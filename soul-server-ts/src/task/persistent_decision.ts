@@ -49,6 +49,7 @@ export interface PersistentDecisionConfig {
   keepalive_short_floor: number;
   keepalive_weekly_floor: number;
   generation_short_floor: number;
+  generation_weekly_floor: number;
   default_weekly_reserve: number;
   usage_stale_seconds: number;
   usage_refresh_seconds: number;
@@ -98,7 +99,7 @@ export function decidePersistentGeneration(
       currentAccount,
       currentAccount?.weekly_remaining_percent,
       config,
-    ) && currentAccount!.weekly_remaining_percent! <= 0;
+    ) && isWeeklyExhausted(currentAccount!.weekly_remaining_percent!, config);
     if (currentShortExhausted || currentWeeklyExhausted) {
       const eligibleCandidates = eligibleOtherProviderCandidates(input, config);
       if (eligibleCandidates.length > 0) {
@@ -360,7 +361,7 @@ function selectPreset(
     const account = accountForPreset(input, preset);
     if (isStaleForValue(input, account, account?.weekly_remaining_percent, config)) return true;
     const remaining = account!.weekly_remaining_percent!;
-    return remaining > 0
+    return !isWeeklyExhausted(remaining, config)
       && (preset !== input.default_model || remaining >= defaultWeeklyReserve);
   });
 
@@ -398,8 +399,12 @@ function eligibleOtherProviderCandidates(
         config,
       )
         && !isStaleForValue(input, account, account?.weekly_remaining_percent, config)
-        && account!.weekly_remaining_percent! > 0;
+        && !isWeeklyExhausted(account!.weekly_remaining_percent!, config);
     });
+}
+
+function isWeeklyExhausted(remainingPercent: number, config: PersistentDecisionConfig): boolean {
+  return remainingPercent < config.generation_weekly_floor;
 }
 
 function isStaleForValue(

@@ -87,11 +87,17 @@ export class AntigravityEngineAdapter implements EnginePort {
       for await (const raw of process.events) for (const event of mapper.accept(raw)) yield engineEventFrame(event);
       const exit = await process.done;
       await cleanedUp;
-      const terminal = mapper.terminal(exit, process.interrupted);
-      if (terminal) {
+      const terminalEvents = mapper.terminal(exit, process.interrupted);
+      if (terminalEvents.length > 0) {
         const usage = addAntigravityUsage(this.usageCarry, mapper.usage);
         this.usageCarry = undefined;
-        yield engineEventFrame({ ...terminal, ...(usage ? { usage } : {}) } as SSEEventPayload);
+        for (let i = 0; i < terminalEvents.length; i += 1) {
+          const event = terminalEvents[i]!;
+          yield engineEventFrame({
+            ...event,
+            ...(i === terminalEvents.length - 1 && usage ? { usage } : {}),
+          } as SSEEventPayload);
+        }
       } else {
         this.usageCarry = addAntigravityUsage(this.usageCarry, mapper.usage);
       }

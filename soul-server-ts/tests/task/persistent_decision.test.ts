@@ -862,6 +862,45 @@ describe("ranked persistent fallback models", () => {
     });
   });
 
+  it("moves from an Antigravity weekly balance below the floor to the default Claude preset", () => {
+    const result = decidePersistentGeneration(makeInput({
+      trigger: "arrival",
+      current_preset: "gemini-4-argon",
+      default_model: "claude-opus",
+      last_call_ended_at: NOW,
+      fallback_models: ["gemini-4-argon", "codex-6.1-sol"],
+      accounts: {
+        antigravity: {
+          weekly_headroom: 0,
+          weekly_remaining_percent: 0.063,
+          short_remaining_percent: 95.8,
+          short_reset_at: "2026-10-06T13:00:00.000Z",
+          observed_at: NOW,
+        },
+        claude: {
+          weekly_headroom: 0,
+          weekly_remaining_percent: 97,
+          short_remaining_percent: 98,
+          short_reset_at: "2026-10-06T13:00:00.000Z",
+          observed_at: NOW,
+        },
+        codex: {
+          weekly_headroom: 0,
+          weekly_remaining_percent: 92,
+          short_remaining_percent: null,
+          short_reset_at: null,
+          observed_at: NOW,
+        },
+      },
+    }));
+
+    expect(result).toMatchObject({
+      action: "new_generation",
+      rule: "arrival.current_exhausted",
+      target_preset: "claude-opus",
+    });
+  });
+
   it("does not schedule a keepalive for an Antigravity current model", () => {
     const result = decidePersistentGeneration(makeInput({
       trigger: "turn_end",

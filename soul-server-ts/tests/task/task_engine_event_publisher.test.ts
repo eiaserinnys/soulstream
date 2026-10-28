@@ -103,6 +103,22 @@ describe("TaskEngineEventPublisher", () => {
     });
   });
 
+  it("captures reset metadata from Antigravity quota errors without a rate-limit type", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+
+    await publisher.publishEngineEvent(task, {
+      type: "error",
+      error_code: "antigravity_quota_exceeded",
+      resets_at: "2026-10-31T21:42:58.000Z",
+    } as SSEEventPayload);
+
+    expect(task.rateLimitStopInfo).toEqual({
+      resetsAt: "2026-10-31T21:42:58.000Z",
+    });
+  });
+
   it("enqueues a persistent event without worker broadcast, then runs side effects", async () => {
     const deps = makePublisherDeps();
     const publisher = new TaskEngineEventPublisher(deps);

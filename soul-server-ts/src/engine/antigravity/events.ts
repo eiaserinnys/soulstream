@@ -1,4 +1,5 @@
 import type { SSEEventPayload } from "../protocol.js";
+import { ANTIGRAVITY_QUOTA_ERROR_CODE } from "../usage_limit_stop.js";
 
 export interface AntigravityUsage {
   input_tokens: number;
@@ -18,7 +19,12 @@ export interface AntigravityEvent {
   };
   result?: { status: string; response?: string; error?: string; usage?: Record<string, number> };
 }
-export interface AntigravityExit { code: number | null; signal: NodeJS.Signals | null; error?: string }
+export interface AntigravityExit {
+  code: number | null;
+  signal: NodeJS.Signals | null;
+  error?: string;
+  forcedAfterResult?: boolean;
+}
 
 export function parseAntigravityEvent(line: string): AntigravityEvent {
   const value: unknown = JSON.parse(line);
@@ -114,26 +120,55 @@ export class AntigravityEventMapper {
     return events;
   }
 
-  terminal(exit: AntigravityExit, expectedInterrupt: boolean): SSEEventPayload | undefined {
-    if (expectedInterrupt) return undefined;
+  terminal(exit: AntigravityExit, expectedInterrupt: boolean): SSEEventPayload[] {
+    if (expectedInterrupt) return [];
     const result = this.result;
     const common = { timestamp: Date.now() / 1000, raw_event_type: "antigravity/result",
       ...(this.model !== undefined ? { model: this.model } : {}),
-      ...(this.usage !== undefined ? { usage: this.usage } : {}),
     };
+    const usage = this.usage !== undefined ? { usage: this.usage } : {};
     // agy 1.3.5 can report a historical ERROR_MESSAGE in a resumed result.
     // The stream contains only this execution's steps; a matching DONE response
     // without a new error step proves recovery. Preserve all actual close errors.
     const recovered = this.resuming && result?.status === "ERROR"
       && !this.sawErrorMessage && this.completedResponse !== undefined
       && result.response === this.completedResponse;
-    if (!exit.error && (result?.status === "SUCCESS" || recovered) && exit.code === 0 && exit.signal === null) {
-      return { type: "complete", ...common, status: "completed", ...(result.response !== undefined ? { result: result.response } : {}) };
+    if (
+      !exit.error
+      && (result?.status === "SUCCESS" || recovered)
+      && ((exit.code === 0 && exit.signal === null) || exit.forcedAfterResult === true)
+    ) {
+      return [{ type: "complete", ...common, status: "completed", ...usage,
+        ...(result.response !== undefined ? { result: result.response } : {}) }];
     }
     const registryError = result?.error?.includes("not found in registry");
     const message = registryError
       ? "안티그라비티 도구 구성이 현재 CLI와 맞지 않아 실행을 시작하지 못했습니다."
       : exit.error ?? result?.error ?? `Antigravity exited without a successful result (${exit.signal ?? exit.code})`;
-    return { type: "error", ...common, fatal: true, message };
+    const quotaMessage = result?.error ?? exit.error;
+    if (quotaMessage && /quota reached/i.test(quotaMessage)) {
+      const resetsAt = parseAntigravityResetsAt(quotaMessage);
+      const quotaFields = { error_code: ANTIGRAVITY_QUOTA_ERROR_CODE,
+        ...(resetsAt !== undefined ? { resets_at: resetsAt } : {}) };
+      return [
+        { type: "credential_alert", status: "rejected", ...common,
+          ...(resetsAt !== undefined ? { resets_at: resetsAt } : {}) } as SSEEventPayload,
+        { type: "error", ...common, ...usage, fatal: true, message, ...quotaFields } as SSEEventPayload,
+      ];
+    }
+    return [{ type: "error", ...common, ...usage, fatal: true, message }];
   }
+}
+
+function parseAntigravityResetsAt(message: string): string | undefined {
+  const match = /\bResets in\s+((?:\d+d)?(?:\d+h)?(?:\d+m)?(?:\d+s)?)/i.exec(message);
+  const duration = match?.[1];
+  if (!duration) return undefined;
+  const parts = /^(?:(\d+)d)?(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/i.exec(duration);
+  if (!parts) return undefined;
+  const seconds = Number(parts[1] ?? 0) * 86_400
+    + Number(parts[2] ?? 0) * 3_600
+    + Number(parts[3] ?? 0) * 60
+    + Number(parts[4] ?? 0);
+  return new Date(Date.now() + seconds * 1_000).toISOString();
 }

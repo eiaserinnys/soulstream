@@ -35,7 +35,7 @@ describe("AntigravityEventMapper", () => {
     mapper.accept(step(2, { usage: { input_tokens: 5, cache_read_tokens: 50, output_tokens: 10, thinking_tokens: 8 } }));
     mapper.accept({ event: "result", result: { status: "SUCCESS", response: "끝", usage: { input_tokens: 9999 } } });
     expect(mapper.usage).toEqual({ input_tokens: 165, cached_input_tokens: 150, output_tokens: 30, reasoning_output_tokens: 23 });
-    expect(mapper.terminal({ code: 0, signal: null }, false)).toMatchObject({ type: "complete", result: "끝", model: "gemini-3.8-flash", usage: mapper.usage });
+    expect(mapper.terminal({ code: 0, signal: null }, false)).toMatchObject([{ type: "complete", result: "끝", model: "gemini-3.8-flash", usage: mapper.usage }]);
   });
   it("pairs repeated ACTIVE and DONE-only tools, unwraps MCP to the existing Codex naming, gives resumed turns distinct IDs", () => {
     const call = step(3, { step_type: "tool", tool_info: { name: "call_mcp_tool", parameters: { ServerName: "probe", ToolName: "echo", Arguments: { text: "한글" } }, output: "답" } });
@@ -54,8 +54,8 @@ describe("AntigravityEventMapper", () => {
   it("holds result until close and emits one failure for missing or inconsistent result", () => {
     const mapper = new AntigravityEventMapper("turn");
     expect(mapper.accept({ event: "result", result: { status: "SUCCESS", response: "x" } })).toEqual([]);
-    expect(mapper.terminal({ code: 1, signal: null }, false)).toMatchObject({ type: "error", fatal: true });
-    expect(new AntigravityEventMapper("turn").terminal({ code: 0, signal: null }, false)).toMatchObject({ type: "error", fatal: true });
+    expect(mapper.terminal({ code: 1, signal: null }, false)).toMatchObject([{ type: "error", fatal: true }]);
+    expect(new AntigravityEventMapper("turn").terminal({ code: 0, signal: null }, false)).toMatchObject([{ type: "error", fatal: true }]);
   });
   it("completes a resumed response when the CLI repeats a historical error at clean close", () => {
     // agy 1.3.5 replay: old native ERROR_MESSAGE step 3, new streamed steps 10–12.
@@ -66,7 +66,7 @@ describe("AntigravityEventMapper", () => {
     mapper.accept(step(12, { text_delta: "\n" }));
     mapper.accept({ event: "result", result: { status: "ERROR", response: "OK\n",
       error: "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 6m57s." } });
-    expect(mapper.terminal({ code: 0, signal: null }, false)).toMatchObject({ type: "complete", result: "OK\n" });
+    expect(mapper.terminal({ code: 0, signal: null }, false)).toMatchObject([{ type: "complete", result: "OK\n" }]);
   });
   it.each(["new-error", "new-turn", "different-response", "bad-exit", "partial-response"])("keeps a real failure after a response (%s)", scenario => {
     const mapper = new AntigravityEventMapper("turn", scenario !== "new-turn");
@@ -75,16 +75,37 @@ describe("AntigravityEventMapper", () => {
     mapper.accept({ event: "result", result: { status: "ERROR",
       response: scenario === "different-response" ? "partial" : "OK\n", error: "current failure" } });
     expect(mapper.terminal({ code: scenario === "bad-exit" ? 3 : 0, signal: null }, false))
-      .toMatchObject({ type: "error", fatal: true, message: "current failure" });
+      .toMatchObject([{ type: "error", fatal: true, message: "current failure" }]);
   });
   it("suppresses expected SIGINT only, carries no success terminal, and gives a short registry failure", () => {
     const mapper = new AntigravityEventMapper("turn");
     mapper.accept({ event: "result", result: { status: "ERROR", error: "interrupted" } });
-    expect(mapper.terminal({ code: 1, signal: null }, true)).toBeUndefined();
-    expect(mapper.terminal({ code: 1, signal: null }, false)).toMatchObject({ type: "error", message: "interrupted" });
+    expect(mapper.terminal({ code: 1, signal: null }, true)).toEqual([]);
+    expect(mapper.terminal({ code: 1, signal: null }, false)).toMatchObject([{ type: "error", message: "interrupted" }]);
     const invalid = new AntigravityEventMapper("turn");
     invalid.accept({ event: "result", result: { status: "ERROR", error: "failed to construct executor: bad_tool not found in registry" } });
-    expect(invalid.terminal({ code: 3, signal: null }, false)).toMatchObject({ type: "error", message: "안티그라비티 도구 구성이 현재 CLI와 맞지 않아 실행을 시작하지 못했습니다." });
+    expect(invalid.terminal({ code: 3, signal: null }, false)).toMatchObject([{ type: "error", message: "안티그라비티 도구 구성이 현재 CLI와 맞지 않아 실행을 시작하지 못했습니다." }]);
+  });
+  it("maps a quota error to a rejected credential alert and a coded error with reset time", () => {
+    const startedAt = Date.now();
+    const mapper = new AntigravityEventMapper("quota-turn");
+    mapper.accept({ event: "result", result: {
+      status: "ERROR",
+      error: "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 54h42m58s.",
+    } });
+
+    const events = mapper.terminal({ code: 1, signal: null }, false);
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({ type: "credential_alert", status: "rejected", raw_event_type: "antigravity/result" });
+    expect(events[1]).toMatchObject({ type: "error", fatal: true, error_code: "antigravity_quota_exceeded" });
+    const alert = events[0] as unknown as Record<string, unknown>;
+    const error = events[1] as unknown as Record<string, unknown>;
+    expect(alert.resets_at).toBe(error.resets_at);
+    expect(alert).not.toHaveProperty("rate_limit_type");
+    const resetAt = Date.parse(String(alert.resets_at));
+    const expectedDelay = (54 * 60 * 60 + 42 * 60 + 58) * 1_000;
+    expect(resetAt).toBeGreaterThanOrEqual(startedAt + expectedDelay);
+    expect(resetAt).toBeLessThanOrEqual(Date.now() + expectedDelay + 1_000);
   });
   it("rejects malformed external envelopes", () => {
     expect(() => parseAntigravityEvent('{"wrong":1}')).toThrow();
