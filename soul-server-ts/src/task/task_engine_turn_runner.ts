@@ -146,8 +146,13 @@ export class TaskEngineTurnRunner {
           sourceLabel: hasResolvedPreset ? "model preset" : "agents.yaml",
         })
       : undefined;
+    // Pool targeting follows the resolved provider and endpoint, not the model
+    // spelling: official presets use aliases such as "opus" or "haiku", which the
+    // usage provider classifier reports as "unknown". Third-party Anthropic-compatible
+    // endpoints (Kimi and any ANTHROPIC_BASE_URL override) stay on their env path.
     const claudeAccountPoolTarget = this.deps.claudeAccountPoolEnabled === true
-      && provider === "claude"
+      && backend === "claude"
+      && provider !== "kimi"
       && claudeProfileEnv?.ANTHROPIC_BASE_URL === undefined;
     const claudeExtraEnv = engine.backendId === "claude"
       ? {
