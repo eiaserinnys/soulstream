@@ -237,6 +237,29 @@ test('requested login can be cancelled and the cancelled state closes the panel'
   expect(view.queryByTestId('claude-login-flow')).toBeNull();
 });
 
+test('unmount cancels a nonterminal server login', async () => {
+  const api = createApi();
+  const { view } = renderPool(api);
+
+  fireEvent.press(view.getByLabelText('Claude 계정 추가'));
+  await view.findByTestId('claude-login-flow');
+  view.unmount();
+
+  expect(api.cancelClaudeAuthLogin).toHaveBeenCalledWith('node-a', loginFlow.login_id);
+});
+
+test('changing nodes cancels the login on its original node and closes its panel', async () => {
+  const api = createApi();
+  const { view } = renderPool(api);
+
+  fireEvent.press(view.getByLabelText('Claude 계정 추가'));
+  await view.findByTestId('claude-login-flow');
+  view.rerender(<ClaudeAccountPoolSection nodeId="node-b" initialList={initial} api={api} />);
+
+  await waitFor(() => expect(api.cancelClaudeAuthLogin).toHaveBeenCalledWith('node-a', loginFlow.login_id));
+  await waitFor(() => expect(view.queryByTestId('claude-login-flow')).toBeNull());
+});
+
 test('polling exposes a failed flow and stops at the terminal state', async () => {
   jest.useFakeTimers();
   const api = createApi();
@@ -251,7 +274,63 @@ test('polling exposes a failed flow and stops at the terminal state', async () =
   expect(view.getByText('인증 코드가 만료되었거나 이미 사용되었습니다.')).toBeTruthy();
   expect(view.queryByText('private response text')).toBeNull();
   expect(api.getClaudeAuthLogin).toHaveBeenCalledTimes(1);
+  view.unmount();
+  expect(api.cancelClaudeAuthLogin).not.toHaveBeenCalled();
   jest.useRealTimers();
+});
+
+test('cancel closes a failed login and clears its code and error even when server keeps failed state', async () => {
+  const failedFlow: ClaudeAuthLoginFlow = { ...loginFlow, state: 'failed', auth_url: null,
+    error: { code: 'invalid_login_code', message: 'private response text' } };
+  const api = createApi();
+  api.startClaudeAuthLogin.mockResolvedValueOnce(failedFlow);
+  api.cancelClaudeAuthLogin.mockResolvedValueOnce(failedFlow);
+  const { view } = renderPool(api);
+
+  fireEvent.press(view.getByLabelText('Claude 계정 추가'));
+  expect(await view.findByText('인증 코드가 만료되었거나 이미 사용되었습니다.')).toBeTruthy();
+  fireEvent.changeText(view.getByLabelText('인증 코드'), 'stale-code#state');
+  fireEvent.press(view.getByLabelText('인증 취소'));
+
+  await waitFor(() => expect(api.cancelClaudeAuthLogin).toHaveBeenCalledWith('node-a', failedFlow.login_id));
+  await waitFor(() => expect(view.queryByTestId('claude-login-flow')).toBeNull());
+  expect(view.queryByText('인증 코드가 만료되었거나 이미 사용되었습니다.')).toBeNull();
+
+  fireEvent.press(view.getByLabelText('Claude 계정 추가'));
+  const input = await view.findByLabelText('인증 코드');
+  expect(input.props.value).toBe('');
+  expect(view.queryByText('인증 코드가 만료되었거나 이미 사용되었습니다.')).toBeNull();
+});
+
+test('cancel request failure keeps an active login open for retry', async () => {
+  const api = createApi();
+  api.cancelClaudeAuthLogin.mockRejectedValueOnce(new Error('network unavailable'));
+  const { view } = renderPool(api);
+
+  fireEvent.press(view.getByLabelText('Claude 계정 추가'));
+  await view.findByTestId('claude-login-flow');
+  fireEvent.press(view.getByLabelText('인증 취소'));
+
+  expect(await view.findByText('인증을 취소하지 못했습니다. 다시 시도해 주세요.')).toBeTruthy();
+  expect(view.getByTestId('claude-login-flow')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('인증 취소'));
+  expect(await view.findByText('인증을 취소했습니다.')).toBeTruthy();
+  expect(view.queryByTestId('claude-login-flow')).toBeNull();
+  expect(api.cancelClaudeAuthLogin).toHaveBeenCalledTimes(2);
+});
+
+test('cancel response that completed login refreshes the account list', async () => {
+  const api = createApi();
+  api.cancelClaudeAuthLogin.mockResolvedValueOnce({ ...loginFlow, state: 'done', auth_url: null });
+  const { view } = renderPool(api);
+
+  fireEvent.press(view.getByLabelText('Claude 계정 추가'));
+  await view.findByTestId('claude-login-flow');
+  fireEvent.press(view.getByLabelText('인증 취소'));
+
+  expect(await view.findByText('Claude 계정이 연결되었습니다.')).toBeTruthy();
+  expect(view.queryByTestId('claude-login-flow')).toBeNull();
+  expect(api.getClaudeAuthAccounts).toHaveBeenCalledWith('node-a');
 });
 
 test('a failed code-submission flow maps its account error to a readable message', async () => {

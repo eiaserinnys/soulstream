@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Switch,
@@ -37,6 +37,8 @@ type Props = {
 };
 
 const terminalStates = new Set(['done', 'failed', 'cancelled']);
+
+type TrackedLogin = { nodeId: string; loginId: string; state: ClaudeAuthLoginFlow['state'] };
 
 function sortedAccounts(accounts: readonly ClaudeAccount[]): ClaudeAccount[] {
   return accounts.map((account, index) => ({ account, index }))
@@ -168,8 +170,33 @@ export function ClaudeAccountPoolSection({ nodeId, initialList, api }: Props) {
   const [cancellingLogin, setCancellingLogin] = useState(false);
   const [code, setCode] = useState('');
   const submitLock = useRef(false);
+  const trackedLoginRef = useRef<TrackedLogin | null>(null);
+  const currentLoginFlowRef = useRef<ClaudeAuthLoginFlow | null>(null);
+  const closedLoginIdRef = useRef<string | null>(null);
+  const currentNodeIdRef = useRef(nodeId);
+  const previousNodeIdRef = useRef(nodeId);
+  const mountedRef = useRef(false);
+  const cancelRequestRef = useRef<{ nodeId: string; loginId: string } | null>(null);
   const ordered = useMemo(() => sortedAccounts(accounts), [accounts]);
   const prioritized = useMemo(() => ordered.filter(account => account.enabled), [ordered]);
+
+  const updateLoginFlow = useCallback((flow: ClaudeAuthLoginFlow | null, ownerNodeId: string) => {
+    if (flow && flow.login_id === closedLoginIdRef.current) return;
+    currentLoginFlowRef.current = flow;
+    trackedLoginRef.current = flow && !terminalStates.has(flow.state)
+      ? { nodeId: ownerNodeId, loginId: flow.login_id, state: flow.state }
+      : null;
+    setLoginFlow(flow);
+  }, []);
+
+  const cancelTrackedLogin = useCallback((expectedNodeId?: string) => {
+    const tracked = trackedLoginRef.current;
+    if (!tracked || terminalStates.has(tracked.state)
+      || (expectedNodeId !== undefined && tracked.nodeId !== expectedNodeId)) return;
+    trackedLoginRef.current = null;
+    closedLoginIdRef.current = tracked.loginId;
+    void api.cancelClaudeAuthLogin(tracked.nodeId, tracked.loginId).catch(() => {});
+  }, [api]);
 
   function applyList(result: ClaudeAccountList) {
     setAccountList(result);
@@ -182,42 +209,73 @@ export function ClaudeAccountPoolSection({ nodeId, initialList, api }: Props) {
     } catch { setNotice('계정 목록을 갱신하지 못했습니다.'); }
   }
 
+  useLayoutEffect(() => {
+    currentNodeIdRef.current = nodeId;
+  }, [nodeId]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      cancelTrackedLogin();
+    };
+  }, [cancelTrackedLogin]);
+
+  useEffect(() => {
+    const previousNodeId = previousNodeIdRef.current;
+    if (previousNodeId === nodeId) return;
+    previousNodeIdRef.current = nodeId;
+    cancelTrackedLogin(previousNodeId);
+    updateLoginFlow(null, previousNodeId);
+    closedLoginIdRef.current = null;
+    cancelRequestRef.current = null;
+    submitLock.current = false;
+    setCode('');
+    setLoginError(null);
+    setLoginStarting(false);
+    setSubmittingCode(false);
+    setCancellingLogin(false);
+  }, [cancelTrackedLogin, nodeId, updateLoginFlow]);
+
   useEffect(() => {
     const flow = loginFlow;
     if (!flow || terminalStates.has(flow.state)) return;
+    const tracked = trackedLoginRef.current;
+    if (!tracked || tracked.loginId !== flow.login_id || tracked.nodeId !== nodeId) return;
+    const flowNodeId = tracked.nodeId;
     let active = true;
     let timer: ReturnType<typeof setTimeout> | null = null;
     const poll = async () => {
       let shouldContinue = true;
       try {
-        const latest = await api.getClaudeAuthLogin(nodeId, flow.login_id);
-        if (!active) return;
-        setLoginFlow(latest);
+        const latest = await api.getClaudeAuthLogin(flowNodeId, flow.login_id);
+        if (!active || closedLoginIdRef.current === flow.login_id) return;
+        updateLoginFlow(latest, flowNodeId);
         setLoginError(loginFlowError(latest));
         shouldContinue = !terminalStates.has(latest.state);
       } catch {
-        if (active) setLoginError('인증 상태를 확인하지 못했습니다. 다시 시도해 주세요.');
+        if (active && closedLoginIdRef.current !== flow.login_id) setLoginError('인증 상태를 확인하지 못했습니다. 다시 시도해 주세요.');
       }
       if (active && shouldContinue) timer = setTimeout(() => { void poll(); }, 1_000);
     };
     timer = setTimeout(() => { void poll(); }, 1_000);
     return () => { active = false; if (timer) clearTimeout(timer); };
-  }, [api, loginFlow?.login_id, loginFlow?.state, nodeId]);
+  }, [api, loginFlow?.login_id, loginFlow?.state, nodeId, updateLoginFlow]);
 
   useEffect(() => {
     if (loginFlow?.state === 'done') {
-      setLoginFlow(null);
+      updateLoginFlow(null, nodeId);
       setCode('');
       setLoginError(null);
       setNotice('Claude 계정이 연결되었습니다.');
       void refreshAccounts();
     } else if (loginFlow?.state === 'cancelled') {
-      setLoginFlow(null);
+      updateLoginFlow(null, nodeId);
       setCode('');
       setLoginError(null);
       setNotice('인증을 취소했습니다.');
     }
-  }, [loginFlow?.state]);
+  }, [loginFlow?.state, nodeId, updateLoginFlow]);
 
   async function patchAccount(account: ClaudeAccount, patch: { enabled?: boolean; priority?: number | null }) {
     if (busyAccountId) return;
@@ -311,17 +369,30 @@ export function ClaudeAccountPoolSection({ nodeId, initialList, api }: Props) {
   }
 
   async function startLogin(accountId?: string) {
+    const requestedNodeId = nodeId;
     setLoginStarting(true);
     setLoginError(null);
     setCode('');
     setNotice(null);
     try {
-      const flow = await api.startClaudeAuthLogin(nodeId, accountId);
-      setLoginFlow(flow);
+      const flow = await api.startClaudeAuthLogin(requestedNodeId, accountId);
+      if (!mountedRef.current || currentNodeIdRef.current !== requestedNodeId) {
+        if (!terminalStates.has(flow.state)) {
+          closedLoginIdRef.current = flow.login_id;
+          void api.cancelClaudeAuthLogin(requestedNodeId, flow.login_id).catch(() => {});
+        }
+        return;
+      }
+      closedLoginIdRef.current = null;
+      updateLoginFlow(flow, requestedNodeId);
       setLoginError(loginFlowError(flow));
     }
-    catch (caught) { setLoginError(loginErrorMessage(caught)); }
-    finally { setLoginStarting(false); }
+    catch (caught) {
+      if (mountedRef.current && currentNodeIdRef.current === requestedNodeId) setLoginError(loginErrorMessage(caught));
+    }
+    finally {
+      if (mountedRef.current && currentNodeIdRef.current === requestedNodeId) setLoginStarting(false);
+    }
   }
 
   async function openAuthPage() {
@@ -332,30 +403,70 @@ export function ClaudeAccountPoolSection({ nodeId, initialList, api }: Props) {
 
   async function submitCode() {
     const flow = loginFlow;
+    const requestNodeId = nodeId;
     const value = code.trim();
     if (!flow || !value || submitLock.current) return;
     submitLock.current = true;
     setSubmittingCode(true);
     setLoginError(null);
     try {
-      const result = await api.submitClaudeAuthLoginCode(nodeId, flow.login_id, value);
+      const result = await api.submitClaudeAuthLoginCode(requestNodeId, flow.login_id, value);
+      if (!mountedRef.current || currentNodeIdRef.current !== requestNodeId
+        || closedLoginIdRef.current === flow.login_id) return;
       setCode('');
-      setLoginFlow(result);
+      updateLoginFlow(result, requestNodeId);
       setLoginError(loginFlowError(result));
-    } catch (caught) { setCode(''); setLoginError(loginErrorMessage(caught)); }
-    finally { submitLock.current = false; setSubmittingCode(false); }
+    } catch (caught) {
+      if (mountedRef.current && currentNodeIdRef.current === requestNodeId
+        && closedLoginIdRef.current !== flow.login_id) {
+        setCode('');
+        setLoginError(loginErrorMessage(caught));
+      }
+    }
+    finally {
+      submitLock.current = false;
+      if (mountedRef.current && currentNodeIdRef.current === requestNodeId) setSubmittingCode(false);
+    }
   }
 
   async function cancelLogin() {
-    if (!loginFlow || cancellingLogin) return;
+    const flow = loginFlow;
+    const requestNodeId = nodeId;
+    if (!flow || cancellingLogin) return;
+    const request = { nodeId: requestNodeId, loginId: flow.login_id };
+    cancelRequestRef.current = request;
     setCancellingLogin(true);
+    let result: ClaudeAuthLoginFlow | null = null;
+    let requestFailed = false;
     try {
-      const result = await api.cancelClaudeAuthLogin(nodeId, loginFlow.login_id);
-      setLoginFlow(result);
-      setLoginError(loginFlowError(result));
+      result = await api.cancelClaudeAuthLogin(requestNodeId, flow.login_id);
     }
-    catch { setLoginError('인증을 취소하지 못했습니다. 다시 시도해 주세요.'); }
-    finally { setCancellingLogin(false); }
+    catch { requestFailed = true; }
+    finally {
+      const currentFlow = currentLoginFlowRef.current;
+      const stillOwnsFlow = currentFlow?.login_id === flow.login_id;
+      const currentFlowIsTerminal = terminalStates.has(currentFlow?.state ?? flow.state);
+      if (mountedRef.current && currentNodeIdRef.current === requestNodeId && stillOwnsFlow) {
+        if (requestFailed && !currentFlowIsTerminal) {
+          setLoginError('인증을 취소하지 못했습니다. 다시 시도해 주세요.');
+        } else {
+          closedLoginIdRef.current = flow.login_id;
+          trackedLoginRef.current = null;
+          updateLoginFlow(null, requestNodeId);
+          setCode('');
+          setLoginError(null);
+          if (result?.state === 'cancelled') setNotice('인증을 취소했습니다.');
+          else if (result?.state === 'done') {
+            setNotice('Claude 계정이 연결되었습니다.');
+            void refreshAccounts();
+          }
+        }
+      }
+      if (cancelRequestRef.current === request) {
+        cancelRequestRef.current = null;
+        if (mountedRef.current) setCancellingLogin(false);
+      }
+    }
   }
 
   const summary = pool
