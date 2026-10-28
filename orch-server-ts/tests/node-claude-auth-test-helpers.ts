@@ -38,6 +38,7 @@ export type ClaudeAuthHarnessOptions<
   profileHttpClient?: NodeClaudeAuthRouteOptions["profileHttpClient"];
   provider?: NodeClaudeAuthRouteOptions["provider"];
   sessionStore?: TSessionStore;
+  usageSummary?: NodeClaudeAuthRouteOptions["usageSummary"];
 };
 
 export type ClaudeAuthHarness<
@@ -185,6 +186,7 @@ export function createClaudeAuthHarness(
       if (options.profileHttpError !== undefined) throw options.profileHttpError;
       return options.profileResponse ?? { statusCode: 200, body: { profiles: [] } };
     }),
+    usageSummary: options.usageSummary ?? { refreshNode: async () => poolUsageSnapshot() },
   };
 
   const app = createApp({ config, nodeClaudeAuthRoutes: routeOptions });
@@ -222,6 +224,24 @@ function defaultAckFor(message: Record<string, unknown>): Record<string, unknown
         success: true,
         data: { email: "ada@example.com" },
       };
+    case "claude_auth_accounts_list":
+    case "claude_auth_account_update":
+      return { type: `${message.type}_ack`, success: true, data: accountList() };
+    case "claude_auth_account_delete":
+      return {
+        type: `${message.type}_ack`,
+        success: true,
+        data: { deferred: false, accounts: [], pool: null },
+      };
+    case "claude_auth_login_start":
+    case "claude_auth_login_status":
+    case "claude_auth_login_submit_code":
+    case "claude_auth_login_cancel":
+      return {
+        type: `${message.type}_ack`,
+        success: true,
+        data: loginFlow(message.type === "claude_auth_login_status" ? "done" : "url_ready"),
+      };
     case "provider_usage_get":
       return {
         type: "provider_usage_get_ack",
@@ -231,4 +251,27 @@ function defaultAckFor(message: Record<string, unknown>): Record<string, unknown
     default:
       return { type: "unknown_ack", success: true };
   }
+}
+
+function accountList() {
+  return { mode: "pool", accounts: [], pool: null, fable_pool: null };
+}
+
+function loginFlow(state: "done" | "url_ready") {
+  return {
+    login_id: "login-a",
+    account_id: null,
+    state,
+    auth_url: "https://claude.example.test/login",
+    expires_at: "2026-10-12T04:00:00.000Z",
+    error: null,
+  };
+}
+
+function poolUsageSnapshot() {
+  return {
+    generatedAt: "2026-10-12T03:00:00.000Z",
+    collectedAt: "2026-10-12T03:00:00.000Z",
+    nodes: [],
+  };
 }

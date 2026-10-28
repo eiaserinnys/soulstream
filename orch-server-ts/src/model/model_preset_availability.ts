@@ -7,6 +7,10 @@ import type {
   UsageSummaryQuota,
   UsageSummarySnapshot,
 } from "../usage/usage_summary_service.js";
+import {
+  rejectionReasonLabel,
+  resolveClaudePoolAvailability,
+} from "./claude_account_pool_availability.js";
 import type {
   ProviderLimitProvider,
   ProviderLimitRejection,
@@ -59,7 +63,12 @@ export type ModelPresetAvailabilityRegistry = {
 
 export type ModelPresetUsageSummary = {
   getSummary(): UsageSummarySnapshot;
-  getLimitRejection(nodeId: string, provider: ProviderLimitProvider): ProviderLimitRejection | null;
+  getLimitRejection(
+    nodeId: string,
+    provider: ProviderLimitProvider,
+    accountId?: string,
+    scope?: "all" | "fable",
+  ): ProviderLimitRejection | null;
 };
 
 export class ModelPresetAvailabilityError extends Error {
@@ -89,15 +98,7 @@ export class ModelPresetAvailabilityService {
     const node = this.registry.getConnectedNode(nodeId);
     if (!node) return undefined;
     const summary = this.usageSummary.getSummary();
-    return staticPresets(node).map((preset) => resolvePresetAvailability(
-      nodeId,
-      preset,
-      summary,
-      this.now(),
-      preset.usage_provider === null
-        ? null
-        : this.usageSummary.getLimitRejection(nodeId, preset.usage_provider),
-    ));
+    return staticPresets(node).map((preset) => this.resolveAvailability(nodeId, preset, summary));
   }
 
   /** Validated node advertisement, independent of permissive manual usage fallback. */
@@ -120,14 +121,35 @@ export class ModelPresetAvailabilityService {
     presetId: string,
   ): ModelPresetAvailability {
     const preset = this.resolveStaticForNode(nodeId, presetId);
+    return this.resolveAvailability(nodeId, preset, this.usageSummary.getSummary());
+  }
+
+  private resolveAvailability(
+    nodeId: string,
+    preset: StaticModelPreset,
+    summary: UsageSummarySnapshot,
+  ): ModelPresetAvailability {
+    const provider = preset.usage_provider;
+    const nodeUsage = summary.nodes.find((node) => node.nodeId === nodeId);
+    const providerUsage = provider === null ? null : nodeUsage?.providers[provider] ?? null;
+    if (provider === "claude" && providerUsage?.mode === "pool") {
+      const scopes: readonly ("all" | "fable")[] = isFablePreset(preset)
+        ? ["all", "fable"]
+        : ["all"];
+      const poolRejections = (providerUsage.accounts ?? []).flatMap((account) =>
+        scopes.flatMap((scope) => {
+          const rejection = this.usageSummary.getLimitRejection(nodeId, "claude", account.id, scope);
+          return rejection === null ? [] : [{ accountId: account.id, scope, rejection }];
+        }),
+      );
+      return resolvePresetAvailability(nodeId, preset, summary, this.now(), null, poolRejections);
+    }
     return resolvePresetAvailability(
       nodeId,
       preset,
-      this.usageSummary.getSummary(),
+      summary,
       this.now(),
-      preset.usage_provider === null
-        ? null
-        : this.usageSummary.getLimitRejection(nodeId, preset.usage_provider),
+      provider === null ? null : this.usageSummary.getLimitRejection(nodeId, provider),
     );
   }
 
@@ -158,6 +180,11 @@ export function resolvePresetAvailability(
   summary: UsageSummarySnapshot,
   now: Date,
   rejection: ProviderLimitRejection | null = null,
+  poolRejections: readonly {
+    readonly accountId: string;
+    readonly scope: "all" | "fable";
+    readonly rejection: ProviderLimitRejection;
+  }[] = [],
 ): ModelPresetAvailability {
   const nodeUsage = summary.nodes.find((node) => node.nodeId === nodeId);
   const provider = preset.usage_provider === null
@@ -187,6 +214,17 @@ export function resolvePresetAvailability(
   }
   if (preset.usage_provider === null) return availablePreset(base, false);
 
+  if (preset.usage_provider === "claude" && provider?.mode === "pool") {
+    return resolveClaudePoolAvailability(
+      base,
+      isFablePreset(preset),
+      nodeUsage === undefined || nodeUsage.stale,
+      provider.accounts ?? [],
+      poolRejections,
+      now,
+    );
+  }
+
   const freshProvider = nodeUsage !== undefined && !nodeUsage.stale
     ? provider
     : null;
@@ -201,7 +239,11 @@ export function resolvePresetAvailability(
     };
   }
 
-  if (rejection !== null && Date.parse(rejection.rejectedUntil) > now.getTime()) {
+  if (
+    rejection !== null
+    && rejection.rejectedUntil !== null
+    && Date.parse(rejection.rejectedUntil) > now.getTime()
+  ) {
     return {
       ...base,
       available: false,
@@ -241,12 +283,9 @@ export function resolvePresetAvailability(
   };
 }
 
-function rejectionReasonLabel(rateLimitType: string | null): string {
-  if (rateLimitType === "five_hour") return "5시간 한도 거부 중";
-  if (rateLimitType === "seven_day" || rateLimitType?.startsWith("seven_day_")) {
-    return "7일 한도 거부 중";
-  }
-  return "한도 거부 중";
+function isFablePreset(preset: StaticModelPreset): boolean {
+  return [preset.usage_model_id, preset.id, preset.label]
+    .some((value) => typeof value === "string" && normalizeModelIdentity(value).includes("fable"));
 }
 
 function publicPreset(

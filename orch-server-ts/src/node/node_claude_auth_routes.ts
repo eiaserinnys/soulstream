@@ -4,9 +4,14 @@ import {
   type NodeCommandResponse,
   type RequestResponseNodeCommandPayload,
 } from "./pending_commands.js";
-import type { InMemoryNodeRegistry, NodeConnectionSnapshot } from "./registry.js";
+import type { NodeConnectionSnapshot } from "./registry.js";
 import { supportsClaudeAccountPool } from "./registry_helpers.js";
-import type { SessionCommandTransportBridge } from "../session/session_command_transport.js";
+import {
+  claudeAccountPoolRouteAuthRequirements,
+  registerClaudeAccountPoolRoutes,
+  sendClaudeAccountPoolAccountsAlias,
+  type ClaudeAccountPoolRouteOptions,
+} from "./claude_account_pool_routes.js";
 import { mapNodeCommandError, sendApiError } from "../http/api_errors.js";
 import {
   BROWSER_SCOPE,
@@ -89,15 +94,12 @@ export type NodeClaudeAuthHttpClient = (
   request: NodeClaudeAuthHttpRequest,
 ) => Promise<NodeClaudeAuthHttpResponse>;
 
-export type NodeClaudeAuthRouteOptions = {
+export type NodeClaudeAuthRouteOptions = ClaudeAccountPoolRouteOptions & {
   provider: NodeClaudeAuthRouteProvider;
   pkce: ClaudeAuthPkceProvider;
   sessionStore: ClaudeAuthSessionStore;
   tokenExchange: ClaudeAuthTokenExchangeClient;
   profileHttpClient: NodeClaudeAuthHttpClient;
-  registry: InMemoryNodeRegistry;
-  bridge: SessionCommandTransportBridge;
-  timeoutMs?: number;
 };
 
 type NodeParams = {
@@ -112,6 +114,7 @@ type CallbackQuery = {
 const PROVIDERS = new Set(["claude", "codex", "antigravity"]);
 
 export const nodeClaudeAuthRouteAuthRequirements = {
+  ...claudeAccountPoolRouteAuthRequirements,
   "GET /api/nodes/:node_id/claude-auth/start": true,
   "GET /api/nodes/claude-auth/callback": true,
   "GET /api/nodes/:node_id/claude-auth/status": true,
@@ -229,6 +232,9 @@ export function registerNodeClaudeAuthRoutes(
       const nodeId = nodeParams(request).node_id;
       const node = options.registry.getConnectedNode(nodeId);
       if (node === undefined) return detail(reply, 404, `Node ${nodeId} not connected`);
+      if (supportsClaudeAccountPool(node.capabilities)) {
+        return sendClaudeAccountPoolAccountsAlias(reply, options, nodeId);
+      }
       try {
         const response = await options.profileHttpClient({
           method: "GET",
@@ -346,6 +352,8 @@ export function registerNodeClaudeAuthRoutes(
       });
     },
   );
+
+  registerClaudeAccountPoolRoutes(app, options);
 }
 
 type CommandResult =

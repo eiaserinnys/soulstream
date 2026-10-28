@@ -14,9 +14,130 @@ describe("UsageSummaryService", () => {
     const onCollected = vi.fn();
     const service = new UsageSummaryService({ registry: fakeRegistry(["node"]), bridge: { sendPendingCommand: vi.fn(async () => response) } as unknown as UsageSummaryBridge, pollIntervalMs: 300_000, sharedAccountGroups: [], now: () => new Date("2026-07-20T10:00:00Z"), onCollected });
     await service.collectOnce();
-    expect(service.getSummary().nodes[0]?.providers.claude).toMatchObject({ observedAt: "2026-07-20T09:59:00.000Z", source: "claude-api", sourceKind: "remote", quotas: [{ source: "claude-api", purpose: "execution" }] });
+    const claude = service.getSummary().nodes[0]?.providers.claude;
+    expect(claude).toMatchObject({ observedAt: "2026-07-20T09:59:00.000Z", source: "claude-api", sourceKind: "remote", quotas: [{ source: "claude-api", purpose: "execution" }] });
+    expect(claude).not.toHaveProperty("mode");
+    expect(claude).not.toHaveProperty("accounts");
+    expect(claude).not.toHaveProperty("pool");
+    expect(claude).not.toHaveProperty("fable_pool");
     expect(onCollected).toHaveBeenCalledOnce();
     expect(onCollected.mock.calls[0]?.[0].collectedAt).toBe("2026-07-20T10:00:00.000Z");
+  });
+
+  it("preserves Claude account-pool fields through parser and summary projection", async () => {
+    const response = successResponse(16);
+    const account = poolAccount("account-a");
+    const pool = {
+      available_count: 1,
+      total_count: 1,
+      best_weekly_remaining_percent: 84,
+      best_weekly_resets_at: "2026-07-21T10:00:00.000Z",
+      earliest_available_at: null,
+    };
+    Object.assign(response.data.providers.claude, {
+      mode: "pool",
+      accounts: [account],
+      pool,
+      fable_pool: { ...pool, best_weekly_remaining_percent: 72 },
+    });
+    const service = new UsageSummaryService({
+      registry: fakeRegistry(["node-a"]),
+      bridge: { sendPendingCommand: vi.fn(async () => response) } as unknown as UsageSummaryBridge,
+      pollIntervalMs: 300_000,
+      sharedAccountGroups: [],
+    });
+
+    await service.collectOnce();
+
+    expect(service.getSummary().nodes[0]?.providers.claude).toMatchObject({
+      mode: "pool",
+      accounts: [account],
+      pool,
+      fable_pool: { ...pool, best_weekly_remaining_percent: 72 },
+    });
+  });
+
+  it("collects pool usage per node while retaining legacy shared-provider projection", async () => {
+    const registry = fakeRegistry(["pool-node", "legacy-node"]);
+    registry.getConnectedNode("pool-node")!.capabilities = { claude_account_pool_v1: true };
+    const bridge = {
+      sendPendingCommand: vi.fn(async ({ node }: { node: { nodeId: string } }) => {
+        const response = successResponse(node.nodeId === "pool-node" ? 10 : 30);
+        if (node.nodeId === "pool-node") {
+          Object.assign(response.data.providers.claude, {
+            mode: "pool",
+            accounts: [poolAccount("pool-account")],
+            pool: null,
+            fable_pool: null,
+          });
+        }
+        return response;
+      }),
+    } as unknown as UsageSummaryBridge;
+    const service = new UsageSummaryService({
+      registry,
+      bridge,
+      pollIntervalMs: 300_000,
+      sharedAccountGroups: [{ provider: "claude", nodeIds: ["pool-node", "legacy-node"] }],
+    });
+
+    await service.collectOnce();
+
+    expect(registry.createCommand).toHaveBeenCalledTimes(2);
+    expect(service.getSummary().nodes).toMatchObject([
+      { nodeId: "legacy-node", providers: { claude: { weeklyRemainingPercent: 70 } } },
+      { nodeId: "pool-node", providers: { claude: { weeklyRemainingPercent: 90, mode: "pool", accounts: [{ id: "pool-account" }] } } },
+    ]);
+    expect(service.getSummary().nodes.find((node) => node.nodeId === "legacy-node")?.providers.claude)
+      .not.toHaveProperty("accounts");
+  });
+
+  it("refreshes only the target Claude provider and publishes the exact GET snapshot", async () => {
+    const registry = fakeRegistry(["node-a", "node-b"]);
+    let refreshedAccounts = [poolAccount("account-a")];
+    const bridge = {
+      sendPendingCommand: vi.fn(async ({ node, command }: {
+        node: { nodeId: string };
+        command: { message: { provider?: string } };
+      }) => {
+        if (command.message.provider === "claude") {
+          const response = providerSuccessResponse("claude", 10);
+          Object.assign(response.data, {
+            mode: "pool",
+            accounts: refreshedAccounts,
+            pool: null,
+            fable_pool: null,
+          });
+          return response;
+        }
+        return successResponse(node.nodeId === "node-a" ? 20 : 40);
+      }),
+    } as unknown as UsageSummaryBridge;
+    const onCollected = vi.fn();
+    const service = new UsageSummaryService({
+      registry,
+      bridge,
+      pollIntervalMs: 300_000,
+      sharedAccountGroups: [],
+      onCollected,
+    });
+    await service.collectOnce();
+    const published: unknown[] = [];
+    const unsubscribe = service.subscribe((snapshot) => published.push(snapshot));
+    refreshedAccounts = [poolAccount("account-b")];
+
+    const returned = await service.refreshNode("node-a");
+
+    expect(returned).toEqual(service.getSummary());
+    expect(returned.nodes.find((node) => node.nodeId === "node-a")?.providers.claude)
+      .toMatchObject({ mode: "pool", accounts: [{ id: "account-b" }] });
+    expect(returned.nodes.find((node) => node.nodeId === "node-a")?.providers.codex)
+      .toMatchObject({ weeklyRemainingPercent: 20 });
+    expect(returned.nodes.find((node) => node.nodeId === "node-b")?.providers.claude)
+      .toMatchObject({ weeklyRemainingPercent: 60 });
+    expect(published).toEqual([returned]);
+    expect(onCollected).toHaveBeenCalledTimes(2);
+    unsubscribe();
   });
 
   it("shares durable rejection memory by configured provider account across collections", async () => {
@@ -395,6 +516,21 @@ function successResponse(
       },
     },
   };
+}
+
+function poolAccount(id: string) {
+  return {
+    id,
+    email: `${id}@example.com`,
+    plan: null,
+    enabled: true,
+    priority: null,
+    auth_state: "ok",
+    usage: { five_hour: null, seven_day: null, fable_weekly: null },
+    observed_at: null,
+    blocked: null,
+    active_sessions: 0,
+  } as const;
 }
 
 function providerSuccessResponse(provider: string, weeklyUsedPercent: number) {

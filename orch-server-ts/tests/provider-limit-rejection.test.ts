@@ -159,6 +159,49 @@ describe("provider limit rejection memory", () => {
   });
 });
 
+describe("Claude account-pool rejection memory", () => {
+  it("keys rejection by UUID and scope without letting another account success clear it", () => {
+    const memory = new Map<string, ProviderLimitRejection>();
+    observePool(memory, {
+      nodeId: "node-a",
+      eventType: "error",
+      payload: {
+        type: "error",
+        error_code: "claude_rate_limit_stop_failure",
+        account_id: "account-a",
+        scope: "all",
+        rate_limit_type: "five_hour",
+        resets_at: "2026-10-12T04:00:00.000Z",
+      },
+      createdAt: "2026-10-12T02:59:00.000Z",
+    });
+    observePool(memory, {
+      nodeId: "node-b",
+      eventType: "result",
+      payload: { type: "result", success: true, account_id: "account-b", scope: "all" },
+      createdAt: "2026-10-12T03:01:00.000Z",
+    });
+
+    expect(getPool(memory, "node-b", "account-a", "all")).toMatchObject({
+      rejectedUntil: "2026-10-12T04:00:00.000Z",
+      rateLimitType: "five_hour",
+    });
+    expect(getPool(memory, "node-a", "account-b", "all")).toBeNull();
+  });
+
+  it("keeps the maximum reset for an account and represents indefinite blocks", () => {
+    const memory = new Map<string, ProviderLimitRejection>();
+    observePool(memory, poolError("account-a", "all", "five_hour", "2026-10-12T04:00:00.000Z"));
+    observePool(memory, poolError("account-a", "all", "seven_day", "2026-10-12T05:00:00.000Z"));
+    observePool(memory, poolError("account-b", "fable", "weekly_scoped", null));
+
+    expect(getPool(memory, "node-a", "account-a", "all")?.rejectedUntil)
+      .toBe("2026-10-12T05:00:00.000Z");
+    expect(getPool(memory, "node-a", "account-b", "fable")).toMatchObject({ rejectedUntil: null });
+    expect(getPool(memory, "node-a", "account-b", "all")).toBeNull();
+  });
+});
+
 function observe(memory: Map<string, ProviderLimitRejection>, event: ProviderExecutionEvent): void {
   observeProviderExecution({
     memory,
@@ -192,4 +235,47 @@ function errorEvent(nodeId: string, errorCode: string, rejection: ProviderLimitR
 
 function successEvent(nodeId: string, eventType: string, payload: unknown, createdAt: string): ProviderExecutionEvent {
   return { nodeId, eventType, payload, createdAt };
+}
+
+function observePool(memory: Map<string, ProviderLimitRejection>, event: ProviderExecutionEvent): void {
+  observeProviderExecution({ memory, sharedAccountGroups: groups, event, now, poolNode: true });
+}
+
+function getPool(
+  memory: ReadonlyMap<string, ProviderLimitRejection>,
+  nodeId: string,
+  accountId: string,
+  scope: "all" | "fable",
+) {
+  return getProviderLimitRejection({
+    memory,
+    sharedAccountGroups: groups,
+    nodeId,
+    provider: "claude",
+    accountId,
+    scope,
+    poolNode: true,
+    now,
+  });
+}
+
+function poolError(
+  accountId: string,
+  scope: "all" | "fable",
+  rateLimitType: string,
+  resetsAt: string | null,
+): ProviderExecutionEvent {
+  return {
+    nodeId: "node-a",
+    eventType: "error",
+    payload: {
+      type: "error",
+      error_code: "claude_rate_limit_stop_failure",
+      account_id: accountId,
+      scope,
+      rate_limit_type: rateLimitType,
+      resets_at: resetsAt,
+    },
+    createdAt: "2026-10-12T02:59:00.000Z",
+  };
 }

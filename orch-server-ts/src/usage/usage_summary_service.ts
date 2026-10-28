@@ -1,5 +1,3 @@
-// Collection and wire parsing remain together for this compatibility fix; their
-// existing contract tests cover both paths without a separate module refactor.
 import type {
   NodeCommandResponse,
   PendingNodeCommand,
@@ -7,6 +5,7 @@ import type {
 } from "../node/pending_commands.js";
 import type { NodeConnectionSnapshot } from "../node/registry_types.js";
 import type { SessionCommandTransportBridge } from "../session/session_command_transport.js";
+import { supportsClaudeAccountPool } from "../node/registry_helpers.js";
 import {
   getProviderLimitRejection,
   observeProviderExecution,
@@ -14,6 +13,15 @@ import {
   type ProviderLimitProvider,
   type ProviderLimitRejection,
 } from "./provider_limit_rejection.js";
+import {
+  NOT_CONFIGURED_PROVIDER_LIMITS,
+  parseProviderLimits,
+  parseProviderUsageSnapshot,
+  type ProviderLimits,
+  type ProviderUsageSnapshot,
+  type UsageSummaryClaudeAccount,
+  type UsageSummaryClaudeAccountPool,
+} from "./provider_usage_wire.js";
 
 export const USAGE_SUMMARY_NODE_TIMEOUT_MS = 15_000;
 
@@ -39,6 +47,10 @@ export type UsageSummaryQuota = {
 
 export type UsageSummaryProvider = {
   readonly status: "auto" | "not_configured" | "error";
+  readonly mode?: "legacy" | "pool";
+  readonly accounts?: readonly UsageSummaryClaudeAccount[];
+  readonly pool?: UsageSummaryClaudeAccountPool | null;
+  readonly fable_pool?: UsageSummaryClaudeAccountPool | null;
   readonly source?: string | null;
   readonly sourceKind?: "remote" | "rollout" | "unknown";
   readonly observedAt?: string | null;
@@ -98,38 +110,6 @@ type ProviderUsageCommandResponse = NodeCommandResponse & {
   readonly error?: unknown;
 };
 
-type ProviderUsageSnapshot = {
-  readonly providers: Readonly<Record<UsageSummaryProviderName, ProviderLimits>>;
-};
-
-type ProviderLimits = {
-  readonly status: "auto" | "not_configured" | "error";
-  readonly source?: string | null;
-  readonly sourceKind?: "remote" | "rollout" | "unknown";
-  readonly observedAt?: string | null;
-  readonly weeklyUsedPercent: number | null;
-  readonly weeklyResetAt: number | null;
-  readonly shortUsedPercent: number | null;
-  readonly shortResetAt: number | null;
-  readonly quotas: readonly ProviderQuota[];
-};
-
-type ProviderQuota = {
-  readonly id: string;
-  readonly label: string;
-  readonly window: string | null;
-  readonly model: string | null;
-  readonly remainingPercent: number | null;
-  readonly resetAt: number | null;
-  readonly source?: string | null;
-  readonly purpose?: "execution" | "code_review" | "other";
-};
-
-const NOT_CONFIGURED_PROVIDER_LIMITS: ProviderLimits = {
-  status: "not_configured", weeklyUsedPercent: null, weeklyResetAt: null,
-  shortUsedPercent: null, shortResetAt: null, quotas: [],
-};
-
 type MutableNodeState = {
   readonly nodeId: string;
   snapshot: ProviderUsageSnapshot | null;
@@ -148,6 +128,7 @@ export class UsageSummaryService {
   private readonly onWarning: (message: string, error?: unknown) => void;
   private readonly nodes = new Map<string, MutableNodeState>();
   private readonly providerLimitRejections = new Map<string, ProviderLimitRejection>();
+  private readonly snapshotListeners = new Set<(snapshot: UsageSummarySnapshot) => void>();
   private collectedAt: string | null = null;
   private timer: ReturnType<typeof setInterval> | undefined;
   private activeCollection: Promise<void> | undefined;
@@ -207,24 +188,68 @@ export class UsageSummaryService {
     };
   }
 
+  subscribe(listener: (snapshot: UsageSummarySnapshot) => void): () => void {
+    this.snapshotListeners.add(listener);
+    return () => this.snapshotListeners.delete(listener);
+  }
+
+  async refreshNode(nodeId: string): Promise<UsageSummarySnapshot> {
+    if (this.activeCollection !== undefined) await this.activeCollection;
+    const node = this.registry.getConnectedNode(nodeId);
+    if (node === undefined) throw new Error(`Node is not connected: ${nodeId}`);
+
+    const now = this.now().toISOString();
+    const state = this.nodes.get(nodeId) ?? {
+      nodeId,
+      snapshot: null,
+      fetchedAt: null,
+      staleSince: now,
+    };
+    this.nodes.set(nodeId, state);
+    const snapshot = state.snapshot === null
+      ? await this.fetchNodeSnapshot(nodeId)
+      : {
+          providers: {
+            ...state.snapshot.providers,
+            claude: await this.fetchNodeProvider(nodeId, "claude"),
+          },
+        };
+    state.snapshot = snapshot;
+    state.fetchedAt = this.now().toISOString();
+    state.staleSince = null;
+    this.collectedAt = state.fetchedAt;
+    this.notifyCollected();
+    return this.getSummary();
+  }
+
   observeProviderExecution(input: ProviderExecutionEvent): void {
     observeProviderExecution({
       memory: this.providerLimitRejections,
       sharedAccountGroups: this.sharedAccountGroups,
       event: input,
       now: this.now(),
+      poolNode: supportsClaudeAccountPool(
+        this.registry.getConnectedNode(input.nodeId)?.capabilities,
+      ),
     });
   }
 
   getLimitRejection(
     nodeId: string,
     provider: ProviderLimitProvider,
+    accountId?: string,
+    scope?: "all" | "fable",
   ): ProviderLimitRejection | null {
     return getProviderLimitRejection({
       memory: this.providerLimitRejections,
       sharedAccountGroups: this.sharedAccountGroups,
       nodeId,
       provider,
+      accountId,
+      scope,
+      poolNode: supportsClaudeAccountPool(
+        this.registry.getConnectedNode(nodeId)?.capabilities,
+      ),
       now: this.now(),
     });
   }
@@ -250,10 +275,7 @@ export class UsageSummaryService {
       this.nodes.set(node.nodeId, state);
     }
 
-    const providerOwners = resolveProviderOwners(
-      connectedIds,
-      this.sharedAccountGroups,
-    );
+    const providerOwners = resolveProviderOwners(connectedNodes, this.sharedAccountGroups);
     const providerRequests = this.createProviderRequests(
       connectedNodes,
       providerOwners,
@@ -289,10 +311,22 @@ export class UsageSummaryService {
       }
     }));
     this.collectedAt = this.now().toISOString();
+    this.notifyCollected();
+  }
+
+  private notifyCollected(): void {
+    const summary = this.getSummary();
     try {
-      this.onCollected?.(this.getSummary());
+      this.onCollected?.(summary);
     } catch (error) {
       this.onWarning("Usage collection listener failed", error);
+    }
+    for (const listener of this.snapshotListeners) {
+      try {
+        listener(summary);
+      } catch (error) {
+        this.onWarning("Usage summary subscriber failed", error);
+      }
     }
   }
 
@@ -369,17 +403,22 @@ export class UsageSummaryService {
 }
 
 function resolveProviderOwners(
-  connectedIds: ReadonlySet<string>,
+  connectedNodes: readonly NodeConnectionSnapshot[],
   groups: readonly UsageSummarySharedAccountGroup[],
 ): Map<string, string> {
   const owners = new Map<string, string>();
+  const connectedById = new Map(connectedNodes.map((node) => [node.nodeId, node]));
   for (const group of groups) {
     const connectedMembers = group.nodeIds
-      .filter((nodeId) => connectedIds.has(nodeId));
-    const representative = connectedMembers[0];
+      .map((nodeId) => connectedById.get(nodeId))
+      .filter((node): node is NodeConnectionSnapshot => node !== undefined);
+    const sharedMembers = group.provider === "claude"
+      ? connectedMembers.filter((node) => !supportsClaudeAccountPool(node.capabilities))
+      : connectedMembers;
+    const representative = sharedMembers[0]?.nodeId;
     if (representative === undefined) continue;
-    for (const nodeId of connectedMembers) {
-      owners.set(providerRequestKey(nodeId, group.provider), representative);
+    for (const node of sharedMembers) {
+      owners.set(providerRequestKey(node.nodeId, group.provider), representative);
     }
   }
   return owners;
@@ -408,6 +447,12 @@ function summarizeNode(state: MutableNodeState): UsageSummaryNode {
 function summarizeProvider(limits: ProviderLimits): UsageSummaryProvider {
   return {
     status: limits.status,
+    ...(limits.mode === undefined ? {} : {
+      mode: limits.mode,
+      accounts: limits.accounts,
+      pool: limits.pool,
+      fable_pool: limits.fable_pool,
+    }),
     source: limits.source ?? null,
     sourceKind: limits.sourceKind ?? "unknown",
     observedAt: limits.observedAt ?? null,
@@ -422,85 +467,6 @@ function summarizeProvider(limits: ProviderLimits): UsageSummaryProvider {
 function remainingPercent(usedPercent: number | null): number | null {
   if (usedPercent === null) return null;
   return Math.max(0, Math.min(100, 100 - usedPercent));
-}
-
-function parseProviderUsageSnapshot(value: unknown): ProviderUsageSnapshot {
-  const record = requiredRecord(value, "provider usage snapshot");
-  const providers = requiredRecord(record.providers, "provider usage providers");
-  return {
-    providers: {
-      claude: parseProviderLimits(providers.claude, "claude"),
-      codex: parseProviderLimits(providers.codex, "codex"),
-      antigravity: providers.antigravity === undefined
-        ? NOT_CONFIGURED_PROVIDER_LIMITS
-        : parseProviderLimits(providers.antigravity, "antigravity"),
-    },
-  };
-}
-
-function parseProviderLimits(value: unknown, provider: string): ProviderLimits {
-  const record = requiredRecord(value, `${provider} limits`);
-  const status = record.status;
-  if (status !== "auto" && status !== "not_configured" && status !== "error") {
-    throw new Error(`${provider} limits status is invalid`);
-  }
-  if (!Array.isArray(record.quotas)) throw new Error(`${provider} limits quotas must be an array`);
-  return {
-    status,
-    source: typeof record.source === "string" ? record.source : null,
-    sourceKind: record.sourceKind === "remote" || record.sourceKind === "rollout"
-      ? record.sourceKind : "unknown",
-    observedAt: typeof record.observedAt === "string" ? record.observedAt : null,
-    weeklyUsedPercent: nullableNumber(record.weeklyUsedPercent, `${provider}.weeklyUsedPercent`),
-    weeklyResetAt: nullableNumber(record.weeklyResetAt, `${provider}.weeklyResetAt`),
-    shortUsedPercent: nullableNumber(record.shortUsedPercent, `${provider}.shortUsedPercent`),
-    shortResetAt: nullableNumber(record.shortResetAt, `${provider}.shortResetAt`),
-    quotas: record.quotas.map((quota, index) => parseQuota(quota, provider, index)),
-  };
-}
-
-function parseQuota(value: unknown, provider: string, index: number): ProviderQuota {
-  const record = requiredRecord(value, `${provider}.quotas[${index}]`);
-  return {
-    source: typeof record.source === "string" ? record.source : null,
-    purpose: record.purpose === "execution" || record.purpose === "code_review"
-      ? record.purpose : "other",
-    id: requiredString(record.id, `${provider}.quotas[${index}].id`),
-    label: requiredString(record.label, `${provider}.quotas[${index}].label`),
-    window: nullableString(record.window, `${provider}.quotas[${index}].window`),
-    model: nullableString(record.model, `${provider}.quotas[${index}].model`),
-    remainingPercent: nullableNumber(
-      record.remainingPercent,
-      `${provider}.quotas[${index}].remainingPercent`,
-    ),
-    resetAt: nullableNumber(record.resetAt, `${provider}.quotas[${index}].resetAt`),
-  };
-}
-
-function requiredRecord(value: unknown, label: string): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error(`${label} must be an object`);
-  }
-  return value as Record<string, unknown>;
-}
-
-function requiredString(value: unknown, label: string): string {
-  if (typeof value !== "string" || value.length === 0) throw new Error(`${label} must be a string`);
-  return value;
-}
-
-function nullableString(value: unknown, label: string): string | null {
-  if (value === null) return null;
-  if (typeof value !== "string") throw new Error(`${label} must be a string or null`);
-  return value;
-}
-
-function nullableNumber(value: unknown, label: string): number | null {
-  if (value === null) return null;
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new Error(`${label} must be a finite number or null`);
-  }
-  return value;
 }
 
 function stringValue(value: unknown): string {

@@ -125,6 +125,92 @@ describe("resolvePresetAvailability", () => {
     });
   });
 
+  it("keeps a pool node available when another authenticated account remains usable", () => {
+    const result = resolvePresetAvailability(
+      "node-a",
+      preset,
+      summary(poolProvider([poolAccount("account-a"), poolAccount("account-b")])),
+      now,
+      null,
+      [{ accountId: "account-a", scope: "all", rejection: rejection("2026-07-28T04:00:00.000Z", "five_hour") }],
+    );
+
+    expect(result).toMatchObject({ available: true, reason: null, usage_warning: false });
+  });
+
+  it("applies a Fable-only rejection to Fable and leaves other Claude models available", () => {
+    const usage = summary(poolProvider([poolAccount("account-a")]));
+    const fableRejection = [{
+      accountId: "account-a",
+      scope: "fable" as const,
+      rejection: rejection("2026-07-28T04:00:00.000Z", "seven_day"),
+    }];
+
+    expect(resolvePresetAvailability("node-a", preset, usage, now, null, fableRejection))
+      .toMatchObject({ available: false, reason: "limit_rejected" });
+    expect(resolvePresetAvailability(
+      "node-a",
+      { ...preset, id: "claude-sonnet", label: "Claude - Sonnet", usage_model_id: "sonnet" },
+      usage,
+      now,
+      null,
+      fableRejection,
+    )).toMatchObject({ available: true, reason: null });
+  });
+
+  it("uses each account's maximum applicable reset and the pool's earliest finite reset", () => {
+    const accounts = [
+      poolAccount("account-a", { until: "2026-07-28T05:00:00.000Z", scope: "all" }),
+      poolAccount("account-b", { until: "2026-07-28T04:00:00.000Z", scope: "all" }),
+    ];
+    const result = resolvePresetAvailability(
+      "node-a",
+      preset,
+      summary(poolProvider(accounts)),
+      now,
+      null,
+      [
+        { accountId: "account-a", scope: "fable", rejection: rejection("2026-07-28T07:00:00.000Z", "seven_day") },
+        { accountId: "account-b", scope: "fable", rejection: rejection("2026-07-28T06:00:00.000Z", "seven_day") },
+      ],
+    );
+
+    expect(result).toMatchObject({
+      available: false,
+      reason: "limit_rejected",
+      resets_at: "2026-07-28T06:00:00.000Z",
+    });
+  });
+
+  it("keeps a finite recovery when another account is blocked indefinitely", () => {
+    const result = resolvePresetAvailability(
+      "node-a",
+      preset,
+      summary(poolProvider([
+        poolAccount("account-a", { until: null, scope: "all" }),
+        poolAccount("account-b", { until: "2026-07-28T06:00:00.000Z", scope: "all" }),
+      ])),
+      now,
+    );
+
+    expect(result).toMatchObject({ available: false, reason: "limit_rejected", resets_at: "2026-07-28T06:00:00.000Z" });
+    expect(resolvePresetAvailability(
+      "node-a", preset, summary(poolProvider([poolAccount("account-a", { until: null, scope: "all" })])), now,
+    )).toMatchObject({ available: false, reason: "limit_rejected", resets_at: null });
+  });
+
+  it("treats idle accounts as runnable and fully disabled or unauthenticated pools as unavailable", () => {
+    expect(resolvePresetAvailability(
+      "node-a", preset, summary(poolProvider([poolAccount("account-a", null, "idle")])), now,
+    )).toMatchObject({ available: true, reason: null });
+    expect(resolvePresetAvailability(
+      "node-a", preset, summary(poolProvider([poolAccount("account-a", null, "needs_relogin")])), now,
+    )).toMatchObject({ available: false, reason: "not_authenticated" });
+    expect(resolvePresetAvailability(
+      "node-a", preset, summary(poolProvider([poolAccount("account-a", null, "ok", false)])), now,
+    )).toMatchObject({ available: false, reason: "not_authenticated" });
+  });
+
   it("uses a fresh provider authentication failure before a remembered rejection", () => {
     expect(resolvePresetAvailability(
       "node-a",
@@ -556,8 +642,32 @@ describe("ModelPresetAvailabilityService limit rejection", () => {
   });
 });
 
-function rejection(rejectedUntil: string, rateLimitType: string | null): ProviderLimitRejection {
+function rejection(rejectedUntil: string | null, rateLimitType: string | null): ProviderLimitRejection {
   return { rejectedUntil, rateLimitType, observedAt: "2026-07-28T02:59:00.000Z" };
+}
+
+function poolProvider(accounts: ReturnType<typeof poolAccount>[]): UsageSummaryProvider {
+  return provider({ mode: "pool", accounts, pool: null, fable_pool: null });
+}
+
+function poolAccount(
+  id: string,
+  blocked: { until: string | null; scope: "all" | "fable" } | null = null,
+  auth_state: "ok" | "idle" | "needs_relogin" | "logging_in" = "ok",
+  enabled = true,
+) {
+  return {
+    id,
+    email: `${id}@example.com`,
+    plan: null,
+    enabled,
+    priority: null,
+    auth_state,
+    usage: { five_hour: null, seven_day: null, fable_weekly: null },
+    observed_at: null,
+    blocked,
+    active_sessions: 0,
+  } as const;
 }
 
 it("uses Antigravity group quotas for both presets and existing availability states", () => {

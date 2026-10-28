@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   createApp,
@@ -7,6 +7,7 @@ import {
   parseOrchServerConfig,
 } from "../src/index.js";
 import { createClaudeAuthHarness } from "./node-claude-auth-test-helpers.js";
+import type { UsageSummarySnapshot } from "../src/usage/usage_summary_service.js";
 
 const config = parseOrchServerConfig({
   environment: "test",
@@ -25,6 +26,13 @@ describe("Claude auth route harness", () => {
       ["GET", "/api/nodes/fake-node/claude-auth/usage", undefined],
       ["GET", "/api/nodes/fake-node/claude-auth/profile", undefined],
       ["GET", "/api/nodes/fake-node/claude-auth/profiles", undefined],
+      ["GET", "/api/nodes/fake-node/claude-auth/accounts", undefined],
+      ["PATCH", "/api/nodes/fake-node/claude-auth/accounts/11111111-1111-4111-8111-111111111111", { enabled: true }],
+      ["DELETE", "/api/nodes/fake-node/claude-auth/accounts/11111111-1111-4111-8111-111111111111", undefined],
+      ["POST", "/api/nodes/fake-node/claude-auth/logins", {}],
+      ["GET", "/api/nodes/fake-node/claude-auth/logins/login-a", undefined],
+      ["POST", "/api/nodes/fake-node/claude-auth/logins/login-a/code", { code: "x" }],
+      ["DELETE", "/api/nodes/fake-node/claude-auth/logins/login-a", undefined],
       ["DELETE", "/api/nodes/fake-node/claude-auth/token", undefined],
       ["GET", "/api/nodes/fake-node/claude-auth/headless/start", undefined],
       [
@@ -51,6 +59,13 @@ describe("Claude auth route harness", () => {
       "GET /api/nodes/:node_id/claude-auth/usage": true,
       "GET /api/nodes/:node_id/claude-auth/profile": true,
       "GET /api/nodes/:node_id/claude-auth/profiles": true,
+      "GET /api/nodes/:node_id/claude-auth/accounts": true,
+      "PATCH /api/nodes/:node_id/claude-auth/accounts/:id": true,
+      "DELETE /api/nodes/:node_id/claude-auth/accounts/:id": true,
+      "POST /api/nodes/:node_id/claude-auth/logins": true,
+      "GET /api/nodes/:node_id/claude-auth/logins/:login_id": true,
+      "POST /api/nodes/:node_id/claude-auth/logins/:login_id/code": true,
+      "DELETE /api/nodes/:node_id/claude-auth/logins/:login_id": true,
       "DELETE /api/nodes/:node_id/claude-auth/token": true,
       "GET /api/nodes/:node_id/claude-auth/headless/start": true,
       "POST /api/nodes/:node_id/claude-auth/headless/submit-code": true,
@@ -448,5 +463,203 @@ describe("legacy Claude OAuth routes on account-pool nodes", () => {
     expect(sent).toEqual([]);
 
     await app.close();
+  });
+});
+
+describe("Claude account-pool REST routes", () => {
+  it("dispatches all seven account and login routes and refreshes summaries after mutations", async () => {
+    const account = {
+      id: "11111111-1111-4111-8111-111111111111",
+      email: "pool@example.com",
+      plan: null,
+      enabled: true,
+      priority: null,
+      auth_state: "ok" as const,
+      usage: { five_hour: null, seven_day: null, fable_weekly: null },
+      observed_at: null,
+      blocked: null,
+      active_sessions: 0,
+    };
+    const updatedList = {
+      mode: "pool" as const,
+      accounts: [account],
+      pool: { available_count: 1, total_count: 1, best_weekly_remaining_percent: 80, best_weekly_resets_at: null, earliest_available_at: null },
+      fable_pool: null,
+    };
+    const refreshedSummary: UsageSummarySnapshot = {
+      generatedAt: "2026-10-12T03:00:00.000Z",
+      collectedAt: "2026-10-12T03:00:00.000Z",
+      nodes: [{
+        nodeId: "fake-node",
+        fetchedAt: "2026-10-12T03:00:00.000Z",
+        stale: false,
+        staleSince: null,
+        providers: {
+          claude: {
+            status: "auto",
+            weeklyRemainingPercent: 80,
+            weeklyResetAt: null,
+            shortRemainingPercent: null,
+            shortResetAt: null,
+            quotas: [],
+            ...updatedList,
+          },
+          codex: null,
+          antigravity: null,
+        },
+      }],
+    };
+    const refreshNode = vi.fn(async () => refreshedSummary);
+    const { app, sent } = createClaudeAuthHarness({
+      claudeAccountPoolEnabled: true,
+      usageSummary: { refreshNode },
+    });
+    const base = "/api/nodes/fake-node/claude-auth";
+
+    const listed = await app.inject({ method: "GET", url: `${base}/accounts` });
+    const patched = await app.inject({
+      method: "PATCH",
+      url: `${base}/accounts/${account.id}`,
+      payload: { enabled: true, priority: null },
+    });
+    const deleted = await app.inject({ method: "DELETE", url: `${base}/accounts/${account.id}` });
+    const started = await app.inject({
+      method: "POST",
+      url: `${base}/logins`,
+      payload: { account_id: account.id },
+    });
+    const status = await app.inject({ method: "GET", url: `${base}/logins/login-a` });
+    const submitted = await app.inject({
+      method: "POST",
+      url: `${base}/logins/login-a/code`,
+      payload: { code: "oauth-code#state-value" },
+    });
+    const cancelled = await app.inject({ method: "DELETE", url: `${base}/logins/login-a` });
+
+    expect(listed.statusCode).toBe(200);
+    expect(listed.json()).toMatchObject({ mode: "pool", accounts: [] });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json()).toEqual(updatedList);
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json()).toMatchObject({ deferred: false, accounts: [account], pool: updatedList.pool });
+    expect(started.statusCode).toBe(202);
+    expect(status.statusCode).toBe(200);
+    expect(status.json()).toMatchObject({ state: "done", login_id: "login-a" });
+    expect(submitted.statusCode).toBe(200);
+    expect(cancelled.statusCode).toBe(200);
+    expect(refreshNode).toHaveBeenCalledTimes(3);
+    expect(sent.map((message) => message.type)).toEqual([
+      "claude_auth_accounts_list",
+      "claude_auth_account_update",
+      "claude_auth_account_delete",
+      "claude_auth_login_start",
+      "claude_auth_login_status",
+      "claude_auth_login_submit_code",
+      "claude_auth_login_cancel",
+    ]);
+    expect(sent[1]).toMatchObject({ account_id: account.id, enabled: true, priority: null });
+    expect(sent[2]).toMatchObject({ account_id: account.id });
+    expect(sent[3]).toMatchObject({ account_id: account.id });
+    expect(sent[5]).toMatchObject({ login_id: "login-a", code: "oauth-code#state-value" });
+
+    await app.close();
+  });
+
+  it("rejects unsupported nodes and maps validated, account, and transport errors without echoing secrets", async () => {
+    const unsupported = createClaudeAuthHarness();
+    const unsupportedResponses = await Promise.all([
+      unsupported.app.inject({ method: "GET", url: "/api/nodes/fake-node/claude-auth/accounts" }),
+      unsupported.app.inject({ method: "PATCH", url: "/api/nodes/fake-node/claude-auth/accounts/11111111-1111-4111-8111-111111111111", payload: { enabled: true } }),
+      unsupported.app.inject({ method: "DELETE", url: "/api/nodes/fake-node/claude-auth/accounts/11111111-1111-4111-8111-111111111111" }),
+      unsupported.app.inject({ method: "POST", url: "/api/nodes/fake-node/claude-auth/logins", payload: {} }),
+      unsupported.app.inject({ method: "GET", url: "/api/nodes/fake-node/claude-auth/logins/login-a" }),
+      unsupported.app.inject({ method: "POST", url: "/api/nodes/fake-node/claude-auth/logins/login-a/code", payload: { code: "private-code" } }),
+      unsupported.app.inject({ method: "DELETE", url: "/api/nodes/fake-node/claude-auth/logins/login-a" }),
+    ]);
+    for (const unsupportedResponse of unsupportedResponses) {
+      expect(unsupportedResponse.statusCode).toBe(409);
+      expect(unsupportedResponse.json()).toMatchObject({ code: "claude_account_pool_unsupported" });
+      expect(unsupportedResponse.body).not.toContain("private-code");
+    }
+    expect(unsupported.sent).toEqual([]);
+    await unsupported.app.close();
+
+    const invalid = createClaudeAuthHarness({ claudeAccountPoolEnabled: true });
+    const invalidResponse = await invalid.app.inject({
+      method: "PATCH",
+      url: "/api/nodes/fake-node/claude-auth/accounts/not-a-uuid",
+      payload: { enabled: true },
+    });
+    expect(invalidResponse.statusCode).toBe(400);
+    expect(invalidResponse.json()).toMatchObject({ code: "invalid_request" });
+    await invalid.app.close();
+
+    const accountExists = createClaudeAuthHarness({
+      claudeAccountPoolEnabled: true,
+      ackFor: (message) => message.type === "claude_auth_login_submit_code"
+        ? { success: false, error: { code: "account_exists", message: "oauth-code#state-value https://private.example", existing_account_id: "22222222-2222-4222-8222-222222222222" } }
+        : {},
+    });
+    const duplicate = await accountExists.app.inject({
+      method: "POST",
+      url: "/api/nodes/fake-node/claude-auth/logins/login-a/code",
+      payload: { code: "oauth-code#state-value" },
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json()).toEqual({
+      code: "account_exists",
+      message: expect.any(String),
+      existing_account_id: "22222222-2222-4222-8222-222222222222",
+    });
+    expect(duplicate.body).not.toContain("oauth-code#state-value");
+    expect(duplicate.body).not.toContain("https://private.example");
+    await accountExists.app.close();
+
+    const notFound = createClaudeAuthHarness({
+      claudeAccountPoolEnabled: true,
+      ackFor: (message) => message.type === "claude_auth_account_update"
+        ? { success: false, error: { code: "account_not_found", message: "private detail" } }
+        : {},
+    });
+    const missingAccount = await notFound.app.inject({
+      method: "PATCH",
+      url: "/api/nodes/fake-node/claude-auth/accounts/11111111-1111-4111-8111-111111111111",
+      payload: { enabled: false },
+    });
+    expect(missingAccount.statusCode).toBe(404);
+    expect(missingAccount.json()).toMatchObject({ code: "account_not_found" });
+    await notFound.app.close();
+
+    const disconnected = createClaudeAuthHarness({ claudeAccountPoolEnabled: true, attachTransport: false });
+    const upstreamFailure = await disconnected.app.inject({
+      method: "GET",
+      url: "/api/nodes/fake-node/claude-auth/accounts",
+    });
+    expect(upstreamFailure.statusCode).toBe(502);
+    expect(upstreamFailure.json()).toMatchObject({ code: expect.any(String), message: expect.any(String) });
+    await disconnected.app.close();
+  });
+
+  it("aliases pool-node profile lists to the accounts command while preserving legacy HTTP proxy", async () => {
+    const pool = createClaudeAuthHarness({ claudeAccountPoolEnabled: true });
+    const poolResponse = await pool.app.inject({
+      method: "GET",
+      url: "/api/nodes/fake-node/claude-auth/profiles",
+    });
+    expect(poolResponse.statusCode).toBe(200);
+    expect(poolResponse.json()).toMatchObject({ mode: "pool", accounts: [] });
+    expect(pool.sent.map((message) => message.type)).toEqual(["claude_auth_accounts_list"]);
+    expect(pool.profileRequests).toEqual([]);
+    await pool.app.close();
+
+    const legacy = createClaudeAuthHarness();
+    const legacyResponse = await legacy.app.inject({
+      method: "GET",
+      url: "/api/nodes/fake-node/claude-auth/profiles",
+    });
+    expect(legacyResponse.json()).toEqual({ profiles: [] });
+    expect(legacy.profileRequests).toHaveLength(1);
+    expect(legacy.sent).toEqual([]);
+    await legacy.app.close();
   });
 });
