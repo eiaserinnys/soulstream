@@ -19,7 +19,7 @@ import { useTokens, type DesignTokens } from '../../theme';
 import { useAuthStore } from '../../store/authStore';
 import { GlassButton } from '../GlassSurface';
 import { ProviderUsageChart } from '../ProviderUsageChart';
-import { ClaudeAccountPoolSection } from './ClaudeAccountPoolSection';
+import { ClaudeAccountPoolSection, type ClaudeAccountPoolApi } from './ClaudeAccountPoolSection';
 
 type ClaudeProviderSectionProps = {
   nodeId: string;
@@ -30,25 +30,34 @@ type ClaudeProviderSectionProps = {
   onRefreshUsage(): void;
   onTokenDeleted(): void;
   separateUsage?: boolean;
+  apiClient?: ClaudeAccountPoolApi;
+  onPoolModeChange?(isPool: boolean): void;
 };
 
 export function ClaudeProviderSection(props: ClaudeProviderSectionProps) {
   const jwt = useAuthStore(state => state.jwt);
-  const api = useMemo(() => createApiClient(props.serverUrl), [props.serverUrl]);
+  const api = useMemo(() => props.apiClient ?? createApiClient(props.serverUrl), [props.apiClient, props.serverUrl]);
   const [pool, setPool] = useState<ClaudeAccountList | null>(null);
   const poolRequest = useRef(0);
 
   useEffect(() => {
     const request = ++poolRequest.current;
     setPool(null);
+    props.onPoolModeChange?.(false);
     if (!props.serverUrl || !props.nodeId) return;
     void api.getClaudeAuthAccounts(props.nodeId).then(result => {
-      if (request === poolRequest.current && result.mode === 'pool') setPool(result);
+      if (request !== poolRequest.current) return;
+      const isPool = result.mode === 'pool';
+      setPool(isPool ? result : null);
+      props.onPoolModeChange?.(isPool);
     }).catch(() => {
-      if (request === poolRequest.current) setPool(null);
+      if (request === poolRequest.current) {
+        setPool(null);
+        props.onPoolModeChange?.(false);
+      }
     });
     return () => { ++poolRequest.current; };
-  }, [api, props.nodeId, props.serverUrl, jwt]);
+  }, [api, props.nodeId, props.serverUrl, props.onPoolModeChange, jwt]);
 
   if (pool) return <ClaudeAccountPoolSection nodeId={props.nodeId} initialList={pool} api={api} />;
   return <LegacyClaudeProviderSection {...props} />;

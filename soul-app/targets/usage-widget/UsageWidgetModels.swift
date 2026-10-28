@@ -253,7 +253,7 @@ private func releaseLabel(_ value: String?) -> String? {
     let formatter = DateFormatter()
     formatter.locale = .autoupdatingCurrent
     formatter.dateFormat = "HH:mm"
-    return "\(formatter.string(from: date)) 해제"
+    return "\(formatter.string(from: date)) 해제 예정"
 }
 
 private func parseISO8601(_ value: String) -> Date? {

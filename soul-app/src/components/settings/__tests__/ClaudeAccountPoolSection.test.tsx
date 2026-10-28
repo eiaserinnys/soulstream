@@ -2,6 +2,7 @@ jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('expo-web-browser', () => ({ openBrowserAsync: jest.fn() }));
 
 import React from 'react';
+import { StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import * as WebBrowser from 'expo-web-browser';
 import type { ClaudeAccount, ClaudeAccountList, ClaudeAuthLoginFlow } from '../../../../../packages/soul-ui/src/lib/usage-summary';
@@ -162,7 +163,7 @@ test('toggle PATCHes enabled and deletion uses inline confirmation with deferred
   fireEvent.press(view.getByTestId('claude-account-delete-two'));
   const confirm = view.getByTestId('claude-account-delete-confirmation-two');
   expect(confirm).toBeTruthy();
-  expect(confirm.props.style.backgroundColor).toBeTruthy();
+  expect(confirm.props.style.borderTopWidth).toBeGreaterThan(0);
   fireEvent.press(view.getByTestId('claude-account-delete-confirm-two'));
   expect(await view.findByText('현재 세션이 끝난 뒤 삭제합니다.')).toBeTruthy();
   expect(api.deleteClaudeAuthAccount).toHaveBeenCalledWith('node-a', 'two');
@@ -275,7 +276,7 @@ test.each(['code_submitted', 'verifying'] as const)('login %s state shows its pr
   await view.findByTestId('claude-login-flow');
   fireEvent.changeText(view.getByLabelText('인증 코드'), String.fromCharCode(120));
   fireEvent.press(view.getByTestId('claude-login-submit'));
-  expect(await view.findByText('인증 정보를 확인하고 있습니다.')).toBeTruthy();
+  expect(await view.findByText('인증 코드를 확인하고 계정 정보를 가져오는 중입니다.')).toBeTruthy();
 });
 
 test('done login state refreshes the account list', async () => {
@@ -290,6 +291,55 @@ test('done login state refreshes the account list', async () => {
   expect(await view.findByText('Claude 계정이 연결되었습니다.')).toBeTruthy();
   expect(api.getClaudeAuthAccounts).toHaveBeenCalledTimes(1);
   expect(view.queryByTestId('claude-login-flow')).toBeNull();
+});
+
+test('new login shows the later-account guidance and failed code placeholder', async () => {
+  const api = createApi();
+  api.startClaudeAuthLogin.mockResolvedValueOnce({ ...loginFlow, state: 'failed', auth_url: null });
+  const { view } = renderPool(api);
+  fireEvent.press(view.getByLabelText('Claude 계정 추가'));
+
+  expect(await view.findByText('2번째 이후 계정')).toBeTruthy();
+  expect(view.getByText('다른 계정은 시크릿 창이나 별도 브라우저 프로필에서 열어야 구분됩니다.')).toBeTruthy();
+  expect(view.getByPlaceholderText('새 인증 코드 붙여넣기 (code#state)')).toBeTruthy();
+});
+
+test('relogin title includes the target account email and uses a single-line focused input', async () => {
+  const api = createApi();
+  api.startClaudeAuthLogin.mockResolvedValueOnce({ ...loginFlow, account_id: 'one' });
+  const { view } = renderPool(api);
+  fireEvent.press(view.getByTestId('claude-account-relogin-one'));
+
+  expect(await view.findByText('재로그인 (one@example.invalid)')).toBeTruthy();
+  const input = view.getByLabelText('인증 코드');
+  expect(input.props.multiline).toBeUndefined();
+  fireEvent(input, 'focus');
+  expect(StyleSheet.flatten(view.getByTestId('claude-login-code').props.style) ?? {}).toMatchObject({ borderColor: expect.any(String), backgroundColor: expect.any(String) });
+});
+
+test('reset weekdays are Korean, blocked five-hour quota shows its reset clock, and idle rows show confirmation timing', () => {
+  jest.useFakeTimers().setSystemTime(new Date(2026, 9, 28, 12, 0));
+  const resetAt = '2026-10-28T14:30:00.000Z';
+  const sameDayObserved = new Date(2026, 9, 28, 8, 10).toISOString();
+  const previousDayObserved = new Date(2026, 9, 27, 8, 10).toISOString();
+  const list: ClaudeAccountList = {
+    ...initial,
+    accounts: [
+      { ...account('blocked', 1), blocked: { scope: 'all', until: resetAt }, usage: {
+        ...account('blocked', 1).usage,
+        five_hour: { used_percent: 100, resets_at: resetAt },
+      } },
+      { ...account('idle-today', 2), auth_state: 'idle', usage: { five_hour: null, seven_day: null, fable_weekly: null }, observed_at: sameDayObserved },
+      { ...account('idle-yesterday', 3), auth_state: 'idle', usage: { five_hour: null, seven_day: null, fable_weekly: null }, observed_at: previousDayObserved },
+    ],
+  };
+  const { view } = renderPool(createApi(), list);
+
+  expect(view.getAllByText(/^[일월화수목금토] /)).toHaveLength(2);
+  expect(view.getAllByText(/\d{2}:\d{2} 해제/)).toHaveLength(2);
+  expect(view.getByText('08:10 확인')).toBeTruthy();
+  expect(view.getByText('어제 확인')).toBeTruthy();
+  jest.useRealTimers();
 });
 
 test('single-account pools keep the legacy weekly summary and omit rank controls', () => {

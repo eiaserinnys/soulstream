@@ -1,5 +1,5 @@
 import type { ClaudeAccount, ClaudeAccountList, ClaudeAuthLoginFlow } from '../../../packages/soul-ui/src/lib/usage-summary';
-import type { ClaudeAccountPoolApi } from '../components/settings/ClaudeAccountPoolSection';
+import type { NodeProviderSectionsApi } from '../components/settings/NodeProviderSections';
 
 export const claudePoolReviewList: ClaudeAccountList = {
   mode: 'pool',
@@ -24,19 +24,19 @@ export const claudePoolReviewList: ClaudeAccountList = {
     {
       id: 'review-three', email: 'reserve@example.invalid', plan: 'Pro', enabled: true, priority: 3,
       auth_state: 'idle', usage: { five_hour: null, seven_day: null, fable_weekly: null },
-      observed_at: '2026-10-28T08:10:00.000Z', blocked: null, active_sessions: 0,
+      observed_at: '2026-10-27T23:10:00.000Z', blocked: null, active_sessions: 0,
     },
     {
       id: 'review-old', email: 'expired@example.invalid', plan: 'Pro', enabled: false, priority: null,
       auth_state: 'needs_relogin', usage: { five_hour: null, seven_day: null, fable_weekly: null },
-      observed_at: '2026-10-27T08:10:00.000Z', blocked: null, active_sessions: 0,
+      observed_at: '2026-10-26T23:10:00.000Z', blocked: null, active_sessions: 0,
     },
   ],
   pool: { available_count: 2, total_count: 3, best_weekly_remaining_percent: 87, best_weekly_resets_at: '2026-10-30T12:00:00.000Z', earliest_available_at: '2026-10-28T14:30:00.000Z' },
   fable_pool: { available_count: 2, total_count: 3, best_weekly_remaining_percent: 82, best_weekly_resets_at: '2026-10-30T12:00:00.000Z', earliest_available_at: '2026-10-28T14:30:00.000Z' },
 };
 
-export function createClaudePoolReviewApi(): ClaudeAccountPoolApi {
+export function createClaudePoolReviewApi(): NodeProviderSectionsApi {
   let current: ClaudeAccountList = claudePoolReviewList;
   let flow: ClaudeAuthLoginFlow | null = null;
   return {

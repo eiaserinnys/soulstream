@@ -88,18 +88,32 @@ function resetLabel(value: string | null): string {
   if (!value) return '—';
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return '—';
-  return date.toLocaleDateString(undefined, { weekday: 'short' }) + ' ' +
-    date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+  const weekday = ['일', '월', '화', '수', '목', '금', '토'][date.getDay()];
+  return `${weekday} ${localClock(value)}`;
 }
 
-function quotaResetLabel(value: string | null, short: boolean): string {
+function quotaResetLabel(value: ClaudeAccount['usage']['five_hour'], short: boolean): string {
   if (!value) return '—';
-  const date = new Date(value);
+  if (short && value.used_percent >= 100) return `${localClock(value.resets_at) ?? '—'} 해제`;
+  const date = new Date(value.resets_at ?? '');
   if (!Number.isFinite(date.getTime())) return '—';
-  if (!short) return resetLabel(value);
+  if (!short) return resetLabel(value.resets_at);
   const minutes = Math.max(0, Math.ceil((date.getTime() - Date.now()) / 60_000));
   if (minutes < 60) return `${minutes}분 후`;
   return `${Math.ceil(minutes / 60)}시간 후`;
+}
+
+function observedAtLabel(value: string | null): string {
+  if (!value) return '';
+  const observed = new Date(value);
+  if (!Number.isFinite(observed.getTime())) return '';
+  const now = new Date();
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const startOfObserved = new Date(observed.getFullYear(), observed.getMonth(), observed.getDate());
+  const dayDifference = Math.round((startOfToday.getTime() - startOfObserved.getTime()) / 86_400_000);
+  if (dayDifference === 0) return `${localClock(value) ?? ''} 확인`;
+  if (dayDifference === 1) return '어제 확인';
+  return `${observed.getMonth() + 1}/${observed.getDate()} 확인`;
 }
 
 function loginErrorMessage(caught: unknown): string {
@@ -375,11 +389,18 @@ export function ClaudeAccountPoolSection({ nodeId, initialList, api }: Props) {
           onCancelDelete={() => setConfirmingDelete(null)} onConfirmDelete={() => void deleteAccount(account.id)} />
         {index < ordered.length - 1 ? <SettingsDivider /> : null}
       </React.Fragment>)}
-      {loginFlow ? <ClaudeAccountLoginFlowPanel flow={loginFlow} code={code} error={loginError}
-        starting={loginStarting} submitting={submittingCode} cancelling={cancellingLogin}
-        onOpenAuth={() => void openAuthPage()} onCodeChange={setCode}
-        onSubmit={() => void submitCode()} onCancel={() => void cancelLogin()}
-        onRestart={() => void startLogin(loginFlow.account_id ?? undefined)} /> : null}
+      {loginFlow ? <>
+        <SettingsDivider />
+        <View style={styles.loginPanel}>
+          <ClaudeAccountLoginFlowPanel flow={loginFlow} code={code} error={loginError}
+            starting={loginStarting} submitting={submittingCode} cancelling={cancellingLogin}
+            existingAccountCount={accounts.length}
+            accountEmail={accounts.find(account => account.id === loginFlow.account_id)?.email ?? null}
+            onOpenAuth={() => void openAuthPage()} onCodeChange={setCode}
+            onSubmit={() => void submitCode()} onCancel={() => void cancelLogin()}
+            onRestart={() => void startLogin(loginFlow.account_id ?? undefined)} />
+        </View>
+      </> : null}
       {!loginFlow && loginError ? <Text accessibilityRole="alert" style={styles.errorText}>{loginError}</Text> : null}
       {notice ? <Text accessibilityRole="text" style={styles.noticeText}>{notice}</Text> : null}
     </View>
@@ -456,7 +477,7 @@ function AccountRow({
       {quotas.map(quota => <QuotaGauge key={quota.label} label={quota.label} value={quota.value} short={quota.short} compact={compact} />)}
     </View> : <View style={styles.idleRow}>
       <Text style={styles.metaText}>{account.auth_state === 'needs_relogin' ? '인증 만료로 사용량 조회 중단' : '미측정 (실제 호출 시 갱신)'}</Text>
-      <Text style={styles.metaText}>{account.observed_at ? `${localClock(account.observed_at) ?? ''} 갱신` : ''}</Text>
+      <Text style={styles.metaText}>{observedAtLabel(account.observed_at)}</Text>
     </View>}
     {confirmingDelete ? <DeleteConfirmation accountId={account.id} busy={busy} onCancel={onCancelDelete} onConfirm={onConfirmDelete} /> : null}
   </View>;
@@ -473,10 +494,10 @@ function QuotaGauge({ label, value, short, compact }: { label: string; value: Cl
       <Text numberOfLines={1} style={styles.quotaName}>{label}</Text>
       {compact ? <Text style={styles.quotaPercent}>{Math.round(value.used_percent)}%</Text> : <View style={styles.quotaValueGroup}>
         <Text style={styles.quotaPercent}>{Math.round(value.used_percent)}%</Text>
-        <Text numberOfLines={1} style={styles.quotaReset}>{quotaResetLabel(value.resets_at, short)}</Text>
+        <Text numberOfLines={1} style={styles.quotaReset}>{quotaResetLabel(value, short)}</Text>
       </View>}
     </View>
-    {compact ? <Text numberOfLines={1} style={styles.quotaReset}>{quotaResetLabel(value.resets_at, short)}</Text> : null}
+    {compact ? <Text numberOfLines={1} style={styles.quotaReset}>{quotaResetLabel(value, short)}</Text> : null}
     <View style={styles.quotaTrack}>
       <View style={[styles.quotaFill, { width: `${used}%`, backgroundColor: color }]} />
     </View>

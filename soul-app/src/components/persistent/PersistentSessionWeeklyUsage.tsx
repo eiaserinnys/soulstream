@@ -60,18 +60,24 @@ export function PersistentSessionWeeklyUsage({
     const warning = gauge.remainingPercent < 20;
     const compactCountdown = gauge.resetLabel ?? formatUsageResetCountdown(gauge.resetAt, evaluatedAtMs, true);
     const fullCountdown = gauge.resetLabel ?? formatUsageResetCountdown(gauge.resetAt, evaluatedAtMs, false);
+    const poolFractionColor = gauge.poolState === 'partial' ? t.colors.warningText
+      : gauge.poolState === 'blocked' ? t.colors.errorText : t.colors.textPrimary;
+    const gaugeLabel = gauge.poolFraction ? `${gauge.label} ${gauge.poolFraction}` : gauge.label;
     return <View key={gauge.id} testID={`persistent-session-weekly-usage-slot-${index}`}
       style={{ height: slotHeight, gap: t.spacing.xxs }}>
       <View testID={`persistent-session-weekly-usage-row-${gauge.id}`}
         style={{ minWidth: 0, height: meta.lineHeight, flexDirection: 'row', alignItems: 'baseline', gap: t.spacing.xs }}>
-        <Text numberOfLines={1} style={{ flex: 1, ...meta, color: t.colors.textPrimary }}>{gauge.label}</Text>
+        {gauge.poolFraction ? <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'baseline', gap: t.spacing.xxs }}>
+          <Text numberOfLines={1} style={{ flexShrink: 1, ...meta, color: t.colors.textPrimary }}>{gauge.label}</Text>
+          <Text testID={`persistent-session-weekly-usage-pool-fraction-${gauge.id}`} style={{ flexShrink: 0, ...meta, color: poolFractionColor, fontVariant: ['tabular-nums'] }}>{gauge.poolFraction}</Text>
+        </View> : <Text numberOfLines={1} style={{ flex: 1, ...meta, color: t.colors.textPrimary }}>{gauge.label}</Text>}
         {compactCountdown ? <Text numberOfLines={1} accessibilityLabel={fullCountdown ? `초기화까지 ${fullCountdown}` : undefined}
           style={{ ...meta, color: t.colors.textMuted }}>{compactCountdown}</Text> : null}
         <Text style={{ ...meta, color: warning ? t.colors.warningText : t.colors.textPrimary,
           fontWeight: '600', fontVariant: ['tabular-nums'] }}>{percent}</Text>
       </View>
       <View testID={`persistent-session-weekly-usage-track-${gauge.id}`} accessibilityRole="progressbar"
-        accessibilityLabel={`${gauge.label} 주간 잔량`}
+        accessibilityLabel={`${gaugeLabel} 주간 잔량`}
         accessibilityValue={{ min: 0, max: 100, now: gauge.remainingPercent, text: percent }}
         style={{ height: trackHeight, borderRadius: t.radius.sm, backgroundColor: t.persistentSession.line, overflow: 'hidden' }}>
         <View style={{ height: '100%', width: `${gauge.remainingPercent}%`, backgroundColor: warning ? t.colors.warning : t.colors.accent }} />

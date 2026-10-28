@@ -4,7 +4,11 @@ import {
 } from '../../../packages/soul-ui/src/lib/usage-summary';
 import type { AppUsageSummaryNode, AppUsageSummaryProvider } from '../api/usageEndpoints';
 
-export type AppUsageSummaryGauge = UsageSummaryGauge & { resetLabel?: string };
+export type AppUsageSummaryGauge = UsageSummaryGauge & {
+  resetLabel?: string;
+  poolFraction?: string;
+  poolState?: 'normal' | 'partial' | 'blocked';
+};
 
 function localResetLabel(value: string | null): string {
   if (!value) return '해제';
@@ -27,14 +31,17 @@ export function usageSummaryGaugesForApp(node: AppUsageSummaryNode | null): AppU
   const pool = claude?.mode === 'pool' ? claude.pool : null;
   if (!pool) return gauges;
 
-  const label = pool.total_count >= 2
-    ? `Claude ${pool.available_count}/${pool.total_count}`
-    : 'Claude';
+  const poolFraction = pool.total_count >= 2 ? `${pool.available_count}/${pool.total_count}` : undefined;
+  const poolState: AppUsageSummaryGauge['poolState'] = pool.available_count === 0
+    ? 'blocked'
+    : pool.available_count > 0 && pool.available_count < pool.total_count ? 'partial' : 'normal';
   const current = gauges.find(gauge => gauge.id === 'claude');
   if (pool.total_count > 0 && pool.available_count === 0) {
     const blocked: AppUsageSummaryGauge = {
       id: 'claude',
-      label,
+      label: 'Claude',
+      poolFraction,
+      poolState,
       remainingPercent: 0,
       resetAt: null,
       resetLabel: localResetLabel(pool.earliest_available_at),
@@ -45,7 +52,7 @@ export function usageSummaryGaugesForApp(node: AppUsageSummaryNode | null): AppU
   const remainingPercent = current?.remainingPercent ?? pool.best_weekly_remaining_percent;
   if (remainingPercent === null || remainingPercent === undefined) return gauges;
   const resetAt = current?.resetAt ?? asEpochSeconds(pool.best_weekly_resets_at);
-  const poolGauge: AppUsageSummaryGauge = { id: 'claude', label, remainingPercent, resetAt };
+  const poolGauge: AppUsageSummaryGauge = { id: 'claude', label: 'Claude', poolFraction, poolState, remainingPercent, resetAt };
   return current
     ? gauges.map(gauge => gauge.id === 'claude' ? poolGauge : gauge)
     : [poolGauge, ...gauges];

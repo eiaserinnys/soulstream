@@ -4,7 +4,8 @@ import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet, useWindowDimensions } from 'react-native';
 import { formatUsageUpdatedLabel, type UsageSummaryGauge, type UsageSummaryNode } from '../../../../../packages/soul-ui/src/lib/usage-summary';
-import { DESIGN_SPACING } from '../../../theme/tokens';
+import { DARK_COLORS, DESIGN_SPACING, LIGHT_COLORS } from '../../../theme/tokens';
+import type { AppUsageSummaryGauge } from '../../../lib/usage-summary-pool';
 import { PersistentSessionWeeklyUsage } from '../PersistentSessionWeeklyUsage';
 
 const node = { nodeId: 'node-a', fetchedAt: '2026-10-13T08:00:00.000Z' } as UsageSummaryNode;
@@ -136,4 +137,25 @@ test('keeps stale gauges in place and adds refresh timing to the group descripti
 
   view.unmount();
   dimensions.mockRestore();
+});
+
+test.each([
+  ['3/3', 'normal', 'textPrimary'],
+  ['2/3', 'partial', 'warningText'],
+  ['0/3', 'blocked', 'errorText'],
+] as const)('renders the Claude pool fraction with the %s %s color', (fraction, state, colorRole) => {
+  const poolGauge: AppUsageSummaryGauge = {
+    id: 'claude', label: 'Claude', poolFraction: fraction, poolState: state,
+    remainingPercent: state === 'blocked' ? 0 : 71, resetAt: null,
+  };
+  const view = render(<PersistentSessionWeeklyUsage {...base} node={null} gauges={[poolGauge]} />);
+  const fractionText = view.getByTestId('persistent-session-weekly-usage-pool-fraction-claude');
+  const color = StyleSheet.flatten(fractionText.props.style).color;
+  const supportedColors = [LIGHT_COLORS, DARK_COLORS];
+
+  expect(view.getByText('Claude')).toBeTruthy();
+  expect(view.getByText(fraction)).toBeTruthy();
+  expect(supportedColors.some(theme => theme[colorRole] === color)).toBe(true);
+  expect(view.getByTestId('persistent-session-weekly-usage-track-claude').props.accessibilityLabel)
+    .toBe(`Claude ${fraction} 주간 잔량`);
 });

@@ -161,7 +161,8 @@ struct UsageWidgetView: View {
     }
 
     private func gaugeRow(_ gauge: UsageGauge, compact: Bool, showBar: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        let blockedClaude = gauge.id == "claude" && gauge.remainingPercent == 0
+        return VStack(alignment: .leading, spacing: 2) {
             HStack {
                 Text(gauge.label)
                     .font(.caption)
@@ -176,6 +177,7 @@ struct UsageWidgetView: View {
                 }
                 Text("\(Int(gauge.remainingPercent.rounded()))%")
                     .font(.caption.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(blockedClaude ? .red : .primary)
                     .fixedSize(horizontal: true, vertical: false)
             }
             if showBar {

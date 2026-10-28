@@ -40,7 +40,17 @@ test('one account keeps the existing summary while multi-account pools show avai
     available_count: 2, total_count: 3, best_weekly_remaining_percent: 71, best_weekly_resets_at: null, earliest_available_at: null,
   } });
   expect(usageSummaryGaugesForApp(one.nodes[0]!)[0]).toMatchObject({ label: 'Claude', remainingPercent: 71 });
-  expect(usageSummaryGaugesForApp(multiple.nodes[0]!)[0]).toMatchObject({ label: 'Claude 2/3', remainingPercent: 71 });
+  expect(usageSummaryGaugesForApp(multiple.nodes[0]!)[0]).toMatchObject({ label: 'Claude', poolFraction: '2/3', poolState: 'partial', remainingPercent: 71 });
+});
+
+test('fully available pools label the split fraction as normal', () => {
+  const normal = summary({ mode: 'pool', pool: {
+    available_count: 3, total_count: 3, best_weekly_remaining_percent: 71,
+    best_weekly_resets_at: null, earliest_available_at: null,
+  } });
+  expect(usageSummaryGaugesForApp(normal.nodes[0]!)[0]).toMatchObject({
+    label: 'Claude', poolFraction: '3/3', poolState: 'normal', remainingPercent: 71,
+  });
 });
 
 test('partially blocked pools keep the best weekly value and all-blocked pools show local reset with zero', () => {
@@ -52,8 +62,8 @@ test('partially blocked pools keep the best weekly value and all-blocked pools s
     available_count: 0, total_count: 2, best_weekly_remaining_percent: 41, best_weekly_resets_at: null,
     earliest_available_at: '2026-10-28T14:30:00.000Z',
   } });
-  expect(usageSummaryGaugesForApp(partial.nodes[0]!)[0]).toMatchObject({ label: 'Claude 1/2', remainingPercent: 71 });
+  expect(usageSummaryGaugesForApp(partial.nodes[0]!)[0]).toMatchObject({ label: 'Claude', poolFraction: '1/2', poolState: 'partial', remainingPercent: 71 });
   const blockedGauge = usageSummaryGaugesForApp(allBlocked.nodes[0]!)[0];
   const expected = new Date('2026-10-28T14:30:00.000Z').toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
-  expect(blockedGauge).toMatchObject({ label: 'Claude 0/2', remainingPercent: 0, resetLabel: `${expected} 해제` });
+  expect(blockedGauge).toMatchObject({ label: 'Claude', poolFraction: '0/2', poolState: 'blocked', remainingPercent: 0, resetLabel: `${expected} 해제` });
 });
