@@ -133,6 +133,8 @@ async function main(): Promise<void> {
       agentsConfigPath: env.AGENTS_CONFIG_PATH,
       agentCount: agentRegistry.list().length,
       claudeAuthTokenPathConfigured: Boolean(env.CLAUDE_AUTH_TOKEN_PATH),
+      claudeAccountPoolEnabled: env.CLAUDE_ACCOUNT_POOL_ENABLED,
+      claudeAccountsDir: env.CLAUDE_ACCOUNTS_DIR,
       claudeSessionRuntimeV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
     },
     "soul-server-ts starting (orchestrator-hosted persistence)",
@@ -282,6 +284,11 @@ async function main(): Promise<void> {
     runtime.worktreeSweeper?.stop();
     runtime.sessionPageBindingService.stop();
     await runtime.runnerRecoveryCoordinator?.stop();
+    try {
+      await runtime.claudeLoginService?.shutdown();
+    } catch {
+      logger.warn("Claude CLI login shutdown cleanup failed");
+    }
     try {
       runtime.scheduleDispatcher.stop();
       await runtime.taskManager.shutdown();

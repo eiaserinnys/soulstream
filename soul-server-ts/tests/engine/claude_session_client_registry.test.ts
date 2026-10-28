@@ -230,6 +230,76 @@ describe("ClaudeSessionClientRegistry", () => {
     }
   });
 
+  it.each(["close", "ttl", "capacity"] as const)(
+    "waits for the previous child exit before same-session reentry after %s",
+    async (retirement) => {
+      vi.useFakeTimers();
+      try {
+        let finishPreviousChild!: () => void;
+        const previousChildExit = new Promise<void>((resolve) => {
+          finishPreviousChild = resolve;
+        });
+        const spawnCounts = new Map<string, number>();
+        const clientsBySession = new Map<string, ClaudeClient[]>();
+        const registry = new ClaudeSessionClientRegistry(
+          (sessionId): ClaudeClient => {
+            const sessionClients = clientsBySession.get(sessionId) ?? [];
+            clientsBySession.set(sessionId, sessionClients);
+            const isPreviousSessionClient = sessionId === "session-a" && sessionClients.length === 0;
+            const client: ClaudeClient = {
+              async *run() {},
+              async *runPersistent() {
+                spawnCounts.set(sessionId, (spawnCounts.get(sessionId) ?? 0) + 1);
+              },
+              close: async () => {
+                if (isPreviousSessionClient) await previousChildExit;
+              },
+              persistentRuntimeActivity: () => null,
+            };
+            sessionClients.push(client);
+            return client;
+          },
+          { idleTtlMs: 1_000, maxEntries: retirement === "capacity" ? 2 : 4 },
+        );
+
+        const run = (client: ClaudeClient) => client.runPersistent!(
+          { prompt: "run", workspaceDir: "/tmp/claude-registry" },
+          new AbortController().signal,
+        )[Symbol.asyncIterator]().next();
+        await run(registry.acquire("session-a"));
+        registry.release("session-a");
+
+        let retirementFinished: Promise<unknown> | undefined;
+        if (retirement === "close") {
+          retirementFinished = registry.close("session-a");
+        } else if (retirement === "ttl") {
+          await vi.advanceTimersByTimeAsync(1_000);
+        } else {
+          registry.acquire("session-b");
+          registry.release("session-b");
+          registry.acquire("session-c");
+          registry.release("session-c");
+          registry.release("session-b");
+          // Reclaim another idle slot. The retired session-a close is still waiting.
+          registry.acquire("session-d");
+          registry.release("session-d");
+        }
+
+        const replacement = registry.acquire("session-a");
+        const replacementRun = run(replacement);
+        await Promise.resolve();
+        expect(spawnCounts.get("session-a")).toBe(1);
+
+        finishPreviousChild();
+        await Promise.all([replacementRun, retirementFinished]);
+        expect(spawnCounts.get("session-a")).toBe(2);
+        await registry.shutdown();
+      } finally {
+        vi.useRealTimers();
+      }
+    },
+  );
+
   it("does not evict an idle entry while runtime signals are waiting in the hook pump", async () => {
     const close = vi.fn().mockResolvedValue(undefined);
     const activity = {

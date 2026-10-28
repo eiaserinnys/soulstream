@@ -28,6 +28,13 @@ const RunnerProcessPathsSchema = z.object({
   logPath: paths.logPath ?? join(paths.sessionDirectory, "runner.log"),
 }));
 
+const ClaudeAccountPoolRunnerConfigSchema = z.object({
+  enabled: z.boolean(),
+  accountsDir: z.string().min(1).optional(),
+}).refine((pool) => !pool.enabled || pool.accountsDir !== undefined, {
+  message: "accountsDir is required when Claude account pool is enabled",
+});
+
 const RunnerChildConfigFields = {
   sessionId: z.string().min(1),
   incomingFileDir: z.string().min(1).optional(),
@@ -47,6 +54,7 @@ const RunnerChildConfigFields = {
   codexAppServerRequestTimeoutMs: z.number().int().positive().optional(),
   codexAppServerStartupTimeoutMs: z.number().int().positive().optional(),
   claudeRuntimeV2Enabled: z.boolean(),
+  claudeAccountPool: ClaudeAccountPoolRunnerConfigSchema.optional(),
   claudeRuntimeIdleTtlMs: z.number().int().positive(),
   claudeRuntimeMaxEntries: z.number().int().positive(),
   claudeRuntimeTurnTimeoutMs: z.number().int().positive(),

@@ -48,6 +48,7 @@ export interface TaskEngineTurnRunnerDeps {
   snapshotPersistence: TaskAgentsSnapshotPersistencePort;
   scheduleToolHandler?: ScheduleToolUseHandler;
   modelCatalog?: ModelPresetResolver;
+  claudeAccountPoolEnabled?: boolean;
 }
 
 export interface TaskAgentsSnapshotPersistencePort {
@@ -131,18 +132,40 @@ export class TaskEngineTurnRunner {
     const effectiveDisallowedTools = task.disallowedTools ?? agent.disallowed_tools;
     const effectiveClaudePermissionMode = task.claudePermissionMode ?? agent.claude_permission_mode;
     const effectiveModel = task.model ?? agent.model;
+    const backend = effectiveTaskBackend(task, agent);
+    const provider = usageProviderForExecution(backend, effectiveModel ?? null);
     const opencodeMcpToolAllowlist = resolveOpenCodeMcpToolAllowlist(
       task,
       agent,
       this.deps.modelCatalog,
     );
     const hasResolvedPreset = task.modelPresetBackend !== undefined;
-    const extraEnv = engine.backendId === "claude"
+    const claudeProfileEnv = engine.backendId === "claude"
       ? buildClaudeExtraEnv({
           profileEnv: hasResolvedPreset ? (task.modelPresetEnv ?? {}) : agent.env,
-          oauthToken: task.oauthToken,
           sourceLabel: hasResolvedPreset ? "model preset" : "agents.yaml",
         })
+      : undefined;
+    // Pool targeting follows the resolved provider and endpoint, not the model
+    // spelling: official presets use aliases such as "opus" or "haiku", which the
+    // usage provider classifier reports as "unknown". Third-party Anthropic-compatible
+    // endpoints (Kimi and any ANTHROPIC_BASE_URL override) stay on their env path.
+    const claudeAccountPoolTarget = this.deps.claudeAccountPoolEnabled === true
+      && backend === "claude"
+      && provider !== "kimi"
+      && claudeProfileEnv?.ANTHROPIC_BASE_URL === undefined;
+    const claudeExtraEnv = engine.backendId === "claude"
+      ? {
+          ...(claudeProfileEnv ?? {}),
+          ...(!claudeAccountPoolTarget
+            && task.oauthToken
+            && !(ANTHROPIC_API_KEY_ENV in (claudeProfileEnv ?? {}))
+            ? { [CLAUDE_OAUTH_TOKEN_ENV]: task.oauthToken }
+            : {}),
+        }
+      : undefined;
+    const extraEnv = claudeExtraEnv && Object.keys(claudeExtraEnv).length > 0
+      ? claudeExtraEnv
       : undefined;
 
     const executeParams: EngineExecuteParams = {
@@ -201,9 +224,8 @@ export class TaskEngineTurnRunner {
       ...(this.deps.scheduleToolHandler !== undefined
         ? { scheduleToolUseEnabled: true }
         : {}),
+      ...(claudeAccountPoolTarget ? { claudeAccountPoolTarget: true } : {}),
     };
-    const backend = effectiveTaskBackend(task, agent);
-    const provider = usageProviderForExecution(backend, effectiveModel ?? null);
     const usageSnapshot: UsageSnapshotV1 = {
       schema_version: 1,
       backend,

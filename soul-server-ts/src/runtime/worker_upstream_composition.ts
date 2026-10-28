@@ -3,6 +3,10 @@ import type { AgentConfigService } from "../agent_config_service.js";
 import type { FileAttachmentStore } from "../attachments/file_manager.js";
 import type { ClaudeAuthService } from "../auth/claude_auth.js";
 import type { ProviderUsageCommandHandler } from "../auth/provider_usage.js";
+import type {
+  ClaudeAccountsCommandHandler,
+  ClaudeLoginCommandHandler,
+} from "../upstream/claude_auth_commands.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { McpRuntime } from "../mcp/runtime.js";
 import type { ModelCatalog } from "../model_catalog.js";
@@ -27,6 +31,8 @@ interface WorkerUpstreamCompositionParams {
   taskExecutor: TaskExecutor;
   attachmentStore: FileAttachmentStore;
   claudeAuth: ClaudeAuthService;
+  claudeAccounts?: ClaudeAccountsCommandHandler;
+  claudeLoginService?: ClaudeLoginCommandHandler;
   providerUsage: ProviderUsageCommandHandler;
   sessionDb: SessionDB;
   realtimeBroker: RealtimeBroker;
@@ -47,6 +53,8 @@ export function composeWorkerUpstreamAdapter({
   taskExecutor,
   attachmentStore,
   claudeAuth,
+  claudeAccounts,
+  claudeLoginService,
   providerUsage,
   sessionDb,
   realtimeBroker,
@@ -73,6 +81,7 @@ export function composeWorkerUpstreamAdapter({
       isProduction: env.ENVIRONMENT === "production",
       runnerProcessEnabled: env.SOUL_RUNNER_PROCESS_ENABLED,
       worktreeMcpEnabled: env.WORKTREE_MCP_ENABLED,
+      claudeAccountPoolEnabled: env.CLAUDE_ACCOUNT_POOL_ENABLED,
       ...(env.SOUL_RUNNER_STATE_DIR
         ? { runnerStateDir: env.SOUL_RUNNER_STATE_DIR }
         : {}),
@@ -86,6 +95,9 @@ export function composeWorkerUpstreamAdapter({
       taskExecutor,
       attachmentStore,
       claudeAuth,
+      ...(claudeAccounts ? { claudeAccounts } : {}),
+      ...(claudeLoginService ? { claudeLoginService } : {}),
+      claudeAccountPoolEnabled: env.CLAUDE_ACCOUNT_POOL_ENABLED,
       providerUsage,
       sessionDb,
       realtimeBroker,

@@ -159,6 +159,7 @@ export async function buildPersistentSettingsApp(
     const presets = new ModelPresetAvailabilityService(registry, {
       getSummary: () => ({ nodes: [] }) as never,
       getLimitRejection: () => null,
+      getClaudePoolAccountsForAvailability: (_nodeId, accounts) => accounts,
     });
     const folderOf = async (sessionId: string) =>
       (await sql<Array<{ folder_id: string | null }>>`SELECT folder_id FROM sessions WHERE session_id = ${sessionId}`)[0]?.folder_id ?? null;

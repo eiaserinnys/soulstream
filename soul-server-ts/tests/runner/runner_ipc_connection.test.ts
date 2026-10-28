@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { createServer, connect, type Socket } from "node:net";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 import {
   RUNNER_FRAME_PROTOCOL_VERSION,
@@ -12,6 +13,7 @@ import {
   interruptCommandFrame,
   invokeCommandFrame,
   prepareSessionCommandFrame,
+  runnerRequestFrame,
   runnerControlResponseFrame,
   runnerCommandResultFrame,
   stageInterventionCommandFrame,
@@ -32,6 +34,40 @@ afterEach(() => {
 });
 
 describe("RunnerIpcConnection", () => {
+  it("closes a new runner's account request at the 8e23da6c host frame parser", async () => {
+    // Frozen host_call branch from 8e23da6c: frame_protocol.ts:263-273.
+    const legacyHostCall = z.object({
+      kind: z.literal("host_call"),
+      service: z.enum(["session_store", "claude_runtime", "detached_event", "snapshot", "event_archive"]),
+      operation: z.string().min(1),
+      args: z.array(z.json()),
+    }).passthrough();
+    const [host, runner] = await socketPair();
+    const dispatched = vi.fn();
+    host.once("data", (chunk) => {
+      try {
+        // 8e23da6c runner_ipc_connection.ts: receive() fails and destroys the socket
+        // when RunnerFrameSchema.parse rejects a request before the dispatcher sees it.
+        const frame = JSON.parse(String(chunk));
+        legacyHostCall.parse(frame.request);
+        dispatched(frame);
+      } catch {
+        host.destroy();
+      }
+    });
+    const connection = new RunnerIpcConnection(runner);
+    const request = runnerRequestFrame("account-select", {
+      kind: "host_call", service: "claude_accounts", operation: "select", args: ["session-a"],
+    });
+    expect(legacyHostCall.safeParse({
+      kind: "host_call", service: "session_store", operation: "load", args: [],
+    }).success).toBe(true);
+    await expect(connection.request(request, { timeoutMs: 1_000 })).rejects.toThrow();
+    expect(dispatched).not.toHaveBeenCalled();
+    expect(connection.pendingRequestCount).toBe(0);
+    connection.close();
+  });
+
   it("round-trips commandId-correlated ACK frames over a newline JSON socket", async () => {
     const [host, runner] = await socketPair();
     const hostConnection = new RunnerIpcConnection(host);

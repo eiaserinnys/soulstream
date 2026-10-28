@@ -46,6 +46,7 @@ function createDispatcher(opts: {
   taskExecutor?: Partial<TaskExecutor>;
   attachmentStore?: AttachmentStore;
   claudeAuth?: ClaudeAuthCommandHandler;
+  claudeAccountPoolEnabled?: boolean;
   sessionDb?: Partial<SessionDB>;
   realtimeBroker?: Partial<RealtimeBroker>;
   listRunningSessionIds?: () => Promise<string[]>;
@@ -128,6 +129,7 @@ function createDispatcher(opts: {
     taskExecutor: te,
     attachmentStore: opts.attachmentStore,
     claudeAuth: opts.claudeAuth,
+    claudeAccountPoolEnabled: opts.claudeAccountPoolEnabled,
     sessionDb,
     realtimeBroker: opts.realtimeBroker as RealtimeBroker | undefined,
     agentConfigService: opts.agentConfigService,
@@ -1573,6 +1575,42 @@ describe("CommandDispatcher Claude auth/profile commands (P6)", () => {
       command_type: "claude_auth_set_token",
       message: "invalid token format",
     });
+  });
+
+  it("account-pool mode rejects legacy token mutations with the login_flow_required wire code", async () => {
+    const claudeAuth = makeClaudeAuthMock();
+    const { dispatcher, sent } = createDispatcher({
+      agents: [claudeAgent],
+      claudeAuth,
+      claudeAccountPoolEnabled: true,
+    });
+
+    await dispatcher.dispatch({
+      type: "claude_auth_set_token",
+      requestId: "legacy-set",
+      token: "synthetic-token",
+    });
+    await dispatcher.dispatch({
+      type: "claude_auth_delete_token",
+      requestId: "legacy-delete",
+    });
+
+    expect(sent).toEqual([
+      expect.objectContaining({
+        type: "error",
+        requestId: "legacy-set",
+        command_type: "claude_auth_set_token",
+        code: "login_flow_required",
+      }),
+      expect.objectContaining({
+        type: "error",
+        requestId: "legacy-delete",
+        command_type: "claude_auth_delete_token",
+        code: "login_flow_required",
+      }),
+    ]);
+    expect(claudeAuth.setToken).not.toHaveBeenCalled();
+    expect(claudeAuth.deleteToken).not.toHaveBeenCalled();
   });
 
   it("claude_auth_delete_token → idempotent ACK", async () => {

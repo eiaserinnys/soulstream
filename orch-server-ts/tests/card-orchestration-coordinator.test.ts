@@ -394,7 +394,11 @@ describe("card orchestration logical-input cost and durable replay", () => {
 describe("validated advertised preset accessor", () => {
   it("exposes provider scope without ordinary permissive availability and rejects missing/offline nodes", () => {
     const preset = { id: "claude-opus", label: "Opus", backend: "claude", available: true, usage_provider: "claude", usage_model_id: "opus" };
-    const service = new ModelPresetAvailabilityService({ getConnectedNode: id => id === "node" ? { nodeId: "node", modelPresets: [preset] } as NodeConnectionSnapshot : undefined }, { getSummary: () => ({ generatedAt: "", collectedAt: null, nodes: [] }), getLimitRejection: () => null });
+    const service = new ModelPresetAvailabilityService({ getConnectedNode: id => id === "node" ? { nodeId: "node", modelPresets: [preset] } as NodeConnectionSnapshot : undefined }, {
+      getSummary: () => ({ generatedAt: "", collectedAt: null, nodes: [] }),
+      getLimitRejection: () => null,
+      getClaudePoolAccountsForAvailability: (_nodeId, accounts) => accounts,
+    });
     expect(service.resolveStaticForNode("node", "claude-opus")).toEqual(preset);
     expect(() => service.resolveStaticForNode("node", "missing")).toThrow("not advertised");
     expect(() => service.resolveStaticForNode("offline", "claude-opus")).toThrow("not advertised");

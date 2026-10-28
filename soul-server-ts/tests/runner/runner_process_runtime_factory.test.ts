@@ -27,6 +27,62 @@ describe("createRunnerProcessRuntimeFactory", () => {
     vi.restoreAllMocks();
   });
 
+  it("passes the Claude account pool contract and root to new Claude runners", async () => {
+    const spawn = vi.fn(async () => {
+      throw new Error("captured pool runner config");
+    });
+    const factory = createRunnerProcessRuntimeFactory({
+      env: {
+        ...runnerEnv(),
+        CLAUDE_ACCOUNT_POOL_ENABLED: true,
+        CLAUDE_ACCOUNTS_DIR: "/worker/claude-accounts",
+      },
+      logger: pino({ level: "silent" }),
+      pumpMux: {} as never,
+      sessionStore: {} as never,
+      claudeAccounts: {
+        select: vi.fn(),
+        reject: vi.fn(),
+        release: vi.fn(),
+      },
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
+      releasePool: {
+        resolveCurrentRelease: vi.fn(async () => ({
+          releaseId: "sha-pool",
+          releaseRoot: "/release/sha-pool",
+          runnerModuleRoot: "/release/sha-pool/soul-server-ts",
+        })),
+        describe: vi.fn(),
+        ensureRelease: vi.fn(async () => undefined),
+      },
+      buildChildProcessEnv: () => ({}),
+      spawner: { adopt: vi.fn(), spawn },
+    });
+    const task = {
+      agentSessionId: "session-pool",
+      prompt: "start",
+      status: "pending",
+    } as Task;
+    const runtime = factory(task, {
+      id: "agent-pool",
+      name: "Pool Agent",
+      backend: "claude",
+      workspace_dir: "/workspace/pool",
+    } as AgentProfile, "claude", {
+      persistRunState: vi.fn(async () => undefined),
+      persistSessionItems: vi.fn(async () => undefined),
+    });
+
+    await expect(runtime.dispatcher.prepareSession("session-pool"))
+      .rejects.toThrow("captured pool runner config");
+    expect(spawn).toHaveBeenCalledWith(expect.objectContaining({
+      claudeAccountPool: {
+        enabled: true,
+        accountsDir: "/worker/claude-accounts",
+      },
+    }));
+  });
+
   it("pins new runners to the immutable manifest instead of mutable current release", async () => {
     const spawn = vi.fn(async () => {
       throw new Error("captured pinned spawn input");
@@ -265,6 +321,74 @@ function runnerEnv() {
 }
 
 describe("applyRunnerHostCall", () => {
+  it("routes Claude account operations through the host service and fences session identity", async () => {
+    const account = { account_id: "account-a", config_dir: "/accounts/a" };
+    const service = {
+      select: vi.fn(async () => account),
+      reject: vi.fn(async () => undefined),
+      release: vi.fn(async () => undefined),
+    };
+    const options = { claudeAccounts: service } as never;
+    const task = { agentSessionId: "session-a" } as Task;
+    const snapshots = {
+      persistRunState: vi.fn(async () => undefined),
+      persistSessionItems: vi.fn(async () => undefined),
+    };
+    const selectInput = {
+      session_id: "session-a",
+      turn_id: "turn-a",
+      model: "claude-sonnet-4.5",
+      exclude_ids: [],
+    };
+
+    await expect(applyRunnerHostCall({
+      service: "claude_accounts",
+      operation: "select",
+      args: ["session-a", selectInput],
+      correlationId: "host:claude-account-select",
+    }, task, snapshots, options)).resolves.toEqual(account);
+    await applyRunnerHostCall({
+      service: "claude_accounts",
+      operation: "reject",
+      args: ["session-a", {
+        account_id: "account-a",
+        scope: "all",
+        resets_at: null,
+        observed_at: "2026-10-28T00:00:00.000Z",
+        session_id: "session-a",
+      }],
+      correlationId: "host:claude-account-reject",
+    }, task, snapshots, options);
+    await applyRunnerHostCall({
+      service: "claude_accounts",
+      operation: "release",
+      args: ["session-a", { session_id: "session-a" }],
+      correlationId: "host:claude-account-release",
+    }, task, snapshots, options);
+    const turnRelease = { session_id: "session-a", account_id: "account-a", turn_id: "turn-a" };
+    await applyRunnerHostCall({
+      service: "claude_accounts", operation: "release",
+      args: ["session-a", turnRelease], correlationId: "host:claude-turn-release",
+    }, task, snapshots, options);
+
+    expect(service.select).toHaveBeenCalledWith(selectInput);
+    expect(service.reject).toHaveBeenCalledOnce();
+    expect(service.release).toHaveBeenCalledWith({ session_id: "session-a" });
+    expect(service.release).toHaveBeenCalledWith(turnRelease);
+    await expect(applyRunnerHostCall({
+      service: "claude_accounts",
+      operation: "select",
+      args: ["session-other", { ...selectInput, session_id: "session-other" }],
+      correlationId: "host:claude-account-wrong-session",
+    }, task, snapshots, options)).rejects.toThrow("runner host session mismatch");
+    await expect(applyRunnerHostCall({
+      service: "claude_accounts",
+      operation: "select",
+      args: ["session-a", { ...selectInput, session_id: "session-other" }],
+      correlationId: "host:claude-account-wrong-payload-session",
+    }, task, snapshots, options)).rejects.toThrow("runner Claude account request session mismatch");
+  });
+
   it("registers transcript reconciliation after append success and runs it post-response", async () => {
     let finishAppend!: () => void;
     const appendPending = new Promise<void>((resolve) => {

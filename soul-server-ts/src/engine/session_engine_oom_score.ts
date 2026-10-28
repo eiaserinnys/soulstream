@@ -36,6 +36,7 @@ export async function setSessionEngineOomScore(
 export function spawnClaudeSessionEngine(
   options: ClaudeSpawnOptions,
   logger: Logger,
+  observeClose?: (closed: Promise<void>) => void,
 ): SpawnedProcess {
   const child = spawn(options.command, options.args, {
     cwd: options.cwd,
@@ -47,6 +48,13 @@ export function spawnClaudeSessionEngine(
   child.stderr.on("data", (chunk) => {
     logger.debug({ line: chunk.toString("utf8") }, "Claude Code stderr");
   });
+  if (observeClose) {
+    // `close` follows process exit and stdio closure. Keeping this promise lets
+    // account replacement wait for the old CLI and its stderr tail to settle.
+    observeClose(new Promise<void>((resolve) => {
+      child.once("close", () => resolve());
+    }));
+  }
   void setSessionEngineOomScore(child.pid, { logger });
   return child;
 }

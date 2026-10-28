@@ -241,6 +241,7 @@ export class TaskExecutor {
     private readonly persistentDecisionRuntime?: PersistentDecisionRuntime,
     private readonly waitForAttachmentRefs?: (sessionId: string) => Promise<unknown>,
     private readonly prepareAttachmentInput?: PrepareAttachmentInput,
+    private readonly claudeAccountPoolEnabled = false,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -284,6 +285,7 @@ export class TaskExecutor {
       snapshotPersistence: this.agentsSnapshotPersistence,
       scheduleToolHandler,
       modelCatalog: this.modelCatalog,
+      claudeAccountPoolEnabled: this.claudeAccountPoolEnabled,
     });
     this.deliveryConsumption = deliveryConsumptionRecorder
       ? new TaskDeliveryConsumption(deliveryConsumptionRecorder, this.logger)

@@ -19,6 +19,7 @@ import {
   createProviderUsageDeadline,
   providerUsageEndpoint,
 } from "../../src/auth/provider_usage_telemetry.js";
+import { ClaudeAccountService } from "../../src/claude_accounts/index.js";
 
 function fetchJson(payload: unknown): typeof fetch {
   return vi.fn(async () => ({
@@ -900,5 +901,313 @@ describe("ProviderUsageService", () => {
     }
   });
 
+  it("projects Claude account pool limits, fable_pool, per-scope best quotas, and partial deadline results using real ClaudeAccountService", async () => {
+    resetProviderUsageObservationMemo();
+    const root = await mkdtemp(join(tmpdir(), "provider-claude-pool-"));
+    const accountsDir = join(root, "claude-accounts");
+    const homeDir = join(root, "home");
+    await mkdir(homeDir, { recursive: true });
 
+    const accGeneral = "11111111-1111-4111-8111-111111111111";
+    const accFable = "22222222-2222-4222-8222-222222222222";
+    let hangFable = false;
+    let generalFiveHour = 25;
+    let nowMs = Date.parse("2026-10-28T01:00:00.000Z");
+
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const auth = (init?.headers as Record<string, string>)?.Authorization ?? "";
+      const token = auth.replace(/^Bearer\s+/i, "");
+      if (token === "tok-general") {
+        return new Response(
+          JSON.stringify({
+            five_hour: { utilization: generalFiveHour, resets_at: "2026-10-28T06:00:00.000Z" },
+            seven_day: { utilization: 40, resets_at: "2026-11-04T00:00:00.000Z" },
+            seven_day_fable: { utilization: 85, resets_at: "2026-11-04T00:00:00.000Z" },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      if (hangFable) {
+        return await new Promise<Response>(() => {
+          // Exceeds provider deadline
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          five_hour: { utilization: 30, resets_at: "2026-10-28T06:00:00.000Z" },
+          seven_day: { utilization: 45, resets_at: "2026-11-04T00:00:00.000Z" },
+          limits: [
+            {
+              kind: "weekly_scoped",
+              group: "weekly",
+              percent: 15,
+              resets_at: "2026-11-03T00:00:00.000Z",
+              scope: { model: { id: null, display_name: "Fable" }, surface: null },
+              is_active: false,
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    });
+
+    try {
+      const claudeAccounts = new ClaudeAccountService({
+        accountsDir,
+        homeDir,
+        now: () => nowMs,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      });
+
+      const p1 = await claudeAccounts.createPendingDir("login-1");
+      await writeFile(
+        join(p1, ".credentials.json"),
+        JSON.stringify({
+          claudeAiOauth: {
+            accessToken: "tok-general",
+            refreshToken: "ref-1",
+            expiresAt: nowMs + 7200_000,
+          },
+        }),
+      );
+      await claudeAccounts.registerFromPending({
+        loginId: "login-1",
+        id: accGeneral,
+        email: "general@example.com",
+        plan: "max",
+      });
+
+      const p2 = await claudeAccounts.createPendingDir("login-2");
+      await writeFile(
+        join(p2, ".credentials.json"),
+        JSON.stringify({
+          claudeAiOauth: {
+            accessToken: "tok-fable",
+            refreshToken: "ref-2",
+            expiresAt: nowMs + 7200_000,
+          },
+        }),
+      );
+      await claudeAccounts.registerFromPending({
+        loginId: "login-2",
+        id: accFable,
+        email: "fable@example.com",
+        plan: "max",
+      });
+
+      const service = new ProviderUsageService({
+        claudeAccounts,
+        requestTimeoutMs: 40,
+      });
+      const response = await service.fetchUsage("req-pool", "provider_usage_get", "claude");
+
+      expect(response.success).toBe(true);
+      expect(response.data).toMatchObject({
+        status: "auto",
+        mode: "pool",
+        planType: "max",
+        shortUsedPercent: 25,
+        shortResetAt: Math.floor(Date.parse("2026-10-28T06:00:00.000Z") / 1000),
+        weeklyUsedPercent: 40,
+        weeklyResetAt: Math.floor(Date.parse("2026-11-04T00:00:00.000Z") / 1000),
+        pool: {
+          total_count: 2,
+          available_count: 2,
+          best_weekly_remaining_percent: 60,
+          best_weekly_resets_at: "2026-11-04T00:00:00.000Z",
+          earliest_available_at: null,
+        },
+        fable_pool: {
+          total_count: 2,
+          available_count: 2,
+          best_weekly_remaining_percent: 55,
+          best_weekly_resets_at: "2026-11-04T00:00:00.000Z",
+          earliest_available_at: null,
+        },
+        quotas: [
+          expect.objectContaining({
+            id: "claude:five_hour",
+            usedPercent: 25,
+            remainingPercent: 75,
+            resetAt: Math.floor(Date.parse("2026-10-28T06:00:00.000Z") / 1000),
+          }),
+          expect.objectContaining({
+            id: "claude:seven_day",
+            usedPercent: 40,
+            remainingPercent: 60,
+            resetAt: Math.floor(Date.parse("2026-11-04T00:00:00.000Z") / 1000),
+          }),
+          expect.objectContaining({
+            id: "claude:weekly_scoped:fable",
+            usedPercent: 15,
+            remainingPercent: 85,
+            resetAt: Math.floor(Date.parse("2026-11-03T00:00:00.000Z") / 1000),
+          }),
+        ],
+      });
+
+      // Deadline partial result: advance past 5-minute TTL; accGeneral finishes immediately (with updated 10%), while accFable hangs past requestTimeoutMs (40ms).
+      // ProviderUsageService must NOT fail into emptyLimits("error"), and must return both accounts (accGeneral fresh, accFable stale with previous values).
+      nowMs += 6 * 60_000;
+      generalFiveHour = 10;
+      hangFable = true;
+      const partialRes = await service.fetchUsage(
+        "req-pool-deadline",
+        "provider_usage_refresh",
+        "claude",
+      );
+      expect(partialRes.success).toBe(true);
+      expect(partialRes.data?.status).toBe("auto");
+      expect(partialRes.data?.mode).toBe("pool");
+      expect(partialRes.data?.accounts).toHaveLength(2);
+      const generalAfter = partialRes.data?.accounts?.find((a) => a.id === accGeneral);
+      const fableAfter = partialRes.data?.accounts?.find((a) => a.id === accFable);
+      expect(generalAfter?.stale).toBe(false);
+      expect(generalAfter?.usage.five_hour?.used_percent).toBe(10);
+      expect(fableAfter?.stale).toBe(true);
+      expect(fableAfter?.usage.fable_weekly?.used_percent).toBe(15);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps mode=pool even when 0 accounts exist in the pool, and preserves exact legacy response when pool flag is off", async () => {
+    const root = await mkdtemp(join(tmpdir(), "provider-claude-empty-pool-"));
+    try {
+      const emptyClaudeAccounts = new ClaudeAccountService({
+        accountsDir: join(root, "claude-accounts"),
+        homeDir: join(root, "home"),
+        fetchImpl: vi.fn() as unknown as typeof fetch,
+      });
+      const poolService = new ProviderUsageService({ claudeAccounts: emptyClaudeAccounts });
+      const poolRes = await poolService.fetchUsage("req-empty-pool", "provider_usage_get", "claude");
+      expect(poolRes.data).toMatchObject({
+        status: "not_configured",
+        mode: "pool",
+        accounts: [],
+        pool: { total_count: 0, available_count: 0 },
+      });
+
+      const legacyUnconfigured = new ProviderUsageService({});
+      const legacyUnconfiguredRes = await legacyUnconfigured.fetchUsage(
+        "req-legacy-unconfigured",
+        "provider_usage_get",
+        "claude",
+      );
+      expect(legacyUnconfiguredRes.data).toEqual({
+        status: "not_configured",
+        source: "",
+        sourceKind: "unknown",
+        observedAt: null,
+        planType: null,
+        shortUsedPercent: null,
+        shortWindowMinutes: null,
+        shortResetAt: null,
+        weeklyUsedPercent: null,
+        weeklyResetAt: null,
+        sessionTokens: null,
+        weeklyTokens: null,
+        monthlyTokens: null,
+        quotas: [],
+      });
+      expect("mode" in (legacyUnconfiguredRes.data as Record<string, unknown>)).toBe(false);
+
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-10-28T01:00:00.000Z"));
+      const claudeAuth: ClaudeAuthCommandHandler = {
+        getStatus: vi.fn(),
+        setToken: vi.fn(),
+        deleteToken: vi.fn(),
+        fetchProfile: vi.fn(),
+        fetchUsage: vi.fn(async () => ({
+          type: "provider_usage_get",
+          requestId: "",
+          success: true,
+          data: {
+            five_hour: { utilization: 22, resets_at: "2026-04-14T15:00:00Z" },
+            seven_day: { utilization: 44, resets_at: "2026-04-20T00:00:00Z" },
+          },
+        })),
+      };
+      const legacyConfigured = new ProviderUsageService({ claudeAuth });
+      const legacyConfiguredRes = await legacyConfigured.fetchUsage(
+        "req-legacy-configured",
+        "provider_usage_get",
+        "claude",
+      );
+      // Fixtures below are derived from the legacy e0382faf response path.
+      const expectedLegacy = {
+        status: "auto",
+        source: "https://api.anthropic.com/api/oauth/usage",
+        sourceKind: "remote",
+        observedAt: "2026-10-28T01:00:00.000Z",
+        weeklyTokens: null,
+        monthlyTokens: null,
+        sessionTokens: null,
+        weeklyUsedPercent: 44,
+        weeklyResetAt: 1776643200,
+        shortUsedPercent: 22,
+        shortWindowMinutes: 300,
+        shortResetAt: 1776178800,
+        planType: null,
+        quotas: [
+          {
+            id: "claude:five_hour", label: "5시간", window: "5h", unit: "percent",
+            used: null, remaining: null, limit: null, usedPercent: 22, remainingPercent: 78,
+            resetAt: 1776178800, model: null, source: "https://api.anthropic.com/api/oauth/usage",
+            purpose: "execution",
+          },
+          {
+            id: "claude:seven_day", label: "7일", window: "7d", unit: "percent",
+            used: null, remaining: null, limit: null, usedPercent: 44, remainingPercent: 56,
+            resetAt: 1776643200, model: null, source: "https://api.anthropic.com/api/oauth/usage",
+            purpose: "execution",
+          },
+        ],
+      };
+      expect(legacyConfiguredRes.data).toEqual({
+        ...expectedLegacy,
+        observedAt: expect.any(String),
+      });
+      expect("mode" in (legacyConfiguredRes.data as Record<string, unknown>)).toBe(false);
+      expect(legacyConfiguredRes).toEqual({
+        type: "provider_usage_get", requestId: "req-legacy-configured", success: true,
+        data: expectedLegacy,
+      });
+
+      const noToken = new ProviderUsageService({
+        claudeAuth: { ...claudeAuth, fetchUsage: vi.fn(async () => ({
+          type: "provider_usage_get", requestId: "", success: false, error: "no token",
+        })) },
+      });
+      expect(await noToken.fetchUsage("req-legacy-no-token", "provider_usage_get", "claude")).toEqual({
+        type: "provider_usage_get", requestId: "req-legacy-no-token", success: true,
+        data: {
+          status: "not_configured", source: "", sourceKind: "unknown", observedAt: null,
+          weeklyTokens: null, monthlyTokens: null, sessionTokens: null,
+          weeklyUsedPercent: null, weeklyResetAt: null, shortUsedPercent: null,
+          shortWindowMinutes: null, shortResetAt: null, planType: null, quotas: [],
+        },
+      });
+
+      const transientError = new ProviderUsageService({
+        claudeAuth: { ...claudeAuth, fetchUsage: vi.fn(async () => ({
+          type: "provider_usage_get", requestId: "", success: false, error: "upstream unavailable",
+        })) },
+      });
+      expect(await transientError.fetchUsage("req-legacy-error", "provider_usage_get", "claude")).toEqual({
+        type: "provider_usage_get", requestId: "req-legacy-error", success: true,
+        data: {
+          status: "error", source: "", sourceKind: "unknown", observedAt: null,
+          weeklyTokens: null, monthlyTokens: null, sessionTokens: null,
+          weeklyUsedPercent: null, weeklyResetAt: null, shortUsedPercent: null,
+          shortWindowMinutes: null, shortResetAt: null, planType: null, quotas: [],
+          error: "upstream unavailable",
+        },
+      });
+    } finally {
+      vi.useRealTimers();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });
