@@ -1,9 +1,14 @@
+export type AttachmentLinkContext =
+  | { type: "owner" }
+  | { type: "session" | "card" | "page" | "board_item"; id: string };
+
 export type InternalLinkTarget =
   | { kind: "session"; sessionId: string; eventId?: string }
   | { kind: "card"; cardId: string }
   | { kind: "document"; documentId: string }
   | { kind: "folder"; folderId: string }
   | { kind: "page"; pageId: string }
+  | { kind: "attachment_asset"; attachmentId: string; context: AttachmentLinkContext | null }
   | { kind: "attachment"; nodeId: string; path: string; isImage: boolean };
 
 const IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9:_.-]*$/;
@@ -82,6 +87,35 @@ function isImagePath(path: string): boolean {
   return IMAGE_EXTENSIONS.has(filename.slice(extensionStart + 1).toLowerCase());
 }
 
+function attachmentLinkContext(queryValues: Map<string, string>): AttachmentLinkContext | null | undefined {
+  const hasType = queryValues.has("context_type");
+  const hasId = queryValues.has("context_id");
+  if (!hasType && !hasId) return null;
+
+  const type = queryValues.get("context_type");
+  const id = queryValues.get("context_id");
+  if (type === "owner" && !hasId) return { type: "owner" };
+  if (!id?.trim()) return undefined;
+  switch (type) {
+    case "session":
+    case "card":
+    case "page":
+    case "board_item":
+      return { type, id };
+    default:
+      return undefined;
+  }
+}
+
+function attachmentAssetTarget(
+  attachmentId: string,
+  queryValues: Map<string, string>,
+): InternalLinkTarget | null {
+  const context = attachmentLinkContext(queryValues);
+  if (context === undefined) return null;
+  return { kind: "attachment_asset", attachmentId, context };
+}
+
 /** href가 이 서버의 내부 주소면 대상을, 아니면 null을 돌려준다. */
 export function classifyInternalLink(
   href: string,
@@ -136,6 +170,11 @@ export function classifyInternalLink(
       return { kind: "page", pageId };
     }
 
+    const attachmentId = queryValues.get("attachment");
+    if (attachmentId && isIdentifier(attachmentId)) {
+      return attachmentAssetTarget(attachmentId, queryValues);
+    }
+
     return null;
   }
 
@@ -169,6 +208,22 @@ export function classifyInternalLink(
     };
   }
 
+  const attachmentPrefix = "/api/attachments/";
+  const contentSuffix = "/content";
+  if (path.startsWith(attachmentPrefix) && path.endsWith(contentSuffix)) {
+    const encodedAttachmentId = path.slice(attachmentPrefix.length, -contentSuffix.length);
+    if (!encodedAttachmentId || encodedAttachmentId.includes("/") || queryValues.get("download") === "true") {
+      return null;
+    }
+    try {
+      const attachmentId = decodeURIComponent(encodedAttachmentId);
+      if (!attachmentId || attachmentId.includes("/")) return null;
+      return attachmentAssetTarget(attachmentId, queryValues);
+    } catch {
+      return null;
+    }
+  }
+
   return null;
 }
 
@@ -187,6 +242,16 @@ export function internalLinkPath(target: InternalLinkTarget): string | null {
       return `/?folder=${encodeURIComponent(target.folderId)}`;
     case "page":
       return `/?page=${encodeURIComponent(target.pageId)}`;
+    case "attachment_asset": {
+      const params = [`attachment=${encodeURIComponent(target.attachmentId)}`];
+      if (target.context) {
+        params.push(`context_type=${encodeURIComponent(target.context.type)}`);
+        if (target.context.type !== "owner") {
+          params.push(`context_id=${encodeURIComponent(target.context.id)}`);
+        }
+      }
+      return `/?${params.join("&")}`;
+    }
     case "attachment":
       return null;
   }

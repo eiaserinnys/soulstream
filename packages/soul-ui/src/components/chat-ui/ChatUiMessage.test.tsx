@@ -135,7 +135,7 @@ describe('ChatUiMessage', () => {
     // Observe after React handles the event; suppress jsdom's unsupported navigation only afterwards.
     host.addEventListener('click', event => { prevented = event.defaultPrevented; event.preventDefault(); });
     await act(async () => link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0 })));
-    expect(openTarget).toHaveBeenCalledWith({ kind: 'card', cardId: 'card-review' }, link.href);
+    expect(openTarget).toHaveBeenCalledWith({ kind: 'card', cardId: 'card-review' }, link.href, '출처 열기');
     await act(async () => link.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, button: 0, ctrlKey: true })));
     expect(prevented).toBe(false); expect(openTarget).toHaveBeenCalledTimes(1);
   });

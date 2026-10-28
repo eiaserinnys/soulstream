@@ -37,6 +37,22 @@ const classificationCases: Array<[string, InternalLinkTarget | null]> = [
   ["/?folder=page-runbook:3d36b10b-441d-42e5-b6ea-1887eea8ef53", { kind: "folder", folderId: "page-runbook:3d36b10b-441d-42e5-b6ea-1887eea8ef53" }],
   ["/?page=abc123", { kind: "page", pageId: "abc123" }],
   [
+    "/api/attachments/asset-1/content?context_type=session&context_id=session-1",
+    { kind: "attachment_asset", attachmentId: "asset-1", context: { type: "session", id: "session-1" } },
+  ],
+  [
+    "https://soulstream.eiaserinnys.me/api/attachments/asset-2/content?context_type=owner",
+    { kind: "attachment_asset", attachmentId: "asset-2", context: { type: "owner" } },
+  ],
+  [
+    "/api/attachments/asset-3/content",
+    { kind: "attachment_asset", attachmentId: "asset-3", context: null },
+  ],
+  [
+    "/?attachment=asset-4&context_type=board_item&context_id=item-1",
+    { kind: "attachment_asset", attachmentId: "asset-4", context: { type: "board_item", id: "item-1" } },
+  ],
+  [
     "/api/attachments/files?nodeId=eiaserinnys&path=%2Fhome%2Feias%2Fa%20b%2Fshot.PNG",
     { kind: "attachment", nodeId: "eiaserinnys", path: "/home/eias/a b/shot.PNG", isImage: true },
   ],
@@ -45,6 +61,14 @@ const classificationCases: Array<[string, InternalLinkTarget | null]> = [
     { kind: "attachment", nodeId: "eiaserinnys", path: "/tmp/note.md", isImage: false },
   ],
   ["/api/attachments/files?nodeId=eiaserinnys", null],
+  ["/api/attachments/worker/asset-1/content", null],
+  ["/api/attachments/asset-1/content?download=true", null],
+  ["/api/attachments/asset-1%2Fother/content", null],
+  ["/api/attachments/asset-1/content?context_type=session", null],
+  ["/api/attachments/asset-1/content?context_type=unknown&context_id=one", null],
+  ["/api/attachments/asset-1/content?context_type=owner&context_id=one", null],
+  ["/?attachment=bad%20id", null],
+  ["https://example.com/api/attachments/asset-1/content", null],
   ["https://soulstream.eiaserinnys.me/browser/", null],
   ["/dialogues", null],
   ["/persistent/abc", null],
@@ -100,6 +124,8 @@ describe("classifyInternalLink", () => {
       .toEqual({ kind: "card", cardId: "card-1" });
     expect(classifyInternalLink("/?page=page-1&folder=folder-1", INTERNAL_ORIGINS))
       .toEqual({ kind: "folder", folderId: "folder-1" });
+    expect(classifyInternalLink("/?attachment=asset-1&page=page-1", INTERNAL_ORIGINS))
+      .toEqual({ kind: "page", pageId: "page-1" });
   });
 
   it("uses the first value for repeated query keys and rejects malformed encoding", () => {
@@ -149,13 +175,16 @@ describe("internalLinkPath", () => {
     [{ kind: "folder", folderId: "folder-one" }, "/?folder=folder-one"],
     [{ kind: "page", pageId: "page_1" }, "/?page=page_1"],
     [{ kind: "attachment", nodeId: "node-1", path: "/tmp/image.png", isImage: true }, null],
+    [{ kind: "attachment_asset", attachmentId: "asset:one", context: null }, "/?attachment=asset%3Aone"],
+    [{ kind: "attachment_asset", attachmentId: "asset-1", context: { type: "owner" } }, "/?attachment=asset-1&context_type=owner"],
+    [{ kind: "attachment_asset", attachmentId: "asset-1", context: { type: "card", id: "card one" } }, "/?attachment=asset-1&context_type=card&context_id=card%20one"],
   ];
 
   it.each(pathCases)("builds the canonical path for %s", (target, expected) => {
     expect(internalLinkPath(target)).toBe(expected);
   });
 
-  it.each(pathCases.slice(0, 6))("round trips %s", (target) => {
+  it.each(pathCases.filter(([, path]) => path !== null))("round trips %s", (target) => {
     const path = internalLinkPath(target);
     expect(path).not.toBeNull();
     expect(classifyInternalLink(path!, [])).toEqual(target);

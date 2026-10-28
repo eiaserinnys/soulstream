@@ -4,6 +4,7 @@ import { classifyInternalLink, type InternalLinkTarget } from "../lib/internal-l
 export type InternalLinkOpenTarget = (
   target: InternalLinkTarget,
   href: string,
+  label?: string,
 ) => void | boolean | Promise<void | boolean>;
 
 interface InternalLinkContextValue {
@@ -49,6 +50,8 @@ export function useInternalLinkClick(): MouseEventHandler<HTMLAnchorElement> {
 
     event.preventDefault();
     event.stopPropagation();
-    void context.openTarget(target, href);
+    const label = event.currentTarget.textContent?.trim();
+    if (label) void context.openTarget(target, href, label);
+    else void context.openTarget(target, href);
   }, [context]);
 }

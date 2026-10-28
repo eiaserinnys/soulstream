@@ -299,7 +299,7 @@ export function ChatAttachmentReviewSamples() {
     {
       id: "connected-default-user",
       role: "user",
-      content: "일반 채팅의 첨부입니다.\n\n![첨부 행과 같은 이미지](/api/attachments/review-user-image/content?context_type=session&context_id=attachment-review-connected)\n\n본문 설명 ![외부 이미지](https://images.example/ordinary.png) 뒤 설명\n\n![이전 경로](/api/attachments/files?nodeId=eiaserinnys&path=%2Fincoming%2Finline-only.png)",
+      content: "일반 채팅의 첨부입니다.\n\n[보고서](/api/attachments/review-chat-markdown/content?context_type=session&context_id=attachment-review-connected)\n\n![첨부 행과 같은 이미지](/api/attachments/review-user-image/content?context_type=session&context_id=attachment-review-connected)\n\n본문 설명 ![외부 이미지](https://images.example/ordinary.png) 뒤 설명\n\n![이전 경로](/api/attachments/files?nodeId=eiaserinnys&path=%2Fincoming%2Finline-only.png)",
       treeNodeId: "connected-default-user",
       treeNodeType: "user_message",
       eventId: 201,
@@ -581,6 +581,45 @@ export function ChatAttachmentReviewSamples() {
             headers: { "content-type": "application/json" },
           }));
         }
+      }
+      const attachmentMetadata = url.match(/^\/api\/attachments\/(review-chat-markdown)(?:\?|$)/);
+      if (attachmentMetadata) {
+        return Promise.resolve(Response.json({
+          descriptor: {
+            attachment_id: attachmentMetadata[1],
+            name: "채팅 보고서.md",
+            mime_type: "text/markdown",
+            checksum_sha256: null,
+            byte_size: new TextEncoder().encode("# 채팅 첨부 미리보기\n\n검수 창의 일반 채팅 링크입니다.").byteLength,
+            width: null,
+            height: null,
+            preview_kind: "text",
+            preview_mime_type: "text/markdown",
+          },
+          upload_status: "committed",
+        }));
+      }
+      const attachmentContent = url.match(/^\/api\/attachments\/review-chat-markdown\/content(?:\?|$)/);
+      if (attachmentContent) {
+        const bytes = new TextEncoder().encode("# 채팅 첨부 미리보기\n\n검수 창의 일반 채팅 링크입니다.");
+        const range = new Headers(init?.headers).get("Range")?.match(/^bytes=(\d+)-(\d+)$/);
+        if (range) {
+          const start = Number(range[1]);
+          const end = Math.min(Number(range[2]), bytes.byteLength - 1);
+          const content = bytes.slice(start, end + 1);
+          return Promise.resolve(new Response(content, {
+            status: 206,
+            headers: {
+              "content-range": `bytes ${start}-${end}/${bytes.byteLength}`,
+              "content-length": String(content.byteLength),
+              "content-type": "text/markdown",
+            },
+          }));
+        }
+        return Promise.resolve(new Response(bytes, {
+          status: 200,
+          headers: { "content-length": String(bytes.byteLength), "content-type": "text/markdown" },
+        }));
       }
       const fullContentRequest = url.match(/^\/api\/attachments\/(review-tool-single-full|review-tool-group-full|review-tool-group-input-full|review-thinking-full|review-assistant-truncated)\/content(?:\?|$)/);
       if (fullContentRequest) {

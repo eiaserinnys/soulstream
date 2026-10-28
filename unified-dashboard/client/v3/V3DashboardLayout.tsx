@@ -283,7 +283,7 @@ function V3DashboardContent() {
   const attemptedDashboardIntent = useRef<string | null>(null);
   useEffect(() => {
     const currentUrl = new URL(window.location.href);
-    const hasDashboardQuery = ["session", "card", "document", "folder", "page"]
+    const hasDashboardQuery = ["session", "card", "document", "folder", "page", "attachment"]
       .some((key) => currentUrl.searchParams.has(key));
     const hasLegacyIntent = /^#\/feed\//.test(currentUrl.hash);
     if (currentUrl.pathname !== "/" || (!hasDashboardQuery && !hasLegacyIntent)) {
