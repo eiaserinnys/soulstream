@@ -37,7 +37,7 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 
 새 Claude runner는 `runner_process_runtime_factory.ts:createRunnerProcessRuntimeFactory`가 `claudeAccountPool.enabled/accountsDir`를 child config에 싣고, `runner_child_config.ts:parseRunnerChildConfig`는 이 추가 필드가 없는 기존 config도 읽는다. `runner_child_engine_factory.ts:createRunnerChildEngine`은 runner SQLite에 현재 계정 턴 상태를 열고 `claude_accounts(select/reject/release)`를 host-call로 전달한다. `runner_process_runtime_factory.ts:applyRunnerHostCall`은 요청의 session ID를 현재 task와 대조한다. 살아 있는 child adoption은 기존 child와 SQLite 상태를 그대로 붙이며, 계정 교체는 `claude_sdk_client.ts:closePersistentAndSettle`이 Query/pump 종료와 실제 child close를 확인한 뒤 다음 Query를 만들도록 직렬화한다.
 
-`claude_account_query_settlement.ts:ClaudeAccountQuerySettlement`는 명시 종료와 foreground 실행 중 또는 완료 뒤의 자발적 Query 종료를 같은 정산으로 연결한다. pump와 실제 child가 종료된 뒤 계정 release와 durable 상태 삭제를 한 번 수행한다. 재개 기록 복원은 `claude_account_pool_transcript.ts`가 공유 projects의 같은 session 경로에 kernel lock과 원자적 rename을 적용한다.
+`claude_account_query_settlement.ts:ClaudeAccountQuerySettlement`는 명시 종료와 foreground 실행 중 또는 완료 뒤의 자발적 Query 종료를 같은 정산으로 연결한다. pump와 실제 child가 종료된 뒤 계정 release와 durable 상태 삭제를 한 번 수행한다. `ClaudeAccountSessionActivity.release`는 release의 턴 ID와 활성 assignment의 턴 ID를 대조해 후속 턴의 계정 점유를 보존한다. 재개 기록 복원은 `claude_account_pool_transcript.ts`가 공유 projects의 같은 session 경로에 kernel lock과 원자적 rename을 적용한다.
 
 이 장을 갱신해야 하는 변경 부류: runner release/spawn·registration identity·kernel writer lock·lifecycle heartbeat·event ingress identity·recovery classification/adoption·termination/dispose·terminal retirement/GC 변경.
 

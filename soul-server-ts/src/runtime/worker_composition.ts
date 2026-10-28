@@ -50,10 +50,7 @@ import { composeClaudeRuntime, composeClaudeAccountServices, createClaudeAccount
 import { composeClaudeLoginService } from "./claude_login_runtime_composition.js";
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
 import { createEngineFactory } from "./engine_factory.js";
-import {
-  composeRunnerProcessRuntime,
-  composeRunnerRecoveryCoordinator,
-} from "./runner_process_composition.js";
+import { composeRunnerProcessRuntime, composeRunnerRecoveryCoordinator } from "./runner_process_composition.js";
 import type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 import { composeWorkerUpstreamAdapter } from "./worker_upstream_composition.js";
 import { buildMcpServerOptions } from "./mcp_server_options.js";
@@ -81,9 +78,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     },
   });
   const { claudeAuth, claudeAccounts } = composeClaudeAccountServices(env, logger);
-  const claudeLoginService = claudeAccounts
-    ? composeClaudeLoginService({ accounts: claudeAccounts, claudeAuth, logger })
-    : undefined;
+  const claudeLoginService = claudeAccounts ? composeClaudeLoginService({ accounts: claudeAccounts, claudeAuth, logger }) : undefined;
   const providerUsage = new ProviderUsageService({
     claudeAuth, claudeAccounts, modelCatalog, logger,
     antigravity: {

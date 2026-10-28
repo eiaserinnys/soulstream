@@ -365,10 +365,16 @@ describe("applyRunnerHostCall", () => {
       args: ["session-a", { session_id: "session-a" }],
       correlationId: "host:claude-account-release",
     }, task, snapshots, options);
+    const turnRelease = { session_id: "session-a", account_id: "account-a", turn_id: "turn-a" };
+    await applyRunnerHostCall({
+      service: "claude_accounts", operation: "release",
+      args: ["session-a", turnRelease], correlationId: "host:claude-turn-release",
+    }, task, snapshots, options);
 
     expect(service.select).toHaveBeenCalledWith(selectInput);
     expect(service.reject).toHaveBeenCalledOnce();
     expect(service.release).toHaveBeenCalledWith({ session_id: "session-a" });
+    expect(service.release).toHaveBeenCalledWith(turnRelease);
     await expect(applyRunnerHostCall({
       service: "claude_accounts",
       operation: "select",

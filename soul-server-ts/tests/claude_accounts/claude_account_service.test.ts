@@ -760,6 +760,38 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     })).rejects.toThrow("binding mismatch");
   });
 
+  it("keeps a successor turn assigned when an older Query releases the same account", async () => {
+    const svc = new ClaudeAccountService({ accountsDir, homeDir: fakeHomeDir, now: () => nowMs });
+    svc.store.ensureBaseDirs();
+    svc.store.writeAccounts([{
+      id: ACC_A, email: "a@example.com", plan: "max", enabled: true,
+      priority: null, created_at: new Date(nowMs).toISOString(),
+    }]);
+    vi.spyOn(svc.usageCollector, "getCachedObservation").mockReturnValue({
+      auth_state: "idle", stale: false, observed_at: null, lastPolledAtMs: nowMs,
+      usage: { five_hour: null, seven_day: null, fable_weekly: null },
+    });
+    const select = (turn_id: string) => svc.select({
+      session_id: "session-successor", turn_id, model: "claude-sonnet-4-6",
+    });
+    await select("turn-old");
+    await svc.release({
+      session_id: "session-successor", account_id: ACC_A,
+      turn_id: "turn-old", keep_query_active: true,
+    });
+    await select("turn-new");
+    vi.spyOn(svc.usageCollector, "collectAll").mockResolvedValue(new Map());
+    const deletion = await svc.deleteAccount(ACC_A);
+    expect(deletion.deferred).toBe(true);
+    expect(svc.store.readBindings()["session-successor"]).toBeUndefined();
+    await svc.release({ session_id: "session-successor", account_id: ACC_A, turn_id: "turn-old" });
+    expect(svc.activeSessions(ACC_A)).toBe(1);
+    expect(svc.profileDir(ACC_A)).not.toBeNull();
+    await svc.release({ session_id: "session-successor", account_id: ACC_A, turn_id: "turn-new" });
+    expect(svc.activeSessions(ACC_A)).toBe(0);
+    expect(svc.profileDir(ACC_A)).toBeNull();
+  });
+
   it("enforces 5-minute usage cache TTL, collects normal and failing accounts concurrently, and handles partial deadline", async () => {
     let accBStatus = 200;
     let hangAccB = false;

@@ -4,7 +4,7 @@ import type {
   SDKMessage,
   SessionMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { existsSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -16,6 +16,8 @@ import {
   ClaudeSdkClient,
 } from "../../src/engine/claude_adapter.js";
 import { ClaudeSessionClientRegistry } from "../../src/engine/claude_session_client_registry.js";
+import { ClaudeAccountService } from "../../src/claude_accounts/index.js";
+import type { ClaudeAccountTurnState } from "../../src/engine/claude_account_pool.js";
 import { findClaudeDeliveryTranscriptReceipt } from
   "../../src/engine/claude_delivery_transcript_receipt.js";
 import { readClaudeResultReceiptMetadata } from
@@ -441,7 +443,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
       harness.push(sdkResult("sdk-session", input.uuid, "done"));
       await turn;
       expect(accountPort.release).toHaveBeenCalledWith({
-        session_id: "session-idle-fatal", account_id: "account-a", keep_query_active: true,
+        session_id: "session-idle-fatal", account_id: "account-a", turn_id: "turn-idle-fatal", keep_query_active: true,
       });
       expect(state.clear).not.toHaveBeenCalled();
 
@@ -456,7 +458,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
       await vi.waitFor(() => expect(state.clear).toHaveBeenCalledWith("turn-idle-fatal"));
       expect(accountPort.release).toHaveBeenCalledTimes(2);
       expect(accountPort.release).toHaveBeenLastCalledWith({
-        session_id: "session-idle-fatal", account_id: "account-a",
+        session_id: "session-idle-fatal", account_id: "account-a", turn_id: "turn-idle-fatal",
       });
       await client.close();
       expect(accountPort.release).toHaveBeenCalledTimes(2);
@@ -512,6 +514,82 @@ describe("ClaudeSdkClient persistent runtime", () => {
       for (const harness of harnesses) harness.end();
       await second.catch(() => undefined);
       await client.close();
+    }
+  });
+
+  it("keeps a successor account occupied through old Query settlement and deferred deletion", async () => {
+    const root = mkdtempSync(join(tmpdir(), "claude-successor-account-"));
+    const accountId = "11111111-1111-4111-8111-111111111111";
+    const accounts = new ClaudeAccountService({ accountsDir: join(root, "accounts"), homeDir: root });
+    accounts.store.ensureBaseDirs();
+    accounts.store.writeAccounts([{
+      id: accountId, email: "a@example.com", plan: "max", enabled: true,
+      priority: null, created_at: "2026-10-28T00:00:00Z",
+    }]);
+    vi.spyOn(accounts.usageCollector, "getCachedObservation").mockReturnValue({
+      auth_state: "idle", stale: false, observed_at: null, lastPolledAtMs: 0,
+      usage: { five_hour: null, seven_day: null, fable_weekly: null },
+    });
+    vi.spyOn(accounts.usageCollector, "collectAll").mockResolvedValue(new Map());
+    const harnesses = [makeHarness(), makeHarness()];
+    let queryCalls = 0;
+    let unblockFatal!: () => void;
+    let markFatal!: () => void;
+    const fatalBlocked = new Promise<void>((resolve) => { unblockFatal = resolve; });
+    const fatalSeen = new Promise<void>((resolve) => { markFatal = resolve; });
+    const client = new ClaudeSdkClient({
+      query: (params) => harnesses[queryCalls++]!.queryFn(params),
+      detachedEventSink: async (event) => {
+        if (event.type === "error" && event.errorCode === "claude_persistent_query_failed") {
+          markFatal();
+          await fatalBlocked;
+        }
+      },
+    }, silentLogger);
+    const registry = new ClaudeSessionClientRegistry(() => client, { idleTtlMs: 60_000, maxEntries: 4 });
+    let durable: ClaudeAccountTurnState | null = null;
+    const state = {
+      read: () => durable,
+      write: async (value: ClaudeAccountTurnState) => { durable = value; },
+      clear: async (turnId: string) => { if (durable?.turn_id === turnId) durable = null; },
+    };
+    const engine = new ClaudeEngineAdapter({
+      workspaceDir: root, processEnv: {}, claudeAccountPoolEnabled: true, trackChildExit: true,
+      claudeAccountTurnPort: accounts, claudeAccountTurnState: state, persistentSessionRegistry: registry,
+    }, silentLogger);
+    const execute = (turnId: string) => collectSse(engine.execute({
+      agentSessionId: "session-successor", inputUuid: turnId, prompt: turnId,
+      model: "claude-sonnet-4-6", claudeAccountPoolTarget: true,
+    }));
+    let second: Promise<unknown> | undefined;
+    try {
+      const first = execute("turn-old");
+      const firstInput = await harnesses[0]!.nextInput();
+      harnesses[0]!.push(sdkResult("sdk-session", firstInput.uuid, "done"));
+      await first;
+      harnesses[0]!.fail(new Error("idle Query failed"));
+      await fatalSeen;
+      second = execute("turn-new");
+      await vi.waitFor(() => expect(state.read()?.turn_id).toBe("turn-new"));
+      expect((await accounts.deleteAccount(accountId)).deferred).toBe(true);
+      expect(accounts.store.readBindings()["session-successor"]).toBeUndefined();
+      unblockFatal();
+      const secondInput = await harnesses[1]!.nextInput();
+      expect(accounts.activeSessions(accountId)).toBe(1);
+      expect(accounts.profileDir(accountId)).not.toBeNull();
+      expect(state.read()?.turn_id).toBe("turn-new");
+      harnesses[1]!.push(sdkResult("sdk-session", secondInput.uuid, "second done"));
+      await second;
+      await client.close();
+      expect(accounts.activeSessions(accountId)).toBe(0);
+      expect(accounts.profileDir(accountId)).toBeNull();
+      expect(state.read()).toBeNull();
+    } finally {
+      unblockFatal();
+      for (const harness of harnesses) harness.end();
+      await second?.catch(() => undefined);
+      await registry.shutdown();
+      rmSync(root, { recursive: true, force: true });
     }
   });
 

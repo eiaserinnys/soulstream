@@ -255,6 +255,7 @@ describe("ClaudeEngineAdapter options parity", () => {
     expect(accountTurnPort.release).toHaveBeenCalledWith({
       session_id: "session-a",
       account_id: "account-a",
+      turn_id: "turn-a",
     });
     expect(state.clear).toHaveBeenCalledWith("turn-a");
   });
@@ -368,7 +369,7 @@ describe("ClaudeEngineAdapter options parity", () => {
     };
     await expect(execution()).rejects.toThrow("query failed");
     expect(accountPort.release).toHaveBeenCalledOnce();
-    expect(accountPort.release).toHaveBeenCalledWith({ session_id: "session-a", account_id: "account-a" });
+    expect(accountPort.release).toHaveBeenCalledWith({ session_id: "session-a", account_id: "account-a", turn_id: "turn-a" });
     expect(state.clear).toHaveBeenCalledOnce();
   });
 
@@ -446,6 +447,7 @@ describe("ClaudeEngineAdapter options parity", () => {
     expect(accountTurnPort.release).toHaveBeenCalledWith({
       session_id: "session-live",
       account_id: "account-a",
+      turn_id: "turn-live",
       keep_query_active: true,
     });
     expect(state.clear).not.toHaveBeenCalled();
@@ -519,6 +521,7 @@ describe("ClaudeEngineAdapter options parity", () => {
     expect(accountTurnPort.release).toHaveBeenCalledWith({
       session_id: "session-a",
       account_id: "account-a",
+      turn_id: "turn-a",
     });
     expect(state.clear).toHaveBeenCalledWith("turn-a");
   });

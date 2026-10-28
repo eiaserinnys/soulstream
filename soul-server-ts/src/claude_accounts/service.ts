@@ -223,7 +223,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
     }
 
     this.store.ensureProfileSymlinks(chosen.id);
-    this.sessionActivity.assign(input.session_id, chosen.id);
+    this.sessionActivity.assign(input.session_id, chosen.id, input.turn_id);
     if (previousActiveAccountId && previousActiveAccountId !== chosen.id) {
       this.maybeFinalizeDeferredRetire(previousActiveAccountId);
     }

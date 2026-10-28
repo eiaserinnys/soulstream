@@ -314,6 +314,7 @@ export class ClaudeEngineAdapter
           await accountPort.release({
             session_id: sessionId,
             account_id: selected.account_id,
+            ...(selectedTurnId ? { turn_id: selectedTurnId } : {}),
           });
           if (selectedTurnId) await this.clearAccountTurnIfCurrent(selectedTurnId);
         };
@@ -382,6 +383,7 @@ export class ClaudeEngineAdapter
             await this.claudeAccountTurnPort.release({
               session_id: params.agentSessionId,
               account_id: selectedAccount.account_id,
+              ...(accountTurnId ? { turn_id: accountTurnId } : {}),
               ...(queryStillActive ? { keep_query_active: true } : {}),
             });
             if (!queryStillActive && accountTurnId) {
