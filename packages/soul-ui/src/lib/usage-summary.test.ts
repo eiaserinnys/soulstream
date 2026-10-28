@@ -9,6 +9,7 @@ import {
   selectUsageSummaryNode,
   weeklyUsageGauges,
   type UsageSummaryNode,
+  type UsageSummaryProvider,
   type UsageSummarySnapshot,
 } from "./usage-summary";
 
@@ -40,6 +41,24 @@ function node(
 }
 
 describe("usage summary projection", () => {
+  it("accepts Claude account-pool metadata on the shared provider contract", () => {
+    const provider: UsageSummaryProvider = {
+      ...emptyProvider,
+      mode: "pool",
+      accounts: [],
+      pool: {
+        available_count: 0,
+        total_count: 0,
+        best_weekly_remaining_percent: null,
+        best_weekly_resets_at: null,
+        earliest_available_at: null,
+      },
+      fable_pool: null,
+    };
+
+    expect(provider).toMatchObject({ mode: "pool", accounts: [], pool: { total_count: 0 }, fable_pool: null });
+  });
+
   it("matches only the PAS node and never chooses a fallback", () => {
     const summary: UsageSummarySnapshot = {
       generatedAt: "2026-10-11T00:00:00.000Z",

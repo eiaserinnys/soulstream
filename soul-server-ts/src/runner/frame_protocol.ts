@@ -133,6 +133,7 @@ export const RunnerExecuteParamsSchema = withJsonContract(z.object({
     }).passthrough().optional(),
   }).passthrough().optional(),
   scheduleToolUseEnabled: z.boolean().optional(),
+  claudeAccountPoolTarget: z.boolean().optional(),
 }).passthrough());
 
 export const RunnerCommandFrameSchema = withJsonContract(z.discriminatedUnion("kind", [
@@ -266,6 +267,7 @@ const RunnerRequestSchema = z.discriminatedUnion("kind", [
     kind: z.literal("host_call"),
     service: z.enum([
       "session_store",
+      "claude_accounts",
       "claude_runtime",
       "detached_event",
       "snapshot",

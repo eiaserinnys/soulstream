@@ -72,12 +72,16 @@ function makeEngine(
   };
 }
 
-function makeSubject(modelCatalog?: ModelPresetResolver) {
+function makeSubject(modelCatalog?: ModelPresetResolver, claudeAccountPoolEnabled = false) {
   const snapshotPersistence = {
     persistRunStateSnapshot: vi.fn().mockResolvedValue(undefined),
     persistSessionItemsSnapshot: vi.fn().mockResolvedValue(undefined),
   };
-  const runner = new TaskEngineTurnRunner({ snapshotPersistence, modelCatalog });
+  const runner = new TaskEngineTurnRunner({
+    snapshotPersistence,
+    modelCatalog,
+    claudeAccountPoolEnabled,
+  });
   return { runner, snapshotPersistence };
 }
 
@@ -99,6 +103,106 @@ describe("TaskEngineTurnRunner", () => {
         process.env[key] = original;
       }
     }
+  });
+
+  it("marks only resolved official Claude models for pool selection and omits task OAuth", async () => {
+    const officialTask = makeTask({
+      model: "claude-sonnet-4.5",
+      oauthToken: "legacy-task-oauth",
+    });
+    let officialParams: EngineExecuteParams | undefined;
+    const { runner } = makeSubject(undefined, true);
+    await drain(runner.executeTurn({
+      task: officialTask,
+      agent,
+      runner: createInProcessTaskRunnerRuntime(makeEngine((params) => {
+        officialParams = params;
+      })),
+      input: {
+        prompt: "official",
+        inputUuid: "pool-turn",
+      },
+    }));
+
+    expect(officialParams?.claudeAccountPoolTarget).toBe(true);
+    expect(officialParams?.extraEnv).toBeUndefined();
+
+    let kimiParams: EngineExecuteParams | undefined;
+    await drain(runner.executeTurn({
+      task: makeTask({
+        model: "kimi-for-coding",
+        oauthToken: "legacy-task-oauth",
+      }),
+      agent,
+      runner: createInProcessTaskRunnerRuntime(makeEngine((params) => {
+        kimiParams = params;
+      })),
+      input: { prompt: "kimi", inputUuid: "kimi-turn" },
+    }));
+    expect(kimiParams).not.toHaveProperty("claudeAccountPoolTarget");
+    expect(kimiParams?.extraEnv).toEqual({ [CLAUDE_OAUTH_TOKEN_ENV]: "legacy-task-oauth" });
+  });
+
+  it("marks official Claude alias models such as opus and haiku for pool selection", async () => {
+    const { runner } = makeSubject(undefined, true);
+    for (const model of ["opus", "sonnet", "haiku", "claude-fable-5-1[1m]"]) {
+      let captured: EngineExecuteParams | undefined;
+      await drain(runner.executeTurn({
+        task: makeTask({ model, oauthToken: "legacy-task-oauth" }),
+        agent,
+        runner: createInProcessTaskRunnerRuntime(makeEngine((params) => {
+          captured = params;
+        })),
+        input: { prompt: model, inputUuid: `alias-${model}` },
+      }));
+      expect(captured?.claudeAccountPoolTarget, model).toBe(true);
+      expect(captured?.extraEnv, model).toBeUndefined();
+    }
+  });
+
+  it("keeps alias models on the legacy OAuth path while the pool flag is off", async () => {
+    const { runner } = makeSubject(undefined, false);
+    let captured: EngineExecuteParams | undefined;
+    await drain(runner.executeTurn({
+      task: makeTask({ model: "opus", oauthToken: "legacy-task-oauth" }),
+      agent,
+      runner: createInProcessTaskRunnerRuntime(makeEngine((params) => {
+        captured = params;
+      })),
+      input: { prompt: "legacy", inputUuid: "legacy-alias" },
+    }));
+    expect(captured).not.toHaveProperty("claudeAccountPoolTarget");
+    expect(captured?.extraEnv).toEqual({ [CLAUDE_OAUTH_TOKEN_ENV]: "legacy-task-oauth" });
+  });
+
+  it("keeps Claude models with a resolved Anthropic endpoint on their third-party env path", async () => {
+    const task = makeTask({
+      model: "claude-sonnet-4.5",
+      oauthToken: "legacy-task-oauth",
+    });
+    let captured: EngineExecuteParams | undefined;
+    const { runner } = makeSubject(undefined, true);
+
+    await drain(runner.executeTurn({
+      task,
+      agent: {
+        ...agent,
+        env: {
+          ANTHROPIC_API_KEY: "third-party-key",
+          ANTHROPIC_BASE_URL: "https://api.example/anthropic",
+        },
+      } as AgentProfile,
+      runner: createInProcessTaskRunnerRuntime(makeEngine((params) => {
+        captured = params;
+      })),
+      input: { prompt: "third-party", inputUuid: "third-party-turn" },
+    }));
+
+    expect(captured).not.toHaveProperty("claudeAccountPoolTarget");
+    expect(captured?.extraEnv).toEqual({
+      ANTHROPIC_API_KEY: "third-party-key",
+      ANTHROPIC_BASE_URL: "https://api.example/anthropic",
+    });
   });
 
   it("passes an OpenCode preset allowlist for that profile on each turn only", async () => {

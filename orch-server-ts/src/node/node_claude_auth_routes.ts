@@ -4,8 +4,14 @@ import {
   type NodeCommandResponse,
   type RequestResponseNodeCommandPayload,
 } from "./pending_commands.js";
-import type { InMemoryNodeRegistry, NodeConnectionSnapshot } from "./registry.js";
-import type { SessionCommandTransportBridge } from "../session/session_command_transport.js";
+import type { NodeConnectionSnapshot } from "./registry.js";
+import { supportsClaudeAccountPool } from "./registry_helpers.js";
+import {
+  claudeAccountPoolRouteAuthRequirements,
+  registerClaudeAccountPoolRoutes,
+  sendClaudeAccountPoolAccountsAlias,
+  type ClaudeAccountPoolRouteOptions,
+} from "./claude_account_pool_routes.js";
 import { mapNodeCommandError, sendApiError } from "../http/api_errors.js";
 import {
   BROWSER_SCOPE,
@@ -88,15 +94,12 @@ export type NodeClaudeAuthHttpClient = (
   request: NodeClaudeAuthHttpRequest,
 ) => Promise<NodeClaudeAuthHttpResponse>;
 
-export type NodeClaudeAuthRouteOptions = {
+export type NodeClaudeAuthRouteOptions = ClaudeAccountPoolRouteOptions & {
   provider: NodeClaudeAuthRouteProvider;
   pkce: ClaudeAuthPkceProvider;
   sessionStore: ClaudeAuthSessionStore;
   tokenExchange: ClaudeAuthTokenExchangeClient;
   profileHttpClient: NodeClaudeAuthHttpClient;
-  registry: InMemoryNodeRegistry;
-  bridge: SessionCommandTransportBridge;
-  timeoutMs?: number;
 };
 
 type NodeParams = {
@@ -111,6 +114,7 @@ type CallbackQuery = {
 const PROVIDERS = new Set(["claude", "codex", "antigravity"]);
 
 export const nodeClaudeAuthRouteAuthRequirements = {
+  ...claudeAccountPoolRouteAuthRequirements,
   "GET /api/nodes/:node_id/claude-auth/start": true,
   "GET /api/nodes/claude-auth/callback": true,
   "GET /api/nodes/:node_id/claude-auth/status": true,
@@ -131,6 +135,9 @@ export function registerNodeClaudeAuthRoutes(
   app.get<{ Params: NodeParams }>(
     "/api/nodes/:node_id/claude-auth/start",
     async (request, reply) => {
+      const nodeId = nodeParams(request).node_id;
+      const rejected = rejectLegacyPoolLogin(reply, options, nodeId);
+      if (rejected) return rejected;
       const config = await options.provider.getOAuthConfig();
       const verifier = options.pkce.generateVerifier();
       const challenge = options.pkce.generateChallenge(verifier);
@@ -169,6 +176,8 @@ export function registerNodeClaudeAuthRoutes(
       if (options.registry.getConnectedNode(nodeId) === undefined) {
         return detail(reply, 404, `Node ${nodeId} not connected`);
       }
+      const rejected = rejectLegacyPoolLogin(reply, options, nodeId);
+      if (rejected) return rejected;
       if (code === undefined) return detail(reply, 400, "Missing code");
 
       const config = await options.provider.getOAuthConfig();
@@ -223,6 +232,9 @@ export function registerNodeClaudeAuthRoutes(
       const nodeId = nodeParams(request).node_id;
       const node = options.registry.getConnectedNode(nodeId);
       if (node === undefined) return detail(reply, 404, `Node ${nodeId} not connected`);
+      if (supportsClaudeAccountPool(node.capabilities)) {
+        return sendClaudeAccountPoolAccountsAlias(reply, options, nodeId);
+      }
       try {
         const response = await options.profileHttpClient({
           method: "GET",
@@ -241,9 +253,14 @@ export function registerNodeClaudeAuthRoutes(
 
   app.delete<{ Params: NodeParams }>(
     "/api/nodes/:node_id/claude-auth/token",
-    async (request, reply) => sendRawCommand(reply, options, nodeParams(request).node_id, {
-      type: "claude_auth_delete_token",
-    }),
+    async (request, reply) => {
+      const nodeId = nodeParams(request).node_id;
+      const rejected = rejectLegacyPoolLogin(reply, options, nodeId);
+      if (rejected) return rejected;
+      return sendRawCommand(reply, options, nodeId, {
+        type: "claude_auth_delete_token",
+      });
+    },
   );
 
   app.get<{ Params: NodeParams }>(
@@ -253,6 +270,8 @@ export function registerNodeClaudeAuthRoutes(
       if (options.registry.getConnectedNode(nodeId) === undefined) {
         return detail(reply, 404, `Node ${nodeId} not connected`);
       }
+      const rejected = rejectLegacyPoolLogin(reply, options, nodeId);
+      if (rejected) return rejected;
       const config = await options.provider.getOAuthConfig();
       const verifier = options.pkce.generateVerifier();
       const challenge = options.pkce.generateChallenge(verifier);
@@ -277,6 +296,8 @@ export function registerNodeClaudeAuthRoutes(
     "/api/nodes/:node_id/claude-auth/headless/submit-code",
     async (request, reply) => {
       const nodeId = nodeParams(request).node_id;
+      const rejected = rejectLegacyPoolLogin(reply, options, nodeId);
+      if (rejected) return rejected;
       const parsed = parseHeadlessCode(request.body);
       if (!parsed.ok) return detail(reply, 400, parsed.detail);
       const session = await options.sessionStore.pop(parsed.state);
@@ -331,6 +352,8 @@ export function registerNodeClaudeAuthRoutes(
       });
     },
   );
+
+  registerClaudeAccountPoolRoutes(app, options);
 }
 
 type CommandResult =
@@ -427,4 +450,17 @@ function callbackQuery(request: FastifyRequest): CallbackQuery {
 
 function nodeParams(request: FastifyRequest): NodeParams {
   return request.params as NodeParams;
+}
+
+function rejectLegacyPoolLogin(
+  reply: FastifyReply,
+  options: NodeClaudeAuthRouteOptions,
+  nodeId: string,
+): FastifyReply | undefined {
+  const node = options.registry.getConnectedNode(nodeId);
+  if (node === undefined || !supportsClaudeAccountPool(node.capabilities)) return undefined;
+  return sendApiError(reply, 409, {
+    code: "login_flow_required",
+    message: "Use the Claude account login flow",
+  });
 }

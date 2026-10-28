@@ -152,6 +152,7 @@ export class RunnerProcessSpawner {
       ...(input.opencodeCliPath ? { opencodeCliPath: input.opencodeCliPath } : {}),
       codexDetachedResultRetentionMs: input.codexDetachedResultRetentionMs,
       claudeRuntimeV2Enabled: input.claudeRuntimeV2Enabled,
+      ...(input.claudeAccountPool ? { claudeAccountPool: input.claudeAccountPool } : {}),
       claudeRuntimeIdleTtlMs: input.claudeRuntimeIdleTtlMs,
       claudeRuntimeMaxEntries: input.claudeRuntimeMaxEntries,
       claudeRuntimeTurnTimeoutMs: input.claudeRuntimeTurnTimeoutMs,

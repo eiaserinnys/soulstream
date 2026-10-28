@@ -322,6 +322,42 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
   });
 });
 
+describe("Claude account pool registration capability", () => {
+  const params = {
+    nodeId: "claude-pool-node",
+    host: "127.0.0.1",
+    port: 4205,
+    userName: "",
+    agentRegistry: new AgentRegistry([claudeAgent]),
+  };
+
+  it("leaves the full registration message unchanged while the pool flag is off", () => {
+    const baseline = buildRegistrationMsg(params);
+    const disabled = buildRegistrationMsg(
+      Object.assign({}, params, { claudeAccountPoolEnabled: false }),
+    );
+
+    expect(disabled).toEqual(baseline);
+    expect(disabled.capabilities).not.toHaveProperty("claude_account_pool_v1");
+  });
+
+  it("advertises the pool capability only when enabled", () => {
+    const enabled = buildRegistrationMsg(
+      Object.assign({}, params, { claudeAccountPoolEnabled: true }),
+    );
+
+    expect(enabled.capabilities).toHaveProperty("claude_account_pool_v1", true);
+    expect(enabled.capabilities).toEqual({
+      max_concurrent: 1,
+      reflect_brief: true,
+      app_heartbeat_v1: true,
+      attachment_import_v1: true,
+      runner_inventory_v1: true,
+      claude_account_pool_v1: true,
+    });
+  });
+});
+
 describe("buildRegistrationMsg — portrait wire (Python adapter.py:212-233 정본 정합)", () => {
   let tmpDir: string;
   let portraitPath: string;

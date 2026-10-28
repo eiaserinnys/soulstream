@@ -7,10 +7,18 @@ import type {
   UsageSummaryQuota,
   UsageSummarySnapshot,
 } from "../usage/usage_summary_service.js";
+import type { UsageSummaryClaudeAccount } from "../usage/provider_usage_wire.js";
+import {
+  rejectionReasonLabel,
+  resolveClaudePoolAvailability,
+  type PoolAccountRejection,
+} from "./claude_account_pool_availability.js";
+import type { ClaudePoolAvailabilityAccount } from "../usage/claude_account_pool_observation.js";
 import type {
   ProviderLimitProvider,
   ProviderLimitRejection,
 } from "../usage/provider_limit_rejection.js";
+import { supportsClaudeAccountPool } from "../node/registry_helpers.js";
 import {
   resolveWeeklyHeadroom,
   type WeeklyHeadroom,
@@ -59,7 +67,16 @@ export type ModelPresetAvailabilityRegistry = {
 
 export type ModelPresetUsageSummary = {
   getSummary(): UsageSummarySnapshot;
-  getLimitRejection(nodeId: string, provider: ProviderLimitProvider): ProviderLimitRejection | null;
+  getLimitRejection(
+    nodeId: string,
+    provider: ProviderLimitProvider,
+    accountId?: string,
+    scope?: "all" | "fable",
+  ): ProviderLimitRejection | null;
+  getClaudePoolAccountsForAvailability(
+    nodeId: string,
+    accounts: readonly UsageSummaryClaudeAccount[],
+  ): readonly ClaudePoolAvailabilityAccount[];
 };
 
 export class ModelPresetAvailabilityError extends Error {
@@ -89,15 +106,7 @@ export class ModelPresetAvailabilityService {
     const node = this.registry.getConnectedNode(nodeId);
     if (!node) return undefined;
     const summary = this.usageSummary.getSummary();
-    return staticPresets(node).map((preset) => resolvePresetAvailability(
-      nodeId,
-      preset,
-      summary,
-      this.now(),
-      preset.usage_provider === null
-        ? null
-        : this.usageSummary.getLimitRejection(nodeId, preset.usage_provider),
-    ));
+    return staticPresets(node).map((preset) => this.resolveAvailability(nodeId, preset, summary));
   }
 
   /** Validated node advertisement, independent of permissive manual usage fallback. */
@@ -120,14 +129,58 @@ export class ModelPresetAvailabilityService {
     presetId: string,
   ): ModelPresetAvailability {
     const preset = this.resolveStaticForNode(nodeId, presetId);
+    return this.resolveAvailability(nodeId, preset, this.usageSummary.getSummary());
+  }
+
+  private resolveAvailability(
+    nodeId: string,
+    preset: StaticModelPreset,
+    summary: UsageSummarySnapshot,
+  ): ModelPresetAvailability {
+    const provider = preset.usage_provider;
+    const node = this.registry.getConnectedNode(nodeId);
+    const supportsPool = supportsClaudeAccountPool(node?.capabilities);
+    const nodeUsage = summary.nodes.find((node) => node.nodeId === nodeId);
+    const providerUsage = provider === null ? null : nodeUsage?.providers[provider] ?? null;
+    if (provider === "claude" && supportsPool && providerUsage?.mode === "pool") {
+      const accounts = this.usageSummary.getClaudePoolAccountsForAvailability(
+        nodeId,
+        providerUsage.accounts ?? [],
+      );
+      const scopes: readonly ("all" | "fable")[] = isFablePreset(preset)
+        ? ["all", "fable"]
+        : ["all"];
+      const poolRejections = accounts.flatMap((account) => [
+        ...(account.peer_blocks ?? []).map((block) => ({
+          accountId: account.id,
+          scope: block.scope,
+          rejection: { rejectedUntil: block.until, rateLimitType: null },
+        })),
+        ...scopes.flatMap((scope) => {
+          const rejection = this.usageSummary.getLimitRejection(nodeId, "claude", account.id, scope);
+          return rejection === null ? [] : [{ accountId: account.id, scope, rejection }];
+        }),
+      ]);
+      return resolvePresetAvailability(
+        nodeId,
+        preset,
+        summary,
+        this.now(),
+        null,
+        poolRejections,
+        accounts,
+        supportsPool,
+      );
+    }
     return resolvePresetAvailability(
       nodeId,
       preset,
-      this.usageSummary.getSummary(),
+      summary,
       this.now(),
-      preset.usage_provider === null
-        ? null
-        : this.usageSummary.getLimitRejection(nodeId, preset.usage_provider),
+      provider === null ? null : this.usageSummary.getLimitRejection(nodeId, provider),
+      [],
+      undefined,
+      supportsPool,
     );
   }
 
@@ -158,6 +211,9 @@ export function resolvePresetAvailability(
   summary: UsageSummarySnapshot,
   now: Date,
   rejection: ProviderLimitRejection | null = null,
+  poolRejections: readonly PoolAccountRejection[] = [],
+  poolAccounts?: readonly UsageSummaryClaudeAccount[],
+  useClaudePool = true,
 ): ModelPresetAvailability {
   const nodeUsage = summary.nodes.find((node) => node.nodeId === nodeId);
   const provider = preset.usage_provider === null
@@ -187,6 +243,18 @@ export function resolvePresetAvailability(
   }
   if (preset.usage_provider === null) return availablePreset(base, false);
 
+  if (preset.usage_provider === "claude" && useClaudePool && provider?.mode === "pool") {
+    return resolveClaudePoolAvailability(
+      base,
+      isFablePreset(preset),
+      nodeUsage === undefined || nodeUsage.stale,
+      poolAccounts ?? provider.accounts ?? [],
+      isFablePreset(preset) ? provider.fable_pool : provider.pool,
+      poolRejections,
+      now,
+    );
+  }
+
   const freshProvider = nodeUsage !== undefined && !nodeUsage.stale
     ? provider
     : null;
@@ -201,7 +269,11 @@ export function resolvePresetAvailability(
     };
   }
 
-  if (rejection !== null && Date.parse(rejection.rejectedUntil) > now.getTime()) {
+  if (
+    rejection !== null
+    && rejection.rejectedUntil !== null
+    && Date.parse(rejection.rejectedUntil) > now.getTime()
+  ) {
     return {
       ...base,
       available: false,
@@ -241,12 +313,9 @@ export function resolvePresetAvailability(
   };
 }
 
-function rejectionReasonLabel(rateLimitType: string | null): string {
-  if (rateLimitType === "five_hour") return "5시간 한도 거부 중";
-  if (rateLimitType === "seven_day" || rateLimitType?.startsWith("seven_day_")) {
-    return "7일 한도 거부 중";
-  }
-  return "한도 거부 중";
+function isFablePreset(preset: StaticModelPreset): boolean {
+  return [preset.usage_model_id, preset.id, preset.label]
+    .some((value) => typeof value === "string" && normalizeModelIdentity(value).includes("fable"));
 }
 
 function publicPreset(

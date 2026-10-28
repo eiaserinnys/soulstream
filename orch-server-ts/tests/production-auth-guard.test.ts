@@ -232,6 +232,18 @@ describe("production auth guard", () => {
       method: "GET",
       routeUrl: "/api/sessions/stream",
     })).toBe(true);
+    for (const [method, routeUrl] of [
+      ["GET", "/api/nodes/:node_id/claude-auth/accounts"],
+      ["PATCH", "/api/nodes/:node_id/claude-auth/accounts/:id"],
+      ["DELETE", "/api/nodes/:node_id/claude-auth/accounts/:id"],
+      ["POST", "/api/nodes/:node_id/claude-auth/logins"],
+      ["GET", "/api/nodes/:node_id/claude-auth/logins/:login_id"],
+      ["POST", "/api/nodes/:node_id/claude-auth/logins/:login_id/code"],
+      ["DELETE", "/api/nodes/:node_id/claude-auth/logins/:login_id"],
+      ["GET", "/api/usage/stream"],
+    ] as const) {
+      expect(resolveProductionRouteAuthRequirement({ method, routeUrl })).toBe(true);
+    }
     expect(resolveProductionRouteAuthRequirement({
       method: "GET",
       routeUrl: "/api/sessions/:session_id/background-tasks",
