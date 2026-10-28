@@ -57,6 +57,7 @@ function failureMessage(target: InternalLinkTarget): string | null {
     case 'document': return null;
     case 'folder': return '폴더를 열지 못했습니다.';
     case 'page': return '페이지를 열지 못했습니다.';
+    case 'attachment_asset': return '첨부를 열지 못했습니다.';
     case 'attachment': return '이미지를 열지 못했습니다.';
   }
 }
@@ -180,7 +181,7 @@ export async function openContentLinkNavigation({
     ? classifyInternalLink(href, [new URL(serverUrl).origin])
     : null;
 
-  if (!target || (target.kind === 'attachment' && !target.isImage)) {
+  if (!target || target.kind === 'attachment_asset' || (target.kind === 'attachment' && !target.isImage)) {
     await openExternal(absoluteHref);
     return;
   }

@@ -64,6 +64,16 @@ export function registerAttachmentReadRoutes(
     }
     const download = parseDownload(query.value.download);
     if (!download.ok) return validationError(reply, download.error);
+    if (request.method === "GET" && request.headers["sec-fetch-dest"] === "document" && !download.value) {
+      const params = [`attachment=${encodeURIComponent((request.params as AttachmentReadParams).attachment_id)}`];
+      if (query.value.contextType !== undefined) {
+        params.push(`context_type=${encodeURIComponent(query.value.contextType)}`);
+      }
+      if (query.value.contextId !== undefined) {
+        params.push(`context_id=${encodeURIComponent(query.value.contextId)}`);
+      }
+      return reply.code(303).header("location", `/?${params.join("&")}`).send();
+    }
     const controller = bindAttachmentReadAbortSignal(request, reply);
     try {
       const actor = await options.resolveActor(request);

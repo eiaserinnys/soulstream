@@ -11,6 +11,7 @@ describe("dashboard link intent", () => {
     ["document API path", "/api/markdown-documents/doc-1", "", "", { kind: "document", documentId: "doc-1" }],
     ["folder", "/", "?folder=folder-1", "", { kind: "folder", folderId: "folder-1" }],
     ["page", "/", "?page=page-1", "", { kind: "page", pageId: "page-1" }],
+    ["asset attachment", "/", "?attachment=attachment-1&context_type=card&context_id=card-1", "#return", { kind: "attachment_asset", attachmentId: "attachment-1", context: { type: "card", id: "card-1" } }],
   ])("reads the %s intent through the shared classifier", (_name, pathname, search, hash, target) => {
     expect(readDashboardLinkIntent({ pathname, search, hash }, ORIGINS)).toMatchObject({
       target,
@@ -35,6 +36,12 @@ describe("dashboard link intent", () => {
 
   it("removes only session and event from a successful session intent", () => {
     const intent = readDashboardLinkIntent({ pathname: "/", search: "?keep=1&session=session-1&event=7", hash: "#return" }, ORIGINS)!;
+    expect(consumeDashboardLinkIntent(`https://soulstream.eiaserinnys.me${intent.identity}`, intent))
+      .toBe("/?keep=1#return");
+  });
+
+  it("removes attachment and its context from a successful attachment intent", () => {
+    const intent = readDashboardLinkIntent({ pathname: "/", search: "?keep=1&attachment=attachment-1&context_type=card&context_id=card-1", hash: "#return" }, ORIGINS)!;
     expect(consumeDashboardLinkIntent(`https://soulstream.eiaserinnys.me${intent.identity}`, intent))
       .toBe("/?keep=1#return");
   });

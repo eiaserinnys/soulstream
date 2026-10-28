@@ -63,6 +63,7 @@ describe("useInternalLinkClick", () => {
     ["document", "/api/markdown-documents/doc-1", { kind: "document", documentId: "doc-1" }],
     ["folder", "/?folder=folder-1", { kind: "folder", folderId: "folder-1" }],
     ["page", "/?page=page-1", { kind: "page", pageId: "page-1" }],
+    ["asset attachment", "/api/attachments/asset-1/content?context_type=card&context_id=card-1", { kind: "attachment_asset", attachmentId: "asset-1", context: { type: "card", id: "card-1" } }],
     ["image attachment", "/api/attachments/files?nodeId=node-1&path=%2Fimage.png", { kind: "attachment", nodeId: "node-1", path: "/image.png", isImage: true }],
   ])("handles an ordinary %s click without changing the anchor", async (_name, href, target) => {
     const openTarget = vi.fn();

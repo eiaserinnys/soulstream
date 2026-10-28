@@ -46,6 +46,10 @@ export function consumeDashboardLinkIntent(
   if (intent.target.kind === "session") {
     url.searchParams.delete("session");
     url.searchParams.delete("event");
+  } else if (intent.target.kind === "attachment_asset") {
+    url.searchParams.delete("attachment");
+    url.searchParams.delete("context_type");
+    url.searchParams.delete("context_id");
   } else {
     url.searchParams.delete(intent.target.kind);
   }

@@ -5,6 +5,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { InternalLinkTarget } from "@seosoyoung/soul-ui";
 import { DashboardInternalLinks, useDashboardInternalLinks, useRegisterDashboardLinkOpeners, type DashboardLinkOpeners } from "./DashboardInternalLinks";
 import { useInternalLinkClick } from "@seosoyoung/soul-ui";
+import { MarkdownContent } from "@seosoyoung/soul-ui/components/MarkdownContent";
+import { InternalLinkViewers } from "./InternalLinkViewers";
 
 const mocks = vi.hoisted(() => ({
   notify: vi.fn(),
@@ -168,5 +170,71 @@ describe("DashboardInternalLinks", () => {
     await click(host!.querySelector("a")!);
     expect(host!.querySelector("[data-testid=link-state]")?.getAttribute("data-image")).toBe("");
     expect(mocks.notify).toHaveBeenCalledWith("이미지를 불러오지 못했습니다.");
+  });
+
+  it("opens a rendered Markdown attachment link in the shared viewer", async () => {
+    const markdown = "# Attachment popup\n\nThis came from the attachment.";
+    const bytes = new TextEncoder().encode(markdown);
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = input instanceof Request ? input.url : String(input);
+      if (url === "/api/attachments/attachment-markdown?context_type=session&context_id=session-1") {
+        return Response.json({
+          descriptor: {
+            attachment_id: "attachment-markdown",
+            name: "report.md",
+            mime_type: "text/markdown",
+            byte_size: bytes.byteLength,
+            checksum_sha256: null,
+            width: null,
+            height: null,
+            preview_kind: "text",
+            preview_mime_type: "text/markdown",
+          },
+          upload_status: "committed",
+        });
+      }
+      if (url.startsWith("/api/attachments/attachment-markdown/content")) {
+        expect((init?.headers as Record<string, string> | undefined)?.Range).toBe(`bytes=0-${bytes.byteLength - 1}`);
+        return new Response(markdown, {
+          status: 206,
+          headers: {
+            "Content-Range": `bytes 0-${bytes.byteLength - 1}/${bytes.byteLength}`,
+            "Content-Length": String(bytes.byteLength),
+            "Content-Type": "text/markdown",
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    host = document.createElement("div");
+    const rootHost = document.createElement("div");
+    host.appendChild(rootHost);
+    document.body.appendChild(host);
+    root = createRoot(rootHost);
+    await act(async () => root!.render(
+      <DashboardInternalLinks>
+        <InternalLinkViewers />
+        <MarkdownContent content="[보고서](/api/attachments/attachment-markdown/content?context_type=session&context_id=session-1)" />
+      </DashboardInternalLinks>,
+    ));
+
+    const anchor = host.querySelector<HTMLAnchorElement>("a")!;
+    const event = await click(anchor);
+
+    expect(event.defaultPrevented).toBe(true);
+    // React flushes updates when each act() scope ends, so wait between short act() ticks.
+    await vi.waitFor(async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(document.body.querySelector(".chat-attachment-markdown h1")?.textContent).toBe("Attachment popup");
+    });
+    expect(document.body.querySelector(".chat-image-viewer-title")?.textContent).toBe("report.md");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/attachments/attachment-markdown?context_type=session&context_id=session-1",
+      expect.objectContaining({ credentials: "same-origin" }),
+    );
   });
 });

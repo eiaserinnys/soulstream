@@ -190,6 +190,59 @@ describe("authenticated attachment reads", () => {
     expect(attachmentRoutes.assetRead.service.content).toBe(content);
   });
 
+  it("redirects document GETs to the dashboard attachment intent before resolving the actor", async () => {
+    const content = vi.fn(async () => openResponse());
+    const { app, calls } = makeApp({ content });
+    apps.push(app);
+
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/attachments/attachment-1/content?context_type=card&context_id=card%20one",
+      headers: { "sec-fetch-dest": "document" },
+    });
+
+    expect(response.statusCode).toBe(303);
+    expect(response.headers.location).toBe("/?attachment=attachment-1&context_type=card&context_id=card%20one");
+    expect(response.headers["cache-control"]).toBe("private, no-store");
+    expect(calls).toEqual([]);
+    expect(content).not.toHaveBeenCalled();
+  });
+
+  it("keeps document downloads and non-document requests on the content response path", async () => {
+    const content = vi.fn(async (_actor, _id, _context, input) =>
+      input.method === "HEAD"
+        ? new Response(null, { status: 200, headers: { "content-length": "4" } })
+        : openResponse(),
+    );
+    const { app } = makeApp({ content });
+    apps.push(app);
+
+    const download = await app.inject({
+      method: "GET",
+      url: "/api/attachments/attachment-1/content?download=true",
+      headers: { "sec-fetch-dest": "document" },
+    });
+    const noFetchMetadata = await app.inject({
+      method: "GET",
+      url: "/api/attachments/attachment-1/content",
+    });
+    const head = await app.inject({
+      method: "HEAD",
+      url: "/api/attachments/attachment-1/content",
+      headers: { "sec-fetch-dest": "document" },
+    });
+
+    expect(download.statusCode).toBe(200);
+    expect(download.rawPayload).toEqual(Buffer.from([1, 2, 3, 4]));
+    expect(noFetchMetadata.statusCode).toBe(200);
+    expect(noFetchMetadata.rawPayload).toEqual(Buffer.from([1, 2, 3, 4]));
+    expect(head.statusCode).toBe(200);
+    expect(head.rawPayload).toHaveLength(0);
+    expect(content).toHaveBeenNthCalledWith(1, expect.anything(), "attachment-1", { type: "owner" }, {
+      method: "GET", range: undefined, signal: expect.any(AbortSignal), download: true,
+    });
+  });
+
   it("dispatches a resolved legacy alias before looking up its source node", async () => {
     const legacy = vi.fn(async () => ({ kind: "response", response: openResponse() }));
     const { app, calls } = makeApp({
