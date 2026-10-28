@@ -145,6 +145,236 @@ describe("ClaudeEngineAdapter options parity", () => {
     });
   });
 
+  it("official pool turn selects an account, sanitizes the final env, and releases the turn", async () => {
+    const captured: ClaudeRunOptions[] = [];
+    const client: ClaudeClient = {
+      ...makeClient([], captured),
+      async *runPersistent(options) {
+        captured.push(options);
+      },
+    };
+    const accountTurnPort = {
+      select: vi.fn().mockResolvedValue({
+        account_id: "account-a",
+        config_dir: "/accounts/account-a",
+      }),
+      reject: vi.fn(),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+    const state = {
+      read: () => null,
+      write: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+    const registry = {
+      acquire: () => client,
+      close: vi.fn().mockResolvedValue(true),
+      release: vi.fn(),
+      reserve: vi.fn(),
+    };
+    const engine = new ClaudeEngineAdapter({
+      workspaceDir: "/tmp/claude-work",
+      client,
+      processEnv: {
+        PATH: "/usr/bin",
+        ANTHROPIC_API_KEY: "inherited-key",
+        CLAUDE_CODE_OAUTH_TOKEN: "inherited-oauth",
+        ANTHROPIC_AUTH_TOKEN: "inherited-auth",
+        CLAUDE_AUTH_TOKEN_PATH: "/tmp/legacy-token",
+      },
+      claudeAccountPoolEnabled: true,
+      trackChildExit: true,
+      claudeAccountTurnPort: accountTurnPort,
+      claudeAccountTurnState: state,
+      persistentSessionRegistry: registry,
+    }, silentLogger);
+
+    for await (const _ of engine.execute({
+      agentSessionId: "session-a",
+      prompt: "hello",
+      inputUuid: "turn-a",
+      model: "claude-sonnet-4.5",
+      claudeAccountPoolTarget: true,
+    })) {
+      // drain
+    }
+
+    expect(accountTurnPort.select).toHaveBeenCalledWith({
+      session_id: "session-a",
+      turn_id: "turn-a",
+      model: "claude-sonnet-4.5",
+      exclude_ids: [],
+    });
+    expect(captured[0]?.env).toMatchObject({
+      PATH: "/usr/bin",
+      CLAUDE_CONFIG_DIR: "/accounts/account-a",
+    });
+    for (const key of [
+      "ANTHROPIC_API_KEY",
+      "CLAUDE_CODE_OAUTH_TOKEN",
+      "ANTHROPIC_AUTH_TOKEN",
+      "CLAUDE_AUTH_TOKEN_PATH",
+    ]) {
+      expect(captured[0]?.env).not.toHaveProperty(key);
+    }
+    expect(captured[0]?.trackChildExit).toBe(true);
+    expect(state.write).toHaveBeenCalledWith({
+      turn_id: "turn-a",
+      account_id: "account-a",
+      attempted_ids: [],
+      continuation_uuid: null,
+      continuation_sent: false,
+    });
+    expect(accountTurnPort.release).toHaveBeenCalledWith({ session_id: "session-a" });
+    expect(state.clear).toHaveBeenCalledWith("turn-a");
+  });
+
+  it("does not acquire a Claude client when close aborts a pending account selection", async () => {
+    let resolveSelection!: (value: { account_id: string; config_dir: string }) => void;
+    const selection = new Promise<{ account_id: string; config_dir: string }>((resolve) => {
+      resolveSelection = resolve;
+    });
+    const captured: ClaudeRunOptions[] = [];
+    const client: ClaudeClient = {
+      ...makeClient([], captured),
+      async *runPersistent(options) { captured.push(options); },
+    };
+    const accountTurnPort = {
+      select: vi.fn(() => selection),
+      reject: vi.fn(),
+      release: vi.fn().mockResolvedValue(undefined),
+    };
+    const state = {
+      read: () => null,
+      write: vi.fn().mockResolvedValue(undefined),
+      clear: vi.fn().mockResolvedValue(undefined),
+    };
+    const registry = {
+      acquire: vi.fn(() => client),
+      close: vi.fn().mockResolvedValue(true),
+      release: vi.fn(),
+      reserve: vi.fn(),
+    };
+    const engine = new ClaudeEngineAdapter({
+      workspaceDir: "/tmp/claude-work",
+      client,
+      processEnv: { PATH: "/usr/bin" },
+      claudeAccountPoolEnabled: true,
+      claudeAccountTurnPort: accountTurnPort,
+      claudeAccountTurnState: state,
+      persistentSessionRegistry: registry,
+    }, silentLogger);
+    const execution = (async () => {
+      for await (const _ of engine.execute({
+        agentSessionId: "session-a",
+        prompt: "hello",
+        inputUuid: "turn-a",
+        model: "claude-sonnet-4.5",
+        claudeAccountPoolTarget: true,
+      })) {
+        // drain
+      }
+    })();
+    await vi.waitFor(() => expect(accountTurnPort.select).toHaveBeenCalledOnce());
+
+    const closing = engine.close();
+    resolveSelection({ account_id: "account-a", config_dir: "/accounts/account-a" });
+    await Promise.all([execution, closing]);
+
+    expect(registry.acquire).not.toHaveBeenCalled();
+    expect(captured).toHaveLength(0);
+    expect(state.write).not.toHaveBeenCalled();
+    expect(accountTurnPort.release).toHaveBeenCalledWith({ session_id: "session-a" });
+    expect(state.clear).toHaveBeenCalledWith("turn-a");
+  });
+
+  it("rejects even an empty inherited Anthropic base URL for an official pool turn", async () => {
+    const select = vi.fn();
+    const engine = new ClaudeEngineAdapter({
+      workspaceDir: "/tmp/claude-work",
+      client: makeClient([], []),
+      processEnv: { ANTHROPIC_BASE_URL: "" },
+      claudeAccountPoolEnabled: true,
+      claudeAccountTurnPort: {
+        select,
+        reject: vi.fn(),
+        release: vi.fn(),
+      },
+    }, silentLogger);
+
+    await expect((async () => {
+      for await (const _ of engine.execute({
+        agentSessionId: "session-a",
+        prompt: "hello",
+        model: "claude-sonnet-4.5",
+        claudeAccountPoolTarget: true,
+      })) {
+        // drain
+      }
+    })()).rejects.toThrow("Claude account pool does not allow ANTHROPIC_BASE_URL");
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it("leaves Kimi and flag-off turns on their existing environment path", async () => {
+    const captured: ClaudeRunOptions[] = [];
+    const client: ClaudeClient = {
+      ...makeClient([], captured),
+      async *runPersistent(options) { captured.push(options); },
+    };
+    const select = vi.fn();
+    const registry = {
+      acquire: () => client,
+      close: vi.fn().mockResolvedValue(true),
+      release: vi.fn(),
+      reserve: vi.fn(),
+    };
+    const base = {
+      workspaceDir: "/tmp/claude-work",
+      client,
+      processEnv: {
+        PATH: "/usr/bin",
+        ANTHROPIC_API_KEY: "legacy-key",
+        CLAUDE_CODE_OAUTH_TOKEN: "legacy-oauth",
+      },
+      claudeAccountTurnPort: {
+        select,
+        reject: vi.fn(),
+        release: vi.fn(),
+      },
+      persistentSessionRegistry: registry,
+    };
+    const engine = new ClaudeEngineAdapter({ ...base, claudeAccountPoolEnabled: true }, silentLogger);
+    for await (const _ of engine.execute({
+      agentSessionId: "session-a",
+      prompt: "kimi",
+      inputUuid: "turn-kimi",
+      model: "kimi-for-coding",
+      claudeAccountPoolTarget: false,
+    })) {
+      // drain
+    }
+    const legacy = new ClaudeEngineAdapter(base, silentLogger);
+    for await (const _ of legacy.execute({
+      agentSessionId: "session-b",
+      prompt: "official but pool disabled",
+      inputUuid: "turn-legacy",
+      model: "claude-sonnet-4.5",
+      claudeAccountPoolTarget: true,
+    })) {
+      // drain
+    }
+
+    expect(select).not.toHaveBeenCalled();
+    expect(captured[0]?.env).toMatchObject({
+      ANTHROPIC_API_KEY: "legacy-key",
+      CLAUDE_CODE_OAUTH_TOKEN: "legacy-oauth",
+    });
+    expect(captured[1]?.env).toMatchObject({
+      ANTHROPIC_API_KEY: "legacy-key",
+      CLAUDE_CODE_OAUTH_TOKEN: "legacy-oauth",
+    });
+  });
+
   it("claudeAutoMemoryEnabled를 client options의 autoMemoryEnabled로 전달하고 없으면 생략한다", async () => {
     const captured: ClaudeRunOptions[] = [];
     const engine = new ClaudeEngineAdapter(

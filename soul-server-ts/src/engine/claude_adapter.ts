@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import type {
   SessionStore,
@@ -43,6 +44,12 @@ import {
   buildClaudeEnvironment,
   normalizeClaudeModel,
 } from "./claude_options.js";
+import {
+  assertClaudeAccountPoolOverrides,
+  buildClaudeAccountPoolEnvironment,
+  type ClaudeAccountTurnPort,
+  type ClaudeAccountTurnStatePort,
+} from "./claude_account_pool.js";
 import { ClaudeSdkClient } from "./claude_sdk_client.js";
 import type { ClaudeSessionClientRegistry } from "./claude_session_client_registry.js";
 import type { ClaudePersistentRuntimeActivity } from "./claude_session_runtime.js";
@@ -93,6 +100,8 @@ export interface ClaudeRunOptions {
   sessionStore?: SessionStore;
   sessionStoreFlush?: SessionStoreFlush;
   loadTimeoutMs?: number;
+  /** Install the SDK spawn hook on every platform and retain actual child close. */
+  trackChildExit?: boolean;
 }
 
 export interface ClaudeClient {
@@ -126,6 +135,10 @@ export interface ClaudeAdapterConfig {
   sessionStore?: SessionStore;
   sessionStoreFlush?: SessionStoreFlush;
   loadTimeoutMs?: number;
+  trackChildExit?: boolean;
+  claudeAccountPoolEnabled?: boolean;
+  claudeAccountTurnPort?: ClaudeAccountTurnPort;
+  claudeAccountTurnState?: ClaudeAccountTurnStatePort;
   resolvedMcpServers?: ResolvedMcpServer[];
   internalMcpUrl?: string;
   persistentSessionRegistry?: Pick<
@@ -153,6 +166,10 @@ export class ClaudeEngineAdapter
   private readonly sessionStore?: SessionStore;
   private readonly sessionStoreFlush?: SessionStoreFlush;
   private readonly loadTimeoutMs?: number;
+  private readonly trackChildExit: boolean;
+  private readonly claudeAccountPoolEnabled: boolean;
+  private readonly claudeAccountTurnPort?: ClaudeAccountTurnPort;
+  private readonly claudeAccountTurnState?: ClaudeAccountTurnStatePort;
   private readonly resolvedMcpServers?: ResolvedMcpServer[];
   private readonly internalMcpUrl?: string;
   private readonly persistentSessionRegistry?: Pick<
@@ -160,6 +177,7 @@ export class ClaudeEngineAdapter
     "acquire" | "close" | "release" | "reserve"
   >;
   private activeClient: ClaudeClient | null = null;
+  private activeExecution: Promise<void> | null = null;
   private persistentSessionId: string | null = null;
   private activeFrameChannel: InProcessRunnerFrameChannel | null = null;
   private currentTurn: AbortController | null = null;
@@ -175,6 +193,10 @@ export class ClaudeEngineAdapter
     this.sessionStore = config.sessionStore;
     this.sessionStoreFlush = config.sessionStoreFlush;
     this.loadTimeoutMs = config.loadTimeoutMs;
+    this.trackChildExit = config.trackChildExit ?? false;
+    this.claudeAccountPoolEnabled = config.claudeAccountPoolEnabled ?? false;
+    this.claudeAccountTurnPort = config.claudeAccountTurnPort;
+    this.claudeAccountTurnState = config.claudeAccountTurnState;
     this.resolvedMcpServers = config.resolvedMcpServers;
     this.internalMcpUrl = config.internalMcpUrl;
     this.persistentSessionRegistry = config.persistentSessionRegistry;
@@ -191,7 +213,15 @@ export class ClaudeEngineAdapter
 
   executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
     const channel = new InProcessRunnerFrameChannel();
-    channel.start(() => this.executeToFrameChannel(params, channel));
+    channel.start(async () => {
+      const execution = this.executeToFrameChannel(params, channel);
+      this.activeExecution = execution;
+      try {
+        await execution;
+      } finally {
+        if (this.activeExecution === execution) this.activeExecution = null;
+      }
+    });
     return channel;
   }
 
@@ -215,12 +245,52 @@ export class ClaudeEngineAdapter
     const controller = new AbortController();
     this.currentTurn = controller;
     this.activeFrameChannel = channel;
-    const options = this.buildRunOptions(params, channel, controller.signal);
-    const client = this.resolveClient(params.agentSessionId);
-    this.activeClient = client;
     let lastText: string | undefined;
+    let accountTurnId: string | undefined;
+    let accountSelectionAttempted = false;
+    let selectedAccount: import("../claude_accounts/types.js").ClaudeAccountSelectionResult | null = null;
 
     try {
+      const options = this.buildRunOptions(params, channel, controller.signal);
+      const poolTurn = this.claudeAccountPoolEnabled
+        && params.claudeAccountPoolTarget === true;
+      if (poolTurn) {
+        const sessionId = params.agentSessionId;
+        const model = options.model;
+        const accountPort = this.claudeAccountTurnPort;
+        if (!sessionId || !model || !accountPort) {
+          throw new Error("Claude account pool turn is missing session, model, or account service");
+        }
+        assertClaudeAccountPoolOverrides(params.extraEnv);
+        if (options.env && Object.hasOwn(options.env, "ANTHROPIC_BASE_URL")) {
+          throw new Error("Claude account pool does not allow ANTHROPIC_BASE_URL");
+        }
+        accountTurnId = await this.resolveAccountTurnId(params);
+        if (controller.signal.aborted || this.closed) return;
+        accountSelectionAttempted = true;
+        selectedAccount = await accountPort.select({
+          session_id: sessionId,
+          turn_id: accountTurnId,
+          model,
+          exclude_ids: [],
+        });
+        if (controller.signal.aborted || this.closed) return;
+        if (!selectedAccount) {
+          throw new Error(`No Claude account is available for session ${sessionId}`);
+        }
+        await this.claudeAccountTurnState?.write({
+          turn_id: accountTurnId,
+          account_id: selectedAccount.account_id,
+          attempted_ids: [],
+          continuation_uuid: null,
+          continuation_sent: false,
+        });
+        if (controller.signal.aborted || this.closed) return;
+        options.env = buildClaudeAccountPoolEnvironment(options.env, selectedAccount);
+      }
+
+      const client = this.resolveClient(params.agentSessionId);
+      this.activeClient = client;
       const events = this.persistentSessionRegistry
         ? client.runPersistent?.(options, controller.signal)
         : client.run(options, controller.signal);
@@ -274,8 +344,18 @@ export class ClaudeEngineAdapter
       }
       throw err;
     } finally {
-      this.currentTurn = null;
-      this.activeFrameChannel = null;
+      try {
+        if (accountSelectionAttempted && params.agentSessionId && this.claudeAccountTurnPort) {
+          try {
+            await this.claudeAccountTurnPort.release({ session_id: params.agentSessionId });
+          } finally {
+            if (accountTurnId) await this.claudeAccountTurnState?.clear(accountTurnId);
+          }
+        }
+      } finally {
+        this.currentTurn = null;
+        this.activeFrameChannel = null;
+      }
     }
   }
 
@@ -450,9 +530,17 @@ export class ClaudeEngineAdapter
     if (!this.persistentSessionRegistry) {
       await this.client.close?.();
     } else if (this.persistentSessionId) {
-      this.persistentSessionRegistry.release(this.persistentSessionId);
+      if (this.claudeAccountPoolEnabled) {
+        await this.persistentSessionRegistry.close(this.persistentSessionId, "shutdown");
+      } else {
+        this.persistentSessionRegistry.release(this.persistentSessionId);
+      }
     }
     this.activeClient = null;
+    await this.activeExecution?.catch((error) => {
+      this.logger.warn({ err: error }, "Claude execution ended during adapter close");
+    });
+    this.claudeAccountTurnState?.close?.();
   }
 
   private buildRunOptions(
@@ -515,6 +603,7 @@ export class ClaudeEngineAdapter
       ...(this.sessionStore !== undefined ? { sessionStore: this.sessionStore } : {}),
       ...(this.sessionStoreFlush !== undefined ? { sessionStoreFlush: this.sessionStoreFlush } : {}),
       ...(this.loadTimeoutMs !== undefined ? { loadTimeoutMs: this.loadTimeoutMs } : {}),
+      ...(this.trackChildExit ? { trackChildExit: true } : {}),
     };
   }
 
@@ -533,6 +622,14 @@ export class ClaudeEngineAdapter
     }
     this.persistentSessionId = agentSessionId;
     return this.persistentSessionRegistry.acquire(agentSessionId);
+  }
+
+  private async resolveAccountTurnId(params: EngineExecuteParams): Promise<string> {
+    const durableInputId = params.inputUuid
+      ?? params.runnerInterventionId
+      ?? params.runnerInterventionIds?.[0];
+    if (durableInputId) return durableInputId;
+    return this.claudeAccountTurnState?.read()?.turn_id ?? randomUUID();
   }
 
   private async resetPersistentClientForBackendRollover(

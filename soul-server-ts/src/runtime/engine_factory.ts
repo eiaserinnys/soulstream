@@ -9,6 +9,7 @@ import { AgentsEngineAdapter } from "../engine/agents_adapter.js";
 import { ClaudeEngineAdapter } from "../engine/claude_adapter.js";
 import type { ClaudeSessionClientRegistry } from
   "../engine/claude_session_client_registry.js";
+import type { ClaudeAccountTurnPort } from "../engine/claude_account_pool.js";
 import { CodexEngineAdapter } from "../engine/codex_adapter.js";
 import { CodexAppServerEngineAdapter } from "../engine/codex_app_server/index.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
@@ -24,6 +25,9 @@ type EngineFactoryEnv = Pick<
   | "CODEX_APP_SERVER_STARTUP_TIMEOUT_MS"
   | "CODEX_DETACHED_RESULT_RETENTION_MS"
   | "CLAUDE_SESSION_RUNTIME_V2_ENABLED"
+  | "CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS"
+  | "CLAUDE_SESSION_RUNTIME_MAX_ENTRIES"
+  | "CLAUDE_ACCOUNT_POOL_ENABLED"
   | "MCP_INTERNAL_PORT"
   | "MCP_PATH"
   | "SOUL_RUNNER_STATE_DIR"
@@ -39,6 +43,7 @@ export interface CreateEngineFactoryParams {
   buildClaudeProcessEnv(): Record<string, string | undefined>;
   claudeSessionStore: SessionStore;
   claudeSessionClientRegistry?: ClaudeSessionClientRegistry;
+  claudeAccountTurnPort?: ClaudeAccountTurnPort;
   mcpConfigService: McpConfigService;
 }
 
@@ -53,6 +58,7 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
     buildClaudeProcessEnv,
     claudeSessionStore,
     claudeSessionClientRegistry,
+    claudeAccountTurnPort,
     mcpConfigService,
   } = params;
 
@@ -131,8 +137,13 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
           processEnv: buildClaudeProcessEnv(),
           sessionStore: claudeSessionStore,
           // V2 uses the shared transcript as its cross-node receiver receipt.
-          sessionStoreFlush: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED ? "eager" : "batched",
+          sessionStoreFlush: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED || env.CLAUDE_ACCOUNT_POOL_ENABLED
+            ? "eager"
+            : "batched",
           loadTimeoutMs: 60_000,
+          trackChildExit: env.CLAUDE_ACCOUNT_POOL_ENABLED,
+          claudeAccountPoolEnabled: env.CLAUDE_ACCOUNT_POOL_ENABLED,
+          ...(claudeAccountTurnPort ? { claudeAccountTurnPort } : {}),
           internalMcpUrl: localInternalMcpUrl(env.MCP_INTERNAL_PORT, env.MCP_PATH),
           ...(resolvedMcpServers !== undefined
             ? { resolvedMcpServers }

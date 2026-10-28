@@ -4,6 +4,8 @@ import { FileAttachmentStore } from "../attachments/file_manager.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../auth/claude_auth.js";
 import { ProviderUsageService } from "../auth/provider_usage.js";
 import { ClaudeAccountService } from "../claude_accounts/index.js";
+import { ClaudeSdkClient } from "../engine/claude_sdk_client.js";
+import { ClaudeSessionClientRegistry } from "../engine/claude_session_client_registry.js";
 import { CatalogService } from "../catalog/catalog_service.js";
 import { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import { DEFAULT_COGITO_CONTEXT_LIMITS } from "../context/cogito_context.js";
@@ -237,7 +239,18 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
         },
       })
     : {};
-  const claudeSessionClientRegistry = claudeRuntime.registry;
+  const claudeSessionClientRegistry = claudeRuntime.registry ?? (
+    claudeAccounts
+      ? new ClaudeSessionClientRegistry(
+          () => new ClaudeSdkClient({}, logger),
+          {
+            idleTtlMs: env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
+            maxEntries: env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
+            logger,
+          },
+        )
+      : undefined
+  );
   taskManager = new TaskManager(
     env.SOULSTREAM_NODE_ID,
     db,
@@ -268,6 +281,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     codexProcessEnv: process.env,
     buildClaudeProcessEnv: () => claudeAuth.buildProcessEnv(process.env),
     claudeSessionStore,
+    ...(claudeAccounts ? { claudeAccountTurnPort: claudeAccounts } : {}),
     mcpConfigService,
     ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
   });
@@ -275,6 +289,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     env, logger, mcpConfigService, codexCliPath, antigravityCliPath,
     ...(params.nodeStallMonitor ? { nodeStallMonitor: params.nodeStallMonitor } : {}),
     pumpMux: eventOutboxPumpMux, sessionStore: claudeSessionStore,
+    claudeAccounts,
     producedAttachments: attachmentRuntime.mcpRuntime.producedAttachments,
     buildChildProcessEnv: () => claudeAuth.buildProcessEnv(process.env), publishDetachedClaudeEvent,
     reconcileClaudeTranscriptAppend: (task) => taskRuntime.claudeRuntimeTaskFollowup.reconcileTranscriptAppend(task),

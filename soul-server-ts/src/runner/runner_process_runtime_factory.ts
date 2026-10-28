@@ -9,6 +9,7 @@ import type { Logger } from "pino";
 
 import type { Env } from "../config.js";
 import type { ClaudeClientEvent } from "../engine/claude_client_event.js";
+import type { ClaudeAccountTurnPort } from "../engine/claude_account_pool.js";
 import type {
   EngineRunStateSnapshot,
   EngineSessionItemsSnapshot,
@@ -68,6 +69,8 @@ type RunnerEnv = Pick<Env,
   | "CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS"
   | "CLAUDE_SESSION_RUNTIME_MAX_ENTRIES"
   | "CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS"
+  | "CLAUDE_ACCOUNT_POOL_ENABLED"
+  | "CLAUDE_ACCOUNTS_DIR"
   | "MCP_INTERNAL_PORT"
   | "MCP_PATH"
 > & Partial<Pick<Env, "OPENCODE_CLI_PATH">>;
@@ -77,6 +80,7 @@ export interface RunnerProcessRuntimeFactoryOptions {
   logger: Logger;
   pumpMux: EventOutboxPumpMux;
   sessionStore: IdempotentClaudeSessionStore;
+  claudeAccounts?: ClaudeAccountTurnPort;
   producedAttachments?: Pick<
     ReturnType<typeof createProducedAttachmentRegistration>,
     "register"
@@ -114,6 +118,9 @@ export function createRunnerProcessRuntimeFactory(
   options: RunnerProcessRuntimeFactoryOptions,
 ): RunnerProcessRuntimeFactory {
   const stateDirectory = required(options.env.SOUL_RUNNER_STATE_DIR, "SOUL_RUNNER_STATE_DIR");
+  if (options.env.CLAUDE_ACCOUNT_POOL_ENABLED && !options.claudeAccounts) {
+    throw new Error("Claude account pool is enabled but the host account service is unavailable");
+  }
   const spawner = options.spawner ?? new RunnerProcessSpawner(undefined, options.logger);
 
   const createRuntime = (
@@ -187,6 +194,14 @@ export function createRunnerProcessRuntimeFactory(
       codexAppServerStartupTimeoutMs:
         options.env.CODEX_APP_SERVER_STARTUP_TIMEOUT_MS,
       claudeRuntimeV2Enabled: options.env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
+      ...(backend === "claude" && options.env.CLAUDE_ACCOUNT_POOL_ENABLED
+        ? {
+            claudeAccountPool: {
+              enabled: true,
+              accountsDir: required(options.env.CLAUDE_ACCOUNTS_DIR, "CLAUDE_ACCOUNTS_DIR"),
+            },
+          }
+        : {}),
       claudeRuntimeIdleTtlMs: options.env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
       claudeRuntimeMaxEntries: options.env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
       claudeRuntimeTurnTimeoutMs: options.env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
@@ -275,6 +290,9 @@ function spawnInputFromConfig(
     ...(config.opencodeCliPath ? { opencodeCliPath: config.opencodeCliPath } : {}),
     codexDetachedResultRetentionMs: config.codexDetachedResultRetentionMs,
     claudeRuntimeV2Enabled: config.claudeRuntimeV2Enabled,
+    ...(config.claudeAccountPool
+      ? { claudeAccountPool: config.claudeAccountPool }
+      : {}),
     claudeRuntimeIdleTtlMs: config.claudeRuntimeIdleTtlMs,
     claudeRuntimeMaxEntries: config.claudeRuntimeMaxEntries,
     claudeRuntimeTurnTimeoutMs: config.claudeRuntimeTurnTimeoutMs,
@@ -335,6 +353,36 @@ export async function applyRunnerHostCall(
   registerPostResponse: (continuation: () => Promise<void>) => void = () => undefined,
 ): Promise<unknown> {
   const expectedSessionId = task.agentSessionId;
+  if (call.service === "claude_accounts") {
+    const sessionId = asString(call.args[0], "runner account session id");
+    if (sessionId !== expectedSessionId) {
+      throw new Error(`runner host session mismatch: ${sessionId}`);
+    }
+    const service = options.claudeAccounts;
+    if (!service) throw new Error("Claude account pool host service is unavailable");
+    const rawInput = call.args[1];
+    if (typeof rawInput !== "object" || rawInput === null || Array.isArray(rawInput)) {
+      throw new Error("runner Claude account request must be an object");
+    }
+    const input = rawInput as Record<string, unknown>;
+    if (input.session_id !== sessionId) {
+      throw new Error("runner Claude account request session mismatch");
+    }
+    switch (call.operation) {
+      case "select":
+        return await service.select(
+          input as unknown as Parameters<ClaudeAccountTurnPort["select"]>[0],
+        );
+      case "reject":
+        await service.reject(input as unknown as Parameters<ClaudeAccountTurnPort["reject"]>[0]);
+        return null;
+      case "release":
+        await service.release(input as unknown as Parameters<ClaudeAccountTurnPort["release"]>[0]);
+        return null;
+      default:
+        throw new Error(`unsupported Claude account host operation: ${call.operation}`);
+    }
+  }
   if (call.service === "session_store") {
     const result = await callSessionStore(
       options.sessionStore,

@@ -1,4 +1,5 @@
 import type {
+  Options as ClaudeSdkOptions,
   Query as ClaudeSdkQuery,
   SDKMessage,
   SessionMessage,
@@ -81,6 +82,166 @@ async function runPersistentCompact(
 }
 
 describe("ClaudeSdkClient persistent runtime", () => {
+  it("does not create the initial Query when a tracked turn is already aborted", async () => {
+    const query = vi.fn(() => {
+      throw new Error("aborted pool turn created a Claude Query");
+    });
+    const client = new ClaudeSdkClient({ query }, silentLogger);
+    const controller = new AbortController();
+    const iterator = client.runPersistent({
+      ...runOptions("aborted before query"),
+      model: "claude-sonnet-4.5",
+      trackChildExit: true,
+      env: { CLAUDE_CONFIG_DIR: "/accounts/a" },
+    }, controller.signal)[Symbol.asyncIterator]();
+
+    const pending = iterator.next();
+    controller.abort();
+    await expect(pending).resolves.toEqual({ done: true, value: undefined });
+    expect(query).not.toHaveBeenCalled();
+    await client.close();
+  });
+
+  it("waits for the previous CLI close before spawning for a different account", async () => {
+    const events: string[] = [];
+    const harnesses = [makeHarness(), makeHarness()];
+    let queryIndex = 0;
+    const client = new ClaudeSdkClient({
+      query: (params) => {
+        const index = queryIndex++;
+        events.push(`query-${index + 1}`);
+        const spawnHook = (params.options as ClaudeSdkOptions).spawnClaudeCodeProcess;
+        if (!spawnHook) throw new Error("pool mode did not install the Claude process hook");
+        const child = spawnHook({
+          command: process.execPath,
+          args: [
+            "-e",
+            "process.on('SIGTERM', () => setTimeout(() => process.exit(0), 100)); setInterval(() => {}, 1000);",
+          ],
+          cwd: process.cwd(),
+          env: process.env,
+          signal: new AbortController().signal,
+        });
+        (child as unknown as import("node:child_process").ChildProcess).once(
+          "close",
+          () => events.push(`close-${index + 1}`),
+        );
+        const query = harnesses[index]!.queryFn(params);
+        return {
+          close() {
+            child.kill("SIGTERM");
+            query.close();
+          },
+          interrupt: () => query.interrupt(),
+          backgroundTasks: (toolUseId?: string) => query.backgroundTasks(toolUseId),
+          stopTask: (taskId: string) => query.stopTask(taskId),
+          [Symbol.asyncIterator]: () => query[Symbol.asyncIterator](),
+        } as unknown as ClaudeSdkQuery;
+      },
+    }, silentLogger);
+
+    const first = collect(client.runPersistent({
+      ...runOptions("first"),
+      model: "claude-sonnet-4.5",
+      trackChildExit: true,
+      env: { CLAUDE_CONFIG_DIR: "/accounts/a" },
+    }, abortSignal()));
+    const firstInput = await harnesses[0]!.nextInput();
+    harnesses[0]!.push(sdkResult("sdk-session", firstInput.uuid, "first done"));
+    await first;
+
+    const second = collect(client.runPersistent({
+      ...runOptions("second"),
+      model: "claude-sonnet-4.5",
+      trackChildExit: true,
+      env: { CLAUDE_CONFIG_DIR: "/accounts/b" },
+    }, abortSignal()));
+    const secondInput = await harnesses[1]!.nextInput();
+    expect(events.indexOf("close-1")).toBeGreaterThanOrEqual(0);
+    expect(events.indexOf("close-1")).toBeLessThan(events.indexOf("query-2"));
+    harnesses[1]!.push(sdkResult("sdk-session", secondInput.uuid, "second done"));
+    await second;
+    await client.close();
+  });
+
+  it("waits for a failed persistent CLI to close before compact fallback spawns", async () => {
+    const events: string[] = [];
+    const harnesses = [makeHarness(), makeHarness()];
+    const children: import("node:child_process").ChildProcess[] = [];
+    let queryIndex = 0;
+    let compactPromise: Promise<unknown> | null = null;
+    const client = new ClaudeSdkClient({
+      query: (params) => {
+        const index = queryIndex++;
+        events.push(`query-${index + 1}`);
+        const spawnHook = (params.options as ClaudeSdkOptions).spawnClaudeCodeProcess;
+        if (!spawnHook) throw new Error("pool mode did not install the Claude process hook");
+        const child = spawnHook({
+          command: process.execPath,
+          args: [
+            "-e",
+            "process.on('SIGTERM', () => setTimeout(() => process.exit(0), 250)); setInterval(() => {}, 1000);",
+          ],
+          cwd: process.cwd(),
+          env: process.env,
+          signal: new AbortController().signal,
+        }) as unknown as import("node:child_process").ChildProcess;
+        children.push(child);
+        child.once("close", () => events.push(`child-close-${index + 1}`));
+        const query = harnesses[index]!.queryFn(params);
+        return {
+          close() {
+            events.push(`query-close-${index + 1}`);
+            child.kill("SIGTERM");
+            query.close();
+          },
+          interrupt: () => query.interrupt(),
+          backgroundTasks: (toolUseId?: string) => query.backgroundTasks(toolUseId),
+          stopTask: (taskId: string) => query.stopTask(taskId),
+          [Symbol.asyncIterator]: () => query[Symbol.asyncIterator](),
+        } as unknown as ClaudeSdkQuery;
+      },
+    }, silentLogger);
+
+    const first = collect(client.runPersistent({
+      ...runOptions("first"),
+      model: "claude-sonnet-4.5",
+      trackChildExit: true,
+      env: { CLAUDE_CONFIG_DIR: "/accounts/a" },
+    }, abortSignal()));
+    const firstInput = await harnesses[0]!.nextInput();
+    harnesses[0]!.push(sdkResult("sdk-session", firstInput.uuid, "first done"));
+    await first;
+
+    try {
+      harnesses[0]!.end();
+      await vi.waitFor(() => expect(events).toContain("query-close-1"));
+      compactPromise = client.compact("sdk-session");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(events).not.toContain("query-2");
+      await vi.waitFor(() => expect(events).toContain("query-2"));
+      expect(events.indexOf("child-close-1")).toBeLessThan(events.indexOf("query-2"));
+
+      harnesses[1]!.push({
+        type: "system",
+        subtype: "compact_boundary",
+        compact_metadata: { trigger: "manual" },
+        uuid: "fallback-compact-boundary",
+        session_id: "sdk-session",
+      } as unknown as SDKMessage);
+      harnesses[1]!.push(sdkResult("sdk-session", undefined, "compacted"));
+      harnesses[1]!.end();
+      children[1]!.kill("SIGTERM");
+      await compactPromise;
+      compactPromise = null;
+    } finally {
+      for (const child of children) child.kill("SIGTERM");
+      for (const harness of harnesses) harness.end();
+      await compactPromise?.catch(() => undefined);
+      await client.close().catch(() => undefined);
+    }
+  });
+
   it("warns when maxTurns is ignored by the persistent runtime", async () => {
     const harness = makeHarness();
     const logger = pino({ level: "silent" });

@@ -102,6 +102,40 @@ describe("createEngineFactory", () => {
     }
   });
 
+  it("injects the host Claude account service into the in-process engine", () => {
+    const workspaceDir = makeTempDirSync("claude-account-pool-engine-");
+    const claudeAccountTurnPort = {
+      select: () => Promise.resolve(null),
+      reject: () => Promise.resolve(),
+      release: () => Promise.resolve(),
+    };
+    const factory = createEngineFactory({
+      env: { ...factoryEnv, CLAUDE_ACCOUNT_POOL_ENABLED: true },
+      logger,
+      codexProcessEnv: {},
+      antigravityProcessEnv: {},
+      buildClaudeProcessEnv: () => ({}),
+      claudeSessionStore: sessionStore,
+      claudeAccountTurnPort,
+      mcpConfigService: new McpConfigService({
+        agentsConfigPath: join(workspaceDir, "agents.yaml"),
+      }),
+    });
+    const engine = factory({
+      id: "pool-agent",
+      name: "Pool Agent",
+      backend: "claude",
+      model: "claude-sonnet-4.5",
+      workspace_dir: workspaceDir,
+    } as AgentProfile) as unknown as {
+      claudeAccountTurnPort: unknown;
+      trackChildExit: boolean;
+    };
+
+    expect(engine.claudeAccountTurnPort).toBe(claudeAccountTurnPort);
+    expect(engine.trackChildExit).toBe(true);
+  });
+
   it("fails explicitly when a Codex MCP profile is used with the legacy SDK adapter", () => {
     const workspaceDir = makeTempDirSync("codex-mcp-profile-");
     writeFileSync(

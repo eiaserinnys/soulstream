@@ -23,6 +23,7 @@ interface BuildClaudeSdkOptionsParams {
   eventMapper: ClaudeSdkEventMapper;
   runtimeState: ClaudeRuntimeState;
   toolPermissionController: ClaudeSdkToolPermissionController;
+  onChildProcessClosed?: (closed: Promise<void>) => void;
 }
 
 export function buildClaudeSdkOptions({
@@ -34,6 +35,7 @@ export function buildClaudeSdkOptions({
   eventMapper,
   runtimeState,
   toolPermissionController,
+  onChildProcessClosed,
 }: BuildClaudeSdkOptionsParams): ClaudeSdkOptions {
   const executablePath =
     options.env?.[CLAUDE_CODE_EXECPATH_ENV]?.trim()
@@ -46,8 +48,14 @@ export function buildClaudeSdkOptions({
   return {
     abortController,
     cwd: options.workspaceDir,
-    ...(process.platform === "linux"
-      ? { spawnClaudeCodeProcess: (spawnOptions) => spawnClaudeSessionEngine(spawnOptions, logger) }
+    ...(options.trackChildExit || process.platform === "linux"
+      ? {
+          spawnClaudeCodeProcess: (spawnOptions) => spawnClaudeSessionEngine(
+            spawnOptions,
+            logger,
+            options.trackChildExit ? onChildProcessClosed : undefined,
+          ),
+        }
       : {}),
     ...(options.env !== undefined ? { env: options.env } : {}),
     permissionMode,

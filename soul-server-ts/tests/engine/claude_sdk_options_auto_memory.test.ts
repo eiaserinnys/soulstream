@@ -41,4 +41,9 @@ describe("claude sdk options auto memory", () => {
     expect(built.settings).toBeUndefined();
     expect("settings" in built).toBe(false);
   });
+
+  it("installs the tracked process hook on pool mode even off Linux", () => {
+    const built = build({ trackChildExit: true });
+    expect(built.spawnClaudeCodeProcess).toBeTypeOf("function");
+  });
 });
