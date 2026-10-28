@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   ClaudeAccountProfileSymlinkConflictError,
   ClaudeAccountService,
+  type ClaudeLoginAccountPort,
   SHARED_CLAUDE_HOME_ENTRIES,
   adoptClaudeAccountProfile,
 } from "../../src/claude_accounts/index.js";
@@ -48,37 +49,53 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     fs.rmSync(tmpRoot, { recursive: true, force: true });
   });
 
-  it("creates storage directories (0700), JSON files (0600), and shared symlinks while protecting existing non-symlink conflicts", async () => {
+  it("implements ClaudeLoginAccountPort, creates storage directories (0700), JSON files (0600), and shared symlinks while protecting conflicts", async () => {
     const svc = new ClaudeAccountService({
       accountsDir,
       homeDir: fakeHomeDir,
       now: () => nowMs,
       fetchImpl: vi.fn(),
     });
+    const loginPort: ClaudeLoginAccountPort = svc;
 
-    const pendingDir = await svc.createPendingDir("login-1");
+    expect(loginPort.profileDir(ACC_A)).toBeNull();
+    expect(await loginPort.findAccount(ACC_A)).toBeNull();
+
+    const pendingDir = await loginPort.createPendingDir("login-1");
     writeCredentials(pendingDir, { expiresAt: nowMs + 7200_000 });
     fs.writeFileSync(path.join(pendingDir, ".claude.json"), '{"oauthAccount":{}}', {
       mode: 0o600,
     });
     fs.mkdirSync(path.join(pendingDir, "sessions"), { mode: 0o700 });
 
-    const registered = await svc.registerFromPending({
+    await loginPort.registerFromPending({
       loginId: "login-1",
-      accountUuid: ACC_A,
+      id: ACC_A,
       email: "a@example.com",
       plan: "max_20x",
     });
 
-    expect(registered.id).toBe(ACC_A);
-    expect(registered.email).toBe("a@example.com");
+    expect(await loginPort.findAccount(ACC_A)).toEqual({
+      id: ACC_A,
+      email: "a@example.com",
+    });
+    expect(await loginPort.findByIdentity({ id: ACC_A, email: "other@example.com" })).toEqual({
+      id: ACC_A,
+    });
+    expect(
+      await loginPort.findByIdentity({
+        id: "99999999-9999-4999-8999-999999999999",
+        email: "A@EXAMPLE.COM",
+      }),
+    ).toEqual({ id: ACC_A });
 
     const dirMode = fs.statSync(accountsDir).mode & 0o777;
     expect(dirMode).toBe(0o700);
     const accountsJsonMode = fs.statSync(path.join(accountsDir, "accounts.json")).mode & 0o777;
     expect(accountsJsonMode).toBe(0o600);
 
-    const profilePath = svc.profileDir(ACC_A);
+    const profilePath = loginPort.profileDir(ACC_A)!;
+    expect(profilePath).toBe(path.join(accountsDir, "profiles", ACC_A));
     for (const entry of SHARED_CLAUDE_HOME_ENTRIES) {
       const linkPath = path.join(profilePath, entry);
       const lstat = fs.lstatSync(linkPath);
@@ -92,7 +109,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     expect(fs.lstatSync(path.join(profilePath, "sessions")).isSymbolicLink()).toBe(false);
 
     // If a non-symlink directory/file exists at a shared entry path in another profile, throw without deleting
-    const pending2 = await svc.createPendingDir("login-2");
+    const pending2 = await loginPort.createPendingDir("login-2");
     writeCredentials(pending2, { expiresAt: nowMs + 7200_000 });
     const conflictPath = path.join(pending2, "projects");
     fs.mkdirSync(conflictPath, { recursive: true });
@@ -100,9 +117,9 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     fs.writeFileSync(markerFile, "important-history");
 
     await expect(
-      svc.registerFromPending({
+      loginPort.registerFromPending({
         loginId: "login-2",
-        accountUuid: ACC_B,
+        id: ACC_B,
         email: "b@example.com",
         plan: "max_5x",
       }),
@@ -112,15 +129,8 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     expect(fs.existsSync(markerFile)).toBe(true);
   });
 
-  it("selects accounts with 98% soft preference, Fable headroom reservation, affinity, priority, and no double active_sessions count", async () => {
-    const usageMap: Record<
-      string,
-      {
-        five_hour?: { utilization: number; resets_at: string };
-        seven_day?: { utilization: number; resets_at: string };
-        seven_day_fable?: { utilization: number; resets_at: string };
-      }
-    > = {
+  it("selects accounts with 98% soft preference, same-turn idempotency, stale 98% non-avoidance, priority order, idle eligibility, and Fable headroom reservation", async () => {
+    const usageMap: Record<string, unknown> = {
       [`tok-${ACC_A}`]: {
         five_hour: { utilization: 20, resets_at: "2026-10-28T05:00:00.000Z" },
         seven_day: { utilization: 30, resets_at: "2026-11-01T00:00:00.000Z" },
@@ -137,10 +147,15 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
         seven_day_fable: { utilization: 5, resets_at: "2026-11-01T00:00:00.000Z" },
       },
     };
+    const statusMap: Record<string, number> = {};
 
     const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
       const auth = (init?.headers as Record<string, string>)?.Authorization ?? "";
       const token = auth.replace(/^Bearer\s+/i, "");
+      const status = statusMap[token] ?? 200;
+      if (status !== 200) {
+        return new Response("upstream error", { status });
+      }
       const body = usageMap[token];
       return new Response(JSON.stringify(body ?? {}), {
         status: 200,
@@ -160,7 +175,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
       writeCredentials(pDir, { accessToken: `tok-${id}`, expiresAt: nowMs + 24 * 3600_000 });
       await svc.registerFromPending({
         loginId: `login-${idx}`,
-        accountUuid: id,
+        id,
         email: `${idx}@example.com`,
         plan: "max_20x",
       });
@@ -177,75 +192,257 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     });
     expect(selNonFable?.account_id).toBe(ACC_B);
 
-    // Repeating select for the same session_id returns same binding and does NOT double-count active_sessions
-    const selRepeat = await svc.select({
+    // Same-turn idempotency: if ACC_B becomes >= 98% AND ACC_A gets higher priority (1 < null) mid-turn,
+    // repeating select with the SAME turn_id ("turn-1") keeps ACC_B!
+    usageMap[`tok-${ACC_B}`] = {
+      five_hour: { utilization: 99, resets_at: "2026-10-28T06:00:00.000Z" },
+      seven_day: { utilization: 35, resets_at: "2026-11-01T00:00:00.000Z" },
+      seven_day_fable: { utilization: 70, resets_at: "2026-11-01T00:00:00.000Z" },
+    };
+    await svc.updateAccount(ACC_A, { priority: 1 });
+    nowMs += 6 * 60_000;
+    await svc.getAccountList({ forceRefresh: true });
+
+    const selSameTurnAfter99 = await svc.select({
       session_id: "sess-non-fable",
       turn_id: "turn-1",
       model: "claude-sonnet-4-6",
     });
-    expect(selRepeat?.account_id).toBe(ACC_B);
+    expect(selSameTurnAfter99?.account_id).toBe(ACC_B);
     expect(svc.activeSessions(ACC_B)).toBe(1);
 
-    // Fable model: among <98% candidates (ACC_A max(20,30,10)=30 vs ACC_B max(25,35,70)=70), picks ACC_A
-    const selFable = await svc.select({
-      session_id: "sess-fable",
-      turn_id: "turn-1",
-      model: "claude-fable-5-1",
-    });
-    expect(selFable?.account_id).toBe(ACC_A);
-
-    // If ACC_B becomes >= 98%, sess-non-fable (which has affinity to ACC_B) moves to ACC_A (< 98%)
-    usageMap[`tok-${ACC_B}`].five_hour = {
-      utilization: 99,
-      resets_at: "2026-10-28T06:00:00.000Z",
-    };
-    nowMs += 6 * 60_000;
-    await svc.getAccountList({ forceRefresh: true });
-
-    const selMoved = await svc.select({
+    // On the NEXT turn ("turn-2"), 98% soft preference switches away from ACC_B (99%) to ACC_A (<98%)
+    const selMovedNextTurn = await svc.select({
       session_id: "sess-non-fable",
       turn_id: "turn-2",
       model: "claude-sonnet-4-6",
     });
-    expect(selMoved?.account_id).toBe(ACC_A);
+    expect(selMovedNextTurn?.account_id).toBe(ACC_A);
 
-    // If ALL candidates are >= 98% (and not blocked), do NOT return null; pick lowest max usage (ACC_C at 98% over ACC_B at 99%)
-    usageMap[`tok-${ACC_A}`].seven_day = {
-      utilization: 99.5,
-      resets_at: "2026-11-01T00:00:00.000Z",
+    // Same-turn exclude_ids still switches immediately even within the same turn_id ("turn-2")
+    await svc.updateAccount(ACC_A, { priority: null });
+    usageMap[`tok-${ACC_B}`] = {
+      five_hour: { utilization: 25, resets_at: "2026-10-28T06:00:00.000Z" },
+      seven_day: { utilization: 35, resets_at: "2026-11-01T00:00:00.000Z" },
+      seven_day_fable: { utilization: 70, resets_at: "2026-11-01T00:00:00.000Z" },
     };
     nowMs += 6 * 60_000;
     await svc.getAccountList({ forceRefresh: true });
 
-    const selAllHigh = await svc.select({
-      session_id: "sess-all-high",
+    const selSameTurnExcluded = await svc.select({
+      session_id: "sess-non-fable",
+      turn_id: "turn-2",
+      model: "claude-sonnet-4-6",
+      exclude_ids: [ACC_A],
+    });
+    expect(selSameTurnExcluded?.account_id).toBe(ACC_B);
+
+    // Stale 98% observation does NOT trigger 98% soft-cap avoidance:
+    // Make ACC_C (at 98%) stale by returning 503 for ACC_C, and give ACC_C highest priority (1, while others are null).
+    statusMap[`tok-${ACC_C}`] = 503;
+    await svc.updateAccount(ACC_C, { priority: 1 });
+    nowMs += 6 * 60_000;
+    const staleList = await svc.getAccountList({ forceRefresh: true });
+    expect(staleList.accounts.find((a) => a.id === ACC_C)?.stale).toBe(true);
+
+    const selStaleHigh = await svc.select({
+      session_id: "sess-stale-98",
       turn_id: "turn-1",
       model: "claude-sonnet-4-6",
     });
-    expect(selAllHigh?.account_id).toBe(ACC_C);
+    // Because ACC_C's 98% observation is stale, it is NOT demoted to >=98% bucket, so its priority 1 wins!
+    expect(selStaleHigh?.account_id).toBe(ACC_C);
 
-    // Once ACC_C's 98% five_hour resets_at has passed, it is treated as reset (0%) even before next poll
-    nowMs = Date.parse("2026-10-28T05:01:00.000Z");
-    const selAfterReset = await svc.select({
-      session_id: "sess-after-reset",
+    // Restore ACC_C status and priority
+    delete statusMap[`tok-${ACC_C}`];
+    await svc.updateAccount(ACC_C, { priority: null });
+
+    // Priority ordering among fresh <98% candidates: smaller priority number wins (ACC_B priority 1 before ACC_A priority 5)
+    usageMap[`tok-${ACC_B}`] = {
+      five_hour: { utilization: 25, resets_at: "2026-10-28T06:00:00.000Z" },
+      seven_day: { utilization: 35, resets_at: "2026-11-01T00:00:00.000Z" },
+      seven_day_fable: { utilization: 10, resets_at: "2026-11-01T00:00:00.000Z" },
+    };
+    await svc.updateAccount(ACC_A, { priority: 5 });
+    await svc.updateAccount(ACC_B, { priority: 1 });
+    nowMs += 6 * 60_000;
+    await svc.getAccountList({ forceRefresh: true });
+
+    const selPriorityOrder = await svc.select({
+      session_id: "sess-priority",
       turn_id: "turn-1",
-      model: "claude-sonnet-4-6",
+      model: "claude-fable-5-1",
     });
-    expect(selAfterReset?.account_id).toBe(ACC_C);
+    expect(selPriorityOrder?.account_id).toBe(ACC_B);
+    const selSecondPriority = await svc.select({
+      session_id: "sess-priority-2",
+      turn_id: "turn-1",
+      model: "claude-fable-5-1",
+      exclude_ids: [ACC_B],
+    });
+    expect(selSecondPriority?.account_id).toBe(ACC_A);
+  });
 
-    // Restart persistence: a new ClaudeAccountService instance preserves bindings.json affinity
-    const svcRestarted = new ClaudeAccountService({
+  it("selects idle accounts, excludes disabled accounts from selection and total_count, and computes real service pool summary", async () => {
+    // Use existing Fable weekly_scoped fixture format (from provider_usage_service.test.ts:639-647) on ACC_A
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const auth = (init?.headers as Record<string, string>)?.Authorization ?? "";
+      const token = auth.replace(/^Bearer\s+/i, "");
+      if (token === `tok-${ACC_A}`) {
+        return new Response(
+          JSON.stringify({
+            five_hour: {
+              utilization: 37,
+              resets_at: "2026-10-28T14:20:00.212584+00:00",
+            },
+            seven_day: {
+              utilization: 18,
+              resets_at: "2026-11-03T22:00:00.212608+00:00",
+            },
+            seven_day_omelette: null,
+            limits: [
+              {
+                kind: "weekly_scoped",
+                group: "weekly",
+                percent: 16,
+                resets_at: "2026-11-03T22:00:00.248331+00:00",
+                scope: {
+                  model: {
+                    id: null,
+                    display_name: "Fable",
+                  },
+                  surface: null,
+                },
+                is_active: false,
+              },
+            ],
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      }
+      return new Response("error", { status: 500 });
+    });
+
+    const svc = new ClaudeAccountService({
       accountsDir,
       homeDir: fakeHomeDir,
       now: () => nowMs,
       fetchImpl: fetchImpl as unknown as typeof fetch,
     });
-    const selRestartAffinity = await svcRestarted.select({
-      session_id: "sess-after-reset",
-      turn_id: "turn-2",
-      model: "claude-sonnet-4-6",
+
+    // ACC_A: ok with Fable weekly_scoped fixture
+    const pDirA = await svc.createPendingDir("login-a");
+    writeCredentials(pDirA, { accessToken: `tok-${ACC_A}`, expiresAt: nowMs + 7200_000 });
+    await svc.registerFromPending({
+      loginId: "login-a",
+      id: ACC_A,
+      email: "a@example.com",
+      plan: "max_20x",
     });
-    expect(selRestartAffinity?.account_id).toBe(ACC_C);
+
+    // ACC_B: expired credentials -> auth_state "idle" (unmeasured)
+    const pDirB = await svc.createPendingDir("login-b");
+    writeCredentials(pDirB, { accessToken: `tok-${ACC_B}`, expiresAt: nowMs - 1000 });
+    await svc.registerFromPending({
+      loginId: "login-b",
+      id: ACC_B,
+      email: "b@example.com",
+      plan: "max_20x",
+    });
+
+    // ACC_C: registered, then we test logging_in / needs_relogin / enabled:false
+    const pDirC = await svc.createPendingDir("login-c");
+    writeCredentials(pDirC, { accessToken: `tok-${ACC_C}`, expiresAt: nowMs - 1000 });
+    await svc.registerFromPending({
+      loginId: "login-c",
+      id: ACC_C,
+      email: "c@example.com",
+      plan: "max_20x",
+    });
+
+    // Before ACC_A is enabled, only idle/unmeasured accounts are enabled -> best_weekly_remaining_percent and resets_at are null
+    await svc.updateAccount(ACC_A, { enabled: false });
+    const unmeasuredList = await svc.getAccountList();
+    expect(unmeasuredList.pool.total_count).toBe(2); // ACC_B and ACC_C enabled
+    expect(unmeasuredList.pool.available_count).toBe(2);
+    expect(unmeasuredList.pool.best_weekly_remaining_percent).toBeNull();
+    expect(unmeasuredList.pool.best_weekly_resets_at).toBeNull();
+    expect(unmeasuredList.fable_pool?.best_weekly_remaining_percent).toBeNull();
+    expect(unmeasuredList.fable_pool?.best_weekly_resets_at).toBeNull();
+
+    // Idle account ACC_B is actually selected when ACC_A is disabled!
+    const idleSelected = await svc.select({
+      session_id: "sess-idle",
+      turn_id: "turn-1",
+      model: "claude-sonnet-4-6",
+      exclude_ids: [ACC_C],
+    });
+    expect(idleSelected?.account_id).toBe(ACC_B);
+
+    // Re-enable ACC_A, mark ACC_B as logging_in, mark ACC_C as needs_relogin
+    await svc.updateAccount(ACC_A, { enabled: true });
+    await svc.beginRelogin(ACC_B);
+    await svc.endRelogin(ACC_C, "needs_relogin");
+
+    const listWithStates = await svc.getAccountList({ forceRefresh: true });
+    const accAView = listWithStates.accounts.find((a) => a.id === ACC_A)!;
+    // Verify Fable weekly_scoped fixture was parsed into fable_weekly
+    expect(accAView.usage).toEqual({
+      five_hour: { used_percent: 37, resets_at: "2026-10-28T14:20:00.212584+00:00" },
+      seven_day: { used_percent: 18, resets_at: "2026-11-03T22:00:00.212608+00:00" },
+      fable_weekly: { used_percent: 16, resets_at: "2026-11-03T22:00:00.248331+00:00" },
+    });
+
+    // Pool calculation on real service:
+    // All 3 are enabled -> total_count = 3.
+    // ACC_B (logging_in) and ACC_C (needs_relogin) are in total_count ONLY, excluded from available_count (1).
+    expect(listWithStates.pool).toEqual({
+      available_count: 1,
+      total_count: 3,
+      best_weekly_remaining_percent: 82,
+      best_weekly_resets_at: "2026-11-03T22:00:00.212608+00:00",
+      earliest_available_at: null,
+    });
+    expect(listWithStates.fable_pool).toEqual({
+      available_count: 1,
+      total_count: 3,
+      best_weekly_remaining_percent: 82,
+      best_weekly_resets_at: "2026-11-03T22:00:00.212608+00:00",
+      earliest_available_at: null,
+    });
+
+    // updateAccount(enabled: false) on ACC_C reduces total_count denominator to 2 and excludes it from select
+    const updatedC = await svc.updateAccount(ACC_C, { enabled: false });
+    expect(updatedC.enabled).toBe(false);
+    const afterDisableC = await svc.getAccountList();
+    expect(afterDisableC.pool.total_count).toBe(2);
+    expect(afterDisableC.fable_pool?.total_count).toBe(2);
+    const selAfterDisableC = await svc.select({
+      session_id: "sess-exclude-disabled-c",
+      turn_id: "turn-1",
+      model: "claude-sonnet-4-6",
+      exclude_ids: [ACC_A],
+    });
+    expect(selAfterDisableC).toBeNull();
+
+    // Mixed indefinite block (resets_at: null) and finite block (resets_at: ISO) on available accounts:
+    await svc.endRelogin(ACC_B, "ok");
+    await svc.reject({
+      account_id: ACC_A,
+      scope: "all",
+      resets_at: null,
+      observed_at: new Date(nowMs).toISOString(),
+    });
+    await svc.reject({
+      account_id: ACC_B,
+      scope: "all",
+      resets_at: "2026-10-28T04:00:00.000Z",
+      observed_at: new Date(nowMs).toISOString(),
+    });
+
+    const mixedBlockedList = await svc.getAccountList();
+    expect(mixedBlockedList.pool.available_count).toBe(0);
+    expect(mixedBlockedList.pool.earliest_available_at).toBe("2026-10-28T04:00:00.000Z");
   });
 
   it("isolates per-account/per-scope reject blocks, projects public blocked priority (all > fable), and computes earliest_available_at", async () => {
@@ -272,7 +469,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
       writeCredentials(pDir, { accessToken: `tok-${id}`, expiresAt: nowMs + 7200_000 });
       await svc.registerFromPending({
         loginId: `login-${idx}`,
-        accountUuid: id,
+        id,
         email: `${idx}@example.com`,
         plan: "max_20x",
       });
@@ -330,10 +527,8 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     });
 
     list = await svc.getAccountList();
-    // General pool: ACC_A unblocks at 03:00Z, ACC_B at 04:00Z -> earliest is 03:00Z
     expect(list.pool.available_count).toBe(0);
     expect(list.pool.earliest_available_at).toBe("2026-10-28T03:00:00.000Z");
-    // Fable pool: ACC_A has max(all=03:00Z, fable=06:00Z) = 06:00Z; ACC_B has all=04:00Z -> earliest is 04:00Z!
     expect(list.fable_pool?.available_count).toBe(0);
     expect(list.fable_pool?.earliest_available_at).toBe("2026-10-28T04:00:00.000Z");
 
@@ -362,7 +557,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     writeCredentials(pDir, { accessToken: `tok-${ACC_A}`, expiresAt: nowMs + 7200_000 });
     await svc.registerFromPending({
       loginId: "login-del",
-      accountUuid: ACC_A,
+      id: ACC_A,
       email: "del@example.com",
       plan: "max_20x",
     });
@@ -378,12 +573,13 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     expect(selected?.account_id).toBe(ACC_A);
     expect(svc.activeSessions(ACC_A)).toBe(1);
 
+    const profileDirA = svc.profileDir(ACC_A)!;
     // Delete while active_sessions > 0 -> deferred: true, enabled becomes false immediately
     const delRes = await svc.deleteAccount(ACC_A);
     expect(delRes).toMatchObject({ id: ACC_A, deleted: true, deferred: true });
     expect(delRes.accounts[0]?.enabled).toBe(false);
     expect(delRes.pool.available_count).toBe(0);
-    expect(fs.existsSync(svc.profileDir(ACC_A))).toBe(true);
+    expect(fs.existsSync(profileDirA)).toBe(true);
 
     // New session cannot select disabled deferred-delete account
     const nextSel = await svc.select({
@@ -395,17 +591,35 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
 
     // Release active session -> moves profileDir to retired/ and removes from accounts.json
     await svc.release({ session_id: "sess-active" });
-    expect(fs.existsSync(svc.profileDir(ACC_A))).toBe(false);
+    expect(fs.existsSync(profileDirA)).toBe(false);
+    expect(svc.profileDir(ACC_A)).toBeNull();
     const retiredEntries = fs.readdirSync(path.join(accountsDir, "retired"));
     expect(retiredEntries.some((name) => name.startsWith(ACC_A))).toBe(true);
     expect(fs.readFileSync(sharedProjectFile, "utf8")).toBe("must-survive");
   });
 
-  it("reads .credentials.json read-only, marks expired tokens idle, keeps stale usage on 5xx, and does not permanently mark needs_relogin on single 401", async () => {
-    let statusToReturn = 200;
-    const fetchImpl = vi.fn(async () => {
-      if (statusToReturn !== 200) {
-        return new Response("error", { status: statusToReturn });
+  it("enforces 5-minute usage cache TTL, collects normal and failing accounts concurrently, and handles partial deadline", async () => {
+    let accBStatus = 200;
+    let hangAccB = false;
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const auth = (init?.headers as Record<string, string>)?.Authorization ?? "";
+      const token = auth.replace(/^Bearer\s+/i, "");
+      if (token === `tok-${ACC_B}`) {
+        if (hangAccB) {
+          return await new Promise<Response>(() => {
+            // Never resolves; bounded by deadlineAtMs / AbortSignal
+          });
+        }
+        if (accBStatus !== 200) {
+          return new Response("error", { status: accBStatus });
+        }
+        return new Response(
+          JSON.stringify({
+            five_hour: { utilization: 40, resets_at: "2026-10-28T05:00:00.000Z" },
+            seven_day: { utilization: 50, resets_at: "2026-11-01T00:00:00.000Z" },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
       }
       return new Response(
         JSON.stringify({
@@ -427,62 +641,54 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     writeCredentials(pDirA, { accessToken: `tok-${ACC_A}`, expiresAt: nowMs + 7200_000 });
     await svc.registerFromPending({
       loginId: "login-a",
-      accountUuid: ACC_A,
+      id: ACC_A,
       email: "a@example.com",
       plan: "max_20x",
     });
 
     const pDirB = await svc.createPendingDir("login-b");
-    writeCredentials(pDirB, { accessToken: `tok-${ACC_B}`, expiresAt: nowMs - 1000 });
+    writeCredentials(pDirB, { accessToken: `tok-${ACC_B}`, expiresAt: nowMs + 7200_000 });
     await svc.registerFromPending({
       loginId: "login-b",
-      accountUuid: ACC_B,
+      id: ACC_B,
       email: "b@example.com",
       plan: "max_20x",
     });
 
-    const credPathA = path.join(svc.profileDir(ACC_A), ".credentials.json");
-    const credBefore = fs.readFileSync(credPathA, "utf8");
+    // Initial poll fetches both ACC_A and ACC_B (2 calls)
+    let list = await svc.getAccountList();
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(list.accounts.find((a) => a.id === ACC_A)?.stale).toBe(false);
+    expect(list.accounts.find((a) => a.id === ACC_B)?.stale).toBe(false);
 
-    let list = await svc.getAccountList({ forceRefresh: true });
-    const accA1 = list.accounts.find((a) => a.id === ACC_A)!;
-    const accB1 = list.accounts.find((a) => a.id === ACC_B)!;
+    // Before 5-minute TTL (4 minutes later): cache hit, no new fetch calls
+    nowMs += 4 * 60_000;
+    await svc.getAccountList();
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
 
-    expect(accA1.auth_state).toBe("ok");
-    expect(accA1.stale).toBe(false);
-    expect(accA1.usage.five_hour?.used_percent).toBe(15);
-
-    // Expired token -> idle, usage null, fetch not called for ACC_B
-    expect(accB1.auth_state).toBe("idle");
-    expect(accB1.usage).toEqual({ five_hour: null, seven_day: null, fable_weekly: null });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
-
-    // Transient 503 -> preserves previous usage and observed_at, sets stale = true
-    statusToReturn = 503;
-    nowMs += 6 * 60_000;
-    list = await svc.getAccountList({ forceRefresh: true });
-    const accA2 = list.accounts.find((a) => a.id === ACC_A)!;
-    expect(accA2.stale).toBe(true);
-    expect(accA2.usage.five_hour?.used_percent).toBe(15);
-    expect(accA2.observed_at).toBe(accA1.observed_at);
-
-    // Single 401 -> does NOT permanently mark needs_relogin (becomes idle)
-    statusToReturn = 401;
-    nowMs += 6 * 60_000;
-    list = await svc.getAccountList({ forceRefresh: true });
-    const accA3 = list.accounts.find((a) => a.id === ACC_A)!;
-    expect(accA3.auth_state).toBe("idle");
-
-    // Explicit endRelogin(ACC_A, "needs_relogin") marks needs_relogin
-    await svc.endRelogin(ACC_A, "needs_relogin");
+    // After 5-minute TTL (+1 minute + 1ms): cache miss, fetches again; ACC_A succeeds (200), ACC_B fails (503)
+    accBStatus = 503;
+    nowMs += 60_000 + 1;
     list = await svc.getAccountList();
-    expect(list.accounts.find((a) => a.id === ACC_A)?.auth_state).toBe("needs_relogin");
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+    expect(list.accounts.find((a) => a.id === ACC_A)?.stale).toBe(false);
+    expect(list.accounts.find((a) => a.id === ACC_B)?.stale).toBe(true);
+    expect(list.accounts.find((a) => a.id === ACC_B)?.usage.five_hour?.used_percent).toBe(40);
 
-    // Credentials file was never modified
-    expect(fs.readFileSync(credPathA, "utf8")).toBe(credBefore);
+    // Deadline partial return: ACC_A succeeds immediately while ACC_B exceeds deadline
+    hangAccB = true;
+    nowMs += 6 * 60_000;
+    list = await svc.getAccountList({
+      forceRefresh: true,
+      deadlineAtMs: Date.now() + 30,
+    });
+    expect(list.accounts).toHaveLength(2);
+    expect(list.accounts.find((a) => a.id === ACC_A)?.stale).toBe(false);
+    expect(list.accounts.find((a) => a.id === ACC_B)?.stale).toBe(true);
+    expect(list.accounts.find((a) => a.id === ACC_B)?.usage.five_hour?.used_percent).toBe(40);
   });
 
-  it("adopts an existing profile directory via claude auth status --json without reading or moving credentials", async () => {
+  it("adopts an existing profile directory via claude auth status --json without reading credentials and defaults unknown plan to null", async () => {
     const profileDir = path.join(accountsDir, "profiles", ACC_A);
     const credPath = writeCredentials(profileDir, { accessToken: "secret-do-not-read" });
     const beforeInode = fs.statSync(credPath).ino;
@@ -499,7 +705,6 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
           authMethod: "claude.ai",
           accountUuid: ACC_A,
           email: "adopted@example.com",
-          subscriptionType: "max_20x",
         });
       });
 
@@ -512,7 +717,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
 
       expect(adopted.id).toBe(ACC_A);
       expect(adopted.email).toBe("adopted@example.com");
-      expect(adopted.plan).toBe("max_20x");
+      expect(adopted.plan).toBeNull();
       expect(capturedEnv?.CLAUDE_CONFIG_DIR).toBe(profileDir);
       expect(capturedEnv?.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
       expect(capturedEnv?.ANTHROPIC_API_KEY).toBeUndefined();
@@ -527,3 +732,4 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     }
   });
 });
+

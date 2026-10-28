@@ -9,6 +9,7 @@ import type {
   ClaudeAccountsJsonFile,
   ClaudeBindingsJsonFile,
   ClaudeBlocksJsonFile,
+  ClaudeSessionBindingEntry,
 } from "./types.js";
 
 export const SHARED_CLAUDE_HOME_ENTRIES = [
@@ -212,7 +213,7 @@ export class ClaudeAccountStore {
     return parsed.accounts.map((acc) => ({
       id: String(acc.id),
       email: String(acc.email ?? ""),
-      plan: String(acc.plan ?? ""),
+      plan: typeof acc.plan === "string" && acc.plan.trim() ? acc.plan.trim() : null,
       enabled: Boolean(acc.enabled),
       priority:
         typeof acc.priority === "number" && Number.isFinite(acc.priority)
@@ -230,7 +231,7 @@ export class ClaudeAccountStore {
     writeJsonAtomic0600(this.accountsFilePath, payload);
   }
 
-  readBindings(): Record<string, string> {
+  readBindings(): Record<string, ClaudeSessionBindingEntry> {
     const parsed = readJsonOrDefault<ClaudeBindingsJsonFile>(this.bindingsFilePath, {
       version: 1,
       bindings: {},
@@ -238,10 +239,21 @@ export class ClaudeAccountStore {
     if (!parsed.bindings || typeof parsed.bindings !== "object") {
       return {};
     }
-    return { ...parsed.bindings };
+    const result: Record<string, ClaudeSessionBindingEntry> = {};
+    for (const [sessionId, raw] of Object.entries(parsed.bindings)) {
+      if (typeof raw === "string" && raw) {
+        result[sessionId] = { account_id: raw, turn_id: null };
+      } else if (raw && typeof raw === "object" && typeof raw.account_id === "string") {
+        result[sessionId] = {
+          account_id: raw.account_id,
+          turn_id: typeof raw.turn_id === "string" ? raw.turn_id : null,
+        };
+      }
+    }
+    return result;
   }
 
-  writeBindings(bindings: Record<string, string>): void {
+  writeBindings(bindings: Record<string, ClaudeSessionBindingEntry>): void {
     const payload: ClaudeBindingsJsonFile = {
       version: 1,
       bindings,

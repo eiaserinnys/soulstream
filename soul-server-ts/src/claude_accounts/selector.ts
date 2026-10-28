@@ -125,6 +125,7 @@ export interface SelectableAccountCandidate {
   priority: number | null;
   auth_state: ClaudeAccountAuthState;
   active_sessions: number;
+  stale?: boolean;
   usage: ClaudeAccountUsage;
   blocks?: ClaudeAccountBlocksRecord;
 }
@@ -133,6 +134,8 @@ export interface SelectCandidateParams {
   candidates: SelectableAccountCandidate[];
   model: string;
   boundAccountId?: string | null;
+  boundTurnId?: string | null;
+  turnId?: string | null;
   excludeIds?: Iterable<string>;
   nowMs: number;
 }
@@ -155,7 +158,7 @@ function comparePriority(a: number | null, b: number | null): number {
 export function selectBestCandidate(
   params: SelectCandidateParams,
 ): SelectableAccountCandidate | null {
-  const { candidates, model, boundAccountId, nowMs } = params;
+  const { candidates, model, boundAccountId, boundTurnId, turnId, nowMs } = params;
   const excludeSet = new Set(params.excludeIds ?? []);
   const fableModel = isFableModel(model);
 
@@ -179,11 +182,21 @@ export function selectBestCandidate(
     return null;
   }
 
+  // Same-turn idempotency: if the bound account is re-requested on the same turn_id and is still eligible, keep it
+  if (boundAccountId && turnId && boundTurnId && turnId === boundTurnId) {
+    const sameTurnCandidate = eligible.find((c) => c.id === boundAccountId);
+    if (sameTurnCandidate) {
+      return sameTurnCandidate;
+    }
+  }
+
   const underSoftCap: SelectableAccountCandidate[] = [];
   const atOrAboveSoftCap: SelectableAccountCandidate[] = [];
 
   for (const candidate of eligible) {
-    const maxUsed = relevantMaxUsedPercent(candidate.usage, fableModel, nowMs);
+    const maxUsed = candidate.stale
+      ? null
+      : relevantMaxUsedPercent(candidate.usage, fableModel, nowMs);
     if (maxUsed !== null && maxUsed >= SOFT_USAGE_CAP_PERCENT) {
       atOrAboveSoftCap.push(candidate);
     } else {
@@ -208,16 +221,20 @@ export function selectBestCandidate(
 
       // 3. For non-Fable models: prefer higher active Fable usage first to preserve Fable headroom
       if (!fableModel) {
-        const fableA = effectiveWindowUsedPercent(a.usage.fable_weekly, nowMs) ?? -1;
-        const fableB = effectiveWindowUsedPercent(b.usage.fable_weekly, nowMs) ?? -1;
+        const fableA = a.stale
+          ? -1
+          : (effectiveWindowUsedPercent(a.usage.fable_weekly, nowMs) ?? -1);
+        const fableB = b.stale
+          ? -1
+          : (effectiveWindowUsedPercent(b.usage.fable_weekly, nowMs) ?? -1);
         if (fableA !== fableB) {
           return fableB - fableA;
         }
       }
 
-      // 4. Lower relevant max usage first (measured < 98% before unmeasured idle)
-      const maxA = relevantMaxUsedPercent(a.usage, fableModel, nowMs);
-      const maxB = relevantMaxUsedPercent(b.usage, fableModel, nowMs);
+      // 4. Lower relevant max usage first (measured < 98% before unmeasured idle/stale)
+      const maxA = a.stale ? null : relevantMaxUsedPercent(a.usage, fableModel, nowMs);
+      const maxB = b.stale ? null : relevantMaxUsedPercent(b.usage, fableModel, nowMs);
       const rankA = maxA !== null ? maxA : SOFT_USAGE_CAP_PERCENT;
       const rankB = maxB !== null ? maxB : SOFT_USAGE_CAP_PERCENT;
       if (rankA !== rankB) {

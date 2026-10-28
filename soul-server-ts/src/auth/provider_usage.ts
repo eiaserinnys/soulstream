@@ -246,15 +246,16 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
     });
     providerUsageStarted(this.config.logger, provider, endpoint);
     try {
-      const limits = await withinProviderUsageTimeout(
+      const rawPromise = this.fetchProviderLimits(
+        provider,
         deadline.signal,
-        this.fetchProviderLimits(
-          provider,
-          deadline.signal,
-          deadline.scheduledAbortAtMs,
-          attempts,
-        ),
+        deadline.scheduledAbortAtMs,
+        attempts,
       );
+      const limits =
+        provider === "claude" && this.config.claudeAccounts
+          ? await rawPromise
+          : await withinProviderUsageTimeout(deadline.signal, rawPromise);
       if ((provider === "claude" || provider === "codex" || provider === "antigravity") && limits.status !== "error") {
         rememberProviderUsageObservation(provider, limits);
       }
@@ -348,7 +349,7 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
     }
 
     if (!this.config.claudeAuth) {
-      return { ...emptyLimits(), mode: "legacy" };
+      return emptyLimits();
     }
     const startedAtMs = Date.now();
     let result;
@@ -368,20 +369,15 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
       result: result.success ? "success" : "error",
     });
     if (!result.success) {
-      const failed =
-        result.error === "no token"
-          ? emptyLimits()
-          : emptyLimits("error", result.error ?? "Claude usage request failed");
-      return { ...failed, mode: "legacy" };
+      return result.error === "no token"
+        ? emptyLimits()
+        : emptyLimits("error", result.error ?? "Claude usage request failed");
     }
-    return {
-      ...claudeLimitsFromUsageResponse(
-        result.data ?? {},
-        undefined,
-        this.config.modelCatalog?.list(),
-      ),
-      mode: "legacy",
-    };
+    return claudeLimitsFromUsageResponse(
+      result.data ?? {},
+      undefined,
+      this.config.modelCatalog?.list(),
+    );
   }
 
   private async fetchCodexLimits(

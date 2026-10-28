@@ -3,10 +3,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { promisify } from "node:util";
+import { resolveClaudeExecutableFromPath } from "../engine/claude_executable_path.js";
 import { ClaudeAccountStore, ensureProfileSharedSymlinks } from "./store.js";
 import type { ClaudeAccountRecord } from "./types.js";
 
 const execFileAsync = promisify(execFile);
+const CLAUDE_CODE_EXECPATH_ENV = "CLAUDE_CODE_EXECPATH";
 
 export interface AdoptClaudeAccountOptions {
   profilePath: string;
@@ -55,7 +57,11 @@ export async function adoptClaudeAccountProfile(
 
   const accountsDir = path.resolve(options.accountsDir ?? inferredAccountsDir);
   const homeDir = path.resolve(options.homeDir ?? os.homedir());
-  const claudeCliPath = options.claudeCliPath ?? process.env.CLAUDE_CLI_PATH ?? "claude";
+  const claudeCliPath =
+    options.claudeCliPath?.trim() ||
+    process.env[CLAUDE_CODE_EXECPATH_ENV]?.trim() ||
+    resolveClaudeExecutableFromPath(process.env, process.platform) ||
+    "claude";
   const now = options.now ?? (() => Date.now());
 
   const expectedProfilePath = path.join(accountsDir, "profiles", folderName);
@@ -111,13 +117,14 @@ export async function adoptClaudeAccountProfile(
   const email = String(
     parsed.email ?? accountObj?.email ?? parsed.emailAddress ?? "",
   ).trim();
-  const plan = String(
+  const rawPlan = String(
     parsed.subscriptionType ??
       parsed.plan ??
       accountObj?.subscriptionType ??
       accountObj?.plan ??
-      "max",
+      "",
   ).trim();
+  const plan: string | null = rawPlan ? rawPlan : null;
 
   // Ensure shared symlinks without touching or reading .credentials.json
   ensureProfileSharedSymlinks(resolvedProfilePath, homeDir);
@@ -134,7 +141,7 @@ export async function adoptClaudeAccountProfile(
       ? {
           ...accounts[existingIdx]!,
           email: email || accounts[existingIdx]!.email,
-          plan: plan || accounts[existingIdx]!.plan,
+          plan: plan ?? accounts[existingIdx]!.plan,
         }
       : {
           id: accountUuid,

@@ -21,7 +21,7 @@ export interface ClaudeAccountBlockView {
 export interface ClaudeAccountRecord {
   id: string;
   email: string;
-  plan: string;
+  plan: string | null;
   enabled: boolean;
   priority: number | null;
   created_at: string;
@@ -30,7 +30,7 @@ export interface ClaudeAccountRecord {
 export interface ClaudeAccountView {
   id: string;
   email: string;
-  plan: string;
+  plan: string | null;
   enabled: boolean;
   priority: number | null;
   auth_state: ClaudeAccountAuthState;
@@ -71,9 +71,14 @@ export interface ClaudeAccountsJsonFile {
   accounts: ClaudeAccountRecord[];
 }
 
+export interface ClaudeSessionBindingEntry {
+  account_id: string;
+  turn_id: string | null;
+}
+
 export interface ClaudeBindingsJsonFile {
   version: 1;
-  bindings: Record<string, string>;
+  bindings: Record<string, string | ClaudeSessionBindingEntry>;
 }
 
 export interface ClaudeBlocksJsonFile {
@@ -121,24 +126,17 @@ export interface ClaudeAccountDeleteResult {
 
 export interface ClaudeLoginAccountPort {
   createPendingDir(loginId: string): Promise<string>;
-  profileDir(accountId: string): string;
-  findAccount(accountId: string): Promise<ClaudeAccountRecord | null>;
-  findByIdentity(identity: {
-    accountUuid: string;
-    email?: string | null;
-  }): Promise<ClaudeAccountRecord | null>;
-  registerFromPending(params: {
+  profileDir(accountId: string): string | null;
+  findAccount(accountId: string): Promise<{ id: string; email: string | null } | null>;
+  findByIdentity(input: { id: string; email: string | null }): Promise<{ id: string } | null>;
+  registerFromPending(input: {
     loginId: string;
-    accountUuid: string;
-    email: string;
-    plan: string;
-    overwriteAccountId?: string;
-  }): Promise<ClaudeAccountRecord>;
+    id: string;
+    email: string | null;
+    plan: string | null;
+  }): Promise<void>;
   retirePending(loginId: string): Promise<void>;
   beginRelogin(accountId: string): Promise<void>;
-  endRelogin(
-    accountId: string,
-    outcome: "ok" | "needs_relogin" | "cancelled",
-  ): Promise<void>;
+  endRelogin(accountId: string, outcome: "ok" | "needs_relogin"): Promise<void>;
   activeSessions(accountId: string): number;
 }

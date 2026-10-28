@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import { computePoolSummary, pickBestAccountForScope } from "./pool.js";
 import {
   projectPublicBlockView,
@@ -81,8 +82,11 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
     return count;
   }
 
-  profileDir(accountId: string): string {
-    return this.store.profileDir(accountId);
+  profileDir(accountId: string): string | null {
+    const dir = this.store.profileDir(accountId);
+    if (fs.existsSync(dir)) return dir;
+    const existsInAccounts = this.store.readAccounts().some((acc) => acc.id === accountId);
+    return existsInAccounts ? dir : null;
   }
 
   async createPendingDir(loginId: string): Promise<string> {
@@ -93,74 +97,60 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
     this.store.retirePendingDir(loginId);
   }
 
-  async findAccount(accountId: string): Promise<ClaudeAccountRecord | null> {
-    const accounts = this.store.readAccounts();
-    return accounts.find((acc) => acc.id === accountId) ?? null;
+  async findAccount(
+    accountId: string,
+  ): Promise<{ id: string; email: string | null } | null> {
+    const found = this.store.readAccounts().find((acc) => acc.id === accountId);
+    if (!found) return null;
+    return { id: found.id, email: found.email || null };
   }
 
-  async findByIdentity(identity: {
-    accountUuid: string;
-    email?: string | null;
-  }): Promise<ClaudeAccountRecord | null> {
+  async findByIdentity(input: {
+    id: string;
+    email: string | null;
+  }): Promise<{ id: string } | null> {
     const accounts = this.store.readAccounts();
-    const byId = accounts.find((acc) => acc.id === identity.accountUuid);
-    if (byId) return byId;
-    const normalizedEmail = identity.email?.trim().toLowerCase();
+    const byId = accounts.find((acc) => acc.id === input.id);
+    if (byId) return { id: byId.id };
+    const normalizedEmail = input.email?.trim().toLowerCase();
     if (!normalizedEmail) return null;
-    return accounts.find((acc) => acc.email.trim().toLowerCase() === normalizedEmail) ?? null;
+    const byEmail = accounts.find(
+      (acc) => acc.email.trim().toLowerCase() === normalizedEmail,
+    );
+    return byEmail ? { id: byEmail.id } : null;
   }
 
-  async registerFromPending(params: {
+  async registerFromPending(input: {
     loginId: string;
-    accountUuid: string;
-    email: string;
-    plan: string;
-    overwriteAccountId?: string;
-  }): Promise<ClaudeAccountRecord> {
+    id: string;
+    email: string | null;
+    plan: string | null;
+  }): Promise<void> {
     this.store.promotePendingToProfile({
-      loginId: params.loginId,
-      accountUuid: params.accountUuid,
+      loginId: input.loginId,
+      accountUuid: input.id,
     });
 
     const nowIso = new Date(this.now()).toISOString();
     const accounts = this.store.readAccounts();
-    const existingByUuid = accounts.find((acc) => acc.id === params.accountUuid);
-    const existingByOverwrite =
-      params.overwriteAccountId && params.overwriteAccountId !== params.accountUuid
-        ? accounts.find((acc) => acc.id === params.overwriteAccountId)
-        : undefined;
+    const existingByUuid = accounts.find((acc) => acc.id === input.id);
 
-    const baseRecord = existingByUuid ?? existingByOverwrite;
     const record: ClaudeAccountRecord = {
-      id: params.accountUuid,
-      email: params.email,
-      plan: params.plan,
-      enabled: baseRecord ? baseRecord.enabled : true,
-      priority: baseRecord ? baseRecord.priority : null,
-      created_at: baseRecord ? baseRecord.created_at : nowIso,
+      id: input.id,
+      email: input.email ?? existingByUuid?.email ?? "",
+      plan: input.plan ?? existingByUuid?.plan ?? null,
+      enabled: existingByUuid ? existingByUuid.enabled : true,
+      priority: existingByUuid ? existingByUuid.priority : null,
+      created_at: existingByUuid ? existingByUuid.created_at : nowIso,
     };
 
-    const nextAccounts = accounts.filter(
-      (acc) =>
-        acc.id !== params.accountUuid &&
-        (!params.overwriteAccountId || acc.id !== params.overwriteAccountId),
-    );
+    const nextAccounts = accounts.filter((acc) => acc.id !== input.id);
     nextAccounts.push(record);
     this.store.writeAccounts(nextAccounts);
 
-    if (params.overwriteAccountId && params.overwriteAccountId !== params.accountUuid) {
-      this.cleanupAccountReferences(params.overwriteAccountId);
-      if (this.activeSessions(params.overwriteAccountId) === 0) {
-        this.store.retireProfileDir(params.overwriteAccountId);
-      } else {
-        this.pendingRetireAccountIds.add(params.overwriteAccountId);
-      }
-    }
-
-    this.loggingInAccountIds.delete(params.accountUuid);
-    this.needsReloginAccountIds.delete(params.accountUuid);
-    this.pendingRetireAccountIds.delete(params.accountUuid);
-    return record;
+    this.loggingInAccountIds.delete(input.id);
+    this.needsReloginAccountIds.delete(input.id);
+    this.pendingRetireAccountIds.delete(input.id);
   }
 
   async beginRelogin(accountId: string): Promise<void> {
@@ -169,7 +159,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
 
   async endRelogin(
     accountId: string,
-    outcome: "ok" | "needs_relogin" | "cancelled",
+    outcome: "ok" | "needs_relogin",
   ): Promise<void> {
     this.loggingInAccountIds.delete(accountId);
     if (outcome === "ok") {
@@ -203,25 +193,35 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
     const blocks = this.store.readBlocks();
 
     const candidates: SelectableAccountCandidate[] = accounts.map((acc) => {
-      const obs = this.usageCollector.getCachedObservation(acc.id, this.profileDir(acc.id));
+      const obs = this.usageCollector.getCachedObservation(
+        acc.id,
+        this.store.profileDir(acc.id),
+      );
       return {
         id: acc.id,
         enabled: acc.enabled && !this.pendingRetireAccountIds.has(acc.id),
         priority: acc.priority,
         auth_state: this.resolveEffectiveAuthState(acc.id, obs.auth_state),
         active_sessions: this.activeSessions(acc.id),
+        stale: obs.stale,
         usage: obs.usage,
         blocks: blocks[acc.id],
       };
     });
 
+    const existingBinding = bindings[input.session_id];
     const boundAccountId =
-      this.activeSessionAccounts.get(input.session_id) ?? bindings[input.session_id] ?? null;
+      this.activeSessionAccounts.get(input.session_id) ??
+      existingBinding?.account_id ??
+      null;
+    const boundTurnId = existingBinding?.turn_id ?? null;
 
     const chosen = selectBestCandidate({
       candidates,
       model: input.model,
       boundAccountId,
+      boundTurnId,
+      turnId: input.turn_id,
       excludeIds: input.exclude_ids,
       nowMs,
     });
@@ -241,14 +241,18 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       this.maybeFinalizeDeferredRetire(previousActiveAccountId);
     }
 
-    if (bindings[input.session_id] !== chosen.id) {
-      bindings[input.session_id] = chosen.id;
-      this.store.writeBindings(bindings);
-    } else if (this.activeSessionAccounts.size === 1) {
+    if (
+      existingBinding?.account_id !== chosen.id ||
+      existingBinding?.turn_id !== input.turn_id
+    ) {
+      bindings[input.session_id] = {
+        account_id: chosen.id,
+        turn_id: input.turn_id ?? null,
+      };
       this.store.writeBindings(bindings);
     }
 
-    return { account_id: chosen.id, config_dir: this.profileDir(chosen.id) };
+    return { account_id: chosen.id, config_dir: this.store.profileDir(chosen.id) };
   }
 
   async reject(input: ClaudeAccountRejectInput): Promise<void> {
@@ -352,8 +356,8 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
   private removeBindingsForAccount(accountId: string): void {
     const bindings = this.store.readBindings();
     let changed = false;
-    for (const [sessionId, boundId] of Object.entries(bindings)) {
-      if (boundId === accountId) {
+    for (const [sessionId, boundEntry] of Object.entries(bindings)) {
+      if (boundEntry.account_id === accountId) {
         delete bindings[sessionId];
         changed = true;
       }
@@ -412,7 +416,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       )
       .map((acc) => ({
         accountId: acc.id,
-        profileDir: this.profileDir(acc.id),
+        profileDir: this.store.profileDir(acc.id),
       }));
 
     const observations = await this.usageCollector.collectAll(
@@ -425,7 +429,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
         observations.get(acc.id) ??
         this.usageCollector.getCachedObservation(
           acc.id,
-          this.profileDir(acc.id),
+          this.store.profileDir(acc.id),
         );
       const auth_state = this.resolveEffectiveAuthState(acc.id, obs.auth_state);
       return {

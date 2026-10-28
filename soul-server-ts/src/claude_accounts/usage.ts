@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { claudeLimitsFromUsageResponse } from "../auth/provider_usage.js";
 import type {
   ClaudeAccountAuthState,
   ClaudeAccountUsage,
@@ -107,6 +108,7 @@ function parseWindowNode(node: unknown): ClaudeUsageWindow | null {
   const obj = node as Record<string, unknown>;
   const rawPct =
     obj.utilization ??
+    obj.percent ??
     obj.used_percent ??
     obj.usedPercent ??
     obj.percent_used ??
@@ -124,6 +126,41 @@ function parseWindowNode(node: unknown): ClaudeUsageWindow | null {
   };
 }
 
+function findScopedFableWindow(obj: Record<string, unknown>): ClaudeUsageWindow | null {
+  if (!Array.isArray(obj.limits)) return null;
+  for (const item of obj.limits) {
+    if (!item || typeof item !== "object") continue;
+    const entry = item as Record<string, unknown>;
+    const scope =
+      entry.scope && typeof entry.scope === "object"
+        ? (entry.scope as Record<string, unknown>)
+        : null;
+    const scopeModel =
+      scope?.model && typeof scope.model === "object"
+        ? (scope.model as Record<string, unknown>)
+        : null;
+    const directModel =
+      entry.model && typeof entry.model === "object"
+        ? (entry.model as Record<string, unknown>)
+        : null;
+    const label = String(
+      scopeModel?.display_name ??
+        scopeModel?.id ??
+        directModel?.display_name ??
+        directModel?.name ??
+        directModel?.id ??
+        entry.type ??
+        entry.scope ??
+        "",
+    ).toLowerCase();
+    if (label.includes("fable")) {
+      const parsed = parseWindowNode(entry);
+      if (parsed) return parsed;
+    }
+  }
+  return null;
+}
+
 export function parseAnthropicOAuthUsagePayload(
   payload: unknown,
 ): ClaudeAccountUsage {
@@ -131,60 +168,81 @@ export function parseAnthropicOAuthUsagePayload(
     return emptyClaudeAccountUsage();
   }
   const obj = payload as Record<string, unknown>;
+  const normalized = claudeLimitsFromUsageResponse(obj);
 
-  let five_hour = parseWindowNode(obj.five_hour ?? obj.fiveHour);
-  let seven_day = parseWindowNode(obj.seven_day ?? obj.sevenDay);
-  let fable_weekly = parseWindowNode(
-    obj.seven_day_fable ??
-      obj.sevenDayFable ??
-      obj.fable_weekly ??
-      obj.fableWeekly,
+  const rawFiveHour = parseWindowNode(obj.five_hour ?? obj.fiveHour);
+  const rawSevenDay = parseWindowNode(obj.seven_day ?? obj.sevenDay);
+  const rawFableDirect =
+    parseWindowNode(
+      obj.seven_day_fable ?? obj.sevenDayFable ?? obj.fable_weekly ?? obj.fableWeekly,
+    ) ?? findScopedFableWindow(obj);
+
+  const fiveHourQuota = normalized.quotas.find((q) => q.id === "claude:five_hour");
+  const sevenDayQuota = normalized.quotas.find((q) => q.id === "claude:seven_day");
+  const fableQuota = normalized.quotas.find(
+    (q) =>
+      q.id === "claude:weekly_scoped:fable" ||
+      q.id === "claude:seven_day_fable" ||
+      q.model?.toLowerCase() === "fable",
   );
 
-  if (Array.isArray(obj.limits)) {
-    for (const item of obj.limits) {
-      if (!item || typeof item !== "object") {
-        continue;
-      }
-      const limitObj = item as Record<string, unknown>;
-      const type = String(limitObj.type ?? limitObj.window ?? "").toLowerCase();
-      const scope = String(limitObj.scope ?? limitObj.key ?? "").toLowerCase();
-      const modelObj =
-        limitObj.model && typeof limitObj.model === "object"
-          ? (limitObj.model as Record<string, unknown>)
-          : null;
-      const modelId = String(modelObj?.id ?? "").toLowerCase();
-      const modelName = String(modelObj?.display_name ?? modelObj?.name ?? "").toLowerCase();
+  const five_hour: ClaudeUsageWindow | null =
+    fiveHourQuota && fiveHourQuota.usedPercent !== null
+      ? {
+          used_percent: fiveHourQuota.usedPercent,
+          resets_at:
+            rawFiveHour?.resets_at ??
+            (fiveHourQuota.resetAt !== null
+              ? new Date(fiveHourQuota.resetAt * 1000).toISOString()
+              : null),
+        }
+      : rawFiveHour;
 
-      const parsedWindow = parseWindowNode(limitObj);
-      if (!parsedWindow) {
-        continue;
-      }
+  const seven_day: ClaudeUsageWindow | null =
+    sevenDayQuota && sevenDayQuota.usedPercent !== null
+      ? {
+          used_percent: sevenDayQuota.usedPercent,
+          resets_at:
+            rawSevenDay?.resets_at ??
+            (sevenDayQuota.resetAt !== null
+              ? new Date(sevenDayQuota.resetAt * 1000).toISOString()
+              : null),
+        }
+      : rawSevenDay;
 
-      if (
-        !fable_weekly &&
-        (type.includes("fable") ||
-          scope.includes("fable") ||
-          modelId.includes("fable") ||
-          modelName.includes("fable"))
-      ) {
-        fable_weekly = parsedWindow;
-      } else if (!five_hour && (type === "five_hour" || type === "5h" || scope === "five_hour")) {
-        five_hour = parsedWindow;
-      } else if (
-        !seven_day &&
-        (type === "seven_day" || type === "weekly" || type === "7d" || scope === "seven_day")
-      ) {
-        seven_day = parsedWindow;
-      }
-    }
+  const fable_weekly: ClaudeUsageWindow | null =
+    fableQuota && fableQuota.usedPercent !== null
+      ? {
+          used_percent: fableQuota.usedPercent,
+          resets_at:
+            rawFableDirect?.resets_at ??
+            (fableQuota.resetAt !== null
+              ? new Date(fableQuota.resetAt * 1000).toISOString()
+              : null),
+        }
+      : rawFableDirect;
+
+  return { five_hour, seven_day, fable_weekly };
+}
+
+function raceWithAbort<T>(signal: AbortSignal, promise: Promise<T>): Promise<T> {
+  if (signal.aborted) {
+    return Promise.reject(signal.reason ?? new Error("aborted"));
   }
-
-  return {
-    five_hour,
-    seven_day,
-    fable_weekly,
-  };
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => reject(signal.reason ?? new Error("aborted"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        signal.removeEventListener("abort", onAbort);
+        resolve(value);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
 }
 
 export interface CachedAccountObservation {
@@ -350,7 +408,7 @@ export class ClaudeAccountUsageCollector {
 
     const remainingDeadlineMs =
       options.deadlineAtMs !== undefined
-        ? options.deadlineAtMs - nowMs
+        ? options.deadlineAtMs - Date.now()
         : this.perAccountTimeoutMs;
 
     if (remainingDeadlineMs <= 0) {
@@ -364,21 +422,23 @@ export class ClaudeAccountUsageCollector {
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await this.fetchImpl(this.endpointUrl, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "anthropic-beta": "oauth-2025-04-20",
-          Accept: "application/json",
-          "User-Agent": "soulstream-claude-account-pool/1.0",
-        },
-        signal: controller.signal,
-      });
+      const response = await raceWithAbort(
+        controller.signal,
+        this.fetchImpl(this.endpointUrl, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "anthropic-beta": "oauth-2025-04-20",
+            Accept: "application/json",
+            "User-Agent": "soulstream-claude-account-pool/1.0",
+          },
+          signal: controller.signal,
+        }),
+      );
 
       const completedAtMs = this.now();
 
       if (response.status === 401 || response.status === 403) {
-        // Single 401/403 must not permanently mark needs_relogin; treat as idle until CLI refresh confirms relogin need
         return {
           auth_state: "idle",
           stale: false,
@@ -392,7 +452,10 @@ export class ClaudeAccountUsageCollector {
         return this.buildTransientFallback(previous, completedAtMs);
       }
 
-      const body = (await response.json()) as unknown;
+      const body = (await raceWithAbort(
+        controller.signal,
+        response.json(),
+      )) as unknown;
       const usage = parseAnthropicOAuthUsagePayload(body);
 
       return {
