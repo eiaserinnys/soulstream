@@ -172,10 +172,6 @@ export class ClaudeSdkClient implements ClaudeClient {
 
   async *run(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent> {
     if (this.isClosed) return;
-    if (!options.onAccountRateLimit) {
-      yield* this.runOneShotAttempt(options, signal, undefined);
-      return;
-    }
     yield* this.accountTurnDriver.run(
       options,
       signal,
@@ -245,35 +241,22 @@ export class ClaudeSdkClient implements ClaudeClient {
     signal: AbortSignal,
   ): AsyncIterable<ClaudeClientEvent> {
     if (this.isClosed) return;
-    if (!options.onAccountRateLimit) {
-      yield* this.accountTurnDriver.runPersistentAttempt(
-        options,
-        signal,
-        undefined,
-        (turnOptions, turnSignal, turnUsageCarry, onSession) =>
-          this.runPersistentTurn(turnOptions, turnSignal, turnUsageCarry, onSession),
-        async () => {
-          await this.waitForChildExit();
-          await this.accountQuerySettlement.settle();
-        },
-      );
-      return;
-    }
+    const runPersistentAttempt = (
+      attemptOptions: ClaudeRunOptions,
+      attemptSignal: AbortSignal,
+      usageCarry?: ClaudeSdkUsageCarry,
+    ) => this.accountTurnDriver.runPersistentAttempt(
+      attemptOptions,
+      attemptSignal,
+      usageCarry,
+      this.runPersistentTurn.bind(this),
+      () => this.waitForChildExitAndSettleAccountQueries(),
+    );
     yield* this.accountTurnDriver.run(
       options,
       signal,
       (attemptOptions, attemptSignal, usageCarry) =>
-        this.accountTurnDriver.runPersistentAttempt(
-          attemptOptions,
-          attemptSignal,
-          usageCarry,
-          (turnOptions, turnSignal, turnUsageCarry, onSession) =>
-            this.runPersistentTurn(turnOptions, turnSignal, turnUsageCarry, onSession),
-          async () => {
-            await this.waitForChildExit();
-            await this.accountQuerySettlement.settle();
-          },
-        ),
+        runPersistentAttempt(attemptOptions, attemptSignal, usageCarry),
       () => this.isClosed,
     );
   }
@@ -310,12 +293,10 @@ export class ClaudeSdkClient implements ClaudeClient {
         this.activeQuery = null;
       }
       persistentSession = null;
-      if (options.trackChildExit) await this.waitForChildExit();
-      await this.accountQuerySettlement.settle();
+      await this.waitForChildExitAndSettleAccountQueries(options.trackChildExit === true);
     }
     if (!persistentSession && options.trackChildExit) {
-      await this.waitForChildExit();
-      await this.accountQuerySettlement.settle();
+      await this.waitForChildExitAndSettleAccountQueries();
     }
     if (this.isClosed || (options.trackChildExit && signal.aborted)) return;
     const { maxTurns, ...persistentOptions } = options;
@@ -392,19 +373,14 @@ export class ClaudeSdkClient implements ClaudeClient {
   }
 
   async compact(sessionId: string): Promise<CompactedContextUsage | undefined> {
-    if (!this.lastRunOptions?.trackChildExit) {
-      return await this.compactLocked(sessionId);
-    }
+    const compact = () => compactClaudeSdkSession(sessionId, this.compactContext);
+    if (!this.lastRunOptions?.trackChildExit) return compact();
     const releaseTurn = await this.turnMutex.acquire();
     try {
-      return await this.compactLocked(sessionId);
+      return await compact();
     } finally {
       releaseTurn();
     }
-  }
-
-  private async compactLocked(sessionId: string): Promise<CompactedContextUsage | undefined> {
-    return await compactClaudeSdkSession(sessionId, this.compactContext);
   }
 
   sendControlFrame(frame: RunnerControlFrame): boolean {
@@ -453,8 +429,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     if (this.lastRunOptions?.trackChildExit) {
       await this.activeQueryPump?.catch(() => undefined);
     }
-    await this.waitForChildExit();
-    await this.accountQuerySettlement.settle();
+    await this.waitForChildExitAndSettleAccountQueries();
   }
 
   private async closePersistentAndSettle(
@@ -463,8 +438,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   ): Promise<void> {
     await persistent.close(reason);
     await persistent.settled();
-    await this.waitForChildExit();
-    await this.accountQuerySettlement.settle();
+    await this.waitForChildExitAndSettleAccountQueries();
     if (this.persistentSession === persistent) this.persistentSession = null;
     this.persistentConfigDir = null;
     this.persistentConfigDirKnown = false;
@@ -482,21 +456,22 @@ export class ClaudeSdkClient implements ClaudeClient {
     }
   }
 
+  private async waitForChildExitAndSettleAccountQueries(waitForChildExit = true): Promise<void> {
+    if (waitForChildExit) await this.waitForChildExit();
+    await this.accountQuerySettlement.settle();
+  }
+
   private isQueryActive(query: ClaudeSdkQuery): boolean {
     return this.activeQuery === query;
   }
 
   private normalizeExecutionError(err: unknown, executablePath?: string): Error {
     const rawMessage = err instanceof Error ? err.message : String(err);
-    if (isMissingSpawnExecutableError(err) && executablePath) {
-      return new Error(
-        `Claude Code executable failed to start at CLAUDE_CODE_EXECPATH: ${rawMessage}`,
-      );
+    if (!isMissingSpawnExecutableError(err)) {
+      return err instanceof Error ? err : new Error(rawMessage);
     }
-    if (isMissingSpawnExecutableError(err)) {
-      return new Error(`Claude Code executable failed to start: ${rawMessage}`);
-    }
-    return err instanceof Error ? err : new Error(rawMessage);
+    const location = executablePath ? " at CLAUDE_CODE_EXECPATH" : "";
+    return new Error(`Claude Code executable failed to start${location}: ${rawMessage}`);
   }
 
   private clearPerRunState(): void {
