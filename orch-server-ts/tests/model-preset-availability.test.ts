@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   resolvePresetAvailability,
+  type ModelPresetAvailability,
   type StaticModelPreset,
 } from "../src/model/model_preset_availability.js";
 import type {
@@ -788,6 +789,103 @@ describe("ModelPresetAvailabilityService limit rejection", () => {
     expect(getClaudePoolAccountsForAvailability).not.toHaveBeenCalled();
   });
 });
+
+describe("ModelPresetAvailabilityService usable preset selection", () => {
+  const candidateIds = ["gemini-4-argon", "claude-opus", "codex-6.1-sol"];
+
+  it.each([
+    ["keeps the first preset when it has headroom", [
+      presetAvailability("gemini-4-argon", true, 50),
+      presetAvailability("claude-opus", true, 60),
+      presetAvailability("codex-6.1-sol", true, 80),
+    ], "gemini-4-argon"],
+    ["keeps the first preset when no weekly quota is reported", [
+      presetAvailability("gemini-4-argon", true, null),
+      presetAvailability("claude-opus", true, 60),
+      presetAvailability("codex-6.1-sol", true, 80),
+    ], "gemini-4-argon"],
+    ["moves past the first preset below the weekly floor", [
+      presetAvailability("gemini-4-argon", true, 0.33),
+      presetAvailability("claude-opus", true, 60),
+      presetAvailability("codex-6.1-sol", true, 80),
+    ], "claude-opus"],
+    ["uses the third preset when the first two are unavailable", [
+      presetAvailability("gemini-4-argon", true, 0.33),
+      presetAvailability("claude-opus", false, null),
+      presetAvailability("codex-6.1-sol", true, 83),
+    ], "codex-6.1-sol"],
+    ["uses the third preset when the first two are limit-rejected", [
+      presetAvailability("gemini-4-argon", false, null),
+      presetAvailability("claude-opus", false, null),
+      presetAvailability("codex-6.1-sol", true, 83),
+    ], "codex-6.1-sol"],
+    ["falls back to the first available preset when all are below the floor", [
+      presetAvailability("gemini-4-argon", true, 0.33),
+      presetAvailability("claude-opus", true, 0.5),
+      presetAvailability("codex-6.1-sol", true, 0.75),
+    ], "gemini-4-argon"],
+  ])("%s", (_label, availability, expected) => {
+    const service = createSelectionService(availability as ModelPresetAvailability[]);
+    expect(service.chooseUsablePreset("node-a", candidateIds)).toBe(expected);
+  });
+
+  it("skips candidate presets the node does not advertise", () => {
+    const service = createSelectionService([
+      presetAvailability("claude-opus", true, 60),
+      presetAvailability("codex-6.1-sol", true, 80),
+    ]);
+    expect(service.chooseUsablePreset("node-a", candidateIds)).toBe("claude-opus");
+  });
+
+  it("chooses the first candidate when none is available", () => {
+    const service = createSelectionService([
+      presetAvailability("gemini-4-argon", false, null),
+      presetAvailability("claude-opus", false, null),
+      presetAvailability("codex-6.1-sol", false, null),
+    ]);
+    expect(service.chooseUsablePreset("node-a", candidateIds)).toBe("gemini-4-argon");
+  });
+});
+
+function createSelectionService(availability: ModelPresetAvailability[]) {
+  const service = new ModelPresetAvailabilityService(
+    { getConnectedNode: () => undefined },
+    {
+      getSummary: () => summary(null),
+      getLimitRejection: () => null,
+      getClaudePoolAccountsForAvailability: (_nodeId, accounts) => accounts,
+    },
+    () => now,
+  );
+  vi.spyOn(service, "listForNode").mockReturnValue(availability);
+  return service;
+}
+
+function presetAvailability(
+  id: string,
+  available: boolean,
+  remainingPercent: number | null,
+): ModelPresetAvailability {
+  return {
+    id,
+    label: id,
+    backend: id === "gemini-4-argon" ? "antigravity" : id === "claude-opus" ? "claude" : "codex",
+    available,
+    reason: available ? null : "limit_rejected",
+    reason_label: available ? null : "한도 거부 중",
+    resets_at: null,
+    usage_warning: false,
+    weekly_headroom: remainingPercent === null ? null : {
+      status: "ok",
+      headroom: remainingPercent,
+      remaining_percent: remainingPercent,
+      window_remaining_percent: remainingPercent,
+      resets_at: null,
+      observed_at: now.toISOString(),
+      quota_label: "7일",
+    },
+  };
+}
 
 function rejection(rejectedUntil: string | null, rateLimitType: string | null): ProviderLimitRejection {
   return { rejectedUntil, rateLimitType, observedAt: "2026-07-28T02:59:00.000Z" };

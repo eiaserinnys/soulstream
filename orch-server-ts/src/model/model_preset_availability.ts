@@ -24,6 +24,8 @@ import {
   type WeeklyHeadroom,
 } from "../usage/weekly_headroom.js";
 
+const WEEKLY_HEADROOM_FLOOR_PERCENT = 1; // Matches soul-server-ts PR #1624 generation_weekly_floor.
+
 export type StaticModelPreset = {
   readonly id: string;
   readonly label: string;
@@ -130,6 +132,26 @@ export class ModelPresetAvailabilityService {
   ): ModelPresetAvailability {
     const preset = this.resolveStaticForNode(nodeId, presetId);
     return this.resolveAvailability(nodeId, preset, this.usageSummary.getSummary());
+  }
+
+  chooseUsablePreset(nodeId: string, candidateIds: readonly string[]): string {
+    const candidates = [...new Set(candidateIds)];
+    const firstCandidate = candidates[0]!;
+
+    const advertised = new Map(
+      (this.listForNode(nodeId) ?? []).map((preset) => [preset.id, preset]),
+    );
+    const ordered = candidates.flatMap((id) => {
+      const preset = advertised.get(id);
+      return preset === undefined ? [] : [preset];
+    });
+    const withHeadroom = ordered.find((preset) =>
+      preset.available
+      && (preset.weekly_headroom?.remaining_percent == null
+        || preset.weekly_headroom.remaining_percent >= WEEKLY_HEADROOM_FLOOR_PERCENT),
+    );
+    if (withHeadroom) return withHeadroom.id;
+    return ordered.find((preset) => preset.available)?.id ?? firstCandidate;
   }
 
   private resolveAvailability(

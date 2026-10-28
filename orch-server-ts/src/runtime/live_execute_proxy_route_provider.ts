@@ -68,7 +68,7 @@ export type LiveExecuteProxyRouteProviderOptions = {
   readonly modelPresetAvailability?: Pick<
     ModelPresetAvailabilityService,
     "requireAvailable"
-  >;
+  > & Partial<Pick<ModelPresetAvailabilityService, "chooseUsablePreset">>;
 };
 
 export function createLiveExecuteProxyRouteProvider(
@@ -84,12 +84,40 @@ export function createLiveExecuteProxyRouteProvider(
         agentSessionId,
       );
       try {
-        const selected = options.router.selectNodeForCreate({
+        let selected = options.router.selectNodeForCreate({
           nodeId: payload.nodeId,
           profileId: payload.profile,
           modelPresetId: payload.model_preset,
           legacyModelSpecified: (payload.model?.trim().length ?? 0) > 0,
         });
+        if (
+          payload.model_preset_fallbacks !== undefined
+          && payload.model_preset_fallbacks.length > 0
+          && options.modelPresetAvailability?.chooseUsablePreset !== undefined
+        ) {
+          const candidateIds = [...new Set([
+            ...(selected.modelPresetId === undefined ? [] : [selected.modelPresetId]),
+            ...payload.model_preset_fallbacks,
+          ])];
+          const chosenPresetId = options.modelPresetAvailability.chooseUsablePreset(
+            selected.node.nodeId,
+            candidateIds,
+          );
+          if (chosenPresetId !== selected.modelPresetId) {
+            request?.log.info({
+              nodeId: selected.node.nodeId,
+              firstPresetId: selected.modelPresetId ?? null,
+              chosenPresetId,
+              skippedReason: "unavailable or weekly headroom below 1%",
+            }, "Execute model preset fallback selected");
+            selected = options.router.selectNodeForCreate({
+              nodeId: selected.node.nodeId,
+              profileId: selected.profileId,
+              modelPresetId: chosenPresetId,
+              legacyModelSpecified: (payload.model?.trim().length ?? 0) > 0,
+            });
+          }
+        }
         if (selected.modelPresetId && options.modelPresetAvailability) {
           options.modelPresetAvailability.requireAvailable(
             selected.node.nodeId,
