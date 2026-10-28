@@ -8,16 +8,18 @@ import { ANTHROPIC_API_KEY_ENV, ANTHROPIC_BASE_URL_ENV } from "../model_preset_e
 const ANTHROPIC_AUTH_TOKEN_ENV = "ANTHROPIC_AUTH_TOKEN";
 export const CLAUDE_CODE_EXECPATH_ENV = "CLAUDE_CODE_EXECPATH";
 const CLAUDE_CONFIG_DIR_ENV = "CLAUDE_CONFIG_DIR";
+const CLAUDE_AUTH_HOST = "claude.com";
+const CLAUDE_AUTH_PATH = "/cai/oauth/authorize";
+const BASE64URL_32_BYTE_VALUE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 export const MAX_LOGIN_CODE_LENGTH = 2_048;
 export const MAX_STDOUT_SCAN_BUFFER_CHARS = 32_768;
 
 const ANSI_ESCAPE_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
-const DELIMITED_URL_PATTERN = /(https?:\/\/[^\s"'<>]+)(?=[\s"'<>])/i;
-const TRAILING_URL_PATTERN = /(https?:\/\/[^\s"'<>]+)$/i;
+const URL_CANDIDATE_PATTERN = /https:\/\/[^\s"'<>]+/gi;
 const CONTROL_CHAR_PATTERN = /[\x00-\x1f\x7f]/;
 
-export type TerminationReason = "cancel" | "timeout" | "shutdown";
+export type TerminationReason = "cancel" | "timeout" | "shutdown" | "failure";
 export type ChildExit = { code: number | null; signal: NodeJS.Signals | null };
 
 export type ClaudeLoginProfileFetcher = (input: {
@@ -39,7 +41,6 @@ export interface InternalLoginFlow {
   pendingSettled: boolean;
   reloginEnded: boolean;
   stdoutBuffer: string;
-  urlIdleTimer: NodeJS.Timeout | null;
   timeoutTimer: NodeJS.Timeout | null;
   loginChild: ChildProcess | null;
   loginChildExitPromise: Promise<ChildExit> | null;
@@ -47,6 +48,7 @@ export interface InternalLoginFlow {
   statusChildExitPromise: Promise<ChildExit> | null;
   terminatingReason: TerminationReason | null;
   terminationPromise: Promise<ClaudeAuthLoginFlow> | null;
+  successCommitPromise: Promise<void> | null;
 }
 
 export function createInternalLoginFlow(input: {
@@ -70,7 +72,6 @@ export function createInternalLoginFlow(input: {
     pendingSettled: false,
     reloginEnded: false,
     stdoutBuffer: "",
-    urlIdleTimer: null,
     timeoutTimer: null,
     loginChild: null,
     loginChildExitPromise: null,
@@ -78,6 +79,7 @@ export function createInternalLoginFlow(input: {
     statusChildExitPromise: null,
     terminatingReason: null,
     terminationPromise: null,
+    successCommitPromise: null,
   };
 }
 
@@ -159,37 +161,50 @@ export function validateLoginCode(rawCode: unknown): string {
   return trimmed;
 }
 
-export function scanStdoutForAuthUrl(
-  stdoutBuffer: string,
-  allowTrailing: boolean,
-): { committedUrl: string | null; hasPendingTrailingUrl: boolean } {
+export function scanStdoutForAuthUrl(stdoutBuffer: string): string | null {
   const clean = stdoutBuffer.replace(ANSI_ESCAPE_PATTERN, "");
-  const delimitedMatch = DELIMITED_URL_PATTERN.exec(clean);
-  if (delimitedMatch?.[1] && isValidHttpUrl(delimitedMatch[1])) {
-    return { committedUrl: delimitedMatch[1], hasPendingTrailingUrl: false };
-  }
-
-  const trailingMatch = TRAILING_URL_PATTERN.exec(clean);
-  if (trailingMatch?.[1] && isValidHttpUrl(trailingMatch[1])) {
-    if (allowTrailing) {
-      return { committedUrl: trailingMatch[1], hasPendingTrailingUrl: false };
+  // Claude CLI can append orgUUID or login hints after state, so state is not an end marker.
+  for (const match of clean.matchAll(URL_CANDIDATE_PATTERN)) {
+    const end = (match.index ?? 0) + match[0].length;
+    if (end === clean.length || !/[\s"'<>]/.test(clean[end] ?? "")) continue;
+    const candidate = stripTrailingUrlPunctuation(match[0]);
+    if (isClaudeAuthorizationUrl(candidate)) {
+      return candidate;
     }
-    return { committedUrl: null, hasPendingTrailingUrl: true };
   }
-
-  return { committedUrl: null, hasPendingTrailingUrl: false };
+  return null;
 }
 
-function isValidHttpUrl(candidate: string): boolean {
+function stripTrailingUrlPunctuation(candidate: string): string {
+  return candidate.replace(/[),.;!?\]}]+$/g, "");
+}
+
+function isClaudeAuthorizationUrl(candidate: string): boolean {
   try {
     const parsed = new URL(candidate);
-    return (
-      (parsed.protocol === "https:" || parsed.protocol === "http:") &&
-      parsed.hostname.includes(".")
-    );
+    const params = parsed.searchParams;
+    return parsed.protocol === "https:" &&
+      parsed.host === CLAUDE_AUTH_HOST &&
+      parsed.pathname === CLAUDE_AUTH_PATH &&
+      params.get("code") === "true" &&
+      hasNonEmptyParam(params, "client_id") &&
+      params.get("response_type") === "code" &&
+      hasNonEmptyParam(params, "redirect_uri") &&
+      hasNonEmptyParam(params, "scope") &&
+      hasBase64Url32ByteParam(params, "code_challenge") &&
+      params.get("code_challenge_method") === "S256" &&
+      hasBase64Url32ByteParam(params, "state");
   } catch {
     return false;
   }
+}
+
+function hasNonEmptyParam(params: URLSearchParams, key: string): boolean {
+  return (params.get(key)?.trim().length ?? 0) > 0;
+}
+
+function hasBase64Url32ByteParam(params: URLSearchParams, key: string): boolean {
+  return BASE64URL_32_BYTE_VALUE_PATTERN.test(params.get(key) ?? "");
 }
 
 export function waitForChildExit(child: ChildProcess): Promise<ChildExit> {
@@ -250,17 +265,34 @@ export async function terminateChildProcess(
   }
 }
 
+export async function terminateFlowChildren(
+  flow: InternalLoginFlow,
+  killGracePeriodMs: number,
+): Promise<void> {
+  const children = [
+    [flow.loginChild, flow.loginChildExitPromise],
+    [flow.statusChild, flow.statusChildExitPromise],
+  ] as const;
+  for (const [child, exitPromise] of children) {
+    if (child && exitPromise) {
+      await terminateChildProcess(child, exitPromise, killGracePeriodMs);
+    }
+  }
+}
+
 export async function verifyLoggedInIdentity(input: {
   cli: string;
   configDir: string;
   env: NodeJS.ProcessEnv;
   fetchProfile?: ClaudeLoginProfileFetcher;
   onSpawnStatus?: (child: ChildProcess, exitPromise: Promise<ChildExit>) => void;
+  onStatusStreamError?: () => void;
 }): Promise<ParsedAuthStatus> {
   const statusResult = await runClaudeAuthStatusProcess({
     cli: input.cli,
     env: input.env,
     onSpawn: input.onSpawnStatus,
+    onStreamError: input.onStatusStreamError,
   });
   if (!statusResult.loggedIn) {
     return statusResult;
@@ -289,6 +321,7 @@ export async function runClaudeAuthStatusProcess(input: {
   cli: string;
   env: NodeJS.ProcessEnv;
   onSpawn?: (child: ChildProcess, exitPromise: Promise<ChildExit>) => void;
+  onStreamError?: () => void;
 }): Promise<ParsedAuthStatus> {
   let child: ChildProcess;
   try {
@@ -300,14 +333,16 @@ export async function runClaudeAuthStatusProcess(input: {
     return { loggedIn: false, accountUuid: null, email: null, plan: null };
   }
 
-  child.stderr?.resume();
   let stdout = "";
   if (child.stdout) {
+    child.stdout.on("error", () => input.onStreamError?.());
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
       stdout = (stdout + chunk).slice(-MAX_STDOUT_SCAN_BUFFER_CHARS);
     });
   }
+  child.stderr?.on("error", () => input.onStreamError?.());
+  child.stderr?.resume();
 
   const exitPromise = waitForChildExit(child);
   input.onSpawn?.(child, exitPromise);

@@ -1,15 +1,21 @@
+import { ChildProcess, spawnSync } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import type { Logger } from "pino";
-import { afterEach, describe, expect, it } from "vitest";
+import pino from "pino";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../../src/auth/claude_auth.js";
+import { ClaudeAccountService } from "../../src/claude_accounts/service.js";
 import {
   ClaudeLoginError,
   ClaudeLoginService,
   type ClaudeLoginAccountPort,
 } from "../../src/claude_accounts/login_service.js";
+import { composeClaudeLoginService } from "../../src/runtime/claude_login_runtime_composition.js";
 
 interface FakePortState {
   port: ClaudeLoginAccountPort;
@@ -128,6 +134,32 @@ async function createFakeClaudeCli(rootDir: string, scriptBody: string): Promise
   return cliPath;
 }
 
+async function createInteractiveCli(
+  rootDir: string,
+  state: string,
+  statusScript = `
+    process.stdout.write(JSON.stringify({
+      loggedIn: true,
+      email: "login@example.com",
+      accountUuid: "88888888-8888-4888-8888-888888888888",
+    }));
+    process.exit(0);
+  `,
+): Promise<string> {
+  return createFakeClaudeCli(
+    rootDir,
+    `
+const [group, action] = process.argv.slice(2);
+if (group === "auth" && action === "login") {
+  process.stdout.write(${JSON.stringify(makeAuthUrl(state) + String.fromCharCode(10))});
+  process.stdin.once("data", () => process.exit(0));
+} else if (group === "auth" && action === "status") {
+  ${statusScript}
+}
+    `,
+  );
+}
+
 async function waitFor<T>(
   fn: () => Promise<T> | T,
   predicate: (value: T) => boolean,
@@ -154,7 +186,41 @@ async function makeTempDir(): Promise<string> {
   return dir;
 }
 
+function makeAuthUrl(state: string): string {
+  const stateValue = Buffer.from(state).toString("base64url").padEnd(43, "A").slice(0, 43);
+  const params = new URLSearchParams({
+    code: "true",
+    client_id: "test-client",
+    response_type: "code",
+    redirect_uri: "https://platform.claude.com/oauth/code/callback",
+    scope: "user:profile user:inference",
+    code_challenge: "A".repeat(43),
+    code_challenge_method: "S256",
+    state: stateValue,
+  });
+  return "https://claude.com/cai/oauth/authorize?" + params.toString();
+}
+
+function processIsAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
+    throw error;
+  }
+}
+
+function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
 afterEach(async () => {
+  vi.restoreAllMocks();
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop()!;
     await rm(dir, { recursive: true, force: true });
@@ -167,8 +233,11 @@ describe("ClaudeLoginService (P3 stage 1)", () => {
     const state = createFakePort(rootDir);
     const { logger, entries } = createCapturingLogger();
 
-    const expectedUrl =
-      "https://claude.ai/oauth/authorize?code=true&client_id=test-client&state=split-state-token-999";
+    const expectedUrl = makeAuthUrl("split-state-token-999");
+    const stateStart = expectedUrl.lastIndexOf("state=");
+    const urlPrefix = expectedUrl.slice(0, stateStart);
+    const urlStateName = expectedUrl.slice(stateStart, stateStart + "state=".length);
+    const urlStateValue = expectedUrl.slice(stateStart + "state=".length);
     const secretCode = "oauth-paste-code-xyz-777";
     const targetUuid = "11111111-1111-4111-8111-111111111111";
 
@@ -194,11 +263,11 @@ writeFileSync(join(configDir, "leaked-env.json"), JSON.stringify(leakedEnv));
 
 if (args[0] === "auth" && args[1] === "login") {
   process.stderr.write("SECRET_RAW_STDERR_MARKER\\n");
-  process.stdout.write("SECRET_RAW_STDOUT_MARKER\\nOpen URL: https://claude.ai/oauth/autho");
+  process.stdout.write("SECRET_RAW_STDOUT_MARKER\\nOpen URL: " + ${JSON.stringify(urlPrefix)});
   setTimeout(() => {
-    process.stdout.write("rize?code=true&client_id=test-client");
+    process.stdout.write(${JSON.stringify(urlStateName)});
     setTimeout(() => {
-      process.stdout.write("&state=split-state-token-999\\nPaste code: ");
+      process.stdout.write(${JSON.stringify(urlStateValue + String.fromCharCode(10) + "Paste code: ")});
     }, 25);
   }, 25);
 
@@ -315,7 +384,7 @@ if (args[0] === "auth" && args[1] === "login") {
       `
 const args = process.argv.slice(2);
 if (args[0] === "auth" && args[1] === "login") {
-  process.stdout.write("https://claude.ai/oauth/authorize?state=1\\n");
+  process.stdout.write(${JSON.stringify(makeAuthUrl("one") + String.fromCharCode(10))});
   process.stdin.once("data", () => process.exit(0));
 } else if (args[0] === "auth" && args[1] === "status") {
   process.stdout.write(JSON.stringify({
@@ -364,7 +433,7 @@ if (args[0] === "auth" && args[1] === "login") {
       `
 const args = process.argv.slice(2);
 if (args[0] === "auth" && args[1] === "login") {
-  process.stdout.write("https://claude.ai/oauth/authorize?state=status-fail\\n");
+  process.stdout.write(${JSON.stringify(makeAuthUrl("status-fail") + String.fromCharCode(10))});
   process.stdin.once("data", () => process.exit(0));
 } else if (args[0] === "auth" && args[1] === "status") {
   process.stdout.write(JSON.stringify({ loggedIn: false }));
@@ -406,7 +475,7 @@ if (args[0] === "auth" && args[1] === "login") {
       `
 const args = process.argv.slice(2);
 if (args[0] === "auth" && args[1] === "login") {
-  process.stdout.write("https://claude.ai/oauth/authorize?state=no-uuid\\n");
+  process.stdout.write(${JSON.stringify(makeAuthUrl("no-uuid") + String.fromCharCode(10))});
   process.stdin.once("data", () => process.exit(0));
 } else if (args[0] === "auth" && args[1] === "status") {
   process.stdout.write(JSON.stringify({
@@ -495,7 +564,7 @@ import { join } from "node:path";
 const args = process.argv.slice(2);
 appendFileSync(join(process.env.CLAUDE_CONFIG_DIR, "invocations.log"), args.join(" ") + "\\n");
 if (args[0] === "auth" && args[1] === "login") {
-  process.stdout.write("https://claude.ai/oauth/authorize?state=dup\\n");
+  process.stdout.write(${JSON.stringify(makeAuthUrl("dup") + String.fromCharCode(10))});
   process.stdin.once("data", () => process.exit(0));
 } else if (args[0] === "auth" && args[1] === "status") {
   process.stdout.write(JSON.stringify({
@@ -564,7 +633,7 @@ import { join } from "node:path";
 const args = process.argv.slice(2);
 if (args[0] === "auth" && args[1] === "login") {
   writeFileSync(join(process.env.CLAUDE_CONFIG_DIR, "spawned.txt"), "1");
-  process.stdout.write("https://claude.ai/oauth/authorize?state=relogin\\n");
+  process.stdout.write(${JSON.stringify(makeAuthUrl("relogin") + String.fromCharCode(10))});
   process.stdin.once("data", () => process.exit(0));
 } else if (args[0] === "auth" && args[1] === "status") {
   process.stdout.write(JSON.stringify({
@@ -601,7 +670,7 @@ if (args[0] === "auth" && args[1] === "login") {
       () => service.status({ login_id: started.login_id }),
       (flow) => flow.state === "url_ready",
     );
-    expect(urlReady.auth_url).toBe("https://claude.ai/oauth/authorize?state=relogin");
+    expect(urlReady.auth_url).toBe(makeAuthUrl("relogin"));
 
     await service.submit_code({ login_id: started.login_id, code: "relogin-code" });
     const done = await waitFor(
@@ -630,7 +699,7 @@ if (args[0] === "auth" && args[1] === "login") {
       `
 const args = process.argv.slice(2);
 if (args[0] === "auth" && args[1] === "login") {
-  process.stdout.write("https://claude.ai/oauth/authorize?state=mismatch\\n");
+  process.stdout.write(${JSON.stringify(makeAuthUrl("mismatch") + String.fromCharCode(10))});
   process.stdin.once("data", () => process.exit(0));
 } else if (args[0] === "auth" && args[1] === "status") {
   process.stdout.write(JSON.stringify({
@@ -686,7 +755,7 @@ process.on("SIGTERM", () => {
   // SIGTERM을 무시해 SIGKILL까지 살아 있는 자식 시뮬레이션
 });
 
-process.stdout.write("https://claude.ai/oauth/authorize?state=hang\\n");
+process.stdout.write(${JSON.stringify(makeAuthUrl("hang") + String.fromCharCode(10))});
 setInterval(() => {}, 1000);
       `,
     );
@@ -757,6 +826,587 @@ setInterval(() => {}, 1000);
     expect(state.retiredLogins).toContain(closeFlow.login_id);
   });
 
+  it.each([120, 2_000])(
+    "혼합 출력의 도움말 URL을 건너뛰고 %i ms 뒤 완성된 인증 URL을 선택한다",
+    async (delayMs) => {
+      const rootDir = await makeTempDir();
+      const state = createFakePort(rootDir);
+      const { logger } = createCapturingLogger();
+      const expectedUrl = makeAuthUrl("delayed-" + delayMs) + "&orgUUID=12345678-1234-4123-8123-123456789abc";
+      const optionalSuffixStart = expectedUrl.indexOf("&orgUUID=");
+      const prefix = expectedUrl.slice(0, optionalSuffixStart);
+      const suffix = expectedUrl.slice(optionalSuffixStart) + "\n";
+      const scriptBody = [
+        'const [group, action] = process.argv.slice(2);',
+        'if (group === "auth" && action === "login") {',
+        '  process.stdout.write("Docs: https://docs.example/help\\n" + ' + JSON.stringify(prefix) + ');',
+        '  setTimeout(() => process.stdout.write(' + JSON.stringify(suffix) + '), ' + delayMs + ');',
+        '  process.stdin.once("data", () => process.exit(0));',
+        '} else if (group === "auth" && action === "status") { process.exit(1); }',
+      ].join("\n");
+      const cliPath = await createFakeClaudeCli(rootDir, scriptBody);
+      const service = new ClaudeLoginService({
+        port: state.port,
+        logger,
+        executablePath: cliPath,
+        loginTimeoutMs: 5_000,
+      });
+
+      const started = await service.start();
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      expect((await service.status({ login_id: started.login_id })).state).toBe("requested");
+
+      const ready = await waitFor(
+        () => service.status({ login_id: started.login_id }),
+        (flow) => flow.state === "url_ready",
+        4_000,
+      );
+      expect(ready.auth_url).toBe(expectedUrl);
+      await service.cancel({ login_id: started.login_id });
+    },
+    10_000,
+  );
+
+  it.each(["partial", "absent"] as const)("인증 URL이 %s 상태로 끝나면 timeout 처리한다", async (urlCase) => {
+    const rootDir = await makeTempDir();
+    const state = createFakePort(rootDir);
+    const { logger } = createCapturingLogger();
+    const partialUrl = makeAuthUrl("missing-tail");
+    const stateStart = partialUrl.lastIndexOf("state=") + "state=".length;
+    const prefix = partialUrl.slice(0, stateStart + 12);
+    const outputExpression = urlCase === "partial"
+      ? '"Docs: https://docs.example/help\\n" + ' + JSON.stringify(prefix)
+      : JSON.stringify("Docs: https://docs.example/help\n");
+    const cliPath = await createFakeClaudeCli(
+      rootDir,
+      [
+        'const [group, action] = process.argv.slice(2);',
+        'if (group === "auth" && action === "login") {',
+        '  process.stdout.write(' + outputExpression + ');',
+        '  process.stdin.resume();',
+        '  setInterval(() => {}, 1000);',
+        '}',
+      ].join("\n"),
+    );
+    const service = new ClaudeLoginService({
+      port: state.port,
+      logger,
+      executablePath: cliPath,
+      loginTimeoutMs: 140,
+      killGracePeriodMs: 40,
+    });
+
+    const started = await service.start();
+    const failed = await waitFor(
+      () => service.status({ login_id: started.login_id }),
+      (flow) => flow.state === "failed",
+      3_000,
+    );
+    expect(failed.auth_url).toBeNull();
+    expect(failed.error?.code).toBe("login_timed_out");
+    expect(state.retiredLogins).toEqual([started.login_id]);
+  });
+
+  it("비동기 stdin EPIPE를 잡아 CLI를 SIGTERM→SIGKILL로 종료하고 failed로 격리한다", async () => {
+    const rootDir = await makeTempDir();
+    const cliPath = await createFakeClaudeCli(
+      rootDir,
+      [
+        'import { writeFileSync } from "node:fs";',
+        'import { join } from "node:path";',
+        'const [group, action] = process.argv.slice(2);',
+        'if (group === "auth" && action === "login") {',
+        '  const configDir = process.env.CLAUDE_CONFIG_DIR;',
+        '  writeFileSync(join(configDir, "pid"), String(process.pid));',
+        '  process.on("SIGTERM", () => writeFileSync(join(configDir, "sigterm"), "seen"));',
+        '  process.stdout.write(' + JSON.stringify(makeAuthUrl("epipe") + String.fromCharCode(10)) + ');',
+        '  setInterval(() => {}, 1000);',
+        '} else if (group === "auth" && action === "status") { process.exit(1); }',
+      ].join("\n"),
+    );
+    const harnessPath = join(rootDir, "epipe-harness.mjs");
+    const harnessSource = [
+      'import { ChildProcess } from "node:child_process";',
+      'import { existsSync, mkdirSync, readFileSync } from "node:fs";',
+      'import { join } from "node:path";',
+      'const [moduleUrl, cliPath, rootDir] = process.argv.slice(2);',
+      'const { ClaudeLoginService } = await import(moduleUrl);',
+      'const uncaught = [];',
+      'process.on("uncaughtException", (error) => uncaught.push(error?.code ?? "unknown"));',
+      'const killCalls = [];',
+      'const originalKill = ChildProcess.prototype.kill;',
+      'ChildProcess.prototype.kill = function (signal, ...rest) { killCalls.push([this.pid, signal ?? null]); return originalKill.call(this, signal, ...rest); };',
+      'const retired = [];',
+      'const port = {',
+      '  async createPendingDir(loginId) { const dir = join(rootDir, "pending-" + loginId); mkdirSync(dir, { recursive: true }); return dir; },',
+      '  profileDir() { return null; },',
+      '  async findAccount() { return null; },',
+      '  async findByIdentity() { return null; },',
+      '  async registerFromPending() {},',
+      '  async retirePending(loginId) { retired.push(loginId); },',
+      '  async beginRelogin() {},',
+      '  async endRelogin() {},',
+      '  activeSessions() { return 0; },',
+      '};',
+      'const logger = { info() {}, error() {}, warn() {}, debug() {}, child() { return this; } };',
+      'const service = new ClaudeLoginService({ port, logger, executablePath: cliPath, loginTimeoutMs: 1200, killGracePeriodMs: 40 });',
+      'const started = await service.start();',
+      'const untilReady = Date.now() + 2000;',
+      'let flow = await service.status({ login_id: started.login_id });',
+      'while (flow.state !== "url_ready" && Date.now() < untilReady) { await new Promise((resolve) => setTimeout(resolve, 10)); flow = await service.status({ login_id: started.login_id }); }',
+      'if (flow.state !== "url_ready") throw new Error("login URL did not arrive");',
+      'const stdin = service.flows.get(started.login_id).loginChild.stdin;',
+      'stdin.write = function (_chunk, callback) { queueMicrotask(() => { const error = Object.assign(new Error("pipe closed"), { code: "EPIPE" }); this.emit("error", error); if (callback) callback(error); }); return true; };',
+      'await service.submit_code({ login_id: started.login_id, code: "epipe-test-code" });',
+      'const untilFailed = Date.now() + 2500;',
+      'while (flow.state !== "failed" && Date.now() < untilFailed) { await new Promise((resolve) => setTimeout(resolve, 10)); flow = await service.status({ login_id: started.login_id }); }',
+      'const configDir = join(rootDir, "pending-" + started.login_id);',
+      'const pid = Number(readFileSync(join(configDir, "pid"), "utf8"));',
+      'let pidAlive = true;',
+      'try { process.kill(pid, 0); } catch (error) { if (error?.code === "ESRCH") pidAlive = false; else throw error; }',
+      'const killSignals = killCalls.filter(([targetPid]) => targetPid === pid).map(([, signal]) => signal);',
+      'await service.shutdown();',
+      'process.stdout.write(JSON.stringify({ state: flow.state, errorCode: flow.error?.code ?? null, retired, uncaught, pidAlive, sigterm: existsSync(join(configDir, "sigterm")), killSignals }));',
+    ].join("\n");
+    await writeFile(harnessPath, harnessSource, "utf8");
+
+    const result = spawnSync(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        harnessPath,
+        new URL("../../src/claude_accounts/login_service.ts", import.meta.url).href,
+        cliPath,
+        rootDir,
+      ],
+      { cwd: process.cwd(), encoding: "utf8", timeout: 6_000 },
+    );
+    expect(result.status).toBe(0);
+    const observed = JSON.parse(result.stdout.trim()) as {
+      state: string;
+      errorCode: string | null;
+      retired: string[];
+      uncaught: string[];
+      pidAlive: boolean;
+      sigterm: boolean;
+      killSignals: Array<string | number | null>;
+    };
+    expect(observed.state).toBe("failed");
+    expect(observed.errorCode).toBe("login_stdin_failed");
+    expect(observed.retired).toHaveLength(1);
+    expect(observed.uncaught).toEqual([]);
+    expect(observed.sigterm).toBe(true);
+    expect(observed.killSignals).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(observed.pidAlive).toBe(false);
+  }, 10_000);
+
+  it.each([0, 4])("로그인 자식이 코드 입력 전 종료 코드 %i로 끝나면 상태 검증 없이 실패시킨다", async (exitCode) => {
+    const rootDir = await makeTempDir();
+    const state = createFakePort(rootDir);
+    const { logger } = createCapturingLogger();
+    const cliPath = await createFakeClaudeCli(
+      rootDir,
+      [
+        'import { writeFileSync } from "node:fs";',
+        'import { join } from "node:path";',
+        'const [group, action] = process.argv.slice(2);',
+        `if (group === "auth" && action === "login") process.exit(${exitCode});`,
+        'if (group === "auth" && action === "status") writeFileSync(join(process.env.CLAUDE_CONFIG_DIR, "status-ran"), "yes");',
+      ].join("\n"),
+    );
+    const service = new ClaudeLoginService({ port: state.port, logger, executablePath: cliPath });
+
+    const started = await service.start();
+    const failed = await waitFor(
+      () => service.status({ login_id: started.login_id }),
+      (flow) => flow.state === "failed",
+    );
+    expect(failed.error?.code).toBe("login_process_failed");
+    expect(existsSync(join(state.pendingDirs.get(started.login_id)!, "status-ran"))).toBe(false);
+    expect(state.retiredLogins).toEqual([started.login_id]);
+  });
+
+  it.each([
+    ["nonzero status exit", 'process.stdout.write(JSON.stringify({ loggedIn: true, email: "status@example.com" })); process.exit(7);'],
+    ["malformed status JSON", 'process.stdout.write("not-json"); process.exit(0);'],
+  ])("status의 %s는 인증 실패로 격리한다", async (_label, statusScript) => {
+    const rootDir = await makeTempDir();
+    const state = createFakePort(rootDir);
+    const { logger } = createCapturingLogger();
+    const cliPath = await createInteractiveCli(rootDir, "bad-status", statusScript);
+    const service = new ClaudeLoginService({ port: state.port, logger, executablePath: cliPath });
+
+    const started = await service.start();
+    await waitFor(
+      () => service.status({ login_id: started.login_id }),
+      (flow) => flow.state === "url_ready",
+    );
+    await service.submit_code({ login_id: started.login_id, code: "status-failure-code" });
+    const failed = await waitFor(
+      () => service.status({ login_id: started.login_id }),
+      (flow) => flow.state === "failed",
+    );
+
+    expect(failed.error?.code).toBe("auth_status_failed");
+    expect(state.registered).toEqual([]);
+    expect(state.retiredLogins).toEqual([started.login_id]);
+  });
+
+  it("UUID만 기존 계정과 같아도 새 계정을 account_exists로 거절한다", async () => {
+    const rootDir = await makeTempDir();
+    const state = createFakePort(rootDir);
+    const duplicateId = "88888888-8888-4888-8888-888888888888";
+    state.accounts.set(duplicateId, {
+      id: duplicateId,
+      email: "existing@example.com",
+      plan: "Pro",
+    });
+    const { logger } = createCapturingLogger();
+    const cliPath = await createInteractiveCli(
+      rootDir,
+      "uuid-only-duplicate",
+      'process.stdout.write(JSON.stringify({ loggedIn: true, email: "different@example.com", accountUuid: "88888888-8888-4888-8888-888888888888" })); process.exit(0);',
+    );
+    const service = new ClaudeLoginService({ port: state.port, logger, executablePath: cliPath });
+
+    const started = await service.start();
+    await waitFor(
+      () => service.status({ login_id: started.login_id }),
+      (flow) => flow.state === "url_ready",
+    );
+    await service.submit_code({ login_id: started.login_id, code: "uuid-duplicate-code" });
+    const failed = await waitFor(
+      () => service.status({ login_id: started.login_id }),
+      (flow) => flow.state === "failed",
+    );
+
+    expect(failed.error).toMatchObject({ code: "account_exists", existing_account_id: duplicateId });
+    expect(state.registered).toEqual([]);
+    expect(state.retiredLogins).toEqual([started.login_id]);
+  });
+
+  it.each([
+    ["waiting", "cancel"],
+    ["waiting", "timeout"],
+    ["started", "cancel"],
+    ["started", "timeout"],
+  ] as const)(
+    "재로그인이 %s 단계에서 %s되면 endRelogin을 정확히 한 번 호출하고 제한을 푼다",
+    async (phase, ending) => {
+      const rootDir = await makeTempDir();
+      const state = createFakePort(rootDir);
+      const accountId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+      state.accounts.set(accountId, {
+        id: accountId,
+        email: "relogin-race@example.com",
+        plan: "Pro",
+      });
+      state.activeSessionCounts.set(accountId, phase === "waiting" ? 1 : 0);
+      const { logger } = createCapturingLogger();
+      const cliPath = await createFakeClaudeCli(
+        rootDir,
+        [
+          'import { writeFileSync } from "node:fs";',
+          'import { mkdirSync } from "node:fs";',
+          'import { join } from "node:path";',
+          'const [group, action] = process.argv.slice(2);',
+          'if (group === "auth" && action === "login") {',
+          '  mkdirSync(process.env.CLAUDE_CONFIG_DIR, { recursive: true });',
+          '  writeFileSync(join(process.env.CLAUDE_CONFIG_DIR, "cli-started"), "yes");',
+          '  process.stdout.write(' + JSON.stringify(makeAuthUrl("relogin-lifecycle") + String.fromCharCode(10)) + ');',
+          '  process.on("SIGTERM", () => {});',
+          '  setInterval(() => {}, 1000);',
+          '} else if (group === "auth" && action === "status") { process.exit(1); }',
+        ].join("\n"),
+      );
+      const timeoutMs = ending === "timeout" ? (phase === "waiting" ? 100 : 700) : 4_000;
+      const service = new ClaudeLoginService({
+        port: state.port,
+        logger,
+        executablePath: cliPath,
+        loginTimeoutMs: timeoutMs,
+        activeSessionPollIntervalMs: 10,
+        killGracePeriodMs: 30,
+      });
+
+      const started = await service.start({ account_id: accountId });
+      if (phase === "started") {
+        await waitFor(
+          () => service.status({ login_id: started.login_id }),
+          (flow) => flow.state === "url_ready",
+          2_000,
+        );
+      }
+      if (ending === "cancel") {
+        await service.cancel({ login_id: started.login_id });
+      } else {
+        await waitFor(
+          () => service.status({ login_id: started.login_id }),
+          (flow) => flow.state === "failed",
+          3_000,
+        );
+      }
+
+      expect(state.reloginEnded).toEqual([{ accountId, outcome: "needs_relogin" }]);
+      const profilePath = state.port.profileDir(accountId)!;
+      expect(existsSync(join(profilePath, "cli-started"))).toBe(phase === "started");
+
+      const replacement = await service.start();
+      expect(replacement.login_id).not.toBe(started.login_id);
+      const replacementTerminal = await service.cancel({ login_id: replacement.login_id });
+      expect(replacementTerminal.state).toBe("cancelled");
+      expect(state.reloginEnded).toEqual([{ accountId, outcome: "needs_relogin" }]);
+    },
+    10_000,
+  );
+
+  it("등록 커밋이 시작된 뒤의 취소는 완료 결과를 기다리고 상태를 done으로 고정한다", async () => {
+    const rootDir = await makeTempDir();
+    const state = createFakePort(rootDir);
+    const registrationStarted = deferred<void>();
+    const releaseRegistration = deferred<void>();
+    const register = state.port.registerFromPending.bind(state.port);
+    state.port.registerFromPending = async (input) => {
+      registrationStarted.resolve();
+      await releaseRegistration.promise;
+      await register(input);
+    };
+    const { logger } = createCapturingLogger();
+    const cliPath = await createInteractiveCli(
+      rootDir,
+      "cancel-success-race",
+      'process.stdout.write(JSON.stringify({ loggedIn: true, email: "login@example.com", accountUuid: "88888888-8888-4888-8888-888888888888" })); process.exit(0);',
+    );
+    const service = new ClaudeLoginService({
+      port: state.port,
+      logger,
+      executablePath: cliPath,
+      loginTimeoutMs: 5_000,
+    });
+
+    const started = await service.start();
+    await waitFor(
+      () => service.status({ login_id: started.login_id }),
+      (flow) => flow.state === "url_ready",
+    );
+    await service.submit_code({ login_id: started.login_id, code: "cancel-success-race-code" });
+    await registrationStarted.promise;
+
+    const cancelPromise = service.cancel({ login_id: started.login_id });
+    releaseRegistration.resolve();
+    const cancelResult = await cancelPromise;
+    const finalStatus = await service.status({ login_id: started.login_id });
+    expect(cancelResult.state).toBe("done");
+    expect(finalStatus.state).toBe("done");
+    expect(state.registered).toHaveLength(1);
+
+    const replacement = await service.start();
+    expect(replacement.login_id).not.toBe(started.login_id);
+    await service.cancel({ login_id: replacement.login_id });
+  }, 8_000);
+
+  it("timeout과 계정 확인이 겹치면 failed 상태를 고정하고 다음 로그인을 허용한다", async () => {
+    const rootDir = await makeTempDir();
+    const state = createFakePort(rootDir);
+    const identityCheckStarted = deferred<void>();
+    const releaseIdentityCheck = deferred<void>();
+    const findByIdentity = state.port.findByIdentity.bind(state.port);
+    state.port.findByIdentity = async (input) => {
+      identityCheckStarted.resolve();
+      await releaseIdentityCheck.promise;
+      return findByIdentity(input);
+    };
+    const { logger } = createCapturingLogger();
+    const cliPath = await createInteractiveCli(
+      rootDir,
+      "timeout-success-race",
+      'process.stdout.write(JSON.stringify({ loggedIn: true, email: "login@example.com", accountUuid: "88888888-8888-4888-8888-888888888888" })); process.exit(0);',
+    );
+    const service = new ClaudeLoginService({
+      port: state.port,
+      logger,
+      executablePath: cliPath,
+      loginTimeoutMs: 900,
+      killGracePeriodMs: 30,
+    });
+
+    const started = await service.start();
+    await waitFor(
+      () => service.status({ login_id: started.login_id }),
+      (flow) => flow.state === "url_ready",
+    );
+    await service.submit_code({ login_id: started.login_id, code: "timeout-success-race-code" });
+    await identityCheckStarted.promise;
+    const failed = await waitFor(
+      () => service.status({ login_id: started.login_id }),
+      (flow) => flow.state === "failed",
+      2_000,
+    );
+    releaseIdentityCheck.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 30));
+
+    expect(failed.error?.code).toBe("login_timed_out");
+    expect((await service.status({ login_id: started.login_id })).error?.code).toBe("login_timed_out");
+    expect(state.registered).toEqual([]);
+    expect(state.retiredLogins).toEqual([started.login_id]);
+    const replacement = await service.start();
+    expect(replacement.login_id).not.toBe(started.login_id);
+    await service.cancel({ login_id: replacement.login_id });
+  }, 8_000);
+
+  it("shutdown은 status 자식에 SIGTERM→SIGKILL을 보내고 실제 PID 종료까지 기다린다", async () => {
+    const rootDir = await makeTempDir();
+    const state = createFakePort(rootDir);
+    const { logger } = createCapturingLogger();
+    const cliPath = await createFakeClaudeCli(
+      rootDir,
+      [
+        'import { writeFileSync } from "node:fs";',
+        'import { join } from "node:path";',
+        'const [group, action] = process.argv.slice(2);',
+        'if (group === "auth" && action === "login") {',
+        '  process.stdout.write(' + JSON.stringify(makeAuthUrl("status-shutdown") + String.fromCharCode(10)) + ');',
+        '  process.stdin.once("data", () => process.exit(0));',
+        '} else if (group === "auth" && action === "status") {',
+        '  const dir = process.env.CLAUDE_CONFIG_DIR;',
+        '  writeFileSync(join(dir, "status-pid"), String(process.pid));',
+        '  process.stdout.write(JSON.stringify({ loggedIn: true, email: "status@example.com" }));',
+        '  process.on("SIGTERM", () => {});',
+        '  setInterval(() => {}, 1000);',
+        '}',
+      ].join("\n"),
+    );
+    const service = new ClaudeLoginService({
+      port: state.port,
+      logger,
+      executablePath: cliPath,
+      loginTimeoutMs: 5_000,
+      killGracePeriodMs: 40,
+    });
+    const killSpy = vi.spyOn(ChildProcess.prototype, "kill");
+
+    const started = await service.start();
+    await waitFor(
+      () => service.status({ login_id: started.login_id }),
+      (flow) => flow.state === "url_ready",
+    );
+    await service.submit_code({ login_id: started.login_id, code: "status-shutdown-code" });
+    const pendingDir = state.pendingDirs.get(started.login_id)!;
+    const pidText = await waitFor(
+      () => readFile(join(pendingDir, "status-pid"), "utf8").catch(() => ""),
+      (value) => value.length > 0,
+    );
+    const statusPid = Number(pidText);
+    expect((await service.status({ login_id: started.login_id })).state).toBe("verifying");
+
+    await service.shutdown();
+
+    const killedStatusChild = killSpy.mock.calls
+      .map((call, index) => ({
+        pid: (killSpy.mock.contexts[index] as ChildProcess).pid,
+        signal: call[0],
+      }))
+      .filter((call) => call.pid === statusPid)
+      .map((call) => call.signal);
+    expect(killedStatusChild).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(processIsAlive(statusPid)).toBe(false);
+    expect((await service.status({ login_id: started.login_id })).state).toBe("cancelled");
+    expect(state.retiredLogins).toEqual([started.login_id]);
+  }, 8_000);
+
+  it("실제 runtime composition의 프로필 폴백은 프로필 인증 파일과 단일 계정 토큰 파일을 바꾸지 않는다", async () => {
+    const rootDir = await makeTempDir();
+    const accounts = new ClaudeAccountService({
+      accountsDir: join(rootDir, "accounts"),
+      homeDir: join(rootDir, "home"),
+    });
+    const logger = pino({ level: "silent" });
+    const legacyTokenPath = join(rootDir, "legacy-auth.json");
+    const legacyRaw = JSON.stringify({
+      claudeAiOauth: { accessToken: "sk-ant-oat01-legacy-token" },
+    }) + "\n";
+    await writeFile(legacyTokenPath, legacyRaw, "utf8");
+    const profileCredentialsRaw = JSON.stringify({
+      claudeAiOauth: {
+        accessToken: "profile-access-token",
+        expiresAt: Date.now() + 60_000,
+      },
+    }) + "\n";
+    const accountId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    let pendingProfilePath = "";
+    let profileCredentialsAtFetch = "";
+    let authHeader = "";
+    let profileUrl = "";
+    const claudeAuth = new ClaudeAuthService(
+      {
+        store: new FileClaudeAuthTokenStore(legacyTokenPath),
+        httpGet: async (url, init) => {
+          profileUrl = url;
+          authHeader = init.headers.Authorization ?? "";
+          profileCredentialsAtFetch = readFileSync(pendingProfilePath, "utf8");
+          return {
+            status: 200,
+            text: async () => "",
+            json: async () => ({
+              account: { uuid: accountId, email: "profile@example.com" },
+              subscriptionType: "Pro",
+            }),
+          };
+        },
+      },
+      logger,
+    );
+    const cliPath = await createFakeClaudeCli(
+      rootDir,
+      [
+        'import { writeFileSync } from "node:fs";',
+        'import { join } from "node:path";',
+        'const [group, action] = process.argv.slice(2);',
+        'if (group === "auth" && action === "login") {',
+        '  const dir = process.env.CLAUDE_CONFIG_DIR;',
+        '  process.stdout.write(' + JSON.stringify(makeAuthUrl("runtime-profile") + String.fromCharCode(10)) + ');',
+        '  process.stdin.once("data", () => { writeFileSync(join(dir, ".credentials.json"), ' + JSON.stringify(profileCredentialsRaw) + '); process.exit(0); });',
+        '} else if (group === "auth" && action === "status") {',
+        '  process.stdout.write(JSON.stringify({ loggedIn: true, email: "profile@example.com" }));',
+        '  process.exit(0);',
+        '}',
+      ].join("\n"),
+    );
+    const previousExecPath = process.env.CLAUDE_CODE_EXECPATH;
+    process.env.CLAUDE_CODE_EXECPATH = cliPath;
+    const service = composeClaudeLoginService({ accounts, claudeAuth, logger });
+    try {
+      const started = await service.start();
+      pendingProfilePath = join(accounts.store.pendingLoginDir(started.login_id), ".credentials.json");
+      await waitFor(
+        () => service.status({ login_id: started.login_id }),
+        (flow) => flow.state === "url_ready",
+      );
+      await service.submit_code({ login_id: started.login_id, code: "runtime-profile-code" });
+      const done = await waitFor(
+        () => service.status({ login_id: started.login_id }),
+        (flow) => flow.state === "done",
+      );
+
+      expect(done.account_id).toBe(accountId);
+      expect(profileUrl).toBe("https://api.anthropic.com/api/oauth/profile");
+      expect(authHeader).toBe("Bearer profile-access-token");
+      expect(profileCredentialsAtFetch).toBe(profileCredentialsRaw);
+      expect(await readFile(join(accounts.store.profileDir(accountId), ".credentials.json"), "utf8"))
+        .toBe(profileCredentialsRaw);
+      expect(await readFile(legacyTokenPath, "utf8")).toBe(legacyRaw);
+      expect(await accounts.findAccount(accountId)).toMatchObject({
+        id: accountId,
+        email: "profile@example.com",
+      });
+    } finally {
+      await service.shutdown();
+      if (previousExecPath === undefined) delete process.env.CLAUDE_CODE_EXECPATH;
+      else process.env.CLAUDE_CODE_EXECPATH = previousExecPath;
+    }
+  }, 8_000);
+
   it("shutdown은 진행 중인 로그인 CLI를 종료하고 pending 계정을 격리한다", async () => {
     const rootDir = await makeTempDir();
     const state = createFakePort(rootDir);
@@ -765,7 +1415,7 @@ setInterval(() => {}, 1000);
       rootDir,
       `
 process.stdin.resume();
-process.stdout.write("https://claude.ai/oauth/authorize?state=shutdown\\n");
+process.stdout.write(${JSON.stringify(makeAuthUrl("shutdown") + String.fromCharCode(10))});
 process.on("SIGTERM", () => {});
 setInterval(() => {}, 1000);
       `,

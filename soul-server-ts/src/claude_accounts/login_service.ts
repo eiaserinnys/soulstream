@@ -16,7 +16,7 @@ import {
   isTerminalState,
   MAX_STDOUT_SCAN_BUFFER_CHARS,
   scanStdoutForAuthUrl,
-  terminateChildProcess,
+  terminateFlowChildren,
   type TerminationReason,
   toLoginFlowSnapshot,
   validateLoginCode,
@@ -31,7 +31,6 @@ export type { ClaudeLoginAccountPort } from "./types.js";
 const DEFAULT_LOGIN_TIMEOUT_MS = 10 * 60 * 1_000;
 const DEFAULT_KILL_GRACE_PERIOD_MS = 5_000;
 const DEFAULT_ACTIVE_SESSION_POLL_INTERVAL_MS = 50;
-const DEFAULT_URL_CHUNK_IDLE_MS = 80;
 
 export interface ClaudeLoginServiceConfig {
   port: ClaudeLoginAccountPort;
@@ -43,7 +42,6 @@ export interface ClaudeLoginServiceConfig {
   loginTimeoutMs?: number;
   killGracePeriodMs?: number;
   activeSessionPollIntervalMs?: number;
-  urlChunkIdleMs?: number;
   now?: () => number;
 }
 
@@ -57,7 +55,6 @@ export class ClaudeLoginService {
   private readonly loginTimeoutMs: number;
   private readonly killGracePeriodMs: number;
   private readonly activeSessionPollIntervalMs: number;
-  private readonly urlChunkIdleMs: number;
   private readonly now: () => number;
   private readonly flows = new Map<string, InternalLoginFlow>();
   private activeFlowId: string | null = null;
@@ -74,7 +71,6 @@ export class ClaudeLoginService {
     this.killGracePeriodMs = config.killGracePeriodMs ?? DEFAULT_KILL_GRACE_PERIOD_MS;
     this.activeSessionPollIntervalMs =
       config.activeSessionPollIntervalMs ?? DEFAULT_ACTIVE_SESSION_POLL_INTERVAL_MS;
-    this.urlChunkIdleMs = config.urlChunkIdleMs ?? DEFAULT_URL_CHUNK_IDLE_MS;
     this.now = config.now ?? Date.now;
   }
 
@@ -160,14 +156,19 @@ export class ClaudeLoginService {
 
     flow.codeSubmitted = true;
     flow.state = "code_submitted";
-    try {
-      flow.loginChild.stdin.write(`${validatedCode}\n`);
-      flow.loginChild.stdin.end();
-    } catch {
+    const handleStdinError = () => {
       void this.failFlow(flow, {
         code: "login_stdin_failed",
         message: "Failed to deliver authorization code to Claude CLI",
       });
+    };
+    try {
+      flow.loginChild.stdin.write(`${validatedCode}\n`, (error) => {
+        if (error) handleStdinError();
+      });
+      flow.loginChild.stdin.end();
+    } catch {
+      handleStdinError();
     }
 
     this.logger.info({ loginId: flow.loginId }, "Claude CLI login authorization code submitted");
@@ -193,9 +194,7 @@ export class ClaudeLoginService {
     if (flow) await this.terminateFlow(flow, "shutdown");
   }
 
-  async shutdown(): Promise<void> {
-    await this.close();
-  }
+  async shutdown(): Promise<void> { await this.close(); }
 
   private async waitForZeroActiveSessionsAndSpawn(
     flow: InternalLoginFlow,
@@ -231,15 +230,28 @@ export class ClaudeLoginService {
     }
 
     flow.loginChild = child;
+    flow.loginChildExitPromise = waitForChildExit(child);
+    child.on("error", () => {
+      void this.failFlow(flow, {
+        code: "login_process_failed",
+        message: "Claude CLI login process failed",
+      });
+    });
+    child.stdin?.on("error", () => {
+      void this.failFlow(flow, {
+        code: "login_stdin_failed",
+        message: "Failed to deliver authorization code to Claude CLI",
+      });
+    });
+    child.stdout?.on("error", () => this.failForStreamError(flow));
+    child.stderr?.on("error", () => this.failForStreamError(flow));
     child.stderr?.resume();
 
     if (child.stdout) {
       child.stdout.setEncoding("utf8");
       child.stdout.on("data", (chunk: string) => this.onLoginStdoutChunk(flow, chunk));
-      child.stdout.on("end", () => this.flushTrailingAuthUrl(flow));
     }
 
-    flow.loginChildExitPromise = waitForChildExit(child);
     void flow.loginChildExitPromise.then((exit) => void this.onLoginChildExited(flow, exit));
   }
 
@@ -248,26 +260,11 @@ export class ClaudeLoginService {
       return;
     }
     flow.stdoutBuffer = (flow.stdoutBuffer + chunk).slice(-MAX_STDOUT_SCAN_BUFFER_CHARS);
-    const { committedUrl, hasPendingTrailingUrl } = scanStdoutForAuthUrl(flow.stdoutBuffer, false);
-    if (committedUrl) {
-      this.commitAuthUrl(flow, committedUrl);
-    } else if (hasPendingTrailingUrl) {
-      this.clearUrlIdleTimer(flow);
-      flow.urlIdleTimer = setTimeout(() => this.flushTrailingAuthUrl(flow), this.urlChunkIdleMs);
-    }
-  }
-
-  private flushTrailingAuthUrl(flow: InternalLoginFlow): void {
-    this.clearUrlIdleTimer(flow);
-    if (flow.authUrl !== null || flow.terminatingReason !== null || isTerminalState(flow.state)) {
-      return;
-    }
-    const { committedUrl } = scanStdoutForAuthUrl(flow.stdoutBuffer, true);
-    if (committedUrl) this.commitAuthUrl(flow, committedUrl);
+    const authUrl = scanStdoutForAuthUrl(flow.stdoutBuffer);
+    if (authUrl) this.commitAuthUrl(flow, authUrl);
   }
 
   private commitAuthUrl(flow: InternalLoginFlow, url: string): void {
-    this.clearUrlIdleTimer(flow);
     flow.authUrl = url;
     flow.stdoutBuffer = "";
     if (flow.state === "requested") flow.state = "url_ready";
@@ -275,10 +272,9 @@ export class ClaudeLoginService {
   }
 
   private async onLoginChildExited(flow: InternalLoginFlow, exit: ChildExit): Promise<void> {
-    this.clearUrlIdleTimer(flow);
     if (flow.terminatingReason !== null || isTerminalState(flow.state)) return;
 
-    if (exit.code !== 0 || exit.signal !== null) {
+    if (exit.code !== 0 || exit.signal !== null || !flow.codeSubmitted) {
       await this.failFlow(flow, {
         code: "login_process_failed",
         message: "Claude CLI login exited without completing authentication",
@@ -297,6 +293,7 @@ export class ClaudeLoginService {
           flow.statusChild = child;
           flow.statusChildExitPromise = exitPromise;
         },
+        onStatusStreamError: () => this.failForStreamError(flow),
       });
       if (flow.terminatingReason !== null || isTerminalState(flow.state)) return;
 
@@ -324,8 +321,8 @@ export class ClaudeLoginService {
           });
           return;
         }
-        await this.settleRelogin(flow, "ok");
-        this.finishFlow(flow, "done", null);
+        flow.successCommitPromise = this.commitSuccessfulLogin(flow, null);
+        await flow.successCommitPromise;
         return;
       }
 
@@ -344,15 +341,12 @@ export class ClaudeLoginService {
         return;
       }
 
-      flow.pendingSettled = true;
-      await this.port.registerFromPending({
-        loginId: flow.loginId,
+      flow.successCommitPromise = this.commitSuccessfulLogin(flow, {
         id: identity.accountUuid,
         email: identity.email,
         plan: identity.plan,
       });
-      flow.accountId = identity.accountUuid;
-      this.finishFlow(flow, "done", null);
+      await flow.successCommitPromise;
     } catch {
       if (flow.terminatingReason === null && !isTerminalState(flow.state)) {
         await this.failFlow(flow, {
@@ -363,40 +357,69 @@ export class ClaudeLoginService {
     }
   }
 
+  private async commitSuccessfulLogin(
+    flow: InternalLoginFlow,
+    identity: { id: string; email: string | null; plan: string | null } | null,
+  ): Promise<void> {
+    this.clearTimeoutTimer(flow);
+    if (identity === null) {
+      await this.settleRelogin(flow, "ok");
+    } else {
+      await this.port.registerFromPending({ loginId: flow.loginId, ...identity });
+      flow.pendingSettled = true;
+      flow.accountId = identity.id;
+    }
+    this.finishFlow(flow, "done", null);
+  }
+
+  private failForStreamError(flow: InternalLoginFlow): void {
+    void this.failFlow(flow, {
+      code: "login_process_failed",
+      message: "Claude CLI login stream failed",
+    });
+  }
+
   private terminateFlow(
     flow: InternalLoginFlow,
     reason: TerminationReason,
+    failureError?: ClaudeAuthError,
+  ): Promise<ClaudeAuthLoginFlow> {
+    if (flow.terminationPromise !== null) return flow.terminationPromise;
+    if (isTerminalState(flow.state)) return Promise.resolve(toLoginFlowSnapshot(flow));
+    if (flow.successCommitPromise !== null) {
+      return flow.successCommitPromise.then(
+        () => toLoginFlowSnapshot(flow),
+        () => this.beginTermination(flow, reason, failureError),
+      );
+    }
+    return this.beginTermination(flow, reason, failureError);
+  }
+
+  private beginTermination(
+    flow: InternalLoginFlow,
+    reason: TerminationReason,
+    failureError?: ClaudeAuthError,
   ): Promise<ClaudeAuthLoginFlow> {
     if (flow.terminationPromise !== null) return flow.terminationPromise;
     flow.terminatingReason = reason;
-    this.clearUrlIdleTimer(flow);
     this.clearTimeoutTimer(flow);
 
     const promise = (async (): Promise<ClaudeAuthLoginFlow> => {
       try {
-        if (flow.loginChild && flow.loginChildExitPromise) {
-          await terminateChildProcess(
-            flow.loginChild,
-            flow.loginChildExitPromise,
-            this.killGracePeriodMs,
-          );
-        }
-        if (flow.statusChild && flow.statusChildExitPromise) {
-          await terminateChildProcess(
-            flow.statusChild,
-            flow.statusChildExitPromise,
-            this.killGracePeriodMs,
-          );
-        }
+        await terminateFlowChildren(flow, this.killGracePeriodMs);
         await this.cleanupNonSuccessFlow(flow);
       } finally {
-        if (reason === "timeout") {
-          this.finishFlow(flow, "failed", {
+        if (reason === "timeout" || reason === "failure") {
+          const error = reason === "timeout" ? {
             code: "login_timed_out",
             message: "Claude CLI login timed out",
-          });
+          } : failureError ?? {
+            code: "login_process_failed",
+            message: "Claude CLI login failed",
+          };
+          this.finishFlow(flow, "failed", error, true);
         } else {
-          this.finishFlow(flow, "cancelled", null);
+          this.finishFlow(flow, "cancelled", null, true);
         }
       }
       return toLoginFlowSnapshot(flow);
@@ -407,14 +430,7 @@ export class ClaudeLoginService {
   }
 
   private async failFlow(flow: InternalLoginFlow, error: ClaudeAuthError): Promise<void> {
-    if (isTerminalState(flow.state)) return;
-    this.clearUrlIdleTimer(flow);
-    this.clearTimeoutTimer(flow);
-    try {
-      await this.cleanupNonSuccessFlow(flow);
-    } finally {
-      this.finishFlow(flow, "failed", error);
-    }
+    await this.terminateFlow(flow, "failure", error);
   }
 
   private async cleanupNonSuccessFlow(flow: InternalLoginFlow): Promise<void> {
@@ -439,8 +455,10 @@ export class ClaudeLoginService {
     flow: InternalLoginFlow,
     state: "done" | "failed" | "cancelled",
     error: ClaudeAuthError | null,
+    terminating = false,
   ): void {
-    this.clearUrlIdleTimer(flow);
+    if (isTerminalState(flow.state)) return;
+    if (flow.terminatingReason !== null && !terminating) return;
     this.clearTimeoutTimer(flow);
     flow.stdoutBuffer = "";
     flow.state = state;
@@ -470,13 +488,6 @@ export class ClaudeLoginService {
     const flow = this.flows.get(loginId);
     if (!flow) throw new ClaudeLoginError("login_not_found", "Claude login flow was not found");
     return flow;
-  }
-
-  private clearUrlIdleTimer(flow: InternalLoginFlow): void {
-    if (flow.urlIdleTimer !== null) {
-      clearTimeout(flow.urlIdleTimer);
-      flow.urlIdleTimer = null;
-    }
   }
 
   private clearTimeoutTimer(flow: InternalLoginFlow): void {

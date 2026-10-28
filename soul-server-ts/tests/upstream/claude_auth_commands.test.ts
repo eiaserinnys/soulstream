@@ -85,6 +85,21 @@ async function waitForLoginResponse(
   return response;
 }
 
+function makeAuthUrl(state: string): string {
+  const stateValue = Buffer.from(state).toString("base64url").padEnd(43, "A").slice(0, 43);
+  const params = new URLSearchParams({
+    code: "true",
+    client_id: "test-client",
+    response_type: "code",
+    redirect_uri: "https://platform.claude.com/oauth/code/callback",
+    scope: "user:profile user:inference",
+    code_challenge: "A".repeat(43),
+    code_challenge_method: "S256",
+    state: stateValue,
+  });
+  return "https://claude.com/cai/oauth/authorize?" + params.toString();
+}
+
 describe("claude auth command boundary", () => {
   const unsupportedAccountCommands: ClaudeAuthCommand[] = [
     { type: "claude_auth_accounts_list" },
@@ -366,12 +381,13 @@ describe("claude auth command boundary", () => {
   it("runs the official CLI login through command handling and lists the registered account", async () => {
     const rootDir = await mkdtemp(join(tmpdir(), "claude-auth-command-test-"));
     try {
+      const expectedAuthUrl = makeAuthUrl("test-flow");
       const cliPath = join(rootDir, "fake-claude-cli.mjs");
       const cliScript = [
         "#!/usr/bin/env node",
         "const [group, action] = process.argv.slice(2);",
         "if (group === 'auth' && action === 'login') {",
-        "  process.stdout.write('Open: https://claude.ai/oauth/authorize?state=test-flow ');",
+        "  process.stdout.write('Open: " + expectedAuthUrl + " ');",
         "  process.stdin.resume();",
         "  process.stdin.once('end', () => process.exit(0));",
         "} else if (group === 'auth' && action === 'status') {",
@@ -423,7 +439,7 @@ describe("claude auth command boundary", () => {
         readStatus,
         (response) => response.data?.state === "url_ready",
       );
-      expect(urlReady.data?.auth_url).toBe("https://claude.ai/oauth/authorize?state=test-flow");
+      expect(urlReady.data?.auth_url).toBe(expectedAuthUrl);
 
       const submitted = await commands.handle({
         type: "claude_auth_login_submit_code",
@@ -466,7 +482,8 @@ describe("claude auth command boundary", () => {
         },
       });
       const logs = JSON.stringify(logEntries);
-      expect(logs).not.toContain("https://claude.ai/oauth/authorize");
+      expect(logs).not.toContain("https://claude.com/cai/oauth/authorize");
+      expect(logs).not.toContain(expectedAuthUrl);
       expect(logs).not.toContain("synthetic-login-code");
       expect(logs).not.toContain("loggedIn");
 
