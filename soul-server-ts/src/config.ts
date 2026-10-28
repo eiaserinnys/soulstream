@@ -123,9 +123,16 @@ export const EnvSchema = z
     INCOMING_FILE_DIR: z.string().default(".local/incoming"),
     /**
      * Claude auth/profile command storage 정본. Python `.env`나 `~/.claude`를 암묵 공유하지 않는다.
-     * Claude backend agent를 광고하는 운영 노드는 main.ts 시작 검증에서 이 값을 필수로 요구한다.
+     * Pool 비활성화 상태에서 Claude backend agent를 광고하면 main.ts 시작 검증에서 이 값을 요구한다.
      */
     CLAUDE_AUTH_TOKEN_PATH: z.string().min(1).optional(),
+    /** Multi-account Claude contract; runtime behavior is introduced by a later change. */
+    CLAUDE_ACCOUNT_POOL_ENABLED: z
+      .union([z.literal("true"), z.literal("false")])
+      .default("false")
+      .transform((v) => v === "true"),
+    /** Required as an absolute node-local path while account-pool mode is enabled. */
+    CLAUDE_ACCOUNTS_DIR: z.string().optional(),
     /**
      * Persistent Query + exactly-once delivery runtime.
      * Enabled cluster-wide by default after the migration/canary hardening
@@ -271,6 +278,21 @@ export const EnvSchema = z
         path: ["JWT_SECRET"],
         message: "JWT_SECRET is required when GOOGLE_CLIENT_ID enables dashboard auth",
       });
+    }
+    if (env.CLAUDE_ACCOUNT_POOL_ENABLED) {
+      if (!env.CLAUDE_ACCOUNTS_DIR) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["CLAUDE_ACCOUNTS_DIR"],
+          message: "CLAUDE_ACCOUNTS_DIR is required when CLAUDE_ACCOUNT_POOL_ENABLED=true",
+        });
+      } else if (!isAbsolute(env.CLAUDE_ACCOUNTS_DIR)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["CLAUDE_ACCOUNTS_DIR"],
+          message: "CLAUDE_ACCOUNTS_DIR must be an absolute path when account pool is enabled",
+        });
+      }
     }
     if (env.SOUL_RUNNER_PROCESS_ENABLED) {
       for (const key of [

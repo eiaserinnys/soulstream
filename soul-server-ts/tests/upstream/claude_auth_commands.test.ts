@@ -8,6 +8,7 @@ import type {
 import {
   ClaudeAuthCommandError,
   ClaudeAuthCommands,
+  type ClaudeAuthCommand,
 } from "../../src/upstream/claude_auth_commands.js";
 
 function createAgentRegistry(backends: string[]): Pick<AgentRegistry, "supportedBackends"> {
@@ -54,6 +55,34 @@ function createClaudeAuth(
 }
 
 describe("claude auth command boundary", () => {
+  const unsupportedAccountCommands: ClaudeAuthCommand[] = [
+    { type: "claude_auth_accounts_list" },
+    { type: "claude_auth_account_update", account_id: "account-1" },
+    { type: "claude_auth_account_delete", account_id: "account-1" },
+    { type: "claude_auth_login_start" },
+    { type: "claude_auth_login_status", login_id: "login-1" },
+    { type: "claude_auth_login_submit_code", login_id: "login-1", code: "code" },
+    { type: "claude_auth_login_cancel", login_id: "login-1" },
+  ];
+
+  it.each(unsupportedAccountCommands)(
+    "returns the existing not-implemented error for $type",
+    async (command) => {
+      const commands = new ClaudeAuthCommands({
+        agentRegistry: createAgentRegistry([]),
+        claudeAuth: undefined,
+      });
+
+      await expect(
+        commands.handle({ ...command, requestId: "pool-unsupported" }),
+      ).rejects.toEqual(
+        new ClaudeAuthCommandError(
+          `Not implemented in soul-server-ts: ${command.type}`,
+        ),
+      );
+    },
+  );
+
   it("validates Claude backend support and normalizes requestId before status routing", async () => {
     const auth = createClaudeAuth();
     const commands = new ClaudeAuthCommands({

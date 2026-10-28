@@ -79,6 +79,13 @@ export type SoulstreamUpstreamProtocol =
   | ClaudeAuthDeleteToken
   | ClaudeAuthGetUsage
   | ClaudeAuthGetProfile
+  | ClaudeAuthAccountsList
+  | ClaudeAuthAccountUpdate
+  | ClaudeAuthAccountDelete
+  | ClaudeAuthLoginStart
+  | ClaudeAuthLoginStatus
+  | ClaudeAuthLoginSubmitCode
+  | ClaudeAuthLoginCancel
   | ClaudeRuntimeListTasks
   | ClaudeRuntimeTaskOutput
   | ClaudeRuntimeStopTask
@@ -115,6 +122,7 @@ export interface NodeRegister {
    */
   capabilities?: {
     runner_inventory_v1?: boolean;
+    claude_account_pool_v1?: boolean;
     control_channel_v1?: boolean;
     [k: string]: unknown;
   };
@@ -2945,6 +2953,183 @@ export interface ClaudeAuthGetProfile {
   [k: string]: unknown;
 }
 /**
+ * orch→노드: Claude 계정 목록 조회.
+ */
+export interface ClaudeAuthAccountsList {
+  type: "claude_auth_accounts_list";
+  requestId?: string;
+  /**
+   * 응답에만 존재.
+   */
+  success?: boolean;
+  data?: ClaudeAccountList;
+  error?: ClaudeAuthError;
+  [k: string]: unknown;
+}
+export interface ClaudeAccountList {
+  mode: "legacy" | "pool";
+  accounts: ClaudeAccount[];
+  pool: ClaudeAccountPool | null;
+  fable_pool: ClaudeAccountPool | null;
+}
+/**
+ * 비밀값을 포함하지 않는 Claude 계정 메타데이터.
+ */
+export interface ClaudeAccount {
+  id: string;
+  email: string;
+  plan: string | null;
+  enabled: boolean;
+  priority: number | null;
+  auth_state: "ok" | "idle" | "needs_relogin" | "logging_in";
+  usage: {
+    five_hour: ClaudeAccountUsageWindow | null;
+    seven_day: ClaudeAccountUsageWindow | null;
+    fable_weekly: ClaudeAccountUsageWindow | null;
+  };
+  /**
+   * UTC ISO 8601 usage observation timestamp, or null when unmeasured.
+   */
+  observed_at: string | null;
+  blocked: ClaudeAccountBlocked | null;
+  active_sessions: number;
+}
+/**
+ * Claude 계정 사용 창. 시각은 UTC ISO 8601.
+ */
+export interface ClaudeAccountUsageWindow {
+  used_percent: number;
+  /**
+   * UTC ISO 8601 reset timestamp, or null when unknown.
+   */
+  resets_at: string | null;
+}
+export interface ClaudeAccountBlocked {
+  until: string | null;
+  scope: "all" | "fable";
+}
+export interface ClaudeAccountPool {
+  available_count: number;
+  total_count: number;
+  best_weekly_remaining_percent: number | null;
+  best_weekly_resets_at: string | null;
+  earliest_available_at: string | null;
+}
+export interface ClaudeAuthError {
+  code: string;
+  message: string;
+  existing_account_id?: string;
+}
+/**
+ * orch→노드: Claude 계정 설정 변경.
+ */
+export interface ClaudeAuthAccountUpdate {
+  type: "claude_auth_account_update";
+  requestId?: string;
+  account_id: string;
+  enabled?: boolean;
+  priority?: number | null;
+  /**
+   * 응답에만 존재.
+   */
+  success?: boolean;
+  data?: ClaudeAccountList;
+  error?: ClaudeAuthError;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: Claude 계정 삭제.
+ */
+export interface ClaudeAuthAccountDelete {
+  type: "claude_auth_account_delete";
+  requestId?: string;
+  account_id: string;
+  /**
+   * 응답에만 존재.
+   */
+  success?: boolean;
+  data?: ClaudeAccountDeleteResult;
+  error?: ClaudeAuthError;
+  [k: string]: unknown;
+}
+export interface ClaudeAccountDeleteResult {
+  deferred: boolean;
+  accounts: ClaudeAccount[];
+  pool: ClaudeAccountPool | null;
+}
+/**
+ * orch→노드: Claude CLI 로그인 시작.
+ */
+export interface ClaudeAuthLoginStart {
+  type: "claude_auth_login_start";
+  requestId?: string;
+  account_id?: string;
+  /**
+   * 응답에만 존재.
+   */
+  success?: boolean;
+  data?: ClaudeAuthLoginFlow;
+  error?: ClaudeAuthError;
+  [k: string]: unknown;
+}
+export interface ClaudeAuthLoginFlow {
+  login_id: string;
+  account_id: string | null;
+  state: "requested" | "url_ready" | "code_submitted" | "verifying" | "done" | "failed" | "cancelled";
+  auth_url: string | null;
+  /**
+   * UTC ISO 8601.
+   */
+  expires_at: string;
+  error: ClaudeAuthError | null;
+}
+/**
+ * orch→노드: Claude CLI 로그인 상태 조회.
+ */
+export interface ClaudeAuthLoginStatus {
+  type: "claude_auth_login_status";
+  requestId?: string;
+  login_id: string;
+  /**
+   * 응답에만 존재.
+   */
+  success?: boolean;
+  data?: ClaudeAuthLoginFlow;
+  error?: ClaudeAuthError;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: Claude CLI 로그인 코드 제출.
+ */
+export interface ClaudeAuthLoginSubmitCode {
+  type: "claude_auth_login_submit_code";
+  requestId?: string;
+  login_id: string;
+  code: string;
+  /**
+   * 응답에만 존재.
+   */
+  success?: boolean;
+  data?: ClaudeAuthLoginFlow;
+  error?: ClaudeAuthError;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: Claude CLI 로그인 취소.
+ */
+export interface ClaudeAuthLoginCancel {
+  type: "claude_auth_login_cancel";
+  requestId?: string;
+  login_id: string;
+  /**
+   * 응답에만 존재.
+   */
+  success?: boolean;
+  data?: ClaudeAuthLoginFlow;
+  error?: ClaudeAuthError;
+  [k: string]: unknown;
+}
+/**
  * orch→노드: Claude runtime task 목록 조회.
  */
 export interface ClaudeRuntimeListTasks {
@@ -3296,6 +3481,13 @@ export const CONTROL_COMMAND_TYPES = [
   "claude_auth_delete_token",
   "claude_auth_get_usage",
   "claude_auth_get_profile",
+  "claude_auth_accounts_list",
+  "claude_auth_account_update",
+  "claude_auth_account_delete",
+  "claude_auth_login_start",
+  "claude_auth_login_status",
+  "claude_auth_login_submit_code",
+  "claude_auth_login_cancel",
   "provider_usage_get",
   "reflect_brief",
   "plan_agent_profile_update",

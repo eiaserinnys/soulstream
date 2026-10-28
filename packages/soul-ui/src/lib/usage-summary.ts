@@ -2,6 +2,76 @@ export const USAGE_SUMMARY_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 
 export type UsageSummaryProviderName = "claude" | "codex" | "antigravity";
 
+export type ClaudeAccountUsageWindow = {
+  readonly used_percent: number;
+  readonly resets_at: string | null;
+};
+
+export type ClaudeAccountBlocked = {
+  readonly until: string | null;
+  readonly scope: "all" | "fable";
+};
+
+export type ClaudeAccount = {
+  readonly id: string;
+  readonly email: string;
+  readonly plan: string | null;
+  readonly enabled: boolean;
+  readonly priority: number | null;
+  readonly auth_state: "ok" | "idle" | "needs_relogin" | "logging_in";
+  readonly usage: {
+    readonly five_hour: ClaudeAccountUsageWindow | null;
+    readonly seven_day: ClaudeAccountUsageWindow | null;
+    readonly fable_weekly: ClaudeAccountUsageWindow | null;
+  };
+  readonly observed_at: string | null;
+  readonly blocked: ClaudeAccountBlocked | null;
+  readonly active_sessions: number;
+};
+
+export type ClaudeAccountPool = {
+  readonly available_count: number;
+  readonly total_count: number;
+  readonly best_weekly_remaining_percent: number | null;
+  readonly best_weekly_resets_at: string | null;
+  readonly earliest_available_at: string | null;
+};
+
+export type ClaudeAccountList = {
+  readonly mode: "legacy" | "pool";
+  readonly accounts: readonly ClaudeAccount[];
+  readonly pool: ClaudeAccountPool | null;
+  readonly fable_pool: ClaudeAccountPool | null;
+};
+
+export type ClaudeAccountDeleteResult = {
+  readonly deferred: boolean;
+  readonly accounts: readonly ClaudeAccount[];
+  readonly pool: ClaudeAccountPool | null;
+};
+
+export type ClaudeAuthError = {
+  readonly code: string;
+  readonly message: string;
+  readonly existing_account_id?: string;
+};
+
+export type ClaudeAuthLoginFlow = {
+  readonly login_id: string;
+  readonly account_id: string | null;
+  readonly state:
+    | "requested"
+    | "url_ready"
+    | "code_submitted"
+    | "verifying"
+    | "done"
+    | "failed"
+    | "cancelled";
+  readonly auth_url: string | null;
+  readonly expires_at: string;
+  readonly error: ClaudeAuthError | null;
+};
+
 export type UsageSummaryQuota = {
   readonly id: string;
   readonly label: string;

@@ -1,5 +1,14 @@
 import type { AgentRegistry } from "../agent_registry.js";
 import type {
+  ClaudeAuthAccountDelete,
+  ClaudeAuthAccountsList,
+  ClaudeAuthAccountUpdate,
+  ClaudeAuthLoginCancel,
+  ClaudeAuthLoginStart,
+  ClaudeAuthLoginStatus,
+  ClaudeAuthLoginSubmitCode,
+} from "@soulstream/wire-schema";
+import type {
   ClaudeAuthApiResponse,
   ClaudeAuthCommandHandler,
   ClaudeAuthDeleteTokenResponse,
@@ -18,13 +27,37 @@ type ClaudeAuthStatusCmd = CommandLike & { type: "claude_auth_status" };
 type ClaudeAuthDeleteCmd = CommandLike & { type: "claude_auth_delete_token" };
 type ClaudeAuthUsageCmd = CommandLike & { type: "claude_auth_get_usage" };
 type ClaudeAuthProfileCmd = CommandLike & { type: "claude_auth_get_profile" };
+type ClaudeAuthAccountsListCmd = CommandLike &
+  Pick<ClaudeAuthAccountsList, "type" | "requestId">;
+type ClaudeAuthAccountUpdateCmd = CommandLike &
+  Pick<ClaudeAuthAccountUpdate, "type" | "requestId" | "account_id" | "enabled" | "priority">;
+type ClaudeAuthAccountDeleteCmd = CommandLike &
+  Pick<ClaudeAuthAccountDelete, "type" | "requestId" | "account_id">;
+type ClaudeAuthLoginStartCmd = CommandLike &
+  Pick<ClaudeAuthLoginStart, "type" | "requestId" | "account_id">;
+type ClaudeAuthLoginStatusCmd = CommandLike &
+  Pick<ClaudeAuthLoginStatus, "type" | "requestId" | "login_id">;
+type ClaudeAuthLoginSubmitCodeCmd = CommandLike &
+  Pick<ClaudeAuthLoginSubmitCode, "type" | "requestId" | "login_id" | "code">;
+type ClaudeAuthLoginCancelCmd = CommandLike &
+  Pick<ClaudeAuthLoginCancel, "type" | "requestId" | "login_id">;
+
+type ClaudeAuthAccountCommand =
+  | ClaudeAuthAccountsListCmd
+  | ClaudeAuthAccountUpdateCmd
+  | ClaudeAuthAccountDeleteCmd
+  | ClaudeAuthLoginStartCmd
+  | ClaudeAuthLoginStatusCmd
+  | ClaudeAuthLoginSubmitCodeCmd
+  | ClaudeAuthLoginCancelCmd;
 
 export type ClaudeAuthCommand =
   | ClaudeAuthStatusCmd
   | (CommandLike & ClaudeAuthSetTokenCmd)
   | ClaudeAuthDeleteCmd
   | ClaudeAuthUsageCmd
-  | ClaudeAuthProfileCmd;
+  | ClaudeAuthProfileCmd
+  | ClaudeAuthAccountCommand;
 
 export type ClaudeAuthCommandResponse =
   | ClaudeAuthStatusResponse
@@ -57,8 +90,11 @@ export class ClaudeAuthCommands {
   ) {}
 
   async handle(cmd: ClaudeAuthCommand): Promise<ClaudeAuthCommandResponse | null> {
-    const auth = this.requireAuth();
     const requestId = commandRequestId(cmd);
+    if (isClaudeAuthAccountCommand(cmd)) {
+      throw new ClaudeAuthCommandError(`Not implemented in soul-server-ts: ${cmd.type}`);
+    }
+    const auth = this.requireAuth();
 
     switch (cmd.type) {
       case "claude_auth_status":
@@ -96,4 +132,16 @@ export class ClaudeAuthCommands {
 
 function commandRequestId(cmd: CommandLike): string {
   return cmd.requestId ?? cmd.request_id ?? "";
+}
+
+function isClaudeAuthAccountCommand(
+  cmd: ClaudeAuthCommand,
+): cmd is ClaudeAuthAccountCommand {
+  return cmd.type === "claude_auth_accounts_list"
+    || cmd.type === "claude_auth_account_update"
+    || cmd.type === "claude_auth_account_delete"
+    || cmd.type === "claude_auth_login_start"
+    || cmd.type === "claude_auth_login_status"
+    || cmd.type === "claude_auth_login_submit_code"
+    || cmd.type === "claude_auth_login_cancel";
 }
