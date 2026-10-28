@@ -27,6 +27,7 @@ const frames: RunnerFrame[] = [
     params: {
       agentSessionId: "session-1",
       prompt: "hello",
+      claudeAccountPoolTarget: true,
       runnerInterventionIds: ["intervention-1", "intervention-2", "intervention-3"],
       turnOrigin: { kind: "runtime_followup", id: "delivery-runtime-1" },
       backendSessionRolloverFrom: "backend-session-old",

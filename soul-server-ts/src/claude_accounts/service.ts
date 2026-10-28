@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { ClaudeAccountNotFoundError } from "./errors.js";
 import { computePoolSummary, pickBestAccountForScope } from "./pool.js";
 import {
   projectPublicBlockView,
@@ -6,6 +7,7 @@ import {
   type SelectableAccountCandidate,
 } from "./selector.js";
 import { ClaudeAccountStore } from "./store.js";
+import { ClaudeAccountSessionActivity } from "./session_activity.js";
 import type {
   ClaudeAccountAuthState,
   ClaudeAccountBlocksRecord,
@@ -25,16 +27,7 @@ import {
   type CollectAccountUsageOptions,
 } from "./usage.js";
 
-export class ClaudeAccountNotFoundError extends Error {
-  readonly code = "ACCOUNT_NOT_FOUND";
-  readonly accountId: string;
-
-  constructor(accountId: string) {
-    super(`Claude account not found: ${accountId}`);
-    this.name = "ClaudeAccountNotFoundError";
-    this.accountId = accountId;
-  }
-}
+export { ClaudeAccountNotFoundError } from "./errors.js";
 
 export interface ClaudeAccountServiceOptions {
   accountsDir: string;
@@ -51,7 +44,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
   readonly store: ClaudeAccountStore;
   readonly usageCollector: ClaudeAccountUsageCollector;
   private readonly now: () => number;
-  private readonly activeSessionAccounts = new Map<string, string>();
+  private readonly sessionActivity = new ClaudeAccountSessionActivity();
   private readonly loggingInAccountIds = new Set<string>();
   private readonly needsReloginAccountIds = new Set<string>();
   private readonly pendingRetireAccountIds = new Set<string>();
@@ -73,13 +66,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
   }
 
   activeSessions(accountId: string): number {
-    let count = 0;
-    for (const boundAccountId of this.activeSessionAccounts.values()) {
-      if (boundAccountId === accountId) {
-        count += 1;
-      }
-    }
-    return count;
+    return this.sessionActivity.activeSessions(accountId);
   }
 
   profileDir(accountId: string): string | null {
@@ -211,7 +198,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
 
     const existingBinding = bindings[input.session_id];
     const boundAccountId =
-      this.activeSessionAccounts.get(input.session_id) ??
+      this.sessionActivity.assignment(input.session_id) ??
       existingBinding?.account_id ??
       null;
     const boundTurnId = existingBinding?.turn_id ?? null;
@@ -226,17 +213,17 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       nowMs,
     });
 
-    const previousActiveAccountId = this.activeSessionAccounts.get(input.session_id);
+    const previousActiveAccountId = this.sessionActivity.assignment(input.session_id);
     if (!chosen) {
       if (previousActiveAccountId) {
-        this.activeSessionAccounts.delete(input.session_id);
+        this.sessionActivity.clearAssignment(input.session_id, previousActiveAccountId);
         this.maybeFinalizeDeferredRetire(previousActiveAccountId);
       }
       return null;
     }
 
     this.store.ensureProfileSymlinks(chosen.id);
-    this.activeSessionAccounts.set(input.session_id, chosen.id);
+    this.sessionActivity.assign(input.session_id, chosen.id, input.turn_id);
     if (previousActiveAccountId && previousActiveAccountId !== chosen.id) {
       this.maybeFinalizeDeferredRetire(previousActiveAccountId);
     }
@@ -269,20 +256,24 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
 
     if (
       input.session_id &&
-      this.activeSessionAccounts.get(input.session_id) === input.account_id
+      this.sessionActivity.assignment(input.session_id) === input.account_id
     ) {
-      this.activeSessionAccounts.delete(input.session_id);
+      this.sessionActivity.clearAssignment(input.session_id, input.account_id);
       this.maybeFinalizeDeferredRetire(input.account_id);
     }
   }
 
   async release(input: ClaudeAccountReleaseInput): Promise<void> {
-    const previousAccountId = this.activeSessionAccounts.get(input.session_id);
-    if (!previousAccountId) {
-      return;
+    for (const accountId of this.sessionActivity.release(input)) {
+      this.maybeFinalizeDeferredRetire(accountId);
     }
-    this.activeSessionAccounts.delete(input.session_id);
-    this.maybeFinalizeDeferredRetire(previousAccountId);
+  }
+
+  async restoreActiveBinding(input: {
+    session_id: string;
+    account_id: string;
+  }): Promise<void> {
+    this.sessionActivity.restoreActiveBinding(input, this.store);
   }
 
   async updateAccount(

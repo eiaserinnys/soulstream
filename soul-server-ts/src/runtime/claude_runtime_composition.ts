@@ -3,6 +3,9 @@ import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import type { SessionStore } from "@anthropic-ai/claude-agent-sdk";
 
+import type { Env } from "../config.js";
+import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../auth/claude_auth.js";
+import { ClaudeAccountService } from "../claude_accounts/index.js";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionDeliveryRow } from "../db/session_db_types.js";
@@ -11,6 +14,7 @@ import { ClaudeSdkClient } from "../engine/claude_adapter.js";
 import { ClaudeDeliveryTranscriptReceiptReader } from
   "../engine/claude_delivery_transcript_receipt.js";
 import type { ClaudeClientEvent } from "../engine/claude_client_event.js";
+import type { ClaudeAccountTurnPort } from "../engine/claude_account_pool.js";
 import { ClaudeSessionClientRegistry } from
   "../engine/claude_session_client_registry.js";
 import { ClaudeBackgroundTaskLifecycle } from
@@ -23,6 +27,23 @@ import { QueuedDeliveryTranscriptRecovery } from
   "../task/queued_delivery_transcript_recovery.js";
 import { ClaudeRuntimeStartupRecovery } from
   "./claude_runtime_startup_recovery.js";
+
+export function composeClaudeAccountServices(
+  env: Pick<Env, "CLAUDE_AUTH_TOKEN_PATH" | "CLAUDE_ACCOUNT_POOL_ENABLED" | "CLAUDE_ACCOUNTS_DIR">,
+  logger: Logger,
+): {
+  claudeAuth: ClaudeAuthService;
+  claudeAccounts: ClaudeAccountService | undefined;
+} {
+  return {
+    claudeAuth: new ClaudeAuthService({
+      store: new FileClaudeAuthTokenStore(env.CLAUDE_AUTH_TOKEN_PATH),
+    }, logger),
+    claudeAccounts: env.CLAUDE_ACCOUNT_POOL_ENABLED && env.CLAUDE_ACCOUNTS_DIR
+      ? new ClaudeAccountService({ accountsDir: env.CLAUDE_ACCOUNTS_DIR })
+      : undefined,
+  };
+}
 
 interface ComposeClaudeRuntimeParams {
   enabled: boolean;
@@ -41,6 +62,7 @@ interface ComposeClaudeRuntimeParams {
   ): Promise<void>;
   redeliverContent(row: SessionDeliveryRow): Promise<void>;
   resolveWorktreeWorkspace?(worktreeId: string): Promise<string>;
+  claudeAccountTurnPort?: ClaudeAccountTurnPort;
 }
 
 export interface ClaudeRuntimeComposition {
@@ -136,6 +158,16 @@ export async function composeClaudeRuntime(
       idleTtlMs: params.idleTtlMs,
       maxEntries: params.maxEntries,
       logger: params.logger,
+      ...(params.claudeAccountTurnPort
+        ? {
+            onClientClosed: async (sessionId: string) => {
+              await params.claudeAccountTurnPort!.release({
+                session_id: sessionId,
+                clear_all: true,
+              });
+            },
+          }
+        : {}),
     },
   );
   return {
@@ -147,4 +179,26 @@ export async function composeClaudeRuntime(
     ),
     startupRecovery,
   };
+}
+
+export function createClaudeAccountPoolRegistry(params: {
+  claudeAccountTurnPort: ClaudeAccountTurnPort;
+  idleTtlMs: number;
+  maxEntries: number;
+  logger: Logger;
+}): ClaudeSessionClientRegistry {
+  return new ClaudeSessionClientRegistry(
+    () => new ClaudeSdkClient({}, params.logger),
+    {
+      idleTtlMs: params.idleTtlMs,
+      maxEntries: params.maxEntries,
+      logger: params.logger,
+      onClientClosed: async (sessionId) => {
+        await params.claudeAccountTurnPort.release({
+          session_id: sessionId,
+          clear_all: true,
+        });
+      },
+    },
+  );
 }

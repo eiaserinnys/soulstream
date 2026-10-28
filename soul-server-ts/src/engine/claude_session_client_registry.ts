@@ -1,7 +1,8 @@
 import type { Logger } from "pino";
 
 import { inputResponseControlFrame } from "../runner/frame_protocol.js";
-import type { ClaudeClient } from "./claude_adapter.js";
+import type { ClaudeClient, ClaudeRunOptions } from "./claude_adapter.js";
+import type { ClaudeClientEvent } from "./claude_client_event.js";
 import type {
   ClaudeBackgroundTaskControlResult,
   InputResponseDeliveryResult,
@@ -25,6 +26,10 @@ export interface ClaudeSessionClientRegistryOptions {
   bindTimeoutMs?: number;
   now?: () => number;
   logger?: Pick<Logger, "info" | "warn">;
+  onClientClosed?: (
+    sessionId: string,
+    reason: ClaudeRuntimeRegistryCloseReason,
+  ) => Promise<void> | void;
 }
 
 export interface ClaudeSessionRuntimeControl {
@@ -63,11 +68,13 @@ export type ClaudeRuntimeRegistryCloseReason =
 export class ClaudeSessionClientRegistry implements ClaudeSessionRuntimeControl {
   private readonly entries = new Map<string, RegistryEntry>();
   private readonly pendingCloses = new Set<Promise<void>>();
+  private readonly closingBySession = new Map<string, Promise<void>>();
   private readonly idleTtlMs: number;
   private readonly maxEntries: number;
   private readonly now: () => number;
   private readonly bindTimeoutMs: number;
   private readonly logger?: Pick<Logger, "info" | "warn">;
+  private readonly onClientClosed?: ClaudeSessionClientRegistryOptions["onClientClosed"];
 
   constructor(
     private readonly createClient: (sessionId: string) => ClaudeClient,
@@ -78,6 +85,7 @@ export class ClaudeSessionClientRegistry implements ClaudeSessionRuntimeControl 
     this.now = options.now ?? Date.now;
     this.bindTimeoutMs = options.bindTimeoutMs ?? 5_000;
     this.logger = options.logger;
+    this.onClientClosed = options.onClientClosed;
     if (this.idleTtlMs <= 0) throw new Error("Claude registry idleTtlMs must be positive");
     if (this.maxEntries <= 0) throw new Error("Claude registry maxEntries must be positive");
   }
@@ -88,7 +96,7 @@ export class ClaudeSessionClientRegistry implements ClaudeSessionRuntimeControl 
       existing.attachments += 1;
       this.touch(existing);
       if (!existing.client) {
-        const client = this.createClient(sessionId);
+        const client = this.createFencedClient(sessionId);
         existing.client = client;
         existing.resolveBinding(client);
       }
@@ -96,6 +104,14 @@ export class ClaudeSessionClientRegistry implements ClaudeSessionRuntimeControl 
     }
     this.reserve(sessionId);
     return this.acquire(sessionId);
+  }
+
+  async acquireAfterClose(sessionId: string): Promise<ClaudeClient> {
+    while (true) {
+      const closing = this.closingBySession.get(sessionId);
+      if (!closing) return this.acquire(sessionId);
+      await closing;
+    }
   }
 
   reserve(sessionId: string): boolean {
@@ -136,8 +152,13 @@ export class ClaudeSessionClientRegistry implements ClaudeSessionRuntimeControl 
     reason: ClaudeRuntimeRegistryCloseReason = "explicit_cancel",
   ): Promise<boolean> {
     const entry = this.removeEntry(sessionId);
-    if (!entry) return false;
-    await this.closeClient(entry, reason);
+    if (!entry) {
+      const closing = this.closingBySession.get(sessionId);
+      if (!closing) return false;
+      await closing;
+      return true;
+    }
+    await this.closeEntry(entry, reason);
     return true;
   }
 
@@ -184,7 +205,7 @@ export class ClaudeSessionClientRegistry implements ClaudeSessionRuntimeControl 
       .filter((entry): entry is RegistryEntry => Boolean(entry));
     await Promise.all(entries.map(async (entry) => {
       try {
-        await this.closeClient(entry, "shutdown");
+        await this.closeEntry(entry, "shutdown");
       } catch (error) {
         this.reportCloseError(entry.sessionId, error);
       }
@@ -278,7 +299,7 @@ export class ClaudeSessionClientRegistry implements ClaudeSessionRuntimeControl 
     entry: RegistryEntry,
     reason: ClaudeRuntimeRegistryCloseReason,
   ): void {
-    const pending = this.closeClient(entry, reason).catch((error) => {
+    const pending = this.closeEntry(entry, reason).catch((error) => {
       this.reportCloseError(entry.sessionId, error);
     });
     this.pendingCloses.add(pending);
@@ -290,10 +311,77 @@ export class ClaudeSessionClientRegistry implements ClaudeSessionRuntimeControl 
     reason: ClaudeRuntimeRegistryCloseReason,
   ): Promise<void> {
     await entry.client?.close?.(reason);
+    if (entry.client) await this.onClientClosed?.(entry.sessionId, reason);
     this.logger?.info(
       { sessionId: entry.sessionId, reason, bound: entry.client !== null },
       "Persistent Claude session runtime closed",
     );
+  }
+
+  private closeEntry(
+    entry: RegistryEntry,
+    reason: ClaudeRuntimeRegistryCloseReason,
+  ): Promise<void> {
+    const previousClose = this.closingBySession.get(entry.sessionId) ?? Promise.resolve();
+    const closing = previousClose.then(async () => await this.closeClient(entry, reason));
+    this.closingBySession.set(entry.sessionId, closing);
+    this.pendingCloses.add(closing);
+    void closing.then(
+      () => {
+        this.pendingCloses.delete(closing);
+        if (this.closingBySession.get(entry.sessionId) === closing) {
+          this.closingBySession.delete(entry.sessionId);
+        }
+      },
+      () => {
+        this.pendingCloses.delete(closing);
+      },
+    );
+    void closing.catch(() => undefined);
+    return closing;
+  }
+
+  private createFencedClient(sessionId: string): ClaudeClient {
+    const client = this.createClient(sessionId);
+    const previousClose = this.closingBySession.get(sessionId);
+    if (!previousClose) return client;
+
+    return new Proxy(client, {
+      get(target, property) {
+        if (property === "run") {
+          return async function* (
+            options: ClaudeRunOptions,
+            signal: AbortSignal,
+          ): AsyncIterable<ClaudeClientEvent> {
+            await previousClose;
+            yield* target.run(options, signal);
+          };
+        }
+        if (property === "runPersistent" && target.runPersistent) {
+          return async function* (
+            options: ClaudeRunOptions,
+            signal: AbortSignal,
+          ): AsyncIterable<ClaudeClientEvent> {
+            await previousClose;
+            yield* target.runPersistent!(options, signal);
+          };
+        }
+        if (property === "compact" && target.compact) {
+          return async (sessionId: string) => {
+            await previousClose;
+            return await target.compact!(sessionId);
+          };
+        }
+        if (property === "close" && target.close) {
+          return async (reason?: Parameters<NonNullable<ClaudeClient["close"]>>[0]) => {
+            await previousClose;
+            await target.close!(reason);
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
   }
 
   private async boundEntry(sessionId: string): Promise<RegistryEntry | undefined> {

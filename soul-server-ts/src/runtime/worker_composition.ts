@@ -1,9 +1,7 @@
 import { antigravityEnvironment } from "../engine/antigravity_env.js";
 import { AgentConfigService } from "../agent_config_service.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
-import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../auth/claude_auth.js";
 import { ProviderUsageService } from "../auth/provider_usage.js";
-import { ClaudeAccountService } from "../claude_accounts/index.js";
 import { CatalogService } from "../catalog/catalog_service.js";
 import { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import { DEFAULT_COGITO_CONTEXT_LIMITS } from "../context/cogito_context.js";
@@ -48,14 +46,11 @@ import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import { summarizePayloadForLog } from "../upstream/log_payload_summary.js";
 import { composeTaskRuntime, createWorkerAttachmentRuntime, type TaskRuntimeComposition } from "./task_runtime_composition.js";
-import { composeClaudeRuntime } from "./claude_runtime_composition.js";
+import { composeClaudeRuntime, composeClaudeAccountServices, createClaudeAccountPoolRegistry } from "./claude_runtime_composition.js";
 import { composeClaudeLoginService } from "./claude_login_runtime_composition.js";
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
 import { createEngineFactory } from "./engine_factory.js";
-import {
-  composeRunnerProcessRuntime,
-  composeRunnerRecoveryCoordinator,
-} from "./runner_process_composition.js";
+import { composeRunnerProcessRuntime, composeRunnerRecoveryCoordinator } from "./runner_process_composition.js";
 import type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 import { composeWorkerUpstreamAdapter } from "./worker_upstream_composition.js";
 import { buildMcpServerOptions } from "./mcp_server_options.js";
@@ -82,14 +77,8 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
       await upstreamAdapter.reannounceAgentCatalog();
     },
   });
-  const claudeAuth = new ClaudeAuthService({ store: new FileClaudeAuthTokenStore(env.CLAUDE_AUTH_TOKEN_PATH) }, logger);
-  const claudeAccounts =
-    env.CLAUDE_ACCOUNT_POOL_ENABLED && env.CLAUDE_ACCOUNTS_DIR
-      ? new ClaudeAccountService({ accountsDir: env.CLAUDE_ACCOUNTS_DIR })
-      : undefined;
-  const claudeLoginService = claudeAccounts
-    ? composeClaudeLoginService({ accounts: claudeAccounts, claudeAuth, logger })
-    : undefined;
+  const { claudeAuth, claudeAccounts } = composeClaudeAccountServices(env, logger);
+  const claudeLoginService = claudeAccounts ? composeClaudeLoginService({ accounts: claudeAccounts, claudeAuth, logger }) : undefined;
   const providerUsage = new ProviderUsageService({
     claudeAuth, claudeAccounts, modelCatalog, logger,
     antigravity: {
@@ -231,6 +220,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
         maxEntries: env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
         turnInactivityTimeoutMs: env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
         logger,
+        ...(claudeAccounts ? { claudeAccountTurnPort: claudeAccounts } : {}),
         resolveWorktreeWorkspace: (worktreeId) => resolveWorktreeWorkspace(worktreeService, worktreeId),
         redeliverContent: (row) => redeliverStoredDeliveryContent(
           row, taskManager, taskRuntime.onResume,
@@ -241,7 +231,16 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
         },
       })
     : {};
-  const claudeSessionClientRegistry = claudeRuntime.registry;
+  const claudeSessionClientRegistry = claudeRuntime.registry ?? (
+    claudeAccounts
+      ? createClaudeAccountPoolRegistry({
+          claudeAccountTurnPort: claudeAccounts,
+          idleTtlMs: env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
+          maxEntries: env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
+          logger,
+        })
+      : undefined
+  );
   taskManager = new TaskManager(
     env.SOULSTREAM_NODE_ID,
     db,
@@ -272,6 +271,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     codexProcessEnv: process.env,
     buildClaudeProcessEnv: () => claudeAuth.buildProcessEnv(process.env),
     claudeSessionStore,
+    ...(claudeAccounts ? { claudeAccountTurnPort: claudeAccounts } : {}),
     mcpConfigService,
     ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
   });
@@ -279,6 +279,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     env, logger, mcpConfigService, codexCliPath, antigravityCliPath,
     ...(params.nodeStallMonitor ? { nodeStallMonitor: params.nodeStallMonitor } : {}),
     pumpMux: eventOutboxPumpMux, sessionStore: claudeSessionStore,
+    claudeAccounts,
     producedAttachments: attachmentRuntime.mcpRuntime.producedAttachments,
     buildChildProcessEnv: () => claudeAuth.buildProcessEnv(process.env), publishDetachedClaudeEvent,
     reconcileClaudeTranscriptAppend: (task) => taskRuntime.claudeRuntimeTaskFollowup.reconcileTranscriptAppend(task),

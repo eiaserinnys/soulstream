@@ -90,6 +90,11 @@ describe("RunnerProcessSpawner", () => {
       schemaVersion: 1,
       ...serialized,
       paths,
+    }).claudeAccountPool).toBeUndefined();
+    expect(parseRunnerChildConfig({
+      schemaVersion: 1,
+      ...serialized,
+      paths,
       codexDetachedResultRetentionMs: 120_000,
     }).codexDetachedResultRetentionMs).toBe(120_000);
     for (const value of [0, -1, 1.5]) {

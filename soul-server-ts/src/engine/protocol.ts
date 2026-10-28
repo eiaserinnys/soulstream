@@ -191,6 +191,8 @@ export interface EngineExecuteParams {
   queuedToolApproval?: QueuedToolApprovalDecision;
   /** Host has a consumer for correlated schedule request frames. */
   scheduleToolUseEnabled?: boolean;
+  /** Resolved official Claude provider/model target for account pool selection. */
+  claudeAccountPoolTarget?: boolean;
 }
 
 /**

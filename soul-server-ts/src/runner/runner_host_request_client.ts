@@ -10,6 +10,7 @@ import { RunnerObservationDroppedError } from "./runner_ipc_connection.js";
 
 export type RunnerHostService =
   | "session_store"
+  | "claude_accounts"
   | "claude_runtime"
   | "detached_event"
   | "snapshot"

@@ -209,6 +209,7 @@ export function composeTaskRuntime(
       : undefined,
     params.waitForAttachmentRefs,
     params.prepareAttachmentInput,
+    env.CLAUDE_ACCOUNT_POOL_ENABLED,
   );
   completionDeliveryRecoveryWorker?.start();
   const scheduleDispatcher = new ScheduleDispatcher(

@@ -4,6 +4,13 @@ import type {
   SessionStoreEntry,
 } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
+import type {
+  ClaudeAccountRejectInput,
+  ClaudeAccountReleaseInput,
+  ClaudeAccountSelectionInput,
+  ClaudeAccountSelectionResult,
+} from "../claude_accounts/types.js";
+import type { ClaudeAccountTurnPort } from "../engine/claude_account_pool.js";
 
 import { AgentsEngineAdapter } from "../engine/agents_adapter.js";
 import { AntigravityEngineAdapter } from "../engine/antigravity/adapter.js";
@@ -23,6 +30,7 @@ import type { RunnerHostRequestClient } from "./runner_host_request_client.js";
 import {
   applyRunnerClaudeRuntimeObservationResult,
 } from "./runner_claude_runtime_observation.js";
+import { RunnerClaudeAccountTurnStateStore } from "./claude_account_turn_state_store.js";
 
 const HOST_REQUEST_ATTEMPT_TIMEOUT_MS = 1_800_000;
 const HOST_REQUEST_DEADLINE_MS = HOST_REQUEST_ATTEMPT_TIMEOUT_MS;
@@ -96,41 +104,59 @@ export function createRunnerChildEngine(
     throw new Error(`Unsupported backend "${config.backend}" in runner child`);
   }
   const sessionStore = new HostSessionStore(host);
-  const registry = config.claudeRuntimeV2Enabled
+  const accountPoolEnabled = config.claudeAccountPool?.enabled === true;
+  const claudeAccountTurnPort = accountPoolEnabled
+    ? new HostClaudeAccountTurnPort(host)
+    : undefined;
+  const registry = config.claudeRuntimeV2Enabled || accountPoolEnabled
     ? new ClaudeSessionClientRegistry(
         (sessionId) => new ClaudeSdkClient({
-          runtimeEventSink: async (event) => {
-            const metadata = claudeEngineEventMetadata(event);
-            const result = await host.call(
-              "claude_runtime",
-              "observe",
-              [sessionId, { ...event }, ...(metadata ? [metadata] : [])],
-              hostOptions(),
-            );
-            return applyRunnerClaudeRuntimeObservationResult(
-              event,
-              result,
-              (issue) => logger.error(
-                { err: issue, sessionId },
-                "Runner Claude runtime observation response violated its semantic contract",
-              ),
-            );
-          },
-          detachedEventSink: async (event) => {
-            const metadata = claudeEngineEventMetadata(event);
-            await host.call(
-              "detached_event",
-              "publish",
-              [sessionId, { ...event }, ...(metadata ? [metadata] : [])],
-              hostOptions(),
-            );
-          },
+          ...(config.claudeRuntimeV2Enabled
+            ? {
+                runtimeEventSink: async (event) => {
+                  const metadata = claudeEngineEventMetadata(event);
+                  const result = await host.call(
+                    "claude_runtime",
+                    "observe",
+                    [sessionId, { ...event }, ...(metadata ? [metadata] : [])],
+                    hostOptions(),
+                  );
+                  return applyRunnerClaudeRuntimeObservationResult(
+                    event,
+                    result,
+                    (issue) => logger.error(
+                      { err: issue, sessionId },
+                      "Runner Claude runtime observation response violated its semantic contract",
+                    ),
+                  );
+                },
+                detachedEventSink: async (event) => {
+                  const metadata = claudeEngineEventMetadata(event);
+                  await host.call(
+                    "detached_event",
+                    "publish",
+                    [sessionId, { ...event }, ...(metadata ? [metadata] : [])],
+                    hostOptions(),
+                  );
+                },
+              }
+            : {}),
           persistentTurnInactivityTimeoutMs: config.claudeRuntimeTurnTimeoutMs,
         }, logger),
         {
           idleTtlMs: config.claudeRuntimeIdleTtlMs,
           maxEntries: config.claudeRuntimeMaxEntries,
           logger,
+          ...(claudeAccountTurnPort
+            ? {
+                onClientClosed: async (sessionId) => {
+                  await claudeAccountTurnPort.release({
+                    session_id: sessionId,
+                    clear_all: true,
+                  });
+                },
+              }
+            : {}),
         },
       )
     : undefined;
@@ -139,14 +165,46 @@ export function createRunnerChildEngine(
     agentId: config.agent.id,
     processEnv: process.env,
     sessionStore,
-    sessionStoreFlush: config.claudeRuntimeV2Enabled ? "eager" : "batched",
+    sessionStoreFlush: config.claudeRuntimeV2Enabled || accountPoolEnabled ? "eager" : "batched",
     loadTimeoutMs: 60_000,
+    trackChildExit: accountPoolEnabled,
+    claudeAccountPoolEnabled: accountPoolEnabled,
+    ...(accountPoolEnabled
+      ? {
+          claudeAccountTurnPort: claudeAccountTurnPort!,
+          claudeAccountTurnState: RunnerClaudeAccountTurnStateStore.open(
+            config.paths.databasePath,
+            config.sessionId,
+          ),
+        }
+      : {}),
     internalMcpUrl: config.internalMcpUrl,
     ...(config.resolvedMcpServers
       ? { resolvedMcpServers: config.resolvedMcpServers }
       : {}),
     ...(registry ? { persistentSessionRegistry: registry } : {}),
   }, logger);
+}
+
+class HostClaudeAccountTurnPort implements ClaudeAccountTurnPort {
+  constructor(private readonly host: RunnerHostRequestClient) {}
+
+  async select(input: ClaudeAccountSelectionInput): Promise<ClaudeAccountSelectionResult | null> {
+    return await this.host.call(
+      "claude_accounts",
+      "select",
+      [input.session_id, input],
+      hostOptions(),
+    ) as ClaudeAccountSelectionResult | null;
+  }
+
+  async reject(input: ClaudeAccountRejectInput): Promise<void> {
+    await this.host.call("claude_accounts", "reject", [input.session_id, input], hostOptions());
+  }
+
+  async release(input: ClaudeAccountReleaseInput): Promise<void> {
+    await this.host.call("claude_accounts", "release", [input.session_id, input], hostOptions());
+  }
 }
 
 class HostSessionStore implements SessionStore {
