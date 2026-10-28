@@ -1,6 +1,9 @@
 import type { Query as ClaudeSdkQuery, SDKMessage, SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
-import type { ClaudeRunOptions } from "./claude_adapter.js";
+import type {
+  ClaudeAccountRateLimitSwitchRequest,
+  ClaudeRunOptions,
+} from "./claude_adapter.js";
 import { markPostResultDrainEvent } from "./claude_event_phase.js";
 import type { EngineUserInput } from "./protocol.js";
 import type { ClaudeClientEvent } from "./claude_client_event.js";
@@ -13,10 +16,12 @@ import type { EventQueue } from "./claude_sdk_event_queue.js";
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import { ClaudeSdkUsageCarry } from "./claude_sdk_usage_carry.js";
 import { asRecord, asString } from "./claude_sdk_helpers.js";
-import * as rateLimit from "./claude_sdk_rate_limit_stop_failure.js";
+import {
+  handleClaudeSdkPersistentRateLimitTermination,
+  observeClaudeSdkPersistentAccountSwitch,
+} from "./claude_sdk_persistent_rate_limit_event.js";
 import { isFatalClientError, isRuntimeClientEvent } from "./claude_sdk_runtime_state.js";
-import { ClaudeRuntimeFollowupWatchdog } from "./claude_runtime_followup_watchdog.js";
-import { ClaudeTurnInactivityWatchdog } from "./claude_turn_inactivity_watchdog.js";
+import { ClaudeSdkPersistentTurnTimers } from "./claude_sdk_persistent_turn_timers.js";
 import {
   type ActiveForeground,
   ClaudeExactResultCache,
@@ -25,7 +30,6 @@ import {
   type ClaudeSdkPersistentSessionConfig,
   ClaudePendingNativeNotificationTracker,
   describeResultProvenance,
-  handlePersistentTurnInactivity,
   isExpectedInterruptDiagnostic,
   isTurnStartingUserInput,
   makeStaleInterruptReceiptLogger,
@@ -65,38 +69,39 @@ export class ClaudeSdkPersistentSession {
   private readonly detachedEventSink: ClaudeDetachedEventSink;
   private readonly runtimeEventSink?: ClaudeRuntimeEventSink;
   private readonly logger: Logger;
-  private readonly postResultDrainMs: number;
-  private readonly runtimeFollowupNoOutputTimeoutMs: number;
   private readonly pump: Promise<void>;
   private readonly hookPump: Promise<void>;
-  private readonly followupWatchdog: ClaudeRuntimeFollowupWatchdog;
-  private readonly turnInactivityWatchdog: ClaudeTurnInactivityWatchdog;
+  private readonly turnTimers: ClaudeSdkPersistentTurnTimers;
   private readonly exactResultCache = new ClaudeExactResultCache();
-  private readonly usageCarry = new ClaudeSdkUsageCarry();
+  private readonly usageCarry: ClaudeSdkUsageCarry;
+  private readonly accountRateLimitSwitchEnabled: boolean;
   private readonly nativeNotificationTracker: ClaudePendingNativeNotificationTracker;
   private activeForeground: ActiveForeground | null = null;
   private interventionFence: ActiveForeground | null = null;
-  private drainTimer: ReturnType<typeof setTimeout> | null = null;
+  private accountRateLimitSwitch: ClaudeAccountRateLimitSwitchRequest | null = null;
+  private closeReasonValue: ClaudeRuntimeCloseReason | null = null;
   constructor(config: ClaudeSdkPersistentSessionConfig) {
     this.eventMapper = config.eventMapper;
     this.hookOutput = config.hookOutput;
     this.detachedEventSink = config.detachedEventSink;
     this.runtimeEventSink = config.runtimeEventSink;
+    this.accountRateLimitSwitchEnabled = config.accountRateLimitSwitchEnabled === true;
+    this.usageCarry = config.usageCarry ?? new ClaudeSdkUsageCarry();
     this.logger = config.logger;
-    this.postResultDrainMs = config.postResultDrainMs;
-    this.runtimeFollowupNoOutputTimeoutMs = config.runtimeFollowupNoOutputTimeoutMs;
     this.nativeNotificationTracker = new ClaudePendingNativeNotificationTracker({
       noOutputTimeoutMs: config.runtimeFollowupNoOutputTimeoutMs,
       turnInactivityTimeoutMs: config.turnInactivityTimeoutMs,
     });
     this.runtime = new ClaudeSessionRuntime((input) => config.createQuery(input));
-    this.turnInactivityWatchdog = new ClaudeTurnInactivityWatchdog({
-      timeoutMs: config.turnInactivityTimeoutMs,
-      onInactive: async (uuid) => await this.handleTurnInactivity(uuid),
-    });
-    this.followupWatchdog = new ClaudeRuntimeFollowupWatchdog({
-      timeoutMs: this.runtimeFollowupNoOutputTimeoutMs,
+    this.turnTimers = new ClaudeSdkPersistentTurnTimers({
+      runtime: this.runtime,
       logger: this.logger,
+      turnInactivityTimeoutMs: config.turnInactivityTimeoutMs,
+      runtimeFollowupNoOutputTimeoutMs: config.runtimeFollowupNoOutputTimeoutMs,
+      postResultDrainMs: config.postResultDrainMs,
+      getActive: () => this.activeForeground,
+      setActive: (active) => { this.activeForeground = active; },
+      close: async () => await this.close("fatal"),
     });
     this.pump = this.pumpQuery(config.onClosed);
     this.hookPump = this.pumpHookEvents();
@@ -109,8 +114,8 @@ export class ClaudeSdkPersistentSession {
       signal,
       activeForeground: this.activeForeground,
       runtime: this.runtime,
-      turnInactivityWatchdog: this.turnInactivityWatchdog,
-      followupWatchdog: this.followupWatchdog,
+      turnInactivityWatchdog: this.turnTimers.turnInactivityWatchdog,
+      followupWatchdog: this.turnTimers.followupWatchdog,
       logger: this.logger,
       cachedResultForInput: (uuid) => this.exactResultCache.get(uuid),
       setActiveForeground: (active) => {
@@ -124,7 +129,7 @@ export class ClaudeSdkPersistentSession {
       active: this.activeForeground,
       runtime: this.runtime,
       logger: this.logger,
-      clearForegroundTimers: (active) => this.clearForegroundTimers(active),
+      clearForegroundTimers: (active) => this.turnTimers.clearForegroundTimers(active),
       setInterventionFence: (active) => { this.interventionFence = active; },
       close: async (reason) => await this.close(reason),
     });
@@ -150,17 +155,26 @@ export class ClaudeSdkPersistentSession {
     return this.runtime.query as ClaudeSdkQuery;
   }
 
+  takeAccountRateLimitSwitch(): ClaudeAccountRateLimitSwitchRequest | null {
+    const result = this.accountRateLimitSwitch;
+    this.accountRateLimitSwitch = null;
+    return result;
+  }
+
+  closeReason(): ClaudeRuntimeCloseReason | null {
+    return this.closeReasonValue;
+  }
+
   async close(reason: ClaudeRuntimeCloseReason): Promise<void> {
-    if (this.drainTimer) {
-      clearTimeout(this.drainTimer);
-      this.drainTimer = null;
-    }
+    if (reason !== "account_switch") await this.flushPendingRateLimitEvents();
+    this.closeReasonValue = reason;
+    this.turnTimers.clearDrainTimer();
     this.runtime.close(reason);
     this.exactResultCache.clear();
-    this.usageCarry.clear();
+    if (reason !== "account_switch") this.usageCarry.clear();
     this.nativeNotificationTracker.clear();
     const active = this.activeForeground;
-    this.clearForegroundTimers(active);
+    this.turnTimers.clearForegroundTimers(active);
     active?.output.close();
     this.activeForeground = null;
     settleInterventionInterrupt(this.interventionFence ?? active, false);
@@ -198,7 +212,7 @@ export class ClaudeSdkPersistentSession {
       const active = this.activeForeground;
       this.runtime.close("fatal");
       active?.output.fail(err);
-      this.clearForegroundTimers(active);
+      this.turnTimers.clearForegroundTimers(active);
       settleInterventionInterrupt(active, false);
       this.activeForeground = null;
       await this.emitDetached({
@@ -221,7 +235,7 @@ export class ClaudeSdkPersistentSession {
     const inputUuid = raw?.type === "user" ? asString(raw.uuid) : undefined;
     const inputOriginKind = asString(asRecord(raw?.origin)?.kind);
     if (raw && inputUuid && inputOriginKind && isTurnStartingUserInput(raw)) {
-      this.followupWatchdog.observeTurnInput({
+      this.turnTimers.followupWatchdog.observeTurnInput({
         uuid: inputUuid,
         originKind: inputOriginKind,
       });
@@ -229,7 +243,7 @@ export class ClaudeSdkPersistentSession {
     if (raw?.type === "result") {
       // Classification and clearing are atomic. handleResult consumes the
       // verdict instead of rereading a mutable last-input slot.
-      const foreignTurnEndedBeforeOwn = this.followupWatchdog.observeTurnResult({
+      const foreignTurnEndedBeforeOwn = this.turnTimers.followupWatchdog.observeTurnResult({
         inputUuid: asString(raw.user_message_uuid),
         originKind: asString(asRecord(raw.origin)?.kind),
       });
@@ -242,7 +256,7 @@ export class ClaudeSdkPersistentSession {
       if (isFatalClientError(event)) {
         const active = this.activeForeground;
         active?.output.close();
-        this.clearForegroundTimers(active);
+        this.turnTimers.clearForegroundTimers(active);
         settleInterventionInterrupt(active, false);
         this.activeForeground = null;
         await this.close("fatal");
@@ -253,6 +267,13 @@ export class ClaudeSdkPersistentSession {
   private async handleResult(
     message: Record<string, unknown>, foreignTurnEndedBeforeOwn: boolean,
   ): Promise<void> {
+    if (this.accountRateLimitSwitch) {
+      this.usageCarry.absorb(this.exactResultCache.mapAndRecord(message, this.eventMapper, this.runtime));
+      return;
+    }
+    if (this.activeForeground?.rateLimitSwitchGate.hasPendingSignal()) {
+      await this.flushPendingRateLimitEvents();
+    }
     const phase = this.runtime.snapshot().foregroundPhase;
     const active = this.activeForeground;
     const explicitUserMessageUuid = provableTurnResultOwner(phase, active, message, this.logger);
@@ -294,9 +315,9 @@ export class ClaudeSdkPersistentSession {
       });
       active.interruptedOwnerUuid = undefined;
       this.runtime.beginForegroundTurn(active.uuid);
-      this.turnInactivityWatchdog.arm(active.uuid);
+      this.turnTimers.turnInactivityWatchdog.arm(active.uuid);
       if (active.origin.kind === "runtime_followup") {
-        this.followupWatchdog.arm(active.uuid, active.origin);
+        this.turnTimers.followupWatchdog.arm(active.uuid, active.origin);
       }
       const expectedInterruptDiagnostic = terminalEvents.some(isExpectedInterruptDiagnostic);
       this.logger.info(
@@ -350,13 +371,13 @@ export class ClaudeSdkPersistentSession {
       interrupted: phase === "interrupting",
     });
     this.runtime.settleMergedInputs();
-    if (active) this.followupWatchdog.resultArrived(active.uuid);
-    this.clearForegroundTimers(active);
+    if (active) this.turnTimers.followupWatchdog.resultArrived(active.uuid);
+    this.turnTimers.clearForegroundTimers(active);
     this.runtime.finishForegroundResult();
-    this.armDrainTimer();
+    this.turnTimers.armDrainTimer();
 
     if (active?.timedOut) {
-      active.output.push(turnInactivityError(this.turnInactivityWatchdog.timeoutMs));
+      active.output.push(turnInactivityError(this.turnTimers.turnInactivityWatchdog.timeoutMs));
     } else {
       const expectedInterruptDiagnostic =
         this.interventionFence === active
@@ -374,7 +395,7 @@ export class ClaudeSdkPersistentSession {
     settleInterventionInterrupt(active, true);
   }
 
-  private async routeEvent(event: ClaudeClientEvent): Promise<void> {
+  private async routeEvent(event: ClaudeClientEvent, bypassRateLimitGate = false): Promise<void> {
     const queryOpen = this.runtime.snapshot().queryLifecycle === "open";
     const terminalBackground = isTerminalPersistentBackgroundEvent(event);
     if (!queryOpen && !terminalBackground) return;
@@ -386,6 +407,16 @@ export class ClaudeSdkPersistentSession {
       );
       return;
     }
+    const active = this.activeForeground;
+    if (active && await observeClaudeSdkPersistentAccountSwitch({
+      active,
+      event,
+      accountSwitchEnabled: this.accountRateLimitSwitchEnabled,
+      bypassSwitchGate: bypassRateLimitGate,
+      runtime: this.runtime,
+      setAccountSwitch: (request) => { this.accountRateLimitSwitch = request; },
+      close: async (reason) => await this.close(reason),
+    })) return;
     const runtimeEventAccepted =
       !this.runtimeEventSink || await this.runtimeEventSink(event) !== false;
     if (runtimeEventAccepted) this.nativeNotificationTracker.observeAcceptedTerminal(event);
@@ -395,34 +426,21 @@ export class ClaudeSdkPersistentSession {
     if (!runtimeEventAccepted) {
       return;
     }
-    const active = this.activeForeground;
-    if (active && this.followupWatchdog.observesForeignTurn(active.uuid)) {
+    if (active && this.turnTimers.followupWatchdog.observesForeignTurn(active.uuid)) {
       await this.emitDetached(event);
       return;
     }
-    if (active) this.turnInactivityWatchdog.recordEvent(active.uuid, event);
-    if (active) this.followupWatchdog.observeProgress(active.uuid, event);
-    if (active) {
-      active.rateLimitTerminationState =
-        rateLimit.observeTerminationSignal(active.rateLimitTerminationState, event);
-      active.rateLimitTerminationInfo = rateLimit.captureRejectedRateLimitInfo(
-        active.rateLimitTerminationInfo,
-        event,
-      );
-    }
-    if (active?.rateLimitTerminationState === "terminal") {
-      active.output.push(event);
-      this.runtime.observeResult({ userMessageUuid: active.uuid, interrupted: false });
-      this.runtime.settleMergedInputs();
-      this.clearForegroundTimers(active);
-      this.runtime.finishForegroundResult();
-      this.armDrainTimer();
-      active.output.push(rateLimit.makeStopFailureError(active.rateLimitTerminationInfo));
-      active.output.close();
-      if (this.activeForeground === active) this.activeForeground = null;
-      settleInterventionInterrupt(active, false);
-      return;
-    }
+    if (active && handleClaudeSdkPersistentRateLimitTermination({
+      active,
+      event,
+      runtime: this.runtime,
+      clearForegroundTimers: (foreground) => this.turnTimers.clearForegroundTimers(foreground),
+      finishDrainTimer: () => this.turnTimers.armDrainTimer(),
+      isActiveForeground: (foreground) => this.activeForeground === foreground,
+      clearActiveForeground: () => { this.activeForeground = null; },
+    })) return;
+    if (active) this.turnTimers.turnInactivityWatchdog.recordEvent(active.uuid, event);
+    if (active) this.turnTimers.followupWatchdog.observeProgress(active.uuid, event);
     const phase = this.runtime.snapshot().foregroundPhase;
     const runtimeEvent = isRuntimeClientEvent(event);
     if (
@@ -449,6 +467,14 @@ export class ClaudeSdkPersistentSession {
     }
   }
 
+  private async flushPendingRateLimitEvents(): Promise<void> {
+    const active = this.activeForeground;
+    if (!active?.rateLimitSwitchGate.hasPendingSignal()) return;
+    for (const event of active.rateLimitSwitchGate.flush()) {
+      await this.routeEvent(event, true);
+    }
+  }
+
   private async emitDetached(event: ClaudeClientEvent): Promise<void> {
     try {
       await this.detachedEventSink(event);
@@ -460,39 +486,4 @@ export class ClaudeSdkPersistentSession {
     }
   }
 
-  private async handleTurnInactivity(uuid: string): Promise<void> {
-    await handlePersistentTurnInactivity({
-      uuid,
-      getActive: () => this.activeForeground,
-      setActive: (active) => { this.activeForeground = active; },
-      runtime: this.runtime,
-      logger: this.logger,
-      timeoutMs: this.turnInactivityWatchdog.timeoutMs,
-      postResultDrainMs: this.postResultDrainMs,
-      clearTimers: (active) => this.clearForegroundTimers(active),
-      close: async () => await this.close("fatal"),
-    });
-  }
-
-  private clearForegroundTimers(active: ActiveForeground | null): void {
-    if (!active) return;
-    this.turnInactivityWatchdog.clear(active.uuid);
-    this.followupWatchdog.clear(active.uuid);
-    if (active.interruptResultTimer) {
-      clearTimeout(active.interruptResultTimer);
-      active.interruptResultTimer = null;
-    }
-  }
-
-  private armDrainTimer(): void {
-    if (this.drainTimer) clearTimeout(this.drainTimer);
-    this.drainTimer = setTimeout(() => {
-      this.drainTimer = null;
-      try {
-        this.runtime.finishDrain();
-      } catch (err) {
-        this.logger.warn({ err }, "Persistent Claude drain phase finalization failed");
-      }
-    }, this.postResultDrainMs);
-  }
 }

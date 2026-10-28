@@ -155,28 +155,27 @@ function comparePriority(a: number | null, b: number | null): number {
   return a - b;
 }
 
+function getEligibleCandidates(params: SelectCandidateParams): SelectableAccountCandidate[] {
+  const { candidates, model, nowMs } = params;
+  const excludeSet = new Set(params.excludeIds ?? []);
+  return candidates.filter((candidate) =>
+    candidate.enabled
+    && (candidate.auth_state === "ok" || candidate.auth_state === "idle")
+    && !excludeSet.has(candidate.id)
+    && !isBlockedForModel(candidate.blocks, model, nowMs)
+  );
+}
+
+export function countSelectableCandidates(params: SelectCandidateParams): number {
+  return getEligibleCandidates(params).length;
+}
+
 export function selectBestCandidate(
   params: SelectCandidateParams,
 ): SelectableAccountCandidate | null {
-  const { candidates, model, boundAccountId, boundTurnId, turnId, nowMs } = params;
-  const excludeSet = new Set(params.excludeIds ?? []);
+  const { model, boundAccountId, boundTurnId, turnId, nowMs } = params;
   const fableModel = isFableModel(model);
-
-  const eligible = candidates.filter((c) => {
-    if (!c.enabled) {
-      return false;
-    }
-    if (c.auth_state !== "ok" && c.auth_state !== "idle") {
-      return false;
-    }
-    if (excludeSet.has(c.id)) {
-      return false;
-    }
-    if (isBlockedForModel(c.blocks, model, nowMs)) {
-      return false;
-    }
-    return true;
-  });
+  const eligible = getEligibleCandidates(params);
 
   if (eligible.length === 0) {
     return null;

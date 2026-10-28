@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import { ClaudeAccountNotFoundError } from "./errors.js";
 import { computePoolSummary, pickBestAccountForScope } from "./pool.js";
 import {
+  countSelectableCandidates,
   projectPublicBlockView,
   selectBestCandidate,
   type SelectableAccountCandidate,
@@ -203,7 +204,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       null;
     const boundTurnId = existingBinding?.turn_id ?? null;
 
-    const chosen = selectBestCandidate({
+    const selectionParams = {
       candidates,
       model: input.model,
       boundAccountId,
@@ -211,7 +212,9 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       turnId: input.turn_id,
       excludeIds: input.exclude_ids,
       nowMs,
-    });
+    };
+    const availableCount = countSelectableCandidates(selectionParams);
+    const chosen = selectBestCandidate(selectionParams);
 
     const previousActiveAccountId = this.sessionActivity.assignment(input.session_id);
     if (!chosen) {
@@ -239,7 +242,11 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       this.store.writeBindings(bindings);
     }
 
-    return { account_id: chosen.id, config_dir: this.store.profileDir(chosen.id) };
+    return {
+      account_id: chosen.id,
+      config_dir: this.store.profileDir(chosen.id),
+      available_count: availableCount,
+    };
   }
 
   async reject(input: ClaudeAccountRejectInput): Promise<void> {

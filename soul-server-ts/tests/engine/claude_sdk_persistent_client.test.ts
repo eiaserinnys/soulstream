@@ -30,6 +30,8 @@ import {
   collectSse,
   makeHarness,
   runOptions,
+  sdkAssistantText,
+  sdkCommandLifecycle,
   sdkInit,
   sdkInterruptedResult,
   sdkResult,
@@ -169,6 +171,364 @@ describe("ClaudeSdkClient persistent runtime", () => {
     await second;
     await client.close();
   });
+
+  it("switches accounts only after the paired rate-limit signals and resumes once after child exit", async () => {
+    const lifecycle: string[] = [];
+    const runtimeEvents: import("../../src/engine/claude_client_event.js").ClaudeClientEvent[] = [];
+    const harnesses = [makeHarness(), makeHarness()];
+    let queryIndex = 0;
+    let notifyFirstQueryClose!: () => void;
+    const firstQueryCloseRequested = new Promise<void>((resolve) => {
+      notifyFirstQueryClose = resolve;
+    });
+    const continuationUuid = "continuation-b";
+    const continuationPrompt = "계정 한도로 직전 응답이 끊겼습니다. 이미 끝낸 도구 작업은 반복하지 말고 남은 작업을 이어서 하세요.";
+    const client = new ClaudeSdkClient({
+      runtimeEventSink: async (event) => {
+        runtimeEvents.push(event);
+        return true;
+      },
+      query: (params) => {
+        const index = queryIndex++;
+        lifecycle.push(`query-${index + 1}`);
+        const spawnHook = params.options?.spawnClaudeCodeProcess;
+        if (!spawnHook) throw new Error("pool mode did not install the Claude process hook");
+        const child = spawnHook({
+          command: process.execPath,
+          args: [
+            "-e",
+            "process.on('SIGTERM', () => setTimeout(() => process.exit(0), 100)); setInterval(() => {}, 1000);",
+          ],
+          cwd: process.cwd(),
+          env: process.env,
+          signal: new AbortController().signal,
+        }) as unknown as import("node:child_process").ChildProcess;
+        child.once("close", () => lifecycle.push(`child-close-${index + 1}`));
+        const query = harnesses[index]!.queryFn(params);
+        return {
+          close() {
+            lifecycle.push(`query-close-${index + 1}`);
+            if (index === 0) notifyFirstQueryClose();
+            child.kill("SIGTERM");
+            query.close();
+          },
+          interrupt: () => query.interrupt(),
+          backgroundTasks: (toolUseId?: string) => query.backgroundTasks(toolUseId),
+          stopTask: (taskId: string) => query.stopTask(taskId),
+          [Symbol.asyncIterator]: () => query[Symbol.asyncIterator](),
+        } as unknown as ClaudeSdkQuery;
+      },
+    }, silentLogger);
+    const onAccountRateLimit = vi.fn(async (request: {
+      sessionId?: string;
+      inputUuid: string;
+      inputDelivery: "not_sent" | "ambiguous" | "delivered";
+    }) => ({
+      kind: "switch" as const,
+      options: {
+        env: { CLAUDE_CONFIG_DIR: "/accounts/b" },
+        inputUuid: continuationUuid,
+        prompt: continuationPrompt,
+        resumeSessionId: request.sessionId,
+      },
+    }));
+
+    const output = collect(client.runPersistent({
+      ...runOptions("original user input"),
+      turnOrigin: { kind: "runtime_followup", id: "native-task-1" },
+      model: "claude-sonnet-4.5",
+      trackChildExit: true,
+      env: { CLAUDE_CONFIG_DIR: "/accounts/a" },
+      onAccountRateLimit,
+    }, abortSignal()));
+    const originalInput = await harnesses[0]!.nextInput();
+    expect(originalInput.message.content).toBe("original user input");
+    harnesses[0]!.push(sdkInit("same-claude-session"));
+    harnesses[0]!.push(sdkCommandLifecycle(originalInput.uuid!, "started"));
+    harnesses[0]!.push({
+      type: "rate_limit_event",
+      uuid: "rate-limit-switch",
+      session_id: "same-claude-session",
+      rate_limit_info: {
+        status: "rejected",
+        rateLimitType: "five_hour",
+        resets_at: "2026-10-28T12:00:00.000Z",
+      },
+    } as unknown as SDKMessage);
+    const stopFailureHook = harnesses[0]!.captured[0]?.options?.hooks?.StopFailure?.[0]?.hooks[0];
+    await stopFailureHook?.(
+      {
+        hook_event_name: "StopFailure",
+        session_id: "same-claude-session",
+        error: "rate_limit",
+      } as never,
+      undefined,
+      { signal: new AbortController().signal },
+    );
+
+    await firstQueryCloseRequested;
+    expect(queryIndex).toBe(1);
+    const continuationInput = await harnesses[1]!.nextInput();
+    expect(lifecycle.indexOf("child-close-1")).toBeGreaterThanOrEqual(0);
+    expect(lifecycle.indexOf("child-close-1")).toBeLessThan(lifecycle.indexOf("query-2"));
+    expect(harnesses[1]!.captured[0]?.options?.resume).toBe("same-claude-session");
+    expect(continuationInput.uuid).toBe(continuationUuid);
+    expect(continuationInput.message.content).toBe(continuationPrompt);
+    harnesses[1]!.push(sdkInit("same-claude-session"));
+    harnesses[1]!.push(sdkResult("same-claude-session", continuationInput.uuid, "finished"));
+
+    const events = await output;
+    expect(onAccountRateLimit).toHaveBeenCalledOnce();
+    expect(onAccountRateLimit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "same-claude-session",
+        inputUuid: originalInput.uuid,
+        inputDelivery: "delivered",
+      }),
+      expect.any(AbortSignal),
+    );
+    expect(events.filter((event) => event.type === "complete")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "result")).toHaveLength(1);
+    expect(events.some((event) => event.type === "rate_limit" || event.type === "error"))
+      .toBe(false);
+    expect(runtimeEvents.some((event) => event.type === "rate_limit"
+      || event.type === "claude_runtime_hook_event" && event.hookEventName === "StopFailure"))
+      .toBe(false);
+    await client.close();
+  });
+
+  it("uses the same account continuation for one-shot queries", async () => {
+    const harnesses = [makeHarness(), makeHarness()];
+    let queryIndex = 0;
+    let notifyFirstClose!: () => void;
+    const firstCloseRequested = new Promise<void>((resolve) => { notifyFirstClose = resolve; });
+    const client = new ClaudeSdkClient({
+      query: (params) => {
+        const index = queryIndex++;
+        const query = harnesses[index]!.queryFn(params);
+        if (index !== 0) return query;
+        let closeCalls = 0;
+        return {
+          close() {
+            closeCalls += 1;
+            if (closeCalls === 1) {
+              notifyFirstClose();
+              return;
+            }
+            query.close();
+          },
+          interrupt: () => query.interrupt(),
+          backgroundTasks: (toolUseId?: string) => query.backgroundTasks(toolUseId),
+          stopTask: (taskId: string) => query.stopTask(taskId),
+          [Symbol.asyncIterator]: () => query[Symbol.asyncIterator](),
+        } as unknown as ClaudeSdkQuery;
+      },
+      postResultDrainMs: 10,
+    }, silentLogger);
+    const continuationUuid = "one-shot-continuation";
+    const continuationPrompt = "계정 한도로 직전 응답이 끊겼습니다. 이미 끝낸 도구 작업은 반복하지 말고 남은 작업을 이어서 하세요.";
+    const onAccountRateLimit = vi.fn(async (request: { sessionId?: string }) => ({
+      kind: "switch" as const,
+      options: {
+        env: { CLAUDE_CONFIG_DIR: "/accounts/b" },
+        inputUuid: continuationUuid,
+        prompt: continuationPrompt,
+        resumeSessionId: request.sessionId,
+      },
+    }));
+    const onAccountQueryClosed = vi.fn(async () => undefined);
+    const output = collect(client.run({
+      ...runOptions("one-shot original"),
+      inputUuid: "one-shot-original-id",
+      model: "claude-sonnet-4.5",
+      env: { CLAUDE_CONFIG_DIR: "/accounts/a" },
+      onAccountRateLimit,
+      onAccountQueryClosed,
+    }, abortSignal()));
+
+    const originalInput = await harnesses[0]!.nextInput();
+    expect(originalInput.uuid).toBe("one-shot-original-id");
+    expect(originalInput.message.content).toBe("one-shot original");
+    harnesses[0]!.push(sdkInit("one-shot-session"));
+    harnesses[0]!.push({
+      type: "rate_limit_event",
+      uuid: "one-shot-rate-limit",
+      session_id: "one-shot-session",
+      rate_limit_info: { status: "rejected", rateLimitType: "seven_day" },
+    } as unknown as SDKMessage);
+    const stopFailureHook = harnesses[0]!.captured[0]?.options?.hooks?.StopFailure?.[0]?.hooks[0];
+    await stopFailureHook?.(
+      {
+        hook_event_name: "StopFailure",
+        session_id: "one-shot-session",
+        error: "rate_limit",
+      } as never,
+      undefined,
+      { signal: new AbortController().signal },
+    );
+
+    await firstCloseRequested;
+    const rejectedResult = sdkResult("one-shot-session", originalInput.uuid, "partial usage") as
+      unknown as Record<string, unknown>;
+    rejectedResult.usage = { input_tokens: 10, output_tokens: 2 };
+    rejectedResult.total_cost_usd = 0.001;
+    const partialAssistant = sdkAssistantText("partial-assistant", "partial") as
+      unknown as Record<string, unknown>;
+    (partialAssistant.message as Record<string, unknown>).model = "claude-sonnet-4.5";
+    harnesses[0]!.push(partialAssistant as unknown as SDKMessage);
+    harnesses[0]!.push(rejectedResult as unknown as SDKMessage);
+
+    const continuationInput = await harnesses[1]!.nextInput();
+    expect(harnesses[1]!.captured[0]?.options?.resume).toBe("one-shot-session");
+    expect(continuationInput.uuid).toBe(continuationUuid);
+    expect(continuationInput.message.content).toBe(continuationPrompt);
+    harnesses[1]!.push(sdkInit("one-shot-session"));
+    const finalAssistant = sdkAssistantText("final-assistant", "finished") as
+      unknown as Record<string, unknown>;
+    (finalAssistant.message as Record<string, unknown>).model = "claude-sonnet-4.5";
+    harnesses[1]!.push(finalAssistant as unknown as SDKMessage);
+    harnesses[1]!.push(sdkResult("one-shot-session", continuationUuid, "finished"));
+
+    const events = await output;
+    expect(onAccountRateLimit).toHaveBeenCalledOnce();
+    expect(onAccountRateLimit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "one-shot-session",
+        inputUuid: "one-shot-original-id",
+        inputDelivery: "ambiguous",
+      }),
+      expect.any(AbortSignal),
+    );
+    expect(onAccountQueryClosed.mock.calls[0]?.[0]).toBe("account_switch");
+    expect(events.filter((event) => event.type === "complete")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "result")).toHaveLength(1);
+    expect(events.some((event) => event.type === "rate_limit" || event.type === "error"))
+      .toBe(false);
+    expect(events.find((event) => event.type === "result")).toMatchObject({
+      usage: { input_tokens: 11, output_tokens: 3 },
+    });
+    await client.close();
+  });
+
+  it("sends the original input once when an ID-less one-shot prompt was not consumed", async () => {
+    const harnesses = [makeHarness(), makeHarness()];
+    let queryIndex = 0;
+    const client = new ClaudeSdkClient({
+      query: (params) => harnesses[queryIndex++]!.queryFn(params),
+      postResultDrainMs: 10,
+    }, silentLogger);
+    const onAccountRateLimit = vi.fn(async (request: {
+      sessionId?: string;
+      inputUuid: string;
+      inputDelivery: "not_sent" | "ambiguous" | "delivered";
+    }) => ({
+      kind: "switch" as const,
+      options: { env: { CLAUDE_CONFIG_DIR: "/accounts/b" } },
+    }));
+    const output = collect(client.run({
+      ...runOptions("original undelivered input"),
+      model: "claude-sonnet-4.5",
+      env: { CLAUDE_CONFIG_DIR: "/accounts/a" },
+      onAccountRateLimit,
+    }, abortSignal()));
+
+    harnesses[0]!.push({
+      type: "rate_limit_event",
+      uuid: "undelivered-rate-limit",
+      rate_limit_info: { status: "rejected", rateLimitType: "five_hour" },
+    } as unknown as SDKMessage);
+    const stopFailureHook = harnesses[0]!.captured[0]?.options?.hooks?.StopFailure?.[0]?.hooks[0];
+    await stopFailureHook?.(
+      { hook_event_name: "StopFailure", error: "rate_limit" } as never,
+      undefined,
+      { signal: new AbortController().signal },
+    );
+
+    const replayedOriginal = await harnesses[1]!.nextInput();
+    const originalInputUuid = onAccountRateLimit.mock.calls[0]![0].inputUuid;
+    expect(originalInputUuid).toBeTruthy();
+    expect(replayedOriginal.uuid).toBe(originalInputUuid);
+    expect(replayedOriginal.message.content).toBe("original undelivered input");
+    expect(harnesses[1]!.captured[0]?.options?.resume).toBeUndefined();
+    harnesses[1]!.push(sdkInit("new-session-after-first-input"));
+    harnesses[1]!.push(sdkResult(
+      "new-session-after-first-input",
+      originalInputUuid,
+      "finished",
+    ));
+
+    const events = await output;
+    expect(onAccountRateLimit).toHaveBeenCalledOnce();
+    expect(onAccountRateLimit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inputUuid: originalInputUuid,
+        inputDelivery: "not_sent",
+      }),
+      expect.any(AbortSignal),
+    );
+    expect(events.filter((event) => event.type === "complete")).toHaveLength(1);
+    expect(events.some((event) => event.type === "rate_limit" || event.type === "error"))
+      .toBe(false);
+    await client.close();
+  });
+
+  it.each(["cancel", "shutdown"] as const)(
+    "does not launch a replacement Query when %s arrives during account selection",
+    async (stopKind) => {
+      const harnesses = [makeHarness(), makeHarness()];
+      let queryIndex = 0;
+      const client = new ClaudeSdkClient({
+        query: (params) => harnesses[queryIndex++]!.queryFn(params),
+      }, silentLogger);
+      let onSwitchStarted!: () => void;
+      const switchStarted = new Promise<void>((resolve) => { onSwitchStarted = resolve; });
+      let finishSwitch!: () => void;
+      const selection = new Promise<void>((resolve) => { finishSwitch = resolve; });
+      const onAccountRateLimit = vi.fn(async () => {
+        onSwitchStarted();
+        await selection;
+        return {
+          kind: "switch" as const,
+          options: { env: { CLAUDE_CONFIG_DIR: "/accounts/b" } },
+        };
+      });
+      const controller = new AbortController();
+      const output = collect(client.runPersistent({
+        ...runOptions("cancel during account switch"),
+        env: { CLAUDE_CONFIG_DIR: "/accounts/a" },
+        onAccountRateLimit,
+      }, controller.signal));
+      await harnesses[0]!.nextInput();
+      harnesses[0]!.push(sdkInit("same-claude-session"));
+      harnesses[0]!.push({
+        type: "rate_limit_event",
+        uuid: `rate-limit-${stopKind}`,
+        session_id: "same-claude-session",
+        rate_limit_info: { status: "rejected", rateLimitType: "five_hour" },
+      } as unknown as SDKMessage);
+      const stopFailureHook = harnesses[0]!.captured[0]?.options?.hooks?.StopFailure?.[0]?.hooks[0];
+      await stopFailureHook?.(
+        {
+          hook_event_name: "StopFailure",
+          session_id: "same-claude-session",
+          error: "rate_limit",
+        } as never,
+        undefined,
+        { signal: new AbortController().signal },
+      );
+      await switchStarted;
+
+      if (stopKind === "cancel") controller.abort();
+      else await client.close();
+      finishSwitch();
+      await output;
+
+      expect(queryIndex).toBe(1);
+      expect(harnesses[1]!.captured).toHaveLength(0);
+      expect(onAccountRateLimit).toHaveBeenCalledOnce();
+      await client.close();
+    },
+  );
 
   it("waits for a failed persistent CLI to close before compact fallback spawns", async () => {
     const events: string[] = [];
@@ -408,7 +768,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
       detachedEventSink: harness.detached,
     }, silentLogger);
     const accountPort = {
-      select: vi.fn(async () => ({ account_id: "account-a", config_dir: "/accounts/a" })),
+      select: vi.fn(async () => ({ account_id: "account-a", config_dir: "/accounts/a", available_count: 1 })),
       reject: vi.fn(),
       release: vi.fn(async () => undefined),
     };

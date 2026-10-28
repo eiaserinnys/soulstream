@@ -25,7 +25,7 @@ describe("createRunnerChildEngine Claude account service bridge", () => {
     directories.push(stateDirectory);
     const sessionDirectory = stateDirectory;
     await mkdir(sessionDirectory, { recursive: true });
-    const account = { account_id: "account-a", config_dir: "/accounts/a" };
+    const account = { account_id: "account-a", config_dir: "/accounts/a", available_count: 1 };
     const hostCall = vi.fn(async (_service: string, operation: string, _args: unknown[], _options: unknown) =>
       operation === "select" ? account : null,
     );

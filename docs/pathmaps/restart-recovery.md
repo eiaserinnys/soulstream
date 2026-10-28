@@ -42,6 +42,8 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 
 재개 시 `engine/claude_account_pool_transcript.ts`는 같은 SessionKey의 DB transcript와 subkey를 선택 프로필의 공유 projects에 복원한다. 로컬이 최신이면 유지하고, DB가 앞서면 세션별 kernel lock 안에서 임시 파일을 쓴 뒤 rename한다. Query가 foreground 완료 뒤 스스로 닫혀도 pump와 실제 child 종료 뒤 계정 점유와 해당 durable 턴 상태를 정산한다.
 
+P5의 계정 전환은 같은 row에 시도한 계정 ID와 continuation UUID·송신 여부를 갱신한다. 재시작 시 UUID가 아직 미송신이면 그 UUID의 continuation을 한 번 이어 보내며, `continuation_sent=true`면 원 입력이나 continuation을 다시 전송하지 않고 해당 턴을 실패로 종결한다. 이미 거부된 profile은 `attempted_ids`로 다시 고르지 않는다. 따라서 재시작 경계에서 continuation 중복은 0회다.
+
 이 장을 갱신해야 하는 변경 부류: worker startup 순서·queued transcript recovery·node-ready/maintenance replay·delivery attempt maintenance·runner scan/classification/adoption·host gap frame forwarding·initial inventory 변경.
 
 ## Antigravity 대화 재개 (PR A)

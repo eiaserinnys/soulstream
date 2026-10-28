@@ -225,6 +225,11 @@ describe("ClaudeEngineAdapter options parity", () => {
       PATH: "/usr/bin",
       CLAUDE_CONFIG_DIR: configDir,
     });
+    expect(captured[0]).toMatchObject({
+      prompt: "hello",
+      inputUuid: "turn-a",
+    });
+    expect(captured[0]?.resumeSessionId).toBeUndefined();
     for (const key of [
       "ANTHROPIC_API_KEY",
       "CLAUDE_CODE_OAUTH_TOKEN",
@@ -270,7 +275,7 @@ describe("ClaudeEngineAdapter options parity", () => {
     const accountTurnPort = {
       select: vi.fn(async () => {
         events.push("select");
-        return { account_id: "account-a", config_dir: "/accounts/account-a" };
+        return { account_id: "account-a", config_dir: "/accounts/account-a", available_count: 1 };
       }),
       reject: vi.fn(),
       release: vi.fn(async (input: { clear_all?: boolean }) => {
@@ -348,7 +353,7 @@ describe("ClaudeEngineAdapter options parity", () => {
       async close() {},
     };
     const accountPort = {
-      select: vi.fn(async () => ({ account_id: "account-a", config_dir: "/accounts/a" })),
+      select: vi.fn(async () => ({ account_id: "account-a", config_dir: "/accounts/a", available_count: 1 })),
       reject: vi.fn(),
       release: vi.fn(async () => undefined),
     };
@@ -371,6 +376,316 @@ describe("ClaudeEngineAdapter options parity", () => {
     expect(accountPort.release).toHaveBeenCalledOnce();
     expect(accountPort.release).toHaveBeenCalledWith({ session_id: "session-a", account_id: "account-a", turn_id: "turn-a" });
     expect(state.clear).toHaveBeenCalledOnce();
+  });
+
+  it("caps same-turn account attempts, records continuations, and emits one exhaustion terminal", async () => {
+    const resetTimes = [
+      "2026-10-28T12:00:00.000Z",
+      "2026-10-28T20:00:00.000Z",
+      "2026-10-28T15:00:00.000Z",
+    ];
+    const rateLimitTypes = ["five_hour", "fable_weekly", "fable_weekly"];
+    const accountIds = ["account-a", "account-b", "account-c"];
+    const attempts: ClaudeRunOptions[] = [];
+    const finalClientEvents: ClaudeClientEvent[] = [];
+    const client: ClaudeClient = {
+      async *run() {},
+      async *runPersistent(initialOptions, signal) {
+        let options = initialOptions;
+        for (let index = 0; index < accountIds.length; index += 1) {
+          attempts.push(options);
+          options.onAccountQueryStarted?.();
+          await options.onAccountQueryClosed?.("account_switch");
+          const decision = await options.onAccountRateLimit!({
+            info: { rateLimitType: rateLimitTypes[index], resetsAt: resetTimes[index] },
+            sessionId: "same-claude-session",
+            inputUuid: "p5-turn",
+            inputDelivery: "delivered",
+          }, signal);
+          if (decision.kind === "switch") {
+            options = { ...options, ...decision.options };
+            continue;
+          }
+          if (decision.kind !== "exhausted") throw new Error("unexpected cancelled account switch");
+          const terminal: ClaudeClientEvent = {
+            type: "error",
+            fatal: true,
+            errorCode: "claude_rate_limit_stop_failure",
+            message: "Claude account pool exhausted",
+            rateLimitType: rateLimitTypes[index],
+            resetsAt: decision.resetsAt,
+          };
+          finalClientEvents.push(terminal);
+          yield terminal;
+          return;
+        }
+      },
+      async close() {},
+    };
+    const accountTurnPort = {
+      select: vi.fn(async (input: { exclude_ids: string[] }) => {
+        const accountId = accountIds.find((id) => !input.exclude_ids.includes(id));
+        if (!accountId) return null;
+        const account = {
+          account_id: accountId,
+          config_dir: `/accounts/${accountId}`,
+          available_count: accountIds.filter((id) => !input.exclude_ids.includes(id)).length,
+        };
+        return account;
+      }),
+      reject: vi.fn(async () => undefined),
+      release: vi.fn(async () => undefined),
+    };
+    let persistedState: {
+      turn_id: string;
+      account_id: string;
+      attempted_ids: string[];
+      continuation_uuid: string | null;
+      continuation_sent: boolean;
+    } | null = null;
+    const state = {
+      read: () => persistedState,
+      write: vi.fn(async (next: NonNullable<typeof persistedState>) => {
+        persistedState = { ...next, attempted_ids: [...next.attempted_ids] };
+      }),
+      clear: vi.fn(async () => { persistedState = null; }),
+    };
+    const registry = {
+      acquire: () => client,
+      close: vi.fn().mockResolvedValue(true),
+      release: vi.fn(),
+      reserve: vi.fn(),
+    };
+    const engine = new ClaudeEngineAdapter({
+      workspaceDir: "/tmp/claude-work",
+      processEnv: { PATH: "/usr/bin" },
+      claudeAccountPoolEnabled: true,
+      trackChildExit: true,
+      claudeAccountTurnPort: accountTurnPort,
+      claudeAccountTurnState: state,
+      persistentSessionRegistry: registry,
+    }, silentLogger);
+    const frames: import("../../src/runner/frame_protocol.js").RunnerEventFrame[] = [];
+    let executionError: unknown;
+    try {
+      for await (const frame of engine.executeFrames({
+        agentSessionId: "account-session",
+        inputUuid: "p5-turn",
+        prompt: "original user input",
+        model: "claude-fable-4",
+        claudeAccountPoolTarget: true,
+      })) frames.push(frame);
+    } catch (error) {
+      executionError = error;
+    }
+
+    expect(executionError).toBeDefined();
+    expect(frames.filter((frame) => frame.kind === "engine_event"
+      && (frame.payload as { type?: string }).type === "error")).toHaveLength(1);
+    expect(finalClientEvents).toHaveLength(1);
+    expect(accountTurnPort.select.mock.calls.map(([input]) => input.exclude_ids)).toEqual([
+      [], ["account-a"], ["account-a", "account-b"],
+    ]);
+    expect(accountTurnPort.reject.mock.calls.map(([input]) => [input.account_id, input.scope]))
+      .toEqual([["account-a", "all"], ["account-b", "fable"], ["account-c", "fable"]]);
+    expect(accountTurnPort.reject.mock.calls.map(([input]) => input.resets_at)).toEqual(resetTimes);
+    expect(attempts.map((attempt) => attempt.prompt)).toEqual([
+      "original user input",
+      "계정 한도로 직전 응답이 끊겼습니다. 이미 끝낸 도구 작업은 반복하지 말고 남은 작업을 이어서 하세요.",
+      "계정 한도로 직전 응답이 끊겼습니다. 이미 끝낸 도구 작업은 반복하지 말고 남은 작업을 이어서 하세요.",
+    ]);
+    expect(attempts[0]?.inputUuid).toBe("p5-turn");
+    expect(attempts[1]?.inputUuid).not.toBe("p5-turn");
+    expect(attempts[2]?.inputUuid).not.toBe(attempts[1]?.inputUuid);
+    expect(attempts.map((attempt) => attempt.resumeSessionId)).toEqual([
+      undefined, "same-claude-session", "same-claude-session",
+    ]);
+    expect(state.write.mock.calls.filter(([next]) => next.continuation_sent)).toHaveLength(2);
+    expect(finalClientEvents[0]).toMatchObject({
+      rateLimitType: "fable_weekly",
+      resetsAt: "2026-10-28T12:00:00.000Z",
+    });
+    expect(accountTurnPort.release).toHaveBeenCalledOnce();
+    expect(state.clear).toHaveBeenCalledWith("p5-turn");
+  });
+
+  it.each(["not_sent", "ambiguous"] as const)(
+    "handles a first turn without a Claude session ID when input delivery is %s",
+    async (inputDelivery) => {
+      const attempts: ClaudeRunOptions[] = [];
+      const decisions: Array<{ kind: string; options?: Partial<ClaudeRunOptions>; resetsAt?: string }> = [];
+      const client: ClaudeClient = {
+        async *run() {},
+        async *runPersistent(initialOptions, signal) {
+          attempts.push(initialOptions);
+          initialOptions.onAccountQueryStarted?.();
+          await initialOptions.onAccountQueryClosed?.("account_switch");
+          const decision = await initialOptions.onAccountRateLimit!({
+            info: { rateLimitType: "seven_day", resetsAt: "2026-10-28T12:00:00.000Z" },
+            inputUuid: "first-turn",
+            inputDelivery,
+          }, signal);
+          decisions.push(decision);
+          if (decision.kind === "switch") {
+            const next = { ...initialOptions, ...decision.options };
+            attempts.push(next);
+            next.onAccountQueryStarted?.();
+            await next.onAccountQueryClosed?.();
+            yield { type: "complete", result: "finished" };
+            return;
+          }
+          yield {
+            type: "error",
+            fatal: true,
+            errorCode: "claude_rate_limit_stop_failure",
+            message: "Claude account pool exhausted",
+            rateLimitType: "seven_day",
+            resetsAt: decision.kind === "exhausted" ? decision.resetsAt : undefined,
+          };
+        },
+        async close() {},
+      };
+      let persistedState: {
+        turn_id: string;
+        account_id: string;
+        attempted_ids: string[];
+        continuation_uuid: string | null;
+        continuation_sent: boolean;
+      } | null = null;
+      const state = {
+        read: () => persistedState,
+        write: vi.fn(async (next: NonNullable<typeof persistedState>) => {
+          persistedState = { ...next, attempted_ids: [...next.attempted_ids] };
+        }),
+        clear: vi.fn(async () => { persistedState = null; }),
+      };
+      const accountTurnPort = {
+        select: vi.fn(async (input: { exclude_ids: string[] }) => {
+          const accountId = input.exclude_ids.includes("account-a") ? "account-b" : "account-a";
+          return {
+            account_id: accountId,
+            config_dir: `/accounts/${accountId}`,
+            available_count: input.exclude_ids.length === 0 ? 2 : 1,
+          };
+        }),
+        reject: vi.fn(async () => undefined),
+        release: vi.fn(async () => undefined),
+      };
+      const registry = {
+        acquire: () => client,
+        close: vi.fn().mockResolvedValue(true),
+        release: vi.fn(),
+        reserve: vi.fn(),
+      };
+      const engine = new ClaudeEngineAdapter({
+        workspaceDir: "/tmp/claude-work",
+        processEnv: { PATH: "/usr/bin" },
+        claudeAccountPoolEnabled: true,
+        trackChildExit: true,
+        claudeAccountTurnPort: accountTurnPort,
+        claudeAccountTurnState: state,
+        persistentSessionRegistry: registry,
+      }, silentLogger);
+      const frames: import("../../src/runner/frame_protocol.js").RunnerEventFrame[] = [];
+      let executionError: unknown;
+      try {
+        for await (const frame of engine.executeFrames({
+          agentSessionId: "account-session",
+          inputUuid: "first-turn",
+          prompt: "original first-turn input",
+          model: "claude-sonnet-4.5",
+          claudeAccountPoolTarget: true,
+        })) frames.push(frame);
+      } catch (error) {
+        executionError = error;
+      }
+
+      expect(accountTurnPort.reject).toHaveBeenCalledWith(expect.objectContaining({
+        account_id: "account-a",
+        scope: "all",
+      }));
+      if (inputDelivery === "not_sent") {
+        expect(executionError).toBeUndefined();
+        expect(decisions[0]?.kind).toBe("switch");
+        expect(attempts).toHaveLength(2);
+        expect(attempts[1]?.prompt).toBe("original first-turn input");
+        expect(attempts[1]?.inputUuid).toBe("first-turn");
+        expect(attempts[1]).not.toHaveProperty("resumeSessionId");
+        expect(attempts[1]?.env?.CLAUDE_CONFIG_DIR).toBe("/accounts/account-b");
+        expect(state.write.mock.calls.at(-1)?.[0]).toMatchObject({
+          account_id: "account-b",
+          attempted_ids: ["account-a"],
+          continuation_uuid: null,
+          continuation_sent: false,
+        });
+        expect(accountTurnPort.select).toHaveBeenCalledTimes(2);
+      } else {
+        expect(executionError).toBeDefined();
+        expect(decisions[0]).toMatchObject({ kind: "exhausted", resetsAt: "2026-10-28T12:00:00.000Z" });
+        expect(attempts).toHaveLength(1);
+        expect(accountTurnPort.select).toHaveBeenCalledOnce();
+        expect(frames.filter((frame) => frame.kind === "engine_event"
+          && (frame.payload as { type?: string }).type === "error")).toHaveLength(1);
+      }
+    },
+  );
+
+  it("does not resend a durable continuation already marked sent before restart", async () => {
+    const client: ClaudeClient = {
+      run: vi.fn(async function* () {}),
+      runPersistent: vi.fn(async function* () {}),
+      close: vi.fn(async () => undefined),
+    };
+    const accountTurnPort = {
+      select: vi.fn(),
+      reject: vi.fn(),
+      release: vi.fn(async () => undefined),
+    };
+    const state = {
+      read: () => ({
+        turn_id: "turn-restart",
+        account_id: "account-b",
+        attempted_ids: ["account-a"],
+        continuation_uuid: "continuation-already-sent",
+        continuation_sent: true,
+      }),
+      write: vi.fn(async () => undefined),
+      clear: vi.fn(async () => undefined),
+    };
+    const registry = {
+      acquire: () => client,
+      close: vi.fn().mockResolvedValue(true),
+      release: vi.fn(),
+      reserve: vi.fn(),
+    };
+    const engine = new ClaudeEngineAdapter({
+      workspaceDir: "/tmp/claude-work",
+      processEnv: { PATH: "/usr/bin" },
+      claudeAccountPoolEnabled: true,
+      claudeAccountTurnPort: accountTurnPort,
+      claudeAccountTurnState: state,
+      persistentSessionRegistry: registry,
+    }, silentLogger);
+
+    let executionError: unknown;
+    try {
+      for await (const _frame of engine.executeFrames({
+        agentSessionId: "account-session",
+        inputUuid: "turn-restart",
+        prompt: "original input",
+        model: "claude-sonnet-4.5",
+        claudeAccountPoolTarget: true,
+      })) {
+        // drain the fail-safe error frame
+      }
+    } catch (error) {
+      executionError = error;
+    }
+
+    expect(executionError).toBeDefined();
+    expect(accountTurnPort.select).not.toHaveBeenCalled();
+    expect(client.runPersistent).not.toHaveBeenCalled();
+    expect(state.write).not.toHaveBeenCalled();
   });
 
   it("retains account occupancy after foreground completion while the Query remains open", async () => {
@@ -399,6 +714,7 @@ describe("ClaudeEngineAdapter options parity", () => {
       select: vi.fn().mockResolvedValue({
         account_id: "account-a",
         config_dir: "/accounts/account-a",
+        available_count: 1,
       }),
       reject: vi.fn(),
       release: vi.fn().mockResolvedValue(undefined),
@@ -462,8 +778,16 @@ describe("ClaudeEngineAdapter options parity", () => {
   });
 
   it("does not acquire a Claude client when close aborts a pending account selection", async () => {
-    let resolveSelection!: (value: { account_id: string; config_dir: string }) => void;
-    const selection = new Promise<{ account_id: string; config_dir: string }>((resolve) => {
+    let resolveSelection!: (value: {
+      account_id: string;
+      config_dir: string;
+      available_count: number;
+    }) => void;
+    const selection = new Promise<{
+      account_id: string;
+      config_dir: string;
+      available_count: number;
+    }>((resolve) => {
       resolveSelection = resolve;
     });
     const captured: ClaudeRunOptions[] = [];
@@ -512,7 +836,7 @@ describe("ClaudeEngineAdapter options parity", () => {
     await vi.waitFor(() => expect(accountTurnPort.select).toHaveBeenCalledOnce());
 
     const closing = engine.close();
-    resolveSelection({ account_id: "account-a", config_dir: "/accounts/account-a" });
+    resolveSelection({ account_id: "account-a", config_dir: "/accounts/account-a", available_count: 1 });
     await Promise.all([execution, closing]);
 
     expect(registry.acquire).toHaveBeenCalledOnce();

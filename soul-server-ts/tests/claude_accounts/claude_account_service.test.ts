@@ -236,6 +236,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
       exclude_ids: [ACC_A],
     });
     expect(selSameTurnExcluded?.account_id).toBe(ACC_B);
+    expect(selSameTurnExcluded?.available_count).toBe(2);
 
     // Stale 98% observation does NOT trigger 98% soft-cap avoidance:
     // Make ACC_C (at 98%) stale by returning 503 for ACC_C, and give ACC_C highest priority (1, while others are null).

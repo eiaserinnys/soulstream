@@ -322,7 +322,7 @@ function runnerEnv() {
 
 describe("applyRunnerHostCall", () => {
   it("routes Claude account operations through the host service and fences session identity", async () => {
-    const account = { account_id: "account-a", config_dir: "/accounts/a" };
+    const account = { account_id: "account-a", config_dir: "/accounts/a", available_count: 1 };
     const service = {
       select: vi.fn(async () => account),
       reject: vi.fn(async () => undefined),
