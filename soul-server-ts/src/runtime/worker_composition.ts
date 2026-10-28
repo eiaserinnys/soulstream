@@ -3,6 +3,7 @@ import { AgentConfigService } from "../agent_config_service.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../auth/claude_auth.js";
 import { ProviderUsageService } from "../auth/provider_usage.js";
+import { ClaudeAccountService } from "../claude_accounts/index.js";
 import { CatalogService } from "../catalog/catalog_service.js";
 import { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
 import { DEFAULT_COGITO_CONTEXT_LIMITS } from "../context/cogito_context.js";
@@ -74,21 +75,19 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     isDbIdentityOwnedProfile: agentProfileSource?.isDbIdentityOwnedProfile?.bind(agentProfileSource),
     onAfterRegistryReplace: async () => {
       if (!upstreamAdapter) {
-        logger.warn(
-          { nodeId: env.SOULSTREAM_NODE_ID },
-          "Agent catalog reannounce skipped — UpstreamAdapter not ready",
-        );
+        logger.warn({ nodeId: env.SOULSTREAM_NODE_ID }, "Agent catalog reannounce skipped — UpstreamAdapter not ready");
         return;
       }
       await upstreamAdapter.reannounceAgentCatalog();
     },
   });
-  const claudeAuth = new ClaudeAuthService(
-    { store: new FileClaudeAuthTokenStore(env.CLAUDE_AUTH_TOKEN_PATH) },
-    logger,
-  );
+  const claudeAuth = new ClaudeAuthService({ store: new FileClaudeAuthTokenStore(env.CLAUDE_AUTH_TOKEN_PATH) }, logger);
+  const claudeAccounts =
+    env.CLAUDE_ACCOUNT_POOL_ENABLED && env.CLAUDE_ACCOUNTS_DIR
+      ? new ClaudeAccountService({ accountsDir: env.CLAUDE_ACCOUNTS_DIR })
+      : undefined;
   const providerUsage = new ProviderUsageService({
-    claudeAuth, modelCatalog, logger,
+    claudeAuth, claudeAccounts, modelCatalog, logger,
     antigravity: {
       cliPath: antigravityCliPath?.path,
       environment: antigravityEnvironment(process.env),
@@ -439,6 +438,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
       providerUsage,
       attachmentStore,
       claudeAuth,
+      claudeAccounts,
       sessionDb: db,
       realtimeBroker,
       agentConfigService,
@@ -471,6 +471,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     ...(agentProfileSource ? { agentProfileSource } : {}),
     attachmentStore,
     claudeAuth,
+    ...(claudeAccounts ? { claudeAccounts } : {}),
     realtimeBroker,
     agentConfigService,
     mcpRuntime,
@@ -478,9 +479,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     sessionPageBindingService,
     ...(worktreeSweeper ? { worktreeSweeper } : {}),
     ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
-    ...(claudeRuntime.startupRecovery
-      ? { claudeRuntimeStartupRecovery: claudeRuntime.startupRecovery }
-      : {}),
+    ...(claudeRuntime.startupRecovery ? { claudeRuntimeStartupRecovery: claudeRuntime.startupRecovery } : {}),
     eventOutbox,
     eventOutboxPump,
     eventOutboxPumpMux,

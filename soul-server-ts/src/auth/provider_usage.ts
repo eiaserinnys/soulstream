@@ -14,6 +14,12 @@ import {
   type ClaudeAuthCommandHandler,
 } from "./claude_auth.js";
 import { collectAntigravityUsage, type AntigravityUsageConfig } from "./antigravity_usage.js";
+import {
+  claudeLimitsFromAccountPool,
+  type ClaudeAccountPoolSummary,
+  type ClaudeAccountService,
+  type ClaudeAccountView,
+} from "../claude_accounts/index.js";
 import type { ModelCatalog, ModelPreset } from "../model_catalog.js";
 import { rememberProviderUsageObservation } from "./provider_usage_observation.js";
 import {
@@ -66,6 +72,10 @@ export interface ProviderLimits {
   planType: string | null;
   quotas: ProviderQuota[];
   error?: string;
+  mode?: "pool" | "legacy";
+  accounts?: ClaudeAccountView[];
+  pool?: ClaudeAccountPoolSummary;
+  fable_pool?: ClaudeAccountPoolSummary | null;
 }
 
 export interface ProviderUsageSnapshot {
@@ -92,6 +102,7 @@ export interface ProviderUsageCommandHandler {
 export interface ProviderUsageServiceConfig {
   antigravity?: AntigravityUsageConfig;
   claudeAuth?: ClaudeAuthCommandHandler;
+  claudeAccounts?: Pick<ClaudeAccountService, "getAccountListWithBestProjection">;
   modelCatalog?: Pick<ModelCatalog, "list">;
   homeDir?: string;
   fetchImpl?: typeof fetch;
@@ -296,7 +307,7 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
   ): Promise<ProviderLimits> {
     switch (provider) {
       case "claude":
-        return this.fetchClaudeLimits(signal, attempts);
+        return this.fetchClaudeLimits(signal, deadlineAtMs, attempts);
       case "codex":
         return this.fetchCodexLimits(signal, deadlineAtMs, attempts);
       case "antigravity":
@@ -306,12 +317,39 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
 
   private async fetchClaudeLimits(
     signal: AbortSignal,
+    deadlineAtMs: number,
     attempts: ProviderUsageAttempt[],
   ): Promise<ProviderLimits> {
-    if (!this.config.claudeAuth) {
-      return emptyLimits();
-    }
     const endpoint = providerUsageEndpoint(ANTHROPIC_USAGE_URL);
+    if (this.config.claudeAccounts) {
+      const startedAtMs = Date.now();
+      try {
+        const projection = await this.config.claudeAccounts.getAccountListWithBestProjection({
+          signal,
+          deadlineAtMs,
+        });
+        attempts.push({
+          endpoint,
+          durationMs: providerUsageDurationMs(startedAtMs),
+          result: "success",
+        });
+        return claudeLimitsFromAccountPool({
+          ...projection,
+          source: ANTHROPIC_USAGE_URL,
+        });
+      } catch (error) {
+        attempts.push({
+          endpoint,
+          durationMs: providerUsageDurationMs(startedAtMs),
+          result: providerUsageFailureResult(signal, error),
+        });
+        throw error;
+      }
+    }
+
+    if (!this.config.claudeAuth) {
+      return { ...emptyLimits(), mode: "legacy" };
+    }
     const startedAtMs = Date.now();
     let result;
     try {
@@ -330,15 +368,20 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
       result: result.success ? "success" : "error",
     });
     if (!result.success) {
-      return result.error === "no token"
-        ? emptyLimits()
-        : emptyLimits("error", result.error ?? "Claude usage request failed");
+      const failed =
+        result.error === "no token"
+          ? emptyLimits()
+          : emptyLimits("error", result.error ?? "Claude usage request failed");
+      return { ...failed, mode: "legacy" };
     }
-    return claudeLimitsFromUsageResponse(
-      result.data ?? {},
-      undefined,
-      this.config.modelCatalog?.list(),
-    );
+    return {
+      ...claudeLimitsFromUsageResponse(
+        result.data ?? {},
+        undefined,
+        this.config.modelCatalog?.list(),
+      ),
+      mode: "legacy",
+    };
   }
 
   private async fetchCodexLimits(

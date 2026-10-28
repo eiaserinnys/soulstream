@@ -187,4 +187,148 @@ describe("claude auth command boundary", () => {
       new ClaudeAuthCommandError("Claude auth service is not configured in soul-server-ts"),
     );
   });
+
+  it("routes claude_auth_accounts_list, claude_auth_account_update, and claude_auth_account_delete to claudeAccounts when wired", async () => {
+    const sampleAccount = {
+      id: "11111111-1111-4111-8111-111111111111",
+      email: "alpha@example.com",
+      plan: "max",
+      enabled: true,
+      priority: 1,
+      auth_state: "ok" as const,
+      active_sessions: 0,
+      blocked: { resets_at: null, observed_at: null },
+      stale: false,
+      observed_at: "2026-10-28T01:00:00.000Z",
+      usage: {
+        five_hour: { used_percent: 10, resets_at: "2026-10-28T05:00:00.000Z" },
+        seven_day: { used_percent: 20, resets_at: "2026-11-03T00:00:00.000Z" },
+        fable_weekly: null,
+      },
+    };
+    const samplePool = {
+      total_count: 1,
+      available_count: 1,
+      best_weekly_remaining_percent: 80,
+      best_weekly_resets_at: "2026-11-03T00:00:00.000Z",
+      earliest_available_at: null,
+    };
+
+    const claudeAccounts = {
+      getAccountList: vi.fn(async () => ({
+        mode: "pool" as const,
+        accounts: [sampleAccount],
+        pool: samplePool,
+        fable_pool: samplePool,
+      })),
+      updateAccount: vi.fn(async () => ({
+        ...sampleAccount,
+        enabled: false,
+        priority: 3,
+      })),
+      deleteAccount: vi.fn(async () => ({
+        id: sampleAccount.id,
+        deleted: true as const,
+        deferred: false,
+        accounts: [],
+        pool: {
+          total_count: 0,
+          available_count: 0,
+          best_weekly_remaining_percent: null,
+          best_weekly_resets_at: null,
+          earliest_available_at: null,
+        },
+        fable_pool: {
+          total_count: 0,
+          available_count: 0,
+          best_weekly_remaining_percent: null,
+          best_weekly_resets_at: null,
+          earliest_available_at: null,
+        },
+      })),
+    };
+
+    const commands = new ClaudeAuthCommands({
+      agentRegistry: createAgentRegistry(["claude"]),
+      claudeAuth: createClaudeAuth(),
+      claudeAccounts,
+    });
+
+    const listRes = await commands.handle({
+      type: "claude_auth_accounts_list",
+      requestId: "req-list",
+    });
+    expect(listRes).toEqual({
+      type: "claude_auth_accounts_list",
+      requestId: "req-list",
+      success: true,
+      data: {
+        mode: "pool",
+        accounts: [
+          {
+            id: sampleAccount.id,
+            email: sampleAccount.email,
+            plan: sampleAccount.plan,
+            enabled: true,
+            priority: 1,
+            auth_state: "ok",
+            usage: sampleAccount.usage,
+            observed_at: sampleAccount.observed_at,
+            blocked: sampleAccount.blocked,
+            active_sessions: 0,
+          },
+        ],
+        pool: samplePool,
+        fable_pool: samplePool,
+      },
+    });
+
+    const updateRes = await commands.handle({
+      type: "claude_auth_account_update",
+      requestId: "req-update",
+      account_id: sampleAccount.id,
+      enabled: false,
+      priority: 3,
+    });
+    expect(claudeAccounts.updateAccount).toHaveBeenCalledWith(sampleAccount.id, {
+      enabled: false,
+      priority: 3,
+    });
+    expect(updateRes).toMatchObject({
+      type: "claude_auth_account_update",
+      requestId: "req-update",
+      success: true,
+      data: {
+        mode: "pool",
+      },
+    });
+
+    const deleteRes = await commands.handle({
+      type: "claude_auth_account_delete",
+      requestId: "req-delete",
+      account_id: sampleAccount.id,
+    });
+    expect(claudeAccounts.deleteAccount).toHaveBeenCalledWith(sampleAccount.id);
+    expect(deleteRes).toMatchObject({
+      type: "claude_auth_account_delete",
+      requestId: "req-delete",
+      success: true,
+      data: {
+        deferred: false,
+        accounts: [],
+        pool: { total_count: 0, available_count: 0 },
+      },
+    });
+
+    await expect(
+      commands.handle({
+        type: "claude_auth_login_start",
+        requestId: "req-login-p3",
+      }),
+    ).rejects.toEqual(
+      new ClaudeAuthCommandError(
+        "Not implemented in soul-server-ts: claude_auth_login_start",
+      ),
+    );
+  });
 });

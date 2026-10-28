@@ -900,5 +900,153 @@ describe("ProviderUsageService", () => {
     }
   });
 
+  it("projects Claude account pool limits, fable_pool, and per-scope best quotas when claudeAccounts is configured", async () => {
+    resetProviderUsageObservationMemo();
+    const generalAccount = {
+      id: "11111111-1111-4111-8111-111111111111",
+      email: "general@example.com",
+      plan: "max",
+      enabled: true,
+      priority: 1,
+      auth_state: "ok" as const,
+      active_sessions: 1,
+      blocked: { resets_at: null, observed_at: null },
+      stale: false,
+      observed_at: "2026-10-28T01:00:00.000Z",
+      usage: {
+        five_hour: { used_percent: 25, resets_at: "2026-10-28T06:00:00.000Z" },
+        seven_day: { used_percent: 40, resets_at: "2026-11-04T00:00:00.000Z" },
+        fable_weekly: { used_percent: 85, resets_at: "2026-11-04T00:00:00.000Z" },
+      },
+    };
+    const fableAccount = {
+      id: "22222222-2222-4222-8222-222222222222",
+      email: "fable@example.com",
+      plan: "max",
+      enabled: true,
+      priority: 2,
+      auth_state: "ok" as const,
+      active_sessions: 0,
+      blocked: { resets_at: null, observed_at: null },
+      stale: false,
+      observed_at: "2026-10-28T01:02:00.000Z",
+      usage: {
+        five_hour: { used_percent: 30, resets_at: "2026-10-28T06:00:00.000Z" },
+        seven_day: { used_percent: 45, resets_at: "2026-11-04T00:00:00.000Z" },
+        fable_weekly: { used_percent: 15, resets_at: "2026-11-03T00:00:00.000Z" },
+      },
+    };
 
+    const claudeAccounts = {
+      getAccountListWithBestProjection: vi.fn(async () => ({
+        accountList: {
+          mode: "pool" as const,
+          accounts: [generalAccount, fableAccount],
+          pool: {
+            total_count: 2,
+            available_count: 2,
+            best_weekly_remaining_percent: 60,
+            best_weekly_resets_at: "2026-11-04T00:00:00.000Z",
+            earliest_available_at: null,
+          },
+          fable_pool: {
+            total_count: 2,
+            available_count: 2,
+            best_weekly_remaining_percent: 85,
+            best_weekly_resets_at: "2026-11-03T00:00:00.000Z",
+            earliest_available_at: null,
+          },
+        },
+        bestGeneralAccount: generalAccount,
+        bestFableAccount: fableAccount,
+      })),
+    };
+
+    const service = new ProviderUsageService({ claudeAccounts });
+    const response = await service.fetchUsage("req-pool", "provider_usage_get", "claude");
+
+    expect(response.success).toBe(true);
+    expect(response.data).toMatchObject({
+      status: "auto",
+      mode: "pool",
+      planType: "max",
+      observedAt: "2026-10-28T01:00:00.000Z",
+      shortUsedPercent: 25,
+      shortResetAt: Math.floor(Date.parse("2026-10-28T06:00:00.000Z") / 1000),
+      weeklyUsedPercent: 40,
+      weeklyResetAt: Math.floor(Date.parse("2026-11-04T00:00:00.000Z") / 1000),
+      pool: {
+        total_count: 2,
+        available_count: 2,
+        best_weekly_remaining_percent: 60,
+      },
+      fable_pool: {
+        total_count: 2,
+        available_count: 2,
+        best_weekly_remaining_percent: 85,
+      },
+      quotas: [
+        expect.objectContaining({
+          id: "claude:five_hour",
+          usedPercent: 25,
+          remainingPercent: 75,
+          resetAt: Math.floor(Date.parse("2026-10-28T06:00:00.000Z") / 1000),
+        }),
+        expect.objectContaining({
+          id: "claude:seven_day",
+          usedPercent: 40,
+          remainingPercent: 60,
+          resetAt: Math.floor(Date.parse("2026-11-04T00:00:00.000Z") / 1000),
+        }),
+        expect.objectContaining({
+          id: "claude:weekly_scoped:fable",
+          usedPercent: 15,
+          remainingPercent: 85,
+          resetAt: Math.floor(Date.parse("2026-11-03T00:00:00.000Z") / 1000),
+        }),
+      ],
+    });
+  });
+
+  it("keeps mode=pool even when 0 accounts exist in the pool, and uses mode=legacy when pool is disabled", async () => {
+    const emptyClaudeAccounts = {
+      getAccountListWithBestProjection: vi.fn(async () => ({
+        accountList: {
+          mode: "pool" as const,
+          accounts: [],
+          pool: {
+            total_count: 0,
+            available_count: 0,
+            best_weekly_remaining_percent: null,
+            best_weekly_resets_at: null,
+            earliest_available_at: null,
+          },
+          fable_pool: {
+            total_count: 0,
+            available_count: 0,
+            best_weekly_remaining_percent: null,
+            best_weekly_resets_at: null,
+            earliest_available_at: null,
+          },
+        },
+        bestGeneralAccount: null,
+        bestFableAccount: null,
+      })),
+    };
+    const poolService = new ProviderUsageService({ claudeAccounts: emptyClaudeAccounts });
+    const poolRes = await poolService.fetchUsage("req-empty-pool", "provider_usage_get", "claude");
+    expect(poolRes.data).toMatchObject({
+      status: "not_configured",
+      mode: "pool",
+      accounts: [],
+      pool: { total_count: 0, available_count: 0 },
+    });
+
+    const legacyService = new ProviderUsageService({});
+    const legacyRes = await legacyService.fetchUsage("req-legacy", "provider_usage_get", "claude");
+    expect(legacyRes.data).toMatchObject({
+      status: "not_configured",
+      mode: "legacy",
+    });
+  });
 });
