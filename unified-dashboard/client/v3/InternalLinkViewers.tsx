@@ -9,7 +9,7 @@ export function InternalLinkViewers() {
   const openers = useMemo(() => ({
     document: (target: InternalLinkTarget) => target.kind === "document" ? openDocument(target.documentId) : false,
     attachment: (target: InternalLinkTarget, href: string) => target.kind === "attachment" && target.isImage ? openImage(href) : false,
-    attachment_asset: (target: InternalLinkTarget) => target.kind === "attachment_asset" ? openAttachment(target) : false,
+    attachment_asset: (target: InternalLinkTarget, _href: string, label?: string) => target.kind === "attachment_asset" ? openAttachment(target, label) : false,
   }), [openAttachment, openDocument, openImage]);
   useRegisterDashboardLinkOpeners(openers);
   const attachment = selectedAttachment?.image.attachment;

@@ -71,7 +71,7 @@ describe("useInternalLinkClick", () => {
     const event = click(anchor);
 
     expect(event.defaultPrevented).toBe(true);
-    expect(openTarget).toHaveBeenCalledWith(target, href);
+    expect(openTarget).toHaveBeenCalledWith(target, href, "Open");
     expect(onParentClick).not.toHaveBeenCalled();
     expect(anchor.getAttribute("href")).toBe(href);
     expect(anchor.getAttribute("target")).toBe("_blank");

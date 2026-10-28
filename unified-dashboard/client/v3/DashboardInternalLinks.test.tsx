@@ -112,7 +112,7 @@ describe("DashboardInternalLinks", () => {
     const openers = { card: cardOpener };
     const anchor = await render("/?card=card-1", false, openers);
     await click(host!.querySelector("a")!);
-    expect(cardOpener).toHaveBeenCalledWith({ kind: "card", cardId: "card-1" }, "/?card=card-1");
+    expect(cardOpener).toHaveBeenCalledWith({ kind: "card", cardId: "card-1" }, "/?card=card-1", "open");
     expect(mocks.navigate).not.toHaveBeenCalled();
     expect(anchor.getAttribute("href")).toBe("/?card=card-1");
 
@@ -236,5 +236,34 @@ describe("DashboardInternalLinks", () => {
       "/api/attachments/attachment-markdown?context_type=session&context_id=session-1",
       expect.objectContaining({ credentials: "same-origin" }),
     );
+  });
+
+  it("uses the link label as the viewer title when attachment metadata returns 404", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 404 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    host = document.createElement("div");
+    host.className = "v3-shell";
+    const rootHost = document.createElement("div");
+    host.appendChild(rootHost);
+    document.body.appendChild(host);
+    root = createRoot(rootHost);
+    await act(async () => root!.render(
+      <DashboardInternalLinks>
+        <InternalLinkViewers />
+        <MarkdownContent content="[보고서](/api/attachments/attachment-missing/content?context_type=session&context_id=session-1)" />
+      </DashboardInternalLinks>,
+    ));
+
+    const anchor = host.querySelector<HTMLAnchorElement>("a")!;
+    const event = await click(anchor);
+    expect(event.defaultPrevented).toBe(true);
+    await vi.waitFor(async () => {
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      });
+      expect(document.body.querySelector(".chat-image-viewer-title")?.textContent).toBe("보고서");
+      expect(document.body.textContent).toContain("첨부를 찾을 수 없습니다.");
+    });
   });
 });

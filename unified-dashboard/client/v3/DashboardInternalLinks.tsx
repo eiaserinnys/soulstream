@@ -26,20 +26,21 @@ import { loadAttachmentAsset, unavailableItem } from "./attachment-asset-loader"
 type DashboardLinkOpener = (
   target: InternalLinkTarget,
   href: string,
+  label?: string,
 ) => void | boolean | Promise<void | boolean>;
 
 export type DashboardLinkOpeners = Partial<Record<InternalLinkTarget["kind"], DashboardLinkOpener>>;
 
 interface DashboardInternalLinksValue {
   registerOpeners(openers: DashboardLinkOpeners): () => void;
-  openTarget(target: InternalLinkTarget, href: string): Promise<boolean>;
+  openTarget(target: InternalLinkTarget, href: string, label?: string): Promise<boolean>;
   selectedDocumentId: string | null;
   selectedImage: CardImageSelection | null;
   selectedAttachment: { image: CardImageSelection; status?: CardAttachmentStatus } | null;
   attachmentReturnFocus: HTMLElement | null;
   openDocument(documentId: string): boolean;
   openImage(href: string): Promise<boolean>;
-  openAttachment(target: Extract<InternalLinkTarget, { kind: "attachment_asset" }>): Promise<boolean>;
+  openAttachment(target: Extract<InternalLinkTarget, { kind: "attachment_asset" }>, label?: string): Promise<boolean>;
   closeDocument(): void;
   closeImage(): void;
   closeAttachment(): void;
@@ -90,6 +91,7 @@ export function DashboardInternalLinks({ children }: { children: ReactNode }) {
 
   const openAttachment = useCallback(async (
     target: Extract<InternalLinkTarget, { kind: "attachment_asset" }>,
+    label?: string,
   ): Promise<boolean> => {
     attachmentRequest.current?.abort();
     const controller = new AbortController();
@@ -100,7 +102,7 @@ export function DashboardInternalLinks({ children }: { children: ReactNode }) {
       attachmentId: target.attachmentId,
       context,
       key: `asset:${target.attachmentId}`,
-      label: target.attachmentId,
+      label: label ?? "",
     };
     const placeholder = unavailableItem(reference, "unavailable");
     const src = attachmentContentUrl(target.attachmentId, context);
@@ -155,13 +157,13 @@ export function DashboardInternalLinks({ children }: { children: ReactNode }) {
 
   useEffect(() => () => attachmentRequest.current?.abort(), []);
 
-  const openTarget = useCallback(async (target: InternalLinkTarget, href: string): Promise<boolean> => {
+  const openTarget = useCallback(async (target: InternalLinkTarget, href: string, label?: string): Promise<boolean> => {
     if (target.kind !== "document" && target.kind !== "attachment_asset" && !(target.kind === "attachment" && target.isImage)) closeDocument();
     const registered = [...registrations.current.values()].reverse();
     const opener = registered
       .map((candidate) => candidate[target.kind])
       .find((candidate) => candidate !== undefined);
-    if (opener) return (await opener(target, href)) !== false;
+    if (opener) return (await opener(target, href, label)) !== false;
 
     const path = internalLinkPath(target);
     if (path) {

@@ -5,6 +5,7 @@ import { dialoguesInventory, type DialogueId } from "./dialogues-inventory";
 import { webDialogueGroups } from "./dialogues-gallery-groups";
 import { createDialoguesApi } from "./dialogues-api";
 import { DialoguesSamples } from "./DialoguesSamples";
+import { InternalLinkViewers } from "./InternalLinkViewers";
 import { confirmUserRemoval } from "../components/UserManagementTab";
 import { confirmRecurringArchive } from "../components/RecurringJobsTab";
 import { confirmPersistentSessionRelease } from "../components/PersistentSessionsTab";
@@ -54,19 +55,22 @@ function DialogueSamplePage({ id }: { id: DialogueId }) {
   const embedded = new URLSearchParams(window.location.search).get("embedded") === "1";
   // Dialog overlays already own their CSS glass surface. No catalog load or WebGL canvas is needed here.
   return <LiquidGlassProvider renderDefaultCanvas={false}>
-    <div ref={setHost} className="v3-shell v3-dialogue-sample-page isolate font-sans" data-testid="dialogue-sample" data-embedded={embedded ? "true" : undefined}
-      style={{ "--v3-card-gap": `${V3_CARD_GAP_PX}px`, "--v3-outer-inset": `${V3_OUTER_INSET_PX}px` } as CSSProperties}>
-      <WallpaperLayer/>
-      {!native && open ? host ? <DialoguesSamples key={opening} id={id} api={api} onClose={() => setOpen(false)}
-        onChanged={() => setNotice(`샘플 변경 ${api.mutations.length}건 · ${api.mutations.at(-1) ?? "변경 없음"}`)}/> :
-        null :
-        <div className="v3-dialogue-sample-closed">
-          <p className="v3-components-label" role="status">{native ? "브라우저 기본 확인창은 버튼으로 엽니다." : notice}</p>
-          <Button variant="outline" onClick={() => {
-            if (native) { const accepted = openNativeConfirm(id); setNotice(accepted ? "확인" : "취소"); }
-            else { setOpening(value => value + 1); setOpen(true); }
-          }}>{native ? "확인창 열기" : "다시 열기"}</Button>
-        </div>}
-    </div>
+    <>
+      <div ref={setHost} className="v3-shell v3-dialogue-sample-page isolate font-sans" data-testid="dialogue-sample" data-embedded={embedded ? "true" : undefined}
+        style={{ "--v3-card-gap": `${V3_CARD_GAP_PX}px`, "--v3-outer-inset": `${V3_OUTER_INSET_PX}px` } as CSSProperties}>
+        <WallpaperLayer/>
+        {!native && open ? host ? <DialoguesSamples key={opening} id={id} api={api} onClose={() => setOpen(false)}
+          onChanged={() => setNotice(`샘플 변경 ${api.mutations.length}건 · ${api.mutations.at(-1) ?? "변경 없음"}`)}/> :
+          null :
+          <div className="v3-dialogue-sample-closed">
+            <p className="v3-components-label" role="status">{native ? "브라우저 기본 확인창은 버튼으로 엽니다." : notice}</p>
+            <Button variant="outline" onClick={() => {
+              if (native) { const accepted = openNativeConfirm(id); setNotice(accepted ? "확인" : "취소"); }
+              else { setOpening(value => value + 1); setOpen(true); }
+            }}>{native ? "확인창 열기" : "다시 열기"}</Button>
+          </div>}
+      </div>
+      {id === "chat-attachments" ? <InternalLinkViewers/> : null}
+    </>
   </LiquidGlassProvider>;
 }
