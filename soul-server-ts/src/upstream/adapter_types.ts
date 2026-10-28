@@ -5,6 +5,7 @@ import type { AgentRegistry } from "../agent_registry.js";
 import type { AttachmentStore } from "../attachments/file_manager.js";
 import type { ClaudeAuthCommandHandler } from "../auth/claude_auth.js";
 import type { ProviderUsageCommandHandler } from "../auth/provider_usage.js";
+import type { ClaudeAccountsCommandHandler } from "./claude_auth_commands.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { McpRuntime } from "../mcp/runtime.js";
 import type { ModelCatalog } from "../model_catalog.js";
@@ -42,6 +43,7 @@ export interface UpstreamDependencies {
   providerUsage: ProviderUsageCommandHandler;
   attachmentStore?: AttachmentStore;
   claudeAuth?: ClaudeAuthCommandHandler;
+  claudeAccounts?: ClaudeAccountsCommandHandler;
   sessionDb?: SessionDB;
   realtimeBroker?: RealtimeBroker;
   agentConfigService?: AgentConfigService;

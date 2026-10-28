@@ -21,6 +21,7 @@ export function createUpstreamCommandDispatcher(input: {
     providerUsage: deps.providerUsage,
     attachmentStore: deps.attachmentStore,
     claudeAuth: deps.claudeAuth,
+    claudeAccounts: deps.claudeAccounts,
     sessionDb: deps.sessionDb,
     realtimeBroker: deps.realtimeBroker,
     agentConfigService: deps.agentConfigService,
