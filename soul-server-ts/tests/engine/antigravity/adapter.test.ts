@@ -33,9 +33,10 @@ if(model==='blocking'){
  process.on('SIGINT',()=>{emit({event:'result',result:{status:'ERROR',error:'interrupted'}});process.exit(1)});
  setInterval(()=>{},1000);
 }else if(model==='missing-result'){process.exit(0)}else{
- if(model==='stale-quota'||model==='current-quota'){
+ if(model==='stale-quota'||model==='current-quota'||model==='long-quota'){
   if(model==='current-quota') emit({event:'step_update',step_update:{conversation_id:id,step_index:1,state:'DONE',step_type:'error_message'}});
-  emit({event:'result',result:{status:'ERROR',response:'한글',error:'Individual quota reached. Resets in 6m57s.'}});
+  const error=model==='long-quota'?'Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 54h42m58s.':'Individual quota reached. Resets in 6m57s.';
+  emit({event:'result',result:{status:'ERROR',response:'한글',error}});
   process.exit(0);
  }
  emit({event:'result',result:{status:'SUCCESS',response:prompt,usage:{input_tokens:99999}}});
@@ -102,6 +103,24 @@ describe("AntigravityEngineAdapter", () => {
     expect(existsSync(join(state, "antigravity-agent"))).toBe(false);
     expect(existsSync(join(directory, ".agents"))).toBe(false);
     await engine.close();
+  });
+  it("publishes Antigravity quota exhaustion as a rejected credential alert and a limit-coded error", async () => {
+    const { engine } = fixture();
+    const startedAt = Date.now();
+    try {
+      const events = await collect(engine, { ...input, model: "long-quota" });
+      const alert = events.find(event => event.type === "credential_alert") as unknown as Record<string, unknown>;
+      const error = events.find(event => event.type === "error") as unknown as Record<string, unknown>;
+      expect(alert).toMatchObject({ type: "credential_alert", status: "rejected", raw_event_type: "antigravity/result" });
+      expect(error).toMatchObject({ type: "error", error_code: "antigravity_quota_exceeded" });
+      expect(alert.resets_at).toBe(error.resets_at);
+      const resetAt = Date.parse(String(error.resets_at));
+      const expectedDelay = (54 * 60 * 60 + 42 * 60 + 58) * 1_000;
+      expect(resetAt).toBeGreaterThanOrEqual(startedAt + expectedDelay);
+      expect(resetAt).toBeLessThanOrEqual(Date.now() + expectedDelay + 1_000);
+    } finally {
+      await engine.close();
+    }
   });
   it("interrupts without a terminal, resumes same ID, adds usage carry exactly once", async () => {
     const { engine, state } = fixture();

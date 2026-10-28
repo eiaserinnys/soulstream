@@ -9,6 +9,7 @@ import {
   resetProviderUsageObservationMemo,
 } from "../../src/auth/provider_usage_observation.js";
 import type { EnginePort, SSEEventPayload } from "../../src/engine/protocol.js";
+import { AntigravityEventMapper } from "../../src/engine/antigravity/events.js";
 import type { ModelCatalog } from "../../src/model_catalog.js";
 import { ScheduleDispatcher } from "../../src/schedule/schedule_dispatcher.js";
 import { SoulstreamScheduleService } from "../../src/schedule/schedule_service.js";
@@ -762,6 +763,20 @@ describe("TaskExecutor persistent decision wiring", () => {
     )).toBe(false);
   });
 
+  it("classifies Antigravity quota events as a limit_hit task termination", async () => {
+    const task = makeTask();
+    const runtime = makeRuntime(task, []);
+    rememberProviderUsageObservation("claude", makeUsage());
+    rememberProviderUsageObservation("codex", makeUsage("168h"));
+    const executor = taskExecutor(task, runtime, () => antigravityQuotaEngine());
+
+    const execution = executor.startNewExecution(task, agent);
+    await execution;
+    await task.executionPromise;
+
+    expect(task.terminationReason).toBe("limit_hit");
+  });
+
   it("switches persistent limit_hit to the other provider and schedules the same terminal immediately", async () => {
     const task = makeTask();
     const resetAt = "2026-10-06T13:00:00.000Z";
@@ -920,6 +935,24 @@ describe("TaskExecutor persistent decision wiring", () => {
       .toBe(false);
   });
 });
+
+function antigravityQuotaEngine(): EnginePort {
+  return {
+    backendId: "antigravity",
+    workspaceDir: "/tmp/antigravity",
+    async *execute(): AsyncIterable<SSEEventPayload> {
+      const mapper = new AntigravityEventMapper("quota-turn");
+      mapper.accept({ event: "result", result: {
+        status: "ERROR",
+        error: "Individual quota reached. Please upgrade your subscription to increase your limits. Resets in 54h42m58s.",
+      } });
+      for (const event of mapper.terminal({ code: 1, signal: null }, false)) yield event;
+      throw new Error("quota exhausted");
+    },
+    async interrupt() { return true; },
+    async close() {},
+  };
+}
 
 function limitHitEngine(resetAt: string): EnginePort {
   return {

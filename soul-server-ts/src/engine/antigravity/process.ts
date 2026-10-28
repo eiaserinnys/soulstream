@@ -61,6 +61,7 @@ export function cleanUpAntigravityDescendants(descendants: readonly DescendantId
 export function launchAntigravityProcess(options: {
   executablePath: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv; input: string;
   logger: Pick<Logger, "warn">;
+  exitGraceMs?: number;
 }) {
   const child = spawn(options.executablePath, options.args, {
     cwd: options.cwd, env: antigravityEnvironment(options.env),
@@ -70,6 +71,9 @@ export function launchAntigravityProcess(options: {
   let interrupted = false;
   let initialized = false;
   let closed = false;
+  let sawResult = false;
+  let forcedAfterResult = false;
+  let exitGraceTimer: ReturnType<typeof setTimeout> | undefined;
   let descendants: DescendantIdentity[] = [];
   const lines = createInterface({ input: child.stdout });
   const iterator = lines[Symbol.asyncIterator]();
@@ -77,9 +81,33 @@ export function launchAntigravityProcess(options: {
   child.stderr.resume();
   child.stdin.on("error", (error: Error) => { failure ??= error.message; });
   child.on("error", (error: Error) => { failure ??= error.message; });
+  function clearExitGraceTimer(): void {
+    if (exitGraceTimer !== undefined) {
+      clearTimeout(exitGraceTimer);
+      exitGraceTimer = undefined;
+    }
+  }
+  function armExitGraceTimer(): void {
+    if (closed) return;
+    clearExitGraceTimer();
+    exitGraceTimer = setTimeout(() => {
+      exitGraceTimer = undefined;
+      if (closed || !child.pid) return;
+      descendants = snapshotAntigravityDescendants(child.pid);
+      try {
+        process.kill(-child.pid, "SIGKILL");
+        if (sawResult) forcedAfterResult = true;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ESRCH") {
+          failure ??= "Antigravity process group SIGKILL failed";
+        }
+      }
+    }, options.exitGraceMs ?? 15_000);
+  }
   const done = new Promise<AntigravityExit>((resolve) => {
     child.once("close", (code, signal) => {
       closed = true;
+      clearExitGraceTimer();
       try {
         const terminatedProcessCount = cleanUpAntigravityDescendants(descendants);
         if (terminatedProcessCount > 0) options.logger.warn(
@@ -88,13 +116,18 @@ export function launchAntigravityProcess(options: {
       } catch {
         failure ??= "Antigravity tool descendant cleanup failed";
       }
-      resolve({ code, signal, ...(failure ? { error: failure } : {}) });
+      resolve({ code, signal, ...(failure ? { error: failure } : {}),
+        ...(forcedAfterResult ? { forcedAfterResult: true } : {}) });
     });
   });
-  function signalGroup(): boolean {
+  function signalGroup(armGraceAfterInterrupt = false): boolean {
     if (closed || !child.pid) return false;
     descendants = snapshotAntigravityDescendants(child.pid);
-    try { process.kill(-child.pid, "SIGINT"); return true; }
+    try {
+      process.kill(-child.pid, "SIGINT");
+      if (armGraceAfterInterrupt) armExitGraceTimer();
+      return true;
+    }
     catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
       throw error;
@@ -112,7 +145,11 @@ export function launchAntigravityProcess(options: {
       }
       if (event.event === "init") {
         initialized = true;
-        if (interrupted) signalGroup();
+        if (interrupted) signalGroup(true);
+      }
+      if (event.event === "result") {
+        sawResult = true;
+        armExitGraceTimer();
       }
       yield event;
     }
@@ -127,7 +164,7 @@ export function launchAntigravityProcess(options: {
       // Record the pending request immediately; init supplies the resumable ID
       // before the first actual SIGINT for both new and resumed conversations.
       interrupted = true;
-      return initialized ? signalGroup() : true;
+      return initialized ? signalGroup(true) : true;
     },
   };
 }

@@ -3,6 +3,7 @@ import { once } from "node:events";
 import { readFileSync } from "node:fs";
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
+import { AntigravityEventMapper } from "../../../src/engine/antigravity/events.js";
 import { snapshotAntigravityDescendants, cleanUpAntigravityDescendants, launchAntigravityProcess } from "../../../src/engine/antigravity/process.js";
 
 function live(pid: number) {
@@ -65,6 +66,37 @@ describe("Antigravity process descendants", () => {
     } finally {
       if (pid && live(pid)) process.kill(pid, "SIGTERM");
     }
+  });
+  it("force-kills a CLI that stays alive after a successful result and keeps the completion", async () => {
+    const source = `const emit=x=>console.log(JSON.stringify(x));
+      emit({event:'result',result:{status:'SUCCESS',response:'finished'}});
+      process.stdout.end(); setInterval(()=>{},1000); setTimeout(()=>process.exit(0),2000);`;
+    const child = launchAntigravityProcess({ executablePath: process.execPath, args: ["-e", source],
+      cwd: "/tmp", env: process.env, input: "", logger: pino({ level: "silent" }), exitGraceMs: 30 });
+    const events = [];
+    for await (const event of child.events) events.push(event);
+
+    const exit = await child.done;
+    const mapper = new AntigravityEventMapper("forced-turn");
+    for (const event of events) mapper.accept(event);
+    expect(exit).toMatchObject({ signal: "SIGKILL", forcedAfterResult: true });
+    expect(mapper.terminal(exit, false)).toMatchObject([{ type: "complete", status: "completed", result: "finished" }]);
+  });
+  it("force-kills a CLI that ignores SIGINT after the exit grace", async () => {
+    const source = `const emit=x=>console.log(JSON.stringify(x));
+      process.on('SIGINT',()=>{});
+      emit({event:'init',conversation_id:'fixture',init:{model:'fixture'}});
+      setInterval(()=>{},1000); setTimeout(()=>process.exit(0),2000);`;
+    const child = launchAntigravityProcess({ executablePath: process.execPath, args: ["-e", source],
+      cwd: "/tmp", env: process.env, input: "", logger: pino({ level: "silent" }), exitGraceMs: 30 });
+    for await (const event of child.events) {
+      if (event.event === "init") expect(child.interrupt()).toBe(true);
+    }
+
+    const exit = await child.done;
+    expect(exit.signal).toBe("SIGKILL");
+    expect(exit.forcedAfterResult).toBeUndefined();
+    expect(child.interrupted).toBe(true);
   });
   it.each([false,true])("defers an interruption before init until init (%s resume-like fixture)", async resume => {
     const source = `const emit=x=>console.log(JSON.stringify(x)); let initialized=false;
