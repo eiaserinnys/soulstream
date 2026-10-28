@@ -4,7 +4,9 @@ import {
   UsageSummaryService,
   type UsageSummaryBridge,
   type UsageSummaryRegistry,
+  type UsageSummarySnapshot,
 } from "../src/usage/usage_summary_service.js";
+import { mergeClaudePoolObservations } from "../src/usage/claude_account_pool_observation.js";
 
 describe("UsageSummaryService", () => {
   it("preserves source observation rather than collector time and wakes after a committed collection", async () => {
@@ -26,6 +28,8 @@ describe("UsageSummaryService", () => {
 
   it("preserves Claude account-pool fields through parser and summary projection", async () => {
     const response = successResponse(16);
+    const registry = fakeRegistry(["node-a"]);
+    registry.getConnectedNode("node-a")!.capabilities = { claude_account_pool_v1: true };
     const account = poolAccount("account-a");
     const pool = {
       available_count: 1,
@@ -41,7 +45,7 @@ describe("UsageSummaryService", () => {
       fable_pool: { ...pool, best_weekly_remaining_percent: 72 },
     });
     const service = new UsageSummaryService({
-      registry: fakeRegistry(["node-a"]),
+      registry,
       bridge: { sendPendingCommand: vi.fn(async () => response) } as unknown as UsageSummaryBridge,
       pollIntervalMs: 300_000,
       sharedAccountGroups: [],
@@ -98,15 +102,29 @@ describe("UsageSummaryService", () => {
       ...poolAccount(accountId),
       usage: { five_hour: { used_percent: 30, resets_at: null }, seven_day: null, fable_weekly: null },
       observed_at: "2026-10-28T03:00:00.000Z",
+      blocked: { until: "2026-10-28T05:00:00.000Z", scope: "all" as const },
     };
     const newerAccount = {
       ...poolAccount(accountId),
       usage: { five_hour: { used_percent: 85, resets_at: null }, seven_day: null, fable_weekly: null },
       observed_at: "2026-10-28T03:30:00.000Z",
-      blocked: { until: "2026-10-28T04:00:00.000Z", scope: "all" as const },
+      blocked: null,
     };
     const localOnlyAccount = poolAccount("22222222-2222-4222-8222-222222222222");
     const siblingOnlyAccount = poolAccount("33333333-3333-4333-8333-333333333333");
+    const nullObservationId = "44444444-4444-4444-8444-444444444444";
+    const localNullObservationAccount = {
+      ...poolAccount(nullObservationId),
+      usage: { five_hour: { used_percent: 20, resets_at: null }, seven_day: null, fable_weekly: null },
+      observed_at: "2026-10-28T03:15:00.000Z",
+      blocked: { until: "2026-10-28T06:00:00.000Z", scope: "fable" as const },
+    };
+    const nullObservationPeerAccount = {
+      ...poolAccount(nullObservationId),
+      usage: { five_hour: { used_percent: 99, resets_at: null }, seven_day: null, fable_weekly: null },
+      observed_at: null,
+      blocked: { until: "2026-10-28T08:00:00.000Z", scope: "fable" as const },
+    };
     const registry = fakeRegistry(["pool-a", "pool-b", "legacy-node"]);
     registry.getConnectedNode("pool-a")!.capabilities = { claude_account_pool_v1: true };
     registry.getConnectedNode("pool-b")!.capabilities = { claude_account_pool_v1: true };
@@ -117,8 +135,8 @@ describe("UsageSummaryService", () => {
           Object.assign(response.data.providers.claude, {
             mode: "pool",
             accounts: node.nodeId === "pool-a"
-              ? [localAccount, localOnlyAccount]
-              : [newerAccount, siblingOnlyAccount],
+              ? [localAccount, localOnlyAccount, localNullObservationAccount]
+              : [newerAccount, siblingOnlyAccount, nullObservationPeerAccount],
             pool: null,
             fable_pool: null,
           });
@@ -140,6 +158,7 @@ describe("UsageSummaryService", () => {
       .toMatchObject({ mode: "pool", accounts: [
         { id: accountId, observed_at: newerAccount.observed_at },
         { id: siblingOnlyAccount.id },
+        { id: nullObservationId, observed_at: null },
       ] });
 
     const summaryAccounts = service.getSummary().nodes
@@ -151,20 +170,49 @@ describe("UsageSummaryService", () => {
         id: accountId,
         usage: newerAccount.usage,
         observed_at: newerAccount.observed_at,
-        blocked: newerAccount.blocked,
+        blocked: localAccount.blocked,
       },
       { id: localOnlyAccount.id },
+      {
+        id: nullObservationId,
+        usage: localNullObservationAccount.usage,
+        observed_at: localNullObservationAccount.observed_at,
+        blocked: nullObservationPeerAccount.blocked,
+      },
     ]);
     expect(service.getSummary().nodes.find((node) => node.nodeId === "pool-a")?.providers.claude?.accounts)
       .toMatchObject([
-        { id: accountId, usage: localAccount.usage, observed_at: localAccount.observed_at, blocked: null },
+        { id: accountId, usage: localAccount.usage, observed_at: localAccount.observed_at, blocked: localAccount.blocked },
         { id: localOnlyAccount.id },
+        { id: nullObservationId, usage: localNullObservationAccount.usage, blocked: localNullObservationAccount.blocked },
       ]);
     expect(correlated.map((account) => account.id)).not.toContain(siblingOnlyAccount.id);
+    expect(correlated[2]?.peer_blocks).toEqual([
+      { scope: "fable", until: "2026-10-28T08:00:00.000Z" },
+    ]);
+  });
+
+  it("retains a later Fable peer block alongside an earlier all-scope local block", () => {
+    const accountId = "11111111-1111-4111-8111-111111111111";
+    const local = {
+      ...poolAccount(accountId),
+      blocked: { scope: "all" as const, until: "2026-10-28T05:00:00.000Z" },
+    };
+    const peer = {
+      ...poolAccount(accountId),
+      observed_at: null,
+      blocked: { scope: "fable" as const, until: "2026-10-28T07:00:00.000Z" },
+    };
+
+    expect(mergeClaudePoolObservations([local], [[peer]])[0]).toMatchObject({
+      blocked: { scope: "fable", until: "2026-10-28T07:00:00.000Z" },
+      peer_blocks: [{ scope: "fable", until: "2026-10-28T07:00:00.000Z" }],
+    });
   });
 
   it("refreshes only the target Claude provider and publishes the exact GET snapshot", async () => {
     const registry = fakeRegistry(["node-a", "node-b"]);
+    registry.getConnectedNode("node-a")!.capabilities = { claude_account_pool_v1: true };
     let refreshedAccounts = [poolAccount("account-a")];
     const bridge = {
       sendPendingCommand: vi.fn(async ({ node, command }: {
@@ -210,6 +258,106 @@ describe("UsageSummaryService", () => {
     expect(published).toEqual([returned]);
     expect(onCollected).toHaveBeenCalledTimes(2);
     unsubscribe();
+  });
+
+  it("marks cached usage stale and notifies subscribers when a refresh fails", async () => {
+    let now = new Date("2026-10-28T04:00:00.000Z");
+    let failRefresh = false;
+    const registry = fakeRegistry(["node-a"]);
+    registry.getConnectedNode("node-a")!.capabilities = { claude_account_pool_v1: true };
+    const bridge = {
+      sendPendingCommand: vi.fn(async ({ command }: {
+        command: { message: { provider?: string } };
+      }) => {
+        if (failRefresh && command.message.provider === "claude") throw new Error("provider unavailable");
+        const response = successResponse(16);
+        Object.assign(response.data.providers.claude, {
+          mode: "pool",
+          accounts: [poolAccount("account-a")],
+          pool: { available_count: 1, total_count: 1, best_weekly_remaining_percent: 84, best_weekly_resets_at: null, earliest_available_at: null },
+          fable_pool: { available_count: 1, total_count: 1, best_weekly_remaining_percent: 84, best_weekly_resets_at: null, earliest_available_at: null },
+        });
+        return command.message.provider === "claude"
+          ? providerSuccessResponse("claude", 16)
+          : response;
+      }),
+    } as unknown as UsageSummaryBridge;
+    const onCollected = vi.fn();
+    const service = new UsageSummaryService({
+      registry,
+      bridge,
+      pollIntervalMs: 300_000,
+      sharedAccountGroups: [],
+      now: () => now,
+      onCollected,
+    });
+    await service.collectOnce();
+    const published: UsageSummarySnapshot[] = [];
+    const unsubscribe = service.subscribe((snapshot) => published.push(snapshot));
+    failRefresh = true;
+    now = new Date("2026-10-28T04:05:00.000Z");
+
+    await expect(service.refreshNode("node-a")).rejects.toThrow("provider unavailable");
+
+    expect(service.getSummary().nodes[0]).toMatchObject({
+      fetchedAt: "2026-10-28T04:00:00.000Z",
+      stale: true,
+      staleSince: "2026-10-28T04:05:00.000Z",
+      providers: { claude: { mode: "pool", accounts: [{ id: "account-a" }] } },
+    });
+    expect(published).toHaveLength(1);
+    expect(published[0]?.nodes[0]?.stale).toBe(true);
+    expect(onCollected).toHaveBeenCalledTimes(2);
+    unsubscribe();
+  });
+
+  it("hides cached pool fields as soon as a connected node stops advertising pool capability", async () => {
+    const registry = fakeRegistry(["node-a"]);
+    registry.getConnectedNode("node-a")!.capabilities = { claude_account_pool_v1: true };
+    const response = successResponse(16);
+    Object.assign(response.data.providers.claude, {
+      mode: "pool",
+      accounts: [poolAccount("account-a")],
+      pool: { available_count: 1, total_count: 1, best_weekly_remaining_percent: 84, best_weekly_resets_at: null, earliest_available_at: null },
+      fable_pool: { available_count: 1, total_count: 1, best_weekly_remaining_percent: 84, best_weekly_resets_at: null, earliest_available_at: null },
+    });
+    const service = new UsageSummaryService({
+      registry,
+      bridge: { sendPendingCommand: vi.fn(async () => response) } as unknown as UsageSummaryBridge,
+      pollIntervalMs: 300_000,
+      sharedAccountGroups: [],
+    });
+    await service.collectOnce();
+    const pooled = service.getSummary().nodes[0]?.providers.claude;
+    expect(pooled?.mode).toBe("pool");
+
+    registry.getConnectedNode("node-a")!.capabilities = {};
+    const legacy = service.getSummary().nodes[0]?.providers.claude;
+
+    expect(legacy).toEqual({
+      status: "auto",
+      source: null,
+      sourceKind: "unknown",
+      observedAt: null,
+      weeklyRemainingPercent: 84,
+      weeklyResetAt: 1_753_100_000,
+      shortRemainingPercent: 70,
+      shortResetAt: 1_753_000_000,
+      quotas: [{
+        source: null,
+        purpose: "other",
+        id: "claude:weekly_scoped:fable",
+        label: "fable",
+        window: "weekly_scoped",
+        model: "fable",
+        remainingPercent: 84,
+        resetAt: 1_753_100_000,
+      }],
+    });
+    expect(legacy).not.toHaveProperty("mode");
+    expect(legacy).not.toHaveProperty("accounts");
+    expect(legacy).not.toHaveProperty("pool");
+    expect(legacy).not.toHaveProperty("fable_pool");
   });
 
   it("shares durable rejection memory by configured provider account across collections", async () => {

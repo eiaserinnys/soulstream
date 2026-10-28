@@ -9,6 +9,7 @@ import {
   type ClaudeAuthSessionStore,
   type ClaudeAuthTokenExchangeRequest,
   type ClaudeAuthTokenExchangeResponse,
+  type CreateAppOptions,
   type NodeClaudeAuthHttpRequest,
   type NodeClaudeAuthHttpResponse,
   type NodeClaudeAuthRouteOptions,
@@ -37,6 +38,11 @@ export type ClaudeAuthHarnessOptions<
   pkce?: NodeClaudeAuthRouteOptions["pkce"];
   profileHttpClient?: NodeClaudeAuthRouteOptions["profileHttpClient"];
   provider?: NodeClaudeAuthRouteOptions["provider"];
+  config?: CreateAppOptions["config"];
+  productionAuth?: CreateAppOptions["productionAuth"];
+  logDestination?: CreateAppOptions["logDestination"];
+  timeoutMs?: number;
+  withholdAck?: (message: Record<string, unknown>) => boolean;
   sessionStore?: TSessionStore;
   usageSummary?: NodeClaudeAuthRouteOptions["usageSummary"];
 };
@@ -135,6 +141,7 @@ export function createClaudeAuthHarness(
         send: (data) => {
           const message = JSON.parse(data) as Record<string, unknown>;
           sent.push(message);
+        if (!options.withholdAck?.(message)) {
           registry.receiveNodeMessage(
             { nodeId: "fake-node", connectionId },
             {
@@ -143,6 +150,7 @@ export function createClaudeAuthHarness(
               requestId: message.requestId,
             },
           );
+        }
         },
       },
     });
@@ -187,9 +195,15 @@ export function createClaudeAuthHarness(
       return options.profileResponse ?? { statusCode: 200, body: { profiles: [] } };
     }),
     usageSummary: options.usageSummary ?? { refreshNode: async () => poolUsageSnapshot() },
+    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
   };
 
-  const app = createApp({ config, nodeClaudeAuthRoutes: routeOptions });
+  const app = createApp({
+    config: options.config ?? config,
+    nodeClaudeAuthRoutes: routeOptions,
+    ...(options.productionAuth === undefined ? {} : { productionAuth: options.productionAuth }),
+    ...(options.logDestination === undefined ? {} : { logDestination: options.logDestination }),
+  });
   return {
     app,
     bridge,

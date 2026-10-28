@@ -30,6 +30,28 @@ type PoolCommandResult = NodeCommandResponse & { success?: unknown; data?: unkno
 type SuccessAction = "account_list" | "account_delete" | "login_flow" | "login_flow_done";
 
 const ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const WORKER_REJECTION_STATUS: Readonly<Record<string, 400 | 404 | 409 | 502>> = {
+  invalid_code: 400,
+  invalid_login_code: 400,
+  ACCOUNT_NOT_FOUND: 404,
+  account_not_found: 404,
+  login_not_found: 404,
+  account_exists: 409,
+  account_identity_mismatch: 409,
+  login_flow_required: 409,
+  login_in_progress: 409,
+  login_not_ready: 409,
+  ACCOUNT_UPDATE_FAILED: 502,
+  ACCOUNT_DELETE_FAILED: 502,
+  login_spawn_failed: 502,
+  login_stdin_failed: 502,
+  login_process_failed: 502,
+  auth_status_failed: 502,
+  account_uuid_missing: 502,
+  login_verification_failed: 502,
+  login_timed_out: 502,
+  login_flow_failed: 502,
+};
 
 export function registerClaudeAccountPoolRoutes(
   app: FastifyInstance,
@@ -198,10 +220,7 @@ async function sendPoolCommand(
 function sendNodeRejection(reply: FastifyReply, response: PoolCommandResult): FastifyReply {
   const workerError = isRecord(response.error) ? response.error : null;
   const code = safeErrorCode(workerError?.code);
-  const status = code === "account_exists" || code === "account_identity_mismatch"
-    || code === "login_flow_required" || code === "login_in_progress"
-    ? 409
-    : code.endsWith("_not_found") ? 404 : 400;
+  const status = WORKER_REJECTION_STATUS[code] ?? 502;
   const body: Record<string, unknown> = { code, message: errorMessage(code) };
   if (code === "account_exists" && isAccountId(workerError?.existing_account_id)) {
     body.existing_account_id = workerError.existing_account_id;

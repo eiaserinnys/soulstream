@@ -182,6 +182,66 @@ describe("resolvePresetAvailability", () => {
     });
   });
 
+  it("uses worker scope summaries for separate all and Fable recovery times", () => {
+    const account = poolAccount("account-a", { until: "2026-07-28T05:00:00.000Z", scope: "all" });
+    const usage = summary(poolProvider([account], {
+      pool: poolAggregate(0, 1, "2026-07-28T05:00:00.000Z"),
+      fable_pool: poolAggregate(0, 1, "2026-07-28T07:00:00.000Z"),
+    }));
+    const allScopeEvent = [{
+      accountId: account.id,
+      scope: "all" as const,
+      rejection: rejection("2026-07-28T05:00:00.000Z", "five_hour"),
+    }];
+
+    expect(resolvePresetAvailability("node-a", preset, usage, now))
+      .toMatchObject({ available: false, reason: "limit_rejected", resets_at: "2026-07-28T07:00:00.000Z" });
+    expect(resolvePresetAvailability("node-a", preset, usage, now, null, allScopeEvent))
+      .toMatchObject({ available: false, reason: "limit_rejected", resets_at: "2026-07-28T07:00:00.000Z" });
+    expect(resolvePresetAvailability(
+      "node-a",
+      { ...preset, id: "claude-sonnet", label: "Claude - Sonnet", usage_model_id: "sonnet" },
+      usage,
+      now,
+    )).toMatchObject({ available: false, reason: "limit_rejected", resets_at: "2026-07-28T05:00:00.000Z" });
+    expect(resolvePresetAvailability(
+      "node-a",
+      preset,
+      usage,
+      new Date("2026-07-28T07:00:00.000Z"),
+    )).toMatchObject({ available: true, reason: null });
+  });
+
+  it("keeps known auth failures and scoped rejection evidence when usage is stale", () => {
+    for (const authState of ["needs_relogin", "logging_in"] as const) {
+      expect(resolvePresetAvailability(
+        "node-a",
+        preset,
+        summary(poolProvider([poolAccount("account-a", null, authState)]), true),
+        now,
+      )).toMatchObject({
+        available: false,
+        reason: "not_authenticated",
+        usage_warning: true,
+      });
+    }
+
+    expect(resolvePresetAvailability(
+      "node-a",
+      preset,
+      summary(poolProvider([poolAccount("account-a")], {
+        pool: poolAggregate(0, 1, "2026-07-28T05:00:00.000Z"),
+        fable_pool: poolAggregate(0, 1, "2026-07-28T07:00:00.000Z"),
+      }), true),
+      now,
+    )).toMatchObject({
+      available: false,
+      reason: "limit_rejected",
+      resets_at: "2026-07-28T07:00:00.000Z",
+      usage_warning: true,
+    });
+  });
+
   it("keeps a finite recovery when another account is blocked indefinitely", () => {
     const result = resolvePresetAvailability(
       "node-a",
@@ -619,7 +679,11 @@ describe("ModelPresetAvailabilityService limit rejection", () => {
     const activeRejection = rejection("2026-07-28T04:00:00.000Z", "five_hour");
     const service = new ModelPresetAvailabilityService(
       {
-        getConnectedNode: () => ({ nodeId: "node-a", modelPresets: [preset] } as unknown as NodeConnectionSnapshot),
+        getConnectedNode: () => ({
+          nodeId: "node-a",
+          capabilities: { claude_account_pool_v1: true },
+          modelPresets: [preset],
+        } as unknown as NodeConnectionSnapshot),
       },
       {
         getSummary: () => summary(provider()),
@@ -647,6 +711,7 @@ describe("ModelPresetAvailabilityService limit rejection", () => {
     const observedAccount = {
       ...account,
       blocked: { until: "2026-07-28T04:00:00.000Z", scope: "all" as const },
+      peer_blocks: [{ until: "2026-07-28T04:00:00.000Z", scope: "all" as const }],
       observed_at: "2026-07-28T03:30:00.000Z",
     };
     const getClaudePoolAccountsForAvailability = vi.fn(
@@ -655,7 +720,11 @@ describe("ModelPresetAvailabilityService limit rejection", () => {
     );
     const service = new ModelPresetAvailabilityService(
       {
-        getConnectedNode: () => ({ nodeId: "node-a", modelPresets: [preset] } as unknown as NodeConnectionSnapshot),
+        getConnectedNode: () => ({
+          nodeId: "node-a",
+          capabilities: { claude_account_pool_v1: true },
+          modelPresets: [preset],
+        } as unknown as NodeConnectionSnapshot),
       },
       {
         getSummary: () => summary(poolProvider([account])),
@@ -672,14 +741,104 @@ describe("ModelPresetAvailabilityService limit rejection", () => {
     });
     expect(getClaudePoolAccountsForAvailability).toHaveBeenCalledWith("node-a", [account]);
   });
+
+  it("uses legacy scalar availability immediately after pool capability is withdrawn", () => {
+    const node = {
+      nodeId: "node-a",
+      capabilities: {},
+      modelPresets: [preset],
+    } as unknown as NodeConnectionSnapshot;
+    const getClaudePoolAccountsForAvailability = vi.fn(
+      (_nodeId: string, accounts: readonly ReturnType<typeof poolAccount>[]) => accounts,
+    );
+    const service = new ModelPresetAvailabilityService(
+      { getConnectedNode: () => node },
+      {
+        getSummary: () => summary(poolProvider([
+          poolAccount("account-a", { until: "2026-07-28T07:00:00.000Z", scope: "all" }),
+        ], {
+          pool: poolAggregate(0, 1, "2026-07-28T07:00:00.000Z"),
+          fable_pool: poolAggregate(0, 1, "2026-07-28T07:00:00.000Z"),
+        })),
+        getLimitRejection: () => null,
+        getClaudePoolAccountsForAvailability,
+      },
+      () => now,
+    );
+
+    expect(service.listForNode("node-a")?.[0]).toEqual({
+      id: "claude-fable",
+      label: "Claude - Fable",
+      backend: "claude",
+      available: true,
+      reason: null,
+      reason_label: null,
+      resets_at: null,
+      usage_warning: false,
+      weekly_headroom: {
+        status: "unavailable",
+        headroom: null,
+        remaining_percent: null,
+        window_remaining_percent: null,
+        resets_at: null,
+        observed_at: null,
+        quota_label: null,
+      },
+    });
+    expect(getClaudePoolAccountsForAvailability).not.toHaveBeenCalled();
+  });
 });
 
 function rejection(rejectedUntil: string | null, rateLimitType: string | null): ProviderLimitRejection {
   return { rejectedUntil, rateLimitType, observedAt: "2026-07-28T02:59:00.000Z" };
 }
 
-function poolProvider(accounts: ReturnType<typeof poolAccount>[]): UsageSummaryProvider {
-  return provider({ mode: "pool", accounts, pool: null, fable_pool: null });
+function poolProvider(
+  accounts: ReturnType<typeof poolAccount>[],
+  overrides: {
+    pool?: NonNullable<UsageSummaryProvider["pool"]>;
+    fable_pool?: UsageSummaryProvider["fable_pool"];
+  } = {},
+): UsageSummaryProvider {
+  return provider({
+    mode: "pool",
+    accounts,
+    pool: overrides.pool ?? poolAggregateForAccounts(accounts, "all"),
+    fable_pool: overrides.fable_pool ?? poolAggregateForAccounts(accounts, "fable"),
+  });
+}
+
+function poolAggregate(
+  available_count: number,
+  total_count: number,
+  earliest_available_at: string | null,
+): NonNullable<UsageSummaryProvider["pool"]> {
+  return {
+    available_count,
+    total_count,
+    best_weekly_remaining_percent: null,
+    best_weekly_resets_at: null,
+    earliest_available_at,
+  };
+}
+
+function poolAggregateForAccounts(
+  accounts: ReturnType<typeof poolAccount>[],
+  scope: "all" | "fable",
+): NonNullable<UsageSummaryProvider["pool"]> {
+  const enabled = accounts.filter((account) => account.enabled);
+  const eligible = enabled.filter((account) =>
+    account.auth_state === "ok" || account.auth_state === "idle");
+  const blocked = eligible.filter((account) => account.blocked !== null && (
+    account.blocked.scope === "all" || scope === "fable"
+  ));
+  const available = eligible.length - blocked.length;
+  const finiteResets = blocked
+    .map((account) => account.blocked?.until)
+    .filter((value): value is string => value !== null && value !== undefined)
+    .sort((left, right) => Date.parse(left) - Date.parse(right));
+  return poolAggregate(enabled.length > 0 ? available : 0, enabled.length,
+    available === 0 ? finiteResets[0] ?? null : null);
 }
 
 function poolAccount(

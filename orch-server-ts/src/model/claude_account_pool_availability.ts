@@ -1,6 +1,9 @@
 import type { ModelPresetAvailability } from "./model_preset_availability.js";
 import type { ProviderLimitRejection } from "../usage/provider_limit_rejection.js";
-import type { UsageSummaryClaudeAccount } from "../usage/provider_usage_wire.js";
+import type {
+  UsageSummaryClaudeAccount,
+  UsageSummaryClaudeAccountPool,
+} from "../usage/provider_usage_wire.js";
 
 type AvailabilityBase = Pick<
   ModelPresetAvailability,
@@ -10,7 +13,7 @@ type AvailabilityBase = Pick<
 export type PoolAccountRejection = {
   readonly accountId: string;
   readonly scope: "all" | "fable";
-  readonly rejection: ProviderLimitRejection;
+  readonly rejection: Pick<ProviderLimitRejection, "rejectedUntil" | "rateLimitType">;
 };
 
 export function resolveClaudePoolAvailability(
@@ -18,13 +21,12 @@ export function resolveClaudePoolAvailability(
   fablePreset: boolean,
   stale: boolean,
   accounts: readonly UsageSummaryClaudeAccount[],
+  pool: UsageSummaryClaudeAccountPool | null | undefined,
   rejections: readonly PoolAccountRejection[],
   now: Date,
 ): ModelPresetAvailability {
   const candidates = accounts.filter((account) =>
-    account.enabled && (
-      stale || account.auth_state === "ok" || account.auth_state === "idle"
-    ),
+    account.enabled && (account.auth_state === "ok" || account.auth_state === "idle"),
   );
   if (candidates.length === 0) {
     return {
@@ -37,53 +39,91 @@ export function resolveClaudePoolAvailability(
     };
   }
 
-  const recoveries: string[] = [];
-  let earliestReason: string | null = null;
-  for (const account of candidates) {
-    const activeBlocks: Array<{ until: string | null; rateLimitType: string | null }> = [];
-    const accountBlock = !stale ? account.blocked : null;
-    if (
-      accountBlock !== null
-      && (accountBlock.scope === "all" || fablePreset)
-      && (accountBlock.until === null || isAfter(accountBlock.until, now))
-    ) {
-      activeBlocks.push({ until: accountBlock.until, rateLimitType: null });
+  const memoryBlocks = candidates.map((account) => ({
+    blocks: rejections.filter((item) =>
+      item.accountId === account.id
+      && (item.scope === "all" || fablePreset)
+      && isLiveRejection(item.rejection, now),
+    ),
+  }));
+  if (memoryBlocks.every(({ blocks }) => blocks.length > 0)) {
+    const rejected = rejectedPreset(base, stale, memoryBlocks.flatMap(({ blocks }) => blocks), now);
+    if (pool !== null && pool !== undefined && pool.total_count > 0 && pool.available_count === 0) {
+      return {
+        ...rejected,
+        resets_at: laterReset(pool.earliest_available_at, rejected.resets_at),
+      };
     }
-    for (const item of rejections) {
-      if (item.accountId !== account.id || (item.scope === "fable" && !fablePreset)) continue;
-      if (isLiveRejection(item.rejection, now)) {
-        activeBlocks.push({
-          until: item.rejection.rejectedUntil,
-          rateLimitType: item.rejection.rateLimitType,
-        });
-      }
-    }
-    if (activeBlocks.length === 0) return availablePreset(base, stale || account.auth_state === "idle");
-
-    const indefinite = activeBlocks.some((block) => block.until === null);
-    const accountReset = indefinite
-      ? null
-      : activeBlocks.reduce<string>((latest, block) =>
-          Date.parse(block.until!) > Date.parse(latest) ? block.until! : latest,
-        activeBlocks[0]!.until!);
-    if (accountReset !== null) recoveries.push(accountReset);
-    if (earliestReason === null) {
-      earliestReason = activeBlocks.find((block) => block.rateLimitType !== null)?.rateLimitType ?? null;
-    }
+    return rejected;
   }
 
-  const earliestRecovery = recoveries
-    .map((value) => ({ value, time: Date.parse(value) }))
-    .filter((candidate) => Number.isFinite(candidate.time))
-    .sort((left, right) => left.time - right.time)[0]?.value ?? null;
+  const poolAvailable = pool !== null && pool !== undefined && (
+    pool.available_count > 0
+    || (pool.earliest_available_at !== null && !isAfter(pool.earliest_available_at, now))
+  );
+  if (poolAvailable === true) return availablePreset(base, stale || candidates.every((account) => account.auth_state === "idle"));
+
+  if (pool !== null && pool !== undefined && pool.total_count > 0 && pool.available_count === 0) {
+    return {
+      ...base,
+      available: false,
+      reason: "limit_rejected",
+      reason_label: rejectionReasonLabel(null),
+      resets_at: pool.earliest_available_at,
+      usage_warning: stale,
+    };
+  }
+
+  if (pool === null || pool === undefined) {
+    return availablePreset(base, true);
+  }
+  return {
+    ...base,
+    available: false,
+    reason: "not_authenticated",
+    reason_label: "미인증",
+    resets_at: null,
+    usage_warning: stale,
+  };
+}
+
+function rejectedPreset(
+  base: AvailabilityBase,
+  stale: boolean,
+  rejections: readonly PoolAccountRejection[],
+  now: Date,
+): ModelPresetAvailability {
+  const accountIds = [...new Set(rejections.map((item) => item.accountId))];
+  const accountRecoveries = accountIds.map((accountId) => {
+    const accountRejections = rejections.filter((item) => item.accountId === accountId);
+    if (accountRejections.some((item) => item.rejection.rejectedUntil === null)) return null;
+    return accountRejections.reduce<string | null>((latest, item) => {
+      const reset = item.rejection.rejectedUntil;
+      if (reset === null) return latest;
+      return latest === null || Date.parse(reset) > Date.parse(latest) ? reset : latest;
+    }, null);
+  });
+  const finiteRecoveries = accountRecoveries
+    .filter((value): value is string => value !== null && isAfter(value, now))
+    .sort((left, right) => Date.parse(left) - Date.parse(right));
+  const reason = rejections.find((item) => item.rejection.rateLimitType !== null)?.rejection.rateLimitType ?? null;
   return {
     ...base,
     available: false,
     reason: "limit_rejected",
-    reason_label: rejectionReasonLabel(earliestReason),
-    resets_at: earliestRecovery,
-    usage_warning: false,
+    reason_label: rejectionReasonLabel(reason),
+    resets_at: finiteRecoveries[0] ?? null,
+    usage_warning: stale,
   };
+}
+
+function laterReset(sourceReset: string | null, memoryReset: string | null): string | null {
+  if (sourceReset === null || memoryReset === null) return null;
+  const sourceTime = Date.parse(sourceReset);
+  const memoryTime = Date.parse(memoryReset);
+  if (!Number.isFinite(sourceTime)) return memoryReset;
+  if (!Number.isFinite(memoryTime)) return sourceReset;
+  return sourceTime >= memoryTime ? sourceReset : memoryReset;
 }
 
 export function rejectionReasonLabel(rateLimitType: string | null): string {
@@ -94,7 +134,10 @@ export function rejectionReasonLabel(rateLimitType: string | null): string {
   return "한도 거부 중";
 }
 
-function isLiveRejection(rejection: ProviderLimitRejection, now: Date): boolean {
+function isLiveRejection(
+  rejection: Pick<ProviderLimitRejection, "rejectedUntil">,
+  now: Date,
+): boolean {
   return rejection.rejectedUntil === null || isAfter(rejection.rejectedUntil, now);
 }
 

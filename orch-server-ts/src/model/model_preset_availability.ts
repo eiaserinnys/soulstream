@@ -11,11 +11,14 @@ import type { UsageSummaryClaudeAccount } from "../usage/provider_usage_wire.js"
 import {
   rejectionReasonLabel,
   resolveClaudePoolAvailability,
+  type PoolAccountRejection,
 } from "./claude_account_pool_availability.js";
+import type { ClaudePoolAvailabilityAccount } from "../usage/claude_account_pool_observation.js";
 import type {
   ProviderLimitProvider,
   ProviderLimitRejection,
 } from "../usage/provider_limit_rejection.js";
+import { supportsClaudeAccountPool } from "../node/registry_helpers.js";
 import {
   resolveWeeklyHeadroom,
   type WeeklyHeadroom,
@@ -73,7 +76,7 @@ export type ModelPresetUsageSummary = {
   getClaudePoolAccountsForAvailability(
     nodeId: string,
     accounts: readonly UsageSummaryClaudeAccount[],
-  ): readonly UsageSummaryClaudeAccount[];
+  ): readonly ClaudePoolAvailabilityAccount[];
 };
 
 export class ModelPresetAvailabilityError extends Error {
@@ -135,9 +138,11 @@ export class ModelPresetAvailabilityService {
     summary: UsageSummarySnapshot,
   ): ModelPresetAvailability {
     const provider = preset.usage_provider;
+    const node = this.registry.getConnectedNode(nodeId);
+    const supportsPool = supportsClaudeAccountPool(node?.capabilities);
     const nodeUsage = summary.nodes.find((node) => node.nodeId === nodeId);
     const providerUsage = provider === null ? null : nodeUsage?.providers[provider] ?? null;
-    if (provider === "claude" && providerUsage?.mode === "pool") {
+    if (provider === "claude" && supportsPool && providerUsage?.mode === "pool") {
       const accounts = this.usageSummary.getClaudePoolAccountsForAvailability(
         nodeId,
         providerUsage.accounts ?? [],
@@ -145,13 +150,27 @@ export class ModelPresetAvailabilityService {
       const scopes: readonly ("all" | "fable")[] = isFablePreset(preset)
         ? ["all", "fable"]
         : ["all"];
-      const poolRejections = accounts.flatMap((account) =>
-        scopes.flatMap((scope) => {
+      const poolRejections = accounts.flatMap((account) => [
+        ...(account.peer_blocks ?? []).map((block) => ({
+          accountId: account.id,
+          scope: block.scope,
+          rejection: { rejectedUntil: block.until, rateLimitType: null },
+        })),
+        ...scopes.flatMap((scope) => {
           const rejection = this.usageSummary.getLimitRejection(nodeId, "claude", account.id, scope);
           return rejection === null ? [] : [{ accountId: account.id, scope, rejection }];
         }),
+      ]);
+      return resolvePresetAvailability(
+        nodeId,
+        preset,
+        summary,
+        this.now(),
+        null,
+        poolRejections,
+        accounts,
+        supportsPool,
       );
-      return resolvePresetAvailability(nodeId, preset, summary, this.now(), null, poolRejections, accounts);
     }
     return resolvePresetAvailability(
       nodeId,
@@ -159,6 +178,9 @@ export class ModelPresetAvailabilityService {
       summary,
       this.now(),
       provider === null ? null : this.usageSummary.getLimitRejection(nodeId, provider),
+      [],
+      undefined,
+      supportsPool,
     );
   }
 
@@ -189,12 +211,9 @@ export function resolvePresetAvailability(
   summary: UsageSummarySnapshot,
   now: Date,
   rejection: ProviderLimitRejection | null = null,
-  poolRejections: readonly {
-    readonly accountId: string;
-    readonly scope: "all" | "fable";
-    readonly rejection: ProviderLimitRejection;
-  }[] = [],
+  poolRejections: readonly PoolAccountRejection[] = [],
   poolAccounts?: readonly UsageSummaryClaudeAccount[],
+  useClaudePool = true,
 ): ModelPresetAvailability {
   const nodeUsage = summary.nodes.find((node) => node.nodeId === nodeId);
   const provider = preset.usage_provider === null
@@ -224,12 +243,13 @@ export function resolvePresetAvailability(
   }
   if (preset.usage_provider === null) return availablePreset(base, false);
 
-  if (preset.usage_provider === "claude" && provider?.mode === "pool") {
+  if (preset.usage_provider === "claude" && useClaudePool && provider?.mode === "pool") {
     return resolveClaudePoolAvailability(
       base,
       isFablePreset(preset),
       nodeUsage === undefined || nodeUsage.stale,
       poolAccounts ?? provider.accounts ?? [],
+      isFablePreset(preset) ? provider.fable_pool : provider.pool,
       poolRejections,
       now,
     );

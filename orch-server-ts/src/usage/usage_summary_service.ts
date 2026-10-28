@@ -22,7 +22,10 @@ import {
   type UsageSummaryClaudeAccount,
   type UsageSummaryClaudeAccountPool,
 } from "./provider_usage_wire.js";
-import { mergeClaudePoolObservations } from "./claude_account_pool_observation.js";
+import {
+  mergeClaudePoolObservations,
+  type ClaudePoolAvailabilityAccount,
+} from "./claude_account_pool_observation.js";
 import { providerRequestKey, resolveProviderOwners } from "./usage_summary_account_groups.js";
 
 export const USAGE_SUMMARY_NODE_TIMEOUT_MS = 15_000;
@@ -186,7 +189,7 @@ export class UsageSummaryService {
       collectedAt: this.collectedAt,
       nodes: [...this.nodes.values()]
         .sort((left, right) => left.nodeId.localeCompare(right.nodeId))
-        .map((state) => summarizeNode(state)),
+        .map((state) => this.summarizeNode(state)),
     };
   }
 
@@ -196,10 +199,6 @@ export class UsageSummaryService {
   }
 
   async refreshNode(nodeId: string): Promise<UsageSummarySnapshot> {
-    if (this.activeCollection !== undefined) await this.activeCollection;
-    const node = this.registry.getConnectedNode(nodeId);
-    if (node === undefined) throw new Error(`Node is not connected: ${nodeId}`);
-
     const now = this.now().toISOString();
     const state = this.nodes.get(nodeId) ?? {
       nodeId,
@@ -208,20 +207,31 @@ export class UsageSummaryService {
       staleSince: now,
     };
     this.nodes.set(nodeId, state);
-    const snapshot = state.snapshot === null
-      ? await this.fetchNodeSnapshot(nodeId)
-      : {
-          providers: {
-            ...state.snapshot.providers,
-            claude: await this.fetchNodeProvider(nodeId, "claude"),
-          },
-        };
-    state.snapshot = snapshot;
-    state.fetchedAt = this.now().toISOString();
-    state.staleSince = null;
-    this.collectedAt = state.fetchedAt;
-    this.notifyCollected();
-    return this.getSummary();
+    try {
+      if (this.activeCollection !== undefined) await this.activeCollection;
+      const node = this.registry.getConnectedNode(nodeId);
+      if (node === undefined) throw new Error(`Node is not connected: ${nodeId}`);
+
+      const snapshot = state.snapshot === null
+        ? await this.fetchNodeSnapshot(nodeId)
+        : {
+            providers: {
+              ...state.snapshot.providers,
+              claude: await this.fetchNodeProvider(nodeId, "claude"),
+            },
+          };
+      state.snapshot = snapshot;
+      state.fetchedAt = this.now().toISOString();
+      state.staleSince = null;
+      this.collectedAt = state.fetchedAt;
+      this.notifyCollected();
+      return this.getSummary();
+    } catch (error) {
+      state.staleSince ??= this.now().toISOString();
+      this.collectedAt = this.now().toISOString();
+      this.notifyCollected();
+      throw error;
+    }
   }
 
   observeProviderExecution(input: ProviderExecutionEvent): void {
@@ -259,7 +269,7 @@ export class UsageSummaryService {
   getClaudePoolAccountsForAvailability(
     nodeId: string,
     accounts: readonly UsageSummaryClaudeAccount[],
-  ): readonly UsageSummaryClaudeAccount[] {
+  ): readonly ClaudePoolAvailabilityAccount[] {
     if (!supportsClaudeAccountPool(this.registry.getConnectedNode(nodeId)?.capabilities)) return accounts;
     const group = this.sharedAccountGroups.find((candidate) =>
       candidate.provider === "claude" && candidate.nodeIds.includes(nodeId));
@@ -351,6 +361,28 @@ export class UsageSummaryService {
         this.onWarning("Usage summary subscriber failed", error);
       }
     }
+  }
+
+  private summarizeNode(state: MutableNodeState): UsageSummaryNode {
+    const summary = summarizeNode(state);
+    const node = this.registry.getConnectedNode(state.nodeId);
+    if (
+      node === undefined
+      || supportsClaudeAccountPool(node.capabilities)
+      || summary.providers.claude === null
+    ) return summary;
+
+    const {
+      mode: _mode,
+      accounts: _accounts,
+      pool: _pool,
+      fable_pool: _fablePool,
+      ...legacyClaude
+    } = summary.providers.claude;
+    return {
+      ...summary,
+      providers: { ...summary.providers, claude: legacyClaude },
+    };
   }
 
   private createProviderRequests(

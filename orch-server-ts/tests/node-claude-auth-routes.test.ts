@@ -640,6 +640,112 @@ describe("Claude account-pool REST routes", () => {
     await disconnected.app.close();
   });
 
+  it.each([
+    { code: "invalid_login_code", status: 400, method: "POST", path: "/logins/login-a/code", payload: { code: "worker-valid-code" } },
+    { code: "ACCOUNT_NOT_FOUND", status: 404, method: "PATCH", path: "/accounts/11111111-1111-4111-8111-111111111111", payload: { enabled: false } },
+    { code: "account_not_found", status: 404, method: "POST", path: "/logins", payload: { account_id: "11111111-1111-4111-8111-111111111111" } },
+    { code: "login_not_found", status: 404, method: "GET", path: "/logins/login-a" },
+    { code: "account_exists", status: 409, method: "POST", path: "/logins/login-a/code", payload: { code: "worker-valid-code" } },
+    { code: "account_identity_mismatch", status: 409, method: "POST", path: "/logins/login-a/code", payload: { code: "worker-valid-code" } },
+    { code: "login_flow_required", status: 409, method: "POST", path: "/logins", payload: {} },
+    { code: "login_in_progress", status: 409, method: "POST", path: "/logins", payload: {} },
+    { code: "login_not_ready", status: 409, method: "POST", path: "/logins/login-a/code", payload: { code: "worker-valid-code" } },
+    { code: "ACCOUNT_UPDATE_FAILED", status: 502, method: "PATCH", path: "/accounts/11111111-1111-4111-8111-111111111111", payload: { enabled: false } },
+    { code: "ACCOUNT_DELETE_FAILED", status: 502, method: "DELETE", path: "/accounts/11111111-1111-4111-8111-111111111111" },
+    { code: "login_spawn_failed", status: 502, method: "POST", path: "/logins", payload: {} },
+    { code: "login_stdin_failed", status: 502, method: "POST", path: "/logins/login-a/code", payload: { code: "worker-valid-code" } },
+    { code: "login_process_failed", status: 502, method: "GET", path: "/logins/login-a" },
+    { code: "auth_status_failed", status: 502, method: "GET", path: "/logins/login-a" },
+    { code: "account_uuid_missing", status: 502, method: "GET", path: "/logins/login-a" },
+    { code: "login_verification_failed", status: 502, method: "GET", path: "/logins/login-a" },
+    { code: "login_timed_out", status: 502, method: "GET", path: "/logins/login-a" },
+    { code: "login_flow_failed", status: 502, method: "POST", path: "/logins", payload: {} },
+  ] as const)("maps worker error $code to HTTP $status", async ({ code, status, method, path, payload }) => {
+    const harness = createClaudeAuthHarness({
+      claudeAccountPoolEnabled: true,
+      ackFor: () => ({ success: false, error: { code, message: "private OAuth code https://private.example/login" } }),
+    });
+
+    const response = await harness.app.inject({
+      method,
+      url: `/api/nodes/fake-node/claude-auth${path}`,
+      ...(payload === undefined ? {} : { payload }),
+    });
+
+    expect(response.statusCode).toBe(status);
+    expect(response.json()).toMatchObject({ code, message: expect.any(String) });
+    expect(response.body).not.toContain("private OAuth code");
+    expect(response.body).not.toContain("https://private.example/login");
+    await harness.app.close();
+  });
+
+  it("maps pending command timeout and a detached node transport to safe 502 errors", async () => {
+    const timedOut = createClaudeAuthHarness({
+      claudeAccountPoolEnabled: true,
+      timeoutMs: 10,
+      withholdAck: (message) => message.type === "claude_auth_accounts_list",
+    });
+    const timeoutResponse = await timedOut.app.inject({
+      method: "GET",
+      url: "/api/nodes/fake-node/claude-auth/accounts",
+    });
+    expect(timeoutResponse.statusCode).toBe(502);
+    expect(timeoutResponse.json()).toEqual({
+      code: "node_command_timeout",
+      message: "Claude account node request failed.",
+    });
+    await timedOut.app.close();
+
+    const detached = createClaudeAuthHarness({ claudeAccountPoolEnabled: true });
+    expect(detached.connectionId).toBeDefined();
+    detached.transports.detach({ nodeId: "fake-node", connectionId: detached.connectionId! });
+    const detachedResponse = await detached.app.inject({
+      method: "GET",
+      url: "/api/nodes/fake-node/claude-auth/accounts",
+    });
+    expect(detachedResponse.statusCode).toBe(502);
+    expect(detachedResponse.json()).toEqual({
+      code: "node_command_failed",
+      message: "Claude account node request failed.",
+    });
+    await detached.app.close();
+  });
+
+  it("logs a real production auth rejection without writing request code or auth URL", async () => {
+    const logs: string[] = [];
+    const authUrl = "https://claude.com/cai/oauth/authorize?code=true&state=private-state";
+    const code = "private-oauth-code#private-state";
+    const harness = createClaudeAuthHarness({
+      claudeAccountPoolEnabled: true,
+      config: parseOrchServerConfig({
+        environment: "production",
+        databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
+        authBearerToken: "test-token",
+      }),
+      productionAuth: {
+        resolveTokenAccess: async () => ({
+          ok: false,
+          statusCode: 401,
+          detail: "Authorization header required",
+        }),
+      },
+      logDestination: { write: (message) => logs.push(message) },
+    });
+
+    const response = await harness.app.inject({
+      method: "POST",
+      url: `/api/nodes/fake-node/claude-auth/logins/login-a/code?auth_url=${encodeURIComponent(authUrl)}`,
+      payload: { code },
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(harness.sent).toEqual([]);
+    await harness.app.close();
+    expect(logs.join("\n")).not.toContain(code);
+    expect(logs.join("\n")).not.toContain(authUrl);
+    expect(logs.join("\n")).not.toContain("private-state");
+  });
+
   it("aliases pool-node profile lists to the accounts command while preserving legacy HTTP proxy", async () => {
     const pool = createClaudeAuthHarness({ claudeAccountPoolEnabled: true });
     const poolResponse = await pool.app.inject({
