@@ -143,6 +143,38 @@ describe("TaskEngineTurnRunner", () => {
     expect(kimiParams?.extraEnv).toEqual({ [CLAUDE_OAUTH_TOKEN_ENV]: "legacy-task-oauth" });
   });
 
+  it("marks official Claude alias models such as opus and haiku for pool selection", async () => {
+    const { runner } = makeSubject(undefined, true);
+    for (const model of ["opus", "sonnet", "haiku", "claude-fable-5-1[1m]"]) {
+      let captured: EngineExecuteParams | undefined;
+      await drain(runner.executeTurn({
+        task: makeTask({ model, oauthToken: "legacy-task-oauth" }),
+        agent,
+        runner: createInProcessTaskRunnerRuntime(makeEngine((params) => {
+          captured = params;
+        })),
+        input: { prompt: model, inputUuid: `alias-${model}` },
+      }));
+      expect(captured?.claudeAccountPoolTarget, model).toBe(true);
+      expect(captured?.extraEnv, model).toBeUndefined();
+    }
+  });
+
+  it("keeps alias models on the legacy OAuth path while the pool flag is off", async () => {
+    const { runner } = makeSubject(undefined, false);
+    let captured: EngineExecuteParams | undefined;
+    await drain(runner.executeTurn({
+      task: makeTask({ model: "opus", oauthToken: "legacy-task-oauth" }),
+      agent,
+      runner: createInProcessTaskRunnerRuntime(makeEngine((params) => {
+        captured = params;
+      })),
+      input: { prompt: "legacy", inputUuid: "legacy-alias" },
+    }));
+    expect(captured).not.toHaveProperty("claudeAccountPoolTarget");
+    expect(captured?.extraEnv).toEqual({ [CLAUDE_OAUTH_TOKEN_ENV]: "legacy-task-oauth" });
+  });
+
   it("keeps Claude models with a resolved Anthropic endpoint on their third-party env path", async () => {
     const task = makeTask({
       model: "claude-sonnet-4.5",
