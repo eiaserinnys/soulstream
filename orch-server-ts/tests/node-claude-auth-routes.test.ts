@@ -578,7 +578,10 @@ describe("Claude account-pool REST routes", () => {
     ]);
     for (const unsupportedResponse of unsupportedResponses) {
       expect(unsupportedResponse.statusCode).toBe(409);
-      expect(unsupportedResponse.json()).toMatchObject({ code: "claude_account_pool_unsupported" });
+      expect(unsupportedResponse.json()).toEqual({
+        code: "claude_account_pool_unsupported",
+        message: "이 노드는 Claude 계정 풀을 지원하지 않습니다.",
+      });
       expect(unsupportedResponse.body).not.toContain("private-code");
     }
     expect(unsupported.sent).toEqual([]);
@@ -591,13 +594,38 @@ describe("Claude account-pool REST routes", () => {
       payload: { enabled: true },
     });
     expect(invalidResponse.statusCode).toBe(400);
-    expect(invalidResponse.json()).toMatchObject({ code: "invalid_request" });
+    expect(invalidResponse.json()).toEqual({
+      code: "invalid_request",
+      message: "올바르지 않은 Claude 계정 ID입니다.",
+    });
+    const invalidInputs = await Promise.all([
+      invalid.app.inject({ method: "PATCH", url: "/api/nodes/fake-node/claude-auth/accounts/11111111-1111-4111-8111-111111111111", payload: { enabled: "invalid" } }),
+      invalid.app.inject({ method: "POST", url: "/api/nodes/fake-node/claude-auth/logins", payload: { account_id: "not-a-uuid" } }),
+      invalid.app.inject({ method: "POST", url: "/api/nodes/fake-node/claude-auth/logins/login-a/code", payload: { code: "" } }),
+    ]);
+    expect(invalidInputs.map((response) => [response.statusCode, response.json()])).toEqual([
+      [400, { code: "invalid_request", message: "올바르지 않은 Claude 계정 수정 요청입니다." }],
+      [400, { code: "invalid_request", message: "올바르지 않은 Claude 로그인 요청입니다." }],
+      [400, { code: "invalid_request", message: "올바르지 않은 Claude 인증 코드입니다." }],
+    ]);
     await invalid.app.close();
+
+    const missingNode = createClaudeAuthHarness({ claudeAccountPoolEnabled: true, registerNode: false });
+    const missingNodeResponse = await missingNode.app.inject({
+      method: "GET",
+      url: "/api/nodes/missing-node/claude-auth/accounts",
+    });
+    expect(missingNodeResponse.statusCode).toBe(404);
+    expect(missingNodeResponse.json()).toEqual({
+      code: "node_not_connected",
+      message: "노드가 연결되어 있지 않습니다.",
+    });
+    await missingNode.app.close();
 
     const accountExists = createClaudeAuthHarness({
       claudeAccountPoolEnabled: true,
       ackFor: (message) => message.type === "claude_auth_login_submit_code"
-        ? { success: false, error: { code: "account_exists", message: "oauth-code#state-value https://private.example", existing_account_id: "22222222-2222-4222-8222-222222222222" } }
+        ? { success: false, error: { code: "ACCOUNT_EXISTS", message: "oauth-code#state-value https://private.example", existing_account_id: "22222222-2222-4222-8222-222222222222" } }
         : {},
     });
     const duplicate = await accountExists.app.inject({
@@ -608,7 +636,7 @@ describe("Claude account-pool REST routes", () => {
     expect(duplicate.statusCode).toBe(409);
     expect(duplicate.json()).toEqual({
       code: "account_exists",
-      message: expect.any(String),
+      message: "이미 등록된 Claude 계정입니다.",
       existing_account_id: "22222222-2222-4222-8222-222222222222",
     });
     expect(duplicate.body).not.toContain("oauth-code#state-value");
@@ -627,7 +655,7 @@ describe("Claude account-pool REST routes", () => {
       payload: { enabled: false },
     });
     expect(missingAccount.statusCode).toBe(404);
-    expect(missingAccount.json()).toMatchObject({ code: "account_not_found" });
+    expect(missingAccount.json()).toEqual({ code: "account_not_found", message: "Claude 계정을 찾을 수 없습니다." });
     await notFound.app.close();
 
     const disconnected = createClaudeAuthHarness({ claudeAccountPoolEnabled: true, attachTransport: false });
@@ -636,11 +664,12 @@ describe("Claude account-pool REST routes", () => {
       url: "/api/nodes/fake-node/claude-auth/accounts",
     });
     expect(upstreamFailure.statusCode).toBe(502);
-    expect(upstreamFailure.json()).toMatchObject({ code: expect.any(String), message: expect.any(String) });
+    expect(upstreamFailure.json()).toMatchObject({ code: expect.any(String), message: "Claude 계정 노드 요청을 처리하지 못했습니다." });
     await disconnected.app.close();
   });
 
   it.each([
+    { code: "invalid_code", status: 400, method: "POST", path: "/logins/login-a/code", payload: { code: "worker-valid-code" } },
     { code: "invalid_login_code", status: 400, method: "POST", path: "/logins/login-a/code", payload: { code: "worker-valid-code" } },
     { code: "ACCOUNT_NOT_FOUND", status: 404, method: "PATCH", path: "/accounts/11111111-1111-4111-8111-111111111111", payload: { enabled: false } },
     { code: "account_not_found", status: 404, method: "POST", path: "/logins", payload: { account_id: "11111111-1111-4111-8111-111111111111" } },
@@ -649,6 +678,8 @@ describe("Claude account-pool REST routes", () => {
     { code: "account_identity_mismatch", status: 409, method: "POST", path: "/logins/login-a/code", payload: { code: "worker-valid-code" } },
     { code: "login_flow_required", status: 409, method: "POST", path: "/logins", payload: {} },
     { code: "login_in_progress", status: 409, method: "POST", path: "/logins", payload: {} },
+    { code: "LOGIN_SESSION_CONFLICT", status: 409, method: "POST", path: "/logins", payload: {} },
+    { code: "login_session_conflict", status: 409, method: "POST", path: "/logins", payload: {} },
     { code: "login_not_ready", status: 409, method: "POST", path: "/logins/login-a/code", payload: { code: "worker-valid-code" } },
     { code: "ACCOUNT_UPDATE_FAILED", status: 502, method: "PATCH", path: "/accounts/11111111-1111-4111-8111-111111111111", payload: { enabled: false } },
     { code: "ACCOUNT_DELETE_FAILED", status: 502, method: "DELETE", path: "/accounts/11111111-1111-4111-8111-111111111111" },
@@ -673,7 +704,29 @@ describe("Claude account-pool REST routes", () => {
     });
 
     expect(response.statusCode).toBe(status);
-    expect(response.json()).toMatchObject({ code, message: expect.any(String) });
+    const normalizedCodes: Readonly<Record<string, string>> = {
+      ACCOUNT_NOT_FOUND: "account_not_found",
+      ACCOUNT_UPDATE_FAILED: "account_update_failed",
+      ACCOUNT_DELETE_FAILED: "account_delete_failed",
+      LOGIN_SESSION_CONFLICT: "login_session_conflict",
+    };
+    const normalizedCode = normalizedCodes[code] ?? code;
+    const messages: Readonly<Record<string, string>> = {
+      account_exists: "이미 등록된 Claude 계정입니다.",
+      account_identity_mismatch: "인증된 Claude 계정이 요청한 계정과 일치하지 않습니다.",
+      account_not_found: "Claude 계정을 찾을 수 없습니다.",
+      login_not_found: "Claude 로그인 세션을 찾을 수 없습니다.",
+      login_flow_required: "Claude 계정 로그인 절차를 사용해 주세요.",
+      login_in_progress: "이미 진행 중인 Claude 로그인이 있습니다.",
+      login_session_conflict: "이미 진행 중인 Claude 로그인이 있습니다.",
+      login_not_ready: "아직 인증 코드를 입력할 수 있는 상태가 아닙니다.",
+      invalid_code: "올바르지 않은 Claude 인증 코드입니다.",
+      invalid_login_code: "올바르지 않은 Claude 인증 코드입니다.",
+    };
+    expect(response.json()).toEqual({
+      code: normalizedCode,
+      message: messages[normalizedCode] ?? "Claude 계정 요청이 거절되었습니다.",
+    });
     expect(response.body).not.toContain("private OAuth code");
     expect(response.body).not.toContain("https://private.example/login");
     await harness.app.close();
@@ -692,7 +745,7 @@ describe("Claude account-pool REST routes", () => {
     expect(timeoutResponse.statusCode).toBe(502);
     expect(timeoutResponse.json()).toEqual({
       code: "node_command_timeout",
-      message: "Claude account node request failed.",
+      message: "Claude 계정 노드 요청을 처리하지 못했습니다.",
     });
     await timedOut.app.close();
 
@@ -706,7 +759,7 @@ describe("Claude account-pool REST routes", () => {
     expect(detachedResponse.statusCode).toBe(502);
     expect(detachedResponse.json()).toEqual({
       code: "node_command_failed",
-      message: "Claude account node request failed.",
+      message: "Claude 계정 노드 요청을 처리하지 못했습니다.",
     });
     await detached.app.close();
   });

@@ -33,16 +33,16 @@ const ACCOUNT_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-
 const WORKER_REJECTION_STATUS: Readonly<Record<string, 400 | 404 | 409 | 502>> = {
   invalid_code: 400,
   invalid_login_code: 400,
-  ACCOUNT_NOT_FOUND: 404,
   account_not_found: 404,
   login_not_found: 404,
   account_exists: 409,
   account_identity_mismatch: 409,
   login_flow_required: 409,
   login_in_progress: 409,
+  login_session_conflict: 409,
   login_not_ready: 409,
-  ACCOUNT_UPDATE_FAILED: 502,
-  ACCOUNT_DELETE_FAILED: 502,
+  account_update_failed: 502,
+  account_delete_failed: 502,
   login_spawn_failed: 502,
   login_stdin_failed: 502,
   login_process_failed: 502,
@@ -74,7 +74,7 @@ export function registerClaudeAccountPoolRoutes(
       const accountId = accountIdOrError(reply, request.params.id);
       if (accountId === undefined) return reply;
       const patch = parseAccountPatch(request.body);
-      if (patch === null) return sendPoolError(reply, 400, "invalid_request", "Invalid Claude account update.");
+      if (patch === null) return sendPoolError(reply, 400, "invalid_request", "올바르지 않은 Claude 계정 수정 요청입니다.");
       return sendPoolCommand(
         reply,
         options,
@@ -104,7 +104,7 @@ export function registerClaudeAccountPoolRoutes(
     "/api/nodes/:node_id/claude-auth/logins",
     async (request, reply) => {
       const accountId = parseLoginStartBody(request.body);
-      if (accountId === undefined) return sendPoolError(reply, 400, "invalid_request", "Invalid Claude login request.");
+      if (accountId === undefined) return sendPoolError(reply, 400, "invalid_request", "올바르지 않은 Claude 로그인 요청입니다.");
       return sendPoolCommand(
         reply,
         options,
@@ -133,7 +133,7 @@ export function registerClaudeAccountPoolRoutes(
     "/api/nodes/:node_id/claude-auth/logins/:login_id/code",
     async (request, reply) => {
       const code = parseLoginCode(request.body);
-      if (code === null) return sendPoolError(reply, 400, "invalid_request", "Invalid Claude login code.");
+      if (code === null) return sendPoolError(reply, 400, "invalid_request", "올바르지 않은 Claude 인증 코드입니다.");
       return sendPoolCommand(
         reply,
         options,
@@ -186,9 +186,9 @@ async function sendPoolCommand(
   },
 ): Promise<FastifyReply> {
   const node = options.registry.getConnectedNode(nodeId);
-  if (node === undefined) return sendPoolError(reply, 404, "node_not_connected", "Node is not connected.");
+  if (node === undefined) return sendPoolError(reply, 404, "node_not_connected", "노드가 연결되어 있지 않습니다.");
   if (!supportsClaudeAccountPool(node.capabilities)) {
-    return sendPoolError(reply, 409, "claude_account_pool_unsupported", "Node does not support Claude account pools.");
+    return sendPoolError(reply, 409, "claude_account_pool_unsupported", "이 노드는 Claude 계정 풀을 지원하지 않습니다.");
   }
 
   try {
@@ -213,7 +213,7 @@ async function sendPoolCommand(
     const code = error instanceof Error && error.name === "PendingNodeCommandTimeoutError"
       ? "node_command_timeout"
       : "node_command_failed";
-    return sendPoolError(reply, 502, code, "Claude account node request failed.");
+    return sendPoolError(reply, 502, code, "Claude 계정 노드 요청을 처리하지 못했습니다.");
   }
 }
 
@@ -239,27 +239,29 @@ function sendPoolError(
 
 function errorMessage(code: string): string {
   switch (code) {
-    case "account_exists": return "Claude account already exists.";
-    case "account_identity_mismatch": return "The authenticated Claude account did not match.";
-    case "account_not_found": return "Claude account not found.";
-    case "login_not_found": return "Claude login flow not found.";
-    case "login_flow_required": return "Use the Claude account login flow.";
-    case "login_in_progress": return "A Claude login is already in progress.";
+    case "account_exists": return "이미 등록된 Claude 계정입니다.";
+    case "account_identity_mismatch": return "인증된 Claude 계정이 요청한 계정과 일치하지 않습니다.";
+    case "account_not_found": return "Claude 계정을 찾을 수 없습니다.";
+    case "login_not_found": return "Claude 로그인 세션을 찾을 수 없습니다.";
+    case "login_flow_required": return "Claude 계정 로그인 절차를 사용해 주세요.";
+    case "login_in_progress":
+    case "login_session_conflict": return "이미 진행 중인 Claude 로그인이 있습니다.";
+    case "login_not_ready": return "아직 인증 코드를 입력할 수 있는 상태가 아닙니다.";
     case "invalid_code":
-    case "invalid_login_code": return "Invalid Claude login code.";
-    default: return "Claude account request was rejected.";
+    case "invalid_login_code": return "올바르지 않은 Claude 인증 코드입니다.";
+    default: return "Claude 계정 요청이 거절되었습니다.";
   }
 }
 
 function safeErrorCode(value: unknown): string {
   return typeof value === "string" && /^[a-zA-Z0-9_.-]{1,80}$/.test(value)
-    ? value
+    ? value.toLowerCase()
     : "node_command_rejected";
 }
 
 function accountIdOrError(reply: FastifyReply, value: string): string | undefined {
   if (isAccountId(value)) return value;
-  sendPoolError(reply, 400, "invalid_request", "Invalid Claude account id.");
+  sendPoolError(reply, 400, "invalid_request", "올바르지 않은 Claude 계정 ID입니다.");
   return undefined;
 }
 

@@ -118,7 +118,7 @@ describe("Claude account-pool route and usage-summary integration", () => {
       expect(failedRefresh.status).toBe(502);
       expect(await failedRefresh.json()).toEqual({
         code: "node_command_failed",
-        message: "Claude account node request failed.",
+        message: "Claude 계정 노드 요청을 처리하지 못했습니다.",
       });
       await expectSummaryAndStream(origin, reader, buffered, {
         accountIds: [loggedInAccount.id],
