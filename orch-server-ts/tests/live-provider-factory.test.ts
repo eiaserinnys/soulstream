@@ -28,6 +28,7 @@ import type {
 } from "../src/attachments/attachment_routes.js";
 import type { UiEventRepository } from "../src/ui-events/ui_event_routes.js";
 import { UI_EVENT_COLLECTION_DISABLED } from "../src/ui-events/ui_event_settings.js";
+import type { UsageSummaryClaudeAccount } from "../src/usage/provider_usage_wire.js";
 
 const config = parseOrchServerConfig({
   environment: "test",
@@ -714,6 +715,7 @@ function createUsageSummaryRoutes() {
         nodes: [],
       }),
       getLimitRejection: () => null,
+      getClaudePoolAccountsForAvailability: (_nodeId: string, accounts: readonly UsageSummaryClaudeAccount[]) => accounts,
     },
   };
 }

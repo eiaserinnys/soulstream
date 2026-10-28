@@ -58,7 +58,7 @@ export function resolveClaudePoolAvailability(
         });
       }
     }
-    if (activeBlocks.length === 0) return availablePreset(base, stale);
+    if (activeBlocks.length === 0) return availablePreset(base, stale || account.auth_state === "idle");
 
     const indefinite = activeBlocks.some((block) => block.until === null);
     const accountReset = indefinite

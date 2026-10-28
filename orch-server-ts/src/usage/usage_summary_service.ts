@@ -22,6 +22,8 @@ import {
   type UsageSummaryClaudeAccount,
   type UsageSummaryClaudeAccountPool,
 } from "./provider_usage_wire.js";
+import { mergeClaudePoolObservations } from "./claude_account_pool_observation.js";
+import { providerRequestKey, resolveProviderOwners } from "./usage_summary_account_groups.js";
 
 export const USAGE_SUMMARY_NODE_TIMEOUT_MS = 15_000;
 
@@ -254,6 +256,27 @@ export class UsageSummaryService {
     });
   }
 
+  getClaudePoolAccountsForAvailability(
+    nodeId: string,
+    accounts: readonly UsageSummaryClaudeAccount[],
+  ): readonly UsageSummaryClaudeAccount[] {
+    if (!supportsClaudeAccountPool(this.registry.getConnectedNode(nodeId)?.capabilities)) return accounts;
+    const group = this.sharedAccountGroups.find((candidate) =>
+      candidate.provider === "claude" && candidate.nodeIds.includes(nodeId));
+    if (group === undefined) return accounts;
+
+    const peerAccounts = group.nodeIds.flatMap((memberNodeId) => {
+      if (memberNodeId === nodeId) return [];
+      const member = this.registry.getConnectedNode(memberNodeId);
+      if (!supportsClaudeAccountPool(member?.capabilities)) return [];
+      const provider = this.nodes.get(memberNodeId)?.snapshot?.providers.claude;
+      return provider?.mode === "pool" && provider.accounts !== undefined
+        ? [provider.accounts]
+        : [];
+    });
+    return mergeClaudePoolObservations(accounts, peerAccounts);
+  }
+
   private async runCollection(): Promise<void> {
     const cycleStartedAt = this.now().toISOString();
     const connectedNodes = this.registry.listConnectedNodes();
@@ -400,32 +423,6 @@ export class UsageSummaryService {
     }
     return response;
   }
-}
-
-function resolveProviderOwners(
-  connectedNodes: readonly NodeConnectionSnapshot[],
-  groups: readonly UsageSummarySharedAccountGroup[],
-): Map<string, string> {
-  const owners = new Map<string, string>();
-  const connectedById = new Map(connectedNodes.map((node) => [node.nodeId, node]));
-  for (const group of groups) {
-    const connectedMembers = group.nodeIds
-      .map((nodeId) => connectedById.get(nodeId))
-      .filter((node): node is NodeConnectionSnapshot => node !== undefined);
-    const sharedMembers = group.provider === "claude"
-      ? connectedMembers.filter((node) => !supportsClaudeAccountPool(node.capabilities))
-      : connectedMembers;
-    const representative = sharedMembers[0]?.nodeId;
-    if (representative === undefined) continue;
-    for (const node of sharedMembers) {
-      owners.set(providerRequestKey(node.nodeId, group.provider), representative);
-    }
-  }
-  return owners;
-}
-
-function providerRequestKey(nodeId: string, provider: UsageSummaryProviderName): string {
-  return `${nodeId}\u0000${provider}`;
 }
 
 function summarizeNode(state: MutableNodeState): UsageSummaryNode {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   resolvePresetAvailability,
@@ -202,7 +202,7 @@ describe("resolvePresetAvailability", () => {
   it("treats idle accounts as runnable and fully disabled or unauthenticated pools as unavailable", () => {
     expect(resolvePresetAvailability(
       "node-a", preset, summary(poolProvider([poolAccount("account-a", null, "idle")])), now,
-    )).toMatchObject({ available: true, reason: null });
+    )).toMatchObject({ available: true, reason: null, usage_warning: true });
     expect(resolvePresetAvailability(
       "node-a", preset, summary(poolProvider([poolAccount("account-a", null, "needs_relogin")])), now,
     )).toMatchObject({ available: false, reason: "not_authenticated" });
@@ -624,6 +624,7 @@ describe("ModelPresetAvailabilityService limit rejection", () => {
       {
         getSummary: () => summary(provider()),
         getLimitRejection: () => activeRejection,
+        getClaudePoolAccountsForAvailability: (_nodeId, accounts) => accounts,
       },
       () => now,
     );
@@ -639,6 +640,37 @@ describe("ModelPresetAvailabilityService limit rejection", () => {
     );
     expect(service.requireAvailable("node-a", preset.id, { allowLimitRejected: true }))
       .toMatchObject({ available: false, reason: "limit_rejected" });
+  });
+
+  it("uses UUID-correlated account observations when resolving pool availability", () => {
+    const account = poolAccount("account-a");
+    const observedAccount = {
+      ...account,
+      blocked: { until: "2026-07-28T04:00:00.000Z", scope: "all" as const },
+      observed_at: "2026-07-28T03:30:00.000Z",
+    };
+    const getClaudePoolAccountsForAvailability = vi.fn(
+      (_nodeId: string, accounts: readonly typeof account[]) =>
+        accounts.map((candidate) => candidate.id === account.id ? observedAccount : candidate),
+    );
+    const service = new ModelPresetAvailabilityService(
+      {
+        getConnectedNode: () => ({ nodeId: "node-a", modelPresets: [preset] } as unknown as NodeConnectionSnapshot),
+      },
+      {
+        getSummary: () => summary(poolProvider([account])),
+        getLimitRejection: () => null,
+        getClaudePoolAccountsForAvailability,
+      },
+      () => now,
+    );
+
+    expect(service.listForNode("node-a")?.[0]).toMatchObject({
+      available: false,
+      reason: "limit_rejected",
+      resets_at: "2026-07-28T04:00:00.000Z",
+    });
+    expect(getClaudePoolAccountsForAvailability).toHaveBeenCalledWith("node-a", [account]);
   });
 });
 
@@ -691,7 +723,11 @@ it("accepts advertised Antigravity presets in the shared node-list API availabil
   const presets = ["gemini-3.8-flash", "gemini-4-argon"].map(id => ({ ...preset, id, backend: "antigravity", usage_provider: "antigravity", usage_model_id: id }));
   const service = new ModelPresetAvailabilityService(
     { getConnectedNode: () => ({ nodeId: "node-a", modelPresets: presets } as unknown as NodeConnectionSnapshot) },
-    { getSummary: () => ({ ...usage, nodes: [{ ...usage.nodes[0]!, providers: { ...usage.nodes[0]!.providers, antigravity } }] }), getLimitRejection: () => null },
+    {
+      getSummary: () => ({ ...usage, nodes: [{ ...usage.nodes[0]!, providers: { ...usage.nodes[0]!.providers, antigravity } }] }),
+      getLimitRejection: () => null,
+      getClaudePoolAccountsForAvailability: (_nodeId, accounts) => accounts,
+    },
     () => now,
   );
   expect(service.listForNode("node-a")).toEqual(presets.map(p => expect.objectContaining({ id: p.id, backend: "antigravity", available: true, weekly_headroom: expect.objectContaining({ headroom: expect.any(Number), remaining_percent: 90 }) })));

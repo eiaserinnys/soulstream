@@ -92,6 +92,77 @@ describe("UsageSummaryService", () => {
       .not.toHaveProperty("accounts");
   });
 
+  it("uses the freshest observation for a same-UUID pool account without copying sibling accounts", async () => {
+    const accountId = "11111111-1111-4111-8111-111111111111";
+    const localAccount = {
+      ...poolAccount(accountId),
+      usage: { five_hour: { used_percent: 30, resets_at: null }, seven_day: null, fable_weekly: null },
+      observed_at: "2026-10-28T03:00:00.000Z",
+    };
+    const newerAccount = {
+      ...poolAccount(accountId),
+      usage: { five_hour: { used_percent: 85, resets_at: null }, seven_day: null, fable_weekly: null },
+      observed_at: "2026-10-28T03:30:00.000Z",
+      blocked: { until: "2026-10-28T04:00:00.000Z", scope: "all" as const },
+    };
+    const localOnlyAccount = poolAccount("22222222-2222-4222-8222-222222222222");
+    const siblingOnlyAccount = poolAccount("33333333-3333-4333-8333-333333333333");
+    const registry = fakeRegistry(["pool-a", "pool-b", "legacy-node"]);
+    registry.getConnectedNode("pool-a")!.capabilities = { claude_account_pool_v1: true };
+    registry.getConnectedNode("pool-b")!.capabilities = { claude_account_pool_v1: true };
+    const bridge = {
+      sendPendingCommand: vi.fn(async ({ node }: { node: { nodeId: string } }) => {
+        const response = successResponse(0);
+        if (node.nodeId !== "legacy-node") {
+          Object.assign(response.data.providers.claude, {
+            mode: "pool",
+            accounts: node.nodeId === "pool-a"
+              ? [localAccount, localOnlyAccount]
+              : [newerAccount, siblingOnlyAccount],
+            pool: null,
+            fable_pool: null,
+          });
+        }
+        return response;
+      }),
+    } as unknown as UsageSummaryBridge;
+    const service = new UsageSummaryService({
+      registry,
+      bridge,
+      pollIntervalMs: 300_000,
+      sharedAccountGroups: [{ provider: "claude", nodeIds: ["pool-a", "pool-b", "legacy-node"] }],
+      now: () => new Date("2026-10-28T04:00:00.000Z"),
+    });
+    await service.collectOnce();
+    expect(registry.getConnectedNode("pool-b")?.capabilities)
+      .toMatchObject({ claude_account_pool_v1: true });
+    expect(service.getSummary().nodes.find((node) => node.nodeId === "pool-b")?.providers.claude)
+      .toMatchObject({ mode: "pool", accounts: [
+        { id: accountId, observed_at: newerAccount.observed_at },
+        { id: siblingOnlyAccount.id },
+      ] });
+
+    const summaryAccounts = service.getSummary().nodes
+      .find((node) => node.nodeId === "pool-a")?.providers.claude?.accounts ?? [];
+    const correlated = service.getClaudePoolAccountsForAvailability("pool-a", summaryAccounts);
+
+    expect(correlated).toMatchObject([
+      {
+        id: accountId,
+        usage: newerAccount.usage,
+        observed_at: newerAccount.observed_at,
+        blocked: newerAccount.blocked,
+      },
+      { id: localOnlyAccount.id },
+    ]);
+    expect(service.getSummary().nodes.find((node) => node.nodeId === "pool-a")?.providers.claude?.accounts)
+      .toMatchObject([
+        { id: accountId, usage: localAccount.usage, observed_at: localAccount.observed_at, blocked: null },
+        { id: localOnlyAccount.id },
+      ]);
+    expect(correlated.map((account) => account.id)).not.toContain(siblingOnlyAccount.id);
+  });
+
   it("refreshes only the target Claude provider and publishes the exact GET snapshot", async () => {
     const registry = fakeRegistry(["node-a", "node-b"]);
     let refreshedAccounts = [poolAccount("account-a")];
@@ -120,6 +191,7 @@ describe("UsageSummaryService", () => {
       pollIntervalMs: 300_000,
       sharedAccountGroups: [],
       onCollected,
+      now: () => new Date("2026-10-28T04:00:00.000Z"),
     });
     await service.collectOnce();
     const published: unknown[] = [];
