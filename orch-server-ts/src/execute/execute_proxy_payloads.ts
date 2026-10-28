@@ -39,6 +39,7 @@ export type ExecuteProxyNewProviderRequest = {
   system_prompt?: string;
   model?: string;
   model_preset?: string;
+  model_preset_fallbacks?: string[];
   reasoningEffort?: ReasoningEffort;
   caller_info: ExecuteProxyCallerInfo;
   extra_context_items?: ExecuteProxyContextItem[];
@@ -161,6 +162,9 @@ export function parseExecuteProxyPayload(
   if (optionalFields.value.model_preset !== undefined) {
     newValue.model_preset = optionalFields.value.model_preset;
   }
+  if (optionalFields.value.model_preset_fallbacks !== undefined) {
+    newValue.model_preset_fallbacks = optionalFields.value.model_preset_fallbacks;
+  }
   if (optionalFields.value.reasoningEffort !== undefined) {
     newValue.reasoningEffort = optionalFields.value.reasoningEffort;
   }
@@ -251,6 +255,15 @@ function parseNewExecuteOptionalFields(
   if (!model.ok) return model;
   const modelPreset = optionalNonBlankString(body, "model_preset");
   if (!modelPreset.ok) return modelPreset;
+  const modelPresetFallbacks = optionalStringArray(body, "model_preset_fallbacks");
+  if (!modelPresetFallbacks.ok) return modelPresetFallbacks;
+  if (modelPresetFallbacks.value?.some((presetId) => presetId.trim().length === 0)) {
+    return {
+      ok: false,
+      statusCode: 422,
+      detail: "model_preset_fallbacks must contain non-blank strings",
+    };
+  }
   const reasoningEffort = optionalReasoningEffort(body, "reasoningEffort");
   if (!reasoningEffort.ok) return reasoningEffort;
 
@@ -266,6 +279,7 @@ function parseNewExecuteOptionalFields(
       system_prompt: systemPrompt.value,
       model: model.value,
       model_preset: modelPreset.value,
+      model_preset_fallbacks: modelPresetFallbacks.value,
       reasoningEffort: reasoningEffort.value,
     },
   };

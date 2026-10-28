@@ -26,6 +26,45 @@ function fakeProvider(): ExecuteProxyProvider {
 }
 
 describe("execute proxy attachment input", () => {
+  it("passes ordered model preset fallbacks for new requests", async () => {
+    const provider = fakeProvider();
+    const app = createApp({ config, executeProxyRoutes: { provider } });
+    try {
+      const response = await app.inject({ method: "POST", url: "/api/execute", payload: {
+        prompt: "hello",
+        profile: "codex-agent",
+        model_preset_fallbacks: ["gemini-4-argon", "claude-opus", "codex-6.1-sol"],
+      } });
+
+      expect(response.statusCode).toBe(200);
+      expect(provider.executeNew).toHaveBeenCalledWith(
+        expect.objectContaining({
+          model_preset_fallbacks: ["gemini-4-argon", "claude-opus", "codex-6.1-sol"],
+        }),
+        expect.anything(),
+      );
+    } finally { await app.close(); }
+  });
+
+  it.each([
+    ["non-array", "claude-opus"],
+    ["non-string entry", ["claude-opus", 1]],
+    ["blank entry", ["claude-opus", "  "]],
+  ])("rejects %s model preset fallbacks with 422", async (_label, fallbacks) => {
+    const provider = fakeProvider();
+    const app = createApp({ config, executeProxyRoutes: { provider } });
+    try {
+      const response = await app.inject({ method: "POST", url: "/api/execute", payload: {
+        prompt: "hello",
+        profile: "codex-agent",
+        model_preset_fallbacks: fallbacks,
+      } });
+
+      expect(response.statusCode).toBe(422);
+      expect(provider.executeNew).not.toHaveBeenCalled();
+    } finally { await app.close(); }
+  });
+
   it("passes attachment ids and paths for new requests and hands the request to the provider", async () => {
     const provider = fakeProvider();
     const app = createApp({ config, executeProxyRoutes: { provider } });
@@ -58,6 +97,7 @@ describe("execute proxy attachment input", () => {
       const response = await app.inject({ method: "POST", url: "/api/execute", payload: {
         prompt: "", agent_session_id: "sess-old",
         attachment_ids: ["att-1", "att-2"], attachmentPaths: ["/incoming/pending/a.png"],
+        model_preset_fallbacks: ["codex-6.1-sol"],
       } });
 
       expect(response.statusCode).toBe(200);

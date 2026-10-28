@@ -221,6 +221,73 @@ describe("live execute proxy provider", () => {
     await expect(resultBody(result)).resolves.toContain('"node_id":"node-hybrid"');
   });
 
+  it("reselects the chosen fallback preset and sends its backend preset", async () => {
+    const chooseUsablePreset = vi.fn(() => "codex-6.1-sol");
+    const requireAvailable = vi.fn();
+    const harness = createHarness({
+      modelPresetAvailability: { chooseUsablePreset, requireAvailable },
+    });
+    const connectionId = harness.registerNode({
+      nodeId: "node-mixed",
+      agents: [{
+        id: "defaulted-agent",
+        backend: "claude",
+        default_preset: "gemini-4-argon",
+      }],
+      supportedBackends: ["antigravity", "claude", "codex"],
+      modelPresets: [
+        { id: "gemini-4-argon", label: "Argon", backend: "antigravity", available: true, usage_provider: "antigravity" },
+        { id: "claude-opus", label: "Opus", backend: "claude", available: true, usage_provider: "claude" },
+        { id: "codex-6.1-sol", label: "Sol", backend: "codex", available: true, usage_provider: "codex" },
+      ],
+    });
+    const selectNodeForCreate = vi.spyOn(harness.router, "selectNodeForCreate");
+    const logInfo = vi.fn();
+    const sent = harness.attachTransport("node-mixed", connectionId, (message) => {
+      harness.receive("node-mixed", connectionId, {
+        type: "session_created",
+        requestId: message.requestId,
+        agentSessionId: message.agentSessionId,
+      });
+      harness.receive("node-mixed", connectionId, {
+        type: "event",
+        agentSessionId: message.agentSessionId,
+        event: { type: "complete", result: "done", _event_id: 14 },
+      });
+    });
+
+    await harness.provider.executeNew({
+      prompt: "hello",
+      profile: "defaulted-agent",
+      model_preset_fallbacks: ["claude-opus", "codex-6.1-sol"],
+      caller_info: { source: "execute-proxy" },
+    }, { log: { info: logInfo } } as never);
+
+    expect(chooseUsablePreset).toHaveBeenCalledWith(
+      "node-mixed",
+      ["gemini-4-argon", "claude-opus", "codex-6.1-sol"],
+    );
+    expect(selectNodeForCreate).toHaveBeenCalledTimes(2);
+    expect(selectNodeForCreate).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      nodeId: "node-mixed",
+      profileId: "defaulted-agent",
+      modelPresetId: "codex-6.1-sol",
+    }));
+    expect(selectNodeForCreate.mock.results[1]?.value.backend).toBe("codex");
+    expect(requireAvailable).toHaveBeenCalledWith("node-mixed", "codex-6.1-sol");
+    expect(sent[0]).toMatchObject({
+      type: "create_session",
+      profile: "defaulted-agent",
+      model_preset: "codex-6.1-sol",
+    });
+    expect(logInfo).toHaveBeenCalledWith(expect.objectContaining({
+      nodeId: "node-mixed",
+      firstPresetId: "gemini-4-argon",
+      chosenPresetId: "codex-6.1-sol",
+      skippedReason: expect.any(String),
+    }), "Execute model preset fallback selected");
+  });
+
   it("closes a new execute stream when a session error update arrives", async () => {
     const harness = createHarness();
     const connectionId = harness.registerNode({
@@ -846,7 +913,8 @@ function createHarness(options: {
   createSessionReconcileTimeoutMs?: number;
   findSessionOwnerNodeId?: (agentSessionId: string) => Promise<string | null>;
   findRescuableSessionOwnerNodeId?: (agentSessionId: string) => Promise<string | null>;
-  modelPresetAvailability?: Pick<ModelPresetAvailabilityService, "requireAvailable">;
+  modelPresetAvailability?: Pick<ModelPresetAvailabilityService, "requireAvailable">
+    & Partial<Pick<ModelPresetAvailabilityService, "chooseUsablePreset">>;
 } = {}) {
   const registry = new InMemoryNodeRegistry({
     nowMs: () => 1_700_000_000_000,
@@ -875,6 +943,7 @@ function createHarness(options: {
 
   return {
     registry,
+    router,
     provider,
     sessionEventHub,
     registerNode: (input: {
