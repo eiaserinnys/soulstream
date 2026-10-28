@@ -8,7 +8,7 @@ import type {
   ClaudeAccountRejectInput,
   ClaudeAccountReleaseInput,
   ClaudeAccountSelectionInput,
-  ClaudeAccountSelectionResult,
+  ClaudeAccountSelectionResponse,
 } from "../claude_accounts/types.js";
 import type { ClaudeAccountTurnPort } from "../engine/claude_account_pool.js";
 
@@ -189,13 +189,13 @@ export function createRunnerChildEngine(
 class HostClaudeAccountTurnPort implements ClaudeAccountTurnPort {
   constructor(private readonly host: RunnerHostRequestClient) {}
 
-  async select(input: ClaudeAccountSelectionInput): Promise<ClaudeAccountSelectionResult | null> {
+  async select(input: ClaudeAccountSelectionInput): Promise<ClaudeAccountSelectionResponse> {
     return await this.host.call(
       "claude_accounts",
       "select",
       [input.session_id, input],
       hostOptions(),
-    ) as ClaudeAccountSelectionResult | null;
+    ) as ClaudeAccountSelectionResponse;
   }
 
   async reject(input: ClaudeAccountRejectInput): Promise<void> {

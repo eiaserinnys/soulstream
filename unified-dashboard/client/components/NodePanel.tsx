@@ -9,7 +9,7 @@ import { useMemo, useState } from "react";
 import { cn, nodeIdToHue, useTheme, ScrollArea } from "@seosoyoung/soul-ui";
 import { useOrchestratorStore } from "../store/orchestrator-store";
 import { CogitoHealthPanel } from "./CogitoHealthPanel";
-import { NodeClaudeAuthPanel } from "./NodeClaudeAuthPanel";
+import { NodeClaudeAuthGate } from "./NodeClaudeAuthGate";
 
 export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sampleNodes?: ReturnType<typeof useOrchestratorStore.getState>["nodes"] } = {}) {
   const storedNodes = useOrchestratorStore((s) => s.nodes);
@@ -84,7 +84,7 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
                       </span>
                     </div>
                     {/* 확장 패널 — Claude Code 크레덴셜 */}
-                    {isExpanded && <NodeClaudeAuthPanel request={request} nodeId={node.nodeId} />}
+                    {isExpanded && <NodeClaudeAuthGate request={request} nodeId={node.nodeId} />}
                   </div>
                 );
               })}

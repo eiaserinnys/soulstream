@@ -45,6 +45,7 @@ import { ChatInputAccessoriesReviewSample, ChatUiMessageReviewSample } from "./C
 import { ChatUiReviewSample } from './ChatUiReviewSample';
 import { PersistentReportReviewSample } from './PersistentReportReviewSample';
 import { PersistentSessionWeeklyUsageReviewSample } from './PersistentSessionWeeklyUsageReviewSample';
+import { ClaudeAccountPoolReviewSample, ClaudePoolPasReviewSample } from './ClaudeAccountPoolReviewSample';
 import { UsageShareRow } from "../components/usage-stats/UsageShareRow";
 import "../components/usage-stats/usage-stats.css";
 
@@ -116,6 +117,14 @@ export function ComponentsReviewPage() {
   };
 
   const sampleParams = new URLSearchParams(window.location.search);
+  if (sampleParams.get('sample') === 'claude-accounts') return <div className="v3-detail-pane v3-detail-pane--inline" data-testid="claude-accounts-review">
+    <p className="v3-components-label">ClaudeAccountPoolPanel · 실제 설정 컴포넌트 · 가짜 API</p>
+    <ClaudeAccountPoolReviewSample />
+  </div>;
+  if (sampleParams.get('sample') === 'claude-pas') return <div className="v3-detail-pane v3-detail-pane--inline" data-testid="claude-pas-review">
+    <p className="v3-components-label">PersistentSessionWeeklyUsage · Claude 계정 풀 · 가짜 요약</p>
+    <ClaudePoolPasReviewSample availableCount={Number(sampleParams.get('count') ?? 2)} />
+  </div>;
   if (sampleParams.get('sample') === 'pas-card') return <div className="v3-detail-pane v3-detail-pane--inline"><p className="v3-components-label">PAS 카드 펼친 장</p><PersistentReportReviewSample cardPreview bubble before={sampleParams.get('before') === '1'} /></div>;
   const completionState = sampleParams.get('state');
   if (sampleParams.get('sample') === 'pas-completion' && ['review', 'blocked', 'undo', 'undo-only'].includes(completionState ?? '')) {
@@ -352,6 +361,7 @@ export function ComponentsReviewPage() {
             <ComponentsReviewControls/>
             <Sample name="PersistentSessionDetails / PersistentSessionMonitoring" state="표시 필드 · 판단 있음/없음 · 값 있음 · 기록 없음 · 불러오는 중 · 조회 실패"><PersistentSessionSettingsReviewSample/></Sample>
             <Sample name="PersistentSessionWeeklyUsage" state="1101px 이상 · 노드 3/2/0개 게이지 · 노드 이동 · 대기 · 조회 실패 · 갱신 지연"><PersistentSessionWeeklyUsageReviewSample/></Sample>
+            <Sample name="ClaudeAccountPoolPanel / ClaudeAuthLoginSheet" state="가짜 API · 계정 정렬 · 삭제 확인 · 로그인"><ClaudeAccountPoolReviewSample/></Sample>
             <Sample name="PersistentSessionInstructions" state="빈 목록 · 항목 여럿 · 편집 중 · 상한 안내"><PersistentSessionInstructionsReviewSample/></Sample>
             <Sample name="PersistentSessionPortraitToggle" state="표시 · 숨김"><PersistentSessionPortraitToggleReviewSample/></Sample>
             <Sample name="CardOrchestrationSettingsForm / Input / Button" state="실제 설정 폼 · 모델 순서 · 저장 · 로컬 샘플"><CardOrchestrationSettingsSample/></Sample>

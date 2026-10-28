@@ -127,6 +127,14 @@ P8 코드 대조 커밋 SHA: `82b65bfe971e8a1ab71d99c9a43d9342fd6a9844`
 
 풀의 SDK resume은 `claude_account_pool.ts:useLocalClaudeAccountPoolResume`을 거쳐 DB의 main·subagent transcript와 metadata를 `claude_account_pool_transcript.ts:materializeClaudeAccountTranscript`가 공유 projects에 반영한다. SDK에는 빈 load 결과를 돌려 임시 config 복원을 막고 선택 프로필로 spawn하며 append·list·delete는 기존 SessionStore에 전달한다. foreground 완료 뒤에도 Query가 살아 있으면 점유를 유지하고, Query pump와 실제 child가 모두 종료된 뒤 한 번 정산한다.
 
+### P5 같은 턴 한도 전환
+
+`claude_sdk_rate_limit_switch_gate.ts:ClaudeSdkRateLimitSwitchGate`는 `rate_limit status=rejected`와 `StopFailure error=rate_limit`을 순서에 상관없이 모두 확인한 뒤에만 `claude_sdk_client.ts`의 계정 전환 callback으로 넘긴다. 경고와 한 신호만으로는 전환하지 않는다. persistent 경로는 신호와 사이 이벤트를 foreground 출력 및 `runtimeEventSink`보다 먼저 보류하므로, 전환 시 중간 terminal을 밖으로 내보내지 않는다. 일반 실패는 기존 fatal 경로를 쓴다.
+
+`claude_adapter.ts`가 실패 계정·창의 거부를 host에 기록한다. `five_hour`와 `seven_day`는 `all`, Fable 모델의 전용 창은 `fable` scope다. 처음 선택에서 받은 `available_count`가 그 턴의 시도 상한이며, `attempted_ids`는 다음 선택의 `exclude_ids`로 전달된다. 이어 갈 Claude session ID가 있으면 원 입력 대신 새 UUID의 continuation 한 건으로 같은 SessionKey·workspace·transcript를 resume한다. 이전 Query, pump, child 종료와 host 점유 정산이 끝난 뒤 다음 profile을 연다. `ClaudeSdkUsageCarry`는 실패 시도의 Result 사용량과 비용을 최종 Result에 합친다. one-shot과 persistent/native follow-up은 같은 callback을 쓴다.
+
+session ID가 없는 첫 턴은 입력 전달 상태가 `not_sent`로 증명된 경우에만 원 입력을 다음 계정에 한 번 보낸다. `ambiguous`면 원 입력을 재전송하지 않고 실패한다. `continuation_uuid`와 `continuation_sent`는 runner SQLite에 기록하며, 재시작 시 미송신 UUID는 한 번 보내고 이미 송신된 continuation은 재실행하지 않는다. 98% 선제 회피는 기존 선택 단계가 맡고, 풀 flag가 꺼진 경로와 Kimi는 전환 callback을 사용하지 않는다.
+
 이 장을 갱신해야 하는 변경 부류: intervene 진입·delivery admission/route·auto-resume·runner spawn·context 주입·turn loop·runtime follow-up receipt·terminal persistence/projection·completion notification 변경.
 
 ## 로컬 MCP 새 세션 생성 전 가용 확인

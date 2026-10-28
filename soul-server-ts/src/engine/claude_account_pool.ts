@@ -6,13 +6,14 @@ import type {
   ClaudeAccountRejectInput,
   ClaudeAccountReleaseInput,
   ClaudeAccountSelectionInput,
+  ClaudeAccountSelectionResponse,
   ClaudeAccountSelectionResult,
 } from "../claude_accounts/types.js";
 
 export type ClaudeAccountPoolTurn = ClaudeAccountSelectionResult;
 
 export interface ClaudeAccountTurnPort {
-  select(input: ClaudeAccountSelectionInput): Promise<ClaudeAccountSelectionResult | null>;
+  select(input: ClaudeAccountSelectionInput): Promise<ClaudeAccountSelectionResponse>;
   reject(input: ClaudeAccountRejectInput): Promise<void>;
   release(input: ClaudeAccountReleaseInput): Promise<void>;
   restoreActiveBinding?(input: { session_id: string; account_id: string }): Promise<void>;

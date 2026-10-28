@@ -1,7 +1,13 @@
 import * as fs from "node:fs";
 import { ClaudeAccountNotFoundError } from "./errors.js";
-import { computePoolSummary, pickBestAccountForScope } from "./pool.js";
 import {
+  computeEarliestAvailableAt,
+  computePoolSummary,
+  pickBestAccountForScope,
+} from "./pool.js";
+import {
+  countSelectableCandidates,
+  isFableModel,
   projectPublicBlockView,
   selectBestCandidate,
   type SelectableAccountCandidate,
@@ -17,7 +23,7 @@ import type {
   ClaudeAccountRejectInput,
   ClaudeAccountReleaseInput,
   ClaudeAccountSelectionInput,
-  ClaudeAccountSelectionResult,
+  ClaudeAccountSelectionResponse,
   ClaudeAccountUpdatePatch,
   ClaudeAccountView,
   ClaudeLoginAccountPort,
@@ -173,7 +179,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
 
   async select(
     input: ClaudeAccountSelectionInput,
-  ): Promise<ClaudeAccountSelectionResult | null> {
+  ): Promise<ClaudeAccountSelectionResponse> {
     const nowMs = this.now();
     const accounts = this.store.readAccounts();
     const bindings = this.store.readBindings();
@@ -203,7 +209,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       null;
     const boundTurnId = existingBinding?.turn_id ?? null;
 
-    const chosen = selectBestCandidate({
+    const selectionParams = {
       candidates,
       model: input.model,
       boundAccountId,
@@ -211,7 +217,9 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       turnId: input.turn_id,
       excludeIds: input.exclude_ids,
       nowMs,
-    });
+    };
+    const availableCount = countSelectableCandidates(selectionParams);
+    const chosen = selectBestCandidate(selectionParams);
 
     const previousActiveAccountId = this.sessionActivity.assignment(input.session_id);
     if (!chosen) {
@@ -219,7 +227,16 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
         this.sessionActivity.clearAssignment(input.session_id, previousActiveAccountId);
         this.maybeFinalizeDeferredRetire(previousActiveAccountId);
       }
-      return null;
+      return {
+        pool_exhausted: true,
+        available_count: 0,
+        earliest_available_at: computeEarliestAvailableAt(
+          candidates,
+          blocks,
+          isFableModel(input.model) ? "fable" : "all",
+          nowMs,
+        ),
+      };
     }
 
     this.store.ensureProfileSymlinks(chosen.id);
@@ -239,7 +256,11 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       this.store.writeBindings(bindings);
     }
 
-    return { account_id: chosen.id, config_dir: this.store.profileDir(chosen.id) };
+    return {
+      account_id: chosen.id,
+      config_dir: this.store.profileDir(chosen.id),
+      available_count: availableCount,
+    };
   }
 
   async reject(input: ClaudeAccountRejectInput): Promise<void> {

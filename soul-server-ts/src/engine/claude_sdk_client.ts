@@ -7,9 +7,14 @@ import type {
 import type { Logger } from "pino";
 
 import type { RunnerControlFrame } from "../runner/frame_protocol.js";
-import type { ClaudeClient, ClaudeRunOptions } from "./claude_adapter.js";
+import type {
+  ClaudeAccountRateLimitSwitchRequest,
+  ClaudeClient,
+  ClaudeRunOptions,
+} from "./claude_adapter.js";
 import { AsyncMutex } from "./async_mutex.js";
 import { ClaudeAccountQuerySettlement } from "./claude_account_query_settlement.js";
+import { ClaudeSdkAccountTurnDriver } from "./claude_sdk_account_turn_driver.js";
 import {
   compactClaudeSdkSession,
   type ClaudeSdkClientCompactOptions,
@@ -23,7 +28,6 @@ import {
   type EventQueue,
 } from "./claude_sdk_event_queue.js";
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
-import { pumpLegacyClaudeQuery } from "./claude_sdk_legacy_pump.js";
 import { buildClaudeSdkOptions } from "./claude_sdk_options.js";
 import {
   ClaudeSdkPersistentSession,
@@ -38,7 +42,9 @@ import {
   DEFAULT_INPUT_REQUEST_TIMEOUT_MS,
   DEFAULT_POST_RESULT_DRAIN_MS,
 } from "./claude_sdk_client_defaults.js";
-import { makeUserMessage } from "./claude_sdk_user_message.js";
+import { runClaudeSdkOneShotAttempt } from "./claude_sdk_one_shot_attempt.js";
+import type { ClaudeSdkOneShotAttemptContext } from "./claude_sdk_one_shot_attempt.js";
+import { ClaudeSdkUsageCarry } from "./claude_sdk_usage_carry.js";
 import type { ClaudePersistentRuntimeActivity } from "./claude_session_runtime.js";
 import type {
   ClaudeBackgroundTaskControlResult,
@@ -99,8 +105,10 @@ export class ClaudeSdkClient implements ClaudeClient {
   private persistentConfigDir: string | null = null;
   private persistentConfigDirKnown = false;
   private readonly accountQuerySettlement: ClaudeAccountQuerySettlement;
+  private readonly accountTurnDriver = new ClaudeSdkAccountTurnDriver();
   private readonly childExitPromises = new Set<Promise<void>>();
   private readonly turnMutex = new AsyncMutex();
+  private isClosed = false;
 
   constructor(config: ClaudeSdkClientConfig = {}, logger: Logger) {
     this.queryFn = config.query ?? defaultQuery;
@@ -163,77 +171,57 @@ export class ClaudeSdkClient implements ClaudeClient {
   }
 
   async *run(options: ClaudeRunOptions, signal: AbortSignal): AsyncIterable<ClaudeClientEvent> {
+    if (this.isClosed) return;
+    if (!options.onAccountRateLimit) {
+      yield* this.runOneShotAttempt(options, signal, undefined);
+      return;
+    }
+    yield* this.accountTurnDriver.run(
+      options,
+      signal,
+      (attemptOptions, attemptSignal, usageCarry) =>
+        this.runOneShotAttempt(attemptOptions, attemptSignal, usageCarry),
+      () => this.isClosed,
+    );
+  }
+
+  private async *runOneShotAttempt(
+    options: ClaudeRunOptions,
+    signal: AbortSignal,
+    usageCarry?: ClaudeSdkUsageCarry,
+  ): AsyncGenerator<ClaudeClientEvent, ClaudeAccountRateLimitSwitchRequest | null, void> {
     this.lastWorkspaceDir = options.workspaceDir;
     this.lastEnv = options.env;
     this.lastRunOptions = options;
     this.clearPerRunState();
+    return yield* runClaudeSdkOneShotAttempt(this.oneShotAttemptContext(), options, signal, usageCarry);
+  }
 
-    const output = createEventQueue<ClaudeClientEvent>();
-    const input = createEventQueue<SDKUserMessage>();
-    input.push(makeUserMessage(options.prompt, options.imageAttachmentPaths));
-
-    const abortController = new AbortController();
-    const abortSdk = () => abortController.abort(signal.reason);
-    if (signal.aborted) {
-      abortSdk();
-    } else {
-      signal.addEventListener("abort", abortSdk, { once: true });
-    }
-
-    const queryOptions = buildClaudeSdkOptions({
-      options,
-      abortController,
-      output,
+  private oneShotAttemptContext(): ClaudeSdkOneShotAttemptContext {
+    return {
+      queryFn: this.queryFn,
       logger: this.logger,
       resolveClaudeExecutablePath: this.resolveClaudeExecutablePath,
       eventMapper: this.eventMapper,
       runtimeState: this.runtimeState,
       toolPermissionController: this.toolPermissionController,
-      ...(options.trackChildExit
-        ? { onChildProcessClosed: (closed) => this.trackChildExit(closed) }
-        : {}),
-    });
-    let query: ClaudeSdkQuery;
-    this.activeInput = input;
-    try {
-      query = this.queryFn({ prompt: input, options: queryOptions });
-    } catch (err) {
-      this.closeActiveInput(input);
-      signal.removeEventListener("abort", abortSdk);
-      throw this.normalizeExecutionError(err, queryOptions.pathToClaudeCodeExecutable);
-    }
-    this.activeQuery = query;
-    const pump = pumpLegacyClaudeQuery({
-      query,
-      output,
-      signal: abortController.signal,
-      input,
-      eventMapper: this.eventMapper,
       postResultDrainer: this.postResultDrainer,
-      runtimeState: this.runtimeState,
-      logger: this.logger,
-      isQueryActive: (candidate) => this.isQueryActive(candidate),
-      closeInput: (candidate) => this.closeActiveInput(candidate),
-    });
-    this.activeQueryPump = pump;
-
-    try {
-      for await (const event of output) {
-        yield event;
-      }
-      await pump;
-    } catch (err) {
-      throw this.normalizeExecutionError(err, queryOptions.pathToClaudeCodeExecutable);
-    } finally {
-      signal.removeEventListener("abort", abortSdk);
-      if (this.activeQuery === query) this.activeQuery = null;
-      this.closeActiveInput(input);
-      this.toolPermissionController.abortPendingInputRequests();
-      await pump.catch(() => undefined);
-      if (this.activeQueryPump === pump) this.activeQueryPump = null;
-      if (options.trackChildExit) await this.waitForChildExit();
-      await options.onAccountQueryClosed?.();
-    }
+      setActiveInput: (input) => { this.activeInput = input; },
+      setActiveQuery: (query) => { this.activeQuery = query; },
+      clearActiveQuery: (query) => {
+        if (this.activeQuery === query) this.activeQuery = null;
+      },
+      setActiveQueryPump: (pump) => { this.activeQueryPump = pump; },
+      clearActiveQueryPump: (pump) => {
+        if (this.activeQueryPump === pump) this.activeQueryPump = null;
+      },
+      isQueryActive: (query) => this.isQueryActive(query),
+      closeActiveInput: (input) => this.closeActiveInput(input),
+      trackChildExit: (closed) => this.trackChildExit(closed),
+      waitForChildExit: () => this.waitForChildExit(),
+      normalizeExecutionError: (error, executablePath) =>
+        this.normalizeExecutionError(error, executablePath),
+    };
   }
 
   async *runPersistent(
@@ -256,24 +244,45 @@ export class ClaudeSdkClient implements ClaudeClient {
     options: ClaudeRunOptions,
     signal: AbortSignal,
   ): AsyncIterable<ClaudeClientEvent> {
-    try {
-      yield* this.runPersistentTurn(options, signal);
-    } finally {
-      const persistentSession = this.persistentSession;
-      if (
-        options.trackChildExit
-        && (!persistentSession || persistentSession.snapshot().queryLifecycle !== "open")
-      ) {
-        await persistentSession?.settled();
-        await this.waitForChildExit();
-        await this.accountQuerySettlement.settle();
-      }
+    if (this.isClosed) return;
+    if (!options.onAccountRateLimit) {
+      yield* this.accountTurnDriver.runPersistentAttempt(
+        options,
+        signal,
+        undefined,
+        (turnOptions, turnSignal, turnUsageCarry, onSession) =>
+          this.runPersistentTurn(turnOptions, turnSignal, turnUsageCarry, onSession),
+        async () => {
+          await this.waitForChildExit();
+          await this.accountQuerySettlement.settle();
+        },
+      );
+      return;
     }
+    yield* this.accountTurnDriver.run(
+      options,
+      signal,
+      (attemptOptions, attemptSignal, usageCarry) =>
+        this.accountTurnDriver.runPersistentAttempt(
+          attemptOptions,
+          attemptSignal,
+          usageCarry,
+          (turnOptions, turnSignal, turnUsageCarry, onSession) =>
+            this.runPersistentTurn(turnOptions, turnSignal, turnUsageCarry, onSession),
+          async () => {
+            await this.waitForChildExit();
+            await this.accountQuerySettlement.settle();
+          },
+        ),
+      () => this.isClosed,
+    );
   }
 
   private async *runPersistentTurn(
     options: ClaudeRunOptions,
     signal: AbortSignal,
+    usageCarry?: ClaudeSdkUsageCarry,
+    onSession?: (session: ClaudeSdkPersistentSession) => void,
   ): AsyncIterable<ClaudeClientEvent> {
     this.lastWorkspaceDir = options.workspaceDir;
     this.lastEnv = options.env;
@@ -308,7 +317,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       await this.waitForChildExit();
       await this.accountQuerySettlement.settle();
     }
-    if (options.trackChildExit && signal.aborted) return;
+    if (this.isClosed || (options.trackChildExit && signal.aborted)) return;
     const { maxTurns, ...persistentOptions } = options;
     if (maxTurns !== undefined) {
       this.logger.warn(
@@ -349,6 +358,8 @@ export class ClaudeSdkClient implements ClaudeClient {
         hookOutput,
         detachedEventSink: this.detachedEventSink,
         runtimeEventSink: this.runtimeEventSink,
+        accountRateLimitSwitchEnabled: options.onAccountRateLimit !== undefined,
+        ...(usageCarry ? { usageCarry } : {}),
         logger: this.logger,
         postResultDrainMs: this.postResultDrainMs,
         turnInactivityTimeoutMs: this.persistentTurnInactivityTimeoutMs,
@@ -366,6 +377,8 @@ export class ClaudeSdkClient implements ClaudeClient {
       this.persistentConfigDir = nextConfigDir;
       this.persistentConfigDirKnown = true;
     }
+    if (usageCarry) persistentSession.setUsageCarry(usageCarry);
+    onSession?.(persistentSession);
     this.accountQuerySettlement.bind(options.onAccountQueryClosed);
     options.onAccountQueryStarted?.();
 
@@ -427,6 +440,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   async close(
     reason: import("./claude_session_runtime.js").ClaudeRuntimeCloseReason = "shutdown",
   ): Promise<void> {
+    this.isClosed = true;
     if (this.persistentSession) {
       const persistent = this.persistentSession;
       await this.closePersistentAndSettle(persistent, reason);
