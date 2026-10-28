@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   buildClaudeAccountPoolEnvironment,
@@ -6,6 +9,9 @@ import {
   useLocalClaudeAccountPoolResume,
   type ClaudeAccountPoolTurn,
 } from "../../src/engine/claude_account_pool.js";
+
+const roots: string[] = [];
+afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 describe("Claude account pool environment", () => {
   it("uses the selected profile and removes inherited credentials", () => {
@@ -44,6 +50,10 @@ describe("Claude account pool environment", () => {
 
   it("keeps transcript writes and session keys while making pool resume use shared local projects", async () => {
     const key = { projectKey: "project", sessionId: "session", subpath: "agent" };
+    const mainKey = { projectKey: key.projectKey, sessionId: key.sessionId };
+    const configDir = mkdtempSync(join(tmpdir(), "claude-pool-store-"));
+    roots.push(configDir);
+    mkdirSync(join(configDir, "projects"));
     const entries = [{ type: "assistant", uuid: "entry-1" }] as never;
     const store = {
       append: vi.fn(async () => undefined),
@@ -52,15 +62,16 @@ describe("Claude account pool environment", () => {
       listSubkeys: vi.fn(async () => ["agent"]),
       delete: vi.fn(async () => undefined),
     };
-    const poolStore = useLocalClaudeAccountPoolResume(store as never);
+    const poolStore = useLocalClaudeAccountPoolResume(store as never, configDir);
 
-    await expect(poolStore.load(key as never)).resolves.toBeNull();
+    await expect(poolStore.load(mainKey)).resolves.toBeNull();
     await poolStore.append(key as never, entries);
     await expect(poolStore.listSessions?.("project")).resolves.toEqual([]);
     await expect(poolStore.listSubkeys?.(key)).resolves.toEqual(["agent"]);
     await poolStore.delete?.(key as never);
 
-    expect(store.load).not.toHaveBeenCalled();
+    expect(store.load).toHaveBeenCalledWith(mainKey);
+    expect(store.load).toHaveBeenCalledWith(key);
     expect(store.append).toHaveBeenCalledWith(key, entries);
     expect(store.listSessions).toHaveBeenCalledWith("project");
     expect(store.listSubkeys).toHaveBeenCalledWith(key);

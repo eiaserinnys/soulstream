@@ -299,7 +299,7 @@ export class ClaudeEngineAdapter
         if (controller.signal.aborted || this.closed) return;
         options.env = buildClaudeAccountPoolEnvironment(options.env, selectedAccount);
         if (options.sessionStore) {
-          options.sessionStore = useLocalClaudeAccountPoolResume(options.sessionStore);
+          options.sessionStore = useLocalClaudeAccountPoolResume(options.sessionStore, selectedAccount.config_dir);
         }
         const selected = selectedAccount;
         const selectedTurnId = accountTurnId;
@@ -378,7 +378,7 @@ export class ClaudeEngineAdapter
       try {
         if (accountSelectionAttempted && params.agentSessionId && this.claudeAccountTurnPort) {
           const queryStillActive = accountQueryStarted && !accountQueryClosed;
-          if (selectedAccount) {
+          if (selectedAccount && !accountQueryClosed) {
             await this.claudeAccountTurnPort.release({
               session_id: params.agentSessionId,
               account_id: selectedAccount.account_id,
@@ -387,7 +387,7 @@ export class ClaudeEngineAdapter
             if (!queryStillActive && accountTurnId) {
               await this.clearAccountTurnIfCurrent(accountTurnId);
             }
-          } else if (!accountClient?.persistentRuntimeActivity?.()) {
+          } else if (!selectedAccount && !accountClient?.persistentRuntimeActivity?.()) {
             await this.claudeAccountTurnPort.release({
               session_id: params.agentSessionId,
             });

@@ -125,6 +125,8 @@ P8 코드 대조 커밋 SHA: `82b65bfe971e8a1ab71d99c9a43d9342fd6a9844`
 
 `task_engine_turn_runner.ts:TaskEngineTurnRunner.executeTurn`은 resolved provider/model과 해석된 preset `ANTHROPIC_BASE_URL`을 기준으로 공식 Claude 풀 대상을 표시한다. Kimi와 커스텀 Anthropic endpoint는 기존 env 경로를 유지한다. 공식 대상은 `ClaudeEngineAdapter.executeToFrameChannel`이 턴 시작에 host `ClaudeAccountService.select`를 호출하고, 기존 SDK 환경에서 인증 override를 걷어낸 뒤 선택된 profile의 `CLAUDE_CONFIG_DIR`을 지정한다. 성공·오류·취소 뒤 `release`와 runner SQLite 상태 삭제를 수행한다. `claude_sdk_client.ts:runPersistentLocked`는 세션 client 하나를 유지하고 config_dir이 달라질 때 기존 Query 종료, pump 정산, 실제 child close를 확인한 뒤 새 Query를 띄운다. compact는 마지막 선택 계정 환경을 사용한다.
 
+풀의 SDK resume은 `claude_account_pool.ts:useLocalClaudeAccountPoolResume`을 거쳐 DB의 main·subagent transcript와 metadata를 `claude_account_pool_transcript.ts:materializeClaudeAccountTranscript`가 공유 projects에 반영한다. SDK에는 빈 load 결과를 돌려 임시 config 복원을 막고 선택 프로필로 spawn하며 append·list·delete는 기존 SessionStore에 전달한다. foreground 완료 뒤에도 Query가 살아 있으면 점유를 유지하고, Query pump와 실제 child가 모두 종료된 뒤 한 번 정산한다.
+
 이 장을 갱신해야 하는 변경 부류: intervene 진입·delivery admission/route·auto-resume·runner spawn·context 주입·turn loop·runtime follow-up receipt·terminal persistence/projection·completion notification 변경.
 
 ## 로컬 MCP 새 세션 생성 전 가용 확인

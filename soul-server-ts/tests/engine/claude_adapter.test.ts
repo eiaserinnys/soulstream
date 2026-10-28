@@ -1,4 +1,7 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import pino from "pino";
 
 import {
@@ -25,6 +28,8 @@ import {
 } from "../../src/runner/frame_protocol.js";
 
 const silentLogger = pino({ level: "silent" });
+const roots: string[] = [];
+afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 async function withProcessEnvValue(
   key: string,
@@ -146,6 +151,9 @@ describe("ClaudeEngineAdapter options parity", () => {
   });
 
   it("official pool turn selects an account, sanitizes the final env, and releases the turn", async () => {
+    const configDir = mkdtempSync(join(tmpdir(), "claude-pool-adapter-"));
+    roots.push(configDir);
+    mkdirSync(join(configDir, "projects"));
     const captured: ClaudeRunOptions[] = [];
     const client: ClaudeClient = {
       ...makeClient([], captured),
@@ -156,7 +164,7 @@ describe("ClaudeEngineAdapter options parity", () => {
     const accountTurnPort = {
       select: vi.fn().mockResolvedValue({
         account_id: "account-a",
-        config_dir: "/accounts/account-a",
+        config_dir: configDir,
       }),
       reject: vi.fn(),
       release: vi.fn().mockResolvedValue(undefined),
@@ -215,7 +223,7 @@ describe("ClaudeEngineAdapter options parity", () => {
     });
     expect(captured[0]?.env).toMatchObject({
       PATH: "/usr/bin",
-      CLAUDE_CONFIG_DIR: "/accounts/account-a",
+      CLAUDE_CONFIG_DIR: configDir,
     });
     for (const key of [
       "ANTHROPIC_API_KEY",
@@ -234,7 +242,7 @@ describe("ClaudeEngineAdapter options parity", () => {
     const mirrorKey = { projectKey: "project", sessionId: "session-a" };
     const mirrorEntries = [{ type: "assistant", uuid: "mirrored-entry" }] as never;
     await captured[0]?.sessionStore?.append(mirrorKey, mirrorEntries);
-    expect(sessionStore.load).not.toHaveBeenCalled();
+    expect(sessionStore.load).toHaveBeenCalledWith(mirrorKey);
     expect(sessionStore.append).toHaveBeenCalledWith(mirrorKey, mirrorEntries);
     expect(captured[0]?.sessionStoreFlush).toBe("eager");
     expect(state.write).toHaveBeenCalledWith({
@@ -326,6 +334,42 @@ describe("ClaudeEngineAdapter options parity", () => {
     expect(events.indexOf("previous-close-release")).toBeLessThan(events.indexOf("select"));
     expect(events.indexOf("select")).toBeLessThan(events.indexOf("successor-run"));
     await registry.shutdown();
+  });
+
+  it("does not release the same account twice when a foreground Query closes fatally", async () => {
+    const client: ClaudeClient = {
+      async *run() {},
+      async *runPersistent(options) {
+        options.onAccountQueryStarted?.();
+        await options.onAccountQueryClosed?.();
+        yield { type: "error", message: "query failed", fatal: true };
+      },
+      async close() {},
+    };
+    const accountPort = {
+      select: vi.fn(async () => ({ account_id: "account-a", config_dir: "/accounts/a" })),
+      reject: vi.fn(),
+      release: vi.fn(async () => undefined),
+    };
+    const state = { read: () => null, write: vi.fn(async () => undefined), clear: vi.fn(async () => undefined) };
+    const registry = {
+      acquire: () => client, close: vi.fn().mockResolvedValue(true), release: vi.fn(), reserve: vi.fn(),
+    };
+    const engine = new ClaudeEngineAdapter({
+      workspaceDir: "/tmp/claude-work", processEnv: {}, claudeAccountPoolEnabled: true,
+      trackChildExit: true, claudeAccountTurnPort: accountPort, claudeAccountTurnState: state,
+      persistentSessionRegistry: registry,
+    }, silentLogger);
+    const execution = async () => {
+      for await (const _ of engine.execute({
+        agentSessionId: "session-a", inputUuid: "turn-a", prompt: "hello",
+        model: "claude-sonnet-4.5", claudeAccountPoolTarget: true,
+      })) { /* drain */ }
+    };
+    await expect(execution()).rejects.toThrow("query failed");
+    expect(accountPort.release).toHaveBeenCalledOnce();
+    expect(accountPort.release).toHaveBeenCalledWith({ session_id: "session-a", account_id: "account-a" });
+    expect(state.clear).toHaveBeenCalledOnce();
   });
 
   it("retains account occupancy after foreground completion while the Query remains open", async () => {

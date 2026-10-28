@@ -9,6 +9,7 @@ import type { Logger } from "pino";
 import type { RunnerControlFrame } from "../runner/frame_protocol.js";
 import type { ClaudeClient, ClaudeRunOptions } from "./claude_adapter.js";
 import { AsyncMutex } from "./async_mutex.js";
+import { ClaudeAccountQuerySettlement } from "./claude_account_query_settlement.js";
 import {
   compactClaudeSdkSession,
   type ClaudeSdkClientCompactOptions,
@@ -97,13 +98,14 @@ export class ClaudeSdkClient implements ClaudeClient {
   private persistentSession: ClaudeSdkPersistentSession | null = null;
   private persistentConfigDir: string | null = null;
   private persistentConfigDirKnown = false;
-  private persistentAccountQueryClosed: (() => Promise<void>) | null = null;
+  private readonly accountQuerySettlement: ClaudeAccountQuerySettlement;
   private readonly childExitPromises = new Set<Promise<void>>();
   private readonly turnMutex = new AsyncMutex();
 
   constructor(config: ClaudeSdkClientConfig = {}, logger: Logger) {
     this.queryFn = config.query ?? defaultQuery;
     this.logger = logger;
+    this.accountQuerySettlement = new ClaudeAccountQuerySettlement(() => this.waitForChildExit(), logger);
     const inputRequestTimeoutMs = config.inputRequestTimeoutMs ?? DEFAULT_INPUT_REQUEST_TIMEOUT_MS;
     this.postResultDrainMs = config.postResultDrainMs ?? DEFAULT_POST_RESULT_DRAIN_MS;
     this.runtimeDrainMaxMs = config.runtimeDrainMaxMs ?? DEFAULT_CLAUDE_RUNTIME_DRAIN_MAX_MS;
@@ -262,8 +264,9 @@ export class ClaudeSdkClient implements ClaudeClient {
         options.trackChildExit
         && (!persistentSession || persistentSession.snapshot().queryLifecycle !== "open")
       ) {
+        await persistentSession?.settled();
         await this.waitForChildExit();
-        await this.settlePersistentAccountQuery();
+        await this.accountQuerySettlement.settle();
       }
     }
   }
@@ -292,16 +295,18 @@ export class ClaudeSdkClient implements ClaudeClient {
       persistentSession
       && persistentSession.snapshot().queryLifecycle !== "open"
     ) {
+      if (options.trackChildExit) await persistentSession.settled();
       if (this.persistentSession === persistentSession) {
         this.persistentSession = null;
         this.activeQuery = null;
       }
       persistentSession = null;
       if (options.trackChildExit) await this.waitForChildExit();
-      await this.settlePersistentAccountQuery();
+      await this.accountQuerySettlement.settle();
     }
     if (!persistentSession && options.trackChildExit) {
       await this.waitForChildExit();
+      await this.accountQuerySettlement.settle();
     }
     if (options.trackChildExit && signal.aborted) return;
     const { maxTurns, ...persistentOptions } = options;
@@ -352,6 +357,7 @@ export class ClaudeSdkClient implements ClaudeClient {
           if (this.persistentSession === createdSession) {
             this.activeQuery = null;
             this.persistentSession = null;
+            this.accountQuerySettlement.queryClosed(createdSession);
           }
         },
       });
@@ -360,7 +366,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       this.persistentConfigDir = nextConfigDir;
       this.persistentConfigDirKnown = true;
     }
-    if (options.onAccountQueryClosed) this.persistentAccountQueryClosed = options.onAccountQueryClosed;
+    this.accountQuerySettlement.bind(options.onAccountQueryClosed);
     options.onAccountQueryStarted?.();
 
     try {
@@ -434,7 +440,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       await this.activeQueryPump?.catch(() => undefined);
     }
     await this.waitForChildExit();
-    await this.settlePersistentAccountQuery();
+    await this.accountQuerySettlement.settle();
   }
 
   private async closePersistentAndSettle(
@@ -444,16 +450,10 @@ export class ClaudeSdkClient implements ClaudeClient {
     await persistent.close(reason);
     await persistent.settled();
     await this.waitForChildExit();
-    await this.settlePersistentAccountQuery();
+    await this.accountQuerySettlement.settle();
     if (this.persistentSession === persistent) this.persistentSession = null;
     this.persistentConfigDir = null;
     this.persistentConfigDirKnown = false;
-  }
-
-  private async settlePersistentAccountQuery(): Promise<void> {
-    const onClosed = this.persistentAccountQueryClosed;
-    this.persistentAccountQueryClosed = null;
-    await onClosed?.();
   }
 
   private trackChildExit(closed: Promise<void>): void {
