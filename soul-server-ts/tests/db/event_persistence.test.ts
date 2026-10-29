@@ -215,6 +215,7 @@ describe("EventPersistence durable ingress", () => {
     const { db } = makeMockDB();
     const { broadcaster } = makeMockBroadcaster();
     const ingress = makeMockIngress();
+    ingress.append.mockResolvedValueOnce(ingress.record);
     ingress.append.mockRejectedValueOnce(new Error("outbox append failed"));
     const ep = new EventPersistence(
       db,
@@ -224,6 +225,20 @@ describe("EventPersistence durable ingress", () => {
       ingress.pump,
     );
 
+    await ep.enqueueEvent("sess-1", {
+      type: "session_ended",
+      status: "completed",
+      termination_reason: "completed_ok",
+      termination_detail: null,
+      timestamp: 0,
+    } as unknown as SSEEventPayload, {
+      kind: "terminal_transition",
+      status: "completed",
+      termination_reason: "completed_ok",
+      termination_detail: null,
+      review_state: "acknowledged",
+      updated_at: "2026-10-29T00:00:00.000Z",
+    }, "registration-1");
     await expect(ep.enqueueEvent("sess-1", {
       type: "session_ended",
       status: "completed",
@@ -237,13 +252,14 @@ describe("EventPersistence durable ingress", () => {
       termination_detail: null,
       review_state: "acknowledged",
       updated_at: "2026-10-29T00:00:00.000Z",
-    }, "registration-1")).rejects.toThrow("outbox append failed");
+    }, "registration-2")).rejects.toThrow("outbox append failed");
     await ep.enqueueEvent("sess-1", {
-      type: "subagent_stop",
+      type: "prompt_suggestion",
       timestamp: 2,
-    } as unknown as SSEEventPayload, undefined, "registration-1");
+    } as unknown as SSEEventPayload, undefined, "registration-2");
 
-    expect(ingress.append.mock.calls[1][0].registration_id).toBe("registration-1");
+    expect(ingress.append.mock.calls[0][0].registration_id).toBe("registration-1");
+    expect(ingress.append.mock.calls[2][0].registration_id).toBe("registration-2");
   });
 
   it.each([
