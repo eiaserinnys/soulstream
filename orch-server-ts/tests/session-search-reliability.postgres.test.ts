@@ -538,25 +538,76 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     expect(perSession).toHaveLength(1);
   }, 60_000);
 
-  it("mirrors and searches long tokens through the event write path", async () => {
-    const longLatin = Array.from({ length: 34 }, (_, i) =>
-      createHash("sha256").update(`event-search-long-${i}`).digest("hex")).join("");
-    const longKorean = "가나다라마바사아자차카타파하".repeat(80);
-    expect(Buffer.byteLength(longLatin)).toBeGreaterThan(2_000);
-    expect(longKorean.length).toBeGreaterThan(1_000);
-    await sql`INSERT INTO sessions (session_id, status) VALUES ('long-event-search', 'idle')`;
-    await sql`INSERT INTO events (session_id, id, event_type, searchable_text)
-      VALUES ('long-event-search', 1, 'assistant_message', ${`${longLatin} ${longKorean}`})`;
-    const mirrored = await sql`
-      SELECT dictionary.term FROM event_search_postings posting
-      JOIN event_search_dictionary dictionary USING (term_id)
-      JOIN event_search_session_keys session_key USING (session_key)
-      WHERE session_key.session_id = 'long-event-search' AND posting.event_id = 1
-    `;
-    expect(new Set(mirrored.map((row) => row.term))).toEqual(new Set([longLatin, longKorean]));
-    for (const term of [longLatin, longKorean]) {
-      const result = await sql`SELECT id FROM event_search(${term}, ARRAY['long-event-search']::text[])`;
-      expect(result.map((row) => row.id)).toEqual([1]);
+  it("drops overlong tokens and preserves the 1024-byte search boundary", async () => {
+    const repeatedLatin = "a".repeat(3_000);
+    const randomLatin = Array.from({ length: 50 }, (_, i) =>
+      createHash("sha256").update(`event-search-random-latin-${i}`).digest("hex")).join("");
+    const repeatedKorean = "가나다라마바사아자차카타파하".repeat(100);
+    const randomKorean = Array.from({ length: 1_100 }, (_, i) => {
+      const digest = createHash("sha256").update(`event-search-random-korean-${i}`).digest();
+      return String.fromCharCode(0xac00 + (digest.readUInt32BE(0) % 11_172));
+    }).join("");
+    const boundaryToken = "b".repeat(1_000);
+    const ordinaryTerm = "ordinarysearchterm";
+    const longTokens = [repeatedLatin, randomLatin, repeatedKorean, randomKorean];
+
+    expect(Buffer.byteLength(repeatedLatin)).toBeGreaterThan(1_024);
+    expect(Buffer.byteLength(randomLatin)).toBeGreaterThan(2_704);
+    expect(Buffer.byteLength(repeatedKorean)).toBeGreaterThan(1_024);
+    expect(Buffer.byteLength(randomKorean)).toBeGreaterThan(2_704);
+    expect(Buffer.byteLength(boundaryToken)).toBe(1_000);
+
+    try {
+      await sql`INSERT INTO sessions (session_id, status) VALUES ('long-event-search', 'idle')`;
+      await sql`INSERT INTO events (session_id, id, event_type, searchable_text)
+        VALUES (
+          'long-event-search', 1, 'assistant_message',
+          ${[...longTokens, boundaryToken, ordinaryTerm].join(" ")}
+        )`;
+
+      const legacyTerms = await sql<Array<{
+        term: string;
+        term_freq: number;
+        doc_len: number;
+      }>>`
+        SELECT term, term_freq, doc_len
+        FROM event_search_terms
+        WHERE session_id = 'long-event-search' AND event_id = 1
+        ORDER BY term
+      `;
+      const mirroredTerms = await sql<Array<{
+        term: string;
+        term_freq: number;
+        doc_len: number;
+      }>>`
+        SELECT dictionary.term, posting.term_freq, document.doc_len
+        FROM event_search_postings posting
+        JOIN event_search_dictionary dictionary USING (term_id)
+        JOIN event_search_session_keys session_key USING (session_key)
+        JOIN event_search_documents document USING (session_key, event_id)
+        WHERE session_key.session_id = 'long-event-search' AND posting.event_id = 1
+        ORDER BY dictionary.term
+      `;
+      expect(new Set(legacyTerms.map((row) => row.term))).toEqual(
+        new Set([boundaryToken, ordinaryTerm]),
+      );
+      expect(legacyTerms.every((row) => row.term_freq === 1 && row.doc_len === 2)).toBe(true);
+      expect(mirroredTerms).toEqual(legacyTerms);
+
+      for (const term of [ordinaryTerm, boundaryToken]) {
+        const result = await sql`
+          SELECT id FROM event_search(${term}, ARRAY['long-event-search']::text[])
+        `;
+        expect(result.map((row) => row.id)).toEqual([1]);
+      }
+      for (const term of longTokens) {
+        const result = await sql`
+          SELECT id FROM event_search(${term}, ARRAY['long-event-search']::text[])
+        `;
+        expect(result).toEqual([]);
+      }
+    } finally {
+      await sql`DELETE FROM sessions WHERE session_id = 'long-event-search'`;
     }
   }, 60_000);
 

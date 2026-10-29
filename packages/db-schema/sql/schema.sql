@@ -1104,7 +1104,8 @@ RETURNS TEXT[] LANGUAGE sql IMMUTABLE AS $$
         lower(coalesce(p_text, '')),
         '[^[:alnum:]_가-힣]+'
     ) AS token(term)
-    WHERE term <> '';
+    WHERE term <> ''
+      AND octet_length(term) <= 1024;
 $$;
 
 CREATE OR REPLACE FUNCTION event_search_adjust_corpus_stats(
