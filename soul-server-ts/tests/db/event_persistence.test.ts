@@ -388,6 +388,48 @@ describe("EventPersistence durable ingress", () => {
     expect(appendInput.searchable_text).not.toContain(original);
   });
 
+  it("omits image bytes before truncation, archive creation, and searchable-text extraction", () => {
+    const original = "A".repeat(300 * 1024);
+    const result = JSON.stringify([{
+      type: "image",
+      source: { type: "base64", data: original, media_type: "image/png" },
+    }]);
+    const event = {
+      type: "tool_result",
+      tool_name: "Read",
+      tool_use_id: "tool-image",
+      result,
+      is_error: false,
+      timestamp: 1,
+    } as unknown as SSEEventPayload;
+
+    const { appendInput, archive } = buildEventOutboxAppendInput("sess-1", event);
+
+    expect(appendInput.payload.result).toContain("[omitted image]");
+    expect(appendInput.payload.result).not.toContain(original);
+    expect(appendInput.payload).not.toHaveProperty("truncation");
+    expect(archive).toBeNull();
+    expect(appendInput.searchable_text).not.toContain(original);
+  });
+
+  it("preserves non-image base64 and image-free tool results", () => {
+    const documentBytes = "D".repeat(80);
+    const event = {
+      type: "tool_result",
+      tool_name: "Read",
+      tool_use_id: "tool-document",
+      result: JSON.stringify([{ type: "document", data: documentBytes }]),
+      is_error: false,
+      timestamp: 1,
+    } as unknown as SSEEventPayload;
+
+    const result = buildEventOutboxAppendInput("sess-1", event);
+
+    expect(result.appendInput.payload.result).toBe(event.result);
+    expect(result.archive).toBeNull();
+    expect(result.appendInput.payload).not.toHaveProperty("truncation");
+  });
+
   it("leaves small events without archive or truncation metadata", () => {
     const result = buildEventOutboxAppendInput("sess-1", {
       type: "tool_result",

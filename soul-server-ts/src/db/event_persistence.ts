@@ -47,6 +47,7 @@ import {
   truncateEventStrings,
   type EventArchiveContent,
 } from "./event_payload_truncation.js";
+import { omitInlineImageData } from "./omit_inline_image_data.js";
 
 /**
  * State transitions wait far longer for their acknowledgement than ordinary
@@ -341,7 +342,7 @@ export function buildEventOutboxAppendInput(
   const safeEvent = stripInternalPersistenceFields(
     sanitizeJsonValue(event),
   ) as SSEEventPayload;
-  const truncated = truncateEventStrings(safeEvent);
+  const truncated = truncateEventStrings(omitInlineImageData(safeEvent));
   const archive = buildEventArchive(truncated.truncatedFields);
   const payload = truncated.payload as Record<string, unknown>;
   if (archive) {
