@@ -66,6 +66,8 @@ interface Props {
   showSessionAuxiliary?: boolean;
   /** 입력 줄과 대기 첨부를 감싼 묶음의 ChatBody 기준 배치. */
   onComposerLayout?: (anchorLayout: LayoutRectangle, composerBox: LayoutRectangle) => void;
+  /** 키보드가 이 채팅 열과 겹치는 높이. */
+  onKeyboardOverlapChange?: (overlap: number) => void;
 }
 
 if (
@@ -103,7 +105,7 @@ export function ChatBody({
   onStoryOpenRequestHandled,
   presentation = 'default',
   showSessionAuxiliary = true,
-  onComposerLayout,
+  onComposerLayout, onKeyboardOverlapChange,
   reportView, inputComposerRef, getReportSendContext,
 }: Props) {
   const t = useTokens();
@@ -461,6 +463,7 @@ export function ChatBody({
     <AppKeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      onOverlapChange={onKeyboardOverlapChange}
     >
       <ChatUiControllerProvider inherited={!!inputComposerRef} sessionId={sessionId} appendGeneratedText={appendGeneratedText}>
       {showSessionAuxiliary ? <SessionStoryPanel

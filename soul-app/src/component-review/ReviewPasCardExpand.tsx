@@ -43,13 +43,15 @@ function previewEvidence(module: number, label: string): CardAttachmentAssetEvid
       checksum_sha256: null, width: 64, height: 64, preview_kind: 'image', preview_mime_type: 'image/png' },
     read_context: { type: 'card', id: card.id }, previewUrl: url, originalUrl: url };
 }
-const items: CardCheckItem[] = [
-  { id: 1, title: '판 안에서 결과와 증거를 읽습니다', state: 'done', result: '제목을 누르면 같은 자리에서 펼쳐집니다.',
-    evidence: [previewEvidence(require('../../assets/icon.png'), '펼친 화면')], caveat: null, rev: 1, confirmed: null, fixOpen: 0, reopened: null, from: null, createdAt: at, reportedAt: at, display: 'reported' },
-  { id: 2, title: '담당에게 바로 커멘트를 남깁니다', state: 'done', result: 'PAS 대화를 떠나지 않고 글을 보냅니다.',
-    evidence: [previewEvidence(require('../../assets/icon-symbol.png'), '입력 화면')], caveat: null, rev: 1, confirmed: null, fixOpen: 0, reopened: null, from: null, createdAt: at, reportedAt: at, display: 'reported' },
-  { id: 3, title: '실기기 화면 확인', state: 'todo', result: null, evidence: [], caveat: 'iPhone 실기기에서는 아직 확인하지 못했습니다.', rev: 1, confirmed: null, fixOpen: 0, reopened: null, from: null, createdAt: at, reportedAt: null, display: 'todo' },
-];
+function createPreviewItems(): CardCheckItem[] {
+  return [
+    { id: 1, title: '판 안에서 결과와 증거를 읽습니다', state: 'done', result: '제목을 누르면 같은 자리에서 펼쳐집니다.',
+      evidence: [previewEvidence(require('../../assets/icon.png'), '펼친 화면')], caveat: null, rev: 1, confirmed: null, fixOpen: 0, reopened: null, from: null, createdAt: at, reportedAt: at, display: 'reported' },
+    { id: 2, title: '담당에게 바로 커멘트를 남깁니다', state: 'done', result: 'PAS 대화를 떠나지 않고 글을 보냅니다.',
+      evidence: [previewEvidence(require('../../assets/icon-symbol.png'), '입력 화면')], caveat: null, rev: 1, confirmed: null, fixOpen: 0, reopened: null, from: null, createdAt: at, reportedAt: at, display: 'reported' },
+    { id: 3, title: '실기기 화면 확인', state: 'todo', result: null, evidence: [], caveat: 'iPhone 실기기에서는 아직 확인하지 못했습니다.', rev: 1, confirmed: null, fixOpen: 0, reopened: null, from: null, createdAt: at, reportedAt: null, display: 'todo' },
+  ];
+}
 const initialEntries: (PersistentReportEntry & { card_id: string; card_status: string })[] = [
   { key: 'card_preview', kind: 'see', title: card.title.slice(0, 24) + '…', context: card.now!.ask!, action: '', options: [], state: 'open', answer: '', card_numbers: [531], card_id: card.id, card_status: 'review', updated_at: at },
   { key: 'card_preview_2', kind: 'see', title: secondCard.title.slice(0, 24) + '…', context: secondCard.now!.ask!, action: '', options: [], state: 'open', answer: '', card_numbers: [532], card_id: secondCard.id, card_status: 'review', updated_at: at },
@@ -63,7 +65,8 @@ function reviewEntries() {
 }
 const question = { id: 'preview-question', cardId: card.id, sessionId: 'preview-agent', text: '추가 커멘트를 장 안에서 바로 쓸까요?',
   options: ['장 안에서', '카드에서'], answer: null, askedAt: at };
-function createReviewCardApi(onStatusChange: (id: string, status: CardStatus) => void): ApiClient {
+export function createReviewCardApi(onStatusChange: (id: string, status: CardStatus) => void = () => {}): ApiClient {
+  const items = createPreviewItems();
   let details: Record<string, CardDetail> = {
     [card.id]: { card: { ...card, items }, reports: [], questions: [question], sessions: [], nowHistory: [], comments: [
       { id: 'preview-user', cardId: card.id, authorKind: 'user', authorId: null, sessionId: null, kind: 'comment', body: 'PAS 안에서 결과를 읽고 의견도 남기고 싶어요.', createdAt: at },

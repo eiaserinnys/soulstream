@@ -25,6 +25,7 @@ jest.mock('../../components/chat/ChatBody', () => {
     const onOverlapChange = React.useCallback((overlap: number) => {
       // Yoga's padding response at the ChatBody boundary; the inset itself is
       // calculated by the production avoider from the native keyboard event.
+      latest.current.onKeyboardOverlapChange?.(overlap);
       if (mockKeyboardLayout) latest.current.onComposerLayout(
         { x: 0, y: 644 - overlap, width: 480, height: 76 },
         { x: 0, y: 20, width: 480, height: 56 });
@@ -85,6 +86,7 @@ import { GlassButton } from '../../components/GlassSurface';
 import { measurePersistentReports } from '../../test-utils/persistent-report-layout';
 import type { CardDetail } from '../../api/cardTypes';
 import { cardFixture } from '../../test-support/cards';
+import type { PersistentReportEntry } from '../../api/types';
 
 let store: StoreApi<PersistentSessionScene>;
 function Capture() { store = usePersistentSessionHost().store; return null; }
@@ -479,6 +481,56 @@ test('입력 줄과 대기 첨부가 anchor 안에서 늘어나도 캐릭터 기
   view.unmount(); measure.mockRestore(); dimensions.mockRestore();
 });
 
+test('태블릿 인라인 보고 장은 입력창 레이아웃과 키보드 겹침에 맞춰 안정적으로 제한된다', async () => {
+  mockDevice = 'tabletLandscape';
+  useSettingsStore.setState({ serverUrl: 'https://screen.test' });
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 951, height: 669, scale: 1, fontScale: 1 });
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 24, 951, 669);
+    else if (this.props.testID === 'persistent-session-conversation') callback(350, 100, 480, 569);
+  });
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
+  const sessionId = 'pas-inline-card';
+  const report: PersistentReportEntry = { key: 'card_531', kind: 'see', title: '검수 결과', card_id: 'card-531',
+    card_numbers: [531], context: '확인해 주세요.', action: '', options: [], state: 'open', answer: '', updated_at: 'now' };
+  act(() => {
+    store.getState().open({ session_id: sessionId, display_name: '관제', persistent: true } as any);
+    useSessionStore.getState().applyPersistentReport(sessionId, [report]);
+    const request = useChatStore.getState().beginPersistentDisplaySettingsLoad(sessionId);
+    useChatStore.getState().finishPersistentDisplaySettingsLoad(sessionId, request, {
+      show_character: true, animate_character: false, show_generation_separator: true, show_jev_candidates: true, turn_usage_mode: 'collapsed',
+    });
+    view.getByTestId('persistent-session-screen').props.onLayout();
+  });
+  const body = view.getByTestId('persistent-body-probe');
+  const reportLayout = (anchorY: number) => act(() => body.props.onComposerLayout(
+    { x: 0, y: anchorY, width: 480, height: 76 }, { x: 0, y: 20, width: 480, height: 56 },
+  ));
+  reportLayout(450);
+  expect(view.queryByTestId('persistent-session-report-bubble-seat', { includeHiddenElements: true })).toBeNull();
+  expect(view.getByTestId('persistent-session-report-inline-seat', { includeHiddenElements: true })).toBeTruthy();
+  expect(view.getByTestId('persistent-session-character-seat')).toBeTruthy();
+  measurePersistentReports(view, { width: 480, readingHeight: 100 });
+  fireEvent.press(view.getAllByTestId('report-title')[0]);
+  await waitFor(() => expect(view.getByTestId('persistent-report-card-expansion-card_531')).toBeTruthy());
+
+  const beforeLine = StyleSheet.flatten(view.getByTestId('persistent-session-baseline').props.style).top;
+  const beforeCharacter = StyleSheet.flatten(view.getByTestId('persistent-session-character-seat').props.style).top;
+  const beforeDeck = StyleSheet.flatten(view.getByTestId('report-deck').props.style).maxHeight;
+  const bandMargin = renderHook(() => useTokens()).result.current.uiSpacing.sm;
+  expect(beforeDeck + bandMargin * 2).toBe(569 - 76);
+
+  reportLayout(480);
+  expect(StyleSheet.flatten(view.getByTestId('report-deck').props.style).maxHeight).toBe(beforeDeck);
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-baseline').props.style).top).toBe(beforeLine);
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-character-seat').props.style).top).toBe(beforeCharacter);
+
+  act(() => body.props.onKeyboardOverlapChange(110));
+  expect(StyleSheet.flatten(view.getByTestId('report-deck').props.style).maxHeight).toBe(beforeDeck - 110);
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-baseline').props.style).top).toBe(beforeLine - 110);
+  view.unmount(); measure.mockRestore(); dimensions.mockRestore();
+});
+
 test.each([
   [true, 'account-off-outline', '캐릭터 숨기기'],
   [false, 'account-outline', '캐릭터 표시'],
@@ -563,11 +615,13 @@ test.each([
   expect(jest.mocked(useUsageSummary).mock.calls.at(-1)?.[0]).toMatchObject({ enabled: true, nodeId: 'node-a', selectedNodeId: null });
   act(() => view.getByTestId('persistent-session-screen').props.onLayout());
   const body = view.getByTestId('persistent-body-probe');
+  const anchorHeight = 80;
+  const anchorY = appHeight - frame.header - anchorHeight;
   act(() => body.props.onComposerLayout(
-    { x: 0, y: 640, width: columns.conversation, height: 80 },
+    { x: 0, y: anchorY, width: columns.conversation, height: anchorHeight },
     { x: 0, y: 24, width: columns.conversation, height: 56 },
   ));
-  const lineY = frame.header + 640 + 24 + 56 - 1;
+  const lineY = frame.header + anchorY + 24 + 56 - 1;
   const usageSeat = view.getByTestId('persistent-session-weekly-usage-seat');
   const usageStyle = StyleSheet.flatten(usageSeat.props.style);
   expect(usageStyle.position).toBe('absolute');
