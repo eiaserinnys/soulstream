@@ -130,29 +130,24 @@ implements SessionStoryRepositoryPort, SessionTurnSummaryRepositoryPort {
   ): Promise<CompletedSessionFoldCandidate[]> {
     const sql = await this.sqlResolver.resolveSql();
     const rows = await sql`
-      WITH candidates AS (
+      WITH summary_counts AS (
         SELECT
-          s.session_id,
-          s.updated_at AS completed_at,
-          COUNT(e.id) FILTER (
-            WHERE e.event_type = 'turn_summary'
-          )::integer AS total_summary_count,
-          COUNT(e.id) FILTER (
-            WHERE e.event_type = 'turn_summary'
-              AND e.id > COALESCE(d.narrative_through_event_id, 0)
-          )::integer AS unfolded_summary_count
-        FROM sessions s
-        LEFT JOIN session_digests d ON d.session_id = s.session_id
-        LEFT JOIN events e ON e.session_id = s.session_id
-        WHERE s.status = 'completed'
-          AND s.updated_at <= ${input.completedBefore}
-        GROUP BY s.session_id, s.updated_at, d.narrative_through_event_id
+          e.session_id,
+          COUNT(*)::integer AS total_summary_count,
+          MAX(e.id) AS last_summary_event_id
+        FROM events e
+        WHERE e.event_type = 'turn_summary'
+        GROUP BY e.session_id
       )
-      SELECT session_id, completed_at
-      FROM candidates
-      WHERE total_summary_count >= ${input.minimumSummaryCount}
-        AND unfolded_summary_count > 0
-      ORDER BY completed_at ASC, session_id ASC
+      SELECT s.session_id, s.updated_at AS completed_at
+      FROM sessions s
+      JOIN summary_counts c ON c.session_id = s.session_id
+      LEFT JOIN session_digests d ON d.session_id = s.session_id
+      WHERE s.status = 'completed'
+        AND s.updated_at <= ${input.completedBefore}
+        AND c.total_summary_count >= ${input.minimumSummaryCount}
+        AND c.last_summary_event_id > COALESCE(d.narrative_through_event_id, 0)
+      ORDER BY s.updated_at ASC, s.session_id ASC
       LIMIT ${input.limit}
     `;
     return rows.map((row) => ({
@@ -314,7 +309,7 @@ implements SessionStoryRepositoryPort, SessionTurnSummaryRepositoryPort {
         FROM sessions s
         WHERE s.session_id = ${input.sessionId}
           AND s.status = 'completed'
-          AND s.updated_at = ${input.completedAt}
+          AND date_trunc('milliseconds', s.updated_at) = ${input.completedAt}
           AND s.updated_at <= ${input.completedBefore}
           AND (
             SELECT COUNT(*)
