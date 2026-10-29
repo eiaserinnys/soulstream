@@ -78,19 +78,34 @@ export class SessionStoryReadRepository {
       card_status: string | null;
     }>>`
       WITH requested AS (
-        SELECT UNNEST(${sessionIds}::text[]) AS session_id
+        SELECT DISTINCT requested_session.session_id
+        FROM UNNEST(${sessionIds}::text[]) AS requested_session(session_id)
+      ),
+      event_metadata AS (
+        SELECT
+          requested.session_id,
+          (
+            SELECT COUNT(*)
+            FROM events e
+            WHERE e.session_id = requested.session_id
+              AND e.event_type IN (
+                'user_message',
+                'intervention_sent',
+                'session_notification'
+              )
+          )::integer AS turn_count,
+          EXISTS (
+            SELECT 1
+            FROM events e
+            WHERE e.session_id = requested.session_id
+              AND e.event_type = 'turn_summary'
+          ) AS has_turn_summaries
+        FROM requested
       )
       SELECT
         requested.session_id,
-        COUNT(e.id) FILTER (
-          WHERE e.event_type IN (
-            'user_message',
-            'intervention_sent',
-            'session_notification'
-          )
-        )::integer AS turn_count,
-        COALESCE(BOOL_OR(e.event_type = 'turn_summary'), false)
-          AS has_turn_summaries,
+        event_metadata.turn_count,
+        event_metadata.has_turn_summaries,
         (d.session_id IS NOT NULL) AS has_story_digest,
         COALESCE(NULLIF(BTRIM(d.highlight), '') IS NOT NULL, false) AS has_highlight,
         linked_card.id AS card_id,
@@ -99,7 +114,7 @@ export class SessionStoryReadRepository {
         linked_card.status AS card_status
       FROM requested
       LEFT JOIN sessions session ON session.session_id = requested.session_id
-      LEFT JOIN events e ON e.session_id = requested.session_id
+      LEFT JOIN event_metadata ON event_metadata.session_id = requested.session_id
       LEFT JOIN session_digests d ON d.session_id = requested.session_id
       LEFT JOIN LATERAL (
         SELECT card.id, card.number, card.title, card.status
@@ -117,8 +132,6 @@ export class SessionStoryReadRepository {
           card.id ASC
         LIMIT 1
       ) linked_card ON TRUE
-      GROUP BY requested.session_id, d.session_id, d.highlight,
-        linked_card.id, linked_card.number, linked_card.title, linked_card.status
     `;
     return rows.map((row) => [row.session_id, {
       turnCount: Number(row.turn_count),
