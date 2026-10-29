@@ -1,0 +1,198 @@
+name: Soul app iOS simulator launch
+
+on:
+  pull_request:
+    paths:
+      - 'soul-app/app.json'
+      - 'soul-app/eas.json'
+      - 'soul-app/package.json'
+      - 'soul-app/package-lock.json'
+      - 'soul-app/plugins/**'
+      - 'soul-app/modules/**'
+      - 'soul-app/patches/**'
+      - 'soul-app/targets/**'
+      - '.github/workflows/soul-app-ios-simulator.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: soul-app-ios-simulator-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 150
+    defaults:
+      run:
+        working-directory: soul-app
+    env:
+      NODE_ENV: development
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: soul-app/package-lock.json
+      - name: Install independent app dependencies
+        run: npm ci --include=dev --no-audit --no-fund
+      - name: Select Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+      - name: Prebuild iOS app
+        run: npx expo prebuild --platform ios --clean
+      - name: Inspect generated scene lifecycle configuration
+        run: |
+          cat ios/*/AppDelegate.swift
+          /usr/libexec/PlistBuddy -c 'Print :UIApplicationSceneManifest' ios/Soulstream/Info.plist || echo 'no scene manifest'
+      - name: Build Release simulator app
+        run: >-
+          xcodebuild -workspace ios/Soulstream.xcworkspace
+          -scheme Soulstream
+          -configuration Release
+          -sdk iphonesimulator
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath build
+          CODE_SIGNING_ALLOWED=NO
+          build
+      - name: Package simulator app
+        run: ditto -c -k --keepParent build/Build/Products/Release-iphonesimulator/Soulstream.app Soulstream.app.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: soulstream-ios-simulator-app
+          path: soul-app/Soulstream.app.zip
+          retention-days: 7
+
+  launch:
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: xcode-27
+            device: iPhone Duo
+            runtime: '27.1'
+          - runner: xcode-27
+            device: iPhone 17
+            runtime: '27.0'
+          - runner: xcode-27
+            device: iPad Pro 13-inch (M5)
+            runtime: '27.0'
+          - runner: macos-26
+            device: iPhone 17
+            runtime: '26.5'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: soulstream-ios-simulator-app
+      - name: Unpack simulator app
+        run: unzip Soulstream.app.zip
+      - name: Inspect Duo simulator controls
+        if: matrix.device == 'iPhone Duo'
+        continue-on-error: true
+        run: |
+          xcrun simctl help
+          xcrun simctl list devicetypes | grep -i duo
+      - name: Find or create simulator
+        id: simulator
+        env:
+          SIMULATOR_RUNTIME: ${{ matrix.runtime }}
+          SIMULATOR_DEVICE: ${{ matrix.device }}
+        run: |
+          cat > "$RUNNER_TEMP/find_simulator.py" <<'PY'
+          import json
+          import subprocess
+          import sys
+
+          version = sys.argv[1]
+          device_name = sys.argv[2]
+          runtime_token = f"iOS-{version.replace('.', '-')}"
+          devices = json.loads(subprocess.check_output(
+              ["xcrun", "simctl", "list", "devices", "available", "-j"], text=True
+          ))["devices"]
+          runtime_ids = [runtime_id for runtime_id in devices if runtime_token in runtime_id]
+          for runtime_id in runtime_ids:
+              for device in devices[runtime_id]:
+                  if device["name"] == device_name and device.get("isAvailable", True):
+                      print(device["udid"])
+                      raise SystemExit(0)
+
+          runtimes = json.loads(subprocess.check_output(
+              ["xcrun", "simctl", "list", "runtimes", "-j"], text=True
+          ))["runtimes"]
+          runtime = next((item for item in runtimes if item.get("identifier") in runtime_ids), None)
+          if runtime is None:
+              runtime = next((item for item in runtimes if item.get("name") == f"iOS {version}"), None)
+          if runtime is None:
+              raise SystemExit(f"iOS {version} simulator runtime is unavailable")
+
+          device_types = json.loads(subprocess.check_output(
+              ["xcrun", "simctl", "list", "devicetypes", "-j"], text=True
+          ))["devicetypes"]
+          device_type = next((item for item in device_types if item.get("name") == device_name), None)
+          if device_type is None:
+              raise SystemExit(f"Simulator device type not found: {device_name}")
+
+          udid = subprocess.check_output([
+              "xcrun", "simctl", "create", device_name,
+              device_type["identifier"], runtime["identifier"],
+          ], text=True).strip()
+          print(udid)
+          PY
+          SIMULATOR_UDID=$(python3 "$RUNNER_TEMP/find_simulator.py" "$SIMULATOR_RUNTIME" "$SIMULATOR_DEVICE")
+          echo "udid=$SIMULATOR_UDID" >> "$GITHUB_OUTPUT"
+          echo "Simulator UDID: $SIMULATOR_UDID"
+      - name: Boot simulator
+        run: |
+          xcrun simctl boot '${{ steps.simulator.outputs.udid }}'
+          xcrun simctl bootstatus '${{ steps.simulator.outputs.udid }}' -b
+      - name: Install and launch app
+        id: launch
+        run: |
+          xcrun simctl install '${{ steps.simulator.outputs.udid }}' Soulstream.app
+          launch_output=$(xcrun simctl launch '${{ steps.simulator.outputs.udid }}' me.eiaserinnys.soulstream)
+          echo "$launch_output"
+          pid=$(printf '%s\n' "$launch_output" | awk '{print $NF}')
+          echo "pid=$pid" >> "$GITHUB_OUTPUT"
+      - name: Capture app after 30 seconds
+        run: |
+          sleep 30
+          xcrun simctl io '${{ steps.simulator.outputs.udid }}' screenshot launch-30s.png
+          if ! kill -0 '${{ steps.launch.outputs.pid }}' 2>/dev/null; then
+            echo '앱이 30초 안에 종료됨'
+            exit 1
+          fi
+      - name: Collect crash reports
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/soulstream-crashes"
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -type f -iname '*Soulstream*' -exec sh -c '
+            for file do
+              echo "--- $file (first 80 lines) ---"
+              head -n 80 "$file"
+              grep -n NoSceneLifecycleAdoption "$file" || true
+              cp "$file" "$RUNNER_TEMP/soulstream-crashes/"
+            done
+          ' sh {} + 2>/dev/null || true
+      - name: Name launch diagnostics artifact
+        id: artifact-name
+        if: always()
+        run: |
+          artifact_device=$(printf '%s' '${{ matrix.device }}' | sed -E 's/[ ()]/-/g')
+          echo "name=launch-${artifact_device}-${{ matrix.runtime }}" >> "$GITHUB_OUTPUT"
+      - name: Upload launch diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact-name.outputs.name }}
+          path: |
+            launch-30s.png
+            ${{ runner.temp }}/soulstream-crashes/*
+          retention-days: 7
+          if-no-files-found: warn
