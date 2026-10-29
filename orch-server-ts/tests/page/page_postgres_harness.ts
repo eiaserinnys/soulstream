@@ -156,25 +156,11 @@ async function createSchema(sql: ReturnType<typeof postgres>): Promise<void> {
       event_type TEXT NOT NULL,
       payload JSONB,
       searchable_text TEXT,
-      search_vector TSVECTOR,
       dedupe_key TEXT,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (session_id, id),
       UNIQUE (session_id, dedupe_key)
     );
-    CREATE OR REPLACE FUNCTION update_search_vector() RETURNS TRIGGER AS $$
-    BEGIN
-      IF NEW.searchable_text IS NOT NULL AND NEW.searchable_text != '' THEN
-        NEW.search_vector := to_tsvector('simple', NEW.searchable_text);
-      ELSE
-        NEW.search_vector := NULL;
-      END IF;
-      RETURN NEW;
-    END;
-    $$ LANGUAGE plpgsql;
-    CREATE TRIGGER trg_events_search_vector
-      BEFORE INSERT OR UPDATE OF searchable_text ON events
-      FOR EACH ROW EXECUTE FUNCTION update_search_vector();
     CREATE TABLE session_feed_state (
       session_id TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
       attention_revision INTEGER NOT NULL DEFAULT 0 CHECK (attention_revision >= 0),

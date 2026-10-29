@@ -528,6 +528,10 @@
     {
       "id": "130_events_session_type_id_index.sql",
       "sha256": "85c50cbb0979f57a5a8288aa9e9c12708985ba2307a3dfd14ee58fd998558b80"
+    },
+    {
+      "id": "131_drop_unused_event_search_vector.sql",
+      "sha256": "2090ab6ffb42c81f47d41397388297356079adf2ad98a9847523aa92aa1532ed"
     }
   ]
 }

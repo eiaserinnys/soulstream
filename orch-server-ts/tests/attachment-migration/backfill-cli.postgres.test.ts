@@ -145,11 +145,10 @@ describe("attachment ref backfill CLI PostgreSQL contract", () => {
     const manifest = await writeManifest([messageIdentity(sessionId, eventId)]);
     const report = await invokeMessage(manifest, ["--apply", "--approved-manifest-sha256", manifest.sha256]);
     expect(report.some((record) => record.code === "P0001")).toBe(true);
-    const stored = (await harness.sql<{ payload: unknown; search_vector: string | null }[]>`
-      SELECT payload, search_vector::text AS search_vector FROM events WHERE session_id=${sessionId} AND id=${eventId}
+    const stored = (await harness.sql<{ payload: unknown }[]>`
+      SELECT payload FROM events WHERE session_id=${sessionId} AND id=${eventId}
     `)[0]!;
     expect(stored.payload).toEqual(payload);
-    expect(stored.search_vector).toBe("'rollback':1 'search':2 'text':3");
   });
 
   it("revalidates message absolute URLs against the explicit origin allowlist", async () => {
