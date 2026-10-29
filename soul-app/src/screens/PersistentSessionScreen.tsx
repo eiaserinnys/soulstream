@@ -136,6 +136,10 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const [app, setApp] = useState<PersistentSessionRect | null>(null);
   const [main, setMain] = useState<PersistentSessionRect | null>(null);
   const [composer, setComposer] = useState<{ anchor: LayoutRectangle; box: LayoutRectangle } | null>(null);
+  const [keyboardOverlap, setKeyboardOverlap] = useState(0);
+  const onKeyboardOverlapChange = React.useCallback((overlap: number) => {
+    setKeyboardOverlap(current => current === overlap ? current : overlap);
+  }, []);
   const [usageHeight, setUsageHeight] = useState(0);
   const compact = phone || (app?.height ?? Infinity) < FRAME.compactHeight;
   const headerHeight = compact ? FRAME.compactHeader : FRAME.header;
@@ -176,13 +180,14 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const composerRoles = createSessionVisualRoles(t).chat.composer;
   const inputRowHeight = Math.max(composerRoles.contentMinHeight,
     t.chatFontSize.body * t.lineHeightRatio * fontScale + composerRoles.inputPaddingVertical * 2);
+  // The composer anchor moves when the inline report grows; keep its cap and portrait line tied to the main column.
   const nextGeometry = app && main && composer ? calculatePersistentSessionLayout({
     app,
     header: { left: app.left, top: app.top, width: app.width, height: headerHeight },
     main,
-    baselineBottom: main.top + composer.anchor.y + composer.box.y + composer.box.height,
+    baselineBottom: main.top + main.height - keyboardOverlap - (composer.anchor.height - (composer.box.y + composer.box.height)),
     inputRowHeight, rowBottomGap: t.spacing.xs, pointerFine: false, showCharacter: display?.show_character === true,
-    phoneConfigured: phone || compact,
+    inlineComposerReserve: composer.anchor.height + keyboardOverlap, phoneConfigured: phone || compact,
     reportBubble: { widthScale: 1, minimumHeight: minimumReportBubbleHeight(t) },
   }) : null;
   const heldGeometry = React.useRef(nextGeometry);
@@ -196,7 +201,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     onExpandedKeyChange={key => setReportExpansion({ sessionId: session?.session_id, key })}
     sessionId={session?.session_id} onReady={setReportReady}
     send={reportSend} completion={completion} bubble={!!geometry.reportBubble}
-    maxHeight={geometry.reportBubble?.maxHeight ?? geometry.reportViewMaxHeight}
+    maxHeight={geometry.reportBubble?.maxHeight ?? (phone ? geometry.reportViewMaxHeight : geometry.reportInlineMaxHeight)}
     onSelect={report.select} onDismiss={report.dismiss} onInteraction={setReportPressed} onDeckTouch={onReportDeckTouch}
     renderCardStatus={entry => {
       const card = persistentReportStatusCard(entry);
@@ -285,6 +290,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
           reportView={geometry?.reportBubble ? null : phone ? pager : geometry && (report.entries.length > 0 || completion.recent)
             ? <View testID="persistent-session-report-inline-space" style={{ height: reportSeatHeight }} /> : null}
           active={chatActive} minimumBottomPadding={phone ? 0 : insets.bottom}
+          onKeyboardOverlapChange={onKeyboardOverlapChange}
           onComposerLayout={(anchor: LayoutRectangle, box: LayoutRectangle) => {
             if (anchor.width > 0 && anchor.height > 0 && box.width > 0 && box.height > 0) setComposer({ anchor, box });
           }} />

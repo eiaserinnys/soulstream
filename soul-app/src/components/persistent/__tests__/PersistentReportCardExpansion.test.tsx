@@ -4,7 +4,7 @@ const mockOpenCardLink = jest.fn();
 jest.mock('../../../hooks/useOpenContentLink', () => ({ useOpenContentLink: () => mockOpenCardLink }));
 
 import React from 'react';
-import { ScrollView } from 'react-native';
+import { Keyboard, ScrollView, View } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';
 import type { CardCheckItem, CardComment, CardDetail } from '../../../api/cardTypes';
@@ -154,4 +154,46 @@ test.each([false, true])('focused card composer follows reading growth and viewp
   expect(scrollToEnd).not.toHaveBeenCalled();
   screen.unmount();
   scrollToEnd.mockRestore();
+});
+
+test('tablet inline band compacts for the keyboard unless card details are expanded', async () => {
+  const listeners = new Map<string, Set<(event: any) => void>>();
+  const keyboard = jest.spyOn(Keyboard, 'addListener').mockImplementation((name, callback) => {
+    const callbacks = listeners.get(name) ?? new Set(); callbacks.add(callback); listeners.set(name, callbacks);
+    return { remove: () => { callbacks.delete(callback); } } as ReturnType<typeof Keyboard.addListener>;
+  });
+  const visible = jest.spyOn(Keyboard, 'isVisible').mockReturnValue(false);
+  const event = { duration: 250, easing: 'keyboard', isEventFromThisApp: true,
+    endCoordinates: { screenX: 0, screenY: 422, width: 1180, height: 398 } };
+  const emit = (name: string) => act(() => { for (const callback of listeners.get(name) ?? []) callback(event); });
+  const entry: PersistentReportEntry = { key: 'card_531', kind: 'see', title: '검수 결과', card_numbers: [531],
+    card_id: card.id, context: '확인해 주세요.', action: '', options: [], state: 'open', answer: '', updated_at: at };
+  const entries: PersistentReportEntry[] = [
+    { ...entry, kind: 'see', card_numbers: [531], card_id: card.id, title: '검수 결과' },
+    { ...entry, key: 'card_532', card_numbers: [532], card_id: 'card-532', title: '다음 검수 결과' },
+  ];
+  const screen = render(<ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+    <PersistentReportPager entries={entries} index={0} api={{ getCard: jest.fn().mockResolvedValue(makeDetail()) } as unknown as ApiClient}
+      bubble={false} maxHeight={440} onSelect={jest.fn()} onDismiss={jest.fn()} onFocusComposer={jest.fn()}
+      renderCardDetails={selected => <View testID={`expanded-${selected.key}`} />} />
+  </ChatUiControllerProvider>);
+  measurePersistentReports(screen, { width: 318 });
+
+  emit('keyboardWillShow'); emit('keyboardDidShow');
+  measurePersistentReports(screen, { width: 318 });
+  await waitFor(() => expect(screen.queryByTestId('report-nav', { includeHiddenElements: true })).toBeNull());
+  emit('keyboardWillHide'); emit('keyboardDidHide');
+  measurePersistentReports(screen, { width: 318 });
+  await waitFor(() => expect(screen.getByTestId('report-nav', { includeHiddenElements: true })).toBeTruthy());
+
+  emit('keyboardWillShow'); emit('keyboardDidShow');
+  measurePersistentReports(screen, { width: 318 });
+  await waitFor(() => expect(screen.queryByTestId('report-nav', { includeHiddenElements: true })).toBeNull());
+  await waitFor(() => expect(screen.getByTestId('report-deck', { includeHiddenElements: true }).props.pointerEvents).toBe('auto'));
+  fireEvent.press(screen.getAllByTestId('report-title', { includeHiddenElements: true })[0]);
+  await waitFor(() => expect(screen.getByTestId('expanded-card_531', { includeHiddenElements: true })).toBeTruthy());
+  expect(screen.getByTestId('report-nav', { includeHiddenElements: true })).toBeTruthy();
+
+  screen.unmount();
+  visible.mockRestore(); keyboard.mockRestore();
 });

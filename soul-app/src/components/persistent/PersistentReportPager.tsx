@@ -46,14 +46,18 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
   const phone = useDeviceType() === 'phone';
   const bleed = phone ? t.foundation.pageInset : t.uiSpacing.lg;
   const styles = useMemo(() => reportStyles(t, bleed, !phone), [t, bleed, phone]);
+  const inlineExpanded = !bubble && expandedKey !== null && renderCardDetails !== undefined;
   const [keyboard, setKeyboard] = useState(Keyboard.isVisible());
   useEffect(() => {
-    if (!phone) return;
+    if (!phone && bubble) return;
     const show = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow', () => setKeyboard(true));
     const hide = Keyboard.addListener(Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide', () => setKeyboard(false));
     return () => { show.remove(); hide.remove(); };
-  }, [phone]);
-  const compact = phone && keyboard && !bubble;
+  }, [phone, bubble]);
+  const compact = keyboard && !bubble && !inlineExpanded;
+  // The deck cap must leave the band's outer margins inside its placement budget.
+  const bandMargin = StyleSheet.flatten(styles.band).marginVertical as number;
+  const inlineMaxHeight = maxHeight === undefined ? undefined : Math.max(0, maxHeight - bandMargin * 2);
   const [width, setWidth] = useState(0);
   const measuredHeights = useRef(new Map<string, number>());
   const readyHeights = useRef(new Set<string>());
@@ -77,8 +81,7 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
   latestMeasurement.current = { entries, commitHeight, measureKey };
   useLayoutEffect(commitHeight, [entries, compact, width, bubble, index]);
   const bubbleHeight = bubble ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
-  const inlineExpanded = !bubble && expandedKey !== null && renderCardDetails !== undefined;
-  const inlineHeight = inlineExpanded ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
+  const inlineHeight = inlineExpanded ? Math.min(inlineMaxHeight ?? height, height || inlineMaxHeight || 0) : undefined;
   // Keep a presented session interactive while its placement/width remeasures:
   // hiding the surface here also hides its focused native TextInput.
   const ready = presentedLayout === layoutKey || (expandedKey !== null && presentedLayout !== null && presentedSession.current === sessionId)
@@ -155,7 +158,7 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
   return <View ref={deck} testID="report-deck" accessibilityLabel="지금의 보고" accessible={false}
     pointerEvents={ready ? 'auto' : 'none'} accessibilityElementsHidden={!ready} importantForAccessibility={ready ? 'auto' : 'no-hide-descendants'}
     style={[styles.deck, !bubble && styles.band, bubble && { height: bubbleHeight, maxHeight },
-      inlineExpanded && { height: inlineHeight, maxHeight }, !ready && { opacity: 0 }]} {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}
+      inlineExpanded && { height: inlineHeight, maxHeight: inlineMaxHeight }, !ready && { opacity: 0 }]} {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}
     onTouchStart={() => onDeckTouch?.(true)} onTouchEnd={() => onDeckTouch?.(false)} onTouchCancel={() => onDeckTouch?.(false)}
     {...{ onKeyDown }}>
     <ScrollView ref={scroll} testID="report-track" horizontal pagingEnabled showsHorizontalScrollIndicator={false}
