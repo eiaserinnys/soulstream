@@ -44,10 +44,12 @@ describePostgres("event search direct writer migration", () => {
     expect(await sql`SELECT term, term_freq FROM event_search_terms
       WHERE session_id = 'rollback-guard' ORDER BY term`).toEqual(savedTerms);
     await sql`DROP VIEW unexpected_legacy_dependency`;
+    const beforeSwitch = await snapshot(harness);
+    await sql.begin((tx) => tx.unsafe(upgrade));
+    await sql.begin((tx) => tx.unsafe(upgrade));
+    expect(await snapshot(harness)).toEqual(beforeSwitch);
     await sql`DELETE FROM sessions WHERE session_id = 'rollback-guard'`;
     await resetFixture(harness);
-    await sql.begin((tx) => tx.unsafe(upgrade));
-    await sql.begin((tx) => tx.unsafe(upgrade));
     expect((await sql`SELECT to_regclass('event_search_terms') AS relation`)[0]?.relation).toBeNull();
     expect(await sql`SELECT p.proname, pg_get_functiondef(p.oid) AS definition
       FROM pg_proc p WHERE p.pronamespace = current_schema()::regnamespace
