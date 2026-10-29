@@ -734,7 +734,6 @@ CREATE TABLE IF NOT EXISTS events (
     event_type      TEXT NOT NULL,
     payload         JSONB,
     searchable_text TEXT,
-    search_vector   TSVECTOR,
     dedupe_key      TEXT,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (session_id, id)
@@ -1051,7 +1050,6 @@ ALTER TABLE events ADD COLUMN IF NOT EXISTS subtree_height INTEGER NOT NULL DEFA
 -- 2. 인덱스
 -- ============================================================
 
-CREATE INDEX IF NOT EXISTS idx_events_session_id_id ON events (session_id, id);
 CREATE INDEX IF NOT EXISTS idx_events_event_type_cover
     ON events USING btree (event_type)
     INCLUDE (session_id, id, created_at);
@@ -1060,7 +1058,6 @@ CREATE INDEX IF NOT EXISTS idx_events_session_type_id
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_session_dedupe_key
     ON events (session_id, dedupe_key)
     WHERE dedupe_key IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_events_search_vector ON events USING GIN (search_vector);
 CREATE INDEX IF NOT EXISTS idx_event_search_terms_term
     ON event_search_terms (term)
     INCLUDE (session_id, event_id, term_freq, doc_len);
@@ -1097,7 +1094,7 @@ CREATE INDEX IF NOT EXISTS idx_events_parent ON events (session_id, parent_event
 CREATE INDEX IF NOT EXISTS idx_events_created_at ON events (session_id, created_at DESC, id DESC);
 
 -- ============================================================
--- 3. 트리거 (search_vector 자동 갱신)
+-- 3. 검색·트리거 함수
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION event_search_tokenize(p_text TEXT)
@@ -1109,22 +1106,6 @@ RETURNS TEXT[] LANGUAGE sql IMMUTABLE AS $$
     ) AS token(term)
     WHERE term <> '';
 $$;
-
-CREATE OR REPLACE FUNCTION update_search_vector() RETURNS TRIGGER AS $$
-BEGIN
-    IF NEW.searchable_text IS NOT NULL AND NEW.searchable_text != '' THEN
-        NEW.search_vector := to_tsvector('simple', NEW.searchable_text);
-    ELSE
-        NEW.search_vector := NULL;
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trg_events_search_vector ON events;
-CREATE TRIGGER trg_events_search_vector
-    BEFORE INSERT OR UPDATE OF searchable_text ON events
-    FOR EACH ROW EXECUTE FUNCTION update_search_vector();
 
 CREATE OR REPLACE FUNCTION event_search_adjust_corpus_stats(
     p_doc_delta     INTEGER,

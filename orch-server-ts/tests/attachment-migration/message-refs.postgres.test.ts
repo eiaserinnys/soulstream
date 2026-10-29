@@ -57,9 +57,6 @@ describe("message ref backfill PostgreSQL contract", () => {
           (${sessionA}, ${eventId}, ${eventType}, ${harness.sql.json(payload)}::jsonb, 'original searchable text'),
           (${sessionB}, ${eventId}, ${eventType}, ${harness.sql.json(payload)}::jsonb, 'other session searchable text')
       `;
-      const searchVectorBefore = (await harness.sql<{ search_vector: string | null }[]>`
-        SELECT search_vector::text AS search_vector FROM events WHERE session_id=${sessionA} AND id=${eventId}
-      `)[0]!.search_vector;
       const resolver = createLiveDbSqlResolver({ sql: harness.liveSql });
       const readRepository = createLiveAttachmentReadRepository(resolver);
       const readService = await createLiveTestAttachmentService(harness.liveSql, {
@@ -104,11 +101,10 @@ describe("message ref backfill PostgreSQL contract", () => {
 
       expect(result.status).toBe("updated");
       const stored = (await harness.sql<{
-        session_id: string; id: number; event_type: string; searchable_text: string; search_vector: string | null;
+        session_id: string; id: number; event_type: string; searchable_text: string;
         payload: Record<string, unknown>; payload_kind: string;
       }[]>`
         SELECT session_id, id, event_type, searchable_text, payload,
-        search_vector::text AS search_vector,
           jsonb_typeof(payload->'attachment_ids') AS payload_kind
         FROM events WHERE session_id=${sessionA} AND id=${eventId}
       `)[0]!;
@@ -118,7 +114,6 @@ describe("message ref backfill PostgreSQL contract", () => {
       }).toEqual({
         session_id: sessionA, id: eventId, event_type: eventType, searchable_text: "original searchable text",
       });
-      expect(stored.search_vector).toBe(searchVectorBefore);
       expect(stored.payload).toEqual({
         ...payload,
         attachment_ids: ["existing-asset", "message-ref-asset"],

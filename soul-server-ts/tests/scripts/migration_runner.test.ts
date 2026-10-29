@@ -21,6 +21,7 @@ import { makeTempDirSync } from "../helpers/temp_dir.js";
 const MIGRATE = fileURLToPath(
   new URL("../../../packages/db-schema/scripts/migrate.mjs", import.meta.url),
 );
+const EVENT_SEARCH_STORAGE_MIGRATION_ID = "131_drop_unused_event_search_vector.sql";
 const RELEASE_EXECUTOR = fileURLToPath(
   new URL("../../../packages/db-schema/scripts/release-executor.mjs", import.meta.url),
 );
@@ -67,6 +68,42 @@ describe.sequential("versioned migration runner", () => {
 
     const sql = postgres(url, { max: 1, idle_timeout: 1 });
     try {
+      await expectLegacyEventSearchStorageAbsent(sql);
+
+      await sql.unsafe(`
+        ALTER TABLE events ADD COLUMN search_vector TSVECTOR
+          GENERATED ALWAYS AS (to_tsvector('simple', searchable_text)) STORED;
+        CREATE INDEX idx_events_search ON events USING GIN (search_vector);
+        CREATE INDEX idx_events_search_vector ON events USING GIN (search_vector);
+        CREATE INDEX idx_events_session_id_id ON events (session_id, id);
+        CREATE FUNCTION update_search_vector() RETURNS TRIGGER AS $$
+        BEGIN
+          IF NEW.searchable_text IS NOT NULL AND NEW.searchable_text != '' THEN
+            NEW.search_vector := to_tsvector('simple', NEW.searchable_text);
+          ELSE
+            NEW.search_vector := NULL;
+          END IF;
+          RETURN NEW;
+        END;
+        $$ LANGUAGE plpgsql;
+        CREATE TRIGGER trg_events_search_vector
+          BEFORE INSERT OR UPDATE OF searchable_text ON events
+          FOR EACH ROW EXECUTE FUNCTION update_search_vector();
+      `);
+      const removedMigration = await sql`DELETE FROM schema_migrations
+        WHERE migration_id = ${EVENT_SEARCH_STORAGE_MIGRATION_ID}
+        RETURNING migration_id`;
+      expect(removedMigration).toHaveLength(1);
+
+      const removalSql = readFileSync(
+        join(REPOSITORY_ROOT, "packages/db-schema/sql/migrations", EVENT_SEARCH_STORAGE_MIGRATION_ID),
+        "utf8",
+      );
+      await sql.unsafe(removalSql);
+      await expectLegacyEventSearchStorageAbsent(sql);
+      await sql.unsafe(removalSql);
+      await expectLegacyEventSearchStorageAbsent(sql);
+
       const coveringIndex = await sql`
         SELECT i.indisvalid, i.indisready, i.indnkeyatts, i.indnatts,
                pg_get_indexdef(i.indexrelid) AS definition,
@@ -276,4 +313,34 @@ async function startPostgres() {
 
 function expectNoSecret(result: { stdout: string; stderr: string }) {
   expect(`${result.stdout}\n${result.stderr}`).not.toContain(TEST_PASSWORD);
+}
+
+async function expectLegacyEventSearchStorageAbsent(sql: ReturnType<typeof postgres>) {
+  const [state] = await sql`
+    SELECT
+      EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = 'events'
+          AND column_name = 'search_vector'
+      ) AS has_search_vector,
+      to_regclass(current_schema() || '.idx_events_search') IS NOT NULL AS has_legacy_search_index,
+      to_regclass(current_schema() || '.idx_events_search_vector') IS NOT NULL AS has_search_vector_index,
+      to_regclass(current_schema() || '.idx_events_session_id_id') IS NOT NULL AS has_duplicate_session_index,
+      to_regprocedure('update_search_vector()') IS NOT NULL AS has_search_vector_function,
+      EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgrelid = 'events'::regclass
+          AND tgname = 'trg_events_search_vector'
+          AND NOT tgisinternal
+      ) AS has_search_vector_trigger
+  `;
+  expect(state).toEqual({
+    has_search_vector: false,
+    has_legacy_search_index: false,
+    has_search_vector_index: false,
+    has_duplicate_session_index: false,
+    has_search_vector_function: false,
+    has_search_vector_trigger: false,
+  });
 }
