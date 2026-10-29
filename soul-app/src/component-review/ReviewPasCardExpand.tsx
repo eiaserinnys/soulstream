@@ -63,7 +63,7 @@ function reviewEntries() {
 }
 const question = { id: 'preview-question', cardId: card.id, sessionId: 'preview-agent', text: '추가 커멘트를 장 안에서 바로 쓸까요?',
   options: ['장 안에서', '카드에서'], answer: null, askedAt: at };
-function createReviewCardApi(onStatusChange: (id: string, status: CardStatus) => void): ApiClient {
+export function createReviewCardApi(onStatusChange: (id: string, status: CardStatus) => void = () => {}): ApiClient {
   let details: Record<string, CardDetail> = {
     [card.id]: { card: { ...card, items }, reports: [], questions: [question], sessions: [], nowHistory: [], comments: [
       { id: 'preview-user', cardId: card.id, authorKind: 'user', authorId: null, sessionId: null, kind: 'comment', body: 'PAS 안에서 결과를 읽고 의견도 남기고 싶어요.', createdAt: at },

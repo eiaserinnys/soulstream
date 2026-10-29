@@ -28,6 +28,16 @@ import { createReviewApi, entryShellCardId } from './fixtures';
 import { installEntryShellPublicHarness } from './fixture-client';
 import { ReviewEntryShell } from './ReviewEntryShell';
 import { ReviewPersistentCardOverlay } from './ReviewPersistentCardOverlay';
+import { useChatStore } from '../store/chatStore';
+import { useSessionStore } from '../store/sessionStore';
+
+const PAS_LAYOUT_FRAMES = {
+  'inner-landscape': { width: 951, height: 669, rail: false, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
+  'inner-portrait': { width: 669, height: 951, rail: false, insets: { top: 72, right: 0, bottom: 24, left: 0 } },
+  'ipad-pro-13-portrait': { width: 1032, height: 1376, rail: false, insets: { top: 24, right: 0, bottom: 20, left: 0 } },
+  'outer-portrait': { width: 466, height: 678, rail: true, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
+  'iphone-17': { width: 393, height: 852, rail: false, insets: { top: 59, right: 0, bottom: 34, left: 0 } },
+} as const;
 
 const RAIL_WIDTH = 84;
 
@@ -43,14 +53,42 @@ export const IPHONE_DUO_FRAMES = [
 function DuoPasCardOverlayStage() {
   const host = usePersistentSessionHost();
   useEffect(() => {
+    const sessionId = 'review-pas-1';
     host.store.getState().open({
-      session_id: 'review-pas-1', display_name: '영구 관제 세션', node_id: 'public-node',
-      folder_id: null, agent_id: 'public-agent', agent_name: '로젤린', persistent: true, settings: {},
+      session_id: sessionId, display_name: '영구 관제 세션', node_id: 'public-node',
+      folder_id: null, agent_id: 'public-agent', agent_name: '로젤린', persistent: true,
+      persistent_report: [{ key: 'card_804', kind: 'see', title: '지금의 보고 · #804', card_numbers: [804],
+        card_id: 'preview-pas-card', card_status: 'review', context: '검수용 카드 장입니다.', action: '',
+        options: [], state: 'open', answer: '', updated_at: '2026-10-29T00:00:00Z' }], settings: {},
       runtime: { current_model: { model_preset: null, reasoning_effort: null, model: null }, pending: null },
     } as any);
-    host.store.getState().swipe('left');
+    useSessionStore.getState().applyPersistentReport(sessionId, [{ key: 'card_804', kind: 'see', title: '지금의 보고 · #804',
+      card_numbers: [804], card_id: 'preview-pas-card', card_status: 'review', context: '검수용 카드 장입니다.',
+      action: '', options: [], state: 'open', answer: '', updated_at: '2026-10-29T00:00:00Z' }]);
+    const request = useChatStore.getState().beginPersistentDisplaySettingsLoad(sessionId);
+    useChatStore.getState().finishPersistentDisplaySettingsLoad(sessionId, request, {
+      show_character: true, animate_character: false, show_generation_separator: true,
+      show_jev_candidates: true, turn_usage_mode: 'collapsed',
+    });
   }, [host.store]);
   return <PersistentSessionScreen active onHome={() => {}} />;
+}
+
+function DuoPasLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRAMES }) {
+  const frame = PAS_LAYOUT_FRAMES[frameId];
+  const frameRect: Rect = { x: 0, y: 0, width: frame.width, height: frame.height };
+  return <PersistentSessionProvider>
+    <SafeAreaFrameContext.Provider value={frameRect}>
+      <SafeAreaInsetsContext.Provider value={frame.insets}>
+        <PhoneRailModeContext.Provider value={frame.rail}>
+          <View style={{ flex: 1, flexDirection: 'row', width: frame.width, height: frame.height, overflow: 'hidden' }}>
+            <View style={{ width: frame.rail ? frame.width - frame.insets.right : frame.width, height: frame.height }}><DuoPasCardOverlayStage /></View>
+            {frame.rail && frame.insets.right > 0 ? <View style={{ width: frame.insets.right, height: frame.height }} /> : null}
+          </View>
+        </PhoneRailModeContext.Provider>
+      </SafeAreaInsetsContext.Provider>
+    </SafeAreaFrameContext.Provider>
+  </PersistentSessionProvider>;
 }
 
 export function ReviewIphoneDuo() {
@@ -59,6 +97,11 @@ export function ReviewIphoneDuo() {
   const sample = typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('sample')
     : null;
+  if (sample === 'pas-layout') {
+    const frameId = new URLSearchParams(window.location.search).get('frame') as keyof typeof PAS_LAYOUT_FRAMES | null;
+    if (!frameId || !PAS_LAYOUT_FRAMES[frameId]) return null;
+    return <DuoPasLayoutReview frameId={frameId} />;
+  }
   const navigationTheme = {
     ...DefaultTheme,
     colors: { ...DefaultTheme.colors, background: t.colors.background },

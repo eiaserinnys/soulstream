@@ -30,6 +30,7 @@ import { createPersistentFullscreenReviewApi } from './persistent-fullscreen-fix
 import { contentLinkReviewSessionEventsUrl } from './chat-fixtures';
 import { createChatUiFlowReviewApi } from './chat-ui-flow-client';
 import { createPersistentReportReviewApi } from './persistent-report-fixtures';
+import { createReviewCardApi } from './ReviewPasCardExpand';
 
 const ownedAgentsReviewApi = createOwnedAgentsReviewApi('normal');
 const nativeSettingsApi = { ...nativeSettingsReviewApi, ...ownedAgentsReviewApi };
@@ -434,17 +435,22 @@ export function createApiClient(baseUrl = ''): ApiClient {
       getStarredFolders: async () => ({ items: empty ? [] : starredFolders, nextCursor: null }) } as unknown as ApiClient;
   }
   if (section === 'cardColors') return createCardColorReviewClient().api;
-  if (section === 'iphoneDuo') return {
-    ...entryShellApi,
-    ...nativeSettingsApi,
-    getCard: entryShellApi.getCard,
-    listCards: entryShellApi.listCards,
-    listCompletedCards: entryShellApi.listCompletedCards,
-    getCatalog: entryShellApi.getCatalog,
-    getFeedPage: entryShellApi.getFeedPage,
-    getSessionsByIds: entryShellApi.getSessionsByIds,
-    catalogStreamUrl: entryShellApi.catalogStreamUrl,
-  } as unknown as ApiClient;
+  if (section === 'iphoneDuo') {
+    const api = {
+      ...entryShellApi,
+      ...nativeSettingsApi,
+      getCard: entryShellApi.getCard,
+      listCards: entryShellApi.listCards,
+      listCompletedCards: entryShellApi.listCompletedCards,
+      getCatalog: entryShellApi.getCatalog,
+      getFeedPage: entryShellApi.getFeedPage,
+      getSessionsByIds: entryShellApi.getSessionsByIds,
+      catalogStreamUrl: entryShellApi.catalogStreamUrl,
+    };
+    return new URLSearchParams(window.location.search).get('sample') === 'pas-layout'
+      ? { ...api, ...createReviewCardApi() } as unknown as ApiClient
+      : api as unknown as ApiClient;
+  }
   if (section === 'nativeSettings') return { ...nativeSettingsApi, ...usageEndpoints } as unknown as ApiClient;
   if (section === 'persistent') {
     const api = createPersistentFullscreenReviewApi(window.location.search);
