@@ -302,6 +302,9 @@ test('expanded inline report uses the layout height cap and scrolls its reading 
   });
   expect(geometry.reportBubble).toBeNull();
   expect(geometry.reportViewMaxHeight).toBe(geometry.lineY - (76 + 16) - 44 - 4);
+  const tokens = renderHook(() => useTokens()).result.current;
+  const bandMargin = StyleSheet.flatten(reportStyles(tokens, tokens.uiSpacing.lg, true).band).marginVertical as number;
+  const deckHeight = geometry.reportViewMaxHeight - bandMargin * 2;
   const cardEntry = { ...reportReviewEntries[2], key: 'card_531', card_id: 'card-531', card_numbers: [531] };
   const screen = render(<ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
       <PersistentReportPager entries={[cardEntry, { ...reportReviewEntries[2], key: 'long-pas', context: '긴 PAS 본문'.repeat(100) }]} index={0} api={null} bubble={false} maxHeight={geometry.reportViewMaxHeight}
@@ -317,7 +320,7 @@ test('expanded inline report uses the layout height cap and scrolls its reading 
   const sheet = () => StyleSheet.flatten(screen.getByTestId('report-sheet-card_531').props.style);
   expect(screen.getByTestId('inline-card-expansion')).toBeTruthy();
   expect(screen.getByTestId('report-scroll')).toBeTruthy();
-  expect(deck().maxHeight).toBe(geometry.reportViewMaxHeight);
+  expect(deck().maxHeight).toBe(deckHeight);
 
   const reading = screen.getByTestId('report-scroll');
   expect(reading.props.stickyHeaderIndices).toEqual([0]);
@@ -326,8 +329,10 @@ test('expanded inline report uses the layout height cap and scrolls its reading 
   fireEvent(reading, 'layout', { nativeEvent: { layout: { height: 160 } } });
   fireEvent(reading, 'contentSizeChange', 390, 1200);
   fireEvent(screen.getByTestId('report-footer'), 'layout', { nativeEvent: { layout: { height: 80 } } });
-  expect(track().height).toBe(geometry.reportViewMaxHeight);
-  expect(sheet().height).toBe(geometry.reportViewMaxHeight);
+  expect(track().height).toBe(deckHeight);
+  expect(sheet().height).toBe(deckHeight);
+  expect(deck().height).toBe(deckHeight);
+  expect(deck().height + bandMargin * 2).toBe(geometry.reportViewMaxHeight);
   const pasSheet = screen.getByTestId('report-sheet-long-pas', { includeHiddenElements: true });
   const pasReading = within(pasSheet).getByTestId('report-scroll', { includeHiddenElements: true });
   expect(within(pasReading).queryByTestId('report-footer', { includeHiddenElements: true })).toBeNull();
