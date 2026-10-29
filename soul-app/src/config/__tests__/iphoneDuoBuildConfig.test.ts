@@ -49,3 +49,14 @@ test('Expo SDK and React Native keep the SDK 57 contract', () => {
   expect(versionsAtLeast(pkg.dependencies.expo, [57, 0, 24])).toBe(true);
   expect(versionsAtLeast(pkg.dependencies['react-native'], [0, 86, 3])).toBe(true);
 });
+
+test('iOS 27 SDK requires UIScene lifecycle support', () => {
+  const app = readJson('app.json');
+  const pkg = readJson('package.json');
+  const buildProperties = app.expo.plugins.find(
+    (plugin: unknown) => Array.isArray(plugin) && plugin[0] === 'expo-build-properties',
+  );
+
+  expect(buildProperties[1].ios.enableSceneSupport).toBe(true);
+  expect(versionsAtLeast(pkg.dependencies.expo, [57, 0, 23])).toBe(true);
+});
