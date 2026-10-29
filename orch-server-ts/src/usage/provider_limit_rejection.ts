@@ -179,6 +179,7 @@ function rejectedProvider(event: ProviderExecutionEvent): ProviderLimitProvider 
   if (event.eventType !== "error" || payload?.type !== "error") return null;
   if (payload.error_code === "claude_rate_limit_stop_failure") return "claude";
   if (payload.error_code === "codex_usage_limit_exceeded") return "codex";
+  if (payload.error_code === "antigravity_quota_exceeded") return "antigravity";
   return null;
 }
 
