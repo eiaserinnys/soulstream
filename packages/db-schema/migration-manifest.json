@@ -540,6 +540,10 @@
     {
       "id": "133_event_search_documents.sql",
       "sha256": "36d73bd599416d81a58456b2ac5f8f13e00b7868614c6ba533b4189ca856c643"
+    },
+    {
+      "id": "134_event_search_read_v2.sql",
+      "sha256": "f3f07a089d0b65bdfe9fedd101565e2f9d35c71dc9e759dc2661d8d3c761371d"
     }
   ]
 }

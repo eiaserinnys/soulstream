@@ -190,6 +190,188 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     expect(excludedType).toHaveLength(0);
   });
 
+  it("reads integer postings with the same search contract and supports migration replay", async () => {
+    const canonicalDefinition = await readEventSearchDefinition(sql);
+    const previousSearchMigration = readFileSync(fileURLToPath(new URL(
+      "../../packages/db-schema/sql/migrations/103_event_search_aggregate_postings.sql",
+      import.meta.url,
+    )), "utf8");
+    const readV2Migration = readFileSync(fileURLToPath(new URL(
+      "../../packages/db-schema/sql/migrations/134_event_search_read_v2.sql",
+      import.meta.url,
+    )), "utf8");
+
+    await sql.unsafe(previousSearchMigration);
+    await sql.unsafe(`
+      ALTER FUNCTION public.event_search(
+        text, text[], integer, text[], text[], integer, integer, text,
+        text[], timestamptz, text[], jsonb
+      ) RENAME TO event_search_before_read_v2
+    `);
+
+    await sql`INSERT INTO sessions (
+      session_id, folder_id, display_name, status, session_type,
+      node_id, agent_id, model_preset, updated_at
+    ) VALUES
+      ('prefix-read-v2-exact', 'folder-allowed', 'prefix-read-v2-exact', 'idle', 'claude', NULL, NULL, NULL, NOW()),
+      ('prefix-read-v2-wide', 'folder-allowed', 'prefix-read-v2-wide', 'idle', 'claude', NULL, NULL, NULL, NOW()),
+      ('prefix-read-v2-astral', 'folder-allowed', 'prefix-read-v2-astral', 'idle', 'claude', NULL, NULL, NULL, NOW()),
+      ('prefix-read-v2-false-n', 'folder-allowed', 'prefix-read-v2-false-n', 'idle', 'claude', NULL, NULL, NULL, NOW()),
+      ('prefix-read-v2-false-a', 'folder-allowed', 'prefix-read-v2-false-a', 'idle', 'claude', NULL, NULL, NULL, NOW()),
+      ('search-filter-preset', 'folder-allowed', 'search-filter-preset', 'idle', 'claude', 'filter-node', 'agent-shared', 'preset-new', NOW()),
+      ('search-filter-fallback', 'folder-allowed', 'search-filter-fallback', 'idle', 'claude', 'filter-node', 'agent-shared', 'preset-old', NOW())
+    `;
+    await sql`
+      INSERT INTO events (session_id, id, event_type, searchable_text, created_at)
+      VALUES
+        ('prefix-read-v2-exact', 1, 'assistant_message', '디스크', NOW()),
+        ('prefix-read-v2-wide', 1, 'assistant_message', '디스크위생', NOW()),
+        ('prefix-read-v2-astral', 1, 'assistant_message', '디스크𐐀', NOW()),
+        ('prefix-read-v2-false-n', 1, 'assistant_message', '디스큰', NOW()),
+        ('prefix-read-v2-false-a', 1, 'assistant_message', '디스카', NOW()),
+        ('search-filter-preset', 1, 'assistant_message', 'filtermarker raretoken', NOW()),
+        ('search-filter-preset', 2, 'assistant_message', 'filtermarker raretoken', NOW()),
+        ('search-filter-fallback', 1, 'tool_result', 'filtermarker raretoken', NOW()),
+        ('actual-work-session', 51, 'assistant_message', '디스크위생 기록', NOW())
+    `;
+
+    await sql.begin((tx) => tx.unsafe(readV2Migration));
+    const afterFirstMigration = await readEventSearchDefinition(sql);
+    await sql.begin((tx) => tx.unsafe(readV2Migration));
+    const afterReplay = await readEventSearchDefinition(sql);
+    expect(afterFirstMigration[0]?.definition).toBe(canonicalDefinition[0]?.definition);
+    expect(afterReplay[0]?.definition).toBe(canonicalDefinition[0]?.definition);
+    const documentFrequencyDefinition = await sql`
+      SELECT pg_get_functiondef(
+        'public.event_search_document_frequency(text)'::regprocedure
+      ) AS definition
+    `;
+    expect(documentFrequencyDefinition[0]?.definition).toContain("event_search_postings");
+    expect(documentFrequencyDefinition[0]?.definition).not.toContain("FROM event_search_terms");
+
+    const tokens = await sql`SELECT event_search_tokenize('디스크𐐀') AS tokens`;
+    expect(tokens[0]?.tokens).toContain("디스크𐐨");
+    const mirrored = await sql`
+      SELECT COUNT(*)::integer AS count
+      FROM event_search_postings posting
+      JOIN event_search_dictionary dictionary USING (term_id)
+      WHERE dictionary.term IN ('디스크', '디스크위생', '디스크𐐨', '디스큰', '디스카')
+    `;
+    expect(mirrored[0]?.count).toBeGreaterThanOrEqual(5);
+
+    const commonArgs: EventSearchArguments = {
+      query: "commonphrase",
+      sessionIds: null,
+      limit: 20,
+      eventTypes: ["assistant_message"],
+      folderIds: null,
+      perSessionLimit: null,
+      prefixLimit: 0,
+      nodeId: null,
+      statuses: null,
+      updatedAfter: null,
+      backends: null,
+      backendCatalog: [],
+    };
+    await expectSearchesEquivalent(sql, commonArgs);
+
+    await expectSearchesEquivalent(sql, {
+      ...commonArgs,
+      query: "unique execution phrase",
+      sessionIds: ["actual-work-session"],
+      limit: null,
+    });
+
+    const folderPrefixArgs: EventSearchArguments = {
+      ...commonArgs,
+      query: "업무 검색어",
+      limit: 1,
+      folderIds: ["folder-allowed"],
+      perSessionLimit: 1,
+      prefixLimit: 2,
+    };
+    await expectSearchesEquivalent(sql, folderPrefixArgs);
+    const independentlySlotted = await runSearchFunction(sql, "public.event_search", folderPrefixArgs);
+    expect(independentlySlotted.length).toBeGreaterThan(folderPrefixArgs.limit ?? 0);
+    expect(independentlySlotted.map((row) => row.session_id)).toContain("prefix-target");
+
+    const prefixArgs = {
+      ...commonArgs,
+      query: "디스크작업",
+      limit: 20,
+      prefixLimit: 0,
+    };
+    const globalPrefix = await runSearchFunction(sql, "public.event_search", prefixArgs);
+    expect(new Set(globalPrefix.map((row) => row.session_id))).toEqual(new Set([
+      "prefix-read-v2-exact",
+      "prefix-read-v2-wide",
+      "prefix-read-v2-astral",
+    ]));
+    expect(globalPrefix.map((row) => row.session_id)).not.toContain("prefix-read-v2-false-n");
+    expect(globalPrefix.map((row) => row.session_id)).not.toContain("prefix-read-v2-false-a");
+
+    const scopedPrefix = await runSearchFunction(sql, "public.event_search", {
+      ...prefixArgs,
+      sessionIds: ["actual-work-session"],
+      limit: 5,
+    });
+    expect(scopedPrefix.map((row) => row.id)).toContain(51);
+
+    const emptyExactRefill = await runSearchFunction(sql, "public.event_search", {
+      ...commonArgs,
+      query: "검색어아주없는요청",
+      limit: 2,
+    });
+    expect(emptyExactRefill.map((row) => row.session_id)).toContain("prefix-target");
+
+    const after = new Date(Date.now() - 60_000);
+    const backendCatalog: EventSearchBackendMapping[] = [
+      { kind: "preset", node_id: "filter-node", model_preset: "preset-new", backend: "codex" },
+      { kind: "agent", node_id: "filter-node", agent_id: "agent-shared", backend: "claude" },
+    ];
+    const filteredArgs: EventSearchArguments = {
+      ...commonArgs,
+      query: "filtermarker raretoken",
+      eventTypes: ["assistant_message"],
+      folderIds: ["folder-allowed"],
+      perSessionLimit: 1,
+      nodeId: "filter-node",
+      statuses: ["idle"],
+      updatedAfter: after,
+      backends: ["codex"],
+      backendCatalog,
+    };
+    await expectSearchesEquivalent(sql, filteredArgs);
+    const filteredPreset = await runSearchFunction(sql, "public.event_search", filteredArgs);
+    expect(filteredPreset).toHaveLength(1);
+    expect(filteredPreset[0]?.session_id).toBe("search-filter-preset");
+
+    const filteredFallback = await runSearchFunction(sql, "public.event_search", {
+      ...filteredArgs,
+      sessionIds: ["search-filter-fallback"],
+      eventTypes: ["tool_result"],
+      backends: ["claude"],
+    });
+    expect(filteredFallback.map((row) => row.session_id)).toContain("search-filter-fallback");
+
+    const unlimited = await runSearchFunction(sql, "public.event_search", {
+      ...commonArgs,
+      limit: null,
+    });
+    expect(unlimited.length).toBeGreaterThan(5);
+    const zero = await runSearchFunction(sql, "public.event_search", {
+      ...commonArgs,
+      limit: 0,
+    });
+    expect(zero).toHaveLength(0);
+    const perSession = await runSearchFunction(sql, "public.event_search", {
+      ...filteredArgs,
+      sessionIds: ["search-filter-preset"],
+      limit: null,
+    });
+    expect(perSession).toHaveLength(1);
+  }, 60_000);
+
   it("serves the observed MCP scoped query through history_search with filters intact", async () => {
     const query = "cn-characters cn-followups cn-support cn-synopsis glossary-zh-fill glossary-mirror-from-shay retire-glossary-gsheet-sync cn-term-alignment";
     await sql`
@@ -1227,6 +1409,110 @@ async function waitForPostgres(sql: ReturnType<typeof postgres>): Promise<void> 
     }
   }
   throw lastError ?? new Error("PostgreSQL did not become ready");
+}
+
+type EventSearchArguments = {
+  query: string;
+  sessionIds: string[] | null;
+  limit: number | null;
+  eventTypes: string[] | null;
+  folderIds: string[] | null;
+  perSessionLimit: number | null;
+  prefixLimit: number;
+  nodeId: string | null;
+  statuses: string[] | null;
+  updatedAfter: Date | null;
+  backends: string[] | null;
+  backendCatalog: EventSearchBackendMapping[];
+};
+
+type EventSearchRow = {
+  id: number;
+  session_id: string;
+  event_type: string;
+  payload: unknown;
+  searchable_text: string;
+  created_at: Date | null;
+  score: number | string;
+};
+
+type EventSearchBackendMapping =
+  | { kind: "preset"; node_id: string; model_preset: string; backend: string }
+  | { kind: "agent"; node_id: string; agent_id: string; backend: string };
+
+type EventSearchFunctionName = "public.event_search" | "public.event_search_before_read_v2";
+
+async function readEventSearchDefinition(
+  sql: ReturnType<typeof postgres>,
+): Promise<Array<{ definition: string }>> {
+  return await sql`
+    SELECT pg_get_functiondef(p.oid) AS definition
+    FROM pg_proc p
+    JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname = 'event_search'
+  `;
+}
+
+async function runSearchFunction(
+  sql: ReturnType<typeof postgres>,
+  functionName: EventSearchFunctionName,
+  args: EventSearchArguments,
+): Promise<EventSearchRow[]> {
+  return await sql.unsafe(
+    `SELECT id, session_id, event_type, payload, searchable_text, created_at, score
+     FROM ${functionName}(
+       $1::text, $2::text[], $3::integer, $4::text[], $5::text[],
+       $6::integer, $7::integer, $8::text, $9::text[], $10::timestamptz,
+       $11::text[], $12::jsonb
+     )
+     ORDER BY score DESC, created_at DESC`,
+    [
+      args.query,
+      args.sessionIds,
+      args.limit,
+      args.eventTypes,
+      args.folderIds,
+      args.perSessionLimit,
+      args.prefixLimit,
+      args.nodeId,
+      args.statuses,
+      args.updatedAfter,
+      args.backends,
+      JSON.stringify(args.backendCatalog),
+    ],
+  );
+}
+
+async function expectSearchesEquivalent(
+  sql: ReturnType<typeof postgres>,
+  args: EventSearchArguments,
+): Promise<void> {
+  const legacyRows = await runSearchFunction(sql, "public.event_search_before_read_v2", args);
+  const currentRows = await runSearchFunction(sql, "public.event_search", args);
+  const stableOrder = (left: EventSearchRow, right: EventSearchRow): number => {
+    const scoreDifference = Number(right.score) - Number(left.score);
+    if (Math.abs(scoreDifference) > 1e-12) return scoreDifference;
+    const leftCreatedAt = left.created_at?.getTime() ?? Number.POSITIVE_INFINITY;
+    const rightCreatedAt = right.created_at?.getTime() ?? Number.POSITIVE_INFINITY;
+    if (leftCreatedAt !== rightCreatedAt) return rightCreatedAt - leftCreatedAt;
+    return left.session_id.localeCompare(right.session_id) || left.id - right.id;
+  };
+  const legacyStable = [...legacyRows].sort(stableOrder);
+  const currentStable = [...currentRows].sort(stableOrder);
+
+  expect(currentStable.map((row) => `${row.session_id}/${row.id}`)).toEqual(
+    legacyStable.map((row) => `${row.session_id}/${row.id}`),
+  );
+  for (const [index, current] of currentStable.entries()) {
+    const legacy = legacyStable[index];
+    expect(legacy).toBeDefined();
+    expect(current.event_type).toBe(legacy?.event_type);
+    expect(current.payload).toEqual(legacy?.payload);
+    expect(current.searchable_text).toBe(legacy?.searchable_text);
+    expect(current.created_at?.toISOString() ?? null).toBe(legacy?.created_at?.toISOString() ?? null);
+    expect(Math.abs(Number(current.score) - Number(legacy?.score))).toBeLessThanOrEqual(1e-12);
+  }
 }
 
 async function expectTermDocumentFrequenciesMatchPostings(sql: ReturnType<typeof postgres>) {
