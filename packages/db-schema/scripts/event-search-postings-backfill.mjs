@@ -263,12 +263,10 @@ async function insertMissingMappings(tx, sessionIds, eventIds) {
 
 async function runVerify(sql, options, initialCheckpoint) {
   const startedAt = Date.now();
-  let checkpoint = initialCheckpoint;
-  let comparedEvents = 0;
-  const differences = { missing: 0, extra: 0, changed: 0 };
-  const samples = [];
+  let checkpoint = restoreVerifyCheckpoint(initialCheckpoint);
   let batches = 0;
-  let complete = false;
+  let complete = checkpoint.complete === true;
+  let timeLimitReached = false;
 
   while (!complete) {
     const result = await sql.begin(async (tx) => {
@@ -278,40 +276,83 @@ async function runVerify(sql, options, initialCheckpoint) {
       const sessionIds = events.map((event) => event.session_id);
       const eventIds = events.map((event) => event.id);
       const batchDifferences = await countDifferences(tx, sessionIds, eventIds);
-      const batchSamples = samples.length < MAX_VERIFY_SAMPLES
-        ? await readDifferenceSamples(tx, sessionIds, eventIds, MAX_VERIFY_SAMPLES - samples.length)
+      const batchSamples = checkpoint.samples.length < MAX_VERIFY_SAMPLES
+        ? await readDifferenceSamples(tx, sessionIds, eventIds,
+          MAX_VERIFY_SAMPLES - checkpoint.samples.length)
         : [];
       return { events, differences: batchDifferences, samples: batchSamples };
     });
 
     if (result.events.length === 0) {
       complete = true;
-      await writeCheckpoint(options.checkpoint, { ...checkpoint, complete: true });
+      checkpoint = { ...checkpoint, complete: true };
+      await writeCheckpoint(options.checkpoint, checkpoint);
       break;
     }
 
     const lastEvent = result.events[result.events.length - 1];
     checkpoint = {
+      ...checkpoint,
       version: CHECKPOINT_VERSION,
       command: "verify",
       lastSessionId: lastEvent.session_id,
       lastEventId: lastEvent.id,
+      comparedEvents: checkpoint.comparedEvents + result.events.length,
+      comparedPostings: checkpoint.comparedPostings + result.differences.comparedPostings,
+      differences: {
+        missing: checkpoint.differences.missing + result.differences.missing,
+        extra: checkpoint.differences.extra + result.differences.extra,
+        changed: checkpoint.differences.changed + result.differences.changed,
+      },
+      samples: [...checkpoint.samples, ...result.samples].slice(0, MAX_VERIFY_SAMPLES),
+      complete: false,
     };
     await writeCheckpoint(options.checkpoint, checkpoint);
-    comparedEvents += result.events.length;
     batches += 1;
-    for (const key of Object.keys(differences)) differences[key] += result.differences[key];
-    samples.push(...result.samples);
     if (batches % PROGRESS_INTERVAL_BATCHES === 0) {
-      writeProgress({ batches, comparedEvents, differences, elapsedMs: Date.now() - startedAt,
-        checkpoint });
+      writeProgress({ batches, comparedEvents: checkpoint.comparedEvents,
+        comparedPostings: checkpoint.comparedPostings, differences: checkpoint.differences,
+        elapsedMs: Date.now() - startedAt, checkpoint });
+    }
+    if (Date.now() - startedAt >= options.maxSeconds * 1000) {
+      timeLimitReached = true;
+      break;
     }
   }
 
-  const totalDifferences = differences.missing + differences.extra + differences.changed;
-  const report = { status: totalDifferences === 0 ? "ok" : "differences_found", command: "verify",
-    ...checkpoint, batches, comparedEvents, differences, samples, elapsedMs: Date.now() - startedAt };
+  const totalDifferences = checkpoint.differences.missing
+    + checkpoint.differences.extra + checkpoint.differences.changed;
+  const report = {
+    status: totalDifferences > 0 ? "differences_found" : complete ? "ok" : "incomplete",
+    command: "verify",
+    ...checkpoint,
+    batches,
+    elapsedMs: Date.now() - startedAt,
+    timeLimitReached,
+  };
   return report;
+}
+
+function restoreVerifyCheckpoint(checkpoint) {
+  const hasCumulativeResults = Number.isSafeInteger(checkpoint.comparedEvents)
+    && Number.isSafeInteger(checkpoint.comparedPostings)
+    && ["missing", "extra", "changed"].every((key) =>
+      Number.isSafeInteger(checkpoint.differences?.[key]))
+    && Array.isArray(checkpoint.samples);
+  if (!hasCumulativeResults) {
+    return {
+      version: CHECKPOINT_VERSION,
+      command: "verify",
+      lastSessionId: null,
+      lastEventId: null,
+      comparedEvents: 0,
+      comparedPostings: 0,
+      differences: { missing: 0, extra: 0, changed: 0 },
+      samples: [],
+      complete: false,
+    };
+  }
+  return checkpoint;
 }
 
 async function countDifferences(tx, sessionIds, eventIds) {
@@ -335,7 +376,8 @@ async function countDifferences(tx, sessionIds, eventIds) {
              compact.term_freq AS compact_tf, compact.doc_len AS compact_len
       FROM legacy FULL JOIN compact USING (session_id, event_id, term)
     )
-    SELECT COUNT(*) FILTER (WHERE legacy_tf IS NOT NULL AND compact_tf IS NULL)::int AS missing,
+    SELECT COUNT(*)::int AS "comparedPostings",
+           COUNT(*) FILTER (WHERE legacy_tf IS NOT NULL AND compact_tf IS NULL)::int AS missing,
            COUNT(*) FILTER (WHERE legacy_tf IS NULL AND compact_tf IS NOT NULL)::int AS extra,
            COUNT(*) FILTER (
              WHERE legacy_tf IS NOT NULL AND compact_tf IS NOT NULL

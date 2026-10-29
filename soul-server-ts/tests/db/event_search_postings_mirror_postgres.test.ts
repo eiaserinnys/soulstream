@@ -169,6 +169,103 @@ describePostgres("integer event-search postings migration and backfill", () => {
       rmSync(checkpointDirectory, { recursive: true, force: true });
     }
   }, 60_000);
+
+  it("preserves verify results across time-limited resumes and completed reruns", async () => {
+    const checkpointDirectory = mkdtempSync(join(tmpdir(), "event-search-postings-verify-"));
+    const cleanCheckpoint = join(checkpointDirectory, "clean-verify.json");
+    const mismatchCheckpoint = join(checkpointDirectory, "mismatch-verify.json");
+    try {
+      await harness.sql`
+        INSERT INTO sessions (session_id, session_type, status)
+        VALUES ('aaa-postings-verify', 'codex', 'running')
+      `;
+      await harness.sql`
+        INSERT INTO events (session_id, id, event_type, payload, searchable_text)
+        VALUES ('aaa-postings-verify', 1, 'user_message', '{}', 'verifyalpha'),
+               ('aaa-postings-verify', 2, 'user_message', '{}', 'verifybravo'),
+               ('aaa-postings-verify', 3, 'user_message', '{}', 'verifycharlie')
+      `;
+
+      const interruptedClean = runBackfill("verify", cleanCheckpoint, harness.databaseUrl,
+        "--batch-events", "1", "--max-seconds", "0");
+      expect(interruptedClean.status, interruptedClean.stderr || interruptedClean.stdout).toBe(0);
+      const interruptedCleanReport = readCommandReport(interruptedClean.stdout);
+      expect(interruptedCleanReport).toMatchObject({
+        complete: false,
+        timeLimitReached: true,
+        comparedEvents: 1,
+        comparedPostings: 1,
+        differences: { missing: 0, extra: 0, changed: 0 },
+      });
+
+      const completedClean = runBackfill("verify", cleanCheckpoint, harness.databaseUrl,
+        "--batch-events", "1");
+      expect(completedClean.status, completedClean.stderr || completedClean.stdout).toBe(0);
+      expect(readCommandReport(completedClean.stdout)).toMatchObject({
+        complete: true,
+        timeLimitReached: false,
+        differences: { missing: 0, extra: 0, changed: 0 },
+      });
+      expect(readCommandReport(completedClean.stdout).comparedEvents)
+        .toBeGreaterThan(interruptedCleanReport.comparedEvents);
+
+      await harness.sql`
+        DELETE FROM event_search_postings posting
+        USING event_search_session_keys session_key
+        WHERE posting.session_key = session_key.session_key
+          AND session_key.session_id = 'aaa-postings-verify'
+          AND posting.event_id IN (1, 2)
+      `;
+
+      const firstMismatch = runBackfill("verify", mismatchCheckpoint, harness.databaseUrl,
+        "--batch-events", "1", "--max-seconds", "0");
+      expect(firstMismatch.status, firstMismatch.stderr || firstMismatch.stdout).toBe(1);
+      expectNoDatabaseUrl(firstMismatch, harness.databaseUrl);
+      const firstMismatchReport = readCommandReport(firstMismatch.stdout);
+      expect(firstMismatchReport).toMatchObject({
+        complete: false,
+        timeLimitReached: true,
+        comparedEvents: 1,
+        comparedPostings: 1,
+        differences: { missing: 1, extra: 0, changed: 0 },
+      });
+      expect(JSON.parse(readFileSync(mismatchCheckpoint, "utf8"))).toMatchObject({
+        comparedEvents: 1,
+        comparedPostings: 1,
+        differences: { missing: 1, extra: 0, changed: 0 },
+      });
+
+      const resumedMismatch = runBackfill("verify", mismatchCheckpoint, harness.databaseUrl,
+        "--batch-events", "1");
+      expect(resumedMismatch.status, resumedMismatch.stderr || resumedMismatch.stdout).toBe(1);
+      expectNoDatabaseUrl(resumedMismatch, harness.databaseUrl);
+      const resumedMismatchReport = readCommandReport(resumedMismatch.stdout);
+      expect(resumedMismatchReport).toMatchObject({
+        complete: true,
+        timeLimitReached: false,
+        differences: { missing: 2, extra: 0, changed: 0 },
+      });
+      expect(resumedMismatchReport.comparedEvents).toBeGreaterThan(
+        firstMismatchReport.comparedEvents,
+      );
+      expect(resumedMismatchReport.comparedPostings).toBeGreaterThan(
+        firstMismatchReport.comparedPostings,
+      );
+
+      const completedMismatchRerun = runBackfill("verify", mismatchCheckpoint, harness.databaseUrl,
+        "--batch-events", "1");
+      expect(completedMismatchRerun.status, completedMismatchRerun.stderr
+        || completedMismatchRerun.stdout).toBe(1);
+      expect(readCommandReport(completedMismatchRerun.stdout)).toMatchObject({
+        complete: true,
+        comparedEvents: resumedMismatchReport.comparedEvents,
+        comparedPostings: resumedMismatchReport.comparedPostings,
+        differences: { missing: 2, extra: 0, changed: 0 },
+      });
+    } finally {
+      rmSync(checkpointDirectory, { recursive: true, force: true });
+    }
+  }, 60_000);
 });
 
 async function readPostingShape(sql: FullSchemaPostgresHarness["sql"]): Promise<unknown> {
@@ -272,6 +369,17 @@ function runBackfill(command: string, checkpoint: string, databaseUrl: string, .
     },
     timeout: 30_000,
   });
+}
+
+function readCommandReport(stdout: string): {
+  complete: boolean;
+  timeLimitReached: boolean;
+  comparedEvents: number;
+  comparedPostings: number;
+  differences: { missing: number; extra: number; changed: number };
+} {
+  const lines = stdout.trim().split(/\r?\n/);
+  return JSON.parse(lines[lines.length - 1]);
 }
 
 function expectNoDatabaseUrl(result: { stdout: string; stderr: string }, databaseUrl: string) {
