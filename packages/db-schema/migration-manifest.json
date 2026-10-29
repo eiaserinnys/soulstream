@@ -532,6 +532,10 @@
     {
       "id": "131_drop_unused_event_search_vector.sql",
       "sha256": "2090ab6ffb42c81f47d41397388297356079adf2ad98a9847523aa92aa1532ed"
+    },
+    {
+      "id": "132_event_search_integer_postings.sql",
+      "sha256": "ead1c73fb92d574c9c39a46172681c9543bf5bc247f1f86077705aac38e34c0a"
     }
   ]
 }
