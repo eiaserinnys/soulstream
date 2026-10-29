@@ -1,5 +1,5 @@
-CREATE OR REPLACE FUNCTION public.event_search_document_frequency(p_term TEXT)
-RETURNS BIGINT LANGUAGE plpgsql STABLE PARALLEL SAFE AS $function$
+CREATE OR REPLACE FUNCTION event_search_document_frequency(p_term TEXT)
+RETURNS BIGINT LANGUAGE plpgsql STABLE PARALLEL SAFE AS $$
 DECLARE
     v_document_count BIGINT;
 BEGIN
@@ -31,13 +31,30 @@ BEGIN
     END IF;
     RETURN 0;
 END;
-$function$;
+$$;
 
-CREATE OR REPLACE FUNCTION public.event_search(p_query text, p_session_ids text[] DEFAULT NULL::text[], p_limit integer DEFAULT 50, p_event_types text[] DEFAULT NULL::text[], p_allowed_folder_ids text[] DEFAULT NULL::text[], p_per_session_limit integer DEFAULT NULL::integer, p_prefix_limit integer DEFAULT 0, p_node_id text DEFAULT NULL::text, p_statuses text[] DEFAULT NULL::text[], p_updated_after timestamp with time zone DEFAULT NULL::timestamp with time zone, p_backends text[] DEFAULT NULL::text[], p_backend_catalog jsonb DEFAULT '[]'::jsonb)
- RETURNS TABLE(id integer, session_id text, event_type text, payload jsonb, searchable_text text, created_at timestamp with time zone, score double precision)
- LANGUAGE sql
- STABLE
-AS $function$
+CREATE OR REPLACE FUNCTION event_search(
+    p_query       TEXT,
+    p_session_ids TEXT[] DEFAULT NULL,
+    p_limit       INTEGER DEFAULT 50,
+    p_event_types TEXT[] DEFAULT NULL,
+    p_allowed_folder_ids TEXT[] DEFAULT NULL,
+    p_per_session_limit INTEGER DEFAULT NULL,
+    p_prefix_limit INTEGER DEFAULT 0,
+    p_node_id TEXT DEFAULT NULL,
+    p_statuses TEXT[] DEFAULT NULL,
+    p_updated_after TIMESTAMPTZ DEFAULT NULL,
+    p_backends TEXT[] DEFAULT NULL,
+    p_backend_catalog JSONB DEFAULT '[]'::jsonb
+) RETURNS TABLE(
+    id              INTEGER,
+    session_id      TEXT,
+    event_type      TEXT,
+    payload         JSONB,
+    searchable_text TEXT,
+    created_at      TIMESTAMPTZ,
+    score           FLOAT
+) LANGUAGE sql STABLE AS $$
     WITH document_rows AS NOT MATERIALIZED (
  SELECT k.session_id,m.event_id AS id,m.created_at,m.doc_len
  FROM event_search_documents m
@@ -317,6 +334,4 @@ AS $function$
         OFFSET 0
     ) e
     ORDER BY candidate.score DESC, candidate.created_at DESC;
-$function$
-
-;
+$$;

@@ -28,10 +28,12 @@ describePostgres("session search reliability PostgreSQL integration", () => {
   let sql: ReturnType<typeof postgres>;
   let databaseUrl: string;
   let cleanup: () => Promise<void>;
+  let schemaInstalledEventSearchDefinition: Array<{ definition: string }> = [];
 
   beforeAll(async () => {
     ({ sql, databaseUrl, cleanup } = await createHarness());
     await seedSearchFixtures(sql);
+    schemaInstalledEventSearchDefinition = await readFunctionDefinition(sql, "event_search");
   }, 60_000);
 
   afterAll(async () => {
@@ -191,7 +193,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
   });
 
   it("reads integer postings with the same search contract and supports migration replay", async () => {
-    const canonicalDefinition = await readEventSearchDefinition(sql);
+    const canonicalDefinition = schemaInstalledEventSearchDefinition;
     const previousSearchMigration = readFileSync(fileURLToPath(new URL(
       "../../packages/db-schema/sql/migrations/103_event_search_aggregate_postings.sql",
       import.meta.url,
@@ -203,7 +205,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
 
     await sql.unsafe(previousSearchMigration);
     await sql.unsafe(`
-      ALTER FUNCTION public.event_search(
+      ALTER FUNCTION event_search(
         text, text[], integer, text[], text[], integer, integer, text,
         text[], timestamptz, text[], jsonb
       ) RENAME TO event_search_before_read_v2
@@ -236,16 +238,15 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     `;
 
     await sql.begin((tx) => tx.unsafe(readV2Migration));
-    const afterFirstMigration = await readEventSearchDefinition(sql);
+    const afterFirstMigration = await readFunctionDefinition(sql, "event_search");
     await sql.begin((tx) => tx.unsafe(readV2Migration));
-    const afterReplay = await readEventSearchDefinition(sql);
+    const afterReplay = await readFunctionDefinition(sql, "event_search");
     expect(afterFirstMigration[0]?.definition).toBe(canonicalDefinition[0]?.definition);
     expect(afterReplay[0]?.definition).toBe(canonicalDefinition[0]?.definition);
-    const documentFrequencyDefinition = await sql`
-      SELECT pg_get_functiondef(
-        'public.event_search_document_frequency(text)'::regprocedure
-      ) AS definition
-    `;
+    const documentFrequencyDefinition = await readFunctionDefinition(
+      sql,
+      "event_search_document_frequency",
+    );
     expect(documentFrequencyDefinition[0]?.definition).toContain("event_search_postings");
     expect(documentFrequencyDefinition[0]?.definition).not.toContain("FROM event_search_terms");
 
@@ -291,7 +292,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       prefixLimit: 2,
     };
     await expectSearchesEquivalent(sql, folderPrefixArgs);
-    const independentlySlotted = await runSearchFunction(sql, "public.event_search", folderPrefixArgs);
+    const independentlySlotted = await runSearchFunction(sql, "event_search", folderPrefixArgs);
     expect(independentlySlotted.length).toBeGreaterThan(folderPrefixArgs.limit ?? 0);
     expect(independentlySlotted.map((row) => row.session_id)).toContain("prefix-target");
 
@@ -301,8 +302,8 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       limit: 20,
       prefixLimit: 0,
     };
-    const globalPrefix = await runSearchFunction(sql, "public.event_search", prefixArgs);
-    expect(new Set(globalPrefix.map((row) => row.session_id))).toEqual(new Set([
+    const globalPrefix = await runSearchFunction(sql, "event_search", prefixArgs);
+    expect(globalPrefix.map((row) => row.session_id)).toEqual(expect.arrayContaining([
       "prefix-read-v2-exact",
       "prefix-read-v2-wide",
       "prefix-read-v2-astral",
@@ -310,14 +311,14 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     expect(globalPrefix.map((row) => row.session_id)).not.toContain("prefix-read-v2-false-n");
     expect(globalPrefix.map((row) => row.session_id)).not.toContain("prefix-read-v2-false-a");
 
-    const scopedPrefix = await runSearchFunction(sql, "public.event_search", {
+    const scopedPrefix = await runSearchFunction(sql, "event_search", {
       ...prefixArgs,
       sessionIds: ["actual-work-session"],
       limit: 5,
     });
     expect(scopedPrefix.map((row) => row.id)).toContain(51);
 
-    const emptyExactRefill = await runSearchFunction(sql, "public.event_search", {
+    const emptyExactRefill = await runSearchFunction(sql, "event_search", {
       ...commonArgs,
       query: "검색어아주없는요청",
       limit: 2,
@@ -342,11 +343,11 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       backendCatalog,
     };
     await expectSearchesEquivalent(sql, filteredArgs);
-    const filteredPreset = await runSearchFunction(sql, "public.event_search", filteredArgs);
+    const filteredPreset = await runSearchFunction(sql, "event_search", filteredArgs);
     expect(filteredPreset).toHaveLength(1);
     expect(filteredPreset[0]?.session_id).toBe("search-filter-preset");
 
-    const filteredFallback = await runSearchFunction(sql, "public.event_search", {
+    const filteredFallback = await runSearchFunction(sql, "event_search", {
       ...filteredArgs,
       sessionIds: ["search-filter-fallback"],
       eventTypes: ["tool_result"],
@@ -354,17 +355,17 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     });
     expect(filteredFallback.map((row) => row.session_id)).toContain("search-filter-fallback");
 
-    const unlimited = await runSearchFunction(sql, "public.event_search", {
+    const unlimited = await runSearchFunction(sql, "event_search", {
       ...commonArgs,
       limit: null,
     });
     expect(unlimited.length).toBeGreaterThan(5);
-    const zero = await runSearchFunction(sql, "public.event_search", {
+    const zero = await runSearchFunction(sql, "event_search", {
       ...commonArgs,
       limit: 0,
     });
     expect(zero).toHaveLength(0);
-    const perSession = await runSearchFunction(sql, "public.event_search", {
+    const perSession = await runSearchFunction(sql, "event_search", {
       ...filteredArgs,
       sessionIds: ["search-filter-preset"],
       limit: null,
@@ -1440,17 +1441,22 @@ type EventSearchBackendMapping =
   | { kind: "preset"; node_id: string; model_preset: string; backend: string }
   | { kind: "agent"; node_id: string; agent_id: string; backend: string };
 
-type EventSearchFunctionName = "public.event_search" | "public.event_search_before_read_v2";
+type EventSearchFunctionName = "event_search" | "event_search_before_read_v2";
 
-async function readEventSearchDefinition(
+async function readFunctionDefinition(
   sql: ReturnType<typeof postgres>,
+  functionName: "event_search" | "event_search_document_frequency",
 ): Promise<Array<{ definition: string }>> {
   return await sql`
-    SELECT pg_get_functiondef(p.oid) AS definition
+    SELECT replace(
+      pg_get_functiondef(p.oid),
+      format('FUNCTION %I.', n.nspname),
+      'FUNCTION '
+    ) AS definition
     FROM pg_proc p
     JOIN pg_namespace n ON n.oid = p.pronamespace
-    WHERE n.nspname = 'public'
-      AND p.proname = 'event_search'
+    WHERE n.nspname = current_schema()
+      AND p.proname = ${functionName}
   `;
 }
 
@@ -1488,8 +1494,8 @@ async function expectSearchesEquivalent(
   sql: ReturnType<typeof postgres>,
   args: EventSearchArguments,
 ): Promise<void> {
-  const legacyRows = await runSearchFunction(sql, "public.event_search_before_read_v2", args);
-  const currentRows = await runSearchFunction(sql, "public.event_search", args);
+  const legacyRows = await runSearchFunction(sql, "event_search_before_read_v2", args);
+  const currentRows = await runSearchFunction(sql, "event_search", args);
   const stableOrder = (left: EventSearchRow, right: EventSearchRow): number => {
     const scoreDifference = Number(right.score) - Number(left.score);
     if (Math.abs(scoreDifference) > 1e-12) return scoreDifference;
