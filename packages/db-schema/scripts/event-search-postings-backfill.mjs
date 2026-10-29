@@ -11,12 +11,22 @@ import {
   readDatabaseUrl,
   releaseServiceEnvironmentPath,
 } from "./migration-contract.mjs";
+import {
+  countDifferences,
+  insertMissingMappings,
+  readDifferenceSamples,
+  readDocumentDifferenceSamples,
+} from "./event-search-postings-backfill-queries.mjs";
 
 const DEFAULT_BATCH_EVENTS = 200;
 const DEFAULT_MAX_SECONDS = 540;
-const CHECKPOINT_VERSION = 1;
+const CHECKPOINT_VERSION = 2;
 const PROGRESS_INTERVAL_BATCHES = 25;
 const MAX_VERIFY_SAMPLES = 10;
+const VERIFY_DIFFERENCE_KEYS = [
+  "missing", "extra", "changed", "missingDocuments", "extraDocuments",
+  "changedDocuments", "orphanPostings",
+];
 
 export function parseArguments(argv) {
   const [command, ...rest] = argv;
@@ -115,14 +125,14 @@ async function selectEvents(tx, checkpoint, batchEvents, lock) {
   const lockClause = lock ? " FOR UPDATE" : "";
   if (checkpoint.lastSessionId === null) {
     return await tx.unsafe(`
-      SELECT session_id, id
+      SELECT session_id, id, event_type, created_at
       FROM events
       ORDER BY session_id, id
       LIMIT $1${lockClause}
     `, [batchEvents]);
   }
   return await tx.unsafe(`
-    SELECT session_id, id
+    SELECT session_id, id, event_type, created_at
     FROM events
     WHERE (session_id, id) > ($1, $2)
     ORDER BY session_id, id
@@ -135,6 +145,7 @@ async function runBackfill(sql, options, initialCheckpoint) {
   let checkpoint = initialCheckpoint;
   let processedEvents = 0;
   let insertedPostings = 0;
+  let insertedDocuments = 0;
   let batches = 0;
   let totalBatchMs = 0;
   let maxBatchMs = 0;
@@ -160,15 +171,48 @@ async function runBackfill(sql, options, initialCheckpoint) {
         WHERE posting.session_key = session_key.session_key
           AND posting.event_id = selected.event_id
       `;
+      await tx`
+        DELETE FROM event_search_documents document
+        USING unnest(${sessionIds}::text[], ${eventIds}::int[])
+          AS selected(session_id, event_id)
+        JOIN event_search_session_keys session_key
+          ON session_key.session_id = selected.session_id
+        WHERE document.session_key = session_key.session_key
+          AND document.event_id = selected.event_id
+      `;
+      const insertedDocs = await tx`
+        INSERT INTO event_search_documents (
+          session_key, event_id, doc_len, event_type_id, created_at
+        )
+        SELECT session_key.session_key,
+               legacy.event_id,
+               MAX(legacy.doc_len)::int,
+               event_type.event_type_id,
+               event.created_at
+        FROM event_search_terms legacy
+        JOIN unnest(${sessionIds}::text[], ${eventIds}::int[])
+          AS selected(session_id, event_id)
+          ON selected.session_id = legacy.session_id
+         AND selected.event_id = legacy.event_id
+        JOIN event_search_session_keys session_key
+          ON session_key.session_id = legacy.session_id
+        JOIN events event
+          ON event.session_id = legacy.session_id
+         AND event.id = legacy.event_id
+        JOIN event_search_event_types event_type
+          ON event_type.event_type = event.event_type
+        GROUP BY session_key.session_key, legacy.event_id,
+                 event_type.event_type_id, event.created_at
+        ORDER BY session_key.session_key, legacy.event_id
+      `;
       const inserted = await tx`
         INSERT INTO event_search_postings (
-          session_key, event_id, term_id, term_freq, doc_len
+          session_key, event_id, term_id, term_freq
         )
         SELECT session_key.session_key,
                legacy.event_id,
                dictionary.term_id,
-               legacy.term_freq,
-               legacy.doc_len
+               legacy.term_freq
         FROM event_search_terms legacy
         JOIN unnest(${sessionIds}::text[], ${eventIds}::int[])
           AS selected(session_id, event_id)
@@ -180,7 +224,11 @@ async function runBackfill(sql, options, initialCheckpoint) {
           ON dictionary.term = legacy.term
         ORDER BY dictionary.term_id, session_key.session_key, legacy.event_id
       `;
-      return { events: selected, postingCount: inserted.count };
+      return {
+        events: selected,
+        documentCount: insertedDocs.count,
+        postingCount: inserted.count,
+      };
     });
 
     if (events.length === 0) {
@@ -200,13 +248,15 @@ async function runBackfill(sql, options, initialCheckpoint) {
     await writeCheckpoint(options.checkpoint, checkpoint);
     processedEvents += selectedEvents.length;
     insertedPostings += events.postingCount;
+    insertedDocuments += events.documentCount;
     batches += 1;
     const batchMs = Date.now() - batchStartedAt;
     totalBatchMs += batchMs;
     maxBatchMs = Math.max(maxBatchMs, batchMs);
 
     if (batches % PROGRESS_INTERVAL_BATCHES === 0) {
-      writeProgress({ batches, processedEvents, insertedPostings, elapsedMs: Date.now() - startedAt,
+      writeProgress({ batches, processedEvents, insertedDocuments, insertedPostings,
+        elapsedMs: Date.now() - startedAt,
         averageBatchMs: totalBatchMs / batches, maxBatchMs, checkpoint });
     }
     if (Date.now() - startedAt >= options.maxSeconds * 1000) {
@@ -215,50 +265,13 @@ async function runBackfill(sql, options, initialCheckpoint) {
     }
   }
 
-  writeProgress({ batches, processedEvents, insertedPostings, elapsedMs: Date.now() - startedAt,
+  writeProgress({ batches, processedEvents, insertedDocuments, insertedPostings,
+    elapsedMs: Date.now() - startedAt,
     averageBatchMs: batches ? totalBatchMs / batches : 0, maxBatchMs, checkpoint, complete,
     timeLimitReached });
   return { status: "ok", command: "backfill", ...checkpoint, batches, processedEvents,
-    insertedPostings, elapsedMs: Date.now() - startedAt, complete, timeLimitReached };
-}
-
-async function insertMissingMappings(tx, sessionIds, eventIds) {
-  await tx`
-    INSERT INTO event_search_session_keys (session_id)
-    SELECT candidates.session_id
-    FROM (
-      SELECT DISTINCT legacy.session_id
-      FROM event_search_terms legacy
-      JOIN unnest(${sessionIds}::text[], ${eventIds}::int[])
-        AS selected(session_id, event_id)
-        ON selected.session_id = legacy.session_id
-       AND selected.event_id = legacy.event_id
-    ) candidates
-    WHERE NOT EXISTS (
-      SELECT 1 FROM event_search_session_keys existing
-      WHERE existing.session_id = candidates.session_id
-    )
-    ORDER BY candidates.session_id COLLATE "C"
-    ON CONFLICT (session_id) DO NOTHING
-  `;
-  await tx`
-    INSERT INTO event_search_dictionary (term)
-    SELECT candidates.term
-    FROM (
-      SELECT DISTINCT legacy.term
-      FROM event_search_terms legacy
-      JOIN unnest(${sessionIds}::text[], ${eventIds}::int[])
-        AS selected(session_id, event_id)
-        ON selected.session_id = legacy.session_id
-       AND selected.event_id = legacy.event_id
-    ) candidates
-    WHERE NOT EXISTS (
-      SELECT 1 FROM event_search_dictionary existing
-      WHERE existing.term = candidates.term
-    )
-    ORDER BY candidates.term COLLATE "C"
-    ON CONFLICT (term) DO NOTHING
-  `;
+    insertedDocuments, insertedPostings, elapsedMs: Date.now() - startedAt, complete,
+    timeLimitReached };
 }
 
 async function runVerify(sql, options, initialCheckpoint) {
@@ -276,10 +289,15 @@ async function runVerify(sql, options, initialCheckpoint) {
       const sessionIds = events.map((event) => event.session_id);
       const eventIds = events.map((event) => event.id);
       const batchDifferences = await countDifferences(tx, sessionIds, eventIds);
-      const batchSamples = checkpoint.samples.length < MAX_VERIFY_SAMPLES
-        ? await readDifferenceSamples(tx, sessionIds, eventIds,
-          MAX_VERIFY_SAMPLES - checkpoint.samples.length)
+      const sampleLimit = MAX_VERIFY_SAMPLES - checkpoint.samples.length;
+      const postingSamples = sampleLimit > 0
+        ? await readDifferenceSamples(tx, sessionIds, eventIds, sampleLimit)
         : [];
+      const documentSamples = sampleLimit > postingSamples.length
+        ? await readDocumentDifferenceSamples(tx, sessionIds, eventIds,
+          sampleLimit - postingSamples.length)
+        : [];
+      const batchSamples = [...postingSamples, ...documentSamples];
       return { events, differences: batchDifferences, samples: batchSamples };
     });
 
@@ -299,11 +317,10 @@ async function runVerify(sql, options, initialCheckpoint) {
       lastEventId: lastEvent.id,
       comparedEvents: checkpoint.comparedEvents + result.events.length,
       comparedPostings: checkpoint.comparedPostings + result.differences.comparedPostings,
-      differences: {
-        missing: checkpoint.differences.missing + result.differences.missing,
-        extra: checkpoint.differences.extra + result.differences.extra,
-        changed: checkpoint.differences.changed + result.differences.changed,
-      },
+      comparedDocuments: checkpoint.comparedDocuments + result.differences.comparedDocuments,
+      differences: Object.fromEntries(VERIFY_DIFFERENCE_KEYS.map((key) => [
+        key, checkpoint.differences[key] + result.differences[key],
+      ])),
       samples: [...checkpoint.samples, ...result.samples].slice(0, MAX_VERIFY_SAMPLES),
       complete: false,
     };
@@ -311,7 +328,9 @@ async function runVerify(sql, options, initialCheckpoint) {
     batches += 1;
     if (batches % PROGRESS_INTERVAL_BATCHES === 0) {
       writeProgress({ batches, comparedEvents: checkpoint.comparedEvents,
-        comparedPostings: checkpoint.comparedPostings, differences: checkpoint.differences,
+        comparedPostings: checkpoint.comparedPostings,
+        comparedDocuments: checkpoint.comparedDocuments,
+        differences: checkpoint.differences,
         elapsedMs: Date.now() - startedAt, checkpoint });
     }
     if (Date.now() - startedAt >= options.maxSeconds * 1000) {
@@ -320,10 +339,10 @@ async function runVerify(sql, options, initialCheckpoint) {
     }
   }
 
-  const totalDifferences = checkpoint.differences.missing
-    + checkpoint.differences.extra + checkpoint.differences.changed;
+  const hasDifferences = VERIFY_DIFFERENCE_KEYS
+    .some((key) => checkpoint.differences[key] > 0);
   const report = {
-    status: totalDifferences > 0 ? "differences_found" : complete ? "ok" : "incomplete",
+    status: hasDifferences ? "differences_found" : complete ? "ok" : "incomplete",
     command: "verify",
     ...checkpoint,
     batches,
@@ -336,7 +355,8 @@ async function runVerify(sql, options, initialCheckpoint) {
 function restoreVerifyCheckpoint(checkpoint) {
   const hasCumulativeResults = Number.isSafeInteger(checkpoint.comparedEvents)
     && Number.isSafeInteger(checkpoint.comparedPostings)
-    && ["missing", "extra", "changed"].every((key) =>
+    && Number.isSafeInteger(checkpoint.comparedDocuments)
+    && VERIFY_DIFFERENCE_KEYS.every((key) =>
       Number.isSafeInteger(checkpoint.differences?.[key]))
     && Array.isArray(checkpoint.samples);
   if (!hasCumulativeResults) {
@@ -347,85 +367,13 @@ function restoreVerifyCheckpoint(checkpoint) {
       lastEventId: null,
       comparedEvents: 0,
       comparedPostings: 0,
-      differences: { missing: 0, extra: 0, changed: 0 },
+      comparedDocuments: 0,
+      differences: Object.fromEntries(VERIFY_DIFFERENCE_KEYS.map((key) => [key, 0])),
       samples: [],
       complete: false,
     };
   }
   return checkpoint;
-}
-
-async function countDifferences(tx, sessionIds, eventIds) {
-  const [row] = await tx`
-    WITH selected AS (
-      SELECT session_id, event_id
-      FROM unnest(${sessionIds}::text[], ${eventIds}::int[]) AS item(session_id, event_id)
-    ), legacy AS (
-      SELECT terms.session_id, terms.event_id, terms.term, terms.term_freq, terms.doc_len
-      FROM event_search_terms terms JOIN selected USING (session_id, event_id)
-    ), compact AS (
-      SELECT keys.session_id, posting.event_id, dictionary.term,
-             posting.term_freq, posting.doc_len
-      FROM event_search_postings posting
-      JOIN event_search_session_keys keys USING (session_key)
-      JOIN event_search_dictionary dictionary USING (term_id)
-      JOIN selected ON selected.session_id = keys.session_id
-                   AND selected.event_id = posting.event_id
-    ), compared AS (
-      SELECT legacy.term_freq AS legacy_tf, legacy.doc_len AS legacy_len,
-             compact.term_freq AS compact_tf, compact.doc_len AS compact_len
-      FROM legacy FULL JOIN compact USING (session_id, event_id, term)
-    )
-    SELECT COUNT(*)::int AS "comparedPostings",
-           COUNT(*) FILTER (WHERE legacy_tf IS NOT NULL AND compact_tf IS NULL)::int AS missing,
-           COUNT(*) FILTER (WHERE legacy_tf IS NULL AND compact_tf IS NOT NULL)::int AS extra,
-           COUNT(*) FILTER (
-             WHERE legacy_tf IS NOT NULL AND compact_tf IS NOT NULL
-               AND (legacy_tf, legacy_len) IS DISTINCT FROM (compact_tf, compact_len)
-           )::int AS changed
-    FROM compared
-  `;
-  return row;
-}
-
-async function readDifferenceSamples(tx, sessionIds, eventIds, limit) {
-  return await tx`
-    WITH selected AS (
-      SELECT session_id, event_id
-      FROM unnest(${sessionIds}::text[], ${eventIds}::int[]) AS item(session_id, event_id)
-    ), legacy AS (
-      SELECT terms.session_id, terms.event_id, terms.term, terms.term_freq, terms.doc_len
-      FROM event_search_terms terms JOIN selected USING (session_id, event_id)
-    ), compact AS (
-      SELECT keys.session_id, posting.event_id, dictionary.term,
-             posting.term_freq, posting.doc_len
-      FROM event_search_postings posting
-      JOIN event_search_session_keys keys USING (session_key)
-      JOIN event_search_dictionary dictionary USING (term_id)
-      JOIN selected ON selected.session_id = keys.session_id
-                   AND selected.event_id = posting.event_id
-    ), compared AS (
-      SELECT COALESCE(legacy.session_id, compact.session_id) AS session_id,
-             COALESCE(legacy.event_id, compact.event_id) AS event_id,
-             COALESCE(legacy.term, compact.term) AS term,
-             legacy.term_freq AS legacy_tf, legacy.doc_len AS legacy_len,
-             compact.term_freq AS compact_tf, compact.doc_len AS compact_len
-      FROM legacy FULL JOIN compact USING (session_id, event_id, term)
-    )
-    SELECT CASE
-             WHEN legacy_tf IS NULL THEN 'extra'
-             WHEN compact_tf IS NULL THEN 'missing'
-             ELSE 'changed'
-           END AS kind,
-           session_id AS "sessionId", event_id AS "eventId", term,
-           legacy_tf AS "legacyTermFreq", legacy_len AS "legacyDocLen",
-           compact_tf AS "compactTermFreq", compact_len AS "compactDocLen"
-    FROM compared
-    WHERE legacy_tf IS NULL OR compact_tf IS NULL
-       OR (legacy_tf, legacy_len) IS DISTINCT FROM (compact_tf, compact_len)
-    ORDER BY session_id, event_id, term
-    LIMIT ${limit}
-  `;
 }
 
 async function readStatus(sql, checkpointPath) {
@@ -441,7 +389,10 @@ async function readStatus(sql, checkpointPath) {
     FROM pg_class relation
     WHERE relation.oid IN (
       to_regclass('event_search_terms'),
-      to_regclass('event_search_postings')
+      to_regclass('event_search_postings'),
+      to_regclass('event_search_documents'),
+      to_regclass('event_search_dictionary'),
+      to_regclass('event_search_event_types')
     )
     ORDER BY relation.relname
   `;
@@ -458,7 +409,7 @@ async function main() {
     const report = await run(options.command, options);
     console.log(JSON.stringify(report));
     if (options.command === "verify"
-        && (report.differences.missing + report.differences.extra + report.differences.changed) > 0) {
+        && VERIFY_DIFFERENCE_KEYS.some((key) => report.differences[key] > 0)) {
       process.exitCode = 1;
     }
   } catch (error) {

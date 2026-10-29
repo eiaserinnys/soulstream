@@ -1299,15 +1299,35 @@ CREATE TABLE IF NOT EXISTS event_search_postings (
     event_id INTEGER NOT NULL,
     term_id INTEGER NOT NULL
         REFERENCES event_search_dictionary(term_id),
-    term_freq INTEGER NOT NULL,
-    doc_len INTEGER NOT NULL
+    term_freq INTEGER NOT NULL
 ) WITH (autovacuum_vacuum_insert_scale_factor = 0.05);
 
 CREATE UNIQUE INDEX IF NOT EXISTS event_search_postings_term_cover
     ON event_search_postings (term_id, session_key, event_id)
-    INCLUDE (term_freq, doc_len);
+    INCLUDE (term_freq);
 CREATE INDEX IF NOT EXISTS idx_event_search_postings_event
     ON event_search_postings (session_key, event_id);
+
+CREATE TABLE IF NOT EXISTS event_search_event_types (
+    event_type_id SMALLINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    event_type TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS event_search_documents (
+    session_key INTEGER NOT NULL
+        REFERENCES event_search_session_keys(session_key),
+    event_id INTEGER NOT NULL,
+    doc_len INTEGER NOT NULL,
+    event_type_id SMALLINT NOT NULL
+        REFERENCES event_search_event_types(event_type_id),
+    created_at TIMESTAMPTZ,
+    PRIMARY KEY (session_key, event_id)
+        INCLUDE (doc_len, event_type_id, created_at)
+) WITH (autovacuum_vacuum_insert_scale_factor = 0.05);
+
+CREATE INDEX IF NOT EXISTS event_search_dictionary_prefix_cover
+    ON event_search_dictionary ((term COLLATE "C"))
+    INCLUDE (term_id, term);
 
 CREATE OR REPLACE FUNCTION mirror_event_search_postings()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
@@ -1322,6 +1342,22 @@ BEGIN
         WHERE posting.session_key = session_key.session_key
           AND posting.event_id = old_posting.event_id
           AND posting.term_id = dictionary.term_id;
+
+        DELETE FROM event_search_documents document
+        USING (
+            SELECT DISTINCT session_key.session_key, old_posting.event_id
+            FROM old_rows old_posting
+            JOIN event_search_session_keys session_key
+              ON session_key.session_id = old_posting.session_id
+        ) old_document
+        WHERE document.session_key = old_document.session_key
+          AND document.event_id = old_document.event_id
+          AND NOT EXISTS (
+              SELECT 1
+              FROM event_search_postings posting
+              WHERE posting.session_key = document.session_key
+                AND posting.event_id = document.event_id
+          );
     END IF;
 
     IF TG_OP IN ('INSERT', 'UPDATE') THEN
@@ -1353,14 +1389,64 @@ BEGIN
         ORDER BY missing.term COLLATE "C"
         ON CONFLICT (term) DO NOTHING;
 
+        INSERT INTO event_search_event_types (event_type)
+        SELECT missing.event_type
+        FROM (
+            SELECT DISTINCT event.event_type
+            FROM (
+                SELECT DISTINCT session_id, event_id
+                FROM new_rows
+            ) new_document
+            JOIN events event
+              ON event.session_id = new_document.session_id
+             AND event.id = new_document.event_id
+        ) missing
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM event_search_event_types existing
+            WHERE existing.event_type = missing.event_type
+        )
+        ORDER BY missing.event_type COLLATE "C"
+        ON CONFLICT (event_type) DO NOTHING;
+
+        INSERT INTO event_search_documents (
+            session_key, event_id, doc_len, event_type_id, created_at
+        )
+        SELECT session_key.session_key,
+               new_document.event_id,
+               new_document.doc_len,
+               event_type.event_type_id,
+               event.created_at
+        FROM (
+            SELECT session_id, event_id, MAX(doc_len) AS doc_len
+            FROM new_rows
+            GROUP BY session_id, event_id
+        ) new_document
+        JOIN events event
+          ON event.session_id = new_document.session_id
+         AND event.id = new_document.event_id
+        JOIN event_search_session_keys session_key
+          ON session_key.session_id = new_document.session_id
+        JOIN event_search_event_types event_type
+          ON event_type.event_type = event.event_type
+        ORDER BY session_key.session_key, new_document.event_id
+        ON CONFLICT (session_key, event_id) DO UPDATE
+        SET doc_len = EXCLUDED.doc_len,
+            event_type_id = EXCLUDED.event_type_id,
+            created_at = EXCLUDED.created_at
+        WHERE (event_search_documents.doc_len,
+               event_search_documents.event_type_id,
+               event_search_documents.created_at)
+              IS DISTINCT FROM
+              (EXCLUDED.doc_len, EXCLUDED.event_type_id, EXCLUDED.created_at);
+
         INSERT INTO event_search_postings (
-            session_key, event_id, term_id, term_freq, doc_len
+            session_key, event_id, term_id, term_freq
         )
         SELECT session_key.session_key,
                rows.event_id,
                dictionary.term_id,
-               rows.term_freq,
-               rows.doc_len
+               rows.term_freq
         FROM new_rows rows
         JOIN event_search_session_keys session_key
           ON session_key.session_id = rows.session_id
@@ -1368,8 +1454,7 @@ BEGIN
           ON dictionary.term = rows.term
         ORDER BY dictionary.term_id, session_key.session_key, rows.event_id
         ON CONFLICT (term_id, session_key, event_id) DO UPDATE
-        SET term_freq = EXCLUDED.term_freq,
-            doc_len = EXCLUDED.doc_len;
+        SET term_freq = EXCLUDED.term_freq;
     END IF;
 
     IF TG_OP NOT IN ('INSERT', 'UPDATE', 'DELETE') THEN

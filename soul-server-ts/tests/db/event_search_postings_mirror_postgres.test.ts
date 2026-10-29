@@ -1,7 +1,6 @@
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -11,14 +10,20 @@ import {
   hasFullSchemaPostgresBackend,
   type FullSchemaPostgresHarness,
 } from "./full_schema_postgres_harness.js";
+import {
+  readDocumentDifferences,
+  readPostingDifferences,
+  readPostingShape,
+  readSearchStatistics,
+  runBackfill,
+} from "./event_search_postings_mirror_postgres_helpers.js";
 
-const REPOSITORY_ROOT = fileURLToPath(new URL("../../..", import.meta.url));
-const MIGRATION_PATH = fileURLToPath(new URL(
+const MIGRATION_132_PATH = fileURLToPath(new URL(
   "../../../packages/db-schema/sql/migrations/132_event_search_integer_postings.sql",
   import.meta.url,
 ));
-const BACKFILL_SCRIPT = fileURLToPath(new URL(
-  "../../../packages/db-schema/scripts/event-search-postings-backfill.mjs",
+const MIGRATION_133_PATH = fileURLToPath(new URL(
+  "../../../packages/db-schema/sql/migrations/133_event_search_documents.sql",
   import.meta.url,
 ));
 const describePostgres = hasFullSchemaPostgresBackend ? describe.sequential : describe.skip;
@@ -34,21 +39,25 @@ describePostgres("integer event-search postings migration and backfill", () => {
     await harness?.cleanup();
   });
 
-  it("replays the migration and mirrors event refresh, event delete, and session cascade", async () => {
+  it("upgrades 132 idempotently and mirrors postings with document metadata", async () => {
     const freshShape = await readPostingShape(harness.sql);
-    const migration = readFileSync(MIGRATION_PATH, "utf8");
+    const migration132 = readFileSync(MIGRATION_132_PATH, "utf8");
+    const migration133 = readFileSync(MIGRATION_133_PATH, "utf8");
 
     await harness.sql.unsafe(`
       DROP TRIGGER IF EXISTS trg_event_search_postings_insert ON event_search_terms;
       DROP TRIGGER IF EXISTS trg_event_search_postings_update ON event_search_terms;
       DROP TRIGGER IF EXISTS trg_event_search_postings_delete ON event_search_terms;
       DROP FUNCTION IF EXISTS mirror_event_search_postings();
+      DROP TABLE IF EXISTS event_search_documents;
       DROP TABLE IF EXISTS event_search_postings;
+      DROP TABLE IF EXISTS event_search_event_types;
       DROP TABLE IF EXISTS event_search_dictionary;
       DROP TABLE IF EXISTS event_search_session_keys;
     `);
-    await harness.sql.unsafe(migration);
-    await harness.sql.unsafe(migration);
+    await harness.sql.unsafe(migration132);
+    await harness.sql.unsafe(migration133);
+    await harness.sql.unsafe(migration133);
     expect(await readPostingShape(harness.sql)).toEqual(freshShape);
 
     await harness.sql`
@@ -57,13 +66,17 @@ describePostgres("integer event-search postings migration and backfill", () => {
              ('postings-mirror-b', 'codex', 'running')
     `;
     await harness.sql`
-      INSERT INTO events (session_id, id, event_type, payload, searchable_text)
-      VALUES ('postings-mirror-a', 1, 'user_message', '{}', 'alpha alpha beta'),
-             ('postings-mirror-a', 2, 'user_message', '{}', 'beta gamma'),
-             ('postings-mirror-b', 1, 'user_message', '{}', 'gamma delta')
+      INSERT INTO events (session_id, id, event_type, payload, searchable_text, created_at)
+      VALUES ('postings-mirror-a', 1, 'user_message', '{}', '디스크 디스크 위생 alpha',
+                '2026-10-28T00:00:00Z'),
+             ('postings-mirror-a', 2, 'assistant_message', '{}', 'beta gamma', NULL),
+             ('postings-mirror-b', 1, 'tool_call', '{}', 'gamma delta', '2026-10-27T00:00:00Z')
     `;
     await harness.sql`
-      UPDATE events SET searchable_text = 'beta delta delta'
+      UPDATE events
+      SET searchable_text = '디스크 크론 크론 beta',
+          event_type = 'assistant_message',
+          created_at = '2026-10-29T04:00:00Z'
       WHERE session_id = 'postings-mirror-a' AND id = 1
     `;
     await harness.sql`
@@ -76,12 +89,18 @@ describePostgres("integer event-search postings migration and backfill", () => {
       extra: 0,
       changed: 0,
     });
+    expect(await readDocumentDifferences(harness.sql)).toEqual({
+      missing: 0,
+      extra: 0,
+      changed: 0,
+      orphanPostings: 0,
+    });
     expect(await readSearchStatistics(harness.sql)).toEqual({
       dfMismatch: 0,
       corpusDocs: 1,
       expectedDocs: 1,
-      corpusDocLength: 3,
-      expectedDocLength: 3,
+      corpusDocLength: 4,
+      expectedDocLength: 4,
     });
     const retainedKeys = await harness.sql<Array<{ session_id: string }>>`
       SELECT session_id FROM event_search_session_keys ORDER BY session_id
@@ -108,12 +127,14 @@ describePostgres("integer event-search postings migration and backfill", () => {
       `);
       await harness.sql`
         INSERT INTO events (session_id, id, event_type, payload, searchable_text)
-        VALUES ('postings-backfill', 1, 'user_message', '{}', 'old alpha'),
-               ('postings-backfill', 2, 'user_message', '{}', 'old beta'),
-               ('postings-backfill', 3, 'user_message', '{}', 'old gamma'),
-               ('postings-backfill', 4, 'user_message', '{}', 'old delta')
+        VALUES ('postings-backfill', 1, 'backfill_message', '{}', 'old alpha'),
+               ('postings-backfill', 2, 'backfill_message', '{}', 'old beta'),
+               ('postings-backfill', 3, 'backfill_message', '{}', 'old gamma'),
+               ('postings-backfill', 4, 'backfill_message', '{}', 'old delta')
       `;
-      await harness.sql.unsafe(readFileSync(MIGRATION_PATH, "utf8"));
+      await harness.sql`TRUNCATE event_search_postings`;
+      await harness.sql`DELETE FROM event_search_documents`;
+      await harness.sql.unsafe(readFileSync(MIGRATION_133_PATH, "utf8"));
 
       const firstRun = runBackfill(
         "backfill", backfillCheckpoint, harness.databaseUrl,
@@ -123,11 +144,12 @@ describePostgres("integer event-search postings migration and backfill", () => {
       expect(firstRun.stdout).toContain("processedEvents");
       expectNoDatabaseUrl(firstRun, harness.databaseUrl);
       const saved = JSON.parse(readFileSync(backfillCheckpoint, "utf8")) as {
+        version: number;
         lastSessionId: string;
         lastEventId: number;
       };
       expect(saved).toMatchObject({
-        version: 1,
+        version: 2,
         command: "backfill",
         lastSessionId: "postings-backfill",
         lastEventId: 2,
@@ -159,6 +181,12 @@ describePostgres("integer event-search postings migration and backfill", () => {
       expect(verified.stdout).toContain('"extra":0');
       expect(verified.stdout).toContain('"changed":0');
       expectNoDatabaseUrl(verified, harness.databaseUrl);
+      expect(await readDocumentDifferences(harness.sql)).toEqual({
+        missing: 0,
+        extra: 0,
+        changed: 0,
+        orphanPostings: 0,
+      });
 
       const status = runBackfill("status", backfillCheckpoint, harness.databaseUrl);
       expect(status.status, status.stderr || status.stdout).toBe(0);
@@ -170,10 +198,54 @@ describePostgres("integer event-search postings migration and backfill", () => {
     }
   }, 60_000);
 
+  it("checks every legacy posting doc_len against its compact document", async () => {
+    const checkpointDirectory = mkdtempSync(join(tmpdir(), "event-search-postings-doc-len-"));
+    const checkpoint = join(checkpointDirectory, "verify.json");
+    try {
+      await harness.sql`
+        INSERT INTO sessions (session_id, session_type, status)
+        VALUES ('postings-doc-len-check', 'codex', 'running')
+      `;
+      await harness.sql`
+        INSERT INTO events (session_id, id, event_type, payload, searchable_text)
+        VALUES ('postings-doc-len-check', 1, 'user_message', '{}', 'lengthalpha lengthbeta')
+      `;
+      await harness.sql`
+        UPDATE event_search_terms SET doc_len = 3
+        WHERE session_id = 'postings-doc-len-check'
+          AND event_id = 1
+          AND term = 'lengthalpha'
+      `;
+
+      const verified = runBackfill("verify", checkpoint, harness.databaseUrl);
+      expect(verified.status, verified.stderr || verified.stdout).toBe(1);
+      expectNoDatabaseUrl(verified, harness.databaseUrl);
+      expect(readCommandReport(verified.stdout)).toMatchObject({
+        complete: true,
+        differences: {
+          missing: 0,
+          extra: 0,
+          changed: 1,
+          missingDocuments: 0,
+          extraDocuments: 0,
+          changedDocuments: 0,
+          orphanPostings: 0,
+        },
+      });
+    } finally {
+      await harness.sql`
+        UPDATE event_search_terms SET doc_len = 2
+        WHERE session_id = 'postings-doc-len-check' AND event_id = 1
+      `;
+      rmSync(checkpointDirectory, { recursive: true, force: true });
+    }
+  }, 60_000);
+
   it("preserves verify results across time-limited resumes and completed reruns", async () => {
     const checkpointDirectory = mkdtempSync(join(tmpdir(), "event-search-postings-verify-"));
     const cleanCheckpoint = join(checkpointDirectory, "clean-verify.json");
     const mismatchCheckpoint = join(checkpointDirectory, "mismatch-verify.json");
+    const oldCheckpoint = join(checkpointDirectory, "old-verify.json");
     try {
       await harness.sql`
         INSERT INTO sessions (session_id, session_type, status)
@@ -209,12 +281,52 @@ describePostgres("integer event-search postings migration and backfill", () => {
       expect(readCommandReport(completedClean.stdout).comparedEvents)
         .toBeGreaterThan(interruptedCleanReport.comparedEvents);
 
+      writeFileSync(oldCheckpoint, JSON.stringify({
+        version: 1,
+        command: "verify",
+        lastSessionId: null,
+        lastEventId: null,
+      }), "utf8");
+      const rejectedOldCheckpoint = runBackfill("verify", oldCheckpoint, harness.databaseUrl);
+      expect(rejectedOldCheckpoint.status).toBe(1);
+      expect(rejectedOldCheckpoint.stderr).toContain("version 2 verify checkpoint");
+      expectNoDatabaseUrl(rejectedOldCheckpoint, harness.databaseUrl);
+
       await harness.sql`
         DELETE FROM event_search_postings posting
         USING event_search_session_keys session_key
         WHERE posting.session_key = session_key.session_key
           AND session_key.session_id = 'aaa-postings-verify'
-          AND posting.event_id IN (1, 2)
+          AND posting.event_id = 1
+      `;
+      await harness.sql`
+        UPDATE event_search_documents document
+        SET doc_len = doc_len + 1
+        FROM event_search_session_keys session_key
+        WHERE document.session_key = session_key.session_key
+          AND session_key.session_id = 'aaa-postings-verify'
+          AND document.event_id = 1
+      `;
+      await harness.sql`
+        DELETE FROM event_search_documents document
+        USING event_search_session_keys session_key
+        WHERE document.session_key = session_key.session_key
+          AND session_key.session_id = 'aaa-postings-verify'
+          AND document.event_id = 2
+      `;
+      await harness.sql`
+        UPDATE events SET searchable_text = ''
+        WHERE session_id = 'aaa-postings-verify' AND id = 3
+      `;
+      await harness.sql`
+        INSERT INTO event_search_documents (
+          session_key, event_id, doc_len, event_type_id, created_at
+        )
+        SELECT key.session_key, event.id, 0, event_type.event_type_id, event.created_at
+        FROM events event
+        JOIN event_search_session_keys key USING (session_id)
+        JOIN event_search_event_types event_type USING (event_type)
+        WHERE event.session_id = 'aaa-postings-verify' AND event.id = 3
       `;
 
       const firstMismatch = runBackfill("verify", mismatchCheckpoint, harness.databaseUrl,
@@ -227,12 +339,16 @@ describePostgres("integer event-search postings migration and backfill", () => {
         timeLimitReached: true,
         comparedEvents: 1,
         comparedPostings: 1,
-        differences: { missing: 1, extra: 0, changed: 0 },
+        differences: {
+          missing: 1, extra: 0, changed: 0, changedDocuments: 1,
+        },
       });
       expect(JSON.parse(readFileSync(mismatchCheckpoint, "utf8"))).toMatchObject({
         comparedEvents: 1,
         comparedPostings: 1,
-        differences: { missing: 1, extra: 0, changed: 0 },
+        differences: {
+          missing: 1, extra: 0, changed: 0, changedDocuments: 1,
+        },
       });
 
       const resumedMismatch = runBackfill("verify", mismatchCheckpoint, harness.databaseUrl,
@@ -243,7 +359,10 @@ describePostgres("integer event-search postings migration and backfill", () => {
       expect(resumedMismatchReport).toMatchObject({
         complete: true,
         timeLimitReached: false,
-        differences: { missing: 2, extra: 0, changed: 0 },
+        differences: {
+          missing: 1, extra: 0, changed: 0, changedDocuments: 1,
+          missingDocuments: 1, extraDocuments: 1, orphanPostings: 1,
+        },
       });
       expect(resumedMismatchReport.comparedEvents).toBeGreaterThan(
         firstMismatchReport.comparedEvents,
@@ -260,116 +379,16 @@ describePostgres("integer event-search postings migration and backfill", () => {
         complete: true,
         comparedEvents: resumedMismatchReport.comparedEvents,
         comparedPostings: resumedMismatchReport.comparedPostings,
-        differences: { missing: 2, extra: 0, changed: 0 },
+        differences: {
+          missing: 1, extra: 0, changed: 0, changedDocuments: 1,
+          missingDocuments: 1, extraDocuments: 1, orphanPostings: 1,
+        },
       });
     } finally {
       rmSync(checkpointDirectory, { recursive: true, force: true });
     }
   }, 60_000);
 });
-
-async function readPostingShape(sql: FullSchemaPostgresHarness["sql"]): Promise<unknown> {
-  const columns = await sql<Array<Record<string, unknown>>>
-    `SELECT table_name, column_name, data_type, is_nullable, is_identity, identity_generation
-     FROM information_schema.columns
-     WHERE table_schema = current_schema()
-       AND table_name IN ('event_search_session_keys', 'event_search_dictionary', 'event_search_postings')
-     ORDER BY table_name, ordinal_position`;
-  const constraints = await sql<Array<Record<string, unknown>>>
-    `SELECT c.relname AS table_name, con.conname AS name, con.contype AS type,
-            pg_get_constraintdef(con.oid) AS definition
-     FROM pg_constraint con JOIN pg_class c ON c.oid = con.conrelid
-     WHERE con.connamespace = current_schema()::regnamespace
-       AND c.relname IN ('event_search_session_keys', 'event_search_dictionary', 'event_search_postings')
-     ORDER BY c.relname, con.conname`;
-  const indexes = await sql<Array<Record<string, unknown>>>
-    `SELECT tablename, indexname, indexdef FROM pg_indexes
-     WHERE schemaname = current_schema()
-       AND tablename IN ('event_search_session_keys', 'event_search_dictionary', 'event_search_postings')
-     ORDER BY tablename, indexname`;
-  const triggers = await sql<Array<Record<string, unknown>>>
-    `SELECT tgname, pg_get_triggerdef(oid) AS definition
-     FROM pg_trigger
-     WHERE tgrelid = 'event_search_terms'::regclass AND NOT tgisinternal
-       AND tgname LIKE 'trg_event_search_postings_%'
-     ORDER BY tgname`;
-  const reloptions = await sql<Array<Record<string, unknown>>>
-    `SELECT c.relname AS table_name, c.reloptions
-     FROM pg_class c
-     WHERE c.relnamespace = current_schema()::regnamespace
-       AND c.relname = 'event_search_postings'`;
-  return { columns, constraints, indexes, triggers, reloptions };
-}
-
-async function readPostingDifferences(sql: FullSchemaPostgresHarness["sql"]) {
-  const [row] = await sql<Array<{ missing: number; extra: number; changed: number }>>`
-    WITH legacy AS (
-      SELECT session_id, event_id, term, term_freq, doc_len FROM event_search_terms
-    ), compact AS (
-      SELECT k.session_id, p.event_id, d.term, p.term_freq, p.doc_len
-      FROM event_search_postings p
-      JOIN event_search_session_keys k USING (session_key)
-      JOIN event_search_dictionary d USING (term_id)
-    ), keyed AS (
-      SELECT legacy.term_freq AS legacy_tf, legacy.doc_len AS legacy_len,
-             compact.term_freq AS compact_tf, compact.doc_len AS compact_len
-      FROM legacy FULL JOIN compact USING (session_id, event_id, term)
-    )
-    SELECT COUNT(*) FILTER (WHERE legacy_tf IS NOT NULL AND compact_tf IS NULL)::int AS missing,
-           COUNT(*) FILTER (WHERE legacy_tf IS NULL AND compact_tf IS NOT NULL)::int AS extra,
-           COUNT(*) FILTER (WHERE (legacy_tf, legacy_len) IS DISTINCT FROM (compact_tf, compact_len)
-                             AND legacy_tf IS NOT NULL AND compact_tf IS NOT NULL)::int AS changed
-    FROM keyed
-  `;
-  return row;
-}
-
-async function readSearchStatistics(sql: FullSchemaPostgresHarness["sql"]) {
-  const [row] = await sql<Array<{
-    dfMismatch: number;
-    corpusDocs: number;
-    expectedDocs: number;
-    corpusDocLength: number;
-    expectedDocLength: number;
-  }>>`
-    WITH expected_df AS (
-      SELECT term, COUNT(*)::bigint AS document_count
-      FROM event_search_terms GROUP BY term
-    ), df_diff AS (
-      SELECT COALESCE(expected_df.term, actual.term) AS term
-      FROM expected_df FULL JOIN event_search_term_document_frequency actual USING (term)
-      WHERE COALESCE(expected_df.document_count, 0)
-        IS DISTINCT FROM COALESCE(actual.document_count, 0)
-    ), expected_corpus AS (
-      SELECT COUNT(*)::int AS docs, COALESCE(SUM(doc_len), 0)::int AS doc_len
-      FROM (SELECT DISTINCT session_id, event_id, doc_len FROM event_search_terms) docs
-    )
-    SELECT (SELECT COUNT(*)::int FROM df_diff) AS "dfMismatch",
-           stats.total_docs::int AS "corpusDocs",
-           expected.docs AS "expectedDocs",
-           stats.total_doc_len::int AS "corpusDocLength",
-           expected.doc_len AS "expectedDocLength"
-    FROM event_search_corpus_stats stats CROSS JOIN expected_corpus expected
-    WHERE stats.id = TRUE
-  `;
-  return row;
-}
-
-function runBackfill(command: string, checkpoint: string, databaseUrl: string, ...args: string[]) {
-  return spawnSync(process.execPath, [
-    BACKFILL_SCRIPT, command, "--checkpoint", checkpoint, ...args,
-  ], {
-    cwd: REPOSITORY_ROOT,
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      DATABASE_URL: databaseUrl,
-      MIGRATION_DATABASE_URL: "",
-      HANIEL_SERVICE_CWD: join(dirname(checkpoint), "empty-service-config"),
-    },
-    timeout: 30_000,
-  });
-}
 
 function readCommandReport(stdout: string): {
   complete: boolean;
