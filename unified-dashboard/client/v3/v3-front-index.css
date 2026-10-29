@@ -45,6 +45,11 @@
   border-left: 1px solid var(--fp-line);
 }
 
+/* 좁은 폭에서만 보이는 1순위 탭(볼 것 | 물어본 것) */
+.fi-split-tabs {
+  display: none;
+}
+
 /* 행 */
 .fi-rows {
   margin: 0;
@@ -144,24 +149,27 @@
   font: var(--v3-type-meta) var(--v3-font-family);
 }
 
-/* 펼친 층: 접힌 행과 같은 자리에서 시작해 아래 행을 덮는다. 그림자 없이 종이와 잉크 테두리 */
+/* 펼친 층: 접힌 행과 같은 자리에서 시작해 아래 행을 덮는다. 그림자 없이 종이와 잉크 테두리.
+   높이는 FrontRow가 정한다(닫힘: 접힌 행 높이, 열림: 덮는 마지막 행의 아래 괘선까지) */
 .fi-row-layer {
   position: absolute;
   top: 0;
   right: 0;
   left: 0;
+  align-content: start;
+  overflow: hidden;
   background: var(--fi-paper);
   outline: 1px solid var(--fp-ink);
   outline-offset: -1px;
   opacity: 0;
   visibility: hidden;
-  transition: opacity var(--fi-close) ease, visibility 0s linear var(--fi-close);
+  transition: height var(--fi-close) ease, opacity var(--fi-close) ease, visibility 0s linear var(--fi-close);
 }
 
 .fi-row[data-open] .fi-row-layer {
   opacity: 1;
   visibility: visible;
-  transition: opacity var(--fi-close) ease, visibility 0s;
+  transition: height var(--fi-open) ease, opacity var(--fi-close) ease, visibility 0s;
 }
 
 .fi-row-dup {
@@ -181,19 +189,10 @@
 
 .fi-row-extra {
   grid-column: 2;
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows var(--fi-close) ease;
-}
-
-.fi-row[data-open] .fi-row-extra {
-  grid-template-rows: 1fr;
-  transition-duration: var(--fi-open);
+  min-width: 0;
 }
 
 .fi-row-extra-inner {
-  min-height: 0;
-  overflow: hidden;
   margin: 0 calc(var(--v3-space-1) * -1) calc(var(--v3-space-1) * -1);
   padding: var(--v3-space-3) var(--v3-space-1) var(--v3-space-1);
 }
@@ -402,9 +401,8 @@
   margin-inline-end: var(--v3-space-2);
 }
 
-.fi-dock-target {
-  color: var(--v3-text-secondary);
-  font: var(--v3-type-body) var(--v3-font-family);
+.v3-shell .fi-dock-chip {
+  cursor: default;
 }
 
 /* 카드 상세: 읽기 단과 메타만 둔 곁단 */
@@ -592,8 +590,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .fi-row,
-  .fi-row-layer,
-  .fi-row-extra {
+  .fi-row-layer {
     transition: none;
   }
 
@@ -626,6 +623,29 @@
     margin-top: var(--v3-space-8);
   }
 
+  .fi-split-tabs {
+    display: block;
+  }
+
+  .fi-split-tabs > .v3-card-detail-tabs {
+    display: flex;
+    padding-bottom: var(--v3-space-2);
+    border-bottom: var(--v3-rule-strong) solid var(--fp-ink);
+  }
+
+  .fi-first > .fi-column > .v3-front-head {
+    display: none;
+  }
+
+  .fi-first > .fi-column + .fi-column {
+    margin-top: 0;
+  }
+
+  .fi-first[data-pane="review"] > [data-pane-name="questions"],
+  .fi-first[data-pane="questions"] > [data-pane-name="review"] {
+    display: none;
+  }
+
   .fi-column + .fi-column::before,
   .fi-card-side::before {
     display: none;
@@ -638,6 +658,8 @@
   .fi-row-layer {
     position: static;
     display: none;
+    height: auto !important;
+    overflow: visible;
   }
 
   .fi-row[data-open] .fi-row-layer {

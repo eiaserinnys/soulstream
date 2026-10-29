@@ -2,6 +2,7 @@ import { useId, useState, type ReactNode } from "react";
 import { Button } from "@seosoyoung/soul-ui";
 import { CardImageViewer, type CardImageSelection } from "./CardImageViewer";
 import { CardProgressSummary } from "./CardProgressSummary";
+import { DetailTabs } from "./DetailTabs";
 import { FrontRow, FrontRowGroup, rowLeaveDelay } from "./FrontRow";
 import { summarizeCardItems } from "./card-item-summary";
 import { FrontPageGnb, Machines, type FrontTab } from "./front-page-parts";
@@ -10,6 +11,9 @@ import {
   type FrontPageCard, type FrontPageData, type FrontPageQuestion,
 } from "./front-page-model";
 import "./v3-front-index.css";
+
+type FirstPane = "review" | "questions";
+const FIRST_PANES = [["review", "볼 것"], ["questions", "물어본 것"]] as const;
 
 interface Props {
   data: FrontPageData;
@@ -33,6 +37,8 @@ export function FrontPageIndex({ data, now, timeZone, imageUrl, dock, onOpenCard
   const [image, setImage] = useState<CardImageSelection | null>(null);
   const [acknowledged, setAcknowledged] = useState<ReadonlySet<number>>(() => new Set());
   const [leaving, setLeaving] = useState<ReadonlySet<number>>(() => new Set());
+  // 좁은 폭에서는 1순위 두 갈래를 위쪽 탭으로 바꾼다. 넓은 폭에서는 두 단을 나란히 둔다.
+  const [firstPane, setFirstPane] = useState<FirstPane>("review");
   const stamp = (iso: string) => <time dateTime={iso}>{ledgerStamp(iso, now, timeZone)}</time>;
   const review = newestFirst(data.review).filter(card => !acknowledged.has(card.number));
   const questions = [...data.questions].sort((a, b) => Date.parse(b.askedAt) - Date.parse(a.askedAt));
@@ -54,8 +60,12 @@ export function FrontPageIndex({ data, now, timeZone, imageUrl, dock, onOpenCard
     </div>
 
     <div className="fi-body" id={`${ids}-panel`} role="tabpanel" aria-labelledby={`${ids}-tab-front`}>
-      <div className="fi-split">
-        <section className="fi-column" aria-labelledby={`${ids}-review`}>
+      <div className="fi-split-tabs">
+        <DetailTabs<FirstPane> id={`${ids}-first`} label="1순위" panelId={`${ids}-first-panel`} variant="card"
+          tabs={FIRST_PANES} value={firstPane} onChange={setFirstPane} />
+      </div>
+      <div className="fi-split fi-first" id={`${ids}-first-panel`} data-pane={firstPane}>
+        <section className="fi-column" data-pane-name="review" aria-labelledby={`${ids}-review`}>
           <h2 className="v3-front-head" id={`${ids}-review`}>볼 것</h2>
           <FrontRowGroup>
             {review.map(card => <FrontRow key={card.number} rowKey={`review-${card.number}`}
@@ -69,7 +79,7 @@ export function FrontPageIndex({ data, now, timeZone, imageUrl, dock, onOpenCard
               onActivate={() => onOpenCard?.(card.number)} />)}
           </FrontRowGroup>
         </section>
-        <section className="fi-column" aria-labelledby={`${ids}-questions`}>
+        <section className="fi-column" data-pane-name="questions" aria-labelledby={`${ids}-questions`}>
           <h2 className="v3-front-head" id={`${ids}-questions`}>물어본 것</h2>
           <FrontRowGroup>
             {questions.map(question => <FrontRow key={question.number} rowKey={`question-${question.number}`}

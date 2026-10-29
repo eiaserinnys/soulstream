@@ -34,7 +34,7 @@ function FrontIndexMockup() {
 
   const dock = <FrontDock destinations={screen === "card" ? ["card", "pas", "new"] : ["pas", "new"]}
     value={destination} onChange={setDestination} text={text} onChangeText={setText} onSend={() => setText("")}
-    pasName="서소영" folderLabel="📁 ✨ 소울스트림" executionLabel={<>서소영 · eiaserinnys · Claude - Opus</>} />;
+    pasName="서소영" cardLabel={`#${card739.number} ${card739.title}`} folderLabel="📁 ✨ 소울스트림" executionLabel={<>서소영 · eiaserinnys · Claude - Opus</>} />;
 
   return <div key={screen} className="fi-screen">
     {screen === "card"
