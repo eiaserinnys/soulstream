@@ -41,6 +41,168 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     await cleanup?.();
   });
 
+  it("keeps search metadata results while scanning cards once per requested session", async () => {
+    const sessionIds = [
+      "metadata-own-card-session",
+      "metadata-assignee-session",
+      "metadata-completed-session",
+      "metadata-empty-session",
+    ];
+    await sql`
+      INSERT INTO sessions (session_id, folder_id, display_name, status, session_type)
+      VALUES
+        ('metadata-own-card-session', 'folder-allowed', 'Own card', 'idle', 'claude'),
+        ('metadata-assignee-session', 'folder-allowed', 'Assignee card', 'idle', 'claude'),
+        ('metadata-completed-session', 'folder-allowed', 'Completed card', 'idle', 'claude'),
+        ('metadata-empty-session', 'folder-allowed', 'No events', 'idle', 'claude')
+    `;
+    await sql`
+      INSERT INTO cards (id, folder_id, position_key, title, status, assignee_kind, assignee_session_id)
+      VALUES
+        ('metadata-own-card', 'folder-allowed', 'm1', 'Session reference', 'running', NULL, NULL),
+        ('metadata-own-assignee-decoy', 'folder-allowed', 'm2', 'Assignee decoy', 'done', 'session', 'metadata-own-card-session'),
+        ('metadata-assignee-card', 'folder-allowed', 'm3', 'Assigned card', 'running', 'session', 'metadata-assignee-session'),
+        ('metadata-assignee-completed-decoy', 'folder-allowed', 'm4', 'Completed decoy', 'done', NULL, NULL),
+        ('metadata-completed-card', 'folder-allowed', 'm5', 'Completed card', 'done', NULL, NULL)
+    `;
+    await sql`
+      UPDATE sessions SET card_id = 'metadata-own-card'
+      WHERE session_id = 'metadata-own-card-session'
+    `;
+    await sql`
+      UPDATE cards SET completed_session_id = 'metadata-assignee-session'
+      WHERE id = 'metadata-assignee-completed-decoy'
+    `;
+    await sql`
+      UPDATE cards SET completed_session_id = 'metadata-completed-session'
+      WHERE id = 'metadata-completed-card'
+    `;
+    const metadataEvents = [
+      ["metadata-own-card-session", 1, "user_message"],
+      ["metadata-own-card-session", 2, "intervention_sent"],
+      ["metadata-own-card-session", 3, "session_notification"],
+      ["metadata-own-card-session", 4, "turn_summary"],
+      ["metadata-own-card-session", 5, "assistant_message"],
+      ["metadata-assignee-session", 1, "user_message"],
+      ["metadata-assignee-session", 2, "user_message"],
+      ["metadata-assignee-session", 3, "assistant_message"],
+      ["metadata-completed-session", 1, "assistant_message"],
+      ["metadata-completed-session", 2, "session_notification"],
+    ] as const;
+    for (const [sessionId, id, eventType] of metadataEvents) {
+      await sql`
+        INSERT INTO events (session_id, id, event_type, searchable_text)
+        VALUES (${sessionId}, ${id}, ${eventType}, ${`event ${id}`})
+      `;
+    }
+    await sql`
+      INSERT INTO session_digests (session_id, narrative, highlight, narrative_through_event_id)
+      VALUES ('metadata-own-card-session', 'Narrative', 'Search highlight', 4)
+    `;
+
+    const legacyRows = await sql<Array<{
+      session_id: string;
+      turn_count: number;
+      has_turn_summaries: boolean;
+      has_story_digest: boolean;
+      has_highlight: boolean;
+      card_id: string | null;
+      card_number: number | null;
+      card_title: string | null;
+      card_status: string | null;
+    }>>`
+      WITH requested AS (
+        SELECT UNNEST(${sessionIds}::text[]) AS session_id
+      )
+      SELECT
+        requested.session_id,
+        COUNT(e.id) FILTER (
+          WHERE e.event_type IN ('user_message', 'intervention_sent', 'session_notification')
+        )::integer AS turn_count,
+        COALESCE(BOOL_OR(e.event_type = 'turn_summary'), false) AS has_turn_summaries,
+        (d.session_id IS NOT NULL) AS has_story_digest,
+        COALESCE(NULLIF(BTRIM(d.highlight), '') IS NOT NULL, false) AS has_highlight,
+        linked_card.id AS card_id,
+        linked_card.number AS card_number,
+        linked_card.title AS card_title,
+        linked_card.status AS card_status
+      FROM requested
+      LEFT JOIN sessions session ON session.session_id = requested.session_id
+      LEFT JOIN events e ON e.session_id = requested.session_id
+      LEFT JOIN session_digests d ON d.session_id = requested.session_id
+      LEFT JOIN LATERAL (
+        SELECT card.id, card.number, card.title, card.status
+        FROM cards card
+        WHERE card.id = session.card_id
+          OR (card.assignee_session_id = session.session_id AND card.archived = FALSE)
+          OR (card.completed_session_id = session.session_id AND card.archived = FALSE)
+        ORDER BY
+          CASE
+            WHEN card.id = session.card_id THEN 0
+            WHEN card.assignee_session_id = session.session_id THEN 1
+            ELSE 2
+          END,
+          card.updated_at DESC,
+          card.id ASC
+        LIMIT 1
+      ) linked_card ON TRUE
+      GROUP BY requested.session_id, d.session_id, d.highlight,
+        linked_card.id, linked_card.number, linked_card.title, linked_card.status
+    `;
+    const debugQueries: Array<{ query: string; parameters: unknown[] }> = [];
+    const tracedSql = postgres(databaseUrl, {
+      max: 1,
+      onnotice: () => {},
+      debug: (_connection, query, parameters) => {
+        if (query.includes("LEFT JOIN LATERAL") && query.includes("linked_card")) {
+          debugQueries.push({ query, parameters });
+        }
+      },
+    });
+    let metadataRows: Awaited<ReturnType<SessionStoryReadRepository["getSessionSearchMetadata"]>>;
+    try {
+      metadataRows = await new SessionStoryReadRepository(tracedSql as unknown as SqlClient)
+        .getSessionSearchMetadata(sessionIds);
+      const capturedQuery = debugQueries[0];
+      expect(capturedQuery).toBeDefined();
+      const explainRows = await tracedSql.unsafe(
+        `EXPLAIN (ANALYZE, FORMAT JSON, COSTS OFF, TIMING OFF) ${capturedQuery!.query}`,
+        capturedQuery!.parameters as never[],
+      );
+      type ExplainNode = {
+        readonly "Relation Name"?: string;
+        readonly "Actual Loops"?: number;
+        readonly Plans?: ExplainNode[];
+      };
+      const explainDocument = (explainRows[0] as Record<string, unknown>)["QUERY PLAN"] as
+        Array<{ Plan: ExplainNode }>;
+      const cardScans: ExplainNode[] = [];
+      const collectCardScans = (node: ExplainNode): void => {
+        if (node["Relation Name"] === "cards") cardScans.push(node);
+        for (const child of node.Plans ?? []) collectCardScans(child);
+      };
+      collectCardScans(explainDocument[0]!.Plan);
+      expect(cardScans.map((scan) => scan["Actual Loops"])).toEqual([sessionIds.length]);
+    } finally {
+      await tracedSql.end({ timeout: 2 });
+    }
+
+    const actualRows = metadataRows!.map(([sessionId, metadata]) => ({
+      session_id: sessionId,
+      turn_count: metadata.turnCount,
+      has_turn_summaries: metadata.hasTurnSummaries,
+      has_story_digest: metadata.hasStoryDigest,
+      has_highlight: metadata.hasHighlight,
+      card_id: metadata.cardId,
+      card_number: metadata.cardNumber,
+      card_title: metadata.cardTitle,
+      card_status: metadata.cardStatus,
+    })).sort((left, right) => left.session_id.localeCompare(right.session_id));
+    expect(actualRows).toEqual(
+      [...legacyRows].sort((left, right) => left.session_id.localeCompare(right.session_id)),
+    );
+  }, 30_000);
+
   it("backfills exact term document frequencies and tracks index lifecycle atomically", async () => {
     const migration = readFileSync(fileURLToPath(new URL(
       "../../packages/db-schema/sql/migrations/099_event_search_term_document_frequency.sql",
