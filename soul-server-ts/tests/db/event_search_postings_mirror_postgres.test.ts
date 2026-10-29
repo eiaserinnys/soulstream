@@ -17,6 +17,7 @@ import {
   readSearchStatistics,
   runBackfill,
 } from "./event_search_postings_mirror_postgres_helpers.js";
+import { migrationSha256 } from "../../../packages/db-schema/scripts/migration-contract.mjs";
 
 const MIGRATION_132_PATH = fileURLToPath(new URL(
   "../../../packages/db-schema/sql/migrations/132_event_search_integer_postings.sql",
@@ -30,6 +31,14 @@ const MIGRATION_134_PATH = fileURLToPath(new URL(
   "../../../packages/db-schema/sql/migrations/134_event_search_read_v2.sql",
   import.meta.url,
 ));
+const TOKEN_LENGTH_MIGRATION_PATH = fileURLToPath(new URL(
+  "../../../packages/db-schema/sql/migrations/135_event_search_token_length_limit.sql",
+  import.meta.url,
+));
+const MIGRATION_MANIFEST_PATH = fileURLToPath(new URL(
+  "../../../packages/db-schema/migration-manifest.json",
+  import.meta.url,
+));
 const describePostgres = hasFullSchemaPostgresBackend ? describe.sequential : describe.skip;
 
 describePostgres("integer event-search postings migration and backfill", () => {
@@ -41,6 +50,27 @@ describePostgres("integer event-search postings migration and backfill", () => {
 
   afterAll(async () => {
     await harness?.cleanup();
+  });
+
+  it("replays the token length migration and matches the fresh schema definition", async () => {
+    const migration = readFileSync(TOKEN_LENGTH_MIGRATION_PATH, "utf8");
+    const manifest = JSON.parse(readFileSync(MIGRATION_MANIFEST_PATH, "utf8")) as {
+      migrations: Array<{ id: string; sha256: string }>;
+    };
+    const entry = manifest.migrations.find(
+      (candidate) => candidate.id === "135_event_search_token_length_limit.sql",
+    );
+    expect(entry?.sha256).toBe(migrationSha256(migration));
+
+    const beforeMigration = await harness.sql<Array<{ definition: string }>>`
+      SELECT pg_get_functiondef('event_search_tokenize(text)'::regprocedure) AS definition
+    `;
+    await harness.sql.unsafe(migration);
+    await harness.sql.unsafe(migration);
+    const afterMigration = await harness.sql<Array<{ definition: string }>>`
+      SELECT pg_get_functiondef('event_search_tokenize(text)'::regprocedure) AS definition
+    `;
+    expect(afterMigration).toEqual(beforeMigration);
   });
 
   it("upgrades 132 idempotently and mirrors postings with document metadata", async () => {
