@@ -2,7 +2,7 @@ import 'react-native-gesture-handler';
 import React, { useEffect, useRef, useState } from 'react';
 import { registerRootComponent } from 'expo';
 import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
-import { Text, TextInput, View } from 'react-native';
+import { Settings, Text, TextInput, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentLinkProvider } from '../src/navigation/ContentLinkProvider';
@@ -33,9 +33,9 @@ function Stage() {
     const key = JSON.stringify(['pas', sessionId]);
     continuity.setViewState(key, { expandedKey: null });
     setPhase('closed 1');
-    const open = setTimeout(() => { continuity.setViewState(key, { expandedKey: cardKey }); setPhase('open'); }, 6000);
-    const close = setTimeout(() => { continuity.setViewState(key, { expandedKey: null }); setPhase('closed 2'); }, 21000);
-    const keyboard = setTimeout(() => { continuity.setViewState(key, { expandedKey: null }); setPhase('keyboard'); }, 27000);
+    const open = setTimeout(() => { continuity.setViewState(key, { expandedKey: cardKey }); setPhase('open'); }, 15000);
+    const close = setTimeout(() => { continuity.setViewState(key, { expandedKey: null }); setPhase('closed 2'); }, 55000);
+    const keyboard = setTimeout(() => { continuity.setViewState(key, { expandedKey: null }); setPhase('keyboard'); }, 70000);
     return () => { clearTimeout(open); clearTimeout(close); clearTimeout(keyboard); };
   }, [continuity, host.store]);
   useEffect(() => {
@@ -52,9 +52,15 @@ function Stage() {
 }
 
 function Root() {
+  const short = Settings.get('pasHarnessScenario') === 'short';
+  const t = useTokens();
   return <GestureHandlerRootView style={{ flex: 1 }}><SafeAreaProvider>
     <LayoutContinuityProvider><PersistentSessionProvider><ContentLinkProvider>
-      <NavigationContainer theme={DefaultTheme}><Stage /></NavigationContainer>
+      <NavigationContainer theme={DefaultTheme}>
+        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: t.colors.background }}>
+          <View style={short ? { width: '100%', height: 669 } : { flex: 1 }}><Stage /></View>
+        </View>
+      </NavigationContainer>
     </ContentLinkProvider></PersistentSessionProvider></LayoutContinuityProvider>
   </SafeAreaProvider></GestureHandlerRootView>;
 }
