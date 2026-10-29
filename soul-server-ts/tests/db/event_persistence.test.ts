@@ -139,6 +139,129 @@ describe("sanitizeJsonText", () => {
 });
 
 describe("EventPersistence durable ingress", () => {
+  it("retires a terminal registration for same-session tail events until the next execution registration", async () => {
+    const { db } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ingress = makeMockIngress();
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
+    const terminalEffect = {
+      kind: "terminal_transition",
+      status: "completed",
+      termination_reason: "completed_ok",
+      termination_detail: null,
+      review_state: "acknowledged",
+      updated_at: "2026-10-29T00:00:00.000Z",
+    } as const;
+
+    await ep.enqueueEvent("sess-1", {
+      type: "session_ended",
+      status: "completed",
+      termination_reason: "completed_ok",
+      termination_detail: null,
+      timestamp: 1,
+    } as unknown as SSEEventPayload, terminalEffect, "registration-1");
+    await ep.enqueueEvent("sess-1", {
+      type: "subagent_stop",
+      timestamp: 2,
+    } as unknown as SSEEventPayload, undefined, "registration-1");
+    await ep.enqueueEvent("sess-2", {
+      type: "prompt_suggestion",
+      timestamp: 3,
+    } as unknown as SSEEventPayload, undefined, "registration-1");
+    await ep.enqueueEvent("sess-1", {
+      type: "prompt_suggestion",
+      timestamp: 4,
+    } as unknown as SSEEventPayload, undefined, "registration-2");
+    await ep.enqueueEvent("sess-1", {
+      type: "assistant_message",
+      content: "next execution",
+      timestamp: 5,
+    } as unknown as SSEEventPayload, {
+      kind: "execution_registration",
+      registration_id: "registration-1",
+      execution_command_id: "command-2",
+      review_state: "not_required",
+      updated_at: "2026-10-29T00:00:01.000Z",
+    });
+    await ep.enqueueEvent("sess-1", {
+      type: "prompt_suggestion",
+      timestamp: 6,
+    } as unknown as SSEEventPayload, undefined, "registration-1");
+
+    const appendInputs = ingress.append.mock.calls.map(([input]) => input);
+    expect(appendInputs[0]).toMatchObject({
+      registration_id: "registration-1",
+      session_effect: terminalEffect,
+    });
+    expect(appendInputs[1]).not.toHaveProperty("registration_id");
+    expect(appendInputs[2].registration_id).toBe("registration-1");
+    expect(appendInputs[3].registration_id).toBe("registration-2");
+    expect(appendInputs[4]).toMatchObject({
+      session_effect: {
+        kind: "execution_registration",
+        registration_id: "registration-1",
+      },
+    });
+    expect(appendInputs[5].registration_id).toBe("registration-1");
+  });
+
+  it("keeps the registration active when appending a terminal transition fails", async () => {
+    const { db } = makeMockDB();
+    const { broadcaster } = makeMockBroadcaster();
+    const ingress = makeMockIngress();
+    ingress.append.mockResolvedValueOnce(ingress.record);
+    ingress.append.mockRejectedValueOnce(new Error("outbox append failed"));
+    const ep = new EventPersistence(
+      db,
+      broadcaster,
+      silentLogger,
+      ingress.outbox,
+      ingress.pump,
+    );
+
+    await ep.enqueueEvent("sess-1", {
+      type: "session_ended",
+      status: "completed",
+      termination_reason: "completed_ok",
+      termination_detail: null,
+      timestamp: 0,
+    } as unknown as SSEEventPayload, {
+      kind: "terminal_transition",
+      status: "completed",
+      termination_reason: "completed_ok",
+      termination_detail: null,
+      review_state: "acknowledged",
+      updated_at: "2026-10-29T00:00:00.000Z",
+    }, "registration-1");
+    await expect(ep.enqueueEvent("sess-1", {
+      type: "session_ended",
+      status: "completed",
+      termination_reason: "completed_ok",
+      termination_detail: null,
+      timestamp: 1,
+    } as unknown as SSEEventPayload, {
+      kind: "terminal_transition",
+      status: "completed",
+      termination_reason: "completed_ok",
+      termination_detail: null,
+      review_state: "acknowledged",
+      updated_at: "2026-10-29T00:00:00.000Z",
+    }, "registration-2")).rejects.toThrow("outbox append failed");
+    await ep.enqueueEvent("sess-1", {
+      type: "prompt_suggestion",
+      timestamp: 2,
+    } as unknown as SSEEventPayload, undefined, "registration-2");
+
+    expect(ingress.append.mock.calls[0][0].registration_id).toBe("registration-1");
+    expect(ingress.append.mock.calls[2][0].registration_id).toBe("registration-2");
+  });
+
   it.each([
     ["missing", undefined],
     ["false", false],

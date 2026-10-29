@@ -97,6 +97,8 @@ export class EventPersistence extends EventTransitionPublisher {
     string,
     EventOutboxRecord
   >();
+  private readonly retiredRegistrationBySession = new Map<string, string>();
+  private appendQueue: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly db: SessionDB,
@@ -124,12 +126,60 @@ export class EventPersistence extends EventTransitionPublisher {
     if (!shouldPersistEvent(event)) {
       throw new Error("transient live events must not be persisted");
     }
-    const record = await this.outbox.append(
-      buildEventOutboxAppendInput(sessionId, event, explicitEffect, registrationId)
-        .appendInput,
-    );
-    this.latestPendingAckBySession.set(sessionId, record);
-    return record;
+    const append = this.appendQueue.then(async () => {
+      const retiredRegistration = this.retiredRegistrationBySession.get(sessionId);
+      let changedRetirement = false;
+
+      if (
+        explicitEffect?.kind === "terminal_transition"
+        && registrationId !== undefined
+        && registrationId !== null
+      ) {
+        this.retiredRegistrationBySession.set(sessionId, registrationId);
+        changedRetirement = true;
+      } else if (explicitEffect?.kind === "execution_registration") {
+        changedRetirement = retiredRegistration !== undefined;
+        this.retiredRegistrationBySession.delete(sessionId);
+      }
+
+      const isRetiredRegistration =
+        explicitEffect?.kind !== "terminal_transition"
+        && explicitEffect?.kind !== "execution_registration"
+        && registrationId !== undefined
+        && registrationId !== null
+        && registrationId === retiredRegistration;
+      const appendInput = buildEventOutboxAppendInput(
+        sessionId,
+        event,
+        explicitEffect,
+        isRetiredRegistration ? undefined : registrationId,
+      ).appendInput;
+
+      if (isRetiredRegistration) {
+        this.logger.debug({
+          sessionId,
+          eventType: event.type,
+          registrationId,
+        }, "omitting retired execution registration from host outbox event");
+      }
+
+      try {
+        const record = await this.outbox.append(appendInput);
+        this.latestPendingAckBySession.set(sessionId, record);
+        return record;
+      } catch (error) {
+        if (changedRetirement) {
+          if (retiredRegistration === undefined) {
+            this.retiredRegistrationBySession.delete(sessionId);
+          } else {
+            this.retiredRegistrationBySession.set(sessionId, retiredRegistration);
+          }
+        }
+        throw error;
+      }
+    });
+    this.appendQueue = append.then(() => undefined, () => undefined);
+    return append;
   }
 
   async enqueueEventAndWaitForSessionAck(
