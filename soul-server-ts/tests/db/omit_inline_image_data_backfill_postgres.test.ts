@@ -194,9 +194,11 @@ async function readPayloadTypes(harness: FullSchemaPostgresHarness) {
 
 async function readEventSearchTerms(harness: FullSchemaPostgresHarness) {
   return await harness.sql<{ event_id: number; term: string; term_freq: number; doc_len: number }[]>`
-    SELECT event_id, term, term_freq, doc_len
-    FROM event_search_terms
-    WHERE session_id = ${SESSION_ID}
-    ORDER BY event_id, term
+    SELECT p.event_id, d.term, p.term_freq, m.doc_len
+    FROM event_search_postings p JOIN event_search_session_keys k USING (session_key)
+    JOIN event_search_dictionary d USING (term_id)
+    JOIN event_search_documents m USING (session_key, event_id)
+    WHERE k.session_id = ${SESSION_ID}
+    ORDER BY p.event_id, d.term
   `;
 }
