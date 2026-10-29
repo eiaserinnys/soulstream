@@ -22,8 +22,9 @@ describe("SessionStoryRepository", () => {
 
     expect(calls[0]?.text).toContain("s.status = 'completed'");
     expect(calls[0]?.text).toContain("s.updated_at <=");
-    expect(calls[0]?.text).toContain("COUNT(e.id) FILTER");
     expect(calls[0]?.text).toContain("turn_summary");
+    expect(calls[0]?.text).toContain("MAX(e.id)");
+    expect(calls[0]?.text).not.toContain("LEFT JOIN events");
     expect(calls[0]?.values).toEqual([
       new Date("2026-07-31T00:30:00.000Z"),
       5,
@@ -159,7 +160,7 @@ describe("SessionStoryRepository", () => {
     })).resolves.toBe(true);
 
     expect(calls[0]?.text).toContain("s.status = 'completed'");
-    expect(calls[0]?.text).toContain("s.updated_at =");
+    expect(calls[0]?.text).toContain("date_trunc('milliseconds', s.updated_at) =");
     expect(calls[0]?.text).toContain("s.updated_at <=");
     expect(calls[0]?.text).toContain("FOR UPDATE OF s");
     expect(calls[0]?.text).toContain("session_digests.version =");
