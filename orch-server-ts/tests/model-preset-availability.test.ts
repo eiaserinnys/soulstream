@@ -10,7 +10,12 @@ import type {
   UsageSummaryQuota,
   UsageSummarySnapshot,
 } from "../src/usage/usage_summary_service.js";
-import type { ProviderLimitRejection } from "../src/usage/provider_limit_rejection.js";
+import {
+  getProviderLimitRejection,
+  observeProviderExecution,
+  type ProviderLimitProvider,
+  type ProviderLimitRejection,
+} from "../src/usage/provider_limit_rejection.js";
 import { ModelPresetAvailabilityService } from "../src/model/model_preset_availability.js";
 import type { NodeConnectionSnapshot } from "../src/node/registry_types.js";
 
@@ -989,4 +994,68 @@ it("accepts advertised Antigravity presets in the shared node-list API availabil
   );
   expect(service.listForNode("node-a")).toEqual(presets.map(p => expect.objectContaining({ id: p.id, backend: "antigravity", available: true, weekly_headroom: expect.objectContaining({ headroom: expect.any(Number), remaining_percent: 90 }) })));
   expect(service.requireAvailable("node-a", "gemini-4-argon").id).toBe("gemini-4-argon");
+});
+
+it("rejects an Antigravity preset after quota error and selects the usable fallback", () => {
+  const memory = new Map<string, ProviderLimitRejection>();
+  const resetsAt = "2026-07-28T04:00:00.000Z";
+  const sharedAccountGroups: Array<{ provider: string; nodeIds: readonly string[] }> = [];
+  observeProviderExecution({
+    memory,
+    sharedAccountGroups,
+    event: {
+      nodeId: "node-a",
+      eventType: "error",
+      payload: { type: "error", error_code: "antigravity_quota_exceeded", resets_at: resetsAt },
+      createdAt: "2026-07-28T02:59:00.000Z",
+    },
+    now,
+  });
+
+  const presets: StaticModelPreset[] = [
+    { id: "gemini-4-argon", label: "Gemini - 4 Argon", backend: "antigravity", available: true,
+      usage_provider: "antigravity", usage_model_id: "gemini-4-argon" },
+    { id: "claude-opus", label: "Claude - Opus", backend: "claude", available: true,
+      usage_provider: "claude", usage_model_id: "claude-opus" },
+    { id: "codex-6.1-sol", label: "Codex - 6.1 Sol", backend: "codex", available: true,
+      usage_provider: "codex", usage_model_id: "gpt-6.1-sol" },
+  ];
+  const usage = summary(null);
+  const resetSeconds = Math.floor(Date.parse(resetsAt) / 1_000);
+  const service = new ModelPresetAvailabilityService(
+    { getConnectedNode: () => ({ nodeId: "node-a", modelPresets: presets } as unknown as NodeConnectionSnapshot) },
+    {
+      getSummary: () => ({
+        ...usage,
+        nodes: [{
+          ...usage.nodes[0]!,
+          providers: {
+            claude: provider({ quotas: [{ id: "claude:weekly", label: "7일", window: "7d",
+              model: "claude-opus", remainingPercent: 0, resetAt: resetSeconds }] }),
+            codex: provider({ quotas: [{ id: "codex:weekly", label: "7일", window: "7d",
+              model: "gpt-6.1-sol", remainingPercent: 81, resetAt: resetSeconds }] }),
+            antigravity: provider({ quotas: [{ id: "antigravity:weekly", label: "7일", window: "7d",
+              model: "gemini-4-argon", remainingPercent: 90, resetAt: resetSeconds }] }),
+          },
+        }],
+      }),
+      getLimitRejection: (nodeId, providerName: ProviderLimitProvider) => getProviderLimitRejection({
+        memory,
+        sharedAccountGroups,
+        nodeId,
+        provider: providerName,
+        now,
+      }),
+      getClaudePoolAccountsForAvailability: (_nodeId, accounts) => accounts,
+    },
+    () => now,
+  );
+
+  expect(service.resolveForNode("node-a", "gemini-4-argon")).toMatchObject({
+    available: false,
+    reason: "limit_rejected",
+    resets_at: resetsAt,
+  });
+  expect(service.chooseUsablePreset("node-a", ["gemini-4-argon", "claude-opus", "codex-6.1-sol"]))
+    .toBe("codex-6.1-sol");
 });

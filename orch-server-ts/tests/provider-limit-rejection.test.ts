@@ -38,6 +38,33 @@ describe("provider limit rejection memory", () => {
     expect(get(memory, "node-a", "claude")).toBeNull();
   });
 
+  it("records an Antigravity quota error until its reset", () => {
+    const memory = new Map(rejections);
+    const resetsAt = "2026-10-12T04:00:00.000Z";
+    observe(memory, {
+      nodeId: "node-a",
+      eventType: "error",
+      payload: {
+        type: "error",
+        error_code: "antigravity_quota_exceeded",
+        resets_at: resetsAt,
+      },
+      createdAt: "2026-10-12T02:59:00.000Z",
+    });
+
+    expect(getProviderLimitRejection({
+      memory,
+      sharedAccountGroups: groups,
+      nodeId: "node-a",
+      provider: "antigravity",
+      now,
+    })).toEqual({
+      rejectedUntil: resetsAt,
+      rateLimitType: null,
+      observedAt: "2026-10-12T02:59:00.000Z",
+    });
+  });
+
   it.each([
     ["credential alert", "credential_alert", "claude_rate_limit_stop_failure"],
     ["wrong code", "error", "some_other_error"],
