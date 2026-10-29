@@ -84,18 +84,23 @@ export class SessionStoryReadRepository {
       event_metadata AS (
         SELECT
           requested.session_id,
-          COUNT(e.id) FILTER (
-            WHERE e.event_type IN (
-              'user_message',
-              'intervention_sent',
-              'session_notification'
-            )
+          (
+            SELECT COUNT(*)
+            FROM events e
+            WHERE e.session_id = requested.session_id
+              AND e.event_type IN (
+                'user_message',
+                'intervention_sent',
+                'session_notification'
+              )
           )::integer AS turn_count,
-          COALESCE(BOOL_OR(e.event_type = 'turn_summary'), false)
-            AS has_turn_summaries
+          EXISTS (
+            SELECT 1
+            FROM events e
+            WHERE e.session_id = requested.session_id
+              AND e.event_type = 'turn_summary'
+          ) AS has_turn_summaries
         FROM requested
-        LEFT JOIN events e ON e.session_id = requested.session_id
-        GROUP BY requested.session_id
       )
       SELECT
         requested.session_id,
