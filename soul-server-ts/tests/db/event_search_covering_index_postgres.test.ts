@@ -75,13 +75,8 @@ describe.sequential("event search covering index migrations", () => {
     );
     expect(eventTypeIndex?.sha256).toBe(migrationSha256(EVENT_TYPE_INDEX_MIGRATION));
 
-    const tableStart = SCHEMA.indexOf("CREATE TABLE IF NOT EXISTS event_search_terms (");
-    expect(tableStart).toBeGreaterThanOrEqual(0);
-    const tableDefinition = SCHEMA.slice(tableStart, tableStart + 700);
-    expect(tableDefinition).toContain("autovacuum_vacuum_insert_scale_factor = 0.05");
-    expect(SCHEMA).toMatch(
-      /CREATE INDEX IF NOT EXISTS idx_event_search_terms_term\s+ON event_search_terms \(term\)\s+INCLUDE \(session_id, event_id, term_freq, doc_len\);/u,
-    );
+    expect(SCHEMA).not.toContain("CREATE TABLE IF NOT EXISTS event_search_terms (");
+    expect(SCHEMA).toContain("CREATE INDEX IF NOT EXISTS event_search_dictionary_korean_prefix");
     expect(MIGRATIONS[0]).not.toMatch(/CREATE\s+INDEX\s+CONCURRENTLY/iu);
     expect(MIGRATIONS[0]).toContain("i.indrelid = v_table");
     expect(MIGRATIONS[0]).toContain("i.indkey[0] = v_term_att");

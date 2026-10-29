@@ -548,6 +548,10 @@
     {
       "id": "135_event_search_token_length_limit.sql",
       "sha256": "63555835acbed3e1953f9eed49813a294c27ae8b7d40d383ed1f27ee56cc23de"
+    },
+    {
+      "id": "136_event_search_write_v2_drop_legacy.sql",
+      "sha256": "be23005f35d7de28e54bcf98ea5eb6534e2373595b79aa7dfd246e6ce8fcf867"
     }
   ]
 }

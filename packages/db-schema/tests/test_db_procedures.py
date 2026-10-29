@@ -140,7 +140,7 @@ async def test_task_status_contract_is_mirrored_in_canonical_schema_sql():
         assert required in schema_sql
 
 
-async def test_event_search_prefix_fallback_migration_is_mirrored_in_schema_sql():
+async def test_event_search_prefix_helpers_are_retained_after_write_switch():
     migration_sql = _migration_sql("031_event_search_prefix_fallback.sql").strip()
     schema_sql = _schema_sql()
 
@@ -154,13 +154,9 @@ async def test_event_search_prefix_fallback_migration_is_mirrored_in_schema_sql(
         assert required in migration_sql
         assert required in schema_sql
 
-    assert _function_sql(
-        migration_sql, "CREATE OR REPLACE FUNCTION event_search("
-    ) in schema_sql
 
-
-async def test_event_search_posting_aggregation_migration_is_mirrored_in_schema_sql():
-    migration_sql = _migration_sql("103_event_search_aggregate_postings.sql").strip()
+async def test_event_search_read_v2_migration_is_mirrored_in_schema_sql():
+    migration_sql = _migration_sql("134_event_search_read_v2.sql").strip()
     schema_sql = _schema_sql()
 
     assert _function_sql(
@@ -2142,10 +2138,13 @@ async def test_event_search_uses_bm25_terms(test_db):
 
     terms = await test_db.fetch(
         """
-        SELECT event_id, term, term_freq, doc_len
-        FROM event_search_terms
-        WHERE session_id = $1 AND term = $2
-        ORDER BY event_id
+        SELECT p.event_id, d.term, p.term_freq, m.doc_len
+        FROM event_search_postings p
+        JOIN event_search_dictionary d USING (term_id)
+        JOIN event_search_session_keys k USING (session_key)
+        JOIN event_search_documents m USING (session_key, event_id)
+        WHERE k.session_id = $1 AND d.term = $2
+        ORDER BY p.event_id
         """,
         "ev-bm25", "alpha",
     )
@@ -2284,6 +2283,8 @@ async def test_event_search_dashboard_path_uses_cached_corpus_with_large_term_ta
     await _create_session(test_db, "ev-ko-prefix-perf")
     now = _utc_now()
 
+    # Seed the same 10,000 documents and 200,000 noise postings in bulk, as the
+    # historical performance fixture did. Normal writes are covered separately.
     await test_db.execute(
         """
         INSERT INTO events (session_id, id, event_type, payload, searchable_text, created_at)
@@ -2293,55 +2294,54 @@ async def test_event_search_dashboard_path_uses_cached_corpus_with_large_term_ta
         "ev-ko-prefix-perf", now,
     )
     await test_db.execute(
+        "INSERT INTO event_search_session_keys(session_id) VALUES ($1)", "ev-ko-prefix-perf",
+    )
+    await test_db.execute(
+        "INSERT INTO event_search_event_types(event_type) VALUES ('text_delta') ON CONFLICT DO NOTHING"
+    )
+    await test_db.execute(
         """
-        INSERT INTO event_search_terms (session_id, event_id, term, term_freq, doc_len)
-        SELECT $1, event_id, 'zz_noise_' || event_id::TEXT || '_' || term_no::TEXT, 1, 20
+        INSERT INTO event_search_dictionary(term)
+        SELECT 'zz_noise_' || event_id::text || '_' || term_no::text
         FROM generate_series(1, 10000) AS event_id
         CROSS JOIN generate_series(1, 20) AS term_no
+        """
+    )
+    await test_db.execute(
+        """
+        INSERT INTO event_search_documents(session_key, event_id, doc_len, event_type_id, created_at)
+        SELECT k.session_key, e.id, 20, y.event_type_id, e.created_at
+        FROM events e JOIN event_search_session_keys k ON k.session_id = e.session_id
+        JOIN event_search_event_types y ON y.event_type = e.event_type
+        WHERE e.session_id = $1
         """,
         "ev-ko-prefix-perf",
     )
+    await test_db.execute(
+        """
+        INSERT INTO event_search_postings(session_key, event_id, term_id, term_freq)
+        SELECT k.session_key, event_id, d.term_id, 1
+        FROM generate_series(1, 10000) AS event_id
+        CROSS JOIN generate_series(1, 20) AS term_no
+        JOIN event_search_dictionary d ON d.term = 'zz_noise_' || event_id::text || '_' || term_no::text
+        CROSS JOIN event_search_session_keys k WHERE k.session_id = $1
+        """,
+        "ev-ko-prefix-perf",
+    )
+    await test_db.execute(
+        "INSERT INTO event_search_term_document_frequency(term, document_count) SELECT term, 1 FROM event_search_dictionary"
+    )
+    await test_db.execute(
+        "UPDATE event_search_corpus_stats SET total_docs = 10000, total_doc_len = 200000 WHERE id = TRUE"
+    )
+    target_text = "가라앉은다 " + " ".join(f"match_noise_{number}" for number in range(1, 20))
     await test_db.fetchval(
         "SELECT event_append($1, $2, $3, $4, $5)",
-        "ev-ko-prefix-perf", "text_delta", '{"text":"가라앉은다"}',
-        "가라앉은다", now,
-    )
-    await test_db.execute(
-        """
-        UPDATE event_search_terms
-        SET doc_len = 20
-        WHERE session_id = $1 AND event_id = 10001
-        """,
-        "ev-ko-prefix-perf",
-    )
-    await test_db.execute(
-        """
-        INSERT INTO event_search_terms (session_id, event_id, term, term_freq, doc_len)
-        SELECT $1, 10001, 'match_noise_' || term_no::TEXT, 1, 20
-        FROM generate_series(1, 19) AS term_no
-        """,
-        "ev-ko-prefix-perf",
-    )
-    await test_db.execute(
-        """
-        INSERT INTO event_search_corpus_stats (id, total_docs, total_doc_len, updated_at)
-        SELECT
-            TRUE,
-            COUNT(*)::BIGINT,
-            COALESCE(SUM(doc_len), 0)::BIGINT,
-            NOW()
-        FROM (
-            SELECT DISTINCT session_id, event_id, doc_len
-            FROM event_search_terms
-        ) docs
-        ON CONFLICT (id) DO UPDATE
-        SET total_docs = EXCLUDED.total_docs,
-            total_doc_len = EXCLUDED.total_doc_len,
-            updated_at = NOW()
-        """
+        "ev-ko-prefix-perf", "text_delta", '{"text":"가라앉은다"}', target_text, now,
     )
     await test_db.execute("ANALYZE events")
-    await test_db.execute("ANALYZE event_search_terms")
+    await test_db.execute("ANALYZE event_search_postings")
+    await test_db.execute("ANALYZE event_search_dictionary")
 
     await test_db.execute("SET statement_timeout = '1000ms'")
     try:

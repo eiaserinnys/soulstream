@@ -168,19 +168,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     );
   }, 30_000);
 
-  it("backfills exact term document frequencies and tracks index lifecycle atomically", async () => {
-    const migration = readFileSync(fileURLToPath(new URL(
-      "../../packages/db-schema/sql/migrations/099_event_search_term_document_frequency.sql",
-      import.meta.url,
-    )), "utf8");
-
-    await sql.begin(async (tx) => {
-      await tx`DROP TRIGGER IF EXISTS trg_event_search_term_df_insert ON event_search_terms`;
-      await tx`DROP TRIGGER IF EXISTS trg_event_search_term_df_update ON event_search_terms`;
-      await tx`DROP TRIGGER IF EXISTS trg_event_search_term_df_delete ON event_search_terms`;
-      await tx`DELETE FROM event_search_term_document_frequency`;
-      await tx.unsafe(migration);
-    });
+  it("tracks exact term document frequencies and index lifecycle atomically", async () => {
     await expectTermDocumentFrequenciesMatchPostings(sql);
 
     await sql`INSERT INTO sessions (session_id, status) VALUES ('df-lifecycle-a', 'idle')`;
@@ -203,7 +191,8 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       .rejects.toMatchObject({ code: "55000" });
     await sql`
       INSERT INTO event_search_term_document_frequency (term, document_count)
-      SELECT term, COUNT(*)::BIGINT FROM event_search_terms WHERE term = 'alpha' GROUP BY term
+      SELECT d.term, COUNT(*)::BIGINT FROM event_search_postings p
+      JOIN event_search_dictionary d USING (term_id) WHERE d.term = 'alpha' GROUP BY d.term
     `;
     await expectTermDocumentFrequenciesMatchPostings(sql);
 
@@ -217,8 +206,8 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     await expectTermDocumentFrequenciesMatchPostings(sql);
 
     await sql`
-      UPDATE event_search_terms SET term = 'renamed'
-      WHERE session_id = 'df-lifecycle-a' AND event_id = 1 AND term = 'shared'
+      UPDATE events SET searchable_text = 'renamed beta beta'
+      WHERE session_id = 'df-lifecycle-a' AND id = 1
     `;
     await expect(sql`
       SELECT term, document_count FROM event_search_term_document_frequency
@@ -332,6 +321,12 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       import.meta.url,
     )), "utf8");
 
+    // Historical 103 reader uses this read-only projection of the same v2 fixture.
+    await sql.unsafe(`CREATE VIEW event_search_terms AS
+      SELECT k.session_id, p.event_id, d.term, p.term_freq, m.doc_len
+      FROM event_search_postings p JOIN event_search_session_keys k USING (session_key)
+      JOIN event_search_dictionary d USING (term_id)
+      JOIN event_search_documents m USING (session_key, event_id)`);
     await sql.unsafe(previousSearchMigration);
     await sql.unsafe(`
       ALTER FUNCTION event_search(
@@ -536,6 +531,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       limit: null,
     });
     expect(perSession).toHaveLength(1);
+    await sql`DROP VIEW event_search_terms`;
   }, 60_000);
 
   it("drops overlong tokens and preserves the 1024-byte search boundary", async () => {
@@ -565,16 +561,6 @@ describePostgres("session search reliability PostgreSQL integration", () => {
           ${[...longTokens, boundaryToken, ordinaryTerm].join(" ")}
         )`;
 
-      const legacyTerms = await sql<Array<{
-        term: string;
-        term_freq: number;
-        doc_len: number;
-      }>>`
-        SELECT term, term_freq, doc_len
-        FROM event_search_terms
-        WHERE session_id = 'long-event-search' AND event_id = 1
-        ORDER BY term
-      `;
       const mirroredTerms = await sql<Array<{
         term: string;
         term_freq: number;
@@ -588,11 +574,10 @@ describePostgres("session search reliability PostgreSQL integration", () => {
         WHERE session_key.session_id = 'long-event-search' AND posting.event_id = 1
         ORDER BY dictionary.term
       `;
-      expect(new Set(legacyTerms.map((row) => row.term))).toEqual(
+      expect(new Set(mirroredTerms.map((row) => row.term))).toEqual(
         new Set([boundaryToken, ordinaryTerm]),
       );
-      expect(legacyTerms.every((row) => row.term_freq === 1 && row.doc_len === 2)).toBe(true);
-      expect(mirroredTerms).toEqual(legacyTerms);
+      expect(mirroredTerms.every((row) => row.term_freq === 1 && row.doc_len === 2)).toBe(true);
 
       for (const term of [ordinaryTerm, boundaryToken]) {
         const result = await sql`
@@ -689,9 +674,8 @@ describePostgres("session search reliability PostgreSQL integration", () => {
           ${existingPrompt}, 'fixture-node', 'completed'
         )
       `;
-      await tx.unsafe(migration);
-      // 097 also replaces unrelated session filters; retain the current folder
-      // schema contract while this case exercises only its compact indexes.
+      await tx.unsafe(migration.slice(0, migration.indexOf("-- 21. event_search")));
+      // Preserve the current folder filter definitions while exercising the compact indexes.
       const currentSchema = readFileSync(fileURLToPath(new URL(
         "../../packages/db-schema/sql/schema.sql", import.meta.url,
       )), "utf8");
@@ -778,9 +762,8 @@ describePostgres("session search reliability PostgreSQL integration", () => {
           'short title fixture', 'fixture-node', 'completed'
         )
       `;
-      await tx.unsafe(migration);
-      // 097 also replaces unrelated session filters; retain the current folder
-      // schema contract while this case exercises only its compact indexes.
+      await tx.unsafe(migration.slice(0, migration.indexOf("-- 21. event_search")));
+      // Preserve the current folder filter definitions while exercising the compact indexes.
       const currentSchema = readFileSync(fileURLToPath(new URL(
         "../../packages/db-schema/sql/schema.sql", import.meta.url,
       )), "utf8");
@@ -1786,8 +1769,8 @@ it("compares returned order while allowing only true ties to swap", () => {
 async function expectTermDocumentFrequenciesMatchPostings(sql: ReturnType<typeof postgres>) {
   const mismatches = await sql`
     WITH expected AS (
-      SELECT term, COUNT(*)::BIGINT AS document_count
-      FROM event_search_terms GROUP BY term
+      SELECT d.term, COUNT(*)::BIGINT AS document_count
+      FROM event_search_postings p JOIN event_search_dictionary d USING (term_id) GROUP BY d.term
     ), actual AS (
       SELECT term, document_count
       FROM event_search_term_document_frequency

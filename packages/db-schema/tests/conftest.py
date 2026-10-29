@@ -16,7 +16,7 @@ import pytest
 import pytest_asyncio
 
 
-TEST_DB_NAME = "soulstream_schema_test"
+TEST_DB_NAME = "schema_procedures_test_db"
 TEST_USER = "soulstream_schema_test"
 TEST_PASSWORD = "soulstream_schema_secret"
 FORBIDDEN_DATABASE_TOKENS = (

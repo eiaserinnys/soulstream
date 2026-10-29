@@ -30,4 +30,8 @@ Before apply, remeasure the actual PostgreSQL data volume's free bytes, current 
 
 ## Separate autovacuum setting
 
-Migration 102 sets `autovacuum_vacuum_insert_scale_factor=0.05` only for `event_search_terms`; the fresh schema has the same reloption. This is visibility-map maintenance for the high-insert table. It is not the BM25 scoring fix, and it does not replace post-deploy search acceptance measurements.
+Migration 102 set `autovacuum_vacuum_insert_scale_factor=0.05` on the legacy `event_search_terms` table before its removal in migration 136. This is visibility-map maintenance for the high-insert table. It is not the BM25 scoring fix, and it does not replace post-deploy search acceptance measurements.
+
+## Direct-write cutover (migration 136)
+
+Finish the complete legacy-to-v2 verify with zero differences and stop backfill and verify before applying 136 through the central release transaction. The migration replaces the writers and drops `event_search_terms` with RESTRICT. A failed transaction rolls back; after commit the legacy index cannot be restored by a code rollback alone. The retained backfill and verify commands report retirement after the switch; status remains available for the v2 tables.

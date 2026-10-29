@@ -104,25 +104,9 @@ describe.sequential("versioned migration runner", () => {
       await sql.unsafe(removalSql);
       await expectLegacyEventSearchStorageAbsent(sql);
 
-      const coveringIndex = await sql`
-        SELECT i.indisvalid, i.indisready, i.indnkeyatts, i.indnatts,
-               pg_get_indexdef(i.indexrelid) AS definition,
-               c.reloptions
-        FROM pg_index i
-        JOIN pg_class c ON c.oid = i.indrelid
-        WHERE i.indexrelid = 'public.idx_event_search_terms_term'::regclass
-      `;
-      expect(coveringIndex[0]).toMatchObject({
-        indisvalid: true,
-        indisready: true,
-        indnkeyatts: 1,
-        indnatts: 5,
-      });
-      expect(coveringIndex[0].definition).toContain(
-        "INCLUDE (session_id, event_id, term_freq, doc_len)",
-      );
-      expect(coveringIndex[0].reloptions)
-        .toContain("autovacuum_vacuum_insert_scale_factor=0.05");
+      expect((await sql`SELECT to_regclass('public.event_search_terms') AS relation`)[0]?.relation).toBeNull();
+      const prefixIndex = await sql`SELECT pg_get_indexdef('public.event_search_dictionary_korean_prefix'::regclass) AS definition`;
+      expect(prefixIndex[0].definition).toContain('INCLUDE (term_id)');
 
       await restorePreFolderSchema(sql);
       await seedHistoricalFolder(sql);

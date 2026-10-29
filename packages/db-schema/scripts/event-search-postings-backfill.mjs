@@ -81,6 +81,10 @@ export async function run(command, options, { env = process.env, cwd = process.c
 
   try {
     if (command === "status") return await readStatus(sql, options.checkpoint);
+    const [legacy] = await sql`SELECT to_regclass('event_search_terms') AS relation`;
+    if (!legacy.relation) {
+      throw new Error("event_search_terms is absent; backfill and verify retired after the v2 write switch");
+    }
     const checkpoint = await readCheckpoint(options.checkpoint, command);
     if (command === "backfill") {
       return await runBackfill(sql, options, checkpoint);

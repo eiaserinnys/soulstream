@@ -17,6 +17,7 @@ import {
   readSearchStatistics,
   runBackfill,
 } from "./event_search_postings_mirror_postgres_helpers.js";
+import { installLegacyEventSearch } from "./event_search_legacy_fixture.js";
 import { migrationSha256 } from "../../../packages/db-schema/scripts/migration-contract.mjs";
 
 const MIGRATION_132_PATH = fileURLToPath(new URL(
@@ -46,6 +47,7 @@ describePostgres("integer event-search postings migration and backfill", () => {
 
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
+    await installLegacyEventSearch(harness);
   }, 120_000);
 
   afterAll(async () => {

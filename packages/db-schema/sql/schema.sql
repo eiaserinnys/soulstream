@@ -991,17 +991,6 @@ CREATE TABLE IF NOT EXISTS soulstream_node_heartbeats (
     last_seen_at TIMESTAMPTZ NOT NULL
 );
 
-CREATE TABLE IF NOT EXISTS event_search_terms (
-    session_id TEXT NOT NULL,
-    event_id   INTEGER NOT NULL,
-    term       TEXT NOT NULL,
-    term_freq  INTEGER NOT NULL,
-    doc_len    INTEGER NOT NULL,
-    PRIMARY KEY (session_id, event_id, term),
-    FOREIGN KEY (session_id, event_id)
-        REFERENCES events(session_id, id) ON DELETE CASCADE
-) WITH (autovacuum_vacuum_insert_scale_factor = 0.05);
-
 CREATE TABLE IF NOT EXISTS event_search_corpus_stats (
     id            BOOLEAN PRIMARY KEY DEFAULT TRUE CHECK (id),
     total_docs    BIGINT NOT NULL DEFAULT 0 CHECK (total_docs >= 0),
@@ -1058,9 +1047,6 @@ CREATE INDEX IF NOT EXISTS idx_events_session_type_id
 CREATE UNIQUE INDEX IF NOT EXISTS idx_events_session_dedupe_key
     ON events (session_id, dedupe_key)
     WHERE dedupe_key IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_event_search_terms_term
-    ON event_search_terms (term)
-    INCLUDE (session_id, event_id, term_freq, doc_len);
 CREATE INDEX IF NOT EXISTS idx_sessions_updated_at ON sessions (updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_soulstream_schedules_session
     ON soulstream_schedules (session_id, status, next_run_at);
@@ -1125,60 +1111,94 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION refresh_event_search_terms() RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION refresh_event_search_terms() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
 DECLARE
-    v_tokens TEXT[];
-    v_doc_len INTEGER;
-    v_old_doc_len INTEGER;
+ v_tokens TEXT[];
+ v_doc_len INTEGER;
+ v_old_doc_len INTEGER;
+ v_session_key INTEGER;
+ v_event_type_id SMALLINT;
+ v_delta RECORD;
 BEGIN
-    SELECT MAX(doc_len) INTO v_old_doc_len
-    FROM event_search_terms
-    WHERE session_id = NEW.session_id
-      AND event_id = NEW.id;
-
-    v_tokens := event_search_tokenize(NEW.searchable_text);
-    v_doc_len := cardinality(v_tokens);
-
-    -- Acquire the corpus-stat row before ordered per-term DF locks to serialize event-index rewrites.
-    PERFORM event_search_adjust_corpus_stats(
-        CASE WHEN v_doc_len > 0 THEN 1 ELSE 0 END
-          - CASE WHEN v_old_doc_len IS NOT NULL THEN 1 ELSE 0 END,
-        v_doc_len - COALESCE(v_old_doc_len, 0)
-    );
-
-    DELETE FROM event_search_terms
-    WHERE session_id = NEW.session_id
-      AND event_id = NEW.id;
-
-    IF v_doc_len > 0 THEN
-        INSERT INTO event_search_terms (
-            session_id, event_id, term, term_freq, doc_len
-        )
-        SELECT NEW.session_id, NEW.id, term, COUNT(*)::INTEGER, v_doc_len
-        FROM unnest(v_tokens) AS token(term)
-        GROUP BY term;
-    END IF;
-
-    RETURN NEW;
+ SELECT session_key INTO v_session_key FROM event_search_session_keys WHERE session_id=NEW.session_id;
+ SELECT doc_len INTO v_old_doc_len FROM event_search_documents
+ WHERE session_key=v_session_key AND event_id=NEW.id;
+ v_tokens := event_search_tokenize(NEW.searchable_text);
+ v_doc_len := cardinality(v_tokens);
+ -- Same serialization point as the old writer, before DF or mapping writes.
+ PERFORM event_search_adjust_corpus_stats(
+  CASE WHEN v_doc_len>0 THEN 1 ELSE 0 END - CASE WHEN v_old_doc_len IS NOT NULL THEN 1 ELSE 0 END,
+  v_doc_len-COALESCE(v_old_doc_len,0));
+ FOR v_delta IN
+  WITH removed AS (
+   DELETE FROM event_search_postings WHERE session_key=v_session_key AND event_id=NEW.id RETURNING term_id
+  )
+  SELECT d.term,-COUNT(*)::BIGINT AS delta FROM removed r JOIN event_search_dictionary d USING(term_id)
+  GROUP BY d.term ORDER BY d.term COLLATE "C"
+ LOOP
+  PERFORM event_search_adjust_term_document_frequency(v_delta.term,v_delta.delta);
+ END LOOP;
+ DELETE FROM event_search_documents WHERE session_key=v_session_key AND event_id=NEW.id;
+ IF v_doc_len>0 THEN
+  IF v_session_key IS NULL THEN
+   INSERT INTO event_search_session_keys(session_id) VALUES(NEW.session_id) ON CONFLICT(session_id) DO NOTHING;
+   SELECT session_key INTO STRICT v_session_key FROM event_search_session_keys WHERE session_id=NEW.session_id;
+  END IF;
+  INSERT INTO event_search_dictionary(term)
+  SELECT missing.term FROM (SELECT DISTINCT term FROM unnest(v_tokens) token(term)) missing
+  WHERE NOT EXISTS(SELECT 1 FROM event_search_dictionary d WHERE d.term=missing.term)
+  ORDER BY missing.term COLLATE "C" ON CONFLICT(term) DO NOTHING;
+  INSERT INTO event_search_event_types(event_type)
+  SELECT NEW.event_type WHERE NOT EXISTS(SELECT 1 FROM event_search_event_types WHERE event_type=NEW.event_type)
+  ON CONFLICT(event_type) DO NOTHING;
+  SELECT event_type_id INTO STRICT v_event_type_id FROM event_search_event_types WHERE event_type=NEW.event_type;
+  INSERT INTO event_search_documents(session_key,event_id,doc_len,event_type_id,created_at)
+  VALUES(v_session_key,NEW.id,v_doc_len,v_event_type_id,NEW.created_at);
+  FOR v_delta IN
+   WITH added AS (
+    INSERT INTO event_search_postings(session_key,event_id,term_id,term_freq)
+    SELECT v_session_key,NEW.id,d.term_id,t.term_freq
+    FROM (SELECT term,COUNT(*)::INTEGER AS term_freq FROM unnest(v_tokens) token(term) GROUP BY term) t
+    JOIN event_search_dictionary d ON d.term=t.term ORDER BY d.term_id
+    RETURNING term_id
+   )
+   SELECT d.term,COUNT(*)::BIGINT AS delta FROM added a JOIN event_search_dictionary d USING(term_id)
+   GROUP BY d.term ORDER BY d.term COLLATE "C"
+  LOOP
+   PERFORM event_search_adjust_term_document_frequency(v_delta.term,v_delta.delta);
+  END LOOP;
+ END IF;
+ RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
-CREATE OR REPLACE FUNCTION decrement_event_search_corpus_stats() RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION decrement_event_search_corpus_stats() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
 DECLARE
-    v_old_doc_len INTEGER;
+ v_session_key INTEGER;
+ v_doc_len INTEGER;
+ v_delta RECORD;
 BEGIN
-    SELECT MAX(doc_len) INTO v_old_doc_len
-    FROM event_search_terms
-    WHERE session_id = OLD.session_id
-      AND event_id = OLD.id;
-
-    IF v_old_doc_len IS NOT NULL THEN
-        PERFORM event_search_adjust_corpus_stats(-1, -v_old_doc_len);
-    END IF;
-
-    RETURN OLD;
+ SELECT k.session_key,m.doc_len INTO v_session_key,v_doc_len
+ FROM event_search_session_keys k JOIN event_search_documents m USING(session_key)
+ WHERE k.session_id=OLD.session_id AND m.event_id=OLD.id;
+ IF FOUND THEN
+  PERFORM event_search_adjust_corpus_stats(-1,-v_doc_len);
+  FOR v_delta IN
+   WITH removed AS (
+    DELETE FROM event_search_postings WHERE session_key=v_session_key AND event_id=OLD.id RETURNING term_id
+   )
+   SELECT d.term,-COUNT(*)::BIGINT AS delta FROM removed r JOIN event_search_dictionary d USING(term_id)
+   GROUP BY d.term ORDER BY d.term COLLATE "C"
+  LOOP
+   PERFORM event_search_adjust_term_document_frequency(v_delta.term,v_delta.delta);
+  END LOOP;
+  DELETE FROM event_search_documents WHERE session_key=v_session_key AND event_id=OLD.id;
+ END IF;
+ RETURN OLD;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 DROP TRIGGER IF EXISTS trg_event_search_terms ON events;
 CREATE TRIGGER trg_event_search_terms
@@ -1217,72 +1237,6 @@ BEGIN
     END IF;
 END;
 $$;
-
-CREATE OR REPLACE FUNCTION update_event_search_term_document_frequency()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-DECLARE
-    v_delta RECORD;
-BEGIN
-    IF TG_OP = 'INSERT' THEN
-        FOR v_delta IN
-            SELECT term, COUNT(*)::BIGINT AS delta
-            FROM new_rows
-            GROUP BY term
-            ORDER BY term COLLATE "C"
-        LOOP
-            PERFORM event_search_adjust_term_document_frequency(v_delta.term, v_delta.delta);
-        END LOOP;
-    ELSIF TG_OP = 'DELETE' THEN
-        FOR v_delta IN
-            SELECT term, -COUNT(*)::BIGINT AS delta
-            FROM old_rows
-            GROUP BY term
-            ORDER BY term COLLATE "C"
-        LOOP
-            PERFORM event_search_adjust_term_document_frequency(v_delta.term, v_delta.delta);
-        END LOOP;
-    ELSIF TG_OP = 'UPDATE' THEN
-        FOR v_delta IN
-            SELECT term, SUM(delta)::BIGINT AS delta
-            FROM (
-                SELECT term, COUNT(*)::BIGINT AS delta
-                FROM new_rows
-                GROUP BY term
-                UNION ALL
-                SELECT term, -COUNT(*)::BIGINT AS delta
-                FROM old_rows
-                GROUP BY term
-            ) changed_terms
-            GROUP BY term
-            HAVING SUM(delta) <> 0
-            ORDER BY term COLLATE "C"
-        LOOP
-            PERFORM event_search_adjust_term_document_frequency(v_delta.term, v_delta.delta);
-        END LOOP;
-    ELSE
-        RAISE EXCEPTION 'unexpected event_search_terms operation: %', TG_OP;
-    END IF;
-    RETURN NULL;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS trg_event_search_term_df_insert ON event_search_terms;
-CREATE TRIGGER trg_event_search_term_df_insert
-    AFTER INSERT ON event_search_terms
-    REFERENCING NEW TABLE AS new_rows
-    FOR EACH STATEMENT EXECUTE FUNCTION update_event_search_term_document_frequency();
-
-DROP TRIGGER IF EXISTS trg_event_search_term_df_update ON event_search_terms;
-CREATE TRIGGER trg_event_search_term_df_update
-    AFTER UPDATE ON event_search_terms
-    REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows
-    FOR EACH STATEMENT EXECUTE FUNCTION update_event_search_term_document_frequency();
-
-DROP TRIGGER IF EXISTS trg_event_search_term_df_delete ON event_search_terms;
-CREATE TRIGGER trg_event_search_term_df_delete
-    AFTER DELETE ON event_search_terms
-    REFERENCING OLD TABLE AS old_rows
-    FOR EACH STATEMENT EXECUTE FUNCTION update_event_search_term_document_frequency();
 
 CREATE TABLE IF NOT EXISTS event_search_session_keys (
     session_key INTEGER GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -1330,165 +1284,12 @@ CREATE INDEX IF NOT EXISTS event_search_dictionary_korean_prefix
     ON event_search_dictionary (left(term, 3)) INCLUDE (term_id)
     WHERE term ~ '[가-힣]';
 
-CREATE OR REPLACE FUNCTION mirror_event_search_postings()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-BEGIN
-    IF TG_OP IN ('DELETE', 'UPDATE') THEN
-        DELETE FROM event_search_postings posting
-        USING old_rows old_posting
-        JOIN event_search_session_keys session_key
-          ON session_key.session_id = old_posting.session_id
-        JOIN event_search_dictionary dictionary
-          ON dictionary.term = old_posting.term
-        WHERE posting.session_key = session_key.session_key
-          AND posting.event_id = old_posting.event_id
-          AND posting.term_id = dictionary.term_id;
-
-        DELETE FROM event_search_documents document
-        USING (
-            SELECT DISTINCT session_key.session_key, old_posting.event_id
-            FROM old_rows old_posting
-            JOIN event_search_session_keys session_key
-              ON session_key.session_id = old_posting.session_id
-        ) old_document
-        WHERE document.session_key = old_document.session_key
-          AND document.event_id = old_document.event_id
-          AND NOT EXISTS (
-              SELECT 1
-              FROM event_search_postings posting
-              WHERE posting.session_key = document.session_key
-                AND posting.event_id = document.event_id
-          );
-    END IF;
-
-    IF TG_OP IN ('INSERT', 'UPDATE') THEN
-        INSERT INTO event_search_session_keys (session_id)
-        SELECT missing.session_id
-        FROM (
-            SELECT DISTINCT rows.session_id
-            FROM new_rows rows
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM event_search_session_keys existing
-                WHERE existing.session_id = rows.session_id
-            )
-        ) missing
-        ORDER BY missing.session_id COLLATE "C"
-        ON CONFLICT (session_id) DO NOTHING;
-
-        INSERT INTO event_search_dictionary (term)
-        SELECT missing.term
-        FROM (
-            SELECT DISTINCT rows.term
-            FROM new_rows rows
-            WHERE NOT EXISTS (
-                SELECT 1
-                FROM event_search_dictionary existing
-                WHERE existing.term = rows.term
-            )
-        ) missing
-        ORDER BY missing.term COLLATE "C"
-        ON CONFLICT (term) DO NOTHING;
-
-        INSERT INTO event_search_event_types (event_type)
-        SELECT missing.event_type
-        FROM (
-            SELECT DISTINCT event.event_type
-            FROM (
-                SELECT DISTINCT session_id, event_id
-                FROM new_rows
-            ) new_document
-            JOIN events event
-              ON event.session_id = new_document.session_id
-             AND event.id = new_document.event_id
-        ) missing
-        WHERE NOT EXISTS (
-            SELECT 1
-            FROM event_search_event_types existing
-            WHERE existing.event_type = missing.event_type
-        )
-        ORDER BY missing.event_type COLLATE "C"
-        ON CONFLICT (event_type) DO NOTHING;
-
-        INSERT INTO event_search_documents (
-            session_key, event_id, doc_len, event_type_id, created_at
-        )
-        SELECT session_key.session_key,
-               new_document.event_id,
-               new_document.doc_len,
-               event_type.event_type_id,
-               event.created_at
-        FROM (
-            SELECT session_id, event_id, MAX(doc_len) AS doc_len
-            FROM new_rows
-            GROUP BY session_id, event_id
-        ) new_document
-        JOIN events event
-          ON event.session_id = new_document.session_id
-         AND event.id = new_document.event_id
-        JOIN event_search_session_keys session_key
-          ON session_key.session_id = new_document.session_id
-        JOIN event_search_event_types event_type
-          ON event_type.event_type = event.event_type
-        ORDER BY session_key.session_key, new_document.event_id
-        ON CONFLICT (session_key, event_id) DO UPDATE
-        SET doc_len = EXCLUDED.doc_len,
-            event_type_id = EXCLUDED.event_type_id,
-            created_at = EXCLUDED.created_at
-        WHERE (event_search_documents.doc_len,
-               event_search_documents.event_type_id,
-               event_search_documents.created_at)
-              IS DISTINCT FROM
-              (EXCLUDED.doc_len, EXCLUDED.event_type_id, EXCLUDED.created_at);
-
-        INSERT INTO event_search_postings (
-            session_key, event_id, term_id, term_freq
-        )
-        SELECT session_key.session_key,
-               rows.event_id,
-               dictionary.term_id,
-               rows.term_freq
-        FROM new_rows rows
-        JOIN event_search_session_keys session_key
-          ON session_key.session_id = rows.session_id
-        JOIN event_search_dictionary dictionary
-          ON dictionary.term = rows.term
-        ORDER BY dictionary.term_id, session_key.session_key, rows.event_id
-        ON CONFLICT (term_id, session_key, event_id) DO UPDATE
-        SET term_freq = EXCLUDED.term_freq;
-    END IF;
-
-    IF TG_OP NOT IN ('INSERT', 'UPDATE', 'DELETE') THEN
-        RAISE EXCEPTION 'unexpected event_search_terms operation: %', TG_OP;
-    END IF;
-    RETURN NULL;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS trg_event_search_postings_insert ON event_search_terms;
-CREATE TRIGGER trg_event_search_postings_insert
-    AFTER INSERT ON event_search_terms
-    REFERENCING NEW TABLE AS new_rows
-    FOR EACH STATEMENT EXECUTE FUNCTION mirror_event_search_postings();
-
-DROP TRIGGER IF EXISTS trg_event_search_postings_update ON event_search_terms;
-CREATE TRIGGER trg_event_search_postings_update
-    AFTER UPDATE ON event_search_terms
-    REFERENCING OLD TABLE AS old_rows NEW TABLE AS new_rows
-    FOR EACH STATEMENT EXECUTE FUNCTION mirror_event_search_postings();
-
-DROP TRIGGER IF EXISTS trg_event_search_postings_delete ON event_search_terms;
-CREATE TRIGGER trg_event_search_postings_delete
-    AFTER DELETE ON event_search_terms
-    REFERENCING OLD TABLE AS old_rows
-    FOR EACH STATEMENT EXECUTE FUNCTION mirror_event_search_postings();
-
-
 INSERT INTO event_search_term_document_frequency (term, document_count)
-SELECT term, COUNT(*)::BIGINT
-FROM event_search_terms
-GROUP BY term
-ORDER BY term COLLATE "C"
+SELECT dictionary.term, COUNT(*)::BIGINT
+FROM event_search_postings posting
+JOIN event_search_dictionary dictionary USING (term_id)
+GROUP BY dictionary.term
+ORDER BY dictionary.term COLLATE "C"
 ON CONFLICT (term) DO UPDATE
 SET document_count = EXCLUDED.document_count;
 
@@ -1498,10 +1299,7 @@ SELECT
     COUNT(*)::BIGINT,
     COALESCE(SUM(doc_len), 0)::BIGINT,
     NOW()
-FROM (
-    SELECT DISTINCT session_id, event_id, doc_len
-    FROM event_search_terms
-) docs
+FROM event_search_documents docs
 ON CONFLICT (id) DO UPDATE
 SET total_docs = EXCLUDED.total_docs,
     total_doc_len = EXCLUDED.total_doc_len,
