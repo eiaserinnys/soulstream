@@ -1,0 +1,965 @@
+{
+ "captured_at": "2026-10-29 14:35 KST (운영 DB 실측)",
+ "note": "실제 운영 데이터. 회사 업무(엠버 앤 블레이드, 돌죽)와 다른 사용자 카드는 공개 주소라 뺐다.",
+ "review": [
+  {
+   "number": 786,
+   "title": "Subframe Motion 웹 UI 모션 카탈로그 등록",
+   "project": "🪞 서소영 (워크스페이스)",
+   "folder": null,
+   "now": "라이선스 확인과 카탈로그 등록을 마쳤습니다",
+   "ask": "라이선스는 전부 MIT, 웹 UI 모션 카탈로그 309선 등록과 HTML 연결 확인",
+   "status_changed_at": "2026-10-29T05:09:25.212293+00:00",
+   "completed_at": null,
+   "items": [
+    {
+     "title": "Subframe Motion 라이선스 확인",
+     "state": "done"
+    },
+    {
+     "title": "웹 UI 모션 카탈로그가 HTML 작업에서 찾아진다",
+     "state": "done"
+    }
+   ],
+   "images": []
+  },
+  {
+   "number": 766,
+   "title": "슬랙 봇 모델 한도 폴백 (Argon, Opus, Sol 순)",
+   "project": "🪞 서소영 (워크스페이스)",
+   "folder": null,
+   "now": "디렉터님 계정으로 봇 DM에 시험 메시지를 보내 Sol 답을 확인하는 중",
+   "ask": "봇 DM의 「확인했습니다」 답글(항목 2 링크)이 Sol로 나온 것을 보시면 됩니다",
+   "status_changed_at": "2026-10-29T04:15:59.714095+00:00",
+   "completed_at": null,
+   "items": [
+    {
+     "title": "지금 봇이 슬랙 멘션에 다시 답함",
+     "state": "done"
+    },
+    {
+     "title": "한도가 차면 Argon, Opus, Sol 순으로 넘어감",
+     "state": "done"
+    },
+    {
+     "title": "한도가 풀리면 다시 Argon으로 돌아옴",
+     "state": "done"
+    }
+   ],
+   "images": []
+  },
+  {
+   "number": 739,
+   "title": "kaleidoscope 쉘 골격과 로컬 md 앱",
+   "project": "🔮 kaleidoscope",
+   "folder": null,
+   "now": "코드와 화면 검수 통과, 머지 완료. v0.2.1 Windows 설치본 빌드 중",
+   "ask": "v0.2.1을 깔고 md 렌더, 줄 고치기, 목록 접기를 봐 주세요",
+   "status_changed_at": "2026-10-29T03:44:05.131837+00:00",
+   "completed_at": null,
+   "items": [
+    {
+     "title": "GitHub Release의 Windows 설치본으로 설치해 실행",
+     "state": "done"
+    },
+    {
+     "title": "데스크톱 두 장, md 앱에서 폴더 골라 파일 고쳐 저장",
+     "state": "done"
+    },
+    {
+     "title": "다시 켜도 데스크톱, 창 배치, 열린 파일이 남음",
+     "state": "done"
+    },
+    {
+     "title": "쉘 재빌드 없이 md-viewer 정의로 다른 앱이 뜸",
+     "state": "done"
+    },
+    {
+     "title": "고른 폴더 밖 경로를 요구하는 앱 정의는 거부",
+     "state": "done"
+    },
+    {
+     "title": "한 창 여러 웹뷰 겹치기 시험 결과를 atom에 기록",
+     "state": "done"
+    },
+    {
+     "title": "설치법을 회사 슬랙 DM으로 받음",
+     "state": "done"
+    },
+    {
+     "title": "편집 영역을 눌러도 푸른 테두리가 없음",
+     "state": "done"
+    },
+    {
+     "title": "md 파일이 렌더된 마크다운으로 보이고 고칠 수 있음",
+     "state": "done"
+    },
+    {
+     "title": "왼쪽 폴더를 여닫을 수 있음",
+     "state": "done"
+    },
+    {
+     "title": "새 버전 설치본과 설치법을 슬랙 DM으로 받음",
+     "state": "done"
+    }
+   ],
+   "images": [
+    "c739-kaleidoscope-md-dark.jpg"
+   ]
+  },
+  {
+   "number": 769,
+   "title": "kaleidoscope 2단계: 에이전트가 MCP로 올린 앱을 쉘이 받아 띄우기",
+   "project": "🔮 kaleidoscope",
+   "folder": null,
+   "now": "서버와 쉘 코어는 머지와 배포 완료. 쉘 화면 재검수가 끝나면 실제 에이전트로 확인",
+   "ask": "PC 쉘이 연결됐습니다. 서소영에게 앱을 부탁해 창이 뜨는지 봐 주세요",
+   "status_changed_at": "2026-10-29T01:34:32.785714+00:00",
+   "completed_at": null,
+   "items": [
+    {
+     "title": "쉘을 에이전트 승인 코드로 kaleidoscope 서버에 연결",
+     "state": "done"
+    },
+    {
+     "title": "에이전트에게 앱을 부탁하면 켜 둔 쉘에 창이 바로 뜸",
+     "state": "done"
+    },
+    {
+     "title": "에이전트가 고쳐 올리면 열린 창이 새 버전으로 바뀜",
+     "state": "done"
+    },
+    {
+     "title": "폴더 밖 경로를 요구하는 앱은 올릴 때 거부됨",
+     "state": "done"
+    },
+    {
+     "title": "새 설치본과 사용법을 회사 슬랙 DM으로 받음",
+     "state": "done"
+    }
+   ],
+   "images": [
+    "c769-agent-app-window.jpg"
+   ]
+  },
+  {
+   "number": 775,
+   "title": "소울스트림 계정 추가와 권한 관리 강화 컨설팅",
+   "project": "✨ 소울스트림",
+   "folder": null,
+   "now": "공개 일반 시스템을 전제로 권하는 권한 모델과 도입 순서를 쓰는 중",
+   "ask": "노트 「권하는 안」의 소유자 모델과 5단계 순서를 보고 이 안으로 갈지, 0단계를 바로 시작할지 정해 주세요",
+   "status_changed_at": "2026-10-29T01:15:43.697952+00:00",
+   "completed_at": null,
+   "items": [
+    {
+     "title": "지금 누가 어디에 닿는지 진단 (웹, 앱, API, MCP, 노드)",
+     "state": "done"
+    },
+    {
+     "title": "계정을 늘릴 때 생기는 위험과 빈틈",
+     "state": "done"
+    },
+    {
+     "title": "권하는 안 하나와 근거, 대안이 아닌 까닭",
+     "state": "done"
+    },
+    {
+     "title": "단계별 도입 순서",
+     "state": "done"
+    }
+   ],
+   "images": []
+  },
+  {
+   "number": 771,
+   "title": "세션 이벤트가 STALE_REGISTRATION으로 유실되는 문제 재발 수정",
+   "project": "🪞 서소영 (워크스페이스)",
+   "folder": null,
+   "now": "수정이 감수와 CI를 통과해 머지됐고, 세 노드 배포를 시작하는 중",
+   "ask": "턴 끝 기록이 버려지던 원인을 고쳐 세 노드에 배포했고, 빠진 92건의 범위를 확인해 주세요",
+   "status_changed_at": "2026-10-29T00:54:10.047663+00:00",
+   "completed_at": null,
+   "items": [
+    {
+     "title": "세션 기록이 더는 버려지지 않게 고쳐 배포",
+     "state": "done"
+    },
+    {
+     "title": "Live2D 포스트모템 세션에서 빠진 기록 범위",
+     "state": "done"
+    }
+   ],
+   "images": []
+  },
+  {
+   "number": 738,
+   "title": "atom 린트 도입 및 사실 정합성 검증 논의 (Fable×Astra)",
+   "project": "💡 atom",
+   "folder": null,
+   "now": "실측과 설계안 정리 끝.",
+   "ask": "실측 결과와 설계안 문서 두 장을 확인해 주세요. 구현은 카드 #742로 넘겨 돌고 있습니다.",
+   "status_changed_at": "2026-10-28T04:45:51.826994+00:00",
+   "completed_at": null,
+   "items": [
+    {
+     "title": "실수 사례·레퍼런스·서재 이력의 실제 어긋남 목록",
+     "state": "done"
+    },
+    {
+     "title": "atom 린트 설계안 (Fable×Astra 논의 결과)",
+     "state": "done"
+    }
+   ],
+   "images": []
+  }
+ ],
+ "running": [
+  {
+   "number": 773,
+   "title": "MotionBricks 로봇 걷기 데모 PC용 pages 발행",
+   "project": "🌐 Pages",
+   "folder": null,
+   "now": "사람 모델 세 부분이 PR로 올라와 코드 감수 중",
+   "ask": null,
+   "status_changed_at": "2026-10-29T04:53:55.178522+00:00",
+   "completed_at": null,
+   "items": [
+    {
+     "title": "발행 주소를 PC에서 열면 G1 로봇을 조종할 수 있다",
+     "state": "done"
+    },
+    {
+     "title": "다시 열면 모델을 다시 받지 않고 바로 뜬다",
+     "state": "doing"
+    },
+    {
+     "title": "원본과 NVIDIA 출처, 라이선스가 화면에 남는다",
+     "state": "done"
+    },
+    {
+     "title": "휴대폰으로 열면 PC에서 보라는 안내가 뜬다",
+     "state": "done"
+    },
+    {
+     "title": "로봇 대신 사람 캐릭터를 조종할 수 있다",
+     "state": "doing"
+    }
+   ],
+   "images": [
+    "c773-robot-walk.jpg"
+   ]
+  },
+  {
+   "number": 785,
+   "title": "소울스트림 운영 DB 하루 1.1GB 증가 줄이기",
+   "project": "🛠️ 서비스 운영",
+   "folder": null,
+   "now": "이미지 원본 빼기 PR 감수 중, 검색 색인 구조 보완 설계 진행 중",
+   "ask": null,
+   "status_changed_at": "2026-10-29T04:22:29.354079+00:00",
+   "completed_at": null,
+   "items": [
+    {
+     "title": "운영 DB 하루 증가량이 줄어든다",
+     "state": "doing"
+    },
+    {
+     "title": "세션 검색과 세션 기록 화면이 그대로 동작한다",
+     "state": "doing"
+    },
+    {
+     "title": "이미 쌓인 DB 크기를 줄여 디스크를 되찾는다",
+     "state": "doing"
+    }
+   ],
+   "images": []
+  },
+  {
+   "number": 779,
+   "title": "kaleidoscope: 워크스페이스마다 소울스트림 PAS 창",
+   "project": "🔮 kaleidoscope",
+   "folder": null,
+   "now": "소울스트림 퍼시스턴트 세션 API를 확인하고 있습니다",
+   "ask": null,
+   "status_changed_at": "2026-10-29T05:27:17.177177+00:00",
+   "completed_at": null,
+   "items": [
+    {
+     "title": "워크스페이스를 만들 때 PAS 모델을 고른다",
+     "state": "todo"
+    },
+    {
+     "title": "작업 PAS 창에 말하면 응답이 흘러나온다",
+     "state": "todo"
+    },
+    {
+     "title": "PAS에 앱을 부탁하면 같은 쉘에 창이 뜬다",
+     "state": "todo"
+    },
+    {
+     "title": "PAS가 지금 데스크톱의 창을 알고 고친다",
+     "state": "todo"
+    },
+    {
+     "title": "새 설치본과 사용법을 슬랙 DM으로 받는다",
+     "state": "todo"
+    }
+   ],
+   "images": []
+  },
+  {
+   "number": 615,
+   "title": "PAS 서소영 Live2D 파츠 분리 및 고개 회전 시안",
+   "project": "🌐 Pages",
+   "folder": null,
+   "now": "이마 옆부터 턱 아래까지 얼굴 둘레 전체를 앞뒤 장면과 이어 뽑도록 다시 설계하는 중",
+   "ask": null,
+   "status_changed_at": "2026-10-29T05:03:53.544583+00:00",
+   "completed_at": null,
+   "items": [
+    {
+     "title": "서소영 Live2D 파츠 분리 및 인페인팅 아틀라스",
+     "state": "done"
+    },
+    {
+     "title": "고개 회전과 시선·호흡·머리카락 메쉬 및 디포머",
+     "state": "doing"
+    },
+    {
+     "title": "고개 회전 애니메이션 및 파츠 점검 웹 뷰어",
+     "state": "doing"
+    },
+    {
+     "title": "고개를 돌려도 이마가 늘어나거나 관자놀이가 찌그러지지 않음",
+     "state": "done"
+    },
+    {
+     "title": "고개를 돌려도 볼과 귀 쪽 얼굴 외곽선이 매끄럽게 이어짐",
+     "state": "dropped"
+    },
+    {
+     "title": "우하단 머리 외곽 통과 원인과 재발 방지 게이트, 재설계 방향",
+     "state": "done"
+    },
+    {
+     "title": "See-through로 원화를 나눠 머리카락 아래 두상이 채워지는지 확인",
+     "state": "done"
+    },
+    {
+     "title": "Tripo로 만든 두상이 지금 머리 모형보다 원화 턱선과 비율에 가까움",
+     "state": "done"
+    },
+    {
+     "title": "정면에서 목 옆 선이 원화처럼 한 줄로 보이고 겹쳐 보이지 않음",
+     "state": "done"
+    },
+    {
+     "title": "고개를 돌려도 눈이 영상 레퍼런스와 정확히 겹침",
+     "state": "doing"
+    },
+    {
+     "title": "고개를 돌려도 얼굴판 윤곽이 영상과 겹침 (머리카락 없는 셈)",
+     "state": "doing"
+    },
+    {
+     "title": "얼굴 정합이 계속 실패한 원인과 다시 시작할 방향 (포스트모템 2)",
+     "state": "done"
+    }
+   ],
+   "images": []
+  }
+ ],
+ "blocked": [
+  {
+   "number": 788,
+   "title": "Metatron — A Promptable Whole-Body Execution Layer for Humanoids",
+   "project": "📚 서소영의 서재",
+   "folder": "🗞️ 다이제스트 클립 2026-10-26~11-01",
+   "now": "문장과 화면 검수 모델이 모두 사용량 한도로 거부됐습니다",
+   "ask": null,
+   "status_changed_at": "2026-10-29T05:24:08.084234+00:00",
+   "completed_at": null,
+   "items": [
+    {
+     "title": "기존 문서를 활용한 Metatron 다이제스트 발행",
+     "state": "doing"
+    },
+    {
+     "title": "클립에서 최종 글과 요약 확인",
+     "state": "doing"
+    }
+   ],
+   "images": []
+  },
+  {
+   "number": 787,
+   "title": "Metatron — A Promptable Whole-Body Execution Layer for Humanoids",
+   "project": "📚 서소영의 서재",
+   "folder": "🗞️ 다이제스트 클립 2026-10-26~11-01",
+   "now": "클립 기존 산출물 확인 및 원문 자료 수집 중",
+   "ask": null,
+   "status_changed_at": "2026-10-29T05:14:49.289774+00:00",
+   "completed_at": null,
+   "items": [
+    {
+     "title": "Metatron 다이제스트 포스트 발행 및 클립 결과 반영",
+     "state": "doing"
+    }
+   ],
+   "images": []
+  },
+  {
+   "number": 772,
+   "title": "소울스트림 DB 백업을 차분(중복 제거) 방식으로 개편",
+   "project": "🛠️ 서비스 운영",
+   "folder": null,
+   "now": "복원 검증과 옛 덤프 정리 끝. 10/30, 10/31 새벽 실행 결과 대기",
+   "ask": null,
+   "status_changed_at": "2026-10-29T03:26:35.582424+00:00",
+   "completed_at": null,
+   "items": [
+    {
+     "title": "매일 새벽 차분 스냅샷이 쌓이고 3일치만 남는다",
+     "state": "doing"
+    },
+    {
+     "title": "스냅샷을 임시 DB로 복원해 행 수가 원본과 같다",
+     "state": "done"
+    },
+    {
+     "title": "개편 전후 백업 용량과 하루 증가분 실측",
+     "state": "doing"
+    },
+    {
+     "title": "R2 원격 사본이 새 방식에서도 매일 유지된다",
+     "state": "doing"
+    },
+    {
+     "title": "검증 뒤 기존 전체 덤프 정리",
+     "state": "done"
+    },
+    {
+     "title": "atom 운영 카드에 방식, 복원 절차, 보관 정책 반영",
+     "state": "done"
+    }
+   ],
+   "images": []
+  }
+ ],
+ "done": [
+  {
+   "number": 783,
+   "title": "clockmaker 트윗 속 사이트 디자인과 구현 분석 다이제스트",
+   "project": "📚 서소영의 서재",
+   "folder": "🔮 Knowledge Base",
+   "now": "다이제스트를 서재에 발행했고 확인을 기다리는 중",
+   "ask": "발행한 Shopify Editions Fall '26 분석 글을 읽어 봐 주세요",
+   "status_changed_at": "2026-10-29T05:19:54.38063+00:00",
+   "completed_at": "2026-10-29T05:19:54.385+00:00",
+   "items": [
+    {
+     "title": "트윗이 소개한 사이트를 찾아 열어 봄",
+     "state": "done"
+    },
+    {
+     "title": "디자인과 구현 분석 다이제스트가 서재에 발행됨",
+     "state": "done"
+    }
+   ],
+   "images": [
+    "c783-shopify-expo.jpg"
+   ]
+  },
+  {
+   "number": 777,
+   "title": "eiaserinnys 디스크 재정리와 다시 차는 원인 차단",
+   "project": "🛠️ 서비스 운영",
+   "folder": null,
+   "now": "여유 156G로 정리 끝, 매일 새벽 자동 정리 등록",
+   "ask": "여유 46G에서 156G로 늘었고 매일 새벽 자동 정리를 걸었습니다. 두 항목을 확인해 주세요",
+   "status_changed_at": "2026-10-29T04:10:49.445635+00:00",
+   "completed_at": "2026-10-29T04:10:49.448+00:00",
+   "items": [
+    {
+     "title": "디스크 여유 150GiB 이상 되찾기",
+     "state": "done"
+    },
+    {
+     "title": "다시 차는 원인 찾아 막기",
+     "state": "done"
+    }
+   ],
+   "images": []
+  },
+  {
+   "number": 774,
+   "title": "서소영 X 멘션 자동 감지와 답글 발행",
+   "project": "📚 서소영의 서재",
+   "folder": "🕊️ 서소영 트위터 관리",
+   "now": "감지기 가동 중, 첫 실제 멘션을 기다리는 중(밤 10시 점검)",
+   "ask": "드라이런 결과표와 감지기 가동 로그를 봐 주십시오. 첫 실제 답글은 밤 10시에 덧붙입니다",
+   "status_changed_at": "2026-10-29T01:46:29.209007+00:00",
+   "completed_at": "2026-10-29T01:46:29.221+00:00",
+   "items": [
+    {
+     "title": "지난 멘션으로 돌린 드라이런 결과",
+     "state": "done"
+    },
+    {
+     "title": "새 멘션에 서소영 답글이 자동 게시됨",
+     "state": "done"
+    },
+    {
+     "title": "자동 답글이 발행 이력에 남음",
+     "state": "done"
+    },
+    {
+     "title": "트윗 전용 낭독과 AI 말투 검사 스킬",
+     "state": "done"
+    },
+    {
+     "title": "대화를 마무리할 때는 좋아요만 누름",
+     "state": "done"
+    }
+   ],
+   "images": []
+  },
+  {
+   "number": 768,
+   "title": "목요일 아침 서소영 현대 이미지 트윗",
+   "project": "📚 서소영의 서재",
+   "folder": "🕊️ 서소영 트위터 관리",
+   "now": "트윗과 답글 게시 완료, 검수 대기",
+   "ask": "4번 항목의 답글 링크를 열어 확인해 주십시오",
+   "status_changed_at": "2026-10-29T00:44:42.31612+00:00",
+   "completed_at": "2026-10-29T00:44:42.324+00:00",
+   "items": [
+    {
+     "title": "목요일 아침 현대 서소영 이미지 (미드저니 원본 포함)",
+     "state": "done"
+    },
+    {
+     "title": "트윗 문구 시안 중 디렉터가 고른 안",
+     "state": "done"
+    },
+    {
+     "title": "@seosoyoung_ai에 게시된 트윗과 발행 이력",
+     "state": "done"
+    },
+    {
+     "title": "유기용(_nodelay)님 답글에 단 서소영의 답글",
+     "state": "done"
+    }
+   ],
+   "images": [
+    "c768-seosoyoung-window.jpg",
+    "c768-seosoyoung-cafe.jpg"
+   ]
+  },
+  {
+   "number": 770,
+   "title": "XOPS 실수 게시 뒤 원어 재시도가 문안 충돌로 거부되는 문제 수정",
+   "project": "🐦 XOPS",
+   "folder": null,
+   "now": "수정과 운영 배포를 마쳤습니다",
+   "ask": "게시한 답글을 다시 열어 한국어를 쓰고 원어로 번역해 보세요",
+   "status_changed_at": "2026-10-29T00:36:54.752978+00:00",
+   "completed_at": "2026-10-29T00:36:54.754+00:00",
+   "items": [
+    {
+     "title": "실수 게시 뒤 원어로 다시 시도해도 막히지 않음",
+     "state": "done"
+    },
+    {
+     "title": "운영 XOPS에 반영",
+     "state": "done"
+    }
+   ],
+   "images": [
+    "c770-xops-translated.jpg"
+   ]
+  },
+  {
+   "number": 754,
+   "title": "PAS Argon 주간 한도 시 Claude 풀 전환 실패와 Argon 세션 미종료 수리",
+   "project": "✨ 소울스트림",
+   "folder": "🤖 수퍼바이저 세션",
+   "now": "윈도우와 WSL에 수정 배포를 시작하는 중",
+   "ask": "세 노드 배포 끝, PAS에 메시지를 보내 Claude Opus가 답하는지 봐 주세요",
+   "status_changed_at": "2026-10-29T00:36:40.715415+00:00",
+   "completed_at": "2026-10-29T00:36:40.724+00:00",
+   "items": [
+    {
+     "title": "Argon 한도가 차면 PAS가 Claude로 넘어가 답한다",
+     "state": "done"
+    },
+    {
+     "title": "Argon 세션이 답을 마치면 실행 중에 머물지 않고 끝난다",
+     "state": "done"
+    },
+    {
+     "title": "멈춰 있던 두 세션이 정상 상태로 돌아온다",
+     "state": "done"
+    }
+   ],
+   "images": []
+  },
+  {
+   "number": 751,
+   "title": "슬랙 봇 이모지 및 대화 개입 판단 Jev 전환",
+   "project": "🪞 서소영 (워크스페이스)",
+   "folder": null,
+   "now": "Terra 보완 커밋 푸시 완료 후 최종 코드 감수를 진행 중입니다.",
+   "ask": "메시지별 Jev 이모지 반응 및 대화 개입 전환과 슬랙 봇 서비스 반영 결과를 확인해 주세요.",
+   "status_changed_at": "2026-10-29T00:35:06.961821+00:00",
+   "completed_at": "2026-10-29T00:35:06.966+00:00",
+   "items": [
+    {
+     "title": "빈도 후보와 직전 이모지 이력 기반 메시지별 Jev 이모지 반응",
+     "state": "done"
+    },
+    {
+     "title": "배치 수집 없이 메시지별 Jev 대화 개입 판정 및 봇 서비스 반영",
+     "state": "done"
+    }
+   ],
+   "images": []
+  },
+  {
+   "number": 761,
+   "title": "atom 대시보드 큰 컴파일 문서 가상 스크롤과 나눠 받기",
+   "project": "💡 atom",
+   "folder": null,
+   "now": "운영 반영 끝, 큰 문서 첫 표시 57초→2.4초, 끝까지 스크롤 가능",
+   "ask": "운영 대시보드에서 「에이전트」 같은 큰 문서를 열어 스크롤, 목차, 찾기를 써 보시면 됩니다",
+   "status_changed_at": "2026-10-29T00:34:50.266469+00:00",
+   "completed_at": "2026-10-29T00:34:50.267+00:00",
+   "items": [
+    {
+     "title": "큰 컴파일 문서가 무거운 원인과 고치기 전 수치",
+     "state": "done"
+    },
+    {
+     "title": "큰 문서를 열면 앞부분이 바로 뜨고 스크롤에 맞춰 이어 받음",
+     "state": "done"
+    },
+    {
+     "title": "끝까지 스크롤해도 멈추지 않음(전후 수치와 움직이는 캡처)",
+     "state": "done"
+    },
+    {
+     "title": "목차 건너뛰기, 전체 복사, 링크 블록, 다크 모드, 휴대폰 폭 유지",
+     "state": "done"
+    },
+    {
+     "title": "그려지지 않은 부분도 찾을 수 있는 문서 안 찾기",
+     "state": "done"
+    }
+   ],
+   "images": [
+    "c761-atom-find-toc.jpg"
+   ]
+  },
+  {
+   "number": 752,
+   "title": "atom 리포 영문 카드 및 트리 관리 스킬 추가와 README 안내",
+   "project": "💡 atom",
+   "folder": null,
+   "now": "배지와 CI PR이 통과해 코드 감수를 받는 중",
+   "ask": "atom README 배지 줄과 skills 폴더 스킬 넷을 봐 주세요",
+   "status_changed_at": "2026-10-29T00:34:13.896371+00:00",
+   "completed_at": "2026-10-29T00:34:13.905+00:00",
+   "items": [
+    {
+     "title": "카드 작성과 검색 영문 스킬이 리포에 들어감",
+     "state": "done"
+    },
+    {
+     "title": "트리 구조 설계와 정리 영문 스킬이 리포에 들어감",
+     "state": "done"
+    },
+    {
+     "title": "README에 스킬 소개와 에이전트 등록 방법 안내",
+     "state": "done"
+    },
+    {
+     "title": "README 맨 위에 CI, 라이선스, 지원 도구 배지가 보임",
+     "state": "done"
+    }
+   ],
+   "images": []
+  },
+  {
+   "number": 757,
+   "title": "atom 시각적 검색 홉 펼침 복원과 역방향 화살표 수정",
+   "project": "💡 atom",
+   "folder": null,
+   "now": "운영 반영 끝. 더 찾아보기 펼침과 화살표 방향이 돌아왔습니다",
+   "ask": "운영 화면을 목표 화면과 나란히 붙였습니다. 세 항목을 확인해 주세요",
+   "status_changed_at": "2026-10-29T00:33:42.787781+00:00",
+   "completed_at": "2026-10-29T00:33:42.791+00:00",
+   "items": [
+    {
+     "title": "더 찾아보기 결과가 홉별로 옆으로 펼쳐지고 선이 이어진다",
+     "state": "done"
+    },
+    {
+     "title": "왼쪽으로 돌아오는 화살표가 출발 왼쪽에서 나와 도착 오른쪽에 붙는다",
+     "state": "done"
+    },
+    {
+     "title": "이웃 확장과 질의 확장 열이 마지막 홉 오른쪽에 붙는다",
+     "state": "done"
+    }
+   ],
+   "images": [
+    "c757-atom-search-more.jpg"
+   ]
+  }
+ ],
+ "queued": [
+  {
+   "number": 780,
+   "title": "kaleidoscope 2b: 워크스페이스와 창 배치를 PC 사이에 맞추기",
+   "project": "🔮 kaleidoscope",
+   "folder": null,
+   "now": null,
+   "ask": null,
+   "status_changed_at": "2026-10-29T02:03:44.148814+00:00",
+   "completed_at": null,
+   "items": [],
+   "images": []
+  },
+  {
+   "number": 747,
+   "title": "집 PC(silent-manari-ts)에 소울스트림 세션이 만들어지지 않음",
+   "project": "🪞 서소영 (워크스페이스)",
+   "folder": null,
+   "now": null,
+   "ask": null,
+   "status_changed_at": "2026-10-28T12:26:25.239055+00:00",
+   "completed_at": null,
+   "items": [],
+   "images": []
+  },
+  {
+   "number": 711,
+   "title": "서재 블로그 표 가로 넘침 상태가 화면 확대·회전 시 해제되지 않는 현상 수정",
+   "project": "📚 서소영의 서재",
+   "folder": null,
+   "now": null,
+   "ask": null,
+   "status_changed_at": "2026-10-27T01:16:00.750207+00:00",
+   "completed_at": null,
+   "items": [],
+   "images": []
+  },
+  {
+   "number": 509,
+   "title": "태블릿에서 링크로 연 문서 미리보기 창이 흔들리지 않기",
+   "project": "✨ 소울스트림",
+   "folder": null,
+   "now": null,
+   "ask": null,
+   "status_changed_at": "2026-10-20T07:30:31.640913+00:00",
+   "completed_at": null,
+   "items": [],
+   "images": []
+  },
+  {
+   "number": 508,
+   "title": "마크다운 표가 다크 테마와 본문 크기에 맞게 보이기",
+   "project": "✨ 소울스트림",
+   "folder": null,
+   "now": null,
+   "ask": null,
+   "status_changed_at": "2026-10-20T07:30:22.707984+00:00",
+   "completed_at": null,
+   "items": [],
+   "images": []
+  },
+  {
+   "number": 76,
+   "title": "Jev 기반 도구 탐색 왕복 절감",
+   "project": "✨ 소울스트림",
+   "folder": "🧪 Jev 기반 인지부하 저감 실험 대시보드",
+   "now": null,
+   "ask": null,
+   "status_changed_at": "2026-10-04T14:20:17.221447+00:00",
+   "completed_at": null,
+   "items": [],
+   "images": []
+  },
+  {
+   "number": 429,
+   "title": "첨부 프리뷰: SVG·HEIC 이미지와 HTML 시안 표시",
+   "project": "✨ 소울스트림",
+   "folder": null,
+   "now": null,
+   "ask": null,
+   "status_changed_at": "2026-10-17T01:39:34.643395+00:00",
+   "completed_at": null,
+   "items": [],
+   "images": []
+  }
+ ],
+ "questions": [
+  {
+   "number": 773,
+   "card_title": "MotionBricks 로봇 걷기 데모 PC용 pages 발행",
+   "text": "다시 열었을 때 가운데 로딩 창이 어떤 상태였는지 알려 주시면 그 단계부터 고치겠습니다. 다른 모습이면 직접 적어 주세요.",
+   "options": [
+    "전부 waiting",
+    "Model 줄만 멈춤",
+    "로딩 창이 없음"
+   ],
+   "asked_at": "2026-10-29T03:42:37.668891+00:00"
+  },
+  {
+   "number": 390,
+   "card_title": "eiaserinnys.me 프로필 자료 조사와 콘셉트 3종 비공개 비교 시안",
+   "text": "eiaserinnys.me로 키울 시안을 골라 주세요. 수위는 이야기의 힘, 중첩은 조형 완성도, 출구는 은유의 즉각성이 강점입니다.",
+   "options": [
+    "01 수위",
+    "02 중첩",
+    "03 출구"
+   ],
+   "asked_at": "2026-10-28T19:30:40.958458+00:00"
+  },
+  {
+   "number": 437,
+   "card_title": "소울스트림 회사 시각화 콘셉트 시안",
+   "text": "어느 시안으로 HTML 시안을 만들까? 추천은 A야. 지금 화면처럼 어두워서 PAS가 그대로 어울리고 상태 색만 빛나. 밝은 테마가 필요하면 D가 짝이야.",
+   "options": [
+    "A 밤 유리 사무실",
+    "B 낮의 파스텔 사무실",
+    "C 픽셀 야근 사무실",
+    "D 잉크 선 평면도"
+   ],
+   "asked_at": "2026-10-17T03:14:31.485311+00:00"
+  },
+  {
+   "number": 418,
+   "card_title": "XOPS 답글 생성 모델을 아르곤 우선으로",
+   "text": "아르곤을 high로 쓰니 초안 한 건에 약 96초가 걸립니다. 그동안 번역 버튼도 뒤에서 기다리고, 가끔 120초 한도를 넘겨 실패합니다. 같은 트윗으로 재 보니 medium은 36초였고, 초안은 비슷하나 조금 짧고 일부 고유명사(Arbor's Crucible 등)를 영어로 남깁니다. 생성 레인을 medium으로 낮출까요?",
+   "options": [
+    "medium으로 낮춘다 (권함)",
+    "high를 유지한다"
+   ],
+   "asked_at": "2026-10-16T11:13:52.077415+00:00"
+  },
+  {
+   "number": 398,
+   "card_title": "OpenCode DeepSeek V4.1 Flash의 소울스트림 통합",
+   "text": "OpenCode 첫 요청이 큰 것은 MCP 도구 정의를 전부 미리 싣기 때문입니다. 줄일까요? 추천은 MCP를 4개 서버로 좁히는 것입니다(약 3.8만 토큰 절감 추정, arbor와 팀 atom, 로어 도구는 그 세션에서 못 씀).",
+   "options": [
+    "현재대로 사용",
+    "MCP를 4개 서버로 좁히기 (추천)",
+    "Code Mode로 필요할 때만 부르기 검증"
+   ],
+   "asked_at": "2026-10-16T08:40:19.214017+00:00"
+  },
+  {
+   "number": 409,
+   "card_title": "XOPS 답글 작업 시간 효율화와 배치 답글 UI 계획",
+   "text": "계획 새 판(r2)대로 구현을 시작해도 될까요? gif 검색에는 GIPHY API 키가 필요해서, 디렉터님 GIPHY 계정으로 베타 키를 만들어 주시면 운영 설정에 넣겠습니다. 앞의 gif 출처 질문은 이 질문으로 바뀝니다.",
+   "options": [
+    "착수, GIPHY 키는 내가 만들어 줌 (권장)",
+    "착수, gif는 Klipy로",
+    "보류"
+   ],
+   "asked_at": "2026-10-16T07:47:03.977281+00:00"
+  }
+ ],
+ "nodes": [
+  {
+   "id": "eiaserinnys",
+   "label": "서버",
+   "cpu": 52.4,
+   "mem": 34.9,
+   "disk": 68.6,
+   "sessions": 18,
+   "connected": true
+  },
+  {
+   "id": "eias-linegames",
+   "label": "회사 PC Windows",
+   "cpu": 59.3,
+   "mem": 77.9,
+   "disk": 71.7,
+   "sessions": 0,
+   "connected": true
+  },
+  {
+   "id": "eias-linegames-wsl",
+   "label": "회사 PC WSL",
+   "cpu": 1.7,
+   "mem": 39.0,
+   "disk": 19.5,
+   "sessions": 1,
+   "connected": true
+  }
+ ],
+ "limits": [
+  {
+   "name": "Claude",
+   "window": "7일",
+   "remaining": 71,
+   "resets": "2026-11-04T13:00Z",
+   "state": "ok"
+  },
+  {
+   "name": "Codex",
+   "window": "7일",
+   "remaining": 77,
+   "resets": "2026-11-04T06:36Z",
+   "state": "ok"
+  },
+  {
+   "name": "Argon",
+   "window": "7일",
+   "remaining": 0,
+   "resets": "2026-10-30T22:06Z",
+   "state": "limit_rejected"
+  }
+ ],
+ "projects_today": [
+  "✨ 소울스트림",
+  "🔮 kaleidoscope",
+  "🌐 Pages",
+  "📚 서소영의 서재",
+  "💡 atom",
+  "🛠️ 서비스 운영",
+  "🪞 서소영 (워크스페이스)",
+  "🐦 XOPS"
+ ],
+ "daily_pages": [
+  "10월 29일 목요일 (오늘)",
+  "10월 28일 수요일",
+  "10월 27일 화요일",
+  "10월 26일 월요일",
+  "10월 25일 일요일",
+  "10월 24일 토요일",
+  "10월 23일 금요일"
+ ],
+ "assets_dir": "/home/eias/workspace/.local/tmp/card789/assets",
+ "wallpaper": {
+  "file": "unified-dashboard/e2e/readme-demo/wallpaper.jpg (디렉터 운영 배경과 md5 동일)",
+  "prefs": {
+   "appearance": "dark",
+   "wallpaper": {
+    "mode": "photo"
+   },
+   "glass": {
+    "blur": 5,
+    "tint": 0.42,
+    "enabled": true,
+    "specular": 0.25,
+    "chromatic": 0.8,
+    "refraction": 66
+   },
+   "chatFontSize": 16
+  }
+ }
+}

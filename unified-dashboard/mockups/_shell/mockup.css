@@ -6,3 +6,8 @@
    시안 빌드의 root는 mockups/<이름>이므로 같은 범위를 명시한다. */
 @source "../../client";
 @source "..";
+
+/* 화면 전체 시안이 자기 유리 상자를 그릴 때(mountMockup의 surface: "bare") 판의 안쪽 여백을 비운다. */
+.v3-components-main.mockup-main--bare {
+  padding: 0;
+}

@@ -11,6 +11,8 @@
   --v3-space-7: 28px;
   --v3-space-8: 32px;
   --v3-card-max-width: 640px;
+  /* 1면 머리 날짜(카드 #789 시안의 제안 토큰). 페이지 제목보다 한 단계 큰 제호 크기 */
+  --v3-type-display: 700 32px/40px;
   --v3-type-page: 680 21px/28px;
   --v3-type-section: 650 16px/24px;
   --v3-type-card: 600 16px/23px;
