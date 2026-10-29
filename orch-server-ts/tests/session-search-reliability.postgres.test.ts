@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
@@ -194,6 +195,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
 
   it("reads integer postings with the same search contract and supports migration replay", async () => {
     const canonicalDefinition = schemaInstalledEventSearchDefinition;
+    const canonicalIndex = await readPrefixIndexDefinition(sql);
     const previousSearchMigration = readFileSync(fileURLToPath(new URL(
       "../../packages/db-schema/sql/migrations/103_event_search_aggregate_postings.sql",
       import.meta.url,
@@ -237,12 +239,26 @@ describePostgres("session search reliability PostgreSQL integration", () => {
         ('actual-work-session', 51, 'assistant_message', '디스크위생 기록', NOW())
     `;
 
+    // Recreate the 133 index to exercise the upgrade as well as fresh schema.
+    await sql`DROP INDEX IF EXISTS event_search_dictionary_korean_prefix`;
+    await sql`CREATE INDEX IF NOT EXISTS event_search_dictionary_prefix_cover
+      ON event_search_dictionary ((term COLLATE "C")) INCLUDE (term_id, term)`;
     await sql.begin((tx) => tx.unsafe(readV2Migration));
     const afterFirstMigration = await readFunctionDefinition(sql, "event_search");
+    expect(await readPrefixIndexDefinition(sql)).toEqual(canonicalIndex);
     await sql.begin((tx) => tx.unsafe(readV2Migration));
     const afterReplay = await readFunctionDefinition(sql, "event_search");
     expect(afterFirstMigration[0]?.definition).toBe(canonicalDefinition[0]?.definition);
     expect(afterReplay[0]?.definition).toBe(canonicalDefinition[0]?.definition);
+    expect(await readPrefixIndexDefinition(sql)).toEqual(canonicalIndex);
+    expect(canonicalIndex.map((row) => row.name)).toEqual(["event_search_dictionary_korean_prefix"]);
+    const prefixPlan = await sql.begin(async (tx) => {
+      await tx`SET LOCAL enable_seqscan = off`;
+      return await tx`EXPLAIN SELECT term_id FROM event_search_dictionary
+        WHERE left(term, 3) = '디스크' AND term ~ '[가-힣]'`;
+    });
+    expect(prefixPlan.map((row) => row["QUERY PLAN"]).join("\n"))
+      .toContain("event_search_dictionary_korean_prefix");
     const documentFrequencyDefinition = await readFunctionDefinition(
       sql,
       "event_search_document_frequency",
@@ -275,6 +291,7 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       backendCatalog: [],
     };
     await expectSearchesEquivalent(sql, commonArgs);
+    expect((await runSearchFunction(sql, "event_search", commonArgs)).length).toBeGreaterThan(0);
 
     await expectSearchesEquivalent(sql, {
       ...commonArgs,
@@ -282,6 +299,9 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       sessionIds: ["actual-work-session"],
       limit: null,
     });
+    expect((await runSearchFunction(sql, "event_search", {
+      ...commonArgs, query: "unique execution phrase", sessionIds: ["actual-work-session"], limit: null,
+    })).length).toBeGreaterThan(0);
 
     const folderPrefixArgs: EventSearchArguments = {
       ...commonArgs,
@@ -295,6 +315,9 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     const independentlySlotted = await runSearchFunction(sql, "event_search", folderPrefixArgs);
     expect(independentlySlotted.length).toBeGreaterThan(folderPrefixArgs.limit ?? 0);
     expect(independentlySlotted.map((row) => row.session_id)).toContain("prefix-target");
+    const scopedPrefixArgs = { ...folderPrefixArgs, sessionIds: ["prefix-target"] };
+    await expectSearchesEquivalent(sql, scopedPrefixArgs);
+    expect((await runSearchFunction(sql, "event_search", scopedPrefixArgs)).length).toBeGreaterThan(0);
 
     const prefixArgs = {
       ...commonArgs,
@@ -303,10 +326,11 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       prefixLimit: 0,
     };
     const globalPrefix = await runSearchFunction(sql, "event_search", prefixArgs);
-    expect(globalPrefix.map((row) => row.session_id)).toEqual(expect.arrayContaining([
+    expect(new Set(globalPrefix.map((row) => row.session_id))).toEqual(new Set([
       "prefix-read-v2-exact",
       "prefix-read-v2-wide",
       "prefix-read-v2-astral",
+      "actual-work-session",
     ]));
     expect(globalPrefix.map((row) => row.session_id)).not.toContain("prefix-read-v2-false-n");
     expect(globalPrefix.map((row) => row.session_id)).not.toContain("prefix-read-v2-false-a");
@@ -318,11 +342,21 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     });
     expect(scopedPrefix.map((row) => row.id)).toContain(51);
 
-    const emptyExactRefill = await runSearchFunction(sql, "event_search", {
+    await sql`INSERT INTO events (session_id, id, event_type, searchable_text)
+      VALUES ('actual-work-session', 52, 'assistant_message', '가_나머지'),
+             ('actual-work-session', 53, 'assistant_message', '가X나머지')`;
+    const underscore = await runSearchFunction(sql, "event_search", {
+      ...prefixArgs, query: "가_나검색", sessionIds: ["actual-work-session"],
+    });
+    expect(underscore.map((row) => row.id)).toEqual([52]);
+
+    const refillArgs = {
       ...commonArgs,
       query: "검색어아주없는요청",
       limit: 2,
-    });
+    };
+    await expectSearchesEquivalent(sql, refillArgs);
+    const emptyExactRefill = await runSearchFunction(sql, "event_search", refillArgs);
     expect(emptyExactRefill.map((row) => row.session_id)).toContain("prefix-target");
 
     const after = new Date(Date.now() - 60_000);
@@ -347,23 +381,27 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     expect(filteredPreset).toHaveLength(1);
     expect(filteredPreset[0]?.session_id).toBe("search-filter-preset");
 
-    const filteredFallback = await runSearchFunction(sql, "event_search", {
+    const fallbackArgs: EventSearchArguments = {
       ...filteredArgs,
       sessionIds: ["search-filter-fallback"],
       eventTypes: ["tool_result"],
       backends: ["claude"],
-    });
+    };
+    await expectSearchesEquivalent(sql, fallbackArgs);
+    const filteredFallback = await runSearchFunction(sql, "event_search", fallbackArgs);
     expect(filteredFallback.map((row) => row.session_id)).toContain("search-filter-fallback");
 
     const unlimited = await runSearchFunction(sql, "event_search", {
       ...commonArgs,
       limit: null,
     });
+    await expectSearchesEquivalent(sql, { ...commonArgs, limit: null });
     expect(unlimited.length).toBeGreaterThan(5);
     const zero = await runSearchFunction(sql, "event_search", {
       ...commonArgs,
       limit: 0,
     });
+    await expectSearchesEquivalent(sql, { ...commonArgs, limit: 0 });
     expect(zero).toHaveLength(0);
     const perSession = await runSearchFunction(sql, "event_search", {
       ...filteredArgs,
@@ -371,6 +409,28 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       limit: null,
     });
     expect(perSession).toHaveLength(1);
+  }, 60_000);
+
+  it("mirrors and searches long tokens through the event write path", async () => {
+    const longLatin = Array.from({ length: 34 }, (_, i) =>
+      createHash("sha256").update(`event-search-long-${i}`).digest("hex")).join("");
+    const longKorean = "가나다라마바사아자차카타파하".repeat(80);
+    expect(Buffer.byteLength(longLatin)).toBeGreaterThan(2_000);
+    expect(longKorean.length).toBeGreaterThan(1_000);
+    await sql`INSERT INTO sessions (session_id, status) VALUES ('long-event-search', 'idle')`;
+    await sql`INSERT INTO events (session_id, id, event_type, searchable_text)
+      VALUES ('long-event-search', 1, 'assistant_message', ${`${longLatin} ${longKorean}`})`;
+    const mirrored = await sql`
+      SELECT dictionary.term FROM event_search_postings posting
+      JOIN event_search_dictionary dictionary USING (term_id)
+      JOIN event_search_session_keys session_key USING (session_key)
+      WHERE session_key.session_id = 'long-event-search' AND posting.event_id = 1
+    `;
+    expect(new Set(mirrored.map((row) => row.term))).toEqual(new Set([longLatin, longKorean]));
+    for (const term of [longLatin, longKorean]) {
+      const result = await sql`SELECT id FROM event_search(${term}, ARRAY['long-event-search']::text[])`;
+      expect(result.map((row) => row.id)).toEqual([1]);
+    }
   }, 60_000);
 
   it("serves the observed MCP scoped query through history_search with filters intact", async () => {
@@ -1433,7 +1493,7 @@ type EventSearchRow = {
   event_type: string;
   payload: unknown;
   searchable_text: string;
-  created_at: Date | null;
+  created_at: string | null;
   score: number | string;
 };
 
@@ -1442,6 +1502,16 @@ type EventSearchBackendMapping =
   | { kind: "agent"; node_id: string; agent_id: string; backend: string };
 
 type EventSearchFunctionName = "event_search" | "event_search_before_read_v2";
+
+async function readPrefixIndexDefinition(sql: ReturnType<typeof postgres>) {
+  return await sql<Array<{ name: string; definition: string }>>`
+    SELECT c.relname AS name, pg_get_indexdef(c.oid) AS definition
+    FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+    WHERE n.nspname = current_schema()
+      AND c.relname IN ('event_search_dictionary_prefix_cover', 'event_search_dictionary_korean_prefix')
+    ORDER BY c.relname
+  `;
+}
 
 async function readFunctionDefinition(
   sql: ReturnType<typeof postgres>,
@@ -1466,13 +1536,12 @@ async function runSearchFunction(
   args: EventSearchArguments,
 ): Promise<EventSearchRow[]> {
   return await sql.unsafe(
-    `SELECT id, session_id, event_type, payload, searchable_text, created_at, score
+    `SELECT id, session_id, event_type, payload, searchable_text, created_at::text AS created_at, score
      FROM ${functionName}(
        $1::text, $2::text[], $3::integer, $4::text[], $5::text[],
        $6::integer, $7::integer, $8::text, $9::text[], $10::timestamptz,
-       $11::text[], $12::jsonb
-     )
-     ORDER BY score DESC, created_at DESC`,
+       $11::text[], $12::text::jsonb
+     )`,
     [
       args.query,
       args.sessionIds,
@@ -1496,30 +1565,45 @@ async function expectSearchesEquivalent(
 ): Promise<void> {
   const legacyRows = await runSearchFunction(sql, "event_search_before_read_v2", args);
   const currentRows = await runSearchFunction(sql, "event_search", args);
-  const stableOrder = (left: EventSearchRow, right: EventSearchRow): number => {
-    const scoreDifference = Number(right.score) - Number(left.score);
-    if (Math.abs(scoreDifference) > 1e-12) return scoreDifference;
-    const leftCreatedAt = left.created_at?.getTime() ?? Number.POSITIVE_INFINITY;
-    const rightCreatedAt = right.created_at?.getTime() ?? Number.POSITIVE_INFINITY;
-    if (leftCreatedAt !== rightCreatedAt) return rightCreatedAt - leftCreatedAt;
-    return left.session_id.localeCompare(right.session_id) || left.id - right.id;
-  };
-  const legacyStable = [...legacyRows].sort(stableOrder);
-  const currentStable = [...currentRows].sort(stableOrder);
+  expectEquivalentRows(legacyRows, currentRows);
+}
 
-  expect(currentStable.map((row) => `${row.session_id}/${row.id}`)).toEqual(
-    legacyStable.map((row) => `${row.session_id}/${row.id}`),
-  );
-  for (const [index, current] of currentStable.entries()) {
-    const legacy = legacyStable[index];
-    expect(legacy).toBeDefined();
-    expect(current.event_type).toBe(legacy?.event_type);
-    expect(current.payload).toEqual(legacy?.payload);
-    expect(current.searchable_text).toBe(legacy?.searchable_text);
-    expect(current.created_at?.toISOString() ?? null).toBe(legacy?.created_at?.toISOString() ?? null);
-    expect(Math.abs(Number(current.score) - Number(legacy?.score))).toBeLessThanOrEqual(1e-12);
+function expectEquivalentRows(legacyRows: EventSearchRow[], currentRows: EventSearchRow[]): void {
+  const key = (row: EventSearchRow) => `${row.session_id}/${row.id}`;
+  const timestamp = (row: EventSearchRow) => row.created_at;
+  expect(currentRows).toHaveLength(legacyRows.length);
+  for (let start = 0; start < legacyRows.length;) {
+    const first = legacyRows[start]!;
+    let end = start + 1;
+    while (end < legacyRows.length && Number(legacyRows[end]!.score) === Number(first.score)
+      && timestamp(legacyRows[end]!) === timestamp(first)) end++;
+    const legacyGroup = legacyRows.slice(start, end);
+    const currentGroup = currentRows.slice(start, end);
+    expect(new Set(currentGroup.map(key))).toEqual(new Set(legacyGroup.map(key)));
+    for (const current of currentGroup) {
+      const legacy = legacyGroup.find((row) => key(row) === key(current))!;
+      expect(current.event_type).toBe(legacy.event_type);
+      expect(current.payload).toEqual(legacy.payload);
+      expect(current.searchable_text).toBe(legacy.searchable_text);
+      expect(timestamp(current)).toBe(timestamp(legacy));
+      expect(Math.abs(Number(current.score) - Number(legacy.score))).toBeLessThanOrEqual(1e-12);
+    }
+    start = end;
   }
 }
+
+it("compares returned order while allowing only true ties to swap", () => {
+  const row = (id: number, score: number, created_at: string): EventSearchRow => ({
+    id, session_id: "ordering", event_type: "assistant_message", payload: null,
+    searchable_text: "test", created_at, score,
+  });
+  const newer = "2026-10-29 00:00:00.000002+00";
+  const older = "2026-10-29 00:00:00.000001+00";
+  const expected = [row(1, 3, newer), row(2, 3, newer), row(3, 3, older), row(4, 2, newer)];
+  expectEquivalentRows(expected, [expected[1]!, expected[0]!, expected[2]!, expected[3]!]);
+  expect(() => expectEquivalentRows(expected, [expected[2]!, expected[1]!, expected[0]!, expected[3]!])).toThrow();
+  expect(() => expectEquivalentRows(expected, [expected[3]!, expected[1]!, expected[2]!, expected[0]!])).toThrow();
+});
 
 async function expectTermDocumentFrequenciesMatchPostings(sql: ReturnType<typeof postgres>) {
   const mismatches = await sql`

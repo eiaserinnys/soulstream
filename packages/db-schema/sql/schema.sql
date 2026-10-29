@@ -1325,9 +1325,9 @@ CREATE TABLE IF NOT EXISTS event_search_documents (
         INCLUDE (doc_len, event_type_id, created_at)
 ) WITH (autovacuum_vacuum_insert_scale_factor = 0.05);
 
-CREATE INDEX IF NOT EXISTS event_search_dictionary_prefix_cover
-    ON event_search_dictionary ((term COLLATE "C"))
-    INCLUDE (term_id, term);
+CREATE INDEX IF NOT EXISTS event_search_dictionary_korean_prefix
+    ON event_search_dictionary (left(term, 3)) INCLUDE (term_id)
+    WHERE term ~ '[가-힣]';
 
 CREATE OR REPLACE FUNCTION mirror_event_search_postings()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
@@ -2856,10 +2856,7 @@ CREATE OR REPLACE FUNCTION event_search(
           ON t.session_id = e.session_id
          AND t.event_id = e.id
         JOIN korean_prefix_terms q
-          ON t.term COLLATE "C" >= q.prefix COLLATE "C"
-         AND t.term COLLATE "C" <
-             (left(q.prefix,2) || chr(ascii(right(q.prefix,1))+1)) COLLATE "C"
-         AND left(t.term,3) COLLATE "C" = q.prefix COLLATE "C"
+          ON left(t.term, 3) = q.prefix
         WHERE t.term ~ '[가-힣]'
           AND (p_prefix_limit > 0 OR p_limit IS NULL
                OR (SELECT count FROM exact_count) < p_limit)
@@ -2883,10 +2880,7 @@ CREATE OR REPLACE FUNCTION event_search(
             )::FLOAT AS score
         FROM korean_prefix_terms q
         JOIN posting_rows t
-          ON t.term COLLATE "C" >= q.prefix COLLATE "C"
-         AND t.term COLLATE "C" <
-             (left(q.prefix,2) || chr(ascii(right(q.prefix,1))+1)) COLLATE "C"
-         AND left(t.term,3) COLLATE "C" = q.prefix COLLATE "C"
+          ON left(t.term, 3) = q.prefix
         WHERE p_session_ids IS NULL
           AND t.term ~ '[가-힣]'
           AND (p_prefix_limit > 0 OR p_limit IS NULL
