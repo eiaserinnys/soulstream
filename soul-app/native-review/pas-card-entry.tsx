@@ -1,8 +1,8 @@
 import 'react-native-gesture-handler';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { registerRootComponent } from 'expo';
 import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
-import { Text, View } from 'react-native';
+import { Text, TextInput, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentLinkProvider } from '../src/navigation/ContentLinkProvider';
@@ -20,7 +20,8 @@ function Stage() {
   const continuity = useLayoutContinuity();
   const insets = useSafeAreaInsets();
   const t = useTokens();
-  const [phase, setPhase] = useState<'preparing' | 'closed 1' | 'open' | 'closed 2'>('preparing');
+  const [phase, setPhase] = useState<'preparing' | 'closed 1' | 'open' | 'closed 2' | 'keyboard'>('preparing');
+  const keyboardInput = useRef<TextInput>(null);
   useEffect(() => {
     useSettingsStore.setState({ serverUrl: 'https://native-review.invalid', appearance: 'light' });
     useSessionStore.getState().setSessions([sessionSummary]);
@@ -34,10 +35,16 @@ function Stage() {
     setPhase('closed 1');
     const open = setTimeout(() => { continuity.setViewState(key, { expandedKey: cardKey }); setPhase('open'); }, 6000);
     const close = setTimeout(() => { continuity.setViewState(key, { expandedKey: null }); setPhase('closed 2'); }, 21000);
-    return () => { clearTimeout(open); clearTimeout(close); };
+    const keyboard = setTimeout(() => { continuity.setViewState(key, { expandedKey: null }); setPhase('keyboard'); }, 27000);
+    return () => { clearTimeout(open); clearTimeout(close); clearTimeout(keyboard); };
   }, [continuity, host.store]);
+  useEffect(() => {
+    if (phase === 'keyboard') keyboardInput.current?.focus();
+  }, [phase]);
   return <View style={{ flex: 1 }}>
     {phase !== 'preparing' ? <PersistentSessionScreen key={phase} active onHome={() => {}} /> : null}
+    <TextInput ref={keyboardInput} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
+      style={{ position: 'absolute', left: -100, top: 0, width: 1, height: 1, opacity: 0 }} />
     <View pointerEvents="none" style={{ position: 'absolute', top: insets.top, left: t.spacing.sm, zIndex: 100 }}>
       <Text style={{ ...t.foundation.typography.meta, color: t.colors.textPrimary, backgroundColor: t.colors.background }}>{phase}</Text>
     </View>

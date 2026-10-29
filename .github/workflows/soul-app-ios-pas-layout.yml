@@ -152,7 +152,7 @@ jobs:
             end tell
           end tell
           APPLESCRIPT
-      - name: Install app and capture 30-second sequence
+      - name: Install app and capture 42-second sequence
         env:
           SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
           DISPLAYS: ${{ matrix.displays }}
@@ -171,7 +171,7 @@ jobs:
           try:
               print(subprocess.check_output(['xcrun', 'simctl', 'launch', udid, 'me.eiaserinnys.soulstream'], text=True).strip(), flush=True)
               start = time.monotonic()
-              for second in range(30):
+              for second in range(42):
                   time.sleep(max(0, start + second - time.monotonic()))
                   for display in displays:
                       suffix = f'-display-{display}' if display else ''
@@ -179,7 +179,7 @@ jobs:
                       if display:
                           args.append(f'--display={display}')
                       subprocess.run(args + [f'captures/{second:02d}s{suffix}.png'], check=True)
-              time.sleep(max(0, start + 30 - time.monotonic()))
+              time.sleep(max(0, start + 42 - time.monotonic()))
           finally:
               video.send_signal(signal.SIGINT)
               video.wait(timeout=30)
