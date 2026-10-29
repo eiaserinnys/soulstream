@@ -140,7 +140,7 @@ async def test_task_status_contract_is_mirrored_in_canonical_schema_sql():
         assert required in schema_sql
 
 
-async def test_event_search_prefix_fallback_migration_is_mirrored_in_schema_sql():
+async def test_event_search_prefix_helpers_are_retained_after_write_switch():
     migration_sql = _migration_sql("031_event_search_prefix_fallback.sql").strip()
     schema_sql = _schema_sql()
 
@@ -154,13 +154,9 @@ async def test_event_search_prefix_fallback_migration_is_mirrored_in_schema_sql(
         assert required in migration_sql
         assert required in schema_sql
 
-    assert _function_sql(
-        migration_sql, "CREATE OR REPLACE FUNCTION event_search("
-    ) in schema_sql
 
-
-async def test_event_search_posting_aggregation_migration_is_mirrored_in_schema_sql():
-    migration_sql = _migration_sql("103_event_search_aggregate_postings.sql").strip()
+async def test_event_search_read_v2_migration_is_mirrored_in_schema_sql():
+    migration_sql = _migration_sql("134_event_search_read_v2.sql").strip()
     schema_sql = _schema_sql()
 
     assert _function_sql(
