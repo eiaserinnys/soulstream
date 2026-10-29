@@ -46,6 +46,8 @@
   --v3-glass-card: color-mix(in srgb, var(--background) 34%, transparent);
   --v3-glass-dense: var(--control-surface);
   --v3-stroke-default: color-mix(in srgb, var(--foreground) 12%, transparent);
+  /* 굵은 괘선(1면 섹션 머리와 머리 아래 먹선). 카드 #789 시안의 제안 토큰 */
+  --v3-rule-strong: 2px;
   --v3-stroke-hover: color-mix(in srgb, var(--v3-accent) 48%, var(--v3-stroke-default));
   --v3-stroke-selected: color-mix(in srgb, var(--v3-accent) 72%, transparent);
   font-family: var(--v3-font-family);

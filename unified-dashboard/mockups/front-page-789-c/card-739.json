@@ -1,0 +1,366 @@
+{
+ "number": 739,
+ "title": "kaleidoscope 쉘 골격과 로컬 md 앱",
+ "status": "review",
+ "project": "🔮 kaleidoscope",
+ "request": "(카드 #737 설계 인터뷰 뒤 서소영이 만든 드래프트. 디렉터가 실행 여부를 정한다)\n\n디렉터 원 요청: 로컬 파일을 열어 놓고 편집하거나, shay 대사를 보거나, 코르크시트를 띄우거나... 에이전트가 작은 앱을 만들어 등록할 수 있고, 나는 그걸 멀티 데스크탑처럼 작업 맥락에 따라서 띄워 두고 일할 수 있는 앱.\n\n인터뷰에서 디렉터가 정한 첫 앱: 로컬 md로 ok.",
+ "now": {
+  "ask": "v0.2.1을 깔고 md 렌더, 줄 고치기, 목록 접기를 봐 주세요",
+  "text": "코드와 화면 검수 통과, 머지 완료. v0.2.1 Windows 설치본 빌드 중",
+  "turn": "user",
+  "sessionId": "ebc9d450-3f58-4888-abb3-98441f42341c",
+  "updatedAt": "2026-10-29T03:44:05.256Z"
+ },
+ "node": "eiaserinnys",
+ "preset": "claude-opus",
+ "created_at": "2026-10-28T01:54:48.523034+00:00",
+ "status_changed_at": "2026-10-29T03:44:05.131837+00:00",
+ "items": [
+  {
+   "id": 1,
+   "title": "GitHub Release의 Windows 설치본으로 설치해 실행",
+   "state": "done",
+   "display": null,
+   "result": "v0.1.0 설치본이 Release에 올라갔고, Windows에서 설치본을 실행하면 첫 화면이 뜹니다",
+   "caveat": "GitHub Windows 러너에서 실행. 디렉터 PC 설치는 미확인",
+   "evidence": [
+    {
+     "type": "link",
+     "label": "v0.1.0 릴리스",
+     "name": null
+    },
+    {
+     "type": "image",
+     "label": "Windows 실행 첫 화면",
+     "name": null
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "title": "데스크톱 두 장, md 앱에서 폴더 골라 파일 고쳐 저장",
+   "state": "done",
+   "display": null,
+   "result": "데스크톱을 더하고 md 편집기에서 폴더를 골라 파일을 고치면 1초 뒤 디스크에 저장됩니다",
+   "caveat": "실제 코어와 브라우저로 확인. Windows 실기 미확인",
+   "evidence": [
+    {
+     "type": "image",
+     "label": "데스크톱 2에서 편집 후 저장됨",
+     "name": null
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "title": "다시 켜도 데스크톱, 창 배치, 열린 파일이 남음",
+   "state": "done",
+   "display": null,
+   "result": "창을 옮기고 데스크톱을 바꾼 뒤 다시 열어도 그 데스크톱, 창 자리, 열린 파일이 남습니다",
+   "caveat": "앱 재시작은 같은 코어 상태의 새로 고침으로 대신함",
+   "evidence": [
+    {
+     "type": "image",
+     "label": "새로 고침 뒤 배치와 열린 파일",
+     "name": null
+    }
+   ]
+  },
+  {
+   "id": 4,
+   "title": "쉘 재빌드 없이 md-viewer 정의로 다른 앱이 뜸",
+   "state": "done",
+   "display": null,
+   "result": "md-viewer.json을 가져오면 다시 설치하지 않고 렌더 보기 앱 창이 뜹니다",
+   "caveat": "실제 코어와 브라우저로 확인. Windows 실기 미확인",
+   "evidence": [
+    {
+     "type": "image",
+     "label": "가져온 마크다운 보기 창",
+     "name": null
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "title": "고른 폴더 밖 경로를 요구하는 앱 정의는 거부",
+   "state": "done",
+   "display": null,
+   "result": "폴더 밖 경로를 적은 앱 정의를 가져오면 거부되고 그 이유가 알림으로 보입니다",
+   "caveat": "실제 코어와 브라우저로 확인. Windows 실기 미확인",
+   "evidence": [
+    {
+     "type": "link",
+     "label": "거부 테스트 코드",
+     "name": null
+    },
+    {
+     "type": "image",
+     "label": "가져오기 거부 알림",
+     "name": null
+    }
+   ]
+  },
+  {
+   "id": 6,
+   "title": "한 창 여러 웹뷰 겹치기 시험 결과를 atom에 기록",
+   "state": "done",
+   "display": null,
+   "result": "웹뷰 둘은 겹쳐 띄우고 순서도 바꿀 수 있으나, 쉘 화면은 웹뷰 위에 못 그립니다",
+   "caveat": "GitHub Windows 러너 결과. 디렉터 PC 실기는 미확인",
+   "evidence": [
+    {
+     "type": "image",
+     "label": "쉘 창(분홍)이 웹뷰 뒤로 가려짐, Windows",
+     "name": null
+    },
+    {
+     "type": "image",
+     "label": "웹뷰 둘 겹침과 순서 바꾸기, Windows",
+     "name": null
+    }
+   ]
+  },
+  {
+   "id": 7,
+   "title": "설치법을 회사 슬랙 DM으로 받음",
+   "state": "done",
+   "display": null,
+   "result": "회사 슬랙 서소영 봇 DM으로 설치법과 확인 순서를 보냈고, 도착을 다시 읽어 확인했습니다",
+   "caveat": null,
+   "evidence": [
+    {
+     "type": "link",
+     "label": "보낸 DM",
+     "name": null
+    }
+   ]
+  },
+  {
+   "id": 8,
+   "title": "편집 영역을 눌러도 푸른 테두리가 없음",
+   "state": "done",
+   "display": null,
+   "result": "편집 영역을 누르거나 글을 쳐도 둘레 테두리가 생기지 않고, 깜빡이는 커서만 보입니다",
+   "caveat": "v0.2.1 앱 화면을 실제 코어와 브라우저로 확인. Windows 실기 미확인",
+   "evidence": [
+    {
+     "type": "image",
+     "label": "문단을 눌러 커서만 놓인 편집 화면",
+     "name": null
+    }
+   ]
+  },
+  {
+   "id": 9,
+   "title": "md 파일이 렌더된 마크다운으로 보이고 고칠 수 있음",
+   "state": "done",
+   "display": null,
+   "result": "md를 열면 렌더된 채로 보이고, 누른 줄이나 표만 원문으로 바뀌어 고치면 그 글자만 저장됩니다",
+   "caveat": "v0.2.1 앱 화면을 실제 코어와 브라우저로 확인. Windows 실기 미확인",
+   "evidence": [
+    {
+     "type": "image",
+     "label": "렌더된 표와 코드 블록",
+     "name": null
+    },
+    {
+     "type": "image",
+     "label": "누른 제목 줄만 원문, 크기는 그대로",
+     "name": null
+    },
+    {
+     "type": "image",
+     "label": "표 칸을 고쳐 저장한 뒤",
+     "name": null
+    }
+   ]
+  },
+  {
+   "id": 10,
+   "title": "왼쪽 폴더를 여닫을 수 있음",
+   "state": "done",
+   "display": null,
+   "result": "파일 목록 머리의 왼쪽 화살표로 목록 칸을 접고, 남은 띠의 화살표로 다시 폅니다",
+   "caveat": "v0.2.1 앱 화면을 실제 코어와 브라우저로 확인. Windows 실기 미확인",
+   "evidence": [
+    {
+     "type": "image",
+     "label": "파일 목록 칸을 펼친 화면, 접기 단추",
+     "name": null
+    },
+    {
+     "type": "image",
+     "label": "목록 칸을 접어 띠만 남은 화면",
+     "name": null
+    }
+   ]
+  },
+  {
+   "id": 11,
+   "title": "새 버전 설치본과 설치법을 슬랙 DM으로 받음",
+   "state": "done",
+   "display": null,
+   "result": "v0.2.1 설치본을 Release에 올리고, 설치법과 확인 순서를 회사 슬랙 DM으로 보냈습니다",
+   "caveat": null,
+   "evidence": [
+    {
+     "type": "link",
+     "label": "v0.2.1 릴리스",
+     "name": null
+    },
+    {
+     "type": "link",
+     "label": "보낸 DM",
+     "name": null
+    },
+    {
+     "type": "image",
+     "label": "Windows에서 설치본 첫 화면",
+     "name": null
+    }
+   ]
+  }
+ ],
+ "comments": [
+  {
+   "author_kind": "agent",
+   "kind": "comment",
+   "body": "말씀하신 세 가지를 고쳐 v0.2.1로 냈습니다. md는 렌더된 채로 보이고 누른 줄이나 표만 원문으로 바뀌어 그 자리에서 고칩니다. 편집 영역의 푸른 테두리는 없앴고, 파일 목록 머리의 왼쪽 화살표로 목록 칸을 접고 폅니다. 설치법은 회사 슬랙 DM으로 보냈습니다. Windows에서 한글을 치는 도중 줄 모양과 낱말 더블클릭 선택을 한 번 봐 주세요.",
+   "created_at": "2026-10-29T03:42:57.828091+00:00",
+   "item_id": null
+  },
+  {
+   "author_kind": "agent",
+   "kind": "note",
+   "body": "Sol 재감수 5(HEAD 3b4b820): 머지 가능, P2 하나(앞 클릭 기록 없이 detail 2로 시작하면 칸 시작 커서로 끝남, 칸 경계는 지킴, 실사용 경로 아님). 머지 전 같은 트리에서 pnpm --dir app build와 cargo check -p kaleidoscope-app 통과(2분). PR #12 squash → main 58fa812(브랜치 트리와 동일 확인). 버전 올림 PR #14(tauri.conf.json, app/src-tauri/Cargo.toml, Cargo.lock, check 통과) → main 28d86f6. v0.2.1 태그 SSH 푸시, Release run 40812570217 진행 중.",
+   "created_at": "2026-10-29T03:31:06.378037+00:00",
+   "item_id": null
+  },
+  {
+   "author_kind": "agent",
+   "kind": "note",
+   "body": "세라피엘 재검수 5(5d99c339, HEAD 3b4b820): 통과. T1(머리 칸, 본문 칸, 굵게와 인라인 코드 칸 더블클릭과 세 번 누르기, 디스크는 그 칸 안만 바뀜), 표 칸 누르기와 끌기, 렌더 줄 더블클릭 확인. R1~R7, R6-1, F1, G1, G2, T1 모두 해결, UI/UX 머지 가능. 실기 미확인(디렉터 설치본 확인 때 전할 것): WebView2 글꼴과 CSS 체크 상자, 포커스 링, 한글 IME 조합 중 줄 전환, 시스템 더블클릭 간격, OS 창 밖 놓기, caretPositionFromPoint 지원. 캡처 회차별 .local/artifacts/20261029-1015 ~ 1215-selaphiel-md-live-*. Sol 재감수 5 기다림.",
+   "created_at": "2026-10-29T03:20:46.980784+00:00",
+   "item_id": null
+  },
+  {
+   "author_kind": "agent",
+   "kind": "note",
+   "body": "7단계 보완 푸시: PR #12 head 3b4b820(원격 일치). 표 위젯 안 두 번째와 세 번째 누름을 표가 직접 처리(보이는 글자를 칸 원문 위치로 이어 낱말 선택, 못 옮기면 칸 전체, 세 번은 칸 원문), 선택은 칸 경계 안. e2e 53개(표 회귀 16개 추가), vitest 71개, 타입 검사와 앱 빌드 통과. 앱 쉘에서 칸하나 더블클릭 뒤 새값 저장, 그 글자만 바뀜(.local/artifacts/20261029-1205-markdown-table-multiclick/). e2e 서버는 실행 주체 stdin이 끊기면 꺼지게 고침, 5173, 1420, 7420 비어 있음 확인. 세라피엘 재검수 5와 Sol 재감수 5를 동시에 맡겼다.",
+   "created_at": "2026-10-29T03:16:35.082718+00:00",
+   "item_id": null
+  },
+  {
+   "author_kind": "agent",
+   "kind": "note",
+   "body": "Sol 재감수 4(52ae0885, HEAD 35b078b): 머지 가능. 실제 Chromium에서 CodeMirror 선택 처리 뒤 window 단계 전환 확인, 고정 복구 네 경로, 연속 클릭 저장 배치 갱신과 폐기, 편집기별 리스너 정리 확인. 증거 .local/tmp/card739-sol-review/pointer-final-*.  세라피엘 T1과 함께 Terra 7단계 지시: 렌더된 표 위젯 안의 두 번째와 세 번째 누름은 표가 직접 처리하고 선택은 시작 칸 원문 범위를 넘지 않음. e2e 뒤 고아 vite(5173)가 다시 남아 껐고, Terra에 서버 정리와 포트 확인을 지시.",
+   "created_at": "2026-10-29T02:59:31.969016+00:00",
+   "item_id": null
+  },
+  {
+   "author_kind": "agent",
+   "kind": "note",
+   "body": "세라피엘 재검수 4(5d99c339, HEAD 35b078b): G1(링크 문단, 제목, 인용, 들여쓴 코드의 더블클릭과 세 번 누르기, 디스크 확인), G2(표 칸 누르기와 끌기), F1 다섯 경로 모두 통과, 빠른 연속 다른 줄 누르기도 정상. 반려 T1: 렌더된 표 칸 낱말을 더블클릭하면 행 끝 `|`가 선택되고 치면 엉뚱한 칸이 바뀐 채 저장(두 번째 누름에서 표가 다시 위젯이 되어 CodeMirror가 위젯 경계로 낱말을 고름). 캡처 .local/artifacts/20261029-1150-selaphiel-md-live-rereview4/. Sol 재감수 4 결과와 합쳐 고친다.",
+   "created_at": "2026-10-29T02:59:05.566954+00:00",
+   "item_id": null
+  }
+ ],
+ "sessions": [
+  {
+   "agent_session_id": "ebc9d450-3f58-4888-abb3-98441f42341c",
+   "display_name": "🔨 kaleidoscope 쉘 골격과 md 앱",
+   "agent_id": "seosoyoung",
+   "node_id": "eiaserinnys",
+   "status": "completed",
+   "model_preset": "claude-opus",
+   "updated_at": "2026-10-29T03:44:56.121+00:00"
+  },
+  {
+   "agent_session_id": "52ae0885-5261-401c-aa62-6a780d8a162b",
+   "display_name": "🔍 md 실시간 보기 코드 감수",
+   "agent_id": "roselin",
+   "node_id": "eiaserinnys",
+   "status": "completed",
+   "model_preset": "codex-6.1-sol",
+   "updated_at": "2026-10-29T03:23:19.44+00:00"
+  },
+  {
+   "agent_session_id": "5d99c339-403b-49ca-ba91-bf2b04038e41",
+   "display_name": "🔍 md 실시간 보기 UI/UX 검수 (PR #12)",
+   "agent_id": "selaphiel",
+   "node_id": "eiaserinnys",
+   "status": "completed",
+   "model_preset": "claude-opus",
+   "updated_at": "2026-10-29T03:19:50.416+00:00"
+  },
+  {
+   "agent_session_id": "fa4a4f89-45c1-4d38-9835-01450a16af40",
+   "display_name": "🔨 마크다운 실시간 보기 시안",
+   "agent_id": "roselin",
+   "node_id": "eiaserinnys",
+   "status": "completed",
+   "model_preset": "codex-6.1-terra",
+   "updated_at": "2026-10-29T03:15:46.186+00:00"
+  },
+  {
+   "agent_session_id": "98b1446c-9f28-45b9-8aef-45c7e6944e9d",
+   "display_name": "🔍 kaleidoscope 쉘 화면 UI/UX 검수",
+   "agent_id": "selaphiel",
+   "node_id": "eiaserinnys",
+   "status": "completed",
+   "model_preset": "claude-opus",
+   "updated_at": "2026-10-28T16:56:09.398+00:00"
+  },
+  {
+   "agent_session_id": "eefc20ad-a33b-48cd-97a3-1823abc8c459",
+   "display_name": "🔨 kaleidoscope U3b 쉘 화면 2차 반려 보완",
+   "agent_id": "roselin",
+   "node_id": "eiaserinnys",
+   "status": "completed",
+   "model_preset": "codex-6.1-terra",
+   "updated_at": "2026-10-28T16:54:22.18+00:00"
+  },
+  {
+   "agent_session_id": "900c3f36-08b0-4dc1-8a49-d801854e6def",
+   "display_name": "🔨 kaleidoscope U3b 쉘 화면",
+   "agent_id": "roselin",
+   "node_id": "eiaserinnys",
+   "status": "completed",
+   "model_preset": "codex-6-luna",
+   "updated_at": "2026-10-28T15:58:06.36+00:00"
+  },
+  {
+   "agent_session_id": "4a70089f-c1d4-46ad-8dc8-79d72c0bec7f",
+   "display_name": "🔨 kaleidoscope 블록 렌더러 구현",
+   "agent_id": "roselin",
+   "node_id": "eiaserinnys",
+   "status": "completed",
+   "model_preset": "codex-6-luna",
+   "updated_at": "2026-10-28T12:56:11.983+00:00"
+  }
+ ],
+ "local_images": [
+  {
+   "item_id": 9,
+   "evidence_label": "렌더된 표와 코드 블록",
+   "file": "c739-i9-render-table-code.jpg"
+  },
+  {
+   "item_id": 10,
+   "evidence_label": "파일 목록 칸을 펼친 화면, 접기 단추",
+   "file": "c739-i10-list-open.jpg"
+  },
+  {
+   "item_id": 10,
+   "evidence_label": "목록 칸을 접어 띠만 남은 화면",
+   "file": "c739-i10-list-folded.jpg"
+  },
+  {
+   "item_id": 11,
+   "evidence_label": "Windows에서 설치본 첫 화면",
+   "file": "c739-i11-windows-first.jpg"
+  }
+ ],
+ "note": "실제 #739 카드(운영 DB). 증거 그림은 로컬에 남은 것만 assets에 있다(local_images). 나머지 증거는 이름만 보인다."
+}

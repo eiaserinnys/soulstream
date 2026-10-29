@@ -1,0 +1,665 @@
+/* 소울스트림 1면과 카드 상세의 Index 결(카드 #789 C 시안). 바탕과 상단 메뉴는 v3-front-page.css의 종이 판을 그대로 쓴다.
+   움직임 값은 프로젝트에 이미 있는 전환 값이다: 펼침 높이 220ms ease(폴더 보드), 투명도 150ms ease(폴더 보드).
+   닫힘과 사라짐은 열림보다 빠르게 둔다. */
+.v3-front-page.fi-page {
+  --fi-open: 220ms;
+  --fi-close: 150ms;
+  --fi-paper: var(--persistent-session-paper);
+  padding-bottom: 0;
+}
+
+.fi-screen {
+  animation: fi-fade 150ms ease;
+}
+
+@keyframes fi-fade {
+  from { opacity: 0; }
+}
+
+.fi-masthead {
+  padding: 0 var(--fp-edge) var(--v3-space-4);
+}
+
+.fi-body {
+  padding: 0 var(--fp-edge) var(--v3-space-8);
+}
+
+/* 두 단(볼 것 7, 물어본 것 5)과 맨 아래 두 단은 같은 비율이라 세로 괘선이 같은 자리에 선다 */
+.fi-split {
+  display: grid;
+  grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+  column-gap: calc(var(--fp-gutter) * 2);
+}
+
+.fi-column {
+  position: relative;
+  min-width: 0;
+}
+
+.fi-column + .fi-column::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--fp-gutter) * -1);
+  border-left: 1px solid var(--fp-line);
+}
+
+/* 행 */
+.fi-rows {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fi-row {
+  position: relative;
+  display: grid;
+  grid-template-rows: 1fr;
+  border-bottom: 1px solid var(--fp-line);
+  transition: grid-template-rows var(--fi-open) ease, opacity var(--fi-close) ease;
+}
+
+.fi-row[data-open] {
+  z-index: 3;
+}
+
+.fi-row-frame {
+  position: relative;
+  min-height: 0;
+  margin-inline: calc(var(--v3-space-3) * -1);
+}
+
+.fi-row-head,
+.fi-row-layer {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: var(--v3-space-4);
+  align-items: baseline;
+  padding: var(--v3-space-3);
+}
+
+.fi-row-head {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+}
+
+.fi-row-head:focus-visible,
+.fi-row-frame:has(> .fi-row-head:focus-visible) .fi-row-layer {
+  box-shadow: 0 0 0 var(--v3-space-1) var(--ring);
+}
+
+.fi-row:not([data-expandable]) .fi-row-head:hover .fi-line1 {
+  color: var(--fp-kicker);
+}
+
+.fi-stamp {
+  color: var(--fp-quiet);
+  font: var(--v3-type-meta) var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.fi-lines {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.fi-line1,
+.fi-line2 {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fi-line1 {
+  font: var(--v3-type-card) var(--v3-font-family);
+}
+
+.fi-line2 {
+  font: var(--v3-type-body) var(--v3-font-family);
+}
+
+.fi-kicker {
+  color: var(--fp-kicker);
+  font: var(--v3-type-meta) var(--v3-font-family);
+}
+
+:is(.fi-line1, .fi-line2) > .fi-kicker {
+  margin-inline-end: var(--v3-space-3);
+}
+
+.fi-quiet {
+  color: var(--fp-quiet);
+}
+
+.fi-meta {
+  font: var(--v3-type-meta) var(--v3-font-family);
+}
+
+/* 펼친 층: 접힌 행과 같은 자리에서 시작해 아래 행을 덮는다. 그림자 없이 종이와 잉크 테두리 */
+.fi-row-layer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  background: var(--fi-paper);
+  outline: 1px solid var(--fp-ink);
+  outline-offset: -1px;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity var(--fi-close) ease, visibility 0s linear var(--fi-close);
+}
+
+.fi-row[data-open] .fi-row-layer {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity var(--fi-close) ease, visibility 0s;
+}
+
+.fi-row-dup {
+  display: contents;
+}
+
+.fi-row-dup > * {
+  cursor: pointer;
+}
+
+.fi-row-dup :is(.fi-line1, .fi-line2) {
+  overflow: visible;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.fi-row-extra {
+  grid-column: 2;
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--fi-close) ease;
+}
+
+.fi-row[data-open] .fi-row-extra {
+  grid-template-rows: 1fr;
+  transition-duration: var(--fi-open);
+}
+
+.fi-row-extra-inner {
+  min-height: 0;
+  overflow: hidden;
+  margin: 0 calc(var(--v3-space-1) * -1) calc(var(--v3-space-1) * -1);
+  padding: var(--v3-space-3) var(--v3-space-1) var(--v3-space-1);
+}
+
+/* 「확인했어」 뒤에 빠지는 행: 높이를 접으며 사라지고 아래 행이 올라온다 */
+.fi-row[data-leaving] {
+  grid-template-rows: 0fr;
+  opacity: 0;
+  border-bottom-color: transparent;
+}
+
+.fi-row[data-leaving] > .fi-row-frame {
+  overflow: hidden;
+}
+
+/* 볼 것 펼친 내용 */
+.fi-review-extra {
+  display: grid;
+  gap: var(--v3-space-4);
+}
+
+.fi-review-extra[data-cover] {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+}
+
+.fi-cover,
+.fi-wall-image {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: var(--muted);
+  cursor: zoom-in;
+}
+
+.fi-cover {
+  aspect-ratio: 16 / 10;
+}
+
+.fi-cover img,
+.fi-wall-image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.fi-review-foot {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v3-space-3);
+}
+
+.fi-review-extra[data-cover] .fi-review-foot {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.fi-review-extra[data-cover] .fi-actions {
+  margin-top: auto;
+}
+
+.fi-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--v3-space-2);
+}
+
+.fi-actions--start {
+  justify-content: flex-start;
+}
+
+.fi-page [data-slot="button"] {
+  font: var(--v3-type-body) var(--v3-font-family);
+  white-space: nowrap;
+}
+
+/* 2순위 막힘: 막힘 상태 칩과 같은 색 */
+.fi-blocked {
+  margin-top: var(--v3-space-8);
+}
+
+.fi-blocked > .v3-front-head {
+  color: var(--v3-error);
+  border-bottom-color: var(--v3-error);
+}
+
+.fi-blocked .fi-rows {
+  margin-inline: calc(var(--v3-space-3) * -1);
+  padding-inline: var(--v3-space-3);
+  background: color-mix(in srgb, var(--destructive) 10%, transparent);
+}
+
+.fi-rows--grid {
+  display: grid;
+  column-gap: calc(var(--fp-gutter) * 2);
+}
+
+.fi-blocked .fi-rows--grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.fi-blocked .fi-row {
+  border-bottom: 0;
+}
+
+/* 3순위 실행 중: 가장 흐린 위계, 한 줄 */
+.fi-running {
+  margin-top: var(--v3-space-8);
+}
+
+.fi-running > .v3-front-head {
+  color: var(--fp-quiet);
+  border-bottom: 1px solid var(--fp-line);
+}
+
+.fi-running .fi-rows--grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.fi-running :is(.fi-line1, .fi-kicker, .fi-stamp) {
+  color: var(--v3-text-tertiary);
+}
+
+.fi-running .fi-row[data-open] .fi-row-layer .fi-line1 {
+  color: var(--foreground);
+}
+
+.fi-now {
+  margin: 0;
+  color: var(--fp-quiet);
+  font: var(--v3-type-body) var(--v3-font-family);
+}
+
+/* 맨 아래: 끝난 일 그림 한 줄, 기계 */
+.fi-last {
+  margin-top: var(--v3-space-8);
+}
+
+.fi-wall {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--v3-space-4);
+  margin: 0;
+  padding: var(--v3-space-4) 0 0;
+  list-style: none;
+}
+
+.fi-wall-image {
+  aspect-ratio: 4 / 3;
+}
+
+.fi-wall-caption {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--v3-space-1);
+  padding: var(--v3-space-2) 0 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fi-wall-caption .fi-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font: var(--v3-type-card) var(--v3-font-family);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.fi-wall-caption:hover .fi-title {
+  color: var(--fp-kicker);
+}
+
+/* 화면 아래 대화창 */
+.fi-dock-seat {
+  position: sticky;
+  bottom: 0;
+  z-index: 10;
+}
+
+.fi-dock {
+  padding: var(--v3-space-2) var(--fp-edge) var(--v3-space-3);
+  border-top: 1px solid var(--fp-line);
+  background: var(--fi-paper);
+}
+
+.fi-dock-inner {
+  max-width: var(--v3-card-max-width);
+  margin: 0 auto;
+}
+
+.fi-dock-toggle {
+  flex: none;
+  flex-wrap: nowrap;
+  gap: var(--v3-space-1);
+  margin-inline-end: var(--v3-space-2);
+}
+
+.fi-dock-target {
+  color: var(--v3-text-secondary);
+  font: var(--v3-type-body) var(--v3-font-family);
+}
+
+/* 카드 상세: 읽기 단과 메타만 둔 곁단 */
+.fi-card-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+  column-gap: calc(var(--fp-gutter) * 2);
+  padding: var(--v3-space-2) var(--fp-edge) var(--v3-space-8);
+}
+
+.fi-card-main {
+  min-width: 0;
+}
+
+.fi-card-head {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--v3-space-3);
+  padding-bottom: var(--v3-space-8);
+}
+
+.fi-back {
+  margin-inline-start: calc(var(--v3-space-2) * -1);
+}
+
+.fi-card-kicker {
+  display: flex;
+  align-items: center;
+  gap: var(--v3-space-3);
+}
+
+.fi-card-title {
+  margin: 0;
+  font: var(--v3-type-display) var(--v3-font-family);
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+  word-break: keep-all;
+}
+
+.fi-card-now {
+  margin: 0;
+  color: var(--v3-text-secondary);
+  font: var(--v3-type-body) var(--v3-font-family);
+}
+
+.fi-card-ask {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--v3-space-4);
+  margin-top: var(--v3-space-2);
+  padding: var(--v3-space-3) 0;
+  border-top: 1px solid var(--fp-line);
+  border-bottom: 1px solid var(--fp-line);
+}
+
+.fi-card-ask > p {
+  margin: 0;
+  font: var(--v3-type-body) var(--v3-font-family);
+}
+
+.fi-item-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--v3-space-2);
+}
+
+.fi-item-number {
+  min-width: 2ch;
+  text-align: right;
+}
+
+.fi-item-extra {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-3);
+}
+
+.fi-evidence-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--v3-space-1) var(--v3-space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--fp-quiet);
+  font: var(--v3-type-meta) var(--v3-font-family);
+}
+
+.fi-evidence-names > li {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--v3-space-1);
+}
+
+.fi-evidence-names svg {
+  width: var(--v3-space-3);
+  height: var(--v3-space-3);
+}
+
+.fi-card-sections {
+  margin-top: var(--v3-space-8);
+}
+
+.fi-card-sections > .v3-card-detail-tabs {
+  display: flex;
+  padding-bottom: var(--v3-space-2);
+  border-bottom: var(--v3-rule-strong) solid var(--fp-ink);
+}
+
+.fi-entries {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fi-entry {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: var(--v3-space-4);
+  align-items: baseline;
+  padding-block: var(--v3-space-4);
+  border-bottom: 1px solid var(--fp-line);
+}
+
+.fi-entry-body {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: var(--v3-space-3);
+  font: var(--v3-type-body) var(--v3-font-family);
+  overflow-wrap: anywhere;
+}
+
+.fi-entry-body > :last-child {
+  min-width: 0;
+  flex: 1;
+}
+
+.fi-meta-row {
+  display: flex;
+  gap: var(--v3-space-3);
+  font: var(--v3-type-meta) var(--v3-font-family);
+}
+
+.fi-card-side {
+  position: relative;
+  min-width: 0;
+}
+
+.fi-card-side::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(var(--fp-gutter) * -1);
+  border-left: 1px solid var(--fp-line);
+}
+
+.fi-card-side dl {
+  margin: 0;
+}
+
+.fi-card-side dl > div {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: var(--v3-space-4);
+  align-items: baseline;
+  padding-block: var(--v3-space-3);
+  border-bottom: 1px solid var(--fp-line);
+}
+
+.fi-card-side dt {
+  color: var(--fp-quiet);
+  font: var(--v3-type-meta) var(--v3-font-family);
+}
+
+.fi-card-side dd {
+  margin: 0;
+  font: var(--v3-type-body) var(--v3-font-family);
+  overflow-wrap: anywhere;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fi-row,
+  .fi-row-layer,
+  .fi-row-extra {
+    transition: none;
+  }
+
+  .fi-screen {
+    animation: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  .fi-blocked .fi-rows--grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fi-card-layout {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  }
+}
+
+/* 휴대폰: 한 열. 행은 눌러서 제자리에서 밀어 연다 */
+@media (max-width: 760px) {
+  .fi-split,
+  .fi-card-layout,
+  .fi-blocked .fi-rows--grid,
+  .fi-running .fi-rows--grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fi-split > .fi-column + .fi-column,
+  .fi-card-side {
+    margin-top: var(--v3-space-8);
+  }
+
+  .fi-column + .fi-column::before,
+  .fi-card-side::before {
+    display: none;
+  }
+
+  .fi-wall {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .fi-row-layer {
+    position: static;
+    display: none;
+  }
+
+  .fi-row[data-open] .fi-row-layer {
+    display: grid;
+    animation: fi-fade var(--fi-close) ease;
+  }
+
+  .fi-row[data-open] .fi-row-head {
+    display: none;
+  }
+
+  .fi-review-extra[data-cover] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .fi-dock {
+    padding-inline: var(--v3-space-3);
+  }
+}
+
+/* 화면 바꿈의 바깥 상자. 종이가 화면 끝까지 차게 한다 */
+.fi-screen {
+  display: grid;
+  min-height: 100%;
+}

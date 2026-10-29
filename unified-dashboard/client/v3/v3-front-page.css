@@ -123,7 +123,7 @@
 }
 
 .v3-front-page[data-surface="paper"] .v3-front-projects {
-  border-top: 2px solid var(--fp-ink);
+  border-top: var(--v3-rule-strong) solid var(--fp-ink);
 }
 
 .v3-front-project {
@@ -185,7 +185,7 @@
 .v3-front-head {
   margin: 0;
   padding-bottom: var(--v3-space-2);
-  border-bottom: 2px solid var(--fp-ink);
+  border-bottom: var(--v3-rule-strong) solid var(--fp-ink);
   font: var(--v3-type-section) var(--v3-font-family);
 }
 

@@ -114,3 +114,59 @@ export function isoDate(date: Date, timeZone?: string): string {
 export const NODE_USAGE_WARNING = 80;
 /** 남은 한도 막대가 경고 색으로 바뀌는 문턱(주간 사용량 표시와 같다). */
 export const LIMIT_REMAINING_WARNING = 20;
+
+/** 오늘이면 시각(14:27), 지난 날이면 날짜(10.28). 장부 여백의 고정폭 한 칸에 들어간다. */
+export function ledgerStamp(iso: string, now: Date, timeZone?: string): string {
+  const day = (date: Date) => isoDate(date, timeZone);
+  const date = new Date(iso);
+  if (day(date) === day(now)) return clockTime(iso, timeZone);
+  const [, month, dayOfMonth] = day(date).split("-");
+  return `${month}.${dayOfMonth}`;
+}
+
+/** 카드 상세(1면에서 들어간 화면)가 받는 카드. */
+export interface FrontCardEvidence {
+  type: "image" | "link";
+  label: string;
+  /** 시안 묶음 안에 남은 그림이면 그 주소. 없으면 이름만 보인다. */
+  src: string | null;
+}
+
+export interface FrontCardItem {
+  id: number;
+  title: string;
+  state: CardCheckItem["state"];
+  result: string | null;
+  caveat: string | null;
+  evidence: readonly FrontCardEvidence[];
+}
+
+export interface FrontCardEntry {
+  kind: "comment" | "note";
+  authorKind: "agent" | "user";
+  body: string;
+  createdAt: string;
+}
+
+export interface FrontCardSession {
+  id: string;
+  title: string;
+  agentId: string;
+  nodeId: string;
+  status: string;
+  modelPreset: string;
+  updatedAt: string;
+}
+
+export interface FrontCardDetail {
+  number: number;
+  title: string;
+  status: "todo" | "queued" | "running" | "blocked" | "review" | "done" | "cancelled";
+  project: string;
+  now: { text: string; ask: string | null; turn: "agent" | "user" | "outside"; sessionId: string | null } | null;
+  nodeId: string;
+  modelPreset: string;
+  items: readonly FrontCardItem[];
+  entries: readonly FrontCardEntry[];
+  sessions: readonly FrontCardSession[];
+}

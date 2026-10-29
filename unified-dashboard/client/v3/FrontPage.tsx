@@ -1,23 +1,15 @@
-import { useId, useRef, useState, type ReactNode } from "react";
-import {
-  Button, DashboardIconCap, ThemeToggle, cn, useDashboardStore, useGlassSurface, useLiquidLens,
-} from "@seosoyoung/soul-ui";
-import { Minus, Plus, Search, UserRound } from "lucide-react";
-import { ConfigButton } from "../components/ConfigButton";
+import { useId, useState, type ReactNode } from "react";
+import { Button, DashboardIconCap, useDashboardStore } from "@seosoyoung/soul-ui";
+import { Minus, Plus } from "lucide-react";
 import { CardImageViewer, type CardImageSelection } from "./CardImageViewer";
 import { CardProgressSummary } from "./CardProgressSummary";
-import { DetailTabs } from "./DetailTabs";
 import { summarizeCardItems } from "./card-item-summary";
+import { FrontPageGnb, GlassBox, Machines, type FrontTab } from "./front-page-parts";
 import {
-  LIMIT_REMAINING_WARNING, NODE_USAGE_WARNING, clockTime, frontPageDate, isoDate, newestFirst,
-  projectIcon, projectName, splitReview, toCheckItems,
-  type FrontPageCard, type FrontPageData, type FrontPageLimit, type FrontPageNode, type FrontPageQuestion,
+  clockTime, frontPageDate, isoDate, newestFirst, projectIcon, projectName, splitReview, toCheckItems,
+  type FrontPageCard, type FrontPageData, type FrontPageQuestion,
 } from "./front-page-model";
-import "./persistent-session-screen.css";
-import "./v3-front-page.css";
 
-type Tab = "front" | "cards" | "record" | "projects";
-const TABS = [["front", "1면"], ["cards", "카드"], ["record", "기록"], ["projects", "프로젝트"]] as const;
 const QUESTION_LIMIT = 3;
 
 interface Props {
@@ -41,7 +33,7 @@ interface Props {
  */
 export function FrontPage({ data, composer, now, timeZone, imageUrl, onOpenCard, onOpenProject, onOpenSearch, onOpenConfig }: Props) {
   const photo = useDashboardStore(state => state.wallpaper.mode === "photo");
-  const [tab, setTab] = useState<Tab>("front");
+  const [tab, setTab] = useState<FrontTab>("front");
   const [image, setImage] = useState<CardImageSelection | null>(null);
   const [acknowledged, setAcknowledged] = useState<ReadonlySet<number>>(() => new Set());
   const { lead, rest } = splitReview(data.review.filter(card => !acknowledged.has(card.number)));
@@ -54,24 +46,8 @@ export function FrontPage({ data, composer, now, timeZone, imageUrl, onOpenCard,
   const ids = useId();
 
   return <div className="v3-front-page" data-surface={photo ? "glass" : "paper"} data-testid="front-page">
-    <header className="v3-front-gnb">
-      <GlassBox glass={photo} className="v3-front-brand" capsule>
-        <span>소울스트림</span>
-      </GlassBox>
-      <GlassBox glass={photo} className="v3-front-tabs" capsule>
-        <DetailTabs<Tab> id={`${ids}-tab`} label="화면" panelId={`${ids}-panel`} variant="card" tabs={TABS} value={tab} onChange={setTab} />
-      </GlassBox>
-      <GlassBox glass={photo} className="v3-front-actions" capsule>
-        <DashboardIconCap appearance="bare" label="검색" onClick={onOpenSearch}>
-          <Search className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
-        </DashboardIconCap>
-        <ConfigButton variant="chrome" appearance="bare" onClick={() => onOpenConfig?.()} />
-        <ThemeToggle variant="chrome" appearance="bare" />
-        <DashboardIconCap appearance="bare" label="계정">
-          <UserRound className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
-        </DashboardIconCap>
-      </GlassBox>
-    </header>
+    <FrontPageGnb glass={photo} idPrefix={`${ids}-tab`} panelId={`${ids}-panel`} tab={tab} onTab={setTab}
+      onOpenSearch={onOpenSearch} onOpenConfig={onOpenConfig} />
 
     <div className="v3-front-masthead">
       <h1 className="v3-front-date"><time dateTime={isoDate(now, timeZone)}>{frontPageDate(now, timeZone)}</time></h1>
@@ -182,20 +158,6 @@ export function FrontPage({ data, composer, now, timeZone, imageUrl, onOpenCard,
   </div>;
 }
 
-/** 사진 배경에서는 유리, 종이 배경에서는 바탕 없는 같은 상자. */
-function GlassBox({ glass, capsule = false, className, children, ...props }: {
-  glass: boolean; capsule?: boolean; className: string; children: ReactNode; id?: string; role?: string; "aria-labelledby"?: string;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-  const webglActive = useGlassSurface(ref, { enabled: glass });
-  useLiquidLens(ref, { scale: 18, enabled: glass && capsule && !webglActive });
-  return <div {...props} ref={ref}
-    className={cn(className, glass && "border border-glass-border glass-strong glass-chrome lg-rim", glass && capsule && "dashboard-toolbar-cap")}
-    data-liquid-glass-webgl={webglActive ? "true" : undefined}>
-    {children}
-  </div>;
-}
-
 function LeadStory({ card, timeZone, imageUrl, onOpen, onEnlarge, onAcknowledge }: {
   card: FrontPageCard; timeZone?: string; imageUrl(name: string): string;
   onOpen(): void; onEnlarge(name: string): void; onAcknowledge(): void;
@@ -264,35 +226,4 @@ function Question({ question, onOpen }: { question: FrontPageQuestion; onOpen():
         onClick={() => setChosen(current => current === option ? null : option)}>{option}</Button>)}
     </div>
   </article>;
-}
-
-function Meter({ label, value, warning }: { label: string; value: number; warning: boolean }) {
-  const clamped = Math.max(0, Math.min(100, value));
-  return <span className={cn("persistent-session-weekly-usage-track v3-front-meter", warning && "is-warning")}
-    role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(clamped)}>
-    <i style={{ width: `${clamped}%` }} />
-  </span>;
-}
-
-function Machines({ nodes, limits }: { nodes: readonly FrontPageNode[]; limits: readonly FrontPageLimit[] }) {
-  return <div className="v3-front-machines">
-    <div className="v3-front-machine v3-front-machine-legend" aria-hidden="true">
-      <span />
-      <span>CPU</span><span>메모리</span><span>디스크</span>
-    </div>
-    {nodes.map(node => <div key={node.id} className="v3-front-machine" title={node.id}>
-      <span className="v3-front-machine-name">{node.label}</span>
-      <Meter label={`${node.label} CPU`} value={node.cpu} warning={node.cpu >= NODE_USAGE_WARNING} />
-      <Meter label={`${node.label} 메모리`} value={node.mem} warning={node.mem >= NODE_USAGE_WARNING} />
-      <Meter label={`${node.label} 디스크`} value={node.disk} warning={node.disk >= NODE_USAGE_WARNING} />
-    </div>)}
-    <div className="v3-front-limits">
-      {limits.map(limit => <div key={limit.name} className="v3-front-machine v3-front-limit">
-        <span className="v3-front-machine-name">{limit.name}</span>
-        {limit.rejected
-          ? <span className="v3-front-limit-rejected">한도 거부</span>
-          : <Meter label={`${limit.name} 남은 한도`} value={limit.remaining} warning={limit.remaining < LIMIT_REMAINING_WARNING} />}
-      </div>)}
-    </div>
-  </div>;
 }
