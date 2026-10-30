@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createFullSchemaPostgresHarness, type FullSchemaPostgresHarness } from "./board_yjs_postgres_harness.js";
 import { ConversationService } from "../src/conversation/conversation_service.js";
+import { ConversationCatalog } from "../src/conversation/conversation_catalog.js";
 import { registerConversationRoutes } from "../src/conversation/conversation_routes.js";
 import { executeCreateSessionRoute } from "../src/session/session_command_routes.js";
 
@@ -20,19 +21,41 @@ describe("conversation thread API", () => {
   let loseInstructionAck = false;
   let rejectModelOnce = false;
   let unavailableNodeOnce = false;
+  const createCalls: Array<{ nodeId: string; profile: string; model_preset: string }> = [];
   beforeAll(async () => {
     db = await createFullSchemaPostgresHarness();
     const access = {
       requireFolderAccess: async () => { if (deny) throw Object.assign(new Error("denied"), { statusCode: 403 }); },
       requireSessionAccess: async () => { if (deny) throw Object.assign(new Error("denied"), { statusCode: 403 }); },
     };
-    const presets = {
-      listForNode: () => [
+    const presetSets = {
+      eiaserinnys: [
         { id: "argon", label: "Argon", available: false, reason_label: "quota" },
         { id: "opus", label: "Opus", available: true },
         { id: "sol", label: "Sol", available: true },
       ],
+      "node-b": [{ id: "remote", label: "Remote", available: true }, { id: "backup", label: "Backup", available: true }],
+      "node-c": [{ id: "offline", label: "Offline", available: true }],
     };
+    const catalog = new ConversationCatalog({
+      defaultNodeId: "eiaserinnys",
+      listNodes: () => [
+        { nodeId: "node-c", connected: false },
+        { nodeId: "node-b", connected: true },
+        { nodeId: "eiaserinnys", connected: true },
+      ],
+      listKnownForNode: nodeId => (presetSets as Record<string, any[]>)[nodeId]?.map(preset => ({
+        ...preset, reason: preset.id === "argon" ? "limit_rejected" : null,
+        reason_label: preset.reason_label ?? null,
+        resets_at: preset.id === "argon" ? "2026-10-30T22:06:34Z" : null,
+        usage_warning: false, weekly_headroom: null,
+      })),
+      listAgentProfiles: async (nodeId): Promise<Record<string, { name?: unknown }> | undefined> => {
+        if (nodeId === "eiaserinnys") return { seosoyoung: { name: "서소영" } };
+        if (nodeId === "node-b") return { seosoyoung: { name: "서소영" }, roselin: { name: "로젤린" } };
+        return undefined;
+      },
+    });
     const persistent = {
       get: async (_: unknown, id: string) => ({ session: settings.get(id) }),
       update: async (_: unknown, id: string, input: any) => {
@@ -54,20 +77,21 @@ describe("conversation thread API", () => {
         return { status: 200, body: { instruction: item } };
       },
     };
-    const service = new ConversationService({ sql: db.sql as never, access: access as never, presets: presets as never,
+    const service = new ConversationService({ sql: db.sql as never, access: access as never, catalog,
       persistent: persistent as never, reads: async () => ({ getSession: async (id: string) => rows.get(id) ?? null }) as never,
       create: async (_request: unknown, body: any, id: string) => {
+        createCalls.push({ nodeId: body.nodeId, profile: body.profile, model_preset: body.model_preset });
         if (unavailableNodeOnce) { unavailableNodeOnce = false; return { status: 404, body: { error: { code: "NODE_NOT_FOUND", message: "offline" } } }; }
         if (rejectModelOnce) { rejectModelOnce = false; return { status: 400, body: { error: { code: "MODEL_PRESET_UNAVAILABLE", message: "quota" } } }; }
         created++; if (delay) await new Promise(resolve => setTimeout(resolve, delay));
-        rows.set(id, { session_id: id, folder_id: body.folderId, display_name: null, node_id: "eiaserinnys",
+        rows.set(id, { session_id: id, folder_id: body.folderId, display_name: null, node_id: body.nodeId,
           created_at: new Date("2026-10-30T00:00:00.000Z"), status: "completed", model_preset: body.model_preset });
         settings.set(id, { session_id: id, persistent: false, display_name: null,
           settings: { default_model: { model_preset: body.model_preset, reasoning_effort: null }, fallback_models: [] },
           runtime: { current_model: { model_preset: body.model_preset } } });
         return { status: 201, body: { agentSessionId: id } };
       },
-      waitForCreatedSession: async (id: string) => rows.has(id), responseTimeoutMs: 40,
+      waitForCreatedSession: async (id: string) => rows.has(id), responseTimeoutMs: 250,
     });
     app = Fastify({ logger: false });
     registerConversationRoutes(app, { service, resolveAccount: async () => "account-a" });
@@ -82,7 +106,7 @@ describe("conversation thread API", () => {
     expect([a.statusCode, b.statusCode]).toEqual([200, 200]);
     expect(a.json().thread.id).toBe(b.json().thread.id);
     expect(created - before).toBe(1);
-    expect(a.json().thread.model).toEqual({ id: "opus", label: "Opus" });
+    expect(a.json().thread.model).toEqual({ id: "opus", label: "Opus", group: { id: "eiaserinnys", label: "eiaserinnys" } });
     expect(a.json().notices).toHaveLength(1);
     const byKey = await app.inject({ method: "GET", url: "/api/conversations/v1/threads/by-key?namespace=n&key=concurrent" });
     expect(byKey.json().thread).toEqual(a.json().thread);
@@ -98,14 +122,78 @@ describe("conversation thread API", () => {
     expect(response.json().thread.model.id).toBe("sol");
     expect(response.json().notices).toHaveLength(1);
   });
-  it("reports an offline node as unavailable without falling back to another model", async () => {
+  it("lists node groups, profile-unavailable choices, limits, offline presets, and profile union", async () => {
+    const models = await app.inject({ method: "GET", url: "/api/conversations/v1/models?profile=roselin" });
+    expect(models.statusCode).toBe(200);
+    expect(models.json().models.map((model: any) => model.id)).toEqual([
+      "argon", "opus", "sol", "n1:node-b:remote", "n1:node-b:backup", "n1:node-c:offline",
+    ]);
+    expect(models.json().models[0]).toMatchObject({
+      group: { id: "eiaserinnys", label: "eiaserinnys" }, available: false,
+      reason_code: "profile_unavailable", reason: "이 노드에 프로필 없음",
+    });
+    const limited = await app.inject({ method: "GET", url: "/api/conversations/v1/models" });
+    expect(limited.json().models[0]).toMatchObject({
+      available: false, reason: "quota", reason_code: "limit_rejected", resets_at: "2026-10-30T22:06:34Z",
+    });
+    expect(limited.json().models[5]).toMatchObject({ available: false, reason_code: "offline", reason: "노드 연결 끊김" });
+    const profiles = await app.inject({ method: "GET", url: "/api/conversations/v1/profiles" });
+    expect(profiles.statusCode).toBe(200);
+    expect(profiles.json().profiles).toEqual([
+      { id: "seosoyoung", label: "서소영", available: true },
+      { id: "roselin", label: "로젤린", available: true },
+    ]);
+  });
+  it("creates a selected secondary-node model with its selected profile", async () => {
+    const payload = { ...request, selected_model: "n1:node-b:remote", model_order: ["n1:node-b:remote"], profile: "roselin" };
+    const response = await ensure("remote-model", payload);
+    expect(response.statusCode).toBe(200);
+    expect(response.json().thread.model).toEqual({
+      id: "n1:node-b:remote", label: "Remote", group: { id: "node-b", label: "node-b" },
+    });
+    expect(createCalls.at(-1)).toEqual({ nodeId: "node-b", profile: "roselin", model_preset: "remote" });
+  });
+  it("keeps legacy default-node model ids through by-key, info, and same-node PATCH", async () => {
+    const made = await ensure("legacy-model");
+    const id = made.json().thread.id;
+    const byKey = await app.inject({ method: "GET", url: "/api/conversations/v1/threads/by-key?namespace=n&key=legacy-model" });
+    expect(byKey.json().thread.model).toMatchObject({ id: "opus", group: { id: "eiaserinnys" } });
+    const info = await app.inject({ method: "GET", url: `/api/conversations/v1/threads/${id}` });
+    expect(info.json().thread.model).toMatchObject({ id: "opus", group: { id: "eiaserinnys" } });
+    expect(info.json().current_model).toMatchObject({ id: "opus", group: { id: "eiaserinnys" } });
+    const patched = await app.inject({ method: "PATCH", url: `/api/conversations/v1/threads/${id}`,
+      payload: { model: "sol", model_order: ["sol", "opus", "n1:node-b:remote"] } });
+    expect(patched.statusCode).toBe(200);
+    expect(patched.json().thread.model).toMatchObject({ id: "sol", group: { id: "eiaserinnys" } });
+    expect(settings.get(id).settings.fallback_models.map((model: any) => model.model_preset)).toEqual(["opus"]);
+  });
+  it("falls from a limited preferred model to a usable model on another node", async () => {
+    const payload = { ...request, selected_model: "argon", model_order: ["n1:node-b:remote"], profile: "seosoyoung" };
+    const response = await ensure("cross-node-fallback", payload);
+    expect(response.statusCode).toBe(200);
+    expect(response.json().thread.model.id).toBe("n1:node-b:remote");
+    expect(response.json().notices).toEqual([
+      "Argon(eiaserinnys)은 quota이라 Remote(node-b)로 시작했습니다.",
+    ]);
+    expect(createCalls.at(-1)).toEqual({ nodeId: "node-b", profile: "seosoyoung", model_preset: "remote" });
+  });
+  it("rejects switching a thread to another node through PATCH", async () => {
+    const made = await ensure("patch-cross-node");
+    const id = made.json().thread.id;
+    const response = await app.inject({ method: "PATCH", url: `/api/conversations/v1/threads/${id}`, payload: { model: "n1:node-b:remote" } });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.message).toBe("다른 위치의 모델은 execution으로 바꾼다");
+  });
+  it("retries a NODE_NOT_FOUND candidate on a later ensure without changing its reservation", async () => {
     unavailableNodeOnce = true;
-    const before = created; const first = await ensure("offline");
-    expect(first.statusCode).toBe(503); expect(first.json().error.code).toBe("unavailable");
-    expect(created).toBe(before);
-    const second = await ensure("offline");
-    expect(second.statusCode).toBe(200); expect(second.json().thread.model.id).toBe("opus");
-    expect(created - before).toBe(1);
+    const payload = { ...request, selected_model: "n1:node-b:remote", model_order: [], profile: "roselin" };
+    const before = createCalls.length;
+    const first = await ensure("offline", payload);
+    expect(first.statusCode).toBe(422); expect(first.json().error.code).toBe("model_unavailable");
+    expect(createCalls.slice(before).map(call => call.nodeId)).toEqual(["node-b"]);
+    const second = await ensure("offline", payload);
+    expect(second.statusCode).toBe(200); expect(second.json().thread.model.id).toBe("n1:node-b:remote");
+    expect(createCalls.slice(before).map(call => call.nodeId)).toEqual(["node-b", "node-b"]);
   });
   it("reserves ids only through the internal create argument", async () => {
     const sent: any[] = [];
@@ -119,12 +207,15 @@ describe("conversation thread API", () => {
     expect(sent[0].agentSessionId).not.toBe(id); expect(sent[1].agentSessionId).toBe(id);
   });
   it("continues after the response times out and a retry observes the same thread", async () => {
-    delay = 100;
-    const before = created; const first = await ensure("slow");
+    delay = 300;
+    const payload = { ...request, selected_model: "n1:node-b:remote", model_order: ["opus"] };
+    const before = created; const beforeCalls = createCalls.length; const first = await ensure("slow", payload);
     expect(first.statusCode).toBe(504); expect(first.json().error.code).toBe("pending");
-    await new Promise(resolve => setTimeout(resolve, 130)); delay = 0;
-    const second = await ensure("slow");
+    expect(createCalls.slice(beforeCalls).map(call => call.nodeId)).toEqual(["node-b"]);
+    await new Promise(resolve => setTimeout(resolve, 330)); delay = 0;
+    const second = await ensure("slow", payload);
     expect(second.statusCode).toBe(200); expect(created - before).toBe(1);
+    expect(createCalls.slice(beforeCalls).map(call => call.nodeId)).toEqual(["node-b"]);
     expect(second.json().thread.id).toBe(first.json().thread_id);
   });
   it("reconciles an instruction saved before its acknowledgement was lost", async () => {

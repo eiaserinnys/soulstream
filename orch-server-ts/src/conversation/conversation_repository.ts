@@ -26,6 +26,11 @@ export class ConversationRepository {
   async instruction(id: string, instructionId: string): Promise<void> { await this.sql`UPDATE conversation_bindings SET instruction_id=${instructionId} WHERE session_id=${id}`; }
   async clearInstruction(id: string): Promise<void> { await this.sql`UPDATE conversation_bindings SET instruction_id=NULL WHERE session_id=${id}`; }
   async model(id: string, model: string): Promise<void> { await this.sql`UPDATE conversation_bindings SET selected_model=${model} WHERE session_id=${id}`; }
+  async order(id: string, modelOrder: string[]): Promise<void> {
+    await this.sql`UPDATE conversation_bindings
+      SET creation_request=jsonb_set(COALESCE(creation_request, '{}'::jsonb), '{model_order}', ${this.sql.json(modelOrder)}::jsonb, true)
+      WHERE session_id=${id}`;
+  }
   async selection(id: string, model: string, notices: ConversationNotice[]): Promise<void> {
     await this.sql`UPDATE conversation_bindings SET selected_model=${model}, notices=${this.sql.json(notices)} WHERE session_id=${id}`;
   }
