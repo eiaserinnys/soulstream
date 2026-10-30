@@ -27,6 +27,9 @@ export function buildInterventionSentEvent(
       : message.text,
     timestamp: Date.now() / 1000,
   };
+  if (message.conversationText !== undefined) {
+    interventionEvent._conversation_text = message.conversationText;
+  }
   if (message.deliveryId) {
     interventionEvent._dedupe_key = `intervention_sent:${message.deliveryId}`;
     interventionEvent.input_id = buildDeliveryInputUuid(message.deliveryId);

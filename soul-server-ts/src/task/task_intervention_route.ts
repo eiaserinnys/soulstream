@@ -54,6 +54,7 @@ export interface AddInterventionParams {
   agentSessionId: string;
   text: string;
   user: string;
+  conversationText?: string;
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
   attachmentIds?: string[];
@@ -163,6 +164,7 @@ export class TaskInterventionRoute {
     const initialMessage: InterventionMessage = {
       text: request.text,
       user: request.user,
+      conversationText: request.conversationText,
       callerInfo: request.callerInfo,
       attachmentPaths: request.attachmentPaths,
       attachmentIds: request.attachmentIds,
@@ -446,6 +448,7 @@ function hydrateStoredDeliveryMessage(
     ...message,
     text: canonical.text,
     user: canonical.user,
+    conversationText: canonical.conversationText,
     callerInfo: canonical.callerInfo,
     rateLimitType: canonical.rateLimitType,
     resetsAt: canonical.resetsAt,

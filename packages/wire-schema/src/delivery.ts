@@ -13,6 +13,7 @@ export interface CanonicalDeliveryPayloadInput {
   attachmentBindings?: ReadonlyArray<AttachmentPathBinding> | null;
   context?: unknown;
   callerInfo?: unknown;
+  conversationText?: string;
   rateLimitType?: string;
   resetsAt?: string;
   followupKey?: string;
@@ -41,6 +42,9 @@ export function buildCanonicalDeliveryPayload(
       : {}),
     context: input.context ?? null,
     caller_info: input.callerInfo ?? null,
+    ...(input.conversationText !== undefined
+      ? { _conversation_text: input.conversationText }
+      : {}),
     ...(input.rateLimitType !== undefined
       ? { rate_limit_type: input.rateLimitType }
       : {}),

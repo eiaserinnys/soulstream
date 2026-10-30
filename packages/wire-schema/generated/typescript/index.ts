@@ -505,6 +505,10 @@ export interface SSEEventSession {
  */
 export interface SSEEventInterventionSent {
   type: "intervention_sent";
+  /**
+   * Original human text retained for conversation display when the agent input has appended context.
+   */
+  _conversation_text?: string;
   attachment_ids?: string[];
   attachment_count?: number;
   [k: string]: unknown;
@@ -531,6 +535,10 @@ export interface SSEEventSessionNotification {
  */
 export interface SSEEventUserMessage {
   type: "user_message";
+  /**
+   * Original human text retained for conversation display when the agent input has appended context.
+   */
+  _conversation_text?: string;
   attachment_ids?: string[];
   attachment_count?: number;
   [k: string]: unknown;
@@ -2147,6 +2155,10 @@ export interface Intervene {
    */
   session_id?: string;
   text: string;
+  /**
+   * Original human text retained for conversation display when the agent input has appended context.
+   */
+  _conversation_text?: string;
   user?: string;
   requestId?: string;
   attachment_paths?: string[];

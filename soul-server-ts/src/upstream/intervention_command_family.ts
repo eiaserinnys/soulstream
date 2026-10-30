@@ -32,6 +32,7 @@ interface InterveneCmd extends CommandLike {
   attachment_ids?: string[];
   attachment_bindings?: AttachmentPathBinding[];
   extra_context_items?: ContextItem[];
+  _conversation_text?: string;
   delivery_id?: string;
   delivery_intent?: DeliveryIntent;
   source?: string;
@@ -161,6 +162,7 @@ async function handleIntervene(
       attachmentIds: cmd.attachment_ids,
       attachmentBindings: cmd.attachment_bindings,
       extraContextItems: cmd.extra_context_items,
+      conversationText: cmd._conversation_text,
       deliveryId: cmd.delivery_id,
       deliveryIntent: cmd.delivery_intent,
       source: cmd.source,

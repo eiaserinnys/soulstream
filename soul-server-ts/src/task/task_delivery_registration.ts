@@ -72,6 +72,7 @@ function buildRegistration(
   const canonical = storedCanonicalPayload(params)
     ?? buildCanonicalDeliveryPayload({
       text: params.text,
+      conversationText: params.conversationText,
       user: params.user,
       source,
       completionId: params.completionId,

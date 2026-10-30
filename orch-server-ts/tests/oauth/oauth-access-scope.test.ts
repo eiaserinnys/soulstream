@@ -17,7 +17,7 @@ const access: OAuthResourceAccess = {
   displayName: "Director",
   avatarUrl: "https://example.test/director.png",
   clientId: "client-1",
-  clientName: "Kaleidoscope",
+  clientName: "Native Client",
   scopes: ["cards:read", "folders:read"],
 };
 
@@ -108,7 +108,7 @@ describe("OAuth resource scopes", () => {
       clientId: "client-1",
       scope: "cards:read folders:read",
     });
-    entities.set("Client:client-1", { client_name: "Kaleidoscope" });
+    entities.set("Client:client-1", { client_name: "Native Client" });
 
     await persistOAuthProfile(sql, {
       email: "Director@Example.Test",

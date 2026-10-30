@@ -47,6 +47,7 @@ export type InterveneNodeCommandPayload =
     attachment_bindings?: AttachmentPathBinding[];
     extra_context_items?: JsonObject[];
     caller_info?: JsonObject;
+    _conversation_text?: string;
   };
 
 export type InterruptNodeCommandPayload =
@@ -121,6 +122,8 @@ export function intervenePayload(
   if (!contextItems.ok) return contextItems;
   const callerInfo = optionalObject(body.caller_info, "caller_info");
   if (!callerInfo.ok) return callerInfo;
+  const conversationText = optionalStringField(body, ["_conversation_text"]);
+  if (!conversationText.ok) return conversationText;
   const deliveryMetadata = parseDeliveryMetadata(body);
   if (!deliveryMetadata.ok) return deliveryMetadata;
 
@@ -142,6 +145,9 @@ export function intervenePayload(
   }
   if (callerInfo.value !== undefined) {
     payload.caller_info = callerInfo.value;
+  }
+  if (conversationText.value !== undefined) {
+    payload._conversation_text = conversationText.value;
   }
   return { ok: true, value: payload };
 }
