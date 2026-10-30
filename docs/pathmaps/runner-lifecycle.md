@@ -45,7 +45,7 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 
 ## Closed-engine close recovery (#824)
 
-`runner_process_dispatcher.ts:close`는 close command RPC가 응답을 기다리는 동안에만 host-call을 허용한다. `trackFrameHandler`는 그 짧은 구간의 `event/request/host_call`만 기존 handler로 전달하고, 일반 event와 response는 계속 버린다. RPC 종료 직후, `releaseHostResources`보다 먼저 예외 상태를 닫는다. `closed`와 `isClosed()` 의미는 유지하며 detach·rollback·retire에는 예외를 열지 않는다. 계정 release→pump/실제 child 종료→durable 턴 상태 삭제 순서는 그대로다.
+`runner_process_dispatcher.ts:close`는 close command RPC가 응답을 기다리는 동안에만 host-call을 허용한다. `trackFrameHandler`는 그 짧은 구간의 `event/request/host_call`만 기존 handler로 전달하고, 일반 event와 response는 계속 버린다. RPC 종료 직후, `releaseHostResources`보다 먼저 예외 상태를 닫는다. `closed`와 `isClosed()` 의미는 유지하며 detach·rollback·retire에는 예외를 열지 않는다. pump와 실제 child 종료→계정 release→durable 턴 상태 삭제 순서는 그대로다.
 
 `runner_child_runtime.ts:handleCommand`의 close는 dispatcher 결과를 먼저 보내고, send 결과와 status에 관계없이 lifecycle의 running 행을 closed로 마친 뒤 shutdown을 예약한다. lifecycle 쓰기 실패도 shutdown 예약을 막지 않는다. 일반 host socket disconnect는 shutdown을 예약하지 않아 detached 실행의 재접속을 보존한다.
 
