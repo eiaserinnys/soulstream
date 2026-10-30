@@ -205,6 +205,17 @@ export function useSSEStream({
         isEffectActive() &&
         connectionGeneration === connectionId &&
         es === currentEs;
+      const scheduleReconnect = () => {
+        if (retryCount >= MAX_RETRIES) return;
+        retryCount++;
+        clearRetryTimer();
+        retryTimer = setTimeout(() => {
+          retryTimer = null;
+          if (!isEffectActive()) return;
+          retryDelay = Math.min(retryDelay * 2, MAX_RETRY_MS);
+          connect();
+        }, retryDelay);
+      };
       const failConnection = (
         error: unknown,
         { allowAuthFailure }: { allowAuthFailure: boolean },
@@ -223,16 +234,7 @@ export function useSSEStream({
           return;
         }
 
-        if (retryCount < MAX_RETRIES) {
-          retryCount++;
-          clearRetryTimer();
-          retryTimer = setTimeout(() => {
-            retryTimer = null;
-            if (!isEffectActive()) return;
-            retryDelay = Math.min(retryDelay * 2, MAX_RETRY_MS);
-            connect();
-          }, retryDelay);
-        }
+        scheduleReconnect();
         try {
           onErrorRef.current?.(error);
         } catch {
@@ -270,6 +272,13 @@ export function useSSEStream({
         // transport error may close and reconnect this EventSource.
         if (event && typeof event === 'object' && 'data' in event) return;
         failConnection(event, { allowAuthFailure: true });
+      });
+
+      addListener('done', () => {
+        if (!isConnectionActive()) return;
+        closeCurrentEventSource();
+        if (!isEffectActive()) return;
+        scheduleReconnect();
       });
 
       // 각 named event type에 리스너 등록

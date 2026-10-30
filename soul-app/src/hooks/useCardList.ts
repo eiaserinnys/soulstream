@@ -11,18 +11,20 @@ export function useCardList(api: ApiClient | null, folderId?: string) {
   const scope = useAuthScopeGeneration();
   const owner = `${scope}:${folderId ?? 'global'}`;
   const [retry, setRetry] = useState(0);
-  const [state, setState] = useState<{ owner: string; cards: CardDto[]; loading: boolean; error: string | null }>({ owner, cards: [], loading: !!api, error: null });
+  const [state, setState] = useState<{ owner: string; cards: CardDto[]; snapshotSeq: number; loading: boolean; error: string | null }>({ owner, cards: [], snapshotSeq: 0, loading: !!api, error: null });
   const invalidation = usePlannerStore((s) => s.invalidation.folder + s.invalidation.replay);
   const updates = useCardStore((s) => s.rows);
+  const rowSeq = useCardStore((s) => s.rowSeq);
   useEffect(() => {
     let cancelled = false;
     let wasBackgrounded = false;
     const load = async () => {
       if (!api) return;
-      setState((previous) => ({ owner, cards: previous.owner === owner ? previous.cards : [], loading: true, error: null }));
+      setState((previous) => ({ owner, cards: previous.owner === owner ? previous.cards : [], snapshotSeq: previous.owner === owner ? previous.snapshotSeq : 0, loading: true, error: null }));
       try {
+        const snapshotSeq = useCardStore.getState().seq;
         const result = await api.listCards(folderId,{includeCompleted:false});
-        if (!cancelled) setState({ owner, cards: result.cards, loading: false, error: null });
+        if (!cancelled) setState({ owner, cards: result.cards, snapshotSeq, loading: false, error: null });
       } catch (cause) {
         if (!cancelled) setState((previous) => ({ ...previous, loading: false, error: cause instanceof Error ? cause.message : String(cause) }));
       }
@@ -37,10 +39,10 @@ export function useCardList(api: ApiClient | null, folderId?: string) {
   const cards = useMemo(() => {
     if (state.owner !== owner) return [];
     const inventory = new Map(state.cards.map((card) => [card.id, card]));
-    return mergeCardRows(state.cards, updates).filter((card) => card.status!=='done' && (!folderId || card.folderId === folderId))
+    return mergeCardRows(state.cards, updates, { seq: state.snapshotSeq, rowSeq }).filter((card) => card.status!=='done' && (!folderId || card.folderId === folderId))
       .map((card) => card.latestActivity === undefined
         ? { ...card, latestActivity: inventory.get(card.id)?.latestActivity } : card);
-  }, [state, owner, updates, folderId]);
+  }, [state, owner, updates, rowSeq, folderId]);
   return { cards, loading: state.owner !== owner || state.loading, error: state.owner === owner ? state.error : null,
     refresh: () => setRetry((value) => value + 1) };
 }
