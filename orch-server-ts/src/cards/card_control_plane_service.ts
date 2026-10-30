@@ -170,6 +170,12 @@ export class CardControlPlaneService {
       ...(Object.hasOwn(params,"assignee") ? assigneeToFields(params.assignee) : {}),node_id:params.nodeId,model_preset:params.modelPreset,color:params.color },
     async (sql,card,eventId,payload) => { await this.patch(sql,card,payload,params,eventId); });
   }
+  async updateCardBrief(params: CardMutationParams & { brief:string }) {
+    return this.mutateCard(params,"update_card",{ brief:params.brief },async (sql,card,eventId) => {
+      assertNotOtherSessionAssignee(card,params);
+      await this.patch(sql,card,{ brief:params.brief },params,eventId);
+    });
+  }
   async saveExecutionSettings(params:CardMutationParams & {folderId:string;nodeId:string|null;agentId:string|null;modelPreset:string|null}) {
     const result=await this.mutateCard(params,"card_execution_settings",{folder_id:params.folderId,node_id:params.nodeId,agent_id:params.agentId,model_preset:params.modelPreset},async(sql,card,eventId)=>{
       await assertNoPendingCardExecution(sql,card.id);
@@ -335,6 +341,7 @@ export class CardControlPlaneService {
     const commentId=existingCommentId ?? randomUUID();
     const prepared=this.prepareAddComment(params,commentId);
     const result=await this.mutateCard(params,"add_card_comment",prepared.payload,async (sql,card,eventId,payload) => {
+      if (prepared.kind === "spoken") assertNotOtherSessionAssignee(card,params);
       await this.applyAddCommentTx(sql,card,eventId,payload,params,commentId,prepared.kind,prepared.external,prepared.reply);
     });
     const storedId=String(result.operation.payload_json.comment_id ?? commentId);
@@ -373,6 +380,7 @@ export class CardControlPlaneService {
       throw invalid("options: 선택지는 1~3개, 각 12자 이하로 줄이고 설명은 질문 글에 쓰세요");
     const questionId=randomUUID();
     const result=await this.mutateCard(params,"ask_card_question",{ text:params.text,options:params.options ?? null },async (sql,card,eventId) => {
+      assertNotOtherSessionAssignee(card,params);
       await sql`INSERT INTO card_questions(id,card_id,session_id,text,options)
         VALUES(${questionId},${card.id},${params.actorSessionId},${params.text},${sql.json(params.options ?? null)})`;
       const now=questionCardNow(card.now ?? null,params.text,new Date().toISOString(),params.actorSessionId);
@@ -597,6 +605,10 @@ function assertAssignedCardSession(card:CardRow,params:CardMutationParams):void 
   if (params.actorKind !== "agent" || !params.actorSessionId
     || card.assignee_kind !== "session" || card.assignee_session_id !== params.actorSessionId)
     throw invalid("Only the current assignee session may reply to a card comment. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work.");
+}
+function assertNotOtherSessionAssignee(card:CardRow,params:CardMutationParams):void {
+  if (params.actorKind === "agent" && card.assignee_kind === "session" && card.assignee_session_id !== params.actorSessionId)
+    throw invalid("다른 세션이 담당인 카드입니다. 인계 요약, 질문, 발언 기록은 담당 세션만 씁니다.");
 }
 /**
  * 새 증거 ID는 생산자·등록 scope까지 검사한다. 같은 항목에 이미 저장되어 카드 ref에 남은 같은 ID/type는

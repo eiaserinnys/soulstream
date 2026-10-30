@@ -101,7 +101,7 @@ function cardHarness(
   const service = {
     mcpRead, getCard: vi.fn().mockResolvedValue(detail), listCards: vi.fn().mockResolvedValue([card]),
     projectCards: vi.fn(async rows => rows), createCard: vi.fn().mockResolvedValue(createdMutation),
-    patchCard: vi.fn().mockResolvedValue(mutation), addReport: vi.fn().mockResolvedValue(mutation),
+    patchCard: vi.fn().mockResolvedValue(mutation), updateCardBrief: vi.fn().mockResolvedValue(mutation), addReport: vi.fn().mockResolvedValue(mutation),
     addComment: vi.fn().mockResolvedValue({ body: "그대로 보존" }), setCardStatus: vi.fn().mockResolvedValue(mutation),
     startCardWork: vi.fn().mockResolvedValue(mutation),
     requestCardReview:vi.fn().mockResolvedValue(mutation),setCardItems:vi.fn().mockResolvedValue(mutation),
@@ -131,7 +131,7 @@ describe("card MCP execution", () => {
           assignee: { kind: "agent", agentId: "roselin" }, nodeId: "node", modelPreset: "sol" }],
       ["list_cards", { folder_id: "folder-1", status: "running" }, "listCards", { folder_id: "folder-1", status: "running" }],
       ["get_card", { card_id: "card-1" }, "getCard", "card-1"],
-      ["update_card_brief", { card_id: "card-1", brief: "경과" }, "patchCard", { brief: "경과", expectedVersion: 3 }],
+      ["update_card_brief", { card_id: "card-1", brief: "경과" }, "updateCardBrief", { brief: "경과", expectedVersion: 3 }],
       ["add_card_report", { card_id: "card-1", title: "보고", format: "html", body: "<p>결과</p>" }, "addReport",
         { title: "보고", format: "html", body: "<p>결과</p>" }],
       ["add_card_comment", { card_id: "card-1", text: "회의에서 받은 요청" }, "addComment", { body: "회의에서 받은 요청" }],
@@ -239,6 +239,7 @@ describe("card MCP execution", () => {
         item.id === 3 ? { ...item, state: "done", result: "완료" } : item) }] },
     } as unknown as typeof h.createdMutation;
     h.service.patchCard.mockResolvedValue(richMutation);
+    h.service.updateCardBrief.mockResolvedValue(richMutation);
     h.service.addReport.mockResolvedValue(richMutation);
     h.service.setCardStatus.mockResolvedValue(richMutation);
     h.service.startCardWork.mockResolvedValue(richMutation);
