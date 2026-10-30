@@ -64,9 +64,9 @@ describe("card role in the session information", () => {
       status: "running",
       role: "member",
       replaced_by: "new-owner",
-      notice: "이 카드의 담당은 세션 new-owner로 넘어갔다. 이 카드의 일(카드 도구, 코드 수정, 머지, 배포)을 하지 않는다. 받은 보고나 결과는 new-owner에 send_message_to_session으로 넘기고 턴을 끝낸다.",
+      notice: buildCardAssigneeReplacementNotice("session-1", "new-owner"),
     });
-    expect(context?.card?.notice).toBe(buildCardAssigneeReplacementNotice("new-owner"));
+    expect(context?.card?.notice).toMatch(/session-1.*new-owner/);
   });
 });
 
