@@ -1,13 +1,14 @@
 import { isIP } from "node:net";
-import { generateKeyPairSync, randomBytes } from "node:crypto";
+import { createHash, generateKeyPairSync, randomBytes, timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import middie from "@fastify/middie";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { errors, Provider, type Configuration } from "oidc-provider";
+import { AUTH_COOKIE_NAME, type AuthRouteOptions } from "../auth/auth_routes.js";
 import type { SqlClient } from "../control_plane/control_plane_types.js";
 import { oauthAdapter } from "./oauth_adapter.js";
+import { oauthScopes, persistOAuthProfile } from "./oauth_access.js";
 
-export const oauthScopes = ["conversations", "cards:read", "folders:read"] as const;
 const scopeSet = new Set<string>(oauthScopes);
 export const oauthRouteAuthRequirements = {
   "GET /.well-known/oauth-authorization-server": false,
@@ -29,6 +30,7 @@ export type OAuthRouteOptions = {
   jwks?: NonNullable<Configuration["jwks"]>;
   cookieKeys?: string[];
   interaction?: Interaction;
+  dashboardAuth?: Pick<AuthRouteOptions, "configProvider" | "jwt" | "authorizeUser">;
 };
 
 function validateClient(_ctx: unknown, _key: string, _value: unknown, metadata: Record<string, unknown>) {
@@ -66,6 +68,9 @@ export function registerOAuthRoutes(app: FastifyInstance, options: OAuthRouteOpt
   });
   app.register(async scoped => {
     await scoped.register(middie);
+    scoped.addContentTypeParser("application/x-www-form-urlencoded", { parseAs: "string" }, (_request, body, done) => {
+      done(null, Object.fromEntries(new URLSearchParams(body.toString())));
+    });
     scoped.use((req, res, next) => {
       const path = (req.url ?? "").split("?", 1)[0]!;
       if (path === "/.well-known/oauth-authorization-server" ||
@@ -88,13 +93,198 @@ export function registerOAuthRoutes(app: FastifyInstance, options: OAuthRouteOpt
     scoped.post("/api/oauth/token", handled);
     scoped.post("/api/oauth/revoke", handled);
     scoped.get("/api/oauth/jwks", handled);
-    scoped.route({ method: ["GET", "POST"], url: "/api/oauth/interaction/:uid", handler: async (request, reply) => {
-      if (!options.interaction) return reply.code(501).send({ detail: "OAuth interaction is not available" });
+    scoped.route<{ Params: { uid: string } }>({ method: ["GET", "POST"], url: "/api/oauth/interaction/:uid", handler: async (request, reply) => {
+      if (!options.interaction && !options.dashboardAuth) return reply.code(501).send({ detail: "OAuth interaction is not available" });
       const provider = await getProvider();
-      reply.hijack();
-      await options.interaction(provider, request.raw, reply.raw);
+      if (options.interaction) {
+        reply.hijack();
+        await options.interaction(provider, request.raw, reply.raw);
+        return;
+      }
+      if (request.method === "GET") {
+        await handleDashboardInteractionGet(provider, request, reply, options);
+      } else {
+        await handleDashboardInteractionPost(provider, request, reply, options);
+      }
     } });
   });
+}
+
+type DashboardInteractionDetails = {
+  readonly params: Record<string, unknown>;
+  readonly prompt: { readonly name: string };
+  readonly session?: { readonly accountId?: string };
+};
+
+type InteractionConsentView = {
+  readonly email: string;
+  readonly clientName: string;
+  readonly permissions: string;
+  readonly csrf: string;
+};
+
+async function handleDashboardInteractionGet(
+  provider: Provider,
+  request: FastifyRequest<{ Params: { uid: string } }>,
+  reply: FastifyReply,
+  options: OAuthRouteOptions,
+): Promise<void> {
+  const dashboardAuth = options.dashboardAuth;
+  if (!dashboardAuth) return void reply.code(501).send({ detail: "OAuth interaction is not available" });
+  const principal = await dashboardPrincipal(request, options);
+  if (!principal) {
+    const returnTo = `/api/oauth/interaction/${encodeURIComponent(request.params.uid)}`;
+    return void reply.redirect(`/api/auth/google?return_to=${encodeURIComponent(returnTo)}`);
+  }
+  if (await dashboardAuth.authorizeUser?.({ email: principal.email, name: principal.name ?? "", picture: principal.picture ?? "" })) {
+    return void finishOAuthAccessDenied(provider, request, reply);
+  }
+  await persistOAuthProfile(options.sql, principal);
+
+  const details = await provider.interactionDetails(request.raw, reply.raw) as DashboardInteractionDetails;
+  if (details.prompt.name === "login") {
+    reply.hijack();
+    await finishOAuthInteraction(provider, request.raw, reply.raw, principal.email);
+    return;
+  }
+  if (details.prompt.name !== "consent" || details.session?.accountId !== principal.email) {
+    return void finishOAuthAccessDenied(provider, request, reply);
+  }
+
+  const view = await interactionConsentView(options, details, principal.email);
+  if (headerValue(request.headers.accept)?.includes("application/json")) {
+    const csrfCookie = serializeInteractionCsrfCookie(request, request.params.uid, view.csrf);
+    return void reply.header("set-cookie", csrfCookie).send(view);
+  }
+  return void reply.redirect(`/oauth/consent?interaction=${encodeURIComponent(request.params.uid)}`);
+}
+
+async function handleDashboardInteractionPost(
+  provider: Provider,
+  request: FastifyRequest<{ Params: { uid: string } }>,
+  reply: FastifyReply,
+  options: OAuthRouteOptions,
+): Promise<void> {
+  const dashboardAuth = options.dashboardAuth;
+  if (!dashboardAuth) return void reply.code(501).send({ detail: "OAuth interaction is not available" });
+  const form = parseOAuthInteractionFormBody(request.body);
+  const csrf = typeof form.csrf === "string" ? form.csrf : "";
+  const cookie = readInteractionCsrfCookie(request, request.params.uid);
+  if (!cookie || !constantTimeStringEqual(csrf, cookie)) {
+    return void reply.code(403).send({ detail: "Invalid CSRF token" });
+  }
+
+  const principal = await dashboardPrincipal(request, options);
+  if (!principal || await dashboardAuth.authorizeUser?.({ email: principal.email, name: principal.name ?? "", picture: principal.picture ?? "" })) {
+    return void finishOAuthAccessDenied(provider, request, reply);
+  }
+  await persistOAuthProfile(options.sql, principal);
+  const details = await provider.interactionDetails(request.raw, reply.raw) as DashboardInteractionDetails;
+  if (details.prompt.name !== "consent" || details.session?.accountId !== principal.email) {
+    return void finishOAuthAccessDenied(provider, request, reply);
+  }
+  const action = form.action;
+  if (action !== "allow" && action !== "cancel") return void reply.code(400).send({ detail: "Invalid consent action" });
+
+  reply.hijack();
+  if (action === "cancel") {
+    await provider.interactionFinished(request.raw, reply.raw, { error: "access_denied" }, { mergeWithLastSubmission: false });
+    return;
+  }
+  await finishOAuthInteraction(provider, request.raw, reply.raw, principal.email);
+}
+
+async function dashboardPrincipal(
+  request: FastifyRequest,
+  options: OAuthRouteOptions,
+): Promise<{ email: string; name?: string; picture?: string } | null> {
+  const dashboardAuth = options.dashboardAuth;
+  if (!dashboardAuth) return null;
+  const authConfig = await dashboardAuth.configProvider.getConfig();
+  const cookieName = authConfig.cookieName ?? AUTH_COOKIE_NAME;
+  const token = parseCookies(request.headers.cookie)[cookieName];
+  if (!token) return null;
+  const payload = await dashboardAuth.jwt.verifyToken(token);
+  if (!payload?.email) return null;
+  return { email: payload.email, name: payload.name, picture: payload.picture };
+}
+
+async function interactionConsentView(
+  options: OAuthRouteOptions,
+  details: DashboardInteractionDetails,
+  email: string,
+): Promise<InteractionConsentView> {
+  const clientId = typeof details.params.client_id === "string" ? details.params.client_id : "";
+  const client = await oauthAdapter(options.sql)("Client").find(clientId) as { client_name?: unknown } | undefined;
+  if (typeof client?.client_name !== "string" || client.client_name.length === 0) {
+    throw new Error("OAuth client name is unavailable");
+  }
+  const requestedScopes = typeof details.params.scope === "string" ? details.params.scope.split(" ") : [];
+  const permissions = [
+    ...(requestedScopes.includes("conversations") ? ["작업 대화"] : []),
+    ...(requestedScopes.includes("cards:read") || requestedScopes.includes("folders:read") ? ["카드와 폴더 읽기"] : []),
+  ].join(", ");
+  const csrf = randomBytes(32).toString("base64url");
+  return { email, clientName: client.client_name, permissions, csrf };
+}
+
+async function finishOAuthAccessDenied(
+  provider: Provider,
+  request: FastifyRequest,
+  reply: FastifyReply,
+): Promise<void> {
+  reply.hijack();
+  await provider.interactionFinished(request.raw, reply.raw, { error: "access_denied" }, { mergeWithLastSubmission: false });
+}
+
+function serializeInteractionCsrfCookie(
+  request: FastifyRequest,
+  uid: string,
+  value: string,
+): string {
+  const name = interactionCsrfCookieName(uid);
+  const parts = [`${name}=${value}`, "Path=/api/oauth/interaction", "HttpOnly", "SameSite=Lax"];
+  if (request.protocol === "https" || headerValue(request.headers["x-forwarded-proto"]) === "https") parts.push("Secure");
+  parts.push("Max-Age=600");
+  return parts.join("; ");
+}
+
+function interactionCsrfCookieName(uid: string): string {
+  return `soul_oauth_csrf_${createHash("sha256").update(uid).digest("hex").slice(0, 16)}`;
+}
+
+function readInteractionCsrfCookie(request: FastifyRequest, uid: string): string | undefined {
+  return parseCookies(request.headers.cookie)[interactionCsrfCookieName(uid)];
+}
+
+export function parseOAuthInteractionFormBody(body: unknown): Record<string, unknown> {
+  if (typeof body === "object" && body !== null && !Array.isArray(body) && !Buffer.isBuffer(body)) {
+    return body as Record<string, unknown>;
+  }
+  if (typeof body === "string" || Buffer.isBuffer(body)) {
+    return Object.fromEntries(new URLSearchParams(body.toString()));
+  }
+  return {};
+}
+
+function constantTimeStringEqual(left: string, right: string): boolean {
+  const leftHash = createHash("sha256").update(left).digest();
+  const rightHash = createHash("sha256").update(right).digest();
+  return timingSafeEqual(leftHash, rightHash);
+}
+
+function parseCookies(header: string | string[] | undefined): Record<string, string> {
+  const cookieHeader = Array.isArray(header) ? header.join("; ") : header;
+  const result: Record<string, string> = {};
+  for (const part of cookieHeader?.split(";") ?? []) {
+    const index = part.indexOf("=");
+    if (index > 0) result[part.slice(0, index).trim()] = part.slice(index + 1).trim();
+  }
+  return result;
+}
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
 }
 
 async function createProvider(options: OAuthRouteOptions): Promise<Provider> {

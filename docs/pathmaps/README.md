@@ -14,3 +14,4 @@
 | [세션 검색](session-search.md) | `/cogito/search` 모드 분기·A0·문서 색인·RRF·Jev·partial 응답 |
 | [타이머 목록](timers-inventory.md) | 복구·전달·러너 경로의 cadence·owner·유지 판정 |
 | [폴더와 카드](folder-card-storage.md) | 폴더 identity·부모 mount·카드·보드·planner·108/109 이관 |
+| [OAuth 로그인과 API 인증](oauth-authentication.md) | Google 로그인·OAuth 동의·인가 코드·bearer scope·폴더 ACL·caller_info |

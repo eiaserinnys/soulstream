@@ -9,6 +9,7 @@
 
 import { useState, useEffect } from "react";
 import { useAuth } from "../../providers/AuthProvider";
+import { AuthSurface } from "./AuthSurface";
 
 const ERROR_MESSAGES: Record<string, string> = {
   auth_failed: "인증에 실패했습니다.",
@@ -72,7 +73,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
       data-testid="login-page"
       className="flex items-center justify-center min-h-screen bg-background"
     >
-      <div className="w-full max-w-sm bg-card border border-border rounded-xl p-8 shadow-lg flex flex-col gap-6">
+      <AuthSurface>
         {/* 제목 */}
         <div className="text-center">
           <h1 className="text-xl font-bold text-foreground">{title}</h1>
@@ -178,7 +179,7 @@ export function Login({ title = "Dashboard" }: LoginProps) {
             </div>
           </>
         )}
-      </div>
+      </AuthSurface>
     </div>
   );
 }

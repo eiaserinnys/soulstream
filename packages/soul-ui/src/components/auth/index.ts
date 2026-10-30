@@ -3,3 +3,4 @@
  */
 export { Login } from "./Login";
 export { AuthGate } from "./AuthGate";
+export { AuthSurface } from "./AuthSurface";

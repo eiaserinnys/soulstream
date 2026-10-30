@@ -74,6 +74,9 @@ import {
   type LiveSystemConfigRouteProviderBundle,
 } from "./live_system_config_route_provider.js";
 import type { AuthRouteOptions } from "../auth/auth_routes.js";
+import type { SqlClient } from "../control_plane/control_plane_types.js";
+import { createOAuthAccessTokenResolver, type OAuthAccessTokenResolver } from "../oauth/oauth_access.js";
+import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { LiveProviderDependencies } from "./live_provider_dependencies.js";
 import { liveProviderDependencyCategories } from "./live_provider_dependencies.js";
 import {
@@ -254,14 +257,33 @@ export function createLiveOrchestratorProviderBundle(
   const authJwt = createLiveAuthJwtHelper({
     configProvider: options.dependencies.configProvider,
   });
+  const authorizeUser = createLiveAuthUserAuthorizer({
+    configProvider: options.dependencies.configProvider,
+  });
+  let oauthAccessTokenResolver: OAuthAccessTokenResolver | undefined;
+  const resolveOAuthToken: OAuthAccessTokenResolver | undefined = options.dbSqlResolver === undefined
+    ? undefined
+    : async (token) => {
+      const sql = await options.dbSqlResolver!.resolveSql() as unknown as SqlClient;
+      oauthAccessTokenResolver ??= createOAuthAccessTokenResolver(sql, authorizeUser);
+      return oauthAccessTokenResolver(token);
+    };
   const authenticatedUserResolvers = createLiveAuthenticatedUserResolvers({
     jwt: authJwt,
+    ...(resolveOAuthToken === undefined ? {} : { resolveOAuthToken }),
+    isServiceBearer: async request => {
+      const config = await options.dependencies.configProvider.getConfig();
+      const token = config.auth_bearer_token;
+      return typeof token === "string" && token.length > 0 &&
+        verifyServiceBearerAuthorization(request.headers.authorization, token).ok;
+    },
   });
   const dashboardAccessProvider = createLiveDashboardAccessProvider({
     configProvider: options.dependencies.configProvider,
     jwt: authJwt,
     repository: options.dependencies.dbCatalogRepository.adminUsersRepository,
     verifyDashboardToken: authenticatedUserResolvers.verifyToken,
+    resolveOAuthAccess: authenticatedUserResolvers.resolveOAuthAccess,
   });
   const sessionResourceAccessProvider = createSessionResourceAccessProvider({
     accessProvider: dashboardAccessProvider,
@@ -436,9 +458,7 @@ export function createLiveOrchestratorProviderBundle(
         jwt: authJwt,
         resolveDashboardUser: authenticatedUserResolvers.resolveUser,
       }),
-      authorizeUser: createLiveAuthUserAuthorizer({
-        configProvider: options.dependencies.configProvider,
-      }),
+      authorizeUser,
       userPayloadExtra: dashboardAccessProvider.userPayloadExtra,
     },
     folderRoutes: {

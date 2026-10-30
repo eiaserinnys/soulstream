@@ -43,6 +43,33 @@ Missing credentials normally return `401 Unauthorized`; rejected credentials
 return `403 Forbidden`. Keep tokens in the bot's secret store, not in source or
 configuration examples committed to the repository.
 
+### Native desktop clients
+
+Kaleidoscope and other native public clients use the orchestrator's OAuth
+authorization-code flow with PKCE. Discover the issuer at
+`GET /.well-known/oauth-authorization-server` and its protected resource at
+`GET /.well-known/oauth-protected-resource`. Register the client with
+`POST /api/oauth/register`, using loopback callback URIs and no client secret.
+The registered `client_name` is shown on the person's consent screen.
+
+Request `conversations`, `cards:read`, and/or `folders:read` at
+`GET /api/oauth/authorize`. The interaction uses the existing Google dashboard
+login and checks `ALLOWED_EMAIL` again before showing consent. Allowing returns
+the authorization code to the loopback callback; cancelling returns the
+standard `access_denied` error. Exchange the code at `POST /api/oauth/token`
+with the original redirect URI and PKCE verifier. The response contains an
+opaque bearer access token and a rotating refresh token. Access tokens last one
+hour, refresh tokens rotate with a 30-day idle lifetime, and the grant lasts 365
+days.
+
+OAuth bearer access is limited to read routes: `cards:read` allows `GET
+/api/cards` and its read subroutes; `folders:read` allows `GET /api/folders` and
+its read subroutes. Both routes apply the signed-in account's existing folder
+ACL. `conversations` is reserved for conversation routes added by a later
+change. OAuth tokens do not authorize session creation, session intervention,
+MCP, or write routes. See the [OAuth authentication path map](pathmaps/oauth-authentication.md)
+for the server-side flow and caller identity fields.
+
 ## Typical bot flow
 
 1. Open `POST /api/execute` with a prompt and agent profile.

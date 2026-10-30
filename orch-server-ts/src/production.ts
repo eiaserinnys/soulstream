@@ -739,7 +739,15 @@ export async function createLiveProductionApplication(
   }) : undefined;
   const lifecycle=new OrchestratorLifecycle(buildId,runtimeServices.sessionBroadcaster);
   const app = createApp({
-    oauthRoutes: { issuer: config.soulstream_public_url, sql: await sqlResolver.resolveSql() as unknown as SqlClient },
+    oauthRoutes: {
+      issuer: config.soulstream_public_url,
+      sql: await sqlResolver.resolveSql() as unknown as SqlClient,
+      dashboardAuth: {
+        configProvider: providers.authRoutes.configProvider,
+        jwt: providers.authRoutes.jwt,
+        authorizeUser: providers.authRoutes.authorizeUser,
+      },
+    },
     externalEvents,
     ownedAgentRoutes: { currentEmail: providers.adminUsersRoutes.provider.currentEmail, service: ownedAgentService },
     resolveSessionOwner,
@@ -1063,6 +1071,7 @@ export function buildProductionRouteOptions(
     corsAllowedOrigins,
     productionAuth: {
       resolveTokenAccess: providers.authRoutes.resolveTokenAccess,
+      resolveOAuthAccess: providers.authenticatedUserResolvers.resolveOAuthAccess,
     },
     adminUsersRoutes: providers.adminUsersRoutes,
     atomRoutes: providers.atomRoutes,
