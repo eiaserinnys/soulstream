@@ -12,6 +12,7 @@ Defined in [`orch-server-ts/.env.example`](../../orch-server-ts/.env.example):
 - `HOST`: required HTTP listener bind address (defaults to `127.0.0.1` in local setups).
 - `PORT`: HTTP listener port (defaults to `5200`).
 - `DATABASE_URL`: required PostgreSQL connection URL.
+- `SOULSTREAM_PUBLIC_URL`: required public HTTP origin for OAuth metadata and issuer (no path or query).
 - `DASHBOARD_DIR`: optional path to the built `unified-dashboard/dist` directory when serving the web UI from the orchestrator.
 - `NODE_NAME`: optional human-readable node label (required when external MCP ingress is enabled).
 
@@ -29,6 +30,10 @@ Board and attachment Cloudflare R2 storage settings are managed in the central P
 - `GOOGLE_IOS_CLIENT_ID`: optional Google OAuth client ID for the iOS app.
 - `ALLOWED_EMAIL`: optional email allowlist for Google authentication.
 - `JWT_SECRET`: optional signing secret for dashboard authentication tokens.
+
+The OAuth authorization server stores its signing and cookie keys in PostgreSQL.
+They persist across restarts and must be preserved with the database. Its interaction
+endpoint remains unavailable until login and consent are integrated.
 
 ### Knowledge, search, usage, and runner controls
 

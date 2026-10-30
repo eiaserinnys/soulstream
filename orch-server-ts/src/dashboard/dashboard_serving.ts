@@ -122,7 +122,7 @@ function requestPathname(request: FastifyRequest): string | undefined {
 }
 
 function isReservedPath(pathname: string): boolean {
-  return ["/api/", "/ws/", "/assets/"].some((prefix) =>
+  return ["/api/", "/ws/", "/assets/", "/.well-known/"].some((prefix) =>
     pathname.startsWith(prefix)
   );
 }

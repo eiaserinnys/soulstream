@@ -739,6 +739,7 @@ export async function createLiveProductionApplication(
   }) : undefined;
   const lifecycle=new OrchestratorLifecycle(buildId,runtimeServices.sessionBroadcaster);
   const app = createApp({
+    oauthRoutes: { issuer: config.soulstream_public_url, sql: await sqlResolver.resolveSql() as unknown as SqlClient },
     externalEvents,
     ownedAgentRoutes: { currentEmail: providers.adminUsersRoutes.provider.currentEmail, service: ownedAgentService },
     resolveSessionOwner,

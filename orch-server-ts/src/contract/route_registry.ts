@@ -452,7 +452,7 @@ export function classifyRouteFamily(path: string): RouteFamily {
   if (path === "/" || path.startsWith("/assets/")) return "dashboard_static";
   if (path === "/api/health" || path === "/api/config") return "public_config";
   if (isControlPlanePath(path)) return "control_plane";
-  if (path.startsWith("/api/auth/") || path === "/api/auth/token") return "auth";
+  if (path.startsWith("/api/auth/") || path.startsWith("/api/oauth/") || path.startsWith("/.well-known/")) return "auth";
   if (path.includes("/claude-auth/") || path.includes("/provider-usage")) return "auth";
   if (path.startsWith("/api/board-yjs/")) return "board_yjs_proxy";
   if (

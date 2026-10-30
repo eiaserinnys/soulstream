@@ -85,6 +85,7 @@ describe("orchestrator lifecycle", () => {
     const server = await createProductionOrchestrator({
       config: loadOrchServerEnvironment({
         HOST: "127.0.0.1",
+    SOULSTREAM_PUBLIC_URL: "https://dashboard.example.test",
         PORT: "0",
         ENVIRONMENT: "test",
         DATABASE_URL: "postgres://unused/unused",

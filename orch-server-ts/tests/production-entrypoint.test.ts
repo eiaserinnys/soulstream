@@ -107,9 +107,8 @@ describe("production orchestrator entrypoint", () => {
       version: "0.1.0",
       database_schema: databaseSchema,
     });
-    // Health schema, execution, card-service, persistent-context, and agent
-    // attachment registration adapters share this resolver.
-    expect(sqlResolver.resolveSql).toHaveBeenCalledTimes(5);
+    // OAuth storage also uses the shared resolver alongside the existing adapters.
+    expect(sqlResolver.resolveSql).toHaveBeenCalledTimes(6);
     expect(schemaQuery).toHaveBeenCalledOnce();
     expect(application.app.hasRoute({
       method: "GET",
@@ -368,6 +367,7 @@ async function createDashboardDirectory(): Promise<string> {
 function minimalEnvironment(): Record<string, string> {
   return {
     HOST: "127.0.0.1",
+    SOULSTREAM_PUBLIC_URL: "https://dashboard.example.test",
     DATABASE_URL: "postgres://unused@localhost/unused",
     ENVIRONMENT: "production",
     DASHBOARD_DIR: fileURLToPath(new URL("./fixtures/dashboard-build", import.meta.url)),

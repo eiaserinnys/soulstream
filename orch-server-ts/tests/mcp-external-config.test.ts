@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { loadOrchServerEnvironment } from "../src/config.js";
 
-const base = { ENVIRONMENT: "test", HOST: "127.0.0.1", DATABASE_URL: "unused",
+const base = { SOULSTREAM_PUBLIC_URL: "https://dashboard.example.test", ENVIRONMENT: "test", HOST: "127.0.0.1", DATABASE_URL: "unused",
   CLAUDE_OAUTH_CLIENT_ID: "test", CLAUDE_OAUTH_CALLBACK_URL: "https://example.test/callback" };
 const enabled = { ...base, NODE_NAME: "test-node", MCP_EXTERNAL_INGRESS_ENABLED: "true",
   MCP_EXTERNAL_INGRESS_PATH: "/dot", MCP_EXTERNAL_INGRESS_SOURCE: "dot",

@@ -58,6 +58,7 @@ import {
   type MarkdownDocumentRouteOptions,
 } from "./board/markdown_document_routes.js";
 import type { OrchServerTsConfig } from "./config.js";
+import { registerOAuthRoutes, type OAuthRouteOptions } from "./oauth/oauth_routes.js";
 import {
   registerCogitoRoutes,
   type CogitoRouteOptions,
@@ -207,6 +208,7 @@ export type CreateAppOptions = {
   adminUsersRoutes?: AdminUsersRouteOptions;
   atomRoutes?: AtomRouteOptions;
   authRoutes?: AuthRouteOptions;
+  oauthRoutes?: OAuthRouteOptions;
   attachmentRoutes?: AttachmentRouteOptions;
   agentAttachmentRoutes?: AgentAttachmentRouteOptions;
   workerAttachmentRoutes?: WorkerAttachmentRouteOptions;
@@ -388,6 +390,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.authRoutes !== undefined) {
     registerAuthRoutes(app, options.authRoutes);
+  }
+  if (options.oauthRoutes !== undefined) {
+    registerOAuthRoutes(app, options.oauthRoutes);
   }
   if (options.r2SettingsRoutes) registerR2SettingsRoutes(app, options.r2SettingsRoutes);
   if (options.ownedAgentRoutes) registerOwnedAgentRoutes(app, options.ownedAgentRoutes);
