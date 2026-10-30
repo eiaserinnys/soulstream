@@ -4516,10 +4516,10 @@ CREATE TABLE IF NOT EXISTS conversation_message_receipts (
     PRIMARY KEY (session_id, request_id)
 );
 
-ALTER TABLE conversation_bindings ADD COLUMN active_session_id TEXT;
-UPDATE conversation_bindings SET active_session_id = session_id;
+ALTER TABLE conversation_bindings ADD COLUMN IF NOT EXISTS active_session_id TEXT;
+UPDATE conversation_bindings SET active_session_id = session_id WHERE active_session_id IS NULL;
 
-CREATE TABLE conversation_executions (
+CREATE TABLE IF NOT EXISTS conversation_executions (
   thread_id TEXT NOT NULL REFERENCES conversation_bindings(session_id) ON DELETE CASCADE,
   session_id TEXT NOT NULL UNIQUE,
   predecessor_session_id TEXT,
@@ -4537,7 +4537,8 @@ CREATE TABLE conversation_executions (
 INSERT INTO conversation_executions(thread_id, session_id, ordinal, first_input_is_initial_instruction)
 SELECT session_id, session_id, 0,
   first_input_is_initial_instruction OR COALESCE(length(creation_request->>'initial_instruction') > 0, false)
-FROM conversation_bindings;
+FROM conversation_bindings
+ON CONFLICT DO NOTHING;
 
-ALTER TABLE conversation_message_receipts ADD COLUMN target_session_id TEXT;
-UPDATE conversation_message_receipts SET target_session_id = session_id;
+ALTER TABLE conversation_message_receipts ADD COLUMN IF NOT EXISTS target_session_id TEXT;
+UPDATE conversation_message_receipts SET target_session_id = session_id WHERE target_session_id IS NULL;

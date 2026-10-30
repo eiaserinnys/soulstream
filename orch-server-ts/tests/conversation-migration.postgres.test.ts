@@ -41,4 +41,20 @@ describe("conversation 138 to 139 migration", () => {
       expect(receipt?.target_session_id).toBe("old-execution");
     });
   });
+  it("reapplying the schema preserves an active replacement and receipt targets", async () => {
+    await db.sql`INSERT INTO conversation_bindings(account_id,namespace,external_key,session_id,active_session_id,selected_model,phase)
+      VALUES ('person','n','reapply','schema-old','schema-new','sol','complete')`;
+    await db.sql`INSERT INTO conversation_executions(thread_id,session_id,predecessor_session_id,ordinal) VALUES
+      ('schema-old','schema-old',NULL,0),('schema-old','schema-new','schema-old',1)`;
+    await db.sql`INSERT INTO conversation_message_receipts(session_id,request_id,request_hash,delivery_id,caller_info,status,target_session_id)
+      VALUES ('schema-old','req','hash','schema-delivery','{}'::jsonb,'accepted','schema-new')`;
+    const schema = readFileSync(new URL("../../packages/db-schema/sql/schema.sql", import.meta.url), "utf8");
+    await db.sql.unsafe(schema);
+    const [binding] = await db.sql`SELECT active_session_id FROM conversation_bindings WHERE session_id='schema-old'`;
+    const executions = await db.sql`SELECT session_id FROM conversation_executions WHERE thread_id='schema-old' ORDER BY ordinal`;
+    const [receipt] = await db.sql`SELECT target_session_id FROM conversation_message_receipts WHERE session_id='schema-old'`;
+    expect(binding?.active_session_id).toBe("schema-new");
+    expect(executions.map(row => row.session_id)).toEqual(["schema-old","schema-new"]);
+    expect(receipt?.target_session_id).toBe("schema-new");
+  }, 60_000);
 });
