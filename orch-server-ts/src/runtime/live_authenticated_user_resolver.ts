@@ -7,6 +7,7 @@ import {
   type AuthJwtPayload,
 } from "../auth/auth_routes.js";
 import { extractBearerToken } from "../auth/service_bearer.js";
+import type { OAuthAccessTokenResolver, OAuthResourceAccess } from "../oauth/oauth_access.js";
 
 export type DashboardAuthHeaders = Pick<
   FastifyRequest["headers"],
@@ -16,6 +17,7 @@ export type DashboardAuthHeaders = Pick<
 export type CreateLiveAuthenticatedUserResolversOptions = {
   readonly jwt: AuthJwtHelper;
   readonly cookieName?: string;
+  readonly resolveOAuthToken?: OAuthAccessTokenResolver;
 };
 
 export type LiveAuthenticatedUserResolver = (
@@ -39,6 +41,7 @@ export type LiveCallerInfoResolver = (
 
 export type LiveAuthenticatedUserResolvers = {
   readonly verifyToken: LiveDashboardTokenVerifier;
+  readonly resolveOAuthAccess: (request: FastifyRequest) => Promise<OAuthResourceAccess | null>;
   readonly resolveUser: LiveAuthenticatedUserResolver;
   readonly resolveUserFromHeaders: (
     headers: DashboardAuthHeaders,
@@ -60,6 +63,7 @@ export function createLiveAuthenticatedUserResolvers(
     FastifyRequest,
     Map<string, Promise<AuthJwtPayload | null>>
   >();
+  const oauthVerificationCache = new WeakMap<FastifyRequest, Promise<OAuthResourceAccess | null>>();
   const verifyToken: LiveDashboardTokenVerifier = async (request, token) => {
     let requestCache = verificationCache.get(request);
     if (requestCache === undefined) {
@@ -98,16 +102,29 @@ export function createLiveAuthenticatedUserResolvers(
     );
   const resolveHeadersWithoutRequest = (headers: DashboardAuthHeaders) =>
     resolveUserFromHeaders(headers, (token) => Promise.resolve(options.jwt.verifyToken(token)));
+  const resolveOAuthAccess = async (request: FastifyRequest): Promise<OAuthResourceAccess | null> => {
+    const cached = oauthVerificationCache.get(request);
+    if (cached !== undefined) return await cached;
+    const token = extractBearerToken(request.headers.authorization);
+    if (token === undefined || options.resolveOAuthToken === undefined) return null;
+    const verification = options.resolveOAuthToken(token);
+    oauthVerificationCache.set(request, verification);
+    return await verification;
+  };
   const resolveUser: LiveAuthenticatedUserResolver = async (request) => {
     return (await resolveAuthenticatedUser(request))?.payload ?? null;
   };
 
   return {
     verifyToken,
+    resolveOAuthAccess,
     resolveUser,
     resolveUserFromHeaders: resolveHeadersWithoutRequest,
     async resolveEmail(request) {
-      return (await resolveUser(request))?.email ?? null;
+      const user = await resolveUser(request);
+      if (user !== null) return user.email;
+      if (isServiceCaller(request)) return null;
+      return (await resolveOAuthAccess(request))?.email ?? null;
     },
     async resolveCallerInfo(request, bodyCallerInfo, _systemNodeId) {
       const authenticated = isServiceCaller(request) ? null : await resolveAuthenticatedUser(request);
@@ -123,16 +140,29 @@ export function createLiveAuthenticatedUserResolvers(
           source,
         );
       }
+      if (!isServiceCaller(request)) {
+        const oauthAccess = await resolveOAuthAccess(request);
+        if (oauthAccess !== null) {
+          return {
+            ...requestCallerMetadata(request),
+            source: "browser",
+            transport: "oauth",
+            oauth_client_id: oauthAccess.clientId,
+            oauth_client_name: oauthAccess.clientName,
+            display_name: oauthAccess.displayName,
+            user_id: oauthAccess.email,
+            email: oauthAccess.email,
+            ...(oauthAccess.avatarUrl ? { avatar_url: oauthAccess.avatarUrl } : {}),
+          };
+        }
+      }
       if (bodyCallerInfo !== null && bodyCallerInfo !== undefined &&
         Object.keys(bodyCallerInfo).length > 0) {
         return bodyCallerInfo;
       }
       const callerInfo: Record<string, unknown> = {
         source: "browser",
-        ip: isServiceCaller(request) ? null : request.ip ?? null,
-        user_agent: headerString((isServiceCaller(request) ? {} : request.headers)["user-agent"]) ?? null,
-        referer: headerString(isServiceCaller(request) ? undefined : request.headers.referer) ?? null,
-        forwarded_for: headerString((isServiceCaller(request) ? {} : request.headers)["x-forwarded-for"]) ?? null,
+        ...requestCallerMetadata(request),
       };
       return callerInfo;
     },
@@ -146,10 +176,7 @@ function authenticatedDirectCallerInfo(
 ): Record<string, unknown> {
   const callerInfo: Record<string, unknown> = {
     source,
-    ip: request.ip ?? null,
-    user_agent: headerString(request.headers["user-agent"]) ?? null,
-    referer: headerString(request.headers.referer) ?? null,
-    forwarded_for: headerString(request.headers["x-forwarded-for"]) ?? null,
+    ...requestCallerMetadata(request),
   };
   if (user.name) callerInfo.display_name = user.name;
   const userId = user.email || user.sub;
@@ -157,6 +184,18 @@ function authenticatedDirectCallerInfo(
   if (user.picture) callerInfo.avatar_url = user.picture;
   if (user.email) callerInfo.email = user.email;
   return callerInfo;
+}
+
+function requestCallerMetadata(request: FastifyRequest | ServiceCaller): Record<string, unknown> {
+  if (isServiceCaller(request)) {
+    return { ip: null, user_agent: null, referer: null, forwarded_for: null };
+  }
+  return {
+    ip: request.ip ?? null,
+    user_agent: headerString(request.headers["user-agent"]) ?? null,
+    referer: headerString(request.headers.referer) ?? null,
+    forwarded_for: headerString(request.headers["x-forwarded-for"]) ?? null,
+  };
 }
 
 export function extractDashboardJwtToken(

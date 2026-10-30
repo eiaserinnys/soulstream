@@ -13,6 +13,7 @@ import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { BoardItemAccessProvider } from "../board/board_item_routes.js";
 import type { MarkdownDocumentAccessProvider } from "../board/markdown_document_routes.js";
 import type { FolderAccessProvider } from "../folders/folder_routes.js";
+import type { OAuthResourceAccess } from "../oauth/oauth_access.js";
 import type { LiveConfigProviderBoundary } from "./live_provider_dependencies.js";
 import {
   extractDashboardBearerToken,
@@ -66,6 +67,7 @@ export type CreateLiveDashboardAccessProviderOptions = {
   readonly repository: DashboardUserRepository;
   readonly cookieName?: string;
   readonly verifyDashboardToken?: LiveDashboardTokenVerifier;
+  readonly resolveOAuthAccess?: (request: FastifyRequest) => Promise<OAuthResourceAccess | null>;
 };
 
 export type DashboardAccessResolveContext = {
@@ -128,6 +130,7 @@ export function createLiveDashboardAccessProvider(
         configProvider: options.configProvider,
         jwt: options.jwt,
         verifyDashboardToken: options.verifyDashboardToken,
+        resolveOAuthAccess: options.resolveOAuthAccess,
         cookieName,
         accessEmail: context?.accessEmail,
       });
@@ -203,6 +206,7 @@ async function resolveAccessIdentity(input: {
   readonly configProvider: LiveConfigProviderBoundary;
   readonly jwt: AuthJwtHelper;
   readonly verifyDashboardToken?: LiveDashboardTokenVerifier;
+  readonly resolveOAuthAccess?: (request: FastifyRequest) => Promise<OAuthResourceAccess | null>;
   readonly cookieName: string;
   readonly accessEmail?: string | null;
 }): Promise<AccessIdentity> {
@@ -237,6 +241,9 @@ async function resolveAccessIdentity(input: {
       }
     }
   }
+
+  const oauthAccess = await input.resolveOAuthAccess?.(input.request);
+  if (oauthAccess) return { mode: "dashboard", email: normalizeDashboardEmail(oauthAccess.email) };
 
   throw new DashboardAccessError(
     "AUTHENTICATION_REQUIRED",

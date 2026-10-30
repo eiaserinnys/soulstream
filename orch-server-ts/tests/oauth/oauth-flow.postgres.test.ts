@@ -6,6 +6,11 @@ import Fastify from "fastify";
 import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { registerOAuthRoutes, finishOAuthInteraction } from "../../src/oauth/oauth_routes.js";
+import { registerAuthRoutes, type AuthJwtHelper, type AuthUserAuthorizer } from "../../src/auth/auth_routes.js";
+import { createOAuthAccessTokenResolver } from "../../src/oauth/oauth_access.js";
+import { createLiveAuthenticatedUserResolvers } from "../../src/runtime/live_authenticated_user_resolver.js";
+import { createLiveDashboardAccessProvider } from "../../src/runtime/live_dashboard_access_provider.js";
+import { registerProductionAuthGuard } from "../../src/runtime/production_auth_guard.js";
 import { createApp } from "../../src/app.js";
 import { parseOrchServerConfig } from "../../src/config.js";
 import { registerDashboardServing } from "../../src/dashboard/dashboard_serving.js";
@@ -102,6 +107,132 @@ async function freshRequest(path: string, fields?: Record<string, string>) {
 }
 async function freshRefresh(clientId: string, token: string) {
   return freshRequest("/api/oauth/token", { grant_type: "refresh_token", client_id: clientId, refresh_token: token });
+}
+
+type DashboardOAuthTestState = { allowedEmail: string; googleEmail: string };
+
+function dashboardOAuthTestDependencies(state: DashboardOAuthTestState) {
+  const configProvider = {
+    getConfig: async () => ({
+      authEnabled: true,
+      devModeEnabled: false,
+      googleClientId: "fake-google-client",
+      googleClientSecret: "fake-google-secret",
+      callbackUrl: "/api/auth/google/callback",
+      jwtSecretConfigured: true,
+      environment: "test",
+      google_client_id: "fake-google-client",
+      auth_bearer_token: "fake-service-token",
+    }),
+    requireConfig: async (key: string) => key,
+  };
+  const jwt: AuthJwtHelper = {
+    issueToken: async () => "fake-dashboard-session",
+    verifyToken: async token => token === "fake-dashboard-session"
+      ? { email: account, name: "Director", picture: "https://example.test/director.png" }
+      : null,
+  };
+  const authorizeUser: AuthUserAuthorizer = async user =>
+    user.email.trim().toLowerCase() === state.allowedEmail.trim().toLowerCase()
+      ? null
+      : "no_user";
+  const authRoutes = {
+    configProvider,
+    jwt,
+    authorizeUser,
+    resolveTokenAccess: async () => ({ ok: true as const }),
+    nativeVerifier: async () => ({}),
+    httpClient: {
+      post: async () => ({ statusCode: 200, body: { access_token: "fake-google-access-token" } }),
+      get: async () => ({ statusCode: 200, body: { email: state.googleEmail, name: "Director", picture: "https://example.test/director.png" } }),
+    },
+  };
+  return { configProvider, jwt, authorizeUser, authRoutes };
+}
+
+async function startDashboardOAuthServer(state: DashboardOAuthTestState) {
+  app = Fastify();
+  const dependencies = dashboardOAuthTestDependencies(state);
+  registerAuthRoutes(app, dependencies.authRoutes);
+  await registerOAuthRoutes(app, {
+    issuer,
+    sql,
+    dashboardAuth: {
+      configProvider: dependencies.configProvider,
+      jwt: dependencies.jwt,
+      authorizeUser: dependencies.authorizeUser,
+    },
+  });
+  await app.listen({ host: "127.0.0.1", port: Number(new URL(issuer).port) });
+  return dependencies;
+}
+
+async function fetchWithCookies(
+  path: string,
+  cookies: Map<string, string>,
+  init: RequestInit = {},
+): Promise<Response> {
+  const headers = new Headers(init.headers);
+  if (cookies.size > 0) headers.set("cookie", [...cookies].map(([name, value]) => `${name}=${value}`).join("; "));
+  const response = await fetch(new URL(path, issuer), { ...init, headers, redirect: "manual" });
+  for (const setCookie of response.headers.getSetCookie()) {
+    const pair = setCookie.split(";", 1)[0] ?? "";
+    const index = pair.indexOf("=");
+    if (index <= 0) continue;
+    const name = pair.slice(0, index);
+    const value = pair.slice(index + 1);
+    if (/max-age=0/i.test(setCookie)) cookies.delete(name);
+    else cookies.set(name, value);
+  }
+  return response;
+}
+
+async function beginInteraction(clientId: string, cookies = new Map<string, string>()) {
+  const params = new URLSearchParams({
+    response_type: "code",
+    client_id: clientId,
+    redirect_uri: "http://127.0.0.1:10002/callback",
+    code_challenge: challenge,
+    code_challenge_method: "S256",
+    scope: "conversations cards:read folders:read",
+    state: "interaction-state",
+  });
+  const response = await fetchWithCookies(`/api/oauth/authorize?${params}`, cookies);
+  const location = response.headers.get("location");
+  if (!location) throw new Error(`authorization did not redirect to interaction: ${response.status}`);
+  const interaction = new URL(location, issuer);
+  return { interactionPath: `${interaction.pathname}${interaction.search}`, cookies };
+}
+
+async function loginThroughGoogle(
+  clientId: string,
+  cookies = new Map<string, string>(),
+): Promise<{ interactionPath: string; cookies: Map<string, string>; view?: Record<string, unknown>; lastResponse: Response }> {
+  const started = await beginInteraction(clientId, cookies);
+  let response = await fetchWithCookies(started.interactionPath, cookies, { headers: { accept: "application/json" } });
+  const loginLocation = response.headers.get("location");
+  if (!loginLocation) return { ...started, lastResponse: response };
+  response = await fetchWithCookies(`${new URL(loginLocation, issuer).pathname}${new URL(loginLocation, issuer).search}`, cookies);
+  const googleLocation = response.headers.get("location");
+  if (!googleLocation) return { ...started, lastResponse: response };
+  const googleUrl = new URL(googleLocation);
+  const state = googleUrl.searchParams.get("state");
+  if (!state) throw new Error("Google authorization state was not set");
+  response = await fetchWithCookies(`/api/auth/google/callback?${new URLSearchParams({ code: "fake-google-code", state })}`, cookies);
+  let target = response.headers.get("location");
+  if (!target) return { ...started, lastResponse: response };
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const next = new URL(target, issuer);
+    if (next.origin !== issuer) return { ...started, lastResponse: response };
+    if (next.pathname === "/" && next.searchParams.has("error")) return { ...started, lastResponse: response };
+    response = await fetchWithCookies(`${next.pathname}${next.search}`, cookies, { headers: { accept: "application/json" } });
+    if (response.status === 200 && response.headers.get("content-type")?.includes("application/json")) {
+      return { ...started, view: await response.json() as Record<string, unknown>, lastResponse: response };
+    }
+    target = response.headers.get("location");
+    if (!target) break;
+  }
+  return { ...started, lastResponse: response };
 }
 
 beforeAll(async () => {
@@ -257,5 +388,131 @@ describe("OAuth authorization server", () => {
       expect(response.headers.get("content-type")).toContain("application/json");
     }
     await server.close();
+  });
+});
+
+describe("OAuth dashboard login, consent, and scoped resource access", () => {
+  const state: DashboardOAuthTestState = { allowedEmail: account, googleEmail: account };
+  let dependencies: ReturnType<typeof dashboardOAuthTestDependencies>;
+
+  beforeAll(async () => {
+    await app.close();
+    issuer = `http://127.0.0.1:${await freePort()}`;
+    dependencies = await startDashboardOAuthServer(state);
+  });
+
+  it("returns an opaque token that reads cards and folders through the signed-in account ACL", async () => {
+    const { data: client } = await register();
+    const flow = await loginThroughGoogle(client.client_id!);
+    expect(flow.view).toMatchObject({
+      email: account,
+      clientName: "Test",
+      permissions: "작업 대화, 카드와 폴더 읽기",
+    });
+    expect(flow.cookies.has("soul_dashboard_auth")).toBe(true);
+    const csrf = flow.view?.csrf;
+    expect(typeof csrf).toBe("string");
+
+    const accepted = await fetchWithCookies(flow.interactionPath, flow.cookies, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ csrf: String(csrf), action: "allow" }),
+    });
+    const callback = accepted.headers.get("location");
+    expect(callback).toBeTruthy();
+    const code = new URL(callback!).searchParams.get("code");
+    expect(code).toBeTruthy();
+    const token = await codeToken(client.client_id!, code!, "http://127.0.0.1:10002/callback");
+    expect(token.response.status).toBe(200);
+    const accessToken = token.data.access_token as string;
+    expect(accessToken.split(".")).toHaveLength(1);
+
+    const resolveOAuthToken = createOAuthAccessTokenResolver(sql, dependencies.authorizeUser);
+    const oauthAccess = await resolveOAuthToken(accessToken);
+    expect(oauthAccess).toMatchObject({
+      email: account,
+      displayName: "Director",
+      avatarUrl: "https://example.test/director.png",
+      clientId: client.client_id,
+      clientName: "Test",
+      scopes: ["conversations", "cards:read", "folders:read"],
+    });
+    state.allowedEmail = "different@example.test";
+    expect(await resolveOAuthToken(accessToken)).toBeNull();
+    state.allowedEmail = account;
+
+    const userResolvers = createLiveAuthenticatedUserResolvers({
+      jwt: dependencies.jwt,
+      resolveOAuthToken,
+    });
+    const accessProvider = createLiveDashboardAccessProvider({
+      configProvider: dependencies.configProvider,
+      jwt: dependencies.jwt,
+      repository: {
+        findUserByEmail: email => email === account
+          ? { email, isAdmin: false, allowedFolderIds: ["folder-allowed"] }
+          : null,
+      },
+      resolveOAuthAccess: userResolvers.resolveOAuthAccess,
+    });
+    const api = Fastify();
+    registerProductionAuthGuard(api, {
+      resolveTokenAccess: async () => ({ ok: false, statusCode: 401, detail: "Authentication required" }),
+      resolveOAuthAccess: userResolvers.resolveOAuthAccess,
+    });
+    api.get("/api/cards", async request => ({
+      access: await accessProvider.resolveAccess(request),
+      callerInfo: await userResolvers.resolveCallerInfo(request, { source: "spoofed", email: "attacker@example.test" }, "test-node"),
+    }));
+    api.get("/api/folders", async request => ({ access: await accessProvider.resolveAccess(request) }));
+    api.post("/api/sessions", async () => ({ created: true }));
+    api.post("/api/sessions/:session_id/intervene", async () => ({ sent: true }));
+
+    const headers = { authorization: `Bearer ${accessToken}` };
+    const cards = await api.inject({ method: "GET", url: "/api/cards", headers });
+    expect(cards.statusCode).toBe(200);
+    expect(cards.json().access).toEqual({ restricted: true, allowedFolderIds: ["folder-allowed"] });
+    expect(cards.json().callerInfo).toMatchObject({
+      source: "browser",
+      transport: "oauth",
+      oauth_client_id: client.client_id,
+      oauth_client_name: "Test",
+      display_name: "Director",
+      user_id: account,
+      email: account,
+      avatar_url: "https://example.test/director.png",
+    });
+    const folders = await api.inject({ method: "GET", url: "/api/folders", headers });
+    expect(folders.statusCode).toBe(200);
+    expect(folders.json().access).toEqual({ restricted: true, allowedFolderIds: ["folder-allowed"] });
+    expect((await api.inject({ method: "POST", url: "/api/sessions", headers })).statusCode).toBe(403);
+    expect((await api.inject({ method: "POST", url: "/api/sessions/test-session/intervene", headers })).statusCode).toBe(403);
+    await api.close();
+  });
+
+  it("keeps a disallowed Google account from reaching consent and returns access_denied on cancel", async () => {
+    state.allowedEmail = "different@example.test";
+    const { data: blockedClient } = await register();
+    const blocked = await loginThroughGoogle(blockedClient.client_id!);
+    expect(blocked.view).toBeUndefined();
+    expect(new URL(blocked.lastResponse.headers.get("location")!, issuer).searchParams.get("error")).toBe("no_user");
+    expect(blocked.cookies.has("soul_dashboard_auth")).toBe(false);
+
+    state.allowedEmail = account;
+    const { data: client } = await register();
+    const flow = await loginThroughGoogle(client.client_id!);
+    expect(flow.view?.email).toBe(account);
+    const response = await fetchWithCookies(flow.interactionPath, flow.cookies, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ csrf: String(flow.view?.csrf), action: "cancel" }),
+    });
+    expect(response.status).toBeGreaterThanOrEqual(300);
+    expect(response.status).toBeLessThan(400);
+    const location = response.headers.get("location");
+    expect(location).toContain("access_denied");
+    const callback = new URL(location!, issuer);
+    expect(callback.searchParams.get("error")).toBe("access_denied");
+    expect(callback.searchParams.get("state")).toBe("interaction-state");
   });
 });

@@ -5,10 +5,12 @@ import { normalizeRouteKey } from "../contract/route_coverage.js";
 import { routeCoverageOwners } from "../contract/route_coverage_matrix.js";
 import { classifyRouteFamily, isLowRiskRouteEntry } from "../contract/route_registry.js";
 import { isDashboardFallbackRequest } from "../dashboard/dashboard_serving.js";
+import { oauthScopeForRoute, requireOAuthScope, type OAuthResourceAccess } from "../oauth/oauth_access.js";
 import { requestLogPath } from "./production_logging.js";
 
 export type ProductionAuthGuardOptions = {
   readonly resolveTokenAccess: AuthTokenResolver;
+  readonly resolveOAuthAccess?: (request: FastifyRequest) => Promise<OAuthResourceAccess | null>;
   /** This dedicated route authenticates its own credential and Host. */
   readonly externalMcpPath?: string;
 };
@@ -45,6 +47,19 @@ export function registerProductionAuthGuard(
       requestRouteIdentity(request),
     );
     if (authRequired === false) return;
+
+    const oauthAccess = await options.resolveOAuthAccess?.(request);
+    if (oauthAccess !== null && oauthAccess !== undefined) {
+      const scope = oauthScopeForRoute(request.method, request.url);
+      const result = scope === null
+        ? { ok: false as const, statusCode: 403, detail: "OAuth token is not allowed for this resource" }
+        : requireOAuthScope(oauthAccess, scope);
+      if (!result.ok) {
+        request.log.warn({ method: request.method, path: requestLogPath(request), statusCode: result.statusCode }, "HTTP authentication rejected");
+        return reply.code(result.statusCode).send({ detail: result.detail });
+      }
+      return;
+    }
 
     const access = await options.resolveTokenAccess(request);
     if (!access.ok) {
