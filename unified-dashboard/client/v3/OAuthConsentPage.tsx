@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { AuthSurface, Button } from "@seosoyoung/soul-ui";
+import { useEffect, useRef, useState } from "react";
+import { AuthSurface, Button, Spinner } from "@seosoyoung/soul-ui";
 
 type OAuthConsentView = {
   readonly email: string;
@@ -16,6 +16,8 @@ export function OAuthConsentPage({ request = fetch }: OAuthConsentPageProps) {
   const interaction = new URLSearchParams(window.location.search).get("interaction");
   const [view, setView] = useState<OAuthConsentView | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState<string | null>(null);
+  const actionInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!interaction) {
@@ -50,14 +52,30 @@ export function OAuthConsentPage({ request = fetch }: OAuthConsentPageProps) {
               action={`/api/oauth/interaction/${encodeURIComponent(interaction ?? "")}`}
               method="post"
               className="flex gap-3"
+              aria-busy={submitting !== null}
+              onSubmit={(event) => {
+                const submitter = (event.nativeEvent as SubmitEvent).submitter as HTMLButtonElement | null;
+                if (actionInput.current && submitter) {
+                  actionInput.current.value = submitter.value;
+                  setSubmitting(submitter.value);
+                }
+              }}
             >
               <input type="hidden" name="csrf" value={view.csrf} />
-              <Button className="flex-1" type="submit" name="action" value="allow">허용</Button>
-              <Button className="flex-1" type="submit" name="action" value="cancel" variant="outline">취소</Button>
+              <input ref={actionInput} type="hidden" name="action" />
+              <Button className="flex-1" type="submit" value="allow" disabled={submitting !== null}>
+                {submitting === "allow" && <Spinner aria-label="처리 중" />}허용
+              </Button>
+              <Button className="flex-1" type="submit" value="cancel" variant="outline" disabled={submitting !== null}>
+                {submitting === "cancel" && <Spinner aria-label="처리 중" />}취소
+              </Button>
             </form>
           </>
         ) : error ? (
-          <p className="text-sm text-accent-red" role="alert">{error}</p>
+          <div role="alert" className="flex flex-col gap-1 text-sm">
+            <p className="text-accent-red">{error}</p>
+            <p className="text-muted-foreground">로그인을 시작한 앱에서 다시 시도해 주세요.</p>
+          </div>
         ) : null}
       </AuthSurface>
     </main>
