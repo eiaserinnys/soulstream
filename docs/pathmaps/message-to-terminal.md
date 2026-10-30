@@ -229,3 +229,7 @@ session ID가 없는 첫 턴은 입력 전달 상태가 `not_sent`로 증명된 
 수집은 기존 러너 상태 루트에서 고정 `antigravity-usage.log`를 호출마다 덮어쓰며 같은 루트를 cwd로 쓴다. 기존 공급자 예산의 AbortSignal로 자식을 종료하고 stderr 원문은 보관하지 않는다. 안티그라비티 성공 complete는 Claude result나 Codex turn/completed가 아니므로 기존 거부 기억을 해제하지 않는다. 새 한도 오류 코드는 추가하지 않으며, PAS 주간 게이지에는 Antigravity 줄을 추가한다.
 
 계정 사용량의 독립 Gemini 수집과 요약 키는 제거했다. 옛 워커 snapshot의 extra gemini는 orch 입력 경계에서 무시한다. Gemini 모델 이름과 agy의 Gemini Models·antigravity:gemini:* 버킷은 유지하며, 상세 창은 5시간→7일 순서다. 주간 계산은 window 식별자와 weekly 필드를 사용한다. 공통 weeklyUsageGauges는 Antigravity를 마지막에 더하고 웹/iPad는 값 행이 하나 이상이면 빈 슬롯 없이 해당 줄 수만큼의 높이로 아래 정렬한다. 값 행이 없는 불러오는 중·조회 실패·주간 한도 없음·수집 대기는 기존 세 줄 자리와 안내를 유지한다. iOS 위젯은 optional Antigravity를 같은 순서로 읽으며 medium은 네 행 이상일 때만 두 칸 두 줄로 배치하고, 세 행 이하는 기존 세로 배치와 긴 남은 날 표기를 유지한다. small 네 행은 ViewThatFits의 세 후보로 표시한다.
+
+## 외부 대화 제공자
+
+대화 스레드의 인증과 생성 경로는 [OAuth와 대화 제공자](oauth-to-conversation.md)를 따른다. 메시지 전달 경로는 대화 API 메시지 구현에서 연결한다.

@@ -1,3 +1,4 @@
+import { registerConversationRoutes, type ConversationRouteOptions } from "./conversation/conversation_routes.js";
 import { registerOwnedAgentRoutes, type OwnedAgentRouteOptions } from "./owned-agents/routes.js";
 import { registerExternalEventsRoutes, type ExternalIngressConfig } from "./mcp/external_events_transport.js";
 import { registerMcpHostRoutes } from "./mcp/mcp_host_routes.js";
@@ -227,6 +228,7 @@ export type CreateAppOptions = {
   sessionResumeAfterLimitRoutes?: SessionResumeAfterLimitRouteOptions;
   sessionCatalogRoutes?: SessionCatalogRouteOptions;
   persistentSessionRoutes?: PersistentSessionSettingsRouteOptions;
+  conversationRoutes?: ConversationRouteOptions;
   sessionCommandRoutes?: SessionCommandRouteOptions;
   sessionHistoryRoutes?: SessionHistoryRouteOptions;
   sessionSnapshotRoutes?: SessionSnapshotRouteOptions;
@@ -353,6 +355,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.sessionCatalogRoutes !== undefined) {
     registerSessionCatalogRoutes(app, options.sessionCatalogRoutes);
+  }
+  if (options.conversationRoutes !== undefined) {
+    registerConversationRoutes(app, options.conversationRoutes);
   }
   if (options.persistentSessionRoutes !== undefined) {
     registerPersistentSessionSettingsRoutes(app, options.persistentSessionRoutes);

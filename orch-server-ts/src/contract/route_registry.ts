@@ -145,6 +145,11 @@ type TypeScriptAdditiveRoute = Omit<RouteDefinition, "order"> & {
 };
 
 const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
+  { methods: ["GET"], path: "/api/conversations/v1/models", name: "conversation_0", authRequired: true, family: "session" },
+  { methods: ["GET"], path: "/api/conversations/v1/threads", name: "conversation_1", authRequired: true, family: "session" },
+  { methods: ["GET", "PUT"], path: "/api/conversations/v1/threads/by-key", name: "conversation_2", authRequired: true, family: "session" },
+  { methods: ["PUT"], path: "/api/conversations/v1/threads/by-key/adoption", name: "conversation_3", authRequired: true, family: "session" },
+  { methods: ["GET", "PATCH"], path: "/api/conversations/v1/threads/{id}", name: "conversation_4", authRequired: true, family: "session" },
   {
     methods: ["GET"],
     path: "/api/context-bundles",
@@ -466,7 +471,7 @@ export function classifyRouteFamily(path: string): RouteFamily {
   }
   if (path.startsWith("/api/cards")) return "control_plane";
   if (path.startsWith("/api/folders/")) return "folder";
-  if (path.startsWith("/api/sessions")) return "session";
+  if (path.startsWith("/api/sessions") || path.startsWith("/api/conversations/")) return "session";
   if (path.startsWith("/api/nodes/")) return "node_proxy";
   if (path.startsWith("/api/usage/")) return "node_proxy";
   if (path.startsWith("/api/config/settings") || path.startsWith("/api/dashboard/config")) {

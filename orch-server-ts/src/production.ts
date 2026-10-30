@@ -1,3 +1,6 @@
+import { ConversationService } from "./conversation/conversation_service.js";
+import { PERSISTENT_CREATE_NODE_ID } from "./session/persistent_session_settings_service.js";
+import { verifyServiceBearerAuthorization } from "./auth/service_bearer.js";
 import { SqlOwnedAgentRepository } from "./owned-agents/repository.js";
 import type { OnPersistentReportPosted, PublishPersistentReports } from "./session/persistent_report_service.js";
 import { CARD_QUESTION_KEY_PREFIX } from "@soulstream/wire-schema/persistent-report";
@@ -738,10 +741,11 @@ export async function createLiveProductionApplication(
     path: config.mcp_external_events_state_file, owner: credentialOwner(config.mcp_external_ingress_path!, config.mcp_external_ingress_bearer_token!),
   }) : undefined;
   const lifecycle=new OrchestratorLifecycle(buildId,runtimeServices.sessionBroadcaster);
+  const productionSql = await sqlResolver.resolveSql() as unknown as SqlClient;
   const app = createApp({
     oauthRoutes: {
       issuer: config.soulstream_public_url,
-      sql: await sqlResolver.resolveSql() as unknown as SqlClient,
+      sql: productionSql,
       dashboardAuth: {
         configProvider: providers.authRoutes.configProvider,
         jwt: providers.authRoutes.jwt,
@@ -776,6 +780,7 @@ export async function createLiveProductionApplication(
       cardDispatchRuntime.executionServiceProvider,
       lifecycle,
       cardDispatchRuntime.workDispatchServiceProvider,
+      productionSql,
     ),
     persistentContextRoutes: {
       authBearerToken: config.auth_bearer_token,
@@ -1048,6 +1053,7 @@ export function buildProductionRouteOptions(
   cardExecutionServiceProvider?: NonNullable<CreateAppOptions["folderRoutes"]>["cardExecutionServiceProvider"],
   lifecycle?: OrchestratorLifecycle,
   workDispatchServiceProvider?: NonNullable<McpHostOptions["cards"]["workDispatchServiceProvider"]>,
+  conversationSql?: SqlClient,
 ): CreateAppOptions {
   const sessionAccessProvider = providers.sessionCatalogRoutes.accessProvider;
   if (scheduleRepositoryProvider !== undefined && sessionAccessProvider === undefined) {
@@ -1066,9 +1072,23 @@ export function buildProductionRouteOptions(
     presets: providers.modelPresetAvailability,
     profiles: providers.nodeAgentProfileRoutes.provider,
   });
+  const conversationService = conversationSql ? new ConversationService({
+    sql: conversationSql, access: sessionAccessProvider, persistent: persistentSessionSettingsService,
+    reads: async () => (await persistenceRepositoryProvider()).sessionReads,
+    presets: providers.modelPresetAvailability,
+    create: (request, body, id, logger) => executeCreateSessionRoute(providers.runtime.sessionCommandRoutes, request, body, logger, id),
+    waitForCreatedSession: (id) => providers.runtime.sessionCommandRoutes.router.waitForCreatedSession(id, PERSISTENT_CREATE_NODE_ID),
+  }) : undefined;
   return {
     config,
     corsAllowedOrigins,
+    ...(conversationService ? { conversationRoutes: { service: conversationService, resolveAccount: async (request) => {
+      const service = verifyServiceBearerAuthorization(request.headers.authorization, config.authBearerToken, config.environment);
+      if (service.ok && !service.developmentBypass) return "service-token";
+      const email = await providers.authenticatedUserResolvers.resolveEmail(request);
+      if (email) return email.trim().toLowerCase();
+      return service.ok ? "service-token" : null;
+    } } } : {}),
     productionAuth: {
       resolveTokenAccess: providers.authRoutes.resolveTokenAccess,
       resolveOAuthAccess: providers.authenticatedUserResolvers.resolveOAuthAccess,
