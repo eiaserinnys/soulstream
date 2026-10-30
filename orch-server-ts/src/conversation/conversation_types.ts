@@ -8,8 +8,10 @@ export type PatchRequest = {
 export type Binding = {
   account_id: string; namespace: string; external_key: string; session_id: string;
   selected_model: string; creation_request: EnsureRequest | null; phase: string;
-  instruction_id: string | null; notices: string[]; archived: boolean;
+  instruction_id: string | null; notices: ConversationNotice[]; archived: boolean;
+  first_input_is_initial_instruction: boolean;
 };
+export type ConversationNotice = { id: string; text: string; at: string };
 export type Thread = {
   id: string; external: { namespace: string; key: string }; title: string;
   model: { id: string; label: string }; created_at: string; archived: boolean;

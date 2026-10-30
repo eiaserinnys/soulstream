@@ -4501,3 +4501,6 @@ CREATE TABLE IF NOT EXISTS conversation_bindings (
     archived BOOLEAN NOT NULL DEFAULT FALSE,
     PRIMARY KEY (account_id, namespace, external_key)
 );
+
+ALTER TABLE conversation_bindings
+  ADD COLUMN IF NOT EXISTS first_input_is_initial_instruction BOOLEAN NOT NULL DEFAULT FALSE;

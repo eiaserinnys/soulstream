@@ -1,0 +1,57 @@
+import type { SqlClient } from "../control_plane/control_plane_types.js";
+import { ConversationError, type Binding } from "./conversation_types.js";
+import { ConversationProjection, type Item, type SourceEvent } from "./conversation_projection.js";
+
+type Row = { id: number; event_type: string; payload: Record<string, unknown> | null; created_at: Date };
+const TYPES = ["user_message", "intervention_sent", "notification", "assistant_message", "tool_start", "tool_result", "complete", "error", "assistant_error"];
+export class ConversationHistory {
+  constructor(private readonly sql: SqlClient) {}
+  async load(binding: Binding) {
+    const [watermark] = await this.sql<Array<{ id: number }>>`SELECT COALESCE(MAX(id), 0)::int AS id FROM events WHERE session_id=${binding.session_id}`;
+    const cursor = watermark?.id ?? 0;
+    const rows = await this.sql<Row[]>`SELECT id,event_type,payload,created_at FROM events
+      WHERE session_id=${binding.session_id} AND id <= ${cursor} AND event_type = ANY(${TYPES})
+      ORDER BY id`;
+    const hideInitial = binding.first_input_is_initial_instruction || Boolean(binding.creation_request?.initial_instruction?.length);
+    const projection = new ConversationProjection(hideInitial);
+    const items: Array<{ position: number; item: Item }> = binding.notices.map(n => ({
+      position: 0, item: { id: n.id, kind: "notice", text: n.text, at: n.at, attachments: [] },
+    }));
+    for (const row of rows) {
+      row.payload = await this.enrichPayload(row.payload ?? {});
+      const result = projection.apply(sourceEvent(row));
+      if (result.item) items.push({ position: row.id, item: result.item });
+    }
+    return { cursor, projection, items };
+  }
+  async enrichPayload(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const ids = Array.isArray(payload.attachment_ids) ? payload.attachment_ids.filter((x): x is string => typeof x === "string") : [];
+    if (!ids.length) return payload;
+    const assets = await this.sql<Array<{ id: string; original_name: string; mime_type: string }>>`
+      SELECT id,original_name,mime_type FROM file_assets
+      WHERE id = ANY(${ids}) AND storage_purpose = 'attachment' AND upload_status = 'committed' AND garbage_collected_at IS NULL`;
+    const byId = new Map(assets.map(asset => [asset.id, asset]));
+    return { ...payload, _conversation_attachments: ids.flatMap(id => {
+      const asset = byId.get(id);
+      return asset ? [{ id, name: asset.original_name, mime: asset.mime_type }] : [];
+    }) };
+  }
+  async items(binding: Binding, before: string | undefined, limit: number) {
+    const history = await this.load(binding);
+    let end = history.items.length;
+    if (before !== undefined) {
+      end = history.items.findIndex(x => x.item.id === before);
+      if (end < 0) throw new ConversationError(400, "invalid_request", "Invalid before cursor");
+    }
+    const start = Math.max(0, end - limit);
+    const slice = history.items.slice(start, end);
+    return { items: slice.map(x => x.item), ...(start > 0 ? { next_before: slice[0]!.item.id } : {}), cursor: String(history.cursor) };
+  }
+}
+export function sourceEvent(row: Row): SourceEvent {
+  const payload = row.payload ?? {};
+  const raw = payload.timestamp;
+  const date = typeof raw === "number" ? new Date(raw < 10_000_000_000 ? raw * 1000 : raw)
+    : typeof raw === "string" ? new Date(raw) : new Date(row.created_at);
+  return { id: row.id, type: row.event_type, at: Number.isFinite(date.getTime()) ? date.toISOString() : new Date(row.created_at).toISOString(), payload };
+}

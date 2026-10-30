@@ -141,6 +141,17 @@ describe("conversation thread API", () => {
     const b = await app.inject({ method: "PUT", url: "/api/conversations/v1/threads/by-key/adoption?namespace=n&key=adopt", payload: { session_id: "other" } });
     expect(b.statusCode).toBe(409);
   });
+  it("stores the initial-input adoption flag and rejects a conflicting retry", async () => {
+    const id = "existing-with-initial";
+    rows.set(id, { session_id: id, folder_id: "allowed", display_name: "Existing", node_id: "eiaserinnys", created_at: new Date(), status: "completed", model_preset: "opus" });
+    const url = "/api/conversations/v1/threads/by-key/adoption?namespace=n&key=initial";
+    const adopt = (flag: boolean) => app.inject({ method: "PUT", url, payload: { session_id: id, first_input_is_initial_instruction: flag } });
+    expect((await adopt(true)).statusCode).toBe(200);
+    expect((await adopt(true)).statusCode).toBe(200);
+    expect((await adopt(false)).statusCode).toBe(409);
+    const [binding] = await db.sql`SELECT first_input_is_initial_instruction FROM conversation_bindings WHERE session_id=${id}`;
+    expect(binding?.first_input_is_initial_instruction).toBe(true);
+  });
   it("enforces session folder access and updates existing thread", async () => {
     const made = await ensure("patch"); const id = made.json().thread.id;
     deny = true; const hidden = await app.inject({ method: "GET", url: `/api/conversations/v1/threads/${id}` }); deny = false;

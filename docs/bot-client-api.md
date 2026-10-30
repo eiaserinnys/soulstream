@@ -65,9 +65,9 @@ days.
 OAuth bearer access is limited to read routes: `cards:read` allows `GET
 /api/cards` and its read subroutes; `folders:read` allows `GET /api/folders` and
 its read subroutes. Both routes apply the signed-in account's existing folder
-ACL. `conversations` is reserved for conversation routes added by a later
-change. OAuth tokens do not authorize session creation, session intervention,
-MCP, or write routes. See the [OAuth authentication path map](pathmaps/oauth-authentication.md)
+ACL. `conversations` authorizes the conversation provider routes documented
+below. OAuth tokens do not authorize the legacy session intervention or MCP
+routes. See the [OAuth authentication path map](pathmaps/oauth-authentication.md)
 for the server-side flow and caller identity fields.
 
 ## Typical bot flow
@@ -389,7 +389,9 @@ Authenticated clients use `/api/conversations/v1`. A thread ID is an opaque iden
 - `GET /threads?namespace=...&cursor=...` returns `{refs, next_cursor?}`; use the returned cursor to continue.
 - `GET /threads/by-key?namespace=...&key=...` returns `{thread}`.
 - `PUT /threads/by-key?namespace=...&key=...` accepts `{title, selected_model, model_order, profile, collection, initial_instruction, instructions}` and returns `{thread, created, notices}`. `profile` and `collection` are opaque provider identifiers. The selected model is tried first, followed by `model_order` when unavailable. Once the request is accepted, processing continues after client disconnect. A `504` with `error.code = "pending"` and `thread_id` means the same key should be queried or retried; do not create a new key.
-- `PUT /threads/by-key/adoption?namespace=...&key=...` with `{session_id}` binds an existing accessible session for migration. A conflicting key or already bound session returns 409.
+- `PUT /threads/by-key/adoption?namespace=...&key=...` with `{session_id, first_input_is_initial_instruction?}` binds an existing accessible session for migration. The optional boolean defaults to false. When true, the first human input event is omitted from the conversation. Retrying the same binding with a different boolean, a conflicting key, or an already bound session returns 409. Newly created threads omit the first human input when their `initial_instruction` is nonempty.
 - `GET /threads/{id}` returns `{thread, busy, tool, current_model}`. `PATCH /threads/{id}` accepts `title`, `archived: true`, `model`, `model_order`, and `instructions`; archive disables persistence without deleting history.
+- `GET /threads/{id}/items?before=...&limit=...` returns `{items, next_before?, cursor}`. The default and maximum limit are 200; items are ordered by provider event order. Use `next_before` to request an older page, and use `cursor` as `Last-Event-ID` when starting the event stream.
+- `GET /threads/{id}/events` returns SSE `snapshot`, `item`, `text`, and `activity` events. A snapshot contains the durable cursor, any items after the supplied cursor, busy/tool state and the current accumulated text. Each `text` replaces the text for its `stream_id`; transient text has no SSE id. Reconnect using the last SSE id.
 
 A thread contains `{id, external: {namespace, key}, title, model: {id, label}, created_at, archived}`. API errors have `{error: {code, message}}`: `invalid_request`, `login_required`, `forbidden`, `not_found`, `conflict`, `model_unavailable`, `unavailable`, or `pending`.
