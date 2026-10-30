@@ -26,12 +26,18 @@ export class ConversationHistory {
   }
   async enrichPayload(payload: Record<string, unknown>): Promise<Record<string, unknown>> {
     const ids = Array.isArray(payload.attachment_ids) ? payload.attachment_ids.filter((x): x is string => typeof x === "string") : [];
-    if (!ids.length) return payload;
+    const rawPaths = Array.isArray(payload.attachments) ? payload.attachments : Array.isArray(payload.attachment_paths) ? payload.attachment_paths : [];
+    const paths = rawPaths.filter((x): x is string => typeof x === "string");
+    const saved = paths.length ? await this.sql<Array<{ upload: {path:string; name:string; mime:string; assetId?:string} }>>`
+      SELECT upload FROM conversation_message_receipts, jsonb_array_elements(uploads) AS upload
+      WHERE upload->>'path' = ANY(${paths})` : [];
+    const pathMetadata = Object.fromEntries(saved.map(row => [row.upload.path, row.upload]));
+    if (!ids.length) return { ...payload, _conversation_path_metadata: pathMetadata };
     const assets = await this.sql<Array<{ id: string; original_name: string; mime_type: string }>>`
       SELECT id,original_name,mime_type FROM file_assets
       WHERE id = ANY(${ids}) AND storage_purpose = 'attachment' AND upload_status = 'committed' AND garbage_collected_at IS NULL`;
     const byId = new Map(assets.map(asset => [asset.id, asset]));
-    return { ...payload, _conversation_attachments: ids.flatMap(id => {
+    return { ...payload, _conversation_path_metadata: pathMetadata, _conversation_attachments: ids.flatMap(id => {
       const asset = byId.get(id);
       return asset ? [{ id, name: asset.original_name, mime: asset.mime_type }] : [];
     }) };

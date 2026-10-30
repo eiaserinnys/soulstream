@@ -394,4 +394,11 @@ Authenticated clients use `/api/conversations/v1`. A thread ID is an opaque iden
 - `GET /threads/{id}/items?before=...&limit=...` returns `{items, next_before?, cursor}`. The default and maximum limit are 200; items are ordered by provider event order. Use `next_before` to request an older page, and use `cursor` as `Last-Event-ID` when starting the event stream.
 - `GET /threads/{id}/events` returns SSE `snapshot`, `item`, `text`, and `activity` events. A snapshot contains the durable cursor, any items after the supplied cursor, busy/tool state and the current accumulated text. Each `text` replaces the text for its `stream_id`; transient text has no SSE id. Reconnect using the last SSE id.
 
-A thread contains `{id, external: {namespace, key}, title, model: {id, label}, created_at, archived}`. API errors have `{error: {code, message}}`: `invalid_request`, `login_required`, `forbidden`, `not_found`, `conflict`, `model_unavailable`, `unavailable`, or `pending`.
+## Conversation API v1: messages and attachments
+
+- `POST /threads/{id}/messages` accepts `{request_id, text, attachments: [{name, mime, data_base64}]}` and returns `{request_id, status, error?}`. An empty text is allowed when attachments are present. Use standard base64. The limits are 10 attachments, 20 MiB each, 30 MiB total and a 48 MiB JSON body; excess returns 413 `attachment_limit`.
+- A request ID identifies one body within a thread. A retry of the same body returns the same receipt; a different body returns 409 `conflict`. The service uploads all attachments before submitting the intervention. If an upload fails, no intervention occurs and the receipt is `failed`.
+- `GET /threads/{id}/messages/{request_id}` returns `pending`, `accepted` or `failed` and an optional safe error. Once the body is received, work continues after HTTP disconnection. Query the receipt before retrying with the same ID. `accepted` means durable admission, not that the agent has finished its turn.
+- `GET /threads/{id}/items/{item_id}/attachments/{attachment_id}` returns bytes, content type and filename. Encode every ID as a URL component. Attachment IDs are opaque and tied to the item; filesystem paths are not exposed. Legacy path-only records are readable as well.
+
+A thread contains `{id, external: {namespace, key}, title, model: {id, label}, created_at, archived}`. API errors have `{error: {code, message}}`: `invalid_request`, `login_required`, `forbidden`, `not_found`, `conflict`, `attachment_limit`, `model_unavailable`, `unavailable`, or `pending`.

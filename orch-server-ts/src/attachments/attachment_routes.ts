@@ -397,7 +397,7 @@ async function* iterAttachmentChunks(content: Buffer): AsyncIterable<Buffer> {
 // Warm the worker cache for a committed owned upload in legacy mode. A missing
 // node is a transport failure (503), and an empty file never falls back to the
 // empty-base64 legacy command: an unsupported chunked command becomes 409.
-async function legacyOwnedUploadCache(
+export async function legacyOwnedUploadCache(
   options: AttachmentRouteOptions,
   nodeId: string,
   sessionId: string,

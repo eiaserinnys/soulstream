@@ -1,3 +1,5 @@
+import { ConversationMessageService } from "./conversation/conversation_messages.js";
+import { createConversationMessagePorts } from "./conversation/conversation_message_ports.js";
 import { ConversationService } from "./conversation/conversation_service.js";
 import { PERSISTENT_CREATE_NODE_ID } from "./session/persistent_session_settings_service.js";
 import { verifyServiceBearerAuthorization } from "./auth/service_bearer.js";
@@ -1082,7 +1084,11 @@ export function buildProductionRouteOptions(
   return {
     config,
     corsAllowedOrigins,
-    ...(conversationService ? { conversationRoutes: { service: conversationService, liveEvents: providers.runtime.sessionHistoryRoutes.liveEvents, closeAfterHistorySync: providers.runtime.sessionHistoryRoutes.closeAfterHistorySync, resolveAccount: async (request) => {
+    ...(conversationService ? { conversationRoutes: { service: conversationService,
+      messages: new ConversationMessageService(conversationSql!,createConversationMessagePorts(conversationSql!,providers.attachmentRoutes,{
+        ...providers.runtime.sessionActionCommandRoutes,
+        deliveryRepositoryProvider: async () => (await persistenceRepositoryProvider()).deliveries,
+      })), liveEvents: providers.runtime.sessionHistoryRoutes.liveEvents, closeAfterHistorySync: providers.runtime.sessionHistoryRoutes.closeAfterHistorySync, resolveAccount: async (request) => {
       const service = verifyServiceBearerAuthorization(request.headers.authorization, config.authBearerToken, config.environment);
       if (service.ok && !service.developmentBypass) return "service-token";
       const email = await providers.authenticatedUserResolvers.resolveEmail(request);

@@ -10,3 +10,6 @@
 - Reserved internal session creation: `orch-server-ts/src/session/session_command_routes.ts`.
 - Provider composition: `orch-server-ts/src/production.ts`; runtime routes and authentication inventory: `orch-server-ts/src/app.ts` and `orch-server-ts/src/contract/`.
 - Thread protocol and examples: `docs/bot-client-api.md` and `orch-server-ts/tests/fixtures/conversation-v1/`.
+- Message submission and receipt: `conversation_routes.ts` checks `historyBinding` (account and folder ACL) before `conversation_messages.ts` validates and reserves `(session_id, request_id)` in migration 140. The receipt retains the request hash, fixed caller, upload metadata and delivery id.
+- Owned uploads and reads: `conversation_message_ports.ts` uses the existing attachment commit, node cache and legacy alias; history projection restores old path-only names in `conversation_projection.ts` and enriches new uploads from receipts in `conversation_history.ts`.
+- Intervention: the facade passes the stored delivery id, caller and paths through `executeSessionIntervention` in `session_action_command_routes.ts`. The existing durable ledger owns delivery and recovery. Attachment reads verify that the requested opaque id belongs to the projected item before resolving the asset or legacy path.
