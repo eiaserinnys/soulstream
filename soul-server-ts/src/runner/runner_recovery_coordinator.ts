@@ -29,6 +29,7 @@ import {
 import { RunnerRegistrationControl } from "./runner_registration_control.js";
 import type { RunnerReleaseGarbageCollector } from "./runner_release_gc.js";
 import type { ClosedRunnerTailDrainer } from "./closed_runner_tail_drainer.js";
+import { isClosedClaudeEngineFailure } from "./closed_engine_error.js";
 import {
   closedRunnerTailRequiresDrain,
   logRunnerRecoveryScan,
@@ -390,6 +391,22 @@ export class RunnerRecoveryCoordinator {
     onRunnerAttached?: () => void,
     phaseObservation?: RunnerPhaseObservation,
   ): Promise<void> {
+    const closedEngineTerminal = registration.lifecycle !== null
+      && registration.lifecycle.execution_state !== "running"
+      && isClosedClaudeEngineFailure(
+        registration.config.backend,
+        registration.lifecycle.terminal_error,
+      );
+    if (task && disposition === "replay_terminal" && closedEngineTerminal) {
+      await this.recoverByDisposition(
+        registration,
+        disposition,
+        task,
+        onRunnerAttached,
+        phaseObservation,
+      );
+      return;
+    }
     if (
       task
       && disposition === "replay_terminal"

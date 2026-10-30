@@ -267,6 +267,26 @@ export class RunnerChildRuntime {
       await connection.send(interventionClaimFailure);
       return;
     }
+    if (command.kind === "close") {
+      try {
+        const result = await this.dispatcher.dispatch(command);
+        await connection.send(result);
+      } finally {
+        try {
+          const lifecycle = this.lifecycle.read();
+          if (lifecycle?.execution_state === "running") {
+            this.lifecycle.finish(
+              lifecycle.execution_command_id,
+              "closed",
+              new Date().toISOString(),
+            );
+          }
+        } finally {
+          queueMicrotask(() => { void this.shutdown(); });
+        }
+      }
+      return;
+    }
     const result = await this.dispatcher.dispatch(command);
     if (
       result.result.status !== "ok"
@@ -287,17 +307,6 @@ export class RunnerChildRuntime {
         this.logger.error({ err: error }, "Runner execution drain failed");
       });
       return;
-    }
-    if (command.kind === "close") {
-      const lifecycle = this.lifecycle.read();
-      if (lifecycle?.execution_state === "running") {
-        this.lifecycle.finish(
-          lifecycle.execution_command_id,
-          "closed",
-          new Date().toISOString(),
-        );
-      }
-      queueMicrotask(() => { void this.shutdown(); });
     }
   }
 

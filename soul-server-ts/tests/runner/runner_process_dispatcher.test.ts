@@ -8,6 +8,7 @@ import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  engineEventFrame,
   executionEndedControlFrame,
   outboxAvailableControlFrame,
   prepareSessionCommandFrame,
@@ -21,6 +22,7 @@ import {
   RunnerIpcRequestTimeoutError,
 } from "../../src/runner/runner_ipc_connection.js";
 import { RunnerParentOutbox } from "../../src/runner/runner_parent_outbox.js";
+import { isClosedClaudeEngineFailure } from "../../src/runner/closed_engine_error.js";
 import { buildDurableRunnerEvent } from
   "../../src/runner/runner_child_runtime_helpers.js";
 import {
@@ -39,6 +41,9 @@ import {
 } from "../../src/runner/runner_socket_endpoint.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
+import { createTaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
+import { TaskExecutorFinalizer } from "../../src/task/task_executor_finalizer.js";
+import type { Task } from "../../src/task/task_models.js";
 import type { EventOutboxBatch } from "../../src/upstream/event_outbox.js";
 import { EventOutboxPump } from "../../src/upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../../src/upstream/event_outbox_pump_mux.js";
@@ -55,6 +60,108 @@ afterEach(async () => {
 });
 
 describe("RunnerProcessDispatcher", () => {
+  it("classifies only the exact closed-engine failure from Claude", () => {
+    const exact = {
+      code: "execution_failed",
+      message: "ClaudeEngineAdapter.execute called after close()",
+    };
+
+    expect(isClosedClaudeEngineFailure("claude", exact)).toBe(true);
+    expect(isClosedClaudeEngineFailure("codex", exact)).toBe(false);
+    expect(isClosedClaudeEngineFailure("claude", {
+      ...exact,
+      code: "close_failed",
+    })).toBe(false);
+    expect(isClosedClaudeEngineFailure("claude", {
+      ...exact,
+      message: `${exact.message} while preparing`,
+    })).toBe(false);
+    expect(isClosedClaudeEngineFailure("claude", {
+      ...exact,
+      message: `wrapped: ${exact.message}`,
+    })).toBe(false);
+  });
+
+  it("continues settling close host-calls after closing admission", async () => {
+    const fixture = await spawnedInitializationFixture();
+    let allowCloseAck!: () => void;
+    let closeCommandSeen!: () => void;
+    const closeAck = new Promise<void>((resolve) => { allowCloseAck = resolve; });
+    const closeSeen = new Promise<void>((resolve) => { closeCommandSeen = resolve; });
+    const terminate = vi.fn(async () => undefined);
+    const hostCall = vi.fn(async () => ({ released: true }));
+    const responseSent = vi.fn(async () => { allowCloseAck(); });
+    const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
+      RunnerProcessDispatcher & {
+        trackFrameHandler(frame: ReturnType<typeof runnerRequestFrame>): Promise<void>;
+      };
+    Object.assign(dispatcher, {
+      ready: Promise.resolve(),
+      spawnedProcess: fixture.spawned,
+      spawnInput: spawnInput(fixture.stateDirectory),
+      closed: false,
+      inFlightFrameHandlers: new Set<Promise<void>>(),
+      inFlightClaudeRuntimeObservations: new Set<Promise<void>>(),
+      requestLifetimes: new Map(),
+      recentHostResponses: new Map(),
+      dispatch: async (frame: { commandId: string }) => {
+        closeCommandSeen();
+        await closeAck;
+        return runnerCommandResultFrame(frame.commandId, { status: "ok" });
+      },
+      releaseHostResources: vi.fn(async () => undefined),
+      options: {
+        logger: { warn: vi.fn(), error: vi.fn(), info: vi.fn() },
+        spawner: { terminate },
+        handleHostCall: hostCall,
+      },
+      hostCallIdempotency: {
+        execute: async (
+          call: { correlationId: string },
+          apply: (key: string) => Promise<unknown>,
+        ) => ({
+          data: await apply(call.correlationId), replayed: false,
+        }),
+      },
+      connection: { send: responseSent, close: vi.fn() },
+      sendBestEffort: async (frame: unknown) => await responseSent(frame),
+    });
+
+    const closing = dispatcher.close();
+    await closeSeen;
+    await dispatcher.trackFrameHandler(runnerRequestFrame("release-during-close", {
+      kind: "host_call",
+      service: "claude_accounts",
+      operation: "release",
+      args: [],
+    }));
+    const settledBeforeFallback = await Promise.race([
+      closing.then(() => true),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 200)),
+    ]);
+    allowCloseAck();
+    await closing;
+
+    expect(settledBeforeFallback).toBe(true);
+    expect(hostCall).toHaveBeenCalledOnce();
+    expect(responseSent).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "response",
+      correlationId: "release-during-close",
+    }));
+    expect(terminate).toHaveBeenCalledWith(fixture.spawned.paths, {
+      registrationId: fixture.spawned.registrationId,
+      pid: fixture.spawned.pid,
+      startIdentity: "start-7101",
+    });
+    await dispatcher.trackFrameHandler(runnerRequestFrame("after-close", {
+      kind: "host_call",
+      service: "claude_accounts",
+      operation: "release",
+      args: [],
+    }));
+    expect(hostCall).toHaveBeenCalledOnce();
+  });
+
   it("forwards terminal registration retirement with the spawned generation", async () => {
     const retireTerminalRegistration = vi.fn(async () => {});
     const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
@@ -1389,6 +1496,204 @@ describe("RunnerProcessDispatcher", () => {
 
     await dispatcher.close();
     await endpoint.close();
+  });
+
+  it("cleans an exact closed Claude turn and accepts the next input on a fresh runner despite an ambiguous old claim", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const writer = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    await writer.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-10-30T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-a",
+        cwd: "/workspace/a",
+        codex_home: null,
+        rollout_root: null,
+        code_sha: "sha-a",
+        snapshot_path: "/release/sha-a/soul-server-ts",
+      },
+    });
+    await writer.stageIntervention({
+      interventionId: "ambiguous-old-claim",
+      message: { text: "old input", user: "alice" },
+      queued: true,
+      queuedAt: "2026-10-30T00:00:00.000Z",
+    });
+    expect(await writer.claimIntervention(
+      "ambiguous-old-claim",
+      "execute:old-command",
+    )).toBe(true);
+    await writer.markInterventionAmbiguous(
+      "ambiguous-old-claim",
+      "execute:old-command",
+    );
+    writer.close();
+    const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
+    const spawned = await spawnedProcessForTest(paths);
+    let endpoint!: RunnerSocketEndpoint;
+    endpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
+      if (frame.channel !== "command") return;
+      await endpoint.currentConnection!.send(runnerCommandResultFrame(frame.commandId, {
+        status: "ok",
+      }));
+      if (frame.kind !== "execute") return;
+      lifecycle.begin({
+        pid: spawned.pid,
+        commandId: frame.commandId,
+        progressedAt: new Date().toISOString(),
+      });
+      await endpoint.currentConnection!.send(engineEventFrame({
+        type: "input_material_manifest",
+        schema_version: 1,
+        timestamp: 1,
+        output_command_id: frame.commandId,
+        input_id: "input-before-closed-error",
+      }));
+      lifecycle.finish(frame.commandId, "failed", new Date().toISOString(), {
+        code: "execution_failed",
+        message: "ClaudeEngineAdapter.execute called after close()",
+      });
+      await endpoint.currentConnection!.send(executionEndedControlFrame(frame.commandId, {
+        code: "execution_failed",
+        message: "ClaudeEngineAdapter.execute called after close()",
+      }));
+    }, vi.fn());
+    await endpoint.listen();
+    const codexInput = spawnInput(stateDirectory);
+    const backend = {
+      ...codexInput,
+      backend: "claude" as const,
+      agent: { ...codexInput.agent, backend: "claude" as const },
+    };
+    const terminate = vi.fn(async () => undefined);
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: backend,
+      runnerProcess: spawned,
+      spawner: { terminate },
+      pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
+      logger: pino({ level: "silent" }),
+      handleHostCall: async () => null,
+    });
+    const task = {
+      agentSessionId: "session-a",
+      status: "error",
+      runner: createTaskRunnerRuntime({
+        backendId: "claude",
+        detachedClaudeRuntime: true,
+        close: vi.fn(async () => undefined),
+      } as never, dispatcher, "runner"),
+    } as unknown as Task;
+    const finalizer = new TaskExecutorFinalizer({
+      lifecycleTransition: {
+        persistExecutorFinalState: vi.fn(async () => ({ terminalTransitionApplied: true })),
+        notifyCompletionIfApplied: vi.fn(async () => undefined),
+      } as never,
+      logger: pino({ level: "silent" }),
+    });
+    let nextEndpoint: RunnerSocketEndpoint | undefined;
+    let nextDispatcher: RunnerProcessDispatcher | undefined;
+    let endpointClosed = false;
+
+    try {
+      await dispatcher.prepareSession("session-a");
+      await expect(collect(dispatcher.executeFrames({
+        agentSessionId: "session-a",
+        prompt: "old turn",
+      }))).rejects.toThrow("ClaudeEngineAdapter.execute called after close()");
+      expect(dispatcher.hasClosedEngineFailureForFinalization()).toBe(true);
+
+      await finalizer.finalize(task);
+
+      expect(task.runner).toBeUndefined();
+      expect(terminate).toHaveBeenCalledWith(paths, {
+        registrationId: spawned.registrationId,
+        pid: spawned.pid,
+        startIdentity: "start-1001",
+      });
+      await endpoint.close();
+      endpointClosed = true;
+
+      const persistedInbox = await RunnerSqliteEventOutbox.open(paths.databasePath);
+      try {
+        expect(await persistedInbox.readPendingInterventions()).toEqual([]);
+        expect(await persistedInbox.claimIntervention(
+          "ambiguous-old-claim",
+          "execute:new-command",
+        )).toBe(false);
+      } finally {
+        persistedInbox.close();
+      }
+
+      const nextIdentity = {
+        ...pendingRunnerRegistrationIdentity("session-a", "sha-a"),
+        pid: 1002,
+        startIdentity: "start-1002",
+      };
+      await writeRunnerRegistrationIdentity(paths.sessionDirectory, nextIdentity);
+      const nextSpawned = {
+        pid: 1002,
+        registrationId: nextIdentity.registrationId,
+        paths,
+        config: {} as never,
+        adopted: false,
+      };
+      nextEndpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
+        if (frame.channel !== "command") return;
+        const connection = nextEndpoint?.currentConnection;
+        if (!connection) throw new Error("next wake has no IPC connection");
+        await connection.send(runnerCommandResultFrame(frame.commandId, { status: "ok" }));
+        if (frame.kind !== "execute") return;
+        lifecycle.begin({
+          pid: nextSpawned.pid,
+          commandId: frame.commandId,
+          progressedAt: new Date().toISOString(),
+        });
+        await connection.send(engineEventFrame({
+          type: "assistant_message",
+          content: "new runner answered",
+          timestamp: 2,
+        }));
+        await connection.send(engineEventFrame({
+          type: "complete",
+          result: "new runner answered",
+          timestamp: 3,
+        }));
+        lifecycle.finish(frame.commandId, "completed", new Date().toISOString());
+        await connection.send(executionEndedControlFrame(frame.commandId));
+      }, vi.fn());
+      await nextEndpoint.listen();
+      const nextTerminate = vi.fn(async () => undefined);
+      nextDispatcher = new RunnerProcessDispatcher({
+        spawn: backend,
+        runnerProcess: nextSpawned,
+        spawner: { terminate: nextTerminate },
+        pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
+        logger: pino({ level: "silent" }),
+        handleHostCall: async () => null,
+      });
+
+      await nextDispatcher.prepareSession("session-a");
+      const nextEvents = await collect(nextDispatcher.executeFrames({
+        agentSessionId: "session-a",
+        prompt: "new input",
+      }));
+
+      expect(nextDispatcher.registrationId()).toBe(nextIdentity.registrationId);
+      expect(nextDispatcher.registrationId()).not.toBe(spawned.registrationId);
+      expect(nextEvents.some((frame) =>
+        frame.kind === "engine_event" && frame.payload.type === "complete"
+      )).toBe(true);
+      expect(nextTerminate).not.toHaveBeenCalled();
+    } finally {
+      lifecycle.close();
+      await dispatcher.close();
+      if (!endpointClosed) await endpoint.close();
+      if (nextDispatcher) await nextDispatcher.close();
+      if (nextEndpoint) await nextEndpoint.close();
+    }
   });
 
   it("converges a running recovery from durable terminal state after IPC reconnect", async () => {

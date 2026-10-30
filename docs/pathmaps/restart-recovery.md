@@ -46,6 +46,8 @@ P5의 계정 전환은 같은 row에 시도한 계정 ID와 continuation UUID·�
 
 이 장을 갱신해야 하는 변경 부류: worker startup 순서·queued transcript recovery·node-ready/maintenance replay·delivery attempt maintenance·runner scan/classification/adoption·host gap frame forwarding·initial inventory 변경.
 
+`RunnerRecoveryCoordinator.handle`은 `replay_terminal`의 authoritative SQLite lifecycle이 Claude `execution_failed`와 정확한 `ClaudeEngineAdapter.execute called after close()`를 기록했으면 SDK activity 조회보다 먼저 기존 terminal replay/ACK→exact retirement 경로로 보낸다. 다른 terminal lifecycle에서 `activity=null`은 여전히 unsupported이므로 보수적으로 retained owner를 유지한다.
+
 ## Antigravity 대화 재개 (PR A)
 
 살아 있는 runner에 다시 붙으면 기존 child config의 MCP/내부 주소/CLI 경로가 유지된다. 새 runner에는 `runner_process_runtime_factory.ts:spawnInputFromConfig`가 저장된 선택 CLI 경로를 전달한다. `runner_recovery_task.ts:prepareRecoveredTask`와 `task_evicted_hydration.ts`의 공통 backend session ID가 `AntigravityEngineAdapter.executeFrames`의 `--conversation` 인자로 이어진다. native 대화가 생성 때 저장한 지시와 MCP를 사용하므로 재개에서 정의 파일을 다시 만들지 않는다. Claude transcript 복구 기능은 확장하지 않는다.

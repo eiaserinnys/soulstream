@@ -69,6 +69,9 @@ export class TaskExecutorFinalizer {
     runner: NonNullable<Task["runner"]>,
   ): Promise<DetachedWorkRetention> {
     if (task.runnerIsOfflineReplay === true) return "not_retained";
+    if (runner.dispatcher.hasClosedEngineFailureForFinalization?.() === true) {
+      return "not_retained";
+    }
     const retention = await this.detachedWorkRetention(task, runner.engine);
     if (task.runner !== runner) return "not_retained";
     if (retention === "retained" || retention === "codex_inactive") {
