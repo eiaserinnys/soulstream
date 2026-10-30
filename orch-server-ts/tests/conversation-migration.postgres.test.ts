@@ -22,4 +22,23 @@ describe("conversation 138 to 139 migration", () => {
       ]);
     });
   });
+  it("backfills each existing binding and receipt when executions are introduced", async () => {
+    await db.sql.begin(async tx => {
+      await tx.unsafe("DROP TABLE conversation_executions");
+      await tx.unsafe("ALTER TABLE conversation_bindings DROP COLUMN active_session_id");
+      await tx.unsafe("ALTER TABLE conversation_message_receipts DROP COLUMN target_session_id");
+      await tx`INSERT INTO conversation_bindings(account_id,namespace,external_key,session_id,selected_model,phase,first_input_is_initial_instruction)
+        VALUES ('person','n','k','old-execution','sol','complete',true)`;
+      await tx`INSERT INTO conversation_message_receipts(session_id,request_id,request_hash,delivery_id,caller_info,status)
+        VALUES ('old-execution','req','hash','delivery','{}'::jsonb,'accepted')`;
+      const migration = readFileSync(new URL("../../packages/db-schema/sql/migrations/141_conversation_executions.sql", import.meta.url), "utf8");
+      await tx.unsafe(migration);
+      const [binding] = await tx`SELECT active_session_id FROM conversation_bindings WHERE session_id='old-execution'`;
+      const [execution] = await tx`SELECT session_id,ordinal,first_input_is_initial_instruction FROM conversation_executions WHERE thread_id='old-execution'`;
+      const [receipt] = await tx`SELECT target_session_id FROM conversation_message_receipts WHERE session_id='old-execution'`;
+      expect(binding?.active_session_id).toBe("old-execution");
+      expect(execution).toMatchObject({session_id:"old-execution",ordinal:0,first_input_is_initial_instruction:true});
+      expect(receipt?.target_session_id).toBe("old-execution");
+    });
+  });
 });

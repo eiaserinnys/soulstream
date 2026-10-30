@@ -8,7 +8,8 @@ import type { SessionResourceAccessProvider } from "../session/session_resource_
 import type { SessionCreateRouteResponse } from "../session/session_create_route_response.js";
 import { ConversationRepository } from "./conversation_repository.js";
 import { ConversationCatalog, type ConversationModel } from "./conversation_catalog.js";
-import { ConversationError, type Binding, type EnsureRequest, type PatchRequest, type Thread } from "./conversation_types.js";
+import { ConversationExecutions } from "./conversation_execution.js";
+import { ConversationError, type Binding, type EnsureRequest, type Execution, type ExecutionRequest, type PatchRequest, type Thread } from "./conversation_types.js";
 
 type Caller = FastifyRequest;
 type Deps = {
@@ -24,8 +25,15 @@ type Deps = {
 
 export class ConversationService {
   private readonly repo: ConversationRepository;
+  private readonly executions: ConversationExecutions;
   private readonly inFlight = new Map<string, Promise<void>>();
-  constructor(private readonly deps: Deps) { this.repo = new ConversationRepository(deps.sql); }
+  constructor(private readonly deps: Deps) {
+    this.repo = new ConversationRepository(deps.sql);
+    this.executions = new ConversationExecutions({ ...deps, repo:this.repo,
+      row:id => this.requireRow(id), candidates:body => this.candidates(body),
+      notice:(preferred,selected,reason) => this.notice(preferred,selected,reason),
+      initialize:(request,binding,execution) => this.initialize(request,binding,execution) });
+  }
 
   models(profile?: string) { return this.deps.catalog.models(profile); }
   profiles() { return this.deps.catalog.profiles(); }
@@ -67,20 +75,23 @@ export class ConversationService {
     return { refs, ...(nextCursor ? { next_cursor: nextCursor } : {}) };
   }
   async byKey(request: Caller, account: string, namespace: string, key: string) {
-    const binding = await this.repo.byKey(account, namespace, key);
+    let binding = await this.repo.byKey(account, namespace, key);
     if (!binding) throw notFound();
+    binding = await this.prepare(request, account, binding);
     return { thread: await this.thread(request, binding) };
   }
   async info(request: Caller, account: string, id: string) {
-    const binding = await this.requireBinding(account, id);
+    const binding = await this.prepare(request, account, await this.requireBinding(account, id));
     const thread = await this.thread(request, binding);
-    const row = await this.requireRow(id);
+    const active = binding.active_session_id ?? id;
+    const row = await this.requireRow(active);
     const events = await this.deps.sql<Array<{ event_type: string; payload: Record<string, unknown> }>>`
-      SELECT event_type,payload FROM events WHERE session_id=${id}
+      SELECT event_type,payload FROM events WHERE session_id=${active}
       AND event_type IN ('user_message','intervention_sent','tool_start','tool_result','complete','error','assistant_error')
       ORDER BY id DESC LIMIT 1`;
     const event = events[0];
-    const busy = event ? ["user_message", "intervention_sent", "tool_start", "tool_result"].includes(event.event_type) : false;
+    const limited = row.status === "error" && row.termination_reason === "limit_hit";
+    const busy = !limited && event ? ["user_message", "intervention_sent", "tool_start", "tool_result"].includes(event.event_type) : false;
     const tool = event?.event_type === "tool_start" && typeof event.payload?.tool_name === "string" ? event.payload.tool_name : null;
     const currentId = typeof row.model_preset === "string" && typeof row.node_id === "string"
       ? this.deps.catalog.idFor(row.node_id, row.model_preset) : null;
@@ -104,7 +115,10 @@ export class ConversationService {
       binding = await this.repo.byKey(account, namespace, key);
       if (!binding) throw new ConversationError(409, "conflict", "Session binding already exists");
     }
-    if (binding.phase === "complete") return { thread: await this.thread(request, binding), created: false, notices: binding.notices.map(n => n.text) };
+    if (binding.phase === "complete") {
+      binding = await this.prepare(request, account, binding);
+      return { thread: await this.thread(request, binding), created: false, notices: binding.notices.map(n => n.text) };
+    }
     if (binding.creation_request) await this.deps.access.requireFolderAccess({ request, folderId: binding.creation_request.collection });
     const id = binding.session_id;
     let work = this.inFlight.get(id);
@@ -120,21 +134,23 @@ export class ConversationService {
     const current = await this.requireBinding(account, id);
     return { thread: await this.thread(request, current), created, notices: current.notices.map(n => n.text) };
   }
-  private async initialize(request: Caller, binding: Binding): Promise<void> {
-    const id = binding.session_id;
-    const body = binding.creation_request;
+  private async initialize(request: Caller, binding: Binding, execution?: Execution): Promise<void> {
+    const id = execution?.session_id ?? binding.session_id;
+    const body = execution?.request ?? binding.creation_request;
+    if (execution) binding = { ...binding, selected_model: execution.selected_model!, phase: execution.phase, notices: execution.notices, instruction_id: execution.instruction_id };
+    const phase = (value: string) => execution ? this.repo.executionPhase(id, value) : this.repo.phase(id, value);
     if (!body) throw new ConversationError(503, "unavailable", "Creation data is missing");
     let row = await (await this.deps.reads()).getSession(id);
     let selectedNodeId = this.deps.catalog.resolve(binding.selected_model)?.nodeId ?? PERSISTENT_CREATE_NODE_ID;
     if (!row && binding.phase === "reserved") {
-      await this.repo.phase(id, "dispatched");
+      await phase("dispatched");
       const candidates = await this.candidates(body);
       const firstPreferred: ConversationModel = candidates.find(model => model.id === body.selected_model)
         ?? { id: body.selected_model, label: body.selected_model, available: false, group: { id: PERSISTENT_CREATE_NODE_ID, label: PERSISTENT_CREATE_NODE_ID } };
       const attempted = new Set<string>();
       let candidate = candidates.find(model => model.id === binding.selected_model && model.available)
         ?? candidates.find(model => model.available);
-      if (!candidate) { await this.repo.phase(id, "reserved"); throw new ConversationError(422, "model_unavailable", "No requested model is available"); }
+      if (!candidate) { await phase("reserved"); throw new ConversationError(422, "model_unavailable", "No requested model is available"); }
       let failureReason = candidate.id === body.selected_model ? undefined : firstPreferred.reason ?? "사용할 수 없습니다";
       let result: SessionCreateRouteResponse;
       while (true) {
@@ -145,12 +161,14 @@ export class ConversationService {
           binding.selected_model = candidate.id;
           const text = candidate.id === body.selected_model ? undefined : this.notice(firstPreferred, candidate, failureReason ?? firstPreferred.reason ?? "사용할 수 없습니다");
           binding.notices = text ? [{ id: "notice:0", text, at: binding.notices[0]?.at ?? new Date().toISOString() }] : [];
-          await this.repo.selection(id, candidate.id, binding.notices);
+          if (execution) await this.repo.executionSelection(id, candidate.id, binding.notices);
+          else await this.repo.selection(id, candidate.id, binding.notices);
         }
         attempted.add(candidate.id);
         result = await this.deps.create(request, {
           profile: body.profile, nodeId: reference.nodeId, folderId: body.collection,
           model_preset: reference.presetId, initial_instruction: body.initial_instruction,
+          ...(execution ? { predecessor_session_id: execution.predecessor_session_id } : {}),
         }, id, request.log);
         const error = result.body.error as { code?: string; message?: string } | undefined;
         if (result.status === 201) break;
@@ -159,7 +177,7 @@ export class ConversationService {
         failureReason = candidate.id === body.selected_model ? error.message ?? candidate.reason ?? "사용할 수 없습니다" : failureReason;
         candidate = candidates.find(item => item.available && !attempted.has(item.id));
         if (!candidate) {
-          await this.repo.phase(id, "reserved");
+          await phase("reserved");
           throw new ConversationError(422, "model_unavailable", "No requested model is available");
         }
       }
@@ -168,7 +186,7 @@ export class ConversationService {
         // A rejected input or unavailable node did not create a session; permit a later retry.
         const unavailable = ["NO_AVAILABLE_NODE", "NODE_NOT_FOUND", "TRANSPORT_MISSING", "TRANSPORT_STALE", "TRANSPORT_JSON_FAILED"].includes(error?.code ?? "");
         if (result.status < 500 || unavailable) {
-          await this.repo.phase(id, "reserved");
+          await phase("reserved");
         }
         const status = unavailable ? 503 : result.status === 403 ? 403 : result.status < 500 ? 400 : 503;
         throw new ConversationError(status, status === 403 ? "forbidden" : status === 400 ? "invalid_request" : "unavailable", error?.message ?? "Session creation failed");
@@ -202,11 +220,12 @@ export class ConversationService {
         fallback_models: fallbacks.map(model_preset => ({ model_preset, reasoning_effort: null })),
       } });
     }
-    if (body.instructions.trim()) await this.setInstruction(request, binding, body.instructions);
-    await this.repo.phase(id, "complete");
+    if (body.instructions.trim()) await this.setInstruction(request, binding, body.instructions, execution);
+    await phase(execution ? "initialized" : "complete");
   }
-  private async setInstruction(request: Caller, binding: Binding, text: string) {
-    const id = binding.session_id;
+  private async setInstruction(request: Caller, binding: Binding, text: string, execution?: Execution) {
+    const id = execution?.session_id ?? binding.active_session_id ?? binding.session_id;
+    const save = (instructionId: string) => execution ? this.repo.executionInstruction(id, instructionId) : this.repo.instruction(binding.session_id, instructionId);
     const list = (await this.deps.persistent.listInstructions(request, id)).instructions;
     const target = binding.instruction_id ? list.find(i => i.id === binding.instruction_id) : undefined;
     const existing = target ?? list.find(i => i.text === text.trim());
@@ -215,12 +234,12 @@ export class ConversationService {
         const result = await this.deps.persistent.updateInstruction(request, id, existing.id, { text });
         if (result.status !== 200) throw new ConversationError(503, "unavailable", "Could not update instructions");
       }
-      await this.repo.instruction(id, existing.id); return;
+      await save(existing.id); return;
     }
     const result = await this.deps.persistent.addInstruction(request, id, { text });
     const item = result.body.instruction as { id?: unknown } | undefined;
     if (result.status !== 201 || typeof item?.id !== "string") throw new ConversationError(503, "unavailable", "Could not add instructions");
-    await this.repo.instruction(id, item.id);
+    await save(item.id);
   }
   async adopt(request: Caller, account: string, namespace: string, key: string, id: string, firstInputIsInitial = false) {
     let existing = await this.repo.byKey(account, namespace, key);
@@ -240,9 +259,10 @@ export class ConversationService {
     if (!existing || existing.session_id !== id || existing.first_input_is_initial_instruction !== firstInputIsInitial) throw new ConversationError(409, "conflict", "Thread or external key is already bound");
     return { thread: await this.thread(request, existing), created: inserted, notices: existing.notices.map(n => n.text) };
   }
-  async patch(request: Caller, account: string, id: string, patch: PatchRequest) {
-    const binding = await this.requireBinding(account, id);
-    await this.thread(request, binding);
+  async patch(request: Caller, account: string, threadId: string, patch: PatchRequest) {
+    return this.executions.locked(threadId, async () => {
+    const binding = await this.prepareLocked(request, account, await this.requireBinding(account, threadId));
+    const id = binding.active_session_id ?? threadId;
     if (patch.title !== undefined) await this.deps.persistent.update(request, id, { display_name: patch.title });
     if (patch.model !== undefined || patch.model_order !== undefined) {
       const row = await this.requireRow(id);
@@ -268,25 +288,27 @@ export class ConversationService {
         default_model: { model_preset: selected.presetId, reasoning_effort: null },
         fallback_models: fallbacks.map(model_preset => ({ model_preset, reasoning_effort: null })),
       } });
-      if (patch.model !== undefined) await this.repo.model(id, selectedId);
-      if (patch.model_order !== undefined) await this.repo.order(id, order);
+      if (patch.model !== undefined) await this.repo.model(threadId, selectedId);
+      if (patch.model_order !== undefined) await this.repo.order(threadId, order);
     }
     if (patch.instructions !== undefined) {
       if (patch.instructions.trim()) await this.setInstruction(request, binding, patch.instructions);
       else if (binding.instruction_id) {
         const result = await this.deps.persistent.updateInstruction(request, id, binding.instruction_id, { status: "removed" });
         if (result.status !== 200) throw new ConversationError(503, "unavailable", "Could not remove instructions");
-        await this.repo.clearInstruction(id);
+        await this.repo.clearInstruction(threadId);
       }
     }
     if (patch.archived === true && !binding.archived) {
-      await this.deps.persistent.update(request, id, { enabled: false });
-      await this.repo.archive(id);
+      await this.executions.release(request, id);
+      await this.repo.archive(threadId);
     }
-    return { thread: await this.thread(request, await this.requireBinding(account, id)) };
+    return { thread: await this.thread(request, await this.requireBinding(account, threadId)) };
+    });
   }
   private async thread(request: Caller, binding: Binding): Promise<Thread> {
-    const row = await (await this.deps.reads()).getSession(binding.session_id);
+    const activeId = binding.active_session_id ?? binding.session_id;
+    const row = await (await this.deps.reads()).getSession(activeId);
     if (!row) {
       if (binding.phase !== "complete") {
         if (binding.creation_request) await this.deps.access.requireFolderAccess({ request, folderId: binding.creation_request.collection });
@@ -294,22 +316,58 @@ export class ConversationService {
       }
       throw notFound();
     }
-    await this.deps.access.requireSessionAccess({ request, sessionId: binding.session_id });
-    const createdAt = row.created_at instanceof Date ? row.created_at.toISOString() : new Date(String(row.created_at)).toISOString();
+    await this.deps.access.requireSessionAccess({ request, sessionId: activeId });
+    const original = activeId === binding.session_id ? row : await this.requireRow(binding.session_id);
+    const createdAt = original.created_at instanceof Date ? original.created_at.toISOString() : new Date(String(original.created_at)).toISOString();
+    const agentId = typeof row.agent_id === "string" ? row.agent_id : undefined;
+    const label = agentId ? await this.deps.catalog.profileLabel(String(row.node_id), agentId) : undefined;
     const model = await this.model(binding.selected_model);
     return { id: binding.session_id, external: { namespace: binding.namespace, key: binding.external_key },
       title: typeof row.display_name === "string" ? row.display_name : "",
       model: { id: binding.selected_model, label: model?.label ?? binding.selected_model,
         ...(model?.group ? { group: model.group } : {}) },
+      ...(agentId ? { profile:{ id:agentId, label:label! } } : {}), execution_id:activeId,
       created_at: createdAt, archived: binding.archived };
   }
   private async requireRow(id: string) { const row = await (await this.deps.reads()).getSession(id); if (!row) throw notFound(); return row; }
   private async requireBinding(account: string, id: string) { const b = await this.repo.byId(account, id); if (!b) throw notFound(); return b; }
-  async historyBinding(request: Caller, account: string, id: string): Promise<Binding> {
-    const binding = await this.requireBinding(account, id);
+  private async prepare(request: Caller, account: string, binding: Binding): Promise<Binding> {
+    return this.executions.locked(binding.session_id, () => this.prepareLocked(request, account, binding));
+  }
+  private async prepareLocked(request: Caller, account: string, binding: Binding): Promise<Binding> {
     await this.thread(request, binding);
+    await this.executions.resume(request, binding);
+    return this.requireBinding(account, binding.session_id);
+  }
+  async historyBinding(request: Caller, account: string, id: string): Promise<Binding> {
+    const binding = await this.prepare(request, account, await this.requireBinding(account, id));
+    for (const execution of await this.repo.executions(id)) {
+      if (execution.phase === "complete") await this.deps.access.requireSessionAccess({request,sessionId:execution.session_id});
+    }
     return binding;
   }
+  async withThread<T>(request: Caller, account: string, id: string, fn: (binding: Binding) => Promise<T>): Promise<T> {
+    return this.executions.locked(id, async () => fn(await this.prepareLocked(request, account, await this.requireBinding(account, id))));
+  }
+  async switchExecution(request: Caller, account: string, id: string, body: ExecutionRequest) {
+    const work = this.executions.locked(id, async () => {
+      let binding = await this.requireBinding(account, id);
+      await this.thread(request, binding);
+      await this.executions.retryReleases(request, binding);
+      await this.executions.switch(request, binding, body);
+      binding = await this.requireBinding(account, id);
+      const current = (await this.repo.executions(id)).find(x => x.session_id === binding.active_session_id);
+      return { thread:await this.thread(request, binding), created:true, notices:(current?.notices ?? []).map(n => n.text) };
+    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([work, new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(pendingError(id)), this.deps.responseTimeoutMs ?? 15_000);
+      })]);
+    } finally { if (timer) clearTimeout(timer); }
+  }
+  watchSwitch(id: string, close: () => void) { return this.executions.watch(id, close); }
+  async requireExecutionAccess(request: Caller, id: string) { await this.deps.access.requireSessionAccess({ request, sessionId:id }); }
   get historySql(): SqlClient { return this.deps.sql; }
 }
 function notFound() { return new ConversationError(404, "not_found", "Thread not found"); }

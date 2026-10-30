@@ -6,27 +6,34 @@ import { ConversationService } from "../src/conversation/conversation_service.js
 import { ConversationCatalog } from "../src/conversation/conversation_catalog.js";
 import { registerConversationRoutes } from "../src/conversation/conversation_routes.js";
 import { executeCreateSessionRoute } from "../src/session/session_command_routes.js";
+import { ConversationMessageService } from "../src/conversation/conversation_messages.js";
+import { createHash } from "node:crypto";
 
 const request = JSON.parse(readFileSync(new URL("./fixtures/conversation-v1/request.json", import.meta.url), "utf8"));
 const logger = { warn() {} };
 describe("conversation thread API", () => {
   let db: FullSchemaPostgresHarness;
   let app: ReturnType<typeof Fastify>;
+  let service: ConversationService;
   let created = 0;
   let delay = 0;
   const rows = new Map<string, any>();
   const instructions = new Map<string, Array<{ id: string; text: string }>>();
   const settings = new Map<string, any>();
   let deny = false;
+  let denySession: string | null = null;
   let loseInstructionAck = false;
   let rejectModelOnce = false;
   let unavailableNodeOnce = false;
-  const createCalls: Array<{ nodeId: string; profile: string; model_preset: string }> = [];
+  let offlineRelease = false;
+  let failRelease = false;
+  const createCalls: Array<{ nodeId: string; profile: string; model_preset: string; predecessor_session_id?: string }> = [];
+  const delivered: string[] = [];
   beforeAll(async () => {
     db = await createFullSchemaPostgresHarness();
     const access = {
       requireFolderAccess: async () => { if (deny) throw Object.assign(new Error("denied"), { statusCode: 403 }); },
-      requireSessionAccess: async () => { if (deny) throw Object.assign(new Error("denied"), { statusCode: 403 }); },
+      requireSessionAccess: async ({sessionId}: {sessionId:string}) => { if (deny || denySession === sessionId) throw Object.assign(new Error("denied"), { statusCode: 403 }); },
     };
     const presetSets = {
       eiaserinnys: [
@@ -59,6 +66,8 @@ describe("conversation thread API", () => {
     const persistent = {
       get: async (_: unknown, id: string) => ({ session: settings.get(id) }),
       update: async (_: unknown, id: string, input: any) => {
+        if (input.enabled === false && offlineRelease) throw Object.assign(new Error("Node unavailable"), { code: "NODE_UNAVAILABLE" });
+        if (input.enabled === false && failRelease) throw new Error("Command failed");
         const old = settings.get(id); settings.set(id, { ...old, persistent: input.enabled ?? old.persistent,
           display_name: input.display_name ?? old.display_name,
           settings: { ...old.settings, ...input.settings } });
@@ -77,15 +86,17 @@ describe("conversation thread API", () => {
         return { status: 200, body: { instruction: item } };
       },
     };
-    const service = new ConversationService({ sql: db.sql as never, access: access as never, catalog,
+    service = new ConversationService({ sql: db.sql as never, access: access as never, catalog,
       persistent: persistent as never, reads: async () => ({ getSession: async (id: string) => rows.get(id) ?? null }) as never,
       create: async (_request: unknown, body: any, id: string) => {
-        createCalls.push({ nodeId: body.nodeId, profile: body.profile, model_preset: body.model_preset });
+        createCalls.push({ nodeId: body.nodeId, profile: body.profile, model_preset: body.model_preset,
+          ...(body.predecessor_session_id ? {predecessor_session_id:body.predecessor_session_id} : {}) });
         if (unavailableNodeOnce) { unavailableNodeOnce = false; return { status: 404, body: { error: { code: "NODE_NOT_FOUND", message: "offline" } } }; }
         if (rejectModelOnce) { rejectModelOnce = false; return { status: 400, body: { error: { code: "MODEL_PRESET_UNAVAILABLE", message: "quota" } } }; }
         created++; if (delay) await new Promise(resolve => setTimeout(resolve, delay));
+        await db.sql`INSERT INTO sessions(session_id,node_id,model_preset,agent_id,created_at) VALUES (${id},${body.nodeId},${body.model_preset},${body.profile},now())`;
         rows.set(id, { session_id: id, folder_id: body.folderId, display_name: null, node_id: body.nodeId,
-          created_at: new Date("2026-10-30T00:00:00.000Z"), status: "completed", model_preset: body.model_preset });
+          agent_id:body.profile, created_at: new Date("2026-10-30T00:00:00.000Z"), status: "completed", model_preset: body.model_preset });
         settings.set(id, { session_id: id, persistent: false, display_name: null,
           settings: { default_model: { model_preset: body.model_preset, reasoning_effort: null }, fallback_models: [] },
           runtime: { current_model: { model_preset: body.model_preset } } });
@@ -94,11 +105,152 @@ describe("conversation thread API", () => {
       waitForCreatedSession: async (id: string) => rows.has(id), responseTimeoutMs: 250,
     });
     app = Fastify({ logger: false });
-    registerConversationRoutes(app, { service, resolveAccount: async () => "account-a" });
+    const messages = new ConversationMessageService(db.sql as never, {
+      caller:async () => ({source:"browser"}),
+      upload:async () => { throw new Error("unexpected upload"); },
+      intervene:async (_request,target) => { delivered.push(target); return {status:200,body:{}}; },
+      read:async (_request,target) => new Response(target),
+    });
+    registerConversationRoutes(app, { service, messages, resolveAccount: async () => "account-a" });
     await app.ready();
   }, 60_000);
   afterAll(async () => { await app?.close(); await db?.cleanup(); });
   const ensure = (key: string, payload: unknown = request) => app.inject({ method: "PUT", url: `/api/conversations/v1/threads/by-key?namespace=n&key=${key}`, payload });
+  it("switches an execution idempotently and finishes an offline release on a later request", async () => {
+    const made = await ensure("switch-offline");
+    const original = made.json().thread;
+    const payload = { ...request, expected_execution_id: original.execution_id, profile: "roselin", selected_model: "n1:node-b:remote", model_order: ["n1:node-b:remote"] };
+    const url = `/api/conversations/v1/threads/${original.id}/execution`;
+    offlineRelease = true;
+    const switched = await app.inject({ method: "PUT", url, payload });
+    expect(switched.statusCode).toBe(200);
+    const current = switched.json().thread;
+    expect(current).toMatchObject({ id: original.id, profile: { id: "roselin", label: "로젤린" } });
+    expect(current.execution_id).not.toBe(original.execution_id);
+    expect(createCalls.at(-1)?.predecessor_session_id).toBe(original.execution_id);
+    const [old] = await db.sql`SELECT release_pending FROM conversation_executions WHERE session_id=${original.execution_id}`;
+    expect(old?.release_pending).toBe(true);
+    const count = created;
+    expect((await app.inject({ method: "PUT", url, payload })).json().thread.execution_id).toBe(current.execution_id);
+    expect(created).toBe(count);
+    expect((await app.inject({ method:"PUT", url, payload:{...payload,profile:"seosoyoung"} })).statusCode).toBe(409);
+    offlineRelease = false;
+    expect((await app.inject({ method: "GET", url: `/api/conversations/v1/threads/${original.id}` })).statusCode).toBe(200);
+    const [released] = await db.sql`SELECT release_pending FROM conversation_executions WHERE session_id=${original.execution_id}`;
+    expect(released?.release_pending).toBe(false);
+    expect(settings.get(original.execution_id).persistent).toBe(false);
+  });
+  it("rejects a switch while an answer is in progress", async () => {
+    const made = await ensure("switch-busy");
+    const thread = made.json().thread;
+    await db.sql`INSERT INTO events(session_id,id,event_type,payload) VALUES
+      (${thread.execution_id},1,'intervention_sent',${db.sql.json({text:"working",caller_info:{source:"browser"}})})`;
+    const before = created;
+    const response = await app.inject({ method:"PUT", url:`/api/conversations/v1/threads/${thread.id}/execution`,
+      payload:{...request, expected_execution_id:thread.execution_id, profile:"roselin", selected_model:"n1:node-b:remote"} });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error.message).toBe("답변이 끝난 뒤 바꿀 수 있습니다");
+    expect(created).toBe(before);
+  });
+  it("allows a limit-stopped thread to switch and records model fallback notices", async () => {
+    const thread = (await ensure("switch-limited")).json().thread;
+    rows.get(thread.execution_id).status = "error";
+    rows.get(thread.execution_id).termination_reason = "limit_hit";
+    await db.sql`INSERT INTO events(session_id,id,event_type,payload) VALUES (${thread.execution_id},1,'intervention_sent',${db.sql.json({text:"stopped"})})`;
+    const info = await app.inject({method:"GET",url:`/api/conversations/v1/threads/${thread.id}`});
+    expect(info.json().busy).toBe(false);
+    const result = await app.inject({method:"PUT",url:`/api/conversations/v1/threads/${thread.id}/execution`,
+      payload:{...request,expected_execution_id:thread.execution_id,profile:"roselin",selected_model:"argon",model_order:["n1:node-b:remote"]}});
+    expect(result.statusCode).toBe(200);
+    expect(result.json().notices).toHaveLength(1);
+    const history = await app.inject({method:"GET",url:`/api/conversations/v1/threads/${thread.id}/items`});
+    expect(history.json().items.filter((item:{kind:string;id:string}) => item.kind === "notice" && item.id.startsWith("1:"))).toHaveLength(2);
+  });
+  it("keeps the predecessor active on another release failure and completes the same reservation on retry", async () => {
+    const original = (await ensure("switch-release-failure")).json().thread;
+    const url = `/api/conversations/v1/threads/${original.id}/execution`;
+    const payload = {...request,expected_execution_id:original.execution_id,profile:"roselin",selected_model:"n1:node-b:remote"};
+    failRelease = true;
+    const failed = await app.inject({method:"PUT",url,payload});
+    expect(failed.statusCode).toBe(504);
+    const [binding] = await db.sql`SELECT active_session_id FROM conversation_bindings WHERE session_id=${original.id}`;
+    expect(binding?.active_session_id).toBe(original.execution_id);
+    const count = created;
+    failRelease = false;
+    const retried = await app.inject({method:"PUT",url,payload});
+    expect(retried.statusCode).toBe(200);
+    expect(created).toBe(count);
+    expect(retried.json().thread.execution_id).not.toBe(original.execution_id);
+  });
+  it("finishes a timed-out switch with the same reserved session", async () => {
+    const thread = (await ensure("switch-slow")).json().thread;
+    const url = `/api/conversations/v1/threads/${thread.id}/execution`;
+    const payload = {...request,expected_execution_id:thread.execution_id,profile:"roselin",selected_model:"n1:node-b:remote"};
+    delay = 300;
+    const before = created;
+    const timedOut = await app.inject({method:"PUT",url,payload});
+    expect(timedOut.statusCode).toBe(504);
+    await new Promise(resolve => setTimeout(resolve, 330));
+    delay = 0;
+    const retried = await app.inject({method:"PUT",url,payload});
+    expect(retried.statusCode).toBe(200);
+    expect(created - before).toBe(1);
+  });
+  it("releases a connected predecessor and cancels its scheduled resume", async () => {
+    const original = (await ensure("switch-connected")).json().thread;
+    await db.sql`INSERT INTO soulstream_schedules(schedule_id,session_id,kind,status,prompt,source_tool,recurring,next_run_at)
+      VALUES ('switch-resume',${original.execution_id},'wakeup','active','resume','ResumeAfterLimit',false,now())`;
+    const result = await app.inject({method:"PUT",url:`/api/conversations/v1/threads/${original.id}/execution`,
+      payload:{...request,expected_execution_id:original.execution_id,profile:"roselin",selected_model:"n1:node-b:remote"}});
+    expect(result.statusCode).toBe(200);
+    expect(result.json().thread.id).toBe(original.id);
+    expect(settings.get(original.execution_id).persistent).toBe(false);
+    const [schedule] = await db.sql`SELECT status FROM soulstream_schedules WHERE schedule_id='switch-resume'`;
+    expect(schedule?.status).toBe("cancelled");
+    const history = await app.inject({method:"GET",url:`/api/conversations/v1/threads/${original.id}/items`});
+    expect(history.json().items).toContainEqual(expect.objectContaining({id:"1:1",kind:"notice",text:"프로필을 로젤린(으)로 바꿔 새 세션으로 이었습니다."}));
+  });
+  it("keeps a pending receipt on its original execution and reads an old attachment after switching", async () => {
+    const thread = (await ensure("switch-receipt")).json().thread;
+    const body = {request_id:"old-request",text:"hello",attachments:[]};
+    const hash = createHash("sha256").update(JSON.stringify(body)).digest("hex");
+    await db.sql`INSERT INTO conversation_message_receipts(session_id,request_id,request_hash,delivery_id,caller_info,status,target_session_id)
+      VALUES (${thread.id},${body.request_id},${hash},'old-delivery','{}'::jsonb,'pending',${thread.execution_id})`;
+    await db.sql`INSERT INTO events(session_id,id,event_type,payload) VALUES (${thread.execution_id},1,'intervention_sent',
+      ${db.sql.json({text:"attachment",attachments:["/private/file.txt"],caller_info:{source:"browser"}})})`;
+    await db.sql`INSERT INTO events(session_id,id,event_type,payload) VALUES (${thread.execution_id},2,'complete','{}'::jsonb)`;
+    const switched = await app.inject({method:"PUT",url:`/api/conversations/v1/threads/${thread.id}/execution`,
+      payload:{...request,expected_execution_id:thread.execution_id,profile:"roselin",selected_model:"n1:node-b:remote"}});
+    expect(switched.statusCode).toBe(200);
+    const active = switched.json().thread.execution_id;
+    const url = `/api/conversations/v1/threads/${thread.id}/messages`;
+    denySession = thread.execution_id;
+    expect((await app.inject({method:"POST",url,payload:body})).statusCode).toBe(403);
+    denySession = null;
+    expect((await app.inject({method:"POST",url,payload:body})).json().status).toBe("accepted");
+    expect(delivered.at(-1)).toBe(thread.execution_id);
+    expect((await app.inject({method:"POST",url,payload:{request_id:"new-request",text:"new"}})).json().status).toBe("accepted");
+    expect(delivered.at(-1)).toBe(active);
+    const attachment = await app.inject({method:"GET",url:`/api/conversations/v1/threads/${thread.id}/items/1/attachments/path%3A0`});
+    expect(attachment.statusCode).toBe(200);
+    expect(attachment.body).toBe(thread.execution_id);
+  });
+  it("closes the live event stream when the execution changes", async () => {
+    const thread = (await ensure("switch-stream")).json().thread;
+    const streaming = Fastify();
+    registerConversationRoutes(streaming, {service,resolveAccount:async () => "account-a",liveEvents:{subscribe:() => () => {}}});
+    const address = await streaming.listen({port:0,host:"127.0.0.1"});
+    const abort = new AbortController();
+    try {
+      const response = await fetch(`${address}/api/conversations/v1/threads/${thread.id}/events`,{signal:abort.signal});
+      const reader = response.body!.getReader();
+      expect(new TextDecoder().decode((await reader.read()).value)).toContain('"kind":"snapshot"');
+      const switched = await app.inject({method:"PUT",url:`/api/conversations/v1/threads/${thread.id}/execution`,
+        payload:{...request,expected_execution_id:thread.execution_id,profile:"roselin",selected_model:"n1:node-b:remote"}});
+      expect(switched.statusCode).toBe(200);
+      expect((await reader.read()).done).toBe(true);
+    } finally { abort.abort(); await streaming.close(); }
+  });
   it("serializes the fixture request and converges concurrent creation on one session with fallback and instructions", async () => {
     expect(JSON.parse(JSON.stringify(request))).toEqual(request);
     const before = created;
