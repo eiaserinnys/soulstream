@@ -6,6 +6,10 @@ import type { SoulstreamFolderContext } from "./soulstream_item.js";
 
 export type SessionCardRole = "assignee" | "member";
 
+export function buildCardAssigneeReplacementNotice(currentAssigneeSessionId: string): string {
+  return `이 카드의 담당은 세션 ${currentAssigneeSessionId}로 넘어갔다. 이 카드의 일(카드 도구, 코드 수정, 머지, 배포)을 하지 않는다. 받은 보고나 결과는 ${currentAssigneeSessionId}에 send_message_to_session으로 넘기고 턴을 끝낸다.`;
+}
+
 export interface PrimarySessionFolderContext {
   folder: SoulstreamFolderContext;
   card?: {
@@ -58,7 +62,7 @@ export async function resolvePrimarySessionFolderContext(
         role: currentAssigneeSessionId ? "member" : resolveCardRole(row, session!, sessionId),
         ...(currentAssigneeSessionId ? {
           replaced_by: currentAssigneeSessionId,
-          notice: `이 카드의 담당은 세션 ${currentAssigneeSessionId}로 넘어갔다. 이 카드의 일(카드 도구, 코드 수정, 머지, 배포)을 하지 않는다. 받은 보고나 결과는 ${currentAssigneeSessionId}에 send_message_to_session으로 넘기고 턴을 끝낸다.`,
+          notice: buildCardAssigneeReplacementNotice(currentAssigneeSessionId),
         } : {}),
       };
     } catch (err) {

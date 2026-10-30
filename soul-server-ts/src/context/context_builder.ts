@@ -52,6 +52,7 @@ import {
 } from "./page_context_resolver.js";
 import { extractAtomContextSourceSpecs } from "./session_context_sources.js";
 import { buildPredecessorSummaryContextItem } from "./predecessor_summary_context.js";
+import { buildCardAssigneeReplacementNotice } from "./session_folder_context.js";
 import { loadInitialResumeContext } from "./initial_resume_context.js";
 import { assemblePreparedContext, type PreparedContext } from "./prepared_context_assembly.js";
 export type { PreparedContext } from "./prepared_context_assembly.js";
@@ -158,6 +159,10 @@ export class ExecutionContextBuilder {
     if (nodeResourcesItem) contextItems.push(nodeResourcesItem);
     const assignedCardItem = await this.buildAssignedCardContext(task, options.inputId);
     if (assignedCardItem) contextItems.push(assignedCardItem);
+    const cardAssigneeReplacementItem = await this.buildCardAssigneeReplacementContextItem(
+      task.agentSessionId,
+    );
+    if (cardAssigneeReplacementItem) contextItems.push(cardAssigneeReplacementItem);
     return { contextItems };
   }
 
@@ -169,6 +174,33 @@ export class ExecutionContextBuilder {
         executionCommandId: task.executionRegistration?.executionCommandId ?? null,
         inputId: inputId ?? null, snapshot,
       }) : undefined);
+  }
+
+  private async buildCardAssigneeReplacementContextItem(
+    sessionId: string,
+  ): Promise<ContextItem | null> {
+    try {
+      const session = await this.db.getSession(sessionId);
+      const cardId = session?.card_id;
+      const currentAssigneeSessionId =
+        session?.card_assignee_replacement?.current_assignee_session_id;
+      if (!cardId || !currentAssigneeSessionId) return null;
+
+      return {
+        key: "card_assignee_replacement",
+        content: {
+          card_id: cardId,
+          replaced_by: currentAssigneeSessionId,
+          notice: buildCardAssigneeReplacementNotice(currentAssigneeSessionId),
+        },
+      };
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId },
+        "card assignee replacement context read failed",
+      );
+      return null;
+    }
   }
 
   async buildBackendRolloverContext(
