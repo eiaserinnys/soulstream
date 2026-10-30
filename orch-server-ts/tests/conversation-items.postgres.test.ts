@@ -247,4 +247,105 @@ describe("conversation items and events", () => {
       expect(response.body.split("\n").filter(line => line.startsWith("id: "))).toEqual(["id: 23"]);
     } finally { await other.close(); }
   });
+  it.each([
+    { order:"stored-first", inputId:25, errorId:26 },
+    { order:"runtime-first", inputId:29, errorId:30 },
+  ])("emits one error in $order order and advances the stored cursor", async ({order,inputId,errorId}) => {
+    await insert(inputId - 1, "complete", {});
+    await insert(inputId, "user_message", { text:"start", caller_info:{source:"browser"} });
+    let listener: ((event: Record<string, unknown>) => void) | undefined;
+    const original = ConversationHistory.prototype.load;
+    const spy = vi.spyOn(ConversationHistory.prototype, "load").mockImplementationOnce(async function (this: ConversationHistory, binding) {
+      const result = await original.call(this, binding);
+      const stored = { type:"error", message:"same failure" };
+      await insert(errorId, "error", stored);
+      const saved = { eventId:errorId, event:stored };
+      const runtime = { event:{ type:"error", message:"same failure" } };
+      for (const event of order === "stored-first" ? [saved,runtime] : [runtime,saved]) listener!(event);
+      return result;
+    });
+    const other = Fastify();
+    registerConversationRoutes(other, {
+      service, resolveAccount:async () => "person", closeAfterHistorySync:true,
+      liveEvents:{ subscribe:(_id, callback) => { listener=callback; return () => {}; } },
+    });
+    try {
+      const response = await other.inject({ method:"GET", url:base+"/events", headers:{"last-event-id":String(inputId)} });
+      const frames = response.body.split("\n\n").filter(Boolean);
+      const events = frames.flatMap(frame => {
+        const data=frame.split("\n").find(line => line.startsWith("data: "));
+        return data ? [JSON.parse(data.slice(6))] : [];
+      });
+      expect(events.filter(event => event.kind === "item" && event.item.kind === "error")).toHaveLength(1);
+      expect(events.some(event => event.kind === "activity" && event.busy === false)).toBe(true);
+      expect(frames.some(frame => frame.split("\n").includes(`id: ${errorId}`))).toBe(true);
+    } finally { spy.mockRestore(); await other.close(); }
+  });
+  it("does not repeat an error already present in the reconnect snapshot", async () => {
+    await insert(31, "complete", {});
+    await insert(32, "error", { message:"stored failure" });
+    let listener: ((event: Record<string, unknown>) => void) | undefined;
+    const other = Fastify();
+    registerConversationRoutes(other, {
+      service, resolveAccount:async () => "person", closeAfterHistorySync:true,
+      liveEvents:{
+        subscribe:(_id, callback) => { listener=callback; return () => {}; },
+        snapshotLiveText:() => { listener!({event:{type:"error",message:"stored failure"}}); return {throughLiveSeq:0,streams:[]}; },
+      },
+    });
+    try {
+      const response = await other.inject({ method:"GET", url:base+"/events", headers:{"last-event-id":"31"} });
+      const frames = response.body.split("\n\n").filter(Boolean);
+      const events = frames.flatMap(frame => {
+        const data=frame.split("\n").find(line => line.startsWith("data: "));
+        return data ? [JSON.parse(data.slice(6))] : [];
+      });
+      expect(events[0].snapshot.items.filter((item: {kind:string}) => item.kind === "error")).toHaveLength(1);
+      expect(events.filter(event => event.kind === "item" && event.item.kind === "error")).toHaveLength(0);
+      expect(events.some(event => event.kind === "activity" && event.busy === false)).toBe(true);
+      expect(frames[0]).toContain("id: 32");
+    } finally { await other.close(); }
+  });
+  it.each([
+    { order:"stored-then-runtime", start:40 },
+    { order:"runtime-then-stored", start:50 },
+  ])("shows a new turn's error after $order", async ({order,start}) => {
+    await insert(start - 1, "complete", {});
+    await insert(start, "user_message", {text:"first turn",caller_info:{source:"browser"}});
+    let listener: ((event: Record<string, unknown>) => void) | undefined;
+    const original = ConversationHistory.prototype.load;
+    const spy = vi.spyOn(ConversationHistory.prototype, "load").mockImplementationOnce(async function (this: ConversationHistory, binding) {
+      const result = await original.call(this, binding);
+      const first = {type:"error",message:"first failure"};
+      const input = {type:"user_message",text:"next turn",caller_info:{source:"browser"}};
+      const second = {type:"error",message:"second failure"};
+      if (order === "stored-then-runtime") {
+        await insert(start + 1,"error",first);
+        listener!({eventId:start + 1,event:first});
+      } else listener!({event:first});
+      await insert(start + 2,"user_message",input);
+      listener!({eventId:start + 2,event:input});
+      if (order === "runtime-then-stored") {
+        await insert(start + 3,"error",second);
+        listener!({eventId:start + 3,event:second});
+      } else listener!({event:second});
+      return result;
+    });
+    const other = Fastify();
+    registerConversationRoutes(other, {service,resolveAccount:async () => "person",closeAfterHistorySync:true,
+      liveEvents:{subscribe:(_id,callback) => {listener=callback; return () => {};}}});
+    try {
+      const response = await other.inject({method:"GET",url:base+"/events",headers:{"last-event-id":String(start)}});
+      const frames = response.body.split("\n\n").filter(Boolean);
+      const events = frames.flatMap(frame => {
+        const data=frame.split("\n").find(line => line.startsWith("data: "));
+        return data ? [JSON.parse(data.slice(6))] : [];
+      });
+      expect(events.filter(event => event.kind === "item" && event.item.kind === "error").map(event => event.item.text))
+        .toEqual(["first failure","second failure"]);
+      expect(events.some(event => event.kind === "activity" && event.busy === false)).toBe(true);
+      expect(frames.some(frame => frame.split("\n").includes(`id: ${order === "runtime-then-stored" ? start + 3 : start + 2}`))).toBe(true);
+    } finally { spy.mockRestore(); await other.close(); }
+  });
+
 });

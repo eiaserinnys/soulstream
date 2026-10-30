@@ -5,7 +5,7 @@ import type { SessionHistoryLiveEventSource } from "../session/session_history_r
 import { ConversationHistory } from "./conversation_history.js";
 import type { Binding } from "./conversation_types.js";
 import type { Item, SourceEvent } from "./conversation_projection.js";
-import { isSilent } from "../../../packages/wire-schema/src/conversation_visibility.js";
+import { isHumanInput, isKeepalive, isSilent } from "../../../packages/wire-schema/src/conversation_visibility.js";
 
 type Options = { liveEvents?: SessionHistoryLiveEventSource; closeAfterHistorySync?: boolean };
 type Wire = { kind: string; [key: string]: unknown };
@@ -55,6 +55,7 @@ export async function sendConversationEvents(request: FastifyRequest, reply: Fas
       text:streamState.text, items:replay };
     let lastId = loaded.cursor;
     let liveSequence = liveSnapshot?.throughLiveSeq ?? 0;
+    let transientErrorInTurn = false;
     const frames: string[] = [frame({ kind:"snapshot", snapshot }, loaded.cursor)];
     let push: (chunk: string) => void = (chunk) => { frames.push(chunk); };
     const process = async (envelope: Record<string, unknown>) => {
@@ -70,13 +71,18 @@ export async function sendConversationEvents(request: FastifyRequest, reply: Fas
       if (id !== undefined) {
         lastId = id;
         payload = await history.enrichPayload(payload);
+        if (isHumanInput(type, payload) && !isKeepalive(payload)) transientErrorInTurn = false;
         const source: SourceEvent = { id, type, payload, at: at(payload) };
         const result = loaded.projection.apply(source);
-        if (result.item) push(frame({ kind:"item", item:result.item }, id));
-        if (result.activity) push(frame({ kind:"activity", ...result.activity }, result.item ? undefined : id));
+        const duplicate = (type === "error" || type === "assistant_error") && transientErrorInTurn;
+        if (type === "complete") transientErrorInTurn = false;
+        if (result.item && !duplicate) push(frame({ kind:"item", item:result.item }, id));
+        if (result.activity) push(frame({ kind:"activity", ...result.activity }, result.item && !duplicate ? undefined : id));
       } else if (type === "error" || type === "assistant_error") {
+        const duplicate = loaded.projection.hasErrorInTurn();
         const result = loaded.projection.apply({ id:0, type, payload, at:at(payload) });
-        if (result.item) push(frame({ kind:"item", item:{ ...result.item, id:`transient:${randomUUID()}` } }));
+        transientErrorInTurn = true;
+        if (result.item && !duplicate) push(frame({ kind:"item", item:{ ...result.item, id:`transient:${randomUUID()}` } }));
         if (result.activity) push(frame({ kind:"activity", ...result.activity }));
       } else {
         const text = loaded.projection.live(type, payload);

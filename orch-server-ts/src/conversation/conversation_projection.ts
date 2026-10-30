@@ -11,9 +11,11 @@ export class ConversationProjection {
   private tool: string | null = null;
   private streamId: string | null = null;
   private streamText = "";
+  private errorInTurn = false;
 
   constructor(private readonly firstInputIsInitial: boolean) {}
   activity() { return { busy: this.busy, tool: this.tool }; }
+  hasErrorInTurn() { return this.errorInTurn; }
   allowsLive() { return !this.keepalive; }
   stream() { return { stream_id: this.streamId, text: this.streamId && !isSilent(this.streamText, true) ? this.streamText : null }; }
   setStream(id: string, text: string) { this.streamId = id; this.streamText = text; }
@@ -23,6 +25,7 @@ export class ConversationProjection {
     const input = type === "user_message" || type === "intervention_sent";
     const internal = isInternalInput(type, payload);
     const keepalive = input && isKeepalive(payload);
+    if (human && !keepalive) this.errorInTurn = false;
     const anchor = string(payload.input_id ?? payload.inputId ?? payload.prepared_input_id ?? payload.preparedInputId);
     const makeItem = (kind: Item["kind"], text: string, attachments: Item["attachments"] = []): Item => ({ id: String(id), kind, text, at, attachments });
     if (input || type === "notification") {
@@ -43,10 +46,12 @@ export class ConversationProjection {
       return {};
     }
     if (type === "error" || type === "assistant_error") {
+      this.errorInTurn = true;
       this.keepalive = false; this.busy = false; this.tool = null; this.streamId = null; this.streamText = "";
       return { item: makeItem("error", string(payload.message) ?? string(payload.error) ?? "턴이 실패했습니다."), activity: this.activity() };
     }
     if (type === "complete") {
+      this.errorInTurn = false;
       this.keepalive = false; this.busy = false; this.tool = null; this.streamId = null; this.streamText = "";
       return { activity: this.activity() };
     }
@@ -91,8 +96,12 @@ function stripInternal(text: string): string {
 function attachmentsFor(payload: Record<string, unknown>): Item["attachments"] {
   const assets = Array.isArray(payload._conversation_attachments) ? payload._conversation_attachments as Item["attachments"] : [];
   const paths = Array.isArray(payload.attachments) ? payload.attachments : Array.isArray(payload.attachment_paths) ? payload.attachment_paths : [];
+  const metadata = payload._conversation_path_metadata as Record<string, {name:string; mime:string; assetId?:string}> | undefined;
   return [...assets, ...paths.flatMap((value, index) => {
     if (typeof value !== "string") return [];
+    const saved = metadata?.[value];
+    if (saved?.assetId && assets.some(asset => asset.id === saved.assetId)) return [];
+    if (saved) return [{ id: `path:${index}`, name: saved.name, mime: saved.mime }];
     const base = value.split(/[\\/]/).pop() ?? value;
     const name = base.replace(/^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d\.\d{3}Z-(.+)-[0-9a-f]{32}(\.[^.]+)?$/, "$1$2");
     const ext = name.split(".").pop()?.toLowerCase() ?? "";

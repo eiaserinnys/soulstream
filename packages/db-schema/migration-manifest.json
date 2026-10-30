@@ -564,6 +564,10 @@
     {
       "id": "139_conversation_initial_and_notices.sql",
       "sha256": "23204b4ad3cf4d7ce0907f078e6eed08bb6c9f8fa8f8b975cfc665699cdec8cd"
+    },
+    {
+      "id": "140_conversation_message_receipts.sql",
+      "sha256": "e1b075e91bb305c18caf5861aa695dd0ec664a4f3ca6ed895b941046fe481c95"
     }
   ]
 }

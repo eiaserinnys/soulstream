@@ -55,4 +55,4 @@ Antigravity는 Claude background runtime follow-up 생산자가 없어 해당 �
 
 ## 외부 대화 제공자
 
-외부 대화 API의 스레드 경로는 [OAuth와 대화 제공자](oauth-to-conversation.md)에 있다. 메시지 영수증과 이 원장의 연결은 대화 API 메시지 구현에서 담당한다.
+외부 대화 API의 스레드 경로는 [OAuth와 대화 제공자](oauth-to-conversation.md)에 있다. 대화 API는 `conversation_message_receipts`에 요청 해시와 전달 ID, 최초 발신자와 업로드 경로를 보존한다. `conversation_message_ports.ts`가 그 전달 ID와 동일 payload를 `executeSessionIntervention`에 넘겨 기존 원장의 등록과 복구를 사용한다. 영수증 accepted는 원장 접수이며 실제 턴 소비 완료와는 다르다.
