@@ -685,6 +685,8 @@ test('phone hides saved weekly usage and passes a disabled request gate', () => 
 
 test('듀오 태블릿은 머리줄 대신 띠 캡슐과 사용량 열을 쓰고 설정 상태를 공유한다', () => {
   mockDevice = 'tabletLandscape';
+  const payload = Buffer.from(JSON.stringify({ email: 'usage@example.com', sub: 'usage@example.com', name: '사용자', exp: 2_000_000_000 })).toString('base64url');
+  useAuthStore.setState({ jwt: `header.${payload}.signature` });
   const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
     if (this.props.testID === 'persistent-session-screen') callback(0, 24, 867, 645);
     else if (this.props.testID === 'persistent-session-conversation') callback(180, 24, 400, 645);
@@ -719,6 +721,7 @@ test('듀오 태블릿은 머리줄 대신 띠 캡슐과 사용량 열을 쓰고
   view.unmount();
   measure.mockRestore();
   useSettingsStore.setState({ serverUrl: '', persistentSessionDevicePrefs: {} } as never);
+  useAuthStore.setState({ jwt: null });
 });
 
 test('PAS 헤더 액션은 테두리와 바탕 없는 원형 버튼 표면을 쓴다', () => {
