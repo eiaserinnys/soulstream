@@ -35,6 +35,7 @@ describe("orch-server-ts config scaffold", () => {
   it("maps the supported environment surface and tracks the ignored folder setting", async () => {
     const config = loadOrchServerEnvironment({
       NODE_NAME: "orch-primary",
+      SOULSTREAM_PUBLIC_URL: "https://dashboard.example.test",
       HOST: "127.0.0.1",
       PORT: "5300",
       DATABASE_URL: "postgres://orch@localhost/orch",
@@ -79,6 +80,7 @@ describe("orch-server-ts config scaffold", () => {
       trusted_proxy: "loopback",
       database_url: "postgres://orch@localhost/orch",
       dashboard_dir: "/srv/dashboard",
+      soulstream_public_url: "https://dashboard.example.test",
       dashboard_user_folder_access_configured: true,
       atom_enabled: true,
       atom_server_url: "https://atom.example.com",
@@ -203,6 +205,7 @@ describe("orch-server-ts config scaffold", () => {
   it.each([
     "HOST",
     "DATABASE_URL",
+    "SOULSTREAM_PUBLIC_URL",
     "ENVIRONMENT",
     "CLAUDE_OAUTH_CLIENT_ID",
     "CLAUDE_OAUTH_CALLBACK_URL",
@@ -350,6 +353,7 @@ describe("orch-server-ts config scaffold", () => {
 
 function minimalEnvironment(): Record<string, string> {
   return {
+    SOULSTREAM_PUBLIC_URL: "https://dashboard.example.test",
     HOST: "127.0.0.1",
     DATABASE_URL: "postgres://orch@localhost/orch",
     ENVIRONMENT: "test",

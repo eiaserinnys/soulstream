@@ -552,6 +552,10 @@
     {
       "id": "136_event_search_write_v2_drop_legacy.sql",
       "sha256": "be23005f35d7de28e54bcf98ea5eb6534e2373595b79aa7dfd246e6ce8fcf867"
+    },
+    {
+      "id": "137_oauth_entities.sql",
+      "sha256": "dd710f19e7391c95e34e8dc1401b649b09c4ae6155b6c7b155ddd5c04f52b963"
     }
   ]
 }

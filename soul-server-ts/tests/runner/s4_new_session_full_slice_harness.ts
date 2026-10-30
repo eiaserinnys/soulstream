@@ -148,6 +148,7 @@ export class ProductionFullSliceHarness {
     this.orch = await createProductionOrchestrator({
       config: loadOrchServerEnvironment({
         HOST: "127.0.0.1",
+        SOULSTREAM_PUBLIC_URL: "http://127.0.0.1",
         PORT: "0",
         DATABASE_URL: this.postgres.databaseUrl,
         ENVIRONMENT: "production",

@@ -160,6 +160,7 @@ function createAllOptInRouteApp() {
   const inert = {} as Record<string, unknown>;
   return createApp({
     config,
+    oauthRoutes: { issuer: "https://dashboard.example.test", sql: inert as never },
     agentProfileRoutes: inert,
     ownedAgentRoutes: inert,
     persistentSessionRoutes: { service: inert, reports: inert, requireSessionAccess: async () => undefined },

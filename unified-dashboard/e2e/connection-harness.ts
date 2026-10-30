@@ -35,6 +35,7 @@ async function start(nextBuild = buildId) {
   server = await createProductionOrchestrator({
     config: loadOrchServerEnvironment({
       HOST: "127.0.0.1",
+      SOULSTREAM_PUBLIC_URL: "http://127.0.0.1",
       PORT: serverPort,
       ENVIRONMENT: "test",
       DASHBOARD_DIR: dist,

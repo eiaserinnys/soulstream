@@ -447,6 +447,7 @@ async function closeHarness(
 function minimalEnvironment(): Record<string, string> {
   return {
     HOST: "127.0.0.1",
+    SOULSTREAM_PUBLIC_URL: "https://dashboard.example.test",
     DATABASE_URL: "postgres://unused@localhost/unused",
     ENVIRONMENT: "production",
     DASHBOARD_DIR: fileURLToPath(new URL("./fixtures/dashboard-build", import.meta.url)),

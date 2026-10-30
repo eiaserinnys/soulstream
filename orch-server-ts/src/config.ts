@@ -32,6 +32,7 @@ export type OrchServerEnvironmentConfig = Partial<ExternalIngressEnvironmentConf
   readonly trusted_proxy: typeof DEFAULT_TRUSTED_PROXY;
   readonly database_url: string;
   readonly dashboard_dir: string;
+  readonly soulstream_public_url: string;
   readonly dashboard_user_folder_access_configured: boolean;
   readonly atom_enabled: boolean;
   readonly atom_server_url: string;
@@ -70,6 +71,7 @@ export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
   "PORT",
   "DATABASE_URL",
   "DASHBOARD_DIR",
+  "SOULSTREAM_PUBLIC_URL",
   "ATOM_ENABLED",
   "ATOM_SERVER_URL",
   "ATOM_API_KEY",
@@ -140,6 +142,7 @@ export function loadOrchServerEnvironment(
     trusted_proxy: DEFAULT_TRUSTED_PROXY,
     database_url: requiredString(env, "DATABASE_URL"),
     dashboard_dir: env.DASHBOARD_DIR ?? "",
+    soulstream_public_url: publicOrigin(requiredString(env, "SOULSTREAM_PUBLIC_URL")),
     dashboard_user_folder_access_configured:
       (env.DASHBOARD_USER_FOLDER_ACCESS?.trim() ?? "").length > 0,
     atom_enabled: parseBoolean(env.ATOM_ENABLED, "ATOM_ENABLED", false),
@@ -220,6 +223,16 @@ function requiredString(env: EnvironmentSource, key: OrchServerEnvironmentVariab
     throw new Error(`${key} is required`);
   }
   return value;
+}
+
+function publicOrigin(value: string): string {
+  let url: URL;
+  try { url = new URL(value); } catch { throw new Error("SOULSTREAM_PUBLIC_URL must be an absolute HTTP origin"); }
+  if (!["http:", "https:"].includes(url.protocol) || url.username || url.password ||
+      url.pathname !== "/" || url.search || url.hash) {
+    throw new Error("SOULSTREAM_PUBLIC_URL must be an absolute HTTP origin");
+  }
+  return url.origin;
 }
 
 function optionalString(value: string | undefined): string | null {
