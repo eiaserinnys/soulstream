@@ -48,6 +48,9 @@ export function registerProductionAuthGuard(
     );
     if (authRequired === false) return;
 
+    const access = await options.resolveTokenAccess(request);
+    if (access.ok) return;
+
     const oauthAccess = await options.resolveOAuthAccess?.(request);
     if (oauthAccess !== null && oauthAccess !== undefined) {
       const scope = oauthScopeForRoute(request.method, request.url);
@@ -61,16 +64,13 @@ export function registerProductionAuthGuard(
       return;
     }
 
-    const access = await options.resolveTokenAccess(request);
-    if (!access.ok) {
-      const statusCode = access.statusCode ?? 401;
-      request.log.warn({
-        method: request.method,
-        path: requestLogPath(request),
-        statusCode,
-      }, "HTTP authentication rejected");
-      return reply.code(statusCode).send({ detail: access.detail });
-    }
+    const statusCode = access.statusCode ?? 401;
+    request.log.warn({
+      method: request.method,
+      path: requestLogPath(request),
+      statusCode,
+    }, "HTTP authentication rejected");
+    return reply.code(statusCode).send({ detail: access.detail });
   });
 }
 

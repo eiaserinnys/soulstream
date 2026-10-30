@@ -76,6 +76,7 @@ import {
 import type { AuthRouteOptions } from "../auth/auth_routes.js";
 import type { SqlClient } from "../control_plane/control_plane_types.js";
 import { createOAuthAccessTokenResolver, type OAuthAccessTokenResolver } from "../oauth/oauth_access.js";
+import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { LiveProviderDependencies } from "./live_provider_dependencies.js";
 import { liveProviderDependencyCategories } from "./live_provider_dependencies.js";
 import {
@@ -270,6 +271,12 @@ export function createLiveOrchestratorProviderBundle(
   const authenticatedUserResolvers = createLiveAuthenticatedUserResolvers({
     jwt: authJwt,
     ...(resolveOAuthToken === undefined ? {} : { resolveOAuthToken }),
+    isServiceBearer: async request => {
+      const config = await options.dependencies.configProvider.getConfig();
+      const token = config.auth_bearer_token;
+      return typeof token === "string" && token.length > 0 &&
+        verifyServiceBearerAuthorization(request.headers.authorization, token).ok;
+    },
   });
   const dashboardAccessProvider = createLiveDashboardAccessProvider({
     configProvider: options.dependencies.configProvider,

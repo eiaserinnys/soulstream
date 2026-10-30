@@ -18,6 +18,7 @@ export type CreateLiveAuthenticatedUserResolversOptions = {
   readonly jwt: AuthJwtHelper;
   readonly cookieName?: string;
   readonly resolveOAuthToken?: OAuthAccessTokenResolver;
+  readonly isServiceBearer?: (request: FastifyRequest) => Promise<boolean>;
 };
 
 export type LiveAuthenticatedUserResolver = (
@@ -107,6 +108,7 @@ export function createLiveAuthenticatedUserResolvers(
     if (cached !== undefined) return await cached;
     const token = extractBearerToken(request.headers.authorization);
     if (token === undefined || options.resolveOAuthToken === undefined) return null;
+    if (await options.isServiceBearer?.(request) || await resolveAuthenticatedUser(request)) return null;
     const verification = options.resolveOAuthToken(token);
     oauthVerificationCache.set(request, verification);
     return await verification;
