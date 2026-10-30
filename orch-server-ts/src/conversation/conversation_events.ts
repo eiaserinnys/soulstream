@@ -55,6 +55,7 @@ export async function sendConversationEvents(request: FastifyRequest, reply: Fas
       text:streamState.text, items:replay };
     let lastId = loaded.cursor;
     let liveSequence = liveSnapshot?.throughLiveSeq ?? 0;
+    let transientErrorSinceComplete = false;
     const frames: string[] = [frame({ kind:"snapshot", snapshot }, loaded.cursor)];
     let push: (chunk: string) => void = (chunk) => { frames.push(chunk); };
     const process = async (envelope: Record<string, unknown>) => {
@@ -72,11 +73,15 @@ export async function sendConversationEvents(request: FastifyRequest, reply: Fas
         payload = await history.enrichPayload(payload);
         const source: SourceEvent = { id, type, payload, at: at(payload) };
         const result = loaded.projection.apply(source);
-        if (result.item) push(frame({ kind:"item", item:result.item }, id));
-        if (result.activity) push(frame({ kind:"activity", ...result.activity }, result.item ? undefined : id));
+        const duplicate = (type === "error" || type === "assistant_error") && transientErrorSinceComplete;
+        if (type === "complete") transientErrorSinceComplete = false;
+        if (result.item && !duplicate) push(frame({ kind:"item", item:result.item }, id));
+        if (result.activity) push(frame({ kind:"activity", ...result.activity }, result.item && !duplicate ? undefined : id));
       } else if (type === "error" || type === "assistant_error") {
+        const duplicate = loaded.projection.hasErrorSinceComplete();
         const result = loaded.projection.apply({ id:0, type, payload, at:at(payload) });
-        if (result.item) push(frame({ kind:"item", item:{ ...result.item, id:`transient:${randomUUID()}` } }));
+        transientErrorSinceComplete = true;
+        if (result.item && !duplicate) push(frame({ kind:"item", item:{ ...result.item, id:`transient:${randomUUID()}` } }));
         if (result.activity) push(frame({ kind:"activity", ...result.activity }));
       } else {
         const text = loaded.projection.live(type, payload);

@@ -11,9 +11,11 @@ export class ConversationProjection {
   private tool: string | null = null;
   private streamId: string | null = null;
   private streamText = "";
+  private errorSinceComplete = false;
 
   constructor(private readonly firstInputIsInitial: boolean) {}
   activity() { return { busy: this.busy, tool: this.tool }; }
+  hasErrorSinceComplete() { return this.errorSinceComplete; }
   allowsLive() { return !this.keepalive; }
   stream() { return { stream_id: this.streamId, text: this.streamId && !isSilent(this.streamText, true) ? this.streamText : null }; }
   setStream(id: string, text: string) { this.streamId = id; this.streamText = text; }
@@ -43,10 +45,12 @@ export class ConversationProjection {
       return {};
     }
     if (type === "error" || type === "assistant_error") {
+      this.errorSinceComplete = true;
       this.keepalive = false; this.busy = false; this.tool = null; this.streamId = null; this.streamText = "";
       return { item: makeItem("error", string(payload.message) ?? string(payload.error) ?? "턴이 실패했습니다."), activity: this.activity() };
     }
     if (type === "complete") {
+      this.errorSinceComplete = false;
       this.keepalive = false; this.busy = false; this.tool = null; this.streamId = null; this.streamText = "";
       return { activity: this.activity() };
     }
