@@ -106,7 +106,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       return;
     }
 
-    const callerSessionId = task.callerSessionId;
+    const callerSessionId = await this._resolveCallerSessionId(task);
     if (!callerSessionId) return;
     if (callerSessionId === task.agentSessionId) {
       this.logger.info(
@@ -148,6 +148,29 @@ export class TaskCompletionNotifier implements CompletionNotifier {
 
   async recoverPending(): Promise<void> {
     await this.durableCoordinator?.recoverPending();
+  }
+
+  private async _resolveCallerSessionId(task: Task): Promise<string | undefined> {
+    const memoryCallerSessionId = task.callerSessionId;
+    if (!this.sessionLookup) return memoryCallerSessionId;
+    try {
+      const child = await this.sessionLookup.getSession(task.agentSessionId);
+      if (!child) {
+        this.logger.warn(
+          { childId: task.agentSessionId, callerSessionId: memoryCallerSessionId },
+          "Completion child session lookup returned no row — retaining in-memory caller",
+        );
+        return memoryCallerSessionId;
+      }
+      if (child.card_id && child.caller_session_id) return child.caller_session_id;
+      return memoryCallerSessionId;
+    } catch (err) {
+      this.logger.warn(
+        { err, childId: task.agentSessionId, callerSessionId: memoryCallerSessionId },
+        "Completion child session lookup failed — retaining in-memory caller",
+      );
+      return memoryCallerSessionId;
+    }
   }
 
   private async _deliver(

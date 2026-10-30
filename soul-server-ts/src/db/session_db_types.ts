@@ -205,6 +205,7 @@ export interface BoardYjsReplica {
 /** `session_get` 반환 행 (sessions 테이블 컬럼 매핑). */
 export interface SessionRow {
   card_id?: string | null;
+  card_assignee_replacement?: { current_assignee_session_id: string } | null;
   session_id: string;
   folder_id: string | null;
   display_name: string | null;
