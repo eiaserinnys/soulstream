@@ -34,6 +34,22 @@ describe("conversation projection", () => {
     expect(p.apply(event(4,"user_message",{text:"legacy",caller_info:{source:"browser"}})).item)
       .toMatchObject({kind:"user",text:"legacy"});
   });
+  it("hides the first user message while preserving an earlier intervention", () => {
+    const p = new ConversationProjection(true);
+    expect(p.apply(event(1, "intervention_sent", { text: "sent before startup", caller_info: { source: "browser" } })).item)
+      .toMatchObject({ kind: "user", text: "sent before startup" });
+    expect(p.apply(event(2, "user_message", { text: "initial instruction", caller_info: { source: "browser" } })).item)
+      .toBeUndefined();
+    expect(p.apply(event(3, "user_message", { text: "follow-up", caller_info: { source: "browser" } })).item)
+      .toMatchObject({ kind: "user", text: "follow-up" });
+  });
+  it("keeps the existing order where the initial user message arrives first", () => {
+    const p = new ConversationProjection(true);
+    expect(p.apply(event(1, "user_message", { text: "initial instruction", caller_info: { source: "browser" } })).item)
+      .toBeUndefined();
+    expect(p.apply(event(2, "intervention_sent", { text: "follow-up", caller_info: { source: "browser" } })).item)
+      .toMatchObject({ kind: "user", text: "follow-up" });
+  });
   it("keeps busy through session_ended and clears it on complete and error", () => {
     const p = new ConversationProjection(false);
     p.apply(event(1, "user_message", { text: "hello" }));
