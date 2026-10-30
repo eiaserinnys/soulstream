@@ -25,6 +25,7 @@ import {
 } from "../../src/runner/sqlite_runner_lifecycle.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { TaskHydrationFailedError } from "../../src/task/task_hydration_errors.js";
+import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { Task } from "../../src/task/task_models.js";
 import { makeEventPersistenceTestDouble } from
   "../task/event_persistence_test_double.js";
@@ -338,6 +339,67 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
     expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
     expect(recovered.runner).toBe(runner);
+  });
+
+  it("releases a retained runner for a running registered task and enters offline replay", async () => {
+    const terminalRegistration = registration({
+      lifecycleState: "completed",
+      pidAlive: true,
+    });
+    terminalRegistration.config.backend = "claude";
+    terminalRegistration.config.agent.backend = "claude";
+    const recovered = task("session-a");
+    recovered.executionRegistration = {
+      registrationId: "registration-a",
+      executionCommandId: "execute-current",
+    };
+    recovered.runnerRetainedForDetachedWork = true;
+    const detachHost = vi.fn(async () => {});
+    recovered.runner = {
+      engine: {
+        backendId: "claude",
+        detachedClaudeRuntime: true,
+        detachedClaudeRuntimeActivity: vi.fn(async () => null),
+      } as never,
+      dispatcher: {
+        registrationId: () => "registration-a",
+        hasActiveExecution: () => false,
+        detachHost,
+      } as never,
+      eventPersistence: "runner",
+    } as NonNullable<Task["runner"]>;
+    const executor = new TaskExecutor(
+      () => { throw new Error("engine factory is unused in this recovery test"); },
+      {} as never,
+      {} as never,
+      {} as never,
+      { warn: vi.fn() } as never,
+    );
+    const recoverRegisteredRunner = vi.fn(async () => {});
+    const subject = makeSubject([terminalRegistration], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(async () => recovered),
+      } as never,
+      taskExecutor: {
+        retainRegisteredDetachedRunner: (owned, exact) =>
+          executor.retainRegisteredDetachedRunner(owned, exact),
+        recoverRegisteredRunner,
+      } as never,
+    });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(detachHost).toHaveBeenCalledOnce();
+    expect(recovered.runner).toBeUndefined();
+    expect(recoverRegisteredRunner).toHaveBeenCalledWith(
+      recovered,
+      expect.anything(),
+      "execute-a",
+      "offline",
+      expect.any(Function),
+      expect.anything(),
+    );
   });
 
   it.each([
