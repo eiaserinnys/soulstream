@@ -18,6 +18,10 @@ describe("conversation items and events", () => {
     await db.sql`INSERT INTO events(session_id,id,event_type,payload,created_at)
       VALUES (${session}, ${id}, ${type}, ${db.sql.json(payload as never)}, '2026-10-30T00:00:00Z')`;
   };
+  const insertFor = async (sessionId: string, id: number, type: string, payload: Record<string, unknown>) => {
+    await db.sql`INSERT INTO events(session_id,id,event_type,payload,created_at)
+      VALUES (${sessionId}, ${id}, ${type}, ${db.sql.json(payload as never)}, '2026-10-30T00:00:00Z')`;
+  };
   beforeAll(async () => {
     db = await createFullSchemaPostgresHarness();
     await db.sql`INSERT INTO folders(id,name) VALUES ('allowed-folder','Allowed'),('other-folder','Other')`;
@@ -99,6 +103,33 @@ describe("conversation items and events", () => {
     const reconnect = await get("/events", { authorization:"Bearer test", "last-event-id":snapshot.snapshot.cursor });
     expect(reconnect.body).not.toContain("between");
     expect(reconnect.body).not.toContain("after");
+  });
+  it("hides the initial instruction after an earlier intervention for created and adopted threads", async () => {
+    const cases = [
+      { id: "s4-race-created", key: "race-created", creation: { title: "created", initial_instruction: "initial instruction" }, adopted: false },
+      { id: "s4-race-adopted", key: "race-adopted", creation: null, adopted: true },
+    ];
+    for (const thread of cases) {
+      await db.sql`INSERT INTO sessions(session_id,folder_id,model_preset,created_at)
+        VALUES (${thread.id},'allowed-folder','sol','2026-10-30T00:00:00Z')`;
+      await db.sql`INSERT INTO conversation_bindings(account_id,namespace,external_key,session_id,selected_model,creation_request,phase,first_input_is_initial_instruction,notices)
+        VALUES ('person','n',${thread.key},${thread.id},'sol',${thread.creation === null ? null : db.sql.json(thread.creation)},'complete',${thread.adopted},'[]'::jsonb)`;
+      await insertFor(thread.id, 1, "intervention_sent", { text: "sent before startup", caller_info: { source: "browser" } });
+      await insertFor(thread.id, 2, "user_message", { text: "initial instruction", caller_info: { source: "browser" } });
+      await insertFor(thread.id, 3, "user_message", { text: "follow-up", caller_info: { source: "browser" } });
+      const threadBase = `/api/conversations/v1/threads/${thread.id}`;
+      const itemsResponse = await app.inject({ method: "GET", url: `${threadBase}/items`, headers: { authorization: "Bearer test" } });
+      expect(itemsResponse.statusCode).toBe(200);
+      const visibleItems = itemsResponse.json().items.map((item: { text: string }) => item.text);
+      expect(visibleItems).toEqual(["sent before startup", "follow-up"]);
+
+      const eventsResponse = await app.inject({ method: "GET", url: `${threadBase}/events`, headers: { authorization: "Bearer test" } });
+      expect(eventsResponse.statusCode).toBe(200);
+      const frames = eventsResponse.body.split("\n\n").filter(Boolean);
+      const snapshot = frames.map((frame: string) => frame.split("\n").find(line => line.startsWith("data: ")))
+        .filter(Boolean).map((line: string) => JSON.parse(line.slice(6))).find((value: { kind: string }) => value.kind === "snapshot");
+      expect(snapshot.snapshot.items.map((item: { text: string }) => item.text)).toEqual(visibleItems);
+    }
   });
   it("checks access before history and stream", async () => {
     deny = true;

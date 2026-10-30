@@ -3,7 +3,7 @@ import { isHumanInput, isInternalInput, isKeepalive, isShortAcknowledgement, isS
 export type Item = { id: string; kind: "user" | "assistant" | "error" | "notice"; text: string; at: string; attachments: Array<{ id: string; name: string; mime: string }> };
 export type SourceEvent = { id: number; type: string; at: string; payload: Record<string, unknown> };
 export class ConversationProjection {
-  private firstHumanSeen = false;
+  private firstUserMessageSeen = false;
   private keepalive = false;
   private suppressed = false;
   private readonly hiddenInputs = new Set<string>();
@@ -36,9 +36,9 @@ export class ConversationProjection {
       this.suppressed = internal || keepalive || hasClosedContext(payload);
       if (input && !keepalive) { this.busy = true; this.tool = null; }
       if (human && !keepalive) {
-        const first = !this.firstHumanSeen;
-        this.firstHumanSeen = true;
-        if (first && this.firstInputIsInitial) return { activity: this.activity() };
+        const firstUserMessage = type === "user_message" && !this.firstUserMessageSeen;
+        if (type === "user_message") this.firstUserMessageSeen = true;
+        if (firstUserMessage && this.firstInputIsInitial) return { activity: this.activity() };
         const attachments = attachmentsFor(payload);
         const text = stripInternal(string(payload._conversation_text) ?? string(payload.text) ?? "");
         return text.trim() || attachments.length ? { item: makeItem("user", text, attachments), activity: this.activity() } : {};
