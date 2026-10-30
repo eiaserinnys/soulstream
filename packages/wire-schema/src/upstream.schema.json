@@ -2754,6 +2754,7 @@
       "additionalProperties": true,
       "properties": {
         "type": { "const": "intervention_sent" },
+        "_conversation_text": { "type": "string", "description": "Original human text retained for conversation display when the agent input has appended context." },
         "attachment_ids": { "type": "array", "items": { "type": "string" } },
         "attachment_count": { "type": "integer", "minimum": 0 }
       }
@@ -2797,6 +2798,7 @@
       "additionalProperties": true,
       "properties": {
         "type": { "const": "user_message" },
+        "_conversation_text": { "type": "string", "description": "Original human text retained for conversation display when the agent input has appended context." },
         "attachment_ids": { "type": "array", "items": { "type": "string" } },
         "attachment_count": { "type": "integer", "minimum": 0 }
       }

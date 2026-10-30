@@ -47,6 +47,34 @@ function makeTerminalTask(overrides: Partial<Task> = {}): Task {
 }
 
 describe("AutoResumeTransition", () => {
+  it("keeps original conversation text on the user event during auto-resume", async () => {
+    const task = makeTerminalTask();
+    const persistenceDouble = makeEventPersistenceTestDouble();
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+    });
+
+    await transition.resume(
+      task,
+      {
+        text: "visible\n\nagent context",
+        conversationText: "visible",
+        user: "u",
+      },
+      vi.fn(),
+    );
+
+    const userMessage = persistenceDouble.enqueueEvent.mock.calls
+      .map(([, event]) => event)
+      .find((event) => event.type === "user_message");
+    expect(userMessage).toMatchObject({
+      type: "user_message",
+      text: "visible\n\nagent context",
+      _conversation_text: "visible",
+    });
+  });
+
   it.each(["slack", "browser", "soul-app"])(
     "starts persistent resume observation for %s after the saved input without waiting for it",
     async (source) => {

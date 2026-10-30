@@ -29,6 +29,10 @@ describe("conversation projection", () => {
       .toMatchObject({kind:"user",text:"visible"});
     expect(p.apply(event(2,"intervention_sent",{text:"legacy"})).item)
       .toMatchObject({kind:"user",text:"legacy"});
+    expect(p.apply(event(3,"user_message",{text:"visible\n\nagent context",caller_info:{source:"browser"},_conversation_text:"visible"})).item)
+      .toMatchObject({kind:"user",text:"visible"});
+    expect(p.apply(event(4,"user_message",{text:"legacy",caller_info:{source:"browser"}})).item)
+      .toMatchObject({kind:"user",text:"legacy"});
   });
   it("keeps busy through session_ended and clears it on complete and error", () => {
     const p = new ConversationProjection(false);

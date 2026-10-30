@@ -16,6 +16,7 @@ export interface UserMessageEventPublisherDeps {
 
 export interface UserMessageEventInput {
   text: string;
+  conversationText?: string;
   inputId?: string;
   user?: string;
   callerInfo?: CallerInfo;
@@ -41,6 +42,9 @@ export function buildUserMessageEvent(input: UserMessageEventInput): Record<stri
       : input.text,
     timestamp: Date.now() / 1000,
   };
+  if (input.conversationText !== undefined) {
+    event._conversation_text = input.conversationText;
+  }
   if (input.inputId) {
     event.input_id = input.inputId;
   }

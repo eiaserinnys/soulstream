@@ -122,6 +122,7 @@ export class AutoResumeTransition {
         ? null
         : buildUserMessageEvent({
           text: message.text,
+          conversationText: message.conversationText,
           inputId: message.deliveryId
             ? buildDeliveryInputUuid(message.deliveryId)
             : undefined,
