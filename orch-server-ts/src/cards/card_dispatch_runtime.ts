@@ -459,23 +459,36 @@ export async function createCardDispatchRuntime(options: {
       throw error;
     }
   };
-  const executionService=new CardExecutionService({sql:await resolveSql(),cards:await serviceProvider(),
-    validate:async card=>{
+  const validateTarget = async (target: import("./card_execution_service.js").ExecutionTarget) => {
       try{
-      if(!card.node_id || !card.assignee_agent_id || !card.model_preset) throw Object.assign(new Error("폴더·노드·에이전트·모델을 선택한 뒤 실행하세요."),{statusCode:422});
-      const selection=options.router.selectNodeForCreate({nodeId:card.node_id,profileId:card.assignee_agent_id,modelPresetId:card.model_preset});
-      options.availability.requireAvailable(card.node_id,selection.modelPresetId!);
-      return {nodeId:card.node_id,agentId:selection.profileId,modelPreset:selection.modelPresetId!};
+      if(!target.nodeId || !target.agentId || !target.modelPreset) throw Object.assign(new Error("폴더·노드·에이전트·모델을 선택한 뒤 실행하세요."),{statusCode:422});
+      const selection=options.router.selectNodeForCreate({nodeId:target.nodeId,profileId:target.agentId,modelPresetId:target.modelPreset});
+      options.availability.requireAvailable(target.nodeId,selection.modelPresetId!);
+      return {nodeId:target.nodeId,agentId:selection.profileId,modelPreset:selection.modelPresetId!};
       }catch(error){throw Object.assign(new Error(error instanceof Error?error.message:String(error)),{statusCode:422,code:"CARD_EXECUTION_SETTINGS_REQUIRED"});}
-    },
+  };
+  const executionService=new CardExecutionService({sql:await resolveSql(),cards:await serviceProvider(),
+    validate: card => validateTarget({nodeId:card.node_id ?? "",agentId:card.assignee_agent_id ?? "",modelPreset:card.model_preset}),
     launch:async input=>{
       const detail=(await (await serviceProvider()).getCard(input.cardId))!;
       const folder=(await legacyOptions.repository.queued()).find(c=>c.id===input.cardId)?.folder_name
         ?? (await (await serviceProvider()).getFolder(detail.card.folder_id))!.folder.name;
       const answers=detail.questions.filter(q=>q.answer!==null).map(q=>`${String(q.text)} → ${String(q.answer)}`).join("\n");
-      const prompt=buildCardPrompt({cardId:input.cardId,title:detail.card.title,folderName:folder,request:detail.card.request,
+      let prompt=buildCardPrompt({cardId:input.cardId,title:detail.card.title,folderName:folder,request:detail.card.request,
         brief:[detail.card.brief,answers].filter(Boolean).join("\n"),comments:detail.comments.filter(c=>c.author_kind==='user').map(c=>({id:String(c.id),createdAt:c.created_at as Date,body:String(c.body)})),
         running:(await legacyOptions.repository.running()).filter(c=>c.id!==input.cardId).map(c=>({title:c.title,folderName:c.folder_name}))});
+      const sql=await resolveSql();
+      const replacement=(await sql<Array<{payload_json:Record<string,any>}>>`SELECT op.payload_json FROM card_execution_requests r
+        JOIN folder_operations op ON r.idempotency_key='dispatch-work-replace:'||op.id
+        WHERE r.id=${input.requestId} AND r.card_id=${input.cardId} AND r.session_id=${input.sessionId}
+          AND op.operation_type='execute_card' AND op.target_id=r.card_id AND op.payload_json->>'dispatch_kind'='replace_assignee'`)[0];
+      if(replacement){
+        const payload=replacement.payload_json, old=payload.previous_assignee;
+        const sessions=await sql<Array<{session_id:string;agent_id:string;node_id:string;status:string;caller_session_id:string|null}>>`
+          SELECT session_id,agent_id,node_id,status,caller_session_id FROM sessions WHERE card_id=${input.cardId} ORDER BY created_at,session_id`;
+        const members=sessions.map(s=>`- ${s.session_id} / ${s.agent_id} / ${s.node_id} / ${s.status} / 부른 세션: ${s.caller_session_id ?? "없음"}`).join("\n");
+        prompt=`[카드 담당 교체] 이 세션은 카드 #${detail.card.number} 「${detail.card.title}」의 새 담당이다. 이전 담당 세션 ${old.session_id}(${old.agent_id}, ${old.node_id}, 상태 ${old.status})가 이어 가지 못해 교체되었다.\n\n요청 원문:\n${payload.request}\n\n인계 요약:\n${payload.brief}\n\n착수 전에 get_card로 확인 항목, 상황판, 노트, 커멘트, 질문, 연결 세션을 읽고, 이전 담당의 진행은 get_session_summary와 list_session_events로 확인한 뒤 이어 간다. 이전 담당이 띄운 이 카드의 하위 세션은 이제 이 세션의 하위 세션이며 완료 보고도 이 세션으로 온다.\n\n카드에 소속된 다른 세션:\n${members}\n\n${prompt}`;
+      }
       const attachments=await prepareCardInput(input.cardId,detail.card.attachments??[],input.target.nodeId);
       return createRecurringSession({router:options.router,bridge:options.bridge,modelPresetAvailability:options.availability},
         {sessionId:input.sessionId,prompt,cardId:input.cardId,folderId:input.target.folderId!,...input.target,
@@ -503,7 +516,7 @@ export async function createCardDispatchRuntime(options: {
       return result as unknown as {state:"started"|"already_running";execution:import("./card_work_lifecycle.js").CardWorkExecution};
     },
     onConfirmedFailureTx: async (sql, request, failure) => {
-      const executionKeyPrefix = "dispatch-work-execution:";
+      const executionKeyPrefix = request.idempotency_key.startsWith("dispatch-work-replace:") ? "dispatch-work-replace:" : "dispatch-work-execution:";
       if (!request.idempotency_key.startsWith(executionKeyPrefix)) return null;
       const operationId = request.idempotency_key.slice(executionKeyPrefix.length);
       if (!operationId) return null;
@@ -514,13 +527,14 @@ export async function createCardDispatchRuntime(options: {
         operation_type: string;
         actor_kind: string;
         actor_session_id: string | null;
-        idempotency_key: string | null;
-      }>>`SELECT id,target_kind,target_id,operation_type,actor_kind,actor_session_id,idempotency_key
+        idempotency_key: string | null; payload_json:Record<string,unknown>;
+      }>>`SELECT id,target_kind,target_id,operation_type,actor_kind,actor_session_id,idempotency_key,payload_json
         FROM folder_operations WHERE id=${operationId}`)[0];
       const stage = request.mode === "create" ? "launch" : request.mode === "resume" ? "restart" : null;
       if (!stage || !operation || request.idempotency_key !== `${executionKeyPrefix}${operation.id}`
         || operation.target_kind !== "card" || operation.target_id !== request.card_id
-        || operation.operation_type !== "create_card" || operation.actor_kind !== "agent"
+        || !(operation.operation_type === "create_card" && executionKeyPrefix === "dispatch-work-execution:"
+          || operation.operation_type === "execute_card" && executionKeyPrefix === "dispatch-work-replace:" && operation.payload_json.dispatch_kind === "replace_assignee") || operation.actor_kind !== "agent"
         || !operation.actor_session_id) return null;
       return await recordConfirmedErrorTx(sql as unknown as RepositorySql, {
         operationId: operation.id,
@@ -541,6 +555,8 @@ export async function createCardDispatchRuntime(options: {
       sql: await resolveSql(),
       cards: await serviceProvider(),
       execution: executionService,
+      isNodeConnected: nodeId => options.router.isNodeConnected(nodeId),
+      validateTarget,
       authorizeFolder,
       sendDelivery: sendWorkDelivery,
       emitCardUpdated: async (cardId, folderId) => {

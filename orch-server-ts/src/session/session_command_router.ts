@@ -145,6 +145,10 @@ export class SessionCommandRouter {
     );
   }
 
+  isNodeConnected(nodeId: string): boolean {
+    return !!this.registry.getConnectedNode(nodeId);
+  }
+
   createSession<
     TPayload extends CreateSessionNodeCommandPayload | RequestResponseNodeCommandPayload<"prepare_card_orchestration_decision">,
     TResponse extends NodeCommandResponse = NodeCommandResponse,

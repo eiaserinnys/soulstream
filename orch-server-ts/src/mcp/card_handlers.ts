@@ -69,6 +69,8 @@ export const cardHandlers = {
     matchingHeader(a, c);
     const hasCard = typeof a.card_id === "string";
     const hasTitle = typeof a.title === "string";
+    if (a.replace_assignee === true && !hasCard) return run(async () => { throw Object.assign(new Error("replace_assignee=true에는 card_id가 필요합니다."), {statusCode:400}); });
+    if (a.replace_assignee === true && a.folder_id !== undefined) return run(async () => { throw Object.assign(new Error("담당 교체에는 folder_id를 지정할 수 없습니다."), {statusCode:400}); });
     if (hasCard === hasTitle) return run(async () => { throw new Error("card_id 또는 title 중 하나만 지정해야 합니다."); });
     return callWithReferenceTranslation(a, refs => resolveDispatchReferences(o.cards, refs), translated =>
       run(async () => {
@@ -80,12 +82,15 @@ export const cardHandlers = {
             throw Object.assign(new Error("Authenticated dispatch actor mismatch"), { statusCode: 403 });
           await allowed(o.cards, o.cards.resolveAccess, folderId);
         };
-        if (hasCard && ["folder_id", "agent_id", "model_preset", "node_id"].some(key => translated[key] !== undefined))
+        if (hasCard && a.replace_assignee !== true && ["folder_id", "agent_id", "model_preset", "node_id"].some(key => translated[key] !== undefined))
           throw new Error("folder_id, agent_id, model_preset, node_id는 새 카드 생성에만 지정할 수 있습니다.");
         const service = await o.cards.workDispatchServiceProvider(authorizeFolder);
         const input: DispatchWorkInput = hasCard
-          ? { kind: "followup", cardId: String(translated.card_id), request: String(translated.request),
+          ? { kind: a.replace_assignee === true ? "replace" : "followup", cardId: String(translated.card_id), request: String(translated.request),
               ...(typeof translated.brief === "string" ? { brief: translated.brief } : {}),
+              ...(a.replace_assignee === true && typeof translated.agent_id === "string" ? { agentId: translated.agent_id } : {}),
+              ...(a.replace_assignee === true && typeof translated.model_preset === "string" ? { modelPreset: translated.model_preset } : {}),
+              ...(a.replace_assignee === true && typeof translated.node_id === "string" ? { nodeId: translated.node_id } : {}),
               idempotencyKey: String(translated.idempotency_key) }
           : { kind: "create", title: String(translated.title), request: String(translated.request),
               ...(typeof translated.brief === "string" ? { brief: translated.brief } : {}),

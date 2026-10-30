@@ -18,6 +18,9 @@ import {
   recordWorkReceipt,
 } from "./card-work-postgres-fixture.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
+import { SessionMutationRepository } from "../src/control_plane/repositories/session_mutation_repository.js";
+import { cardHandlers } from "../src/mcp/card_handlers.js";
+import { PersistentReportService } from "../src/session/persistent_report_service.js";
 
 const actor = { actorKind: "agent" as const, actorSessionId: "caller-session" };
 const createInput = (idempotencyKey: string, overrides: Partial<Extract<DispatchWorkInput, { kind: "create" }>> = {}): Extract<DispatchWorkInput, { kind: "create" }> => ({
@@ -80,10 +83,185 @@ beforeAll(async () => {
   await h.sql`INSERT INTO folders(id,name) VALUES ('work','작업'),('restricted','제한'),('claude','Claude'),('llm','LLM')`;
   await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,folder_id,model_preset)
     VALUES ('caller-session','node-a','agent-a','running','work','model-a')`;
+  await h.sql.unsafe(`
+    CREATE TABLE session_mutation_receipts(idempotency_key TEXT PRIMARY KEY,operation TEXT NOT NULL,session_id TEXT NOT NULL,request_hash TEXT NOT NULL,result_json JSONB NOT NULL);
+    CREATE FUNCTION session_register_with_model_preset(
+      a TEXT,b TEXT,c TEXT,d TEXT,e TEXT,f TEXT,g TEXT,h TEXT,i TIMESTAMPTZ,j TIMESTAMPTZ,k TEXT,l BOOLEAN,m BOOLEAN,n TEXT,o TEXT,p TEXT,q TEXT,r TEXT
+    ) RETURNS void LANGUAGE SQL AS $$
+      INSERT INTO sessions(session_id,node_id,agent_id,session_type,status,created_at,updated_at,caller_session_id,predecessor_session_id,model_preset,reasoning_effort)
+      VALUES(a,b,c,e,h,i,j,k,o,p,r);
+    $$;
+  `);
 }, 60000);
 afterAll(async () => h?.cleanup());
 
 describe("card work dispatch transaction contracts", () => {
+  it("validates replacement-only arguments at the MCP handler", async () => {
+    const options={cards:{}} as any;
+    const context={principal:"internal" as const,callerSessionId:"caller-session",nodeId:"node-a"};
+    const missing=await cardHandlers.dispatch_work(options,{title:"새 카드",request:"요청",idempotency_key:"missing",replace_assignee:true},context);
+    expect(missing.isError).toBe(true);
+    expect(missing.content[0]?.text).toContain("replace_assignee=true에는 card_id가 필요합니다.");
+    const folder=await cardHandlers.dispatch_work(options,{card_id:"card",folder_id:"work",request:"요청",idempotency_key:"folder",replace_assignee:true},context);
+    expect(folder.isError).toBe(true);
+    expect(folder.content[0]?.text).toContain("담당 교체에는 folder_id를 지정할 수 없습니다.");
+  });
+  it("accepts from the actual MCP handler and commits registration, ownership and child callers together", async () => {
+    const stack=createStack();
+    await h.sql`UPDATE sessions SET session_type='agent',metadata=${h.sql.json([{type:"persistent_session",value:{enabled:true}}])} WHERE session_id='caller-session'`;
+    const made=await stack.cards.createCard({actorKind:"user",actorSessionId:null,actorUserId:"user",folderId:"work",
+      title:"교체할 카드",request:"보존할 요청",assignee:{kind:"agent",agentId:"old-agent"},nodeId:"node-a",modelPreset:"old-model"});
+    const otherCard=await stack.cards.createCard({actorKind:"user",actorSessionId:null,actorUserId:"user",folderId:"work",
+      title:"다른 카드",request:"다른 요청",assignee:{kind:"agent",agentId:"worker"},nodeId:"node-a",modelPreset:"model-a"});
+    const cardId=made.operation.target_id, oldId=`mcp-old-${cardId}`, childId=`child-${cardId}`, otherId=`other-${cardId}`;
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,folder_id,model_preset,caller_session_id)
+      VALUES (${oldId},'node-a','old-agent','error',${cardId},'work','old-model',NULL),
+        (${childId},'node-a','worker','running',${cardId},'work','model-a',${oldId}),
+        (${otherId},'node-a','worker','running',${otherCard.operation.target_id},'work','model-a',${oldId})`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_agent_id=NULL,assignee_session_id=${oldId} WHERE id=${cardId}`;
+    await h.sql`UPDATE cards SET items=${h.sql.json([{id:1,title:"보존할 항목",state:"todo",result:null,evidence:[],caveat:null,rev:0,confirmed:null,fixOpen:0,reopened:null,from:null}])} WHERE id=${cardId}`;
+    await h.sql`INSERT INTO card_comments(id,card_id,author_kind,kind,body) VALUES
+      (${`note-${cardId}`},${cardId},'agent','note','보존할 노트'),
+      (${`comment-${cardId}`},${cardId},'user','spoken','보존할 커멘트')`;
+    const contentBefore=(await h.sql`SELECT number,items FROM cards WHERE id=${cardId}`)[0];
+    const service = new CardWorkDispatchService({...stack.optionsForService,isNodeConnected:()=>true,
+      validateTarget:async (target:any)=>target} as any);
+    const kick=service.kick.bind(service);
+    let initialKick:Promise<void> | undefined;
+    service.kick=receipt=>{initialKick=kick(receipt);return initialKick;};
+    const options={cards:{workDispatchServiceProvider:async()=>service}} as any;
+    const response=await cardHandlers.dispatch_work(options,{card_id:cardId,replace_assignee:true,request:"이어 주세요",
+      brief:"완료 기준",node_id:"node-b",model_preset:"model-b",idempotency_key:`mcp-${cardId}`},
+      {principal:"internal",callerSessionId:"caller-session",nodeId:"node-a"});
+    expect(response.isError).not.toBe(true);
+    const receipt=response.structuredContent as {request_id:string};
+    await initialKick;
+    const request=(await h.sql`SELECT * FROM card_execution_requests WHERE id=${receipt.request_id}`)[0]!;
+    const reports=new PersistentReportService(stack.sql,()=>undefined);
+    const supervisors=await (reports as any).connectedSessions(stack.sql,cardId) as Set<string>;
+    expect(supervisors.has("caller-session")).toBe(true);
+    const now=new Date();
+    await new SessionMutationRepository(h.sql).registerSession({idempotencyKey:`register-${cardId}`,sessionId:request.session_id,
+      nodeId:"node-b",agentId:"old-agent",claudeSessionId:null,sessionType:"agent",prompt:"교체",clientId:null,status:"initializing",
+      createdAt:now,updatedAt:now,callerSessionId:null,predecessorSessionId:null,modelPreset:"model-b",cardId});
+    expect((await h.sql`SELECT assignee_session_id,node_id,model_preset,request FROM cards WHERE id=${cardId}`)[0])
+      .toEqual({assignee_session_id:request.session_id,node_id:"node-b",model_preset:"model-b",request:"보존할 요청"});
+    expect((await h.sql`SELECT caller_session_id FROM sessions WHERE session_id=${childId}`)[0]!.caller_session_id).toBe(request.session_id);
+    expect((await h.sql`SELECT caller_session_id FROM sessions WHERE session_id=${otherId}`)[0]!.caller_session_id).toBe(oldId);
+    const op=(await h.sql`SELECT actor_session_id,payload_json FROM folder_operations WHERE target_id=${cardId} AND operation_type='update_card'`)[0]!;
+    expect(op.actor_session_id).toBe("caller-session");
+    expect(op.payload_json).toEqual({assignee:{kind:"session",sessionId:request.session_id},
+      replacement:{from_session_id:oldId,to_session_id:request.session_id,dispatch_operation_id:request.idempotency_key.slice("dispatch-work-replace:".length)}});
+    expect((await h.sql`SELECT number,items FROM cards WHERE id=${cardId}`)[0]).toEqual(contentBefore);
+    expect(await h.sql`SELECT kind,body FROM card_comments WHERE card_id=${cardId} ORDER BY kind`).toEqual([
+      {kind:"note",body:"보존할 노트"},{kind:"spoken",body:"보존할 커멘트"}]);
+    const proof={registrationId:"replacement-reg",executionCommandId:"replacement-cmd"};
+    await recordWorkReceipt(h,request.session_id,"running",proof);
+    await stack.execution.observe(cardId,request.id,actor);
+    expect((await h.sql`SELECT status FROM cards WHERE id=${cardId}`)[0]!.status).toBe("running");
+  },60000);
+
+  it("recovers pending replacement kicks and sends a confirmed failure to the dispatch actor", async () => {
+    const stack=createStack(),start=vi.fn(async()=>undefined);
+    const made=await stack.cards.createCard({actorKind:"user",actorSessionId:null,actorUserId:"user",folderId:"work",
+      title:"복구",request:"요청",assignee:{kind:"agent",agentId:"agent"},nodeId:"node-a",modelPreset:"model-a"});
+    const cardId=made.operation.target_id,oldId=`recovery-owner-${cardId}`;
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,model_preset) VALUES(${oldId},'node-a','agent','error',${cardId},'model-a')`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_agent_id=NULL,assignee_session_id=${oldId} WHERE id=${cardId}`;
+    const service=new CardWorkDispatchService({...stack.optionsForService,isNodeConnected:()=>true,validateTarget:async(target:any)=>target,
+      execution:{reserveTx:stack.execution.reserveTx.bind(stack.execution),startReserved:start}} as any);
+    const receipt=await service.accept({kind:"replace",cardId,request:"계속",idempotencyKey:`recovery-${cardId}`} as any,actor);
+    if(receipt.work.kind!=="execution") throw new Error("execution expected");
+    await service.kickPendingForNode("node-a");
+    expect(start).toHaveBeenCalledWith(receipt.work.requestId,expect.objectContaining({actorSessionId:"caller-session"}));
+    const delivery=await stack.sql.begin(tx=>recordConfirmedErrorTx(tx,{operationId:receipt.operationId,cardId,
+      workId:receipt.work.kind==="execution"?receipt.work.requestId:"",stage:"launch",message:"시작 거부",failureId:"error-ack"}));
+    expect(delivery?.target_session_id).toBe("caller-session");
+    expect((await h.sql`SELECT assignee_session_id FROM cards WHERE id=${cardId}`)[0]!.assignee_session_id).toBe(oldId);
+  },60000);
+  it("accepts a replacement, retains its receipt after the new owner starts, and rejects changed input", async () => {
+    const stack = createStack();
+    const made = await stack.cards.createCard({ actorKind:"user", actorSessionId:null, actorUserId:"user", folderId:"work",
+      title:"이어갈 카드", request:"원래 요청", assignee:{kind:"agent",agentId:"old-agent"}, nodeId:"node-a", modelPreset:"old-model" });
+    const cardId=made.operation.target_id;
+    const oldId=`old-${cardId}`;
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,folder_id,model_preset)
+      VALUES (${oldId},'node-a','old-agent','error',${cardId},'work','old-model')`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_agent_id=NULL,assignee_session_id=${oldId} WHERE id=${cardId}`;
+    const service = new CardWorkDispatchService({ ...stack.optionsForService,
+      isNodeConnected: () => true, validateTarget: async (target: any) => target } as any);
+    const input = {kind:"replace",cardId,request:"이어 주세요",brief:"완료 기준",agentId:"new-agent",idempotencyKey:`replace-${cardId}`} as any;
+    const first=await service.accept(input,actor);
+    expect(first.work.kind).toBe("execution");
+    if(first.work.kind!=="execution") throw new Error("execution expected");
+    const reservation=(await h.sql`SELECT * FROM card_execution_requests WHERE id=${first.work.requestId}`)[0]!;
+    expect(reservation.target).toMatchObject({nodeId:"node-a",agentId:"new-agent",modelPreset:"old-model",folderId:"work"});
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,model_preset)
+      VALUES (${first.work.sessionId},'node-a','new-agent','running',${cardId},'old-model')`;
+    await h.sql`UPDATE cards SET assignee_session_id=${first.work.sessionId} WHERE id=${cardId}`;
+    expect(await service.accept(input,actor)).toEqual({...first,idempotent:true});
+    await expect(service.accept({...input,request:"다른 요청"},actor)).rejects.toMatchObject({statusCode:409,message:"같은 요청 키가 다른 작업에 사용되었습니다."});
+    for(const change of [{brief:"다른 요약"},{agentId:"다른 에이전트"},{nodeId:"node-b"},{modelPreset:"다른 모델"}])
+      await expect(service.accept({...input,...change},actor)).rejects.toMatchObject({statusCode:409,message:"같은 요청 키가 다른 작업에 사용되었습니다."});
+  },60000);
+
+  it("accepts review, done and blocked cards, distinguishes connected running owners, and handles pending reservations", async () => {
+    const stack=createStack();
+    let connected=true;
+    const service=new CardWorkDispatchService({...stack.optionsForService,isNodeConnected:()=>connected,
+      validateTarget:async(target:any)=>target} as any);
+    for(const status of ["review","done","blocked"]){
+      const made=await stack.cards.createCard({actorKind:"user",actorSessionId:null,actorUserId:"user",folderId:"work",
+        title:status,request:"요청",assignee:{kind:"agent",agentId:"old-agent"},nodeId:"node-a",modelPreset:"old-model"});
+      const cardId=made.operation.target_id,oldId=`status-owner-${cardId}`;
+      await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,model_preset) VALUES(${oldId},'node-a','old-agent','error',${cardId},'old-model')`;
+      await h.sql`UPDATE cards SET status=${status},assignee_kind='session',assignee_agent_id=NULL,assignee_session_id=${oldId} WHERE id=${cardId}`;
+      const input={kind:"replace",cardId,request:"계속",idempotencyKey:`status-${cardId}`} as any;
+      const accepted=await service.accept(input,actor);
+      expect(accepted.work.kind).toBe("execution");
+      if(accepted.work.kind!=="execution") throw new Error("execution expected");
+      expect((await h.sql`SELECT target FROM card_execution_requests WHERE id=${accepted.work.requestId}`)[0]!.target)
+        .toEqual({nodeId:"node-a",agentId:"old-agent",modelPreset:"old-model",folderId:"work"});
+      await expect(service.accept({...input,idempotencyKey:`duplicate-${cardId}`},actor))
+        .rejects.toMatchObject({statusCode:409,message:"이미 담당 교체가 진행 중입니다."});
+    }
+    const made=await stack.cards.createCard({actorKind:"user",actorSessionId:null,actorUserId:"user",folderId:"work",
+      title:"pending",request:"요청",assignee:{kind:"agent",agentId:"old-agent"},nodeId:"node-a",modelPreset:"old-model"});
+    const cardId=made.operation.target_id,oldId=`pending-owner-${cardId}`;
+    const input={kind:"replace",cardId,request:"계속",idempotencyKey:`pending-${cardId}`} as any;
+    await expect(service.accept(input,actor)).rejects.toMatchObject({statusCode:409,message:"담당 세션이 없는 카드는 run_card로 실행하세요."});
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,model_preset) VALUES(${oldId},'node-a','old-agent','running',${cardId},'old-model')`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_agent_id=NULL,assignee_session_id=${oldId} WHERE id=${cardId}`;
+    await expect(service.accept(input,actor)).rejects.toMatchObject({statusCode:409,message:expect.stringContaining("지금 턴")});
+    connected=false;
+    await h.sql`INSERT INTO card_execution_requests(id,idempotency_key,keys,card_id,session_id,mode,target,previous_status)
+      VALUES(${`old-request-${cardId}`},${`old-key-${cardId}`},'{}',${cardId},${oldId},'observe','{}','todo')`;
+    await expect(service.accept(input,actor)).rejects.toMatchObject({statusCode:409,message:"자동 배정 실행이 진행 중입니다. 끝난 뒤 교체하세요."});
+    await h.sql`UPDATE card_execution_requests SET mode='resume' WHERE card_id=${cardId}`;
+    await service.accept(input,actor);
+    expect((await h.sql`SELECT state,error FROM card_execution_requests WHERE id=${`old-request-${cardId}`}`)[0])
+      .toEqual({state:"failed",error:"담당 교체 요청으로 이전 실행 예약을 종료했습니다."});
+  },60000);
+
+  it("rolls back session registration when its reserved card owner has changed", async () => {
+    const stack=createStack();
+    const made=await stack.cards.createCard({actorKind:"user",actorSessionId:null,actorUserId:"user",folderId:"work",
+      title:"롤백",request:"요청",assignee:{kind:"agent",agentId:"agent"},nodeId:"node-a",modelPreset:"model-a"});
+    const cardId=made.operation.target_id,oldId=`rollback-owner-${cardId}`;
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,model_preset) VALUES(${oldId},'node-a','agent','error',${cardId},'model-a')`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_agent_id=NULL,assignee_session_id=${oldId} WHERE id=${cardId}`;
+    const service=new CardWorkDispatchService({...stack.optionsForService,isNodeConnected:()=>true,validateTarget:async(target:any)=>target} as any);
+    const receipt=await service.accept({kind:"replace",cardId,request:"계속",idempotencyKey:`rollback-${cardId}`} as any,actor);
+    if(receipt.work.kind!=="execution") throw new Error("execution expected");
+    await h.sql`UPDATE cards SET assignee_kind=NULL,assignee_session_id=NULL WHERE id=${cardId}`;
+    const now=new Date(),sessionId=receipt.work.sessionId;
+    await expect(new SessionMutationRepository(h.sql).registerSession({idempotencyKey:`rollback-reg-${cardId}`,sessionId,
+      nodeId:"node-a",agentId:"agent",claudeSessionId:null,sessionType:"agent",prompt:"교체",clientId:null,status:"initializing",
+      createdAt:now,updatedAt:now,callerSessionId:null,predecessorSessionId:null,modelPreset:"model-a",cardId}))
+      .rejects.toThrow("예약 이후 카드 담당이 바뀌었습니다.");
+    expect(await h.sql`SELECT session_id FROM sessions WHERE session_id=${sessionId}`).toHaveLength(0);
+    expect(await h.sql`SELECT id FROM folder_operations WHERE target_id=${cardId} AND operation_type='update_card'`).toHaveLength(0);
+  },60000);
   it("commits create and reservation before kick, replays the same receipt, and rejects changed input", async () => {
     let releaseLaunch!: () => void;
     let signalLaunch!: () => void;

@@ -21,10 +21,10 @@ export const cardTools = {
       run: z.boolean().optional().describe("true면 만든 직후 run_card와 같은 방식으로 바로 실행한다. queue와 함께 쓰지 않는다.") },
   }, audience: "all" },
   dispatch_work: { name: "dispatch_work", strictInputSchema: true, config: {
-    description: "요청 키로 중복 접수를 억제합니다. 새 작업은 title, 기존 카드 후속은 card_id 중 하나를 지정하세요. request에 원문을, brief에 맥락과 완료 기준을 적습니다. 접수 오류는 호출자에게 반환됩니다. 결과 보고가 필요하면 request에 담당 세션이 기존 메시지로 보고하도록 적으세요.",
+    description: "요청 키로 중복 접수를 억제합니다. 새 작업은 title, 기존 카드 후속은 card_id를 지정합니다. 기존 담당에게 이어서 지시하려면 card_id와 request를 보냅니다. replace_assignee=true면 새 세션을 만들어 같은 카드의 담당을 교체하고 request를 그 세션에 전합니다. 생략한 agent_id, node_id, model_preset은 이전 담당 세션의 값을 사용합니다. 담당 세션이 지금 턴을 돌고 있으면 교체할 수 없습니다. 교체에는 folder_id를 지정하지 않습니다. accepted는 접수 결과이며 실행 시작은 카드에서 확인합니다. request에 원문을, brief에 맥락과 완료 기준을 적습니다. 접수 오류는 호출자에게 반환됩니다. 결과 보고가 필요하면 request에 담당 세션이 기존 메시지로 보고하도록 적으세요.",
     inputSchema: { request: z.string().min(1), idempotency_key: id, brief: z.string().optional(),
       card_id: id.optional(), title: id.optional(), folder_id: id.optional(), agent_id: id.optional(),
-      model_preset: id.optional(), node_id: id.optional(), caller_session_id: callerSessionIdSchema },
+      model_preset: id.optional(), node_id: id.optional(), replace_assignee: z.boolean().optional(), caller_session_id: callerSessionIdSchema },
   }, audience: "internal" },
   run_card: { name: "run_card", timeoutMs: 60000, config: {
     description: "드래프트(todo)나 대기(queued) 카드를 지금 실행한다. 시스템이 카드에 설정된 노드, 에이전트, 모델로 세션을 만들어 담당으로 잇고 진행 중으로 옮긴다. 담당 세션이 이미 있는 카드는 새로 만들지 않고 그 세션을 깨운다. 대기열 순서와 동시 실행 상한을 거치지 않는다. 생긴 세션은 부른 쪽의 자식이 아니며 완료 보고가 돌아오지 않으므로 경과는 카드에서 본다. 담당이 아니어도 실행할 수 있다.",
