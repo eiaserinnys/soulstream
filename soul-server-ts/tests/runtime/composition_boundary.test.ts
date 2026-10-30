@@ -67,7 +67,7 @@ describe("worker composition boundary", () => {
     expect(workerComposition).not.toContain("NO_PAGE_ANCHOR_CONTEXT_RESOLVER");
   });
 
-  it("production task composition keeps gate-OFF completion delivery DB-free and legacy-local", async () => {
+  it("gate-OFF keeps durable completion delivery disabled while re-reading the child caller", async () => {
     const env = parseEnv({
       SOULSTREAM_NODE_ID: "node-test",
       SOULSTREAM_UPSTREAM_URL: "ws://localhost:5200/ws/node",
@@ -143,7 +143,7 @@ describe("worker composition boundary", () => {
       } satisfies Task);
 
       expect(env.CLAUDE_SESSION_RUNTIME_V2_ENABLED).toBe(false);
-      expect(getSession).not.toHaveBeenCalled();
+      expect(getSession).toHaveBeenCalledWith("child-session");
       expect(sessionDeliveries).not.toHaveBeenCalled();
       expect(getDeliveryConsumptionRecorder).not.toHaveBeenCalled();
       expect(addIntervention).toHaveBeenCalledTimes(1);
