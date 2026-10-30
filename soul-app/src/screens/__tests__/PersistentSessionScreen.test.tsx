@@ -724,6 +724,40 @@ test('듀오 태블릿은 머리줄 대신 띠 캡슐과 사용량 열을 쓰고
   useAuthStore.setState({ jwt: null });
 });
 
+test.each([
+  ['아이패드 미니', true, false, 744, 1133, false, 172],
+  ['띠 없는 듀오 안쪽 세로', false, false, 744, 1133, true, 146],
+  ['듀오 띠와 겹치지 않는 대화 열', false, true, 1194, 834, true, 397],
+] as const)('%s 사용량 열 판정', (_name, isPad, band, width, height, inColumn, left) => {
+  mockDevice = height > width ? 'tabletPortrait' : 'tabletLandscape';
+  const originalIsPad = Object.getOwnPropertyDescriptor(Platform, 'isPad');
+  Object.defineProperty(Platform, 'isPad', { configurable: true, value: isPad });
+  const payload = Buffer.from(JSON.stringify({ email: 'usage@example.com', exp: 2_000_000_000 })).toString('base64url');
+  useAuthStore.setState({ jwt: `header.${payload}.signature` });
+  useSettingsStore.setState({ serverUrl: 'https://usage.example', persistentSessionDevicePrefs: {} } as never);
+  useSettingsStore.getState().setPersistentSessionShowWeeklyUsage('https://usage.example', 'usage@example.com', true);
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 24, width, height - 24);
+    else if (this.props.testID === 'persistent-session-conversation') callback(left, 100, 400, height - 100);
+  });
+  const view = render(<SafeAreaInsetsContext.Provider value={{ top: 24, bottom: 20, left: 0, right: band ? 84 : 0 }}>
+    <DuoSideBandContext.Provider value={band}><NavigationContainer><ScreenHarness /></NavigationContainer></DuoSideBandContext.Provider>
+  </SafeAreaInsetsContext.Provider>);
+  act(() => store.getState().open({ session_id: 'pas-usage-device', node_id: 'node-a', persistent: true } as any));
+  act(() => view.getByTestId('persistent-session-screen').props.onLayout());
+  act(() => view.getByTestId('persistent-body-probe').props.onComposerLayout(
+    { x: 0, y: height - 180, width: 400, height: 76 }, { x: 0, y: 20, width: 400, height: 56 }));
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-conversation').props.style).left).toBe(left);
+  expect(!!view.queryByTestId('persistent-session-usage-column')).toBe(inColumn);
+  expect(!!view.queryByTestId('persistent-session-weekly-usage-seat')).toBe(!inColumn);
+  view.unmount();
+  measure.mockRestore();
+  if (originalIsPad) Object.defineProperty(Platform, 'isPad', originalIsPad);
+  else Reflect.deleteProperty(Platform, 'isPad');
+  useAuthStore.setState({ jwt: null });
+  useSettingsStore.setState({ serverUrl: '', persistentSessionDevicePrefs: {} } as never);
+});
+
 test('PAS 헤더 액션은 테두리와 바탕 없는 원형 버튼 표면을 쓴다', () => {
   mockDevice = 'phone';
   const view = render(<PersistentSessionProvider><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);

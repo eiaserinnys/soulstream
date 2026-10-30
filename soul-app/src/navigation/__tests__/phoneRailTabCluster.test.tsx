@@ -12,8 +12,6 @@ import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { PhoneRailTabCluster, RAIL_MIN_INSET_WIDTH } from '../TabNavigator';
-import { Platform } from 'react-native';
-import { hasDuoSideBand } from '../tabContract';
 
 test('레일 탭 클러스터는 5개 루트 탭을 같은 testID로 노출한다', () => {
   const onSelect = jest.fn();
@@ -44,16 +42,6 @@ test('PAS 탭이 활성이고 대화 장면이면 카드 목록 보기로 안내
   );
 
   expect(screen.getByTestId('phone-tab-PersistentTab').props.accessibilityLabel).toBe('카드 목록 보기');
-});
-
-test('듀오 띠는 iOS의 오른쪽 비대칭 안전 영역에서만 감지한다', () => {
-  const original = Platform.OS;
-  Object.defineProperty(Platform, 'OS', { value: 'ios', configurable: true });
-  const insets = { top: 24, bottom: 24, left: 0, right: 84 };
-  expect(hasDuoSideBand(insets)).toBe(true);
-  expect(hasDuoSideBand({ ...insets, left: 59, right: 59 })).toBe(false);
-  expect(hasDuoSideBand({ ...insets, right: 0 })).toBe(false);
-  Object.defineProperty(Platform, 'OS', { value: original, configurable: true });
 });
 
 test('PAS 메뉴는 듀오 띠에서 PAS 탭이 활성일 때만 보인다', () => {

@@ -13,8 +13,9 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { DuoSideBandContext, PhoneRailModeContext, RAIL_MIN_INSET_WIDTH } from '../navigation/tabContract';
 import { ContentLinkProvider } from '../navigation/ContentLinkProvider';
 import { PhoneRailTabCluster } from '../navigation/TabNavigator';
-import { PersistentSessionProvider, usePersistentSessionHost } from '../navigation/PersistentSessionContext';
+import { PersistentSessionProvider, usePersistentSessionHost, usePersistentSessionScene } from '../navigation/PersistentSessionContext';
 import { PersistentSessionScreen } from '../screens/PersistentSessionScreen';
+import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import {
   CardConversationPane,
   FolderWorkspaceDetailPane,
@@ -26,7 +27,7 @@ import { calculateTwoPaneWidths } from '../components/split/paneWidths';
 import { getFolderWorkspaceOverlayWidth } from '../lib/folder-workspace-layout';
 import { createReviewApi, entryShellCardId } from './fixtures';
 import { installEntryShellPublicHarness } from './fixture-client';
-import { ReviewEntryShell } from './ReviewEntryShell';
+import { EntryShellAlertHarness, ReviewEntryShell } from './ReviewEntryShell';
 import { ReviewPersistentCardOverlay } from './ReviewPersistentCardOverlay';
 import { useChatStore } from '../store/chatStore';
 import { useSessionStore } from '../store/sessionStore';
@@ -55,6 +56,9 @@ export const IPHONE_DUO_FRAMES = [
 
 function DuoPasCardOverlayStage() {
   const host = usePersistentSessionHost();
+  const visible = usePersistentSessionScene(state => state.visible);
+  const session = usePersistentSessionScene(state => state.session);
+  const t = useTokens();
   useEffect(() => {
     const sessionId = 'review-pas-1';
     host.store.getState().open({
@@ -74,7 +78,12 @@ function DuoPasCardOverlayStage() {
       show_jev_candidates: true, turn_usage_mode: 'collapsed',
     });
   }, [host.store]);
-  return <PersistentSessionScreen active onHome={() => {}} />;
+  return visible ? <PersistentSessionScreen active onHome={() => host.store.getState().leave()} />
+    : session ? <View testID="review-pas-home" style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <LiquidGlassButton accessibilityLabel="PAS 다시 열기" onPress={() => host.store.getState().open(session)}>
+        <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>PAS 다시 열기</Text>
+      </LiquidGlassButton>
+    </View> : null;
 }
 
 function DuoPasLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRAMES }) {
@@ -97,6 +106,7 @@ function DuoPasLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRAM
               <DuoPasReviewRail duoSideBand={duoSideBand} />
             </View> : null}
           </View>
+          <EntryShellAlertHarness />
           </NavigationContainer>
           </DuoSideBandContext.Provider>
         </PhoneRailModeContext.Provider>

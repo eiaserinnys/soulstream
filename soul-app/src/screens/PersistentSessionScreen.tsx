@@ -35,7 +35,8 @@ import { useUsageSummary } from '../hooks/useUsageSummary';
 import { useOpenContentLink } from '../hooks/useOpenContentLink';
 import { decodeAuthJwt } from '../auth/jwt-payload';
 import { usePersistentSessionHost, usePersistentSessionScene } from '../navigation/PersistentSessionContext';
-import { useDuoSideBand, usePhoneRailMode } from '../navigation/tabContract';
+import { usePhoneRailMode } from '../navigation/tabContract';
+import { useDuoSideBand } from '../navigation/duoSideBand';
 import { RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
 import { usePasContextMenu } from '../components/persistent/usePasContextMenu';
 import { useAuthStore } from '../store/authStore';
@@ -155,7 +156,8 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const widths = portrait ? FRAME.portrait : FRAME.landscape;
   const hasWeeklyUsage = Boolean(session?.node_id && showWeeklyUsage);
   const usageInColumn = !!app && !phone && hasWeeklyUsage
-    && (app.width + widths.conversation) / 2 > app.width - t.foundation.pageInset - (widths.tasks - 2 * t.uiSpacing.sm);
+    && (duoSideBand || (!(Platform as { isPad?: boolean }).isPad
+      && (app.width + widths.conversation) / 2 > app.width - t.foundation.pageInset - (widths.tasks - 2 * t.uiSpacing.sm)));
   const rightColumnVisible = scene === 'cards' || usageInColumn;
   const columnWidth = phone ? Math.max(0, (app?.width ?? 0) - t.foundation.pageInset * 2)
     : duoSideBand && rightColumnVisible ? FRAME.portrait.conversation : widths.conversation;
