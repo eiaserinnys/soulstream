@@ -14,6 +14,8 @@ import { registerProductionAuthGuard } from "../../src/runtime/production_auth_g
 import { createApp } from "../../src/app.js";
 import { parseOrchServerConfig } from "../../src/config.js";
 import { registerDashboardServing } from "../../src/dashboard/dashboard_serving.js";
+import { registerFolderRoutes } from "../../src/folders/folder_routes.js";
+import type { CardControlPlaneService } from "../../src/cards/card_control_plane_service.js";
 import { fileURLToPath } from "node:url";
 import { startPostgresTestContainer } from "../../../packages/db-schema/scripts/postgres-test-container.mjs";
 import { waitForPostgres } from "../persistent-session-settings-world.js";
@@ -227,12 +229,28 @@ async function loginThroughGoogle(
     if (next.pathname === "/" && next.searchParams.has("error")) return { ...started, lastResponse: response };
     response = await fetchWithCookies(`${next.pathname}${next.search}`, cookies, { headers: { accept: "application/json" } });
     if (response.status === 200 && response.headers.get("content-type")?.includes("application/json")) {
-      return { ...started, view: await response.json() as Record<string, unknown>, lastResponse: response };
+      const view = await response.json() as Record<string, unknown>;
+      const cookieName = `soul_oauth_csrf_${createHash("sha256").update(next.pathname.split("/").at(-1)!).digest("hex").slice(0, 16)}`;
+      expect(cookies.get(cookieName)).toBe(view.csrf);
+      return { ...started, interactionPath: `${next.pathname}${next.search}`, view, lastResponse: response };
     }
     target = response.headers.get("location");
     if (!target) break;
   }
   return { ...started, lastResponse: response };
+}
+
+async function followInteractionRedirects(response: Response, cookies: Map<string, string>): Promise<URL> {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    expect(response.status).toBeGreaterThanOrEqual(300);
+    expect(response.status).toBeLessThan(400);
+    const location = response.headers.get("location");
+    if (!location) throw new Error("OAuth interaction did not redirect");
+    const next = new URL(location, issuer);
+    if (next.origin !== issuer) return next;
+    response = await fetchWithCookies(`${next.pathname}${next.search}`, cookies);
+  }
+  throw new Error("OAuth interaction redirect limit");
 }
 
 beforeAll(async () => {
@@ -413,14 +431,22 @@ describe("OAuth dashboard login, consent, and scoped resource access", () => {
     const csrf = flow.view?.csrf;
     expect(typeof csrf).toBe("string");
 
+    const invalidCsrf = await fetchWithCookies(flow.interactionPath, flow.cookies, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ csrf: "wrong", action: "allow" }),
+    });
+    expect(invalidCsrf.status).toBe(403);
+
     const accepted = await fetchWithCookies(flow.interactionPath, flow.cookies, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ csrf: String(csrf), action: "allow" }),
     });
-    const callback = accepted.headers.get("location");
-    expect(callback).toBeTruthy();
-    const code = new URL(callback!).searchParams.get("code");
+    const callback = await followInteractionRedirects(accepted, flow.cookies);
+    expect(`${callback.origin}${callback.pathname}`).toBe("http://127.0.0.1:10002/callback");
+    expect(callback.searchParams.get("state")).toBe("interaction-state");
+    const code = callback.searchParams.get("code");
     expect(code).toBeTruthy();
     const token = await codeToken(client.client_id!, code!, "http://127.0.0.1:10002/callback");
     expect(token.response.status).toBe(200);
@@ -460,19 +486,39 @@ describe("OAuth dashboard login, consent, and scoped resource access", () => {
       resolveTokenAccess: async () => ({ ok: false, statusCode: 401, detail: "Authentication required" }),
       resolveOAuthAccess: userResolvers.resolveOAuthAccess,
     });
-    api.get("/api/cards", async request => ({
-      access: await accessProvider.resolveAccess(request),
-      callerInfo: await userResolvers.resolveCallerInfo(request, { source: "spoofed", email: "attacker@example.test" }, "test-node"),
-    }));
-    api.get("/api/folders", async request => ({ access: await accessProvider.resolveAccess(request) }));
+    const records = [
+      { id: "allowed-card", folder_id: "folder-allowed", title: "Allowed" },
+      { id: "private-card", folder_id: "folder-private", title: "Private" },
+    ];
+    const cardsStore = {
+      listCards: async ({ allowedFolderIds }: { allowedFolderIds: readonly string[] | null }) =>
+        records.filter(record => allowedFolderIds === null || allowedFolderIds.includes(record.folder_id)),
+      projectCards: async (cards: typeof records) => cards,
+      getCard: async (id: string) => {
+        const card = records.find(record => record.id === id);
+        return card ? { card } : null;
+      },
+    } as unknown as CardControlPlaneService;
+    let callerInfo: Awaited<ReturnType<typeof userResolvers.resolveCallerInfo>>;
+    registerFolderRoutes(api, {
+      provider: {
+        listFolders: () => [{ id: "folder-allowed" }, { id: "folder-private" }],
+        listSessionAssignments: () => ({}),
+      },
+      accessProvider: { resolveAccess: async request => {
+        callerInfo = await userResolvers.resolveCallerInfo(request, { source: "spoofed", email: "attacker@example.test" }, "test-node");
+        return accessProvider.resolveAccess(request);
+      } },
+      cardServiceProvider: async () => cardsStore,
+    });
     api.post("/api/sessions", async () => ({ created: true }));
     api.post("/api/sessions/:session_id/intervene", async () => ({ sent: true }));
 
     const headers = { authorization: `Bearer ${accessToken}` };
     const cards = await api.inject({ method: "GET", url: "/api/cards", headers });
     expect(cards.statusCode).toBe(200);
-    expect(cards.json().access).toEqual({ restricted: true, allowedFolderIds: ["folder-allowed"] });
-    expect(cards.json().callerInfo).toMatchObject({
+    expect(cards.json().cards).toEqual([{ id: "allowed-card", folderId: "folder-allowed", title: "Allowed" }]);
+    expect(callerInfo!).toMatchObject({
       source: "browser",
       transport: "oauth",
       oauth_client_id: client.client_id,
@@ -484,7 +530,9 @@ describe("OAuth dashboard login, consent, and scoped resource access", () => {
     });
     const folders = await api.inject({ method: "GET", url: "/api/folders", headers });
     expect(folders.statusCode).toBe(200);
-    expect(folders.json().access).toEqual({ restricted: true, allowedFolderIds: ["folder-allowed"] });
+    expect(folders.json().folders).toEqual([{ id: "folder-allowed" }]);
+    expect((await api.inject({ method: "GET", url: "/api/cards/private-card", headers })).statusCode).toBe(403);
+    expect((await api.inject({ method: "GET", url: "/api/folders/folder-private", headers })).statusCode).toBe(403);
     expect((await api.inject({ method: "POST", url: "/api/sessions", headers })).statusCode).toBe(403);
     expect((await api.inject({ method: "POST", url: "/api/sessions/test-session/intervene", headers })).statusCode).toBe(403);
     await api.close();
@@ -507,11 +555,8 @@ describe("OAuth dashboard login, consent, and scoped resource access", () => {
       headers: { "content-type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({ csrf: String(flow.view?.csrf), action: "cancel" }),
     });
-    expect(response.status).toBeGreaterThanOrEqual(300);
-    expect(response.status).toBeLessThan(400);
-    const location = response.headers.get("location");
-    expect(location).toContain("access_denied");
-    const callback = new URL(location!, issuer);
+    const callback = await followInteractionRedirects(response, flow.cookies);
+    expect(`${callback.origin}${callback.pathname}`).toBe("http://127.0.0.1:10002/callback");
     expect(callback.searchParams.get("error")).toBe("access_denied");
     expect(callback.searchParams.get("state")).toBe("interaction-state");
   });
