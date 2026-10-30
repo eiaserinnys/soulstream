@@ -31,14 +31,16 @@ export function usePlannerFolder(
     setLocal((previous) => ({
       ownerKey,
       data: previous.ownerKey === ownerKey ? previous.data : undefined,
+      snapshotSeq: previous.ownerKey === ownerKey ? previous.snapshotSeq : 0,
       loading: true,
       error: null,
     }));
     try {
+      const snapshotSeq = useCardStore.getState().seq;
       const result = await api.getFolderSnapshot(folderId,{includeCompleted});
       if (isCurrent(generationRef, generation, scopeGeneration)) {
         setLocal((previous) => previous.ownerKey === ownerKey
-          ? { ...previous, data: result }
+          ? { ...previous, data: result, snapshotSeq }
           : previous);
       }
     } catch (cause) {
@@ -66,10 +68,11 @@ export function usePlannerFolder(
   }, [refresh, refreshKey]);
 
   const rows = useCardStore((state) => state.rows);
+  const rowSeq = useCardStore((state) => state.rowSeq);
   const data = useMemo(() => current.data ? { ...current.data,
-    cards: mergeCardRows(current.data.cards, rows).filter((card) => card.folderId === folderId && (includeCompleted||card.status!=='done'))
+    cards: mergeCardRows(current.data.cards, rows, { seq: current.snapshotSeq, rowSeq }).filter((card) => card.folderId === folderId && (includeCompleted||card.status!=='done'))
       .sort((a, b) => a.positionKey < b.positionKey ? -1 : a.positionKey > b.positionKey ? 1 : 0),
-  } : undefined, [current.data, rows, folderId,includeCompleted]);
+  } : undefined, [current.data, current.snapshotSeq, rows, rowSeq, folderId,includeCompleted]);
   return {
     data,
     loading: current.loading,
@@ -81,10 +84,11 @@ export function usePlannerFolder(
 function emptyState(ownerKey: string): {
   ownerKey: string;
   data: FolderSnapshot | undefined;
+  snapshotSeq: number;
   loading: boolean;
   error: string | null;
 } {
-  return { ownerKey, data: undefined, loading: false, error: null };
+  return { ownerKey, data: undefined, snapshotSeq: 0, loading: false, error: null };
 }
 
 function isCurrent(

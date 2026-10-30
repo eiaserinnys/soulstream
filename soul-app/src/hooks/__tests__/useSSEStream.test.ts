@@ -248,6 +248,58 @@ describe('useSSEStream onOpen', () => {
     expect(globalThis.__lastSSEInstance.options.pollingInterval).toBe(0);
   });
 
+  test('정상 종료 done은 연결을 닫고 최신 URL로 backoff 재연결하며 onError를 부르지 않는다', () => {
+    jest.useFakeTimers();
+    let lastEventId = '40';
+    const onError = jest.fn();
+    const urlBuilder = jest.fn(() => `https://example.test/stream?lastEventId=${lastEventId}`);
+    renderHook(() => useSSEStream({
+      urlBuilder,
+      eventTypes: ['message'],
+      onEvent: jest.fn(),
+      onError,
+      enabled: true,
+    }));
+
+    const first = globalThis.__lastSSEInstance;
+    const doneListener = first.listeners.done?.[0];
+    expect(doneListener).toEqual(expect.any(Function));
+    doneListener({ type: 'done' });
+    expect(first.closed).toBe(true);
+    expect(onError).not.toHaveBeenCalled();
+
+    lastEventId = '41';
+    jest.advanceTimersByTime(2999);
+    expect(globalThis.__lastSSEInstance).toBe(first);
+    jest.advanceTimersByTime(1);
+
+    expect(globalThis.__lastSSEInstance).not.toBe(first);
+    expect(globalThis.__lastSSEInstance.url).toBe('https://example.test/stream?lastEventId=41');
+    expect(onError).not.toHaveBeenCalled();
+    jest.useRealTimers();
+  });
+
+  test('cleanup된 연결의 지연 done 콜백은 재연결하지 않는다', () => {
+    jest.useFakeTimers();
+    const hook = renderHook(() => useSSEStream({
+      urlBuilder: () => 'https://example.test/stream',
+      eventTypes: ['message'],
+      onEvent: jest.fn(),
+      enabled: true,
+    }));
+    const first = globalThis.__lastSSEInstance;
+    const doneListener = first.listeners.done?.[0];
+    expect(doneListener).toEqual(expect.any(Function));
+
+    // Simulate a completion callback already queued when effect cleanup closes the source.
+    hook.unmount();
+    doneListener({ type: 'done' });
+    jest.runOnlyPendingTimers();
+
+    expect(globalThis.__lastSSEInstance).toBe(first);
+    jest.useRealTimers();
+  });
+
   test('onOpen이 미제공이어도 기존 동작에 영향이 없다 (회귀 방지)', () => {
     const onEvent = jest.fn();
 

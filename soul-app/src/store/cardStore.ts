@@ -4,6 +4,8 @@ import { captureAuthScope, subscribeAuthScope } from '../lib/auth-scope';
 
 interface CardState {
   rows: Record<string, CardDto>;
+  seq: number;
+  rowSeq: Record<string, number>;
   details: Record<string, CardDetail>;
   pendingItemConfirmations: Record<string, Record<number, { confirmed: boolean; requestId: string }>>;
   putCard(card: CardDto): void;
@@ -13,19 +15,34 @@ interface CardState {
   finishItemConfirmation(cardId: string, itemId: number, requestId: string): void;
 }
 export const useCardStore = create<CardState>((set, get) => ({
-  rows: {}, details: {}, pendingItemConfirmations: {},
-  putCard: (card) => set((state) => state.rows[card.id]?.version > card.version ? state : {
-    rows: { ...state.rows, [card.id]: card },
+  rows: {}, seq: 0, rowSeq: {}, details: {}, pendingItemConfirmations: {},
+  putCard: (card) => set((state) => {
+    if (state.rows[card.id]?.version > card.version) return state;
+    const seq = state.seq + 1;
+    return {
+      seq,
+      rowSeq: { ...state.rowSeq, [card.id]: seq },
+      rows: { ...state.rows, [card.id]: card },
+    };
   }),
-  putDetail: (detail) => set((state) => state.rows[detail.card.id]?.version > detail.card.version ? state : {
-    rows: { ...state.rows, [detail.card.id]: detail.card },
-    details: { ...state.details, [detail.card.id]: detail },
+  putDetail: (detail) => set((state) => {
+    if (state.rows[detail.card.id]?.version > detail.card.version) return state;
+    const seq = state.seq + 1;
+    return {
+      seq,
+      rowSeq: { ...state.rowSeq, [detail.card.id]: seq },
+      rows: { ...state.rows, [detail.card.id]: detail.card },
+      details: { ...state.details, [detail.card.id]: detail },
+    };
   }),
   putMutationCard: (card) => set((state) => {
     const detail = state.details[card.id];
     const newestVersion = Math.max(state.rows[card.id]?.version ?? -1, detail?.card.version ?? -1);
     if (newestVersion > card.version) return state;
+    const seq = state.seq + 1;
     return {
+      seq,
+      rowSeq: { ...state.rowSeq, [card.id]: seq },
       rows: { ...state.rows, [card.id]: card },
       ...(detail ? { details: { ...state.details, [card.id]: { ...detail, card } } } : {}),
     };
@@ -49,7 +66,7 @@ export const useCardStore = create<CardState>((set, get) => ({
     return { pendingItemConfirmations };
   }),
 }));
-subscribeAuthScope(() => useCardStore.setState({ rows: {}, details: {}, pendingItemConfirmations: {} }));
+subscribeAuthScope(() => useCardStore.setState({ rows: {}, seq: 0, rowSeq: {}, details: {}, pendingItemConfirmations: {} }));
 
 export async function refreshCard(
   api: { getCard(id: string): Promise<CardDetail> }, id: string,
@@ -60,10 +77,18 @@ export async function refreshCard(
   return detail;
 }
 
-export function mergeCardRows(initial: readonly CardDto[], updates: Record<string, CardDto>) {
+export function mergeCardRows(
+  initial: readonly CardDto[],
+  updates: Record<string, CardDto>,
+  snapshot?: { seq: number; rowSeq: Record<string, number> },
+) {
   const rows = new Map(initial.map((card) => [card.id, card]));
   for (const card of Object.values(updates)) {
-    if (!rows.has(card.id) || rows.get(card.id)!.version <= card.version) rows.set(card.id, card);
+    if (rows.has(card.id)) {
+      if (rows.get(card.id)!.version <= card.version) rows.set(card.id, card);
+    } else if (!snapshot || (snapshot.rowSeq[card.id] ?? 0) > snapshot.seq) {
+      rows.set(card.id, card);
+    }
   }
   return [...rows.values()].filter((card) => !card.archived);
 }
