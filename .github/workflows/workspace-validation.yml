@@ -118,6 +118,20 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Check removed client-specific name
+        shell: bash
+        run: |
+          forbidden='kaleido''scope'
+          if git grep -i -n "$forbidden"; then
+            exit 1
+          else
+            result=$?
+            if [ "$result" -ne 1 ]; then
+              exit "$result"
+            fi
+            printf 'No client-specific identifier found.\n'
+          fi
+
       - name: Setup Node.js 22
         uses: actions/setup-node@v4
         with:

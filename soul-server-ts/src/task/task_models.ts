@@ -220,6 +220,7 @@ export function createExecutionActivation(): ExecutionActivation {
 export interface InterventionMessage {
   text: string;
   user: string;
+  conversationText?: string;
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
   attachmentIds?: string[];

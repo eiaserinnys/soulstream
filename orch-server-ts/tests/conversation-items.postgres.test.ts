@@ -33,7 +33,7 @@ describe("conversation items and events", () => {
       [4,"tool_start",{ tool_name:"invisible", input_id:"hidden" }],
       [5,"assistant_message",{ content:"hidden", input_id:"hidden" }],
       [6,"complete",{}],
-      [7,"user_message",{ text:"hello\n[첨부 파일 로컬 경로: /tmp/file]", caller_info:{source:"kaleidoscope"}, attachment_ids:["asset-1"], attachments:["/tmp/2026-10-30T00-00-00.000Z-note-0123456789abcdef0123456789abcdef.txt"] }],
+      [7,"user_message",{ text:"hello\n[첨부 파일 로컬 경로: /tmp/file]", caller_info:{source:"external-client"}, attachment_ids:["asset-1"], attachments:["/tmp/2026-10-30T00-00-00.000Z-note-0123456789abcdef0123456789abcdef.txt"] }],
       [8,"assistant_message",{ content:"[SILENT]" }],
       [9,"intervention_sent",{ text:"from app", caller_info:{source:"soul-app"} }],
       [10,"user_message",{ text:"internal", caller_info:{source:"agent"} }],

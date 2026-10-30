@@ -307,6 +307,7 @@ async function admitDurableHumanIntervention(
   };
   const canonical = buildCanonicalDeliveryPayload({
     text: payload.text,
+    conversationText: payload._conversation_text,
     user: payload.user,
     source,
     completionId,

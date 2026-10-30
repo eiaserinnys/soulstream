@@ -40,7 +40,7 @@ export class ConversationProjection {
         this.firstHumanSeen = true;
         if (first && this.firstInputIsInitial) return { activity: this.activity() };
         const attachments = attachmentsFor(payload);
-        const text = stripInternal(string(payload.text) ?? "");
+        const text = stripInternal(string(payload._conversation_text) ?? string(payload.text) ?? "");
         return text.trim() || attachments.length ? { item: makeItem("user", text, attachments), activity: this.activity() } : {};
       }
       return {};
@@ -86,12 +86,7 @@ function hasClosedContext(payload: Record<string, unknown>): boolean {
   return Array.isArray(context) && context.some(x => x && typeof x === "object" && (x as Record<string, unknown>).key === "persistent_report_closed");
 }
 function stripInternal(text: string): string {
-  let share = false;
-  return text.split("\n").filter(line => {
-    if (line === "<kaleidoscope-share>") { share = true; return false; }
-    if (line === "</kaleidoscope-share>") { share = false; return false; }
-    return !share && !line.startsWith("[첨부 파일 로컬 경로: ");
-  }).join("\n").trimEnd();
+  return text.split("\n").filter(line => !line.startsWith("[첨부 파일 로컬 경로: ")).join("\n").trimEnd();
 }
 function attachmentsFor(payload: Record<string, unknown>): Item["attachments"] {
   const assets = Array.isArray(payload._conversation_attachments) ? payload._conversation_attachments as Item["attachments"] : [];

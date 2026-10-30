@@ -76,6 +76,7 @@ export interface InterveneRuntimeParams {
   attachmentIds?: string[];
   attachmentBindings?: AttachmentPathBinding[];
   extraContextItems?: ContextItem[];
+  conversationText?: string;
   deliveryId?: string;
   deliveryIntent?: DeliveryIntent;
   source?: string;
@@ -262,6 +263,7 @@ export class TaskRuntimeCommands {
         attachmentIds: params.attachmentIds,
         attachmentBindings: params.attachmentBindings,
         context: params.extraContextItems,
+        conversationText: params.conversationText,
         deliveryId: params.deliveryId,
         deliveryIntent: params.deliveryIntent,
         source: params.source,

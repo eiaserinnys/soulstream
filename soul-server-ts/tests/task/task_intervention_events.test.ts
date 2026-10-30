@@ -152,6 +152,11 @@ describe("publishInterventionSent", () => {
 });
 
 describe("buildInterventionSentEvent attachment identity", () => {
+  it("copies conversation display text metadata into the durable event", () => {
+    const event=buildInterventionSentEvent({text:"visible\n\nagent context",conversationText:"visible",user:"alice"});
+    expect(event).toMatchObject({text:"visible\n\nagent context",_conversation_text:"visible"});
+  });
+
   it("dedupes attachment ids and counts an admitted binding once", () => {
     const event = buildInterventionSentEvent({
       text: "",

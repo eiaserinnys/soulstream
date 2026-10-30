@@ -5,13 +5,13 @@ import { ConversationError } from "./conversation_types.js";
 
 export type Upload = { name:string; mime:string; data_base64:string };
 export type StoredUpload = { path:string; name:string; mime:string; assetId?:string };
-type Request = { request_id:string; text:string; attachments:Upload[] };
+type Request = { request_id:string; text:string; attachments:Upload[]; context?:string };
 type Receipt = { request_id:string; status:"pending"|"accepted"|"failed"; error?:{code:string;message:string} };
 type Row = { request_id:string; request_hash:string; delivery_id:string; caller_info:Record<string,unknown>; status:Receipt["status"]; uploads:StoredUpload[]; error:Receipt["error"]|null };
 export type MessagePorts = {
   caller(request:FastifyRequest, session:string):Promise<Record<string,unknown>>;
   upload(request:FastifyRequest, session:string, file:Upload, uploadId:string):Promise<StoredUpload>;
-  intervene(request:FastifyRequest, session:string, body:{text:string;attachment_paths:string[];delivery_id:string}, caller:Record<string,unknown>):Promise<{status:number;body:unknown}>;
+  intervene(request:FastifyRequest, session:string, body:{text:string;attachment_paths:string[];delivery_id:string;_conversation_text?:string}, caller:Record<string,unknown>):Promise<{status:number;body:unknown}>;
   read(request:FastifyRequest, session:string, attachment:{path?:string;assetId?:string}):Promise<Response>;
 };
 const MAX_FILE = 20 * 1024 * 1024;
@@ -62,7 +62,12 @@ export class ConversationMessageService {
         await this.sql`UPDATE conversation_message_receipts SET uploads=${this.sql.json(uploads as never)} WHERE session_id=${session} AND request_id=${body.request_id}`;
       }
       interventionStarted = true;
-      const result = await this.ports.intervene(request,session,{text:body.text,attachment_paths:uploads.map(x => x.path),delivery_id:row.delivery_id},row.caller_info);
+      const result = await this.ports.intervene(request,session,{
+        text: body.context === undefined ? body.text : `${body.text}\n\n${body.context}`,
+        attachment_paths:uploads.map(x => x.path),
+        delivery_id:row.delivery_id,
+        ...(body.context === undefined ? {} : {_conversation_text:body.text}),
+      },row.caller_info);
       if (result.status < 200 || result.status >= 300) throw new Error("Intervention failed");
       await this.sql`UPDATE conversation_message_receipts SET status='accepted' WHERE session_id=${session} AND request_id=${body.request_id}`;
       return {request_id:body.request_id,status:"accepted"};
@@ -86,7 +91,8 @@ function receipt(row:Row):Receipt { return {request_id:row.request_id,status:row
 function parseMessage(input:unknown):Request {
   if (!input || typeof input !== "object" || Array.isArray(input)) throw invalid();
   const b = input as Record<string,unknown>;
-  if (Object.keys(b).some(k => !["request_id","text","attachments"].includes(k)) || typeof b.request_id !== "string" || !b.request_id.trim() || typeof b.text !== "string") throw invalid();
+  if (Object.keys(b).some(k => !["request_id","text","attachments","context"].includes(k)) || typeof b.request_id !== "string" || !b.request_id.trim() || typeof b.text !== "string" || (b.context !== undefined && typeof b.context !== "string")) throw invalid();
+  const context = typeof b.context === "string" && b.context.length > 0 ? b.context : undefined;
   const attachments = b.attachments === undefined ? [] : b.attachments;
   if (!Array.isArray(attachments)) throw invalid();
   if (attachments.length > 10) throw limit();
@@ -103,7 +109,7 @@ function parseMessage(input:unknown):Request {
     return {name:a.name,mime:a.mime,data_base64:a.data_base64};
   });
   if (!b.text.trim() && !parsed.length) throw invalid();
-  return {request_id:b.request_id,text:b.text,attachments:parsed};
+  return {request_id:b.request_id,text:b.text,attachments:parsed,...(context === undefined ? {} : {context})};
 }
 function invalid() { return new ConversationError(400,"invalid_request","Invalid message"); }
 function limit() { return new ConversationError(413,"attachment_limit","Attachment limit exceeded"); }

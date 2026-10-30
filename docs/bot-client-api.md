@@ -45,7 +45,7 @@ configuration examples committed to the repository.
 
 ### Native desktop clients
 
-Kaleidoscope and other native public clients use the orchestrator's OAuth
+External native clients use the orchestrator's OAuth
 authorization-code flow with PKCE. Discover the issuer at
 `GET /.well-known/oauth-authorization-server` and its protected resource at
 `GET /.well-known/oauth-protected-resource`. Register the client with
@@ -396,8 +396,8 @@ Authenticated clients use `/api/conversations/v1`. A thread ID is an opaque iden
 
 ## Conversation API v1: messages and attachments
 
-- `POST /threads/{id}/messages` accepts `{request_id, text, attachments: [{name, mime, data_base64}]}` and returns `{request_id, status, error?}`. An empty text is allowed when attachments are present. Use standard base64. The limits are 10 attachments, 20 MiB each, 30 MiB total and a 48 MiB JSON body; excess returns 413 `attachment_limit`.
-- A request ID identifies one body within a thread. A retry of the same body returns the same receipt; a different body returns 409 `conflict`. The service uploads all attachments before submitting the intervention. If an upload fails, no intervention occurs and the receipt is `failed`.
+- `POST /threads/{id}/messages` accepts `{request_id, text, attachments: [{name, mime, data_base64}], context?}` and returns `{request_id, status, error?}`. `context` is an optional string appended to the agent input after `text`, separated by one blank line; the conversation item shows only `text`. Missing and empty `context` are equivalent. An empty text is allowed when attachments are present. Use standard base64. The limits are 10 attachments, 20 MiB each, 30 MiB total and a 48 MiB JSON body; excess returns 413 `attachment_limit`.
+- A request ID identifies one body within a thread, including `context`. A retry of the same body returns the same receipt; a different body returns 409 `conflict`. The service uploads all attachments before submitting the intervention. If an upload fails, no intervention occurs and the receipt is `failed`.
 - `GET /threads/{id}/messages/{request_id}` returns `pending`, `accepted` or `failed` and an optional safe error. Once the body is received, work continues after HTTP disconnection. Query the receipt before retrying with the same ID. `accepted` means durable admission, not that the agent has finished its turn.
 - `GET /threads/{id}/items/{item_id}/attachments/{attachment_id}` returns bytes, content type and filename. Encode every ID as a URL component. Attachment IDs are opaque and tied to the item; filesystem paths are not exposed. Legacy path-only records are readable as well.
 

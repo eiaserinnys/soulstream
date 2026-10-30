@@ -9,6 +9,7 @@ import type { CallerInfo } from "./task_models.js";
 
 export interface CanonicalDeliveryMessage {
   text: string;
+  conversationText?: string;
   user: string;
   attachmentPaths?: string[];
   attachmentIds?: string[];
@@ -28,6 +29,7 @@ export function readCanonicalDeliveryPayload(
 ): CanonicalDeliveryMessage {
   return {
     text: requiredString(payload.text, "text"),
+    conversationText: typeof payload._conversation_text === "string" ? payload._conversation_text : undefined,
     user: requiredString(payload.user, "user"),
     attachmentPaths: stringArray(payload.attachment_paths),
     attachmentIds: stringArray(payload.attachment_ids),

@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createFullSchemaPostgresHarness, type FullSchemaPostgresHarness } from "./board_yjs_postgres_harness.js";
 import { SessionDeliveryRepository } from "../src/control_plane/repositories/session_delivery_repository.js";
@@ -29,12 +30,12 @@ const ports = {
     return { path, name:file.name, mime:file.mime };
   }),
   caller: vi.fn(async (_request: import("fastify").FastifyRequest, _target:string):Promise<Record<string,unknown>> => ({source:"browser",transport:"oauth",oauth_client_id:"client",oauth_client_name:"Client"})),
-  intervene: vi.fn(async (request: import("fastify").FastifyRequest, target: string, body: { text:string; attachment_paths:string[]; delivery_id:string }, caller:Record<string,unknown>) => {
+  intervene: vi.fn(async (request: import("fastify").FastifyRequest, target: string, body: { text:string; attachment_paths:string[]; delivery_id:string; _conversation_text?:string }, caller:Record<string,unknown>) => {
     return await executeSessionIntervention({
       router:{routeExistingSessionPendingCommand:async (payload:unknown) => payload} as never,
-      bridge:{sendPendingCommand:async (payload: {text:string;attachment_paths?:string[];caller_info:Record<string,unknown>}) => {
+      bridge:{sendPendingCommand:async (payload: {text:string;attachment_paths?:string[];caller_info:Record<string,unknown>;delivery_id?:string;_conversation_text?:string}) => {
         await db.sql`INSERT INTO events(session_id,id,event_type,payload,created_at) VALUES
-          (${target}, ${++eventId}, 'intervention_sent', ${db.sql.json({ text:payload.text, attachments:payload.attachment_paths ?? [], caller_info:payload.caller_info } as never)}, now())`;
+          (${target}, ${++eventId}, 'intervention_sent', ${db.sql.json({ text:payload.text, attachments:payload.attachment_paths ?? [], caller_info:payload.caller_info, delivery_id:payload.delivery_id, _conversation_text:payload._conversation_text } as never)}, now())`;
         return {status:"ok"};
       }} as never,
       resolveCallerInfo:() => caller,
@@ -52,8 +53,8 @@ describe("conversation message receipts", () => {
   let app: ReturnType<typeof Fastify>;
   let service: ConversationService;
   let resolveCaller: typeof ports.caller;
-  const post = (request_id:string, text:string, attachments:typeof upload[] = []) => app.inject({
-    method:"POST", url:base + "/messages", headers:{ authorization:"Bearer good" }, payload:{request_id,text,attachments},
+  const post = (request_id:string, text:string, attachments:typeof upload[] = [], context?:string) => app.inject({
+    method:"POST", url:base + "/messages", headers:{ authorization:"Bearer good" }, payload:{request_id,text,attachments,...(context === undefined ? {} : {context})},
   });
   const get = (path:string, auth = "good") => app.inject({ method:"GET", url:base + path, headers:{ authorization:`Bearer ${auth}` } });
   beforeAll(async () => {
@@ -114,6 +115,34 @@ describe("conversation message receipts", () => {
     expect(ports.upload).toHaveBeenCalledTimes(beforeUploads+1);
     expect(ports.intervene).toHaveBeenCalledTimes(beforeSends+1);
   });
+  it("sends context to the agent while projecting only the original message",async () => {
+    const fixture=JSON.parse(readFileSync(new URL("./fixtures/conversation-v1/send.json",import.meta.url),"utf8")) as {request_id:string;text:string;attachments:typeof upload[];context:string};
+    const {request_id,text,context}=fixture;
+    const before=ports.intervene.mock.calls.length;
+    const send=()=>app.inject({method:"POST",url:base+"/messages",headers:{authorization:"Bearer good"},payload:fixture});
+    const first=await send();
+    expect(first.statusCode).toBe(200);
+    expect(first.json()).toEqual({request_id,status:"accepted"});
+    expect((await send()).json()).toEqual(first.json());
+    expect((await app.inject({method:"POST",url:base+"/messages",headers:{authorization:"Bearer good"},payload:{...fixture,context:"다른 덧붙임"}})).statusCode).toBe(409);
+    expect(ports.intervene).toHaveBeenCalledTimes(before+1);
+    const [delivery]=await db.sql`SELECT d.delivery_id,d.payload FROM session_deliveries d JOIN conversation_message_receipts r ON r.delivery_id=d.delivery_id WHERE r.request_id=${request_id}`;
+    expect(delivery!.payload.text).toBe(`${text}\n\n${context}`);
+    expect(delivery!.payload._conversation_text).toBe(text);
+    const [event]=await db.sql`SELECT payload FROM events WHERE session_id=${session} AND event_type='intervention_sent' AND payload->>'delivery_id'=${delivery!.delivery_id}`;
+    expect(event!.payload).toMatchObject({text:`${text}\n\n${context}`,_conversation_text:text});
+    const items=(await get("/items")).json().items;
+    expect(items.find((item:{text:string})=>item.text===text)).toMatchObject({kind:"user",text});
+    expect(items.some((item:{text:string})=>item.text===context)).toBe(false);
+  });
+  it("treats missing and empty context as the same message",async () => {
+    const first=await post("empty-context","plain",[],"");
+    expect(first.json()).toEqual({request_id:"empty-context",status:"accepted"});
+    expect((await post("empty-context","plain")).json()).toEqual(first.json());
+    const [row]=await db.sql`SELECT d.payload FROM session_deliveries d JOIN conversation_message_receipts r ON r.delivery_id=d.delivery_id WHERE r.request_id='empty-context'`;
+    expect(row!.payload.text).toBe("plain");
+    expect(row!.payload).not.toHaveProperty("_conversation_text");
+  });
   it("reconciles pending receipts with the durable ledger on GET",async () => {
     await db.sql`UPDATE conversation_message_receipts SET status='pending' WHERE session_id=${session} AND request_id='r1'`;
     expect((await get("/messages/r1")).json()).toEqual({request_id:"r1",status:"accepted"});
@@ -173,7 +202,7 @@ describe("conversation message receipts", () => {
   it("reads old path-only records and restores their filenames",async () => {
     const path=`/private/${session}/2026-10-30T00-00-00.000Z-note-0123456789abcdef0123456789abcdef.txt`;
     uploads.set(path,Buffer.from("old"));
-    await db.sql`INSERT INTO events(session_id,id,event_type,payload,created_at) VALUES (${session},${++eventId},'user_message',${db.sql.json({text:"old",attachments:[path],caller_info:{source:"kaleidoscope"}})},now())`;
+    await db.sql`INSERT INTO events(session_id,id,event_type,payload,created_at) VALUES (${session},${++eventId},'user_message',${db.sql.json({text:"old",attachments:[path],caller_info:{source:"external-client"}})},now())`;
     const items=(await get("/items")).json().items; const item=items.find((v:{text:string}) => v.text === "old");
     expect(item.attachments[0]).toEqual({id:"path:0",name:"note.txt",mime:"text/plain"});
     expect((await get(`/items/${item.id}/attachments/${encodeURIComponent("path:0")}`)).rawPayload).toEqual(Buffer.from("old"));

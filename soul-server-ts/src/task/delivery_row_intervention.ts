@@ -22,6 +22,7 @@ export function deliveryRowToInterventionParams(
   return {
     agentSessionId: requiredTarget(row),
     text: message.text,
+    conversationText: message.conversationText,
     user: message.user,
     callerInfo: message.callerInfo,
     rateLimitType: message.rateLimitType,

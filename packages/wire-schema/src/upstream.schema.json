@@ -1514,6 +1514,7 @@
           "description": "구버전 호환 — 신규 코드는 agentSessionId 사용."
         },
         "text": { "type": "string" },
+        "_conversation_text": { "type": "string", "description": "Original human text retained for conversation display when the agent input has appended context." },
         "user": { "type": "string" },
         "requestId": { "type": "string" },
         "attachment_paths": {

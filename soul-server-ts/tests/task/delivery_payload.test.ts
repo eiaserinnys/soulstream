@@ -60,6 +60,19 @@ describe("canonical delivery payload", () => {
       attachmentBindings: bindings,
     });
   });
+  it("round-trips conversation display text independently of agent input", () => {
+    const canonical=buildCanonicalDeliveryPayload({
+      text:"visible\n\nagent context",
+      conversationText:"visible",
+      user:"",
+      source:"user_message",
+      completionId:"message:context",
+      relationKey:"user_message:session:context",
+    });
+    expect(canonical.payload._conversation_text).toBe("visible");
+    expect(readCanonicalDeliveryPayload(canonical.payload).conversationText).toBe("visible");
+    expect(readCanonicalDeliveryPayload({text:"legacy",user:""}).conversationText).toBeUndefined();
+  });
 
   it("keeps a stable hash for the same ids and changes it when ids change", () => {
     const build = (attachmentId: string) => buildCanonicalDeliveryPayload({
