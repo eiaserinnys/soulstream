@@ -385,6 +385,7 @@ start_orch() {
       HOME="$HOME" USER="${USER:-eias}" LOGNAME="${LOGNAME:-eias}" PATH="$PATH" \
       NODE_ENV=production ENVIRONMENT=production NODE_NAME=eias-lab-orch \
       HOST=127.0.0.1 PORT="$LAB_ORCH_PORT" DATABASE_URL="$(lab_database_url)" \
+      SOULSTREAM_PUBLIC_URL="http://127.0.0.1:$LAB_ORCH_PORT" \
       AUTH_BEARER_TOKEN="$LAB_AUTH_BEARER_TOKEN" \
       JWT_SECRET="$LAB_JWT_SECRET" \
       CORS_ALLOWED_ORIGINS="http://127.0.0.1:$LAB_ORCH_PORT" \

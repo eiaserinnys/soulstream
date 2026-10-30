@@ -143,6 +143,7 @@ export function buildServiceEnvironments(
     orch: {
       ...shared,
       PORT: String(config.orchPort),
+      SOULSTREAM_PUBLIC_URL: `http://${config.host}:${config.orchPort}`,
       NODE_NAME: "runner-staging-soak-orch",
       DATABASE_URL: secrets.databaseUrl,
       CLAUDE_OAUTH_CLIENT_ID: config.claudeOauthClientId,
