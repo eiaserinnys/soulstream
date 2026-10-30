@@ -43,6 +43,14 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 
 이 장을 갱신해야 하는 변경 부류: runner release/spawn·registration identity·kernel writer lock·lifecycle heartbeat·event ingress identity·recovery classification/adoption·termination/dispose·terminal retirement/GC 변경.
 
+## Closed-engine close recovery (#824)
+
+`runner_process_dispatcher.ts:close`는 close command RPC가 응답을 기다리는 동안에만 host-call을 허용한다. `trackFrameHandler`는 그 짧은 구간의 `event/request/host_call`만 기존 handler로 전달하고, 일반 event와 response는 계속 버린다. RPC 종료 직후, `releaseHostResources`보다 먼저 예외 상태를 닫는다. `closed`와 `isClosed()` 의미는 유지하며 detach·rollback·retire에는 예외를 열지 않는다. 계정 release→pump/실제 child 종료→durable 턴 상태 삭제 순서는 그대로다.
+
+`runner_child_runtime.ts:handleCommand`의 close는 dispatcher 결과를 먼저 보내고, send 결과와 status에 관계없이 lifecycle의 running 행을 closed로 마친 뒤 shutdown을 예약한다. lifecycle 쓰기 실패도 shutdown 예약을 막지 않는다. 일반 host socket disconnect는 shutdown을 예약하지 않아 detached 실행의 재접속을 보존한다.
+
+`closed_engine_error.ts:isClosedClaudeEngineFailure`는 옛 child 호환 경계 하나에서만 Claude backend, `execution_failed`, 정확한 `ClaudeEngineAdapter.execute called after close()` 메시지를 인식한다. 실행 중 dispatcher의 동일 registration·command가 그 오류를 받으면 finalizer는 activity 조회로 retained owner를 만들지 않는다. terminal stream은 현재 턴을 error로 끝내고 기존 close dispatcher→registration·PID·startIdentity exact termination으로 정리한다.
+
 ## Antigravity 엔진 선택과 정의 수명 (PR A)
 
 `main.ts`는 프로필과 카탈로그 backend의 합집합으로 CLI 필요 여부를 판정하고 `engine/antigravity_cli_path.ts`가 AGY_CLI_PATH → PATH의 agy → HOME/.local/bin/agy를 파일 검사만으로 해석한다. 미설치는 워커 기동을 막지 않으며 실제 execute에서 명시 오류가 된다. 선택 경로는 composition → `runner_process_runtime_factory.ts` → `runner_process_spawn.ts` → schemaVersion=1 `runner_child_config.ts.antigravityCliPath`로 전달된다. 재기동 spawn도 저장된 경로를 전달한다. 실행 파일 manifest 슬롯은 Claude/Codex 그대로이며 agy 바이너리를 stamp하지 않는다.

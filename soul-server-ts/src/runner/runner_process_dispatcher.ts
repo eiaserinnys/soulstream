@@ -74,6 +74,7 @@ import {
 } from "./sqlite_runner_lifecycle.js";
 import { readRunnerRegistrationIdentity } from "./runner_registration_identity.js";
 import { RunnerWriterLock } from "./runner_writer_lock.js";
+import { isClosedClaudeEngineFailure } from "./closed_engine_error.js";
 
 const COMMAND_TIMEOUT_MS = 30_000;
 const RECENT_HOST_RESPONSE_LIMIT = 128;
@@ -195,6 +196,8 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private hostCallIdempotency!: RunnerHostCallIdempotency;
   private finishActiveRunnerObservation: (() => void) | undefined;
   private closed = false;
+  private closeCommandInFlight = false;
+  private closedEngineFailureRegistrationId: string | undefined;
   private readonly reconnectPolicy: RunnerIpcReconnectPolicy;
 
   constructor(private readonly options: RunnerProcessDispatcherOptions) {
@@ -231,6 +234,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   }
 
   executeFrames(params: EngineExecuteParams): AsyncIterable<RunnerEventFrame> {
+    this.closedEngineFailureRegistrationId = undefined;
     const commandId = `execute:${randomUUID()}`;
     const stream = new ProcessFrameStream(async (frameSeq) => {
       await this.acknowledgeConsumedFrame(frameSeq);
@@ -373,7 +377,12 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
           },
         };
       }
-      assertCommandAccepted(await this.dispatch(closeCommandFrame(`close:${randomUUID()}`)));
+      this.closeCommandInFlight = true;
+      try {
+        assertCommandAccepted(await this.dispatch(closeCommandFrame(`close:${randomUUID()}`)));
+      } finally {
+        this.closeCommandInFlight = false;
+      }
     } finally {
       const closeRetirement = retirement;
       try {
@@ -436,6 +445,11 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
    */
   isClosed(): boolean {
     return this.closed;
+  }
+
+  hasClosedEngineFailureForFinalization(): boolean {
+    return this.closedEngineFailureRegistrationId !== undefined
+      && this.closedEngineFailureRegistrationId === this.spawnedProcess?.registrationId;
   }
 
   hasActiveExecution(): boolean {
@@ -1066,15 +1080,21 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
         return;
       }
       active.commandId = frame.commandId;
-      if (frame.error) active.stream.fail(new Error(frame.error.message));
-      else active.stream.finish();
+      if (frame.error) {
+        this.recordClosedEngineFailure(frame.commandId, frame.error);
+        active.stream.fail(new Error(frame.error.message));
+      } else active.stream.finish();
       this.clearActiveExecution(frame.commandId);
       return;
     }
   }
 
   private async trackFrameHandler(frame: RunnerFrame): Promise<void> {
-    if (this.closed) return;
+    const closeSettlementHostCall = this.closeCommandInFlight
+      && frame.channel === "event"
+      && frame.kind === "request"
+      && frame.request.kind === "host_call";
+    if (this.closed && !closeSettlementHostCall) return;
     let postResponse: (() => Promise<void>) | undefined;
     const handler = this.handleFrame(frame).then((continuation) => {
       postResponse = continuation;
@@ -1306,6 +1326,9 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     }
     active.commandId = commandId;
     if (lifecycle.execution_state === "running") return false;
+    if (isClosedClaudeEngineFailure(this.spawnInput.backend, lifecycle.terminal_error)) {
+      this.recordClosedEngineFailure(commandId, lifecycle.terminal_error);
+    }
     this.settleActiveExecution(active, lifecycle);
     return true;
   }
@@ -1323,6 +1346,19 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       ));
     }
     this.clearActiveExecution(lifecycle.execution_command_id);
+  }
+
+  private recordClosedEngineFailure(commandId: string, failure: unknown): void {
+    const active = this.activeExecution;
+    const spawned = this.spawnedProcess;
+    if (
+      !active
+      || active.commandId !== commandId
+      || !spawned
+      || (active.registrationId !== undefined && active.registrationId !== spawned.registrationId)
+      || !isClosedClaudeEngineFailure(this.spawnInput.backend, failure)
+    ) return;
+    this.closedEngineFailureRegistrationId = spawned.registrationId;
   }
 
   private async sendBestEffort(frame: RunnerFrame): Promise<void> {

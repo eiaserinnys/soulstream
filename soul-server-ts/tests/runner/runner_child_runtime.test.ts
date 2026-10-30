@@ -1,5 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { createConnection } from "node:net";
 import { join } from "node:path";
 
 import pino from "pino";
@@ -263,6 +264,78 @@ describe("RunnerChildRuntime startup", () => {
     } finally {
       await runtime.shutdown();
     }
+  });
+
+  it("keeps a running child alive after an ordinary host socket disconnect", async () => {
+    const { runtime } = await createRotationRuntime(null, [], "claude");
+    const config = (runtime as unknown as { config: RunnerChildConfig }).config;
+    const shutdown = vi.spyOn(runtime, "shutdown");
+    const socket = createConnection(config.paths.socketPath);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        socket.once("connect", resolve);
+        socket.once("error", reject);
+      });
+      socket.destroy();
+      await new Promise<void>((resolve) => setImmediate(resolve));
+
+      expect(shutdown).not.toHaveBeenCalled();
+    } finally {
+      socket.destroy();
+      shutdown.mockRestore();
+      await runtime.shutdown();
+    }
+  });
+
+  it.each([
+    { name: "the close result send fails", status: "ok" as const, sendFails: true },
+    { name: "the close result is an error", status: "error" as const, sendFails: false },
+  ])("shuts down when $name", async ({ status, sendFails }) => {
+    const send = vi.fn(async () => {
+      if (sendFails) throw new Error("host disconnected before close ACK");
+    });
+    const shutdown = vi.fn(async () => undefined);
+    const finish = vi.fn();
+    const runtime = Object.create(RunnerChildRuntime.prototype) as RunnerChildRuntime & {
+      handleCommand(command: RunnerCommandFrame): Promise<void>;
+    };
+    Object.assign(runtime, {
+      config: { sessionId: "close-child" },
+      endpoint: { currentConnection: { send }, close: vi.fn(async () => undefined) },
+      dispatcher: { dispatch: vi.fn(async (command: { commandId: string }) => ({
+        channel: "command_result",
+        commandId: command.commandId,
+        result: status === "ok"
+          ? { status: "ok" }
+          : { status: "error", error: { code: "close_failed", message: "close failed" } },
+      })) },
+      lifecycle: {
+        read: () => ({ execution_state: "running", execution_command_id: "execute-a" }),
+        finish,
+        close: vi.fn(),
+      },
+      outbox: {},
+      archiveEvent: vi.fn(),
+      shutdown,
+    });
+    const closeCommand = {
+      channel: "command",
+      kind: "close",
+      commandId: "close-a",
+    } as RunnerCommandFrame;
+
+    const handled = runtime.handleCommand(closeCommand);
+    if (sendFails) await expect(handled).rejects.toThrow("host disconnected");
+    else await handled;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+
+    expect(send).toHaveBeenCalledOnce();
+    expect(finish).toHaveBeenCalledWith(
+      "execute-a",
+      "closed",
+      expect.any(String),
+    );
+    expect(shutdown).toHaveBeenCalledOnce();
   });
 });
 

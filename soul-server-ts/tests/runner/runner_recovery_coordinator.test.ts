@@ -250,6 +250,56 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     );
   });
 
+  it("replays a terminal registration with the exact old Claude closed error before retirement", async () => {
+    const terminalRegistration = registration({
+      lifecycleState: "failed",
+      terminalError: {
+        code: "execution_failed",
+        message: "ClaudeEngineAdapter.execute called after close()",
+      },
+      pidAlive: true,
+    });
+    terminalRegistration.config.backend = "claude";
+    terminalRegistration.config.agent.backend = "claude";
+    const recovered = task("session-a");
+    recovered.status = "error";
+    recovered.terminationReason = "error_aborted";
+    recovered.terminationDetail = "ClaudeEngineAdapter.execute called after close()";
+    recovered.terminationEventRecorded = true;
+    recovered.terminalEventId = 14;
+    const retainRegisteredDetachedRunner = vi.fn(async () => true);
+    const recoverRegisteredRunner = vi.fn(async () => undefined);
+    const subject = makeSubject([terminalRegistration], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(async () => recovered),
+      } as never,
+      taskExecutor: {
+        retainRegisteredDetachedRunner,
+        recoverRegisteredRunner,
+      } as never,
+    });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(retainRegisteredDetachedRunner).not.toHaveBeenCalled();
+    expect(recoverRegisteredRunner).toHaveBeenCalledOnce();
+    expect(recoverRegisteredRunner.mock.calls[0]?.slice(0, 4)).toEqual([
+      recovered,
+      expect.objectContaining({
+        registrationId: "registration-a",
+        lifecycle: expect.objectContaining({
+          terminal_error: {
+            code: "execution_failed",
+            message: "ClaudeEngineAdapter.execute called after close()",
+          },
+        }),
+      }),
+      "execute-a",
+      "offline",
+    ]);
+  });
+
   it("adopts a live terminal registration before restart recovery can classify its background rows", async () => {
     const terminalRegistration = registration({
       lifecycleState: "completed",

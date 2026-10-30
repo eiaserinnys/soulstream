@@ -233,3 +233,5 @@ session ID가 없는 첫 턴은 입력 전달 상태가 `not_sent`로 증명된 
 ## 외부 대화 제공자
 
 대화 스레드의 인증과 생성 경로는 [OAuth와 대화 제공자](oauth-to-conversation.md)를 따른다. 메시지 전달 경로는 대화 API 메시지 구현에서 연결한다.
+
+closed-engine 실패는 해당 턴을 error로 끝내고 러너를 정리하며, 다음 깨움은 새 러너에서 시작한다.

@@ -450,6 +450,41 @@ describe("TaskExecutorFinalizer.finalize", () => {
     expect(task.runnerRetainedForDetachedWork).toBeUndefined();
   });
 
+  it("does not retain a Claude runner after its dispatcher confirms the closed-engine failure", async () => {
+    const activity = vi.fn(async () => null);
+    const close = vi.fn(async () => undefined);
+    const engine = {
+      ...makeEngine(vi.fn(async () => undefined)),
+      backendId: "claude",
+      detachedClaudeRuntime: true,
+      detachedClaudeRuntimeActivity: activity,
+    } as EnginePort;
+    const dispatcher = {
+      close,
+      hasClosedEngineFailureForFinalization: vi.fn(() => true),
+    };
+    const task = makeTask({
+      runner: createTaskRunnerRuntime(engine, dispatcher as never),
+    });
+    const finalizer = makeFinalizer({
+      lifecycleTransition: {
+        persistExecutorFinalState: vi.fn().mockResolvedValue({
+          newlyFinalized: true,
+          terminalTransitionApplied: true,
+        }),
+      },
+      logger: makeLogger(),
+    });
+
+    await finalizer.finalize(task);
+
+    expect(dispatcher.hasClosedEngineFailureForFinalization).toHaveBeenCalledOnce();
+    expect(activity).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledOnce();
+    expect(task.runner).toBeUndefined();
+    expect(task.runnerRetainedForDetachedWork).toBeUndefined();
+  });
+
   it.each([
     ["not_supported", { status: "not_supported" }],
     ["undefined", undefined],
