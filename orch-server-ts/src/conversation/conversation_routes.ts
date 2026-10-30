@@ -4,6 +4,7 @@ import { ConversationError, type EnsureRequest, type PatchRequest } from "./conv
 import type { ConversationService } from "./conversation_service.js";
 import { ConversationHistory } from "./conversation_history.js";
 import { sendConversationEvents } from "./conversation_events.js";
+import { parsePosition } from "./conversation_position.js";
 import type { SessionHistoryLiveEventSource } from "../session/session_history_routes.js";
 
 export const conversationRouteAuthRequirements = {
@@ -14,6 +15,7 @@ export const conversationRouteAuthRequirements = {
   "PUT /api/conversations/v1/threads/by-key": true,
   "PUT /api/conversations/v1/threads/by-key/adoption": true,
   "GET /api/conversations/v1/threads/:id": true,
+  "PUT /api/conversations/v1/threads/:id/execution": true,
   "GET /api/conversations/v1/threads/:id/items": true,
   "GET /api/conversations/v1/threads/:id/events": true,
   "PATCH /api/conversations/v1/threads/:id": true,
@@ -47,6 +49,11 @@ export function registerConversationRoutes(app: FastifyInstance, options: Conver
     return options.service.adopt(r, a, query(r, "namespace"), query(r, "key"), string(body.session_id, "session_id"), body.first_input_is_initial_instruction === true);
   }));
   app.get("/api/conversations/v1/threads/:id", wrap((r, a) => options.service.info(r, a, param(r))));
+  app.put("/api/conversations/v1/threads/:id/execution", wrap((r,a) => {
+    const body = object(r.body);
+    const {expected_execution_id, ...rest} = body;
+    return options.service.switchExecution(r, a, param(r), { ...ensureBody(rest), expected_execution_id:string(expected_execution_id, "expected_execution_id") });
+  }));
   app.get("/api/conversations/v1/threads/:id/items", wrap(async (r, a) => {
     const binding = await options.service.historyBinding(r, a, param(r));
     const raw = optionalQuery(r, "limit");
@@ -62,7 +69,7 @@ export function registerConversationRoutes(app: FastifyInstance, options: Conver
     } catch (error) {
       return sendConversationError(request, reply, error);
     }
-    return sendConversationEvents(request, reply, history, binding, options);
+    return sendConversationEvents(request, reply, history, binding, { ...options, watchSwitch:(id, close) => options.service.watchSwitch(id, close) });
   });
   const messageService = () => {
     if (!options.messages) throw new ConversationError(503,"unavailable","Message service unavailable");
@@ -73,8 +80,10 @@ export function registerConversationRoutes(app: FastifyInstance, options: Conver
     if (error.statusCode === 400) return reply.code(400).send({error:{code:"invalid_request",message:"Invalid message"}});
     return sendConversationError(request,reply,error);
   } }, wrap(async (r,a) => {
-    const id=param(r); await options.service.historyBinding(r,a,id);
-    return await messageService().send(r,id,r.body);
+    const id=param(r);
+    const admitted = await options.service.withThread(r,a,id,binding => messageService().admit(r,id,r.body,binding.active_session_id ?? id,
+      target => options.service.requireExecutionAccess(r,target)));
+    return admitted.result;
   }));
   app.get("/api/conversations/v1/threads/:id/messages/:request_id", wrap(async (r,a) => {
     const id=param(r); await options.service.historyBinding(r,a,id);
@@ -85,20 +94,23 @@ export function registerConversationRoutes(app: FastifyInstance, options: Conver
     const params=r.params as Record<string,unknown>;
     const itemId=string(params.item_id,"item_id"), attachmentId=string(params.attachment_id,"attachment_id");
     const loaded=await history.load(binding);
-    const item=loaded.items.find(x => x.item.id === itemId)?.item;
+    const entry=loaded.items.find(x => x.item.id === itemId);
+    const item=entry?.item;
     const attachment=item?.attachments.find(x => x.id === attachmentId);
-    if (!attachment) throw new ConversationError(404,"not_found","Attachment not found");
+    if (!attachment || !entry) throw new ConversationError(404,"not_found","Attachment not found");
+    await options.service.requireExecutionAccess(r,entry.session);
     let reference:{path?:string;assetId?:string};
     if (attachmentId.startsWith("path:")) {
       const indexText=attachmentId.slice(5);
       if (!/^\d+$/.test(indexText)) throw new ConversationError(404,"not_found","Attachment not found");
-      const [event]=await options.service.historySql<Array<{payload:Record<string,unknown>}>>`SELECT payload FROM events WHERE session_id=${id} AND id::text=${itemId}`;
+      const eventId = parsePosition(itemId)?.id;
+      const [event]=await options.service.historySql<Array<{payload:Record<string,unknown>}>>`SELECT payload FROM events WHERE session_id=${entry.session} AND id=${eventId}`;
       const values=Array.isArray(event?.payload?.attachments) ? event.payload.attachments : event?.payload?.attachment_paths;
       const path=Array.isArray(values) ? values[Number(indexText)] : undefined;
       if (typeof path !== "string") throw new ConversationError(404,"not_found","Attachment not found");
       reference={path};
     } else reference={assetId:attachmentId};
-    const data=await messageService().ports.read(r,id,reference);
+    const data=await messageService().ports.read(r,entry.session,reference);
     if (!data.ok) throw new ConversationError(503,"unavailable","Attachment unavailable");
     const name=attachment.name.replace(/[^\x20-\x7e]|["\\]/g,"_");
     const encoded=encodeURIComponent(attachment.name).replace(/['()*]/g,c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);

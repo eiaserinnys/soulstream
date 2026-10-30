@@ -79,6 +79,25 @@ describe("conversation items and events", () => {
   afterAll(async () => { await app?.close(); await db?.cleanup(); });
   const get = (path: string, headers: Record<string, string> = { authorization: "Bearer test" }) =>
     app.inject({ method: "GET", url: base + path, headers });
+  it("paginates and resumes across executions with overlapping event numbers", async () => {
+    const first = "history-first", second = "history-second";
+    await db.sql`INSERT INTO sessions(session_id,folder_id,model_preset,created_at) VALUES
+      (${first},'allowed-folder','sol',now()), (${second},'allowed-folder','sol',now())`;
+    await db.sql`INSERT INTO conversation_bindings(account_id,namespace,external_key,session_id,active_session_id,selected_model,phase)
+      VALUES ('person','n','history',${first},${second},'sol','complete')`;
+    await db.sql`INSERT INTO conversation_executions(thread_id,session_id,ordinal,predecessor_session_id) VALUES
+      (${first},${first},0,NULL), (${first},${second},1,${first})`;
+    await insertFor(first, 1, "user_message", { text:"old", caller_info:{source:"browser"} });
+    await insertFor(second, 1, "user_message", { text:"new", caller_info:{source:"browser"} });
+    const path = `/api/conversations/v1/threads/${first}`;
+    const page = await app.inject({ method:"GET", url:`${path}/items?limit=1`, headers:{authorization:"Bearer test"} });
+    expect(page.json()).toMatchObject({ items:[{ id:"1:1", text:"new" }], next_before:"1:1", cursor:"1:1" });
+    const previous = await app.inject({ method:"GET", url:`${path}/items?limit=1&before=1%3A1`, headers:{authorization:"Bearer test"} });
+    expect(previous.json().items).toMatchObject([{ id:"1", text:"old" }]);
+    const stream = await app.inject({ method:"GET", url:`${path}/events`, headers:{authorization:"Bearer test", "last-event-id":"1"} });
+    expect(stream.body).toContain('"id":"1:1"');
+    expect(stream.body).not.toContain('"text":"old"');
+  });
   it("projects events, orders by provider cursor, includes stable notices and paginates", async () => {
     const response = await get("/items?limit=3");
     expect(response.statusCode).toBe(200);

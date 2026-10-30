@@ -1,0 +1,1 @@
+{"thread":{"id":"thread-1","external":{"namespace":"ns","key":"key-1"},"title":"작업 예시","model":{"id":"n1:node-b:preset-a","label":"Preset A","group":{"id":"node-b","label":"node-b"}},"profile":{"id":"profile-a","label":"Profile A"},"execution_id":"execution-2","created_at":"2026-10-30T12:00:00.000Z","archived":false}}

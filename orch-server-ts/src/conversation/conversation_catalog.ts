@@ -84,6 +84,11 @@ export class ConversationCatalog {
     return { profiles: orderedIds.map(id => ({ id, label: labels.get(id)!, available: true })) };
   }
 
+  async profileLabel(nodeId: string, id: string): Promise<string> {
+    const profile = (await this.options.listAgentProfiles(nodeId))?.[id];
+    return typeof profile?.name === "string" && profile.name ? profile.name : id;
+  }
+
   resolve(id: string): ConversationModelReference | undefined {
     if (!id.startsWith("n1:")) return { nodeId: this.options.defaultNodeId, presetId: id };
     const rest = id.slice(3);

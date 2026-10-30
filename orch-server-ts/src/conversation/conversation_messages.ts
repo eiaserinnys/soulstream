@@ -7,7 +7,7 @@ export type Upload = { name:string; mime:string; data_base64:string };
 export type StoredUpload = { path:string; name:string; mime:string; assetId?:string };
 type Request = { request_id:string; text:string; attachments:Upload[]; context?:string };
 type Receipt = { request_id:string; status:"pending"|"accepted"|"failed"; error?:{code:string;message:string} };
-type Row = { request_id:string; request_hash:string; delivery_id:string; caller_info:Record<string,unknown>; status:Receipt["status"]; uploads:StoredUpload[]; error:Receipt["error"]|null };
+type Row = { target_session_id:string | null; request_id:string; request_hash:string; delivery_id:string; caller_info:Record<string,unknown>; status:Receipt["status"]; uploads:StoredUpload[]; error:Receipt["error"]|null };
 export type MessagePorts = {
   caller(request:FastifyRequest, session:string):Promise<Record<string,unknown>>;
   upload(request:FastifyRequest, session:string, file:Upload, uploadId:string):Promise<StoredUpload>;
@@ -20,23 +20,28 @@ export const MESSAGE_BODY_LIMIT = 48 * 1024 * 1024;
 export class ConversationMessageService {
   private readonly inFlight = new Map<string, Promise<Receipt>>();
   constructor(private readonly sql:SqlClient, readonly ports:MessagePorts) {}
-  async send(request:FastifyRequest, session:string, input:unknown):Promise<Receipt> {
+  async send(request:FastifyRequest, session:string, input:unknown, target:string = session):Promise<Receipt> {
+    return (await this.admit(request,session,input,target)).result;
+  }
+  async admit(request:FastifyRequest, session:string, input:unknown, target:string = session,
+    authorizeTarget?: (session:string) => Promise<void>):Promise<{result:Promise<Receipt>}> {
     const body = parseMessage(input);
     const hash = createHash("sha256").update(JSON.stringify(body)).digest("hex");
-    const caller = await this.ports.caller(request,session);
-    const rows = await this.sql<Row[]>`INSERT INTO conversation_message_receipts(session_id,request_id,request_hash,delivery_id,caller_info,status)
-      VALUES (${session},${body.request_id},${hash},${randomUUID()},${this.sql.json(caller as never)},'pending')
+    const caller = await this.ports.caller(request,target);
+    const rows = await this.sql<Row[]>`INSERT INTO conversation_message_receipts(session_id,request_id,request_hash,delivery_id,caller_info,status,target_session_id)
+      VALUES (${session},${body.request_id},${hash},${randomUUID()},${this.sql.json(caller as never)},'pending',${target})
       ON CONFLICT (session_id,request_id) DO NOTHING RETURNING *`;
     const row = rows[0] ?? await this.getRow(session,body.request_id);
     if (row.request_hash !== hash) throw new ConversationError(409,"conflict","Request id is already used for another message");
-    if (row.status !== "pending") return receipt(row);
+    if (authorizeTarget) await authorizeTarget(row.target_session_id ?? session);
+    if (row.status !== "pending") return {result:Promise.resolve(receipt(row))};
     const key = JSON.stringify([session,body.request_id]);
     let work = this.inFlight.get(key);
     if (!work) {
       work = this.process(request,session,body,row).finally(() => this.inFlight.delete(key));
       this.inFlight.set(key,work);
     }
-    return await work;
+    return {result:work};
   }
   async get(session:string, id:string):Promise<Receipt> {
     const [accepted] = await this.sql<Row[]>`UPDATE conversation_message_receipts AS receipt SET status='accepted'
@@ -51,6 +56,7 @@ export class ConversationMessageService {
     return row;
   }
   private async process(request:FastifyRequest, session:string, body:Request, row:Row):Promise<Receipt> {
+    const target = row.target_session_id ?? session;
     const uploads = [...row.uploads];
     let interventionStarted = false;
     try {
@@ -58,11 +64,11 @@ export class ConversationMessageService {
         // A stable UUID makes the owned upload commit reusable after a retry.
         const hash = createHash("sha256").update(`${row.delivery_id}:${i}`).digest("hex");
         const uploadId = `${hash.slice(0,8)}-${hash.slice(8,12)}-4${hash.slice(13,16)}-a${hash.slice(17,20)}-${hash.slice(20,32)}`;
-        uploads.push(await this.ports.upload(request,session,body.attachments[i]!,uploadId));
+        uploads.push(await this.ports.upload(request,target,body.attachments[i]!,uploadId));
         await this.sql`UPDATE conversation_message_receipts SET uploads=${this.sql.json(uploads as never)} WHERE session_id=${session} AND request_id=${body.request_id}`;
       }
       interventionStarted = true;
-      const result = await this.ports.intervene(request,session,{
+      const result = await this.ports.intervene(request,target,{
         text: body.context === undefined ? body.text : `${body.text}\n\n${body.context}`,
         attachment_paths:uploads.map(x => x.path),
         delivery_id:row.delivery_id,

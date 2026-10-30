@@ -28,6 +28,7 @@ export class ConversationProjection {
     if (human && !keepalive) this.errorInTurn = false;
     const anchor = string(payload.input_id ?? payload.inputId ?? payload.prepared_input_id ?? payload.preparedInputId);
     const makeItem = (kind: Item["kind"], text: string, attachments: Item["attachments"] = []): Item => ({ id: String(id), kind, text, at, attachments });
+    if (type === "notification" && typeof payload._conversation_notice === "string") return { item: makeItem("notice", payload._conversation_notice) };
     if (input || type === "notification") {
       if (input) {
         this.keepalive = keepalive;
