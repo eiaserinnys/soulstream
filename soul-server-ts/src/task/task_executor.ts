@@ -1003,6 +1003,11 @@ export class TaskExecutor {
     registration: RunnerRegistration,
   ): Promise<boolean> {
     assertGenericTaskExecution(task, registration.config?.agent?.id);
+    // Recovery may retain only an already-terminal task with no current execution registration.
+    // Finalization retention runs after the central ACK and has a separate lifecycle.
+    if (!isTerminalTaskStatus(task.status) || task.executionRegistration !== undefined) {
+      return false;
+    }
     if (task.executionPromise !== undefined) return false;
     if (task.runnerReleaseClaim !== undefined) return false;
     const attached = task.runner;

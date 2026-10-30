@@ -2584,6 +2584,55 @@ describe("TaskExecutor runner process boundary", () => {
     expect(recovered.executionPromise).toBeUndefined();
   });
 
+  it("keeps a terminal Claude runner when detached activity is unsupported", async () => {
+    const mocks = makeMocks();
+    const { runner, dispatcher } = makeRunnerProcessRuntime([]);
+    const detachedClaudeRuntimeActivity = vi.fn(async () => null);
+    runner.engine = {
+      ...makeFakeEngine([]),
+      backendId: "claude",
+      detachedClaudeRuntime: true,
+      detachedClaudeRuntimeActivity,
+    } as EnginePort;
+    const processFactory = vi.fn() as unknown as RunnerProcessRuntimeFactory;
+    processFactory.recover = vi.fn(() => runner);
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      processFactory,
+    );
+    const recovered = makeTask();
+    recovered.status = "completed";
+    const registration = {
+      registrationId: "registration-1",
+      config: {
+        sessionId: recovered.agentSessionId,
+        agent: claudeAgent,
+        backend: "claude",
+      },
+    } as unknown as RunnerRegistration;
+
+    await expect(
+      executor.retainRegisteredDetachedRunner(recovered, registration),
+    ).resolves.toBe(true);
+
+    expect(detachedClaudeRuntimeActivity).toHaveBeenCalledOnce();
+    expect(recovered.runner).toBe(runner);
+    expect(recovered.runnerRetainedForDetachedWork).toBe(true);
+    expect(dispatcher.close).not.toHaveBeenCalled();
+    expect(dispatcher.detachHost).not.toHaveBeenCalled();
+    expect(dispatcher.recoverFrames).not.toHaveBeenCalled();
+  });
+
   it("terminal stream retirement releases one slot and admits the exact queued delivery once", async () => {
     const mocks = makeMocks();
     const retired = deferred<void>();
