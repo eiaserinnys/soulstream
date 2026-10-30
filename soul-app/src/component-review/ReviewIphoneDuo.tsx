@@ -10,7 +10,7 @@ import {
 import { useTokens } from '../theme';
 import { SessionFeedScreen } from '../screens/SessionFeedScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
-import { PhoneRailModeContext } from '../navigation/tabContract';
+import { DuoSideBandContext, PhoneRailModeContext, RAIL_MIN_INSET_WIDTH } from '../navigation/tabContract';
 import { ContentLinkProvider } from '../navigation/ContentLinkProvider';
 import { PhoneRailTabCluster } from '../navigation/TabNavigator';
 import { PersistentSessionProvider, usePersistentSessionHost } from '../navigation/PersistentSessionContext';
@@ -35,8 +35,11 @@ const PAS_LAYOUT_FRAMES = {
   'inner-landscape': { width: 951, height: 669, rail: false, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
   'inner-portrait': { width: 669, height: 951, rail: false, insets: { top: 72, right: 0, bottom: 24, left: 0 } },
   'ipad-pro-13-portrait': { width: 1032, height: 1376, rail: false, insets: { top: 24, right: 0, bottom: 20, left: 0 } },
+  'ipad-pro-13-landscape': { width: 1376, height: 1032, rail: false, insets: { top: 24, right: 0, bottom: 20, left: 0 } },
   'outer-portrait': { width: 466, height: 678, rail: true, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
+  'outer-landscape': { width: 678, height: 466, rail: true, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
   'iphone-17': { width: 393, height: 852, rail: false, insets: { top: 59, right: 0, bottom: 34, left: 0 } },
+  'iphone-17-landscape': { width: 852, height: 393, rail: true, insets: { top: 0, right: 59, bottom: 21, left: 59 } },
 } as const;
 
 const RAIL_WIDTH = 84;
@@ -75,20 +78,37 @@ function DuoPasCardOverlayStage() {
 }
 
 function DuoPasLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRAMES }) {
+  const t = useTokens();
   const frame = PAS_LAYOUT_FRAMES[frameId];
   const frameRect: Rect = { x: 0, y: 0, width: frame.width, height: frame.height };
+  const duoSideBand = frame.insets.right >= RAIL_MIN_INSET_WIDTH && frame.insets.left === 0;
   return <PersistentSessionProvider>
     <SafeAreaFrameContext.Provider value={frameRect}>
       <SafeAreaInsetsContext.Provider value={frame.insets}>
         <PhoneRailModeContext.Provider value={frame.rail}>
+          <DuoSideBandContext.Provider value={duoSideBand}>
+          <NavigationContainer>
           <View style={{ flex: 1, flexDirection: 'row', width: frame.width, height: frame.height, overflow: 'hidden' }}>
-            <View style={{ width: frame.rail ? frame.width - frame.insets.right : frame.width, height: frame.height }}><DuoPasCardOverlayStage /></View>
-            {frame.rail && frame.insets.right > 0 ? <View style={{ width: frame.insets.right, height: frame.height }} /> : null}
+            <SafeAreaInsetsContext.Provider value={frame.rail ? { ...frame.insets, right: 0 } : frame.insets}>
+              <View style={{ width: frame.rail ? frame.width - frame.insets.right : frame.width, height: frame.height }}><DuoPasCardOverlayStage /></View>
+            </SafeAreaInsetsContext.Provider>
+            {frame.rail && frame.insets.right > 0 ? <View style={{ width: frame.insets.right, height: frame.height,
+              alignItems: 'center', justifyContent: 'flex-end', paddingBottom: Math.max(frame.insets.bottom, t.uiSpacing.xxl) }}>
+              <DuoPasReviewRail duoSideBand={duoSideBand} />
+            </View> : null}
           </View>
+          </NavigationContainer>
+          </DuoSideBandContext.Provider>
         </PhoneRailModeContext.Provider>
       </SafeAreaInsetsContext.Provider>
     </SafeAreaFrameContext.Provider>
   </PersistentSessionProvider>;
+}
+
+function DuoPasReviewRail({ duoSideBand }: { duoSideBand: boolean }) {
+  const host = usePersistentSessionHost();
+  return <PhoneRailTabCluster active="PersistentTab" duoSideBand={duoSideBand}
+    onSelect={() => host.store.getState().toggleScene()} />;
 }
 
 export function ReviewIphoneDuo() {
@@ -184,6 +204,7 @@ export function ReviewIphoneDuo() {
                     <SafeAreaFrameContext.Provider value={frameRect}>
                       <SafeAreaInsetsContext.Provider value={frameInsets}>
                         <PhoneRailModeContext.Provider value={frame.rail}>
+                        <DuoSideBandContext.Provider value={frame.insets.right >= RAIL_MIN_INSET_WIDTH && frame.insets.left === 0}>
                         <NavigationContainer theme={navigationTheme}>
                           <SafeAreaInsetsContext.Provider value={{ ...frameInsets, right: 0 }}>
                             <View style={{ width: safeWidth, height: '100%', minWidth: 0, minHeight: 0 }}>
@@ -198,9 +219,10 @@ export function ReviewIphoneDuo() {
                             borderLeftWidth: 1,
                             borderLeftColor: t.colors.border,
                           }}>
-                            <PhoneRailTabCluster active={activeTab} onSelect={() => {}} />
+                            <PhoneRailTabCluster active={activeTab} onSelect={() => {}} duoSideBand={frame.insets.right >= RAIL_MIN_INSET_WIDTH && frame.insets.left === 0} />
                           </View> : frame.insets.right > 0 ? <View style={{ width: frame.insets.right }} /> : null}
                         </NavigationContainer>
+                        </DuoSideBandContext.Provider>
                         </PhoneRailModeContext.Provider>
                       </SafeAreaInsetsContext.Provider>
                     </SafeAreaFrameContext.Provider>

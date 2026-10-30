@@ -61,7 +61,10 @@ jest.mock('../../components/AppModalSurface', () => {
   return { AppModalSurface: ({ visible, modalId, onRequestClose, onDismiss, children, surfaceTestID }: any) =>
     <View testID={surfaceTestID} visible={visible} modalId={modalId} onRequestClose={onRequestClose} onDismiss={onDismiss}>{children}</View> };
 });
-jest.mock('../../components/settings/PersistentSessionPasSettingsModal', () => ({ PersistentSessionPasSettingsModal: () => null }));
+jest.mock('../../components/settings/PersistentSessionPasSettingsModal', () => {
+  const { View } = require('react-native');
+  return { PersistentSessionPasSettingsModal: (props: any) => <View testID="pas-settings-modal" {...props} /> };
+});
 jest.mock('../SettingsScreen', () => ({ SettingsScreen: () => null }));
 jest.mock('../../hooks/useUsageSummary', () => ({ useUsageSummary: jest.fn() }));
 
@@ -87,6 +90,9 @@ import { measurePersistentReports } from '../../test-utils/persistent-report-lay
 import type { CardDetail } from '../../api/cardTypes';
 import { cardFixture } from '../../test-support/cards';
 import type { PersistentReportEntry } from '../../api/types';
+import { DuoSideBandContext } from '../../navigation/tabContract';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
+import { NavigationContainer } from '@react-navigation/native';
 
 let store: StoreApi<PersistentSessionScene>;
 function Capture() { store = usePersistentSessionHost().store; return null; }
@@ -675,6 +681,44 @@ test('phone hides saved weekly usage and passes a disabled request gate', () => 
   view.unmount();
   useSettingsStore.setState({ serverUrl: '', persistentSessionDevicePrefs: {} } as never);
   useAuthStore.setState({ jwt: null });
+});
+
+test('듀오 태블릿은 머리줄 대신 띠 캡슐과 사용량 열을 쓰고 설정 상태를 공유한다', () => {
+  mockDevice = 'tabletLandscape';
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 24, 867, 645);
+    else if (this.props.testID === 'persistent-session-conversation') callback(180, 24, 400, 645);
+  });
+  useSettingsStore.setState({ serverUrl: 'https://usage.example', persistentSessionDevicePrefs: {} } as never);
+  const view = render(<SafeAreaInsetsContext.Provider value={{ top: 24, bottom: 24, left: 0, right: 84 }}>
+    <DuoSideBandContext.Provider value={true}><NavigationContainer><ScreenHarness /></NavigationContainer></DuoSideBandContext.Provider>
+  </SafeAreaInsetsContext.Provider>);
+  act(() => store.getState().open({ session_id: 'pas-duo', node_id: 'node-a', agent_name: '서소영', persistent: true } as any));
+  act(() => view.getByTestId('persistent-session-screen').props.onLayout());
+  expect(view.queryByTestId('persistent-session-header')).toBeNull();
+  expect(view.getByLabelText('카드 목록 보기')).toBeTruthy();
+  expect(view.getByLabelText('주간 사용량')).toBeTruthy();
+  expect(view.getByLabelText('PAS 메뉴')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('카드 목록 보기'));
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-conversation').props.style).width).toBe(400);
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style).top).toBe(0);
+  fireEvent.press(view.getByLabelText('PAS 대화로 돌아가기'));
+  fireEvent.press(view.getByLabelText('주간 사용량'));
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-conversation').props.style).width).toBe(400);
+  expect(view.getByTestId('persistent-session-usage-column')).toBeTruthy();
+  act(() => view.getByTestId('persistent-body-probe').props.onKeyboardOverlapChange(260));
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-duo-band').props.style).bottom).toBe(260);
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-usage-column').props.style).bottom).toBe(260);
+  fireEvent.press(view.getByLabelText('카드 목록 보기'));
+  expect(view.getByTestId('persistent-session-card-panel')).toBeTruthy();
+  act(() => store.getState().setSettingsOpen(true));
+  expect(store.getState().settingsOpen).toBe(true);
+  expect(view.getByTestId('pas-settings-modal')).toBeTruthy();
+  act(() => view.getByTestId('pas-settings-modal').props.onClose());
+  expect(store.getState().settingsOpen).toBe(false);
+  view.unmount();
+  measure.mockRestore();
+  useSettingsStore.setState({ serverUrl: '', persistentSessionDevicePrefs: {} } as never);
 });
 
 test('PAS 헤더 액션은 테두리와 바탕 없는 원형 버튼 표면을 쓴다', () => {

@@ -35,7 +35,9 @@ import { useNodeConnectivityStream } from '../hooks/useNodeConnectivityStream';
 import { GlassSurface } from '../components/GlassSurface';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTokens, type DesignTokens } from '../theme';
-import { INITIAL_ROOT_TAB, PhoneRailModeContext, ROOT_TAB_ORDER } from './tabContract';
+import { DuoSideBandContext, hasDuoSideBand, INITIAL_ROOT_TAB, PhoneRailModeContext, RAIL_MIN_INSET_WIDTH, ROOT_TAB_ORDER } from './tabContract';
+import { RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
+import { usePasContextMenu } from '../components/persistent/usePasContextMenu';
 import { FolderWorkspace } from '../components/planner/FolderWorkspace';
 import { createApiClient } from '../api/client';
 import { useSettingsStore } from '../store/settingsStore';
@@ -58,6 +60,7 @@ import {
 } from './phonePanelHistory';
 
 export { INITIAL_ROOT_TAB, ROOT_TAB_ORDER } from './tabContract';
+export { RAIL_MIN_INSET_WIDTH } from './tabContract';
 
 export { PhoneCardDetail, getDefaultTabBarStyle } from './PhoneContentScreens';
 
@@ -73,52 +76,45 @@ function TabBarGlassBackground() {
 const PHONE_TAB_BUTTON_CENTER_STYLE: ViewStyle = { justifyContent: 'center' };
 
 /** 우측 시스템 레일이 생기는 최소 안전 영역 폭. 듀오 바깥 화면은 84pt다. */
-export const RAIL_MIN_INSET_WIDTH = 48;
-const RAIL_CAPSULE_WIDTH = 48;
-const RAIL_ITEM_HEIGHT = 50;
 
 /**
  * 아이폰 듀오 바깥 화면처럼 오른쪽에 시스템 레일이 있는 환경의 세로 탭 클러스터.
  * 하단 탭바 대신 같은 5개 루트 탭을 유리 캡슐에 담아 레일 하단에 둔다.
  */
-export function PhoneRailTabCluster({ active, onSelect }: {
+export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false }: {
   active: keyof RootTabParamList;
   onSelect(name: keyof RootTabParamList): void;
+  duoSideBand?: boolean;
 }) {
   const t = useTokens();
   const c = t.colors;
   const scene = usePersistentSessionScene(state => state.scene);
+  const showPasMenu = usePasContextMenu();
   const persistentLabel = active !== 'PersistentTab'
     ? '영구 세션 열기'
     : scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기';
-  return <GlassSurface role="chrome" testID="phone-rail-tab-cluster" cornerRadius={t.foundation.radius.round}
-    style={{ width: RAIL_CAPSULE_WIDTH }}>
-    <View style={{ width: RAIL_CAPSULE_WIDTH, paddingVertical: t.spacing.xs, gap: t.uiSpacing.xs / 2, alignItems: 'center' }}>
+  return <RailCapsule testID="phone-rail-tab-cluster">
+      {duoSideBand && active === 'PersistentTab' ? <RailCapsuleItem testID="phone-rail-pas-menu" label="PAS 메뉴" onPress={showPasMenu}>
+        <Ionicons name="ellipsis-horizontal" color={c.textMuted} size={t.iconSize.standard} />
+      </RailCapsuleItem> : null}
       {ROOT_TAB_ORDER.map((name) => {
         const config = ROOT_SECTION_CONFIG[name];
         const selected = name === active;
         const color = selected ? c.accent : c.textMuted;
-        return <PlatformPressable
+        return <RailCapsuleItem
           key={name}
           testID={`phone-tab-${name}`}
-          accessibilityRole="tab"
-          accessibilityLabel={name === 'PersistentTab' ? persistentLabel : config.title}
-          accessibilityState={{ selected }}
+          role="tab"
+          label={name === 'PersistentTab' ? persistentLabel : config.title}
+          selected={selected}
           onPress={() => onSelect(name)}
-          style={{
-            width: RAIL_CAPSULE_WIDTH - 4,
-            height: RAIL_ITEM_HEIGHT,
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
         >
           {name === 'PersistentTab'
             ? <PersistentPhoneTabIcon color={color} size={t.iconSize.standard} active={selected} />
             : <Ionicons name={config.icon} color={color} size={t.iconSize.standard} />}
-        </PlatformPressable>;
+        </RailCapsuleItem>;
       })}
-    </View>
-  </GlassSurface>;
+  </RailCapsule>;
 }
 
 function PhoneRailTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
@@ -173,7 +169,7 @@ function PhoneRailTabBar({ state, descriptors, navigation, insets }: BottomTabBa
         backgroundColor: createSurfaceRoles(t).chrome.tokenStyle.backgroundColor,
       }}
     /> : null}
-    {hidden ? null : <PhoneRailTabCluster active={active} onSelect={select} />}
+    {hidden ? null : <PhoneRailTabCluster active={active} onSelect={select} duoSideBand={hasDuoSideBand(insets)} />}
   </View>;
 }
 
@@ -531,14 +527,17 @@ function PhoneTabNavigator({ initialTab }: { initialTab?: string }) {
   const c = t.colors;
   const insets = useSafeAreaInsets();
   const railMode = insets.right >= RAIL_MIN_INSET_WIDTH;
+  const duoSideBand = hasDuoSideBand(insets);
   return (
     <Tab.Navigator
       tabBar={railMode ? (props) => <PhoneRailTabBar {...props} /> : undefined}
       screenLayout={({ children }) => (
         <PhoneRailModeContext.Provider value={railMode}>
+          <DuoSideBandContext.Provider value={duoSideBand}>
           <SafeAreaInsetsContext.Provider value={railMode ? { ...insets, right: 0 } : insets}>
             {children}
           </SafeAreaInsetsContext.Provider>
+          </DuoSideBandContext.Provider>
         </PhoneRailModeContext.Provider>
       )}
       initialRouteName={restoredTab ?? (host.store.getState().visible ? 'PersistentTab' : INITIAL_ROOT_TAB)}
