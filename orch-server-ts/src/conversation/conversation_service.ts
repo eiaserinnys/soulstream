@@ -91,7 +91,7 @@ export class ConversationService {
       binding = await this.repo.byKey(account, namespace, key);
       if (!binding) throw new ConversationError(409, "conflict", "Session binding already exists");
     }
-    if (binding.phase === "complete") return { thread: await this.thread(request, binding), created: false, notices: binding.notices };
+    if (binding.phase === "complete") return { thread: await this.thread(request, binding), created: false, notices: binding.notices.map(n => n.text) };
     if (binding.creation_request) await this.deps.access.requireFolderAccess({ request, folderId: binding.creation_request.collection });
     const id = binding.session_id;
     let work = this.inFlight.get(id);
@@ -105,7 +105,7 @@ export class ConversationService {
       await Promise.race([work, pending]);
     } finally { if (timer) clearTimeout(timer); }
     const current = await this.requireBinding(account, id);
-    return { thread: await this.thread(request, current), created, notices: current.notices };
+    return { thread: await this.thread(request, current), created, notices: current.notices.map(n => n.text) };
   }
   private async initialize(request: Caller, binding: Binding): Promise<void> {
     const id = binding.session_id;
@@ -126,7 +126,7 @@ export class ConversationService {
           .find(item => item?.available && !attempted.has(item.id));
         if (!candidate) { await this.repo.phase(id, "reserved"); throw new ConversationError(422, "model_unavailable", "No requested model is available"); }
         attempted.add(candidate.id); binding.selected_model = candidate.id;
-        binding.notices = candidate.id === body.selected_model ? [] : [`${body.selected_model}을(를) 사용할 수 없어 ${candidate.label}(으)로 시작했습니다.`];
+        binding.notices = candidate.id === body.selected_model ? [] : [{ id: "notice:0", text: `${body.selected_model}을(를) 사용할 수 없어 ${candidate.label}(으)로 시작했습니다.`, at: binding.notices[0]?.at ?? new Date().toISOString() }];
         await this.repo.selection(id, candidate.id, binding.notices);
         result = await this.deps.create(request, { profile: body.profile, nodeId: PERSISTENT_CREATE_NODE_ID, folderId: body.collection,
           model_preset: candidate.id, initial_instruction: body.initial_instruction }, id, request.log);
@@ -184,21 +184,21 @@ export class ConversationService {
     if (result.status !== 201 || typeof item?.id !== "string") throw new ConversationError(503, "unavailable", "Could not add instructions");
     await this.repo.instruction(id, item.id);
   }
-  async adopt(request: Caller, account: string, namespace: string, key: string, id: string) {
+  async adopt(request: Caller, account: string, namespace: string, key: string, id: string, firstInputIsInitial = false) {
     let existing = await this.repo.byKey(account, namespace, key);
     if (existing) {
       await this.thread(request, existing);
-      if (existing.session_id !== id) throw new ConversationError(409, "conflict", "External key is already bound to another thread");
-      return { thread: await this.thread(request, existing), created: false, notices: existing.notices };
+      if (existing.session_id !== id || existing.first_input_is_initial_instruction !== firstInputIsInitial) throw new ConversationError(409, "conflict", "External key is already bound to another thread");
+      return { thread: await this.thread(request, existing), created: false, notices: existing.notices.map(n => n.text) };
     }
     await this.deps.access.requireSessionAccess({ request, sessionId: id });
     const row = await this.requireRow(id);
     const model = typeof row.model_preset === "string" ? row.model_preset : "";
     if (!model) throw new ConversationError(422, "invalid_request", "Session has no model");
-    const inserted = await this.repo.reserve(account, namespace, key, id, model, null, "complete", []);
+    const inserted = await this.repo.reserve(account, namespace, key, id, model, null, "complete", [], firstInputIsInitial);
     existing = await this.repo.byKey(account, namespace, key);
-    if (!existing || existing.session_id !== id) throw new ConversationError(409, "conflict", "Thread or external key is already bound");
-    return { thread: await this.thread(request, existing), created: inserted, notices: existing.notices };
+    if (!existing || existing.session_id !== id || existing.first_input_is_initial_instruction !== firstInputIsInitial) throw new ConversationError(409, "conflict", "Thread or external key is already bound");
+    return { thread: await this.thread(request, existing), created: inserted, notices: existing.notices.map(n => n.text) };
   }
   async patch(request: Caller, account: string, id: string, patch: PatchRequest) {
     const binding = await this.requireBinding(account, id);
@@ -246,6 +246,12 @@ export class ConversationService {
   }
   private async requireRow(id: string) { const row = await (await this.deps.reads()).getSession(id); if (!row) throw notFound(); return row; }
   private async requireBinding(account: string, id: string) { const b = await this.repo.byId(account, id); if (!b) throw notFound(); return b; }
+  async historyBinding(request: Caller, account: string, id: string): Promise<Binding> {
+    const binding = await this.requireBinding(account, id);
+    await this.thread(request, binding);
+    return binding;
+  }
+  get historySql(): SqlClient { return this.deps.sql; }
 }
 function notFound() { return new ConversationError(404, "not_found", "Thread not found"); }
 function pendingError(id: string) { return new ConversationError(504, "pending", "Thread creation is pending", id); }

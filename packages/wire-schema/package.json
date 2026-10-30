@@ -9,6 +9,7 @@
   "exports": {
     ".": "./generated/typescript/index.ts",
     "./delivery": "./src/delivery.ts",
+    "./conversation-visibility": "./src/conversation_visibility.ts",
     "./assigned-card-context-snapshot": "./src/assigned_card_context_snapshot.ts",
     "./schema": "./src/upstream.schema.json",
     "./persistent-jev-candidates": "./src/persistent_jev_candidates.ts",

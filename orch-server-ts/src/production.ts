@@ -1082,7 +1082,7 @@ export function buildProductionRouteOptions(
   return {
     config,
     corsAllowedOrigins,
-    ...(conversationService ? { conversationRoutes: { service: conversationService, resolveAccount: async (request) => {
+    ...(conversationService ? { conversationRoutes: { service: conversationService, liveEvents: providers.runtime.sessionHistoryRoutes.liveEvents, closeAfterHistorySync: providers.runtime.sessionHistoryRoutes.closeAfterHistorySync, resolveAccount: async (request) => {
       const service = verifyServiceBearerAuthorization(request.headers.authorization, config.authBearerToken, config.environment);
       if (service.ok && !service.developmentBypass) return "service-token";
       const email = await providers.authenticatedUserResolvers.resolveEmail(request);

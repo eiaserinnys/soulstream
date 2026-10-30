@@ -50,6 +50,14 @@ describe("conversation route authentication", () => {
       const denied = await get(token); expect(denied.statusCode).toBe(401);
       expect(denied.json()).toEqual({ error: { code: "login_required", message: "Authentication required" } });
     }
+    for (const path of ["/api/conversations/v1/threads/id/items", "/api/conversations/v1/threads/id/events"]) {
+      const missing = await app.inject({ method:"GET", url:path });
+      expect(missing.statusCode).toBe(401);
+      expect(missing.json().error.code).toBe("login_required");
+      const wrongScope = await app.inject({ method:"GET", url:path, headers:{ authorization:"Bearer wrong-scope-token" } });
+      expect(wrongScope.statusCode).toBe(403);
+      expect(wrongScope.json().error.code).toBe("forbidden");
+    }
     const other = await app.inject({ method: "GET", url: "/api/cards" });
     expect(other.statusCode).toBe(401); expect(other.json()).toEqual({ detail: "Authentication required" });
     expect(models).toHaveBeenCalledTimes(3);
