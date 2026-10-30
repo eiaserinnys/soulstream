@@ -15,6 +15,8 @@ type SessionSummaryQueryRow = HostSessionSummaryRow & {
 export interface HostSessionRow extends Record<string, unknown> {
   session_id: string;
   folder_id: string | null;
+  card_id?: string | null;
+  card_assignee_replacement?: { current_assignee_session_id: string } | null;
   predecessor_session_id: string | null;
 }
 
@@ -46,7 +48,34 @@ export class SessionReadRepository {
     const rows = await this.sql<HostSessionRow[]>`
       SELECT * FROM session_get(${sessionId})
     `;
-    return rows[0] ?? null;
+    const session = rows[0];
+    if (!session) return null;
+
+    let replacement: HostSessionRow["card_assignee_replacement"] = null;
+    if (session.card_id) {
+      const replacements = await this.sql<{
+        current_assignee_session_id: string;
+      }[]>`
+        SELECT c.assignee_session_id AS current_assignee_session_id
+        FROM cards c
+        WHERE c.id = ${session.card_id}
+          AND c.assignee_kind = 'session'
+          AND c.assignee_session_id IS NOT NULL
+          AND c.assignee_session_id <> ${sessionId}
+          AND EXISTS (
+            SELECT 1
+            FROM folder_operations op
+            WHERE op.target_kind = 'card'
+              AND op.target_id = c.id
+              AND op.operation_type = 'update_card'
+              AND op.payload_json->'replacement'->>'from_session_id' = ${sessionId}
+          )
+        LIMIT 1
+      `;
+      const current = replacements[0]?.current_assignee_session_id;
+      if (current) replacement = { current_assignee_session_id: current };
+    }
+    return { ...session, card_assignee_replacement: replacement };
   }
 
   /**

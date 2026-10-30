@@ -48,6 +48,22 @@ describe("card role in the session information", () => {
     const context = await resolvePrimarySessionFolderContext(dbWith({ agent_id: "roselin" }, null), logger, "session-1");
     expect(context).toEqual({ folder: { id: "folder-1", title: "폴더" }, card: null });
   });
+
+  it("identifies a replaced assignee as a member and gives the current handoff instruction", async () => {
+    const context = await resolvePrimarySessionFolderContext(dbWith({
+      agent_id: "roselin",
+      card_assignee_replacement: { current_assignee_session_id: "new-owner" },
+    }, { assigneeSessionId: "new-owner" }), logger, "session-1");
+
+    expect(context?.card).toEqual({
+      id: "card-1",
+      title: "카드",
+      status: "running",
+      role: "member",
+      replaced_by: "new-owner",
+      notice: "이 카드의 담당은 세션 new-owner로 넘어갔다. 이 카드의 일(카드 도구, 코드 수정, 머지, 배포)을 하지 않는다. 받은 보고나 결과는 new-owner에 send_message_to_session으로 넘기고 턴을 끝낸다.",
+    });
+  });
 });
 
 describe("applies_when card_role through the real session-to-compile path", () => {

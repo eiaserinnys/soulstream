@@ -744,6 +744,41 @@ describe("ExecutionContextBuilder.build — 기본 흐름", () => {
     expect(getPrimarySessionBoardItem).not.toHaveBeenCalled();
   });
 
+  it("교체된 옛 담당의 안내를 직렬화된 카드 블록에 싣는다", async () => {
+    const cb = makeBuilder({
+      getSession: vi.fn().mockResolvedValue({
+        folder_id: "folder-a",
+        card_id: "rb-item-13",
+        card_assignee_replacement: { current_assignee_session_id: "new-owner" },
+      }),
+      getFolderById: vi.fn().mockResolvedValue({
+        id: "folder-a",
+        name: "업무 폴더",
+        sort_order: 0,
+        settings: {},
+      }),
+      getCard: vi.fn().mockResolvedValue({ card: {
+        id: "rb-item-13",
+        folderId: "folder-a",
+        title: "연결 카드",
+        status: "running",
+        assigneeSessionId: "new-owner",
+      } }),
+    } as Partial<SessionDB>);
+
+    const ctx = await cb.build(makeTask(), codexAgent);
+    const content = ctx.combinedContextItems[0].content as Record<string, unknown>;
+
+    expect(content.card).toEqual({
+      id: "rb-item-13",
+      title: "연결 카드",
+      status: "running",
+      role: "member",
+      replaced_by: "new-owner",
+      notice: "이 카드의 담당은 세션 new-owner로 넘어갔다. 이 카드의 일(카드 도구, 코드 수정, 머지, 배포)을 하지 않는다. 받은 보고나 결과는 new-owner에 send_message_to_session으로 넘기고 턴을 끝낸다.",
+    });
+  });
+
   it("카드 없는 일반 폴더 세션은 폴더 정보만 싣는다", async () => {
     const getSession = vi.fn().mockResolvedValue({ folder_id: "folder-a" });
     const getFolderById = vi.fn().mockResolvedValue({

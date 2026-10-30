@@ -27,7 +27,14 @@ export interface SoulstreamContextParams {
   agentId?: string;
   callerInfo?: CallerInfo;
   folder?: SoulstreamFolderContext | null;
-  card?: { id: string; title: string; status: string; role: "assignee" | "member" } | null;
+  card?: {
+    id: string;
+    title: string;
+    status: string;
+    role: "assignee" | "member";
+    replaced_by?: string;
+    notice?: string;
+  } | null;
 }
 
 /**

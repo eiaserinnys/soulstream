@@ -8,7 +8,14 @@ export type SessionCardRole = "assignee" | "member";
 
 export interface PrimarySessionFolderContext {
   folder: SoulstreamFolderContext;
-  card?: { id: string; title: string; status: string; role: SessionCardRole } | null;
+  card?: {
+    id: string;
+    title: string;
+    status: string;
+    role: SessionCardRole;
+    replaced_by?: string;
+    notice?: string;
+  } | null;
 }
 
 export async function resolvePrimarySessionFolderContext(
@@ -42,7 +49,18 @@ export async function resolvePrimarySessionFolderContext(
   if (cardId) {
     try {
       const { card: row } = await db.getCard(cardId, sessionId);
-      card = { id: row.id, title: row.title, status: row.status, role: resolveCardRole(row, session!, sessionId) };
+      const replacement = session!.card_assignee_replacement;
+      const currentAssigneeSessionId = replacement?.current_assignee_session_id;
+      card = {
+        id: row.id,
+        title: row.title,
+        status: row.status,
+        role: currentAssigneeSessionId ? "member" : resolveCardRole(row, session!, sessionId),
+        ...(currentAssigneeSessionId ? {
+          replaced_by: currentAssigneeSessionId,
+          notice: `이 카드의 담당은 세션 ${currentAssigneeSessionId}로 넘어갔다. 이 카드의 일(카드 도구, 코드 수정, 머지, 배포)을 하지 않는다. 받은 보고나 결과는 ${currentAssigneeSessionId}에 send_message_to_session으로 넘기고 턴을 끝낸다.`,
+        } : {}),
+      };
     } catch (err) {
       logger.warn({ err, sessionId, cardId }, "session card lookup failed");
     }

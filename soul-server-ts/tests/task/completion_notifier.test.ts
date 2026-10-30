@@ -139,7 +139,7 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("gate OFF는 ownership DB를 조회하지 않고 legacy local-first로 즉시 전달한다", async () => {
+  it("gate OFF도 child caller를 읽고 legacy local-first delivery를 유지한다", async () => {
     const tm = makeTaskManagerStub();
     const getSession = vi.fn(async () => {
       throw new Error("gate-off path must not touch the DB");
@@ -160,7 +160,7 @@ describe("TaskCompletionNotifier.notify", () => {
 
     await notifier.notify(makeChild());
 
-    expect(getSession).not.toHaveBeenCalled();
+    expect(getSession).toHaveBeenCalledWith("child-sess-1");
     expect(tm.addIntervention).toHaveBeenCalledTimes(1);
   });
 
@@ -254,7 +254,9 @@ describe("TaskCompletionNotifier.notify", () => {
       makeOrch(),
       vi.fn(),
       {
-        getSession: vi.fn().mockResolvedValue({ node_id: NODE_ID }),
+        getSession: vi.fn(async (sessionId: string) => sessionId === "child-sess-1"
+          ? { card_id: "card-1", caller_session_id: "caller-db-current" }
+          : { node_id: NODE_ID }),
       } as never,
       true,
       repository as never,
@@ -263,7 +265,7 @@ describe("TaskCompletionNotifier.notify", () => {
     await notifier.notify(makeChild({
       lastEventId: 57,
       terminalEventId: 42,
-      callerSessionId: "caller-current",
+      callerSessionId: "caller-memory-old",
       callerInfo: {
         source: "agent",
         agent_id: "seosoyoung-opus",
@@ -276,7 +278,7 @@ describe("TaskCompletionNotifier.notify", () => {
     const params = tm.addIntervention.mock.calls[0]![0] as AddInterventionParams;
 
     expect(params).toMatchObject({
-      agentSessionId: "caller-current",
+      agentSessionId: "caller-db-current",
       deliveryIntent: "completion_notification",
       source: "completion_notifier",
       rateLimitType: "seven_day",
@@ -485,7 +487,9 @@ describe("TaskCompletionNotifier.notify", () => {
       makeOrch(),
       fetchImpl as typeof fetch,
       {
-        getSession: vi.fn().mockResolvedValue({ node_id: "node-remote" }),
+        getSession: vi.fn(async (sessionId: string) => sessionId === "child-sess-1"
+          ? { card_id: "card-1", caller_session_id: "ordinary-agent-caller-new" }
+          : { node_id: "node-remote" }),
       } as never,
       true,
       repository as never,
@@ -493,7 +497,7 @@ describe("TaskCompletionNotifier.notify", () => {
     const child = makeChild({
       lastEventId: 44,
       terminalEventId: 44,
-      callerSessionId: "ordinary-agent-caller-remote",
+      callerSessionId: "ordinary-agent-caller-old",
       callerInfo: {
         source: "agent",
         agent_id: "seosoyoung-opus",
@@ -509,7 +513,7 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(accepted).toHaveLength(1);
     expect(relayedBodies[0]).toEqual(relayedBodies[1]);
     expect(accepted[0]).toMatchObject({
-      agentSessionId: "ordinary-agent-caller-remote",
+      agentSessionId: "ordinary-agent-caller-new",
       user: "agent",
       deliveryId: relayedBodies[0]?.delivery_id,
       deliveryIntent: "completion_notification",
@@ -670,6 +674,69 @@ describe("TaskCompletionNotifier.notify", () => {
     expect(tm.addIntervention).toHaveBeenCalledTimes(1);
     expect(tm.addIntervention.mock.calls[0]![0].agentSessionId).toBe("caller-old");
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("card child completion follows the caller read from the current session row", async () => {
+    const tm = makeTaskManagerStub();
+    const getSession = vi.fn(async (sessionId: string) => sessionId === "child-sess-1"
+      ? { card_id: "card-1", caller_session_id: "caller-new" }
+      : null);
+    const notifier = new TaskCompletionNotifier(
+      NODE_ID,
+      tm.taskManager,
+      makeAgentRegistry(),
+      vi.fn(),
+      silentLogger,
+      makeOrch(),
+      vi.fn(),
+      { getSession } as never,
+    );
+
+    await notifier.notify(makeChild({ callerSessionId: "caller-old" }));
+
+    expect(getSession).toHaveBeenCalledWith("child-sess-1");
+    expect(tm.addIntervention.mock.calls[0]![0].agentSessionId).toBe("caller-new");
+  });
+
+  it("cardless completion keeps the in-memory caller", async () => {
+    const tm = makeTaskManagerStub();
+    const getSession = vi.fn().mockResolvedValue({ card_id: null, caller_session_id: "caller-db" });
+    const notifier = new TaskCompletionNotifier(
+      NODE_ID,
+      tm.taskManager,
+      makeAgentRegistry(),
+      vi.fn(),
+      silentLogger,
+      makeOrch(),
+      vi.fn(),
+      { getSession } as never,
+    );
+
+    await notifier.notify(makeChild({ callerSessionId: "caller-memory" }));
+
+    expect(tm.addIntervention.mock.calls[0]![0].agentSessionId).toBe("caller-memory");
+  });
+
+  it("a failed child lookup warns and keeps the in-memory caller", async () => {
+    const tm = makeTaskManagerStub();
+    const warn = vi.fn();
+    const logger = { warn, info: vi.fn(), error: vi.fn() } as never;
+    const getSession = vi.fn().mockRejectedValue(new Error("database unavailable"));
+    const notifier = new TaskCompletionNotifier(
+      NODE_ID,
+      tm.taskManager,
+      makeAgentRegistry(),
+      vi.fn(),
+      logger,
+      makeOrch(),
+      vi.fn(),
+      { getSession } as never,
+    );
+
+    await notifier.notify(makeChild({ callerSessionId: "caller-memory" }));
+
+    expect(tm.addIntervention.mock.calls[0]![0].agentSessionId).toBe("caller-memory");
+    expect(warn).toHaveBeenCalled();
   });
 
   it("v2 target claim 실패는 pending을 남기고 같은 explicit identity만 재시도한다", async () => {

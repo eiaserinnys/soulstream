@@ -48,3 +48,7 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 `task_running_intervention_transition.ts:tryIntervene` → 러너 generic invoke → `engine/antigravity/adapter.ts:intervene`은 agy 그룹을 SIGINT로 중단하고 `not_delivered / interrupt_then_next_turn / next_turn_required`를 반환한다. 기존 acceptance 게시와 enqueue, interruptRequest 장벽 이후 턴 루프가 즉시 다음 execute를 시작한다. acceptance는 엔진 소비 증거와 별개이며 일반 메시지·위임 완료 보고의 소비는 기존 `task_delivery_turn_receipt.ts:observe`가 다음 턴의 일반 이벤트에서 확인한다.
 
 Antigravity는 Claude background runtime follow-up 생산자가 없어 해당 전달용 exact receipt와 새 metadata를 추가하지 않는다. 기존 ledger writer/TTL/정책은 그대로다. 예상 중단은 complete/error를 생성하지 않고 스트림을 끝내며, init ID가 있는 러너는 이를 기존 정상 lifecycle 종료로 처리한다. init 이전에 중단 요청이 오면 반환은 즉시 하고, init 직후 SIGINT를 보내 대화 ID를 먼저 공개한다. init 없이 스스로 끝난 CLI는 기존 일반 실패 경로를 따른다.
+
+## 카드 담당 교체 후 완료 caller
+
+카드에 연결된 자식 세션의 완료 알림은 알림 생성 직전에 세션 저장소에서 최신 `card_id`와 `caller_session_id`를 다시 읽는다. 둘 다 있으면 최신 caller를 self-check, durable enqueue, relay의 대상으로 쓴다. 카드가 없거나 caller가 비어 있거나 세션 조회가 실패하면 기존 메모리 caller를 쓰며, 조회 실패는 경고 로그로 남긴다. 교체 전에 이미 등록된 완료 delivery의 대상은 바꾸지 않는다.

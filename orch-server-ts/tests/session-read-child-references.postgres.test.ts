@@ -29,6 +29,18 @@ describe("active child sessions carry their card reference", () => {
       ('child-cardless','running','owner',NULL,'카드 없는 세션','2026-01-05T00:00:00Z'),
       ('finished-child','completed','owner','card-numbered','끝난 세션','2026-01-06T00:00:00Z'),
       ('other-owners-child','running','someone-else','card-numbered','남의 세션','2026-01-07T00:00:00Z')`;
+    await h.sql`INSERT INTO folders(id,name) VALUES ('replacement-folder','교체 폴더')`;
+    await h.sql`INSERT INTO sessions(session_id,status,folder_id,caller_session_id) VALUES
+      ('replacement-old','completed','replacement-folder',NULL),
+      ('replacement-current','running','replacement-folder',NULL),
+      ('replacement-member','running','replacement-folder','replacement-current')`;
+    await h.sql`INSERT INTO cards(id,folder_id,position_key,title,status,assignee_kind,assignee_session_id)
+      VALUES ('replacement-card','replacement-folder','a','교체 카드','running','session','replacement-current')`;
+    await h.sql`UPDATE sessions SET card_id='replacement-card'
+      WHERE session_id IN ('replacement-old','replacement-current','replacement-member')`;
+    await h.sql`INSERT INTO folder_operations(id,folder_id,target_kind,target_id,operation_type,payload_json)
+      VALUES ('replacement-op','replacement-folder','card','replacement-card','update_card',
+        '{"assignee":{"kind":"session","sessionId":"replacement-current"},"replacement":{"from_session_id":"replacement-old","to_session_id":"replacement-current","dispatch_operation_id":"dispatch-op"}}'::jsonb)`;
   }, 60_000);
 
   afterAll(async () => { await h?.cleanup(); });
@@ -48,5 +60,17 @@ describe("active child sessions carry their card reference", () => {
 
   it("returns an empty list without asking for references when the caller has no active children", async () => {
     await expect(repository.listActiveChildSessionsSummary("nobody")).resolves.toEqual({ sessions: [], total: 0 });
+  });
+
+  it("adds the current assignee only to a session recorded as replaced", async () => {
+    await expect(repository.getSession("replacement-old")).resolves.toMatchObject({
+      card_assignee_replacement: { current_assignee_session_id: "replacement-current" },
+    });
+    await expect(repository.getSession("replacement-current")).resolves.toMatchObject({
+      card_assignee_replacement: null,
+    });
+    await expect(repository.getSession("replacement-member")).resolves.toMatchObject({
+      card_assignee_replacement: null,
+    });
   });
 });
