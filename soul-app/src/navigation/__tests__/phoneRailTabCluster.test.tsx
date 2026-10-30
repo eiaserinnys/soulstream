@@ -1,8 +1,11 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
+const mockShowMenu = jest.fn();
+const mockSetSettingsOpen = jest.fn();
+jest.mock('../../components/menus/AppContextMenu', () => ({ showAppContextMenu: (...args: unknown[]) => mockShowMenu(...args) }));
 jest.mock('../PersistentSessionContext', () => ({
   usePersistentSessionHost: () => ({ loading: false, portrait: null }),
-  usePersistentSessionScene: (select: (state: { scene: string }) => unknown) => select({ scene: 'chat' }),
+  usePersistentSessionScene: (select: (state: any) => unknown) => select({ scene: 'conversation', session: { agent_name: '서소영' }, setSettingsOpen: mockSetSettingsOpen }),
 }));
 
 import React from 'react';
@@ -39,4 +42,27 @@ test('PAS 탭이 활성이고 대화 장면이면 카드 목록 보기로 안내
   );
 
   expect(screen.getByTestId('phone-tab-PersistentTab').props.accessibilityLabel).toBe('카드 목록 보기');
+});
+
+test('PAS 메뉴는 듀오 띠에서 PAS 탭이 활성일 때만 보인다', () => {
+  const onSelect = jest.fn();
+  const screen = render(<NavigationContainer>
+    <PhoneRailTabCluster active="PersistentTab" onSelect={onSelect} duoSideBand />
+  </NavigationContainer>);
+  expect(screen.getByLabelText('PAS 메뉴')).toBeTruthy();
+  fireEvent.press(screen.getByLabelText('PAS 메뉴'));
+  expect(mockShowMenu).toHaveBeenCalledWith(expect.arrayContaining([
+    expect.objectContaining({ label: '밝기 전환' }),
+    expect.objectContaining({ label: '영구 세션 설정' }),
+  ]), '서소영');
+  mockShowMenu.mock.calls.at(-1)?.[0].find((action: any) => action.label === '영구 세션 설정').onSelect();
+  expect(mockSetSettingsOpen).toHaveBeenCalledWith(true);
+  screen.rerender(<NavigationContainer>
+    <PhoneRailTabCluster active="DailyTab" onSelect={onSelect} duoSideBand />
+  </NavigationContainer>);
+  expect(screen.queryByLabelText('PAS 메뉴')).toBeNull();
+  screen.rerender(<NavigationContainer>
+    <PhoneRailTabCluster active="PersistentTab" onSelect={onSelect} duoSideBand={false} />
+  </NavigationContainer>);
+  expect(screen.queryByLabelText('PAS 메뉴')).toBeNull();
 });

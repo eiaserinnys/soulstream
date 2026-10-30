@@ -36,6 +36,9 @@ import { useOpenContentLink } from '../hooks/useOpenContentLink';
 import { decodeAuthJwt } from '../auth/jwt-payload';
 import { usePersistentSessionHost, usePersistentSessionScene } from '../navigation/PersistentSessionContext';
 import { usePhoneRailMode } from '../navigation/tabContract';
+import { useDuoSideBand } from '../navigation/duoSideBand';
+import { RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
+import { usePasContextMenu } from '../components/persistent/usePasContextMenu';
 import { useAuthStore } from '../store/authStore';
 import { useChatStore } from '../store/chatStore';
 import { useSessionStore } from '../store/sessionStore';
@@ -66,6 +69,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const device = useDeviceType();
   const phone = device === 'phone';
   const railMode = usePhoneRailMode();
+  const duoSideBand = useDuoSideBand();
   const { fontScale } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const host = usePersistentSessionHost();
@@ -99,7 +103,12 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const continuity = useOptionalLayoutContinuity();
   const pasKey = JSON.stringify(['pas', session?.session_id]);
   const savedPas = continuity?.getViewState<{ settingsOpen?: boolean; expandedKey?: string | null }>(pasKey);
-  const [settingsOpen, setSettingsOpen] = useState(savedPas?.settingsOpen ?? false);
+  const settingsOpen = usePersistentSessionScene(state => state.settingsOpen);
+  const setSettingsOpen = usePersistentSessionScene(state => state.setSettingsOpen);
+  const showPasMenu = usePasContextMenu(phone ? undefined : onHome);
+  React.useLayoutEffect(() => {
+    if (savedPas?.settingsOpen !== undefined) setSettingsOpen(savedPas.settingsOpen);
+  }, []);
   const [reportCard, setReportCard] = useState<PersistentReportEntry | null>(() => report.entries.find(entry => entry.key === savedPas?.expandedKey) ?? null);
   const [reportCardSheetEntry, setReportCardSheetEntry] = useState<PersistentReportEntry | null>(() => report.entries.find(entry => entry.key === savedPas?.expandedKey) ?? null);
   const reportCardScroll = useReportComposerScroll();
@@ -142,10 +151,16 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   }, []);
   const [usageHeight, setUsageHeight] = useState(0);
   const compact = phone || (app?.height ?? Infinity) < FRAME.compactHeight;
-  const headerHeight = compact ? FRAME.compactHeader : FRAME.header;
+  const headerHeight = duoSideBand ? 0 : compact ? FRAME.compactHeader : FRAME.header;
   const portrait = app ? app.height > app.width : false;
   const widths = portrait ? FRAME.portrait : FRAME.landscape;
-  const columnWidth = phone ? Math.max(0, (app?.width ?? 0) - t.foundation.pageInset * 2) : widths.conversation;
+  const hasWeeklyUsage = Boolean(session?.node_id && showWeeklyUsage);
+  const usageInColumn = !!app && !phone && hasWeeklyUsage
+    && (duoSideBand || (!(Platform as { isPad?: boolean }).isPad
+      && (app.width + widths.conversation) / 2 > app.width - t.foundation.pageInset - (widths.tasks - 2 * t.uiSpacing.sm)));
+  const rightColumnVisible = scene === 'cards' || usageInColumn;
+  const columnWidth = phone ? Math.max(0, (app?.width ?? 0) - t.foundation.pageInset * 2)
+    : duoSideBand && rightColumnVisible ? FRAME.portrait.conversation : widths.conversation;
   // 카드 장면에서는 우측 카드 패널(tasks)과 겹치지 않도록 대화 열을 왼쪽으로 밀되,
   // 화면 중앙보다 오른쪽으로는 가지 않는다. 넓은 화면에서는 중앙 배치가 유지된다.
   const columnLeft = app
@@ -154,13 +169,12 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       columnWidth,
       tasksWidth: widths.tasks,
       phone,
-      cardsScene: scene === 'cards',
+      cardsScene: rightColumnVisible,
       pageInset: t.foundation.pageInset,
       gap: t.spacing.md,
       cardPanelRightOffset: t.foundation.pageInset - t.uiSpacing.sm,
     })
     : 0;
-  const hasWeeklyUsage = Boolean(session?.node_id && showWeeklyUsage);
   const usageSummary = useUsageSummary({ enabled: active && !phone && hasWeeklyUsage, nodeId: session?.node_id ?? null,
     selectedNodeId: selectedUsageNodeId, api });
   React.useEffect(() => {
@@ -243,12 +257,24 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       onPress={onPress} testID={testID} surfaceTestID={`${testID}-visual`}>
       <Ionicons name={icon} size={t.iconSize.navigation} color={selected ? t.colors.accent : t.colors.textPrimary} />
     </LiquidGlassButton>;
+  const weeklyUsage = <PersistentSessionWeeklyUsage node={usageSummary.node} gauges={usageSummary.gauges}
+    loading={usageSummary.loading} loadState={usageSummary.loadState}
+    evaluatedAtMs={usageSummary.evaluatedAtMs} onRetry={usageSummary.retry}
+    onNextNode={() => {
+      if (!session?.node_id) return;
+      const nextNodeId = nextUsageSummaryNodeId(usageSummary.summary, usageSummary.node?.nodeId ?? null);
+      if (!nextNodeId) return;
+      useSettingsStore.getState().setPersistentSessionWeeklyUsageNodeSelection(serverUrl, email,
+        { configuredNodeId: session.node_id, selectedNodeId: nextNodeId });
+    }} />;
+  const taskList = <PersistentSessionTaskList api={api} visible={!selectedCardId}
+    onOpenCard={cardId => phone && onOpenPhoneCard ? onOpenPhoneCard(cardId) : host.store.getState().selectCard(cardId)} />;
   return <SafeAreaView testID="persistent-session-safe-area" edges={phone
     ? railMode ? ['top', 'bottom', 'left'] : ['top', 'left', 'right']
     : ['top', 'left', 'right']}
     style={{ flex: 1, backgroundColor: t.persistentSession.paper }}>
     <View ref={appRef} testID="persistent-session-screen" style={{ flex: 1 }} onLayout={measureApp} {...(phone ? gestures.panHandlers : {})}>
-      <View testID="persistent-session-header" style={{ height: headerHeight, flexDirection: 'row', alignItems: 'center',
+      {!duoSideBand ? <View testID="persistent-session-header" style={{ height: headerHeight, flexDirection: 'row', alignItems: 'center',
         paddingLeft: t.foundation.pageInset, paddingRight: t.foundation.pageInset - (t.hitTarget.min - t.foundation.iconFrame.compact) / 2,
         gap: t.uiSpacing.sm }}>
         {phone
@@ -264,22 +290,13 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
         }, 'persistent-session-weekly-usage-toggle', showWeeklyUsage) : null}
         {action('options-outline', '영구 세션 설정', () => setSettingsOpen(true), 'persistent-session-settings')}
         {phone ? action('list-outline', scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기', () => host.store.getState().toggleScene(), 'persistent-session-tasks') : null}
-      </View>
-      {!phone && hasWeeklyUsage && app && geometry ? <View testID="persistent-session-weekly-usage-seat" onLayout={event => {
+      </View> : null}
+      {!phone && hasWeeklyUsage && !usageInColumn && app && geometry ? <View testID="persistent-session-weekly-usage-seat" onLayout={event => {
         const height = event.nativeEvent.layout.height;
         setUsageHeight(current => current === height ? current : height);
       }} style={{ position: 'absolute', right: t.foundation.pageInset, width: widths.tasks - 2 * t.uiSpacing.sm,
         bottom: app.height - geometry.lineY }}>
-        <PersistentSessionWeeklyUsage node={usageSummary.node} gauges={usageSummary.gauges}
-          loading={usageSummary.loading} loadState={usageSummary.loadState}
-          evaluatedAtMs={usageSummary.evaluatedAtMs} onRetry={usageSummary.retry}
-          onNextNode={() => {
-            if (!session?.node_id) return;
-            const nextNodeId = nextUsageSummaryNodeId(usageSummary.summary, usageSummary.node?.nodeId ?? null);
-            if (!nextNodeId) return;
-            useSettingsStore.getState().setPersistentSessionWeeklyUsageNodeSelection(serverUrl, email,
-              { configuredNodeId: session.node_id, selectedNodeId: nextNodeId });
-          }} />
+        {weeklyUsage}
       </View> : null}
       <View ref={mainRef} testID="persistent-session-conversation" pointerEvents={phoneCardsScene ? 'none' : 'auto'}
         accessibilityElementsHidden={phoneCardsScene} importantForAccessibility={phoneCardsScene ? 'no-hide-descendants' : 'auto'}
@@ -330,14 +347,23 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
             size={t.iconSize.navigation} color={display?.show_character ? t.colors.textPrimary : t.colors.textMuted} />
         </LiquidGlassButton>
       </View> : null}
-      {!phone ? <View style={{ position: 'absolute', top: headerHeight, right: t.foundation.pageInset - (t.hitTarget.min - t.foundation.iconFrame.compact) / 2 }}>
+      {!phone && !duoSideBand ? <View style={{ position: 'absolute', top: headerHeight, right: t.foundation.pageInset - (t.hitTarget.min - t.foundation.iconFrame.compact) / 2 }}>
         {action('list-outline', scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기', () => host.store.getState().toggleScene(), 'persistent-session-tasks')}
       </View> : null}
-      {scene === 'cards' ? <View testID="persistent-session-card-panel" style={{ position: 'absolute',
-        top: phone ? headerHeight : headerHeight + t.hitTarget.min,
+      {usageInColumn ? <View testID="persistent-session-usage-column" style={{ position: 'absolute',
+        top: headerHeight + (duoSideBand ? 0 : t.hitTarget.min),
+        bottom: Math.max(insets.bottom, keyboardOverlap), right: t.foundation.pageInset - t.uiSpacing.sm,
+        width: widths.tasks, paddingHorizontal: t.uiSpacing.sm, gap: t.spacing.xl }}>
+        {weeklyUsage}
+        {scene === 'cards' ? <View testID="persistent-session-card-panel" style={{ flex: 1, minHeight: 0 }}>
+          {taskList}
+        </View> : null}
+      </View> : null}
+      {scene === 'cards' && !usageInColumn ? <View testID="persistent-session-card-panel" style={{ position: 'absolute',
+        top: phone || duoSideBand ? headerHeight : headerHeight + t.hitTarget.min,
         ...(phone ? { bottom: 0 } : { maxHeight: !phone && hasWeeklyUsage && geometry
           ? Math.max(0, geometry.lineY - usageHeight - t.spacing.xl - (headerHeight + t.hitTarget.min))
-          : Math.max(0, (portrait && geometry ? geometry.lineY : app?.height ?? 0) - headerHeight - t.hitTarget.min - t.uiSpacing.md) }),
+          : Math.max(0, (portrait && geometry ? geometry.lineY : app?.height ?? 0) - headerHeight - (duoSideBand ? 0 : t.hitTarget.min) - t.uiSpacing.md) }),
         right: phone ? 0 : t.foundation.pageInset - t.uiSpacing.sm,
         width: phone ? '100%' : widths.tasks,
         backgroundColor: t.persistentSession.paper,
@@ -345,8 +371,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
         borderWidth: 0, borderColor: t.persistentSession.line,
         paddingHorizontal: phone ? t.foundation.pageInset : t.uiSpacing.sm,
         paddingTop: phone ? t.uiSpacing.md : 0, paddingBottom: phone ? 0 : insets.bottom }}>
-        <PersistentSessionTaskList api={api} visible={!selectedCardId}
-          onOpenCard={cardId => phone && onOpenPhoneCard ? onOpenPhoneCard(cardId) : host.store.getState().selectCard(cardId)} />
+        {taskList}
       </View> : null}
       <PersistentSessionCardOverlay api={api} cardId={scene === 'cards' ? selectedCardId : null}
         sessionId={session?.session_id} bottomSafeAreaInset={insets.bottom}
@@ -354,6 +379,22 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       {settingsOpen && session ? <PersistentSessionPasSettingsModal sessionId={session.session_id} nodeId={session.node_id ?? ''}
         onClose={() => setSettingsOpen(false)} /> : null}
     </View>
+    {!phone && duoSideBand ? <View testID="persistent-session-duo-band" style={{ position: 'absolute', right: 0,
+      bottom: Math.max(keyboardOverlap, insets.bottom, t.uiSpacing.xxl), width: insets.right, alignItems: 'center' }}>
+      <RailCapsule testID="persistent-session-duo-capsule">
+        <RailCapsuleItem testID="persistent-session-duo-tasks" label={scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기'}
+          onPress={() => host.store.getState().toggleScene()}>
+          <Ionicons name="list-outline" size={t.iconSize.standard} color={t.colors.textMuted} />
+        </RailCapsuleItem>
+        {session?.node_id ? <RailCapsuleItem testID="persistent-session-duo-usage" label="주간 사용량" selected={showWeeklyUsage}
+          onPress={() => useSettingsStore.getState().setPersistentSessionShowWeeklyUsage(serverUrl, email, !showWeeklyUsage)}>
+          <Ionicons name="speedometer-outline" size={t.iconSize.standard} color={showWeeklyUsage ? t.colors.accent : t.colors.textMuted} />
+        </RailCapsuleItem> : null}
+        <RailCapsuleItem testID="persistent-session-duo-menu" label="PAS 메뉴" onPress={showPasMenu}>
+          <Ionicons name="ellipsis-horizontal" size={t.iconSize.standard} color={t.colors.textMuted} />
+        </RailCapsuleItem>
+      </RailCapsule>
+    </View> : null}
     {phone && reportCardSheetEntry && isPersistentReportCardExpandable(reportCardSheetEntry) ? <AppModalSurface visible={reportCard !== null} modalId="modal_card_detail"
       variant="expanded" presentationStyle="pageSheet" onRequestClose={closeReportCard} onDismiss={onReportCardSheetDismiss} surfaceTestID="persistent-session-report-card-sheet">
       <PersistentReportCardSheetHeader entry={reportCardSheetEntry} onCollapse={closeReportCard} />

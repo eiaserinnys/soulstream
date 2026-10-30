@@ -26,7 +26,7 @@ import {
 import { nativeSettingsReviewApi } from './native-settings-fixtures';
 import { dialogueApi } from './dialogue-fixtures';
 import { createOwnedAgentsReviewApi } from './ReviewOwnedAgents';
-import { createPersistentFullscreenReviewApi } from './persistent-fullscreen-fixtures';
+import { createPersistentFullscreenReviewApi, persistentWeeklyUsageReviewSummary } from './persistent-fullscreen-fixtures';
 import { contentLinkReviewSessionEventsUrl } from './chat-fixtures';
 import { createChatUiFlowReviewApi } from './chat-ui-flow-client';
 import { createPersistentReportReviewApi } from './persistent-report-fixtures';
@@ -448,7 +448,10 @@ export function createApiClient(baseUrl = ''): ApiClient {
       catalogStreamUrl: entryShellApi.catalogStreamUrl,
     };
     return new URLSearchParams(window.location.search).get('sample') === 'pas-layout'
-      ? { ...api, ...createReviewCardApi() } as unknown as ApiClient
+      ? { ...api, ...createReviewCardApi(), getUsageSummary: async () => ({
+        ...persistentWeeklyUsageReviewSummary,
+        nodes: persistentWeeklyUsageReviewSummary.nodes.map((node, index) => index === 0 ? { ...node, nodeId: 'public-node' } : node),
+      }) } as unknown as ApiClient
       : api as unknown as ApiClient;
   }
   if (section === 'nativeSettings') return { ...nativeSettingsApi, ...usageEndpoints } as unknown as ApiClient;

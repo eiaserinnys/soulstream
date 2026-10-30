@@ -6,6 +6,8 @@ export interface PersistentSessionScene {
   scene: 'conversation' | 'cards';
   selectedCardId: string | null;
   visible: boolean;
+  settingsOpen: boolean;
+  setSettingsOpen: (open: boolean) => void;
   leave: () => void;
   open: (session: PersistentSessionResource) => void;
   toggleScene: () => void;
@@ -20,6 +22,8 @@ export function createPersistentSessionScene() {
     scene: 'conversation',
     selectedCardId: null,
     visible: false,
+    settingsOpen: false,
+    setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
     leave: () => set({ visible: false }),
     open: (session) => set({ session, scene: 'conversation', selectedCardId: null, visible: true }),
     toggleScene: () => set((state) => ({

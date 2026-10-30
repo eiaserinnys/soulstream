@@ -10,7 +10,7 @@ import { AppModalSurface } from '../components/AppModalSurface';
 import { GroupedGlassRow, GroupedGlassSheet } from '../components/planner/GroupedGlassSheet';
 import { ENTRY_SHELL_ALERT_EVENT, installEntryShellPublicHarness, type EntryShellAlertRequest } from './fixture-client';
 
-function EntryShellAlertHarness() {
+export function EntryShellAlertHarness() {
   const t = useTokens();
   const [request, setRequest] = useState<EntryShellAlertRequest | null>(null);
   const selectedButton = useRef<AlertButton | undefined>(undefined);
