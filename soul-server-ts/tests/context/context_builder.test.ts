@@ -3,6 +3,7 @@
  */
 
 import pino from "pino";
+import type { Logger } from "pino";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AgentRegistry, type AgentProfile } from "../../src/agent_registry.js";
@@ -18,6 +19,7 @@ import {
   composeFirstTurnPromptWithMaterial,
 } from "../../src/context/context_builder.js";
 import { createInputMaterialPart } from "../../src/context/input_material_parts.js";
+import { buildCardAssigneeReplacementNotice } from "../../src/context/session_folder_context.js";
 import type { CogitoContextConfig } from "../../src/context/cogito_context.js";
 import type { NodeResourcesContextConfig } from "../../src/context/node_resources_context.js";
 import { ATOM_CONTEXT_HEADER } from "../../src/context/atom_context.js";
@@ -130,6 +132,7 @@ function makeBuilder(
   cogito?: CogitoContextConfig,
   pageContextResolver?: PageContextResolver,
   nodeResources?: NodeResourcesContextConfig,
+  logger = silentLogger,
 ): ExecutionContextBuilder {
   const getSession = vi.fn().mockResolvedValue(null);
   const getFolderById = vi.fn().mockResolvedValue(null);
@@ -151,7 +154,7 @@ function makeBuilder(
       ...(cogito ? { cogito } : {}),
       ...(nodeResources ? { nodeResources } : {}),
     },
-    silentLogger,
+    logger,
     pageContextResolver,
   );
 }
@@ -1898,6 +1901,79 @@ describe("ExecutionContextBuilder.buildFollowupContext — turn별 동적 contex
     expect(ctx.contextItems.map((item) => item.key)).toEqual(["running_sessions" , "assigned_cards"]);
   });
 
+  it("교체된 옛 담당의 일반 후속 턴에 현재 담당 안내를 싣는다", async () => {
+    const getSession = vi.fn().mockResolvedValue({
+      card_id: "card-1",
+      card_assignee_replacement: { current_assignee_session_id: "new-owner" },
+    });
+    const cb = makeBuilder({
+      getSession: getSession as never,
+      listRunningSessionsSummary: vi.fn().mockResolvedValue({ sessions: [], total: 0 }) as never,
+      getAssignedCardContext: vi.fn().mockResolvedValue({
+        capturedAt: "2026-10-30T00:00:00.000Z", total: 1, omitted: 0,
+        cards: [{ id: "other-card", title: "다른 카드", status: "running", latestCommentAt: null, latestReportAt: null }],
+      }) as never,
+    });
+
+    const ctx = await cb.buildFollowupContext(makeTask(), codexAgent);
+
+    expect(getSession).toHaveBeenCalledWith("sess-1");
+    expect(ctx.contextItems.map((item) => item.key)).toEqual([
+      "running_sessions",
+      "assigned_cards",
+      "card_assignee_replacement",
+    ]);
+    expect(ctx.contextItems.at(-1)).toEqual({
+      key: "card_assignee_replacement",
+      content: {
+        card_id: "card-1",
+        replaced_by: "new-owner",
+        notice: buildCardAssigneeReplacementNotice("new-owner"),
+      },
+    });
+  });
+
+  it.each([
+    ["현재 담당", { card_id: "card-1", card_assignee_replacement: null }],
+    ["일반 소속 세션", { card_id: "card-1", card_assignee_replacement: null }],
+    ["카드 없는 세션", { card_id: null, card_assignee_replacement: null }],
+  ])("%s에는 교체 안내 항목을 싣지 않는다", async (_name, session) => {
+    const getSession = vi.fn().mockResolvedValue(session);
+    const cb = makeBuilder({
+      getSession: getSession as never,
+      listRunningSessionsSummary: vi.fn().mockResolvedValue({ sessions: [], total: 0 }) as never,
+      getAssignedCardContext: vi.fn().mockResolvedValue({
+        capturedAt: "2026-10-30T00:00:00.000Z", total: 0, omitted: 0, cards: [],
+      }) as never,
+    });
+
+    const ctx = await cb.buildFollowupContext(makeTask(), codexAgent);
+
+    expect(getSession).toHaveBeenCalledWith("sess-1");
+    expect(ctx.contextItems.map((item) => item.key)).toEqual(["running_sessions"]);
+  });
+
+  it("교체 안내 조회가 실패하면 경고만 남기고 나머지 후속 문맥을 유지한다", async () => {
+    const error = new Error("session lookup unavailable");
+    const getSession = vi.fn().mockRejectedValue(error);
+    const logger = { warn: vi.fn() } as unknown as Logger;
+    const cb = makeBuilder({
+      getSession: getSession as never,
+      listRunningSessionsSummary: vi.fn().mockResolvedValue({ sessions: [], total: 0 }) as never,
+      getAssignedCardContext: vi.fn().mockResolvedValue({
+        capturedAt: "2026-10-30T00:00:00.000Z", total: 0, omitted: 0, cards: [],
+      }) as never,
+    }, undefined, false, undefined, undefined, undefined, logger);
+
+    const ctx = await cb.buildFollowupContext(makeTask(), codexAgent);
+
+    expect(ctx.contextItems.map((item) => item.key)).toEqual(["running_sessions"]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      { err: error, sessionId: "sess-1" },
+      "card assignee replacement context read failed",
+    );
+  });
+
   it("compact 후 첫 사용자 메시지는 full context를 1회 재사용한다", async () => {
     const getSession = vi.fn().mockResolvedValue({ folder_id: "f-1" });
     const getFolderById = vi.fn().mockResolvedValue({
@@ -1926,6 +2002,7 @@ describe("ExecutionContextBuilder.buildFollowupContext — turn별 동적 contex
       "running_sessions",
       "assigned_cards",
     ]);
+    expect(ctx.contextItems.map((item) => item.key)).not.toContain("card_assignee_replacement");
   });
 });
 

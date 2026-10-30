@@ -52,6 +52,7 @@ import {
 } from "./page_context_resolver.js";
 import { extractAtomContextSourceSpecs } from "./session_context_sources.js";
 import { buildPredecessorSummaryContextItem } from "./predecessor_summary_context.js";
+import { fetchCardAssigneeReplacementContextItem } from "./session_folder_context.js";
 import { loadInitialResumeContext } from "./initial_resume_context.js";
 import { assemblePreparedContext, type PreparedContext } from "./prepared_context_assembly.js";
 export type { PreparedContext } from "./prepared_context_assembly.js";
@@ -158,6 +159,12 @@ export class ExecutionContextBuilder {
     if (nodeResourcesItem) contextItems.push(nodeResourcesItem);
     const assignedCardItem = await this.buildAssignedCardContext(task, options.inputId);
     if (assignedCardItem) contextItems.push(assignedCardItem);
+    const cardAssigneeReplacementItem = await fetchCardAssigneeReplacementContextItem(
+      this.db,
+      this.logger,
+      task.agentSessionId,
+    );
+    if (cardAssigneeReplacementItem) contextItems.push(cardAssigneeReplacementItem);
     return { contextItems };
   }
 

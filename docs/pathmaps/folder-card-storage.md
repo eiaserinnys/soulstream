@@ -76,7 +76,7 @@ card_control_plane_service.ts는 카드 commit 뒤, 스냅샷 조회 전에 pers
 
 ## 서버 안내문과 담당 현황
 
-서버가 에이전트에게 보내는 카드 글(`card_prompt.ts`의 첫 프롬프트, 자동배정 한 문장, 깨우는 문구, 질문 답 전달, 한도 재개 문구, 상태 리마인더)은 지금 일어난 사실만 담고 일하는 방법은 atom 지침이 맡는다. `session_folder_context.ts`는 세션 정보의 `card`에 `role`(assignee, member)을 싣고, 지침 주입 조건 `applies_when.card_role`이 이를 쓴다. 이 판정은 표시와 지침 주입용이며 권한은 orch의 `claimableCardSessions`가 정한다. 매 입력의 `assigned_cards` 블록은 담당 카드가 있을 때만 `trust`와 `cards[{id,title,status}]`로 실린다. 여섯 새 MCP 도구는 내부 agent 전용이고 외부 닷 인벤토리에는 포함하지 않는다.
+서버가 에이전트에게 보내는 카드 글(`card_prompt.ts`의 첫 프롬프트, 자동배정 한 문장, 깨우는 문구, 질문 답 전달, 한도 재개 문구, 상태 리마인더)은 지금 일어난 사실만 담고 일하는 방법은 atom 지침이 맡는다. `session_folder_context.ts`는 세션 정보의 `card`에 `role`(assignee, member)을 싣고, 지침 주입 조건 `applies_when.card_role`이 이를 쓴다. 이 판정은 표시와 지침 주입용이며 권한은 orch의 `claimableCardSessions`가 정한다. 매 입력의 `assigned_cards` 블록은 담당 카드가 있을 때만 `trust`와 `cards[{id,title,status}]`로 실린다. 일반 후속 턴에도 교체된 옛 담당을 위한 `card_assignee_replacement` 안내를 `assigned_cards` 뒤에 싣고, 전체 컨텍스트에서는 `soulstream_session.card`에 안내를 싣는다. 여섯 새 MCP 도구는 내부 agent 전용이고 외부 닷 인벤토리에는 포함하지 않는다.
 
 담당 현황은 `cards.items`가 비어 있지 않은 카드에 `hasItems`를 함께 내려 최근 보고 부족 문구를 생략한다. `assigned_card_snapshot_recorder.ts`도 같은 플래그로 실제 입력 관찰 글을 `확인 항목 결과는 get_card로 조회`로 바꾼다. 플래그가 없는 기존 중앙 응답과 과거 캡처는 기존 문구를 유지한다.
 
