@@ -1,4 +1,4 @@
-CREATE TABLE conversation_message_receipts (
+CREATE TABLE IF NOT EXISTS conversation_message_receipts (
     session_id TEXT NOT NULL REFERENCES conversation_bindings(session_id) ON DELETE CASCADE,
     request_id TEXT NOT NULL,
     request_hash TEXT NOT NULL,
