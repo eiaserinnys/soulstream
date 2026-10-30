@@ -58,7 +58,7 @@ export const cardHandlers = {
     const allowedFolderIds = await mcpAllowedFolderIds(o.cards);
     return service.mcpRead.getCard(String(a.card_id), getReadInput(a), allowedFolderIds);
   })),
-  update_card_brief: (o, a, c) => append(o.cards, "update_card", a, c, { brief: a.brief }, true),
+  update_card_brief: (o, a, c) => append(o.cards, "update_card_brief", a, c, { brief: a.brief }, true),
   add_card_report: (o, a, c) => append(o.cards, "add_card_report", a, c, { title: a.title, format: a.format, body: a.body }),
   add_card_comment: (o, a, c) => run(async () => {
     if (a.mode === "reply") matchingHeader(a, c);

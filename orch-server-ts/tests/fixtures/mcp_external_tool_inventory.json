@@ -1,6 +1,6 @@
 [
   {
-    "description": "spoken은 사용자 발언 요약을 사용자 글로 기록하며 첫 줄은 \"아래는 사용자의 발언을 요약하여 옮긴 것입니다\"입니다. reply는 담당 세션이 사용자 글에 답하는 글입니다. 확인 항목이 있으면 mode가 필수이고 답은 300자까지 한 번만 받습니다. 진행은 add_card_note에 씁니다. item_id로 대상 항목을 표시할 수 있습니다.",
+    "description": "spoken은 사용자 발언 요약을 사용자 글로 기록하며 첫 줄은 \"아래는 사용자의 발언을 요약하여 옮긴 것입니다\"입니다. reply는 담당 세션이 사용자 글에 답하는 글입니다. 확인 항목이 있으면 mode가 필수이고 답은 300자까지 한 번만 받습니다. 진행은 add_card_note에 씁니다. item_id로 대상 항목을 표시할 수 있습니다. 다른 세션이 담당인 카드에는 담당 세션만 씁니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -124,7 +124,7 @@
     "name": "archive_folder"
   },
   {
-    "description": "AskUserQuestion 대신 카드에 질문을 남기고 이 턴을 끝내 답을 기다린다. options에 사용자가 고를 선택지를 1~3개(각 12자 이하) 둔다.",
+    "description": "AskUserQuestion 대신 카드에 질문을 남기고 이 턴을 끝내 답을 기다린다. options에 사용자가 고를 선택지를 1~3개(각 12자 이하) 둔다. 다른 세션이 담당인 카드에는 담당 세션만 씁니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -3812,7 +3812,7 @@
     "name": "update_board_item_position"
   },
   {
-    "description": "다음 세션이 이어받을 담당 카드의 인계 요약을 고쳐 씁니다. 진행의 자세한 기록은 add_card_note에 씁니다.",
+    "description": "다음 세션이 이어받을 담당 카드의 인계 요약을 고쳐 씁니다. 진행의 자세한 기록은 add_card_note에 씁니다. 다른 세션이 담당인 카드에는 담당 세션만 씁니다.",
     "execution": {
       "taskSupport": "forbidden"
     },

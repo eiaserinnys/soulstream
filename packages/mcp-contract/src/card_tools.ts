@@ -49,14 +49,14 @@ export const cardTools = {
       cursors: z.record(z.string(), id).optional(), since: id.optional() },
   }, audience: "all" },
   update_card_brief: { name: "update_card_brief", config: {
-    description: "다음 세션이 이어받을 담당 카드의 인계 요약을 고쳐 씁니다. 진행의 자세한 기록은 add_card_note에 씁니다.", inputSchema: { ...scope, brief: z.string() },
+    description: "다음 세션이 이어받을 담당 카드의 인계 요약을 고쳐 씁니다. 진행의 자세한 기록은 add_card_note에 씁니다. 다른 세션이 담당인 카드에는 담당 세션만 씁니다.", inputSchema: { ...scope, brief: z.string() },
   }, audience: "all" },
   add_card_report: { name: "add_card_report", config: {
     description: "확인 항목이 없는 옛 카드에 보고를 추가합니다. 확인 항목이 있는 카드의 결과는 report_card_item에 답니다.",
     inputSchema: { ...scope, title: id, format: z.enum(["markdown", "html"]), body: z.string() },
   }, audience: "all" },
   add_card_comment: { name: "add_card_comment", config: {
-    description: 'spoken은 사용자 발언 요약을 사용자 글로 기록하며 첫 줄은 "아래는 사용자의 발언을 요약하여 옮긴 것입니다"입니다. reply는 담당 세션이 사용자 글에 답하는 글입니다. 확인 항목이 있으면 mode가 필수이고 답은 300자까지 한 번만 받습니다. 진행은 add_card_note에 씁니다. item_id로 대상 항목을 표시할 수 있습니다.',
+    description: 'spoken은 사용자 발언 요약을 사용자 글로 기록하며 첫 줄은 "아래는 사용자의 발언을 요약하여 옮긴 것입니다"입니다. reply는 담당 세션이 사용자 글에 답하는 글입니다. 확인 항목이 있으면 mode가 필수이고 답은 300자까지 한 번만 받습니다. 진행은 add_card_note에 씁니다. item_id로 대상 항목을 표시할 수 있습니다. 다른 세션이 담당인 카드에는 담당 세션만 씁니다.',
     inputSchema: { ...scope, text: id, mode: z.enum(["spoken", "reply"]).optional(), item_id:itemId.optional() },
   }, audience: "all" },
   set_card_status: { name: "set_card_status", config: {
@@ -75,7 +75,7 @@ export const cardTools = {
     description: "담당 카드의 검수를 요청합니다. 확인 항목이 있으면 ask에 사용자가 볼 것을 한 줄로 적으세요. 보고나 미답 질문은 상태 변경을 막지 않습니다.", inputSchema: { ...scope,ask:z.string().optional() },
   }, audience: "all" },
   ask_card_question: { name: "ask_card_question", config: {
-    description: "AskUserQuestion 대신 카드에 질문을 남기고 이 턴을 끝내 답을 기다린다. options에 사용자가 고를 선택지를 1~3개(각 12자 이하) 둔다.",
+    description: "AskUserQuestion 대신 카드에 질문을 남기고 이 턴을 끝내 답을 기다린다. options에 사용자가 고를 선택지를 1~3개(각 12자 이하) 둔다. 다른 세션이 담당인 카드에는 담당 세션만 씁니다.",
     inputSchema: { ...scope, text: id, options: cardQuestionOptionsSchema.describe("사용자가 고를 선택지 1~3개. 각 12자 이하로 짧게 쓰고 설명은 질문 글에 쓴다.") },
   }, audience: "all" },
   withdraw_card_question: { name: "withdraw_card_question", config: {

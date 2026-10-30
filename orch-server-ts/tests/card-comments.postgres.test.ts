@@ -117,6 +117,50 @@ describe("card comments HTTP, storage, and delivery", () => {
     expect((await cards.getCard(cardId))?.card.status).toBe('running');
   });
 
+  it("blocks replaced sessions from brief, question, and spoken writes while preserving allowed actors", async () => {
+    const cardId = await makeCard("담당 교체 쓰기 차단");
+    await h.sql`INSERT INTO sessions(session_id,folder_id,card_id,status) VALUES
+      ('old-owner','comment-folder',${cardId},'running'),('new-owner','comment-folder',${cardId},'running')`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_session_id='new-owner' WHERE id=${cardId}`;
+    const oldOwner = { actorKind: "agent" as const, actorSessionId: "old-owner", cardId };
+    const message = "다른 세션이 담당인 카드입니다. 인계 요약, 질문, 발언 기록은 담당 세션만 씁니다.";
+
+    await expect(cards.updateCardBrief({ ...oldOwner, brief: "옛 요약" }))
+      .rejects.toMatchObject({ statusCode: 422, code: "INVALID_CARD_REQUEST", message });
+    await expect(cards.askQuestion({ ...oldOwner, text: "옛 질문", options: ["진행"] }))
+      .rejects.toMatchObject({ statusCode: 422, code: "INVALID_CARD_REQUEST", message });
+    await expect(cards.addComment({ ...oldOwner, body: "옛 발언", mode: "spoken" }))
+      .rejects.toMatchObject({ statusCode: 422, code: "INVALID_CARD_REQUEST", message });
+
+    const server = app();
+    try {
+      const response = await server.inject({ method: "POST", url: `/api/cards/${cardId}/comments`,
+        headers: { authorization: "Bearer service-test", "x-soulstream-agent-session-id": "old-owner" },
+        payload: { body: "HTTP 옛 발언", mode: "spoken", idempotencyKey: key() } });
+      expect(response.statusCode).toBe(422);
+      expect(response.json()).toMatchObject({ detail: { error: { code: "INVALID_CARD_REQUEST", message } } });
+    } finally { await server.close(); }
+
+    const newOwner = { actorKind: "agent" as const, actorSessionId: "new-owner", cardId };
+    const briefMutation = await cards.updateCardBrief({ ...newOwner, brief: "새 요약" });
+    expect(briefMutation.operation.operation_type).toBe("update_card");
+    await cards.askQuestion({ ...newOwner, text: "새 질문", options: ["진행"], idempotencyKey: key() });
+    await cards.addComment({ ...newOwner, body: "새 발언", mode: "spoken", idempotencyKey: key() });
+    await cards.updateCardBrief({ ...human, cardId, brief: "사용자 요약" });
+    await cards.askQuestion({ ...human, cardId, text: "사용자 질문", options: ["진행"], idempotencyKey: key() });
+    await cards.addComment({ ...human, cardId, body: "사용자 커멘트", idempotencyKey: key() });
+
+    const unassignedCardId = await makeCard("담당 없는 카드");
+    const unassignedActor = { actorKind: "agent" as const, actorSessionId: "old-owner", cardId: unassignedCardId };
+    await cards.updateCardBrief({ ...unassignedActor, brief: "드래프트 요약" });
+    await cards.askQuestion({ ...unassignedActor, text: "드래프트 질문", options: ["진행"], idempotencyKey: key() });
+    await cards.addComment({ ...unassignedActor, body: "드래프트 발언", mode: "spoken", idempotencyKey: key() });
+
+    expect((await cards.getCard(cardId))?.card.brief).toBe("사용자 요약");
+    expect((await cards.getCard(cardId))?.comments.map(comment => comment.body)).toEqual(["새 발언", "사용자 커멘트"]);
+    expect((await cards.getCard(unassignedCardId))?.comments.map(comment => comment.body)).toEqual(["드래프트 발언"]);
+  });
+
   function app() {
     const server = Fastify();
     registerCardRoutes(server, {
@@ -191,7 +235,7 @@ describe("card comments HTTP, storage, and delivery", () => {
   it.each([
     { target: "assigned", actor: "self", kind: "spoken", expected: 0 },
     { target: "assigned", actor: "self", kind: "comment", expected: 0 },
-    { target: "assigned", actor: "other", kind: "spoken", expected: 1 },
+    { target: "assigned", actor: "other", kind: "spoken", expected: 0 },
     { target: "fallback", actor: "self", kind: "spoken", expected: 0 },
     { target: "fallback", actor: "self", kind: "comment", expected: 0 },
     { target: "fallback", actor: "other", kind: "spoken", expected: 1 },
@@ -211,6 +255,14 @@ describe("card comments HTTP, storage, and delivery", () => {
       actorSessionId: actor === "self" ? "target-session" : "other-session",
       cardId, body: "옮겨 적은 사용자 지시", kind, idempotencyKey: key(),
     };
+    if (target === "assigned" && actor === "other" && kind === "spoken") {
+      await expect(cards.addComment(input)).rejects.toMatchObject({
+        statusCode: 422, code: "INVALID_CARD_REQUEST",
+        message: "다른 세션이 담당인 카드입니다. 인계 요약, 질문, 발언 기록은 담당 세션만 씁니다.",
+      });
+      expect((await cards.getCard(cardId))!.comments).toEqual([]);
+      return;
+    }
     const posted = await cards.addComment(input);
     const retried = await cards.addComment(input);
     expect(retried.id).toBe(posted.id);
