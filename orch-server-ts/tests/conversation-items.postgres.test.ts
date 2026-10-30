@@ -1,9 +1,11 @@
 import Fastify from "fastify";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createFullSchemaPostgresHarness, type FullSchemaPostgresHarness } from "./board_yjs_postgres_harness.js";
 import { ConversationService } from "../src/conversation/conversation_service.js";
 import { registerConversationRoutes } from "../src/conversation/conversation_routes.js";
 import { createSessionResourceAccessProvider } from "../src/session/session_resource_access.js";
+import { RuntimeSessionEventHub } from "../src/runtime/session_event_hub.js";
+import { ConversationHistory } from "../src/conversation/conversation_history.js";
 
 describe("conversation items and events", () => {
   let db: FullSchemaPostgresHarness;
@@ -181,5 +183,68 @@ describe("conversation items and events", () => {
     await closed;
     await other.close();
     expect(unsubscribeCount).toBe(1);
+  });
+  it("delivers a stored final response queued before the live snapshot and can resume after completion", async () => {
+    const hub = new RuntimeSessionEventHub();
+    const original = ConversationHistory.prototype.load;
+    const spy = vi.spyOn(ConversationHistory.prototype, "load").mockImplementationOnce(async function (this: ConversationHistory, binding) {
+      const result = await original.call(this, binding);
+      const publish = (event: Record<string, unknown>, eventId?: number) =>
+        hub.publish({ nodeId:"node", data:{ agentSessionId:session, ...(eventId === undefined ? {} : { eventId }), event } });
+      publish({ type:"text_start", tool_use_id:"stream-race", raw_event_type:"item/started" });
+      publish({ type:"text_delta", tool_use_id:"stream-race", raw_event_type:"item/delta", text:"response" });
+      const answer = { type:"assistant_message", content:"race answer", tool_use_id:"stream-race", raw_event_type:"item/completed", _final_for_live_stream:true };
+      await insert(21, "assistant_message", answer);
+      publish(answer, 21);
+      await insert(22, "complete", {});
+      publish({ type:"complete" }, 22);
+      return result;
+    });
+    const other = Fastify();
+    registerConversationRoutes(other, {
+      service, resolveAccount: async () => "person", closeAfterHistorySync:true,
+      liveEvents: {
+        subscribe: (id, listener) => hub.subscribe(id, event => listener(event.data)),
+        snapshotLiveText: id => hub.snapshotLiveText(id),
+      },
+    });
+    try {
+      const response = await other.inject({ method:"GET", url:base + "/events", headers:{ "last-event-id":"20" } });
+      const frames = response.body.split("\n\n").filter(Boolean);
+      const answerFrame = frames.find(frame => frame.includes('"text":"race answer"'));
+      expect(answerFrame).toContain("id: 21");
+      expect(frames.some(frame => frame.includes("id: 22") && frame.includes('"busy":false'))).toBe(true);
+      const again = await other.inject({ method:"GET", url:base + "/events", headers:{ "last-event-id":"22" } });
+      expect(again.body).not.toContain("race answer");
+    } finally { spy.mockRestore(); await other.close(); }
+  });
+  it("emits an unstored runtime termination error without advancing the stored cursor", async () => {
+    await insert(23, "user_message", { text:"work again", caller_info:{source:"browser"} });
+    const hub = new RuntimeSessionEventHub();
+    const other = Fastify();
+    registerConversationRoutes(other, {
+      service, resolveAccount: async () => "person", closeAfterHistorySync:true,
+      liveEvents: {
+        subscribe: (id, listener) => hub.subscribe(id, event => listener(event.data)),
+        snapshotLiveText: id => {
+          hub.dispatchNodeRegistryEvents([{
+            type:"node_session_session_updated", nodeId:"node",
+            data:{ agentSessionId:session, status:"error", termination_detail:"runtime failed" },
+          }]);
+          return hub.snapshotLiveText(id);
+        },
+      },
+    });
+    try {
+      const response = await other.inject({ method:"GET", url:base + "/events", headers:{ "last-event-id":"23" } });
+      const frames = response.body.split("\n\n").filter(Boolean);
+      const errorFrame = frames.find(frame => frame.includes('"kind":"error"'));
+      expect(errorFrame).toContain("runtime failed");
+      expect(errorFrame).not.toContain("\nid:");
+      const activityFrame = frames.find(frame => frame.includes('"kind":"activity"') && frame.includes('"busy":false'));
+      expect(activityFrame).toBeDefined();
+      expect(activityFrame).not.toContain("\nid:");
+      expect(response.body.split("\n").filter(line => line.startsWith("id: "))).toEqual(["id: 23"]);
+    } finally { await other.close(); }
   });
 });

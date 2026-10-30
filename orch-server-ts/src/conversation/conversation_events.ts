@@ -1,4 +1,5 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
+import { randomUUID } from "node:crypto";
 import { createSseStream } from "../sse/sse_stream.js";
 import type { SessionHistoryLiveEventSource } from "../session/session_history_routes.js";
 import { ConversationHistory } from "./conversation_history.js";
@@ -61,7 +62,7 @@ export async function sendConversationEvents(request: FastifyRequest, reply: Fas
       const type = typeof payload.type === "string" ? payload.type : "";
       const id = eventId(envelope, payload);
       const sequence = typeof payload.liveSeq === "number" ? payload.liveSeq : undefined;
-      if (sequence !== undefined) {
+      if (id === undefined && sequence !== undefined && (type === "text_start" || type === "text_delta" || type === "text_end")) {
         if (sequence <= liveSequence) return;
         liveSequence = sequence;
       }
@@ -73,6 +74,10 @@ export async function sendConversationEvents(request: FastifyRequest, reply: Fas
         const result = loaded.projection.apply(source);
         if (result.item) push(frame({ kind:"item", item:result.item }, id));
         if (result.activity) push(frame({ kind:"activity", ...result.activity }, result.item ? undefined : id));
+      } else if (type === "error" || type === "assistant_error") {
+        const result = loaded.projection.apply({ id:0, type, payload, at:at(payload) });
+        if (result.item) push(frame({ kind:"item", item:{ ...result.item, id:`transient:${randomUUID()}` } }));
+        if (result.activity) push(frame({ kind:"activity", ...result.activity }));
       } else {
         const text = loaded.projection.live(type, payload);
         if (text) push(frame({ kind:"text", ...text }));
