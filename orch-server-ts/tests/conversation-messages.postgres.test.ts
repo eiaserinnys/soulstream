@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import { createHash } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createFullSchemaPostgresHarness, type FullSchemaPostgresHarness } from "./board_yjs_postgres_harness.js";
 import { SessionDeliveryRepository } from "../src/control_plane/repositories/session_delivery_repository.js";
@@ -112,6 +113,20 @@ describe("conversation message receipts", () => {
     expect(second.json()).toEqual(first.json());
     expect(ports.upload).toHaveBeenCalledTimes(beforeUploads+1);
     expect(ports.intervene).toHaveBeenCalledTimes(beforeSends+1);
+  });
+  it("reconciles pending receipts with the durable ledger on GET",async () => {
+    await db.sql`UPDATE conversation_message_receipts SET status='pending' WHERE session_id=${session} AND request_id='r1'`;
+    expect((await get("/messages/r1")).json()).toEqual({request_id:"r1",status:"accepted"});
+    const [row] = await db.sql`SELECT status FROM conversation_message_receipts WHERE session_id=${session} AND request_id='r1'`;
+    expect(row!.status).toBe("accepted");
+    const body = {request_id:"not-admitted",text:"resume",attachments:[]};
+    const hash = createHash("sha256").update(JSON.stringify(body)).digest("hex");
+    await db.sql`INSERT INTO conversation_message_receipts(session_id,request_id,request_hash,delivery_id,caller_info,status)
+      VALUES (${session},'not-admitted',${hash},'not-admitted-delivery',${db.sql.json({source:"browser"})},'pending')`;
+    expect((await get("/messages/not-admitted")).json()).toEqual({request_id:"not-admitted",status:"pending"});
+    expect((await post(body.request_id,body.text)).json()).toEqual({request_id:"not-admitted",status:"accepted"});
+    const [resumed] = await db.sql`SELECT delivery_id FROM session_deliveries WHERE delivery_id='not-admitted-delivery'`;
+    expect(resumed?.delivery_id).toBe("not-admitted-delivery");
   });
   it("records a safe failed receipt without intervention when an upload fails",async () => {
     failUpload = true;

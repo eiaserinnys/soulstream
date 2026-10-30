@@ -306,5 +306,46 @@ describe("conversation items and events", () => {
       expect(frames[0]).toContain("id: 32");
     } finally { await other.close(); }
   });
+  it.each([
+    { order:"stored-then-runtime", start:40 },
+    { order:"runtime-then-stored", start:50 },
+  ])("shows a new turn's error after $order", async ({order,start}) => {
+    await insert(start - 1, "complete", {});
+    await insert(start, "user_message", {text:"first turn",caller_info:{source:"browser"}});
+    let listener: ((event: Record<string, unknown>) => void) | undefined;
+    const original = ConversationHistory.prototype.load;
+    const spy = vi.spyOn(ConversationHistory.prototype, "load").mockImplementationOnce(async function (this: ConversationHistory, binding) {
+      const result = await original.call(this, binding);
+      const first = {type:"error",message:"first failure"};
+      const input = {type:"user_message",text:"next turn",caller_info:{source:"browser"}};
+      const second = {type:"error",message:"second failure"};
+      if (order === "stored-then-runtime") {
+        await insert(start + 1,"error",first);
+        listener!({eventId:start + 1,event:first});
+      } else listener!({event:first});
+      await insert(start + 2,"user_message",input);
+      listener!({eventId:start + 2,event:input});
+      if (order === "runtime-then-stored") {
+        await insert(start + 3,"error",second);
+        listener!({eventId:start + 3,event:second});
+      } else listener!({event:second});
+      return result;
+    });
+    const other = Fastify();
+    registerConversationRoutes(other, {service,resolveAccount:async () => "person",closeAfterHistorySync:true,
+      liveEvents:{subscribe:(_id,callback) => {listener=callback; return () => {};}}});
+    try {
+      const response = await other.inject({method:"GET",url:base+"/events",headers:{"last-event-id":String(start)}});
+      const frames = response.body.split("\n\n").filter(Boolean);
+      const events = frames.flatMap(frame => {
+        const data=frame.split("\n").find(line => line.startsWith("data: "));
+        return data ? [JSON.parse(data.slice(6))] : [];
+      });
+      expect(events.filter(event => event.kind === "item" && event.item.kind === "error").map(event => event.item.text))
+        .toEqual(["first failure","second failure"]);
+      expect(events.some(event => event.kind === "activity" && event.busy === false)).toBe(true);
+      expect(frames.some(frame => frame.split("\n").includes(`id: ${order === "runtime-then-stored" ? start + 3 : start + 2}`))).toBe(true);
+    } finally { spy.mockRestore(); await other.close(); }
+  });
 
 });

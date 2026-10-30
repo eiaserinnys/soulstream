@@ -38,7 +38,13 @@ export class ConversationMessageService {
     }
     return await work;
   }
-  async get(session:string, id:string):Promise<Receipt> { return receipt(await this.getRow(session,id)); }
+  async get(session:string, id:string):Promise<Receipt> {
+    const [accepted] = await this.sql<Row[]>`UPDATE conversation_message_receipts AS receipt SET status='accepted'
+      WHERE receipt.session_id=${session} AND receipt.request_id=${id} AND receipt.status='pending'
+      AND EXISTS (SELECT 1 FROM session_deliveries AS delivery WHERE delivery.delivery_id=receipt.delivery_id)
+      RETURNING receipt.*`;
+    return receipt(accepted ?? await this.getRow(session,id));
+  }
   private async getRow(session:string,id:string):Promise<Row> {
     const [row] = await this.sql<Row[]>`SELECT * FROM conversation_message_receipts WHERE session_id=${session} AND request_id=${id}`;
     if (!row) throw new ConversationError(404,"not_found","Message receipt not found");
