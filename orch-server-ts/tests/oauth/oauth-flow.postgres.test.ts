@@ -10,6 +10,8 @@ import { createApp } from "../../src/app.js";
 import { parseOrchServerConfig } from "../../src/config.js";
 import { registerDashboardServing } from "../../src/dashboard/dashboard_serving.js";
 import { fileURLToPath } from "node:url";
+import { startPostgresTestContainer } from "../../../packages/db-schema/scripts/postgres-test-container.mjs";
+import { waitForPostgres } from "../persistent-session-settings-world.js";
 
 const verifier = "v".repeat(43);
 const challenge = createHash("sha256").update(verifier).digest("base64url");
@@ -17,6 +19,8 @@ const account = "director@example.test";
 let sql: ReturnType<typeof postgres>;
 let app: ReturnType<typeof Fastify>;
 let issuer: string;
+let stopContainer: (() => void) | undefined;
+let ownsTestUrl = false;
 
 async function freePort(): Promise<number> {
   const socket = createServer();
@@ -101,18 +105,31 @@ async function freshRefresh(clientId: string, token: string) {
 }
 
 beforeAll(async () => {
+  if (!process.env.TEST_DATABASE_URL) {
+    const container = startPostgresTestContainer({
+      user: "oauth_test", password: "oauth_test", database: "oauth_test_db",
+      staleAfterMs: Number.MAX_SAFE_INTEGER,
+    });
+    stopContainer = container.stop;
+    process.env.TEST_DATABASE_URL = `postgres://oauth_test:oauth_test@127.0.0.1:${container.port}/oauth_test_db`;
+    ownsTestUrl = true;
+  }
   const url = process.env.TEST_DATABASE_URL;
   if (!url) throw new Error("TEST_DATABASE_URL is required");
   const parsed = new URL(url); const db = parsed.pathname.slice(1).toLowerCase();
   if (!db.includes("test") || ["atom_db", "reverie", "soulstream", "serendipity"].some(name => `${parsed.hostname}/${db}`.toLowerCase().includes(name))) throw new Error("unsafe test database");
   sql = postgres(url, { max: 4, onnotice: () => {} });
+  await waitForPostgres(sql);
   const rows = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM information_schema.tables WHERE table_schema NOT IN ('pg_catalog','information_schema')`;
   if (rows[0]?.count !== 0) throw new Error("test database must be empty");
   await sql.unsafe(await readFile(new URL("../../../packages/db-schema/sql/migrations/137_oauth_entities.sql", import.meta.url), "utf8"));
   issuer = `http://127.0.0.1:${await freePort()}`;
   await start();
+}, 60_000);
+afterAll(async () => {
+  try { await app?.close(); await sql?.end({ timeout: 2 }); }
+  finally { stopContainer?.(); if (ownsTestUrl) delete process.env.TEST_DATABASE_URL; }
 });
-afterAll(async () => { await app?.close(); await sql?.end({ timeout: 2 }); });
 
 describe("OAuth authorization server", () => {
   it("exposes both metadata documents and only the intended OAuth grants and scopes", async () => {
