@@ -65,6 +65,7 @@ export type ModelPresetAvailability = {
 
 export type ModelPresetAvailabilityRegistry = {
   getConnectedNode(nodeId: string): NodeConnectionSnapshot | undefined;
+  getNodeState?(nodeId: string): NodeConnectionSnapshot | undefined;
 };
 
 export type ModelPresetUsageSummary = {
@@ -109,6 +110,23 @@ export class ModelPresetAvailabilityService {
     if (!node) return undefined;
     const summary = this.usageSummary.getSummary();
     return staticPresets(node).map((preset) => this.resolveAvailability(nodeId, preset, summary));
+  }
+
+  /** Last advertised presets are retained for display when a node disconnects. */
+  listKnownForNode(nodeId: string): ModelPresetAvailability[] | undefined {
+    const connected = this.registry.getConnectedNode(nodeId);
+    if (connected) return this.listForNode(nodeId);
+    const node = this.registry.getNodeState?.(nodeId);
+    if (!node) return undefined;
+    return staticPresets(node).map((preset) => ({
+      ...publicPreset(preset),
+      available: false,
+      reason: null,
+      reason_label: null,
+      resets_at: null,
+      usage_warning: false,
+      weekly_headroom: null,
+    }));
   }
 
   /** Validated node advertisement, independent of permissive manual usage fallback. */

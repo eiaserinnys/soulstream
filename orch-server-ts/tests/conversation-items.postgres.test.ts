@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createFullSchemaPostgresHarness, type FullSchemaPostgresHarness } from "./board_yjs_postgres_harness.js";
 import { ConversationService } from "../src/conversation/conversation_service.js";
+import { ConversationCatalog } from "../src/conversation/conversation_catalog.js";
 import { registerConversationRoutes } from "../src/conversation/conversation_routes.js";
 import { createSessionResourceAccessProvider } from "../src/session/session_resource_access.js";
 import { RuntimeSessionEventHub } from "../src/runtime/session_event_hub.js";
@@ -66,7 +67,8 @@ describe("conversation items and events", () => {
       sql: db.sql as never,
       access,
       reads: async () => ({ getSession: async () => ({ session_id:session, created_at:new Date(), model_preset:"sol" }) }) as never,
-      presets: { listForNode: () => [] } as never, persistent: {} as never, create: async () => ({} as never),
+      catalog: new ConversationCatalog({ defaultNodeId:"eiaserinnys", listNodes:() => [{nodeId:"eiaserinnys",connected:true}],
+        listKnownForNode:() => [], listAgentProfiles:async () => ({}) }), persistent: {} as never, create: async () => ({} as never),
       waitForCreatedSession: async () => true,
     });
     app = Fastify();

@@ -8,6 +8,7 @@ import type { SessionHistoryLiveEventSource } from "../session/session_history_r
 
 export const conversationRouteAuthRequirements = {
   "GET /api/conversations/v1/models": true,
+  "GET /api/conversations/v1/profiles": true,
   "GET /api/conversations/v1/threads": true,
   "GET /api/conversations/v1/threads/by-key": true,
   "PUT /api/conversations/v1/threads/by-key": true,
@@ -35,7 +36,8 @@ export function registerConversationRoutes(app: FastifyInstance, options: Conver
         return sendConversationError(request, reply, error);
       }
     };
-  app.get("/api/conversations/v1/models", wrap(() => options.service.models()));
+  app.get("/api/conversations/v1/models", wrap(r => options.service.models(optionalQuery(r, "profile"))));
+  app.get("/api/conversations/v1/profiles", wrap(() => options.service.profiles()));
   app.get("/api/conversations/v1/threads", wrap((r, a) => options.service.list(r, a, query(r, "namespace"), optionalQuery(r, "cursor"))));
   app.get("/api/conversations/v1/threads/by-key", wrap((r, a) => options.service.byKey(r, a, query(r, "namespace"), query(r, "key"))));
   app.put("/api/conversations/v1/threads/by-key", wrap((r, a) => options.service.ensure(r, a, query(r, "namespace"), query(r, "key"), ensureBody(r.body))));

@@ -1,6 +1,7 @@
 import { ConversationMessageService } from "./conversation/conversation_messages.js";
 import { createConversationMessagePorts } from "./conversation/conversation_message_ports.js";
 import { ConversationService } from "./conversation/conversation_service.js";
+import { ConversationCatalog } from "./conversation/conversation_catalog.js";
 import { PERSISTENT_CREATE_NODE_ID } from "./session/persistent_session_settings_service.js";
 import { verifyServiceBearerAuthorization } from "./auth/service_bearer.js";
 import { SqlOwnedAgentRepository } from "./owned-agents/repository.js";
@@ -1077,9 +1078,14 @@ export function buildProductionRouteOptions(
   const conversationService = conversationSql ? new ConversationService({
     sql: conversationSql, access: sessionAccessProvider, persistent: persistentSessionSettingsService,
     reads: async () => (await persistenceRepositoryProvider()).sessionReads,
-    presets: providers.modelPresetAvailability,
+    catalog: new ConversationCatalog({
+      defaultNodeId: PERSISTENT_CREATE_NODE_ID,
+      listNodes: () => runtime.registry.listAllNodes().map(node => ({ nodeId: node.nodeId, connected: node.connected })),
+      listKnownForNode: nodeId => providers.modelPresetAvailability.listKnownForNode(nodeId),
+      listAgentProfiles: nodeId => providers.nodeAgentProfileRoutes.provider.listAgentProfiles(nodeId),
+    }),
     create: (request, body, id, logger) => executeCreateSessionRoute(providers.runtime.sessionCommandRoutes, request, body, logger, id),
-    waitForCreatedSession: (id) => providers.runtime.sessionCommandRoutes.router.waitForCreatedSession(id, PERSISTENT_CREATE_NODE_ID),
+    waitForCreatedSession: (id, nodeId) => providers.runtime.sessionCommandRoutes.router.waitForCreatedSession(id, nodeId),
   }) : undefined;
   return {
     config,

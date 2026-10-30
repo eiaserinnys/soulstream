@@ -146,6 +146,7 @@ type TypeScriptAdditiveRoute = Omit<RouteDefinition, "order"> & {
 
 const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
   { methods: ["GET"], path: "/api/conversations/v1/models", name: "conversation_0", authRequired: true, family: "session" },
+  { methods: ["GET"], path: "/api/conversations/v1/profiles", name: "conversation_profiles", authRequired: true, family: "session" },
   { methods: ["GET"], path: "/api/conversations/v1/threads", name: "conversation_1", authRequired: true, family: "session" },
   { methods: ["GET", "PUT"], path: "/api/conversations/v1/threads/by-key", name: "conversation_2", authRequired: true, family: "session" },
   { methods: ["PUT"], path: "/api/conversations/v1/threads/by-key/adoption", name: "conversation_3", authRequired: true, family: "session" },

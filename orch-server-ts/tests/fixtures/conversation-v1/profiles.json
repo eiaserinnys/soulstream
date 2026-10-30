@@ -1,0 +1,1 @@
+{"profiles":[{"id":"profile-a","label":"Profile A","available":true},{"id":"profile-b","label":"Profile B","available":false,"reason":"노드 연결 끊김"}]}

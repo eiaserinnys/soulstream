@@ -6,6 +6,7 @@ import { createFullSchemaPostgresHarness, type FullSchemaPostgresHarness } from 
 import { SessionDeliveryRepository } from "../src/control_plane/repositories/session_delivery_repository.js";
 import { executeSessionIntervention } from "../src/session/session_action_command_routes.js";
 import { ConversationService } from "../src/conversation/conversation_service.js";
+import { ConversationCatalog } from "../src/conversation/conversation_catalog.js";
 import { createConversationMessagePorts } from "../src/conversation/conversation_message_ports.js";
 import { ConversationMessageService } from "../src/conversation/conversation_messages.js";
 import { registerConversationRoutes } from "../src/conversation/conversation_routes.js";
@@ -71,7 +72,8 @@ describe("conversation message receipts", () => {
       }, listFoldersForAccess:async () => (await db.sql`SELECT id,parent_folder_id FROM folders`).map(row => ({id:row.id,parentFolderId:row.parent_folder_id})) },
     });
     service = new ConversationService({sql:db.sql as never, access, reads:async () => ({getSession:async () => ({session_id:session,node_id:"test-node",created_at:new Date(),model_preset:"sol"})}) as never,
-      presets:{listForNode:() => []} as never,persistent:{} as never,create:async () => ({} as never),waitForCreatedSession:async () => true});
+      catalog:new ConversationCatalog({defaultNodeId:"eiaserinnys",listNodes:() => [{nodeId:"eiaserinnys",connected:true}],
+        listKnownForNode:() => [],listAgentProfiles:async () => ({})}),persistent:{} as never,create:async () => ({} as never),waitForCreatedSession:async () => true});
     const token = (scope:string) => ({accountId:"person@example.test",clientId:"client",scope});
     await db.sql`INSERT INTO oauth_entities(kind,id,payload,expires_at) VALUES
       ('Client','client',${db.sql.json({client_name:"Client"})},NULL),

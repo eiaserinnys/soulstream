@@ -14,7 +14,8 @@ export type Binding = {
 export type ConversationNotice = { id: string; text: string; at: string };
 export type Thread = {
   id: string; external: { namespace: string; key: string }; title: string;
-  model: { id: string; label: string }; created_at: string; archived: boolean;
+  model: { id: string; label: string; group?: { id: string; label: string } };
+  created_at: string; archived: boolean;
 };
 export class ConversationError extends Error {
   constructor(readonly status: number, readonly code: string, message: string, readonly threadId?: string) { super(message); }
