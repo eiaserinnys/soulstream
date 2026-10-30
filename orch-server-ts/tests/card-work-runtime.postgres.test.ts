@@ -208,11 +208,13 @@ describe("card work runtime and internal MCP integration", () => {
       SELECT c.request,r.state,r.session_id FROM cards c JOIN card_execution_requests r ON r.card_id=c.id
       WHERE r.id=${String(acceptedContent.request_id)}`;
     expect(stored).toEqual([{ request: "원문 요청", state: "pending", session_id: expect.any(String) }]);
-    expect(await h.sql`SELECT delivery_id FROM session_deliveries WHERE producer_kind='card_work_error'`).toHaveLength(0);
+    expect(await h.sql`SELECT delivery_id FROM session_deliveries WHERE producer_kind='card_work_error' AND producer_id=(
+      SELECT id FROM folder_operations WHERE idempotency_key=${`dispatch-work:${CALLER_ID}:runtime-receipt`})`).toHaveLength(0);
     heldCreate!.resolve();
     await createReturned.promise;
     await tick();
-    expect(await h.sql`SELECT delivery_id FROM session_deliveries WHERE producer_kind='card_work_error'`).toHaveLength(0);
+    expect(await h.sql`SELECT delivery_id FROM session_deliveries WHERE producer_kind='card_work_error' AND producer_id=(
+      SELECT id FROM folder_operations WHERE idempotency_key=${`dispatch-work:${CALLER_ID}:runtime-receipt`})`).toHaveLength(0);
 
     createStarted = deferred();
     createReturned = deferred();
@@ -228,7 +230,8 @@ describe("card work runtime and internal MCP integration", () => {
     await launchErrorAccepted.promise;
     const launchErrorRows = await h.sql<Array<{ target_session_id: string | null; payload: { text?: string }; state: string }>>`
       SELECT target_session_id,payload,state FROM session_deliveries
-      WHERE producer_kind='card_work_error' AND payload->>'text' LIKE '%단계: launch%'`;
+      WHERE producer_kind='card_work_error' AND payload->>'text' LIKE '%단계: launch%'
+        AND producer_id=(SELECT id FROM folder_operations WHERE idempotency_key=${`dispatch-work:${CALLER_ID}:runtime-create-ack-error`})`;
     expect(launchErrorRows).toHaveLength(1);
     expect(launchErrorRows[0]).toMatchObject({ target_session_id: CALLER_ID, state: "queued" });
     expect(launchErrorRows[0]!.payload.text).toContain("node rejected create");
