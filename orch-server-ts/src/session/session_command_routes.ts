@@ -174,6 +174,7 @@ export async function executeCreateSessionRoute(
   request: FastifyRequest | ServiceCaller,
   input: unknown,
   logger: Pick<import("fastify").FastifyRequest["log"], "warn">,
+  reservedSessionId?: string,
 ): Promise<SessionCreateRouteResponse> {
     const body = parseObjectBody(input);
     if (body === undefined) {
@@ -245,7 +246,7 @@ export async function executeCreateSessionRoute(
       const admission = await admitCreateAttachments(
         options,
         request,
-        createSessionPayload(prepared.payload, prompt),
+        createSessionPayload(prepared.payload, prompt, reservedSessionId),
         attachmentIds.value,
       );
       if ("response" in admission) return admission.response;
@@ -386,6 +387,7 @@ async function admitCreateAttachments(
 function createSessionPayload(
   body: JsonObject,
   prompt: string,
+  reservedSessionId?: string,
 ): CreateSessionNodeCommandPayload {
   const {
     requestId: _requestId,
@@ -401,9 +403,9 @@ function createSessionPayload(
     attachment_ids: _attachmentIdsSnake,
     ...rest
   } = body;
-  const agentSessionId = isPageAnchor(rest.pageAnchor) && isUuid(requestedSessionId, 4)
+  const agentSessionId = reservedSessionId ?? (isPageAnchor(rest.pageAnchor) && isUuid(requestedSessionId, 4)
     ? requestedSessionId
-    : randomUUID();
+    : randomUUID());
   const canonicalProfile = firstNonEmptyString(profile, agentId);
   const attachments = parseAttachmentPaths(body);
   return {

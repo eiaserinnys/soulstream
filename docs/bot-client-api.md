@@ -380,3 +380,16 @@ async def run_session(base_url: str, token: str, profile: str, prompt: str) -> N
 
 In production code, persist the session ID and last processed event ID with the
 bot thread mapping before acknowledging delivery to the chat platform.
+
+## Conversation API v1: threads
+
+Authenticated clients use `/api/conversations/v1`. A thread ID is an opaque identifier. Namespace and key are URL query components and must be percent encoded. Folder access is checked for each thread; service-token requests use the service identity, while dashboard users use their authenticated account. An OAuth token with the `conversations` scope will be supported by the OAuth resource guard.
+
+- `GET /models` returns `{models: [{id, label, available, reason?}]}`.
+- `GET /threads?namespace=...&cursor=...` returns `{refs, next_cursor?}`; use the returned cursor to continue.
+- `GET /threads/by-key?namespace=...&key=...` returns `{thread}`.
+- `PUT /threads/by-key?namespace=...&key=...` accepts `{title, selected_model, model_order, profile, collection, initial_instruction, instructions}` and returns `{thread, created, notices}`. `profile` and `collection` are opaque provider identifiers. The selected model is tried first, followed by `model_order` when unavailable. Once the request is accepted, processing continues after client disconnect. A `504` with `error.code = "pending"` and `thread_id` means the same key should be queried or retried; do not create a new key.
+- `PUT /threads/by-key/adoption?namespace=...&key=...` with `{session_id}` binds an existing accessible session for migration. A conflicting key or already bound session returns 409.
+- `GET /threads/{id}` returns `{thread, busy, tool, current_model}`. `PATCH /threads/{id}` accepts `title`, `archived: true`, `model`, `model_order`, and `instructions`; archive disables persistence without deleting history.
+
+A thread contains `{id, external: {namespace, key}, title, model: {id, label}, created_at, archived}`. API errors have `{error: {code, message}}`: `invalid_request`, `login_required`, `forbidden`, `not_found`, `conflict`, `model_unavailable`, `unavailable`, or `pending`.

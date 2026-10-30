@@ -1,0 +1,9 @@
+{
+  "title": "작업 예시",
+  "selected_model": "argon",
+  "model_order": ["argon", "opus", "sol"],
+  "profile": "seosoyoung",
+  "collection": "workspace-folder",
+  "initial_instruction": "작업을 돕는다.",
+  "instructions": "변경된 역할"
+}

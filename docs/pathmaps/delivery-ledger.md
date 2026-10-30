@@ -52,3 +52,7 @@ Antigravity는 Claude background runtime follow-up 생산자가 없어 해당 �
 ## 카드 담당 교체 후 완료 caller
 
 카드에 연결된 자식 세션의 완료 알림은 알림 생성 직전에 세션 저장소에서 최신 `card_id`와 `caller_session_id`를 다시 읽는다. 둘 다 있으면 최신 caller를 self-check, durable enqueue, relay의 대상으로 쓴다. 카드가 없거나 caller가 비어 있거나 세션 조회가 실패하면 기존 메모리 caller를 쓰며, 조회 실패는 경고 로그로 남긴다. 교체 전에 이미 등록된 완료 delivery의 대상은 바꾸지 않는다.
+
+## 외부 대화 제공자
+
+외부 대화 API의 스레드 경로는 [OAuth와 대화 제공자](oauth-to-conversation.md)에 있다. 메시지 영수증과 이 원장의 연결은 대화 API 메시지 구현에서 담당한다.

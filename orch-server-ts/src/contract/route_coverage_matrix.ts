@@ -1,3 +1,4 @@
+import { conversationRouteAuthRequirements } from "../conversation/conversation_routes.js";
 import { ownedAgentRouteAuthRequirements } from "../owned-agents/routes.js";
 import { oauthRouteAuthRequirements } from "../oauth/oauth_routes.js";
 import { mcpHostRouteAuthRequirements } from "../mcp/mcp_host_routes.js";
@@ -52,6 +53,7 @@ import { persistentContextRouteAuthRequirements } from "../persistent-context/pe
 import type { RouteCoverageOwner } from "./route_coverage.js";
 
 export const routeCoverageOwners = [
+  { owner: "conversation", authRequirements: conversationRouteAuthRequirements },
   { owner: "oauth", authRequirements: oauthRouteAuthRequirements },
   { owner: "owned.agents", authRequirements: ownedAgentRouteAuthRequirements },
   { owner: "mcp.host", authRequirements: mcpHostRouteAuthRequirements },
@@ -115,6 +117,7 @@ export const routeCoverageOwners = [
 // The route inventory fixture describes the retired Python server. New TS-only
 // routes must be listed explicitly instead of being backfilled into that fixture.
 export const tsOnlyRouteKeys = [
+  ...Object.keys(conversationRouteAuthRequirements),
   ...Object.keys(oauthRouteAuthRequirements),
   "GET /api/owned-agents", "POST /api/owned-agents", "PATCH /api/owned-agents/{id}",
   "POST /api/owned-agents/{id}/keys", "DELETE /api/owned-agents/{id}/keys/{keyId}", "POST /api/owned-agents/register-existing",
