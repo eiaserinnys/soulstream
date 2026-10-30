@@ -1083,9 +1083,10 @@ export function buildProductionRouteOptions(
     config,
     corsAllowedOrigins,
     ...(conversationService ? { conversationRoutes: { service: conversationService, resolveAccount: async (request) => {
+      const service = verifyServiceBearerAuthorization(request.headers.authorization, config.authBearerToken, config.environment);
+      if (service.ok && !service.developmentBypass) return "service-token";
       const email = await providers.authenticatedUserResolvers.resolveEmail(request);
       if (email) return email.trim().toLowerCase();
-      const service = verifyServiceBearerAuthorization(request.headers.authorization, config.authBearerToken, config.environment);
       return service.ok ? "service-token" : null;
     } } } : {}),
     productionAuth: {

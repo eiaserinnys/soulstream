@@ -59,7 +59,9 @@ export function registerProductionAuthGuard(
         : requireOAuthScope(oauthAccess, scope);
       if (!result.ok) {
         request.log.warn({ method: request.method, path: requestLogPath(request), statusCode: result.statusCode }, "HTTP authentication rejected");
-        return reply.code(result.statusCode).send({ detail: result.detail });
+        return reply.code(result.statusCode).send(requestPath.startsWith("/api/conversations/v1/")
+          ? { error: { code: "forbidden", message: result.detail } }
+          : { detail: result.detail });
       }
       return;
     }
@@ -70,7 +72,9 @@ export function registerProductionAuthGuard(
       path: requestLogPath(request),
       statusCode,
     }, "HTTP authentication rejected");
-    return reply.code(statusCode).send({ detail: access.detail });
+    return reply.code(statusCode).send(requestPath.startsWith("/api/conversations/v1/")
+      ? { error: { code: statusCode === 401 ? "login_required" : statusCode === 403 ? "forbidden" : "unavailable", message: access.detail } }
+      : { detail: access.detail });
   });
 }
 

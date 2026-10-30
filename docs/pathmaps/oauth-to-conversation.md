@@ -1,5 +1,6 @@
 # Conversation provider path map
 
+- Authentication and OAuth scope: `orch-server-ts/src/runtime/production_auth_guard.ts`, `orch-server-ts/src/oauth/oauth_access.ts`.
 - HTTP entry and request validation: `orch-server-ts/src/conversation/conversation_routes.ts`.
 - Thread lifecycle, existing-session access checks and persistent settings: `orch-server-ts/src/conversation/conversation_service.ts`.
 - External-key binding and initialization receipt: `orch-server-ts/src/conversation/conversation_repository.ts`, `packages/db-schema/sql/migrations/138_conversation_bindings.sql`.

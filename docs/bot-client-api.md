@@ -383,7 +383,7 @@ bot thread mapping before acknowledging delivery to the chat platform.
 
 ## Conversation API v1: threads
 
-Authenticated clients use `/api/conversations/v1`. A thread ID is an opaque identifier. Namespace and key are URL query components and must be percent encoded. Folder access is checked for each thread; service-token requests use the service identity, while dashboard users use their authenticated account. An OAuth token with the `conversations` scope will be supported by the OAuth resource guard.
+Authenticated clients use `/api/conversations/v1`. A thread ID is an opaque identifier. Namespace and key are URL query components and must be percent encoded. Folder access is checked for each thread; service-token requests use the service identity, while dashboard users use their authenticated account. OAuth tokens require the `conversations` scope.
 
 - `GET /models` returns `{models: [{id, label, available, reason?}]}`.
 - `GET /threads?namespace=...&cursor=...` returns `{refs, next_cursor?}`; use the returned cursor to continue.
