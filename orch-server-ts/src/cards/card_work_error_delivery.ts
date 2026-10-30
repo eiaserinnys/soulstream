@@ -33,6 +33,7 @@ type DispatchOperation = {
   actor_kind: string;
   actor_session_id: string | null;
   idempotency_key: string | null;
+  payload_json: Record<string, unknown>;
 };
 
 type DispatchRequest = CardExecutionRequest & {
@@ -58,7 +59,7 @@ export function canonicalWorkErrorDeliveryId(sessionId: string, eventId: number)
 export async function recordConfirmedErrorTx(sql: RepositorySql, failure: ConfirmedWorkError): Promise<SessionDeliveryRow | null> {
   if (!failure.operationId || !failure.cardId || !failure.workId || !failure.failureId || !failure.message) return null;
   const operation = (await sql<DispatchOperation[]>`
-    SELECT id,target_kind,target_id,operation_type,actor_kind,actor_session_id,idempotency_key
+    SELECT id,target_kind,target_id,operation_type,actor_kind,actor_session_id,idempotency_key,payload_json
     FROM folder_operations WHERE id=${failure.operationId}
   `)[0];
   if (!operation || operation.target_kind !== "card" || operation.target_id !== failure.cardId
@@ -75,11 +76,12 @@ export async function recordConfirmedErrorTx(sql: RepositorySql, failure: Confir
     `)[0];
     if (!related) return null;
   } else {
-    if (operation.operation_type !== "create_card") return null;
+    const replacement=operation.operation_type==="execute_card" && operation.payload_json.dispatch_kind==="replace_assignee";
+    if (operation.operation_type !== "create_card" && !replacement) return null;
     const related = (await sql<CardExecutionRequest[]>`
       SELECT * FROM card_execution_requests
       WHERE id=${failure.workId} AND card_id=${failure.cardId}
-        AND idempotency_key=${`dispatch-work-execution:${operation.id}`}
+        AND idempotency_key=${`dispatch-work-${replacement ? "replace" : "execution"}:${operation.id}`}
     `)[0];
     if (!related) return null;
     if (failure.stage === "runtime") {
@@ -160,9 +162,10 @@ export async function relayCanonicalErrorTx(sql: RepositorySql, input: Canonical
     SELECT r.*,
       op.id AS operation_id,op.target_id AS card_id_from_operation,op.actor_session_id
     FROM card_execution_requests r
-    JOIN folder_operations op ON r.idempotency_key='dispatch-work-execution:'||op.id
+    JOIN folder_operations op ON (r.idempotency_key='dispatch-work-execution:'||op.id AND op.operation_type='create_card')
+      OR (r.idempotency_key='dispatch-work-replace:'||op.id AND op.operation_type='execute_card' AND op.payload_json->>'dispatch_kind'='replace_assignee')
     WHERE r.session_id=${input.sessionId}
-      AND op.operation_type='create_card' AND op.target_kind='card' AND op.actor_kind='agent'
+      AND op.target_kind='card' AND op.actor_kind='agent'
       AND op.actor_session_id IS NOT NULL
   `;
   const matches: DispatchRequest[] = [];

@@ -14,6 +14,7 @@ import {
   runIdempotentSessionMutation,
 } from "./idempotent_session_mutation.js";
 import { lockWorktreeForSessionBinding } from "./worktree_repository.js";
+import { applySessionCardReplacement } from "./session_card_replacement.js";
 
 export type SessionTransitionFields = {
   status?: string;
@@ -141,6 +142,7 @@ export class SessionMutationRepository {
         )
       `;
       if (sanitizedInput.cardId !== undefined) await sql`UPDATE sessions SET card_id=${sanitizedInput.cardId} WHERE session_id=${sanitizedInput.sessionId}`;
+      await applySessionCardReplacement(sql,sanitizedInput.sessionId);
       return {
         ok: true,
         reviewRequired: review.reviewRequired,
@@ -248,6 +250,7 @@ export class SessionMutationRepository {
           UPDATE sessions SET worktree_id = ${sanitizedInput.worktreeId},card_id=${sanitizedInput.cardId ?? null}
           WHERE session_id = ${sanitizedInput.sessionId}
         `;
+        await applySessionCardReplacement(sql,sanitizedInput.sessionId);
         return {
           ok: true,
           reviewRequired: review.reviewRequired,

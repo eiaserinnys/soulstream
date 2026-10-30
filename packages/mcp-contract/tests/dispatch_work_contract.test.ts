@@ -27,6 +27,13 @@ test("dispatch_work is internal-only with a strict bounded intake shape", () => 
   }).success, true);
   assert.equal(input.safeParse({
     request: "작업",
+    idempotency_key: "work-replace",
+    card_id: "card-1",
+    replace_assignee: true,
+    agent_id: "agent-2",
+  }).success, true);
+  assert.equal(input.safeParse({
+    request: "작업",
     idempotency_key: "work-3",
     card_id: "card-1",
     unknown: true,

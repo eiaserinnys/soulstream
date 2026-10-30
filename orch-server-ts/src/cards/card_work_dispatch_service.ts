@@ -6,6 +6,8 @@ import type { CardControlPlaneService } from "./card_control_plane_service.js";
 import { buildCardChangeNotification } from "./card_change_notification.js";
 import type { CardExecutionService, CardExecutionRequest } from "./card_execution_service.js";
 import type { CardRow, FolderOperationRow, RepositorySql, SqlClient } from "./control_plane/card_types.js";
+import { appendFolderOperation } from "../folders/folder_operation_store.js";
+import type { ExecutionTarget } from "./card_execution_service.js";
 
 export type DispatchWorkInput = {
   request: string;
@@ -14,6 +16,7 @@ export type DispatchWorkInput = {
 } & (
   | { kind: "create"; title: string; folderId?: string; agentId?: string; modelPreset?: string; nodeId?: string }
   | { kind: "followup"; cardId: string }
+  | { kind: "replace"; cardId: string; agentId?: string; modelPreset?: string; nodeId?: string }
 );
 
 export type DispatchWorkActor = {
@@ -39,6 +42,8 @@ export interface CardWorkDispatchServiceOptions {
   sendDelivery(row: SessionDeliveryRow): Promise<void>;
   emitCardUpdated(cardId: string, folderId: string): void | Promise<void>;
   warn(message: string): void;
+  isNodeConnected?(nodeId: string): boolean;
+  validateTarget?(target: ExecutionTarget): Promise<ExecutionTarget>;
 }
 
 type CallerSessionDefaults = {
@@ -54,6 +59,7 @@ type StoredOperation = FolderOperationRow & {
 
 type DeliveryQueryRow = SessionDeliveryRow & Record<string, unknown>;
 type NewlyAcceptedWork = { receipt: AcceptedWork; folderId: string };
+type PreviousAssignee = { session_id:string; agent_id:string; node_id:string; model_preset:string|null; status:string };
 
 const systemFolders = new Set(["claude", "llm"]);
 
@@ -64,13 +70,25 @@ export class CardWorkDispatchService {
     assertInput(input, actor);
     const idempotencyKey = `dispatch-work:${actor.actorSessionId}:${input.idempotencyKey}`;
     let preflightFolderId: string | null = null;
-    if (input.kind === "followup") {
+    let previous: PreviousAssignee | null = null;
+    if (input.kind === "followup" || input.kind === "replace") {
       const existing = await this.options.cards.mcpRead.getCard(input.cardId, { include: [] }, null);
       const card = existing.card as Record<string, unknown> | undefined;
       if (typeof card?.folderId !== "string") throw failure("Card folder is unavailable", 404);
       preflightFolderId = card.folderId;
       assertCardFolder(preflightFolderId);
       await this.options.authorizeFolder(preflightFolderId, actor);
+      if (input.kind === "replace") {
+        const prior = (await this.options.sql<StoredOperation[]>`SELECT * FROM folder_operations WHERE idempotency_key=${idempotencyKey} LIMIT 1`)[0];
+        if (prior) return this.replayReplace(this.options.sql, input, actor, prior);
+        const current = (await this.options.sql<CardRow[]>`SELECT * FROM cards WHERE id=${input.cardId}`)[0];
+        if (!current || current.assignee_kind !== "session" || !current.assignee_session_id)
+          throw failure("담당 세션이 없는 카드는 run_card로 실행하세요.",409);
+        previous = (await this.options.sql<PreviousAssignee[]>`SELECT session_id,agent_id,node_id,model_preset,status FROM sessions WHERE session_id=${current.assignee_session_id}`)[0] ?? null;
+        if (!previous) throw failure("담당 세션이 없는 카드는 run_card로 실행하세요.",409);
+        if (["running","initializing"].includes(previous.status) && this.options.isNodeConnected?.(previous.node_id))
+          throw failure("담당 세션이 지금 턴을 돌고 있습니다. 후속 지시로 전하거나 턴이 끝난 뒤 교체하세요.",409);
+      }
     }
 
     const result = await this.options.sql.begin(async (sql) => {
@@ -82,6 +100,7 @@ export class CardWorkDispatchService {
         return {
           receipt: input.kind === "create"
             ? await this.replayCreate(sql, input, actor, prior)
+            : input.kind === "replace" ? await this.replayReplace(sql,input,actor,prior)
             : await this.replayFollowup(sql, input, actor, prior),
           changed: false,
           folderId: prior.folder_id,
@@ -97,6 +116,11 @@ export class CardWorkDispatchService {
       if (!card) throw failure("Card not found", 404);
       assertCardFolder(card.folder_id);
       if (card.folder_id !== preflightFolderId) await this.options.authorizeFolder(card.folder_id, actor);
+      if (input.kind === "replace") {
+        if (!previous || card.assignee_kind !== "session" || card.assignee_session_id !== previous.session_id)
+          throw failure("예약 이후 카드 담당이 바뀌었습니다. 현재 담당을 확인하세요.",409);
+        return {...await this.replace(sql,input,actor,idempotencyKey,card,previous),changed:true};
+      }
       const ownerSessionId = card.assignee_kind === "session" ? card.assignee_session_id : null;
       if (!ownerSessionId) throw failure("Card has no assigned session", 409);
       const owner = (await sql<{ session_id: string }[]>`
@@ -167,12 +191,13 @@ export class CardWorkDispatchService {
   async kick(receipt: AcceptedWork): Promise<void> {
     try {
       if (receipt.work.kind === "execution") {
-        const operation = await this.readDispatchOperation(receipt.operationId, receipt.card.id, "create_card");
+        const operation = await this.readDispatchOperation(receipt.operationId, receipt.card.id);
+        const replacement = operation.operation_type === "execute_card" && operation.payload_json.dispatch_kind === "replace_assignee";
         const request = (await this.options.sql<CardExecutionRequest[]>`
           SELECT * FROM card_execution_requests WHERE id=${receipt.work.requestId}
         `)[0];
         if (!request || request.card_id !== receipt.card.id || request.session_id !== receipt.work.sessionId
-          || request.idempotency_key !== `dispatch-work-execution:${operation.id}`) {
+          || request.idempotency_key !== `dispatch-work-${replacement ? "replace" : "execution"}:${operation.id}`) {
           throw failure("Saved execution reservation does not match receipt", 409);
         }
         if (request.state !== "pending") return;
@@ -215,10 +240,11 @@ export class CardWorkDispatchService {
       }>>`
         SELECT op.id AS operation_id,c.id AS card_id,c.number,r.id AS request_id,r.session_id
         FROM card_execution_requests r
-        JOIN folder_operations op ON r.idempotency_key='dispatch-work-execution:'||op.id
+        JOIN folder_operations op ON (r.idempotency_key='dispatch-work-execution:'||op.id AND op.operation_type='create_card')
+          OR (r.idempotency_key='dispatch-work-replace:'||op.id AND op.operation_type='execute_card' AND op.payload_json->>'dispatch_kind'='replace_assignee')
         JOIN cards c ON c.id=r.card_id
         WHERE r.state='pending' AND r.target->>'nodeId'=${nodeId}
-          AND op.operation_type='create_card' AND op.actor_kind='agent'
+          AND op.target_kind='card' AND op.target_id=c.id AND op.actor_kind='agent'
           AND op.actor_session_id IS NOT NULL
           AND op.idempotency_key LIKE 'dispatch-work:'||op.actor_session_id||':%'
         ORDER BY r.created_at,r.id
@@ -235,6 +261,46 @@ export class CardWorkDispatchService {
     } catch (error) {
       this.options.warn(`Pending card work scan failed for node ${nodeId}: ${errorMessage(error)}`);
     }
+  }
+
+  private async replace(sql:RepositorySql,input:Extract<DispatchWorkInput,{kind:"replace"}>,actor:DispatchWorkActor,
+    idempotencyKey:string,card:CardRow,previous:PreviousAssignee):Promise<NewlyAcceptedWork> {
+    const targetInput = {nodeId:input.nodeId ?? previous.node_id,agentId:input.agentId ?? previous.agent_id,
+      modelPreset:input.modelPreset ?? previous.model_preset,folderId:card.folder_id};
+    const target = {...await this.options.validateTarget!(targetInput),folderId:card.folder_id};
+    const pending=(await sql<CardExecutionRequest[]>`SELECT * FROM card_execution_requests WHERE card_id=${card.id} AND state='pending' FOR UPDATE`)[0];
+    if(pending){
+      if(pending.idempotency_key.startsWith("dispatch-work-replace:")) throw failure("이미 담당 교체가 진행 중입니다.",409);
+      if(pending.mode==="observe") throw failure("자동 배정 실행이 진행 중입니다. 끝난 뒤 교체하세요.",409);
+      await sql`UPDATE card_execution_requests SET state='failed',error='담당 교체 요청으로 이전 실행 예약을 종료했습니다.',updated_at=NOW() WHERE id=${pending.id}`;
+    }
+    const operationId=randomUUID(),sessionId=randomUUID(),requestId=randomUUID();
+    const payload={dispatch_kind:"replace_assignee",request:input.request,brief:input.brief ?? "",
+      previous_assignee:previous,new_session_id:sessionId,
+      input:{agent_id:input.agentId ?? null,node_id:input.nodeId ?? null,model_preset:input.modelPreset ?? null},target};
+    await appendFolderOperation(sql,{id:operationId,folderId:card.folder_id,targetKind:"card",targetId:card.id,
+      operationType:"execute_card",actorKind:actor.actorKind,actorSessionId:actor.actorSessionId,actorEventId:null,
+      idempotencyKey,payload});
+    const reservationKey=`dispatch-work-replace:${operationId}`;
+    await sql`INSERT INTO card_execution_requests(id,idempotency_key,keys,card_id,session_id,mode,target,previous_status,baseline_event_id)
+      VALUES(${requestId},${reservationKey},${sql.json({})},${card.id},${sessionId},'create',${sql.json(target)},${card.status},0)`;
+    return {receipt:{accepted:true,idempotent:false,operationId,card:{id:card.id,number:card.number},
+      work:{kind:"execution",requestId,sessionId}},folderId:card.folder_id};
+  }
+
+  private async replayReplace(sql:RepositorySql,input:Extract<DispatchWorkInput,{kind:"replace"}>,actor:DispatchWorkActor,operation:StoredOperation):Promise<AcceptedWork>{
+    const payload=operation.payload_json;
+    const supplied=payload.input as Record<string,unknown> | undefined;
+    if(operation.actor_kind!=="agent" || operation.actor_session_id!==actor.actorSessionId || operation.operation_type!=="execute_card"
+      || operation.target_kind!=="card" || operation.target_id!==input.cardId || payload.dispatch_kind!=="replace_assignee"
+      || payload.request!==input.request || payload.brief!==(input.brief ?? "")
+      || supplied?.agent_id!==(input.agentId ?? null) || supplied?.node_id!==(input.nodeId ?? null)
+      || supplied?.model_preset!==(input.modelPreset ?? null)) throw failure("같은 요청 키가 다른 작업에 사용되었습니다.",409);
+    const card=await this.readCard(sql,operation.target_id);
+    const reservation=(await sql<CardExecutionRequest[]>`SELECT * FROM card_execution_requests WHERE idempotency_key=${`dispatch-work-replace:${operation.id}`}`)[0];
+    if(!reservation || reservation.card_id!==card.id) throw failure("Saved execution reservation is unavailable",409);
+    return {accepted:true,idempotent:true,operationId:operation.id,card:{id:card.id,number:card.number},
+      work:{kind:"execution",requestId:reservation.id,sessionId:reservation.session_id}};
   }
 
   private async create(sql: RepositorySql, input: Extract<DispatchWorkInput, { kind: "create" }>,
@@ -341,12 +407,13 @@ export class CardWorkDispatchService {
     return card;
   }
 
-  private async readDispatchOperation(operationId: string, cardId: string, operationType: string): Promise<StoredOperation> {
+  private async readDispatchOperation(operationId: string, cardId: string, operationType?: string): Promise<StoredOperation> {
     const operation = (await this.options.sql<StoredOperation[]>`
       SELECT * FROM folder_operations WHERE id=${operationId}
     `)[0];
     if (!operation || operation.target_kind !== "card" || operation.target_id !== cardId
-      || operation.operation_type !== operationType || operation.actor_kind !== "agent"
+      || (operationType ? operation.operation_type !== operationType
+        : operation.operation_type !== "create_card" && !(operation.operation_type === "execute_card" && operation.payload_json.dispatch_kind === "replace_assignee")) || operation.actor_kind !== "agent"
       || !operation.actor_session_id || operation.idempotency_key?.startsWith(`dispatch-work:${operation.actor_session_id}:`) !== true) {
       throw failure("Saved dispatch operation is unavailable", 409);
     }

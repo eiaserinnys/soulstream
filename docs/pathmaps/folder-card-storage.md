@@ -58,6 +58,8 @@ card_control_plane_service.ts는 카드 commit 뒤, 스냅샷 조회 전에 pers
 
 ## 카드 실행과 세션 연결
 
+`dispatch_work` 담당 교체는 카드 폴더 권한과 멱등 영수증을 확인한 뒤 교체 실행 예약을 접수한다. 새 세션 등록 트랜잭션에서 기존 담당을 다시 확인하고 단일 담당 검사를 거쳐 담당과 실행 대상을 바꾸며, 같은 카드에 속한 직계 자식의 caller도 새 세션으로 옮긴다. 교체 감사 연산과 세션 등록은 함께 커밋된다. 실행 증거가 확인되면 기존 recordExecution이 카드 상태를 running으로 전환한다. 등록 전 실패에는 이전 담당이 남고 등록 후 실패에는 새 담당이 남는다.
+
 | 경로 | 구현 | 계약 |
 | --- | --- | --- |
 | 대기열 진입·재정렬 | `orch-server-ts/src/cards/card_control_plane_service.ts` → `card_dispatcher.ts` | 커밋된 mutation만 실행을 깨운다. `pickNextCard`는 C 정렬 대기열에서 자리가 있는 첫 카드를 고른다. human과 담당 없는 카드는 queued로 두고 사유를 적는다. |

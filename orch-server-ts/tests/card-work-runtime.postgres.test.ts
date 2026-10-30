@@ -37,6 +37,7 @@ describe("card work runtime and internal MCP integration", () => {
   let runtime: Awaited<ReturnType<typeof createCardDispatchRuntime>>;
   let mcp: McpHostOptions;
   let createCommandCount = 0;
+  let lastCreatePayload: Record<string,unknown> | null = null;
   let interventionCommandCount = 0;
   let rejectNextCreate = false;
   let holdNextCreate = false;
@@ -72,10 +73,12 @@ describe("card work runtime and internal MCP integration", () => {
       VALUES (${CALLER_ID},'node-a','agent-a','running','work','model-a')`;
 
     const router = {
+      isNodeConnected: () => true,
       selectNodeForCreate: ({ nodeId, profileId, modelPresetId }: { nodeId: string; profileId: string; modelPresetId?: string }) => ({
         nodeId, profileId, modelPresetId: modelPresetId ?? "model-a",
       }),
       createSession: (payload: Record<string, unknown>) => {
+        lastCreatePayload = payload;
         createCommandCount += 1;
         return {
           node: { nodeId: String(payload.nodeId) },
@@ -161,6 +164,32 @@ describe("card work runtime and internal MCP integration", () => {
     await h?.cleanup();
   });
 
+  it("sends the replacement handoff prompt and reports a confirmed launch failure to PAS",async()=>{
+    const cards=await runtime.serviceProvider();
+    const made=await cards.createCard({actorKind:"user",actorSessionId:null,actorUserId:"test",folderId:"work",
+      title:"이어받을 카드",request:"원래 요청",assignee:{kind:"agent",agentId:"agent-a"},nodeId:"node-a",modelPreset:"model-a"});
+    const cardId=made.operation.target_id,owner=`prompt-owner-${cardId}`,child=`prompt-child-${cardId}`;
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,folder_id,model_preset,caller_session_id)
+      VALUES(${owner},'node-a','agent-a','error',${cardId},'work','model-a',NULL),
+      (${child},'node-a','worker','running',${cardId},'work','model-a',${owner})`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_agent_id=NULL,assignee_session_id=${owner} WHERE id=${cardId}`;
+    const delivered=deferred(); errorDeliveryAccepted=delivered.resolve; rejectNextCreate=true;
+    const result=await executeMcpTool(mcp,"dispatch_work",{card_id:cardId,replace_assignee:true,
+      request:"교체 요청 원문",brief:"새 완료 기준",idempotency_key:`prompt-${cardId}`},
+      {principal:"internal",callerSessionId:CALLER_ID,nodeId:"node-a"});
+    expect(structuredContent(result)).toMatchObject({accepted:true,request_id:expect.any(String)});
+    await delivered.promise;
+    const prompt=String((lastCreatePayload as Record<string,unknown> | null)?.prompt);
+    for(const fragment of ["[카드 담당 교체]","이어받을 카드",owner,child,"교체 요청 원문","새 완료 기준",
+      "get_session_summary","list_session_events"]) expect(prompt).toContain(fragment);
+    const requestId=String(structuredContent(result).request_id);
+    expect(await h.sql`SELECT state FROM card_execution_requests WHERE id=${requestId}`).toEqual([{state:"failed"}]);
+    expect((await h.sql`SELECT assignee_session_id FROM cards WHERE id=${cardId}`)[0]!.assignee_session_id).toBe(owner);
+    const failure=(await h.sql`SELECT target_session_id,payload FROM session_deliveries
+      WHERE producer_kind='card_work_error' AND payload->>'text' LIKE ${`%${requestId}%`}`)[0]!;
+    expect(failure.target_session_id).toBe(CALLER_ID);
+  },60000);
+
   it("returns a committed MCP receipt before kick, keeps normal acceptance quiet, and routes only confirmed errors", async () => {
     const context = { principal: "internal" as const, callerSessionId: CALLER_ID, nodeId: "node-a" };
     createStarted = deferred();
@@ -179,11 +208,13 @@ describe("card work runtime and internal MCP integration", () => {
       SELECT c.request,r.state,r.session_id FROM cards c JOIN card_execution_requests r ON r.card_id=c.id
       WHERE r.id=${String(acceptedContent.request_id)}`;
     expect(stored).toEqual([{ request: "원문 요청", state: "pending", session_id: expect.any(String) }]);
-    expect(await h.sql`SELECT delivery_id FROM session_deliveries WHERE producer_kind='card_work_error'`).toHaveLength(0);
+    expect(await h.sql`SELECT delivery_id FROM session_deliveries WHERE producer_kind='card_work_error' AND producer_id=(
+      SELECT id FROM folder_operations WHERE idempotency_key=${`dispatch-work:${CALLER_ID}:runtime-receipt`})`).toHaveLength(0);
     heldCreate!.resolve();
     await createReturned.promise;
     await tick();
-    expect(await h.sql`SELECT delivery_id FROM session_deliveries WHERE producer_kind='card_work_error'`).toHaveLength(0);
+    expect(await h.sql`SELECT delivery_id FROM session_deliveries WHERE producer_kind='card_work_error' AND producer_id=(
+      SELECT id FROM folder_operations WHERE idempotency_key=${`dispatch-work:${CALLER_ID}:runtime-receipt`})`).toHaveLength(0);
 
     createStarted = deferred();
     createReturned = deferred();
@@ -199,7 +230,8 @@ describe("card work runtime and internal MCP integration", () => {
     await launchErrorAccepted.promise;
     const launchErrorRows = await h.sql<Array<{ target_session_id: string | null; payload: { text?: string }; state: string }>>`
       SELECT target_session_id,payload,state FROM session_deliveries
-      WHERE producer_kind='card_work_error' AND payload->>'text' LIKE '%단계: launch%'`;
+      WHERE producer_kind='card_work_error' AND payload->>'text' LIKE '%단계: launch%'
+        AND producer_id=(SELECT id FROM folder_operations WHERE idempotency_key=${`dispatch-work:${CALLER_ID}:runtime-create-ack-error`})`;
     expect(launchErrorRows).toHaveLength(1);
     expect(launchErrorRows[0]).toMatchObject({ target_session_id: CALLER_ID, state: "queued" });
     expect(launchErrorRows[0]!.payload.text).toContain("node rejected create");

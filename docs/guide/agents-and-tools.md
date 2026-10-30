@@ -31,6 +31,8 @@ Major MCP tool groups include:
 - **Session history and search**: `list_sessions`, `search_sessions` (hybrid lexical, bigram BM25, RRF, and optional Jev reranking), `search_session_history` (event-level BM25 search), `list_session_events`, `get_session_event`, `get_session_summary`, `get_session_story`, `get_session_highlight`, and `get_session_turn_summaries`.
 - **Session lifecycle and delegation**: `create_agent_session`, `create_remote_agent_session`, `send_message_to_session`, `get_session_name`, `set_session_name`, and `delete_session`.
 - **Folder and card orchestration**: `list_folders`, `list_child_folders`, `browse_folder`, `create_folder`, `rename_folder`, `delete_folder`, `create_card`, `run_card`, `dispatch_work`, `get_card`, `list_cards`, `search_cards`, `update_card_brief`, `set_card_items`, `add_card_item`, `report_card_item`, `update_card_now`, `start_card_work`, `request_card_review`, `set_card_status`, `ask_card_question`, `withdraw_card_question`, `add_card_note`, `list_card_notes`, `add_card_comment`, and `transfer_card_assignee`.
+
+  `dispatch_work` creates work with `title`, sends follow-up instructions to an existing assignee with `card_id`, or replaces that assignee with a new session using `card_id` and `replace_assignee=true`. Replacement inherits omitted node, agent and model settings from the previous session. Its receipt confirms acceptance; inspect the card for execution progress.
 - **Chat UI publication**: `publish_chat_ui(publication_key, document)` publishes validated interactive UI payloads alongside readable fallback markdown in chat.
 
 ## Worktrees
