@@ -17,6 +17,9 @@ import { usePhoneRailActions, useRegisterDuoRailOverride } from '../phoneRailAct
 import { PhoneRailModeContext } from '../tabContract';
 import { RailCapsule, RailCapsuleItem } from '../../components/navigation/RailCapsule';
 import { Text } from 'react-native';
+import { DuoRailOverride } from '../../components/navigation/DuoRailOverride';
+import { AppKeyboardAvoidingView } from '../../components/AppKeyboardAvoidingView';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 
 test('숫자와 점의 우선순위와 비활성 상태를 노출한다', () => {
   const onPress = jest.fn();
@@ -52,6 +55,48 @@ test('상세 레일은 마지막 오버레이를 우선하고 닫으면 이전 �
   expect(open).toHaveBeenCalledTimes(1);
   screen.rerender(<Scene inner={false} />);
   expect(screen.getByTestId('phone-rail-action-folder')).toBeTruthy();
+});
+
+test('뒤로 액션을 위에 분리하고 나머지는 하단 캡슐에 둔다', () => {
+  function Override({ single }: { single: boolean }) {
+    useRegisterDuoRailOverride('detail', true, [
+      { id: 'back', label: '뒤로', icon: 'chevron-back', onPress: jest.fn() },
+      ...(single ? [] : [{ id: 'edit', label: '편집', icon: 'pencil' as const, onPress: jest.fn() }]),
+    ]);
+    return null;
+  }
+  const scene = (single: boolean) => <NavigationContainer><Override single={single} />
+    <PhoneRailTabCluster active="DailyTab" onSelect={jest.fn()} duoSideBand />
+  </NavigationContainer>;
+  const screen = render(scene(false));
+  expect(screen.getByTestId('duo-rail-back-capsule')).toBeTruthy();
+  expect(screen.getByTestId('phone-rail-action-back')).toBeTruthy();
+  expect(screen.getByTestId('phone-rail-action-edit')).toBeTruthy();
+  screen.rerender(scene(true));
+  expect(screen.queryByTestId('duo-rail-back-capsule')).toBeNull();
+  expect(screen.getByTestId('phone-rail-tab-cluster')).toBeTruthy();
+  expect(screen.getByTestId('phone-rail-action-back')).toBeTruthy();
+});
+
+test('오버레이 레일도 키보드 위로 올라가고 하단 액션을 제한한다', () => {
+  const key = Symbol('overlay');
+  const onEdit = jest.fn();
+  act(() => usePhoneRailActions.getState().pushOverride(key, [
+    { id: 'close', label: '닫기', icon: 'close', onPress: jest.fn() },
+    { id: 'edit', label: '편집', icon: 'pencil', onPress: onEdit },
+  ]));
+  const screen = render(<NavigationContainer><SafeAreaInsetsContext.Provider value={{ top: 24, bottom: 24, left: 0, right: 84 }}>
+    <DuoRailOverride />
+  </SafeAreaInsetsContext.Provider></NavigationContainer>);
+  act(() => screen.UNSAFE_getByType(AppKeyboardAvoidingView).props.onOverlapChange(300));
+  expect(screen.getByTestId('duo-rail-back-capsule')).toBeTruthy();
+  const capsule = screen.getByTestId('duo-rail-override');
+  expect(capsule).toBeTruthy();
+  expect(StyleSheet.flatten(screen.getByTestId('duo-rail-override-lower').props.style).bottom).toBe(300);
+  expect(StyleSheet.flatten(screen.getByTestId('duo-rail-override-scroll').props.style).maxHeight).toBeGreaterThanOrEqual(0);
+  fireEvent.press(screen.getByTestId('duo-rail-action-edit'));
+  expect(onEdit).toHaveBeenCalledTimes(1);
+  act(() => usePhoneRailActions.getState().removeOverride(key));
 });
 
 test('활성 루트의 동작을 탭보다 앞에 표시하고 호출한다', () => {

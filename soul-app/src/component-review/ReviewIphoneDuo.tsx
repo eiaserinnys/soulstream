@@ -13,6 +13,7 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { DuoSideBandContext, PhoneRailModeContext, RAIL_MIN_INSET_WIDTH } from '../navigation/tabContract';
 import { ContentLinkProvider } from '../navigation/ContentLinkProvider';
 import { PhoneRailTabCluster, TabNavigator } from '../navigation/TabNavigator';
+import { DUO_RAIL_END_INSET } from '../navigation/duoSideBand';
 import { TwoPaneWithDrawer } from '../components/split/TwoPaneWithDrawer';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { PersistentSessionProvider, usePersistentSessionHost, usePersistentSessionScene } from '../navigation/PersistentSessionContext';
@@ -101,7 +102,7 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
                     {view === 'rail-badge' || view === 'rail-dot' ? <DuoBadgeReview dot={view === 'rail-dot'} /> : null}
                   </View>
                 </SafeAreaInsetsContext.Provider>
-                {phone ? <View style={{ width: frame.insets.right, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: frame.insets.bottom }}>
+                {phone ? <View style={{ width: frame.insets.right, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: frame.insets.bottom, ...(duo ? { paddingRight: DUO_RAIL_END_INSET } : {}) }}>
                   <PhoneRailTabCluster active="DailyTab" duoSideBand={duo} compact={duo && frame.width > frame.height} onSelect={() => setView(null)} />
                 </View> : null}
                 {!phone && duo ? <View style={{ width: frame.insets.right }} /> : null}
@@ -176,7 +177,8 @@ function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { fr
               <View style={{ width: frame.rail ? frame.width - frame.insets.right : frame.width, height: frame.height }}><DuoPasCardOverlayStage reportsEmpty={reportsEmpty} initialReportsScene={initialReportsScene} /></View>
             </SafeAreaInsetsContext.Provider>
             {frame.rail && frame.insets.right > 0 ? <View style={{ width: frame.insets.right, height: frame.height,
-              alignItems: 'center', justifyContent: 'flex-end', paddingBottom: compact ? frame.insets.bottom : Math.max(frame.insets.bottom, t.uiSpacing.xxl) }}>
+              alignItems: 'center', justifyContent: 'flex-end', paddingBottom: compact ? frame.insets.bottom : Math.max(frame.insets.bottom, t.uiSpacing.xxl),
+              ...(duoSideBand ? { paddingRight: DUO_RAIL_END_INSET } : {}) }}>
               <DuoPasReviewRail duoSideBand={duoSideBand} compact={compact} />
             </View> : null}
             {!frame.rail && duoSideBand ? <View style={{ width: frame.insets.right, height: frame.height }} /> : null}
@@ -310,6 +312,7 @@ export function ReviewIphoneDuo() {
                             paddingBottom: compact ? frame.insets.bottom : Math.max(frame.insets.bottom, t.uiSpacing.xxl),
                             alignItems: 'center',
                             justifyContent: 'flex-end',
+                            ...(duoSideBand ? { paddingRight: DUO_RAIL_END_INSET } : {}),
                             borderLeftWidth: 1,
                             borderLeftColor: t.colors.border,
                           }}>

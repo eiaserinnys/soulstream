@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   AppState,
+  Dimensions,
   Keyboard,
   Platform,
   StyleSheet,
@@ -114,7 +115,7 @@ export function AppKeyboardAvoidingView({
 
   useEffect(() => {
     activeRef.current = AppState.currentState !== 'background' && AppState.currentState !== 'inactive';
-    if (!behavior) return;
+    if (!behavior && !onOverlapChange) return;
 
     const showEvent =
       Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
@@ -154,13 +155,19 @@ export function AppKeyboardAvoidingView({
       },
     );
 
+    const currentFrame = activeRef.current && Keyboard.isVisible?.() ? Keyboard.metrics?.() : undefined;
+    if (currentFrame) {
+      keyboardFrameRef.current = currentFrame;
+      measureAndApplyInset(currentFrame);
+    }
+
     return () => {
       requestGenerationRef.current += 1;
       showSubscription.remove();
       hideSubscription.remove();
       appStateSubscription.remove();
     };
-  }, [behavior, measureAndApplyInset, resetInset]);
+  }, [behavior, onOverlapChange, measureAndApplyInset, resetInset]);
 
   const handleLayout = useCallback(
     (event: LayoutChangeEvent) => {
@@ -236,10 +243,12 @@ export function resolveKeyboardOverlap(
     return 0;
   }
 
-  const viewRight = viewFrame.x + viewFrame.width;
   const keyboardRight = keyboardFrame.screenX + keyboardFrame.width;
+  const viewX = viewFrame.x >= keyboardRight && viewFrame.x >= Dimensions.get('window').width
+    ? Math.max(0, keyboardRight - viewFrame.width) : viewFrame.x;
+  const viewRight = viewX + viewFrame.width;
   const overlapsHorizontally =
-    keyboardFrame.screenX < viewRight && keyboardRight > viewFrame.x;
+    keyboardFrame.screenX < viewRight && keyboardRight > viewX;
   if (!overlapsHorizontally) return 0;
 
   const viewBottom = viewFrame.y + viewFrame.height;

@@ -258,7 +258,7 @@ test('phone swipes and adjustable page select one accessible sheet; tablet arrow
 test('phone keyboard collapses context/buttons, keeps two-line action, and restores without swallowing links', async () => {
   const listeners: Record<string, () => void> = {};
   jest.spyOn(Keyboard, 'addListener').mockImplementation((name, listener) => {
-    listeners[name] = listener as () => void; return { remove: jest.fn() } as any;
+    const previous = listeners[name]; listeners[name] = () => { previous?.(); (listener as () => void)(); }; return { remove: jest.fn() } as any;
   });
   const dismiss = jest.spyOn(Keyboard, 'dismiss');
   const screen = pager();
@@ -287,7 +287,7 @@ test('phone keyboard collapses context/buttons, keeps two-line action, and resto
 test('eligible card titles open the card sheet even while the phone report is compact', () => {
   const listeners: Record<string, () => void> = {};
   jest.spyOn(Keyboard, 'addListener').mockImplementation((name, listener) => {
-    listeners[name] = listener as () => void; return { remove: jest.fn() } as any;
+    const previous = listeners[name]; listeners[name] = () => { previous?.(); (listener as () => void)(); }; return { remove: jest.fn() } as any;
   });
   const dismissKeyboard = jest.spyOn(Keyboard, 'dismiss');
   const cardEntry = { ...reportReviewEntries[2], key: 'card_531', card_id: 'card-531', card_status: 'review', card_numbers: [531] };
@@ -381,7 +381,7 @@ test('action이 빈 장은 할 일 줄을 그리지 않고, action이 있으면 
 test('compact에서 action이 빈 장은 질문 글을 두 줄로, action이 있으면 할 일을 보여 준다', () => {
   const listeners: Record<string, () => void> = {};
   jest.spyOn(Keyboard, 'addListener').mockImplementation((name, listener) => {
-    listeners[name] = listener as () => void; return { remove: jest.fn() } as any;
+    const previous = listeners[name]; listeners[name] = () => { previous?.(); (listener as () => void)(); }; return { remove: jest.fn() } as any;
   });
   const show = () => act(() => listeners[Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow']());
   const question = { ...reportReviewEntries[0], key: 'question', title: '카드 331번 확인', action: '', options: [],
@@ -757,7 +757,7 @@ test('navigation touch defers a live height update and releases on end, cancella
 test('unequal compact sheets stretch to the shared height with their page after the flexible space', () => {
   const listeners: Record<string, () => void> = {};
   jest.spyOn(Keyboard, 'addListener').mockImplementation((name, listener) => {
-    listeners[name] = listener as () => void; return { remove: jest.fn() } as any;
+    const previous = listeners[name]; listeners[name] = () => { previous?.(); (listener as () => void)(); }; return { remove: jest.fn() } as any;
   });
   const screen = pager(reportReviewEntries.slice(0, 2));
   act(() => listeners[Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow']());

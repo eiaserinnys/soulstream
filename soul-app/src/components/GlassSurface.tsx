@@ -441,7 +441,7 @@ export function GlassButton({
 
   if (variant === 'primary') {
     return (
-      <View style={[style, iconBoundaryStyle]}>
+      <View testID={surfaceTestID} style={[style, iconBoundaryStyle]}>
         {renderButton(false)}
       </View>
     );

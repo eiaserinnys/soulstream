@@ -15,6 +15,7 @@ import { useSearchStore } from '../../../store/searchStore';
 import { DuoSideBandContext } from '../../../navigation/tabContract';
 import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { usePhoneRailActions } from '../../../navigation/phoneRailActions';
+import { AppKeyboardAvoidingView } from '../../AppKeyboardAvoidingView';
 
 const mockOpenPlannerSessionWorkspace = jest.fn();
 const mockOpenFeedSessionCardWorkspace = jest.fn();
@@ -133,6 +134,29 @@ describe('iPad v3 planner shell', () => {
     expect(screen.getByTestId('duo-rail-action-starred')).toBeTruthy();
     expect(screen.getByTestId('duo-main-menu')).toBeTruthy();
     act(() => usePhoneRailActions.getState().removeOverride(folder));
+  });
+
+  it('키보드가 올라오면 상단 뒤로와 하단 레일이 겹치지 않고 하단 행동은 스크롤할 수 있다', () => {
+    const previousWindow = ReactNative.Dimensions.get('window');
+    const previousScreen = ReactNative.Dimensions.get('screen');
+    ReactNative.Dimensions.set({ window: { width: 951, height: 669, scale: 1, fontScale: 1 }, screen: { width: 951, height: 669, scale: 1, fontScale: 1 } });
+    useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-31' }, mainPaneViews: {}, cardBoardExpanded: false, settingsVisible: false });
+    const screen = render(<ThemeProvider value={DefaultTheme}><DuoSideBandContext.Provider value={true}><TwoPaneWithDrawer /></DuoSideBandContext.Provider></ThemeProvider>);
+    const key = Symbol('detail');
+    act(() => usePhoneRailActions.getState().pushOverride(key, [
+      { id: 'close', label: '닫기', icon: 'close', onPress: jest.fn() },
+      ...['one', 'two', 'three', 'four', 'five'].map(id => ({ id, label: id, icon: 'add' as const, onPress: jest.fn() })),
+    ]));
+    const avoider = screen.UNSAFE_getAllByType(AppKeyboardAvoidingView).find(node => node.props.onOverlapChange)!;
+    act(() => avoider.props.onOverlapChange(300));
+    expect(screen.getByTestId('duo-rail-back-capsule')).toBeTruthy();
+    const band = StyleSheet.flatten(screen.getByTestId('duo-main-band').props.style);
+    const scroll = screen.getByTestId('duo-main-actions-scroll');
+    expect(StyleSheet.flatten(scroll.props.style).maxHeight).toBeLessThanOrEqual(669 - band.bottom - 200 - 50);
+    expect(screen.getByTestId('duo-rail-action-five')).toBeTruthy();
+    act(() => usePhoneRailActions.getState().removeOverride(key));
+    screen.unmount();
+    ReactNative.Dimensions.set({ window: previousWindow, screen: previousScreen });
   });
 
   it('가로는 좌 내비·중앙 플래너·우 세션의 3열과 업무 오버레이를 공유한다', () => {

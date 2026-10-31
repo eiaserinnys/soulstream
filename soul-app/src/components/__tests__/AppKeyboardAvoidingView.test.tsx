@@ -116,6 +116,34 @@ describe('AppKeyboardAvoidingView', () => {
     jest.restoreAllMocks();
   });
 
+  test('이미 열린 키보드와 겹치는 경우 마운트 즉시 회피한다', () => {
+    keyboardVisible = true;
+    keyboardMetrics = keyboardEvent(500, 300).endCoordinates;
+    const screen = renderAvoider('padding');
+    expect(paddingBottom(screen.getByTestId('keyboard-avoider'))).toBe(300);
+  });
+
+  test('behavior 없이도 겹침을 콜백으로 전달한다', () => {
+    const onOverlapChange = jest.fn();
+    render(<AppKeyboardAvoidingView onOverlapChange={onOverlapChange}><View /></AppKeyboardAvoidingView>);
+    act(() => emitKeyboard('keyboardWillShow', keyboardEvent(500, 300)));
+    expect(onOverlapChange).toHaveBeenLastCalledWith(300);
+  });
+
+  test('오른쪽 화면 밖에서 진입하는 패널의 키보드 겹침을 계산한다', () => {
+    expect(resolveKeyboardOverlap(
+      { x: 1024, y: 100, width: 600, height: 700 },
+      { screenX: 0, screenY: 500, width: 1024, height: 300 },
+    )).toBe(300);
+  });
+
+  test('화면 안에서 떠 있는 키보드 오른쪽에 있는 패널은 밀지 않는다', () => {
+    expect(resolveKeyboardOverlap(
+      { x: 600, y: 100, width: 150, height: 700 },
+      { screenX: 0, screenY: 500, width: 400, height: 300 },
+    )).toBe(0);
+  });
+
   test('background → active 사이에 비정상 keyboard frame이 와도 inset을 0으로 복구한다', () => {
     const screen = renderAvoider('padding');
     const avoider = screen.getByTestId('keyboard-avoider');
