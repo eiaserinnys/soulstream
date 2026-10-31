@@ -53,20 +53,19 @@ export function FolderWorkspaceReadOverlay({ host = 'root', parentWidth }: {
     : null;
 }
 
-export function CardDetailPane({ api, cardId, detailWidth, hideRightBorder = false, active = true, onClose, onOpenSession, extraRailActions }: {
+export function CardDetailPane({ api, cardId, detailWidth, hideRightBorder = false, active = true, onClose, onOpenSession }: {
   api: ReturnType<typeof createApiClient> | null;
   cardId: string;
   detailWidth?: number;
   hideRightBorder?: boolean;
   active?: boolean;
-  extraRailActions?: PhoneRailAction[];
   onClose(): void;
   onOpenSession?(id: string): void;
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   return <View testID="task-workspace-task-pane" style={[styles.folderPane, detailWidth === undefined ? { flex: 1, borderRightWidth: 0 } : { width: detailWidth }, hideRightBorder ? { borderRightWidth: 0 } : null]}>
-    <CardDetailContent key={cardId} api={api} cardId={cardId} inline visible={active} extraRailActions={extraRailActions} onClose={onClose} onOpenSession={onOpenSession} />
+    <CardDetailContent key={cardId} api={api} cardId={cardId} inline visible={active} onClose={onClose} onOpenSession={onOpenSession} />
   </View>;
 }
 
@@ -88,7 +87,7 @@ export function CardConversationPane({ active, sessionId, onClose, hideChat = fa
 }
 
 /** 카드/폴더 상세 열. 2열에서는 폭을 받고, 단일 열에서는 남는 폭을 다 쓴다. */
-export function FolderWorkspaceDetailPane({ api, cardId, pageId, sessionId, active, width, hideRightBorder = false, onClose, onOpenSession, onOpenFolder, extraRailActions }: {
+export function FolderWorkspaceDetailPane({ api, cardId, pageId, sessionId, active, width, hideRightBorder = false, onClose, onOpenSession, onOpenFolder }: {
   api: ReturnType<typeof createApiClient> | null;
   cardId: string | null;
   pageId: string | null;
@@ -96,7 +95,6 @@ export function FolderWorkspaceDetailPane({ api, cardId, pageId, sessionId, acti
   active: boolean;
   width?: number;
   hideRightBorder?: boolean;
-  extraRailActions?: PhoneRailAction[];
   onClose(): void;
   onOpenSession?(id: string): void;
   onOpenFolder?(folderId: string, projectPageId: string): void;
@@ -111,7 +109,7 @@ export function FolderWorkspaceDetailPane({ api, cardId, pageId, sessionId, acti
   ));
 
   if (cardId) {
-    return <CardDetailPane api={api} cardId={cardId} detailWidth={width} hideRightBorder={hideRightBorder} active={active} extraRailActions={extraRailActions}
+    return <CardDetailPane api={api} cardId={cardId} detailWidth={width} hideRightBorder={hideRightBorder} active={active}
       onClose={onClose} onOpenSession={onOpenSession} />;
   }
 
@@ -122,7 +120,6 @@ export function FolderWorkspaceDetailPane({ api, cardId, pageId, sessionId, acti
           api={api}
           folderPageId={pageId}
           active={active}
-          extraRailActions={extraRailActions}
           onOpenSession={onOpenSession}
           onClose={onClose}
           onOpenFolder={onOpenFolder}
@@ -233,10 +230,9 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
     continuity?.setViewState(memoryKey, 'detail');
     useUIStore.setState({ overlaySessionExplicit: false, initialCardSessionId: null });
   };
-  const chatActions: PhoneRailAction[] = [
-    ...(canReturnToDetail ? [{ id: 'back', label: '상세로 돌아가기', icon: 'chevron-back' as const, onPress: returnToDetail }] : []),
-    { id: 'close', label: '챗 닫기', icon: 'close', onPress: onClose },
-  ];
+  const chatActions: PhoneRailAction[] = canReturnToDetail
+    ? [{ id: 'back', label: '상세로 돌아가기', icon: 'chevron-back', onPress: returnToDetail }]
+    : [{ id: 'close', label: '챗 닫기', icon: 'close', onPress: onClose }];
   useRegisterDuoRailOverride('folder-chat', duo && active && (step === 'chat' || (!cardId && !pageId && !!sessionId)), chatActions);
   const backButton = (
     <GlassButton
@@ -310,12 +306,8 @@ export function CardDetailChatPanes({ api, cardId, active, detailWidth, onClose,
   hideChat?: boolean;
   ownsSessionConnection?: boolean;
 }) {
-  const closeChat = onCloseChat ?? (() => useUIStore.getState().setActiveSessionId(null));
-  const extraRailActions: PhoneRailAction[] = !hideChat && sessionId ? [
-    { id: 'close-chat', label: '챗 닫기', icon: 'close-outline', onPress: closeChat },
-  ] : [];
   return <>
-    <CardDetailPane api={api} cardId={cardId} detailWidth={detailWidth} active={active} extraRailActions={extraRailActions} onClose={onClose} onOpenSession={onOpenSession} />
+    <CardDetailPane api={api} cardId={cardId} detailWidth={detailWidth} active={active} onClose={onClose} onOpenSession={onOpenSession} />
     <CardConversationPane active={active} sessionId={sessionId} onClose={onCloseChat} hideChat={hideChat} ownsSessionConnection={ownsSessionConnection} />
   </>;
 }
@@ -452,7 +444,6 @@ function FolderWorkspaceOverlayContent({ parentWidth }: { parentWidth?: number }
             sessionId={sessionId}
             active={visible}
             width={folderPaneWidth}
-            extraRailActions={sessionId ? [{ id: 'close-chat', label: '챗 닫기', icon: 'close-outline', onPress: () => setActiveSessionId(null) }] : []}
             onClose={close}
             onOpenSession={setActiveSessionId}
             onOpenFolder={openFolder}

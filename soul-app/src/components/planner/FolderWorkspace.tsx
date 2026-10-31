@@ -20,7 +20,8 @@ import { useSessionStore } from '../../store/sessionStore';
 import { SessionSuccessionHost } from './SessionSuccessionHost';
 import { TabletPaneHeader } from '../split/TabletPaneHeader';
 import { FolderSessionHistory } from './FolderSessionHistory';
-import { FolderCards } from './FolderCards';
+import { FolderCards, type FolderCardsHandle } from './FolderCards';
+import { useCardDisplay } from '../../hooks/useCardDisplay';
 import { FolderWorkspaceList } from './FolderWorkspaceList';
 import { AppGlassCard } from '../AppGlassCard';
 import { FolderBoardContent } from './FolderBoardContent';
@@ -54,7 +55,6 @@ export function FolderWorkspace({
   onTitleSaved,
   onOpenFolder,
   cardDisplay,
-  extraRailActions = [],
 }: {
   api: ApiClient | null;
   folderPageId: string;
@@ -65,7 +65,6 @@ export function FolderWorkspace({
   onTitleSaved?: (title: string) => void;
   onOpenFolder?: (folderId: string, pageId: string, name: string) => void;
   cardDisplay?: FolderCardDisplay;
-  extraRailActions?: PhoneRailAction[];
 }) {
   const t = useTokens();
   const tablet = useDeviceType() !== 'phone';
@@ -88,6 +87,9 @@ export function FolderWorkspace({
         pageDetail.data?.blocks ?? [],
       )
     : undefined), [folder, pageDetail.data, planner.data, storedFolderSummary]);
+  const localCardDisplay = useCardDisplay(folderSummary?.folderId ?? folderId ?? folderPageId);
+  const folderCardDisplay = cardDisplay ?? localCardDisplay;
+  const folderCardsRef = useRef<FolderCardsHandle>(null);
   const today = useUIStore((state) => state.todayDate);
   const todayDaily = usePlannerDaily(api, today, active);
   const folderInToday = todayDaily.data
@@ -155,7 +157,9 @@ export function FolderWorkspace({
       { id: 'today', label: '오늘 데일리', icon: (folderInToday ? 'sunny' : 'sunny-outline') as PhoneRailAction['icon'], selected: folderInToday === true, disabled: !scopedApi || !todayReady, onPress: () => { void runRailToggle('today'); } },
     ] : []),
     ...(folder?.projectPageId ? [{ id: 'menu', label: '폴더 메뉴', icon: 'ellipsis-horizontal' as const, onPress: () => menus.openProjectMenu({ folder, projectPageId: folder.projectPageId!, onOpen: () => undefined, onCreateFolder: () => setNewFolderDraft({ parentPageId: folder.projectPageId! }) }) }] : []),
-    ...extraRailActions,
+    { id: 'create', label: '드래프트 카드 추가', icon: 'add-outline', disabled: !folderSummary, onPress: () => folderCardsRef.current?.toggleCreate() },
+    { id: 'completed', label: '완료·취소 숨김', icon: folderCardDisplay.includeCompleted ? 'eye-outline' : 'eye-off-outline', selected: !folderCardDisplay.includeCompleted,
+      disabled: !folderSummary, onPress: () => folderCardDisplay.onChange(!folderCardDisplay.includeCompleted) },
   ];
   useRegisterDuoRailOverride(`folder-${folderPageId}`, duo && active, railActions);
 
@@ -443,7 +447,7 @@ export function FolderWorkspace({
           ) : null}
         </TabletPaneHeader>
       ) : null}
-      <FolderWorkspaceList scrollMemoryKey={JSON.stringify(['folder', folderPageId, 'sessions'])} api={api} folderId={folderSummary.folderId} active={active} cardDisplay={cardDisplay} onOpenSession={onOpenSession} onNearEnd={notifySessionNearEnd}
+      <FolderWorkspaceList scrollMemoryKey={JSON.stringify(['folder', folderPageId, 'sessions'])} api={api} folderId={folderSummary.folderId} active={active} cardDisplay={folderCardDisplay} onOpenSession={onOpenSession} onNearEnd={notifySessionNearEnd}
         contentContainerStyle={styles.content}
         header={<>
         {pageDetail.error ? <Text style={styles.error}>{pageDetail.error}</Text> : null}
@@ -544,7 +548,7 @@ export function FolderWorkspace({
             </>
           )}
         </View>
-        <FolderCards api={api} folderId={folderSummary.folderId} active={active} onOpenSession={onOpenSession} cardDisplay={cardDisplay} virtualHost/>
+        <FolderCards ref={folderCardsRef} api={api} folderId={folderSummary.folderId} active={active} onOpenSession={onOpenSession} cardDisplay={folderCardDisplay} virtualHost/>
         </>}
         footer={<>
         {folder ? (

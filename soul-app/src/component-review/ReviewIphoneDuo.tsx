@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
+import { DefaultTheme, NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { ScrollView, Text, View } from 'react-native';
 import {
   SafeAreaFrameContext,
@@ -77,15 +77,19 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
   const phone = frameId.startsWith('outer-') || frameId.startsWith('iphone-');
   const initialTab = params.get('tab') ?? undefined;
   const [view, setView] = useState(params.get('view'));
+  const navigationRef = useNavigationContainerRef<any>();
+  const phoneChat = phone && view === 'chat';
   const api = useMemo(() => createReviewApi('normal', { entryShell: true }), []);
   useEffect(() => installEntryShellPublicHarness(), []);
   return <PersistentSessionProvider><ContentLinkProvider>
     <SafeAreaFrameContext.Provider value={{ x: 0, y: 0, width: frame.width, height: frame.height }}>
       <SafeAreaInsetsContext.Provider value={frame.insets}>
         <DuoSideBandContext.Provider value={duo}>
-          <NavigationContainer>
+          <NavigationContainer ref={navigationRef} onReady={() => {
+            if (phoneChat) navigationRef.navigate('FeedTab', { screen: 'Chat', params: { sessionId: 'public-shell-session-0' } });
+          }}>
             <View style={{ width: frame.width, height: frame.height, overflow: 'hidden' }}>
-              {view ? <View style={{ flex: 1, flexDirection: 'row' }}>
+              {view && !phoneChat ? <View style={{ flex: 1, flexDirection: 'row' }}>
                 <SafeAreaInsetsContext.Provider value={{ ...frame.insets, right: 0 }}>
                   <View style={{ flex: 1, paddingTop: frame.insets.top, paddingBottom: frame.insets.bottom }}>
                     {view === 'card-detail' ? <CardDetailContent api={api} cardId={entryShellCardId} inline={!phone} onClose={() => setView(null)} /> : null}
@@ -99,7 +103,7 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
                 </View> : null}
                 {!phone && duo ? <View style={{ width: frame.insets.right }} /> : null}
                 {!phone && duo ? <DuoRailOverride /> : null}
-              </View> : phone ? <TabNavigator initialTab={initialTab} /> : <MainReviewStack.Navigator screenOptions={{ headerShown: false }}>
+              </View> : phone ? <TabNavigator initialTab={phoneChat ? 'FeedTab' : initialTab} /> : <MainReviewStack.Navigator screenOptions={{ headerShown: false }}>
                 <MainReviewStack.Screen name="Main" component={TwoPaneWithDrawer} />
                 <MainReviewStack.Screen name="PersistentSession" component={DuoPasCardOverlayStage} />
               </MainReviewStack.Navigator>}

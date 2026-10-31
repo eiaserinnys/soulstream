@@ -17,6 +17,7 @@ import { retryPlannerSessionWorkspace } from '../../../lib/planner-folder-worksp
 import { coordinateFolderWorkspaceClose } from '../../../lib/planner-folder-title-save';
 import { TABLET_SHELL_LAYOUT } from '../../../theme';
 import { DuoSideBandContext } from '../../../navigation/tabContract';
+import { usePhoneRailActions } from '../../../navigation/phoneRailActions';
 
 let mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
 let mockInsets = { top: 0, bottom: 0, left: 0, right: 0 };
@@ -315,19 +316,25 @@ test.each([
   expect(screen.getByTestId('task-workspace-chat-pane')).toBeTruthy();
 });
 
-test('듀오 두 열에서 채팅만 닫아도 카드 상세는 열린 채 유지된다', () => {
+test('듀오 두 열에서는 상세 닫기 외에 중복 채팅 닫기 액션을 두지 않는다', () => {
   mockWindowDimensions = { width: 951, height: 669, scale: 1, fontScale: 1 };
   const detail = cardDetail('card-duo-chat', 'session-only');
   useCardStore.getState().putDetail(detail);
   useUIStore.getState().openCardOverlay(detail.card.id);
   act(() => { useUIStore.getState().setActiveSessionId('session-only'); });
   const screen = render(<DuoSideBandContext.Provider value={true}><FolderWorkspaceReadOverlay /></DuoSideBandContext.Provider>);
-  const actions = screen.getByTestId('overlay-card-detail').props.extraRailActions;
-  const closeChat = actions.find((action: { id: string }) => action.id === 'close-chat');
-  expect(closeChat).toBeTruthy();
-  act(() => { closeChat.onPress(); });
-  expect(useUIStore.getState().activeSessionId).toBeNull();
-  expect(useUIStore.getState().folderOverlayVisible).toBe(true);
+  expect(screen.getByTestId('overlay-card-detail').props.extraRailActions).toBeUndefined();
+});
+
+test('듀오 단일 열 채팅은 상세가 있으면 뒤로, 단독 세션이면 닫기만 표시한다', () => {
+  mockWindowDimensions = { width: 669, height: 951, scale: 1, fontScale: 1 };
+  useUIStore.getState().openCardOverlay('single-card', 'session-only');
+  const screen = render(<DuoSideBandContext.Provider value={true}><FolderWorkspaceReadOverlay /></DuoSideBandContext.Provider>);
+  expect(usePhoneRailActions.getState().overrides.at(-1)?.actions.map(action => action.id)).toEqual(['back']);
+  screen.unmount();
+  useUIStore.getState().openSessionOverlay('session-only');
+  render(<DuoSideBandContext.Provider value={true}><FolderWorkspaceReadOverlay /></DuoSideBandContext.Provider>);
+  expect(usePhoneRailActions.getState().overrides.at(-1)?.actions.map(action => action.id)).toEqual(['close']);
 });
 
 test('the native board sheet and inline root exclusively host the same overlay', () => {

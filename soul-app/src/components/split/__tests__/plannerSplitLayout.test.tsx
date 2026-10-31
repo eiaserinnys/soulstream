@@ -100,6 +100,18 @@ describe('iPad v3 planner shell', () => {
     expect(screen.getByTestId('duo-main-band-capsule')).toBeTruthy();
   });
 
+  it('확대 보드와 설정 모달이 열리면 바깥 듀오 레일을 숨기고 닫으면 복원한다', () => {
+    useUIStore.setState({ cardBoardExpanded: false, settingsVisible: false });
+    const screen = render(<ThemeProvider value={DefaultTheme}><DuoSideBandContext.Provider value={true}><TwoPaneWithDrawer /></DuoSideBandContext.Provider></ThemeProvider>);
+    expect(screen.getByTestId('duo-main-band')).toBeTruthy();
+    act(() => { useUIStore.setState({ cardBoardExpanded: true }); });
+    expect(screen.queryByTestId('duo-main-band')).toBeNull();
+    act(() => { useUIStore.setState({ cardBoardExpanded: false, settingsVisible: true }); });
+    expect(screen.queryByTestId('duo-main-band')).toBeNull();
+    act(() => { useUIStore.setState({ settingsVisible: false }); });
+    expect(screen.getByTestId('duo-main-band')).toBeTruthy();
+  });
+
   it('가로는 좌 내비·중앙 플래너·우 세션의 3열과 업무 오버레이를 공유한다', () => {
     const screen = render(<ThreePaneLayout />);
 

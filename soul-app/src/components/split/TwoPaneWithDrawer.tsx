@@ -72,6 +72,8 @@ export function TwoPaneWithDrawer() {
   const paneMiddleWidth = useUIStore((s) => s.paneMiddleWidth);
   const paneMiddleWidthTwoPane = useUIStore((s) => s.paneMiddleWidthTwoPane);
   const folderOverlayVisible = useUIStore((s) => s.folderOverlayVisible);
+  const cardBoardExpanded = useUIStore((s) => s.cardBoardExpanded);
+  const settingsVisible = useUIStore((s) => s.settingsVisible);
   const setPaneMiddleWidthTwoPane = useUIStore((s) => s.setPaneMiddleWidthTwoPane);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -174,7 +176,7 @@ export function TwoPaneWithDrawer() {
         <FolderWorkspaceReadOverlay />
       </TabletSafeAreaFrame>
     </SafeAreaView>
-    {duo ? <AppKeyboardAvoidingView
+    {duo && !cardBoardExpanded && !settingsVisible ? <AppKeyboardAvoidingView
       pointerEvents="box-none" behavior="padding" onOverlapChange={setKeyboardOverlap}
       style={StyleSheet.absoluteFill}>
       <View testID="duo-main-band" pointerEvents="box-none" style={{

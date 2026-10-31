@@ -56,7 +56,6 @@ type CardDetailContentProps = {
   onOpenSession?(id: string): void;
   inline?: boolean;
   visible?: boolean;
-  extraRailActions?: PhoneRailAction[];
 };
 
 export function CardDetailSheet({ api, cardId, onClose, onOpenSession }: {
@@ -74,7 +73,7 @@ export function CardDetailSheet({ api, cardId, onClose, onOpenSession }: {
 }
 
 export function CardDetailContent(props: CardDetailContentProps) {
-  const { api, cardId, onClose, onOpenSession, inline = false, visible = true, extraRailActions = [] } = props;
+  const { api, cardId, onClose, onOpenSession, inline = false, visible = true } = props;
   const duo = useDuoSideBand();
   const t = useTokens();
   const styles = useMemo(() => cardDetailStyles(t), [t]);
@@ -233,7 +232,6 @@ export function CardDetailContent(props: CardDetailContentProps) {
     { id: 'tab-comments', label: '커멘트', icon: 'chatbubble-outline', selected: tab === 'comments', dot: commentUnread, onPress: () => setTab('comments') },
     { id: 'tab-sessions', label: '세션', icon: 'terminal-outline', selected: tab === 'sessions', onPress: () => setTab('sessions') },
     { id: 'tab-notes', label: '노트', icon: 'document-text-outline', selected: tab === 'notes', onPress: () => setTab('notes') },
-    ...extraRailActions,
   ];
   useRegisterDuoRailOverride(`card-${cardId}`, duo && visible, railActions);
   const selectedItem = targetItem;

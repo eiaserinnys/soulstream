@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { forwardRef, useImperativeHandle, useMemo, useState } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import { usePlannerFolder } from '../../hooks/usePlannerFolder';
@@ -16,14 +16,19 @@ import { useCompletedCards } from '../../hooks/useCompletedCards';
 import { CompletedCardCollection } from './CompletedCardCollection';
 import { LiquidGlassButton } from '../LiquidGlassButton';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { useDuoSideBand } from '../../navigation/duoSideBand';
 
-export function FolderCards({ api, folderId, active = true, onOpenSession, cardDisplay:controlledDisplay,virtualHost=false }: {
+export interface FolderCardsHandle { toggleCreate(): void; }
+
+export const FolderCards = forwardRef<FolderCardsHandle, {
   api: ApiClient | null; folderId: string; active?: boolean; onOpenSession?(id: string): void; cardDisplay?: FolderCardDisplay;
   virtualHost?:boolean;
-}) {
+}>(function FolderCards({ api, folderId, active = true, onOpenSession, cardDisplay:controlledDisplay,virtualHost=false }, ref) {
   const t = useTokens();
+  const duo = useDuoSideBand();
   const styles = useMemo(() => cardStyles(t), [t]);
   const [adding, setAdding] = useState(false);
+  useImperativeHandle(ref, () => ({ toggleCreate: () => setAdding(open => !open) }), []);
   const [selected, setSelected] = useState<string | null>(null);
   const localDisplay=useCardDisplay(folderId),cardDisplay=controlledDisplay??localDisplay;
   const completed=useCompletedCards(api,folderId,active&&cardDisplay.includeCompleted&&!virtualHost);
@@ -31,9 +36,9 @@ export function FolderCards({ api, folderId, active = true, onOpenSession, cardD
   return <View testID="folder-cards" style={styles.section}>
     <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: t.uiSpacing.sm }}>
       <View style={{ flexGrow: 1 }}><PlannerSectionHeader testID="planner-section-header-cards" title="카드"/></View>
-      <CompletedCardsToggle includeCompleted={cardDisplay.includeCompleted}
+      {!duo ? <><CompletedCardsToggle includeCompleted={cardDisplay.includeCompleted}
         completedCount={data?.cards.filter((card) => card.status === 'done').length ?? 0} onChange={cardDisplay.onChange} />
-      <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="카드 추가" onPress={()=>setAdding(open=>!open)}><Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary}/></LiquidGlassButton>
+      <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel="카드 추가" onPress={()=>setAdding(open=>!open)}><Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary}/></LiquidGlassButton></> : null}
     </View>
     {adding ? <CardComposer key={folderId} api={api} folderId={folderId} onCreated={() => setAdding(false)} /> : null}
     {loading && !data ? <ActivityIndicator color={t.colors.accent} /> : null}
@@ -42,4 +47,4 @@ export function FolderCards({ api, folderId, active = true, onOpenSession, cardD
     {!virtualHost&&cardDisplay.includeCompleted?<CompletedCardCollection api={api} browser={completed} onOpen={setSelected}/>:null}
     <CardDetailSheet api={api} cardId={selected} onClose={() => setSelected(null)} onOpenSession={onOpenSession} />
   </View>;
-}
+});
