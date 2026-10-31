@@ -330,8 +330,18 @@ describe('streamingSlotTransitionForEvent', () => {
       clear: [],
     });
     expect(streamingSlotTransitionForEvent('complete', {})).toEqual({
-      finalize: ['assistant', 'thinking'],
-      clear: [],
+      finalize: ['thinking'],
+      clear: ['assistant'],
     });
   });
+
+  it.each(['intervention_sent', 'user_message', 'complete', 'session_ended'])(
+    '%s 경계는 assistant preview를 지우고 thinking만 finalize한다',
+    (type) => {
+      expect(streamingSlotTransitionForEvent(type, {})).toEqual({
+        finalize: ['thinking'],
+        clear: ['assistant'],
+      });
+    },
+  );
 });

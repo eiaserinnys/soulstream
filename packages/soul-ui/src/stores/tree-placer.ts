@@ -78,6 +78,43 @@ function removeLiveTextNode(
   return true;
 }
 
+/** Removes incomplete transient text nodes without touching completed or durable text. */
+export function removeIncompleteTransientTextNodes(
+  ctx: ProcessingContext,
+  root: EventTreeNode | null,
+): boolean {
+  const finalizedNodes = new Set<EventTreeNode>();
+  for (const identity of ctx.finalizedTextStreams) {
+    const node = ctx.nodeMap.get(liveTextNodeKey(identity));
+    if (node?.type === "text") finalizedNodes.add(node);
+  }
+  const isTransient = (node: EventTreeNode): node is TextTargetNode => {
+    if (node.type !== "text" || node.textCompleted === true || finalizedNodes.has(node)) return false;
+    const eventId = readNodeEventId(node);
+    return !(typeof eventId === "number" && Number.isSafeInteger(eventId) && eventId > 0);
+  };
+  const candidates = new Set<TextTargetNode>();
+  for (const child of root?.children ?? []) {
+    if (isTransient(child)) candidates.add(child);
+  }
+  for (const node of ctx.nodeMap.values()) {
+    if (isTransient(node)) candidates.add(node);
+  }
+  if (ctx.activeTextTarget && isTransient(ctx.activeTextTarget)) {
+    candidates.add(ctx.activeTextTarget);
+  }
+
+  if (candidates.size === 0) return false;
+  if (root) root.children = root.children.filter((child) => !candidates.has(child as TextTargetNode));
+  if (ctx.activeTextTarget && candidates.has(ctx.activeTextTarget)) {
+    ctx.activeTextTarget = null;
+  }
+  for (const [key, node] of ctx.nodeMap) {
+    if (candidates.has(node as TextTargetNode)) ctx.nodeMap.delete(key);
+  }
+  return true;
+}
+
 /**
  * 새 노드를 root.children 의 시간순(eventId ASC) 위치에 삽입한다.
  *

@@ -32,7 +32,13 @@ import {
   applyUpdate,
   applyPendingResolution,
 } from "./node-factory";
-import { applyLiveTextSnapshot, placeInTree, handleTextStart, repositionNodeInOrder } from "./tree-placer";
+import {
+  applyLiveTextSnapshot,
+  handleTextStart,
+  placeInTree,
+  removeIncompleteTransientTextNodes,
+  repositionNodeInOrder,
+} from "./tree-placer";
 import { shouldNotify } from "./session-updater";
 
 /** ensureRoot가 필요한 이벤트 타입 (text_delta, text_end, tool_result, subagent_stop 제외) */
@@ -71,6 +77,29 @@ export function acceptLiveTextEvent(
   if (sequence <= prior) return false;
   ctx.liveTextLastSeqByIdentity.set(streamIdentity, sequence);
   return !ctx.resetRequiredTextStreams.has(streamIdentity);
+}
+
+function isLiveTextLifecycleFence(event: SoulSSEEvent): boolean {
+  return event.type === "intervention_sent" || event.type === "user_message" ||
+    event.type === "complete" || event.type === "session_ended";
+}
+
+function lifecycleFenceLiveSeq(event: SoulSSEEvent): number | null {
+  const sequence = (event as unknown as { liveSeq?: unknown }).liveSeq;
+  return typeof sequence === "number" && Number.isSafeInteger(sequence) && sequence >= 0
+    ? sequence
+    : null;
+}
+
+function isPostSnapshotLifecycleFenceReplay(
+  event: SoulSSEEvent,
+  eventId: number,
+  lastEventId: number,
+  ctx: ProcessingContext,
+): boolean {
+  const liveSeq = lifecycleFenceLiveSeq(event);
+  return isLiveTextLifecycleFence(event) && eventId > 0 && eventId <= lastEventId &&
+    liveSeq !== null && liveSeq > ctx.liveTextThroughSeq;
 }
 
 /**
@@ -123,6 +152,7 @@ export function processEventSingle(
     eventId > 0
     && eventId <= lastEventId
     && !canApplyReassertedLiveTextFinal(event, eventId, lastEventId, ctx)
+    && !isPostSnapshotLifecycleFenceReplay(event, eventId, lastEventId, ctx)
   ) {
     return { root, updated: false, notify: false, newLastEventId: lastEventId, isHistorySync: false };
   }
@@ -178,8 +208,27 @@ export function processEventSingle(
     };
   }
 
+  if (isPostSnapshotLifecycleFenceReplay(event, eventId, lastEventId, ctx)) {
+    const removed = removeIncompleteTransientTextNodes(ctx, root);
+    ctx.liveTextThroughSeq = lifecycleFenceLiveSeq(event)!;
+    return {
+      root,
+      updated: removed,
+      notify: false,
+      newLastEventId: lastEventId,
+      isHistorySync: false,
+    };
+  }
+
   if (!acceptLiveTextEvent(event, eventId, ctx)) {
     return { root, updated: false, notify: false, newLastEventId: lastEventId, isHistorySync: false };
+  }
+
+  let lifecycleUpdated = false;
+  if (isLiveTextLifecycleFence(event)) {
+    lifecycleUpdated = removeIncompleteTransientTextNodes(ctx, root);
+    const liveSeq = lifecycleFenceLiveSeq(event);
+    if (liveSeq !== null) ctx.liveTextThroughSeq = Math.max(ctx.liveTextThroughSeq, liveSeq);
   }
 
   // root 보장
@@ -202,10 +251,11 @@ export function processEventSingle(
     updated = true;
   } else if (event.type === "text_start") {
     root = ensureRoot(root, ctx);
-    updated = handleTextStart(event as TextStartEvent, eventId, ctx, root);
+    updated = handleTextStart(event as TextStartEvent, eventId, ctx, root) || lifecycleUpdated;
   } else {
-    updated = applyUpdate(event, eventId, ctx, root);
+    updated = applyUpdate(event, eventId, ctx, root) || lifecycleUpdated;
   }
+  updated = updated || lifecycleUpdated;
 
   const notify = ctx.historySynced && shouldNotify(event);
 
@@ -267,8 +317,30 @@ export function processEventsBatch(
       && eventId > 0
       && eventId <= lastEventId
       && !canApplyReassertedLiveTextFinal(event, eventId, lastEventId, ctx)
+      && !isPostSnapshotLifecycleFenceReplay(event, eventId, lastEventId, ctx)
     ) continue;
     if (eventId > maxEventId) maxEventId = eventId;
+
+    const reassertedFence = !skipDedup && isPostSnapshotLifecycleFenceReplay(
+      event,
+      eventId,
+      lastEventId,
+      ctx,
+    );
+    if (reassertedFence) {
+      const removed = removeIncompleteTransientTextNodes(ctx, root);
+      ctx.liveTextThroughSeq = lifecycleFenceLiveSeq(event)!;
+      updated = removed || updated;
+      continue;
+    }
+
+    let lifecycleUpdated = false;
+    if (!skipDedup && isLiveTextLifecycleFence(event)) {
+      lifecycleUpdated = removeIncompleteTransientTextNodes(ctx, root);
+      const liveSeq = lifecycleFenceLiveSeq(event);
+      if (liveSeq !== null) ctx.liveTextThroughSeq = Math.max(ctx.liveTextThroughSeq, liveSeq);
+      updated = lifecycleUpdated || updated;
+    }
 
     if (event.type === "text_snapshot") {
       const snapshot = applyLiveTextSnapshot(event, ctx, root);
@@ -332,6 +404,7 @@ export function processEventsBatch(
         updated = true;
       }
     }
+    updated = lifecycleUpdated || updated;
 
     if (ctx.historySynced) {
       if (shouldNotify(event)) {

@@ -10,6 +10,7 @@ import type {
   CallerInfoSource,
   SSEEventGenerationStarted,
   SSEEventInputMaterialManifest,
+  SSEEventSessionEnded,
   SSEEventTextSnapshot,
   SSEEventType as GeneratedSSEEventType,
   SSEEventUsageObservation,
@@ -185,6 +186,7 @@ export interface DebugEvent {
 }
 
 export type GenerationStartedEvent = SSEEventGenerationStarted;
+export type SessionEndedEvent = SSEEventSessionEnded;
 
 /** Claude API 에러 이벤트 (인증 실패, 과금 에러 등) */
 export interface AssistantErrorEvent {
@@ -872,6 +874,7 @@ export type SoulSSEEvent =
   | GenerationStartedEvent
   | SSEEventInputMaterialManifest
   | SSEEventUsageObservation
+  | SessionEndedEvent
   | CompleteEvent
   | ErrorEvent
   | ContextUsageEvent

@@ -61,7 +61,7 @@ function visibleCount(
   }).length;
 }
 
-function renderVisibilitySubject() {
+function renderVisibilitySubject({ initialize = true }: { initialize?: boolean } = {}) {
   const visibleEvents: SessionEvent[] = [];
   const isCatchingUpRef = { current: true };
   const historyLoadingRef = { current: false };
@@ -74,6 +74,8 @@ function renderVisibilitySubject() {
   const api = {
     sessionEventsUrl: () => 'https://example.test/api/sessions/session-i2/events',
   };
+  const clearCalls: Array<[string, string, string | undefined]> = [];
+  const snapshotSlots: SessionEvent[][] = [];
 
   const hook = renderHook(() =>
     useChatSseStream({
@@ -89,8 +91,8 @@ function renderVisibilitySubject() {
       mergeEvents: (_sessionId, events) => visibleEvents.push(...events),
       setLastEventId: jest.fn(),
       setStreamingEvent: jest.fn(),
-      replaceAssistantStreamingEvents: jest.fn(),
-      clearStreamingEvent: jest.fn(),
+      replaceAssistantStreamingEvents: (_sessionId, events) => snapshotSlots.push([...events]),
+      clearStreamingEvent: (sessionId, kind, identity) => clearCalls.push([sessionId, kind, identity]),
       finalizeStreamingEvent: jest.fn(),
       applyClaudeRuntimeEvent: jest.fn(),
       streamFailureRef: { current: jest.fn() },
@@ -99,12 +101,14 @@ function renderVisibilitySubject() {
 
   const stream = globalThis.__lastSSEInstance;
   stream.triggerOpen();
-  stream.triggerEvent('history_sync', {
-    type: 'history_sync',
-    last_event_id: 592,
-    is_live: true,
-  });
-  return { ...hook, stream, visibleEvents };
+  if (initialize) {
+    stream.triggerEvent('history_sync', {
+      type: 'history_sync',
+      last_event_id: 592,
+      is_live: true,
+    });
+  }
+  return { ...hook, stream, visibleEvents, clearCalls, snapshotSlots };
 }
 
 beforeEach(() => {
@@ -139,6 +143,43 @@ test('control: ordinary completion remains visible exactly once', () => {
   expect(visibleCount(visibleEvents, 'assistant_message', FOLLOWUP_REPLY_NONCE)).toBe(1);
   unmount();
 });
+
+test.each(['intervention_sent', 'user_message', 'complete', 'session_ended'] as const)(
+  'catch-up snapshot 뒤 %s fence는 assistant preview를 재적용해 비운다',
+  (type) => {
+    const { stream, clearCalls, snapshotSlots, unmount } = renderVisibilitySubject({ initialize: false });
+
+    stream.triggerEvent('text_snapshot', {
+      type: 'text_snapshot',
+      basedOnEventId: 42,
+      throughLiveSeq: 10,
+      streams: [{
+        streamIdentity: 'stream-a',
+        text: 'stale A',
+        updatedAt: '2026-10-31T00:00:00Z',
+        truncated: false,
+        resetRequired: false,
+        recovery: 'none',
+      }],
+    });
+    stream.triggerEvent(type, {
+      _event_id: 42,
+      type,
+      text: 'next turn',
+      liveSeq: 11,
+    }, '42');
+    stream.triggerEvent('history_sync', {
+      type: 'history_sync',
+      last_event_id: 42,
+      is_live: true,
+      reset_required: false,
+    }, '42');
+
+    expect(snapshotSlots).toHaveLength(1);
+    expect(clearCalls).toContainEqual([SESSION_ID, 'assistant', undefined]);
+    unmount();
+  },
+);
 
 test('canceled attempt error does not hide nonce replacement and followup replies', () => {
   jest.useFakeTimers();

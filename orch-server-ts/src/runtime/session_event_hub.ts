@@ -167,7 +167,23 @@ export class RuntimeSessionEventHub {
     const payload = eventPayload(event.data);
     if (payload === null) return event;
     const eventType = typeof payload.type === "string" ? payload.type : "";
-    if (eventType === "session_ended" || eventType === "session_deleted") {
+    if (
+      eventType === "intervention_sent" ||
+      eventType === "user_message" ||
+      eventType === "complete" ||
+      eventType === "session_ended"
+    ) {
+      const sessionKey = liveTextSessionKey(sessionId);
+      if (!this.hasActiveLiveTextSnapshot(sessionKey)) {
+        if (eventType === "session_ended") {
+          this.fenceSessionLiveText(sessionKey, event.nodeId);
+        }
+        return event;
+      }
+      const liveSeq = this.fenceSessionLiveText(sessionKey, event.nodeId);
+      return withLiveSequence(event, liveSeq);
+    }
+    if (eventType === "session_deleted") {
       this.fenceSessionLiveText(liveTextSessionKey(sessionId), event.nodeId);
       return event;
     }
@@ -310,13 +326,19 @@ export class RuntimeSessionEventHub {
     this.touchSequence(sessionKey, sequence);
   }
 
-  private fenceSessionLiveText(sessionKey: string, nodeId: string): void {
+  private fenceSessionLiveText(sessionKey: string, nodeId: string): number {
     const liveSeq = this.nextLiveSequence(sessionKey, nodeId);
     this.liveTextBySession.delete(sessionKey);
     const sequence = this.sequenceFor(sessionKey);
     sequence.resetStreams.clear();
     sequence.throughSeq = liveSeq;
     this.touchSequence(sessionKey, sequence);
+    return liveSeq;
+  }
+
+  private hasActiveLiveTextSnapshot(sessionKey: string): boolean {
+    return (this.liveTextBySession.get(sessionKey)?.streams.size ?? 0) > 0 ||
+      (this.liveSequenceBySession.get(sessionKey)?.resetStreams.size ?? 0) > 0;
   }
 
   private nextLiveSequence(sessionKey: string, nodeId?: string): number {
@@ -555,6 +577,25 @@ function withLiveTextMetadata(
     };
   }
   return { ...event, data: { ...event.data, ...metadata } };
+}
+
+function withLiveSequence(
+  event: RuntimeSessionEvent,
+  liveSeq: number,
+): RuntimeSessionEvent {
+  if (isRecord(event.data.event)) {
+    return {
+      ...event,
+      data: { ...event.data, event: { ...event.data.event, liveSeq } },
+    };
+  }
+  if (isRecord(event.data.payload)) {
+    return {
+      ...event,
+      data: { ...event.data, payload: { ...event.data.payload, liveSeq } },
+    };
+  }
+  return { ...event, data: { ...event.data, liveSeq } };
 }
 
 function eventTimestamp(payload: Record<string, unknown>): string {

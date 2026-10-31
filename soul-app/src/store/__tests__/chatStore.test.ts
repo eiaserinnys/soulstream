@@ -434,6 +434,197 @@ describe('chatStore.streamingSlots — live delta append 제거', () => {
     expect(getStreamingSlots()?.assistant).toBeUndefined();
   });
 
+  it('assistant live-only preview는 finalize 대상에서 history 편입 없이 슬롯에 남긴다', () => {
+    const { setStreamingEvent, finalizeStreamingEvent } = useChatStore.getState();
+    const preview: SessionEvent = {
+      id: 'live:assistant-a',
+      type: 'text_delta',
+      data: { text: 'partial A', _live_only: true },
+    };
+    const durable: SessionEvent = {
+      id: '31',
+      type: 'text_delta',
+      data: { text: 'durable legacy delta', streamIdentity: 'stream-durable' },
+    };
+    setStreamingEvent(SID, 'assistant', preview);
+    setStreamingEvent(SID, 'assistant', durable);
+
+    finalizeStreamingEvent(SID, 'assistant');
+
+    expect(getEvents()).toEqual([durable]);
+    expect(getStreamingSlots()?.assistant).toBe(preview);
+    expect(getStreamingSlots()?.assistantByStream?.['stream-durable']).toBeUndefined();
+  });
+
+  const cleanupTriggers: Array<[string, SessionEvent]> = [
+    ['ordinary assistant_message', {
+      id: '43',
+      type: 'assistant_message',
+      data: { content: 'final B' },
+    }],
+    ['complete', { id: '43', type: 'complete', data: {} }],
+    ['intervention_sent', { id: '43', type: 'intervention_sent', data: {} }],
+    ['user_message', { id: '43', type: 'user_message', data: {} }],
+    ['session_ended', { id: '43', type: 'session_ended', data: {} }],
+  ];
+
+  it.each(cleanupTriggers)('%s는 liveSeq 없이도 기존 synthetic live text를 지운다', (_label, trigger) => {
+    const stale: SessionEvent = {
+      id: 'live:stale',
+      type: 'text_delta',
+      data: { text: 'stale A', _live_only: true },
+    };
+    const numericStringId: SessionEvent = {
+      id: 'live:numeric-string-id',
+      type: 'text_delta',
+      data: { text: 'legacy synthetic', _live_only: true, _event_id: '41' },
+    };
+    const durableLiveId: SessionEvent = {
+      id: 'live:durable-id',
+      type: 'text_delta',
+      data: { text: 'durable replay', _live_only: true, _event_id: 42 },
+    };
+    const assistantMessage: SessionEvent = {
+      id: '42',
+      type: 'assistant_message',
+      data: { content: 'durable assistant' },
+    };
+    const previewBeforeTrigger: SessionEvent = {
+      id: 'live:before-trigger',
+      type: 'text_delta',
+      data: { text: 'stale batch', _live_only: true },
+    };
+    const previewAfterTrigger: SessionEvent = {
+      id: 'live:after-trigger',
+      type: 'text_delta',
+      data: { text: 'new preview', _live_only: true },
+    };
+    useChatStore.setState({
+      eventsBySession: {
+        [SID]: [stale, numericStringId, durableLiveId, assistantMessage],
+      },
+    });
+
+    useChatStore.getState().mergeEvents(SID, [
+      previewBeforeTrigger,
+      trigger,
+      previewAfterTrigger,
+    ]);
+
+    expect(getEvents()).not.toContainEqual(stale);
+    expect(getEvents()).not.toContainEqual(numericStringId);
+    expect(getEvents()).not.toContainEqual(previewBeforeTrigger);
+    expect(getEvents()).toContainEqual(durableLiveId);
+    expect(getEvents()).toContainEqual(assistantMessage);
+    expect(getEvents()).toContainEqual(trigger);
+    expect(getEvents()).toContainEqual(previewAfterTrigger);
+  });
+
+  it('과거 REST history prepend의 lifecycle 이벤트는 현재 synthetic preview를 지우지 않는다', () => {
+    const stale: SessionEvent = {
+      id: 'live:stale',
+      type: 'text_delta',
+      data: { text: 'current preview', _live_only: true },
+    };
+    const currentHistory: SessionEvent = {
+      id: '50',
+      type: 'assistant_message',
+      data: { content: 'current durable event' },
+    };
+    useChatStore.setState({ eventsBySession: { [SID]: [currentHistory, stale] } });
+
+    useChatStore.getState().mergeEvents(SID, [
+      { id: '49', type: 'complete', data: {} },
+    ]);
+
+    expect(getEvents()).toContainEqual(stale);
+  });
+
+  it('live stream final fold는 일반 assistant_message cleanup trigger가 아니다', () => {
+    const stale: SessionEvent = {
+      id: 'live:stale',
+      type: 'text_delta',
+      data: { text: 'legacy live preview', _live_only: true },
+    };
+    useChatStore.setState({ eventsBySession: { [SID]: [stale] } });
+
+    useChatStore.getState().mergeEvents(SID, [{
+      id: '43',
+      type: 'assistant_message',
+      data: { content: 'folded preview', _final_for_live_stream: true },
+    }]);
+
+    expect(getEvents()).toContainEqual(stale);
+  });
+
+  it('lifecycle 경계에서 이전 synthetic live text만 지우고 새 preview와 영속 이벤트는 보존한다', () => {
+    const stale: SessionEvent = {
+      id: 'live:stale',
+      type: 'text_delta',
+      data: { text: 'stale A', _live_only: true },
+    };
+    const liveBeforeFence: SessionEvent = {
+      id: 'live:before-fence',
+      type: 'text_delta',
+      data: { text: 'stale batch A', _live_only: true, liveSeq: 10 },
+    };
+    const numericLiveId: SessionEvent = {
+      id: 'live:durable-id',
+      type: 'text_delta',
+      data: { text: 'durable replay', _live_only: true, _event_id: 42 },
+    };
+    const numericStringId: SessionEvent = {
+      id: 'live:numeric-string-id',
+      type: 'text_delta',
+      data: { text: 'legacy synthetic', _live_only: true, _event_id: '42' },
+    };
+    const assistantMessage: SessionEvent = {
+      id: 'live:assistant-message',
+      type: 'assistant_message',
+      data: {
+        content: 'assistant messages are durable rows',
+        _live_only: true,
+        _final_for_live_stream: true,
+      },
+    };
+    const freshAfterFence: SessionEvent = {
+      id: 'live:fresh-after-fence',
+      type: 'text_delta',
+      data: { text: 'fresh B', _live_only: true, liveSeq: 12 },
+    };
+    useChatStore.setState({ eventsBySession: { [SID]: [stale] } });
+
+    useChatStore.getState().mergeEvents(SID, [
+      { ...stale, data: { ...stale.data, text: 'new chunk A' } },
+      liveBeforeFence,
+      numericLiveId,
+      numericStringId,
+      assistantMessage,
+    ]);
+
+    expect(getEvents()).toContainEqual(stale);
+    expect(getEvents()).toContainEqual(liveBeforeFence);
+    expect(getEvents()).toContainEqual(numericStringId);
+
+    useChatStore.getState().mergeEvents(SID, [
+      liveBeforeFence,
+      { id: '43', type: 'intervention_sent', data: { text: '개입', liveSeq: 11 } },
+      freshAfterFence,
+    ]);
+
+    expect(getEvents().map((event) => event.id).sort()).toEqual([
+      '43',
+      'live:durable-id',
+      'live:assistant-message',
+      'live:fresh-after-fence',
+    ].sort());
+    expect(getEvents()).not.toContainEqual(stale);
+    expect(getEvents()).not.toContainEqual(liveBeforeFence);
+    expect(getEvents()).not.toContainEqual(numericStringId);
+    expect(getEvents()).toContainEqual(numericLiveId);
+    expect(getEvents()).toContainEqual(assistantMessage);
+  });
+
   it('assistant_message merge는 final event 추가와 assistant slot clear를 원자적으로 처리한다', () => {
     const { setStreamingEvent, mergeEvents } = useChatStore.getState();
 

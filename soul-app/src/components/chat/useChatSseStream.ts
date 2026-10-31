@@ -202,9 +202,11 @@ export function useChatSseStream({
     const liveTextMetadata = isLiveTextEventType(acceptedType, acceptedData)
       ? liveTextEventMetadata(acceptedData)
       : null;
+    const lifecycleLiveSeq = lifecycleFenceLiveSeq(acceptedType, acceptedData);
+    const replayLiveSeq = liveTextMetadata?.liveSeq ?? lifecycleLiveSeq;
     // Snapshot 캡처 뒤 더 새 durable replay는 snapshot 설치 후 의미 적용한다.
     if (
-      liveTextMetadata
+      replayLiveSeq !== null
       && acceptedEid.length > 0
       && isCatchingUpRef.current
       && !historySyncSeenRef.current
@@ -213,7 +215,7 @@ export function useChatSseStream({
         type: acceptedType,
         data: acceptedData,
         eid: acceptedEid,
-        liveSeq: liveTextMetadata.liveSeq,
+        liveSeq: replayLiveSeq,
       });
     }
 
@@ -247,6 +249,10 @@ export function useChatSseStream({
           setLastEventId: (id) => setLastEventId(sessionId, id),
         },
       );
+    }
+
+    if (lifecycleLiveSeq !== null && lifecycleLiveSeq <= liveTextThroughSeqRef.current) {
+      return;
     }
 
     if (liveTextMetadata) {
@@ -333,7 +339,9 @@ export function useChatSseStream({
       clearStreamingEvent(
         sessionId,
         kind,
-        kind === 'assistant' ? liveTextMetadata?.streamIdentity : undefined,
+        kind === 'assistant' && lifecycleLiveSeq === null
+          ? liveTextMetadata?.streamIdentity
+          : undefined,
       );
     }
     for (const kind of transition.finalize) {
@@ -447,6 +455,11 @@ export function useChatSseStream({
       pendingPostSyncQueueRef.current = [];
       liveTextThroughSeqRef.current = 0;
       resetRequiredStreamsRef.current = new Set();
+    } else if (lifecycleLiveSeq !== null && !historyLoadingRef.current) {
+      liveTextThroughSeqRef.current = Math.max(
+        liveTextThroughSeqRef.current,
+        lifecycleLiveSeq,
+      );
     } else if (liveTextMetadata && !historyLoadingRef.current) {
       liveTextThroughSeqRef.current = liveTextMetadata.liveSeq;
     }
@@ -498,6 +511,20 @@ function isLiveTextEventType(type: string, data: unknown): boolean {
 function isHistorySyncReset(data: unknown): boolean {
   return typeof data === 'object' && data !== null
     && (data as Record<string, unknown>).reset_required === true;
+}
+
+function lifecycleFenceLiveSeq(type: string, data: unknown): number | null {
+  if (
+    type !== 'intervention_sent'
+    && type !== 'user_message'
+    && type !== 'complete'
+    && type !== 'session_ended'
+  ) return null;
+  if (typeof data !== 'object' || data === null) return null;
+  const value = (data as Record<string, unknown>).liveSeq;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : null;
 }
 
 function historySyncLastEventId(data: unknown): number | null {

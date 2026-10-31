@@ -41,7 +41,9 @@ export function applyUpdate(
       const streamTarget = identity
         ? ctx.nodeMap.get(`app-server-agent-message:${identity}`)
         : undefined;
-      const target = streamTarget?.type === "text" ? streamTarget : ctx.activeTextTarget;
+      const target = identity
+        ? streamTarget?.type === "text" ? streamTarget : undefined
+        : ctx.activeTextTarget;
       if (target) {
         target.content = event.liveTextMode === "replace"
           ? event.text
@@ -57,7 +59,9 @@ export function applyUpdate(
       const streamTarget = identity
         ? ctx.nodeMap.get(`app-server-agent-message:${identity}`)
         : undefined;
-      const target = streamTarget?.type === "text" ? streamTarget : ctx.activeTextTarget;
+      const target = identity
+        ? streamTarget?.type === "text" ? streamTarget : undefined
+        : ctx.activeTextTarget;
       if (target) {
         target.textCompleted = true;
         target.completed = true;

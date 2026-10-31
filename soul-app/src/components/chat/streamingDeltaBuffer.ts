@@ -158,5 +158,13 @@ export function streamingSlotTransitionForEvent(
   if (type === 'assistant_message') {
     return { finalize: ['thinking'], clear: [] };
   }
+  if (
+    type === 'intervention_sent'
+    || type === 'user_message'
+    || type === 'complete'
+    || type === 'session_ended'
+  ) {
+    return { finalize: ['thinking'], clear: ['assistant'] };
+  }
   return { finalize: ['assistant', 'thinking'], clear: [] };
 }

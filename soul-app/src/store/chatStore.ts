@@ -349,30 +349,97 @@ function mergeSorted(
   existing: SessionEvent[],
   fresh: SessionEvent[]
 ): SessionEvent[] {
-  if (fresh.length === 0) return existing;
-  const seenIds = new Set(existing.map((e) => e.id));
-  const dedup = fresh.filter((event) => {
+  const minExistingNumericKey = existing
+    .map(sortKey)
+    .filter((key) => Number.isFinite(key) && key < Number.MAX_SAFE_INTEGER)
+    .reduce<number | null>((minimum, key) => (
+      minimum === null ? key : Math.min(minimum, key)
+    ), null);
+  let cleanupFenceIndex = -1;
+  let cleanupFenceLiveSeq: number | null = null;
+  fresh.forEach((event, index) => {
+    if (!isSyntheticLiveTextCleanupTrigger(event)) return;
+    const eventSortKey = sortKey(event);
+    if (
+      minExistingNumericKey !== null
+      && Number.isFinite(eventSortKey)
+      && eventSortKey < minExistingNumericKey
+    ) return;
+    cleanupFenceIndex = index;
+    cleanupFenceLiveSeq = eventLiveSequence(event);
+  });
+  const cleanExisting = cleanupFenceIndex >= 0 && existing.some(isSyntheticLiveTextEvent)
+    ? existing.filter((event) => !isSyntheticLiveTextEvent(event))
+    : existing;
+  const cleanFresh = cleanupFenceIndex < 0
+    ? fresh
+    : fresh.filter((event, index) => {
+      if (!isSyntheticLiveTextEvent(event)) return true;
+      const liveSeq = eventLiveSequence(event);
+      return liveSeq !== null && cleanupFenceLiveSeq !== null
+        ? liveSeq > cleanupFenceLiveSeq
+        : index > cleanupFenceIndex;
+    });
+  if (cleanFresh.length === 0) return cleanExisting;
+  const seenIds = new Set(cleanExisting.map((e) => e.id));
+  const dedup = cleanFresh.filter((event) => {
     if (seenIds.has(event.id)) return false;
     seenIds.add(event.id);
     return true;
   });
-  if (dedup.length === 0) return existing;
+  if (dedup.length === 0) return cleanExisting;
   // existing은 mergeEvents가 유일한 갱신 경로이므로 ASC invariant 유지.
   // fresh는 호출자가 정렬을 보장하지 못할 수 있어 명시적으로 정렬한 뒤 머지.
   const dedupSorted = [...dedup].sort((a, b) => sortKey(a) - sortKey(b));
   const out: SessionEvent[] = [];
   let i = 0;
   let j = 0;
-  while (i < existing.length && j < dedupSorted.length) {
-    if (sortKey(existing[i]) <= sortKey(dedupSorted[j])) {
-      out.push(existing[i++]);
+  while (i < cleanExisting.length && j < dedupSorted.length) {
+    if (sortKey(cleanExisting[i]) <= sortKey(dedupSorted[j])) {
+      out.push(cleanExisting[i++]);
     } else {
       out.push(dedupSorted[j++]);
     }
   }
-  while (i < existing.length) out.push(existing[i++]);
+  while (i < cleanExisting.length) out.push(cleanExisting[i++]);
   while (j < dedupSorted.length) out.push(dedupSorted[j++]);
   return out;
+}
+
+function isSyntheticLiveTextEvent(event: SessionEvent): boolean {
+  if (
+    event.type !== 'text_start'
+    && event.type !== 'text_delta'
+    && event.type !== 'text_end'
+  ) return false;
+  if (event.data?._live_only !== true || !event.id.startsWith('live:')) return false;
+  const eventId = event.data?._event_id;
+  return !(typeof eventId === 'number' && Number.isSafeInteger(eventId) && eventId > 0);
+}
+
+function isSyntheticLiveTextCleanupTrigger(event: SessionEvent): boolean {
+  if (
+    event.type === 'intervention_sent'
+    || event.type === 'user_message'
+    || event.type === 'complete'
+    || event.type === 'session_ended'
+  ) return true;
+  return event.type === 'assistant_message'
+    && event.data?._final_for_live_stream !== true;
+}
+
+function eventLiveSequence(event: SessionEvent): number | null {
+  const value = event.data?.liveSeq;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : null;
+}
+
+function isAssistantLivePreview(event: SessionEvent): boolean {
+  if (event.data?._live_only === true) return true;
+  if (!event.id.startsWith('live:')) return false;
+  const eventId = event.data?._event_id;
+  return !(typeof eventId === 'number' && Number.isSafeInteger(eventId) && eventId > 0);
 }
 
 export const useChatStore = create<ChatStore>((set, get) => ({
@@ -636,11 +703,16 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         const nextByStream = { ...slots.assistantByStream };
         if (streamIdentity) {
           const event = nextByStream[streamIdentity];
-          if (event) events.push(event);
-          delete nextByStream[streamIdentity];
+          if (event && !isAssistantLivePreview(event)) {
+            events.push(event);
+            delete nextByStream[streamIdentity];
+          }
         } else {
-          events.push(...Object.values(nextByStream));
-          for (const identity of Object.keys(nextByStream)) delete nextByStream[identity];
+          for (const [identity, event] of Object.entries(nextByStream)) {
+            if (isAssistantLivePreview(event)) continue;
+            events.push(event);
+            delete nextByStream[identity];
+          }
         }
         if (Object.keys(nextByStream).length === 0) {
           delete nextSlots.assistantByStream;
@@ -649,7 +721,11 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         }
       }
       const legacyEvent = slots[kind];
-      if (!streamIdentity && legacyEvent) {
+      if (
+        !streamIdentity
+        && legacyEvent
+        && !(kind === 'assistant' && isAssistantLivePreview(legacyEvent))
+      ) {
         events.push(legacyEvent);
         delete nextSlots[kind];
       }

@@ -3,6 +3,8 @@ import type { SessionEvent } from '../../../api/types';
 import { groupChatEvents } from '../groupChatEvents';
 import { findChatRenderItemKeyForEvent } from '../chatSearchAnchor';
 import { useChatRenderItems } from '../useChatRenderItems';
+import { useChatStore } from '../../../store/chatStore';
+import { streamingSlotTransitionForEvent } from '../streamingDeltaBuffer';
 
 function event(
   id: string,
@@ -19,11 +21,15 @@ function event(
   };
 }
 
-function renderItems(events: SessionEvent[], presentation: 'default' | 'manuscript' = 'manuscript') {
+function renderItems(
+  events: SessionEvent[],
+  presentation: 'default' | 'manuscript' = 'manuscript',
+  streamingSlots?: ReturnType<typeof useChatStore.getState>['streamingSlotsBySession'][string],
+) {
   return useChatRenderItems({
     events,
     pendingOptimistic: undefined,
-    streamingSlots: undefined,
+    streamingSlots,
     sessionStatus: 'completed',
     presentation,
   });
@@ -116,5 +122,62 @@ describe('manuscript agent message groups', () => {
     const { result } = renderHook(() => renderItems(input, 'default'));
 
     expect(result.current.reversedItems).toEqual(groupChatEvents(input).reverse());
+  });
+
+  test('PAS stale stream A never enters the transcript and next-turn delta D renders after B and C', () => {
+    const sessionId = 'pas-interrupted-stream-846';
+    const store = useChatStore.getState();
+    const previewA: SessionEvent = {
+      id: 'live:stream-a',
+      type: 'text_delta',
+      data: { text: 'stale A', _live_only: true, streamIdentity: 'stream-a' },
+    };
+    store.setStreamingEvent(sessionId, 'assistant', previewA);
+
+    // A structural event finalizes pending slots. A live preview remains owned by
+    // the streaming slot until an explicit lifecycle fence clears it.
+    store.finalizeStreamingEvent(sessionId, 'assistant');
+    expect(useChatStore.getState().eventsBySession[sessionId] ?? []).toEqual([]);
+    expect(useChatStore.getState().streamingSlotsBySession[sessionId]?.assistantByStream?.['stream-a'])
+      .toEqual(previewA);
+
+    const intervention = streamingSlotTransitionForEvent('intervention_sent', {});
+    intervention.clear.forEach(kind => store.clearStreamingEvent(sessionId, kind));
+    intervention.finalize.forEach(kind => store.finalizeStreamingEvent(sessionId, kind));
+    const rows: SessionEvent[] = [
+      { id: '64838', type: 'intervention_sent', data: { text: '개입' } },
+      { id: '64840', type: 'assistant_message', data: { content: 'final B' } },
+      { id: '64841', type: 'complete', data: { result: 'done' } },
+      { id: '64842', type: 'session_ended', data: { status: 'completed', termination_reason: 'completed_ok' } },
+      { id: '64849', type: 'user_message', data: { text: '다음 질문', caller_info: { source: 'browser' } } },
+      { id: '64856', type: 'assistant_message', data: { content: 'final C' } },
+    ];
+    for (const row of rows) {
+      if (row.type === 'complete' || row.type === 'session_ended' || row.type === 'user_message') {
+        const transition = streamingSlotTransitionForEvent(row.type, row.data);
+        transition.clear.forEach(kind => store.clearStreamingEvent(sessionId, kind));
+        transition.finalize.forEach(kind => store.finalizeStreamingEvent(sessionId, kind));
+      }
+      store.mergeEvents(sessionId, [row]);
+    }
+    store.setStreamingEvent(sessionId, 'assistant', {
+      id: 'live:stream-d',
+      type: 'text_delta',
+      data: { text: 'fresh D', _live_only: true, streamIdentity: 'stream-d' },
+    });
+
+    const state = useChatStore.getState();
+    const { result } = renderHook(() => renderItems(
+      state.eventsBySession[sessionId] ?? [],
+      'manuscript',
+      state.streamingSlotsBySession[sessionId],
+    ));
+    const items = chronological(result.current.reversedItems);
+    const rendered = JSON.stringify(items);
+
+    expect(rendered).not.toContain('stale A');
+    expect(rendered).toContain('final B');
+    expect(rendered).toContain('final C');
+    expect(rendered).toContain('fresh D');
   });
 });

@@ -292,6 +292,7 @@ describe("RuntimeSessionEventHub live text snapshots", () => {
     expect(seen.at(-1)?.data.event).toEqual({
       type: "session_ended",
       status: "interrupted",
+      liveSeq: 2,
     });
     expect(hub.snapshotLiveText("sess-1")).toEqual({
       throughLiveSeq: 2,
@@ -306,6 +307,40 @@ describe("RuntimeSessionEventHub live text snapshots", () => {
     });
     expect(seen.at(-1)?.data.event).toMatchObject({ liveSeq: 3 });
   });
+
+  it.each(["intervention_sent", "user_message", "complete", "session_ended"] as const)(
+    "fences retained live text and sequences the %s boundary",
+    (type) => {
+      const hub = new RuntimeSessionEventHub();
+      const seen: RuntimeSessionEvent[] = [];
+      hub.subscribe("sess-1", (event) => seen.push(event));
+      publish(hub, {
+        type: "text_delta",
+        item_id: "item-1",
+        raw_event_type: "item.updated",
+        text: "stale preview",
+      });
+
+      publish(hub, { type });
+
+      expect(seen.at(-1)?.data.event).toEqual({ type, liveSeq: 2 });
+      expect(hub.snapshotLiveText("sess-1")).toEqual({
+        throughLiveSeq: 2,
+        streams: [],
+      });
+
+      publish(hub, {
+        type: "text_delta",
+        item_id: "item-2",
+        raw_event_type: "item.updated",
+        text: "next turn",
+      });
+      expect(seen.at(-1)?.data.event).toMatchObject({ liveSeq: 3 });
+      expect(hub.snapshotLiveText("sess-1").streams).toMatchObject([
+        { text: "next turn" },
+      ]);
+    },
+  );
 
   it("fences partial text at registry deletion and disconnect boundaries", () => {
     const hub = new RuntimeSessionEventHub();
