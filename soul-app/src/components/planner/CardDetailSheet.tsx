@@ -248,7 +248,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
             <Ionicons testID="card-detail-back-icon" name="chevron-back" size={t.foundation.typography.body.fontSize} color={t.colors.textPrimary} />
           </GlassButton> : null}
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="상태 변경" disabled={locked || !api || !card}
-            onPress={() => setStatusMenuOpen(true)} frameStyle={styles.titleHitFrame} surfaceStyle={styles.titleHitSurface}>
+            onPress={() => setStatusMenuOpen(true)} frameStyle={styles.titleHitFrame} surfaceStyle={styles.titleHitSurface} surfaceTestID="card-detail-title-surface">
             <Text testID="card-detail-title" style={styles.heading} numberOfLines={3}>
               {card ? <><CardStatusChip card={card} detail />{' '}{card.title}</> : '카드'}
             </Text>

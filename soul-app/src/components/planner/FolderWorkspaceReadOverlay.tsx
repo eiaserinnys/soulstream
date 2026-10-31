@@ -100,6 +100,7 @@ export function FolderWorkspaceDetailPane({ api, cardId, pageId, sessionId, acti
   onOpenFolder?(folderId: string, projectPageId: string): void;
 }) {
   const t = useTokens();
+  const duo = useDuoSideBand();
   const styles = useMemo(() => makeStyles(t), [t]);
   const resolution = useUIStore((state) => state.sessionFolderResolution);
   const focusEventId = useUIStore((state) => state.focusEventId);
@@ -132,14 +133,14 @@ export function FolderWorkspaceDetailPane({ api, cardId, pageId, sessionId, acti
                 ? getSessionDisplayName(session, sessionId)
                 : '세션을 선택하세요'}
             </Text>
-            <TouchableOpacity
+            {!duo ? <TouchableOpacity
               onPress={onClose}
               accessibilityRole="button"
               accessibilityLabel="세션 패널 닫기"
               style={styles.closeButton}
             >
               <Ionicons name="close" size={t.iconSize.navigation} color={t.colors.textMuted} />
-            </TouchableOpacity>
+            </TouchableOpacity> : null}
           </TabletPaneHeader>
           <ScrollView contentContainerStyle={styles.folderContent}>
             {resolution?.status === 'loading' ? (

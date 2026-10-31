@@ -87,6 +87,7 @@ jest.mock('../FolderSessionHistory', () => ({
 
 beforeEach(() => {
   mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
+  mockInsets = { top: 0, bottom: 0, left: 0, right: 0 };
   mockOverlayChatMounted.mockClear();
   mockOverlayChatUnmounted.mockClear();
   usePlannerStore.getState().resetForTest();
@@ -124,6 +125,19 @@ test('서버가 미소속으로 확인한 세션만 단독 채팅 안내를 렌�
   expect(screen.getByTestId('overlay-chat').props.active).toBe(true);
   expect(screen.getByTestId('overlay-chat').props.minimumBottomPadding).toBeUndefined();
   expect(screen.queryByTestId('task-run-history')).toBeNull();
+  expect(screen.getByLabelText('세션 패널 닫기')).toBeTruthy();
+});
+
+test('듀오 두 열의 단독 세션은 본문 닫기 대신 레일 닫기만 제공한다', async () => {
+  mockWindowDimensions = { width: 951, height: 669, scale: 1, fontScale: 1 };
+  mockInsets = { top: 0, bottom: 24, left: 0, right: 84 };
+  useUIStore.getState().openSessionOverlay('session-only');
+  const screen = render(<DuoSideBandContext.Provider value={true}><FolderWorkspaceReadOverlay /></DuoSideBandContext.Provider>);
+  expect(screen.queryByLabelText('세션 패널 닫기')).toBeNull();
+  const close = usePhoneRailActions.getState().overrides.at(-1)!.actions;
+  expect(close.map(action => action.id)).toEqual(['close']);
+  await act(async () => { await close[0].onPress(); });
+  expect(useUIStore.getState().folderOverlayVisible).toBe(false);
 });
 
 test('카드 패널 프레임은 실제로 전달받은 하단 여백을 내부 ChatPane에 전달한다', () => {

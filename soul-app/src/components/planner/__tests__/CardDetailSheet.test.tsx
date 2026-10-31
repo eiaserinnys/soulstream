@@ -112,6 +112,8 @@ test('듀오 카드 상세는 헤더 조작과 네 탭을 레일에 두고 탭�
     <CardDetailContent api={api as any} cardId={card.id} onClose={onClose} />
   </DuoSideBandContext.Provider>);
   await waitFor(() => expect(screen.getByText('원문')).toBeTruthy());
+  const titleSurface = screen.getByTestId('card-detail-title-surface');
+  expect(StyleSheet.flatten(titleSurface.props.style)).toMatchObject({ width: '100%', alignSelf: 'stretch' });
   expect(screen.queryByTestId('card-detail-back-icon')).toBeNull();
   expect(screen.queryByTestId('settings-segment-card-detail-comments')).toBeNull();
   const actions = () => usePhoneRailActions.getState().overrides.at(-1)!.actions;

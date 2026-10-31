@@ -28,7 +28,7 @@ import { TabletPersistentEntry } from '../../navigation/TabletPersistentEntry';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { MainListPaneHandle } from './MainListPane';
-import { useActiveDuoRailOverride } from '../../navigation/phoneRailActions';
+import { useActiveDuoRailOverrideEntry } from '../../navigation/phoneRailActions';
 
 const DRAWER_WIDTH = 280;
 const ANIM_MS = 240;
@@ -55,12 +55,14 @@ export function TwoPaneWithDrawer() {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const duo = useDuoSideBand();
-  const override = useActiveDuoRailOverride();
+  const override = useActiveDuoRailOverrideEntry();
   const mainRef = useRef<MainListPaneHandle>(null);
   const [keyboardOverlap, setKeyboardOverlap] = useState(0);
   const activeSection = useUIStore(state => state.activeSection);
   const views = useUIStore(state => state.mainPaneViews);
   const board = activeSection.kind === 'daily' || views[activeSection.folderId] === 'board';
+  const showRootNavigation = !override?.actions.length || override.mode === 'prepend';
+  const rootActionCount = showRootNavigation ? (board ? 3 : 0) + (activeSection.kind === 'project' ? 1 : 0) + 3 : 0;
   const cardDisplay = useCardDisplay(activeSection.kind === 'project' ? activeSection.folderId : undefined);
   const searchActive = useSearchStore(state => state.tabletActive);
   // 회전·폴드 직후에는 이전 프레임의 측정값이 남아 pane 폭이 한 번 튄다.
@@ -183,11 +185,12 @@ export function TwoPaneWithDrawer() {
         position: 'absolute', right: 0, width: insets.right, alignItems: 'center',
         bottom: Math.max(keyboardOverlap, insets.bottom, t.uiSpacing.xxl),
       }}>
-        <RailCapsule testID="duo-main-band-capsule" compact={(override?.length ?? (activeSection.kind === 'project' && board ? 7 : 6)) >= 7 || screenHeight < 500}>
-          {override?.length ? override.map(action => <RailCapsuleItem key={action.id} testID={`duo-rail-action-${action.id}`}
+        <RailCapsule testID="duo-main-band-capsule" compact={(override?.actions.length ?? 0) + rootActionCount >= 7 || screenHeight < 500}>
+          {override?.actions.map(action => <RailCapsuleItem key={action.id} testID={`duo-rail-action-${action.id}`}
             label={action.label} selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
             <Ionicons name={action.icon} color={action.selected ? t.colors.accent : t.colors.textMuted} size={t.iconSize.standard} />
-          </RailCapsuleItem>) : <>
+          </RailCapsuleItem>)}
+          {showRootNavigation ? <>
           {board ? <>
             <RailCapsuleItem testID="duo-main-create" label="드래프트 카드 추가" onPress={() => mainRef.current?.openCreate()}>
               <Ionicons name="add-outline" color={t.colors.textMuted} size={t.iconSize.standard} />
@@ -214,7 +217,7 @@ export function TwoPaneWithDrawer() {
             <Ionicons name="search-outline" color={searchActive ? t.colors.accent : t.colors.textMuted} size={t.iconSize.standard} />
           </RailCapsuleItem>
           <TabletPersistentEntry rail />
-          </>}
+          </> : null}
         </RailCapsule>
       </View>
     </AppKeyboardAvoidingView> : null}

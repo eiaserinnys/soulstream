@@ -33,6 +33,7 @@ import { EntryShellAlertHarness, ReviewEntryShell } from './ReviewEntryShell';
 import { ReviewPersistentCardOverlay } from './ReviewPersistentCardOverlay';
 import { useChatStore } from '../store/chatStore';
 import { useSessionStore } from '../store/sessionStore';
+import { useUIStore } from '../store/uiStore';
 import { CardDetailContent } from '../components/planner/CardDetailSheet';
 import { FolderWorkspace } from '../components/planner/FolderWorkspace';
 import { DuoRailOverride } from '../components/navigation/DuoRailOverride';
@@ -76,6 +77,7 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
   const duo = params.get('band') !== 'off' && frame.insets.right >= RAIL_MIN_INSET_WIDTH && frame.insets.left === 0;
   const phone = frameId.startsWith('outer-') || frameId.startsWith('iphone-');
   const initialTab = params.get('tab') ?? undefined;
+  const sampleCardId = params.get('card') ?? entryShellCardId;
   const [view, setView] = useState(params.get('view'));
   const navigationRef = useNavigationContainerRef<any>();
   const phoneChat = phone && view === 'chat';
@@ -87,12 +89,13 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
         <DuoSideBandContext.Provider value={duo}>
           <NavigationContainer ref={navigationRef} onReady={() => {
             if (phoneChat) navigationRef.navigate('FeedTab', { screen: 'Chat', params: { sessionId: 'public-shell-session-0' } });
+            if (!phone && params.get('overlay') === 'card-with-chat') useUIStore.getState().openCardOverlay(sampleCardId, 'public-shell-session-0');
           }}>
             <View style={{ width: frame.width, height: frame.height, overflow: 'hidden' }}>
               {view && !phoneChat ? <View style={{ flex: 1, flexDirection: 'row' }}>
                 <SafeAreaInsetsContext.Provider value={{ ...frame.insets, right: 0 }}>
                   <View style={{ flex: 1, paddingTop: frame.insets.top, paddingBottom: frame.insets.bottom }}>
-                    {view === 'card-detail' ? <CardDetailContent api={api} cardId={entryShellCardId} inline={!phone} onClose={() => setView(null)} /> : null}
+                    {view === 'card-detail' ? <CardDetailContent api={api} cardId={sampleCardId} inline={!phone} onClose={() => setView(null)} /> : null}
                     {view === 'folder-workspace' ? <FolderWorkspace api={api} folderPageId="public-shell-page-0" active onClose={() => setView(null)} onOpenSession={() => setView('chat')} /> : null}
                     {view === 'chat' ? <FolderWorkspaceSinglePanel api={api} cardId={entryShellCardId} pageId={null} sessionId="public-shell-session-0" active initialStep="chat" onClose={() => setView(null)} /> : null}
                     {view === 'rail-badge' || view === 'rail-dot' ? <DuoBadgeReview dot={view === 'rail-dot'} /> : null}

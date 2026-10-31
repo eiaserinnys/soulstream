@@ -16,12 +16,14 @@ export type PhoneRailAction = {
 };
 
 type RootActionTab = 'DailyTab' | 'FolderTab' | 'FeedTab';
+type RailOverrideMode = 'replace' | 'prepend';
+type RailOverride = { key: symbol; actions: PhoneRailAction[]; mode: RailOverrideMode };
 type RailState = {
   actions: Partial<Record<RootActionTab, PhoneRailAction[]>>;
   setActions(tab: RootActionTab, actions: PhoneRailAction[] | undefined): void;
-  overrides: { key: symbol; actions: PhoneRailAction[] }[];
-  pushOverride(key: symbol, actions: PhoneRailAction[]): void;
-  updateOverride(key: symbol, actions: PhoneRailAction[]): void;
+  overrides: RailOverride[];
+  pushOverride(key: symbol, actions: PhoneRailAction[], mode?: RailOverrideMode): void;
+  updateOverride(key: symbol, actions: PhoneRailAction[], mode?: RailOverrideMode): void;
   removeOverride(key: symbol): void;
 };
 
@@ -29,12 +31,12 @@ export const usePhoneRailActions = create<RailState>((set) => ({
   actions: {},
   setActions: (tab, actions) => set((state) => ({ actions: { ...state.actions, [tab]: actions } })),
   overrides: [],
-  pushOverride: (key, actions) => set(state => ({ overrides: [...state.overrides, { key, actions }] })),
-  updateOverride: (key, actions) => set(state => ({ overrides: state.overrides.map(entry => entry.key === key ? { key, actions } : entry) })),
+  pushOverride: (key, actions, mode = 'replace') => set(state => ({ overrides: [...state.overrides, { key, actions, mode }] })),
+  updateOverride: (key, actions, mode = 'replace') => set(state => ({ overrides: state.overrides.map(entry => entry.key === key ? { key, actions, mode } : entry) })),
   removeOverride: key => set(state => ({ overrides: state.overrides.filter(entry => entry.key !== key) })),
 }));
 
-export function useRegisterDuoRailOverride(id: string, enabled: boolean, actions: PhoneRailAction[]) {
+export function useRegisterDuoRailOverride(id: string, enabled: boolean, actions: PhoneRailAction[], mode: RailOverrideMode = 'replace') {
   const key = useRef(Symbol(id)).current;
   const latest = useRef(actions);
   latest.current = actions;
@@ -45,12 +47,16 @@ export function useRegisterDuoRailOverride(id: string, enabled: boolean, actions
   }));
   useLayoutEffect(() => {
     if (!enabled) return;
-    usePhoneRailActions.getState().pushOverride(key, stableActions());
+    usePhoneRailActions.getState().pushOverride(key, stableActions(), mode);
     return () => usePhoneRailActions.getState().removeOverride(key);
   }, [enabled, key]);
   useLayoutEffect(() => {
-    if (enabled) usePhoneRailActions.getState().updateOverride(key, stableActions());
-  }, [enabled, key, signature]);
+    if (enabled) usePhoneRailActions.getState().updateOverride(key, stableActions(), mode);
+  }, [enabled, key, mode, signature]);
+}
+
+export function useActiveDuoRailOverrideEntry(): RailOverride | null {
+  return usePhoneRailActions(state => state.overrides.at(-1) ?? null);
 }
 
 export function useActiveDuoRailOverride(): PhoneRailAction[] | null {

@@ -38,7 +38,7 @@ import { usePersistentSessionHost, usePersistentSessionScene } from '../navigati
 import { usePhoneRailMode } from '../navigation/tabContract';
 import { useDuoSideBand } from '../navigation/duoSideBand';
 import { RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
-import { useActiveDuoRailOverride } from '../navigation/phoneRailActions';
+import { useActiveDuoRailOverrideEntry } from '../navigation/phoneRailActions';
 import { usePasContextMenu } from '../components/persistent/usePasContextMenu';
 import { useAuthStore } from '../store/authStore';
 import { useChatStore } from '../store/chatStore';
@@ -72,7 +72,8 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const railMode = usePhoneRailMode();
   const duoSideBand = useDuoSideBand();
   const { fontScale, height: windowHeight } = useWindowDimensions();
-  const railOverride = useActiveDuoRailOverride();
+  const railEntry = useActiveDuoRailOverrideEntry();
+  const railOverride = railEntry?.mode === 'replace' ? railEntry.actions : null;
   const insets = useSafeAreaInsets();
   const host = usePersistentSessionHost();
   const session = usePersistentSessionScene(state => state.session);

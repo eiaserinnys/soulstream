@@ -218,6 +218,13 @@ describe('GlassSurface render paths and composition', () => {
     )).not.toThrow();
   });
 
+  test('compact 터치 프레임은 호출자가 지정한 정렬을 우선한다', () => {
+    const screen = render(<CompactTouchTarget testID="aligned-target" frameStyle={{ alignItems: 'stretch' }}><Text>제목</Text></CompactTouchTarget>);
+    const frame = StyleSheet.flatten(screen.getByTestId('aligned-target').props.style);
+    expect(frame.alignItems).toBe('stretch');
+    expect(frame.minHeight).toBeGreaterThanOrEqual(44);
+  });
+
   test('__DEV__에서는 synthetic direct same-role 중첩을 명시적으로 실패시킨다', () => {
     expect(() => render(
       <GlassSurface role="glassCard">

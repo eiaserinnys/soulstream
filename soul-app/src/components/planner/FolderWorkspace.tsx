@@ -150,8 +150,8 @@ export function FolderWorkspace({
     } finally { togglePending.current = false; }
   };
   const railActions: PhoneRailAction[] = [
-    { id: 'back', label: tablet ? '폴더 패널 닫기' : '뒤로', icon: tablet ? 'close' : 'chevron-back',
-      onPress: () => coordinateFolderWorkspaceClose(folderSummary?.page.id ?? folderPageId, onClose) },
+    ...(onClose ? [{ id: 'back', label: tablet ? '폴더 패널 닫기' : '뒤로', icon: (tablet ? 'close' : 'chevron-back') as PhoneRailAction['icon'],
+      onPress: () => coordinateFolderWorkspaceClose(folderSummary?.page.id ?? folderPageId, onClose) }] : []),
     ...(folderSummary && folder?.id !== 'claude' && folder?.id !== 'llm' ? [
       { id: 'starred', label: '중요 폴더', icon: (folderSummary.page.metadata.starred ? 'star' : 'star-outline') as PhoneRailAction['icon'], selected: folderSummary.page.metadata.starred === true, disabled: !scopedApi, onPress: () => { void runRailToggle('starred'); } },
       { id: 'today', label: '오늘 데일리', icon: (folderInToday ? 'sunny' : 'sunny-outline') as PhoneRailAction['icon'], selected: folderInToday === true, disabled: !scopedApi || !todayReady, onPress: () => { void runRailToggle('today'); } },
@@ -161,7 +161,7 @@ export function FolderWorkspace({
     { id: 'completed', label: '완료·취소 숨김', icon: folderCardDisplay.includeCompleted ? 'eye-outline' : 'eye-off-outline', selected: !folderCardDisplay.includeCompleted,
       disabled: !folderSummary, onPress: () => folderCardDisplay.onChange(!folderCardDisplay.includeCompleted) },
   ];
-  useRegisterDuoRailOverride(`folder-${folderPageId}`, duo && active, railActions);
+  useRegisterDuoRailOverride(`folder-${folderPageId}`, duo && active, railActions, onClose ? 'replace' : 'prepend');
 
   useEffect(() => {
     mounted.current = true;
