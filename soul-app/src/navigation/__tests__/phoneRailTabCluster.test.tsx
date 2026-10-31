@@ -9,29 +9,71 @@ jest.mock('../PersistentSessionContext', () => ({
 }));
 
 import React from 'react';
-import { StyleSheet } from 'react-native';
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { PhoneRailTabCluster, RAIL_MIN_INSET_WIDTH } from '../TabNavigator';
-import { RailCapsule, RailCapsuleItem } from '../../components/navigation/RailCapsule';
+import { StyleSheet } from 'react-native';
+import { usePhoneRailActions, useRegisterDuoRailOverride } from '../phoneRailActions';
 import { PhoneRailModeContext } from '../tabContract';
+import { RailCapsule, RailCapsuleItem } from '../../components/navigation/RailCapsule';
+import { Text } from 'react-native';
 
-test('compact 레일은 캡슐 안 항목 높이를 최소 터치 높이로 줄인다', () => {
-  const compactProps = { compact: true };
-  const screen = render(
-    <PhoneRailModeContext.Provider value>
-      <NavigationContainer>
-        <RailCapsule {...compactProps} testID="compact-rail">
-          <RailCapsuleItem testID="compact-rail-item" label="탭" onPress={jest.fn()} badge={2}>
-            <></>
-          </RailCapsuleItem>
-        </RailCapsule>
-      </NavigationContainer>
-    </PhoneRailModeContext.Provider>,
-  );
+test('숫자와 점의 우선순위와 비활성 상태를 노출한다', () => {
+  const onPress = jest.fn();
+  const disabledPress = jest.fn();
+  const screen = render(<NavigationContainer><RailCapsule testID="badge-capsule" compact>
+    <RailCapsuleItem testID="count" label="확인 항목" badgeCount={3} dot onPress={onPress}><Text>아이콘</Text></RailCapsuleItem>
+    <RailCapsuleItem testID="dot" label="커멘트" dot disabled onPress={disabledPress}><Text>아이콘</Text></RailCapsuleItem>
+  </RailCapsule></NavigationContainer>);
+  expect(screen.getByTestId('count-badge')).toBeTruthy();
+  expect(screen.queryByTestId('count-dot')).toBeNull();
+  expect(screen.getByTestId('dot-dot')).toBeTruthy();
+  expect(screen.getByLabelText('커멘트').props.accessibilityState.disabled).toBe(true);
+});
 
-  expect(StyleSheet.flatten(screen.getByTestId('compact-rail-item').props.style).height).toBe(44);
-  expect(StyleSheet.flatten(screen.getByTestId('compact-rail-item-badge').props.style)).toMatchObject({ top: 4, right: 8 });
+test('상세 레일은 마지막 오버레이를 우선하고 닫으면 이전 레일로 돌아간다', () => {
+  const open = jest.fn();
+  function Override({ id, count }: { id: string; count?: number }) {
+    useRegisterDuoRailOverride(id, true, [{ id, label: id, icon: 'close', badgeCount: count, onPress: open }]);
+    return null;
+  }
+  function Scene({ inner }: { inner: boolean }) {
+    return <NavigationContainer><Override id="folder" />{inner ? <Override id="card" count={3} /> : null}
+      <PhoneRailTabCluster active="DailyTab" onSelect={jest.fn()} duoSideBand />
+    </NavigationContainer>;
+  }
+  const screen = render(<Scene inner={false} />);
+  expect(screen.getByTestId('phone-rail-action-folder')).toBeTruthy();
+  expect(screen.queryByTestId('phone-tab-DailyTab')).toBeNull();
+  screen.rerender(<Scene inner />);
+  expect(screen.getByTestId('phone-rail-action-card')).toBeTruthy();
+  expect(screen.getByText('3')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('phone-rail-action-card'));
+  expect(open).toHaveBeenCalledTimes(1);
+  screen.rerender(<Scene inner={false} />);
+  expect(screen.getByTestId('phone-rail-action-folder')).toBeTruthy();
+});
+
+test('활성 루트의 동작을 탭보다 앞에 표시하고 호출한다', () => {
+  const create = jest.fn();
+  usePhoneRailActions.getState().setActions('DailyTab', [
+    { id: 'create', label: '드래프트 카드 추가', icon: 'add-outline', onPress: create },
+  ]);
+  const screen = render(<NavigationContainer><PhoneRailTabCluster active="DailyTab" onSelect={jest.fn()} duoSideBand /></NavigationContainer>);
+  fireEvent.press(screen.getByLabelText('드래프트 카드 추가'));
+  expect(create).toHaveBeenCalledTimes(1);
+  screen.rerender(<NavigationContainer><PhoneRailTabCluster active="FeedTab" onSelect={jest.fn()} duoSideBand /></NavigationContainer>);
+  expect(screen.queryByLabelText('드래프트 카드 추가')).toBeNull();
+  act(() => usePhoneRailActions.getState().setActions('DailyTab', undefined));
+});
+
+test('compact 레일은 모든 탭 칸에 최소 터치 높이를 쓴다', () => {
+  const screen = render(<NavigationContainer><PhoneRailModeContext.Provider value={true}>
+    <PhoneRailTabCluster active="DailyTab" onSelect={jest.fn()} compact />
+  </PhoneRailModeContext.Provider></NavigationContainer>);
+  for (const name of ['DailyTab', 'FolderTab', 'PersistentTab', 'FeedTab', 'SettingsTab']) {
+    expect(StyleSheet.flatten(screen.getByTestId(`phone-tab-${name}`).props.style).height).toBe(44);
+  }
 });
 
 test('레일 탭 클러스터는 5개 루트 탭을 같은 testID로 노출한다', () => {

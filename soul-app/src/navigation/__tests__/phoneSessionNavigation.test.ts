@@ -12,6 +12,7 @@ import { PhoneSessionFeedScreen } from '../TabNavigator';
 jest.mock('@react-navigation/native', () => ({
   ...jest.requireActual('@react-navigation/native'),
   useIsFocused: () => true,
+  useFocusEffect: (effect: () => void | (() => void)) => require('react').useEffect(effect, [effect]),
 }));
 
 jest.mock('@expo/vector-icons/Ionicons', () => () => null);

@@ -16,6 +16,8 @@ import { ChatPane } from '../../split/ChatPane';
 import { retryPlannerSessionWorkspace } from '../../../lib/planner-folder-workspace';
 import { coordinateFolderWorkspaceClose } from '../../../lib/planner-folder-title-save';
 import { TABLET_SHELL_LAYOUT } from '../../../theme';
+import { DuoSideBandContext } from '../../../navigation/tabContract';
+import { usePhoneRailActions } from '../../../navigation/phoneRailActions';
 
 let mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
 let mockInsets = { top: 0, bottom: 0, left: 0, right: 0 };
@@ -42,7 +44,7 @@ jest.mock('react-native-webview', () => ({
   WebView: () => null,
 }));
 
-jest.mock('../CardDetailSheet', () => ({ CardDetailContent: () => require('react').createElement(require('react-native').View, { testID: 'overlay-card-detail' }) }));
+jest.mock('../CardDetailSheet', () => ({ CardDetailContent: (props: any) => require('react').createElement(require('react-native').View, { ...props, testID: 'overlay-card-detail' }) }));
 
 jest.mock('../../split/ChatPane', () => {
   const React = require('react');
@@ -85,6 +87,7 @@ jest.mock('../FolderSessionHistory', () => ({
 
 beforeEach(() => {
   mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
+  mockInsets = { top: 0, bottom: 0, left: 0, right: 0 };
   mockOverlayChatMounted.mockClear();
   mockOverlayChatUnmounted.mockClear();
   usePlannerStore.getState().resetForTest();
@@ -122,6 +125,19 @@ test('서버가 미소속으로 확인한 세션만 단독 채팅 안내를 렌�
   expect(screen.getByTestId('overlay-chat').props.active).toBe(true);
   expect(screen.getByTestId('overlay-chat').props.minimumBottomPadding).toBeUndefined();
   expect(screen.queryByTestId('task-run-history')).toBeNull();
+  expect(screen.getByLabelText('세션 패널 닫기')).toBeTruthy();
+});
+
+test('듀오 두 열의 단독 세션은 본문 닫기 대신 레일 닫기만 제공한다', async () => {
+  mockWindowDimensions = { width: 951, height: 669, scale: 1, fontScale: 1 };
+  mockInsets = { top: 0, bottom: 24, left: 0, right: 84 };
+  useUIStore.getState().openSessionOverlay('session-only');
+  const screen = render(<DuoSideBandContext.Provider value={true}><FolderWorkspaceReadOverlay /></DuoSideBandContext.Provider>);
+  expect(screen.queryByLabelText('세션 패널 닫기')).toBeNull();
+  const close = usePhoneRailActions.getState().overrides.at(-1)!.actions;
+  expect(close.map(action => action.id)).toEqual(['close']);
+  await act(async () => { await close[0].onPress(); });
+  expect(useUIStore.getState().folderOverlayVisible).toBe(false);
 });
 
 test('카드 패널 프레임은 실제로 전달받은 하단 여백을 내부 ChatPane에 전달한다', () => {
@@ -312,6 +328,27 @@ test.each([
   const screen = render(<FolderWorkspaceReadOverlay />);
   expect(StyleSheet.flatten(screen.getByTestId('task-workspace-task-pane').props.style).width).toBe(expected);
   expect(screen.getByTestId('task-workspace-chat-pane')).toBeTruthy();
+});
+
+test('듀오 두 열에서는 상세 닫기 외에 중복 채팅 닫기 액션을 두지 않는다', () => {
+  mockWindowDimensions = { width: 951, height: 669, scale: 1, fontScale: 1 };
+  const detail = cardDetail('card-duo-chat', 'session-only');
+  useCardStore.getState().putDetail(detail);
+  useUIStore.getState().openCardOverlay(detail.card.id);
+  act(() => { useUIStore.getState().setActiveSessionId('session-only'); });
+  const screen = render(<DuoSideBandContext.Provider value={true}><FolderWorkspaceReadOverlay /></DuoSideBandContext.Provider>);
+  expect(screen.getByTestId('overlay-card-detail').props.extraRailActions).toBeUndefined();
+});
+
+test('듀오 단일 열 채팅은 상세가 있으면 뒤로, 단독 세션이면 닫기만 표시한다', () => {
+  mockWindowDimensions = { width: 669, height: 951, scale: 1, fontScale: 1 };
+  useUIStore.getState().openCardOverlay('single-card', 'session-only');
+  const screen = render(<DuoSideBandContext.Provider value={true}><FolderWorkspaceReadOverlay /></DuoSideBandContext.Provider>);
+  expect(usePhoneRailActions.getState().overrides.at(-1)?.actions.map(action => action.id)).toEqual(['back']);
+  screen.unmount();
+  useUIStore.getState().openSessionOverlay('session-only');
+  render(<DuoSideBandContext.Provider value={true}><FolderWorkspaceReadOverlay /></DuoSideBandContext.Provider>);
+  expect(usePhoneRailActions.getState().overrides.at(-1)?.actions.map(action => action.id)).toEqual(['close']);
 });
 
 test('the native board sheet and inline root exclusively host the same overlay', () => {

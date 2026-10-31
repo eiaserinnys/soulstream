@@ -12,11 +12,15 @@ import { TwoPaneWithDrawer } from '../TwoPaneWithDrawer';
 import { TabletSafeAreaFrame } from '../TabletSafeAreaFrame';
 import { useUIStore } from '../../../store/uiStore';
 import { useSearchStore } from '../../../store/searchStore';
+import { DuoSideBandContext } from '../../../navigation/tabContract';
+import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { usePhoneRailActions } from '../../../navigation/phoneRailActions';
 
 const mockOpenPlannerSessionWorkspace = jest.fn();
 const mockOpenFeedSessionCardWorkspace = jest.fn();
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+jest.mock('../../../navigation/TabletPersistentEntry', () => ({ TabletPersistentEntry: () => require('react').createElement(require('react-native').View, { testID: 'tablet-persistent-entry' }) }));
 jest.mock('../SidebarPane', () => ({
   SidebarPane: () => require('react').createElement(require('react-native').View, { testID: 'planner-navigation' }),
 }));
@@ -73,6 +77,62 @@ describe('iPad v3 planner shell', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('듀오 띠는 보드 행동과 검색을 노출하고 프로젝트 기존 보기와 겹창에 맞춰 바뀐다', async () => {
+    useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-31' }, mainPaneViews: {} });
+    const screen = render(<ThemeProvider value={DefaultTheme}><DuoSideBandContext.Provider value={true}><TwoPaneWithDrawer /></DuoSideBandContext.Provider></ThemeProvider>);
+    expect(screen.getByTestId('duo-main-create')).toBeTruthy();
+    expect(screen.getByTestId('duo-main-expand')).toBeTruthy();
+    expect(screen.getByTestId('duo-main-completed').props.accessibilityState.selected).toBe(true);
+    fireEvent.press(screen.getByTestId('duo-main-completed'));
+    expect(screen.getByTestId('duo-main-completed').props.accessibilityState.selected).toBe(false);
+    fireEvent.press(screen.getByLabelText('세션 검색'));
+    expect(screen.getByLabelText('검색 닫기').props.accessibilityState.selected).toBe(true);
+    expect(screen.queryByTestId('tablet-feed-header')).toBeNull();
+    fireEvent.press(screen.getByLabelText('검색 닫기'));
+    expect(useSearchStore.getState().tabletActive).toBe(false);
+    await act(async () => { useUIStore.setState({ activeSection: { kind: 'project', folderId: 'folder-1', projectPageId: 'page-1' } }); });
+    expect(screen.queryByTestId('duo-main-create')).toBeNull();
+    expect(screen.getByTestId('duo-main-menu')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('duo-main-view'));
+    expect(useUIStore.getState().mainPaneViews['folder-1']).toBe('board');
+    expect(screen.getByTestId('duo-main-create')).toBeTruthy();
+    await act(async () => { useUIStore.setState({ folderOverlayVisible: true }); });
+    expect(screen.getByTestId('duo-main-band-capsule')).toBeTruthy();
+  });
+
+  it('확대 보드와 설정 모달이 열리면 바깥 듀오 레일을 숨기고 닫으면 복원한다', () => {
+    useUIStore.setState({ cardBoardExpanded: false, settingsVisible: false });
+    const screen = render(<ThemeProvider value={DefaultTheme}><DuoSideBandContext.Provider value={true}><TwoPaneWithDrawer /></DuoSideBandContext.Provider></ThemeProvider>);
+    expect(screen.getByTestId('duo-main-band')).toBeTruthy();
+    act(() => { useUIStore.setState({ cardBoardExpanded: true }); });
+    expect(screen.queryByTestId('duo-main-band')).toBeNull();
+    act(() => { useUIStore.setState({ cardBoardExpanded: false, settingsVisible: true }); });
+    expect(screen.queryByTestId('duo-main-band')).toBeNull();
+    act(() => { useUIStore.setState({ settingsVisible: false }); });
+    expect(screen.getByTestId('duo-main-band')).toBeTruthy();
+  });
+
+  it('인라인 폴더 행동과 루트 이동을 함께 표시하고 위쪽 상세를 닫으면 복원한다', () => {
+    useUIStore.setState({ activeSection: { kind: 'project', folderId: 'folder-1', projectPageId: 'page-1' }, mainPaneViews: {}, cardBoardExpanded: false, settingsVisible: false });
+    const folder = Symbol('inline-folder');
+    const card = Symbol('card-detail');
+    const screen = render(<ThemeProvider value={DefaultTheme}><DuoSideBandContext.Provider value={true}><TwoPaneWithDrawer /></DuoSideBandContext.Provider></ThemeProvider>);
+    act(() => usePhoneRailActions.getState().pushOverride(folder, [{ id: 'starred', label: '중요 폴더', icon: 'star-outline', onPress: jest.fn() }], 'prepend'));
+    expect(screen.getByTestId('duo-rail-action-starred')).toBeTruthy();
+    expect(screen.getByTestId('duo-main-view')).toBeTruthy();
+    expect(screen.getByTestId('duo-main-menu')).toBeTruthy();
+    expect(screen.getByTestId('duo-main-search')).toBeTruthy();
+    expect(screen.getByTestId('tablet-persistent-entry')).toBeTruthy();
+    act(() => usePhoneRailActions.getState().pushOverride(card, [{ id: 'close', label: '닫기', icon: 'close', onPress: jest.fn() }]));
+    expect(screen.getByTestId('duo-rail-action-close')).toBeTruthy();
+    expect(screen.queryByTestId('duo-rail-action-starred')).toBeNull();
+    expect(screen.queryByTestId('duo-main-menu')).toBeNull();
+    act(() => usePhoneRailActions.getState().removeOverride(card));
+    expect(screen.getByTestId('duo-rail-action-starred')).toBeTruthy();
+    expect(screen.getByTestId('duo-main-menu')).toBeTruthy();
+    act(() => usePhoneRailActions.getState().removeOverride(folder));
   });
 
   it('가로는 좌 내비·중앙 플래너·우 세션의 3열과 업무 오버레이를 공유한다', () => {

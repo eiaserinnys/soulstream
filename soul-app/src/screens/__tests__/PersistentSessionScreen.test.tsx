@@ -93,6 +93,7 @@ import type { PersistentReportEntry } from '../../api/types';
 import { DuoSideBandContext } from '../../navigation/tabContract';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
+import { usePhoneRailActions } from '../../navigation/phoneRailActions';
 
 let store: StoreApi<PersistentSessionScene>;
 function Capture() { store = usePersistentSessionHost().store; return null; }
@@ -722,6 +723,42 @@ test('듀오 태블릿은 머리줄 대신 띠 캡슐과 사용량 열을 쓰고
   measure.mockRestore();
   useSettingsStore.setState({ serverUrl: '', persistentSessionDevicePrefs: {} } as never);
   useAuthStore.setState({ jwt: null });
+});
+
+test('듀오 PAS 카드 상세가 열리면 PAS 띠에 카드 레일이 우선한다', () => {
+  mockDevice = 'tabletLandscape';
+  const view = render(<SafeAreaInsetsContext.Provider value={{ top: 24, bottom: 24, left: 0, right: 84 }}>
+    <DuoSideBandContext.Provider value={true}><NavigationContainer><ScreenHarness /></NavigationContainer></DuoSideBandContext.Provider>
+  </SafeAreaInsetsContext.Provider>);
+  act(() => store.getState().open({ session_id: 'pas-duo', node_id: 'node-a', persistent: true } as any));
+  const key = Symbol('detail');
+  const close = jest.fn();
+  act(() => usePhoneRailActions.getState().pushOverride(key, [{ id: 'close', label: '카드 닫기', icon: 'close', onPress: close }]));
+  fireEvent.press(view.getByTestId('duo-rail-action-close'));
+  expect(close).toHaveBeenCalledTimes(1);
+  expect(view.queryByLabelText('카드 목록 보기')).toBeNull();
+  act(() => usePhoneRailActions.getState().removeOverride(key));
+  expect(view.getByLabelText('카드 목록 보기')).toBeTruthy();
+});
+
+test('인라인 폴더에서 진입한 듀오 PAS는 폴더 레일 대신 PAS 동작을 표시한다', () => {
+  mockDevice = 'tabletLandscape';
+  const folder = Symbol('background-folder');
+  act(() => usePhoneRailActions.getState().pushOverride(folder, [{ id: 'create', label: '폴더 카드 추가', icon: 'add', onPress: jest.fn() }], 'prepend'));
+  const view = render(<SafeAreaInsetsContext.Provider value={{ top: 24, bottom: 24, left: 0, right: 84 }}>
+    <DuoSideBandContext.Provider value={true}><NavigationContainer><ScreenHarness /></NavigationContainer></DuoSideBandContext.Provider>
+  </SafeAreaInsetsContext.Provider>);
+  act(() => store.getState().open({ session_id: 'pas-duo', node_id: 'node-a', persistent: true } as any));
+  expect(view.getByTestId('persistent-session-duo-tasks')).toBeTruthy();
+  expect(view.getByTestId('persistent-session-duo-menu')).toBeTruthy();
+  expect(view.queryByTestId('duo-rail-action-create')).toBeNull();
+  const card = Symbol('pas-card');
+  act(() => usePhoneRailActions.getState().pushOverride(card, [{ id: 'close', label: '카드 닫기', icon: 'close', onPress: jest.fn() }]));
+  expect(view.getByTestId('duo-rail-action-close')).toBeTruthy();
+  expect(view.queryByTestId('persistent-session-duo-tasks')).toBeNull();
+  act(() => usePhoneRailActions.getState().removeOverride(card));
+  expect(view.getByTestId('persistent-session-duo-tasks')).toBeTruthy();
+  act(() => usePhoneRailActions.getState().removeOverride(folder));
 });
 
 test.each([

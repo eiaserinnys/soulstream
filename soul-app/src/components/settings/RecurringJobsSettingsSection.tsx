@@ -6,6 +6,7 @@ import { useTokens } from '../../theme';
 import { useSettingsWorkspace } from './SettingsWorkspaceContext';
 import { SettingsSection } from './SettingsSection';
 import { settingsPanelPage } from './SettingsFormParts';
+import { useDuoSideBand } from '../../navigation/duoSideBand';
 import {
   RecurringJobEditor,
   RecurringJobHistory,
@@ -28,6 +29,7 @@ export function RecurringJobsSettingsSection({
   onOpenRecurringJobs?: () => void;
 }) {
   const t = useTokens();
+  const duo = useDuoSideBand();
   const workspace = useSettingsWorkspace();
   const [localPanel, setLocalPanel] = useState<WidePanel>({ kind: 'list' });
   const panel = workspace?.jobs ?? localPanel;
@@ -47,7 +49,7 @@ export function RecurringJobsSettingsSection({
     const hidden = (kind: WidePanel['kind']) => panel.kind !== kind;
     const page = (kind: WidePanel['kind']) => settingsPanelPage(t, hidden(kind));
     return <View testID="wide-recurring-jobs-panel" style={{ flex: 1, minHeight: 0 }}>
-      <ScrollView {...page('list')} testID="settings-jobs-list-scroll"><RecurringJobsList serverUrl={serverUrl} onCreate={() => openEditor()} onEdit={job => openEditor(job.job_id)} refreshKey={listRevision}/></ScrollView>
+      <ScrollView {...page('list')} testID="settings-jobs-list-scroll"><RecurringJobsList hideCreate={duo} serverUrl={serverUrl} onCreate={() => openEditor()} onEdit={job => openEditor(job.job_id)} refreshKey={listRevision}/></ScrollView>
       {showEditor ? <ScrollView {...page('editor')} testID="settings-jobs-editor-scroll"><RecurringJobEditor key={activeEditorId ?? 'new'} serverUrl={serverUrl} jobId={activeEditorId} onDone={() => { setHasEditor(false); setListRevision(value => value + 1); setPanel({ kind: 'list' }); }} onOpenHistory={jobId => { setHistoryId(jobId); setPanel({ kind: 'history', jobId }); }}/></ScrollView> : null}
       {activeHistoryId ? <ScrollView {...page('history')} testID="settings-jobs-history-scroll"><RecurringJobHistory serverUrl={serverUrl} jobId={activeHistoryId} onOpenSession={sessionId => openPlannerSessionWorkspace(sessionId)}/></ScrollView> : null}
     </View>;

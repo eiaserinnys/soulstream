@@ -11,6 +11,7 @@ import { useTokens, type DesignTokens } from '../../theme';
 import { createSurfaceRoles } from '../../theme/surfaceRoles';
 import { TabletPaneHeader } from './TabletPaneHeader';
 import { resolveTabletBottomSafeAreaPadding } from './tabletShellInsets';
+import { useDuoSideBand } from '../../navigation/duoSideBand';
 
 /** A containing card panel may provide the bottom clearance it actually reserves. */
 export const ChatPaneMinimumBottomPaddingContext = createContext<number | undefined>(undefined);
@@ -24,6 +25,7 @@ export function ChatPane({ active = true, sessionId: sessionIdOverride, onClose,
   headerLeading?: React.ReactNode;
 }) {
   const t = useTokens();
+  const duo = useDuoSideBand();
   const styles = useMemo(() => makeStyles(t), [t]);
   const insets = useSafeAreaInsets();
   const panelMinimumBottomPadding = useContext(ChatPaneMinimumBottomPaddingContext);
@@ -51,7 +53,7 @@ export function ChatPane({ active = true, sessionId: sessionIdOverride, onClose,
         testID="tablet-chat-header"
         style={styles.headerSurface}
       >
-        {headerLeading}
+        {!duo ? headerLeading : null}
         {sessionId ? (
           <>
             <StatusDot status={session?.status} />
@@ -60,7 +62,7 @@ export function ChatPane({ active = true, sessionId: sessionIdOverride, onClose,
             </Text>
             <View style={styles.spacer} />
             {/* 챗 닫기 — 우측 패널을 빈 상태로 되돌리고 싶을 때 사용. */}
-            <TouchableOpacity
+            {!duo ? <TouchableOpacity
               testID="tablet-chat-close"
               style={styles.closeButton}
               onPress={onClose ?? (() => useUIStore.getState().setActiveSessionId(null))}
@@ -71,7 +73,7 @@ export function ChatPane({ active = true, sessionId: sessionIdOverride, onClose,
                 color={t.colors.textMuted}
                 size={t.iconSize.prominent}
               />
-            </TouchableOpacity>
+            </TouchableOpacity> : null}
           </>
         ) : (
           <>

@@ -11,7 +11,7 @@ export function cardDetailStyles(t: DesignTokens) {
     header: { paddingHorizontal: t.foundation.pageInset, paddingVertical: s.md, gap: s.sm },
     headerRow: { flexDirection: 'row', alignItems: 'center', gap: s.sm },
     titleHitFrame: { flex: 1, minWidth: 0, alignSelf: 'stretch', alignItems: 'stretch', justifyContent: 'center' },
-    titleHitSurface: { flex: 1, minWidth: 0, alignItems: 'flex-start', justifyContent: 'center' },
+    titleHitSurface: { flex: 1, minWidth: 0, width: '100%', alignSelf: 'stretch', alignItems: 'flex-start', justifyContent: 'center' },
     heading: { flex: 1, minWidth: 0, ...type.section, color: t.colors.textPrimary },
     chips: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: s.xs },
     chip: { minHeight: t.controlHeight.chip, paddingHorizontal: s.sm, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.surfaceCode, flexDirection: 'row', alignItems: 'center', gap: s.xs, maxWidth: '100%' },

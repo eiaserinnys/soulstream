@@ -26,6 +26,7 @@ test('새 세션·새 카드 공통 입력과 새 세션 sheet 제품 마운트�
 test('FolderWorkspace 새 세션 표면은 phone과 tablet 경로를 모두 지난다', () => {
   expect(findProductFilesContaining(/<FolderWorkspace\b/)).toEqual([
     'component-review/ReviewFolderWorkspace.tsx',
+    'component-review/ReviewIphoneDuo.tsx',
     'components/planner/FolderWorkspaceReadOverlay.tsx',
     'components/split/MainListPane.tsx',
     'navigation/TabNavigator.tsx',

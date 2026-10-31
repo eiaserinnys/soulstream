@@ -31,6 +31,8 @@ import { FolderWorkspace } from './FolderWorkspace';
 import { retryPlannerSessionWorkspace } from '../../lib/planner-folder-workspace';
 import { coordinateFolderWorkspaceClose } from '../../lib/planner-folder-title-save';
 import { createSurfaceRoles } from '../../theme/surfaceRoles';
+import { useDuoSideBand } from '../../navigation/duoSideBand';
+import { useRegisterDuoRailOverride, type PhoneRailAction } from '../../navigation/phoneRailActions';
 import {
   FOLDER_WORKSPACE_BACKDROP_COLOR,
   getCardDetailPaneWidth,
@@ -51,18 +53,19 @@ export function FolderWorkspaceReadOverlay({ host = 'root', parentWidth }: {
     : null;
 }
 
-export function CardDetailPane({ api, cardId, detailWidth, hideRightBorder = false, onClose, onOpenSession }: {
+export function CardDetailPane({ api, cardId, detailWidth, hideRightBorder = false, active = true, onClose, onOpenSession }: {
   api: ReturnType<typeof createApiClient> | null;
   cardId: string;
   detailWidth?: number;
   hideRightBorder?: boolean;
+  active?: boolean;
   onClose(): void;
   onOpenSession?(id: string): void;
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   return <View testID="task-workspace-task-pane" style={[styles.folderPane, detailWidth === undefined ? { flex: 1, borderRightWidth: 0 } : { width: detailWidth }, hideRightBorder ? { borderRightWidth: 0 } : null]}>
-    <CardDetailContent key={cardId} api={api} cardId={cardId} inline onClose={onClose} onOpenSession={onOpenSession} />
+    <CardDetailContent key={cardId} api={api} cardId={cardId} inline visible={active} onClose={onClose} onOpenSession={onOpenSession} />
   </View>;
 }
 
@@ -97,6 +100,7 @@ export function FolderWorkspaceDetailPane({ api, cardId, pageId, sessionId, acti
   onOpenFolder?(folderId: string, projectPageId: string): void;
 }) {
   const t = useTokens();
+  const duo = useDuoSideBand();
   const styles = useMemo(() => makeStyles(t), [t]);
   const resolution = useUIStore((state) => state.sessionFolderResolution);
   const focusEventId = useUIStore((state) => state.focusEventId);
@@ -106,7 +110,7 @@ export function FolderWorkspaceDetailPane({ api, cardId, pageId, sessionId, acti
   ));
 
   if (cardId) {
-    return <CardDetailPane api={api} cardId={cardId} detailWidth={width} hideRightBorder={hideRightBorder}
+    return <CardDetailPane api={api} cardId={cardId} detailWidth={width} hideRightBorder={hideRightBorder} active={active}
       onClose={onClose} onOpenSession={onOpenSession} />;
   }
 
@@ -129,14 +133,14 @@ export function FolderWorkspaceDetailPane({ api, cardId, pageId, sessionId, acti
                 ? getSessionDisplayName(session, sessionId)
                 : '세션을 선택하세요'}
             </Text>
-            <TouchableOpacity
+            {!duo ? <TouchableOpacity
               onPress={onClose}
               accessibilityRole="button"
               accessibilityLabel="세션 패널 닫기"
               style={styles.closeButton}
             >
               <Ionicons name="close" size={t.iconSize.navigation} color={t.colors.textMuted} />
-            </TouchableOpacity>
+            </TouchableOpacity> : null}
           </TabletPaneHeader>
           <ScrollView contentContainerStyle={styles.folderContent}>
             {resolution?.status === 'loading' ? (
@@ -194,6 +198,7 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
   onOpenFolder?(folderId: string, projectPageId: string): void;
 }) {
   const t = useTokens();
+  const duo = useDuoSideBand();
   const styles = useMemo(() => makeStyles(t), [t]);
   const resolution = useUIStore((state) => state.sessionFolderResolution);
   const continuity = useOptionalLayoutContinuity();
@@ -221,6 +226,15 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
     setStep('chat');
   };
   const canReturnToDetail = Boolean(cardId || pageId);
+  const returnToDetail = () => {
+    setStep('detail');
+    continuity?.setViewState(memoryKey, 'detail');
+    useUIStore.setState({ overlaySessionExplicit: false, initialCardSessionId: null });
+  };
+  const chatActions: PhoneRailAction[] = canReturnToDetail
+    ? [{ id: 'back', label: '상세로 돌아가기', icon: 'chevron-back', onPress: returnToDetail }]
+    : [{ id: 'close', label: '챗 닫기', icon: 'close', onPress: onClose }];
+  useRegisterDuoRailOverride('folder-chat', duo && active && (step === 'chat' || (!cardId && !pageId && !!sessionId)), chatActions);
   const backButton = (
     <GlassButton
       testID="folder-workspace-step-back"
@@ -228,11 +242,7 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
       size="compact"
       borderRadius={t.foundation.radius.round}
       accessibilityLabel="상세로 돌아가기"
-      onPress={() => {
-        setStep('detail');
-        continuity?.setViewState(memoryKey, 'detail');
-        useUIStore.setState({ overlaySessionExplicit: false, initialCardSessionId: null });
-      }}
+      onPress={returnToDetail}
     >
       <Ionicons
         name="chevron-back"
@@ -298,7 +308,7 @@ export function CardDetailChatPanes({ api, cardId, active, detailWidth, onClose,
   ownsSessionConnection?: boolean;
 }) {
   return <>
-    <CardDetailPane api={api} cardId={cardId} detailWidth={detailWidth} onClose={onClose} onOpenSession={onOpenSession} />
+    <CardDetailPane api={api} cardId={cardId} detailWidth={detailWidth} active={active} onClose={onClose} onOpenSession={onOpenSession} />
     <CardConversationPane active={active} sessionId={sessionId} onClose={onCloseChat} hideChat={hideChat} ownsSessionConnection={ownsSessionConnection} />
   </>;
 }
@@ -350,6 +360,7 @@ export function CardPanelOverlayFrame({ visible, width, onClose, onHidden, testI
 
 function FolderWorkspaceOverlayContent({ parentWidth }: { parentWidth?: number }) {
   const t = useTokens();
+  const duo = useDuoSideBand();
   const { width: screenWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const visible = useUIStore((state) => state.folderOverlayVisible);
@@ -373,6 +384,8 @@ function FolderWorkspaceOverlayContent({ parentWidth }: { parentWidth?: number }
   const safeParentWidth = Math.max(0, parentWidth ?? (screenWidth - insets.left - insets.right));
   const overlayWidth = getFolderWorkspaceOverlayWidth(safeParentWidth);
   const singlePanel = shouldUseSinglePanel(overlayWidth);
+  useRegisterDuoRailOverride('unlinked-chat', duo && visible && !singlePanel && !cardId && !pageId && !!sessionId,
+    [{ id: 'close', label: '챗 닫기', icon: 'close', onPress: close }]);
   const sheetWidth = singlePanel
     ? overlayWidth
     : overlayWidth + (cardId ? StyleSheet.hairlineWidth * 2 : 0);

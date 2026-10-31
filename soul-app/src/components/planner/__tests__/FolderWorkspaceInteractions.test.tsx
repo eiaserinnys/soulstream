@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import type { PlannerPage, PlannerFolder } from '../../../api/plannerTypes';
 import { usePlannerStore } from '../../../store/plannerStore';
 import { useSessionStore } from '../../../store/sessionStore';
@@ -8,6 +8,7 @@ import { useSettingsStore } from '../../../store/settingsStore';
 const mockOpenProjectMenu = jest.fn();
 const mockOpenChildFolderManagement = jest.fn();
 const mockUsePlannerProject = jest.fn();
+const mockToggleFolderCardCreate = jest.fn();
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
@@ -60,13 +61,19 @@ jest.mock('../NewFolderSheet', () => ({ NewFolderSheet: (props: { visible: boole
   : null }));
 jest.mock('../FolderDefaultAssignment', () => ({ FolderDefaultAssignment: () => null }));
 jest.mock('../FolderCards', () => ({
-  FolderCards: () => require('react').createElement(require('react-native').View, { testID: 'folder-checklist' }),
+  FolderCards: require('react').forwardRef((_props: unknown, ref: any) => {
+    const React = require('react');
+    React.useImperativeHandle(ref, () => ({ toggleCreate: mockToggleFolderCardCreate }), []);
+    return React.createElement(require('react-native').View, { testID: 'folder-checklist' });
+  }),
 }));
 jest.mock('../FolderSessionHistory', () => ({ FolderSessionHistory: () => null }));
 jest.mock('../SessionSuccessionSheet', () => ({ SessionSuccessionSheet: () => null }));
 jest.mock('../SessionSuccessionHost', () => ({ SessionSuccessionHost: () => null }));
 
 import { FolderWorkspace } from '../FolderWorkspace';
+import { DuoSideBandContext } from '../../../navigation/tabContract';
+import { usePhoneRailActions } from '../../../navigation/phoneRailActions';
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -90,6 +97,32 @@ test('폴더 문맥은 남고 문서 동작 메뉴는 열리지 않는다', () =
   expect(screen.getByText('설계 문서')).toBeTruthy();
   expect(mockOpenProjectMenu).not.toHaveBeenCalled();
   expect(mockOpenChildFolderManagement).not.toHaveBeenCalled();
+});
+
+test('듀오 폴더 레일에서 카드 추가와 완료 표시를 제어한다', () => {
+  usePlannerStore.setState({ selectedFolderSnapshot: plannerFolder() });
+  const onChange = jest.fn();
+  render(<DuoSideBandContext.Provider value={true}><FolderWorkspace api={null} folderPageId="task-1" cardDisplay={{ includeCompleted: false, onChange }} /></DuoSideBandContext.Provider>);
+  const actions = usePhoneRailActions.getState().overrides.at(-1)!.actions;
+  act(() => { actions.find(action => action.id === 'create')!.onPress(); });
+  act(() => { actions.find(action => action.id === 'completed')!.onPress(); });
+  expect(mockToggleFolderCardCreate).toHaveBeenCalledTimes(1);
+  expect(onChange).toHaveBeenCalledWith(true);
+});
+
+test('듀오 인라인 폴더는 루트 이동을 유지하고 닫을 수 있는 상세만 닫기를 등록한다', () => {
+  usePlannerStore.setState({ selectedFolderSnapshot: plannerFolder() });
+  const inline = render(<DuoSideBandContext.Provider value={true}><FolderWorkspace api={null} folderPageId="task-1" /></DuoSideBandContext.Provider>);
+  const inlineRail = usePhoneRailActions.getState().overrides.at(-1)!;
+  expect(inlineRail.mode).toBe('prepend');
+  expect(inlineRail.actions.some(action => action.id === 'back')).toBe(false);
+  expect(inlineRail.actions.map(action => action.id)).toEqual(expect.arrayContaining(['create', 'completed']));
+  inline.unmount();
+
+  render(<DuoSideBandContext.Provider value={true}><FolderWorkspace api={null} folderPageId="task-1" onClose={jest.fn()} /></DuoSideBandContext.Provider>);
+  const detailRail = usePhoneRailActions.getState().overrides.at(-1)!;
+  expect(detailRail.mode).toBe('replace');
+  expect(detailRail.actions[0].id).toBe('back');
 });
 
 test('하위 폴더도 기존 PlannerFolderRow로 열고 상위 폴더로 이동한다', () => {

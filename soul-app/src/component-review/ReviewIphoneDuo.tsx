@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo } from 'react';
-import { DefaultTheme, NavigationContainer } from '@react-navigation/native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { DefaultTheme, NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
 import { ScrollView, Text, View } from 'react-native';
 import {
   SafeAreaFrameContext,
@@ -12,7 +12,9 @@ import { SessionFeedScreen } from '../screens/SessionFeedScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { DuoSideBandContext, PhoneRailModeContext, RAIL_MIN_INSET_WIDTH } from '../navigation/tabContract';
 import { ContentLinkProvider } from '../navigation/ContentLinkProvider';
-import { PhoneRailTabCluster } from '../navigation/TabNavigator';
+import { PhoneRailTabCluster, TabNavigator } from '../navigation/TabNavigator';
+import { TwoPaneWithDrawer } from '../components/split/TwoPaneWithDrawer';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { PersistentSessionProvider, usePersistentSessionHost, usePersistentSessionScene } from '../navigation/PersistentSessionContext';
 import { PersistentSessionScreen } from '../screens/PersistentSessionScreen';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
@@ -31,9 +33,15 @@ import { EntryShellAlertHarness, ReviewEntryShell } from './ReviewEntryShell';
 import { ReviewPersistentCardOverlay } from './ReviewPersistentCardOverlay';
 import { useChatStore } from '../store/chatStore';
 import { useSessionStore } from '../store/sessionStore';
+import { useUIStore } from '../store/uiStore';
+import { CardDetailContent } from '../components/planner/CardDetailSheet';
+import { FolderWorkspace } from '../components/planner/FolderWorkspace';
+import { DuoRailOverride } from '../components/navigation/DuoRailOverride';
+import { useRegisterDuoRailOverride } from '../navigation/phoneRailActions';
 
 const PAS_LAYOUT_FRAMES = {
   'inner-landscape': { width: 951, height: 669, rail: false, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
+  'inner-landscape-short': { width: 890, height: 626, rail: false, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
   'inner-portrait': { width: 669, height: 951, rail: false, insets: { top: 72, right: 0, bottom: 24, left: 0 } },
   'ipad-pro-13-portrait': { width: 1032, height: 1376, rail: false, insets: { top: 24, right: 0, bottom: 20, left: 0 } },
   'ipad-pro-13-landscape': { width: 1376, height: 1032, rail: false, insets: { top: 24, right: 0, bottom: 20, left: 0 } },
@@ -53,6 +61,63 @@ export const IPHONE_DUO_FRAMES = [
   { id: 'inner-landscape', label: '안쪽 가로', width: 951, height: 669, rail: false, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
   { id: 'inner-landscape-short', label: '안쪽 가로(높이 626)', width: 890, height: 626, rail: false, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
 ] as const;
+
+const MainReviewStack = createNativeStackNavigator();
+
+function DuoBadgeReview({ dot }: { dot: boolean }) {
+  useRegisterDuoRailOverride('review-badge', true, [
+    { id: 'badge-preview', label: '확인 항목', icon: 'checkbox-outline', badgeCount: dot ? undefined : 3, dot, onPress: () => {} },
+  ]);
+  return <View style={{ flex: 1 }} />;
+}
+
+function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRAMES }) {
+  const frame = PAS_LAYOUT_FRAMES[frameId];
+  const params = new URLSearchParams(window.location.search);
+  const duo = params.get('band') !== 'off' && frame.insets.right >= RAIL_MIN_INSET_WIDTH && frame.insets.left === 0;
+  const phone = frameId.startsWith('outer-') || frameId.startsWith('iphone-');
+  const initialTab = params.get('tab') ?? undefined;
+  const sampleCardId = params.get('card') ?? entryShellCardId;
+  const [view, setView] = useState(params.get('view'));
+  const navigationRef = useNavigationContainerRef<any>();
+  const phoneChat = phone && view === 'chat';
+  const api = useMemo(() => createReviewApi('normal', { entryShell: true }), []);
+  useEffect(() => installEntryShellPublicHarness(), []);
+  return <PersistentSessionProvider><ContentLinkProvider>
+    <SafeAreaFrameContext.Provider value={{ x: 0, y: 0, width: frame.width, height: frame.height }}>
+      <SafeAreaInsetsContext.Provider value={frame.insets}>
+        <DuoSideBandContext.Provider value={duo}>
+          <NavigationContainer ref={navigationRef} onReady={() => {
+            if (phoneChat) navigationRef.navigate('FeedTab', { screen: 'Chat', params: { sessionId: 'public-shell-session-0' } });
+            if (!phone && params.get('overlay') === 'card-with-chat') useUIStore.getState().openCardOverlay(sampleCardId, 'public-shell-session-0');
+          }}>
+            <View style={{ width: frame.width, height: frame.height, overflow: 'hidden' }}>
+              {view && !phoneChat ? <View style={{ flex: 1, flexDirection: 'row' }}>
+                <SafeAreaInsetsContext.Provider value={{ ...frame.insets, right: 0 }}>
+                  <View style={{ flex: 1, paddingTop: frame.insets.top, paddingBottom: frame.insets.bottom }}>
+                    {view === 'card-detail' ? <CardDetailContent api={api} cardId={sampleCardId} inline={!phone} onClose={() => setView(null)} /> : null}
+                    {view === 'folder-workspace' ? <FolderWorkspace api={api} folderPageId="public-shell-page-0" active onClose={() => setView(null)} onOpenSession={() => setView('chat')} /> : null}
+                    {view === 'chat' ? <FolderWorkspaceSinglePanel api={api} cardId={entryShellCardId} pageId={null} sessionId="public-shell-session-0" active initialStep="chat" onClose={() => setView(null)} /> : null}
+                    {view === 'rail-badge' || view === 'rail-dot' ? <DuoBadgeReview dot={view === 'rail-dot'} /> : null}
+                  </View>
+                </SafeAreaInsetsContext.Provider>
+                {phone ? <View style={{ width: frame.insets.right, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: frame.insets.bottom }}>
+                  <PhoneRailTabCluster active="DailyTab" duoSideBand={duo} compact={duo && frame.width > frame.height} onSelect={() => setView(null)} />
+                </View> : null}
+                {!phone && duo ? <View style={{ width: frame.insets.right }} /> : null}
+                {!phone && duo ? <DuoRailOverride /> : null}
+              </View> : phone ? <TabNavigator initialTab={phoneChat ? 'FeedTab' : initialTab} /> : <MainReviewStack.Navigator screenOptions={{ headerShown: false }}>
+                <MainReviewStack.Screen name="Main" component={TwoPaneWithDrawer} />
+                <MainReviewStack.Screen name="PersistentSession" component={DuoPasCardOverlayStage} />
+              </MainReviewStack.Navigator>}
+            </View>
+            <EntryShellAlertHarness />
+          </NavigationContainer>
+        </DuoSideBandContext.Provider>
+      </SafeAreaInsetsContext.Provider>
+    </SafeAreaFrameContext.Provider>
+  </ContentLinkProvider></PersistentSessionProvider>;
+}
 
 function DuoPasCardOverlayStage({ reportsEmpty = false, initialReportsScene = false }: { reportsEmpty?: boolean; initialReportsScene?: boolean }) {
   const host = usePersistentSessionHost();
@@ -74,6 +139,9 @@ function DuoPasCardOverlayStage({ reportsEmpty = false, initialReportsScene = fa
     } as any);
     useSessionStore.getState().applyPersistentReport(sessionId, entries);
     if (initialReportsScene && !reportsEmpty) host.store.getState().toggleReports();
+    if (new URLSearchParams(window.location.search).get('view') === 'card-detail') {
+      host.store.getState().selectCard('preview-pas-card');
+    }
     const request = useChatStore.getState().beginPersistentDisplaySettingsLoad(sessionId);
     useChatStore.getState().finishPersistentDisplaySettingsLoad(sessionId, request, {
       show_character: true, animate_character: false, show_generation_separator: true,
@@ -135,6 +203,11 @@ export function ReviewIphoneDuo() {
     if (!frameId || !PAS_LAYOUT_FRAMES[frameId]) return null;
     return <DuoPasLayoutReview frameId={frameId} reportsEmpty={new URLSearchParams(window.location.search).get('reports') === '0'}
       initialReportsScene={new URLSearchParams(window.location.search).get('scene') === 'reports'} />;
+  }
+  if (sample === 'main-layout') {
+    const frameId = new URLSearchParams(window.location.search).get('frame') as keyof typeof PAS_LAYOUT_FRAMES | null;
+    if (!frameId || !PAS_LAYOUT_FRAMES[frameId]) return null;
+    return <DuoMainLayoutReview frameId={frameId} />;
   }
   const navigationTheme = {
     ...DefaultTheme,

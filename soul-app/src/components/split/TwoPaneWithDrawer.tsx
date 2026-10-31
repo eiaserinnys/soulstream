@@ -20,6 +20,15 @@ import { TabletSafeAreaFrame } from './TabletSafeAreaFrame';
 import { TabletSessionFeedPane } from './TabletSessionFeedPane';
 import { TabletHomeComposerHost } from './TabletHomeComposerHost';
 import { clampTwoPaneMiddleDrag, resolveTwoPaneMiddleWidth } from './paneWidths';
+import { useDuoSideBand } from '../../navigation/duoSideBand';
+import { useSearchStore } from '../../store/searchStore';
+import { useCardDisplay } from '../../hooks/useCardDisplay';
+import { RailCapsule, RailCapsuleItem } from '../navigation/RailCapsule';
+import { TabletPersistentEntry } from '../../navigation/TabletPersistentEntry';
+import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import type { MainListPaneHandle } from './MainListPane';
+import { useActiveDuoRailOverrideEntry } from '../../navigation/phoneRailActions';
 
 const DRAWER_WIDTH = 280;
 const ANIM_MS = 240;
@@ -43,8 +52,19 @@ const ANIM_MS = 240;
 export function TwoPaneWithDrawer() {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
-  const { width: screenWidth } = useWindowDimensions();
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const duo = useDuoSideBand();
+  const override = useActiveDuoRailOverrideEntry();
+  const mainRef = useRef<MainListPaneHandle>(null);
+  const [keyboardOverlap, setKeyboardOverlap] = useState(0);
+  const activeSection = useUIStore(state => state.activeSection);
+  const views = useUIStore(state => state.mainPaneViews);
+  const board = activeSection.kind === 'daily' || views[activeSection.folderId] === 'board';
+  const showRootNavigation = !override?.actions.length || override.mode === 'prepend';
+  const rootActionCount = showRootNavigation ? (board ? 3 : 0) + (activeSection.kind === 'project' ? 1 : 0) + 3 : 0;
+  const cardDisplay = useCardDisplay(activeSection.kind === 'project' ? activeSection.folderId : undefined);
+  const searchActive = useSearchStore(state => state.tabletActive);
   // 회전·폴드 직후에는 이전 프레임의 측정값이 남아 pane 폭이 한 번 튄다.
   // 화면 폭·안전 영역이 바뀌면 무효가 되는 key와 함께 보관한다.
   const layoutKey = `${screenWidth}:${insets.left}:${insets.right}`;
@@ -54,6 +74,8 @@ export function TwoPaneWithDrawer() {
   const paneMiddleWidth = useUIStore((s) => s.paneMiddleWidth);
   const paneMiddleWidthTwoPane = useUIStore((s) => s.paneMiddleWidthTwoPane);
   const folderOverlayVisible = useUIStore((s) => s.folderOverlayVisible);
+  const cardBoardExpanded = useUIStore((s) => s.cardBoardExpanded);
+  const settingsVisible = useUIStore((s) => s.settingsVisible);
   const setPaneMiddleWidthTwoPane = useUIStore((s) => s.setPaneMiddleWidthTwoPane);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -88,6 +110,7 @@ export function TwoPaneWithDrawer() {
   });
 
   return (
+    <View style={{ flex: 1 }}>
     <SafeAreaView
       style={styles.container}
       edges={['left', 'right']}
@@ -103,6 +126,7 @@ export function TwoPaneWithDrawer() {
         >
           <SplitPanelSurface testID="split-panel-main" style={[styles.pane, { width: resolvedMiddleWidth }]}>
             <MainListPane
+              ref={mainRef}
               onMenuPress={() => setDrawerOpen(true)}
               showSearch
               paneWidth={resolvedMiddleWidth}
@@ -154,6 +178,50 @@ export function TwoPaneWithDrawer() {
         <FolderWorkspaceReadOverlay />
       </TabletSafeAreaFrame>
     </SafeAreaView>
+    {duo && !cardBoardExpanded && !settingsVisible ? <AppKeyboardAvoidingView
+      pointerEvents="box-none" behavior="padding" onOverlapChange={setKeyboardOverlap}
+      style={StyleSheet.absoluteFill}>
+      <View testID="duo-main-band" pointerEvents="box-none" style={{
+        position: 'absolute', right: 0, width: insets.right, alignItems: 'center',
+        bottom: Math.max(keyboardOverlap, insets.bottom, t.uiSpacing.xxl),
+      }}>
+        <RailCapsule testID="duo-main-band-capsule" compact={(override?.actions.length ?? 0) + rootActionCount >= 7 || screenHeight < 500}>
+          {override?.actions.map(action => <RailCapsuleItem key={action.id} testID={`duo-rail-action-${action.id}`}
+            label={action.label} selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
+            <Ionicons name={action.icon} color={action.selected ? t.colors.accent : t.colors.textMuted} size={t.iconSize.standard} />
+          </RailCapsuleItem>)}
+          {showRootNavigation ? <>
+          {board ? <>
+            <RailCapsuleItem testID="duo-main-create" label="드래프트 카드 추가" onPress={() => mainRef.current?.openCreate()}>
+              <Ionicons name="add-outline" color={t.colors.textMuted} size={t.iconSize.standard} />
+            </RailCapsuleItem>
+            <RailCapsuleItem testID="duo-main-completed" label="완료·취소 숨김" selected={!cardDisplay.includeCompleted}
+              onPress={() => cardDisplay.onChange(!cardDisplay.includeCompleted)}>
+              <Ionicons name={cardDisplay.includeCompleted ? 'eye-outline' : 'eye-off-outline'}
+                color={cardDisplay.includeCompleted ? t.colors.textMuted : t.colors.accent} size={t.iconSize.standard} />
+            </RailCapsuleItem>
+            <RailCapsuleItem testID="duo-main-expand" label="보드 확대" onPress={() => mainRef.current?.openExpanded()}>
+              <Ionicons name="expand-outline" color={t.colors.textMuted} size={t.iconSize.standard} />
+            </RailCapsuleItem>
+          </> : null}
+          {activeSection.kind === 'project' ? <RailCapsuleItem testID="duo-main-view" label={board ? '기존 보기' : '카드 보드'}
+            onPress={() => useUIStore.getState().setMainPaneView(activeSection.folderId, board ? 'existing' : 'board')}>
+            <Ionicons name={board ? 'list-outline' : 'grid-outline'} color={t.colors.textMuted} size={t.iconSize.standard} />
+          </RailCapsuleItem> : null}
+          <RailCapsuleItem testID="duo-main-menu" label="메뉴" onPress={() => setDrawerOpen(true)}>
+            <Ionicons name="menu" color={t.colors.textMuted} size={t.iconSize.standard} />
+          </RailCapsuleItem>
+          <RailCapsuleItem testID="duo-main-search" label={searchActive ? '검색 닫기' : '세션 검색'}
+            selected={searchActive} onPress={() => searchActive
+              ? useSearchStore.getState().closeTabletSearch() : useSearchStore.getState().openTabletSearch()}>
+            <Ionicons name="search-outline" color={searchActive ? t.colors.accent : t.colors.textMuted} size={t.iconSize.standard} />
+          </RailCapsuleItem>
+          <TabletPersistentEntry rail />
+          </> : null}
+        </RailCapsule>
+      </View>
+    </AppKeyboardAvoidingView> : null}
+    </View>
   );
 }
 

@@ -60,12 +60,14 @@ export function RecurringJobsList({
   onCreate,
   onEdit,
   refreshKey = 0,
+  hideCreate = false,
 }: {
   serverUrl: string;
   onCreate(): void;
   onEdit(job: RecurringJobDto): void;
   /** Phone screen increments this after returning from editor/history. */
   refreshKey?: number;
+  hideCreate?: boolean;
 }) {
   const t = useTokens();
   const styles = useSettingsFormStyles();
@@ -93,7 +95,7 @@ export function RecurringJobsList({
   if (!serverUrl) return <Notice text="연결 설정을 저장하면 반복 작업을 관리할 수 있습니다." />;
   return (
     <View testID="recurring-jobs-list" style={styles.block}>
-      <SettingsListHeader title="반복 작업" help="다음 실행 시각은 서버가 계산합니다."><Action label="새로고침" onPress={() => void load()} testID="recurring-jobs-refresh" /><Action label="새 작업" onPress={onCreate} /></SettingsListHeader>
+      <SettingsListHeader title="반복 작업" help="다음 실행 시각은 서버가 계산합니다."><Action label="새로고침" onPress={() => void load()} testID="recurring-jobs-refresh" />{!hideCreate ? <Action label="새 작업" onPress={onCreate} /> : null}</SettingsListHeader>
       {loading ? <ActivityIndicator color={t.colors.accent} /> : null}
       {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
       {!loading && !error && jobs.length === 0 ? <Notice text="등록된 반복 작업이 없습니다." /> : null}

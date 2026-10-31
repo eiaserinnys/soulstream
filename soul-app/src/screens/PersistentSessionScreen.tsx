@@ -38,6 +38,7 @@ import { usePersistentSessionHost, usePersistentSessionScene } from '../navigati
 import { usePhoneRailMode } from '../navigation/tabContract';
 import { useDuoSideBand } from '../navigation/duoSideBand';
 import { RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
+import { useActiveDuoRailOverrideEntry } from '../navigation/phoneRailActions';
 import { usePasContextMenu } from '../components/persistent/usePasContextMenu';
 import { useAuthStore } from '../store/authStore';
 import { useChatStore } from '../store/chatStore';
@@ -70,7 +71,9 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const phone = device === 'phone';
   const railMode = usePhoneRailMode();
   const duoSideBand = useDuoSideBand();
-  const { fontScale } = useWindowDimensions();
+  const { fontScale, height: windowHeight } = useWindowDimensions();
+  const railEntry = useActiveDuoRailOverrideEntry();
+  const railOverride = railEntry?.mode === 'replace' ? railEntry.actions : null;
   const insets = useSafeAreaInsets();
   const host = usePersistentSessionHost();
   const session = usePersistentSessionScene(state => state.session);
@@ -397,7 +400,11 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     </View>
     {!phone && duoSideBand ? <View testID="persistent-session-duo-band" style={{ position: 'absolute', right: 0,
       bottom: Math.max(keyboardOverlap, insets.bottom, t.uiSpacing.xxl), width: insets.right, alignItems: 'center' }}>
-      <RailCapsule testID="persistent-session-duo-capsule">
+      <RailCapsule testID="persistent-session-duo-capsule" compact={(railOverride?.length ?? 0) >= 7 || windowHeight < 500}>
+        {railOverride?.length ? railOverride.map(action => <RailCapsuleItem key={action.id} testID={`duo-rail-action-${action.id}`}
+          label={action.label} selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
+          <Ionicons name={action.icon} size={t.iconSize.standard} color={action.selected ? t.colors.accent : t.colors.textMuted} />
+        </RailCapsuleItem>) : <>
         <RailCapsuleItem testID="persistent-session-duo-reports" selected={reportsScene} badge={reportCount} disabled={!hasReports}
           label={!hasReports ? '지금의 보고 없음' : reportsScene ? 'PAS 대화로 돌아가기' : '지금의 보고'}
           onPress={() => host.store.getState().toggleReports()}>
@@ -414,6 +421,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
         <RailCapsuleItem testID="persistent-session-duo-menu" label="PAS 메뉴" onPress={showPasMenu}>
           <Ionicons name="ellipsis-horizontal" size={t.iconSize.standard} color={t.colors.textMuted} />
         </RailCapsuleItem>
+        </>}
       </RailCapsule>
     </View> : null}
     {phone && reportCardSheetEntry && isPersistentReportCardExpandable(reportCardSheetEntry) ? <AppModalSurface visible={reportCard !== null} modalId="modal_card_detail"

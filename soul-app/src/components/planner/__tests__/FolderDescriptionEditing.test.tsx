@@ -313,6 +313,7 @@ test('설명 편집 표면 inventory는 task 공통 경로와 runbook 제외 근
   ]);
   expect(folderWorkspaceMounts).toEqual([
     'src/component-review/ReviewFolderWorkspace.tsx',
+    'src/component-review/ReviewIphoneDuo.tsx',
     'src/components/planner/FolderWorkspaceReadOverlay.tsx',
     'src/components/split/MainListPane.tsx',
     'src/navigation/TabNavigator.tsx',

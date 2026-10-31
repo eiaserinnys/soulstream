@@ -5,6 +5,7 @@ let mockOnFocus: (() => void) | undefined;
 const mockListProps = jest.fn();
 
 jest.mock('@react-navigation/native', () => ({
+  useIsFocused: () => true,
   useFocusEffect: jest.fn((callback) => { mockOnFocus = callback; }),
 }));
 jest.mock('../../theme', () => ({

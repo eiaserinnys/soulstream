@@ -28,6 +28,8 @@ jest.mock('../../useSessionCardAnimation', () => ({ useSessionCardAnimation: () 
 jest.mock('../CardAssignmentSheet', () => ({ CardAssignmentSheet: () => null }));
 import { CardCreateSheet } from '../CardCreateSheet';
 import { CardDetailContent, CardDetailSheet } from '../CardDetailSheet';
+import { DuoSideBandContext } from '../../../navigation/tabContract';
+import { usePhoneRailActions } from '../../../navigation/phoneRailActions';
 
 // Count the real component boundaries without memoizing the test wrappers.
 const mockRenders = { detail: 0, timeline: 0, sessions: 0, images: 0, rows: [] as string[] };
@@ -103,6 +105,25 @@ beforeEach(async () => {
   mockControlLocks.input = []; mockControlLocks.header = [];
 });
 afterEach(() => jest.restoreAllMocks());
+test('듀오 카드 상세는 헤더 조작과 네 탭을 레일에 두고 탭과 뒤로를 실행한다', async () => {
+  const onClose = jest.fn();
+  const api = { getCard: jest.fn().mockResolvedValue(detail) };
+  const screen = render(<DuoSideBandContext.Provider value={true}>
+    <CardDetailContent api={api as any} cardId={card.id} onClose={onClose} />
+  </DuoSideBandContext.Provider>);
+  await waitFor(() => expect(screen.getByText('원문')).toBeTruthy());
+  const titleSurface = screen.getByTestId('card-detail-title-surface');
+  expect(StyleSheet.flatten(titleSurface.props.style)).toMatchObject({ width: '100%', alignSelf: 'stretch' });
+  expect(screen.queryByTestId('card-detail-back-icon')).toBeNull();
+  expect(screen.queryByTestId('settings-segment-card-detail-comments')).toBeNull();
+  const actions = () => usePhoneRailActions.getState().overrides.at(-1)!.actions;
+  expect(actions().map(action => action.id)).toEqual(['close', 'complete', 'tab-items', 'tab-comments', 'tab-sessions', 'tab-notes']);
+  act(() => actions().find(action => action.id === 'tab-sessions')!.onPress());
+  expect(screen.getByText('실행 세션')).toBeTruthy();
+  expect(actions().find(action => action.id === 'tab-sessions')?.selected).toBe(true);
+  act(() => actions().find(action => action.id === 'close')!.onPress());
+  expect(onClose).toHaveBeenCalledTimes(1);
+});
 test('상세 패널의 기존 상태 진입점에서 같은 색상 선택 메뉴를 연다', async () => {
   const colored = { ...detail, card: { ...card, color: 'blue' } };
   const api = { getCard: jest.fn().mockResolvedValue(colored) };

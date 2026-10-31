@@ -14,6 +14,8 @@ import { usePersistentSessionHost } from './PersistentSessionContext';
 import { AppGlassCard } from '../components/AppGlassCard';
 import { FOLDER_WORKSPACE_BACKDROP_COLOR, getCardDetailPaneWidth, getFolderWorkspaceOverlayWidth } from '../lib/folder-workspace-layout';
 import { createSurfaceRoles, useTokens } from '../theme';
+import { useDuoSideBand } from './duoSideBand';
+import { DuoRailOverride } from '../components/navigation/DuoRailOverride';
 
 export type TabletStackParamList = {
   Main: undefined;
@@ -42,20 +44,22 @@ function TabletPersistentSession({ navigation }: NativeStackScreenProps<TabletSt
 }
 
 function TabletCardDetail({ route, navigation }: NativeStackScreenProps<TabletStackParamList, 'CardDetail'>) {
+  const visible = useIsFocused();
   const host = usePersistentSessionHost();
   const serverUrl = useSettingsStore(state => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
   return <TabletDetailScreenFrame navigation={navigation} testID="persistent-tablet-card-sheet" accessibilityLabel="카드 상세 닫기">
-    <CardDetailContent inline api={api} cardId={route.params.cardId} onClose={() => navigation.goBack()}
+    <CardDetailContent inline visible={visible} api={api} cardId={route.params.cardId} onClose={() => navigation.goBack()}
       onOpenSession={sessionId => { host.store.getState().leave(); navigation.popTo('Main'); void openPlannerSessionWorkspace(sessionId); }} />
   </TabletDetailScreenFrame>;
 }
 
 function TabletMarkdownDocument({ route, navigation }: NativeStackScreenProps<TabletStackParamList, 'MarkdownDocument'>) {
+  const visible = useIsFocused();
   const serverUrl = useSettingsStore(state => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
   return <TabletDetailScreenFrame navigation={navigation} testID="persistent-tablet-document-sheet" accessibilityLabel="문서 닫기">
-    <MarkdownDocumentContent api={api} documentId={route.params.documentId}
+    <MarkdownDocumentContent visible={visible} api={api} documentId={route.params.documentId}
       onClose={() => navigation.goBack()} />
   </TabletDetailScreenFrame>;
 }
@@ -67,6 +71,7 @@ function TabletDetailScreenFrame({ navigation, testID, accessibilityLabel, child
   children: React.ReactNode;
 }) {
   const t = useTokens();
+  const duo = useDuoSideBand();
   const focused = useIsFocused();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -90,6 +95,7 @@ function TabletDetailScreenFrame({ navigation, testID, accessibilityLabel, child
         </View>
       </AppGlassCard>
     </View>
+    {duo && focused ? <DuoRailOverride /> : null}
   </View>;
 }
 

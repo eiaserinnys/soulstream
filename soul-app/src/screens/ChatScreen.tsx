@@ -24,6 +24,9 @@ import {
 import { usePhonePanelHistory } from '../navigation/phonePanelHistory';
 import { useSearchStore } from '../store/searchStore';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
+import { useDuoSideBand } from '../navigation/duoSideBand';
+import { useRegisterDuoRailOverride } from '../navigation/phoneRailActions';
+import { DuoSafeTop } from '../navigation/DuoSafeTop';
 
 type Props = NativeStackScreenProps<FeedStackParamList, 'Chat'>;
 
@@ -46,6 +49,7 @@ export function ChatScreen({ route, navigation }: Props) {
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
   const menus = usePlannerContextMenus(api);
   const isFocused = useIsFocused();
+  const duo = useDuoSideBand();
 
   usePhoneConversationKeyboard(navigation);
 
@@ -66,6 +70,10 @@ export function ChatScreen({ route, navigation }: Props) {
   const session = useSessionStore((s) =>
     sessionId ? s.sessions[sessionId] : undefined
   );
+  useRegisterDuoRailOverride('chat', duo && isFocused, [
+    { id: 'back', label: '뒤로', icon: 'chevron-back', onPress: () => openPreviousPhonePanel(navigation, panelHistory.getReturnTab()) },
+    ...(sessionId ? [{ id: 'menu', label: '세션 메뉴', icon: 'ellipsis-horizontal' as const, onPress: () => menus.openSessionMenu({ sessionId }) }] : []),
+  ]);
 
   // native title이 제목의 단일 소유자다. 상태 도트는 별도 left action으로 유지한다.
   React.useLayoutEffect(() => {
@@ -144,7 +152,10 @@ export function ChatScreen({ route, navigation }: Props) {
   }
 
   return (
-    <>
+    <DuoSafeTop>
+      {duo ? <View testID="duo-chat-title" style={[styles.headerLeft, { paddingHorizontal: t.foundation.pageInset, minHeight: t.hitTarget.min }]}>
+        <StatusDot status={session?.status} /><Text numberOfLines={1} style={{ ...t.foundation.typography.navigation, color: t.colors.textPrimary, flexShrink: 1 }}>{getSessionDisplayName(session, sessionId)}</Text>
+      </View> : null}
       <ChatBody
         sessionId={sessionId}
         active={isFocused}
@@ -163,7 +174,7 @@ export function ChatScreen({ route, navigation }: Props) {
           sessionId: createdSessionId, returnTab: route.params?.returnTab,
         })}
       />
-    </>
+    </DuoSafeTop>
   );
 }
 

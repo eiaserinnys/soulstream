@@ -6,18 +6,22 @@ import { SettingsSegmentedControl } from '../components/settings/SettingsSegment
 import { createPlannerVisualRoles, useTokens } from '../theme';
 import { ProjectListScreen } from './ProjectListScreen';
 import { StarredFoldersScreen } from './StarredFoldersScreen';
+import { useDuoSideBand } from '../navigation/duoSideBand';
 
 export type FolderListTab = 'starred' | 'all';
 
 /** The picker control owns the same typography and hit targets in both surfaces. */
-export function FolderListScreen({ active = true, onOpenFolder, onOpenProject, onTabChange }: {
+export function FolderListScreen({ active = true, onOpenFolder, onOpenProject, onTabChange, selectedTab }: {
   active?: boolean;
   onOpenFolder?: (folder: PlannerFolder) => void;
   onOpenProject?: (folder: Folder, projectPageId: string) => void;
   onTabChange?: (tab: FolderListTab) => void;
+  selectedTab?: FolderListTab;
 }) {
   const t = useTokens();
-  const [tab, setTab] = useState<FolderListTab>('starred');
+  const duo = useDuoSideBand();
+  const [internalTab, setTab] = useState<FolderListTab>('starred');
+  const tab = selectedTab ?? internalTab;
   const [allVisited, setAllVisited] = useState(false);
   const styles = useMemo(() => {
     const planner = createPlannerVisualRoles(t);
@@ -29,13 +33,14 @@ export function FolderListScreen({ active = true, onOpenFolder, onOpenProject, o
     });
   }, [t]);
   useLayoutEffect(() => { onTabChange?.(tab); }, [onTabChange, tab]);
+  useLayoutEffect(() => { if (tab === 'all') setAllVisited(true); }, [tab]);
   return <View testID="folder-list-screen" style={styles.frame}>
-    <View testID="folder-list-tabs" style={styles.tabs}>
+    {!duo ? <View testID="folder-list-tabs" style={styles.tabs}>
       <SettingsSegmentedControl<FolderListTab> id="folder-list" value={tab} onChange={(next) => {
         if (next === 'all') setAllVisited(true);
         setTab(next);
       }} options={[{ value: 'starred', label: '중요 작업' }, { value: 'all', label: '전체 폴더' }]} />
-    </View>
+    </View> : null}
     <View style={[styles.content, tab !== 'starred' && styles.hidden]}>
       <StarredFoldersScreen embedded active={active && tab === 'starred'} onOpenFolder={onOpenFolder} />
     </View>

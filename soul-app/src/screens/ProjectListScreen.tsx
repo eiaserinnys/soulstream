@@ -18,20 +18,25 @@ import {
 } from '../components/planner/projectManagement';
 import { buildPlannerProjectTreeRows } from '../lib/planner-project-tree';
 
-export function ProjectHeaderAddButton() {
-  const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
+export function useCreateProject() {
   const serverUrl = useSettingsStore((state) => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
   const actions = usePlannerActions(api);
+  return React.useCallback(() => promptText('새 프로젝트', '프로젝트 이름', (name) => {
+    void actions.createRootFolder(name).catch(reportPlannerError('프로젝트를 만들지 못했습니다.'));
+  }), [actions]);
+}
+
+export function ProjectHeaderAddButton() {
+  const t = useTokens();
+  const styles = useMemo(() => makeStyles(t), [t]);
+  const createProject = useCreateProject();
   return (
     <TouchableOpacity
       testID="project-header-add"
       accessibilityLabel="새 프로젝트"
       style={styles.headerAction}
-      onPress={() => promptText('새 프로젝트', '프로젝트 이름', (name) => {
-        void actions.createRootFolder(name).catch(reportPlannerError('프로젝트를 만들지 못했습니다.'));
-      })}
+      onPress={createProject}
     >
       <Ionicons name="add" color={t.colors.accent} size={t.iconSize.action} />
     </TouchableOpacity>

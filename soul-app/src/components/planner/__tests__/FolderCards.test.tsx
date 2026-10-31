@@ -2,13 +2,14 @@ jest.mock('expo-image-picker', () => ({ requestMediaLibraryPermissionsAsync: jes
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import React from 'react';
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import { cardFixture } from '../../../test-support/cards';
 const mockFolder = jest.fn();
 jest.mock('../../../hooks/usePlannerFolder', () => ({ usePlannerFolder: (...args: unknown[]) => mockFolder(...args) }));
 jest.mock('../CardDetailSheet', () => ({ CardDetailSheet: ({ cardId }: any) => cardId ? require('react').createElement(require('react-native').Text, null, `상세 ${cardId}`) : null }));
 jest.mock('../CardAssignmentSheet', () => ({ CardAssignmentSheet: () => null }));
-import { FolderCards } from '../FolderCards';
+import { FolderCards, type FolderCardsHandle } from '../FolderCards';
+import { DuoSideBandContext } from '../../../navigation/tabContract';
 
 test('같은 카드 행과 상태를 보여주고 탭은 상세, 카드 추가는 입력창을 연다', () => {
   mockFolder.mockReturnValue({ data: { cards: [cardFixture({ status: 'review' }), cardFixture({ id: 'card-2', title: '진행 카드', status: 'running' })] }, loading: false, error: null });
@@ -19,4 +20,16 @@ test('같은 카드 행과 상태를 보여주고 탭은 상세, 카드 추가�
   expect(screen.getByText('상세 card-1')).toBeTruthy();
   fireEvent.press(screen.getByLabelText('카드 추가'));
   expect(screen.getByLabelText('맡길 일')).toBeTruthy();
+});
+
+test('듀오 폴더 카드 액션은 본문에서 숨기고 레일의 추가 동작으로 입력창을 토글한다', () => {
+  mockFolder.mockReturnValue({ data: { cards: [] }, loading: false, error: null });
+  const ref = React.createRef<FolderCardsHandle>();
+  const screen = render(<DuoSideBandContext.Provider value={true}><FolderCards ref={ref} api={null} folderId="folder-1" /></DuoSideBandContext.Provider>);
+  expect(screen.queryByLabelText('카드 추가')).toBeNull();
+  expect(screen.queryByLabelText('완료·취소 숨김')).toBeNull();
+  act(() => { ref.current?.toggleCreate(); });
+  expect(screen.getByLabelText('맡길 일')).toBeTruthy();
+  act(() => { ref.current?.toggleCreate(); });
+  expect(screen.queryByLabelText('맡길 일')).toBeNull();
 });
