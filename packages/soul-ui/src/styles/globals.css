@@ -252,7 +252,7 @@
 [data-slot="chat-root"][data-chat-presentation="manuscript"] [data-chat-narration="true"] [data-slot="chat-body"] {
   color: var(--muted-foreground);
 }
-[data-chat-user="true"] [data-slot="chat-body"] :is(ul, ol, pre, div:has(> table)) {
+[data-chat-user="true"] [data-slot="chat-body"] :is(ul, ol, pre, [data-slot="codeblock-copy-frame"], div:has(> table)) {
   width: fit-content;
   max-width: 100%;
   margin-inline-start: auto;

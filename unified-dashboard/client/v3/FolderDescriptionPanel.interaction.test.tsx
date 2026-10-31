@@ -27,6 +27,7 @@ describe("FolderDescriptionPanel content-sized editor interactions", () => {
     flushSync(() => root.unmount());
     container.remove();
     scrollHeightSpy.mockRestore();
+    vi.unstubAllGlobals();
   });
 
   for (const variant of ["default", "compact", "daily", "inline"] as const) {
@@ -49,8 +50,19 @@ describe("FolderDescriptionPanel content-sized editor interactions", () => {
 
   it("fits an empty editor when entering editing without changing the draft", () => {
     flushSync(() => root.render(<FolderDescriptionPanel markdown="" onSave={vi.fn()} />));
-    flushSync(() => container.querySelector<HTMLButtonElement>(".v3-description-content")!.click());
+    flushSync(() => container.querySelector<HTMLDivElement>(".v3-description-content")!.click());
     expect(container.querySelector<HTMLTextAreaElement>("textarea")!.style.height).not.toBe("");
+  });
+
+  it("copies fenced code without entering editing", async () => {
+    vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+    flushSync(() => root.render(<FolderDescriptionPanel markdown={"```ts\nconst value = 1;\n```"} onSave={vi.fn()} />));
+    const button = container.querySelector<HTMLButtonElement>('[aria-label="코드 복사"]')!;
+
+    flushSync(() => button.click());
+    await vi.waitFor(() => expect(button.dataset.copyState).toBe("success"));
+
+    expect(container.querySelector("textarea")).toBeNull();
   });
 
   it("preserves the unsaved draft after a failed blur save", async () => {

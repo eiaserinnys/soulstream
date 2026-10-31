@@ -471,7 +471,7 @@ export function MarkdownDocumentPanel({
             className="prose prose-sm min-h-full max-w-none cursor-text dark:prose-invert"
             data-v3-selectable-content="true"
             onClick={(event) => {
-              if (event.target instanceof Element && event.target.closest("a")) return;
+              if (event.target instanceof Element && event.target.closest("a, button")) return;
               enterEditMode();
             }}
             data-testid="markdown-read-body"
