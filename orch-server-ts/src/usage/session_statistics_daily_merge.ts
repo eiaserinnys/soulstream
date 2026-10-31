@@ -6,6 +6,7 @@ import { createSessionStatisticsMetricState, finalizeSessionStatisticsMetrics, s
 import { addDecimal, decimalString, parseDecimal } from "./session_statistics_decimal.js";
 import { buildSessionStatisticsMaterial } from "./session_statistics_material.js";
 import { finalizeSessionStatisticsOptions } from "./session_statistics_options.js";
+import { visibleProject } from "./session_statistics_repository.js";
 import { buildDay, buildOverview, finalizeSessionStatisticsAggregate, type SessionStatisticsView } from "./session_statistics_service.js";
 import { dailySelectorKey, type DailyAggregateState, type DailyMaterial, type DailySessionState, type DailyGroupState, type DailyOverviewAggregateState,
   type SessionStatisticsDailyState } from "./session_statistics_daily_state.js";
@@ -107,9 +108,15 @@ function dailyView(read: SessionStatisticsReadResult, days: readonly SessionStat
     .flatMap(day => {
       const result: Cell[] = [];
       for (const cell of day.groups ?? day.sessions) {
-        const session = "sessionId" in cell ? authorized.get(cell.sessionId)
+        const isSession = "sessionId" in cell;
+        const session = isSession ? authorized.get(cell.sessionId)
           : pairs.get(JSON.stringify([cell.folderId, cell.cardFolderId]));
-        if (session) result.push({ day: day.day, cell, projectId: session.projectId, projectLabel: session.projectLabel });
+        const project = session ? null
+          : isSession || read.visibleFolders === undefined ? null
+            : visibleProject(read.visibleFolders, cell.folderId ?? cell.cardFolderId);
+        if (session || project) result.push({ day: day.day, cell,
+          projectId: session?.projectId ?? project?.id ?? null,
+          projectLabel: session?.projectLabel ?? project?.label ?? "미분류" });
       }
       return result;
     });
@@ -132,6 +139,17 @@ function dailyView(read: SessionStatisticsReadResult, days: readonly SessionStat
     if (cell.unattributedAllFields) for (const key of TOKEN_FLAGS) coverage.token_partials[key] = true;
     return { metrics: emptyMetric, coverage, sourceCount: 0, tokenEvidence: cell.unattributedAllFields, material: emptyMaterial };
   };
+  const cellsByDay = new Map<string, Cell[]>();
+  const cellsByMonth = new Map<string, Cell[]>();
+  for (const cell of cells) {
+    const daily = cellsByDay.get(cell.day) ?? [];
+    daily.push(cell);
+    cellsByDay.set(cell.day, daily);
+    const month = cell.day.slice(0, 7);
+    const monthly = cellsByMonth.get(month) ?? [];
+    monthly.push(cell);
+    cellsByMonth.set(month, monthly);
+  }
   const select = (scope: SessionStatisticsScope) => {
     const respects = scope.respectQueryFilters !== false;
     const query = respects ? read.query : { provider: null, model: null, project_ids: undefined };
@@ -139,9 +157,10 @@ function dailyView(read: SessionStatisticsReadResult, days: readonly SessionStat
       || (scope.model !== undefined && query.model != null && scope.model.value !== query.model);
     const key = dailySelectorKey({ provider: scope.provider ?? query.provider ?? undefined,
       model: scope.model ?? (query.model == null ? undefined : { value: query.model }) });
-    return cells.filter(({ day, projectId: project }) => {
-      return (scope.date === undefined || (scope.date.length === 7 ? day.startsWith(scope.date) : day === scope.date))
-        && (query.project_ids === undefined || sessionStatisticsProjectMatches(project, query.project_ids))
+    const scopedCells = scope.date === undefined ? cells
+      : scope.date.length === 7 ? cellsByMonth.get(scope.date) ?? [] : cellsByDay.get(scope.date) ?? [];
+    return scopedCells.filter(({ projectId: project }) => {
+      return (query.project_ids === undefined || sessionStatisticsProjectMatches(project, query.project_ids))
         && (scope.projectIds === undefined || scope.projectIds.includes(project));
     }).map(({ cell }) => conflict ? fallback(cell) : cell.selectors[key] ?? fallback(cell));
   };

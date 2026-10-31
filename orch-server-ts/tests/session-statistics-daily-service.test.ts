@@ -15,7 +15,7 @@ function fixture() {
   const saved = { ...createSessionStatisticsDailyState(metadata, "2026-10-19"), sourceMaxEventId: "20" };
   const daily = { load: vi.fn(async () => [saved]), sourceMax: vi.fn(async () => new Map([["2026-10-19", "20"]])),
     save: vi.fn(async (_state: SessionStatisticsDailyState, _maximum: string) => {}), withLock: vi.fn(async (work: () => Promise<void>) => { await work(); return true; }) };
-  const repository = { daily, readMetadata: vi.fn(async () => ({ ...metadata, rows: [] })),
+  const repository = { daily, readMetadata: vi.fn(async () => ({ ...metadata, rows: [] as SessionStatisticsReadResult["rows"] })),
     readSlice: vi.fn(async (_input: SessionStatisticsReadRequest, _day: string) => metadata), read: vi.fn(async () => metadata) };
   return { metadata, input, saved, daily, repository };
 }
@@ -52,6 +52,30 @@ describe("daily statistics scheduling and live cache", () => {
     services.push(service);
     await service.getOverview(f.input);
     expect(f.repository.read).toHaveBeenCalledTimes(1);
+  });
+
+  it("fills one missing stored day from a slice without using the full scan", async () => {
+    const f = fixture();
+    const input = { ...f.input, asOf: "2026-10-21T00:00:00.000Z" };
+    const readOverviewSlice = vi.fn(async (_input: SessionStatisticsReadRequest, _day: string) => ({
+      ...f.metadata, asOf: input.asOf,
+    }));
+    Object.assign(f.repository, { readOverviewSlice });
+    f.repository.readMetadata.mockResolvedValue({
+      ...f.metadata,
+      asOf: input.asOf,
+      range: { ...f.metadata.range, effective_until: "2026-10-22" },
+    });
+    const service = new SessionStatisticsDailyService(async () => f.repository, () => new Date(input.asOf));
+    services.push(service);
+
+    await service.getOverview(input);
+
+    expect(f.repository.read).not.toHaveBeenCalled();
+    expect(readOverviewSlice.mock.calls.map(([, day]) => day)).toEqual(["2026-10-20", "2026-10-21"]);
+    const sliceCalls = readOverviewSlice.mock.calls.length;
+    await service.getOverview(input);
+    expect(readOverviewSlice).toHaveBeenCalledTimes(sliceCalls);
   });
 
   it("recalculates one recent changed date under the advisory lock", async () => {

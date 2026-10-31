@@ -68,11 +68,16 @@ export class SessionStatisticsRepository implements SessionStatisticsRepositoryP
     return this.readInternal(input, "slice", day);
   }
 
-  async read(input: SessionStatisticsReadRequest): Promise<SessionStatisticsReadResult> {
-    return this.readInternal(input, "direct");
+  readOverviewSlice(input: SessionStatisticsReadRequest, day: string): Promise<SessionStatisticsReadResult> {
+    return this.readInternal(input, "overview_slice", day);
   }
 
-  private async readInternal(input: SessionStatisticsReadRequest, mode: "direct" | "metadata" | "slice", sliceDay?: string): Promise<SessionStatisticsReadResult> {
+  async read(input: SessionStatisticsReadRequest): Promise<SessionStatisticsReadResult> {
+    return this.readInternal(input, "full");
+  }
+
+  private async readInternal(input: SessionStatisticsReadRequest,
+    mode: "full" | "metadata" | "slice" | "overview_slice", sliceDay?: string): Promise<SessionStatisticsReadResult> {
     parseOffsetTimestamp(input.asOf, "asOf");
     return await this.sql.begin(async (transaction) => {
       await transaction`SET TRANSACTION ISOLATION LEVEL REPEATABLE READ`;
@@ -90,7 +95,7 @@ export class SessionStatisticsRepository implements SessionStatisticsRepositoryP
         input.asOf,
         authorizedEarliest,
       );
-      if (mode === "slice") {
+      if (mode === "slice" || mode === "overview_slice") {
         const bounds = resolveSessionStatisticsDateSlice(sliceDay!, input.asOf);
         const next = new Date(`${sliceDay}T00:00:00Z`);
         next.setUTCDate(next.getUTCDate() + 1);
@@ -116,7 +121,7 @@ export class SessionStatisticsRepository implements SessionStatisticsRepositoryP
       };
       if (mode === "slice") {
         readPurpose = { kind: "day", recordedAtFrom: period.recordedAtFrom, recordedAtBefore: period.recordedAtBefore };
-      } else if (input.day === null || mode === "metadata") {
+      } else if (mode === "overview_slice" || input.day === null || mode === "metadata") {
         readPurpose = { kind: "overview" };
       } else {
         const day = resolveSessionStatisticsDay(input.day, period.range, input.asOf);
@@ -148,6 +153,7 @@ export class SessionStatisticsRepository implements SessionStatisticsRepositoryP
         range: period.range,
         projectionStatus,
         collectionCoverage: "unknown",
+        visibleFolders: input.visibleFolders,
         sessions,
         rows,
         costDecimals,
@@ -178,9 +184,7 @@ async function readAuthorizedSessions(
   return rows.map((row) => {
     const sessionFolderId = row.folder_id;
     const sourceFolderId = sessionFolderId ?? row.card_folder_id;
-    const project = sourceFolderId === null
-      ? null
-      : visibleProject(sourceFolderId, visibleFolderById);
+    const project = sourceFolderId === null ? null : resolveVisibleProject(sourceFolderId, visibleFolderById);
     return {
       sessionId: row.session_id,
       folderId: sessionFolderId,
@@ -191,7 +195,15 @@ async function readAuthorizedSessions(
   });
 }
 
-function visibleProject(
+export function visibleProject(
+  visibleFolders: SessionStatisticsReadRequest["visibleFolders"],
+  sourceFolderId: string | null,
+): { id: string; label: string } | null {
+  if (sourceFolderId === null) return null;
+  return resolveVisibleProject(sourceFolderId, new Map(visibleFolders.map((folder) => [folder.id, folder])));
+}
+
+function resolveVisibleProject(
   sourceFolderId: string,
   visibleFolderById: ReadonlyMap<string, SessionStatisticsReadRequest["visibleFolders"][number]>,
 ): { id: string; label: string } | null {
