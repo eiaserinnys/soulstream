@@ -8,6 +8,7 @@ import {
   type PersistentSettingsPatch,
   type StoredPersistentSettings,
 } from "@soulstream/wire-schema/persistent-session-settings";
+import { DEFAULT_MODEL_CATALOG, resolveModelPreset } from "@soulstream/model-catalog";
 
 import type { EventPersistence } from "../db/event_persistence.js";
 import { UnknownModelPresetError, type ModelCatalog } from "../model_catalog.js";
@@ -27,6 +28,7 @@ import {
 } from "./persistent_session_instruction_control.js";
 
 export interface PersistentSessionControlDeps {
+  nodeId?: string;
   getTask(sessionId: string): Task | undefined;
   loadEvictedTask(sessionId: string): Promise<Task | null>;
   rememberTask(task: Task): void;
@@ -153,12 +155,17 @@ export class PersistentSessionControl {
     const pending = task.persistentGeneration?.pending;
     const alreadyRunning = current !== null
       && current.model_preset === target.model_preset
-      && current.reasoning_effort === target.reasoning_effort;
+      && current.reasoning_effort === target.reasoning_effort
+      && (target.node_id === undefined || target.node_id === this.deps.nodeId);
     const alreadyPending = pending !== undefined
       && pending.targetModelPreset === target.model_preset
-      && (pending.targetReasoningEffort ?? null) === target.reasoning_effort;
+      && (pending.targetReasoningEffort ?? null) === target.reasoning_effort
+      && (pending.targetNodeId ?? undefined) === target.node_id;
     if (alreadyRunning || alreadyPending) {
       return { sessionId, persistent: true, modelChange: "none" };
+    }
+    if (target.node_id !== undefined && target.node_id !== this.deps.nodeId) {
+      return { sessionId, persistent: true, modelChange: "next_execution_start" };
     }
     await this.requestGenerationRollover(sessionId, {
       modelPreset: target.model_preset,
@@ -166,6 +173,7 @@ export class PersistentSessionControl {
         ? {}
         : { reasoningEffort: target.reasoning_effort as ReasoningEffort }),
       reason: "settings",
+      ...(target.node_id === undefined ? {} : { targetNodeId: target.node_id }),
     });
     return { sessionId, persistent: true, modelChange: "next_execution_start" };
   }
@@ -198,7 +206,9 @@ export class PersistentSessionControl {
         : patch.show_turn_usage ? "collapsed" : "hidden");
     return {
       default_model: defaultModel,
-      fallback_models: patch.fallback_models !== undefined ? patch.fallback_models : base.fallback_models,
+      fallback_models: patch.fallback_models !== undefined
+        ? patch.fallback_models.map((selection) => this.normalizeDefaultModel(selection))
+        : base.fallback_models,
       show_generation_separator: patch.show_generation_separator ?? base.show_generation_separator,
       show_character: patch.show_character ?? base.show_character,
       show_jev_candidates: patch.show_jev_candidates ?? base.show_jev_candidates,
@@ -210,17 +220,42 @@ export class PersistentSessionControl {
   }
 
   private normalizeDefaultModel(selection: PersistentModelSelection): PersistentModelSelection {
-    if (!this.deps.modelCatalog) {
+    const remoteNode = selection.node_id !== undefined && selection.node_id !== this.deps.nodeId;
+    if (!this.deps.modelCatalog && !remoteNode) {
       throw new Error(`Model catalog is not configured; cannot resolve preset: ${selection.model_preset}`);
     }
     let preset: ReturnType<ModelCatalog["resolve"]>;
-    try {
-      preset = this.deps.modelCatalog.resolve(selection.model_preset);
-    } catch (error) {
-      if (error instanceof UnknownModelPresetError) {
-        throw new PersistentSessionControlError("INVALID_MODEL_PRESET", error.message);
+    if (remoteNode) {
+      let localPreset: ReturnType<ModelCatalog["resolve"]> | undefined;
+      try {
+        localPreset = this.deps.modelCatalog?.resolve(selection.model_preset);
+      } catch (error) {
+        if (!(error instanceof UnknownModelPresetError)) throw error;
       }
-      throw error;
+      if (localPreset) {
+        preset = localPreset;
+      } else {
+        try {
+          preset = resolveModelPreset(DEFAULT_MODEL_CATALOG, selection.model_preset);
+        } catch (error) {
+          if (error instanceof UnknownModelPresetError) {
+            throw new PersistentSessionControlError("INVALID_MODEL_PRESET", error.message);
+          }
+          throw error;
+        }
+      }
+    } else {
+      if (!this.deps.modelCatalog) {
+        throw new Error(`Model catalog is not configured; cannot resolve preset: ${selection.model_preset}`);
+      }
+      try {
+        preset = this.deps.modelCatalog.resolve(selection.model_preset);
+      } catch (error) {
+        if (error instanceof UnknownModelPresetError) {
+          throw new PersistentSessionControlError("INVALID_MODEL_PRESET", error.message);
+        }
+        throw error;
+      }
     }
     const requested = selection.reasoning_effort;
     if (requested !== null && !isReasoningEffort(requested)) {
@@ -229,6 +264,7 @@ export class PersistentSessionControl {
     return {
       model_preset: preset.id,
       reasoning_effort: resolveReasoningEffortForCreate(preset, requested ?? undefined) ?? null,
+      ...(selection.node_id === undefined ? {} : { node_id: selection.node_id }),
     };
   }
 
@@ -272,6 +308,7 @@ export class PersistentSessionControl {
       reason: string;
       resetContext?: boolean;
       keepInstructions?: boolean;
+      targetNodeId?: string;
     },
   ): Promise<RequestGenerationRolloverResult> {
     if (input.keepInstructions === false && input.resetContext !== true) {
@@ -332,6 +369,7 @@ export class PersistentSessionControl {
         reason: input.reason,
         requestedAt: new Date().toISOString(),
         targetModelPreset: targetPreset.id,
+        ...(input.targetNodeId === undefined ? {} : { targetNodeId: input.targetNodeId }),
         ...(reasoningEffort === undefined ? {} : { targetReasoningEffort: reasoningEffort }),
         resetContext,
         keepInstructions,

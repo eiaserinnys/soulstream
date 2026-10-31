@@ -74,6 +74,7 @@ export interface PersistentGenerationPending {
   requestedAt: string;
   targetModelPreset: string;
   targetReasoningEffort?: ReasoningEffort;
+  targetNodeId?: string;
   resetContext?: boolean;
   keepInstructions?: boolean;
   applyingFrom?: string;

@@ -154,6 +154,161 @@ describe("live execute proxy provider", () => {
     );
   });
 
+  it("hands an idle limit-hit PAS resume to the first available cross-node fallback", async () => {
+    const updated: unknown[] = [];
+    const staticPreset = {
+      id: "codex-next", label: "Codex Next", backend: "codex" as const,
+      available: true, usage_provider: "codex" as const, model: "gpt-codex-next",
+    };
+    const harness = createHarness({
+      modelPresetAvailability: {
+        requireAvailable: vi.fn(),
+        resolveStaticForNode: vi.fn(() => staticPreset),
+      },
+      persistentResume: {
+        getSession: async () => ({
+          session_id: "sess-handoff", agent_id: "agent", node_id: "node-a",
+          status: "error", termination_reason: "limit_hit", model_preset: "claude-old",
+          model: "claude-model", reasoning_effort: "high", claude_session_id: "native-old",
+          metadata: [
+            { type: "persistent_session", value: { enabled: true } },
+            { type: "persistent_settings", value: {
+              default_model: { model_preset: "claude-old", reasoning_effort: "high" },
+              fallback_models: [{ model_preset: "codex-next", reasoning_effort: "high", node_id: "node-b" }],
+            } },
+            { type: "persistent_generation", value: { number: 4 } },
+          ],
+        }),
+        updateSession: async (input) => { updated.push(input); },
+        listAgentProfiles: async () => ({ agent: {} }),
+      },
+    });
+    const nodeA = harness.registerNode({
+      nodeId: "node-a", agents: [{ id: "agent", backend: "claude" }], supportedBackends: ["claude"],
+    });
+    const nodeB = harness.registerNode({
+      nodeId: "node-b", agents: [{ id: "agent", backend: "codex" }], supportedBackends: ["codex"],
+      modelPresets: [{ ...staticPreset, usage_provider: "codex" }],
+    });
+    harness.registry.sessionCache.upsertFromSessionCreated({
+      nodeId: "node-a", connectionId: nodeA,
+      message: { type: "session_created", session: { agent_session_id: "sess-handoff", status: "error" } },
+      nowMs: 1_700_000_000_000,
+    });
+    harness.attachTransport("node-a", nodeA);
+    const sent = harness.attachTransport("node-b", nodeB, (message) => {
+      harness.receive("node-b", nodeB, {
+        type: "intervene_ack", requestId: message.requestId, status: "ok", outcome: "queued",
+      });
+      harness.receive("node-b", nodeB, {
+        type: "event", agentSessionId: "sess-handoff", payload: { type: "complete", result: "retried" }, eventId: 1,
+      });
+    });
+
+    const result = await harness.provider.executeResume({
+      agent_session_id: "sess-handoff", prompt: "continue", source: "execute-proxy",
+    });
+
+    expect(sent[0]).toMatchObject({ type: "intervene", agentSessionId: "sess-handoff" });
+    expect(updated[0]).toMatchObject({
+      nodeId: "node-b", modelPreset: "codex-next", model: "gpt-codex-next", reasoningEffort: "high",
+      claudeSessionId: null,
+      metadata: expect.arrayContaining([expect.objectContaining({
+        type: "persistent_generation",
+        value: expect.objectContaining({ number: 4, pending: expect.objectContaining({
+          number: 5, reason: "auto:fallback", target_node_id: "node-b", applying_from: "native-old",
+        }) }),
+      })]),
+    });
+    expect(await resultBody(result)).toContain('"node_id":"node-b"');
+  });
+
+  it("auto-retries a limit_hit when resume starts on the already-selected first candidate", async () => {
+    const row: Record<string, unknown> = {
+      session_id: "sess-same-candidate", agent_id: "agent", node_id: "node-b",
+      status: "completed", termination_reason: null, model_preset: "codex-current",
+      model: "gpt-current", reasoning_effort: "high", claude_session_id: "native-current",
+      metadata: [
+        { type: "persistent_session", value: { enabled: true } },
+        { type: "persistent_settings", value: {
+          default_model: { model_preset: "codex-current", reasoning_effort: "high", node_id: "node-b" },
+          fallback_models: [
+            { model_preset: "codex-second", reasoning_effort: "high", node_id: "node-c" },
+            { model_preset: "codex-third", reasoning_effort: "high", node_id: "node-d" },
+          ],
+        } },
+        { type: "persistent_generation", value: { number: 7 } },
+      ],
+    };
+    const updated: Array<Record<string, unknown>> = [];
+    const presets = new Map([
+      ["codex-current", { id: "codex-current", label: "Current", backend: "codex" as const, model: "gpt-current", available: true, usage_provider: "codex" as const }],
+      ["codex-third", { id: "codex-third", label: "Third", backend: "codex" as const, model: "gpt-third", available: true, usage_provider: "codex" as const }],
+    ]);
+    const harness = createHarness({
+      modelPresetAvailability: {
+        requireAvailable: vi.fn(),
+        resolveStaticForNode: vi.fn((_nodeId, presetId) => presets.get(presetId)!),
+      },
+      persistentResume: {
+        getSession: async () => row,
+        updateSession: async (input) => {
+          updated.push(input);
+          Object.assign(row, {
+            node_id: input.nodeId,
+            model_preset: input.modelPreset,
+            model: input.model,
+            reasoning_effort: input.reasoningEffort,
+            claude_session_id: input.claudeSessionId,
+            metadata: input.metadata,
+          });
+        },
+        listAgentProfiles: async (nodeId) => nodeId === "node-c" ? undefined : ({ agent: {} }),
+      },
+    });
+    const nodeB = harness.registerNode({
+      nodeId: "node-b", agents: [{ id: "agent", backend: "codex" }], supportedBackends: ["codex"],
+      modelPresets: [{ ...presets.get("codex-current")!, usage_provider: "codex" }],
+    });
+    const nodeD = harness.registerNode({
+      nodeId: "node-d", agents: [{ id: "agent", backend: "codex" }], supportedBackends: ["codex"],
+      modelPresets: [{ ...presets.get("codex-third")!, usage_provider: "codex" }],
+    });
+    harness.registry.sessionCache.upsertFromSessionCreated({
+      nodeId: "node-b", connectionId: nodeB,
+      message: { type: "session_created", session: { agent_session_id: "sess-same-candidate", status: "completed" } },
+      nowMs: 1_700_000_000_000,
+    });
+    const firstAttempt = harness.attachTransport("node-b", nodeB, (message) => {
+      harness.receive("node-b", nodeB, { type: "intervene_ack", requestId: message.requestId, status: "ok", outcome: "queued" });
+      row.status = "error";
+      row.termination_reason = "limit_hit";
+      harness.receive("node-b", nodeB, {
+        type: "event", agentSessionId: "sess-same-candidate",
+        payload: { type: "complete", termination_reason: "limit_hit" }, eventId: 1,
+      });
+    });
+    const retry = harness.attachTransport("node-d", nodeD, (message) => {
+      harness.receive("node-d", nodeD, { type: "intervene_ack", requestId: message.requestId, status: "ok", outcome: "queued" });
+      harness.receive("node-d", nodeD, {
+        type: "event", agentSessionId: "sess-same-candidate",
+        payload: { type: "complete", result: "fallback-complete" }, eventId: 2,
+      });
+    });
+
+    const result = await harness.provider.executeResume({
+      agent_session_id: "sess-same-candidate", prompt: "continue", source: "execute-proxy", delivery_id: "delivery-first",
+    });
+
+    const body = await resultBody(result);
+    expect(firstAttempt[0]).toMatchObject({ type: "intervene", delivery_id: "delivery-first" });
+    expect(retry[0]).toMatchObject({ type: "intervene", delivery_id: expect.any(String) });
+    expect(retry[0]?.delivery_id).not.toBe("delivery-first");
+    expect(updated[0]).toMatchObject({ nodeId: "node-d", modelPreset: "codex-third", model: "gpt-third" });
+    expect(body).toContain('"result":"fallback-complete"');
+    expect(body).not.toContain('"termination_reason":"limit_hit"');
+  });
+
   it("selects a Codex preset for a base Claude profile and forwards both explicit fields", async () => {
     const requireAvailable = vi.fn(() => ({
       id: "codex-5.6-sol",
@@ -914,7 +1069,15 @@ function createHarness(options: {
   findSessionOwnerNodeId?: (agentSessionId: string) => Promise<string | null>;
   findRescuableSessionOwnerNodeId?: (agentSessionId: string) => Promise<string | null>;
   modelPresetAvailability?: Pick<ModelPresetAvailabilityService, "requireAvailable">
-    & Partial<Pick<ModelPresetAvailabilityService, "chooseUsablePreset">>;
+    & Partial<Pick<ModelPresetAvailabilityService, "chooseUsablePreset" | "resolveStaticForNode">>;
+  persistentResume?: {
+    getSession(sessionId: string): Promise<Record<string, unknown> | null>;
+    updateSession(input: {
+      sessionId: string; nodeId: string; modelPreset: string; model: string;
+      reasoningEffort: string | null; claudeSessionId: string | null; metadata: unknown;
+    }): Promise<void>;
+    listAgentProfiles(nodeId: string): Promise<Record<string, unknown> | undefined>;
+  };
 } = {}) {
   const registry = new InMemoryNodeRegistry({
     nowMs: () => 1_700_000_000_000,
@@ -938,6 +1101,7 @@ function createHarness(options: {
     createSessionReconcileTimeoutMs: options.createSessionReconcileTimeoutMs,
     generateSessionId: () => "generated-session",
     modelPresetAvailability: options.modelPresetAvailability,
+    persistentResume: options.persistentResume,
     admitAttachmentInput: options.admitAttachmentInput,
   });
 

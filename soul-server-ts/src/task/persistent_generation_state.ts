@@ -23,6 +23,22 @@ export function resolveGenerationState(
     };
   }
 
+  if (!currentNativeSessionId && pending.applyingFrom !== undefined) {
+    return {
+      persistentGeneration: current,
+      activeGenerationRollover: {
+        number: pending.number,
+        reason: pending.reason,
+        requestedAt: pending.requestedAt,
+        fromBackendSessionId: pending.applyingFrom,
+        resetContext: pending.resetContext === true,
+        keepInstructions: pending.keepInstructions !== false,
+        ...(pending.previousModelPreset === undefined ? {} : { previousModelPreset: pending.previousModelPreset }),
+        ...(pending.previousBackend === undefined ? {} : { previousBackend: pending.previousBackend }),
+      },
+    };
+  }
+
   if (currentNativeSessionId !== pending.applyingFrom) {
     const targetChanged = pending.targetModelPreset !== currentModel.modelPreset
       || pending.targetReasoningEffort !== currentModel.reasoningEffort;

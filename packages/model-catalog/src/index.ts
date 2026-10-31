@@ -81,6 +81,27 @@ export const ModelCatalogSchema = z.object({
 
 export type ModelCatalogConfig = z.infer<typeof ModelCatalogSchema>;
 
+/** Shared static fallback for validating presets that belong to an unconnected node. */
+export const DEFAULT_MODEL_CATALOG: ModelCatalogConfig = {
+  presets: [
+    { id: "claude-sonnet", label: "Claude - Sonnet", backend: "claude", model: "sonnet", supported_efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "xhigh" },
+    { id: "claude-opus", label: "Claude - Opus", backend: "claude", model: "opus", supported_efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "xhigh" },
+    { id: "claude-fable", label: "Claude - Fable", backend: "claude", model: "claude-fable-5-1[1m]", usage_model_id: "fable", supported_efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "high" },
+    { id: "codex-6-astra", label: "Codex - 6 Astra", backend: "codex", model: "gpt-6-astra", supported_efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], default_effort: "medium" },
+    { id: "codex-6.1-sol", label: "Codex - 6.1 Sol", backend: "codex", model: "gpt-6.1-sol", supported_efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], default_effort: "high" },
+    { id: "codex-6-sol", label: "Codex - 6 Sol", backend: "codex", model: "gpt-6-sol", supported_efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], default_effort: "xhigh" },
+    { id: "codex-6-luna", label: "Codex - 6 Luna", backend: "codex", model: "gpt-6-luna", supported_efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "xhigh" },
+    { id: "codex-5.6-sol", label: "Codex - 5.6 Sol", backend: "codex", model: "gpt-5.6-sol", supported_efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], default_effort: "xhigh" },
+    { id: "codex-5.6-luna", label: "Codex - 5.6 Luna", backend: "codex", model: "gpt-5.6-luna", supported_efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "xhigh" },
+    { id: "codex-5.6-terra", label: "Codex - 5.6 Terra", backend: "codex", model: "gpt-5.6-terra", supported_efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], default_effort: "xhigh" },
+    { id: "kimi-2", label: "Kimi - 2", backend: "claude", model: "kimi-for-coding" },
+    { id: "kimi-3", label: "Kimi - 3", backend: "claude", model: "k3" },
+    { id: "gemini-3.8-flash", label: "Gemini - 3.8 Flash", backend: "antigravity", model: "gemini-3.8-flash", supported_efforts: ["low", "medium", "high"], default_effort: "low" },
+    { id: "gemini-4-argon", label: "Gemini - 4 Argon", backend: "antigravity", model: "gemini-4-argon", supported_efforts: ["low", "medium", "high"], default_effort: "high" },
+    { id: "opencode-deepseek-v4.1-flash-free", label: "OpenCode - DeepSeek V4.1 Flash Free", backend: "opencode", model: "opencode/deepseek-v4.1-flash-free" },
+  ],
+};
+
 export class UnknownModelPresetError extends Error {
   constructor(readonly presetId: string) {
     super(`Unknown model preset: ${presetId}`);
@@ -100,4 +121,15 @@ export function resolveModelPreset(
   const preset = catalog.presets.find((entry) => entry.id === presetId);
   if (!preset) throw new UnknownModelPresetError(presetId);
   return preset;
+}
+
+/** Validate an explicit effort against the static preset definition and apply its default. */
+export function normalizeReasoningEffort(
+  preset: { id: string; supported_efforts?: readonly string[]; default_effort?: string },
+  requested?: string | null,
+): string | null {
+  if (requested != null && !preset.supported_efforts?.includes(requested as ReasoningEffort)) {
+    throw new Error(`Reasoning effort "${requested}" is not supported by model preset "${preset.id}"`);
+  }
+  return requested ?? preset.default_effort ?? null;
 }

@@ -680,6 +680,52 @@ describe("resolvePresetAvailability", () => {
   });
 });
 
+describe("ModelPresetAvailabilityService static offline resolution", () => {
+  it("uses the node's cached static catalog to normalize an offline target", () => {
+    const service = new ModelPresetAvailabilityService({
+      getConnectedNode: () => undefined,
+      getNodeState: () => ({
+        nodeId: "node-offline", modelPresets: [{
+          id: "codex-next", label: "Codex Next", backend: "codex", model: "gpt-codex-next",
+          available: true, usage_provider: "codex", supported_efforts: ["high"], default_effort: "high",
+        }],
+      } as unknown as NodeConnectionSnapshot),
+    }, {
+      getSummary: () => summary(null),
+      getLimitRejection: () => null,
+      getClaudePoolAccountsForAvailability: () => [],
+    });
+
+    expect(service.resolveStaticForNode("node-offline", "codex-next", { requireAvailable: false }))
+      .toMatchObject({ id: "codex-next", model: "gpt-codex-next", default_effort: "high" });
+    expect(() => service.resolveStaticForNode("node-offline", "missing", { requireAvailable: false }))
+      .toThrow("not advertised by node node-offline");
+  });
+
+  it("falls back to the shared static catalog when a remote node has never connected", () => {
+    const service = new ModelPresetAvailabilityService({
+      getConnectedNode: () => undefined,
+      getNodeState: () => undefined,
+    }, {
+      getSummary: () => summary(null),
+      getLimitRejection: () => null,
+      getClaudePoolAccountsForAvailability: () => [],
+    });
+
+    expect(service.resolveStaticForNode("node-never-seen", "gemini-4-argon", { requireAvailable: false }))
+      .toMatchObject({
+        id: "gemini-4-argon",
+        label: "Gemini - 4 Argon",
+        backend: "antigravity",
+        model: "gemini-4-argon",
+        available: false,
+        default_effort: "high",
+      });
+    expect(() => service.resolveStaticForNode("node-never-seen", "gemini-4-argon", { requireAvailable: true }))
+      .toThrow("not advertised by node node-never-seen");
+  });
+});
+
 describe("ModelPresetAvailabilityService limit rejection", () => {
   it("keeps availability false for settings callers and reports the reset in the create error", () => {
     const activeRejection = rejection("2026-07-28T04:00:00.000Z", "five_hour");

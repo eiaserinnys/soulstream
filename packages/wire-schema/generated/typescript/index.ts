@@ -137,6 +137,10 @@ export interface NodeRegister {
     id: string;
     label: string;
     backend: "claude" | "codex" | "openai-agents" | "antigravity" | "opencode";
+    /**
+     * 이 preset이 실행할 실제 모델 식별자. PAS 노드 간 핸드오프의 세션 row 투영에 사용한다.
+     */
+    model?: string;
     available: boolean;
     reason?: "env_unresolved";
     /**

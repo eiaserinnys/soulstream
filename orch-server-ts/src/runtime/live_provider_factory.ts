@@ -582,6 +582,29 @@ export function createLiveOrchestratorProviderBundle(
         bridge: options.runtimeServices.sessionBridge,
         sessionEventHub: options.runtimeServices.sessionEventHub,
         modelPresetAvailability,
+        ...(options.dbSqlResolver === undefined ? {} : {
+          persistentResume: {
+            getSession: async (sessionId: string) => {
+              const sql = await options.dbSqlResolver!.resolveSql();
+              const rows = await sql<Record<string, unknown>[]>`SELECT * FROM session_get(${sessionId})`;
+              return rows[0] ?? null;
+            },
+            updateSession: async (input) => {
+              const sql = await options.dbSqlResolver!.resolveSql();
+              await sql`
+                UPDATE sessions SET node_id = ${input.nodeId},
+                  model_preset = ${input.modelPreset}, model = ${input.model},
+                  reasoning_effort = ${input.reasoningEffort},
+                  claude_session_id = ${input.claudeSessionId},
+                  metadata = ${sql.json(input.metadata)}
+                WHERE session_id = ${input.sessionId}
+              `;
+            },
+            listAgentProfiles: async (nodeId: string) =>
+              await nodeAgentProfileProviders.nodeAgentProfileRoutes.provider.listAgentProfiles(nodeId) as
+                Record<string, unknown> | undefined,
+          },
+        }),
         ...(attachmentInputAdmission === undefined ? {} : {
           admitAttachmentInput: (request, input) => attachmentInputAdmission.forRequest(
             request ?? { headers: {} } as FastifyRequest,

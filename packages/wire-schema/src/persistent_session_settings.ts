@@ -15,6 +15,7 @@ export type PersistentModelSelection = {
   model_preset: string;
   /** null = 추론 수준을 지정하지 않음(백엔드 기본). */
   reasoning_effort: string | null;
+  node_id?: string;
 };
 
 export type PersistentSessionSettings = {
@@ -57,6 +58,7 @@ export const PERSISTENT_SETTINGS_DEFAULTS = {
 export type PersistentPendingTarget = {
   target_model_preset: string;
   target_reasoning_effort: string | null;
+  target_node_id?: string;
 };
 
 type ParseResult<T> = { ok: true; value: T } | { ok: false; message: string };
@@ -100,13 +102,14 @@ export function parsePersistentSettingsPatch(input: unknown): ParseResult<Persis
     for (let index = 0; index < input.fallback_models.length; index += 1) {
       const parsed = parseModelSelection(input.fallback_models[index], `settings.fallback_models[${index}]`);
       if (!parsed.ok) return parsed;
-      if (seen.has(parsed.value.model_preset)) {
+      const dedupeKey = `${parsed.value.node_id ?? ""}:${parsed.value.model_preset}`;
+      if (seen.has(dedupeKey)) {
         return {
           ok: false,
           message: `settings.fallback_models has duplicate model_preset: ${parsed.value.model_preset}`,
         };
       }
-      seen.add(parsed.value.model_preset);
+      seen.add(dedupeKey);
       models.push(parsed.value);
     }
     patch.fallback_models = models;
@@ -146,8 +149,10 @@ export function readStoredPersistentSettings(metadata: unknown): StoredPersisten
     for (const value of record.fallback_models) {
       if (fallbackModels.length >= PERSISTENT_FALLBACK_MODELS_MAX) break;
       const parsed = parseModelSelection(value, "fallback_models");
-      if (!parsed.ok || seen.has(parsed.value.model_preset)) continue;
-      seen.add(parsed.value.model_preset);
+      if (!parsed.ok) continue;
+      const dedupeKey = `${parsed.value.node_id ?? ""}:${parsed.value.model_preset}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
       fallbackModels.push(parsed.value);
     }
   } else if (Object.prototype.hasOwnProperty.call(record, "fallback_model")) {
@@ -208,6 +213,9 @@ export function readPersistentPendingTarget(metadata: unknown): PersistentPendin
     target_reasoning_effort: typeof pending.target_reasoning_effort === "string"
       ? pending.target_reasoning_effort
       : null,
+    ...(typeof pending.target_node_id === "string" && pending.target_node_id.trim().length > 0
+      ? { target_node_id: pending.target_node_id.trim() }
+      : {}),
   };
 }
 
@@ -219,11 +227,16 @@ function parseModelSelection(value: unknown, label: string): ParseResult<Persist
   if (effort !== undefined && effort !== null && (typeof effort !== "string" || effort.trim().length === 0)) {
     return { ok: false, message: `${label}.reasoning_effort must be a non-empty string or null` };
   }
+  const nodeId = value.node_id;
+  if (nodeId !== undefined && (typeof nodeId !== "string" || nodeId.trim().length === 0)) {
+    return { ok: false, message: `${label}.node_id must be a non-empty string` };
+  }
   return {
     ok: true,
     value: {
       model_preset: preset,
       reasoning_effort: typeof effort === "string" ? effort.trim() : null,
+      ...(typeof nodeId === "string" ? { node_id: nodeId.trim() } : {}),
     },
   };
 }

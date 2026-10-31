@@ -125,6 +125,7 @@ export class TaskManager {
     this.sessionMutations = sessionMutations ?? createMissingSessionMutationHost();
     this.loadEvictedTask = createEvictedTaskLoader({ db, logger, nodeId });
     this.persistentSessions = new PersistentSessionControl({
+      nodeId,
       getTask: (sessionId) => this.tasks.get(sessionId),
       loadEvictedTask: (sessionId) => this.loadEvictedTask(sessionId),
       rememberTask: (task) => {

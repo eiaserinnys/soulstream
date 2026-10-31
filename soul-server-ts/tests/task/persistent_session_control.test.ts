@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { parsePersistentSettingsPatch, readStoredPersistentSettings } from "@soulstream/wire-schema/persistent-session-settings";
 import type { EventPersistence } from "../../src/db/event_persistence.js";
-import type { ModelCatalog } from "../../src/model_catalog.js";
+import { UnknownModelPresetError, type ModelCatalog } from "../../src/model_catalog.js";
 import type { Task } from "../../src/task/task_models.js";
 import { PersistentSessionControl } from "../../src/task/persistent_session_control.js";
 
@@ -17,7 +17,7 @@ const firstCall = {
 
 function makeRolloverControl(
   task: Task,
-  options: { persistent?: EventPersistence; presets?: Record<string, Record<string, unknown>> } = {},
+  options: { persistent?: EventPersistence; presets?: Record<string, Record<string, unknown>>; nodeId?: string } = {},
 ) {
   const persistedEntries: Array<Record<string, unknown>> = [];
   const enqueueMetadataEffect = vi.fn(async (_sessionId: string, entry: Record<string, unknown>) => {
@@ -59,10 +59,15 @@ function makeRolloverControl(
     },
   };
   const modelCatalog = {
-    resolve: vi.fn((presetId: string) => presets[presetId]),
+    resolve: vi.fn((presetId: string) => {
+      const preset = presets[presetId];
+      if (!preset) throw new UnknownModelPresetError(presetId);
+      return preset;
+    }),
   } as unknown as Pick<ModelCatalog, "resolve">;
   const persistence = options.persistent ?? { enqueueMetadataEffect } as unknown as EventPersistence;
   const control = new PersistentSessionControl({
+    nodeId: options.nodeId ?? "worker-current",
     getTask: vi.fn((sessionId) => sessionId === task.agentSessionId ? task : undefined),
     loadEvictedTask: vi.fn(),
     rememberTask: vi.fn(),
@@ -380,6 +385,26 @@ describe("PersistentSessionControl", () => {
 });
 
 describe("PersistentSessionControl.applySettings", () => {
+  it("statically validates and stores a remote default when the worker catalog lacks it", async () => {
+    const task = makeRolloverTask();
+    const { control, enqueueMetadataEffect, modelCatalog } = makeRolloverControl(task);
+    const remoteSelection = {
+      model_preset: "gemini-4-argon",
+      reasoning_effort: "high",
+      node_id: "worker-remote",
+    };
+
+    await expect(control.applySettings(task.agentSessionId, {
+      settings: { default_model: remoteSelection },
+    })).resolves.toMatchObject({ modelChange: "next_execution_start" });
+
+    expect(task.modelPreset).toBe("claude-preset");
+    expect(task.persistentGeneration?.pending).toBeUndefined();
+    expect(enqueueMetadataEffect.mock.calls.map(([, entry]) => entry.type)).toEqual(["persistent_settings"]);
+    expect(readStoredPersistentSettings(task.metadata)?.default_model).toEqual(remoteSelection);
+    expect(modelCatalog.resolve).toHaveBeenCalledWith("gemini-4-argon");
+  });
+
   const sonnet = { model_preset: "codex-preset", reasoning_effort: "high" };
 
   it("reads canonical usage modes before legacy booleans without mutating metadata", () => {
