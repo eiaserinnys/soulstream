@@ -41,9 +41,9 @@ export function usePersistentReport(sessionId: string | undefined, enabled: bool
       continuity?.setViewState(memoryKey, { ...continuity.getViewState<object>(memoryKey), reportKey: entries[next]?.key, reportIndex: next });
       setView(current => ({ ...current, index: next, key: entries[next]?.key }));
     },
-    getSendContext(text: string, reply: ReportReplyDraft | null) {
+    getSendContext(text: string, reply: ReportReplyDraft | null, visible = true) {
       // The reply baseline stays the server list; the visible reference follows the projection.
-      return reportSendContext(server, key, text, reply, entries);
+      return reportSendContext(server, visible ? key : undefined, text, reply, entries);
     },
     dismiss(key: string): Promise<boolean> {
       const target = server.find(entry => entry.key === key);

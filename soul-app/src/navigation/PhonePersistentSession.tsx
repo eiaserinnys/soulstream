@@ -19,7 +19,7 @@ export function PhonePersistentSession({ navigation }: { navigation: any }) {
   useFocusEffect(useCallback(() => navigation.addListener('beforeRemove', (event: any) => {
     const state = host.store.getState();
     event.preventDefault();
-    if (state.scene === 'cards') state.swipe('right');
+    if (state.scene === 'cards' || state.scene === 'reports') state.swipe('right');
     else home();
   }), [host.store, home, navigation]));
   useFocusEffect(useCallback(() => {

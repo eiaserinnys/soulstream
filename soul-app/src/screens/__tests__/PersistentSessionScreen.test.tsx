@@ -863,3 +863,104 @@ test('카드 오버레이가 열리면 작업 목록을 숨기고 닫으면 다�
   expect(StyleSheet.flatten(view.getByTestId('persistent-task-list-mock').props.style).display).toBe('flex');
   view.unmount();
 });
+
+test('듀오 태블릿의 보고 장면은 대화 자리와 키보드 위를 덮고 목록으로 전환된다', () => {
+  mockDevice = 'tabletLandscape';
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 24, 867, 621);
+    else if (this.props.testID === 'persistent-session-conversation') callback(200, 24, 400, 621);
+  });
+  const view = render(<SafeAreaInsetsContext.Provider value={{ top: 24, bottom: 24, left: 0, right: 84 }}>
+    <DuoSideBandContext.Provider value><NavigationContainer><ScreenHarness /></NavigationContainer></DuoSideBandContext.Provider>
+  </SafeAreaInsetsContext.Provider>);
+  act(() => {
+    store.getState().open({ session_id: 'pas-report-duo', persistent: true } as any);
+    useSessionStore.getState().applyPersistentReport('pas-report-duo', reportReviewEntries.slice(0, 2));
+    view.getByTestId('persistent-session-screen').props.onLayout();
+  });
+  const body = view.getByTestId('persistent-body-probe');
+  act(() => body.props.onComposerLayout({ x: 0, y: 500, width: 400, height: 76 }, { x: 0, y: 20, width: 400, height: 56 }));
+  expect(body.props.reportView).toBeNull();
+  expect(body.props.getReportSendContext('일반 메시지', null)).toEqual({});
+  expect(view.queryByTestId('persistent-session-report-inline-seat', { includeHiddenElements: true })).toBeNull();
+  expect(view.getByTestId('persistent-session-duo-reports').props.accessibilityState.disabled).toBe(false);
+  expect(view.getByTestId('persistent-session-duo-reports-badge').props.children).toBe(2);
+  fireEvent.press(view.getByTestId('persistent-session-duo-reports'));
+  const before = StyleSheet.flatten(view.getByTestId('persistent-session-reports-cover').props.style);
+  expect(before.top).toBe(0);
+  expect(before.width).toBe(StyleSheet.flatten(view.getByTestId('persistent-session-conversation').props.style).width);
+  expect(before.left).toBe(StyleSheet.flatten(view.getByTestId('persistent-session-conversation').props.style).left);
+  act(() => body.props.onKeyboardOverlapChange(110));
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-reports-cover').props.style).height).toBe(before.height - 110);
+  fireEvent.press(view.getByTestId('persistent-session-duo-tasks'));
+  expect(store.getState().scene).toBe('cards');
+  expect(view.queryByTestId('persistent-session-reports-cover')).toBeNull();
+  view.unmount(); measure.mockRestore();
+});
+
+
+test('듀오 폰은 보고를 별도 판에 표시하고 보고가 없어지면 대화로 돌아온다', () => {
+  mockDevice = 'phone';
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 24, 382, 630);
+    else if (this.props.testID === 'persistent-session-conversation') callback(20, 24, 342, 630);
+  });
+  const view = render(<SafeAreaInsetsContext.Provider value={{ top: 24, bottom: 24, left: 0, right: 84 }}>
+    <DuoSideBandContext.Provider value><NavigationContainer><ScreenHarness /></NavigationContainer></DuoSideBandContext.Provider>
+  </SafeAreaInsetsContext.Provider>);
+  act(() => {
+    store.getState().open({ session_id: 'pas-report-phone', persistent: true } as any);
+    useSessionStore.getState().applyPersistentReport('pas-report-phone', reportReviewEntries.slice(0, 2));
+    view.getByTestId('persistent-session-screen').props.onLayout();
+  });
+  const body = view.getByTestId('persistent-body-probe');
+  act(() => body.props.onComposerLayout({ x: 0, y: 500, width: 342, height: 76 }, { x: 0, y: 20, width: 342, height: 56 }));
+  expect(body.props.reportView).toBeNull();
+  expect(body.props.getReportSendContext('일반 입력', null)).toEqual({});
+  expect(body.props.getReportSendContext('선택', { key: 'app', option: '선택', text: '선택' }).contextItems[0].key).toBe('persistent_report_reply');
+  expect(store.getState()).toMatchObject({ reportCount: 2, hasReports: true });
+  act(() => store.getState().open({ session_id: 'pas-report-phone', persistent: true } as any));
+  expect(store.getState()).toMatchObject({ reportCount: 2, hasReports: true });
+  act(() => store.getState().toggleReports());
+  expect(view.getByTestId('persistent-session-reports-panel')).toBeTruthy();
+  expect(view.getByTestId('persistent-session-conversation', { includeHiddenElements: true }).props.pointerEvents).toBe('none');
+  expect(body.props.getReportSendContext('일반 입력', null).contextItems[0].key).toBe('persistent_report_visible');
+  act(() => useSessionStore.getState().applyPersistentReport('pas-report-phone', []));
+  expect(store.getState()).toMatchObject({ scene: 'conversation', reportCount: 0, hasReports: false });
+  expect(view.queryByTestId('persistent-session-reports-panel')).toBeNull();
+  view.unmount(); measure.mockRestore();
+});
+
+
+test('마지막 보고를 완료하면 실행 취소가 끝날 때까지 보고 장면을 유지한다', async () => {
+  mockDevice = 'tabletLandscape';
+  useSettingsStore.setState({ serverUrl: 'https://screen.test' });
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 24, 867, 621);
+    else if (this.props.testID === 'persistent-session-conversation') callback(200, 24, 480, 621);
+  });
+  const view = render(<SafeAreaInsetsContext.Provider value={{ top: 24, bottom: 24, left: 0, right: 84 }}>
+    <DuoSideBandContext.Provider value><NavigationContainer><ScreenHarness /></NavigationContainer></DuoSideBandContext.Provider>
+  </SafeAreaInsetsContext.Provider>);
+  const entry = { key: 'card_531', kind: 'see' as const, title: '검수 결과', card_id: 'card-531', card_status: 'review',
+    card_numbers: [531], context: '확인해 주세요.', action: '', options: [], state: 'open' as const, answer: '', updated_at: 'now' };
+  act(() => {
+    store.getState().open({ session_id: 'pas-completion-duo', persistent: true } as any);
+    useSessionStore.getState().applyPersistentReport('pas-completion-duo', [entry]);
+    view.getByTestId('persistent-session-screen').props.onLayout();
+  });
+  act(() => view.getByTestId('persistent-body-probe').props.onComposerLayout(
+    { x: 0, y: 500, width: 480, height: 76 }, { x: 0, y: 20, width: 480, height: 56 }));
+  fireEvent.press(view.getByTestId('persistent-session-duo-reports'));
+  measurePersistentReports(view);
+  jest.useFakeTimers();
+  await act(async () => { fireEvent.press(view.getByText('완료')); });
+  expect(store.getState()).toMatchObject({ scene: 'reports', reportCount: 0, hasReports: true });
+  expect(view.getByTestId('report-undo')).toBeTruthy();
+  expect(view.queryByTestId('persistent-session-duo-reports-badge')).toBeNull();
+  act(() => { jest.advanceTimersByTime(5000); });
+  expect(store.getState()).toMatchObject({ scene: 'conversation', reportCount: 0, hasReports: false });
+  expect(view.getByTestId('persistent-session-duo-reports').props.accessibilityState.disabled).toBe(true);
+  jest.useRealTimers();
+  view.unmount(); measure.mockRestore();
+});

@@ -39,3 +39,22 @@ test('입구의 0/1/복수와 시작의 마지막 선택 규칙을 구분한다'
   expect(resolvePersistentSessionEntry(sessions, 'pas-2', true)).toEqual({ kind: 'open', session: sessions[1] });
   expect(resolvePersistentSessionEntry(sessions, 'removed', true)).toEqual({ kind: 'choose' });
 });
+
+test('보고와 목록 버튼, PAS 탭과 오른쪽 밀기는 각각 정해진 장면으로 이동한다', () => {
+  const store = createPersistentSessionScene();
+  store.getState().open(session('pas-1'));
+  store.getState().setReportAvailability(2, true);
+  store.getState().toggleReports();
+  expect(store.getState().scene).toBe('reports');
+  store.getState().toggleCards();
+  expect(store.getState().scene).toBe('cards');
+  store.getState().toggleReports();
+  store.getState().toggleScene();
+  expect(store.getState().scene).toBe('conversation');
+  store.getState().toggleReports();
+  store.getState().swipe('right');
+  expect(store.getState().scene).toBe('conversation');
+  store.getState().toggleReports();
+  store.getState().toggleReports();
+  expect(store.getState().scene).toBe('conversation');
+});

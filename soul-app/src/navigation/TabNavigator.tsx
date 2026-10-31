@@ -90,13 +90,22 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false }: {
   const t = useTokens();
   const c = t.colors;
   const scene = usePersistentSessionScene(state => state.scene);
+  const reportCount = usePersistentSessionScene(state => state.reportCount);
+  const hasReports = usePersistentSessionScene(state => state.hasReports);
+  const host = usePersistentSessionHost();
   const showPasMenu = usePasContextMenu();
   const persistentLabel = active !== 'PersistentTab'
     ? '영구 세션 열기'
-    : scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기';
+    : scene !== 'conversation' ? 'PAS 대화로 돌아가기' : '카드 목록 보기';
   return <RailCapsule testID="phone-rail-tab-cluster">
       {duoSideBand && active === 'PersistentTab' ? <RailCapsuleItem testID="phone-rail-pas-menu" label="PAS 메뉴" onPress={showPasMenu}>
         <Ionicons name="ellipsis-horizontal" color={c.textMuted} size={t.iconSize.standard} />
+      </RailCapsuleItem> : null}
+      {duoSideBand && active === 'PersistentTab' ? <RailCapsuleItem testID="phone-rail-pas-reports"
+        label={!hasReports ? '지금의 보고 없음' : scene === 'reports' ? 'PAS 대화로 돌아가기' : '지금의 보고'}
+        selected={scene === 'reports'} badge={reportCount} disabled={!hasReports}
+        onPress={() => host.store.getState().toggleReports()}>
+        <Ionicons name="chatbubble-ellipses-outline" color={scene === 'reports' ? c.accent : c.textMuted} size={t.iconSize.standard} />
       </RailCapsuleItem> : null}
       {ROOT_TAB_ORDER.map((name) => {
         const config = ROOT_SECTION_CONFIG[name];
@@ -572,7 +581,7 @@ function PhoneTabNavigator({ initialTab }: { initialTab?: string }) {
             options={{
               tabBarButtonTestID: `phone-tab-${name}`,
               ...(name === 'PersistentTab' ? { tabBarAccessibilityLabel: focusedTab === 'PersistentTab'
-                ? scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기' : '영구 세션 열기' } : {}),
+                ? scene !== 'conversation' ? 'PAS 대화로 돌아가기' : '카드 목록 보기' : '영구 세션 열기' } : {}),
               tabBarIcon: ({ color, size }) => name === 'PersistentTab'
                 ? <PersistentPhoneTabIcon color={color} size={size} active={focusedTab === name} />
                 : <Ionicons name={config.icon} color={color} size={size} />,
