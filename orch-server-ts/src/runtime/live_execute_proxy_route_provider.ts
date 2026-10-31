@@ -227,6 +227,7 @@ export function createLiveExecuteProxyRouteProvider(
               && row!.model_preset === candidate.model_preset
               && (row!.reasoning_effort === candidate.reasoning_effort
                 || (row!.reasoning_effort === "auto" && candidate.reasoning_effort === null));
+            persistentTarget = { nodeId };
             if (!same) {
               await commitPersistentHandoff(options, row!, candidate, nodeId, preset);
               options.registry.sessionCache.moveSessionOwner(
@@ -234,7 +235,6 @@ export function createLiveExecuteProxyRouteProvider(
                 nodeId,
                 options.registry.getConnectedNode(nodeId)!.connectionId,
               );
-              persistentTarget = { nodeId };
             }
           }
         }
@@ -255,7 +255,7 @@ export function createLiveExecuteProxyRouteProvider(
           agentSessionId: payload.agent_session_id,
           nodeId: routed.node.nodeId,
           queue,
-          onLimitHit: persistentTarget && fallbackCandidates.length > 0
+          onLimitHit: fallbackCandidates.length > 1
             ? async () => {
                 if (autoRetried) return false;
                 const current = await options.persistentResume?.getSession(payload.agent_session_id);

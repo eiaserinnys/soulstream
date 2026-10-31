@@ -1,6 +1,8 @@
 import type { NodeConnectionSnapshot } from "../node/registry_types.js";
 import {
+  DEFAULT_MODEL_CATALOG,
   resolveModelPreset,
+  UnknownModelPresetError,
   MODEL_BACKENDS,
   type ModelCatalogConfig,
   type ReasoningEffort,
@@ -159,6 +161,25 @@ export class ModelPresetAvailabilityService {
       };
       const resolved = resolveModelPreset(staticCatalog, presetId);
       preset = { ...preset, id: resolved.id, model: resolved.model };
+    }
+    if (!preset && !node && options?.requireAvailable === false) {
+      try {
+        const resolved = resolveModelPreset(DEFAULT_MODEL_CATALOG, presetId);
+        preset = {
+          id: resolved.id,
+          label: resolved.label,
+          backend: resolved.backend,
+          model: resolved.model,
+          available: false,
+          usage_provider: resolved.backend === "claude" || resolved.backend === "codex" || resolved.backend === "antigravity"
+            ? resolved.backend
+            : null,
+          ...(resolved.supported_efforts ? { supported_efforts: resolved.supported_efforts } : {}),
+          ...(resolved.default_effort ? { default_effort: resolved.default_effort } : {}),
+        };
+      } catch (error) {
+        if (!(error instanceof UnknownModelPresetError)) throw error;
+      }
     }
     if (!preset) {
       throw new ModelPresetAvailabilityError(

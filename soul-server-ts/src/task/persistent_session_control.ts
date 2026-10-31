@@ -8,6 +8,7 @@ import {
   type PersistentSettingsPatch,
   type StoredPersistentSettings,
 } from "@soulstream/wire-schema/persistent-session-settings";
+import { DEFAULT_MODEL_CATALOG, resolveModelPreset } from "@soulstream/model-catalog";
 
 import type { EventPersistence } from "../db/event_persistence.js";
 import { UnknownModelPresetError, type ModelCatalog } from "../model_catalog.js";
@@ -219,17 +220,42 @@ export class PersistentSessionControl {
   }
 
   private normalizeDefaultModel(selection: PersistentModelSelection): PersistentModelSelection {
-    if (!this.deps.modelCatalog) {
+    const remoteNode = selection.node_id !== undefined && selection.node_id !== this.deps.nodeId;
+    if (!this.deps.modelCatalog && !remoteNode) {
       throw new Error(`Model catalog is not configured; cannot resolve preset: ${selection.model_preset}`);
     }
     let preset: ReturnType<ModelCatalog["resolve"]>;
-    try {
-      preset = this.deps.modelCatalog.resolve(selection.model_preset);
-    } catch (error) {
-      if (error instanceof UnknownModelPresetError) {
-        throw new PersistentSessionControlError("INVALID_MODEL_PRESET", error.message);
+    if (remoteNode) {
+      let localPreset: ReturnType<ModelCatalog["resolve"]> | undefined;
+      try {
+        localPreset = this.deps.modelCatalog?.resolve(selection.model_preset);
+      } catch (error) {
+        if (!(error instanceof UnknownModelPresetError)) throw error;
       }
-      throw error;
+      if (localPreset) {
+        preset = localPreset;
+      } else {
+        try {
+          preset = resolveModelPreset(DEFAULT_MODEL_CATALOG, selection.model_preset);
+        } catch (error) {
+          if (error instanceof UnknownModelPresetError) {
+            throw new PersistentSessionControlError("INVALID_MODEL_PRESET", error.message);
+          }
+          throw error;
+        }
+      }
+    } else {
+      if (!this.deps.modelCatalog) {
+        throw new Error(`Model catalog is not configured; cannot resolve preset: ${selection.model_preset}`);
+      }
+      try {
+        preset = this.deps.modelCatalog.resolve(selection.model_preset);
+      } catch (error) {
+        if (error instanceof UnknownModelPresetError) {
+          throw new PersistentSessionControlError("INVALID_MODEL_PRESET", error.message);
+        }
+        throw error;
+      }
     }
     const requested = selection.reasoning_effort;
     if (requested !== null && !isReasoningEffort(requested)) {

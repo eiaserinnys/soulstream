@@ -701,6 +701,29 @@ describe("ModelPresetAvailabilityService static offline resolution", () => {
     expect(() => service.resolveStaticForNode("node-offline", "missing", { requireAvailable: false }))
       .toThrow("not advertised by node node-offline");
   });
+
+  it("falls back to the shared static catalog when a remote node has never connected", () => {
+    const service = new ModelPresetAvailabilityService({
+      getConnectedNode: () => undefined,
+      getNodeState: () => undefined,
+    }, {
+      getSummary: () => summary(null),
+      getLimitRejection: () => null,
+      getClaudePoolAccountsForAvailability: () => [],
+    });
+
+    expect(service.resolveStaticForNode("node-never-seen", "gemini-4-argon", { requireAvailable: false }))
+      .toMatchObject({
+        id: "gemini-4-argon",
+        label: "Gemini - 4 Argon",
+        backend: "antigravity",
+        model: "gemini-4-argon",
+        available: false,
+        default_effort: "high",
+      });
+    expect(() => service.resolveStaticForNode("node-never-seen", "gemini-4-argon", { requireAvailable: true }))
+      .toThrow("not advertised by node node-never-seen");
+  });
 });
 
 describe("ModelPresetAvailabilityService limit rejection", () => {
