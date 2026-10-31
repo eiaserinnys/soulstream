@@ -84,7 +84,8 @@ export class SessionStatisticsDailyService extends SessionStatisticsService {
     }
     // Prune yesterday's transient entries after the KST live boundary moves.
     for (const day of this.live.keys()) if (!liveDays.includes(day)) this.live.delete(day);
-    for (const day of this.liveOverview.keys()) if (!liveDays.includes(day)) this.liveOverview.delete(day);
+    const overviewDays = new Set([...liveDays, ...missingDays]);
+    for (const day of this.liveOverview.keys()) if (!overviewDays.has(day)) this.liveOverview.delete(day);
     const liveAsOf = days.filter(day => liveDays.includes(day.day)).map(day => day.asOf).sort()[0];
     return { read: liveAsOf === undefined ? read : { ...read, asOf: liveAsOf }, days };
   }

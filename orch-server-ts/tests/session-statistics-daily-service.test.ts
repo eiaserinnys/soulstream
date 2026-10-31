@@ -57,6 +57,10 @@ describe("daily statistics scheduling and live cache", () => {
   it("fills one missing stored day from a slice without using the full scan", async () => {
     const f = fixture();
     const input = { ...f.input, asOf: "2026-10-21T00:00:00.000Z" };
+    const readOverviewSlice = vi.fn(async (_input: SessionStatisticsReadRequest, _day: string) => ({
+      ...f.metadata, asOf: input.asOf,
+    }));
+    Object.assign(f.repository, { readOverviewSlice });
     f.repository.readMetadata.mockResolvedValue({
       ...f.metadata,
       asOf: input.asOf,
@@ -68,7 +72,10 @@ describe("daily statistics scheduling and live cache", () => {
     await service.getOverview(input);
 
     expect(f.repository.read).not.toHaveBeenCalled();
-    expect(f.repository.readSlice.mock.calls.map(([, day]) => day)).toEqual(["2026-10-20", "2026-10-21"]);
+    expect(readOverviewSlice.mock.calls.map(([, day]) => day)).toEqual(["2026-10-20", "2026-10-21"]);
+    const sliceCalls = readOverviewSlice.mock.calls.length;
+    await service.getOverview(input);
+    expect(readOverviewSlice).toHaveBeenCalledTimes(sliceCalls);
   });
 
   it("recalculates one recent changed date under the advisory lock", async () => {
