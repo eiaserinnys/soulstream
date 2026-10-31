@@ -814,20 +814,26 @@ export class TaskExecutor {
     }
   }
 
-  private takeOrCreateRunner(
+  private async takeOrCreateRunner(
     task: Task,
     agent: AgentProfile,
     backend: BackendId,
     retainedRunner: TaskRunnerRuntime | undefined,
-  ): TaskRunnerRuntime {
-    const runner = retainedRunner ?? (this.runnerProcessFactory
+  ): Promise<TaskRunnerRuntime> {
+    let reusableRunner = retainedRunner;
+    if (reusableRunner && reusableRunner.engine.backendId !== backend) {
+      await reusableRunner.dispatcher.close();
+      releaseTaskRunner(task, reusableRunner);
+      reusableRunner = undefined;
+    }
+    const runner = reusableRunner ?? (this.runnerProcessFactory
       ? this.runnerProcessFactory(task, agent, backend, this.snapshotPersistenceFor(task))
       : createInProcessTaskRunnerRuntime(
           task.modelPresetBackend
             ? this.engineFactory(agent, backend)
             : this.engineFactory(agent),
         ));
-    if (retainedRunner) releaseTaskRunner(task, retainedRunner);
+    if (reusableRunner) releaseTaskRunner(task, reusableRunner);
     return runner;
   }
 
@@ -839,8 +845,36 @@ export class TaskExecutor {
     activation?: ExecutionActivation,
     executionSlotHeld = false,
   ): Promise<void> {
-    const runner = this.takeOrCreateRunner(task, agent, backend, retainedRunner);
-    return this.startExecutionWithRunner(task, agent, runner, activation, executionSlotHeld);
+    const execution = (async () => {
+      let runner: TaskRunnerRuntime;
+      try {
+        runner = await this.takeOrCreateRunner(task, agent, backend, retainedRunner);
+      } catch (error) {
+        const compensatesRunningTransition =
+          activation?.hasFailureCompensation?.() === true;
+        try {
+          if (compensatesRunningTransition) {
+            await activation?.reject(error);
+            if (isTerminalTaskStatus(task.status)) return;
+          }
+          await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, error);
+          task.completedAt = new Date();
+          await this._finalize(task);
+        } finally {
+          if (activation) {
+            if (task.executionActivation === activation) {
+              task.executionActivation = undefined;
+            }
+            if (!compensatesRunningTransition) {
+              await activation.reject(error);
+            }
+          }
+        }
+        return;
+      }
+      await this.startExecutionWithRunner(task, agent, runner, activation, true);
+    })();
+    return executionSlotHeld ? execution : this.holdExecutionSlot(task, execution);
   }
 
   /**
@@ -907,7 +941,7 @@ export class TaskExecutor {
     let runner: TaskRunnerRuntime | undefined;
     let proof: import("./execution_registration.js").RunnerExecutionIdentity | undefined;
     try {
-      runner = this.takeOrCreateRunner(task, agent, backend, retainedRunner);
+      runner = await this.takeOrCreateRunner(task, agent, backend, retainedRunner);
       if (task.runner) {
         throw new Error(
           `Task ${task.agentSessionId} already has a runner — concurrent execute not supported`,

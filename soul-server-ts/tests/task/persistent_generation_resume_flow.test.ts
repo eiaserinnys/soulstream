@@ -91,9 +91,18 @@ function productionSessionRow(): SessionRow {
   } as unknown as SessionRow;
 }
 
-function makeFixture(row = productionSessionRow()) {
+function makeFixture(
+  row = productionSessionRow(),
+  capabilityProfile:
+    | "legacy_transition_only"
+    | "execution_registration" = "execution_registration",
+) {
   const repository = new MemoryDeliveryRepository();
-  const persistenceDouble = makeEventPersistenceTestDouble();
+  const persistenceDouble = makeEventPersistenceTestDouble(
+    undefined,
+    undefined,
+    { capabilityProfile },
+  );
   // Production reads the row through the orch host transport, which JSON-decodes
   // it and revives `*_at` strings. Reading it any other way skips that layer.
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(row), {
@@ -132,8 +141,12 @@ function makeFixture(row = productionSessionRow()) {
     resolve: vi.fn((id: string) => ({
       id,
       label: id,
-      backend: id.startsWith("codex") ? "codex" as const : "claude" as const,
-      model: id.startsWith("codex") ? "gpt-6.1" : "opus",
+      backend: id === "gemini-4-argon"
+        ? "antigravity" as const
+        : id.startsWith("codex") ? "codex" as const : "claude" as const,
+      model: id === "gemini-4-argon"
+        ? "gemini-4-argon"
+        : id.startsWith("codex") ? "gpt-6.1" : "opus",
       env: undefined,
       supported_efforts: ["low" as const, "medium" as const, "high" as const, "xhigh" as const],
       default_effort: "xhigh" as const,
@@ -205,7 +218,10 @@ function makeFixture(row = productionSessionRow()) {
     dispatcher: dispatcher as never,
     eventPersistence: "runner",
   };
-  const runnerProcessFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
+  const runnerProcessFactorySpy = vi.fn(
+    (_task: Task, _agent: AgentProfile, _backend: string) => runner,
+  );
+  const runnerProcessFactory = runnerProcessFactorySpy as unknown as RunnerProcessRuntimeFactory;
 
   const taskManager = new TaskManager(
     "eiaserinnys",
@@ -255,6 +271,9 @@ function makeFixture(row = productionSessionRow()) {
     dispatcher,
     runnerEvents,
     runnerFailure,
+    runner,
+    engine,
+    runnerProcessFactorySpy,
   };
 }
 
@@ -295,18 +314,248 @@ describe("persistent generation rollover through the production resume path", ()
   });
 });
 
-async function resume(fixture: ReturnType<typeof makeFixture>, text = "continue") {
+async function resume(
+  fixture: ReturnType<typeof makeFixture>,
+  text = "continue",
+  onResume = fixture.onResume,
+  waitForExecution = true,
+) {
   const deliveryId = crypto.randomUUID();
   await fixture.taskManager.addIntervention({
     agentSessionId: SESSION_ID, text, user: "seosoyoung", source: "user_message",
     deliveryId, deliveryIntent: "human_live_steer", completionId: `message:${deliveryId}`,
     relationKey: `user_message:${SESSION_ID}:${deliveryId}`,
     callerInfo: { source: "agent", agent_id: "seosoyoung" },
-  }, fixture.onResume);
+  }, onResume);
   const task = fixture.taskManager.getTask(SESSION_ID)!;
-  await task.executionPromise;
+  if (waitForExecution) await task.executionPromise;
   return task;
 }
+
+function retainRunnerForPreset(
+  task: Task,
+  runner: TaskRunnerRuntime,
+  options: {
+    nativeSessionId: string;
+    applyingFrom: string;
+    modelPreset: string;
+    backend: "antigravity" | "claude";
+    reasoningEffort: "high" | "xhigh";
+  },
+) {
+  const generation = task.persistentGeneration!;
+  task.codexThreadId = options.nativeSessionId;
+  task.modelPreset = options.modelPreset;
+  task.model = options.modelPreset === "gemini-4-argon" ? "gemini-4-argon" : "opus";
+  task.modelPresetBackend = options.backend;
+  task.modelPresetEnv = undefined;
+  task.reasoningEffort = options.reasoningEffort;
+  task.persistentGeneration = {
+    ...generation,
+    pending: {
+      ...generation.pending!,
+      applyingFrom: options.applyingFrom,
+      previousModelPreset: "claude-opus",
+      previousBackend: "claude",
+      targetModelPreset: options.modelPreset,
+      targetReasoningEffort: options.reasoningEffort,
+    },
+  };
+  task.runner = runner;
+  task.runnerRetainedForDetachedWork = true;
+}
+
+function startWithRetainedRunner(
+  fixture: ReturnType<typeof makeFixture>,
+  options: Parameters<typeof retainRunnerForPreset>[2],
+) {
+  return (task: Task, activation?: Task["executionActivation"]) => {
+    retainRunnerForPreset(task, fixture.runner, options);
+    return activation
+      ? fixture.executor.startNewExecution(task, AGENT, activation)
+      : fixture.executor.startNewExecution(task, AGENT);
+  };
+}
+
+function makeReplacementRunner(
+  fixture: ReturnType<typeof makeFixture>,
+  backend: string,
+  order: string[],
+): TaskRunnerRuntime {
+  const dispatcher = {
+    ...fixture.dispatcher,
+    close: vi.fn(async () => { order.push("new-close"); }),
+    executeFrames: vi.fn((params: EngineExecuteParams) => {
+      order.push("execute");
+      fixture.executed.push(params);
+      return (async function* () {
+        for (const event of fixture.runnerEvents) yield engineEventFrame(event);
+      })();
+    }),
+  };
+  return {
+    ...fixture.runner,
+    engine: { ...fixture.engine, backendId: backend as EnginePort["backendId"] },
+    dispatcher: dispatcher as never,
+  };
+}
+
+function useReplacementRunnerFactory(
+  fixture: ReturnType<typeof makeFixture>,
+  order: string[],
+) {
+  fixture.runnerProcessFactorySpy.mockImplementation((_task, _agent, backend) => {
+    order.push(`factory:${backend}`);
+    return makeReplacementRunner(fixture, backend, order);
+  });
+}
+
+describe("retained runner backend selection after persistent rollover", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it.each([
+    { path: "execution registration", profile: "execution_registration" as const },
+    { path: "legacy execution", profile: "legacy_transition_only" as const },
+  ])("closes a retained Claude runner before starting the Argon runner on $path", async ({ profile }) => {
+    const fixture = makeFixture(productionSessionRow(), profile);
+    const order: string[] = [];
+    let signalCloseStarted!: () => void;
+    let releaseClose!: () => void;
+    const closeStarted = new Promise<void>((resolve) => { signalCloseStarted = resolve; });
+    const closeGate = new Promise<void>((resolve) => { releaseClose = resolve; });
+    fixture.dispatcher.close.mockImplementation(async () => {
+      order.push("old-close:start");
+      signalCloseStarted();
+      await closeGate;
+      order.push("old-close:done");
+    });
+    useReplacementRunnerFactory(fixture, order);
+
+    const start = startWithRetainedRunner(fixture, {
+      nativeSessionId: OLD_NATIVE_ID,
+      applyingFrom: OLD_NATIVE_ID,
+      modelPreset: "gemini-4-argon",
+      backend: "antigravity",
+      reasoningEffort: "high",
+    });
+    const resuming = resume(fixture, "continue", start, false);
+    await closeStarted;
+    const task = fixture.taskManager.getTask(SESSION_ID)!;
+
+    const whileClosing = {
+      order: [...order],
+      factoryCalls: fixture.runnerProcessFactorySpy.mock.calls.length,
+      oldExecuteCalls: fixture.dispatcher.executeFrames.mock.calls.length,
+      executions: fixture.executed.length,
+      slotHeld: task.executionPromise !== undefined,
+      activationHeld: task.executionActivation !== undefined,
+    };
+
+    releaseClose();
+    await task.executionPromise;
+
+    expect(task.status, task.error).toBe("completed");
+    expect(whileClosing).toEqual({
+      order: ["old-close:start"],
+      factoryCalls: 0,
+      oldExecuteCalls: 0,
+      executions: 0,
+      slotHeld: true,
+      activationHeld: true,
+    });
+    expect(order.slice(0, 4)).toEqual([
+      "old-close:start",
+      "old-close:done",
+      "factory:antigravity",
+      "execute",
+    ]);
+    expect(fixture.runnerProcessFactorySpy).toHaveBeenCalledWith(
+      task,
+      AGENT,
+      "antigravity",
+      expect.anything(),
+    );
+    expect(fixture.dispatcher.executeFrames).not.toHaveBeenCalled();
+    expect(fixture.executed).toHaveLength(1);
+    await resuming;
+  });
+
+  it("does not reuse Claude after native-ID reconciliation clears the pending generation", async () => {
+    const fixture = makeFixture();
+    const order: string[] = [];
+    useReplacementRunnerFactory(fixture, order);
+    const start = startWithRetainedRunner(fixture, {
+      nativeSessionId: "native-already-rotated",
+      applyingFrom: OLD_NATIVE_ID,
+      modelPreset: "gemini-4-argon",
+      backend: "antigravity",
+      reasoningEffort: "high",
+    });
+
+    const task = await resume(fixture, "continue", start);
+
+    expect(task.persistentGeneration?.pending).toBeUndefined();
+    expect(fixture.runnerProcessFactorySpy).toHaveBeenCalledWith(
+      task,
+      AGENT,
+      "antigravity",
+      expect.anything(),
+    );
+    expect(fixture.dispatcher.close).toHaveBeenCalledOnce();
+    expect(fixture.dispatcher.executeFrames).not.toHaveBeenCalled();
+    expect(order).toEqual(["factory:antigravity", "execute", "new-close"]);
+  });
+
+  it("reuses a retained runner when its backend already matches", async () => {
+    const fixture = makeFixture();
+    const order: string[] = [];
+    fixture.dispatcher.executeFrames.mockImplementation((params: EngineExecuteParams) => {
+      order.push("execute");
+      fixture.executed.push(params);
+      return (async function* () {
+        for (const event of fixture.runnerEvents) yield engineEventFrame(event);
+      })();
+    });
+    fixture.dispatcher.close.mockImplementation(async () => { order.push("close"); });
+    const start = startWithRetainedRunner(fixture, {
+      nativeSessionId: OLD_NATIVE_ID,
+      applyingFrom: OLD_NATIVE_ID,
+      modelPreset: "claude-opus",
+      backend: "claude",
+      reasoningEffort: "xhigh",
+    });
+
+    await resume(fixture, "continue", start);
+
+    expect(fixture.runnerProcessFactorySpy).not.toHaveBeenCalled();
+    expect(fixture.dispatcher.executeFrames).toHaveBeenCalledOnce();
+    expect(fixture.executed).toHaveLength(1);
+    expect(order).toEqual(["execute", "close"]);
+  });
+
+  it.each([
+    { path: "execution registration", profile: "execution_registration" as const },
+    { path: "legacy execution", profile: "legacy_transition_only" as const },
+  ])(
+    "does not start the target runner when close fails on $path",
+    async ({ profile }) => {
+      const fixture = makeFixture(productionSessionRow(), profile);
+      fixture.dispatcher.close.mockRejectedValue(new Error("retained runner close failed"));
+      const start = startWithRetainedRunner(fixture, {
+        nativeSessionId: OLD_NATIVE_ID,
+        applyingFrom: OLD_NATIVE_ID,
+        modelPreset: "gemini-4-argon",
+        backend: "antigravity",
+        reasoningEffort: "high",
+      });
+
+      await expect(resume(fixture, "continue", start, false))
+        .rejects.toThrow("retained runner close failed");
+      expect(fixture.runnerProcessFactorySpy).not.toHaveBeenCalled();
+      expect(fixture.dispatcher.executeFrames).not.toHaveBeenCalled();
+    },
+  );
+});
 
 function rejectAtLimit(fixture: ReturnType<typeof makeFixture>, nativeChanged: boolean) {
   fixture.runnerEvents.splice(0, fixture.runnerEvents.length,
