@@ -598,6 +598,29 @@ describe("TaskEngineEventPublisher", () => {
     expect(task.terminationReason).toBeUndefined();
   });
 
+  it("preserves rejected credential detail when a usage-limit error follows", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+
+    await publisher.publishEngineEvent(task, {
+      type: "credential_alert",
+      status: "rejected",
+      message: "credential alert detail",
+      timestamp: 1,
+    } as unknown as SSEEventPayload);
+    await publisher.publishEngineEvent(task, {
+      type: "error",
+      error_code: "claude_rate_limit_stop_failure",
+      message: "rate limit stop failure",
+      fatal: true,
+      timestamp: 2,
+    } as SSEEventPayload);
+
+    expect(task.pendingTerminationHint).toBe("limit_hit");
+    expect(task.pendingTerminationDetail).toBe("credential alert detail");
+  });
+
   it("keeps an allowed credential warning observational", async () => {
     const deps = makePublisherDeps();
     const publisher = new TaskEngineEventPublisher(deps);

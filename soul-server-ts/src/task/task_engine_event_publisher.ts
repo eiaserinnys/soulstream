@@ -161,6 +161,7 @@ export class TaskEngineEventPublisher {
       return;
     }
     if (eventType === "error") {
+      if (task.pendingTerminationHint === "limit_hit") return;
       const error = event as {
         error_code?: unknown;
         message?: unknown;
