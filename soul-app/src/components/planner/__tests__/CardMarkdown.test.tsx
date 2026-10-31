@@ -31,6 +31,14 @@ test('노트 기록 본문은 보조 색 15/22이고 기본 마크다운의 글�
   expect(screen.getByTestId('markdown').props.markdownStyle.paragraph.color).toBe(result.current.colors.textPrimary);
 });
 
+test('Planner 마크다운에서 인용문과 코드블록 복사 버튼을 각각 렌더한다', () => {
+  const markdown = ['본문', '', '> 인용문', '', '```ts', 'const value = 1;', '```'].join('\n');
+  const screen = render(<PlannerMarkdownText markdown={markdown} />);
+
+  expect(screen.getByTestId('blockquote-copy-button-0')).toBeTruthy();
+  expect(screen.getByTestId('codeblock-copy-button-0')).toBeTruthy();
+});
+
 test('보고 폭 계약은 접기와 펼치기에서 같고 질문과 에이전트 커멘트는 내용 폭을 유지한다', () => {
   const card = cardFixture({ id: 'width-card', request: '지시', assigneeAgentId: 'roselin', createdAt: '2026-10-01T00:00:00Z' });
   const screen = render(<CardTimeline detail={{ card, sessions: [],
@@ -112,8 +120,13 @@ test('planner 표는 채팅 마크다운의 토큰 스타일을 공유한다', (
 test('planner와 채팅 마크다운의 h4~h6 및 구분선·코드 테두리는 테마 토큰을 쓴다', () => {
   const { result } = renderHook(() => useTokens());
   const roles = createPlannerVisualRoles(result.current);
-  const planner = render(<PlannerMarkdownText markdown="#### 넷째\n\n##### 다섯째\n\n###### 여섯째\n\n---\n\n`코드`\n\n```ts\nconst ok = true;\n```" />);
-  const plannerStyle = planner.getByTestId('markdown').props.markdownStyle;
+  const markdown = [
+    '#### 넷째', '', '##### 다섯째', '', '###### 여섯째', '', '---', '', '`코드`', '',
+    '```ts', 'const ok = true;', '```',
+  ].join('\n');
+  const planner = render(<PlannerMarkdownText markdown={markdown} />);
+  const plannerStyle = planner.getAllByTestId('markdown')[0].props.markdownStyle;
+  expect(planner.getByTestId('codeblock-copy-button-0')).toBeTruthy();
 
   for (const key of ['h4', 'h5', 'h6']) {
     expect(plannerStyle[key]).toEqual({

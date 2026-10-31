@@ -5,6 +5,8 @@ import { EnrichedMarkdownText } from 'react-native-enriched-markdown';
 import { createAssistantMarkdownStyle, markdownTableStyle } from '../../theme/assistantMarkdownStyle';
 import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
+import { CopyableBlockquote, CopyableCodeBlock } from '../events/CopyableAssistantMarkdown';
+import { segmentMarkdownBlockquotes } from '../events/blockquoteCopyModel';
 
 export function PlannerMarkdownText({
   markdown,
@@ -29,16 +31,54 @@ export function PlannerMarkdownText({
     h2: { ...markdownStyle.h2, textAlign },
     h3: { ...markdownStyle.h3, textAlign },
   } : markdownStyle;
+  const segments = segmentMarkdownBlockquotes(markdown);
+  const renderMarkdown = (value: string, segmentIndex?: number) => (
+    <EnrichedMarkdownText
+      {...(segmentIndex === undefined ? {} : { testID: `planner-markdown-segment-${segmentIndex}` })}
+      markdown={value}
+      flavor="github"
+      markdownStyle={alignedStyle}
+      containerStyle={textAlign ? { width: '100%', textAlign } : undefined}
+      selectable
+      onLinkPress={({ url }) => { void openContentLink(url); }}
+    />
+  );
+  let quoteIndex = 0;
+  let codeBlockIndex = 0;
   return (
     <View testID={testID} style={textAlign ? { width: '100%', alignSelf: 'stretch' } : undefined}>
-      <EnrichedMarkdownText
-        markdown={markdown}
-        flavor="github"
-        markdownStyle={alignedStyle}
-        containerStyle={textAlign ? { width: '100%', textAlign } : undefined}
-        selectable
-        onLinkPress={({ url }) => { void openContentLink(url); }}
-      />
+      {segments.length === 1 && segments[0].kind === 'markdown'
+        ? renderMarkdown(segments[0].markdown)
+        : segments.map((segment, index) => {
+          if (segment.kind === 'blockquote') {
+            const currentQuoteIndex = quoteIndex;
+            quoteIndex += 1;
+            return <CopyableBlockquote
+              key={`blockquote-${currentQuoteIndex}`}
+              index={currentQuoteIndex}
+              markdown={segment.markdown}
+              plainText={segment.plainText}
+              markdownStyle={alignedStyle as any}
+              onLinkPress={({ url }) => { void openContentLink(url); }}
+            />;
+          }
+          if (segment.kind === 'codeBlock') {
+            const currentCodeBlockIndex = codeBlockIndex;
+            codeBlockIndex += 1;
+            return <CopyableCodeBlock
+              key={`codeblock-${currentCodeBlockIndex}`}
+              index={currentCodeBlockIndex}
+              markdown={segment.markdown}
+              copyText={segment.copyText}
+              markdownStyle={alignedStyle as any}
+              onLinkPress={({ url }) => { void openContentLink(url); }}
+              selectable
+            />;
+          }
+          return <React.Fragment key={`markdown-${index}`}>
+            {renderMarkdown(segment.markdown, index)}
+          </React.Fragment>;
+        })}
     </View>
   );
 }

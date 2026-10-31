@@ -56,8 +56,47 @@ describe('segmentMarkdownBlockquotes', () => {
     const markdown = ['```text', '> 인용 아님', '```'].join('\n');
 
     expect(segmentMarkdownBlockquotes(markdown)).toEqual([
-      { kind: 'markdown', markdown },
+      { kind: 'codeBlock', markdown, copyText: '> 인용 아님' },
     ]);
+  });
+
+  test('최상위 펜스 코드만 복사용 구간으로 분리하고 펜스와 여는 들여쓰기를 제거한다', () => {
+    expect(segmentMarkdownBlockquotes([
+      '앞 문단',
+      '',
+      '  ```ts',
+      '  const answer = 42;',
+      '    return answer;',
+      '  ```',
+      '',
+      '뒤 문단',
+    ].join('\n'))).toEqual([
+      { kind: 'markdown', markdown: '앞 문단\n' },
+      {
+        kind: 'codeBlock',
+        markdown: ['  ```ts', '  const answer = 42;', '    return answer;', '  ```'].join('\n'),
+        copyText: ['const answer = 42;', '  return answer;'].join('\n'),
+      },
+      { kind: 'markdown', markdown: '\n뒤 문단' },
+    ]);
+  });
+
+  test('물결 펜스와 닫히지 않은 코드 펜스를 분리한다', () => {
+    expect(segmentMarkdownBlockquotes(['~~~', '한 줄', '~~~', '', '```js', 'const open = true;'].join('\n')))
+      .toEqual([
+        { kind: 'codeBlock', markdown: '~~~\n한 줄\n~~~', copyText: '한 줄' },
+        { kind: 'markdown', markdown: '' },
+        { kind: 'codeBlock', markdown: '```js\nconst open = true;', copyText: 'const open = true;' },
+      ]);
+  });
+
+  test('최상위 코드와 인용 내부 코드를 서로 다른 복사 구간으로 섞지 않는다', () => {
+    expect(segmentMarkdownBlockquotes(['```', '> 인용 문장', '```', '', '> ```', '> 인용 코드', '> ```'].join('\n')))
+      .toEqual([
+        { kind: 'codeBlock', markdown: '```\n> 인용 문장\n```', copyText: '> 인용 문장' },
+        { kind: 'markdown', markdown: '' },
+        { kind: 'blockquote', markdown: '> ```\n> 인용 코드\n> ```', plainText: '인용 코드' },
+      ]);
   });
 
   test('인용 안 fenced code와 목록을 같은 인용 구간에 보존한다', () => {

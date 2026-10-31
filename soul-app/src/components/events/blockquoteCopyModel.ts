@@ -1,6 +1,9 @@
-export type MarkdownBlockSegment =
+export type MarkdownSegment =
   | { kind: 'markdown'; markdown: string }
-  | { kind: 'blockquote'; markdown: string; plainText: string };
+  | { kind: 'blockquote'; markdown: string; plainText: string }
+  | { kind: 'codeBlock'; markdown: string; copyText: string };
+
+export type MarkdownBlockSegment = MarkdownSegment;
 
 type Fence = {
   marker: '`' | '~';
@@ -16,7 +19,12 @@ export function segmentMarkdownBlockquotes(markdown: string): MarkdownBlockSegme
   const segments: MarkdownBlockSegment[] = [];
   let normalLines: string[] = [];
   let quoteLines: string[] = [];
-  let normalFence: Fence | null = null;
+  let codeBlock: {
+    fence: Fence;
+    indent: number;
+    lines: string[];
+    codeLines: string[];
+  } | null = null;
 
   const flushNormal = () => {
     if (normalLines.length === 0) return;
@@ -58,9 +66,19 @@ export function segmentMarkdownBlockquotes(markdown: string): MarkdownBlockSegme
       flushQuote();
     }
 
-    if (normalFence) {
-      normalLines.push(line);
-      normalFence = advanceFence(normalFence, line);
+    if (codeBlock) {
+      codeBlock.lines.push(line);
+      const candidate = readFence(line);
+      if (isClosingFence(codeBlock.fence, candidate)) {
+        segments.push({
+          kind: 'codeBlock',
+          markdown: codeBlock.lines.join('\n'),
+          copyText: codeBlock.codeLines.join('\n'),
+        });
+        codeBlock = null;
+      } else {
+        codeBlock.codeLines.push(stripOpeningIndent(line, codeBlock.indent));
+      }
       continue;
     }
 
@@ -70,10 +88,28 @@ export function segmentMarkdownBlockquotes(markdown: string): MarkdownBlockSegme
       continue;
     }
 
+    const fenceMatch = readFence(line);
+    if (fenceMatch) {
+      flushNormal();
+      codeBlock = {
+        fence: { marker: fenceMatch.marker, length: fenceMatch.length },
+        indent: line.length - line.trimStart().length,
+        lines: [line],
+        codeLines: [],
+      };
+      continue;
+    }
+
     normalLines.push(line);
-    normalFence = advanceFence(null, line);
   }
 
+  if (codeBlock) {
+    segments.push({
+      kind: 'codeBlock',
+      markdown: codeBlock.lines.join('\n'),
+      copyText: codeBlock.codeLines.join('\n'),
+    });
+  }
   flushQuote();
   flushNormal();
   return segments;
@@ -111,13 +147,10 @@ export function extractBlockquotePlainText(markdown: string): string {
   return output.join('\n').trim();
 }
 
-function advanceFence(activeFence: Fence | null, line: string): Fence | null {
-  const match = readFence(line);
-  if (!match) return activeFence;
-  if (activeFence) {
-    return isClosingFence(activeFence, match) ? null : activeFence;
-  }
-  return { marker: match.marker, length: match.length };
+export const blockquotePlainText = extractBlockquotePlainText;
+
+function stripOpeningIndent(line: string, indent: number): string {
+  return indent > 0 && line.startsWith(' '.repeat(indent)) ? line.slice(indent) : line;
 }
 
 function readFence(line: string): (Fence & { suffix: string }) | null {
