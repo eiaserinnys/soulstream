@@ -52,6 +52,7 @@ jest.mock('../../components/planner/PostItCard', () => {
 
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { Keyboard, Platform, StyleSheet, View } from 'react-native';
 import { CardHomeScreen } from '../CardHomeScreen';
 import { cardFixture } from '../../test-support/cards';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -93,4 +94,35 @@ test('home composer height updates only the spacer and does not render the board
   act(() => { fireEvent(dock, 'layout', { nativeEvent: { layout: { height: 120 } } }); });
   expect(mockRenderCounts).toEqual({ workspace: 0, board: 0, dragCard: 0, postIt: 0 });
   expect(screen.getByTestId('home-composer-spacer-review').props.style).toMatchObject({ height: 132, marginTop: -8 });
+});
+
+test('outer phone composer moves above keyboard and returns without rerendering the workspace', async () => {
+  const listeners = new Map<string, (event: any) => void>();
+  jest.spyOn(Keyboard, 'addListener').mockImplementation(((name: string, callback: (event: any) => void) => {
+    listeners.set(name, callback);
+    return { remove: jest.fn() } as any;
+  }) as any);
+  jest.spyOn(Keyboard, 'scheduleLayoutAnimation').mockImplementation(() => {});
+  jest.spyOn(View.prototype, 'measureInWindow').mockImplementation((callback: any) => callback(0, 0, 400, 800));
+  mockApi.listCards.mockResolvedValue({ cards: [cardFixture({ id: 'keyboard-review', status: 'review' })] });
+  const screen = render(<CardHomeScreen onOpen={() => {}} onSessionCreated={() => {}} />);
+  await waitFor(() => expect(screen.getByTestId('home-session-composer-dock')).toBeTruthy());
+  const avoider = screen.getByTestId('card-home-screen');
+  fireEvent(avoider, 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 400, height: 800 } } });
+  Object.assign(mockRenderCounts, { workspace: 0, board: 0, dragCard: 0, postIt: 0 });
+
+  const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+  const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+  act(() => listeners.get(showEvent)?.({ isEventFromThisApp: true, duration: 250, easing: 'keyboard',
+    endCoordinates: { screenX: 0, screenY: 500, width: 400, height: 300 },
+    startCoordinates: { screenX: 0, screenY: 800, width: 400, height: 300 } }));
+  expect(StyleSheet.flatten(screen.getByTestId('home-session-composer-dock').props.style).bottom).toBe(312);
+  expect(mockRenderCounts.workspace).toBe(0);
+
+  act(() => listeners.get(hideEvent)?.({ isEventFromThisApp: true, duration: 250, easing: 'keyboard',
+    endCoordinates: { screenX: 0, screenY: 800, width: 400, height: 0 },
+    startCoordinates: { screenX: 0, screenY: 500, width: 400, height: 300 } }));
+  expect(StyleSheet.flatten(screen.getByTestId('home-session-composer-dock').props.style).bottom).toBe(12);
+  expect(mockRenderCounts.workspace).toBe(0);
+  jest.restoreAllMocks();
 });

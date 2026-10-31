@@ -960,6 +960,11 @@ test('듀오 폰은 보고를 별도 판에 표시하고 보고가 없어지면 
   expect(store.getState()).toMatchObject({ reportCount: 2, hasReports: true });
   act(() => store.getState().toggleReports());
   expect(view.getByTestId('persistent-session-reports-panel')).toBeTruthy();
+  expect(view.getAllByTestId(/^report-sheet-/)).toHaveLength(2);
+  expect(view.getByTestId('report-track').props.horizontal).toBeFalsy();
+  expect(view.getByTestId('report-track').props.pagingEnabled).toBeFalsy();
+  expect(view.queryByTestId('report-page')).toBeNull();
+  expect(view.queryByTestId('report-nav')).toBeNull();
   expect(view.getByTestId('persistent-session-conversation', { includeHiddenElements: true }).props.pointerEvents).toBe('none');
   expect(body.props.getReportSendContext('일반 입력', null).contextItems[0].key).toBe('persistent_report_visible');
   act(() => useSessionStore.getState().applyPersistentReport('pas-report-phone', []));
