@@ -214,5 +214,13 @@ describe("MarkdownContent — remark-breaks plugin", () => {
     expect(css).toMatch(
       /pre\[data-slot="codeblock-copy-content"\]\s+\.hljs\s*\{[^}]*background:\s*transparent;[^}]*padding:\s*0;[^}]*color:\s*var\(--foreground\);/s,
     );
+    expect(css).toContain(":root:not(.dark) pre[data-slot=\"codeblock-copy-content\"] .hljs-string");
+    expect(css).toContain("color: #cf222e;");
+    expect(css).toContain("color: #8250df;");
+    expect(css).toContain("color: #0550ae;");
+    expect(css).toContain("color: #0a3069;");
+    expect(css).toContain("color: #953800;");
+    expect(css).toContain("color: #57606a;");
+    expect(css).toContain("color: #116329;");
   });
 });

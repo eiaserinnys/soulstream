@@ -10,10 +10,12 @@ import { Children, cloneElement, createContext, isValidElement, useCallback, use
 import { Check, Copy } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
+import { cn } from "../lib/cn";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
+import { DashboardIconCap } from "./DashboardIconCap";
 import { MarkdownImage } from "./MarkdownImage";
 import { useInternalLinkClick } from "./InternalLinkProvider";
 import { ChatImageAttachments, ChatImageViewer } from "./chat/ChatImageAttachments";
@@ -291,23 +293,29 @@ function CopyableCodeBlock({
     : copyState === "error"
       ? "코드를 복사하지 못했습니다"
       : "";
+  const copied = copyState === "success";
+  const handleCopy = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    void copyCode();
+  };
 
   const copyButton = (
     <>
-      <button
-        type="button"
-        aria-label="코드 복사"
+      <DashboardIconCap
+        label="코드 복사"
+        size="small"
+        appearance="bare"
+        data-slot="codeblock-copy-button"
         data-copy-state={copyState}
-        onClick={(event) => {
-          event.stopPropagation();
-          void copyCode();
-        }}
-        className="absolute right-1 top-1 inline-flex size-7 items-center justify-center rounded-md text-muted-foreground/75 transition-colors hover:bg-muted/60 hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        className={cn("absolute right-0.5 top-0.5 z-10", copied && "text-foreground")}
+        onClick={handleCopy}
+        onMouseDown={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
       >
-        {copyState === "success"
-          ? <Check className="size-4" aria-hidden="true" />
-          : <Copy className="size-4" aria-hidden="true" />}
-      </button>
+        {copied
+          ? <Check className="h-3.5 w-3.5" aria-hidden="true" />
+          : <Copy className="h-3.5 w-3.5" aria-hidden="true" />}
+      </DashboardIconCap>
       <span className="sr-only" role="status" aria-live="polite">{feedback}</span>
     </>
   );

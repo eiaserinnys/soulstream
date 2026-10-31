@@ -139,6 +139,8 @@ describe("MarkdownContent fenced code copy", () => {
 
     expect(buttons).toHaveLength(2);
     expect(Array.from(buttons).every(button => button.querySelector("svg") !== null)).toBe(true);
+    expect(Array.from(buttons).every(button => button.getAttribute("data-slot") === "codeblock-copy-button")).toBe(true);
+    expect(Array.from(buttons).every(button => button.classList.contains("dashboard-icon-cap--small"))).toBe(true);
     expect(view.querySelectorAll('[data-slot="codeblock-copy-content"]')).toHaveLength(2);
     expect(view.querySelectorAll('[data-slot="codeblock-copy-frame"]')).toHaveLength(2);
     expect(view.querySelectorAll('[data-slot="codeblock-copy-content"].pr-9.min-h-9')).toHaveLength(2);
