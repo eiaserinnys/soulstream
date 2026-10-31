@@ -54,30 +54,32 @@ export const IPHONE_DUO_FRAMES = [
   { id: 'inner-landscape-short', label: '안쪽 가로(높이 626)', width: 890, height: 626, rail: false, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
 ] as const;
 
-function DuoPasCardOverlayStage() {
+function DuoPasCardOverlayStage({ reportsEmpty = false, initialReportsScene = false }: { reportsEmpty?: boolean; initialReportsScene?: boolean }) {
   const host = usePersistentSessionHost();
   const visible = usePersistentSessionScene(state => state.visible);
   const session = usePersistentSessionScene(state => state.session);
   const t = useTokens();
   useEffect(() => {
     const sessionId = 'review-pas-1';
+    const entries = reportsEmpty ? [] : [{ key: 'card_804', kind: 'see', title: '지금의 보고 · #804', card_numbers: [804],
+      card_id: 'preview-pas-card', card_status: 'review', context: '검수용 카드 장입니다.', action: '',
+      options: [], state: 'open', answer: '', updated_at: '2026-10-29T00:00:00Z' },
+    { key: 'report_805', kind: 'see', title: '두 번째 보고', card_numbers: [805], context: '두 번째 보고입니다.',
+      action: '', options: [], state: 'open', answer: '', updated_at: '2026-10-29T00:00:00Z' }] as any;
     host.store.getState().open({
       session_id: sessionId, display_name: '영구 관제 세션', node_id: 'public-node',
       folder_id: null, agent_id: 'public-agent', agent_name: '로젤린', persistent: true,
-      persistent_report: [{ key: 'card_804', kind: 'see', title: '지금의 보고 · #804', card_numbers: [804],
-        card_id: 'preview-pas-card', card_status: 'review', context: '검수용 카드 장입니다.', action: '',
-        options: [], state: 'open', answer: '', updated_at: '2026-10-29T00:00:00Z' }], settings: {},
+      persistent_report: entries, settings: {},
       runtime: { current_model: { model_preset: null, reasoning_effort: null, model: null }, pending: null },
     } as any);
-    useSessionStore.getState().applyPersistentReport(sessionId, [{ key: 'card_804', kind: 'see', title: '지금의 보고 · #804',
-      card_numbers: [804], card_id: 'preview-pas-card', card_status: 'review', context: '검수용 카드 장입니다.',
-      action: '', options: [], state: 'open', answer: '', updated_at: '2026-10-29T00:00:00Z' }]);
+    useSessionStore.getState().applyPersistentReport(sessionId, entries);
+    if (initialReportsScene && !reportsEmpty) host.store.getState().toggleReports();
     const request = useChatStore.getState().beginPersistentDisplaySettingsLoad(sessionId);
     useChatStore.getState().finishPersistentDisplaySettingsLoad(sessionId, request, {
       show_character: true, animate_character: false, show_generation_separator: true,
       show_jev_candidates: true, turn_usage_mode: 'collapsed',
     });
-  }, [host.store]);
+  }, [host.store, reportsEmpty, initialReportsScene]);
   return visible ? <PersistentSessionScreen active onHome={() => host.store.getState().leave()} />
     : session ? <View testID="review-pas-home" style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
       <LiquidGlassButton accessibilityLabel="PAS 다시 열기" onPress={() => host.store.getState().open(session)}>
@@ -86,11 +88,12 @@ function DuoPasCardOverlayStage() {
     </View> : null;
 }
 
-function DuoPasLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRAMES }) {
+function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { frameId: keyof typeof PAS_LAYOUT_FRAMES; reportsEmpty: boolean; initialReportsScene: boolean }) {
   const t = useTokens();
   const frame = PAS_LAYOUT_FRAMES[frameId];
   const frameRect: Rect = { x: 0, y: 0, width: frame.width, height: frame.height };
   const duoSideBand = frame.insets.right >= RAIL_MIN_INSET_WIDTH && frame.insets.left === 0;
+  const compact = duoSideBand && frame.width > frame.height;
   return <PersistentSessionProvider>
     <SafeAreaFrameContext.Provider value={frameRect}>
       <SafeAreaInsetsContext.Provider value={frame.insets}>
@@ -99,11 +102,11 @@ function DuoPasLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRAM
           <NavigationContainer>
           <View style={{ flex: 1, flexDirection: 'row', width: frame.width, height: frame.height, overflow: 'hidden' }}>
             <SafeAreaInsetsContext.Provider value={frame.rail ? { ...frame.insets, right: 0 } : frame.insets}>
-              <View style={{ width: frame.rail ? frame.width - frame.insets.right : frame.width, height: frame.height }}><DuoPasCardOverlayStage /></View>
+              <View style={{ width: frame.rail ? frame.width - frame.insets.right : frame.width, height: frame.height }}><DuoPasCardOverlayStage reportsEmpty={reportsEmpty} initialReportsScene={initialReportsScene} /></View>
             </SafeAreaInsetsContext.Provider>
             {frame.rail && frame.insets.right > 0 ? <View style={{ width: frame.insets.right, height: frame.height,
-              alignItems: 'center', justifyContent: 'flex-end', paddingBottom: Math.max(frame.insets.bottom, t.uiSpacing.xxl) }}>
-              <DuoPasReviewRail duoSideBand={duoSideBand} />
+              alignItems: 'center', justifyContent: 'flex-end', paddingBottom: compact ? frame.insets.bottom : Math.max(frame.insets.bottom, t.uiSpacing.xxl) }}>
+              <DuoPasReviewRail duoSideBand={duoSideBand} compact={compact} />
             </View> : null}
           </View>
           <EntryShellAlertHarness />
@@ -115,9 +118,9 @@ function DuoPasLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRAM
   </PersistentSessionProvider>;
 }
 
-function DuoPasReviewRail({ duoSideBand }: { duoSideBand: boolean }) {
+function DuoPasReviewRail({ duoSideBand, compact }: { duoSideBand: boolean; compact: boolean }) {
   const host = usePersistentSessionHost();
-  return <PhoneRailTabCluster active="PersistentTab" duoSideBand={duoSideBand}
+  return <PhoneRailTabCluster active="PersistentTab" duoSideBand={duoSideBand} compact={compact}
     onSelect={() => host.store.getState().toggleScene()} />;
 }
 
@@ -130,7 +133,8 @@ export function ReviewIphoneDuo() {
   if (sample === 'pas-layout') {
     const frameId = new URLSearchParams(window.location.search).get('frame') as keyof typeof PAS_LAYOUT_FRAMES | null;
     if (!frameId || !PAS_LAYOUT_FRAMES[frameId]) return null;
-    return <DuoPasLayoutReview frameId={frameId} />;
+    return <DuoPasLayoutReview frameId={frameId} reportsEmpty={new URLSearchParams(window.location.search).get('reports') === '0'}
+      initialReportsScene={new URLSearchParams(window.location.search).get('scene') === 'reports'} />;
   }
   const navigationTheme = {
     ...DefaultTheme,
@@ -195,6 +199,8 @@ export function ReviewIphoneDuo() {
                         </View>
                         : <PersistentSessionProvider><DuoPasCardOverlayStage /></PersistentSessionProvider>;
               const activeTab = frame.id === 'outer-portrait' ? 'FeedTab' : 'SettingsTab';
+              const duoSideBand = frame.insets.right >= RAIL_MIN_INSET_WIDTH && frame.insets.left === 0;
+              const compact = duoSideBand && frame.width > frame.height;
               return (
                 <View key={frame.id} style={{ gap: t.spacing.sm }}>
                   <Text style={{ ...t.foundation.typography.meta, color: t.colors.textMuted }}>{frame.label}</Text>
@@ -223,13 +229,13 @@ export function ReviewIphoneDuo() {
                           </SafeAreaInsetsContext.Provider>
                           {frame.rail ? <View style={{
                             width: RAIL_WIDTH,
-                            paddingBottom: frame.insets.bottom,
+                            paddingBottom: compact ? frame.insets.bottom : Math.max(frame.insets.bottom, t.uiSpacing.xxl),
                             alignItems: 'center',
                             justifyContent: 'flex-end',
                             borderLeftWidth: 1,
                             borderLeftColor: t.colors.border,
                           }}>
-                            <PhoneRailTabCluster active={activeTab} onSelect={() => {}} duoSideBand={frame.insets.right >= RAIL_MIN_INSET_WIDTH && frame.insets.left === 0} />
+                            <PhoneRailTabCluster active={activeTab} onSelect={() => {}} duoSideBand={duoSideBand} compact={compact} />
                           </View> : frame.insets.right > 0 ? <View style={{ width: frame.insets.right }} /> : null}
                         </NavigationContainer>
                         </DuoSideBandContext.Provider>

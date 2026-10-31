@@ -1,3 +1,4 @@
+import { useSessionStore } from '../store/sessionStore';
 import type { ApiClient } from '../api/client';
 import { createApiRequestContext } from '../api/clientCore';
 import { createUsageEndpoints } from '../api/usageEndpoints';
@@ -448,7 +449,14 @@ export function createApiClient(baseUrl = ''): ApiClient {
       catalogStreamUrl: entryShellApi.catalogStreamUrl,
     };
     return new URLSearchParams(window.location.search).get('sample') === 'pas-layout'
-      ? { ...api, ...createReviewCardApi(), getUsageSummary: async () => ({
+      ? { ...api, ...createReviewCardApi(),
+        dismissPersistentReport: async (sessionId: string, key: string) => {
+          const entries = useSessionStore.getState().persistentReportsBySession[sessionId]?.entries ?? [];
+          const remaining = entries.filter(entry => entry.key !== key);
+          useSessionStore.getState().applyPersistentReport(sessionId, remaining);
+          return { ok: true as const, changed: remaining.length !== entries.length, entries: remaining.map(({ key, title }) => ({ key, title })), persistent_report: remaining };
+        },
+        getUsageSummary: async () => ({
         ...persistentWeeklyUsageReviewSummary,
         nodes: persistentWeeklyUsageReviewSummary.nodes.map((node, index) => index === 0 ? { ...node, nodeId: 'public-node' } : node),
       }) } as unknown as ApiClient
