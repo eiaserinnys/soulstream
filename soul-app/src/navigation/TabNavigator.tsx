@@ -82,10 +82,11 @@ const PHONE_TAB_BUTTON_CENTER_STYLE: ViewStyle = { justifyContent: 'center' };
  * 아이폰 듀오 바깥 화면처럼 오른쪽에 시스템 레일이 있는 환경의 세로 탭 클러스터.
  * 하단 탭바 대신 같은 5개 루트 탭을 유리 캡슐에 담아 레일 하단에 둔다.
  */
-export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false }: {
+export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, compact = false }: {
   active: keyof RootTabParamList;
   onSelect(name: keyof RootTabParamList): void;
   duoSideBand?: boolean;
+  compact?: boolean;
 }) {
   const t = useTokens();
   const c = t.colors;
@@ -97,7 +98,7 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false }: {
   const persistentLabel = active !== 'PersistentTab'
     ? '영구 세션 열기'
     : scene !== 'conversation' ? 'PAS 대화로 돌아가기' : '카드 목록 보기';
-  return <RailCapsule testID="phone-rail-tab-cluster">
+  return <RailCapsule testID="phone-rail-tab-cluster" compact={compact}>
       {duoSideBand && active === 'PersistentTab' ? <RailCapsuleItem testID="phone-rail-pas-menu" label="PAS 메뉴" onPress={showPasMenu}>
         <Ionicons name="ellipsis-horizontal" color={c.textMuted} size={t.iconSize.standard} />
       </RailCapsuleItem> : null}
@@ -130,6 +131,7 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false }: {
 function PhoneRailTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
   const t = useTokens();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const compact = hasDuoSideBand(insets) && windowWidth > windowHeight;
   const activeRoute = state.routes[state.index];
   const active = activeRoute?.name as keyof RootTabParamList;
   const nestedState = (activeRoute as typeof activeRoute & {
@@ -158,7 +160,7 @@ function PhoneRailTabBar({ state, descriptors, navigation, insets }: BottomTabBa
     style={{
       position: 'relative',
       width: Math.max(insets.right, RAIL_MIN_INSET_WIDTH),
-      paddingBottom: Math.max(insets.bottom, t.uiSpacing.xxl),
+      paddingBottom: compact ? insets.bottom : Math.max(insets.bottom, t.uiSpacing.xxl),
       alignItems: 'center',
       justifyContent: 'flex-end',
     }}
@@ -179,7 +181,7 @@ function PhoneRailTabBar({ state, descriptors, navigation, insets }: BottomTabBa
         backgroundColor: createSurfaceRoles(t).chrome.tokenStyle.backgroundColor,
       }}
     /> : null}
-    {hidden ? null : <PhoneRailTabCluster active={active} onSelect={select} duoSideBand={hasDuoSideBand(insets)} />}
+    {hidden ? null : <PhoneRailTabCluster active={active} onSelect={select} duoSideBand={hasDuoSideBand(insets)} compact={compact} />}
   </View>;
 }
 

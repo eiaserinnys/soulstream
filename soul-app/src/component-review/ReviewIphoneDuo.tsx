@@ -93,6 +93,7 @@ function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { fr
   const frame = PAS_LAYOUT_FRAMES[frameId];
   const frameRect: Rect = { x: 0, y: 0, width: frame.width, height: frame.height };
   const duoSideBand = frame.insets.right >= RAIL_MIN_INSET_WIDTH && frame.insets.left === 0;
+  const compact = duoSideBand && frame.width > frame.height;
   return <PersistentSessionProvider>
     <SafeAreaFrameContext.Provider value={frameRect}>
       <SafeAreaInsetsContext.Provider value={frame.insets}>
@@ -104,8 +105,8 @@ function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { fr
               <View style={{ width: frame.rail ? frame.width - frame.insets.right : frame.width, height: frame.height }}><DuoPasCardOverlayStage reportsEmpty={reportsEmpty} initialReportsScene={initialReportsScene} /></View>
             </SafeAreaInsetsContext.Provider>
             {frame.rail && frame.insets.right > 0 ? <View style={{ width: frame.insets.right, height: frame.height,
-              alignItems: 'center', justifyContent: 'flex-end', paddingBottom: Math.max(frame.insets.bottom, t.uiSpacing.xxl) }}>
-              <DuoPasReviewRail duoSideBand={duoSideBand} />
+              alignItems: 'center', justifyContent: 'flex-end', paddingBottom: compact ? frame.insets.bottom : Math.max(frame.insets.bottom, t.uiSpacing.xxl) }}>
+              <DuoPasReviewRail duoSideBand={duoSideBand} compact={compact} />
             </View> : null}
           </View>
           <EntryShellAlertHarness />
@@ -117,9 +118,9 @@ function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { fr
   </PersistentSessionProvider>;
 }
 
-function DuoPasReviewRail({ duoSideBand }: { duoSideBand: boolean }) {
+function DuoPasReviewRail({ duoSideBand, compact }: { duoSideBand: boolean; compact: boolean }) {
   const host = usePersistentSessionHost();
-  return <PhoneRailTabCluster active="PersistentTab" duoSideBand={duoSideBand}
+  return <PhoneRailTabCluster active="PersistentTab" duoSideBand={duoSideBand} compact={compact}
     onSelect={() => host.store.getState().toggleScene()} />;
 }
 
@@ -198,6 +199,8 @@ export function ReviewIphoneDuo() {
                         </View>
                         : <PersistentSessionProvider><DuoPasCardOverlayStage /></PersistentSessionProvider>;
               const activeTab = frame.id === 'outer-portrait' ? 'FeedTab' : 'SettingsTab';
+              const duoSideBand = frame.insets.right >= RAIL_MIN_INSET_WIDTH && frame.insets.left === 0;
+              const compact = duoSideBand && frame.width > frame.height;
               return (
                 <View key={frame.id} style={{ gap: t.spacing.sm }}>
                   <Text style={{ ...t.foundation.typography.meta, color: t.colors.textMuted }}>{frame.label}</Text>
@@ -226,13 +229,13 @@ export function ReviewIphoneDuo() {
                           </SafeAreaInsetsContext.Provider>
                           {frame.rail ? <View style={{
                             width: RAIL_WIDTH,
-                            paddingBottom: frame.insets.bottom,
+                            paddingBottom: compact ? frame.insets.bottom : Math.max(frame.insets.bottom, t.uiSpacing.xxl),
                             alignItems: 'center',
                             justifyContent: 'flex-end',
                             borderLeftWidth: 1,
                             borderLeftColor: t.colors.border,
                           }}>
-                            <PhoneRailTabCluster active={activeTab} onSelect={() => {}} duoSideBand={frame.insets.right >= RAIL_MIN_INSET_WIDTH && frame.insets.left === 0} />
+                            <PhoneRailTabCluster active={activeTab} onSelect={() => {}} duoSideBand={duoSideBand} compact={compact} />
                           </View> : frame.insets.right > 0 ? <View style={{ width: frame.insets.right }} /> : null}
                         </NavigationContainer>
                         </DuoSideBandContext.Provider>
