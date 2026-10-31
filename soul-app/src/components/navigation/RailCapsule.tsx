@@ -7,7 +7,16 @@ import { STATUS_DOT_SIZE } from '../chat/StatusDot';
 
 export const RAIL_CAPSULE_WIDTH = 48;
 export const RAIL_ITEM_HEIGHT = 50;
-const CompactRailContext = React.createContext(false);
+const RailCapsuleItemContext = React.createContext({ compact: false, single: false });
+
+function countRailCapsuleItems(children: React.ReactNode): number {
+  return React.Children.toArray(children).filter(Boolean).reduce<number>((count, child) => {
+    if (React.isValidElement(child) && child.type === React.Fragment) {
+      return count + countRailCapsuleItems((child.props as { children?: React.ReactNode }).children);
+    }
+    return count + 1;
+  }, 0);
+}
 
 export function RailCapsuleViewport({ children, maxHeight, testID }: { children: React.ReactNode; maxHeight?: number; testID?: string }) {
   if (maxHeight === undefined) return <>{children}</>;
@@ -18,10 +27,14 @@ export function RailCapsuleViewport({ children, maxHeight, testID }: { children:
 
 export function RailCapsule({ children, testID, compact = false }: { children: React.ReactNode; testID: string; compact?: boolean }) {
   const t = useTokens();
+  const single = countRailCapsuleItems(children) === 1;
   return <GlassSurface role="chrome" testID={testID} cornerRadius={t.foundation.radius.round}
-    style={{ width: RAIL_CAPSULE_WIDTH }}>
-    <View style={{ width: RAIL_CAPSULE_WIDTH, paddingVertical: compact ? t.spacing.xxs : t.spacing.xs, gap: compact ? 0 : t.uiSpacing.xs / 2, alignItems: 'center' }}>
-      <CompactRailContext.Provider value={compact}>{children}</CompactRailContext.Provider>
+    style={{ width: RAIL_CAPSULE_WIDTH, ...(single ? { height: RAIL_CAPSULE_WIDTH } : {}) }}>
+    <View style={{ width: RAIL_CAPSULE_WIDTH,
+      ...(single ? { height: RAIL_CAPSULE_WIDTH, paddingVertical: 0, gap: 0, justifyContent: 'center' as const }
+        : { paddingVertical: compact ? t.spacing.xxs : t.spacing.xs, gap: compact ? 0 : t.uiSpacing.xs / 2 }),
+      alignItems: 'center' }}>
+      <RailCapsuleItemContext.Provider value={{ compact, single }}>{children}</RailCapsuleItemContext.Provider>
     </View>
   </GlassSurface>;
 }
@@ -31,11 +44,13 @@ export function RailCapsuleItem({ children, testID, label, onPress, selected, ba
   selected?: boolean; badge?: number; badgeCount?: number; dot?: boolean; disabled?: boolean; role?: AccessibilityRole;
 }) {
   const t = useTokens();
-  const compact = React.useContext(CompactRailContext);
+  const { compact, single } = React.useContext(RailCapsuleItemContext);
   const count = badgeCount ?? badge;
   return <PlatformPressable testID={testID} accessibilityRole={role} accessibilityLabel={label}
     accessibilityState={{ ...(selected === undefined ? {} : { selected }), disabled }} disabled={disabled} onPress={disabled ? undefined : onPress}
-    style={{ width: RAIL_CAPSULE_WIDTH - 4, height: compact ? t.hitTarget.min : RAIL_ITEM_HEIGHT, alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.55 : 1 }}>
+    style={{ width: single ? RAIL_CAPSULE_WIDTH : RAIL_CAPSULE_WIDTH - 4,
+      height: single ? RAIL_CAPSULE_WIDTH : compact ? t.hitTarget.min : RAIL_ITEM_HEIGHT,
+      alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.55 : 1 }}>
     <View style={{ position: 'relative' }}>
       {children}
       {count && count > 0 ? <Text testID={`${testID}-badge`} style={{ position: 'absolute', top: -t.spacing.xxs, right: -t.spacing.xxs,

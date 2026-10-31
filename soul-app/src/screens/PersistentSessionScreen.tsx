@@ -38,7 +38,7 @@ import { usePersistentSessionHost, usePersistentSessionScene } from '../navigati
 import { usePhoneRailMode } from '../navigation/tabContract';
 import { DUO_RAIL_END_INSET, getDuoRailTopOffset, splitDuoRailBackAction, useDuoSideBand } from '../navigation/duoSideBand';
 import { AppKeyboardAvoidingView } from '../components/AppKeyboardAvoidingView';
-import { RAIL_ITEM_HEIGHT, RailCapsule, RailCapsuleItem, RailCapsuleViewport } from '../components/navigation/RailCapsule';
+import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem, RailCapsuleViewport } from '../components/navigation/RailCapsule';
 import { useActiveDuoRailOverrideEntry } from '../navigation/phoneRailActions';
 import { usePasContextMenu } from '../components/persistent/usePasContextMenu';
 import { useAuthStore } from '../store/authStore';
@@ -166,7 +166,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const railBottom = Math.max(keyboardOverlap, insets.bottom, t.uiSpacing.xxl);
   const lowerRailMaxHeight = railBack && keyboardOverlap > 0
     ? Math.max(0, windowHeight - railBottom - getDuoRailTopOffset(windowWidth, windowHeight)
-      - (railCompact ? t.hitTarget.min + 2 * t.spacing.xxs : RAIL_ITEM_HEIGHT + 2 * t.spacing.xs) - t.uiSpacing.xs)
+      - RAIL_CAPSULE_WIDTH - t.uiSpacing.xs)
     : undefined;
   const onKeyboardOverlapChange = React.useCallback((overlap: number) => {
     setKeyboardOverlap(current => current === overlap ? current : overlap);

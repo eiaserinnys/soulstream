@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTokens } from '../../theme';
 import { useActiveDuoRailOverride } from '../../navigation/phoneRailActions';
 import { DUO_RAIL_END_INSET, getDuoRailTopOffset, splitDuoRailBackAction } from '../../navigation/duoSideBand';
-import { RAIL_ITEM_HEIGHT, RailCapsule, RailCapsuleItem, RailCapsuleViewport } from './RailCapsule';
+import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem, RailCapsuleViewport } from './RailCapsule';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 
 export function DuoRailOverride() {
@@ -20,7 +20,7 @@ export function DuoRailOverride() {
   const bottom = Math.max(keyboardOverlap, insets.bottom, t.uiSpacing.xxl);
   const lowerMaxHeight = backAction && keyboardOverlap > 0
     ? Math.max(0, height - bottom - getDuoRailTopOffset(width, height)
-      - (compact ? t.hitTarget.min + 2 * t.spacing.xxs : RAIL_ITEM_HEIGHT + 2 * t.spacing.xs) - t.uiSpacing.xs)
+      - RAIL_CAPSULE_WIDTH - t.uiSpacing.xs)
     : undefined;
   const renderAction = (action: typeof actions[number]) => <RailCapsuleItem key={action.id} testID={`duo-rail-action-${action.id}`} label={action.label}
         selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>

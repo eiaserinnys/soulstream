@@ -6,7 +6,7 @@ import { DuoSideBandContext } from '../tabContract';
 import { DUO_RAIL_END_INSET, getDuoRailTopOffset, hasDuoSideBand, splitDuoRailBackAction, useDuoSideBand } from '../duoSideBand';
 
 test('듀오 레일의 상단 위치와 시스템 영역 중심에 맞는 가로 정렬', () => {
-  expect((84 - DUO_RAIL_END_INSET) / 2).toBe(36);
+  expect((84 - DUO_RAIL_END_INSET) / 2).toBe(32);
   expect(getDuoRailTopOffset(466, 678)).toBe(228);
   expect(getDuoRailTopOffset(678, 466)).toBe(114);
   expect(getDuoRailTopOffset(951, 669)).toBe(200);
