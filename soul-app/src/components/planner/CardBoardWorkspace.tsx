@@ -65,9 +65,9 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
     openExpanded: () => setExpanded({ ...position.current, lanes: { ...position.current.lanes } }) }), []);
   const closeExpanded = () => { setExpanded(null); onExpandedClose?.(); };
   useRegisterDuoRailOverride('expanded-board', duo && !!expanded, [
+    { id: 'close', label: '보드 확대 닫기', icon: 'close-outline', onPress: closeExpanded },
     { id: 'create', label: '드래프트 카드 추가', icon: 'add-outline', onPress: () => setAdding(true) },
     { id: 'completed', label: '완료·취소 숨김', icon: cardDisplay.includeCompleted ? 'eye-outline' : 'eye-off-outline', selected: !cardDisplay.includeCompleted, onPress: () => cardDisplay.onChange(!cardDisplay.includeCompleted) },
-    { id: 'close', label: '보드 확대 닫기', icon: 'close-outline', onPress: closeExpanded },
   ]);
   const completedCount = completed.cards.length;
   const board = (initialPosition: BoardPosition = position.current, expandedBoard = false) => <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} phone={expandedBoard ? phone : true} completed={completed}

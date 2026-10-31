@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   ScrollView,
   Switch,
   Text,
@@ -35,6 +36,7 @@ import {
   useSettingsFormStyles,
 } from './SettingsFormParts';
 import { RecurringSchedulePicker } from './RecurringSchedulePicker';
+import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import {
   defaultRecurringSchedule,
   recurringScheduleExpressions,
@@ -288,7 +290,8 @@ export function RecurringJobEditor({
   const Container = workspace ? View : ScrollView;
   const previewStyle = { gap: t.spacing.xs, padding: t.spacing.sm, borderRadius: t.foundation.radius.field, backgroundColor: t.colors.surfaceMuted };
   if (!serverUrl) return <Notice text="연결 설정을 저장하면 반복 작업을 편집할 수 있습니다." />;
-  return <Container testID="recurring-job-editor" {...(workspace ? { style: styles.editor } : { contentContainerStyle: styles.editor, keyboardShouldPersistTaps: 'handled' as const })}>
+  return <AppKeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+  <Container testID="recurring-job-editor" {...(workspace ? { style: styles.editor } : { contentContainerStyle: styles.editor, keyboardShouldPersistTaps: 'handled' as const })}>
     {loading ? <ActivityIndicator color={t.colors.accent} /> : null}
     {error ? <View><Text accessibilityRole="alert" style={styles.error}>{error}</Text>{jobId && !job ? <Action label="다시 불러오기" onPress={() => { if (dirty) confirmSettingsDiscard(() => void loadExisting(), saveScreen); else void loadExisting(); }}/>: null}</View> : null}
     <Text style={styles.heading}>{job ? job.name : '새 반복 작업'}</Text>
@@ -320,7 +323,7 @@ export function RecurringJobEditor({
     {!workspace ? <Action label={saving ? '저장 중...' : '저장'} disabled={saving || loading || job?.archived_at != null || (Boolean(jobId) && !job)} primary onPress={() => void save()}/> : null}
     </Group></SettingsSection>
     {job ? <View style={styles.actions}><Action label="이력" disabled={saving} onPress={() => onOpenHistory(job.job_id)} testID="recurring-job-history" /><Action label={job.enabled ? '일시정지' : '재개'} disabled={saving || job.archived_at !== null} onPress={() => void updateEnabled()} testID="recurring-job-toggle-enabled" /><Action label="지금 실행" disabled={saving || job.archived_at !== null} primary onPress={() => void runNow()} testID="recurring-job-run-now" /><Action label="보관" disabled={saving || job.archived_at !== null} onPress={confirmArchive} testID="recurring-job-archive" /></View> : null}
-  </Container>;
+  </Container></AppKeyboardAvoidingView>;
 }
 
 export function RecurringJobHistory({

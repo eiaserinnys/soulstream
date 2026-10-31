@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { File } from 'expo-file-system';
-import { Platform, Share, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, ScrollView, Share, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ChatAttachment } from '../../hooks/useChatAttachments';
 import type { ChatBodyStyles } from './ChatBody.styles';
@@ -137,19 +137,16 @@ export function AttachmentChips({
 
   return (
     <>
-    <View style={hasTrailingAccessory ? [baseContainerStyle, { alignItems: 'center' }] : baseContainerStyle}>
-      {hasTrailingAccessory ? (
-        <>
-          {attachments.slice(0, -1).map((attachment, idx) => renderAttachment(attachment, idx))}
-          <View style={styles.generatedAttachmentActionRow}>
-            {renderAttachment(attachments[attachments.length - 1], attachments.length - 1,
-              { flexShrink: 1, minWidth: 0, maxWidth: '100%' },
-            )}
-            <View style={{ marginLeft: 'auto', flexShrink: 0 }}>{trailingAccessory}</View>
-          </View>
-        </>
-      ) : attachments.map((attachment, idx) => renderAttachment(attachment, idx))}
-    </View>
+    {readOnly ? <View style={baseContainerStyle}>
+      {attachments.map((attachment, idx) => renderAttachment(attachment, idx))}
+      {trailingAccessory}
+    </View> : <View style={[baseContainerStyle, { flexWrap: 'nowrap', alignItems: 'center', minWidth: 0 }]}>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled"
+        testID="attachment-chips-scroll" style={{ flexShrink: 1 }} contentContainerStyle={styles.attachmentScrollContent}>
+        {attachments.map((attachment, idx) => renderAttachment(attachment, idx))}
+      </ScrollView>
+      {hasTrailingAccessory ? <View style={{ flexShrink: 0 }}>{trailingAccessory}</View> : null}
+    </View>}
     {preview ? <AttachmentPreviewModal
       item={preview.item}
       onClose={() => {

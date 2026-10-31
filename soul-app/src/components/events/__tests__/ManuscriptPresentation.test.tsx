@@ -97,7 +97,7 @@ test('원고형은 대기·승인·오류·도구·생각·담당 카드·첨부
     styles={{ attachmentRow: {}, attachmentTouchFrame: {}, attachmentChip: {}, attachmentRemoveSpacer: {},
       attachmentRemoveFrame: {}, attachmentRemove: {}, attachmentName: {} } as never}
     textSecondaryColor="#000" textMutedColor="#000" onRemove={() => {}} />);
-  const chip = chips.UNSAFE_getAllByType(View)[2];
+  const chip = chips.UNSAFE_getAllByType(View).find(view => StyleSheet.flatten(view.props.style)?.backgroundColor === LIGHT_PERSISTENT_SESSION_COLORS.paper)!;
   expect(StyleSheet.flatten(chip?.props.style).backgroundColor).toBe(LIGHT_PERSISTENT_SESSION_COLORS.paper);
   expect(StyleSheet.flatten(chip?.props.style).borderColor).toBe(LIGHT_PERSISTENT_SESSION_COLORS.line);
 

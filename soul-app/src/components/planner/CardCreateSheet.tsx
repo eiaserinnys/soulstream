@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import * as Crypto from 'expo-crypto';
 import { ApiHttpError } from '../../api/clientCore';
 import type { ApiClient } from '../../api/client';
@@ -98,7 +99,7 @@ export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { a
           {pending ? <ActivityIndicator color={t.colors.accent} /> : <Text style={[styles.headerAction, !canSave && styles.disabled]}>드래프트 저장</Text>}
         </TouchableOpacity>
       </View>
-      <View style={styles.keyboard}>
+      <AppKeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboard}>
         <ScrollView ref={scroll} testID="card-create-content" contentContainerStyle={styles.content}
           keyboardDismissMode="interactive" keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}>
           {errorDetail ? <SheetErrorNotice summary="카드를 저장하지 못했습니다. 입력을 유지했습니다. 다시 저장해 주세요." detail={errorDetail} /> : null}
@@ -148,7 +149,7 @@ export function CardCreateSheet({ api, onClose, folderId: initialFolderId }: { a
             {selection.modelPresetSelectionInvalid ? <Text style={styles.selectionError} accessibilityRole="alert">선택한 모델을 이 노드에서 사용할 수 없습니다. 모델을 다시 선택해 주세요.</Text> : null}
           </GroupedGlassSheet>
         </ScrollView>
-      </View>
+      </AppKeyboardAvoidingView>
     </AppModalSurface>
     {selecting === 'folder' ? <FolderSelectionSheet api={api} onClose={() => setSelecting(null)} onSelect={setFolderId} /> : null}
     {selecting === 'execution' ? <ExecutionSelectionSheet api={api} value={assignment} onClose={() => setSelecting(null)} onSave={(next) => {

@@ -36,7 +36,7 @@ import { GlassSurface } from '../components/GlassSurface';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTokens, type DesignTokens } from '../theme';
 import { DuoSideBandContext, INITIAL_ROOT_TAB, PhoneRailModeContext, RAIL_MIN_INSET_WIDTH, ROOT_TAB_ORDER } from './tabContract';
-import { hasDuoSideBand, useDuoSideBand } from './duoSideBand';
+import { DUO_RAIL_END_INSET, getDuoRailTopOffset, hasDuoSideBand, splitDuoRailBackAction, useDuoSideBand } from './duoSideBand';
 import { useActiveDuoRailOverride, usePhoneRailActions, useRegisterDuoRailOverride, useRegisterPhoneRailActions, type PhoneRailAction } from './phoneRailActions';
 import { RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
 import { usePasContextMenu } from '../components/persistent/usePasContextMenu';
@@ -99,14 +99,24 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
   const showPasMenu = usePasContextMenu();
   const actions = usePhoneRailActions(state => state.actions);
   const override = useActiveDuoRailOverride();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const { backAction, mainActions } = splitDuoRailBackAction(duoSideBand ? override : null);
+  const topOffset = getDuoRailTopOffset(windowWidth, windowHeight);
+  const renderOverrideAction = (action: PhoneRailAction) => <RailCapsuleItem key={action.id} testID={`phone-rail-action-${action.id}`}
+    label={action.label} selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
+    <Ionicons name={action.icon} color={action.selected ? c.accent : c.textMuted} size={t.iconSize.standard} />
+  </RailCapsuleItem>;
   const persistentLabel = active !== 'PersistentTab'
     ? '영구 세션 열기'
     : scene !== 'conversation' ? 'PAS 대화로 돌아가기' : '카드 목록 보기';
-  return <RailCapsule testID="phone-rail-tab-cluster" compact={compact}>
-      {duoSideBand && override?.length ? override.map(action => <RailCapsuleItem key={action.id} testID={`phone-rail-action-${action.id}`}
-        label={action.label} selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
-        <Ionicons name={action.icon} color={action.selected ? c.accent : c.textMuted} size={t.iconSize.standard} />
-      </RailCapsuleItem>) : <>
+  return <>
+    {backAction ? <View style={{ position: 'absolute', top: topOffset }}>
+      <RailCapsule testID={mainActions.length ? 'duo-rail-back-capsule' : 'phone-rail-tab-cluster'} compact={compact}>
+        {renderOverrideAction(backAction)}
+      </RailCapsule>
+    </View> : null}
+    {backAction && !mainActions.length ? null : <RailCapsule testID="phone-rail-tab-cluster" compact={compact}>
+      {duoSideBand && override?.length ? mainActions.map(renderOverrideAction) : <>
       {duoSideBand && (active === 'DailyTab' || active === 'FolderTab' || active === 'FeedTab')
         ? actions[active]?.map(action => <RailCapsuleItem key={action.id} testID={`phone-rail-action-${action.id}`}
             label={action.label} selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
@@ -139,7 +149,8 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
         </RailCapsuleItem>;
       })}
       </>}
-  </RailCapsule>;
+    </RailCapsule>}
+  </>;
 }
 
 function PhoneRailTabBar({ state, descriptors, navigation, insets, duoSideBand }: BottomTabBarProps & { duoSideBand: boolean }) {
@@ -182,6 +193,7 @@ function PhoneRailTabBar({ state, descriptors, navigation, insets, duoSideBand }
       paddingBottom: compact ? insets.bottom : Math.max(insets.bottom, t.uiSpacing.xxl),
       alignItems: 'center',
       justifyContent: 'flex-end',
+      ...(duoSideBand ? { paddingRight: DUO_RAIL_END_INSET } : {}),
     }}
   >
     {showHeaderCap ? <View

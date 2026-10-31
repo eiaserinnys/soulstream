@@ -93,6 +93,8 @@ export function CardDetailContent(props: CardDetailContentProps) {
   const [composerBusy, setComposerBusy] = useState(false);
   const chooseAnswer = React.useCallback((answer: string) => composer.current?.chooseAnswer(answer), []);
   const scroll = useRef<ScrollView>(null);
+  const scrollOffsetRef = useRef(0);
+  const prevKeyboardOverlapRef = useRef(0);
   const [frameWidth, setFrameWidth] = useState(windowWidth);
   const [dockHeight, setDockHeight] = useState(0);
   const [keyboardOverlap, setKeyboardOverlap] = useState(0);
@@ -119,6 +121,16 @@ export function CardDetailContent(props: CardDetailContentProps) {
   const currentVisit = visitState?.cardId === cardId ? visitState : firstVisit;
   const initialTab = currentVisit?.initialTab ?? 'comments';
   const tab = tabChoice?.cardId === cardId ? tabChoice.value : savedView?.tab ?? initialTab;
+  useEffect(() => {
+    const delta = keyboardOverlap - prevKeyboardOverlapRef.current;
+    prevKeyboardOverlapRef.current = keyboardOverlap;
+    if (delta <= 0) return;
+    const frame = requestAnimationFrame(() => {
+      if (tab === 'comments') scroll.current?.scrollToEnd({ animated: false });
+      else scroll.current?.scrollTo({ y: Math.max(0, scrollOffsetRef.current + delta), animated: false });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [keyboardOverlap, tab]);
   const itemSummary = useMemo(() => summarizeCardItems(cardItems, itemActions.pendingConfirmations),
     [cardItems, itemActions.pendingConfirmations]);
   const targetItemId = targetChoice?.cardId === cardId ? targetChoice.itemId : targetChoice ? savedView?.targetItemId : undefined;
@@ -273,7 +285,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
         </View> : null}
         {statusAction.execution && statusAction.execution.phase !== 'pending' ? <Text style={styles.error}>{statusAction.execution.message}</Text> : null}
       </View>
-      {card?.now ? <View style={styles.nowWrap}>
+      {card?.now && keyboardOverlap === 0 ? <View style={styles.nowWrap}>
         <CardNowPanel now={card.now} history={detail?.nowHistory ?? []} allConfirmed={allConfirmed}
           surfaceRole={inline ? 'glassCard' : 'panel'} completeDisabled={locked || !api || startPhase === 'pending'}
           onComplete={() => { void status('done'); }} />
@@ -288,7 +300,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
         </View> : <ScrollView testID="card-detail-scroll" ref={scroll} style={{ marginBottom: dockBottom }}
           contentContainerStyle={[styles.content, { paddingBottom: dockHeight + t.uiSpacing.xxl }]}
           keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
-          onScroll={scrollMemory.onScroll} onScrollBeginDrag={scrollMemory.onScrollBeginDrag}
+          onScroll={event => { scrollOffsetRef.current = event.nativeEvent.contentOffset.y; scrollMemory.onScroll(event); }} onScrollBeginDrag={scrollMemory.onScrollBeginDrag}
           onLayout={scrollMemory.onLayout} scrollEventThrottle={16}
           onContentSizeChange={(width, height) => {
             if (scrollMemory.onContentSizeChange(width, height)) { scrollStamp.current = timelineStamp; return; }
@@ -323,6 +335,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
           <CardCommentComposer key={cardId} ref={composer} api={api} cardId={cardId} sessionId={card?.assigneeSessionId} nodeId={nodeId}
             question={question} cardLoaded={!!card} locked={locked} sending={comments.pending || pending} onBusyChange={setComposerBusy}
             sendComment={comments.send} runMutation={run} embedded targetItem={selectedItem}
+            onInputFocusChange={focused => { if (focused && tab === 'comments') requestAnimationFrame(() => scroll.current?.scrollToEnd({ animated: true })); }}
             onReleaseTarget={() => setTargetChoice(null)} onTargetSent={() => setTargetChoice(null)}
             onSent={() => {
               if (tab === 'comments') {

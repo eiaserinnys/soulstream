@@ -8,7 +8,7 @@ import { makeStyles } from '../ChatBody.styles';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 
-test('undo centers the wrapping row while the last chip shrinks without growing', () => {
+test('editable attachments scroll in one row and leave undo accessible', () => {
   const tokens = renderHook(() => useTokens()).result.current;
   const styles = makeStyles(tokens);
   const screen = render(<AttachmentChips
@@ -19,20 +19,10 @@ test('undo centers the wrapping row while the last chip shrinks without growing'
   const frames = screen.UNSAFE_getAllByType(View).filter(view => (
     StyleSheet.flatten(view.props.style)?.position === 'relative'
   ));
-  const root = screen.UNSAFE_getAllByType(View)[0];
-  expect(StyleSheet.flatten(root.props.style)).toMatchObject({
-    flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center',
-  });
-  for (const frame of frames.slice(0, -1)) {
-    expect(frame.parent!.parent).toBe(root);
-    expect(StyleSheet.flatten(frame.props.style).maxWidth).toBe('70%');
-  }
-  const last = frames[2];
-  expect(last.parent!.parent!.parent!.parent).toBe(root);
-  expect(StyleSheet.flatten(last.props.style)).toMatchObject({ flexShrink: 1, minWidth: 0 });
-  expect(StyleSheet.flatten(last.props.style).flex).toBeUndefined();
-  expect(StyleSheet.flatten(last.props.style).flexGrow).toBeUndefined();
-  expect(StyleSheet.flatten(last.parent!.props.style)).toMatchObject({ flexGrow: 1, alignItems: 'center' });
+  expect(screen.getByTestId('attachment-chips-scroll').props.horizontal).toBe(true);
+  expect(screen.getByText('되돌리기')).toBeTruthy();
+  expect(frames).toHaveLength(3);
+  for (const frame of frames) expect(StyleSheet.flatten(frame.props.style)).toMatchObject({ maxWidth: 180, flexShrink: 0 });
 });
 
 test('attachment-only callers retain the existing frame and row styles', () => {
@@ -44,8 +34,7 @@ test('attachment-only callers retain the existing frame and row styles', () => {
   />);
   const frame = screen.UNSAFE_getByType(CompactTouchTarget).parent!;
   expect(StyleSheet.flatten(frame.props.style)).toEqual(styles.attachmentTouchFrame);
-  expect(StyleSheet.flatten(screen.UNSAFE_getAllByType(View)[0].props.style)).toEqual(styles.attachmentRow);
-  expect(StyleSheet.flatten(screen.UNSAFE_getAllByType(View)[0].props.style).alignItems).toBeUndefined();
+  expect(screen.getByTestId('attachment-chips-scroll').props.horizontal).toBe(true);
 });
 
 test.each(['default', 'manuscript'] as const)('%s read-only chips fit the chip height and full available width without a remove control', presentation => {

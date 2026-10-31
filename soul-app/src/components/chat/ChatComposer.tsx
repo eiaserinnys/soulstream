@@ -89,7 +89,7 @@ export function ChatComposer({
   const canSend = (input.trim().length > 0 || hasAttachments)
     && !hasPendingOptimistic && !disabled && !sendDisabled && !uploading;
   const controlsDisabled = uploading || disabled;
-  const { fontScale } = useWindowDimensions();
+  const { fontScale, height: windowHeight } = useWindowDimensions();
   const composer = createSessionVisualRoles(t).chat.composer;
   const manuscriptAttachmentOutset = (composer.hitTarget - t.iconSize.action) / 2
     + t.iconSize.action * ADD_GLYPH_INSET_RATIO;
@@ -115,7 +115,8 @@ export function ChatComposer({
   }, [reportComposerBoxLayout]);
   const measuredHeight = input ? measurement.contentHeight : 0;
   const multilineExpanded = measuredHeight > singleLineHeight + 1;
-  const inputHeight = Math.min(styles.composerTextInput.maxHeight, Math.max(singleLineHeight, measuredHeight));
+  const maxInputHeight = Math.min(styles.composerTextInput.maxHeight, Math.max(singleLineHeight * 2, Math.floor(windowHeight * 0.22)));
+  const inputHeight = Math.min(maxInputHeight, Math.max(singleLineHeight, measuredHeight));
   const inputPadding = multilineExpanded ? composer.inputPaddingVertical : (singleLineHeight - lineHeight) / 2;
   const [stacked, setStacked] = React.useState(false);
   const effectiveStacked = !isEmpty && stacked;
@@ -201,7 +202,7 @@ export function ChatComposer({
                 ...(Platform.OS === 'ios'
                   ? { minHeight: singleLineHeight, ...(isEmpty ? { height: singleLineHeight } : {}) }
                   : { height: inputHeight }),
-                paddingVertical: inputPadding,
+                paddingVertical: inputPadding, ...(maxInputHeight < styles.composerTextInput.maxHeight ? { maxHeight: maxInputHeight } : {}),
                 ...(presentation === 'manuscript' && effectiveStacked ? { paddingHorizontal: 0 } : {}),
                 ...(Platform.OS === 'web'
                   ? isEmpty
@@ -211,7 +212,7 @@ export function ChatComposer({
               }]}
               onLayout={Platform.OS === 'ios' ? (event) => {
                 // Once capped, content may change without another contentSize event.
-                setIOSAtMaxHeight(event.nativeEvent.layout.height >= styles.composerTextInput.maxHeight);
+                setIOSAtMaxHeight(event.nativeEvent.layout.height >= maxInputHeight);
               } : undefined}
               value={input}
               onChangeText={onChangeInput}
@@ -222,7 +223,7 @@ export function ChatComposer({
               placeholderTextColor={t.colors.textPlaceholder}
               multiline
               {...(Platform.OS === 'web' ? { rows: 1 } : {})}
-              scrollEnabled={Platform.OS === 'ios' ? !isEmpty && iosAtMaxHeight : measuredHeight > styles.composerTextInput.maxHeight}
+              scrollEnabled={Platform.OS === 'ios' ? !isEmpty && iosAtMaxHeight : measuredHeight > maxInputHeight}
               maxLength={CHAT_COMPOSER_MAX_LENGTH}
               autoCorrect={false}
               spellCheck={false}

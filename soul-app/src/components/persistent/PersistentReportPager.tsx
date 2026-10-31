@@ -12,6 +12,7 @@ import { PersistentReportSheet, PersistentReportUndoRow, reportTag, reportWebPro
 import { reportStyles } from './persistentReportStyles';
 import type { usePersistentReportSend } from './usePersistentReportSend';
 import type { CardCompletion } from './usePersistentCardCompletion';
+import { ReportComposerFocusContext, useReportComposerScroll } from './useReportComposerScroll';
 
 function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps<typeof LiquidGlassButton> & { interaction(pressed: boolean): void }) {
   const held = useRef(false);
@@ -81,7 +82,8 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
   latestMeasurement.current = { entries, commitHeight, measureKey };
   useLayoutEffect(commitHeight, [entries, compact, width, bubble, index]);
   const bubbleHeight = bubble ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
-  const inlineHeight = inlineExpanded ? Math.min(inlineMaxHeight ?? height, height || inlineMaxHeight || 0) : undefined;
+  const inlineCapped = !bubble && (inlineExpanded || (inlineMaxHeight !== undefined && height > inlineMaxHeight));
+  const inlineHeight = inlineCapped ? Math.min(inlineMaxHeight ?? height, height || inlineMaxHeight || 0) : undefined;
   // Keep a presented session interactive while its placement/width remeasures:
   // hiding the surface here also hides its focused native TextInput.
   const ready = verticalList || presentedLayout === layoutKey || (expandedKey !== null && presentedLayout !== null && presentedSession.current === sessionId)
@@ -92,6 +94,14 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
   latestInteraction.current = interaction;
   const navInteraction = useCallback((pressed: boolean) => latestInteraction.current(pressed), []);
   const scroll = useRef<ScrollView>(null);
+  const verticalItemLayouts = useRef(new Map<string, { y: number; height: number }>());
+  const verticalViewportHeight = useRef(0);
+  const focusedVerticalKey = useRef<string | null>(null);
+  const getVerticalTarget = useCallback(() => {
+    const layout = focusedVerticalKey.current ? verticalItemLayouts.current.get(focusedVerticalKey.current) : undefined;
+    return layout ? Math.max(0, layout.y + layout.height - verticalViewportHeight.current) : null;
+  }, []);
+  const verticalScroll = useReportComposerScroll(getVerticalTarget);
   const deck = useRef<View>(null);
   const titleNodes = useRef<Record<string, Text | null>>({});
   const expectedScroll = useRef<number | null>(null);
@@ -161,11 +171,12 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
       style={[{ flex: 1, minHeight: 0 }, !bubble && styles.band, maxHeight !== undefined ? { maxHeight } : null, !ready && { opacity: 0 }]}
       {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}
       onTouchStart={() => onDeckTouch?.(true)} onTouchEnd={() => onDeckTouch?.(false)} onTouchCancel={() => onDeckTouch?.(false)}>
-      <ScrollView ref={scroll} testID="report-track" showsVerticalScrollIndicator={false}
+      <ScrollView ref={verticalScroll.scroll} testID="report-track" showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled" style={{ flex: 1, minHeight: 0 }}
         contentContainerStyle={{ gap: t.cardLayout.gap, paddingBottom: t.uiSpacing.lg }}
         onScrollBeginDrag={() => interaction(true)} onScrollEndDrag={() => interaction(false)} onMomentumScrollEnd={() => interaction(false)}
-        onLayout={event => setWidth(event.nativeEvent.layout.width)}>
+        onLayout={event => { setWidth(event.nativeEvent.layout.width); verticalViewportHeight.current = event.nativeEvent.layout.height; verticalScroll.keepComposerVisible(); }}
+        onContentSizeChange={verticalScroll.keepComposerVisible}>
         {entries.map((entry, i) => {
           const expandable = isPersistentReportCardExpandable(entry);
           const reviewCard = isReviewCardEntry(entry);
@@ -175,7 +186,14 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
           };
           const undo = i === index && completion?.recent ? { label: completion.recent.label, expiresAt: completion.recent.expiresAt,
             busy: completion.busy, onUndo: () => { void completion.undo().then(ok => { if (!ok) setNotice('되돌리지 못했어.'); }); } } : undefined;
-          return <PersistentReportSheet key={JSON.stringify([sessionId, entry.key])} entry={entry}
+          return <View key={JSON.stringify([sessionId, entry.key])} testID={`report-list-entry-${entry.key}`} onLayout={event => {
+            const { y, height } = event.nativeEvent.layout;
+            verticalItemLayouts.current.set(entry.key, { y, height });
+            if (focusedVerticalKey.current === entry.key) verticalScroll.keepComposerVisible();
+          }}><ReportComposerFocusContext.Provider value={focused => {
+            focusedVerticalKey.current = focused ? entry.key : null;
+            verticalScroll.onFocusChange(focused);
+          }}><PersistentReportSheet entry={entry}
             expandedContent={expandable && expandedKey === entry.key ? renderCardDetails?.(entry) : undefined}
             cardStatus={expandable ? renderCardStatus?.(entry) : undefined}
             onToggleCard={expandable && (renderCardDetails || onOpenCardDetails) ? () => {
@@ -201,23 +219,25 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
             }}
             onOption={option => { if (i !== index) onSelect(i); void send?.sendOption(entry, option); }}
             onCard={number => { if (i !== index) onSelect(i); void openCard(number); }}
-            onLink={url => { if (i !== index) onSelect(i); void openLink(url); }} />;
+            onLink={url => { if (i !== index) onSelect(i); void openLink(url); }} /></ReportComposerFocusContext.Provider></View>;
         })}
       </ScrollView>
     </View>;
   }
+  const deckHeight = inlineMaxHeight !== undefined && height > 0 ? Math.min(height, inlineMaxHeight) : height;
   return <View ref={deck} testID="report-deck" accessibilityLabel="지금의 보고" accessible={false}
     pointerEvents={ready ? 'auto' : 'none'} accessibilityElementsHidden={!ready} importantForAccessibility={ready ? 'auto' : 'no-hide-descendants'}
     style={[styles.deck, !bubble && styles.band, bubble && { height: bubbleHeight, maxHeight },
-      inlineExpanded && { height: inlineHeight, maxHeight: inlineMaxHeight }, !ready && { opacity: 0 }]} {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}
+      !bubble && { maxHeight: inlineMaxHeight, overflow: 'hidden' },
+      inlineCapped && { height: inlineHeight, maxHeight: inlineMaxHeight }, !ready && { opacity: 0 }]} {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}
     onTouchStart={() => onDeckTouch?.(true)} onTouchEnd={() => onDeckTouch?.(false)} onTouchCancel={() => onDeckTouch?.(false)}
     {...{ onKeyDown }}>
     <ScrollView ref={scroll} testID="report-track" horizontal pagingEnabled showsHorizontalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.track, inlineExpanded && { height: inlineHeight }]} style={bubble ? { height: bubbleHeight, flexShrink: 0,
+      keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.track, inlineCapped && { height: inlineHeight }]} style={bubble ? { height: bubbleHeight, flexShrink: 0,
         // The surface's existing horizontal borders belong to its height;
         // let the viewport span them without adding two more pixels.
-        marginVertical: -StyleSheet.hairlineWidth } : inlineExpanded ? { height: inlineHeight, flexShrink: 0 }
-          : height ? { height } : undefined}
+        marginVertical: -StyleSheet.hairlineWidth } : inlineCapped ? { height: inlineHeight, flexShrink: 0 }
+          : deckHeight ? { height: deckHeight } : undefined}
       onScrollBeginDrag={() => interaction(true)} onScrollEndDrag={() => interaction(false)} onMomentumScrollEnd={() => interaction(false)}
       onLayout={event => setWidth(event.nativeEvent.layout.width)} onContentSizeChange={align}
       onScroll={event => {
@@ -246,7 +266,7 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
           else setExpandedKey(expandedKey === entry.key ? null : entry.key);
         } : undefined}
         index={i} count={count} current={i === index} compact={compact} showNav={!phone} width={width} styles={styles}
-        bubble={bubble} surfaceHeight={bubble ? bubbleHeight : inlineExpanded ? inlineHeight : undefined}
+        bubble={bubble} surfaceHeight={bubble ? bubbleHeight : inlineHeight}
         busy={reviewCard ? completion?.busy ?? true : isServerCardAcknowledgement(entry) ? false : send?.busy} canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)}
         acknowledgeLabel={reviewCard ? '완료' : undefined} undo={undo}
         onCancel={() => void send?.cancel(entry)} onInteraction={interaction}

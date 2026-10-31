@@ -20,10 +20,10 @@ import { TabletSafeAreaFrame } from './TabletSafeAreaFrame';
 import { TabletSessionFeedPane } from './TabletSessionFeedPane';
 import { TabletHomeComposerHost } from './TabletHomeComposerHost';
 import { clampTwoPaneMiddleDrag, resolveTwoPaneMiddleWidth } from './paneWidths';
-import { useDuoSideBand } from '../../navigation/duoSideBand';
+import { DUO_RAIL_END_INSET, getDuoRailTopOffset, splitDuoRailBackAction, useDuoSideBand } from '../../navigation/duoSideBand';
 import { useSearchStore } from '../../store/searchStore';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
-import { RailCapsule, RailCapsuleItem } from '../navigation/RailCapsule';
+import { RAIL_ITEM_HEIGHT, RailCapsule, RailCapsuleItem, RailCapsuleViewport } from '../navigation/RailCapsule';
 import { TabletPersistentEntry } from '../../navigation/TabletPersistentEntry';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -62,7 +62,15 @@ export function TwoPaneWithDrawer() {
   const views = useUIStore(state => state.mainPaneViews);
   const board = activeSection.kind === 'daily' || views[activeSection.folderId] === 'board';
   const showRootNavigation = !override?.actions.length || override.mode === 'prepend';
+  const { backAction, mainActions } = splitDuoRailBackAction(override?.actions);
+  const hasLowerActions = mainActions.length > 0 || showRootNavigation;
   const rootActionCount = showRootNavigation ? (board ? 3 : 0) + (activeSection.kind === 'project' ? 1 : 0) + 3 : 0;
+  const railCompact = (override?.actions.length ?? 0) + rootActionCount >= 7 || screenHeight < 500;
+  const railBottom = Math.max(keyboardOverlap, insets.bottom, t.uiSpacing.xxl);
+  const lowerRailMaxHeight = backAction && keyboardOverlap > 0
+    ? Math.max(0, screenHeight - railBottom - getDuoRailTopOffset(screenWidth, screenHeight)
+      - (railCompact ? t.hitTarget.min + 2 * t.spacing.xxs : RAIL_ITEM_HEIGHT + 2 * t.spacing.xs) - t.uiSpacing.xs)
+    : undefined;
   const cardDisplay = useCardDisplay(activeSection.kind === 'project' ? activeSection.folderId : undefined);
   const searchActive = useSearchStore(state => state.tabletActive);
   // 회전·폴드 직후에는 이전 프레임의 측정값이 남아 pane 폭이 한 번 튄다.
@@ -181,12 +189,24 @@ export function TwoPaneWithDrawer() {
     {duo && !cardBoardExpanded && !settingsVisible ? <AppKeyboardAvoidingView
       pointerEvents="box-none" behavior="padding" onOverlapChange={setKeyboardOverlap}
       style={StyleSheet.absoluteFill}>
+      {backAction ? <View pointerEvents="box-none" style={{ position: 'absolute', top: getDuoRailTopOffset(screenWidth, screenHeight),
+        right: (insets.right - 48 + DUO_RAIL_END_INSET) / 2 }}>
+        <RailCapsule testID={hasLowerActions ? 'duo-rail-back-capsule' : 'duo-main-band-capsule'} compact={railCompact}>
+          <RailCapsuleItem testID={`duo-rail-action-${backAction.id}`} label={backAction.label} selected={backAction.selected}
+            badgeCount={backAction.badgeCount} dot={backAction.dot} disabled={backAction.disabled} onPress={backAction.onPress}>
+            <Ionicons name={backAction.icon} color={backAction.selected ? t.colors.accent : t.colors.textMuted} size={t.iconSize.standard} />
+          </RailCapsuleItem>
+        </RailCapsule>
+      </View> : null}
+      {hasLowerActions ?
       <View testID="duo-main-band" pointerEvents="box-none" style={{
         position: 'absolute', right: 0, width: insets.right, alignItems: 'center',
-        bottom: Math.max(keyboardOverlap, insets.bottom, t.uiSpacing.xxl),
+        paddingRight: DUO_RAIL_END_INSET,
+        bottom: railBottom,
       }}>
-        <RailCapsule testID="duo-main-band-capsule" compact={(override?.actions.length ?? 0) + rootActionCount >= 7 || screenHeight < 500}>
-          {override?.actions.map(action => <RailCapsuleItem key={action.id} testID={`duo-rail-action-${action.id}`}
+        <RailCapsuleViewport testID="duo-main-actions-scroll" maxHeight={lowerRailMaxHeight}>
+        <RailCapsule testID="duo-main-band-capsule" compact={railCompact}>
+          {mainActions.map(action => <RailCapsuleItem key={action.id} testID={`duo-rail-action-${action.id}`}
             label={action.label} selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
             <Ionicons name={action.icon} color={action.selected ? t.colors.accent : t.colors.textMuted} size={t.iconSize.standard} />
           </RailCapsuleItem>)}
@@ -219,7 +239,8 @@ export function TwoPaneWithDrawer() {
           <TabletPersistentEntry rail />
           </> : null}
         </RailCapsule>
-      </View>
+        </RailCapsuleViewport>
+      </View> : null}
     </AppKeyboardAvoidingView> : null}
     </View>
   );

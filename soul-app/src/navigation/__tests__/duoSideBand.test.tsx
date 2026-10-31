@@ -3,7 +3,18 @@ import { renderHook } from '@testing-library/react-native';
 import { Platform } from 'react-native';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { DuoSideBandContext } from '../tabContract';
-import { hasDuoSideBand, useDuoSideBand } from '../duoSideBand';
+import { DUO_RAIL_END_INSET, getDuoRailTopOffset, hasDuoSideBand, splitDuoRailBackAction, useDuoSideBand } from '../duoSideBand';
+
+test('듀오 레일의 상단 위치와 시스템 영역 중심에 맞는 가로 정렬', () => {
+  expect((84 - DUO_RAIL_END_INSET) / 2).toBe(36);
+  expect(getDuoRailTopOffset(466, 678)).toBe(228);
+  expect(getDuoRailTopOffset(678, 466)).toBe(114);
+  expect(getDuoRailTopOffset(951, 669)).toBe(200);
+  const back = { id: 'back' }, next = { id: 'next' };
+  expect(splitDuoRailBackAction([back, next])).toEqual({ backAction: back, mainActions: [next] });
+  expect(splitDuoRailBackAction([{ id: 'close' }])).toEqual({ backAction: { id: 'close' }, mainActions: [] });
+  expect(splitDuoRailBackAction([next, back])).toEqual({ backAction: null, mainActions: [next, back] });
+});
 
 test('듀오 띠는 iOS 오른쪽 비대칭 안전 영역에서만 감지한다', () => {
   const original = Platform.OS;

@@ -7,7 +7,7 @@ jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import React from 'react';
 import { act, fireEvent, render, renderHook, userEvent, waitFor } from '@testing-library/react-native';
-import { ActionSheetIOS, Alert, FlatList, StyleSheet } from 'react-native';
+import { ActionSheetIOS, Alert, FlatList, ScrollView, StyleSheet } from 'react-native';
 import type { CardCheckItem, CardDetail, CardDto } from '../../../api/cardTypes';
 import { useCardStore } from '../../../store/cardStore';
 import { useSessionStore } from '../../../store/sessionStore';
@@ -29,6 +29,7 @@ jest.mock('../CardAssignmentSheet', () => ({ CardAssignmentSheet: () => null }))
 import { CardCreateSheet } from '../CardCreateSheet';
 import { CardDetailContent, CardDetailSheet } from '../CardDetailSheet';
 import { DuoSideBandContext } from '../../../navigation/tabContract';
+import { AppKeyboardAvoidingView } from '../../AppKeyboardAvoidingView';
 import { usePhoneRailActions } from '../../../navigation/phoneRailActions';
 
 // Count the real component boundaries without memoizing the test wrappers.
@@ -105,6 +106,20 @@ beforeEach(async () => {
   mockControlLocks.input = []; mockControlLocks.header = [];
 });
 afterEach(() => jest.restoreAllMocks());
+test('키보드가 열리면 상황판을 숨기고 커멘트 입력에 필요한 공간을 확보한다', async () => {
+  const scrollToEnd = jest.spyOn(ScrollView.prototype, 'scrollToEnd').mockImplementation(() => {});
+  const withNow = { ...detail, card: { ...card, now: { text: '상황판', turn: 'user' as const, ask: '확인', updatedAt: card.updatedAt, sessionId: 's1' } } };
+  const screen = render(<CardDetailContent api={{ getCard: jest.fn().mockResolvedValue(withNow) } as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByText('상황판')).toBeTruthy());
+  scrollToEnd.mockClear();
+  const avoider = screen.UNSAFE_getByType(AppKeyboardAvoidingView);
+  act(() => avoider.props.onOverlapChange(220));
+  expect(screen.queryByText('상황판')).toBeNull();
+  expect(screen.getByTestId('card-detail-scroll')).toBeTruthy();
+  await waitFor(() => expect(scrollToEnd).toHaveBeenCalledWith({ animated: false }));
+  act(() => avoider.props.onOverlapChange(0));
+  expect(screen.getByText('상황판')).toBeTruthy();
+});
 test('듀오 카드 상세는 헤더 조작과 네 탭을 레일에 두고 탭과 뒤로를 실행한다', async () => {
   const onClose = jest.fn();
   const api = { getCard: jest.fn().mockResolvedValue(detail) };

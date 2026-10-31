@@ -2,7 +2,8 @@ import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 // Existing title/description editing stays together; this change extracts the virtual scroll owner.
 // The remaining 500+ line coordinator is preserved to avoid changing unrelated editing behavior.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { createApiClient, type ApiClient } from '../../api/client';
 import type { PlannerFolder } from '../../api/plannerTypes';
@@ -418,7 +419,7 @@ export function FolderWorkspace({
   });
   const parentFolder = folders.find((candidate) => candidate.id === folder?.parentFolderId);
   return (
-    <View style={styles.container}>
+    <AppKeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
       {tablet ? (
         <TabletPaneHeader testID="task-workspace-tablet-header" style={styles.tabletHeader}>
           <TextInput
@@ -598,7 +599,7 @@ export function FolderWorkspace({
         onClose={menus.closeSessionSuccession}
         onCreated={(sessionId) => onOpenSession?.(sessionId)}
       />
-    </View>
+    </AppKeyboardAvoidingView>
   );
 }
 

@@ -1,6 +1,7 @@
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
-import React, { useMemo, useState } from 'react';
-import { Alert, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Text, TextInput, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import * as Crypto from 'expo-crypto';
 import type { ApiClient } from '../../api/client';
 import type { CardAssignment } from '../../api/cardTypes';
@@ -14,6 +15,7 @@ import { useChatAttachments } from '../../hooks/useChatAttachments';
 
 import { useTokens } from '../../theme';
 import { CompactTouchTarget } from '../CompactTouchTarget';
+import { GlassButton } from '../GlassSurface';
 import { ChatComposer } from '../chat/ChatComposer';
 import { AttachmentChips } from '../chat/AttachmentChips';
 import { makeStyles as chatStyles } from '../chat/ChatBody.styles';
@@ -24,8 +26,14 @@ import { FolderSelectionSheet } from './FolderSelectionSheet';
 import { ExecutionSelectionSheet } from './ExecutionSelectionSheet';
 import { todayCardStyles } from './TodayCard.styles';
 
-export function TodayCardComposer({ api, onCreated }: { api: ApiClient | null; onCreated?(sessionId: string): void }) {
+export function TodayCardComposer({ api, onCreated, autoFocus = false, onCollapse }: { api: ApiClient | null; onCreated?(sessionId: string): void; autoFocus?: boolean; onCollapse?(): void }) {
   const t = useTokens();
+  const inputRef = useRef<TextInput | null>(null);
+  useEffect(() => {
+    if (!autoFocus) return;
+    const frame = requestAnimationFrame(() => inputRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [autoFocus]);
   const styles = useMemo(() => todayCardStyles(t), [t]);
   const chat = useMemo(() => chatStyles(t), [t]);
   const settings = useSettingsStore();
@@ -91,10 +99,16 @@ export function TodayCardComposer({ api, onCreated }: { api: ApiClient | null; o
         <View testID="card-composer-chips" style={styles.chips}>
           {chip('폴더 선택', `📁 ${folders.find((folder) => folder.id === value.folderId)?.name ?? '폴더 선택'}`, 'folder')}
           {chip('실행 대상 선택', <>{value.agentId ? labels.selectedAgentName : '에이전트'} · {labels.selectedNodeName || value.nodeId || settings.nodeId} · <SelectedModelPresetName selection={labels} /></>, 'execution')}
+          {onCollapse ? <View style={{ marginLeft: 'auto' }}><GlassButton testID="card-composer-collapse"
+            surfaceTestID="card-composer-collapse-surface" accessibilityLabel="새 대화 입력창 접기" iconOnly size="compact"
+            borderRadius={t.foundation.radius.round} onPress={onCollapse}>
+            <Ionicons name="chevron-down" size={t.iconSize.compact} color={t.colors.textSecondary} />
+          </GlassButton></View> : null}
         </View>
         <ChatComposer embedded input={text} onChangeInput={setText} placeholder="무엇을 시작할까요" inputAccessibilityLabel="세션 첫 메시지"
           sendAccessibilityLabel="세션 시작" onPickAttachment={attachments.pickAttachment} onSend={() => { void submit(); }}
-          uploading={attachments.uploading} sending={pending} disabled={pending || !api} sendDisabled={!canSend} voiceControls={null} />
+          uploading={attachments.uploading} sending={pending} disabled={pending || !api} sendDisabled={!canSend} voiceControls={null}
+          onInputRef={input => { inputRef.current = input; }} />
         <AttachmentChips attachments={attachments.attachments} onRemove={attachments.removeAttachment} disabled={disabled}
           styles={{ ...chat, attachmentRow: { ...chat.attachmentRow, paddingHorizontal: 0, paddingTop: 0 },
             attachmentName: { ...chat.attachmentName, ...t.foundation.typography.meta } }}

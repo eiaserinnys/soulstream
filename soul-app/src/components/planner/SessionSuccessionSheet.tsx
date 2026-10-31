@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import type { ApiClient } from '../../api/client';
+import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import type { PlannerFolder } from '../../api/plannerTypes';
 import { useChatAttachments } from '../../hooks/useChatAttachments';
 import { pendingId } from '../../hooks/plannerActionModels';
@@ -378,7 +379,7 @@ function SessionSuccessionSheetContent({
                 : <Text style={[styles.headerAction, !canSubmit && styles.disabled]}>세션 시작</Text>}
             </TouchableOpacity>
       </View>
-      <View testID="succession-keyboard" style={styles.keyboard}>
+      <AppKeyboardAvoidingView testID="succession-keyboard" behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.keyboard}>
         <ScrollView
           ref={contentScrollRef}
           testID="succession-content"
@@ -510,7 +511,7 @@ function SessionSuccessionSheetContent({
           </GroupedGlassSheet>
 
         </ScrollView>
-      </View>
+      </AppKeyboardAvoidingView>
     </AppModalSurface>
   );
 }

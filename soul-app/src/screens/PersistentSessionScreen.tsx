@@ -36,8 +36,9 @@ import { useOpenContentLink } from '../hooks/useOpenContentLink';
 import { decodeAuthJwt } from '../auth/jwt-payload';
 import { usePersistentSessionHost, usePersistentSessionScene } from '../navigation/PersistentSessionContext';
 import { usePhoneRailMode } from '../navigation/tabContract';
-import { useDuoSideBand } from '../navigation/duoSideBand';
-import { RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
+import { DUO_RAIL_END_INSET, getDuoRailTopOffset, splitDuoRailBackAction, useDuoSideBand } from '../navigation/duoSideBand';
+import { AppKeyboardAvoidingView } from '../components/AppKeyboardAvoidingView';
+import { RAIL_ITEM_HEIGHT, RailCapsule, RailCapsuleItem, RailCapsuleViewport } from '../components/navigation/RailCapsule';
 import { useActiveDuoRailOverrideEntry } from '../navigation/phoneRailActions';
 import { usePasContextMenu } from '../components/persistent/usePasContextMenu';
 import { useAuthStore } from '../store/authStore';
@@ -71,9 +72,10 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const phone = device === 'phone';
   const railMode = usePhoneRailMode();
   const duoSideBand = useDuoSideBand();
-  const { fontScale, height: windowHeight } = useWindowDimensions();
+  const { fontScale, width: windowWidth, height: windowHeight } = useWindowDimensions();
   const railEntry = useActiveDuoRailOverrideEntry();
   const railOverride = railEntry?.mode === 'replace' ? railEntry.actions : null;
+  const { backAction: railBack, mainActions: railMain } = splitDuoRailBackAction(railOverride);
   const insets = useSafeAreaInsets();
   const host = usePersistentSessionHost();
   const session = usePersistentSessionScene(state => state.session);
@@ -160,6 +162,12 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const [main, setMain] = useState<PersistentSessionRect | null>(null);
   const [composer, setComposer] = useState<{ anchor: LayoutRectangle; box: LayoutRectangle } | null>(null);
   const [keyboardOverlap, setKeyboardOverlap] = useState(0);
+  const railCompact = (railOverride?.length ?? 0) >= 7 || windowHeight < 500;
+  const railBottom = Math.max(keyboardOverlap, insets.bottom, t.uiSpacing.xxl);
+  const lowerRailMaxHeight = railBack && keyboardOverlap > 0
+    ? Math.max(0, windowHeight - railBottom - getDuoRailTopOffset(windowWidth, windowHeight)
+      - (railCompact ? t.hitTarget.min + 2 * t.spacing.xxs : RAIL_ITEM_HEIGHT + 2 * t.spacing.xs) - t.uiSpacing.xs)
+    : undefined;
   const onKeyboardOverlapChange = React.useCallback((overlap: number) => {
     setKeyboardOverlap(current => current === overlap ? current : overlap);
   }, []);
@@ -229,8 +237,8 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     onExpandedKeyChange={key => setReportExpansion({ sessionId: session?.session_id, key })}
     sessionId={session?.session_id} onReady={setReportReady}
     send={reportSend} completion={completion} bubble={!reportsScene && !!geometry.reportBubble} verticalList={reportsScene}
-    maxHeight={reportsScene ? (phone ? app?.height : geometry.reportInlineMaxHeight)
-      : geometry.reportBubble?.maxHeight ?? (phone ? geometry.reportViewMaxHeight : geometry.reportInlineMaxHeight)}
+    maxHeight={reportsScene ? (phone ? Math.max(0, (app?.height ?? 0) - keyboardOverlap) : geometry.reportInlineMaxHeight)
+      : geometry.reportBubble?.maxHeight ?? (phone ? Math.min(geometry.reportViewMaxHeight, geometry.reportInlineMaxHeight) : geometry.reportInlineMaxHeight)}
     onSelect={report.select} onDismiss={report.dismiss} onInteraction={setReportPressed} onDeckTouch={onReportDeckTouch}
     renderCardStatus={entry => {
       const card = persistentReportStatusCard(entry);
@@ -327,7 +335,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
             if (anchor.width > 0 && anchor.height > 0 && box.width > 0 && box.height > 0) setComposer({ anchor, box });
           }} />
       </View>
-      {phone && reportsScene ? <View testID="persistent-session-reports-panel" style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0,
+      {phone && reportsScene ? <View testID="persistent-session-reports-panel" style={{ position: 'absolute', top: 0, bottom: keyboardOverlap, left: 0, right: 0,
         backgroundColor: t.persistentSession.paper, paddingHorizontal: t.foundation.pageInset,
         paddingTop: t.uiSpacing.sm, paddingBottom: t.uiSpacing.sm, minHeight: 0 }}>{pager}</View> : null}
       {geometry && !(phone && reportsScene) ? <View testID="persistent-session-baseline" pointerEvents="none" style={{ position: 'absolute',
@@ -400,10 +408,20 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       {settingsOpen && session ? <PersistentSessionPasSettingsModal sessionId={session.session_id} nodeId={session.node_id ?? ''}
         onClose={() => setSettingsOpen(false)} /> : null}
     </View>
-    {!phone && duoSideBand ? <View testID="persistent-session-duo-band" style={{ position: 'absolute', right: 0,
-      bottom: Math.max(keyboardOverlap, insets.bottom, t.uiSpacing.xxl), width: insets.right, alignItems: 'center' }}>
-      <RailCapsule testID="persistent-session-duo-capsule" compact={(railOverride?.length ?? 0) >= 7 || windowHeight < 500}>
-        {railOverride?.length ? railOverride.map(action => <RailCapsuleItem key={action.id} testID={`duo-rail-action-${action.id}`}
+    {!phone && duoSideBand && railBack ? <View style={{ position: 'absolute', top: getDuoRailTopOffset(windowWidth, windowHeight),
+      right: (insets.right - 48 + DUO_RAIL_END_INSET) / 2 }}>
+      <RailCapsule testID={railMain.length ? 'duo-rail-back-capsule' : 'persistent-session-duo-capsule'} compact={railCompact}>
+        <RailCapsuleItem testID={`duo-rail-action-${railBack.id}`} label={railBack.label} selected={railBack.selected}
+          badgeCount={railBack.badgeCount} dot={railBack.dot} disabled={railBack.disabled} onPress={railBack.onPress}>
+          <Ionicons name={railBack.icon} size={t.iconSize.standard} color={railBack.selected ? t.colors.accent : t.colors.textMuted} />
+        </RailCapsuleItem>
+      </RailCapsule>
+    </View> : null}
+    {!phone && duoSideBand && (!railBack || railMain.length > 0) ? <View testID="persistent-session-duo-band" style={{ position: 'absolute', right: 0,
+      bottom: railBottom, width: insets.right, alignItems: 'center', paddingRight: DUO_RAIL_END_INSET }}>
+      <RailCapsuleViewport maxHeight={lowerRailMaxHeight}>
+      <RailCapsule testID="persistent-session-duo-capsule" compact={railCompact}>
+        {railOverride?.length ? railMain.map(action => <RailCapsuleItem key={action.id} testID={`duo-rail-action-${action.id}`}
           label={action.label} selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
           <Ionicons name={action.icon} size={t.iconSize.standard} color={action.selected ? t.colors.accent : t.colors.textMuted} />
         </RailCapsuleItem>) : <>
@@ -425,9 +443,11 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
         </RailCapsuleItem>
         </>}
       </RailCapsule>
+      </RailCapsuleViewport>
     </View> : null}
     {phone && reportCardSheetEntry && isPersistentReportCardExpandable(reportCardSheetEntry) ? <AppModalSurface visible={reportCard !== null} modalId="modal_card_detail"
       variant="expanded" presentationStyle="pageSheet" onRequestClose={closeReportCard} onDismiss={onReportCardSheetDismiss} surfaceTestID="persistent-session-report-card-sheet">
+      <AppKeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, minHeight: 0 }}>
       <PersistentReportCardSheetHeader entry={reportCardSheetEntry} onCollapse={closeReportCard} />
       <ScrollView style={{ flex: 1, minHeight: 0 }} ref={reportCardScroll.scroll} contentContainerStyle={{ padding: t.foundation.pageInset }}
         onLayout={reportCardScroll.keepComposerVisible} onContentSizeChange={reportCardScroll.keepComposerVisible}
@@ -439,6 +459,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
             completion={completion} onCompleted={closeReportCard} />
         </ReportComposerFocusContext.Provider>
       </ScrollView>
+      </AppKeyboardAvoidingView>
     </AppModalSurface> : null}
   </SafeAreaView>;
 }

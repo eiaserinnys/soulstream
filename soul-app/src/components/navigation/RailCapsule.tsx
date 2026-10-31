@@ -1,5 +1,5 @@
 import React from 'react';
-import { Text, View, type AccessibilityRole } from 'react-native';
+import { ScrollView, Text, View, type AccessibilityRole } from 'react-native';
 import { PlatformPressable } from '@react-navigation/elements';
 import { GlassSurface } from '../GlassSurface';
 import { useTokens } from '../../theme';
@@ -8,6 +8,13 @@ import { STATUS_DOT_SIZE } from '../chat/StatusDot';
 export const RAIL_CAPSULE_WIDTH = 48;
 export const RAIL_ITEM_HEIGHT = 50;
 const CompactRailContext = React.createContext(false);
+
+export function RailCapsuleViewport({ children, maxHeight, testID }: { children: React.ReactNode; maxHeight?: number; testID?: string }) {
+  if (maxHeight === undefined) return <>{children}</>;
+  return <ScrollView testID={testID} style={{ maxHeight }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+    {children}
+  </ScrollView>;
+}
 
 export function RailCapsule({ children, testID, compact = false }: { children: React.ReactNode; testID: string; compact?: boolean }) {
   const t = useTokens();

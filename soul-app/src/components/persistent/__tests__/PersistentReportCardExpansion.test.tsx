@@ -156,6 +156,24 @@ test.each([false, true])('focused card composer follows reading growth and viewp
   scrollToEnd.mockRestore();
 });
 
+test('vertical report list keeps a focused earlier card visible instead of jumping to the last card', async () => {
+  const api = { getCard: jest.fn().mockResolvedValue(makeDetail()) } as unknown as ApiClient;
+  const scrollTo = jest.spyOn(ScrollView.prototype, 'scrollTo').mockImplementation(() => {});
+  const entries = [{ ...entry, card_id: card.id }, { ...entry, key: 'card_532', card_id: 'card-532' }];
+  const screen = render(<ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+    <PersistentReportPager entries={entries} index={0} api={api} verticalList expandedKey={entry.key} maxHeight={440}
+      onSelect={jest.fn()} onDismiss={jest.fn()} onFocusComposer={jest.fn()}
+      renderCardDetails={item => <PersistentReportCardExpansion api={api} entry={item} />} />
+  </ChatUiControllerProvider>);
+  await waitFor(() => expect(screen.getByPlaceholderText('질문에 답하기')).toBeTruthy());
+  fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 318, height: 300 } } });
+  fireEvent(screen.getByTestId('report-list-entry-card_531'), 'layout', { nativeEvent: { layout: { y: 40, height: 400 } } });
+  fireEvent(screen.getByPlaceholderText('질문에 답하기'), 'focus');
+  await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ y: 140, animated: false }));
+  screen.unmount();
+  scrollTo.mockRestore();
+});
+
 test('tablet inline band compacts for the keyboard unless card details are expanded', async () => {
   const listeners = new Map<string, Set<(event: any) => void>>();
   const keyboard = jest.spyOn(Keyboard, 'addListener').mockImplementation((name, callback) => {

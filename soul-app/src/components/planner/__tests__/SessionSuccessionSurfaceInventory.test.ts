@@ -33,13 +33,13 @@ test('FolderWorkspace 새 세션 표면은 phone과 tablet 경로를 모두 지�
   ]);
 });
 
-test('SessionSuccessionSheet는 iOS 키보드 조정을 바깥 native ScrollView에 맡긴다', () => {
+test('SessionSuccessionSheet는 iOS 키보드 회피와 ScrollView 입력 동작을 함께 사용한다', () => {
   const source = read('components/planner/SessionSuccessionSheet.tsx');
 
   expect(source).toMatch(
     /<ScrollView[\s\S]*automaticallyAdjustKeyboardInsets=\{Platform\.OS === 'ios'\}/,
   );
-  expect(source).not.toContain('AppKeyboardAvoidingView');
+  expect(source).toMatch(/<AppKeyboardAvoidingView[^>]*behavior=\{Platform\.OS === 'ios' \? 'padding' : undefined\}/);
   expect(source).not.toContain('useFocusedViewportEndFollow');
 });
 

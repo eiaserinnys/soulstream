@@ -147,6 +147,7 @@ export function makeStyles(t: DesignTokens) {
       paddingHorizontal: t.spacing.md,
       paddingTop: t.spacing.xs,
     },
+    attachmentScrollContent: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.sm },
     generatedTextRow: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -173,7 +174,8 @@ export function makeStyles(t: DesignTokens) {
     },
     attachmentTouchFrame: {
       minHeight: t.hitTarget.min,
-      maxWidth: '70%',
+      maxWidth: 180,
+      flexShrink: 0,
       justifyContent: 'center',
       position: 'relative',
     },
