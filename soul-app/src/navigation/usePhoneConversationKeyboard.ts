@@ -6,7 +6,10 @@ import { useTokens } from '../theme';
 import { useDuoSideBand } from './duoSideBand';
 
 /** 포커스된 대화에서만 등록하는 기존 phone 키보드/탭 표시 계약. */
-export function usePhoneConversationKeyboard(navigation: { getParent(): { setOptions(options: unknown): void } | undefined; getState(): { index: number; routes: { key: string }[] } }) {
+export function usePhoneConversationKeyboard(navigation: {
+  getParent?(): { setOptions(options: unknown): void } | undefined;
+  getState?(): { index: number; routes: { key: string }[] };
+}) {
   const t = useTokens();
   const duo = useDuoSideBand();
   // 키보드 등장 시 탭 바를 숨겨 KAV의 effective bottom = 화면 바닥이 되게 한다.
@@ -16,8 +19,10 @@ export function usePhoneConversationKeyboard(navigation: { getParent(): { setOpt
   useFocusEffect(
     useCallback(() => {
       if (duo) return;
-      const parent = navigation.getParent();
-      const initialStack = navigation.getState();
+      const parent = navigation?.getParent?.();
+      const getState = navigation.getState;
+      if (!parent || !getState) return;
+      const initialStack = getState();
       const routeKey = initialStack.routes[initialStack.index].key;
       const visible = getDefaultTabBarStyle(t.colors);
       const hidden = { ...visible, display: 'none' as const };
@@ -37,7 +42,7 @@ export function usePhoneConversationKeyboard(navigation: { getParent(): { setOpt
         showSub.remove();
         hideSub.remove();
         // 위에 push된 화면이 숨김을 맡은 경우만 보존한다. pop과 탭 전환은 복원한다.
-        const stack = navigation.getState();
+        const stack = getState();
         const coveredByNextScreen = stack.routes.some(route => route.key === routeKey)
           && stack.routes[stack.index].key !== routeKey;
         if (hiddenByKeyboard && !coveredByNextScreen) parent?.setOptions({ tabBarStyle: visible });

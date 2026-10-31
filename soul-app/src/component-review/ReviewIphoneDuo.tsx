@@ -130,7 +130,10 @@ function DuoPasCardOverlayStage({ reportsEmpty = false, initialReportsScene = fa
       card_id: 'preview-pas-card', card_status: 'review', context: '검수용 카드 장입니다.', action: '',
       options: [], state: 'open', answer: '', updated_at: '2026-10-29T00:00:00Z' },
     { key: 'report_805', kind: 'see', title: '두 번째 보고', card_numbers: [805], context: '두 번째 보고입니다.',
-      action: '', options: [], state: 'open', answer: '', updated_at: '2026-10-29T00:00:00Z' }] as any;
+      action: '', options: [], state: 'open', answer: '', updated_at: '2026-10-29T00:00:00Z' },
+    { key: 'ask_806', kind: 'ask', title: '세 번째 보고 · 배포 확인', card_numbers: [806],
+      context: '세로 스크롤에서 여러 보고 카드를 한눈에 확인합니다.', action: '배포 시점을 골라 주세요.',
+      options: ['지금 배포', '내일 오전'], state: 'open', answer: '', updated_at: '2026-10-29T00:00:00Z' }] as any;
     host.store.getState().open({
       session_id: sessionId, display_name: '영구 관제 세션', node_id: 'public-node',
       folder_id: null, agent_id: 'public-agent', agent_name: '로젤린', persistent: true,
@@ -176,6 +179,8 @@ function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { fr
               alignItems: 'center', justifyContent: 'flex-end', paddingBottom: compact ? frame.insets.bottom : Math.max(frame.insets.bottom, t.uiSpacing.xxl) }}>
               <DuoPasReviewRail duoSideBand={duoSideBand} compact={compact} />
             </View> : null}
+            {!frame.rail && duoSideBand ? <View style={{ width: frame.insets.right, height: frame.height }} /> : null}
+            {!frame.rail && duoSideBand ? <DuoRailOverride /> : null}
           </View>
           <EntryShellAlertHarness />
           </NavigationContainer>

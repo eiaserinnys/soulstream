@@ -139,6 +139,11 @@ describe('AppKeyboardAvoidingView', () => {
     expect(paddingBottom(avoider)).toBe(0);
   });
 
+  test('측정 대상 View를 native hierarchy에 유지한다', () => {
+    const screen = renderAvoider('padding');
+    expect(screen.getByTestId('keyboard-avoider').props.collapsable).toBe(false);
+  });
+
   test('inactive → active 복귀에서 현재 keyboard metrics로 inset을 복원한다', () => {
     const screen = renderAvoider('padding');
     const avoider = screen.getByTestId('keyboard-avoider');

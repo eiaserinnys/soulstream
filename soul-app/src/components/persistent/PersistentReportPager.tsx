@@ -24,7 +24,7 @@ function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps
   </View>;
 }
 
-export function PersistentReportPager({ entries: rawEntries, index: rawIndex, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, onOpenCardDetails, expandedKey: controlledExpandedKey, onExpandedKeyChange, completion }: {
+export function PersistentReportPager({ entries: rawEntries, index: rawIndex, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, onOpenCardDetails, expandedKey: controlledExpandedKey, onExpandedKeyChange, completion, verticalList = false }: {
   expandedKey?: string | null; onExpandedKeyChange?(key: string | null): void;
   renderCardDetails?(entry: PersistentReportEntry): React.ReactNode;
   renderCardStatus?(entry: PersistentReportEntry): React.ReactNode;
@@ -34,7 +34,7 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
   onFocusComposer(): void;
   send?: ReturnType<typeof usePersistentReportSend>; bubble?: boolean; maxHeight?: number; onInteraction?(pressed: boolean): void;
   onDeckTouch?(active: boolean): void; onReady?(ready: boolean): void; sessionId?: string;
-  completion?: CardCompletion;
+  completion?: CardCompletion; verticalList?: boolean;
 }) {
   const entries = useMemo(() => completion?.filterEntries ? completion.filterEntries(rawEntries) : rawEntries, [completion, rawEntries]);
   const index = Math.min(rawIndex, Math.max(0, entries.length - 1));
@@ -84,7 +84,7 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
   const inlineHeight = inlineExpanded ? Math.min(inlineMaxHeight ?? height, height || inlineMaxHeight || 0) : undefined;
   // Keep a presented session interactive while its placement/width remeasures:
   // hiding the surface here also hides its focused native TextInput.
-  const ready = presentedLayout === layoutKey || (expandedKey !== null && presentedLayout !== null && presentedSession.current === sessionId)
+  const ready = verticalList || presentedLayout === layoutKey || (expandedKey !== null && presentedLayout !== null && presentedSession.current === sessionId)
     || (entries.length === 0 && Boolean(completion?.recent));
   useLayoutEffect(() => onReady?.(ready), [ready, onReady]);
   const interaction = (pressed: boolean) => { pressing.current = pressed; onInteraction?.(pressed); if (!pressed) commitHeight(); };
@@ -102,24 +102,24 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
   const keys = JSON.stringify(entries.map(entry => entry.key));
   const openLink = useOpenContentLink();
   const align = () => {
-    if (!width) return;
+    if (verticalList || !width) return;
     expectedScroll.current = Math.abs(scrollOffset.current - index * width) > 1 ? index * width : null;
     scroll.current?.scrollTo({ x: index * width, animated: false });
   };
-  useLayoutEffect(align, [width, keys, index]);
+  useLayoutEffect(align, [width, keys, index, verticalList]);
   const page = `${index + 1} / ${count}`;
   const announced = useRef(key);
   useEffect(() => {
     if (announced.current === key) return;
     announced.current = key;
-    if (key && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(count > 1 ? page : reportTag(entries[index]));
+    if (key && Platform.OS !== 'web') AccessibilityInfo.announceForAccessibility(!verticalList && count > 1 ? page : reportTag(entries[index]));
     if (!moveFocus.current) return;
     moveFocus.current = false;
     const target = key ? titleNodes.current[key] : null;
     if (!target) { onFocusComposer(); return; }
     if (Platform.OS === 'web') (target as unknown as HTMLElement).focus({ preventScroll: true });
     else { const handle = findNodeHandle(target); if (handle != null) AccessibilityInfo.setAccessibilityFocus(handle); }
-  }, [key, count, page, entries, index, onFocusComposer]);
+  }, [key, count, page, entries, index, onFocusComposer, verticalList]);
   const focusInside = () => Platform.OS === 'web'
     && !!(deck.current as unknown as HTMLElement | null)?.contains(document.activeElement);
   const previousKey = useRef(key);
@@ -153,6 +153,57 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
       style={[styles.deck, !bubble && styles.band, !ready && { opacity: 0 }]}
       {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}>
       <View testID="report-footer" style={[styles.foot, { marginTop: 'auto' }]}><PersistentReportUndoRow undo={undo} styles={styles} /></View>
+    </View>;
+  }
+  if (verticalList) {
+    return <View ref={deck} testID="report-deck" accessibilityLabel="지금의 보고" accessible={false}
+      pointerEvents={ready ? 'auto' : 'none'} accessibilityElementsHidden={!ready} importantForAccessibility={ready ? 'auto' : 'no-hide-descendants'}
+      style={[{ flex: 1, minHeight: 0 }, !bubble && styles.band, maxHeight !== undefined ? { maxHeight } : null, !ready && { opacity: 0 }]}
+      {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}
+      onTouchStart={() => onDeckTouch?.(true)} onTouchEnd={() => onDeckTouch?.(false)} onTouchCancel={() => onDeckTouch?.(false)}>
+      <ScrollView ref={scroll} testID="report-track" showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled" style={{ flex: 1, minHeight: 0 }}
+        contentContainerStyle={{ gap: t.cardLayout.gap, paddingBottom: t.uiSpacing.lg }}
+        onScrollBeginDrag={() => interaction(true)} onScrollEndDrag={() => interaction(false)} onMomentumScrollEnd={() => interaction(false)}
+        onLayout={event => setWidth(event.nativeEvent.layout.width)}>
+        {entries.map((entry, i) => {
+          const expandable = isPersistentReportCardExpandable(entry);
+          const reviewCard = isReviewCardEntry(entry);
+          const entryInteraction = (pressed: boolean) => {
+            if (pressed && i !== index) onSelect(i);
+            interaction(pressed);
+          };
+          const undo = i === index && completion?.recent ? { label: completion.recent.label, expiresAt: completion.recent.expiresAt,
+            busy: completion.busy, onUndo: () => { void completion.undo().then(ok => { if (!ok) setNotice('되돌리지 못했어.'); }); } } : undefined;
+          return <PersistentReportSheet key={JSON.stringify([sessionId, entry.key])} entry={entry}
+            expandedContent={expandable && expandedKey === entry.key ? renderCardDetails?.(entry) : undefined}
+            cardStatus={expandable ? renderCardStatus?.(entry) : undefined}
+            onToggleCard={expandable && (renderCardDetails || onOpenCardDetails) ? () => {
+              if (i !== index) onSelect(i);
+              if (onOpenCardDetails) onOpenCardDetails(entry);
+              else setExpandedKey(expandedKey === entry.key ? null : entry.key);
+            } : undefined}
+            index={i} count={count} current compact={false} showNav={false} width={width || undefined} styles={styles}
+            cardSurface hidePageIndicator bubble={false} surfaceHeight={undefined}
+            busy={reviewCard ? completion?.busy ?? true : isServerCardAcknowledgement(entry) ? false : send?.busy}
+            canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)} acknowledgeLabel={reviewCard ? '완료' : undefined}
+            undo={undo} onCancel={() => { if (i !== index) onSelect(i); void send?.cancel(entry); }} onInteraction={entryInteraction}
+            onReady={() => {}} onHeight={() => {}} titleRef={node => { titleNodes.current[entry.key] = node; }} onStep={step} onExpand={expand}
+            onDismiss={() => {
+              if (i !== index) onSelect(i);
+              if (reviewCard) {
+                if (!completion) return;
+                void completion.complete(entry).then(ok => { if (!ok) setNotice('카드를 완료하지 못했어.'); });
+                return;
+              }
+              if (!send?.close(entry)) return;
+              void onDismiss(entry.key).then(ok => { if (ok === false) setNotice('보고를 내리지 못했어.'); });
+            }}
+            onOption={option => { if (i !== index) onSelect(i); void send?.sendOption(entry, option); }}
+            onCard={number => { if (i !== index) onSelect(i); void openCard(number); }}
+            onLink={url => { if (i !== index) onSelect(i); void openLink(url); }} />;
+        })}
+      </ScrollView>
     </View>;
   }
   return <View ref={deck} testID="report-deck" accessibilityLabel="지금의 보고" accessible={false}

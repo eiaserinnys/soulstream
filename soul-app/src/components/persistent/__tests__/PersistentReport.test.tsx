@@ -39,7 +39,7 @@ beforeEach(() => {
 afterEach(() => jest.restoreAllMocks());
 
 function pager(entries = reportReviewEntries, onDeckTouch?: (active: boolean) => void, completion?: any,
-  options: { bubble?: boolean; maxHeight?: number } = {}) {
+  options: { bubble?: boolean; maxHeight?: number; verticalList?: boolean; onReady?: (ready: boolean) => void } = {}) {
   const onSelect = jest.fn(), onDismiss = jest.fn().mockResolvedValue(undefined), onAppend = jest.fn((_text: string, _reply?: ReportReplyDraft) => ({ ok: true as const }));
   const api = { listCards: jest.fn().mockResolvedValue({ cards: [{ id: 'public-card', number: 270 }] }) } as any;
   const send = { busy: false, close: jest.fn(() => true), canCancel: () => false, cancelSent: () => false,
@@ -49,13 +49,45 @@ function pager(entries = reportReviewEntries, onDeckTouch?: (active: boolean) =>
     return <ChatUiControllerProvider sessionId="pas" appendGeneratedText={(_id, text, reply) => onAppend(text, reply)}>
       <PersistentReportPager entries={entries} index={index} api={api}
         onSelect={i => { onSelect(i); setIndex(i); }} onDismiss={onDismiss} onFocusComposer={jest.fn()}
-        onDeckTouch={onDeckTouch} completion={completion} send={send} bubble={options.bubble} maxHeight={options.maxHeight} />
+        onDeckTouch={onDeckTouch} completion={completion} send={send} bubble={options.bubble} maxHeight={options.maxHeight}
+        verticalList={options.verticalList} onReady={options.onReady} />
     </ChatUiControllerProvider>;
   }
   const screen = render(<Harness />);
   measurePersistentReports(screen);
   return { ...screen, onSelect, onDismiss, onAppend, api, send };
 }
+
+test('vertical report list renders every active card without page navigation and selects the acted-on card', () => {
+  const scrollTo = jest.spyOn(ReactNative.ScrollView.prototype, 'scrollTo').mockImplementation(() => undefined);
+  const onReady = jest.fn();
+  const entries: PersistentReportEntry[] = [
+    { ...reportReviewEntries[0], key: 'see_804', title: '첫 번째 보고' },
+    { ...reportReviewEntries[1], key: 'ask_805', title: '두 번째 보고', options: ['지금 배포', '내일 오전'], state: 'open' },
+    { ...reportReviewEntries[2], key: 'see_806', title: '세 번째 보고' },
+  ];
+  const screen = pager(entries, undefined, undefined, { verticalList: true, onReady });
+  scrollTo.mockClear();
+  expect(onReady).toHaveBeenLastCalledWith(true);
+  const track = screen.getByTestId('report-track');
+  expect(track.props.horizontal).toBeFalsy();
+  expect(track.props.pagingEnabled).toBeFalsy();
+  expect(screen.getAllByTestId(/^report-sheet-/)).toHaveLength(3);
+  for (const entry of entries) {
+    const sheet = screen.getByTestId(`report-sheet-${entry.key}`);
+    expect(sheet.props['aria-hidden']).toBe(false);
+    expect(sheet.props.accessibilityElementsHidden).toBe(false);
+    if (sheet.props.inert !== undefined) expect(sheet.props.inert).toBe(false);
+  }
+  expect(screen.queryByTestId('report-page')).toBeNull();
+  expect(screen.queryByTestId('report-count')).toBeNull();
+  expect(screen.queryByTestId('report-nav')).toBeNull();
+
+  fireEvent.press(within(screen.getByTestId('report-sheet-ask_805')).getByLabelText('지금 배포'));
+  expect(screen.onSelect).toHaveBeenLastCalledWith(1);
+  expect(scrollTo).not.toHaveBeenCalled();
+  expect(screen.send.sendOption).toHaveBeenCalledWith(entries[1], '지금 배포');
+});
 
 function cardSheet({ expandedContent, onToggleCard, onExpand = jest.fn() }: {
   expandedContent?: React.ReactNode; onToggleCard?: () => void; onExpand?: () => void;

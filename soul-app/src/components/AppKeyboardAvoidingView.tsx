@@ -113,6 +113,7 @@ export function AppKeyboardAvoidingView({
   }, [commitInset]);
 
   useEffect(() => {
+    activeRef.current = AppState.currentState !== 'background' && AppState.currentState !== 'inactive';
     if (!behavior) return;
 
     const showEvent =
@@ -196,6 +197,7 @@ export function AppKeyboardAvoidingView({
   return (
     <View
       ref={viewRef}
+      collapsable={false}
       style={StyleSheet.compose(style, avoidanceStyle)}
       onLayout={handleLayout}
       {...props}

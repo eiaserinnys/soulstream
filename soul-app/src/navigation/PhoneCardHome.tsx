@@ -11,11 +11,13 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import type { CardBoardWorkspaceHandle } from '../components/planner/CardBoardWorkspace';
 import { openPhoneChat } from './phoneSessionNavigation';
 import { useDuoSideBand } from './duoSideBand';
+import { usePhoneConversationKeyboard } from './usePhoneConversationKeyboard';
 import { useRegisterPhoneRailActions, type PhoneRailAction } from './phoneRailActions';
 import { DuoSafeTop } from './DuoSafeTop';
 
 /** Home actions use the existing native root header slots. */
 export function PhoneCardHome({ navigation }: NativeStackScreenProps<DailyStackParamList, 'Daily'>) {
+  usePhoneConversationKeyboard(navigation);
   const t = useTokens();
   const boardRef = useRef<CardBoardWorkspaceHandle>(null);
   const cardDisplay = useCardDisplay();
