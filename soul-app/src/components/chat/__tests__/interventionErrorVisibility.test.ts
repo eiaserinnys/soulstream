@@ -144,7 +144,7 @@ test('control: ordinary completion remains visible exactly once', () => {
   unmount();
 });
 
-test.each(['intervention_sent', 'user_message', 'complete'] as const)(
+test.each(['intervention_sent', 'user_message', 'complete', 'session_ended'] as const)(
   'catch-up snapshot 뒤 %s fence는 assistant preview를 재적용해 비운다',
   (type) => {
     const { stream, clearCalls, snapshotSlots, unmount } = renderVisibilitySubject({ initialize: false });

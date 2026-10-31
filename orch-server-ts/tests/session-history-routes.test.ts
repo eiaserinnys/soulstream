@@ -962,66 +962,69 @@ describe("session history/read-only route harness", () => {
     await app.close();
   });
 
-  it("replays a persisted lifecycle boundary after a snapshot that predates it", async () => {
-    let liveListener: ((event: Record<string, unknown>) => void) | undefined;
-    const boundary = {
-      _event_id: 42,
-      type: "intervention_sent",
-      text: "next turn",
-      liveSeq: 11,
-    };
-    const liveEvents: SessionHistoryLiveEventSource = {
-      subscribe: vi.fn((_sessionId, listener) => {
-        liveListener = listener;
-        return vi.fn();
-      }),
-      snapshotLiveText: vi.fn(() => ({
-        throughLiveSeq: 10,
-        streams: [{
-          streamIdentity: "stream-a",
-          text: "stale preview",
-          updatedAt: "2026-09-06T12:00:00.000Z",
-          truncated: false,
-          resetRequired: false,
-          recovery: "none" as const,
-        }],
-      })),
-    };
-    const provider = createProvider({
-      readLastEventId: vi.fn(async () => {
-        liveListener?.({ agent_session_id: "sess-1", event: boundary });
-        return 42;
-      }),
-      streamEventsRaw: vi.fn(async function* () {
-        yield {
-          eventId: 42,
-          eventType: "intervention_sent",
-          payloadText: JSON.stringify(boundary),
-        };
-      }),
-    });
-    const app = createApp({
-      config,
-      sessionHistoryRoutes: {
-        provider,
-        liveEvents,
-        closeAfterHistorySync: true,
-      },
-    });
+  it.each(["intervention_sent", "session_ended"] as const)(
+    "replays a persisted %s boundary after a snapshot that predates it",
+    async (type) => {
+      let liveListener: ((event: Record<string, unknown>) => void) | undefined;
+      const boundary = {
+        _event_id: 42,
+        type,
+        text: "next turn",
+        liveSeq: 11,
+      };
+      const liveEvents: SessionHistoryLiveEventSource = {
+        subscribe: vi.fn((_sessionId, listener) => {
+          liveListener = listener;
+          return vi.fn();
+        }),
+        snapshotLiveText: vi.fn(() => ({
+          throughLiveSeq: 10,
+          streams: [{
+            streamIdentity: "stream-a",
+            text: "stale preview",
+            updatedAt: "2026-09-06T12:00:00.000Z",
+            truncated: false,
+            resetRequired: false,
+            recovery: "none" as const,
+          }],
+        })),
+      };
+      const provider = createProvider({
+        readLastEventId: vi.fn(async () => {
+          liveListener?.({ agent_session_id: "sess-1", event: boundary });
+          return 42;
+        }),
+        streamEventsRaw: vi.fn(async function* () {
+          yield {
+            eventId: 42,
+            eventType: type,
+            payloadText: JSON.stringify(boundary),
+          };
+        }),
+      });
+      const app = createApp({
+        config,
+        sessionHistoryRoutes: {
+          provider,
+          liveEvents,
+          closeAfterHistorySync: true,
+        },
+      });
 
-    const response = await app.inject({
-      method: "GET",
-      url: "/api/sessions/sess-1/events?lastEventId=41",
-    });
+      const response = await app.inject({
+        method: "GET",
+        url: "/api/sessions/sess-1/events?lastEventId=41",
+      });
 
-    expect(response.statusCode).toBe(200);
-    const historySyncIndex = response.body.indexOf("event: history_sync");
-    const replayIndex = response.body.indexOf('data: {"_event_id":42,"type":"intervention_sent"', historySyncIndex);
-    expect(historySyncIndex).toBeGreaterThanOrEqual(0);
-    expect(replayIndex).toBeGreaterThan(historySyncIndex);
-    expect(response.body.match(/event: intervention_sent/g)).toHaveLength(2);
-    await app.close();
-  });
+      expect(response.statusCode).toBe(200);
+      const historySyncIndex = response.body.indexOf("event: history_sync");
+      const replayIndex = response.body.indexOf(`data: ${JSON.stringify(boundary)}`, historySyncIndex);
+      expect(historySyncIndex).toBeGreaterThanOrEqual(0);
+      expect(replayIndex).toBeGreaterThan(historySyncIndex);
+      expect(response.body.match(new RegExp(`event: ${type}`, "g"))).toHaveLength(2);
+      await app.close();
+    },
+  );
 
   it("preserves retryable error payload and event id in the live session SSE frame", async () => {
     let liveListener: ((event: Record<string, unknown>) => void) | undefined;

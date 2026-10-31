@@ -349,29 +349,36 @@ function mergeSorted(
   existing: SessionEvent[],
   fresh: SessionEvent[]
 ): SessionEvent[] {
-  let lifecycleFenceIndex = -1;
-  let lifecycleFenceLiveSeq: number | null = null;
+  const minExistingNumericKey = existing
+    .map(sortKey)
+    .filter((key) => Number.isFinite(key) && key < Number.MAX_SAFE_INTEGER)
+    .reduce<number | null>((minimum, key) => (
+      minimum === null ? key : Math.min(minimum, key)
+    ), null);
+  let cleanupFenceIndex = -1;
+  let cleanupFenceLiveSeq: number | null = null;
   fresh.forEach((event, index) => {
-    const liveSeq = liveTextLifecycleFenceSeq(event);
-    if (liveSeq === null) return;
-    lifecycleFenceIndex = index;
-    lifecycleFenceLiveSeq = liveSeq;
+    if (!isSyntheticLiveTextCleanupTrigger(event)) return;
+    const eventSortKey = sortKey(event);
+    if (
+      minExistingNumericKey !== null
+      && Number.isFinite(eventSortKey)
+      && eventSortKey < minExistingNumericKey
+    ) return;
+    cleanupFenceIndex = index;
+    cleanupFenceLiveSeq = eventLiveSequence(event);
   });
-  const cleanExisting = lifecycleFenceIndex >= 0 && existing.some(isSyntheticLiveTextEvent)
+  const cleanExisting = cleanupFenceIndex >= 0 && existing.some(isSyntheticLiveTextEvent)
     ? existing.filter((event) => !isSyntheticLiveTextEvent(event))
     : existing;
-  const cleanFresh = lifecycleFenceIndex < 0
+  const cleanFresh = cleanupFenceIndex < 0
     ? fresh
     : fresh.filter((event, index) => {
       if (!isSyntheticLiveTextEvent(event)) return true;
-      const liveSeq = typeof event.data?.liveSeq === 'number'
-        && Number.isSafeInteger(event.data.liveSeq)
-        && event.data.liveSeq >= 0
-        ? event.data.liveSeq
-        : null;
-      return liveSeq !== null
-        ? liveSeq > lifecycleFenceLiveSeq!
-        : index > lifecycleFenceIndex;
+      const liveSeq = eventLiveSequence(event);
+      return liveSeq !== null && cleanupFenceLiveSeq !== null
+        ? liveSeq > cleanupFenceLiveSeq
+        : index > cleanupFenceIndex;
     });
   if (cleanFresh.length === 0) return cleanExisting;
   const seenIds = new Set(cleanExisting.map((e) => e.id));
@@ -410,13 +417,18 @@ function isSyntheticLiveTextEvent(event: SessionEvent): boolean {
   return !(typeof eventId === 'number' && Number.isSafeInteger(eventId) && eventId > 0);
 }
 
-function liveTextLifecycleFenceSeq(event: SessionEvent): number | null {
+function isSyntheticLiveTextCleanupTrigger(event: SessionEvent): boolean {
   if (
-    event.type !== 'intervention_sent'
-    && event.type !== 'user_message'
-    && event.type !== 'complete'
-    && event.type !== 'session_ended'
-  ) return null;
+    event.type === 'intervention_sent'
+    || event.type === 'user_message'
+    || event.type === 'complete'
+    || event.type === 'session_ended'
+  ) return true;
+  return event.type === 'assistant_message'
+    && event.data?._final_for_live_stream !== true;
+}
+
+function eventLiveSequence(event: SessionEvent): number | null {
   const value = event.data?.liveSeq;
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
     ? value

@@ -170,14 +170,20 @@ export class RuntimeSessionEventHub {
     if (
       eventType === "intervention_sent" ||
       eventType === "user_message" ||
-      eventType === "complete"
+      eventType === "complete" ||
+      eventType === "session_ended"
     ) {
       const sessionKey = liveTextSessionKey(sessionId);
-      if (!this.hasActiveLiveTextSnapshot(sessionKey)) return event;
+      if (!this.hasActiveLiveTextSnapshot(sessionKey)) {
+        if (eventType === "session_ended") {
+          this.fenceSessionLiveText(sessionKey, event.nodeId);
+        }
+        return event;
+      }
       const liveSeq = this.fenceSessionLiveText(sessionKey, event.nodeId);
       return withLiveSequence(event, liveSeq);
     }
-    if (eventType === "session_ended" || eventType === "session_deleted") {
+    if (eventType === "session_deleted") {
       this.fenceSessionLiveText(liveTextSessionKey(sessionId), event.nodeId);
       return event;
     }
