@@ -188,13 +188,13 @@ export class PersistentSessionSettingsService {
     const defaultModel = this.normalizeModel(PERSISTENT_CREATE_NODE_ID, body.default_model, {
       requireAvailable: false, allowLimitRejected: false, keepEffort: undefined,
     });
-    const fallbackModels = (body.fallback_models ?? []).map((model) => this.normalizeModel(
+    const fallbackModels = body.fallback_models?.map((model) => this.normalizeModel(
       PERSISTENT_CREATE_NODE_ID, model,
       { requireAvailable: false, allowLimitRejected: false, keepEffort: undefined },
     ));
     let initialCandidate: PersistentModelSelection | undefined;
     let initialNodeId = PERSISTENT_CREATE_NODE_ID;
-    for (const candidate of [defaultModel, ...fallbackModels]) {
+    for (const candidate of [defaultModel, ...(fallbackModels ?? [])]) {
       const candidateNodeId = candidate.node_id ?? PERSISTENT_CREATE_NODE_ID;
       try {
         const profileId = body.agent_id;
@@ -229,7 +229,7 @@ export class PersistentSessionSettingsService {
       await this.deps.catalog.renameSession(sessionId, body.display_name);
       await this.sendSettings(sessionId, { enabled: true, settings: {
         default_model: defaultModel,
-        fallback_models: fallbackModels,
+        ...(fallbackModels === undefined ? {} : { fallback_models: fallbackModels }),
       } });
     } catch (error) {
       throw new PersistentSessionApiError(
