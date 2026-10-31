@@ -292,7 +292,6 @@ describe("RuntimeSessionEventHub live text snapshots", () => {
     expect(seen.at(-1)?.data.event).toEqual({
       type: "session_ended",
       status: "interrupted",
-      liveSeq: 2,
     });
     expect(hub.snapshotLiveText("sess-1")).toEqual({
       throughLiveSeq: 2,
@@ -308,7 +307,7 @@ describe("RuntimeSessionEventHub live text snapshots", () => {
     expect(seen.at(-1)?.data.event).toMatchObject({ liveSeq: 3 });
   });
 
-  it.each(["intervention_sent", "user_message", "complete", "session_ended"] as const)(
+  it.each(["intervention_sent", "user_message", "complete"] as const)(
     "fences retained live text and sequences the %s boundary",
     (type) => {
       const hub = new RuntimeSessionEventHub();

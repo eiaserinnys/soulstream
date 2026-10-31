@@ -172,20 +172,14 @@ export class RuntimeSessionEventHub {
       eventType === "user_message" ||
       eventType === "complete"
     ) {
-      const liveSeq = this.fenceSessionLiveText(
-        liveTextSessionKey(sessionId),
-        event.nodeId,
-      );
+      const sessionKey = liveTextSessionKey(sessionId);
+      if (!this.hasActiveLiveTextSnapshot(sessionKey)) return event;
+      const liveSeq = this.fenceSessionLiveText(sessionKey, event.nodeId);
       return withLiveSequence(event, liveSeq);
     }
     if (eventType === "session_ended" || eventType === "session_deleted") {
-      const liveSeq = this.fenceSessionLiveText(
-        liveTextSessionKey(sessionId),
-        event.nodeId,
-      );
-      return eventType === "session_ended"
-        ? withLiveSequence(event, liveSeq)
-        : event;
+      this.fenceSessionLiveText(liveTextSessionKey(sessionId), event.nodeId);
+      return event;
     }
     if (!isLiveTextEvent(eventType, payload)) return event;
     const stream = liveTextIdentity(payload);
@@ -334,6 +328,11 @@ export class RuntimeSessionEventHub {
     sequence.throughSeq = liveSeq;
     this.touchSequence(sessionKey, sequence);
     return liveSeq;
+  }
+
+  private hasActiveLiveTextSnapshot(sessionKey: string): boolean {
+    return (this.liveTextBySession.get(sessionKey)?.streams.size ?? 0) > 0 ||
+      (this.liveSequenceBySession.get(sessionKey)?.resetStreams.size ?? 0) > 0;
   }
 
   private nextLiveSequence(sessionKey: string, nodeId?: string): number {
