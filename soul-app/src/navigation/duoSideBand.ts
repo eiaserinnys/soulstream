@@ -3,7 +3,7 @@ import { Platform } from 'react-native';
 import { useSafeAreaInsets, type EdgeInsets } from 'react-native-safe-area-context';
 import { DuoSideBandContext, RAIL_MIN_INSET_WIDTH } from './tabContract';
 
-export const DUO_RAIL_END_INSET = 20;
+export const DUO_RAIL_END_INSET = 12;
 
 export function getDuoRailTopOffset(windowWidth: number, windowHeight: number): number {
   return windowWidth > windowHeight ? (windowWidth >= 800 ? 200 : 114) : 228;
