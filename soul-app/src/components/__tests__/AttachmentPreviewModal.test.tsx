@@ -109,7 +109,11 @@ test('Markdown preview renders through PlannerMarkdownText in the document frame
     markdown,
     readContext: { type: 'card', id: 'card-1' },
   });
-  expect(screen.getByTestId('planner-markdown-rendered').props.markdown).toBe(markdown);
+  const renderedMarkdown = screen.getAllByTestId('planner-markdown-rendered').map(node => node.props.markdown);
+  expect(renderedMarkdown.some(part => part.includes('# Argon 톤 제안'))).toBe(true);
+  expect(renderedMarkdown.some(part => part.startsWith('```ts'))).toBe(true);
+  expect(renderedMarkdown.some(part => part.includes('[원문](https://example.com/argon-tone)'))).toBe(true);
+  expect(screen.getByTestId('codeblock-copy-button-0')).toBeTruthy();
   expect(screen.queryByTestId('attachment-preview-text')).toBeNull();
   const preview = screen.getByTestId('attachment-preview-markdown');
   expect(StyleSheet.flatten(preview.props.style).flex).toBe(1);

@@ -15,7 +15,7 @@ import {
 import { chatImageSource } from '../../lib/chat-image-source';
 import { segmentCardReportImages, type CardReportSegment } from '../../lib/card-report-images';
 import { ChatRefinedImageGallery, getChatAttachmentFilename, useChatImageMetadata } from '../AttachmentImage';
-import { createSessionVisualRoles, DESIGN_HIT_TARGET, useTokens } from '../../theme';
+import { DESIGN_HIT_TARGET, useTokens } from '../../theme';
 import { segmentMarkdownBlockquotes, type MarkdownBlockSegment } from './blockquoteCopyModel';
 
 const COPY_FEEDBACK_MS = 1600;
@@ -39,8 +39,6 @@ export function CopyableAssistantMarkdown({
   serverUrl = '',
   jwt = null,
 }: Props) {
-  const t = useTokens();
-  const styles = useMemo(() => makeStyles(), []);
   const segments = useMemo(
     () => presentation === 'manuscript' && serverUrl
       ? parseAssistantMarkdownImages(markdown)
@@ -56,6 +54,7 @@ export function CopyableAssistantMarkdown({
   )), [segments, serverUrl, jwt]);
   const galleryImagesWithMetadata = useChatImageMetadata(galleryImages, serverUrl);
   let quoteIndex = 0;
+  let codeBlockIndex = 0;
   let imageIndex = 0;
 
   return (
@@ -72,8 +71,22 @@ export function CopyableAssistantMarkdown({
               plainText={segment.plainText}
               markdownStyle={markdownStyle}
               onLinkPress={onLinkPress}
-              iconColor={t.colors.textMuted}
-              styles={styles}
+            />
+          );
+        }
+
+        if (segment.kind === 'codeBlock') {
+          const currentCodeBlockIndex = codeBlockIndex;
+          codeBlockIndex += 1;
+          return (
+            <CopyableCodeBlock
+              key={`codeblock-${segmentIndex}`}
+              index={currentCodeBlockIndex}
+              markdown={segment.markdown}
+              copyText={segment.copyText}
+              markdownStyle={markdownStyle}
+              onLinkPress={onLinkPress}
+              selectable={false}
             />
           );
         }
@@ -116,7 +129,7 @@ export type AssistantMarkdownImagePart =
 export function parseAssistantMarkdownImages(markdown: string): AssistantMarkdownImagePart[] {
   const parts: AssistantMarkdownImagePart[] = [];
   for (const block of segmentMarkdownBlockquotes(markdown)) {
-    if (block.kind === 'blockquote') {
+    if (block.kind === 'blockquote' || block.kind === 'codeBlock') {
       parts.push(block);
       continue;
     }
@@ -153,23 +166,21 @@ function appendMarkdownImageRuns(
   flushImages(false);
 }
 
-function CopyableBlockquote({
+export function CopyableBlockquote({
   index,
   markdown,
   plainText,
   markdownStyle,
   onLinkPress,
-  iconColor,
-  styles,
 }: {
   index: number;
   markdown: string;
   plainText: string;
   markdownStyle: MarkdownStyle;
   onLinkPress?: Props['onLinkPress'];
-  iconColor: string;
-  styles: ReturnType<typeof makeStyles>;
 }) {
+  const t = useTokens();
+  const styles = useMemo(() => makeStyles(), []);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [copyState, setCopyState] = useState<CopyState>('idle');
 
@@ -224,14 +235,119 @@ function CopyableBlockquote({
           testID={`blockquote-copy-icon-${index}`}
           name={copyState === 'success' ? 'checkmark' : 'copy-outline'}
           size={COPY_ICON_SIZE}
-          color={iconColor}
+          color={t.colors.textMuted}
           style={styles.copyIcon}
         />
       </Pressable>
       <Text
         testID={`blockquote-copy-feedback-${index}`}
         accessibilityLiveRegion="polite"
-        style={styles.feedback}
+        style={styles.srOnly}
+      >
+        {feedback}
+      </Text>
+    </View>
+  );
+}
+
+export function CopyableCodeBlock({
+  index,
+  markdown,
+  copyText,
+  markdownStyle,
+  onLinkPress,
+  selectable = true,
+}: {
+  index: number;
+  markdown: string;
+  copyText: string;
+  markdownStyle: MarkdownStyle;
+  onLinkPress?: Props['onLinkPress'];
+  selectable?: boolean;
+}) {
+  const t = useTokens();
+  const styles = useMemo(() => makeStyles(), []);
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [copyState, setCopyState] = useState<CopyState>('idle');
+
+  useEffect(() => () => {
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+  }, []);
+
+  const copyCode = async () => {
+    let feedback: string;
+    try {
+      await Clipboard.setStringAsync(copyText);
+      setCopyState('success');
+      feedback = '코드를 복사했습니다';
+    } catch {
+      setCopyState('error');
+      feedback = '코드를 복사하지 못했습니다';
+    }
+    AccessibilityInfo.announceForAccessibility(feedback);
+
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = setTimeout(() => {
+      setCopyState('idle');
+      resetTimerRef.current = null;
+    }, COPY_FEEDBACK_MS);
+  };
+
+  const feedback = copyState === 'success'
+    ? '코드를 복사했습니다'
+    : copyState === 'error'
+      ? '코드를 복사하지 못했습니다'
+      : '';
+
+  return (
+    <View
+      testID={`codeblock-copy-frame-${index}`}
+      style={[
+        styles.codeFrame,
+        {
+          backgroundColor: markdownStyle?.codeBlock?.backgroundColor ?? t.colors.surfaceCode,
+          borderRadius: markdownStyle?.codeBlock?.borderRadius ?? t.radius.sm,
+          marginTop: markdownStyle?.codeBlock?.marginTop,
+          marginBottom: markdownStyle?.codeBlock?.marginBottom,
+        },
+      ]}
+    >
+      <EnrichedMarkdownText
+        testID={`codeblock-markdown-${index}`}
+        markdown={markdown}
+        flavor="github"
+        markdownStyle={{
+          ...markdownStyle,
+          codeBlock: {
+            ...markdownStyle?.codeBlock,
+            marginTop: 0,
+            marginBottom: 0,
+          },
+        }}
+        containerStyle={styles.codeContent}
+        selectable={selectable}
+        onLinkPress={onLinkPress}
+      />
+      <Pressable
+        testID={`codeblock-copy-button-${index}`}
+        accessibilityRole="button"
+        accessibilityLabel="코드 복사"
+        accessibilityState={{ busy: false }}
+        onPress={() => void copyCode()}
+        style={styles.copyButton}
+      >
+        <Ionicons
+          testID={`codeblock-copy-icon-${index}`}
+          name={copyState === 'success' ? 'checkmark' : 'copy-outline'}
+          size={COPY_ICON_SIZE}
+          color={copyState === 'success' ? t.colors.statusCompleted : t.colors.textMuted}
+          style={styles.copyIcon}
+        />
+      </Pressable>
+      <Text
+        testID={`codeblock-copy-feedback-${index}`}
+        accessibilityLiveRegion="polite"
+        style={styles.srOnly}
       >
         {feedback}
       </Text>
@@ -241,6 +357,14 @@ function CopyableBlockquote({
 
 function makeStyles() {
   return StyleSheet.create({
+    codeFrame: {
+      position: 'relative',
+      minHeight: DESIGN_HIT_TARGET.min,
+      justifyContent: 'center',
+    },
+    codeContent: {
+      paddingRight: DESIGN_HIT_TARGET.min,
+    },
     quoteFrame: {
       position: 'relative',
     },
@@ -259,7 +383,7 @@ function makeStyles() {
     copyIcon: {
       opacity: 0.75,
     },
-    feedback: {
+    srOnly: {
       position: 'absolute',
       width: 1,
       height: 1,

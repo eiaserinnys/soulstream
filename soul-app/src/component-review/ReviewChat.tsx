@@ -330,7 +330,7 @@ export function ReviewChat() {
   const sample = typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('sample')
     : null;
-  const markdown = '**공개 예시 답변**\n\n> 핵심 내용을 인용문으로 표시합니다.\n\n- 본문 크기와 줄 간격\n- `코드`와 **강조**\n\n[공개 문서](https://expo.dev)';
+  const markdown = '**공개 예시 답변**\n\n> 핵심 내용을 인용문으로 표시합니다.\n\n- 본문 크기와 줄 간격\n- `코드`와 **강조**\n\n```ts\nconst answer = "코드 블록 복사";\n```\n\n[공개 문서](https://expo.dev)';
   const finalReply = '조사 결과를 확인했습니다. 다음 단계에서 수정 내용을 검증하겠습니다.';
   if (sample === 'pas-images') return <ReviewChatPasImageSample />;
   return <>
