@@ -156,6 +156,7 @@ function stripOpeningIndent(line: string, indent: number): string {
 function readFence(line: string): (Fence & { suffix: string }) | null {
   const match = FENCE_LINE.exec(line);
   if (!match) return null;
+  if (match[1][0] === '`' && match[2].includes('`')) return null;
   return {
     marker: match[1][0] as Fence['marker'],
     length: match[1].length,

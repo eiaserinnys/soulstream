@@ -90,6 +90,13 @@ describe('segmentMarkdownBlockquotes', () => {
       ]);
   });
 
+  test('info string에 백틱이 들어간 한 줄 인라인 코드는 펜스로 오판하지 않는다', () => {
+    const markdown = '```inline```';
+    expect(segmentMarkdownBlockquotes(markdown)).toEqual([
+      { kind: 'markdown', markdown },
+    ]);
+  });
+
   test('최상위 코드와 인용 내부 코드를 서로 다른 복사 구간으로 섞지 않는다', () => {
     expect(segmentMarkdownBlockquotes(['```', '> 인용 문장', '```', '', '> ```', '> 인용 코드', '> ```'].join('\n')))
       .toEqual([

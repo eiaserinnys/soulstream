@@ -33,6 +33,8 @@ const markdownStyle = {
   codeBlock: {
     backgroundColor: '#222222',
     borderRadius: 6,
+    marginTop: 12,
+    marginBottom: 16,
   },
 };
 
@@ -130,13 +132,17 @@ describe('CopyableAssistantMarkdown', () => {
       expect(frameStyle).toMatchObject({
         backgroundColor: '#222222',
         borderRadius: 6,
+        marginTop: 12,
+        marginBottom: 16,
         minHeight: 44,
         justifyContent: 'center',
       });
       expect(StyleSheet.flatten(content.props.containerStyle).paddingRight).toBe(44);
+      expect(content.props.markdownStyle.codeBlock).toMatchObject({ marginTop: 0, marginBottom: 0 });
       expect(buttonStyle).toMatchObject({ position: 'absolute', top: 0, right: 0, width: 44, height: 44 });
       expect(button.props.accessibilityLabel).toBe('코드 복사');
       expect(button.props.accessibilityState).toEqual({ busy: false });
+      expect(StyleSheet.flatten(getByTestId(`codeblock-copy-icon-${index}`).props.style).opacity).toBe(0.75);
     }
   });
 

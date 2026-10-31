@@ -307,6 +307,8 @@ export function CopyableCodeBlock({
         {
           backgroundColor: markdownStyle?.codeBlock?.backgroundColor ?? t.colors.surfaceCode,
           borderRadius: markdownStyle?.codeBlock?.borderRadius ?? t.radius.sm,
+          marginTop: markdownStyle?.codeBlock?.marginTop,
+          marginBottom: markdownStyle?.codeBlock?.marginBottom,
         },
       ]}
     >
@@ -314,7 +316,14 @@ export function CopyableCodeBlock({
         testID={`codeblock-markdown-${index}`}
         markdown={markdown}
         flavor="github"
-        markdownStyle={markdownStyle}
+        markdownStyle={{
+          ...markdownStyle,
+          codeBlock: {
+            ...markdownStyle?.codeBlock,
+            marginTop: 0,
+            marginBottom: 0,
+          },
+        }}
         containerStyle={styles.codeContent}
         selectable={selectable}
         onLinkPress={onLinkPress}
@@ -332,6 +341,7 @@ export function CopyableCodeBlock({
           name={copyState === 'success' ? 'checkmark' : 'copy-outline'}
           size={COPY_ICON_SIZE}
           color={copyState === 'success' ? t.colors.statusCompleted : t.colors.textMuted}
+          style={styles.copyIcon}
         />
       </Pressable>
       <Text
