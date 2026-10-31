@@ -17,6 +17,10 @@ import { CardCreateSheet } from './CardCreateSheet';
 import type { BoardPosition } from '../../lib/card-board-layout';
 import { useUIStore } from '../../store/uiStore';
 import { FolderWorkspaceReadOverlay } from './FolderWorkspaceReadOverlay';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useDuoSideBand } from '../../navigation/duoSideBand';
+import { useRegisterDuoRailOverride } from '../../navigation/phoneRailActions';
+import { DuoRailOverride } from '../navigation/DuoRailOverride';
 
 export interface FolderCardDisplay { includeCompleted: boolean; onChange(value: boolean): void; }
 export interface CardBoardWorkspaceHandle { openCreate(): void; openExpanded(): void; }
@@ -26,6 +30,8 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
   api: ApiClient | null; folderId?: string; cardDisplay: FolderCardDisplay; onOpen(id: string): void; externalHeader?: boolean; reserveHomeComposerSpace?: boolean; onExpandedClose?(): void;
 }>(function CardBoardWorkspace({ api, folderId, cardDisplay, onOpen, externalHeader = false, reserveHomeComposerSpace = false, onExpandedClose }, ref) {
   const t = useTokens();
+  const duo = useDuoSideBand();
+  const insets = useSafeAreaInsets();
   const phone = useDeviceType() === 'phone';
   const { cards, loading, error, refresh } = useCardList(api, folderId);
   const completed=useCompletedCards(api,folderId,cardDisplay.includeCompleted);
@@ -58,6 +64,11 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
   useImperativeHandle(ref, () => ({ openCreate: () => setAdding(true),
     openExpanded: () => setExpanded({ ...position.current, lanes: { ...position.current.lanes } }) }), []);
   const closeExpanded = () => { setExpanded(null); onExpandedClose?.(); };
+  useRegisterDuoRailOverride('expanded-board', duo && !!expanded, [
+    { id: 'create', label: '드래프트 카드 추가', icon: 'add-outline', onPress: () => setAdding(true) },
+    { id: 'completed', label: '완료·취소 숨김', icon: cardDisplay.includeCompleted ? 'eye-outline' : 'eye-off-outline', selected: !cardDisplay.includeCompleted, onPress: () => cardDisplay.onChange(!cardDisplay.includeCompleted) },
+    { id: 'close', label: '보드 확대 닫기', icon: 'close-outline', onPress: closeExpanded },
+  ]);
   const completedCount = completed.cards.length;
   const board = (initialPosition: BoardPosition = position.current, expandedBoard = false) => <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} phone={expandedBoard ? phone : true} completed={completed}
     reserveHomeComposerSpace={!expandedBoard && reserveHomeComposerSpace}
@@ -71,14 +82,14 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
     }} />;
   const heading = (expandedBoard = false) => <View style={{ paddingHorizontal: expandedBoard && !phone ? 0 : t.cardLayout.padding, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: t.uiSpacing.sm }}>
     <View style={{ flexGrow: 1 }}><PlannerSectionHeader title={folderId ? '현재 폴더 · 카드' : '전체 · 카드'} /></View>
-    <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} testID="card-board-create"
+    {!(duo && expandedBoard) ? <><LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} testID="card-board-create"
       surfaceTestID="card-board-create-visual" accessibilityLabel="드래프트 카드 추가" onPress={() => setAdding(true)}>
       <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
     </LiquidGlassButton>
     <CompletedCardsToggle includeCompleted={cardDisplay.includeCompleted} completedCount={completedCount} onChange={cardDisplay.onChange} />
     {!phone ? <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} accessibilityLabel={expanded ? '보드 확대 닫기' : '보드 확대'} onPress={() => expanded ? closeExpanded() : setExpanded({ ...position.current, lanes: { ...position.current.lanes } })}>
       <Ionicons name={expanded ? 'close-outline' : 'expand-outline'} size={t.iconSize.standard} color={t.colors.textPrimary} />
-    </LiquidGlassButton> : null}
+    </LiquidGlassButton> : null}</> : null}
   </View>;
   return <View testID="card-board-workspace" style={{ flex: 1, position: 'relative', paddingHorizontal: 0, paddingTop: t.uiSpacing.sm, paddingBottom: t.cardLayout.padding, gap: t.uiSpacing.md }}>
     {externalHeader ? null : heading()}
@@ -89,7 +100,7 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
     {board()}
     {loading && !expanded ? <AutomaticRefreshIndicator testID="card-board-auto-progress" style={{ top: 0, right: 0 }} /> : null}
     {adding ? <CardCreateSheet api={api} folderId={folderId} onClose={() => setAdding(false)} /> : null}
-    {expanded ? <AppModalSurface visible modalId="modal_card_detail" {...(phone
+    {expanded ? <AppModalSurface visible modalId="modal_card_detail" sideBand={duo ? <DuoRailOverride /> : undefined} sideBandWidth={duo ? insets.right : 0} {...(phone
       ? { variant: 'expanded' as const, presentationStyle: 'pageSheet' as const }
       : { variant: 'board' as const })} onRequestClose={() => {
       if (useUIStore.getState().folderOverlayVisible) useUIStore.getState().closeFolderOverlay();

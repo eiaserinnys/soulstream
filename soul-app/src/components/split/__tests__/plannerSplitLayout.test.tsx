@@ -12,6 +12,8 @@ import { TwoPaneWithDrawer } from '../TwoPaneWithDrawer';
 import { TabletSafeAreaFrame } from '../TabletSafeAreaFrame';
 import { useUIStore } from '../../../store/uiStore';
 import { useSearchStore } from '../../../store/searchStore';
+import { DuoSideBandContext } from '../../../navigation/tabContract';
+import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
 
 const mockOpenPlannerSessionWorkspace = jest.fn();
 const mockOpenFeedSessionCardWorkspace = jest.fn();
@@ -73,6 +75,29 @@ describe('iPad v3 planner shell', () => {
 
   afterEach(() => {
     jest.restoreAllMocks();
+  });
+
+  it('듀오 띠는 보드 행동과 검색을 노출하고 프로젝트 기존 보기와 겹창에 맞춰 바뀐다', async () => {
+    useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-31' }, mainPaneViews: {} });
+    const screen = render(<ThemeProvider value={DefaultTheme}><DuoSideBandContext.Provider value={true}><TwoPaneWithDrawer /></DuoSideBandContext.Provider></ThemeProvider>);
+    expect(screen.getByTestId('duo-main-create')).toBeTruthy();
+    expect(screen.getByTestId('duo-main-expand')).toBeTruthy();
+    expect(screen.getByTestId('duo-main-completed').props.accessibilityState.selected).toBe(true);
+    fireEvent.press(screen.getByTestId('duo-main-completed'));
+    expect(screen.getByTestId('duo-main-completed').props.accessibilityState.selected).toBe(false);
+    fireEvent.press(screen.getByLabelText('세션 검색'));
+    expect(screen.getByLabelText('검색 닫기').props.accessibilityState.selected).toBe(true);
+    expect(screen.queryByTestId('tablet-feed-header')).toBeNull();
+    fireEvent.press(screen.getByLabelText('검색 닫기'));
+    expect(useSearchStore.getState().tabletActive).toBe(false);
+    await act(async () => { useUIStore.setState({ activeSection: { kind: 'project', folderId: 'folder-1', projectPageId: 'page-1' } }); });
+    expect(screen.queryByTestId('duo-main-create')).toBeNull();
+    expect(screen.getByTestId('duo-main-menu')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('duo-main-view'));
+    expect(useUIStore.getState().mainPaneViews['folder-1']).toBe('board');
+    expect(screen.getByTestId('duo-main-create')).toBeTruthy();
+    await act(async () => { useUIStore.setState({ folderOverlayVisible: true }); });
+    expect(screen.getByTestId('duo-main-band-capsule')).toBeTruthy();
   });
 
   it('가로는 좌 내비·중앙 플래너·우 세션의 3열과 업무 오버레이를 공유한다', () => {

@@ -38,6 +38,8 @@ import { PlannerForegroundCard } from './PlannerForegroundCard';
 import { PlannerSectionHeader } from './PlannerSectionHeader';
 import { folderPage, folderWorkspaceSummary } from './folderWorkspaceModel';
 import type { FolderCardDisplay } from './CardBoardWorkspace';
+import { useDuoSideBand } from '../../navigation/duoSideBand';
+import { useRegisterDuoRailOverride, type PhoneRailAction } from '../../navigation/phoneRailActions';
 
 // Existing workspace exceeds 500 lines; this change only forwards the iPad board's controlled view option.
 // Splitting unrelated title/description save lifecycles belongs to a separate change.
@@ -65,6 +67,7 @@ export function FolderWorkspace({
 }) {
   const t = useTokens();
   const tablet = useDeviceType() !== 'phone';
+  const duo = useDuoSideBand();
   const styles = useMemo(() => makeFolderWorkspaceStyles(t), [t]);
   const selector = useMemo(() => selectPlannerFolder(folderPageId), [folderPageId]);
   const storedFolderSummary = usePlannerStore(selector);
@@ -131,6 +134,27 @@ export function FolderWorkspace({
   const [editingPhoneTitle, setEditingPhoneTitle] = useState(false);
   const [successionId, setSuccessionId] = useState<string | null | undefined>(undefined);
   const [newFolderDraft, setNewFolderDraft] = useState<{ parentPageId: string } | null>(null);
+  const togglePending = useRef(false);
+  const runRailToggle = async (kind: 'starred' | 'today') => {
+    if (!folderSummary || togglePending.current) return;
+    togglePending.current = true;
+    try {
+      if (kind === 'starred') await actions.setFolderStarred(folderSummary, folderSummary.page.metadata.starred !== true);
+      else if (folderInToday !== undefined) await actions.setFolderToday(folderSummary, today, !folderInToday);
+    } catch (error) {
+      Alert.alert(kind === 'starred' ? '중요 폴더를 변경하지 못했습니다.' : '오늘 데일리를 변경하지 못했습니다.', errorText(error));
+    } finally { togglePending.current = false; }
+  };
+  const railActions: PhoneRailAction[] = [
+    { id: 'back', label: tablet ? '폴더 패널 닫기' : '뒤로', icon: tablet ? 'close' : 'chevron-back',
+      onPress: () => coordinateFolderWorkspaceClose(folderSummary?.page.id ?? folderPageId, onClose) },
+    ...(folderSummary && folder?.id !== 'claude' && folder?.id !== 'llm' ? [
+      { id: 'starred', label: '중요 폴더', icon: (folderSummary.page.metadata.starred ? 'star' : 'star-outline') as PhoneRailAction['icon'], selected: folderSummary.page.metadata.starred === true, disabled: !scopedApi, onPress: () => { void runRailToggle('starred'); } },
+      { id: 'today', label: '오늘 데일리', icon: (folderInToday ? 'sunny' : 'sunny-outline') as PhoneRailAction['icon'], selected: folderInToday === true, disabled: !scopedApi || !todayReady, onPress: () => { void runRailToggle('today'); } },
+    ] : []),
+    ...(folder?.projectPageId ? [{ id: 'menu', label: '폴더 메뉴', icon: 'ellipsis-horizontal' as const, onPress: () => menus.openProjectMenu({ folder, projectPageId: folder.projectPageId!, onOpen: () => undefined, onCreateFolder: () => setNewFolderDraft({ parentPageId: folder.projectPageId! }) }) }] : []),
+  ];
+  useRegisterDuoRailOverride(`folder-${folderPageId}`, duo && active, railActions);
 
   useEffect(() => {
     mounted.current = true;
@@ -403,8 +427,8 @@ export function FolderWorkspace({
             accessibilityLabel="폴더 제목"
             style={styles.tabletTitle}
           />
-          {toggleActions}
-          {onClose ? (
+          {!duo ? toggleActions : null}
+          {!duo && onClose ? (
             <TouchableOpacity
               testID="task-workspace-close"
               accessibilityLabel="폴더 패널 닫기"
@@ -420,6 +444,7 @@ export function FolderWorkspace({
         contentContainerStyle={styles.content}
         header={<>
         {pageDetail.error ? <Text style={styles.error}>{pageDetail.error}</Text> : null}
+        {duo && !tablet ? <Text testID="task-workspace-phone-title" style={styles.title} numberOfLines={3}>{visibleTitle}</Text> : null}
         <FolderWorkspaceDetails
           api={api}
           folderSummary={folderSummary}
@@ -435,7 +460,7 @@ export function FolderWorkspace({
             });
           }}
         />
-        {!tablet ? (
+        {!tablet && !duo ? (
           <View style={styles.topActions}>{toggleActions}</View>
         ) : null}
         {!tablet && editingPhoneTitle ? (

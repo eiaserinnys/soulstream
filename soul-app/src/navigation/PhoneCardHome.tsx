@@ -1,4 +1,4 @@
-import React, { useLayoutEffect, useRef } from 'react';
+import React, { useLayoutEffect, useMemo, useRef } from 'react';
 import { View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { DailyStackParamList } from './TabNavigator';
@@ -10,12 +10,22 @@ import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { CardBoardWorkspaceHandle } from '../components/planner/CardBoardWorkspace';
 import { openPhoneChat } from './phoneSessionNavigation';
+import { useDuoSideBand } from './duoSideBand';
+import { useRegisterPhoneRailActions, type PhoneRailAction } from './phoneRailActions';
+import { DuoSafeTop } from './DuoSafeTop';
 
 /** Home actions use the existing native root header slots. */
 export function PhoneCardHome({ navigation }: NativeStackScreenProps<DailyStackParamList, 'Daily'>) {
   const t = useTokens();
   const boardRef = useRef<CardBoardWorkspaceHandle>(null);
   const cardDisplay = useCardDisplay();
+  const duo = useDuoSideBand();
+  const railActions = useMemo<PhoneRailAction[]>(() => [
+    { id: 'create', label: '드래프트 카드 추가', icon: 'add-outline', onPress: () => boardRef.current?.openCreate() },
+    { id: 'completed', label: '완료·취소 숨김', icon: cardDisplay.includeCompleted ? 'eye-outline' : 'eye-off-outline',
+      selected: !cardDisplay.includeCompleted, onPress: () => cardDisplay.onChange(!cardDisplay.includeCompleted) },
+  ], [cardDisplay.includeCompleted, cardDisplay.onChange]);
+  useRegisterPhoneRailActions('DailyTab', duo, railActions);
   useLayoutEffect(() => { navigation.setOptions({
     headerTitleAlign: 'left',
     headerLeft: () => null,
@@ -27,6 +37,6 @@ export function PhoneCardHome({ navigation }: NativeStackScreenProps<DailyStackP
       <CompletedCardsToggle {...cardDisplay} />
     </View>,
   }); }, [navigation, t, cardDisplay.includeCompleted, cardDisplay.onChange]);
-  return <CardHomeScreen ref={boardRef} externalHeader cardDisplay={cardDisplay} onOpen={(cardId) => navigation.navigate('CardDetail', { cardId })}
-    onSessionCreated={id => { openPhoneChat(navigation, id); }} />;
+  return <DuoSafeTop><CardHomeScreen ref={boardRef} externalHeader cardDisplay={cardDisplay} onOpen={(cardId) => navigation.navigate('CardDetail', { cardId })}
+    onSessionCreated={id => { openPhoneChat(navigation, id); }} /></DuoSafeTop>;
 }

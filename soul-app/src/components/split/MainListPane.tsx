@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -28,29 +28,37 @@ import { useAuthScopeGeneration } from '../../lib/auth-scope';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
 import { TabletPersistentEntry } from '../../navigation/TabletPersistentEntry';
 import { GroupedGlassRow, GroupedGlassSheet } from '../planner/GroupedGlassSheet';
+import { useDuoSideBand } from '../../navigation/duoSideBand';
 
 /** 이 폭 미만이면 보드 헤더 액션을 오버플로 메뉴로 접는다. */
 export const MAIN_LIST_HEADER_OVERFLOW_MAX_WIDTH = 380;
 
-export function MainListPane({
-  onMenuPress,
-  topInsetPadding = false,
-  showSearch = false,
-  paneWidth,
-}: {
+export type MainListPaneHandle = { openCreate(): void; openExpanded(): void };
+
+export const MainListPane = forwardRef<MainListPaneHandle, {
   onMenuPress?: () => void;
   topInsetPadding?: boolean;
   showSearch?: boolean;
   paneWidth?: number;
-}) {
+}>(function MainListPane({
+  onMenuPress,
+  topInsetPadding = false,
+  showSearch = false,
+  paneWidth,
+}, ref) {
   const t = useTokens();
   const c = t.colors;
   const styles = useMemo(() => makeStyles(t), [t]);
   const dailyRef = useRef<DailyPlannerScreenHandle>(null);
   const boardRef = useRef<CardBoardWorkspaceHandle>(null);
+  useImperativeHandle(ref, () => ({
+    openCreate: () => boardRef.current?.openCreate(),
+    openExpanded: () => boardRef.current?.openExpanded(),
+  }), []);
+  const duo = useDuoSideBand();
   const insets = useSafeAreaInsets();
   const activeSection = useUIStore((state) => state.activeSection);
-  const effectiveShowSearch = showSearch && activeSection.kind !== 'daily';
+  const effectiveShowSearch = !duo && showSearch && activeSection.kind !== 'daily';
   const views = useUIStore(state => state.mainPaneViews);
   const setMainPaneView = useUIStore(state => state.setMainPaneView);
   const scope = useAuthScopeGeneration();
@@ -62,9 +70,10 @@ export function MainListPane({
     ...Object.fromEntries(Object.entries(views).filter(([, view]) => view === 'board').map(([key]) => [key, true])),
   }));
   const setView = (value: 'existing' | 'board') => { setMainPaneView(viewKey, value); if (value === 'board') setVisited((old) => ({ ...old, [viewKey]: true })); };
+  useEffect(() => { if (view === 'board') setVisited(old => old[viewKey] ? old : { ...old, [viewKey]: true }); }, [view, viewKey]);
   const folderId = activeSection.kind === 'project' ? activeSection.folderId : undefined;
   const cardDisplay = useCardDisplay(folderId);
-  const compactHeader = paneWidth !== undefined && paneWidth < MAIN_LIST_HEADER_OVERFLOW_MAX_WIDTH;
+  const compactHeader = !duo && paneWidth !== undefined && paneWidth < MAIN_LIST_HEADER_OVERFLOW_MAX_WIDTH;
   const [overflowOpen, setOverflowOpen] = useState(false);
   const setActiveSection = useUIStore((state) => state.setActiveSection);
   const folders = useSessionStore((state) => state.catalog.folders);
@@ -83,7 +92,7 @@ export function MainListPane({
   }, [searchFocusRequestId, effectiveShowSearch]);
   return (
     <View style={styles.container}>
-      <TabletPaneHeader
+      {!duo ? <TabletPaneHeader
         testID="tablet-main-header"
         style={topInsetPadding && {
           paddingTop: t.tabletShell.header.paddingVertical + insets.top,
@@ -146,8 +155,8 @@ export function MainListPane({
         ) : null}
         <TabletPersistentEntry />
         </View>
-      </TabletPaneHeader>
-      {!effectiveShowSearch && activeSection.kind === 'project' ? <View style={{ paddingHorizontal: t.tabletShell.header.paddingHorizontal, paddingBottom: t.uiSpacing.sm }}>
+      </TabletPaneHeader> : null}
+      {!duo && !effectiveShowSearch && activeSection.kind === 'project' ? <View style={{ paddingHorizontal: t.tabletShell.header.paddingHorizontal, paddingBottom: t.uiSpacing.sm }}>
         <SettingsSegmentedControl<'existing' | 'board'> id="tablet-card-view" value={view} onChange={setView}
           options={[{ value: 'existing', label: '기존 보기' }, { value: 'board', label: '카드 보드' }]} />
       </View> : null}
@@ -272,7 +281,7 @@ export function MainListPane({
       ) : null}
     </View>
   );
-}
+});
 
 function makeStyles(t: DesignTokens) {
   return StyleSheet.create({

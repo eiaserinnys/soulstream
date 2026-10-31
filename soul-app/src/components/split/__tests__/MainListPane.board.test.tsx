@@ -6,7 +6,7 @@ jest.mock('../../planner/FolderWorkspace', () => ({ FolderWorkspace: (props: any
 } }));
 jest.mock('../../../screens/DailyPlannerScreen', () => ({ DailyPlannerScreen: () => require('react').createElement(require('react-native').Text, null, '기존 데일리') }));
 jest.mock('../../planner/DailyHeaderActions', () => ({ DailyHeaderActions: () => null }));
-jest.mock('../../../api/client', () => ({ createApiClient: () => ({ listCards: mockList, listCompletedCards: mockCompleted }) }));
+jest.mock('../../../api/client', () => ({ createApiClient: () => ({ listCards: mockList, listCompletedCards: mockCompleted, listNodes: async () => ({ nodes: [] }) }) }));
 jest.mock('../../planner/CardDetailSheet', () => ({ CardDetailSheet: () => null }));
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
@@ -15,8 +15,18 @@ import { useUIStore } from '../../../store/uiStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { useCardStore } from '../../../store/cardStore';
 import { cardFixture } from '../../../test-support/cards';
+import { DuoSideBandContext } from '../../../navigation/tabContract';
 const mockList = jest.fn();
 const mockCompleted=jest.fn();
+
+test('듀오 프로젝트에서는 본문 탭 없이 레일의 보기 변경을 반영한다', async () => {
+  useUIStore.setState({ activeSection: { kind: 'project', folderId: 'folder-1', projectPageId: 'page-1' }, mainPaneViews: {} });
+  const screen = render(<DuoSideBandContext.Provider value={true}><MainListPane showSearch paneWidth={333} /></DuoSideBandContext.Provider>);
+  expect(screen.queryByTestId('tablet-main-header')).toBeNull();
+  expect(screen.queryByLabelText('카드 보드')).toBeNull();
+  await act(async () => useUIStore.getState().setMainPaneView('folder-1', 'board'));
+  await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
+});
 
 beforeEach(() => {
   useUIStore.setState({ mainPaneViews: { global: 'board' }, floatingComposerBottomInset: 0 });
@@ -42,7 +52,7 @@ test('카드 홈은 저장된 데일리 선택을 무시하고 전체 보드와 
   expect(screen.queryByLabelText('카드 보드')).toBeNull();
   expect(screen.getByLabelText('보드 확대')).toBeTruthy();
   expect(screen.getAllByLabelText('드래프트 카드 추가')).toHaveLength(1);
-  fireEvent.press(screen.getByLabelText('드래프트 카드 추가'));
+  await act(async () => fireEvent.press(screen.getByLabelText('드래프트 카드 추가')));
   expect(screen.getByLabelText('카드 제목')).toBeTruthy();
 
 });

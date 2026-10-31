@@ -13,6 +13,8 @@ import { useDashboardAdminStatus } from '../components/settings/useDashboardAdmi
 import { TABLET_BREAKPOINT, useDeviceType, useTokens, type DesignTokens } from '../theme';
 import { usePhoneRailMode } from '../navigation/tabContract';
 import { SettingsContent } from './SettingsContent';
+import { useDuoSideBand } from '../navigation/duoSideBand';
+import { useRegisterDuoRailOverride, type PhoneRailAction } from '../navigation/phoneRailActions';
 
 /** 2열 폼을 켜는 최소 폭. 듀오 바깥 화면(678×466) 가로에서는 1열을 유지한다. */
 export const SETTINGS_FORM_COLUMNS_MIN_WIDTH = 700;
@@ -30,15 +32,17 @@ interface Props {
   connectionOnly?: boolean;
   registerCloseRequest?: (close: () => void) => void;
   initialPersistentDestination?: SettingsPersistentDestination;
+  active?: boolean;
 }
 
 /** All three entry points share this stable host and the production form controllers. */
-export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = 'screen', flattened = false, category: initialCategory, showAdmin, onClose, connectionOnly = false, registerCloseRequest, initialPersistentDestination }: Props = {}) {
+export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = 'screen', flattened = false, category: initialCategory, showAdmin, onClose, connectionOnly = false, registerCloseRequest, initialPersistentDestination, active: screenActive = true }: Props = {}) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const window = useWindowDimensions();
   const device = useDeviceType();
   const railMode = usePhoneRailMode();
+  const duo = useDuoSideBand();
   const [width, setWidth] = useState(window.width);
   const wide = !connectionOnly && device !== 'phone' && width >= TABLET_BREAKPOINT;
   const detectedAdmin = useDashboardAdminStatus(showAdmin === undefined);
@@ -90,6 +94,13 @@ export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = '
     else action();
   }, [scopes]);
   const context = useMemo(() => ({ category: active, wide, columns: width - (wide ? 240 : 0) >= SETTINGS_FORM_COLUMNS_MIN_WIDTH, jobs, setJobs, persistent, setPersistent, register, select: setCategory, guard, changeConnection }), [active, wide, width, jobs, persistent, register, guard, changeConnection]);
+  const nestedSettings = (active === 'recurring-jobs' && jobs.kind !== 'list') || (active === 'persistent' && persistent.kind !== 'list');
+  const railBack = nestedSettings || (!!active && !wide);
+  const railActions: PhoneRailAction[] = [
+    { id: 'back', label: railBack ? '뒤로' : '설정 닫기', icon: railBack ? 'chevron-back' : 'close', onPress: railBack ? back : close },
+    ...(active === 'recurring-jobs' && jobs.kind === 'list' ? [{ id: 'job-add', label: '새 정기 작업', icon: 'add' as const, onPress: () => setJobs({ kind: 'editor' }) }] : []),
+  ];
+  useRegisterDuoRailOverride('settings', duo && screenActive && !connectionOnly && (!!active || !!onClose), railActions);
   return <SettingsWorkspaceContext.Provider value={context}>
     <SafeAreaView testID="settings-safe-area" style={styles.root} edges={flattened ? [] : {
       left: 'additive',
@@ -98,13 +109,13 @@ export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = '
       bottom: bottomSafeAreaOwner === 'parent' ? 'off' : 'additive',
     }} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
       <AppKeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View testID="settings-modal-header" style={styles.header}>
-          {!connectionOnly && !wide && active ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="모든 설정으로 돌아가기" onPress={() => setCategory(null)}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>설정</Text></TouchableOpacity> : null}
-          {active === 'recurring-jobs' && jobs.kind !== 'list' ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="반복 작업 이전 화면으로 돌아가기" onPress={back}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>{jobs.kind === 'history' ? '편집' : '목록'}</Text></TouchableOpacity> : null}
-          {active === 'persistent' && persistent.kind !== 'list' ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="영구 에이전트 세션 이전 화면으로 돌아가기" onPress={back}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>목록</Text></TouchableOpacity> : null}
+        {!(duo && !wide && !active && !onClose) ? <View testID="settings-modal-header" style={styles.header}>
+          {!duo && !connectionOnly && !wide && active ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="모든 설정으로 돌아가기" onPress={() => setCategory(null)}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>설정</Text></TouchableOpacity> : null}
+          {!duo && active === 'recurring-jobs' && jobs.kind !== 'list' ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="반복 작업 이전 화면으로 돌아가기" onPress={back}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>{jobs.kind === 'history' ? '편집' : '목록'}</Text></TouchableOpacity> : null}
+          {!duo && active === 'persistent' && persistent.kind !== 'list' ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="영구 에이전트 세션 이전 화면으로 돌아가기" onPress={back}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>목록</Text></TouchableOpacity> : null}
           <Text style={styles.title}>{title}</Text>
-          {onClose ? <TouchableOpacity testID="settings-modal-close" accessibilityRole="button" accessibilityLabel="설정 닫기" style={styles.headerAction} onPress={close}><Text style={styles.actionText}>완료</Text></TouchableOpacity> : null}
-        </View>
+          {!duo && onClose ? <TouchableOpacity testID="settings-modal-close" accessibilityRole="button" accessibilityLabel="설정 닫기" style={styles.headerAction} onPress={close}><Text style={styles.actionText}>완료</Text></TouchableOpacity> : null}
+        </View> : null}
         <View testID={wide ? 'settings-wide-layout' : 'settings-compact-layout'} style={[styles.body, wide && styles.wide]}>
           <ScrollView testID={wide ? 'settings-sidebar-scroll' : 'settings-phone-index'} style={[wide ? styles.sidebar : styles.root, (connectionOnly || (!wide && active)) && styles.hidden]} accessibilityElementsHidden={connectionOnly || (!wide && active !== null)} importantForAccessibility={connectionOnly || (!wide && active !== null) ? 'no-hide-descendants' : 'auto'} contentContainerStyle={styles.index}>
             {!wide ? <View style={styles.introduction}><Text style={styles.introTitle}>내 작업 환경</Text><Text style={styles.help}>변경할 항목을 선택하세요.</Text></View> : null}

@@ -38,6 +38,8 @@ import { SettingsSegmentedControl } from '../settings/SettingsSegmentedControl';
 import { resolveTabletBottomSafeAreaPadding } from '../split/tabletShellInsets';
 import { ChatPaneMinimumBottomPaddingContext } from '../split/ChatPane';
 import { summarizeCardItems } from '../../lib/card-check-item-summary';
+import { useDuoSideBand } from '../../navigation/duoSideBand';
+import { useRegisterDuoRailOverride, type PhoneRailAction } from '../../navigation/phoneRailActions';
 
 type CardDetailTab = 'items' | 'comments' | 'sessions' | 'notes';
 type CardDetailVisitState = {
@@ -53,6 +55,7 @@ type CardDetailContentProps = {
   onClose(): void;
   onOpenSession?(id: string): void;
   inline?: boolean;
+  visible?: boolean;
 };
 
 export function CardDetailSheet({ api, cardId, onClose, onOpenSession }: {
@@ -70,7 +73,8 @@ export function CardDetailSheet({ api, cardId, onClose, onOpenSession }: {
 }
 
 export function CardDetailContent(props: CardDetailContentProps) {
-  const { api, cardId, onClose, onOpenSession, inline = false } = props;
+  const { api, cardId, onClose, onOpenSession, inline = false, visible = true } = props;
+  const duo = useDuoSideBand();
   const t = useTokens();
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const folderStyles = useMemo(() => makeFolderWorkspaceStyles(t), [t]);
@@ -219,6 +223,17 @@ export function CardDetailContent(props: CardDetailContentProps) {
     { value: 'sessions' as const, label: '세션', count: tabletLandscape ? sessionIds.length : undefined },
     { value: 'notes' as const, label: '노트', count: tabletLandscape ? (detail?.notes?.length ?? 0) : undefined },
   ];
+  const railActions: PhoneRailAction[] = [
+    { id: 'close', label: inline ? '닫기' : '뒤로', icon: inline ? 'close' : 'chevron-back', onPress: onClose },
+    ...(card ? [{ id: startable || startPhase ? 'start' : 'complete', label: actionLabel,
+      icon: (startable || startPhase ? 'play' : 'checkmark') as PhoneRailAction['icon'], selected: card.status === 'done',
+      disabled: locked || !api || startPhase === 'pending', onPress: () => { void status(startPhase || startable ? 'running' : 'done'); } }] : []),
+    { id: 'tab-items', label: '확인 항목', icon: 'checkbox-outline', selected: tab === 'items', badgeCount: needsReview, onPress: () => setTab('items') },
+    { id: 'tab-comments', label: '커멘트', icon: 'chatbubble-outline', selected: tab === 'comments', dot: commentUnread, onPress: () => setTab('comments') },
+    { id: 'tab-sessions', label: '세션', icon: 'terminal-outline', selected: tab === 'sessions', onPress: () => setTab('sessions') },
+    { id: 'tab-notes', label: '노트', icon: 'document-text-outline', selected: tab === 'notes', onPress: () => setTab('notes') },
+  ];
+  useRegisterDuoRailOverride(`card-${cardId}`, duo && visible, railActions);
   const selectedItem = targetItem;
   return <><AppKeyboardAvoidingView testID="card-detail-container" behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     onOverlapChange={onOverlapChange} style={folderStyles.container}>
@@ -229,16 +244,16 @@ export function CardDetailContent(props: CardDetailContentProps) {
     }}>
       <View testID="card-detail-header" style={styles.header}>
         <View style={styles.headerRow}>
-          <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} accessibilityLabel="뒤로" onPress={onClose}>
+          {!duo ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} accessibilityLabel="뒤로" onPress={onClose}>
             <Ionicons testID="card-detail-back-icon" name="chevron-back" size={t.foundation.typography.body.fontSize} color={t.colors.textPrimary} />
-          </GlassButton>
+          </GlassButton> : null}
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="상태 변경" disabled={locked || !api || !card}
             onPress={() => setStatusMenuOpen(true)} frameStyle={styles.titleHitFrame} surfaceStyle={styles.titleHitSurface}>
             <Text testID="card-detail-title" style={styles.heading} numberOfLines={3}>
               {card ? <><CardStatusChip card={card} detail />{' '}{card.title}</> : '카드'}
             </Text>
           </CompactTouchTarget>
-          {card ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round}
+          {card && !duo ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round}
             variant={allConfirmed ? 'primary' : 'secondary'} accessibilityLabel={actionLabel}
             disabled={locked || !api || startPhase === 'pending'} surfaceTestID="card-detail-complete-visual"
             onPress={() => { void status(startPhase || startable ? 'running' : 'done'); }}>
@@ -263,9 +278,9 @@ export function CardDetailContent(props: CardDetailContentProps) {
           surfaceRole={inline ? 'glassCard' : 'panel'} completeDisabled={locked || !api || startPhase === 'pending'}
           onComplete={() => { void status('done'); }} />
       </View> : null}
-      <View style={styles.tabsWrap}>
+      {!duo ? <View style={styles.tabsWrap}>
         <SettingsSegmentedControl<CardDetailTab> id="card-detail" variant="detail" value={tab} options={tabOptions} onChange={setTab} />
-      </View>
+      </View> : null}
       <View style={styles.bodyFrame}>
         {detail && tab === 'sessions' ? <View testID="card-sessions" style={{ flex: 1, marginBottom: dockBottom }}>
           <FolderSessionHistory scrollMemoryKey={JSON.stringify(['card', cardId])} api={api} small virtualized sessionIds={sessionIds} sessionSummaries={sessionSummaries} onOpenSession={openSession}

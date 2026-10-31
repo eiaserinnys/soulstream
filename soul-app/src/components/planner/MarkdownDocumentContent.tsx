@@ -10,12 +10,17 @@ import { GlassButton } from '../GlassSurface';
 import { removeOverlappingDocumentHeading } from '../../../../packages/soul-ui/src/lib/markdown-document-heading';
 import { cardDetailStyles } from './CardDetail.styles';
 import { PlannerMarkdownText } from './PlannerMarkdownText';
+import { useDuoSideBand } from '../../navigation/duoSideBand';
+import { useRegisterDuoRailOverride } from '../../navigation/phoneRailActions';
 
-export function MarkdownDocumentContent({ api, documentId, onClose }: {
+export function MarkdownDocumentContent({ api, documentId, onClose, visible = true }: {
   api: ApiClient | null;
   documentId: string;
   onClose(): void;
+  visible?: boolean;
 }) {
+  const duo = useDuoSideBand();
+  useRegisterDuoRailOverride(`document-${documentId}`, duo && visible, [{ id: 'back', label: '뒤로', icon: 'chevron-back', onPress: onClose }]);
   const t = useTokens();
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const phone = useDeviceType() === 'phone';
@@ -46,10 +51,10 @@ export function MarkdownDocumentContent({ api, documentId, onClose }: {
   return <View style={styles.frame}>
     <View style={styles.header}>
       <View style={styles.headerRow}>
-        <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round}
+        {!duo ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round}
           accessibilityLabel="뒤로" onPress={onClose}>
           <Ionicons name="chevron-back" size={t.foundation.typography.body.fontSize} color={t.colors.textPrimary} />
-        </GlassButton>
+        </GlassButton> : null}
         {document ? <Text testID="markdown-document-title" style={styles.heading} numberOfLines={3}>
           {document.title}
         </Text> : null}

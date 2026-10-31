@@ -49,6 +49,7 @@ import { AppGlassCard } from '../AppGlassCard';
 import { CompactTouchTarget } from '../CompactTouchTarget';
 import { DisclosureIcon } from '../DisclosureIcon';
 import { GlassSurface } from '../GlassSurface';
+import { AppModalSurface } from '../AppModalSurface';
 import { LiquidGlassButton } from '../LiquidGlassButton';
 import { useSettingsStore } from '../../store/settingsStore';
 import { SESSION_SUCCESSION_DIAGNOSTICS_KEY } from '../../lib/session-succession-diagnostics';
@@ -223,6 +224,15 @@ describe('GlassSurface render paths and composition', () => {
         <GlassSurface role="glassCard" />
       </GlassSurface>,
     )).toThrow('Nested GlassSurface role is not allowed: glassCard');
+  });
+
+  test('보드 모달의 상세 패널은 바깥 패널과 별개인 유리 표면을 쓴다', () => {
+    const screen = render(<GlassSurface role="glassSoft">
+      <AppModalSurface visible variant="board" modalId="modal_card_detail" onRequestClose={() => {}}>
+        <GlassSurface role="glassSoft" testID="board-detail" />
+      </AppModalSurface>
+    </GlassSurface>);
+    expect(screen.getByTestId('native-board-detail')).toBeTruthy();
   });
 
   test('불투명 nativeSheet는 같은 역할이 중첩돼도 glass 규약 위반이 아니다', () => {

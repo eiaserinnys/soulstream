@@ -12,6 +12,7 @@ import { useUIStore } from '../../store/uiStore';
 import { LiquidGlassButton } from '../LiquidGlassButton';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { recordUiUsageEvent } from '../../lib/ui-usage-events';
+import { useDuoSideBand } from '../../navigation/duoSideBand';
 
 /**
  * 태블릿 portrait·landscape가 공유하는 session feed chrome 구현.
@@ -24,11 +25,12 @@ export function TabletSessionFeedPane({ width, onOpenSession }: {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const searchActive = useSearchStore((state) => state.tabletActive);
+  const duo = useDuoSideBand();
   const folderOverlayVisible = useUIStore((state) => state.folderOverlayVisible);
 
   return (
     <View style={[styles.container, width === undefined ? null : { width }]}>
-      <TabletPaneHeader testID="tablet-feed-header">
+      {!duo ? <TabletPaneHeader testID="tablet-feed-header">
         <View testID="tablet-feed-title" style={styles.title}>
           <RootSectionHeaderTitle
             section="FeedTab"
@@ -49,13 +51,13 @@ export function TabletSessionFeedPane({ width, onOpenSession }: {
             />
           </LiquidGlassButton>
         ) : null}
-      </TabletPaneHeader>
+      </TabletPaneHeader> : null}
       <View style={styles.body}>
         {searchActive ? (
           <SearchScreen
             tablet
-            showInput={false}
-            autoFocus={false}
+            showInput={duo}
+            autoFocus={duo}
             onOpenSession={(sessionId, eventId, storyOpenRequestId) =>
               openPlannerSessionWorkspace(
                 sessionId,

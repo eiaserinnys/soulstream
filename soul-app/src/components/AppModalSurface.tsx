@@ -16,6 +16,7 @@ import { AppGlassCard } from './AppGlassCard';
 import { TabletSafeAreaFrame } from './split/TabletSafeAreaFrame';
 import { recordModalVisibility } from '../lib/session-diagnostics-api';
 import type { ModalDiagnosticSource } from '../lib/session-diagnostics-core';
+import { GlassSurfaceBoundary } from './GlassSurface';
 
 const SUPPORTED_MODAL_ORIENTATIONS: NonNullable<ModalProps['supportedOrientations']> = [
   'portrait',
@@ -38,6 +39,8 @@ type AppModalSurfaceCommonProps = {
   animationType?: ModalProps['animationType'];
   surfaceTestID?: string;
   safeAreaTestID?: string;
+  sideBand?: React.ReactNode;
+  sideBandWidth?: number;
 };
 
 type AppModalSurfaceProps = AppModalSurfaceCommonProps & (
@@ -80,11 +83,14 @@ export function AppModalSurface({
   presentationStyle,
   surfaceTestID,
   safeAreaTestID,
+  sideBand,
+  sideBandWidth = 0,
 }: AppModalSurfaceProps) {
   const previousVisible = useRef(false);
   const compact = variant === 'compact';
   const popover = variant === 'popover';
   const board = variant === 'board';
+  const Layer = board ? GlassSurfaceBoundary : React.Fragment;
   const presentation = resolveAppModalPresentation(variant, presentationStyle);
   const diagnosticVariant = board ? 'expanded' : variant;
   useEffect(() => {
@@ -103,7 +109,7 @@ export function AppModalSurface({
       onRequestClose={onRequestClose}
       onDismiss={onDismiss}
     >
-      <View
+      <Layer><View
         testID="app-modal-viewport"
         style={[
           styles.viewport,
@@ -125,6 +131,7 @@ export function AppModalSurface({
             onPress={onRequestClose}
           />
         ) : null}
+        <SideBandFrame width={sideBandWidth}>
         {board ? (
           <TabletSafeAreaFrame>
             <AppGlassCard role={presentation.surfaceRole} testID={surfaceTestID} style={styles.expandedSurface}>
@@ -150,6 +157,8 @@ export function AppModalSurface({
                   ? ['bottom', 'left', 'right']
                   : popover
                     ? []
+                    : sideBandWidth
+                      ? ['top', 'bottom', 'left']
                     : undefined
               }
               style={
@@ -164,9 +173,15 @@ export function AppModalSurface({
             </SafeAreaView>
           </AppGlassCard>
         )}
-      </View>
+        </SideBandFrame>
+        {sideBand}
+      </View></Layer>
     </Modal>
   );
+}
+
+function SideBandFrame({ width, children }: { width: number; children: React.ReactNode }) {
+  return width ? <View style={{ flex: 1, paddingRight: width }}>{children}</View> : <>{children}</>;
 }
 
 export function resolveAppModalPresentation(

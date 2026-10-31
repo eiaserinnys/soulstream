@@ -22,7 +22,7 @@ import {
   type DailyPlannerScreenHandle,
 } from '../screens/DailyPlannerScreen';
 import { FolderListScreen, type FolderListTab } from '../screens/FolderListScreen';
-import { ProjectHeaderAddButton } from '../screens/ProjectListScreen';
+import { ProjectHeaderAddButton, useCreateProject } from '../screens/ProjectListScreen';
 import { SessionFeedScreen } from '../screens/SessionFeedScreen';
 import { SearchScreen } from '../screens/SearchScreen';
 import { ChatScreen } from '../screens/ChatScreen';
@@ -36,7 +36,8 @@ import { GlassSurface } from '../components/GlassSurface';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTokens, type DesignTokens } from '../theme';
 import { DuoSideBandContext, INITIAL_ROOT_TAB, PhoneRailModeContext, RAIL_MIN_INSET_WIDTH, ROOT_TAB_ORDER } from './tabContract';
-import { hasDuoSideBand } from './duoSideBand';
+import { hasDuoSideBand, useDuoSideBand } from './duoSideBand';
+import { useActiveDuoRailOverride, usePhoneRailActions, useRegisterDuoRailOverride, useRegisterPhoneRailActions, type PhoneRailAction } from './phoneRailActions';
 import { RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
 import { usePasContextMenu } from '../components/persistent/usePasContextMenu';
 import { FolderWorkspace } from '../components/planner/FolderWorkspace';
@@ -55,6 +56,7 @@ import { RootSectionHeaderTitle } from '../components/navigation/RootSectionHead
 import { DailyHeaderActions } from '../components/planner/DailyHeaderActions';
 import { useCardDisplay } from '../hooks/useCardDisplay';
 import { PhoneCardHome } from './PhoneCardHome';
+import { DuoSafeTop } from './DuoSafeTop';
 import {
   PhonePanelHistoryProvider,
   usePhonePanelHistory,
@@ -95,10 +97,21 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
   const hasReports = usePersistentSessionScene(state => state.hasReports);
   const host = usePersistentSessionHost();
   const showPasMenu = usePasContextMenu();
+  const actions = usePhoneRailActions(state => state.actions);
+  const override = useActiveDuoRailOverride();
   const persistentLabel = active !== 'PersistentTab'
     ? '영구 세션 열기'
     : scene !== 'conversation' ? 'PAS 대화로 돌아가기' : '카드 목록 보기';
   return <RailCapsule testID="phone-rail-tab-cluster" compact={compact}>
+      {duoSideBand && override?.length ? override.map(action => <RailCapsuleItem key={action.id} testID={`phone-rail-action-${action.id}`}
+        label={action.label} selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
+        <Ionicons name={action.icon} color={action.selected ? c.accent : c.textMuted} size={t.iconSize.standard} />
+      </RailCapsuleItem>) : <>
+      {duoSideBand && (active === 'DailyTab' || active === 'FolderTab' || active === 'FeedTab')
+        ? actions[active]?.map(action => <RailCapsuleItem key={action.id} testID={`phone-rail-action-${action.id}`}
+            label={action.label} selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
+            <Ionicons name={action.icon} color={action.selected ? c.accent : c.textMuted} size={t.iconSize.standard} />
+          </RailCapsuleItem>) : null}
       {duoSideBand && active === 'PersistentTab' ? <RailCapsuleItem testID="phone-rail-pas-menu" label="PAS 메뉴" onPress={showPasMenu}>
         <Ionicons name="ellipsis-horizontal" color={c.textMuted} size={t.iconSize.standard} />
       </RailCapsuleItem> : null}
@@ -125,26 +138,32 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
             : <Ionicons name={config.icon} color={color} size={t.iconSize.standard} />}
         </RailCapsuleItem>;
       })}
+      </>}
   </RailCapsule>;
 }
 
-function PhoneRailTabBar({ state, descriptors, navigation, insets }: BottomTabBarProps) {
+function PhoneRailTabBar({ state, descriptors, navigation, insets, duoSideBand }: BottomTabBarProps & { duoSideBand: boolean }) {
   const t = useTokens();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const compact = hasDuoSideBand(insets) && windowWidth > windowHeight;
   const activeRoute = state.routes[state.index];
   const active = activeRoute?.name as keyof RootTabParamList;
   const nestedState = (activeRoute as typeof activeRoute & {
     state?: { index?: number; routes?: Array<{ name?: string }> };
   } | undefined)?.state;
   const nestedRouteName = nestedState?.routes?.[nestedState.index ?? 0]?.name;
-  const showHeaderCap = active === 'SettingsTab'
+  const rootWithoutHeader = duoSideBand && (
+    (active === 'DailyTab' && (!nestedRouteName || nestedRouteName === 'Daily'))
+    || (active === 'FolderTab' && (!nestedRouteName || nestedRouteName === 'FolderList'))
+    || (active === 'FeedTab' && (!nestedRouteName || nestedRouteName === 'Feed'))
+  );
+  const showHeaderCap = !duoSideBand && !rootWithoutHeader && (active === 'SettingsTab'
     ? ['RecurringJobs', 'RecurringJobEditor', 'RecurringJobHistory'].includes(nestedRouteName ?? '')
     : active === 'DailyTab' || active === 'FolderTab' || active === 'FeedTab'
       ? nestedRouteName !== 'CardDetail' && nestedRouteName !== 'MarkdownDocument'
-      : false;
+      : false);
+  const compact = duoSideBand && windowWidth > windowHeight;
   // 하위 화면이 탭바를 숨기면 레일 열 폭은 유지하고 캡슐만 감춘다.
-  const hidden = StyleSheet.flatten(
+  const hidden = !duoSideBand && StyleSheet.flatten(
     (activeRoute ? descriptors[activeRoute.key]?.options?.tabBarStyle : undefined) as ViewStyle | undefined,
   )?.display === 'none';
   const select = (name: keyof RootTabParamList) => {
@@ -181,7 +200,7 @@ function PhoneRailTabBar({ state, descriptors, navigation, insets }: BottomTabBa
         backgroundColor: createSurfaceRoles(t).chrome.tokenStyle.backgroundColor,
       }}
     /> : null}
-    {hidden ? null : <PhoneRailTabCluster active={active} onSelect={select} duoSideBand={hasDuoSideBand(insets)} compact={compact} />}
+    {hidden ? null : <PhoneRailTabCluster active={active} onSelect={select} duoSideBand={duoSideBand} compact={compact} />}
   </View>;
 }
 
@@ -269,6 +288,13 @@ function rootScreenOptions(section: RootSectionKey) {
 
 function PhoneDailyHistoryScreen({ navigation }: NativeStackScreenProps<DailyStackParamList, 'DailyHistory'>) {
   const dailyRef = useRef<DailyPlannerScreenHandle>(null);
+  const duo = useDuoSideBand();
+  const focused = useIsFocused();
+  useRegisterDuoRailOverride('daily-history', duo && focused, [
+    { id: 'back', label: '뒤로', icon: 'chevron-back', onPress: () => navigation.goBack() },
+    { id: 'folder-add', label: '폴더 추가', icon: 'add', onPress: () => dailyRef.current?.openNewFolder() },
+    { id: 'review', label: '모닝 리뷰', icon: 'sunny-outline', onPress: () => dailyRef.current?.openReview() },
+  ]);
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
@@ -280,16 +306,16 @@ function PhoneDailyHistoryScreen({ navigation }: NativeStackScreenProps<DailySta
     });
   }, [navigation]);
   return (
-    <DailyPlannerScreen
+    <DuoSafeTop><DailyPlannerScreen
       ref={dailyRef}
-      active={useIsFocused()}
+      active={focused}
       onOpenSession={(id) => openPhoneChat(navigation, id)}
       onOpenFolder={(folder) => navigation.navigate('FolderWorkspace', {
         folderPageId: folder.page.id,
         folderTitle: folder.page.title,
         folderId: folder.folderId,
       })}
-    />
+    /></DuoSafeTop>
   );
 }
 
@@ -299,14 +325,15 @@ function PhoneDailyFolderWorkspace({ route, navigation }: NativeStackScreenProps
 
 function DailyNavigator() {
   const t = useTokens();
+  const duo = useDuoSideBand();
   return (
     <DailyStack.Navigator screenOptions={stackScreenOptions(t)}>
-      <DailyStack.Screen name="Daily" component={PhoneCardHome} options={rootScreenOptions('DailyTab')} />
-      <DailyStack.Screen name="DailyHistory" component={PhoneDailyHistoryScreen} options={{ title: '데일리 기록' }} />
+      <DailyStack.Screen name="Daily" component={PhoneCardHome} options={{ ...rootScreenOptions('DailyTab'), headerShown: !duo }} />
+      <DailyStack.Screen name="DailyHistory" component={PhoneDailyHistoryScreen} options={{ title: '데일리 기록', headerShown: !duo }} />
       <DailyStack.Screen
         name="FolderWorkspace"
         component={PhoneDailyFolderWorkspace}
-        options={({ route }) => ({ title: route.params.folderTitle })}
+        options={({ route }) => ({ title: route.params.folderTitle, headerShown: !duo })}
       />
       <DailyStack.Screen name="CardDetail" component={PhoneCardDetail} options={{ title: '카드', headerShown: false }} />
       <DailyStack.Screen name="MarkdownDocument" component={PhoneMarkdownDocument} options={{ headerShown: false }} />
@@ -315,16 +342,26 @@ function DailyNavigator() {
 }
 
 function PhoneFolderListScreen({ navigation }: NativeStackScreenProps<FolderStackParamList, 'FolderList'>) {
+  const duo = useDuoSideBand();
+  const [tab, setTab] = useState<FolderListTab>('starred');
+  const createProject = useCreateProject();
+  const railActions = useMemo<PhoneRailAction[]>(() => [
+    { id: 'starred', label: '중요 작업', icon: 'star-outline', selected: tab === 'starred', onPress: () => setTab('starred') },
+    { id: 'all-folders', label: '전체 폴더', icon: 'folder-outline', selected: tab === 'all', onPress: () => setTab('all') },
+    ...(tab === 'all' ? [{ id: 'project-create', label: '새 프로젝트', icon: 'add' as const, onPress: createProject }] : []),
+  ], [tab, createProject]);
+  useRegisterPhoneRailActions('FolderTab', duo, railActions);
   const onTabChange = useCallback((tab: FolderListTab) => {
+    setTab(tab);
     navigation.setOptions({ headerRight: () => tab === 'all' ? <ProjectHeaderAddButton /> : null });
   }, [navigation]);
-  return <FolderListScreen active={useIsFocused()} onTabChange={onTabChange}
+  return <DuoSafeTop><FolderListScreen active={useIsFocused()} selectedTab={duo ? tab : undefined} onTabChange={onTabChange}
     onOpenFolder={(folder) => navigation.navigate('FolderWorkspace', {
       folderPageId: folder.page.id, folderTitle: folder.page.title, folderId: folder.folderId,
     })}
     onOpenProject={(folder, projectPageId) => navigation.navigate('FolderWorkspace', {
       folderPageId: projectPageId, folderTitle: folder.name, folderId: folder.id,
-    })} />;
+    })} /></DuoSafeTop>;
 }
 
 function PhoneFolderListWorkspace({ route, navigation }: NativeStackScreenProps<FolderStackParamList, 'FolderWorkspace'>) {
@@ -336,12 +373,13 @@ export function PhoneFolderWorkspace({ folderPageId, folderId, navigation }: { f
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
   const cardDisplay = useCardDisplay(folderId ?? folderPageId);
   return (
-    <FolderWorkspace
+    <DuoSafeTop><FolderWorkspace
       api={api}
       folderPageId={folderPageId}
       folderId={folderId}
       cardDisplay={cardDisplay}
       active={useIsFocused()}
+      onClose={() => navigation.goBack()}
       onOpenSession={(sessionId) => openPhoneChat(navigation, sessionId)}
       onTitleSaved={(folderTitle) => navigation.setParams({ folderTitle: folderTitle })}
       onOpenFolder={(nextFolderId, nextPageId, nextName) => navigation.push('FolderWorkspace', {
@@ -349,23 +387,24 @@ export function PhoneFolderWorkspace({ folderPageId, folderId, navigation }: { f
         folderTitle: nextName,
         folderId: nextFolderId,
       })}
-    />
+    /></DuoSafeTop>
   );
 }
 
 function FolderNavigator() {
   const t = useTokens();
+  const duo = useDuoSideBand();
   return (
     <FolderStack.Navigator screenOptions={stackScreenOptions(t)}>
       <FolderStack.Screen
         name="FolderList"
         component={PhoneFolderListScreen}
-        options={rootScreenOptions('FolderTab')}
+        options={{ ...rootScreenOptions('FolderTab'), headerShown: !duo }}
       />
       <FolderStack.Screen
         name="FolderWorkspace"
         component={PhoneFolderListWorkspace}
-        options={({ route }) => ({ title: route.params.folderTitle })}
+        options={({ route }) => ({ title: route.params.folderTitle, headerShown: !duo })}
       />
       <FolderStack.Screen name="CardDetail" component={PhoneCardDetail} options={{ title: '카드', headerShown: false }} />
       <FolderStack.Screen name="MarkdownDocument" component={PhoneMarkdownDocument} options={{ headerShown: false }} />
@@ -380,6 +419,11 @@ type PhoneFeedProps = CompositeScreenProps<
 
 export function PhoneSessionFeedScreen({ navigation }: PhoneFeedProps) {
   const t = useTokens();
+  const duo = useDuoSideBand();
+  const railActions = useMemo<PhoneRailAction[]>(() => [
+    { id: 'search', label: '세션 검색', icon: 'search-outline', onPress: () => navigation.navigate('Search') },
+  ], [navigation]);
+  useRegisterPhoneRailActions('FeedTab', duo, railActions);
   useLayoutEffect(() => {
     const openSearch = () => navigation.navigate('Search');
     navigation.setOptions?.({
@@ -406,11 +450,11 @@ export function PhoneSessionFeedScreen({ navigation }: PhoneFeedProps) {
     });
   }, [navigation, t]);
   return (
-    <SessionFeedScreen
+    <DuoSafeTop><SessionFeedScreen
       active={useIsFocused()}
-      reserveBottomSearchBarSpace
+      reserveBottomSearchBarSpace={!duo}
       onOpenSession={(sessionId) => openPhoneChat(navigation, sessionId)}
-    />
+    /></DuoSafeTop>
   );
 }
 
@@ -419,12 +463,16 @@ function PhoneSearchScreen({
   navigation,
 }: NativeStackScreenProps<FeedStackParamList, 'Search'>) {
   const t = useTokens();
+  const duo = useDuoSideBand();
+  const focused = useIsFocused();
+  useRegisterDuoRailOverride('search', duo && focused, [{ id: 'back', label: '뒤로', icon: 'chevron-back', onPress: () => navigation.goBack() }]);
   const tabs = navigation.getParent<BottomTabNavigationProp<RootTabParamList>>();
   useLayoutEffect(() => {
     useSearchStore.getState().setQuery(route.params?.initialQuery ?? '');
   }, [route.params?.initialQuery]);
   useFocusEffect(
     useCallback(() => {
+      if (duo) return;
       const tabs = navigation.getParent();
       tabs?.setOptions({
         tabBarStyle: {
@@ -435,10 +483,10 @@ function PhoneSearchScreen({
       return () => {
         tabs?.setOptions({ tabBarStyle: getDefaultTabBarStyle(t.colors) });
       };
-    }, [navigation, t.colors]),
+    }, [navigation, t.colors, duo]),
   );
   return (
-    <SearchScreen
+    <DuoSafeTop><SearchScreen
       onOpenSession={(sessionId, eventId, storyOpenRequestId) =>
         void openPhoneSearchSession(
           navigation,
@@ -457,23 +505,24 @@ function PhoneSearchScreen({
           },
         })
       }
-    />
+    /></DuoSafeTop>
   );
 }
 
 function FeedNavigator() {
   const t = useTokens();
+  const duo = useDuoSideBand();
   return (
     <FeedStack.Navigator screenOptions={stackScreenOptions(t)}>
-      <FeedStack.Screen name="Feed" component={PhoneSessionFeedScreen} options={rootScreenOptions('FeedTab')} />
+      <FeedStack.Screen name="Feed" component={PhoneSessionFeedScreen} options={{ ...rootScreenOptions('FeedTab'), headerShown: !duo }} />
       <FeedStack.Screen
         name="Search"
         component={PhoneSearchScreen}
-        options={{ title: '검색', headerLargeTitleEnabled: false }}
+        options={{ title: '검색', headerLargeTitleEnabled: false, headerShown: !duo }}
       />
       <FeedStack.Screen name="CardDetail" component={PhoneCardDetail} options={{ title: '카드', headerShown: false }} />
       <FeedStack.Screen name="MarkdownDocument" component={PhoneMarkdownDocument} options={{ headerShown: false }} />
-      <FeedStack.Screen name="Chat" component={ChatScreen} options={{ ...rootScreenOptions('ChatTab'), gestureEnabled: false }} />
+      <FeedStack.Screen name="Chat" component={ChatScreen} options={{ ...rootScreenOptions('ChatTab'), gestureEnabled: false, headerShown: !duo }} />
     </FeedStack.Navigator>
   );
 }
@@ -489,18 +538,19 @@ function PersistentNavigator() {
 
 function SettingsNavigator() {
   const t = useTokens();
+  const duo = useDuoSideBand();
   return (
     <SettingsStack.Navigator screenOptions={stackScreenOptions(t)}>
       <SettingsStack.Screen name="Settings" component={PhoneSettingsScreen} options={{ ...rootScreenOptions('SettingsTab'), headerShown: false }} />
-      <SettingsStack.Screen name="RecurringJobs" component={RecurringJobsScreen} options={{ title: '반복 작업' }} />
-      <SettingsStack.Screen name="RecurringJobEditor" component={RecurringJobEditorScreen} options={{ title: '반복 작업 편집' }} />
-      <SettingsStack.Screen name="RecurringJobHistory" component={RecurringJobHistoryScreen} options={{ title: '실행 이력' }} />
+      <SettingsStack.Screen name="RecurringJobs" component={RecurringJobsScreen} options={{ title: '반복 작업', headerShown: !duo }} />
+      <SettingsStack.Screen name="RecurringJobEditor" component={RecurringJobEditorScreen} options={{ title: '반복 작업 편집', headerShown: !duo }} />
+      <SettingsStack.Screen name="RecurringJobHistory" component={RecurringJobHistoryScreen} options={{ title: '실행 이력', headerShown: !duo }} />
     </SettingsStack.Navigator>
   );
 }
 
 export function PhoneSettingsScreen({ navigation }: NativeStackScreenProps<SettingsStackParamList, 'Settings'>) {
-  return <SettingsScreen showTitle={false} bottomSafeAreaOwner="parent" />;
+  return <SettingsScreen active={useIsFocused()} showTitle={false} bottomSafeAreaOwner="parent" />;
 }
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -539,10 +589,11 @@ function PhoneTabNavigator({ initialTab }: { initialTab?: string }) {
   const c = t.colors;
   const insets = useSafeAreaInsets();
   const railMode = insets.right >= RAIL_MIN_INSET_WIDTH;
-  const duoSideBand = hasDuoSideBand(insets);
+  const outerDuoSideBand = React.useContext(DuoSideBandContext);
+  const duoSideBand = outerDuoSideBand ?? hasDuoSideBand(insets);
   return (
     <Tab.Navigator
-      tabBar={railMode ? (props) => <PhoneRailTabBar {...props} /> : undefined}
+      tabBar={railMode ? (props) => <PhoneRailTabBar {...props} duoSideBand={duoSideBand} /> : undefined}
       screenLayout={({ children }) => (
         <PhoneRailModeContext.Provider value={railMode}>
           <DuoSideBandContext.Provider value={duoSideBand}>

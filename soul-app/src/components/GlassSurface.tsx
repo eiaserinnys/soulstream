@@ -42,6 +42,11 @@ type ExpoGlassEffectModule = {
 let glassEffectModule: ExpoGlassEffectModule | null | undefined;
 const SurfaceRoleContext = React.createContext<readonly SurfaceRoleName[]>([]);
 
+/** Native modals are separate compositing layers, even when React retains their ancestry. */
+export function GlassSurfaceBoundary({ children }: { children: React.ReactNode }) {
+  return <SurfaceRoleContext.Provider value={[]}>{children}</SurfaceRoleContext.Provider>;
+}
+
 function loadGlassEffect(): ExpoGlassEffectModule | null {
   if (glassEffectModule !== undefined) return glassEffectModule;
   try {
