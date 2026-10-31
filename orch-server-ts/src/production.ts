@@ -896,6 +896,7 @@ export async function createLiveProductionApplication(
     app,
     beginShutdown:()=>lifecycle.beginShutdown(),
     startBackground: async () => {
+      providers.sessionStatisticsRoutes.startBackground?.();
       await sessionReconciliation.start();
       await recurringJobScheduler?.start();
       await dbCatalogRepository.agentProfileRepository.list();

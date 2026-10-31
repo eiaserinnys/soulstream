@@ -187,7 +187,7 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
     const roster = overview?.options.project_roster ?? [];
     for (const project of overview?.options.projects ?? []) {
       const index = roster.indexOf(project.project_id);
-      result[project.project_id] = index >= 0 ? projectPalette[index] ?? t.colors.textTertiary : t.colors.textTertiary;
+      result[project.project_id] = index >= 0 ? projectPalette[index % projectPalette.length] ?? t.colors.textTertiary : t.colors.textTertiary;
     }
     return result;
   })();

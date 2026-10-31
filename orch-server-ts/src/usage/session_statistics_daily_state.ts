@@ -49,7 +49,8 @@ export function dailySelectorKey(selector: DailySelector): string {
 }
 
 /** Existing canonical/coverage/metric policies prepare each disjoint session slice. */
-export function createSessionStatisticsDailyState(read: SessionStatisticsReadResult, day: string): SessionStatisticsDailyState {
+export function createSessionStatisticsDailyState(read: SessionStatisticsReadResult, day: string,
+  options?: { includeMaterial?: boolean }): SessionStatisticsDailyState {
   const grouped = new Map<string, SessionStatisticsReadResult["rows"][number][]>();
   for (const row of read.rows) {
     const group = grouped.get(row.session_id) ?? [];
@@ -57,6 +58,9 @@ export function createSessionStatisticsDailyState(read: SessionStatisticsReadRes
     grouped.set(row.session_id, group);
   }
   const sessions: DailySessionState[] = [];
+  const emptyMaterial = options?.includeMaterial === false
+    ? buildSessionStatisticsMaterial({ ...read, rows: [] }, day)
+    : undefined;
   for (const session of read.sessions) {
     const rows = grouped.get(session.sessionId);
     if (rows === undefined) continue;
@@ -86,7 +90,7 @@ export function createSessionStatisticsDailyState(read: SessionStatisticsReadRes
         metrics: createSessionStatisticsMetricState(slice, selected), coverage, sourceCount: selected.length,
         tokenEvidence: selected.length > 0 || coverage.usage_partial_events > 0
           || coverage.missing_usage_turns > 0 || unattributedAllFields,
-        material: buildSessionStatisticsMaterial(slice, day, scope),
+        material: emptyMaterial ?? buildSessionStatisticsMaterial(slice, day, scope),
       };
     }
     sessions.push({ sessionId: session.sessionId, folderId: session.folderId,

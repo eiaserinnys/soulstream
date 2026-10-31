@@ -71,7 +71,7 @@ function providerColor(provider: UsageStatsProvider): string {
 }
 
 function projectColor(index: number): string {
-  return index >= 0 && index < 5 ? `var(--usage-stats-project-${index + 1})` : "var(--v3-text-tertiary)";
+  return index >= 0 ? `var(--usage-stats-project-${(index % 5) + 1})` : "var(--v3-text-tertiary)";
 }
 
 function providerSeries(rows: readonly UsageStatsProviderRow[], modelMode: boolean, options: UsageStatsOptions | undefined): UsageChartSeries[] {

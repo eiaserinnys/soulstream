@@ -29,6 +29,7 @@ export type SessionStatisticsReadResult = {
   range: UsageStatsRange;
   projectionStatus: UsageStatsOverview["projection_status"];
   collectionCoverage: "unknown";
+  visibleFolders?: SessionStatisticsReadRequest["visibleFolders"];
   sessions: readonly SessionStatisticsScopeSession[];
   rows: readonly CanonicalSessionStatisticsRow[];
   costDecimals: ReadonlyMap<string, string>;
@@ -38,5 +39,6 @@ export type SessionStatisticsRepositoryPort = {
   daily?: import("./session_statistics_daily_repository.js").SessionStatisticsDailyRepositoryPort;
   readMetadata?(input: SessionStatisticsReadRequest): Promise<SessionStatisticsReadResult>;
   readSlice?(input: SessionStatisticsReadRequest, day: string): Promise<SessionStatisticsReadResult>;
+  readOverviewSlice?(input: SessionStatisticsReadRequest, day: string): Promise<SessionStatisticsReadResult>;
   read(input: SessionStatisticsReadRequest): Promise<SessionStatisticsReadResult>;
 };

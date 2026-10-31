@@ -47,6 +47,7 @@ import type { UserPreferencesRouteOptions } from "../user/user_preferences_route
 import type { UserBackgroundRouteOptions } from "../user/user_background_routes.js";
 import type { UsageSummaryRouteOptions } from "../usage/usage_summary_routes.js";
 import { SessionStatisticsDailyService } from "../usage/session_statistics_daily_service.js";
+import { statisticsLiveDays } from "../usage/session_statistics_daily_calculator.js";
 import type { SessionStatisticsRepositoryPort } from "../usage/session_statistics_types.js";
 import type { SessionStatisticsRouteOptions } from "../usage/session_statistics_routes.js";
 import type { UiEventRepository, UiEventRouteOptions }
@@ -186,9 +187,13 @@ export type LiveOrchestratorProviderBundle = {
   readonly nodeClaudeAuthRoutes: LiveNodeClaudeAuthRouteProviderBundle["nodeClaudeAuthRoutes"];
   readonly systemConfigRoutes: LiveSystemConfigRouteProviderBundle["systemConfigRoutes"];
   readonly usageSummaryRoutes: LiveUsageSummaryRouteOptions;
-  readonly sessionStatisticsRoutes: SessionStatisticsRouteOptions;
+  readonly sessionStatisticsRoutes: LiveSessionStatisticsProvider;
   readonly uiEventRoutes: UiEventRouteOptions;
   readonly implementedProviderPaths: readonly LiveProviderPath[];
+};
+
+export type LiveSessionStatisticsProvider = SessionStatisticsRouteOptions & {
+  readonly startBackground?: () => void;
 };
 
 export type CreateLiveOrchestratorProviderBundleOptions = {
@@ -409,6 +414,12 @@ export function createLiveOrchestratorProviderBundle(
     boardItems: options.dependencies.dbCatalogRepository.boardItemRouteProvider,
     access: sessionResourceAccessProvider,
   });
+  const sessionStatisticsProvider = createLiveSessionStatisticsProvider({
+    repositoryProvider: options.sessionStatisticsRepositoryProvider,
+    accessProvider: dashboardAccessProvider,
+    folderProvider: options.dependencies.dbCatalogRepository.folderRouteProvider,
+    now: () => new Date(),
+  });
 
   return {
     agentProfileRoutes: {
@@ -586,12 +597,7 @@ export function createLiveOrchestratorProviderBundle(
     nodeClaudeAuthRoutes: nodeClaudeAuthProviders.nodeClaudeAuthRoutes,
     systemConfigRoutes: systemConfigProviders.systemConfigRoutes,
     usageSummaryRoutes: options.usageSummaryRoutes,
-    sessionStatisticsRoutes: {
-      service: new SessionStatisticsDailyService(options.sessionStatisticsRepositoryProvider),
-      accessProvider: dashboardAccessProvider,
-      folderProvider: options.dependencies.dbCatalogRepository.folderRouteProvider,
-      now: () => new Date(),
-    },
+    sessionStatisticsRoutes: sessionStatisticsProvider,
     uiEventRoutes: {
       repository: options.uiEventRepository,
       resolveIdentity: createLiveUiEventIdentityResolver({
@@ -599,6 +605,34 @@ export function createLiveOrchestratorProviderBundle(
       }),
     },
     implementedProviderPaths: alignment.factoryProviderPaths,
+  };
+}
+
+function createLiveSessionStatisticsProvider(options: {
+  repositoryProvider: () => Promise<SessionStatisticsRepositoryPort>;
+  accessProvider: SessionStatisticsRouteOptions["accessProvider"];
+  folderProvider: SessionStatisticsRouteOptions["folderProvider"];
+  now: () => Date;
+}): LiveSessionStatisticsProvider {
+  const service = new SessionStatisticsDailyService(options.repositoryProvider, options.now);
+  return {
+    service,
+    accessProvider: options.accessProvider,
+    folderProvider: options.folderProvider,
+    now: options.now,
+    startBackground: () => {
+      void service.startBackground(async () => {
+        const asOf = options.now().toISOString();
+        return {
+          query: { period: "week", anchor: statisticsLiveDays(asOf).at(-1)! },
+          timezone: "Asia/Seoul",
+          asOf,
+          access: { restricted: false, allowedFolderIds: [] },
+          visibleFolders: await options.folderProvider.listFolders(),
+          day: null,
+        };
+      });
+    },
   };
 }
 

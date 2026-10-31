@@ -154,7 +154,7 @@ export function finalizeSessionStatisticsOptions(
     providers: USAGE_STATS_PROVIDERS.map((provider) => ({ provider, label: PROVIDER_LABELS[provider] })),
     models: sortedModels,
     projects,
-    project_roster: projects.slice(0, 5).map((project) => project.project_id),
+    project_roster: projects.map((project) => project.project_id),
     model_rosters: modelRosters,
   };
 }
