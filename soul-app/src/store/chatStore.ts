@@ -349,10 +349,30 @@ function mergeSorted(
   existing: SessionEvent[],
   fresh: SessionEvent[]
 ): SessionEvent[] {
-  const cleanExisting = existing.some(isSyntheticLiveTextEvent)
+  let lifecycleFenceIndex = -1;
+  let lifecycleFenceLiveSeq: number | null = null;
+  fresh.forEach((event, index) => {
+    const liveSeq = liveTextLifecycleFenceSeq(event);
+    if (liveSeq === null) return;
+    lifecycleFenceIndex = index;
+    lifecycleFenceLiveSeq = liveSeq;
+  });
+  const cleanExisting = lifecycleFenceIndex >= 0 && existing.some(isSyntheticLiveTextEvent)
     ? existing.filter((event) => !isSyntheticLiveTextEvent(event))
     : existing;
-  const cleanFresh = fresh.filter((event) => !isSyntheticLiveTextEvent(event));
+  const cleanFresh = lifecycleFenceIndex < 0
+    ? fresh
+    : fresh.filter((event, index) => {
+      if (!isSyntheticLiveTextEvent(event)) return true;
+      const liveSeq = typeof event.data?.liveSeq === 'number'
+        && Number.isSafeInteger(event.data.liveSeq)
+        && event.data.liveSeq >= 0
+        ? event.data.liveSeq
+        : null;
+      return liveSeq !== null
+        ? liveSeq > lifecycleFenceLiveSeq!
+        : index > lifecycleFenceIndex;
+    });
   if (cleanFresh.length === 0) return cleanExisting;
   const seenIds = new Set(cleanExisting.map((e) => e.id));
   const dedup = cleanFresh.filter((event) => {
@@ -388,6 +408,19 @@ function isSyntheticLiveTextEvent(event: SessionEvent): boolean {
   if (event.data?._live_only !== true || !event.id.startsWith('live:')) return false;
   const eventId = event.data?._event_id;
   return !(typeof eventId === 'number' && Number.isSafeInteger(eventId) && eventId > 0);
+}
+
+function liveTextLifecycleFenceSeq(event: SessionEvent): number | null {
+  if (
+    event.type !== 'intervention_sent'
+    && event.type !== 'user_message'
+    && event.type !== 'complete'
+    && event.type !== 'session_ended'
+  ) return null;
+  const value = event.data?.liveSeq;
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : null;
 }
 
 function isAssistantLivePreview(event: SessionEvent): boolean {

@@ -179,8 +179,13 @@ export class RuntimeSessionEventHub {
       return withLiveSequence(event, liveSeq);
     }
     if (eventType === "session_ended" || eventType === "session_deleted") {
-      this.fenceSessionLiveText(liveTextSessionKey(sessionId), event.nodeId);
-      return event;
+      const liveSeq = this.fenceSessionLiveText(
+        liveTextSessionKey(sessionId),
+        event.nodeId,
+      );
+      return eventType === "session_ended"
+        ? withLiveSequence(event, liveSeq)
+        : event;
     }
     if (!isLiveTextEvent(eventType, payload)) return event;
     const stream = liveTextIdentity(payload);

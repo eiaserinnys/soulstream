@@ -456,11 +456,16 @@ describe('chatStore.streamingSlots — live delta append 제거', () => {
     expect(getStreamingSlots()?.assistantByStream?.['stream-durable']).toBeUndefined();
   });
 
-  it('mergeEvents 입구에서 기존·신규 synthetic live text만 제거한다', () => {
+  it('lifecycle 경계에서 이전 synthetic live text만 지우고 새 preview와 영속 이벤트는 보존한다', () => {
     const stale: SessionEvent = {
       id: 'live:stale',
       type: 'text_delta',
       data: { text: 'stale A', _live_only: true },
+    };
+    const liveBeforeFence: SessionEvent = {
+      id: 'live:before-fence',
+      type: 'text_delta',
+      data: { text: 'stale batch A', _live_only: true, liveSeq: 10 },
     };
     const numericLiveId: SessionEvent = {
       id: 'live:durable-id',
@@ -477,24 +482,39 @@ describe('chatStore.streamingSlots — live delta append 제거', () => {
       type: 'assistant_message',
       data: { content: 'assistant messages are durable rows', _live_only: true },
     };
+    const freshAfterFence: SessionEvent = {
+      id: 'live:fresh-after-fence',
+      type: 'text_delta',
+      data: { text: 'fresh B', _live_only: true, liveSeq: 12 },
+    };
     useChatStore.setState({ eventsBySession: { [SID]: [stale] } });
 
     useChatStore.getState().mergeEvents(SID, [
-      { ...stale, data: { ...stale.data, text: 'new stale chunk' } },
+      { ...stale, data: { ...stale.data, text: 'new chunk A' } },
+      liveBeforeFence,
       numericLiveId,
       numericStringId,
-      { id: '43', type: 'assistant_message', data: { content: 'final B' } },
       assistantMessage,
-      { id: '44', type: 'thinking_delta', data: { text: 'kept' } },
     ]);
 
-    expect(getEvents().map((event) => event.id)).toEqual([
+    expect(getEvents()).toContainEqual(stale);
+    expect(getEvents()).toContainEqual(liveBeforeFence);
+    expect(getEvents()).toContainEqual(numericStringId);
+
+    useChatStore.getState().mergeEvents(SID, [
+      liveBeforeFence,
+      { id: '43', type: 'intervention_sent', data: { text: '개입', liveSeq: 11 } },
+      freshAfterFence,
+    ]);
+
+    expect(getEvents().map((event) => event.id).sort()).toEqual([
       '43',
-      '44',
       'live:durable-id',
       'live:assistant-message',
-    ]);
+      'live:fresh-after-fence',
+    ].sort());
     expect(getEvents()).not.toContainEqual(stale);
+    expect(getEvents()).not.toContainEqual(liveBeforeFence);
     expect(getEvents()).not.toContainEqual(numericStringId);
     expect(getEvents()).toContainEqual(numericLiveId);
     expect(getEvents()).toContainEqual(assistantMessage);
