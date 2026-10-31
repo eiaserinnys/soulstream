@@ -6,14 +6,16 @@
  * @tailwindcss/typography (prose)를 사용하지 않고 커스텀 컴포넌트로 스타일링합니다.
  */
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type HTMLAttributes } from "react";
+import { Children, cloneElement, createContext, isValidElement, useCallback, useContext, useEffect, useMemo, useRef, useState, type HTMLAttributes } from "react";
 import { Check, Copy } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
+import { cn } from "../lib/cn";
 import remarkGfm from "remark-gfm";
 import remarkBreaks from "remark-breaks";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
+import { DashboardIconCap } from "./DashboardIconCap";
 import { MarkdownImage } from "./MarkdownImage";
 import { useInternalLinkClick } from "./InternalLinkProvider";
 import { ChatImageAttachments, ChatImageViewer } from "./chat/ChatImageAttachments";
@@ -130,7 +132,9 @@ const components: Components = {
   ),
   code: ({ className, children, ...props }) => {
     // rehype-highlight가 language-* 클래스를 추가한 경우 → 코드블록 내부
-    const isBlock = className?.startsWith("language-") || className?.startsWith("hljs");
+    const isBlock = className?.split(/\s+/).includes("markdown-code-block")
+      || className?.startsWith("language-")
+      || className?.startsWith("hljs");
     if (isBlock) {
       return (
         <code className={className} {...props}>
@@ -208,7 +212,9 @@ const compactComponents: Components = {
     </pre>
   ),
   code: ({ className, children, ...props }) => {
-    const isBlock = className?.startsWith("language-") || className?.startsWith("hljs");
+    const isBlock = className?.split(/\s+/).includes("markdown-code-block")
+      || className?.startsWith("language-")
+      || className?.startsWith("hljs");
     if (isBlock) {
       return <code className={className} {...props}>{children}</code>;
     }
@@ -249,21 +255,123 @@ const compactComponents: Components = {
 const userBubbleComponents: Components = { ...components, a: userBubbleAnchor };
 const compactUserBubbleComponents: Components = { ...compactComponents, a: userBubbleAnchor };
 
-const documentCodeBlock: NonNullable<Components["pre"]> = ({ children }) => (
-  <div
-    data-markdown-code-scroll="horizontal"
-    className="my-1.5 overflow-x-auto overflow-y-hidden rounded"
-  >
-    <pre
-      data-markdown-code-layout="document"
-      className="m-0 text-xs text-muted-foreground bg-input rounded px-2 py-1.5 whitespace-pre-wrap break-words font-mono"
-    >
-      {children}
-    </pre>
-  </div>
-);
-
 const BlockquoteDepthContext = createContext(0);
+
+function CopyableCodeBlock({
+  children,
+  compact,
+  codeBlockLayout,
+}: {
+  children: React.ReactNode;
+  compact: boolean;
+  codeBlockLayout: "bounded" | "document";
+}) {
+  const contentRef = useRef<HTMLPreElement>(null);
+  const resetTimerRef = useRef<number | null>(null);
+  const [copyState, setCopyState] = useState<"idle" | "success" | "error">("idle");
+
+  useEffect(() => () => {
+    if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
+  }, []);
+
+  const copyCode = async () => {
+    try {
+      const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
+      if (!clipboard?.writeText) throw new Error("Clipboard API is unavailable");
+      const code = contentRef.current?.textContent?.replace(/\r?\n$/, "") ?? "";
+      await clipboard.writeText(code);
+      setCopyState("success");
+    } catch {
+      setCopyState("error");
+    }
+    if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = window.setTimeout(() => setCopyState("idle"), 1600);
+  };
+
+  const feedback = copyState === "success"
+    ? "코드를 복사했습니다"
+    : copyState === "error"
+      ? "코드를 복사하지 못했습니다"
+      : "";
+  const copied = copyState === "success";
+  const handleCopy = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    void copyCode();
+  };
+
+  const copyButton = (
+    <>
+      <DashboardIconCap
+        label="코드 복사"
+        size="small"
+        appearance="bare"
+        data-slot="codeblock-copy-button"
+        data-copy-state={copyState}
+        className={cn("absolute right-0.5 top-0.5 z-10", copied && "text-foreground")}
+        onClick={handleCopy}
+        onMouseDown={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        {copied
+          ? <Check className="h-3.5 w-3.5" aria-hidden="true" />
+          : <Copy className="h-3.5 w-3.5" aria-hidden="true" />}
+      </DashboardIconCap>
+      <span className="sr-only" role="status" aria-live="polite">{feedback}</span>
+    </>
+  );
+
+  if (codeBlockLayout === "document") {
+    return (
+      <div data-slot="codeblock-copy-frame" className="group/codeblock relative">
+        <div
+          data-markdown-code-scroll="horizontal"
+          className="my-1.5 overflow-x-auto overflow-y-hidden rounded"
+        >
+          <pre
+            ref={contentRef}
+            data-slot="codeblock-copy-content"
+            data-markdown-code-layout="document"
+            className="m-0 text-xs text-muted-foreground bg-input rounded px-2 py-2.5 pr-9 min-h-9 whitespace-pre-wrap break-words font-mono"
+          >
+            {children}
+          </pre>
+        </div>
+        {copyButton}
+      </div>
+    );
+  }
+
+  if (compact) {
+    return (
+      <div data-slot="codeblock-copy-frame" className="group/codeblock relative">
+        <pre ref={contentRef} data-slot="codeblock-copy-content" className="text-xs text-muted-foreground bg-input rounded px-1.5 py-1 pr-9 min-h-9 my-1 whitespace-pre-wrap break-words overflow-auto max-h-24 font-mono">{children}</pre>
+        {copyButton}
+      </div>
+    );
+  }
+
+  return (
+    <div data-slot="codeblock-copy-frame" className="group/codeblock relative">
+      <pre ref={contentRef} data-slot="codeblock-copy-content" className="text-xs text-muted-foreground bg-input rounded px-2 py-2.5 pr-9 min-h-9 my-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">{children}</pre>
+      {copyButton}
+    </div>
+  );
+}
+
+function createCopyableCodeBlock(
+  compact: boolean,
+  codeBlockLayout: "bounded" | "document",
+): NonNullable<Components["pre"]> {
+  return ({ children }) => (
+    <CopyableCodeBlock compact={compact} codeBlockLayout={codeBlockLayout}>
+      {Children.map(children, (child) => {
+        if (!isValidElement<{ className?: string }>(child)) return child;
+        const className = [child.props.className, "markdown-code-block"].filter(Boolean).join(" ");
+        return cloneElement(child, { className });
+      })}
+    </CopyableCodeBlock>
+  );
+}
 
 function CopyableBlockquote({
   children,
@@ -411,9 +519,7 @@ export function MarkdownContent({
       : compact
         ? compactComponents
         : components;
-    const layoutComponents = codeBlockLayout === "document"
-      ? { ...baseComponents, pre: documentCodeBlock }
-      : baseComponents;
+    const layoutComponents = { ...baseComponents, pre: createCopyableCodeBlock(compact, codeBlockLayout) };
     const imageComponents = onImageClick || chatImages?.readContext
       ? {
         ...layoutComponents,

@@ -94,7 +94,7 @@ export function ComponentsReviewPage() {
   const [inputSampleVersion, setInputSampleVersion] = useState(0);
   const [folder, setFolder] = useState(reviewFolders[0]);
   const [panelOpen, setPanelOpen] = useState(false);
-  const [description, setDescription] = useState("폴더 설명을 누르면 기존 편집기가 열립니다.");
+  const [description, setDescription] = useState("폴더 설명을 누르면 기존 편집기가 열립니다.\n\n```\npnpm test\n```\n\n```ts\nconst result = \"a deliberately long first line that should wrap without touching the copy button\";\nconsole.log(result);\n```");
   const [comments, setComments] = useState(reviewDetail.comments ?? []);
   const [expandedFolders, setExpandedFolders] = useState<ReadonlySet<string>>(() => new Set());
   const open = (label: string) => setNotice(`${label} 샘플을 열었습니다.`);

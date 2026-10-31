@@ -252,7 +252,7 @@
 [data-slot="chat-root"][data-chat-presentation="manuscript"] [data-chat-narration="true"] [data-slot="chat-body"] {
   color: var(--muted-foreground);
 }
-[data-chat-user="true"] [data-slot="chat-body"] :is(ul, ol, pre, div:has(> table)) {
+[data-chat-user="true"] [data-slot="chat-body"] :is(ul, ol, pre, [data-slot="codeblock-copy-frame"], div:has(> table)) {
   width: fit-content;
   max-width: 100%;
   margin-inline-start: auto;
@@ -268,9 +268,63 @@
   background: var(--persistent-session-panel);
   border: 1px solid var(--persistent-session-line);
 }
-[data-slot="chat-root"][data-chat-presentation="manuscript"] pre .hljs {
+pre[data-slot="codeblock-copy-content"] .hljs {
   background: transparent;
+  padding: 0;
   color: var(--foreground);
+}
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-doctag,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-keyword,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-meta .hljs-keyword,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-template-tag,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-template-variable,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-type,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-variable.language_ {
+  color: #cf222e;
+}
+
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-title,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-title.class_,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-title.class_.inherited__,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-title.function_ {
+  color: #8250df;
+}
+
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-attr,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-attribute,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-literal,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-meta,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-number,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-operator,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-variable,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-selector-attr,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-selector-class,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-selector-id {
+  color: #0550ae;
+}
+
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-regexp,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-string,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-meta .hljs-string {
+  color: #0a3069;
+}
+
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-built_in,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-symbol {
+  color: #953800;
+}
+
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-comment,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-code,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-formula {
+  color: #57606a;
+}
+
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-name,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-quote,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-selector-tag,
+:root:not(.dark) pre[data-slot="codeblock-copy-content"] .hljs-selector-pseudo {
+  color: #116329;
 }
 [data-slot="chat-root"][data-chat-presentation="manuscript"] [data-slot="chat-composer-anchor"] .w-20.h-20 {
   background: var(--persistent-session-paper);

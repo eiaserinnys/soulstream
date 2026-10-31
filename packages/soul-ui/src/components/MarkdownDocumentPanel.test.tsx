@@ -262,6 +262,7 @@ describe("MarkdownDocumentPanel", () => {
     cleanupRuntime = undefined;
     for (const cleanup of standaloneCleanups.splice(0)) cleanup();
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
   it("switches to CodeMirror on body click and saves edited body on blur", async () => {
@@ -655,6 +656,19 @@ describe("MarkdownDocumentPanel", () => {
 
     const anchor = await waitForSelector<HTMLAnchorElement>(container, '[data-testid="markdown-read-body"] a');
     flushSync(() => anchor.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 })));
+
+    expect(container.querySelector('[data-testid="markdown-read-body"]')).not.toBeNull();
+    expect(container.querySelector('[data-testid="markdown-codemirror-editor"]')).toBeNull();
+  });
+
+  it("keeps code copy clicks in read mode", async () => {
+    storedDocument.body = "```ts\nconst value = 1;\n```";
+    vi.stubGlobal("navigator", { clipboard: { writeText: vi.fn().mockResolvedValue(undefined) } });
+    ({ container, root } = renderPanel());
+
+    const button = await waitForSelector<HTMLButtonElement>(container, '[aria-label="코드 복사"]');
+    flushSync(() => button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true })));
+    await vi.waitFor(() => expect(button.getAttribute("data-copy-state")).toBe("success"));
 
     expect(container.querySelector('[data-testid="markdown-read-body"]')).not.toBeNull();
     expect(container.querySelector('[data-testid="markdown-codemirror-editor"]')).toBeNull();

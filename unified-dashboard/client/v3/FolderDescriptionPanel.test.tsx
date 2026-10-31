@@ -52,6 +52,16 @@ describe("FolderDescriptionPanel", () => {
     expect(html).not.toContain("전체 보기");
   });
 
+  it("keeps fenced code copy controls outside the description click target", () => {
+    const html = renderToStaticMarkup(
+      <FolderDescriptionPanel markdown={"```ts\nconst value = 1;\n```"} onSave={vi.fn()} />,
+    );
+
+    expect(html).toContain('<div class="v3-description-content"');
+    expect(html).toContain('aria-label="코드 복사"');
+    expect(html).not.toContain('<button type="button" class="v3-description-content"');
+  });
+
   it("uses the icon-cap save action for the compact daily memo editor", () => {
     const html = renderToStaticMarkup(
       <FolderDescriptionPanel

@@ -6,6 +6,7 @@ import { useGlassSurface } from "./LiquidGlassProvider";
 
 export interface DashboardIconCapProps
   extends Omit<ComponentPropsWithoutRef<"button">, "aria-label" | "title"> {
+  "data-slot"?: string;
   label: string;
   tooltip?: string;
   size?: "default" | "small";
@@ -18,6 +19,7 @@ export const DashboardIconCap = forwardRef<HTMLButtonElement, DashboardIconCapPr
   tooltip,
   size = "default",
   appearance = "default",
+  "data-slot": dataSlot,
   className,
   children,
   type = "button",
@@ -46,7 +48,7 @@ export const DashboardIconCap = forwardRef<HTMLButtonElement, DashboardIconCapPr
         size === "small" && "dashboard-icon-cap--small",
         className,
       )}
-      data-slot="dashboard-icon-cap"
+      data-slot={dataSlot ?? "dashboard-icon-cap"}
       data-appearance={bare ? "bare" : undefined}
       data-liquid-glass-webgl={webglActive ? "true" : undefined}
       aria-label={label}

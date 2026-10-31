@@ -101,14 +101,15 @@ export function FolderDescriptionPanel({
           data-editor-variant={variant}
           onClick={(event) => { if (event.target === event.currentTarget) changeEditing(true); }}
         >
-          <button
-            type="button"
+          <div
             className="v3-description-content"
-            aria-label={`${ariaLabel} 편집`}
-            onClick={() => changeEditing(true)}
+            onClick={(event) => {
+              if (event.target instanceof Element && event.target.closest("a, button")) return;
+              changeEditing(true);
+            }}
           >
             {markdown ? <MarkdownContent content={markdown} codeBlockLayout="document" /> : <span className="v3-description-empty">{emptyText}</span>}
-          </button>
+          </div>
           <div className="v3-description-actions">
             <DashboardIconCap size="small" label={`${ariaLabel} 편집`} onClick={() => changeEditing(true)}>
               <Pencil className="h-4 w-4" aria-hidden="true" />
