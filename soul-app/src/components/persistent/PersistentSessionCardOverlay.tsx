@@ -55,7 +55,7 @@ export function PersistentSessionCardOverlay({ api, cardId, sessionId, bottomSaf
   return <CardPanelOverlayFrame visible={cardId !== null} width={frameWidth} onClose={onClose}
     onHidden={onHidden} testID="persistent-card-overlay" direction="row"
     chatPaneMinimumBottomPadding={bottomSafeAreaInset}>
-    <CardDetailChatPanes api={api} cardId={renderedCardId} active detailWidth={detailWidth}
+    <CardDetailChatPanes api={api} cardId={renderedCardId} active={cardId !== null} detailWidth={detailWidth}
       onClose={onClose} onOpenSession={openSessionInOverlay} sessionId={chatSessionId} onCloseChat={closeChat}
       ownsSessionConnection={!sameSession} />
   </CardPanelOverlayFrame>;

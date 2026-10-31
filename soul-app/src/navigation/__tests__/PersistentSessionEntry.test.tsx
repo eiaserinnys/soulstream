@@ -8,9 +8,16 @@ import { useAuthStore } from '../../store/authStore';
 import { useAppNoticeStore } from '../../store/appNoticeStore';
 const mockList = jest.fn();
 jest.mock('../../api/client', () => ({ createApiClient: () => ({ listPersistentSessions: mockList }) }));
-jest.mock('../../screens/SettingsScreen', () => ({ SettingsScreen: jest.fn(() => null) }));
-jest.mock('../../components/AppModalSurface', () => ({ AppModalSurface: ({ children }: any) => children }));
+jest.mock('../../screens/SettingsScreen', () => ({ SettingsScreen: jest.fn((props: any) => {
+  const { useDuoSideBand } = require('../duoSideBand');
+  const { useRegisterDuoRailOverride } = require('../phoneRailActions');
+  useRegisterDuoRailOverride('entry-settings', useDuoSideBand(), [{ id: 'close', label: '설정 닫기', icon: 'close', onPress: props.onClose }]);
+  return null;
+}) }));
+jest.mock('../../components/AppModalSurface', () => ({ AppModalSurface: ({ children, sideBand }: any) => <>{children}{sideBand}</> }));
 import { SettingsScreen } from '../../screens/SettingsScreen';
+import { DuoSideBandContext } from '../tabContract';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 let host: ReturnType<typeof usePersistentSessionHost>;
 let store: StoreApi<PersistentSessionScene>;
 function Probe() { host = usePersistentSessionHost(); store = host.store; return null; }
@@ -54,6 +61,15 @@ test('시작 토글 끔은 초상만 읽고, 0개의 수동 입구는 기존 추
   expect(view.queryByTestId('persistent-entry-loading')).toBeNull();
   await act(async () => { await host.requestEntry(open); });
   expect(jest.mocked(SettingsScreen).mock.calls.at(-1)![0]).toMatchObject({ category: 'persistent', initialPersistentDestination: { kind: 'editor' } });
+});
+test('듀오 영구 세션 추가 화면의 모달 안에 레일 호스트가 있다', async () => {
+  mockList.mockResolvedValue({ sessions: [], create_defaults: defaults });
+  const view = render(<SafeAreaInsetsContext.Provider value={{ top: 24, bottom: 24, left: 0, right: 84 }}>
+    <DuoSideBandContext.Provider value={true}><PersistentSessionProvider><Probe /></PersistentSessionProvider></DuoSideBandContext.Provider>
+  </SafeAreaInsetsContext.Provider>);
+  await act(async () => { await host.requestEntry(jest.fn()); });
+  fireEvent.press(view.getByTestId('duo-rail-action-close'));
+  expect(view.queryByTestId('duo-rail-action-close')).toBeNull();
 });
 test('시작 조회 중 도착한 세션 intent는 늦은 PAS 응답보다 우선하고 loading sheet는 없다', async () => {
   let finish!: (result: unknown) => void;

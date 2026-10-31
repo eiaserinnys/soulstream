@@ -16,6 +16,7 @@ import { ChatPane } from '../../split/ChatPane';
 import { retryPlannerSessionWorkspace } from '../../../lib/planner-folder-workspace';
 import { coordinateFolderWorkspaceClose } from '../../../lib/planner-folder-title-save';
 import { TABLET_SHELL_LAYOUT } from '../../../theme';
+import { DuoSideBandContext } from '../../../navigation/tabContract';
 
 let mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
 let mockInsets = { top: 0, bottom: 0, left: 0, right: 0 };
@@ -42,7 +43,7 @@ jest.mock('react-native-webview', () => ({
   WebView: () => null,
 }));
 
-jest.mock('../CardDetailSheet', () => ({ CardDetailContent: () => require('react').createElement(require('react-native').View, { testID: 'overlay-card-detail' }) }));
+jest.mock('../CardDetailSheet', () => ({ CardDetailContent: (props: any) => require('react').createElement(require('react-native').View, { ...props, testID: 'overlay-card-detail' }) }));
 
 jest.mock('../../split/ChatPane', () => {
   const React = require('react');
@@ -312,6 +313,21 @@ test.each([
   const screen = render(<FolderWorkspaceReadOverlay />);
   expect(StyleSheet.flatten(screen.getByTestId('task-workspace-task-pane').props.style).width).toBe(expected);
   expect(screen.getByTestId('task-workspace-chat-pane')).toBeTruthy();
+});
+
+test('듀오 두 열에서 채팅만 닫아도 카드 상세는 열린 채 유지된다', () => {
+  mockWindowDimensions = { width: 951, height: 669, scale: 1, fontScale: 1 };
+  const detail = cardDetail('card-duo-chat', 'session-only');
+  useCardStore.getState().putDetail(detail);
+  useUIStore.getState().openCardOverlay(detail.card.id);
+  act(() => { useUIStore.getState().setActiveSessionId('session-only'); });
+  const screen = render(<DuoSideBandContext.Provider value={true}><FolderWorkspaceReadOverlay /></DuoSideBandContext.Provider>);
+  const actions = screen.getByTestId('overlay-card-detail').props.extraRailActions;
+  const closeChat = actions.find((action: { id: string }) => action.id === 'close-chat');
+  expect(closeChat).toBeTruthy();
+  act(() => { closeChat.onPress(); });
+  expect(useUIStore.getState().activeSessionId).toBeNull();
+  expect(useUIStore.getState().folderOverlayVisible).toBe(true);
 });
 
 test('the native board sheet and inline root exclusively host the same overlay', () => {

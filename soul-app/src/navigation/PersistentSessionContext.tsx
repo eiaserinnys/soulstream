@@ -17,6 +17,10 @@ import { useSettingsStore } from '../store/settingsStore';
 import { useSessionStore } from '../store/sessionStore';
 import { useTokens } from '../theme';
 import { useAppNoticeStore } from '../store/appNoticeStore';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { useDuoSideBand } from './duoSideBand';
+import { DuoRailOverride } from '../components/navigation/DuoRailOverride';
 
 interface PersistentSessionHost {
   store: StoreApi<PersistentSessionScene>;
@@ -32,6 +36,8 @@ export function PersistentSessionProvider({ children, sessionIntent = false, onL
 }) {
   const [store] = useState(createPersistentSessionScene);
   const t = useTokens();
+  const duo = useDuoSideBand();
+  const insets = useSafeAreaInsets();
   const serverUrl = useSettingsStore(state => state.serverUrl);
   const jwt = useAuthStore(state => state.jwt);
   const email = decodeAuthJwt(jwt)?.email;
@@ -97,6 +103,8 @@ export function PersistentSessionProvider({ children, sessionIntent = false, onL
   return <Context.Provider value={{ store, portrait, loading, requestEntry, initialize }}>
     {children}
     {sheet ? <AppModalSurface visible variant="expanded" presentationStyle="pageSheet" modalId="modal_settings" surfaceTestID="persistent-entry-sheet"
+      sideBand={duo && sheet === 'add' ? <ThemeProvider value={t.mode === 'dark' ? DarkTheme : DefaultTheme}><DuoRailOverride /></ThemeProvider> : undefined}
+      sideBandWidth={duo && sheet === 'add' ? insets.right : 0}
       onRequestClose={() => sheet === 'add' ? closeAdd.current() : setSheet(null)}>
       {sheet === 'add' ? <SettingsScreen category="persistent" initialPersistentDestination={{ kind: 'editor' }}
         onClose={() => setSheet(null)} registerCloseRequest={close => { closeAdd.current = close; }} />

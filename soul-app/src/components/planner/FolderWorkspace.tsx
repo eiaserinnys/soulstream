@@ -54,6 +54,7 @@ export function FolderWorkspace({
   onTitleSaved,
   onOpenFolder,
   cardDisplay,
+  extraRailActions = [],
 }: {
   api: ApiClient | null;
   folderPageId: string;
@@ -64,6 +65,7 @@ export function FolderWorkspace({
   onTitleSaved?: (title: string) => void;
   onOpenFolder?: (folderId: string, pageId: string, name: string) => void;
   cardDisplay?: FolderCardDisplay;
+  extraRailActions?: PhoneRailAction[];
 }) {
   const t = useTokens();
   const tablet = useDeviceType() !== 'phone';
@@ -153,6 +155,7 @@ export function FolderWorkspace({
       { id: 'today', label: '오늘 데일리', icon: (folderInToday ? 'sunny' : 'sunny-outline') as PhoneRailAction['icon'], selected: folderInToday === true, disabled: !scopedApi || !todayReady, onPress: () => { void runRailToggle('today'); } },
     ] : []),
     ...(folder?.projectPageId ? [{ id: 'menu', label: '폴더 메뉴', icon: 'ellipsis-horizontal' as const, onPress: () => menus.openProjectMenu({ folder, projectPageId: folder.projectPageId!, onOpen: () => undefined, onCreateFolder: () => setNewFolderDraft({ parentPageId: folder.projectPageId! }) }) }] : []),
+    ...extraRailActions,
   ];
   useRegisterDuoRailOverride(`folder-${folderPageId}`, duo && active, railActions);
 

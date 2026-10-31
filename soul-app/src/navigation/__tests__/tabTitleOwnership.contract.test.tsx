@@ -24,7 +24,8 @@ jest.mock('@react-navigation/native-stack', () => ({
 jest.mock('@react-navigation/bottom-tabs', () => ({
   createBottomTabNavigator: require('./navigationCaptureMock').createBottomTabNavigatorCapture,
 }));
-jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true }));
+jest.mock('@react-navigation/native', () => ({ useIsFocused: () => true,
+  useFocusEffect: (effect: () => void) => require('react').useEffect(effect, [effect]) }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('../../hooks/useSessionsStream', () => ({ useSessionsStream: jest.fn() }));
 jest.mock('../../screens/DailyPlannerScreen', () => {

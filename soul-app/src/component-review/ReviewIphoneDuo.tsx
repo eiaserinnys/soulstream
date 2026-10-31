@@ -132,6 +132,9 @@ function DuoPasCardOverlayStage({ reportsEmpty = false, initialReportsScene = fa
     } as any);
     useSessionStore.getState().applyPersistentReport(sessionId, entries);
     if (initialReportsScene && !reportsEmpty) host.store.getState().toggleReports();
+    if (new URLSearchParams(window.location.search).get('view') === 'card-detail') {
+      host.store.getState().selectCard('preview-pas-card');
+    }
     const request = useChatStore.getState().beginPersistentDisplaySettingsLoad(sessionId);
     useChatStore.getState().finishPersistentDisplaySettingsLoad(sessionId, request, {
       show_character: true, animate_character: false, show_generation_separator: true,

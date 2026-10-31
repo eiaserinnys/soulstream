@@ -6,6 +6,7 @@ import { useTokens } from '../../theme';
 import { PhoneCardDetail, PhoneMarkdownDocument } from '../PhoneContentScreens';
 
 jest.mock('@react-navigation/native', () => ({
+  useIsFocused: () => true,
   useFocusEffect: (effect: () => (() => void) | void) => {
     const ReactModule = require('react');
     ReactModule.useEffect(() => effect(), [effect]);
