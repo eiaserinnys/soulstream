@@ -214,7 +214,6 @@ export function createLiveExecuteProxyRouteProvider(
           ? readStoredPersistentSettings(row.metadata)
           : undefined;
         const attempted = new Set<string>();
-        let autoRetried = false;
         const fallbackCandidates = stored?.default_model
           ? [stored.default_model, ...stored.fallback_models]
           : [];
@@ -257,12 +256,10 @@ export function createLiveExecuteProxyRouteProvider(
           queue,
           onLimitHit: fallbackCandidates.length > 1
             ? async () => {
-                if (autoRetried) return false;
                 const current = await options.persistentResume?.getSession(payload.agent_session_id);
                 if (!current) return false;
                 const next = await choosePersistentCandidate(options, current, fallbackCandidates, attempted);
                 if (!next) return false;
-                autoRetried = true;
                 attempted.add(`${next.nodeId}:${next.candidate.model_preset}`);
                 await commitPersistentHandoff(options, current, next.candidate, next.nodeId, next.preset);
                 const targetNode = options.registry.getConnectedNode(next.nodeId);
