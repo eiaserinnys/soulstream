@@ -322,6 +322,27 @@ test('card expansion is limited to a bound ID or one card number', () => {
   expect(onOpen).not.toHaveBeenCalled();
 });
 
+test('일반 보고는 높이 제한에 걸릴 때 본문을 스크롤하고 하단 확인 버튼을 유지한다', () => {
+  const maxHeight = 260;
+  const t = renderHook(() => useTokens()).result.current;
+  const margin = StyleSheet.flatten(reportStyles(t, t.foundation.pageInset, false).band).marginVertical as number;
+  const cappedHeight = maxHeight - margin * 2;
+  const screen = pager([reportReviewEntries[2]], undefined, undefined, { maxHeight });
+  const sheet = () => screen.getByTestId('report-sheet-result');
+
+  expect(screen.queryByTestId('report-scroll')).toBeNull();
+  expect(StyleSheet.flatten(sheet().props.style).height).toBeUndefined();
+  measurePersistentReports(screen, { readingHeight: 400 });
+
+  expect(StyleSheet.flatten(sheet().props.style).height).toBe(cappedHeight);
+  const reading = screen.getByTestId('report-scroll');
+  const footer = screen.getByTestId('report-footer');
+  expect(within(reading).queryByTestId('report-footer')).toBeNull();
+  expect(within(footer).getByLabelText('확인했어')).toBeTruthy();
+  fireEvent.press(within(footer).getByLabelText('확인했어'));
+  expect(screen.onDismiss).toHaveBeenCalledWith('result');
+});
+
 test('expanded inline report uses the layout height cap and scrolls its reading block', () => {
   mockDevice = 'tablet';
   const geometry = calculatePersistentSessionLayout({

@@ -82,7 +82,8 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
   latestMeasurement.current = { entries, commitHeight, measureKey };
   useLayoutEffect(commitHeight, [entries, compact, width, bubble, index]);
   const bubbleHeight = bubble ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
-  const inlineHeight = inlineExpanded ? Math.min(inlineMaxHeight ?? height, height || inlineMaxHeight || 0) : undefined;
+  const inlineCapped = !bubble && (inlineExpanded || (inlineMaxHeight !== undefined && height > inlineMaxHeight));
+  const inlineHeight = inlineCapped ? Math.min(inlineMaxHeight ?? height, height || inlineMaxHeight || 0) : undefined;
   // Keep a presented session interactive while its placement/width remeasures:
   // hiding the surface here also hides its focused native TextInput.
   const ready = verticalList || presentedLayout === layoutKey || (expandedKey !== null && presentedLayout !== null && presentedSession.current === sessionId)
@@ -228,14 +229,14 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
     pointerEvents={ready ? 'auto' : 'none'} accessibilityElementsHidden={!ready} importantForAccessibility={ready ? 'auto' : 'no-hide-descendants'}
     style={[styles.deck, !bubble && styles.band, bubble && { height: bubbleHeight, maxHeight },
       !bubble && { maxHeight: inlineMaxHeight, overflow: 'hidden' },
-      inlineExpanded && { height: inlineHeight, maxHeight: inlineMaxHeight }, !ready && { opacity: 0 }]} {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}
+      inlineCapped && { height: inlineHeight, maxHeight: inlineMaxHeight }, !ready && { opacity: 0 }]} {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}
     onTouchStart={() => onDeckTouch?.(true)} onTouchEnd={() => onDeckTouch?.(false)} onTouchCancel={() => onDeckTouch?.(false)}
     {...{ onKeyDown }}>
     <ScrollView ref={scroll} testID="report-track" horizontal pagingEnabled showsHorizontalScrollIndicator={false}
-      keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.track, inlineExpanded && { height: inlineHeight }]} style={bubble ? { height: bubbleHeight, flexShrink: 0,
+      keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.track, inlineCapped && { height: inlineHeight }]} style={bubble ? { height: bubbleHeight, flexShrink: 0,
         // The surface's existing horizontal borders belong to its height;
         // let the viewport span them without adding two more pixels.
-        marginVertical: -StyleSheet.hairlineWidth } : inlineExpanded ? { height: inlineHeight, flexShrink: 0 }
+        marginVertical: -StyleSheet.hairlineWidth } : inlineCapped ? { height: inlineHeight, flexShrink: 0 }
           : deckHeight ? { height: deckHeight } : undefined}
       onScrollBeginDrag={() => interaction(true)} onScrollEndDrag={() => interaction(false)} onMomentumScrollEnd={() => interaction(false)}
       onLayout={event => setWidth(event.nativeEvent.layout.width)} onContentSizeChange={align}
@@ -265,7 +266,7 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
           else setExpandedKey(expandedKey === entry.key ? null : entry.key);
         } : undefined}
         index={i} count={count} current={i === index} compact={compact} showNav={!phone} width={width} styles={styles}
-        bubble={bubble} surfaceHeight={bubble ? bubbleHeight : inlineExpanded ? inlineHeight : undefined}
+        bubble={bubble} surfaceHeight={bubble ? bubbleHeight : inlineHeight}
         busy={reviewCard ? completion?.busy ?? true : isServerCardAcknowledgement(entry) ? false : send?.busy} canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)}
         acknowledgeLabel={reviewCard ? '완료' : undefined} undo={undo}
         onCancel={() => void send?.cancel(entry)} onInteraction={interaction}
