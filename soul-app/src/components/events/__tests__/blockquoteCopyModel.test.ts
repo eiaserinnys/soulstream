@@ -74,7 +74,7 @@ describe('segmentMarkdownBlockquotes', () => {
       { kind: 'markdown', markdown: '앞 문단\n' },
       {
         kind: 'codeBlock',
-        markdown: ['  ```ts', '  const answer = 42;', '    return answer;', '  ```'].join('\n'),
+        markdown: ['```ts', 'const answer = 42;', '  return answer;', '```'].join('\n'),
         copyText: ['const answer = 42;', '  return answer;'].join('\n'),
       },
       { kind: 'markdown', markdown: '\n뒤 문단' },
@@ -111,10 +111,25 @@ describe('segmentMarkdownBlockquotes', () => {
       { kind: 'markdown', markdown: '1. 안내\n' },
       {
         kind: 'codeBlock',
-        markdown: ['    ```bash', '    pnpm test', '    ```'].join('\n'),
+        markdown: ['```bash', 'pnpm test', '```'].join('\n'),
         copyText: 'pnpm test',
       },
       { kind: 'markdown', markdown: ' 후속 설명' },
+    ]);
+  });
+
+  test('목록 안 물결 펜스의 더 깊이 들여쓴 닫는 줄도 정규화한다', () => {
+    const markdown = [
+      '1. 안내',
+      '',
+      '    ~~~bash',
+      '    pnpm test',
+      '      ~~~',
+    ].join('\n');
+
+    expect(segmentMarkdownBlockquotes(markdown)).toEqual([
+      { kind: 'markdown', markdown: '1. 안내\n' },
+      { kind: 'codeBlock', markdown: '~~~bash\npnpm test\n~~~', copyText: 'pnpm test' },
     ]);
   });
 

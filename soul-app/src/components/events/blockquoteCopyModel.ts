@@ -72,9 +72,9 @@ export function segmentMarkdownBlockquotes(markdown: string): MarkdownBlockSegme
     }
 
     if (codeBlock) {
-      codeBlock.lines.push(line);
       const candidate = readFence(line, codeBlock.maxFenceIndent);
       if (isClosingFence(codeBlock.fence, candidate)) {
+        codeBlock.lines.push(line.trimStart());
         segments.push({
           kind: 'codeBlock',
           markdown: codeBlock.lines.join('\n'),
@@ -83,7 +83,9 @@ export function segmentMarkdownBlockquotes(markdown: string): MarkdownBlockSegme
         continuationIndent = codeBlock.listIndent;
         codeBlock = null;
       } else {
-        codeBlock.codeLines.push(stripOpeningIndent(line, codeBlock.indent));
+        const codeLine = stripOpeningIndent(line, codeBlock.indent);
+        codeBlock.lines.push(codeLine);
+        codeBlock.codeLines.push(codeLine);
       }
       continue;
     }
@@ -113,7 +115,7 @@ export function segmentMarkdownBlockquotes(markdown: string): MarkdownBlockSegme
         indent: fenceMatch.indent,
         maxFenceIndent,
         listIndent,
-        lines: [line],
+        lines: [stripOpeningIndent(line, fenceMatch.indent)],
         codeLines: [],
       };
       continue;
