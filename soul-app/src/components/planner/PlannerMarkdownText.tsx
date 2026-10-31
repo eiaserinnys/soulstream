@@ -75,6 +75,7 @@ export function PlannerMarkdownText({
               selectable
             />;
           }
+          if (!segment.markdown.trim()) return null;
           return <React.Fragment key={`markdown-${index}`}>
             {renderMarkdown(segment.markdown, index)}
           </React.Fragment>;
@@ -110,6 +111,8 @@ export function plannerMarkdownStyle(t: DesignTokens, note = false) {
       borderRadius: t.radius.sm,
       borderColor: c.accent,
       borderWidth: 0,
+      marginTop: t.uiSpacing.sm,
+      marginBottom: t.uiSpacing.sm,
     },
     blockquote: {
       color: c.textSecondary,

@@ -39,6 +39,21 @@ test('Planner 마크다운에서 인용문과 코드블록 복사 버튼을 각�
   expect(screen.getByTestId('codeblock-copy-button-0')).toBeTruthy();
 });
 
+test('Planner 코드 프레임이 세로 여백을 소유하고 빈 Markdown 세그먼트를 마운트하지 않는다', () => {
+  const { result } = renderHook(() => useTokens());
+  const markdown = ['```ts', 'const first = true;', '```', '', '```ts', 'const second = true;', '```'].join('\n');
+  const screen = render(<PlannerMarkdownText markdown={markdown} />);
+
+  for (const index of [0, 1]) {
+    expect(StyleSheet.flatten(screen.getByTestId(`codeblock-copy-frame-${index}`).props.style))
+      .toMatchObject({ marginTop: result.current.uiSpacing.sm, marginBottom: result.current.uiSpacing.sm });
+  }
+  expect(screen.getAllByTestId('markdown').map(node => node.props.markdown)).toEqual([
+    '```ts\nconst first = true;\n```',
+    '```ts\nconst second = true;\n```',
+  ]);
+});
+
 test('보고 폭 계약은 접기와 펼치기에서 같고 질문과 에이전트 커멘트는 내용 폭을 유지한다', () => {
   const card = cardFixture({ id: 'width-card', request: '지시', assigneeAgentId: 'roselin', createdAt: '2026-10-01T00:00:00Z' });
   const screen = render(<CardTimeline detail={{ card, sessions: [],

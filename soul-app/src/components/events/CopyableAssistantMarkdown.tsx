@@ -242,7 +242,7 @@ export function CopyableBlockquote({
       <Text
         testID={`blockquote-copy-feedback-${index}`}
         accessibilityLiveRegion="polite"
-        style={styles.feedback}
+        style={styles.srOnly}
       >
         {feedback}
       </Text>
@@ -382,12 +382,6 @@ function makeStyles() {
     },
     copyIcon: {
       opacity: 0.75,
-    },
-    feedback: {
-      position: 'absolute',
-      width: 1,
-      height: 1,
-      opacity: 0,
     },
     srOnly: {
       position: 'absolute',

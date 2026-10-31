@@ -176,6 +176,30 @@ describe('CopyableAssistantMarkdown', () => {
     expect(AccessibilityInfo.announceForAccessibility).toHaveBeenLastCalledWith('코드를 복사하지 못했습니다');
   });
 
+  test('번호 목록 안의 4칸 들여쓰기 fenced code 본문을 복사한다', async () => {
+    const markdown = ['1. 안내', '', '    ```bash', '    pnpm test', '    ```'].join('\n');
+    const { getByTestId } = render(
+      <CopyableAssistantMarkdown markdown={markdown} markdownStyle={markdownStyle} />,
+    );
+
+    await act(async () => {
+      fireEvent.press(getByTestId('codeblock-copy-button-0'));
+      await Promise.resolve();
+    });
+
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith('pnpm test');
+  });
+
+  test('일반 4칸 들여쓰기 코드는 복사 가능한 펜스로 분리하지 않는다', () => {
+    const markdown = ['    console.log(1);', '    nextLine();'].join('\n');
+    const { getByTestId, queryByTestId } = render(
+      <CopyableAssistantMarkdown markdown={markdown} markdownStyle={markdownStyle} />,
+    );
+
+    expect(queryByTestId('codeblock-copy-button-0')).toBeNull();
+    expect(getByTestId('assistant-markdown').props.markdown).toBe(markdown);
+  });
+
   test('인용이 없으면 기존 native markdown 단일 렌더 계약을 유지한다', () => {
     const onLinkPress = jest.fn();
     const { getByTestId, queryByTestId } = render(

@@ -11,7 +11,8 @@ type Fence = {
 };
 
 const BLOCKQUOTE_LINE = /^ {0,3}>[ \t]?(.*)$/;
-const FENCE_LINE = /^ {0,3}(`{3,}|~{3,})(.*)$/;
+const FENCE_LINE = /^( *)(`{3,}|~{3,})(.*)$/;
+const LIST_MARKER_LINE = /^( *)(?:[-+*]|\d+[.)])[ \t]+/;
 const INTERRUPTING_BLOCK = /^ {0,3}(?:#{1,6}[ \t]|(?:[-+*]|\d+[.)])[ \t]+|`{3,}|~{3,})/;
 
 export function segmentMarkdownBlockquotes(markdown: string): MarkdownBlockSegment[] {
@@ -19,9 +20,13 @@ export function segmentMarkdownBlockquotes(markdown: string): MarkdownBlockSegme
   const segments: MarkdownBlockSegment[] = [];
   let normalLines: string[] = [];
   let quoteLines: string[] = [];
+  let listIndent: number | null = null;
+  let continuationIndent: number | null = null;
   let codeBlock: {
     fence: Fence;
     indent: number;
+    maxFenceIndent: number;
+    listIndent: number | null;
     lines: string[];
     codeLines: string[];
   } | null = null;
@@ -43,7 +48,7 @@ export function segmentMarkdownBlockquotes(markdown: string): MarkdownBlockSegme
     quoteLines = [];
   };
 
-  for (const line of lines) {
+  for (let line of lines) {
     if (quoteLines.length > 0) {
       if (BLOCKQUOTE_LINE.test(line)) {
         quoteLines.push(line);
@@ -68,13 +73,14 @@ export function segmentMarkdownBlockquotes(markdown: string): MarkdownBlockSegme
 
     if (codeBlock) {
       codeBlock.lines.push(line);
-      const candidate = readFence(line);
+      const candidate = readFence(line, codeBlock.maxFenceIndent);
       if (isClosingFence(codeBlock.fence, candidate)) {
         segments.push({
           kind: 'codeBlock',
           markdown: codeBlock.lines.join('\n'),
           copyText: codeBlock.codeLines.join('\n'),
         });
+        continuationIndent = codeBlock.listIndent;
         codeBlock = null;
       } else {
         codeBlock.codeLines.push(stripOpeningIndent(line, codeBlock.indent));
@@ -83,21 +89,43 @@ export function segmentMarkdownBlockquotes(markdown: string): MarkdownBlockSegme
     }
 
     if (BLOCKQUOTE_LINE.test(line)) {
+      if (listIndent !== null && leadingSpaces(line) < listIndent) {
+        listIndent = null;
+        continuationIndent = null;
+      }
       flushNormal();
       quoteLines.push(line);
       continue;
     }
 
-    const fenceMatch = readFence(line);
+    const listMarker = readListMarker(line, listIndent);
+    if (listMarker !== null) {
+      listIndent = listMarker;
+      continuationIndent = null;
+    }
+
+    const maxFenceIndent = listIndent === null ? 3 : listIndent + 3;
+    const fenceMatch = readFence(line, maxFenceIndent);
     if (fenceMatch) {
       flushNormal();
       codeBlock = {
         fence: { marker: fenceMatch.marker, length: fenceMatch.length },
-        indent: line.length - line.trimStart().length,
+        indent: fenceMatch.indent,
+        maxFenceIndent,
+        listIndent,
         lines: [line],
         codeLines: [],
       };
       continue;
+    }
+
+    if (line.trim() !== '' && listMarker === null && listIndent !== null) {
+      if (leadingSpaces(line) < listIndent) {
+        listIndent = null;
+        continuationIndent = null;
+      } else if (continuationIndent !== null) {
+        line = stripOpeningIndent(line, continuationIndent);
+      }
     }
 
     normalLines.push(line);
@@ -153,15 +181,31 @@ function stripOpeningIndent(line: string, indent: number): string {
   return indent > 0 && line.startsWith(' '.repeat(indent)) ? line.slice(indent) : line;
 }
 
-function readFence(line: string): (Fence & { suffix: string }) | null {
+function readFence(
+  line: string,
+  maxIndent = 3,
+): (Fence & { suffix: string; indent: number }) | null {
   const match = FENCE_LINE.exec(line);
-  if (!match) return null;
-  if (match[1][0] === '`' && match[2].includes('`')) return null;
+  if (!match || match[1].length > maxIndent) return null;
+  if (match[2][0] === '`' && match[3].includes('`')) return null;
   return {
-    marker: match[1][0] as Fence['marker'],
-    length: match[1].length,
-    suffix: match[2],
+    marker: match[2][0] as Fence['marker'],
+    length: match[2].length,
+    suffix: match[3],
+    indent: match[1].length,
   };
+}
+
+function readListMarker(line: string, activeListIndent: number | null): number | null {
+  const match = LIST_MARKER_LINE.exec(line);
+  if (!match) return null;
+  const markerIndent = match[1].length;
+  if (markerIndent > 3 && (activeListIndent === null || markerIndent < activeListIndent)) return null;
+  return match[0].length;
+}
+
+function leadingSpaces(line: string): number {
+  return line.length - line.trimStart().length;
 }
 
 function isClosingFence(

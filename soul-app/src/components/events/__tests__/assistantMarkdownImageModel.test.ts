@@ -38,7 +38,8 @@ test('only adjacent standalone images form a gallery; fenced, inline, reference,
 
   expect(parseAssistantMarkdownImages(markdown)).toEqual([
     { kind: 'images', images: [{ alt: '첫째', url: '/one.png' }, { alt: '둘째', url: '/two.png' }] },
-    { kind: 'markdown', markdown: '\n```md\n![코드](/code.png)\n```\n문장 안의 ![인라인](/inline.png)\n![참조][image]\n[image]: /reference.png\n<img src="/html.png">' },
+    { kind: 'codeBlock', markdown: '```md\n![코드](/code.png)\n```', copyText: '![코드](/code.png)' },
+    { kind: 'markdown', markdown: '문장 안의 ![인라인](/inline.png)\n![참조][image]\n[image]: /reference.png\n<img src="/html.png">' },
     { kind: 'blockquote', markdown: '> ![인용](/quote.png)', plainText: '인용' },
   ]);
 });

@@ -97,6 +97,34 @@ describe('segmentMarkdownBlockquotes', () => {
     ]);
   });
 
+  test('번호 목록의 4칸 들여쓰기 펜스를 코드블록으로 분리한다', () => {
+    const markdown = [
+      '1. 안내',
+      '',
+      '    ```bash',
+      '    pnpm test',
+      '    ```',
+      '    후속 설명',
+    ].join('\n');
+
+    expect(segmentMarkdownBlockquotes(markdown)).toEqual([
+      { kind: 'markdown', markdown: '1. 안내\n' },
+      {
+        kind: 'codeBlock',
+        markdown: ['    ```bash', '    pnpm test', '    ```'].join('\n'),
+        copyText: 'pnpm test',
+      },
+      { kind: 'markdown', markdown: ' 후속 설명' },
+    ]);
+  });
+
+  test('목록 문맥 밖 일반 4칸 들여쓰기 코드는 fenced codeBlock으로 분리하지 않는다', () => {
+    const markdown = ['    console.log(1);', '    nextLine();'].join('\n');
+    expect(segmentMarkdownBlockquotes(markdown)).toEqual([
+      { kind: 'markdown', markdown },
+    ]);
+  });
+
   test('최상위 코드와 인용 내부 코드를 서로 다른 복사 구간으로 섞지 않는다', () => {
     expect(segmentMarkdownBlockquotes(['```', '> 인용 문장', '```', '', '> ```', '> 인용 코드', '> ```'].join('\n')))
       .toEqual([
