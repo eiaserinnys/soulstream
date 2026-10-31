@@ -23,7 +23,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { placeInTree, handleTextStart } from "./tree-placer";
+import { handleTextStart, placeInTree, removeIncompleteTransientTextNodes } from "./tree-placer";
 import { diag } from "../lib/diag";
 import { createProcessingContext, makeNode, registerNode } from "./processing-context";
 import type { ProcessingContext } from "./processing-context";
@@ -391,5 +391,36 @@ describe("handleTextStart diag 대칭화 (H-2)", () => {
       (c) => c[1] === "→ insert",
     );
     expect(insertCalls).toHaveLength(0);
+  });
+});
+
+describe("removeIncompleteTransientTextNodes", () => {
+  it("root, nodeMap aliases, active target의 미완료 transient만 제거한다", () => {
+    const { ctx, root } = makeCtxWithRoot();
+    handleTextStart({ type: "text_start", streamIdentity: "stale-stream" } as TextStartEvent, 0, ctx, root);
+    const stale = ctx.activeTextTarget!;
+    stale.content = "stale A";
+    ctx.nodeMap.set("stale-alias", stale);
+
+    const completed = makeNode("text-completed", "text", "finished", {
+      completed: true,
+      textCompleted: true,
+    });
+    const durable = makeNode("text-12", "text", "stored", { eventId: 12 });
+    const finalized = makeNode("text-finalized-stream", "text", "finalized but not durable yet");
+    root.children.push(completed, durable);
+    registerNode(ctx, completed);
+    registerNode(ctx, durable);
+    registerNode(ctx, finalized);
+    ctx.nodeMap.set("app-server-agent-message:finalized-stream", finalized);
+    ctx.finalizedTextStreams.add("finalized-stream");
+    root.children.push(finalized);
+
+    expect(removeIncompleteTransientTextNodes(ctx, root)).toBe(true);
+
+    expect(root.children).toEqual([completed, durable, finalized]);
+    expect([...ctx.nodeMap.values()]).not.toContain(stale);
+    expect(ctx.nodeMap.get("app-server-agent-message:finalized-stream")).toBe(finalized);
+    expect(ctx.activeTextTarget).toBeNull();
   });
 });

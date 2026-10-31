@@ -434,6 +434,72 @@ describe('chatStore.streamingSlots — live delta append 제거', () => {
     expect(getStreamingSlots()?.assistant).toBeUndefined();
   });
 
+  it('assistant live-only preview는 finalize 대상에서 history 편입 없이 슬롯에 남긴다', () => {
+    const { setStreamingEvent, finalizeStreamingEvent } = useChatStore.getState();
+    const preview: SessionEvent = {
+      id: 'live:assistant-a',
+      type: 'text_delta',
+      data: { text: 'partial A', _live_only: true },
+    };
+    const durable: SessionEvent = {
+      id: '31',
+      type: 'text_delta',
+      data: { text: 'durable legacy delta', streamIdentity: 'stream-durable' },
+    };
+    setStreamingEvent(SID, 'assistant', preview);
+    setStreamingEvent(SID, 'assistant', durable);
+
+    finalizeStreamingEvent(SID, 'assistant');
+
+    expect(getEvents()).toEqual([durable]);
+    expect(getStreamingSlots()?.assistant).toBe(preview);
+    expect(getStreamingSlots()?.assistantByStream?.['stream-durable']).toBeUndefined();
+  });
+
+  it('mergeEvents 입구에서 기존·신규 synthetic live text만 제거한다', () => {
+    const stale: SessionEvent = {
+      id: 'live:stale',
+      type: 'text_delta',
+      data: { text: 'stale A', _live_only: true },
+    };
+    const numericLiveId: SessionEvent = {
+      id: 'live:durable-id',
+      type: 'text_delta',
+      data: { text: 'durable replay', _live_only: true, _event_id: 42 },
+    };
+    const numericStringId: SessionEvent = {
+      id: 'live:numeric-string-id',
+      type: 'text_delta',
+      data: { text: 'legacy synthetic', _live_only: true, _event_id: '42' },
+    };
+    const assistantMessage: SessionEvent = {
+      id: 'live:assistant-message',
+      type: 'assistant_message',
+      data: { content: 'assistant messages are durable rows', _live_only: true },
+    };
+    useChatStore.setState({ eventsBySession: { [SID]: [stale] } });
+
+    useChatStore.getState().mergeEvents(SID, [
+      { ...stale, data: { ...stale.data, text: 'new stale chunk' } },
+      numericLiveId,
+      numericStringId,
+      { id: '43', type: 'assistant_message', data: { content: 'final B' } },
+      assistantMessage,
+      { id: '44', type: 'thinking_delta', data: { text: 'kept' } },
+    ]);
+
+    expect(getEvents().map((event) => event.id)).toEqual([
+      '43',
+      '44',
+      'live:durable-id',
+      'live:assistant-message',
+    ]);
+    expect(getEvents()).not.toContainEqual(stale);
+    expect(getEvents()).not.toContainEqual(numericStringId);
+    expect(getEvents()).toContainEqual(numericLiveId);
+    expect(getEvents()).toContainEqual(assistantMessage);
+  });
+
   it('assistant_message merge는 final event 추가와 assistant slot clear를 원자적으로 처리한다', () => {
     const { setStreamingEvent, mergeEvents } = useChatStore.getState();
 

@@ -1104,6 +1104,115 @@ describe("processEventsBatch — skipDedup (history prepend 경로)", () => {
   });
 });
 
+describe("live text lifecycle fences", () => {
+  const liveText = (type: "text_start" | "text_delta" | "text_end", streamIdentity: string, text?: string): SoulSSEEvent => ({
+    type,
+    streamIdentity,
+    liveSeq: type === "text_start" ? 1 : type === "text_delta" ? 2 : 3,
+    liveTextMode: "append",
+    ...(text === undefined ? {} : { text }),
+  } as unknown as SoulSSEEvent);
+
+  it.each(["intervention_sent", "user_message", "complete", "session_ended"] as const)(
+    "단건 %s는 미완료 transient만 지우고 완료 텍스트는 보존한다",
+    (type) => {
+      const ctx = createProcessingContext();
+      const started = processEventsBatch([
+        { event: liveText("text_start", "stream-a"), eventId: 0 },
+        { event: liveText("text_delta", "stream-a", "stale A"), eventId: 0 },
+        { event: liveText("text_start", "stream-complete"), eventId: 0 },
+        { event: liveText("text_delta", "stream-complete", "finished"), eventId: 0 },
+        { event: liveText("text_end", "stream-complete"), eventId: 0 },
+      ], ctx, null, "sess-1", null, 0);
+      const result = processEventSingle(
+        { type, liveSeq: 2 } as unknown as SoulSSEEvent,
+        2,
+        ctx,
+        started.root,
+        "sess-1",
+        null,
+        started.maxEventId,
+      );
+
+      expect(result.updated).toBe(true);
+      expect(flattenTree(result.root).filter((message) => message.treeNodeType === "text").map((message) => message.content))
+        .toEqual(["finished"]);
+    },
+  );
+
+  it("배치 경계는 transient A를 제거하고 다음 assistant B를 새 preview로 받는다", () => {
+    const ctx = createProcessingContext();
+    const result = processEventsBatch([
+      { event: liveText("text_start", "stream-a"), eventId: 0 },
+      { event: liveText("text_delta", "stream-a", "stale A"), eventId: 0 },
+      { event: { type: "complete", result: "done" } as unknown as SoulSSEEvent, eventId: 2 },
+      { event: liveText("text_start", "stream-b"), eventId: 0 },
+      { event: liveText("text_delta", "stream-b", "fresh B"), eventId: 0 },
+    ], ctx, null, "sess-1", null, 0);
+
+    expect(flattenTree(result.root).filter((message) => message.treeNodeType === "text").map((message) => message.content))
+      .toEqual(["fresh B"]);
+    expect(ctx.activeTextTarget?.content).toBe("fresh B");
+  });
+
+  it("경계 뒤 늦은 A text_end는 새 B를 완료시키지 않는다", () => {
+    const ctx = createProcessingContext();
+    const started = processEventsBatch([
+      { event: liveText("text_start", "stream-a"), eventId: 0 },
+      { event: liveText("text_delta", "stream-a", "stale A"), eventId: 0 },
+      { event: { type: "intervention_sent", text: "next" } as unknown as SoulSSEEvent, eventId: 2 },
+      { event: liveText("text_start", "stream-b"), eventId: 0 },
+      { event: liveText("text_delta", "stream-b", "fresh B"), eventId: 0 },
+    ], ctx, null, "sess-1", null, 0);
+
+    const ended = processEventsBatch([
+      { event: liveText("text_end", "stream-a"), eventId: 0 },
+    ], ctx, started.root, "sess-1", null, started.maxEventId);
+
+    expect(ctx.activeTextTarget?.content).toBe("fresh B");
+    expect(ctx.activeTextTarget?.textCompleted).not.toBe(true);
+    expect(flattenTree(ended.root).filter((message) => message.treeNodeType === "text").map((message) => message.content))
+      .toEqual(["fresh B"]);
+  });
+
+  it("snapshot 이후 재주장된 durable 경계는 cursor 이하라도 transient를 지우고 DB 노드는 중복하지 않는다", () => {
+    const ctx = createProcessingContext();
+    const snapshot = processEventsBatch([{
+      event: {
+        type: "text_snapshot",
+        throughLiveSeq: 10,
+        streams: [{ streamIdentity: "stream-a", text: "stale A", updatedAt: "2026-10-31T00:00:00Z" }],
+      } as unknown as SoulSSEEvent,
+      eventId: 0,
+    }], ctx, null, "sess-1", null, 0);
+
+    const replayed = processEventsBatch([{
+      event: { type: "intervention_sent", text: "next", liveSeq: 11 } as unknown as SoulSSEEvent,
+      eventId: 7,
+    }], ctx, snapshot.root, "sess-1", null, 20);
+
+    expect(replayed.updated).toBe(true);
+    expect(ctx.liveTextThroughSeq).toBe(11);
+    expect(flattenTree(replayed.root).filter((message) => message.treeNodeType === "text")).toHaveLength(0);
+    expect(flattenTree(replayed.root).filter((message) => message.treeNodeType === "intervention")).toHaveLength(0);
+  });
+
+  it("history prepend의 과거 user_message는 현재 transient preview를 지우지 않는다", () => {
+    const ctx = createProcessingContext();
+    const live = processEventsBatch([
+      { event: liveText("text_start", "stream-b"), eventId: 0 },
+      { event: liveText("text_delta", "stream-b", "current B"), eventId: 0 },
+    ], ctx, null, "sess-1", null, 0);
+
+    const history = processEventsBatch([
+      { event: { type: "user_message", text: "old turn" } as unknown as SoulSSEEvent, eventId: 1 },
+    ], ctx, live.root, "sess-1", null, 0, true);
+
+    expect(flattenTree(history.root).filter((message) => message.treeNodeType === "text").map((message) => message.content))
+      .toEqual(["current B"]);
+  });
+});
+
 describe("turn_summary — 응답 anchor 직접 캡션 투영", () => {
   it("뒤 이벤트가 표시된 후 늦게 도착해도 final response 바로 뒤에 삽입한다", () => {
     const ctx = createProcessingContext();
