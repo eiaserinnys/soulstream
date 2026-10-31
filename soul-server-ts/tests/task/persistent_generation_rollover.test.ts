@@ -84,6 +84,32 @@ function makeCatalog() {
 }
 
 describe("beginGenerationRolloverIfPending", () => {
+  it("updates an existing active rollover to the latest pending generation", () => {
+    const task = makeTask({
+      persistentGeneration: {
+        number: 1,
+        pending: {
+          number: 3,
+          reason: "auto:limit_hit.switch",
+          requestedAt: "2026-10-06T00:00:00.000Z",
+          targetModelPreset: "claude-new",
+          targetReasoningEffort: "high",
+          applyingFrom: "native-old",
+        },
+      },
+      activeGenerationRollover: {
+        number: 2,
+        reason: "auto:arrival.cold.over_ratio",
+        requestedAt: "2026-10-05T00:00:00.000Z",
+        fromBackendSessionId: "native-old",
+      },
+    });
+
+    const active = beginGenerationRolloverIfPending(task, agent, makeCatalog());
+
+    expect(active).toMatchObject({ number: 3, reason: "auto:limit_hit.switch" });
+  });
+
   it("applies a requested generation to a persistent session with queued input", () => {
     const task = makeTask();
     const catalog = makeCatalog();

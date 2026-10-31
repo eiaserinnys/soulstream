@@ -604,7 +604,7 @@ export class TaskExecutor {
       return false;
     }
     if (
-      task.persistentGeneration?.pending
+      hasUnappliedOrNonArrivalPendingGeneration(task)
       || task.runnerRetainedForDetachedWork === true
       || !task.codexThreadId
     ) return false;
@@ -618,7 +618,7 @@ export class TaskExecutor {
     const runtime = this.persistentDecisionRuntime;
     if (!runtime || !this.modelCatalog || task.persistent !== true) return;
     if (
-      task.persistentGeneration?.pending
+      hasUnappliedOrNonArrivalPendingGeneration(task)
       || task.runnerRetainedForDetachedWork === true
       || !task.codexThreadId
     ) return;
@@ -651,6 +651,12 @@ export class TaskExecutor {
 
     const targetSelection = persistentSelectionForTarget(task, decision.target_preset);
     const reasoningEffort = targetSelection?.reasoning_effort;
+    const existingPending = task.persistentGeneration?.pending;
+    if (
+      existingPending?.applyingFrom !== undefined
+      && existingPending.targetModelPreset === decision.target_preset
+      && existingPending.targetReasoningEffort === (reasoningEffort as ReasoningEffort | undefined)
+    ) return;
     await runtime.persistentSessions.requestGenerationRollover(task.agentSessionId, {
       modelPreset: decision.target_preset,
       ...(reasoningEffort ? { reasoningEffort: reasoningEffort as ReasoningEffort } : {}),
@@ -2037,6 +2043,13 @@ export class TaskExecutor {
   ): Promise<void> {
     for (const receipt of receipts) await receipt.consume(task);
   }
+}
+
+function hasUnappliedOrNonArrivalPendingGeneration(task: Task): boolean {
+  const pending = task.persistentGeneration?.pending;
+  if (!pending) return false;
+  if (pending.applyingFrom === undefined) return true;
+  return !pending.reason.startsWith("auto:arrival.");
 }
 
 function persistentSelectionForTarget(task: Task, targetPreset: string) {

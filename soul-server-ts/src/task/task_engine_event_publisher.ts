@@ -158,6 +158,21 @@ export class TaskEngineEventPublisher {
         "limit_hit",
         typeof detail === "string" ? detail : "credential_alert",
       );
+      return;
+    }
+    if (eventType === "error") {
+      const error = event as {
+        error_code?: unknown;
+        message?: unknown;
+      };
+      if (!isUsageLimitStopErrorCode(error.error_code)) return;
+      recordTerminationHint(
+        task,
+        "limit_hit",
+        typeof error.message === "string" && error.message.length > 0
+          ? error.message
+          : error.error_code as string,
+      );
     }
   }
 

@@ -91,6 +91,8 @@ export function beginGenerationRolloverIfPending(
     };
     task.activeGenerationRollover = active;
   } else {
+    active.number = pending.number;
+    active.reason = pending.reason;
     active.requestedAt = pending.requestedAt;
     active.resetContext = pending.resetContext === true;
     active.keepInstructions = pending.keepInstructions !== false;

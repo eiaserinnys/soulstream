@@ -85,6 +85,21 @@ describe("TaskEngineEventPublisher", () => {
     });
   });
 
+  it("records a limit termination hint from a usage-limit error without a credential alert", async () => {
+    const deps = makePublisherDeps();
+    const publisher = new TaskEngineEventPublisher(deps);
+    const task = makeTask();
+
+    await publisher.publishEngineEvent(task, {
+      type: "error",
+      error_code: "claude_rate_limit_stop_failure",
+      message: "Claude account pool exhausted",
+      fatal: true,
+    } as SSEEventPayload);
+
+    expect(task.pendingTerminationHint).toBe("limit_hit");
+  });
+
   it("captures terminal rate-limit metadata from Codex usage-limit errors", async () => {
     const deps = makePublisherDeps();
     const publisher = new TaskEngineEventPublisher(deps);
