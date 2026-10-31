@@ -207,4 +207,12 @@ describe("MarkdownContent — remark-breaks plugin", () => {
     expect(css).toMatch(/\.chat-image-refined\.chat-image-thumbnail-image\s*\{[^}]*width:\s*100%;[^}]*height:\s*100%;[^}]*object-fit:\s*contain[^}]*\}/s);
     expect(css).toMatch(/\.chat-image-run\[data-chat-image-role="user"\]\s+\.chat-image-caption\s*\{[^}]*text-align:\s*right[^}]*\}/s);
   });
+
+  test("highlighted code blocks keep the pre surface and foreground color", () => {
+    const css = readFileSync(new URL("../styles/globals.css", import.meta.url), "utf8");
+
+    expect(css).toMatch(
+      /pre\[data-slot="codeblock-copy-content"\]\s+\.hljs\s*\{[^}]*background:\s*transparent;[^}]*padding:\s*0;[^}]*color:\s*var\(--foreground\);/s,
+    );
+  });
 });

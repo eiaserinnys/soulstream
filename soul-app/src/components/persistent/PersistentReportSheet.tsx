@@ -31,10 +31,11 @@ export function PersistentReportUndoRow({ undo, styles }: {
 export function PersistentReportSheet({ entry, index, count, current, compact, showNav, width, styles,
   titleRef, onStep, onExpand, onOption, onDismiss, onCard, onLink, bubble = false, surfaceHeight, busy = false,
   canCancel = false, cancelSent = false, onCancel, onHeight, onInteraction, onReady, expandedContent, cardStatus, onToggleCard,
-  acknowledgeLabel = '확인했어', undo }: {
+  acknowledgeLabel = '확인했어', undo, cardSurface = false, hidePageIndicator = false }: {
   expandedContent?: React.ReactNode; cardStatus?: React.ReactNode; onToggleCard?(): void;
   acknowledgeLabel?: string; undo?: Pick<CardCompletionRecent, 'label' | 'expiresAt'> & { busy: boolean; onUndo(): void };
-  entry: PersistentReportEntry; index: number; count: number; current: boolean; compact: boolean; showNav: boolean; width: number;
+  entry: PersistentReportEntry; index: number; count: number; current: boolean; compact: boolean; showNav: boolean; width?: number;
+  cardSurface?: boolean; hidePageIndicator?: boolean;
   styles: ReturnType<typeof reportStyles>; titleRef(node: Text | null): void;
   onStep(by: number): void; onExpand(): void; onOption(option: string): void; onDismiss(): void;
   onCard(number: number): void; onLink(url: string): void;
@@ -47,7 +48,8 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   const [asked, setAsked] = useState({ signature, reading: 0, foot: 0 });
   if (asked.signature !== signature) setAsked({ signature, reading: 0, foot: 0 });
   const acknowledgeable = entry.kind === 'see' || (entry.kind === 'ask' && entry.options.length === 0 && entry.state === 'open');
-  const hasFooter = !compact && (count > 1 || entry.state === 'answered' || acknowledgeable || entry.options.length > 0 || Boolean(undo));
+  const showPage = !hidePageIndicator && count > 1;
+  const hasFooter = !compact && (showPage || entry.state === 'answered' || acknowledgeable || entry.options.length > 0 || Boolean(undo));
   const measured = useRef<{ reading: number | null; foot: number | null }>({ reading: null, foot: null });
   if (!hasFooter && measured.current.foot !== null) measured.current.foot = null;
   const measure = (part: 'reading' | 'foot', height: number) => {
@@ -63,7 +65,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   const answer = entry.kind === 'ask' && entry.state === 'answered';
   const page = `${index + 1} / ${count}`;
   const received = <Text testID="report-received" style={styles.todo}><Text style={styles.receivedLabel}>받은 답  </Text>{entry.answer}</Text>;
-  const readingPath = surfaceHeight !== undefined || bubble || !!expandedContent;
+  const readingPath = !hidePageIndicator && (surfaceHeight !== undefined || bubble || !!expandedContent);
   const expanded = Boolean(expandedContent);
   const heading = <View style={onToggleCard ? styles.headingRow : undefined}>
     <View testID="report-head" style={[styles.heading, onToggleCard ? styles.headingContent : undefined]}>
@@ -112,7 +114,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   const foot = hasFooter
     ? <View testID="report-footer" style={styles.foot} onLayout={event => measure('foot', event.nativeEvent.layout.height)}>
       {undo ? <PersistentReportUndoRow undo={undo} styles={styles} /> : null}
-      {count > 1 ? <View testID="report-nav-slot" style={[styles.navSlot, !showNav && { width: 'auto', minWidth: t.uiSpacing.xxl,
+      {showPage ? <View testID="report-nav-slot" style={[styles.navSlot, !showNav && { width: 'auto', minWidth: t.uiSpacing.xxl,
         height: t.hitTarget.min, justifyContent: 'center' }]}
 >
         {!showNav ? <Text testID="report-page" style={styles.count} numberOfLines={1}
@@ -135,15 +137,16 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
     </View> : null;
   return <Pressable testID={`report-sheet-${entry.key}`} accessible={false}
     aria-hidden={!current} accessibilityElementsHidden={!current} importantForAccessibility={current ? 'auto' : 'no-hide-descendants'}
-    accessibilityLabel={`${count > 1 ? `${page}, ` : ''}${reportTag(entry)}, ${entry.title}`}
+    accessibilityLabel={`${!hidePageIndicator && count > 1 ? `${page}, ` : ''}${reportTag(entry)}, ${entry.title}`}
     onPress={compact ? onExpand : undefined} onTouchStart={() => onInteraction?.(true)} onTouchEnd={() => onInteraction?.(false)}
     onTouchCancel={() => onInteraction?.(false)} {...reportWebProps({ inert: !current, tabIndex: -1, role: 'group' })}
-    style={[styles.sheet, { width, minWidth: t.hitTarget.min, minHeight: t.hitTarget.min }, surfaceHeight !== undefined ? { height: surfaceHeight } : null, !compact && styles.resting]}>
+    style={[styles.sheet, cardSurface ? [styles.deck, { flexGrow: 0, flexShrink: 0 }] : null, { width: width ?? '100%', minWidth: t.hitTarget.min, minHeight: t.hitTarget.min },
+      surfaceHeight !== undefined ? { height: surfaceHeight } : null, !compact && styles.resting]}>
     {readingPath ? <PersistentReportReading current={current} styles={styles} header={heading}
       contentMinHeight={answer && !bubble && !compact && asked.reading ? asked.reading : undefined}
       onHeight={height => measure('reading', height)}>{frame}</PersistentReportReading>
       : <View style={[styles.body, compact ? styles.compact : null, { flexGrow: 1 }]}>{frame}
-        {compact && count > 1 ? <Text testID="report-page" style={styles.page} accessible accessibilityRole="adjustable" accessibilityLabel="지금의 보고"
+        {compact && showPage ? <Text testID="report-page" style={styles.page} accessible accessibilityRole="adjustable" accessibilityLabel="지금의 보고"
           accessibilityValue={{ min: 1, max: count, now: index + 1, text: page }}
           accessibilityActions={[{ name: 'increment', label: '다음 장' }, { name: 'decrement', label: '앞 장' }]}
           onAccessibilityAction={event => onStep(event.nativeEvent.actionName === 'increment' ? 1 : -1)}>{page}</Text> : null}

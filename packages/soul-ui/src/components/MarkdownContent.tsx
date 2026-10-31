@@ -6,7 +6,7 @@
  * @tailwindcss/typography (prose)를 사용하지 않고 커스텀 컴포넌트로 스타일링합니다.
  */
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type HTMLAttributes } from "react";
+import { Children, cloneElement, createContext, isValidElement, useCallback, useContext, useEffect, useMemo, useRef, useState, type HTMLAttributes } from "react";
 import { Check, Copy } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
@@ -130,7 +130,9 @@ const components: Components = {
   ),
   code: ({ className, children, ...props }) => {
     // rehype-highlight가 language-* 클래스를 추가한 경우 → 코드블록 내부
-    const isBlock = className?.startsWith("language-") || className?.startsWith("hljs");
+    const isBlock = className?.split(/\s+/).includes("markdown-code-block")
+      || className?.startsWith("language-")
+      || className?.startsWith("hljs");
     if (isBlock) {
       return (
         <code className={className} {...props}>
@@ -208,7 +210,9 @@ const compactComponents: Components = {
     </pre>
   ),
   code: ({ className, children, ...props }) => {
-    const isBlock = className?.startsWith("language-") || className?.startsWith("hljs");
+    const isBlock = className?.split(/\s+/).includes("markdown-code-block")
+      || className?.startsWith("language-")
+      || className?.startsWith("hljs");
     if (isBlock) {
       return <code className={className} {...props}>{children}</code>;
     }
@@ -319,7 +323,7 @@ function CopyableCodeBlock({
             ref={contentRef}
             data-slot="codeblock-copy-content"
             data-markdown-code-layout="document"
-            className="m-0 text-xs text-muted-foreground bg-input rounded px-2 py-1.5 pr-9 min-h-9 whitespace-pre-wrap break-words font-mono"
+            className="m-0 text-xs text-muted-foreground bg-input rounded px-2 py-2.5 pr-9 min-h-9 whitespace-pre-wrap break-words font-mono"
           >
             {children}
           </pre>
@@ -340,7 +344,7 @@ function CopyableCodeBlock({
 
   return (
     <div data-slot="codeblock-copy-frame" className="group/codeblock relative">
-      <pre ref={contentRef} data-slot="codeblock-copy-content" className="text-xs text-muted-foreground bg-input rounded px-2 py-1.5 pr-9 min-h-9 my-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">{children}</pre>
+      <pre ref={contentRef} data-slot="codeblock-copy-content" className="text-xs text-muted-foreground bg-input rounded px-2 py-2.5 pr-9 min-h-9 my-1.5 whitespace-pre-wrap break-words overflow-auto max-h-60 font-mono">{children}</pre>
       {copyButton}
     </div>
   );
@@ -350,7 +354,15 @@ function createCopyableCodeBlock(
   compact: boolean,
   codeBlockLayout: "bounded" | "document",
 ): NonNullable<Components["pre"]> {
-  return ({ children }) => <CopyableCodeBlock compact={compact} codeBlockLayout={codeBlockLayout}>{children}</CopyableCodeBlock>;
+  return ({ children }) => (
+    <CopyableCodeBlock compact={compact} codeBlockLayout={codeBlockLayout}>
+      {Children.map(children, (child) => {
+        if (!isValidElement<{ className?: string }>(child)) return child;
+        const className = [child.props.className, "markdown-code-block"].filter(Boolean).join(" ");
+        return cloneElement(child, { className });
+      })}
+    </CopyableCodeBlock>
+  );
 }
 
 function CopyableBlockquote({

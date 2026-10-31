@@ -228,7 +228,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     key={`report-${session?.session_id}`} expandedKey={expandedReportKey}
     onExpandedKeyChange={key => setReportExpansion({ sessionId: session?.session_id, key })}
     sessionId={session?.session_id} onReady={setReportReady}
-    send={reportSend} completion={completion} bubble={!reportsScene && !!geometry.reportBubble}
+    send={reportSend} completion={completion} bubble={!reportsScene && !!geometry.reportBubble} verticalList={reportsScene}
     maxHeight={reportsScene ? (phone ? app?.height : geometry.reportInlineMaxHeight)
       : geometry.reportBubble?.maxHeight ?? (phone ? geometry.reportViewMaxHeight : geometry.reportInlineMaxHeight)}
     onSelect={report.select} onDismiss={report.dismiss} onInteraction={setReportPressed} onDeckTouch={onReportDeckTouch}
@@ -328,7 +328,8 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
           }} />
       </View>
       {phone && reportsScene ? <View testID="persistent-session-reports-panel" style={{ position: 'absolute', top: 0, bottom: 0, left: 0, right: 0,
-        backgroundColor: t.persistentSession.paper, paddingHorizontal: t.foundation.pageInset }}>{pager}</View> : null}
+        backgroundColor: t.persistentSession.paper, paddingHorizontal: t.foundation.pageInset,
+        paddingTop: t.uiSpacing.sm, paddingBottom: t.uiSpacing.sm, minHeight: 0 }}>{pager}</View> : null}
       {geometry && !(phone && reportsScene) ? <View testID="persistent-session-baseline" pointerEvents="none" style={{ position: 'absolute',
         left: columnLeft - geometry.lineLeftReach, top: geometry.lineY,
         width: columnWidth + geometry.lineLeftReach, height: StyleSheet.hairlineWidth, backgroundColor: t.persistentSession.line }} /> : null}
@@ -353,7 +354,8 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
           transform: [{ skewX: geometry.reportBubble.tailDirection === 'left' ? '-45deg' : '45deg' }, { rotate: '45deg' }] }} /> : null}
       </View> : null}
       {!phone && reportsScene && geometry ? <View testID="persistent-session-reports-cover" style={{ position: 'absolute',
-        left: columnLeft, width: columnWidth, top: 0, height: geometry.reportInlineMaxHeight, backgroundColor: t.persistentSession.paper }}>{pager}</View> : null}
+        left: columnLeft, width: columnWidth, top: 0, height: geometry.reportInlineMaxHeight, minHeight: 0, overflow: 'hidden',
+        backgroundColor: t.persistentSession.paper }}>{pager}</View> : null}
       {!phone && geometry?.toggle ? <View testID="persistent-session-character-toggle-seat" style={{ position: 'absolute',
         left: geometry.toggle.left + (geometry.toggle.width - t.hitTarget.min) / 2,
         top: geometry.toggle.top + (geometry.toggle.height - t.hitTarget.min) / 2 }}>

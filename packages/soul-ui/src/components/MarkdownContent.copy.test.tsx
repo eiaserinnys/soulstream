@@ -142,6 +142,28 @@ describe("MarkdownContent fenced code copy", () => {
     expect(view.querySelectorAll('[data-slot="codeblock-copy-content"]')).toHaveLength(2);
     expect(view.querySelectorAll('[data-slot="codeblock-copy-frame"]')).toHaveLength(2);
     expect(view.querySelectorAll('[data-slot="codeblock-copy-content"].pr-9.min-h-9')).toHaveLength(2);
+    expect(Array.from(view.querySelectorAll('[data-slot="codeblock-copy-content"]'))
+      .every(pre => pre.classList.contains("py-2.5"))).toBe(true);
+  });
+
+  it("renders an untagged fenced block as block code without inline code surface classes", () => {
+    const view = renderMarkdown("```\npnpm test\n```");
+    const code = view.querySelector<HTMLElement>('[data-slot="codeblock-copy-content"] > code');
+
+    expect(code?.textContent?.trimEnd()).toBe("pnpm test");
+    expect(code?.classList.contains("bg-input")).toBe(false);
+    expect(code?.classList.contains("rounded")).toBe(false);
+    expect(code?.classList.contains("px-1")).toBe(false);
+
+    resetRender();
+
+    const compact = renderMarkdown("```\npnpm test\n```", false, true);
+    const compactCode = compact.querySelector<HTMLElement>('[data-slot="codeblock-copy-content"] > code');
+
+    expect(compactCode?.textContent?.trimEnd()).toBe("pnpm test");
+    expect(compactCode?.classList.contains("bg-input")).toBe(false);
+    expect(compactCode?.classList.contains("rounded")).toBe(false);
+    expect(compactCode?.classList.contains("px-0.5")).toBe(false);
   });
 
   it("copies the code text while preserving leading spaces and removes one parser newline", async () => {
@@ -162,6 +184,7 @@ describe("MarkdownContent fenced code copy", () => {
 
     expect(scroll.className).toContain("overflow-x-auto overflow-y-hidden");
     expect(scroll.querySelector('[data-markdown-code-layout="document"]')).not.toBeNull();
+    expect(scroll.querySelector('[data-slot="codeblock-copy-content"]')?.classList.contains("py-2.5")).toBe(true);
     expect(frame.querySelector('[aria-label="코드 복사"]')?.parentElement).toBe(frame);
     expect(frame.querySelector('[aria-label="코드 복사"]')?.closest('[data-markdown-code-scroll]')).toBeNull();
   });
