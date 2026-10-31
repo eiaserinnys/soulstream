@@ -196,10 +196,11 @@ async function collectAccounts(
   providerUsage: ProviderUsageCommandHandler,
   logger: Pick<Logger, "warn">,
 ): Promise<DecisionInput["accounts"]> {
-  const stale = providers.some((provider) => !isFreshObservation(
-    readProviderUsageObservation(provider)?.observed_at ?? null,
-    now,
-  ));
+  const stale = providers.some((provider) => {
+    const observation = readProviderUsageObservation(provider);
+    return !isFreshObservation(observation?.observed_at ?? null, now)
+      || (observation !== undefined && isExpiredPoolBlockObservation(observation.result, now));
+  });
   if (forceRefresh || stale) {
     try {
       const response = await providerUsage.fetchUsage(
@@ -234,10 +235,25 @@ function isFreshObservation(observedAt: string | null, now: Date): boolean {
 
 function toAccountObservation(
   result: Pick<ProviderLimits,
-    "weeklyUsedPercent" | "weeklyResetAt" | "shortUsedPercent" | "shortResetAt">,
+    | "weeklyUsedPercent"
+    | "weeklyResetAt"
+    | "shortUsedPercent"
+    | "shortResetAt"
+    | "mode"
+    | "pool"
+  >,
   observedAt: string | null,
   now: Date,
 ): AccountObservation {
+  if (isExhaustedClaudePool(result, now)) {
+    return {
+      weekly_headroom: -100,
+      weekly_remaining_percent: 0,
+      short_remaining_percent: 0,
+      short_reset_at: result.pool!.earliest_available_at,
+      observed_at: observedAt ?? now.toISOString(),
+    };
+  }
   const weeklyHeadroom = result.weeklyUsedPercent === null || result.weeklyResetAt === null
     ? null
     : 100 - result.weeklyUsedPercent
@@ -255,6 +271,30 @@ function toAccountObservation(
       : new Date(result.shortResetAt * 1_000).toISOString(),
     observed_at: observedAt,
   };
+}
+
+function isExhaustedClaudePool(
+  result: Pick<ProviderLimits, "mode" | "pool">,
+  now: Date,
+): boolean {
+  return result.mode === "pool"
+    && result.pool !== undefined
+    && result.pool.total_count > 0
+    && result.pool.available_count === 0
+    && (result.pool.earliest_available_at === null
+      || Date.parse(result.pool.earliest_available_at) > now.getTime());
+}
+
+function isExpiredPoolBlockObservation(
+  result: Pick<ProviderLimits, "mode" | "pool">,
+  now: Date,
+): boolean {
+  return result.mode === "pool"
+    && result.pool !== undefined
+    && result.pool.total_count > 0
+    && result.pool.available_count === 0
+    && result.pool.earliest_available_at !== null
+    && Date.parse(result.pool.earliest_available_at) <= now.getTime();
 }
 
 function providerForPreset(

@@ -777,6 +777,140 @@ describe("TaskExecutor persistent decision wiring", () => {
     expect(task.terminationReason).toBe("limit_hit");
   });
 
+  it("switches a Claude pool-only rate-limit error to Argon and schedules its resume", async () => {
+    const task = makeTask();
+    task.metadata = [{
+      type: "persistent_settings",
+      value: {
+        default_model: { model_preset: "claude-opus", reasoning_effort: "high" },
+        fallback_models: [
+          { model_preset: "gemini-4-argon", reasoning_effort: "high" },
+          { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
+        ],
+      },
+    }];
+    const runtime = makeRuntime(task, []);
+    rememberProviderUsageObservation("claude", {
+      ...makeUsage(),
+      weeklyUsedPercent: null,
+      weeklyResetAt: null,
+      shortUsedPercent: null,
+      shortResetAt: null,
+      mode: "pool",
+      pool: {
+        total_count: 2,
+        available_count: 0,
+        best_weekly_remaining_percent: null,
+        best_weekly_resets_at: null,
+        earliest_available_at: "2026-11-01T22:00:00.000Z",
+      },
+    });
+    rememberProviderUsageObservation("antigravity", makeUsage());
+    rememberProviderUsageObservation("codex", makeUsage("168h"));
+    const requestRollover = vi.spyOn(runtime.persistentSessions, "requestGenerationRollover");
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-default",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        yield {
+          type: "error",
+          error_code: "claude_rate_limit_stop_failure",
+          message: "Claude account pool exhausted",
+          fatal: true,
+          timestamp: Date.now() / 1_000,
+        } as SSEEventPayload;
+        throw new Error("Claude account pool exhausted");
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = taskExecutor(task, runtime, () => engine);
+
+    const execution = executor.startNewExecution(task, agent);
+    await execution;
+    await task.executionPromise;
+
+    expect(task.terminationReason).toBe("limit_hit");
+    expect(requestRollover).toHaveBeenCalledWith(task.agentSessionId, {
+      modelPreset: "gemini-4-argon",
+      reasoningEffort: "high",
+      reason: "auto:limit_hit.switch",
+    });
+    expect(runtime.scheduleService.scheduleResumeAfterLimit).toHaveBeenCalledOnce();
+  });
+
+  it("rechecks an interrupted auto-arrival rollover when the next intervention arrives", async () => {
+    const task = makeTask();
+    task.metadata = [{
+      type: "persistent_settings",
+      value: {
+        default_model: { model_preset: "claude-opus", reasoning_effort: "high" },
+        fallback_models: [
+          { model_preset: "gemini-4-argon", reasoning_effort: "high" },
+          { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
+        ],
+      },
+    }];
+    task.persistentGeneration = {
+      number: 1,
+      pending: {
+        number: 2,
+        reason: "auto:arrival.cold.over_ratio",
+        requestedAt: new Date(Date.now() - 60_000).toISOString(),
+        targetModelPreset: "claude-opus",
+        targetReasoningEffort: "high",
+        applyingFrom: "native-old",
+        previousModelPreset: "claude-opus",
+        previousBackend: "claude",
+      },
+    };
+    task.interventionQueue.push({ text: "continue", user: "Alice" });
+    const runtime = makeRuntime(task, []);
+    rememberProviderUsageObservation("claude", {
+      ...makeUsage(),
+      weeklyUsedPercent: null,
+      weeklyResetAt: null,
+      shortUsedPercent: null,
+      shortResetAt: null,
+      mode: "pool",
+      pool: {
+        total_count: 2,
+        available_count: 0,
+        best_weekly_remaining_percent: null,
+        best_weekly_resets_at: null,
+        earliest_available_at: "2026-11-01T22:00:00.000Z",
+      },
+    });
+    rememberProviderUsageObservation("antigravity", makeUsage());
+    rememberProviderUsageObservation("codex", makeUsage("168h"));
+    const requestRollover = vi.spyOn(runtime.persistentSessions, "requestGenerationRollover");
+    const executor = taskExecutor(
+      task,
+      runtime,
+      () => makeEngine([
+        { type: "session", session_id: "native-old" } as SSEEventPayload,
+        {
+          type: "complete",
+          usage: {},
+          timestamp: Date.now() / 1_000,
+          first_call: { input_tokens: 1_000, cached_input_tokens: 0 },
+        } as unknown as SSEEventPayload,
+      ]),
+      makeContextBuilder(),
+      { setModelSelection: vi.fn(async () => undefined) },
+    );
+
+    const execution = executor.startNewExecution(task, agent);
+    await execution;
+    await task.executionPromise;
+
+    expect(requestRollover).toHaveBeenCalledWith(task.agentSessionId, {
+      modelPreset: "gemini-4-argon",
+      reasoningEffort: "high",
+      reason: "auto:arrival.current_exhausted",
+    });
+  });
+
   it("switches persistent limit_hit to the other provider and schedules the same terminal immediately", async () => {
     const task = makeTask();
     const resetAt = "2026-10-06T13:00:00.000Z";

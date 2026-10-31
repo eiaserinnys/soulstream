@@ -248,6 +248,101 @@ describe("buildPersistentDecisionInput", () => {
     expect(fetchUsage).not.toHaveBeenCalled();
   });
 
+  it("treats an exhausted Claude account pool as zero availability and selects Argon", async () => {
+    const task = makeTask();
+    task.metadata = [{
+      type: "persistent_settings",
+      value: {
+        default_model: { model_preset: "claude-opus", reasoning_effort: "high" },
+        fallback_models: [
+          { model_preset: "gemini-4-argon", reasoning_effort: "high" },
+          { model_preset: "codex-6.1-sol", reasoning_effort: "high" },
+        ],
+      },
+    }];
+    rememberProviderUsageObservation("claude", {
+      ...makeUsage(0, 0),
+      weeklyUsedPercent: null,
+      weeklyResetAt: null,
+      shortUsedPercent: null,
+      shortResetAt: null,
+      mode: "pool",
+      pool: {
+        total_count: 2,
+        available_count: 0,
+        best_weekly_remaining_percent: null,
+        best_weekly_resets_at: null,
+        earliest_available_at: "2026-11-01T22:00:00.000Z",
+      },
+    }, now.toISOString());
+    rememberProviderUsageObservation("antigravity", makeUsage(45, 15), now.toISOString());
+    rememberProviderUsageObservation("codex", makeUsage(45, 15, "168h"), now.toISOString());
+
+    const input = await buildPersistentDecisionInput(
+      { task, trigger: "arrival", now },
+      {
+        db: { readEvents: vi.fn(async () => []) } as unknown as Pick<SessionDB, "readEvents">,
+        modelCatalog: {
+          resolve: (id: string) => ({
+            id,
+            backend: id === "gemini-4-argon"
+              ? "antigravity"
+              : id.startsWith("claude") ? "claude" : "codex",
+          }),
+        } as unknown as Pick<ModelCatalog, "resolve">,
+        providerUsage: { fetchUsage: vi.fn() } as unknown as ProviderUsageCommandHandler,
+        logger: { warn: vi.fn() },
+      },
+    );
+    const decision = decidePersistentGeneration(input);
+
+    expect(input.accounts.claude).toMatchObject({
+      short_remaining_percent: 0,
+      weekly_remaining_percent: 0,
+      short_reset_at: "2026-11-01T22:00:00.000Z",
+    });
+    expect(decision).toMatchObject({
+      action: "new_generation",
+      rule: "arrival.current_exhausted",
+      target_preset: "gemini-4-argon",
+    });
+  });
+
+  it("refreshes a Claude pool observation after its earliest block has expired", async () => {
+    const task = makeTask();
+    rememberProviderUsageObservation("claude", {
+      ...makeUsage(0, 0),
+      weeklyUsedPercent: null,
+      weeklyResetAt: null,
+      shortUsedPercent: null,
+      shortResetAt: null,
+      mode: "pool",
+      pool: {
+        total_count: 2,
+        available_count: 0,
+        best_weekly_remaining_percent: null,
+        best_weekly_resets_at: null,
+        earliest_available_at: "2026-10-05T22:00:00.000Z",
+      },
+    }, now.toISOString());
+    rememberProviderUsageObservation("codex", makeUsage(45, 15, "168h"), now.toISOString());
+    const fetchUsage = vi.fn(async () => ({ success: false }));
+
+    await buildPersistentDecisionInput(
+      { task, trigger: "arrival", now },
+      {
+        db: { readEvents: vi.fn(async () => []) } as unknown as Pick<SessionDB, "readEvents">,
+        modelCatalog: {
+          resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
+        } as unknown as Pick<ModelCatalog, "resolve">,
+        providerUsage: { fetchUsage } as unknown as ProviderUsageCommandHandler,
+        logger: { warn: vi.fn() },
+      },
+    );
+
+    expect(fetchUsage).toHaveBeenCalledOnce();
+  });
+
   it("forces one usage refresh for limit_hit even when observations are fresh", async () => {
     const task = makeTask();
     const claudeUsage = makeUsage(35, 20);
