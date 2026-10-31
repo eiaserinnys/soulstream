@@ -149,7 +149,7 @@ describe("update_persistent_session_settings MCP tool", () => {
       agent_id: "agent-1",
       settings: { default_model: { model_preset: "codex-6.1-sol", reasoning_effort: "high" } },
     }, { warn: vi.fn() })).rejects.toMatchObject({ statusCode: 422, code: "INVALID_MODEL_PRESET" });
-    expect(h.requireAvailable).toHaveBeenNthCalledWith(2, "eiaserinnys", "codex-6.1-sol", undefined);
+    expect(h.requireAvailable).toHaveBeenNthCalledWith(2, "eiaserinnys", "codex-6.1-sol");
   });
 
   it("saves ordered fallback ranks through MCP and returns them on read", async () => {

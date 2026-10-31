@@ -8,6 +8,7 @@ import {
   type PersistentSettingsPatch,
 } from "@soulstream/wire-schema/persistent-session-settings";
 import type { ServiceCaller } from "../auth/service_caller.js";
+import { normalizeReasoningEffort } from "@soulstream/model-catalog";
 import type {
   HostPersistentSessionRow,
   HostSessionRow,
@@ -184,12 +185,38 @@ export class PersistentSessionSettingsService {
     logger: Pick<FastifyRequest["log"], "warn">,
   ): Promise<{ status: number; body: Record<string, unknown> }> {
     const body = parseCreateBody(input);
-    const defaultModel = await this.normalizeNewDefaultModel(PERSISTENT_CREATE_NODE_ID, body.default_model);
+    const defaultModel = this.normalizeModel(PERSISTENT_CREATE_NODE_ID, body.default_model, {
+      requireAvailable: false, allowLimitRejected: false, keepEffort: undefined,
+    });
+    const fallbackModels = (body.fallback_models ?? []).map((model) => this.normalizeModel(
+      PERSISTENT_CREATE_NODE_ID, model,
+      { requireAvailable: false, allowLimitRejected: false, keepEffort: undefined },
+    ));
+    let initialCandidate: PersistentModelSelection | undefined;
+    let initialNodeId = PERSISTENT_CREATE_NODE_ID;
+    for (const candidate of [defaultModel, ...fallbackModels]) {
+      const candidateNodeId = candidate.node_id ?? PERSISTENT_CREATE_NODE_ID;
+      try {
+        const profileId = body.agent_id;
+        const profiles = await this.deps.profiles.listAgentProfiles(candidateNodeId);
+        if (profiles === undefined || !(profileId in profiles)) continue;
+        this.deps.presets.resolveStaticForNode(candidateNodeId, candidate.model_preset, { requireAvailable: true });
+        this.deps.presets.requireAvailable(candidateNodeId, candidate.model_preset);
+        initialCandidate = candidate;
+        initialNodeId = candidateNodeId;
+        break;
+      } catch (error) {
+        if (!(error instanceof ModelPresetAvailabilityError)) throw error;
+      }
+    }
+    if (!initialCandidate) {
+      throw new PersistentSessionApiError(422, "INVALID_MODEL_PRESET", "No requested model candidate is currently available");
+    }
     const created = await this.deps.createSession(request, {
       profile: body.agent_id,
-      nodeId: PERSISTENT_CREATE_NODE_ID,
-      model_preset: defaultModel.model_preset,
-      ...(defaultModel.reasoning_effort === null ? {} : { reasoningEffort: defaultModel.reasoning_effort }),
+      nodeId: initialNodeId,
+      model_preset: initialCandidate.model_preset,
+      ...(initialCandidate.reasoning_effort === null ? {} : { reasoningEffort: initialCandidate.reasoning_effort }),
       ...(body.folder_id === undefined ? {} : { folderId: body.folder_id }),
       initial_instruction: body.initial_instruction || PERSISTENT_INITIAL_INSTRUCTION,
     }, logger);
@@ -200,7 +227,10 @@ export class PersistentSessionSettingsService {
       // session_rename updates silently when the row is missing, so require the row first.
       await this.requireRow(sessionId);
       await this.deps.catalog.renameSession(sessionId, body.display_name);
-      await this.sendSettings(sessionId, { enabled: true, settings: { default_model: defaultModel } });
+      await this.sendSettings(sessionId, { enabled: true, settings: {
+        default_model: defaultModel,
+        fallback_models: fallbackModels,
+      } });
     } catch (error) {
       throw new PersistentSessionApiError(
         503,
@@ -285,12 +315,15 @@ export class PersistentSessionSettingsService {
       keepEffort: string | null | undefined;
     },
   ): PersistentModelSelection {
+    const targetNodeId = requested.node_id ?? nodeId;
     let preset: ReturnType<ModelPresetAvailabilityService["resolveStaticForNode"]>;
     try {
-      preset = this.deps.presets.resolveStaticForNode(nodeId, requested.model_preset);
+      preset = this.deps.presets.resolveStaticForNode(targetNodeId, requested.model_preset, {
+        requireAvailable: options.requireAvailable,
+      });
       if (options.requireAvailable) {
         this.deps.presets.requireAvailable(
-          nodeId,
+          targetNodeId,
           requested.model_preset,
           options.allowLimitRejected ? { allowLimitRejected: true } : undefined,
         );
@@ -308,19 +341,18 @@ export class PersistentSessionSettingsService {
         `Persistent sessions support claude, codex and antigravity presets only: ${preset.id}`,
       );
     }
-    if (requested.reasoning_effort !== null) {
-      if (!preset.supported_efforts?.includes(requested.reasoning_effort)) {
-        throw new PersistentSessionApiError(
-          422,
-          "UNSUPPORTED_REASONING_EFFORT",
-          `Reasoning effort "${requested.reasoning_effort}" is not supported by model preset "${preset.id}"`,
-        );
-      }
-      return { model_preset: preset.id, reasoning_effort: requested.reasoning_effort };
+    let reasoningEffort: string | null;
+    try {
+      reasoningEffort = requested.reasoning_effort !== null
+        ? normalizeReasoningEffort(preset, requested.reasoning_effort)
+        : options.keepEffort !== undefined ? options.keepEffort : normalizeReasoningEffort(preset);
+    } catch (error) {
+      throw new PersistentSessionApiError(422, "UNSUPPORTED_REASONING_EFFORT", errorMessage(error));
     }
     return {
       model_preset: preset.id,
-      reasoning_effort: options.keepEffort !== undefined ? options.keepEffort : preset.default_effort ?? null,
+      reasoning_effort: reasoningEffort,
+      ...(requested.node_id === undefined ? {} : { node_id: requested.node_id }),
     };
   }
 
@@ -438,6 +470,7 @@ type CreateBody = {
   folder_id?: string;
   initial_instruction: string;
   default_model: PersistentModelSelection;
+  fallback_models?: PersistentModelSelection[];
 };
 
 function parseCreateBody(input: unknown): CreateBody {
@@ -455,7 +488,7 @@ function parseCreateBody(input: unknown): CreateBody {
   }
   const settings = body.settings === undefined ? undefined : parseSettings(body.settings);
   if (settings?.default_model === undefined) throw invalid("settings.default_model is required");
-  const hiddenKeys = Object.keys(settings).filter((key) => key !== "default_model");
+  const hiddenKeys = Object.keys(settings).filter((key) => key !== "default_model" && key !== "fallback_models");
   if (hiddenKeys.length > 0) throw invalid(`settings.${hiddenKeys[0]} cannot be set when creating a session`);
   return {
     display_name: parseDisplayName(body.display_name),
@@ -463,6 +496,7 @@ function parseCreateBody(input: unknown): CreateBody {
     ...(typeof body.folder_id === "string" ? { folder_id: body.folder_id } : {}),
     initial_instruction: typeof body.initial_instruction === "string" ? body.initial_instruction.trim() : "",
     default_model: settings.default_model,
+    ...(settings.fallback_models === undefined ? {} : { fallback_models: settings.fallback_models }),
   };
 }
 

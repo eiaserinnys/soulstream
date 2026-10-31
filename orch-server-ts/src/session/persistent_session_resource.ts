@@ -12,6 +12,7 @@ import { readPersistentReport, type PersistentReportEntry } from "@soulstream/wi
 export type PersistentModelSelectionView = {
   model_preset: string | null;
   reasoning_effort: string | null;
+  node_id?: string;
 };
 
 export type PersistentSettingsView = {
@@ -82,12 +83,14 @@ export function buildPersistentSessionResource(
         fallback_models: stored.fallback_models.map((model) => ({
           model_preset: model.model_preset,
           reasoning_effort: model.reasoning_effort,
+          ...(model.node_id === undefined ? {} : { node_id: model.node_id }),
         })),
         // Read-only projection for deployed app compatibility; fallback_models is canonical.
         fallback_model: stored.fallback_models[0]
           ? {
               model_preset: stored.fallback_models[0].model_preset,
               reasoning_effort: stored.fallback_models[0].reasoning_effort,
+              ...(stored.fallback_models[0].node_id === undefined ? {} : { node_id: stored.fallback_models[0].node_id }),
             }
           : null,
         show_generation_separator: stored.show_generation_separator,

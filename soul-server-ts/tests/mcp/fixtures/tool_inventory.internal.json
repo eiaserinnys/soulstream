@@ -8699,6 +8699,10 @@
               "minLength": 1,
               "type": "string"
             },
+            "node_id": {
+              "minLength": 1,
+              "type": "string"
+            },
             "reasoning_effort": {
               "anyOf": [
                 {
@@ -8721,6 +8725,10 @@
             "additionalProperties": false,
             "properties": {
               "model_preset": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "node_id": {
                 "minLength": 1,
                 "type": "string"
               },

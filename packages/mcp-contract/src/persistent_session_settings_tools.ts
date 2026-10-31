@@ -5,6 +5,7 @@ import type { McpToolDefinition } from "./tool_definitions.js";
 const modelSelection = z.object({
   model_preset: z.string().min(1),
   reasoning_effort: z.string().min(1).nullable().optional(),
+  node_id: z.string().min(1).optional(),
 }).strict();
 
 const settingFields = {

@@ -59,6 +59,20 @@ export class PerNodeSessionCache {
     return this.getSessionForNode(nodeId, agentSessionId);
   }
 
+  /** Move the cached owner after the durable session row has been handed off. */
+  moveSessionOwner(agentSessionId: string, nodeId: string, connectionId: string): void {
+    const current = this.findSession(agentSessionId);
+    if (!current) return;
+    this.storeSession({
+      ...current,
+      nodeId,
+      connectionId,
+      fresh: true,
+      disconnectedAtMs: undefined,
+      updatedAtMs: Date.now(),
+    });
+  }
+
   getSessionForNode(
     nodeId: string,
     agentSessionId: string,

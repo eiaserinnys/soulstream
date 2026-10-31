@@ -49,6 +49,12 @@ export function beginGenerationRolloverIfPending(
 ): ActiveGenerationRollover | undefined {
   const pending = task.persistentGeneration?.pending;
   if (!pending) return undefined;
+  if (!task.codexThreadId && !pending.applyingFrom) {
+    pending.applyingFrom = "cross_node_handoff";
+    pending.previousModelPreset ??= task.modelPreset ?? null;
+    pending.previousBackend ??= effectiveTaskBackend(task, agent);
+  }
+  if (!task.codexThreadId && pending.applyingFrom === undefined) return undefined;
 
   if (pending.applyingFrom === undefined) {
     const firstIntervention = sortInterventionsByPriority(task.interventionQueue)[0];

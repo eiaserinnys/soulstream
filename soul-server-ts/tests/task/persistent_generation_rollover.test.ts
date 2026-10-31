@@ -135,7 +135,6 @@ describe("beginGenerationRolloverIfPending", () => {
   it.each([
     ["persistent marker off", { persistent: false }],
     ["queue empty", { interventionQueue: [] }],
-    ["native id absent", { codexThreadId: undefined }],
     ["retained runner", { runnerRetainedForDetachedWork: true }],
     ["runtime follow-up is first", {
       interventionQueue: [{ text: "background result", source: "claude_runtime_task_followup" }],
@@ -150,6 +149,16 @@ describe("beginGenerationRolloverIfPending", () => {
     expect(task.persistentGeneration?.pending?.applyingFrom).toBeUndefined();
     expect(task.modelPreset).toBe("claude-old");
     expect(catalog.resolve).not.toHaveBeenCalled();
+  });
+
+  it("starts an applying cross-node handoff without a native backend session", () => {
+    const task = makeTask({ codexThreadId: undefined });
+    const rollover = beginGenerationRolloverIfPending(task, agent, makeCatalog());
+
+    expect(rollover).toMatchObject({ fromBackendSessionId: "cross_node_handoff" });
+    expect(task.persistentGeneration?.pending?.applyingFrom).toBe("cross_node_handoff");
+    expect(task.modelPreset).toBe("codex-new");
+    expect(task.reasoningEffort).toBe("high");
   });
 
   it("continues an applying generation despite a disabled marker and empty queue", () => {
@@ -650,5 +659,32 @@ describe("beginGenerationRolloverIfPending", () => {
       model: "claude-model-old",
       measuredAt: "2026-10-04T00:00:00.000Z",
     });
+  });
+});
+
+describe("resolveGenerationState cross-node handoff", () => {
+  it("keeps an applying handoff active until the new backend thread starts", () => {
+    const state = {
+      number: 2,
+      pending: {
+        number: 3,
+        reason: "auto:fallback",
+        requestedAt: "2026-10-05T00:00:00.000Z",
+        targetModelPreset: "codex-new",
+        targetReasoningEffort: "high" as const,
+        applyingFrom: "cross_node_handoff",
+        previousBackend: "claude",
+      },
+    };
+
+    expect(resolveGenerationState(state, null, { modelPreset: "codex-new", reasoningEffort: "high" }))
+      .toMatchObject({
+        persistentGeneration: state,
+        activeGenerationRollover: {
+          number: 3,
+          fromBackendSessionId: "cross_node_handoff",
+          previousBackend: "claude",
+        },
+      });
   });
 });

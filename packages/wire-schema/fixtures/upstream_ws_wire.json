@@ -37,6 +37,7 @@
           "id": "claude-fable",
           "label": "Claude - Fable",
           "backend": "claude",
+          "model": "claude-fable-5[1m]",
           "available": true,
           "usage_provider": "claude",
           "usage_model_id": "fable"

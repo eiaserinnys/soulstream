@@ -59,6 +59,8 @@ export interface AdvertisedModelPreset {
   id: string;
   label: string;
   backend: ModelPreset["backend"];
+  /** Resolved model id for orchestrator persistence during cross-node handoff. */
+  model: string;
   available: boolean;
   reason?: "env_unresolved";
   /**
@@ -156,6 +158,7 @@ export class ModelCatalog {
         id: preset.id,
         label: preset.label,
         backend: preset.backend,
+        model: preset.model,
         available,
         ...(!available ? { reason: "env_unresolved" as const } : {}),
         usage_provider: usageProvider,

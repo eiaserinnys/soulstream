@@ -154,6 +154,75 @@ describe("live execute proxy provider", () => {
     );
   });
 
+  it("hands an idle limit-hit PAS resume to the first available cross-node fallback", async () => {
+    const updated: unknown[] = [];
+    const staticPreset = {
+      id: "codex-next", label: "Codex Next", backend: "codex" as const,
+      available: true, usage_provider: "codex" as const, model: "gpt-codex-next",
+    };
+    const harness = createHarness({
+      modelPresetAvailability: {
+        requireAvailable: vi.fn(),
+        resolveStaticForNode: vi.fn(() => staticPreset),
+      },
+      persistentResume: {
+        getSession: async () => ({
+          session_id: "sess-handoff", agent_id: "agent", node_id: "node-a",
+          status: "error", termination_reason: "limit_hit", model_preset: "claude-old",
+          model: "claude-model", reasoning_effort: "high", claude_session_id: "native-old",
+          metadata: [
+            { type: "persistent_session", value: { enabled: true } },
+            { type: "persistent_settings", value: {
+              default_model: { model_preset: "claude-old", reasoning_effort: "high" },
+              fallback_models: [{ model_preset: "codex-next", reasoning_effort: "high", node_id: "node-b" }],
+            } },
+            { type: "persistent_generation", value: { number: 4 } },
+          ],
+        }),
+        updateSession: async (input) => { updated.push(input); },
+        listAgentProfiles: async () => ({ agent: {} }),
+      },
+    });
+    const nodeA = harness.registerNode({
+      nodeId: "node-a", agents: [{ id: "agent", backend: "claude" }], supportedBackends: ["claude"],
+    });
+    const nodeB = harness.registerNode({
+      nodeId: "node-b", agents: [{ id: "agent", backend: "codex" }], supportedBackends: ["codex"],
+      modelPresets: [{ ...staticPreset, usage_provider: "codex" }],
+    });
+    harness.registry.sessionCache.upsertFromSessionCreated({
+      nodeId: "node-a", connectionId: nodeA,
+      message: { type: "session_created", session: { agent_session_id: "sess-handoff", status: "error" } },
+      nowMs: 1_700_000_000_000,
+    });
+    harness.attachTransport("node-a", nodeA);
+    const sent = harness.attachTransport("node-b", nodeB, (message) => {
+      harness.receive("node-b", nodeB, {
+        type: "intervene_ack", requestId: message.requestId, status: "ok", outcome: "queued",
+      });
+      harness.receive("node-b", nodeB, {
+        type: "event", agentSessionId: "sess-handoff", payload: { type: "complete", result: "retried" }, eventId: 1,
+      });
+    });
+
+    const result = await harness.provider.executeResume({
+      agent_session_id: "sess-handoff", prompt: "continue", source: "execute-proxy",
+    });
+
+    expect(sent[0]).toMatchObject({ type: "intervene", agentSessionId: "sess-handoff" });
+    expect(updated[0]).toMatchObject({
+      nodeId: "node-b", modelPreset: "codex-next", model: "gpt-codex-next", reasoningEffort: "high",
+      claudeSessionId: null,
+      metadata: expect.arrayContaining([expect.objectContaining({
+        type: "persistent_generation",
+        value: expect.objectContaining({ number: 4, pending: expect.objectContaining({
+          number: 5, reason: "auto:fallback", target_node_id: "node-b", applying_from: "native-old",
+        }) }),
+      })]),
+    });
+    expect(await resultBody(result)).toContain('"node_id":"node-b"');
+  });
+
   it("selects a Codex preset for a base Claude profile and forwards both explicit fields", async () => {
     const requireAvailable = vi.fn(() => ({
       id: "codex-5.6-sol",
@@ -914,7 +983,15 @@ function createHarness(options: {
   findSessionOwnerNodeId?: (agentSessionId: string) => Promise<string | null>;
   findRescuableSessionOwnerNodeId?: (agentSessionId: string) => Promise<string | null>;
   modelPresetAvailability?: Pick<ModelPresetAvailabilityService, "requireAvailable">
-    & Partial<Pick<ModelPresetAvailabilityService, "chooseUsablePreset">>;
+    & Partial<Pick<ModelPresetAvailabilityService, "chooseUsablePreset" | "resolveStaticForNode">>;
+  persistentResume?: {
+    getSession(sessionId: string): Promise<Record<string, unknown> | null>;
+    updateSession(input: {
+      sessionId: string; nodeId: string; modelPreset: string; model: string;
+      reasoningEffort: string | null; claudeSessionId: string | null; metadata: unknown;
+    }): Promise<void>;
+    listAgentProfiles(nodeId: string): Promise<Record<string, unknown> | undefined>;
+  };
 } = {}) {
   const registry = new InMemoryNodeRegistry({
     nowMs: () => 1_700_000_000_000,
@@ -938,6 +1015,7 @@ function createHarness(options: {
     createSessionReconcileTimeoutMs: options.createSessionReconcileTimeoutMs,
     generateSessionId: () => "generated-session",
     modelPresetAvailability: options.modelPresetAvailability,
+    persistentResume: options.persistentResume,
     admitAttachmentInput: options.admitAttachmentInput,
   });
 

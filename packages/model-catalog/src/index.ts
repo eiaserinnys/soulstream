@@ -101,3 +101,14 @@ export function resolveModelPreset(
   if (!preset) throw new UnknownModelPresetError(presetId);
   return preset;
 }
+
+/** Validate an explicit effort against the static preset definition and apply its default. */
+export function normalizeReasoningEffort(
+  preset: { id: string; supported_efforts?: readonly string[]; default_effort?: string },
+  requested?: string | null,
+): string | null {
+  if (requested != null && !preset.supported_efforts?.includes(requested as ReasoningEffort)) {
+    throw new Error(`Reasoning effort "${requested}" is not supported by model preset "${preset.id}"`);
+  }
+  return requested ?? preset.default_effort ?? null;
+}

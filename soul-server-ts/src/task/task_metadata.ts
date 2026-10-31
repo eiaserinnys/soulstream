@@ -93,6 +93,7 @@ export function buildPersistentGenerationMetadataEntry(
             requested_at: pending.requestedAt,
             target_model_preset: pending.targetModelPreset,
             target_reasoning_effort: pending.targetReasoningEffort ?? null,
+            ...(pending.targetNodeId === undefined ? {} : { target_node_id: pending.targetNodeId }),
             reset_context: pending.resetContext ?? false,
             keep_instructions: pending.keepInstructions ?? true,
             applying_from: pending.applyingFrom ?? null,
@@ -183,6 +184,9 @@ function parsePersistentGenerationPending(value: unknown):
     reason: record.reason,
     requestedAt: record.requested_at,
     targetModelPreset: record.target_model_preset,
+    ...(typeof record.target_node_id === "string" && record.target_node_id.trim().length > 0
+      ? { targetNodeId: record.target_node_id.trim() }
+      : {}),
     resetContext: record.reset_context === true,
     keepInstructions: record.keep_instructions !== false,
     ...(isReasoningEffort(record.target_reasoning_effort)

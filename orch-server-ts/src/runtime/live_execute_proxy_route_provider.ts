@@ -40,8 +40,13 @@ import type {
 import { CREATE_ACK_ERROR_HTTP_STATUS } from "../session/session_command_routes.js";
 import {
   ModelPresetAvailabilityError,
+  type StaticModelPreset,
   type ModelPresetAvailabilityService,
 } from "../model/model_preset_availability.js";
+import {
+  readPersistentEnabled,
+  readStoredPersistentSettings,
+} from "@soulstream/wire-schema/persistent-session-settings";
 
 const EXECUTE_PROXY_KEEPALIVE_MS = 30_000;
 
@@ -68,7 +73,20 @@ export type LiveExecuteProxyRouteProviderOptions = {
   readonly modelPresetAvailability?: Pick<
     ModelPresetAvailabilityService,
     "requireAvailable"
-  > & Partial<Pick<ModelPresetAvailabilityService, "chooseUsablePreset">>;
+  > & Partial<Pick<ModelPresetAvailabilityService, "resolveStaticForNode" | "chooseUsablePreset">>;
+  readonly persistentResume?: {
+    getSession(sessionId: string): Promise<Record<string, unknown> | null>;
+    updateSession(input: {
+      sessionId: string;
+      nodeId: string;
+      modelPreset: string;
+      model: string;
+      reasoningEffort: string | null;
+      claudeSessionId: string | null;
+      metadata: unknown;
+    }): Promise<void>;
+    listAgentProfiles(nodeId: string): Promise<Record<string, unknown> | undefined>;
+  };
 };
 
 export function createLiveExecuteProxyRouteProvider(
@@ -190,17 +208,45 @@ export function createLiveExecuteProxyRouteProvider(
         payload.agent_session_id,
       );
       try {
+        let persistentTarget: { nodeId: string } | undefined;
+        const row = await options.persistentResume?.getSession(payload.agent_session_id);
+        const stored = row && readPersistentEnabled(row.metadata) && isIdleSession(row.status)
+          ? readStoredPersistentSettings(row.metadata)
+          : undefined;
+        const attempted = new Set<string>();
+        let autoRetried = false;
+        const fallbackCandidates = stored?.default_model
+          ? [stored.default_model, ...stored.fallback_models]
+          : [];
+        if (stored?.default_model) {
+          const chosen = await choosePersistentCandidate(options, row!, fallbackCandidates, attempted);
+          if (chosen) {
+            const { candidate, nodeId, preset } = chosen;
+            attempted.add(`${nodeId}:${candidate.model_preset}`);
+            const same = row!.node_id === nodeId
+              && row!.model_preset === candidate.model_preset
+              && (row!.reasoning_effort === candidate.reasoning_effort
+                || (row!.reasoning_effort === "auto" && candidate.reasoning_effort === null));
+            if (!same) {
+              await commitPersistentHandoff(options, row!, candidate, nodeId, preset);
+              options.registry.sessionCache.moveSessionOwner(
+                payload.agent_session_id,
+                nodeId,
+                options.registry.getConnectedNode(nodeId)!.connectionId,
+              );
+              persistentTarget = { nodeId };
+            }
+          }
+        }
         const admitted = await admitExecuteAttachments(options, request, {
           sessionId: payload.agent_session_id,
-          resolveNodeId: async () =>
-            (await options.router.requireNodeForExistingSession(payload.agent_session_id)).nodeId,
+          resolveNodeId: async () => persistentTarget?.nodeId
+            ?? (await options.router.requireNodeForExistingSession(payload.agent_session_id)).nodeId,
           attachmentIds: payload.attachment_ids,
           attachmentPaths: payload.attachment_paths,
         });
-        const routed = await options.router.routeExistingSessionPendingCommand(
-          interveneCommandPayload(payload, admitted),
-          { timeoutMs: options.timeoutMs },
-        );
+        const commandPayload = interveneCommandPayload(payload, admitted);
+        const routed = await options.router.routeExistingSessionPendingCommand(commandPayload, { timeoutMs: options.timeoutMs });
         const result = await options.bridge.sendPendingCommand(routed);
         if (isCommandError(result)) {
           throw routeErrorFromAck(422, result);
@@ -209,6 +255,35 @@ export function createLiveExecuteProxyRouteProvider(
           agentSessionId: payload.agent_session_id,
           nodeId: routed.node.nodeId,
           queue,
+          onLimitHit: persistentTarget && fallbackCandidates.length > 0
+            ? async () => {
+                if (autoRetried) return false;
+                const current = await options.persistentResume?.getSession(payload.agent_session_id);
+                if (!current) return false;
+                const next = await choosePersistentCandidate(options, current, fallbackCandidates, attempted);
+                if (!next) return false;
+                autoRetried = true;
+                attempted.add(`${next.nodeId}:${next.candidate.model_preset}`);
+                await commitPersistentHandoff(options, current, next.candidate, next.nodeId, next.preset);
+                const targetNode = options.registry.getConnectedNode(next.nodeId);
+                if (!targetNode) return false;
+                options.registry.sessionCache.moveSessionOwner(payload.agent_session_id, next.nodeId, targetNode.connectionId);
+                const retryAdmitted = await admitExecuteAttachments(options, request, {
+                  sessionId: payload.agent_session_id,
+                  resolveNodeId: () => next.nodeId,
+                  attachmentIds: payload.attachment_ids,
+                  attachmentPaths: payload.attachment_paths,
+                });
+                const retryPayload = { ...payload, delivery_id: randomUUID() };
+                const retryRoute = await options.router.routeExistingSessionPendingCommand(
+                  interveneCommandPayload(retryPayload, retryAdmitted),
+                  { timeoutMs: options.timeoutMs },
+                );
+                const retryResult = await options.bridge.sendPendingCommand(retryRoute);
+                if (isCommandError(retryResult)) throw routeErrorFromAck(422, retryResult);
+                return true;
+              }
+            : undefined,
         });
       } catch (error) {
         queue.close();
@@ -266,6 +341,7 @@ function streamResult(params: {
   agentSessionId: string;
   nodeId: string;
   queue: SessionEventQueue;
+  onLimitHit?: () => Promise<boolean>;
 }): ExecuteProxyResult {
   return {
     body: Readable.from(streamExecuteProxyEvents(params)),
@@ -273,10 +349,103 @@ function streamResult(params: {
   };
 }
 
+function isIdleSession(status: unknown): boolean {
+  return status === "completed" || status === "error" || status === "interrupted";
+}
+
+async function choosePersistentCandidate(
+  options: LiveExecuteProxyRouteProviderOptions,
+  row: Record<string, unknown>,
+  candidates: readonly { model_preset: string; reasoning_effort: string | null; node_id?: string }[],
+  excluded: Set<string>,
+): Promise<{
+  candidate: { model_preset: string; reasoning_effort: string | null; node_id?: string };
+  nodeId: string;
+  preset: StaticModelPreset;
+} | undefined> {
+  const fallback = options.persistentResume;
+  const availability = options.modelPresetAvailability;
+  if (!fallback || !availability?.resolveStaticForNode) return undefined;
+  if (row.termination_reason === "limit_hit" && typeof row.node_id === "string" && typeof row.model_preset === "string") {
+    excluded.add(`${row.node_id}:${row.model_preset}`);
+  }
+  for (const candidate of candidates) {
+    const nodeId = candidate.node_id ?? (typeof row.node_id === "string" ? row.node_id : "");
+    const key = `${nodeId}:${candidate.model_preset}`;
+    if (!nodeId || excluded.has(key) || !options.registry.getConnectedNode(nodeId)) continue;
+    const profiles = await fallback.listAgentProfiles(nodeId);
+    const agentId = typeof row.agent_id === "string" ? row.agent_id : "";
+    if (!profiles || !agentId || !(agentId in profiles)) continue;
+    try {
+      const preset = availability.resolveStaticForNode(nodeId, candidate.model_preset, { requireAvailable: true });
+      availability.requireAvailable(nodeId, candidate.model_preset);
+      return { candidate, nodeId, preset };
+    } catch (error) {
+      if (error instanceof ModelPresetAvailabilityError) continue;
+      throw error;
+    }
+  }
+  return undefined;
+}
+
+async function commitPersistentHandoff(
+  options: LiveExecuteProxyRouteProviderOptions,
+  row: Record<string, unknown>,
+  candidate: { model_preset: string; reasoning_effort: string | null; node_id?: string },
+  nodeId: string,
+  preset: { id: string; model?: string; backend: string },
+): Promise<void> {
+  const store = options.persistentResume;
+  if (!store) return;
+  const metadata = Array.isArray(row.metadata) ? row.metadata : [];
+  const existingGeneration = [...metadata].reverse().find((item) => isRecord(item) && item.type === "persistent_generation");
+  const generationValue = isRecord(existingGeneration) && isRecord(existingGeneration.value) ? existingGeneration.value : {};
+  const currentGeneration = typeof generationValue.number === "number" ? generationValue.number : 1;
+  const previousPreset = typeof row.model_preset === "string" ? row.model_preset : undefined;
+  let previousPresetInfo: StaticModelPreset | undefined;
+  if (previousPreset && typeof row.node_id === "string") {
+    try {
+      previousPresetInfo = options.modelPresetAvailability?.resolveStaticForNode?.(row.node_id, previousPreset, { requireAvailable: false });
+    } catch (error) {
+      if (!(error instanceof ModelPresetAvailabilityError)) throw error;
+    }
+  }
+  const pending = {
+    number: currentGeneration + 1,
+    reason: "auto:fallback",
+    requested_at: new Date().toISOString(),
+    target_model_preset: candidate.model_preset,
+    target_reasoning_effort: candidate.reasoning_effort,
+    target_node_id: nodeId,
+    applying_from: (typeof row.claude_session_id === "string" && row.claude_session_id.length > 0)
+      ? row.claude_session_id : "cross_node_handoff",
+    previous_model_preset: previousPreset ?? null,
+    previous_backend: previousPresetInfo?.backend ?? (typeof row.backend === "string" ? row.backend : preset.backend),
+    reset_context: false,
+    keep_instructions: true,
+  };
+  const nextMetadata = metadata.filter((item) => !(isRecord(item) && item.type === "persistent_generation"));
+  nextMetadata.push({
+    type: "persistent_generation",
+    value: { ...generationValue, number: currentGeneration, pending },
+  });
+  await store.updateSession({
+    sessionId: String(row.session_id),
+    nodeId,
+    modelPreset: preset.id,
+    model: preset.model ?? preset.id,
+    reasoningEffort: candidate.reasoning_effort,
+    claudeSessionId: row.node_id === nodeId && typeof row.claude_session_id === "string"
+      ? row.claude_session_id : null,
+    metadata: nextMetadata,
+  });
+}
+
 async function* streamExecuteProxyEvents(params: {
   agentSessionId: string;
   nodeId: string;
   queue: SessionEventQueue;
+  onLimitHit?: () => Promise<boolean>;
 }): AsyncGenerator<string> {
   try {
     yield formatExecuteProxySseFrame({
@@ -297,13 +466,20 @@ async function* streamExecuteProxyEvents(params: {
       }
 
       const raw = next.data as ExecuteProxyRawEvent;
-      yield formatExecuteProxyRawEvent(raw);
       const eventType = eventTypeFromRawEvent(raw);
+      if (eventType === "complete" && terminationReasonFromRawEvent(raw) === "limit_hit"
+        && params.onLimitHit && await params.onLimitHit()) continue;
+      yield formatExecuteProxyRawEvent(raw);
       if (eventType === "complete" || eventType === "error") return;
     }
   } finally {
     params.queue.close();
   }
+}
+
+function terminationReasonFromRawEvent(raw: ExecuteProxyRawEvent): string | undefined {
+  const payload = isRecord(raw.event) ? raw.event : isRecord(raw.payload) ? raw.payload : undefined;
+  return typeof payload?.termination_reason === "string" ? payload.termination_reason : undefined;
 }
 
 function createSessionCommandPayload(params: {

@@ -680,6 +680,29 @@ describe("resolvePresetAvailability", () => {
   });
 });
 
+describe("ModelPresetAvailabilityService static offline resolution", () => {
+  it("uses the node's cached static catalog to normalize an offline target", () => {
+    const service = new ModelPresetAvailabilityService({
+      getConnectedNode: () => undefined,
+      getNodeState: () => ({
+        nodeId: "node-offline", modelPresets: [{
+          id: "codex-next", label: "Codex Next", backend: "codex", model: "gpt-codex-next",
+          available: true, usage_provider: "codex", supported_efforts: ["high"], default_effort: "high",
+        }],
+      } as unknown as NodeConnectionSnapshot),
+    }, {
+      getSummary: () => summary(null),
+      getLimitRejection: () => null,
+      getClaudePoolAccountsForAvailability: () => [],
+    });
+
+    expect(service.resolveStaticForNode("node-offline", "codex-next", { requireAvailable: false }))
+      .toMatchObject({ id: "codex-next", model: "gpt-codex-next", default_effort: "high" });
+    expect(() => service.resolveStaticForNode("node-offline", "missing", { requireAvailable: false }))
+      .toThrow("not advertised by node node-offline");
+  });
+});
+
 describe("ModelPresetAvailabilityService limit rejection", () => {
   it("keeps availability false for settings callers and reports the reset in the create error", () => {
     const activeRejection = rejection("2026-07-28T04:00:00.000Z", "five_hour");
