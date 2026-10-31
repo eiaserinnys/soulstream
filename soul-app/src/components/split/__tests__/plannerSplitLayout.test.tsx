@@ -128,6 +128,8 @@ describe('iPad v3 planner shell', () => {
     expect(screen.getByTestId('tablet-persistent-entry')).toBeTruthy();
     act(() => usePhoneRailActions.getState().pushOverride(card, [{ id: 'close', label: '닫기', icon: 'close', onPress: jest.fn() }]));
     expect(screen.getByTestId('duo-rail-action-close')).toBeTruthy();
+    expect(StyleSheet.flatten(screen.getByTestId('duo-main-band-capsule').props.style)).toMatchObject({ width: 48, height: 48 });
+    expect(StyleSheet.flatten(screen.getByTestId('duo-rail-action-close').props.style)).toMatchObject({ width: 48, height: 48 });
     expect(screen.queryByTestId('duo-rail-action-starred')).toBeNull();
     expect(screen.queryByTestId('duo-main-menu')).toBeNull();
     act(() => usePhoneRailActions.getState().removeOverride(card));
@@ -150,6 +152,8 @@ describe('iPad v3 planner shell', () => {
     const avoider = screen.UNSAFE_getAllByType(AppKeyboardAvoidingView).find(node => node.props.onOverlapChange)!;
     act(() => avoider.props.onOverlapChange(300));
     expect(screen.getByTestId('duo-rail-back-capsule')).toBeTruthy();
+    expect(StyleSheet.flatten(screen.getByTestId('duo-rail-back-capsule').props.style)).toMatchObject({ width: 48, height: 48 });
+    expect(StyleSheet.flatten(screen.getByTestId('duo-rail-action-close').props.style)).toMatchObject({ width: 48, height: 48 });
     const band = StyleSheet.flatten(screen.getByTestId('duo-main-band').props.style);
     const scroll = screen.getByTestId('duo-main-actions-scroll');
     expect(StyleSheet.flatten(scroll.props.style).maxHeight).toBeLessThanOrEqual(669 - band.bottom - 200 - 50);

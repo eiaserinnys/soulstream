@@ -70,12 +70,16 @@ test('뒤로 액션을 위에 분리하고 나머지는 하단 캡슐에 둔다'
   </NavigationContainer>;
   const screen = render(scene(false));
   expect(screen.getByTestId('duo-rail-back-capsule')).toBeTruthy();
+  expect(StyleSheet.flatten(screen.getByTestId('duo-rail-back-capsule').props.style)).toMatchObject({ width: 48, height: 48 });
   expect(screen.getByTestId('phone-rail-action-back')).toBeTruthy();
+  expect(StyleSheet.flatten(screen.getByTestId('phone-rail-action-back').props.style)).toMatchObject({ width: 48, height: 48 });
   expect(screen.getByTestId('phone-rail-action-edit')).toBeTruthy();
   screen.rerender(scene(true));
   expect(screen.queryByTestId('duo-rail-back-capsule')).toBeNull();
   expect(screen.getByTestId('phone-rail-tab-cluster')).toBeTruthy();
+  expect(StyleSheet.flatten(screen.getByTestId('phone-rail-tab-cluster').props.style)).toMatchObject({ width: 48, height: 48 });
   expect(screen.getByTestId('phone-rail-action-back')).toBeTruthy();
+  expect(StyleSheet.flatten(screen.getByTestId('phone-rail-action-back').props.style)).toMatchObject({ width: 48, height: 48 });
 });
 
 test('오버레이 레일도 키보드 위로 올라가고 하단 액션을 제한한다', () => {
@@ -90,6 +94,8 @@ test('오버레이 레일도 키보드 위로 올라가고 하단 액션을 제�
   </SafeAreaInsetsContext.Provider></NavigationContainer>);
   act(() => screen.UNSAFE_getByType(AppKeyboardAvoidingView).props.onOverlapChange(300));
   expect(screen.getByTestId('duo-rail-back-capsule')).toBeTruthy();
+  expect(StyleSheet.flatten(screen.getByTestId('duo-rail-back-capsule').props.style)).toMatchObject({ width: 48, height: 48 });
+  expect(StyleSheet.flatten(screen.getByTestId('duo-rail-action-close').props.style)).toMatchObject({ width: 48, height: 48 });
   const capsule = screen.getByTestId('duo-rail-override');
   expect(capsule).toBeTruthy();
   expect(StyleSheet.flatten(screen.getByTestId('duo-rail-override-lower').props.style).bottom).toBe(300);

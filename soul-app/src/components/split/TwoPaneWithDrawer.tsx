@@ -23,7 +23,7 @@ import { clampTwoPaneMiddleDrag, resolveTwoPaneMiddleWidth } from './paneWidths'
 import { DUO_RAIL_END_INSET, getDuoRailTopOffset, splitDuoRailBackAction, useDuoSideBand } from '../../navigation/duoSideBand';
 import { useSearchStore } from '../../store/searchStore';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
-import { RAIL_ITEM_HEIGHT, RailCapsule, RailCapsuleItem, RailCapsuleViewport } from '../navigation/RailCapsule';
+import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem, RailCapsuleViewport } from '../navigation/RailCapsule';
 import { TabletPersistentEntry } from '../../navigation/TabletPersistentEntry';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -69,7 +69,7 @@ export function TwoPaneWithDrawer() {
   const railBottom = Math.max(keyboardOverlap, insets.bottom, t.uiSpacing.xxl);
   const lowerRailMaxHeight = backAction && keyboardOverlap > 0
     ? Math.max(0, screenHeight - railBottom - getDuoRailTopOffset(screenWidth, screenHeight)
-      - (railCompact ? t.hitTarget.min + 2 * t.spacing.xxs : RAIL_ITEM_HEIGHT + 2 * t.spacing.xs) - t.uiSpacing.xs)
+      - RAIL_CAPSULE_WIDTH - t.uiSpacing.xs)
     : undefined;
   const cardDisplay = useCardDisplay(activeSection.kind === 'project' ? activeSection.folderId : undefined);
   const searchActive = useSearchStore(state => state.tabletActive);
