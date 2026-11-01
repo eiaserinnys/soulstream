@@ -133,7 +133,7 @@ export const sessionTools = {
         event_id: z.number().int().positive(),
       },
     } },
-  list_user_messages: { name: "list_user_messages", audience: "internal", config: {
+  list_user_messages: { name: "list_user_messages", audience: "internal", timeoutMs: 35_000, config: {
       description:
         "기간 안의 user_message 이벤트를 여러 세션에 걸쳐 시간순으로 조회한다. "
         + "본문과 발신 정보, 첨부 ID와 저장된 레거시 경로 문자열을 돌려주며, 본문이 없어도 유효한 첨부가 있으면 포함한다. 주입 컨텍스트는 뺀다. "
