@@ -35,10 +35,10 @@ import { useNodeConnectivityStream } from '../hooks/useNodeConnectivityStream';
 import { GlassSurface } from '../components/GlassSurface';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTokens, type DesignTokens } from '../theme';
-import { DuoSideBandContext, INITIAL_ROOT_TAB, PhoneRailModeContext, RAIL_MIN_INSET_WIDTH, ROOT_TAB_ORDER } from './tabContract';
+import { DuoSideBandContext, DUO_RAIL_TAB_ORDER, INITIAL_ROOT_TAB, PhoneRailModeContext, RAIL_MIN_INSET_WIDTH, ROOT_TAB_ORDER } from './tabContract';
 import { DUO_RAIL_END_INSET, getDuoRailTopOffset, hasDuoSideBand, splitDuoRailBackAction, useDuoSideBand } from './duoSideBand';
 import { useActiveDuoRailOverride, usePhoneRailActions, useRegisterDuoRailOverride, useRegisterPhoneRailActions, type PhoneRailAction } from './phoneRailActions';
-import { RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
+import { RAIL_CAPSULE_WIDTH, RAIL_ITEM_HEIGHT, RailCapsule, RailCapsuleItem, RailCapsuleViewport } from '../components/navigation/RailCapsule';
 import { usePasContextMenu } from '../components/persistent/usePasContextMenu';
 import { FolderWorkspace } from '../components/planner/FolderWorkspace';
 import { createApiClient } from '../api/client';
@@ -84,15 +84,17 @@ const PHONE_TAB_BUTTON_CENTER_STYLE: ViewStyle = { justifyContent: 'center' };
  * 아이폰 듀오 바깥 화면처럼 오른쪽에 시스템 레일이 있는 환경의 세로 탭 클러스터.
  * 하단 탭바 대신 같은 5개 루트 탭을 유리 캡슐에 담아 레일 하단에 둔다.
  */
-export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, compact = false }: {
+export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, compact = false, onBack }: {
   active: keyof RootTabParamList;
   onSelect(name: keyof RootTabParamList): void;
   duoSideBand?: boolean;
   compact?: boolean;
+  onBack?: () => void;
 }) {
   const t = useTokens();
   const c = t.colors;
   const scene = usePersistentSessionScene(state => state.scene);
+  const selectedCardId = usePersistentSessionScene(state => state.selectedCardId);
   const reportCount = usePersistentSessionScene(state => state.reportCount);
   const hasReports = usePersistentSessionScene(state => state.hasReports);
   const host = usePersistentSessionHost();
@@ -100,6 +102,7 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
   const actions = usePhoneRailActions(state => state.actions);
   const override = useActiveDuoRailOverride();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const { backAction, mainActions } = splitDuoRailBackAction(duoSideBand ? override : null);
   const topOffset = getDuoRailTopOffset(windowWidth, windowHeight);
   const renderOverrideAction = (action: PhoneRailAction) => <RailCapsuleItem key={action.id} testID={`phone-rail-action-${action.id}`}
@@ -109,52 +112,81 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
   const persistentLabel = active !== 'PersistentTab'
     ? '영구 세션 열기'
     : scene !== 'conversation' ? 'PAS 대화로 돌아가기' : '카드 목록 보기';
-  return <>
-    {backAction ? <View style={{ position: 'absolute', top: topOffset }}>
-      <RailCapsule testID={mainActions.length ? 'duo-rail-back-capsule' : 'phone-rail-tab-cluster'} compact={compact}>
-        {renderOverrideAction(backAction)}
-      </RailCapsule>
-    </View> : null}
-    {backAction && !mainActions.length ? null : <RailCapsule testID="phone-rail-tab-cluster" compact={compact}>
-      {duoSideBand && override?.length ? mainActions.map(renderOverrideAction) : <>
-      {duoSideBand && (active === 'DailyTab' || active === 'FolderTab' || active === 'FeedTab')
-        ? actions[active]?.map(action => <RailCapsuleItem key={action.id} testID={`phone-rail-action-${action.id}`}
-            label={action.label} selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
-            <Ionicons name={action.icon} color={action.selected ? c.accent : c.textMuted} size={t.iconSize.standard} />
-          </RailCapsuleItem>) : null}
-      {duoSideBand && active === 'PersistentTab' ? <RailCapsuleItem testID="phone-rail-pas-menu" label="PAS 메뉴" onPress={showPasMenu}>
-        <Ionicons name="ellipsis-horizontal" color={c.textMuted} size={t.iconSize.standard} />
-      </RailCapsuleItem> : null}
-      {duoSideBand && active === 'PersistentTab' ? <RailCapsuleItem testID="phone-rail-pas-reports"
-        label={!hasReports ? '지금의 보고 없음' : scene === 'reports' ? 'PAS 대화로 돌아가기' : '지금의 보고'}
-        selected={scene === 'reports'} badge={reportCount} disabled={!hasReports}
-        onPress={() => host.store.getState().toggleReports()}>
-        <Ionicons name="chatbubble-ellipses-outline" color={scene === 'reports' ? c.accent : c.textMuted} size={t.iconSize.standard} />
-      </RailCapsuleItem> : null}
-      {ROOT_TAB_ORDER.map((name) => {
-        const config = ROOT_SECTION_CONFIG[name];
-        const selected = name === active;
-        const color = selected ? c.accent : c.textMuted;
-        return <RailCapsuleItem
-          key={name}
-          testID={`phone-tab-${name}`}
-          role="tab"
-          label={name === 'PersistentTab' ? persistentLabel : config.title}
-          selected={selected}
-          onPress={() => onSelect(name)}
-        >
-          {name === 'PersistentTab'
-            ? <PersistentPhoneTabIcon color={color} size={t.iconSize.standard} active={selected} />
-            : <Ionicons name={config.icon} color={color} size={t.iconSize.standard} />}
-        </RailCapsuleItem>;
-      })}
-      </>}
-    </RailCapsule>}
-  </>;
+  const renderTab = (name: keyof RootTabParamList) => {
+    const config = ROOT_SECTION_CONFIG[name];
+    const selected = name === active;
+    const color = selected ? c.accent : c.textMuted;
+    return <RailCapsuleItem key={name} testID={`phone-tab-${name}`} role="tab"
+      label={name === 'PersistentTab' ? persistentLabel : config.title} selected={selected} onPress={() => onSelect(name)}>
+      {name === 'PersistentTab'
+        ? <PersistentPhoneTabIcon color={color} size={t.iconSize.standard} active={selected} />
+        : <Ionicons name={config.icon} color={color} size={t.iconSize.standard} />}
+    </RailCapsuleItem>;
+  };
+
+  if (!duoSideBand) {
+    return <RailCapsule testID="phone-rail-tab-cluster" compact={compact}>
+      {ROOT_TAB_ORDER.map((name) => renderTab(name))}
+    </RailCapsule>;
+  }
+
+  const defaultBackAction: PhoneRailAction = active === 'PersistentTab'
+    ? selectedCardId
+      ? { id: 'back', label: '카드 닫기', icon: 'chevron-back', onPress: () => host.store.getState().selectCard(null) }
+      : scene !== 'conversation'
+        ? { id: 'back', label: 'PAS 대화로 돌아가기', icon: 'chevron-back', onPress: () => host.store.getState().swipe('right') }
+        : { id: 'back', label: '뒤로', icon: 'chevron-back', disabled: !onBack && !host.store.getState().session,
+            onPress: () => { if (onBack) onBack(); else host.store.getState().leave(); } }
+    : { id: 'back', label: '뒤로', icon: 'chevron-back', disabled: !onBack, onPress: () => onBack?.() };
+  const resolvedBackAction = backAction ?? defaultBackAction;
+  const contextActions: PhoneRailAction[] = override?.length
+    ? mainActions
+    : active === 'PersistentTab'
+      ? [
+        { id: 'pas-menu', label: 'PAS 메뉴', icon: 'ellipsis-horizontal', onPress: showPasMenu },
+        { id: 'pas-reports', label: !hasReports ? '지금의 보고 없음' : scene === 'reports' ? 'PAS 대화로 돌아가기' : '지금의 보고',
+          icon: 'chatbubble-ellipses-outline', selected: scene === 'reports', badgeCount: reportCount, disabled: !hasReports,
+          onPress: () => host.store.getState().toggleReports() },
+      ]
+      : active === 'DailyTab' || active === 'FolderTab' || active === 'FeedTab'
+        ? actions[active] ?? []
+        : [];
+  const navigationNames = DUO_RAIL_TAB_ORDER.filter((name) => name !== active);
+  const navigationItemHeight = compact ? t.hitTarget.min : RAIL_ITEM_HEIGHT;
+  const navigationHeight = navigationNames.length * navigationItemHeight
+    + (compact ? 0 : Math.max(0, navigationNames.length - 1) * t.uiSpacing.xs / 2)
+    + 2 * (compact ? t.spacing.xxs : t.spacing.xs);
+  const bottomInset = compact ? insets.bottom : Math.max(insets.bottom, t.uiSpacing.xxl);
+  const contextMaxHeight = Math.max(0,
+    windowHeight - bottomInset - navigationHeight - topOffset - RAIL_CAPSULE_WIDTH - 2 * t.uiSpacing.sm);
+  const renderContextAction = (action: PhoneRailAction) => {
+    const testID = !override?.length && active === 'PersistentTab'
+      ? action.id === 'pas-menu' ? 'phone-rail-pas-menu' : 'phone-rail-pas-reports'
+      : `phone-rail-action-${action.id}`;
+    return <RailCapsuleItem key={action.id} testID={testID} label={action.label} selected={action.selected}
+      badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
+      <Ionicons name={action.icon} color={action.selected ? c.accent : c.textMuted} size={t.iconSize.standard} />
+    </RailCapsuleItem>;
+  };
+
+  return <View testID="duo-rail-column" style={{ width: RAIL_CAPSULE_WIDTH, flex: 1, position: 'relative', alignItems: 'center', justifyContent: 'flex-end' }}>
+    <View testID="duo-rail-top-stack" pointerEvents="box-none"
+      style={{ position: 'absolute', top: topOffset, left: 0, right: 0, alignItems: 'center', gap: t.uiSpacing.sm }}>
+      <RailCapsule testID="duo-rail-back-capsule" compact={compact}>{renderOverrideAction(resolvedBackAction)}</RailCapsule>
+      {contextActions.length ? <RailCapsuleViewport testID="duo-rail-context-scroll" maxHeight={contextMaxHeight}>
+        <RailCapsule testID="duo-rail-context-capsule" compact={compact}>{contextActions.map(renderContextAction)}</RailCapsule>
+      </RailCapsuleViewport> : null}
+    </View>
+    <RailCapsule testID="phone-rail-tab-cluster" compact={compact}>
+      {navigationNames.map((name) => renderTab(name))}
+    </RailCapsule>
+  </View>;
 }
 
 function PhoneRailTabBar({ state, descriptors, navigation, insets, duoSideBand }: BottomTabBarProps & { duoSideBand: boolean }) {
   const t = useTokens();
+  const panelHistory = usePhonePanelHistory();
+  const host = usePersistentSessionHost();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const activeRoute = state.routes[state.index];
   const active = activeRoute?.name as keyof RootTabParamList;
@@ -185,6 +217,27 @@ function PhoneRailTabBar({ state, descriptors, navigation, insets, duoSideBand }
       navigation.dispatch({ ...CommonActions.navigate(name), target: state.key });
     }
   };
+  const canGoBack = (nestedState?.index ?? 0) > 0
+    || (panelHistory.hasReturnTab() && panelHistory.getReturnTab() !== active)
+    || active !== INITIAL_ROOT_TAB;
+  const onBack = useCallback(() => {
+    if ((nestedState?.index ?? 0) > 0) {
+      navigation.dispatch(CommonActions.goBack());
+      return;
+    }
+    if (panelHistory.hasReturnTab()) {
+      const returnTab = panelHistory.getReturnTab();
+      if (returnTab !== active) {
+        if (active === 'PersistentTab') host.store.getState().leave();
+        select(returnTab);
+        return;
+      }
+    }
+    if (active !== INITIAL_ROOT_TAB) {
+      if (active === 'PersistentTab') host.store.getState().leave();
+      select(INITIAL_ROOT_TAB);
+    }
+  }, [active, host.store, navigation, nestedState?.index, panelHistory, select]);
   return <View
     testID="phone-rail-tab-rail"
     style={{
@@ -212,7 +265,8 @@ function PhoneRailTabBar({ state, descriptors, navigation, insets, duoSideBand }
         backgroundColor: createSurfaceRoles(t).chrome.tokenStyle.backgroundColor,
       }}
     /> : null}
-    {hidden ? null : <PhoneRailTabCluster active={active} onSelect={select} duoSideBand={duoSideBand} compact={compact} />}
+    {hidden ? null : <PhoneRailTabCluster active={active} onSelect={select} duoSideBand={duoSideBand} compact={compact}
+      onBack={duoSideBand && canGoBack ? onBack : undefined} />}
   </View>;
 }
 

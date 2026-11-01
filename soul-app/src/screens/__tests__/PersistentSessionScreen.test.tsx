@@ -84,8 +84,6 @@ import { useAuthStore } from '../../store/authStore';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useUsageSummary } from '../../hooks/useUsageSummary';
 import { useTokens } from '../../theme';
-import { AppModalSurface } from '../../components/AppModalSurface';
-import { GlassButton } from '../../components/GlassSurface';
 import { measurePersistentReports } from '../../test-utils/persistent-report-layout';
 import type { CardDetail } from '../../api/cardTypes';
 import { cardFixture } from '../../test-support/cards';
@@ -216,8 +214,7 @@ test('phone report deck touch leaves page swipes to the deck and conversation sw
   measure.mockRestore();
 });
 
-test('card report opens an iPhone page sheet and expands inline on iPad', async () => {
-  const errors = jest.spyOn(console, 'error').mockImplementation(() => {});
+test('card report opens the card directly on iPhone and expands inline on iPad', async () => {
   const cardReport = { key: 'card_531', kind: 'see' as const, title: '검수 결과', card_numbers: [531], card_id: 'card-531',
     card_status: 'review', context: '결과를 확인해 주세요.', action: '', options: [], state: 'open' as const, answer: '', updated_at: '2026-10-21T00:00:00Z' };
   const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
@@ -238,55 +235,9 @@ test('card report opens an iPhone page sheet and expands inline on iPad', async 
   measurePersistentReports(phonePager);
   await waitFor(() => expect(phonePager.getByTestId('report-title')).toBeTruthy());
   fireEvent.press(phonePager.getByTestId('report-title'), { stopPropagation: jest.fn() });
-  const modal = phone.UNSAFE_getByType(AppModalSurface);
-  expect(errors.mock.calls.filter(args => String(args[0]).includes('same key'))).toEqual([]);
-  errors.mockRestore();
-  expect(modal.props.variant).toBe('expanded');
-  expect(modal.props.presentationStyle).toBe('pageSheet');
-  expect(phone.getByTestId('persistent-session-report-card-sheet')).toBeTruthy();
-  expect(phone.getAllByText('검수 대기')).toHaveLength(2);
-  await waitFor(() => expect(phone.getByTestId('persistent-report-card-expansion-card_531')).toBeTruthy());
-  const scrollToEnd = jest.spyOn(ScrollView.prototype, 'scrollToEnd').mockImplementation(() => {});
-  fireEvent(phone.getByPlaceholderText('커멘트'), 'focus');
-  const sheetScroll = phone.UNSAFE_getAllByType(ScrollView).find(scroll => scroll.props.automaticallyAdjustKeyboardInsets);
-  expect(sheetScroll).toBeDefined();
-  fireEvent.changeText(phone.getByPlaceholderText('커멘트'), '아이폰에서도\n입력이\n여러 줄로\n늘어납니다.');
-  fireEvent(sheetScroll!, 'contentSizeChange', 390, 1184);
-  await waitFor(() => expect(scrollToEnd).toHaveBeenCalled());
-  fireEvent(phone.getByPlaceholderText('커멘트'), 'blur');
-  scrollToEnd.mockClear();
-  fireEvent(sheetScroll!, 'layout', { nativeEvent: { layout: { height: 400 } } });
-  expect(scrollToEnd).not.toHaveBeenCalled();
-  scrollToEnd.mockRestore();
-  expect(mockOpenContentLink).not.toHaveBeenCalled();
-  const closeAfterOpen = phone.UNSAFE_getByType(AppModalSurface).props.onDismiss;
-  const openCard = phone.UNSAFE_getAllByType(GlassButton).find(button => button.props.accessibilityLabel === '카드 열기');
-  expect(openCard).toBeDefined();
-  act(() => openCard!.props.onPress());
-  await waitFor(() => expect(phone.UNSAFE_getByType(AppModalSurface).props.visible).toBe(false));
-  const closingSheet = phone.UNSAFE_getByType(AppModalSurface);
-  expect(mockOpenContentLink).not.toHaveBeenCalled();
-  act(() => closingSheet.props.onDismiss());
+  await waitFor(() => expect(mockOpenContentLink).toHaveBeenCalledWith('/?card=card-531'));
+  expect(phone.queryByTestId('persistent-session-report-card-sheet')).toBeNull();
   expect(mockOpenContentLink).toHaveBeenCalledTimes(1);
-  expect(mockOpenContentLink).toHaveBeenCalledWith('/?card=card-531');
-  act(() => closeAfterOpen());
-  expect(mockOpenContentLink).toHaveBeenCalledTimes(1);
-
-  fireEvent.press(phone.getByTestId('report-title'), { stopPropagation: jest.fn() });
-  await waitFor(() => expect(phone.getByTestId('persistent-session-report-card-sheet').props.visible).toBe(true));
-  expect(phone.getByLabelText('축소')).toBeTruthy();
-  expect(phone.queryByLabelText('닫기')).toBeNull();
-  fireEvent.press(phone.getByLabelText('축소'));
-  await waitFor(() => expect(phone.getByTestId('persistent-session-report-card-sheet').props.visible).toBe(false));
-
-  fireEvent.press(phone.getByTestId('report-title'), { stopPropagation: jest.fn() });
-  await waitFor(() => expect(phone.getByTestId('persistent-session-report-card-sheet').props.visible).toBe(true));
-  expect(phone.getByTestId('persistent-report-card-sheet-complete')).toBeTruthy();
-  mockApi.setCardStatus.mockClear();
-  await act(async () => { fireEvent.press(phone.getByTestId('persistent-report-card-sheet-complete')); });
-  await waitFor(() => expect(phone.getByTestId('persistent-session-report-card-sheet').props.visible).toBe(false));
-  expect(mockApi.setCardStatus).toHaveBeenCalledTimes(1);
-  expect(mockApi.setCardStatus.mock.calls[0][1]).toBe('done');
   phone.unmount();
 
   mockDevice = 'tabletLandscape';
@@ -313,7 +264,37 @@ test('card report opens an iPhone page sheet and expands inline on iPad', async 
   tabletMeasure.mockRestore(); dimensions.mockRestore(); measure.mockRestore();
 });
 
-test('blocked card sheet does not show the completion action', async () => {
+test('phone report resolves a single card number and navigates directly without a sheet', async () => {
+  mockDevice = 'phone';
+  useSettingsStore.setState({ serverUrl: 'https://screen.test' });
+  mockApi.listCards.mockResolvedValue({ cards: [cardFixture({ id: 'card-531', number: 531 })] });
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 47, 390, 715);
+    else if (this.props.testID === 'persistent-session-conversation') callback(20, 95, 350, 667);
+  });
+  const report = { key: 'card_531', kind: 'see' as const, title: '검수 결과', card_numbers: [531],
+    card_status: 'review', context: '결과를 확인해 주세요.', action: '', options: [], state: 'open' as const, answer: '', updated_at: 'now' };
+  const onOpenPhoneCard = jest.fn();
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} onOpenPhoneCard={onOpenPhoneCard} /></PersistentSessionProvider>);
+  act(() => {
+    store.getState().open({ session_id: 'pas-card-number', display_name: '관제', persistent: true } as any);
+    useSessionStore.getState().applyPersistentReport('pas-card-number', [report]);
+  });
+  act(() => view.getByTestId('persistent-session-screen').props.onLayout());
+  act(() => view.getByTestId('persistent-body-probe').props.onComposerLayout(
+    { x: 0, y: 560, width: 350, height: 76 }, { x: 0, y: 20, width: 350, height: 56 }));
+  measurePersistentReports(view);
+  await waitFor(() => expect(view.getByTestId('report-title')).toBeTruthy());
+  fireEvent.press(view.getByTestId('report-title'), { stopPropagation: jest.fn() });
+  await waitFor(() => expect(onOpenPhoneCard).toHaveBeenCalledWith('card-531'));
+  expect(mockApi.listCards).toHaveBeenCalledWith(undefined, { includeCompleted: true });
+  expect(view.queryByTestId('persistent-session-report-card-sheet')).toBeNull();
+  expect(mockOpenContentLink).not.toHaveBeenCalled();
+  view.unmount();
+  measure.mockRestore();
+});
+
+test('blocked phone report still opens the card directly without a sheet', async () => {
   mockDevice = 'phone';
   useSettingsStore.setState({ serverUrl: 'https://screen.test' });
   const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
@@ -333,8 +314,8 @@ test('blocked card sheet does not show the completion action', async () => {
   measurePersistentReports(view);
   await waitFor(() => expect(view.getByTestId('report-title')).toBeTruthy());
   fireEvent.press(view.getByTestId('report-title'), { stopPropagation: jest.fn() });
-  await waitFor(() => expect(view.getByTestId('persistent-session-report-card-sheet').props.visible).toBe(true));
-  expect(view.queryByTestId('persistent-report-card-sheet-complete')).toBeNull();
+  await waitFor(() => expect(mockOpenContentLink).toHaveBeenCalledWith('/?card=card-531'));
+  expect(view.queryByTestId('persistent-session-report-card-sheet')).toBeNull();
   view.unmount();
   measure.mockRestore();
 });

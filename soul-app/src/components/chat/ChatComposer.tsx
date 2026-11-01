@@ -116,11 +116,12 @@ export function ChatComposer({
   const measuredHeight = input ? measurement.contentHeight : 0;
   const multilineExpanded = measuredHeight > singleLineHeight + 1;
   const maxInputHeight = Math.min(styles.composerTextInput.maxHeight, Math.max(singleLineHeight * 2, Math.floor(windowHeight * 0.22)));
+  const [iosAtMaxHeight, setIOSAtMaxHeight] = React.useState(false);
+  const isAtMaxHeight = !isEmpty && (iosAtMaxHeight || measuredHeight >= maxInputHeight - 1);
   const inputHeight = Math.min(maxInputHeight, Math.max(singleLineHeight, measuredHeight));
   const inputPadding = multilineExpanded ? composer.inputPaddingVertical : (singleLineHeight - lineHeight) / 2;
   const [stacked, setStacked] = React.useState(false);
   const effectiveStacked = !isEmpty && stacked;
-  const [iosAtMaxHeight, setIOSAtMaxHeight] = React.useState(false);
   const composerSurfaceStyle = presentation === 'manuscript'
     ? [styles.manuscriptComposerBox, {
         borderBottomWidth: StyleSheet.hairlineWidth,
@@ -200,7 +201,8 @@ export function ChatComposer({
                 ? [{ outlineStyle: 'solid' as const, outlineWidth: 0 }]
                 : []), {
                 ...(Platform.OS === 'ios'
-                  ? { minHeight: singleLineHeight, ...(isEmpty ? { height: singleLineHeight } : {}) }
+                  ? { minHeight: singleLineHeight, ...(isEmpty ? { height: singleLineHeight } : {}),
+                      ...(!isEmpty && isAtMaxHeight ? { height: maxInputHeight } : {}) }
                   : { height: inputHeight }),
                 paddingVertical: inputPadding, ...(maxInputHeight < styles.composerTextInput.maxHeight ? { maxHeight: maxInputHeight } : {}),
                 ...(presentation === 'manuscript' && effectiveStacked ? { paddingHorizontal: 0 } : {}),
@@ -212,7 +214,7 @@ export function ChatComposer({
               }]}
               onLayout={Platform.OS === 'ios' ? (event) => {
                 // Once capped, content may change without another contentSize event.
-                setIOSAtMaxHeight(event.nativeEvent.layout.height >= maxInputHeight);
+                setIOSAtMaxHeight(event.nativeEvent.layout.height >= maxInputHeight - 1);
               } : undefined}
               value={input}
               onChangeText={onChangeInput}
@@ -223,7 +225,7 @@ export function ChatComposer({
               placeholderTextColor={t.colors.textPlaceholder}
               multiline
               {...(Platform.OS === 'web' ? { rows: 1 } : {})}
-              scrollEnabled={Platform.OS === 'ios' ? !isEmpty && iosAtMaxHeight : measuredHeight > maxInputHeight}
+              scrollEnabled={Platform.OS === 'ios' ? isAtMaxHeight : measuredHeight > maxInputHeight}
               maxLength={CHAT_COMPOSER_MAX_LENGTH}
               autoCorrect={false}
               spellCheck={false}

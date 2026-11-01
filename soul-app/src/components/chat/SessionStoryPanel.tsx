@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { SessionStoryResponse } from '../../api/sessionEndpoints';
+import { useDuoSideBand } from '../../navigation/duoSideBand';
 import { useTokens, type DesignTokens } from '../../theme';
 import { DisclosureIcon } from '../DisclosureIcon';
 import { GlassButton } from '../GlassSurface';
@@ -21,6 +22,8 @@ interface Props {
   api: Pick<ApiClient, 'getSessionStory'> | null;
   openRequestId?: number | null;
   onOpenRequestHandled?: () => void;
+  storyExpanded?: boolean;
+  onStoryExpandedChange?: (expanded: boolean) => void;
 }
 
 interface SessionStoryPresentation {
@@ -36,12 +39,16 @@ export function SessionStoryPanel({
   api,
   openRequestId = null,
   onOpenRequestHandled,
+  storyExpanded,
+  onStoryExpandedChange,
   presentation = 'default',
   mode = 'disclosure',
 }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
-  const [expanded, setExpanded] = useState(false);
+  const [localExpanded, setLocalExpanded] = useState(false);
+  const expanded = storyExpanded ?? localExpanded;
+  const duoSideBand = useDuoSideBand();
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [story, setStory] = useState<SessionStoryPresentation | null>(null);
   const [developmentFailure, setDevelopmentFailure] = useState<Error | null>(null);
@@ -53,6 +60,10 @@ export function SessionStoryPanel({
     || requestContext.current.sessionId !== sessionId
   );
   const isDevelopmentBuild = typeof __DEV__ !== 'undefined' && __DEV__;
+  const setExpanded = useCallback((value: boolean) => {
+    setLocalExpanded(value);
+    onStoryExpandedChange?.(value);
+  }, [onStoryExpandedChange]);
 
   useEffect(() => {
     requestContext.current = { api, sessionId };
@@ -62,7 +73,7 @@ export function SessionStoryPanel({
     setStory(null);
     setDevelopmentFailure(null);
     handledOpenRequest.current = null;
-  }, [api, mode, sessionId]);
+  }, [api, mode, sessionId, setExpanded]);
 
   useEffect(() => () => {
     requestGeneration.current += 1;
@@ -120,6 +131,10 @@ export function SessionStoryPanel({
   }, [expand, expanded]);
 
   useEffect(() => {
+    if (mode === 'disclosure' && expanded && loadState === 'idle') expand();
+  }, [expand, expanded, loadState, mode]);
+
+  useEffect(() => {
     if (mode === 'settings') return;
     if (
       openRequestId === null
@@ -146,6 +161,7 @@ export function SessionStoryPanel({
     throw developmentFailure;
   }
   if (mode !== 'settings' && (!api || loadState === 'hidden')) return null;
+  if (mode === 'disclosure' && duoSideBand && !expanded) return null;
 
   if (mode === 'settings') {
     return (
@@ -176,7 +192,7 @@ export function SessionStoryPanel({
 
   return (
     <View testID="session-story-panel" style={[styles.container, chatAuxiliarySurface(t, presentation)]}>
-      <TouchableOpacity
+      {!duoSideBand ? <TouchableOpacity
         testID="session-story-toggle"
         accessibilityRole="button"
         accessibilityLabel={`세션 스토리 ${expanded ? '접기' : '펼치기'}`}
@@ -186,7 +202,7 @@ export function SessionStoryPanel({
       >
         <Text style={styles.headerTitle}>세션 스토리</Text>
         <DisclosureIcon expanded={expanded} tone="tertiary" />
-      </TouchableOpacity>
+      </TouchableOpacity> : null}
 
       {expanded ? (
         loadState === 'loading' ? (

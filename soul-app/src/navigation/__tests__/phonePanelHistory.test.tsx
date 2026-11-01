@@ -33,9 +33,11 @@ describe('phone panel history', () => {
   test('이력 없는 최초 Feed/Chat 진입은 FeedTab으로 귀결한다', () => {
     const history = createPhonePanelHistory();
 
+    expect(history.hasReturnTab()).toBe(false);
     history.recordChatOpen();
 
     expect(history.getReturnTab()).toBe('FeedTab');
+    expect(history.hasReturnTab()).toBe(true);
   });
 
   test('Provider remount는 이전 인스턴스의 복귀 panel을 버리고 FeedTab으로 초기화한다', () => {

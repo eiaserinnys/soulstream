@@ -67,12 +67,18 @@ export function ChatScreen({ route, navigation }: Props) {
     navigation.setParams({ focusEventId: undefined });
   }, [navigation]);
   const storyOpenRequestId = route.params?.storyOpenRequestId ?? null;
+  const [storyExpanded, setStoryExpanded] = React.useState(false);
+  React.useEffect(() => setStoryExpanded(false), [sessionId]);
+  const handleToggleStory = useCallback(() => setStoryExpanded(value => !value), []);
   const session = useSessionStore((s) =>
     sessionId ? s.sessions[sessionId] : undefined
   );
   useRegisterDuoRailOverride('chat', duo && isFocused, [
     { id: 'back', label: '뒤로', icon: 'chevron-back', onPress: () => openPreviousPhonePanel(navigation, panelHistory.getReturnTab()) },
-    ...(sessionId ? [{ id: 'menu', label: '세션 메뉴', icon: 'ellipsis-horizontal' as const, onPress: () => menus.openSessionMenu({ sessionId }) }] : []),
+    ...(sessionId ? [
+      { id: 'story', label: '지난 줄거리', icon: 'book-outline' as const, selected: storyExpanded, onPress: handleToggleStory },
+      { id: 'menu', label: '세션 메뉴', icon: 'ellipsis-horizontal' as const, onPress: () => menus.openSessionMenu({ sessionId }) },
+    ] : []),
   ]);
 
   // native title이 제목의 단일 소유자다. 상태 도트는 별도 left action으로 유지한다.
@@ -161,6 +167,8 @@ export function ChatScreen({ route, navigation }: Props) {
         active={isFocused}
         focusEventId={focusEventId}
         storyOpenRequestId={storyOpenRequestId}
+        storyExpanded={storyExpanded}
+        onStoryExpandedChange={setStoryExpanded}
         onFocusEventHandled={handleFocusEventHandled}
         onStoryOpenRequestHandled={() =>
           navigation.setParams({ storyOpenRequestId: undefined })

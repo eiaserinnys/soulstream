@@ -1,6 +1,7 @@
 import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';
+import { DuoSideBandContext } from '../../../navigation/tabContract';
 import {
   projectSessionStory,
   SessionStoryPanel,
@@ -99,6 +100,26 @@ test('외부 열기 요청은 기존 패널을 펼치고 같은 요청을 한 �
   await waitFor(() => {
     expect(onOpenRequestHandled).toHaveBeenCalledTimes(2);
   });
+  expect(getSessionStory).toHaveBeenCalledTimes(1);
+});
+
+test('듀오 레일에서는 인라인 토글을 숨기고 외부 상태로 스토리 본문을 연다', async () => {
+  const getSessionStory = jest.fn().mockResolvedValue(story);
+  const onStoryExpandedChange = jest.fn();
+  const api = makeApi(getSessionStory);
+  const screen = render(<DuoSideBandContext.Provider value>
+    <SessionStoryPanel sessionId="session-1" api={api} storyExpanded={false} onStoryExpandedChange={onStoryExpandedChange} />
+  </DuoSideBandContext.Provider>);
+  expect(screen.queryByTestId('session-story-panel')).toBeNull();
+  expect(screen.queryByTestId('session-story-toggle')).toBeNull();
+  expect(getSessionStory).not.toHaveBeenCalled();
+
+  screen.rerender(<DuoSideBandContext.Provider value>
+    <SessionStoryPanel sessionId="session-1" api={api} storyExpanded onStoryExpandedChange={onStoryExpandedChange} />
+  </DuoSideBandContext.Provider>);
+  await waitFor(() => expect(screen.getByTestId('session-story-scroll')).toBeTruthy());
+  expect(screen.queryByTestId('session-story-toggle')).toBeNull();
+  expect(screen.getByText('핵심 결정은 단일 정본으로 모으는 것이다.')).toBeTruthy();
   expect(getSessionStory).toHaveBeenCalledTimes(1);
 });
 

@@ -499,7 +499,7 @@ describe('ChatComposer', () => {
     expect(StyleSheet.flatten(screen.getByTestId('chat-composer-content-row').props.style).flexDirection).toBe('column');
   });
 
-  test('iOS는 빈 입력만 한 줄 높이를 지정하고 실제 입력의 상한 스크롤은 layout으로 정한다', () => {
+  test('iOS는 최대 높이 근처에서 고정 뷰포트와 내부 스크롤을 켠다', () => {
     const props = { onChangeInput: jest.fn(), onPickAttachment: jest.fn(), onSend: jest.fn(), uploading: false, sending: false, voiceControls: null };
     const screen = render(<ChatComposer {...props} input="" />);
     const field = () => screen.getByTestId('chat-composer-text-input');
@@ -516,8 +516,9 @@ describe('ChatComposer', () => {
     layout(108);
     expect(field().props.scrollEnabled).toBe(false);
     // The cap must enable scrolling without a contentSizeChange event.
-    layout(128);
+    layout(127.5);
     expect(field().props.scrollEnabled).toBe(true);
+    expect(StyleSheet.flatten(field().props.style).height).toBe(128);
     screen.rerender(<ChatComposer {...props} input={'더 긴 글 '.repeat(100)} />);
     expect(field().props.scrollEnabled).toBe(true);
     screen.rerender(<ChatComposer {...props} input="한 줄" />);
@@ -539,7 +540,7 @@ describe('ChatComposer', () => {
 
     layoutAtCap();
     expect(field().props.scrollEnabled).toBe(true);
-    expect(style().height).toBeUndefined();
+    expect(style().height).toBe(128);
 
     screen.rerender(<ChatComposer {...props} input="" />);
     expect(style().height).toBe(singleLineHeight);

@@ -4,8 +4,11 @@ const mockShowMenu = jest.fn();
 const mockSetSettingsOpen = jest.fn();
 jest.mock('../../components/menus/AppContextMenu', () => ({ showAppContextMenu: (...args: unknown[]) => mockShowMenu(...args) }));
 jest.mock('../PersistentSessionContext', () => ({
-  usePersistentSessionHost: () => ({ loading: false, portrait: null }),
-  usePersistentSessionScene: (select: (state: any) => unknown) => select({ scene: 'conversation', session: { agent_name: '서소영' }, setSettingsOpen: mockSetSettingsOpen }),
+  usePersistentSessionHost: () => ({ loading: false, portrait: null, store: { getState: () => ({
+    session: null, leave: jest.fn(), swipe: jest.fn(), selectCard: jest.fn(), toggleReports: jest.fn(),
+  }) } }),
+  usePersistentSessionScene: (select: (state: any) => unknown) => select({ scene: 'conversation', session: { agent_name: '서소영' }, selectedCardId: null,
+    reportCount: 0, hasReports: false, setSettingsOpen: mockSetSettingsOpen }),
 }));
 
 import React from 'react';
@@ -57,7 +60,7 @@ test('상세 레일은 마지막 오버레이를 우선하고 닫으면 이전 �
   expect(screen.getByTestId('phone-rail-action-folder')).toBeTruthy();
 });
 
-test('뒤로 액션을 위에 분리하고 나머지는 하단 캡슐에 둔다', () => {
+test('듀오 레일은 백·현재 화면 조작·전체 내비게이션을 한 48pt 열에 둔다', () => {
   function Override({ single }: { single: boolean }) {
     useRegisterDuoRailOverride('detail', true, [
       { id: 'back', label: '뒤로', icon: 'chevron-back', onPress: jest.fn() },
@@ -69,17 +72,53 @@ test('뒤로 액션을 위에 분리하고 나머지는 하단 캡슐에 둔다'
     <PhoneRailTabCluster active="DailyTab" onSelect={jest.fn()} duoSideBand />
   </NavigationContainer>;
   const screen = render(scene(false));
+  const column = screen.getByTestId('duo-rail-column');
+  expect(StyleSheet.flatten(column.props.style)).toMatchObject({ width: 48, flex: 1, position: 'relative' });
+  const columnChildren = React.Children.toArray(column.props.children) as React.ReactElement<{ testID?: string }>[];
+  expect(columnChildren.map(child => child.props.testID)).toEqual(['duo-rail-top-stack', 'phone-rail-tab-cluster']);
   expect(screen.getByTestId('duo-rail-back-capsule')).toBeTruthy();
   expect(StyleSheet.flatten(screen.getByTestId('duo-rail-back-capsule').props.style)).toMatchObject({ width: 48, height: 48 });
   expect(screen.getByTestId('phone-rail-action-back')).toBeTruthy();
   expect(StyleSheet.flatten(screen.getByTestId('phone-rail-action-back').props.style)).toMatchObject({ width: 48, height: 48 });
+  expect(screen.getByTestId('duo-rail-context-capsule')).toBeTruthy();
   expect(screen.getByTestId('phone-rail-action-edit')).toBeTruthy();
-  screen.rerender(scene(true));
-  expect(screen.queryByTestId('duo-rail-back-capsule')).toBeNull();
   expect(screen.getByTestId('phone-rail-tab-cluster')).toBeTruthy();
-  expect(StyleSheet.flatten(screen.getByTestId('phone-rail-tab-cluster').props.style)).toMatchObject({ width: 48, height: 48 });
-  expect(screen.getByTestId('phone-rail-action-back')).toBeTruthy();
-  expect(StyleSheet.flatten(screen.getByTestId('phone-rail-action-back').props.style)).toMatchObject({ width: 48, height: 48 });
+  expect(screen.queryByTestId('phone-tab-DailyTab')).toBeNull();
+  for (const name of ['FolderTab', 'PersistentTab', 'FeedTab']) expect(screen.getByTestId(`phone-tab-${name}`)).toBeTruthy();
+  screen.rerender(scene(true));
+  expect(screen.getByTestId('duo-rail-back-capsule')).toBeTruthy();
+  expect(screen.queryByTestId('duo-rail-context-capsule')).toBeNull();
+  expect(screen.queryByTestId('phone-rail-action-edit')).toBeNull();
+  expect(screen.getByTestId('phone-rail-tab-cluster')).toBeTruthy();
+});
+
+test.each(['DailyTab', 'FolderTab', 'PersistentTab', 'FeedTab'] as const)(
+  '듀오 레일 하단에서 활성 탭 %s만 제외한다', (active) => {
+    const screen = render(<NavigationContainer><PhoneRailTabCluster active={active} onSelect={jest.fn()} duoSideBand /></NavigationContainer>);
+    expect(screen.getByTestId('duo-rail-back-capsule')).toBeTruthy();
+    expect(screen.getByTestId('phone-rail-tab-cluster')).toBeTruthy();
+    expect(screen.queryByTestId(`phone-tab-${active}`)).toBeNull();
+    for (const name of ['DailyTab', 'FolderTab', 'PersistentTab', 'FeedTab'] as const) {
+      if (name !== active) expect(screen.getByTestId(`phone-tab-${name}`)).toBeTruthy();
+    }
+  },
+);
+
+test('초기 루트의 백버튼은 자리를 유지하고 비활성화된다', () => {
+  const screen = render(<NavigationContainer>
+    <PhoneRailTabCluster active="DailyTab" onSelect={jest.fn()} duoSideBand />
+  </NavigationContainer>);
+  expect(screen.getByTestId('duo-rail-back-capsule')).toBeTruthy();
+  expect(screen.getByTestId('phone-rail-action-back').props.accessibilityState.disabled).toBe(true);
+});
+
+test('루트 하위 탭의 듀오 레일 백버튼은 전달된 복귀 동작을 실행한다', () => {
+  const onBack = jest.fn();
+  const screen = render(<NavigationContainer>
+    <PhoneRailTabCluster active="FolderTab" onSelect={jest.fn()} duoSideBand onBack={onBack} />
+  </NavigationContainer>);
+  fireEvent.press(screen.getByTestId('phone-rail-action-back'));
+  expect(onBack).toHaveBeenCalledTimes(1);
 });
 
 test('오버레이 레일도 키보드 위로 올라가고 하단 액션을 제한한다', () => {
@@ -93,6 +132,12 @@ test('오버레이 레일도 키보드 위로 올라가고 하단 액션을 제�
     <DuoRailOverride />
   </SafeAreaInsetsContext.Provider></NavigationContainer>);
   act(() => screen.UNSAFE_getByType(AppKeyboardAvoidingView).props.onOverlapChange(300));
+  const overrideHost = screen.getByTestId('duo-rail-override-host');
+  const overrideWrappers = React.Children.toArray(overrideHost.props.children) as React.ReactElement<{ style?: any }>[];
+  expect(overrideWrappers).toHaveLength(2);
+  for (const wrapper of overrideWrappers) {
+    expect(StyleSheet.flatten(wrapper.props.style)).toMatchObject({ left: 0, right: 12, alignItems: 'center' });
+  }
   expect(screen.getByTestId('duo-rail-back-capsule')).toBeTruthy();
   expect(StyleSheet.flatten(screen.getByTestId('duo-rail-back-capsule').props.style)).toMatchObject({ width: 48, height: 48 });
   expect(StyleSheet.flatten(screen.getByTestId('duo-rail-action-close').props.style)).toMatchObject({ width: 48, height: 48 });
@@ -158,7 +203,7 @@ test('compact PAS 레일 설정이 탭 항목까지 전달된다', () => {
     </PhoneRailModeContext.Provider>,
   );
 
-  expect(StyleSheet.flatten(screen.getByTestId('phone-tab-DailyTab').props.style).height).toBe(44);
+  expect(StyleSheet.flatten(screen.getByTestId('phone-tab-FolderTab').props.style).height).toBe(44);
 });
 
 test('PAS 탭이 활성이고 대화 장면이면 카드 목록 보기로 안내한다', () => {
@@ -176,6 +221,8 @@ test('PAS 메뉴는 듀오 띠에서 PAS 탭이 활성일 때만 보인다', () 
   const screen = render(<NavigationContainer>
     <PhoneRailTabCluster active="PersistentTab" onSelect={onSelect} duoSideBand />
   </NavigationContainer>);
+  expect(screen.getByTestId('phone-rail-pas-menu')).toBeTruthy();
+  expect(screen.getByTestId('phone-rail-pas-reports')).toBeTruthy();
   expect(screen.getByLabelText('PAS 메뉴')).toBeTruthy();
   fireEvent.press(screen.getByLabelText('PAS 메뉴'));
   expect(mockShowMenu).toHaveBeenCalledWith(expect.arrayContaining([
