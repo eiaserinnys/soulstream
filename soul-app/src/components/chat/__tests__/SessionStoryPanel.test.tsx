@@ -123,6 +123,14 @@ test('듀오 레일에서는 인라인 토글을 숨기고 외부 상태로 스�
   expect(getSessionStory).toHaveBeenCalledTimes(1);
 });
 
+test('듀오 레일에서도 외부 제어가 없는 채팅 본문은 인라인 토글을 유지한다', () => {
+  const api = makeApi(jest.fn().mockResolvedValue(story));
+  const screen = render(<DuoSideBandContext.Provider value>
+    <SessionStoryPanel sessionId="session-1" api={api} />
+  </DuoSideBandContext.Provider>);
+  expect(screen.getByTestId('session-story-toggle')).toBeTruthy();
+});
+
 test('다른 세션의 외부 열기 요청은 이전 스토리를 재사용하지 않고 다시 조회한다', async () => {
   const getSessionStory = jest.fn(async (sessionId: string) => ({
     ...story,
@@ -173,6 +181,7 @@ test.each([
 
   fireEvent.press(screen.getByLabelText('세션 스토리 펼치기'));
 
+  await waitFor(() => expect(getSessionStory).toHaveBeenCalledTimes(1));
   await waitFor(() => {
     expect(screen.queryByTestId('session-story-panel')).toBeNull();
   });

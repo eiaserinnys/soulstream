@@ -48,6 +48,7 @@ export function SessionStoryPanel({
   const styles = useMemo(() => makeStyles(t), [t]);
   const [localExpanded, setLocalExpanded] = useState(false);
   const expanded = storyExpanded ?? localExpanded;
+  const externallyControlled = storyExpanded !== undefined;
   const duoSideBand = useDuoSideBand();
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [story, setStory] = useState<SessionStoryPresentation | null>(null);
@@ -161,7 +162,7 @@ export function SessionStoryPanel({
     throw developmentFailure;
   }
   if (mode !== 'settings' && (!api || loadState === 'hidden')) return null;
-  if (mode === 'disclosure' && duoSideBand && !expanded) return null;
+  if (mode === 'disclosure' && duoSideBand && externallyControlled && !expanded) return null;
 
   if (mode === 'settings') {
     return (
@@ -192,7 +193,7 @@ export function SessionStoryPanel({
 
   return (
     <View testID="session-story-panel" style={[styles.container, chatAuxiliarySurface(t, presentation)]}>
-      {!duoSideBand ? <TouchableOpacity
+      {!duoSideBand || !externallyControlled ? <TouchableOpacity
         testID="session-story-toggle"
         accessibilityRole="button"
         accessibilityLabel={`세션 스토리 ${expanded ? '접기' : '펼치기'}`}

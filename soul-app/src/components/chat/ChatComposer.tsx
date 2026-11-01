@@ -10,7 +10,9 @@ import {
   useWindowDimensions,
   type LayoutChangeEvent,
   type LayoutRectangle,
+  type NativeSyntheticEvent,
   type TextInputProps,
+  type TextInputContentSizeChangeEventData,
 } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
@@ -118,6 +120,12 @@ export function ChatComposer({
   const maxInputHeight = Math.min(styles.composerTextInput.maxHeight, Math.max(singleLineHeight * 2, Math.floor(windowHeight * 0.22)));
   const [iosAtMaxHeight, setIOSAtMaxHeight] = React.useState(false);
   const isAtMaxHeight = !isEmpty && (iosAtMaxHeight || measuredHeight >= maxInputHeight - 1);
+  const handleContentSizeChange = React.useCallback((event: NativeSyntheticEvent<TextInputContentSizeChangeEventData>) => {
+    measurement.onContentSizeChange?.(event);
+    if (Platform.OS === 'ios' && event.nativeEvent.contentSize.height < maxInputHeight - 1) {
+      setIOSAtMaxHeight(false);
+    }
+  }, [maxInputHeight, measurement.onContentSizeChange]);
   const inputHeight = Math.min(maxInputHeight, Math.max(singleLineHeight, measuredHeight));
   const inputPadding = multilineExpanded ? composer.inputPaddingVertical : (singleLineHeight - lineHeight) / 2;
   const [stacked, setStacked] = React.useState(false);
@@ -194,7 +202,7 @@ export function ChatComposer({
               onBlur={focusAccent || onInputFocusChange ? () => { if (focusAccent) setFocusAccentActive(false); onInputFocusChange?.(false); } : undefined}
               selection={selection}
               onSelectionChange={onSelectionChange}
-              onContentSizeChange={measurement.onContentSizeChange}
+              onContentSizeChange={Platform.OS === 'web' ? undefined : handleContentSizeChange}
               testID="chat-composer-text-input"
               // Empty iOS inputs collapse immediately; text keeps native intrinsic growth.
               style={[styles.composerTextInput, ...(focusAccent && Platform.OS === 'web'

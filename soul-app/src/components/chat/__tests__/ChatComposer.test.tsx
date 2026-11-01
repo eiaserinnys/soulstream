@@ -521,8 +521,10 @@ describe('ChatComposer', () => {
     expect(StyleSheet.flatten(field().props.style).height).toBe(128);
     screen.rerender(<ChatComposer {...props} input={'더 긴 글 '.repeat(100)} />);
     expect(field().props.scrollEnabled).toBe(true);
+    fireEvent.changeText(field(), '한 줄');
     screen.rerender(<ChatComposer {...props} input="한 줄" />);
-    layout(48);
+    fireEvent(field(), 'contentSizeChange', { nativeEvent: { contentSize: { width: 200, height: 48 } } });
+    expect(StyleSheet.flatten(field().props.style).height).toBeUndefined();
     expect(field().props.scrollEnabled).toBe(false);
     screen.rerender(<ChatComposer {...props} input="" />);
     expect(StyleSheet.flatten(field().props.style).height).toBe(48);
