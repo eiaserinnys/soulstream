@@ -572,6 +572,10 @@
     {
       "id": "141_conversation_executions.sql",
       "sha256": "cd618d983e4927b5f209b34d4a492a1d9a1570d78e87e05a19c72f51504ceba4"
+    },
+    {
+      "id": "142_event_append_searchable_text_not_null.sql",
+      "sha256": "57b14580e3c00772188d35248a392ff41af37e752c53ad9b4de3eb0c3c1ef51a"
     }
   ]
 }

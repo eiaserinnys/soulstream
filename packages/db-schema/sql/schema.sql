@@ -733,7 +733,7 @@ CREATE TABLE IF NOT EXISTS events (
     id              INTEGER NOT NULL,
     event_type      TEXT NOT NULL,
     payload         JSONB,
-    searchable_text TEXT,
+    searchable_text TEXT NOT NULL DEFAULT '',
     dedupe_key      TEXT,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (session_id, id)
@@ -2034,7 +2034,7 @@ BEGIN
     INSERT INTO events (id, session_id, event_type, payload, searchable_text, created_at)
     VALUES (
         (SELECT COALESCE(MAX(id), 0) + 1 FROM events WHERE session_id = p_session_id),
-        p_session_id, p_event_type, p_event_payload::jsonb, p_searchable_text, p_now
+        p_session_id, p_event_type, p_event_payload::jsonb, COALESCE(p_searchable_text, ''), p_now
     ) RETURNING id INTO v_event_id;
 
     -- last_event_id 갱신
@@ -2289,7 +2289,7 @@ BEGIN
                         created_at, parent_event_id, dedupe_key)
     VALUES (
         (SELECT COALESCE(MAX(id), 0) + 1 FROM events WHERE session_id = p_session_id),
-        p_session_id, p_event_type, v_payload, p_searchable_text,
+        p_session_id, p_event_type, v_payload, COALESCE(p_searchable_text, ''),
         p_created_at, v_parent, p_dedupe_key
     ) RETURNING id INTO v_event_id;
 

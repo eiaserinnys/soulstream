@@ -67,6 +67,25 @@ const legacyPre041 = {
 };
 
 describe("versioned migration contract", () => {
+  it("keeps event searchable text non-null and append functions null-safe", async () => {
+    const migration = (await loadMigrationManifest()).find(item =>
+      item.id === "142_event_append_searchable_text_not_null.sql",
+    );
+    const schema = readFileSync(fileURLToPath(
+      new URL("../../../packages/db-schema/sql/schema.sql", import.meta.url),
+    ), "utf8");
+
+    expect(migration).toBeDefined();
+    expect(migrationSha256(migration!.sql)).toBe(migration!.sha256);
+    expect(migration!.sql).toContain("ALTER TABLE events ALTER COLUMN searchable_text SET DEFAULT ''");
+    expect(migration!.sql).toContain("AND NOT attnotnull");
+    expect(migration!.sql).toContain("UPDATE events SET searchable_text = '' WHERE searchable_text IS NULL");
+    expect(migration!.sql.match(/COALESCE\(p_searchable_text, ''\)/g)).toHaveLength(2);
+    expect(schema).toMatch(/searchable_text\s+TEXT NOT NULL DEFAULT ''/);
+    expect(schema).toContain("p_event_payload::jsonb, COALESCE(p_searchable_text, ''), p_now");
+    expect(schema).toContain("v_payload, COALESCE(p_searchable_text, ''),");
+  });
+
   it("uses the same migration checksum after a Windows CRLF checkout", () => {
     const lf = "SELECT 1;\nSELECT 2;\n";
     const crlf = lf.replaceAll("\n", "\r\n");

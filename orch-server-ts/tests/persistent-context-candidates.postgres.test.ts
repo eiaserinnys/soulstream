@@ -94,15 +94,15 @@ describe("persistent context candidates in PostgreSQL", () => {
       await db.sql`
         INSERT INTO events (session_id, id, event_type, payload, searchable_text, created_at)
         VALUES
-          ('jev-current', 1, 'turn_summary', '{"content":"이전 요약 하나"}', NULL, NOW()),
-          ('jev-current', 2, 'turn_summary', '{"content":"이전 요약 둘"}', NULL, NOW()),
+          ('jev-current', 1, 'turn_summary', '{"content":"이전 요약 하나"}', '', NOW()),
+          ('jev-current', 2, 'turn_summary', '{"content":"이전 요약 둘"}', '', NOW()),
           ('jev-current', 3, 'user_message', '{"input_id":"input-current"}', '현재 요청', NOW()),
-          ('jev-current', 4, 'turn_summary', '{"content":"입력 뒤 요약"}', NULL, NOW()),
+          ('jev-current', 4, 'turn_summary', '{"content":"입력 뒤 요약"}', '', NOW()),
           ('jev-completed-1', 1, 'user_message', '{"text":"완료 세션 요청"}', '완료 세션 요청', TIMESTAMPTZ '2026-01-01T00:00:00Z')
       `;
       await db.sql`
         INSERT INTO events (session_id, id, event_type, payload, searchable_text, created_at)
-        SELECT 'jev-completed-' || n, 2, 'complete', '{}', NULL,
+        SELECT 'jev-completed-' || n, 2, 'complete', '{}', '',
           TIMESTAMPTZ '2026-01-01T00:00:00Z' + n * INTERVAL '1 day'
         FROM generate_series(1, 7) AS n
       `;
