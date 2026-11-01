@@ -44,7 +44,9 @@ test('SessionSuccessionSheet는 iOS 키보드 회피와 ScrollView 입력 동작
 });
 
 test('PAS 카드 시트와 검수 샘플은 iOS 키보드 회피와 원형 축소 버튼을 공유한다', () => {
-  for (const path of ['screens/PersistentSessionScreen.tsx', 'component-review/ReviewPasCardExpand.tsx']) {
+  expect(read('screens/PersistentSessionScreen.tsx')).not.toMatch(/<PersistentReportCardSheetHeader\b/);
+
+  for (const path of ['component-review/ReviewPasCardExpand.tsx']) {
     const source = read(path);
     const scroll = source.match(/<ScrollView style=\{\{ flex: 1, minHeight: 0 \}\}[\s\S]*?<\/ScrollView>/)?.[0];
     expect(scroll).toBeDefined();

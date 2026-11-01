@@ -119,10 +119,10 @@ export function ChatComposer({
   const multilineExpanded = measuredHeight > singleLineHeight + 1;
   const maxInputHeight = Math.min(styles.composerTextInput.maxHeight, Math.max(singleLineHeight * 2, Math.floor(windowHeight * 0.22)));
   const [iosAtMaxHeight, setIOSAtMaxHeight] = React.useState(false);
-  const isAtMaxHeight = !isEmpty && (iosAtMaxHeight || measuredHeight >= maxInputHeight - 1);
+  const isAtMaxHeight = !isEmpty && (iosAtMaxHeight || measuredHeight > maxInputHeight);
   const handleContentSizeChange = React.useCallback((event: NativeSyntheticEvent<TextInputContentSizeChangeEventData>) => {
     measurement.onContentSizeChange?.(event);
-    if (Platform.OS === 'ios' && event.nativeEvent.contentSize.height < maxInputHeight - 1) {
+    if (Platform.OS === 'ios' && event.nativeEvent.contentSize.height <= maxInputHeight) {
       setIOSAtMaxHeight(false);
     }
   }, [maxInputHeight, measurement.onContentSizeChange]);
