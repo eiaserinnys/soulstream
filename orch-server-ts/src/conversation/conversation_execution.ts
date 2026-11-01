@@ -100,9 +100,9 @@ export class ConversationExecutions {
       : `${model?.group?.label ?? newRow.node_id}의 ${model?.label ?? updated.selected_model}로 옮겨 새 세션으로 이었습니다.`;
     await this.deps.sql.begin(async tx => {
       for (const [index, fallback] of updated.notices.entries()) {
-        await tx`SELECT event_append(${execution.session_id}, 'notification', ${JSON.stringify({_conversation_notice:fallback.text})}, NULL, now(), ${`conversation-fallback:${execution.session_id}:${index}`})`;
+        await tx`SELECT event_append(${execution.session_id}, 'notification', ${JSON.stringify({_conversation_notice:fallback.text})}, ${fallback.text}, now(), ${`conversation-fallback:${execution.session_id}:${index}`})`;
       }
-      await tx`SELECT event_append(${execution.session_id}, 'notification', ${JSON.stringify({_conversation_notice:notice})}, NULL, now(), ${`conversation-execution:${execution.session_id}`})`;
+      await tx`SELECT event_append(${execution.session_id}, 'notification', ${JSON.stringify({_conversation_notice:notice})}, ${notice}, now(), ${`conversation-execution:${execution.session_id}`})`;
       await tx`UPDATE conversation_executions SET phase='complete',notice=${notice} WHERE session_id=${execution.session_id}`;
       await tx`UPDATE conversation_bindings SET active_session_id=${execution.session_id},selected_model=${updated.selected_model},
         creation_request=${tx.json(body as never)},instruction_id=${updated.instruction_id} WHERE session_id=${binding.session_id}`;

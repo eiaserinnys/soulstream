@@ -163,8 +163,23 @@ describe("conversation thread API", () => {
       payload:{...request,expected_execution_id:thread.execution_id,profile:"roselin",selected_model:"argon",model_order:["n1:node-b:remote"]}});
     expect(result.statusCode).toBe(200);
     expect(result.json().notices).toHaveLength(1);
+    const executionId = result.json().thread.execution_id;
+    const [fallback] = result.json().notices;
+    const notifications = await db.sql`SELECT searchable_text FROM events
+      WHERE session_id=${executionId} AND event_type='notification' ORDER BY id`;
+    expect(notifications.map(event => event.searchable_text)).toEqual([
+      fallback,
+      "프로필을 로젤린(으)로 바꿔 새 세션으로 이었습니다.",
+    ]);
     const history = await app.inject({method:"GET",url:`/api/conversations/v1/threads/${thread.id}/items`});
     expect(history.json().items.filter((item:{kind:string;id:string}) => item.kind === "notice" && item.id.startsWith("1:"))).toHaveLength(2);
+  });
+  it("stores an empty searchable text when event_append receives null", async () => {
+    const thread = (await ensure("switch-null-searchable-text")).json().thread;
+    const dedupeKey = `test-null-searchable-text:${thread.execution_id}`;
+    await db.sql`SELECT event_append(${thread.execution_id}, 'notification', ${JSON.stringify({_conversation_notice:"empty text"})}, NULL, now(), ${dedupeKey})`;
+    const [event] = await db.sql`SELECT searchable_text FROM events WHERE session_id=${thread.execution_id} AND dedupe_key=${dedupeKey}`;
+    expect(event?.searchable_text).toBe("");
   });
   it("keeps the predecessor active on another release failure and completes the same reservation on retry", async () => {
     const original = (await ensure("switch-release-failure")).json().thread;
