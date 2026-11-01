@@ -69,9 +69,12 @@ test('vertical report list renders every active card without page navigation and
   const screen = pager(entries, undefined, undefined, { verticalList: true, onReady });
   scrollTo.mockClear();
   expect(onReady).toHaveBeenLastCalledWith(true);
+  const deckStyle = StyleSheet.flatten(screen.getByTestId('report-deck').props.style);
   const track = screen.getByTestId('report-track');
   expect(track.props.horizontal).toBeFalsy();
   expect(track.props.pagingEnabled).toBeFalsy();
+  expect(deckStyle.marginBottom).toBe(0);
+  expect(StyleSheet.flatten(track.props.contentContainerStyle).paddingBottom).toBeGreaterThan(0);
   expect(screen.getAllByTestId(/^report-sheet-/)).toHaveLength(3);
   for (const entry of entries) {
     const sheet = screen.getByTestId(`report-sheet-${entry.key}`);

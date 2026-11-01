@@ -168,7 +168,7 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
   if (verticalList) {
     return <View ref={deck} testID="report-deck" accessibilityLabel="지금의 보고" accessible={false}
       pointerEvents={ready ? 'auto' : 'none'} accessibilityElementsHidden={!ready} importantForAccessibility={ready ? 'auto' : 'no-hide-descendants'}
-      style={[{ flex: 1, minHeight: 0 }, !bubble && styles.band, maxHeight !== undefined ? { maxHeight } : null, !ready && { opacity: 0 }]}
+      style={[{ flex: 1, minHeight: 0 }, !bubble && [styles.band, { marginBottom: 0 }], maxHeight !== undefined ? { maxHeight } : null, !ready && { opacity: 0 }]}
       {...reportWebProps({ role: 'region', 'aria-hidden': !ready })}
       onTouchStart={() => onDeckTouch?.(true)} onTouchEnd={() => onDeckTouch?.(false)} onTouchCancel={() => onDeckTouch?.(false)}>
       <ScrollView ref={verticalScroll.scroll} testID="report-track" showsVerticalScrollIndicator={false}

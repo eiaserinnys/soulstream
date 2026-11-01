@@ -73,6 +73,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const railOverride = railEntry?.mode === 'replace' ? railEntry.actions : null;
   const { backAction: railBack, mainActions: railMain } = splitDuoRailBackAction(railOverride);
   const insets = useSafeAreaInsets();
+  const bottomSafeAreaInset = phone || duoSideBand ? 0 : insets.bottom;
   const host = usePersistentSessionHost();
   const session = usePersistentSessionScene(state => state.session);
   const storedScene = usePersistentSessionScene(state => state.scene);
@@ -287,7 +288,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const taskList = <PersistentSessionTaskList api={api} visible={!selectedCardId}
     onOpenCard={cardId => phone && onOpenPhoneCard ? onOpenPhoneCard(cardId) : host.store.getState().selectCard(cardId)} />;
   return <SafeAreaView testID="persistent-session-safe-area" edges={phone
-    ? railMode ? ['top', 'bottom', 'left'] : ['top', 'left', 'right']
+    ? duoSideBand ? ['top', 'left'] : railMode ? ['top', 'bottom', 'left'] : ['top', 'left', 'right']
     : ['top', 'left', 'right']}
     style={{ flex: 1, backgroundColor: t.persistentSession.paper }}>
     <View ref={appRef} testID="persistent-session-screen" style={{ flex: 1 }} onLayout={measureApp} {...(phone ? gestures.panHandlers : {})}>
@@ -323,7 +324,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
           inputComposerRef={inputComposerRef} getReportSendContext={(text, reply) => report.getSendContext(text, reply, !duoSideBand || reportsScene)}
           reportView={duoSideBand ? null : geometry?.reportBubble ? null : phone ? pager : geometry && (report.entries.length > 0 || completion.recent)
             ? <View testID="persistent-session-report-inline-space" style={{ height: reportSeatHeight }} /> : null}
-          active={chatActive} minimumBottomPadding={phone ? 0 : insets.bottom}
+          active={chatActive} minimumBottomPadding={bottomSafeAreaInset}
           onKeyboardOverlapChange={onKeyboardOverlapChange}
           onComposerLayout={(anchor: LayoutRectangle, box: LayoutRectangle) => {
             if (anchor.width > 0 && anchor.height > 0 && box.width > 0 && box.height > 0) setComposer({ anchor, box });
@@ -331,7 +332,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       </View>
       {phone && reportsScene ? <View testID="persistent-session-reports-panel" style={{ position: 'absolute', top: 0, bottom: keyboardOverlap, left: 0, right: 0,
         backgroundColor: t.persistentSession.paper, paddingHorizontal: t.foundation.pageInset,
-        paddingTop: t.uiSpacing.sm, paddingBottom: t.uiSpacing.sm, minHeight: 0 }}>{pager}</View> : null}
+        paddingTop: t.uiSpacing.sm, paddingBottom: 0, minHeight: 0 }}>{pager}</View> : null}
       {geometry && !(phone && reportsScene) ? <View testID="persistent-session-baseline" pointerEvents="none" style={{ position: 'absolute',
         left: columnLeft - geometry.lineLeftReach, top: geometry.lineY,
         width: columnWidth + geometry.lineLeftReach, height: StyleSheet.hairlineWidth, backgroundColor: t.persistentSession.line }} /> : null}
@@ -393,11 +394,11 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
         borderRadius: phone ? 0 : t.foundation.radius.card,
         borderWidth: 0, borderColor: t.persistentSession.line,
         paddingHorizontal: phone ? t.foundation.pageInset : t.uiSpacing.sm,
-        paddingTop: phone ? t.uiSpacing.md : 0, paddingBottom: phone ? 0 : insets.bottom }}>
+        paddingTop: phone ? t.uiSpacing.md : 0, paddingBottom: phone ? 0 : bottomSafeAreaInset }}>
         {taskList}
       </View> : null}
       <PersistentSessionCardOverlay api={api} cardId={scene === 'cards' ? selectedCardId : null}
-        sessionId={session?.session_id} bottomSafeAreaInset={insets.bottom}
+        sessionId={session?.session_id} bottomSafeAreaInset={bottomSafeAreaInset}
         onClose={() => host.store.getState().selectCard(null)} />
       {settingsOpen && session ? <PersistentSessionPasSettingsModal sessionId={session.session_id} nodeId={session.node_id ?? ''}
         onClose={() => setSettingsOpen(false)} /> : null}
