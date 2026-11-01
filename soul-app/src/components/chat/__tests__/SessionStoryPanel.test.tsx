@@ -1,4 +1,5 @@
 import React from 'react';
+import { StyleSheet } from 'react-native';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';
 import { DuoSideBandContext } from '../../../navigation/tabContract';
@@ -120,7 +121,41 @@ test('듀오 레일에서는 인라인 토글을 숨기고 외부 상태로 스�
   await waitFor(() => expect(screen.getByTestId('session-story-scroll')).toBeTruthy());
   expect(screen.queryByTestId('session-story-toggle')).toBeNull();
   expect(screen.getByText('핵심 결정은 단일 정본으로 모으는 것이다.')).toBeTruthy();
+  const contentStyle = StyleSheet.flatten(screen.getByTestId('session-story-scroll').props.contentContainerStyle);
+  expect(contentStyle.paddingTop).toBeGreaterThan(0);
+  expect(contentStyle.paddingTop).toBe(contentStyle.paddingBottom);
   expect(getSessionStory).toHaveBeenCalledTimes(1);
+});
+
+test('듀오 레일 외부 토글 로딩 여백은 숨긴 헤더의 공간을 대칭으로 보완한다', () => {
+  const getSessionStory = jest.fn(() => new Promise(() => {}));
+  const screen = render(<DuoSideBandContext.Provider value>
+    <SessionStoryPanel sessionId="session-1" api={makeApi(getSessionStory)} storyExpanded />
+  </DuoSideBandContext.Provider>);
+
+  const loadingStyle = StyleSheet.flatten(screen.getByTestId('session-story-loading').props.style);
+  expect(loadingStyle.paddingTop).toBeGreaterThan(0);
+  expect(loadingStyle.paddingTop).toBe(loadingStyle.paddingBottom);
+});
+
+test('스토리가 없는 듀오 세션은 외부 토글을 닫고 사용 불가 상태를 알린다', async () => {
+  const onStoryAvailableChange = jest.fn();
+  const onStoryExpandedChange = jest.fn();
+  const screen = render(<DuoSideBandContext.Provider value>
+    <SessionStoryPanel
+      sessionId="session-empty"
+      api={makeApi(jest.fn().mockResolvedValue(null))}
+      storyExpanded
+      onStoryAvailableChange={onStoryAvailableChange}
+      onStoryExpandedChange={onStoryExpandedChange}
+    />
+  </DuoSideBandContext.Provider>);
+
+  await waitFor(() => {
+    expect(onStoryAvailableChange).toHaveBeenCalledWith(false);
+    expect(onStoryExpandedChange).toHaveBeenCalledWith(false);
+    expect(screen.queryByTestId('session-story-panel')).toBeNull();
+  });
 });
 
 test('듀오 레일에서도 외부 제어가 없는 채팅 본문은 인라인 토글을 유지한다', () => {

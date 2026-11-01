@@ -60,6 +60,7 @@ interface Props {
   storyOpenRequestId?: number | null;
   storyExpanded?: boolean;
   onStoryExpandedChange?: (expanded: boolean) => void;
+  onStoryAvailableChange?: (available: boolean) => void;
   onFocusEventHandled?: (sessionId: string, eventId: number) => void;
   onStoryOpenRequestHandled?: () => void;
   /** 같은 채팅 부품을 원고형으로 표시한다. 기본 채팅은 기존 모양을 유지한다. */
@@ -105,6 +106,7 @@ export function ChatBody({
   storyOpenRequestId = null,
   storyExpanded,
   onStoryExpandedChange,
+  onStoryAvailableChange,
   onFocusEventHandled,
   onStoryOpenRequestHandled,
   presentation = 'default',
@@ -477,6 +479,7 @@ export function ChatBody({
         openRequestId={storyOpenRequestId}
         storyExpanded={storyExpanded}
         onStoryExpandedChange={onStoryExpandedChange}
+        onStoryAvailableChange={onStoryAvailableChange}
         onOpenRequestHandled={onStoryOpenRequestHandled}
       /> : null}
 

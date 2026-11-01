@@ -43,20 +43,20 @@ test('SessionSuccessionSheet는 iOS 키보드 회피와 ScrollView 입력 동작
   expect(source).not.toContain('useFocusedViewportEndFollow');
 });
 
-test('PAS 카드 시트와 검수 샘플은 iOS 키보드 회피와 원형 축소 버튼을 공유한다', () => {
+test('모바일 PAS 보고는 카드를 직행으로 열고 검수 창에도 구버전 시트가 없다', () => {
   expect(read('screens/PersistentSessionScreen.tsx')).not.toMatch(/<PersistentReportCardSheetHeader\b/);
 
-  for (const path of ['component-review/ReviewPasCardExpand.tsx']) {
-    const source = read(path);
-    const scroll = source.match(/<ScrollView style=\{\{ flex: 1, minHeight: 0 \}\}[\s\S]*?<\/ScrollView>/)?.[0];
-    expect(scroll).toBeDefined();
-    expect(scroll).toContain('keyboardDismissMode="interactive"');
-    expect(scroll).toContain("automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}");
-    expect(source).toMatch(/<PersistentReportCardSheetHeader\b/);
-  }
-  const header = read('components/persistent/PersistentReportCardSheetHeader.tsx');
-  expect(header).toMatch(/<GlassButton\s+testID="persistent-report-card-sheet-collapse"\s+iconOnly\s+size="compact"\s+borderRadius=\{t\.foundation\.radius\.round\}/);
-  expect(header).toContain("name=\"contract-outline\"");
+  const reviewExpand = read('component-review/ReviewPasCardExpand.tsx');
+  expect(reviewExpand).not.toMatch(/<PersistentReportCardSheetHeader\b/);
+  expect(reviewExpand).not.toMatch(/<PersistentReportCardSheetComplete\b/);
+  expect(reviewExpand).not.toMatch(/<AppModalSurface\b/);
+  expect(reviewExpand).toMatch(/<CardDetailContent\b/);
+  expect(fs.existsSync(path.resolve(__dirname, '../../../components/persistent/PersistentReportCardSheetHeader.tsx'))).toBe(false);
+  expect(fs.existsSync(path.resolve(__dirname, '../../../components/persistent/PersistentReportCardSheetComplete.tsx'))).toBe(false);
+
+  const duoReview = read('component-review/ReviewIphoneDuo.tsx');
+  expect(duoReview).toMatch(/onOpenPhoneCard=\{frame\.rail \? setOpenedCardId : undefined\}/);
+  expect(duoReview).toMatch(/<CardDetailContent visible api=\{reviewCardApi\} cardId=\{openedCardId\}/);
 });
 
 function read(relativePath: string): string {

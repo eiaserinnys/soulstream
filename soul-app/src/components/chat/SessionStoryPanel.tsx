@@ -24,6 +24,7 @@ interface Props {
   onOpenRequestHandled?: () => void;
   storyExpanded?: boolean;
   onStoryExpandedChange?: (expanded: boolean) => void;
+  onStoryAvailableChange?: (available: boolean) => void;
 }
 
 interface SessionStoryPresentation {
@@ -41,6 +42,7 @@ export function SessionStoryPanel({
   onOpenRequestHandled,
   storyExpanded,
   onStoryExpandedChange,
+  onStoryAvailableChange,
   presentation = 'default',
   mode = 'disclosure',
 }: Props) {
@@ -69,12 +71,13 @@ export function SessionStoryPanel({
   useEffect(() => {
     requestContext.current = { api, sessionId };
     requestGeneration.current += 1;
+    onStoryAvailableChange?.(true);
     setExpanded(false);
     setLoadState('idle');
     setStory(null);
     setDevelopmentFailure(null);
     handledOpenRequest.current = null;
-  }, [api, mode, sessionId, setExpanded]);
+  }, [api, mode, onStoryAvailableChange, sessionId, setExpanded]);
 
   useEffect(() => () => {
     requestGeneration.current += 1;
@@ -93,6 +96,7 @@ export function SessionStoryPanel({
       const nextStory = projectSessionStory(response, isDevelopmentBuild, mode);
       if (!nextStory) {
         setExpanded(false);
+        onStoryAvailableChange?.(false);
         setLoadState('hidden');
         return;
       }
@@ -113,9 +117,10 @@ export function SessionStoryPanel({
         return;
       }
       setExpanded(false);
+      onStoryAvailableChange?.(false);
       setLoadState('hidden');
     }
-  }, [api, isDevelopmentBuild, mode, sessionId]);
+  }, [api, isDevelopmentBuild, mode, onStoryAvailableChange, sessionId, setExpanded]);
 
   const expand = useCallback((forceLoad = false) => {
     setExpanded(true);
@@ -134,6 +139,10 @@ export function SessionStoryPanel({
   useEffect(() => {
     if (mode === 'disclosure' && expanded && loadState === 'idle') expand();
   }, [expand, expanded, loadState, mode]);
+
+  useEffect(() => {
+    if (mode !== 'settings' && loadState === 'hidden' && expanded) setExpanded(false);
+  }, [expanded, loadState, mode, setExpanded]);
 
   useEffect(() => {
     if (mode === 'settings') return;
@@ -161,8 +170,9 @@ export function SessionStoryPanel({
   if (mode !== 'settings' && isDevelopmentBuild && developmentFailure) {
     throw developmentFailure;
   }
+  const hideInlineToggle = duoSideBand && externallyControlled;
   if (mode !== 'settings' && (!api || loadState === 'hidden')) return null;
-  if (mode === 'disclosure' && duoSideBand && externallyControlled && !expanded) return null;
+  if (mode === 'disclosure' && hideInlineToggle && !expanded) return null;
 
   if (mode === 'settings') {
     return (
@@ -193,7 +203,7 @@ export function SessionStoryPanel({
 
   return (
     <View testID="session-story-panel" style={[styles.container, chatAuxiliarySurface(t, presentation)]}>
-      {!duoSideBand || !externallyControlled ? <TouchableOpacity
+      {!hideInlineToggle ? <TouchableOpacity
         testID="session-story-toggle"
         accessibilityRole="button"
         accessibilityLabel={`세션 스토리 ${expanded ? '접기' : '펼치기'}`}
@@ -207,14 +217,14 @@ export function SessionStoryPanel({
 
       {expanded ? (
         loadState === 'loading' ? (
-          <View testID="session-story-loading" style={styles.loading}>
+          <View testID="session-story-loading" style={[styles.loading, hideInlineToggle && { paddingTop: t.spacing.sm }]}>
             <ActivityIndicator color={t.colors.textTertiary} />
           </View>
         ) : story ? (
           <ScrollView
             testID="session-story-scroll"
             style={styles.scroll}
-            contentContainerStyle={styles.content}
+            contentContainerStyle={[styles.content, hideInlineToggle && { paddingTop: t.spacing.md }]}
             nestedScrollEnabled
           >
             <StoryContent story={story} styles={styles} mode="disclosure" />

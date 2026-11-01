@@ -33,9 +33,11 @@ jest.mock('../../components/planner/SessionSuccessionHost', () => ({ SessionSucc
 import React from 'react';
 import { Keyboard, Platform, StyleSheet } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import { fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import type { Session } from '../../api/types';
 import type { PhonePanelHistory } from '../../navigation/phonePanelHistory';
+import { DuoSideBandContext } from '../../navigation/tabContract';
+import { usePhoneRailActions } from '../../navigation/phoneRailActions';
 import {
   PhonePanelHistoryProvider,
   usePhonePanelHistory,
@@ -183,6 +185,51 @@ test.each([
   expect(mockChatBody).toHaveBeenLastCalledWith(
     expect.objectContaining({ sessionId: 'session-1', active: expectedActive }),
   );
+});
+
+test('스토리가 없는 세션의 듀오 레일 줄거리 액션은 선택을 해제하고 비활성화한다', () => {
+  useSessionStore.setState({
+    sessions: {
+      'session-1': {
+        agentSessionId: 'session-1',
+        displayName: '줄거리 없는 세션',
+        status: 'running',
+        createdAt: '',
+        updatedAt: '',
+      } as Session,
+    },
+  });
+  const navigation = {
+    getParent: jest.fn(),
+    navigate: jest.fn(),
+    setOptions: jest.fn(),
+    setParams: jest.fn(),
+  };
+
+  const screen = render(<DuoSideBandContext.Provider value>
+    <PhonePanelHistoryProvider>
+      <ChatScreen
+        route={{ key: 'chat', name: 'Chat', params: { sessionId: 'session-1' } } as any}
+        navigation={navigation as any}
+      />
+    </PhonePanelHistoryProvider>
+  </DuoSideBandContext.Provider>);
+
+  const bodyProps = mockChatBody.mock.calls.at(-1)?.[0] as {
+    onStoryExpandedChange: (expanded: boolean) => void;
+    onStoryAvailableChange: (available: boolean) => void;
+  };
+  act(() => {
+    bodyProps.onStoryExpandedChange(true);
+    bodyProps.onStoryAvailableChange(false);
+  });
+
+  const actions = usePhoneRailActions.getState().overrides.at(-1)?.actions ?? [];
+  expect(actions.find(action => action.id === 'story')).toEqual(expect.objectContaining({
+    selected: false,
+    disabled: true,
+  }));
+  screen.unmount();
 });
 
 test('Chat focus hides the parent tab bar for keyboard events and restores it on hide and blur', () => {

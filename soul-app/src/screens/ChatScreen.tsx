@@ -68,7 +68,11 @@ export function ChatScreen({ route, navigation }: Props) {
   }, [navigation]);
   const storyOpenRequestId = route.params?.storyOpenRequestId ?? null;
   const [storyExpanded, setStoryExpanded] = React.useState(false);
-  React.useEffect(() => setStoryExpanded(false), [sessionId]);
+  const [storyAvailable, setStoryAvailable] = React.useState(true);
+  React.useEffect(() => {
+    setStoryExpanded(false);
+    setStoryAvailable(true);
+  }, [sessionId]);
   const handleToggleStory = useCallback(() => setStoryExpanded(value => !value), []);
   const session = useSessionStore((s) =>
     sessionId ? s.sessions[sessionId] : undefined
@@ -76,7 +80,8 @@ export function ChatScreen({ route, navigation }: Props) {
   useRegisterDuoRailOverride('chat', duo && isFocused, [
     { id: 'back', label: '뒤로', icon: 'chevron-back', onPress: () => openPreviousPhonePanel(navigation, panelHistory.getReturnTab()) },
     ...(sessionId ? [
-      { id: 'story', label: '지난 줄거리', icon: 'book-outline' as const, selected: storyExpanded, onPress: handleToggleStory },
+      { id: 'story', label: '지난 줄거리', icon: 'book-outline' as const,
+        selected: storyExpanded && storyAvailable, disabled: !storyAvailable, onPress: handleToggleStory },
       { id: 'menu', label: '세션 메뉴', icon: 'ellipsis-horizontal' as const, onPress: () => menus.openSessionMenu({ sessionId }) },
     ] : []),
   ]);
@@ -169,6 +174,7 @@ export function ChatScreen({ route, navigation }: Props) {
         storyOpenRequestId={storyOpenRequestId}
         storyExpanded={storyExpanded}
         onStoryExpandedChange={setStoryExpanded}
+        onStoryAvailableChange={setStoryAvailable}
         onFocusEventHandled={handleFocusEventHandled}
         onStoryOpenRequestHandled={() =>
           navigation.setParams({ storyOpenRequestId: undefined })
