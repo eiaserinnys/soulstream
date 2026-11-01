@@ -156,7 +156,7 @@ export function ReviewPasCardExpand() {
     renderCardDetails={phone ? undefined : details} onOpenCardDetails={phone ? setSheet : undefined}
     send={{ busy: false, close: () => true, canCancel: () => false, cancelSent: () => false, sendOption: async (entry: PersistentReportEntry, option: string) => answer(entry, option) } as any} />;
   return <ContentLinkProvider><ChatUiControllerProvider sessionId="preview-pas" appendGeneratedText={() => ({ ok: true })}>
-    <View testID="pas-card-expand-review" style={{ flex: 1, backgroundColor: t.persistentSession.paper, paddingTop: insets.top, paddingBottom: insets.bottom }}>
+    {phone && sheet ? <CardDetailContent visible api={api} cardId={sheet.card_id ?? card.id} onClose={() => setSheet(null)} /> : <View testID="pas-card-expand-review" style={{ flex: 1, backgroundColor: t.persistentSession.paper, paddingTop: insets.top, paddingBottom: insets.bottom }}>
       <View style={styles.header}><Text style={styles.heading}>PAS · 카드 펼침 시안</Text></View>
       <View style={{ flex: 1, minHeight: 0, width: column, alignSelf: 'center', gap: t.uiSpacing.lg }}>
         <UserMessage event={{ id: 'preview-user', type: 'user_message', data: { text: 'PAS 안에서 결과를 보고 의견도 남기고 싶어요.' } }} />
@@ -169,7 +169,6 @@ export function ReviewPasCardExpand() {
         <SwayCharacter width={layout.body.width} height={layout.body.height} shown motionEnabled={false} active={false} />
       </View> : null}
       {layout.reportBubble ? <View style={{ position: 'absolute', left: layout.reportBubble.left, bottom: height - layout.reportBubble.bottom, width: layout.reportBubble.width }}>{pager}</View> : null}
-    </View>
-    {phone && sheet ? <CardDetailContent visible api={api} cardId={sheet.card_id ?? card.id} onClose={() => setSheet(null)} /> : null}
+    </View>}
   </ChatUiControllerProvider></ContentLinkProvider>;
 }
