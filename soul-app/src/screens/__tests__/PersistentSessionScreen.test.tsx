@@ -88,7 +88,7 @@ import { measurePersistentReports } from '../../test-utils/persistent-report-lay
 import type { CardDetail } from '../../api/cardTypes';
 import { cardFixture } from '../../test-support/cards';
 import type { PersistentReportEntry } from '../../api/types';
-import { DuoSideBandContext } from '../../navigation/tabContract';
+import { DuoSideBandContext, PhoneRailModeContext } from '../../navigation/tabContract';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { usePhoneRailActions } from '../../navigation/phoneRailActions';
@@ -143,6 +143,21 @@ test('카드를 누르면 바로 오버레이가 열리고 PAS ChatBody와 입�
   expect((globalThis as any).__persistentChatConnectionProbe).toMatchObject({ opens: 1, closes: 0, connected: true });
   view.unmount();
   expect((globalThis as any).__persistentChatConnectionProbe).toMatchObject({ opens: 1, closes: 1, connected: false });
+});
+
+test('듀오 태블릿은 입력창과 카드 패널에서 바닥 안전 여백을 중복하지 않는다', () => {
+  mockDevice = 'tabletLandscape';
+  const view = render(<SafeAreaInsetsContext.Provider value={{ top: 24, bottom: 24, left: 0, right: 84 }}>
+    <DuoSideBandContext.Provider value><NavigationContainer><ScreenHarness /></NavigationContainer></DuoSideBandContext.Provider>
+  </SafeAreaInsetsContext.Provider>);
+  act(() => store.getState().open({ session_id: 'pas-tablet-duo', persistent: true } as any));
+  expect(view.getByTestId('persistent-body-probe').props.minimumBottomPadding).toBe(0);
+  fireEvent.press(view.getByTestId('persistent-session-duo-tasks'));
+  const panel = StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style);
+  expect(panel.paddingBottom).toBe(0);
+  fireEvent.press(view.getByTestId('choose-card'));
+  expect(view.getByTestId('persistent-card-overlay-mock').props.bottomSafeAreaInset).toBe(0);
+  view.unmount();
 });
 
 test('phone report deck touch leaves page swipes to the deck and conversation swipes to the scene', () => {
@@ -924,7 +939,7 @@ test('듀오 폰은 보고를 별도 판에 표시하고 보고가 없어지면 
     else if (this.props.testID === 'persistent-session-conversation') callback(20, 24, 342, 630);
   });
   const view = render(<SafeAreaInsetsContext.Provider value={{ top: 24, bottom: 24, left: 0, right: 84 }}>
-    <DuoSideBandContext.Provider value><NavigationContainer><ScreenHarness /></NavigationContainer></DuoSideBandContext.Provider>
+    <DuoSideBandContext.Provider value><PhoneRailModeContext.Provider value><NavigationContainer><ScreenHarness /></NavigationContainer></PhoneRailModeContext.Provider></DuoSideBandContext.Provider>
   </SafeAreaInsetsContext.Provider>);
   act(() => {
     store.getState().open({ session_id: 'pas-report-phone', persistent: true } as any);
@@ -932,6 +947,10 @@ test('듀오 폰은 보고를 별도 판에 표시하고 보고가 없어지면 
     view.getByTestId('persistent-session-screen').props.onLayout();
   });
   const body = view.getByTestId('persistent-body-probe');
+  expect(view.getByTestId('persistent-session-safe-area').props.edges).toEqual({
+    top: 'additive', bottom: 'off', left: 'additive', right: 'off',
+  });
+  expect(body.props.minimumBottomPadding).toBe(0);
   act(() => body.props.onComposerLayout({ x: 0, y: 500, width: 342, height: 76 }, { x: 0, y: 20, width: 342, height: 56 }));
   expect(body.props.reportView).toBeNull();
   expect(body.props.getReportSendContext('일반 입력', null)).toEqual({});
@@ -941,6 +960,8 @@ test('듀오 폰은 보고를 별도 판에 표시하고 보고가 없어지면 
   expect(store.getState()).toMatchObject({ reportCount: 2, hasReports: true });
   act(() => store.getState().toggleReports());
   expect(view.getByTestId('persistent-session-reports-panel')).toBeTruthy();
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-reports-panel').props.style).paddingBottom).toBe(0);
+  expect(StyleSheet.flatten(view.getByTestId('report-deck').props.style).marginBottom).toBe(0);
   expect(view.getAllByTestId(/^report-sheet-/)).toHaveLength(2);
   expect(view.getByTestId('report-track').props.horizontal).toBeFalsy();
   expect(view.getByTestId('report-track').props.pagingEnabled).toBeFalsy();
