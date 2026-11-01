@@ -1,0 +1,206 @@
+name: Soul app iOS PAS layout
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'soul-app/native-review/**'
+      - 'soul-app/metro.config.js'
+      - 'soul-app/metro.config.test.js'
+      - 'soul-app/src/screens/PersistentSessionScreen.tsx'
+      - 'soul-app/src/components/chat/ChatBody.tsx'
+      - 'soul-app/src/components/persistent/**'
+      - '.github/workflows/soul-app-ios-pas-layout.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 150
+    defaults:
+      run:
+        working-directory: soul-app
+    env:
+      NODE_ENV: development
+      SOUL_APP_NATIVE_REVIEW: '1'
+      ENTRY_FILE: ${{ github.workspace }}/soul-app/native-review/pas-card-entry.tsx
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: soul-app/package-lock.json
+      - name: Install independent app dependencies
+        run: npm ci --include=dev --no-audit --no-fund
+      - name: Select Xcode 27.1
+        run: |
+          sudo xcode-select -s /Applications/Xcode_27.1.app
+          xcodebuild -version
+      - name: Prebuild iOS app
+        run: npx expo prebuild --platform ios --clean
+      - name: Verify generated bundle phase accepts ENTRY_FILE
+        run: |
+          grep -F 'if [[ -z \"$ENTRY_FILE\" ]]' ios/Soulstream.xcodeproj/project.pbxproj
+          test -f "$ENTRY_FILE"
+          echo "Harness entry: $ENTRY_FILE"
+      - name: Build Release simulator app
+        run: >-
+          xcodebuild -workspace ios/Soulstream.xcworkspace
+          -scheme Soulstream
+          -configuration Release
+          -sdk iphonesimulator
+          -destination 'generic/platform=iOS Simulator'
+          -derivedDataPath build
+          CODE_SIGNING_ALLOWED=NO
+          build
+      - name: Package simulator app
+        run: ditto -c -k --keepParent build/Build/Products/Release-iphonesimulator/Soulstream.app Soulstream.app.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pas-layout-app
+          path: soul-app/Soulstream.app.zip
+          retention-days: 7
+
+  capture:
+    needs: build
+    runs-on: xcode-27
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - device: iPad Pro 13-inch (M5)
+            runtime: '27.0'
+            artifact: ipad-pro-13
+            display: ''
+            short: '1'
+          - device: iPhone 17
+            runtime: '27.0'
+            artifact: iphone-17
+            display: ''
+            short: '0'
+          - device: iPhone Duo
+            runtime: '27.1'
+            artifact: iphone-duo
+            display: '1'
+            short: '0'
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: pas-layout-app
+      - name: Unpack simulator app
+        run: unzip Soulstream.app.zip
+      - name: Find or create simulator
+        id: simulator
+        env:
+          SIMULATOR_RUNTIME: ${{ matrix.runtime }}
+          SIMULATOR_DEVICE: ${{ matrix.device }}
+        run: |
+          cat > "$RUNNER_TEMP/find_pas_simulator.py" <<'PY'
+          import json
+          import subprocess
+          import sys
+
+          version, name = sys.argv[1:]
+          token = f"iOS-{version.replace('.', '-')}"
+          devices = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devices', 'available', '-j']))['devices']
+          for runtime, items in devices.items():
+              if token in runtime:
+                  for item in items:
+                      if item['name'] == name and item.get('isAvailable', True):
+                          print(item['udid'])
+                          raise SystemExit(0)
+          runtimes = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'runtimes', '-j']))['runtimes']
+          runtime = next(item for item in runtimes if item.get('name') == f'iOS {version}' and item.get('isAvailable', True))
+          types = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devicetypes', '-j']))['devicetypes']
+          device_type = next(item for item in types if item['name'] == name)
+          print(subprocess.check_output(['xcrun', 'simctl', 'create', name, device_type['identifier'], runtime['identifier']], text=True).strip())
+          PY
+          udid=$(python3 "$RUNNER_TEMP/find_pas_simulator.py" "$SIMULATOR_RUNTIME" "$SIMULATOR_DEVICE")
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+          echo "Simulator UDID: $udid"
+      - name: Boot simulator
+        run: |
+          xcrun simctl boot '${{ steps.simulator.outputs.udid }}'
+          xcrun simctl bootstatus '${{ steps.simulator.outputs.udid }}' -b
+      - name: Install app and capture 110-second sequences
+        env:
+          SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
+          PAS_DISPLAY: ${{ matrix.display }}
+          SHORT_SCENARIO: ${{ matrix.short }}
+        run: |
+          xcrun simctl install "$SIMULATOR_UDID" Soulstream.app
+          mkdir -p captures
+          cat > "$RUNNER_TEMP/capture_pas.py" <<'PY'
+          import os
+          from pathlib import Path
+          import signal
+          import subprocess
+          import time
+
+          udid = os.environ['SIMULATOR_UDID']
+          display = os.environ['PAS_DISPLAY']
+          scenarios = ['default', 'short'] if os.environ['SHORT_SCENARIO'] == '1' else ['default']
+          for scenario in scenarios:
+              output = Path('captures') / scenario
+              output.mkdir(parents=True, exist_ok=True)
+              subprocess.run(['xcrun', 'simctl', 'terminate', udid, 'me.eiaserinnys.soulstream'],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+              video = None
+              if not display:
+                  try:
+                      video = subprocess.Popen(['xcrun', 'simctl', 'io', udid, 'recordVideo', str(output / 'sequence.mp4')])
+                  except OSError as error:
+                      print(f'{scenario} video could not start: {error}', flush=True)
+              try:
+                  start = time.monotonic()
+                  print(subprocess.check_output(['xcrun', 'simctl', 'launch', udid, 'me.eiaserinnys.soulstream',
+                                                 '-pasHarnessScenario', scenario], text=True).strip(), flush=True)
+                  while (elapsed := time.monotonic() - start) < 110:
+                      second = int(elapsed)
+                      args = ['xcrun', 'simctl', 'io', udid, 'screenshot']
+                      if display:
+                          args.append(f'--display={display}')
+                      path = output / f't{second:03d}.png'
+                      subprocess.run(args + [str(path)], check=True)
+                      end = time.monotonic() - start
+                      print(f'{scenario} {path.name}: capture started {elapsed:.2f}s, finished {end:.2f}s', flush=True)
+                      time.sleep(max(0, second + 1 - end))
+                  time.sleep(max(0, start + 110 - time.monotonic()))
+              finally:
+                  if video is not None:
+                      video.send_signal(signal.SIGINT)
+                      try:
+                          video.wait(timeout=30)
+                          print(f'{scenario} video exit: {video.returncode}', flush=True)
+                      except subprocess.TimeoutExpired:
+                          video.terminate()
+                          video.wait()
+                          print(f'{scenario} video did not stop in time', flush=True)
+          PY
+          python3 "$RUNNER_TEMP/capture_pas.py"
+      - name: Collect simulator app diagnostics
+        if: always()
+        env:
+          SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          mkdir -p captures/diagnostics
+          if [ -n "$SIMULATOR_UDID" ]; then
+            xcrun simctl spawn "$SIMULATOR_UDID" log show --last 15m --style compact \
+              --predicate 'process == "Soulstream"' > captures/diagnostics/app.log 2>&1 || true
+            crash_dir="$HOME/Library/Developer/CoreSimulator/Devices/$SIMULATOR_UDID/data/Library/Logs/CrashReporter"
+            find "$crash_dir" -maxdepth 1 -type f -iname '*Soulstream*' -exec cp {} captures/diagnostics/ \; 2>/dev/null || true
+          fi
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -type f -iname '*Soulstream*' \
+            -exec cp {} captures/diagnostics/ \; 2>/dev/null || true
+      - name: Upload capture sequence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pas-layout-${{ matrix.artifact }}
+          path: captures/
+          retention-days: 7
+          if-no-files-found: warn
