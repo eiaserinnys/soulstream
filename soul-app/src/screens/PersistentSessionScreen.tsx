@@ -13,21 +13,17 @@ import type { ChatInputComposerHandle } from '../components/chat/ChatInputCompos
 import { usePersistentReport } from '../components/persistent/usePersistentReport';
 import { usePersistentReportSend } from '../components/persistent/usePersistentReportSend';
 import { PersistentReportPager } from '../components/persistent/PersistentReportPager';
-import { PersistentReportCardSheetHeader } from '../components/persistent/PersistentReportCardSheetHeader';
-import { PersistentReportCardSheetComplete } from '../components/persistent/PersistentReportCardSheetComplete';
 import { usePersistentCardCompletion } from '../components/persistent/usePersistentCardCompletion';
 import { minimumReportBubbleHeight } from '../components/persistent/persistentReportStyles';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import { PersistentSessionCardOverlay } from '../components/persistent/PersistentSessionCardOverlay';
 import { PersistentReportCardExpansion } from '../components/persistent/PersistentReportCardExpansion';
-import { ReportComposerFocusContext, useReportComposerScroll } from '../components/persistent/useReportComposerScroll';
 import { PersistentSessionTaskList } from '../components/persistent/PersistentSessionTaskList';
 import { SwayCharacter } from '../components/persistent/SwayCharacter';
 import { PERSISTENT_SESSION_FRAME as FRAME } from '../components/persistent/persistentSessionFrame';
 import { PersistentSessionPasSettingsModal } from '../components/settings/PersistentSessionPasSettingsModal';
 import { persistentChatDisplaySettings, savePersistentSessionSettings } from '../components/settings/persistentSessionSettingsActions';
 import { useDisplayPreferenceActions } from '../components/settings/useDisplayPreferenceActions';
-import { AppModalSurface } from '../components/AppModalSurface';
 import { GlassButton } from '../components/GlassSurface';
 import { CardStatusChip } from '../components/planner/CardRow';
 import { PersistentSessionWeeklyUsage } from '../components/persistent/PersistentSessionWeeklyUsage';
@@ -47,7 +43,7 @@ import { useSessionStore } from '../store/sessionStore';
 import { useSettingsStore } from '../store/settingsStore';
 import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
 import type { PersistentReportEntry } from '../api/types';
-import { isPersistentReportCardExpandable, persistentReportStatusCard } from '../lib/persistent-report-card';
+import { persistentReportStatusCard } from '../lib/persistent-report-card';
 import { resolvePersistentConversationLeft } from '../lib/persistent-session-column';
 
 export interface PersistentSessionScreenProps {
@@ -125,36 +121,34 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   React.useLayoutEffect(() => {
     if (savedPas?.settingsOpen !== undefined) setSettingsOpen(savedPas.settingsOpen);
   }, []);
-  const [reportCard, setReportCard] = useState<PersistentReportEntry | null>(() => report.entries.find(entry => entry.key === savedPas?.expandedKey) ?? null);
-  const [reportCardSheetEntry, setReportCardSheetEntry] = useState<PersistentReportEntry | null>(() => report.entries.find(entry => entry.key === savedPas?.expandedKey) ?? null);
-  const reportCardScroll = useReportComposerScroll();
   const [reportExpansion, setReportExpansion] = useState<{ sessionId?: string; key: string | null }>({ sessionId: session?.session_id, key: savedPas?.expandedKey ?? null });
   const expandedReportKey = reportExpansion.sessionId === session?.session_id ? reportExpansion.key : null;
   React.useEffect(() => {
     continuity?.setViewState(pasKey, { ...continuity.getViewState<object>(pasKey), settingsOpen,
-      expandedKey: phone ? reportCard?.key ?? null : expandedReportKey });
-  }, [continuity, pasKey, settingsOpen, phone, reportCard?.key, expandedReportKey]);
+      expandedKey: phone ? null : expandedReportKey });
+  }, [continuity, pasKey, settingsOpen, phone, expandedReportKey]);
   const [reportSeatHeight, setReportSeatHeight] = useState(0);
-  const pendingReportCardLink = React.useRef<string | null>(null);
   const openContentLink = useOpenContentLink();
-  const showReportCard = React.useCallback((entry: PersistentReportEntry) => {
-    pendingReportCardLink.current = null;
-    setReportCard(entry);
-    setReportCardSheetEntry(entry);
-  }, []);
-  const closeReportCard = React.useCallback(() => {
-    setReportCard(null);
-  }, []);
-  const openReportCardFromSheet = React.useCallback((cardId: string) => {
-    pendingReportCardLink.current = cardId;
-    closeReportCard();
-  }, [closeReportCard]);
-  const onReportCardSheetDismiss = React.useCallback(() => {
-    const cardId = pendingReportCardLink.current;
-    pendingReportCardLink.current = null;
-    setReportCardSheetEntry(null);
-    if (cardId) void openContentLink(`/?card=${encodeURIComponent(cardId)}`);
-  }, [openContentLink]);
+  const openReportCardDirectly = React.useCallback(async (entry: PersistentReportEntry) => {
+    let cardId = entry.card_id ?? null;
+    if (!cardId && entry.card_numbers.length === 1 && api) {
+      const cardNumber = entry.card_numbers[0];
+      try {
+        const { cards } = await api.listCards(undefined, { includeCompleted: true });
+        cardId = cards.find(card => card.number === cardNumber)?.id ?? null;
+      } catch {
+        setNotice(`#${cardNumber} 카드를 불러오지 못했어.`);
+        return;
+      }
+      if (!cardId) {
+        setNotice(`#${cardNumber} 카드를 찾지 못했어.`);
+        return;
+      }
+    }
+    if (!cardId) return;
+    if (onOpenPhoneCard) onOpenPhoneCard(cardId);
+    else void openContentLink(`/?card=${encodeURIComponent(cardId)}`);
+  }, [api, onOpenPhoneCard, openContentLink, setNotice]);
   const [savingCharacter, setSavingCharacter] = useState(false);
   const appRef = React.useRef<View>(null);
   const mainRef = React.useRef<View>(null);
@@ -245,7 +239,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       return card ? <CardStatusChip card={card} detail /> : null;
     }}
     renderCardDetails={!phone ? entry => <PersistentReportCardExpansion key={entry.key} api={api} entry={entry} /> : undefined}
-    onOpenCardDetails={phone ? showReportCard : undefined}
+    onOpenCardDetails={phone ? openReportCardDirectly : undefined}
     onFocusComposer={() => inputComposerRef.current?.focusAccessibility()} /> : null;
   const back = React.useCallback(() => {
     const state = host.store.getState();
@@ -445,21 +439,5 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       </RailCapsule>
       </RailCapsuleViewport>
     </View> : null}
-    {phone && reportCardSheetEntry && isPersistentReportCardExpandable(reportCardSheetEntry) ? <AppModalSurface visible={reportCard !== null} modalId="modal_card_detail"
-      variant="expanded" presentationStyle="pageSheet" onRequestClose={closeReportCard} onDismiss={onReportCardSheetDismiss} surfaceTestID="persistent-session-report-card-sheet">
-      <AppKeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, minHeight: 0 }}>
-      <PersistentReportCardSheetHeader entry={reportCardSheetEntry} onCollapse={closeReportCard} />
-      <ScrollView style={{ flex: 1, minHeight: 0 }} ref={reportCardScroll.scroll} contentContainerStyle={{ padding: t.foundation.pageInset }}
-        onLayout={reportCardScroll.keepComposerVisible} onContentSizeChange={reportCardScroll.keepComposerVisible}
-        showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
-        automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}>
-        <ReportComposerFocusContext.Provider value={reportCardScroll.onFocusChange}>
-          <PersistentReportCardExpansion key={reportCardSheetEntry.key} api={api} entry={reportCardSheetEntry} onOpenCard={openReportCardFromSheet} />
-          <PersistentReportCardSheetComplete key={'complete-' + reportCardSheetEntry.key} entry={reportCardSheetEntry}
-            completion={completion} onCompleted={closeReportCard} />
-        </ReportComposerFocusContext.Provider>
-      </ScrollView>
-      </AppKeyboardAvoidingView>
-    </AppModalSurface> : null}
   </SafeAreaView>;
 }

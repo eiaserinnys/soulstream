@@ -28,10 +28,10 @@ export function DuoRailOverride() {
       </RailCapsuleItem>;
   return <AppKeyboardAvoidingView pointerEvents="box-none" onOverlapChange={setKeyboardOverlap} style={StyleSheet.absoluteFill}>
   <View testID="duo-rail-override-host" pointerEvents="box-none" style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: insets.right, alignItems: 'center', paddingRight: DUO_RAIL_END_INSET }}>
-    {backAction ? <View style={{ position: 'absolute', top: getDuoRailTopOffset(width, height) }}>
+    {backAction ? <View style={{ position: 'absolute', top: getDuoRailTopOffset(width, height), left: 0, right: DUO_RAIL_END_INSET, alignItems: 'center' }}>
       <RailCapsule testID={mainActions.length ? 'duo-rail-back-capsule' : 'duo-rail-override'} compact={compact}>{renderAction(backAction)}</RailCapsule>
     </View> : null}
-    {mainActions.length ? <View testID="duo-rail-override-lower" style={{ position: 'absolute', bottom }}>
+    {mainActions.length ? <View testID="duo-rail-override-lower" style={{ position: 'absolute', bottom, left: 0, right: DUO_RAIL_END_INSET, alignItems: 'center' }}>
       <RailCapsuleViewport testID="duo-rail-override-scroll" maxHeight={lowerMaxHeight}><RailCapsule testID="duo-rail-override" compact={compact}>{mainActions.map(renderAction)}</RailCapsule></RailCapsuleViewport>
     </View> : null}
   </View></AppKeyboardAvoidingView>;

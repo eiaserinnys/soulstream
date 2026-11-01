@@ -8,6 +8,7 @@ export interface PhonePanelHistory {
   recordFocus(tab: PhoneRootTab): void;
   recordChatOpen(origin?: PhoneReturnTab): void;
   getReturnTab(): PhoneReturnTab;
+  hasReturnTab(): boolean;
 }
 
 const FALLBACK_RETURN_TAB: PhoneReturnTab = 'FeedTab';
@@ -15,6 +16,7 @@ const FALLBACK_RETURN_TAB: PhoneReturnTab = 'FeedTab';
 export function createPhonePanelHistory(): PhonePanelHistory {
   let activeTab: PhoneRootTab | null = null;
   let returnTab: PhoneReturnTab = FALLBACK_RETURN_TAB;
+  let hasReturnTab = false;
 
   return {
     recordFocus(tab) {
@@ -22,10 +24,14 @@ export function createPhonePanelHistory(): PhonePanelHistory {
     },
     recordChatOpen(origin) {
       returnTab = origin ?? activeTab ?? returnTab;
+      hasReturnTab = true;
       activeTab = null;
     },
     getReturnTab() {
       return returnTab;
+    },
+    hasReturnTab() {
+      return hasReturnTab;
     },
   };
 }

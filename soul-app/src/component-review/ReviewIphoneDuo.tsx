@@ -36,6 +36,7 @@ import { useChatStore } from '../store/chatStore';
 import { useSessionStore } from '../store/sessionStore';
 import { useUIStore } from '../store/uiStore';
 import { CardDetailContent } from '../components/planner/CardDetailSheet';
+import { createReviewCardApi } from './ReviewPasCardExpand';
 import { FolderWorkspace } from '../components/planner/FolderWorkspace';
 import { DuoRailOverride } from '../components/navigation/DuoRailOverride';
 import { useRegisterDuoRailOverride } from '../navigation/phoneRailActions';
@@ -120,7 +121,11 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
   </ContentLinkProvider></PersistentSessionProvider>;
 }
 
-function DuoPasCardOverlayStage({ reportsEmpty = false, initialReportsScene = false }: { reportsEmpty?: boolean; initialReportsScene?: boolean }) {
+function DuoPasCardOverlayStage({ reportsEmpty = false, initialReportsScene = false, onOpenPhoneCard }: {
+  reportsEmpty?: boolean;
+  initialReportsScene?: boolean;
+  onOpenPhoneCard?: (cardId: string) => void;
+}) {
   const host = usePersistentSessionHost();
   const visible = usePersistentSessionScene(state => state.visible);
   const session = usePersistentSessionScene(state => state.session);
@@ -152,7 +157,7 @@ function DuoPasCardOverlayStage({ reportsEmpty = false, initialReportsScene = fa
       show_jev_candidates: true, turn_usage_mode: 'collapsed',
     });
   }, [host.store, reportsEmpty, initialReportsScene]);
-  return visible ? <PersistentSessionScreen active onHome={() => host.store.getState().leave()} />
+  return visible ? <PersistentSessionScreen active onHome={() => host.store.getState().leave()} onOpenPhoneCard={onOpenPhoneCard} />
     : session ? <View testID="review-pas-home" style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
       <LiquidGlassButton accessibilityLabel="PAS 다시 열기" onPress={() => host.store.getState().open(session)}>
         <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>PAS 다시 열기</Text>
@@ -162,6 +167,8 @@ function DuoPasCardOverlayStage({ reportsEmpty = false, initialReportsScene = fa
 
 function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { frameId: keyof typeof PAS_LAYOUT_FRAMES; reportsEmpty: boolean; initialReportsScene: boolean }) {
   const t = useTokens();
+  const [openedCardId, setOpenedCardId] = useState<string | null>(null);
+  const reviewCardApi = useMemo(() => createReviewCardApi(), []);
   const frame = PAS_LAYOUT_FRAMES[frameId];
   const frameRect: Rect = { x: 0, y: 0, width: frame.width, height: frame.height };
   const duoSideBand = frame.insets.right >= RAIL_MIN_INSET_WIDTH && frame.insets.left === 0;
@@ -174,7 +181,12 @@ function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { fr
           <NavigationContainer>
           <View style={{ flex: 1, flexDirection: 'row', width: frame.width, height: frame.height, overflow: 'hidden' }}>
             <SafeAreaInsetsContext.Provider value={frame.rail ? { ...frame.insets, right: 0 } : frame.insets}>
-              <View style={{ width: frame.rail ? frame.width - frame.insets.right : frame.width, height: frame.height }}><DuoPasCardOverlayStage reportsEmpty={reportsEmpty} initialReportsScene={initialReportsScene} /></View>
+              <View style={{ width: frame.rail ? frame.width - frame.insets.right : frame.width, height: frame.height }}>
+                {frame.rail && openedCardId ? <View style={{ flex: 1, paddingTop: frame.insets.top + t.uiSpacing.md, paddingBottom: frame.insets.bottom }}>
+                  <CardDetailContent visible api={reviewCardApi} cardId={openedCardId} onClose={() => setOpenedCardId(null)} />
+                </View> : <DuoPasCardOverlayStage reportsEmpty={reportsEmpty} initialReportsScene={initialReportsScene}
+                  onOpenPhoneCard={frame.rail ? setOpenedCardId : undefined} />}
+              </View>
             </SafeAreaInsetsContext.Provider>
             {frame.rail && frame.insets.right > 0 ? <View style={{ width: frame.insets.right, height: frame.height,
               alignItems: 'center', justifyContent: 'flex-end', paddingBottom: compact ? frame.insets.bottom : Math.max(frame.insets.bottom, t.uiSpacing.xxl),

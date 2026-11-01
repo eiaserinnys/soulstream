@@ -1,4 +1,4 @@
-import { INITIAL_ROOT_TAB, ROOT_TAB_ORDER } from '../tabContract';
+import { DUO_RAIL_TAB_ORDER, INITIAL_ROOT_TAB, ROOT_TAB_ORDER } from '../tabContract';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ROOT_SECTION_CONFIG } from '../rootSectionConfig';
@@ -12,6 +12,10 @@ test('v3 탭 순서와 초기 탭은 Daily·Folder·Persistent·Feed·Settings �
     'SettingsTab',
   ]);
   expect(INITIAL_ROOT_TAB).toBe('DailyTab');
+});
+
+test('듀오 레일의 내비게이션 순서는 PAS·카드·폴더·세션이다', () => {
+  expect(DUO_RAIL_TAB_ORDER).toEqual(['PersistentTab', 'DailyTab', 'FolderTab', 'FeedTab']);
 });
 
 test('phone와 tablet root title과 tab/header icon key는 emoji 없는 한 정본이다', () => {

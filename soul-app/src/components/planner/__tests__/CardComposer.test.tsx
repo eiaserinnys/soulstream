@@ -135,10 +135,12 @@ test('오늘 입력창의 iOS 높이·칩 배치 계약과 콘텐츠 이벤트 �
   fireEvent.changeText(input, '첫 줄\n둘째 줄');
   // This checks alignment after event receipt, not native event delivery or growth.
   fireEvent(screen.getByLabelText('세션 첫 메시지'), 'contentSizeChange', {
-    nativeEvent: { contentSize: { width: 200, height: initialHeight * 2 } },
+    nativeEvent: { contentSize: { width: 200, height: Math.min(initialHeight * 2, StyleSheet.flatten(input.props.style).maxHeight) } },
   });
-  expect(StyleSheet.flatten(screen.getByLabelText('세션 첫 메시지').props.style).height).toBeUndefined();
-  expect(screen.getByLabelText('세션 첫 메시지').props.textAlignVertical).toBe('top');
+  const twoLineInput = screen.getByLabelText('세션 첫 메시지');
+  expect(StyleSheet.flatten(twoLineInput.props.style).height).toBeUndefined();
+  expect(twoLineInput.props.scrollEnabled).toBe(false);
+  expect(twoLineInput.props.textAlignVertical).toBe('top');
   expect(StyleSheet.flatten(screen.getByTestId('card-composer-chips').props.style)).toMatchObject({ flexDirection: 'row', flexWrap: 'nowrap' });
   const chips = screen.getByTestId('card-composer-chips');
   const frame = screen.getByTestId('card-composer-layout');

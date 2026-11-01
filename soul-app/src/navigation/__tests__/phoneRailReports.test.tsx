@@ -22,8 +22,10 @@ test('듀오 PAS 레일의 보고 버튼은 개수와 장면, 빈 상태를 반�
   fireEvent.press(view.getByTestId('phone-rail-pas-reports'));
   expect(store.getState().scene).toBe('reports');
   expect(view.getByTestId('phone-rail-pas-reports').props.accessibilityState.selected).toBe(true);
-  expect(view.getByTestId('phone-tab-PersistentTab').props.accessibilityLabel).toBe('PAS 대화로 돌아가기');
-  fireEvent.press(view.getByTestId('phone-tab-PersistentTab'));
+  expect(view.queryByTestId('phone-tab-PersistentTab')).toBeNull();
+  const back = view.getByTestId('phone-rail-action-back');
+  expect(back.props.accessibilityLabel).toBe('PAS 대화로 돌아가기');
+  fireEvent.press(back);
   expect(store.getState().scene).toBe('conversation');
   act(() => store.getState().setReportAvailability(0, false));
   expect(view.queryByTestId('phone-rail-pas-reports-badge')).toBeNull();

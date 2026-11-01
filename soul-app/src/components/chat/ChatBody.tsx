@@ -58,6 +58,9 @@ interface Props {
   focusEventId?: number | null;
   /** 검색 결과에서 기존 세션 스토리 패널을 펼치는 일회성 요청. */
   storyOpenRequestId?: number | null;
+  storyExpanded?: boolean;
+  onStoryExpandedChange?: (expanded: boolean) => void;
+  onStoryAvailableChange?: (available: boolean) => void;
   onFocusEventHandled?: (sessionId: string, eventId: number) => void;
   onStoryOpenRequestHandled?: () => void;
   /** 같은 채팅 부품을 원고형으로 표시한다. 기본 채팅은 기존 모양을 유지한다. */
@@ -101,6 +104,9 @@ export function ChatBody({
   minimumBottomPadding = 0,
   focusEventId = null,
   storyOpenRequestId = null,
+  storyExpanded,
+  onStoryExpandedChange,
+  onStoryAvailableChange,
   onFocusEventHandled,
   onStoryOpenRequestHandled,
   presentation = 'default',
@@ -471,6 +477,9 @@ export function ChatBody({
         sessionId={sessionId}
         api={api}
         openRequestId={storyOpenRequestId}
+        storyExpanded={storyExpanded}
+        onStoryExpandedChange={onStoryExpandedChange}
+        onStoryAvailableChange={onStoryAvailableChange}
         onOpenRequestHandled={onStoryOpenRequestHandled}
       /> : null}
 

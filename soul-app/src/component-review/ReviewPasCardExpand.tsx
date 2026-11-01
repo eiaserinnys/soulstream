@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Platform, ScrollView, Text, View, useWindowDimensions } from 'react-native';
+import { Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Asset } from 'expo-asset';
 import type { ApiClient } from '../api/client';
@@ -11,17 +11,14 @@ import { ContentLinkProvider } from '../navigation/ContentLinkProvider';
 import { ChatUiControllerProvider } from '../components/chat-ui/ChatUiControllerProvider';
 import { PersistentReportPager } from '../components/persistent/PersistentReportPager';
 import { PersistentReportCardExpansion } from '../components/persistent/PersistentReportCardExpansion';
-import { PersistentReportCardSheetHeader } from '../components/persistent/PersistentReportCardSheetHeader';
-import { PersistentReportCardSheetComplete } from '../components/persistent/PersistentReportCardSheetComplete';
 import { usePersistentCardCompletion } from '../components/persistent/usePersistentCardCompletion';
-import { ReportComposerFocusContext, useReportComposerScroll } from '../components/persistent/useReportComposerScroll';
 import { minimumReportBubbleHeight } from '../components/persistent/persistentReportStyles';
 import { calculatePersistentSessionLayout } from '../../../packages/soul-ui/src/lib/persistent-session-layout';
 import { PERSISTENT_SESSION_FRAME as FRAME } from '../components/persistent/persistentSessionFrame';
 import { SwayCharacter } from '../components/persistent/SwayCharacter';
 import { CardStatusChip } from '../components/planner/CardRow';
 import { cardDetailStyles } from '../components/planner/CardDetail.styles';
-import { AppModalSurface } from '../components/AppModalSurface';
+import { CardDetailContent } from '../components/planner/CardDetailSheet';
 import { UserMessage } from '../components/events/UserMessage';
 import { AssistantMessage } from '../components/events/AssistantMessage';
 import { ChatComposer } from '../components/chat/ChatComposer';
@@ -128,7 +125,6 @@ export function ReviewPasCardExpand() {
   const [entries, setEntries] = useState<PersistentReportEntry[]>(reviewEntries);
   const [index, setIndex] = useState(0);
   const [sheet, setSheet] = useState<PersistentReportEntry | null>(null);
-  const sheetScroll = useReportComposerScroll();
   const [text, setText] = useState('');
   const api = useMemo(() => createReviewCardApi((id, status) => {
     const reviewEntry = initialEntries.find(entry => entry.card_id === id);
@@ -160,7 +156,7 @@ export function ReviewPasCardExpand() {
     renderCardDetails={phone ? undefined : details} onOpenCardDetails={phone ? setSheet : undefined}
     send={{ busy: false, close: () => true, canCancel: () => false, cancelSent: () => false, sendOption: async (entry: PersistentReportEntry, option: string) => answer(entry, option) } as any} />;
   return <ContentLinkProvider><ChatUiControllerProvider sessionId="preview-pas" appendGeneratedText={() => ({ ok: true })}>
-    <View testID="pas-card-expand-review" style={{ flex: 1, backgroundColor: t.persistentSession.paper, paddingTop: insets.top, paddingBottom: insets.bottom }}>
+    {phone && sheet ? <CardDetailContent visible api={api} cardId={sheet.card_id ?? card.id} onClose={() => setSheet(null)} /> : <View testID="pas-card-expand-review" style={{ flex: 1, backgroundColor: t.persistentSession.paper, paddingTop: insets.top, paddingBottom: insets.bottom }}>
       <View style={styles.header}><Text style={styles.heading}>PAS · 카드 펼침 시안</Text></View>
       <View style={{ flex: 1, minHeight: 0, width: column, alignSelf: 'center', gap: t.uiSpacing.lg }}>
         <UserMessage event={{ id: 'preview-user', type: 'user_message', data: { text: 'PAS 안에서 결과를 보고 의견도 남기고 싶어요.' } }} />
@@ -173,18 +169,6 @@ export function ReviewPasCardExpand() {
         <SwayCharacter width={layout.body.width} height={layout.body.height} shown motionEnabled={false} active={false} />
       </View> : null}
       {layout.reportBubble ? <View style={{ position: 'absolute', left: layout.reportBubble.left, bottom: height - layout.reportBubble.bottom, width: layout.reportBubble.width }}>{pager}</View> : null}
-    </View>
-    {sheet ? <AppModalSurface visible modalId="modal_card_detail" variant="expanded" presentationStyle="pageSheet" onRequestClose={() => setSheet(null)} surfaceTestID="pas-card-preview-sheet">
-      <PersistentReportCardSheetHeader entry={sheet} onCollapse={() => setSheet(null)} />
-      <ScrollView style={{ flex: 1, minHeight: 0 }} ref={sheetScroll.scroll} contentContainerStyle={{ padding: t.foundation.pageInset }} showsVerticalScrollIndicator={false}
-        onLayout={sheetScroll.keepComposerVisible} onContentSizeChange={sheetScroll.keepComposerVisible}
-        keyboardShouldPersistTaps="handled" keyboardDismissMode="interactive"
-        automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}>
-        <ReportComposerFocusContext.Provider value={sheetScroll.onFocusChange}>
-          {details(sheet)}
-          <PersistentReportCardSheetComplete entry={sheet} completion={completion} onCompleted={() => setSheet(null)} />
-        </ReportComposerFocusContext.Provider>
-      </ScrollView>
-    </AppModalSurface> : null}
+    </View>}
   </ChatUiControllerProvider></ContentLinkProvider>;
 }

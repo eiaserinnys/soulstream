@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { SessionStoryResponse } from '../../api/sessionEndpoints';
+import { useDuoSideBand } from '../../navigation/duoSideBand';
 import { useTokens, type DesignTokens } from '../../theme';
 import { DisclosureIcon } from '../DisclosureIcon';
 import { GlassButton } from '../GlassSurface';
@@ -21,6 +22,9 @@ interface Props {
   api: Pick<ApiClient, 'getSessionStory'> | null;
   openRequestId?: number | null;
   onOpenRequestHandled?: () => void;
+  storyExpanded?: boolean;
+  onStoryExpandedChange?: (expanded: boolean) => void;
+  onStoryAvailableChange?: (available: boolean) => void;
 }
 
 interface SessionStoryPresentation {
@@ -36,12 +40,18 @@ export function SessionStoryPanel({
   api,
   openRequestId = null,
   onOpenRequestHandled,
+  storyExpanded,
+  onStoryExpandedChange,
+  onStoryAvailableChange,
   presentation = 'default',
   mode = 'disclosure',
 }: Props) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
-  const [expanded, setExpanded] = useState(false);
+  const [localExpanded, setLocalExpanded] = useState(false);
+  const expanded = storyExpanded ?? localExpanded;
+  const externallyControlled = storyExpanded !== undefined;
+  const duoSideBand = useDuoSideBand();
   const [loadState, setLoadState] = useState<LoadState>('idle');
   const [story, setStory] = useState<SessionStoryPresentation | null>(null);
   const [developmentFailure, setDevelopmentFailure] = useState<Error | null>(null);
@@ -53,16 +63,21 @@ export function SessionStoryPanel({
     || requestContext.current.sessionId !== sessionId
   );
   const isDevelopmentBuild = typeof __DEV__ !== 'undefined' && __DEV__;
+  const setExpanded = useCallback((value: boolean) => {
+    setLocalExpanded(value);
+    onStoryExpandedChange?.(value);
+  }, [onStoryExpandedChange]);
 
   useEffect(() => {
     requestContext.current = { api, sessionId };
     requestGeneration.current += 1;
+    onStoryAvailableChange?.(true);
     setExpanded(false);
     setLoadState('idle');
     setStory(null);
     setDevelopmentFailure(null);
     handledOpenRequest.current = null;
-  }, [api, mode, sessionId]);
+  }, [api, mode, onStoryAvailableChange, sessionId, setExpanded]);
 
   useEffect(() => () => {
     requestGeneration.current += 1;
@@ -81,6 +96,7 @@ export function SessionStoryPanel({
       const nextStory = projectSessionStory(response, isDevelopmentBuild, mode);
       if (!nextStory) {
         setExpanded(false);
+        onStoryAvailableChange?.(false);
         setLoadState('hidden');
         return;
       }
@@ -101,9 +117,10 @@ export function SessionStoryPanel({
         return;
       }
       setExpanded(false);
+      onStoryAvailableChange?.(false);
       setLoadState('hidden');
     }
-  }, [api, isDevelopmentBuild, mode, sessionId]);
+  }, [api, isDevelopmentBuild, mode, onStoryAvailableChange, sessionId, setExpanded]);
 
   const expand = useCallback((forceLoad = false) => {
     setExpanded(true);
@@ -118,6 +135,14 @@ export function SessionStoryPanel({
     }
     expand();
   }, [expand, expanded]);
+
+  useEffect(() => {
+    if (mode === 'disclosure' && expanded && loadState === 'idle') expand();
+  }, [expand, expanded, loadState, mode]);
+
+  useEffect(() => {
+    if (mode !== 'settings' && loadState === 'hidden' && expanded) setExpanded(false);
+  }, [expanded, loadState, mode, setExpanded]);
 
   useEffect(() => {
     if (mode === 'settings') return;
@@ -145,7 +170,9 @@ export function SessionStoryPanel({
   if (mode !== 'settings' && isDevelopmentBuild && developmentFailure) {
     throw developmentFailure;
   }
+  const hideInlineToggle = duoSideBand && externallyControlled;
   if (mode !== 'settings' && (!api || loadState === 'hidden')) return null;
+  if (mode === 'disclosure' && hideInlineToggle && !expanded) return null;
 
   if (mode === 'settings') {
     return (
@@ -176,7 +203,7 @@ export function SessionStoryPanel({
 
   return (
     <View testID="session-story-panel" style={[styles.container, chatAuxiliarySurface(t, presentation)]}>
-      <TouchableOpacity
+      {!hideInlineToggle ? <TouchableOpacity
         testID="session-story-toggle"
         accessibilityRole="button"
         accessibilityLabel={`세션 스토리 ${expanded ? '접기' : '펼치기'}`}
@@ -186,18 +213,18 @@ export function SessionStoryPanel({
       >
         <Text style={styles.headerTitle}>세션 스토리</Text>
         <DisclosureIcon expanded={expanded} tone="tertiary" />
-      </TouchableOpacity>
+      </TouchableOpacity> : null}
 
       {expanded ? (
         loadState === 'loading' ? (
-          <View testID="session-story-loading" style={styles.loading}>
+          <View testID="session-story-loading" style={[styles.loading, hideInlineToggle && { paddingTop: t.spacing.sm }]}>
             <ActivityIndicator color={t.colors.textTertiary} />
           </View>
         ) : story ? (
           <ScrollView
             testID="session-story-scroll"
             style={styles.scroll}
-            contentContainerStyle={styles.content}
+            contentContainerStyle={[styles.content, hideInlineToggle && { paddingTop: t.spacing.md }]}
             nestedScrollEnabled
           >
             <StoryContent story={story} styles={styles} mode="disclosure" />
