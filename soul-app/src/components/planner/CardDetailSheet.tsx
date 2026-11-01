@@ -240,10 +240,12 @@ export function CardDetailContent(props: CardDetailContentProps) {
     ...(card ? [{ id: startable || startPhase ? 'start' : 'complete', label: actionLabel,
       icon: (startable || startPhase ? 'play' : 'checkmark') as PhoneRailAction['icon'], selected: card.status === 'done',
       disabled: locked || !api || startPhase === 'pending', onPress: () => { void status(startPhase || startable ? 'running' : 'done'); } }] : []),
-    { id: 'tab-items', label: '확인 항목', icon: 'checkbox-outline', selected: tab === 'items', badgeCount: needsReview, onPress: () => setTab('items') },
-    { id: 'tab-comments', label: '커멘트', icon: 'chatbubble-outline', selected: tab === 'comments', dot: commentUnread, onPress: () => setTab('comments') },
-    { id: 'tab-sessions', label: '세션', icon: 'terminal-outline', selected: tab === 'sessions', onPress: () => setTab('sessions') },
-    { id: 'tab-notes', label: '노트', icon: 'document-text-outline', selected: tab === 'notes', onPress: () => setTab('notes') },
+    ...(tab !== 'items' ? [{ id: 'tab-items', label: '확인 항목', icon: 'checkbox-outline' as const,
+      badgeCount: needsReview, onPress: () => setTab('items') }] : []),
+    ...(tab !== 'comments' ? [{ id: 'tab-comments', label: '커멘트', icon: 'chatbubble-outline' as const,
+      dot: commentUnread, onPress: () => setTab('comments') }] : []),
+    ...(tab !== 'sessions' ? [{ id: 'tab-sessions', label: '세션', icon: 'terminal-outline' as const,
+      onPress: () => setTab('sessions') }] : []),
   ];
   useRegisterDuoRailOverride(`card-${cardId}`, duo && visible, railActions);
   const selectedItem = targetItem;

@@ -172,6 +172,39 @@ test('compact 레일은 모든 탭 칸에 최소 터치 높이를 쓴다', () =>
   }
 });
 
+test('compact 듀오 레일은 세 컨텍스트 액션 높이에 맞춰 캡슐을 제한한다', () => {
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({
+    width: 678, height: 466, scale: 1, fontScale: 1,
+  });
+  function Override() {
+    useRegisterDuoRailOverride('compact-three-actions', true, [
+      { id: 'back', label: '뒤로', icon: 'chevron-back', onPress: jest.fn() },
+      ...(['one', 'two', 'three'] as const).map((id) => ({ id, label: id, icon: 'ellipse-outline' as const, onPress: jest.fn() })),
+    ]);
+    return null;
+  }
+  const screen = render(<NavigationContainer><SafeAreaInsetsContext.Provider value={{ top: 0, bottom: 24, left: 0, right: 84 }}>
+    <Override />
+    <PhoneRailTabCluster active="DailyTab" onSelect={jest.fn()} duoSideBand compact />
+  </SafeAreaInsetsContext.Provider></NavigationContainer>);
+
+  expect(screen.getByTestId('duo-rail-context-scroll').props.style.maxHeight).toBe(136);
+  expect(StyleSheet.flatten(screen.getByTestId('duo-rail-top-stack').props.style).gap).toBe(4);
+  for (const id of ['one', 'two', 'three']) {
+    expect(StyleSheet.flatten(screen.getByTestId(`phone-rail-action-${id}`).props.style).height).toBe(44);
+  }
+
+  screen.unmount();
+  dimensions.mockRestore();
+});
+
+test.each([[true, 4], [false, 8]] as const)('듀오 상단 캡슐 간격은 compact=%s일 때 %ipt다', (compact, gap) => {
+  const screen = render(<NavigationContainer>
+    <PhoneRailTabCluster active="DailyTab" onSelect={jest.fn()} duoSideBand compact={compact} />
+  </NavigationContainer>);
+  expect(StyleSheet.flatten(screen.getByTestId('duo-rail-top-stack').props.style).gap).toBe(gap);
+});
+
 test('레일 탭 클러스터는 5개 루트 탭을 같은 testID로 노출한다', () => {
   const onSelect = jest.fn();
   const screen = render(

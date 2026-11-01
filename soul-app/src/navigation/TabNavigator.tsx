@@ -157,8 +157,9 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
     + (compact ? 0 : Math.max(0, navigationNames.length - 1) * t.uiSpacing.xs / 2)
     + 2 * (compact ? t.spacing.xxs : t.spacing.xs);
   const bottomInset = compact ? insets.bottom : Math.max(insets.bottom, t.uiSpacing.xxl);
+  const stackGap = compact ? t.uiSpacing.xs : t.uiSpacing.sm;
   const contextMaxHeight = Math.max(0,
-    windowHeight - bottomInset - navigationHeight - topOffset - RAIL_CAPSULE_WIDTH - 2 * t.uiSpacing.sm);
+    windowHeight - bottomInset - navigationHeight - topOffset - RAIL_CAPSULE_WIDTH - 2 * stackGap);
   const renderContextAction = (action: PhoneRailAction) => {
     const testID = !override?.length && active === 'PersistentTab'
       ? action.id === 'pas-menu' ? 'phone-rail-pas-menu' : 'phone-rail-pas-reports'
@@ -171,7 +172,7 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
 
   return <View testID="duo-rail-column" style={{ width: RAIL_CAPSULE_WIDTH, flex: 1, position: 'relative', alignItems: 'center', justifyContent: 'flex-end' }}>
     <View testID="duo-rail-top-stack" pointerEvents="box-none"
-      style={{ position: 'absolute', top: topOffset, left: 0, right: 0, alignItems: 'center', gap: t.uiSpacing.sm }}>
+      style={{ position: 'absolute', top: topOffset, left: 0, right: 0, alignItems: 'center', gap: stackGap }}>
       <RailCapsule testID="duo-rail-back-capsule" compact={compact}>{renderOverrideAction(resolvedBackAction)}</RailCapsule>
       {contextActions.length ? <RailCapsuleViewport testID="duo-rail-context-scroll" maxHeight={contextMaxHeight}>
         <RailCapsule testID="duo-rail-context-capsule" compact={compact}>{contextActions.map(renderContextAction)}</RailCapsule>

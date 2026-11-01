@@ -77,6 +77,8 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
   const frame = PAS_LAYOUT_FRAMES[frameId];
   const params = new URLSearchParams(window.location.search);
   const duo = params.get('band') !== 'off' && frame.insets.right >= RAIL_MIN_INSET_WIDTH && frame.insets.left === 0;
+  const compact = duo && frame.width > frame.height;
+  const t = useTokens();
   const phone = frameId.startsWith('outer-') || frameId.startsWith('iphone-');
   const initialTab = params.get('tab') ?? undefined;
   const sampleCardId = params.get('card') ?? entryShellCardId;
@@ -103,8 +105,10 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
                     {view === 'rail-badge' || view === 'rail-dot' ? <DuoBadgeReview dot={view === 'rail-dot'} /> : null}
                   </View>
                 </SafeAreaInsetsContext.Provider>
-                {phone ? <View style={{ width: frame.insets.right, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: frame.insets.bottom, ...(duo ? { paddingRight: DUO_RAIL_END_INSET } : {}) }}>
-                  <PhoneRailTabCluster active="DailyTab" duoSideBand={duo} compact={duo && frame.width > frame.height} onSelect={() => setView(null)} />
+                {phone ? <View style={{ width: frame.insets.right, alignItems: 'center', justifyContent: 'flex-end',
+                  paddingBottom: compact ? frame.insets.bottom : Math.max(frame.insets.bottom, t.uiSpacing.xxl),
+                  ...(duo ? { paddingRight: DUO_RAIL_END_INSET } : {}) }}>
+                  <PhoneRailTabCluster active="DailyTab" duoSideBand={duo} compact={compact} onSelect={() => setView(null)} />
                 </View> : null}
                 {!phone && duo ? <View style={{ width: frame.insets.right }} /> : null}
                 {!phone && duo ? <DuoRailOverride /> : null}
