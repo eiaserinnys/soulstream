@@ -17,12 +17,16 @@ test('듀오 PAS 레일의 보고 버튼은 개수와 장면, 빈 상태를 반�
   const view = render(<PersistentSessionProvider><Capture /><NavigationContainer>
     <PhoneRailTabCluster active="PersistentTab" onSelect={() => store.getState().toggleScene()} duoSideBand />
   </NavigationContainer></PersistentSessionProvider>);
-  act(() => { store.getState().open({ session_id: 'pas' } as any); store.getState().setReportAvailability(2, true); });
+  act(() => {
+    store.getState().open({ session_id: 'pas' } as any);
+    store.getState().setSessions([{ session_id: 'pas' }, { session_id: 'pas-2' }] as any);
+    store.getState().setReportAvailability(2, true);
+  });
   expect(view.getByTestId('phone-rail-pas-reports-badge').props.children).toBe(2);
   fireEvent.press(view.getByTestId('phone-rail-pas-reports'));
   expect(store.getState().scene).toBe('reports');
   expect(view.getByTestId('phone-rail-pas-reports').props.accessibilityState.selected).toBe(true);
-  expect(view.queryByTestId('phone-tab-PersistentTab')).toBeNull();
+  expect(view.getByTestId('phone-tab-PersistentTab').props.accessibilityLabel).toBe('영구 세션 선택');
   const back = view.getByTestId('phone-rail-action-back');
   expect(back.props.accessibilityLabel).toBe('PAS 대화로 돌아가기');
   fireEvent.press(back);

@@ -136,6 +136,13 @@ function DuoPasCardOverlayStage({ reportsEmpty = false, initialReportsScene = fa
   const t = useTokens();
   useEffect(() => {
     const sessionId = 'review-pas-1';
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('count') === '2' || params.get('multiPas') === '1') {
+      host.store.getState().setSessions([
+        { session_id: 'review-pas-1', display_name: '로젤린', node_id: 'public-node', agent_id: 'roselin', agent_name: '로젤린', persistent: true },
+        { session_id: 'review-pas-2', display_name: '서소영', node_id: 'public-node', agent_id: 'seosoyoung', agent_name: '서소영', persistent: true },
+      ] as any);
+    }
     const entries = reportsEmpty ? [] : [{ key: 'card_804', kind: 'see', title: '지금의 보고 · #804', card_numbers: [804],
       card_id: 'preview-pas-card', card_status: 'review', context: '검수용 카드 장입니다.', action: '',
       options: [], state: 'open', answer: '', updated_at: '2026-10-29T00:00:00Z' },
@@ -174,6 +181,7 @@ function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { fr
   const [openedCardId, setOpenedCardId] = useState<string | null>(null);
   const reviewCardApi = useMemo(() => createReviewCardApi(), []);
   const frame = PAS_LAYOUT_FRAMES[frameId];
+  useEffect(() => installEntryShellPublicHarness(), []);
   const frameRect: Rect = { x: 0, y: 0, width: frame.width, height: frame.height };
   const duoSideBand = frame.insets.right >= RAIL_MIN_INSET_WIDTH && frame.insets.left === 0;
   const compact = duoSideBand && frame.width > frame.height;
@@ -212,7 +220,10 @@ function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { fr
 function DuoPasReviewRail({ duoSideBand, compact }: { duoSideBand: boolean; compact: boolean }) {
   const host = usePersistentSessionHost();
   return <PhoneRailTabCluster active="PersistentTab" duoSideBand={duoSideBand} compact={compact}
-    onSelect={() => host.store.getState().toggleScene()} />;
+    onSelect={(name) => {
+      if (name === 'PersistentTab') void host.requestEntry(() => {}, false, true);
+      else host.store.getState().toggleScene();
+    }} />;
 }
 
 export function ReviewIphoneDuo() {

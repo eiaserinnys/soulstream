@@ -1,5 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import type { StoreApi } from 'zustand';
 import type { PersistentSessionScene } from '../../store/persistentSessionScene';
 import { PersistentSessionProvider, usePersistentSessionHost } from '../PersistentSessionContext';
@@ -89,10 +90,43 @@ test('시작 조회 중 도착한 세션 intent는 늦은 PAS 응답보다 우�
 test('이미 선택 sheet가 열린 뒤 새 session intent가 오면 선택 sheet를 닫는다', async () => {
   mockList.mockResolvedValue({ sessions: [pas('one'), pas('two')], create_defaults: defaults });
   const view = render(<PersistentSessionProvider><Probe /></PersistentSessionProvider>);
-  await act(async () => { await host.requestEntry(jest.fn()); });
+  await act(async () => { await host.requestEntry(jest.fn(), false, true); });
   expect(view.getByTestId('persistent-entry-one')).toBeTruthy();
   view.rerender(<PersistentSessionProvider sessionIntent><Probe /></PersistentSessionProvider>);
   expect(view.queryByTestId('persistent-entry-one')).toBeNull();
+});
+
+test('다른 화면에서는 활성 PAS를 바로 열고 재선택 요청은 세로 가운데에서 고른다', async () => {
+  const sessions = [pas('one'), pas('two')];
+  mockList.mockResolvedValue({ sessions, create_defaults: defaults });
+  const open = jest.fn();
+  const view = render(<PersistentSessionProvider><Probe /></PersistentSessionProvider>);
+  act(() => store.getState().open(sessions[1] as any));
+
+  await act(async () => { await host.requestEntry(open); });
+  expect(store.getState().session?.session_id).toBe('two');
+  expect(store.getState().sessions).toEqual(sessions);
+  expect(view.queryByTestId('persistent-entry-one')).toBeNull();
+
+  await act(async () => { await host.requestEntry(open, false, true); });
+  const dialog = view.getByTestId('persistent-entry-dialog');
+  expect(StyleSheet.flatten(dialog.props.style).justifyContent).toBe('center');
+  expect(StyleSheet.flatten(view.getByTestId('persistent-entry-choose-scroll').props.style)).toMatchObject({ flexGrow: 0, flexShrink: 1 });
+  expect(view.getByTestId('persistent-entry-two').props.accessibilityState.selected).toBe(true);
+  fireEvent.press(view.getByTestId('persistent-entry-one'));
+  expect(store.getState().session?.session_id).toBe('one');
+});
+
+test('선택 진입 실패 뒤 재시도도 선택 상태를 유지한다', async () => {
+  mockList.mockRejectedValueOnce(new Error('offline'));
+  const view = render(<PersistentSessionProvider><Probe /></PersistentSessionProvider>);
+  await act(async () => { await host.requestEntry(jest.fn(), false, true); });
+  expect(view.getByTestId('persistent-entry-error')).toBeTruthy();
+
+  mockList.mockResolvedValue({ sessions: [pas('one'), pas('two')], create_defaults: defaults });
+  await act(async () => { fireEvent.press(view.getByLabelText('영구 세션 다시 조회')); });
+  expect(view.getByTestId('persistent-entry-one')).toBeTruthy();
+  expect(view.getByTestId('persistent-entry-two')).toBeTruthy();
 });
 test('시작 실패는 홈 안내, 수동 실패는 오류와 같은 입구 재시도이며 0개로 처리하지 않는다', async () => {
   mockList.mockRejectedValue(new Error('offline'));

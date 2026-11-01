@@ -2,13 +2,14 @@ jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
 const mockShowMenu = jest.fn();
 const mockSetSettingsOpen = jest.fn();
+const mockSessionData = { sessions: [] as any[] };
 jest.mock('../../components/menus/AppContextMenu', () => ({ showAppContextMenu: (...args: unknown[]) => mockShowMenu(...args) }));
 jest.mock('../PersistentSessionContext', () => ({
   usePersistentSessionHost: () => ({ loading: false, portrait: null, store: { getState: () => ({
-    session: null, leave: jest.fn(), swipe: jest.fn(), selectCard: jest.fn(), toggleReports: jest.fn(),
+    session: null, sessions: mockSessionData.sessions, leave: jest.fn(), swipe: jest.fn(), selectCard: jest.fn(), toggleReports: jest.fn(),
   }) } }),
   usePersistentSessionScene: (select: (state: any) => unknown) => select({ scene: 'conversation', session: { agent_name: '서소영' }, selectedCardId: null,
-    reportCount: 0, hasReports: false, setSettingsOpen: mockSetSettingsOpen }),
+    sessions: mockSessionData.sessions, reportCount: 0, hasReports: false, setSettingsOpen: mockSetSettingsOpen }),
 }));
 
 import React from 'react';
@@ -23,6 +24,8 @@ import { Text } from 'react-native';
 import { DuoRailOverride } from '../../components/navigation/DuoRailOverride';
 import { AppKeyboardAvoidingView } from '../../components/AppKeyboardAvoidingView';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
+
+beforeEach(() => { mockSessionData.sessions = []; });
 
 test('숫자와 점의 우선순위와 비활성 상태를 노출한다', () => {
   const onPress = jest.fn();
@@ -247,6 +250,18 @@ test('PAS 탭이 활성이고 대화 장면이면 카드 목록 보기로 안내
   );
 
   expect(screen.getByTestId('phone-tab-PersistentTab').props.accessibilityLabel).toBe('카드 목록 보기');
+});
+
+test('듀오 PAS 화면에서는 복수 세션 선택을 위해 활성 PAS 탭도 노출한다', () => {
+  mockSessionData.sessions = [{ session_id: 'pas-one' }, { session_id: 'pas-two' }];
+  const onSelect = jest.fn();
+  const screen = render(<NavigationContainer>
+    <PhoneRailTabCluster active="PersistentTab" onSelect={onSelect} duoSideBand />
+  </NavigationContainer>);
+
+  expect(screen.getByTestId('phone-tab-PersistentTab').props.accessibilityLabel).toBe('영구 세션 선택');
+  fireEvent.press(screen.getByTestId('phone-tab-PersistentTab'));
+  expect(onSelect).toHaveBeenCalledWith('PersistentTab');
 });
 
 test('PAS 메뉴는 듀오 띠에서 PAS 탭이 활성일 때만 보인다', () => {

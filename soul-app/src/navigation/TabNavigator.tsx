@@ -94,6 +94,7 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
   const t = useTokens();
   const c = t.colors;
   const scene = usePersistentSessionScene(state => state.scene);
+  const hasMultiplePas = usePersistentSessionScene(state => state.sessions.length > 1);
   const selectedCardId = usePersistentSessionScene(state => state.selectedCardId);
   const reportCount = usePersistentSessionScene(state => state.reportCount);
   const hasReports = usePersistentSessionScene(state => state.hasReports);
@@ -111,7 +112,7 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
   </RailCapsuleItem>;
   const persistentLabel = active !== 'PersistentTab'
     ? '영구 세션 열기'
-    : scene !== 'conversation' ? 'PAS 대화로 돌아가기' : '카드 목록 보기';
+    : (duoSideBand || hasMultiplePas) ? '영구 세션 선택' : scene !== 'conversation' ? 'PAS 대화로 돌아가기' : '카드 목록 보기';
   const renderTab = (name: keyof RootTabParamList) => {
     const config = ROOT_SECTION_CONFIG[name];
     const selected = name === active;
@@ -151,7 +152,7 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
       : active === 'DailyTab' || active === 'FolderTab' || active === 'FeedTab'
         ? actions[active] ?? []
         : [];
-  const navigationNames = DUO_RAIL_TAB_ORDER.filter((name) => name !== active);
+  const navigationNames = DUO_RAIL_TAB_ORDER.filter((name) => name !== active || (name === 'PersistentTab' && hasMultiplePas));
   const navigationItemHeight = compact ? t.hitTarget.min : RAIL_ITEM_HEIGHT;
   const navigationHeight = navigationNames.length * navigationItemHeight
     + (compact ? 0 : Math.max(0, navigationNames.length - 1) * t.uiSpacing.xs / 2)
@@ -650,6 +651,7 @@ function PhoneTabNavigator({ initialTab }: { initialTab?: string }) {
   const panelHistory = usePhonePanelHistory();
   const host = usePersistentSessionHost();
   const scene = usePersistentSessionScene(state => state.scene);
+  const hasMultiplePas = usePersistentSessionScene(state => state.sessions.length > 1);
   const restoredTab = ROOT_TAB_ORDER.find(name => name === initialTab);
   const [focusedTab, setFocusedTab] = useState<keyof RootTabParamList>(restoredTab ?? (host.store.getState().visible ? 'PersistentTab' : INITIAL_ROOT_TAB));
   const t = useTokens();
@@ -694,14 +696,22 @@ function PhoneTabNavigator({ initialTab }: { initialTab?: string }) {
             listeners={({ navigation }) => ({ focus: () => { panelHistory.recordFocus(name); setFocusedTab(name); host.store.setState({ visible: name === 'PersistentTab' }); },
               ...(name === 'PersistentTab' ? { tabPress: (event: { preventDefault(): void }) => {
                 event.preventDefault();
-                if (navigation.isFocused() && host.store.getState().session) host.store.getState().toggleScene();
-                else void host.requestEntry(() => navigation.navigate('PersistentTab'));
+                if (navigation.isFocused() && host.store.getState().session) {
+                  if (duoSideBand || host.store.getState().sessions.length > 1) {
+                    void host.requestEntry(() => navigation.navigate('PersistentTab'), false, true);
+                  } else {
+                    host.store.getState().toggleScene();
+                  }
+                } else {
+                  void host.requestEntry(() => navigation.navigate('PersistentTab'));
+                }
               } } : {}),
             })}
             options={{
               tabBarButtonTestID: `phone-tab-${name}`,
               ...(name === 'PersistentTab' ? { tabBarAccessibilityLabel: focusedTab === 'PersistentTab'
-                ? scene !== 'conversation' ? 'PAS 대화로 돌아가기' : '카드 목록 보기' : '영구 세션 열기' } : {}),
+                ? (duoSideBand || hasMultiplePas) ? '영구 세션 선택' : scene !== 'conversation' ? 'PAS 대화로 돌아가기' : '카드 목록 보기'
+                : '영구 세션 열기' } : {}),
               tabBarIcon: ({ color, size }) => name === 'PersistentTab'
                 ? <PersistentPhoneTabIcon color={color} size={size} active={focusedTab === name} />
                 : <Ionicons name={config.icon} color={color} size={size} />,

@@ -11,9 +11,9 @@ function Entry({ onOpen }: { onOpen(): void }) {
   useEffect(() => {
     if (started.current) return;
     started.current = true;
-    void requestEntry(onOpen);
+    void requestEntry(onOpen, false, true);
   }, [onOpen, requestEntry]);
-  return <LiquidGlassButton accessibilityLabel="영구 세션 선택 열기" onPress={() => void requestEntry(onOpen)}>
+  return <LiquidGlassButton accessibilityLabel="영구 세션 선택 열기" onPress={() => void requestEntry(onOpen, false, true)}>
     <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>영구 세션 선택</Text>
   </LiquidGlassButton>;
 }

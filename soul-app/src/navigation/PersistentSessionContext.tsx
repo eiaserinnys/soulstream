@@ -26,7 +26,7 @@ interface PersistentSessionHost {
   store: StoreApi<PersistentSessionScene>;
   portrait: Pick<PersistentSessionResource, 'session_id' | 'node_id' | 'agent_id' | 'agent_name'> | null;
   loading: boolean;
-  requestEntry(onOpen: () => void, startup?: boolean): Promise<void>;
+  requestEntry(onOpen: () => void, startup?: boolean, choose?: boolean): Promise<void>;
   initialize(onOpen: () => void, openOnStart: boolean): Promise<void>;
 }
 const Context = createContext<PersistentSessionHost | null>(null);
@@ -48,7 +48,8 @@ export function PersistentSessionProvider({ children, sessionIntent = false, onL
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const destination = useRef<() => void>(() => undefined);
-  const pending = useRef<'manual' | 'startup' | null>(null);
+  const pending = useRef<'manual' | 'choose' | 'startup' | null>(null);
+  const lastMode = useRef<'manual' | 'choose' | 'startup' | null>(null);
   const intent = useRef(sessionIntent);
   intent.current = sessionIntent;
   React.useEffect(() => { if (sessionIntent) setSheet(null); }, [sessionIntent]);
@@ -57,7 +58,9 @@ export function PersistentSessionProvider({ children, sessionIntent = false, onL
     return () => onLeaveReady?.(null);
   }, [store, onLeaveReady]);
   const last = useSettingsStore(state => state.getPersistentSessionDevicePreference(serverUrl, email).lastSessionId);
-  const portrait = sessions.find(session => session.session_id === last) ?? sessions[0]
+  const activeSession = useStore(store, state => state.session);
+  const activeOrLastId = activeSession?.session_id ?? last;
+  const portrait = sessions.find(session => session.session_id === activeOrLastId) ?? activeSession ?? sessions[0]
     ?? (defaults ? { session_id: '', node_id: defaults.node_id, agent_id: defaults.preferred_agent_id, agent_name: null } : null);
 
   function open(session: PersistentSessionResource) {
@@ -66,7 +69,7 @@ export function PersistentSessionProvider({ children, sessionIntent = false, onL
     setSheet(null);
     destination.current();
   }
-  async function readEntry(onOpen: () => void, mode: 'manual' | 'startup' | 'portrait') {
+  async function readEntry(onOpen: () => void, mode: 'manual' | 'choose' | 'startup' | 'portrait') {
     if (mode !== 'portrait') {
       if (pending.current) return;
       destination.current = onOpen;
@@ -83,21 +86,28 @@ export function PersistentSessionProvider({ children, sessionIntent = false, onL
         useSessionStore.getState().applyPersistentReport(session.session_id, session.persistent_report,
           { snapshot: reportState.persistentReportsBySession[session.session_id], generation: reportState.scopeGeneration });
       }
-      setSessions(result.sessions); setDefaults(result.create_defaults);
+      setSessions(result.sessions);
+      store.getState().setSessions(result.sessions);
+      setDefaults(result.create_defaults);
       if (mode === 'portrait') return;
       if (pending.current !== mode) return;
       if (mode === 'startup' && intent.current) { setSheet(null); return; }
-      const entry = resolvePersistentSessionEntry(result.sessions, last, mode === 'startup');
+      const preferredId = mode === 'startup' ? last : (store.getState().session?.session_id ?? last);
+      const entry = resolvePersistentSessionEntry(result.sessions, preferredId, mode === 'startup', mode === 'choose');
       if (entry.kind === 'open') open(entry.session);
       else setSheet(entry.kind === 'home' ? null : entry.kind);
     } catch {
       if (mode === 'startup') {
         setSheet(null);
         if (!intent.current) useAppNoticeStore.getState().showNotice({ tone: 'error', title: '영구 세션을 불러오지 못했습니다.', message: '입구에서 다시 시도해 주세요.' });
-      } else if (mode === 'manual') { setError('영구 세션을 불러오지 못했습니다.'); setSheet('error'); }
+      } else if (mode !== 'portrait') { setError('영구 세션을 불러오지 못했습니다.'); setSheet('error'); }
     } finally { if (mode !== 'portrait') { pending.current = null; setLoading(false); } }
   }
-  const requestEntry = (onOpen: () => void, startup = false) => readEntry(onOpen, startup ? 'startup' : 'manual');
+  const requestEntry = (onOpen: () => void, startup = false, choose = false) => {
+    const mode = startup ? 'startup' : choose ? 'choose' : 'manual';
+    lastMode.current = mode;
+    return readEntry(onOpen, mode);
+  };
   const initialize = (onOpen: () => void, openOnStart: boolean) => readEntry(onOpen, openOnStart ? 'startup' : 'portrait');
   const closeAdd = useRef<() => void>(() => setSheet(null));
   return <Context.Provider value={{ store, portrait, loading, requestEntry, initialize }}>
@@ -108,7 +118,7 @@ export function PersistentSessionProvider({ children, sessionIntent = false, onL
       onRequestClose={() => sheet === 'add' ? closeAdd.current() : setSheet(null)}>
       {sheet === 'add' ? <SettingsScreen category="persistent" initialPersistentDestination={{ kind: 'editor' }}
         onClose={() => setSheet(null)} registerCloseRequest={close => { closeAdd.current = close; }} />
-        : <View style={{ flex: 1, padding: t.foundation.pageInset, gap: t.uiSpacing.lg }}>
+        : <View testID="persistent-entry-dialog" style={{ flex: 1, justifyContent: 'center', padding: t.foundation.pageInset, gap: t.uiSpacing.lg }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
             <Text style={{ flex: 1, ...t.foundation.typography.section, color: t.colors.textPrimary }}>영구 세션</Text>
             <TouchableOpacity accessibilityRole="button" accessibilityLabel="영구 세션 선택 닫기" onPress={() => setSheet(null)}
@@ -118,13 +128,13 @@ export function PersistentSessionProvider({ children, sessionIntent = false, onL
           </View>
           {sheet === 'error' ? <>
             <Text testID="persistent-entry-error" style={{ ...t.foundation.typography.body, color: t.colors.errorText }}>{error}</Text>
-            <LiquidGlassButton accessibilityLabel="영구 세션 다시 조회" onPress={() => void requestEntry(destination.current)}>
+            <LiquidGlassButton accessibilityLabel="영구 세션 다시 조회" onPress={() => void requestEntry(destination.current, false, lastMode.current === 'choose')}>
               <Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>다시 시도</Text>
             </LiquidGlassButton>
           </> : null}
-          {sheet === 'choose' ? <ScrollView showsVerticalScrollIndicator={false}>
+          {sheet === 'choose' ? <ScrollView testID="persistent-entry-choose-scroll" style={{ flexGrow: 0, flexShrink: 1 }} showsVerticalScrollIndicator={false}>
             <GroupedGlassSheet>{sessions.map(session => <GroupedGlassRow key={session.session_id}
-              testID={`persistent-entry-${session.session_id}`} selected={session.session_id === last}
+              testID={`persistent-entry-${session.session_id}`} selected={session.session_id === activeOrLastId}
               accessibilityLabel={session.display_name ?? session.session_id} onPress={() => open(session)}
               style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.md, padding: t.cardLayout.padding }}>
               <PersistentSessionPortrait session={session} size={t.avatarSize.message} />
