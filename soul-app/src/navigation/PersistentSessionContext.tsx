@@ -114,7 +114,7 @@ export function PersistentSessionProvider({ children, sessionIntent = false, onL
     {children}
     {sheet ? <AppModalSurface visible variant="expanded" presentationStyle="pageSheet" modalId="modal_settings" surfaceTestID="persistent-entry-sheet"
       sideBand={duo && sheet === 'add' ? <ThemeProvider value={t.mode === 'dark' ? DarkTheme : DefaultTheme}><DuoRailOverride /></ThemeProvider> : undefined}
-      sideBandWidth={duo && sheet === 'add' ? insets.right : 0}
+      sideBandWidth={duo ? insets.right : 0}
       onRequestClose={() => sheet === 'add' ? closeAdd.current() : setSheet(null)}>
       {sheet === 'add' ? <SettingsScreen category="persistent" initialPersistentDestination={{ kind: 'editor' }}
         onClose={() => setSheet(null)} registerCloseRequest={close => { closeAdd.current = close; }} />
@@ -160,6 +160,7 @@ export function usePersistentSessionScene<T>(selector: (state: PersistentSession
 export function PersistentSessionPortrait({ session, size }: {
   session: PersistentSessionHost['portrait']; size: number;
 }) {
+  const [failedUri, setFailedUri] = useState<string | null>(null);
   const t = useTokens();
   const serverUrl = useSettingsStore(state => state.serverUrl);
   const jwt = useAuthStore(state => state.jwt);
@@ -174,7 +175,9 @@ export function PersistentSessionPortrait({ session, size }: {
       ? `/api/nodes/${encodeURIComponent(session.node_id)}/agents/${encodeURIComponent(session.agent_id)}/portrait` : null),
   }, serverUrl);
   const style = { width: size, height: size, borderRadius: size / 2 };
-  return avatar.uri ? <Image source={{ uri: avatar.uri, ...(jwt ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }} style={style} />
+  return avatar.uri && failedUri !== avatar.uri
+    ? <Image source={{ uri: avatar.uri, ...(jwt ? { headers: { Authorization: `Bearer ${jwt}` } } : {}) }}
+      onError={() => setFailedUri(avatar.uri)} style={style} />
     : <View style={[style, { alignItems: 'center', justifyContent: 'center', backgroundColor: t.colors.surfaceMuted }]}>
       <Text style={{ ...t.foundation.typography.label, color: t.colors.textPrimary }}>{avatar.fallbackChar}</Text>
     </View>;

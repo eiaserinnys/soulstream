@@ -1,13 +1,15 @@
 import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
+import { Image } from 'react-native';
 import type { StoreApi } from 'zustand';
 import type { PersistentSessionScene } from '../../store/persistentSessionScene';
-import { PersistentSessionProvider, usePersistentSessionHost } from '../PersistentSessionContext';
+import { PersistentSessionPortrait, PersistentSessionProvider, usePersistentSessionHost } from '../PersistentSessionContext';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
 import { useAppNoticeStore } from '../../store/appNoticeStore';
 const mockList = jest.fn();
+const mockSideBandWidth = jest.fn();
 jest.mock('../../api/client', () => ({ createApiClient: () => ({ listPersistentSessions: mockList }) }));
 jest.mock('../../screens/SettingsScreen', () => ({ SettingsScreen: jest.fn((props: any) => {
   const { useDuoSideBand } = require('../duoSideBand');
@@ -15,7 +17,10 @@ jest.mock('../../screens/SettingsScreen', () => ({ SettingsScreen: jest.fn((prop
   useRegisterDuoRailOverride('entry-settings', useDuoSideBand(), [{ id: 'close', label: '설정 닫기', icon: 'close', onPress: props.onClose }]);
   return null;
 }) }));
-jest.mock('../../components/AppModalSurface', () => ({ AppModalSurface: ({ children, sideBand }: any) => <>{children}{sideBand}</> }));
+jest.mock('../../components/AppModalSurface', () => ({ AppModalSurface: ({ children, sideBand, sideBandWidth }: any) => {
+  mockSideBandWidth(sideBandWidth);
+  return <>{children}{sideBand}</>;
+} }));
 import { SettingsScreen } from '../../screens/SettingsScreen';
 import { DuoSideBandContext } from '../tabContract';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
@@ -26,6 +31,7 @@ const pas = (id: string) => ({ session_id: id, persistent: true, display_name: i
 const defaults = { node_id: 'test', preferred_agent_id: 'roselin' };
 beforeEach(() => {
   mockList.mockReset();
+  mockSideBandWidth.mockClear();
   jest.mocked(SettingsScreen).mockClear();
   useAuthStore.setState({ jwt: 'public.' + Buffer.from(JSON.stringify({email: 'review@public.invalid'})).toString('base64url') + '.fixture' });
   useSettingsStore.setState({ serverUrl: 'https://public.invalid', persistentSessionDevicePrefs: {} });
@@ -127,6 +133,29 @@ test('선택 진입 실패 뒤 재시도도 선택 상태를 유지한다', asyn
   await act(async () => { fireEvent.press(view.getByLabelText('영구 세션 다시 조회')); });
   expect(view.getByTestId('persistent-entry-one')).toBeTruthy();
   expect(view.getByTestId('persistent-entry-two')).toBeTruthy();
+});
+
+test.each(['choose', 'error'] as const)('듀오 PAS 선택 %s 시트는 84pt 시스템 밴드 폭을 예약한다', async (kind) => {
+  mockList.mockResolvedValue({ sessions: [pas('one'), pas('two')], create_defaults: defaults });
+  if (kind === 'error') mockList.mockRejectedValueOnce(new Error('offline'));
+  const view = render(<SafeAreaInsetsContext.Provider value={{ top: 24, bottom: 24, left: 0, right: 84 }}>
+    <DuoSideBandContext.Provider value={true}><PersistentSessionProvider><Probe /></PersistentSessionProvider></DuoSideBandContext.Provider>
+  </SafeAreaInsetsContext.Provider>);
+
+  await act(async () => { await host.requestEntry(jest.fn(), false, true); });
+
+  expect(view.getByTestId(kind === 'choose' ? 'persistent-entry-one' : 'persistent-entry-error')).toBeTruthy();
+  expect(mockSideBandWidth).toHaveBeenLastCalledWith(84);
+});
+
+test('초상화 이미지 로드 실패 시 세션 이니셜 원형을 표시한다', () => {
+  const view = render(<PersistentSessionPortrait session={{ ...pas('one'), agent_name: '로젤린' } as any} size={32} />);
+  const image = view.UNSAFE_getByType(Image);
+
+  fireEvent(image, 'error');
+
+  expect(view.UNSAFE_queryByType(Image)).toBeNull();
+  expect(view.getByText('로')).toBeTruthy();
 });
 test('시작 실패는 홈 안내, 수동 실패는 오류와 같은 입구 재시도이며 0개로 처리하지 않는다', async () => {
   mockList.mockRejectedValue(new Error('offline'));

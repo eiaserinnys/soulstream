@@ -87,10 +87,11 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
   const phoneChat = phone && view === 'chat';
   const api = useMemo(() => createReviewApi('normal', { entryShell: true }), []);
   useEffect(() => installEntryShellPublicHarness(), []);
-  return <PersistentSessionProvider><ContentLinkProvider>
+  return <ContentLinkProvider>
     <SafeAreaFrameContext.Provider value={{ x: 0, y: 0, width: frame.width, height: frame.height }}>
       <SafeAreaInsetsContext.Provider value={frame.insets}>
         <DuoSideBandContext.Provider value={duo}>
+          <PersistentSessionProvider>
           <NavigationContainer ref={navigationRef} onReady={() => {
             if (phoneChat) navigationRef.navigate('FeedTab', { screen: 'Chat', params: { sessionId: 'public-shell-session-0' } });
             if (!phone && params.get('overlay') === 'card-with-chat') useUIStore.getState().openCardOverlay(sampleCardId, 'public-shell-session-0');
@@ -119,10 +120,11 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
             </View>
             <EntryShellAlertHarness />
           </NavigationContainer>
+          </PersistentSessionProvider>
         </DuoSideBandContext.Provider>
       </SafeAreaInsetsContext.Provider>
     </SafeAreaFrameContext.Provider>
-  </ContentLinkProvider></PersistentSessionProvider>;
+  </ContentLinkProvider>;
 }
 
 function DuoPasCardOverlayStage({ reportsEmpty = false, initialReportsScene = false, onOpenPhoneCard }: {
@@ -185,11 +187,11 @@ function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { fr
   const frameRect: Rect = { x: 0, y: 0, width: frame.width, height: frame.height };
   const duoSideBand = frame.insets.right >= RAIL_MIN_INSET_WIDTH && frame.insets.left === 0;
   const compact = duoSideBand && frame.width > frame.height;
-  return <PersistentSessionProvider>
-    <SafeAreaFrameContext.Provider value={frameRect}>
+  return <SafeAreaFrameContext.Provider value={frameRect}>
       <SafeAreaInsetsContext.Provider value={frame.insets}>
         <PhoneRailModeContext.Provider value={frame.rail}>
           <DuoSideBandContext.Provider value={duoSideBand}>
+          <PersistentSessionProvider>
           <NavigationContainer>
           <View style={{ flex: 1, flexDirection: 'row', width: frame.width, height: frame.height, overflow: 'hidden' }}>
             <SafeAreaInsetsContext.Provider value={frame.rail ? { ...frame.insets, right: 0 } : frame.insets}>
@@ -210,11 +212,11 @@ function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { fr
           </View>
           <EntryShellAlertHarness />
           </NavigationContainer>
+          </PersistentSessionProvider>
           </DuoSideBandContext.Provider>
         </PhoneRailModeContext.Provider>
       </SafeAreaInsetsContext.Provider>
-    </SafeAreaFrameContext.Provider>
-  </PersistentSessionProvider>;
+    </SafeAreaFrameContext.Provider>;
 }
 
 function DuoPasReviewRail({ duoSideBand, compact }: { duoSideBand: boolean; compact: boolean }) {
