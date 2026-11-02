@@ -20,9 +20,14 @@ jest.mock('../../screens/RecurringJobEditorScreen', () => ({ RecurringJobEditorS
 jest.mock('../../screens/RecurringJobHistoryScreen', () => ({ RecurringJobHistoryScreen: () => null }));
 jest.mock('../../components/planner/FolderWorkspace', () => ({ FolderWorkspace: () => null }));
 jest.mock('../../components/planner/MarkdownDocumentContent', () => ({ MarkdownDocumentContent: () => null }));
-jest.mock('../../components/planner/CardDetailSheet', () => ({ CardDetailContent: ({ cardId }: { cardId: string }) => {
+jest.mock('../../components/planner/CardDetailSheet', () => ({ CardDetailContent: ({ cardId, onOpenSession }: { cardId: string; onOpenSession?: (id: string) => void }) => {
   const draft = require('../../hooks/usePersistentDraft').usePersistentDraft('card-comment', [cardId], '');
-  return require('react').createElement(require('react-native').TextInput, { testID: 'card-draft', value: draft.value, editable: draft.ready, onChangeText: draft.setValue });
+  const ReactModule = require('react');
+  const { View, TextInput, Pressable } = require('react-native');
+  return ReactModule.createElement(View, null,
+    ReactModule.createElement(TextInput, { testID: 'card-draft', value: draft.value, editable: draft.ready, onChangeText: draft.setValue }),
+    onOpenSession ? ReactModule.createElement(Pressable, { testID: 'open-card-session', onPress: () => onOpenSession('card-session') }) : null,
+  );
 } }));
 jest.mock('../../components/split/SplitLayout', () => ({ SplitLayout: () => {
   const React = require('react');
@@ -53,6 +58,7 @@ import { useAuthStore } from '../../store/authStore';
 import { usePlannerStore } from '../../store/plannerStore';
 import { useSessionStore } from '../../store/sessionStore';
 import { resetPlannerSessionResolverForTest } from '../../lib/planner-folder-workspace';
+import { openPreviousPhonePanel } from '../phoneSessionNavigation';
 
 const mockApi = { getSessionsByIds: jest.fn(), listCards: jest.fn(), getPlannerFolder: jest.fn() };
 beforeEach(() => {
@@ -112,6 +118,63 @@ test.each(['Chat', 'CardDetail', 'FolderWorkspace', 'MarkdownDocument', 'Setting
     if (target === 'Settings') expect(continuity.getViewState<any>(JSON.stringify(['settings','workspace'])).jobs.jobId).toBe('job-a');
     view.unmount();
   });
+
+test.each(['DailyTab', 'FolderTab', 'PersistentTab'] as const)(
+  '카드 세션에서 연 Chat은 %s 출발로 두 번 접었다 펴도 카드와 복귀 탭을 보존한다', async origin => {
+    const navigation = createNavigationContainerRef<any>();
+    let host!: ReturnType<typeof usePersistentSessionHost>;
+    function Capture() { host = usePersistentSessionHost(); return null; }
+    const shell = (device: 'phone' | 'tabletPortrait') =>
+      <PersistentSessionProvider><LayoutContinuityProvider><Capture />
+        <AdaptiveNavigationHost device={device} containerRef={navigation} />
+      </LayoutContinuityProvider></PersistentSessionProvider>;
+    const view = render(shell('phone'));
+    await waitFor(() => expect(navigation.isReady()).toBe(true));
+
+    if (origin === 'FolderTab') {
+      act(() => navigation.navigate('FolderTab', { screen: 'FolderWorkspace', params: { folderPageId: 'page-a', folderTitle: '폴더', folderId: 'folder-a' } }));
+      await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('FolderWorkspace'));
+      act(() => navigation.navigate('FolderTab', { screen: 'CardDetail', params: { cardId: 'card-a' } }));
+    } else if (origin === 'DailyTab') {
+      act(() => navigation.navigate('DailyTab', { screen: 'CardDetail', params: { cardId: 'card-a' } }));
+    } else {
+      act(() => {
+        host.store.getState().open({ session_id: 'pas-a' } as any);
+        host.store.getState().selectCard('card-a');
+        navigation.navigate('PersistentTab', { screen: 'CardDetail', params: { cardId: 'card-a' } });
+      });
+    }
+    await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('CardDetail'));
+    fireEvent.press(view.getByTestId('open-card-session'));
+    await waitFor(() => expect(navigation.getCurrentRoute()).toMatchObject({
+      name: 'Chat', params: { sessionId: 'card-session', returnTab: origin },
+    }));
+
+    for (let cycle = 0; cycle < 2; cycle += 1) {
+      await act(async () => { view.rerender(shell('tabletPortrait')); });
+      await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('Main'));
+      expect(useUIStore.getState()).toMatchObject({ selectedCardId: 'card-a', activeSessionId: 'card-session' });
+
+      await act(async () => { view.rerender(shell('phone')); });
+      await waitFor(() => expect(navigation.getCurrentRoute()).toMatchObject({
+        name: 'Chat', params: { sessionId: 'card-session', returnTab: origin },
+      }));
+      const root = navigation.getRootState();
+      const feed = root.routes.find((route: any) => route.name === 'FeedTab')!.state!;
+      expect(feed.routes[feed.index!]!).toMatchObject({ name: 'Chat', params: { sessionId: 'card-session' } });
+    }
+
+    const chatReturnTab = (navigation.getCurrentRoute()?.params as { returnTab?: typeof origin } | undefined)?.returnTab ?? origin;
+    act(() => openPreviousPhonePanel({ getParent: () => navigation, goBack: () => navigation.goBack() }, chatReturnTab));
+    await waitFor(() => expect(navigation.getCurrentRoute()).toMatchObject({ name: 'CardDetail', params: { cardId: 'card-a' } }));
+    expect(navigation.getRootState().routes[navigation.getRootState().index!].name).toBe(origin);
+
+    act(() => navigation.goBack());
+    const sourceRoute = origin === 'DailyTab' ? 'Daily' : origin === 'FolderTab' ? 'FolderWorkspace' : 'PersistentSession';
+    await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe(sourceRoute));
+    view.unmount();
+  },
+);
 
 test('tablet overlay closure and a newer selection win over the old phone snapshot', async () => {
   const navigation = createNavigationContainerRef<any>();

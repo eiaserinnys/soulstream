@@ -214,6 +214,9 @@ export function readPhoneLocation(
     case 'Search':
       return { originTab, kind: 'search', initialQuery: stringParam(top.params, 'initialQuery') };
     case 'Chat': {
+      const sessionId = stringParam(top.params, 'sessionId') ?? '';
+      const previous = context.previousLocation;
+      const sameChat = previous?.kind === 'chat' && previous.sessionId === sessionId ? previous : undefined;
       const returnTab = isPhoneTab(top.params?.returnTab) ? top.params?.returnTab : undefined;
       const contextTab = returnTab ?? originTab;
       const contextRoutes = contextTab === originTab ? routes : stackRoutesInTab(state, contextTab);
@@ -221,13 +224,13 @@ export function readPhoneLocation(
       return {
         originTab,
         kind: 'chat',
-        sessionId: stringParam(top.params, 'sessionId') ?? '',
+        sessionId,
         focusEventId: numberParam(top.params, 'focusEventId'),
         storyOpenRequestId: numberParam(top.params, 'storyOpenRequestId'),
         usageEntry,
         returnTab,
         folder: folder ?? lastFolder(contextRoutes, context.folderById) ?? folderOfLocation(context.previousLocation),
-        cardId: cardId ?? lastCardId(contextRoutes),
+        cardId: cardId ?? lastCardId(contextRoutes) ?? sameChat?.cardId,
       };
     }
     case 'CardDetail': {
