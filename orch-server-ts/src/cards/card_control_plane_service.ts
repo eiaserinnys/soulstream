@@ -20,6 +20,7 @@ import { CardMcpReadService } from "./card_mcp_read.js";
 import { randomUUID } from "node:crypto";
 import { generateKeyBetween } from "@soulstream/fractional-position";
 import { CardRepository } from "./control_plane/card_repository.js";
+import { isCardOffBoard } from "./control_plane/card_types.js";
 import { CardMutationCore, type FolderMutateParams } from "./control_plane/card_mutation_core.js";
 import { CardVersionConflict, assigneeToFields, type CardAssigneeInput } from "./control_plane/card_models.js";
 import type { CardRow, CardStatus, CardMutationResult, FolderOperationRow, SqlClient, RepositorySql, FolderActorParams, FolderDbPort, FolderBroadcasterPort, FolderStatus } from "./control_plane/card_types.js";
@@ -560,10 +561,9 @@ export class CardControlPlaneService {
         const cardChanged = previousStatus !== committedCard?.status || previousCard?.title !== committedCard?.title
           || previousCard?.archived !== committedCard?.archived || JSON.stringify(previousCard?.now) !== JSON.stringify(committedCard?.now);
         if (!this.reports || (!questionChanged && !cardChanged)) return;
-        const finished = previousStatus !== committedCard?.status
-          && (committedCard?.status === "done" || committedCard?.status === "cancelled");
+        const leftBoard = previousStatus !== committedCard?.status && committedCard !== undefined && isCardOffBoard(committedCard.status);
         try {
-          await this.reports.syncCard(card.id,{ scanBoards:questionChanged || finished });
+          await this.reports.syncCard(card.id,{ scanBoards:questionChanged || leftBoard });
           if (previousStatus !== committedCard?.status) await this.reports.recordCardTimeline(card.id);
         }
         catch (error) { this.warn(`PAS report sync failed after card ${card.id} committed: ${String(error)}`); }

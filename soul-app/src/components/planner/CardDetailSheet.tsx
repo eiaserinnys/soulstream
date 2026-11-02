@@ -140,7 +140,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
   const allConfirmed = itemSummary.total > 0 && itemSummary.unconfirmed.length === 0;
   const needsReview = itemSummary.needsReview;
   const tabletLandscape = tablet && windowWidth > windowHeight;
-  const startable = card?.status === 'todo' || card?.status === 'queued';
+  const startable = card?.status === 'todo' || card?.status === 'queued' || card?.status === 'on_hold';
   const startPhase = statusAction.execution?.phase;
   const actionLabel = startPhase === 'pending' ? '시작 중…' : startPhase ? (startPhase === 'delayed' ? '다시 확인' : '다시 시도') : startable ? '시작하기' : '완료';
   const timelineStamp = detail ? `${detail.questions.length}:${detail.reports.length}:${detail.comments?.filter((comment) => comment.kind !== 'note').length ?? 0}` : '';

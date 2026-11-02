@@ -192,10 +192,11 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
           </div>
           {(entries.length > 1 || completionEligible || acknowledgeable || entry.options.length > 0 || answered) && <div className="pas-report-footer">
             {(completionEligible || acknowledgeable || entry.options.length > 0) && !(answered && sizing.overflowing && !completionEligible) && <div className="chat-ui-actions pas-report-actions" aria-hidden={suppressActions || undefined} inert={suppressActions || undefined} style={suppressActions ? { visibility: 'hidden' } : undefined}>
-              {(completionEligible ? ['완료'] : acknowledgeable ? ['확인했어'] : entry.options).map(option => <Button key={option} variant="outline" disabled={disabled || sending.sending || (completionEligible && completion.busy)} onClick={() => {
+              {(completionEligible ? ['완료','보류'] : acknowledgeable ? ['확인했어'] : entry.options).map(option => <Button key={option} variant="outline" disabled={disabled || sending.sending || (completionEligible && completion.busy)} onClick={() => {
                 if (completionEligible) {
                   const nextKey = entries[position + 1]?.key ?? entries[position - 1]?.key ?? null;
-                  void completion.complete(cardEntry as ReportCardEntry & { card_id: string; card_numbers: number[] }, entries).then(done => {
+                  const target = option === '보류' ? 'on_hold' : 'done';
+                  void completion.complete(cardEntry as ReportCardEntry & { card_id: string; card_numbers: number[] }, entries, target).then(done => {
                     if (done && nextKey && report.visibleKey === entry.key) selectKey(nextKey);
                   });
                 } else if (acknowledgeable) {

@@ -9,7 +9,7 @@ function preview(row:Record<string,unknown>):CardPreview|undefined {
  const text=cardActivityPreview({body:activity.body,format:activity.format},true).slice(0,500);
  return text?{kind:activity.kind==='report'?'report':'instruction',text}:undefined;
 }
-export const cardStatuses=['todo','queued','blocked','running','review','done','cancelled'] as const;
+export const cardStatuses=['todo','queued','blocked','running','review','on_hold','done','cancelled'] as const;
 export function projectCards(payload:unknown,limit=100){
  if(!payload||typeof payload!=='object'||!Array.isArray((payload as {cards?:unknown}).cards))throw new Error('Invalid cards response');
  const rows=(payload as {cards:unknown[]}).cards;

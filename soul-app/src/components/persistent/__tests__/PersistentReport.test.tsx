@@ -180,7 +180,7 @@ test('review cards use complete while blocked cards keep acknowledge and the dis
 });
 
 test('card questions keep their options; undo appears on the current card and on the empty deck', async () => {
-  const completion = { recent: { cardId: 'card-531', number: 531, label: '#531 완료됨', expiresAt: Date.now() + 5000 }, busy: false,
+  const completion = { recent: { cardId: 'card-531', number: 531, target: 'done' as const, label: '#531 완료됨', expiresAt: Date.now() + 5000 }, busy: false,
     complete: jest.fn(), undo: jest.fn().mockResolvedValue(true) };
   const question = { ...reportReviewEntries[2], key: 'cq_question', kind: 'ask' as const, options: ['확인', '보류'],
     card_id: 'card-531', card_status: 'review' };
@@ -202,7 +202,7 @@ test('card questions keep their options; undo appears on the current card and on
 test('tablet navigation lifts above the visible completion undo row', () => {
   mockDevice = 'tablet';
   const t = renderHook(() => useTokens()).result.current;
-  const completion = { recent: { cardId: 'card-531', number: 531, label: '#531 완료됨', expiresAt: Date.now() + 5000 }, busy: false,
+  const completion = { recent: { cardId: 'card-531', number: 531, target: 'done' as const, label: '#531 완료됨', expiresAt: Date.now() + 5000 }, busy: false,
     complete: jest.fn(), undo: jest.fn() };
   const review = { ...reportReviewEntries[2], key: 'card_531', card_id: 'card-531', card_status: 'review' };
   const screen = pager([review, reportReviewEntries[0]], undefined, completion);
@@ -214,7 +214,7 @@ test('tablet navigation lifts above the visible completion undo row', () => {
 
 test('empty bubble undo deck has no measured report height', () => {
   const t = renderHook(() => useTokens()).result.current;
-  const completion = { recent: { cardId: 'card-531', number: 531, label: '#531 완료됨', expiresAt: Date.now() + 5000 }, busy: false,
+  const completion = { recent: { cardId: 'card-531', number: 531, target: 'done' as const, label: '#531 완료됨', expiresAt: Date.now() + 5000 }, busy: false,
     complete: jest.fn(), undo: jest.fn() };
   const screen = pager([], undefined, completion, { bubble: true, maxHeight: 440 });
   const deckStyle = StyleSheet.flatten(screen.getByTestId('report-deck').props.style);
@@ -1000,6 +1000,36 @@ test('consecutive completions hide each card immediately and undo restores only 
 
   expect(screen.getByTestId('report-sheet-card_532')).toBeTruthy();
   expect(screen.queryByTestId('report-sheet-card_531')).toBeNull();
+  expect(screen.queryByTestId('report-undo-label')).toBeNull();
+});
+
+test('review card holds through the second action and undo returns it to review', async () => {
+  const api = completionApi([531]);
+  const entries = [cardEntry(531)];
+  const send = { busy: false, close: jest.fn(() => true), canCancel: () => false, cancelSent: () => false,
+    cancel: jest.fn(), sendOption: jest.fn() } as any;
+  function Harness() {
+    const [index, setIndex] = React.useState(0);
+    const completion = usePersistentCardCompletion(api);
+    return <ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true as const })}>
+      <PersistentReportPager entries={entries} index={index} api={api} onSelect={setIndex}
+        onDismiss={jest.fn().mockResolvedValue(undefined)} onFocusComposer={jest.fn()} completion={completion} send={send} />
+    </ChatUiControllerProvider>;
+  }
+  const screen = render(<Harness />);
+  measurePersistentReports(screen);
+  const sheet = screen.getByTestId('report-sheet-card_531');
+  expect(within(sheet).getByLabelText('완료')).toBeTruthy();
+  expect(within(sheet).getByLabelText('보류')).toBeTruthy();
+
+  await act(async () => { fireEvent.press(within(sheet).getByLabelText('보류')); });
+  expect(api.setCardStatus).toHaveBeenLastCalledWith('card-531', 'on_hold', 1, 'soul-app-card-report-operation-id', undefined);
+  expect(screen.queryByTestId('report-sheet-card_531')).toBeNull();
+  expect(screen.getByTestId('report-undo-label').props.children).toBe('#531 보류됨');
+
+  await act(async () => { fireEvent.press(screen.getByTestId('report-undo')); });
+  expect(api.setCardStatus).toHaveBeenLastCalledWith('card-531', 'review', 2, 'soul-app-card-report-operation-id', undefined);
+  expect(screen.getByTestId('report-sheet-card_531')).toBeTruthy();
   expect(screen.queryByTestId('report-undo-label')).toBeNull();
 });
 

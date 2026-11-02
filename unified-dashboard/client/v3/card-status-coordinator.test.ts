@@ -15,7 +15,7 @@ describe("shared card transition contract", () => {
   await performCardTransition(control,"blocked");await performCardTransition(control,"running");await performCardTransition(control,"review");
   expect(change).toHaveBeenCalledTimes(3);
  });
- it.each(["todo","queued","running","review","done","cancelled"] as const)("allows %s despite an unanswered question",async status=>{
+ it.each(["todo","queued","running","review","on_hold","done","cancelled"] as const)("allows %s despite an unanswered question",async status=>{
   const latest={...reviewDetail,card:{...reviewDetail.card,status:"blocked" as const,blockedKind:"question" as const},questions:[{id:"q",text:"질문",answer:null,options:null,askedAt:"",answeredAt:null}]};
   const change=vi.fn().mockResolvedValue(undefined);
   await performCardTransition({pending:false,load:vi.fn().mockResolvedValue(latest),change},status);

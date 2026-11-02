@@ -114,7 +114,7 @@
     "system",
     "trello_watcher"
   ],
-  "x-soulstream-card-statuses": ["todo", "queued", "blocked", "running", "review", "done", "cancelled"],
+  "x-soulstream-card-statuses": ["todo", "queued", "blocked", "running", "review", "on_hold", "done", "cancelled"],
   "x-soulstream-board-item-types": [
     "session",
     "markdown",

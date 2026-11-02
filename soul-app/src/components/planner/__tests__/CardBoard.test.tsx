@@ -10,13 +10,13 @@ import { CompletedCardsToggle } from '../CompletedCardsToggle';
 import { ReviewBoardActions } from '../../../component-review/ReviewBoardActions';
 import { useCardStore } from '../../../store/cardStore';
 
-const cards = (['todo', 'queued', 'running', 'blocked', 'review', 'done', 'cancelled'] as const)
+const cards = (['todo', 'queued', 'running', 'blocked', 'review', 'on_hold', 'done', 'cancelled'] as const)
   .map((status) => cardFixture({ id: status, title: status, status }));
 
-test('7열 순서와 개수를 유지하고 보관은 보드에서 제외한다', () => {
+test('8열 순서와 개수를 유지하고 보관은 보드에서 제외한다', () => {
   const screen = render(<CardBoard api={null} cards={[...cards, cardFixture({ id: 'archived', archived: true })]} onOpen={() => {}} />);
   expect(screen.getAllByTestId(/^card-board-column-/).map((column) => column.props.testID))
-    .toEqual(['todo', 'queued', 'running', 'blocked', 'review', 'done', 'cancelled'].map((status) => `card-board-column-${status}`));
+    .toEqual(['todo', 'queued', 'running', 'blocked', 'review', 'on_hold', 'done', 'cancelled'].map((status) => `card-board-column-${status}`));
   expect(screen.queryByTestId('card-board-stages')).toBeNull();
   for (const [status, label] of [['todo', '드래프트'], ['review', '검수 대기']] as const) {
     const lane = within(screen.getByTestId(`card-board-column-${status}`));
@@ -28,6 +28,8 @@ test('7열 순서와 개수를 유지하고 보관은 보드에서 제외한다'
     expect(lane.getByTestId(`postit-card-${status}`)).toBeTruthy();
   }
   expect(screen.getByTestId('postit-card-cancelled')).toBeTruthy();
+  expect(within(screen.getByTestId('card-board-column-on_hold')).getAllByText('보류').length).toBeGreaterThan(0);
+  expect(screen.getByTestId('postit-card-on_hold')).toBeTruthy();
   expect(screen.queryByTestId('postit-card-archived')).toBeNull();
   expect(screen.getByTestId('card-board-count-done').props.children).toBe('1개 표시');
 });
@@ -44,6 +46,7 @@ test('폴더 행/보드의 같은 controlled 옵션은 완료만 숨기고 숨�
   expect(screen.getByTestId('card-row-cancelled')).toBeTruthy();
   expect(screen.queryByTestId('card-board-column-done')).toBeNull();
   expect(screen.queryByTestId('card-board-column-cancelled')).toBeNull();
+  expect(screen.getByTestId('card-board-column-on_hold')).toBeTruthy();
   fireEvent.press(screen.getByLabelText('완료·취소 숨김'));
   expect(screen.getByTestId('card-row-done')).toBeTruthy();
   expect(screen.getByTestId('postit-card-done')).toBeTruthy();
@@ -53,7 +56,7 @@ test('폴더 행/보드의 같은 controlled 옵션은 완료만 숨기고 숨�
 
 test.each([{ items: [] }, { items: cards.filter((card) => card.status === 'done') }])('expanded 보드는 완료 0개/전부 완료에도 기존 5개 빈 레인을 유지한다', ({ items }) => {
   const screen = render(<CardBoard api={null} cards={items} includeCompleted={false} hideEmptyLanes={false} onOpen={() => {}} />);
-  expect(screen.getAllByTestId(/^card-board-column-/)).toHaveLength(5);
+  expect(screen.getAllByTestId(/^card-board-column-/)).toHaveLength(6);
   expect(screen.queryByTestId('postit-card-done')).toBeNull();
   expect(screen.getAllByText('카드가 없습니다.').length).toBeGreaterThanOrEqual(5);
 });

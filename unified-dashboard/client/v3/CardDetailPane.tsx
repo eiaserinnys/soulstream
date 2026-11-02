@@ -58,7 +58,7 @@ export function CardDetailPane(props:CardDetailPaneProps) {
  const hasCheckItems=Boolean(card?.items?.length);
  const allChecked=hasCheckItems&&itemSummary.activeCount===0;
  const targetItem=targetItemId===null?undefined:card?.items?.find(item=>item.id===targetItemId);
- const startable=card?.status==='todo'||card?.status==='queued';
+ const startable=card?.status==='todo'||card?.status==='queued'||card?.status==='on_hold';
  const actionLabel=allChecked?'완료':execution?.phase==='pending'?'시작 중…':execution?(execution.phase==='delayed'?'다시 확인':'다시 시도'):startable?'시작하기':'완료';
  const sessionIds=useMemo(()=>[...new Set([...(initialSessionId?[initialSessionId]:[]),...(card?.assigneeSessionId ? [card.assigneeSessionId]:[]),...(detail?.sessions.map(session=>session.sessionId)??[])])],[card?.assigneeSessionId,detail?.sessions,initialSessionId]);
  const assignee=catalog?.sessionList?.find(session=>session.agentSessionId===card?.assigneeSessionId) ?? detail?.sessions.find(session=>session.sessionId===card?.assigneeSessionId);

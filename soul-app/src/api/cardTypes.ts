@@ -28,7 +28,7 @@ export type CardAttachmentEvidence =
   | { type: 'image' | 'link'; url: string; label: string }
   | CardAttachmentAssetEvidence;
 
-export type CardStatus = 'todo' | 'queued' | 'blocked' | 'running' | 'review' | 'done' | 'cancelled';
+export type CardStatus = 'todo' | 'queued' | 'blocked' | 'running' | 'review' | 'on_hold' | 'done' | 'cancelled';
 export interface CardAttachment {
   nodeId: string;
   path: string;

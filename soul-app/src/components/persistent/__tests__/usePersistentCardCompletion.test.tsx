@@ -81,8 +81,21 @@ test('completion moves a review card to done and clears its undo row after five 
   expect(getCard).toHaveBeenCalledTimes(1);
   expect(setCardStatus).toHaveBeenCalledTimes(1);
   expect(setCardStatus).toHaveBeenCalledWith('card-531', 'done', 1, 'soul-app-card-completion-operation-id', undefined);
-  expect(result.current.recent).toEqual({ cardId: 'card-531', number: 531, label: '#531 완료됨', expiresAt: completedAt + 5000 });
+  expect(result.current.recent).toEqual({ cardId: 'card-531', number: 531, target: 'done', label: '#531 완료됨', expiresAt: completedAt + 5000 });
   await act(async () => { await jest.advanceTimersByTimeAsync(5000); });
+  expect(result.current.recent).toBeNull();
+  unmount();
+});
+
+test('holds a review card and undo expects the held state before returning to review', async () => {
+  jest.useFakeTimers();
+  const { api, entry, setCardStatus } = completionHarness();
+  const { result, unmount } = renderHook(() => usePersistentCardCompletion(api));
+  await act(async () => { await result.current.complete(entry, [entry], 'on_hold'); });
+  expect(setCardStatus).toHaveBeenLastCalledWith('card-531', 'on_hold', 1, 'soul-app-card-completion-operation-id', undefined);
+  expect(result.current.recent).toMatchObject({ target: 'on_hold', label: '#531 보류됨' });
+  await act(async () => { await result.current.undo(); });
+  expect(setCardStatus).toHaveBeenLastCalledWith('card-531', 'review', 2, 'soul-app-card-completion-operation-id', undefined);
   expect(result.current.recent).toBeNull();
   unmount();
 });
@@ -108,7 +121,7 @@ test('a second completion replaces the undo row and keeps it for its own five se
   const startedAt = Date.now();
 
   await act(async () => { await result.current.complete(entryA, [entryA, entryB]); });
-  expect(result.current.recent).toEqual({ cardId: 'card-531', number: 531, label: '#531 완료됨', expiresAt: startedAt + 5000 });
+  expect(result.current.recent).toEqual({ cardId: 'card-531', number: 531, target: 'done', label: '#531 완료됨', expiresAt: startedAt + 5000 });
   await act(async () => { await jest.advanceTimersByTimeAsync(3000); });
   await act(async () => { await result.current.complete(entryB, [entryA, entryB]); });
   expect(result.current.recent?.label).toBe('#532 완료됨');
@@ -177,7 +190,7 @@ test('a failed completion restores the remaining time of the previous undo row',
   await act(async () => { ok = await pending; });
 
   expect(ok).toBe(false);
-  expect(result.current.recent).toEqual({ cardId: 'card-531', number: 531, label: '#531 완료됨', expiresAt: startedAt + 5000 });
+  expect(result.current.recent).toEqual({ cardId: 'card-531', number: 531, target: 'done', label: '#531 완료됨', expiresAt: startedAt + 5000 });
   await act(async () => { await jest.advanceTimersByTimeAsync(1799); });
   expect(result.current.recent?.label).toBe('#531 완료됨');
   await act(async () => { await jest.advanceTimersByTimeAsync(2); });

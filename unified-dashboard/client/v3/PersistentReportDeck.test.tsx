@@ -38,7 +38,7 @@ const sheetButton = (host: HTMLElement, key: string, name: string) => Array.from
 let root: Root; let host: HTMLDivElement;
 const transport = vi.fn().mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null }); const notify = vi.fn(); const focusInput = vi.fn(); const openTarget = vi.fn();
 let entries: PersistentReportEntry[];
-let cardTransition: ((cardId: string, status: 'done' | 'review') => Promise<void>) | undefined;
+let cardTransition: ((cardId: string, status: 'done' | 'on_hold' | 'review') => Promise<void>) | undefined;
 let portalTarget: HTMLDivElement | null = null;
 let inlineMaxHeight: number | null = null;
 const dismiss = vi.fn(async (key: string) => { entries = entries.filter(entry => entry.key !== key); await render(); });
@@ -166,6 +166,16 @@ it('keeps completion available for a review card even with an existing answer', 
   contentHeight = 500; inlineMaxHeight = 250; await render();
   expect(host.querySelector('[data-testid="report-deck"]')?.getAttribute('data-overflow')).toBe('true');
   expect(button('완료')).toBeTruthy();
+  expect(button('보류')).toBeTruthy();
+});
+
+it('holds a review card and undoes it back to review', async () => {
+  entries = [reviewA]; cardTransition = vi.fn(async () => {}); await render();
+  await act(async () => button('보류').click());
+  expect(cardTransition).toHaveBeenNthCalledWith(1, cardRow.id, 'on_hold');
+  expect(host.textContent).toContain('#270 보류됨');
+  await act(async () => button('되돌리기').click());
+  expect(cardTransition).toHaveBeenNthCalledWith(2, cardRow.id, 'review');
 });
 
 it('keeps the existing acknowledgement on a blocked card', async () => {

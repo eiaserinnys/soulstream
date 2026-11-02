@@ -17,7 +17,7 @@ describe("display-only card status and completion action",()=>{
  beforeEach(()=>{container=document.createElement("div");document.body.append(container);root=createRoot(container);mutate.mockReset().mockResolvedValue({});loadCard.mockReset().mockResolvedValue({});useCardStore.setState({mutate,loadCard});});
  afterEach(async()=>{await act(()=>root.unmount());container.remove();useCardStore.getState().reset();vi.restoreAllMocks();});
  async function click(el:HTMLElement){await act(async()=>{el.click();});}
- it.each(["todo","queued","blocked","running","review","done","cancelled"] as const)("shows %s as a word without a status control",async status=>{
+ it.each(["todo","queued","blocked","running","review","on_hold","done","cancelled"] as const)("shows %s as a word without a status control",async status=>{
   await act(()=>root.render(<CardStatusChip card={card(status)}/>));
   const word=container.querySelector('.v3-status-chip')!;
   expect(word.tagName).toBe("SPAN");expect(word.textContent?.length).toBeGreaterThan(0);

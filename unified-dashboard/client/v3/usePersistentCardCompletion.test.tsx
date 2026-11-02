@@ -23,12 +23,12 @@ let completion: ReturnType<typeof usePersistentCardCompletion>;
 let loadCard: ReturnType<typeof vi.fn>;
 let mutate: ReturnType<typeof vi.fn>;
 const notify = vi.fn();
-function Harness({ cardTransition, entries }: { cardTransition?: (id: string, status: 'done' | 'review') => Promise<void>; entries?: PersistentReportEntry[] }) {
+function Harness({ cardTransition, entries }: { cardTransition?: (id: string, status: 'done' | 'on_hold' | 'review') => Promise<void>; entries?: PersistentReportEntry[] }) {
   completion = usePersistentCardCompletion(notify, cardTransition);
   return <div><button onClick={() => void completion.complete(entry, entries)}>완료</button><button onClick={() => void completion.complete(second, entries)}>완료B</button><button onClick={() => void completion.undo()}>되돌리기</button>
     <output>{completion.recent?.label ?? ''}</output><output>{String(completion.busy)}</output></div>;
 }
-const render = (cardTransition?: (id: string, status: 'done' | 'review') => Promise<void>, entries?: PersistentReportEntry[]) => act(async () => root.render(<Harness cardTransition={cardTransition} entries={entries} />));
+const render = (cardTransition?: (id: string, status: 'done' | 'on_hold' | 'review') => Promise<void>, entries?: PersistentReportEntry[]) => act(async () => root.render(<Harness cardTransition={cardTransition} entries={entries} />));
 
 beforeEach(async () => {
   vi.useFakeTimers(); vi.clearAllMocks();
@@ -45,7 +45,22 @@ it('loads the current card and completes once with its latest version', async ()
   await act(async () => completion.complete(entry));
   expect(loadCard).toHaveBeenCalledTimes(1); expect(loadCard).toHaveBeenCalledWith(cardId);
   expect(mutate).toHaveBeenCalledTimes(1); expect(mutate).toHaveBeenCalledWith(cardId, '/status', { status: 'done', expectedVersion: 8 });
-  expect(completion.recent).toEqual({ cardId, label: '#531 완료됨', expiresAt: completedAt + CARD_COMPLETION_UNDO_MS });
+  expect(completion.recent).toEqual({ cardId, target: 'done', label: '#531 완료됨', expiresAt: completedAt + CARD_COMPLETION_UNDO_MS });
+});
+
+it('holds a review card and undo expects on_hold before returning it to review', async () => {
+  let status: 'review' | 'on_hold' = 'review';
+  loadCard.mockImplementation(async () => ({ card: { id: cardId, status, version: 8 } } as CardDetail));
+  mutate.mockImplementation(async (_id: string, _path: string, body: { status: 'review' | 'on_hold' }) => {
+    status = body.status;
+    return { card: { id: cardId, status, version: 9 } };
+  });
+  await act(async () => completion.complete(entry, [entry], 'on_hold'));
+  expect(mutate).toHaveBeenLastCalledWith(cardId, '/status', { status: 'on_hold', expectedVersion: 8 });
+  expect(completion.recent).toMatchObject({ target: 'on_hold', label: '#531 보류됨' });
+  await act(async () => completion.undo());
+  expect(mutate).toHaveBeenLastCalledWith(cardId, '/status', { status: 'review', expectedVersion: 8 });
+  expect(completion.recent).toBeNull();
 });
 
 it('rejects completion when the latest card status is no longer review', async () => {

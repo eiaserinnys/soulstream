@@ -4,6 +4,7 @@ export const cardGroups=[
  {id:'running',label:'실행 중',statuses:['running']},
  {id:'queued',label:'대기',statuses:['queued','unknown']},
  {id:'draft',label:'드래프트',statuses:['todo']},
+ {id:'on_hold',label:'보류',statuses:['on_hold']},
  {id:'completed',label:'완료',statuses:['done','cancelled']},
 ] as const;
 export function groupWidgetCards(cards:readonly WidgetCard[]){

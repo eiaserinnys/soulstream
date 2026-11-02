@@ -409,7 +409,7 @@ test('assigned settings disappear while native status/complete and sessions rema
  expect(screen.getByTestId('card-sessions')).toBeTruthy();
 });
 
-test.each(['todo','queued'] as const)('상세 %s 시작은 접수 후 화면을 유지하고 실패 알림 없이 시작 중을 보인다',async status=>{
+test.each(['todo','queued','on_hold'] as const)('상세 %s 시작은 접수 후 화면을 유지하고 실패 알림 없이 시작 중을 보인다',async status=>{
  jest.useFakeTimers();
  const source={...card,id:`start-detail-${status}`,status};const current={...detail,card:source,questions:[]};
  const result={card:{...source,status:'running',version:5},folderId:source.folderId,execution:{requestId:`detail-${status}`,sessionId:'owner',state:'pending'}};

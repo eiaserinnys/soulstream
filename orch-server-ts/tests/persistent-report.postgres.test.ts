@@ -212,8 +212,38 @@ describe("PAS reports on production PostgreSQL schema", () => {
     expect((await reports.get('pas')).some(e=>e.key===`card_${cardId}`)).toBe(false);
     await cards.setCardStatus({...human,cardId,status:'review'});
     expect((await reports.get('pas')).some(e=>e.key===`card_${cardId}`)).toBe(true);
+    await cards.setCardStatus({...human,cardId,status:'on_hold'});
+    expect((await reports.get('pas')).some(e=>e.key===`card_${cardId}`)).toBe(false);
+    await cards.setCardStatus({...human,cardId,status:'review'});
+    expect((await reports.get('pas')).some(e=>e.key===`card_${cardId}`)).toBe(true);
     await cards.setCardStatus({...human,cardId,status:'done'});
     expect((await reports.get('pas')).some(e=>e.key===`card_${cardId}`)).toBe(false);
+  });
+  it("removes card and question entries from connected and other boards on hold, keeps the question answerable, and restores only the card entry", async () => {
+    for (const e of await reports.get('pas')) await reports.remove('pas',e.key);
+    await sql`UPDATE sessions SET agent_id='report-agent' WHERE session_id='pas'`;
+    await sql`UPDATE cards SET assignee_kind='agent',assignee_agent_id='report-agent',assignee_session_id=NULL WHERE assignee_session_id='pas'`;
+    await sql`INSERT INTO sessions(session_id,folder_id,node_id,metadata,agent_id) VALUES
+      ('pas-unrelated-on-hold','report-folder','test-node',${sql.json([{type:"persistent_session",value:{enabled:true}}])},'report-agent')`;
+    const cardId=(await cards.createCard({actorKind:'agent',actorSessionId:'pas',actorUserId:null,folderId:'report-folder',
+      title:'보류 카드 판 동기화',request:'요청',assignee:{kind:'session',sessionId:'pas'}})).operation.target_id;
+    const number=(await cards.getCard(cardId))!.card.number!;
+    await cards.setCardStatus({...human,cardId,status:'review'});
+    await cards.askQuestion({actorKind:'agent',actorSessionId:'pas',cardId,text:'질문을 남깁니다',options:['진행']});
+    const questionId=String((await cards.getCard(cardId))!.questions[0]!.id);
+    expect((await reports.putQuestion('pas',questionId)).ok).toBe(true);
+    expect((await reports.get('pas')).map(e=>e.key)).toEqual([`cq_${questionId}`]);
+    expect((await reports.put('pas-unrelated-on-hold',{...entry('ordinary-card'),card_numbers:[number]})).ok).toBe(true);
+
+    await cards.setCardStatus({...human,cardId,status:'on_hold'});
+    expect((await reports.get('pas')).some(e=>e.key===`cq_${questionId}`||e.key===`card_${cardId}`)).toBe(false);
+    expect((await reports.get('pas-unrelated-on-hold')).some(e=>e.key==='ordinary-card')).toBe(false);
+    expect((await cards.getCard(cardId))!.questions.find(q=>String(q.id)===questionId)).toMatchObject({answer:null});
+
+    await cards.answerQuestion({...human,cardId,questionId,answer:'진행'});
+    await cards.setCardStatus({...human,cardId,status:'review'});
+    expect((await reports.get('pas')).map(e=>e.key)).toEqual([`card_${cardId}`]);
+    expect((await reports.get('pas-unrelated-on-hold')).some(e=>e.key==='ordinary-card')).toBe(false);
   });
   it("links only persistent creator and operation sessions and rejects PAS-owned keys and card numbers", async () => {
     const enabled=[{type:'persistent_session',value:{enabled:true}}];

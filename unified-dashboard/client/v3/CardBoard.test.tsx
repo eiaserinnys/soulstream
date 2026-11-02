@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import { CardBoard, boardColumns } from "./CardBoard";
 import { reviewCard } from "./components-review-fixtures";
 
-it("keeps seven columns in order and hides done and cancelled together", () => {
+it("keeps eight columns in order and hides done and cancelled together", () => {
   const cards = [...boardColumns.map(({status}) => ({...reviewCard,id:status,status})),
     {...reviewCard,id:"archived",archived:true}];
   const render = (includeCompleted?: boolean) => renderToStaticMarkup(createElement(CardBoard, {
@@ -12,7 +12,7 @@ it("keeps seven columns in order and hides done and cancelled together", () => {
     completion: includeCompleted === undefined ? undefined : {includeCompleted,onChange:()=>undefined},
   }));
   const full = render();
-  expect([...full.matchAll(/data-board-column="([^"]+)"/g)].map(match => match[1])).toEqual(["todo","queued","running","blocked","review","done","cancelled"]);
+  expect([...full.matchAll(/data-board-column="([^"]+)"/g)].map(match => match[1])).toEqual(["todo","queued","running","blocked","review","on_hold","done","cancelled"]);
   expect(full).toContain("드래프트"); expect(full).toContain("검수 대기");
   expect(full).toContain('data-sample="cancelled"'); expect(full).not.toContain('data-sample="archived"');
   expect(render(false)).not.toContain('data-board-column="done"'); expect(render(false)).not.toContain('data-sample="done"');
@@ -33,6 +33,7 @@ it("hides empty lanes after applying the completed filter when requested", () =>
   const cards = [
     {...reviewCard,id:"draft",status:"todo" as const},
     {...reviewCard,id:"running",status:"running" as const},
+    {...reviewCard,id:"on-hold",status:"on_hold" as const},
     {...reviewCard,id:"done",status:"done" as const},
     {...reviewCard,id:"cancelled",status:"cancelled" as const},
     {...reviewCard,id:"archived",status:"queued" as const,archived:true},
@@ -42,10 +43,11 @@ it("hides empty lanes after applying the completed filter when requested", () =>
     completion: {includeCompleted,onChange:()=>undefined}, hideEmptyLanes:true,
   }));
   const visible = render(false);
-  expect([...visible.matchAll(/data-board-column="([^"]+)"/g)].map(match=>match[1])).toEqual(["todo","running"]);
+  expect([...visible.matchAll(/data-board-column="([^"]+)"/g)].map(match=>match[1])).toEqual(["todo","running","on_hold"]);
+  expect(visible).toContain('data-sample="on-hold"');
   expect(visible).not.toContain('data-sample="archived"');
   const completed = render(true);
-  expect([...completed.matchAll(/data-board-column="([^"]+)"/g)].map(match=>match[1])).toEqual(["todo","running","done","cancelled"]);
+  expect([...completed.matchAll(/data-board-column="([^"]+)"/g)].map(match=>match[1])).toEqual(["todo","running","on_hold","done","cancelled"]);
 });
 
 it("shows one empty-board message when every lane is hidden", () => {
