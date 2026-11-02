@@ -130,6 +130,10 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   }, [continuity, pasKey, settingsOpen, phone, expandedReportKey]);
   const [reportSeatHeight, setReportSeatHeight] = useState(0);
   const openContentLink = useOpenContentLink();
+  const openCard = React.useCallback((cardId: string) => {
+    if (phone && onOpenPhoneCard) onOpenPhoneCard(cardId);
+    else host.store.getState().selectCard(cardId);
+  }, [host.store, onOpenPhoneCard, phone]);
   const openReportCardDirectly = React.useCallback(async (entry: PersistentReportEntry) => {
     let cardId = entry.card_id ?? null;
     if (!cardId && entry.card_numbers.length === 1 && api) {
@@ -286,7 +290,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
         { configuredNodeId: session.node_id, selectedNodeId: nextNodeId });
     }} />;
   const taskList = <PersistentSessionTaskList api={api} visible={!selectedCardId}
-    onOpenCard={cardId => phone && onOpenPhoneCard ? onOpenPhoneCard(cardId) : host.store.getState().selectCard(cardId)} />;
+    onOpenCard={openCard} />;
   return <SafeAreaView testID="persistent-session-safe-area" edges={phone
     ? duoSideBand ? ['top', 'left'] : railMode ? ['top', 'bottom', 'left'] : ['top', 'left', 'right']
     : ['top', 'left', 'right']}
@@ -321,6 +325,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
         style={{ position: 'absolute', top: headerHeight, bottom: 0, left: columnLeft, width: columnWidth,
           opacity: hidePhoneConversation ? 0 : 1 }} onLayout={measureMain}>
         <ChatBody sessionId={session?.session_id} presentation="manuscript" showSessionAuxiliary={false}
+          onOpenReportCard={openCard}
           inputComposerRef={inputComposerRef} getReportSendContext={(text, reply) => report.getSendContext(text, reply, !duoSideBand || reportsScene)}
           reportView={duoSideBand ? null : geometry?.reportBubble ? null : phone ? pager : geometry && (report.entries.length > 0 || completion.recent)
             ? <View testID="persistent-session-report-inline-space" style={{ height: reportSeatHeight }} /> : null}

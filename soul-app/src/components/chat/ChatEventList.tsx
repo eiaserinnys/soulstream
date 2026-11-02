@@ -10,7 +10,9 @@ import {
 import type { ToolTraceResponse } from '../../api/client';
 import type { PersistentTurnUsageMode } from '../../api/persistentSessionEndpoints';
 import type { ChatBodyStyles } from './ChatBody.styles';
+import type { ReportTimelineLine } from '../../../../packages/wire-schema/src/persistent_report';
 import type { ChatRenderItem } from './groupChatEvents';
+import { ReportTimelineRow } from './ReportTimelineRow';
 import { EventContextMenu } from '../events/EventContextMenu';
 import { EventRenderer, type ChatMessageSession } from '../events/EventRenderer';
 import {
@@ -83,6 +85,7 @@ interface Props {
   presentation?: 'default' | 'manuscript';
   showNewMessage?: boolean;
   onPressNewMessage?: () => void;
+  onOpenReportCard?: (cardId: string) => void;
 }
 
 export const ChatEventList = memo(function ChatEventList({
@@ -110,6 +113,7 @@ export const ChatEventList = memo(function ChatEventList({
   presentation = 'default',
   showNewMessage = false,
   onPressNewMessage,
+  onOpenReportCard,
 }: Props) {
   const t = useTokens();
   const [activeSelection, setActiveSelection] = useState<{
@@ -322,6 +326,13 @@ const ChatEventRow = memo(function ChatEventRow({
     const label = item.event.data.context_reset === true ? '새 세대 · 문맥 초기화' : '새 세대';
     return <SearchFocusHighlight active={highlighted}><LabeledDivider label={label} alignmentInset={presentation === 'manuscript' ? 'content' : 'avatar'}
       {...(presentation === 'manuscript' ? { lineColor: t.persistentSession.line } : {})} /></SearchFocusHighlight>;
+  }
+  if (item.kind === 'event' && item.event.type === 'report_timeline') {
+    return <SearchFocusHighlight active={highlighted}><ReportTimelineRow
+      line={item.event.data as unknown as ReportTimelineLine}
+      presentation={presentation}
+      onOpenCard={onOpenReportCard}
+    /></SearchFocusHighlight>;
   }
   if (item.kind === 'tool') {
     return (
