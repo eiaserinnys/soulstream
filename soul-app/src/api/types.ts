@@ -242,6 +242,7 @@ export type SessionEventType =
   | 'user_message'
   | 'assistant_message'
   | 'generation_started'
+  | 'report_timeline'
   | 'turn_summary'
   | 'debug'
   | 'intervention_sent'

@@ -27,5 +27,6 @@ export const PERSISTENT_HISTORY_EVENT_TYPES = [
   'realtime_status',
   'realtime_transcript',
   'generation_started',
+  'report_timeline',
   'complete',
 ] as const;

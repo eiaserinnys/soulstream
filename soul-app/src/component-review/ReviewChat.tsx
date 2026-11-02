@@ -167,6 +167,29 @@ export const persistentChatEvents: SessionEvent[] = [
     caller_info: { source: 'browser', display_name: '디렉터님' },
   } },
   { id: '934', type: 'assistant_message', data: { text: PAS_REVIEW_ASSISTANT_RESPONSE } },
+  { id: '935', type: 'report_timeline', data: {
+    line_key: 'review-card-1', status: 'review', title: '보고 타임라인 첫 검수', detail: '담당자가 확인 중', card_id: 'review-card-1', card_number: 881,
+  } },
+  { id: '936', type: 'report_timeline', data: {
+    line_key: 'review-card-1', status: 'blocked', title: '보고 타임라인 최신 상태', detail: '답변을 기다리는 중', card_id: 'review-card-1', card_number: 881,
+  } },
+  { id: '937', type: 'user_message', data: { input_id: 'timeline-boundary', text: '이전 상태를 확인했습니다.' } },
+  { id: '938', type: 'report_timeline', data: {
+    line_key: 'review-card-1', status: 'question', title: '같은 카드의 질문 상태', detail: '대화 뒤에는 별도 줄', card_id: 'review-card-1', card_number: 881,
+  } },
+  { id: '939', type: 'report_timeline', data: {
+    line_key: 'review-card-2', status: 'done', title: '완료된 보고 카드', detail: '확인 항목을 마쳤습니다', card_id: 'review-card-2', card_number: 882,
+  } },
+  { id: '940', type: 'report_timeline', data: {
+    line_key: 'review-card-3', status: 'cancelled', title: '취소된 카드', detail: '', card_id: 'review-card-3', card_number: 883,
+  } },
+  { id: '941', type: 'report_timeline', data: {
+    line_key: 'review-card-4', status: 'on_hold', title: '보류된 카드', detail: '외부 확인 대기', card_id: 'review-card-4', card_number: 884,
+  } },
+  { id: '942', type: 'report_timeline', data: {
+    line_key: 'report-without-card', status: 'report', title: '카드 연결이 없는 보고',
+    detail: '긴 제목과 상세가 좁은 화면에서 한 줄로 말줄임됩니다', card_id: null, card_number: null,
+  } },
 ];
 const persistentWorkDetailsSample: SessionEvent = {
   id: '935',

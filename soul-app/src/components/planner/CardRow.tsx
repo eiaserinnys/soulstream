@@ -27,7 +27,7 @@ import { withAlphaColor } from '../StatusPulseDecoration';
 import { STATUS_DOT_SIZE } from '../chat/StatusDot';
 import { AttachmentReadContextProvider } from '../../navigation/ContentLinkProvider';
 
-export function CardStatusChip({ card, title = false, board = false, detail = false, colors }: { card: CardDto; title?: boolean; board?: boolean; detail?: boolean; colors?: ColorScheme }) {
+export function CardStatusChip({ card, title = false, board = false, detail = false, label, colors }: { card: CardDto; title?: boolean; board?: boolean; detail?: boolean; label?: string; colors?: ColorScheme }) {
   const t = useTokens();
   const execution = useSyncExternalStore(subscribeCardWrites, () => cardExecutionState(card.id), () => undefined);
   const palette = colors ?? t.colors;
@@ -43,8 +43,13 @@ export function CardStatusChip({ card, title = false, board = false, detail = fa
       paddingHorizontal: t.uiSpacing.xs, paddingVertical: t.uiSpacing.xxs, marginRight: t.uiSpacing.xs } : {}),
     fontWeight: '700' }} numberOfLines={1}>
     {detail ? <Ionicons name="ellipse" size={STATUS_DOT_SIZE} color={color} /> : null}{detail ? ' ' : null}
-    {execution?.phase === 'pending' ? '시작 중…' : board && card.status === 'todo' ? '드래프트' : board && card.status === 'review' ? '검수 대기'
-      : card.status === 'blocked' && card.blockedKind === 'question' ? (board ? '막힘, 질문' : '질문') : CARD_STATUS_LABEL[card.status]}
+    {label ?? (
+      execution?.phase === 'pending' ? '시작 중…'
+        : board && card.status === 'todo' ? '드래프트'
+          : board && card.status === 'review' ? '검수 대기'
+            : card.status === 'blocked' && card.blockedKind === 'question' ? (board ? '막힘, 질문' : '질문')
+              : CARD_STATUS_LABEL[card.status]
+    )}
   </Text>;
 }
 
