@@ -535,9 +535,10 @@ export class RunnerRecoveryCoordinator {
       return;
     }
     if (disposition === "already_reaped") {
+      const recoveryTask = requireRecoveryTask(task, registration);
       await terminalizeReapedRunner({
         registration,
-        task: requireRecoveryTask(task, registration),
+        task: recoveryTask,
         hydrate: (owned) => (this.options.hydrate ?? hydrateRunnerRegistration)(
           owned,
           phaseObservation,
@@ -546,6 +547,8 @@ export class RunnerRecoveryCoordinator {
           await this.registrationControl.terminate(owned);
         },
         invalidate: async (owned) => await this.registrationControl.invalidate(owned),
+        retireAttached: async (owned) =>
+          await this.retireAttachedTerminalAdmission(owned, recoveryTask),
         recoverOffline: async (owned, recoveredTask) =>
           (await this.recoverRegistered(
             owned,

@@ -63,6 +63,7 @@ export async function terminalizeReapedRunner(input: {
   hydrate?: (registration: RunnerRegistration) => Promise<RunnerRegistration>;
   terminate(registration: RunnerRegistration): Promise<void>;
   invalidate(registration: RunnerRegistration): Promise<void>;
+  retireAttached(registration: RunnerRegistration): Promise<boolean>;
   recoverOffline(registration: RunnerRegistration, task: Task): Promise<Task>;
   logger: Pick<Logger, "info">;
 }): Promise<void> {
@@ -74,6 +75,7 @@ export async function terminalizeReapedRunner(input: {
     );
     return;
   }
+  if (await input.retireAttached(hydrated)) return;
   if (hydrated.pidAlive) await input.terminate(hydrated);
   await input.invalidate(hydrated);
   prepareRecoveredTask(input.task, hydrated);

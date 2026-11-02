@@ -62,7 +62,7 @@ afterEach(async () => {
 });
 
 describe("RunnerProcessDispatcher", () => {
-  it.each(["replaced", "removed", "retired"] as const)(
+  it.each(["replaced", "removed", "retired", "pid-cleared"] as const)(
     "stops reconnecting after its registration is %s and releases its event stream",
     async (change) => {
       const stateDirectory = await temporaryDirectory();
@@ -113,9 +113,13 @@ describe("RunnerProcessDispatcher", () => {
                   });
                 } else if (change === "removed") {
                   await rm(runnerRegistrationIdentityPath(paths.sessionDirectory));
-                } else {
+                } else if (change === "retired") {
                   await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
                     ...identity, retiredAt: new Date().toISOString(),
+                  });
+                } else {
+                  await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+                    ...identity, pid: null, startIdentity: null,
                   });
                 }
                 throw new Error("initial socket failure");

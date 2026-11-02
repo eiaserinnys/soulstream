@@ -1001,6 +1001,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
             !identity
             || identity.registrationId !== spawned.registrationId
             || identity.retiredAt !== undefined
+            || identity.pid === null
           )
         ) {
           this.options.logger.warn(
