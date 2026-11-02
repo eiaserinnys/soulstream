@@ -19,8 +19,8 @@ export function TabletHomeComposerHost() {
   if (!visible) return null;
   return <AppKeyboardAvoidingView testID="tablet-home-composer-host" pointerEvents="box-none"
     behavior="padding" style={StyleSheet.absoluteFill}>
-    <View pointerEvents="box-none" style={{ flex: 1, justifyContent: 'flex-end', alignItems: 'center', paddingBottom: t.uiSpacing.md }}>
-      <FloatingSessionComposer api={api} style={{ width: '60%' }} onCoveredHeightChange={setInset}
+    <View pointerEvents="box-none" style={{ flex: 1, justifyContent: 'flex-end', paddingBottom: t.uiSpacing.md }}>
+      <FloatingSessionComposer api={api} composerStyle={{ width: '60%', alignSelf: 'center' }} triggerStyle={{ paddingRight: t.foundation.pageInset }} onCoveredHeightChange={setInset}
         onSessionCreated={id => useUIStore.getState().openSessionOverlay(id)} />
     </View>
   </AppKeyboardAvoidingView>;
