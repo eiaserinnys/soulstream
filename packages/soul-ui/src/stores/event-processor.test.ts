@@ -232,6 +232,31 @@ describe("processEventsBatch — dedup", () => {
     expect(result.notifications).toEqual([]);
   });
 
+  it("report_timeline 이벤트를 실제 store 경로에서 채팅 시스템 행으로 만든다", () => {
+    const ctx = createProcessingContext();
+    const event = {
+      type: "report_timeline",
+      line_key: "card-1",
+      status: "review",
+      title: "검수 요청",
+      detail: "구현이 끝났습니다.",
+      card_id: "card-1",
+      card_number: 812,
+    } as SoulSSEEvent;
+
+    const result = processEventsBatch([{ event, eventId: 14 }], ctx, null, "sess-1", null, 0);
+
+    expect(flattenTree(result.root)).toEqual([
+      expect.objectContaining({
+        role: "system",
+        content: "",
+        treeNodeType: "report_timeline",
+        reportTimeline: expect.objectContaining({ line_key: "card-1", title: "검수 요청" }),
+      }),
+    ]);
+    expect(result.maxEventId).toBe(14);
+  });
+
   it("raw Jev 기록을 입력 아래에 투영하고 늦게 온 입력에 재배치한다", () => {
     const ctx = createProcessingContext();
     const jevEvent = {

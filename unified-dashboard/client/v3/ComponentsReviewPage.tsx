@@ -45,6 +45,8 @@ import { ChatInputAccessoriesReviewSample, ChatUiMessageReviewSample } from "./C
 import { ChatUiReviewSample } from './ChatUiReviewSample';
 import { PersistentReportReviewSample } from './PersistentReportReviewSample';
 import { PersistentSessionWeeklyUsageReviewSample } from './PersistentSessionWeeklyUsageReviewSample';
+import { ReportTimelineRow } from './ReportTimelineRow';
+import type { ReportTimelineLine } from '@seosoyoung/soul-ui';
 import { ClaudeAccountPoolReviewSample, ClaudePoolPasReviewSample } from './ClaudeAccountPoolReviewSample';
 import { UsageShareRow } from "../components/usage-stats/UsageShareRow";
 import "../components/usage-stats/usage-stats.css";
@@ -302,6 +304,26 @@ export function ComponentsReviewPage() {
                 <Sample name="Manuscript activity" state="도구·생각 구간 · 접힘/펼침 · 상태 · 생각 중"><ManuscriptActivityReviewSample /></Sample>
                 <LabeledDivider label="다음 대화" />
                 <LabeledDivider label="매우 긴 구분선 라벨이 좁은 화면에서 어떻게 보이는지 확인합니다" />
+              </div>
+            </Sample>
+            <Sample name="ReportTimelineRow" state="7개 상태 · 카드 연결/없음 · content/avatar inset · 긴 글">
+              <div className="space-y-1">
+                {(["review", "blocked", "question", "done", "cancelled", "on_hold", "report"] as const).map((status) => {
+                  const line: ReportTimelineLine = {
+                    line_key: `review-${status}`, status, title: "카드 상태가 갱신되었습니다.", detail: "상황판 또는 질문이 한 줄로 표시됩니다.",
+                    card_id: "review-card-812", card_number: 812,
+                  };
+                  return <ReportTimelineRow key={status} line={line} alignmentInset="content" />;
+                })}
+                <ReportTimelineRow line={{
+                  line_key: "cardless-report", status: "report", title: "보고 카드가 없는 시스템 줄", detail: "카드 번호 없음",
+                  card_id: null, card_number: null,
+                }} alignmentInset="content" />
+                <ReportTimelineRow line={{
+                  line_key: "long-report", status: "question", title: "제목이 좁은 화면에서 한 줄로 말줄임되어야 하는 긴 카드 제목".repeat(3),
+                  detail: "상황판과 질문의 긴 세부 내용이 좁은 화면에서 한 줄로 말줄임되어야 합니다.".repeat(3),
+                  card_id: "review-card-long", card_number: 813,
+                }} alignmentInset="avatar" />
               </div>
             </Sample>
             <Sample name="CollapsibleCaption / align=start" state="기본 접힘 · 펼침 · 후보 없음 · 긴 줄 말줄임">

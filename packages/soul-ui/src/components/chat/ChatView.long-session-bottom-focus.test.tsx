@@ -1840,4 +1840,37 @@ describe("ChatView long-session initial bottom focus", () => {
 
     expect(targetMessage.classList.contains("chat-focus-ring")).toBe(true);
   });
+
+  it("report 타임라인은 도구 사이에서 갱신되고 대화 뒤에는 새 행으로 시작한다", async () => {
+    const report = (title: string, eventId: number) => ({
+      eventId,
+      event: {
+        type: "report_timeline",
+        line_key: "card-812",
+        status: "review",
+        title,
+        detail: "세부 상황",
+        card_id: "card-812",
+        card_number: 812,
+      } as unknown as SoulSSEEvent,
+    });
+    useDashboardStore.getState().processHistoryEvents([
+      report("첫 상태", 1),
+      makeToolStart(2),
+      report("도구 뒤 상태", 3),
+      makeUserMessage(4),
+      report("대화 뒤 상태", 5),
+    ]);
+    ({ container, root } = await renderChatView({ presentation: "manuscript" }));
+
+    const messages = virtuosoData().flatMap((item: any) => item.type === "single"
+      ? [item.msg]
+      : item.type === "activity-group" ? item.messages : []);
+    const reportMessages = messages.filter((message: any) => message.treeNodeType === "report_timeline");
+    expect(reportMessages).toHaveLength(2);
+    expect(reportMessages.map((message: any) => message.reportTimeline.title)).toEqual([
+      "도구 뒤 상태",
+      "대화 뒤 상태",
+    ]);
+  });
 });

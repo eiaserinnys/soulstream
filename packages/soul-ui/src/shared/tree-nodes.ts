@@ -8,6 +8,7 @@
 import type { CallerInfo, ContextItem, EventTruncation, InputRequestQuestion } from "./sse-events";
 import type { AssignedCardContextSnapshotEvent } from "@soulstream/wire-schema/assigned-card-context-snapshot";
 import type { PersistentJevCandidate } from "../lib/persistent-jev-candidates";
+import type { ReportTimelineLine } from "@soulstream/wire-schema/persistent-report";
 
 /** 트리 노드 타입 (SSE 이벤트 lifecycle → 단일 노드) */
 export type EventTreeNodeType = EventTreeNode["type"];
@@ -85,6 +86,12 @@ export interface UserMessageNode extends BaseNode, AttachmentEventSignalFields {
 /** 시스템 메시지 노드 (system_message 이벤트 → 노드) */
 export interface SystemMessageNode extends BaseNode {
   type: "system_message";
+}
+
+/** PAS report timeline event rendered as a compact system row. */
+export interface ReportTimelineNode extends BaseNode {
+  type: "report_timeline";
+  line: ReportTimelineLine;
 }
 
 /** ledger가 dedupe한 완료/후속 전달 알림 노드. */
@@ -329,6 +336,7 @@ export type EventTreeNode =
   | SessionNode
   | UserMessageNode
   | SystemMessageNode
+  | ReportTimelineNode
   | SessionNotificationNode
   | InterventionNode
   | ThinkingNode

@@ -18,6 +18,7 @@ import type {
   ErrorEvent,
   UserMessageEvent,
   SystemMessageEvent,
+  ReportTimelineEvent,
   SessionNotificationEvent,
   InterventionSentEvent,
   CompactEvent,
@@ -143,6 +144,21 @@ export function createNodeFromEvent(
       const e = event as SystemMessageEvent;
       return makeNode(`system-msg-${eventId}`, "system_message", e.text, {
         completed: true,
+      });
+    }
+
+    case "report_timeline": {
+      const e = event as ReportTimelineEvent;
+      return makeNode(`report-timeline-${eventId}`, "report_timeline", e.title, {
+        completed: true,
+        line: {
+          line_key: e.line_key,
+          status: e.status,
+          title: e.title,
+          detail: e.detail,
+          card_id: e.card_id,
+          card_number: e.card_number,
+        },
       });
     }
 

@@ -16,6 +16,7 @@ vi.mock("@seosoyoung/soul-ui", async () => {
   const React = await import("react");
   return {
     ChatView: () => React.createElement("div", { "data-testid": "chat-view" }),
+    ReportTimelineRowProvider: ({ children }: { children: ReactNode }) => children,
     useDashboardStore: Object.assign((selector: (state: { setPersistentSessionDisplaySettings: typeof setDisplaySettings }) => unknown) => selector({ setPersistentSessionDisplaySettings: setDisplaySettings, persistentReports: {}, persistentSessionDisplaySettings: settingsState.current } as any), {
       getState: () => ({ persistentReports: {}, persistentSessionDisplaySettings: settingsState.current, setPersistentReport: vi.fn() }),
     }),

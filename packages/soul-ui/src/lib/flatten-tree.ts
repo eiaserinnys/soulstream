@@ -32,7 +32,9 @@ import type {
   PersistentInstructionRecordedData,
   AttachmentEventSignalFields,
   EventTruncation,
+  ReportTimelineNode,
 } from "@shared/types";
+import type { ReportTimelineLine } from "@soulstream/wire-schema/persistent-report";
 import { mapAttachmentMessageSignals, sameAttachmentMessageSignals } from "./attachment-event-signals";
 import { extractNodeEventId } from "./event-tree-id";
 import { placeTurnSummariesAtResponseAnchors } from "./turn-summary-projection";
@@ -54,6 +56,7 @@ export interface ChatMessage extends AttachmentEventSignalFields {
   captionStats?: string;
   /** manuscript-only source data for the PAS turn usage projection. */
   contextUsageData?: ContextUsageNode["contextUsageData"];
+  reportTimeline?: ReportTimelineLine;
   turnCostUsd?: number;
   sessionCostUsd?: number;
   sessionCostPartial?: boolean;
@@ -647,6 +650,19 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
     case "generation_started": {
       const n = node as GenerationStartedNode;
       return { id: n.id, role: "system", content: n.content, timestamp: n.timestamp, treeNodeId: n.id, treeNodeType: n.type, contextReset: n.contextReset };
+    }
+
+    case "report_timeline": {
+      const n = node as ReportTimelineNode;
+      return {
+        id: n.id,
+        role: "system",
+        content: "",
+        timestamp: n.timestamp,
+        treeNodeId: n.id,
+        treeNodeType: n.type,
+        reportTimeline: n.line,
+      };
     }
 
     case "persistent_jev_candidates": {

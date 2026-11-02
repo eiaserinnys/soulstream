@@ -66,6 +66,8 @@ export { CollapsibleCaption } from "./chat/CollapsibleCaption";
 export type { CollapsibleCaptionProps } from "./chat/CollapsibleCaption";
 export { LabeledDivider } from "./chat/LabeledDivider";
 export type { LabeledDividerProps } from "./chat/LabeledDivider";
+export { ReportTimelineRowProvider, useReportTimelineRow } from "./chat/ReportTimelineRowSlot";
+export type { ReportTimelineAlignmentInset } from "./chat/ReportTimelineRowSlot";
 export { NewSessionFolderSelector } from "./NewSessionFolderSelector";
 export type { NewSessionFolderSelectorProps } from "./NewSessionFolderSelector";
 export { FileAttachmentPreview } from "./FileAttachmentPreview";

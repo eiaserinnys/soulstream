@@ -66,6 +66,7 @@ import type { PendingChatSend } from "../../stores/dashboard-store-types";
 import type { PendingChatSendActions } from "./pending-chat-send";
 import { ChatUiControllerProvider, ChatUiOperationsBridge } from "../chat-ui/ChatUiControllerProvider";
 import type { ChatUiComposerHandle, RegisterGeneratedTextActions } from "../chat-ui/chat-ui-composer";
+import { collapseReportTimeline } from "@soulstream/wire-schema/persistent-report";
 
 export interface ChatViewProps {
   registerChatUiOperations?: import('../chat-ui/chat-ui-composer').RegisterChatUiOperations;
@@ -227,7 +228,12 @@ function ChatViewContent({
           }
           : null,
       );
-      return isManuscript ? projectManuscriptMessages(visible) : visible;
+      const projected = isManuscript ? projectManuscriptMessages(visible) : visible;
+      return collapseReportTimeline(
+        projected,
+        (message) => message.reportTimeline?.line_key ?? null,
+        (message) => message.role === "user" || message.role === "assistant" || message.role === "intervention",
+      );
     },
     [isManuscript, transcriptMessages, persistentSessionDisplaySettings, activeSessionKey],
   );
