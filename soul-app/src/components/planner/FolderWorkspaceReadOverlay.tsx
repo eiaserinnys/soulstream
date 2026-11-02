@@ -313,7 +313,7 @@ export function CardDetailChatPanes({ api, cardId, active, detailWidth, onClose,
   </>;
 }
 
-export function CardPanelOverlayFrame({ visible, width, onClose, onHidden, testID = 'task-workspace', direction = 'row', chatPaneMinimumBottomPadding, children }: {
+export function CardPanelOverlayFrame({ visible, width, onClose, onHidden, testID = 'task-workspace', direction = 'row', chatPaneMinimumBottomPadding, sheetTop = 0, children }: {
   visible: boolean;
   width: number;
   onClose(): void;
@@ -321,6 +321,7 @@ export function CardPanelOverlayFrame({ visible, width, onClose, onHidden, testI
   testID?: string;
   direction?: 'row' | 'column';
   chatPaneMinimumBottomPadding?: number;
+  sheetTop?: number;
   children: React.ReactNode;
 }) {
   const t = useTokens();
@@ -347,7 +348,7 @@ export function CardPanelOverlayFrame({ visible, width, onClose, onHidden, testI
         <View testID={`${testID}-backdrop-close`} style={StyleSheet.absoluteFill} />
       </TouchableWithoutFeedback>
     </Animated.View>
-    <Animated.View testID={`${testID}-sheet`} style={[styles.sheet, { width, transform: [{ translateX }] }]}>
+    <Animated.View testID={`${testID}-sheet`} style={[styles.sheet, { width, top: sheetTop, transform: [{ translateX }] }]}>
       <AppGlassCard role="glassSoft" testID={`${testID}-sheet-surface`}
         style={[styles.sheetSurface, direction === 'column' ? styles.sheetSurfaceColumn : null]}>
         <ChatPaneMinimumBottomPaddingContext.Provider value={chatPaneMinimumBottomPadding}>

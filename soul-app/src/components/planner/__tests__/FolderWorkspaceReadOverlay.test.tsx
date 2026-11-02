@@ -150,6 +150,15 @@ test('카드 패널 프레임은 실제로 전달받은 하단 여백을 내부 
   expect(screen.getByTestId('overlay-chat').props.minimumBottomPadding).toBe(20);
 });
 
+test('카드 패널 시트는 전달받은 상단 오프셋만큼 시스템 영역 아래에서 시작한다', () => {
+  const screen = render(
+    <CardPanelOverlayFrame visible width={TABLET_SHELL_LAYOUT.folderPane.maxWidth} onClose={jest.fn()} sheetTop={82}>
+      <ChatPane active />
+    </CardPanelOverlayFrame>,
+  );
+  expect(StyleSheet.flatten(screen.getByTestId('task-workspace-sheet').props.style).top).toBe(82);
+});
+
 test('닫힌 overlay는 ChatPane mount 상태를 보존하되 active=false로 상세 연결을 막는다', () => {
   useUIStore.setState({
     activeSessionId: 'session-only',

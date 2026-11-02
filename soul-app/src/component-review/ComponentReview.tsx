@@ -310,7 +310,7 @@ function getNativeSettingsSafeAreaFixture(search: string, width: number, height:
     const insets: EdgeInsets = Math.min(width, height) < 600
       ? { top: 24, right: 84, bottom: 24, left: 0 }
       : width < height
-        ? { top: 72, right: 0, bottom: 24, left: 0 }
+        ? { top: 82, right: 0, bottom: 24, left: 0 }
         : { top: 24, right: 84, bottom: 24, left: 0 };
     return { frame: { x: 0, y: 0, width, height }, insets };
   }

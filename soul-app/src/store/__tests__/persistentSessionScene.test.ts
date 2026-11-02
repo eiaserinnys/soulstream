@@ -65,3 +65,13 @@ test('보고와 목록 버튼, PAS 탭과 오른쪽 밀기는 각각 정해진 �
   store.getState().toggleReports();
   expect(store.getState().scene).toBe('conversation');
 });
+
+test('보고 카드 상세를 닫으면 reports 장면의 목록으로 돌아온다', () => {
+  const store = createPersistentSessionScene();
+  store.getState().open(session('pas-1'));
+  store.getState().toggleReports();
+  store.getState().selectReportCard('card-531');
+  expect(store.getState()).toMatchObject({ scene: 'reports', selectedCardId: 'card-531' });
+  store.getState().closeCard();
+  expect(store.getState()).toMatchObject({ scene: 'reports', selectedCardId: null });
+});

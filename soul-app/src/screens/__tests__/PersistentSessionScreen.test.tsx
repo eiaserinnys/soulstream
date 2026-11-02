@@ -53,7 +53,7 @@ jest.mock('../../components/persistent/PersistentSessionTaskList', () => {
 jest.mock('../../components/persistent/SwayCharacter', () => ({ SwayCharacter: () => null }));
 jest.mock('../../components/persistent/PersistentSessionCardOverlay', () => {
   const { Pressable, View } = require('react-native');
-  return { PersistentSessionCardOverlay: ({ cardId, sessionId, bottomSafeAreaInset, onClose }: any) => cardId ? <View testID="persistent-card-overlay-mock" cardId={cardId} sessionId={sessionId} bottomSafeAreaInset={bottomSafeAreaInset}>
+  return { PersistentSessionCardOverlay: ({ cardId, sessionId, bottomSafeAreaInset, sheetTop, onClose }: any) => cardId ? <View testID="persistent-card-overlay-mock" cardId={cardId} sessionId={sessionId} bottomSafeAreaInset={bottomSafeAreaInset} sheetTop={sheetTop}>
     <Pressable testID="close-card-overlay" onPress={onClose} />
   </View> : null };
 });
@@ -89,7 +89,7 @@ import { measurePersistentReports } from '../../test-utils/persistent-report-lay
 import type { CardDetail } from '../../api/cardTypes';
 import { cardFixture } from '../../test-support/cards';
 import type { PersistentReportEntry } from '../../api/types';
-import { DuoSideBandContext, PhoneRailModeContext } from '../../navigation/tabContract';
+import { DuoSideBandContext, DuoTopBandContext, PhoneRailModeContext } from '../../navigation/tabContract';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { NavigationContainer } from '@react-navigation/native';
 import { usePhoneRailActions } from '../../navigation/phoneRailActions';
@@ -926,8 +926,11 @@ test('카드 오버레이가 열리면 작업 목록을 숨기고 닫으면 다�
   view.unmount();
 });
 
-test('듀오 태블릿의 보고 장면은 대화 자리와 키보드 위를 덮고 목록으로 전환된다', () => {
+test('듀오 태블릿의 보고 장면은 대화 자리와 키보드 위를 덮고 목록에서 카드를 연다', async () => {
   mockDevice = 'tabletLandscape';
+  useSettingsStore.setState({ serverUrl: 'https://screen.example' });
+  const reportCardEntry = { ...reportReviewEntries[2], key: 'card_531', card_numbers: [531], title: '결과 카드' };
+  mockApi.listCards.mockResolvedValue({ cards: [{ id: 'card-531', number: 531 }] } as any);
   const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
     if (this.props.testID === 'persistent-session-screen') callback(0, 24, 867, 621);
     else if (this.props.testID === 'persistent-session-conversation') callback(200, 24, 400, 621);
@@ -937,7 +940,7 @@ test('듀오 태블릿의 보고 장면은 대화 자리와 키보드 위를 덮
   </SafeAreaInsetsContext.Provider>);
   act(() => {
     store.getState().open({ session_id: 'pas-report-duo', persistent: true } as any);
-    useSessionStore.getState().applyPersistentReport('pas-report-duo', reportReviewEntries.slice(0, 2));
+    useSessionStore.getState().applyPersistentReport('pas-report-duo', [reportCardEntry]);
     view.getByTestId('persistent-session-screen').props.onLayout();
   });
   const body = view.getByTestId('persistent-body-probe');
@@ -946,7 +949,7 @@ test('듀오 태블릿의 보고 장면은 대화 자리와 키보드 위를 덮
   expect(body.props.getReportSendContext('일반 메시지', null)).toEqual({});
   expect(view.queryByTestId('persistent-session-report-inline-seat', { includeHiddenElements: true })).toBeNull();
   expect(view.getByTestId('persistent-session-duo-reports').props.accessibilityState.disabled).toBe(false);
-  expect(view.getByTestId('persistent-session-duo-reports-badge').props.children).toBe(2);
+  expect(view.getByTestId('persistent-session-duo-reports-badge').props.children).toBe(1);
   fireEvent.press(view.getByTestId('persistent-session-duo-reports'));
   const before = StyleSheet.flatten(view.getByTestId('persistent-session-reports-cover').props.style);
   expect(before.top).toBe(StyleSheet.flatten(view.getByTestId('persistent-session-header').props.style).height);
@@ -954,10 +957,73 @@ test('듀오 태블릿의 보고 장면은 대화 자리와 키보드 위를 덮
   expect(before.left).toBe(StyleSheet.flatten(view.getByTestId('persistent-session-conversation').props.style).left);
   act(() => body.props.onKeyboardOverlapChange(110));
   expect(StyleSheet.flatten(view.getByTestId('persistent-session-reports-cover').props.style).height).toBe(before.height - 110);
+  fireEvent.press(view.getByTestId('report-title'));
+  await waitFor(() => expect(store.getState()).toMatchObject({ scene: 'reports', selectedCardId: 'card-531' }));
+  expect(mockApi.listCards).toHaveBeenCalledWith(undefined, { includeCompleted: true });
+  expect(view.getByTestId('persistent-card-overlay-mock').props.sheetTop).toBe(0);
+  fireEvent.press(view.getByTestId('close-card-overlay'));
+  expect(store.getState()).toMatchObject({ scene: 'reports', selectedCardId: null });
   fireEvent.press(view.getByTestId('persistent-session-duo-tasks'));
   expect(store.getState().scene).toBe('cards');
   expect(view.queryByTestId('persistent-session-reports-cover')).toBeNull();
   view.unmount(); measure.mockRestore();
+});
+
+test('듀오 안쪽 세로는 상단 띠에 헤더와 레일을 놓고 보고 카드에서 카드 상세로 직행한다', () => {
+  mockDevice = 'tabletPortrait';
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 669, height: 951, scale: 1, fontScale: 1 });
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 82, 669, 869);
+    else if (this.props.testID === 'persistent-session-conversation') callback(0, 168, 669, 783);
+  });
+  const entry = { ...reportReviewEntries[2], key: 'card_531', card_id: 'card-531', card_numbers: [531], title: '결과 카드' };
+  const view = render(<SafeAreaInsetsContext.Provider value={{ top: 82, bottom: 24, left: 0, right: 0 }}>
+    <DuoSideBandContext.Provider value={false}><DuoTopBandContext.Provider value>
+      <NavigationContainer><ScreenHarness /></NavigationContainer>
+    </DuoTopBandContext.Provider></DuoSideBandContext.Provider>
+  </SafeAreaInsetsContext.Provider>);
+  act(() => {
+    store.getState().open({ session_id: 'pas-top-band', persistent: true } as any);
+    useSessionStore.getState().applyPersistentReport('pas-top-band', [entry]);
+    view.getByTestId('persistent-session-screen').props.onLayout();
+  });
+  const header = StyleSheet.flatten(view.getByTestId('persistent-session-header').props.style);
+  expect(header).toMatchObject({ height: 86, paddingTop: 10, paddingRight: 132 });
+  expect(view.getByTestId('persistent-session-safe-area').props.edges).toEqual({ top: 'off', right: 'additive', bottom: 'off', left: 'additive' });
+  expect(view.queryByTestId('persistent-session-tasks')).toBeNull();
+  expect(view.getByTestId('persistent-session-duo-reports')).toBeTruthy();
+  expect(view.getByTestId('persistent-session-duo-tasks')).toBeTruthy();
+  expect(view.getByTestId('persistent-session-duo-reports-badge').props.children).toBe(1);
+  act(() => view.getByTestId('persistent-body-probe').props.onComposerLayout(
+    { x: 0, y: 700, width: 669, height: 76 }, { x: 0, y: 20, width: 669, height: 56 }));
+  expect(view.getByTestId('persistent-body-probe').props.reportView).toBeNull();
+  expect(view.queryByTestId('report-deck')).toBeNull();
+  fireEvent.press(view.getByTestId('persistent-session-duo-reports'));
+  const cover = view.getByTestId('persistent-session-reports-cover');
+  expect(view.getByTestId('report-track').props.horizontal).toBeFalsy();
+  measurePersistentReports(view);
+  fireEvent.press(view.getByTestId('report-title'));
+  expect(store.getState()).toMatchObject({ scene: 'reports', selectedCardId: 'card-531' });
+  expect(view.getByTestId('persistent-card-overlay-mock').props.sheetTop).toBe(82);
+  fireEvent.press(view.getByTestId('close-card-overlay'));
+  expect(store.getState()).toMatchObject({ scene: 'reports', selectedCardId: null });
+  expect(view.getByTestId('persistent-session-reports-cover')).toBeTruthy();
+  expect(cover).toBeTruthy();
+  fireEvent.press(view.getByTestId('persistent-session-duo-reports'));
+  expect(view.queryByTestId('persistent-session-reports-cover')).toBeNull();
+  view.unmount(); measure.mockRestore(); dimensions.mockRestore();
+});
+
+test('듀오 안쪽 세로는 보고가 없으면 보고 레일 버튼을 비활성화한다', () => {
+  mockDevice = 'tabletPortrait';
+  const view = render(<SafeAreaInsetsContext.Provider value={{ top: 82, bottom: 24, left: 0, right: 0 }}>
+    <DuoSideBandContext.Provider value={false}><DuoTopBandContext.Provider value>
+      <NavigationContainer><ScreenHarness /></NavigationContainer>
+    </DuoTopBandContext.Provider></DuoSideBandContext.Provider>
+  </SafeAreaInsetsContext.Provider>);
+  act(() => store.getState().open({ session_id: 'pas-top-band-empty', persistent: true } as any));
+  expect(view.getByTestId('persistent-session-duo-reports').props.accessibilityState.disabled).toBe(true);
+  view.unmount();
 });
 
 

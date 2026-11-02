@@ -1,9 +1,14 @@
 import { useContext } from 'react';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets, type EdgeInsets } from 'react-native-safe-area-context';
-import { DuoSideBandContext, RAIL_MIN_INSET_WIDTH } from './tabContract';
+import { DuoSideBandContext, DuoTopBandContext, RAIL_MIN_INSET_WIDTH } from './tabContract';
 
 export const DUO_RAIL_END_INSET = 12;
+/** 안쪽 화면 세로의 상단 띠. 값은 실기기 캡처(669×951) 실측이다. */
+export const DUO_TOP_BAND_MIN_INSET = 60;
+export const DUO_TOP_BAND_STATUS_CENTER_Y = 48;
+export const DUO_TOP_BAND_STATUS_RESERVE = 132;
+export const DUO_RAIL_CENTER_FROM_END = 48;
 
 export function getDuoRailTopOffset(windowWidth: number, windowHeight: number): number {
   return windowWidth > windowHeight ? (windowWidth >= 800 ? 200 : 114) : 228;
@@ -17,6 +22,16 @@ export function splitDuoRailBackAction<T extends { id: string }>(actions: readon
 
 export function hasDuoSideBand(insets: EdgeInsets): boolean {
   return Platform.OS === 'ios' && insets.right >= RAIL_MIN_INSET_WIDTH && insets.left === 0;
+}
+
+export function hasDuoTopBand(insets: EdgeInsets): boolean {
+  return Platform.OS === 'ios' && insets.top >= DUO_TOP_BAND_MIN_INSET && insets.left === 0 && insets.right === 0;
+}
+
+export function useDuoTopBand(): boolean {
+  const fromHarness = useContext(DuoTopBandContext);
+  const insets = useSafeAreaInsets();
+  return fromHarness ?? hasDuoTopBand(insets);
 }
 
 export function useDuoSideBand(): boolean {
