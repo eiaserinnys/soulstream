@@ -11,6 +11,7 @@ import type { SoulSSEEvent } from "@shared/types";
 import { createChatSessionStore, useDashboardStore } from "../../stores/dashboard-store";
 import { ChatView } from "./ChatView";
 import { MAX_SEARCH_FOCUS_HISTORY_PAGES } from "./ChatView.reverse-helpers";
+import { ReportTimelineRowProvider } from "./ReportTimelineRowSlot";
 
 const virtuosoMock = vi.hoisted(() => ({
   scrollToIndex: vi.fn(),
@@ -107,23 +108,37 @@ vi.mock("../ChatInput", async () => {
   };
 });
 
-vi.mock("./VirtualizedItem", () => ({
-  VirtualizedItem: ({ item }: { item: any }) => {
-    const firstMessage = item.type === "tool-group"
-      ? item.messages[0]
-      : item.type === "summary-group"
-        ? item.anchor.type === "tool-group"
-          ? item.anchor.messages[0]
-          : item.anchor.msg
-        : item.type === "single"
-          ? item.msg
-          : null;
-    return createElement("div", {
-      "data-testid": "chat-item",
-      "data-tree-node-id": firstMessage?.treeNodeId,
-    });
-  },
-}));
+vi.mock("./VirtualizedItem", async () => {
+  const React = await vi.importActual<typeof import("react")>("react");
+  const { SystemMessage } = await vi.importActual<typeof import("./SystemMessage")>("./SystemMessage");
+  return {
+    VirtualizedItem: ({ item, presentation }: { item: any; presentation?: "default" | "manuscript" }) => {
+      const firstMessage = item.type === "tool-group"
+        ? item.messages[0]
+        : item.type === "summary-group"
+          ? item.anchor.type === "tool-group"
+            ? item.anchor.messages[0]
+            : item.anchor.msg
+          : item.type === "single"
+            ? item.msg
+            : null;
+      if (firstMessage?.treeNodeType === "report_timeline") {
+        return React.createElement(
+          "div",
+          {
+            "data-testid": "chat-item",
+            "data-tree-node-id": firstMessage.treeNodeId,
+          },
+          React.createElement(SystemMessage, { msg: firstMessage, presentation }),
+        );
+      }
+      return React.createElement("div", {
+        "data-testid": "chat-item",
+        "data-tree-node-id": firstMessage?.treeNodeId,
+      });
+    },
+  };
+});
 
 vi.mock("./hooks", () => ({
   useLlmContext: () => undefined,
@@ -324,8 +339,21 @@ async function renderChatView(props: Partial<NonNullable<Parameters<typeof ChatV
 
   flushSync(() => {
     root.render(createElement(
-      ChatView as unknown as ComponentType<Record<string, unknown>>,
-      props as Record<string, unknown>,
+      ReportTimelineRowProvider,
+      {
+        render: (line, alignmentInset) => createElement(
+          "div",
+          {
+            "data-testid": "report-timeline-row-rendered",
+            "data-alignment-inset": alignmentInset,
+          },
+          line.title,
+        ),
+        children: createElement(
+          ChatView as unknown as ComponentType<Record<string, unknown>>,
+          props as Record<string, unknown>,
+        ),
+      },
     ));
   });
   await flushPassiveEffects();
@@ -1861,7 +1889,7 @@ describe("ChatView long-session initial bottom focus", () => {
       makeUserMessage(4),
       report("대화 뒤 상태", 5),
     ]);
-    ({ container, root } = await renderChatView({ presentation: "manuscript" }));
+    ({ container, root } = await renderChatView());
 
     const messages = virtuosoData().flatMap((item: any) => item.type === "single"
       ? [item.msg]
@@ -1869,6 +1897,11 @@ describe("ChatView long-session initial bottom focus", () => {
     const reportMessages = messages.filter((message: any) => message.treeNodeType === "report_timeline");
     expect(reportMessages).toHaveLength(2);
     expect(reportMessages.map((message: any) => message.reportTimeline.title)).toEqual([
+      "도구 뒤 상태",
+      "대화 뒤 상태",
+    ]);
+    const renderedRows = container.querySelectorAll('[data-testid="report-timeline-row-rendered"]');
+    expect(Array.from(renderedRows, (row) => row.textContent)).toEqual([
       "도구 뒤 상태",
       "대화 뒤 상태",
     ]);

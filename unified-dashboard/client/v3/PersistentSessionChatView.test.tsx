@@ -16,7 +16,7 @@ vi.mock("@seosoyoung/soul-ui", async () => {
   const React = await import("react");
   return {
     ChatView: () => React.createElement("div", { "data-testid": "chat-view" }),
-    ReportTimelineRowProvider: ({ children }: { children: ReactNode }) => children,
+    ReportTimelineRowProvider: ({ children }: { children: ReactNode }) => React.createElement("div", { "data-testid": "report-timeline-provider" }, children),
     useDashboardStore: Object.assign((selector: (state: { setPersistentSessionDisplaySettings: typeof setDisplaySettings }) => unknown) => selector({ setPersistentSessionDisplaySettings: setDisplaySettings, persistentReports: {}, persistentSessionDisplaySettings: settingsState.current } as any), {
       getState: () => ({ persistentReports: {}, persistentSessionDisplaySettings: settingsState.current, setPersistentReport: vi.fn() }),
     }),
@@ -58,6 +58,7 @@ describe("PersistentSessionChatView", () => {
 
     act(() => root?.render(<PersistentSessionChatView sessionId="pas-1" />));
     expect(host?.querySelector('[data-testid="chat-view"]')).not.toBeNull();
+    expect(host?.querySelector('[data-testid="report-timeline-provider"]')).not.toBeNull();
     expect(getSession).toHaveBeenCalledWith("pas-1");
     expect(setDisplaySettings).toHaveBeenNthCalledWith(1, "pas-1", null);
 
