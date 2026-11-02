@@ -1005,6 +1005,13 @@ test('듀오 안쪽 세로는 상단 띠에 헤더와 레일을 놓고 보고 �
   fireEvent.press(view.getByTestId('report-title'));
   expect(store.getState()).toMatchObject({ scene: 'reports', selectedCardId: 'card-531' });
   expect(view.getByTestId('persistent-card-overlay-mock').props.sheetTop).toBe(82);
+  const screenChildren = React.Children.toArray(view.getByTestId('persistent-session-screen').props.children)
+    .flatMap(child => React.isValidElement(child)
+      ? [child.props as { testID?: string; cardId?: string | null }]
+      : []);
+  const topBandRailIndex = screenChildren.findIndex(child => child.testID === 'persistent-session-top-band-rail');
+  const cardOverlayIndex = screenChildren.findIndex(child => child.cardId === 'card-531');
+  expect(topBandRailIndex >= 0 && cardOverlayIndex >= 0 && topBandRailIndex < cardOverlayIndex).toBe(true);
   fireEvent.press(view.getByTestId('close-card-overlay'));
   expect(store.getState()).toMatchObject({ scene: 'reports', selectedCardId: null });
   expect(view.getByTestId('persistent-session-reports-cover')).toBeTruthy();

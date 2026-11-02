@@ -397,6 +397,12 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       {!phone && !duoSideBand && !duoTopBand ? <View style={{ position: 'absolute', top: headerHeight, right: t.foundation.pageInset - (t.hitTarget.min - t.foundation.iconFrame.compact) / 2 }}>
         {action('list-outline', scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기', () => host.store.getState().toggleScene(), 'persistent-session-tasks')}
       </View> : null}
+      {!phone && duoTopBand ? <View testID="persistent-session-top-band-rail" onLayout={event => {
+        const height = event.nativeEvent.layout.height + t.uiSpacing.sm;
+        setTopBandRailHeight(current => current === height ? current : height);
+      }} style={{ position: 'absolute', top: headerHeight, right: DUO_RAIL_CENTER_FROM_END - RAIL_CAPSULE_WIDTH / 2 }}>
+        <RailCapsule testID="persistent-session-top-band-capsule">{reportAndTaskRailItems}</RailCapsule>
+      </View> : null}
       {usageInColumn ? <View testID="persistent-session-usage-column" style={{ position: 'absolute',
         top: headerHeight + rightControlsHeight,
         bottom: Math.max(insets.bottom, keyboardOverlap), right: t.foundation.pageInset - t.uiSpacing.sm,
@@ -426,12 +432,6 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       {settingsOpen && session ? <PersistentSessionPasSettingsModal sessionId={session.session_id} nodeId={session.node_id ?? ''}
         onClose={() => setSettingsOpen(false)} /> : null}
     </View>
-    {!phone && duoTopBand ? <View testID="persistent-session-top-band-rail" onLayout={event => {
-      const height = event.nativeEvent.layout.height + t.uiSpacing.sm;
-      setTopBandRailHeight(current => current === height ? current : height);
-    }} style={{ position: 'absolute', top: headerHeight, right: DUO_RAIL_CENTER_FROM_END - RAIL_CAPSULE_WIDTH / 2 }}>
-      <RailCapsule testID="persistent-session-top-band-capsule">{reportAndTaskRailItems}</RailCapsule>
-    </View> : null}
     {!phone && duoSideBand && railBack ? <View style={{ position: 'absolute', top: getDuoRailTopOffset(windowWidth, windowHeight),
       right: (insets.right - 48 + DUO_RAIL_END_INSET) / 2 }}>
       <RailCapsule testID={railMain.length ? 'duo-rail-back-capsule' : 'persistent-session-duo-capsule'} compact={railCompact}>
