@@ -10,10 +10,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   engineEventFrame,
   executionEndedControlFrame,
+  invokeCommandFrame,
   outboxAvailableControlFrame,
   prepareSessionCommandFrame,
   runnerCommandResultFrame,
   runnerRequestFrame,
+  type RunnerFrame,
 } from "../../src/runner/frame_protocol.js";
 import { RunnerOrphanedSpawnError, RunnerProcessDispatcher } from
   "../../src/runner/runner_process_dispatcher.js";
@@ -23,6 +25,7 @@ import {
 } from "../../src/runner/runner_ipc_connection.js";
 import { RunnerParentOutbox } from "../../src/runner/runner_parent_outbox.js";
 import { ProcessFrameStream } from "../../src/runner/runner_process_frame_stream.js";
+import { RunnerProcessEngineProxy } from "../../src/runner/runner_process_engine_proxy.js";
 import { isClosedClaudeEngineFailure } from "../../src/runner/closed_engine_error.js";
 import { buildDurableRunnerEvent } from
   "../../src/runner/runner_child_runtime_helpers.js";
@@ -104,6 +107,10 @@ describe("RunnerProcessDispatcher", () => {
           options: {
             logger,
             reconnectSleep: async () => undefined,
+            inspectWriterLock: async () => ({
+              kind: "held",
+              owner: { pid: 1001, startIdentity: "start-1001" },
+            }),
             connectSocket: async () => {
               connectCalls += 1;
               if (connectCalls === 1) {
@@ -181,6 +188,10 @@ describe("RunnerProcessDispatcher", () => {
       options: {
         logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
         reconnectSleep: async () => undefined,
+        inspectWriterLock: async () => ({
+          kind: "held",
+          owner: { pid: 1001, startIdentity: "start-1001" },
+        }),
         connectSocket: async () => {
           connectCalls += 1;
           if (connectCalls === 2) dispatcher.closed = true;
@@ -193,6 +204,161 @@ describe("RunnerProcessDispatcher", () => {
       runReconnectLoop(socketPath: string, firstConnectedForMs: number): Promise<void>;
     }).runReconnectLoop(paths.socketPath, 0);
     expect(connectCalls).toBe(2);
+  });
+
+  it("stops on a free writer lock without settling the active stream and rejects queued dispatches", async () => {
+    const sleepStarted = deferred<void>();
+    const releaseSleep = deferred<void>();
+    const inspectWriterLock = vi.fn(async () => ({ kind: "free" }));
+    const executeReceived = deferred<void>();
+    const fixture = await connectedDispatcherFixture({
+      reconnectSleep: async () => {
+        sleepStarted.resolve();
+        await releaseSleep.promise;
+      },
+      inspectWriterLock,
+      onCommand: async (endpoint, frame) => {
+        if (frame.kind === "execute") executeReceived.resolve();
+        await endpoint.currentConnection!.send(
+          runnerCommandResultFrame(frame.commandId, { status: "ok" }),
+        );
+      },
+    });
+
+    try {
+      const stream = fixture.dispatcher.executeFrames({
+        agentSessionId: "session-a",
+        prompt: "leave execution open",
+      });
+      const streamOutcome = observePromise(collect(stream), 300);
+      await executeReceived.promise;
+      await vi.waitFor(() => expect(fixture.dispatcher.hasActiveExecution()).toBe(true));
+
+      fixture.endpoint.currentConnection!.close();
+      await sleepStarted.promise;
+      const inFlightDispatch = fixture.dispatcher.dispatch(
+        invokeCommandFrame("activity-during-reconnect", "codexDetachedCommandActivity", []),
+      );
+      const inFlightOutcome = observePromise(inFlightDispatch, 300);
+      releaseSleep.resolve();
+
+      await vi.waitFor(() => expect(hasLostRunner(fixture.dispatcher)).toBe(true), {
+        timeout: 500,
+      });
+      expect(fixture.connectSocket).toHaveBeenCalledOnce();
+      expect(inspectWriterLock).toHaveBeenCalledOnce();
+      expect(fixture.dispatcher.isClosed()).toBe(false);
+      expect(fixture.dispatcher.hasActiveExecution()).toBe(true);
+      expect((await streamOutcome).status).toBe("pending");
+      const inFlightResult = await inFlightOutcome;
+      expect(inFlightResult).toMatchObject({ status: "rejected" });
+      expect((inFlightResult as { status: "rejected"; error: unknown }).error)
+        .toMatchObject({ message: "Runner process is unavailable: session-a" });
+
+      const laterOutcome = await observePromise(fixture.dispatcher.dispatch(
+        invokeCommandFrame("activity-after-reconnect", "codexDetachedCommandActivity", []),
+      ), 300);
+      expect(laterOutcome).toMatchObject({ status: "rejected" });
+      expect((laterOutcome as { status: "rejected"; error: unknown }).error)
+        .toMatchObject({ message: "Runner process is unavailable: session-a" });
+
+    } finally {
+      releaseSleep.resolve();
+      await fixture.dispatcher.detachHost().catch(() => undefined);
+      await fixture.endpoint.close();
+    }
+  });
+
+  it.each(["held", "unavailable", "throw"] as const)(
+    "continues reconnecting when writer lock inspection is %s",
+    async (inspection) => {
+      const inspectWriterLock = vi.fn(async () => {
+        if (inspection === "throw") throw new Error("lock inspection failed");
+        return inspection === "held"
+          ? { kind: "held", owner: { pid: 2002, startIdentity: "start-2002" } }
+          : { kind: "unavailable" };
+      });
+      const fixture = await connectedDispatcherFixture({
+        reconnectSleep: async () => undefined,
+        inspectWriterLock,
+      });
+
+      try {
+        fixture.endpoint.currentConnection!.close();
+        await vi.waitFor(() => expect(fixture.connectSocket).toHaveBeenCalledTimes(2), {
+          timeout: 1_000,
+        });
+        expect(inspectWriterLock).toHaveBeenCalledOnce();
+        expect(hasLostRunner(fixture.dispatcher)).toBe(false);
+      } finally {
+        await fixture.dispatcher.detachHost().catch(() => undefined);
+        await fixture.endpoint.close();
+      }
+    },
+  );
+
+  it("lets terminal retirement finish when its activity query dispatches during a lost-runner reconnect", async () => {
+    const firstSleepStarted = deferred<void>();
+    const releaseFirstSleep = deferred<void>();
+    const releaseLaterSleep = deferred<void>();
+    let sleepCount = 0;
+    const inspectWriterLock = vi.fn(async () => ({ kind: "free" }));
+    const retireTerminalRegistration = vi.fn(async () => undefined);
+    const fixture = await connectedDispatcherFixture({
+      reconnectSleep: async () => {
+        sleepCount += 1;
+        if (sleepCount === 1) {
+          firstSleepStarted.resolve();
+          await releaseFirstSleep.promise;
+        } else {
+          await releaseLaterSleep.promise;
+        }
+      },
+      inspectWriterLock,
+      retireTerminalRegistration,
+      connectSocketAttempt: async (attempt, socketPath, options) => {
+        if (attempt === 1) return await connectRunnerSocket(socketPath, options);
+        throw new Error("ECONNREFUSED");
+      },
+    });
+    const engine = new RunnerProcessEngineProxy(
+      "codex",
+      "/workspace/a",
+      fixture.dispatcher,
+    );
+    const activityStarted = deferred<void>();
+    let activityError: unknown;
+
+    try {
+      fixture.endpoint.currentConnection!.close();
+      await firstSleepStarted.promise;
+      const retirement = fixture.dispatcher.retireTerminalRegistration(async () => {
+        const query = engine.codexDetachedCommandActivity();
+        activityStarted.resolve();
+        try {
+          await query;
+        } catch (error) {
+          activityError = error;
+        }
+      });
+      await activityStarted.promise;
+      releaseFirstSleep.resolve();
+
+      const retirementOutcome = await observePromise(retirement, 500);
+      expect(retirementOutcome.status).toBe("resolved");
+      expect(activityError).toMatchObject({
+        message: "Runner process is unavailable: session-a",
+      });
+      expect(fixture.connectSocket).toHaveBeenCalledOnce();
+      expect(inspectWriterLock).toHaveBeenCalledOnce();
+      expect(retireTerminalRegistration).toHaveBeenCalledOnce();
+      expect(fixture.dispatcher.isClosed()).toBe(true);
+    } finally {
+      releaseFirstSleep.resolve();
+      releaseLaterSleep.resolve();
+      await fixture.dispatcher.detachHost().catch(() => undefined);
+      await fixture.endpoint.close();
+    }
   });
 
   it("classifies only the exact closed-engine failure from Claude", () => {
@@ -1457,6 +1623,10 @@ describe("RunnerProcessDispatcher", () => {
         stableConnectionMs: 1_000,
       },
       reconnectSleep: async () => undefined,
+      inspectWriterLock: async () => ({
+        kind: "held",
+        owner: { pid: 1001, startIdentity: "start-1001" },
+      }),
     });
 
     const stream = dispatcher.executeFrames({
@@ -1527,6 +1697,10 @@ describe("RunnerProcessDispatcher", () => {
         stableConnectionMs: 1_000,
       },
       reconnectSleep: async () => undefined,
+      inspectWriterLock: async () => ({
+        kind: "held",
+        owner: { pid: 1001, startIdentity: "start-1001" },
+      }),
       pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
       logger: pino({ level: "silent" }),
       handleHostCall: async () => null,
@@ -1892,6 +2066,10 @@ describe("RunnerProcessDispatcher", () => {
       pumpMux: { register: registerPump } as never,
       logger,
       handleHostCall: async () => null,
+      inspectWriterLock: async () => ({
+        kind: "held",
+        owner: { pid: 1001, startIdentity: "start-1001" },
+      }),
       nodeStallMonitor: {
         beginRunnerOperation: vi.fn((input) => input.operation === "execution:recover"
           ? finishRecoveryObservation
@@ -2059,6 +2237,111 @@ async function temporaryDirectory(): Promise<string> {
   return directory;
 }
 
+async function connectedDispatcherFixture(options: {
+  reconnectSleep(delayMs: number): Promise<void>;
+  inspectWriterLock(path: string): Promise<unknown>;
+  onCommand?(
+    endpoint: RunnerSocketEndpoint,
+    frame: Extract<RunnerFrame, { channel: "command" }>,
+  ): Promise<void>;
+  retireTerminalRegistration?(): Promise<void>;
+  connectSocketAttempt?(
+    attempt: number,
+    socketPath: string,
+    connectOptions: Parameters<typeof connectRunnerSocket>[1],
+  ): Promise<RunnerIpcConnection>;
+}) {
+  const stateDirectory = await temporaryDirectory();
+  const paths = runnerProcessPaths(stateDirectory, "session-a");
+  await mkdir(paths.sessionDirectory, { recursive: true });
+  const outbox = await RunnerSqliteEventOutbox.create(paths.databasePath);
+  await outbox.initializeBootstrap({
+    session_id: "session-a",
+    created_at: "2026-11-03T00:00:00.000Z",
+    resume: {
+      schema_version: 1,
+      backend_session_id: "backend-a",
+      cwd: "/workspace/a",
+      codex_home: "/home/test/.codex",
+      rollout_root: "/home/test/.codex/sessions",
+      code_sha: "sha-a",
+      snapshot_path: "/release/sha-a/soul-server-ts",
+    },
+  });
+  outbox.close();
+  const spawned = await spawnedProcessForTest(paths);
+  let endpoint!: RunnerSocketEndpoint;
+  endpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
+    if (frame.channel !== "command") return;
+    if (options.onCommand) {
+      await options.onCommand(endpoint, frame);
+      return;
+    }
+    await endpoint.currentConnection!.send(
+      runnerCommandResultFrame(frame.commandId, { status: "ok" }),
+    );
+  }, vi.fn());
+  await endpoint.listen();
+
+  let connectAttemptCount = 0;
+  const connectSocket = vi.fn(async (
+    socketPath: string,
+    connectOptions: Parameters<typeof connectRunnerSocket>[1],
+  ) => {
+    connectAttemptCount += 1;
+    return await (options.connectSocketAttempt
+      ? options.connectSocketAttempt(connectAttemptCount, socketPath, connectOptions)
+      : connectRunnerSocket(socketPath, connectOptions));
+  });
+  const dispatcherOptions = {
+    spawn: spawnInput(stateDirectory),
+    runnerProcess: { ...spawned, adopted: true },
+    spawner: {
+      retireTerminalRegistration: options.retireTerminalRegistration ?? vi.fn(async () => undefined),
+    },
+    connectSocket,
+    reconnectSleep: options.reconnectSleep,
+    inspectWriterLock: options.inspectWriterLock,
+    pumpMux: new EventOutboxPumpMux(
+      new EventOutboxPump(emptyStore("node-stream"), vi.fn()),
+    ),
+    logger: pino({ level: "silent" }),
+    handleHostCall: async () => null,
+  } as unknown as ConstructorParameters<typeof RunnerProcessDispatcher>[0];
+  const dispatcher = new RunnerProcessDispatcher(dispatcherOptions);
+  await dispatcher.prepareSession("session-a");
+
+  return { dispatcher, endpoint, paths, connectSocket };
+}
+
+function hasLostRunner(dispatcher: RunnerProcessDispatcher): boolean {
+  return (dispatcher as RunnerProcessDispatcher & { hasLostRunner?(): boolean })
+    .hasLostRunner?.() === true;
+}
+
+function observePromise<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+): Promise<
+  | { status: "resolved"; value: T }
+  | { status: "rejected"; error: unknown }
+  | { status: "pending" }
+> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve({ status: "pending" }), timeoutMs);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve({ status: "resolved", value });
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        resolve({ status: "rejected", error });
+      },
+    );
+  });
+}
+
 async function spawnedInitializationFixture() {
   const stateDirectory = await temporaryDirectory();
   const paths = runnerProcessPaths(stateDirectory, "session-a");
@@ -2155,4 +2438,14 @@ async function collect<T>(iterable: AsyncIterable<T>): Promise<T[]> {
   const result: T[] = [];
   for await (const value of iterable) result.push(value);
   return result;
+}
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
