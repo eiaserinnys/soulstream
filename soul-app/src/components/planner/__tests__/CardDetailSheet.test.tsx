@@ -121,7 +121,7 @@ test('키보드가 열리면 상황판을 숨기고 커멘트 입력에 필요�
   act(() => avoider.props.onOverlapChange(0));
   expect(screen.getByText('상황판')).toBeTruthy();
 });
-test('듀오 카드 상세는 헤더 조작과 네 탭을 레일에 두고 탭과 뒤로를 실행한다', async () => {
+test('듀오 카드 상세는 상태 메뉴를 헤더에 두고 완료와 네 탭을 레일에서 실행한다', async () => {
   const onClose = jest.fn();
   const api = { getCard: jest.fn().mockResolvedValue(detail) };
   const screen = render(<DuoSideBandContext.Provider value={true}>
@@ -133,9 +133,11 @@ test('듀오 카드 상세는 헤더 조작과 네 탭을 레일에 두고 탭�
   expect(screen.queryByTestId('card-detail-back-icon')).toBeNull();
   expect(screen.queryByTestId('settings-segment-card-detail-comments')).toBeNull();
   const actions = () => usePhoneRailActions.getState().overrides.at(-1)!.actions;
-  expect(actions().map(action => action.id)).toEqual(['close', 'complete', 'status-menu', 'tab-items', 'tab-comments', 'tab-sessions', 'tab-notes']);
-  act(() => actions().find(action => action.id === 'status-menu')!.onPress());
-  expect(screen.getByTestId('card-status-menu')).toBeTruthy();
+  expect(actions().map(action => action.id)).toEqual(['close', 'complete', 'tab-items', 'tab-comments', 'tab-sessions', 'tab-notes']);
+  expect(screen.getByTestId('card-detail-status-menu-visual')).toBeTruthy();
+  expect(screen.queryByTestId('card-detail-complete-visual')).toBeNull();
+  await act(async () => fireEvent.press(screen.getByLabelText('상태 변경 메뉴')));
+  await waitFor(() => expect(screen.getByTestId('card-status-menu')).toBeTruthy());
   act(() => actions().find(action => action.id === 'tab-sessions')!.onPress());
   expect(screen.getByText('실행 세션')).toBeTruthy();
   expect(actions().find(action => action.id === 'tab-sessions')?.selected).toBe(true);
