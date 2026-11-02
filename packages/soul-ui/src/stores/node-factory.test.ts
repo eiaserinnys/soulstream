@@ -281,6 +281,26 @@ describe("createNodeFromEvent", () => {
       expect(node).toMatchObject({ type: "generation_started", contextReset: expected });
     });
 
+    it("creates a report timeline node from the generated wire event", () => {
+      const node = createNodeFromEvent({
+        type: "report_timeline",
+        line_key: "card-812",
+        status: "review",
+        title: "검수 요청",
+        detail: "구현이 끝났습니다.",
+        card_id: "card-812",
+        card_number: 812,
+      }, 812);
+
+      expect(node).toMatchObject({
+        id: "report-timeline-812",
+        type: "report_timeline",
+        content: "검수 요청",
+        completed: true,
+        line: { line_key: "card-812", status: "review", card_number: 812 },
+      });
+    });
+
     it("should extract content from messages when text is absent (LLM session)", () => {
       const event: UserMessageEvent = {
         type: "user_message",

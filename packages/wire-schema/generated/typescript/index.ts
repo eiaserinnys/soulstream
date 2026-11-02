@@ -3460,6 +3460,7 @@ export const CARD_STATUSES = [
   "blocked",
   "running",
   "review",
+  "on_hold",
   "done",
   "cancelled",
 ] as const;

@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { act, render } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import type { FlatList, NativeScrollEvent, NativeSyntheticEvent } from 'react-native';
 import type { StreamingSlots } from '../../../store/chatStore';
 import type { SessionEvent } from '../../../api/types';
@@ -68,6 +68,17 @@ jest.mock('../../events/TurnSummaryCaption', () => ({
     return null;
   },
 }));
+jest.mock('../ReportTimelineRow', () => {
+  const ReactModule = jest.requireActual('react');
+  const Native = jest.requireActual('react-native');
+  return {
+    ReportTimelineRow: ({ line, onOpenCard }: { line: { title: string; card_id: string | null }; onOpenCard?: (id: string) => void }) =>
+      ReactModule.createElement(Native.Pressable, {
+        accessibilityRole: 'link',
+        onPress: () => { if (line.card_id) onOpenCard?.(line.card_id); },
+      }, ReactModule.createElement(Native.Text, null, `timeline:${line.title}`)),
+  };
+});
 jest.mock('../TypingIndicator', () => ({ TypingIndicator: () => null }));
 jest.mock('../ManuscriptActivitySegment', () => ({ ManuscriptActivitySegment: () => null }));
 jest.mock('../HistoryFetchError', () => ({ HistoryFetchError: () => null }));
@@ -131,6 +142,7 @@ function Harness({
   presentation = 'default',
   persistentDisplaySettings,
   showNewMessage = false,
+  onOpenReportCard,
 }: {
   events: SessionEvent[];
   sessionId?: string;
@@ -138,6 +150,7 @@ function Harness({
   presentation?: 'default' | 'manuscript';
   persistentDisplaySettings?: PersistentDisplayProjectionSettings;
   showNewMessage?: boolean;
+  onOpenReportCard?: (cardId: string) => void;
 }) {
   const flatListRef = useRef<FlatList<ChatRenderItem> | null>(null);
   const { reversedItems, bottomFollowItemKey } = useChatRenderItems({
@@ -177,6 +190,7 @@ function Harness({
       presentation={presentation}
       showNewMessage={showNewMessage}
       onPressNewMessage={noop}
+      onOpenReportCard={onOpenReportCard}
     />
   );
 }
@@ -185,6 +199,18 @@ describe('chat row render isolation', () => {
   const base = [ev('1', 'user_message', { text: '질문' }), ev('2', 'assistant_message', { text: '이전 답변' }),
     ev('3', 'tool_start', { tool_use_id: 'tool-a', tool_name: 'exec_command' })];
   beforeEach(() => { mockRenderOrder.length = 0; mockNarrationByEvent.clear(); });
+
+  it('실제 렌더 아이템 경로의 보고 타임라인을 전용 행에 보내고 카드 열기를 전달한다', () => {
+    const openCard = jest.fn();
+    const view = render(<Harness presentation="manuscript" onOpenReportCard={openCard} events={[
+      ev('timeline', 'report_timeline', {
+        line_key: 'card-1', status: 'review', title: '검수 요청', detail: '', card_id: 'card-1', card_number: 1,
+      }),
+    ]} />);
+
+    fireEvent.press(view.getByText('timeline:검수 요청'));
+    expect(openCard).toHaveBeenCalledWith('card-1');
+  });
 
   it('dims manuscript prose only after its next chronological tool activity arrives', () => {
     const progress = ev('progress', 'assistant_message', { text: '두 건을 나눠 맡깁니다.' });

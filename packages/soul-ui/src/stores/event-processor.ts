@@ -48,7 +48,7 @@ const NEEDS_ROOT = new Set([
   "complete", "context_usage", "error", "result", "compact", "input_request",
   "tool_approval_requested", "agent_updated", "handoff_requested", "handoff_occurred",
   "guardrail_tripwire", "assistant_message", "assistant_error", "away_summary", "generation_started",
-  "turn_summary", "debug",
+  "turn_summary", "debug", "report_timeline",
 ]);
 
 /** Legacy text events remain supported; exact id=0 metadata enables dedupe. */

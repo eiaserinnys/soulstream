@@ -177,14 +177,39 @@ describe("user card execution transport",()=>{
       });
     }finally{await runtime.dispatcher.drain();}
   });
-  it.each(["running","done"] as const)("refuses agent execution while a card is %s",async status=>{
+  it.each(["running","done","cancelled"] as const)("refuses agent execution while a card is %s",async status=>{
     const f=await fixture();
     await cards.setCardStatus({...actor,cardId:f.cardId,status,idempotencyKey:`state-${status}`});
     const current=(await cards.getCard(f.cardId))!.card;
     await expect(f.service.execute(agentInput(f.cardId,`agent-${status}`,current.version)))
-      .rejects.toMatchObject({statusCode:422,message:`드래프트(todo)나 대기(queued) 카드만 실행할 수 있습니다. 현재 상태: ${status}`});
+      .rejects.toMatchObject({statusCode:422,message:`드래프트(todo), 대기(queued), 보류(on_hold) 카드만 실행할 수 있습니다. 현재 상태: ${status}`});
     expect(f.launch).not.toHaveBeenCalled();expect(f.ensure).not.toHaveBeenCalled();
     expect((await h.sql`SELECT id FROM card_execution_requests WHERE card_id=${f.cardId}`)).toHaveLength(0);
+  });
+  it("allows agent execution of a held card",async()=>{
+    const f=await fixture();
+    await cards.setCardStatus({...actor,cardId:f.cardId,status:"on_hold",idempotencyKey:"state-on-hold"});
+    const current=(await cards.getCard(f.cardId))!.card;
+    const result=await f.service.execute(agentInput(f.cardId,"agent-on-hold",current.version));
+    expect(result.execution.state).toBe("started");expect(f.launch).toHaveBeenCalledTimes(1);
+  });
+  it("resumes a held card assigned to a session without a card link",async()=>{
+    const f=await fixture();const ownerId=`owner-${f.cardId}`;
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,model_preset) VALUES(${ownerId},'node','profile','completed','owner-model')`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_agent_id=NULL,assignee_session_id=${ownerId} WHERE id=${f.cardId}`;
+    await h.sql`UPDATE cards SET status='on_hold',status_changed_at=NOW(),version=version+1 WHERE id=${f.cardId}`;
+    const current=(await cards.getCard(f.cardId))!.card;
+    const result=await f.service.execute(agentInput(f.cardId,"agent-on-hold-unlinked",current.version,ownerId));
+    expect(result.execution.state).toBe("started");expect(result.card.status).toBe("running");
+    expect(result.card.assignee_session_id).toBe(ownerId);expect(f.ensure).toHaveBeenCalledTimes(1);
+    expect(await h.sql`SELECT card_id FROM sessions WHERE session_id=${ownerId}`).toEqual([{card_id:null}]);
+  });
+  it("rejects execution proof from a session other than the card assignee",async()=>{
+    const f=await fixture("ok",true);
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,model_preset) VALUES('other-session','node','profile','running','model')`;
+    await expect(cards.recordExecution({...agentActor,actorSessionId:"other-session",cardId:f.cardId,sessionId:"other-session",
+      requestId:"foreign-request",idempotencyKey:"foreign-execution-proof"}))
+      .rejects.toMatchObject({message:"실행 세션과 카드 담당이 일치하지 않습니다."});
   });
   it("different concurrent keys share one pending reservation and fixed session",async()=>{
     const f=await fixture("pending");const results=await Promise.all([f.service.execute(input(f.cardId,"concurrent-a")),f.service.execute(input(f.cardId,"concurrent-b"))]);

@@ -31,8 +31,9 @@ export function PersistentReportUndoRow({ undo, styles }: {
 export function PersistentReportSheet({ entry, index, count, current, compact, showNav, width, styles,
   titleRef, onStep, onExpand, onOption, onDismiss, onCard, onLink, bubble = false, surfaceHeight, busy = false,
   canCancel = false, cancelSent = false, onCancel, onHeight, onInteraction, onReady, expandedContent, cardStatus, onToggleCard,
-  acknowledgeLabel = '확인했어', undo, cardSurface = false, hidePageIndicator = false }: {
+  acknowledgeLabel = '확인했어', holdAction, undo, cardSurface = false, hidePageIndicator = false }: {
   expandedContent?: React.ReactNode; cardStatus?: React.ReactNode; onToggleCard?(): void;
+  holdAction?: { label: string; onPress(): void };
   acknowledgeLabel?: string; undo?: Pick<CardCompletionRecent, 'label' | 'expiresAt'> & { busy: boolean; onUndo(): void };
   entry: PersistentReportEntry; index: number; count: number; current: boolean; compact: boolean; showNav: boolean; width?: number;
   cardSurface?: boolean; hidePageIndicator?: boolean;
@@ -49,7 +50,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   if (asked.signature !== signature) setAsked({ signature, reading: 0, foot: 0 });
   const acknowledgeable = entry.kind === 'see' || (entry.kind === 'ask' && entry.options.length === 0 && entry.state === 'open');
   const showPage = !hidePageIndicator && count > 1;
-  const hasFooter = !compact && (showPage || entry.state === 'answered' || acknowledgeable || entry.options.length > 0 || Boolean(undo));
+  const hasFooter = !compact && (showPage || entry.state === 'answered' || acknowledgeable || entry.options.length > 0 || Boolean(holdAction) || Boolean(undo));
   const measured = useRef<{ reading: number | null; foot: number | null }>({ reading: null, foot: null });
   if (!hasFooter && measured.current.foot !== null) measured.current.foot = null;
   const measure = (part: 'reading' | 'foot', height: number) => {
@@ -127,12 +128,16 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
         {received}{cancelSent ? <View style={styles.cancelStatus}><Text testID="report-cancel-sent" style={styles.cancelLabel}>취소 요청 보냄</Text></View>
           : canCancel ? <View style={styles.cancelEdge}><GlassButton testID="report-cancel" variant="plain" size="compact"
             disabled={busy} accessibilityLabel="취소 요청" onPress={() => onCancel?.()}><Text style={styles.cancelLabel}>취소 요청</Text></GlassButton></View> : null}
-      </View> : acknowledgeable || entry.options.length ? <View testID="report-actions" style={styles.actions}>
+      </View> : acknowledgeable || entry.options.length || holdAction ? <View testID="report-actions" style={styles.actions}>
         {(acknowledgeable ? [acknowledgeLabel] : entry.options).map(option => <GlassButton key={option} variant="paper" size="compact"
           disabled={busy} accessibilityLabel={option}
           onPress={() => acknowledgeable ? onDismiss() : onOption(option)} style={styles.button}>
           <Text style={styles.buttonLabel}>{option}</Text>
         </GlassButton>)}
+        {holdAction ? <GlassButton key={holdAction.label} variant="paper" size="compact" disabled={busy}
+          accessibilityLabel={holdAction.label} onPress={holdAction.onPress} style={styles.button}>
+          <Text style={styles.buttonLabel}>{holdAction.label}</Text>
+        </GlassButton> : null}
       </View> : null}
     </View> : null;
   return <Pressable testID={`report-sheet-${entry.key}`} accessible={false}

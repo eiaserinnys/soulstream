@@ -34,7 +34,7 @@ test('tablet panel uses phone lanes and inset, while expanded board keeps wide g
   expect(expanded.queryByTestId('card-board-stages')).toBeNull();
   expect(StyleSheet.flatten(expanded.getByTestId('card-board-scroll-review').props.contentContainerStyle).paddingBottom).toBe(16);
   expect(expanded.queryByTestId(/^home-composer-spacer-/)).toBeNull();
-  expect(expanded.getAllByTestId(/^card-board-column-/)).toHaveLength(7);
+  expect(expanded.getAllByTestId(/^card-board-column-/)).toHaveLength(8);
   expect(screen.UNSAFE_getByType(AppModalSurface).props.variant).toBe('board');
   expect(screen.UNSAFE_getByType(AppModalSurface).props.presentationStyle).toBeUndefined();
 });
@@ -200,9 +200,9 @@ test('empty main board owns the create action in the workspace heading and expan
 
   act(() => ref.current!.openExpanded());
   const expanded = within(screen.getByTestId('card-board-expanded'));
-  expect(expanded.getAllByTestId(/^card-board-column-/)).toHaveLength(5);
+  expect(expanded.getAllByTestId(/^card-board-column-/)).toHaveLength(6);
   expect(expanded.getByLabelText('드래프트 카드 추가')).toBeTruthy();
-  expect(expanded.getAllByText('카드가 없습니다.')).toHaveLength(5);
+  expect(expanded.getAllByText('카드가 없습니다.')).toHaveLength(6);
   fireEvent.press(expanded.getByLabelText('드래프트 카드 추가'));
   expect(screen.UNSAFE_getByType(require('../CardCreateSheet').CardCreateSheet)).toBeTruthy();
 });

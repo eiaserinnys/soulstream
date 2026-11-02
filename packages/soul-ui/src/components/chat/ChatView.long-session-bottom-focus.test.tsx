@@ -11,6 +11,7 @@ import type { SoulSSEEvent } from "@shared/types";
 import { createChatSessionStore, useDashboardStore } from "../../stores/dashboard-store";
 import { ChatView } from "./ChatView";
 import { MAX_SEARCH_FOCUS_HISTORY_PAGES } from "./ChatView.reverse-helpers";
+import { ReportTimelineRowProvider } from "./ReportTimelineRowSlot";
 
 const virtuosoMock = vi.hoisted(() => ({
   scrollToIndex: vi.fn(),
@@ -107,23 +108,37 @@ vi.mock("../ChatInput", async () => {
   };
 });
 
-vi.mock("./VirtualizedItem", () => ({
-  VirtualizedItem: ({ item }: { item: any }) => {
-    const firstMessage = item.type === "tool-group"
-      ? item.messages[0]
-      : item.type === "summary-group"
-        ? item.anchor.type === "tool-group"
-          ? item.anchor.messages[0]
-          : item.anchor.msg
-        : item.type === "single"
-          ? item.msg
-          : null;
-    return createElement("div", {
-      "data-testid": "chat-item",
-      "data-tree-node-id": firstMessage?.treeNodeId,
-    });
-  },
-}));
+vi.mock("./VirtualizedItem", async () => {
+  const React = await vi.importActual<typeof import("react")>("react");
+  const { SystemMessage } = await vi.importActual<typeof import("./SystemMessage")>("./SystemMessage");
+  return {
+    VirtualizedItem: ({ item, presentation }: { item: any; presentation?: "default" | "manuscript" }) => {
+      const firstMessage = item.type === "tool-group"
+        ? item.messages[0]
+        : item.type === "summary-group"
+          ? item.anchor.type === "tool-group"
+            ? item.anchor.messages[0]
+            : item.anchor.msg
+          : item.type === "single"
+            ? item.msg
+            : null;
+      if (firstMessage?.treeNodeType === "report_timeline") {
+        return React.createElement(
+          "div",
+          {
+            "data-testid": "chat-item",
+            "data-tree-node-id": firstMessage.treeNodeId,
+          },
+          React.createElement(SystemMessage, { msg: firstMessage, presentation }),
+        );
+      }
+      return React.createElement("div", {
+        "data-testid": "chat-item",
+        "data-tree-node-id": firstMessage?.treeNodeId,
+      });
+    },
+  };
+});
 
 vi.mock("./hooks", () => ({
   useLlmContext: () => undefined,
@@ -150,6 +165,17 @@ function makeAssistantMessage(eventId: number): { event: SoulSSEEvent; eventId: 
     event: {
       type: "assistant_message",
       text: `assistant-${eventId}`,
+      timestamp: 0,
+    } as unknown as SoulSSEEvent,
+    eventId,
+  };
+}
+
+function makeThinking(eventId: number): { event: SoulSSEEvent; eventId: number } {
+  return {
+    event: {
+      type: "thinking",
+      thinking: `thinking-${eventId}`,
       timestamp: 0,
     } as unknown as SoulSSEEvent,
     eventId,
@@ -324,8 +350,21 @@ async function renderChatView(props: Partial<NonNullable<Parameters<typeof ChatV
 
   flushSync(() => {
     root.render(createElement(
-      ChatView as unknown as ComponentType<Record<string, unknown>>,
-      props as Record<string, unknown>,
+      ReportTimelineRowProvider,
+      {
+        render: (line, alignmentInset) => createElement(
+          "div",
+          {
+            "data-testid": "report-timeline-row-rendered",
+            "data-alignment-inset": alignmentInset,
+          },
+          line.title,
+        ),
+        children: createElement(
+          ChatView as unknown as ComponentType<Record<string, unknown>>,
+          props as Record<string, unknown>,
+        ),
+      },
     ));
   });
   await flushPassiveEffects();
@@ -1839,5 +1878,76 @@ describe("ChatView long-session initial bottom focus", () => {
     flushSync(() => itemsRendered());
 
     expect(targetMessage.classList.contains("chat-focus-ring")).toBe(true);
+  });
+
+  it("report 타임라인은 도구 사이에서 갱신되고 대화 뒤에는 새 행으로 시작한다", async () => {
+    const report = (title: string, eventId: number) => ({
+      eventId,
+      event: {
+        type: "report_timeline",
+        line_key: "card-812",
+        status: "review",
+        title,
+        detail: "세부 상황",
+        card_id: "card-812",
+        card_number: 812,
+      } as unknown as SoulSSEEvent,
+    });
+    useDashboardStore.getState().processHistoryEvents([
+      report("첫 상태", 1),
+      makeToolStart(2),
+      report("도구 뒤 상태", 3),
+      makeUserMessage(4),
+      report("대화 뒤 상태", 5),
+    ]);
+    ({ container, root } = await renderChatView());
+
+    const messages = virtuosoData().flatMap((item: any) => item.type === "single"
+      ? [item.msg]
+      : item.type === "activity-group" ? item.messages : []);
+    const reportMessages = messages.filter((message: any) => message.treeNodeType === "report_timeline");
+    expect(reportMessages).toHaveLength(2);
+    expect(reportMessages.map((message: any) => message.reportTimeline.title)).toEqual([
+      "도구 뒤 상태",
+      "대화 뒤 상태",
+    ]);
+    const renderedRows = container.querySelectorAll('[data-testid="report-timeline-row-rendered"]');
+    expect(Array.from(renderedRows, (row) => row.textContent)).toEqual([
+      "도구 뒤 상태",
+      "대화 뒤 상태",
+    ]);
+  });
+
+  it("thinking은 같은 line_key 보고를 끊지 않고 assistant 글은 끊는다", async () => {
+    const report = (title: string, eventId: number) => ({
+      eventId,
+      event: {
+        type: "report_timeline",
+        line_key: "card-812",
+        status: "review",
+        title,
+        detail: "세부 상황",
+        card_id: "card-812",
+        card_number: 812,
+      } as unknown as SoulSSEEvent,
+    });
+    useDashboardStore.getState().processHistoryEvents([
+      report("첫 상태", 1),
+      makeThinking(2),
+      report("thinking 뒤 최신", 3),
+      makeAssistantMessage(4),
+      report("assistant 글 뒤 새 행", 5),
+    ]);
+    ({ container, root } = await renderChatView());
+
+    const messages = virtuosoData().flatMap((item: any) => item.type === "single"
+      ? [item.msg]
+      : item.type === "activity-group" ? item.messages : []);
+    const reportMessages = messages.filter((message: any) => message.treeNodeType === "report_timeline");
+    expect(reportMessages).toHaveLength(2);
+    expect(reportMessages.map((message: any) => message.reportTimeline.title)).toEqual([
+      "thinking 뒤 최신",
+      "assistant 글 뒤 새 행",
+    ]);
   });
 });

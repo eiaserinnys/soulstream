@@ -8,12 +8,12 @@ const detail = (overrides: Partial<CardDetail> = {}): CardDetail => ({ card: car
 
 test('보고 없이 보관·완료 카드도 사유 없이 이동한다', () => {
   const archived = detail({ card: cardFixture({ status: 'done', archived: true }) });
-  for (const next of ['todo', 'queued', 'running', 'blocked', 'review', 'cancelled'] as const)
+  for (const next of ['todo', 'queued', 'running', 'blocked', 'review', 'on_hold', 'cancelled'] as const)
     expect(cardTransitionProblem(archived, next)).toBeNull();
   expect(cardTransitionProblem(detail({card:cardFixture({status:'review'})}), 'running')).toBeNull();
 });
 
-test.each(['todo', 'queued', 'running', 'review', 'done', 'cancelled'] as const)('미답 질문이 있어도 %s 상태를 저장한다', async (next) => {
+test.each(['todo', 'queued', 'running', 'review', 'on_hold', 'done', 'cancelled'] as const)('미답 질문이 있어도 %s 상태를 저장한다', async (next) => {
   const source = cardFixture({ status: 'blocked', blockedKind: 'question' });
   const latest = detail({ card: source, reports: [], questions: [{ answer: null } as any] });
   const api = { getCard: jest.fn().mockResolvedValue(latest), setCardStatus: jest.fn().mockResolvedValue({ card: { ...source, status: next } }),executeCard:jest.fn().mockResolvedValue({card:{...source,status:next},execution:{requestId:'req',state:'started'}}) };

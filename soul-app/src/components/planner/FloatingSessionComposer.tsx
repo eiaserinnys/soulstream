@@ -8,9 +8,11 @@ import { TodayCardComposer } from './TodayCardComposer';
 import type { ApiClient } from '../../api/client';
 
 /** Hosts choose placement; the existing composer owns every visual and action. */
-export function FloatingSessionComposer({ api, style, onCoveredHeightChange, onSessionCreated }: {
+export function FloatingSessionComposer({ api, style, composerStyle, triggerStyle, onCoveredHeightChange, onSessionCreated }: {
   api: ApiClient | null;
   style?: StyleProp<ViewStyle>;
+  composerStyle?: StyleProp<ViewStyle>;
+  triggerStyle?: StyleProp<ViewStyle>;
   onCoveredHeightChange(height: number): void;
   onSessionCreated?(sessionId: string): void;
 }) {
@@ -21,11 +23,11 @@ export function FloatingSessionComposer({ api, style, onCoveredHeightChange, onS
   useEffect(() => () => onCoveredHeightChange(0), [onCoveredHeightChange]);
   return <View testID="home-session-composer-dock" pointerEvents="box-none" style={style}
     onLayout={event => { onCoveredHeightChange(event.nativeEvent.layout.height + t.uiSpacing.md); }}>
-    {opened || Platform.OS !== 'ios' ? <View style={Platform.OS === 'ios' && !expanded ? { display: 'none' } : undefined}>
+    {opened || Platform.OS !== 'ios' ? <View testID="home-session-composer-panel" style={[composerStyle, Platform.OS === 'ios' && !expanded ? { display: 'none' } : null]}>
       <TodayCardComposer api={api} autoFocus={Platform.OS === 'ios' && expanded} onCollapse={Platform.OS === 'ios' ? collapse : undefined}
         onCreated={sessionId => { collapse(); if (onSessionCreated) onSessionCreated(sessionId); else useUIStore.getState().openSessionAtEvent(sessionId); }} />
     </View> : null}
-    {Platform.OS === 'ios' && !expanded ? <View pointerEvents="box-none" style={{ alignItems: 'flex-end' }}>
+    {Platform.OS === 'ios' && !expanded ? <View testID="home-session-composer-trigger-slot" pointerEvents="box-none" style={[{ alignItems: 'flex-end' }, triggerStyle]}>
         <GlassButton testID="home-session-composer-trigger" surfaceTestID="home-session-composer-trigger-surface"
           accessibilityLabel="새 대화" variant="primary" borderRadius={t.foundation.radius.round}
           contentStyle={{ paddingHorizontal: t.uiSpacing.lg, gap: t.uiSpacing.xs }} onPress={() => { setOpened(true); setExpanded(true); }}>

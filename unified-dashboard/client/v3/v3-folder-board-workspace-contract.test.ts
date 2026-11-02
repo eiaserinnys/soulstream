@@ -5,6 +5,12 @@ function read(relativePath: string): string {
   return readFileSync(new URL(relativePath, import.meta.url), "utf8");
 }
 
+function expectHiddenReportBranchToKeepTimeline(source: string): void {
+  const branch = source.match(/if \(!showReport\) return ([\s\S]*?)<\/ReportTimelineRowProvider>;/)?.[1] ?? "";
+  expect(branch).toContain("<ReportTimelineRowProvider");
+  expect(branch).toContain("<ChatView {...props} storeScope={storeScope} />");
+}
+
 describe("task board r3 workspace contract", () => {
   it("keeps the task board catalog and document selection scoped to the task board", () => {
     const pane = read("./FolderBoardPane.tsx");
@@ -41,7 +47,7 @@ describe("task board r3 workspace contract", () => {
     expect(sessionColumn).toContain("sessionId={activeSession.agentSessionId} storeScope={storeScope}");
     expect(sessionColumn).toContain("onSessionChange={onSessionChange} loadDisplaySettings={loadDisplaySettings}");
     expect(sessionColumn).toContain("chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled}");
-    expect(persistentChat).toContain("return <ChatView {...props} storeScope={storeScope} />;");
+    expectHiddenReportBranchToKeepTimeline(persistentChat);
     expect(resources).toContain("<FolderCardSection");
     expect(resources).toContain("<RichSessionRow");
     expect(resources).toContain("<MarkdownContent");
@@ -67,7 +73,7 @@ describe("task board r3 workspace contract", () => {
     expect(workspace).toContain("<WorkspaceSessionColumn");
     expect(workspace).toMatch(/<WorkspaceSessionColumn\s+activeSession=\{activeSession\}/);
     expect(sessionColumn).toContain("sessionId={activeSession.agentSessionId} storeScope={storeScope}");
-    expect(persistentChat).toContain("return <ChatView {...props} storeScope={storeScope} />;");
+    expectHiddenReportBranchToKeepTimeline(persistentChat);
     expect(workspace).not.toContain("<RightPanel");
   });
 

@@ -6,7 +6,7 @@ import {
   type PersistentReportEntry, type PersistentReportIssue, type PersistentReportResult,
   type ReportTimelineLine, type ReportTimelineStatus,
 } from "@soulstream/wire-schema/persistent-report";
-import type { SqlClient, RepositorySql } from "../cards/control_plane/card_types.js";
+import { isCardOffBoard, type CardStatus, type SqlClient, type RepositorySql } from "../cards/control_plane/card_types.js";
 import type { AppendReportTimeline } from "./report_timeline_publisher.js";
 
 export type PersistentReportUpdate = { agent_session_id: string; node_id: string | null; persistent_report: PersistentReportEntry[] };
@@ -188,7 +188,7 @@ export class PersistentReportService {
   /**
    * Card commit is complete. Align the server-owned card entries on every connected board, and with scanBoards on every board
    * that holds an entry for this card. The board scan reads every session's metadata (about 0.5s on the live DB), so the
-   * caller asks for it only when entries outside the connected boards can change: question asked/answered/withdrawn or card finished.
+   * caller asks for it only when entries outside the connected boards can change: question asked/answered/withdrawn or card left the board.
    */
   async syncCard(cardId: string, options: { scanBoards: boolean } = { scanBoards: true }): Promise<void> {
     const targets = await this.connectedSessions(this.sql, cardId);
@@ -245,8 +245,8 @@ export class PersistentReportService {
       const question = entry.question_id === undefined ? undefined : questions.find(q=>q.id === entry.question_id);
       const resolved = question !== undefined && (question.answer !== null || question.withdrawn_at !== null);
       const statuses = entry.card_numbers.length ? await sql<{number:number;status:string}[]>`SELECT number,status FROM cards WHERE number=ANY(${sql.array(entry.card_numbers)}::integer[])` : [];
-      const finished = entry.card_numbers.length > 0 && statuses.length === new Set(entry.card_numbers).size && statuses.every(c=>c.status==='done'||c.status==='cancelled');
-      if (resolved || finished) continue;
+      const leftBoard = entry.card_numbers.length > 0 && statuses.length === new Set(entry.card_numbers).size && statuses.every(c=>isCardOffBoard(c.status as CardStatus));
+      if (resolved || leftBoard) continue;
       if (entry.key.startsWith(CARD_QUESTION_KEY_PREFIX) && entry.question_id !== undefined && questionIds.has(entry.question_id)) {
         const title = clip(card.title,24);
         next.push(entry.title === title && entry.card_id === card.id && entry.card_status === card.status

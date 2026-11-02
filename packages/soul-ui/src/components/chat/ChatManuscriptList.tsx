@@ -49,14 +49,30 @@ export function manuscriptActivityNarrationIds(items: readonly MessageOrGroup[])
   return ids;
 }
 
+function isReportTimelineRow(item: ChatTimelineItem | undefined): boolean {
+  return item?.type === "single" && item.msg.treeNodeType === "report_timeline";
+}
+
 function isUserRow(item: ChatTimelineItem | undefined): boolean {
   return item?.type === "pending-message"
     || (item?.type === "single" && (item.msg.role === "user" || item.msg.role === "intervention"));
 }
 
-export function manuscriptItemSpacingClass(item: ChatTimelineItem, previous: ChatTimelineItem | undefined): string {
+export function manuscriptItemSpacingClass(
+  item: ChatTimelineItem,
+  previous: ChatTimelineItem | undefined,
+  next: ChatTimelineItem | undefined,
+): string {
   // Former adjacent margins collapsed to mt-10. Preserve that gap using pb-5 + pt-5.
-  // Read the previous data row, so virtual unmounting cannot change the spacing.
+  // Read neighboring data rows, so virtual unmounting cannot change the spacing.
+  if (isReportTimelineRow(item)) {
+    const spacing = [
+      ...(!isReportTimelineRow(previous) ? ["pt-2"] : []),
+      ...(!isReportTimelineRow(next) ? ["pb-2"] : []),
+    ];
+    return spacing.length === 0 ? "contents" : spacing.join(" ");
+  }
+
   return isUserRow(item) && isUserRow(previous)
     ? MANUSCRIPT_ADJACENT_USER_ROW_CLASS_NAME
     : "contents";

@@ -71,6 +71,7 @@ interface Props {
   onComposerLayout?: (anchorLayout: LayoutRectangle, composerBox: LayoutRectangle) => void;
   /** 키보드가 이 채팅 열과 겹치는 높이. */
   onKeyboardOverlapChange?: (overlap: number) => void;
+  onOpenReportCard?: (cardId: string) => void;
 }
 
 if (
@@ -112,6 +113,7 @@ export function ChatBody({
   presentation = 'default',
   showSessionAuxiliary = true,
   onComposerLayout, onKeyboardOverlapChange,
+  onOpenReportCard,
   reportView, inputComposerRef, getReportSendContext,
 }: Props) {
   const t = useTokens();
@@ -515,6 +517,7 @@ export function ChatBody({
         presentation={presentation}
         showNewMessage={showNewMessage}
         onPressNewMessage={requestBottomFollow}
+        onOpenReportCard={onOpenReportCard}
       />
 
       {showSessionAuxiliary ? <ChatRuntimeStrips sessionId={sessionId} api={ownsSessionConnection ? api : null} presentation={presentation} /> : null}

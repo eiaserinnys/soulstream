@@ -62,7 +62,7 @@ test('main with one non-review card opens on its first visible lane', () => {
   expect(screen.getAllByTestId(/^card-board-column-/)).toHaveLength(1);
 });
 
-test('숨김 토글은 중간 선택 레인을 유지하고 완료 선택만 검수 대기로 되돌린다', () => {
+test('숨김 토글은 중간 선택 레인을 유지하고 완료 선택만 가장 가까운 보류 칸으로 되돌린다', () => {
   const saved = jest.fn();
   const screen = render(<CardBoard phone api={null} cards={[]} includeCompleted onOpen={() => {}} onPositionChange={saved} />);
   fireEvent(screen.getByTestId('card-board-frame'), 'layout', { nativeEvent: { layout: { width: 390, height: 600 } } });
@@ -71,10 +71,10 @@ test('숨김 토글은 중간 선택 레인을 유지하고 완료 선택만 검
   expect(saved.mock.calls.at(-1)[0].lane).toBe('running');
   expect(screen.queryByLabelText('완료 레인 보기')).toBeNull();
   screen.rerender(<CardBoard phone api={null} cards={[]} includeCompleted onOpen={() => {}} onPositionChange={saved} />);
-  fireEvent.scroll(screen.getByTestId('card-board'), { nativeEvent: { contentOffset: { x: screen.getByTestId('card-board').props.snapToOffsets[5], y: 0 } } });
+  fireEvent.scroll(screen.getByTestId('card-board'), { nativeEvent: { contentOffset: { x: screen.getByTestId('card-board').props.snapToOffsets[6], y: 0 } } });
   screen.rerender(<CardBoard phone api={null} cards={[]} includeCompleted={false} onOpen={() => {}} onPositionChange={saved} />);
-  expect(saved.mock.calls.at(-1)[0].lane).toBe('review');
-  expect(saved.mock.calls.at(-1)[0].x).toBe(screen.getByTestId('card-board').props.snapToOffsets[4]);
+  expect(saved.mock.calls.at(-1)[0].lane).toBe('on_hold');
+  expect(saved.mock.calls.at(-1)[0].x).toBe(screen.getByTestId('card-board').props.snapToOffsets[5]);
 });
 
  test('pointer mouse pan changes horizontal position before longpress, vertical motion and secondary click do not', () => {
@@ -103,11 +103,11 @@ test.each([true, false])('phone=%s has no status tabs or lane-owned create actio
 });
 
 
-test('취소 레인도 숨길 때 검수 대기로 돌아오고 펼친 보드에서 취소 위치를 복원한다',()=>{
+test('취소 레인도 숨길 때 가장 가까운 보류 칸으로 되돌아간다',()=>{
  const saved=jest.fn();const props={phone:true,api:null,cards:[],onOpen:()=>{},onPositionChange:saved};
  const screen=render(<CardBoard {...props} includeCompleted initialPosition={{x:0,lane:'cancelled',lanes:{}}}/>);
  fireEvent(screen.getByTestId('card-board-frame'),'layout',{nativeEvent:{layout:{width:390,height:600}}});
  expect(saved.mock.calls.at(-1)[0].lane).toBe('cancelled');
  screen.rerender(<CardBoard {...props} includeCompleted={false}/>);
- expect(saved.mock.calls.at(-1)[0].lane).toBe('review');
+ expect(saved.mock.calls.at(-1)[0].lane).toBe('on_hold');
 });

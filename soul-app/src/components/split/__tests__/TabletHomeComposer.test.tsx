@@ -17,13 +17,18 @@ beforeEach(() => useUIStore.setState({
   floatingComposerBottomInset: 0,
 } as any));
 
-test.each([ThreePaneLayout, TwoPaneWithDrawer])('%p shares a 60% floating host and releases covered height on hiding', Layout => {
+test.each([ThreePaneLayout, TwoPaneWithDrawer])('%p keeps the composer centered at 60%, aligns its trigger to the feed inset, and releases covered height on hiding', Layout => {
   const screen = render(<Layout />);
   const host = screen.getByTestId('tablet-home-composer-host');
   expect(host.props.pointerEvents).toBe('box-none');
   expect(StyleSheet.flatten(host.props.style).position).toBe('absolute');
   const dock = screen.getByTestId('home-session-composer-dock');
-  expect(StyleSheet.flatten(dock.props.style).width).toBe('60%');
+  expect(dock.props.style).toBeUndefined();
+  expect(StyleSheet.flatten(screen.getByTestId('home-session-composer-trigger-slot').props.style).paddingRight).toBe(20);
+  fireEvent.press(screen.getByTestId('home-session-composer-trigger'));
+  expect(StyleSheet.flatten(screen.getByTestId('home-session-composer-panel').props.style)).toMatchObject({
+    width: '60%', alignSelf: 'center',
+  });
   fireEvent(dock, 'layout', { nativeEvent: { layout: { height: 100 } } });
   expect((useUIStore.getState() as any).floatingComposerBottomInset).toBe(112);
   act(() => { useUIStore.setState({ settingsVisible: true }); });

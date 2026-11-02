@@ -130,7 +130,7 @@ export function ReviewPasCardExpand() {
     const reviewEntry = initialEntries.find(entry => entry.card_id === id);
     if (!reviewEntry) return;
     setEntries(saved => {
-      if (status === 'done') return saved.filter(entry => entry.key !== reviewEntry.key);
+      if (status === 'done' || status === 'on_hold') return saved.filter(entry => entry.key !== reviewEntry.key);
       return saved.some(entry => entry.key === reviewEntry.key) ? saved : [reviewEntry, ...saved];
     });
   }), []);

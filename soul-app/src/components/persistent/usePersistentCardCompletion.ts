@@ -11,6 +11,7 @@ export const CARD_COMPLETION_UNDO_MS = 5000;
 export interface CardCompletionRecent {
   cardId: string;
   number: number | null;
+  target: 'done' | 'on_hold';
   label: string;
   expiresAt: number;
 }
@@ -18,7 +19,7 @@ export interface CardCompletionRecent {
 export interface CardCompletion {
   recent: CardCompletionRecent | null;
   busy: boolean;
-  complete(entry: PersistentReportEntry, currentEntries?: PersistentReportEntry[]): Promise<boolean>;
+  complete(entry: PersistentReportEntry, currentEntries?: PersistentReportEntry[], target?: 'done' | 'on_hold'): Promise<boolean>;
   undo(): Promise<boolean>;
   filterEntries?(entries: PersistentReportEntry[]): PersistentReportEntry[];
 }
@@ -99,7 +100,7 @@ export function usePersistentCardCompletion(api: ApiClient | null): CardCompleti
     };
   }, []);
 
-  const complete = useCallback(async (entry: PersistentReportEntry, currentEntries?: PersistentReportEntry[]): Promise<boolean> => {
+  const complete = useCallback(async (entry: PersistentReportEntry, currentEntries?: PersistentReportEntry[], target: 'done' | 'on_hold' = 'done'): Promise<boolean> => {
     if (!api || busyRef.current || !isReviewCardEntry(entry)) return false;
     const source = persistentReportStatusCard(entry);
     if (!source) return false;
@@ -110,7 +111,7 @@ export function usePersistentCardCompletion(api: ApiClient | null): CardCompleti
     const prevCard = completedCard.current;
     stopTimer();
     try {
-      const result = await performCardTransition(api, source, 'done', cardOperationId(), undefined, () => mounted.current);
+      const result = await performCardTransition(api, source, target, cardOperationId(), undefined, () => mounted.current);
       if (!result.card) {
         if (mounted.current) restorePreviousRecent(prevRecent, prevCard);
         return false;
@@ -129,7 +130,8 @@ export function usePersistentCardCompletion(api: ApiClient | null): CardCompleti
       completedCard.current = result.card;
       const number = entry.card_numbers[0] ?? null;
       const expiresAt = Date.now() + CARD_COMPLETION_UNDO_MS;
-      const nextRecent = { cardId: result.card.id, number, label: number === null ? '완료됨' : `#${number} 완료됨`, expiresAt };
+      const label = target === 'on_hold' ? '보류됨' : '완료됨';
+      const nextRecent = { cardId: result.card.id, number, target, label: number === null ? label : `#${number} ${label}`, expiresAt };
       recentRef.current = nextRecent;
       setRecent(nextRecent);
       bump(value => value + 1);
@@ -151,14 +153,16 @@ export function usePersistentCardCompletion(api: ApiClient | null): CardCompleti
 
   const undo = useCallback(async (): Promise<boolean> => {
     const source = completedCard.current;
-    if (!api || busyRef.current || !source) return false;
+    const recentTarget = recentRef.current?.target;
+    if (!api || busyRef.current || !source || !recentTarget) return false;
+    const expectedSource = { ...source, status: recentTarget };
 
     busyRef.current = true;
     setBusy(true);
     const prevRecent = recentRef.current;
     stopTimer();
     try {
-      const result = await performCardTransition(api, source, 'review', cardOperationId(), undefined, () => mounted.current);
+      const result = await performCardTransition(api, expectedSource, 'review', cardOperationId(), undefined, () => mounted.current);
       if (!result.card) {
         if (mounted.current) restorePreviousRecent(prevRecent, source);
         return false;

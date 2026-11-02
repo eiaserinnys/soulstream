@@ -45,7 +45,7 @@ it("opens the ordered card context menu and routes a selected status through the
   expect(menu.textContent).not.toContain(reviewCard.id);
   expect(menu.textContent).toContain("카드 상태 변경");
   expect([...menu.querySelectorAll<HTMLElement>('[data-slot="menu-item"]')].map(item=>item.textContent?.trim())).toEqual([
-    "카드 ID 복사","카드 색상 변경","드래프트","대기","실행 중","막힘","검수 대기","완료","취소",
+    "카드 ID 복사","카드 색상 변경","드래프트","대기","실행 중","막힘","검수 대기","보류","완료","취소",
   ]);
   await act(async()=>{menu.querySelector<HTMLButtonElement>('[role="menuitem"]')!.click();await Promise.resolve();});
   expect(writeText).toHaveBeenCalledWith(reviewCard.id);

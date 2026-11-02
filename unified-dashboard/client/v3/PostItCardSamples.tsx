@@ -9,7 +9,7 @@ export function PostItCardSamples({onOpen}:{onOpen(label:string):void}) {
   const [statuses,setStatuses]=useState<Record<string,CardStatus>>({});
   const [colors,setColors]=useState<Record<string,CardColor>>({});
   const [queueOrder,setQueueOrder]=useState(["postit-queued-a","postit-queued-b"]);
-  const statusesToShow=["todo","blocked","running","review","done","cancelled"] as const;
+  const statusesToShow=["todo","blocked","running","review","on_hold","done","cancelled"] as const;
   const cards=statusesToShow.map((status,index)=>({
     ...reviewCard,id:`postit-sample-${index}`,status:statuses[`postit-sample-${index}`]??status,
     color:colors[`postit-sample-${index}`]??CARD_COLOR_KEYS[index % CARD_COLOR_KEYS.length],

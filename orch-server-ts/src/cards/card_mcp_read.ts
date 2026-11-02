@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { CARD_STATUSES } from "@soulstream/wire-schema";
 import { serializeCardRow } from "../folders/folder_contracts.js";
 import {
   CARD_MCP_READ_KINDS,
@@ -12,7 +13,6 @@ import {
 import type { SqlClient } from "./control_plane/card_types.js";
 import { projectCardAttachmentRows } from "./card_attachment_projection.js";
 
-const CARD_STATUSES = ["todo", "queued", "blocked", "running", "review", "done", "cancelled"] as const;
 const TOKEN_FINGERPRINT_KINDS = [
   "card", "request", "brief", "attachments", "questions", "questions_history",
   "comments", "notes", "reports", "sessions", "now_history",

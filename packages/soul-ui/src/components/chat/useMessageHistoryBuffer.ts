@@ -39,6 +39,7 @@ export const CHAT_HISTORY_EVENT_TYPES = [
   "turn_summary",
   "debug",
   "generation_started",
+  "report_timeline",
   "tool_start",
   "tool_result",
   "error",

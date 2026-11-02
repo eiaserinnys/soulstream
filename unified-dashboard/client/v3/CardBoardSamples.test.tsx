@@ -17,6 +17,7 @@ afterEach(async()=>{await act(()=>root.unmount());queryClient.clear();element.re
 
 it("retains a mixed sample card after its status moves outside the initial seed set",async()=>{
  await act(()=>root.render(<QueryClientProvider client={queryClient}><CardBoardSamples/></QueryClientProvider>));
+ expect(element.querySelector('[data-board-column="on_hold"] [data-card-id="board-5-0"]')).not.toBeNull();
  const card=element.querySelector<HTMLElement>('[data-card-id="board-0-0"]')!;
  expect(card).not.toBeNull();
  await act(async()=>{card.querySelector<HTMLButtonElement>('[aria-label="카드 상태 변경"]')!.click();await new Promise(resolve=>setTimeout(resolve,0));});

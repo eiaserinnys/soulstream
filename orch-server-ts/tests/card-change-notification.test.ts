@@ -12,6 +12,12 @@ describe("committed card reference notifications",()=>{
   it("uses actual actor, locked before/after state and exact owner",()=>{
     expect(buildCardChangeNotification(change())).toMatchObject({sessionId:"owner",text:"사용자가 카드 「작업」(card)를 대기→실행 중으로 변경했습니다",deliveryId:"card:card:state:op:owner"});
   });
+  it("notifies a running owner about a hold so the session can stop, and keeps idle owners asleep",()=>{
+    const running=change({previousStatus:"running",committedCard:{id:"card",title:"작업",status:"on_hold",assignee_session_id:"owner"}});
+    expect(buildCardChangeNotification(running)).toMatchObject({sessionId:"owner",text:"사용자가 카드 「작업」(card)를 실행 중→보류로 변경했습니다"});
+    const idle=change({previousStatus:"review",committedCard:{id:"card",title:"작업",status:"on_hold",assignee_session_id:"owner"}});
+    expect(buildCardChangeNotification(idle)).toBeNull();
+  });
   it.each([change({previousStatus:"running"}),change({previousAssigneeSessionId:null}),change({committedCard:{id:"card",status:"done"}}),change({result:{idempotent:true,operation:{}}}),change({result:{operation:{actor_kind:"agent",actor_session_id:"owner",operation_type:"set_card_status"}}})])("suppresses no-change, unowned, done, replay, own changes",c=>expect(buildCardChangeNotification(c)).toBeNull());
   it("labels another session honestly even when comment.author_kind says user",()=>{
     const c=change();c.result.operation.actor_kind="agent";c.result.operation.actor_session_id="other";c.result.operation.operation_type="add_card_comment";

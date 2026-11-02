@@ -3,7 +3,7 @@ import { completedGridLayout } from '../../../packages/soul-ui/src/cards/complet
 
 export const BOARD_COLUMNS = [
   ['todo', '드래프트'], ['queued', '대기'], ['running', '실행 중'],
-  ['blocked', '막힘'], ['review', '검수 대기'], ['done', '완료'], ['cancelled', '취소'],
+  ['blocked', '막힘'], ['review', '검수 대기'], ['on_hold', '보류'], ['done', '완료'], ['cancelled', '취소'],
 ] as const;
 export const BOARD_LONG_PRESS_MS = 350;
 export const BOARD_DRAG_SLOP = 8; // Existing queue gesture threshold.

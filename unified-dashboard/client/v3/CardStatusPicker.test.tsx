@@ -32,7 +32,7 @@ it("aligns the status popup to the chip start edge",async()=>{
 it("allows every state with unanswered questions, without a restart reason",async()=>{
  const d=detail();d.reports=[];d.questions=[{id:"q",text:"질문",options:null,answer:null,askedAt:"",answeredAt:null}];
  const c=await render(vi.fn().mockResolvedValue(d));await click("카드 상태 변경");
- for(const label of ["드래프트","대기","실행 중","막힘","검수 대기","완료","취소"])expect(button(label).disabled).toBe(false);
+ for(const label of ["드래프트","대기","실행 중","막힘","검수 대기","보류","완료","취소"])expect(button(label).disabled).toBe(false);
  await click("실행 중");expect(c.change).toHaveBeenCalledWith(d.card,"running",undefined);
  expect(document.querySelector('input[aria-label="다시 실행할 사유"]')).toBeNull();
 });

@@ -56,5 +56,5 @@ function preview(text: string, max: number): string {
 }
 
 export function cardStatusLabel(status: string): string {
-  return ({todo:"할 일",queued:"대기",blocked:"막힘",running:"실행 중",review:"검수 대기",done:"완료",cancelled:"취소"} as Record<string,string>)[status] ?? status;
+  return ({todo:"할 일",queued:"대기",blocked:"막힘",running:"실행 중",review:"검수 대기",on_hold:"보류",done:"완료",cancelled:"취소"} as Record<string,string>)[status] ?? status;
 }

@@ -10,7 +10,9 @@ import {
 import type { ToolTraceResponse } from '../../api/client';
 import type { PersistentTurnUsageMode } from '../../api/persistentSessionEndpoints';
 import type { ChatBodyStyles } from './ChatBody.styles';
+import type { ReportTimelineLine } from '../../../../packages/wire-schema/src/persistent_report';
 import type { ChatRenderItem } from './groupChatEvents';
+import { ReportTimelineRow } from './ReportTimelineRow';
 import { EventContextMenu } from '../events/EventContextMenu';
 import { EventRenderer, type ChatMessageSession } from '../events/EventRenderer';
 import {
@@ -83,6 +85,7 @@ interface Props {
   presentation?: 'default' | 'manuscript';
   showNewMessage?: boolean;
   onPressNewMessage?: () => void;
+  onOpenReportCard?: (cardId: string) => void;
 }
 
 export const ChatEventList = memo(function ChatEventList({
@@ -110,6 +113,7 @@ export const ChatEventList = memo(function ChatEventList({
   presentation = 'default',
   showNewMessage = false,
   onPressNewMessage,
+  onOpenReportCard,
 }: Props) {
   const t = useTokens();
   const [activeSelection, setActiveSelection] = useState<{
@@ -132,12 +136,13 @@ export const ChatEventList = memo(function ChatEventList({
     return (
       <ChatEventRow item={item} session={item.kind === 'event' || item.kind === 'typing' || item.kind === 'agent-message-group' || item.kind === 'activity' ? session : undefined} sessionId={sessionId} api={api}
         onRetryPending={onRetryPending} onRestorePending={onRestorePending}
+        onOpenReportCard={onOpenReportCard}
         selection={activeSelection?.eventKey === item.key ? activeSelection.model : null}
         activeSelection={activeSelection}
         highlighted={highlighted} highlightedItemKey={highlightedItemKey} selectText={selectText} closeSelection={closeSelection}
         presentation={presentation} narration={narration} />
     );
-  }, [items, session, sessionId, api, onRetryPending, onRestorePending, activeSelection, highlightedItemKey, selectText, closeSelection, presentation]);
+  }, [items, session, sessionId, api, onRetryPending, onRestorePending, onOpenReportCard, activeSelection, highlightedItemKey, selectText, closeSelection, presentation]);
 
   const list = (
     <FlatList
@@ -215,6 +220,7 @@ interface RowProps {
   api: Props['api'];
   onRetryPending: Props['onRetryPending'];
   onRestorePending: Props['onRestorePending'];
+  onOpenReportCard?: Props['onOpenReportCard'];
   selection: MessageSelectionModel | null;
   activeSelection: { eventKey: string; model: MessageSelectionModel } | null;
   highlighted: boolean;
@@ -226,7 +232,7 @@ interface RowProps {
 }
 
 const ChatEventRow = memo(function ChatEventRow({
-  item, session, sessionId, api, onRetryPending, onRestorePending,
+  item, session, sessionId, api, onRetryPending, onRestorePending, onOpenReportCard,
   selection, activeSelection, highlighted, highlightedItemKey, selectText, closeSelection, presentation, narration,
 }: RowProps) {
   const t = useTokens();
@@ -245,6 +251,7 @@ const ChatEventRow = memo(function ChatEventRow({
               api={api}
               onRetryPending={onRetryPending}
               onRestorePending={onRestorePending}
+              onOpenReportCard={onOpenReportCard}
               selection={activeSelection?.eventKey === eventItem.key ? activeSelection.model : null}
               activeSelection={activeSelection}
               highlighted={eventItem.key === highlightedItemKey}
@@ -322,6 +329,13 @@ const ChatEventRow = memo(function ChatEventRow({
     const label = item.event.data.context_reset === true ? '새 세대 · 문맥 초기화' : '새 세대';
     return <SearchFocusHighlight active={highlighted}><LabeledDivider label={label} alignmentInset={presentation === 'manuscript' ? 'content' : 'avatar'}
       {...(presentation === 'manuscript' ? { lineColor: t.persistentSession.line } : {})} /></SearchFocusHighlight>;
+  }
+  if (item.kind === 'event' && item.event.type === 'report_timeline') {
+    return <SearchFocusHighlight active={highlighted}><ReportTimelineRow
+      line={item.event.data as unknown as ReportTimelineLine}
+      presentation={presentation}
+      onOpenCard={onOpenReportCard}
+    /></SearchFocusHighlight>;
   }
   if (item.kind === 'tool') {
     return (

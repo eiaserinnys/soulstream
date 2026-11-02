@@ -18,6 +18,7 @@ import { bottomFollowTargetKey } from './bottomFollow';
 import { projectPersistentTurnUsage } from './persistentTurnUsageProjection';
 import { projectCacheKeepaliveTurns } from './cacheKeepaliveProjection';
 import { projectOutputAttachments } from '../../lib/output-attachment-projection';
+import { collapseReportTimeline } from '../../../../packages/wire-schema/src/persistent_report';
 
 const TYPING_RENDER_ITEM: ChatRenderItem = {
   kind: 'typing',
@@ -69,6 +70,20 @@ export function useChatRenderItems({
       : placedRenderItems,
     [placedRenderItems, presentation],
   );
+  const collapsedBaseRenderItems = useMemo(
+    () => collapseReportTimeline(baseRenderItems, (item) => {
+      if (item.kind !== 'event' || item.event.type !== 'report_timeline') return null;
+      const key = item.event.data.line_key;
+      return typeof key === 'string' ? key : null;
+    }, (item) => item.kind === 'event' && (
+      item.event.type === 'user_message'
+      || item.event.type === 'intervention_sent'
+      || item.event.type === 'assistant_message'
+      || item.event.type === 'text_delta'
+      || item.event.type === 'realtime_transcript'
+    )),
+    [baseRenderItems],
+  );
   const streamingRenderItems = useMemo(
     () => {
       if (suppressStreaming) return [];
@@ -113,8 +128,8 @@ export function useChatRenderItems({
     streamingRenderItems,
   ]);
   const chronologicalItems = useMemo(
-    () => [...baseRenderItems, ...bottomRenderItems],
-    [baseRenderItems, bottomRenderItems],
+    () => [...collapsedBaseRenderItems, ...bottomRenderItems],
+    [collapsedBaseRenderItems, bottomRenderItems],
   );
   const hideWorkDetails = presentation === 'manuscript'
     && persistentDisplaySettings !== undefined

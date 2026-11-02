@@ -146,7 +146,7 @@ test("main and folder boards hide empty lanes and restore the current lane acros
  await home.getByRole("button",{name:"보드 확대",exact:true}).click();
  const expanded=page.getByRole("dialog",{name:"전체 카드 보드",exact:true}),expandedBoard=expanded.locator(".v3-card-board");
  await expect(expanded).toBeVisible();
- expect(await expandedBoard.locator("[data-board-column]").evaluateAll(columns=>columns.map(column=>column.getAttribute("data-board-column")))).toEqual(["todo","queued","running","blocked","review","done","cancelled"]);
+ expect(await expandedBoard.locator("[data-board-column]").evaluateAll(columns=>columns.map(column=>column.getAttribute("data-board-column")))).toEqual(["todo","queued","running","blocked","review","on_hold","done","cancelled"]);
  const expandedDone=expandedBoard.locator('[data-board-column="done"]');await expect(expandedDone.locator(".v3-completed-controls")).toHaveCount(1);
  const expandedCompletedScroller=expandedDone.locator('[data-testid="virtuoso-scroller"]');
  await expect.poll(()=>expandedCompletedScroller.evaluate(element=>element.scrollTop)).toBe(mainCompletedScroll);
@@ -176,7 +176,7 @@ test("main and folder boards hide empty lanes and restore the current lane acros
  await expect(folder.locator(".v3-card-actions").getByRole("button",{name:"새 카드",exact:true})).toBeVisible();
  await folder.getByRole("button",{name:"보드 확대",exact:true}).click();
  const folderExpanded=page.getByRole("dialog",{name:"현재 폴더 카드 보드",exact:true});
- expect(await folderExpanded.locator("[data-board-column]").evaluateAll(columns=>columns.map(column=>column.getAttribute("data-board-column")))).toEqual(["todo","queued","running","blocked","review"]);
+ expect(await folderExpanded.locator("[data-board-column]").evaluateAll(columns=>columns.map(column=>column.getAttribute("data-board-column")))).toEqual(["todo","queued","running","blocked","review","on_hold"]);
  await expect(folderExpanded.locator(".v3-card-actions").getByRole("button",{name:"새 카드",exact:true})).toBeVisible();
  await folderExpanded.getByRole("button",{name:"확대 닫기",exact:true}).click();
  await expect(folderExpanded).toHaveCount(0);
@@ -187,7 +187,7 @@ test("main and folder boards hide empty lanes and restore the current lane acros
  await expect(sampleBoard.locator(".v3-card-board-empty")).toHaveCount(1);
  await expect(sample.locator(".v3-card-actions").getByRole("button",{name:"새 카드",exact:true})).toBeVisible();
  await sample.getByRole("button",{name:"혼합",exact:true}).click();
- expect(await sampleBoard.locator("[data-board-column]").evaluateAll(columns=>columns.map(column=>column.getAttribute("data-board-column")))).toEqual(["todo","running","review"]);
+ expect(await sampleBoard.locator("[data-board-column]").evaluateAll(columns=>columns.map(column=>column.getAttribute("data-board-column")))).toEqual(["todo","running","review","on_hold"]);
  expect(state.writes).toHaveLength(1);
 });
 for(const [width,font] of [[390,17],[1210,14],[1440,17],[1920,18]])test(`product layout ${width} font ${font}`,async({page})=>{

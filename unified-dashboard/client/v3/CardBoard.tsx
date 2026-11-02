@@ -11,7 +11,7 @@ import type { CompletedBrowser } from "./use-completed-cards";
 export const boardColumns = [
   {status:"todo",label:"드래프트"}, {status:"queued",label:"대기"},
   {status:"running",label:"실행 중"}, {status:"blocked",label:"막힘"},
-  {status:"review",label:"검수 대기"}, {status:"done",label:"완료"}, {status:"cancelled",label:"취소"},
+  {status:"review",label:"검수 대기"}, {status:"on_hold",label:"보류"}, {status:"done",label:"완료"}, {status:"cancelled",label:"취소"},
 ] as const;
 
 /** Existing active lanes and a viewport-sized completed lane share card mutations. */

@@ -10,7 +10,7 @@ export interface CardStatusControl {
   change(card: CardRow, status: CardStatus, reason?: string): Promise<unknown>;
   changeColor?(card: CardRow, color: CardColor): Promise<unknown>;
 }
-export const cardStatusChoices = ["todo", "queued", "running", "blocked", "review", "done", "cancelled"] as const;
+export const cardStatusChoices = ["todo", "queued", "running", "blocked", "review", "on_hold", "done", "cancelled"] as const;
 
 export async function performCardTransition(control:CardStatusControl,status:CardStatus,reason?:string,loaded?:CardDetail) {
   const detail=loaded??await control.load();

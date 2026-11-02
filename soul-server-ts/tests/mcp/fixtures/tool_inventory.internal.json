@@ -3050,6 +3050,7 @@
             "blocked",
             "running",
             "review",
+            "on_hold",
             "done",
             "cancelled"
           ],
@@ -3325,6 +3326,7 @@
                   "blocked",
                   "running",
                   "review",
+                  "on_hold",
                   "done",
                   "cancelled",
                   "unknown"
@@ -6520,7 +6522,7 @@
     "name": "rollback_remote_agents_config"
   },
   {
-    "description": "드래프트(todo)나 대기(queued) 카드를 지금 실행한다. 시스템이 카드에 설정된 노드, 에이전트, 모델로 세션을 만들어 담당으로 잇고 진행 중으로 옮긴다. 담당 세션이 이미 있는 카드는 새로 만들지 않고 그 세션을 깨운다. 대기열 순서와 동시 실행 상한을 거치지 않는다. 생긴 세션은 부른 쪽의 자식이 아니며 완료 보고가 돌아오지 않으므로 경과는 카드에서 본다. 담당이 아니어도 실행할 수 있다.",
+    "description": "드래프트(todo), 대기(queued), 보류(on_hold) 카드를 지금 실행한다. 시스템이 카드에 설정된 노드, 에이전트, 모델로 세션을 만들어 담당으로 잇고 진행 중으로 옮긴다. 담당 세션이 이미 있는 카드는 새로 만들지 않고 그 세션을 깨운다. 대기열 순서와 동시 실행 상한을 거치지 않는다. 생긴 세션은 부른 쪽의 자식이 아니며 완료 보고가 돌아오지 않으므로 경과는 카드에서 본다. 담당이 아니어도 실행할 수 있다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -6604,6 +6606,7 @@
             "blocked",
             "running",
             "review",
+            "on_hold",
             "done",
             "cancelled"
           ],
@@ -6965,7 +6968,7 @@
     "name": "set_card_items"
   },
   {
-    "description": "담당 카드의 상태를 직접 변경한다. 보고·질문·사유·보관·이전 상태와 관계없이 완료·취소·재열기를 포함한 모든 상태를 선택할 수 있다. running 기록은 프로세스 실행 승인이 아니다.",
+    "description": "담당 카드의 상태를 직접 변경한다. 보고·질문·사유·보관·이전 상태와 관계없이 완료·취소·재열기를 포함한 모든 상태를 선택할 수 있다. running 기록은 프로세스 실행 승인이 아니다. 보류(on_hold)는 완료도 취소도 아닌 채 검수 대기와 PAS 판에서 내려 두는 상태다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -6998,6 +7001,7 @@
             "blocked",
             "running",
             "review",
+            "on_hold",
             "done",
             "cancelled"
           ],
@@ -7259,6 +7263,7 @@
                   "blocked",
                   "running",
                   "review",
+                  "on_hold",
                   "done",
                   "cancelled",
                   "unknown"

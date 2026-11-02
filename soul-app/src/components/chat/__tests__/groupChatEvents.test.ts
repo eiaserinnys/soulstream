@@ -137,6 +137,24 @@ describe('groupChatEvents', () => {
     )).toEqual(['context_usage', 'complete']);
   });
 
+  it('보고 타임라인은 스트리밍 글을 끊지 않고 독립 이벤트로 남긴다', () => {
+    const timeline = ev('timeline', 'report_timeline', {
+      line_key: 'card-1', status: 'review', title: '검수', detail: '', card_id: 'card-1', card_number: 1,
+    });
+    const result = groupChatEvents([
+      ev('start', 'text_start'),
+      ev('delta-1', 'text_delta', { text: '먼저 ' }),
+      timeline,
+      ev('delta-2', 'text_delta', { text: '확인하겠습니다.' }),
+      ev('end', 'text_end'),
+    ]);
+
+    expect(result.filter((item) => item.kind === 'event' && item.event.type === 'report_timeline'))
+      .toEqual([{ kind: 'event', event: timeline, key: 'evt-timeline' }]);
+    const assistant = result.find((item) => item.kind === 'event' && item.event.type === 'assistant_message');
+    expect(assistant).toMatchObject({ kind: 'event', event: { data: { text: '먼저 확인하겠습니다.' } } });
+  });
+
   it('manuscript PAS는 침묵 구호와 비사용자 턴의 단독 긍정 답변을 숨긴다', () => {
     const events = [
       ev('agent-input', 'user_message', { text: '보고', caller_info: { source: 'agent' } }),

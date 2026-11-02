@@ -41,6 +41,16 @@ test('menu failure stays visible, successful explicit move closes only after sav
   expect(api.setCardStatus).toHaveBeenCalled();
  });
 
+test('상태 목록에서 보류를 선택해 카드 상태를 저장한다', async () => {
+  const card = cardFixture({ status: 'review', version: 5 });
+  const api = { getCard: jest.fn().mockResolvedValue({ card, reports: [], questions: [], sessions: [] }),
+    setCardStatus: jest.fn().mockResolvedValue({ card: { ...card, status: 'on_hold', version: 6 } }) };
+  const screen = render(<CardStatusMenu api={api as any} card={card} onClose={() => {}} />);
+  await waitFor(() => expect(screen.getByLabelText('보류로 이동')).toBeTruthy());
+  await act(async () => fireEvent.press(screen.getByLabelText('보류로 이동')));
+  expect(api.setCardStatus).toHaveBeenCalledWith(card.id, 'on_hold', 5, expect.any(String), undefined);
+});
+
 test('취소는 한 번 표시하고 실행 없이 취소 상태만 저장한다', async () => {
   const card = cardFixture({ status: 'todo', version: 3 });
   const api = { getCard: jest.fn().mockResolvedValue({ card, reports: [], questions: [], sessions: [] }),

@@ -20,6 +20,7 @@ import { CardMcpReadService } from "./card_mcp_read.js";
 import { randomUUID } from "node:crypto";
 import { generateKeyBetween } from "@soulstream/fractional-position";
 import { CardRepository } from "./control_plane/card_repository.js";
+import { isCardOffBoard } from "./control_plane/card_types.js";
 import { CardMutationCore, type FolderMutateParams } from "./control_plane/card_mutation_core.js";
 import { CardVersionConflict, assigneeToFields, type CardAssigneeInput } from "./control_plane/card_models.js";
 import type { CardRow, CardStatus, CardMutationResult, FolderOperationRow, SqlClient, RepositorySql, FolderActorParams, FolderDbPort, FolderBroadcasterPort, FolderStatus } from "./control_plane/card_types.js";
@@ -192,7 +193,7 @@ export class CardControlPlaneService {
   async recordExecution(params:CardMutationParams & {requestId:string;sessionId:string;execution?:CardWorkExecution}) {
     return this.mutateCard(params,"execute_card",{request_id:params.requestId,session_id:params.sessionId,execution:params.execution},async(sql,card,eventId)=>{
       const session=(await sql`SELECT card_id FROM sessions WHERE session_id=${params.sessionId} FOR SHARE`)[0];
-      if(session?.card_id!==card.id || card.assignee_session_id && card.assignee_session_id!==params.sessionId)
+      if(card.assignee_session_id ? card.assignee_session_id!==params.sessionId : session?.card_id!==card.id)
         throw invalid("실행 세션과 카드 담당이 일치하지 않습니다.");
       const stateChanged=(await sql`SELECT c.status_changed_at>r.updated_at AS changed FROM cards c
         JOIN card_execution_requests r ON r.card_id=c.id WHERE c.id=${card.id} AND r.id=${params.requestId} AND r.session_id=${params.sessionId}`)[0]?.changed===true;
@@ -560,11 +561,15 @@ export class CardControlPlaneService {
         const cardChanged = previousStatus !== committedCard?.status || previousCard?.title !== committedCard?.title
           || previousCard?.archived !== committedCard?.archived || JSON.stringify(previousCard?.now) !== JSON.stringify(committedCard?.now);
         if (!this.reports || (!questionChanged && !cardChanged)) return;
-        const finished = previousStatus !== committedCard?.status
-          && (committedCard?.status === "done" || committedCard?.status === "cancelled");
+        const leftBoard = previousStatus !== committedCard?.status && committedCard !== undefined && isCardOffBoard(committedCard.status);
         try {
-          await this.reports.syncCard(card.id,{ scanBoards:questionChanged || finished });
+          await this.reports.syncCard(card.id,{ scanBoards:questionChanged || leftBoard });
           if (previousStatus !== committedCard?.status) await this.reports.recordCardTimeline(card.id);
+          if (previousStatus === "on_hold" && committedCard !== undefined && !isCardOffBoard(committedCard.status) && this.onQuestionAsked) {
+            const openQuestions = await this.repoSql<{id:string}[]>`SELECT id FROM card_questions
+              WHERE card_id=${card.id} AND answer IS NULL AND withdrawn_at IS NULL ORDER BY asked_at,id`;
+            for (const question of openQuestions) await this.onQuestionAsked({cardId:card.id,questionId:question.id});
+          }
         }
         catch (error) { this.warn(`PAS report sync failed after card ${card.id} committed: ${String(error)}`); }
       } }).catch(error=>translateAssigneeConflict(this.repoSql,error,

@@ -61,7 +61,7 @@ export function CardBoardSamples() {
       ...(index===0&&copy===0?{items:sampleItems,now:sampleNow}:{}),
     }))).map(seed=>({...seed,...sampleDetails[seed.id]?.card,completedAt:seed.completedAt}));
     return seeds.filter(card=>(scenario!=="none"||card.status!=="done")
-      &&(scenario!=="mixed"||card.status==="todo"||card.status==="running"||card.status==="review"||card.status==="done"))
+      &&(scenario!=="mixed"||card.status==="todo"||card.status==="running"||card.status==="review"||card.status==="on_hold"||card.status==="done"))
       .map(card=>({...card,status:statuses[card.id]??card.status}));
   },[scenario,statuses,assignmentScenario,settings,sampleDetails,checkScenario]);
   const loader=useCallback<CompletedPageLoader>(async params=>{
