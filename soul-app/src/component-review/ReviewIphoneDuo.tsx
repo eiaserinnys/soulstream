@@ -10,7 +10,7 @@ import {
 import { useTokens } from '../theme';
 import { SessionFeedScreen } from '../screens/SessionFeedScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
-import { DuoSideBandContext, PhoneRailModeContext, RAIL_MIN_INSET_WIDTH } from '../navigation/tabContract';
+import { DuoSideBandContext, DuoTopBandContext, PhoneRailModeContext, RAIL_MIN_INSET_WIDTH } from '../navigation/tabContract';
 import { ContentLinkProvider } from '../navigation/ContentLinkProvider';
 import { PhoneRailTabCluster, TabNavigator } from '../navigation/TabNavigator';
 import { DUO_RAIL_END_INSET } from '../navigation/duoSideBand';
@@ -44,7 +44,8 @@ import { useRegisterDuoRailOverride } from '../navigation/phoneRailActions';
 const PAS_LAYOUT_FRAMES = {
   'inner-landscape': { width: 951, height: 669, rail: false, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
   'inner-landscape-short': { width: 890, height: 626, rail: false, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
-  'inner-portrait': { width: 669, height: 951, rail: false, insets: { top: 72, right: 0, bottom: 24, left: 0 } },
+  'inner-portrait': { width: 669, height: 951, rail: false, insets: { top: 82, right: 0, bottom: 24, left: 0 } },
+  'inner-portrait-short': { width: 626, height: 890, rail: false, insets: { top: 82, right: 0, bottom: 24, left: 0 } },
   'ipad-pro-13-portrait': { width: 1032, height: 1376, rail: false, insets: { top: 24, right: 0, bottom: 20, left: 0 } },
   'ipad-pro-13-landscape': { width: 1376, height: 1032, rail: false, insets: { top: 24, right: 0, bottom: 20, left: 0 } },
   'outer-portrait': { width: 466, height: 678, rail: true, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
@@ -58,8 +59,8 @@ const RAIL_WIDTH = 84;
 export const IPHONE_DUO_FRAMES = [
   { id: 'outer-portrait', label: '바깥 세로', width: 466, height: 678, rail: true, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
   { id: 'outer-landscape', label: '바깥 가로', width: 678, height: 466, rail: true, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
-  { id: 'inner-portrait', label: '안쪽 세로', width: 669, height: 951, rail: false, insets: { top: 72, right: 0, bottom: 24, left: 0 } },
-  { id: 'inner-portrait-short', label: '안쪽 세로(높이 890)', width: 626, height: 890, rail: false, insets: { top: 72, right: 0, bottom: 24, left: 0 } },
+  { id: 'inner-portrait', label: '안쪽 세로', width: 669, height: 951, rail: false, insets: { top: 82, right: 0, bottom: 24, left: 0 } },
+  { id: 'inner-portrait-short', label: '안쪽 세로(높이 890)', width: 626, height: 890, rail: false, insets: { top: 82, right: 0, bottom: 24, left: 0 } },
   { id: 'inner-landscape', label: '안쪽 가로', width: 951, height: 669, rail: false, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
   { id: 'inner-landscape-short', label: '안쪽 가로(높이 626)', width: 890, height: 626, rail: false, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
 ] as const;
@@ -191,6 +192,7 @@ function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { fr
       <SafeAreaInsetsContext.Provider value={frame.insets}>
         <PhoneRailModeContext.Provider value={frame.rail}>
           <DuoSideBandContext.Provider value={duoSideBand}>
+          <DuoTopBandContext.Provider value={frameId.startsWith('inner-portrait')}>
           <PersistentSessionProvider>
           <NavigationContainer>
           <View style={{ flex: 1, flexDirection: 'row', width: frame.width, height: frame.height, overflow: 'hidden' }}>
@@ -213,6 +215,7 @@ function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { fr
           <EntryShellAlertHarness />
           </NavigationContainer>
           </PersistentSessionProvider>
+          </DuoTopBandContext.Provider>
           </DuoSideBandContext.Provider>
         </PhoneRailModeContext.Provider>
       </SafeAreaInsetsContext.Provider>
