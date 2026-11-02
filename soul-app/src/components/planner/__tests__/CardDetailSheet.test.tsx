@@ -6,6 +6,7 @@ jest.mock('expo-image-picker', () => ({ requestMediaLibraryPermissionsAsync: jes
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import React from 'react';
+import Ionicons from '@expo/vector-icons/Ionicons';
 import { act, fireEvent, render, renderHook, userEvent, waitFor } from '@testing-library/react-native';
 import { ActionSheetIOS, Alert, FlatList, ScrollView, StyleSheet } from 'react-native';
 import type { CardCheckItem, CardDetail, CardDto } from '../../../api/cardTypes';
@@ -417,7 +418,7 @@ test.each(['todo','queued','on_hold'] as const)('상세 %s 시작 버튼은 재�
  const alert=jest.spyOn(Alert,'alert').mockImplementation(()=>{}),onClose=jest.fn();
  const screen=render(<CardDetailContent api={api as any} cardId={source.id} onClose={onClose}/>);
  await waitFor(()=>expect(screen.getByTestId('card-detail-complete-visual')).toBeTruthy());
- expect(screen.getByTestId('card-detail-complete-visual').findByType('Ionicons').props.name).toBe('play');
+ expect(screen.getByTestId('card-detail-complete-visual').findByType(Ionicons).props.name).toBe('play');
  await act(async()=>fireEvent.press(screen.getByLabelText('시작하기')));
  expect(api.executeCard).toHaveBeenCalledTimes(1);expect(useCardStore.getState().rows[source.id].status).toBe('running');
  expect(screen.getByLabelText('시작 중…')).toBeTruthy();expect(onClose).not.toHaveBeenCalled();expect(alert).not.toHaveBeenCalled();
