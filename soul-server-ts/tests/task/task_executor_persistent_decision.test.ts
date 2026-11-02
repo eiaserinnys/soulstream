@@ -802,7 +802,7 @@ describe("TaskExecutor persistent decision wiring", () => {
         available_count: 0,
         best_weekly_remaining_percent: null,
         best_weekly_resets_at: null,
-        earliest_available_at: "2026-11-01T22:00:00.000Z",
+        earliest_available_at: new Date(Date.now() + 3_600_000).toISOString(),
       },
     });
     rememberProviderUsageObservation("antigravity", makeUsage());
@@ -878,7 +878,7 @@ describe("TaskExecutor persistent decision wiring", () => {
         available_count: 0,
         best_weekly_remaining_percent: null,
         best_weekly_resets_at: null,
-        earliest_available_at: "2026-11-01T22:00:00.000Z",
+        earliest_available_at: new Date(Date.now() + 3_600_000).toISOString(),
       },
     });
     rememberProviderUsageObservation("antigravity", makeUsage());
