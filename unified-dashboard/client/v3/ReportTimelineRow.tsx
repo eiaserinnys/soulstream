@@ -20,8 +20,8 @@ export function ReportTimelineRow({
       {...(line.status === "report" ? {} : { tone: line.status })}
     />
     {line.card_number !== null ? <span className="shrink-0 text-xs text-foreground">#{line.card_number}</span> : null}
-    <span className="min-w-0 flex-1 truncate text-xs text-foreground" data-slot="report-timeline-title">{line.title}</span>
-    {line.detail ? <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground" data-slot="report-timeline-detail">{line.detail}</span> : null}
+    <span className="min-w-0 truncate text-xs text-foreground" data-slot="report-timeline-title">{line.title}</span>
+    {line.detail ? <span className="min-w-0 truncate text-xs text-muted-foreground" data-slot="report-timeline-detail">{line.detail}</span> : null}
   </span>;
   const rowClassName = alignmentInset === "content"
     ? "flex min-w-0 py-1"
