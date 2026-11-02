@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 191개 $defs (top-level wire 90 + supporting/SSE 101). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 192개 $defs (top-level wire 90 + supporting/SSE 102). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -459,6 +459,7 @@ export interface SessionEventEnvelope {
     | SSEEventContextUsage
     | SSEEventContextManifest
     | SSEEventGenerationStarted
+    | SSEEventReportTimeline
     | SSEEventInputMaterialManifest
     | SSEEventUsageObservation
     | SSEEventCompact
@@ -1358,6 +1359,19 @@ export interface SSEEventGenerationStarted {
     material_unavailable?: true;
   };
   timestamp: number;
+  [k: string]: unknown;
+}
+/**
+ * SSE: PAS 채팅에 표시하는 카드 상태 타임라인.
+ */
+export interface SSEEventReportTimeline {
+  type: "report_timeline";
+  line_key: string;
+  status: "review" | "blocked" | "question" | "done" | "cancelled" | "on_hold" | "report";
+  title: string;
+  detail: string;
+  card_id: string | null;
+  card_number: number | null;
   [k: string]: unknown;
 }
 /**
@@ -3293,6 +3307,7 @@ export const EVENT_DURABILITY = {
   "context_usage": "durable",
   "context_manifest": "durable",
   "generation_started": "durable",
+  "report_timeline": "durable",
   "input_material_manifest": "durable",
   "usage_observation": "durable",
   "compact": "durable",
@@ -3369,6 +3384,7 @@ export const SSE_EVENT_TYPES = [
   "context_usage",
   "context_manifest",
   "generation_started",
+  "report_timeline",
   "compact",
   "reconnect",
   "history_sync",
@@ -3412,6 +3428,7 @@ export const SESSION_TIMELINE_EVENT_TYPES = [
   "realtime_status",
   "realtime_transcript",
   "generation_started",
+  "report_timeline",
 ] as const;
 export type SessionTimelineEventType = (typeof SESSION_TIMELINE_EVENT_TYPES)[number];
 

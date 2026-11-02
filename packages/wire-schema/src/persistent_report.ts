@@ -1,5 +1,52 @@
-/** PAS report storage and message-context contract. No event schema or DB column is added. */
+/** PAS report storage, message-context, and timeline event contracts. */
 export const PERSISTENT_REPORT_METADATA_TYPE = "persistent_report";
+export const REPORT_TIMELINE_EVENT_TYPE = "report_timeline";
+export type ReportTimelineStatus = "review" | "blocked" | "question" | "done" | "cancelled" | "on_hold" | "report";
+export type ReportTimelineLine = {
+  line_key: string;
+  status: ReportTimelineStatus;
+  title: string;
+  detail: string;
+  card_id: string | null;
+  card_number: number | null;
+};
+export const REPORT_TIMELINE_STATUS_LABEL: Record<ReportTimelineStatus, string> = {
+  review: "검수 대기",
+  blocked: "막힘",
+  question: "질문",
+  done: "완료",
+  cancelled: "취소",
+  on_hold: "보류",
+  report: "보고",
+};
+export function collapseReportTimeline<T>(
+  items: readonly T[],
+  lineKeyOf: (item: T) => string | null,
+  isConversation: (item: T) => boolean,
+): T[] {
+  const collapsed: T[] = [];
+  const positions = new Map<string, number>();
+  for (const item of items) {
+    if (isConversation(item)) {
+      collapsed.push(item);
+      positions.clear();
+      continue;
+    }
+    const key = lineKeyOf(item);
+    if (key === null) {
+      collapsed.push(item);
+      continue;
+    }
+    const position = positions.get(key);
+    if (position === undefined) {
+      positions.set(key, collapsed.length);
+      collapsed.push(item);
+    } else {
+      collapsed[position] = item;
+    }
+  }
+  return collapsed;
+}
 export const PERSISTENT_REPORT_LIMIT = 12;
 export const PERSISTENT_REPORT_KEY = /^[a-z0-9][a-z0-9_-]{0,47}$/;
 /** 카드 질문을 판에 올릴 때 쓰는 예약 key 접두사. `cq_` + 질문 UUID. */

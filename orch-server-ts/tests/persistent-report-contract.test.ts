@@ -1,10 +1,28 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { parsePersistentReportEntry, readPersistentReport, parsePersistentReportReply } from "../../packages/wire-schema/src/persistent_report.js";
+import { collapseReportTimeline, parsePersistentReportEntry, readPersistentReport, parsePersistentReportReply, REPORT_TIMELINE_STATUS_LABEL } from "../../packages/wire-schema/src/persistent_report.js";
 
 const entry = { key: "deploy-270", kind: "ask", title: "배포 결정", card_numbers: [], context: "검증을 마쳤습니다", action: "[결과](https://example.com/result)", options: ["진행", "보류"] };
 
 describe("persistent report shared contract", () => {
+  it("collapses repeated timeline lines only within conversation boundaries", () => {
+    const a1 = { key: "A", value: 1 };
+    const a2 = { key: "A", value: 2 };
+    const b1 = { key: "B", value: 1 };
+    const other = { key: null, conversation: false };
+    const conversation = { key: null, conversation: true };
+    const lineKeyOf = (item: typeof a1 | typeof other | typeof conversation) => item.key;
+    const isConversation = (item: typeof a1 | typeof other | typeof conversation) => "conversation" in item && item.conversation;
+
+    expect(collapseReportTimeline([a1, other, a2], lineKeyOf, isConversation)).toEqual([a2, other]);
+    expect(collapseReportTimeline([a1, conversation, a2], lineKeyOf, isConversation)).toEqual([a1, conversation, a2]);
+    expect(collapseReportTimeline([a1, b1, a2], lineKeyOf, isConversation)).toEqual([a2, b1]);
+    expect(REPORT_TIMELINE_STATUS_LABEL).toEqual({
+      review: "검수 대기", blocked: "막힘", question: "질문", done: "완료",
+      cancelled: "취소", on_hold: "보류", report: "보고",
+    });
+    expect([a1, other, a2]).toEqual([a1, other, a2]);
+  });
   it("keeps the link recognition regex aligned with the display contract", () => {
     const source = readFileSync(new URL("../../packages/wire-schema/src/persistent_report.ts", import.meta.url), "utf8");
     expect(source).toContain(String.raw`action.replace(/\[([^\]\n]+)\]\((https:\/\/[^\s)]+)\)/g,`);

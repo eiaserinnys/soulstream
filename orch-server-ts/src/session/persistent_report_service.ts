@@ -4,8 +4,10 @@ import {
   CARD_ENTRY_KEY_PREFIX, CARD_QUESTION_KEY_PREFIX,
   PERSISTENT_REPORT_KEY, PERSISTENT_REPORT_LIMIT, PERSISTENT_REPORT_METADATA_TYPE,
   type PersistentReportEntry, type PersistentReportIssue, type PersistentReportResult,
+  type ReportTimelineLine, type ReportTimelineStatus,
 } from "@soulstream/wire-schema/persistent-report";
 import type { SqlClient, RepositorySql } from "../cards/control_plane/card_types.js";
+import type { AppendReportTimeline } from "./report_timeline_publisher.js";
 
 export type PersistentReportUpdate = { agent_session_id: string; node_id: string | null; persistent_report: PersistentReportEntry[] };
 export type PublishPersistentReports = (updates: PersistentReportUpdate[]) => void | Promise<void>;
@@ -19,13 +21,15 @@ export type PersistentReportReplyDecision =
 type ReportRow = Record<string, unknown> & { session_id: string; node_id: string | null; metadata: unknown; session_type: string | null };
 type ConnectedSessionRow = { session_id: string; session_type: string | null; metadata: unknown };
 type CardQuestionRow = { card_id: string; options: string[] | null; answer: string | null; withdrawn_at: Date | null };
-type CardStateRow = { id: string; number: number | null; title: string; status: string; archived: boolean; blocked_detail: string | null; now: { text?: string; turn?: string; ask?: string | null } | null };
+type CardStateRow = { id: string; number: number | null; title: string; status: string; archived: boolean; blocked_kind: string | null; blocked_detail: string | null; now: { text?: string; turn?: string; ask?: string | null } | null };
+const CARD_TIMELINE_STATUSES = new Set(["review", "blocked", "done", "cancelled", "on_hold"]);
 
 export class PersistentReportService {
   constructor(
     private readonly sql: SqlClient,
     private readonly publish: PublishPersistentReports,
     private readonly onPosted?: OnPersistentReportPosted,
+    private readonly appendTimeline?: AppendReportTimeline,
   ) {}
   async get(sessionId: string): Promise<PersistentReportEntry[]> {
     const row = (await this.sql<ReportRow[]>`SELECT metadata FROM sessions WHERE session_id=${sessionId}`)[0];
@@ -51,9 +55,34 @@ export class PersistentReportService {
       && typeof (input as { key: unknown }).key === "string"
       ? (input as { key: string }).key
       : undefined;
-    if (result.ok && result.changed && this.onPosted && key !== undefined) {
+    if (result.ok && result.changed && key !== undefined) {
       const entry = result.persistent_report.find(candidate => candidate.key === key && candidate.state === "open");
-      if (entry) await this.onPosted({ sessionId, entry });
+      if (entry) {
+        if (this.appendTimeline) {
+          let lineKey = `report:${entry.key}`;
+          let cardId: string | null = null;
+          let cardNumber: number | null = null;
+          if (entry.card_numbers.length === 1) {
+            const number = entry.card_numbers[0]!;
+            const card = (await this.sql<{ id: string }[]>`SELECT id FROM cards WHERE number=${number}`)[0];
+            if (card) {
+              lineKey = `card:${card.id}`;
+              cardId = card.id;
+              cardNumber = number;
+            }
+          }
+          const line: ReportTimelineLine = {
+            line_key: lineKey,
+            status: entry.kind === "ask" ? "question" : "report",
+            title: entry.title,
+            detail: entry.context,
+            card_id: cardId,
+            card_number: cardNumber,
+          };
+          await this.appendTimeline(sessionId, line);
+        }
+        await this.onPosted?.({ sessionId, entry });
+      }
     }
     return result;
   }
@@ -62,7 +91,8 @@ export class PersistentReportService {
    * 이미 답했거나 철회한 질문, 끝난 카드는 no-op. 판이 가득 차면 errors를 돌려주고(호출자가 경고만 한다) 질문 자체는 그대로 남는다.
    */
   async putQuestion(sessionId: string, questionId: string): Promise<PersistentReportResult> {
-    return this.mutate(sessionId, async (sql, entries) => {
+    let timelineLine: ReportTimelineLine | undefined;
+    const result = await this.mutate(sessionId, async (sql, entries) => {
       const question = (await sql<{ card_id: string; text: string; options: string[] | null; answer: string | null; withdrawn_at: Date | null }[]>`
         SELECT card_id,text,options,answer,withdrawn_at FROM card_questions WHERE id=${questionId}`)[0];
       if (!question) return [{ path: "question_id", reason: "질문이 없습니다" }];
@@ -70,6 +100,14 @@ export class PersistentReportService {
       const card = (await sql<{ number: number | null; title: string; status: string }[]>`
         SELECT number,title,status FROM cards WHERE id=${question.card_id}`)[0];
       if (!card || card.status === "done" || card.status === "cancelled") return null;
+      timelineLine = {
+        line_key: `card:${question.card_id}`,
+        status: "question",
+        title: clip(card.title, 60),
+        detail: clip(question.text, 120),
+        card_id: question.card_id,
+        card_number: card.number,
+      };
       const parsed = parsePersistentReportEntry({
         key: `${CARD_QUESTION_KEY_PREFIX}${questionId}`, kind: "ask",
         title: clip(card.title, 24),
@@ -80,6 +118,8 @@ export class PersistentReportService {
       if (!parsed.ok) return parsed.errors;
       return this.upsertEntry(sql, entries, { ...parsed.value, card_id: question.card_id, card_status: card.status });
     });
+    if (result.ok && result.changed && timelineLine) await this.appendTimeline?.(sessionId, timelineLine);
+    return result;
   }
   private async upsertEntry(sql: RepositorySql, entries: PersistentReportEntry[], entry: Omit<PersistentReportEntry, "updated_at">): Promise<PersistentReportIssue[] | null> {
     const cards = entry.card_numbers.length ? await sql<{ number: number; id: string }[]>`SELECT number,id FROM cards WHERE number=ANY(${sql.array(entry.card_numbers)}::integer[])` : [];
@@ -168,9 +208,32 @@ export class PersistentReportService {
     for (const row of related) targets.add(row.session_id);
     for (const sessionId of targets) await this.mutate(sessionId, (sql, entries) => this.syncCardOnBoard(sql, entries, cardId, sessionId));
   }
+  async recordCardTimeline(cardId: string): Promise<void> {
+    if (!this.appendTimeline) return;
+    const card = (await this.sql<CardStateRow[]>`
+      SELECT id,number,title,status,archived,blocked_kind,blocked_detail,now FROM cards WHERE id=${cardId}
+    `)[0];
+    if (!card || card.archived || !CARD_TIMELINE_STATUSES.has(card.status)) return;
+    if (card.status === "blocked" && card.blocked_kind === "question") return;
+    const status = card.status as ReportTimelineStatus;
+    const detail = status === "review" || status === "blocked"
+      ? clip(cardSituationText(card), 120)
+      : "";
+    const line: ReportTimelineLine = {
+      line_key: `card:${card.id}`,
+      status,
+      title: clip(card.title, 60),
+      detail,
+      card_id: card.id,
+      card_number: card.number,
+    };
+    for (const sessionId of await this.connectedSessions(this.sql, card.id)) {
+      await this.appendTimeline?.(sessionId, line);
+    }
+  }
   /** 판 하나에서 카드 C의 장을 규칙대로 맞춘다. 바뀐 것이 없으면 mutate가 publish하지 않는다. */
   private async syncCardOnBoard(sql: RepositorySql, entries: PersistentReportEntry[], cardId: string, sessionId: string): Promise<PersistentReportIssue[] | null> {
-    const card = (await sql<CardStateRow[]>`SELECT id,number,title,status,archived,blocked_detail,now FROM cards WHERE id=${cardId}`)[0];
+    const card = (await sql<CardStateRow[]>`SELECT id,number,title,status,archived,blocked_kind,blocked_detail,now FROM cards WHERE id=${cardId}`)[0];
     if (!card) return null;
     const questions = await sql<{id:string;answer:string|null;withdrawn_at:Date|null}[]>`SELECT id,answer,withdrawn_at FROM card_questions WHERE card_id=${cardId}`;
     const questionIds = new Set(questions.map(question=>question.id));
@@ -203,7 +266,7 @@ export class PersistentReportService {
     const key = `${CARD_ENTRY_KEY_PREFIX}${card.id}`;
     const index = next.findIndex(entry=>entry.key === key);
     if (wantsState) {
-      const text = (card.now?.turn === "user" && card.now.ask ? card.now.ask : card.now?.text) || card.blocked_detail || "";
+      const text = cardSituationText(card);
       const desired: Omit<PersistentReportEntry,"updated_at"> = { key, kind: "see", title: clip(card.title,24),
         card_numbers: card.number === null ? [] : [card.number], context: clip(text,120), action: "", options: [],
         state: "open", answer: "", card_id: card.id, card_status: card.status };
@@ -280,6 +343,12 @@ function sameArray<T>(left: readonly T[], right: readonly T[]): boolean {
 export async function writePersistentReportTx(sql: RepositorySql, row: Pick<ReportRow,"session_id"|"node_id">, entries: PersistentReportEntry[]): Promise<PersistentReportUpdate> {
   await sql`SELECT session_apply_metadata_entry(${row.session_id},${JSON.stringify({type:PERSISTENT_REPORT_METADATA_TYPE,value:{entries}})},${PERSISTENT_REPORT_METADATA_TYPE},NOW())`;
   return {agent_session_id:row.session_id,node_id:row.node_id,persistent_report:entries};
+}
+
+function cardSituationText(card: Pick<CardStateRow, "now" | "blocked_detail">): string {
+  return (card.now?.turn === "user" && card.now.ask ? card.now.ask : card.now?.text)
+    || card.blocked_detail
+    || "";
 }
 
 /** 길이가 바뀌는 글은 말줄임으로 끊는다. 코드포인트로 max를 넘으면 앞 max-1자 + 「…」, 아니면 원문. */
