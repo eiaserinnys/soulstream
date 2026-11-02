@@ -20,6 +20,7 @@ describe("buildHistoryPageUrl", () => {
       "turn_summary",
       "debug",
       "generation_started",
+      "report_timeline",
       "tool_start",
       "tool_result",
       "error",

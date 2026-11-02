@@ -46,6 +46,7 @@ const CHAT_MESSAGE_EVENT_ID_INVENTORY = {
   turn_summary: "render",
   assigned_card_context: "render",
   generation_started: "render",
+  report_timeline: "render",
   persistent_jev_candidates: "render",
   persistent_instruction_recorded: "conditional",
   context_usage: "hidden",
@@ -317,6 +318,13 @@ describe("flattenTree", () => {
         eventId: 160,
       },
       { node: makeRawEventNode("generation_started", 170), type: "generation_started", eventId: 170 },
+      {
+        node: makeRawEventNode("report_timeline", 200, {
+          line: { line_key: "card-812", status: "review", title: "검수 요청", detail: "완료", card_id: "card-812", card_number: 812 },
+        }),
+        type: "report_timeline",
+        eventId: 200,
+      },
       {
         node: makeRawEventNode("persistent_jev_candidates", 190, { preparedInputId: "prepared-input", candidates: [] }),
         type: "persistent_jev_candidates",

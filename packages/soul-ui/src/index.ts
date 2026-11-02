@@ -18,3 +18,6 @@ export * from "./folder-status";
 export * from "./page";
 export * from "./pending-mutation-registry";
 export type { PersistentTurnUsageMode } from "@soulstream/wire-schema/persistent-session-settings";
+export { REPORT_TIMELINE_STATUS_LABEL } from "@soulstream/wire-schema/persistent-report";
+export { collapseReportTimeline } from "@soulstream/wire-schema/persistent-report";
+export type { ReportTimelineLine, ReportTimelineStatus } from "@soulstream/wire-schema/persistent-report";

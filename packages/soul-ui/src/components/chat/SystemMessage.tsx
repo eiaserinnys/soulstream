@@ -7,12 +7,15 @@ import { LabeledDivider } from "./LabeledDivider";
 import { formatPersistentJevCandidates } from "../../lib/persistent-jev-candidates";
 import { formatPersistentInstructionRecorded, persistentInstructionRecordedTitle } from "../../lib/persistent-instruction-recorded";
 import { ManuscriptAgentMessageGroup } from "./ManuscriptAgentMessageGroup";
+import { useReportTimelineRow } from "./ReportTimelineRowSlot";
 
 export const SystemMessage = memo(function SystemMessage({ msg, presentation = "default" }: { msg: ChatMessage; presentation?: "default" | "manuscript" }) {
+  const renderReportTimelineRow = useReportTimelineRow();
   if (msg.manuscriptAgentMessages) {
     return <ManuscriptAgentMessageGroup messages={msg.manuscriptAgentMessages} />;
   }
   const alignmentInset = presentation === "manuscript" ? "content" : "avatar";
+  if (msg.reportTimeline) return renderReportTimelineRow?.(msg.reportTimeline, alignmentInset) ?? null;
   if (msg.treeNodeType === "generation_started") return <LabeledDivider label={msg.contextReset ? "새 세대 · 문맥 초기화" : "새 세대"} alignmentInset={alignmentInset} />;
   if (msg.treeNodeType === "persistent_jev_candidates") {
     const candidates = msg.jevCandidates ?? [];
