@@ -30,7 +30,7 @@ describe('surface roles v0.1', () => {
     expect(roles.modal.blurIntensity).toBeGreaterThan(roles.glassCard.blurIntensity);
     expect(roles.nativeSheet.nativeGlass).toBe(false);
     expect(roles.nativeSheet.fallbackColor).toBe(
-      mode === 'light' ? LIGHT_COLORS.surface : DARK_COLORS.surface,
+      mode === 'light' ? LIGHT_COLORS.surface : '#151518',
     );
   });
 

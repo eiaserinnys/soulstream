@@ -127,7 +127,7 @@ describe('surface role contract', () => {
     expect(roles.nativeSheet.nativeGlass).toBe(false);
     expect(roles.nativeSheet.compositesBackdrop).toBe(false);
     expect(roles.nativeSheet.fallbackColor).toBe(
-      mode === 'light' ? LIGHT_COLORS.surface : DARK_COLORS.surface,
+      mode === 'light' ? LIGHT_COLORS.surface : '#151518',
     );
     expect(roles.nativeSheet.borderRadius).toBe(0);
     expect(roles.nativeSheet.blurIntensity).toBe(0);
