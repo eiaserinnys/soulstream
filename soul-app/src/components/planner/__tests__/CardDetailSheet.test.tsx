@@ -123,9 +123,12 @@ test('키보드가 열리면 상황판을 숨기고 커멘트 입력에 필요�
   act(() => avoider.props.onOverlapChange(0));
   expect(screen.getByText('상황판')).toBeTruthy();
 });
-test('듀오 카드 상세 레일은 현재 탭과 노트를 숨기고 다른 탭으로 이동한다', async () => {
+test.each(['phone', 'tabletLandscape'])('%s 듀오 카드 상세 레일은 현재 탭만 숨기고 나머지 탭으로 이동한다', async (device) => {
+  mockDevice = device;
   const onClose = jest.fn();
-  const withItems: CardDetail = { ...detail, card: { ...card, items: [checkItem(1, 'todo')] } };
+  const withItems: CardDetail = { ...detail, card: { ...card, items: [checkItem(1, 'todo')] },
+    notes: [{ id: 'note-1', cardId: card.id, authorKind: 'agent', authorId: null,
+      sessionId: 's1', kind: 'note', body: '노트 본문', createdAt: '' }] };
   const api = { getCard: jest.fn().mockResolvedValue(withItems) };
   const screen = render(<DuoSideBandContext.Provider value={true}>
     <CardDetailContent api={api as any} cardId={card.id} onClose={onClose} />
@@ -136,45 +139,20 @@ test('듀오 카드 상세 레일은 현재 탭과 노트를 숨기고 다른 �
   expect(screen.queryByTestId('card-detail-back-icon')).toBeNull();
   expect(screen.queryByTestId('settings-segment-card-detail-comments')).toBeNull();
   const actions = () => usePhoneRailActions.getState().overrides.at(-1)!.actions;
-  expect(actions().map(action => action.id)).toEqual(['close', 'complete', 'tab-comments', 'tab-sessions']);
-  expect(actions().some(action => action.id === 'tab-items' || action.id === 'tab-notes')).toBe(false);
+  expect(actions().map(action => action.id)).toEqual(['close', 'complete', 'tab-comments', 'tab-sessions', 'tab-notes']);
   act(() => actions().find(action => action.id === 'tab-comments')!.onPress());
-  expect(actions().map(action => action.id)).toEqual(['close', 'complete', 'tab-items', 'tab-sessions']);
-  expect(actions().some(action => action.id === 'tab-comments' || action.id === 'tab-notes')).toBe(false);
+  expect(actions().map(action => action.id)).toEqual(['close', 'complete', 'tab-items', 'tab-sessions', 'tab-notes']);
   act(() => actions().find(action => action.id === 'tab-sessions')!.onPress());
   expect(screen.getByText('실행 세션')).toBeTruthy();
-  expect(actions().map(action => action.id)).toEqual(['close', 'complete', 'tab-items', 'tab-comments']);
-  act(() => actions().find(action => action.id === 'close')!.onPress());
-  expect(onClose).toHaveBeenCalledTimes(1);
-});
-
-test('접은 듀오에서는 제목 메뉴로 노트를 열고 레일 탭은 두 개만 유지한다', async () => {
-  const withNotes: CardDetail = { ...detail, notes: [{ id: 'note-1', cardId: card.id, authorKind: 'agent', authorId: null,
-    sessionId: 's1', kind: 'note', body: '노트 본문', createdAt: '' }] };
-  const api = { getCard: jest.fn().mockResolvedValue(withNotes) };
-  const screen = render(<DuoSideBandContext.Provider value={true}>
-    <CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />
-  </DuoSideBandContext.Provider>);
-  await waitFor(() => expect(screen.getByText('원문')).toBeTruthy());
-  fireEvent.press(screen.getByLabelText('상태 변경'));
-  await waitFor(() => expect(screen.getByLabelText('노트 보기')).toBeTruthy());
-  fireEvent.press(screen.getByLabelText('노트 보기'));
-
+  expect(actions().map(action => action.id)).toEqual(['close', 'complete', 'tab-items', 'tab-comments', 'tab-notes']);
+  act(() => actions().find(action => action.id === 'tab-notes')!.onPress());
   expect(screen.getByTestId('card-notes')).toBeTruthy();
   expect(screen.getByText('노트 본문')).toBeTruthy();
-  expect(usePhoneRailActions.getState().overrides.at(-1)!.actions.map(action => action.id))
-    .toEqual(['close', 'complete', 'tab-items', 'tab-comments']);
-});
-
-test('펼친 듀오에서는 노트 진입점을 레일에 둔다', async () => {
-  mockDevice = 'tabletLandscape';
-  const api = { getCard: jest.fn().mockResolvedValue(detail) };
-  const screen = render(<DuoSideBandContext.Provider value={true}>
-    <CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />
-  </DuoSideBandContext.Provider>);
-  await waitFor(() => expect(screen.getByText('원문')).toBeTruthy());
-
-  expect(usePhoneRailActions.getState().overrides.at(-1)!.actions.map(action => action.id)).toContain('tab-notes');
+  expect(actions().map(action => action.id)).toEqual(['close', 'complete', 'tab-items', 'tab-comments', 'tab-sessions']);
+  act(() => actions().find(action => action.id === 'tab-sessions')!.onPress());
+  expect(screen.getByText('실행 세션')).toBeTruthy();
+  act(() => actions().find(action => action.id === 'close')!.onPress());
+  expect(onClose).toHaveBeenCalledTimes(1);
 });
 test('상세 패널의 기존 상태 진입점에서 같은 색상 선택 메뉴를 연다', async () => {
   const colored = { ...detail, card: { ...card, color: 'blue' } };

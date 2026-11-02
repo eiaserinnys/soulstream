@@ -15,7 +15,7 @@ jest.mock('../PersistentSessionContext', () => ({
 }));
 
 import React from 'react';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { PhoneRailTabCluster, RAIL_MIN_INSET_WIDTH } from '../TabNavigator';
 import { StyleSheet, View } from 'react-native';
@@ -194,6 +194,8 @@ test('compact 듀오 레일은 세 컨텍스트 액션 높이에 맞춰 캡슐�
   </SafeAreaInsetsContext.Provider></NavigationContainer>);
 
   expect(screen.getByTestId('duo-rail-context-scroll').props.style.maxHeight).toBe(136);
+  expect(within(screen.getByTestId('duo-rail-context-capsule')).getByTestId('duo-rail-context-scroll')).toBeTruthy();
+  expect(StyleSheet.flatten(screen.getByTestId('duo-rail-context-capsule').props.style)).toMatchObject({ maxHeight: 136, overflow: 'hidden' });
   expect(StyleSheet.flatten(screen.getByTestId('duo-rail-top-stack').props.style).gap).toBe(4);
   for (const id of ['one', 'two', 'three']) {
     expect(StyleSheet.flatten(screen.getByTestId(`phone-rail-action-${id}`).props.style).height).toBe(44);
@@ -204,6 +206,35 @@ test('compact 듀오 레일은 세 컨텍스트 액션 높이에 맞춰 캡슐�
   });
   expect(StyleSheet.flatten(contextContents!.props.style).paddingVertical).toBe(0);
 
+  screen.unmount();
+  dimensions.mockRestore();
+});
+
+test('바깥 세로 카드 레일은 네 액션을 compact 캡슐에 잘림 없이 배치한다', () => {
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({
+    width: 466, height: 678, scale: 1, fontScale: 1,
+  });
+  function Override() {
+    useRegisterDuoRailOverride('card-detail-portrait', true, [
+      { id: 'close', label: '닫기', icon: 'close', onPress: jest.fn() },
+      ...(['complete', 'tab-comments', 'tab-sessions', 'tab-notes'] as const)
+        .map((id) => ({ id, label: id, icon: 'ellipse-outline' as const, onPress: jest.fn() })),
+    ]);
+    return null;
+  }
+  const screen = render(<NavigationContainer><SafeAreaInsetsContext.Provider value={{ top: 24, bottom: 24, left: 0, right: 84 }}>
+    <Override /><PhoneRailTabCluster active="PersistentTab" onSelect={jest.fn()} duoSideBand />
+  </SafeAreaInsetsContext.Provider></NavigationContainer>);
+
+  expect(screen.getByTestId('duo-rail-context-scroll').props.style.maxHeight).toBe(226);
+  expect(StyleSheet.flatten(screen.getByTestId('duo-rail-top-stack').props.style).gap).toBe(4);
+  for (const id of ['complete', 'tab-comments', 'tab-sessions', 'tab-notes']) {
+    expect(StyleSheet.flatten(screen.getByTestId(`phone-rail-action-${id}`).props.style).height).toBe(44);
+  }
+  for (const name of ['DailyTab', 'FolderTab', 'FeedTab']) {
+    expect(StyleSheet.flatten(screen.getByTestId(`phone-tab-${name}`).props.style).height).toBe(44);
+  }
+  expect(4 * 44 + 2).toBeLessThanOrEqual(screen.getByTestId('duo-rail-context-scroll').props.style.maxHeight);
   screen.unmount();
   dimensions.mockRestore();
 });

@@ -244,7 +244,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
       dot: commentUnread, onPress: () => setTab('comments') }] : []),
     ...(tab !== 'sessions' ? [{ id: 'tab-sessions', label: '세션', icon: 'terminal-outline' as const,
       onPress: () => setTab('sessions') }] : []),
-    ...(duo && !phone && tab !== 'notes' ? [{ id: 'tab-notes', label: '노트', icon: 'document-text-outline' as const,
+    ...(tab !== 'notes' ? [{ id: 'tab-notes', label: '노트', icon: 'document-text-outline' as const,
       onPress: () => setTab('notes') }] : []),
   ];
   const railActions: PhoneRailAction[] = [
@@ -252,7 +252,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
     ...(card ? [{ id: startable || startPhase ? 'start' : 'complete', label: actionLabel,
       icon: (startable || startPhase ? 'play' : 'checkmark') as PhoneRailAction['icon'], selected: card.status === 'done',
       disabled: locked || !api || startPhase === 'pending', onPress: () => { void status(startPhase || startable ? 'running' : 'done'); } }] : []),
-    ...(phone && duo ? sectionActions.slice(0, 2) : sectionActions),
+    ...sectionActions,
   ];
   useRegisterDuoRailOverride(`card-${cardId}`, duo && visible, railActions);
   const selectedItem = targetItem;
@@ -366,7 +366,6 @@ export function CardDetailContent(props: CardDetailContentProps) {
         if(!ok)throw new Error('실행 설정을 저장하지 못했습니다.');
       }} /> : null}
   </AppKeyboardAvoidingView>
-    {statusMenuOpen && card ? <CardStatusMenu api={api} card={card} onClose={() => setStatusMenuOpen(false)}
-      onOpenNotes={duo && phone && tab !== 'notes' ? () => setTab('notes') : undefined} /> : null}
+    {statusMenuOpen && card ? <CardStatusMenu api={api} card={card} onClose={() => setStatusMenuOpen(false)} /> : null}
   </>;
 }
