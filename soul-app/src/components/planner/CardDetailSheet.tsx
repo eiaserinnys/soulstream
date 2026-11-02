@@ -219,7 +219,6 @@ export function CardDetailContent(props: CardDetailContentProps) {
     return ok;
   };
   const openSession = (id: string) => {
-    if (!inline) onClose();
     if (onOpenSession) onOpenSession(id);
     else useUIStore.getState().openSessionAtEvent(id);
   };
@@ -249,9 +248,6 @@ export function CardDetailContent(props: CardDetailContentProps) {
   ];
   const railActions: PhoneRailAction[] = [
     { id: 'close', label: inline ? '닫기' : '뒤로', icon: inline ? 'close' : 'chevron-back', onPress: onClose },
-    ...(card ? [{ id: startable || startPhase ? 'start' : 'complete', label: actionLabel,
-      icon: (startable || startPhase ? 'play' : 'checkmark') as PhoneRailAction['icon'], selected: card.status === 'done',
-      disabled: locked || !api || startPhase === 'pending', onPress: () => { void status(startPhase || startable ? 'running' : 'done'); } }] : []),
     ...sectionActions,
   ];
   useRegisterDuoRailOverride(`card-${cardId}`, duo && visible, railActions);
@@ -274,12 +270,19 @@ export function CardDetailContent(props: CardDetailContentProps) {
               {card ? <><CardStatusChip card={card} detail />{' '}{card.title}</> : '카드'}
             </Text>
           </CompactTouchTarget>
-          {card && !duo ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round}
-            variant={allConfirmed ? 'primary' : 'secondary'} accessibilityLabel={actionLabel}
-            disabled={locked || !api || startPhase === 'pending'} surfaceTestID="card-detail-complete-visual"
-            onPress={() => { void status(startPhase || startable ? 'running' : 'done'); }}>
-            <Ionicons name={startPhase || startable ? 'play' : 'checkmark'} size={t.iconSize.standard} color={allConfirmed ? t.colors.accentText : t.colors.textSecondary} />
-          </GlassButton> : null}
+          {card ? <View style={styles.headerActions}>
+            <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} variant="secondary"
+              accessibilityLabel="상태 변경 메뉴" disabled={locked || !api} surfaceTestID="card-detail-status-menu-visual"
+              onPress={() => setStatusMenuOpen(true)}>
+              <Ionicons name="ellipsis-horizontal" size={t.iconSize.standard} color={t.colors.textSecondary} />
+            </GlassButton>
+            <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round}
+              variant={allConfirmed ? 'primary' : 'secondary'} accessibilityLabel={actionLabel}
+              disabled={locked || !api || startPhase === 'pending'} surfaceTestID="card-detail-complete-visual"
+              onPress={() => { void status(startPhase || startable ? 'running' : 'done'); }}>
+              <Ionicons name={startPhase || startable ? 'play' : 'checkmark'} size={t.iconSize.standard} color={allConfirmed ? t.colors.accentText : t.colors.textSecondary} />
+            </GlassButton>
+          </View> : null}
         </View>
         {card ? <View style={styles.headerRow}>
           <View style={styles.chips}>

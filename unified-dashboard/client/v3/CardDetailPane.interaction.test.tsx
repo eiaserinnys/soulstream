@@ -109,6 +109,20 @@ it("closes after successful completion",async()=>{
  expect(useCardStore.getState().mutate).toHaveBeenCalledWith("inherit","/status",{status:"done",expectedVersion:1});
  expect(close).toHaveBeenCalledTimes(1);
 });
+it("opens the header status menu, moves the card to on hold, and keeps both actions small",async()=>{
+ const current={...detail,card:{...card,status:"review" as const}};
+ const mutate=vi.fn().mockResolvedValue(undefined);
+ useCardStore.setState({byId:{inherit:current.card},details:{inherit:current},mutate});
+ await render();
+ const actions=container.querySelector(".v3-folder-header-actions")!;
+ const buttons=[...actions.querySelectorAll<HTMLButtonElement>("button")];
+ expect(buttons).toHaveLength(2);
+ expect(buttons.every(button=>button.classList.contains("dashboard-icon-cap--small"))).toBe(true);
+ await act(async()=>{actions.querySelector<HTMLButtonElement>('[aria-label="상태 변경 메뉴"]')!.click();await new Promise(done=>setTimeout(done,20));});
+ const hold=[...document.querySelectorAll<HTMLButtonElement>("[data-card-status-picker] button")].find(button=>button.textContent==="보류")!;
+ await act(async()=>hold.click());
+ expect(mutate).toHaveBeenCalledWith("inherit","/status",{status:"on_hold",expectedVersion:1});
+});
 it("closes the review sample after completion and has no undo action",async()=>{
  const sampleCard={...card,status:"review" as const,items:[item(1,"todo")]};
  const sample={...detail,card:sampleCard};

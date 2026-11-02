@@ -6,7 +6,7 @@ import {
   SafeAreaView,
   type Metrics,
 } from 'react-native-safe-area-context';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
 import { ThreePaneLayout } from '../ThreePaneLayout';
 import { TwoPaneWithDrawer } from '../TwoPaneWithDrawer';
 import { TabletSafeAreaFrame } from '../TabletSafeAreaFrame';
@@ -156,7 +156,10 @@ describe('iPad v3 planner shell', () => {
     expect(StyleSheet.flatten(screen.getByTestId('duo-rail-action-close').props.style)).toMatchObject({ width: 48, height: 48 });
     const band = StyleSheet.flatten(screen.getByTestId('duo-main-band').props.style);
     const scroll = screen.getByTestId('duo-main-actions-scroll');
-    expect(StyleSheet.flatten(scroll.props.style).maxHeight).toBeLessThanOrEqual(669 - band.bottom - 200 - 50);
+    expect(scroll.props.keyboardShouldPersistTaps).toBe('handled');
+    expect(within(screen.getByTestId('duo-main-band-capsule')).getByTestId('duo-main-actions-scroll')).toBeTruthy();
+    expect(scroll.props.style.maxHeight).toBe(StyleSheet.flatten(screen.getByTestId('duo-main-band-capsule').props.style).maxHeight);
+    expect(StyleSheet.flatten(screen.getByTestId('duo-main-band-capsule').props.style).maxHeight).toBeLessThanOrEqual(669 - band.bottom - 200 - 50);
     expect(screen.getByTestId('duo-rail-action-five')).toBeTruthy();
     act(() => usePhoneRailActions.getState().removeOverride(key));
     screen.unmount();

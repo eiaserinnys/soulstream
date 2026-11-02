@@ -19,12 +19,15 @@ jest.mock('../../screens/RecurringJobsScreen', () => ({ RecurringJobsScreen: () 
 jest.mock('../../screens/RecurringJobEditorScreen', () => ({ RecurringJobEditorScreen: () => null }));
 jest.mock('../../screens/RecurringJobHistoryScreen', () => ({ RecurringJobHistoryScreen: () => null }));
 jest.mock('../../components/planner/FolderWorkspace', () => ({ FolderWorkspace: () => null }));
-jest.mock('../../components/planner/CardDetailSheet', () => ({ CardDetailContent: () => null }));
+jest.mock('../../components/planner/CardDetailSheet', () => ({ CardDetailContent: ({ onOpenSession }: { onOpenSession?: (id: string) => void }) =>
+  require('react').createElement(require('react-native').Pressable, {
+    testID: 'open-card-session', onPress: () => onOpenSession?.('session-b'),
+  }) }));
 jest.mock('../../components/split/SplitLayout', () => ({ SplitLayout: () => require('react').createElement(require('react-native').View, { testID: 'real-main' }) }));
 jest.mock('../../screens/PersistentSessionScreen', () => ({ PersistentSessionScreen: () => null }));
 
 import React from 'react';
-import { act, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { NavigationContainer, createNavigationContainerRef } from '@react-navigation/native';
 import { TabNavigator } from '../TabNavigator';
 import { PersistentSessionProvider, usePersistentSessionHost } from '../PersistentSessionContext';
@@ -33,6 +36,7 @@ import { openTabletSessionFromRoot } from '../tabletSessionNavigation';
 import { useUIStore } from '../../store/uiStore';
 import { openNotificationSession } from '../notificationSessionRoute';
 import { openPhoneChat, openPreviousPhonePanel } from '../phoneSessionNavigation';
+import { buildPhoneState, readPhoneLocation } from '../layoutNavigationState';
 
 test.each(['DailyTab', 'FolderTab', 'SettingsTab', 'notification'] as const)(
   '미방문 Feed에서 %s 진입은 실제 [Feed, Chat] 스택을 만들고 돌아간 뒤 피드가 살아 있다', async origin => {
@@ -62,6 +66,89 @@ test.each(['DailyTab', 'FolderTab', 'SettingsTab', 'notification'] as const)(
     expect(navigation.getRootState().routes.find(route => route.name === 'FeedTab')!.state!.routes.map(route => route.name)).toEqual(['Feed']);
   },
 );
+
+test.each(['DailyTab', 'FolderTab', 'PersistentTab'] as const)(
+  '복원된 %s 카드 상세에서 세션을 열면 Feed의 Chat으로 가고 카드로 돌아온다', async origin => {
+    const navigation = createNavigationContainerRef<any>();
+    const initialState = buildPhoneState({
+      originTab: origin,
+      kind: 'cardDetail',
+      cardId: 'card-a',
+      ...(origin === 'PersistentTab' ? { pasCard: true } : {}),
+    });
+    const view = render(<PersistentSessionProvider><NavigationContainer ref={navigation} initialState={initialState}>
+      <TabNavigator />
+    </NavigationContainer></PersistentSessionProvider>);
+    await waitFor(() => expect(navigation.isReady()).toBe(true));
+    expect(navigation.getCurrentRoute()?.name).toBe('CardDetail');
+    expect(view.queryByTestId('real-feed')).toBeNull();
+
+    fireEvent.press(view.getByTestId('open-card-session'));
+    await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('Chat'));
+    const root = navigation.getRootState();
+    expect(root.routes[root.index!]!.name).toBe('FeedTab');
+    const feed = root.routes.find((route: any) => route.name === 'FeedTab')!.state!;
+    const chat = feed.routes[feed.index!]!;
+    expect(chat).toMatchObject({ name: 'Chat', params: { sessionId: 'session-b', returnTab: origin } });
+    expect(readPhoneLocation(root)).toMatchObject({ kind: 'chat', cardId: 'card-a' });
+
+    act(() => openPreviousPhonePanel({ getParent: () => navigation, goBack: () => navigation.goBack() }, origin));
+    await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('CardDetail'));
+    const stateAfterBack = navigation.getRootState();
+    expect(stateAfterBack.routes[stateAfterBack.index!]!.name).toBe(origin);
+    const cardStack = stateAfterBack.routes.find((route: any) => route.name === origin)!.state!;
+    expect(cardStack.routes[cardStack.index!]!).toMatchObject({ name: 'CardDetail', params: { cardId: 'card-a' } });
+    const feedAfterBack = stateAfterBack.routes.find((route: any) => route.name === 'FeedTab')!.state!;
+    expect(feedAfterBack.routes.map((route: any) => route.name)).toEqual(['Feed']);
+    view.unmount();
+  },
+);
+
+test('복원된 Feed의 기존 Chat A 위에서 카드 세션 B를 열면 B가 최상단이다', async () => {
+  const navigation = createNavigationContainerRef<any>();
+  const previousFeed = buildPhoneState({
+    originTab: 'FeedTab', kind: 'chat', sessionId: 'session-a', returnTab: 'DailyTab', cardId: 'card-a',
+  });
+  const initialState = buildPhoneState({ originTab: 'DailyTab', kind: 'cardDetail', cardId: 'card-a' }, previousFeed);
+  const view = render(<PersistentSessionProvider><NavigationContainer ref={navigation} initialState={initialState}>
+    <TabNavigator />
+  </NavigationContainer></PersistentSessionProvider>);
+  await waitFor(() => expect(navigation.isReady()).toBe(true));
+
+  fireEvent.press(view.getByTestId('open-card-session'));
+  await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('Chat'));
+  const feed = navigation.getRootState().routes.find((route: any) => route.name === 'FeedTab')!.state!;
+  expect(feed.routes[feed.index!]!).toMatchObject({ name: 'Chat', params: { sessionId: 'session-b' } });
+  view.unmount();
+});
+
+test('Feed 안의 Chat A → 카드 → Chat B에서 뒤로 가면 카드, Chat A, Feed 순서로 돌아온다', async () => {
+  const navigation = createNavigationContainerRef<any>();
+  const initialState = buildPhoneState({
+    originTab: 'FeedTab', kind: 'chat', sessionId: 'session-a', returnTab: 'FeedTab',
+  });
+  const view = render(<PersistentSessionProvider><NavigationContainer ref={navigation} initialState={initialState}>
+    <TabNavigator />
+  </NavigationContainer></PersistentSessionProvider>);
+  await waitFor(() => expect(navigation.isReady()).toBe(true));
+  expect(navigation.getCurrentRoute()).toMatchObject({ name: 'Chat', params: { sessionId: 'session-a' } });
+
+  act(() => navigation.navigate('FeedTab', { screen: 'CardDetail', params: { cardId: 'card-a' } }));
+  await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('CardDetail'));
+  fireEvent.press(view.getByTestId('open-card-session'));
+  await waitFor(() => expect(navigation.getCurrentRoute()).toMatchObject({ name: 'Chat', params: { sessionId: 'session-b' } }));
+  const feed = navigation.getRootState().routes.find((route: any) => route.name === 'FeedTab')!.state!;
+  expect(feed.routes.map((route: any) => route.name)).toEqual(['Feed', 'Chat', 'CardDetail', 'Chat']);
+
+  const backToFeedStack = () => openPreviousPhonePanel({ getParent: () => navigation, goBack: () => navigation.goBack() }, 'FeedTab');
+  act(backToFeedStack);
+  await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('CardDetail'));
+  act(() => navigation.goBack());
+  await waitFor(() => expect(navigation.getCurrentRoute()).toMatchObject({ name: 'Chat', params: { sessionId: 'session-a' } }));
+  act(backToFeedStack);
+  await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('Feed'));
+  view.unmount();
+});
 
 test.each(['PersistentSession', 'CardDetail'] as const)('iPad %s 위 알림·URL은 같은 Main으로 pop하고 대상 workspace를 연다', async top => {
   for (const entry of ['notification', 'search'] as const) {

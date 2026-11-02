@@ -8,7 +8,6 @@ import { STATUS_DOT_SIZE } from '../chat/StatusDot';
 export const RAIL_CAPSULE_WIDTH = 48;
 export const RAIL_ITEM_HEIGHT = 50;
 const RailCapsuleItemContext = React.createContext({ compact: false, single: false });
-const RailCapsuleViewportContext = React.createContext<{ maxHeight: number; testID?: string } | null>(null);
 
 function countRailCapsuleItems(children: React.ReactNode): number {
   return React.Children.toArray(children).filter(Boolean).reduce<number>((count, child) => {
@@ -19,17 +18,11 @@ function countRailCapsuleItems(children: React.ReactNode): number {
   }, 0);
 }
 
-export function RailCapsuleViewport({ children, maxHeight, testID }: { children: React.ReactNode; maxHeight?: number; testID?: string }) {
-  if (maxHeight === undefined) return <>{children}</>;
-  return <RailCapsuleViewportContext.Provider value={{ maxHeight, testID }}>
-    {children}
-  </RailCapsuleViewportContext.Provider>;
-}
-
-export function RailCapsule({ children, testID, compact = false }: { children: React.ReactNode; testID: string; compact?: boolean }) {
+export function RailCapsule({ children, testID, compact = false, maxHeight, scrollTestID }: {
+  children: React.ReactNode; testID: string; compact?: boolean; maxHeight?: number; scrollTestID?: string;
+}) {
   const t = useTokens();
   const single = countRailCapsuleItems(children) === 1;
-  const viewport = React.useContext(RailCapsuleViewportContext);
   const content = <View style={{ width: RAIL_CAPSULE_WIDTH,
     ...(single ? { height: RAIL_CAPSULE_WIDTH, paddingVertical: 0, gap: 0, justifyContent: 'center' as const }
       : { paddingVertical: compact ? 0 : t.spacing.xs, gap: compact ? 0 : t.uiSpacing.xs / 2 }),
@@ -38,9 +31,10 @@ export function RailCapsule({ children, testID, compact = false }: { children: R
   </View>;
   return <GlassSurface role="chrome" testID={testID} cornerRadius={t.foundation.radius.round}
     style={{ width: RAIL_CAPSULE_WIDTH, ...(single ? { height: RAIL_CAPSULE_WIDTH } : {}),
-      ...(viewport ? { maxHeight: viewport.maxHeight, overflow: 'hidden' as const } : {}) }}>
-    {viewport ? <ScrollView testID={viewport.testID} style={{ maxHeight: viewport.maxHeight }}
-      showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">{content}</ScrollView> : content}
+      ...(maxHeight === undefined ? {} : { maxHeight, overflow: 'hidden' as const }) }}>
+    {maxHeight === undefined ? content : <ScrollView testID={scrollTestID} style={{ maxHeight }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      {content}
+    </ScrollView>}
   </GlassSurface>;
 }
 

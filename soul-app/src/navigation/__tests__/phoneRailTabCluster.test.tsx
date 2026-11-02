@@ -149,7 +149,8 @@ test('오버레이 레일도 키보드 위로 올라가고 하단 액션을 제�
   const capsule = screen.getByTestId('duo-rail-override');
   expect(capsule).toBeTruthy();
   expect(StyleSheet.flatten(screen.getByTestId('duo-rail-override-lower').props.style).bottom).toBe(300);
-  expect(StyleSheet.flatten(screen.getByTestId('duo-rail-override-scroll').props.style).maxHeight).toBeGreaterThanOrEqual(0);
+  expect(screen.getByTestId('duo-rail-override-scroll').props.keyboardShouldPersistTaps).toBe('handled');
+  expect(StyleSheet.flatten(capsule.props.style)).toMatchObject({ maxHeight: expect.any(Number), overflow: 'hidden' });
   fireEvent.press(screen.getByTestId('duo-rail-action-edit'));
   expect(onEdit).toHaveBeenCalledTimes(1);
   act(() => usePhoneRailActions.getState().removeOverride(key));
@@ -210,14 +211,14 @@ test('compact 듀오 레일은 세 컨텍스트 액션 높이에 맞춰 캡슐�
   dimensions.mockRestore();
 });
 
-test('바깥 세로 카드 레일은 네 액션을 compact 캡슐에 잘림 없이 배치한다', () => {
+test('바깥 세로 카드 레일은 세 탭을 일반 캡슐에 잘림 없이 배치한다', () => {
   const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({
     width: 466, height: 678, scale: 1, fontScale: 1,
   });
   function Override() {
     useRegisterDuoRailOverride('card-detail-portrait', true, [
       { id: 'close', label: '닫기', icon: 'close', onPress: jest.fn() },
-      ...(['complete', 'tab-comments', 'tab-sessions', 'tab-notes'] as const)
+      ...(['tab-comments', 'tab-sessions', 'tab-notes'] as const)
         .map((id) => ({ id, label: id, icon: 'ellipse-outline' as const, onPress: jest.fn() })),
     ]);
     return null;
@@ -226,15 +227,15 @@ test('바깥 세로 카드 레일은 네 액션을 compact 캡슐에 잘림 없�
     <Override /><PhoneRailTabCluster active="PersistentTab" onSelect={jest.fn()} duoSideBand />
   </SafeAreaInsetsContext.Provider></NavigationContainer>);
 
-  expect(screen.getByTestId('duo-rail-context-scroll').props.style.maxHeight).toBe(226);
-  expect(StyleSheet.flatten(screen.getByTestId('duo-rail-top-stack').props.style).gap).toBe(4);
-  for (const id of ['complete', 'tab-comments', 'tab-sessions', 'tab-notes']) {
-    expect(StyleSheet.flatten(screen.getByTestId(`phone-rail-action-${id}`).props.style).height).toBe(44);
+  expect(screen.getByTestId('duo-rail-context-scroll').props.style.maxHeight).toBe(188);
+  expect(StyleSheet.flatten(screen.getByTestId('duo-rail-top-stack').props.style).gap).toBe(8);
+  for (const id of ['tab-comments', 'tab-sessions', 'tab-notes']) {
+    expect(StyleSheet.flatten(screen.getByTestId(`phone-rail-action-${id}`).props.style).height).toBe(50);
   }
   for (const name of ['DailyTab', 'FolderTab', 'FeedTab']) {
-    expect(StyleSheet.flatten(screen.getByTestId(`phone-tab-${name}`).props.style).height).toBe(44);
+    expect(StyleSheet.flatten(screen.getByTestId(`phone-tab-${name}`).props.style).height).toBe(50);
   }
-  expect(4 * 44 + 2).toBeLessThanOrEqual(screen.getByTestId('duo-rail-context-scroll').props.style.maxHeight);
+  expect(3 * 50 + 4 + 8 + 2).toBeLessThanOrEqual(screen.getByTestId('duo-rail-context-scroll').props.style.maxHeight);
   screen.unmount();
   dimensions.mockRestore();
 });
@@ -307,9 +308,9 @@ test('카드 오버레이가 열린 복수 PAS에서는 하단 PAS 전환 탭을
   function Override() {
     useRegisterDuoRailOverride('card-detail', true, [
       { id: 'back', label: '카드 닫기', icon: 'chevron-back', onPress: jest.fn() },
-      { id: 'complete', label: '완료 처리', icon: 'checkmark', onPress: jest.fn() },
       { id: 'tab-items', label: '확인 항목', icon: 'checkbox-outline', onPress: jest.fn() },
       { id: 'tab-comments', label: '커멘트', icon: 'chatbubble-outline', onPress: jest.fn() },
+      { id: 'tab-sessions', label: '세션', icon: 'terminal-outline', onPress: jest.fn() },
     ]);
     return null;
   }

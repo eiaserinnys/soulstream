@@ -10,6 +10,7 @@ export function cardDetailStyles(t: DesignTokens) {
     frame: { flex: 1, minHeight: 0 },
     header: { paddingHorizontal: t.foundation.pageInset, paddingVertical: s.md, gap: s.sm },
     headerRow: { flexDirection: 'row', alignItems: 'center', gap: s.sm },
+    headerActions: { flexDirection: 'row', alignItems: 'center' },
     titleHitFrame: { flex: 1, minWidth: 0, alignSelf: 'stretch', alignItems: 'stretch', justifyContent: 'center' },
     titleHitSurface: { flex: 1, minWidth: 0, width: '100%', alignSelf: 'stretch', alignItems: 'flex-start', justifyContent: 'center' },
     heading: { flex: 1, minWidth: 0, ...type.section, color: t.colors.textPrimary },

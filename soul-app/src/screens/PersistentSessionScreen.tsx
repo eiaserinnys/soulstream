@@ -34,7 +34,7 @@ import { usePersistentSessionHost, usePersistentSessionScene } from '../navigati
 import { usePhoneRailMode } from '../navigation/tabContract';
 import { DUO_RAIL_END_INSET, getDuoRailTopOffset, splitDuoRailBackAction, useDuoSideBand } from '../navigation/duoSideBand';
 import { AppKeyboardAvoidingView } from '../components/AppKeyboardAvoidingView';
-import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem, RailCapsuleViewport } from '../components/navigation/RailCapsule';
+import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
 import { useActiveDuoRailOverrideEntry } from '../navigation/phoneRailActions';
 import { usePasContextMenu } from '../components/persistent/usePasContextMenu';
 import { useAuthStore } from '../store/authStore';
@@ -423,8 +423,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     </View> : null}
     {!phone && duoSideBand && (!railBack || railMain.length > 0) ? <View testID="persistent-session-duo-band" style={{ position: 'absolute', right: 0,
       bottom: railBottom, width: insets.right, alignItems: 'center', paddingRight: DUO_RAIL_END_INSET }}>
-      <RailCapsuleViewport maxHeight={lowerRailMaxHeight}>
-      <RailCapsule testID="persistent-session-duo-capsule" compact={railCompact}>
+      <RailCapsule testID="persistent-session-duo-capsule" compact={railCompact} maxHeight={lowerRailMaxHeight}>
         {railOverride?.length ? railMain.map(action => <RailCapsuleItem key={action.id} testID={`duo-rail-action-${action.id}`}
           label={action.label} selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
           <Ionicons name={action.icon} size={t.iconSize.standard} color={action.selected ? t.colors.accent : t.colors.textMuted} />
@@ -447,7 +446,6 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
         </RailCapsuleItem>
         </>}
       </RailCapsule>
-      </RailCapsuleViewport>
     </View> : null}
   </SafeAreaView>;
 }

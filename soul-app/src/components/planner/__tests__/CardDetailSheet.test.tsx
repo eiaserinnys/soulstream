@@ -139,20 +139,24 @@ test.each(['phone', 'tabletLandscape'])('%s 듀오 카드 상세 레일은 현�
   expect(screen.queryByTestId('card-detail-back-icon')).toBeNull();
   expect(screen.queryByTestId('settings-segment-card-detail-comments')).toBeNull();
   const actions = () => usePhoneRailActions.getState().overrides.at(-1)!.actions;
-  expect(actions().map(action => action.id)).toEqual(['close', 'complete', 'tab-comments', 'tab-sessions', 'tab-notes']);
+  expect(screen.getByTestId('card-detail-status-menu-visual')).toBeTruthy();
+  expect(screen.getByTestId('card-detail-complete-visual')).toBeTruthy();
+  expect(actions().map(action => action.id)).toEqual(['close', 'tab-comments', 'tab-sessions', 'tab-notes']);
   act(() => actions().find(action => action.id === 'tab-comments')!.onPress());
-  expect(actions().map(action => action.id)).toEqual(['close', 'complete', 'tab-items', 'tab-sessions', 'tab-notes']);
+  expect(actions().map(action => action.id)).toEqual(['close', 'tab-items', 'tab-sessions', 'tab-notes']);
   act(() => actions().find(action => action.id === 'tab-sessions')!.onPress());
   expect(screen.getByText('실행 세션')).toBeTruthy();
-  expect(actions().map(action => action.id)).toEqual(['close', 'complete', 'tab-items', 'tab-comments', 'tab-notes']);
+  expect(actions().map(action => action.id)).toEqual(['close', 'tab-items', 'tab-comments', 'tab-notes']);
   act(() => actions().find(action => action.id === 'tab-notes')!.onPress());
   expect(screen.getByTestId('card-notes')).toBeTruthy();
   expect(screen.getByText('노트 본문')).toBeTruthy();
-  expect(actions().map(action => action.id)).toEqual(['close', 'complete', 'tab-items', 'tab-comments', 'tab-sessions']);
+  expect(actions().map(action => action.id)).toEqual(['close', 'tab-items', 'tab-comments', 'tab-sessions']);
   act(() => actions().find(action => action.id === 'tab-sessions')!.onPress());
   expect(screen.getByText('실행 세션')).toBeTruthy();
   act(() => actions().find(action => action.id === 'close')!.onPress());
   expect(onClose).toHaveBeenCalledTimes(1);
+  await act(async () => fireEvent.press(screen.getByLabelText('상태 변경 메뉴')));
+  await waitFor(() => expect(screen.getByTestId('card-status-menu')).toBeTruthy());
 });
 test('상세 패널의 기존 상태 진입점에서 같은 색상 선택 메뉴를 연다', async () => {
   const colored = { ...detail, card: { ...card, color: 'blue' } };
@@ -349,7 +353,7 @@ test('카드의 루트 1개·자식 33개를 폴더 정본 컴포넌트로 hydra
   expect(screen.UNSAFE_getByType(FlatList).props.data.map((row: any) => row.session.agentSessionId)).toEqual(orderBefore);
   expect(StyleSheet.flatten(screen.getByTestId('task-run-depth-run-0').props.style).marginLeft).toBe(0);
   await userEvent.press(screen.getByTestId('task-run-row-run-0'));
-  expect(onClose).toHaveBeenCalled();
+  expect(onClose).not.toHaveBeenCalled();
   expect(onOpenSession).toHaveBeenCalledWith('run-0');
 
 });
@@ -422,6 +426,16 @@ test('assigned settings disappear while native status/complete and sessions rema
  expect(screen.getByLabelText('상태 변경')).toBeTruthy();expect(screen.getByLabelText('완료')).toBeTruthy();expect(screen.getByTestId('card-comment-composer')).toBeTruthy();
  fireEvent.press(screen.getByTestId('settings-segment-card-detail-sessions'));
  expect(screen.getByTestId('card-sessions')).toBeTruthy();
+});
+
+test('상세 헤더 상태 메뉴를 열어 기존 상태 선택기를 표시한다',async()=>{
+ const api={getCard:jest.fn().mockResolvedValue(detail)};
+ const screen=render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()}/>);
+ await waitFor(()=>expect(screen.getByText('원문')).toBeTruthy());
+ expect(screen.getByTestId('card-detail-status-menu-visual')).toBeTruthy();
+ expect(screen.getByTestId('card-detail-complete-visual')).toBeTruthy();
+ await act(async()=>fireEvent.press(screen.getByLabelText('상태 변경 메뉴')));
+ await waitFor(()=>expect(screen.getByTestId('card-status-menu')).toBeTruthy());
 });
 
 test.each(['todo','queued','on_hold'] as const)('상세 %s 시작 버튼은 재생 아이콘을 보이고 running으로 전이한다',async status=>{

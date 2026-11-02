@@ -1,0 +1,26 @@
+diff --git a/node_modules/@react-navigation/core/lib/module/useNavigationBuilder.js b/node_modules/@react-navigation/core/lib/module/useNavigationBuilder.js
+index 1bc5467..ccc19b5 100644
+--- a/node_modules/@react-navigation/core/lib/module/useNavigationBuilder.js
++++ b/node_modules/@react-navigation/core/lib/module/useNavigationBuilder.js
+@@ -289,7 +289,7 @@ export function useNavigationBuilder(createRouter, options) {
+       if (stateBeforeInitialization != null && options.UNSTABLE_routeNamesChangeBehavior === 'lastUnhandled' && doesStateHaveOnlyInvalidRoutes(stateBeforeInitialization)) {
+         return [stateBeforeInitialization, hydratedState, true, paramsForState];
+       }
+-      return [undefined, hydratedState, false, paramsForState];
++      return [undefined, hydratedState, false, stateFromParams != null ? paramsForState : undefined];
+     }
+     // We explicitly don't include routeNames, route.params etc. in the dep list
+     // below. We want to avoid forcing a new state to be calculated in those cases
+diff --git a/node_modules/@react-navigation/core/src/useNavigationBuilder.tsx b/node_modules/@react-navigation/core/src/useNavigationBuilder.tsx
+index 83a442e..a33447a 100644
+--- a/node_modules/@react-navigation/core/src/useNavigationBuilder.tsx
++++ b/node_modules/@react-navigation/core/src/useNavigationBuilder.tsx
+@@ -577,7 +577,7 @@ export function useNavigationBuilder<
+         return [stateBeforeInitialization, hydratedState, true, paramsForState];
+       }
+ 
+-      return [undefined, hydratedState, false, paramsForState];
++      return [undefined, hydratedState, false, stateFromParams != null ? paramsForState : undefined];
+     }
+     // We explicitly don't include routeNames, route.params etc. in the dep list
+     // below. We want to avoid forcing a new state to be calculated in those cases
