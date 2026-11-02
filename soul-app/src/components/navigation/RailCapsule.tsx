@@ -32,7 +32,7 @@ export function RailCapsule({ children, testID, compact = false }: { children: R
     style={{ width: RAIL_CAPSULE_WIDTH, ...(single ? { height: RAIL_CAPSULE_WIDTH } : {}) }}>
     <View style={{ width: RAIL_CAPSULE_WIDTH,
       ...(single ? { height: RAIL_CAPSULE_WIDTH, paddingVertical: 0, gap: 0, justifyContent: 'center' as const }
-        : { paddingVertical: compact ? t.spacing.xxs : t.spacing.xs, gap: compact ? 0 : t.uiSpacing.xs / 2 }),
+        : { paddingVertical: compact ? 0 : t.spacing.xs, gap: compact ? 0 : t.uiSpacing.xs / 2 }),
       alignItems: 'center' }}>
       <RailCapsuleItemContext.Provider value={{ compact, single }}>{children}</RailCapsuleItemContext.Provider>
     </View>

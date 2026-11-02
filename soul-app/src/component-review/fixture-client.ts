@@ -437,6 +437,9 @@ export function createApiClient(baseUrl = ''): ApiClient {
   }
   if (section === 'cardColors') return createCardColorReviewClient().api;
   if (section === 'iphoneDuo') {
+    const params = new URLSearchParams(window.location.search);
+    const multiPasSample = params.get('sample') === 'pas-layout'
+      && (params.get('count') === '2' || params.get('multiPas') === '1');
     const api = {
       ...entryShellApi,
       ...nativeSettingsApi,
@@ -450,6 +453,16 @@ export function createApiClient(baseUrl = ''): ApiClient {
     };
     return new URLSearchParams(window.location.search).get('sample') === 'pas-layout'
       ? { ...api, ...createReviewCardApi(),
+        ...(multiPasSample ? { listPersistentSessions: async () => {
+          const result = await nativeSettingsApi.listPersistentSessions();
+          const sessions = result.sessions.slice(0, 2).map((session, index) => ({
+            ...session,
+            display_name: index === 0 ? '로젤린' : '서소영',
+            agent_id: index === 0 ? 'roselin' : 'seosoyoung',
+            agent_name: index === 0 ? '로젤린' : '서소영',
+          }));
+          return { ...result, sessions, total: sessions.length };
+        } } : {}),
         dismissPersistentReport: async (sessionId: string, key: string) => {
           const entries = useSessionStore.getState().persistentReportsBySession[sessionId]?.entries ?? [];
           const remaining = entries.filter(entry => entry.key !== key);

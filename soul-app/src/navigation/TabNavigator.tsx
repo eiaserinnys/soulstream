@@ -32,7 +32,7 @@ import { RecurringJobEditorScreen } from '../screens/RecurringJobEditorScreen';
 import { RecurringJobHistoryScreen } from '../screens/RecurringJobHistoryScreen';
 import { useSessionsStream } from '../hooks/useSessionsStream';
 import { useNodeConnectivityStream } from '../hooks/useNodeConnectivityStream';
-import { GlassSurface } from '../components/GlassSurface';
+import { GLASS_BUTTON_BORDER_WIDTH, GlassSurface } from '../components/GlassSurface';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTokens, type DesignTokens } from '../theme';
 import { DuoSideBandContext, DUO_RAIL_TAB_ORDER, INITIAL_ROOT_TAB, PhoneRailModeContext, RAIL_MIN_INSET_WIDTH, ROOT_TAB_ORDER } from './tabContract';
@@ -94,6 +94,7 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
   const t = useTokens();
   const c = t.colors;
   const scene = usePersistentSessionScene(state => state.scene);
+  const hasMultiplePas = usePersistentSessionScene(state => state.sessions.length > 1);
   const selectedCardId = usePersistentSessionScene(state => state.selectedCardId);
   const reportCount = usePersistentSessionScene(state => state.reportCount);
   const hasReports = usePersistentSessionScene(state => state.hasReports);
@@ -111,7 +112,7 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
   </RailCapsuleItem>;
   const persistentLabel = active !== 'PersistentTab'
     ? '영구 세션 열기'
-    : scene !== 'conversation' ? 'PAS 대화로 돌아가기' : '카드 목록 보기';
+    : (duoSideBand || hasMultiplePas) ? '영구 세션 선택' : scene !== 'conversation' ? 'PAS 대화로 돌아가기' : '카드 목록 보기';
   const renderTab = (name: keyof RootTabParamList) => {
     const config = ROOT_SECTION_CONFIG[name];
     const selected = name === active;
@@ -151,14 +152,17 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
       : active === 'DailyTab' || active === 'FolderTab' || active === 'FeedTab'
         ? actions[active] ?? []
         : [];
-  const navigationNames = DUO_RAIL_TAB_ORDER.filter((name) => name !== active);
+  const showPasSwitcher = hasMultiplePas && !override?.length;
+  const navigationNames = DUO_RAIL_TAB_ORDER.filter((name) => name !== active || (name === 'PersistentTab' && showPasSwitcher));
   const navigationItemHeight = compact ? t.hitTarget.min : RAIL_ITEM_HEIGHT;
   const navigationHeight = navigationNames.length * navigationItemHeight
     + (compact ? 0 : Math.max(0, navigationNames.length - 1) * t.uiSpacing.xs / 2)
-    + 2 * (compact ? t.spacing.xxs : t.spacing.xs);
+    + 2 * (compact ? 0 : t.spacing.xs)
+    + 2 * GLASS_BUTTON_BORDER_WIDTH;
   const bottomInset = compact ? insets.bottom : Math.max(insets.bottom, t.uiSpacing.xxl);
+  const stackGap = compact ? t.uiSpacing.xs : t.uiSpacing.sm;
   const contextMaxHeight = Math.max(0,
-    windowHeight - bottomInset - navigationHeight - topOffset - RAIL_CAPSULE_WIDTH - 2 * t.uiSpacing.sm);
+    windowHeight - bottomInset - navigationHeight - topOffset - RAIL_CAPSULE_WIDTH - 2 * stackGap);
   const renderContextAction = (action: PhoneRailAction) => {
     const testID = !override?.length && active === 'PersistentTab'
       ? action.id === 'pas-menu' ? 'phone-rail-pas-menu' : 'phone-rail-pas-reports'
@@ -171,7 +175,7 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
 
   return <View testID="duo-rail-column" style={{ width: RAIL_CAPSULE_WIDTH, flex: 1, position: 'relative', alignItems: 'center', justifyContent: 'flex-end' }}>
     <View testID="duo-rail-top-stack" pointerEvents="box-none"
-      style={{ position: 'absolute', top: topOffset, left: 0, right: 0, alignItems: 'center', gap: t.uiSpacing.sm }}>
+      style={{ position: 'absolute', top: topOffset, left: 0, right: 0, alignItems: 'center', gap: stackGap }}>
       <RailCapsule testID="duo-rail-back-capsule" compact={compact}>{renderOverrideAction(resolvedBackAction)}</RailCapsule>
       {contextActions.length ? <RailCapsuleViewport testID="duo-rail-context-scroll" maxHeight={contextMaxHeight}>
         <RailCapsule testID="duo-rail-context-capsule" compact={compact}>{contextActions.map(renderContextAction)}</RailCapsule>
@@ -649,6 +653,7 @@ function PhoneTabNavigator({ initialTab }: { initialTab?: string }) {
   const panelHistory = usePhonePanelHistory();
   const host = usePersistentSessionHost();
   const scene = usePersistentSessionScene(state => state.scene);
+  const hasMultiplePas = usePersistentSessionScene(state => state.sessions.length > 1);
   const restoredTab = ROOT_TAB_ORDER.find(name => name === initialTab);
   const [focusedTab, setFocusedTab] = useState<keyof RootTabParamList>(restoredTab ?? (host.store.getState().visible ? 'PersistentTab' : INITIAL_ROOT_TAB));
   const t = useTokens();
@@ -693,14 +698,22 @@ function PhoneTabNavigator({ initialTab }: { initialTab?: string }) {
             listeners={({ navigation }) => ({ focus: () => { panelHistory.recordFocus(name); setFocusedTab(name); host.store.setState({ visible: name === 'PersistentTab' }); },
               ...(name === 'PersistentTab' ? { tabPress: (event: { preventDefault(): void }) => {
                 event.preventDefault();
-                if (navigation.isFocused() && host.store.getState().session) host.store.getState().toggleScene();
-                else void host.requestEntry(() => navigation.navigate('PersistentTab'));
+                if (navigation.isFocused() && host.store.getState().session) {
+                  if (duoSideBand || host.store.getState().sessions.length > 1) {
+                    void host.requestEntry(() => navigation.navigate('PersistentTab'), false, true);
+                  } else {
+                    host.store.getState().toggleScene();
+                  }
+                } else {
+                  void host.requestEntry(() => navigation.navigate('PersistentTab'));
+                }
               } } : {}),
             })}
             options={{
               tabBarButtonTestID: `phone-tab-${name}`,
               ...(name === 'PersistentTab' ? { tabBarAccessibilityLabel: focusedTab === 'PersistentTab'
-                ? scene !== 'conversation' ? 'PAS 대화로 돌아가기' : '카드 목록 보기' : '영구 세션 열기' } : {}),
+                ? (duoSideBand || hasMultiplePas) ? '영구 세션 선택' : scene !== 'conversation' ? 'PAS 대화로 돌아가기' : '카드 목록 보기'
+                : '영구 세션 열기' } : {}),
               tabBarIcon: ({ color, size }) => name === 'PersistentTab'
                 ? <PersistentPhoneTabIcon color={color} size={size} active={focusedTab === name} />
                 : <Ionicons name={config.icon} color={color} size={size} />,

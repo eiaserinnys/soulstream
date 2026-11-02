@@ -86,7 +86,9 @@ export function CardDetailContent(props: CardDetailContentProps) {
   const insets = useSafeAreaInsets();
   const panelMinimumBottomPadding = useContext(ChatPaneMinimumBottomPaddingContext);
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const tablet = inline || useDeviceType() !== 'phone';
+  const deviceType = useDeviceType();
+  const phone = deviceType === 'phone';
+  const tablet = inline || !phone;
   const [assignmentOpen, setAssignmentOpen] = useState(false);
   const [statusMenuOpen, setStatusMenuOpen] = useState(false);
   const composer = useRef<CardCommentComposerHandle>(null);
@@ -235,15 +237,22 @@ export function CardDetailContent(props: CardDetailContentProps) {
     { value: 'sessions' as const, label: '세션', count: tabletLandscape ? sessionIds.length : undefined },
     { value: 'notes' as const, label: '노트', count: tabletLandscape ? (detail?.notes?.length ?? 0) : undefined },
   ];
+  const sectionActions: PhoneRailAction[] = [
+    ...(tab !== 'items' ? [{ id: 'tab-items', label: '확인 항목', icon: 'checkbox-outline' as const,
+      badgeCount: needsReview, onPress: () => setTab('items') }] : []),
+    ...(tab !== 'comments' ? [{ id: 'tab-comments', label: '커멘트', icon: 'chatbubble-outline' as const,
+      dot: commentUnread, onPress: () => setTab('comments') }] : []),
+    ...(tab !== 'sessions' ? [{ id: 'tab-sessions', label: '세션', icon: 'terminal-outline' as const,
+      onPress: () => setTab('sessions') }] : []),
+    ...(duo && !phone && tab !== 'notes' ? [{ id: 'tab-notes', label: '노트', icon: 'document-text-outline' as const,
+      onPress: () => setTab('notes') }] : []),
+  ];
   const railActions: PhoneRailAction[] = [
     { id: 'close', label: inline ? '닫기' : '뒤로', icon: inline ? 'close' : 'chevron-back', onPress: onClose },
     ...(card ? [{ id: startable || startPhase ? 'start' : 'complete', label: actionLabel,
       icon: (startable || startPhase ? 'play' : 'checkmark') as PhoneRailAction['icon'], selected: card.status === 'done',
       disabled: locked || !api || startPhase === 'pending', onPress: () => { void status(startPhase || startable ? 'running' : 'done'); } }] : []),
-    { id: 'tab-items', label: '확인 항목', icon: 'checkbox-outline', selected: tab === 'items', badgeCount: needsReview, onPress: () => setTab('items') },
-    { id: 'tab-comments', label: '커멘트', icon: 'chatbubble-outline', selected: tab === 'comments', dot: commentUnread, onPress: () => setTab('comments') },
-    { id: 'tab-sessions', label: '세션', icon: 'terminal-outline', selected: tab === 'sessions', onPress: () => setTab('sessions') },
-    { id: 'tab-notes', label: '노트', icon: 'document-text-outline', selected: tab === 'notes', onPress: () => setTab('notes') },
+    ...(phone && duo ? sectionActions.slice(0, 2) : sectionActions),
   ];
   useRegisterDuoRailOverride(`card-${cardId}`, duo && visible, railActions);
   const selectedItem = targetItem;
@@ -357,6 +366,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
         if(!ok)throw new Error('실행 설정을 저장하지 못했습니다.');
       }} /> : null}
   </AppKeyboardAvoidingView>
-    {statusMenuOpen && card ? <CardStatusMenu api={api} card={card} onClose={() => setStatusMenuOpen(false)} /> : null}
+    {statusMenuOpen && card ? <CardStatusMenu api={api} card={card} onClose={() => setStatusMenuOpen(false)}
+      onOpenNotes={duo && phone && tab !== 'notes' ? () => setTab('notes') : undefined} /> : null}
   </>;
 }

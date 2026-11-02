@@ -76,6 +76,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const bottomSafeAreaInset = phone || duoSideBand ? 0 : insets.bottom;
   const host = usePersistentSessionHost();
   const session = usePersistentSessionScene(state => state.session);
+  const hasMultiplePas = usePersistentSessionScene(state => state.sessions.length > 1);
   const storedScene = usePersistentSessionScene(state => state.scene);
   const scene = storedScene === 'reports' && !duoSideBand ? 'conversation' : storedScene;
   const selectedCardId = usePersistentSessionScene(state => state.selectedCardId);
@@ -168,7 +169,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   }, []);
   const [usageHeight, setUsageHeight] = useState(0);
   const compact = phone || (app?.height ?? Infinity) < FRAME.compactHeight;
-  const headerHeight = duoSideBand ? 0 : compact ? FRAME.compactHeader : FRAME.header;
+  const headerHeight = compact ? FRAME.compactHeader : FRAME.header;
   const portrait = app ? app.height > app.width : false;
   const widths = portrait ? FRAME.portrait : FRAME.landscape;
   const hasWeeklyUsage = Boolean(session?.node_id && showWeeklyUsage);
@@ -232,7 +233,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     onExpandedKeyChange={key => setReportExpansion({ sessionId: session?.session_id, key })}
     sessionId={session?.session_id} onReady={setReportReady}
     send={reportSend} completion={completion} bubble={!reportsScene && !!geometry.reportBubble} verticalList={reportsScene}
-    maxHeight={reportsScene ? (phone ? Math.max(0, (app?.height ?? 0) - keyboardOverlap) : geometry.reportInlineMaxHeight)
+    maxHeight={reportsScene ? (phone ? Math.max(0, (app?.height ?? 0) - headerHeight - keyboardOverlap) : geometry.reportInlineMaxHeight)
       : geometry.reportBubble?.maxHeight ?? (phone ? Math.min(geometry.reportViewMaxHeight, geometry.reportInlineMaxHeight) : geometry.reportInlineMaxHeight)}
     onSelect={report.select} onDismiss={report.dismiss} onInteraction={setReportPressed} onDeckTouch={onReportDeckTouch}
     renderCardStatus={entry => {
@@ -292,7 +293,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     : ['top', 'left', 'right']}
     style={{ flex: 1, backgroundColor: t.persistentSession.paper }}>
     <View ref={appRef} testID="persistent-session-screen" style={{ flex: 1 }} onLayout={measureApp} {...(phone ? gestures.panHandlers : {})}>
-      {!duoSideBand ? <View testID="persistent-session-header" style={{ height: headerHeight, flexDirection: 'row', alignItems: 'center',
+      <View testID="persistent-session-header" style={{ height: headerHeight, flexDirection: 'row', alignItems: 'center',
         paddingLeft: t.foundation.pageInset, paddingRight: t.foundation.pageInset - (t.hitTarget.min - t.foundation.iconFrame.compact) / 2,
         gap: t.uiSpacing.sm }}>
         {phone
@@ -301,14 +302,17 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
             <Text style={{ ...t.foundation.typography.navigation, color: t.colors.textPrimary }}>소울스트림</Text>
             <Text numberOfLines={1} style={{ flex: 1, ...t.foundation.typography.body, color: t.colors.textMuted }}>{session?.agent_name ?? ''}</Text>
           </View>}
-        {!phone ? action('home-outline', '홈으로 돌아가기', onHome, 'persistent-session-home') : null}
-        {action(t.mode === 'light' ? 'moon-outline' : 'sunny-outline', '밝기 전환', () => void handleAppearanceChange(t.mode === 'light' ? 'dark' : 'light'), 'persistent-session-appearance')}
-        {!phone && session?.node_id ? action('speedometer-outline', '주간 사용량', () => {
-          useSettingsStore.getState().setPersistentSessionShowWeeklyUsage(serverUrl, email, !showWeeklyUsage);
-        }, 'persistent-session-weekly-usage-toggle', showWeeklyUsage) : null}
-        {action('options-outline', '영구 세션 설정', () => setSettingsOpen(true), 'persistent-session-settings')}
-        {phone ? action('list-outline', scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기', () => host.store.getState().toggleScene(), 'persistent-session-tasks') : null}
-      </View> : null}
+        {!duoSideBand ? <>
+          {!phone ? action('home-outline', '홈으로 돌아가기', onHome, 'persistent-session-home') : null}
+          {!phone && hasMultiplePas ? action('swap-horizontal-outline', '영구 세션 선택', () => void host.requestEntry(() => {}, false, true), 'persistent-session-switch') : null}
+          {action(t.mode === 'light' ? 'moon-outline' : 'sunny-outline', '밝기 전환', () => void handleAppearanceChange(t.mode === 'light' ? 'dark' : 'light'), 'persistent-session-appearance')}
+          {!phone && session?.node_id ? action('speedometer-outline', '주간 사용량', () => {
+            useSettingsStore.getState().setPersistentSessionShowWeeklyUsage(serverUrl, email, !showWeeklyUsage);
+          }, 'persistent-session-weekly-usage-toggle', showWeeklyUsage) : null}
+          {action('options-outline', '영구 세션 설정', () => setSettingsOpen(true), 'persistent-session-settings')}
+          {phone ? action('list-outline', scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기', () => host.store.getState().toggleScene(), 'persistent-session-tasks') : null}
+        </> : null}
+      </View>
       {!phone && hasWeeklyUsage && !usageInColumn && app && geometry ? <View testID="persistent-session-weekly-usage-seat" onLayout={event => {
         const height = event.nativeEvent.layout.height;
         setUsageHeight(current => current === height ? current : height);
@@ -330,7 +334,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
             if (anchor.width > 0 && anchor.height > 0 && box.width > 0 && box.height > 0) setComposer({ anchor, box });
           }} />
       </View>
-      {phone && reportsScene ? <View testID="persistent-session-reports-panel" style={{ position: 'absolute', top: 0, bottom: keyboardOverlap, left: 0, right: 0,
+      {phone && reportsScene ? <View testID="persistent-session-reports-panel" style={{ position: 'absolute', top: headerHeight, bottom: keyboardOverlap, left: 0, right: 0,
         backgroundColor: t.persistentSession.paper, paddingHorizontal: t.foundation.pageInset,
         paddingTop: t.uiSpacing.sm, paddingBottom: 0, minHeight: 0 }}>{pager}</View> : null}
       {geometry && !(phone && reportsScene) ? <View testID="persistent-session-baseline" pointerEvents="none" style={{ position: 'absolute',
@@ -357,7 +361,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
           transform: [{ skewX: geometry.reportBubble.tailDirection === 'left' ? '-45deg' : '45deg' }, { rotate: '45deg' }] }} /> : null}
       </View> : null}
       {!phone && reportsScene && geometry ? <View testID="persistent-session-reports-cover" style={{ position: 'absolute',
-        left: columnLeft, width: columnWidth, top: 0, height: geometry.reportInlineMaxHeight, minHeight: 0, overflow: 'hidden',
+        left: columnLeft, width: columnWidth, top: headerHeight, height: geometry.reportInlineMaxHeight, minHeight: 0, overflow: 'hidden',
         backgroundColor: t.persistentSession.paper }}>{pager}</View> : null}
       {!phone && geometry?.toggle ? <View testID="persistent-session-character-toggle-seat" style={{ position: 'absolute',
         left: geometry.toggle.left + (geometry.toggle.width - t.hitTarget.min) / 2,

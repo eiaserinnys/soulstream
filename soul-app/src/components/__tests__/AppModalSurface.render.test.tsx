@@ -10,6 +10,12 @@ import {
   bindSessionDiagnosticsSink,
   type SessionDiagnosticsSink,
 } from '../../lib/session-diagnostics-api';
+import { useSettingsStore } from '../../store/settingsStore';
+import { DARK_COLORS, LIGHT_COLORS } from '../../theme/tokens';
+
+afterEach(() => {
+  useSettingsStore.setState({ appearance: 'system' });
+});
 
 test('compact modal is one content-fit bottom glass surface over a transparent host', () => {
   const screen = render(
@@ -66,6 +72,19 @@ test('expanded modal keeps the requested native presentation in the same surface
     });
   expect(screen.UNSAFE_getByType(Modal).props.supportedOrientations)
     .toEqual(['portrait', 'portrait-upside-down', 'landscape-left', 'landscape-right']);
+});
+
+test.each([
+  ['light', LIGHT_COLORS.surface],
+  ['dark', DARK_COLORS.surface],
+] as const)('expanded %s modal fills the duo system band with the surface token', (mode, sheetColor) => {
+  useSettingsStore.setState({ appearance: mode });
+  const screen = render(<AppModalSurface visible variant="expanded" modalId="modal_settings" presentationStyle="pageSheet"
+    sideBandWidth={84} surfaceTestID="sheet-surface" onRequestClose={jest.fn()}><View /></AppModalSurface>);
+
+  expect(StyleSheet.flatten(screen.getByTestId('sheet-surface').props.style).backgroundColor).toBe(sheetColor);
+  expect(StyleSheet.flatten(screen.getByTestId('app-modal-viewport').props.style).backgroundColor).toBe(sheetColor);
+  expect(screen.UNSAFE_getByType(Modal).props.backdropColor).toBe(sheetColor);
 });
 
 test('board modal uses transparent overlay and the shared tablet inset frame', () => {

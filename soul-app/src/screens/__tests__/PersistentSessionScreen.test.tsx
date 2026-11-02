@@ -3,6 +3,7 @@ jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityI
 const mockOpenContentLink = jest.fn();
 const mockApi = {
   listCards: jest.fn().mockResolvedValue({ cards: [] }),
+  listPersistentSessions: jest.fn(),
   getCard: jest.fn(),
   setCardStatus: jest.fn(),
   dismissPersistentReport: jest.fn(),
@@ -143,6 +144,28 @@ test('카드를 누르면 바로 오버레이가 열리고 PAS ChatBody와 입�
   expect((globalThis as any).__persistentChatConnectionProbe).toMatchObject({ opens: 1, closes: 0, connected: true });
   view.unmount();
   expect((globalThis as any).__persistentChatConnectionProbe).toMatchObject({ opens: 1, closes: 1, connected: false });
+});
+
+test('복수 PAS가 열린 태블릿은 머리줄에서 다른 영구 세션을 고를 수 있다', async () => {
+  mockDevice = 'tabletLandscape';
+  useSettingsStore.setState({ serverUrl: 'https://screen.example' });
+  const sessions = [
+    { session_id: 'pas-one', display_name: '로젤린', agent_name: '로젤린', agent_id: 'roselin', node_id: 'node-a', persistent: true },
+    { session_id: 'pas-two', display_name: '서소영', agent_name: '서소영', agent_id: 'seosoyoung', node_id: 'node-a', persistent: true },
+  ];
+  mockApi.listPersistentSessions.mockResolvedValue({ sessions, create_defaults: { node_id: 'node-a', preferred_agent_id: 'roselin' } });
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
+  act(() => {
+    store.getState().setSessions(sessions as any);
+    store.getState().open(sessions[0] as any);
+  });
+
+  expect(view.getByTestId('persistent-session-switch').props.accessibilityLabel).toBe('영구 세션 선택');
+  fireEvent.press(view.getByTestId('persistent-session-switch'));
+  await waitFor(() => expect(view.getByTestId('persistent-entry-pas-two')).toBeTruthy());
+  expect(store.getState().session?.session_id).toBe('pas-one');
+  view.unmount();
+  mockDevice = 'phone';
 });
 
 test('듀오 태블릿은 입력창과 카드 패널에서 바닥 안전 여백을 중복하지 않는다', () => {
@@ -680,13 +703,13 @@ test('phone hides saved weekly usage and passes a disabled request gate', () => 
   useAuthStore.setState({ jwt: null });
 });
 
-test('듀오 태블릿은 머리줄 대신 띠 캡슐과 사용량 열을 쓰고 설정 상태를 공유한다', () => {
+test('듀오 태블릿은 에이전트 머리줄과 띠 캡슐을 쓰고 설정 상태를 공유한다', () => {
   mockDevice = 'tabletLandscape';
   const payload = Buffer.from(JSON.stringify({ email: 'usage@example.com', sub: 'usage@example.com', name: '사용자', exp: 2_000_000_000 })).toString('base64url');
   useAuthStore.setState({ jwt: `header.${payload}.signature` });
   const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
-    if (this.props.testID === 'persistent-session-screen') callback(0, 24, 867, 645);
-    else if (this.props.testID === 'persistent-session-conversation') callback(180, 24, 400, 645);
+    if (this.props.testID === 'persistent-session-screen') callback(0, 24, 867, 500);
+    else if (this.props.testID === 'persistent-session-conversation') callback(180, 24, 400, 500);
   });
   useSettingsStore.setState({ serverUrl: 'https://usage.example', persistentSessionDevicePrefs: {} } as never);
   const view = render(<SafeAreaInsetsContext.Provider value={{ top: 24, bottom: 24, left: 0, right: 84 }}>
@@ -694,13 +717,19 @@ test('듀오 태블릿은 머리줄 대신 띠 캡슐과 사용량 열을 쓰고
   </SafeAreaInsetsContext.Provider>);
   act(() => store.getState().open({ session_id: 'pas-duo', node_id: 'node-a', agent_name: '서소영', persistent: true } as any));
   act(() => view.getByTestId('persistent-session-screen').props.onLayout());
-  expect(view.queryByTestId('persistent-session-header')).toBeNull();
+  const header = view.getByTestId('persistent-session-header');
+  expect(view.getByText('서소영')).toBeTruthy();
+  expect(StyleSheet.flatten(header.props.style).height).toBe(56);
+  for (const testID of ['persistent-session-home', 'persistent-session-appearance', 'persistent-session-weekly-usage-toggle',
+    'persistent-session-settings', 'persistent-session-tasks']) {
+    expect(view.queryByTestId(testID)).toBeNull();
+  }
   expect(view.getByLabelText('카드 목록 보기')).toBeTruthy();
   expect(view.getByLabelText('주간 사용량')).toBeTruthy();
   expect(view.getByLabelText('PAS 메뉴')).toBeTruthy();
   fireEvent.press(view.getByLabelText('카드 목록 보기'));
   expect(StyleSheet.flatten(view.getByTestId('persistent-session-conversation').props.style).width).toBe(400);
-  expect(StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style).top).toBe(0);
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style).top).toBe(56);
   fireEvent.press(view.getByLabelText('PAS 대화로 돌아가기'));
   fireEvent.press(view.getByLabelText('주간 사용량'));
   expect(StyleSheet.flatten(view.getByTestId('persistent-session-conversation').props.style).width).toBe(400);
@@ -920,7 +949,7 @@ test('듀오 태블릿의 보고 장면은 대화 자리와 키보드 위를 덮
   expect(view.getByTestId('persistent-session-duo-reports-badge').props.children).toBe(2);
   fireEvent.press(view.getByTestId('persistent-session-duo-reports'));
   const before = StyleSheet.flatten(view.getByTestId('persistent-session-reports-cover').props.style);
-  expect(before.top).toBe(0);
+  expect(before.top).toBe(StyleSheet.flatten(view.getByTestId('persistent-session-header').props.style).height);
   expect(before.width).toBe(StyleSheet.flatten(view.getByTestId('persistent-session-conversation').props.style).width);
   expect(before.left).toBe(StyleSheet.flatten(view.getByTestId('persistent-session-conversation').props.style).left);
   act(() => body.props.onKeyboardOverlapChange(110));
@@ -960,7 +989,8 @@ test('듀오 폰은 보고를 별도 판에 표시하고 보고가 없어지면 
   expect(store.getState()).toMatchObject({ reportCount: 2, hasReports: true });
   act(() => store.getState().toggleReports());
   expect(view.getByTestId('persistent-session-reports-panel')).toBeTruthy();
-  expect(StyleSheet.flatten(view.getByTestId('persistent-session-reports-panel').props.style).paddingBottom).toBe(0);
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-reports-panel').props.style)).toMatchObject({ top: 56, paddingBottom: 0 });
+  expect(StyleSheet.flatten(view.getByTestId('report-deck').props.style).maxHeight).toBe(574);
   expect(StyleSheet.flatten(view.getByTestId('report-deck').props.style).marginBottom).toBe(0);
   expect(view.getAllByTestId(/^report-sheet-/)).toHaveLength(2);
   expect(view.getByTestId('report-track').props.horizontal).toBeFalsy();

@@ -47,6 +47,30 @@ test('정확한 가운데 슬롯만 기본 이동을 막고 같은 id로 scene�
   expect(mockList).toHaveBeenCalledTimes(1);
   expect(preventDefault).toHaveBeenCalledTimes(3);
 });
+
+test('다른 탭에서 PAS를 열면 바로 돌아오고 재탭하면 복수 PAS 중 고른다', async () => {
+  resetNavigationCapture();
+  useSettingsStore.setState({ serverUrl: 'https://public.invalid', persistentSessionDevicePrefs: {} });
+  mockList.mockReset().mockResolvedValue({ sessions: [
+    { session_id: 'pas-one', display_name: '하나', persistent: true },
+    { session_id: 'pas-two', display_name: '둘', persistent: true },
+  ], create_defaults: null });
+  const view = render(<PersistentSessionProvider><Probe /><TabNavigator /></PersistentSessionProvider>);
+  const tab = getBottomTabCaptures()[0].screens.find(screen => screen.name === 'PersistentTab')!;
+  const navigation = { isFocused: () => false, navigate: jest.fn() };
+  const preventDefault = jest.fn();
+  await act(async () => { await tab.listeners({ navigation }).tabPress({ preventDefault }); });
+  expect(host.store.getState()).toMatchObject({ session: { session_id: 'pas-one' }, sessions: [{ session_id: 'pas-one' }, { session_id: 'pas-two' }] });
+  expect(view.queryByTestId('persistent-entry-pas-one')).toBeNull();
+
+  await act(async () => {
+    await tab.listeners({ navigation: { ...navigation, isFocused: () => true } }).tabPress({ preventDefault });
+  });
+  expect(view.getByTestId('persistent-entry-pas-one')).toBeTruthy();
+  expect(view.getByTestId('persistent-entry-pas-two')).toBeTruthy();
+  expect(mockList).toHaveBeenCalledTimes(2);
+});
+
 test('iPhone PAS 카드는 기존 PhoneCardDetail stack 경로를 사용하고 PAS 대화를 유지한다', () => {
   resetNavigationCapture();
   render(<PersistentSessionProvider><Probe /><TabNavigator /></PersistentSessionProvider>);

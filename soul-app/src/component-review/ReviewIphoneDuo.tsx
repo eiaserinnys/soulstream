@@ -77,6 +77,8 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
   const frame = PAS_LAYOUT_FRAMES[frameId];
   const params = new URLSearchParams(window.location.search);
   const duo = params.get('band') !== 'off' && frame.insets.right >= RAIL_MIN_INSET_WIDTH && frame.insets.left === 0;
+  const compact = duo && frame.width > frame.height;
+  const t = useTokens();
   const phone = frameId.startsWith('outer-') || frameId.startsWith('iphone-');
   const initialTab = params.get('tab') ?? undefined;
   const sampleCardId = params.get('card') ?? entryShellCardId;
@@ -85,10 +87,11 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
   const phoneChat = phone && view === 'chat';
   const api = useMemo(() => createReviewApi('normal', { entryShell: true }), []);
   useEffect(() => installEntryShellPublicHarness(), []);
-  return <PersistentSessionProvider><ContentLinkProvider>
+  return <ContentLinkProvider>
     <SafeAreaFrameContext.Provider value={{ x: 0, y: 0, width: frame.width, height: frame.height }}>
       <SafeAreaInsetsContext.Provider value={frame.insets}>
         <DuoSideBandContext.Provider value={duo}>
+          <PersistentSessionProvider>
           <NavigationContainer ref={navigationRef} onReady={() => {
             if (phoneChat) navigationRef.navigate('FeedTab', { screen: 'Chat', params: { sessionId: 'public-shell-session-0' } });
             if (!phone && params.get('overlay') === 'card-with-chat') useUIStore.getState().openCardOverlay(sampleCardId, 'public-shell-session-0');
@@ -103,8 +106,10 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
                     {view === 'rail-badge' || view === 'rail-dot' ? <DuoBadgeReview dot={view === 'rail-dot'} /> : null}
                   </View>
                 </SafeAreaInsetsContext.Provider>
-                {phone ? <View style={{ width: frame.insets.right, alignItems: 'center', justifyContent: 'flex-end', paddingBottom: frame.insets.bottom, ...(duo ? { paddingRight: DUO_RAIL_END_INSET } : {}) }}>
-                  <PhoneRailTabCluster active="DailyTab" duoSideBand={duo} compact={duo && frame.width > frame.height} onSelect={() => setView(null)} />
+                {phone ? <View style={{ width: frame.insets.right, alignItems: 'center', justifyContent: 'flex-end',
+                  paddingBottom: compact ? frame.insets.bottom : Math.max(frame.insets.bottom, t.uiSpacing.xxl),
+                  ...(duo ? { paddingRight: DUO_RAIL_END_INSET } : {}) }}>
+                  <PhoneRailTabCluster active="DailyTab" duoSideBand={duo} compact={compact} onSelect={() => setView(null)} />
                 </View> : null}
                 {!phone && duo ? <View style={{ width: frame.insets.right }} /> : null}
                 {!phone && duo ? <DuoRailOverride /> : null}
@@ -115,10 +120,11 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
             </View>
             <EntryShellAlertHarness />
           </NavigationContainer>
+          </PersistentSessionProvider>
         </DuoSideBandContext.Provider>
       </SafeAreaInsetsContext.Provider>
     </SafeAreaFrameContext.Provider>
-  </ContentLinkProvider></PersistentSessionProvider>;
+  </ContentLinkProvider>;
 }
 
 function DuoPasCardOverlayStage({ reportsEmpty = false, initialReportsScene = false, onOpenPhoneCard }: {
@@ -132,6 +138,13 @@ function DuoPasCardOverlayStage({ reportsEmpty = false, initialReportsScene = fa
   const t = useTokens();
   useEffect(() => {
     const sessionId = 'review-pas-1';
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('count') === '2' || params.get('multiPas') === '1') {
+      host.store.getState().setSessions([
+        { session_id: 'review-pas-1', display_name: '로젤린', node_id: 'public-node', agent_id: 'roselin', agent_name: '로젤린', persistent: true },
+        { session_id: 'review-pas-2', display_name: '서소영', node_id: 'public-node', agent_id: 'seosoyoung', agent_name: '서소영', persistent: true },
+      ] as any);
+    }
     const entries = reportsEmpty ? [] : [{ key: 'card_804', kind: 'see', title: '지금의 보고 · #804', card_numbers: [804],
       card_id: 'preview-pas-card', card_status: 'review', context: '검수용 카드 장입니다.', action: '',
       options: [], state: 'open', answer: '', updated_at: '2026-10-29T00:00:00Z' },
@@ -170,14 +183,15 @@ function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { fr
   const [openedCardId, setOpenedCardId] = useState<string | null>(null);
   const reviewCardApi = useMemo(() => createReviewCardApi(), []);
   const frame = PAS_LAYOUT_FRAMES[frameId];
+  useEffect(() => installEntryShellPublicHarness(), []);
   const frameRect: Rect = { x: 0, y: 0, width: frame.width, height: frame.height };
   const duoSideBand = frame.insets.right >= RAIL_MIN_INSET_WIDTH && frame.insets.left === 0;
   const compact = duoSideBand && frame.width > frame.height;
-  return <PersistentSessionProvider>
-    <SafeAreaFrameContext.Provider value={frameRect}>
+  return <SafeAreaFrameContext.Provider value={frameRect}>
       <SafeAreaInsetsContext.Provider value={frame.insets}>
         <PhoneRailModeContext.Provider value={frame.rail}>
           <DuoSideBandContext.Provider value={duoSideBand}>
+          <PersistentSessionProvider>
           <NavigationContainer>
           <View style={{ flex: 1, flexDirection: 'row', width: frame.width, height: frame.height, overflow: 'hidden' }}>
             <SafeAreaInsetsContext.Provider value={frame.rail ? { ...frame.insets, right: 0 } : frame.insets}>
@@ -198,17 +212,20 @@ function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { fr
           </View>
           <EntryShellAlertHarness />
           </NavigationContainer>
+          </PersistentSessionProvider>
           </DuoSideBandContext.Provider>
         </PhoneRailModeContext.Provider>
       </SafeAreaInsetsContext.Provider>
-    </SafeAreaFrameContext.Provider>
-  </PersistentSessionProvider>;
+    </SafeAreaFrameContext.Provider>;
 }
 
 function DuoPasReviewRail({ duoSideBand, compact }: { duoSideBand: boolean; compact: boolean }) {
   const host = usePersistentSessionHost();
   return <PhoneRailTabCluster active="PersistentTab" duoSideBand={duoSideBand} compact={compact}
-    onSelect={() => host.store.getState().toggleScene()} />;
+    onSelect={(name) => {
+      if (name === 'PersistentTab') void host.requestEntry(() => {}, false, true);
+      else host.store.getState().toggleScene();
+    }} />;
 }
 
 export function ReviewIphoneDuo() {

@@ -16,10 +16,10 @@ import { cardStyles } from './Card.styles';
 import { GroupedGlassRow, GroupedGlassSheet } from './GroupedGlassSheet';
 import Ionicons from '@expo/vector-icons/Ionicons';
 
-export function CardStatusMenu({ api, card, onClose, entry = 'status', visible = true, requestedStatus, onBack, onDismiss }: {
+export function CardStatusMenu({ api, card, onClose, entry = 'status', visible = true, requestedStatus, onBack, onDismiss, onOpenNotes }: {
   api: ApiClient | null; card: CardDto; onClose(): void;
   entry?: 'status' | 'color'; visible?: boolean; requestedStatus?: CardStatus;
-  onBack?(): void; onDismiss?(): void;
+  onBack?(): void; onDismiss?(): void; onOpenNotes?(): void;
 }) {
   const t = useTokens();
   const styles = cardStyles(t);
@@ -110,6 +110,8 @@ export function CardStatusMenu({ api, card, onClose, entry = 'status', visible =
             else setColorSelection(false);
           }}><Text style={styles.body}>돌아가기</Text></GlassButton>
       </> : <>
+        {detail && onOpenNotes ? <GlassButton accessibilityLabel="노트 보기" disabled={mutationPending}
+          onPress={() => { onOpenNotes(); close(); }}><Text style={styles.body}>노트 보기</Text></GlassButton> : null}
         {detail ? <GlassButton accessibilityLabel={`카드 색상: ${CARD_COLORS[currentColor].name}`} disabled={mutationPending}
           onPress={() => setColorSelection(true)}><Text style={styles.body}>카드 색상: {CARD_COLORS[currentColor].name}</Text></GlassButton> : null}
         {detail ? BOARD_COLUMNS.map(([next, label]) => {
