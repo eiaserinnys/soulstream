@@ -150,6 +150,49 @@ test('header 선렌더 뒤 focus history가 바뀌어도 press 순간 최신 Fol
   expect(navigate).toHaveBeenCalledWith('FolderTab');
 });
 
+test('Chat route returnTab은 덮어쓴 panel history보다 우선해 header와 듀오 레일에서 사용된다', () => {
+  useSessionStore.setState({
+    sessions: {
+      'session-1': {
+        agentSessionId: 'session-1',
+        displayName: '검수할 채팅',
+        status: 'running',
+        createdAt: '',
+        updatedAt: '',
+      } as Session,
+    },
+  });
+  const navigate = jest.fn();
+  const navigation = {
+    getParent: jest.fn(() => ({ navigate })),
+    navigate: jest.fn(),
+    setOptions: jest.fn(),
+    setParams: jest.fn(),
+  };
+
+  render(<DuoSideBandContext.Provider value>
+    <PhonePanelHistoryProvider>
+      <CaptureHistory />
+      <ChatScreen
+        route={{ key: 'chat', name: 'Chat', params: { sessionId: 'session-1', returnTab: 'DailyTab' } } as any}
+        navigation={navigation as any}
+      />
+    </PhonePanelHistoryProvider>
+  </DuoSideBandContext.Provider>);
+
+  capturedHistory!.recordFocus('FolderTab');
+  capturedHistory!.recordChatOpen();
+  const options = navigation.setOptions.mock.calls.at(-1)?.[0];
+  const headerLeft = render(React.createElement(options.headerLeft));
+  fireEvent.press(headerLeft.getByLabelText('이전 패널로 돌아가기'));
+  expect(navigate).toHaveBeenLastCalledWith('DailyTab');
+
+  navigate.mockClear();
+  const back = usePhoneRailActions.getState().overrides.at(-1)?.actions.find(action => action.id === 'back');
+  act(() => back?.onPress());
+  expect(navigate).toHaveBeenLastCalledWith('DailyTab');
+});
+
 test.each([
   [true, true],
   [false, false],

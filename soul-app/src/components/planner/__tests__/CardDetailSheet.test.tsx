@@ -339,7 +339,7 @@ test('카드의 루트 1개·자식 33개를 폴더 정본 컴포넌트로 hydra
   expect(screen.UNSAFE_getByType(FlatList).props.data.map((row: any) => row.session.agentSessionId)).toEqual(orderBefore);
   expect(StyleSheet.flatten(screen.getByTestId('task-run-depth-run-0').props.style).marginLeft).toBe(0);
   await userEvent.press(screen.getByTestId('task-run-row-run-0'));
-  expect(onClose).toHaveBeenCalled();
+  expect(onClose).not.toHaveBeenCalled();
   expect(onOpenSession).toHaveBeenCalledWith('run-0');
 
 });

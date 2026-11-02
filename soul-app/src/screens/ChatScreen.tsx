@@ -78,7 +78,7 @@ export function ChatScreen({ route, navigation }: Props) {
     sessionId ? s.sessions[sessionId] : undefined
   );
   useRegisterDuoRailOverride('chat', duo && isFocused, [
-    { id: 'back', label: '뒤로', icon: 'chevron-back', onPress: () => openPreviousPhonePanel(navigation, panelHistory.getReturnTab()) },
+    { id: 'back', label: '뒤로', icon: 'chevron-back', onPress: () => openPreviousPhonePanel(navigation, route.params?.returnTab ?? panelHistory.getReturnTab()) },
     ...(sessionId ? [
       { id: 'story', label: '지난 줄거리', icon: 'book-outline' as const,
         selected: storyExpanded && storyAvailable, disabled: !storyAvailable, onPress: handleToggleStory },
@@ -110,7 +110,7 @@ export function ChatScreen({ route, navigation }: Props) {
             accessibilityHint="채팅을 열기 전에 보던 화면으로 돌아갑니다"
             contentStyle={styles.headerBackAction}
             onPress={() =>
-              openPreviousPhonePanel(navigation, panelHistory.getReturnTab())
+              openPreviousPhonePanel(navigation, route.params?.returnTab ?? panelHistory.getReturnTab())
             }
           >
             <Ionicons
@@ -133,7 +133,7 @@ export function ChatScreen({ route, navigation }: Props) {
         </TouchableOpacity>
       ),
     });
-  }, [menus.openSessionMenu, navigation, panelHistory, session, sessionId, styles, t]);
+  }, [menus.openSessionMenu, navigation, panelHistory, route.params?.returnTab, session, sessionId, styles, t]);
 
   if (!sessionId) {
     return (

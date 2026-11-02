@@ -217,7 +217,6 @@ export function CardDetailContent(props: CardDetailContentProps) {
     return ok;
   };
   const openSession = (id: string) => {
-    if (!inline) onClose();
     if (onOpenSession) onOpenSession(id);
     else useUIStore.getState().openSessionAtEvent(id);
   };
