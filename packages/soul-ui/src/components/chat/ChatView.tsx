@@ -232,7 +232,9 @@ function ChatViewContent({
       return collapseReportTimeline(
         projected,
         (message) => message.reportTimeline?.line_key ?? null,
-        (message) => message.role === "user" || message.role === "assistant" || message.role === "intervention",
+        (message) => message.role === "user"
+          || message.role === "intervention"
+          || (message.role === "assistant" && message.treeNodeType !== "thinking"),
       );
     },
     [isManuscript, transcriptMessages, persistentSessionDisplaySettings, activeSessionKey],
@@ -889,7 +891,11 @@ function ChatViewContent({
             <div
               data-chat-item-key={messageOrGroupKey(item)}
               className={isManuscript
-                ? manuscriptItemSpacingClass(item, timelineItems[index - firstItemIndex - 1])
+                ? manuscriptItemSpacingClass(
+                  item,
+                  timelineItems[index - firstItemIndex - 1],
+                  timelineItems[index - firstItemIndex + 1],
+                )
                 : "contents"}
             >
               <VirtualizedItem

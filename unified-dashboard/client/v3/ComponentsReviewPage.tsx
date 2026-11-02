@@ -307,7 +307,7 @@ export function ComponentsReviewPage() {
               </div>
             </Sample>
             <Sample name="ReportTimelineRow" state="7개 상태 · 카드 연결/없음 · content/avatar inset · 긴 글">
-              <div className="space-y-1">
+              <div>
                 {(["review", "blocked", "question", "done", "cancelled", "on_hold", "report"] as const).map((status) => {
                   const line: ReportTimelineLine = {
                     line_key: `review-${status}`, status, title: "카드 상태가 갱신되었습니다.", detail: "상황판 또는 질문이 한 줄로 표시됩니다.",

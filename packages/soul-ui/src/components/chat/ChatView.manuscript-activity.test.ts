@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { groupManuscriptMessages } from "../../lib/grouping";
-import { isManuscriptNarration, manuscriptActivityNarrationIds } from "./ChatManuscriptList";
+import {
+  isManuscriptNarration,
+  manuscriptActivityNarrationIds,
+  manuscriptItemSpacingClass,
+  MANUSCRIPT_ADJACENT_USER_ROW_CLASS_NAME,
+} from "./ChatManuscriptList";
 import type { ChatTimelineItem } from "./ChatView.thinking-indicator";
 
 function message(
@@ -142,5 +147,24 @@ describe("manuscript activity projection", () => {
     expect(isManuscriptNarration(asSingle(narration), asSingle(message("complete", "system", "complete")))).toBe(false);
     expect(isManuscriptNarration(asSingle(assistantWithUi), asSingle(tool))).toBe(false);
     expect(isManuscriptNarration(asSingle(assistantThinking), asSingle(tool))).toBe(false);
+  });
+});
+
+describe("manuscript report timeline spacing", () => {
+  const asSingle = (msg: ChatMessage): Extract<ChatTimelineItem, { type: "single" }> => ({ type: "single", msg });
+  const timeline = asSingle(message("report", "system", "report_timeline"));
+  const narration = asSingle(message("narration", "assistant", "text"));
+  const user = asSingle(message("user", "user", "user_message"));
+
+  it("spaces a timeline group away from neighboring prose and keeps adjacent rows together", () => {
+    expect(manuscriptItemSpacingClass(timeline, timeline, timeline)).toBe("contents");
+    expect(manuscriptItemSpacingClass(timeline, timeline, narration)).toBe("pb-2");
+    expect(manuscriptItemSpacingClass(timeline, narration, timeline)).toBe("pt-2");
+    expect(manuscriptItemSpacingClass(timeline, narration, narration)).toBe("pt-2 pb-2");
+  });
+
+  it("leaves non-timeline row spacing unchanged", () => {
+    expect(manuscriptItemSpacingClass(narration, user, timeline)).toBe("contents");
+    expect(manuscriptItemSpacingClass(user, user, timeline)).toBe(MANUSCRIPT_ADJACENT_USER_ROW_CLASS_NAME);
   });
 });

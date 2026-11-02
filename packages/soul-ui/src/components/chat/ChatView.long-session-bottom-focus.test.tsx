@@ -171,6 +171,17 @@ function makeAssistantMessage(eventId: number): { event: SoulSSEEvent; eventId: 
   };
 }
 
+function makeThinking(eventId: number): { event: SoulSSEEvent; eventId: number } {
+  return {
+    event: {
+      type: "thinking",
+      thinking: `thinking-${eventId}`,
+      timestamp: 0,
+    } as unknown as SoulSSEEvent,
+    eventId,
+  };
+}
+
 function makeComplete(eventId: number): { event: SoulSSEEvent; eventId: number } {
   return {
     event: {
@@ -1904,6 +1915,39 @@ describe("ChatView long-session initial bottom focus", () => {
     expect(Array.from(renderedRows, (row) => row.textContent)).toEqual([
       "도구 뒤 상태",
       "대화 뒤 상태",
+    ]);
+  });
+
+  it("thinking은 같은 line_key 보고를 끊지 않고 assistant 글은 끊는다", async () => {
+    const report = (title: string, eventId: number) => ({
+      eventId,
+      event: {
+        type: "report_timeline",
+        line_key: "card-812",
+        status: "review",
+        title,
+        detail: "세부 상황",
+        card_id: "card-812",
+        card_number: 812,
+      } as unknown as SoulSSEEvent,
+    });
+    useDashboardStore.getState().processHistoryEvents([
+      report("첫 상태", 1),
+      makeThinking(2),
+      report("thinking 뒤 최신", 3),
+      makeAssistantMessage(4),
+      report("assistant 글 뒤 새 행", 5),
+    ]);
+    ({ container, root } = await renderChatView());
+
+    const messages = virtuosoData().flatMap((item: any) => item.type === "single"
+      ? [item.msg]
+      : item.type === "activity-group" ? item.messages : []);
+    const reportMessages = messages.filter((message: any) => message.treeNodeType === "report_timeline");
+    expect(reportMessages).toHaveLength(2);
+    expect(reportMessages.map((message: any) => message.reportTimeline.title)).toEqual([
+      "thinking 뒤 최신",
+      "assistant 글 뒤 새 행",
     ]);
   });
 });
