@@ -68,6 +68,7 @@ export interface RunnerCommandDispatcher {
   detachHost(): Promise<void>;
   releaseEventStreamRegistration?(): Promise<void>;
   isClosed?(): boolean;
+  hasLostRunner?(): boolean;
   /** True only after this process registration reported the exact closed-engine failure. */
   hasClosedEngineFailureForFinalization?(): boolean;
   hasActiveExecution(): boolean;

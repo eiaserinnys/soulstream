@@ -74,6 +74,7 @@ export class TaskExecutorFinalizer {
     }
     const retention = await this.detachedWorkRetention(task, runner.engine);
     if (task.runner !== runner) return "not_retained";
+    if (runner.dispatcher.hasLostRunner?.() === true) return "not_retained";
     if (retention === "retained" || retention === "codex_inactive") {
       task.runnerRetainedForDetachedWork = true;
     }

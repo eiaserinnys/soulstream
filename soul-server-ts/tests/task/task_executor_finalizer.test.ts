@@ -118,6 +118,57 @@ function exactCodexRunner(options: {
 }
 
 describe("TaskExecutorFinalizer.finalize", () => {
+  it.each([
+    ["claude", true],
+    ["codex", true],
+    ["claude", false],
+    ["codex", false],
+  ] as const)(
+    "%s activity failure is not retained after lost runner is %s",
+    async (backend, lostRunner) => {
+      const activity = vi.fn(async () => { throw new Error("activity dispatch failed"); });
+      const engine = {
+        ...makeEngine(vi.fn(async () => undefined)),
+        backendId: backend,
+        detachedClaudeRuntime: backend === "claude" ? true : undefined,
+        detachedClaudeRuntimeActivity: backend === "claude" ? activity : undefined,
+        codexDetachedCommandRuntime: backend === "codex" ? true : undefined,
+        codexDetachedCommandActivity: backend === "codex" ? activity : undefined,
+      } as EnginePort;
+      const close = vi.fn(async () => undefined);
+      const dispatcher = {
+        close,
+        hasLostRunner: vi.fn(() => lostRunner),
+      };
+      const task = makeTask({
+        runner: createTaskRunnerRuntime(engine, dispatcher as never),
+      });
+      const finalizer = makeFinalizer({
+        lifecycleTransition: {
+          persistExecutorFinalState: vi.fn().mockResolvedValue({
+            newlyFinalized: true,
+            terminalTransitionApplied: true,
+          }),
+        },
+        logger: makeLogger(),
+      });
+
+      await finalizer.finalize(task);
+
+      expect(activity).toHaveBeenCalledOnce();
+      if (lostRunner) {
+        expect(dispatcher.hasLostRunner).toHaveBeenCalledOnce();
+        expect(close).toHaveBeenCalledOnce();
+        expect(task.runner).toBeUndefined();
+        expect(task.runnerRetainedForDetachedWork).toBeUndefined();
+      } else {
+        expect(dispatcher.hasLostRunner).toHaveBeenCalledOnce();
+        expect(close).not.toHaveBeenCalled();
+        expect(task.runnerRetainedForDetachedWork).toBe(true);
+      }
+    },
+  );
+
   it("retains a process Codex runner for detached running or terminal-result work", async () => {
     const close = vi.fn(async () => undefined);
     const activity = vi.fn(async () => codexActivity({ detachedRunningCount: 1 }));

@@ -73,7 +73,10 @@ import {
   type RunnerLifecycleRecord,
 } from "./sqlite_runner_lifecycle.js";
 import { readRunnerRegistrationIdentity } from "./runner_registration_identity.js";
-import { RunnerWriterLock } from "./runner_writer_lock.js";
+import {
+  inspectRunnerWriterLock,
+  RunnerWriterLock,
+} from "./runner_writer_lock.js";
 import { isClosedClaudeEngineFailure } from "./closed_engine_error.js";
 
 const COMMAND_TIMEOUT_MS = 30_000;
@@ -132,6 +135,7 @@ export interface RunnerProcessDispatcherOptions {
   offlineExisting?: boolean;
   openParentOutbox?: typeof RunnerParentOutbox.open;
   connectSocket?: typeof connectRunnerSocket;
+  inspectWriterLock?: typeof inspectRunnerWriterLock;
   pumpMux: EventOutboxPumpMux;
   logger: Logger;
   reconnectPolicy?: RunnerIpcReconnectPolicy;
@@ -184,6 +188,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   private reconnectRequested = false;
   private reconnectAttempts = 0;
   private reconnectCause: Error | undefined;
+  private runnerLost = false;
   /** One host admission owns the exact runner registration, command and stream. */
   private activeExecution: ActiveProcessExecution | undefined;
   private spawnedProcess: import("./runner_process_spawn.js").SpawnedRunnerProcess | undefined;
@@ -205,6 +210,10 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       options.reconnectPolicy ?? DEFAULT_RECONNECT_POLICY,
     );
     this.ready = this.initialize();
+  }
+
+  hasLostRunner(): boolean {
+    return this.runnerLost;
   }
 
   async dispatch(
@@ -1004,6 +1013,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
             || identity.pid === null
           )
         ) {
+          this.runnerLost = true;
           this.options.logger.warn(
             {
               ...this.runnerIdentityContext(socketPath),
@@ -1021,6 +1031,31 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
           }
           await this.detachHost();
           return;
+        }
+        try {
+          const writerLock = await (this.options.inspectWriterLock ?? inspectRunnerWriterLock)(
+            spawned.paths.lockPath,
+          );
+          if (writerLock.kind === "free") {
+            this.runnerLost = true;
+            this.options.logger.warn(
+              {
+                ...this.runnerIdentityContext(socketPath),
+                registrationId: spawned.registrationId,
+              },
+              "Runner process is gone; host stops reconnecting",
+            );
+            return;
+          }
+        } catch (error) {
+          this.options.logger.warn(
+            {
+              err: error,
+              ...this.runnerIdentityContext(socketPath),
+              registrationId: spawned.registrationId,
+            },
+            "Runner writer lock could not be inspected; host continues reconnecting",
+          );
         }
       }
       try {
@@ -1068,6 +1103,9 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     if (this.reconnectInFlight) {
       await this.reconnectInFlight;
       if (this.connection) return this.connection;
+    }
+    if (this.runnerLost) {
+      throw new Error(`Runner process is unavailable: ${this.spawnInput.sessionId}`);
     }
     if (!this.connecting) {
       this.connecting = this.ready.then(async () => {
