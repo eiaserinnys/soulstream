@@ -1,22 +1,28 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, useWindowDimensions } from 'react-native';
 import type { ApiClient } from '../../api/client';
-import { CardDetailChatPanes, CardPanelOverlayFrame } from '../planner/FolderWorkspaceReadOverlay';
+import { CardDetailChatPanes, CardPanelOverlayFrame, DuoTopBandRailScope, FolderWorkspaceSinglePanel } from '../planner/FolderWorkspaceReadOverlay';
 import { useCardStore } from '../../store/cardStore';
-import { getCardDetailPaneWidth, getFolderWorkspaceOverlayWidth } from '../../lib/folder-workspace-layout';
+import { getCardDetailPaneWidth, getFolderWorkspaceOverlayWidth, shouldUseSinglePanel } from '../../lib/folder-workspace-layout';
 import { useDeviceType } from '../../theme';
+import { DUO_SIDE_BAND_WIDTH } from '../../navigation/duoSideBand';
 
-export function PersistentSessionCardOverlay({ api, cardId, sessionId, bottomSafeAreaInset, onClose }: {
+export function PersistentSessionCardOverlay({ api, cardId, sessionId, bottomSafeAreaInset, sheetTop, railBand = false, onClose }: {
   api: ApiClient | null;
   cardId: string | null;
   sessionId: string | undefined;
   bottomSafeAreaInset: number;
+  sheetTop?: number;
+  railBand?: boolean;
   onClose(): void;
 }) {
   const phone = useDeviceType() === 'phone';
   const { width } = useWindowDimensions();
   const overlayWidth = getFolderWorkspaceOverlayWidth(width);
   const frameWidth = overlayWidth + StyleSheet.hairlineWidth * 2;
+  const singlePanel = shouldUseSinglePanel(overlayWidth);
+  const sheetRight = railBand ? DUO_SIDE_BAND_WIDTH : 0;
+  const sheetWidth = railBand ? width - DUO_SIDE_BAND_WIDTH : frameWidth;
   const detailWidth = getCardDetailPaneWidth(overlayWidth);
   const [renderedCardId, setRenderedCardId] = useState(cardId);
   const [closedChatCardId, setClosedChatCardId] = useState<string | null>(null);
@@ -52,11 +58,15 @@ export function PersistentSessionCardOverlay({ api, cardId, sessionId, bottomSaf
   }, [renderedCardId]);
 
   if (!renderedCardId || phone) return null;
-  return <CardPanelOverlayFrame visible={cardId !== null} width={frameWidth} onClose={onClose}
-    onHidden={onHidden} testID="persistent-card-overlay" direction="row"
-    chatPaneMinimumBottomPadding={bottomSafeAreaInset}>
-    <CardDetailChatPanes api={api} cardId={renderedCardId} active={cardId !== null} detailWidth={detailWidth}
+  return <CardPanelOverlayFrame visible={cardId !== null} width={sheetWidth} sheetRight={sheetRight} onClose={onClose}
+    onHidden={onHidden} testID="persistent-card-overlay"
+    chatPaneMinimumBottomPadding={bottomSafeAreaInset} sheetTop={sheetTop} direction={singlePanel ? 'column' : 'row'}>
+    {singlePanel ? <DuoTopBandRailScope enabled={railBand}>
+      <FolderWorkspaceSinglePanel api={api} cardId={renderedCardId} pageId={null} sessionId={selectedSessionId}
+        active={cardId !== null} onClose={onClose} onOpenSession={openSessionInOverlay}
+        ownsSessionConnection={!sameSession} />
+    </DuoTopBandRailScope> : <CardDetailChatPanes api={api} cardId={renderedCardId} active={cardId !== null} detailWidth={detailWidth}
       onClose={onClose} onOpenSession={openSessionInOverlay} sessionId={chatSessionId} onCloseChat={closeChat}
-      ownsSessionConnection={!sameSession} />
+      ownsSessionConnection={!sameSession} />}
   </CardPanelOverlayFrame>;
 }

@@ -8,10 +8,12 @@ import { DUO_RAIL_END_INSET, getDuoRailTopOffset, splitDuoRailBackAction } from 
 import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem } from './RailCapsule';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 
-export function DuoRailOverride() {
+export function DuoRailOverride({ topOffset, bandWidth }: { topOffset?: number; bandWidth?: number }) {
   const t = useTokens();
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
+  const railTopOffset = topOffset ?? getDuoRailTopOffset(width, height);
+  const railBandWidth = bandWidth ?? insets.right;
   const [keyboardOverlap, setKeyboardOverlap] = useState(0);
   const actions = useActiveDuoRailOverride();
   if (!actions?.length) return null;
@@ -19,7 +21,7 @@ export function DuoRailOverride() {
   const compact = actions.length >= 7 || height < 500;
   const bottom = Math.max(keyboardOverlap, insets.bottom, t.uiSpacing.xxl);
   const lowerMaxHeight = backAction && keyboardOverlap > 0
-    ? Math.max(0, height - bottom - getDuoRailTopOffset(width, height)
+    ? Math.max(0, height - bottom - railTopOffset
       - RAIL_CAPSULE_WIDTH - t.uiSpacing.xs)
     : undefined;
   const renderAction = (action: typeof actions[number]) => <RailCapsuleItem key={action.id} testID={`duo-rail-action-${action.id}`} label={action.label}
@@ -27,8 +29,8 @@ export function DuoRailOverride() {
         <Ionicons name={action.icon} size={t.iconSize.standard} color={action.selected ? t.colors.accent : t.colors.textMuted} />
       </RailCapsuleItem>;
   return <AppKeyboardAvoidingView pointerEvents="box-none" onOverlapChange={setKeyboardOverlap} style={StyleSheet.absoluteFill}>
-  <View testID="duo-rail-override-host" pointerEvents="box-none" style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: insets.right, alignItems: 'center', paddingRight: DUO_RAIL_END_INSET }}>
-    {backAction ? <View style={{ position: 'absolute', top: getDuoRailTopOffset(width, height), left: 0, right: DUO_RAIL_END_INSET, alignItems: 'center' }}>
+  <View testID="duo-rail-override-host" pointerEvents="box-none" style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: railBandWidth, alignItems: 'center', paddingRight: DUO_RAIL_END_INSET }}>
+    {backAction ? <View style={{ position: 'absolute', top: railTopOffset, left: 0, right: DUO_RAIL_END_INSET, alignItems: 'center' }}>
       <RailCapsule testID={mainActions.length ? 'duo-rail-back-capsule' : 'duo-rail-override'} compact={compact}>{renderAction(backAction)}</RailCapsule>
     </View> : null}
     {mainActions.length ? <View testID="duo-rail-override-lower" style={{ position: 'absolute', bottom, left: 0, right: DUO_RAIL_END_INSET, alignItems: 'center' }}>

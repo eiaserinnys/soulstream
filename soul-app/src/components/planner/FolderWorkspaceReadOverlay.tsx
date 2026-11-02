@@ -21,7 +21,7 @@ import { getSessionDisplayName } from '../../lib/session-display-name';
 import { useUIStore } from '../../store/uiStore';
 import { useSessionStore } from '../../store/sessionStore';
 import { useCardStore } from '../../store/cardStore';
-import { createPlannerVisualRoles, useTokens, type DesignTokens } from '../../theme';
+import { createPlannerVisualRoles, useDeviceType, useTokens, type DesignTokens } from '../../theme';
 import { ChatPane, ChatPaneMinimumBottomPaddingContext } from '../split/ChatPane';
 import { TabletPaneHeader } from '../split/TabletPaneHeader';
 import { AppGlassCard } from '../AppGlassCard';
@@ -31,8 +31,9 @@ import { FolderWorkspace } from './FolderWorkspace';
 import { retryPlannerSessionWorkspace } from '../../lib/planner-folder-workspace';
 import { coordinateFolderWorkspaceClose } from '../../lib/planner-folder-title-save';
 import { createSurfaceRoles } from '../../theme/surfaceRoles';
-import { useDuoSideBand } from '../../navigation/duoSideBand';
+import { DUO_SIDE_BAND_WIDTH, useDuoSideBand, useDuoTopBand } from '../../navigation/duoSideBand';
 import { useRegisterDuoRailOverride, type PhoneRailAction } from '../../navigation/phoneRailActions';
+import { DuoSideBandContext } from '../../navigation/tabContract';
 import {
   FOLDER_WORKSPACE_BACKDROP_COLOR,
   getCardDetailPaneWidth,
@@ -49,8 +50,14 @@ export function FolderWorkspaceReadOverlay({ host = 'root', parentWidth }: {
 }) {
   const expanded = useUIStore((state) => state.cardBoardExpanded);
   return expanded === (host === 'board')
-    ? <FolderWorkspaceOverlayContent parentWidth={parentWidth} />
+    ? <FolderWorkspaceOverlayContent host={host} parentWidth={parentWidth} />
     : null;
+}
+
+export function DuoTopBandRailScope({ enabled, children }: { enabled: boolean; children: React.ReactNode }) {
+  return enabled
+    ? <DuoSideBandContext.Provider value={true}>{children}</DuoSideBandContext.Provider>
+    : <>{children}</>;
 }
 
 export function CardDetailPane({ api, cardId, detailWidth, hideRightBorder = false, active = true, onClose, onOpenSession }: {
@@ -185,7 +192,7 @@ export function FolderWorkspaceDetailPane({ api, cardId, pageId, sessionId, acti
  * 좁은 오버레이용 단일 열. 상세를 먼저 보여 주고 세션을 열면 대화로 넘어간다.
  * 헤더의 뒤로 버튼으로 상세에 돌아오며, 카드/폴더가 바뀌면 상세로 리셋한다.
  */
-export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, active, initialStep = !cardId && !pageId && sessionId ? 'chat' : 'detail', overlayWidth, onClose, onOpenSession, onOpenFolder }: {
+export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, active, initialStep = !cardId && !pageId && sessionId ? 'chat' : 'detail', overlayWidth, ownsSessionConnection = true, onClose, onOpenSession, onOpenFolder }: {
   api: ReturnType<typeof createApiClient> | null;
   cardId: string | null;
   pageId: string | null;
@@ -193,6 +200,7 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
   active: boolean;
   initialStep?: 'detail' | 'chat';
   overlayWidth?: number;
+  ownsSessionConnection?: boolean;
   onClose(): void;
   onOpenSession?(id: string): void;
   onOpenFolder?(folderId: string, projectPageId: string): void;
@@ -256,7 +264,7 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
   if (!cardId && !pageId && sessionId && unlinkedSession) {
     return (
       <View testID="folder-workspace-single-panel" style={styles.singlePanel}>
-        <CardConversationPane active={active} sessionId={sessionId} onClose={onClose} />
+        <CardConversationPane active={active} sessionId={sessionId} onClose={onClose} ownsSessionConnection={ownsSessionConnection} />
       </View>
     );
   }
@@ -289,6 +297,7 @@ export function FolderWorkspaceSinglePanel({ api, cardId, pageId, sessionId, act
         active={active}
         sessionId={selectedSessionId}
         onClose={onClose}
+        ownsSessionConnection={ownsSessionConnection}
         back={canReturnToDetail ? backButton : undefined}
       /> : null}
     </View>
@@ -313,7 +322,7 @@ export function CardDetailChatPanes({ api, cardId, active, detailWidth, onClose,
   </>;
 }
 
-export function CardPanelOverlayFrame({ visible, width, onClose, onHidden, testID = 'task-workspace', direction = 'row', chatPaneMinimumBottomPadding, children }: {
+export function CardPanelOverlayFrame({ visible, width, onClose, onHidden, testID = 'task-workspace', direction = 'row', chatPaneMinimumBottomPadding, sheetTop = 0, sheetRight = 0, children }: {
   visible: boolean;
   width: number;
   onClose(): void;
@@ -321,6 +330,8 @@ export function CardPanelOverlayFrame({ visible, width, onClose, onHidden, testI
   testID?: string;
   direction?: 'row' | 'column';
   chatPaneMinimumBottomPadding?: number;
+  sheetTop?: number;
+  sheetRight?: number;
   children: React.ReactNode;
 }) {
   const t = useTokens();
@@ -339,7 +350,7 @@ export function CardPanelOverlayFrame({ visible, width, onClose, onHidden, testI
 
   const translateX = progress.interpolate({
     inputRange: [0, 1],
-    outputRange: [width, 0],
+    outputRange: [width + sheetRight, 0],
   });
   return <View pointerEvents={visible ? 'auto' : 'none'} style={styles.overlayLayer} testID={`${testID}-overlay`}>
     <Animated.View style={[styles.backdrop, { opacity: progress }]}>
@@ -347,7 +358,7 @@ export function CardPanelOverlayFrame({ visible, width, onClose, onHidden, testI
         <View testID={`${testID}-backdrop-close`} style={StyleSheet.absoluteFill} />
       </TouchableWithoutFeedback>
     </Animated.View>
-    <Animated.View testID={`${testID}-sheet`} style={[styles.sheet, { width, transform: [{ translateX }] }]}>
+    <Animated.View testID={`${testID}-sheet`} style={[styles.sheet, { width, right: sheetRight, top: sheetTop, transform: [{ translateX }] }]}>
       <AppGlassCard role="glassSoft" testID={`${testID}-sheet-surface`}
         style={[styles.sheetSurface, direction === 'column' ? styles.sheetSurfaceColumn : null]}>
         <ChatPaneMinimumBottomPaddingContext.Provider value={chatPaneMinimumBottomPadding}>
@@ -358,9 +369,11 @@ export function CardPanelOverlayFrame({ visible, width, onClose, onHidden, testI
   </View>;
 }
 
-function FolderWorkspaceOverlayContent({ parentWidth }: { parentWidth?: number }) {
+function FolderWorkspaceOverlayContent({ host, parentWidth }: { host: 'root' | 'board'; parentWidth?: number }) {
   const t = useTokens();
   const duo = useDuoSideBand();
+  const duoTopBand = useDuoTopBand();
+  const device = useDeviceType();
   const { width: screenWidth } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const visible = useUIStore((state) => state.folderOverlayVisible);
@@ -384,11 +397,15 @@ function FolderWorkspaceOverlayContent({ parentWidth }: { parentWidth?: number }
   const safeParentWidth = Math.max(0, parentWidth ?? (screenWidth - insets.left - insets.right));
   const overlayWidth = getFolderWorkspaceOverlayWidth(safeParentWidth);
   const singlePanel = shouldUseSinglePanel(overlayWidth);
+  const railBand = duoTopBand && host === 'root' && device !== 'phone';
   useRegisterDuoRailOverride('unlinked-chat', duo && visible && !singlePanel && !cardId && !pageId && !!sessionId,
     [{ id: 'close', label: '챗 닫기', icon: 'close', onPress: close }]);
-  const sheetWidth = singlePanel
-    ? overlayWidth
-    : overlayWidth + (cardId ? StyleSheet.hairlineWidth * 2 : 0);
+  const sheetRight = railBand ? DUO_SIDE_BAND_WIDTH - t.tabletShell.outerInset : 0;
+  const sheetWidth = railBand
+    ? safeParentWidth - 2 * t.tabletShell.outerInset - sheetRight
+    : singlePanel
+      ? overlayWidth
+      : overlayWidth + (cardId ? StyleSheet.hairlineWidth * 2 : 0);
   const folderPaneWidth = singlePanel
     ? undefined
     : cardId
@@ -420,10 +437,11 @@ function FolderWorkspaceOverlayContent({ parentWidth }: { parentWidth?: number }
     <CardPanelOverlayFrame
       visible={visible}
       width={sheetWidth}
+      sheetRight={sheetRight}
       onClose={requestClose}
       direction={singlePanel ? 'column' : 'row'}
     >
-      {singlePanel ? (
+      <DuoTopBandRailScope enabled={railBand}>{singlePanel ? (
         <FolderWorkspaceSinglePanel
           api={api}
           cardId={cardId}
@@ -451,7 +469,7 @@ function FolderWorkspaceOverlayContent({ parentWidth }: { parentWidth?: number }
           />
           <CardConversationPane active={visible} />
         </>
-      )}
+      )}</DuoTopBandRailScope>
     </CardPanelOverlayFrame>
   );
 }

@@ -20,7 +20,7 @@ import { TabletSafeAreaFrame } from './TabletSafeAreaFrame';
 import { TabletSessionFeedPane } from './TabletSessionFeedPane';
 import { TabletHomeComposerHost } from './TabletHomeComposerHost';
 import { clampTwoPaneMiddleDrag, resolveTwoPaneMiddleWidth } from './paneWidths';
-import { DUO_RAIL_END_INSET, getDuoRailTopOffset, splitDuoRailBackAction, useDuoSideBand } from '../../navigation/duoSideBand';
+import { DUO_RAIL_END_INSET, DUO_SIDE_BAND_WIDTH, getDuoRailTopOffset, splitDuoRailBackAction, useDuoSideBand, useDuoTopBand } from '../../navigation/duoSideBand';
 import { useSearchStore } from '../../store/searchStore';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
 import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem } from '../navigation/RailCapsule';
@@ -29,6 +29,7 @@ import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { MainListPaneHandle } from './MainListPane';
 import { useActiveDuoRailOverrideEntry } from '../../navigation/phoneRailActions';
+import { DuoRailOverride } from '../navigation/DuoRailOverride';
 
 const DRAWER_WIDTH = 280;
 const ANIM_MS = 240;
@@ -55,6 +56,7 @@ export function TwoPaneWithDrawer() {
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const duo = useDuoSideBand();
+  const duoTopBand = useDuoTopBand();
   const override = useActiveDuoRailOverrideEntry();
   const mainRef = useRef<MainListPaneHandle>(null);
   const [keyboardOverlap, setKeyboardOverlap] = useState(0);
@@ -241,6 +243,9 @@ export function TwoPaneWithDrawer() {
         </RailCapsule>
       </View> : null}
     </AppKeyboardAvoidingView> : null}
+    {duoTopBand && !cardBoardExpanded && !settingsVisible
+      ? <DuoRailOverride bandWidth={DUO_SIDE_BAND_WIDTH} topOffset={insets.top + t.tabletShell.outerInset} />
+      : null}
     </View>
   );
 }
