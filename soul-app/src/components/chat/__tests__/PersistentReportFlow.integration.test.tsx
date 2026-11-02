@@ -52,7 +52,6 @@ const mockApi = {
 };
 jest.mock('../../../api/client', () => ({ createApiClient: () => mockApi }));
 jest.mock('../SessionStoryPanel', () => ({ SessionStoryPanel: () => null }));
-jest.mock('../ChatRuntimeStrips', () => ({ ChatRuntimeStrips: () => null }));
 jest.mock('../RealtimeVoiceControls', () => ({ RealtimeVoiceControls: () => null }));
 const mockListMount = jest.fn();
 const mockListUnmount = jest.fn();

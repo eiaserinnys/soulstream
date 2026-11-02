@@ -302,14 +302,13 @@ describe('ChatBody store subscription boundary', () => {
     view.unmount();
   });
 
-  test('session auxiliary visibility defaults on and PAS can omit both story and runtime strips', async () => {
+  test('session story visibility defaults on while runtime strips stay hidden', async () => {
     const view = await renderSettled();
     expect(view.getByTestId('session-story-panel')).toBeTruthy();
-    expect(view.getByTestId('chat-runtime-strips')).toBeTruthy();
+    expect(view.queryByTestId('chat-runtime-strips')).toBeNull();
 
     view.rerender(<View><ChatBody sessionId={SID} showSessionAuxiliary={false} /></View>);
     expect(view.queryByTestId('session-story-panel')).toBeNull();
-    expect(view.queryByTestId('chat-runtime-strips')).toBeNull();
     expect(view.getByTestId('chat-composer-input')).toBeTruthy();
     view.unmount();
   });
