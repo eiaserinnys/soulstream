@@ -193,7 +193,7 @@ export class CardControlPlaneService {
   async recordExecution(params:CardMutationParams & {requestId:string;sessionId:string;execution?:CardWorkExecution}) {
     return this.mutateCard(params,"execute_card",{request_id:params.requestId,session_id:params.sessionId,execution:params.execution},async(sql,card,eventId)=>{
       const session=(await sql`SELECT card_id FROM sessions WHERE session_id=${params.sessionId} FOR SHARE`)[0];
-      if(session?.card_id!==card.id || card.assignee_session_id && card.assignee_session_id!==params.sessionId)
+      if(card.assignee_session_id ? card.assignee_session_id!==params.sessionId : session?.card_id!==card.id)
         throw invalid("실행 세션과 카드 담당이 일치하지 않습니다.");
       const stateChanged=(await sql`SELECT c.status_changed_at>r.updated_at AS changed FROM cards c
         JOIN card_execution_requests r ON r.card_id=c.id WHERE c.id=${card.id} AND r.id=${params.requestId} AND r.session_id=${params.sessionId}`)[0]?.changed===true;
