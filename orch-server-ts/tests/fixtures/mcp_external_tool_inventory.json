@@ -1479,6 +1479,7 @@
             "blocked",
             "running",
             "review",
+            "on_hold",
             "done",
             "cancelled"
           ],
@@ -3214,6 +3215,7 @@
             "blocked",
             "running",
             "review",
+            "on_hold",
             "done",
             "cancelled"
           ],
