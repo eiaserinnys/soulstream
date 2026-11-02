@@ -979,6 +979,50 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       );
       await (this.options.reconnectSleep ?? sleep)(reconnectDelayMs);
       if (this.closed) return;
+      const spawned = this.spawnedProcess;
+      if (spawned) {
+        let identity: Awaited<ReturnType<typeof readRunnerRegistrationIdentity>> | undefined;
+        try {
+          identity = await readRunnerRegistrationIdentity(spawned.paths.sessionDirectory);
+        } catch (error) {
+          this.options.logger.warn(
+            {
+              err: error,
+              ...this.runnerIdentityContext(socketPath),
+              expectedRegistrationId: spawned.registrationId,
+            },
+            "Runner registration identity could not be read; host continues reconnecting",
+          );
+          identity = undefined;
+        }
+        if (
+          identity !== undefined
+          && (
+            !identity
+            || identity.registrationId !== spawned.registrationId
+            || identity.retiredAt !== undefined
+            || identity.pid === null
+          )
+        ) {
+          this.options.logger.warn(
+            {
+              ...this.runnerIdentityContext(socketPath),
+              expectedRegistrationId: spawned.registrationId,
+              currentRegistrationId: identity?.registrationId ?? null,
+            },
+            "Runner registration lost; host stops reconnecting",
+          );
+          const active = this.activeExecution;
+          if (active) {
+            active.stream.fail(new Error(
+              "runner registration replaced or removed while the host was reconnecting",
+            ));
+            this.clearActiveExecution(active.commandId);
+          }
+          await this.detachHost();
+          return;
+        }
+      }
       try {
         await this.connect(socketPath);
       } catch (error) {

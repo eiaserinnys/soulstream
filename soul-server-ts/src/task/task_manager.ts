@@ -82,6 +82,7 @@ const TASK_CREATION_DELETE_DRAIN_TIMEOUT_MS = 5_000;
 
 export class TaskManager {
   private readonly tasks = new Map<string, Task>();
+  private readonly taskLoads = new Map<string, Promise<Task | null>>();
   private readonly taskCreation: TaskCreation;
   private readonly toolApprovalRecovery: ToolApprovalRecovery;
   private readonly responseEventPublisher: ResponseEventPublisher;
@@ -123,7 +124,22 @@ export class TaskManager {
     prepareAttachmentInput?: PrepareAttachmentInput,
   ) {
     this.sessionMutations = sessionMutations ?? createMissingSessionMutationHost();
-    this.loadEvictedTask = createEvictedTaskLoader({ db, logger, nodeId });
+    const loadEvictedTask = createEvictedTaskLoader({ db, logger, nodeId });
+    this.loadEvictedTask = (sessionId) => {
+      const activeLoad = this.taskLoads.get(sessionId);
+      if (activeLoad) return activeLoad;
+
+      const load = loadEvictedTask(sessionId).then((loaded) => {
+        const remembered = this.tasks.get(sessionId);
+        if (remembered) return remembered;
+        if (loaded) this.tasks.set(sessionId, loaded);
+        return loaded;
+      }).finally(() => {
+        if (this.taskLoads.get(sessionId) === load) this.taskLoads.delete(sessionId);
+      });
+      this.taskLoads.set(sessionId, load);
+      return load;
+    };
     this.persistentSessions = new PersistentSessionControl({
       nodeId,
       getTask: (sessionId) => this.tasks.get(sessionId),
@@ -209,6 +225,7 @@ export class TaskManager {
       loadTask: (sessionId) => this.loadEvictedTask(sessionId),
       rememberTask: (task) => this.tasks.set(task.agentSessionId, task),
       lifecycleTransition,
+      logger,
       ...(persistence ? { persistence } : {}),
     });
     const deliveryRepository = deliveryRuntimeV2Enabled

@@ -236,7 +236,16 @@ export class TaskInterventionRoute {
           };
         }
       }
-      await this.awaitInitializingTask(task);
+      // Keep concurrent inputs behind whichever execution activation currently
+      // owns startup, including the running projection before its callback starts.
+      let awaitedActivation: Task["executionActivation"];
+      do {
+        awaitedActivation = task.executionActivation;
+        await this.awaitInitializingTask(task);
+      } while (
+        task.executionActivation !== undefined
+        && task.executionActivation !== awaitedActivation
+      );
       const taskRoute = interventionTaskRoute(task);
       if (taskRoute === "activating") {
         throw new Error(
@@ -362,14 +371,16 @@ export class TaskInterventionRoute {
   }
 
   private async awaitInitializingTask(task: Task): Promise<void> {
-    if (task.status !== "initializing") return;
     const activation = task.executionActivation?.promise;
-    if (!activation) {
+    if (activation) {
+      await activation;
+      return;
+    }
+    if (task.status === "initializing") {
       throw new Error(
         `initializing task has no activation barrier: ${task.agentSessionId}`,
       );
     }
-    await activation;
   }
 
   private async projectNotificationPublication(

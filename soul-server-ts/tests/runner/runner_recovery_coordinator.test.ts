@@ -1702,6 +1702,128 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.task.runner).toBeDefined();
   });
 
+  it("does not terminalize a closed old identity while the task holds a newer execution", async () => {
+    const admitted = registration({ pidAlive: false, lifecycleState: "closed" });
+    const hydrated = { ...admitted, pidAlive: true };
+    const closedTailDrainer = { drain: vi.fn(async () => {}) };
+    const subject = makeSubject([admitted], Date.now(), [], {
+      hydrate: vi.fn(async () => hydrated),
+      closedTailDrainer,
+    });
+    subject.task.executionPromise = Promise.resolve();
+    subject.task.runner = {
+      dispatcher: {
+        hasActiveExecution: () => true,
+        registrationId: () => "replacement-registration",
+      } as never,
+    } as never;
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(subject.terminate).not.toHaveBeenCalled();
+    expect(subject.projectClosedRunner).not.toHaveBeenCalled();
+    expect(closedTailDrainer.drain).not.toHaveBeenCalled();
+  });
+
+  it("retires an attached reaped admission with the matching command before invalidation", async () => {
+    const admitted = registration({ pidAlive: false, lifecycleState: "reaped" });
+    const subject = makeSubject([admitted]);
+    const execution = deferred<void>();
+    const order: string[] = [];
+    subject.task.status = "running";
+    subject.task.executionPromise = execution.promise;
+    const retireTerminalRegistration = vi.fn(async (before?: () => Promise<void>) => {
+      order.push("retire");
+      subject.task.status = "error";
+      subject.task.terminationEventRecorded = true;
+      subject.task.terminalEventId = 15;
+      subject.task.executionPromise = undefined;
+      execution.resolve();
+      await before?.();
+    });
+    subject.task.runner = {
+      dispatcher: {
+        registrationId: () => admitted.registrationId,
+        activeExecutionCommandId: () => "execute-a",
+        hasActiveExecution: () => true,
+        retireTerminalRegistration,
+      } as never,
+    } as never;
+    subject.invalidateRegistration.mockImplementation(async () => {
+      order.push("invalidate");
+    });
+    subject.terminate.mockImplementation(async () => { order.push("terminate"); });
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(order).toEqual(["retire"]);
+    expect(subject.invalidateRegistration).not.toHaveBeenCalled();
+    expect(subject.terminate).not.toHaveBeenCalled();
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+    expect(subject.task.executionPromise).toBeUndefined();
+    expect(subject.task.runner).toBeUndefined();
+    expect(subject.task.status).toBe("error");
+  });
+
+  it("leaves a mismatched attached command for offline recovery to report blockedBy runner", async () => {
+    const admitted = registration({ pidAlive: false, lifecycleState: "reaped" });
+    const subject = makeSubject([admitted]);
+    const retireTerminalRegistration = vi.fn(async () => {});
+    subject.task.status = "running";
+    subject.task.executionPromise = Promise.resolve();
+    subject.task.runner = {
+      dispatcher: {
+        registrationId: () => admitted.registrationId,
+        activeExecutionCommandId: () => "execute-new",
+        hasActiveExecution: () => true,
+        retireTerminalRegistration,
+      } as never,
+    } as never;
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(retireTerminalRegistration).not.toHaveBeenCalled();
+    expect(subject.invalidateRegistration).toHaveBeenCalledOnce();
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+    expect(subject.task.runner).toBeDefined();
+    expect(subject.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: "offline",
+        blockedBy: "runner",
+        taskStatus: "running",
+      }),
+      "registered runner recovery skipped because the task still holds an execution",
+    );
+  });
+
+  it("applies the held-execution guard before retiring a pidAlive reaped registration", async () => {
+    const admitted = registration({ pidAlive: true, lifecycleState: "reaped" });
+    const subject = makeSubject([admitted]);
+    const retireTerminalRegistration = vi.fn(async () => {});
+    subject.task.status = "running";
+    subject.task.executionPromise = Promise.resolve();
+    subject.task.runner = {
+      dispatcher: {
+        registrationId: () => admitted.registrationId,
+        activeExecutionCommandId: () => undefined,
+        hasActiveExecution: () => false,
+        retireTerminalRegistration,
+      } as never,
+    } as never;
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(retireTerminalRegistration).not.toHaveBeenCalled();
+    expect(subject.terminate).not.toHaveBeenCalled();
+    expect(subject.invalidateRegistration).not.toHaveBeenCalled();
+    expect(subject.recoverRegisteredRunner).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["running", false],
     ["running", true],

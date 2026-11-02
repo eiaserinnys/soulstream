@@ -25,6 +25,19 @@ export function dispositionRequiresTask(
   return disposition !== "wait_for_bootstrap" && disposition !== "retired_terminal";
 }
 
+/** A stale lifecycle row must not touch the execution that replaced it. */
+export function heldExecutionSupersedesRegistration(
+  task: Task,
+  registration: RunnerRegistration,
+): boolean {
+  const holdsExecution = task.executionPromise !== undefined
+    || task.executionActivation !== undefined
+    || task.runner?.dispatcher.hasActiveExecution() === true;
+  if (!holdsExecution) return false;
+  return registration.pidAlive
+    || task.runner?.dispatcher.registrationId() !== registration.registrationId;
+}
+
 export async function handleRecoveryWithFailureTracking(input: {
   registration: RunnerRegistration;
   disposition: RunnerRecoveryDisposition;
@@ -50,10 +63,19 @@ export async function terminalizeReapedRunner(input: {
   hydrate?: (registration: RunnerRegistration) => Promise<RunnerRegistration>;
   terminate(registration: RunnerRegistration): Promise<void>;
   invalidate(registration: RunnerRegistration): Promise<void>;
+  retireAttached(registration: RunnerRegistration): Promise<boolean>;
   recoverOffline(registration: RunnerRegistration, task: Task): Promise<Task>;
   logger: Pick<Logger, "info">;
 }): Promise<void> {
   const hydrated = await (input.hydrate ?? hydrateRunnerRegistration)(input.registration);
+  if (heldExecutionSupersedesRegistration(input.task, hydrated)) {
+    input.logger.info(
+      { sessionId: hydrated.config.sessionId, disposition: "already_reaped" },
+      "reaped runner recovery skipped because a newer execution owns the session",
+    );
+    return;
+  }
+  if (await input.retireAttached(hydrated)) return;
   if (hydrated.pidAlive) await input.terminate(hydrated);
   await input.invalidate(hydrated);
   prepareRecoveredTask(input.task, hydrated);

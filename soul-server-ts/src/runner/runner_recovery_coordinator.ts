@@ -14,6 +14,7 @@ import { RunnerRecoveryHydrationPhase } from "./runner_recovery_hydration_phase.
 import { RunnerRecoveryLogger } from "./runner_recovery_logging.js";
 import {
   dispositionRequiresTask,
+  heldExecutionSupersedesRegistration,
   handleRecoveryWithFailureTracking,
   terminalizeFailedRunner,
   recoverRunnerByDisposition,
@@ -509,6 +510,13 @@ export class RunnerRecoveryCoordinator {
         }
         return;
       }
+      if (heldExecutionSupersedesRegistration(recoveredTask, hydrated)) {
+        this.options.logger.info(
+          { sessionId: hydrated.config.sessionId, disposition: "closed" },
+          "closed runner recovery skipped because a newer execution owns the session",
+        );
+        return;
+      }
       if (hydrated.pidAlive) await this.registrationControl.terminate(hydrated);
       const closedRegistration = { ...hydrated, pidAlive: false };
       if (closedRunnerTailRequiresDrain(closedRegistration)) {
@@ -527,9 +535,10 @@ export class RunnerRecoveryCoordinator {
       return;
     }
     if (disposition === "already_reaped") {
+      const recoveryTask = requireRecoveryTask(task, registration);
       await terminalizeReapedRunner({
         registration,
-        task: requireRecoveryTask(task, registration),
+        task: recoveryTask,
         hydrate: (owned) => (this.options.hydrate ?? hydrateRunnerRegistration)(
           owned,
           phaseObservation,
@@ -538,6 +547,8 @@ export class RunnerRecoveryCoordinator {
           await this.registrationControl.terminate(owned);
         },
         invalidate: async (owned) => await this.registrationControl.invalidate(owned),
+        retireAttached: async (owned) =>
+          await this.retireAttachedTerminalAdmission(owned, recoveryTask),
         recoverOffline: async (owned, recoveredTask) =>
           (await this.recoverRegistered(
             owned,

@@ -7,6 +7,7 @@ import type {
 } from "../../src/runner/runner_process_registry.js";
 import {
   dispositionRequiresTask,
+  heldExecutionSupersedesRegistration,
   handleRecoveryWithFailureTracking,
   recoverRunnerByDisposition,
   terminalizeFailedRunner,
@@ -68,6 +69,60 @@ describe("handleRecoveryWithFailureTracking", () => {
 });
 
 describe("terminal-only failure recovery", () => {
+  it("skips a reaped identity when the task already holds a newer live runner", async () => {
+    const inputTask = task();
+    inputTask.executionPromise = Promise.resolve();
+    inputTask.runner = {
+      dispatcher: {
+        hasActiveExecution: () => true,
+        registrationId: () => "replacement-registration",
+      } as never,
+    } as never;
+    const terminate = vi.fn(async () => {});
+    const invalidate = vi.fn(async () => {});
+    const retireAttached = vi.fn(async () => false);
+    const recoverOffline = vi.fn(async (_registration: RunnerRegistration, current: Task) => current);
+    await terminalizeReapedRunner({
+      registration: registration({ pidAlive: true, lifecycleState: "reaped" }),
+      task: inputTask,
+      hydrate: async (value) => value,
+      terminate,
+      invalidate,
+      retireAttached,
+      recoverOffline,
+      logger: { info: vi.fn() },
+    });
+    expect(terminate).not.toHaveBeenCalled();
+    expect(invalidate).not.toHaveBeenCalled();
+    expect(retireAttached).not.toHaveBeenCalled();
+    expect(recoverOffline).not.toHaveBeenCalled();
+  });
+
+  it("allows a dead registration held by its own execution to be reaped", async () => {
+    const inputTask = task();
+    inputTask.executionPromise = Promise.resolve();
+    inputTask.runner = {
+      dispatcher: {
+        hasActiveExecution: () => true,
+        registrationId: () => "registration-a",
+      } as never,
+    } as never;
+    const current = registration({ pidAlive: false, lifecycleState: "reaped" });
+    expect(heldExecutionSupersedesRegistration(inputTask, current)).toBe(false);
+    const invalidate = vi.fn(async () => {});
+    await terminalizeReapedRunner({
+      registration: current,
+      task: inputTask,
+      hydrate: async (value) => value,
+      terminate: vi.fn(async () => {}),
+      invalidate,
+      retireAttached: vi.fn(async () => false),
+      recoverOffline: async (_registration, recoveredTask) => recoveredTask,
+      logger: { info: vi.fn() },
+    });
+    expect(invalidate).toHaveBeenCalledOnce();
+  });
+
   it("replays a reaped terminal fact without creating a replacement", async () => {
     const order: string[] = [];
     const inputTask = task();
@@ -78,6 +133,10 @@ describe("terminal-only failure recovery", () => {
       hydrate: async (value) => value,
       terminate: async () => { order.push("terminate"); },
       invalidate: async () => { order.push("invalidate"); },
+      retireAttached: async () => {
+        order.push("retireAttached");
+        return false;
+      },
       recoverOffline: async (owned, recoveredTask) => {
         order.push("recover");
         expect(owned.pidAlive).toBe(false);
@@ -86,7 +145,7 @@ describe("terminal-only failure recovery", () => {
       },
       logger: { info: vi.fn() },
     });
-    expect(order).toEqual(["terminate", "invalidate", "recover"]);
+    expect(order).toEqual(["retireAttached", "terminate", "invalidate", "recover"]);
   });
 
   it("terminalizes a still-verified dead runner", async () => {

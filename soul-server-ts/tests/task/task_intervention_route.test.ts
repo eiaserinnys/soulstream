@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import pino from "pino";
 
 import { buildCanonicalDeliveryPayload } from "../../src/task/delivery_payload.js";
 import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
-import type { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
+import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { RunningInterventionTransition } from "../../src/task/task_running_intervention_transition.js";
 import type {
@@ -10,6 +11,7 @@ import type {
   TaskDeliveryLedgerGate,
 } from "../../src/task/task_delivery_ledger_gate.js";
 import type { SessionNotificationPublisher } from "../../src/task/task_session_notification.js";
+import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
 function activeRunner(): NonNullable<Task["runner"]> {
   return {
@@ -368,6 +370,129 @@ describe("TaskInterventionRoute.addIntervention", () => {
 
     resolveActivation();
     await expect(request).resolves.toEqual({ autoResumed: true });
+  });
+
+  it("holds a second admitted intervention through projected running until activation", async () => {
+    const task = makeTask({
+      status: "completed",
+      runner: undefined,
+      terminationReason: "completed_ok",
+      terminationEventRecorded: true,
+      terminalEventId: 7,
+    });
+    const persistenceDouble = makeEventPersistenceTestDouble();
+    const firstSideEffectStarted = deferred<void>();
+    const releaseFirstSideEffect = deferred<void>();
+    let sideEffectCalls = 0;
+    persistenceDouble.handleSideEffects.mockImplementation(async () => {
+      sideEffectCalls += 1;
+      if (sideEffectCalls === 1) {
+        firstSideEffectStarted.resolve();
+        await releaseFirstSideEffect.promise;
+      }
+    });
+    const autoResumeTransition = new AutoResumeTransition({
+      logger: pino({ level: "silent" }),
+      persistence: persistenceDouble.persistence,
+    });
+    const firstDispatch = deferred<void>();
+    let dispatchCalls = 0;
+    const secondAdmission = admitted(
+      "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "human_live_steer",
+    ) as Extract<DeliveryLedgerAdmission, { kind: "admitted" }>;
+    secondAdmission.row.payload = {
+      ...secondAdmission.row.payload,
+      text: "second message",
+      user: "alice",
+    };
+    const admissions = [
+      admitted("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", "human_live_steer"),
+      secondAdmission,
+    ];
+    const deliveryLedgerGate = {
+      admit: vi.fn(async () => admissions.shift()!),
+      beginDispatch: vi.fn(async (candidate: DeliveryLedgerAdmission) => {
+        dispatchCalls += 1;
+        if (dispatchCalls === 2) firstDispatch.resolve();
+        return candidate;
+      }),
+      recordResult: vi.fn(async () => {}),
+      deferFailureToCoordinator: vi.fn(async () => {}),
+    } as Pick<
+      TaskDeliveryLedgerGate,
+      "admit" | "beginDispatch" | "recordResult" | "deferFailureToCoordinator"
+    >;
+    const delivered: string[] = [];
+    const runningInterventionTransition = {
+      deliver: vi.fn(async (_owned: Task, message: { text: string }) => {
+        delivered.push(message.text);
+        return { delivered: true as const };
+      }),
+      queueOnly: vi.fn(async () => ({ delivered: true as const })),
+    } as unknown as Pick<RunningInterventionTransition, "deliver" | "queueOnly">;
+    const route = new TaskInterventionRoute({
+      getTask: (sessionId) => sessionId === task.agentSessionId ? task : undefined,
+      loadEvictedTask: async () => null,
+      rememberTask: () => {},
+      runningInterventionTransition,
+      autoResumeTransition,
+      deliveryLedgerGate,
+    });
+    const onResume = vi.fn((resumedTask: Task, activation?: Task["executionActivation"]) => {
+      resumedTask.status = "running";
+      resumedTask.runner = activeRunner();
+      resumedTask.executionActivation = undefined;
+      activation?.resolve();
+    });
+    const first = route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "first message",
+      user: "alice",
+      deliveryId: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      deliveryIntent: "human_live_steer",
+      completionId: "first-message",
+      relationKey: "first-message",
+    }, onResume);
+    let second: ReturnType<typeof route.addIntervention> | undefined;
+    let callbacksInProjectedRunningWindow = -1;
+    let transitionsInProjectedRunningWindow = -1;
+    let outcomes: PromiseSettledResult<Awaited<typeof first>>[] = [];
+    try {
+      await firstSideEffectStarted.promise;
+      expect(task.status).toBe("running");
+      expect(task.executionActivation).toBeDefined();
+      expect(onResume).not.toHaveBeenCalled();
+
+      second = route.addIntervention({
+        agentSessionId: task.agentSessionId,
+        text: "second message",
+        user: "alice",
+        deliveryId: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        deliveryIntent: "human_live_steer",
+        completionId: "second-message",
+        relationKey: "second-message",
+      }, onResume);
+      await firstDispatch.promise;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      callbacksInProjectedRunningWindow = onResume.mock.calls.length;
+      transitionsInProjectedRunningWindow =
+        persistenceDouble.enqueueRunningTransitionAndWaitForApplication.mock.calls.length;
+    } finally {
+      releaseFirstSideEffect.resolve();
+      outcomes = await Promise.allSettled(second ? [first, second] : [first]);
+    }
+
+    expect(callbacksInProjectedRunningWindow).toBe(0);
+    expect(transitionsInProjectedRunningWindow).toBe(1);
+    expect(outcomes).toEqual([
+      { status: "fulfilled", value: { autoResumed: true } },
+      { status: "fulfilled", value: { delivered: true } },
+    ]);
+    expect(onResume).toHaveBeenCalledOnce();
+    expect(persistenceDouble.enqueueRunningTransitionAndWaitForApplication)
+      .toHaveBeenCalledOnce();
+    expect(delivered).toEqual(["second message"]);
   });
 
   it("keeps an unlabelled human intervention human while assigning durable identity", async () => {

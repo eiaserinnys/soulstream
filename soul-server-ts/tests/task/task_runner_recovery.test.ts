@@ -14,8 +14,9 @@ describe("TaskRunnerRecovery", () => {
   });
 
   it("persists runner failure without starting a replacement", async () => {
+    const detachHost = vi.fn(async () => {});
     const current = task({
-      runner: { dispatcher: {} as never },
+      runner: { dispatcher: { detachHost } as never } as never,
       executionPromise: Promise.resolve(),
     });
     const persistExecutorFinalState = vi.fn(async () => ({
@@ -47,6 +48,7 @@ describe("TaskRunnerRecovery", () => {
     });
     expect(current.runner).toBeUndefined();
     expect(current.executionPromise).toBeUndefined();
+    expect(detachHost).toHaveBeenCalledOnce();
   });
 
   it("does not overwrite a task that is already terminal", async () => {
@@ -75,7 +77,8 @@ describe("TaskRunnerRecovery", () => {
   });
 
   it("projects closed through the ordinary terminal transition", async () => {
-    const current = task();
+    const detachHost = vi.fn(async () => {});
+    const current = task({ runner: { dispatcher: { detachHost } as never } as never });
     const applyRunnerTerminalFact = vi.fn();
     const persistExecutorFinalState = vi.fn(async () => ({
       newlyFinalized: true,
@@ -93,6 +96,7 @@ describe("TaskRunnerRecovery", () => {
     expect(applyRunnerTerminalFact).toHaveBeenCalledWith(current, "closed", "runner closed");
     expect(persistExecutorFinalState).toHaveBeenCalledWith(current, true);
     expect(notifyCompletionIfApplied).toHaveBeenCalledOnce();
+    expect(detachHost).toHaveBeenCalledOnce();
   });
 
   it("does not emit another terminal fact after canonical termination", async () => {
@@ -115,6 +119,7 @@ function subject(overrides: Record<string, unknown> = {}): TaskRunnerRecovery {
     loadTask: vi.fn(),
     rememberTask: vi.fn(),
     lifecycleTransition: {} as never,
+    logger: { warn: vi.fn() },
     ...overrides,
   });
 }
