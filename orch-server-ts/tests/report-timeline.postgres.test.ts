@@ -141,6 +141,14 @@ describe("PAS report timeline on production PostgreSQL schema", () => {
     } });
   });
 
+  it("leaves older events out of the replay so a past complete cannot fence live text", async () => {
+    await sql`UPDATE events SET created_at = NOW() - INTERVAL '1 minute' WHERE session_id='pas-order'`;
+    hub.publish.mockClear();
+    await appender("pas-order", line);
+    expect(hub.publish).toHaveBeenCalledTimes(1);
+    expect(hub.publish.mock.calls[0]![0].data.event.type).toBe("report_timeline");
+  });
+
   it("keeps card commits successful when timeline storage is unavailable", async () => {
     const brokenAppender = createReportTimelineAppender({
       resolveSql: async () => { throw new Error("DB unavailable"); },

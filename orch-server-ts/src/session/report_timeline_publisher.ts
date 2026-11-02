@@ -44,10 +44,13 @@ export function createReportTimelineAppender(deps: {
       }
 
       // Publish the database gap first so this event cannot advance the SSE cursor past it.
+      // Only just-stored events can be overtaken. An older `complete` replayed here would clear
+      // the hub's live text snapshot for a turn that is streaming now.
       const preceding = await sql<Record<string, unknown>[]>`
         SELECT id, event_type, payload
         FROM events
         WHERE session_id = ${sessionId} AND id < ${eventId}
+          AND created_at >= NOW() - INTERVAL '5 seconds'
         ORDER BY id DESC
         LIMIT 20
       `;
