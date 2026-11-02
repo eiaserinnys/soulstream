@@ -2,9 +2,9 @@ import {cardExecutionState,subscribeCardExecution,type CardExecutionState} from 
 import {CardApiError} from "@seosoyoung/soul-ui/cards/card-api";
 import {CardExecutionSettingsDialog} from "./CardExecutionSettings";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, useMemo, useImperativeHandle, useSyncExternalStore, type Ref } from "react";
-import { Check } from "lucide-react";
+import { Check, MoreHorizontal } from "lucide-react";
 import {CARD_COLORS, CARD_COLOR_KEYS} from "@seosoyoung/soul-ui/cards/card-types";
-import { Button, useDashboardStore, Popover, PopoverPopup, PopoverTrigger } from "@seosoyoung/soul-ui";
+import { Button, DashboardIconCap, useDashboardStore, Popover, PopoverPopup, PopoverTrigger } from "@seosoyoung/soul-ui";
 import type { CardColor, CardRow, CardStatus } from "@seosoyoung/soul-ui/cards/card-types";
 import type { CardQueueStatusActivator } from "@seosoyoung/soul-ui/cards/CardQueue";
 import { cardStatusLabel } from "./CardActions";
@@ -17,8 +17,8 @@ import { useCardBoardLayer } from "./card-board-layer";
 export interface CardStatusHandle { request(status?:CardStatus):void; requestColor():void; }
 
 /** The existing status popup hosts all transition entry points. */
-export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activator}: {
-  card:CardRow;control:CardStatusControl;onOpen():void;ref?:Ref<CardStatusHandle>;sampleExecution?:CardExecutionState;activator?:CardQueueStatusActivator;
+export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activator,trigger="chip"}: {
+  card:CardRow;control:CardStatusControl;onOpen():void;ref?:Ref<CardStatusHandle>;sampleExecution?:CardExecutionState;activator?:CardQueueStatusActivator;trigger?:"chip"|"more";
 }) {
   const observedExecution=useSyncExternalStore(subscribeCardExecution,()=>cardExecutionState(card.id),()=>undefined);
   const execution=sampleExecution??observedExecution;
@@ -71,14 +71,15 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
     changeOpen(next);
   }}>
     <PopoverTrigger ref={activator?.setActivatorNodeRef} {...activator?.attributes} {...activator?.listeners}
+      render={trigger==="more"?<DashboardIconCap size="small" label="카드 상태 변경" tooltip="상태 변경 메뉴"><MoreHorizontal className="h-4 w-4" aria-hidden="true"/></DashboardIconCap>:undefined}
       payload={popupContent}
       className="v3-postit-status-trigger" aria-label="카드 상태 변경" aria-disabled={control.pending||activator?.disabled||false}
       disabled={control.pending||activator?.disabled||false} style={activator?{touchAction:"none"}:undefined}
       onClick={event => event.stopPropagation()}
       >
-      <StatusChip label={execution?.phase==="pending"?"시작 중…":cardStatusLabel(card)} tone={tone}/>
+      {trigger==="chip"?<StatusChip label={execution?.phase==="pending"?"시작 중…":cardStatusLabel(card)} tone={tone}/>:null}
     </PopoverTrigger>
-    <PopoverPopup align="start" className="v3-surface v3-card-status-picker glass-strong glass-chrome min-w-32 max-w-(--available-width)" data-card-status-picker onClick={event => event.stopPropagation()} initialFocus={view==="color"?initialColorFocus:undefined}>
+    <PopoverPopup align={trigger==="more"?"end":"start"} className="v3-surface v3-card-status-picker glass-strong glass-chrome min-w-32 max-w-(--available-width)" data-card-status-picker onClick={event => event.stopPropagation()} initialFocus={view==="color"?initialColorFocus:undefined}>
       <div className="v3-card-status-picker-content">
         {execution && execution.phase!=='pending'?<><p role={execution.phase==='error'?'alert':'status'}>{execution.message}</p><Button size="sm" variant="ghost" disabled={busy} onClick={()=>void state.request('running')}>{execution.phase==='delayed'?'다시 확인':'다시 시도'}</Button></>:null}
         {loading ? <p role="status">불러오는 중…</p> : null}

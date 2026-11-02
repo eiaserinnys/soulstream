@@ -133,7 +133,9 @@ test('듀오 카드 상세는 헤더 조작과 네 탭을 레일에 두고 탭�
   expect(screen.queryByTestId('card-detail-back-icon')).toBeNull();
   expect(screen.queryByTestId('settings-segment-card-detail-comments')).toBeNull();
   const actions = () => usePhoneRailActions.getState().overrides.at(-1)!.actions;
-  expect(actions().map(action => action.id)).toEqual(['close', 'complete', 'tab-items', 'tab-comments', 'tab-sessions', 'tab-notes']);
+  expect(actions().map(action => action.id)).toEqual(['close', 'complete', 'status-menu', 'tab-items', 'tab-comments', 'tab-sessions', 'tab-notes']);
+  act(() => actions().find(action => action.id === 'status-menu')!.onPress());
+  expect(screen.getByTestId('card-status-menu')).toBeTruthy();
   act(() => actions().find(action => action.id === 'tab-sessions')!.onPress());
   expect(screen.getByText('실행 세션')).toBeTruthy();
   expect(actions().find(action => action.id === 'tab-sessions')?.selected).toBe(true);
@@ -408,6 +410,16 @@ test('assigned settings disappear while native status/complete and sessions rema
  expect(screen.getByLabelText('상태 변경')).toBeTruthy();expect(screen.getByLabelText('완료')).toBeTruthy();expect(screen.getByTestId('card-comment-composer')).toBeTruthy();
  fireEvent.press(screen.getByTestId('settings-segment-card-detail-sessions'));
  expect(screen.getByTestId('card-sessions')).toBeTruthy();
+});
+
+test('상세 헤더 상태 메뉴를 열어 기존 상태 선택기를 표시한다',async()=>{
+ const api={getCard:jest.fn().mockResolvedValue(detail)};
+ const screen=render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()}/>);
+ await waitFor(()=>expect(screen.getByText('원문')).toBeTruthy());
+ expect(screen.getByTestId('card-detail-status-menu-visual')).toBeTruthy();
+ expect(screen.getByTestId('card-detail-complete-visual')).toBeTruthy();
+ await act(async()=>fireEvent.press(screen.getByLabelText('상태 변경 메뉴')));
+ await waitFor(()=>expect(screen.getByTestId('card-status-menu')).toBeTruthy());
 });
 
 test.each(['todo','queued','on_hold'] as const)('상세 %s 시작 버튼은 재생 아이콘을 보이고 running으로 전이한다',async status=>{

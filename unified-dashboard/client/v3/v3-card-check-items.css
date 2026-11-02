@@ -153,7 +153,7 @@
 .v3-card-tab-label { display: inline-flex; min-width: 0; align-items: center; justify-content: center; gap: var(--v3-space-1); overflow: hidden; }
 .v3-card-tab-label > span:not(.v3-card-tab-dot) { flex: none; }
 .v3-card-tab-dot { width: var(--v3-space-1); height: var(--v3-space-1); flex: none; border-radius: 50%; background: var(--v3-favorite); }
-.v3-card-detail .v3-folder-header-actions[data-complete-emphasis] > .dashboard-icon-cap { color: var(--background); background: var(--v3-complete); }
+.v3-card-detail .v3-folder-header-actions[data-complete-emphasis] > .dashboard-icon-cap:last-child { color: var(--background); background: var(--v3-complete); }
 .v3-card-detail [data-card-tab-panel][hidden] { display: none !important; }
 .v3-card-detail > .v3-card-panel-scroll { flex: 1; min-height: 0; padding-block-start: 0; padding-block-end: calc(var(--v3-card-dock-height,0px) + var(--v3-space-4)); }
 .v3-card-detail .v3-card-composer-slot { position: absolute; inset-inline: 0; bottom: 0; z-index: 4; display: flex; min-width: 0; flex-direction: column; gap: var(--v3-space-2); padding-inline: var(--v3-detail-inline-inset); padding-bottom: var(--v3-space-4); pointer-events: none; }
