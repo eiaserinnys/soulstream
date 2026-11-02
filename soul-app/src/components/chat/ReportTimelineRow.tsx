@@ -55,7 +55,7 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
       alignItems: 'center',
       gap: t.spacing.xs,
       paddingHorizontal: getChatRowHorizontalInset(t, presentation, t.spacing.lg),
-      paddingVertical: t.spacing.xs,
+      minHeight: t.hitTarget.min,
     },
     badge: { flexShrink: 0 },
     number: { ...t.foundation.typography.meta, color: t.colors.textPrimary, flexShrink: 0 },
