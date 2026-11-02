@@ -193,6 +193,24 @@ describe("user card execution transport",()=>{
     const result=await f.service.execute(agentInput(f.cardId,"agent-on-hold",current.version));
     expect(result.execution.state).toBe("started");expect(f.launch).toHaveBeenCalledTimes(1);
   });
+  it("resumes a held card assigned to a session without a card link",async()=>{
+    const f=await fixture();const ownerId=`owner-${f.cardId}`;
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,model_preset) VALUES(${ownerId},'node','profile','completed','owner-model')`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_agent_id=NULL,assignee_session_id=${ownerId} WHERE id=${f.cardId}`;
+    await h.sql`UPDATE cards SET status='on_hold',status_changed_at=NOW(),version=version+1 WHERE id=${f.cardId}`;
+    const current=(await cards.getCard(f.cardId))!.card;
+    const result=await f.service.execute(agentInput(f.cardId,"agent-on-hold-unlinked",current.version,ownerId));
+    expect(result.execution.state).toBe("started");expect(result.card.status).toBe("running");
+    expect(result.card.assignee_session_id).toBe(ownerId);expect(f.ensure).toHaveBeenCalledTimes(1);
+    expect(await h.sql`SELECT card_id FROM sessions WHERE session_id=${ownerId}`).toEqual([{card_id:null}]);
+  });
+  it("rejects execution proof from a session other than the card assignee",async()=>{
+    const f=await fixture("ok",true);
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,model_preset) VALUES('other-session','node','profile','running','model')`;
+    await expect(cards.recordExecution({...agentActor,actorSessionId:"other-session",cardId:f.cardId,sessionId:"other-session",
+      requestId:"foreign-request",idempotencyKey:"foreign-execution-proof"}))
+      .rejects.toMatchObject({message:"실행 세션과 카드 담당이 일치하지 않습니다."});
+  });
   it("different concurrent keys share one pending reservation and fixed session",async()=>{
     const f=await fixture("pending");const results=await Promise.all([f.service.execute(input(f.cardId,"concurrent-a")),f.service.execute(input(f.cardId,"concurrent-b"))]);
     expect(new Set(results.map(r=>r.execution.sessionId)).size).toBe(1);expect(f.launch).toHaveBeenCalledTimes(1);
