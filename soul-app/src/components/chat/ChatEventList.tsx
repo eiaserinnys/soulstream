@@ -136,12 +136,13 @@ export const ChatEventList = memo(function ChatEventList({
     return (
       <ChatEventRow item={item} session={item.kind === 'event' || item.kind === 'typing' || item.kind === 'agent-message-group' || item.kind === 'activity' ? session : undefined} sessionId={sessionId} api={api}
         onRetryPending={onRetryPending} onRestorePending={onRestorePending}
+        onOpenReportCard={onOpenReportCard}
         selection={activeSelection?.eventKey === item.key ? activeSelection.model : null}
         activeSelection={activeSelection}
         highlighted={highlighted} highlightedItemKey={highlightedItemKey} selectText={selectText} closeSelection={closeSelection}
         presentation={presentation} narration={narration} />
     );
-  }, [items, session, sessionId, api, onRetryPending, onRestorePending, activeSelection, highlightedItemKey, selectText, closeSelection, presentation]);
+  }, [items, session, sessionId, api, onRetryPending, onRestorePending, onOpenReportCard, activeSelection, highlightedItemKey, selectText, closeSelection, presentation]);
 
   const list = (
     <FlatList
@@ -219,6 +220,7 @@ interface RowProps {
   api: Props['api'];
   onRetryPending: Props['onRetryPending'];
   onRestorePending: Props['onRestorePending'];
+  onOpenReportCard?: Props['onOpenReportCard'];
   selection: MessageSelectionModel | null;
   activeSelection: { eventKey: string; model: MessageSelectionModel } | null;
   highlighted: boolean;
@@ -230,7 +232,7 @@ interface RowProps {
 }
 
 const ChatEventRow = memo(function ChatEventRow({
-  item, session, sessionId, api, onRetryPending, onRestorePending,
+  item, session, sessionId, api, onRetryPending, onRestorePending, onOpenReportCard,
   selection, activeSelection, highlighted, highlightedItemKey, selectText, closeSelection, presentation, narration,
 }: RowProps) {
   const t = useTokens();
@@ -249,6 +251,7 @@ const ChatEventRow = memo(function ChatEventRow({
               api={api}
               onRetryPending={onRetryPending}
               onRestorePending={onRestorePending}
+              onOpenReportCard={onOpenReportCard}
               selection={activeSelection?.eventKey === eventItem.key ? activeSelection.model : null}
               activeSelection={activeSelection}
               highlighted={eventItem.key === highlightedItemKey}

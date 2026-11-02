@@ -58,8 +58,8 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
       paddingVertical: t.spacing.xs,
     },
     badge: { flexShrink: 0 },
-    number: { ...t.foundation.typography.meta, color: t.colors.text, flexShrink: 0 },
-    title: { ...t.foundation.typography.meta, color: t.colors.text, flexShrink: 1 },
+    number: { ...t.foundation.typography.meta, color: t.colors.textPrimary, flexShrink: 0 },
+    title: { ...t.foundation.typography.meta, color: t.colors.textPrimary, flexShrink: 1 },
     detail: { ...t.foundation.typography.meta, color: t.colors.textMuted, flexShrink: 1 },
     pressed: { opacity: 0.82 },
   });
