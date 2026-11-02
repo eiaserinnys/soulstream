@@ -14,6 +14,7 @@ import { RunnerRecoveryHydrationPhase } from "./runner_recovery_hydration_phase.
 import { RunnerRecoveryLogger } from "./runner_recovery_logging.js";
 import {
   dispositionRequiresTask,
+  heldExecutionSupersedesRegistration,
   handleRecoveryWithFailureTracking,
   terminalizeFailedRunner,
   recoverRunnerByDisposition,
@@ -507,6 +508,13 @@ export class RunnerRecoveryCoordinator {
             phaseObservation,
           );
         }
+        return;
+      }
+      if (heldExecutionSupersedesRegistration(recoveredTask, hydrated)) {
+        this.options.logger.info(
+          { sessionId: hydrated.config.sessionId, disposition: "closed" },
+          "closed runner recovery skipped because a newer execution owns the session",
+        );
         return;
       }
       if (hydrated.pidAlive) await this.registrationControl.terminate(hydrated);

@@ -236,7 +236,17 @@ export class TaskInterventionRoute {
           };
         }
       }
-      await this.awaitInitializingTask(task);
+      // An awaited helper yields before this frame resumes, so inputs released
+      // together all pass its check and then meet the first one's "initializing".
+      // The status is re-read here, in the same synchronous run as the route below.
+      let awaitedActivation: Task["executionActivation"];
+      do {
+        awaitedActivation = task.executionActivation;
+        await this.awaitInitializingTask(task);
+      } while (
+        task.status === "initializing"
+        && task.executionActivation !== awaitedActivation
+      );
       const taskRoute = interventionTaskRoute(task);
       if (taskRoute === "activating") {
         throw new Error(

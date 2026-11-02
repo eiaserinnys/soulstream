@@ -1702,6 +1702,30 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
     expect(subject.task.runner).toBeDefined();
   });
 
+  it("does not terminalize a closed old identity while the task holds a newer execution", async () => {
+    const admitted = registration({ pidAlive: false, lifecycleState: "closed" });
+    const hydrated = { ...admitted, pidAlive: true };
+    const closedTailDrainer = { drain: vi.fn(async () => {}) };
+    const subject = makeSubject([admitted], Date.now(), [], {
+      hydrate: vi.fn(async () => hydrated),
+      closedTailDrainer,
+    });
+    subject.task.executionPromise = Promise.resolve();
+    subject.task.runner = {
+      dispatcher: {
+        hasActiveExecution: () => true,
+        registrationId: () => "replacement-registration",
+      } as never,
+    } as never;
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(subject.terminate).not.toHaveBeenCalled();
+    expect(subject.projectClosedRunner).not.toHaveBeenCalled();
+    expect(closedTailDrainer.drain).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["running", false],
     ["running", true],

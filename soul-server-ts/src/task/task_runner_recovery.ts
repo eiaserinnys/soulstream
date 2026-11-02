@@ -1,3 +1,5 @@
+import type { Logger } from "pino";
+
 import { isTerminalTaskStatus, type Task } from "./task_models.js";
 import type { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import { releaseTaskRunner } from "./task_runner_release.js";
@@ -7,6 +9,7 @@ export interface TaskRunnerRecoveryDeps {
   loadTask(sessionId: string): Promise<Task | null>;
   rememberTask(task: Task): void;
   lifecycleTransition: TaskLifecycleTransition;
+  logger: Pick<Logger, "warn">;
 }
 
 /**
@@ -31,7 +34,16 @@ export class TaskRunnerRecovery {
   ): Promise<void> {
     if (isTerminalTaskStatus(task.status)) return;
     const runner = task.runner;
-    if (runner) releaseTaskRunner(task, runner);
+    if (runner && releaseTaskRunner(task, runner)) {
+      try {
+        await runner.dispatcher.detachHost();
+      } catch (error) {
+        this.deps.logger.warn(
+          { err: error, sessionId: task.agentSessionId },
+          "runner dispatcher detach failed after runner failure projection",
+        );
+      }
+    }
     task.executionPromise = undefined;
     task.error = message;
     this.deps.lifecycleTransition.applyRunnerTerminalFact(task, "reaped", message);
@@ -42,7 +54,16 @@ export class TaskRunnerRecovery {
   async projectClosed(task: Task, detail: string): Promise<boolean> {
     if (task.terminationEventRecorded) return false;
     const runner = task.runner;
-    if (runner) releaseTaskRunner(task, runner);
+    if (runner && releaseTaskRunner(task, runner)) {
+      try {
+        await runner.dispatcher.detachHost();
+      } catch (error) {
+        this.deps.logger.warn(
+          { err: error, sessionId: task.agentSessionId },
+          "runner dispatcher detach failed after closed runner projection",
+        );
+      }
+    }
     task.executionPromise = undefined;
     this.deps.lifecycleTransition.applyRunnerTerminalFact(task, "closed", detail);
     const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task, true);

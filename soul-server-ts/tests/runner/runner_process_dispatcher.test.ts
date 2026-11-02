@@ -22,6 +22,7 @@ import {
   RunnerIpcRequestTimeoutError,
 } from "../../src/runner/runner_ipc_connection.js";
 import { RunnerParentOutbox } from "../../src/runner/runner_parent_outbox.js";
+import { ProcessFrameStream } from "../../src/runner/runner_process_frame_stream.js";
 import { isClosedClaudeEngineFailure } from "../../src/runner/closed_engine_error.js";
 import { buildDurableRunnerEvent } from
   "../../src/runner/runner_child_runtime_helpers.js";
@@ -33,6 +34,7 @@ import {
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import {
   pendingRunnerRegistrationIdentity,
+  runnerRegistrationIdentityPath,
   writeRunnerRegistrationIdentity,
 } from "../../src/runner/runner_registration_identity.js";
 import {
@@ -60,6 +62,135 @@ afterEach(async () => {
 });
 
 describe("RunnerProcessDispatcher", () => {
+  it.each(["replaced", "removed", "retired"] as const)(
+    "stops reconnecting after its registration is %s and releases its event stream",
+    async (change) => {
+      const stateDirectory = await temporaryDirectory();
+      const paths = runnerProcessPaths(stateDirectory, "session-a");
+      await mkdir(paths.sessionDirectory, { recursive: true });
+      const identity = {
+        ...pendingRunnerRegistrationIdentity("session-a", "sha-a"),
+        pid: 1001,
+        startIdentity: "start-1001",
+      };
+      await writeRunnerRegistrationIdentity(paths.sessionDirectory, identity);
+      const mux = new EventOutboxPumpMux(
+        new EventOutboxPump(emptyStore("fallback-stream"), vi.fn()),
+      );
+      const unregister = mux.register(
+        new EventOutboxPump(emptyStore("stream-session-a"), vi.fn()),
+      );
+      let dispatcher!: RunnerProcessDispatcher & Record<string, unknown>;
+      let connectCalls = 0;
+      const logger = { warn: vi.fn(), info: vi.fn(), error: vi.fn() };
+      const stream = new ProcessFrameStream(async () => {});
+      dispatcher = Object.assign(
+        Object.create(RunnerProcessDispatcher.prototype),
+        {
+          closed: false,
+          reconnectRequested: true,
+          reconnectAttempts: 0,
+          reconnectCause: new Error("initial socket failure"),
+          reconnectPolicy: {
+            initialDelayMs: 1, maxDelayMs: 1, maxAttempts: 3,
+            stableConnectionMs: 1000,
+          },
+          spawnInput: spawnInput(stateDirectory),
+          spawnedProcess: {
+            registrationId: identity.registrationId,
+            paths,
+            pid: 1001,
+          },
+          options: {
+            logger,
+            reconnectSleep: async () => undefined,
+            connectSocket: async () => {
+              connectCalls += 1;
+              if (connectCalls === 1) {
+                if (change === "replaced") {
+                  await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+                    ...identity, registrationId: "replacement-registration",
+                  });
+                } else if (change === "removed") {
+                  await rm(runnerRegistrationIdentityPath(paths.sessionDirectory));
+                } else {
+                  await writeRunnerRegistrationIdentity(paths.sessionDirectory, {
+                    ...identity, retiredAt: new Date().toISOString(),
+                  });
+                }
+                throw new Error("initial socket failure");
+              }
+              dispatcher.closed = true;
+              throw new Error("unexpected reconnect");
+            },
+          },
+          activeExecution: {
+            commandId: "execute-a",
+            registrationId: identity.registrationId,
+            stream,
+            acceptsInterventions: true,
+          },
+          requestLifetimes: new Map(),
+          releaseHostResources: vi.fn(async () => { unregister(); }),
+        },
+      ) as RunnerProcessDispatcher & Record<string, unknown>;
+
+      await (dispatcher as unknown as {
+        runReconnectLoop(socketPath: string, firstConnectedForMs: number): Promise<void>;
+      }).runReconnectLoop(paths.socketPath, 0);
+
+      expect(connectCalls).toBe(1);
+      expect(dispatcher.closed).toBe(true);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ expectedRegistrationId: identity.registrationId }),
+        expect.stringContaining("Runner registration lost"),
+      );
+      await expect(collect(stream)).rejects.toThrow(
+        "runner registration replaced or removed while the host was reconnecting",
+      );
+      expect(() => mux.register(
+        new EventOutboxPump(emptyStore("stream-session-a"), vi.fn()),
+      )).not.toThrow();
+    },
+  );
+
+  it("continues reconnecting while the runner registration is still owned", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const identity = {
+      ...pendingRunnerRegistrationIdentity("session-a", "sha-a"),
+      pid: 1001,
+      startIdentity: "start-1001",
+    };
+    await writeRunnerRegistrationIdentity(paths.sessionDirectory, identity);
+    let dispatcher!: RunnerProcessDispatcher & Record<string, unknown>;
+    let connectCalls = 0;
+    dispatcher = Object.assign(Object.create(RunnerProcessDispatcher.prototype), {
+      closed: false,
+      reconnectRequested: true,
+      reconnectAttempts: 0,
+      reconnectCause: new Error("socket failure"),
+      reconnectPolicy: { initialDelayMs: 1, maxDelayMs: 1, maxAttempts: 3, stableConnectionMs: 1000 },
+      spawnInput: spawnInput(stateDirectory),
+      spawnedProcess: { registrationId: identity.registrationId, paths, pid: 1001 },
+      options: {
+        logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() },
+        reconnectSleep: async () => undefined,
+        connectSocket: async () => {
+          connectCalls += 1;
+          if (connectCalls === 2) dispatcher.closed = true;
+          throw new Error("socket failure");
+        },
+      },
+    }) as RunnerProcessDispatcher & Record<string, unknown>;
+
+    await (dispatcher as unknown as {
+      runReconnectLoop(socketPath: string, firstConnectedForMs: number): Promise<void>;
+    }).runReconnectLoop(paths.socketPath, 0);
+    expect(connectCalls).toBe(2);
+  });
+
   it("classifies only the exact closed-engine failure from Claude", () => {
     const exact = {
       code: "execution_failed",
