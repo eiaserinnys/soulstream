@@ -248,6 +248,78 @@ describe("WorktreeService", () => {
     expect(existsSync(String(created.path))).toBe(!closed);
   });
 
+  it.each([false, true])("sweeps a squash-merged worktree only when its PR head matches HEAD (advanced=%s)", async (advanced) => {
+    const { projectsRoot, repo, host, service } = fixture();
+    const origin = join(projectsRoot, "remote.git");
+    git(projectsRoot, "init", "--bare", "-b", "main", origin);
+    git(repo, "remote", "add", "origin", origin);
+    git(repo, "push", "origin", "main");
+    git(repo, "remote", "set-head", "origin", "main");
+
+    const branch = advanced ? "squash/advanced-after-merge" : "squash/merged";
+    const created = await service.create({ actorSessionId: "owner", repoId: "demo", branch, mode: "new" });
+    const path = String(created.path), id = String(created.worktreeId);
+    writeFileSync(join(path, "feature.txt"), "feature\n");
+    git(path, "add", "feature.txt");
+    git(path, "commit", "-m", "feature change");
+    const prHead = git(path, "rev-parse", "HEAD");
+    git(path, "push", "origin", branch);
+    git(repo, "merge", "--squash", branch);
+    git(repo, "commit", "-m", "squash feature");
+    git(repo, "push", "origin", "main");
+    git(repo, "push", "origin", "--delete", branch);
+    if (advanced) {
+      writeFileSync(join(path, "after-merge.txt"), "local commit\n");
+      git(path, "add", "after-merge.txt");
+      git(path, "commit", "-m", "local commit after merge");
+    }
+
+    const now = Date.now() + 4 * 60 * 60_000;
+    const record = host.records.get(id)!;
+    host.records.set(id, { ...record,
+      lastSessionActivityAt: new Date(now - 4 * 60 * 60_000).toISOString(),
+    });
+
+    const { runBoundedProcess } = await import("../src/worktree/worktree_process.js");
+    const ghCalls: string[][] = [];
+    const sweepGit = new WorktreeGit({
+      projectsRoot,
+      timeoutMs: 5_000,
+      processRunner: async (input) => {
+        if (input.command === "gh") {
+          ghCalls.push(input.args);
+          return { stdout: JSON.stringify([{ headRefOid: prHead }]), stderr: "", exitCode: 0 };
+        }
+        return await runBoundedProcess(input);
+      },
+    });
+    let observedState: { pushed: boolean; merged: boolean } | undefined;
+    const sweepCommitState = sweepGit.sweepCommitState.bind(sweepGit);
+    vi.spyOn(sweepGit, "sweepCommitState").mockImplementation(async (repoId, head) => {
+      observedState = await sweepCommitState(repoId, head);
+      return observedState;
+    });
+    const sweeper = new WorktreeService({ nodeId: "node-a", projectsRoot, git: sweepGit,
+      createTimeoutMs: 5_000, host,
+      lock: new RepositoryLock({ lockRoot: join(projectsRoot, ".locks"), defaultTimeoutMs: 2_000 }),
+      listActiveWorkspaceDirs: () => [],
+    });
+
+    const result = await sweeper.sweep({ now });
+
+    expect(observedState).toEqual({ pushed: false, merged: false });
+    if (advanced) {
+      expect(result).toMatchObject({ removed: 0, unpushed: 1 });
+      expect(existsSync(path)).toBe(true);
+      expect(host.records.get(id)?.state).toBe("ready");
+    } else {
+      expect(result).toMatchObject({ removed: 1, unpushed: 0 });
+      expect(existsSync(path)).toBe(false);
+      expect(host.records.get(id)?.state).toBe("removed");
+    }
+    expect(ghCalls).toEqual([["pr", "list", "--head", branch, "--state", "merged", "--json", "headRefOid", "--limit", "30"]]);
+  });
+
   it("sweeps only finished clean pushed worktrees, once per repo, preserving branches", async () => {
     const active: string[] = [];
     const { projectsRoot, repo, service, host } = fixture(active);

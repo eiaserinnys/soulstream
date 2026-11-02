@@ -480,6 +480,30 @@ export class WorktreeGit {
     }
   }
 
+  async mergedPullRequestHeads(repoId: string, branch: string): Promise<string[]> {
+    const repo = this.resolveRepository(repoId);
+    try {
+      const { stdout, exitCode } = await (this.options.processRunner ?? runBoundedProcess)({
+        command: "gh",
+        args: ["pr", "list", "--head", branch, "--state", "merged", "--json", "headRefOid", "--limit", "30"],
+        cwd: repo,
+        timeoutMs: this.options.timeoutMs,
+        signal: this.operationSignal.getStore(),
+        env: { ...process.env, GH_PROMPT_DISABLED: "1" },
+      });
+      if (exitCode !== 0) return [];
+      const parsed: unknown = JSON.parse(stdout);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.flatMap((item: unknown) => {
+        if (item === null || typeof item !== "object" || !("headRefOid" in item)) return [];
+        return typeof item.headRefOid === "string" ? [item.headRefOid] : [];
+      });
+    } catch (error) {
+      rethrowProcessTimeout(error);
+      return [];
+    }
+  }
+
   async branchHead(repoId: string, branch: string): Promise<string | null> {
     const repo = this.resolveRepository(repoId);
     try {
