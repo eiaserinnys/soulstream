@@ -112,6 +112,11 @@ beforeEach(() => {
   (globalThis as any).__persistentChatConnectionProbe = { opens: 0, closes: 0, connected: false };
   jest.mocked(useUsageSummary).mockReturnValue({ summary: null, node: null, gauges: [], loading: false, loadState: 'idle', evaluatedAtMs: 0, retry: jest.fn() });
 });
+test('persistent session screen isolates native overlay stacking', () => {
+  const view = render(<ScreenHarness />);
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-screen').props.style).isolation).toBe('isolate');
+});
+
 test('카드를 누르면 바로 오버레이가 열리고 PAS ChatBody와 입력 draft는 그대로 유지된다', () => {
   mockDevice = 'tabletLandscape';
   (globalThis as any).__persistentChatConnectionProbe = { opens: 0, closes: 0, connected: false };
