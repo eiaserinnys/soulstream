@@ -17,7 +17,7 @@ beforeEach(() => {
 });
 
 test('전체 목록은 global useCardList 결과의 활성 카드를 묶고 행 열기를 전달한다', async () => {
-  const statuses: CardStatus[] = ['todo', 'queued', 'running', 'blocked', 'review', 'done', 'cancelled'];
+  const statuses: CardStatus[] = ['todo', 'queued', 'running', 'blocked', 'review', 'on_hold', 'done', 'cancelled'];
   const cards = statuses.map((status) => cardFixture({ id: `card-${status}`, status, number: status === 'todo' ? null : 1 }));
   const listCards = jest.fn().mockResolvedValue({ cards });
   const onOpenCard = jest.fn();
@@ -31,6 +31,8 @@ test('전체 목록은 global useCardList 결과의 활성 카드를 묶고 행 
   ]);
   expect(screen.queryByTestId('card-row-card-done-summary')).toBeNull();
   expect(screen.queryByTestId('card-row-card-cancelled-summary')).toBeNull();
+  expect(screen.queryByTestId('persistent-task-group-on_hold')).toBeNull();
+  expect(screen.queryByTestId('card-row-card-on_hold-summary')).toBeNull();
   expect(screen.queryByTestId('card-card-todo-number')).toBeNull();
 
   fireEvent.press(screen.getByTestId('card-row-card-running-summary'));

@@ -177,14 +177,21 @@ describe("user card execution transport",()=>{
       });
     }finally{await runtime.dispatcher.drain();}
   });
-  it.each(["running","done"] as const)("refuses agent execution while a card is %s",async status=>{
+  it.each(["running","done","cancelled"] as const)("refuses agent execution while a card is %s",async status=>{
     const f=await fixture();
     await cards.setCardStatus({...actor,cardId:f.cardId,status,idempotencyKey:`state-${status}`});
     const current=(await cards.getCard(f.cardId))!.card;
     await expect(f.service.execute(agentInput(f.cardId,`agent-${status}`,current.version)))
-      .rejects.toMatchObject({statusCode:422,message:`드래프트(todo)나 대기(queued) 카드만 실행할 수 있습니다. 현재 상태: ${status}`});
+      .rejects.toMatchObject({statusCode:422,message:`드래프트(todo), 대기(queued), 보류(on_hold) 카드만 실행할 수 있습니다. 현재 상태: ${status}`});
     expect(f.launch).not.toHaveBeenCalled();expect(f.ensure).not.toHaveBeenCalled();
     expect((await h.sql`SELECT id FROM card_execution_requests WHERE card_id=${f.cardId}`)).toHaveLength(0);
+  });
+  it("allows agent execution of a held card",async()=>{
+    const f=await fixture();
+    await cards.setCardStatus({...actor,cardId:f.cardId,status:"on_hold",idempotencyKey:"state-on-hold"});
+    const current=(await cards.getCard(f.cardId))!.card;
+    const result=await f.service.execute(agentInput(f.cardId,"agent-on-hold",current.version));
+    expect(result.execution.state).toBe("started");expect(f.launch).toHaveBeenCalledTimes(1);
   });
   it("different concurrent keys share one pending reservation and fixed session",async()=>{
     const f=await fixture("pending");const results=await Promise.all([f.service.execute(input(f.cardId,"concurrent-a")),f.service.execute(input(f.cardId,"concurrent-b"))]);

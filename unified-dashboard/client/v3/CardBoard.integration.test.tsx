@@ -50,7 +50,8 @@ it("starts the card home with only populated lanes and keeps creation in the wor
  expect(element.querySelector('.v3-card-actions button[aria-label="새 카드"]')).not.toBeNull();
  expect(element.querySelector('[data-board-column="todo"] button[aria-label="새 카드"]')).toBeNull();
  await act(()=>button("보드 확대").click());
- expect(element.querySelectorAll('[data-board-column]')).toHaveLength(5);
+ expect(element.querySelectorAll('[data-board-column]')).toHaveLength(6);
+ expect(element.querySelector('[data-board-column="on_hold"]')).not.toBeNull();
  expect(element.querySelector('.v3-card-actions button[aria-label="새 카드"]')).not.toBeNull();
  expect(element.querySelector('.v3-card-actions button[aria-label="기록"]')).toBeNull();
  await act(()=>button("확대 닫기").click());

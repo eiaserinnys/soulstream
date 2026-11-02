@@ -205,6 +205,10 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
             cardSurface hidePageIndicator bubble={false} surfaceHeight={undefined}
             busy={reviewCard ? completion?.busy ?? true : isServerCardAcknowledgement(entry) ? false : send?.busy}
             canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)} acknowledgeLabel={reviewCard ? '완료' : undefined}
+            holdAction={reviewCard ? { label: '보류', onPress: () => {
+              if (!completion) return;
+              void completion.complete(entry, entries, 'on_hold').then(ok => { if (!ok) setNotice('카드를 보류하지 못했어.'); });
+            } } : undefined}
             undo={undo} onCancel={() => { if (i !== index) onSelect(i); void send?.cancel(entry); }} onInteraction={entryInteraction}
             onReady={() => {}} onHeight={() => {}} titleRef={node => { titleNodes.current[entry.key] = node; }} onStep={step} onExpand={expand}
             onDismiss={() => {
@@ -269,6 +273,10 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
         bubble={bubble} surfaceHeight={bubble ? bubbleHeight : inlineHeight}
         busy={reviewCard ? completion?.busy ?? true : isServerCardAcknowledgement(entry) ? false : send?.busy} canCancel={send?.canCancel(entry)} cancelSent={send?.cancelSent(entry)}
         acknowledgeLabel={reviewCard ? '완료' : undefined} undo={undo}
+        holdAction={reviewCard ? { label: '보류', onPress: () => {
+          if (!completion) return;
+          void completion.complete(entry, entries, 'on_hold').then(ok => { if (!ok) setNotice('카드를 보류하지 못했어.'); });
+        } } : undefined}
         onCancel={() => void send?.cancel(entry)} onInteraction={interaction}
         onReady={() => {
           const id = measureKey(entry), latest = latestMeasurement.current;

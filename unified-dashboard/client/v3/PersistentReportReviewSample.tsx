@@ -46,9 +46,9 @@ export function PersistentReportReviewSample({ bubble = false, cardPreview = fal
   useEffect(() => { if (previewEnabled) useCardStore.getState().putCards([pasPreviewCard, pasSecondPreviewCard]); }, [previewEnabled]);
   const preview = previewEnabled && !before ? { renderCardStatus: (entry: typeof source[number]) => <PasCardPreviewStatus entry={entry} />, renderCardDetails: (entry: typeof source[number], lookupCards: () => Promise<void>) => !completionScenario || entry.key === reviewCompletionEntry.key || entry.key === secondReviewCompletionEntry.key ? <PasCardPreview key={entry.key} entry={entry} lookupCards={lookupCards} onAnswer={answer => setEntries(current => current.map(item => item.key === entry.key ? { ...item, answer, state: 'answered', updated_at: 'preview-answer' } : item))} /> : null } : {};
   const dismiss = useCallback(async (key: string) => setEntries(current => current.filter(entry => entry.key !== key)), []);
-  const cardTransition = useCallback(async (cardId: string, status: 'done' | 'review') => {
+  const cardTransition = useCallback(async (cardId: string, status: 'done' | 'on_hold' | 'review') => {
     const key = `card_${cardId}`;
-    if (status === 'done') setEntries(current => current.filter(entry => entry.key !== key));
+    if (status === 'done' || status === 'on_hold') setEntries(current => current.filter(entry => entry.key !== key));
     else setEntries(current => {
       if (current.some(entry => entry.key === key)) return current;
       const restored = source.find(entry => entry.key === key);

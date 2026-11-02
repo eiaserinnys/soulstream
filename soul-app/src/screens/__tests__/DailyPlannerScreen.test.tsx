@@ -73,6 +73,7 @@ afterEach(() => {
 
 test('review와 모든 blocked 종류를 표시하고 날짜 머리는 키커·한국어 날짜·오른쪽 캡 두 개다', () => {
   const data = parsePlannerToday(canonicalTodayFixture());
+  data.attention.push(cardFixture({ id: 'held-today', title: '보류한 카드', status: 'on_hold' }));
   mockUsePlannerDaily.mockReturnValue({
     data,
     loading: false,
@@ -84,6 +85,7 @@ test('review와 모든 blocked 종류를 표시하고 날짜 머리는 키커·�
 
   expect(screen.getByText('확인할 것')).toBeTruthy();
   for (const kind of ['review', 'question', 'no_report', 'limit']) expect(screen.getByText(`카드 ${kind}`)).toBeTruthy();
+  expect(screen.queryByText('보류한 카드')).toBeNull();
   expect(screen.queryByTestId('today-cards-running')).toBeNull();
   expect(screen.queryByTestId('today-cards-queued')).toBeNull();
   expect(screen.queryByText('오늘 업무')).toBeNull();

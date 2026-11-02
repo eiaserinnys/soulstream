@@ -3,15 +3,16 @@ import type { PersistentReportEntry } from '@seosoyoung/soul-ui';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 
 export const CARD_COMPLETION_UNDO_MS = 5000;
-export type CardTransition = (cardId: string, status: 'done' | 'review') => Promise<void>;
+export type CardCompletionTarget = 'done' | 'on_hold';
+export type CardTransition = (cardId: string, status: CardCompletionTarget | 'review') => Promise<void>;
 export type CompletionEntry = Pick<PersistentReportEntry, 'card_numbers'> & { card_id: string; key?: string; updated_at?: string } & Partial<PersistentReportEntry>;
-type RecentCompletion = { cardId: string; label: string; expiresAt: number };
-type CompletedRecord = { key: string; cardId: string; updatedAt: string; snapshot: PersistentReportEntry | null; nextKey: string | null };
+type RecentCompletion = { cardId: string; target: CardCompletionTarget; label: string; expiresAt: number };
+type CompletedRecord = { key: string; cardId: string; target: CardCompletionTarget; updatedAt: string; snapshot: PersistentReportEntry | null; nextKey: string | null };
 type RestoredRecord = { key: string; cardId: string; snapshot: PersistentReportEntry; updatedAt: string; nextKey: string | null };
 
 class CardStatusChangedError extends Error {}
 
-async function transitionCard(cardId: string, status: 'done' | 'review', expectedStatus: 'review' | 'done') {
+async function transitionCard(cardId: string, status: CardCompletionTarget | 'review', expectedStatus: 'review' | CardCompletionTarget) {
   const store = useCardStore.getState();
   const detail = await store.loadCard(cardId);
   if (detail.card.status !== expectedStatus) throw new CardStatusChangedError();
@@ -36,12 +37,12 @@ export function usePersistentCardCompletion(notify: (text: string) => void, card
   }, []);
   useEffect(() => clearTimer, [clearTimer]);
 
-  const runTransition = useCallback(async (cardId: string, status: 'done' | 'review', expectedStatus: 'review' | 'done') => {
+  const runTransition = useCallback(async (cardId: string, status: CardCompletionTarget | 'review', expectedStatus: 'review' | CardCompletionTarget) => {
     if (cardTransition) await cardTransition(cardId, status);
     else await transitionCard(cardId, status, expectedStatus);
   }, [cardTransition]);
 
-  const complete = useCallback(async (entry: CompletionEntry, currentEntries?: PersistentReportEntry[]) => {
+  const complete = useCallback(async (entry: CompletionEntry, currentEntries?: PersistentReportEntry[], target: CardCompletionTarget = 'done') => {
     if (busyRef.current) return false;
     busyRef.current = true;
     setBusy(true);
@@ -50,16 +51,17 @@ export function usePersistentCardCompletion(notify: (text: string) => void, card
     const previousRecent = recentRef.current;
     clearTimer();
     try {
-      await runTransition(entry.card_id, 'done', 'review');
+      await runTransition(entry.card_id, target, 'review');
       const key = entry.key ?? `card_${entry.card_id}`;
       const sourceEntry = currentEntries?.find(item => item.key === key)
         ?? (typeof entry.title === 'string' && typeof entry.kind === 'string' ? entry as unknown as PersistentReportEntry : null);
       const sourceIndex = currentEntries ? currentEntries.findIndex(item => item.key === key) : -1;
       const nextKey = sourceIndex >= 0 && currentEntries ? (currentEntries[sourceIndex + 1]?.key ?? null) : null;
-      completedByKey.current.set(key, { key, cardId: entry.card_id, updatedAt: sourceEntry?.updated_at ?? entry.updated_at ?? '', snapshot: sourceEntry, nextKey });
+      completedByKey.current.set(key, { key, cardId: entry.card_id, target, updatedAt: sourceEntry?.updated_at ?? entry.updated_at ?? '', snapshot: sourceEntry, nextKey });
       restoredByKey.current.delete(key);
       const expiresAt = Date.now() + CARD_COMPLETION_UNDO_MS;
-      const next = { cardId: entry.card_id, label: entry.card_numbers[0] === undefined ? '완료됨' : `#${entry.card_numbers[0]} 완료됨`, expiresAt };
+      const label = target === 'on_hold' ? '보류됨' : '완료됨';
+      const next = { cardId: entry.card_id, target, label: entry.card_numbers[0] === undefined ? label : `#${entry.card_numbers[0]} ${label}`, expiresAt };
       recentRef.current = next;
       setRecent(next);
       timer.current = setTimeout(() => {
@@ -85,7 +87,7 @@ export function usePersistentCardCompletion(notify: (text: string) => void, card
           setRecent(null);
         }
       }
-      notify(error instanceof CardStatusChangedError ? '카드 상태가 바뀌었어.' : '카드를 완료하지 못했어.');
+      notify(error instanceof CardStatusChangedError ? '카드 상태가 바뀌었어.' : target === 'on_hold' ? '카드를 보류하지 못했어.' : '카드를 완료하지 못했어.');
       return false;
     } finally {
       busyRef.current = false;
@@ -100,7 +102,7 @@ export function usePersistentCardCompletion(notify: (text: string) => void, card
     setBusy(true);
     clearTimer();
     try {
-      await runTransition(current.cardId, 'review', 'done');
+      await runTransition(current.cardId, 'review', current.target);
       const key = `card_${current.cardId}`;
       const record = completedByKey.current.get(key);
       completedByKey.current.delete(key);

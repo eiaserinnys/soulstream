@@ -45,7 +45,7 @@ describe("explicit manual card work", () => {
     const replay = await cards.startCardWork(declaration(id, "todo-start"));
     expect(replay.idempotent).toBe(true);
   });
-  it.each(["review","queued","blocked","done","cancelled","running"])("starts manual %s without report, reason or admission",async status=>{
+it.each(["review","queued","blocked","on_hold","done","cancelled","running"])("starts manual %s without report, reason or admission",async status=>{
     const id=await make(status);
     await cards.startCardWork(declaration(id,`manual-${status}`));
     expect((await cards.getCard(id))!.card).toMatchObject({status:"running",completed_kind:null,completed_at:null});

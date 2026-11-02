@@ -28,7 +28,20 @@ it.each(['user','agent'] as const)('allows reportless %s transitions with open q
   resolveDashboardUserId:()=>human.actorUserId,authBearerToken:'service',environment:'production',cardServiceProvider:async()=>cards});
  const headers=actor==='agent'?{authorization:'Bearer service','x-soulstream-agent-session-id':'owner'}:{};
  try {
-  for(const status of ['review','done','running','cancelled','todo','queued','blocked'] as const){
+  for(const resume of ['todo','queued','blocked','running','review','done','cancelled'] as const){
+   let before=(await cards.getCard(id))!.card;
+   const started=await app.inject({method:'POST',url:`/api/cards/${id}/status`,headers,payload:{status:resume,expectedVersion:before.version,idempotencyKey:key()}});
+   expect(started.statusCode,started.body).toBe(200);
+   before=(await cards.getCard(id))!.card;
+   const held=await app.inject({method:'POST',url:`/api/cards/${id}/status`,headers,payload:{status:'on_hold',expectedVersion:before.version,idempotencyKey:key()}});
+   expect(held.statusCode,held.body).toBe(200);
+   expect((await cards.getCard(id))!.card.status).toBe('on_hold');
+   before=(await cards.getCard(id))!.card;
+   const resumed=await app.inject({method:'POST',url:`/api/cards/${id}/status`,headers,payload:{status:resume,expectedVersion:before.version,idempotencyKey:key()}});
+   expect(resumed.statusCode,resumed.body).toBe(200);
+   expect((await cards.getCard(id))!.card.status).toBe(resume);
+  }
+  for(const status of ['review','on_hold','done','running','cancelled','todo','queued','blocked'] as const){
    const before=(await cards.getCard(id))!.card;
    const changed=await app.inject({method:'POST',url:`/api/cards/${id}/status`,headers,payload:{status,expectedVersion:before.version,idempotencyKey:key()}});
    expect(changed.statusCode,changed.body).toBe(200);

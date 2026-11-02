@@ -103,8 +103,8 @@ export class CardExecutionService {
         return pending;
       }
       // A caller may join a pending request in any state so it can confirm the result; this matches the user path.
-      if(params.actorKind!=="user" && card.status!=="todo" && card.status!=="queued")
-        throw failure(`드래프트(todo)나 대기(queued) 카드만 실행할 수 있습니다. 현재 상태: ${card.status}`,422);
+      if(params.actorKind!=="user" && card.status!=="todo" && card.status!=="queued" && card.status!=="on_hold")
+        throw failure(`드래프트(todo), 대기(queued), 보류(on_hold) 카드만 실행할 수 있습니다. 현재 상태: ${card.status}`,422);
       if(card.version!==params.expectedVersion) throw new CardVersionConflict("card",card.id,params.expectedVersion,card.version);
       const automatic=await activeAutomaticReservation(sql,card);
       const prior=(await sql<CardExecutionRequest[]>`SELECT * FROM card_execution_requests WHERE card_id=${card.id} AND state='failed' ORDER BY created_at DESC LIMIT 1`)[0];
