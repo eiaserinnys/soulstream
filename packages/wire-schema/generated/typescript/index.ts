@@ -459,6 +459,7 @@ export interface SessionEventEnvelope {
     | SSEEventContextUsage
     | SSEEventContextManifest
     | SSEEventGenerationStarted
+    | SSEEventReportTimeline
     | SSEEventInputMaterialManifest
     | SSEEventUsageObservation
     | SSEEventCompact
@@ -1358,6 +1359,19 @@ export interface SSEEventGenerationStarted {
     material_unavailable?: true;
   };
   timestamp: number;
+  [k: string]: unknown;
+}
+/**
+ * SSE: PAS 채팅에 표시하는 카드 상태 타임라인.
+ */
+export interface SSEEventReportTimeline {
+  type: "report_timeline";
+  line_key: string;
+  status: "review" | "blocked" | "question" | "done" | "cancelled" | "on_hold" | "report";
+  title: string;
+  detail: string;
+  card_id: string | null;
+  card_number: number | null;
   [k: string]: unknown;
 }
 /**
@@ -3293,6 +3307,7 @@ export const EVENT_DURABILITY = {
   "context_usage": "durable",
   "context_manifest": "durable",
   "generation_started": "durable",
+  "report_timeline": "durable",
   "input_material_manifest": "durable",
   "usage_observation": "durable",
   "compact": "durable",
@@ -3369,6 +3384,7 @@ export const SSE_EVENT_TYPES = [
   "context_usage",
   "context_manifest",
   "generation_started",
+  "report_timeline",
   "compact",
   "reconnect",
   "history_sync",
@@ -3412,6 +3428,7 @@ export const SESSION_TIMELINE_EVENT_TYPES = [
   "realtime_status",
   "realtime_transcript",
   "generation_started",
+  "report_timeline",
 ] as const;
 export type SessionTimelineEventType = (typeof SESSION_TIMELINE_EVENT_TYPES)[number];
 

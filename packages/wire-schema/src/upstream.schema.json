@@ -92,7 +92,8 @@
     "credential_alert",
     "realtime_status",
     "realtime_transcript",
-    "generation_started"
+    "generation_started",
+    "report_timeline"
   ],
   "x-soulstream-session-statuses": [
     "running",
@@ -177,6 +178,7 @@
     "context_usage": "durable",
     "context_manifest": "durable",
     "generation_started": "durable",
+    "report_timeline": "durable",
     "input_material_manifest": "durable",
     "usage_observation": "durable",
     "compact": "durable",
@@ -692,6 +694,7 @@
             { "$ref": "#/$defs/SSEEventContextUsage" },
             { "$ref": "#/$defs/SSEEventContextManifest" },
             { "$ref": "#/$defs/SSEEventGenerationStarted" },
+            { "$ref": "#/$defs/SSEEventReportTimeline" },
             { "$ref": "#/$defs/SSEEventInputMaterialManifest" },
             { "$ref": "#/$defs/SSEEventUsageObservation" },
             { "$ref": "#/$defs/SSEEventCompact" },
@@ -4086,6 +4089,21 @@
           }
         },
         "timestamp": { "type": "number" }
+      }
+    },
+    "SSEEventReportTimeline": {
+      "type": "object",
+      "description": "SSE: PAS 채팅에 표시하는 카드 상태 타임라인.",
+      "required": ["type", "line_key", "status", "title", "detail", "card_id", "card_number"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "report_timeline" },
+        "line_key": { "type": "string" },
+        "status": { "enum": ["review", "blocked", "question", "done", "cancelled", "on_hold", "report"] },
+        "title": { "type": "string" },
+        "detail": { "type": "string" },
+        "card_id": { "type": ["string", "null"] },
+        "card_number": { "type": ["integer", "null"] }
       }
     },
     "SSEEventCompact": {

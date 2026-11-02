@@ -30,6 +30,7 @@ import type {
 import { CardDispatcher } from "./card_dispatcher.js";
 import { CardDispatchRepository } from "./card_dispatch_repository.js";
 import { createCardControlPlaneServiceProvider } from "./card_control_plane_runtime.js";
+import type { AppendReportTimeline } from "../session/report_timeline_publisher.js";
 import { resolveCardOwnerEmail } from "./card_question_board.js";
 import {
   readCardDispatchSettings,
@@ -64,6 +65,7 @@ export async function createCardDispatchRuntime(options: {
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;
   warn: (message: string) => void;
   onReportsChanged?: PublishPersistentReports;
+  appendTimeline?: AppendReportTimeline;
   onQuestionAsked?: (input:{cardId:string;questionId:string})=>void | Promise<void>;
   corsAllowedOrigins?: readonly string[];
   onFolderHeaderUpdated: () => Promise<void>;
@@ -150,6 +152,7 @@ export async function createCardDispatchRuntime(options: {
     onFolderHeaderUpdated: options.onFolderHeaderUpdated,
     onMutation: (change) => dispatcher.acceptMutation(change),
     onReportsChanged: options.onReportsChanged,
+    appendTimeline: options.appendTimeline,
     corsAllowedOrigins: options.corsAllowedOrigins,
     onQuestionAsked: options.onQuestionAsked,
   });
