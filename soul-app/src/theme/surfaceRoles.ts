@@ -33,7 +33,6 @@ export type SurfaceRoles = Record<SurfaceRoleName, SurfaceRoleDefinition>;
 
 const CHROME_CONTENT_ALPHA = 0.92;
 const CHROME_NATIVE_TINT_ALPHA = 0.68;
-const NATIVE_SHEET_DARK_SURFACE = '#151518';
 const SEMANTIC_GLASS_PALETTE = {
   light: {
     glassSoft: { translucent: 'rgba(231, 237, 245, 0.56)', solid: '#e7edf5' },
@@ -61,7 +60,6 @@ export const MODAL_BACKDROP_COLOR = 'rgba(0, 0, 0, 0.35)';
 export function createSurfaceRoles(t: DesignTokens): SurfaceRoles {
   const c = t.colors;
   const semanticGlass = SEMANTIC_GLASS_PALETTE[t.mode];
-  const nativeSheetSurface = t.mode === 'dark' ? NATIVE_SHEET_DARK_SURFACE : c.surface;
   return {
     canvas: role({
       compositesBackdrop: false,
@@ -131,9 +129,9 @@ export function createSurfaceRoles(t: DesignTokens): SurfaceRoles {
       // 앱은 그 내부를 불투명 토큰으로 채우며 별도 glass를 합성하지 않는다.
       compositesBackdrop: false,
       nativeGlass: false,
-      nativeTintColor: nativeSheetSurface,
-      blurColor: nativeSheetSurface,
-      fallbackColor: nativeSheetSurface,
+      nativeTintColor: c.surface,
+      blurColor: c.surface,
+      fallbackColor: c.surface,
       borderRadius: 0,
       blurIntensity: 0,
     }),

@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal, StyleSheet, View } from 'react-native';
-import { render, renderHook } from '@testing-library/react-native';
+import { render } from '@testing-library/react-native';
 
 import {
   AppModalSurface,
@@ -10,8 +10,12 @@ import {
   bindSessionDiagnosticsSink,
   type SessionDiagnosticsSink,
 } from '../../lib/session-diagnostics-api';
-import { useTokens } from '../../theme';
-import { createSurfaceRoles } from '../../theme/surfaceRoles';
+import { useSettingsStore } from '../../store/settingsStore';
+import { DARK_COLORS, LIGHT_COLORS } from '../../theme/tokens';
+
+afterEach(() => {
+  useSettingsStore.setState({ appearance: 'system' });
+});
 
 test('compact modal is one content-fit bottom glass surface over a transparent host', () => {
   const screen = render(
@@ -70,12 +74,15 @@ test('expanded modal keeps the requested native presentation in the same surface
     .toEqual(['portrait', 'portrait-upside-down', 'landscape-left', 'landscape-right']);
 });
 
-test('expanded modal fills the duo system band with the native sheet surface color', () => {
-  const tokens = renderHook(() => useTokens()).result.current;
-  const sheetColor = createSurfaceRoles(tokens).nativeSheet.tokenStyle.backgroundColor;
+test.each([
+  ['light', LIGHT_COLORS.surface],
+  ['dark', DARK_COLORS.surface],
+] as const)('expanded %s modal fills the duo system band with the surface token', (mode, sheetColor) => {
+  useSettingsStore.setState({ appearance: mode });
   const screen = render(<AppModalSurface visible variant="expanded" modalId="modal_settings" presentationStyle="pageSheet"
-    sideBandWidth={84} onRequestClose={jest.fn()}><View /></AppModalSurface>);
+    sideBandWidth={84} surfaceTestID="sheet-surface" onRequestClose={jest.fn()}><View /></AppModalSurface>);
 
+  expect(StyleSheet.flatten(screen.getByTestId('sheet-surface').props.style).backgroundColor).toBe(sheetColor);
   expect(StyleSheet.flatten(screen.getByTestId('app-modal-viewport').props.style).backgroundColor).toBe(sheetColor);
   expect(screen.UNSAFE_getByType(Modal).props.backdropColor).toBe(sheetColor);
 });
