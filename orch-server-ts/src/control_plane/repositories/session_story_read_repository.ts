@@ -212,7 +212,11 @@ export class SessionStoryReadRepository {
               OR EXISTS (
                 SELECT 1 FROM events final_response
                 WHERE final_response.session_id = ordered_summaries.session_id
-                  AND final_response.id::text = ordered_summaries.payload->>'final_response_event_id'
+                  AND final_response.id = CASE
+                    WHEN ordered_summaries.payload->>'final_response_event_id' ~ '^[1-9][0-9]*$'
+                    THEN (ordered_summaries.payload->>'final_response_event_id')::bigint
+                    ELSE NULL
+                  END
                   AND final_response.created_at >= ${options.period.since}::timestamptz
                   AND final_response.created_at < ${options.period.until}::timestamptz
               )
