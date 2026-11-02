@@ -245,6 +245,50 @@ describe("PAS reports on production PostgreSQL schema", () => {
     expect((await reports.get('pas')).map(e=>e.key)).toEqual([`card_${cardId}`]);
     expect((await reports.get('pas-unrelated-on-hold')).some(e=>e.key==='ordinary-card')).toBe(false);
   });
+  it("restores open questions to owner boards after leaving on hold before restoring the card entry", async () => {
+    const enabled = [{ type: "persistent_session", value: { enabled: true } }, { type: "caller_info", value: { source: "browser", email: "director@example.com" } }];
+    await sql`INSERT INTO sessions(session_id,folder_id,node_id,session_type,metadata) VALUES
+      ('hold-owner-a','report-folder','test-node',NULL,${sql.json(enabled)}),
+      ('hold-owner-b','report-folder','test-node',NULL,${sql.json(enabled)})`;
+    const reads = new SessionReadRepository(sql as never);
+    const findUserByEmail = async (email: string) => ({ email, isAdmin: false, allowedFolderIds: [] });
+    const resolveOwner = createSessionOwnerResolver({ getSession: id => reads.getSession(id), findUserByEmail, findExternalAgent: async () => null });
+    const dispatch = new CardDispatchRepository(async () => sql as never);
+    const withBoard = new CardControlPlaneService(adapted, dbPort, undefined, undefined, publish, undefined, undefined, async ({ cardId, questionId }) => {
+      const ownerEmail = await resolveCardOwnerEmail(cardId, { cardCreatorActor: id => dispatch.cardCreatorActor(id), findUserByEmail, resolveSessionOwner: resolveOwner });
+      await placeCardQuestionOnOwnerBoards({ questionId, ownerEmail, resolveSessionOwner: resolveOwner,
+        listPersistentSessions: () => reads.listPersistentSessions(),
+        putQuestion: (sessionId, qid) => reports.putQuestion(sessionId, qid) });
+    });
+    const cardId = (await withBoard.createCard({ actorKind: "agent", actorSessionId: "hold-owner-a", actorUserId: null,
+      folderId: "report-folder", title: "열린 질문 복원", request: "", assignee: { kind: "session", sessionId: "hold-owner-a" } })).operation.target_id;
+    await withBoard.updateCardNow({ actorKind: "agent", actorSessionId: "hold-owner-a", cardId, now: "질문을 확인해 주세요", turn: "user", ask: "질문 답을 기다립니다" });
+    await withBoard.setCardStatus({ ...human, cardId, status: "review" });
+    await withBoard.askQuestion({ actorKind: "agent", actorSessionId: "hold-owner-a", actorUserId: null, cardId, text: "계속할까요?", options: ["진행", "중단"] });
+    const questionId = String((await withBoard.getCard(cardId))!.questions.at(-1)!.id);
+    expect((await reports.get("hold-owner-a")).some(entry => entry.key === `cq_${questionId}`)).toBe(true);
+
+    await withBoard.setCardStatus({ ...human, cardId, status: "on_hold" });
+    expect((await reports.get("hold-owner-a")).some(entry => entry.key === `cq_${questionId}`)).toBe(false);
+    await withBoard.setCardStatus({ ...human, cardId, status: "review" });
+    for (const sessionId of ["hold-owner-a", "hold-owner-b"]) {
+      const entries = await reports.get(sessionId);
+      expect(entries.some(entry => entry.key === `cq_${questionId}`)).toBe(true);
+      expect(entries.some(entry => entry.key === `card_${cardId}`)).toBe(false);
+    }
+
+    await withBoard.answerQuestion({ ...human, cardId, questionId, answer: "진행" });
+    expect((await reports.get("hold-owner-a")).some(entry => entry.key === `cq_${questionId}`)).toBe(false);
+    expect((await reports.get("hold-owner-a")).some(entry => entry.key === `card_${cardId}`)).toBe(true);
+
+    await withBoard.askQuestion({ actorKind: "agent", actorSessionId: "hold-owner-a", actorUserId: null, cardId, text: "두 번째 질문", options: ["진행"] });
+    const secondQuestionId = String((await withBoard.getCard(cardId))!.questions.at(-1)!.id);
+    await withBoard.setCardStatus({ ...human, cardId, status: "on_hold" });
+    await withBoard.setCardStatus({ ...human, cardId, status: "done" });
+    expect((await reports.get("hold-owner-a")).some(entry => entry.key === `cq_${secondQuestionId}`)).toBe(false);
+    await sql`UPDATE sessions SET metadata=${sql.json([{ type: "other", value: "test cleanup" }])}
+      WHERE session_id IN ('hold-owner-a','hold-owner-b')`;
+  });
   it("links only persistent creator and operation sessions and rejects PAS-owned keys and card numbers", async () => {
     const enabled=[{type:'persistent_session',value:{enabled:true}}];
     await sql`UPDATE cards SET assignee_kind='agent',assignee_agent_id='report-agent',assignee_session_id=NULL WHERE assignee_session_id='pas'`;

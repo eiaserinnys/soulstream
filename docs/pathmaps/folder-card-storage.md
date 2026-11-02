@@ -2,11 +2,11 @@
 
 ## PAS 보고 자동 내림 (#270 R1)
 
-card_control_plane_service.ts는 카드 commit 뒤, 스냅샷 조회 전에 persistent_report_service.ts의 pruneForCard를 기다린다. 대상 PAS를 잠금 없이 찾고 세션마다 별도 트랜잭션에서 세션 행만 잠근 뒤 현재 판과 질문·카드 상태를 다시 확인한다. 질문 정식 답 저장·철회 또는 연결 카드 전부 done/cancelled/on_hold일 때만 내린다. 보류는 종료 상태가 아니지만 사용자가 판에서 내린 카드다. 보류 전환은 연결 판과 카드 연결 밖 판의 card_, cq_ 및 그 카드만 가리키는 일반 장을 내리고, 질문은 카드 상세에서 계속 답할 수 있다. 보고 쪽은 카드 행을 잠그지 않으며 판 방송은 각 보고 commit 직후 그 트랜잭션의 결과로 낸다. 질문 답변의 기존 메시지 전달은 그대로다.
+card_control_plane_service.ts는 카드 commit 뒤, 스냅샷 조회 전에 persistent_report_service.ts의 syncCard를 기다린다. 대상 PAS를 잠금 없이 찾고 세션마다 별도 트랜잭션에서 세션 행만 잠근 뒤 현재 판과 질문·카드 상태를 다시 확인한다. 질문 정식 답 저장·철회 또는 연결 카드 전부 done/cancelled/on_hold일 때만 내린다. 보류는 종료 상태가 아니지만 사용자가 판에서 내린 카드다. 보류 전환은 연결 판과 카드 연결 밖 판의 card_, cq_ 및 그 카드만 가리키는 일반 장을 내리고, 질문은 카드 상세에서 계속 답할 수 있다. 보고 쪽은 카드 행을 잠그지 않으며 판 방송은 각 보고 commit 직후 그 트랜잭션의 결과로 낸다. 질문 답변의 기존 메시지 전달은 그대로다.
 
 자동 내림이 실패하면 기록만 남기고 commit된 카드 변경 결과는 유지한다. 남은 장은 PAS나 사용자가 「확인했어」로 내릴 때까지 보존한다. 중앙 캐시의 보고 patch는 기존 updatedAtMs를 갱신해 먼저 시작한 DB seed가 최신 판을 덮지 못하게 한다.
 
-카드 질문도 판에 오른다. `card_question_board.ts`의 `placeCardQuestionOnOwnerBoards`가 카드 소유자의 PAS 판에 key `cq_<질문ID>`의 ask 장을 `persistent_report_service.ts`의 `putQuestion`으로 넣는다. 소유자는 `resolveCardOwnerEmail`이 카드를 만든 작업 기록의 사용자, 없으면 세션 소유자 순으로 푼다. 판이 12장으로 차면 장을 만들지 않고 경고만 하며 질문 commit은 그대로 성공한다. 판에서 그 `cq_` 장에 답하면 `acceptReply`가 그 선택지를 카드의 정식 답으로 되돌리지 않고(`card` 결정) 접수 지점이 기존 `answer_card_question` 경로로 저장한다. 판 장과 카드 답은 「답 받음→내림」의 정본이며, 답 commit 뒤 `pruneForCard`가 장을 내린다. 같은 답 재전송은 접수만 확인하고, 다른 답·철회·없는 선택지는 판 전달 없이 카드 route 오류로 끝난다.
+카드 질문도 판에 오른다. `card_question_board.ts`의 `placeCardQuestionOnOwnerBoards`가 카드 소유자의 PAS 판에 key `cq_<질문ID>`의 ask 장을 `persistent_report_service.ts`의 `putQuestion`으로 넣는다. 보류에서 나오면 열린 질문을 소유자 판에 다시 올린다. 소유자는 `resolveCardOwnerEmail`이 카드를 만든 작업 기록의 사용자, 없으면 세션 소유자 순으로 푼다. 판이 12장으로 차면 장을 만들지 않고 경고만 하며 질문 commit은 그대로 성공한다. 판에서 그 `cq_` 장에 답하면 `acceptReply`가 그 선택지를 카드의 정식 답으로 되돌리지 않고(`card` 결정) 접수 지점이 기존 `answer_card_question` 경로로 저장한다. 판 장과 카드 답은 「답 받음→내림」의 정본이며, 답 commit 뒤 `syncCard`가 장을 내린다. 같은 답 재전송은 접수만 확인하고, 다른 답·철회·없는 선택지는 판 전달 없이 카드 route 오류로 끝난다.
 
 `folders.id`가 폴더, 카드, 보드, 세션, worktree의 공통 소속이다. 카드는 섹션 없이 폴더에 직접 속한다. 폴더 상세의 카드 영역은 항상 보이며, 카드가 없을 때는 제목과 추가 동작만 표시한다.
 

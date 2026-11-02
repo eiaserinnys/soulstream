@@ -409,16 +409,18 @@ test('assigned settings disappear while native status/complete and sessions rema
  expect(screen.getByTestId('card-sessions')).toBeTruthy();
 });
 
-test.each(['todo','queued','on_hold'] as const)('상세 %s 시작은 접수 후 화면을 유지하고 실패 알림 없이 시작 중을 보인다',async status=>{
+test.each(['todo','queued','on_hold'] as const)('상세 %s 시작 버튼은 재생 아이콘을 보이고 running으로 전이한다',async status=>{
  jest.useFakeTimers();
  const source={...card,id:`start-detail-${status}`,status};const current={...detail,card:source,questions:[]};
  const result={card:{...source,status:'running',version:5},folderId:source.folderId,execution:{requestId:`detail-${status}`,sessionId:'owner',state:'pending'}};
  const api={getCard:jest.fn().mockResolvedValue(current),executeCard:jest.fn().mockResolvedValue(result),getCardExecution:jest.fn().mockResolvedValue({...result,execution:{...result.execution,state:'started'}})};
  const alert=jest.spyOn(Alert,'alert').mockImplementation(()=>{}),onClose=jest.fn();
  const screen=render(<CardDetailContent api={api as any} cardId={source.id} onClose={onClose}/>);
- await act(async()=>{await Promise.resolve();});
+ await waitFor(()=>expect(screen.getByTestId('card-detail-complete-visual')).toBeTruthy());
+ expect(screen.getByTestId('card-detail-complete-visual').findByType('Ionicons').props.name).toBe('play');
  await act(async()=>fireEvent.press(screen.getByLabelText('시작하기')));
- expect(api.executeCard).toHaveBeenCalledTimes(1);expect(screen.getByLabelText('시작 중…')).toBeTruthy();expect(onClose).not.toHaveBeenCalled();expect(alert).not.toHaveBeenCalled();
+ expect(api.executeCard).toHaveBeenCalledTimes(1);expect(useCardStore.getState().rows[source.id].status).toBe('running');
+ expect(screen.getByLabelText('시작 중…')).toBeTruthy();expect(onClose).not.toHaveBeenCalled();expect(alert).not.toHaveBeenCalled();
  await act(async()=>{await jest.advanceTimersByTimeAsync(1000);});
  expect(screen.queryByLabelText('시작 중…')).toBeNull();expect(onClose).not.toHaveBeenCalled();jest.useRealTimers();
 });

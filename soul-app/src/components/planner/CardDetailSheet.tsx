@@ -269,7 +269,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
             variant={allConfirmed ? 'primary' : 'secondary'} accessibilityLabel={actionLabel}
             disabled={locked || !api || startPhase === 'pending'} surfaceTestID="card-detail-complete-visual"
             onPress={() => { void status(startPhase || startable ? 'running' : 'done'); }}>
-            <Ionicons name="checkmark" size={t.iconSize.standard} color={allConfirmed ? t.colors.accentText : t.colors.textSecondary} />
+            <Ionicons name={startPhase || startable ? 'play' : 'checkmark'} size={t.iconSize.standard} color={allConfirmed ? t.colors.accentText : t.colors.textSecondary} />
           </GlassButton> : null}
         </View>
         {card ? <View style={styles.headerRow}>

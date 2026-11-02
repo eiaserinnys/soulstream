@@ -565,6 +565,11 @@ export class CardControlPlaneService {
         try {
           await this.reports.syncCard(card.id,{ scanBoards:questionChanged || leftBoard });
           if (previousStatus !== committedCard?.status) await this.reports.recordCardTimeline(card.id);
+          if (previousStatus === "on_hold" && committedCard !== undefined && !isCardOffBoard(committedCard.status) && this.onQuestionAsked) {
+            const openQuestions = await this.repoSql<{id:string}[]>`SELECT id FROM card_questions
+              WHERE card_id=${card.id} AND answer IS NULL AND withdrawn_at IS NULL ORDER BY asked_at,id`;
+            for (const question of openQuestions) await this.onQuestionAsked({cardId:card.id,questionId:question.id});
+          }
         }
         catch (error) { this.warn(`PAS report sync failed after card ${card.id} committed: ${String(error)}`); }
       } }).catch(error=>translateAssigneeConflict(this.repoSql,error,
