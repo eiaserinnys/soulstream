@@ -90,6 +90,33 @@ describe('readPhoneLocation', () => {
     });
   });
 
+  test('마운트되지 않은 출발 탭은 같은 세션 대화의 카드 문맥만 이어받는다', () => {
+    const state = phoneState('FeedTab', [
+      { name: 'Feed' },
+      { name: 'Chat', params: { sessionId: 'session-a', returnTab: 'FolderTab' } },
+    ]);
+    delete state.routes.find((route: any) => route.name === 'FolderTab').state;
+    const sameChat: NormalizedNavigationLocation = {
+      originTab: 'FeedTab', kind: 'chat', sessionId: 'session-a', cardId: 'card-a', returnTab: 'FolderTab',
+    };
+    const differentChat: NormalizedNavigationLocation = {
+      ...sameChat, sessionId: 'session-old', cardId: 'stale-card',
+    };
+    const cardDetail: NormalizedNavigationLocation = {
+      originTab: 'FolderTab', kind: 'cardDetail', cardId: 'stale-card',
+    };
+
+    expect(readPhoneLocation(state, { previousLocation: sameChat })).toMatchObject({
+      kind: 'chat', sessionId: 'session-a', returnTab: 'FolderTab', cardId: 'card-a',
+    });
+    const fromDifferentChat = readPhoneLocation(state, { previousLocation: differentChat });
+    expect(fromDifferentChat.kind).toBe('chat');
+    expect((fromDifferentChat as Extract<NormalizedNavigationLocation, { kind: 'chat' }>).cardId).toBeUndefined();
+    const fromCardDetail = readPhoneLocation(state, { previousLocation: cardDetail });
+    expect(fromCardDetail.kind).toBe('chat');
+    expect((fromCardDetail as Extract<NormalizedNavigationLocation, { kind: 'chat' }>).cardId).toBeUndefined();
+  });
+
   test('카드 상세·문서·PAS·설정·반복 작업 경로를 읽는다', () => {
     expect(readPhoneLocation(phoneState('FolderTab', [
       { name: 'FolderList' },
