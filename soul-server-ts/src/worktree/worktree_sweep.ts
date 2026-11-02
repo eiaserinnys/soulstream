@@ -104,8 +104,11 @@ async function sweepCandidate(
     worktreeId: record.worktreeIdentity, branch: record.branch,
   });
   const state = await options.git.sweepCommitState(record.repoId, head);
+  const prMerged = !state.merged
+    && (await options.git.mergedPullRequestHeads(record.repoId, record.branch)).includes(head);
   const outcome = decideWorktreeSweep({ idleMs, missing: false, inUse: false, baseLinks: false,
-    changes: false, ...state, merged: state.merged && head !== record.createdFromSha,
+    changes: false, pushed: state.pushed || prMerged,
+    merged: (state.merged && head !== record.createdFromSha) || prMerged,
     linkedCardsClosed: record.linkedCardsClosed });
   if (outcome === "removed") await removeWorktreeLocked({ ...options, baseDependencyLinks }, record, { sweeperNodeId: options.nodeId });
   return outcome;

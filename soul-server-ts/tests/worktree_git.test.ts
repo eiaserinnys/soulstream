@@ -42,6 +42,60 @@ function makeRepository(): { projectsRoot: string; repo: string } {
 }
 
 describe("WorktreeGit", () => {
+  it("lists merged pull request head SHAs from gh", async () => {
+    const { projectsRoot } = makeRepository();
+    const calls: Array<{ command: string; args: string[]; cwd: string; timeoutMs: number; env?: NodeJS.ProcessEnv }> = [];
+    const worktrees = new WorktreeGit({
+      projectsRoot,
+      timeoutMs: 5_000,
+      processRunner: async (input) => {
+        calls.push(input);
+        return { stdout: JSON.stringify([
+          { headRefOid: "abc123" },
+          { headRefOid: 123 },
+          { headRefOid: "def456" },
+        ]), stderr: "", exitCode: 0 };
+      },
+    });
+
+    await expect(worktrees.mergedPullRequestHeads("demo", "feature/example"))
+      .resolves.toEqual(["abc123", "def456"]);
+    expect(calls).toEqual([expect.objectContaining({
+      command: "gh",
+      args: ["pr", "list", "--head", "feature/example", "--state", "merged", "--json", "headRefOid", "--limit", "30"],
+      cwd: join(projectsRoot, "demo"),
+      timeoutMs: 5_000,
+    })]);
+    expect(calls[0]?.env).toMatchObject({ GH_PROMPT_DISABLED: "1" });
+  });
+
+  it("returns no merged pull request heads when gh fails", async () => {
+    const { projectsRoot } = makeRepository();
+    const worktrees = new WorktreeGit({
+      projectsRoot,
+      timeoutMs: 5_000,
+      processRunner: async () => {
+        throw new GitProcessError("PROCESS_FAILED", "gh is not authenticated", true);
+      },
+    });
+
+    await expect(worktrees.mergedPullRequestHeads("demo", "feature/example"))
+      .resolves.toEqual([]);
+  });
+
+  it("rethrows a timed out merged pull request lookup", async () => {
+    const { projectsRoot } = makeRepository();
+    const timeout = new GitProcessError("PROCESS_TIMEOUT", "gh timed out", true);
+    const worktrees = new WorktreeGit({
+      projectsRoot,
+      timeoutMs: 5_000,
+      processRunner: async () => { throw timeout; },
+    });
+
+    await expect(worktrees.mergedPullRequestHeads("demo", "feature/example"))
+      .rejects.toBe(timeout);
+  });
+
   it("compares canonical worktree paths case-insensitively on Windows", () => {
     expect(samePath("C:\\Soulstream\\Projects\\Demo", "c:\\soulstream\\projects\\demo", "win32"))
       .toBe(true);
