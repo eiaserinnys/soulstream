@@ -71,9 +71,10 @@ export function CardStatusPicker({card,control,onOpen,ref,sampleExecution,activa
     changeOpen(next);
   }}>
     <PopoverTrigger ref={activator?.setActivatorNodeRef} {...activator?.attributes} {...activator?.listeners}
-      render={trigger==="more"?<DashboardIconCap size="small" label="카드 상태 변경" tooltip="상태 변경 메뉴"><MoreHorizontal className="h-4 w-4" aria-hidden="true"/></DashboardIconCap>:undefined}
+      render={trigger==="more"?<DashboardIconCap size="small" label="상태 변경 메뉴"><MoreHorizontal className="h-4 w-4" aria-hidden="true"/></DashboardIconCap>:undefined}
       payload={popupContent}
-      className="v3-postit-status-trigger" aria-label="카드 상태 변경" aria-disabled={control.pending||activator?.disabled||false}
+      {...(trigger==="chip"?{className:"v3-postit-status-trigger","aria-label":"카드 상태 변경"}:{})}
+      aria-disabled={control.pending||activator?.disabled||false}
       disabled={control.pending||activator?.disabled||false} style={activator?{touchAction:"none"}:undefined}
       onClick={event => event.stopPropagation()}
       >

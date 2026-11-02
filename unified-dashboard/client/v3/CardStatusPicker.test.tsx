@@ -24,7 +24,11 @@ it("loads only on explicit opens and allows reportless review",async()=>{
  await click("드래프트");expect(c.change).toHaveBeenCalledWith(d.card,"todo",undefined);expect(c.onOpen).not.toHaveBeenCalled();
 });
 it("aligns the status popup to the chip start edge",async()=>{
- await render();await click("카드 상태 변경");
+ await render();
+ const trigger=document.querySelector<HTMLButtonElement>('[data-slot="popover-trigger"]')!;
+ expect(trigger.getAttribute("aria-label")).toBe("카드 상태 변경");
+ expect(trigger.classList.contains("v3-postit-status-trigger")).toBe(true);
+ await click("카드 상태 변경");
  expect(document.querySelector('[data-slot="popover-positioner"]')?.getAttribute("data-align")).toBe("start");
  expect(document.querySelector('[data-card-status-picker]')?.classList.contains("glass-strong")).toBe(true);
  expect(document.querySelector('[data-card-status-picker]')?.classList.contains("glass-chrome")).toBe(true);
@@ -33,7 +37,8 @@ it("uses the small more trigger and aligns its popup to the end edge",async()=>{
  await render(undefined,undefined,undefined,undefined,"more");
  const trigger=document.querySelector<HTMLButtonElement>('[data-slot="popover-trigger"]')!;
  expect(trigger.classList.contains("dashboard-icon-cap--small")).toBe(true);
- expect(trigger.getAttribute("aria-label")).toBe("카드 상태 변경");
+ expect(trigger.classList.contains("v3-postit-status-trigger")).toBe(false);
+ expect(trigger.getAttribute("aria-label")).toBe("상태 변경 메뉴");
  expect(trigger.title).toBe("상태 변경 메뉴");
  await act(async()=>{trigger.click();await new Promise(done=>setTimeout(done,20));});
  expect(document.querySelector('[data-slot="popover-positioner"]')?.getAttribute("data-align")).toBe("end");

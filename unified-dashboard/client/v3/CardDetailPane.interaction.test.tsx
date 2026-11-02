@@ -118,7 +118,7 @@ it("opens the header status menu, moves the card to on hold, and keeps both acti
  const buttons=[...actions.querySelectorAll<HTMLButtonElement>("button")];
  expect(buttons).toHaveLength(2);
  expect(buttons.every(button=>button.classList.contains("dashboard-icon-cap--small"))).toBe(true);
- await act(async()=>{container.querySelector<HTMLButtonElement>('[aria-label="카드 상태 변경"]')!.click();await new Promise(done=>setTimeout(done,20));});
+ await act(async()=>{actions.querySelector<HTMLButtonElement>('[aria-label="상태 변경 메뉴"]')!.click();await new Promise(done=>setTimeout(done,20));});
  const hold=[...document.querySelectorAll<HTMLButtonElement>("[data-card-status-picker] button")].find(button=>button.textContent==="보류")!;
  await act(async()=>hold.click());
  expect(mutate).toHaveBeenCalledWith("inherit","/status",{status:"on_hold",expectedVersion:1});
