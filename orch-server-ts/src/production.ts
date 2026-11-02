@@ -6,6 +6,7 @@ import { PERSISTENT_CREATE_NODE_ID } from "./session/persistent_session_settings
 import { verifyServiceBearerAuthorization } from "./auth/service_bearer.js";
 import { SqlOwnedAgentRepository } from "./owned-agents/repository.js";
 import type { OnPersistentReportPosted, PublishPersistentReports } from "./session/persistent_report_service.js";
+import { createReportTimelineAppender, type AppendReportTimeline } from "./session/report_timeline_publisher.js";
 import { CARD_QUESTION_KEY_PREFIX } from "@soulstream/wire-schema/persistent-report";
 import { OwnedAgentService } from "./owned-agents/service.js";
 import { createSessionOwnerResolver } from "./session/session_owner.js";
@@ -275,6 +276,7 @@ export async function createLiveProductionApplication(
   });
   let publishPersistentReports: PublishPersistentReports = () => undefined;
   let notifyPersistentReportPosted: OnPersistentReportPosted = () => undefined;
+  let appendReportTimeline: AppendReportTimeline = async () => undefined;
   const persistenceRepositoryProvider = createPersistenceHostRepositoryProvider(
     sqlResolver,
     sessionDeletionService,
@@ -282,6 +284,7 @@ export async function createLiveProductionApplication(
     reportSearchCancelError,
     updates => publishPersistentReports(updates),
     input => notifyPersistentReportPosted(input),
+    (sessionId, line) => appendReportTimeline(sessionId, line),
   );
   const recurringJobRepository = new SqlRecurringJobRepository(sqlResolver);
   const registry = new InMemoryNodeRegistry();
@@ -483,6 +486,11 @@ export async function createLiveProductionApplication(
       sessionIds,
       movedBoardItem ? { [movedBoardItem.id]: movedBoardItem } : {},
     );
+  appendReportTimeline = createReportTimelineAppender({
+    resolveSql: () => sqlResolver.resolveSql(),
+    eventHub: runtimeServices.sessionEventHub,
+    warn: context.warn,
+  });
   publishPersistentReports = updates => {
     for (const update of updates) {
       registry.sessionCache.patchPersistentReport(update.agent_session_id, update.persistent_report);
@@ -651,6 +659,7 @@ export async function createLiveProductionApplication(
     broadcaster:runtimeServices.sessionBroadcaster,warn:context.warn,
     corsAllowedOrigins: config.cors_allowed_origins,
     onReportsChanged: updates => publishPersistentReports(updates),
+    appendTimeline: (sessionId, line) => appendReportTimeline(sessionId, line),
     onQuestionAsked: async ({cardId,questionId}) => {
       const ownerEmail = await resolveCardOwnerEmail(cardId, {
         cardCreatorActor: id => cardExecutionOwnerRepository.cardCreatorActor(id),

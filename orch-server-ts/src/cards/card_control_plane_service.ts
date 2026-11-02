@@ -1,6 +1,7 @@
 import { assertNoPendingCardExecution } from "./card_execution_reservation.js";
 // 500줄 예외: 카드 aggregate의 기존 트랜잭션 facade. 보고 저장 로직은 별도 service에 둔다.
 import { PersistentReportService, type PublishPersistentReports } from "../session/persistent_report_service.js";
+import type { AppendReportTimeline } from "../session/report_timeline_publisher.js";
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type { CardColor } from "@soulstream/wire-schema/card-colors";
 import type { AttachmentRef } from "@soulstream/wire-schema/attachments";
@@ -61,10 +62,11 @@ export class CardControlPlaneService {
     onReportsChanged?: PublishPersistentReports,
     private readonly warn: (message: string) => void = console.warn,
     corsAllowedOrigins: readonly string[] = [],
-    private readonly onQuestionAsked?: (input:{cardId:string;questionId:string})=>void | Promise<void>) {
+    private readonly onQuestionAsked?: (input:{cardId:string;questionId:string})=>void | Promise<void>,
+    appendTimeline?: AppendReportTimeline) {
     this.repo=new CardRepository(repoSql, corsAllowedOrigins);
     this.core=new CardMutationCore(db,this.repo,broadcaster);
-    this.reports=onReportsChanged ? new PersistentReportService(repoSql,onReportsChanged) : undefined;
+    this.reports=onReportsChanged ? new PersistentReportService(repoSql,onReportsChanged,undefined,appendTimeline) : undefined;
     this.mcpRead=new CardMcpReadService(repoSql, corsAllowedOrigins);
   }
   getAssignedCardContext(sessionId: string) { return readAssignedCardContext(this.repoSql,sessionId); }
@@ -560,7 +562,10 @@ export class CardControlPlaneService {
         if (!this.reports || (!questionChanged && !cardChanged)) return;
         const finished = previousStatus !== committedCard?.status
           && (committedCard?.status === "done" || committedCard?.status === "cancelled");
-        try { await this.reports.syncCard(card.id,{ scanBoards:questionChanged || finished }); }
+        try {
+          await this.reports.syncCard(card.id,{ scanBoards:questionChanged || finished });
+          if (previousStatus !== committedCard?.status) await this.reports.recordCardTimeline(card.id);
+        }
         catch (error) { this.warn(`PAS report sync failed after card ${card.id} committed: ${String(error)}`); }
       } }).catch(error=>translateAssigneeConflict(this.repoSql,error,
         typeof clean.assignee_session_id === "string" ? clean.assignee_session_id : params.actorSessionId ?? card.assignee_session_id));

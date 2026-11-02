@@ -77,6 +77,21 @@ export interface TurnSummaryRepositoryPort {
   ): Promise<Record<string, unknown>[]>;
 }
 
+export function sessionEventEnvelopeFromRow(
+  sessionId: string,
+  row: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    type: "event",
+    agentSessionId: sessionId,
+    event: {
+      ...recordValue(parseJsonValue(row.payload)),
+      type: String(row.event_type ?? ""),
+      _event_id: numberValue(row.id) ?? 0,
+    },
+  };
+}
+
 export type TurnSummaryAgentNameResolver = (input: {
   readonly agentId: string;
   readonly nodeId: string | null;
@@ -284,15 +299,7 @@ export class TurnSummaryRepository implements TurnSummaryRepositoryPort {
         AND id < ${beforeEventId}
       ORDER BY id ASC
     `;
-    return rows.map((row) => ({
-      type: "event",
-      agentSessionId: sessionId,
-      event: {
-        ...recordValue(parseJsonValue(row.payload)),
-        type: String(row.event_type ?? ""),
-        _event_id: numberValue(row.id) ?? 0,
-      },
-    }));
+    return rows.map((row) => sessionEventEnvelopeFromRow(sessionId, row));
   }
 }
 
