@@ -76,6 +76,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const bottomSafeAreaInset = phone || duoSideBand ? 0 : insets.bottom;
   const host = usePersistentSessionHost();
   const session = usePersistentSessionScene(state => state.session);
+  const hasMultiplePas = usePersistentSessionScene(state => state.sessions.length > 1);
   const storedScene = usePersistentSessionScene(state => state.scene);
   const scene = storedScene === 'reports' && !duoSideBand ? 'conversation' : storedScene;
   const selectedCardId = usePersistentSessionScene(state => state.selectedCardId);
@@ -303,6 +304,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
           </View>}
         {!duoSideBand ? <>
           {!phone ? action('home-outline', '홈으로 돌아가기', onHome, 'persistent-session-home') : null}
+          {!phone && hasMultiplePas ? action('swap-horizontal-outline', '영구 세션 선택', () => void host.requestEntry(() => {}, false, true), 'persistent-session-switch') : null}
           {action(t.mode === 'light' ? 'moon-outline' : 'sunny-outline', '밝기 전환', () => void handleAppearanceChange(t.mode === 'light' ? 'dark' : 'light'), 'persistent-session-appearance')}
           {!phone && session?.node_id ? action('speedometer-outline', '주간 사용량', () => {
             useSettingsStore.getState().setPersistentSessionShowWeeklyUsage(serverUrl, email, !showWeeklyUsage);

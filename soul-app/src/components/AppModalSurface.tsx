@@ -7,8 +7,9 @@ import {
   type ModalProps,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { DESIGN_HIT_TARGET, DESIGN_SPACING } from '../theme';
+import { DESIGN_HIT_TARGET, DESIGN_SPACING, useTokens } from '../theme';
 import {
+  createSurfaceRoles,
   MODAL_BACKDROP_COLOR,
   type SurfaceRoleName,
 } from '../theme/surfaceRoles';
@@ -86,12 +87,14 @@ export function AppModalSurface({
   sideBand,
   sideBandWidth = 0,
 }: AppModalSurfaceProps) {
+  const t = useTokens();
   const previousVisible = useRef(false);
   const compact = variant === 'compact';
   const popover = variant === 'popover';
   const board = variant === 'board';
   const Layer = board ? GlassSurfaceBoundary : React.Fragment;
   const presentation = resolveAppModalPresentation(variant, presentationStyle);
+  const surfaceRole = createSurfaceRoles(t)[presentation.surfaceRole];
   const diagnosticVariant = board ? 'expanded' : variant;
   useEffect(() => {
     if (previousVisible.current !== visible) {
@@ -105,6 +108,7 @@ export function AppModalSurface({
       animationType={animationType}
       transparent={presentation.transparent}
       presentationStyle={presentation.presentationStyle}
+      backdropColor={!presentation.transparent ? surfaceRole.tokenStyle.backgroundColor : undefined}
       supportedOrientations={SUPPORTED_MODAL_ORIENTATIONS}
       onRequestClose={onRequestClose}
       onDismiss={onDismiss}
@@ -120,6 +124,7 @@ export function AppModalSurface({
               : board
                 ? styles.boardViewport
                 : styles.expandedViewport,
+          !presentation.transparent ? surfaceRole.tokenStyle : null,
         ]}
       >
         {compact || popover ? (

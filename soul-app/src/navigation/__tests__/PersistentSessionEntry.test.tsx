@@ -1,10 +1,11 @@
 import React from 'react';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { Image } from 'react-native';
 import type { StoreApi } from 'zustand';
 import type { PersistentSessionScene } from '../../store/persistentSessionScene';
 import { PersistentSessionPortrait, PersistentSessionProvider, usePersistentSessionHost } from '../PersistentSessionContext';
+import { ReviewPersistentEntry } from '../../component-review/ReviewPersistentEntry';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useAuthStore } from '../../store/authStore';
 import { useAppNoticeStore } from '../../store/appNoticeStore';
@@ -118,9 +119,28 @@ test('다른 화면에서는 활성 PAS를 바로 열고 재선택 요청은 세
   const dialog = view.getByTestId('persistent-entry-dialog');
   expect(StyleSheet.flatten(dialog.props.style).justifyContent).toBe('center');
   expect(StyleSheet.flatten(view.getByTestId('persistent-entry-choose-scroll').props.style)).toMatchObject({ flexGrow: 0, flexShrink: 1 });
+  const closeStyle = StyleSheet.flatten(view.getByLabelText('영구 세션 선택 닫기').props.style);
+  expect(closeStyle.minWidth).toBeGreaterThanOrEqual(44);
+  expect(closeStyle.minHeight).toBeGreaterThanOrEqual(44);
+  expect(closeStyle.alignItems).toBe('flex-end');
   expect(view.getByTestId('persistent-entry-two').props.accessibilityState.selected).toBe(true);
   fireEvent.press(view.getByTestId('persistent-entry-one'));
   expect(store.getState().session?.session_id).toBe('one');
+});
+
+test('검수용 PAS 선택은 기본으로 고르고 명시적으로는 바로 연다', async () => {
+  const sessions = [pas('one'), pas('two')];
+  mockList.mockResolvedValue({ sessions, create_defaults: defaults });
+  const onOpenChoose = jest.fn();
+  const chooseView = render(<ReviewPersistentEntry onOpen={onOpenChoose} />);
+  await waitFor(() => expect(chooseView.getByTestId('persistent-entry-one')).toBeTruthy());
+  expect(onOpenChoose).not.toHaveBeenCalled();
+  chooseView.unmount();
+
+  const onOpenDirect = jest.fn();
+  const directView = render(<ReviewPersistentEntry onOpen={onOpenDirect} choose={false} />);
+  await waitFor(() => expect(onOpenDirect).toHaveBeenCalledTimes(1));
+  expect(directView.queryByTestId('persistent-entry-one')).toBeNull();
 });
 
 test('선택 진입 실패 뒤 재시도도 선택 상태를 유지한다', async () => {

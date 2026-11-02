@@ -1,6 +1,6 @@
 import React from 'react';
 import { Modal, StyleSheet, View } from 'react-native';
-import { render } from '@testing-library/react-native';
+import { render, renderHook } from '@testing-library/react-native';
 
 import {
   AppModalSurface,
@@ -10,6 +10,8 @@ import {
   bindSessionDiagnosticsSink,
   type SessionDiagnosticsSink,
 } from '../../lib/session-diagnostics-api';
+import { useTokens } from '../../theme';
+import { createSurfaceRoles } from '../../theme/surfaceRoles';
 
 test('compact modal is one content-fit bottom glass surface over a transparent host', () => {
   const screen = render(
@@ -66,6 +68,16 @@ test('expanded modal keeps the requested native presentation in the same surface
     });
   expect(screen.UNSAFE_getByType(Modal).props.supportedOrientations)
     .toEqual(['portrait', 'portrait-upside-down', 'landscape-left', 'landscape-right']);
+});
+
+test('expanded modal fills the duo system band with the native sheet surface color', () => {
+  const tokens = renderHook(() => useTokens()).result.current;
+  const sheetColor = createSurfaceRoles(tokens).nativeSheet.tokenStyle.backgroundColor;
+  const screen = render(<AppModalSurface visible variant="expanded" modalId="modal_settings" presentationStyle="pageSheet"
+    sideBandWidth={84} onRequestClose={jest.fn()}><View /></AppModalSurface>);
+
+  expect(StyleSheet.flatten(screen.getByTestId('app-modal-viewport').props.style).backgroundColor).toBe(sheetColor);
+  expect(screen.UNSAFE_getByType(Modal).props.backdropColor).toBe(sheetColor);
 });
 
 test('board modal uses transparent overlay and the shared tablet inset frame', () => {

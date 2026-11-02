@@ -3,6 +3,7 @@ jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityI
 const mockOpenContentLink = jest.fn();
 const mockApi = {
   listCards: jest.fn().mockResolvedValue({ cards: [] }),
+  listPersistentSessions: jest.fn(),
   getCard: jest.fn(),
   setCardStatus: jest.fn(),
   dismissPersistentReport: jest.fn(),
@@ -143,6 +144,28 @@ test('카드를 누르면 바로 오버레이가 열리고 PAS ChatBody와 입�
   expect((globalThis as any).__persistentChatConnectionProbe).toMatchObject({ opens: 1, closes: 0, connected: true });
   view.unmount();
   expect((globalThis as any).__persistentChatConnectionProbe).toMatchObject({ opens: 1, closes: 1, connected: false });
+});
+
+test('복수 PAS가 열린 태블릿은 머리줄에서 다른 영구 세션을 고를 수 있다', async () => {
+  mockDevice = 'tabletLandscape';
+  useSettingsStore.setState({ serverUrl: 'https://screen.example' });
+  const sessions = [
+    { session_id: 'pas-one', display_name: '로젤린', agent_name: '로젤린', agent_id: 'roselin', node_id: 'node-a', persistent: true },
+    { session_id: 'pas-two', display_name: '서소영', agent_name: '서소영', agent_id: 'seosoyoung', node_id: 'node-a', persistent: true },
+  ];
+  mockApi.listPersistentSessions.mockResolvedValue({ sessions, create_defaults: { node_id: 'node-a', preferred_agent_id: 'roselin' } });
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
+  act(() => {
+    store.getState().setSessions(sessions as any);
+    store.getState().open(sessions[0] as any);
+  });
+
+  expect(view.getByTestId('persistent-session-switch').props.accessibilityLabel).toBe('영구 세션 선택');
+  fireEvent.press(view.getByTestId('persistent-session-switch'));
+  await waitFor(() => expect(view.getByTestId('persistent-entry-pas-two')).toBeTruthy());
+  expect(store.getState().session?.session_id).toBe('pas-one');
+  view.unmount();
+  mockDevice = 'phone';
 });
 
 test('듀오 태블릿은 입력창과 카드 패널에서 바닥 안전 여백을 중복하지 않는다', () => {

@@ -32,7 +32,7 @@ import { RecurringJobEditorScreen } from '../screens/RecurringJobEditorScreen';
 import { RecurringJobHistoryScreen } from '../screens/RecurringJobHistoryScreen';
 import { useSessionsStream } from '../hooks/useSessionsStream';
 import { useNodeConnectivityStream } from '../hooks/useNodeConnectivityStream';
-import { GlassSurface } from '../components/GlassSurface';
+import { GLASS_BUTTON_BORDER_WIDTH, GlassSurface } from '../components/GlassSurface';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTokens, type DesignTokens } from '../theme';
 import { DuoSideBandContext, DUO_RAIL_TAB_ORDER, INITIAL_ROOT_TAB, PhoneRailModeContext, RAIL_MIN_INSET_WIDTH, ROOT_TAB_ORDER } from './tabContract';
@@ -152,11 +152,13 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
       : active === 'DailyTab' || active === 'FolderTab' || active === 'FeedTab'
         ? actions[active] ?? []
         : [];
-  const navigationNames = DUO_RAIL_TAB_ORDER.filter((name) => name !== active || (name === 'PersistentTab' && hasMultiplePas));
+  const showPasSwitcher = hasMultiplePas && !override?.length;
+  const navigationNames = DUO_RAIL_TAB_ORDER.filter((name) => name !== active || (name === 'PersistentTab' && showPasSwitcher));
   const navigationItemHeight = compact ? t.hitTarget.min : RAIL_ITEM_HEIGHT;
   const navigationHeight = navigationNames.length * navigationItemHeight
     + (compact ? 0 : Math.max(0, navigationNames.length - 1) * t.uiSpacing.xs / 2)
-    + 2 * (compact ? t.spacing.xxs : t.spacing.xs);
+    + 2 * (compact ? 0 : t.spacing.xs)
+    + 2 * GLASS_BUTTON_BORDER_WIDTH;
   const bottomInset = compact ? insets.bottom : Math.max(insets.bottom, t.uiSpacing.xxl);
   const stackGap = compact ? t.uiSpacing.xs : t.uiSpacing.sm;
   const contextMaxHeight = Math.max(0,

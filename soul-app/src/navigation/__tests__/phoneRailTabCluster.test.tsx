@@ -2,12 +2,14 @@ jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
 const mockShowMenu = jest.fn();
 const mockSetSettingsOpen = jest.fn();
+const mockRequestEntry = jest.fn();
 const mockSessionData = { sessions: [] as any[] };
 jest.mock('../../components/menus/AppContextMenu', () => ({ showAppContextMenu: (...args: unknown[]) => mockShowMenu(...args) }));
 jest.mock('../PersistentSessionContext', () => ({
-  usePersistentSessionHost: () => ({ loading: false, portrait: null, store: { getState: () => ({
+  usePersistentSessionHost: () => ({ loading: false, portrait: null, requestEntry: mockRequestEntry, store: { getState: () => ({
     session: null, sessions: mockSessionData.sessions, leave: jest.fn(), swipe: jest.fn(), selectCard: jest.fn(), toggleReports: jest.fn(),
   }) } }),
+  useOptionalPersistentSessionHost: () => ({ requestEntry: mockRequestEntry }),
   usePersistentSessionScene: (select: (state: any) => unknown) => select({ scene: 'conversation', session: { agent_name: '서소영' }, selectedCardId: null,
     sessions: mockSessionData.sessions, reportCount: 0, hasReports: false, setSettingsOpen: mockSetSettingsOpen }),
 }));
@@ -16,7 +18,7 @@ import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { PhoneRailTabCluster, RAIL_MIN_INSET_WIDTH } from '../TabNavigator';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { usePhoneRailActions, useRegisterDuoRailOverride } from '../phoneRailActions';
 import { PhoneRailModeContext } from '../tabContract';
 import { RailCapsule, RailCapsuleItem } from '../../components/navigation/RailCapsule';
@@ -25,7 +27,7 @@ import { DuoRailOverride } from '../../components/navigation/DuoRailOverride';
 import { AppKeyboardAvoidingView } from '../../components/AppKeyboardAvoidingView';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 
-beforeEach(() => { mockSessionData.sessions = []; });
+beforeEach(() => { mockSessionData.sessions = []; mockRequestEntry.mockClear(); });
 
 test('숫자와 점의 우선순위와 비활성 상태를 노출한다', () => {
   const onPress = jest.fn();
@@ -196,6 +198,11 @@ test('compact 듀오 레일은 세 컨텍스트 액션 높이에 맞춰 캡슐�
   for (const id of ['one', 'two', 'three']) {
     expect(StyleSheet.flatten(screen.getByTestId(`phone-rail-action-${id}`).props.style).height).toBe(44);
   }
+  const contextContents = screen.UNSAFE_getAllByType(View).find(node => {
+    const style = StyleSheet.flatten(node.props.style) ?? {};
+    return style.width === 48 && style.height === undefined && Object.prototype.hasOwnProperty.call(style, 'paddingVertical');
+  });
+  expect(StyleSheet.flatten(contextContents!.props.style).paddingVertical).toBe(0);
 
   screen.unmount();
   dimensions.mockRestore();
@@ -264,7 +271,35 @@ test('듀오 PAS 화면에서는 복수 세션 선택을 위해 활성 PAS 탭�
   expect(onSelect).toHaveBeenCalledWith('PersistentTab');
 });
 
+test('카드 오버레이가 열린 복수 PAS에서는 하단 PAS 전환 탭을 감추고 세 버튼 높이를 확보한다', () => {
+  mockSessionData.sessions = [{ session_id: 'pas-one' }, { session_id: 'pas-two' }];
+  function Override() {
+    useRegisterDuoRailOverride('card-detail', true, [
+      { id: 'back', label: '카드 닫기', icon: 'chevron-back', onPress: jest.fn() },
+      { id: 'complete', label: '완료 처리', icon: 'checkmark', onPress: jest.fn() },
+      { id: 'tab-items', label: '확인 항목', icon: 'checkbox-outline', onPress: jest.fn() },
+      { id: 'tab-comments', label: '커멘트', icon: 'chatbubble-outline', onPress: jest.fn() },
+    ]);
+    return null;
+  }
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({
+    width: 678, height: 466, scale: 1, fontScale: 1,
+  });
+  const screen = render(<NavigationContainer><SafeAreaInsetsContext.Provider value={{ top: 0, bottom: 24, left: 0, right: 84 }}>
+    <Override />
+    <PhoneRailTabCluster active="PersistentTab" onSelect={jest.fn()} duoSideBand compact />
+  </SafeAreaInsetsContext.Provider></NavigationContainer>);
+
+  expect(screen.queryByTestId('phone-tab-PersistentTab')).toBeNull();
+  for (const name of ['DailyTab', 'FolderTab', 'FeedTab']) expect(screen.getByTestId(`phone-tab-${name}`)).toBeTruthy();
+  expect(screen.getByTestId('duo-rail-context-scroll').props.style.maxHeight).toBeGreaterThanOrEqual(3 * 44 + 2);
+
+  screen.unmount();
+  dimensions.mockRestore();
+});
+
 test('PAS 메뉴는 듀오 띠에서 PAS 탭이 활성일 때만 보인다', () => {
+  mockSessionData.sessions = [{ session_id: 'pas-one' }, { session_id: 'pas-two' }];
   const onSelect = jest.fn();
   const screen = render(<NavigationContainer>
     <PhoneRailTabCluster active="PersistentTab" onSelect={onSelect} duoSideBand />
@@ -275,8 +310,11 @@ test('PAS 메뉴는 듀오 띠에서 PAS 탭이 활성일 때만 보인다', () 
   fireEvent.press(screen.getByLabelText('PAS 메뉴'));
   expect(mockShowMenu).toHaveBeenCalledWith(expect.arrayContaining([
     expect.objectContaining({ label: '밝기 전환' }),
+    expect.objectContaining({ label: '영구 세션 선택' }),
     expect.objectContaining({ label: '영구 세션 설정' }),
   ]), '서소영');
+  mockShowMenu.mock.calls.at(-1)?.[0].find((action: any) => action.label === '영구 세션 선택').onSelect();
+  expect(mockRequestEntry).toHaveBeenCalledWith(expect.any(Function), false, true);
   mockShowMenu.mock.calls.at(-1)?.[0].find((action: any) => action.label === '영구 세션 설정').onSelect();
   expect(mockSetSettingsOpen).toHaveBeenCalledWith(true);
   screen.rerender(<NavigationContainer>

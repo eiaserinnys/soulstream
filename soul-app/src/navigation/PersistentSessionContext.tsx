@@ -122,7 +122,7 @@ export function PersistentSessionProvider({ children, sessionIntent = false, onL
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
             <Text style={{ flex: 1, ...t.foundation.typography.section, color: t.colors.textPrimary }}>영구 세션</Text>
             <TouchableOpacity accessibilityRole="button" accessibilityLabel="영구 세션 선택 닫기" onPress={() => setSheet(null)}
-              style={{ minHeight: t.hitTarget.min, minWidth: t.hitTarget.min, justifyContent: 'center', alignItems: 'center' }}>
+              style={{ minHeight: t.hitTarget.min, minWidth: t.hitTarget.min, justifyContent: 'center', alignItems: 'flex-end' }}>
               <Text style={{ ...t.foundation.typography.body, color: t.colors.accent }}>닫기</Text>
             </TouchableOpacity>
           </View>
