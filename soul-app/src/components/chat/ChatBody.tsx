@@ -28,7 +28,6 @@ import { useChatBottomFollow } from './useChatBottomFollow';
 import { usePersistentChatDisplaySettings } from './usePersistentChatDisplaySettings';
 import { useTokens } from '../../theme';
 import { ChatEventList } from './ChatEventList';
-import { ChatRuntimeStrips } from './ChatRuntimeStrips';
 import { useChatRenderItems } from './useChatRenderItems';
 import { useChatSseStream } from './useChatSseStream';
 import { captureAuthScope, useAuthScopeGeneration } from '../../lib/auth-scope';
@@ -65,7 +64,7 @@ interface Props {
   onStoryOpenRequestHandled?: () => void;
   /** 같은 채팅 부품을 원고형으로 표시한다. 기본 채팅은 기존 모양을 유지한다. */
   presentation?: 'default' | 'manuscript';
-  /** 세션 스토리와 런타임 보조 띠를 표시한다. 일반 대화의 기본값은 유지한다. */
+  /** 세션 스토리를 표시한다. 일반 대화의 기본값은 유지한다. */
   showSessionAuxiliary?: boolean;
   /** 입력 줄과 대기 첨부를 감싼 묶음의 ChatBody 기준 배치. */
   onComposerLayout?: (anchorLayout: LayoutRectangle, composerBox: LayoutRectangle) => void;
@@ -519,8 +518,6 @@ export function ChatBody({
         onPressNewMessage={requestBottomFollow}
         onOpenReportCard={onOpenReportCard}
       />
-
-      {showSessionAuxiliary ? <ChatRuntimeStrips sessionId={sessionId} api={ownsSessionConnection ? api : null} presentation={presentation} /> : null}
 
       <ChatUiInputComposer
         key={sessionId}

@@ -4,6 +4,7 @@ import { ClaudeRuntimeTasksStrip } from './ClaudeRuntimeTasksStrip';
 import { ClaudeRuntimeSchedulesStrip } from './ClaudeRuntimeSchedulesStrip';
 import { ClaudeRuntimeSignalsStrip } from './ClaudeRuntimeSignalsStrip';
 
+// 채팅창 공간을 위해 261103부터 ChatBody에서 렌더하지 않는다(카드 #922). 다시 켤 때는 ChatBody 입력창 바로 위에 되돌린다.
 export function ChatRuntimeStrips({ sessionId, api, presentation }: {
   sessionId: string; api: ApiClient | null; presentation: 'default' | 'manuscript';
 }) {
