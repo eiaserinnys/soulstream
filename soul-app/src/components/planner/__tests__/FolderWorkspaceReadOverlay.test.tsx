@@ -1,6 +1,6 @@
 import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import type { Session } from '../../../api/types';
 import { useCardStore } from '../../../store/cardStore';
 import { cardFixture } from '../../../test-support/cards';
@@ -16,8 +16,12 @@ import { ChatPane } from '../../split/ChatPane';
 import { retryPlannerSessionWorkspace } from '../../../lib/planner-folder-workspace';
 import { coordinateFolderWorkspaceClose } from '../../../lib/planner-folder-title-save';
 import { TABLET_SHELL_LAYOUT } from '../../../theme';
-import { DuoSideBandContext } from '../../../navigation/tabContract';
+import { DuoSideBandContext, DuoTopBandContext } from '../../../navigation/tabContract';
 import { usePhoneRailActions } from '../../../navigation/phoneRailActions';
+import { DuoTopBandRailScope } from '../FolderWorkspaceReadOverlay';
+import { useDuoSideBand } from '../../../navigation/duoSideBand';
+import { useDeviceType } from '../../../theme';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 
 let mockWindowDimensions = { width: 834, height: 1210, scale: 1, fontScale: 1 };
 let mockInsets = { top: 0, bottom: 0, left: 0, right: 0 };
@@ -111,6 +115,7 @@ beforeEach(() => {
     cardSessionSelectionHandled: false,
     sessionFolderResolution: null,
   });
+  usePhoneRailActions.setState({ overrides: [] });
 });
 
 test('서버가 미소속으로 확인한 세션만 단독 채팅 안내를 렌더한다', () => {
@@ -148,6 +153,59 @@ test('카드 패널 프레임은 실제로 전달받은 하단 여백을 내부 
   );
 
   expect(screen.getByTestId('overlay-chat').props.minimumBottomPadding).toBe(20);
+});
+
+test('카드 패널 시트는 전달받은 상단 오프셋만큼 시스템 영역 아래에서 시작한다', () => {
+  const screen = render(
+    <CardPanelOverlayFrame visible width={TABLET_SHELL_LAYOUT.folderPane.maxWidth} onClose={jest.fn()} sheetTop={82}>
+      <ChatPane active />
+    </CardPanelOverlayFrame>,
+  );
+  expect(StyleSheet.flatten(screen.getByTestId('task-workspace-sheet').props.style).top).toBe(82);
+});
+
+test('닫힌 카드 시트는 오른쪽 레일 칸을 포함해 화면 밖으로 이동한다', () => {
+  const screen = render(
+    <CardPanelOverlayFrame visible={false} width={585} sheetRight={84} onClose={jest.fn()}>
+      <ChatPane active />
+    </CardPanelOverlayFrame>,
+  );
+  const style = StyleSheet.flatten(screen.getByTestId('task-workspace-sheet').props.style);
+  const translateX = style.transform[0].translateX as { __getValue?: () => number } | number;
+  expect(style.right).toBe(84);
+  expect(typeof translateX === 'number' ? translateX : translateX.__getValue?.()).toBe(669);
+});
+
+test('상단 띠 레일 범위는 side band만 켜고 디바이스 판정은 유지한다', () => {
+  function Probe({ testID }: { testID: string }) {
+    return <View testID={testID} accessibilityLabel={`${useDuoSideBand()}|${useDeviceType()}`} />;
+  }
+  const screen = render(<SafeAreaInsetsContext.Provider value={{ top: 82, bottom: 24, left: 0, right: 0 }}>
+    <DuoTopBandContext.Provider value>
+      <Probe testID="outside-scope" />
+      <DuoTopBandRailScope enabled><Probe testID="inside-scope" /></DuoTopBandRailScope>
+    </DuoTopBandContext.Provider>
+  </SafeAreaInsetsContext.Provider>);
+  const outside = screen.getByTestId('outside-scope').props.accessibilityLabel;
+  const inside = screen.getByTestId('inside-scope').props.accessibilityLabel;
+  expect(outside?.startsWith('false|')).toBe(true);
+  expect(inside?.startsWith('true|')).toBe(true);
+  expect(inside?.split('|')[1]).toBe(outside?.split('|')[1]);
+});
+
+test('상단 띠에서도 확대 보드 host는 오른쪽 레일을 켜지 않는다', () => {
+  mockWindowDimensions = { width: 669, height: 951, scale: 1, fontScale: 1 };
+  mockInsets = { top: 82, bottom: 24, left: 0, right: 0 };
+  useUIStore.getState().openSessionOverlay('session-only');
+  useUIStore.setState({ cardBoardExpanded: true });
+  const screen = render(<SafeAreaInsetsContext.Provider value={mockInsets}>
+    <DuoTopBandContext.Provider value>
+      <FolderWorkspaceReadOverlay host="board" />
+    </DuoTopBandContext.Provider>
+  </SafeAreaInsetsContext.Provider>);
+  const sheet = StyleSheet.flatten(screen.getByTestId('task-workspace-sheet').props.style);
+  expect(sheet.right).toBe(0);
+  expect(usePhoneRailActions.getState().overrides).toHaveLength(0);
 });
 
 test('닫힌 overlay는 ChatPane mount 상태를 보존하되 active=false로 상세 연결을 막는다', () => {

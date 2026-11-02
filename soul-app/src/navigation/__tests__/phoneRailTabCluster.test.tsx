@@ -26,8 +26,10 @@ import { Text } from 'react-native';
 import { DuoRailOverride } from '../../components/navigation/DuoRailOverride';
 import { AppKeyboardAvoidingView } from '../../components/AppKeyboardAvoidingView';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
+import { DUO_RAIL_CENTER_FROM_END, DUO_TOP_BAND_RAIL_TOP } from '../duoSideBand';
 
 beforeEach(() => { mockSessionData.sessions = []; mockRequestEntry.mockClear(); });
+afterEach(() => { usePhoneRailActions.setState({ overrides: [] }); });
 
 test('숫자와 점의 우선순위와 비활성 상태를 노출한다', () => {
   const onPress = jest.fn();
@@ -154,6 +156,37 @@ test('오버레이 레일도 키보드 위로 올라가고 하단 액션을 제�
   fireEvent.press(screen.getByTestId('duo-rail-action-edit'));
   expect(onEdit).toHaveBeenCalledTimes(1);
   act(() => usePhoneRailActions.getState().removeOverride(key));
+});
+
+test('안쪽 세로 레일은 지정 폭과 상단 위치를 쓰고 높이 한계도 그 위치를 반영한다', () => {
+  const key = Symbol('top-band');
+  act(() => usePhoneRailActions.getState().pushOverride(key, [
+    { id: 'close', label: '닫기', icon: 'close', onPress: jest.fn() },
+    { id: 'complete', label: '완료', icon: 'checkmark', onPress: jest.fn() },
+  ]));
+  const screen = render(<NavigationContainer><SafeAreaInsetsContext.Provider value={{ top: 82, bottom: 24, left: 0, right: 0 }}>
+    <DuoRailOverride bandWidth={84} topOffset={86} />
+  </SafeAreaInsetsContext.Provider></NavigationContainer>);
+  act(() => screen.UNSAFE_getByType(AppKeyboardAvoidingView).props.onOverlapChange(300));
+
+  expect(StyleSheet.flatten(screen.getByTestId('duo-rail-override-host').props.style).width).toBe(84);
+  const overrideHost = screen.getByTestId('duo-rail-override-host');
+  const hostChildren = React.Children.toArray(overrideHost.props.children) as React.ReactElement<{ style?: any }>[];
+  expect(StyleSheet.flatten(hostChildren[0].props.style).top).toBe(86);
+  expect(StyleSheet.flatten(screen.getByTestId('duo-rail-override-scroll').props.style).maxHeight).toBeGreaterThan(0);
+  const maxHeightWithBandTop = StyleSheet.flatten(screen.getByTestId('duo-rail-override-scroll').props.style).maxHeight;
+  screen.unmount();
+
+  const defaultScreen = render(<NavigationContainer><SafeAreaInsetsContext.Provider value={{ top: 82, bottom: 24, left: 0, right: 0 }}>
+    <DuoRailOverride />
+  </SafeAreaInsetsContext.Provider></NavigationContainer>);
+  act(() => defaultScreen.UNSAFE_getByType(AppKeyboardAvoidingView).props.onOverlapChange(300));
+  expect(StyleSheet.flatten(defaultScreen.getByTestId('duo-rail-override-host').props.style).width).toBe(0);
+  expect(maxHeightWithBandTop).toBeGreaterThan(StyleSheet.flatten(defaultScreen.getByTestId('duo-rail-override-scroll').props.style).maxHeight);
+  defaultScreen.unmount();
+  act(() => usePhoneRailActions.getState().removeOverride(key));
+  expect(DUO_TOP_BAND_RAIL_TOP).toBe(86);
+  expect(DUO_RAIL_CENTER_FROM_END).toBe(48);
 });
 
 test('활성 루트의 동작을 탭보다 앞에 표시하고 호출한다', () => {
