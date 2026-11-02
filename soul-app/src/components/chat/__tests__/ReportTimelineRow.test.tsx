@@ -17,8 +17,12 @@ jest.mock('../../planner/CardRow', () => ({
 jest.mock('../../../theme', () => ({
   useTokens: () => ({
     spacing: { xs: 4, lg: 16 },
-    foundation: { typography: { meta: { fontSize: 13 } } },
-    colors: { text: 'black', textMuted: 'gray' },
+    uiSpacing: { xxs: 2, xs: 4 },
+    hitTarget: { min: 44 },
+    chatFontSize: { meta: 14 },
+    lineHeightRatio: 1.3,
+    foundation: { typography: { meta: { fontSize: 13, lineHeight: 18 } } },
+    colors: { textPrimary: 'black', textMuted: 'gray' },
   }),
 }));
 
