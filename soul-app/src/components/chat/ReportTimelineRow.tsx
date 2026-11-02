@@ -82,7 +82,8 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
     },
     number: { ...captionText, color: t.colors.textMuted, flexShrink: 0 },
     title: { ...captionText, color: t.colors.textPrimary, flexShrink: 1 },
-    detail: { ...captionText, color: t.colors.textMuted, flexShrink: 100 },
+    // 제목이 제 폭을 먼저 쓰고 상황판은 남는 폭만 쓴다.
+    detail: { ...captionText, color: t.colors.textMuted, flex: 1, minWidth: 0 },
     pressed: { opacity: 0.82 },
   });
 }
