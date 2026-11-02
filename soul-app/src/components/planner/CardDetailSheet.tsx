@@ -265,12 +265,19 @@ export function CardDetailContent(props: CardDetailContentProps) {
               {card ? <><CardStatusChip card={card} detail />{' '}{card.title}</> : '카드'}
             </Text>
           </CompactTouchTarget>
-          {card && !duo ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round}
-            variant={allConfirmed ? 'primary' : 'secondary'} accessibilityLabel={actionLabel}
-            disabled={locked || !api || startPhase === 'pending'} surfaceTestID="card-detail-complete-visual"
-            onPress={() => { void status(startPhase || startable ? 'running' : 'done'); }}>
-            <Ionicons name={startPhase || startable ? 'play' : 'checkmark'} size={t.iconSize.standard} color={allConfirmed ? t.colors.accentText : t.colors.textSecondary} />
-          </GlassButton> : null}
+          {card ? <View style={styles.headerActions}>
+            <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} variant="secondary"
+              accessibilityLabel="상태 변경 메뉴" disabled={locked || !api} surfaceTestID="card-detail-status-menu-visual"
+              onPress={() => setStatusMenuOpen(true)}>
+              <Ionicons name="ellipsis-horizontal" size={t.iconSize.standard} color={t.colors.textSecondary} />
+            </GlassButton>
+            {!duo ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round}
+              variant={allConfirmed ? 'primary' : 'secondary'} accessibilityLabel={actionLabel}
+              disabled={locked || !api || startPhase === 'pending'} surfaceTestID="card-detail-complete-visual"
+              onPress={() => { void status(startPhase || startable ? 'running' : 'done'); }}>
+              <Ionicons name={startPhase || startable ? 'play' : 'checkmark'} size={t.iconSize.standard} color={allConfirmed ? t.colors.accentText : t.colors.textSecondary} />
+            </GlassButton> : null}
+          </View> : null}
         </View>
         {card ? <View style={styles.headerRow}>
           <View style={styles.chips}>

@@ -38,7 +38,7 @@ import { useTokens, type DesignTokens } from '../theme';
 import { DuoSideBandContext, DUO_RAIL_TAB_ORDER, INITIAL_ROOT_TAB, PhoneRailModeContext, RAIL_MIN_INSET_WIDTH, ROOT_TAB_ORDER } from './tabContract';
 import { DUO_RAIL_END_INSET, getDuoRailTopOffset, hasDuoSideBand, splitDuoRailBackAction, useDuoSideBand } from './duoSideBand';
 import { useActiveDuoRailOverride, usePhoneRailActions, useRegisterDuoRailOverride, useRegisterPhoneRailActions, type PhoneRailAction } from './phoneRailActions';
-import { RAIL_CAPSULE_WIDTH, RAIL_ITEM_HEIGHT, RailCapsule, RailCapsuleItem, RailCapsuleViewport } from '../components/navigation/RailCapsule';
+import { RAIL_CAPSULE_WIDTH, RAIL_ITEM_HEIGHT, RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
 import { usePasContextMenu } from '../components/persistent/usePasContextMenu';
 import { FolderWorkspace } from '../components/planner/FolderWorkspace';
 import { createApiClient } from '../api/client';
@@ -173,9 +173,10 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
     <View testID="duo-rail-top-stack" pointerEvents="box-none"
       style={{ position: 'absolute', top: topOffset, left: 0, right: 0, alignItems: 'center', gap: t.uiSpacing.sm }}>
       <RailCapsule testID="duo-rail-back-capsule" compact={compact}>{renderOverrideAction(resolvedBackAction)}</RailCapsule>
-      {contextActions.length ? <RailCapsuleViewport testID="duo-rail-context-scroll" maxHeight={contextMaxHeight}>
-        <RailCapsule testID="duo-rail-context-capsule" compact={compact}>{contextActions.map(renderContextAction)}</RailCapsule>
-      </RailCapsuleViewport> : null}
+      {contextActions.length ? <RailCapsule testID="duo-rail-context-capsule" compact={compact}
+        maxHeight={contextMaxHeight} scrollTestID="duo-rail-context-scroll">
+        {contextActions.map(renderContextAction)}
+      </RailCapsule> : null}
     </View>
     <RailCapsule testID="phone-rail-tab-cluster" compact={compact}>
       {navigationNames.map((name) => renderTab(name))}

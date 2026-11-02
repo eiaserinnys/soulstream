@@ -7,7 +7,7 @@ import { ArrowLeft, Check, Play, LoaderCircle, RotateCw } from "lucide-react";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
 import { cardMutationKey } from "@seosoyoung/soul-ui/cards/card-api";
 import {cardExecutionState,subscribeCardExecution,type CardExecutionState} from "@seosoyoung/soul-ui/cards/card-execution";
-import { CardStatusPicker, type CardStatusHandle } from "./CardStatusPicker";
+import { CardStatusPicker, type CardStatusControl, type CardStatusHandle } from "./CardStatusPicker";
 import { FolderTitleEditor } from "./FolderTitleEditor";
 import { CardSessionHistory, type CardSessionSelection } from "./CardSessionHistory";
 import { DetailTabs } from "./DetailTabs";
@@ -131,6 +131,13 @@ export function CardDetailPane(props:CardDetailPaneProps) {
   catch {} finally {setPending(false);}
  };
  if(!card)return <div className="v3-detail-section" role={error?"alert":undefined}>{error??"카드를 불러오는 중…"}</div>;
+ const statusControl:CardStatusControl={pending,
+  assignment:sampleDetail?dialoguesAssignment:undefined,folders,
+  saveSettings:sampleDetail?async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};updateSample(current=>({...current,card:saved}));return saved;}:undefined,
+  load:()=>sampleDetail ? Promise.resolve(activeSample!) : useCardStore.getState().loadCard(cardId),
+  change:async(latest,status,reason)=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,...latest,status,...(status==="running"?{assigneeKind:"session",assigneeSessionId:current.sessions[0]?.sessionId??"sample-session"}: {})}}));else if(status==="running")await useCardStore.getState().execute(cardId,latest.version);else await useCardStore.getState().mutate(cardId,"/status",{status,expectedVersion:latest.version,...(reason?{reason}:{})});},
+  changeColor:async(latest,color:CardColor)=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,color,version:latest.version+1}}));else await useCardStore.getState().mutate(cardId,"",{color,expectedVersion:latest.version},"PATCH");},
+ };
  const dockStyle={"--v3-card-dock-height":`${dockHeight}px`} as CSSProperties;
  const tabs=[
   ["items",<span className="v3-card-tab-label">확인 항목{itemSummary.toReviewCount>0?<span className="v3-card-tab-count">{itemSummary.toReviewCount}</span>:null}</span>],
@@ -141,14 +148,11 @@ export function CardDetailPane(props:CardDetailPaneProps) {
  return <article ref={surface} className="v3-detail-pane v3-card-detail border border-glass-border glass-strong glass-chrome lg-rim" data-liquid-glass-webgl={webglActive?"true":undefined} data-testid="card-detail">
   <header className="v3-folder-header v3-workspace-toolbar v3-detail-gutter">
    <DashboardIconCap label="카드 닫기" onClick={onClose}><ArrowLeft className="h-4 w-4"/></DashboardIconCap>
-   <FolderTitleEditor leading={<CardStatusPicker sampleExecution={sampleExecution} ref={statusPicker} card={card} onOpen={()=>{}} control={{pending,
-    assignment:sampleDetail?dialoguesAssignment:undefined,folders,
-    saveSettings:sampleDetail?async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};updateSample(current=>({...current,card:saved}));return saved;}:undefined,
-    load:()=>sampleDetail ? Promise.resolve(activeSample!) : useCardStore.getState().loadCard(cardId),
-    change:async(latest,status,reason)=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,...latest,status,...(status==="running"?{assigneeKind:"session",assigneeSessionId:current.sessions[0]?.sessionId??"sample-session"}: {})}}));else if(status==="running")await useCardStore.getState().execute(cardId,latest.version);else await useCardStore.getState().mutate(cardId,"/status",{status,expectedVersion:latest.version,...(reason?{reason}:{})});},
-    changeColor:async(latest,color:CardColor)=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,color,version:latest.version+1}}));else await useCardStore.getState().mutate(cardId,"",{color,expectedVersion:latest.version},"PATCH");},
-   }}/>} variant="card" title={card.title} headingLevel={1} onRename={async title=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,title}}));else await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH");}}/>
-   <div className="v3-folder-header-actions" data-complete-emphasis={allChecked||undefined}><DashboardIconCap label={actionLabel} disabled={pending||execution?.phase==='pending'} onClick={()=>{if(!allChecked&&(execution||startable))statusPicker.current?.request('running');else void complete();}}>{execution?.phase==='pending'?<LoaderCircle className="h-4 w-4 animate-spin"/>:allChecked?<Check className="h-4 w-4"/>:execution?<RotateCw className="h-4 w-4"/>:startable?<Play className="h-4 w-4"/>:<Check className="h-4 w-4"/>}</DashboardIconCap></div>
+   <FolderTitleEditor leading={<CardStatusPicker sampleExecution={sampleExecution} ref={statusPicker} card={card} onOpen={()=>{}} control={statusControl}/>} variant="card" title={card.title} headingLevel={1} onRename={async title=>{if(sampleDetail)updateSample(current=>({...current,card:{...current.card,title}}));else await useCardStore.getState().mutate(cardId,"",{title,expectedVersion:card.version},"PATCH");}}/>
+   <div className="v3-folder-header-actions" data-complete-emphasis={allChecked||undefined}>
+    <CardStatusPicker trigger="more" card={card} onOpen={()=>{}} control={statusControl} sampleExecution={sampleExecution}/>
+    <DashboardIconCap size="small" label={actionLabel} disabled={pending||execution?.phase==='pending'} onClick={()=>{if(!allChecked&&(execution||startable))statusPicker.current?.request('running');else void complete();}}>{execution?.phase==='pending'?<LoaderCircle className="h-4 w-4 animate-spin"/>:allChecked?<Check className="h-4 w-4"/>:execution?<RotateCw className="h-4 w-4"/>:startable?<Play className="h-4 w-4"/>:<Check className="h-4 w-4"/>}</DashboardIconCap>
+   </div>
   </header>
   {!card.assigneeSessionId?<div className="v3-detail-gutter v3-task-detail-content v3-card-context">
    <section className="v3-detail-section"><CardExecutionSettings assignment={sampleDetail?dialoguesAssignment:undefined} card={card} folders={folders} onSave={sampleDetail?async(value)=>{const saved={...card,folderId:value.folderId,nodeId:value.nodeId,assigneeAgentId:value.agentId,modelPreset:value.modelPreset,version:card.version+1};updateSample(current=>({...current,card:saved}));return saved;}:undefined}/></section>

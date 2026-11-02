@@ -156,7 +156,8 @@ describe('iPad v3 planner shell', () => {
     expect(StyleSheet.flatten(screen.getByTestId('duo-rail-action-close').props.style)).toMatchObject({ width: 48, height: 48 });
     const band = StyleSheet.flatten(screen.getByTestId('duo-main-band').props.style);
     const scroll = screen.getByTestId('duo-main-actions-scroll');
-    expect(StyleSheet.flatten(scroll.props.style).maxHeight).toBeLessThanOrEqual(669 - band.bottom - 200 - 50);
+    expect(scroll.props.keyboardShouldPersistTaps).toBe('handled');
+    expect(StyleSheet.flatten(screen.getByTestId('duo-main-band-capsule').props.style).maxHeight).toBeLessThanOrEqual(669 - band.bottom - 200 - 50);
     expect(screen.getByTestId('duo-rail-action-five')).toBeTruthy();
     act(() => usePhoneRailActions.getState().removeOverride(key));
     screen.unmount();

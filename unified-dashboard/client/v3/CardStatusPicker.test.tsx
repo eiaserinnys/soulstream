@@ -13,8 +13,8 @@ beforeEach(()=>{element=document.createElement("div");document.body.append(eleme
 afterEach(async()=>{await act(()=>root.unmount());element.remove();});
 const button=(label:string)=>[...document.querySelectorAll<HTMLButtonElement>("button")].find(x=>x.getAttribute("aria-label")===label || x.getAttribute("data-slot")==="button" && x.textContent===label)!;
 const click=async(label:string)=>act(async()=>{button(label).click();await new Promise(done=>setTimeout(done,20));});
-async function render(load=vi.fn().mockResolvedValue(detail()),change=vi.fn().mockResolvedValue(undefined),onOpen=vi.fn(),changeColor?:ReturnType<typeof vi.fn>) {
- await act(()=>root.render(<CardStatusPicker card={reviewCard} control={{load,change,pending:false,...(changeColor?{changeColor}:{})}} onOpen={onOpen}/>));
+async function render(load=vi.fn().mockResolvedValue(detail()),change=vi.fn().mockResolvedValue(undefined),onOpen=vi.fn(),changeColor?:ReturnType<typeof vi.fn>,trigger:"chip"|"more"="chip") {
+ await act(()=>root.render(<CardStatusPicker card={reviewCard} control={{load,change,pending:false,...(changeColor?{changeColor}:{})}} onOpen={onOpen} trigger={trigger}/>));
  return {load,change,onOpen,changeColor};
 }
 it("loads only on explicit opens and allows reportless review",async()=>{
@@ -24,10 +24,24 @@ it("loads only on explicit opens and allows reportless review",async()=>{
  await click("드래프트");expect(c.change).toHaveBeenCalledWith(d.card,"todo",undefined);expect(c.onOpen).not.toHaveBeenCalled();
 });
 it("aligns the status popup to the chip start edge",async()=>{
- await render();await click("카드 상태 변경");
+ await render();
+ const trigger=document.querySelector<HTMLButtonElement>('[data-slot="popover-trigger"]')!;
+ expect(trigger.getAttribute("aria-label")).toBe("카드 상태 변경");
+ expect(trigger.classList.contains("v3-postit-status-trigger")).toBe(true);
+ await click("카드 상태 변경");
  expect(document.querySelector('[data-slot="popover-positioner"]')?.getAttribute("data-align")).toBe("start");
  expect(document.querySelector('[data-card-status-picker]')?.classList.contains("glass-strong")).toBe(true);
  expect(document.querySelector('[data-card-status-picker]')?.classList.contains("glass-chrome")).toBe(true);
+});
+it("uses the small more trigger and aligns its popup to the end edge",async()=>{
+ await render(undefined,undefined,undefined,undefined,"more");
+ const trigger=document.querySelector<HTMLButtonElement>('[data-slot="popover-trigger"]')!;
+ expect(trigger.classList.contains("dashboard-icon-cap--small")).toBe(true);
+ expect(trigger.classList.contains("v3-postit-status-trigger")).toBe(false);
+ expect(trigger.getAttribute("aria-label")).toBe("상태 변경 메뉴");
+ expect(trigger.title).toBe("상태 변경 메뉴");
+ await act(async()=>{trigger.click();await new Promise(done=>setTimeout(done,20));});
+ expect(document.querySelector('[data-slot="popover-positioner"]')?.getAttribute("data-align")).toBe("end");
 });
 it("allows every state with unanswered questions, without a restart reason",async()=>{
  const d=detail();d.reports=[];d.questions=[{id:"q",text:"질문",options:null,answer:null,askedAt:"",answeredAt:null}];

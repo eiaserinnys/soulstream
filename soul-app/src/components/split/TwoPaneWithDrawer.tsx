@@ -23,7 +23,7 @@ import { clampTwoPaneMiddleDrag, resolveTwoPaneMiddleWidth } from './paneWidths'
 import { DUO_RAIL_END_INSET, getDuoRailTopOffset, splitDuoRailBackAction, useDuoSideBand } from '../../navigation/duoSideBand';
 import { useSearchStore } from '../../store/searchStore';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
-import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem, RailCapsuleViewport } from '../navigation/RailCapsule';
+import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem } from '../navigation/RailCapsule';
 import { TabletPersistentEntry } from '../../navigation/TabletPersistentEntry';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -204,8 +204,8 @@ export function TwoPaneWithDrawer() {
         paddingRight: DUO_RAIL_END_INSET,
         bottom: railBottom,
       }}>
-        <RailCapsuleViewport testID="duo-main-actions-scroll" maxHeight={lowerRailMaxHeight}>
-        <RailCapsule testID="duo-main-band-capsule" compact={railCompact}>
+        <RailCapsule testID="duo-main-band-capsule" compact={railCompact}
+          maxHeight={lowerRailMaxHeight} scrollTestID="duo-main-actions-scroll">
           {mainActions.map(action => <RailCapsuleItem key={action.id} testID={`duo-rail-action-${action.id}`}
             label={action.label} selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
             <Ionicons name={action.icon} color={action.selected ? t.colors.accent : t.colors.textMuted} size={t.iconSize.standard} />
@@ -239,7 +239,6 @@ export function TwoPaneWithDrawer() {
           <TabletPersistentEntry rail />
           </> : null}
         </RailCapsule>
-        </RailCapsuleViewport>
       </View> : null}
     </AppKeyboardAvoidingView> : null}
     </View>

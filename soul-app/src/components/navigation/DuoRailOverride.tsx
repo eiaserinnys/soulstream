@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTokens } from '../../theme';
 import { useActiveDuoRailOverride } from '../../navigation/phoneRailActions';
 import { DUO_RAIL_END_INSET, getDuoRailTopOffset, splitDuoRailBackAction } from '../../navigation/duoSideBand';
-import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem, RailCapsuleViewport } from './RailCapsule';
+import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem } from './RailCapsule';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 
 export function DuoRailOverride() {
@@ -32,7 +32,9 @@ export function DuoRailOverride() {
       <RailCapsule testID={mainActions.length ? 'duo-rail-back-capsule' : 'duo-rail-override'} compact={compact}>{renderAction(backAction)}</RailCapsule>
     </View> : null}
     {mainActions.length ? <View testID="duo-rail-override-lower" style={{ position: 'absolute', bottom, left: 0, right: DUO_RAIL_END_INSET, alignItems: 'center' }}>
-      <RailCapsuleViewport testID="duo-rail-override-scroll" maxHeight={lowerMaxHeight}><RailCapsule testID="duo-rail-override" compact={compact}>{mainActions.map(renderAction)}</RailCapsule></RailCapsuleViewport>
+      <RailCapsule testID="duo-rail-override" compact={compact} maxHeight={lowerMaxHeight} scrollTestID="duo-rail-override-scroll">
+        {mainActions.map(renderAction)}
+      </RailCapsule>
     </View> : null}
   </View></AppKeyboardAvoidingView>;
 }

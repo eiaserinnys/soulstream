@@ -144,7 +144,8 @@ test('오버레이 레일도 키보드 위로 올라가고 하단 액션을 제�
   const capsule = screen.getByTestId('duo-rail-override');
   expect(capsule).toBeTruthy();
   expect(StyleSheet.flatten(screen.getByTestId('duo-rail-override-lower').props.style).bottom).toBe(300);
-  expect(StyleSheet.flatten(screen.getByTestId('duo-rail-override-scroll').props.style).maxHeight).toBeGreaterThanOrEqual(0);
+  expect(screen.getByTestId('duo-rail-override-scroll').props.keyboardShouldPersistTaps).toBe('handled');
+  expect(StyleSheet.flatten(capsule.props.style)).toMatchObject({ maxHeight: expect.any(Number), overflow: 'hidden' });
   fireEvent.press(screen.getByTestId('duo-rail-action-edit'));
   expect(onEdit).toHaveBeenCalledTimes(1);
   act(() => usePhoneRailActions.getState().removeOverride(key));
