@@ -92,6 +92,9 @@ describe("session activity period repositories", () => {
     await insertEvent("b-node-two", 9, "turn_summary", "2026-10-07T00:00:00Z", {
       content: "경계 밖 턴", turn_start_event_id: 3, final_response_event_id: 8,
     });
+    await insertEvent("b-node-two", 10, "turn_summary", "2026-10-06T14:00:00Z", {
+      content: "응답 이벤트 ID가 잘못된 턴", turn_start_event_id: 4, final_response_event_id: "invalid",
+    });
     await insertEvent("m-no-summary", 1, "tool_result", "2026-10-06T09:00:00Z");
     await insertEvent("n-until-only", 1, "assistant_message", "2026-10-07T00:00:00Z");
     await insertEvent("z-old", 1, "assistant_message", "2026-10-05T12:00:00Z");
@@ -110,12 +113,14 @@ describe("session activity period repositories", () => {
     const nextEvents = await events.readEvents("b-node-two", firstEvents.at(-1)?.id ?? 0, 1, undefined, PERIOD);
     expect.soft(firstEvents.map((event) => event.id)).toEqual([2]);
     expect.soft(nextEvents.map((event) => event.id)).toEqual([3]);
-    expect(await events.countEvents("b-node-two")).toBe(9);
+    expect(await events.countEvents("b-node-two")).toBe(10);
 
     const stories = new SessionStoryReadRepository(sql as never);
     const summaries = await stories.loadTurnSummaryRange("b-node-two", 1, null, 10, { period: PERIOD } as never);
-    expect.soft(summaries.map((summary) => summary.turnNumber)).toEqual([2, 3]);
-    expect.soft(summaries.map((summary) => summary.content)).toEqual(["첫 턴", "늦게 저장된 둘째 턴"]);
+    expect.soft(summaries.map((summary) => summary.turnNumber)).toEqual([2, 3, 5]);
+    expect.soft(summaries.map((summary) => summary.content)).toEqual([
+      "첫 턴", "늦게 저장된 둘째 턴", "응답 이벤트 ID가 잘못된 턴",
+    ]);
     await expect(stories.loadTurnSummaryRange("m-no-summary", 1, null, 10, { period: PERIOD } as never))
       .resolves.toEqual([]);
   });
