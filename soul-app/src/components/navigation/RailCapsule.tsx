@@ -25,14 +25,14 @@ export function RailCapsule({ children, testID, compact = false, maxHeight, scro
   const single = countRailCapsuleItems(children) === 1;
   const content = <View style={{ width: RAIL_CAPSULE_WIDTH,
     ...(single ? { height: RAIL_CAPSULE_WIDTH, paddingVertical: 0, gap: 0, justifyContent: 'center' as const }
-      : { paddingVertical: compact ? t.spacing.xxs : t.spacing.xs, gap: compact ? 0 : t.uiSpacing.xs / 2 }),
+      : { paddingVertical: compact ? 0 : t.spacing.xs, gap: compact ? 0 : t.uiSpacing.xs / 2 }),
     alignItems: 'center' }}>
     <RailCapsuleItemContext.Provider value={{ compact, single }}>{children}</RailCapsuleItemContext.Provider>
   </View>;
   return <GlassSurface role="chrome" testID={testID} cornerRadius={t.foundation.radius.round}
     style={{ width: RAIL_CAPSULE_WIDTH, ...(single ? { height: RAIL_CAPSULE_WIDTH } : {}),
       ...(maxHeight === undefined ? {} : { maxHeight, overflow: 'hidden' as const }) }}>
-    {maxHeight === undefined ? content : <ScrollView testID={scrollTestID} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+    {maxHeight === undefined ? content : <ScrollView testID={scrollTestID} style={{ maxHeight }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
       {content}
     </ScrollView>}
   </GlassSurface>;

@@ -499,35 +499,37 @@ describe('ChatComposer', () => {
     expect(StyleSheet.flatten(screen.getByTestId('chat-composer-content-row').props.style).flexDirection).toBe('column');
   });
 
-  test('iOS는 최대 높이 근처에서 고정 뷰포트와 내부 스크롤을 켠다', () => {
+  test('iOS는 네 번째 줄부터 내부 스크롤을 켜고 콘텐츠 이벤트 뒤에도 유지한다', () => {
+    jest.replaceProperty(Platform, 'OS', 'ios');
     const props = { onChangeInput: jest.fn(), onPickAttachment: jest.fn(), onSend: jest.fn(), uploading: false, sending: false, voiceControls: null };
     const screen = render(<ChatComposer {...props} input="" />);
     const field = () => screen.getByTestId('chat-composer-text-input');
     const layout = (height: number) => fireEvent(field(), 'layout', { nativeEvent: { layout: { x: 0, y: 0, width: 200, height } } });
     const button = StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style);
-    for (const value of ['', '한국어 연속 입력 '.repeat(20), '첫 줄\n둘째 줄\n셋째 줄\n넷째 줄', '한 줄', '']) {
-      screen.rerender(<ChatComposer {...props} input={value} />);
-      expect(StyleSheet.flatten(field().props.style)).toMatchObject({ minHeight: 48, maxHeight: 128 });
-      expect(StyleSheet.flatten(field().props.style).height).toBe(value.length === 0 ? 48 : undefined);
-      expect(field().props.multiline).toBe(true);
-      expect(StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style)).toEqual(button);
-    }
     screen.rerender(<ChatComposer {...props} input={'긴 글 '.repeat(100)} />);
-    layout(108);
-    expect(field().props.scrollEnabled).toBe(false);
-    // The cap must enable scrolling without a contentSizeChange event.
-    layout(127.5);
-    expect(field().props.scrollEnabled).toBe(true);
-    expect(StyleSheet.flatten(field().props.style).height).toBe(128);
-    screen.rerender(<ChatComposer {...props} input={'더 긴 글 '.repeat(100)} />);
-    expect(field().props.scrollEnabled).toBe(true);
-    fireEvent.changeText(field(), '한 줄');
-    screen.rerender(<ChatComposer {...props} input="한 줄" />);
-    fireEvent(field(), 'contentSizeChange', { nativeEvent: { contentSize: { width: 200, height: 48 } } });
     expect(StyleSheet.flatten(field().props.style).height).toBeUndefined();
+    layout(86);
+    expect(field().props.scrollEnabled).toBe(false);
+    layout(108.4);
+    expect(field().props.scrollEnabled).toBe(true);
+    expect(StyleSheet.flatten(field().props.style).height).toBeUndefined();
+    fireEvent(field(), 'contentSizeChange', { nativeEvent: { contentSize: { width: 200, height: 108.4 } } });
+    expect(field().props.scrollEnabled).toBe(true);
+    layout(128);
+    expect(field().props.scrollEnabled).toBe(true);
+    expect(StyleSheet.flatten(field().props.style).height).toBeUndefined();
+
+    fireEvent(field(), 'contentSizeChange', { nativeEvent: { contentSize: { width: 200, height: 86 } } });
+    layout(86);
+    expect(StyleSheet.flatten(field().props.style).height).toBeUndefined();
+    expect(field().props.scrollEnabled).toBe(false);
+    layout(48);
     expect(field().props.scrollEnabled).toBe(false);
     screen.rerender(<ChatComposer {...props} input="" />);
     expect(StyleSheet.flatten(field().props.style).height).toBe(48);
+    expect(field().props.scrollEnabled).toBe(false);
+    expect(field().props.multiline).toBe(true);
+    expect(StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style)).toEqual(button);
   });
 
   test.each(['가', ' ', '\n'])('iOS 최대 높이 → 빈 값 → 첫 입력 %j → 긴 입력의 JS 계약', (firstInput) => {
@@ -542,7 +544,7 @@ describe('ChatComposer', () => {
 
     layoutAtCap();
     expect(field().props.scrollEnabled).toBe(true);
-    expect(style().height).toBe(128);
+    expect(style().height).toBeUndefined();
 
     screen.rerender(<ChatComposer {...props} input="" />);
     expect(style().height).toBe(singleLineHeight);

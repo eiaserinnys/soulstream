@@ -134,8 +134,10 @@ test('오늘 입력창의 iOS 높이·칩 배치 계약과 콘텐츠 이벤트 �
   expect(initialHeight).toBeGreaterThanOrEqual(48);
   fireEvent.changeText(input, '첫 줄\n둘째 줄');
   // This checks alignment after event receipt, not native event delivery or growth.
+  const twoLineHeight = initialHeight + 12;
+  expect(twoLineHeight).toBeLessThan(StyleSheet.flatten(input.props.style).maxHeight);
   fireEvent(screen.getByLabelText('세션 첫 메시지'), 'contentSizeChange', {
-    nativeEvent: { contentSize: { width: 200, height: Math.min(initialHeight * 2, StyleSheet.flatten(input.props.style).maxHeight) } },
+    nativeEvent: { contentSize: { width: 200, height: twoLineHeight } },
   });
   const twoLineInput = screen.getByLabelText('세션 첫 메시지');
   expect(StyleSheet.flatten(twoLineInput.props.style).height).toBeUndefined();

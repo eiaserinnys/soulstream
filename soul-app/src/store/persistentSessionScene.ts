@@ -3,6 +3,7 @@ import type { PersistentSessionResource } from '../api/persistentSessionEndpoint
 
 export interface PersistentSessionScene {
   session: PersistentSessionResource | null;
+  sessions: PersistentSessionResource[];
   scene: 'conversation' | 'cards' | 'reports';
   reportCount: number;
   hasReports: boolean;
@@ -10,6 +11,7 @@ export interface PersistentSessionScene {
   visible: boolean;
   settingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
+  setSessions: (sessions: PersistentSessionResource[]) => void;
   leave: () => void;
   open: (session: PersistentSessionResource) => void;
   toggleScene: () => void;
@@ -24,6 +26,7 @@ export interface PersistentSessionScene {
 export function createPersistentSessionScene() {
   return createStore<PersistentSessionScene>((set, get) => ({
     session: null,
+    sessions: [],
     scene: 'conversation',
     reportCount: 0,
     hasReports: false,
@@ -31,6 +34,7 @@ export function createPersistentSessionScene() {
     visible: false,
     settingsOpen: false,
     setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+    setSessions: (sessions) => set({ sessions }),
     leave: () => set({ visible: false }),
     open: (session) => set({ session, scene: 'conversation', selectedCardId: null, reportCount: 0, hasReports: false, visible: true }),
     toggleScene: () => set((state) => ({
