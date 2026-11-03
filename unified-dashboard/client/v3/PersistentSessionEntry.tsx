@@ -22,7 +22,7 @@ export function PersistentSessionSwitch({ sessions, currentSessionId }: { sessio
     <PopoverTrigger render={<DashboardIconCap appearance="bare" label="영구 세션 바꾸기" data-testid="persistent-session-switch"/>}>
       <ArrowLeftRight className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true"/>
     </PopoverTrigger>
-    <PopoverPopup align="end"><div className="v3-surface">{sessions.map(session => <PersistentSessionChoiceRow key={session.session_id} session={session} selected={session.session_id === currentSessionId} onSelect={() => {
+    <PopoverPopup align="end" className="v3-popup-chrome"><div className="v3-surface">{sessions.map(session => <PersistentSessionChoiceRow key={session.session_id} session={session} selected={session.session_id === currentSessionId} onSelect={() => {
       setOpen(false);
       if (session.session_id !== currentSessionId) navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`);
     }}/>)}</div></PopoverPopup>
@@ -59,7 +59,7 @@ export function PersistentSessionEntry() {
   return <>
     <Popover open={open} onOpenChange={next => { if (!next) setOpen(false); }}>
       <PopoverTrigger render={<DashboardIconCap label="영구 세션 열기" data-testid="persistent-session-entry" onClick={enter}/> }><ProfileAvatar role="assistant" shape="circle" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji="🤖"/></PopoverTrigger>
-      <PopoverPopup align="end"><div className="v3-surface">{listing?.sessions.map(session => <PersistentSessionChoiceRow key={session.session_id} session={session} selected={lastId === session.session_id} onSelect={() => { setOpen(false); navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`); }}/>)}</div></PopoverPopup>
+      <PopoverPopup align="end" className="v3-popup-chrome"><div className="v3-surface">{listing?.sessions.map(session => <PersistentSessionChoiceRow key={session.session_id} session={session} selected={lastId === session.session_id} onSelect={() => { setOpen(false); navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`); }}/>)}</div></PopoverPopup>
     </Popover>
     <ConfigModal open={configOpen} onOpenChange={setConfigOpen} initialTab="persistent"/>
   </>;

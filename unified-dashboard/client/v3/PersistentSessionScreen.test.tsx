@@ -23,7 +23,7 @@ vi.mock('../dashboard-navigation',()=>({navigateDashboard:(...args:any[])=>mocks
 vi.mock('./use-v3-live-data-plane',()=>({useV3LiveDataPlane:vi.fn()}));
 vi.mock('../hooks/useNodes',()=>({useNodes:vi.fn()}));
 vi.mock('./use-session-node-connectivity',()=>({useSessionNodeConnectivity:()=>({nodes:new Map([['node-1',{status:'connected'}]])})}));
-vi.mock('./V3GlobalToolbar',()=>({V3GlobalToolbar:(p:any)=> <header data-testid="v3-global-toolbar" data-agent-only={String(p.agentOnly)} data-show-home={String(p.showHome)} data-agent-name={p.agentName}><span data-testid="scene-title">{p.agentName}</span>{p.showHome&&<button aria-label="홈" onClick={p.onOpenHome}/>} {p.sessionSwitch}{p.onToggleUsage&&<button data-testid="usage-toggle" aria-pressed={p.showWeeklyUsage} onClick={p.onToggleUsage}>주간 사용량</button>}<button onClick={p.onOpenConfig}>PAS 설정</button></header>}));
+vi.mock('./V3GlobalToolbar',()=>({V3GlobalToolbar:(p:any)=> <header data-testid="v3-global-toolbar" data-agent-only={String(p.agentOnly)} data-show-home={String(p.showHome)} data-agent-name={p.agentName}><span data-testid="scene-title">{p.agentName}</span>{p.sessionSwitch}{p.showHome&&<button aria-label="홈" onClick={p.onOpenHome}/>} {p.onToggleUsage&&<button data-testid="usage-toggle" aria-pressed={p.showWeeklyUsage} onClick={p.onToggleUsage}>주간 사용량</button>}<button onClick={p.onOpenConfig}>PAS 설정</button></header>}));
 vi.mock('../hooks/useUsageSummary', async()=>{
  const {selectUsageSummaryNode,weeklyUsageGauges}=await vi.importActual<typeof import('@seosoyoung/soul-ui')>('@seosoyoung/soul-ui');
  return {useUsageSummary:(options:any)=>{
@@ -66,11 +66,12 @@ const currentProviderOptions=()=>mocks.provider.mock.calls.slice(-2).map(([optio
 beforeEach(()=>{vi.clearAllMocks();resizeTo(1024);mediaListeners=[];vi.stubGlobal('matchMedia',(query:string)=>({get matches(){return mediaMatches(query);},media:query,addEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>mediaListeners.push({query,listener}),removeEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>{mediaListeners=mediaListeners.filter(item=>item.listener!==listener);}}));localStorage.clear();mocks.usageSummary=usageSummaryFixture;useDashboardStore.getState().setActiveSession(null);useCardStore.getState().reset();useCardNavigation.getState().close();host=document.createElement('div');document.body.append(host);root=createRoot(host);mocks.fetchSessions.mockImplementation(async(o:any)=>({sessions:o.sessionIds.map((id:string)=>({agentSessionId:id,nodeId:'node-1',title:id}))}));});
 afterEach(()=>{act(()=>root.unmount());host.remove();geometry.value=null;vi.unstubAllGlobals();});
 async function mount(id?:string){await act(async()=>{root.render(<DashboardInternalLinks><PersistentSessionScreen sessionId={id}/></DashboardInternalLinks>);});}
-it('opens the PAS switch after home, marks the current session and navigates to the selected session',async()=>{
+it('opens the PAS switch before home, marks the current session and navigates to the selected session',async()=>{
  mocks.list.mockResolvedValue({sessions:[session('one'),session('two / 다음')]});await mount('one');
  const home=host.querySelector('[aria-label="홈"]')!;const button=host.querySelector<HTMLButtonElement>('[data-testid="persistent-session-switch"]')!;
- expect(home.nextElementSibling).toBe(button);
+ expect(button.nextElementSibling).toBe(home);
  await act(async()=>button.click());
+ expect(document.body.querySelector('[data-slot="popover-popup"]')?.classList.contains('v3-popup-chrome')).toBe(true);
  const choice=(title:string)=>[...document.body.querySelectorAll('span')].find(span=>span.textContent===title)?.closest('button');
  const choices=[choice('one'),choice('two / 다음')];
  expect(choices.every(Boolean)).toBe(true);
@@ -78,6 +79,13 @@ it('opens the PAS switch after home, marks the current session and navigates to 
  await act(async()=>choices[0]!.click());expect(mocks.navigate).not.toHaveBeenCalled();
  await act(async()=>button.click());await act(async()=>choice('two / 다음')!.click());
  expect(mocks.navigate).toHaveBeenCalledWith('/persistent/two%20%2F%20%EB%8B%A4%EC%9D%8C');
+});
+it('keeps the usage toggle visible while switching PAS before chat is ready',async()=>{
+ resizeTo(1440);mocks.list.mockResolvedValue({sessions:[session('one'),session('two')]});await mount('one');
+ expect(host.querySelector('[data-testid="usage-toggle"]')).not.toBeNull();
+ mocks.list.mockReturnValue(new Promise(()=>{}));await mount('two');
+ expect(host.querySelector('[data-testid="chat"]')).toBeNull();
+ expect(host.querySelector('[data-testid="usage-toggle"]')).not.toBeNull();
 });
 it('does not show the PAS switch for a single session',async()=>{
  mocks.list.mockResolvedValue({sessions:[session('one')]});await mount('one');
@@ -101,7 +109,7 @@ it('provides the common frame spacing tokens to reused card components',async()=
  mocks.list.mockResolvedValue({sessions:[session('one')]});await mount('one');const frame=host.querySelector<HTMLElement>('[data-testid="persistent-session-screen"]')!;
  expect(frame.style.getPropertyValue('--v3-card-gap')).toBe('4px');expect(frame.style.getPropertyValue('--v3-panel-gap')).toBe('16px');expect(frame.style.getPropertyValue('--v3-outer-inset')).toBe('20px');
 });
-it('routes one PAS immediately and lets multiple PAS be selected in API order',async()=>{mocks.list.mockResolvedValue({sessions:[session('one')]});await mount();expect(mocks.navigate).toHaveBeenCalledWith('/persistent/one',true);mocks.list.mockResolvedValue({sessions:[session('second'),session('first')]});act(()=>root.unmount());root=createRoot(host);await mount();expect([...host.querySelectorAll('[data-pas-choice]')].map(e=>e.getAttribute('data-pas-choice'))).toEqual(['second','first']);expect(mocks.fetchSessions).not.toHaveBeenCalled();});
+it('routes one PAS immediately and lets multiple PAS be selected in API order',async()=>{mocks.list.mockResolvedValue({sessions:[session('one')]});await mount();expect(mocks.navigate).toHaveBeenCalledWith('/persistent/one',true);mocks.list.mockResolvedValue({sessions:[session('second'),session('first')]});act(()=>root.unmount());root=createRoot(host);await mount();expect([...host.querySelectorAll('[data-pas-choice]')].map(e=>e.getAttribute('data-pas-choice'))).toEqual(['second','first']);expect(host.querySelector('[data-testid="persistent-session-switch"]')).toBeNull();expect(mocks.fetchSessions).not.toHaveBeenCalled();});
 it('resolves an explicit PAS before mounting chat and scopes its single stream and uploads',async()=>{mocks.list.mockResolvedValue({sessions:[session('one'),session('two')]});await mount('two');expect(mocks.fetchSessions).toHaveBeenCalledWith({sessionIds:['two']});expect(useDashboardStore.getState().activeSessionKey).toBe('two');expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-session')).toBe('two');expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-upload')).toBe('/api/attachments/sessions?nodeId=node-1');expect(currentProviderOptions().find(options=>options.sessionKey==='two')).toMatchObject({sessionKey:'two',active:true,cursorScope:'http://localhost:3000|test@example.com'});expect(host.querySelector('[data-testid="persistent-character"]')).toBeNull();});
 it('uses the agent-only toolbar and hides runtime strips on mobile PAS while keeping the conversation mounted',async()=>{
  Object.defineProperty(window,'innerWidth',{configurable:true,value:390});

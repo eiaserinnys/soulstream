@@ -1,10 +1,23 @@
 /* v3 interaction chrome is not document content. Keep this policy at the shell boundary. */
-.v3-shell {
+/* Portal-based interaction popups outside the shell share the boundary through v3-popup-chrome. */
+.v3-shell,
+.v3-popup-chrome {
   -webkit-user-select: none;
   user-select: none;
 }
 
 .v3-shell :where(
+  input,
+  textarea,
+  [contenteditable="true"],
+  [data-v3-selectable-content="true"],
+  [data-v3-selectable-content="true"] *,
+  [data-slot="chat-body"],
+  [data-slot="chat-body"] *,
+  [data-slot="chat-tool-body"],
+  [data-slot="chat-tool-body"] *
+),
+.v3-popup-chrome :where(
   input,
   textarea,
   [contenteditable="true"],

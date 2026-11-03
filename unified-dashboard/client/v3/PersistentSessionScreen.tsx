@@ -290,9 +290,9 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
   return <div ref={appRef} className={`v3-shell persistent-session-screen${hasWeeklyUsage ? ' has-weekly-usage' : ''}`}
     style={{ ...shellStyle, '--pas-usage-height': `${usageHeight}px`, '--pas-baseline-bottom': geometry ? `calc(100% - ${geometry.lineY}px)` : undefined } as CSSProperties} data-testid="persistent-session-screen">
     <V3GlobalToolbar headerRef={headerRef} variant="minimal" appearance="bare" sessionName={resource?.display_name ?? undefined} agentName={resource?.agent_name ?? undefined} agentOnly={isMobile} showHome={!isMobile} onOpenHome={() => navigateDashboard('/')} onOpenConfig={() => setSettingsOpen(true)}
-      sessionSwitch={<PersistentSessionSwitch sessions={listing?.sessions ?? []} currentSessionId={sessionId}/>}
-      showWeeklyUsage={usageAvailable && chatReady && resource?.node_id && user?.email ? showWeeklyUsage : undefined}
-      onToggleUsage={usageAvailable && chatReady && resource?.node_id && user?.email ? toggleWeeklyUsage : undefined}/>
+      sessionSwitch={sessionId ? <PersistentSessionSwitch sessions={listing?.sessions ?? []} currentSessionId={sessionId}/> : undefined}
+      showWeeklyUsage={usageAvailable && user?.email ? showWeeklyUsage : undefined}
+      onToggleUsage={usageAvailable && user?.email ? toggleWeeklyUsage : undefined}/>
     <main ref={mainRef} className="persistent-session-main">
       {details.error && <div className="persistent-session-save-error"><SettingsAlert>{details.error}</SettingsAlert></div>}
       {loading ? <p role="status">불러오는 중…</p> : error ? <SettingsAlert>{error}<div className="flex gap-2"><Button data-testid="persistent-retry" onClick={() => setRetry(value => value + 1)}>다시 시도</Button><Button onClick={() => navigateDashboard('/')}>홈</Button><Button onClick={() => navigateDashboard('/persistent')}>세션 선택</Button></div></SettingsAlert> : !sessionId ? <div className="persistent-session-choices">{listing?.sessions.map(session => <div key={session.session_id} data-pas-choice={session.session_id}><PersistentSessionChoiceRow session={session} selected={lastId === session.session_id} onSelect={() => navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`)}/></div>)}</div> : null}

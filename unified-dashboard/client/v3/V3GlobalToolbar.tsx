@@ -52,12 +52,12 @@ export function V3GlobalToolbar({
       <span>소울스트림</span><strong>{agentName}</strong>
     </div>
     <div className="dashboard-toolbar-actions">
+      {sessionSwitch}
       {showHome ? <DashboardIconCap label="홈" appearance={appearance} onClick={onOpenHome}>
         {appearance === "bare"
           ? <House className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
           : <span aria-hidden="true" className="text-base leading-none">⌂</span>}
       </DashboardIconCap> : null}
-      {sessionSwitch}
       <ThemeToggle variant="chrome" appearance={appearance}/>
       {onToggleUsage && showWeeklyUsage !== undefined ? <DashboardIconCap appearance={appearance} label="주간 사용량"
         aria-pressed={showWeeklyUsage} className={`persistent-session-weekly-usage-toggle${showWeeklyUsage ? " persistent-session-weekly-usage-toggle--selected" : ""}`}

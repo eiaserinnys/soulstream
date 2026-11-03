@@ -54,7 +54,7 @@ it("uses the actual agent name in the minimal PAS header and keeps a stable usag
   expect(brand.textContent).toContain("서소영 (PAS)");
   expect(brand.textContent).not.toContain("대화 제목");
   const actions = host.querySelector(".dashboard-toolbar-actions")!;
-  expect([...actions.children].map(element => element.getAttribute("aria-label"))).toEqual(["홈", "영구 세션 바꾸기", "테마 전환", "주간 사용량", "설정"]);
+  expect([...actions.children].map(element => element.getAttribute("aria-label"))).toEqual(["영구 세션 바꾸기", "홈", "테마 전환", "주간 사용량", "설정"]);
 
   const toggle = host.querySelector<HTMLButtonElement>(".persistent-session-weekly-usage-toggle")!;
   expect(toggle).not.toBeNull();
