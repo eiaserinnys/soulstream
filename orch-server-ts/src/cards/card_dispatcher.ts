@@ -1,7 +1,8 @@
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import { cardAttachmentPaths } from "./card_attachment_paths.js";
 import { buildCardChangeNotification, cardStatusLabels, type CardChangeDelivery } from "./card_change_notification.js";
-import { buildCardBlockedNotice, buildCardStatusReminder, MAX_REMINDERS_PER_TICK } from "./card_status_reminder.js";
+import { buildCardStatusReminder, MAX_REMINDERS_PER_TICK } from "./card_status_reminder.js";
+import { buildCardBlockedNotice, buildCardDoneNotice, buildCardQuestionNotice, buildCardReviewNotice, selectCardSupervisorNotice } from "./card_supervisor_notice.js";
 import { randomUUID } from "node:crypto";
 import type { NodeRegistryEvent } from "../node/registry_types.js";
 import { isTerminalSessionStatus } from "../session/session_status.js";
@@ -181,17 +182,25 @@ export class CardDispatcher {
         if (card.status === "queued" || op.operation_type === "reorder_card_queue" || op.operation_type === "answer_card_question" || (previousStatus !== "review" && card.status === "review"))
             await this.dispatchOnce();
         const committed = change.committedCard;
-        if (op.operation_type === "set_card_status" && op.actor_kind === "system" && previousStatus !== "blocked"
-            && committed?.status === "blocked" && !committed.archived && (committed.blocked_kind === "limit" || committed.blocked_kind === "no_report")) {
-            const owner = committed.assignee_session_id ? await this.options.repository.ownerSession(committed.assignee_session_id) : null;
-            const text = buildCardBlockedNotice(committed, owner);
+        const kind = committed ? selectCardSupervisorNotice({operationType:op.operation_type, actorKind:op.actor_kind, previousStatus, committed}) : null;
+        if (kind && committed) {
+            let text: string;
+            if (kind === "blocked") {
+                const owner = committed.assignee_session_id ? await this.options.repository.ownerSession(committed.assignee_session_id) : null;
+                text = buildCardBlockedNotice(committed, owner);
+            } else if (kind === "question") {
+                const question = [...detail.questions].reverse().find(q => q.answer == null && q.withdrawn_at == null
+                    && q.session_id === op.actor_session_id && q.text === payload.text);
+                text = buildCardQuestionNotice(committed, payload.text as string, payload.options as string[], question?.id as string | undefined);
+            } else if (kind === "review") text = buildCardReviewNotice(committed);
+            else text = buildCardDoneNotice(committed);
             for (const sessionId of await this.options.repository.boardSessions(committed.id)) {
-                if (sessionId === committed.assignee_session_id) continue;
-                const deliveryId = `card-blocked:${committed.id}:${op.id}:${sessionId}`;
+                if (sessionId === committed.assignee_session_id || sessionId === op.actor_session_id) continue;
+                const deliveryId = `card-${kind}:${committed.id}:${op.id}:${sessionId}`;
                 try {
                     if (await this.options.deliveryExists(deliveryId)) continue;
                     await this.options.sendMessage(sessionId, text, undefined, {deliveryId, actorKind:"system", actorSessionId:null});
-                } catch (error) { this.options.warn(`card ${committed.id} blocked notice delivery failed: ${String(error)}`); }
+                } catch (error) { this.options.warn(`card ${committed.id} ${kind} notice delivery failed: ${String(error)}`); }
             }
         }
     }
