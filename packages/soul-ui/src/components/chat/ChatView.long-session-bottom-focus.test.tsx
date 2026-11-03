@@ -1918,6 +1918,77 @@ describe("ChatView long-session initial bottom focus", () => {
     ]);
   });
 
+  it("숨은 턴은 PAS 타임라인 줄 사이에 항목이나 간격을 만들지 않는다", async () => {
+    const report = (lineKey: string, status: string, title: string, eventId: number) => ({
+      eventId,
+      event: {
+        type: "report_timeline",
+        line_key: lineKey,
+        status,
+        title,
+        detail: "",
+        card_id: `card-${lineKey}`,
+        card_number: Number(lineKey),
+      } as unknown as SoulSSEEvent,
+    });
+    const hidden = (type: string, eventId: number, data: Record<string, unknown> = {}) => ({
+      eventId,
+      event: { type, ...data } as unknown as SoulSSEEvent,
+    });
+    const assistant = (eventId: number, content: string) => ({
+      eventId,
+      event: { type: "assistant_message", content } as unknown as SoulSSEEvent,
+    });
+    useDashboardStore.getState().processHistoryEvents([
+      assistant(1, "앞 문단"),
+      report("930", "review", "#930 검수", 2),
+      hidden("user_message", 3, {
+        text: "위임 보고",
+        caller_info: { source: "agent", agent_node: "eiaserinnys", agent_id: "agent-1" },
+      }),
+      report("926", "done", "#926 완료", 4),
+      hidden("session_notification", 5, {
+        delivery_intent: "completion_notification", disposition: "queued", text: "완료 알림",
+      }),
+      report("932", "review", "#932 검수", 6),
+      report("930", "done", "#930 완료", 7),
+      assistant(8, "[SILENT]"),
+      report("932", "done", "#932 완료", 9),
+      report("918", "review", "#918 검수", 10),
+      makeComplete(11),
+      hidden("session_ended", 12, { status: "completed", termination_reason: "completed_ok" }),
+      report("932", "review", "#932 최신 검수", 13),
+      report("932", "done", "#932 최신 완료", 14),
+      hidden("turn_summary", 15, {
+        content: "완료한 작업 요약", final_response_event_id: 8, parent_event_id: 8,
+      }),
+      assistant(16, "뒤 문단"),
+    ]);
+    ({ container, root } = await renderChatView({ presentation: "manuscript" }));
+
+    const timelineItems = virtuosoData();
+    const reportIndexes = timelineItems.flatMap((item, index) => (
+      item.type === "single" && item.msg.treeNodeType === "report_timeline" ? [index] : []
+    ));
+    expect(reportIndexes).toHaveLength(4);
+    expect(reportIndexes.slice(1).map((right, index) => timelineItems
+      .slice(reportIndexes[index] + 1, right))).toEqual(
+      Array.from({ length: reportIndexes.length - 1 }, () => []),
+    );
+    expect(reportIndexes.map((index) => timelineItems[index].msg.reportTimeline.title)).toEqual([
+      "#930 완료",
+      "#926 완료",
+      "#932 최신 완료",
+      "#918 검수",
+    ]);
+
+    const rowClasses = Array.from(
+      container.querySelectorAll<HTMLElement>("[data-testid='report-timeline-row-rendered']"),
+      (row) => row.closest<HTMLElement>("[data-chat-item-key]")?.className,
+    );
+    expect(rowClasses).toEqual(["pt-2", "contents", "contents", "pb-2"]);
+  });
+
   it("thinking은 같은 line_key 보고를 끊지 않고 assistant 글은 끊는다", async () => {
     const report = (title: string, eventId: number) => ({
       eventId,

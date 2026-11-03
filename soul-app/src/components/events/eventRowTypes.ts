@@ -1,0 +1,23 @@
+/** 채팅 목록이 행을 그리는 이벤트 타입. 여기 없는 타입을 목록에 넣으면 메뉴 래퍼의 최소 높이만 남은 빈 칸이 된다. EventRenderer에 case를 더할 때 함께 고친다. */
+export const RENDERED_EVENT_TYPES: ReadonlySet<string> = new Set([
+  'user_message',
+  'intervention_sent',
+  'assistant_message',
+  'text_delta',
+  'realtime_transcript',
+  'thinking_start',
+  'thinking_delta',
+  'thinking_end',
+  'complete',
+  'context_usage',
+  'compact',
+  'session_notification',
+  'input_request',
+  'tool_approval_requested',
+  'system',
+  'realtime_status',
+  'guardrail_tripwire',
+  'error',
+  'generation_started',
+  'report_timeline',
+]);

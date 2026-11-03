@@ -1,5 +1,6 @@
 import type { SessionEvent } from '../../../api/types';
 import type { ChatRenderItem } from '../groupChatEvents';
+import { groupChatEvents } from '../groupChatEvents';
 import { projectManuscriptActivity } from '../manuscriptActivityProjection';
 
 const ev = (id: string, type: SessionEvent['type'], data: Record<string, unknown> = {}): SessionEvent => ({
@@ -90,17 +91,29 @@ describe('projectManuscriptActivity', () => {
     ]);
   });
 
-  it('화면에 나오지 않는 생명주기 이벤트는 연속 구간을 끊지 않는다', () => {
-    const first = tool('1');
-    const hidden = {
-      kind: 'event',
-      event: ev('2', 'input_request_responded'),
-      key: 'evt-2',
-    } as const;
-    const second = tool('3');
+  it('목록에서 그리지 않는 이벤트는 활동 묶음에 들어오지 않는다', () => {
+    const grouped = groupChatEvents([
+      ev('1', 'tool_start', { tool_use_id: 'tu-1', tool_name: 'Read' }),
+      ev('2', 'input_request_responded'),
+      ev('3', 'thinking_delta', { thinking: '생각' }),
+      ev('4', 'tool_start', { tool_use_id: 'tu-4', tool_name: 'Read' }),
+    ]);
 
-    expect(projectManuscriptActivity([first, hidden, second])).toEqual([
-      { kind: 'activity', key: 'activity-tool-1', items: [first, second] },
+    expect(grouped.map((item) => item.kind === 'event' ? item.event.type : item.kind))
+      .not.toContain('input_request_responded');
+    expect(projectManuscriptActivity(grouped)).toEqual([
+      {
+        kind: 'activity',
+        key: 'activity-tool-1',
+        items: [
+          expect.objectContaining({ kind: 'tool', key: 'tool-1' }),
+          expect.objectContaining({
+            kind: 'event',
+            event: expect.objectContaining({ type: 'thinking_delta' }),
+          }),
+          expect.objectContaining({ kind: 'tool', key: 'tool-4' }),
+        ],
+      },
     ]);
   });
 

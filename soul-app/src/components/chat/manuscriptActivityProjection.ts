@@ -22,17 +22,6 @@ function isManuscriptActivityEntry(
   return item.kind === 'tool' || isThinkingItem(item);
 }
 
-function isInvisibleEventItem(item: ChatRenderItem): item is ChatEventRenderItem {
-  if (item.kind !== 'event') return false;
-  return (
-    item.event.type === 'session_start' ||
-    item.event.type === 'input_request_expired' ||
-    item.event.type === 'input_request_responded' ||
-    item.event.type === 'tool_approval_resolved' ||
-    item.event.type === 'history_sync'
-  );
-}
-
 /** Fold each contiguous manuscript run of tools and thinking rows into one row. */
 export function projectManuscriptActivity(
   items: ChatRenderItem[],
@@ -69,8 +58,6 @@ export function projectManuscriptActivity(
         flush();
         projected.push(...item.summaries);
       }
-    } else if (isInvisibleEventItem(item)) {
-      run.push(item);
     } else {
       flush();
       projected.push(item);
