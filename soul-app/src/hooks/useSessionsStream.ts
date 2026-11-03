@@ -8,6 +8,7 @@ import {
 } from '../lib/session-attention';
 import { useSettingsStore } from '../store/settingsStore';
 import { useSessionStore } from '../store/sessionStore';
+import type { PersistentReportBaseline } from '../store/sessionStore';
 import { useSSEStream, CATALOG_STREAM_EVENTS } from './useSSEStream';
 import { plannerSourceForStreamEvent } from '../lib/planner-invalidation';
 import { usePlannerStore } from '../store/plannerStore';
@@ -40,6 +41,7 @@ type InFlightSession = {
   feedEvent: boolean;
   pendingUpdates: Partial<Session>;
   pendingAttention: PendingAttentionDelta[];
+  persistentReportBaseline: PersistentReportBaseline;
 };
 
 const FEED_CATALOG_STREAM_SCOPE = {
@@ -197,11 +199,16 @@ export function useSessionsStream() {
       return;
     }
 
+    const storeAtStart = useSessionStore.getState();
     const pending: InFlightSession = {
       controller: new AbortController(),
       feedEvent,
       pendingUpdates: updates,
       pendingAttention: attention ? [attention] : [],
+      persistentReportBaseline: {
+        snapshot: storeAtStart.persistentReportsBySession[sessionId],
+        generation: storeAtStart.scopeGeneration,
+      },
     };
     inFlightSessionsRef.current.set(sessionId, pending);
     void api.getSessionsByIds([sessionId], pending.controller.signal)
@@ -213,6 +220,13 @@ export function useSessionsStream() {
         ) return;
         const row = rows.find((candidate) => candidate.agentSessionId === sessionId);
         if (!row) return;
+        if (row.persistentReport !== undefined) {
+          useSessionStore.getState().applyPersistentReport(
+            sessionId,
+            row.persistentReport,
+            pending.persistentReportBaseline,
+          );
+        }
         const store = useSessionStore.getState();
         store.upsertSession(row, pending.feedEvent ? { feedEvent: true } : undefined);
         const latestStore = useSessionStore.getState();
@@ -329,10 +343,17 @@ export function useSessionsStream() {
         usePlannerStore.getState().invalidate('replay');
         lastEventIdRef.current = meta.latestId;
         instanceIdRef.current = meta.instanceId;
-        for (const [sessionId, session] of Object.entries(useSessionStore.getState().sessions)) {
-          if (session.status === 'running' && !snapshotSessionIds.has(sessionId)) {
-            hydrateSession(sessionId, {}, null, false);
-          }
+        const store = useSessionStore.getState();
+        const hydrationSessionIds = new Set(
+          Object.entries(store.sessions)
+            .filter(([, session]) => session.status === 'running')
+            .map(([sessionId]) => sessionId),
+        );
+        for (const sessionId of Object.keys(store.persistentReportsBySession)) {
+          hydrationSessionIds.add(sessionId);
+        }
+        for (const sessionId of hydrationSessionIds) {
+          if (!snapshotSessionIds.has(sessionId)) hydrateSession(sessionId, {}, null, false);
         }
         break;
       }

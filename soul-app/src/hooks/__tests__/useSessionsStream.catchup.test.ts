@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
-import type { Session } from '../../api/types';
+import type { PersistentReportEntry, Session } from '../../api/types';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSessionsStream } from '../useSessionsStream';
 
@@ -38,6 +38,21 @@ function session(id: string, index: number): Session {
     createdAt: '2026-10-01T00:00:00Z',
     updatedAt: '2026-10-02T00:00:00Z',
     folderId: 'visible',
+  };
+}
+
+function reportEntry(key: string): PersistentReportEntry {
+  return {
+    key,
+    kind: 'ask',
+    title: key,
+    card_numbers: [],
+    context: '',
+    action: '',
+    options: [],
+    state: 'open',
+    answer: '',
+    updated_at: '2026-10-02T00:00:00Z',
   };
 }
 
@@ -95,6 +110,7 @@ beforeEach(() => {
   useSessionStore.setState({
     sessions: {},
     catalog: { folders: [], sessions: {} },
+    persistentReportsBySession: {},
     feedMembership: {},
     feedSessionIds: [],
     feedPage: { hasMore: false, nextCursor: null, status: 'idle' },
@@ -103,6 +119,111 @@ beforeEach(() => {
     catalogRetryRequest: 0,
     pendingAttentionVersionsBySession: {},
   });
+});
+
+test('보고 store에만 있는 PAS는 session_list 누락 뒤 빈 보고를 REST에서 반영한다', async () => {
+  const sessionId = 'report-only';
+  useSessionStore.getState().applyPersistentReport(sessionId, [reportEntry('old')]);
+  const fetchMock = global.fetch as jest.Mock;
+  fetchMock.mockResolvedValue(jsonResponse({
+    sessions: [{ ...session(sessionId, 7), persistentReport: [] }],
+  }));
+  const hook = renderHook(() => useSessionsStream());
+
+  emit('stream_meta', { instance_id: 'node-a', latest_id: 100 });
+  emit('session_list', snapshotPayload([]));
+
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  expect(new URL(fetchMock.mock.calls[0][0]).searchParams.getAll('session_id')).toEqual([sessionId]);
+  await waitFor(() => expect(useSessionStore.getState().persistentReportsBySession[sessionId]?.entries).toEqual([]));
+  expect(useSessionStore.getState().feedMembership[sessionId]).toBeUndefined();
+  expect(useSessionStore.getState().feedSessionIds).not.toContain(sessionId);
+  hook.unmount();
+});
+
+test('보고 보충 조회는 완료 PAS의 서버 최신 장만 남긴다', async () => {
+  const sessionId = 'completed-pas';
+  const remaining = reportEntry('remaining');
+  useSessionStore.getState().applyPersistentReport(sessionId, [reportEntry('removed'), remaining]);
+  const fetchMock = global.fetch as jest.Mock;
+  fetchMock.mockResolvedValue(jsonResponse({
+    sessions: [{ ...session(sessionId, 7), persistentReport: [remaining] }],
+  }));
+  const hook = renderHook(() => useSessionsStream());
+
+  emit('stream_meta', { instance_id: 'node-a', latest_id: 100 });
+  emit('session_list', snapshotPayload([]));
+
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(useSessionStore.getState().persistentReportsBySession[sessionId]?.entries).toEqual([remaining]));
+  expect(useSessionStore.getState().feedMembership[sessionId]).toBeUndefined();
+  expect(useSessionStore.getState().feedSessionIds).not.toContain(sessionId);
+  hook.unmount();
+});
+
+test('보충 조회 중 도착한 보고 SSE는 이전 REST 응답보다 우선한다', async () => {
+  const sessionId = 'report-race';
+  const initial = reportEntry('initial');
+  const latest = reportEntry('latest');
+  useSessionStore.getState().applyPersistentReport(sessionId, [initial]);
+  let resolveResponse!: (response: Response) => void;
+  const fetchMock = global.fetch as jest.Mock;
+  fetchMock.mockImplementation(() => new Promise<Response>((resolve) => { resolveResponse = resolve; }));
+  const hook = renderHook(() => useSessionsStream());
+
+  emit('stream_meta', { instance_id: 'node-a', latest_id: 100 });
+  emit('session_list', snapshotPayload([]));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  emit('session_updated', { agent_session_id: sessionId, persistent_report: [latest] }, '101');
+
+  await act(async () => {
+    resolveResponse(jsonResponse({
+      sessions: [{ ...session(sessionId, 7), persistentReport: [initial] }],
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  });
+
+  expect(useSessionStore.getState().persistentReportsBySession[sessionId]?.entries).toEqual([latest]);
+  expect(useSessionStore.getState().feedMembership[sessionId]).toBeUndefined();
+  hook.unmount();
+});
+
+test('실행 중 목록과 보고 store에 모두 있는 PAS는 한 번만 보충 조회한다', async () => {
+  const sessionId = 'running-and-reported';
+  useSessionStore.setState({ sessions: { [sessionId]: session(sessionId, 0) } });
+  useSessionStore.getState().applyPersistentReport(sessionId, []);
+  const fetchMock = global.fetch as jest.Mock;
+  fetchMock.mockResolvedValue(jsonResponse({
+    sessions: [{ ...session(sessionId, 0), persistentReport: [] }],
+  }));
+  const hook = renderHook(() => useSessionsStream());
+
+  emit('stream_meta', { instance_id: 'node-a', latest_id: 100 });
+  emit('session_list', snapshotPayload([]));
+
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  expect(new URL(fetchMock.mock.calls[0][0]).searchParams.getAll('session_id')).toEqual([sessionId]);
+  const feedIds = useSessionStore.getState().feedSessionIds;
+  expect(new Set(feedIds).size).toBe(feedIds.length);
+  hook.unmount();
+});
+
+test('보충 조회 실패는 기존 보고를 유지한다', async () => {
+  const sessionId = 'failed-report-catchup';
+  const existing = reportEntry('keep');
+  useSessionStore.getState().applyPersistentReport(sessionId, [existing]);
+  const fetchMock = global.fetch as jest.Mock;
+  fetchMock.mockRejectedValue(new Error('offline'));
+  jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+  const hook = renderHook(() => useSessionsStream());
+
+  emit('stream_meta', { instance_id: 'node-a', latest_id: 100 });
+  emit('session_list', snapshotPayload([]));
+
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+  await act(async () => { await Promise.resolve(); });
+  expect(useSessionStore.getState().persistentReportsBySession[sessionId]?.entries).toEqual([existing]);
+  hook.unmount();
 });
 
 afterEach(() => {
