@@ -74,7 +74,7 @@ card_control_plane_service.ts는 카드 commit 뒤, 스냅샷 조회 전에 pers
 | 확인 요청·사용자 커멘트 | `request_card_review(ask)` / POST `/api/cards/:id/comments`의 `itemId` / `card_control_plane_service.ts:applyAddCommentTx` | 검수 요청은 기존 상태 전환과 함께 상황판을 user 차례로 갱신한다. 확인 항목 대상 커멘트는 항목 확인을 풀고 고칠 점을 추가한다. 저장된 사용자 작성 커멘트(`author_kind=user`, reply mode 제외)는 보관되지 않은 session 담당의 limit 외 막힘 카드에서 같은 트랜잭션으로 running 재개, 막힘 세부값 정리, 열린 질문 닫기를 한다. 질문 철회 사유는 `사용자가 커멘트로 답해 서버가 닫았습니다`다. 일반 커멘트의 PAS 동기화는 `mutateCard` commit 뒤에 돈다. `dispatch_work` 후속 지시는 `card_work_dispatch_service.ts`가 바깥 commit 뒤 같은 `syncReportsAfterCommit`을 호출하고 `card_updated`를 낸다. 에이전트 reply mode와 사람 입력 재개를 동반하지 않는 상태 변경은 질문을 바꾸지 않는다. 커멘트 전달에는 ID, 대상 항목, 직전 성공 전달 이후 확인했던 번호를 넣고 기존 성공 뒤 `delivered_at`을 기록한다. |
 | 반려 | 사람의 review→running, 선택 사유 | 사유는 선택 사항이며, 입력한 경우 기존 세션에 반려 사유 메시지로 전달하고 새 세션의 첫 프롬프트에 포함한다. 완료 세션이면 queued로 둔다. |
 | 카드 알림 | `push/push_notifier.ts`의 notifyCard → 기존 sendToUser | 질문은 카드 제목·질문, review는 `검수 요청: {제목}`. 확인만으로 담당 세션을 깨우지 않으며 다음 사용자 커멘트 전달에 확인 사실을 포함한다. 기존 토큰 fan-out/invalid token 제거/폴더 알림 제외를 재사용한다. orch에 Slack DM 발송 경로는 없다. |
-| 시스템 막힘 PAS 알림 | `CardControlPlaneService.setCardStatus` → `CardDispatcher.handleMutation` → `readCardBoardSessions` | 시스템이 비보관 카드를 blocked(limit/no_report)로 옮기면 PAS 판 연결 세션에 담당 정보와 교체 방법을 보낸다. 담당 세션과 질문 막힘은 제외한다. |
+| 카드 상태 PAS 알림 | `CardControlPlaneService.setCardStatus/askQuestion` → `CardDispatcher.handleMutation` → `readCardBoardSessions` | 비보관 카드의 시스템 막힘(limit/no_report), 질문 열림, 검수 대기, 완료를 PAS 판 연결 세션에 알린다. 담당 세션과 변경 행위자 세션은 제외한다. 질문 막힘의 상태 변경 자체는 알리지 않는다. |
 | 표시 | `planner/planner_repository.ts`, `card_updated` | attention은 review와 blocked 전체(question/no_report/limit), running, queued는 전역 대기열 순서를 따른다. 카드 상세 및 세션 DTO는 같은 sessions.card_id를 읽는다. 웹·앱 소비 구현은 d/e다. |
 
 ## 서버 안내문과 담당 현황
@@ -117,7 +117,7 @@ card_control_plane_service.ts는 카드 commit 뒤, 스냅샷 조회 전에 pers
 | 멈춤 안내 | 담당 뿌리 종료와 기존 60초 `CardDispatcher.tick` | running 카드의 트리가 모두 멈췄고 뿌리 종료 영수증이 상태 시점보다 뒤이면 막힘·검수·재개를 안내한다. interrupted와 limit_hit 뿌리는 깨우지 않는다. 자동배정 설정과 무관하게 tick에서 확인하며 최대 2건을 보낸다. |
 | 미완료 통지 판정 | `session_deliveries`, `session_delivery_relation_consumptions`, `event_ingress_receipts` | 트리로 향하는 pending 전달이 30분 미만이면 보류한다. 완료 통지 대상 후손의 relation이 장부와 소비 기록 양쪽에 없고 종료 커밋이 5분 미만이면 보류한다. 30분·5분은 고장 판단 상한이며 정상 경로에 기다리는 시간을 더하지 않는다. |
 | 전달·중복 억제 | `CardDispatcherOptions.deliveryExists` → `SessionDeliveryRepository.get`, 기존 sendMessage → `sendCardChangeOnce` | ID는 `card-reminder:{cardId}:{kind}:{상태 시점의 epoch 마이크로초}:{rootSessionId}`다. 어느 상태든 같은 전달 행이 있으면 재전송하지 않는다. 수신자는 뿌리, actorKind와 caller_info.source는 system이다. pending 행 재전송은 기존 전달 경로가 담당한다. |
-| 시스템 막힘 PAS 전달·중복 억제 | `CardDispatcher.handleMutation` → `deliveryExists` → 기존 `sendMessage` | ID는 `card-blocked:{cardId}:{operationId}:{sessionId}`다. 같은 전달 행이 있으면 건너뛰고 수신 세션별 전송 실패를 warn으로 격리한다. |
+| 카드 상태 PAS 전달·중복 억제 | `CardDispatcher.handleMutation` → `deliveryExists` → 기존 `sendMessage` | ID는 `card-{blocked/question/review/done}:{cardId}:{operationId}:{sessionId}`다. 같은 전달 행이 있으면 건너뛰고 수신 세션별 전송 실패를 warn으로 격리한다. |
 
 뿌리 종료 계기에서는 세션 기본 키 조회로 종료 상태를 먼저 확인하고 실행 중 갱신은 카드 후보·트리 사실 조회를 생략한다. 리마인더 점검 전체의 예외는 warn으로 격리해 기존 한도·종료·자동배정 처리를 이어 간다. 판정과 전송은 기존 디스패처 enqueue 체인에서 카드 mutation과 순서를 맞춘다. 실패는 warn으로 남기고 다음 tick과 기존 전달 처리에 맡긴다. 리마인더는 카드 상태를 바꾸지 않으며 새 타이머·표·재시도 계층을 만들지 않는다. brief 갱신·같은 상태 재기록·디스패처 재시작에도 같은 상태 시점의 리마인더가 반복되지 않는다.
 

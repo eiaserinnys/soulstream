@@ -126,6 +126,45 @@ describe("card dispatch and session lifecycle", () => {
         await dispatcher.drain();
         expect(blockedNotices()).toHaveLength(0);
     });
+    it("sends a question with its ID and choices to the PAS once", async () => {
+        const id = await makeNoticeCard();
+        const result = await cards.askQuestion({actorKind:'agent',actorSessionId:'worker',cardId:id,text:'어느 방향?',options:['진행','중단']});
+        await dispatcher.drain();
+        const detail = (await cards.getCard(id))!;
+        const notice = messages.mock.calls.filter(call => call[1].startsWith('[카드 질문]'));
+        expect(notice).toEqual([['pas',`[카드 질문] 맡긴 카드 #${detail.card.number} 「맡긴 작업」(${id})에 담당이 질문을 열었습니다. 질문 ${detail.questions[0]!.id}: 어느 방향? 선택지: 진행 / 중단. 디렉터 판에 질문 장이 올라 있습니다.`,undefined,
+            {deliveryId:`card-question:${id}:${result.operation.id}:pas`,actorKind:'system',actorSessionId:null}]]);
+        dispatcher.acceptMutation(changes.find(change => change.result.operation.id === result.operation.id)!);
+        await dispatcher.drain();
+        expect(messages.mock.calls.filter(call => call[1].startsWith('[카드 질문]'))).toHaveLength(1);
+    });
+    it("sends review instructions and item status to the PAS", async () => {
+        const id = await makeNoticeCard();
+        const agent = {actorKind:'agent' as const,actorSessionId:'worker',cardId:id};
+        await cards.setCardItems({...agent,items:['첫째 확인','둘째 확인']});
+        await cards.reportCardItem({...agent,itemId:1,state:'done',result:'첫째 확인됨'});
+        await dispatcher.drain();
+        messages.mockClear();
+        const result = await cards.requestCardReview({...agent,ask:'결과를 확인해 주세요'});
+        await dispatcher.drain();
+        const card = (await cards.getCard(id))!.card;
+        expect(messages.mock.calls.filter(call => call[1].startsWith('[카드 검수 대기]'))).toEqual([['pas',`[카드 검수 대기] 맡긴 카드 #${card.number} 「맡긴 작업」(${id})가 검수 대기가 됐습니다. 볼 것: 결과를 확인해 주세요. 확인 항목: 1. 첫째 확인(결과 있음), 2. 둘째 확인(아직).`,undefined,
+            {deliveryId:`card-review:${id}:${result.operation.id}:pas`,actorKind:'system',actorSessionId:null}]]);
+    });
+    it("sends a human completion to the PAS", async () => {
+        const id = await makeNoticeCard();
+        const result = await cards.setCardStatus({...human,cardId:id,status:'done'});
+        await dispatcher.drain();
+        const card = (await cards.getCard(id))!.card;
+        expect(messages.mock.calls.filter(call => call[1].startsWith('[카드 완료]'))).toEqual([['pas',`[카드 완료] 맡긴 카드 #${card.number} 「맡긴 작업」(${id})가 완료됐습니다. 완료한 쪽: 사람.`,undefined,
+            {deliveryId:`card-done:${id}:${result.operation.id}:pas`,actorKind:'system',actorSessionId:null}]]);
+    });
+    it("does not send review notices for an unconnected card", async () => {
+        const id = await makeNoticeCard(false);
+        await cards.requestCardReview({actorKind:'agent',actorSessionId:'worker',cardId:id,ask:'결과 확인'});
+        await dispatcher.drain();
+        expect(messages.mock.calls.filter(call => call[1].startsWith('[카드 검수 대기]'))).toHaveLength(0);
+    });
     async function terminal(sessionId: string, reason: string | null = null) {
         await h.sql `UPDATE sessions SET status=${reason ? 'error' : 'completed'},termination_reason=${reason},termination_event_id=1 WHERE session_id=${sessionId}`;
         await dispatcher.sessionEnded(sessionId);
