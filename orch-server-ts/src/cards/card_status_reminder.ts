@@ -1,5 +1,16 @@
 import { cardStatusLabels, type CardChangeDelivery } from "./card_change_notification.js";
-import type { CardStatus } from "./control_plane/card_types.js";
+import type { CardRow, CardStatus } from "./control_plane/card_types.js";
+import type { CardOwnerSession } from "./card_session_target.js";
+
+export function buildCardBlockedNotice(
+  card: Pick<CardRow, "id" | "number" | "title" | "blocked_detail" | "blocked_kind" | "assignee_session_id" | "node_id" | "assignee_agent_id" | "model_preset">,
+  owner: Pick<CardOwnerSession, "node_id" | "agent_id" | "model_preset"> | null,
+): string {
+  const node = card.assignee_session_id ? owner?.node_id : card.node_id;
+  const agent = card.assignee_session_id ? owner?.agent_id : card.assignee_agent_id;
+  const model = card.assignee_session_id ? owner?.model_preset : card.model_preset;
+  return `[카드 막힘] 맡긴 카드 #${card.number} 「${card.title}」(${card.id})가 막혔습니다. 사유: ${card.blocked_detail ?? "없음"}(${card.blocked_kind}). 담당 세션 ${card.assignee_session_id ?? "없음"}, 노드 ${node ?? "?"}, 에이전트 ${agent ?? "?"}, 모델 ${model ?? "?"}. 담당이 이어 가지 못하는 막힘입니다. 다른 모델이나 노드로 담당을 바꿔 이어 가려면 dispatch_work에 card_id와 replace_assignee=true를 보내세요.`;
+}
 
 // Failure ceilings, not a delay on the normal completion path.
 export const PENDING_DELIVERY_FAILURE_CEILING_MS = 30 * 60 * 1000;

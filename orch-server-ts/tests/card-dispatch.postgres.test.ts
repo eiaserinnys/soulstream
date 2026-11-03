@@ -3,9 +3,9 @@ import Fastify from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
-import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
+import { CardControlPlaneService, type CardMutationChange } from "../src/cards/card_control_plane_service.js";
 import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
-import { CardDispatcher } from "../src/cards/card_dispatcher.js";
+import { CardDispatcher, type CardDispatcherOptions } from "../src/cards/card_dispatcher.js";
 import {createCardDispatchRuntime} from "../src/cards/card_dispatch_runtime.js";
 import { createSessionOwnerResolver } from "../src/session/session_owner.js";
 import { buildCardPrompt } from "../src/cards/card_prompt.js";
@@ -24,7 +24,11 @@ describe("card dispatch and session lifecycle", () => {
     let repo: CardDispatchRepository;
     let sequence = 0;
     let available = true;
-    const messages = vi.fn(async (_sessionId: string, _text: string) => { });
+    let changes: CardMutationChange[] = [];
+    const deliveries = new Set<string>();
+    const messages = vi.fn<CardDispatcherOptions["sendMessage"]>(async (_sessionId, _text, _admission, delivery) => {
+        if (delivery) deliveries.add(delivery.deliveryId);
+    });
     const notify = vi.fn(async (_input: unknown) => { });
     const warn = vi.fn();
     const launch = vi.fn(async (input: {
@@ -55,8 +59,8 @@ describe("card dispatch and session lifecycle", () => {
                     id: number;
                 }[]> `SELECT event_append(${p.sessionId},${p.eventType},${p.payload},${p.searchableText},${p.createdAt},${p.dedupeKey ?? null}) AS id`;
                 return rows[0]!.id;
-            } }, undefined, change => dispatcher.acceptMutation(change));
-        dispatcher = new CardDispatcher({ deliveryExists: async () => false, repository: repo, cards: async () => cards,
+            } }, undefined, change => { changes.push(change); dispatcher.acceptMutation(change); });
+        dispatcher = new CardDispatcher({ deliveryExists: async id => deliveries.has(id), repository: repo, cards: async () => cards,
             resolveTarget: card => ({ nodeId: card.node_id ?? 'eiaserinnys', agentId: card.assignee_agent_id!, modelPreset: card.model_preset ?? 'default-model',
                 available, reason: available ? null : '사용량 제한' }), launch, sendMessage: messages, notify, warn });
     }, 60000);
@@ -73,6 +77,8 @@ describe("card dispatch and session lifecycle", () => {
         notify.mockClear();
         launch.mockClear();
         warn.mockClear();
+        changes = [];
+        deliveries.clear();
         available = true;
     });
     async function make(title: string, queue = false) {
@@ -82,6 +88,44 @@ describe("card dispatch and session lifecycle", () => {
         return result.operation.target_id;
     }
     async function start() { const id = await make('작업', true); return { id, sessionId: String((await cards.getCard(id))!.sessions[0]!.session_id) }; }
+    async function makeNoticeCard(connected = true) {
+        await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,model_preset,metadata) VALUES
+          ('pas','pas-node','supervisor','running','pas-model',${h.sql.json([{type:'persistent_session',value:{enabled:true}}])}),
+          ('worker','worker-node','roselin','running','worker-model','[]')`;
+        const actor = connected ? {actorKind:'agent' as const, actorSessionId:'pas'} : human;
+        const id = (await cards.createCard({...actor,folderId:'dispatch-folder',title:'맡긴 작업',request:'수행',
+            assignee:{kind:'session',sessionId:'worker'},nodeId:'card-node',modelPreset:'card-model'})).operation.target_id;
+        await cards.setCardStatus({...human,cardId:id,status:'running'});
+        await dispatcher.drain();
+        messages.mockClear();
+        return id;
+    }
+    function blockedNotices() { return messages.mock.calls.filter(call => call[1].startsWith('[카드 막힘]')); }
+    it.each(['limit','no_report'] as const)("sends the system %s block once to the connected PAS", async kind => {
+        const id = await makeNoticeCard();
+        const result = await cards.setCardStatus({actorKind:'system',actorSessionId:null,cardId:id,status:'blocked',blockedKind:kind,blockedDetail:'실행 중단'});
+        await dispatcher.drain();
+        const card = (await cards.getCard(id))!.card;
+        const change = changes.find(item => item.result.operation.id === result.operation.id)!;
+        expect(blockedNotices()).toEqual([['pas',`[카드 막힘] 맡긴 카드 #${card.number} 「맡긴 작업」(${id})가 막혔습니다. 사유: 실행 중단(${kind}). 담당 세션 worker, 노드 worker-node, 에이전트 roselin, 모델 worker-model. 담당이 이어 가지 못하는 막힘입니다. 다른 모델이나 노드로 담당을 바꿔 이어 가려면 dispatch_work에 card_id와 replace_assignee=true를 보내세요.`,undefined,
+            {deliveryId:`card-blocked:${id}:${result.operation.id}:pas`,actorKind:'system',actorSessionId:null}]]);
+        dispatcher.acceptMutation(change);
+        await dispatcher.drain();
+        expect(blockedNotices()).toHaveLength(1);
+    });
+    it.each(['question','agent'] as const)("does not send a PAS notice for %s blocks", async kind => {
+        const id = await makeNoticeCard();
+        const actor = kind === 'agent' ? {actorKind:'agent' as const,actorSessionId:'worker'} : {actorKind:'system' as const,actorSessionId:null};
+        await cards.setCardStatus({...actor,cardId:id,status:'blocked',blockedKind:kind === 'agent' ? 'no_report' : 'question'});
+        await dispatcher.drain();
+        expect(blockedNotices()).toHaveLength(0);
+    });
+    it("does not send a PAS notice for an unconnected card", async () => {
+        const id = await makeNoticeCard(false);
+        await cards.setCardStatus({actorKind:'system',actorSessionId:null,cardId:id,status:'blocked',blockedKind:'limit'});
+        await dispatcher.drain();
+        expect(blockedNotices()).toHaveLength(0);
+    });
     async function terminal(sessionId: string, reason: string | null = null) {
         await h.sql `UPDATE sessions SET status=${reason ? 'error' : 'completed'},termination_reason=${reason},termination_event_id=1 WHERE session_id=${sessionId}`;
         await dispatcher.sessionEnded(sessionId);
