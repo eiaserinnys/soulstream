@@ -34,7 +34,7 @@ vi.mock('../hooks/useUsageSummary', async()=>{
  }};
 });
 vi.mock('../components/ConfigModal',()=>({ConfigModal:(p:any)=>p.open?<div data-testid="config" data-tab={p.initialTab}/>:null}));
-vi.mock('./PersistentSessionChatView',()=>({PersistentSessionChatView:(p:any)=><div data-testid="chat" data-session={p.sessionId} data-report-ready={String(p.reportSeat?.ready)} data-upload={p.fileUploadUrl} data-history={p.historyEnabled} data-runtime-strips={String(p.showRuntimeStrips)}/> }));
+vi.mock('./PersistentSessionChatView',()=>({PersistentSessionChatView:(p:any)=><div data-testid="chat" data-session={p.sessionId} data-disabled={String(p.chatInputDisabled)} data-settings-lookup={String(p.loadDisplaySettings)} data-report-ready={String(p.reportSeat?.ready)} data-upload={p.fileUploadUrl} data-history={p.historyEnabled} data-runtime-strips={String(p.showRuntimeStrips)}>{JSON.stringify(useDashboardStore.getState().persistentReports[p.sessionId]??[])}{p.transcriptFallback}</div> }));
 
 let host:HTMLDivElement,root:Root;
 type MediaListener={query:string;listener:(event:{matches:boolean})=>void};
@@ -66,6 +66,39 @@ const currentProviderOptions=()=>mocks.provider.mock.calls.slice(-2).map(([optio
 beforeEach(()=>{vi.clearAllMocks();resizeTo(1024);mediaListeners=[];vi.stubGlobal('matchMedia',(query:string)=>({get matches(){return mediaMatches(query);},media:query,addEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>mediaListeners.push({query,listener}),removeEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>{mediaListeners=mediaListeners.filter(item=>item.listener!==listener);}}));localStorage.clear();mocks.usageSummary=usageSummaryFixture;useDashboardStore.getState().setActiveSession(null);useCardStore.getState().reset();useCardNavigation.getState().close();host=document.createElement('div');document.body.append(host);root=createRoot(host);mocks.fetchSessions.mockImplementation(async(o:any)=>({sessions:o.sessionIds.map((id:string)=>({agentSessionId:id,nodeId:'node-1',title:id}))}));});
 afterEach(()=>{act(()=>root.unmount());host.remove();geometry.value=null;vi.unstubAllGlobals();});
 async function mount(id?:string){await act(async()=>{root.render(<DashboardInternalLinks><PersistentSessionScreen sessionId={id}/></DashboardInternalLinks>);});}
+it('keeps the target frame isolated while list and session summary load in sequence',async()=>{
+ const one=session('one'),two=session('two');mocks.list.mockResolvedValue({sessions:[one,two]});await mount('one');
+ act(()=>useDashboardStore.setState({tree:{id:'old-tree'} as any,persistentReports:{one:[{title:'old-report'}]} as any}));
+ let releaseList!:(value:any)=>void;let releaseSummary!:(value:any)=>void;
+ mocks.list.mockReturnValue(new Promise(resolve=>{releaseList=resolve}));
+ mocks.fetchSessions.mockReturnValue(new Promise(resolve=>{releaseSummary=resolve}));
+ await mount('two');
+ const checkWaiting=()=>{
+  expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-session')).toBe('two');
+  expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-disabled')).toBe('true');
+  expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-history')).toBe('false');
+  expect(host.querySelector('[data-testid="chat"]')?.textContent).toContain('Loading earlier messages...');
+  expect(host.querySelector('[data-testid="chat"]')?.textContent).not.toContain('old-report');
+  expect(useDashboardStore.getState().tree).toBeNull();expect(useDashboardStore.getState().activeSessionSummary).toBeNull();
+  expect(useDashboardStore.getState().persistentSessionDisplaySettings?.sessionId).toBe('two');
+  expect(currentProviderOptions().some(options=>options.sessionKey==='two'&&options.active)).toBe(false);
+ };
+ checkWaiting();await act(async()=>releaseList({sessions:[one,two]}));checkWaiting();
+ await act(async()=>releaseSummary({sessions:[{agentSessionId:'two',nodeId:'node-1',title:'two'}]}));
+ expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-disabled')).toBe('false');
+ expect(currentProviderOptions().some(options=>options.sessionKey==='two'&&options.active)).toBe(true);
+});
+it('keeps the target frame on summary failure and reconnects after retry',async()=>{
+ const one=session('one'),two=session('two');mocks.list.mockResolvedValue({sessions:[one,two]});await mount('one');
+ mocks.fetchSessions.mockRejectedValueOnce(new Error('summary offline'));await mount('two');
+ expect(host.querySelector('[data-testid="chat"]')?.textContent).toContain('summary offline');
+ expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-disabled')).toBe('true');
+ mocks.fetchSessions.mockResolvedValueOnce({sessions:[{agentSessionId:'two',nodeId:'node-1',title:'two'}]});
+ await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="persistent-retry"]')!.click());
+ expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-disabled')).toBe('false');
+ expect(useDashboardStore.getState().activeSessionSummary?.agentSessionId).toBe('two');
+ expect(currentProviderOptions().some(options=>options.sessionKey==='two'&&options.active)).toBe(true);
+});
 it('opens the PAS switch before home, marks the current session and navigates to the selected session',async()=>{
  mocks.list.mockResolvedValue({sessions:[session('one'),session('two / 다음')]});await mount('one');
  const home=host.querySelector('[aria-label="홈"]')!;const button=host.querySelector<HTMLButtonElement>('[data-testid="persistent-session-switch"]')!;
@@ -84,7 +117,7 @@ it('keeps the usage toggle visible while switching PAS before chat is ready',asy
  resizeTo(1440);mocks.list.mockResolvedValue({sessions:[session('one'),session('two')]});await mount('one');
  expect(host.querySelector('[data-testid="usage-toggle"]')).not.toBeNull();
  mocks.list.mockReturnValue(new Promise(()=>{}));await mount('two');
- expect(host.querySelector('[data-testid="chat"]')).toBeNull();
+ expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-disabled')).toBe('true');
  expect(host.querySelector('[data-testid="usage-toggle"]')).not.toBeNull();
 });
 it('does not show the PAS switch for a single session',async()=>{

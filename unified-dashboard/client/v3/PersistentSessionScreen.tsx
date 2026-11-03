@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Button, DashboardIconCap, LiquidGlassProvider, PersistentSessionPortraitIcon, PersistentSessionPortraitOffIcon, SwayCharacter, createChatSessionStore, initTheme, nextUsageSummaryNodeId, useAuth, useDashboardStore, useInitialCatalogLoad, useIsMobile, useSessionProvider, useUserPreferencesSync, type SessionReviewAcknowledgeResult, type SessionSummary } from '@seosoyoung/soul-ui';
+import { ChatHistoryStatus } from '@seosoyoung/soul-ui/components/chat/ChatHistoryStatus';
 import { ArrowLeft, ListTodo, X } from 'lucide-react';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import { usePersistentSessionDetailsController } from '../components/PersistentSessionDetails';
@@ -105,7 +106,18 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
     return () => media.removeEventListener('change', changed);
   }, []);
   const resource = listing?.sessions.find(session => session.session_id === sessionId) ?? null;
-  const chatReady = Boolean(sessionId && activatedId === sessionId && activeSessionKey === sessionId);
+  const frameReady = Boolean(sessionId && resource?.persistent === true && activeSessionKey === sessionId && displaySettings?.sessionId === sessionId);
+  const chatReady = Boolean(sessionId && activatedId === sessionId && activeSessionKey === sessionId && activeSessionSummary?.agentSessionId === sessionId);
+  const prepareFrame = useCallback((target: PersistentSession) => {
+    const state = useDashboardStore.getState();
+    if (state.activeSessionKey === target.session_id && state.persistentSessionDisplaySettings?.sessionId === target.session_id) return;
+    state.setActiveSessionSummary(null);
+    state.setActiveSession(target.session_id);
+    state.setPersistentSessionDisplaySettings(target.session_id, target.settings);
+  }, []);
+  useLayoutEffect(() => {
+    if (resource?.persistent === true) prepareFrame(resource);
+  }, [resource, prepareFrame]);
   const preferences = user?.email ? readPersistentSessionDevicePreferences(user.email) : null;
   const showWeeklyUsage = preferences?.showWeeklyUsage ?? false;
   const savedNodeSelection = preferences?.weeklyUsageNodeSelection;
@@ -151,7 +163,7 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
     observer.observe(seat);
     return () => observer.disconnect();
   }, [hasWeeklyUsage, usageSummary.evaluatedAtMs, usageSummary.gauges.length, usageSummary.loading, usageSummary.loadState, usageSummary.node?.fetchedAt]);
-  const geometry = usePersistentSessionGeometry({ app: appRef, header: headerRef, main: mainRef, composer: composerAnchorRef, enabled: chatReady, showCharacter: displaySettings?.showCharacter ?? false });
+  const geometry = usePersistentSessionGeometry({ app: appRef, header: headerRef, main: mainRef, composer: composerAnchorRef, enabled: frameReady, showCharacter: displaySettings?.showCharacter ?? false });
   const applySaved = useCallback((saved: PersistentSession) => {
     setListing(current => current ? { ...current, sessions: current.sessions.map(session => session.session_id === saved.session_id ? saved : session) } : current);
     useDashboardStore.getState().setPersistentSessionDisplaySettings(saved.session_id, saved.settings);
@@ -266,7 +278,12 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
       }
       const selectedSession = result.sessions.find(session => session.session_id === sessionId && session.persistent);
       if (!selectedSession) throw new Error('영구 세션을 찾을 수 없습니다.');
-      const summary = await resolveSessionForOpen({ sessionId, fetchSessions: orchestratorSessionProvider.fetchSessions });
+      prepareFrame(selectedSession);
+      const state = useDashboardStore.getState();
+      const knownSession = state.activeSessionSummary?.agentSessionId === sessionId
+        ? state.activeSessionSummary
+        : state.catalog?.sessionList?.find(session => session.agentSessionId === sessionId);
+      const summary = await resolveSessionForOpen({ sessionId, knownSession, fetchSessions: orchestratorSessionProvider.fetchSessions });
       if (!current) return;
       if (!summary) throw new Error('영구 세션의 대화를 불러오지 못했습니다.');
       activateRunSession(summary, useDashboardStore.getState());
@@ -277,7 +294,7 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
     }).catch(caught => { if (current) setError(caught instanceof Error ? caught.message : String(caught)); })
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
-  }, [api, retry, sessionId, user?.email]);
+  }, [api, prepareFrame, retry, sessionId, user?.email]);
   useEffect(() => () => {
     const state = useDashboardStore.getState();
     if (sessionId && state.activeSessionKey === sessionId) {
@@ -285,8 +302,9 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
       state.setActiveSession(null);
     }
   }, [sessionId]);
-  const disabled = !activeSessionSummary?.nodeId || nodes.get(activeSessionSummary.nodeId)?.status !== 'connected';
+  const disabled = !chatReady || Boolean(error) || !activeSessionSummary?.nodeId || nodes.get(activeSessionSummary.nodeId)?.status !== 'connected';
   const lastId = user?.email ? readPersistentSessionDevicePreferences(user.email).lastSessionId : null;
+  const errorContent = error ? <SettingsAlert>{error}<div className="flex gap-2"><Button data-testid="persistent-retry" onClick={() => setRetry(value => value + 1)}>다시 시도</Button><Button onClick={() => navigateDashboard('/')}>홈</Button><Button onClick={() => navigateDashboard('/persistent')}>세션 선택</Button></div></SettingsAlert> : null;
   return <div ref={appRef} className={`v3-shell persistent-session-screen${hasWeeklyUsage ? ' has-weekly-usage' : ''}`}
     style={{ ...shellStyle, '--pas-usage-height': `${usageHeight}px`, '--pas-baseline-bottom': geometry ? `calc(100% - ${geometry.lineY}px)` : undefined } as CSSProperties} data-testid="persistent-session-screen">
     <V3GlobalToolbar headerRef={headerRef} variant="minimal" appearance="bare" sessionName={resource?.display_name ?? undefined} agentName={resource?.agent_name ?? undefined} agentOnly={isMobile} showHome={!isMobile} onOpenHome={() => navigateDashboard('/')} onOpenConfig={() => setSettingsOpen(true)}
@@ -295,11 +313,11 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
       onToggleUsage={usageAvailable && user?.email ? toggleWeeklyUsage : undefined}/>
     <main ref={mainRef} className="persistent-session-main">
       {details.error && <div className="persistent-session-save-error"><SettingsAlert>{details.error}</SettingsAlert></div>}
-      {loading ? <p role="status">불러오는 중…</p> : error ? <SettingsAlert>{error}<div className="flex gap-2"><Button data-testid="persistent-retry" onClick={() => setRetry(value => value + 1)}>다시 시도</Button><Button onClick={() => navigateDashboard('/')}>홈</Button><Button onClick={() => navigateDashboard('/persistent')}>세션 선택</Button></div></SettingsAlert> : !sessionId ? <div className="persistent-session-choices">{listing?.sessions.map(session => <div key={session.session_id} data-pas-choice={session.session_id}><PersistentSessionChoiceRow session={session} selected={lastId === session.session_id} onSelect={() => navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`)}/></div>)}</div> : null}
-      {chatReady && !error && <PersistentSessionChatView sessionId={sessionId!} showReport reportSeat={{ ready: geometry !== null && (!geometry.reportBubble || reportTarget !== null), inlineWidth: geometry?.mainWidth, inlineMaxHeight: geometry?.reportInlineMaxHeight, target: reportTarget, layout: geometry?.reportBubble ?? null, body: geometry?.body ?? null }} presentation="manuscript" composerAnchorRef={composerAnchorRef} chatInputDisabled={disabled} fileUploadUrl={!disabled && activeSessionSummary?.nodeId ? `/api/attachments/sessions?nodeId=${encodeURIComponent(activeSessionSummary.nodeId)}` : undefined} historyEnabled={stream.synchronizedSessionKey === activeSessionKey} showRuntimeStrips={!isMobile && showWorkDetails}/>}
+      {!frameReady && (loading ? <p role="status">불러오는 중…</p> : error ? errorContent : !sessionId ? <div className="persistent-session-choices">{listing?.sessions.map(session => <div key={session.session_id} data-pas-choice={session.session_id}><PersistentSessionChoiceRow session={session} selected={lastId === session.session_id} onSelect={() => navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`)}/></div>)}</div> : null)}
+      {frameReady && <PersistentSessionChatView key={sessionId} sessionId={sessionId!} showReport reportSeat={{ ready: geometry !== null && (!geometry.reportBubble || reportTarget !== null), inlineWidth: geometry?.mainWidth, inlineMaxHeight: geometry?.reportInlineMaxHeight, target: reportTarget, layout: geometry?.reportBubble ?? null, body: geometry?.body ?? null }} presentation="manuscript" composerAnchorRef={composerAnchorRef} chatInputDisabled={disabled} fileUploadUrl={chatReady && !disabled && activeSessionSummary?.nodeId ? `/api/attachments/sessions?nodeId=${encodeURIComponent(activeSessionSummary.nodeId)}` : undefined} historyEnabled={chatReady && stream.synchronizedSessionKey === activeSessionKey} loadDisplaySettings={chatReady} transcriptFallback={error ? errorContent : !chatReady ? <ChatHistoryStatus loading reachedTop={false} blockedReason={null} onRetry={() => {}}/> : undefined} showRuntimeStrips={!isMobile && showWorkDetails}/>}
     </main>
-    {chatReady && !error && <>
-      {!tasksOpen && <div className="persistent-session-task-toggle"><DashboardIconCap appearance="bare" label="작업 목록" aria-expanded={tasksOpen} onClick={() => setTasksOpen(value => !value)}><ListTodo className="size-5" strokeWidth={1.4} absoluteStrokeWidth/></DashboardIconCap></div>}
+    {frameReady && <>
+      {!tasksOpen && <div className="persistent-session-task-toggle"><DashboardIconCap appearance="bare" label="작업 목록" disabled={!chatReady || Boolean(error)} aria-expanded={tasksOpen} onClick={() => setTasksOpen(value => !value)}><ListTodo className="size-5" strokeWidth={1.4} absoluteStrokeWidth/></DashboardIconCap></div>}
       {tasksOpen && <aside className={`persistent-session-tasks${selectedCardId ? ' is-card-open' : ''}`} aria-label="작업">
         <div className="persistent-session-task-head">
           {selectedCardId ? <DashboardIconCap appearance="bare" label="작업 목록으로" onClick={() => setSelectedCardId(null)}><ArrowLeft className="size-5" strokeWidth={1.4} absoluteStrokeWidth/></DashboardIconCap> : <h2>작업</h2>}
@@ -320,7 +338,7 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
     </>}
     {geometry?.body && geometry.lineLeftReach > 0 && <div aria-hidden="true" className="persistent-session-line" style={{ top: geometry.lineY, left: geometry.mainLeft - geometry.lineLeftReach, width: geometry.lineLeftReach }}/>}
     {displaySettings && geometry?.body && <div ref={setReportTarget} data-testid="persistent-character" className="persistent-session-character" style={{ left: geometry.body.left, top: geometry.body.top, width: geometry.body.width, height: geometry.body.height }}><SwayCharacter shown width={geometry.body.width} height={geometry.body.height} motionEnabled={displaySettings.animateCharacter} active={visible && !settingsOpen && !selectedCardId} assetBaseUrl="/characters/seosoyoung"/></div>}
-    {displaySettings && geometry?.toggle && <div className="persistent-session-character-toggle" style={{ left: geometry.toggle.left + geometry.toggle.width / 2, top: geometry.toggle.top + geometry.toggle.height / 2 }}><DashboardIconCap appearance="bare" label={displaySettings.showCharacter ? '캐릭터 숨기기' : '캐릭터 표시'} disabled={details.pending || !resource?.node_id} onClick={() => details.onFieldChange('showCharacter', !displaySettings.showCharacter, { saveImmediately: true })}>{displaySettings.showCharacter ? <PersistentSessionPortraitOffIcon/> : <PersistentSessionPortraitIcon/>}</DashboardIconCap></div>}
+    {displaySettings && geometry?.toggle && <div className="persistent-session-character-toggle" style={{ left: geometry.toggle.left + geometry.toggle.width / 2, top: geometry.toggle.top + geometry.toggle.height / 2 }}><DashboardIconCap appearance="bare" label={displaySettings.showCharacter ? '캐릭터 숨기기' : '캐릭터 표시'} disabled={!chatReady || Boolean(error) || details.pending || !resource?.node_id} onClick={() => details.onFieldChange('showCharacter', !displaySettings.showCharacter, { saveImmediately: true })}>{displaySettings.showCharacter ? <PersistentSessionPortraitOffIcon/> : <PersistentSessionPortraitIcon/>}</DashboardIconCap></div>}
     {settingsOpen && resource?.node_id && <PersistentSessionSettingsDialog sessionId={resource.session_id} nodeId={resource.node_id} onSaved={applySaved} onClose={() => setSettingsOpen(false)}/>}
     <ConfigModal open={configOpen} initialTab="persistent" onOpenChange={open => { setConfigOpen(open); if (!open) navigateDashboard('/'); }}/>
     <InternalLinkViewers />

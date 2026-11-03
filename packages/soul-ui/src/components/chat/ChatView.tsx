@@ -17,7 +17,7 @@
  * Tool grouping: 연속된 tool 메시지를 접기/펼치기 그룹으로 묶어 표시.
  */
 
-import { useMemo, useRef, useEffect, useState, useCallback, useLayoutEffect, type RefObject } from "react";
+import { useMemo, useRef, useEffect, useState, useCallback, useLayoutEffect, type ReactNode, type RefObject } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { ArrowDown } from "lucide-react";
 import { useDashboardStore, type ChatSessionStoreScope } from "../../stores/dashboard-store";
@@ -74,6 +74,7 @@ export interface ChatViewProps {
   chatInputDisabled?: boolean;
   fileUploadUrl?: string;
   historyEnabled?: boolean;
+  transcriptFallback?: ReactNode;
   showRuntimeStrips?: boolean;
   presentation?: "default" | "manuscript";
   composerAnchorRef?: RefObject<HTMLDivElement | null>;
@@ -128,6 +129,7 @@ function ChatViewContent({
   chatInputDisabled = false,
   fileUploadUrl,
   historyEnabled = true,
+  transcriptFallback,
   showRuntimeStrips = true,
   presentation = "default",
   composerAnchorRef,
@@ -512,7 +514,7 @@ function ChatViewContent({
     if (frame !== null) window.cancelAnimationFrame(frame);
     focusScrollRetryRef.current = { key: null, attempts: 0, frame: null };
   }, [activeSessionKey, focusEventRequestId]);
-  const history = useMessageHistoryBuffer(activeSessionKey, scrollerRef, historyEnabled, isManuscript);
+  const history = useMessageHistoryBuffer(activeSessionKey, scrollerRef, historyEnabled && transcriptFallback == null, isManuscript);
   requestOlderRef.current = history.requestOlder;
   useEffect(() => {
     if (focusHistoryCrawlRef.current.requestId !== focusEventRequestId) {
@@ -787,6 +789,7 @@ function ChatViewContent({
       className={presentation === "manuscript" ? "-mx-1 flex h-full min-h-0 flex-col overflow-hidden px-1 pb-3 pt-3" : "flex h-full min-h-0 flex-col overflow-hidden px-3 pb-3 pt-3"}
       data-chat-presentation={presentation === "manuscript" ? "manuscript" : undefined}
     >
+      {transcriptFallback != null ? <div className="flex-1 min-h-0">{transcriptFallback}</div> : <>
       {focusEventId !== null
         && !history.loading
         && findFocusIndex(timelineItems, focusEventId) < 0
@@ -958,8 +961,9 @@ function ChatViewContent({
           className={presentation === "manuscript" ? "-mx-1 flex-1 min-h-0 overflow-x-hidden overscroll-none [mask-image:linear-gradient(to_bottom,transparent,black_calc(var(--spacing)*6))] [mask-repeat:no-repeat]" : "flex-1 min-h-0 overflow-x-hidden py-2 overscroll-none"}
         />
       )}
+      </>}
 
-      {showNewMessage && !isFollowing && (
+      {transcriptFallback == null && showNewMessage && !isFollowing && (
         <div className="relative">
           {presentation === "manuscript" ? (
             <DashboardIconCap
