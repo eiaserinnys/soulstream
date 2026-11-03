@@ -181,6 +181,63 @@ describe("PAS reports on production PostgreSQL schema", () => {
       expect(sync).toHaveBeenCalledTimes(6);
     } finally { sync.mockRestore(); }
   });
+
+  it("closes a question and removes its PAS cq_ entry when a user comment resumes the card", async () => {
+    const cardId = (await cards.createCard({
+      ...human,folderId:'report-folder',title:'커멘트로 질문 종료',request:'요청',
+    })).operation.target_id;
+    await sql`UPDATE cards SET assignee_kind='session',assignee_session_id='pas' WHERE id=${cardId}`;
+    await cards.askQuestion({actorKind:'agent',actorSessionId:'pas',cardId,text:'결정이 필요합니다',options:['진행']});
+    const questionId = String((await cards.getCard(cardId))!.questions[0]!.id);
+    expect(await reports.putQuestion('pas',questionId)).toMatchObject({ok:true});
+    expect((await reports.get('pas')).some(row=>row.key===`cq_${questionId}`)).toBe(true);
+
+    await cards.addComment({...human,cardId,body:'이대로 계속해 주세요'});
+
+    expect((await cards.getCard(cardId))!.card).toMatchObject({status:'running',blocked_kind:null,blocked_detail:null});
+    expect((await sql`SELECT withdrawn_at,withdrawn_by_session_id,withdrawal_reason FROM card_questions WHERE id=${questionId}`)[0])
+      .toMatchObject({withdrawn_at:expect.any(Date),withdrawn_by_session_id:null,
+        withdrawal_reason:'사용자가 커멘트로 답해 서버가 닫았습니다'});
+    expect((await reports.get('pas')).some(row=>row.key===`cq_${questionId}`)).toBe(false);
+    await sql`UPDATE cards SET assignee_kind=NULL,assignee_session_id=NULL WHERE id=${cardId}`;
+  });
+
+  it("closes a question and removes its PAS cq_ entry when human session input resumes the card", async () => {
+    const cardId = (await cards.createCard({...human,folderId:'report-folder',title:'메시지로 질문 종료',request:'요청'})).operation.target_id;
+    await sql`UPDATE cards SET assignee_kind='session',assignee_session_id='pas' WHERE id=${cardId}`;
+    await cards.askQuestion({actorKind:'agent',actorSessionId:'pas',cardId,text:'결정이 필요합니다',options:['진행']});
+    const detail = (await cards.getCard(cardId))!;
+    const questionId = String(detail.questions[0]!.id);
+    expect(await reports.putQuestion('pas',questionId)).toMatchObject({ok:true});
+
+    await cards.resumeBlockedCardOnHumanInput({cardId,expectedVersion:detail.card.version});
+
+    expect((await cards.getCard(cardId))!.card).toMatchObject({status:'running',blocked_kind:null,blocked_detail:null});
+    expect((await sql`SELECT withdrawn_at,withdrawn_by_session_id,withdrawal_reason FROM card_questions WHERE id=${questionId}`)[0])
+      .toMatchObject({withdrawn_at:expect.any(Date),withdrawn_by_session_id:null,
+        withdrawal_reason:'사용자 메시지로 작업이 재개되어 서버가 닫았습니다'});
+    expect((await reports.get('pas')).some(row=>row.key===`cq_${questionId}`)).toBe(false);
+    await sql`UPDATE cards SET assignee_kind=NULL,assignee_session_id=NULL WHERE id=${cardId}`;
+  });
+
+  it("preserves open questions across status changes, including completion", async () => {
+    const resumeId = (await cards.createCard({...human,folderId:'report-folder',title:'상태 재개 질문',request:''})).operation.target_id;
+    await cards.askQuestion({...human,cardId:resumeId,text:'진행할까요?',options:['진행']});
+    const resumeQuestion = String((await cards.getCard(resumeId))!.questions[0]!.id);
+    await cards.setCardStatus({...human,cardId:resumeId,status:'running'});
+    expect((await sql`SELECT withdrawn_at FROM card_questions WHERE id=${resumeQuestion}`)[0]!.withdrawn_at).toBeNull();
+
+    const holdId = (await cards.createCard({...human,folderId:'report-folder',title:'보류 질문',request:''})).operation.target_id;
+    await cards.askQuestion({...human,cardId:holdId,text:'보류해도 남을까요?',options:['진행']});
+    const holdQuestion = String((await cards.getCard(holdId))!.questions[0]!.id);
+    await cards.setCardStatus({...human,cardId:holdId,status:'on_hold'});
+    expect((await sql`SELECT withdrawn_at FROM card_questions WHERE id=${holdQuestion}`)[0]!.withdrawn_at).toBeNull();
+    await cards.setCardStatus({...human,cardId:holdId,status:'review'});
+    expect((await sql`SELECT withdrawn_at FROM card_questions WHERE id=${holdQuestion}`)[0]!.withdrawn_at).toBeNull();
+    await cards.setCardStatus({...human,cardId:holdId,status:'done'});
+    expect((await sql`SELECT withdrawn_at,withdrawal_reason FROM card_questions WHERE id=${holdQuestion}`)[0])
+      .toMatchObject({withdrawn_at:null,withdrawal_reason:null});
+  });
   it("keeps one card entry current, swaps it for an open question, and removes it outside review or blocked", async () => {
     for (const e of await reports.get('pas')) await reports.remove('pas',e.key);
     await sql`UPDATE sessions SET agent_id='report-agent' WHERE session_id='pas'`;

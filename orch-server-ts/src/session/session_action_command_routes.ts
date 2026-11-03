@@ -67,6 +67,7 @@ export type SessionActionCommandRouteOptions =
      */
     acceptPersistentReportReply?: (sessionId: string, context: unknown, callerInfo: JsonObject | undefined, request: FastifyRequest | ServiceCaller) =>
       Promise<{ handled: boolean; failure?: { status: number; body: unknown } } | undefined>;
+    onHumanSessionInput?: (targetSessionId: string) => Promise<void>;
   };
 
 export const sessionActionCommandRouteAuthRequirements = {
@@ -226,7 +227,14 @@ export async function executeSessionIntervention(
   if (durable.conflict) return { status: 409, body: { error: {
     code: "DELIVERY_IDENTITY_CONFLICT", message: `Delivery identity conflict: ${durable.deliveryId}`, deliveryId: durable.deliveryId,
   } } };
-  return executeInterveneCommand(options, durable.payload, durable.deliveryId);
+  const response=await executeInterveneCommand(options, durable.payload, durable.deliveryId);
+  if (response.status>=200 && response.status<300 && "log" in caller
+    && (payload.value.caller_info?.source==="browser" || payload.value.caller_info?.source==="soul-app")
+    && options.onHumanSessionInput) {
+    try { await options.onHumanSessionInput(targetSessionId); }
+    catch (error) { caller.log.warn({err:error,targetSessionId},"Card resume after human session input failed"); }
+  }
+  return response;
 }
 
 /** 카드 질문에 판에서 답한 경우. 담당 세션에는 보내지 않았지만 사용자 답변은 기록되었으니 전달 완료로 알린다. */

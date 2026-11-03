@@ -13,7 +13,7 @@ describe("card question withdrawal", () => {
   let cards: CardControlPlaneService;
   let dispatcher: CardDispatcher;
   let sequence = 0;
-  const messages = vi.fn(async (_sessionId: string, _text: string) => {});
+  const messages = vi.fn(async (_sessionId: string, _text: string, _admission?: unknown, _changeDelivery?: unknown) => {});
   const human = { actorKind: "user" as const, actorSessionId: null, actorUserId: "director@example.com" };
   const key = () => `question-withdrawal:${++sequence}`;
 
@@ -162,6 +162,36 @@ describe("card question withdrawal", () => {
     expect((await cards.getCard(cardId))!.card).toMatchObject({ status: "blocked", blocked_kind: "question" });
     await cards.answerQuestion({ ...human, cardId, questionId: lastId, answer: "진행", idempotencyKey: key() });
     expect((await cards.getCard(cardId))!.card.status).toBe("running");
+  });
+
+  it("resumes after human input without a second state message, while direct status changes still notify", async () => {
+    const resumedId = await makeCard("메시지로 재개");
+    const manuallyResumedId = await makeCard("직접 상태 변경");
+    await h.sql`INSERT INTO sessions(session_id,status) VALUES ('input-owner','running'),('status-owner','running')`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_session_id='input-owner' WHERE id=${resumedId}`;
+    await h.sql`UPDATE cards SET status='blocked',blocked_kind='question',blocked_detail='결정',
+      assignee_kind='session',assignee_session_id='status-owner' WHERE id=${manuallyResumedId}`;
+    await cards.askQuestion({ actorKind: "agent", actorSessionId: "input-owner", cardId: resumedId,
+      text: "결정이 필요합니다", options: ["진행"] });
+    const questionId = String((await cards.getCard(resumedId))!.questions[0]!.id);
+    await dispatcher.drain();
+    messages.mockClear();
+
+    const detail = (await cards.getCard(resumedId))!;
+    await cards.resumeBlockedCardOnHumanInput({ cardId: resumedId, expectedVersion: detail.card.version });
+    await dispatcher.drain();
+
+    expect((await cards.getCard(resumedId))!.card.status).toBe("running");
+    expect((await h.sql`SELECT withdrawn_at FROM card_questions WHERE id=${questionId}`)[0]!.withdrawn_at).toBeInstanceOf(Date);
+    expect(messages).not.toHaveBeenCalled();
+
+    await cards.setCardStatus({ ...human, cardId: manuallyResumedId, status: "running" });
+    await dispatcher.drain();
+    expect((await cards.getCard(manuallyResumedId))!.card.status).toBe("running");
+    expect(messages).toHaveBeenCalledOnce();
+    expect(messages.mock.calls[0]?.[0]).toBe("status-owner");
+    expect(messages.mock.calls[0]?.[1]).toContain("막힘→실행 중");
+    expect(messages.mock.calls[0]?.[3]).toMatchObject({ actorKind: "user", sessionId: "status-owner" });
   });
 
   it("rejects non-assignees, dashboard actors, invalid reasons, missing, answered, and withdrawn questions", async () => {

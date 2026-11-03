@@ -20,6 +20,7 @@ export type ActionHarnessOptions = {
   createSession?: boolean;
   bridgeOverride?: Partial<SessionCommandTransportBridge>;
   resolveCallerInfo?: SessionActionCommandRouteOptions["resolveCallerInfo"];
+  onHumanSessionInput?: SessionActionCommandRouteOptions["onHumanSessionInput"];
   reviewAcknowledgeFallback?:
     SessionActionCommandRouteOptions["reviewAcknowledgeFallback"];
 };
@@ -107,6 +108,9 @@ export function createActionHarness(options: ActionHarnessOptions = {}): {
     ...(options.resolveCallerInfo === undefined
       ? {}
       : { resolveCallerInfo: options.resolveCallerInfo }),
+    ...(options.onHumanSessionInput === undefined
+      ? {}
+      : { onHumanSessionInput: options.onHumanSessionInput }),
     ...(options.reviewAcknowledgeFallback === undefined
       ? {}
       : { reviewAcknowledgeFallback: options.reviewAcknowledgeFallback }),

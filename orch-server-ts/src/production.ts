@@ -1226,6 +1226,21 @@ export function buildProductionRouteOptions(
     },
     sessionActionCommandRoutes: {
       ...providers.runtime.sessionActionCommandRoutes,
+      onHumanSessionInput: async targetSessionId => {
+        if (!cardServiceProvider) return;
+        const cards=await cardServiceProvider();
+        const assigned=await cards.getAssignedCardContext(targetSessionId);
+        for (const summary of assigned.cards) {
+          if (summary.status!=="blocked") continue;
+          const detail=await cards.getCard(summary.id);
+          if (!detail) continue;
+          const card=detail.card;
+          if (card.status!=="blocked" || card.blocked_kind==="limit" || card.archived!==false
+            || card.assignee_kind!=="session" || card.assignee_session_id!==targetSessionId) continue;
+          await cards.resumeBlockedCardOnHumanInput({cardId:card.id,expectedVersion:card.version});
+          return;
+        }
+      },
       acceptPersistentReportReply: async (sessionId, contextItems, callerInfo, request) => {
         const decision = await (await persistenceRepositoryProvider()).persistentReports!.acceptReply(sessionId,contextItems,callerInfo);
         if (decision.action === "none") return { handled: false };

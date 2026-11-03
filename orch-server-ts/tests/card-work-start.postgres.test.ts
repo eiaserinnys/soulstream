@@ -50,6 +50,16 @@ it.each(["review","queued","blocked","on_hold","done","cancelled","running"])("s
     await cards.startCardWork(declaration(id,`manual-${status}`));
     expect((await cards.getCard(id))!.card).toMatchObject({status:"running",completed_kind:null,completed_at:null});
   });
+  it("keeps open questions when the assignee starts work",async()=>{
+    const id=await make("running");
+    await cards.askQuestion({actorKind:"agent",actorSessionId:"owner",cardId:id,text:"계속할까요?",options:["진행"]});
+    const detail=(await cards.getCard(id))!;
+    const questionId=String(detail.questions[0]!.id);
+    await cards.startCardWork({...declaration(id,"question-start"),expectedVersion:detail.card.version});
+    expect((await cards.getCard(id))!.card).toMatchObject({status:"running",blocked_kind:null,blocked_detail:null});
+    expect((await h.sql`SELECT withdrawn_at,withdrawn_by_session_id FROM card_questions WHERE id=${questionId}`)[0])
+      .toMatchObject({withdrawn_at:null,withdrawn_by_session_id:null});
+  });
   it("allows a manual owner execution while its automatic delivery is still pending",async()=>{
     const id=await make("queued","session","other"),identity={registrationId:"other-reg",executionCommandId:"other-command"};
     await recordWorkReceipt(h,"other","running",identity);
