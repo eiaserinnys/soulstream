@@ -1,6 +1,8 @@
+// Credential parsing, cache and polling form one collector contract; split when that contract changes.
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { claudeLimitsFromUsageResponse } from "../auth/provider_usage.js";
+import type { ClaudeProfileCredentialRenewer } from "./credential_renewal.js";
 import type {
   ClaudeAccountAuthState,
   ClaudeAccountUsage,
@@ -8,7 +10,8 @@ import type {
 } from "./types.js";
 
 const DEFAULT_USAGE_ENDPOINT = "https://api.anthropic.com/api/oauth/usage";
-const DEFAULT_POLL_TTL_MS = 5 * 60_000;
+// Shorter than orch's default 300-second usage summary interval, so every poll refreshes.
+const DEFAULT_POLL_TTL_MS = 4 * 60_000;
 const DEFAULT_CONCURRENCY = 3;
 const DEFAULT_PER_ACCOUNT_TIMEOUT_MS = 4_000;
 
@@ -254,6 +257,7 @@ export interface CachedAccountObservation {
 }
 
 export interface ClaudeAccountUsageCollectorOptions {
+  credentialRenewer?: ClaudeProfileCredentialRenewer;
   fetchImpl?: typeof fetch;
   now?: () => number;
   endpointUrl?: string;
@@ -265,6 +269,7 @@ export interface ClaudeAccountUsageCollectorOptions {
 export interface CollectAccountUsageInput {
   accountId: string;
   profileDir: string;
+  renewExpiredCredentials?: boolean;
 }
 
 export interface CollectAccountUsageOptions {
@@ -280,7 +285,10 @@ export class ClaudeAccountUsageCollector {
   private readonly pollTtlMs: number;
   private readonly concurrency: number;
   private readonly perAccountTimeoutMs: number;
+  private readonly credentialRenewer?: ClaudeProfileCredentialRenewer;
   private readonly cache = new Map<string, CachedAccountObservation>();
+  private readonly renewals = new Map<string, Promise<void>>();
+  private readonly lastRenewalAttempt = new Map<string, number>();
 
   constructor(options: ClaudeAccountUsageCollectorOptions = {}) {
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
@@ -289,6 +297,7 @@ export class ClaudeAccountUsageCollector {
     this.pollTtlMs = options.pollTtlMs ?? DEFAULT_POLL_TTL_MS;
     this.concurrency = Math.max(1, options.concurrency ?? DEFAULT_CONCURRENCY);
     this.perAccountTimeoutMs = options.perAccountTimeoutMs ?? DEFAULT_PER_ACCOUNT_TIMEOUT_MS;
+    this.credentialRenewer = options.credentialRenewer;
   }
 
   getCachedObservation(
@@ -298,15 +307,7 @@ export class ClaudeAccountUsageCollector {
     const nowMs = this.now();
     const creds = readProfileCredentialsReadOnly(profileDir);
     if (!creds || (creds.expiresAtMs !== null && creds.expiresAtMs <= nowMs)) {
-      const idleObs: CachedAccountObservation = {
-        auth_state: "idle",
-        stale: false,
-        observed_at: null,
-        usage: emptyClaudeAccountUsage(),
-        lastPolledAtMs: nowMs,
-      };
-      this.cache.set(accountId, idleObs);
-      return idleObs;
+      return this.cacheIdleObservation(accountId, nowMs, creds !== null);
     }
 
     const existing = this.cache.get(accountId);
@@ -327,6 +328,20 @@ export class ClaudeAccountUsageCollector {
     this.cache.delete(accountId);
   }
 
+  private cacheIdleObservation(accountId: string, nowMs: number, expired: boolean): CachedAccountObservation {
+    const previous = this.cache.get(accountId);
+    const observed = expired && previous?.observed_at != null ? previous : null;
+    const idle: CachedAccountObservation = {
+      auth_state: "idle",
+      stale: observed !== null,
+      observed_at: observed?.observed_at ?? null,
+      usage: observed?.usage ?? emptyClaudeAccountUsage(),
+      lastPolledAtMs: nowMs,
+    };
+    this.cache.set(accountId, idle);
+    return idle;
+  }
+
   async collectAll(
     inputs: CollectAccountUsageInput[],
     options: CollectAccountUsageOptions = {},
@@ -338,15 +353,11 @@ export class ClaudeAccountUsageCollector {
     for (const input of inputs) {
       const creds = readProfileCredentialsReadOnly(input.profileDir);
       if (!creds || (creds.expiresAtMs !== null && creds.expiresAtMs <= nowMs)) {
-        const idleObs: CachedAccountObservation = {
-          auth_state: "idle",
-          stale: false,
-          observed_at: null,
-          usage: emptyClaudeAccountUsage(),
-          lastPolledAtMs: nowMs,
-        };
-        this.cache.set(input.accountId, idleObs);
+        const idleObs = this.cacheIdleObservation(input.accountId, nowMs, creds !== null);
         results.set(input.accountId, idleObs);
+        if (creds && input.renewExpiredCredentials && this.credentialRenewer) {
+          this.renewExpiredCredentials(input, nowMs);
+        }
         continue;
       }
 
@@ -354,6 +365,7 @@ export class ClaudeAccountUsageCollector {
       const isFreshCache =
         !options.forceRefresh &&
         cached !== undefined &&
+        cached.auth_state === "ok" &&
         cached.lastPolledAtMs > 0 &&
         !cached.stale &&
         nowMs - cached.lastPolledAtMs < this.pollTtlMs;
@@ -398,6 +410,20 @@ export class ClaudeAccountUsageCollector {
 
     await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
     return results;
+  }
+
+  private renewExpiredCredentials(input: CollectAccountUsageInput, nowMs: number): void {
+    const lastAttempt = this.lastRenewalAttempt.get(input.accountId);
+    if (this.renewals.has(input.accountId) ||
+      (lastAttempt !== undefined && nowMs - lastAttempt < this.pollTtlMs)) return;
+    this.lastRenewalAttempt.set(input.accountId, nowMs);
+    const renewal = Promise.resolve()
+      .then(() => this.credentialRenewer!.renew({ accountId: input.accountId, profileDir: input.profileDir }))
+      .then(() => this.collectAll([{ accountId: input.accountId, profileDir: input.profileDir }], { forceRefresh: true }))
+      .then(() => undefined)
+      .catch(() => {})
+      .finally(() => { this.renewals.delete(input.accountId); });
+    this.renewals.set(input.accountId, renewal);
   }
 
   private async fetchSingleAccountUsage(

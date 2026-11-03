@@ -93,6 +93,27 @@ export function effectiveWindowUsedPercent(
   return window.used_percent;
 }
 
+function exhaustedWindows(usage: ClaudeAccountUsage, scope: "all" | "fable", nowMs: number): ClaudeUsageWindow[] {
+  const windows = [usage.five_hour, usage.seven_day];
+  if (scope === "fable") windows.push(usage.fable_weekly);
+  // Usage cannot decrease before a window resets, so a 100% observation remains
+  // valid until reset even when the observation is stale.
+  return windows.filter((window): window is ClaudeUsageWindow =>
+    window !== null && (effectiveWindowUsedPercent(window, nowMs) ?? 0) >= 100,
+  );
+}
+
+export function isUsageExhaustedForScope(usage: ClaudeAccountUsage, scope: "all" | "fable", nowMs: number): boolean {
+  return exhaustedWindows(usage, scope, nowMs).length > 0;
+}
+
+export function usageExhaustionResetMs(usage: ClaudeAccountUsage, scope: "all" | "fable", nowMs: number): number | null {
+  const windows = exhaustedWindows(usage, scope, nowMs);
+  if (windows.length === 0) return null;
+  const resets = windows.map((window) => window.resets_at ? Date.parse(window.resets_at) : NaN);
+  return resets.every(Number.isFinite) ? Math.max(...resets) : null;
+}
+
 export function effectiveWindowResetMs(
   window: ClaudeUsageWindow | null | undefined,
   nowMs: number,
@@ -211,6 +232,7 @@ function getEligibleCandidates(params: SelectCandidateParams): SelectableAccount
     && (candidate.auth_state === "ok" || candidate.auth_state === "idle")
     && !excludeSet.has(candidate.id)
     && !isBlockedForModel(candidate.blocks, model, nowMs)
+    && !isUsageExhaustedForScope(candidate.usage, isFableModel(model) ? "fable" : "all", nowMs)
   );
 }
 

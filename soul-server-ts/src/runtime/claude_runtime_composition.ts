@@ -6,6 +6,7 @@ import type { SessionStore } from "@anthropic-ai/claude-agent-sdk";
 import type { Env } from "../config.js";
 import { ClaudeAuthService, FileClaudeAuthTokenStore } from "../auth/claude_auth.js";
 import { ClaudeAccountService } from "../claude_accounts/index.js";
+import { ClaudeCliCredentialRenewer } from "../claude_accounts/credential_renewal.js";
 import type { AgentRegistry } from "../agent_registry.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionDeliveryRow } from "../db/session_db_types.js";
@@ -40,7 +41,7 @@ export function composeClaudeAccountServices(
       store: new FileClaudeAuthTokenStore(env.CLAUDE_AUTH_TOKEN_PATH),
     }, logger),
     claudeAccounts: env.CLAUDE_ACCOUNT_POOL_ENABLED && env.CLAUDE_ACCOUNTS_DIR
-      ? new ClaudeAccountService({ accountsDir: env.CLAUDE_ACCOUNTS_DIR })
+      ? new ClaudeAccountService({ accountsDir: env.CLAUDE_ACCOUNTS_DIR, credentialRenewer: new ClaudeCliCredentialRenewer({ logger }) })
       : undefined,
   };
 }

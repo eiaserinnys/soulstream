@@ -3,6 +3,8 @@ import {
   effectiveWindowUsedPercent,
   isBlockedForScope,
   isScopeBlockActive,
+  isUsageExhaustedForScope,
+  usageExhaustionResetMs,
 } from "./selector.js";
 import type {
   ClaudeAccountBlocksRecord,
@@ -32,7 +34,7 @@ function accountAvailableForScope(
   if (account.auth_state !== "ok" && account.auth_state !== "idle") {
     return false;
   }
-  return !isBlockedForScope(blocks, scope, nowMs);
+  return !isBlockedForScope(blocks, scope, nowMs) && !isUsageExhaustedForScope(account.usage, scope, nowMs);
 }
 
 function computeWeeklyRemainingForScope(
@@ -96,7 +98,7 @@ function computeWeeklyRemainingForScope(
 }
 
 export function computeEarliestAvailableAt(
-  accounts: Array<Pick<ClaudeAccountView, "id" | "enabled" | "auth_state">>,
+  accounts: Array<Pick<ClaudeAccountView, "id" | "enabled" | "auth_state" | "usage">>,
   blocksByAccount: Record<string, ClaudeAccountBlocksRecord | undefined>,
   scope: ClaudeAccountScope,
   nowMs: number,
@@ -112,7 +114,9 @@ export function computeEarliestAvailableAt(
       continue;
     }
     const blocks = blocksByAccount[account.id];
-    if (!isBlockedForScope(blocks, scope, nowMs)) {
+    const blocked = isBlockedForScope(blocks, scope, nowMs);
+    const exhausted = isUsageExhaustedForScope(account.usage, scope, nowMs);
+    if (!blocked && !exhausted) {
       continue;
     }
 
@@ -124,14 +128,9 @@ export function computeEarliestAvailableAt(
       activeEntries.push(blocks.fable);
     }
 
-    if (activeEntries.length === 0) {
-      continue;
-    }
-
     // If any applicable active block has resets_at === null (indefinite), this account's unblock time is unknown
     let hasUnknownReset = false;
     let accountMaxMs = Number.NEGATIVE_INFINITY;
-    let accountMaxIso: string | null = null;
 
     for (const entry of activeEntries) {
       if (entry.resets_at === null) {
@@ -145,17 +144,18 @@ export function computeEarliestAvailableAt(
       }
       if (parsedMs > accountMaxMs) {
         accountMaxMs = parsedMs;
-        accountMaxIso = entry.resets_at;
       }
     }
 
-    if (hasUnknownReset || accountMaxIso === null) {
+    const usageResetMs = exhausted ? usageExhaustionResetMs(account.usage, scope, nowMs) : null;
+    if (hasUnknownReset || (exhausted && usageResetMs === null)) {
       continue;
     }
+    if (usageResetMs !== null) accountMaxMs = Math.max(accountMaxMs, usageResetMs);
 
     if (accountMaxMs < earliestMs) {
       earliestMs = accountMaxMs;
-      earliestIso = accountMaxIso;
+      earliestIso = new Date(accountMaxMs).toISOString();
     }
   }
 

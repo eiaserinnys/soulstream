@@ -3,6 +3,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import type { ClaudeAuthError, ClaudeAuthLoginFlow } from "@soulstream/wire-schema";
 
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../engine/claude_options.js";
+import { resolveClaudeExecutableFromPath } from "../engine/claude_executable_path.js";
 import { ANTHROPIC_API_KEY_ENV, ANTHROPIC_BASE_URL_ENV } from "../model_preset_env.js";
 
 const ANTHROPIC_AUTH_TOKEN_ENV = "ANTHROPIC_AUTH_TOKEN";
@@ -127,6 +128,14 @@ export interface ParsedAuthStatus {
   accountUuid: string | null;
   email: string | null;
   plan: string | null;
+}
+
+export function resolveClaudeAuthExecutable(
+  executablePath: string | undefined,
+  baseEnv: NodeJS.ProcessEnv | Record<string, string | undefined>,
+  resolvePath: () => string | undefined = () => resolveClaudeExecutableFromPath(baseEnv),
+): string {
+  return executablePath?.trim() || baseEnv[CLAUDE_CODE_EXECPATH_ENV]?.trim() || resolvePath() || "claude";
 }
 
 export function buildSanitizedCliEnv(

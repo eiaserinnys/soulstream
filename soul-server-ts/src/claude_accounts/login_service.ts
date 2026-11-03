@@ -4,11 +4,9 @@ import { randomUUID } from "node:crypto";
 import type { ClaudeAuthError, ClaudeAuthLoginFlow } from "@soulstream/wire-schema";
 import type { Logger } from "pino";
 
-import { resolveClaudeExecutableFromPath } from "../engine/claude_executable_path.js";
 import type { ClaudeLoginAccountPort } from "./types.js";
 import {
   type ChildExit,
-  CLAUDE_CODE_EXECPATH_ENV,
   ClaudeLoginError,
   type ClaudeLoginProfileFetcher,
   createInternalLoginFlow,
@@ -16,6 +14,7 @@ import {
   isTerminalState,
   MAX_STDOUT_SCAN_BUFFER_CHARS,
   scanStdoutForAuthUrl,
+  resolveClaudeAuthExecutable,
   terminateFlowChildren,
   type TerminationReason,
   toLoginFlowSnapshot,
@@ -49,7 +48,7 @@ export class ClaudeLoginService {
   private readonly port: ClaudeLoginAccountPort;
   private readonly logger: Logger;
   private readonly executablePath?: string;
-  private readonly resolveClaudeExecutablePath: () => string | undefined;
+  private readonly resolveClaudeExecutablePath?: () => string | undefined;
   private readonly baseEnv: NodeJS.ProcessEnv | Record<string, string | undefined>;
   private readonly fetchProfile?: ClaudeLoginProfileFetcher;
   private readonly loginTimeoutMs: number;
@@ -64,8 +63,7 @@ export class ClaudeLoginService {
     this.logger = config.logger;
     this.executablePath = config.executablePath;
     this.baseEnv = config.baseEnv ?? process.env;
-    this.resolveClaudeExecutablePath =
-      config.resolveClaudeExecutablePath ?? (() => resolveClaudeExecutableFromPath(this.baseEnv));
+    this.resolveClaudeExecutablePath = config.resolveClaudeExecutablePath;
     this.fetchProfile = config.fetchProfile;
     this.loginTimeoutMs = config.loginTimeoutMs ?? DEFAULT_LOGIN_TIMEOUT_MS;
     this.killGracePeriodMs = config.killGracePeriodMs ?? DEFAULT_KILL_GRACE_PERIOD_MS;
@@ -476,12 +474,7 @@ export class ClaudeLoginService {
   }
 
   private resolveExecutable(): string {
-    return (
-      this.executablePath?.trim() ||
-      this.baseEnv[CLAUDE_CODE_EXECPATH_ENV]?.trim() ||
-      this.resolveClaudeExecutablePath() ||
-      "claude"
-    );
+    return resolveClaudeAuthExecutable(this.executablePath, this.baseEnv, this.resolveClaudeExecutablePath);
   }
 
   private requireFlow(loginId: string): InternalLoginFlow {
