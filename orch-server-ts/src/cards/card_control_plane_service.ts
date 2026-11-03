@@ -21,6 +21,7 @@ import { randomUUID } from "node:crypto";
 import { generateKeyBetween } from "@soulstream/fractional-position";
 import { CardRepository } from "./control_plane/card_repository.js";
 import { isCardOffBoard } from "./control_plane/card_types.js";
+import { cardStatusLabels } from "./card_change_notification.js";
 import { CardMutationCore, type FolderMutateParams } from "./control_plane/card_mutation_core.js";
 import { CardVersionConflict, assigneeToFields, type CardAssigneeInput } from "./control_plane/card_models.js";
 import type { CardRow, CardStatus, CardMutationResult, FolderOperationRow, SqlClient, RepositorySql, FolderActorParams, FolderDbPort, FolderBroadcasterPort, FolderStatus } from "./control_plane/card_types.js";
@@ -52,6 +53,13 @@ type CreateCardParams = FolderActorParams & {
 };
 type AddCommentParams = CardMutationParams & { body:string; kind?:"comment" | "spoken"; mode?:"spoken" | "reply"; itemId?:number };
 type CardCommentRow = NonNullable<Awaited<ReturnType<CardRepository["getComment"]>>>;
+export type CardReportSyncParams = {
+  previousStatus: CardStatus | undefined;
+  committedCard: CardRow | undefined;
+  questionChanged: boolean;
+  cardChanged?: boolean;
+  previousCard?: Pick<CardRow,"now"|"title"|"archived"|"number">;
+};
 const shortTitle = (title: string) => [...title].slice(0, 60).join("");
 export class CardControlPlaneService {
   private readonly repo: CardRepository;
@@ -355,11 +363,13 @@ export class CardControlPlaneService {
   async addCommentTx(
     sql:RepositorySql,
     params:AddCommentParams & {commentId:string},
-  ):Promise<{operation:FolderOperationRow;eventId:number | null;card:CardRow;comment:CardCommentRow}> {
+  ):Promise<{operation:FolderOperationRow;eventId:number | null;card:CardRow;comment:CardCommentRow;previousStatus:CardStatus;questionChanged:boolean}> {
     const prepared=this.prepareAddComment(params,params.commentId);
     const payload=Object.fromEntries(Object.entries(prepared.payload).filter(([,value])=>value!==undefined));
     const card=(await sql<CardRow[]>`SELECT * FROM cards WHERE id=${params.cardId}`)[0];
     if (!card) throw Object.assign(new Error("Card not found"),{statusCode:404});
+    let previousStatus:CardStatus | undefined;
+    let questionChanged=false;
     const result=await this.core.mutateTx(sql,{
       folderId:card.folder_id,targetKind:"card",targetId:card.id,operationType:"add_card_comment",actor:params,
       idempotencyKey:params.idempotencyKey,reason:params.reason,payload,
@@ -368,14 +378,19 @@ export class CardControlPlaneService {
         if (!locked) throw Object.assign(new Error("Card not found"),{statusCode:404});
         if (params.expectedVersion!==undefined && locked.version!==params.expectedVersion)
           throw new CardVersionConflict("card",card.id,params.expectedVersion,locked.version);
+        previousStatus=locked.status;
         await this.applyAddCommentTx(tx,locked,eventId,payload,params,params.commentId,prepared.kind,prepared.external,prepared.reply);
+        const committed=(await tx<CardRow[]>`SELECT * FROM cards WHERE id=${card.id}`)[0];
+        if (!committed) throw new Error("Card was not stored");
+        questionChanged=await this.closeOpenQuestionsForStatusChangeTx(tx,card.id,previousStatus,committed.status);
       },
     });
     const savedCard=(await sql<CardRow[]>`SELECT * FROM cards WHERE id=${params.cardId}`)[0];
     if (!savedCard) throw new Error("Card was not stored");
     const comment=(await sql<CardCommentRow[]>`SELECT * FROM card_comments WHERE card_id=${params.cardId} AND id=${params.commentId}`)[0];
     if (!comment) throw new Error("Card comment was not stored");
-    return {...result,card:savedCard,comment};
+    if (previousStatus===undefined) throw new Error("Card status was not captured");
+    return {...result,card:savedCard,comment,previousStatus,questionChanged};
   }
   markCommentDelivered(cardId:string,commentId:string) { return this.repo.markCommentDelivered(cardId,commentId); }
   async askQuestion(params: CardMutationParams & { text:string; options:string[] }) {
@@ -503,6 +518,10 @@ export class CardControlPlaneService {
       const items=openCardItemFix(card.items ?? [],params.itemId);
       await this.patch(sql,card,{items:sql.json(items)},params,eventId);
     }
+    if (!reply && card.status === "blocked" && card.blocked_kind !== "limit" && card.archived === false
+      && card.assignee_kind === "session") {
+      await this.patch(sql,card,{status:"running",blocked_kind:null,blocked_detail:null},params,eventId);
+    }
   }
   private async checkAdmission(sql:RepositorySql,params:{cardId:string;expectedVersion:number;sessionId:string;nodeId:string;admission?:PolicyAdmission}) {
     const enabled=(await sql<{enabled:boolean}[]>`SELECT (value->>'enabled')::boolean AS enabled FROM system_settings WHERE setting_key='card_orchestration'`)[0]?.enabled===true;
@@ -543,6 +562,7 @@ export class CardControlPlaneService {
     const clean=Object.fromEntries(Object.entries(payload).filter(([,v])=>v !== undefined));
     let previousStatus:CardStatus | undefined,previousAssigneeSessionId:string | null | undefined,committedCard:CardRow | undefined;
     let previousCard:Pick<CardRow,"now"|"title"|"archived"|"number"> | undefined;
+    let statusQuestionChanged=false;
     const result=await this.core.mutate({ folderId:card.folder_id,targetKind:"card",targetId:card.id,operationType,actor:params,
       idempotencyKey:params.idempotencyKey,reason:params.reason,payload:clean,
       apply:async (sql,eventId) => {
@@ -553,29 +573,51 @@ export class CardControlPlaneService {
         previousCard={now:locked.now,title:locked.title,archived:locked.archived,number:locked.number};
         previousAssigneeSessionId=locked.assignee_session_id;
         await apply(sql,locked,eventId,clean);
+        const afterApply=(await sql<{status:CardStatus}[]>`SELECT status FROM cards WHERE id=${card.id}`)[0];
+        if (!afterApply) throw new Error("Card was not stored");
+        statusQuestionChanged=await this.closeOpenQuestionsForStatusChangeTx(sql,card.id,previousStatus,afterApply.status);
         committedCard=(await sql<CardRow[]>`SELECT * FROM cards WHERE id=${card.id}`)[0];
       },
       afterCommit: async () => {
-        const questionChanged = operationType === "ask_card_question" || operationType === "answer_card_question"
+        const questionChanged = statusQuestionChanged || operationType === "ask_card_question" || operationType === "answer_card_question"
           || operationType === "withdraw_card_question";
         const cardChanged = previousStatus !== committedCard?.status || previousCard?.title !== committedCard?.title
           || previousCard?.archived !== committedCard?.archived || JSON.stringify(previousCard?.now) !== JSON.stringify(committedCard?.now);
-        if (!this.reports || (!questionChanged && !cardChanged)) return;
-        const leftBoard = previousStatus !== committedCard?.status && committedCard !== undefined && isCardOffBoard(committedCard.status);
-        try {
-          await this.reports.syncCard(card.id,{ scanBoards:questionChanged || leftBoard });
-          if (previousStatus !== committedCard?.status) await this.reports.recordCardTimeline(card.id);
-          if (previousStatus === "on_hold" && committedCard !== undefined && !isCardOffBoard(committedCard.status) && this.onQuestionAsked) {
-            const openQuestions = await this.repoSql<{id:string}[]>`SELECT id FROM card_questions
-              WHERE card_id=${card.id} AND answer IS NULL AND withdrawn_at IS NULL ORDER BY asked_at,id`;
-            for (const question of openQuestions) await this.onQuestionAsked({cardId:card.id,questionId:question.id});
-          }
-        }
-        catch (error) { this.warn(`PAS report sync failed after card ${card.id} committed: ${String(error)}`); }
+        await this.syncReportsAfterCommit(card.id,{previousStatus,previousCard,committedCard,questionChanged,cardChanged});
       } }).catch(error=>translateAssigneeConflict(this.repoSql,error,
         typeof clean.assignee_session_id === "string" ? clean.assignee_session_id : params.actorSessionId ?? card.assignee_session_id));
     if (!result.idempotent && notifyMutation) this.onMutation?.({result,previousStatus,previousAssigneeSessionId,committedCard});
     return result;
+  }
+  async syncReportsAfterCommit(cardId:string,change:CardReportSyncParams):Promise<void> {
+    const {previousStatus,committedCard,questionChanged}=change;
+    const cardChanged=change.cardChanged ?? previousStatus !== committedCard?.status;
+    if (!this.reports || (!questionChanged && !cardChanged) || !committedCard) return;
+    const leftBoard=previousStatus !== committedCard.status && isCardOffBoard(committedCard.status);
+    try {
+      await this.reports.syncCard(cardId,{scanBoards:questionChanged || leftBoard});
+      if (previousStatus !== committedCard.status) await this.reports.recordCardTimeline(cardId);
+      if (previousStatus === "on_hold" && !isCardOffBoard(committedCard.status) && this.onQuestionAsked) {
+        const openQuestions=await this.repoSql<{id:string}[]>`SELECT id FROM card_questions
+          WHERE card_id=${cardId} AND answer IS NULL AND withdrawn_at IS NULL ORDER BY asked_at,id`;
+        for (const question of openQuestions) await this.onQuestionAsked({cardId,questionId:question.id});
+      }
+    } catch (error) { this.warn(`PAS report sync failed after card ${cardId} committed: ${String(error)}`); }
+  }
+  private async closeOpenQuestionsForStatusChangeTx(
+    sql:RepositorySql,
+    cardId:string,
+    previousStatus:CardStatus | undefined,
+    nextStatus:CardStatus,
+  ):Promise<boolean> {
+    if (previousStatus===undefined || previousStatus===nextStatus) return false;
+    const exitsBlocked=previousStatus==="blocked" && nextStatus!=="blocked" && nextStatus!=="on_hold";
+    if (!exitsBlocked && nextStatus!=="done" && nextStatus!=="cancelled") return false;
+    const label=cardStatusLabels[nextStatus];
+    const reason=`카드가 「${label}」(으)로 옮겨져 서버가 닫았습니다`;
+    const closed=await sql`UPDATE card_questions SET withdrawn_at=NOW(),withdrawn_by_session_id=NULL,withdrawal_reason=${reason}
+      WHERE card_id=${cardId} AND answer IS NULL AND withdrawn_at IS NULL RETURNING id`;
+    return closed.length>0;
   }
   private async patch(sql:RepositorySql,card:CardRow,fields:Record<string,unknown>,actor:FolderActorParams,eventId:number | null) {
     const sessionId=Object.hasOwn(fields,"assignee_session_id") ? fields.assignee_session_id : card.assignee_session_id;

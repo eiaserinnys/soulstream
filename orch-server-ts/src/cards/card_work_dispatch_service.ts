@@ -36,7 +36,7 @@ export type AcceptedWork = {
 
 export interface CardWorkDispatchServiceOptions {
   sql: SqlClient;
-  cards: Pick<CardControlPlaneService, "createCardTx" | "addCommentTx" | "markCommentDelivered" | "mcpRead">;
+  cards: Pick<CardControlPlaneService, "createCardTx" | "addCommentTx" | "markCommentDelivered" | "mcpRead" | "syncReportsAfterCommit">;
   execution: Pick<CardExecutionService, "reserveTx" | "startReserved">;
   authorizeFolder(folderId: string, actor: DispatchWorkActor): Promise<void>;
   sendDelivery(row: SessionDeliveryRow): Promise<void>;
@@ -58,7 +58,7 @@ type StoredOperation = FolderOperationRow & {
 };
 
 type DeliveryQueryRow = SessionDeliveryRow & Record<string, unknown>;
-type NewlyAcceptedWork = { receipt: AcceptedWork; folderId: string };
+type NewlyAcceptedWork = { receipt: AcceptedWork; folderId: string; postCommitSync?: Parameters<CardControlPlaneService["syncReportsAfterCommit"]>[1] };
 type PreviousAssignee = { session_id:string; agent_id:string; node_id:string; model_preset:string|null; status:string };
 
 const systemFolders = new Set(["claude", "llm"]);
@@ -181,10 +181,20 @@ export class CardWorkDispatchService {
         },
         changed: true,
         folderId: card.folder_id,
+        postCommitSync: {
+          previousStatus: mutation.previousStatus,
+          committedCard: mutation.card,
+          questionChanged: mutation.questionChanged,
+          cardChanged: mutation.previousStatus !== mutation.card.status,
+        },
       };
     });
 
-    if (result.changed && result.folderId) await this.emitCardUpdated(result.receipt.card.id, result.folderId);
+    if (result.changed && result.folderId) {
+      if ("postCommitSync" in result && result.postCommitSync)
+        await this.options.cards.syncReportsAfterCommit(result.receipt.card.id,result.postCommitSync);
+      await this.emitCardUpdated(result.receipt.card.id, result.folderId);
+    }
     return result.receipt;
   }
 

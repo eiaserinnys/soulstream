@@ -401,6 +401,32 @@ describe("card work dispatch transaction contracts", () => {
     expect(marked[0]!.delivered_at).not.toBeNull();
   }, 60000);
 
+  it("reopens a question-blocked followup card and syncs its PAS state after the outer commit", async () => {
+    const stack = createStack();
+    const made = await stack.cards.createCard({
+      actorKind:"user",actorSessionId:null,actorUserId:"user",folderId:"work",title:"후속 지시 재개",request:"요청",
+      assignee:{kind:"agent",agentId:"owner-agent"},nodeId:"node-a",modelPreset:"model-a",
+    });
+    const cardId = made.operation.target_id;
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,folder_id,model_preset)
+      VALUES ('followup-owner','node-a','owner-agent','completed',${cardId},'work','owner-model')`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_agent_id=NULL,assignee_session_id='followup-owner' WHERE id=${cardId}`;
+    await stack.cards.askQuestion({actorKind:'agent',actorSessionId:'followup-owner',cardId,text:'결정이 필요합니다',options:['진행']});
+    const questionId = String((await stack.cards.getCard(cardId))!.questions[0]!.id);
+    const sync = vi.fn(async () => {
+      expect((await h.concurrentSql`SELECT status FROM cards WHERE id=${cardId}`)[0]!.status).toBe("running");
+      expect((await h.concurrentSql`SELECT withdrawn_at FROM card_questions WHERE id=${questionId}`)[0]!.withdrawn_at).toBeInstanceOf(Date);
+    });
+    (stack.cards as any).syncReportsAfterCommit = sync;
+
+    const receipt = await stack.service.accept({kind:"followup",cardId,request:"이어 진행",idempotencyKey:"followup-resume"},actor);
+
+    expect(receipt.work).toMatchObject({kind:"delivery",sessionId:"followup-owner"});
+    expect((await stack.cards.getCard(cardId))!.card).toMatchObject({status:"running",blocked_kind:null});
+    expect(sync).toHaveBeenCalledOnce();
+    expect(sync).toHaveBeenCalledWith(cardId,expect.objectContaining({previousStatus:"blocked",questionChanged:true}));
+  },60000);
+
   it("records only confirmed errors for the operation actor and relays an exact canonical execution failure", async () => {
     const stack = createStack();
     const receipt = await stack.service.accept(createInput("error-relay"), actor);

@@ -161,6 +161,49 @@ describe("session action command HTTP route harness", () => {
     await app.close();
   });
 
+  it.each(["browser", "soul-app"] as const)("notifies the card owner after a successful human %s intervention", async source => {
+    const onHumanSessionInput = vi.fn(async () => undefined);
+    const { app } = createActionHarness({ onHumanSessionInput });
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/sessions/sess-contract/intervene",
+      payload: { text: "계속 진행해 주세요", caller_info: { source } },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(onHumanSessionInput).toHaveBeenCalledOnce();
+    expect(onHumanSessionInput).toHaveBeenCalledWith("sess-contract");
+    await app.close();
+  });
+
+  it("does not notify for non-human or failed interventions and preserves successful ACK on callback failure", async () => {
+    const onHumanSessionInput = vi.fn(async () => { throw new Error("card update failed"); });
+    const normal = createActionHarness({ onHumanSessionInput });
+    const response = await normal.app.inject({
+      method: "POST", url: "/api/sessions/sess-contract/intervene",
+      payload: { text: "계속 진행", caller_info: { source: "browser" } },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(onHumanSessionInput).toHaveBeenCalledOnce();
+    const agent = await normal.app.inject({
+      method: "POST", url: "/api/sessions/sess-contract/intervene",
+      payload: { text: "agent message", caller_info: { source: "agent" } },
+    });
+    expect(agent.statusCode).toBe(200);
+    expect(onHumanSessionInput).toHaveBeenCalledOnce();
+    await normal.app.close();
+
+    const failed = createActionHarness({ onHumanSessionInput, ackFor: () => ({
+      type:"intervene_ack",status:"error",code:"SESSION_NOT_RUNNING",message:"session is not running",
+    }) });
+    const failedResponse = await failed.app.inject({
+      method: "POST", url: "/api/sessions/sess-contract/intervene",
+      payload: { text: "보내지 못함", caller_info: { source: "browser" } },
+    });
+    expect(failedResponse.statusCode).toBeGreaterThanOrEqual(400);
+    expect(onHumanSessionInput).toHaveBeenCalledOnce();
+    await failed.app.close();
+  });
+
   it("returns an unknown verdict without retrying when intervene exceeds the node deadline", async () => {
     const sendPendingCommand = vi.fn(async () => {
       throw new PendingNodeCommandTimeoutError({

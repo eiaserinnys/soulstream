@@ -10,11 +10,13 @@ describe('report ingress uses existing message and persistence boundaries',()=>{
   it('accepts trusted human context once and still sends the unchanged intervention payload',async()=>{
     const h=createActionHarness();
     const accept=vi.fn(async()=>undefined);
+    const onHumanSessionInput=vi.fn(async()=>undefined);
     const context=[{key:'persistent_report_reply',content:{key:'r1',option:'진행'}},{key:'persistent_report_visible',content:{key:'r1',title:'보고'}}];
-    const result=await executeSessionIntervention({router:h.router,bridge:h.bridge,resolveCallerInfo:()=>({source:'browser'}),acceptPersistentReportReply:accept},SERVICE_CALLER,'sess-contract',{text:'보고: 진행',context_items:context});
+    const result=await executeSessionIntervention({router:h.router,bridge:h.bridge,resolveCallerInfo:()=>({source:'browser'}),acceptPersistentReportReply:accept,onHumanSessionInput},SERVICE_CALLER,'sess-contract',{text:'보고: 진행',context_items:context});
     expect(result.status).toBe(200);
     expect(accept).toHaveBeenCalledTimes(1);
     expect(accept).toHaveBeenCalledWith('sess-contract',context,{source:'browser'},SERVICE_CALLER);
+    expect(onHumanSessionInput).not.toHaveBeenCalled();
     expect(h.sent.at(-1)).toMatchObject({type:'intervene',text:'보고: 진행',extra_context_items:context});
     await h.app.close();
   });
