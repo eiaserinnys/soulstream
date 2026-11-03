@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { buildCardBlockedNotice } from "../src/cards/card_supervisor_notice.js";
+import { buildCardBlockedNotice } from "../src/cards/card_board_notice.js";
 
 it("formats an unassigned blocked card with its saved execution settings", () => {
   expect(buildCardBlockedNotice({

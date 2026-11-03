@@ -2,7 +2,7 @@ import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import { cardAttachmentPaths } from "./card_attachment_paths.js";
 import { buildCardChangeNotification, cardStatusLabels, type CardChangeDelivery } from "./card_change_notification.js";
 import { buildCardStatusReminder, MAX_REMINDERS_PER_TICK } from "./card_status_reminder.js";
-import { buildCardBlockedNotice, buildCardDoneNotice, buildCardQuestionNotice, buildCardReviewNotice, selectCardSupervisorNotice } from "./card_supervisor_notice.js";
+import { buildCardBlockedNotice, buildCardDoneNotice, buildCardQuestionNotice, buildCardReviewNotice, selectCardBoardNotice } from "./card_board_notice.js";
 import { randomUUID } from "node:crypto";
 import type { NodeRegistryEvent } from "../node/registry_types.js";
 import { isTerminalSessionStatus } from "../session/session_status.js";
@@ -182,7 +182,7 @@ export class CardDispatcher {
         if (card.status === "queued" || op.operation_type === "reorder_card_queue" || op.operation_type === "answer_card_question" || (previousStatus !== "review" && card.status === "review"))
             await this.dispatchOnce();
         const committed = change.committedCard;
-        const kind = committed ? selectCardSupervisorNotice({operationType:op.operation_type, actorKind:op.actor_kind, previousStatus, committed}) : null;
+        const kind = committed ? selectCardBoardNotice({operationType:op.operation_type, actorKind:op.actor_kind, previousStatus, committed}) : null;
         if (kind && committed) {
             let text: string;
             if (kind === "blocked") {

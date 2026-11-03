@@ -4,7 +4,7 @@ import type { CardOwnerSession } from "./card_session_target.js";
 
 type NoticeCard = Pick<CardRow, "id" | "number" | "title">;
 
-export function selectCardSupervisorNotice({operationType, actorKind, previousStatus, committed}: {
+export function selectCardBoardNotice({operationType, actorKind, previousStatus, committed}: {
   operationType: string; actorKind: FolderOperationActorKind; previousStatus?: CardStatus; committed: CardRow;
 }): "blocked" | "question" | "review" | "done" | null {
   if (committed.archived) return null;
