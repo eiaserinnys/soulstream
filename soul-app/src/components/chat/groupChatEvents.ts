@@ -9,6 +9,7 @@ import {
 import { placeJevCandidateCaptions, placeTurnSummaries } from './turnSummaryProjection';
 import type { ManuscriptActivityRenderItem } from './manuscriptActivityProjection';
 import { placePersistentInstructionRecordedCaptions } from './persistentInstructionRecordedProjection';
+import { RENDERED_EVENT_TYPES } from '../events/eventRowTypes';
 
 /** FlatList items: events, paired tools, turn captions, manuscript activity, and typing. */
 export type TurnSummaryRenderItem = {
@@ -625,6 +626,7 @@ export function groupChatEvents(
       return;
     }
 
+    if (!RENDERED_EVENT_TYPES.has(e.type)) return;
     out.push({ kind: 'event', event: e, key: `evt-${e.id}` });
   });
 

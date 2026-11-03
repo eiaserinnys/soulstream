@@ -190,6 +190,47 @@ export const persistentChatEvents: SessionEvent[] = [
     line_key: 'report-without-card', status: 'report', title: '카드 연결이 없는 보고',
     detail: '긴 제목과 상세가 좁은 화면에서 한 줄로 말줄임됩니다', card_id: null, card_number: null,
   } },
+  { id: '950', type: 'report_timeline', data: {
+    line_key: 'card-930', status: 'review', title: '#930 보고 검수', detail: '', card_id: 'card-930', card_number: 930,
+  } },
+  { id: '951', type: 'user_message', data: {
+    input_id: 'timeline-agent-hidden', text: '위임 에이전트 보고',
+    caller_info: { source: 'agent', agent_node: 'eiaserinnys', agent_id: 'review-agent', agent_name: '검수 에이전트' },
+  } },
+  { id: '952', type: 'report_timeline', data: {
+    line_key: 'card-930', status: 'done', title: '#930 보고 완료', detail: '', card_id: 'card-930', card_number: 930,
+  } },
+  { id: '953', type: 'report_timeline', data: {
+    line_key: 'card-926', status: 'done', title: '#926 보고 완료', detail: '', card_id: 'card-926', card_number: 926,
+  } },
+  { id: '954', type: 'session_ended', data: { status: 'completed', termination_reason: 'completed_ok' } },
+  { id: '955', type: 'session_notification', data: {
+    delivery_id: '00000000-0000-4000-8000-000000002253',
+    delivery_intent: 'completion_notification', source: 'review-sample-producer',
+    text: '완료 알림', disposition: 'queued',
+  } },
+  { id: '956', type: 'report_timeline', data: {
+    line_key: 'card-932', status: 'review', title: '#932 보고 검수', detail: '', card_id: 'card-932', card_number: 932,
+  } },
+  { id: '957', type: 'assistant_message', data: { text: '[SILENT]' } },
+  { id: '958', type: 'report_timeline', data: {
+    line_key: 'card-932', status: 'done', title: '#932 보고 완료', detail: '', card_id: 'card-932', card_number: 932,
+  } },
+  { id: '959', type: 'report_timeline', data: {
+    line_key: 'card-918', status: 'review', title: '#918 보고 검수', detail: '', card_id: 'card-918', card_number: 918,
+  } },
+  { id: '960', type: 'complete', data: { result: '완료' } },
+  { id: '961', type: 'report_timeline', data: {
+    line_key: 'card-932', status: 'review', title: '#932 최신 검수', detail: '', card_id: 'card-932', card_number: 932,
+  } },
+  { id: '962', type: 'turn_summary', data: {
+    content: '보고 카드 상태 갱신을 확인했습니다.',
+    final_response_event_id: 957,
+    parent_event_id: 957,
+  } },
+  { id: '963', type: 'report_timeline', data: {
+    line_key: 'card-932', status: 'done', title: '#932 최신 완료', detail: '', card_id: 'card-932', card_number: 932,
+  } },
 ];
 const persistentWorkDetailsSample: SessionEvent = {
   id: '935',
