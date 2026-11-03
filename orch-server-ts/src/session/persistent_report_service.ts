@@ -20,6 +20,22 @@ export type PersistentReportReplyDecision =
   | { action: "reject"; cardId: string; code: string; status: number; message: string };
 type ReportRow = Record<string, unknown> & { session_id: string; node_id: string | null; metadata: unknown; session_type: string | null };
 type ConnectedSessionRow = { session_id: string; session_type: string | null; metadata: unknown };
+
+/** 카드와 한 단계 부모 카드에 관여한 영구 세션들. */
+export async function readCardBoardSessions(sql: RepositorySql | SqlClient, cardId: string): Promise<Set<string>> {
+  // Collect the related card IDs first, then find their actors by primary key; an EXISTS over sessions scans the whole table.
+  const rows = await sql<ConnectedSessionRow[]>`WITH card_ids AS MATERIALIZED (
+      SELECT id FROM cards WHERE id=${cardId}
+      UNION SELECT id FROM cards WHERE assignee_session_id=(SELECT created_session_id FROM cards WHERE id=${cardId}) AND id<>${cardId}
+    ), actor_sessions AS (
+      SELECT created_session_id AS session_id FROM cards WHERE id IN (SELECT id FROM card_ids) AND created_session_id IS NOT NULL
+      UNION SELECT actor_session_id FROM folder_operations WHERE target_kind='card' AND target_id IN (SELECT id FROM card_ids)
+        AND operation_type IN ('create_card','execute_card','add_card_comment') AND actor_session_id IS NOT NULL
+    )
+    SELECT s.session_id,s.session_type,s.metadata FROM sessions s
+    WHERE s.session_id IN (SELECT session_id FROM actor_sessions)`;
+  return new Set(rows.filter(row=>row.session_type !== "llm" && readPersistentEnabled(row.metadata)).map(row=>row.session_id));
+}
 type CardQuestionRow = { card_id: string; options: string[] | null; answer: string | null; withdrawn_at: Date | null };
 type CardStateRow = { id: string; number: number | null; title: string; status: string; archived: boolean; blocked_kind: string | null; blocked_detail: string | null; now: { text?: string; turn?: string; ask?: string | null } | null };
 const CARD_TIMELINE_STATUSES = new Set(["review", "blocked", "done", "cancelled", "on_hold"]);
@@ -281,18 +297,7 @@ export class PersistentReportService {
   }
   /** 카드 C와 C의 담당 세션이 담당자로 연결된 한 단계 부모 카드에 관여한 영구 세션들. */
   private async connectedSessions(sql: RepositorySql | SqlClient, cardId: string): Promise<Set<string>> {
-    // Collect the related card IDs first, then find their actors by primary key; an EXISTS over sessions scans the whole table.
-    const rows = await sql<ConnectedSessionRow[]>`WITH card_ids AS MATERIALIZED (
-        SELECT id FROM cards WHERE id=${cardId}
-        UNION SELECT id FROM cards WHERE assignee_session_id=(SELECT created_session_id FROM cards WHERE id=${cardId}) AND id<>${cardId}
-      ), actor_sessions AS (
-        SELECT created_session_id AS session_id FROM cards WHERE id IN (SELECT id FROM card_ids) AND created_session_id IS NOT NULL
-        UNION SELECT actor_session_id FROM folder_operations WHERE target_kind='card' AND target_id IN (SELECT id FROM card_ids)
-          AND operation_type IN ('create_card','execute_card','add_card_comment') AND actor_session_id IS NOT NULL
-      )
-      SELECT s.session_id,s.session_type,s.metadata FROM sessions s
-      WHERE s.session_id IN (SELECT session_id FROM actor_sessions)`;
-    return new Set(rows.filter(row=>row.session_type !== "llm" && readPersistentEnabled(row.metadata)).map(row=>row.session_id));
+    return readCardBoardSessions(sql, cardId);
   }
   /** 이 세션이 카드 C의 연결 세션인가. 판에 카드 장을 올릴지 판정한다. */
   private async isBoardCard(sql: RepositorySql, sessionId: string, cardId: string): Promise<boolean> {
