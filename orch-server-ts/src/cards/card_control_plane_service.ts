@@ -223,7 +223,7 @@ export class CardControlPlaneService {
       const fields=await this.applyStatusTx(sql,card,eventId,{...actor,status:"running"},payload);
       await this.patch(sql,card,fields,actor,eventId);
       return this.closeOpenQuestionsTx(sql,card.id,"사용자 메시지로 작업이 재개되어 서버가 닫았습니다");
-    });
+    },false);
   }
   async requestCardReview(params: CardMutationParams & { ask?: string }) {
     return this.mutateCard(params,"set_card_status",{status:"review",blocked_kind:null,blocked_detail:null,ask:params.ask},async(sql,card,eventId,payload)=>{
