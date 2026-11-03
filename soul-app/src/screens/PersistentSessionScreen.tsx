@@ -315,7 +315,8 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     ? duoSideBand ? ['top', 'left'] : railMode ? ['top', 'bottom', 'left'] : ['top', 'left', 'right']
     : duoTopBand ? ['left', 'right'] : ['top', 'left', 'right']}
     style={{ flex: 1, backgroundColor: t.persistentSession.paper }}>
-    <View ref={appRef} testID="persistent-session-screen" style={{ flex: 1 }} onLayout={measureApp} {...(phone ? gestures.panHandlers : {})}>
+    {/* Keep native z-index stacking inside PAS so overlays cannot cover the Duo rail. */}
+    <View ref={appRef} testID="persistent-session-screen" style={{ flex: 1, isolation: 'isolate' }} onLayout={measureApp} {...(phone ? gestures.panHandlers : {})}>
       <View testID="persistent-session-header" style={{ height: headerHeight, flexDirection: 'row', alignItems: 'center',
         paddingTop: topBandInset,
         paddingLeft: t.foundation.pageInset, paddingRight: duoTopBand ? DUO_TOP_BAND_STATUS_RESERVE : t.foundation.pageInset - (t.hitTarget.min - t.foundation.iconFrame.compact) / 2,
