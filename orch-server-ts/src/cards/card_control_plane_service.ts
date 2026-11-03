@@ -21,7 +21,6 @@ import { randomUUID } from "node:crypto";
 import { generateKeyBetween } from "@soulstream/fractional-position";
 import { CardRepository } from "./control_plane/card_repository.js";
 import { isCardOffBoard } from "./control_plane/card_types.js";
-import { cardStatusLabels } from "./card_change_notification.js";
 import { CardMutationCore, type FolderMutateParams } from "./control_plane/card_mutation_core.js";
 import { CardVersionConflict, assigneeToFields, type CardAssigneeInput } from "./control_plane/card_models.js";
 import type { CardRow, CardStatus, CardMutationResult, FolderOperationRow, SqlClient, RepositorySql, FolderActorParams, FolderDbPort, FolderBroadcasterPort, FolderStatus } from "./control_plane/card_types.js";
@@ -217,6 +216,15 @@ export class CardControlPlaneService {
       await this.patch(sql,card,fields,params,eventId);
     });
   }
+  async resumeBlockedCardOnHumanInput(params:{cardId:string;expectedVersion:number}) {
+    const actor={actorKind:"system" as const,actorSessionId:null,...params,reason:"사용자 메시지로 작업 재개"};
+    return this.mutateCard(actor,"set_card_status",{status:"running",blocked_kind:null,blocked_detail:null},async(sql,card,eventId,payload)=>{
+      if (card.status!=="blocked" || card.blocked_kind==="limit" || card.archived!==false || card.assignee_kind!=="session") return false;
+      const fields=await this.applyStatusTx(sql,card,eventId,{...actor,status:"running"},payload);
+      await this.patch(sql,card,fields,actor,eventId);
+      return this.closeOpenQuestionsTx(sql,card.id,"사용자 메시지로 작업이 재개되어 서버가 닫았습니다");
+    });
+  }
   async requestCardReview(params: CardMutationParams & { ask?: string }) {
     return this.mutateCard(params,"set_card_status",{status:"review",blocked_kind:null,blocked_detail:null,ask:params.ask},async(sql,card,eventId,payload)=>{
       if ((card.items ?? []).length > 0 && params.ask === undefined)
@@ -353,7 +361,7 @@ export class CardControlPlaneService {
     const prepared=this.prepareAddComment(params,commentId);
     const result=await this.mutateCard(params,"add_card_comment",prepared.payload,async (sql,card,eventId,payload) => {
       if (prepared.kind === "spoken") assertNotOtherSessionAssignee(card,params);
-      await this.applyAddCommentTx(sql,card,eventId,payload,params,commentId,prepared.kind,prepared.external,prepared.reply);
+      return this.applyAddCommentTx(sql,card,eventId,payload,params,commentId,prepared.kind,prepared.external,prepared.reply);
     });
     const storedId=String(result.operation.payload_json.comment_id ?? commentId);
     const comment=await this.repo.getComment(params.cardId,storedId);
@@ -379,10 +387,7 @@ export class CardControlPlaneService {
         if (params.expectedVersion!==undefined && locked.version!==params.expectedVersion)
           throw new CardVersionConflict("card",card.id,params.expectedVersion,locked.version);
         previousStatus=locked.status;
-        await this.applyAddCommentTx(tx,locked,eventId,payload,params,params.commentId,prepared.kind,prepared.external,prepared.reply);
-        const committed=(await tx<CardRow[]>`SELECT * FROM cards WHERE id=${card.id}`)[0];
-        if (!committed) throw new Error("Card was not stored");
-        questionChanged=await this.closeOpenQuestionsForStatusChangeTx(tx,card.id,previousStatus,committed.status);
+        questionChanged=await this.applyAddCommentTx(tx,locked,eventId,payload,params,params.commentId,prepared.kind,prepared.external,prepared.reply);
       },
     });
     const savedCard=(await sql<CardRow[]>`SELECT * FROM cards WHERE id=${params.cardId}`)[0];
@@ -493,7 +498,7 @@ export class CardControlPlaneService {
     kind:"comment" | "spoken",
     external:boolean,
     reply:boolean,
-  ):Promise<void> {
+  ):Promise<boolean> {
     if (params.actorKind === "agent" && (card.items ?? []).length > 0 && params.mode === undefined)
       throw invalid("mode를 spoken 또는 reply로 지정하세요");
     const claim=reply ? await this.claim(sql,card,params.actorSessionId,payload) : {};
@@ -521,7 +526,9 @@ export class CardControlPlaneService {
     if (!reply && card.status === "blocked" && card.blocked_kind !== "limit" && card.archived === false
       && card.assignee_kind === "session") {
       await this.patch(sql,card,{status:"running",blocked_kind:null,blocked_detail:null},params,eventId);
+      return this.closeOpenQuestionsTx(sql,card.id,"사용자가 커멘트로 답해 서버가 닫았습니다");
     }
+    return false;
   }
   private async checkAdmission(sql:RepositorySql,params:{cardId:string;expectedVersion:number;sessionId:string;nodeId:string;admission?:PolicyAdmission}) {
     const enabled=(await sql<{enabled:boolean}[]>`SELECT (value->>'enabled')::boolean AS enabled FROM system_settings WHERE setting_key='card_orchestration'`)[0]?.enabled===true;
@@ -556,13 +563,13 @@ export class CardControlPlaneService {
       completed_user_id:params.status === "done" ? params.actorUserId ?? null : null,
       completed_at:params.status === "done" ? new Date() : null };
   }
-  private async mutateCard(params:CardMutationParams,operationType:string,payload:Record<string,unknown>,apply:(sql:RepositorySql,card:CardRow,eventId:number | null,payload:Record<string,unknown>)=>Promise<void>,notifyMutation=true) {
+  private async mutateCard(params:CardMutationParams,operationType:string,payload:Record<string,unknown>,apply:(sql:RepositorySql,card:CardRow,eventId:number | null,payload:Record<string,unknown>)=>Promise<void | boolean>,notifyMutation=true) {
     const card=await this.repo.getCard(params.cardId);
     if (!card) throw Object.assign(new Error("Card not found"),{ statusCode:404 });
     const clean=Object.fromEntries(Object.entries(payload).filter(([,v])=>v !== undefined));
     let previousStatus:CardStatus | undefined,previousAssigneeSessionId:string | null | undefined,committedCard:CardRow | undefined;
     let previousCard:Pick<CardRow,"now"|"title"|"archived"|"number"> | undefined;
-    let statusQuestionChanged=false;
+    let applyQuestionChanged=false;
     const result=await this.core.mutate({ folderId:card.folder_id,targetKind:"card",targetId:card.id,operationType,actor:params,
       idempotencyKey:params.idempotencyKey,reason:params.reason,payload:clean,
       apply:async (sql,eventId) => {
@@ -572,14 +579,11 @@ export class CardControlPlaneService {
         previousStatus=locked.status;
         previousCard={now:locked.now,title:locked.title,archived:locked.archived,number:locked.number};
         previousAssigneeSessionId=locked.assignee_session_id;
-        await apply(sql,locked,eventId,clean);
-        const afterApply=(await sql<{status:CardStatus}[]>`SELECT status FROM cards WHERE id=${card.id}`)[0];
-        if (!afterApply) throw new Error("Card was not stored");
-        statusQuestionChanged=await this.closeOpenQuestionsForStatusChangeTx(sql,card.id,previousStatus,afterApply.status);
+        applyQuestionChanged=await apply(sql,locked,eventId,clean)===true;
         committedCard=(await sql<CardRow[]>`SELECT * FROM cards WHERE id=${card.id}`)[0];
       },
       afterCommit: async () => {
-        const questionChanged = statusQuestionChanged || operationType === "ask_card_question" || operationType === "answer_card_question"
+        const questionChanged = applyQuestionChanged || operationType === "ask_card_question" || operationType === "answer_card_question"
           || operationType === "withdraw_card_question";
         const cardChanged = previousStatus !== committedCard?.status || previousCard?.title !== committedCard?.title
           || previousCard?.archived !== committedCard?.archived || JSON.stringify(previousCard?.now) !== JSON.stringify(committedCard?.now);
@@ -604,17 +608,7 @@ export class CardControlPlaneService {
       }
     } catch (error) { this.warn(`PAS report sync failed after card ${cardId} committed: ${String(error)}`); }
   }
-  private async closeOpenQuestionsForStatusChangeTx(
-    sql:RepositorySql,
-    cardId:string,
-    previousStatus:CardStatus | undefined,
-    nextStatus:CardStatus,
-  ):Promise<boolean> {
-    if (previousStatus===undefined || previousStatus===nextStatus) return false;
-    const exitsBlocked=previousStatus==="blocked" && nextStatus!=="blocked" && nextStatus!=="on_hold";
-    if (!exitsBlocked && nextStatus!=="done" && nextStatus!=="cancelled") return false;
-    const label=cardStatusLabels[nextStatus];
-    const reason=`카드가 「${label}」(으)로 옮겨져 서버가 닫았습니다`;
+  private async closeOpenQuestionsTx(sql:RepositorySql,cardId:string,reason:string):Promise<boolean> {
     const closed=await sql`UPDATE card_questions SET withdrawn_at=NOW(),withdrawn_by_session_id=NULL,withdrawal_reason=${reason}
       WHERE card_id=${cardId} AND answer IS NULL AND withdrawn_at IS NULL RETURNING id`;
     return closed.length>0;

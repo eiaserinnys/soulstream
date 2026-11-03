@@ -415,7 +415,8 @@ describe("card work dispatch transaction contracts", () => {
     const questionId = String((await stack.cards.getCard(cardId))!.questions[0]!.id);
     const sync = vi.fn(async () => {
       expect((await h.concurrentSql`SELECT status FROM cards WHERE id=${cardId}`)[0]!.status).toBe("running");
-      expect((await h.concurrentSql`SELECT withdrawn_at FROM card_questions WHERE id=${questionId}`)[0]!.withdrawn_at).toBeInstanceOf(Date);
+      expect((await h.concurrentSql`SELECT withdrawn_at,withdrawal_reason FROM card_questions WHERE id=${questionId}`)[0])
+        .toMatchObject({withdrawn_at:expect.any(Date),withdrawal_reason:"사용자가 커멘트로 답해 서버가 닫았습니다"});
     });
     (stack.cards as any).syncReportsAfterCommit = sync;
 

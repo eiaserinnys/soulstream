@@ -1237,8 +1237,7 @@ export function buildProductionRouteOptions(
           const card=detail.card;
           if (card.status!=="blocked" || card.blocked_kind==="limit" || card.archived!==false
             || card.assignee_kind!=="session" || card.assignee_session_id!==targetSessionId) continue;
-          await cards.setCardStatus({actorKind:"system",actorSessionId:null,cardId:card.id,expectedVersion:card.version,
-            status:"running",reason:"사용자 메시지로 작업 재개"});
+          await cards.resumeBlockedCardOnHumanInput({cardId:card.id,expectedVersion:card.version});
           return;
         }
       },
