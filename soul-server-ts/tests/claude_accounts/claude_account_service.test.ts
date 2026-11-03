@@ -951,7 +951,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     expect(svc.profileDir(ACC_A)).toBeNull();
   });
 
-  it("enforces 5-minute usage cache TTL, collects normal and failing accounts concurrently, and handles partial deadline", async () => {
+  it("enforces 4-minute usage cache TTL, collects normal and failing accounts concurrently, and handles partial deadline", async () => {
     let accBStatus = 200;
     let hangAccB = false;
     const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
@@ -1014,14 +1014,14 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     expect(list.accounts.find((a) => a.id === ACC_A)?.stale).toBe(false);
     expect(list.accounts.find((a) => a.id === ACC_B)?.stale).toBe(false);
 
-    // Before 5-minute TTL (4 minutes later): cache hit, no new fetch calls
-    nowMs += 4 * 60_000;
+    // Just before the 4-minute TTL: cache hit, no new fetch calls
+    nowMs += 4 * 60_000 - 1;
     await svc.getAccountList();
     expect(fetchImpl).toHaveBeenCalledTimes(2);
 
-    // After 5-minute TTL (+1 minute + 1ms): cache miss, fetches again; ACC_A succeeds (200), ACC_B fails (503)
+    // At the 4-minute TTL: cache miss, fetches again; ACC_A succeeds (200), ACC_B fails (503)
     accBStatus = 503;
-    nowMs += 60_000 + 1;
+    nowMs += 1;
     list = await svc.getAccountList();
     expect(fetchImpl).toHaveBeenCalledTimes(4);
     expect(list.accounts.find((a) => a.id === ACC_A)?.stale).toBe(false);
@@ -1061,6 +1061,8 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     const list = await svc.getAccountList({ forceRefresh: true });
     const accA3 = list.accounts.find((a) => a.id === ACC_A)!;
     expect(accA3.auth_state).toBe("idle");
+    expect(accA3.observed_at).toBeNull();
+    expect(accA3.usage).toEqual({ five_hour: null, seven_day: null, fable_weekly: null });
     expect(fs.readFileSync(credPathA, "utf8")).toBe(credBefore);
   });
 

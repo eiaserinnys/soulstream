@@ -1,4 +1,6 @@
+// Account lifecycle and pool operations share one store and session-activity contract.
 import * as fs from "node:fs";
+import type { ClaudeProfileCredentialRenewer } from "./credential_renewal.js";
 import { ClaudeAccountNotFoundError } from "./errors.js";
 import {
   computeEarliestAvailableAt,
@@ -36,6 +38,7 @@ import {
 export { ClaudeAccountNotFoundError } from "./errors.js";
 
 export interface ClaudeAccountServiceOptions {
+  credentialRenewer?: ClaudeProfileCredentialRenewer;
   accountsDir: string;
   homeDir?: string;
   now?: () => number;
@@ -68,6 +71,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       pollTtlMs: options.pollTtlMs,
       concurrency: options.concurrency,
       perAccountTimeoutMs: options.perAccountTimeoutMs,
+      credentialRenewer: options.credentialRenewer,
     });
   }
 
@@ -429,6 +433,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       .map((acc) => ({
         accountId: acc.id,
         profileDir: this.store.profileDir(acc.id),
+        renewExpiredCredentials: acc.enabled && !this.pendingRetireAccountIds.has(acc.id),
       }));
 
     const observations = await this.usageCollector.collectAll(
