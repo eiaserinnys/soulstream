@@ -1,13 +1,32 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { DashboardIconCap, Popover, PopoverPopup, PopoverTrigger, ProfileAvatar, useAuth } from '@seosoyoung/soul-ui';
+import { ArrowLeftRight } from 'lucide-react';
 import { navigateDashboard } from '../dashboard-navigation';
-import { createPersistentSessionsApi, type PersistentSessionList } from '../lib/persistent-sessions';
+import { createPersistentSessionsApi, type PersistentSession, type PersistentSessionList } from '../lib/persistent-sessions';
 import { readPersistentSessionDevicePreferences } from '../lib/persistent-session-device-preferences';
 import { ConfigModal } from '../components/ConfigModal';
 import { SettingsListRow } from '../components/config/SettingsListDetail';
 
 export function persistentSessionPortrait(nodeId: string | null | undefined, agentId: string | null | undefined) {
   return nodeId && agentId ? `/api/nodes/${encodeURIComponent(nodeId)}/agents/${encodeURIComponent(agentId)}/portrait` : null;
+}
+
+export function PersistentSessionChoiceRow({ session, selected, onSelect }: { session: PersistentSession; selected: boolean; onSelect(): void }) {
+  return <SettingsListRow title={session.display_name ?? '영구 세션'} meta={session.agent_name ?? ''} selected={selected} portrait={<ProfileAvatar role="assistant" shape="circle" hasPortrait portraitUrl={persistentSessionPortrait(session.node_id, session.agent_id)} fallbackEmoji="🤖"/>} onSelect={onSelect}/>;
+}
+
+export function PersistentSessionSwitch({ sessions, currentSessionId }: { sessions: PersistentSession[]; currentSessionId?: string }) {
+  const [open, setOpen] = useState(false);
+  if (sessions.length < 2) return null;
+  return <Popover open={open} onOpenChange={setOpen}>
+    <PopoverTrigger render={<DashboardIconCap appearance="bare" label="영구 세션 바꾸기" data-testid="persistent-session-switch"/>}>
+      <ArrowLeftRight className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true"/>
+    </PopoverTrigger>
+    <PopoverPopup align="end"><div className="v3-surface">{sessions.map(session => <PersistentSessionChoiceRow key={session.session_id} session={session} selected={session.session_id === currentSessionId} onSelect={() => {
+      setOpen(false);
+      if (session.session_id !== currentSessionId) navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`);
+    }}/>)}</div></PopoverPopup>
+  </Popover>;
 }
 
 /** Existing chrome cap and settings selection rows are the only home additions. */
@@ -40,7 +59,7 @@ export function PersistentSessionEntry() {
   return <>
     <Popover open={open} onOpenChange={next => { if (!next) setOpen(false); }}>
       <PopoverTrigger render={<DashboardIconCap label="영구 세션 열기" data-testid="persistent-session-entry" onClick={enter}/> }><ProfileAvatar role="assistant" shape="circle" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji="🤖"/></PopoverTrigger>
-      <PopoverPopup align="end"><div className="v3-surface">{listing?.sessions.map(session => <SettingsListRow key={session.session_id} title={session.display_name ?? '영구 세션'} meta={session.agent_name ?? ''} selected={lastId === session.session_id} portrait={<ProfileAvatar role="assistant" hasPortrait shape="circle" portraitUrl={persistentSessionPortrait(session.node_id, session.agent_id)} fallbackEmoji="🤖"/>} onSelect={() => { setOpen(false); navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`); }}/>)}</div></PopoverPopup>
+      <PopoverPopup align="end"><div className="v3-surface">{listing?.sessions.map(session => <PersistentSessionChoiceRow key={session.session_id} session={session} selected={lastId === session.session_id} onSelect={() => { setOpen(false); navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`); }}/>)}</div></PopoverPopup>
     </Popover>
     <ConfigModal open={configOpen} onOpenChange={setConfigOpen} initialTab="persistent"/>
   </>;

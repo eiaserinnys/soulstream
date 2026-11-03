@@ -1,4 +1,4 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, useRef, type ReactNode, type RefObject } from "react";
 import {
   ThemeToggle,
   DashboardIconCap,
@@ -13,7 +13,7 @@ import { PersistentSessionEntry } from './PersistentSessionEntry';
 export function V3GlobalToolbar({
   onOpenConfig,
   onOpenSearch,
-  variant = 'default', agentName, agentOnly = false, showHome = true, onOpenHome, headerRef, showWeeklyUsage, onToggleUsage,
+  variant = 'default', agentName, agentOnly = false, showHome = true, onOpenHome, headerRef, showWeeklyUsage, onToggleUsage, sessionSwitch,
   appearance = 'default',
 }: {
   onOpenConfig(): void;
@@ -24,6 +24,7 @@ export function V3GlobalToolbar({
   agentOnly?: boolean;
   showHome?: boolean;
   onOpenHome?(): void;
+  sessionSwitch?: ReactNode;
   headerRef?: RefObject<HTMLElement | null>;
   appearance?: "default" | "bare";
   showWeeklyUsage?: boolean;
@@ -56,6 +57,7 @@ export function V3GlobalToolbar({
           ? <House className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true" />
           : <span aria-hidden="true" className="text-base leading-none">⌂</span>}
       </DashboardIconCap> : null}
+      {sessionSwitch}
       <ThemeToggle variant="chrome" appearance={appearance}/>
       {onToggleUsage && showWeeklyUsage !== undefined ? <DashboardIconCap appearance={appearance} label="주간 사용량"
         aria-pressed={showWeeklyUsage} className={`persistent-session-weekly-usage-toggle${showWeeklyUsage ? " persistent-session-weekly-usage-toggle--selected" : ""}`}

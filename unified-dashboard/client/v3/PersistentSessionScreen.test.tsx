@@ -23,7 +23,7 @@ vi.mock('../dashboard-navigation',()=>({navigateDashboard:(...args:any[])=>mocks
 vi.mock('./use-v3-live-data-plane',()=>({useV3LiveDataPlane:vi.fn()}));
 vi.mock('../hooks/useNodes',()=>({useNodes:vi.fn()}));
 vi.mock('./use-session-node-connectivity',()=>({useSessionNodeConnectivity:()=>({nodes:new Map([['node-1',{status:'connected'}]])})}));
-vi.mock('./V3GlobalToolbar',()=>({V3GlobalToolbar:(p:any)=> <header data-testid="v3-global-toolbar" data-agent-only={String(p.agentOnly)} data-show-home={String(p.showHome)} data-agent-name={p.agentName}><span data-testid="scene-title">{p.agentName}</span>{p.onToggleUsage&&<button data-testid="usage-toggle" aria-pressed={p.showWeeklyUsage} onClick={p.onToggleUsage}>주간 사용량</button>}<button onClick={p.onOpenConfig}>PAS 설정</button></header>}));
+vi.mock('./V3GlobalToolbar',()=>({V3GlobalToolbar:(p:any)=> <header data-testid="v3-global-toolbar" data-agent-only={String(p.agentOnly)} data-show-home={String(p.showHome)} data-agent-name={p.agentName}><span data-testid="scene-title">{p.agentName}</span>{p.showHome&&<button aria-label="홈" onClick={p.onOpenHome}/>} {p.sessionSwitch}{p.onToggleUsage&&<button data-testid="usage-toggle" aria-pressed={p.showWeeklyUsage} onClick={p.onToggleUsage}>주간 사용량</button>}<button onClick={p.onOpenConfig}>PAS 설정</button></header>}));
 vi.mock('../hooks/useUsageSummary', async()=>{
  const {selectUsageSummaryNode,weeklyUsageGauges}=await vi.importActual<typeof import('@seosoyoung/soul-ui')>('@seosoyoung/soul-ui');
  return {useUsageSummary:(options:any)=>{
@@ -66,6 +66,23 @@ const currentProviderOptions=()=>mocks.provider.mock.calls.slice(-2).map(([optio
 beforeEach(()=>{vi.clearAllMocks();resizeTo(1024);mediaListeners=[];vi.stubGlobal('matchMedia',(query:string)=>({get matches(){return mediaMatches(query);},media:query,addEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>mediaListeners.push({query,listener}),removeEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>{mediaListeners=mediaListeners.filter(item=>item.listener!==listener);}}));localStorage.clear();mocks.usageSummary=usageSummaryFixture;useDashboardStore.getState().setActiveSession(null);useCardStore.getState().reset();useCardNavigation.getState().close();host=document.createElement('div');document.body.append(host);root=createRoot(host);mocks.fetchSessions.mockImplementation(async(o:any)=>({sessions:o.sessionIds.map((id:string)=>({agentSessionId:id,nodeId:'node-1',title:id}))}));});
 afterEach(()=>{act(()=>root.unmount());host.remove();geometry.value=null;vi.unstubAllGlobals();});
 async function mount(id?:string){await act(async()=>{root.render(<DashboardInternalLinks><PersistentSessionScreen sessionId={id}/></DashboardInternalLinks>);});}
+it('opens the PAS switch after home, marks the current session and navigates to the selected session',async()=>{
+ mocks.list.mockResolvedValue({sessions:[session('one'),session('two / 다음')]});await mount('one');
+ const home=host.querySelector('[aria-label="홈"]')!;const button=host.querySelector<HTMLButtonElement>('[data-testid="persistent-session-switch"]')!;
+ expect(home.nextElementSibling).toBe(button);
+ await act(async()=>button.click());
+ const choice=(title:string)=>[...document.body.querySelectorAll('span')].find(span=>span.textContent===title)?.closest('button');
+ const choices=[choice('one'),choice('two / 다음')];
+ expect(choices.every(Boolean)).toBe(true);
+ expect(choices[0]!.className).toContain('bg-accent-blue/15');expect(choices[1]!.className).not.toContain('bg-accent-blue/15');
+ await act(async()=>choices[0]!.click());expect(mocks.navigate).not.toHaveBeenCalled();
+ await act(async()=>button.click());await act(async()=>choice('two / 다음')!.click());
+ expect(mocks.navigate).toHaveBeenCalledWith('/persistent/two%20%2F%20%EB%8B%A4%EC%9D%8C');
+});
+it('does not show the PAS switch for a single session',async()=>{
+ mocks.list.mockResolvedValue({sessions:[session('one')]});await mount('one');
+ expect(host.querySelector('[data-testid="persistent-session-switch"]')).toBeNull();
+});
 it('seeds the active display settings from its PAS list before opening chat',async()=>{
  mocks.list.mockResolvedValue({sessions:[session('one'),session('two')]});await mount('two');
  expect(useDashboardStore.getState().persistentSessionDisplaySettings).toMatchObject({sessionId:'two',showCharacter:true});
