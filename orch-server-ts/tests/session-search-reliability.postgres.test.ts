@@ -324,6 +324,10 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       "../../packages/db-schema/sql/migrations/144_event_search_scoped_term_first.sql",
       import.meta.url,
     )), "utf8");
+    const prefixGuardMigration = readFileSync(fileURLToPath(new URL(
+      "../../packages/db-schema/sql/migrations/145_event_search_scoped_prefix_guard.sql",
+      import.meta.url,
+    )), "utf8");
 
     // Historical 103 reader uses this read-only projection of the same v2 fixture.
     await sql.unsafe(`CREATE VIEW event_search_terms AS
@@ -371,9 +375,14 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       ON event_search_dictionary ((term COLLATE "C")) INCLUDE (term_id, term)`;
     await sql.begin((tx) => tx.unsafe(readV2Migration));
     await sql.begin((tx) => tx.unsafe(scopedReadMigration));
+    await sql.unsafe(`ALTER FUNCTION event_search(
+      text, text[], integer, text[], text[], integer, integer, text,
+      text[], timestamptz, text[], jsonb
+    ) RENAME TO event_search_before_prefix_guard`);
+    await sql.begin((tx) => tx.unsafe(prefixGuardMigration));
     const afterFirstMigration = await readFunctionDefinition(sql, "event_search");
     expect(await readPrefixIndexDefinition(sql)).toEqual(canonicalIndex);
-    await sql.begin((tx) => tx.unsafe(scopedReadMigration));
+    await sql.begin((tx) => tx.unsafe(prefixGuardMigration));
     const afterReplay = await readFunctionDefinition(sql, "event_search");
     expect(afterFirstMigration[0]?.definition).toBe(canonicalDefinition[0]?.definition);
     expect(afterReplay[0]?.definition).toBe(canonicalDefinition[0]?.definition);
@@ -417,6 +426,24 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       backends: null,
       backendCatalog: [],
     };
+    for (let id = 60; id < 66; id++) {
+      await sql`INSERT INTO events (session_id, id, event_type, searchable_text)
+        VALUES ('actual-work-session', ${id}, 'tool_result', 'heavy_verify')`;
+    }
+    const overfetchArgs = {
+      ...commonArgs, query: "heavy_verify", sessionIds: ["actual-work-session"],
+      eventTypes: ["tool_start", "tool_result"], limit: 23,
+    };
+    const oldOverfetch = await runSearchFunction(sql, "event_search_before_prefix_guard", overfetchArgs);
+    const newOverfetch = await runSearchFunction(sql, "event_search", overfetchArgs);
+    expect(oldOverfetch).toHaveLength(6);
+    expectEquivalentRows(oldOverfetch, newOverfetch);
+
+    const koreanArgs = { ...commonArgs, query: "디스크작업", sessionIds: ["actual-work-session"] };
+    const oldKorean = await runSearchFunction(sql, "event_search_before_prefix_guard", koreanArgs);
+    const newKorean = await runSearchFunction(sql, "event_search", koreanArgs);
+    expect(oldKorean.map((row) => row.id)).toContain(51);
+    expectEquivalentRows(oldKorean, newKorean);
     await expectSearchesEquivalent(sql, commonArgs);
     expect((await runSearchFunction(sql, "event_search", commonArgs)).length).toBeGreaterThan(0);
 
@@ -1672,7 +1699,7 @@ type EventSearchBackendMapping =
   | { kind: "preset"; node_id: string; model_preset: string; backend: string }
   | { kind: "agent"; node_id: string; agent_id: string; backend: string };
 
-type EventSearchFunctionName = "event_search" | "event_search_before_read_v2";
+type EventSearchFunctionName = "event_search" | "event_search_before_read_v2" | "event_search_before_prefix_guard";
 
 async function readPrefixIndexDefinition(sql: ReturnType<typeof postgres>) {
   return await sql<Array<{ name: string; definition: string }>>`

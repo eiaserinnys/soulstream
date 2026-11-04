@@ -156,12 +156,20 @@ async def test_event_search_prefix_helpers_are_retained_after_write_switch():
 
 
 async def test_event_search_scoped_read_migration_is_mirrored_in_schema_sql():
-    migration_sql = _migration_sql("144_event_search_scoped_term_first.sql").strip()
+    migration_sql = _migration_sql("145_event_search_scoped_prefix_guard.sql").strip()
     schema_sql = _schema_sql()
 
     assert _function_sql(
         migration_sql, "CREATE OR REPLACE FUNCTION event_search("
     ) in schema_sql
+
+
+async def test_event_search_skips_scoped_prefix_without_korean_terms():
+    function = _function_sql(_schema_sql(), "CREATE OR REPLACE FUNCTION event_search(")
+    scoped_prefix = function.split("scoped_prefix_scored AS (", 1)[1].split(
+        "global_prefix_postings AS", 1
+    )[0]
+    assert "AND EXISTS (SELECT 1 FROM korean_prefix_terms)" in scoped_prefix
 
 
 async def test_event_type_covering_index_migration_is_mirrored_in_schema_sql():

@@ -2665,6 +2665,7 @@ CREATE OR REPLACE FUNCTION event_search(
         JOIN korean_prefix_terms q
           ON left(t.term, 3) = q.prefix
         WHERE t.term ~ '[가-힣]'
+          AND EXISTS (SELECT 1 FROM korean_prefix_terms)
           AND (p_prefix_limit > 0 OR p_limit IS NULL
                OR (SELECT count FROM exact_count) < p_limit)
           AND NOT EXISTS (
