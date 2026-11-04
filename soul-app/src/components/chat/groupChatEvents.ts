@@ -9,6 +9,7 @@ import {
 import { placeJevCandidateCaptions, placeTurnSummaries } from './turnSummaryProjection';
 import type { ManuscriptActivityRenderItem } from './manuscriptActivityProjection';
 import { placePersistentInstructionRecordedCaptions } from './persistentInstructionRecordedProjection';
+import { isHiddenConversationInput } from './hiddenConversationProjection';
 import { RENDERED_EVENT_TYPES } from '../events/eventRowTypes';
 
 /** FlatList items: events, paired tools, turn captions, manuscript activity, and typing. */
@@ -145,7 +146,7 @@ function isSuppressedManuscriptTurnEvent(event: SessionEvent): boolean {
   ));
 
   return shouldHideManuscriptEvent(event)
-    || data?.purpose === 'cache_keepalive'
+    || isHiddenConversationInput(event)
     || hasClosedReportContext;
 }
 

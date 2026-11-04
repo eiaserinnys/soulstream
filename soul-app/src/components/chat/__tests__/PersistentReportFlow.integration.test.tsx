@@ -12,7 +12,7 @@ import { useNodeConnectivityStore } from '../../../store/nodeConnectivityStore';
 import { useSSEStream } from '../../../hooks/useSSEStream';
 import { chatUiFixtureEvent } from '../../../component-review/chat-ui-fixtures';
 import { groupChatEvents, projectManuscriptMessages } from '../groupChatEvents';
-import { projectCacheKeepaliveTurns } from '../cacheKeepaliveProjection';
+import { projectHiddenConversationTurns } from '../hiddenConversationProjection';
 import type { PersistentReportEntry, SessionEvent } from '../../../api/types';
 import { ChatUiControllerProvider, useChatUiActions } from '../../chat-ui/ChatUiControllerProvider';
 import { usePersistentReport } from '../../persistent/usePersistentReport';

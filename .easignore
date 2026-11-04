@@ -45,6 +45,7 @@
 !/packages/wire-schema/src
 /packages/wire-schema/src/*
 !/packages/wire-schema/src/card_colors.ts
+!/packages/wire-schema/src/conversation_visibility.ts
 !/packages/wire-schema/src/persistent_jev_candidates.ts
 !/packages/wire-schema/src/persistent_report.ts
 !/packages/wire-schema/src/session_statistics.ts
