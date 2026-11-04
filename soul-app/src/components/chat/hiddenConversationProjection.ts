@@ -62,6 +62,7 @@ export function projectHiddenConversationTurns(
 ): HiddenConversationProjection {
   const keepaliveInputIds = new Set<string>();
   const noticeInputIds = new Set<string>();
+  const turnNoticeInputIds = new Set<string>();
   let hidingTurn = false;
   let hasVisibleInput = false;
   const visible: SessionEvent[] = [];
@@ -74,12 +75,19 @@ export function projectHiddenConversationTurns(
         if (keepalive || !hasVisibleInput) {
           hidingTurn = true;
           const inputId = inputAnchorId(event);
-          if (inputId !== null) (keepalive ? keepaliveInputIds : noticeInputIds).add(inputId);
+          if (inputId !== null) {
+            if (keepalive) keepaliveInputIds.add(inputId);
+            else {
+              noticeInputIds.add(inputId);
+              turnNoticeInputIds.add(inputId);
+            }
+          }
         }
       } else {
         hidingTurn = false;
         hasVisibleInput = true;
-        noticeInputIds.clear();
+        for (const inputId of turnNoticeInputIds) noticeInputIds.delete(inputId);
+        turnNoticeInputIds.clear();
         visible.push(event);
       }
       continue;
@@ -94,6 +102,7 @@ export function projectHiddenConversationTurns(
       const wasHiding = hidingTurn;
       hidingTurn = false;
       hasVisibleInput = false;
+      turnNoticeInputIds.clear();
       if (wasHiding) {
         if (event.type === 'error') visible.push(event);
         continue;

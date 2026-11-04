@@ -357,3 +357,17 @@ test('old system notices including nested payload are hidden, but the same human
   for (const id of ['old', 'old-answer', 'old-end', 'nested', 'nested-end', 'nested-late']) expect(ids).not.toContain(id);
   expect(ids).toEqual(expect.arrayContaining(['human', 'human-answer']));
 });
+
+test('a late row anchored to a completed notice remains hidden after a human input', () => {
+  const events = [
+    cardNotice('notice'),
+    event('done', 'complete'),
+    event('person', 'user_message', { text: '사람 입력' }),
+    event('late', 'system', { input_id: 'notice-anchor', text: '늦은 알림 행' }),
+    event('reply', 'assistant_message', { text: '사람에게 답변' }),
+  ];
+  const { result } = renderHook(() => renderItems(events));
+  const ids = sourceEventIds(result.current.reversedItems);
+  expect(ids).toEqual(expect.arrayContaining(['person', 'reply']));
+  expect(ids).not.toContain('late');
+});
