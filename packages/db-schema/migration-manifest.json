@@ -584,6 +584,10 @@
     {
       "id": "144_event_search_scoped_term_first.sql",
       "sha256": "49f0b73b7d7275134ca17b9ca988256804e8201f2c0b390ef7d3d51ee77fd27b"
+    },
+    {
+      "id": "145_event_search_scoped_prefix_guard.sql",
+      "sha256": "bae43554b97293745baddd25012f70e48f82aeda4b079b60f14850fd12c7474d"
     }
   ]
 }
