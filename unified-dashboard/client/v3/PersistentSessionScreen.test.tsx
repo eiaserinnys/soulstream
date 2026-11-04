@@ -9,12 +9,12 @@ import { PersistentSessionScreen } from './PersistentSessionScreen';
 import { useCardNavigation } from './card-navigation';
 import { DashboardInternalLinks } from './DashboardInternalLinks';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const mocks = vi.hoisted(() => ({ list: vi.fn(), fetchSessions: vi.fn(), provider: vi.fn(), navigate: vi.fn(), get: vi.fn(), update: vi.fn(), cardRequest: vi.fn(), usage: vi.fn(), usageRetry: vi.fn(), sync: true, usageSummary: null as UsageSummarySnapshot | null }));
+const mocks = vi.hoisted(() => ({ list: vi.fn(), fetchSessions: vi.fn(), provider: vi.fn(), navigate: vi.fn(), get: vi.fn(), update: vi.fn(), cardRequest: vi.fn(), usage: vi.fn(), usageRetry: vi.fn(), sync: true, streamStatus: 'connected', reconnect: vi.fn(), usageSummary: null as UsageSummarySnapshot | null }));
 const geometry = vi.hoisted(() => ({ value: null as any }));
 vi.mock('./use-persistent-session-geometry',()=>({usePersistentSessionGeometry:()=>geometry.value}));
 vi.mock('@seosoyoung/soul-ui', async () => {
  const real = await vi.importActual<typeof import('@seosoyoung/soul-ui')>('@seosoyoung/soul-ui');
- return { ...real, LiquidGlassProvider: ({children}:any) => children, useAuth: () => ({ user:{email:'test@example.com'},refreshAuthStatus:vi.fn() }), useUserPreferencesSync:vi.fn(), useInitialCatalogLoad:vi.fn(), useSessionProvider:(o:any)=> {mocks.provider(o);return {synchronizedSessionKey:mocks.sync ? o.sessionKey : null}}, initTheme:vi.fn() };
+ return { ...real, LiquidGlassProvider: ({children}:any) => children, useAuth: () => ({ user:{email:'test@example.com'},refreshAuthStatus:vi.fn() }), useUserPreferencesSync:vi.fn(), useInitialCatalogLoad:vi.fn(), useSessionProvider:(o:any)=> {mocks.provider(o);return {status:mocks.streamStatus,reconnect:mocks.reconnect,synchronizedSessionKey:mocks.sync ? o.sessionKey : null}}, initTheme:vi.fn() };
 });
 vi.mock('../lib/persistent-sessions',()=>({createPersistentSessionsApi:()=>({list:mocks.list,get:mocks.get,update:mocks.update})}));
 vi.mock('../providers',()=>({orchestratorSessionProvider:{fetchSessions:mocks.fetchSessions}}));
@@ -63,7 +63,7 @@ const usageNode=(nodeId:string,claude:number|null,codex:number|null,fable=false)
 const usageSummaryFixture:UsageSummarySnapshot={generatedAt:'2026-10-13T08:00:00.000Z',collectedAt:null,nodes:[usageNode('node-1',73,38,true),usageNode('node-2',61,42),usageNode('node-3',null,null)]};
 const session=(id:string)=>({session_id:id,display_name:id,persistent:true,node_id:'node-1',settings:{default_model:{model_preset:null},show_character:true}});
 const currentProviderOptions=()=>mocks.provider.mock.calls.slice(-2).map(([options]:any[])=>options as any);
-beforeEach(()=>{vi.clearAllMocks();mocks.sync=true;resizeTo(1024);mediaListeners=[];vi.stubGlobal('matchMedia',(query:string)=>({get matches(){return mediaMatches(query);},media:query,addEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>mediaListeners.push({query,listener}),removeEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>{mediaListeners=mediaListeners.filter(item=>item.listener!==listener);}}));localStorage.clear();mocks.usageSummary=usageSummaryFixture;useDashboardStore.getState().setActiveSession(null);useCardStore.getState().reset();useCardNavigation.getState().close();host=document.createElement('div');document.body.append(host);root=createRoot(host);mocks.fetchSessions.mockImplementation(async(o:any)=>({sessions:o.sessionIds.map((id:string)=>({agentSessionId:id,nodeId:'node-1',title:id}))}));});
+beforeEach(()=>{vi.clearAllMocks();mocks.sync=true;mocks.streamStatus='connected';resizeTo(1024);mediaListeners=[];vi.stubGlobal('matchMedia',(query:string)=>({get matches(){return mediaMatches(query);},media:query,addEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>mediaListeners.push({query,listener}),removeEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>{mediaListeners=mediaListeners.filter(item=>item.listener!==listener);}}));localStorage.clear();mocks.usageSummary=usageSummaryFixture;useDashboardStore.getState().setActiveSession(null);useCardStore.getState().reset();useCardNavigation.getState().close();host=document.createElement('div');document.body.append(host);root=createRoot(host);mocks.fetchSessions.mockImplementation(async(o:any)=>({sessions:o.sessionIds.map((id:string)=>({agentSessionId:id,nodeId:'node-1',title:id}))}));});
 afterEach(()=>{act(()=>root.unmount());host.remove();geometry.value=null;vi.unstubAllGlobals();});
 async function mount(id?:string){await act(async()=>{root.render(<DashboardInternalLinks><PersistentSessionScreen sessionId={id}/></DashboardInternalLinks>);});}
 it('keeps the target frame isolated while list and session summary load in sequence',async()=>{
@@ -251,6 +251,19 @@ it('keeps transcript loading until the target subscription synchronizes',async()
  expect(host.querySelector('[data-testid="chat"]')?.textContent).toContain('Loading earlier messages...');
  expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-history')).toBe('false');
  mocks.sync=true;await mount('one');
+ expect(host.querySelector('[data-testid="chat"]')?.textContent).not.toContain('Loading earlier messages...');
+ expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-history')).toBe('true');
+});
+
+it('offers reconnect after subscription failure and restores loading while reconnecting',async()=>{
+ mocks.list.mockResolvedValue({sessions:[session('one')]});mocks.sync=false;mocks.streamStatus='error';await mount('one');
+ const retry=host.querySelector<HTMLButtonElement>('[data-testid="v3-session-stream-retry"]');
+ expect(retry).not.toBeNull();expect(host.querySelector('[data-testid="chat"]')?.textContent).not.toContain('Loading earlier messages...');
+ await act(async()=>retry!.click());expect(mocks.reconnect).toHaveBeenCalledOnce();
+ mocks.streamStatus='connecting';await mount('one');
+ expect(host.querySelector('[data-testid="v3-session-stream-retry"]')).toBeNull();
+ expect(host.querySelector('[data-testid="chat"]')?.textContent).toContain('Loading earlier messages...');
+ mocks.sync=true;mocks.streamStatus='connected';await mount('one');
  expect(host.querySelector('[data-testid="chat"]')?.textContent).not.toContain('Loading earlier messages...');
  expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-history')).toBe('true');
 });

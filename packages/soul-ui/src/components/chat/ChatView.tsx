@@ -75,6 +75,8 @@ export interface ChatViewProps {
   fileUploadUrl?: string;
   historyEnabled?: boolean;
   transcriptFallback?: ReactNode;
+  /** Status text shares the list gutter; boxed content aligns with the composer. */
+  transcriptFallbackLayout?: "status" | "content";
   showRuntimeStrips?: boolean;
   presentation?: "default" | "manuscript";
   composerAnchorRef?: RefObject<HTMLDivElement | null>;
@@ -130,6 +132,7 @@ function ChatViewContent({
   fileUploadUrl,
   historyEnabled = true,
   transcriptFallback,
+  transcriptFallbackLayout = "status",
   showRuntimeStrips = true,
   presentation = "default",
   composerAnchorRef,
@@ -790,7 +793,7 @@ function ChatViewContent({
       className={presentation === "manuscript" ? "-mx-1 flex h-full min-h-0 flex-col overflow-hidden px-1 pb-3 pt-3" : "flex h-full min-h-0 flex-col overflow-hidden px-3 pb-3 pt-3"}
       data-chat-presentation={presentation === "manuscript" ? "manuscript" : undefined}
     >
-      {transcriptFallback != null ? <div className={presentation === "manuscript" ? "-mx-1 flex-1 min-h-0" : "flex-1 min-h-0"}><VirtuosoHeader/></div> : <>
+      {transcriptFallback != null ? <div className={presentation === "manuscript" && transcriptFallbackLayout === "status" ? "-mx-1 flex-1 min-h-0" : "flex-1 min-h-0"}><VirtuosoHeader/></div> : <>
       {focusEventId !== null
         && !history.loading
         && findFocusIndex(timelineItems, focusEventId) < 0
