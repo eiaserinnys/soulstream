@@ -1270,10 +1270,10 @@ setInterval(() => {}, 1000);
         '  process.stdin.once("data", () => process.exit(0));',
         '} else if (group === "auth" && action === "status") {',
         '  const dir = process.env.CLAUDE_CONFIG_DIR;',
-        '  writeFileSync(join(dir, "status-pid"), String(process.pid));',
-        '  process.stdout.write(JSON.stringify({ loggedIn: true, email: "status@example.com" }));',
         '  process.on("SIGTERM", () => {});',
         '  setInterval(() => {}, 1000);',
+        '  process.stdout.write(JSON.stringify({ loggedIn: true, email: "status@example.com" }));',
+        '  writeFileSync(join(dir, "status-pid"), String(process.pid));',
         '}',
       ].join("\n"),
     );
