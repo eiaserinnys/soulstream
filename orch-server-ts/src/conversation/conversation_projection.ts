@@ -1,4 +1,4 @@
-import { isHumanInput, isInternalInput, isKeepalive, isShortAcknowledgement, isSilent } from "../../../packages/wire-schema/src/conversation_visibility.js";
+import { isHumanInput, isInternalInput, isHiddenConversationInput, isShortAcknowledgement, isSilent } from "../../../packages/wire-schema/src/conversation_visibility.js";
 
 export type Item = { id: string; kind: "user" | "assistant" | "error" | "notice"; text: string; at: string; attachments: Array<{ id: string; name: string; mime: string }> };
 export type SourceEvent = { id: number; type: string; at: string; payload: Record<string, unknown> };
@@ -7,6 +7,8 @@ export class ConversationProjection {
   private keepalive = false;
   private suppressed = false;
   private readonly hiddenInputs = new Set<string>();
+  private readonly turnHiddenInputs = new Set<string>();
+  private visibleInputInTurn = false;
   private busy = false;
   private tool: string | null = null;
   private streamId: string | null = null;
@@ -24,19 +26,29 @@ export class ConversationProjection {
     const human = isHumanInput(type, payload);
     const input = type === "user_message" || type === "intervention_sent";
     const internal = isInternalInput(type, payload);
-    const keepalive = input && isKeepalive(payload);
-    if (human && !keepalive) this.errorInTurn = false;
+    const hiddenInput = isHiddenConversationInput(type, payload);
+    if (human && !hiddenInput) this.errorInTurn = false;
     const anchor = string(payload.input_id ?? payload.inputId ?? payload.prepared_input_id ?? payload.preparedInputId);
     const makeItem = (kind: Item["kind"], text: string, attachments: Item["attachments"] = []): Item => ({ id: String(id), kind, text, at, attachments });
     if (type === "notification" && typeof payload._conversation_notice === "string") return { item: makeItem("notice", payload._conversation_notice) };
     if (input || type === "notification") {
       if (input) {
-        this.keepalive = keepalive;
-        if (keepalive && anchor) this.hiddenInputs.add(anchor);
+        if (hiddenInput) {
+          if (!this.visibleInputInTurn) {
+            this.keepalive = true;
+            this.suppressed = true;
+            if (anchor) { this.hiddenInputs.add(anchor); this.turnHiddenInputs.add(anchor); }
+          }
+          return {};
+        }
+        this.visibleInputInTurn = true;
+        this.keepalive = false;
+        for (const id of this.turnHiddenInputs) this.hiddenInputs.delete(id);
+        this.turnHiddenInputs.clear();
       }
-      this.suppressed = internal || keepalive || hasClosedContext(payload);
-      if (input && !keepalive) { this.busy = true; this.tool = null; }
-      if (human && !keepalive) {
+      this.suppressed = internal || hasClosedContext(payload);
+      if (input) { this.busy = true; this.tool = null; }
+      if (human) {
         const firstUserMessage = type === "user_message" && !this.firstUserMessageSeen;
         if (type === "user_message") this.firstUserMessageSeen = true;
         if (firstUserMessage && this.firstInputIsInitial) return { activity: this.activity() };
@@ -48,11 +60,13 @@ export class ConversationProjection {
     }
     if (type === "error" || type === "assistant_error") {
       this.errorInTurn = true;
+      this.visibleInputInTurn = false; this.turnHiddenInputs.clear();
       this.keepalive = false; this.busy = false; this.tool = null; this.streamId = null; this.streamText = "";
       return { item: makeItem("error", string(payload.message) ?? string(payload.error) ?? "턴이 실패했습니다."), activity: this.activity() };
     }
     if (type === "complete") {
       this.errorInTurn = false;
+      this.visibleInputInTurn = false; this.turnHiddenInputs.clear();
       this.keepalive = false; this.busy = false; this.tool = null; this.streamId = null; this.streamText = "";
       return { activity: this.activity() };
     }
