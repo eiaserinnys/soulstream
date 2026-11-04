@@ -61,7 +61,7 @@ export function SettingsListRow({ title, meta, selected, onSelect, portrait }: {
   return (
     <button
       type="button"
-      className={`w-full rounded px-2 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${selected ? "bg-accent-blue/15 text-foreground" : "hover:bg-muted"}`}
+      className={`block w-full rounded px-2 py-2 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background ${selected ? "bg-accent-blue/15 text-foreground" : "hover:bg-muted"}`}
       onClick={onSelect}
     >
       {portrait ? <span className="flex items-center gap-2">{portrait}<span className="min-w-0"><span className="block truncate font-medium">{title}</span><span className="block truncate text-xs text-muted-foreground">{meta}</span></span></span> : <><span className="block truncate font-medium">{title}</span><span className="block truncate text-xs text-muted-foreground">{meta}</span></>}
