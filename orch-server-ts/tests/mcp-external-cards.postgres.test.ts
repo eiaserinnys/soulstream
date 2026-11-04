@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { cardTools } from "@soulstream/mcp-contract";
+import { callWithReferenceTranslation, cardTools } from "@soulstream/mcp-contract";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { prepareCardWorkSchema, appendCardEventTx } from "./card-work-postgres-fixture.js";
 import { unusedClusterDependencies } from "./mcp-cluster-unused-fixture.js";
@@ -44,7 +44,7 @@ describe("external MCP card writes", () => {
     await h.sql`TRUNCATE folders,sessions,folder_operations RESTART IDENTITY CASCADE`;
     await h.sql`INSERT INTO folders(id,name) VALUES ('a','A'),('b','B')`;
     access = { restricted: false, allowedFolderIds: [] };
-    await h.sql`INSERT INTO sessions(session_id,node_id,status) VALUES ('owner','node','running')`;
+    await h.sql`INSERT INTO sessions(session_id,node_id,status) VALUES ('owner','node','running'),('other','node','running')`;
     await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,status,assignee_kind,assignee_session_id)
       VALUES ('card','a','a0','대상','원문','todo','session','owner')`;
     await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,status,assignee_kind,assignee_session_id)
@@ -56,6 +56,61 @@ describe("external MCP card writes", () => {
     await dispatcher.drain();
     return result;
   }
+  it("reads another assignee's notes through the internal note and card paths", async () => {
+    await h.sql`INSERT INTO card_comments(id,card_id,author_kind,kind,body,created_at) VALUES
+      ('other-note-old','card','agent','note','이전 노트','2026-10-08T09:00:00Z'),
+      ('other-note-new','card','agent','note','최근 노트','2026-10-08T10:00:00Z')`;
+    const member = { principal: "internal" as const, callerSessionId: "other", nodeId: "orch" };
+    const notePage: CallToolResult = await executeMcpTool(executionOptions, "list_card_notes", { card_id: "card", limit: 2 }, member);
+    const cardPage: CallToolResult = await executeMcpTool(executionOptions, "get_card", { card_id: "card", include: ["notes"], limit: 2 }, member);
+    expect(notePage.isError).not.toBe(true);
+    expect(cardPage.isError).not.toBe(true);
+    const notes = (notePage.structuredContent as { notes: Array<{ id: string; body: string }> }).notes;
+    const cardNotes = (cardPage.structuredContent as { sections: { notes: { items: Array<{ id: string; body: string }> } } }).sections.notes.items;
+    expect(notes.map(({ id, body }) => ({ id, body }))).toEqual(cardNotes.map(({ id, body }) => ({ id, body })));
+    expect(notes.map(note => note.body)).toEqual(["최근 노트", "이전 노트"]);
+    expect((await call("list_card_notes", { card_id: "card" })).isError).toBe(true);
+    access = { restricted: true, allowedFolderIds: ["b"] };
+    const denied = await executeMcpTool(executionOptions, "list_card_notes", { card_id: "card" }, member);
+    expect(denied.isError).toBe(true);
+    expect(JSON.stringify(denied)).not.toContain("최근 노트");
+  });
+  it("keeps notes writable only by the assignee and gives general write guidance", async () => {
+    const member = { principal: "internal" as const, callerSessionId: "other", nodeId: "orch" };
+    const result = await executeMcpTool(executionOptions, "add_card_note", { card_id: "card", text: "잘못된 쓰기" }, member);
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("담당 세션");
+    expect(result.content[0]?.text).toContain("owner");
+    expect(result.content[0]?.text).not.toContain("reply");
+    expect(await h.sql`SELECT id FROM card_comments WHERE body='잘못된 쓰기'`).toHaveLength(0);
+  });
+  it("reads the same card by UUID, number reference and bare number, including archived cards", async () => {
+    const id = "0b0099e0-6d5c-443e-a6ac-782f1e648c56";
+    await h.sql`INSERT INTO cards(id,number,folder_id,position_key,title,request,status,archived)
+      VALUES (${id},785,'a','a1','번호 카드','원문','todo',true)`;
+    const get = (cardId: string) => call("get_card", { card_id: cardId });
+    const byId = await get(id);
+    const byNumber = await get("785");
+    const byReference = await callWithReferenceTranslation({ card_id: "#785" },
+      refs => cards.resolveReferences(refs, folder => folder === "a"),
+      args => executeMcpTool(executionOptions, "get_card", args, context));
+    expect(byId.isError).not.toBe(true);
+    expect(byNumber.structuredContent).toEqual(byId.structuredContent);
+    const { resolved_references: _refs, ...referenceContent } = byReference.structuredContent!;
+    expect(referenceContent).toEqual(byId.structuredContent);
+    expect(byId.structuredContent).toMatchObject({ card: { id, number: 785, archived: true } });
+    access = { restricted: true, allowedFolderIds: ["b"] };
+    const denied = await get("785");
+    expect(denied.isError).toBe(true);
+    expect(JSON.stringify(denied)).not.toContain("번호 카드");
+    expect(JSON.stringify(denied)).not.toContain(id);
+  });
+  it("explains that an eight-character hexadecimal prefix is not a card ID", async () => {
+    const result = await call("get_card", { card_id: "0b0099e0" });
+    expect(result.isError).toBe(true);
+    expect(result.content[0]?.text).toContain("전체 UUID");
+    expect(result.content[0]?.text).toContain("#");
+  });
   it("returns compact current state by default and restores only selected source pages", async () => {
     await h.sql`UPDATE cards SET brief='인계 요약',
       attachments='[{"nodeId":"node","path":"/incoming/file.txt","name":"file.txt","mimeType":"text/plain"}]'::jsonb,

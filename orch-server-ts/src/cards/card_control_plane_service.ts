@@ -122,7 +122,6 @@ export class CardControlPlaneService {
   async listCardNotes(params:CardMutationParams & {limit?:number;before?:string}) {
     const card=await this.repo.getCard(params.cardId);
     if (!card) throw Object.assign(new Error("Card not found"),{statusCode:404});
-    assertAssignedCardSession(card,params);
     const limit=params.limit ?? 20;
     if (!Number.isInteger(limit) || limit<1 || limit>100) throw invalid("limit은 1에서 100 사이여야 합니다");
     return this.repo.listCardNotes(params.cardId,limit,params.before);
@@ -649,8 +648,10 @@ export class CardControlPlaneService {
 }
 function assertAssignedCardSession(card:CardRow,params:CardMutationParams):void {
   if (params.actorKind !== "agent" || !params.actorSessionId
-    || card.assignee_kind !== "session" || card.assignee_session_id !== params.actorSessionId)
-    throw invalid("Only the current assignee session may reply to a card comment. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work.");
+    || card.assignee_kind !== "session" || card.assignee_session_id !== params.actorSessionId) {
+    const assignee = card.assignee_kind === "session" && card.assignee_session_id ? ` (${card.assignee_session_id})` : "";
+    throw invalid(`카드 쓰기는 현재 담당 세션만 할 수 있습니다. 담당 세션${assignee}에 전하세요.`);
+  }
 }
 function assertNotOtherSessionAssignee(card:CardRow,params:CardMutationParams):void {
   if (params.actorKind === "agent" && card.assignee_kind === "session" && card.assignee_session_id !== params.actorSessionId)
