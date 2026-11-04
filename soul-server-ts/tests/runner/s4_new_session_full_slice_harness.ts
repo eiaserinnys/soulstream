@@ -459,6 +459,7 @@ export class ProductionFullSliceHarness {
           ENVIRONMENT: "production",
           LOG_LEVEL: "error",
           EVENT_OUTBOX_DIR: this.outboxDirectory,
+          CLAUDE_ACCOUNT_POOL_ENABLED: "false",
           SOUL_RUNNER_PROCESS_ENABLED: "true",
           SOUL_RUNNER_STATE_DIR: this.stateDirectory,
           SOUL_RUNNER_ARTIFACT_DIR: this.artifactDirectory,
