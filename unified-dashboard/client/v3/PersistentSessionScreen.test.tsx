@@ -255,15 +255,21 @@ it('keeps transcript loading until the target subscription synchronizes',async()
  expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-history')).toBe('true');
 });
 
-it('offers reconnect after subscription failure and restores loading while reconnecting',async()=>{
- mocks.list.mockResolvedValue({sessions:[session('one')]});mocks.sync=false;mocks.streamStatus='error';await mount('one');
- const retry=host.querySelector<HTMLButtonElement>('[data-testid="v3-session-stream-retry"]');
- expect(retry).not.toBeNull();expect(host.querySelector('[data-testid="chat"]')?.textContent).not.toContain('Loading earlier messages...');
- await act(async()=>retry!.click());expect(mocks.reconnect).toHaveBeenCalledOnce();
- mocks.streamStatus='connecting';await mount('one');
- expect(host.querySelector('[data-testid="v3-session-stream-retry"]')).toBeNull();
- expect(host.querySelector('[data-testid="chat"]')?.textContent).toContain('Loading earlier messages...');
+it('holds the stream error through automatic retries until sync or manual reconnect',async()=>{
+ mocks.list.mockResolvedValue({sessions:[session('one'),session('two')]});mocks.sync=false;mocks.streamStatus='error';await mount('one');
+ const retry=()=>host.querySelector<HTMLButtonElement>('[data-testid="v3-session-stream-retry"]');
+ expect(retry()).not.toBeNull();
+ for(const status of ['connecting','connected','error','connecting']){
+  mocks.streamStatus=status;await mount('one');expect(retry()).not.toBeNull();
+  expect(host.querySelector('[data-testid="chat"]')?.textContent).not.toContain('Loading earlier messages...');
+ }
  mocks.sync=true;mocks.streamStatus='connected';await mount('one');
- expect(host.querySelector('[data-testid="chat"]')?.textContent).not.toContain('Loading earlier messages...');
- expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-history')).toBe('true');
+ expect(retry()).toBeNull();expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-history')).toBe('true');
+ mocks.sync=false;mocks.streamStatus='error';await mount('one');expect(retry()).not.toBeNull();
+ await act(async()=>retry()!.click());expect(mocks.reconnect).toHaveBeenCalledOnce();
+ // reconnect updates the hook status after this render; its old error must not flash back.
+ expect(retry()).toBeNull();expect(host.querySelector('[data-testid="chat"]')?.textContent).toContain('Loading earlier messages...');
+ mocks.streamStatus='connecting';await mount('one');expect(retry()).toBeNull();
+ mocks.streamStatus='error';await mount('one');expect(retry()).not.toBeNull();
+ mocks.streamStatus='connecting';await mount('two');expect(retry()).toBeNull();
 });

@@ -51,3 +51,17 @@ it('uses the same manuscript list header for fallback and history loading',async
   expect(header()?.className).toBe(classes);
  }finally{act(()=>root.unmount());host.remove();useDashboardStore.getState().reset();vi.unstubAllGlobals();}
 });
+
+it('reconciles a fresh fallback button without losing its DOM identity or focus',async()=>{
+ vi.stubGlobal('ResizeObserver',class{observe(){} unobserve(){} disconnect(){}});
+ useDashboardStore.getState().reset();useDashboardStore.getState().setActiveSession('target');
+ const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
+ try{
+  await act(async()=>root.render(<ChatView presentation="manuscript" transcriptFallback={<button>다시 시도</button>}/>));
+  const button=host.querySelector('button')!;button.focus();
+  for(let i=0;i<3;i++){
+   await act(async()=>root.render(<ChatView presentation="manuscript" transcriptFallback={<button>다시 시도</button>}/>));
+   expect(host.querySelector('button')).toBe(button);expect(document.activeElement).toBe(button);
+  }
+ }finally{act(()=>root.unmount());host.remove();useDashboardStore.getState().reset();vi.unstubAllGlobals();}
+});

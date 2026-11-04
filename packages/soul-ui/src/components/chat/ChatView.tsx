@@ -747,7 +747,7 @@ function ChatViewContent({
     }
   }, [bottomScrollLocation, clearOlderHistoryIntent, scrollToBottomWithBehavior]);
 
-  const VirtuosoHeader = useCallback(
+  const renderHistoryHeader = useCallback(
     () => {
       const status = transcriptFallback ?? <ChatHistoryStatus
         loading={history.loading}
@@ -769,6 +769,7 @@ function ChatViewContent({
       timelineItems.length,
     ],
   );
+  const VirtuosoHeader = useCallback(() => renderHistoryHeader(), [renderHistoryHeader]);
   const virtuosoComponents = useMemo(
     () => ({ Header: VirtuosoHeader, ...(presentation === "manuscript" ? { List: ChatManuscriptList, Footer: ChatManuscriptFooter } : {}) }),
     [VirtuosoHeader, presentation],
@@ -793,7 +794,7 @@ function ChatViewContent({
       className={presentation === "manuscript" ? "-mx-1 flex h-full min-h-0 flex-col overflow-hidden px-1 pb-3 pt-3" : "flex h-full min-h-0 flex-col overflow-hidden px-3 pb-3 pt-3"}
       data-chat-presentation={presentation === "manuscript" ? "manuscript" : undefined}
     >
-      {transcriptFallback != null ? <div className={presentation === "manuscript" && transcriptFallbackLayout === "status" ? "-mx-1 flex-1 min-h-0" : "flex-1 min-h-0"}><VirtuosoHeader/></div> : <>
+      {transcriptFallback != null ? <div className={presentation === "manuscript" && transcriptFallbackLayout === "status" ? "-mx-1 flex-1 min-h-0" : "flex-1 min-h-0"}>{renderHistoryHeader()}</div> : <>
       {focusEventId !== null
         && !history.loading
         && findFocusIndex(timelineItems, focusEventId) < 0
