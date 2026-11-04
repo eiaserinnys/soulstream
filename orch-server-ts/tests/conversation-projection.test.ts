@@ -12,7 +12,7 @@ describe("conversation projection", () => {
     const project = (id: number, type: string, payload: Record<string, unknown>) => p.apply(event(id, type, payload));
     expect(project(1, "user_message", { text: "any initial text", caller_info: { source: "browser" } }).item).toBeUndefined();
     expect(project(2, "user_message", { text: "keep", purpose: "cache_keepalive", input_id: "hidden" }).item).toBeUndefined();
-    expect(project(3, "assistant_message", { content: "hidden", input_id: "hidden" }).item).toMatchObject({kind:"assistant",text:"hidden"});
+    expect(project(3, "assistant_message", { content: "hidden", input_id: "hidden" }).item).toBeUndefined();
     expect(project(4, "error", { message: "real error" }).item).toMatchObject({ kind: "error", text: "real error" });
     expect(project(5, "intervention_sent", { text: "human", caller_info: { source: "browser" } }).item).toMatchObject({ kind: "user", text: "human" });
     expect(project(6, "user_message", { text: "agent", caller_info: { source: "agent" } }).item).toBeUndefined();
@@ -22,6 +22,16 @@ describe("conversation projection", () => {
     expect(project(10, "assistant_message", { content: "answer" }).item).toMatchObject({ id: "10", kind: "assistant", text: "answer", at, attachments: [] });
     expect(project(11, "user_message", { text: "legacy agent report", agent_info: { source: "agent" } }).item).toBeUndefined();
     expect(project(12, "assistant_message", { content: "네." }).item).toBeUndefined();
+  });
+  it("hides keepalive output after a human input until another visible input", () => {
+    const p = new ConversationProjection(false);
+    expect(p.apply(event(1,"user_message",{text:"사람 입력",caller_info:{source:"browser"}})).item).toMatchObject({text:"사람 입력"});
+    expect(p.apply(event(2,"user_message",{text:"캐시 유지",purpose:"cache_keepalive",input_id:"keep"})).item).toBeUndefined();
+    expect(p.apply(event(3,"tool_start",{tool_name:"Read"}))).toEqual({});
+    expect(p.live("text_delta",{text:"숨김"})).toBeUndefined();
+    expect(p.apply(event(4,"assistant_message",{content:"숨긴 답",input_id:"keep"})).item).toBeUndefined();
+    expect(p.apply(event(5,"intervention_sent",{text:"다음 입력",caller_info:{source:"browser"}})).item).toMatchObject({text:"다음 입력"});
+    expect(p.apply(event(6,"assistant_message",{content:"보이는 답"})).item).toMatchObject({text:"보이는 답"});
   });
   it("hides old card notices and their response while retaining surrounding turns and errors", () => {
     const p = new ConversationProjection(false);

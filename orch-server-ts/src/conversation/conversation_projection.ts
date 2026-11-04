@@ -1,4 +1,4 @@
-import { isHumanInput, isInternalInput, isHiddenConversationInput, isShortAcknowledgement, isSilent } from "../../../packages/wire-schema/src/conversation_visibility.js";
+import { isHumanInput, isInternalInput, isKeepalive, isHiddenConversationInput, isShortAcknowledgement, isSilent } from "../../../packages/wire-schema/src/conversation_visibility.js";
 
 export type Item = { id: string; kind: "user" | "assistant" | "error" | "notice"; text: string; at: string; attachments: Array<{ id: string; name: string; mime: string }> };
 export type SourceEvent = { id: number; type: string; at: string; payload: Record<string, unknown> };
@@ -34,7 +34,7 @@ export class ConversationProjection {
     if (input || type === "notification") {
       if (input) {
         if (hiddenInput) {
-          if (!this.visibleInputInTurn) {
+          if (isKeepalive(payload) || !this.visibleInputInTurn) {
             this.keepalive = true;
             this.suppressed = true;
             if (anchor) { this.hiddenInputs.add(anchor); this.turnHiddenInputs.add(anchor); }

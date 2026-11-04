@@ -129,8 +129,8 @@ describe("conversation items and events", () => {
     expect(page.items.map((x: any) => x.text)).toEqual(["slack", "answer", "error"]);
     expect(page.cursor).toBe("16");
     const older = await get(`/items?limit=20&before=${encodeURIComponent(page.next_before)}`);
-    expect(older.json().items.map((x: any) => x.text)).toEqual(["fallback","greeting","hidden","hello","from app"]);
-    expect(older.json().items[3].attachments).toEqual([
+    expect(older.json().items.map((x: any) => x.text)).toEqual(["fallback","greeting","hello","from app"]);
+    expect(older.json().items[2].attachments).toEqual([
       { id:"asset-1", name:"image.png", mime:"image/png" },
       { id:"path:0", name:"note.txt", mime:"text/plain" },
     ]);
