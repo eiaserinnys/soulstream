@@ -24,7 +24,7 @@ export function PhoneCardHome({ navigation }: NativeStackScreenProps<DailyStackP
   const duo = useDuoSideBand();
   const railActions = useMemo<PhoneRailAction[]>(() => [
     { id: 'create', label: '드래프트 카드 추가', icon: 'add-outline', onPress: () => boardRef.current?.openCreate() },
-    { id: 'completed', label: '완료·취소 숨김', icon: cardDisplay.includeCompleted ? 'eye-outline' : 'eye-off-outline',
+    { id: 'completed', label: '완료·취소 숨김', menuLabel: cardDisplay.includeCompleted ? '완료 카드 숨기기' : '완료 카드 보이기', icon: cardDisplay.includeCompleted ? 'eye-outline' : 'eye-off-outline',
       selected: !cardDisplay.includeCompleted, onPress: () => cardDisplay.onChange(!cardDisplay.includeCompleted) },
   ], [cardDisplay.includeCompleted, cardDisplay.onChange]);
   useRegisterPhoneRailActions('DailyTab', duo, railActions);

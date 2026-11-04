@@ -1,6 +1,6 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
-jest.mock('../../components/persistent/usePasContextMenu', () => ({ usePasContextMenu: () => jest.fn() }));
+jest.mock('../../components/persistent/usePasContextMenu', () => ({ usePasContextMenu: () => ({ items: () => [], title: undefined, show: jest.fn() }) }));
 
 import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
