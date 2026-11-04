@@ -33,7 +33,7 @@ import {
   projectManuscriptSilentResponses,
 } from "../../lib/manuscript-agent-message-projection";
 import { projectPersistentChatDisplayMessages } from "../../lib/persistent-jev-candidates";
-import { projectCacheKeepaliveTurns } from "../../lib/persistent-cache-keepalive";
+import { projectHiddenInputTurns } from "../../lib/persistent-cache-keepalive";
 import { ChatInput } from "../ChatInput";
 import { cn } from "../../lib/cn";
 import { useLlmContext } from "./hooks";
@@ -208,19 +208,22 @@ function ChatViewContent({
     () => projectChatOutputAttachments(flattenedMessages),
     [flattenedMessages],
   );
+  const hiddenInputProjection = useMemo(
+    () => projectHiddenInputTurns(isManuscript
+      ? projectManuscriptAssignedCardContexts(placeTurnSummariesAtCompleteCaptions(messages))
+      : messages),
+    [isManuscript, messages],
+  );
   const transcriptMessages = useMemo(
     () => {
-      if (!isManuscript) return messages;
-      const cacheKeepaliveFiltered = projectCacheKeepaliveTurns(
-        projectManuscriptAssignedCardContexts(placeTurnSummariesAtCompleteCaptions(messages)),
-      );
-      const silentResponsesFiltered = projectManuscriptSilentResponses(cacheKeepaliveFiltered);
+      if (!isManuscript) return hiddenInputProjection.messages;
+      const silentResponsesFiltered = projectManuscriptSilentResponses(hiddenInputProjection.messages);
       return projectPersistentTurnUsage(
         projectPersistentWorkDetails(silentResponsesFiltered, showWorkDetails),
         turnUsageMode,
       );
     },
-    [isManuscript, messages, showWorkDetails, turnUsageMode],
+    [isManuscript, hiddenInputProjection, showWorkDetails, turnUsageMode],
   );
   const visibleMessages = useMemo(
     () => {
@@ -263,8 +266,8 @@ function ChatViewContent({
   );
   const chatStatus = activeSessionSummary?.status ?? "unknown";
   const timelineItems = useMemo(
-    () => buildChatTimelineItems(grouped, visibleMessages, chatStatus, pendingChatSend),
-    [grouped, visibleMessages, chatStatus, pendingChatSend],
+    () => buildChatTimelineItems(grouped, visibleMessages, chatStatus, pendingChatSend, hiddenInputProjection.suppressStreaming),
+    [grouped, visibleMessages, chatStatus, pendingChatSend, hiddenInputProjection.suppressStreaming],
   );
   const focusEventId = resolveFocusEventId(
     timelineItems,

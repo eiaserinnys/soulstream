@@ -31,7 +31,7 @@ function isAutomaticDeliveryNotice(message: ChatMessage): boolean {
 
 function isCacheKeepaliveTurn(message: ChatMessage): boolean {
   const purpose = (message as ChatMessage & { purpose?: unknown }).purpose;
-  return message.cacheKeepalive === true || purpose === "cache_keepalive";
+  return message.cacheKeepalive === true || message.cardNotice === true || purpose === "cache_keepalive";
 }
 
 function hasManuscriptAttachment(message: ChatMessage): boolean {

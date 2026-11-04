@@ -37,6 +37,7 @@ import type {
 } from "@shared/types";
 import { formatRetryingErrorHistory } from "@shared/sse-events";
 import { isAssignedCardContextSnapshotEvent } from "@soulstream/wire-schema/assigned-card-context-snapshot";
+import { isCardNoticeInput } from "@soulstream/wire-schema/conversation-visibility";
 import { mapAttachmentEventSignals } from "../lib/attachment-event-signals";
 import { formatAssignedCardContextSnapshot } from "../lib/assigned-card-context-content";
 import { isCacheKeepaliveInput } from "../lib/persistent-cache-keepalive";
@@ -50,6 +51,14 @@ export { applyPendingResolution, applyUpdate } from "./event-update";
 
 /** 이 길이를 초과하는 콘텐츠는 truncate하여 메모리를 절약한다 */
 const PLACEHOLDER_TEXT = new Set(["{}", "[]", "null", "undefined"]);
+
+function isCardNoticeEvent(event: SoulSSEEvent): boolean {
+  const record = event as unknown as Record<string, unknown>;
+  const payload = record.payload;
+  return isCardNoticeInput(event.type, payload && typeof payload === "object" && !Array.isArray(payload)
+    ? payload as Record<string, unknown>
+    : record);
+}
 
 function meaningfulDisplayText(value: string): string {
   const text = value.trim();
@@ -137,6 +146,7 @@ export function createNodeFromEvent(
         callerInfo: ci,
         inputId: e.input_id,
         cacheKeepalive: isCacheKeepaliveInput(e),
+        cardNotice: isCardNoticeEvent(e),
       });
     }
 
@@ -215,6 +225,7 @@ export function createNodeFromEvent(
         callerInfo: ci,
         inputId: e.input_id,
         cacheKeepalive: isCacheKeepaliveInput(e),
+        cardNotice: isCardNoticeEvent(e),
       });
     }
 

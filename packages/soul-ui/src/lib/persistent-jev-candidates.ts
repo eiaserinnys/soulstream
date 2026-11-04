@@ -1,5 +1,5 @@
 import { isPersistentJevCandidatesDebugEvent as isWirePersistentJevCandidatesDebugEvent } from "@soulstream/wire-schema/persistent-jev-candidates";
-import { projectCacheKeepaliveTurns } from "./persistent-cache-keepalive";
+import { projectHiddenInputTurns } from "./persistent-cache-keepalive";
 
 export interface PersistentJevCandidate {
   label: string;
@@ -26,11 +26,11 @@ export interface PersistentChatDisplaySettings {
 }
 
 /** Applies PAS visibility after flattening, retaining each visible message object. */
-export function projectPersistentChatDisplayMessages<T extends { treeNodeType: string; cacheKeepalive?: boolean }>(
+export function projectPersistentChatDisplayMessages<T extends { treeNodeType: string; cacheKeepalive?: boolean; cardNotice?: boolean }>(
   messages: T[],
   settings: PersistentChatDisplaySettings | null,
 ): T[] {
-  return projectCacheKeepaliveTurns(messages).filter((message) => {
+  return projectHiddenInputTurns(messages).messages.filter((message) => {
     if (message.treeNodeType === "generation_started") {
       return settings?.show_generation_separator === true;
     }
