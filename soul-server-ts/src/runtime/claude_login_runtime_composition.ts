@@ -1,8 +1,12 @@
 import type { Logger } from "pino";
 import type { ChildProcess } from "node:child_process";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
+import type { Env } from "../config.js";
 import type { ClaudeAuthService } from "../auth/claude_auth.js";
 import type { ClaudeAccountService } from "../claude_accounts/index.js";
+import { seedPoolFromLegacyCredential } from "../claude_accounts/legacy_seed.js";
 import { ClaudeLoginService } from "../claude_accounts/login_service.js";
 import { readProfileCredentialsReadOnly } from "../claude_accounts/usage.js";
 import {
@@ -53,6 +57,21 @@ export function createLegacyIdentityVerifier(claudeAuth: ClaudeAuthService): (co
       }
     }
   };
+}
+
+export async function seedLegacyClaudeAccount(input: {
+  env: Pick<Env, "CLAUDE_ACCOUNTS_DIR" | "CLAUDE_AUTH_TOKEN_PATH">;
+  accounts: ClaudeAccountService;
+  claudeAuth: ClaudeAuthService;
+  logger: Logger;
+}): Promise<void> {
+  await seedPoolFromLegacyCredential({
+    accounts: input.accounts,
+    accountsDir: input.env.CLAUDE_ACCOUNTS_DIR!,
+    legacyCredentialPath: input.env.CLAUDE_AUTH_TOKEN_PATH ?? join(homedir(), ".claude", ".credentials.json"),
+    verifyIdentity: createLegacyIdentityVerifier(input.claudeAuth),
+    logger: input.logger,
+  });
 }
 
 export function composeClaudeLoginService(input: {

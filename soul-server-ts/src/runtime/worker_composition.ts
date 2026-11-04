@@ -1,7 +1,4 @@
-import { homedir } from "node:os";
-import { join } from "node:path";
 import { antigravityEnvironment } from "../engine/antigravity_env.js";
-import { seedPoolFromLegacyCredential } from "../claude_accounts/legacy_seed.js";
 import { AgentConfigService } from "../agent_config_service.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
 import { ProviderUsageService } from "../auth/provider_usage.js";
@@ -50,7 +47,7 @@ import { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import { summarizePayloadForLog } from "../upstream/log_payload_summary.js";
 import { composeTaskRuntime, createWorkerAttachmentRuntime, type TaskRuntimeComposition } from "./task_runtime_composition.js";
 import { composeClaudeRuntime, composeClaudeAccountServices, createClaudeAccountPoolRegistry } from "./claude_runtime_composition.js";
-import { composeClaudeLoginService, createLegacyIdentityVerifier } from "./claude_login_runtime_composition.js";
+import { composeClaudeLoginService, seedLegacyClaudeAccount } from "./claude_login_runtime_composition.js";
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
 import { createEngineFactory } from "./engine_factory.js";
 import { composeRunnerProcessRuntime, composeRunnerRecoveryCoordinator } from "./runner_process_composition.js";
@@ -81,15 +78,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     },
   });
   const { claudeAuth, claudeAccounts } = composeClaudeAccountServices(env, logger);
-  if (claudeAccounts) {
-    await seedPoolFromLegacyCredential({
-      accounts: claudeAccounts,
-      accountsDir: env.CLAUDE_ACCOUNTS_DIR!,
-      legacyCredentialPath: env.CLAUDE_AUTH_TOKEN_PATH ?? join(homedir(), ".claude", ".credentials.json"),
-      verifyIdentity: createLegacyIdentityVerifier(claudeAuth),
-      logger,
-    });
-  }
+  if (claudeAccounts) await seedLegacyClaudeAccount({ env, accounts: claudeAccounts, claudeAuth, logger });
   const claudeLoginService = claudeAccounts ? composeClaudeLoginService({ accounts: claudeAccounts, claudeAuth, logger }) : undefined;
   const providerUsage = new ProviderUsageService({
     claudeAuth, claudeAccounts, modelCatalog, logger,
