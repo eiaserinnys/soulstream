@@ -9,12 +9,12 @@ import { PersistentSessionScreen } from './PersistentSessionScreen';
 import { useCardNavigation } from './card-navigation';
 import { DashboardInternalLinks } from './DashboardInternalLinks';
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-const mocks = vi.hoisted(() => ({ list: vi.fn(), fetchSessions: vi.fn(), provider: vi.fn(), navigate: vi.fn(), get: vi.fn(), update: vi.fn(), cardRequest: vi.fn(), usage: vi.fn(), usageRetry: vi.fn(), usageSummary: null as UsageSummarySnapshot | null }));
+const mocks = vi.hoisted(() => ({ list: vi.fn(), fetchSessions: vi.fn(), provider: vi.fn(), navigate: vi.fn(), get: vi.fn(), update: vi.fn(), cardRequest: vi.fn(), usage: vi.fn(), usageRetry: vi.fn(), sync: true, usageSummary: null as UsageSummarySnapshot | null }));
 const geometry = vi.hoisted(() => ({ value: null as any }));
 vi.mock('./use-persistent-session-geometry',()=>({usePersistentSessionGeometry:()=>geometry.value}));
 vi.mock('@seosoyoung/soul-ui', async () => {
  const real = await vi.importActual<typeof import('@seosoyoung/soul-ui')>('@seosoyoung/soul-ui');
- return { ...real, LiquidGlassProvider: ({children}:any) => children, useAuth: () => ({ user:{email:'test@example.com'},refreshAuthStatus:vi.fn() }), useUserPreferencesSync:vi.fn(), useInitialCatalogLoad:vi.fn(), useSessionProvider:(o:any)=> {mocks.provider(o);return {synchronizedSessionKey:o.sessionKey}}, initTheme:vi.fn() };
+ return { ...real, LiquidGlassProvider: ({children}:any) => children, useAuth: () => ({ user:{email:'test@example.com'},refreshAuthStatus:vi.fn() }), useUserPreferencesSync:vi.fn(), useInitialCatalogLoad:vi.fn(), useSessionProvider:(o:any)=> {mocks.provider(o);return {synchronizedSessionKey:mocks.sync ? o.sessionKey : null}}, initTheme:vi.fn() };
 });
 vi.mock('../lib/persistent-sessions',()=>({createPersistentSessionsApi:()=>({list:mocks.list,get:mocks.get,update:mocks.update})}));
 vi.mock('../providers',()=>({orchestratorSessionProvider:{fetchSessions:mocks.fetchSessions}}));
@@ -63,7 +63,7 @@ const usageNode=(nodeId:string,claude:number|null,codex:number|null,fable=false)
 const usageSummaryFixture:UsageSummarySnapshot={generatedAt:'2026-10-13T08:00:00.000Z',collectedAt:null,nodes:[usageNode('node-1',73,38,true),usageNode('node-2',61,42),usageNode('node-3',null,null)]};
 const session=(id:string)=>({session_id:id,display_name:id,persistent:true,node_id:'node-1',settings:{default_model:{model_preset:null},show_character:true}});
 const currentProviderOptions=()=>mocks.provider.mock.calls.slice(-2).map(([options]:any[])=>options as any);
-beforeEach(()=>{vi.clearAllMocks();resizeTo(1024);mediaListeners=[];vi.stubGlobal('matchMedia',(query:string)=>({get matches(){return mediaMatches(query);},media:query,addEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>mediaListeners.push({query,listener}),removeEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>{mediaListeners=mediaListeners.filter(item=>item.listener!==listener);}}));localStorage.clear();mocks.usageSummary=usageSummaryFixture;useDashboardStore.getState().setActiveSession(null);useCardStore.getState().reset();useCardNavigation.getState().close();host=document.createElement('div');document.body.append(host);root=createRoot(host);mocks.fetchSessions.mockImplementation(async(o:any)=>({sessions:o.sessionIds.map((id:string)=>({agentSessionId:id,nodeId:'node-1',title:id}))}));});
+beforeEach(()=>{vi.clearAllMocks();mocks.sync=true;resizeTo(1024);mediaListeners=[];vi.stubGlobal('matchMedia',(query:string)=>({get matches(){return mediaMatches(query);},media:query,addEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>mediaListeners.push({query,listener}),removeEventListener:(_event:string,listener:(event:{matches:boolean})=>void)=>{mediaListeners=mediaListeners.filter(item=>item.listener!==listener);}}));localStorage.clear();mocks.usageSummary=usageSummaryFixture;useDashboardStore.getState().setActiveSession(null);useCardStore.getState().reset();useCardNavigation.getState().close();host=document.createElement('div');document.body.append(host);root=createRoot(host);mocks.fetchSessions.mockImplementation(async(o:any)=>({sessions:o.sessionIds.map((id:string)=>({agentSessionId:id,nodeId:'node-1',title:id}))}));});
 afterEach(()=>{act(()=>root.unmount());host.remove();geometry.value=null;vi.unstubAllGlobals();});
 async function mount(id?:string){await act(async()=>{root.render(<DashboardInternalLinks><PersistentSessionScreen sessionId={id}/></DashboardInternalLinks>);});}
 it('keeps the target frame isolated while list and session summary load in sequence',async()=>{
@@ -240,4 +240,17 @@ it('keeps the actual agent name in the header when the PAS display name changes'
  const resource={...session('one'),display_name:'이전 이름',agent_id:'agent',agent_name:'에이전트',settings:{default_model:{model_preset:'sol',reasoning_effort:'high'},fallback_models:[],show_character:true,animate_character:true,show_generation_separator:true,show_jev_candidates:true,turn_usage_mode:'collapsed' as const,show_turn_usage:true},runtime:{current_model:{model_preset:'sol',reasoning_effort:'high',model:'sol'},pending:null}};
  mocks.list.mockResolvedValue({sessions:[resource]});mocks.get.mockResolvedValue({session:resource});mocks.update.mockImplementation(async(_id:string,patch:any)=>({session:{...resource,display_name:patch.display_name}}));vi.stubGlobal('fetch',vi.fn(async()=>Response.json({messages:[],next_cursor:null,presets:[]})));
  await mount('one');const chat=host.querySelector('[data-testid="chat"]');expect(host.querySelector('[data-testid="v3-global-toolbar"]')?.getAttribute('data-agent-only')).toBe('false');expect(host.querySelector('[data-testid="v3-global-toolbar"]')?.getAttribute('data-show-home')).toBe('true');expect(host.querySelector('[data-testid="scene-title"]')?.textContent).toBe('에이전트');await act(async()=>[...host.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='PAS 설정')!.click());const input=document.body.querySelector<HTMLInputElement>('input[aria-label="세션 이름"]')!;expect(input).not.toBeNull();await act(async()=>{Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'새 이름');input.dispatchEvent(new Event('input',{bubbles:true}));});await act(async()=>[...document.body.querySelectorAll<HTMLButtonElement>('button')].find(b=>b.textContent==='변경 저장')!.click());expect(mocks.update).toHaveBeenCalledWith('one',expect.objectContaining({display_name:'새 이름'}));expect(host.querySelector('[data-testid="scene-title"]')?.textContent).toBe('에이전트');expect(host.querySelector('[data-testid="chat"]')).toBe(chat);expect(mocks.fetchSessions).toHaveBeenCalledOnce();
+});
+
+it('omits weekly usage on the unselected wide PAS route',async()=>{
+ resizeTo(1440);mocks.list.mockResolvedValue({sessions:[session('one')]});await mount();
+ expect(host.querySelector('[data-testid="usage-toggle"]')).toBeNull();
+});
+it('keeps transcript loading until the target subscription synchronizes',async()=>{
+ mocks.list.mockResolvedValue({sessions:[session('one')]});mocks.sync=false;await mount('one');
+ expect(host.querySelector('[data-testid="chat"]')?.textContent).toContain('Loading earlier messages...');
+ expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-history')).toBe('false');
+ mocks.sync=true;await mount('one');
+ expect(host.querySelector('[data-testid="chat"]')?.textContent).not.toContain('Loading earlier messages...');
+ expect(host.querySelector('[data-testid="chat"]')?.getAttribute('data-history')).toBe('true');
 });

@@ -2,6 +2,7 @@
 import { act, forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { expect, it, vi } from 'vitest';
+import { ChatHistoryStatus } from './ChatHistoryStatus';
 import { ChatView } from './ChatView';
 import { useDashboardStore } from '../../stores/dashboard-store';
 
@@ -10,7 +11,7 @@ vi.mock('react-virtuoso',()=>({Virtuoso:forwardRef((props:any,ref)=>{
  const scroller=useRef<HTMLDivElement>(null);
  useImperativeHandle(ref,()=>({scrollToIndex:vi.fn(),scrollBy:vi.fn(),scrollTo:vi.fn()}));
  useEffect(()=>{props.scrollerRef?.(scroller.current);return()=>props.scrollerRef?.(null)},[props.scrollerRef]);
- return <div ref={scroller}>{props.data.map((item:any,i:number)=><div key={i}>{props.itemContent(props.firstItemIndex+i,item)}</div>)}</div>;
+ return <div ref={scroller}>{props.components?.Header && <props.components.Header/>}{props.data.map((item:any,i:number)=><div key={i}>{props.itemContent(props.firstItemIndex+i,item)}</div>)}</div>;
 })}));
 vi.mock('./hooks',()=>({useLlmContext:()=>undefined}));
 vi.mock('../../providers/AuthProvider',()=>({useAuth:()=>({isAuthenticated:false,user:null})}));
@@ -31,5 +32,22 @@ it('keeps the real composer while fallback suppresses history, then restores tra
   await act(async()=>root.render(<ChatView presentation="manuscript"/>));
   expect(host.textContent).not.toContain('대화 준비 중');
   expect(fetchMock.mock.calls.some(([url])=>String(url).includes('/timeline'))).toBe(true);
+ }finally{act(()=>root.unmount());host.remove();useDashboardStore.getState().reset();vi.unstubAllGlobals();}
+});
+
+it('uses the same manuscript list header for fallback and history loading',async()=>{
+ vi.stubGlobal('ResizeObserver',class{observe(){} unobserve(){} disconnect(){}});
+ vi.stubGlobal('fetch',vi.fn(()=>new Promise<Response>(()=>{})));
+ useDashboardStore.getState().reset();useDashboardStore.getState().setActiveSession('target');
+ useDashboardStore.getState().processHistoryEvents([{event:{type:'assistant_message',content:'target transcript'} as any,eventId:1}]);
+ const host=document.createElement('div');document.body.append(host);const root=createRoot(host);
+ const header=()=>host.querySelector('[data-slot="chat-manuscript-list-header"]');
+ try{
+  await act(async()=>root.render(<ChatView presentation="manuscript" transcriptFallback={<ChatHistoryStatus loading reachedTop={false} blockedReason={null} onRetry={()=>{}}/>}/>));
+  expect(header()?.textContent).toContain('Loading earlier messages...');
+  const classes=header()?.className;
+  await act(async()=>root.render(<ChatView presentation="manuscript"/>));
+  expect(header()?.textContent).toContain('Loading earlier messages...');
+  expect(header()?.className).toBe(classes);
  }finally{act(()=>root.unmount());host.remove();useDashboardStore.getState().reset();vi.unstubAllGlobals();}
 });
