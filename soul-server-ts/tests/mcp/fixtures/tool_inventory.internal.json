@@ -2485,7 +2485,7 @@
     "name": "get_backlinks"
   },
   {
-    "description": "기본은 카드 현황, 저장된 결과와 근거, 미답 질문, 전문별 이용 가능 수와 changeToken만 반환합니다. include로 필요한 종류만 펼치고 limit/text_limit/cursors로 페이지를 읽습니다. since가 같으면 unchanged만 반환하고, 바뀐 종류는 현재값으로 교체(replace)됩니다.",
+    "description": "card_id에 전체 UUID, 카드 번호(#785) 또는 숫자 문자열(785)을 넣습니다. 기본은 카드 현황, 저장된 결과와 근거, 미답 질문, 전문별 이용 가능 수와 changeToken만 반환합니다. include로 필요한 종류만 펼치고 limit/text_limit/cursors로 페이지를 읽습니다. since가 같으면 unchanged만 반환하고, 바뀐 종류는 현재값으로 교체(replace)됩니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -2978,7 +2978,7 @@
     "name": "list_agents_config_snapshots"
   },
   {
-    "description": "담당 카드의 작업 노트를 최신순으로 읽습니다. 다음 목록은 before에 직전 목록의 nextCursor를 넣어 읽으세요.",
+    "description": "카드의 작업 노트를 최신순으로 읽습니다. 다음 목록은 before에 직전 목록의 nextCursor를 넣어 읽으세요.",
     "execution": {
       "taskSupport": "forbidden"
     },
