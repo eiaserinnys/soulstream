@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { statSync } from "node:fs";
-import { isAbsolute } from "node:path";
+import { homedir } from "node:os";
+import { isAbsolute, join } from "node:path";
 
 import {
   assertRunnerStateDirectoryCompatible,
@@ -126,12 +127,12 @@ export const EnvSchema = z
      * Pool 비활성화 상태에서 Claude backend agent를 광고하면 main.ts 시작 검증에서 이 값을 요구한다.
      */
     CLAUDE_AUTH_TOKEN_PATH: z.string().min(1).optional(),
-    /** Multi-account Claude contract; runtime behavior is introduced by a later change. */
+    /** Claude account pool is enabled by default; explicit false is the emergency kill switch. */
     CLAUDE_ACCOUNT_POOL_ENABLED: z
       .union([z.literal("true"), z.literal("false")])
-      .default("false")
+      .default("true")
       .transform((v) => v === "true"),
-    /** Required as an absolute node-local path while account-pool mode is enabled. */
+    /** Optional absolute node-local path; defaults to ~/.claude-accounts when the pool is enabled. */
     CLAUDE_ACCOUNTS_DIR: z.string().optional(),
     /**
      * Persistent Query + exactly-once delivery runtime.
@@ -280,13 +281,7 @@ export const EnvSchema = z
       });
     }
     if (env.CLAUDE_ACCOUNT_POOL_ENABLED) {
-      if (!env.CLAUDE_ACCOUNTS_DIR) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["CLAUDE_ACCOUNTS_DIR"],
-          message: "CLAUDE_ACCOUNTS_DIR is required when CLAUDE_ACCOUNT_POOL_ENABLED=true",
-        });
-      } else if (!isAbsolute(env.CLAUDE_ACCOUNTS_DIR)) {
+      if (env.CLAUDE_ACCOUNTS_DIR !== undefined && !isAbsolute(env.CLAUDE_ACCOUNTS_DIR)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: ["CLAUDE_ACCOUNTS_DIR"],
@@ -347,6 +342,9 @@ export const EnvSchema = z
   .transform((env) => ({
     ...env,
     MCP_INTERNAL_PORT: env.MCP_INTERNAL_PORT ?? env.PORT + 1,
+    CLAUDE_ACCOUNTS_DIR: env.CLAUDE_ACCOUNT_POOL_ENABLED
+      ? env.CLAUDE_ACCOUNTS_DIR ?? join(homedir(), ".claude-accounts")
+      : env.CLAUDE_ACCOUNTS_DIR,
   }));
 
 export type Env = z.infer<typeof EnvSchema>;

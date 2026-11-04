@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ZodError } from "zod";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 import { parseEnv } from "../src/config.js";
 
@@ -31,8 +33,8 @@ describe("parseEnv", () => {
     expect(env.EVENT_OUTBOX_DIR).toBe("/tmp/soulstream-event-outbox-test");
     expect(env.CLAUDE_SESSION_RUNTIME_V2_ENABLED).toBe(true);
     expect(env.SOUL_RUNNER_PROCESS_ENABLED).toBe(false);
-    expect(env.CLAUDE_ACCOUNT_POOL_ENABLED).toBe(false);
-    expect(env.CLAUDE_ACCOUNTS_DIR).toBeUndefined();
+    expect(env.CLAUDE_ACCOUNT_POOL_ENABLED).toBe(true);
+    expect(env.CLAUDE_ACCOUNTS_DIR).toBe(join(homedir(), ".claude-accounts"));
   });
 
   it("SOULSTREAM_NODE_ID 부재 시 ZodError", () => {
@@ -258,11 +260,13 @@ describe("parseEnv", () => {
     expect(env.CLAUDE_AUTH_TOKEN_PATH).toBe("/var/lib/soulstream-ts/claude-auth.json");
   });
 
-  it("Claude account pool is off by default and requires an absolute directory when enabled", () => {
-    expect(() => parseEnv({
+  it("Claude account pool defaults on, permits an explicit kill switch and validates its directory", () => {
+    const disabled = parseEnv({
       ...minimal,
-      CLAUDE_ACCOUNT_POOL_ENABLED: "true",
-    })).toThrow(/CLAUDE_ACCOUNTS_DIR is required/);
+      CLAUDE_ACCOUNT_POOL_ENABLED: "false",
+    });
+    expect(disabled.CLAUDE_ACCOUNT_POOL_ENABLED).toBe(false);
+    expect(disabled.CLAUDE_ACCOUNTS_DIR).toBeUndefined();
 
     expect(() => parseEnv({
       ...minimal,

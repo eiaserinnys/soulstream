@@ -227,6 +227,7 @@ export class P0R2FullSliceHarness {
       SOULSTREAM_NODE_ID: P0R2_NODE_ID,
       SOULSTREAM_UPSTREAM_URL: "ws://127.0.0.1:1/ws/node",
       EVENT_OUTBOX_DIR: outboxDirectory,
+      CLAUDE_ACCOUNT_POOL_ENABLED: "false",
       SOUL_RUNNER_PROCESS_ENABLED: "true",
       SOUL_RUNNER_STATE_DIR: stateDirectory,
       SOUL_RUNNER_ARTIFACT_DIR: artifactDirectory,
