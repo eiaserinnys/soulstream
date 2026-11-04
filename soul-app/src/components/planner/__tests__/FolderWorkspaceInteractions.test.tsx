@@ -6,6 +6,7 @@ import { useSessionStore } from '../../../store/sessionStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 
 const mockOpenProjectMenu = jest.fn();
+const mockProjectMenuItems = jest.fn(() => [{ key: 'copy-id', label: '폴더 ID 복사', onSelect: jest.fn() }]);
 const mockOpenChildFolderManagement = jest.fn();
 const mockUsePlannerProject = jest.fn();
 const mockToggleFolderCardCreate = jest.fn();
@@ -39,6 +40,7 @@ jest.mock('../../../hooks/usePlannerContextMenus', () => ({
   usePlannerContextMenus: () => ({
     openFolderMenu: jest.fn(),
     openProjectMenu: mockOpenProjectMenu,
+    projectMenuItems: mockProjectMenuItems,
     openChildFolderManagement: mockOpenChildFolderManagement,
     openSessionMenu: jest.fn(),
     sessionSuccession: null,
@@ -191,3 +193,22 @@ function page(id: string, title: string): PlannerPage {
     metadata: {}, createdAt: '', updatedAt: '',
   };
 }
+
+test.each([true, false])('듀오 폴더 메뉴는 항목을 직접 넘기고 중요 상태 %s의 다음 행동을 쓴다', (starred) => {
+  const summary = plannerFolder();
+  summary.page.metadata.starred = starred;
+  usePlannerStore.setState({ selectedFolderSnapshot: summary });
+  useSessionStore.setState({ catalog: { folders: [
+    { id: 'task-1', name: '폴더 이름', projectPageId: 'task-1', sortOrder: 0 },
+  ], sessions: {} } });
+  const view = render(<DuoSideBandContext.Provider value><FolderWorkspace api={null} folderId="task-1" folderPageId="task-1" /></DuoSideBandContext.Provider>);
+  const actions = usePhoneRailActions.getState().overrides.at(-1)!.actions;
+  expect(actions.find(action => action.id === 'starred')?.menuLabel).toBe(starred ? '중요 폴더 해제' : '중요 폴더로 지정');
+  expect(actions.find(action => action.id === 'today')?.menuLabel).toBe('오늘 데일리에 추가');
+  const menu = actions.find(action => action.id === 'menu')!;
+  expect(menu.menuTitle).toBe('폴더 이름');
+  expect(menu.menuItems?.()).toEqual(mockProjectMenuItems.mock.results.at(-1)?.value);
+  expect(mockProjectMenuItems).toHaveBeenCalledWith(expect.objectContaining({ folder: expect.objectContaining({ id: 'task-1' }) }));
+  expect(mockOpenProjectMenu).not.toHaveBeenCalled();
+  view.unmount();
+});

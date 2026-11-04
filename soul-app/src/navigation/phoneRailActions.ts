@@ -3,6 +3,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { create } from 'zustand';
 import type { ComponentProps } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import type { PlannerContextMenuAction } from '../lib/planner-context-menu-model';
 
 export type PhoneRailAction = {
   id: string;
@@ -13,6 +14,10 @@ export type PhoneRailAction = {
   badgeCount?: number;
   dot?: boolean;
   disabled?: boolean;
+  kind?: 'exit' | 'view' | 'action' | 'status' | 'rare' | 'settings' | 'nav' | 'menu';
+  menuLabel?: string;
+  menuItems?: () => PlannerContextMenuAction[];
+  menuTitle?: string;
 };
 
 type RootActionTab = 'DailyTab' | 'FolderTab' | 'FeedTab';
@@ -40,10 +45,11 @@ export function useRegisterDuoRailOverride(id: string, enabled: boolean, actions
   const key = useRef(Symbol(id)).current;
   const latest = useRef(actions);
   latest.current = actions;
-  const signature = JSON.stringify(actions.map(({ id: actionId, label, icon, selected, badgeCount, dot, disabled }) =>
-    [actionId, label, icon, selected, badgeCount, dot, disabled]));
+  const signature = JSON.stringify(actions.map(({ id: actionId, label, icon, selected, badgeCount, dot, disabled, kind, menuLabel, menuTitle }) =>
+    [actionId, label, icon, selected, badgeCount, dot, disabled, kind, menuLabel, menuTitle]));
   const stableActions = () => latest.current.map(action => ({ ...action,
     onPress: () => latest.current.find(current => current.id === action.id)?.onPress(),
+    ...(action.menuItems ? { menuItems: () => latest.current.find(current => current.id === action.id)?.menuItems?.() ?? [] } : {}),
   }));
   useLayoutEffect(() => {
     if (!enabled) return;

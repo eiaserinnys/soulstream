@@ -237,13 +237,13 @@ export function CardDetailContent(props: CardDetailContentProps) {
     { value: 'notes' as const, label: '노트', count: tabletLandscape ? (detail?.notes?.length ?? 0) : undefined },
   ];
   const sectionActions: PhoneRailAction[] = [
-    ...(tab !== 'items' ? [{ id: 'tab-items', label: '확인 항목', icon: 'checkbox-outline' as const,
+    ...(tab !== 'items' ? [{ id: 'tab-items', kind: 'view' as const, label: '확인 항목', icon: 'checkbox-outline' as const,
       badgeCount: needsReview, onPress: () => setTab('items') }] : []),
-    ...(tab !== 'comments' ? [{ id: 'tab-comments', label: '커멘트', icon: 'chatbubble-outline' as const,
+    ...(tab !== 'comments' ? [{ id: 'tab-comments', kind: 'view' as const, label: '커멘트', icon: 'chatbubble-outline' as const,
       dot: commentUnread, onPress: () => setTab('comments') }] : []),
-    ...(tab !== 'sessions' ? [{ id: 'tab-sessions', label: '세션', icon: 'terminal-outline' as const,
+    ...(tab !== 'sessions' ? [{ id: 'tab-sessions', kind: 'view' as const, label: '세션', icon: 'terminal-outline' as const,
       onPress: () => setTab('sessions') }] : []),
-    ...(tab !== 'notes' ? [{ id: 'tab-notes', label: '노트', icon: 'document-text-outline' as const,
+    ...(tab !== 'notes' ? [{ id: 'tab-notes', kind: 'view' as const, label: '노트', icon: 'document-text-outline' as const,
       onPress: () => setTab('notes') }] : []),
   ];
   const railActions: PhoneRailAction[] = [

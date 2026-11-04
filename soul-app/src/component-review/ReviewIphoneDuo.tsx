@@ -82,6 +82,7 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
   const t = useTokens();
   const phone = frameId.startsWith('outer-') || frameId.startsWith('iphone-');
   const initialTab = params.get('tab') ?? undefined;
+  const [selectedTab, setSelectedTab] = useState(initialTab);
   const sampleCardId = params.get('card') ?? entryShellCardId;
   const [view, setView] = useState(params.get('view'));
   const navigationRef = useNavigationContainerRef<any>();
@@ -109,13 +110,13 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
                   </View>
                 </SafeAreaInsetsContext.Provider>
                 {phone ? <View style={{ width: frame.insets.right, alignItems: 'center', justifyContent: 'flex-end',
-                  paddingBottom: compact ? frame.insets.bottom : Math.max(frame.insets.bottom, t.uiSpacing.xxl),
+                  paddingBottom: duo ? 0 : compact ? frame.insets.bottom : Math.max(frame.insets.bottom, t.uiSpacing.xxl),
                   ...(duo ? { paddingRight: DUO_RAIL_END_INSET } : {}) }}>
-                  <PhoneRailTabCluster active="DailyTab" duoSideBand={duo} compact={compact} onSelect={() => setView(null)} />
+                  <PhoneRailTabCluster active="DailyTab" duoSideBand={duo} compact={compact} onSelect={(tab) => { setSelectedTab(tab); setView(null); }} />
                 </View> : null}
                 {!phone && duo ? <View style={{ width: frame.insets.right }} /> : null}
                 {!phone && duo ? <DuoRailOverride /> : null}
-              </View> : phone ? <TabNavigator initialTab={phoneChat ? 'FeedTab' : initialTab} /> : <MainReviewStack.Navigator screenOptions={{ headerShown: false }}>
+              </View> : phone ? <TabNavigator initialTab={phoneChat ? 'FeedTab' : selectedTab} /> : <MainReviewStack.Navigator screenOptions={{ headerShown: false }}>
                 <MainReviewStack.Screen name="Main" component={TwoPaneWithDrawer} />
                 <MainReviewStack.Screen name="PersistentSession" component={DuoPasCardOverlayStage} />
               </MainReviewStack.Navigator>}
@@ -207,12 +208,11 @@ function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { fr
               </View>
             </SafeAreaInsetsContext.Provider>
             {frame.rail && frame.insets.right > 0 ? <View style={{ width: frame.insets.right, height: frame.height,
-              alignItems: 'center', justifyContent: 'flex-end', paddingBottom: compact ? frame.insets.bottom : Math.max(frame.insets.bottom, t.uiSpacing.xxl),
+              alignItems: 'center', justifyContent: 'flex-end', paddingBottom: duoSideBand ? 0 : compact ? frame.insets.bottom : Math.max(frame.insets.bottom, t.uiSpacing.xxl),
               ...(duoSideBand ? { paddingRight: DUO_RAIL_END_INSET } : {}) }}>
               <DuoPasReviewRail duoSideBand={duoSideBand} compact={compact} />
             </View> : null}
             {!frame.rail && duoSideBand ? <View style={{ width: frame.insets.right, height: frame.height }} /> : null}
-            {!frame.rail && duoSideBand ? <DuoRailOverride /> : null}
           </View>
           <EntryShellAlertHarness />
           </NavigationContainer>
@@ -343,7 +343,7 @@ export function ReviewIphoneDuo() {
                           </SafeAreaInsetsContext.Provider>
                           {frame.rail ? <View style={{
                             width: RAIL_WIDTH,
-                            paddingBottom: compact ? frame.insets.bottom : Math.max(frame.insets.bottom, t.uiSpacing.xxl),
+                            paddingBottom: duoSideBand ? 0 : compact ? frame.insets.bottom : Math.max(frame.insets.bottom, t.uiSpacing.xxl),
                             alignItems: 'center',
                             justifyContent: 'flex-end',
                             ...(duoSideBand ? { paddingRight: DUO_RAIL_END_INSET } : {}),

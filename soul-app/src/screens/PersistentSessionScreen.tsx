@@ -34,9 +34,9 @@ import { usePersistentSessionHost, usePersistentSessionScene } from '../navigati
 import { usePhoneRailMode } from '../navigation/tabContract';
 import { DUO_RAIL_CENTER_FROM_END, DUO_RAIL_END_INSET, DUO_SIDE_BAND_WIDTH, DUO_TOP_BAND_RAIL_TOP, DUO_TOP_BAND_STATUS_CENTER_Y, DUO_TOP_BAND_STATUS_RESERVE, getDuoRailTopOffset, splitDuoRailBackAction, useDuoSideBand, useDuoTopBand } from '../navigation/duoSideBand';
 import { AppKeyboardAvoidingView } from '../components/AppKeyboardAvoidingView';
-import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
-import { DuoRailOverride } from '../components/navigation/DuoRailOverride';
-import { useActiveDuoRailOverrideEntry } from '../navigation/phoneRailActions';
+import { RAIL_CAPSULE_WIDTH, railCapsuleHeight, RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
+import { useActiveDuoRailOverrideEntry, type PhoneRailAction } from '../navigation/phoneRailActions';
+import { duoRailLayout } from '../navigation/duoRailLayout';
 import { usePasContextMenu } from '../components/persistent/usePasContextMenu';
 import { useAuthStore } from '../store/authStore';
 import { useChatStore } from '../store/chatStore';
@@ -122,7 +122,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const savedPas = continuity?.getViewState<{ settingsOpen?: boolean; expandedKey?: string | null }>(pasKey);
   const settingsOpen = usePersistentSessionScene(state => state.settingsOpen);
   const setSettingsOpen = usePersistentSessionScene(state => state.setSettingsOpen);
-  const showPasMenu = usePasContextMenu(phone ? undefined : onHome);
+  const pasMenu = usePasContextMenu();
   React.useLayoutEffect(() => {
     if (savedPas?.settingsOpen !== undefined) setSettingsOpen(savedPas.settingsOpen);
   }, []);
@@ -166,22 +166,39 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const [main, setMain] = useState<PersistentSessionRect | null>(null);
   const [composer, setComposer] = useState<{ anchor: LayoutRectangle; box: LayoutRectangle } | null>(null);
   const [keyboardOverlap, setKeyboardOverlap] = useState(0);
-  const railCompact = (railOverride?.length ?? 0) >= 7 || windowHeight < 500;
   const railBottom = Math.max(keyboardOverlap, insets.bottom, t.uiSpacing.xxl);
-  const lowerRailMaxHeight = railBack && keyboardOverlap > 0
-    ? Math.max(0, windowHeight - railBottom - getDuoRailTopOffset(windowWidth, windowHeight)
-      - RAIL_CAPSULE_WIDTH - t.uiSpacing.xs)
-    : undefined;
   const onKeyboardOverlapChange = React.useCallback((overlap: number) => {
     setKeyboardOverlap(current => current === overlap ? current : overlap);
   }, []);
   const [usageHeight, setUsageHeight] = useState(0);
   const compact = phone || (app?.height ?? Infinity) < FRAME.compactHeight;
-  const [topBandRailHeight, setTopBandRailHeight] = useState(0);
   const baseHeaderHeight = compact ? FRAME.compactHeader : FRAME.header;
   const topBandInset = duoTopBand ? DUO_TOP_BAND_STATUS_CENTER_Y - baseHeaderHeight / 2 : 0;
   const headerHeight = baseHeaderHeight + topBandInset;
-  const rightControlsHeight = duoSideBand ? 0 : duoTopBand ? topBandRailHeight : t.hitTarget.min;
+  const rightControlsHeight = duoSideBand ? 0 : duoTopBand ? RAIL_CAPSULE_WIDTH + t.uiSpacing.sm : t.hitTarget.min;
+  const railTokens = { spacingXs: t.spacing.xs, uiSpacingXs: t.uiSpacing.xs, uiSpacingSm: t.uiSpacing.sm, hitTargetMin: t.hitTarget.min };
+  const pasActions: PhoneRailAction[] = [
+    ...(session?.node_id ? [{ id: 'usage', kind: 'status' as const, label: '주간 사용량',
+      menuLabel: showWeeklyUsage ? '주간 사용량 숨기기' : '주간 사용량 보기', icon: 'speedometer-outline' as const, selected: showWeeklyUsage,
+      onPress: () => useSettingsStore.getState().setPersistentSessionShowWeeklyUsage(serverUrl, email, !showWeeklyUsage) }] : []),
+    { id: 'tasks', kind: 'view', selected: scene === 'cards', label: scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기', icon: 'list-outline',
+      onPress: () => host.store.getState().toggleCards() },
+    { id: 'reports', kind: 'view', label: !hasReports ? '지금의 보고 없음' : reportsScene ? 'PAS 대화로 돌아가기' : '지금의 보고',
+      icon: 'chatbubble-ellipses-outline', selected: reportsScene, badgeCount: reportCount, disabled: !hasReports,
+      onPress: () => host.store.getState().toggleReports() },
+  ];
+  const railMenu: PhoneRailAction | null = railOverride?.length
+    ? railMain.find(item => item.kind === 'menu') ?? null
+    : { id: 'menu', kind: 'menu', label: 'PAS 메뉴', icon: 'ellipsis-horizontal', onPress: pasMenu.show,
+      menuItems: pasMenu.items, menuTitle: pasMenu.title };
+  const railLayout = duoRailLayout({ exit: railBack?.disabled ? null : railBack ?? { id: 'home', kind: 'exit', label: '홈으로 돌아가기', icon: 'home-outline', onPress: onHome },
+    screen: railOverride?.length ? railMain.filter(item => item.kind !== 'menu' && item.kind !== 'rare') : pasActions,
+    nav: [], rare: railOverride?.length ? railMain.filter(item => item.kind === 'rare') : [], menu: railMenu,
+    windowHeight, topStart: duoTopBand ? DUO_TOP_BAND_RAIL_TOP : getDuoRailTopOffset(windowWidth, windowHeight),
+    bottomReserve: Math.max(insets.bottom, t.uiSpacing.xxl), keyboardOverlap, tokens: railTokens });
+  const screenRailTop = windowHeight - railBottom - railCapsuleHeight(railLayout.screen.length, railLayout.compact, railTokens);
+  const railColumnBottom = Math.max(0, (app?.height ?? windowHeight) - screenRailTop + t.uiSpacing.sm);
+  const rightColumnOffset = duoTopBand ? DUO_RAIL_CENTER_FROM_END - RAIL_CAPSULE_WIDTH / 2 - t.uiSpacing.sm : t.foundation.pageInset - t.uiSpacing.sm;
   const portrait = app ? app.height > app.width : false;
   const widths = portrait ? FRAME.portrait : FRAME.landscape;
   const hasWeeklyUsage = Boolean(session?.node_id && showWeeklyUsage);
@@ -202,7 +219,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       cardsScene: rightColumnVisible,
       pageInset: t.foundation.pageInset,
       gap: t.spacing.md,
-      cardPanelRightOffset: t.foundation.pageInset - t.uiSpacing.sm,
+      cardPanelRightOffset: rightColumnOffset,
     })
     : 0;
   const usageSummary = useUsageSummary({ enabled: active && !phone && hasWeeklyUsage, nodeId: session?.node_id ?? null,
@@ -300,17 +317,13 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     }} />;
   const taskList = <PersistentSessionTaskList api={api} visible={!selectedCardId}
     onOpenCard={openCard} />;
-  const reportAndTaskRailItems = <>
-    <RailCapsuleItem testID="persistent-session-duo-reports" selected={reportsScene} badge={reportCount} disabled={!hasReports}
-      label={!hasReports ? '지금의 보고 없음' : reportsScene ? 'PAS 대화로 돌아가기' : '지금의 보고'}
-      onPress={() => host.store.getState().toggleReports()}>
-      <Ionicons name="chatbubble-ellipses-outline" size={t.iconSize.standard} color={reportsScene ? t.colors.accent : t.colors.textMuted} />
-    </RailCapsuleItem>
-    <RailCapsuleItem testID="persistent-session-duo-tasks" label={scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기'}
-      onPress={() => host.store.getState().toggleCards()}>
-      <Ionicons name="list-outline" size={t.iconSize.standard} color={t.colors.textMuted} />
-    </RailCapsuleItem>
-  </>;
+  const renderRailAction = (item: PhoneRailAction) => {
+    const testID = railOverride?.length ? `duo-rail-action-${item.id}` : `persistent-session-duo-${item.id}`;
+    return <RailCapsuleItem key={item.id} testID={testID} label={item.label} selected={item.selected}
+      badgeCount={item.badgeCount} dot={item.dot} disabled={item.disabled} onPress={item.onPress}>
+      <Ionicons name={item.icon} size={t.iconSize.standard} color={item.selected ? t.colors.accent : t.colors.textMuted} />
+    </RailCapsuleItem>;
+  };
   return <SafeAreaView testID="persistent-session-safe-area" edges={phone
     ? duoSideBand ? ['top', 'left'] : railMode ? ['top', 'bottom', 'left'] : ['top', 'left', 'right']
     : duoTopBand ? ['left', 'right'] : ['top', 'left', 'right']}
@@ -327,7 +340,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
             <Text style={{ ...t.foundation.typography.navigation, color: t.colors.textPrimary }}>소울스트림</Text>
             <Text numberOfLines={1} style={{ flex: 1, ...t.foundation.typography.body, color: t.colors.textMuted }}>{session?.agent_name ?? ''}</Text>
           </View>}
-        {!duoSideBand ? <>
+        {!duoSideBand && !duoTopBand ? <>
           {!phone ? action('home-outline', '홈으로 돌아가기', onHome, 'persistent-session-home') : null}
           {!phone && hasMultiplePas ? action('swap-horizontal-outline', '영구 세션 선택', () => void host.requestEntry(() => {}, false, true), 'persistent-session-switch') : null}
           {action(t.mode === 'light' ? 'moon-outline' : 'sunny-outline', '밝기 전환', () => void handleAppearanceChange(t.mode === 'light' ? 'dark' : 'light'), 'persistent-session-appearance')}
@@ -404,15 +417,9 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       {!phone && !duoSideBand && !duoTopBand ? <View style={{ position: 'absolute', top: headerHeight, right: t.foundation.pageInset - (t.hitTarget.min - t.foundation.iconFrame.compact) / 2 }}>
         {action('list-outline', scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기', () => host.store.getState().toggleScene(), 'persistent-session-tasks')}
       </View> : null}
-      {!phone && duoTopBand && !selectedCardId ? <View testID="persistent-session-top-band-rail" onLayout={event => {
-        const height = event.nativeEvent.layout.height + t.uiSpacing.sm;
-        setTopBandRailHeight(current => current === height ? current : height);
-      }} style={{ position: 'absolute', top: headerHeight, right: DUO_RAIL_CENTER_FROM_END - RAIL_CAPSULE_WIDTH / 2 }}>
-        <RailCapsule testID="persistent-session-top-band-capsule">{reportAndTaskRailItems}</RailCapsule>
-      </View> : null}
       {usageInColumn ? <View testID="persistent-session-usage-column" style={{ position: 'absolute',
         top: headerHeight + rightControlsHeight,
-        bottom: Math.max(insets.bottom, keyboardOverlap), right: t.foundation.pageInset - t.uiSpacing.sm,
+        bottom: duoTopBand ? railColumnBottom : Math.max(insets.bottom, keyboardOverlap), right: rightColumnOffset,
         width: widths.tasks, paddingHorizontal: t.uiSpacing.sm, gap: t.spacing.xl }}>
         {weeklyUsage}
         {scene === 'cards' ? <View testID="persistent-session-card-panel" style={{ flex: 1, minHeight: 0 }}>
@@ -421,10 +428,11 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       </View> : null}
       {scene === 'cards' && !usageInColumn ? <View testID="persistent-session-card-panel" style={{ position: 'absolute',
         top: phone || duoSideBand ? headerHeight : headerHeight + rightControlsHeight,
-        ...(phone ? { bottom: 0 } : { maxHeight: !phone && hasWeeklyUsage && geometry
+        ...(phone ? { bottom: 0 } : { maxHeight: duoTopBand ? Math.max(0, (app?.height ?? windowHeight) - railColumnBottom - headerHeight - rightControlsHeight)
+          : !phone && hasWeeklyUsage && geometry
           ? Math.max(0, geometry.lineY - usageHeight - t.spacing.xl - (headerHeight + rightControlsHeight))
           : Math.max(0, (portrait && geometry ? geometry.lineY : app?.height ?? 0) - headerHeight - rightControlsHeight - t.uiSpacing.md) }),
-        right: phone ? 0 : t.foundation.pageInset - t.uiSpacing.sm,
+        right: phone ? 0 : rightColumnOffset,
         width: phone ? '100%' : widths.tasks,
         backgroundColor: t.persistentSession.paper,
         borderRadius: phone ? 0 : t.foundation.radius.card,
@@ -439,34 +447,18 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       {settingsOpen && session ? <PersistentSessionPasSettingsModal sessionId={session.session_id} nodeId={session.node_id ?? ''}
         onClose={() => setSettingsOpen(false)} /> : null}
     </View>
-    {!phone && duoSideBand && railBack ? <View style={{ position: 'absolute', top: getDuoRailTopOffset(windowWidth, windowHeight),
-      right: (insets.right - 48 + DUO_RAIL_END_INSET) / 2 }}>
-      <RailCapsule testID={railMain.length ? 'duo-rail-back-capsule' : 'persistent-session-duo-capsule'} compact={railCompact}>
-        <RailCapsuleItem testID={`duo-rail-action-${railBack.id}`} label={railBack.label} selected={railBack.selected}
-          badgeCount={railBack.badgeCount} dot={railBack.dot} disabled={railBack.disabled} onPress={railBack.onPress}>
-          <Ionicons name={railBack.icon} size={t.iconSize.standard} color={railBack.selected ? t.colors.accent : t.colors.textMuted} />
-        </RailCapsuleItem>
+    {!phone && (duoSideBand || duoTopBand) && railLayout.exit ? <View style={{ position: 'absolute',
+      top: duoTopBand ? DUO_TOP_BAND_RAIL_TOP : getDuoRailTopOffset(windowWidth, windowHeight),
+      right: duoTopBand ? DUO_RAIL_CENTER_FROM_END - RAIL_CAPSULE_WIDTH / 2 : (insets.right - RAIL_CAPSULE_WIDTH + DUO_RAIL_END_INSET) / 2 }}>
+      <RailCapsule testID="duo-rail-back-capsule" compact={railLayout.compact}>{renderRailAction(railLayout.exit)}</RailCapsule>
+    </View> : null}
+    {!phone && (duoSideBand || duoTopBand) && railLayout.screen.length ? <View testID="persistent-session-duo-band" style={{
+      position: 'absolute', bottom: railBottom, alignItems: 'center',
+      ...(duoTopBand ? { right: DUO_RAIL_CENTER_FROM_END - RAIL_CAPSULE_WIDTH / 2 }
+        : { right: 0, width: insets.right, paddingRight: DUO_RAIL_END_INSET }) }}>
+      <RailCapsule testID="persistent-session-duo-capsule" compact={railLayout.compact}>
+        {railLayout.screen.map(renderRailAction)}
       </RailCapsule>
     </View> : null}
-    {!phone && duoSideBand && (!railBack || railMain.length > 0) ? <View testID="persistent-session-duo-band" style={{ position: 'absolute', right: 0,
-      bottom: railBottom, width: insets.right, alignItems: 'center', paddingRight: DUO_RAIL_END_INSET }}>
-      <RailCapsule testID="persistent-session-duo-capsule" compact={railCompact} maxHeight={lowerRailMaxHeight}
-        scrollTestID="persistent-session-duo-capsule-scroll">
-        {railOverride?.length ? railMain.map(action => <RailCapsuleItem key={action.id} testID={`duo-rail-action-${action.id}`}
-          label={action.label} selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
-          <Ionicons name={action.icon} size={t.iconSize.standard} color={action.selected ? t.colors.accent : t.colors.textMuted} />
-        </RailCapsuleItem>) : <>
-        {reportAndTaskRailItems}
-        {session?.node_id ? <RailCapsuleItem testID="persistent-session-duo-usage" label="주간 사용량" selected={showWeeklyUsage}
-          onPress={() => useSettingsStore.getState().setPersistentSessionShowWeeklyUsage(serverUrl, email, !showWeeklyUsage)}>
-          <Ionicons name="speedometer-outline" size={t.iconSize.standard} color={showWeeklyUsage ? t.colors.accent : t.colors.textMuted} />
-        </RailCapsuleItem> : null}
-        <RailCapsuleItem testID="persistent-session-duo-menu" label="PAS 메뉴" onPress={showPasMenu}>
-          <Ionicons name="ellipsis-horizontal" size={t.iconSize.standard} color={t.colors.textMuted} />
-        </RailCapsuleItem>
-        </>}
-      </RailCapsule>
-    </View> : null}
-    {!phone && duoTopBand ? <DuoRailOverride bandWidth={DUO_SIDE_BAND_WIDTH} topOffset={DUO_TOP_BAND_RAIL_TOP} /> : null}
   </SafeAreaView>;
 }

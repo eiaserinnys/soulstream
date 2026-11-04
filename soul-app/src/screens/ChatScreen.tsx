@@ -82,7 +82,7 @@ export function ChatScreen({ route, navigation }: Props) {
     ...(sessionId ? [
       { id: 'story', label: '지난 줄거리', icon: 'book-outline' as const,
         selected: storyExpanded && storyAvailable, disabled: !storyAvailable, onPress: handleToggleStory },
-      { id: 'menu', label: '세션 메뉴', icon: 'ellipsis-horizontal' as const, onPress: () => menus.openSessionMenu({ sessionId }) },
+      { id: 'menu', kind: 'menu' as const, label: '세션 메뉴', icon: 'ellipsis-horizontal' as const, onPress: () => menus.openSessionMenu({ sessionId }) },
     ] : []),
   ]);
 

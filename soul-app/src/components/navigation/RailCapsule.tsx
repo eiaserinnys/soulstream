@@ -1,12 +1,18 @@
 import React from 'react';
-import { ScrollView, Text, View, type AccessibilityRole } from 'react-native';
+import { Text, View, type AccessibilityRole } from 'react-native';
 import { PlatformPressable } from '@react-navigation/elements';
-import { GlassSurface } from '../GlassSurface';
+import { GLASS_BUTTON_BORDER_WIDTH, GlassSurface } from '../GlassSurface';
 import { useTokens } from '../../theme';
 import { STATUS_DOT_SIZE } from '../chat/StatusDot';
 
 export const RAIL_CAPSULE_WIDTH = 48;
 export const RAIL_ITEM_HEIGHT = 50;
+export function railCapsuleHeight(count: number, compact: boolean, tokens: { spacingXs: number; uiSpacingXs: number; hitTargetMin: number }) {
+  if (count === 0) return 0;
+  if (count === 1) return RAIL_CAPSULE_WIDTH;
+  return compact ? count * tokens.hitTargetMin + GLASS_BUTTON_BORDER_WIDTH
+    : count * RAIL_ITEM_HEIGHT + (count - 1) * tokens.uiSpacingXs / 2 + 2 * tokens.spacingXs + GLASS_BUTTON_BORDER_WIDTH;
+}
 const RailCapsuleItemContext = React.createContext({ compact: false, single: false });
 
 function countRailCapsuleItems(children: React.ReactNode): number {
@@ -18,8 +24,8 @@ function countRailCapsuleItems(children: React.ReactNode): number {
   }, 0);
 }
 
-export function RailCapsule({ children, testID, compact = false, maxHeight, scrollTestID }: {
-  children: React.ReactNode; testID: string; compact?: boolean; maxHeight?: number; scrollTestID?: string;
+export function RailCapsule({ children, testID, compact = false }: {
+  children: React.ReactNode; testID: string; compact?: boolean;
 }) {
   const t = useTokens();
   const single = countRailCapsuleItems(children) === 1;
@@ -30,11 +36,9 @@ export function RailCapsule({ children, testID, compact = false, maxHeight, scro
     <RailCapsuleItemContext.Provider value={{ compact, single }}>{children}</RailCapsuleItemContext.Provider>
   </View>;
   return <GlassSurface role="chrome" testID={testID} cornerRadius={t.foundation.radius.round}
-    style={{ width: RAIL_CAPSULE_WIDTH, ...(single ? { height: RAIL_CAPSULE_WIDTH } : {}),
-      ...(maxHeight === undefined ? {} : { maxHeight, overflow: 'hidden' as const }) }}>
-    {maxHeight === undefined ? content : <ScrollView testID={scrollTestID} style={{ maxHeight }} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-      {content}
-    </ScrollView>}
+    style={{ width: RAIL_CAPSULE_WIDTH, height: railCapsuleHeight(countRailCapsuleItems(children), compact,
+      { spacingXs: t.spacing.xs, uiSpacingXs: t.uiSpacing.xs, hitTargetMin: t.hitTarget.min }) }}>
+    {content}
   </GlassSurface>;
 }
 

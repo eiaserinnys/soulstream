@@ -7,6 +7,7 @@ import { useActiveDuoRailOverride } from '../../navigation/phoneRailActions';
 import { DUO_RAIL_END_INSET, getDuoRailTopOffset, splitDuoRailBackAction } from '../../navigation/duoSideBand';
 import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem } from './RailCapsule';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
+import { duoRailLayout } from '../../navigation/duoRailLayout';
 
 export function DuoRailOverride({ topOffset, bandWidth }: { topOffset?: number; bandWidth?: number }) {
   const t = useTokens();
@@ -18,24 +19,25 @@ export function DuoRailOverride({ topOffset, bandWidth }: { topOffset?: number; 
   const actions = useActiveDuoRailOverride();
   if (!actions?.length) return null;
   const { backAction, mainActions } = splitDuoRailBackAction(actions);
-  const compact = actions.length >= 7 || height < 500;
   const bottom = Math.max(keyboardOverlap, insets.bottom, t.uiSpacing.xxl);
-  const lowerMaxHeight = backAction && keyboardOverlap > 0
-    ? Math.max(0, height - bottom - railTopOffset
-      - RAIL_CAPSULE_WIDTH - t.uiSpacing.xs)
-    : undefined;
+  const menu = mainActions.find(action => action.kind === 'menu') ?? null;
+  const layout = duoRailLayout({ exit: backAction?.disabled ? null : backAction,
+    screen: mainActions.filter(action => action.kind !== 'menu' && action.kind !== 'rare'), nav: [],
+    rare: mainActions.filter(action => action.kind === 'rare'), menu, windowHeight: height, topStart: railTopOffset,
+    bottomReserve: Math.max(insets.bottom, t.uiSpacing.xxl), keyboardOverlap,
+    tokens: { spacingXs: t.spacing.xs, uiSpacingXs: t.uiSpacing.xs, uiSpacingSm: t.uiSpacing.sm, hitTargetMin: t.hitTarget.min } });
   const renderAction = (action: typeof actions[number]) => <RailCapsuleItem key={action.id} testID={`duo-rail-action-${action.id}`} label={action.label}
         selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
         <Ionicons name={action.icon} size={t.iconSize.standard} color={action.selected ? t.colors.accent : t.colors.textMuted} />
       </RailCapsuleItem>;
   return <AppKeyboardAvoidingView pointerEvents="box-none" onOverlapChange={setKeyboardOverlap} style={StyleSheet.absoluteFill}>
   <View testID="duo-rail-override-host" pointerEvents="box-none" style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: railBandWidth, alignItems: 'center', paddingRight: DUO_RAIL_END_INSET }}>
-    {backAction ? <View style={{ position: 'absolute', top: railTopOffset, left: 0, right: DUO_RAIL_END_INSET, alignItems: 'center' }}>
-      <RailCapsule testID={mainActions.length ? 'duo-rail-back-capsule' : 'duo-rail-override'} compact={compact}>{renderAction(backAction)}</RailCapsule>
+    {layout.exit ? <View style={{ position: 'absolute', top: railTopOffset, left: 0, right: DUO_RAIL_END_INSET, alignItems: 'center' }}>
+      <RailCapsule testID={layout.screen.length ? 'duo-rail-back-capsule' : 'duo-rail-override'} compact={layout.compact}>{renderAction(layout.exit)}</RailCapsule>
     </View> : null}
-    {mainActions.length ? <View testID="duo-rail-override-lower" style={{ position: 'absolute', bottom, left: 0, right: DUO_RAIL_END_INSET, alignItems: 'center' }}>
-      <RailCapsule testID="duo-rail-override" compact={compact} maxHeight={lowerMaxHeight} scrollTestID="duo-rail-override-scroll">
-        {mainActions.map(renderAction)}
+    {layout.screen.length ? <View testID="duo-rail-override-lower" style={{ position: 'absolute', bottom, left: 0, right: DUO_RAIL_END_INSET, alignItems: 'center' }}>
+      <RailCapsule testID="duo-rail-override" compact={layout.compact}>
+        {layout.screen.map(renderAction)}
       </RailCapsule>
     </View> : null}
   </View></AppKeyboardAvoidingView>;

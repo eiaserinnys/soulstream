@@ -181,6 +181,7 @@ test('듀오 태블릿은 입력창과 카드 패널에서 바닥 안전 여백�
   act(() => store.getState().open({ session_id: 'pas-tablet-duo', persistent: true } as any));
   expect(view.getByTestId('persistent-body-probe').props.minimumBottomPadding).toBe(0);
   fireEvent.press(view.getByTestId('persistent-session-duo-tasks'));
+  expect(view.getByTestId('persistent-session-duo-tasks').props.accessibilityState.selected).toBe(true);
   const panel = StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style);
   expect(panel.paddingBottom).toBe(0);
   fireEvent.press(view.getByTestId('choose-card'));
@@ -708,6 +709,29 @@ test('phone hides saved weekly usage and passes a disabled request gate', () => 
   useAuthStore.setState({ jwt: null });
 });
 
+test.each([
+  ['가로', 'tabletLandscape', true, false, 951, 669, { top: 24, bottom: 24, left: 0, right: 84 }],
+  ['세로', 'tabletPortrait', false, true, 669, 951, { top: 82, bottom: 24, left: 0, right: 0 }],
+] as const)('듀오 PAS %s의 위쪽 홈은 홈 동작을 실행한다', (_name, device, side, top, width, height, insets) => {
+  mockDevice = device;
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width, height, scale: 1, fontScale: 1 });
+  const onHome = jest.fn();
+  const view = render(<SafeAreaInsetsContext.Provider value={insets}><DuoSideBandContext.Provider value={side}>
+    <DuoTopBandContext.Provider value={top}><NavigationContainer><PersistentSessionProvider><Capture />
+      <PersistentSessionScreen onHome={onHome} />
+    </PersistentSessionProvider></NavigationContainer></DuoTopBandContext.Provider>
+  </DuoSideBandContext.Provider></SafeAreaInsetsContext.Provider>);
+  act(() => store.getState().open({ session_id: 'pas-home', persistent: true } as any));
+  fireEvent.press(view.getByTestId('persistent-session-duo-home'));
+  expect(onHome).toHaveBeenCalledTimes(1);
+  if (top) {
+    expect(view.queryByTestId('persistent-session-home')).toBeNull();
+    expect(view.queryByTestId('persistent-session-appearance')).toBeNull();
+    expect(view.queryByTestId('persistent-session-settings')).toBeNull();
+  }
+  view.unmount(); dimensions.mockRestore();
+});
+
 test('듀오 태블릿은 에이전트 머리줄과 띠 캡슐을 쓰고 설정 상태를 공유한다', () => {
   mockDevice = 'tabletLandscape';
   const payload = Buffer.from(JSON.stringify({ email: 'usage@example.com', sub: 'usage@example.com', name: '사용자', exp: 2_000_000_000 })).toString('base64url');
@@ -1015,7 +1039,8 @@ test('듀오 안쪽 세로는 상단 띠에 헤더와 레일을 놓고 보고 �
   fireEvent.press(view.getByTestId('close-card-overlay'));
   expect(store.getState()).toMatchObject({ scene: 'reports', selectedCardId: null });
   expect(view.getByTestId('persistent-session-reports-cover')).toBeTruthy();
-  expect(view.getByTestId('persistent-session-top-band-rail')).toBeTruthy();
+  expect(view.queryByTestId('persistent-session-top-band-rail')).toBeNull();
+  expect(view.getByTestId('persistent-session-duo-band')).toBeTruthy();
   expect(cover).toBeTruthy();
   fireEvent.press(view.getByTestId('persistent-session-duo-reports'));
   expect(view.queryByTestId('persistent-session-reports-cover')).toBeNull();
