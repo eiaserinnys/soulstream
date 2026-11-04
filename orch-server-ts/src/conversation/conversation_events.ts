@@ -6,7 +6,7 @@ import { ConversationHistory } from "./conversation_history.js";
 import { formatPosition, parsePosition, comparePosition } from "./conversation_position.js";
 import type { Binding } from "./conversation_types.js";
 import type { Item, SourceEvent } from "./conversation_projection.js";
-import { isHumanInput, isKeepalive, isSilent } from "../../../packages/wire-schema/src/conversation_visibility.js";
+import { isHumanInput, isHiddenConversationInput, isSilent } from "../../../packages/wire-schema/src/conversation_visibility.js";
 
 type Options = { liveEvents?: SessionHistoryLiveEventSource; closeAfterHistorySync?: boolean; watchSwitch?: (id: string, close: () => void) => () => void };
 type Wire = { kind: string; [key: string]: unknown };
@@ -81,7 +81,7 @@ export async function sendConversationEvents(request: FastifyRequest, reply: Fas
       if (id !== undefined) {
         lastId = id;
         payload = await history.enrichPayload(payload);
-        if (isHumanInput(type, payload) && !isKeepalive(payload)) transientErrorInTurn = false;
+        if (isHumanInput(type, payload) && !isHiddenConversationInput(type, payload)) transientErrorInTurn = false;
         const source: SourceEvent = { id, type, payload, at: at(payload) };
         const result = loaded.projection.apply(source);
         const duplicate = (type === "error" || type === "assistant_error") && transientErrorInTurn;

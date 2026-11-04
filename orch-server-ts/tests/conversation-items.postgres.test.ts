@@ -79,6 +79,30 @@ describe("conversation items and events", () => {
   afterAll(async () => { await app?.close(); await db?.cleanup(); });
   const get = (path: string, headers: Record<string, string> = { authorization: "Bearer test" }) =>
     app.inject({ method: "GET", url: base + path, headers });
+  it("hides old card notice turns in items and SSE while preserving mixed input replies", async () => {
+    const id = "card-notice-history";
+    await db.sql`INSERT INTO sessions(session_id,folder_id,model_preset) VALUES (${id},'allowed-folder','sol')`;
+    await db.sql`INSERT INTO conversation_bindings(account_id,namespace,external_key,session_id,selected_model,phase)
+      VALUES ('person','n','card-notice',${id},'sol','complete')`;
+    const notice = {text:"[카드 완료] 맡긴 카드 #953 내용",caller_info:{source:"system"}};
+    await insertFor(id,1,"user_message",notice);
+    await insertFor(id,2,"assistant_message",{content:"숨긴 답"});
+    await insertFor(id,3,"complete",{});
+    await insertFor(id,4,"user_message",{text:"사람 입력",caller_info:{source:"browser"}});
+    await insertFor(id,5,"intervention_sent",notice);
+    await insertFor(id,6,"assistant_message",{content:"보이는 답"});
+    await insertFor(id,7,"complete",{});
+    const threadBase = `/api/conversations/v1/threads/${id}`;
+    const items = await app.inject({method:"GET",url:`${threadBase}/items`,headers:{authorization:"Bearer test"}});
+    expect(items.statusCode).toBe(200);
+    expect(items.json().items.map((item:{text:string})=>item.text)).toEqual(["사람 입력","보이는 답"]);
+    const events = await app.inject({method:"GET",url:`${threadBase}/events`,headers:{authorization:"Bearer test"}});
+    expect(events.statusCode).toBe(200);
+    expect(events.body).toContain("사람 입력");
+    expect(events.body).toContain("보이는 답");
+    expect(events.body).not.toContain("맡긴 카드");
+    expect(events.body).not.toContain("숨긴 답");
+  });
   it("paginates and resumes across executions with overlapping event numbers", async () => {
     const first = "history-first", second = "history-second";
     await db.sql`INSERT INTO sessions(session_id,folder_id,model_preset,created_at) VALUES

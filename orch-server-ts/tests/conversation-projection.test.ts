@@ -23,6 +23,65 @@ describe("conversation projection", () => {
     expect(project(11, "user_message", { text: "legacy agent report", agent_info: { source: "agent" } }).item).toBeUndefined();
     expect(project(12, "assistant_message", { content: "네." }).item).toBeUndefined();
   });
+  it("hides keepalive output after a human input until another visible input", () => {
+    const p = new ConversationProjection(false);
+    expect(p.apply(event(1,"user_message",{text:"사람 입력",caller_info:{source:"browser"}})).item).toMatchObject({text:"사람 입력"});
+    expect(p.apply(event(2,"user_message",{text:"캐시 유지",purpose:"cache_keepalive",input_id:"keep"})).item).toBeUndefined();
+    expect(p.apply(event(3,"tool_start",{tool_name:"Read"}))).toEqual({});
+    expect(p.live("text_delta",{text:"숨김"})).toBeUndefined();
+    expect(p.apply(event(4,"assistant_message",{content:"숨긴 답",input_id:"keep"})).item).toBeUndefined();
+    expect(p.apply(event(5,"intervention_sent",{text:"다음 입력",caller_info:{source:"browser"}})).item).toMatchObject({text:"다음 입력"});
+    expect(p.apply(event(6,"assistant_message",{content:"보이는 답"})).item).toMatchObject({text:"보이는 답"});
+  });
+  it("hides old card notices and their response while retaining surrounding turns and errors", () => {
+    const p = new ConversationProjection(false);
+    const notice = {text:"[카드 막힘] 맡긴 카드 #953 내용",caller_info:{source:"system"},input_id:"notice"};
+    const human = {text:"일반 입력",caller_info:{source:"browser"}};
+    expect(p.apply(event(1,"user_message",human)).item).toMatchObject({kind:"user",text:"일반 입력"});
+    expect(p.apply(event(2,"assistant_message",{content:"첫 답"})).item).toMatchObject({text:"첫 답"});
+    p.apply(event(3,"complete"));
+    expect(p.apply(event(4,"intervention_sent",notice)).item).toBeUndefined();
+    expect(p.apply(event(5,"tool_start",{tool_name:"Read"}))).toEqual({});
+    expect(p.live("text_delta",{text:"숨긴 스트림"})).toBeUndefined();
+    expect(p.apply(event(6,"assistant_message",{content:"숨긴 답"})).item).toBeUndefined();
+    expect(p.apply(event(7,"error",{message:"오류"})).item).toMatchObject({kind:"error",text:"오류"});
+    expect(p.apply(event(8,"user_message",human)).item).toMatchObject({kind:"user",text:"일반 입력"});
+    expect(p.apply(event(9,"assistant_message",{content:"다음 답"})).item).toMatchObject({text:"다음 답"});
+  });
+  it.each(["notice-first","human-first"])("preserves human input and output in a mixed batch: %s", order => {
+    const p = new ConversationProjection(false);
+    const notice = {text:"[카드 질문] 맡긴 카드 #953 내용",callerInfo:{source:"system"},input_id:"notice"};
+    const human = {text:"사람 입력",caller_info:{source:"browser"},input_id:"human"};
+    const entries = order === "notice-first" ? [notice,human] : [human,notice];
+    const items = entries.flatMap((payload,index) => {
+      const result = p.apply(event(index+1,"user_message",payload));
+      return result.item ? [result.item.text] : [];
+    });
+    expect(items).toEqual(["사람 입력"]);
+    expect(p.apply(event(3,"tool_start",{tool_name:"Read",input_id:"notice"})).activity).toMatchObject({tool:"Read"});
+    expect(p.live("text_delta",{text:"응답"})).toMatchObject({text:"응답"});
+    expect(p.apply(event(4,"assistant_message",{content:"완료 답",input_id:"notice"})).item).toMatchObject({text:"완료 답"});
+  });
+  it("shows only later output when a human intervenes after hidden output", () => {
+    const p = new ConversationProjection(false);
+    const inputs = [
+      event(1,"user_message",{text:"[카드 완료] 맡긴 카드 #953 내용",caller_info:{source:"system"}}),
+      event(2,"assistant_message",{content:"개입 전 답변"}),
+      event(3,"intervention_sent",{text:"사람 개입",caller_info:{source:"browser"}}),
+      event(4,"assistant_message",{content:"개입 후 답변"}),
+      event(5,"complete"),
+    ];
+    const items = inputs.flatMap(value => { const result = p.apply(value); return result.item ? [result.item.text] : []; });
+    expect(items).toEqual(["사람 개입","개입 후 답변"]);
+  });
+  it("does not treat a hidden notice as the first human input or reset a prior error", () => {
+    const p = new ConversationProjection(true);
+    p.apply(event(1,"error",{message:"실패"}));
+    expect(p.hasErrorInTurn()).toBe(true);
+    expect(p.apply(event(2,"user_message",{text:"[카드 완료] 맡긴 카드 #1 내용",caller_info:{source:"system"}})).item).toBeUndefined();
+    expect(p.hasErrorInTurn()).toBe(true);
+    expect(p.apply(event(3,"user_message",{text:"초기 지시",caller_info:{source:"browser"}})).item).toBeUndefined();
+  });
   it("uses display metadata for context-bearing messages and keeps legacy event text", () => {
     const p=new ConversationProjection(false);
     expect(p.apply(event(1,"intervention_sent",{text:"visible\n\nagent context",_conversation_text:"visible"})).item)
