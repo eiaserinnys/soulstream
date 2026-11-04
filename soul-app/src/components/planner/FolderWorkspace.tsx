@@ -157,9 +157,9 @@ export function FolderWorkspace({
       { id: 'starred', label: '중요 폴더', icon: (folderSummary.page.metadata.starred ? 'star' : 'star-outline') as PhoneRailAction['icon'], selected: folderSummary.page.metadata.starred === true, disabled: !scopedApi, onPress: () => { void runRailToggle('starred'); } },
       { id: 'today', label: '오늘 데일리', icon: (folderInToday ? 'sunny' : 'sunny-outline') as PhoneRailAction['icon'], selected: folderInToday === true, disabled: !scopedApi || !todayReady, onPress: () => { void runRailToggle('today'); } },
     ] : []),
-    ...(folder?.projectPageId ? [{ id: 'menu', label: '폴더 메뉴', icon: 'ellipsis-horizontal' as const, onPress: () => menus.openProjectMenu({ folder, projectPageId: folder.projectPageId!, onOpen: () => undefined, onCreateFolder: () => setNewFolderDraft({ parentPageId: folder.projectPageId! }) }) }] : []),
+    ...(folder?.projectPageId ? [{ id: 'menu', kind: 'menu' as const, label: '폴더 메뉴', icon: 'ellipsis-horizontal' as const, onPress: () => menus.openProjectMenu({ folder, projectPageId: folder.projectPageId!, onOpen: () => undefined, onCreateFolder: () => setNewFolderDraft({ parentPageId: folder.projectPageId! }) }) }] : []),
     { id: 'create', label: '드래프트 카드 추가', icon: 'add-outline', disabled: !folderSummary, onPress: () => folderCardsRef.current?.toggleCreate() },
-    { id: 'completed', label: '완료·취소 숨김', icon: folderCardDisplay.includeCompleted ? 'eye-outline' : 'eye-off-outline', selected: !folderCardDisplay.includeCompleted,
+    { id: 'completed', label: '완료·취소 숨김', menuLabel: folderCardDisplay.includeCompleted ? '완료 카드 숨기기' : '완료 카드 보이기', icon: folderCardDisplay.includeCompleted ? 'eye-outline' : 'eye-off-outline', selected: !folderCardDisplay.includeCompleted,
       disabled: !folderSummary, onPress: () => folderCardDisplay.onChange(!folderCardDisplay.includeCompleted) },
   ];
   useRegisterDuoRailOverride(`folder-${folderPageId}`, duo && active, railActions, onClose ? 'replace' : 'prepend');

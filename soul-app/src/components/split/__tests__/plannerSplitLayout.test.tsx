@@ -73,6 +73,8 @@ describe('iPad v3 planner shell', () => {
       paneLeftWidth: 240,
       paneMiddleWidth: 480,
       paneMiddleWidthTwoPane: null,
+      settingsVisible: false,
+      cardBoardExpanded: false,
     });
   });
 
@@ -101,6 +103,8 @@ describe('iPad v3 planner shell', () => {
     expect(screen.getByTestId('duo-main-create')).toBeTruthy();
     await act(async () => { useUIStore.setState({ folderOverlayVisible: true }); });
     expect(screen.getByTestId('duo-main-band-capsule')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('duo-main-settings'));
+    expect(useUIStore.getState().settingsVisible).toBe(true);
   });
 
   it('확대 보드와 설정 모달이 열리면 바깥 듀오 레일을 숨기고 닫으면 복원한다', () => {
@@ -125,7 +129,7 @@ describe('iPad v3 planner shell', () => {
     expect(screen.getByTestId('duo-main-view')).toBeTruthy();
     expect(screen.getByTestId('duo-main-menu')).toBeTruthy();
     expect(screen.getByTestId('duo-main-search')).toBeTruthy();
-    expect(screen.getByTestId('tablet-persistent-entry')).toBeTruthy();
+    expect(screen.queryByTestId('tablet-persistent-entry')).toBeNull(); // 이 하니스에는 PAS host가 없다.
     act(() => usePhoneRailActions.getState().pushOverride(card, [{ id: 'close', label: '닫기', icon: 'close', onPress: jest.fn() }]));
     expect(screen.getByTestId('duo-rail-action-close')).toBeTruthy();
     expect(StyleSheet.flatten(screen.getByTestId('duo-main-band-capsule').props.style)).toMatchObject({ width: 48, height: 48 });
@@ -138,7 +142,7 @@ describe('iPad v3 planner shell', () => {
     act(() => usePhoneRailActions.getState().removeOverride(folder));
   });
 
-  it('키보드가 올라오면 상단 뒤로와 하단 레일이 겹치지 않고 하단 행동은 스크롤할 수 있다', () => {
+  it('키보드가 올라오면 상단 뒤로와 하단 레일이 겹치지 않고 행동은 더 보기로 접힌다', () => {
     const previousWindow = ReactNative.Dimensions.get('window');
     const previousScreen = ReactNative.Dimensions.get('screen');
     ReactNative.Dimensions.set({ window: { width: 951, height: 669, scale: 1, fontScale: 1 }, screen: { width: 951, height: 669, scale: 1, fontScale: 1 } });
@@ -155,12 +159,11 @@ describe('iPad v3 planner shell', () => {
     expect(StyleSheet.flatten(screen.getByTestId('duo-rail-back-capsule').props.style)).toMatchObject({ width: 48, height: 48 });
     expect(StyleSheet.flatten(screen.getByTestId('duo-rail-action-close').props.style)).toMatchObject({ width: 48, height: 48 });
     const band = StyleSheet.flatten(screen.getByTestId('duo-main-band').props.style);
-    const scroll = screen.getByTestId('duo-main-actions-scroll');
-    expect(scroll.props.keyboardShouldPersistTaps).toBe('handled');
-    expect(within(screen.getByTestId('duo-main-band-capsule')).getByTestId('duo-main-actions-scroll')).toBeTruthy();
-    expect(scroll.props.style.maxHeight).toBe(StyleSheet.flatten(screen.getByTestId('duo-main-band-capsule').props.style).maxHeight);
-    expect(StyleSheet.flatten(screen.getByTestId('duo-main-band-capsule').props.style).maxHeight).toBeLessThanOrEqual(669 - band.bottom - 200 - 50);
-    expect(screen.getByTestId('duo-rail-action-five')).toBeTruthy();
+    expect(band.bottom).toBe(300);
+    expect(screen.queryByTestId('duo-main-actions-scroll')).toBeNull();
+    expect(screen.getByTestId('duo-rail-action-more')).toBeTruthy();
+    expect(screen.queryByTestId('duo-rail-action-five')).toBeNull();
+    expect(StyleSheet.flatten(screen.getByTestId('duo-main-band-capsule').props.style).height).toBeLessThanOrEqual(669 - band.bottom - 200 - 56);
     act(() => usePhoneRailActions.getState().removeOverride(key));
     screen.unmount();
     ReactNative.Dimensions.set({ window: previousWindow, screen: previousScreen });

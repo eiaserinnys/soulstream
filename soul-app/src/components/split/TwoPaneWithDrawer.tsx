@@ -30,6 +30,11 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import type { MainListPaneHandle } from './MainListPane';
 import { useActiveDuoRailOverrideEntry } from '../../navigation/phoneRailActions';
 import { DuoRailOverride } from '../navigation/DuoRailOverride';
+import { NavigationContext } from '@react-navigation/native';
+import { useOptionalPersistentSessionHost } from '../../navigation/PersistentSessionContext';
+import { ROOT_SECTION_CONFIG } from '../../navigation/rootSectionConfig';
+import { duoRailLayout } from '../../navigation/duoRailLayout';
+import type { PhoneRailAction } from '../../navigation/phoneRailActions';
 
 const DRAWER_WIDTH = 280;
 const ANIM_MS = 240;
@@ -65,14 +70,9 @@ export function TwoPaneWithDrawer() {
   const board = activeSection.kind === 'daily' || views[activeSection.folderId] === 'board';
   const showRootNavigation = !override?.actions.length || override.mode === 'prepend';
   const { backAction, mainActions } = splitDuoRailBackAction(override?.actions);
-  const hasLowerActions = mainActions.length > 0 || showRootNavigation;
-  const rootActionCount = showRootNavigation ? (board ? 3 : 0) + (activeSection.kind === 'project' ? 1 : 0) + 3 : 0;
-  const railCompact = (override?.actions.length ?? 0) + rootActionCount >= 7 || screenHeight < 500;
   const railBottom = Math.max(keyboardOverlap, insets.bottom, t.uiSpacing.xxl);
-  const lowerRailMaxHeight = backAction && keyboardOverlap > 0
-    ? Math.max(0, screenHeight - railBottom - getDuoRailTopOffset(screenWidth, screenHeight)
-      - RAIL_CAPSULE_WIDTH - t.uiSpacing.xs)
-    : undefined;
+  const navigation = React.useContext(NavigationContext);
+  const persistentHost = useOptionalPersistentSessionHost();
   const cardDisplay = useCardDisplay(activeSection.kind === 'project' ? activeSection.folderId : undefined);
   const searchActive = useSearchStore(state => state.tabletActive);
   // 회전·폴드 직후에는 이전 프레임의 측정값이 남아 pane 폭이 한 번 튄다.
@@ -118,6 +118,42 @@ export function TwoPaneWithDrawer() {
     paneMiddleWidth,
     paneMiddleWidthTwoPane,
   });
+  const rootScreen: PhoneRailAction[] = showRootNavigation ? [
+    ...(board ? [
+      { id: 'create', label: '드래프트 카드 추가', icon: 'add-outline' as const, onPress: () => mainRef.current?.openCreate() },
+      { id: 'completed', label: '완료·취소 숨김', menuLabel: cardDisplay.includeCompleted ? '완료 카드 숨기기' : '완료 카드 보이기',
+        icon: cardDisplay.includeCompleted ? 'eye-outline' as const : 'eye-off-outline' as const,
+        selected: !cardDisplay.includeCompleted, onPress: () => cardDisplay.onChange(!cardDisplay.includeCompleted) },
+      { id: 'expand', label: '보드 확대', icon: 'expand-outline' as const, onPress: () => mainRef.current?.openExpanded() },
+    ] : []),
+    { id: 'search', label: searchActive ? '검색 닫기' : '세션 검색', icon: 'search-outline', selected: searchActive,
+      onPress: () => searchActive ? useSearchStore.getState().closeTabletSearch() : useSearchStore.getState().openTabletSearch() },
+    ...(activeSection.kind === 'project' ? [{ id: 'view', kind: 'view' as const, label: board ? '기존 보기' : '카드 보드',
+      icon: board ? 'list-outline' as const : 'grid-outline' as const,
+      onPress: () => useUIStore.getState().setMainPaneView(activeSection.folderId, board ? 'existing' : 'board') }] : []),
+  ] : [];
+  const rootNav: PhoneRailAction[] = showRootNavigation ? [
+    ...(persistentHost && navigation ? [{ id: 'pas', kind: 'nav' as const, label: '영구 세션 열기', icon: 'person-circle-outline' as const,
+      onPress: () => { void persistentHost.requestEntry(() => navigation.navigate('PersistentSession' as never)); } }] : []),
+    { id: 'drawer', kind: 'nav', label: '메뉴', icon: 'menu', onPress: () => setDrawerOpen(true) },
+    { id: 'settings', kind: 'settings', label: ROOT_SECTION_CONFIG.SettingsTab.title, icon: ROOT_SECTION_CONFIG.SettingsTab.icon,
+      onPress: () => useUIStore.getState().openSettings() },
+  ] : [];
+  const menu = mainActions.find(item => item.kind === 'menu') ?? null;
+  const layout = duoRailLayout({ exit: backAction?.disabled ? null : backAction,
+    screen: [...mainActions.filter(item => item.kind !== 'menu' && item.kind !== 'rare'), ...rootScreen], nav: rootNav,
+    rare: mainActions.filter(item => item.kind === 'rare'), menu, windowHeight: screenHeight,
+    topStart: getDuoRailTopOffset(screenWidth, screenHeight), bottomReserve: Math.max(insets.bottom, t.uiSpacing.xxl), keyboardOverlap,
+    tokens: { spacingXs: t.spacing.xs, uiSpacingXs: t.uiSpacing.xs, uiSpacingSm: t.uiSpacing.sm, hitTargetMin: t.hitTarget.min } });
+  const renderRailAction = (item: PhoneRailAction) => {
+    if (item.id === 'pas') return <TabletPersistentEntry key={item.id} rail />;
+    const testID = item === layout.exit || mainActions.some(action => action.id === item.id) || item.id === 'more'
+      ? `duo-rail-action-${item.id}` : `duo-main-${item.id === 'drawer' ? 'menu' : item.id}`;
+    return <RailCapsuleItem key={item.id} testID={testID} label={item.label} selected={item.selected}
+      badgeCount={item.badgeCount} dot={item.dot} disabled={item.disabled} onPress={item.onPress}>
+      <Ionicons name={item.icon} color={item.selected ? t.colors.accent : t.colors.textMuted} size={t.iconSize.standard} />
+    </RailCapsuleItem>;
+  };
 
   return (
     <View style={{ flex: 1 }}>
@@ -191,56 +227,22 @@ export function TwoPaneWithDrawer() {
     {duo && !cardBoardExpanded && !settingsVisible ? <AppKeyboardAvoidingView
       pointerEvents="box-none" behavior="padding" onOverlapChange={setKeyboardOverlap}
       style={StyleSheet.absoluteFill}>
-      {backAction ? <View pointerEvents="box-none" style={{ position: 'absolute', top: getDuoRailTopOffset(screenWidth, screenHeight),
-        right: (insets.right - 48 + DUO_RAIL_END_INSET) / 2 }}>
-        <RailCapsule testID={hasLowerActions ? 'duo-rail-back-capsule' : 'duo-main-band-capsule'} compact={railCompact}>
-          <RailCapsuleItem testID={`duo-rail-action-${backAction.id}`} label={backAction.label} selected={backAction.selected}
-            badgeCount={backAction.badgeCount} dot={backAction.dot} disabled={backAction.disabled} onPress={backAction.onPress}>
-            <Ionicons name={backAction.icon} color={backAction.selected ? t.colors.accent : t.colors.textMuted} size={t.iconSize.standard} />
-          </RailCapsuleItem>
+      {layout.exit ? <View pointerEvents="box-none" style={{ position: 'absolute', top: getDuoRailTopOffset(screenWidth, screenHeight),
+        right: (insets.right - RAIL_CAPSULE_WIDTH + DUO_RAIL_END_INSET) / 2 }}>
+        <RailCapsule testID={layout.screen.length || layout.nav.length ? 'duo-rail-back-capsule' : 'duo-main-band-capsule'} compact={layout.compact}>
+          {renderRailAction(layout.exit)}
         </RailCapsule>
       </View> : null}
-      {hasLowerActions ?
-      <View testID="duo-main-band" pointerEvents="box-none" style={{
-        position: 'absolute', right: 0, width: insets.right, alignItems: 'center',
-        paddingRight: DUO_RAIL_END_INSET,
-        bottom: railBottom,
+      {layout.screen.length || layout.nav.length ? <View testID="duo-main-band" pointerEvents="box-none" style={{
+        position: 'absolute', right: 0, width: insets.right, alignItems: 'center', paddingRight: DUO_RAIL_END_INSET,
+        bottom: railBottom, gap: layout.compact ? t.uiSpacing.xs : t.uiSpacing.sm,
       }}>
-        <RailCapsule testID="duo-main-band-capsule" compact={railCompact}
-          maxHeight={lowerRailMaxHeight} scrollTestID="duo-main-actions-scroll">
-          {mainActions.map(action => <RailCapsuleItem key={action.id} testID={`duo-rail-action-${action.id}`}
-            label={action.label} selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
-            <Ionicons name={action.icon} color={action.selected ? t.colors.accent : t.colors.textMuted} size={t.iconSize.standard} />
-          </RailCapsuleItem>)}
-          {showRootNavigation ? <>
-          {board ? <>
-            <RailCapsuleItem testID="duo-main-create" label="드래프트 카드 추가" onPress={() => mainRef.current?.openCreate()}>
-              <Ionicons name="add-outline" color={t.colors.textMuted} size={t.iconSize.standard} />
-            </RailCapsuleItem>
-            <RailCapsuleItem testID="duo-main-completed" label="완료·취소 숨김" selected={!cardDisplay.includeCompleted}
-              onPress={() => cardDisplay.onChange(!cardDisplay.includeCompleted)}>
-              <Ionicons name={cardDisplay.includeCompleted ? 'eye-outline' : 'eye-off-outline'}
-                color={cardDisplay.includeCompleted ? t.colors.textMuted : t.colors.accent} size={t.iconSize.standard} />
-            </RailCapsuleItem>
-            <RailCapsuleItem testID="duo-main-expand" label="보드 확대" onPress={() => mainRef.current?.openExpanded()}>
-              <Ionicons name="expand-outline" color={t.colors.textMuted} size={t.iconSize.standard} />
-            </RailCapsuleItem>
-          </> : null}
-          {activeSection.kind === 'project' ? <RailCapsuleItem testID="duo-main-view" label={board ? '기존 보기' : '카드 보드'}
-            onPress={() => useUIStore.getState().setMainPaneView(activeSection.folderId, board ? 'existing' : 'board')}>
-            <Ionicons name={board ? 'list-outline' : 'grid-outline'} color={t.colors.textMuted} size={t.iconSize.standard} />
-          </RailCapsuleItem> : null}
-          <RailCapsuleItem testID="duo-main-menu" label="메뉴" onPress={() => setDrawerOpen(true)}>
-            <Ionicons name="menu" color={t.colors.textMuted} size={t.iconSize.standard} />
-          </RailCapsuleItem>
-          <RailCapsuleItem testID="duo-main-search" label={searchActive ? '검색 닫기' : '세션 검색'}
-            selected={searchActive} onPress={() => searchActive
-              ? useSearchStore.getState().closeTabletSearch() : useSearchStore.getState().openTabletSearch()}>
-            <Ionicons name="search-outline" color={searchActive ? t.colors.accent : t.colors.textMuted} size={t.iconSize.standard} />
-          </RailCapsuleItem>
-          <TabletPersistentEntry rail />
-          </> : null}
-        </RailCapsule>
+        {layout.screen.length ? <RailCapsule testID="duo-main-band-capsule" compact={layout.compact}>
+          {layout.screen.map(renderRailAction)}
+        </RailCapsule> : null}
+        {layout.nav.length ? <RailCapsule testID="duo-main-navigation-capsule" compact={layout.compact}>
+          {layout.nav.map(renderRailAction)}
+        </RailCapsule> : null}
       </View> : null}
     </AppKeyboardAvoidingView> : null}
     {duoTopBand && !cardBoardExpanded && !settingsVisible
