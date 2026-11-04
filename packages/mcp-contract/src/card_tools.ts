@@ -43,7 +43,7 @@ export const cardTools = {
       caller_session_id: callerSessionIdSchema },
   }, audience: "all" },
   get_card: { name: "get_card", config: {
-    description: "기본은 카드 현황, 저장된 결과와 근거, 미답 질문, 전문별 이용 가능 수와 changeToken만 반환합니다. include로 필요한 종류만 펼치고 limit/text_limit/cursors로 페이지를 읽습니다. since가 같으면 unchanged만 반환하고, 바뀐 종류는 현재값으로 교체(replace)됩니다.",
+    description: "card_id에 전체 UUID, 카드 번호(#785) 또는 숫자 문자열(785)을 넣습니다. 기본은 카드 현황, 저장된 결과와 근거, 미답 질문, 전문별 이용 가능 수와 changeToken만 반환합니다. include로 필요한 종류만 펼치고 limit/text_limit/cursors로 페이지를 읽습니다. since가 같으면 unchanged만 반환하고, 바뀐 종류는 현재값으로 교체(replace)됩니다.",
     inputSchema: { ...scope, include: z.array(z.enum(["request", "brief", "attachments", "comments", "notes", "reports", "sessions", "now_history", "questions_history"])).optional(),
       limit: z.number().int().min(1).max(50).optional().describe("각 목록 페이지의 항목 수. 정수 1~50, 생략 시 20."), text_limit: z.number().int().min(1).max(4000).optional().describe("텍스트 전문 한 페이지의 문자 수. 정수 1~4000, 생략 시 4000. 다음 페이지는 해당 전문의 nextCursor를 cursors에 넣어 읽는다."),
       cursors: z.record(z.string(), id).optional(), since: id.optional() },
@@ -107,7 +107,7 @@ export const cardTools = {
     inputSchema: { ...scope,text:z.string() },
   }, audience: "internal" },
   list_card_notes: { name: "list_card_notes", config: {
-    description: "담당 카드의 작업 노트를 최신순으로 읽습니다. 다음 목록은 before에 직전 목록의 nextCursor를 넣어 읽으세요.",
+    description: "카드의 작업 노트를 최신순으로 읽습니다. 다음 목록은 before에 직전 목록의 nextCursor를 넣어 읽으세요.",
     inputSchema: { ...scope,limit:z.number().int().min(1).max(100).optional().describe("페이지당 노트 수. 정수 1~100, 생략 시 20. 다음 페이지는 nextCursor를 before로 전달한다."),before:id.optional() },
   }, audience: "internal" },
 } as const;

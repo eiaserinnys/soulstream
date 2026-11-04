@@ -56,7 +56,15 @@ export const cardHandlers = {
   get_card: (o, a) => run(() => request(async () => {
     const service = await o.cards.cardServiceProvider!();
     const allowedFolderIds = await mcpAllowedFolderIds(o.cards);
-    return service.mcpRead.getCard(String(a.card_id), getReadInput(a), allowedFolderIds);
+    let cardId = String(a.card_id);
+    if (/^[1-9][0-9]{0,8}$/.test(cardId)) {
+      const [resolved] = await service.resolveReferences([`#${cardId}`], folderId => allowedFolderIds === null || allowedFolderIds.includes(folderId));
+      if (!resolved || "error" in resolved) throw Object.assign(new Error("Card not found"), { statusCode: 404, code: "CARD_NOT_FOUND" });
+      cardId = resolved.id;
+    } else if (/^[a-fA-F0-9]{8}$/.test(cardId)) {
+      throw Object.assign(new Error("card_id는 전체 UUID나 카드 번호(#785)를 받습니다. 모르면 search_cards로 찾으세요."), { statusCode: 400 });
+    }
+    return service.mcpRead.getCard(cardId, getReadInput(a), allowedFolderIds);
   })),
   update_card_brief: (o, a, c) => append(o.cards, "update_card_brief", a, c, { brief: a.brief }, true),
   add_card_report: (o, a, c) => append(o.cards, "add_card_report", a, c, { title: a.title, format: a.format, body: a.body }),
