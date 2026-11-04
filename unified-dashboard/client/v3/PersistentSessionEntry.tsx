@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { DashboardIconCap, Popover, PopoverPopup, PopoverTrigger, ProfileAvatar, useAuth } from '@seosoyoung/soul-ui';
+import { DashboardIconCap, Popover, PopoverPopup, PopoverTrigger, ProfileAvatar, useAuth, useIsMobile } from '@seosoyoung/soul-ui';
 import { ArrowLeftRight } from 'lucide-react';
 import { navigateDashboard } from '../dashboard-navigation';
 import { createPersistentSessionsApi, type PersistentSession, type PersistentSessionList } from '../lib/persistent-sessions';
@@ -17,12 +17,14 @@ export function PersistentSessionChoiceRow({ session, selected, onSelect }: { se
 
 export function PersistentSessionSwitch({ sessions, currentSessionId }: { sessions: PersistentSession[]; currentSessionId?: string }) {
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const isMobile = useIsMobile();
   if (sessions.length < 2) return null;
   return <Popover open={open} onOpenChange={setOpen}>
-    <PopoverTrigger render={<DashboardIconCap appearance="bare" label="영구 세션 바꾸기" data-testid="persistent-session-switch"/>}>
+    <PopoverTrigger render={<DashboardIconCap ref={triggerRef} appearance="bare" label="영구 세션 바꾸기" data-testid="persistent-session-switch"/>}>
       <ArrowLeftRight className="size-5" strokeWidth={1.4} absoluteStrokeWidth aria-hidden="true"/>
     </PopoverTrigger>
-    <PopoverPopup align="end" className="v3-popup-chrome"><div className="v3-surface">{sessions.map(session => <PersistentSessionChoiceRow key={session.session_id} session={session} selected={session.session_id === currentSessionId} onSelect={() => {
+    <PopoverPopup align="end" anchor={isMobile ? triggerRef.current?.closest<HTMLElement>('.dashboard-toolbar-actions') ?? undefined : undefined} className="v3-popup-chrome"><div className="v3-surface">{sessions.map(session => <PersistentSessionChoiceRow key={session.session_id} session={session} selected={session.session_id === currentSessionId} onSelect={() => {
       setOpen(false);
       if (session.session_id !== currentSessionId) navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`);
     }}/>)}</div></PopoverPopup>
@@ -32,6 +34,8 @@ export function PersistentSessionSwitch({ sessions, currentSessionId }: { sessio
 /** Existing chrome cap and settings selection rows are the only home additions. */
 export function PersistentSessionEntry() {
   const { user } = useAuth();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const isMobile = useIsMobile();
   const api = useMemo(() => createPersistentSessionsApi(), []);
   const [listing, setListing] = useState<PersistentSessionList | null>(null);
   const [open, setOpen] = useState(false);
@@ -58,8 +62,8 @@ export function PersistentSessionEntry() {
   };
   return <>
     <Popover open={open} onOpenChange={next => { if (!next) setOpen(false); }}>
-      <PopoverTrigger render={<DashboardIconCap label="영구 세션 열기" data-testid="persistent-session-entry" onClick={enter}/> }><ProfileAvatar role="assistant" shape="circle" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji="🤖"/></PopoverTrigger>
-      <PopoverPopup align="end" className="v3-popup-chrome"><div className="v3-surface">{listing?.sessions.map(session => <PersistentSessionChoiceRow key={session.session_id} session={session} selected={lastId === session.session_id} onSelect={() => { setOpen(false); navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`); }}/>)}</div></PopoverPopup>
+      <PopoverTrigger render={<DashboardIconCap ref={triggerRef} label="영구 세션 열기" data-testid="persistent-session-entry" onClick={enter}/> }><ProfileAvatar role="assistant" shape="circle" hasPortrait={Boolean(portrait)} portraitUrl={portrait} fallbackEmoji="🤖"/></PopoverTrigger>
+      <PopoverPopup align="end" anchor={isMobile ? triggerRef.current?.closest<HTMLElement>('.dashboard-toolbar-actions') ?? undefined : undefined} className="v3-popup-chrome"><div className="v3-surface">{listing?.sessions.map(session => <PersistentSessionChoiceRow key={session.session_id} session={session} selected={lastId === session.session_id} onSelect={() => { setOpen(false); navigateDashboard(`/persistent/${encodeURIComponent(session.session_id)}`); }}/>)}</div></PopoverPopup>
     </Popover>
     <ConfigModal open={configOpen} onOpenChange={setConfigOpen} initialTab="persistent"/>
   </>;

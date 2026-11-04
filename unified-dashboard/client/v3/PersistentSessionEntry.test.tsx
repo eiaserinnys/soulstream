@@ -1,14 +1,29 @@
 /** @vitest-environment jsdom */
 import { act } from 'react';import { createRoot } from 'react-dom/client';import { afterEach,expect,it,vi } from 'vitest';
-import { PersistentSessionEntry } from './PersistentSessionEntry';
+import { PersistentSessionEntry, PersistentSessionSwitch } from './PersistentSessionEntry';
 import { V3GlobalToolbar } from './V3GlobalToolbar';
-const mocks=vi.hoisted(()=>({list:vi.fn(),navigate:vi.fn(),create:vi.fn()}));
-vi.mock('@seosoyoung/soul-ui',async()=>({...await vi.importActual<any>('@seosoyoung/soul-ui'),useAuth:()=>({user:{email:'entry@example.com'}})}));
+const mocks=vi.hoisted(()=>({list:vi.fn(),navigate:vi.fn(),create:vi.fn(),mobile:false,anchors:[] as unknown[]}));
+vi.mock('@seosoyoung/soul-ui',async()=>{const React=await import('react');const actual=await vi.importActual<any>('@seosoyoung/soul-ui');return {...actual,useAuth:()=>({user:{email:'entry@example.com'}}),useIsMobile:()=>mocks.mobile,PopoverPopup:(props:any)=>{mocks.anchors.push(props.anchor);return React.createElement(actual.PopoverPopup,props)}}});
 vi.mock('../lib/persistent-sessions',()=>({createPersistentSessionsApi:()=>({list:mocks.list})}));
 vi.mock('../dashboard-navigation',()=>({navigateDashboard:(...a:any[])=>mocks.navigate(...a)}));
 vi.mock('../components/ConfigModal',()=>({ConfigModal:(p:any)=>p.open?<div data-testid="entry-config"><button onClick={()=>mocks.create()}>첫 PAS 생성</button><button onClick={()=>p.onOpenChange(false)}>설정 닫기</button></div>:null}));
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT=true;
-afterEach(()=>{vi.clearAllMocks();document.body.innerHTML='';});
+afterEach(()=>{vi.clearAllMocks();mocks.mobile=false;mocks.anchors=[];document.body.innerHTML='';});
+it.each([true,false])('uses the toolbar as the popover anchor only on mobile: %s',async(mobile)=>{
+ mocks.mobile=mobile;
+ const sessions=[{session_id:'first',node_id:'node',agent_id:'default',display_name:'첫 PAS'},{session_id:'second',node_id:'node',agent_id:'default',display_name:'둘째 PAS'}];
+ mocks.list.mockResolvedValue({sessions});
+ const host=document.createElement('div');host.className='dashboard-toolbar-actions';document.body.append(host);const root=createRoot(host);
+ try {
+  await act(async()=>root.render(<PersistentSessionEntry/>));
+  await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="persistent-session-entry"]')!.click());
+  const home=mocks.anchors.at(-1);
+  await act(async()=>root.render(<PersistentSessionSwitch sessions={sessions as any} currentSessionId="first"/>));
+  await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="persistent-session-switch"]')!.click());
+  const switcher=mocks.anchors.at(-1);
+  expect([home,switcher]).toEqual(mobile?[host,host]:[undefined,undefined]);
+ } finally {await act(async()=>root.unmount());}
+});
 it('adds only the first chrome action and preserves brand, search, config and theme',async()=>{mocks.list.mockResolvedValue({sessions:[{session_id:'a',node_id:'n',agent_id:'a'}]});const host=document.createElement('div');document.body.append(host);const root=createRoot(host);await act(async()=>root.render(<V3GlobalToolbar onOpenConfig={vi.fn()} onOpenSearch={vi.fn()}/>));expect(host.querySelector('.dashboard-toolbar-brand')?.textContent).toBe('Soulstream');expect(host.querySelector('.dashboard-toolbar-search')?.textContent).toContain('Search sessions');expect(host.querySelector('.dashboard-toolbar-actions')?.firstElementChild?.getAttribute('data-testid')).toBe('persistent-session-entry');expect(host.querySelector('[data-testid="persistent-session-entry"] img')?.className).toContain('rounded-full');await act(async()=>host.querySelector<HTMLButtonElement>('[data-testid="persistent-session-entry"]')!.click());expect(mocks.navigate).toHaveBeenCalledWith('/persistent/a');act(()=>root.unmount());});
 it('opens existing create settings for zero PAS',async()=>{mocks.list.mockResolvedValue({sessions:[],create_defaults:{node_id:'node',preferred_agent_id:'default'}});const host=document.createElement('div');document.body.append(host);const root=createRoot(host);await act(async()=>root.render(<PersistentSessionEntry/>));expect(host.querySelector('img')?.getAttribute('src')).toBe('/api/nodes/node/agents/default/portrait');await act(async()=>host.querySelector<HTMLButtonElement>('button')!.click());expect(host.querySelector('[data-testid="entry-config"]')).not.toBeNull();act(()=>root.unmount());});
 
