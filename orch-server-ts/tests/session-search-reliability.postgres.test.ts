@@ -320,6 +320,10 @@ describePostgres("session search reliability PostgreSQL integration", () => {
       "../../packages/db-schema/sql/migrations/134_event_search_read_v2.sql",
       import.meta.url,
     )), "utf8");
+    const scopedReadMigration = readFileSync(fileURLToPath(new URL(
+      "../../packages/db-schema/sql/migrations/144_event_search_scoped_term_first.sql",
+      import.meta.url,
+    )), "utf8");
 
     // Historical 103 reader uses this read-only projection of the same v2 fixture.
     await sql.unsafe(`CREATE VIEW event_search_terms AS
@@ -366,9 +370,10 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     await sql`CREATE INDEX IF NOT EXISTS event_search_dictionary_prefix_cover
       ON event_search_dictionary ((term COLLATE "C")) INCLUDE (term_id, term)`;
     await sql.begin((tx) => tx.unsafe(readV2Migration));
+    await sql.begin((tx) => tx.unsafe(scopedReadMigration));
     const afterFirstMigration = await readFunctionDefinition(sql, "event_search");
     expect(await readPrefixIndexDefinition(sql)).toEqual(canonicalIndex);
-    await sql.begin((tx) => tx.unsafe(readV2Migration));
+    await sql.begin((tx) => tx.unsafe(scopedReadMigration));
     const afterReplay = await readFunctionDefinition(sql, "event_search");
     expect(afterFirstMigration[0]?.definition).toBe(canonicalDefinition[0]?.definition);
     expect(afterReplay[0]?.definition).toBe(canonicalDefinition[0]?.definition);
@@ -502,6 +507,11 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     const filteredPreset = await runSearchFunction(sql, "event_search", filteredArgs);
     expect(filteredPreset).toHaveLength(1);
     expect(filteredPreset[0]?.session_id).toBe("search-filter-preset");
+    const deniedScoped = await runSearchFunction(sql, "event_search", {
+      ...commonArgs, query: "secretphrase", sessionIds: ["denied-session"],
+      folderIds: ["folder-allowed"],
+    });
+    expect(deniedScoped).toEqual([]);
 
     const fallbackArgs: EventSearchArguments = {
       ...filteredArgs,
