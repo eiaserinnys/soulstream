@@ -4,8 +4,48 @@ import { flattenTree, clearFlattenTreeCache } from "./flatten-tree";
 import { projectPersistentChatDisplayMessages } from "./persistent-jev-candidates";
 import { projectPersistentTurnUsage } from "./persistent-turn-usage-projection";
 import { createNodeFromEvent } from "../stores/node-factory";
+import { projectHiddenInputTurns } from "./persistent-cache-keepalive";
 
 const keepaliveText = "캐시 유지용 호출입니다. 도구를 쓰지 말고 '[SILENT]'만 답하십시오.";
+
+describe("card notice turn projection", () => {
+  type Row = { treeNodeType: string; content: string; inputId?: string; cardNotice?: boolean; cacheKeepalive?: boolean };
+  const input = (id: string, cardNotice = false): Row => ({ treeNodeType: "user_message", inputId: id, cardNotice, content: id });
+  const row = (type: string, content: string, inputId?: string): Row => ({ treeNodeType: type, content, inputId });
+  const project = (messages: Row[]) => projectHiddenInputTurns(messages);
+
+  it("hides a notice turn including tool, stream and terminal while retaining divider and error", () => {
+    const notice = input("notice", true);
+    const result = project([notice, row("tool", "tool"), row("thinking", "thinking"), row("text", "stream"), row("generation_started", "divider"), row("error", "error")]);
+    expect(result.messages.map(item => item.content)).toEqual(["divider", "error"]);
+    expect(result.suppressStreaming).toBe(false);
+    expect(project([notice, row("tool", "tool")]).suppressStreaming).toBe(true);
+    expect(project([notice, row("complete", "complete")]).messages).toEqual([]);
+  });
+
+  it("retains ordinary turns around a notice and hides a late notice anchor", () => {
+    const result = project([input("before"), row("text", "before answer"), row("complete", "before end"), input("notice", true), row("text", "hidden"), row("complete", "hidden end"), row("debug", "late", "notice"), input("after"), row("text", "after answer")]);
+    expect(result.messages.map(item => item.content)).toEqual(["before", "before answer", "before end", "after", "after answer"]);
+  });
+
+  it.each([false, true])("a visible input interrupts a notice (prior output: %s)", (hasPriorOutput) => {
+    const events = [input("notice", true), ...(hasPriorOutput ? [row("text", "hidden before")] : []), input("human"), row("text", "visible answer", "notice")];
+    const result = project(events);
+    expect(result.messages.map(item => item.content)).toEqual(["human", "visible answer"]);
+    expect(result.suppressStreaming).toBe(false);
+  });
+
+  it("only hides the notice bubble when a visible input came first", () => {
+    const result = project([input("human"), input("notice", true), row("text", "answer", "notice"), row("complete", "end")]);
+    expect(result.messages.map(item => item.content)).toEqual(["human", "answer", "end"]);
+    expect(result.suppressStreaming).toBe(false);
+  });
+
+  it("retains the existing keepalive behavior when a visible input came first", () => {
+    const result = project([input("human"), { ...input("keepalive"), cacheKeepalive: true }, row("text", "hidden"), row("complete", "end")]);
+    expect(result.messages.map(item => item.content)).toEqual(["human"]);
+  });
+});
 
 function transcript(events: SoulSSEEvent[]): ReturnType<typeof flattenTree> {
   const root: EventTreeNode = {

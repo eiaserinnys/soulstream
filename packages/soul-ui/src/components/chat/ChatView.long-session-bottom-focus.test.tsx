@@ -581,6 +581,33 @@ describe("ChatView long-session initial bottom focus", () => {
     expect(geometry.scrollTo).not.toHaveBeenCalled();
   });
 
+  it.each(["default", "manuscript"] as const)("hides a live card notice, tool and thinking indicator in %s", async (presentation) => {
+    useDashboardStore.getState().setActiveSessionSummary({ status: "running" } as any);
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1), makeComplete(2)]);
+    ({ container, root } = await renderChatView({ presentation }));
+    expect(virtuosoData().some(item => item.type === "thinking-indicator")).toBe(true);
+
+    await addLiveEvent({ type: "user_message", input_id: "notice", text: "[카드 막힘] 맡긴 카드 #953 확인", caller_info: { source: "system" } } as unknown as SoulSSEEvent, 3);
+    expect(virtuosoData().some(item => item.type === "thinking-indicator")).toBe(false);
+    await addLiveEvent(makeToolStart(4).event, 4);
+    const items = virtuosoData();
+    expect(JSON.stringify(useDashboardStore.getState().tree)).toContain("tool-use-4");
+    expect(items.some(item => item.type === "thinking-indicator")).toBe(false);
+    expect(JSON.stringify(items)).not.toContain("맡긴 카드 #953");
+    expect(JSON.stringify(items)).not.toContain("tool-use-4");
+    await addLiveEvent({ type: "intervention_sent", text: "사람 개입" } as SoulSSEEvent, 5);
+    expect(virtuosoData().some(item => item.type === "thinking-indicator")).toBe(true);
+  });
+
+  it("suppresses the thinking indicator during a live keepalive turn", async () => {
+    useDashboardStore.getState().setActiveSessionSummary({ status: "running" } as any);
+    useDashboardStore.getState().processHistoryEvents([makeUserMessage(1)]);
+    ({ container, root } = await renderChatView({ presentation: "manuscript" }));
+    expect(virtuosoData().some(item => item.type === "thinking-indicator")).toBe(true);
+    await addLiveEvent({ type: "user_message", text: "keepalive", purpose: "cache_keepalive" } as SoulSSEEvent, 2);
+    expect(virtuosoData().some(item => item.type === "thinking-indicator")).toBe(false);
+  });
+
   it.each(["threshold", "returned-to-bottom"] as const)(
     "(라) 기본 모양은 %s 경로에서 기존처럼 새 메시지 버튼을 보인다",
     async (scenario) => {

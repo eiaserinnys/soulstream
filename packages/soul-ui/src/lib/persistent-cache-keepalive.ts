@@ -14,33 +14,46 @@ export function isCacheKeepaliveInput(value: unknown): boolean {
     || payload?.purpose === CACHE_KEEPALIVE_PURPOSE;
 }
 
-/** Hides each marked turn through its terminal while preserving dividers and unrelated anchored rows. */
-export function projectCacheKeepaliveTurns<T extends Pick<ChatMessage, "treeNodeType" | "cacheKeepalive">
+/** Hides marked inputs and their output while preserving dividers and errors. */
+export function projectHiddenInputTurns<T extends Pick<ChatMessage, "treeNodeType" | "cacheKeepalive" | "cardNotice">
   & Partial<Pick<ChatMessage, "inputId" | "preparedInputId">>>(
   messages: T[],
-): T[] {
+): { messages: T[]; suppressStreaming: boolean } {
   const hiddenInputIds = new Set<string>();
-  let hidingKeepaliveTurn = false;
-  return messages.filter((message) => {
+  const activeHiddenInputIds = new Set<string>();
+  let hiding = false;
+  let hasVisibleInput = false;
+  const visible = messages.filter((message) => {
     const isInput = message.treeNodeType === "user_message" || message.treeNodeType === "intervention";
     if (isInput) {
-      hidingKeepaliveTurn = message.cacheKeepalive === true;
-      if (hidingKeepaliveTurn && message.inputId) hiddenInputIds.add(message.inputId);
-      return !hidingKeepaliveTurn;
+      const hiddenInput = message.cacheKeepalive === true || message.cardNotice === true;
+      if (!hiddenInput) {
+        if (hiding) activeHiddenInputIds.forEach((id) => hiddenInputIds.delete(id));
+        activeHiddenInputIds.clear();
+        hiding = false;
+        hasVisibleInput = true;
+        return true;
+      }
+      if (message.cacheKeepalive || !hasVisibleInput) hiding = true;
+      if (hiding && message.inputId) {
+        hiddenInputIds.add(message.inputId);
+        activeHiddenInputIds.add(message.inputId);
+      }
+      return false;
     }
 
     if (message.treeNodeType === "generation_started") return true;
-    if (hidingKeepaliveTurn && message.treeNodeType === "complete") {
-      hidingKeepaliveTurn = false;
-      return false;
+    if (message.treeNodeType === "complete" || message.treeNodeType === "error") {
+      const wasHiding = hiding;
+      hiding = false;
+      hasVisibleInput = false;
+      activeHiddenInputIds.clear();
+      return !wasHiding || message.treeNodeType === "error";
     }
-    if (hidingKeepaliveTurn && message.treeNodeType === "error") {
-      hidingKeepaliveTurn = false;
-      return true;
-    }
-    if (hidingKeepaliveTurn) return false;
+    if (hiding) return false;
 
     const anchorIds = [message.inputId, message.preparedInputId];
     return !anchorIds.some((inputId) => inputId !== undefined && hiddenInputIds.has(inputId));
   });
+  return { messages: visible, suppressStreaming: hiding };
 }

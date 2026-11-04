@@ -267,6 +267,14 @@ describe("createNodeFromEvent", () => {
       expect((node as InterventionNode).cacheKeepalive).toBe(true);
     });
 
+    it.each(["user_message", "intervention_sent"] as const)("marks card notice inputs from flat and wrapped %s events", (type) => {
+      const text = "[카드 막힘] 맡긴 카드 #953 확인";
+      const make = (fields: object) => createNodeFromEvent({ type, text, ...fields } as unknown as SoulSSEEvent, 203);
+      expect(make({ caller_info: { source: "system" } })).toMatchObject({ cardNotice: true, cacheKeepalive: false });
+      expect(make({ payload: { text, callerInfo: { source: "system" } } })).toMatchObject({ cardNotice: true });
+      expect(make({ caller_info: { source: "browser" } })).toMatchObject({ cardNotice: false });
+    });
+
     it.each([
       [{ context_reset: true }, true],
       [{ context_reset: false }, false],

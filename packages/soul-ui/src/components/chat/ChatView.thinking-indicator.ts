@@ -45,8 +45,9 @@ export function buildChatTimelineItems(
   messages: ChatMessage[],
   sessionStatus: string | undefined,
   pending?: PendingChatSend,
+  suppressStreaming = false,
 ): ChatTimelineItem[] {
-  const showThinking = shouldShowChatThinkingIndicator(sessionStatus, messages);
+  const showThinking = !suppressStreaming && shouldShowChatThinkingIndicator(sessionStatus, messages);
   if (!showThinking && !pending) return grouped;
   const visibleItems = showThinking
     ? grouped.filter(
