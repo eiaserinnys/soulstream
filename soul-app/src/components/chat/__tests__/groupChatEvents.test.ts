@@ -933,3 +933,13 @@ describe('placePendingOptimistic', () => {
     expect(out.map((item) => item.key)).toEqual([`evt-${pending.id}`, 'tool-10']);
   });
 });
+
+test('manuscript acknowledgement suppression recognizes card notice inputs', () => {
+  const input = ev('card', 'user_message', {
+    text: '[카드 완료] 맡긴 카드 #953 완료',
+    caller_info: { source: 'system' },
+  });
+  const acknowledgement = ev('ack', 'assistant_message', { text: '네.' });
+  const items = [input, acknowledgement].map(event => ({ kind: 'event' as const, event, key: event.id }));
+  expect(projectManuscriptMessages(items).some(item => item.kind === 'event' && item.event.id === 'ack')).toBe(false);
+});

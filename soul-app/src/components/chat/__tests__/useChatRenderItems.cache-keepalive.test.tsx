@@ -278,3 +278,82 @@ test('generation_started stays visible while the keepalive turn remains active w
   expect(ids).toContain('52');
   expect(ids).not.toEqual(expect.arrayContaining(['50', '51']));
 });
+
+const cardNotice = (id: string, extra: Record<string, unknown> = {}) => event(id, 'user_message', {
+  text: '[카드 막힘] 맡긴 카드 #953 처리 중단',
+  caller_info: { source: 'system' },
+  input_id: 'notice-anchor',
+  ...extra,
+});
+
+test('card notice turns hide history and anchored late rows while preserving neighboring conversations', () => {
+  const events = [
+    ...humanTurn,
+    cardNotice('notice'),
+    event('generation', 'generation_started'),
+    event('tool', 'tool_start', { tool_use_id: 'notice-tool', tool_name: 'Read' }),
+    event('tool-result', 'tool_result', { tool_use_id: 'notice-tool' }),
+    event('answer', 'assistant_message', { text: '알림 답변' }),
+    event('done', 'complete'),
+    event('late', 'system', { input_id: 'notice-anchor', text: '늦은 행' }),
+    ...sameTextHumanTurn,
+  ];
+  const { result } = renderHook(() => renderItems(events));
+  const ids = sourceEventIds(result.current.reversedItems);
+
+  for (const id of ['1', '2', '3', 'generation', '9', '10', '11']) expect(ids).toContain(id);
+  for (const id of ['notice', 'tool', 'tool-result', 'answer', 'done', 'late']) expect(ids).not.toContain(id);
+});
+
+test('an open card notice suppresses streaming slots and typing; errors remain visible', () => {
+  const events = [cardNotice('notice'), event('generation', 'generation_started')];
+  const { result, rerender } = renderHook(
+    ({ slots, currentEvents }: { slots?: StreamingSlots; currentEvents: SessionEvent[] }) =>
+      renderItems(currentEvents, slots, 'running'),
+    { initialProps: { slots: {
+      assistant: event('live', 'assistant_message', { text: '실시간 답변' }),
+      thinking: event('thinking', 'thinking_delta', { text: '실시간 생각' }),
+      assistantSnapshotStreams: { stream: true },
+    } as StreamingSlots | undefined, currentEvents: events } },
+  );
+  for (const id of ['notice', 'live', 'thinking']) expect(sourceEventIds(result.current.reversedItems)).not.toContain(id);
+  expect(sourceEventIds(result.current.reversedItems)).toContain('generation');
+  expect(result.current.reversedItems.some(item => item.kind === 'typing')).toBe(false);
+
+  act(() => rerender({ slots: undefined, currentEvents: events }));
+  expect(result.current.reversedItems.some(item => item.kind === 'typing')).toBe(false);
+
+  act(() => rerender({ slots: undefined, currentEvents: [...events, event('error', 'error', { message: '오류' })] }));
+  expect(sourceEventIds(result.current.reversedItems)).toContain('error');
+});
+
+test.each([
+  ['notice then person', [cardNotice('notice'), event('person', 'user_message', { text: '사람' }), event('reply', 'assistant_message', { text: '답' })], []],
+  ['notice then output then person', [cardNotice('notice'), event('hidden', 'assistant_message', { text: '숨길 답' }), event('person', 'user_message', { text: '사람' }), event('reply', 'assistant_message', { text: '답' }), event('late-visible', 'system', { input_id: 'notice-anchor', text: '이후 행' })], ['hidden']],
+  ['person then notice', [event('person', 'user_message', { text: '사람' }), cardNotice('notice'), event('reply', 'assistant_message', { text: '답' })], []],
+])('%s preserves visible input and subsequent reply', (_label, events, hiddenIds) => {
+  const { result } = renderHook(() => renderItems(events));
+  const ids = sourceEventIds(result.current.reversedItems);
+  expect(ids).toEqual(expect.arrayContaining(['person', 'reply']));
+  expect(ids).not.toContain('notice');
+  for (const id of hiddenIds) expect(ids).not.toContain(id);
+  if (events.some(item => item.id === 'late-visible')) expect(ids).toContain('late-visible');
+});
+
+test('old system notices including nested payload are hidden, but the same human text stays visible', () => {
+  const text = '[카드 질문] 맡긴 카드 #953 확인';
+  const events = [
+    event('old', 'intervention_sent', { callerInfo: { source: 'system' }, text }),
+    event('old-answer', 'assistant_message', { text: '숨김' }),
+    event('old-end', 'complete'),
+    event('nested', 'user_message', { payload: { caller_info: { source: 'system' }, text, input_id: 'nested-anchor' } }),
+    event('nested-end', 'complete'),
+    event('nested-late', 'system', { input_id: 'nested-anchor', text: '늦은 행' }),
+    event('human', 'user_message', { caller_info: { source: 'browser' }, text }),
+    event('human-answer', 'assistant_message', { text: '보임' }),
+  ];
+  const { result } = renderHook(() => renderItems(events));
+  const ids = sourceEventIds(result.current.reversedItems);
+  for (const id of ['old', 'old-answer', 'old-end', 'nested', 'nested-end', 'nested-late']) expect(ids).not.toContain(id);
+  expect(ids).toEqual(expect.arrayContaining(['human', 'human-answer']));
+});

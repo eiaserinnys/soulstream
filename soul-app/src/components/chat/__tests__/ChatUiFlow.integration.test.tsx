@@ -12,7 +12,7 @@ import { useNodeConnectivityStore } from '../../../store/nodeConnectivityStore';
 import { useSSEStream } from '../../../hooks/useSSEStream';
 import { chatUiFixtureEvent } from '../../../component-review/chat-ui-fixtures';
 import { groupChatEvents, projectManuscriptMessages } from '../groupChatEvents';
-import { projectCacheKeepaliveTurns } from '../cacheKeepaliveProjection';
+import { projectHiddenConversationTurns } from '../hiddenConversationProjection';
 import type { SessionEvent } from '../../../api/types';
 
 // Existing ChatBody/AssistantMessage test patterns: replace OS transport and
@@ -258,10 +258,54 @@ test('PAS tool/thinking activity breaks at UI and preserves delegation/notificat
   const screen = await open('manuscript');
   const readEvents = useChatStore.getState().eventsBySession.one;
   expect(readEvents.map(event => event.id)).toEqual(events.map(event => event.id));
-  const projection = projectManuscriptMessages(groupChatEvents(projectCacheKeepaliveTurns(readEvents).displayEvents));
+  const projection = projectManuscriptMessages(groupChatEvents(projectHiddenConversationTurns(readEvents).displayEvents));
   const ids = projection.filter(item => item.kind === 'event').map(item => item.event.id);
   for (const id of ['5', '6', '7', '8']) expect(ids).not.toContain(id);
   expect(ids).toContain('3');
   expect(screen.getByLabelText('인원수')).toBeTruthy();
   expect(screen.queryByText('위임 보고')).toBeNull(); expect(screen.queryByText('자동 알림')).toBeNull();
+});
+
+test('PAS hides card notices in loaded history, live events, and reopened history', async () => {
+  const notice = { text: '[카드 막힘] 맡긴 카드 #953 중단', caller_info: { source: 'system' } };
+  const events: SessionEvent[] = [
+    { id: '1', type: 'user_message', data: { text: '이전 질문' } },
+    ui,
+    { id: '3', type: 'complete', data: {} },
+    { id: '4', type: 'user_message', data: notice },
+    { id: '5', type: 'assistant_message', data: { text: '알림 응답' } },
+    { id: '6', type: 'complete', data: {} },
+    { id: '7', type: 'user_message', data: { text: '다음 질문' } },
+    { id: '8', type: 'assistant_message', data: { text: '다음 답변' } },
+    { id: '9', type: 'complete', data: {} },
+  ];
+  const history = (rows: SessionEvent[]) => rows.slice().reverse().map(event => ({
+    id: Number(event.id), event_type: event.type, payload: event.data,
+    created_at: '2026-10-12T00:00:01Z', parent_event_id: null,
+  }));
+  mockApi.getTimeline.mockResolvedValue({ messages: history(events), next_cursor: null });
+  const screen = await open('manuscript');
+  expect(screen.getByText('이전 질문')).toBeTruthy();
+  expect(screen.getByText('다음 질문')).toBeTruthy();
+  expect(screen.getByText('다음 답변')).toBeTruthy();
+  expect(screen.queryByText(notice.text)).toBeNull();
+  expect(screen.queryByText('알림 응답')).toBeNull();
+
+  await sse('history_sync', { last_event_id: 9 });
+  await sse('user_message', notice, '10');
+  await sse('assistant_message', { text: '실시간 알림 응답' }, '11');
+  expect(screen.queryByText(notice.text)).toBeNull();
+  expect(screen.queryByText('실시간 알림 응답')).toBeNull();
+
+  screen.unmount();
+  useChatStore.setState({ eventsBySession: {}, lastEventIdBySession: {}, streamingSlotsBySession: {} });
+  mockApi.getTimeline.mockResolvedValue({ messages: history([
+    ...events,
+    { id: '10', type: 'user_message', data: notice },
+    { id: '11', type: 'assistant_message', data: { text: '실시간 알림 응답' } },
+  ]), next_cursor: null });
+  const reopened = await open('manuscript');
+  expect(reopened.getByText('다음 답변')).toBeTruthy();
+  expect(reopened.queryByText(notice.text)).toBeNull();
+  expect(reopened.queryByText('실시간 알림 응답')).toBeNull();
 });

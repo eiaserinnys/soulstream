@@ -16,7 +16,7 @@ import { projectPersistentWorkDetails } from './persistentWorkDetailsProjection'
 import { replaceEqualDeep } from '../../lib/structural-sharing';
 import { bottomFollowTargetKey } from './bottomFollow';
 import { projectPersistentTurnUsage } from './persistentTurnUsageProjection';
-import { projectCacheKeepaliveTurns } from './cacheKeepaliveProjection';
+import { isHiddenConversationInput, projectHiddenConversationTurns } from './hiddenConversationProjection';
 import { projectOutputAttachments } from '../../lib/output-attachment-projection';
 import { collapseReportTimeline } from '../../../../packages/wire-schema/src/persistent_report';
 
@@ -47,12 +47,12 @@ export function useChatRenderItems({
   reversedItems: ChatRenderItem[];
   bottomFollowItemKey: string | null;
 } {
-  const snapshotStreams = streamingSlots?.assistantSnapshotStreams;
-  const keepaliveProjection = useMemo(
-    () => projectCacheKeepaliveTurns(events, pendingOptimistic),
+  const hiddenProjection = useMemo(
+    () => projectHiddenConversationTurns(events, pendingOptimistic),
     [events, pendingOptimistic],
   );
-  const { displayEvents, suppressStreaming } = keepaliveProjection;
+  const { displayEvents, suppressStreaming } = hiddenProjection;
+  const snapshotStreams = suppressStreaming ? undefined : streamingSlots?.assistantSnapshotStreams;
   const placedRenderItems = useMemo<ChatRenderItem[]>(
     () => {
       const grouped = groupChatEvents(displayEvents, snapshotStreams, persistentDisplaySettings);
@@ -60,7 +60,8 @@ export function useChatRenderItems({
       const presented = presentation === 'manuscript'
         ? projectPersistentTurnUsage(withOutputAttachments, displayEvents, turnUsageMode)
         : withOutputAttachments;
-      return placePendingOptimistic(presented, pendingOptimistic);
+      return placePendingOptimistic(presented, pendingOptimistic && !isHiddenConversationInput(pendingOptimistic)
+        ? pendingOptimistic : undefined);
     },
     [displayEvents, pendingOptimistic, persistentDisplaySettings, presentation, snapshotStreams, turnUsageMode],
   );
