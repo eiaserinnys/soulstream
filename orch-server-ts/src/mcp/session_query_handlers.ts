@@ -1,7 +1,9 @@
 import { z } from "zod";
 import { sessionTools, errorResult, jsonResult, serializeSessionStoryView, serializeSessionStoryTurnSummary, type SessionStoryView } from "@soulstream/mcp-contract";
-import { searchSessionEvents } from "@soulstream/search-contract";
+import { searchSessionEvents, SessionHistorySearchDeadlineError as RequestDeadlineError } from "@soulstream/search-contract";
 import { DEFAULT_EXCLUDED_USER_MESSAGE_SOURCES } from "../control_plane/repositories/event_read_repository.js";
+import { SessionHistorySearchDeadlineError as DatabaseDeadlineError } from "../control_plane/repositories/session_history_search_repository.js";
+import { LiveSearchDeadlineError } from "../runtime/live_db_sql.js";
 import { applyToolContentPolicy } from "./session_content_policy.js";
 import { SessionConsumptionBoundary } from "./session_consumption_boundary.js";
 import { sessionReadAdapter, type McpSessionReadAdapter, type McpSessionRow } from "./session_read_adapter.js";
@@ -192,11 +194,9 @@ export const sessionQueryHandlers = {
       include_story,
       top_k,
     }: SessionArgs<"search_session_history">, extra: { signal: AbortSignal }) => {
+      const deadlineSignal = AbortSignal.timeout(4_800);
+      const requestSignal = AbortSignal.any([extra.signal, deadlineSignal]);
       try {
-        const requestSignal = AbortSignal.any([
-          extra.signal,
-          AbortSignal.timeout(4_800),
-        ]);
         const callerSessionId = (context.principal === "external" ? undefined : context.callerSessionId ?? undefined);
         const excludeSessionIds = callerSessionId
           && !session_ids?.includes(callerSessionId)
@@ -251,6 +251,20 @@ export const sessionQueryHandlers = {
           observations,
         );
       } catch (err) {
+        const cause = err instanceof Error && err.cause !== undefined ? err.cause : err;
+        const timeoutKind = cause instanceof DatabaseDeadlineError ? "database_timeout"
+          : cause instanceof LiveSearchDeadlineError || cause instanceof RequestDeadlineError
+            || (deadlineSignal.aborted && cause === deadlineSignal.reason) ? "request_deadline"
+            : null;
+        if (timeoutKind) {
+          options.cluster?.logger.warn({ kind: timeoutKind }, "session history search timed out");
+          return errorResult("검색 시간이 초과됐습니다. 검색어를 더 구체화하거나 세션 범위를 지정해 주세요.");
+        }
+        const code = typeof cause === "object" && cause !== null && "code" in cause
+          && typeof cause.code === "string" && /^(?:[0-9A-Z]{5}|E[A-Z]+)$/.test(cause.code)
+          ? cause.code : undefined;
+        options.cluster?.logger.warn({ causeType: cause instanceof Error ? cause.constructor.name : typeof cause, code },
+          "session history search failed");
         const msg = err instanceof Error ? err.message : String(err);
         return errorResult(msg);
       }

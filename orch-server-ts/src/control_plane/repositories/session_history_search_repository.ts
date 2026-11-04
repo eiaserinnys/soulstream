@@ -87,8 +87,8 @@ export class SessionHistorySearchRepository {
 }
 
 function isPostgresStatementTimeout(error: unknown): boolean {
-  return typeof error === "object"
-    && error !== null
+  return error instanceof Error
     && "code" in error
-    && error.code === "57014";
+    && error.code === "57014"
+    && error.message === "canceling statement due to statement timeout";
 }

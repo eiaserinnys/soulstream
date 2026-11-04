@@ -2543,18 +2543,26 @@ CREATE OR REPLACE FUNCTION event_search(
              LIMIT 1)
           ) = ANY(p_backends))
     ),
-    -- A session-scoped query uses the (session_id, event_id, term) primary key
-    -- for candidate postings. Global document frequencies remain exact, but
-    -- only their term keys are read before the scope is applied.
+    -- Resolve terms before reading postings for the requested sessions.
+    resolved_terms AS MATERIALIZED (
+        SELECT d.term_id, q.term, df.doc_count
+        FROM query_terms q
+        JOIN query_term_document_frequencies df USING(term)
+        JOIN event_search_dictionary d USING(term)
+    ),
     scoped_matching_postings AS (
-        SELECT q.term, t.session_id, t.event_id, t.term_freq, t.doc_len,
-               df.doc_count, t.created_at
-        FROM scoped_events e
-        JOIN posting_rows t
-          ON t.session_id = e.session_id
-         AND t.event_id = e.id
-        JOIN query_terms q ON q.term = t.term
-        JOIN query_term_document_frequencies df ON df.term = q.term
+        SELECT q.term, k.session_id, p.event_id, p.term_freq, m.doc_len,
+               q.doc_count, m.created_at
+        FROM resolved_terms q
+        CROSS JOIN event_search_session_keys k
+        CROSS JOIN LATERAL (
+            SELECT p.event_id,p.term_freq FROM event_search_postings p
+            WHERE p.term_id=q.term_id AND p.session_key=k.session_key OFFSET 0
+        ) p
+        JOIN event_search_documents m ON m.session_key=k.session_key AND m.event_id=p.event_id
+        WHERE p_session_ids IS NOT NULL AND k.session_id=ANY(p_session_ids)
+          AND (p_event_types IS NULL OR m.event_type_id=ANY(ARRAY(
+             SELECT event_type_id FROM event_search_event_types WHERE event_type=ANY(p_event_types))))
     ),
     -- Unscoped searches keep the term-first path, which avoids scanning every
     -- event when the caller supplied no session IDs.

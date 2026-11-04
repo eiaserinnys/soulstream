@@ -37,7 +37,7 @@ function revive(value: unknown, key?: string): unknown {
 }
 async function read<T>(operation: string, invoke: () => Promise<T>): Promise<T> {
   try { return sessionHostValue<T>(await invoke()); }
-  catch { throw new Error(`session-data host ${operation} failed`); }
+  catch (cause) { throw new Error(`session-data host ${operation} failed`, { cause }); }
 }
 
 /** Direct repository calls keep the worker read client's public projections and errors. */
