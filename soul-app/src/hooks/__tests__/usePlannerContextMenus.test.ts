@@ -268,3 +268,17 @@ const folder = {
   }],
   sessionIds: ['session-1'],
 } as PlannerFolder;
+
+test('프로젝트 메뉴 항목을 만들 때 시트를 띄우지 않고 기존 메뉴와 같은 동작을 제공한다', () => {
+  const { result } = renderHook(() => usePlannerContextMenus(api));
+  const input = { folder: { id: 'project', name: '폴더 이름', status: 'open' } as any,
+    projectPageId: 'page', onOpen: jest.fn(), onCreateFolder: jest.fn() };
+  const items = (result.current as any).projectMenuItems(input);
+  expect(showAppContextMenu).not.toHaveBeenCalled();
+  act(() => result.current.openProjectMenu(input));
+  const [shown, title] = (showAppContextMenu as jest.Mock).mock.calls[0];
+  expect(title).toBe('폴더 이름');
+  expect(shown.map(({ key, label }: any) => ({ key, label }))).toEqual(items.map(({ key, label }: any) => ({ key, label })));
+  act(() => items.find((item: any) => item.key === 'create-task').onSelect());
+  expect(input.onCreateFolder).toHaveBeenCalledTimes(1);
+});

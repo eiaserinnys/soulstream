@@ -28,10 +28,10 @@ export function duoRailLayout({ exit, screen, nav, rare, menu, windowHeight, top
   const priority = (item: PhoneRailAction, index: number) => {
     switch (item.kind) {
       case 'status': return 0;
-      case 'settings': return 1;
+      case 'settings': return 2;
       case 'nav': return 3 + (visibleNav.length - index) / 100;
       case 'view': return 4 + (item.badgeCount || item.dot ? 1 : 0);
-      default: return 2;
+      default: return 1;
     }
   };
   while (need() > available) {

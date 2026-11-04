@@ -181,6 +181,7 @@ test('듀오 태블릿은 입력창과 카드 패널에서 바닥 안전 여백�
   act(() => store.getState().open({ session_id: 'pas-tablet-duo', persistent: true } as any));
   expect(view.getByTestId('persistent-body-probe').props.minimumBottomPadding).toBe(0);
   fireEvent.press(view.getByTestId('persistent-session-duo-tasks'));
+  expect(view.getByTestId('persistent-session-duo-tasks').props.accessibilityState.selected).toBe(true);
   const panel = StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style);
   expect(panel.paddingBottom).toBe(0);
   fireEvent.press(view.getByTestId('choose-card'));

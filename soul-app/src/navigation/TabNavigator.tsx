@@ -136,7 +136,7 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
 
   const defaultBackAction: PhoneRailAction | null = active === 'PersistentTab' && selectedCardId
     ? { id: 'back', label: '카드 닫기', icon: 'chevron-back', onPress: () => host.store.getState().selectCard(null) }
-    : active === 'PersistentTab' && scene !== 'conversation'
+    : active === 'PersistentTab' && scene === 'cards'
       ? { id: 'back', label: 'PAS 대화로 돌아가기', icon: 'chevron-back', onPress: () => host.store.getState().swipe('right') }
       : onBack ? { id: 'back', label: '뒤로', icon: 'chevron-back', onPress: onBack } : null;
   const contextActions: PhoneRailAction[] = override?.length ? mainActions

@@ -181,7 +181,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     ...(session?.node_id ? [{ id: 'usage', kind: 'status' as const, label: '주간 사용량',
       menuLabel: showWeeklyUsage ? '주간 사용량 숨기기' : '주간 사용량 보기', icon: 'speedometer-outline' as const, selected: showWeeklyUsage,
       onPress: () => useSettingsStore.getState().setPersistentSessionShowWeeklyUsage(serverUrl, email, !showWeeklyUsage) }] : []),
-    { id: 'tasks', kind: 'view', label: scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기', icon: 'list-outline',
+    { id: 'tasks', kind: 'view', selected: scene === 'cards', label: scene === 'cards' ? 'PAS 대화로 돌아가기' : '카드 목록 보기', icon: 'list-outline',
       onPress: () => host.store.getState().toggleCards() },
     { id: 'reports', kind: 'view', label: !hasReports ? '지금의 보고 없음' : reportsScene ? 'PAS 대화로 돌아가기' : '지금의 보고',
       icon: 'chatbubble-ellipses-outline', selected: reportsScene, badgeCount: reportCount, disabled: !hasReports,

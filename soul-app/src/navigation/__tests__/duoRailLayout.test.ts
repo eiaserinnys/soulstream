@@ -75,3 +75,10 @@ test.each([
   expect((options.windowHeight ?? 669) - Math.max(options.bottomReserve ?? 32, options.keyboardOverlap ?? 0)
     - (options.topStart ?? 200) - (result.exit ? 48 + gap : 0)).toBe(available);
 });
+
+test('프로젝트 기존 보기의 넘침은 화면 동작부터 접고 설정을 남긴다', () => {
+  const result = layout({ menu: action('folder-menu', 'menu'),
+    screen: [action('starred'), action('today'), action('create'), action('completed'), action('view', 'view')], nav: mainNav });
+  expect(result.folded.map(item => item.id)).toEqual(['starred']);
+  expect(result.nav.map(item => item.id)).toContain('settings');
+});

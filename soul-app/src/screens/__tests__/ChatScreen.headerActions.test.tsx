@@ -324,3 +324,12 @@ test('Chat focus hides the parent tab bar for keyboard events and restores it on
   addListener.mockRestore();
   (useFocusEffect as jest.Mock).mockReset();
 });
+
+test('듀오 세션 메뉴는 접히는 action 대신 menu 성격으로 등록한다', () => {
+  const screen = render(<DuoSideBandContext.Provider value><PhonePanelHistoryProvider>
+    <ChatScreen route={{ key: 'chat-menu', name: 'Chat', params: { sessionId: 'session-1' } } as any}
+      navigation={{ getParent: jest.fn(), navigate: jest.fn(), setOptions: jest.fn(), setParams: jest.fn() } as any} />
+  </PhonePanelHistoryProvider></DuoSideBandContext.Provider>);
+  expect(usePhoneRailActions.getState().overrides.at(-1)?.actions.find(action => action.id === 'menu')?.kind).toBe('menu');
+  screen.unmount();
+});

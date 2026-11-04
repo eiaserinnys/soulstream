@@ -99,13 +99,13 @@ export function usePlannerContextMenus(api: ApiClient | null) {
     }), folder.page.title);
   }, [actions, folders, today]);
 
-  const openProjectMenu = useCallback((input: {
+  const projectMenuItems = useCallback((input: {
     folder: Folder;
     projectPageId: string;
     onOpen(): void;
     onCreateFolder(): void;
   }) => {
-    showAppContextMenu(buildProjectContextMenuActions({
+    return buildProjectContextMenuActions({
       completed: input.folder.status === 'completed',
       actions: {
         open: input.onOpen,
@@ -127,8 +127,12 @@ export function usePlannerContextMenus(api: ApiClient | null) {
           usePlannerStore.getState().invalidate('folder');
         })()),
       },
-    }), input.folder.name);
+    });
   }, [api]);
+
+  const openProjectMenu = useCallback((input: Parameters<typeof projectMenuItems>[0]) => {
+    showAppContextMenu(projectMenuItems(input), input.folder.name);
+  }, [projectMenuItems]);
 
   const openChildFolderManagement = useCallback((folder: Folder) => {
     const managedFolder = folders.find((candidate) => candidate.id === folder.id) ?? folder;
@@ -251,6 +255,7 @@ export function usePlannerContextMenus(api: ApiClient | null) {
   return {
     openFolderMenu,
     openProjectMenu,
+    projectMenuItems,
     openChildFolderManagement,
     openSessionMenu,
     sessionSuccession,
