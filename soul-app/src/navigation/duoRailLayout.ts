@@ -1,4 +1,4 @@
-import { railCapsuleHeight, RAIL_CAPSULE_WIDTH } from '../components/navigation/RailCapsule';
+import { railCapsuleLength, RAIL_CAPSULE_WIDTH } from '../components/navigation/RailCapsule';
 import { showAppContextMenu } from '../components/menus/AppContextMenu';
 import type { PhoneRailAction } from './phoneRailActions';
 
@@ -10,9 +10,9 @@ export function duoRailLayout({ exit, screen, nav, rare, menu, windowHeight, top
   const screenOrder = (item: PhoneRailAction) => item.kind === 'status' ? 0 : item.kind === 'view' ? 2 : 1;
   const orderedScreen = [...screen].sort((a, b) => screenOrder(a) - screenOrder(b));
   const original = [...orderedScreen, ...nav];
-  const regularNeed = railCapsuleHeight(screen.length + (menu || rare.length ? 1 : 0), false, tokens)
+  const regularNeed = railCapsuleLength(screen.length + (menu || rare.length ? 1 : 0), false, tokens)
     + (screen.length + (menu || rare.length ? 1 : 0) && nav.length ? tokens.uiSpacingSm : 0)
-    + railCapsuleHeight(nav.length, false, tokens);
+    + railCapsuleLength(nav.length, false, tokens);
   const regularAvailable = windowHeight - bottomReserve - topStart - (exit ? RAIL_CAPSULE_WIDTH + tokens.uiSpacingSm : 0);
   const compact = windowHeight < 500 || regularNeed > regularAvailable;
   const gap = compact ? tokens.uiSpacingXs : tokens.uiSpacingSm;
@@ -22,8 +22,8 @@ export function duoRailLayout({ exit, screen, nav, rare, menu, windowHeight, top
   const available = windowHeight - Math.max(bottomReserve, keyboardOverlap) - topStart - (exit ? RAIL_CAPSULE_WIDTH + gap : 0);
   const need = () => {
     const screenCount = visibleScreen.length + (menu || rare.length || folded.length ? 1 : 0);
-    return railCapsuleHeight(screenCount, compact, tokens)
-      + (screenCount && visibleNav.length ? gap : 0) + railCapsuleHeight(visibleNav.length, compact, tokens);
+    return railCapsuleLength(screenCount, compact, tokens)
+      + (screenCount && visibleNav.length ? gap : 0) + railCapsuleLength(visibleNav.length, compact, tokens);
   };
   const priority = (item: PhoneRailAction, index: number) => {
     switch (item.kind) {

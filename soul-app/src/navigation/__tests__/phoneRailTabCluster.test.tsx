@@ -31,6 +31,15 @@ import { DUO_RAIL_CENTER_FROM_END, DUO_TOP_BAND_RAIL_TOP } from '../duoSideBand'
 beforeEach(() => { mockSessionData.sessions = []; mockRequestEntry.mockClear(); });
 afterEach(() => { usePhoneRailActions.setState({ overrides: [] }); });
 
+test('가로 캡슐은 세 항목을 regular 크기로 배치한다', () => {
+  const RowCapsule = RailCapsule as React.ComponentType<any>;
+  const screen = render(<NavigationContainer><RowCapsule testID="row" direction="row">
+    {['one', 'two', 'three'].map(id => <RailCapsuleItem key={id} testID={id} label={id} onPress={jest.fn()}><Text>{id}</Text></RailCapsuleItem>)}
+  </RowCapsule></NavigationContainer>);
+  expect(StyleSheet.flatten(screen.getByTestId('row').props.style)).toMatchObject({ width: 168, height: 48 });
+  expect(StyleSheet.flatten(screen.getByTestId('one').props.style)).toMatchObject({ width: 50, height: 44 });
+});
+
 test('숫자와 점의 우선순위와 비활성 상태를 노출한다', () => {
   const onPress = jest.fn();
   const disabledPress = jest.fn();

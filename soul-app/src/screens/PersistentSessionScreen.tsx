@@ -34,7 +34,7 @@ import { usePersistentSessionHost, usePersistentSessionScene } from '../navigati
 import { usePhoneRailMode } from '../navigation/tabContract';
 import { DUO_RAIL_CENTER_FROM_END, DUO_RAIL_END_INSET, DUO_SIDE_BAND_WIDTH, DUO_TOP_BAND_RAIL_TOP, DUO_TOP_BAND_STATUS_CENTER_Y, DUO_TOP_BAND_STATUS_RESERVE, getDuoRailTopOffset, splitDuoRailBackAction, useDuoSideBand, useDuoTopBand } from '../navigation/duoSideBand';
 import { AppKeyboardAvoidingView } from '../components/AppKeyboardAvoidingView';
-import { RAIL_CAPSULE_WIDTH, railCapsuleHeight, RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
+import { RAIL_CAPSULE_WIDTH, railCapsuleLength, RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
 import { useActiveDuoRailOverrideEntry, type PhoneRailAction } from '../navigation/phoneRailActions';
 import { duoRailLayout } from '../navigation/duoRailLayout';
 import { usePasContextMenu } from '../components/persistent/usePasContextMenu';
@@ -196,7 +196,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     nav: [], rare: railOverride?.length ? railMain.filter(item => item.kind === 'rare') : [], menu: railMenu,
     windowHeight, topStart: duoTopBand ? DUO_TOP_BAND_RAIL_TOP : getDuoRailTopOffset(windowWidth, windowHeight),
     bottomReserve: Math.max(insets.bottom, t.uiSpacing.xxl), keyboardOverlap, tokens: railTokens });
-  const screenRailTop = windowHeight - railBottom - railCapsuleHeight(railLayout.screen.length, railLayout.compact, railTokens);
+  const screenRailTop = windowHeight - railBottom - railCapsuleLength(railLayout.screen.length, railLayout.compact, railTokens);
   const railColumnBottom = Math.max(0, (app?.height ?? windowHeight) - screenRailTop + t.uiSpacing.sm);
   const rightColumnOffset = duoTopBand ? DUO_RAIL_CENTER_FROM_END - RAIL_CAPSULE_WIDTH / 2 - t.uiSpacing.sm : t.foundation.pageInset - t.uiSpacing.sm;
   const portrait = app ? app.height > app.width : false;

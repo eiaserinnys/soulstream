@@ -7,13 +7,13 @@ import { STATUS_DOT_SIZE } from '../chat/StatusDot';
 
 export const RAIL_CAPSULE_WIDTH = 48;
 export const RAIL_ITEM_HEIGHT = 50;
-export function railCapsuleHeight(count: number, compact: boolean, tokens: { spacingXs: number; uiSpacingXs: number; hitTargetMin: number }) {
+export function railCapsuleLength(count: number, compact: boolean, tokens: { spacingXs: number; uiSpacingXs: number; hitTargetMin: number }) {
   if (count === 0) return 0;
   if (count === 1) return RAIL_CAPSULE_WIDTH;
   return compact ? count * tokens.hitTargetMin + GLASS_BUTTON_BORDER_WIDTH
     : count * RAIL_ITEM_HEIGHT + (count - 1) * tokens.uiSpacingXs / 2 + 2 * tokens.spacingXs + GLASS_BUTTON_BORDER_WIDTH;
 }
-const RailCapsuleItemContext = React.createContext({ compact: false, single: false });
+const RailCapsuleItemContext = React.createContext<{ compact: boolean; single: boolean; direction: 'column' | 'row' }>({ compact: false, single: false, direction: 'column' });
 
 function countRailCapsuleItems(children: React.ReactNode): number {
   return React.Children.toArray(children).filter(Boolean).reduce<number>((count, child) => {
@@ -24,20 +24,22 @@ function countRailCapsuleItems(children: React.ReactNode): number {
   }, 0);
 }
 
-export function RailCapsule({ children, testID, compact = false }: {
-  children: React.ReactNode; testID: string; compact?: boolean;
+export function RailCapsule({ children, testID, compact = false, direction = 'column' }: {
+  children: React.ReactNode; testID: string; compact?: boolean; direction?: 'column' | 'row';
 }) {
   const t = useTokens();
   const single = countRailCapsuleItems(children) === 1;
-  const content = <View style={{ width: RAIL_CAPSULE_WIDTH,
-    ...(single ? { height: RAIL_CAPSULE_WIDTH, paddingVertical: 0, gap: 0, justifyContent: 'center' as const }
-      : { paddingVertical: compact ? 0 : t.spacing.xs, gap: compact ? 0 : t.uiSpacing.xs / 2 }),
+  const row = direction === 'row';
+  const length = railCapsuleLength(countRailCapsuleItems(children), compact,
+    { spacingXs: t.spacing.xs, uiSpacingXs: t.uiSpacing.xs, hitTargetMin: t.hitTarget.min });
+  const content = <View style={{ ...(row ? { height: RAIL_CAPSULE_WIDTH, flexDirection: 'row' as const } : { width: RAIL_CAPSULE_WIDTH }),
+    ...(single ? { width: RAIL_CAPSULE_WIDTH, height: RAIL_CAPSULE_WIDTH, gap: 0, justifyContent: 'center' as const }
+      : { ...(row ? { paddingHorizontal: compact ? 0 : t.spacing.xs } : { paddingVertical: compact ? 0 : t.spacing.xs }), gap: compact ? 0 : t.uiSpacing.xs / 2 }),
     alignItems: 'center' }}>
-    <RailCapsuleItemContext.Provider value={{ compact, single }}>{children}</RailCapsuleItemContext.Provider>
+    <RailCapsuleItemContext.Provider value={{ compact, single, direction }}>{children}</RailCapsuleItemContext.Provider>
   </View>;
   return <GlassSurface role="chrome" testID={testID} cornerRadius={t.foundation.radius.round}
-    style={{ width: RAIL_CAPSULE_WIDTH, height: railCapsuleHeight(countRailCapsuleItems(children), compact,
-      { spacingXs: t.spacing.xs, uiSpacingXs: t.uiSpacing.xs, hitTargetMin: t.hitTarget.min }) }}>
+    style={{ width: row ? length : RAIL_CAPSULE_WIDTH, height: row ? RAIL_CAPSULE_WIDTH : length }}>
     {content}
   </GlassSurface>;
 }
@@ -47,12 +49,13 @@ export function RailCapsuleItem({ children, testID, label, onPress, selected, ba
   selected?: boolean; badge?: number; badgeCount?: number; dot?: boolean; disabled?: boolean; role?: AccessibilityRole;
 }) {
   const t = useTokens();
-  const { compact, single } = React.useContext(RailCapsuleItemContext);
+  const { compact, single, direction } = React.useContext(RailCapsuleItemContext);
   const count = badgeCount ?? badge;
+  const itemLength = compact ? t.hitTarget.min : RAIL_ITEM_HEIGHT;
   return <PlatformPressable testID={testID} accessibilityRole={role} accessibilityLabel={label}
     accessibilityState={{ ...(selected === undefined ? {} : { selected }), disabled }} disabled={disabled} onPress={disabled ? undefined : onPress}
-    style={{ width: single ? RAIL_CAPSULE_WIDTH : RAIL_CAPSULE_WIDTH - 4,
-      height: single ? RAIL_CAPSULE_WIDTH : compact ? t.hitTarget.min : RAIL_ITEM_HEIGHT,
+    style={{ width: single ? RAIL_CAPSULE_WIDTH : direction === 'row' ? itemLength : RAIL_CAPSULE_WIDTH - 4,
+      height: single ? RAIL_CAPSULE_WIDTH : direction === 'row' ? RAIL_CAPSULE_WIDTH - 4 : itemLength,
       alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.55 : 1 }}>
     <View style={{ position: 'relative' }}>
       {children}

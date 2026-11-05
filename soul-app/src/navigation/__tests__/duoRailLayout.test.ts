@@ -50,7 +50,7 @@ test('안쪽 PAS 자판에서 사용량과 카드 목록을 접고 보고는 남
 });
 
 // 시안 screens.md의 필요/가용 높이를 실제 캡슐 높이 계약과 함께 고정한다.
-import { railCapsuleHeight } from '../../components/navigation/RailCapsule';
+import { railCapsuleLength } from '../../components/navigation/RailCapsule';
 const mainControls = ['add', 'done', 'expand', 'search'].map(id => action(id));
 const mainNav = [action('pas', 'nav'), action('drawer', 'nav'), action('settings', 'settings')];
 const pasOptions = { exit: action('home', 'exit'), menu: action('pas-menu', 'menu'),
@@ -69,9 +69,9 @@ test.each([
   const result = layout(options);
   const tokens = options.tokens ?? tabletTokens;
   const gap = result.compact ? tokens.uiSpacingXs : tokens.uiSpacingSm;
-  expect(railCapsuleHeight(result.screen.length, result.compact, tokens)
+  expect(railCapsuleLength(result.screen.length, result.compact, tokens)
     + (result.screen.length && result.nav.length ? gap : 0)
-    + railCapsuleHeight(result.nav.length, result.compact, tokens)).toBe(need);
+    + railCapsuleLength(result.nav.length, result.compact, tokens)).toBe(need);
   expect((options.windowHeight ?? 669) - Math.max(options.bottomReserve ?? 32, options.keyboardOverlap ?? 0)
     - (options.topStart ?? 200) - (result.exit ? 48 + gap : 0)).toBe(available);
 });
@@ -81,4 +81,13 @@ test('프로젝트 기존 보기의 넘침은 화면 동작부터 접고 설정�
     screen: [action('starred'), action('today'), action('create'), action('completed'), action('view', 'view')], nav: mainNav });
   expect(result.folded.map(item => item.id)).toEqual(['starred']);
   expect(result.nav.map(item => item.id)).toContain('settings');
+});
+
+test.each([[669, ['starred']], [626, ['starred', 'today']]])('안쪽 세로 %i는 compact 없이 화면 동작을 접는다', (width, folded) => {
+  const result = layout({ menu: action('folder-menu', 'menu'),
+    screen: [action('starred'), action('today'), action('create'), action('completed'), action('search'), action('view', 'view')],
+    nav: [action('drawer', 'nav'), action('pas', 'nav'), action('settings', 'settings')],
+    windowHeight: width, topStart: 132, bottomReserve: 12, allowCompact: false } as any);
+  expect(result.compact).toBe(false);
+  expect(result.folded.map(item => item.id)).toEqual(folded);
 });
