@@ -47,6 +47,7 @@ const api = {
   sessionEventsUrl: () => '',
   getPersistentSession: async () => ({ session }),
   getSessionsByIds: async () => [sessionSummary],
+  getDailyHistory: async () => ({ dates: [] }),
   getTimeline: async (_id: string, params?: { before?: string }) => ({ messages: params?.before ? [] : dialogueMessages, next_cursor: null }),
   listCards: async () => ({ cards: [card] }),
   getCard: async () => detail,
