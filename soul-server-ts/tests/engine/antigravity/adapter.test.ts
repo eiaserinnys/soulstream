@@ -7,7 +7,7 @@ import { makeTempDirSync } from "../../helpers/temp_dir.js";
 
 // Like the existing stdio transport tests, use an isolated Node fixture process.
 // This verifies stdin EOF, process close, SIGINT and file lifetime without calling agy.
-function fixture(processEnv: NodeJS.ProcessEnv = process.env) {
+function fixture(processEnv: NodeJS.ProcessEnv = process.env, resolvedMcpServers: import("../../../src/mcp_config_service.js").ResolvedMcpServer[] = []) {
   const directory = makeTempDirSync("agy-adapter-");
   const executable = join(directory, "fake-agy.mjs");
   writeFileSync(executable, `#!/usr/bin/env node
@@ -46,7 +46,7 @@ if(model==='blocking'){
   chmodSync(executable, 0o700);
   const state = join(directory, "state");
   const engine = new AntigravityEngineAdapter({ workspaceDir: directory, agentId: "test", sessionDirectory: state,
-    executablePath: executable, processEnv }, pino({ level: "silent" }));
+    executablePath: executable, processEnv, resolvedMcpServers }, pino({ level: "silent" }));
   return { directory, state, engine };
 }
 const testHome = makeTempDirSync("agy-adapter-home-");
@@ -60,6 +60,24 @@ async function collect(engine: AntigravityEngineAdapter, params = input) {
 
 describe("AntigravityEngineAdapter", () => {
   afterEach(() => vi.unstubAllEnvs());
+
+  it("refreshes the gateway config on new and resumed turns without writing a new definition on resume", async () => {
+    const servers: import("../../../src/mcp_config_service.js").ResolvedMcpServer[] = [
+      { name: "alpha", type: "stdio", command: "node" },
+    ];
+    const { engine, state } = fixture(process.env, servers);
+    const path = join(state, "antigravity-mcp-gateway.json");
+    try {
+      await collect(engine);
+      expect(JSON.parse(readFileSync(path, "utf8")).servers.map((x: { name: string }) => x.name)).toEqual(["alpha"]);
+      servers.splice(0, 1, { name: "beta", type: "stdio", command: "node" });
+      for await (const event of engine.execute({ ...input, resumeSessionId: "fixture-conversation" })) {
+        if (event.type === "session") expect(readdirSync(agents).filter(name => name.startsWith("soulstream-"))).toEqual([]);
+      }
+      expect(JSON.parse(readFileSync(path, "utf8")).servers.map((x: { name: string }) => x.name)).toEqual(["beta"]);
+      expect(statSync(path).mode & 0o777).toBe(0o600);
+    } finally { await engine.close(); }
+  });
 
   it.each([undefined, "fixture-conversation"])("passes agent workspace env and strips Google API routing keys (resume: %s)", async resumeSessionId => {
     vi.stubEnv("AGENT_COMMON_FILES_DIR", "/fixture/worker-common");

@@ -10,9 +10,10 @@ import type { InProcessRunnerFrameChannel } from "../../runner/in_process_frame_
 import { sseEventsFromRunnerFrames } from "../../runner/engine_event_stream.js";
 import type { EngineExecuteParams, EngineInterventionResult, EnginePort, EngineUserInput, SSEEventPayload } from "../protocol.js";
 import { withScratchWorkspaceEnv } from "../scratch_workspace_env.js";
-import { writeAntigravityAgentDefinition } from "./agent_definition.js";
+import { antigravityMcpGatewayUpstreams, writeAntigravityAgentDefinition, writeAntigravityMcpGatewayConfig } from "./agent_definition.js";
 import { addAntigravityUsage, AntigravityEventMapper, type AntigravityUsage } from "./events.js";
-import { resolveAntigravityMcpProxyLaunch } from "./mcp_schema_proxy_launch.js";
+import { resolveAntigravityMcpGatewayLaunch } from "./mcp_schema_proxy_launch.js";
+import { antigravityGatewayServerName } from "./mcp_gateway.js";
 import { antigravityArguments, antigravityUserMessage } from "./params.js";
 import { launchAntigravityProcess } from "./process.js";
 
@@ -52,7 +53,7 @@ export class AntigravityEngineAdapter implements EnginePort {
     if (this.closed) throw new Error("Antigravity engine is closed");
     if (this.executing) throw new Error("Antigravity engine already has an active turn");
     this.executing = true;
-    const mapper = new AntigravityEventMapper(randomUUID(), Boolean(params.resumeSessionId));
+    const mapper = new AntigravityEventMapper(randomUUID(), Boolean(params.resumeSessionId), antigravityGatewayServerName(this.options.agentId));
     let definition: Awaited<ReturnType<typeof writeAntigravityAgentDefinition>> | undefined;
     let process: ReturnType<typeof launchAntigravityProcess> | undefined;
     try {
@@ -62,12 +63,18 @@ export class AntigravityEngineAdapter implements EnginePort {
       // Validate effort before writing anything containing session credentials.
       antigravityArguments(params, join(sessionDirectory, "antigravity.log"));
       await mkdir(sessionDirectory, { recursive: true, mode: 0o700 });
+      const gatewayConfigPath = join(sessionDirectory, "antigravity-mcp-gateway.json");
+      if (params.useMcp !== false) {
+        await writeAntigravityMcpGatewayConfig(gatewayConfigPath, antigravityMcpGatewayUpstreams({
+          resolvedMcpServers: this.options.resolvedMcpServers, useMcp: params.useMcp, logger: this.logger,
+        }));
+      }
       if (!params.resumeSessionId) {
         if (params.systemPrompt === undefined) throw new Error("이 세션은 첫 턴에서 대화를 만들지 못했습니다. 새 세션을 시작해 주십시오.");
         definition = await writeAntigravityAgentDefinition({
-          agentSessionId: params.agentSessionId, systemPrompt: params.systemPrompt,
+          agentId: this.options.agentId, agentSessionId: params.agentSessionId, systemPrompt: params.systemPrompt, gatewayConfigPath,
           resolvedMcpServers: this.options.resolvedMcpServers, internalMcpUrl: this.options.internalMcpUrl,
-          useMcp: params.useMcp, mcpProxyLaunch: resolveAntigravityMcpProxyLaunch(import.meta.url, nodeProcess.execPath),
+          useMcp: params.useMcp, mcpGatewayLaunch: resolveAntigravityMcpGatewayLaunch(import.meta.url, nodeProcess.execPath),
           logger: this.logger,
         });
       }

@@ -10,7 +10,7 @@ export type AntigravityMcpProxyConfig =
   | { type: "streamable_http"; url: string; headers?: Record<string, string> }
   | { type: "stdio"; command: string; args?: string[]; env?: Record<string, string>; cwd?: string };
 
-type ProxyIo = {
+export type ProxyIo = {
   stdin: Readable;
   stdout: Writable;
   inheritedEnv: NodeJS.ProcessEnv;
@@ -29,6 +29,10 @@ export function parseAntigravityMcpProxyConfig(raw: string | undefined): Antigra
     throw new Error("Invalid Antigravity MCP proxy configuration");
   }
 
+  return parseAntigravityMcpUpstream(parsed);
+}
+
+export function parseAntigravityMcpUpstream(parsed: unknown): AntigravityMcpProxyConfig {
   if (!isObject(parsed)) throw new Error("Invalid Antigravity MCP proxy configuration");
   if (parsed.type === "streamable_http" && typeof parsed.url === "string" && parsed.url.length > 0) {
     const headers = optionalStringRecord(parsed, "headers");
@@ -47,7 +51,7 @@ export function parseAntigravityMcpProxyConfig(raw: string | undefined): Antigra
 /** Relay MCP JSON-RPC messages between Antigravity's stdio and the configured upstream. */
 export async function runAntigravityMcpSchemaProxy(config: AntigravityMcpProxyConfig, io: ProxyIo): Promise<void> {
   const downstream = new StdioServerTransport(io.stdin, io.stdout);
-  const upstream = createUpstreamTransport(config, io.inheritedEnv);
+  const upstream = createUpstreamTransport(config, io.inheritedEnv, ANTIGRAVITY_MCP_PROXY_CONFIG_ENV);
   const pendingRequests = new Map<RequestId, PendingRequest>();
   let closePromise: Promise<void> | undefined;
   let failure: unknown;
@@ -133,7 +137,7 @@ export async function runAntigravityMcpSchemaProxy(config: AntigravityMcpProxyCo
   }
 }
 
-function createUpstreamTransport(config: AntigravityMcpProxyConfig, inheritedEnv: NodeJS.ProcessEnv) {
+export function createUpstreamTransport(config: AntigravityMcpProxyConfig, inheritedEnv: NodeJS.ProcessEnv, excludedEnv: string) {
   if (config.type === "streamable_http") {
     return new StreamableHTTPClientTransport(new URL(config.url), {
       requestInit: config.headers ? { headers: config.headers } : undefined,
@@ -142,7 +146,7 @@ function createUpstreamTransport(config: AntigravityMcpProxyConfig, inheritedEnv
 
   const mergedEnv: Record<string, string> = {};
   for (const [key, value] of Object.entries(inheritedEnv)) {
-    if (key !== ANTIGRAVITY_MCP_PROXY_CONFIG_ENV && typeof value === "string") mergedEnv[key] = value;
+    if (key !== excludedEnv && typeof value === "string") mergedEnv[key] = value;
   }
   Object.assign(mergedEnv, config.env);
   return new StdioClientTransport({ command: config.command, args: config.args, env: mergedEnv, cwd: config.cwd, stderr: "inherit" });

@@ -7,6 +7,17 @@ const step = (index: number, extra: object) => ({ event: "step_update", step_upd
 } });
 
 describe("AntigravityEventMapper", () => {
+  it("unwraps only the configured gateway server name", () => {
+    const mapper = new AntigravityEventMapper("turn", false, "profile-test");
+    const tool = (index: number, server: string, name: string) => step(index, { step_type: "tool",
+      tool_info: { name: "call_mcp_tool", parameters: { ServerName: server, ToolName: name, Arguments: { x: 1 } }, output: "ok" } });
+    expect(mapper.accept(tool(1, "profile-test", "beta__ping"))).toMatchObject([
+      { type: "tool_start", tool_name: "mcp/beta/ping", tool_input: { x: 1 } },
+      { type: "tool_result", tool_name: "mcp/beta/ping", result: "ok" },
+    ]);
+    expect(mapper.accept(tool(2, "other", "beta__ping"))[0]).toMatchObject({ tool_name: "mcp/other/beta__ping" });
+    expect(mapper.accept(tool(3, "profile-test", "plain"))[0]).toMatchObject({ tool_name: "mcp/profile-test/plain" });
+  });
   it("maps init, incremental text including DONE and one final assistant message", () => {
     const mapper = new AntigravityEventMapper("turn-a");
     expect(mapper.accept(init)).toMatchObject([{ type: "session", session_id: "conversation", model: "gemini-3.8-flash" }]);
