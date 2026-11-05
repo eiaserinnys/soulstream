@@ -24,7 +24,7 @@ const mockOpenFeedSessionCardWorkspace = jest.fn();
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('../../../navigation/TabletPersistentEntry', () => ({ TabletPersistentEntry: () => require('react').createElement(require('react-native').View, { testID: 'tablet-persistent-entry' }) }));
 jest.mock('../SidebarPane', () => ({
-  SidebarPane: () => require('react').createElement(require('react-native').View, { testID: 'planner-navigation' }),
+  SidebarPane: ({ active }: { active?: boolean }) => require('react').createElement(require('react-native').View, { testID: 'planner-navigation', accessibilityState: { expanded: active } }),
 }));
 jest.mock('../MainListPane', () => ({
   MainListPane: () => require('react').createElement(require('react-native').View, { testID: 'planner-main' }),
@@ -88,9 +88,9 @@ describe('iPad v3 planner shell', () => {
     const previousScreen = ReactNative.Dimensions.get('screen');
     ReactNative.Dimensions.set({ window: { width: 669, height: 951, scale: 1, fontScale: 1 }, screen: { width: 669, height: 951, scale: 1, fontScale: 1 } });
     useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-31' }, mainPaneViews: {} });
-    const screen = render(<DuoSideBandContext.Provider value={false}><DuoTopBandContext.Provider value={true}>
+    const screen = render(<ThemeProvider value={DefaultTheme}><DuoSideBandContext.Provider value={false}><DuoTopBandContext.Provider value={true}>
       <PersistentSessionProvider><NavigationContext.Provider value={{ navigate: jest.fn() } as any}><TwoPaneWithDrawer /></NavigationContext.Provider></PersistentSessionProvider>
-    </DuoTopBandContext.Provider></DuoSideBandContext.Provider>);
+    </DuoTopBandContext.Provider></DuoSideBandContext.Provider></ThemeProvider>);
     expect(screen.getByTestId('duo-top-band')).toBeTruthy();
     const navigation = within(screen.getByTestId('duo-top-band-navigation-capsule'));
     const items = navigation.UNSAFE_getAllByType(View).filter(node => ['duo-main-menu', 'tablet-persistent-entry', 'duo-main-settings'].includes(node.props.testID));
@@ -99,14 +99,16 @@ describe('iPad v3 planner shell', () => {
     fireEvent.press(screen.getByTestId('duo-main-search'));
     expect(useSearchStore.getState().tabletActive).toBe(true);
     fireEvent.press(screen.getByTestId('duo-main-menu'));
-    expect(screen.getByTestId('planner-navigation').parent?.parent?.props.pointerEvents).toBe('auto');
+    expect(screen.getByTestId('planner-navigation').props.accessibilityState.expanded).toBe(true);
     expect(screen.getByTestId('duo-top-band')).toBeTruthy();
     fireEvent.press(screen.getByTestId('duo-main-settings'));
     expect(useUIStore.getState().settingsVisible).toBe(true);
     expect(screen.queryByTestId('duo-top-band')).toBeNull();
-    act(() => useUIStore.setState({ settingsVisible: false, cardBoardExpanded: true }));
+    // Persisted setState returns an AsyncStorage promise at runtime. Do not
+    // return it from synchronous act: that leaves an unawaited async scope.
+    act(() => { useUIStore.setState({ settingsVisible: false, cardBoardExpanded: true }); });
     expect(screen.queryByTestId('duo-top-band')).toBeNull();
-    act(() => useUIStore.setState({ cardBoardExpanded: false }));
+    act(() => { useUIStore.setState({ cardBoardExpanded: false }); });
     const folder = Symbol('folder');
     const detail = Symbol('detail');
     act(() => usePhoneRailActions.getState().pushOverride(folder, [{ id: 'extra', label: '추가 동작', icon: 'add', onPress: jest.fn() }], 'prepend'));

@@ -19,7 +19,7 @@ import { DuoSideBandContext, DuoTopBandMainContext } from '../../../navigation/t
 const mockList = jest.fn();
 const mockCompleted=jest.fn();
 
-test('듀오 세로 메인에서만 패널 머리줄을 띠에 맡긴다', () => {
+test('듀오 세로 메인에서만 패널 머리줄을 띠에 맡긴다', async () => {
   useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-01' } });
   const screen = render(<DuoSideBandContext.Provider value={false}><DuoTopBandMainContext.Provider value={true}>
     <MainListPane showSearch />
@@ -29,6 +29,8 @@ test('듀오 세로 메인에서만 패널 머리줄을 띠에 맡긴다', () =>
     <MainListPane showSearch />
   </DuoTopBandMainContext.Provider></DuoSideBandContext.Provider>);
   expect(screen.getByTestId('tablet-main-header')).toBeTruthy();
+  await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
+  screen.unmount();
 });
 
 test('듀오 프로젝트에서는 본문 탭 없이 레일의 보기 변경을 반영한다', async () => {
