@@ -40,7 +40,7 @@ import { PlannerForegroundCard } from './PlannerForegroundCard';
 import { PlannerSectionHeader } from './PlannerSectionHeader';
 import { folderPage, folderWorkspaceSummary } from './folderWorkspaceModel';
 import type { FolderCardDisplay } from './CardBoardWorkspace';
-import { useDuoSideBand } from '../../navigation/duoSideBand';
+import { useDuoBandOwnsPanelActions } from '../../navigation/duoSideBand';
 import { useRegisterDuoRailOverride, type PhoneRailAction } from '../../navigation/phoneRailActions';
 
 // Existing workspace exceeds 500 lines; this change only forwards the iPad board's controlled view option.
@@ -69,7 +69,7 @@ export function FolderWorkspace({
 }) {
   const t = useTokens();
   const tablet = useDeviceType() !== 'phone';
-  const duo = useDuoSideBand();
+  const duo = useDuoBandOwnsPanelActions();
   const styles = useMemo(() => makeFolderWorkspaceStyles(t), [t]);
   const selector = useMemo(() => selectPlannerFolder(folderPageId), [folderPageId]);
   const storedFolderSummary = usePlannerStore(selector);

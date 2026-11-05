@@ -1,7 +1,7 @@
 import { useContext } from 'react';
 import { Platform } from 'react-native';
 import { useSafeAreaInsets, type EdgeInsets } from 'react-native-safe-area-context';
-import { DuoSideBandContext, DuoTopBandContext, RAIL_MIN_INSET_WIDTH } from './tabContract';
+import { DuoSideBandContext, DuoTopBandContext, DuoTopBandMainContext, RAIL_MIN_INSET_WIDTH } from './tabContract';
 
 export const DUO_RAIL_END_INSET = 12;
 export const DUO_SIDE_BAND_WIDTH = 84;
@@ -40,4 +40,10 @@ export function useDuoSideBand(): boolean {
   const fromPhone = useContext(DuoSideBandContext);
   const insets = useSafeAreaInsets();
   return fromPhone ?? hasDuoSideBand(insets);
+}
+
+export function useDuoBandOwnsPanelActions(): boolean {
+  const sideBand = useDuoSideBand();
+  const topBandMain = useContext(DuoTopBandMainContext);
+  return sideBand || topBandMain;
 }

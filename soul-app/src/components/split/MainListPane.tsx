@@ -28,7 +28,7 @@ import { useAuthScopeGeneration } from '../../lib/auth-scope';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
 import { TabletPersistentEntry } from '../../navigation/TabletPersistentEntry';
 import { GroupedGlassRow, GroupedGlassSheet } from '../planner/GroupedGlassSheet';
-import { useDuoSideBand } from '../../navigation/duoSideBand';
+import { useDuoBandOwnsPanelActions } from '../../navigation/duoSideBand';
 
 /** 이 폭 미만이면 보드 헤더 액션을 오버플로 메뉴로 접는다. */
 export const MAIN_LIST_HEADER_OVERFLOW_MAX_WIDTH = 380;
@@ -55,7 +55,7 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
     openCreate: () => boardRef.current?.openCreate(),
     openExpanded: () => boardRef.current?.openExpanded(),
   }), []);
-  const duo = useDuoSideBand();
+  const duo = useDuoBandOwnsPanelActions();
   const insets = useSafeAreaInsets();
   const activeSection = useUIStore((state) => state.activeSection);
   const effectiveShowSearch = !duo && showSearch && activeSection.kind !== 'daily';
