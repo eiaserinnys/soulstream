@@ -2,7 +2,7 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
-import { resolveAntigravityMcpProxyLaunch } from "../../../src/engine/antigravity/mcp_schema_proxy_launch.js";
+import { resolveAntigravityMcpGatewayLaunch, resolveAntigravityMcpProxyLaunch } from "../../../src/engine/antigravity/mcp_schema_proxy_launch.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../");
 const packageRequire = createRequire(resolve(packageRoot, "package.json"));
@@ -11,6 +11,13 @@ const sourceRunnerPath = resolve(packageRoot, "src/runner/runner_entry.ts");
 const tsxEsmUrl = pathToFileURL(packageRequire.resolve("tsx/esm")).href;
 
 describe("resolveAntigravityMcpProxyLaunch", () => {
+  it("uses the same source and packaged launch paths for the gateway", () => {
+    const source = resolveAntigravityMcpGatewayLaunch(pathToFileURL(sourceAdapterPath).href, "/usr/bin/node");
+    expect(source).toEqual({ command: "/usr/bin/node", args: ["--import", tsxEsmUrl, sourceRunnerPath, "--antigravity-mcp-gateway"] });
+    expect(resolveAntigravityMcpGatewayLaunch("file:///srv/dist/main.js", "/usr/bin/node")).toEqual({
+      command: "/usr/bin/node", args: ["/srv/dist/runner/runner_entry.js", "--antigravity-mcp-gateway"],
+    });
+  });
   it("launches the source runner through the absolute tsx ESM loader", () => {
     const launch = resolveAntigravityMcpProxyLaunch(pathToFileURL(sourceAdapterPath).href, "/usr/bin/node");
 

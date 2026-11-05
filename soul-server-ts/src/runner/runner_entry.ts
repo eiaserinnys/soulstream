@@ -4,15 +4,41 @@ import pino from "pino";
 
 import { installProcessErrorHandlers } from "../runtime/process_error_handlers.js";
 import { parseAntigravityMcpProxyConfig, runAntigravityMcpSchemaProxy } from "../engine/antigravity/mcp_schema_proxy.js";
-import { ANTIGRAVITY_MCP_PROXY_CONFIG_ENV } from "../engine/antigravity/mcp_schema_proxy_launch.js";
+import { parseAntigravityMcpGatewayConfig, runAntigravityMcpGateway } from "../engine/antigravity/mcp_gateway.js";
+import { ANTIGRAVITY_MCP_GATEWAY_CONFIG_ENV, ANTIGRAVITY_MCP_GATEWAY_FLAG,
+  ANTIGRAVITY_MCP_PROXY_CONFIG_ENV, ANTIGRAVITY_MCP_PROXY_FLAG } from "../engine/antigravity/mcp_schema_proxy_launch.js";
 import { RunnerChildRuntime } from "./runner_child_runtime.js";
 import { parseRunnerChildConfig } from "./runner_process_spawn.js";
 import { startRunnerLogRotation } from "./runner_log_rotation.js";
 
-const PROXY_FLAG = "--antigravity-mcp-schema-proxy";
-
-if (process.argv[2] === PROXY_FLAG) await runAntigravityMcpProxyMode();
+if (process.argv[2] === ANTIGRAVITY_MCP_PROXY_FLAG) await runAntigravityMcpProxyMode();
+else if (process.argv[2] === ANTIGRAVITY_MCP_GATEWAY_FLAG) await runAntigravityMcpGatewayMode();
 else await runSessionRunner();
+
+async function runAntigravityMcpGatewayMode(): Promise<void> {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  process.once("SIGTERM", abort);
+  process.once("SIGINT", abort);
+  let configParsed = false;
+  try {
+    const path = process.env[ANTIGRAVITY_MCP_GATEWAY_CONFIG_ENV];
+    if (!path) throw new Error("Missing gateway configuration path");
+    const upstreams = parseAntigravityMcpGatewayConfig(await readFile(path, "utf8"));
+    configParsed = true;
+    await runAntigravityMcpGateway(upstreams, {
+      stdin: process.stdin, stdout: process.stdout, inheritedEnv: process.env, signal: controller.signal,
+    });
+  } catch {
+    process.stderr.write(configParsed
+      ? "Antigravity MCP gateway transport failed\n"
+      : "Antigravity MCP gateway configuration failed\n");
+    process.exitCode = 1;
+  } finally {
+    process.removeListener("SIGTERM", abort);
+    process.removeListener("SIGINT", abort);
+  }
+}
 
 async function runAntigravityMcpProxyMode(): Promise<void> {
   const controller = new AbortController();

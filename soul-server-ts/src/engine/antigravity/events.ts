@@ -1,5 +1,6 @@
 import type { SSEEventPayload } from "../protocol.js";
 import { ANTIGRAVITY_QUOTA_ERROR_CODE } from "../usage_limit_stop.js";
+import { splitAntigravityGatewayToolName } from "./mcp_gateway.js";
 
 export interface AntigravityUsage {
   input_tokens: number;
@@ -57,7 +58,7 @@ export class AntigravityEventMapper {
   private completedResponse: string | undefined;
   private sawErrorMessage = false;
 
-  constructor(private readonly turnId: string, private readonly resuming = false) {}
+  constructor(private readonly turnId: string, private readonly resuming = false, private readonly gatewayServerName?: string) {}
 
   accept(raw: AntigravityEvent): SSEEventPayload[] {
     const timestamp = Date.now() / 1000;
@@ -103,7 +104,10 @@ export class AntigravityEventMapper {
       const info = step.tool_info;
       const parameters = info.parameters as Record<string, unknown> | undefined;
       const mcp = info.name === "call_mcp_tool";
-      const tool_name = mcp ? `mcp/${parameters?.ServerName}/${parameters?.ToolName}` : info.name;
+      const gatewayTool = mcp && parameters?.ServerName === this.gatewayServerName && typeof parameters?.ToolName === "string"
+        ? splitAntigravityGatewayToolName(parameters.ToolName) : undefined;
+      const tool_name = gatewayTool ? `mcp/${gatewayTool.server}/${gatewayTool.tool}`
+        : mcp ? `mcp/${parameters?.ServerName}/${parameters?.ToolName}` : info.name;
       const tool_use_id = `${step.conversation_id}:${this.turnId}:${index}`;
       if (!this.calls.has(index)) {
         this.calls.add(index);
