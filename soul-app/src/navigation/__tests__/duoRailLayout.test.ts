@@ -6,22 +6,22 @@ const action = (id: string, kind: PhoneRailAction['kind'] = 'action', extra: Par
 const phoneTokens = { spacingXs: 4, uiSpacingXs: 4, uiSpacingSm: 8, hitTargetMin: 44 };
 const tabletTokens = { ...phoneTokens, spacingXs: 6, hitTargetMin: 48 };
 const layout = (options: Partial<Parameters<typeof duoRailLayout>[0]>) => duoRailLayout({
-  exit: null, screen: [], nav: [], rare: [], menu: null, windowHeight: 669, topStart: 200,
-  bottomReserve: 32, keyboardOverlap: 0, tokens: tabletTokens, ...options,
+  exit: null, screen: [], nav: [], rare: [], menu: null, length: 669, statusReserve: 200,
+  endReserve: 32, keyboardOverlap: 0, tokens: tabletTokens, ...options,
 });
 const nav = [action('pas', 'nav'), action('daily', 'nav'), action('folder', 'nav'), action('feed', 'nav'), action('settings', 'settings')];
 const sections = [action('items', 'view'), action('sessions', 'view'), action('notes', 'view')];
 const back = action('back', 'exit');
 
 test('바깥 세로 상세는 compact로 전부 보인다', () => {
-  const result = layout({ exit: back, screen: sections, nav: nav.filter(x => x.id !== 'daily'), windowHeight: 678, topStart: 228, tokens: phoneTokens });
+  const result = layout({ exit: back, screen: sections, nav: nav.filter(x => x.id !== 'daily'), length: 678, statusReserve: 228, tokens: phoneTokens });
   expect(result.compact).toBe(true);
   expect(result.folded).toEqual([]);
   expect(result.screen.map(x => x.id)).toEqual(['items', 'sessions', 'notes']);
 });
 
 test('바깥 가로 루트는 전부 보이고 상세는 설정과 피드를 접는다', () => {
-  const common = { nav: nav.filter(x => x.id !== 'daily'), windowHeight: 466, topStart: 114, bottomReserve: 24, tokens: phoneTokens };
+  const common = { nav: nav.filter(x => x.id !== 'daily'), length: 466, statusReserve: 114, endReserve: 24, tokens: phoneTokens };
   expect(layout({ ...common, screen: [action('add'), action('done')] }).folded).toEqual([]);
   const detail = layout({ ...common, exit: back, screen: sections });
   expect(detail.folded.map(x => x.id)).toEqual(['feed', 'settings']);
@@ -57,14 +57,14 @@ const pasOptions = { exit: action('home', 'exit'), menu: action('pas-menu', 'men
   rare: [action('appearance', 'rare'), action('pas-settings', 'rare')],
   screen: [action('usage', 'status'), action('cards', 'view'), action('reports', 'view', { badgeCount: 3 })] };
 test.each([
-  ['바깥 세로 상세', { exit: back, screen: sections, nav: nav.filter(x => x.id !== 'daily'), windowHeight: 678, topStart: 228, tokens: phoneTokens }, 316, 366],
-  ['바깥 가로 루트', { screen: [action('add'), action('done')], nav: nav.filter(x => x.id !== 'daily'), windowHeight: 466, topStart: 114, bottomReserve: 24, tokens: phoneTokens }, 272, 328],
-  ['바깥 가로 상세 접힘', { exit: back, screen: sections, nav: nav.filter(x => x.id !== 'daily'), windowHeight: 466, topStart: 114, bottomReserve: 24, tokens: phoneTokens }, 272, 276],
+  ['바깥 세로 상세', { exit: back, screen: sections, nav: nav.filter(x => x.id !== 'daily'), length: 678, statusReserve: 228, tokens: phoneTokens }, 316, 366],
+  ['바깥 가로 루트', { screen: [action('add'), action('done')], nav: nav.filter(x => x.id !== 'daily'), length: 466, statusReserve: 114, endReserve: 24, tokens: phoneTokens }, 272, 328],
+  ['바깥 가로 상세 접힘', { exit: back, screen: sections, nav: nav.filter(x => x.id !== 'daily'), length: 466, statusReserve: 114, endReserve: 24, tokens: phoneTokens }, 272, 276],
   ['안쪽 가로 데일리', { screen: mainControls, nav: mainNav }, 396, 437],
   ['안쪽 가로 프로젝트', { screen: [...mainControls, action('view', 'view')], nav: mainNav }, 392, 437],
   ['안쪽 가로 데일리 자판', { screen: mainControls, nav: mainNav, keyboardOverlap: 295 }, 168, 174],
   ['안쪽 가로 PAS 자판', { ...pasOptions, keyboardOverlap: 295 }, 116, 118],
-  ['안쪽 세로 PAS', { ...pasOptions, windowHeight: 951, topStart: 86 }, 220, 777],
+  ['안쪽 세로 PAS', { ...pasOptions, length: 951, statusReserve: 86 }, 220, 777],
 ] as Array<[string, Partial<Parameters<typeof duoRailLayout>[0]>, number, number]>)('%s 높이', (_name, options, need, available) => {
   const result = layout(options);
   const tokens = options.tokens ?? tabletTokens;
@@ -72,8 +72,8 @@ test.each([
   expect(railCapsuleLength(result.screen.length, result.compact, tokens)
     + (result.screen.length && result.nav.length ? gap : 0)
     + railCapsuleLength(result.nav.length, result.compact, tokens)).toBe(need);
-  expect((options.windowHeight ?? 669) - Math.max(options.bottomReserve ?? 32, options.keyboardOverlap ?? 0)
-    - (options.topStart ?? 200) - (result.exit ? 48 + gap : 0)).toBe(available);
+  expect((options.length ?? 669) - Math.max(options.endReserve ?? 32, options.keyboardOverlap ?? 0)
+    - (options.statusReserve ?? 200) - (result.exit ? 48 + gap : 0)).toBe(available);
 });
 
 test('프로젝트 기존 보기의 넘침은 화면 동작부터 접고 설정을 남긴다', () => {
@@ -87,7 +87,7 @@ test.each([[669, ['starred']], [626, ['starred', 'today']]])('안쪽 세로 %i�
   const result = layout({ menu: action('folder-menu', 'menu'),
     screen: [action('starred'), action('today'), action('create'), action('completed'), action('search'), action('view', 'view')],
     nav: [action('drawer', 'nav'), action('pas', 'nav'), action('settings', 'settings')],
-    windowHeight: width, topStart: 132, bottomReserve: 12, allowCompact: false } as any);
+    length: width, statusReserve: 132, endReserve: 12, allowCompact: false });
   expect(result.compact).toBe(false);
   expect(result.folded.map(item => item.id)).toEqual(folded);
 });

@@ -194,8 +194,8 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const railLayout = duoRailLayout({ exit: railBack?.disabled ? null : railBack ?? { id: 'home', kind: 'exit', label: '홈으로 돌아가기', icon: 'home-outline', onPress: onHome },
     screen: railOverride?.length ? railMain.filter(item => item.kind !== 'menu' && item.kind !== 'rare') : pasActions,
     nav: [], rare: railOverride?.length ? railMain.filter(item => item.kind === 'rare') : [], menu: railMenu,
-    windowHeight, topStart: duoTopBand ? DUO_TOP_BAND_RAIL_TOP : getDuoRailTopOffset(windowWidth, windowHeight),
-    bottomReserve: Math.max(insets.bottom, t.uiSpacing.xxl), keyboardOverlap, tokens: railTokens });
+    length: windowHeight, statusReserve: duoTopBand ? DUO_TOP_BAND_RAIL_TOP : getDuoRailTopOffset(windowWidth, windowHeight),
+    endReserve: Math.max(insets.bottom, t.uiSpacing.xxl), keyboardOverlap, tokens: railTokens });
   const screenRailTop = windowHeight - railBottom - railCapsuleLength(railLayout.screen.length, railLayout.compact, railTokens);
   const railColumnBottom = Math.max(0, (app?.height ?? windowHeight) - screenRailTop + t.uiSpacing.sm);
   const rightColumnOffset = duoTopBand ? DUO_RAIL_CENTER_FROM_END - RAIL_CAPSULE_WIDTH / 2 - t.uiSpacing.sm : t.foundation.pageInset - t.uiSpacing.sm;

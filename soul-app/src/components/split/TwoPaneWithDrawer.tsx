@@ -142,8 +142,8 @@ export function TwoPaneWithDrawer() {
   const menu = mainActions.find(item => item.kind === 'menu') ?? null;
   const layout = duoRailLayout({ exit: backAction?.disabled ? null : backAction,
     screen: [...mainActions.filter(item => item.kind !== 'menu' && item.kind !== 'rare'), ...rootScreen], nav: rootNav,
-    rare: mainActions.filter(item => item.kind === 'rare'), menu, windowHeight: screenHeight,
-    topStart: getDuoRailTopOffset(screenWidth, screenHeight), bottomReserve: Math.max(insets.bottom, t.uiSpacing.xxl), keyboardOverlap,
+    rare: mainActions.filter(item => item.kind === 'rare'), menu, length: screenHeight,
+    statusReserve: getDuoRailTopOffset(screenWidth, screenHeight), endReserve: Math.max(insets.bottom, t.uiSpacing.xxl), keyboardOverlap,
     tokens: { spacingXs: t.spacing.xs, uiSpacingXs: t.uiSpacing.xs, uiSpacingSm: t.uiSpacing.sm, hitTargetMin: t.hitTarget.min } });
   const renderRailAction = (item: PhoneRailAction) => {
     if (item.id === 'pas') return <TabletPersistentEntry key={item.id} rail />;

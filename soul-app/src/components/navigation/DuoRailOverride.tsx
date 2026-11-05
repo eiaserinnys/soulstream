@@ -23,8 +23,8 @@ export function DuoRailOverride({ topOffset, bandWidth }: { topOffset?: number; 
   const menu = mainActions.find(action => action.kind === 'menu') ?? null;
   const layout = duoRailLayout({ exit: backAction?.disabled ? null : backAction,
     screen: mainActions.filter(action => action.kind !== 'menu' && action.kind !== 'rare'), nav: [],
-    rare: mainActions.filter(action => action.kind === 'rare'), menu, windowHeight: height, topStart: railTopOffset,
-    bottomReserve: Math.max(insets.bottom, t.uiSpacing.xxl), keyboardOverlap,
+    rare: mainActions.filter(action => action.kind === 'rare'), menu, length: height, statusReserve: railTopOffset,
+    endReserve: Math.max(insets.bottom, t.uiSpacing.xxl), keyboardOverlap,
     tokens: { spacingXs: t.spacing.xs, uiSpacingXs: t.uiSpacing.xs, uiSpacingSm: t.uiSpacing.sm, hitTargetMin: t.hitTarget.min } });
   const renderAction = (action: typeof actions[number]) => <RailCapsuleItem key={action.id} testID={`duo-rail-action-${action.id}`} label={action.label}
         selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>

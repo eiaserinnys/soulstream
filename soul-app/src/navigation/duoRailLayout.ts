@@ -2,9 +2,9 @@ import { railCapsuleLength, RAIL_CAPSULE_WIDTH } from '../components/navigation/
 import { showAppContextMenu } from '../components/menus/AppContextMenu';
 import type { PhoneRailAction } from './phoneRailActions';
 
-export function duoRailLayout({ exit, screen, nav, rare, menu, windowHeight, topStart, bottomReserve, keyboardOverlap, tokens }: {
+export function duoRailLayout({ exit, screen, nav, rare, menu, length, statusReserve, endReserve, keyboardOverlap, tokens, allowCompact = true }: {
   exit: PhoneRailAction | null; screen: PhoneRailAction[]; nav: PhoneRailAction[]; rare: PhoneRailAction[];
-  menu: PhoneRailAction | null; windowHeight: number; topStart: number; bottomReserve: number; keyboardOverlap: number;
+  menu: PhoneRailAction | null; length: number; statusReserve: number; endReserve: number; keyboardOverlap: number; allowCompact?: boolean;
   tokens: { spacingXs: number; uiSpacingXs: number; uiSpacingSm: number; hitTargetMin: number };
 }) {
   const screenOrder = (item: PhoneRailAction) => item.kind === 'status' ? 0 : item.kind === 'view' ? 2 : 1;
@@ -13,13 +13,13 @@ export function duoRailLayout({ exit, screen, nav, rare, menu, windowHeight, top
   const regularNeed = railCapsuleLength(screen.length + (menu || rare.length ? 1 : 0), false, tokens)
     + (screen.length + (menu || rare.length ? 1 : 0) && nav.length ? tokens.uiSpacingSm : 0)
     + railCapsuleLength(nav.length, false, tokens);
-  const regularAvailable = windowHeight - bottomReserve - topStart - (exit ? RAIL_CAPSULE_WIDTH + tokens.uiSpacingSm : 0);
-  const compact = windowHeight < 500 || regularNeed > regularAvailable;
+  const regularAvailable = length - endReserve - statusReserve - (exit ? RAIL_CAPSULE_WIDTH + tokens.uiSpacingSm : 0);
+  const compact = allowCompact && (length < 500 || regularNeed > regularAvailable);
   const gap = compact ? tokens.uiSpacingXs : tokens.uiSpacingSm;
   const visibleScreen = [...orderedScreen];
   const visibleNav = keyboardOverlap > 0 ? [] : [...nav];
   const folded: PhoneRailAction[] = [];
-  const available = windowHeight - Math.max(bottomReserve, keyboardOverlap) - topStart - (exit ? RAIL_CAPSULE_WIDTH + gap : 0);
+  const available = length - Math.max(endReserve, keyboardOverlap) - statusReserve - (exit ? RAIL_CAPSULE_WIDTH + gap : 0);
   const need = () => {
     const screenCount = visibleScreen.length + (menu || rare.length || folded.length ? 1 : 0);
     return railCapsuleLength(screenCount, compact, tokens)
