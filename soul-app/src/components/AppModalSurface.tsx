@@ -18,6 +18,7 @@ import { TabletSafeAreaFrame } from './split/TabletSafeAreaFrame';
 import { recordModalVisibility } from '../lib/session-diagnostics-api';
 import type { ModalDiagnosticSource } from '../lib/session-diagnostics-core';
 import { GlassSurfaceBoundary } from './GlassSurface';
+import { DuoTopBandMainContext } from '../navigation/tabContract';
 
 const SUPPORTED_MODAL_ORIENTATIONS: NonNullable<ModalProps['supportedOrientations']> = [
   'portrait',
@@ -113,6 +114,7 @@ export function AppModalSurface({
       onRequestClose={onRequestClose}
       onDismiss={onDismiss}
     >
+      <DuoTopBandMainContext.Provider value={false}>
       <Layer><View
         testID="app-modal-viewport"
         style={[
@@ -181,6 +183,7 @@ export function AppModalSurface({
         </SideBandFrame>
         {sideBand}
       </View></Layer>
+      </DuoTopBandMainContext.Provider>
     </Modal>
   );
 }
