@@ -4,16 +4,19 @@ import type { DesignTokens } from '../../theme';
 export function cardDetailStyles(t: DesignTokens) {
   const type = t.foundation.typography;
   const s = t.uiSpacing;
+  const iconOverhang = (t.hitTarget.min - t.foundation.iconFrame.compact) / 2;
   const sendNoticeSurfaceHeight = t.controlHeight.chip + s.xs + s.xxs;
   return StyleSheet.create({
     container: { flex: 1 },
     frame: { flex: 1, minHeight: 0 },
     header: { paddingHorizontal: t.foundation.pageInset, paddingVertical: s.md, gap: s.sm },
     headerRow: { flexDirection: 'row', alignItems: 'center', gap: s.sm },
-    headerActions: { flexDirection: 'row', alignItems: 'center' },
+    headerActions: { flexDirection: 'row', alignItems: 'center', marginRight: -iconOverhang },
+    backFrame: { marginLeft: -iconOverhang },
     titleHitFrame: { flex: 1, minWidth: 0, alignSelf: 'stretch', alignItems: 'stretch', justifyContent: 'center' },
     titleHitSurface: { flex: 1, minWidth: 0, width: '100%', alignSelf: 'stretch', alignItems: 'flex-start', justifyContent: 'center' },
     heading: { flex: 1, minWidth: 0, ...type.section, color: t.colors.textPrimary },
+    title: { minWidth: 0, maxWidth: '100%', ...type.section, color: t.colors.textPrimary },
     chips: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: s.xs },
     chip: { minHeight: t.controlHeight.chip, paddingHorizontal: s.sm, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.surfaceCode, flexDirection: 'row', alignItems: 'center', gap: s.xs, maxWidth: '100%' },
     chipAvatar: { width: t.avatarSize.compact, height: t.avatarSize.compact, borderRadius: t.foundation.radius.round },

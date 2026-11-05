@@ -261,12 +261,12 @@ export function CardDetailContent(props: CardDetailContentProps) {
     }}>
       <View testID="card-detail-header" style={styles.header}>
         <View style={styles.headerRow}>
-          {!duo ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} accessibilityLabel="뒤로" onPress={onClose}>
+          {!duo ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} accessibilityLabel="뒤로" onPress={onClose} frameStyle={styles.backFrame}>
             <Ionicons testID="card-detail-back-icon" name="chevron-back" size={t.foundation.typography.body.fontSize} color={t.colors.textPrimary} />
           </GlassButton> : null}
           <CompactTouchTarget accessibilityRole="button" accessibilityLabel="상태 변경" disabled={locked || !api || !card}
             onPress={() => setStatusMenuOpen(true)} frameStyle={styles.titleHitFrame} surfaceStyle={styles.titleHitSurface} surfaceTestID="card-detail-title-surface">
-            <Text testID="card-detail-title" style={styles.heading} numberOfLines={3}>
+            <Text testID="card-detail-title" style={styles.title} numberOfLines={3}>
               {card ? <><CardStatusChip card={card} detail />{' '}{card.title}</> : '카드'}
             </Text>
           </CompactTouchTarget>
