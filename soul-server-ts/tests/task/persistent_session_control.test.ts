@@ -5,6 +5,7 @@ import type { EventPersistence } from "../../src/db/event_persistence.js";
 import { UnknownModelPresetError, type ModelCatalog } from "../../src/model_catalog.js";
 import type { Task } from "../../src/task/task_models.js";
 import { PersistentSessionControl } from "../../src/task/persistent_session_control.js";
+import { EventAcknowledgementTimeoutError } from "../../src/upstream/event_outbox_pump_protocol.js";
 
 const firstCall = {
   generation: 1,
@@ -385,6 +386,79 @@ describe("PersistentSessionControl", () => {
 });
 
 describe("PersistentSessionControl.applySettings", () => {
+  it("keeps the durable marker in memory after an acknowledgement timeout so a settings retry succeeds", async () => {
+    const task = makeRolloverTask({ persistent: false, metadata: [] });
+    const appended: Record<string, unknown>[] = [];
+    const timeout = new EventAcknowledgementTimeoutError(42, 30_000);
+    const enqueueMetadataEffect = vi.fn(async (_id: string, entry: Record<string, unknown>) => {
+      appended.push(entry);
+      if (entry.type === "persistent_session") throw timeout;
+      return 42;
+    });
+    const { control } = makeRolloverControl(task, { persistent: { enqueueMetadataEffect } as unknown as EventPersistence });
+
+    await expect(control.applySettings(task.agentSessionId, { enabled: true })).rejects.toBe(timeout);
+    expect(appended.map((entry) => entry.type)).toEqual(["persistent_settings", "persistent_session"]);
+    expect(task.persistent).toBe(true);
+    expect(task.metadata).toContainEqual(appended[1]);
+    await expect(control.applySettings(task.agentSessionId, { settings: { show_character: false } }))
+      .resolves.toMatchObject({ persistent: true });
+  });
+
+  it("leaves the marker unchanged when appending fails", async () => {
+    const task = makeRolloverTask({ persistent: false, metadata: [] });
+    const failure = new Error("append failed");
+    const enqueueMetadataEffect = vi.fn(async (_id: string, entry: Record<string, unknown>) => {
+      if (entry.type === "persistent_session") throw failure;
+      return 42;
+    });
+    const { control } = makeRolloverControl(task, { persistent: { enqueueMetadataEffect } as unknown as EventPersistence });
+
+    await expect(control.applySettings(task.agentSessionId, { enabled: true })).rejects.toBe(failure);
+    expect(task.persistent).toBe(false);
+    expect(task.metadata?.some((entry) => entry.type === "persistent_session")).toBe(false);
+  });
+
+  it("retains durable settings metadata after an acknowledgement timeout", async () => {
+    const task = makeRolloverTask();
+    const timeout = new EventAcknowledgementTimeoutError(42, 30_000);
+    const enqueueMetadataEffect = vi.fn().mockRejectedValue(timeout);
+    const { control } = makeRolloverControl(task, { persistent: { enqueueMetadataEffect } as unknown as EventPersistence });
+
+    await expect(control.applySettings(task.agentSessionId, { settings: { show_character: false } })).rejects.toBe(timeout);
+    expect(readStoredPersistentSettings(task.metadata)?.show_character).toBe(false);
+  });
+
+  it("retains durable generation metadata after an acknowledgement timeout", async () => {
+    const task = makeRolloverTask();
+    const timeout = new EventAcknowledgementTimeoutError(42, 30_000);
+    const enqueueMetadataEffect = vi.fn().mockRejectedValue(timeout);
+    const { control } = makeRolloverControl(task, { persistent: { enqueueMetadataEffect } as unknown as EventPersistence });
+
+    await expect(control.requestGenerationRollover(task.agentSessionId, { modelPreset: "codex-preset", reason: "manual" }))
+      .rejects.toBe(timeout);
+    expect(task.persistentGeneration?.pending?.targetModelPreset).toBe("codex-preset");
+    expect(task.metadata?.some((entry) => entry.type === "persistent_generation")).toBe(true);
+  });
+
+  it("lists an instruction saved before its acknowledgement timed out", async () => {
+    const task = makeRolloverTask();
+    const appended: Record<string, unknown>[] = [];
+    const timeout = new EventAcknowledgementTimeoutError(42, 30_000);
+    const enqueueMetadataEffect = vi.fn(async (_id: string, entry: Record<string, unknown>) => {
+      appended.push(entry);
+      throw timeout;
+    });
+    const { control } = makeRolloverControl(task, { persistent: { enqueueMetadataEffect } as unknown as EventPersistence });
+
+    await expect(control.applyPersistentInstructions(task.agentSessionId, {
+      origin: "agent", ops: [{ op: "add", text: "Keep replies concise." }],
+    })).rejects.toBe(timeout);
+    expect(appended[0]?.type).toBe("persistent_instructions");
+    expect(await control.listPersistentInstructions(task.agentSessionId))
+      .toEqual([expect.objectContaining({ text: "Keep replies concise." })]);
+  });
+
   it("statically validates and stores a remote default when the worker catalog lacks it", async () => {
     const task = makeRolloverTask();
     const { control, enqueueMetadataEffect, modelCatalog } = makeRolloverControl(task);

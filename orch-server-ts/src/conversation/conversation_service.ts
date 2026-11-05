@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { FastifyRequest } from "fastify";
+import { PendingNodeCommandTimeoutError } from "../node/pending_commands.js";
 import type { SqlClient } from "../control_plane/control_plane_types.js";
 import type { HostSessionRow } from "../control_plane/repositories/session_read_repository.js";
 import type { PersistentSessionSettingsService } from "../session/persistent_session_settings_service.js";
@@ -130,6 +131,9 @@ export class ConversationService {
     try {
       const pending = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(pendingError(id)), this.deps.responseTimeoutMs ?? 15_000); });
       await Promise.race([work, pending]);
+    } catch (error) {
+      if (error instanceof PendingNodeCommandTimeoutError) throw pendingError(id);
+      throw error;
     } finally { if (timer) clearTimeout(timer); }
     const current = await this.requireBinding(account, id);
     return { thread: await this.thread(request, current), created, notices: current.notices.map(n => n.text) };

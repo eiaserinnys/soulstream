@@ -8,6 +8,7 @@ import { registerConversationRoutes } from "../src/conversation/conversation_rou
 import { executeCreateSessionRoute } from "../src/session/session_command_routes.js";
 import { ConversationMessageService } from "../src/conversation/conversation_messages.js";
 import { createHash } from "node:crypto";
+import { PendingNodeCommandTimeoutError } from "../src/node/pending_commands.js";
 
 const request = JSON.parse(readFileSync(new URL("./fixtures/conversation-v1/request.json", import.meta.url), "utf8"));
 const logger = { warn() {} };
@@ -23,6 +24,7 @@ describe("conversation thread API", () => {
   let deny = false;
   let denySession: string | null = null;
   let loseInstructionAck = false;
+  let timeoutPersistentUpdateOnce = false;
   let rejectModelOnce = false;
   let unavailableNodeOnce = false;
   let offlineRelease = false;
@@ -66,6 +68,10 @@ describe("conversation thread API", () => {
     const persistent = {
       get: async (_: unknown, id: string) => ({ session: settings.get(id) }),
       update: async (_: unknown, id: string, input: any) => {
+        if (timeoutPersistentUpdateOnce) {
+          timeoutPersistentUpdateOnce = false;
+          throw new PendingNodeCommandTimeoutError({ commandType: "set_persistent_session_settings", requestId: "test", timeoutMs: 30_000 });
+        }
         if (input.enabled === false && offlineRelease) throw Object.assign(new Error("Node unavailable"), { code: "NODE_UNAVAILABLE" });
         if (input.enabled === false && failRelease) throw new Error("Command failed");
         const old = settings.get(id); settings.set(id, { ...old, persistent: input.enabled ?? old.persistent,
@@ -390,6 +396,18 @@ describe("conversation thread API", () => {
     const first = await ensure("instruction-ack"); expect(first.statusCode).toBe(503);
     const second = await ensure("instruction-ack"); expect(second.statusCode).toBe(200);
     expect(instructions.get(second.json().thread.id)).toHaveLength(1);
+  });
+  it("returns pending on a node command timeout and reconnects the same thread on retry", async () => {
+    timeoutPersistentUpdateOnce = true;
+    const before = created;
+    const first = await ensure("persistent-command-timeout");
+    expect(first.statusCode).toBe(504);
+    expect(first.json().error.code).toBe("pending");
+    expect(first.json().thread_id).toEqual(expect.any(String));
+    const second = await ensure("persistent-command-timeout");
+    expect(second.statusCode).toBe(200);
+    expect(second.json().thread.id).toBe(first.json().thread_id);
+    expect(created - before).toBe(1);
   });
   it("adopts an existing session id and rejects a different binding", async () => {
     const id = "existing-1"; rows.set(id, { session_id: id, folder_id: "allowed", display_name: "Existing", node_id: "eiaserinnys", created_at: new Date(), status: "completed", model_preset: "opus" });
