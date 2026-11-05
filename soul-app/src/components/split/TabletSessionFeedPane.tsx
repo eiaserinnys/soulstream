@@ -12,7 +12,7 @@ import { useUIStore } from '../../store/uiStore';
 import { LiquidGlassButton } from '../LiquidGlassButton';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { recordUiUsageEvent } from '../../lib/ui-usage-events';
-import { useDuoSideBand } from '../../navigation/duoSideBand';
+import { useDuoBandOwnsPanelActions } from '../../navigation/duoSideBand';
 
 /**
  * 태블릿 portrait·landscape가 공유하는 session feed chrome 구현.
@@ -25,7 +25,7 @@ export function TabletSessionFeedPane({ width, onOpenSession }: {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   const searchActive = useSearchStore((state) => state.tabletActive);
-  const duo = useDuoSideBand();
+  const duo = useDuoBandOwnsPanelActions();
   const folderOverlayVisible = useUIStore((state) => state.folderOverlayVisible);
 
   return (

@@ -22,6 +22,7 @@ export const PhoneRailModeContext = createContext(false);
 export const RAIL_MIN_INSET_WIDTH = 48;
 export const DuoSideBandContext = createContext<boolean | null>(null);
 export const DuoTopBandContext = createContext<boolean | null>(null);
+export const DuoTopBandMainContext = createContext(false);
 
 export function usePhoneRailMode(): boolean {
   return useContext(PhoneRailModeContext);

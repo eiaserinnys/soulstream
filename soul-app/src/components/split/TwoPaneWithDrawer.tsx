@@ -20,7 +20,8 @@ import { TabletSafeAreaFrame } from './TabletSafeAreaFrame';
 import { TabletSessionFeedPane } from './TabletSessionFeedPane';
 import { TabletHomeComposerHost } from './TabletHomeComposerHost';
 import { clampTwoPaneMiddleDrag, resolveTwoPaneMiddleWidth } from './paneWidths';
-import { DUO_RAIL_END_INSET, DUO_SIDE_BAND_WIDTH, getDuoRailTopOffset, splitDuoRailBackAction, useDuoSideBand, useDuoTopBand } from '../../navigation/duoSideBand';
+import { DUO_RAIL_END_INSET, DUO_SIDE_BAND_WIDTH, DUO_TOP_BAND_STATUS_CENTER_Y, DUO_TOP_BAND_STATUS_RESERVE, getDuoRailTopOffset, splitDuoRailBackAction, useDuoSideBand, useDuoTopBand } from '../../navigation/duoSideBand';
+import { DuoTopBandMainContext } from '../../navigation/tabContract';
 import { useSearchStore } from '../../store/searchStore';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
 import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem } from '../navigation/RailCapsule';
@@ -62,6 +63,7 @@ export function TwoPaneWithDrawer() {
   const insets = useSafeAreaInsets();
   const duo = useDuoSideBand();
   const duoTopBand = useDuoTopBand();
+  const topBandMain = duoTopBand && !duo;
   const override = useActiveDuoRailOverrideEntry();
   const mainRef = useRef<MainListPaneHandle>(null);
   const [keyboardOverlap, setKeyboardOverlap] = useState(0);
@@ -140,10 +142,13 @@ export function TwoPaneWithDrawer() {
       onPress: () => useUIStore.getState().openSettings() },
   ] : [];
   const menu = mainActions.find(item => item.kind === 'menu') ?? null;
-  const layout = duoRailLayout({ exit: backAction?.disabled ? null : backAction,
-    screen: [...mainActions.filter(item => item.kind !== 'menu' && item.kind !== 'rare'), ...rootScreen], nav: rootNav,
-    rare: mainActions.filter(item => item.kind === 'rare'), menu, windowHeight: screenHeight,
-    topStart: getDuoRailTopOffset(screenWidth, screenHeight), bottomReserve: Math.max(insets.bottom, t.uiSpacing.xxl), keyboardOverlap,
+  const layout = duoRailLayout({ exit: topBandMain ? null : backAction?.disabled ? null : backAction,
+    screen: [...mainActions.filter(item => item.kind !== 'menu' && item.kind !== 'rare'), ...rootScreen],
+    nav: topBandMain ? [...rootNav.filter(item => item.id === 'drawer'), ...rootNav.filter(item => item.id !== 'drawer')] : rootNav,
+    rare: mainActions.filter(item => item.kind === 'rare'), menu, length: topBandMain ? screenWidth : screenHeight,
+    statusReserve: topBandMain ? DUO_TOP_BAND_STATUS_RESERVE : getDuoRailTopOffset(screenWidth, screenHeight),
+    endReserve: topBandMain ? insets.left + t.tabletShell.outerInset : Math.max(insets.bottom, t.uiSpacing.xxl),
+    keyboardOverlap: topBandMain ? 0 : keyboardOverlap, allowCompact: !topBandMain,
     tokens: { spacingXs: t.spacing.xs, uiSpacingXs: t.uiSpacing.xs, uiSpacingSm: t.uiSpacing.sm, hitTargetMin: t.hitTarget.min } });
   const renderRailAction = (item: PhoneRailAction) => {
     if (item.id === 'pas') return <TabletPersistentEntry key={item.id} rail />;
@@ -162,6 +167,7 @@ export function TwoPaneWithDrawer() {
       edges={['left', 'right']}
     >
       <TabletSafeAreaFrame>
+        <DuoTopBandMainContext.Provider value={topBandMain}>
         <View
           pointerEvents={folderOverlayVisible ? 'none' : 'auto'}
           style={styles.row}
@@ -189,6 +195,7 @@ export function TwoPaneWithDrawer() {
             <TabletSessionFeedPane />
           </SplitPanelSurface>
         </View>
+        </DuoTopBandMainContext.Provider>
 
         <TabletHomeComposerHost />
         {/* 드로어 오버레이 — pointerEvents로 닫힘 상태에선 터치 통과 */}
@@ -224,6 +231,17 @@ export function TwoPaneWithDrawer() {
         <FolderWorkspaceReadOverlay />
       </TabletSafeAreaFrame>
     </SafeAreaView>
+    {topBandMain && showRootNavigation && !cardBoardExpanded && !settingsVisible ? <View
+      testID="duo-top-band" accessibilityRole="toolbar" accessibilityLabel="메인 도구" pointerEvents="box-none"
+      style={{ position: 'absolute', top: DUO_TOP_BAND_STATUS_CENTER_Y - RAIL_CAPSULE_WIDTH / 2,
+        left: insets.left + t.tabletShell.outerInset, flexDirection: 'row', gap: t.uiSpacing.sm }}>
+      {layout.nav.length ? <RailCapsule direction="row" testID="duo-top-band-navigation-capsule">
+        {layout.nav.map(renderRailAction)}
+      </RailCapsule> : null}
+      {layout.screen.length ? <RailCapsule direction="row" testID="duo-top-band-capsule">
+        {[...layout.screen].reverse().map(renderRailAction)}
+      </RailCapsule> : null}
+    </View> : null}
     {duo && !cardBoardExpanded && !settingsVisible ? <AppKeyboardAvoidingView
       pointerEvents="box-none" behavior="padding" onOverlapChange={setKeyboardOverlap}
       style={StyleSheet.absoluteFill}>
@@ -245,7 +263,7 @@ export function TwoPaneWithDrawer() {
         </RailCapsule> : null}
       </View> : null}
     </AppKeyboardAvoidingView> : null}
-    {duoTopBand && !cardBoardExpanded && !settingsVisible
+    {topBandMain && !showRootNavigation && !cardBoardExpanded && !settingsVisible
       ? <DuoRailOverride bandWidth={DUO_SIDE_BAND_WIDTH} topOffset={insets.top + t.tabletShell.outerInset} />
       : null}
     </View>

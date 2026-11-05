@@ -24,11 +24,8 @@ import {
   FolderWorkspaceDetailPane,
   FolderWorkspaceSinglePanel,
 } from '../components/planner/FolderWorkspaceReadOverlay';
-import { MainListPane } from '../components/split/MainListPane';
-import { TabletSessionFeedPane } from '../components/split/TabletSessionFeedPane';
-import { calculateTwoPaneWidths } from '../components/split/paneWidths';
 import { getFolderWorkspaceOverlayWidth } from '../lib/folder-workspace-layout';
-import { createReviewApi, entryShellCardId } from './fixtures';
+import { createReviewApi, entryShellCardId, entryShellFolders } from './fixtures';
 import { installEntryShellPublicHarness } from './fixture-client';
 import { EntryShellAlertHarness, ReviewEntryShell } from './ReviewEntryShell';
 import { ReviewPersistentCardOverlay } from './ReviewPersistentCardOverlay';
@@ -89,6 +86,13 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
   const phoneChat = phone && view === 'chat';
   const api = useMemo(() => createReviewApi('normal', { entryShell: true }), []);
   useEffect(() => installEntryShellPublicHarness(), []);
+  useEffect(() => {
+    const projectView = params.get('project-view');
+    if (projectView !== 'existing' && projectView !== 'board') return;
+    const folder = entryShellFolders[0];
+    useUIStore.getState().setMainPaneView(folder.id, projectView);
+    useUIStore.getState().setActiveSection({ kind: 'project', folderId: folder.id, projectPageId: folder.projectPageId! });
+  }, []);
   return <ContentLinkProvider>
     <DuoTopBandContext.Provider value={frameId.startsWith('inner-portrait')}>
     <SafeAreaFrameContext.Provider value={{ x: 0, y: 0, width: frame.width, height: frame.height }}>
@@ -269,9 +273,6 @@ export function ReviewIphoneDuo() {
             {IPHONE_DUO_FRAMES.map((frame) => {
               const safeWidth = frame.width - frame.insets.left - frame.insets.right;
               const safeHeight = frame.height - frame.insets.top - frame.insets.bottom;
-              const twoPane = calculateTwoPaneWidths(
-                Math.max(0, safeWidth - 2 * t.tabletShell.outerInset),
-              );
               const overlayWidth = getFolderWorkspaceOverlayWidth(safeWidth);
               const frameRect: Rect = { x: 0, y: 0, width: frame.width, height: frame.height };
               const frameInsets: EdgeInsets = frame.insets;
@@ -280,12 +281,9 @@ export function ReviewIphoneDuo() {
                 : frame.id === 'outer-landscape'
                   ? <SettingsScreen showTitle={false} bottomSafeAreaOwner="parent" />
                   : frame.id === 'inner-portrait'
-                    ? <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', gap: t.tabletShell.panelGap, paddingHorizontal: t.tabletShell.outerInset }}>
-                      <View style={{ width: twoPane.middle, minWidth: 0 }}>
-                        <MainListPane paneWidth={twoPane.middle} />
-                      </View>
-                      <TabletSessionFeedPane width={twoPane.right} onOpenSession={() => {}} />
-                    </View>
+                    ? React.createElement('iframe', { title: '안쪽 세로 메인',
+                      src: `${window.location.pathname}?section=iphoneDuo&sample=main-layout&frame=inner-portrait`,
+                      style: { width: '100%', height: '100%', border: 0 } })
                     : frame.id === 'inner-portrait-short'
                       ? <View style={{ width: overlayWidth, height: safeHeight, minHeight: 0 }}>
                         <FolderWorkspaceSinglePanel

@@ -16,7 +16,7 @@ import { useCompletedCards } from '../../hooks/useCompletedCards';
 import { CompletedCardCollection } from './CompletedCardCollection';
 import { LiquidGlassButton } from '../LiquidGlassButton';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useDuoSideBand } from '../../navigation/duoSideBand';
+import { useDuoBandOwnsPanelActions } from '../../navigation/duoSideBand';
 
 export interface FolderCardsHandle { toggleCreate(): void; }
 
@@ -25,7 +25,7 @@ export const FolderCards = forwardRef<FolderCardsHandle, {
   virtualHost?:boolean;
 }>(function FolderCards({ api, folderId, active = true, onOpenSession, cardDisplay:controlledDisplay,virtualHost=false }, ref) {
   const t = useTokens();
-  const duo = useDuoSideBand();
+  const duo = useDuoBandOwnsPanelActions();
   const styles = useMemo(() => cardStyles(t), [t]);
   const [adding, setAdding] = useState(false);
   useImperativeHandle(ref, () => ({ toggleCreate: () => setAdding(open => !open) }), []);

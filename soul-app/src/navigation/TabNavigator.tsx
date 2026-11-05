@@ -156,7 +156,7 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
   const bottomReserve = windowHeight < 500 ? insets.bottom : Math.max(insets.bottom, t.uiSpacing.xxl);
   const layout = duoRailLayout({ exit: backAction?.disabled ? null : backAction ?? defaultBackAction,
     screen: contextActions.filter(item => item.kind !== 'menu' && item.kind !== 'rare'), nav: navigationActions,
-    rare: contextActions.filter(item => item.kind === 'rare'), menu, windowHeight, topStart: topOffset, bottomReserve, keyboardOverlap,
+    rare: contextActions.filter(item => item.kind === 'rare'), menu, length: windowHeight, statusReserve: topOffset, endReserve: bottomReserve, keyboardOverlap,
     tokens: { spacingXs: t.spacing.xs, uiSpacingXs: t.uiSpacing.xs, uiSpacingSm: t.uiSpacing.sm, hitTargetMin: t.hitTarget.min } });
   const renderAction = (item: PhoneRailAction) => {
     const isTab = navigationNames.some(name => name === item.id);

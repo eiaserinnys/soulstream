@@ -15,9 +15,23 @@ import { useUIStore } from '../../../store/uiStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { useCardStore } from '../../../store/cardStore';
 import { cardFixture } from '../../../test-support/cards';
-import { DuoSideBandContext } from '../../../navigation/tabContract';
+import { DuoSideBandContext, DuoTopBandMainContext } from '../../../navigation/tabContract';
 const mockList = jest.fn();
 const mockCompleted=jest.fn();
+
+test('듀오 세로 메인에서만 패널 머리줄을 띠에 맡긴다', async () => {
+  useUIStore.setState({ activeSection: { kind: 'daily', date: '2026-10-01' } });
+  const screen = render(<DuoSideBandContext.Provider value={false}><DuoTopBandMainContext.Provider value={true}>
+    <MainListPane showSearch />
+  </DuoTopBandMainContext.Provider></DuoSideBandContext.Provider>);
+  expect(screen.queryByTestId('tablet-main-header')).toBeNull();
+  screen.rerender(<DuoSideBandContext.Provider value={false}><DuoTopBandMainContext.Provider value={false}>
+    <MainListPane showSearch />
+  </DuoTopBandMainContext.Provider></DuoSideBandContext.Provider>);
+  expect(screen.getByTestId('tablet-main-header')).toBeTruthy();
+  await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
+  screen.unmount();
+});
 
 test('듀오 프로젝트에서는 본문 탭 없이 레일의 보기 변경을 반영한다', async () => {
   useUIStore.setState({ activeSection: { kind: 'project', folderId: 'folder-1', projectPageId: 'page-1' }, mainPaneViews: {} });
