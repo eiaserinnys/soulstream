@@ -4,6 +4,7 @@ const { startScenario } = require('./scenarios.cjs');
 
 test('scenario callbacks execute in the requested order and report their real phase', () => {
   const expectations = {
+    'home-portrait': ['band', 'drawer', 'settings', 'search'],
     'home-landscape': ['band', 'settings', 'closed'],
     'pas-landscape': ['conversation', 'reports', 'cards', 'keyboard', 'home'],
     'pas-portrait': ['conversation', 'reports', 'cards'],

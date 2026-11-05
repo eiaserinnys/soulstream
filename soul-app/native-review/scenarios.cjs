@@ -1,4 +1,5 @@
 const sequences = {
+  'home-portrait': ['band', 'drawer', 'settings', 'search'],
   'home-landscape': ['band', 'settings', 'closed'],
   'pas-landscape': ['conversation', 'reports', 'cards', 'keyboard', 'home'],
   'pas-portrait': ['conversation', 'reports', 'cards'],

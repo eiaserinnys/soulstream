@@ -22,10 +22,12 @@ import { useUIStore } from '../src/store/uiStore';
 import { useTokens } from '../src/theme';
 import { session, sessionId, sessionSummary } from './fixture-client';
 import { PhaseContext, PhaseMetrics } from './phase-metrics';
+import { subscribeHomePhase } from './home-phase';
 const { startScenario } = require('./scenarios.cjs');
 
 const Stack = createNativeStackNavigator();
 const innerInsets = { top: 24, right: 84, bottom: 24, left: 0 };
+const portraitInsets = { top: 82, right: 0, bottom: 24, left: 0 };
 const scenario = String(Settings.get('pasHarnessScenario') || 'pas-portrait');
 
 function prepareFixtures() {
@@ -48,6 +50,10 @@ function HomeStage({ returnedFromPas = false }: { returnedFromPas?: boolean }) {
   useEffect(() => {
     prepareFixtures();
     if (returnedFromPas) return;
+    if (scenario === 'home-portrait') {
+      setPhase('band');
+      return subscribeHomePhase(setPhase);
+    }
     const timers = startScenario('home-landscape', {
       band: () => {},
       settings: () => useUIStore.getState().openSettings(),
@@ -120,7 +126,7 @@ function OuterRailStage() {
 }
 
 function HarnessStage() {
-  if (scenario === 'home-landscape') return <HomeStage />;
+  if (scenario === 'home-landscape' || scenario === 'home-portrait') return <HomeStage />;
   if (scenario.startsWith('outer-rail')) return <OuterRailStage />;
   return <PasStage />;
 }
@@ -139,7 +145,7 @@ function Root() {
   }, []);
   const stage = <LayoutContinuityProvider><PersistentSessionProvider><ContentLinkProvider>
     <NavigationContainer theme={DefaultTheme}>
-      <DuoTopBandContext.Provider value={scenario === 'pas-portrait' ? true : null}>
+      <DuoTopBandContext.Provider value={scenario === 'pas-portrait' || scenario === 'home-portrait' ? true : null}>
         <Stack.Navigator screenOptions={{ headerShown: false, animation: 'none', contentStyle: { backgroundColor: t.colors.background } }}>
           <Stack.Screen name="Harness" component={HarnessStage} />
         </Stack.Navigator>
@@ -148,7 +154,8 @@ function Root() {
   </ContentLinkProvider></PersistentSessionProvider></LayoutContinuityProvider>;
   const forceInner = scenario === 'home-landscape' || scenario === 'pas-landscape';
   return <GestureHandlerRootView style={{ flex: 1 }}><SafeAreaProvider>
-    {ready ? (forceInner ? <SafeAreaInsetsContext.Provider value={innerInsets}>{stage}</SafeAreaInsetsContext.Provider> : stage)
+    {ready ? (scenario === 'home-portrait' ? <SafeAreaInsetsContext.Provider value={portraitInsets}>{stage}</SafeAreaInsetsContext.Provider>
+      : forceInner ? <SafeAreaInsetsContext.Provider value={innerInsets}>{stage}</SafeAreaInsetsContext.Provider> : stage)
       : <Text>Preparing orientation</Text>}
   </SafeAreaProvider></GestureHandlerRootView>;
 }

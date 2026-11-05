@@ -1,0 +1,7 @@
+appId: me.eiaserinnys.soulstream
+---
+- tapOn:
+    id: settings-modal-close
+- tapOn:
+    id: duo-main-search
+- waitForAnimationToEnd

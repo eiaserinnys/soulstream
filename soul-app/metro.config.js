@@ -29,6 +29,10 @@ config.resolver.resolveRequest = process.env.SOUL_APP_NATIVE_REVIEW === '1'
     };
     if (fixtures[moduleName]) return { type: 'sourceFile', filePath: path.resolve(__dirname, fixtures[moduleName]) };
     const resolved = defaultResolveRequest(context, moduleName, platform);
+    if (resolved.filePath === path.resolve(__dirname, 'src/components/navigation/RailCapsule.tsx')
+      && context.originModulePath !== path.resolve(__dirname, 'native-review/rail-capsule.tsx')) {
+      return { type: 'sourceFile', filePath: path.resolve(__dirname, 'native-review/rail-capsule.tsx') };
+    }
     if (resolved.filePath === path.resolve(__dirname, 'src/api/client.ts')) {
       return { type: 'sourceFile', filePath: path.resolve(__dirname, 'native-review/fixture-client.ts') };
     }

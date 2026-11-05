@@ -2,7 +2,7 @@ name: Soul app iOS PAS layout
 
 on:
   push:
-    branches: ['ci/duo-rail-956-sim-*']
+    branches: ['ci/duo-top-band-1019-sim']
   workflow_dispatch:
 
 permissions:
@@ -60,95 +60,80 @@ jobs:
   capture:
     needs: build
     runs-on: xcode-27
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJSON(github.ref_name == 'ci/duo-rail-956-sim-before' && '[{"scenario":"home-landscape","device":"iPad Pro 13-inch (M5)","runtime":"27.0"},{"scenario":"pas-landscape","device":"iPad Pro 13-inch (M5)","runtime":"27.0"}]' || '[{"scenario":"home-landscape","device":"iPad Pro 13-inch (M5)","runtime":"27.0"},{"scenario":"pas-landscape","device":"iPad Pro 13-inch (M5)","runtime":"27.0"},{"scenario":"pas-portrait","device":"iPad Pro 13-inch (M5)","runtime":"27.0"},{"scenario":"outer-rail-portrait","device":"iPhone Duo","runtime":"27.1"},{"scenario":"outer-rail-landscape","device":"iPhone Duo","runtime":"27.1"}]') }}
+    timeout-minutes: 40
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
       - uses: actions/download-artifact@v4
         with:
           name: pas-layout-app
+      - name: Install Maestro
+        run: |
+          curl -fsSL "https://get.maestro.mobile.dev" | bash
+          echo "$HOME/.maestro/bin" >> "$GITHUB_PATH"
       - name: Unpack simulator app
         run: unzip Soulstream.app.zip
-      - name: Find or create simulator
+      - name: Select Xcode 27.1
+        run: sudo xcode-select -s /Applications/Xcode_27.1.app
+      - name: Find simulator
         id: simulator
-        env:
-          SIMULATOR_RUNTIME: ${{ matrix.runtime }}
-          SIMULATOR_DEVICE: ${{ matrix.device }}
         run: |
-          cat > "$RUNNER_TEMP/find_pas_simulator.py" <<'PY'
+          cat > "$RUNNER_TEMP/find_simulator.py" <<'PY'
           import json
           import subprocess
-          import sys
+          from pathlib import Path
+          import os
 
-          version, name = sys.argv[1:]
-          token = f"iOS-{version.replace('.', '-')}"
           devices = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devices', 'available', '-j']))['devices']
-          for runtime, items in devices.items():
-              if token in runtime:
-                  for item in items:
-                      if item['name'] == name and item.get('isAvailable', True):
-                          print(item['udid'])
-                          raise SystemExit(0)
-          runtimes = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'runtimes', '-j']))['runtimes']
-          runtime = next(item for item in runtimes if item.get('name') == f'iOS {version}' and item.get('isAvailable', True))
-          types = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devicetypes', '-j']))['devicetypes']
-          device_type = next(item for item in types if item['name'] == name)
-          print(subprocess.check_output(['xcrun', 'simctl', 'create', name, device_type['identifier'], runtime['identifier']], text=True).strip())
+          choices = [(runtime, device) for runtime, items in devices.items() if 'iOS' in runtime
+                     for device in items if device.get('isAvailable', True)]
+          minis = [(runtime, device) for runtime, device in choices if 'iPad mini' in device['name']]
+          fallback = [(runtime, device) for runtime, device in choices if device['name'] == 'iPad Pro 13-inch (M5)']
+          if minis or fallback:
+              runtime, device = (minis or fallback)[0]
+          else:
+              runtimes = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'runtimes', '-j']))['runtimes']
+              types = json.loads(subprocess.check_output(['xcrun', 'simctl', 'list', 'devicetypes', '-j']))['devicetypes']
+              runtime_info = next(item for item in runtimes if item['name'] == 'iOS 27.0' and item.get('isAvailable', True))
+              device_type = next(item for item in types if item['name'] == 'iPad Pro 13-inch (M5)')
+              udid = subprocess.check_output(['xcrun', 'simctl', 'create', device_type['name'], device_type['identifier'], runtime_info['identifier']], text=True).strip()
+              runtime, device = runtime_info['identifier'], {'name': device_type['name'], 'udid': udid, 'state': 'Shutdown'}
+          state = device.get('state', 'unknown')
+          print(f"Using {device['name']} {runtime}, {device['udid']} ({state})", flush=True)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f"udid={device['udid']}\n")
+              output.write(f"state={state}\n")
+          Path('captures').mkdir(exist_ok=True)
+          Path('captures/device.json').write_text(json.dumps({'runtime': runtime, 'name': device['name'], 'udid': device['udid']}, indent=2))
           PY
-          udid=$(python3 "$RUNNER_TEMP/find_pas_simulator.py" "$SIMULATOR_RUNTIME" "$SIMULATOR_DEVICE")
-          echo "udid=$udid" >> "$GITHUB_OUTPUT"
-          echo "Simulator UDID: $udid"
+          python3 "$RUNNER_TEMP/find_simulator.py"
       - name: Boot simulator
-        run: |
-          xcrun simctl boot '${{ steps.simulator.outputs.udid }}'
-          xcrun simctl bootstatus '${{ steps.simulator.outputs.udid }}' -b
-      - name: Capture scenario sequence
         env:
           SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
-          PAS_SCENARIO: ${{ matrix.scenario }}
-          SKIP_IPAD_ROTATION: ${{ matrix.device == 'iPad Pro 13-inch (M5)' }}
+          SIMULATOR_STATE: ${{ steps.simulator.outputs.state }}
+        run: |
+          if [ "$SIMULATOR_STATE" != "Booted" ]; then xcrun simctl boot "$SIMULATOR_UDID"; fi
+          xcrun simctl bootstatus "$SIMULATOR_UDID" -b
+      - name: Capture home portrait and tap native controls
+        env:
+          SIMULATOR_UDID: ${{ steps.simulator.outputs.udid }}
         run: |
           xcrun simctl install "$SIMULATOR_UDID" Soulstream.app
-          mkdir -p captures
-          cat > "$RUNNER_TEMP/capture_pas.py" <<'PY'
-          import os
-          from pathlib import Path
-          import subprocess
-          import time
-
-          udid = os.environ['SIMULATOR_UDID']
-          scenario = os.environ['PAS_SCENARIO']
-          output = Path('captures')
-          subprocess.run(['xcrun', 'simctl', 'terminate', udid, 'me.eiaserinnys.soulstream'],
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-          try:
-              subprocess.run(['xcrun', 'simctl', 'io', udid, 'screenshot', '--display=1', str(output / 'warmup.png')],
-                             capture_output=True, text=True, check=False, timeout=30)
-          except subprocess.TimeoutExpired:
-              print('Warmup screenshot timed out', flush=True)
-          started = time.monotonic()
-          args = ['xcrun', 'simctl', 'launch', udid, 'me.eiaserinnys.soulstream', '-pasHarnessScenario', scenario]
-          if os.environ['SKIP_IPAD_ROTATION'] == 'true':
-              args.extend(['-pasHarnessSkipRotation', 'true'])
-          result = subprocess.check_output(args, text=True, timeout=60)
-          print(result.strip(), flush=True)
-          while (elapsed := time.monotonic() - started) < 260:
-              second = int(elapsed)
-              path = output / f't{second:03d}.png'
-              try:
-                  capture = subprocess.run(['xcrun', 'simctl', 'io', udid, 'screenshot', '--display=1', str(path)],
-                                           capture_output=True, text=True, check=False, timeout=30)
-              except subprocess.TimeoutExpired:
-                  print(f'{scenario} {path.name} timed out after 30s', flush=True)
-                  continue
-              print(f'{scenario} {path.name} elapsed={time.monotonic()-started:.1f}s exit={capture.returncode} {capture.stderr.strip()}', flush=True)
-              if capture.returncode:
-                  raise SystemExit(capture.returncode)
-              time.sleep(max(0, 5 - (time.monotonic() - started - elapsed)))
-          PY
-          python3 "$RUNNER_TEMP/capture_pas.py"
+          xcrun simctl terminate "$SIMULATOR_UDID" me.eiaserinnys.soulstream || true
+          xcrun simctl launch "$SIMULATOR_UDID" me.eiaserinnys.soulstream -pasHarnessScenario home-portrait
+          sleep 12
+          capture_phase() {
+            xcrun simctl io "$SIMULATOR_UDID" screenshot --display=1 "captures/$1.png"
+            maestro --device="$SIMULATOR_UDID" hierarchy > "captures/$1-hierarchy.json" || true
+          }
+          capture_phase band
+          for phase in menu settings search; do
+            maestro --device="$SIMULATOR_UDID" test --debug-output="captures/debug-$phase" "soul-app/native-review/home-portrait-$phase.yaml"
+            if [ "$phase" = menu ]; then capture_phase drawer; else capture_phase "$phase"; fi
+          done
       - name: Collect simulator diagnostics
         if: always()
         env:
@@ -158,14 +143,12 @@ jobs:
           if [ -n "$SIMULATOR_UDID" ]; then
             xcrun simctl spawn "$SIMULATOR_UDID" log show --last 15m --style compact \
               --predicate 'process == "Soulstream"' > captures/diagnostics/app.log 2>&1 || true
-            crash_dir="$HOME/Library/Developer/CoreSimulator/Devices/$SIMULATOR_UDID/data/Library/Logs/CrashReporter"
-            find "$crash_dir" -maxdepth 1 -type f -iname '*Soulstream*' -exec cp {} captures/diagnostics/ \; 2>/dev/null || true
           fi
       - name: Upload capture sequence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: pas-layout-${{ matrix.scenario }}
+          name: home-portrait-native
           path: captures/
           retention-days: 7
           if-no-files-found: warn

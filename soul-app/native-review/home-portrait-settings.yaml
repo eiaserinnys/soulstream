@@ -1,0 +1,9 @@
+appId: me.eiaserinnys.soulstream
+---
+- tapOn:
+    point: "85%,50%"
+- tapOn:
+    id: duo-main-settings
+- assertVisible:
+    id: settings-modal-close
+- waitForAnimationToEnd
