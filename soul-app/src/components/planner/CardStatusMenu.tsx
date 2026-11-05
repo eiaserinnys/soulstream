@@ -27,9 +27,14 @@ export function CardStatusMenu({ api, card, onClose, entry = 'status', visible =
   const [readError, setReadError] = useState<string | null>(null);
   const [colorSelection, setColorSelection] = useState(entry === 'color');
   const [showTransitionResult, setShowTransitionResult] = useState(false);
+  const [viewHeight, setViewHeight] = useState(0);
+  const [contentHeight, setContentHeight] = useState(0);
+  const scroll = useRef<ScrollView>(null);
+  const overflow = viewHeight > 0 && contentHeight > viewHeight;
   const active = useRef(true);
   const handledStatus = useRef<CardStatus | null>(null);
   const previousEntry = useRef(entry);
+  useEffect(() => { if (visible && overflow) scroll.current?.flashScrollIndicators(); }, [visible, overflow]);
   const action=useCardTransition(api,card.id);
   const { transition, pending, error }=action;
   const colorAction = useCardActions(api, cause => setReadError(cause instanceof Error ? cause.message : String(cause)));
@@ -84,7 +89,8 @@ export function CardStatusMenu({ api, card, onClose, entry = 'status', visible =
   const visibleError = readError ?? error;
   return <><CardTransitionSettings api={api} action={action} onExecuted={close}/><AppModalSurface visible={(visible || showTransitionResult) && !action.settingsCard}
     modalId="modal_card_assignment" variant="compact" onRequestClose={close} onDismiss={onDismiss}>
-    <ScrollView testID="card-status-menu" contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+    <ScrollView ref={scroll} testID="card-status-menu" contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator
+      onLayout={event => setViewHeight(event.nativeEvent.layout.height)} onContentSizeChange={(_, height) => setContentHeight(height)}>
       <Text style={styles.heading} numberOfLines={2}>{`${card.title} (${colorSelection ? '카드 색상' : '상태 이동'})`}</Text>
       {!detail && !readError ? <ActivityIndicator color={t.colors.accent} /> : null}
       {action.execution && action.execution.phase !== 'pending' ? <><Text style={styles.error}>{action.execution.message}</Text><GlassButton disabled={pending} onPress={() => { void move('running'); }}><Text style={styles.body}>{action.execution.phase === 'delayed' ? '다시 확인' : '다시 시도'}</Text></GlassButton></> : null}

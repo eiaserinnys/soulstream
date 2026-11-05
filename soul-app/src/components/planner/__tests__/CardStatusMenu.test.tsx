@@ -1,10 +1,26 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
-import { Alert, Modal } from 'react-native';
+import { Alert, Modal, ScrollView } from 'react-native';
 import { CardStatusMenu } from '../CardStatusMenu';
 import { cardFixture } from '../../../test-support/cards';
 import { createCardColorReviewClient } from '../../../component-review/fixture-client';
+
+test.each([[300, 600, 1], [600, 300, 0]])('메뉴 높이 %i와 내용 높이 %i에서 스크롤 단서를 %i회 표시한다', async (viewHeight, contentHeight, calls) => {
+  const flash = jest.spyOn(ScrollView.prototype, 'flashScrollIndicators').mockImplementation(() => {});
+  const fixture = createCardColorReviewClient('success');
+  const screen = render(<CardStatusMenu api={fixture.api} card={fixture.card} onClose={() => {}} />);
+  await waitFor(() => expect(screen.getByLabelText('카드 색상: 하늘')).toBeTruthy());
+  const menu = screen.getByTestId('card-status-menu');
+  flash.mockClear();
+  act(() => {
+    menu.props.onLayout({ nativeEvent: { layout: { height: viewHeight } } });
+    menu.props.onContentSizeChange(300, contentHeight);
+  });
+  expect(menu.props.showsVerticalScrollIndicator).toBe(true);
+  expect(flash).toHaveBeenCalledTimes(calls);
+  jest.restoreAllMocks();
+});
 
 test('menu failure stays visible, successful explicit move closes only after save', async () => {
   jest.spyOn(Alert, 'alert').mockImplementation(() => {});
