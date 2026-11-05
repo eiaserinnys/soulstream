@@ -1,5 +1,7 @@
 import React from 'react';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, within } from '@testing-library/react-native';
+import { DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { CardBoardWorkspace, type CardBoardWorkspaceHandle } from '../CardBoardWorkspace';
 import { StyleSheet, View } from 'react-native';
 import type { Session } from '../../../api/types';
 import { useCardStore } from '../../../store/cardStore';
@@ -16,7 +18,7 @@ import { ChatPane } from '../../split/ChatPane';
 import { retryPlannerSessionWorkspace } from '../../../lib/planner-folder-workspace';
 import { coordinateFolderWorkspaceClose } from '../../../lib/planner-folder-title-save';
 import { TABLET_SHELL_LAYOUT } from '../../../theme';
-import { DuoSideBandContext, DuoTopBandContext } from '../../../navigation/tabContract';
+import { DuoSideBandContext, DuoTopBandContext, DuoTopBandMainContext } from '../../../navigation/tabContract';
 import { usePhoneRailActions } from '../../../navigation/phoneRailActions';
 import { DuoTopBandRailScope } from '../FolderWorkspaceReadOverlay';
 import { useDuoSideBand } from '../../../navigation/duoSideBand';
@@ -38,6 +40,7 @@ jest.mock('react-native-safe-area-context', () => {
 });
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+jest.mock('react-native-gesture-handler', () => ({ ...jest.requireActual('react-native-gesture-handler'), GestureHandlerRootView: require('react-native').View }));
 jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
 jest.mock('expo-document-picker', () => ({ getDocumentAsync: jest.fn() }));
 jest.mock('expo-image-picker', () => ({
@@ -48,7 +51,7 @@ jest.mock('react-native-webview', () => ({
   WebView: () => null,
 }));
 
-jest.mock('../CardDetailSheet', () => ({ CardDetailContent: (props: any) => require('react').createElement(require('react-native').View, { ...props, testID: 'overlay-card-detail' }) }));
+jest.mock('../CardDetailSheet', () => ({ CardDetailSheet: () => null, CardDetailContent: (props: any) => require('react').createElement(require('react-native').View, { ...props, testID: 'overlay-card-detail' }) }));
 
 jest.mock('../../split/ChatPane', () => {
   const React = require('react');
@@ -206,6 +209,35 @@ test('상단 띠에서도 확대 보드 host는 오른쪽 레일을 켜지 않�
   const sheet = StyleSheet.flatten(screen.getByTestId('task-workspace-sheet').props.style);
   expect(sheet.right).toBe(0);
   expect(usePhoneRailActions.getState().overrides).toHaveLength(0);
+});
+
+test('듀오 세로 메인의 확대 보드 안 폴더는 닫기와 폴더 단추를 유지한다', async () => {
+  mockWindowDimensions = { width: 669, height: 951, scale: 1, fontScale: 1 };
+  mockInsets = { top: 82, bottom: 24, left: 0, right: 0 };
+  useSessionStore.setState({ catalog: { folders: [{
+    id: 'expanded-folder', name: '확대 보드 폴더', projectPageId: 'expanded-page', sortOrder: 0,
+  }], sessions: {} } });
+  const ref = React.createRef<CardBoardWorkspaceHandle>();
+  const screen = render(<ThemeProvider value={DefaultTheme}>
+    <SafeAreaInsetsContext.Provider value={mockInsets}>
+      <DuoSideBandContext.Provider value={false}><DuoTopBandContext.Provider value>
+        <DuoTopBandMainContext.Provider value>
+          <CardBoardWorkspace ref={ref} api={null} externalHeader
+            cardDisplay={{ includeCompleted: false, onChange: jest.fn() }} onOpen={jest.fn()} />
+        </DuoTopBandMainContext.Provider>
+      </DuoTopBandContext.Provider></DuoSideBandContext.Provider>
+    </SafeAreaInsetsContext.Provider>
+  </ThemeProvider>);
+  await act(async () => { ref.current!.openExpanded(); });
+  expect(useUIStore.getState().cardBoardExpanded).toBe(true);
+  await act(async () => { useUIStore.getState().openFolderOverlay('expanded-page'); });
+  const folder = within(screen.getByTestId('task-workspace-tablet-header'));
+  expect(folder.getByLabelText('폴더 패널 닫기')).toBeTruthy();
+  expect(folder.getByTestId('task-workspace-starred-toggle')).toBeTruthy();
+  expect(folder.getByTestId('task-workspace-today-toggle')).toBeTruthy();
+  expect(folder.getByLabelText('폴더 메뉴')).toBeTruthy();
+  expect(usePhoneRailActions.getState().overrides).toHaveLength(0);
+  screen.unmount();
 });
 
 test('닫힌 overlay는 ChatPane mount 상태를 보존하되 active=false로 상세 연결을 막는다', () => {
