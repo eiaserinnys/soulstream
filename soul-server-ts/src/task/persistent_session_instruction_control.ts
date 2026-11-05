@@ -12,6 +12,7 @@ import {
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { SSEEventPayload } from "../engine/protocol.js";
 import type { Task } from "./task_models.js";
+import { savePersistentMetadata } from "./persistent_metadata_write.js";
 
 export interface ApplyPersistentInstructionsInput {
   origin: PersistentInstructionOrigin;
@@ -129,14 +130,12 @@ export class PersistentSessionInstructionControl {
 
     if (input.ops.length > 0) {
       const entry = buildPersistentInstructionsMetadataEntry(instructions);
-      await this.persistence.enqueueMetadataEffect(sessionId, entry, {
-        replaceExistingType: "persistent_instructions",
-        waitForAck: true,
+      await savePersistentMetadata(this.persistence, sessionId, entry, "persistent_instructions", () => {
+        task.metadata = [
+          ...(task.metadata ?? []).filter((metadata) => metadata.type !== "persistent_instructions"),
+          entry,
+        ];
       });
-      task.metadata = [
-        ...(task.metadata ?? []).filter((metadata) => metadata.type !== "persistent_instructions"),
-        entry,
-      ];
     }
 
     if (input.origin === "extracted" && (extractedEvents.length > 0 || capReached)) {

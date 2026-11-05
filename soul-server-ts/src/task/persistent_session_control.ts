@@ -14,6 +14,7 @@ import type { EventPersistence } from "../db/event_persistence.js";
 import { UnknownModelPresetError, type ModelCatalog } from "../model_catalog.js";
 import { isReasoningEffort, type ReasoningEffort } from "../engine/protocol.js";
 import type { Task } from "./task_models.js";
+import { savePersistentMetadata } from "./persistent_metadata_write.js";
 import {
   buildPersistentGenerationMetadataEntry,
   buildPersistentSessionMetadataEntry,
@@ -140,14 +141,12 @@ export class PersistentSessionControl {
 
     const merged = this.mergeSettings(task, input);
     const entry = buildPersistentSettingsMetadataEntry(merged);
-    await this.deps.persistence.enqueueMetadataEffect(sessionId, entry, {
-      replaceExistingType: "persistent_settings",
-      waitForAck: true,
+    await savePersistentMetadata(this.deps.persistence, sessionId, entry, "persistent_settings", () => {
+      task.metadata = [
+        ...(task.metadata ?? []).filter((item) => item.type !== "persistent_settings"),
+        entry,
+      ];
     });
-    task.metadata = [
-      ...(task.metadata ?? []).filter((item) => item.type !== "persistent_settings"),
-      entry,
-    ];
     if (input.enabled === true) await this.setSessionPersistent(sessionId, true);
 
     const target = merged.default_model;
@@ -287,15 +286,13 @@ export class PersistentSessionControl {
     }
 
     const entry = buildPersistentSessionMetadataEntry(enabled);
-    await this.deps.persistence.enqueueMetadataEffect(sessionId, entry, {
-      replaceExistingType: "persistent_session",
-      waitForAck: true,
+    await savePersistentMetadata(this.deps.persistence, sessionId, entry, "persistent_session", () => {
+      task.metadata = [
+        ...(task.metadata ?? []).filter((item) => item.type !== "persistent_session"),
+        entry,
+      ];
+      task.persistent = enabled;
     });
-    task.metadata = [
-      ...(task.metadata ?? []).filter((item) => item.type !== "persistent_session"),
-      entry,
-    ];
-    task.persistent = enabled;
 
     return { sessionId, persistent: enabled, generation: task.persistentGeneration?.number ?? 1 };
   }
@@ -387,15 +384,13 @@ export class PersistentSessionControl {
       },
     };
     const entry = buildPersistentGenerationMetadataEntry(nextGeneration);
-    await this.deps.persistence.enqueueMetadataEffect(sessionId, entry, {
-      replaceExistingType: "persistent_generation",
-      waitForAck: true,
+    await savePersistentMetadata(this.deps.persistence, sessionId, entry, "persistent_generation", () => {
+      task.metadata = [
+        ...(task.metadata ?? []).filter((item) => item.type !== "persistent_generation"),
+        entry,
+      ];
+      task.persistentGeneration = nextGeneration;
     });
-    task.metadata = [
-      ...(task.metadata ?? []).filter((item) => item.type !== "persistent_generation"),
-      entry,
-    ];
-    task.persistentGeneration = nextGeneration;
 
     return {
       sessionId,
