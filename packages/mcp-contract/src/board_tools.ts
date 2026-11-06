@@ -54,7 +54,7 @@ export const boardTools = {
         idempotency_key: z.string().min(1),
       },
     }, audience: "all" },
-  create_markdown_document: { name: "create_markdown_document", config: {
+  create_markdown_document: { name: "create_markdown_document", timeoutMs: 60000, config: {
       description: "현재 보드 폴더에 마크다운 문서와 보드 카드를 생성.",
       inputSchema: {
         folder_id: z.string().min(1),
@@ -68,7 +68,7 @@ export const boardTools = {
       description: "마크다운 문서 본문 조회.",
       inputSchema: { document_id: z.string().min(1) },
     }, audience: "all" },
-  update_markdown_document: { name: "update_markdown_document", config: {
+  update_markdown_document: { name: "update_markdown_document", timeoutMs: 60000, config: {
       description: "마크다운 문서 제목 또는 본문 수정.",
       inputSchema: {
         document_id: z.string().min(1),
@@ -77,7 +77,7 @@ export const boardTools = {
         body: z.string().optional(),
       },
     }, audience: "all" },
-  delete_markdown_document: { name: "delete_markdown_document", config: {
+  delete_markdown_document: { name: "delete_markdown_document", timeoutMs: 60000, config: {
       description: "마크다운 문서와 해당 보드 카드를 삭제.",
       inputSchema: { document_id: z.string().min(1) },
     }, audience: "internal" },

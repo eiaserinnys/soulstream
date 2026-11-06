@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { registerOrchestratorTools } from "../../src/mcp/orchestrator_tools.js";
 import { registerMultiNodeTools } from "../../src/mcp/tools/multi_node.js";
+import { boardTools } from "../../../packages/mcp-contract/src/board_tools.js";
 import { sessionTools } from "../../../packages/mcp-contract/src/session_tools.js";
 
 type ToolHandler = (input?: Record<string, unknown>, request?: unknown) => Promise<unknown>;
@@ -31,7 +32,14 @@ function captureTools(): Map<string, ToolHandler> {
     logger: { warn: vi.fn() },
   } as never;
   registerMultiNodeTools(server, runtime);
-  registerOrchestratorTools(server, runtime, [sessionTools.list_sessions, sessionTools.list_user_messages]);
+  registerOrchestratorTools(server, runtime, [
+    sessionTools.list_sessions,
+    sessionTools.list_user_messages,
+    boardTools.create_markdown_document,
+    boardTools.get_markdown_document,
+    boardTools.update_markdown_document,
+    boardTools.delete_markdown_document,
+  ]);
   return handlers;
 }
 
@@ -103,6 +111,40 @@ describe("multi-node common forwarding deadlines", () => {
       35_000,
       35_000,
       35_000,
+      10_000,
+    ]);
+  });
+
+  it("gives document writes a 60-second forwarding deadline while document reads keep the default", async () => {
+    expect(boardTools.create_markdown_document.timeoutMs).toBe(60_000);
+    expect(boardTools.update_markdown_document.timeoutMs).toBe(60_000);
+    expect(boardTools.delete_markdown_document.timeoutMs).toBe(60_000);
+    expect("timeoutMs" in boardTools.get_markdown_document).toBe(false);
+
+    const timeout = vi.spyOn(AbortSignal, "timeout");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("{}", { status: 200 })),
+    );
+    const handlers = captureTools();
+
+    await invoke(handlers, "create_markdown_document", {
+      folder_id: "folder-1",
+      title: "문서",
+      body: "",
+    });
+    await invoke(handlers, "update_markdown_document", {
+      document_id: "doc-1",
+      expected_version: 1,
+      body: "본문",
+    });
+    await invoke(handlers, "delete_markdown_document", { document_id: "doc-1" });
+    await invoke(handlers, "get_markdown_document", { document_id: "doc-1" });
+
+    expect(timeout.mock.calls.map(([timeoutMs]) => timeoutMs)).toEqual([
+      60_000,
+      60_000,
+      60_000,
       10_000,
     ]);
   });
