@@ -1218,6 +1218,7 @@ describe("TaskEngineTurnRunner", () => {
     ["Antigravity", "antigravity", "gemini-3", "antigravity"],
     ["Kimi K3", "claude", "k3", "kimi"],
     ["Claude", "claude", "claude-sonnet-4-5", "claude"],
+    ["DeepSeek Go", "claude", "deepseek-v4.1-flash", "deepseek"],
     ["DeepSeek OpenCode", "opencode", "opencode/deepseek-v4.1-flash-free", "deepseek"],
     ["unmapped model", "claude", "custom-model", "unknown"],
   ] as const)("maps %s to its configured usage provider", async (_label, backend, model, provider) => {

@@ -71,6 +71,7 @@ function usageProviderForExecution(
   if (backend === "antigravity") return "antigravity";
   if (backend === "claude") {
     if (model === "kimi-for-coding" || model === "k3") return "kimi";
+    if (model === "deepseek-v4.1-flash") return "deepseek";
     if (model?.startsWith("claude-")) return "claude";
   }
   if (backend === "opencode" && model === "opencode/deepseek-v4.1-flash-free") {
