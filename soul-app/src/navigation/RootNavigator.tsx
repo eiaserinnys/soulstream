@@ -42,13 +42,15 @@ import {
 } from '../lib/planner-folder-workspace';
 import {
   cancelPhoneSearchSessionOpen,
+  openPhoneCard,
   openPhoneChat,
   openPhoneSearchSessionFromRoot,
   type PhoneRootNavigation,
 } from './phoneSessionNavigation';
 import { parseSessionSearchIntentUrl, type SessionSearchIntent } from './sessionSearchIntent';
 import { useAuthenticatedStartupReady } from './authenticatedStartupReady';
-import { openTabletSessionFromRoot } from './tabletSessionNavigation';
+import { openTabletCardFromRoot, openTabletSessionFromRoot } from './tabletSessionNavigation';
+import { parseNotificationTarget, type NotificationTarget } from './notificationTarget';
 
 type PendingSessionSearchIntent = {
   readonly id: number;
@@ -79,6 +81,8 @@ export function RootNavigator({
   const device = useDeviceType();
   const leavePersistent = useRef<(() => void) | null>(null);
   const onPersistentLeaveReady = useCallback((leave: (() => void) | null) => { leavePersistent.current = leave; }, []);
+  const openPersistentReport = useRef<((sessionId: string, entryKey: string, onOpen: () => void) => void) | null>(null);
+  const onReportOpenReady = useCallback((open: typeof openPersistentReport.current) => { openPersistentReport.current = open; }, []);
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const wallpaper = useSettingsStore((s) => s.wallpaper);
   const applyUserPreferences = useSettingsStore((s) => s.applyUserPreferences);
@@ -101,7 +105,7 @@ export function RootNavigator({
   const [initialLinkChecked, setInitialLinkChecked] = useState(false);
   const [initialNotificationChecked, setInitialNotificationChecked] = useState(false);
   const [sessionIntentReceived, setSessionIntentReceived] = useState(false);
-  const [pendingNotification, setPendingNotification] = useState<string | null>(null);
+  const [pendingNotification, setPendingNotification] = useState<NotificationTarget | null>(null);
   const notificationEventReceived = useRef(false);
   const startup = useAuthenticatedStartupReady();
 
@@ -170,10 +174,10 @@ export function RootNavigator({
   useEffect(() => {
     let active = true;
     void Notifications.getLastNotificationResponseAsync().then(response => {
-      const sid = response?.notification.request.content.data?.sessionId;
-      if (active && !notificationEventReceived.current && typeof sid === 'string' && sid) {
+      const target = parseNotificationTarget(response?.notification.request.content.data);
+      if (active && !notificationEventReceived.current && target) {
         setSessionIntentReceived(true);
-        setPendingNotification(sid);
+        setPendingNotification(target);
       }
     }).catch(() => {}).finally(() => { if (active) setInitialNotificationChecked(true); });
     return () => { active = false; };
@@ -297,14 +301,11 @@ export function RootNavigator({
     const sub = Notifications.addNotificationResponseReceivedListener(
       (response) => {
         if (!isAuthScopeCurrent(scope)) return;
-        const data = response.notification.request.content.data as
-          | { sessionId?: string }
-          | undefined;
-        const sid = data?.sessionId;
-        if (!sid) return;
+        const target = parseNotificationTarget(response.notification.request.content.data);
+        if (!target) return;
         notificationEventReceived.current = true;
         setSessionIntentReceived(true);
-        setPendingNotification(sid);
+        setPendingNotification(target);
       },
     );
     return () => sub.remove();
@@ -313,14 +314,29 @@ export function RootNavigator({
   useEffect(() => {
     if (!pendingNotification || !usageDestinationReady || !startup.navigationReady || !navigationRef.isReady()) return;
     if (device !== 'phone' && !uiStoreHydrated) return;
-    const sid = pendingNotification;
-    if (device === 'phone') leavePersistent.current?.();
-    recordUiUsageEvent({ type: 'notification_open', target: { kind: 'session', id: sid },
+    const target = pendingNotification;
+    recordUiUsageEvent({ type: 'notification_open', target: target.kind === 'card'
+      ? { kind: 'card', id: target.cardId } : { kind: 'session', id: target.sessionId },
       entry: 'notification', attrs: { surface: 'push', navigated: true } });
-    if (device === 'phone') openNotificationSession(device, sid, sessionId => {
-      openPhoneChat({ getParent: () => navigationRef }, sessionId, undefined, undefined, 'notification');
-    });
-    else void openTabletSessionFromRoot(navigationRef, leavePersistent.current, sid, undefined, undefined, 'notification');
+    if (target.kind === 'session') {
+      if (device === 'phone') {
+        leavePersistent.current?.();
+        openNotificationSession(device, target.sessionId, sessionId => {
+          openPhoneChat({ getParent: () => navigationRef }, sessionId, undefined, undefined, 'notification');
+        });
+      } else void openTabletSessionFromRoot(navigationRef, leavePersistent.current, target.sessionId, undefined, undefined, 'notification');
+    } else if (target.kind === 'card') {
+      if (target.question) useUIStore.getState().requestCardQuestionFocus(target.cardId);
+      if (device === 'phone') {
+        leavePersistent.current?.();
+        openPhoneCard(navigationRef, target.cardId);
+      } else openTabletCardFromRoot(navigationRef, leavePersistent.current, target.cardId);
+    } else {
+      openPersistentReport.current?.(target.sessionId, target.entryKey, () => {
+        if (device === 'phone') navigationRef.navigate('PersistentTab', { screen: 'PersistentSession', pop: true });
+        else (navigationRef as any).navigate('PersistentSession');
+      });
+    }
     setPendingNotification(null);
     void Notifications.clearLastNotificationResponseAsync().catch(() => {});
   }, [pendingNotification, usageDestinationReady, startup.navigationReady, device, uiStoreHydrated]);
@@ -421,6 +437,7 @@ export function RootNavigator({
         startupReady={startup.hydrated && uiStoreHydrated && startup.navigationReady && initialLinkChecked && initialNotificationChecked}
         sessionIntent={sessionIntentReceived}
         onPersistentLeaveReady={onPersistentLeaveReady}
+        onReportOpenReady={onReportOpenReady}
         onOpenPersistent={() => (navigationRef as any).navigate(device === 'phone' ? 'PersistentTab' : 'PersistentSession')}
       />
     </AppWallpaperBackground>

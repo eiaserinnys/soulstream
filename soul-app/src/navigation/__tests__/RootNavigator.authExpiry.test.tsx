@@ -5,6 +5,7 @@ import { Alert, Linking } from 'react-native';
 
 const mockAuthenticatedProps = jest.fn();
 const mockLeavePersistent = jest.fn();
+const mockOpenPersistentReport = jest.fn((_sessionId: string, _entryKey: string, onOpen: () => void) => onOpen());
 jest.mock('expo-notifications', () => ({
   addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
   getLastNotificationResponseAsync: jest.fn(async () => null),
@@ -17,8 +18,9 @@ jest.mock('../AuthenticatedAppSubtree', () => {
     AuthenticatedAppSubtree: (props: any) => {
       ReactModule.useLayoutEffect(() => {
         props.onPersistentLeaveReady?.(mockLeavePersistent);
-        return () => props.onPersistentLeaveReady?.(null);
-      }, [props.onPersistentLeaveReady]);
+        props.onReportOpenReady?.(mockOpenPersistentReport);
+        return () => { props.onPersistentLeaveReady?.(null); props.onReportOpenReady?.(null); };
+      }, [props.onPersistentLeaveReady, props.onReportOpenReady]);
       mockAuthenticatedProps(props); return ReactModule.createElement(
       Text,
       { testID: 'authenticated-app' },
@@ -54,6 +56,7 @@ jest.mock('../notificationSessionRoute', () => ({ openNotificationSession: jest.
 jest.mock('../phoneSessionNavigation', () => ({
   openPhoneSearchSessionFromRoot: jest.fn(),
   openPhoneChat: jest.fn(),
+  openPhoneCard: jest.fn(),
   cancelPhoneSearchSessionOpen: jest.fn(),
 }));
 jest.mock('../../lib/planner-folder-workspace', () => ({
@@ -66,8 +69,13 @@ import { navigationRef } from '../navigationRef';
 import { useDeviceType } from '../../theme/useDeviceType';
 import {
   cancelPhoneSearchSessionOpen,
+  openPhoneCard,
+  openPhoneChat,
   openPhoneSearchSessionFromRoot,
 } from '../phoneSessionNavigation';
+import { openNotificationSession } from '../notificationSessionRoute';
+import { recordUiUsageEvent } from '../../lib/ui-usage-events';
+import type { CardReviewPushData, PersistentReportPushData } from '../../../../packages/wire-schema/src/push_notification';
 import {
   cancelPlannerSessionWorkspaceOpen,
   openPlannerSessionWorkspace,
@@ -92,6 +100,14 @@ let configRequest: () => Promise<Response>;
 beforeEach(() => {
   mockAuthenticatedProps.mockClear();
   mockLeavePersistent.mockClear();
+  mockOpenPersistentReport.mockClear();
+  jest.mocked(Notifications.addNotificationResponseReceivedListener).mockClear();
+  jest.mocked(Notifications.clearLastNotificationResponseAsync).mockClear();
+  jest.mocked(recordUiUsageEvent).mockClear();
+  jest.mocked(openPhoneCard).mockClear();
+  jest.mocked(openPhoneChat).mockClear();
+  jest.mocked(openNotificationSession).mockReset().mockImplementation((_device, sessionId, callback) => callback(sessionId));
+  (navigationRef.navigate as jest.Mock).mockClear();
   (navigationRef.dispatch as jest.Mock).mockReset();
   jest.mocked(Notifications.getLastNotificationResponseAsync).mockReset().mockResolvedValue(null);
   jest.spyOn(Linking, 'getInitialURL').mockResolvedValue(null);
@@ -128,9 +144,57 @@ beforeEach(() => {
     activeSessionId: null,
     selectedFolderPageId: null,
     sessionFolderResolution: null,
+    pendingCardQuestionFocus: null,
   });
   useAuthStore.setState({ jwt: 'expired-jwt', authRejected: false });
   resetAuthScopeForTest();
+});
+
+const reviewPush = { kind: 'card_review', cardId: 'card-review', folderId: 'folder' } satisfies CardReviewPushData;
+const reportPush = { kind: 'persistent_report', persistentSessionId: 'pas-report', entryKey: 'entry', reportKind: 'see' } satisfies PersistentReportPushData;
+const questionPush = { ...reportPush, reportKind: 'ask', cardId: 'card-question', questionId: 'question', folderId: 'folder' } satisfies PersistentReportPushData;
+const notificationCases = [
+  ['review', reviewPush, { kind: 'card', id: 'card-review' }],
+  ['question', questionPush, { kind: 'card', id: 'card-question' }],
+  ['report', reportPush, { kind: 'session', id: 'pas-report' }],
+  ['legacy', { sessionId: 'old-session' }, { kind: 'session', id: 'old-session' }],
+] as const;
+
+test.each(notificationCases.flatMap(([kind, data, target]) =>
+  (['cold', 'listener'] as const).flatMap(source => (['phone', 'tabletPortrait'] as const).map(device => ({ kind, data, target, source, device })))),
+)('알림 $kind / $source / $device는 목적지를 연다', async ({ kind, data, target, source, device }) => {
+  (useDeviceType as jest.Mock).mockReturnValue(device);
+  (navigationRef.isReady as jest.Mock).mockReturnValue(true);
+  const response = { notification: { request: { content: { data } } } } as any;
+  if (source === 'cold') jest.mocked(Notifications.getLastNotificationResponseAsync).mockResolvedValue(response);
+  render(<RootNavigator />);
+  if (source === 'listener') {
+    await waitFor(() => expect(Notifications.addNotificationResponseReceivedListener).toHaveBeenCalled());
+    const listener = jest.mocked(Notifications.addNotificationResponseReceivedListener).mock.calls.at(-1)![0];
+    act(() => listener(response));
+  }
+  await waitFor(() => expect(Notifications.clearLastNotificationResponseAsync).toHaveBeenCalledTimes(1));
+  expect(mockAuthenticatedProps.mock.calls.some(([props]) => props.sessionIntent === true)).toBe(true);
+  expect(recordUiUsageEvent).toHaveBeenCalledWith(expect.objectContaining({ type: 'notification_open', target }));
+  if (kind === 'report') {
+    expect(mockOpenPersistentReport).toHaveBeenCalledWith('pas-report', 'entry', expect.any(Function));
+    expect(navigationRef.navigate).toHaveBeenCalledWith(...(device === 'phone'
+      ? ['PersistentTab', { screen: 'PersistentSession', pop: true }]
+      : ['PersistentSession']));
+    expect(mockLeavePersistent).not.toHaveBeenCalled();
+  } else if (kind === 'legacy') {
+    if (device === 'phone') expect(openPhoneChat).toHaveBeenCalledWith(expect.anything(), 'old-session', undefined, undefined, 'notification');
+    else expect(openPlannerSessionWorkspace).toHaveBeenCalledWith('old-session', undefined, undefined, 'notification');
+    expect(mockLeavePersistent).toHaveBeenCalled();
+  } else {
+    expect(useUIStore.getState().pendingCardQuestionFocus).toBe(kind === 'question' ? target.id : null);
+    if (device === 'phone') expect(openPhoneCard).toHaveBeenCalledWith(navigationRef, target.id);
+    else {
+      expect(navigationRef.dispatch).toHaveBeenCalledWith({ type: 'POP_TO', payload: { name: 'Main' } });
+      expect(useUIStore.getState()).toMatchObject({ selectedCardId: target.id, folderOverlayVisible: true });
+    }
+    expect(mockLeavePersistent).toHaveBeenCalled();
+  }
 });
 
 afterEach(() => {

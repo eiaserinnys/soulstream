@@ -33,6 +33,8 @@ import { CardDetailContent, CardDetailSheet } from '../CardDetailSheet';
 import { DuoSideBandContext } from '../../../navigation/tabContract';
 import { AppKeyboardAvoidingView } from '../../AppKeyboardAvoidingView';
 import { usePhoneRailActions } from '../../../navigation/phoneRailActions';
+import { useUIStore } from '../../../store/uiStore';
+import { LayoutContinuityProvider, useLayoutContinuity } from '../../../navigation/LayoutContinuityContext';
 
 // Count the real component boundaries without memoizing the test wrappers.
 const mockRenders = { detail: 0, timeline: 0, sessions: 0, images: 0, rows: [] as string[] };
@@ -104,11 +106,63 @@ beforeEach(async () => {
   useSettingsStore.setState({ serverUrl: 'https://card.example' });
   useDraftStore.setState({ drafts: {} });
   useCardStore.setState({ rows: {}, details: {} });
+  useUIStore.setState({ pendingCardQuestionFocus: null });
   useSessionStore.setState({ sessions: { s1: detail.sessions[0] } });
   useNodeConnectivityStore.getState().reset();
   mockControlLocks.input = []; mockControlLocks.header = [];
 });
 afterEach(() => jest.restoreAllMocks());
+
+test.each([false, true])('질문 알림은 항목이 있는 카드의 커멘트를 연다 (저장된 항목 탭: %s)', async saved => {
+  const withItems = { ...detail, card: { ...card, items: [checkItem(1, 'todo')] } };
+  const api = { getCard: jest.fn().mockResolvedValue(withItems) };
+  const scrollToEnd = jest.spyOn(ScrollView.prototype, 'scrollToEnd').mockImplementation(() => {});
+  function Seed() {
+    const continuity = useLayoutContinuity();
+    const initialized = React.useRef(false);
+    if (saved && !initialized.current) {
+      initialized.current = true;
+      continuity.setViewState(JSON.stringify(['card-view', card.id]), { tab: 'items', visit: null });
+      continuity.setScrollPosition(JSON.stringify(['card', card.id]), { offsetY: 200 });
+    }
+    return null;
+  }
+  useUIStore.getState().requestCardQuestionFocus(card.id);
+  const screen = render(<LayoutContinuityProvider><Seed /><CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} /></LayoutContinuityProvider>);
+  await waitFor(() => expect(screen.getByTestId('card-check-item-1')).toBeTruthy());
+  expect(useUIStore.getState().pendingCardQuestionFocus).toBe(card.id);
+  expect(screen.queryByTestId('card-timeline')).toBeNull();
+  act(() => screen.getByTestId('card-detail-dock').props.onLayout({ nativeEvent: { layout: { height: 56 } } }));
+  await waitFor(() => expect(screen.getByTestId('card-timeline')).toBeTruthy());
+  expect(screen.getByTestId('settings-segment-card-detail-comments').props.accessibilityState.selected).toBe(true);
+  expect(screen.getByText('어떤 색?')).toBeTruthy();
+  expect(screen.getByLabelText('파랑')).toBeTruthy();
+  expect(screen.getByLabelText('빨강')).toBeTruthy();
+  expect(useUIStore.getState().pendingCardQuestionFocus).toBeNull();
+  act(() => screen.getByTestId('card-detail-scroll').props.onContentSizeChange(390, 1200));
+  expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
+  screen.unmount();
+});
+
+test('숨겨진 카드 상세는 질문 요청을 소비하지 않는다', async () => {
+  const withItems = { ...detail, card: { ...card, items: [checkItem(1, 'todo')] } };
+  useUIStore.getState().requestCardQuestionFocus(card.id);
+  const screen = render(<CardDetailContent visible={false} api={{ getCard: jest.fn().mockResolvedValue(withItems) } as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByTestId('card-check-item-1')).toBeTruthy());
+  act(() => screen.getByTestId('card-detail-dock').props.onLayout({ nativeEvent: { layout: { height: 56 } } }));
+  expect(useUIStore.getState().pendingCardQuestionFocus).toBe(card.id);
+  expect(screen.queryByTestId('card-timeline')).toBeNull();
+  screen.unmount();
+});
+
+test('질문 알림이 없는 항목 카드는 확인 항목을 기본으로 연다', async () => {
+  const withItems = { ...detail, card: { ...card, items: [checkItem(1, 'todo')] } };
+  const screen = render(<CardDetailContent api={{ getCard: jest.fn().mockResolvedValue(withItems) } as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByTestId('card-check-item-1')).toBeTruthy());
+  expect(screen.getByTestId('settings-segment-card-detail-items').props.accessibilityState.selected).toBe(true);
+  expect(screen.queryByTestId('card-timeline')).toBeNull();
+  screen.unmount();
+});
 test('제목과 양 끝 단추가 내용 끝선에 맞는 스타일을 쓴다', async () => {
   const api = { getCard: jest.fn().mockResolvedValue(detail) };
   const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);

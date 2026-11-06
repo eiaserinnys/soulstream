@@ -8,12 +8,15 @@ export interface PersistentSessionScene {
   reportCount: number;
   hasReports: boolean;
   selectedCardId: string | null;
+  pendingReportKey: string | null;
   visible: boolean;
   settingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
   setSessions: (sessions: PersistentSessionResource[]) => void;
   leave: () => void;
   open: (session: PersistentSessionResource) => void;
+  focusReport: (key: string) => void;
+  clearReportFocus: () => void;
   toggleScene: () => void;
   toggleCards: () => void;
   toggleReports: () => void;
@@ -33,12 +36,15 @@ export function createPersistentSessionScene() {
     reportCount: 0,
     hasReports: false,
     selectedCardId: null,
+    pendingReportKey: null,
     visible: false,
     settingsOpen: false,
     setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
     setSessions: (sessions) => set({ sessions }),
     leave: () => set({ visible: false }),
-    open: (session) => set({ session, scene: 'conversation', selectedCardId: null, reportCount: 0, hasReports: false, visible: true }),
+    open: (session) => set({ session, scene: 'conversation', selectedCardId: null, pendingReportKey: null, reportCount: 0, hasReports: false, visible: true }),
+    focusReport: (pendingReportKey) => set({ pendingReportKey }),
+    clearReportFocus: () => set({ pendingReportKey: null }),
     toggleScene: () => set((state) => ({
       scene: state.scene === 'conversation' ? 'cards' : 'conversation',
       selectedCardId: null,

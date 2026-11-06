@@ -112,6 +112,72 @@ beforeEach(() => {
   (globalThis as any).__persistentChatConnectionProbe = { opens: 0, closes: 0, connected: false };
   jest.mocked(useUsageSummary).mockReturnValue({ summary: null, node: null, gauges: [], loading: false, loadState: 'idle', evaluatedAtMs: 0, retry: jest.fn() });
 });
+
+test.each([false, true])('보고 알림은 지정한 장을 선택한다 (듀오: %s)', duo => {
+  mockDevice = 'phone';
+  const scrollTo = jest.spyOn(ScrollView.prototype, 'scrollTo').mockImplementation(() => {});
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 47, 390, 715);
+    else if (this.props.testID === 'persistent-session-conversation') callback(20, 95, 350, 667);
+  });
+  const view = render(<DuoSideBandContext.Provider value={duo}><NavigationContainer><ScreenHarness /></NavigationContainer></DuoSideBandContext.Provider>);
+  act(() => {
+    store.getState().open({ session_id: 'pas-focus', persistent: true } as any);
+    useSessionStore.getState().applyPersistentReport('pas-focus', reportReviewEntries.slice(0, 2));
+  });
+  act(() => store.getState().focusReport(reportReviewEntries[1].key));
+  expect(store.getState().pendingReportKey).toBeNull();
+  if (duo) {
+    expect(store.getState().scene).toBe('reports');
+    expect(view.getByTestId('persistent-session-reports-panel')).toBeTruthy();
+    act(() => view.getByTestId('persistent-session-screen').props.onLayout());
+    const body = view.getByTestId('persistent-body-probe', { includeHiddenElements: true });
+    act(() => body.props.onComposerLayout({ x: 0, y: 500, width: 350, height: 76 }, { x: 0, y: 20, width: 350, height: 56 }));
+    const entry = view.getByTestId(`report-list-entry-${reportReviewEntries[1].key}`);
+    act(() => entry.props.onLayout({ nativeEvent: { layout: { y: 620, height: 250 } } }));
+    expect(scrollTo).toHaveBeenCalledWith({ y: 620, animated: false });
+  } else {
+    act(() => view.getByTestId('persistent-session-screen').props.onLayout());
+    const body = view.getByTestId('persistent-body-probe');
+    act(() => body.props.onComposerLayout({ x: 0, y: 500, width: 350, height: 76 }, { x: 0, y: 20, width: 350, height: 56 }));
+    expect(body.props.reportView.props.index).toBe(1);
+  }
+  view.unmount();
+  measure.mockRestore();
+  scrollTo.mockRestore();
+});
+
+test('이미 없는 보고 키는 지우고 PAS에 머문다', () => {
+  mockDevice = 'phone';
+  const view = render(<ScreenHarness />);
+  act(() => {
+    store.getState().open({ session_id: 'pas-missing', persistent: true } as any);
+    useSessionStore.getState().applyPersistentReport('pas-missing', reportReviewEntries.slice(0, 2));
+  });
+  act(() => store.getState().focusReport('missing'));
+  expect(store.getState()).toMatchObject({ pendingReportKey: null, scene: 'conversation', visible: true });
+  view.unmount();
+});
+
+test('보고 진입은 현재 PAS보다 지정된 PAS를 먼저 열고 그 장을 선택한다', async () => {
+  mockDevice = 'phone';
+  useSettingsStore.setState({ serverUrl: 'https://screen.test' });
+  const sessions = [
+    { session_id: 'pas-current', persistent: true, persistent_report: reportReviewEntries.slice(0, 2) },
+    { session_id: 'pas-target', persistent: true, persistent_report: reportReviewEntries.slice(0, 2) },
+  ];
+  mockApi.listPersistentSessions.mockResolvedValue({ sessions, create_defaults: null });
+  let openReport: ((sessionId: string, entryKey: string, onOpen: () => void) => void) | null = null;
+  const onOpen = jest.fn();
+  const view = render(<PersistentSessionProvider onReportOpenReady={open => { openReport = open; }}>
+    <Capture /><PersistentSessionScreen onHome={jest.fn()} />
+  </PersistentSessionProvider>);
+  act(() => store.getState().open(sessions[0] as any));
+  await act(async () => { openReport!('pas-target', reportReviewEntries[1].key, onOpen); });
+  await waitFor(() => expect(onOpen).toHaveBeenCalledTimes(1));
+  expect(store.getState()).toMatchObject({ session: { session_id: 'pas-target' }, pendingReportKey: null });
+  view.unmount();
+});
 test('persistent session screen isolates native overlay stacking', () => {
   const view = render(<ScreenHarness />);
   expect(StyleSheet.flatten(view.getByTestId('persistent-session-screen').props.style).isolation).toBe('isolate');

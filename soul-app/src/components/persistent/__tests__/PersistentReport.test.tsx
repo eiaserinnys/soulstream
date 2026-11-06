@@ -38,6 +38,41 @@ beforeEach(() => {
 });
 afterEach(() => jest.restoreAllMocks());
 
+test.each(['before layout', 'after layout'] as const)('vertical reveal scrolls to the target %s', timing => {
+  const scrollTo = jest.spyOn(ReactNative.ScrollView.prototype, 'scrollTo').mockImplementation(() => undefined);
+  const onRevealed = jest.fn();
+  const entries = reportReviewEntries.slice(0, 3);
+  const target = entries[2].key;
+  const viewFor = (revealKey: string | null) => <ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true as const })}>
+    <PersistentReportPager entries={entries} index={2} api={null} verticalList revealKey={revealKey} onRevealed={onRevealed}
+      onSelect={jest.fn()} onDismiss={jest.fn()} onFocusComposer={jest.fn()} />
+  </ChatUiControllerProvider>;
+  const view = render(viewFor(timing === 'before layout' ? target : null));
+  expect(scrollTo).not.toHaveBeenCalled();
+  fireEvent(view.getByTestId(`report-list-entry-${target}`), 'layout', { nativeEvent: { layout: { y: 740, height: 300 } } });
+  if (timing === 'after layout') {
+    expect(scrollTo).not.toHaveBeenCalled();
+    view.rerender(viewFor(target));
+  }
+  expect(scrollTo).toHaveBeenCalledWith({ y: 740, animated: false });
+  expect(onRevealed).toHaveBeenCalledTimes(1);
+  view.unmount();
+});
+
+test('vertical list does not scroll on layout or index changes without a reveal key', () => {
+  const scrollTo = jest.spyOn(ReactNative.ScrollView.prototype, 'scrollTo').mockImplementation(() => undefined);
+  const entries = reportReviewEntries.slice(0, 3);
+  const viewFor = (index: number) => <ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true as const })}>
+    <PersistentReportPager entries={entries} index={index} api={null} verticalList
+      onSelect={jest.fn()} onDismiss={jest.fn()} onFocusComposer={jest.fn()} />
+  </ChatUiControllerProvider>;
+  const view = render(viewFor(0));
+  fireEvent(view.getByTestId(`report-list-entry-${entries[2].key}`), 'layout', { nativeEvent: { layout: { y: 740, height: 300 } } });
+  view.rerender(viewFor(2));
+  expect(scrollTo).not.toHaveBeenCalled();
+  view.unmount();
+});
+
 function pager(entries = reportReviewEntries, onDeckTouch?: (active: boolean) => void, completion?: any,
   options: { bubble?: boolean; maxHeight?: number; verticalList?: boolean; onReady?: (ready: boolean) => void } = {}) {
   const onSelect = jest.fn(), onDismiss = jest.fn().mockResolvedValue(undefined), onAppend = jest.fn((_text: string, _reply?: ReportReplyDraft) => ({ ok: true as const }));

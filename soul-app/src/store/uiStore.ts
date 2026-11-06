@@ -54,6 +54,9 @@ interface UIState {
   /** iPad 업무 오버레이가 읽을 업무=페이지 정본 ID. */
   selectedFolderPageId: string | null;
   selectedCardId: string | null;
+  pendingCardQuestionFocus: string | null;
+  requestCardQuestionFocus: (cardId: string) => void;
+  clearCardQuestionFocus: () => void;
   initialCardSessionId: string | null;
   cardSessionSelectionHandled: boolean;
   openCardOverlay: (cardId: string, initialSessionId?: string | null) => void;
@@ -161,6 +164,9 @@ export const useUIStore = create<UIState>()(
       storyOpenRequestId: null,
       selectedFolderPageId: null,
       selectedCardId: null,
+      pendingCardQuestionFocus: null,
+      requestCardQuestionFocus: (pendingCardQuestionFocus) => set({ pendingCardQuestionFocus }),
+      clearCardQuestionFocus: () => set({ pendingCardQuestionFocus: null }),
       initialCardSessionId: null,
       cardSessionSelectionHandled: false,
       settingsVisible: false,

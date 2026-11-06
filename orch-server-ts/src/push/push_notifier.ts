@@ -1,6 +1,7 @@
 import type { NodeRegistryEvent } from "../node/registry.js";
 import type { CardNotification } from "../cards/card_dispatcher.js";
 import type { PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
+import type { PushNotificationData } from "@soulstream/wire-schema/push-notification";
 import type { PushRegistrationRepository } from "./push_routes.js";
 import { SessionForegroundObserverTracker } from "./session_foreground_observer_tracker.js";
 
@@ -215,7 +216,7 @@ export class PushNotifier {
     nodeId: string,
     title: string,
     body: string,
-    data: Readonly<Record<string, unknown>>,
+    data: PushNotificationData,
   ): Promise<boolean> {
     const email = this.options.resolveNodeEmail(nodeId)?.trim();
     if (!email) return false;
@@ -226,7 +227,7 @@ export class PushNotifier {
     email: string,
     title: string,
     body: string,
-    data: Readonly<Record<string, unknown>>,
+    data: PushNotificationData,
   ): Promise<boolean> {
     let tokens: readonly PushDeviceToken[];
     try {
