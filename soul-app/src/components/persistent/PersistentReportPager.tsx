@@ -25,7 +25,7 @@ function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps
   </View>;
 }
 
-export function PersistentReportPager({ entries: rawEntries, index: rawIndex, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, onOpenCardDetails, expandedKey: controlledExpandedKey, onExpandedKeyChange, completion, verticalList = false }: {
+export function PersistentReportPager({ entries: rawEntries, index: rawIndex, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, onOpenCardDetails, expandedKey: controlledExpandedKey, onExpandedKeyChange, completion, verticalList = false, revealKey, onRevealed }: {
   expandedKey?: string | null; onExpandedKeyChange?(key: string | null): void;
   renderCardDetails?(entry: PersistentReportEntry): React.ReactNode;
   renderCardStatus?(entry: PersistentReportEntry): React.ReactNode;
@@ -35,7 +35,7 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
   onFocusComposer(): void;
   send?: ReturnType<typeof usePersistentReportSend>; bubble?: boolean; maxHeight?: number; onInteraction?(pressed: boolean): void;
   onDeckTouch?(active: boolean): void; onReady?(ready: boolean): void; sessionId?: string;
-  completion?: CardCompletion; verticalList?: boolean;
+  completion?: CardCompletion; verticalList?: boolean; revealKey?: string | null; onRevealed?(): void;
 }) {
   const entries = useMemo(() => completion?.filterEntries ? completion.filterEntries(rawEntries) : rawEntries, [completion, rawEntries]);
   const index = Math.min(rawIndex, Math.max(0, entries.length - 1));
@@ -102,6 +102,13 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
     return layout ? Math.max(0, layout.y + layout.height - verticalViewportHeight.current) : null;
   }, []);
   const verticalScroll = useReportComposerScroll(getVerticalTarget);
+  const reveal = () => {
+    const layout = verticalList && revealKey ? verticalItemLayouts.current.get(revealKey) : undefined;
+    if (!layout) return;
+    verticalScroll.scroll.current?.scrollTo({ y: layout.y, animated: false });
+    onRevealed?.();
+  };
+  useEffect(reveal, [revealKey, verticalList]);
   const deck = useRef<View>(null);
   const titleNodes = useRef<Record<string, Text | null>>({});
   const expectedScroll = useRef<number | null>(null);
@@ -189,6 +196,7 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
           return <View key={JSON.stringify([sessionId, entry.key])} testID={`report-list-entry-${entry.key}`} onLayout={event => {
             const { y, height } = event.nativeEvent.layout;
             verticalItemLayouts.current.set(entry.key, { y, height });
+            reveal();
             if (focusedVerticalKey.current === entry.key) verticalScroll.keepComposerVisible();
           }}><ReportComposerFocusContext.Provider value={focused => {
             focusedVerticalKey.current = focused ? entry.key : null;

@@ -32,11 +32,55 @@ import { NavigationContainer, createNavigationContainerRef } from '@react-naviga
 import { TabNavigator } from '../TabNavigator';
 import { PersistentSessionProvider, usePersistentSessionHost } from '../PersistentSessionContext';
 import { TabletNavigator } from '../TabletNavigator';
-import { openTabletSessionFromRoot } from '../tabletSessionNavigation';
+import { openTabletCardFromRoot, openTabletSessionFromRoot } from '../tabletSessionNavigation';
 import { useUIStore } from '../../store/uiStore';
 import { openNotificationSession } from '../notificationSessionRoute';
-import { openPhoneChat, openPreviousPhonePanel } from '../phoneSessionNavigation';
+import { openPhoneCard, openPhoneChat, openPreviousPhonePanel } from '../phoneSessionNavigation';
 import { buildPhoneState, readPhoneLocation } from '../layoutNavigationState';
+
+test.each(['unvisited', 'chat'] as const)('복원된 %s에서 카드 알림을 열고 Daily로 돌아간다', async origin => {
+  const navigation = createNavigationContainerRef<any>();
+  const initialState = origin === 'chat'
+    ? buildPhoneState({ originTab: 'FeedTab', kind: 'chat', sessionId: 'session-a', returnTab: 'FeedTab' })
+    : buildPhoneState({ originTab: 'PersistentTab', kind: 'persistentSession' });
+  const view = render(<PersistentSessionProvider><NavigationContainer ref={navigation} initialState={initialState}>
+    <TabNavigator />
+  </NavigationContainer></PersistentSessionProvider>);
+  await waitFor(() => expect(navigation.isReady()).toBe(true));
+  act(() => openPhoneCard(navigation, 'card-notice'));
+  await waitFor(() => expect(navigation.getCurrentRoute()).toMatchObject({ name: 'CardDetail', params: { cardId: 'card-notice' } }));
+  act(() => navigation.goBack());
+  await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('Daily'));
+  expect(view.getByTestId('real-daily')).toBeTruthy();
+  view.unmount();
+});
+
+test('복원된 PAS 카드 상세 위에서 보고 목적지는 PAS 화면으로 돌아간다', async () => {
+  const navigation = createNavigationContainerRef<any>();
+  const initialState = buildPhoneState({ originTab: 'PersistentTab', kind: 'cardDetail', cardId: 'card-a', pasCard: true });
+  const view = render(<PersistentSessionProvider><NavigationContainer ref={navigation} initialState={initialState}>
+    <TabNavigator />
+  </NavigationContainer></PersistentSessionProvider>);
+  await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('CardDetail'));
+  act(() => navigation.navigate('PersistentTab', { screen: 'PersistentSession', pop: true }));
+  await waitFor(() => expect(navigation.getCurrentRoute()?.name).toBe('PersistentSession'));
+  view.unmount();
+});
+
+test('태블릿 카드 알림은 PAS를 떠나 Main의 카드 오버레이를 연다', async () => {
+  const navigation = createNavigationContainerRef<any>();
+  let host!: ReturnType<typeof usePersistentSessionHost>;
+  function Capture() { host = usePersistentSessionHost(); return null; }
+  const view = render(<PersistentSessionProvider><Capture /><NavigationContainer ref={navigation}><TabletNavigator /></NavigationContainer></PersistentSessionProvider>);
+  await waitFor(() => expect(navigation.isReady()).toBe(true));
+  act(() => { host.store.getState().open({ session_id: 'pas' } as any); navigation.navigate('PersistentSession'); });
+  const leave = jest.fn(() => host.store.getState().leave());
+  act(() => openTabletCardFromRoot(navigation, leave, 'card-notice'));
+  expect(leave).toHaveBeenCalledTimes(1);
+  expect(navigation.getCurrentRoute()?.name).toBe('Main');
+  expect(useUIStore.getState()).toMatchObject({ selectedCardId: 'card-notice', folderOverlayVisible: true });
+  view.unmount();
+});
 
 test.each(['DailyTab', 'FolderTab', 'SettingsTab', 'notification'] as const)(
   '미방문 Feed에서 %s 진입은 실제 [Feed, Chat] 스택을 만들고 돌아간 뒤 피드가 살아 있다', async origin => {

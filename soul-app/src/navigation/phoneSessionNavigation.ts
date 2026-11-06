@@ -24,6 +24,11 @@ export function cancelPhoneSearchSessionOpen(): void {
   latestSearchOpenRequest += 1;
 }
 
+export function openPhoneCard(root: PhoneRootNavigation, cardId: string): void {
+  latestSearchOpenRequest += 1;
+  root.navigate('DailyTab', { screen: 'CardDetail', initial: false, params: { cardId } });
+}
+
 /** 폰 stack에서 한 단계 위 root tab을 통해 채팅 세션을 연다. */
 export function openPhoneChat(
   navigation: PhoneStackNavigation,

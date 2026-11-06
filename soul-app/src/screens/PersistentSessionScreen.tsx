@@ -98,6 +98,20 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const pending = useChatStore(state => session ? state.pendingOptimisticBySession[session.session_id] : undefined);
   const completion = usePersistentCardCompletion(api);
   const report = usePersistentReport(session?.session_id, true, api, session?.persistent_report, pending, completion.filterEntries);
+  const pendingReportKey = usePersistentSessionScene(state => state.pendingReportKey);
+  const [revealReportKey, setRevealReportKey] = useState<string | null>(null);
+  React.useEffect(() => {
+    if (!pendingReportKey) return;
+    const index = report.entries.findIndex(entry => entry.key === pendingReportKey);
+    if (index !== -1) {
+      report.select(index);
+      if (reportsListMode) {
+        setRevealReportKey(pendingReportKey);
+        if (host.store.getState().scene !== 'reports') host.store.getState().toggleReports();
+      }
+    }
+    host.store.getState().clearReportFocus();
+  }, [pendingReportKey, report.entries, reportsListMode, host.store]);
   const status = useSessionStore(state => session ? state.sessions[session.session_id]?.status : undefined);
   const reportSend = usePersistentReportSend(session?.session_id ?? '', api, report.entries, report.server, status, setNotice);
   const reportCount = reportSend.entries.length;
@@ -262,6 +276,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     onExpandedKeyChange={key => setReportExpansion({ sessionId: session?.session_id, key })}
     sessionId={session?.session_id} onReady={setReportReady}
     send={reportSend} completion={completion} bubble={!reportsScene && !!geometry.reportBubble} verticalList={reportsScene}
+    revealKey={reportsScene ? revealReportKey : null} onRevealed={() => setRevealReportKey(null)}
     maxHeight={reportsScene ? (phone ? Math.max(0, (app?.height ?? 0) - headerHeight - keyboardOverlap) : geometry.reportInlineMaxHeight)
       : geometry.reportBubble?.maxHeight ?? (phone ? Math.min(geometry.reportViewMaxHeight, geometry.reportInlineMaxHeight) : geometry.reportInlineMaxHeight)}
     onSelect={report.select} onDismiss={report.dismiss} onInteraction={setReportPressed} onDeckTouch={onReportDeckTouch}

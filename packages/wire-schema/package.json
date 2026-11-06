@@ -20,6 +20,7 @@
     "./persistent-session-settings": "./src/persistent_session_settings.ts",
     "./persistent-session-instructions": "./src/persistent_session_instructions.ts",
     "./persistent-report": "./src/persistent_report.ts",
+    "./push-notification": "./src/push_notification.ts",
     "./resume-after-limit": "./src/resume_after_limit.ts",
     "./session-statistics": "./src/session_statistics.ts",
     "./node-resources": "./src/node_resources.ts"

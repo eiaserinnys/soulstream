@@ -16,6 +16,7 @@ interface Props {
   sessionIntent?: boolean;
   onOpenPersistent?: () => void;
   onPersistentLeaveReady?: (leave: (() => void) | null) => void;
+  onReportOpenReady?: (open: ((sessionId: string, entryKey: string, onOpen: () => void) => void) | null) => void;
 }
 
 /**
@@ -33,6 +34,7 @@ export function AuthenticatedAppSubtree({
   sessionIntent = false,
   onOpenPersistent,
   onPersistentLeaveReady,
+  onReportOpenReady,
 }: Props) {
   const snapshotCurrentView = React.useCallback(() => {
     if (device === 'phone') {
@@ -46,13 +48,13 @@ export function AuthenticatedAppSubtree({
     <>
       <UiUsageEventsHost generation={generation} onCollectionEnabled={snapshotCurrentView} />
       <AuthenticatedAppInstance key={generation} device={device} startupReady={startupReady}
-        sessionIntent={sessionIntent} onOpenPersistent={onOpenPersistent} onPersistentLeaveReady={onPersistentLeaveReady} />
+        sessionIntent={sessionIntent} onOpenPersistent={onOpenPersistent} onPersistentLeaveReady={onPersistentLeaveReady} onReportOpenReady={onReportOpenReady} />
     </>
   );
 }
 
-function AuthenticatedAppInstance({ device, startupReady, sessionIntent, onOpenPersistent, onPersistentLeaveReady }: Pick<Props, 'device' | 'startupReady' | 'sessionIntent' | 'onOpenPersistent' | 'onPersistentLeaveReady'>) {
-  return <PersistentSessionProvider sessionIntent={sessionIntent} onLeaveReady={onPersistentLeaveReady}>
+function AuthenticatedAppInstance({ device, startupReady, sessionIntent, onOpenPersistent, onPersistentLeaveReady, onReportOpenReady }: Pick<Props, 'device' | 'startupReady' | 'sessionIntent' | 'onOpenPersistent' | 'onPersistentLeaveReady' | 'onReportOpenReady'>) {
+  return <PersistentSessionProvider sessionIntent={sessionIntent} onLeaveReady={onPersistentLeaveReady} onReportOpenReady={onReportOpenReady}>
     <LayoutContinuityProvider><ContentLinkProvider><AdaptiveNavigationHost device={device} /></ContentLinkProvider></LayoutContinuityProvider>
     {onOpenPersistent ? <PersistentSessionStartup ready={startupReady === true} sessionIntent={sessionIntent === true} onOpen={onOpenPersistent} /> : null}
   </PersistentSessionProvider>;

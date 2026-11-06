@@ -31,8 +31,9 @@ interface PersistentSessionHost {
 }
 const Context = createContext<PersistentSessionHost | null>(null);
 
-export function PersistentSessionProvider({ children, sessionIntent = false, onLeaveReady }: {
+export function PersistentSessionProvider({ children, sessionIntent = false, onLeaveReady, onReportOpenReady }: {
   children: React.ReactNode; sessionIntent?: boolean; onLeaveReady?: (leave: (() => void) | null) => void;
+  onReportOpenReady?: (open: ((sessionId: string, entryKey: string, onOpen: () => void) => void) | null) => void;
 }) {
   const [store] = useState(createPersistentSessionScene);
   const t = useTokens();
@@ -69,7 +70,8 @@ export function PersistentSessionProvider({ children, sessionIntent = false, onL
     setSheet(null);
     destination.current();
   }
-  async function readEntry(onOpen: () => void, mode: 'manual' | 'choose' | 'startup' | 'portrait') {
+  async function readEntry(onOpen: () => void, mode: 'manual' | 'choose' | 'startup' | 'portrait',
+    options?: { preferredSessionId?: string; reportKey?: string }) {
     if (mode !== 'portrait') {
       if (pending.current) return;
       destination.current = onOpen;
@@ -92,9 +94,12 @@ export function PersistentSessionProvider({ children, sessionIntent = false, onL
       if (mode === 'portrait') return;
       if (pending.current !== mode) return;
       if (mode === 'startup' && intent.current) { setSheet(null); return; }
-      const preferredId = mode === 'startup' ? last : (store.getState().session?.session_id ?? last);
+      const preferredId = options?.preferredSessionId ?? (mode === 'startup' ? last : (store.getState().session?.session_id ?? last));
       const entry = resolvePersistentSessionEntry(result.sessions, preferredId, mode === 'startup', mode === 'choose');
-      if (entry.kind === 'open') open(entry.session);
+      if (entry.kind === 'open') {
+        open(entry.session);
+        if (entry.session.session_id === options?.preferredSessionId && options.reportKey) store.getState().focusReport(options.reportKey);
+      }
       else setSheet(entry.kind === 'home' ? null : entry.kind);
     } catch {
       if (mode === 'startup') {
@@ -103,6 +108,12 @@ export function PersistentSessionProvider({ children, sessionIntent = false, onL
       } else if (mode !== 'portrait') { setError('영구 세션을 불러오지 못했습니다.'); setSheet('error'); }
     } finally { if (mode !== 'portrait') { pending.current = null; setLoading(false); } }
   }
+  React.useLayoutEffect(() => {
+    onReportOpenReady?.((sessionId, entryKey, onOpen) => {
+      void readEntry(onOpen, 'manual', { preferredSessionId: sessionId, reportKey: entryKey });
+    });
+    return () => onReportOpenReady?.(null);
+  }, [onReportOpenReady, store, api, last, serverUrl, email]);
   const requestEntry = (onOpen: () => void, startup = false, choose = false) => {
     const mode = startup ? 'startup' : choose ? 'choose' : 'manual';
     lastMode.current = mode;
