@@ -1,3 +1,5 @@
+import { performance } from "node:perf_hooks";
+
 import Fastify, { type FastifyBaseLogger } from "fastify";
 import {
   HocuspocusProvider,
@@ -8,7 +10,10 @@ import WebSocket from "ws";
 import * as Y from "yjs";
 
 import { BoardYjsService } from "../src/board-yjs/board_yjs_service.js";
-import { readBoardYDocReplica } from "../src/board-yjs/board_yjs_model.js";
+import {
+  createMarkdownYjsDocument,
+  readBoardYDocReplica,
+} from "../src/board-yjs/board_yjs_model.js";
 import { registerBoardYjsRoutes } from "../src/board-yjs/board_yjs_route.js";
 import { assertBoardItemProjectionParity } from
   "../src/board-yjs/board_yjs_projection_verification.js";
@@ -25,6 +30,7 @@ import type {
 const providers: HocuspocusProvider[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(providers.splice(0).map((provider) => provider.destroy()));
 });
 
@@ -207,6 +213,263 @@ describe("orch BoardYjsService", () => {
     }
   }, 20_000);
 });
+
+describe("direct mutation timing", () => {
+  it("does not log when the whole direct mutation stays under 1000ms", async () => {
+    const logger = silentLogger();
+    const service = createService(new MemoryBoardYjsRepository(), logger);
+    const clock = installFakeClock();
+    installControlledDirectMutation(service, {
+      clock,
+      gateWaitMs: 100,
+      connectMs: 200,
+      transactMs: 400,
+      disconnectMs: 299,
+    });
+    try {
+      await expect(
+        service.updateMarkdownDocument(
+          { folderId: "folder-1" },
+          "missing",
+          { expectedVersion: 1 },
+        ),
+      ).resolves.toBeNull();
+      expect(logger.info).not.toHaveBeenCalled();
+    } finally {
+      await service.close();
+    }
+  });
+
+  it("logs one timing line when the whole direct mutation reaches exactly 1000ms", async () => {
+    const logger = silentLogger();
+    const service = createService(new MemoryBoardYjsRepository(), logger);
+    const clock = installFakeClock();
+    installControlledDirectMutation(service, {
+      clock,
+      gateWaitMs: 400,
+      connectMs: 200,
+      transactMs: 300,
+      disconnectMs: 100,
+    });
+    try {
+      await expect(
+        service.updateMarkdownDocument(
+          { folderId: "folder-1" },
+          "missing",
+          { expectedVersion: 1 },
+        ),
+      ).resolves.toBeNull();
+      expect(singleLoggedPayload(logger)).toEqual({
+        documentName: "board-folder:folder-1",
+        totalMs: 1000,
+        gateWaitMs: 400,
+        connectMs: 200,
+        transactMs: 300,
+        disconnectMs: 100,
+        outcome: "ok",
+        failedStage: null,
+      });
+    } finally {
+      await service.close();
+    }
+  });
+
+  it("logs the failed connect stage and rethrows the original error", async () => {
+    const logger = silentLogger();
+    const service = createService(new MemoryBoardYjsRepository(), logger);
+    const clock = installFakeClock();
+    const connectError = new Error("connect failed for confidential-token");
+    installControlledDirectMutation(service, {
+      clock,
+      gateWaitMs: 10,
+      connectMs: 990,
+      connectError,
+    });
+    try {
+      await expect(
+        service.updateMarkdownDocument(
+          { folderId: "folder-1" },
+          "doc-1",
+          { expectedVersion: 1 },
+        ),
+      ).rejects.toBe(connectError);
+      const payload = singleLoggedPayload(logger);
+      expect(payload).toEqual({
+        documentName: "board-folder:folder-1",
+        totalMs: 1000,
+        gateWaitMs: 10,
+        connectMs: 990,
+        transactMs: null,
+        disconnectMs: null,
+        outcome: "error",
+        failedStage: "connect",
+      });
+      expect(JSON.stringify(payload)).not.toContain("confidential-token");
+    } finally {
+      await service.close();
+    }
+  });
+
+  it("logs the failed transact stage and rethrows the original error", async () => {
+    const logger = silentLogger();
+    const service = createService(new MemoryBoardYjsRepository(), logger);
+    const clock = installFakeClock();
+    const transactError = new Error("store hook failed for confidential-body");
+    installControlledDirectMutation(service, {
+      clock,
+      gateWaitMs: 10,
+      connectMs: 10,
+      transactMs: 980,
+      disconnectMs: 10,
+      transactError,
+    });
+    try {
+      await expect(
+        service.updateMarkdownDocument(
+          { folderId: "folder-1" },
+          "doc-1",
+          { expectedVersion: 1 },
+        ),
+      ).rejects.toBe(transactError);
+      const payload = singleLoggedPayload(logger);
+      expect(payload).toEqual({
+        documentName: "board-folder:folder-1",
+        totalMs: 1010,
+        gateWaitMs: 10,
+        connectMs: 10,
+        transactMs: 980,
+        disconnectMs: 10,
+        outcome: "error",
+        failedStage: "transact",
+      });
+      expect(JSON.stringify(payload)).not.toContain("confidential-body");
+    } finally {
+      await service.close();
+    }
+  });
+
+  it("logs only timing fields and never document content", async () => {
+    const logger = silentLogger();
+    const service = createService(new MemoryBoardYjsRepository(), logger);
+    const clock = installFakeClock();
+    const document = new Y.Doc();
+    createMarkdownYjsDocument(document, { folderId: "folder-1" }, {
+      title: "Confidential title",
+      body: "confidential body",
+      x: 0,
+      y: 0,
+      documentId: "doc-secret",
+    });
+    installControlledDirectMutation(service, {
+      clock,
+      gateWaitMs: 10,
+      connectMs: 20,
+      transactMs: 1000,
+      disconnectMs: 10,
+      document,
+    });
+    try {
+      const updated = await service.updateMarkdownDocument(
+        { folderId: "folder-1" },
+        "doc-secret",
+        { title: "Updated confidential", body: "new confidential body", expectedVersion: 1 },
+      );
+      expect(updated).toEqual({
+        id: "doc-secret",
+        title: "Updated confidential",
+        body: "new confidential body",
+        version: 2,
+      });
+      const payload = singleLoggedPayload(logger);
+      expect(Object.keys(payload).sort()).toEqual([
+        "connectMs",
+        "disconnectMs",
+        "documentName",
+        "failedStage",
+        "gateWaitMs",
+        "outcome",
+        "totalMs",
+        "transactMs",
+      ]);
+      const serialized = JSON.stringify(payload);
+      expect(serialized).not.toContain("confidential");
+      expect(serialized).not.toContain("Confidential");
+    } finally {
+      await service.close();
+    }
+  });
+});
+
+function singleLoggedPayload(logger: FastifyBaseLogger): Record<string, unknown> {
+  const info = vi.mocked(logger.info);
+  expect(info).toHaveBeenCalledOnce();
+  return info.mock.calls[0]?.[0] as Record<string, unknown>;
+}
+
+interface FakeClock {
+  advance(ms: number): void;
+}
+
+function installFakeClock(): FakeClock {
+  let now = 0;
+  vi.spyOn(performance, "now").mockImplementation(() => now);
+  return {
+    advance(ms: number) {
+      now += ms;
+    },
+  };
+}
+
+interface ControlledDirectMutationOptions {
+  clock: FakeClock;
+  gateWaitMs: number;
+  connectMs?: number;
+  transactMs?: number;
+  disconnectMs?: number;
+  connectError?: Error;
+  transactError?: Error;
+  document?: Y.Doc;
+}
+
+function installControlledDirectMutation(
+  service: BoardYjsService,
+  options: ControlledDirectMutationOptions,
+): void {
+  const internals = service as unknown as {
+    hocuspocus: {
+      openDirectConnection(documentName: string, context?: unknown): Promise<unknown>;
+    };
+    documentMutationGate: unknown;
+  };
+  const document = options.document ?? new Y.Doc();
+  const connection = {
+    async transact(transaction: (doc: Y.Doc) => void): Promise<void> {
+      options.clock.advance(options.transactMs ?? 0);
+      transaction(document);
+      if (options.transactError) throw options.transactError;
+    },
+    async disconnect(): Promise<void> {
+      options.clock.advance(options.disconnectMs ?? 0);
+    },
+  };
+  vi.spyOn(internals.hocuspocus, "openDirectConnection").mockImplementation(async () => {
+    options.clock.advance(options.connectMs ?? 0);
+    if (options.connectError) throw options.connectError;
+    return connection;
+  });
+  Object.assign(internals, {
+    documentMutationGate: {
+      async withMutation<T>(
+        documentNames: readonly string[],
+        work: () => Promise<T>,
+      ): Promise<T> {
+        void documentNames;
+        options.clock.advance(options.gateWaitMs);
+        return await work();
+      },
+    },
+  });
+}
 
 function createBoardApp(
   repository = new MemoryBoardYjsRepository(),
