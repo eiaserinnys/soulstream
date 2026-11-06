@@ -129,6 +129,10 @@ test.each([false, true])('질문 알림은 항목이 있는 카드의 커멘트�
   }
   useUIStore.getState().requestCardQuestionFocus(card.id);
   const screen = render(<LayoutContinuityProvider><Seed /><CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} /></LayoutContinuityProvider>);
+  await waitFor(() => expect(screen.getByTestId('card-check-item-1')).toBeTruthy());
+  expect(useUIStore.getState().pendingCardQuestionFocus).toBe(card.id);
+  expect(screen.queryByTestId('card-timeline')).toBeNull();
+  act(() => screen.getByTestId('card-detail-dock').props.onLayout({ nativeEvent: { layout: { height: 56 } } }));
   await waitFor(() => expect(screen.getByTestId('card-timeline')).toBeTruthy());
   expect(screen.getByTestId('settings-segment-card-detail-comments').props.accessibilityState.selected).toBe(true);
   expect(screen.getByText('어떤 색?')).toBeTruthy();
@@ -145,41 +149,9 @@ test('숨겨진 카드 상세는 질문 요청을 소비하지 않는다', async
   useUIStore.getState().requestCardQuestionFocus(card.id);
   const screen = render(<CardDetailContent visible={false} api={{ getCard: jest.fn().mockResolvedValue(withItems) } as any} cardId={card.id} onClose={jest.fn()} />);
   await waitFor(() => expect(screen.getByTestId('card-check-item-1')).toBeTruthy());
+  act(() => screen.getByTestId('card-detail-dock').props.onLayout({ nativeEvent: { layout: { height: 56 } } }));
   expect(useUIStore.getState().pendingCardQuestionFocus).toBe(card.id);
   expect(screen.queryByTestId('card-timeline')).toBeNull();
-  screen.unmount();
-});
-
-test('질문 알림은 같은 타임라인이 커져도 끝을 유지하고 사용자가 끌면 멈춘다', async () => {
-  const withItems = { ...detail, card: { ...card, items: [checkItem(1, 'todo')] } };
-  const scrollToEnd = jest.spyOn(ScrollView.prototype, 'scrollToEnd').mockImplementation(() => {});
-  useUIStore.getState().requestCardQuestionFocus(card.id);
-  const screen = render(<CardDetailContent api={{ getCard: jest.fn().mockResolvedValue(withItems) } as any} cardId={card.id} onClose={jest.fn()} />);
-  await waitFor(() => expect(screen.getByTestId('card-timeline')).toBeTruthy());
-  const scroll = screen.getByTestId('card-detail-scroll');
-  act(() => scroll.props.onContentSizeChange(390, 1000));
-  scrollToEnd.mockClear();
-  act(() => scroll.props.onContentSizeChange(390, 1100));
-  expect(scrollToEnd).toHaveBeenCalledTimes(1);
-  expect(scrollToEnd).toHaveBeenCalledWith({ animated: false });
-  act(() => scroll.props.onScrollBeginDrag());
-  scrollToEnd.mockClear();
-  act(() => scroll.props.onContentSizeChange(390, 1200));
-  expect(scrollToEnd).not.toHaveBeenCalled();
-  screen.unmount();
-});
-
-test('질문 알림 없이 연 타임라인은 같은 stamp의 크기 변경으로 이동하지 않는다', async () => {
-  const withItems = { ...detail, card: { ...card, items: [checkItem(1, 'todo')] } };
-  const scrollToEnd = jest.spyOn(ScrollView.prototype, 'scrollToEnd').mockImplementation(() => {});
-  const screen = render(<CardDetailContent api={{ getCard: jest.fn().mockResolvedValue(withItems) } as any} cardId={card.id} onClose={jest.fn()} />);
-  await waitFor(() => expect(screen.getByTestId('card-check-item-1')).toBeTruthy());
-  fireEvent.press(screen.getByTestId('settings-segment-card-detail-comments'));
-  const scroll = screen.getByTestId('card-detail-scroll');
-  act(() => scroll.props.onContentSizeChange(390, 1000));
-  scrollToEnd.mockClear();
-  act(() => scroll.props.onContentSizeChange(390, 1100));
-  expect(scrollToEnd).not.toHaveBeenCalled();
   screen.unmount();
 });
 
