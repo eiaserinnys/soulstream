@@ -48,10 +48,31 @@ describe("ModelCatalog", () => {
       "codex-5.6-terra",
       "kimi-2",
       "kimi-3",
+      "deepseek-flash-4.1",
       "gemini-3.8-flash",
       "gemini-4-argon",
       "opencode-deepseek-v4.1-flash-free",
     ]);
+  });
+
+  it("loads the DeepSeek Go example preset", () => {
+    const catalog = new ModelCatalog(path.resolve(process.cwd(), "config/model-catalog.yaml.example"));
+    expect(catalog.resolve("deepseek-flash-4.1")).toMatchObject({
+      label: "DeepSeek - Flash 4.1",
+      backend: "claude",
+      model: "deepseek-v4.1-flash",
+      supported_efforts: ["low", "high", "max"],
+      default_effort: "max",
+      env: {
+        ANTHROPIC_BASE_URL: "https://opencode.ai/inference/go/anthropic",
+        ANTHROPIC_API_KEY: "${OPENCODE_GO_API_KEY}",
+        ENABLE_TOOL_SEARCH: "true",
+        CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: "deepseek-v4.1-flash",
+        ANTHROPIC_DEFAULT_SONNET_MODEL: "deepseek-v4.1-flash",
+        ANTHROPIC_DEFAULT_OPUS_MODEL: "deepseek-v4.1-flash",
+      },
+    });
   });
 
   it("advertises the OpenCode DeepSeek preset without a usage provider or effort control", () => {

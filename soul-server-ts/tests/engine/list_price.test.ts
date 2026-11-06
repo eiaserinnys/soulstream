@@ -121,6 +121,7 @@ describe("fixed inference price reference", () => {
     ["codex", "gpt-6-astra", 0.0591],
     ["antigravity", "gemini-4-argon", 0.01181],
     ["deepseek", "deepseek-flash", 0.0014706],
+    ["deepseek", "deepseek-v4.1-flash", 0.0014706],
   ])("prices the fixed %s reference row", (provider, model, expectedCost) => {
     const result = priceInferenceUsage({ provider, model, ...completeInput });
 

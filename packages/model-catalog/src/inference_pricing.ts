@@ -40,6 +40,7 @@ export const PRICE_SNAPSHOT_METADATA = {
     antigravity: ["gemini-4-argon", "gemini-3.8-flash"],
     deepseek: [
       "deepseek-v4.1-flash-1017",
+      "deepseek-v4.1-flash",
       "deepseek-flash",
       "deepseek-v4-flash",
       "deepseek-v4-flash-vision-exp",
@@ -55,6 +56,7 @@ export const PRICE_SNAPSHOT_METADATA = {
   assumptions: [
     "Standard API prices and default context tiers are used for the fixed snapshot.",
     "DeepSeek V4.1 Flash uses the 1017 peak schedule; the OpenCode free-harness alias is priced at API list price, not at $0.",
+    "OpenCode Go subscription usage is also valued at API list price.",
     "Gemini promotional rates remain frozen in this snapshot after their published end dates.",
     "Other legacy rows retain their previous 2026-10-05 values and are not claimed as reverified for this snapshot.",
   ],
@@ -141,6 +143,7 @@ const EXACT_MODEL_ALIASES: Record<string, string> = {
   "antigravity:gemini-3.8-flash": "antigravity:gemini-3.8-flash",
   "deepseek:deepseek-flash": "deepseek:deepseek-flash",
   "deepseek:deepseek-v4.1-flash-1017": "deepseek:deepseek-flash",
+  "deepseek:deepseek-v4.1-flash": "deepseek:deepseek-flash",
   "deepseek:deepseek-v4-flash": "deepseek:deepseek-flash",
   "deepseek:deepseek-v4-flash-vision-exp": "deepseek:deepseek-flash",
   "deepseek:opencode/deepseek-v4.1-flash-free": "deepseek:deepseek-flash",

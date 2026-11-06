@@ -5,8 +5,19 @@ import {
   resolveModelPreset,
   UnknownModelPresetError,
 } from "@soulstream/model-catalog";
+import { PRICE_SNAPSHOT_METADATA, priceInferenceUsage } from "@soulstream/model-catalog/inference-pricing";
 
 describe("shared model catalog contract", () => {
+  it("includes and prices the DeepSeek Go model in the fixed snapshot", () => {
+    expect(PRICE_SNAPSHOT_METADATA.refreshed_model_rows.deepseek).toContain("deepseek-v4.1-flash");
+    const usage = {
+      provider: "deepseek", input_total: 1_000, cache_read: 100,
+      cache_write_5m: 0, cache_write_1h: 0, cache_write_unknown: 0, output_total: 1_000,
+    };
+    expect(priceInferenceUsage({ ...usage, model: "deepseek-v4.1-flash" }))
+      .toEqual(priceInferenceUsage({ ...usage, model: "deepseek-flash" }));
+  });
+
   it("parses a catalog and resolves the backend model without changing the preset id", () => {
     const catalog = parseModelCatalogYaml(`
 presets:
