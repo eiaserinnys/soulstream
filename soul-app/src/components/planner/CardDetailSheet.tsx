@@ -149,6 +149,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
   const scrollMemory = useContinuityScroll(JSON.stringify(['card', cardId]), y => scroll.current?.scrollTo({ y, animated: false }), !!detail);
   const scrollStamp = useRef(scrollMemory.hasPosition ? timelineStamp : '');
   const initialScroll = useRef(true);
+  const pinnedQuestionCard = useRef<string | null>(null);
   useEffect(() => {
     if (detail) continuity?.setViewState(viewKey, { tab, visit: currentVisit, targetItemId: targetItem?.id });
   }, [continuity, viewKey, detail, tab, currentVisit, targetItem]);
@@ -169,6 +170,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
       ? panelMinimumBottomPadding ?? (resolveTabletBottomSafeAreaPadding(insets.bottom, t.tabletShell.outerInset) + t.uiSpacing.sm)
       : insets.bottom + t.uiSpacing.sm;
   const setTab = (next: CardDetailTab) => {
+    pinnedQuestionCard.current = null;
     setTabChoice({ cardId, value: next });
     if (next === 'comments') {
       setUnreadChoice({ cardId, value: false });
@@ -184,6 +186,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
     scrollStamp.current = '';
     scrollMemory.onScrollBeginDrag();
     setTab('comments');
+    pinnedQuestionCard.current = cardId;
     requestAnimationFrame(() => scroll.current?.scrollToEnd({ animated: false }));
   }, [visible, questionFocus, cardId, detail?.card.id]);
   const setItemTarget = (item: CardCheckItem) => {
@@ -323,11 +326,12 @@ export function CardDetailContent(props: CardDetailContentProps) {
         </View> : <ScrollView testID="card-detail-scroll" ref={scroll} style={{ marginBottom: dockBottom }}
           contentContainerStyle={[styles.content, { paddingBottom: dockHeight + t.uiSpacing.xxl }]}
           keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
-          onScroll={event => { scrollOffsetRef.current = event.nativeEvent.contentOffset.y; scrollMemory.onScroll(event); }} onScrollBeginDrag={scrollMemory.onScrollBeginDrag}
+          onScroll={event => { scrollOffsetRef.current = event.nativeEvent.contentOffset.y; scrollMemory.onScroll(event); }}
+          onScrollBeginDrag={() => { pinnedQuestionCard.current = null; scrollMemory.onScrollBeginDrag(); }}
           onLayout={scrollMemory.onLayout} scrollEventThrottle={16}
           onContentSizeChange={(width, height) => {
             if (scrollMemory.onContentSizeChange(width, height)) { scrollStamp.current = timelineStamp; return; }
-            if (tab === 'comments' && timelineStamp && scrollStamp.current !== timelineStamp) {
+            if (tab === 'comments' && timelineStamp && (pinnedQuestionCard.current === cardId || scrollStamp.current !== timelineStamp)) {
               scrollStamp.current = timelineStamp;
               scroll.current?.scrollToEnd({ animated: false });
             }
