@@ -1,9 +1,10 @@
 import { withFolderBoardIdentity, folderIdentityDocumentNames, type FolderBoardIdentityInput } from "./board_yjs_folder_identity.js";
 import { upsertFolderYjsBoardItem } from "./board_yjs_model.js";
 import type { IncomingMessage } from "node:http";
+import { performance } from "node:perf_hooks";
 
 import { Hocuspocus } from "@hocuspocus/server";
-import type { Extension, onAuthenticatePayload } from "@hocuspocus/server";
+import type { DirectConnection, Extension, onAuthenticatePayload } from "@hocuspocus/server";
 import type { FastifyBaseLogger } from "fastify";
 import type WebSocket from "ws";
 import * as Y from "yjs";
@@ -60,6 +61,32 @@ export interface BoardYjsServiceConfig {
     position?: { x: number; y: number };
   }) => Promise<CatalogBoardItemRow | null>;
   persistBoardItemMove?: (application: StagedBoardMove) => Promise<void>;
+}
+
+type DirectMutationStage = "connect" | "transact" | "disconnect";
+
+interface DirectMutationTiming {
+  gateWaitMs: number | null;
+  connectMs: number | null;
+  transactMs: number | null;
+  disconnectMs: number | null;
+  failedStage: DirectMutationStage | null;
+}
+
+async function measureDirectMutationStage<T>(
+  timing: DirectMutationTiming,
+  stage: DirectMutationStage,
+  work: () => Promise<T>,
+): Promise<T> {
+  const startedAt = performance.now();
+  try {
+    return await work();
+  } catch (error) {
+    timing.failedStage = stage;
+    throw error;
+  } finally {
+    timing[`${stage}Ms`] = performance.now() - startedAt;
+  }
 }
 
 export class BoardYjsService {
@@ -302,22 +329,64 @@ export class BoardYjsService {
     container: string | BoardYjsFolderScope,
     callback: (doc: Y.Doc) => T,
   ): Promise<T> {
+    const startedAt = performance.now();
     const resolved = typeof container === "string" ? boardYjsFolderScope(container) : container;
     const documentName = getBoardYjsContainerDocumentName(resolved);
-    return await this.documentMutationGate.withMutation([documentName], async () => {
-      const connection = await this.requireHocuspocus().openDirectConnection(
-        documentName,
-        { ...resolved, source: "server" },
-      );
-      try {
-        let result: T | undefined;
-        await connection.transact((document) => {
-          result = callback(document as unknown as Y.Doc);
-        });
-        return result as T;
-      } finally {
-        await connection.disconnect();
-      }
+    const timing: DirectMutationTiming = {
+      gateWaitMs: null,
+      connectMs: null,
+      transactMs: null,
+      disconnectMs: null,
+      failedStage: null,
+    };
+    let outcome: "ok" | "error" = "ok";
+    try {
+      return await this.documentMutationGate.withMutation([documentName], async () => {
+        timing.gateWaitMs = performance.now() - startedAt;
+        const connection = await measureDirectMutationStage(timing, "connect", async () =>
+          await this.requireHocuspocus().openDirectConnection(
+            documentName,
+            { ...resolved, source: "server" },
+          )
+        );
+        try {
+          let result: T | undefined;
+          await measureDirectMutationStage(timing, "transact", async () =>
+            await connection.transact((document) => {
+              result = callback(document as unknown as Y.Doc);
+            })
+          );
+          return result as T;
+        } finally {
+          await measureDirectMutationStage(timing, "disconnect", async () =>
+            await connection.disconnect()
+          );
+        }
+      });
+    } catch (error) {
+      outcome = "error";
+      throw error;
+    } finally {
+      this.logDirectMutationTiming(documentName, performance.now() - startedAt, timing, outcome);
+    }
+  }
+
+  private logDirectMutationTiming(
+    documentName: string,
+    totalMs: number,
+    timing: DirectMutationTiming,
+    outcome: "ok" | "error",
+  ): void {
+    if (totalMs < 1000) return;
+    this.config.logger.info({
+      documentName,
+      totalMs,
+      gateWaitMs: timing.gateWaitMs,
+      connectMs: timing.connectMs,
+      transactMs: timing.transactMs,
+      disconnectMs: timing.disconnectMs,
+      outcome,
+      failedStage: timing.failedStage,
     });
   }
 
