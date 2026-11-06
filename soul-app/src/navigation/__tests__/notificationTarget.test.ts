@@ -6,11 +6,12 @@ const report = { kind: 'persistent_report', persistentSessionId: 'pas-1', entryK
 const question = { ...report, reportKind: 'ask', cardId: 'card-2', questionId: 'question-1', folderId: 'folder-1' } satisfies PersistentReportPushData;
 
 test.each([
-  [review, { kind: 'card', cardId: 'card-1' }],
-  [question, { kind: 'card', cardId: 'card-2' }],
+  [review, { kind: 'card', cardId: 'card-1', question: false }],
+  [question, { kind: 'card', cardId: 'card-2', question: true }],
   [report, { kind: 'report', sessionId: 'pas-1', entryKey: 'entry-1' }],
   [{ sessionId: 'old-1' }, { kind: 'session', sessionId: 'old-1' }],
-  [{ ...question, sessionId: 'old-1' }, { kind: 'card', cardId: 'card-2' }],
+  [{ ...question, sessionId: 'old-1' }, { kind: 'card', cardId: 'card-2', question: true }],
+  [{ ...question, questionId: '' }, { kind: 'card', cardId: 'card-2', question: false }],
   [null, null], [{}, null], [{ cardId: '' }, null], [{ sessionId: '' }, null],
   [{ kind: 'persistent_report', persistentSessionId: 'pas-1' }, null],
   [{ kind: 'persistent_report', persistentSessionId: '', entryKey: 'entry-1' }, null],

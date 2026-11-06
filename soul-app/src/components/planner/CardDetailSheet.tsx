@@ -175,6 +175,17 @@ export function CardDetailContent(props: CardDetailContentProps) {
       setNoticeChoice({ cardId, value: false });
     }
   };
+  const questionFocus = useUIStore(state => state.pendingCardQuestionFocus);
+  useEffect(() => {
+    if (!visible || questionFocus !== cardId || detail?.card.id !== cardId) return;
+    useUIStore.getState().clearCardQuestionFocus();
+    // 알림으로 들어온 질문이 저장된 탭과 스크롤 위치보다 앞선다.
+    initialScroll.current = false;
+    scrollStamp.current = '';
+    scrollMemory.onScrollBeginDrag();
+    setTab('comments');
+    requestAnimationFrame(() => scroll.current?.scrollToEnd({ animated: false }));
+  }, [visible, questionFocus, cardId, detail?.card.id]);
   const setItemTarget = (item: CardCheckItem) => {
     setTargetChoice({ cardId, itemId: item.id });
     requestAnimationFrame(() => composer.current?.focus());

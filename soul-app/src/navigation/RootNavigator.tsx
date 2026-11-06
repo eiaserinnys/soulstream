@@ -326,6 +326,7 @@ export function RootNavigator({
         });
       } else void openTabletSessionFromRoot(navigationRef, leavePersistent.current, target.sessionId, undefined, undefined, 'notification');
     } else if (target.kind === 'card') {
+      if (target.question) useUIStore.getState().requestCardQuestionFocus(target.cardId);
       if (device === 'phone') {
         leavePersistent.current?.();
         openPhoneCard(navigationRef, target.cardId);

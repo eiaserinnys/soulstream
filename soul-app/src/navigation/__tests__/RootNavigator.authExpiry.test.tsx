@@ -144,6 +144,7 @@ beforeEach(() => {
     activeSessionId: null,
     selectedFolderPageId: null,
     sessionFolderResolution: null,
+    pendingCardQuestionFocus: null,
   });
   useAuthStore.setState({ jwt: 'expired-jwt', authRejected: false });
   resetAuthScopeForTest();
@@ -186,6 +187,7 @@ test.each(notificationCases.flatMap(([kind, data, target]) =>
     else expect(openPlannerSessionWorkspace).toHaveBeenCalledWith('old-session', undefined, undefined, 'notification');
     expect(mockLeavePersistent).toHaveBeenCalled();
   } else {
+    expect(useUIStore.getState().pendingCardQuestionFocus).toBe(kind === 'question' ? target.id : null);
     if (device === 'phone') expect(openPhoneCard).toHaveBeenCalledWith(navigationRef, target.id);
     else {
       expect(navigationRef.dispatch).toHaveBeenCalledWith({ type: 'POP_TO', payload: { name: 'Main' } });
