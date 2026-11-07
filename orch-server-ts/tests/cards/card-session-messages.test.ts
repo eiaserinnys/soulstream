@@ -4,6 +4,7 @@ import { registerCardRoutes, cardRouteAuthRequirements } from "../../src/cards/c
 import { readCardSessionMessages } from "../../src/cards/card_session_messages.js";
 import type { CardDetail } from "../../src/cards/card_operations.js";
 import type { SqlClient } from "../../src/cards/control_plane/card_types.js";
+import { intervenePayload } from "../../src/session/session_action_command_payloads.js";
 import type { FolderRouteOptions } from "../../src/folders/folder_routes.js";
 
 const apps: ReturnType<typeof Fastify>[] = [];
@@ -125,7 +126,12 @@ it("sends a message to the card session for a dashboard user", async () => {
   const response = await app.inject({ method: "POST", url: "/api/cards/card/messages", payload: { text: " 이어서 진행해 주세요. ", idempotencyKey: "key-1" } });
   expect(response.statusCode).toBe(202);
   expect(response.json()).toEqual({ ok: true, sessionId: "assignee-session", delivery: { accepted: true } });
-  expect(send).toHaveBeenCalledWith(expect.anything(), "assignee-session", { text: "이어서 진행해 주세요.", client_msg_id: "key-1" });
+  expect(send).toHaveBeenCalledWith(expect.anything(), "assignee-session", { text: "이어서 진행해 주세요.", delivery_id: "key-1" });
+});
+
+it("carries the idempotency key into the intervention delivery id", () => {
+  const parsed = intervenePayload("assignee-session", { text: "안녕하세요", delivery_id: "key-1" });
+  expect(parsed).toMatchObject({ ok: true, value: { type: "intervene", agentSessionId: "assignee-session", text: "안녕하세요", delivery_id: "key-1" } });
 });
 
 it("forwards a failed delivery status unchanged", async () => {

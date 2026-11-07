@@ -67,7 +67,7 @@ export type FolderRouteOptions = {
   sendCardSessionMessage?: (
     request: FastifyRequest,
     sessionId: string,
-    body: { text: string; client_msg_id?: string },
+    body: { text: string; delivery_id?: string },
   ) => Promise<{ status: number; body: unknown }>;
   controlPlaneServiceProvider?: () => Promise<FolderControlPlaneService>;
 };

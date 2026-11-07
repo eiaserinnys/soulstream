@@ -102,7 +102,7 @@ export function registerCardRoutes(app: FastifyInstance, options: FolderRouteOpt
       if (!targetSessionId || !linked) throw new CardOperationError("메시지를 보낼 카드 연결 세션이 없습니다.", 422);
       if (!options.sendCardSessionMessage) throw new CardOperationError("카드 세션 메시지 전송이 구성되지 않았습니다.", 503);
       const result = await options.sendCardSessionMessage(request, targetSessionId,
-        { text, ...(body.idempotencyKey ? { client_msg_id: body.idempotencyKey } : {}) });
+        { text, ...(body.idempotencyKey ? { delivery_id: body.idempotencyKey } : {}) });
       return result.status >= 200 && result.status < 300
         ? reply.code(result.status).send({ ok: true, sessionId: targetSessionId, delivery: result.body })
         : reply.code(result.status).send(result.body);
