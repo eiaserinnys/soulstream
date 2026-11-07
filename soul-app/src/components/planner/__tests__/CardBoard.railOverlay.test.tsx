@@ -21,7 +21,7 @@ test('레일 폭만큼 뷰포트를 줄여 스냅과 좌우 여백이 좁은 화
   const board = wide.getByTestId('card-board');
   expect(board.props.snapToOffsets).toEqual(expected);
   const content = StyleSheet.flatten(board.props.contentContainerStyle);
-  expect(content.paddingLeft).toBe(8);
+  expect(content.paddingHorizontal).toBe(8);
   expect(content.paddingRight).toBe(92);
 });
 
