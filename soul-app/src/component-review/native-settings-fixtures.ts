@@ -246,6 +246,14 @@ export const nativeSettingsReviewApi = { ...dialogueApi, ...persistentSessionFix
   getAuthStatus: async () => ({ authenticated: true, user: { isAdmin: true } }),
   listNodes: async () => { if (state() === 'nodes-error') throw new Error('공개 예시 오류'); return { nodes: Array.from({ length: 8 }, (_, index) => ({ nodeId: index === 0 ? 'public-node' : `public-node-${index}` })) }; },
   getProviderUsage: async () => { if (state() === 'usage-error') throw new Error('공개 예시 오류'); return usage; },
+  // The backends screen mounts the legacy Claude provider section, which asks
+  // for the account list and auth state before it can render any provider.
+  getClaudeAuthAccounts: async () => ({ mode: 'legacy', accounts: [], pool: null, fable_pool: null }),
+  getClaudeAuthStatus: async () => ({ has_token: false }),
+  getClaudeProfile: async () => null,
+  startClaudeAuth: async () => { throw new Error('공개 예시에서는 실제 계정 로그인을 시작하지 않습니다.'); },
+  submitClaudeCode: async () => ({ ok: true }),
+  deleteClaudeToken: async () => ({ ok: true }),
   listRecurringJobs: async () => ({ jobs: state() === 'empty' ? [] : jobs }),
   createRecurringJob: async (input: any) => { const job = { ...jobs[0], ...input, job_id: 'review-created', version: 1 }; jobs = [...jobs, job]; return { job }; },
   updateRecurringJob: async (id: string, input: any) => { const job = jobs.find(item => item.job_id === id)!; if (input.expected_version !== job.version) throw new ApiHttpError('conflict', 409, '{}'); const saved = { ...job, ...input, version: job.version + 1 }; jobs = jobs.map(item => item.job_id === id ? saved : item); return { job: saved }; },
