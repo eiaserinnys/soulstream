@@ -1,6 +1,6 @@
 export const USAGE_SUMMARY_REFRESH_INTERVAL_MS = 15 * 60 * 1000;
 
-export type UsageSummaryProviderName = "claude" | "codex" | "antigravity";
+export type UsageSummaryProviderName = "claude" | "codex" | "antigravity" | "opencode_go";
 
 export type ClaudeAccountUsageWindow = {
   readonly used_percent: number;
@@ -151,6 +151,17 @@ export function nextUsageSummaryNodeId(
   return summary.nodes[(startIndex + 1) % summary.nodes.length].nodeId;
 }
 
+export function findFableWeeklyQuota(
+  quotas: readonly UsageSummaryQuota[],
+): UsageSummaryQuota | null {
+  return quotas.find((quota) => {
+    const identity = [quota.id, quota.label, quota.model ?? ""].join(" ").toLowerCase();
+    return quota.window === "7d"
+      && quota.id.startsWith("claude:weekly_scoped:")
+      && identity.includes("fable");
+  }) ?? null;
+}
+
 export function weeklyUsageGauges(node: UsageSummaryNode | null): UsageSummaryGauge[] {
   if (!node) return [];
 
@@ -165,12 +176,7 @@ export function weeklyUsageGauges(node: UsageSummaryNode | null): UsageSummaryGa
     });
   }
 
-  const fableQuota = claude?.quotas.find((quota) => {
-    const identity = [quota.id, quota.label, quota.model ?? ""].join(" ").toLowerCase();
-    return quota.window === "7d"
-      && quota.id.startsWith("claude:weekly_scoped:")
-      && identity.includes("fable");
-  });
+  const fableQuota = claude ? findFableWeeklyQuota(claude.quotas) : null;
   if (fableQuota?.remainingPercent !== null && fableQuota?.remainingPercent !== undefined) {
     gauges.push({
       id: "fable",
@@ -201,6 +207,69 @@ export function weeklyUsageGauges(node: UsageSummaryNode | null): UsageSummaryGa
   }
 
   return gauges;
+}
+
+export type ProviderQuotaSlotKind = "short" | "weekly" | "monthly" | "fable";
+
+export type ProviderQuotaSlot = {
+  readonly kind: ProviderQuotaSlotKind;
+  readonly label: string;
+  readonly usedPercent: number;
+  readonly resetAt: number | null;
+};
+
+export type ProviderQuotaSlots = readonly [
+  ProviderQuotaSlot | null,
+  ProviderQuotaSlot | null,
+  ProviderQuotaSlot | null,
+];
+
+export function providerQuotaSlots(provider: UsageSummaryProvider | null): ProviderQuotaSlots {
+  if (provider === null || provider.status !== "auto") return [null, null, null];
+
+  const quotas = provider.quotas.filter(isExecutionQuota);
+  const short = quotas.find((quota) => quota.model === null && quotaWindow(quota) === "5h") ?? null;
+  const weekly = quotas.find((quota) =>
+    quota.model === null
+    && (quotaWindow(quota) === "7d" || quotaWindow(quota) === "168h")) ?? null;
+  const monthly = quotas.find((quota) => quotaWindow(quota) === "monthly") ?? null;
+  const fable = monthly === null ? findFableWeeklyQuota(quotas) : null;
+  const fableRemaining = fable?.remainingPercent ?? null;
+  const thirdSlot = monthly !== null
+    ? quotaSlot("monthly", "월간", monthly)
+    : fable === null || fableRemaining === null
+      ? null
+      : quotaSlot("fable", "Fable", { remainingPercent: fableRemaining, resetAt: fable.resetAt });
+
+  return [
+    short === null ? null : quotaSlot("short", "5시간", short),
+    weekly === null ? null : quotaSlot("weekly", "7일", weekly),
+    thirdSlot,
+  ];
+}
+
+function isExecutionQuota(
+  quota: UsageSummaryQuota,
+): quota is UsageSummaryQuota & { readonly remainingPercent: number } {
+  return quota.remainingPercent !== null
+    && (quota.purpose === undefined || quota.purpose === "execution");
+}
+
+function quotaWindow(quota: UsageSummaryQuota): string | null {
+  return quota.window === null ? null : quota.window.trim().toLowerCase();
+}
+
+function quotaSlot(
+  kind: ProviderQuotaSlotKind,
+  label: string,
+  quota: { readonly remainingPercent: number; readonly resetAt: number | null },
+): ProviderQuotaSlot {
+  return {
+    kind,
+    label,
+    usedPercent: Math.min(100, Math.max(0, 100 - quota.remainingPercent)),
+    resetAt: quota.resetAt,
+  };
 }
 
 export function formatWeeklyRemainingPercent(value: number): string {

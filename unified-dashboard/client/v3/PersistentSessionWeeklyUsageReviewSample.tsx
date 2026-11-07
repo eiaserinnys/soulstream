@@ -28,13 +28,14 @@ const threeGauges = reviewNode('node-a', {
   claude: provider(73, [{ id: 'claude:weekly_scoped:fable', label: 'Fable', window: '7d', model: 'Fable', remainingPercent: 41, resetAt }]),
   codex: provider(18),
   antigravity: null,
+  opencode_go: null,
 });
-const twoGauges = reviewNode('node-b', { claude: provider(66), codex: provider(42), antigravity: null });
-const noGauges = reviewNode('node-c', { claude: null, codex: null, antigravity: null });
+const twoGauges = reviewNode('node-b', { claude: provider(66), codex: provider(42), antigravity: null, opencode_go: null });
+const noGauges = reviewNode('node-c', { claude: null, codex: null, antigravity: null, opencode_go: null });
 const summary: UsageSummarySnapshot = {
   generatedAt: '2026-10-13T08:00:00.000Z',
   collectedAt: null,
-  nodes: [reviewNode('node-four', { ...threeGauges.providers, antigravity: provider(96) }), threeGauges, twoGauges, reviewNode('node-one', { claude: provider(73), codex: null, antigravity: null }), noGauges],
+  nodes: [reviewNode('node-four', { ...threeGauges.providers, antigravity: provider(96) }), threeGauges, twoGauges, reviewNode('node-one', { claude: provider(73), codex: null, antigravity: null, opencode_go: null }), noGauges],
 };
 const stateLabels: Record<SampleState, string> = {
   normal: '정상', loading: '불러오는 중', pending: '수집 대기', empty: '주간 한도 없음', error: '조회 실패', stale: '갱신 지연',

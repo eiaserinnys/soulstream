@@ -190,7 +190,7 @@ function pasNode(availableCount: number): UsageSummaryNode {
     fetchedAt: "2026-10-28T09:11:00+09:00",
     stale: false,
     staleSince: null,
-    providers: { claude, codex: null, antigravity: null },
+    providers: { claude, codex: null, antigravity: null, opencode_go: null },
   };
 }
 

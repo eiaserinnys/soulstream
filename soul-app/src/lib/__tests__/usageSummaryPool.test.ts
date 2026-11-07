@@ -16,7 +16,7 @@ function summary(provider: Record<string, unknown>): AppUsageSummarySnapshot {
     nodes: [{ nodeId: 'node-a', fetchedAt: null, stale: false, staleSince: null, providers: {
       claude: { status: 'auto', source: null, sourceKind: 'unknown', observedAt: null, weeklyRemainingPercent: 71,
         weeklyResetAt: 1_800_352_800, shortRemainingPercent: null, shortResetAt: null, quotas: [] },
-      codex: null, antigravity: null,
+      codex: null, antigravity: null, opencode_go: null,
     } }],
   };
   return {

@@ -23,6 +23,7 @@ const pasNode: UsageSummarySnapshot["nodes"][number] = {
     },
     codex: null,
     antigravity: null,
+    opencode_go: null,
   },
 };
 const otherNode: UsageSummarySnapshot["nodes"][number] = {

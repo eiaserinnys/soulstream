@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createApp,
   parseOrchServerConfig,
+  resolveProductionRouteAuthRequirement,
   usageSummaryRouteAuthRequirements,
 } from "../src/index.js";
 import type { UsageSummarySnapshot } from "../src/usage/usage_summary_service.js";
@@ -33,7 +34,7 @@ describe("usage summary route", () => {
         providers: { claude: null, codex: null, antigravity: null, opencode_go: null },
       }],
     };
-    const service = { getSummary: vi.fn(() => summary) };
+    const service = { getSummary: vi.fn(() => summary), collectOnce: vi.fn(async () => undefined) };
     const app = createApp({ config, usageSummaryRoutes: { service } });
 
     const response = await app.inject({ method: "GET", url: "/api/usage/summary" });
@@ -44,7 +45,38 @@ describe("usage summary route", () => {
     expect(usageSummaryRouteAuthRequirements).toEqual({
       "GET /api/usage/summary": true,
       "GET /api/usage/stream": true,
+      "POST /api/usage/refresh": true,
     });
+    await app.close();
+  });
+
+  it("refreshes by collecting once and returns the new summary", async () => {
+    const before: UsageSummarySnapshot = {
+      generatedAt: "2026-11-07T01:00:00.000Z",
+      collectedAt: null,
+      nodes: [],
+    };
+    const after: UsageSummarySnapshot = {
+      generatedAt: "2026-11-07T01:00:05.000Z",
+      collectedAt: "2026-11-07T01:00:05.000Z",
+      nodes: [],
+    };
+    let summary = before;
+    const service = {
+      getSummary: vi.fn(() => summary),
+      collectOnce: vi.fn(async () => { summary = after; }),
+    };
+    const app = createApp({ config, usageSummaryRoutes: { service } });
+
+    const response = await app.inject({ method: "POST", url: "/api/usage/refresh" });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toEqual(after);
+    expect(service.collectOnce).toHaveBeenCalledOnce();
+    expect(resolveProductionRouteAuthRequirement({
+      method: "POST",
+      routeUrl: "/api/usage/refresh",
+    })).toBe(true);
     await app.close();
   });
 
@@ -76,7 +108,11 @@ describe("usage summary route", () => {
         },
       }],
     };
-    const service = { getSummary: vi.fn(() => summary), subscribe: vi.fn(() => () => undefined) };
+    const service = {
+      getSummary: vi.fn(() => summary),
+      collectOnce: vi.fn(async () => undefined),
+      subscribe: vi.fn(() => () => undefined),
+    };
     const app = createApp({ config, usageSummaryRoutes: { service, replayOnlyForTests: true } });
 
     const response = await app.inject({ method: "GET", url: "/api/usage/stream" });
@@ -90,6 +126,7 @@ describe("usage summary route", () => {
     expect(usageSummaryRouteAuthRequirements).toEqual({
       "GET /api/usage/summary": true,
       "GET /api/usage/stream": true,
+      "POST /api/usage/refresh": true,
     });
     await app.close();
   });
