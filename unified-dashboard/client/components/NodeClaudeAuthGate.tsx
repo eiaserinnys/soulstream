@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { NodeClaudeAuthPanel } from "./NodeClaudeAuthPanel";
+import { NodeProviderUsagePanel } from "./NodeProviderUsagePanel";
 import { ClaudeAccountPoolPanel } from "./claude-accounts/ClaudeAccountPoolPanel";
 import { getClaudeAccounts } from "../lib/claude-auth-api";
 
@@ -21,7 +22,16 @@ export function NodeClaudeAuthGate({ nodeId, request = fetch }: Props) {
   }
 
   if (accounts.data?.mode === "pool") {
-    return <ClaudeAccountPoolPanel nodeId={nodeId} request={request} initialList={accounts.data} />;
+    return (
+      <>
+        <ClaudeAccountPoolPanel nodeId={nodeId} request={request} initialList={accounts.data} />
+        <NodeProviderUsagePanel
+          nodeId={nodeId}
+          request={request}
+          providers={["codex", "antigravity", "opencode_go"]}
+        />
+      </>
+    );
   }
 
   return <NodeClaudeAuthPanel nodeId={nodeId} request={request} />;

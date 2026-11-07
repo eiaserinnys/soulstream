@@ -14,11 +14,14 @@ it('omits legacy Gemini entries while keeping Antigravity usage in the node sett
   const request = vi.fn(async () => Response.json({ generatedAt: '', providers: {
     gemini: { status: 'not_configured', quotas: [] },
     antigravity: { status: 'auto', planType: null, quotas: [] },
+    opencode_go: { status: 'not_configured', planType: null, quotas: [] },
   } })) as unknown as typeof fetch;
   try {
     act(() => root.render(<NodeClaudeAuthPanel nodeId="legacy" request={request} />));
     await act(async () => Array.from(host.querySelectorAll('button')).find(button => button.textContent === '사용량')!.click());
     expect(host.textContent).toContain('Antigravity');
+    expect(host.textContent).toContain('OpenCode Go');
+    expect(host.textContent).toContain('키 없음');
     expect(host.textContent).not.toContain('Gemini');
   } finally {
     act(() => root.unmount());

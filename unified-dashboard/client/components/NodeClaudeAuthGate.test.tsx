@@ -57,6 +57,33 @@ const poolList = {
   fable_pool: null,
 } as const;
 
+function quota(id: string, label: string, usedPercent: number, resetAt: number) {
+  return {
+    id, label, window: null, unit: null, used: null, remaining: null, limit: null,
+    usedPercent, remainingPercent: 100 - usedPercent, resetAt, model: null, source: null,
+  };
+}
+
+const providerUsage = {
+  generatedAt: "",
+  providers: {
+    claude: { status: "auto", source: "", planType: "Max", quotas: [quota("claude:7d", "7일", 50, 1_794_182_400)] },
+    codex: { status: "auto", source: "codex-api", planType: "Plus", quotas: [quota("codex:7d", "7일", 42, 1_794_182_400)] },
+    antigravity: { status: "auto", source: "agy:/usage", planType: null, quotas: [quota("antigravity:gemini:5h", "5시간", 12, 1_793_958_181)] },
+    opencode_go: {
+      status: "auto",
+      source: "https://opencode.ai/inference/go/v1/usage",
+      sourceKind: "remote",
+      planType: "구독",
+      quotas: [
+        quota("opencode_go:rolling", "5시간", 2, 1_793_958_181),
+        quota("opencode_go:weekly", "7일", 18, 1_794_182_400),
+        quota("opencode_go:monthly", "월", 9, 1_796_562_656),
+      ],
+    },
+  },
+};
+
 function jsonResponse(data: unknown, status = 200): Response {
   return Response.json(data, { status });
 }
@@ -130,5 +157,62 @@ describe("NodeClaudeAuthGate", () => {
     expect(host.querySelector('[data-testid="claude-account-pool-panel"]')).not.toBeNull();
     expect(host.textContent).toContain("first@example.test");
     expect(host.textContent).not.toContain("Claude Code 크레덴셜");
+  });
+
+  it("shows Codex, Antigravity and OpenCode Go usage under the pool panel", async () => {
+    const request = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/nodes/node-a/claude-auth/accounts") return jsonResponse(poolList);
+      if (path === "/api/nodes/node-a/provider-usage") return jsonResponse(providerUsage);
+      return new Response("not found", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    await act(async () => root.render(
+      <QueryClientProvider client={client}>
+        <NodeClaudeAuthGate nodeId="node-a" request={request} />
+      </QueryClientProvider>,
+    ));
+    await act(async () => {
+      await vi.waitFor(() => expect(host.querySelector('[data-testid="node-provider-usage-panel"]')).not.toBeNull());
+    });
+
+    await act(async () => {
+      Array.from(host.querySelectorAll("button")).find(button => button.textContent === "사용량")!.click();
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain("OpenCode Go"));
+    });
+
+    expect(host.textContent).toContain("Codex");
+    expect(host.textContent).toContain("Antigravity");
+    expect(host.textContent).toContain("5시간");
+    expect(host.textContent).toContain("7일");
+    expect(host.textContent).toContain("월");
+    expect(host.textContent).not.toContain("Claude Code");
+  });
+
+  it("shows a provider usage failure inside the pool node panel", async () => {
+    const request = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/api/nodes/node-a/claude-auth/accounts") return jsonResponse(poolList);
+      if (path === "/api/nodes/node-a/provider-usage") return new Response("provider usage unavailable", { status: 500 });
+      return new Response("not found", { status: 404 });
+    }) as unknown as typeof fetch;
+
+    await act(async () => root.render(
+      <QueryClientProvider client={client}>
+        <NodeClaudeAuthGate nodeId="node-a" request={request} />
+      </QueryClientProvider>,
+    ));
+    await act(async () => {
+      await vi.waitFor(() => expect(host.querySelector('[data-testid="node-provider-usage-panel"]')).not.toBeNull());
+    });
+
+    await act(async () => {
+      Array.from(host.querySelectorAll("button")).find(button => button.textContent === "사용량")!.click();
+    });
+    await act(async () => {
+      await vi.waitFor(() => expect(host.textContent).toContain("provider usage unavailable"));
+    });
   });
 });

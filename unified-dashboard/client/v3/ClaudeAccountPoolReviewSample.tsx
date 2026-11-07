@@ -82,6 +82,37 @@ function sampleAccounts(): ClaudeAccountList {
   };
 }
 
+function usageQuota(id: string, label: string, window: string, usedPercent: number, resetAt: number, source: string) {
+  return {
+    id, label, window, unit: null, used: null, remaining: null, limit: null,
+    usedPercent, remainingPercent: 100 - usedPercent, resetAt, model: null, source,
+  };
+}
+
+function sampleProviderUsage() {
+  const opencodeSource = "https://opencode.ai/inference/go/v1/usage";
+  return {
+    generatedAt: "2026-10-28T09:11:00+09:00",
+    providers: {
+      claude: { status: "auto", source: "claude-oauth", planType: "Max 20x", quotas: [
+        usageQuota("claude:7d", "7일", "7d", 13, 1_793_280_000, "claude-oauth"),
+      ] },
+      codex: { status: "auto", source: "codex-api", planType: "Plus", quotas: [
+        usageQuota("codex:7d", "7일", "7d", 36, 1_794_182_400, "codex-api"),
+      ] },
+      antigravity: { status: "auto", source: "agy:/usage", planType: null, quotas: [
+        usageQuota("antigravity:gemini:5h", "5시간", "5h", 12, 1_793_958_181, "agy:/usage"),
+        usageQuota("antigravity:gemini:weekly", "7일", "7d", 27, 1_794_182_400, "agy:/usage"),
+      ] },
+      opencode_go: { status: "auto", source: opencodeSource, sourceKind: "remote", planType: "구독", quotas: [
+        usageQuota("opencode_go:rolling", "5시간", "5h", 2, 1_793_958_181, opencodeSource),
+        usageQuota("opencode_go:weekly", "7일", "7d", 18, 1_794_182_400, opencodeSource),
+        usageQuota("opencode_go:monthly", "월", "monthly", 9, 1_796_562_656, opencodeSource),
+      ] },
+    },
+  };
+}
+
 function jsonData(data: unknown): Response {
   return Response.json(data);
 }
@@ -93,6 +124,7 @@ export function createClaudeAccountReviewRequest(): typeof fetch {
     const path = String(input);
     const method = init?.method ?? "GET";
     if (path === `/api/nodes/${nodeId}/claude-auth/accounts` && method === "GET") return jsonData(list);
+    if (path === `/api/nodes/${nodeId}/provider-usage` && method === "GET") return jsonData(sampleProviderUsage());
     if (path === `/api/nodes/${nodeId}/claude-auth/logins` && method === "POST") {
       const body = JSON.parse(String(init?.body ?? "{}")) as { account_id?: string };
       flow = {
