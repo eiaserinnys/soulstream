@@ -76,7 +76,7 @@ import { PersistentSessionScreen } from '../PersistentSessionScreen';
 import { ChatUiControllerProvider } from '../../components/chat-ui/ChatUiControllerProvider';
 import type { PersistentSessionScene } from '../../store/persistentSessionScene';
 import type { StoreApi } from 'zustand';
-import { Keyboard, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { BackHandler, Keyboard, Platform, ScrollView, StyleSheet, View } from 'react-native';
 import { renderHook } from '@testing-library/react-native';
 import { useChatStore } from '../../store/chatStore';
 import { useSessionStore } from '../../store/sessionStore';
@@ -1019,6 +1019,28 @@ test('카드 오버레이가 열리면 작업 목록을 숨기고 닫으면 다�
   fireEvent.press(view.getByTestId('close-card-overlay'));
   expect(StyleSheet.flatten(view.getByTestId('persistent-task-list-mock').props.style).display).toBe('flex');
   view.unmount();
+});
+
+test('태블릿 대화 장면의 PAS 카드 오버레이는 카드 목록 없이 열리고 back은 장면을 바꾸지 않고 닫는다', () => {
+  mockDevice = 'tabletLandscape';
+  const handlers: Array<() => boolean> = [];
+  const addEventListener = jest.spyOn(BackHandler, 'addEventListener').mockImplementation((_event, handler) => {
+    handlers.push(handler as () => boolean);
+    return { remove: jest.fn() } as any;
+  });
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
+  act(() => store.getState().open({ session_id: 'pas-1', persistent: true } as any));
+  act(() => store.getState().openCardOverlay('card-1'));
+  expect(view.getByTestId('persistent-card-overlay-mock').props.cardId).toBe('card-1');
+  expect(store.getState()).toMatchObject({ scene: 'conversation', selectedCardId: 'card-1' });
+  expect(view.queryByTestId('persistent-session-card-panel')).toBeNull();
+  let handled = false;
+  act(() => { handled = handlers[handlers.length - 1](); });
+  expect(handled).toBe(true);
+  expect(store.getState()).toMatchObject({ scene: 'conversation', selectedCardId: null });
+  expect(view.queryByTestId('persistent-card-overlay-mock')).toBeNull();
+  view.unmount();
+  addEventListener.mockRestore();
 });
 
 test('듀오 태블릿의 보고 장면은 대화 자리와 키보드 위를 덮고 목록에서 카드를 연다', async () => {

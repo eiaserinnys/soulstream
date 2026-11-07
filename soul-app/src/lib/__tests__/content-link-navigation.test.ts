@@ -337,6 +337,28 @@ test('카드는 phone에서 현재 stack에 push하고 태블릿 Main에서는 a
   expect(tablet.navigation.push).not.toHaveBeenCalled();
 });
 
+test('태블릿 PAS 위 카드 링크는 라우트를 떠나지 않고 PAS 카드 오버레이를 열고 phone은 그대로 push한다', async () => {
+  const openPersistentCard = jest.fn();
+  const tabletNavigation = makeNavigation('PersistentSession');
+  const openCardOverlay = jest.spyOn(useUIStore.getState(), 'openCardOverlay');
+  const tablet = deps('https://soulstream.test/?card=card-1', {
+    device: 'tabletLandscape', navigation: tabletNavigation, openPersistentCard,
+  });
+  await openContentLinkNavigation(tablet.input);
+  expect(openPersistentCard).toHaveBeenCalledWith('card-1');
+  expect(tabletNavigation.push).not.toHaveBeenCalled();
+  expect(openCardOverlay).not.toHaveBeenCalled();
+
+  const phoneOpenPersistentCard = jest.fn();
+  const phoneNavigation = makeNavigation('PersistentSession');
+  const phone = deps('https://soulstream.test/?card=card-2', {
+    navigation: phoneNavigation, openPersistentCard: phoneOpenPersistentCard,
+  });
+  await openContentLinkNavigation(phone.input);
+  expect(phoneNavigation.push).toHaveBeenCalledWith('CardDetail', { cardId: 'card-2' });
+  expect(phoneOpenPersistentCard).not.toHaveBeenCalled();
+});
+
 test('현재 맨 위와 같은 카드는 두 번 push하지 않는다', async () => {
   const navigation = makeNavigation('CardDetail', { cardId: 'card-1' });
   const state = deps('https://soulstream.test/?card=card-1', { navigation });

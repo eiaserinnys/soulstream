@@ -289,9 +289,12 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     onFocusComposer={() => inputComposerRef.current?.focusAccessibility()} /> : null;
   const back = React.useCallback(() => {
     const state = host.store.getState();
+    if (state.selectedCardId) {
+      state.closeCard();
+      return true;
+    }
     if (state.scene === 'cards' || (reportsListMode && state.scene === 'reports')) {
-      if (state.selectedCardId) state.closeCard();
-      else state.swipe('right');
+      state.swipe('right');
       return true;
     }
     return false;
@@ -456,7 +459,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
         paddingTop: phone ? t.uiSpacing.md : 0, paddingBottom: phone ? 0 : bottomSafeAreaInset }}>
         {taskList}
       </View> : null}
-      <PersistentSessionCardOverlay api={api} cardId={scene === 'cards' || reportsScene ? selectedCardId : null}
+      <PersistentSessionCardOverlay api={api} cardId={selectedCardId}
         sessionId={session?.session_id} bottomSafeAreaInset={bottomSafeAreaInset}
         sheetTop={duoTopBand ? headerHeight : 0} railBand={duoTopBand} onClose={() => host.store.getState().closeCard()} />
       {settingsOpen && session ? <PersistentSessionPasSettingsModal sessionId={session.session_id} nodeId={session.node_id ?? ''}
