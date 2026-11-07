@@ -64,6 +64,11 @@ export type FolderRouteOptions = {
   environment?: string;
   cardServiceProvider?: () => Promise<CardControlPlaneService>;
   cardExecutionServiceProvider?: () => Promise<import("../cards/card_execution_service.js").CardExecutionService>;
+  sendCardSessionMessage?: (
+    request: FastifyRequest,
+    sessionId: string,
+    body: { text: string; delivery_id?: string },
+  ) => Promise<{ status: number; body: unknown }>;
   controlPlaneServiceProvider?: () => Promise<FolderControlPlaneService>;
 };
 

@@ -72,8 +72,19 @@ describe("OAuth resource scopes", () => {
     expect(oauthScopeForRoute("GET", "/api/folders/folder-1")).toBe("folders:read");
   });
 
+  it("lets the card read scope write card status, comments and messages", () => {
+    for (const method of ["POST", "PATCH"]) {
+      expect(oauthScopeForRoute(method, "/api/cards")).toBe("cards:read");
+      expect(oauthScopeForRoute(method, "/api/cards/card-1/status")).toBe("cards:read");
+      expect(oauthScopeForRoute(method, "/api/cards/card-1/comments")).toBe("cards:read");
+      expect(oauthScopeForRoute(method, "/api/cards/card-1/messages")).toBe("cards:read");
+    }
+  });
+
   it("keeps every other method and resource outside the OAuth allowlist", () => {
-    expect(oauthScopeForRoute("POST", "/api/cards")).toBeNull();
+    expect(oauthScopeForRoute("POST", "/api/folders")).toBeNull();
+    expect(oauthScopeForRoute("PATCH", "/api/folders/folder-1")).toBeNull();
+    expect(oauthScopeForRoute("DELETE", "/api/cards/card-1")).toBeNull();
     expect(oauthScopeForRoute("GET", "/api/sessions")).toBeNull();
     expect(oauthScopeForRoute("POST", "/api/sessions")).toBeNull();
   });

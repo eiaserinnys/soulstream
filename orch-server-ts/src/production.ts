@@ -131,6 +131,7 @@ import { sessionDeliveryInterventionPayload } from
   "./session/session_delivery_intervention_payload.js";
 import { PersistentSessionSettingsService } from "./session/persistent_session_settings_service.js";
 import { executeCreateSessionRoute } from "./session/session_command_routes.js";
+import { executeSessionIntervention } from "./session/session_action_command_routes.js";
 import {
   createLiveTurnSummaryPipeline,
   type LiveTurnSummaryPipeline,
@@ -1182,6 +1183,10 @@ export function buildProductionRouteOptions(
       ...providers.folderRoutes,
       ...(cardExecutionServiceProvider ? {cardExecutionServiceProvider} : {}),
       ...(cardServiceProvider ? { cardServiceProvider } : {}),
+      ...(cardServiceProvider ? {
+        sendCardSessionMessage: (request, sessionId, body) =>
+          executeSessionIntervention(providers.runtime.sessionActionCommandRoutes, request, sessionId, body),
+      } : {}),
       authBearerToken: config.authBearerToken,
       ...(folderProjectIdentityService
         ? { projectIdentityService: folderProjectIdentityService }

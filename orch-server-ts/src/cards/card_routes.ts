@@ -5,9 +5,16 @@ import { serializeCardRow } from "../folders/folder_contracts.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import type { FolderRouteOptions } from "../folders/folder_routes.js";
 import { dashboardFolderActor } from "../folders/folder_workspace_routes.js";
-import type { CardOperation } from "./card_operations.js";
+import { CardOperationError, type CardOperation } from "./card_operations.js";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
-import { listCardRouteBody, readCardRouteBody, mutateCardRouteBody, cardRouteErrorResponse } from "./card_route_body.js";
+import {
+  CardNotFoundError,
+  cardRouteErrorResponse,
+  listCardRouteBody,
+  mutateCardRouteBody,
+  readCardRouteBody,
+  sendCardMessageSchema,
+} from "./card_route_body.js";
 
 const mutations:readonly ["POST" | "PATCH",string,CardOperation][]=[
   ["POST","/api/cards","create_card"],["PATCH","/api/cards/:id","update_card"],
@@ -24,6 +31,7 @@ export const cardRouteAuthRequirements:Record<string,boolean>=Object.fromEntries
   ...mutations.map(([method,path])=>[`${method} ${path}`,true]),
   ["POST /api/cards/:id/execute",true],["GET /api/cards/:id/execution",true],["POST /api/cards/:id/execution-settings",true],
   ["GET /api/cards",true],["GET /api/cards/:id",true],["GET /api/cards/:id/reports",true],
+  ["GET /api/cards/:id/messages",true],["POST /api/cards/:id/messages",true],
 ]);
 export function registerCardRoutes(app: FastifyInstance, options: FolderRouteOptions) {
   const mutation=z.object({expectedVersion:z.number().int().positive(),idempotencyKey:z.string().min(1)}).strict();
@@ -63,6 +71,43 @@ export function registerCardRoutes(app: FastifyInstance, options: FolderRouteOpt
       catch (error) { const failure = cardRouteErrorResponse(error); return reply.code(failure.status).send(failure.body); }
     });
   }
+  app.get<{ Params: { id: string }; Querystring: { sessionId?: string; limit?: string } }>("/api/cards/:id/messages", async (request, reply) => {
+    try {
+      const service = await options.cardServiceProvider!();
+      const detail = await service.getCard(request.params.id);
+      if (!detail) throw new CardNotFoundError();
+      await allowed(options, () => options.accessProvider.resolveAccess(request), detail.card.folder_id);
+      const messages = await service.getCardSessionMessages(request.params.id,
+        { sessionId: request.query.sessionId ?? null, limit: request.query.limit ?? null });
+      if (!messages) throw new CardNotFoundError();
+      return messages;
+    } catch (error) { const failure = cardRouteErrorResponse(error); return reply.code(failure.status).send(failure.body); }
+  });
+  app.post<{ Params: { id: string } }>("/api/cards/:id/messages", async (request, reply) => {
+    try {
+      const body = sendCardMessageSchema.parse(request.body ?? {});
+      const text = body.text.trim();
+      if (!text) throw new CardOperationError("메시지 내용을 입력하십시오.", 422);
+      const service = await options.cardServiceProvider!();
+      const detail = await service.getCard(request.params.id);
+      if (!detail) throw new CardNotFoundError();
+      await allowed(options, () => options.accessProvider.resolveAccess(request), detail.card.folder_id);
+      const actor = await cardActor(request, options);
+      if (actor.actorKind !== "user") return reply.code(403).send({ error: "Forbidden", message: "Only user actors can send card session messages" });
+      const requested = body.sessionId?.trim() ?? "";
+      const firstSessionId = typeof detail.sessions[0]?.session_id === "string" ? detail.sessions[0].session_id : "";
+      const targetSessionId = requested || detail.card.assignee_session_id || firstSessionId || null;
+      const linked = Boolean(targetSessionId && (detail.card.assignee_session_id === targetSessionId
+        || detail.sessions.some(session => session.session_id === targetSessionId)));
+      if (!targetSessionId || !linked) throw new CardOperationError("메시지를 보낼 카드 연결 세션이 없습니다.", 422);
+      if (!options.sendCardSessionMessage) throw new CardOperationError("카드 세션 메시지 전송이 구성되지 않았습니다.", 503);
+      const result = await options.sendCardSessionMessage(request, targetSessionId,
+        { text, ...(body.idempotencyKey ? { delivery_id: body.idempotencyKey } : {}) });
+      return result.status >= 200 && result.status < 300
+        ? reply.code(result.status).send({ ok: true, sessionId: targetSessionId, delivery: result.body })
+        : reply.code(result.status).send(result.body);
+    } catch (error) { const failure = cardRouteErrorResponse(error); return reply.code(failure.status).send(failure.body); }
+  });
   for (const [method, url, operation] of mutations) {
     app.route<{ Params: { id?: string; qid?: string; itemId?: string } }>({ method, url, handler: async (request, reply) => {
       try {
