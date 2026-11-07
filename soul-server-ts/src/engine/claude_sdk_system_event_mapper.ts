@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { ClaudeClientEvent } from "./claude_client_event.js";
 import { SOULSTREAM_SCHEDULE_TOOLS } from "./claude_sdk_constants.js";
 import {
+  asNumber,
   asRecord,
   asString,
 } from "./claude_sdk_helpers.js";
@@ -38,6 +39,33 @@ export function mapClaudeSystemMessage(
   if (subtype === "init") {
     const sessionId = asString(message.session_id);
     return sessionId ? [{ type: "session", sessionId }] : [];
+  }
+  if (subtype === "api_retry") {
+    // SDK `api_retry`는 CLI 내부 재시도를 알리는 신호다. 표시하지 않으면
+    // 재시도가 도는 동안 세션이 아무 이벤트도 받지 못해 무응답으로 보인다.
+    const attempt = asNumber(message.attempt);
+    const maxRetries = asNumber(message.max_retries);
+    const retryDelayMs = asNumber(message.retry_delay_ms);
+    const errorStatus = asNumber(message.error_status);
+    const errorKind = asString(message.error);
+    const details: string[] = [];
+    if (attempt !== undefined && maxRetries !== undefined) {
+      details.push(`${attempt}/${maxRetries}`);
+    }
+    if (errorStatus !== undefined) {
+      details.push(`HTTP ${errorStatus}`);
+    } else if (errorKind) {
+      details.push(errorKind);
+    }
+    if (retryDelayMs !== undefined && retryDelayMs > 0) {
+      details.push(`${Math.max(1, Math.round(retryDelayMs / 1000))}초 후`);
+    }
+    return [{
+      type: "progress",
+      text: details.length > 0
+        ? `API 요청 재시도 중 (${details.join(", ")})`
+        : "API 요청 재시도 중",
+    }];
   }
   if (subtype === "session_state_changed") {
     const state = parseRuntimeSessionState(message.state);

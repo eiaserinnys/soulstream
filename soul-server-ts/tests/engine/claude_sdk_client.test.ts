@@ -2164,6 +2164,31 @@ describe("ClaudeSdkClient", () => {
     ]);
   });
 
+  it("maps SDK api_retry system messages to a progress event", async () => {
+    const events = await runSdkClientMessages([
+      sdkSystemInit("claude-sess-retry"),
+      {
+        type: "system",
+        subtype: "api_retry",
+        attempt: 1,
+        max_retries: 3,
+        retry_delay_ms: 30_000,
+        error_status: 429,
+        error: "rate_limit",
+        uuid: "api-retry-1",
+        session_id: "claude-sess-retry",
+      } as unknown as SDKMessage,
+      sdkSuccessResult("claude-sess-retry", "done"),
+    ]);
+
+    expect(events[0]).toEqual({ type: "session", sessionId: "claude-sess-retry" });
+    expect(events[1]).toEqual({
+      type: "progress",
+      text: "API 요청 재시도 중 (1/3, HTTP 429, 30초 후)",
+    });
+    expect(events.at(-1)).toMatchObject({ type: "complete", result: "done" });
+  });
+
   it("omits SDK model and executable options when caller does not provide them", async () => {
     const captured: ClaudeSdkQueryParams[] = [];
     const client = new ClaudeSdkClient(
