@@ -114,7 +114,7 @@ const boardFixtureTitles: Record<string, [string, CardCheckItem['display']][]> =
   ],
 };
 export function boardFixtureCards(fixture: BoardFixture): CardDto[] {
-  const statuses: CardStatus[] = fixture === 'review-last' ? ['review'] : ['todo', 'queued', 'running', 'review', 'on_hold'];
+  const statuses: CardStatus[] = fixture === 'review-last' ? ['todo', 'queued', 'running', 'review'] : ['todo', 'queued', 'running', 'review', 'on_hold'];
   return statuses.flatMap((status) => (boardFixtureTitles[status] ?? [])
     .map(([title, display], index) => boardFixtureCard(status, index + 1, title,
       [boardFixtureItem(1, '확인 항목 하나: 결과와 진행 표시를 함께 봅니다', display),

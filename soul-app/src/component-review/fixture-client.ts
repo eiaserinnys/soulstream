@@ -8,6 +8,7 @@ import type { CardCheckItem, CardComment, CardDetail, CardDto, CardMutationResul
 import { buildAttachmentReviewApi } from './attachment-review-api';
 import { Asset } from 'expo-asset';
 import {
+  boardFixtureCards,
   createReviewApi,
   entryShellFolders,
   entryShellSessions,
@@ -451,6 +452,14 @@ export function createApiClient(baseUrl = ''): ApiClient {
       getSessionsByIds: entryShellApi.getSessionsByIds,
       catalogStreamUrl: entryShellApi.catalogStreamUrl,
     };
+    // 데일리 보드 캡처는 운영 형태 카드로 바꾼다(보드=ops, 보드=review-last). 로딩은 응답을 붙잡는다.
+    const boardParam = params.get('board');
+    const boardApi = boardParam === 'loading'
+      ? { ...api, listCards: () => new Promise<never>(() => {}), listCompletedCards: () => new Promise<never>(() => {}) }
+      : boardParam === 'ops' || boardParam === 'review-last'
+        ? { ...api, listCards: async () => ({ cards: boardFixtureCards(boardParam) }),
+          listCompletedCards: async () => ({ cards: [], nextCursor: null }) }
+        : api;
     return new URLSearchParams(window.location.search).get('sample') === 'pas-layout'
       ? { ...api, ...createReviewCardApi(),
         ...(multiPasSample ? { listPersistentSessions: async () => {
@@ -473,7 +482,7 @@ export function createApiClient(baseUrl = ''): ApiClient {
         ...persistentWeeklyUsageReviewSummary,
         nodes: persistentWeeklyUsageReviewSummary.nodes.map((node, index) => index === 0 ? { ...node, nodeId: 'public-node' } : node),
       }) } as unknown as ApiClient
-      : api as unknown as ApiClient;
+      : boardApi as unknown as ApiClient;
   }
   if (section === 'nativeSettings') return { ...nativeSettingsApi, ...usageEndpoints } as unknown as ApiClient;
   if (section === 'persistent') {

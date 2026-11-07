@@ -68,7 +68,7 @@ function measure() {
     composerTrigger: box(byTestId('home-session-composer-trigger')),
     refreshIndicator: box(byTestId('card-board-auto-progress')),
     dailyContent: box(byTestId('card-home-content')),
-    folderRoot: box(byTestId('project-list-root')),
+    folderRoot: box(byTestId('folder-list-screen')),
     feedBody: box(byTestId('phone-feed-body')),
     settingsRoot: box(byTestId('settings-safe-area')),
     pasRoot: box(byTestId('persistent-session-screen')),
@@ -77,7 +77,7 @@ function measure() {
 }
 
 // 레일 띠 안에서 카드가 아닌 빈 지점을 찾는다. 그 지점의 히트 대상이 보드여야 관통이 증명된다.
-function findEmptyRailPoint(sidebarLeft, width) {
+function findEmptyRailPoint({ sidebarLeft, width }) {
   const hits = [];
   for (let x = sidebarLeft + 6; x < width - 4; x += 12) {
     for (let y = 90; y < innerHeight - 140; y += 10) {
@@ -141,33 +141,42 @@ async function main() {
       entries.push(await captureScreen(page, frame, 'pas', pageUrl('tab=PersistentTab&board=ops')));
       entries.push(await captureScreen(page, frame, 'settings', pageUrl('tab=SettingsTab&board=ops')));
       entries.push(await captureScreen(page, frame, 'card-detail', pageUrl('view=card-detail&board=ops')));
+      result.frames.push({ frame: frame.id, entries });
       const sidebarLeft = frame.width - 84;
+      const overlay = phase !== 'before';
       const daily = entries.find((entry) => entry.name === 'daily-default');
-      if (daily.metrics.boardFrame) {
+      // before는 기준선 기록만 한다. 보드가 화면 끝까지 오는 것은 after의 기대값이다.
+      result.baselines = { ...(result.baselines ?? {}), [frame.id]: {
+        boardRight: daily.metrics.boardFrame?.right ?? null,
+        composerDockRight: daily.metrics.composerDock?.right ?? null,
+      } };
+      if (overlay && daily.metrics.boardFrame) {
         assert.ok(Math.abs(daily.metrics.boardFrame.right - frame.width) <= 1, `보드 오른쪽 끝이 화면 끝이 아니다: ${daily.metrics.boardFrame.right}`);
       }
       const lastColumn = endMetrics.columns[endMetrics.columns.length - 1];
       if (lastColumn) {
         assert.ok(lastColumn.right <= sidebarLeft + 1, `끝 열이 사이드바 경계를 넘었다: ${lastColumn.right} > ${sidebarLeft}`);
       }
-      if (daily.metrics.composerTrigger) {
-        assert.ok(Math.abs(daily.metrics.composerTrigger.right - sidebarLeft) <= 20, `새 대화 버튼이 사이드바 안으로 들어갔다: ${daily.metrics.composerTrigger.right}`);
+      const composerRight = daily.metrics.composerDock?.right ?? daily.metrics.composerTrigger?.right;
+      if (composerRight !== undefined) {
+        assert.ok(Math.abs(composerRight - (sidebarLeft - 16)) <= 20, `새 대화 도크가 사이드바 안으로 들어갔다: ${composerRight}`);
       }
-      if (frame.id === 'outer-portrait') {
+      // 레일 띠 관통과 캡슐 누름은 after에서만 의미가 있다(before에는 띠 아래에 보드가 없다).
+      if (overlay && frame.id === 'outer-portrait') {
         // 1) 레일 캡슐 버튼이 눌린다.
         await page.goto(pageUrl('tab=DailyTab&board=ops'));
         await page.getByTestId('card-board-frame').waitFor();
         await page.waitForTimeout(700);
         const folderTab = page.getByTestId('phone-tab-FolderTab');
         await folderTab.click();
-        await page.getByTestId('project-list-root').waitFor();
+        await page.getByTestId('folder-list-screen').waitFor();
         const folderMetrics = await page.evaluate(measure);
         assert.ok(folderMetrics.folderRoot && folderMetrics.folderRoot.right <= sidebarLeft + 1, '폴더 탭 내용이 사이드바 아래로 들어갔다');
         await page.getByTestId('phone-tab-DailyTab').click();
         await page.getByTestId('card-home-content').waitFor();
         result.interactions.push({ name: 'rail-button', passed: true, folderContentRight: folderMetrics.folderRoot?.right });
         // 2) 캡슐 사이 빈 레일 띠는 보드로 관통한다. 누르면 화면이 바뀌지 않는다.
-        const points = await page.evaluate(findEmptyRailPoint, sidebarLeft, frame.width);
+        const points = await page.evaluate(findEmptyRailPoint, { sidebarLeft, width: frame.width });
         assert.ok(points.length > 0, '레일 띠에서 보드로 관통하는 빈 지점을 찾지 못했다');
         const point = points[0];
         await page.mouse.click(point.x, point.y);
@@ -179,7 +188,7 @@ async function main() {
         await page.getByTestId('card-board-frame').waitFor();
         await page.waitForTimeout(700);
         const beforeDrag = await page.evaluate(measure);
-        const dragPoints = await page.evaluate(findEmptyRailPoint, sidebarLeft, frame.width);
+        const dragPoints = await page.evaluate(findEmptyRailPoint, { sidebarLeft, width: frame.width });
         const dragPoint = dragPoints[0];
         assert.ok(dragPoint, '레일 띠에서 끌기를 시작할 빈 지점을 찾지 못했다');
         await page.mouse.move(dragPoint.x, dragPoint.y);
@@ -195,7 +204,6 @@ async function main() {
         result.interactions.push({ name: 'rail-empty-drag', passed: true, point: dragPoint,
           scrollBefore: beforeDrag.boardScroll.left, scrollAfter: afterDrag.boardScroll.left });
       }
-      result.frames.push({ frame: frame.id, entries });
       await context.close();
     }
     result.passed = true;
@@ -208,7 +216,7 @@ async function main() {
 main().then(async () => {
   await fs.writeFile(path.join(output, `${phase}-duo-board-overlay.json`), JSON.stringify(result, null, 2));
   console.log(JSON.stringify({ passed: result.passed, phase: result.phase, frames: result.frames.map((frame) => frame.frame),
-    interactions: result.interactions, errors: result.errors }, null, 2));
+    baselines: result.baselines, interactions: result.interactions, errors: result.errors }, null, 2));
   process.exit(0);
 }).catch(async (error) => {
   result.errors.push(String(error?.message ?? error));
