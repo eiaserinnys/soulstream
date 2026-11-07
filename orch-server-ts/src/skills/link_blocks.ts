@@ -250,5 +250,5 @@ export function stripCompileHeader(markdown: string): string {
   const withoutRootHeader = /^# .+<!--\s*node:[^>]+-->.*$/.test(firstLine)
     ? (newline === -1 ? "" : markdown.slice(newline + 1))
     : markdown;
-  return withoutRootHeader.replace(/^(#{1,6}\s+.+?)\s*<!--\s*node:[^>]+-->\s*$/gm, "$1");
+  return withoutRootHeader.replace(/^(#{1,6}[ \t]+.+?)[ \t]*<!--[ \t]*node:[^>]+-->[ \t]*$/gm, "$1");
 }

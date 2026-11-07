@@ -47,7 +47,7 @@ function clientFor(nodeId: string, parentNodeId: string | null, childCount: numb
 describe("Atom skill body loader", () => {
   it("compiles child cards at the requested depth and keeps depth-specific cached bodies", async () => {
     const nodeId = "77d4f29e-6251-47b5-96e4-3cc074856990";
-    const source = `# Root <!-- node:${nodeId} -->\n\nOverview\n\n## Child <!-- node:child card:child -->\nChild text\n`;
+    const source = `# Root <!-- node:${nodeId} -->\n\nOverview\n\n## Child <!-- node:child card:child -->\n\nChild text\n`;
     const { httpClient, requests } = clientFor(nodeId, null, 1, source);
     const options = {
       bodyNodeId: nodeId, nodeId: "catalog-node",
@@ -56,7 +56,7 @@ describe("Atom skill body loader", () => {
     };
     await loadAtomNodeBody(options);
     const loaded = await loadAtomNodeBody({ ...options, depth: 2 });
-    expect(loaded.markdown).toBe("\nOverview\n\n## Child\nChild text\n");
+    expect(loaded.markdown).toBe("\nOverview\n\n## Child\n\nChild text\n");
     expect(requests.filter((url) => url.includes("/compile"))
       .map((url) => new URL(url).searchParams.get("depth"))).toEqual(["0", "2"]);
   });
