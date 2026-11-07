@@ -582,9 +582,22 @@ export class ClaudeEngineAdapter
 
       for (;;) {
         // 일시적 429 직전에 방출되는 합성 실패 이벤트는 재시도하면 소비자에게
-        // 보이지 않아야 하므로 잠시 보류한다. 일반 이벤트가 오면 순서대로 방출한다.
+        // 보이지 않아야 하므로 보류한다. 후보가 생긴 뒤에는 terminal 판정까지
+        // 이벤트를 순서대로 모아 두어, 중간에 끼어든 훅·런타임 이벤트가 합성
+        // 실패를 먼저 방출하지 않게 한다.
         let pendingTransient429Events: ClaudeClientEvent[] = [];
         let transient429RetryMessage: string | null = null;
+        const flushPendingTransient429Events = async (
+          includeSynthetic: boolean,
+        ): Promise<void> => {
+          if (pendingTransient429Events.length === 0) return;
+          const buffered = pendingTransient429Events;
+          pendingTransient429Events = [];
+          for (const event of buffered) {
+            if (!includeSynthetic && isTransient429SyntheticFailureEvent(event)) continue;
+            await emitClientEvent(event);
+          }
+        };
         const client = accountClient
           ?? await this.resolveClient(params.agentSessionId, transient429Attempt > 0);
         accountClient = client;
@@ -609,36 +622,35 @@ export class ClaudeEngineAdapter
               && transient429Attempt < this.transient429MaxRetries
             ) {
               transient429RetryMessage = clientEvent.message;
-              pendingTransient429Events = [];
+              // 재시도로 대체되는 시도의 합성 실패는 폐기하고, 중간에 낀
+              // 훅·런타임 이벤트는 순서대로 소비자에게 전달한다.
+              await flushPendingTransient429Events(false);
               break;
             }
-            for (const buffered of pendingTransient429Events) {
-              await emitClientEvent(buffered);
-            }
-            pendingTransient429Events = [];
+            await flushPendingTransient429Events(true);
             await emitClientEvent(clientEvent);
             throw new ClaudeClientFatalEventError(clientEvent.message);
+          }
+
+          if (pendingTransient429Events.length > 0) {
+            pendingTransient429Events.push(clientEvent);
+            // 성공 result는 합성 실패가 실제 오류가 아니었음을 확정한다.
+            if (clientEvent.type === "result" && clientEvent.success === true) {
+              await flushPendingTransient429Events(false);
+            }
+            continue;
           }
 
           if (isTransient429SyntheticFailureEvent(clientEvent)) {
             pendingTransient429Events.push(clientEvent);
             continue;
           }
-          if (clientEvent.type === "context_usage" && pendingTransient429Events.length > 0) {
-            pendingTransient429Events.push(clientEvent);
-            continue;
-          }
 
-          for (const buffered of pendingTransient429Events) {
-            await emitClientEvent(buffered);
-          }
-          pendingTransient429Events = [];
           await emitClientEvent(clientEvent);
         }
 
-        for (const buffered of pendingTransient429Events) {
-          await emitClientEvent(buffered);
-        }
+        // terminal 오류 없이 스트림이 끝났다면 숨길 이유가 없으므로 그대로 전달한다.
+        await flushPendingTransient429Events(true);
         if (transient429RetryMessage === null) return;
 
         transient429Attempt += 1;

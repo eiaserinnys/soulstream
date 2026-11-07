@@ -91,6 +91,9 @@ function transient429FailureEvents(sessionId: string): ClaudeClientEvent[] {
     { type: "session", sessionId },
     { type: "assistant_error", errorType: "rate_limit", model: "<synthetic>" },
     { type: "text", text: TRANSIENT_429_OVERLOADED_TEXT },
+    // 실제 SDK 스트림에서는 StopFailure 훅 이벤트가 합성 실패와 terminal 오류
+    // 사이에 끼어든다. 이 이벤트가 합성 실패 버퍼를 조기 방출하면 안 된다.
+    { type: "claude_runtime_hook_event", hookEventName: "StopFailure", hookInput: {} },
     {
       type: "result",
       success: false,
@@ -1900,14 +1903,20 @@ describe("Claude transient 429 retry", () => {
 
     expect(seen.map((event) => event.type)).toEqual([
       "session",
+      "claude_runtime_hook_event",
+      "context_usage",
       "progress",
       "session",
       "assistant_message",
       "complete",
     ]);
-    expect(seen[1]).toMatchObject({ type: "progress" });
-    expect((seen[1] as { text?: string }).text).toContain("1/3");
-    expect(seen[3]).toMatchObject({ type: "assistant_message", content: "재개 완료" });
+    expect(seen[1]).toMatchObject({
+      type: "claude_runtime_hook_event",
+      hook_event_name: "StopFailure",
+    });
+    expect(seen[3]).toMatchObject({ type: "progress" });
+    expect((seen[3] as { text?: string }).text).toContain("1/3");
+    expect(seen[5]).toMatchObject({ type: "assistant_message", content: "재개 완료" });
     expect(seen.some((event) => event.type === "assistant_error")).toBe(false);
     expect(seen.some((event) => event.type === "error")).toBe(false);
     expect(seen.some(
