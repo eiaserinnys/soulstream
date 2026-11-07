@@ -111,7 +111,7 @@ async function appendClaudeTranscriptEntries(
       ${key.projectKey},
       ${key.sessionId},
       ${normalizeTranscriptSubpath(key.subpath)},
-      ${JSON.stringify(entries)},
+      ${sql.json(entries as never)},
       ${new Date()}
     ) AS claude_transcript_append
   `;

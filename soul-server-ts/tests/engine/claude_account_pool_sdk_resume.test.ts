@@ -11,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
 import pino from "pino";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -231,5 +231,114 @@ describe("Claude account pool SDK resume", () => {
       finishFirst();
       await first;
     }
+  });
+
+  it("documents the current partial-database resume behavior with and without the account pool", async () => {
+    const root = mkdtempSync(join(tmpdir(), "claude-partial-db-resume-"));
+    roots.push(root);
+    const configDir = join(root, "selected-profile");
+    const sharedProjects = join(root, "shared-projects");
+    mkdirSync(configDir);
+    mkdirSync(sharedProjects);
+    symlinkSync(sharedProjects, join(configDir, "projects"), "dir");
+    const executablePath = join(root, "capture-claude");
+    writeFileSync(executablePath, [
+      "#!/usr/bin/env node",
+      'import { readFileSync, writeFileSync } from "node:fs";',
+      'import { join } from "node:path";',
+      'const path = join(process.env.CLAUDE_CONFIG_DIR, "projects", process.env.POOL_PROJECT_KEY, `${process.env.POOL_SESSION_ID}.jsonl`);',
+      'let transcript = null; try { transcript = readFileSync(path, "utf8"); } catch {}',
+      'writeFileSync(process.env.POOL_ENV_CAPTURE_FILE, JSON.stringify({',
+      "  CLAUDE_CONFIG_DIR: process.env.CLAUDE_CONFIG_DIR,",
+      "  transcript,",
+      "}));",
+      "process.exit(0);",
+      "",
+    ].join("\n"), { mode: 0o700 });
+    chmodSync(executablePath, 0o700);
+
+    const resumeSessionId = "550e8400-e29b-41d4-a716-446655440000";
+    const projectKey = root.replace(/[^a-zA-Z0-9]/g, "-");
+    const localEntries = [
+      { type: "user", uuid: "local-1", timestamp: "2026-11-07T00:00:01.000Z" },
+      { type: "assistant", uuid: "local-2", timestamp: "2026-11-07T00:00:02.000Z" },
+      { type: "user", uuid: "local-3", timestamp: "2026-11-07T00:00:03.000Z" },
+      { type: "assistant", uuid: "local-4", timestamp: "2026-11-07T00:00:04.000Z" },
+      { type: "user", uuid: "local-5", timestamp: "2026-11-07T00:00:05.000Z" },
+      { type: "assistant", uuid: "local-6", timestamp: "2026-11-07T00:00:06.000Z" },
+    ];
+    const storedTail = localEntries.slice(3);
+    const transcriptPath = join(sharedProjects, projectKey, `${resumeSessionId}.jsonl`);
+    mkdirSync(dirname(transcriptPath), { recursive: true, mode: 0o700 });
+    writeFileSync(
+      transcriptPath,
+      localEntries.map((entry) => `${JSON.stringify(entry)}\n`).join(""),
+    );
+    const store = {
+      append: vi.fn(async () => undefined),
+      load: vi.fn(async () => storedTail as never),
+      listSessions: vi.fn(async () => []),
+      listSubkeys: vi.fn(async () => []),
+    };
+    const runResume = async (sessionStore: unknown, destination: string) => {
+      const client = new ClaudeSdkClient({ postResultDrainMs: 10 }, pino({ level: "silent" }));
+      try {
+        const events = client.run({
+          prompt: "resume this session",
+          workspaceDir: root,
+          resumeSessionId,
+          env: {
+            PATH: process.env.PATH ?? "/usr/bin:/bin",
+            CLAUDE_CONFIG_DIR: configDir,
+            CLAUDE_CODE_EXECPATH: executablePath,
+            POOL_ENV_CAPTURE_FILE: destination,
+            POOL_PROJECT_KEY: projectKey,
+            POOL_SESSION_ID: resumeSessionId,
+          },
+          sessionStore: sessionStore as never,
+          sessionStoreFlush: "eager",
+          trackChildExit: true,
+        }, new AbortController().signal);
+        try {
+          for await (const _event of events) {
+            // The stub CLI exits without a response; the SDK still completes its real spawn path.
+          }
+        } catch {
+          // The stub executable does not implement the Claude stream protocol.
+        }
+        return JSON.parse(readFileSync(destination, "utf8")) as { transcript: string | null };
+      } finally {
+        await client.close();
+      }
+    };
+    const parse = (transcript: string | null) => {
+      const text = transcript?.trim();
+      return text ? text.split("\n").map((line) => JSON.parse(line)) : null;
+    };
+
+    const rawEnv = await runResume(store, join(root, "raw.json"));
+    expect(parse(rawEnv.transcript)).toEqual(storedTail);
+
+    writeFileSync(join(configDir, ".credentials.json"), '{"fixture":"not-a-real-credential"}');
+    writeFileSync(join(configDir, ".claude.json"), '{"fixture":"not-a-real-config"}');
+    const pooledEnv = await runResume(
+      useLocalClaudeAccountPoolResume(store as never, configDir),
+      join(root, "pooled.json"),
+    );
+    expect(parse(pooledEnv.transcript)).toEqual(localEntries);
+
+    const newerTail = [
+      ...storedTail.slice(0, 2),
+      { type: "assistant", uuid: "db-tail-newer", timestamp: "2026-11-07T00:00:09.000Z" },
+    ];
+    // Record-loss branch under investigation (card #1062): when the DB tail is
+    // newer than the local file, the shorter tail replaces the complete local
+    // transcript. This assertion records current behavior, not a target contract.
+    store.load.mockResolvedValue(newerTail as never);
+    const pooledNewerEnv = await runResume(
+      useLocalClaudeAccountPoolResume(store as never, configDir),
+      join(root, "pooled-newer.json"),
+    );
+    expect(parse(pooledNewerEnv.transcript)).toEqual(newerTail);
   });
 });
