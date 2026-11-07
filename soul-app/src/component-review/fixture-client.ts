@@ -484,7 +484,7 @@ export function createApiClient(baseUrl = ''): ApiClient {
       }) } as unknown as ApiClient
       : boardApi as unknown as ApiClient;
   }
-  if (section === 'nativeSettings') return { ...nativeSettingsApi, ...usageEndpoints } as unknown as ApiClient;
+  if (section === 'nativeSettings') return { ...usageEndpoints, ...nativeSettingsApi } as unknown as ApiClient;
   if (section === 'persistent') {
     const api = createPersistentFullscreenReviewApi(window.location.search);
     return new URLSearchParams(window.location.search).get('sample') === 'report'

@@ -13,7 +13,9 @@ export function ReviewClaudeAccountPool() {
   const device = useDeviceType();
   const wide = device !== 'phone' && width >= TABLET_BREAKPOINT;
   const columns = width - (wide ? 240 : 0) >= 700;
-  const api = useMemo(() => createClaudePoolReviewApi(), []);
+  const api = useMemo(() => createClaudePoolReviewApi(
+    typeof window === 'undefined' ? null : new URLSearchParams(window.location.search).get('state'),
+  ), []);
   const [jobs, setJobs] = useState<SettingsJobDestination>({ kind: 'list' });
   const [persistent, setPersistent] = useState<SettingsPersistentDestination>({ kind: 'list' });
   const workspace = useMemo(() => ({

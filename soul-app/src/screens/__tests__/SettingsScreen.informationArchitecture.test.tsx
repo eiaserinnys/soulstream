@@ -30,7 +30,10 @@ const api = {
   listNodes: jest.fn(),
   getClaudeAuthStatus: jest.fn(),
   getClaudeProfile: jest.fn(),
+  getClaudeAuthAccounts: jest.fn(),
   getProviderUsage: jest.fn(),
+  getUsageSummary: jest.fn(),
+  refreshUsageSummary: jest.fn(),
   getAuthStatus: jest.fn(),
   listOwnedAgents: jest.fn(),
   issueOwnedAgentKey: jest.fn(),
@@ -42,7 +45,10 @@ beforeEach(() => {
   api.listNodes.mockReset();
   api.getClaudeAuthStatus.mockReset().mockResolvedValue({ has_token: false });
   api.getClaudeProfile.mockReset().mockResolvedValue(null);
+  api.getClaudeAuthAccounts.mockReset().mockResolvedValue({ mode: 'legacy', accounts: [], pool: null, fable_pool: null });
   api.getProviderUsage.mockReset();
+  api.getUsageSummary.mockReset().mockResolvedValue({ generatedAt: '2026-11-07T05:00:00.000Z', collectedAt: null, nodes: [] });
+  api.refreshUsageSummary.mockReset().mockResolvedValue({ generatedAt: '2026-11-07T05:00:00.000Z', collectedAt: null, nodes: [] });
   api.getAuthStatus.mockReset();
   api.listOwnedAgents.mockReset();
   api.issueOwnedAgentKey.mockReset();

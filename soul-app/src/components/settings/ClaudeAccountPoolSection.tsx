@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Switch,
@@ -10,6 +10,7 @@ import * as WebBrowser from 'expo-web-browser';
 import type {
   ClaudeAccount,
   ClaudeAccountList,
+  ClaudeAccountPool,
   ClaudeAuthLoginFlow,
 } from '../../../../packages/soul-ui/src/lib/usage-summary';
 import type { ApiClient } from '../../api/client';
@@ -18,6 +19,7 @@ import { useDeviceType, useTokens } from '../../theme';
 import { makeClaudePoolStyles } from './claudeAccountPoolStyles';
 import { ClaudeAccountLoginFlowPanel } from './ClaudeAccountLoginFlowPanel';
 import { GlassButton } from '../GlassSurface';
+import { ProviderQuotaGrid, type QuotaGridCell } from './ProviderQuotaGrid';
 import { SettingsDivider } from './SettingsSection';
 
 export type ClaudeAccountPoolApi = Pick<ApiClient,
@@ -30,10 +32,17 @@ export type ClaudeAccountPoolApi = Pick<ApiClient,
   | 'cancelClaudeAuthLogin'
 >;
 
+export type ClaudeAccountPoolSectionHandle = {
+  startLogin(): void;
+};
+
 type Props = {
   nodeId: string;
   initialList: ClaudeAccountList;
   api: ClaudeAccountPoolApi;
+  showHeader?: boolean;
+  onListChange?(list: ClaudeAccountList): void;
+  onLoginStartingChange?(starting: boolean): void;
 };
 
 const terminalStates = new Set(['done', 'failed', 'cancelled']);
@@ -86,23 +95,17 @@ function localClock(value: string | null): string | null {
   return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
-function resetLabel(value: string | null): string {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return '—';
-  const weekday = ['일', '월', '화', '수', '목', '금', '토'][date.getDay()];
-  return `${weekday} ${localClock(value)}`;
+export function poolSummaryLabel(pool: ClaudeAccountPool | null): string | null {
+  if (!pool) return null;
+  if (pool.total_count < 2) {
+    return pool.best_weekly_remaining_percent === null ? null : `주간 잔여 ${Math.round(pool.best_weekly_remaining_percent)}%`;
+  }
+  return `${pool.available_count}/${pool.total_count} 가용${pool.best_weekly_remaining_percent === null ? '' : ` (주간 최대 잔여 ${Math.round(pool.best_weekly_remaining_percent)}%)`}`;
 }
 
-function quotaResetLabel(value: ClaudeAccount['usage']['five_hour'], short: boolean): string {
-  if (!value) return '—';
-  if (short && value.used_percent >= 100) return `${localClock(value.resets_at) ?? '—'} 해제`;
-  const date = new Date(value.resets_at ?? '');
-  if (!Number.isFinite(date.getTime())) return '—';
-  if (!short) return resetLabel(value.resets_at);
-  const minutes = Math.max(0, Math.ceil((date.getTime() - Date.now()) / 60_000));
-  if (minutes < 60) return `${minutes}분 후`;
-  return `${Math.ceil(minutes / 60)}시간 후`;
+export function poolAvailabilityLabel(pool: ClaudeAccountPool | null): string | null {
+  if (!pool) return null;
+  return `${pool.available_count}/${pool.total_count} 가용`;
 }
 
 function observedAtLabel(value: string | null): string {
@@ -154,10 +157,14 @@ function accountAvailable(account: ClaudeAccount): boolean {
   return account.enabled && account.auth_state === 'ok' && account.blocked?.scope !== 'all';
 }
 
-export function ClaudeAccountPoolSection({ nodeId, initialList, api }: Props) {
+export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandle, Props>(function ClaudeAccountPoolSection(
+  { nodeId, initialList, api, showHeader = true, onListChange, onLoginStartingChange },
+  ref,
+) {
   const t = useTokens();
   const styles = useMemo(() => makeClaudePoolStyles(t), [t]);
   const [accountList, setAccountList] = useState<ClaudeAccountList>(initialList);
+  useEffect(() => { setAccountList(initialList); }, [initialList]);
   const accounts = accountList.accounts;
   const pool = accountList.pool;
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
@@ -469,26 +476,28 @@ export function ClaudeAccountPoolSection({ nodeId, initialList, api }: Props) {
     }
   }
 
-  const summary = pool
-    ? pool.total_count >= 2
-      ? `${pool.available_count}/${pool.total_count} 가용${pool.best_weekly_remaining_percent === null ? '' : ` (주간 최대 잔여 ${Math.round(pool.best_weekly_remaining_percent)}%)`}`
-      : pool.best_weekly_remaining_percent === null ? null : `주간 잔여 ${Math.round(pool.best_weekly_remaining_percent)}%`
-    : null;
+  useImperativeHandle(ref, () => ({ startLogin: () => { void startLogin(); } }));
+  useEffect(() => { onListChange?.(accountList); }, [accountList, onListChange]);
+  useEffect(() => { onLoginStartingChange?.(loginStarting); }, [loginStarting, onLoginStartingChange]);
+
+  const summary = poolSummaryLabel(pool);
 
   return <View testID="claude-account-pool-section" style={styles.section}>
-    <View style={styles.poolTopBar}>
-      <View style={styles.poolTitleRow}>
-        <Text style={styles.poolTitle}>Claude 계정</Text>
-        {summary ? <Text style={styles.metaText}>{summary}</Text> : null}
+    {showHeader ? <>
+      <View style={styles.poolTopBar}>
+        <View style={styles.poolTitleRow}>
+          <Text style={styles.poolTitle}>Claude 계정</Text>
+          {summary ? <Text style={styles.metaText}>{summary}</Text> : null}
+        </View>
+        <GlassButton testID="claude-account-add" accessibilityLabel="Claude 계정 추가" onPress={() => void startLogin()} disabled={loginStarting}>
+          {loginStarting ? <ActivityIndicator size="small" color={t.colors.accent} /> : <>
+            <Ionicons name="add" size={t.iconSize.compact} color={t.colors.accent} />
+            <Text style={styles.accentButtonText}>계정 추가</Text>
+          </>}
+        </GlassButton>
       </View>
-      <GlassButton testID="claude-account-add" accessibilityLabel="Claude 계정 추가" onPress={() => void startLogin()} disabled={loginStarting}>
-        {loginStarting ? <ActivityIndicator size="small" color={t.colors.accent} /> : <>
-          <Ionicons name="add" size={t.iconSize.compact} color={t.colors.accent} />
-          <Text style={styles.accentButtonText}>계정 추가</Text>
-        </>}
-      </GlassButton>
-    </View>
-    <SettingsDivider />
+      <SettingsDivider />
+    </> : null}
     <View style={styles.accountList}>
       {ordered.map((account, index) => <React.Fragment key={account.id}>
         <AccountRow account={account} index={account.enabled ? prioritized.findIndex(item => item.id === account.id) : index} totalCount={prioritized.length}
@@ -516,7 +525,7 @@ export function ClaudeAccountPoolSection({ nodeId, initialList, api }: Props) {
       {notice ? <Text accessibilityRole="text" style={styles.noticeText}>{notice}</Text> : null}
     </View>
   </View>;
-}
+});
 
 function AccountRow({
   account, index, totalCount, confirmingDelete, busy, onToggle, onMoveUp, onMoveDown,
@@ -539,10 +548,10 @@ function AccountRow({
   const compact = useDeviceType() === 'phone';
   const styles = useMemo(() => makeClaudePoolStyles(t), [t]);
   const statusLabel = authStateLabel(account);
-  const quotas = [
-    { label: '5시간', value: account.usage.five_hour, short: true },
-    { label: '7일', value: account.usage.seven_day, short: false },
-    { label: 'Fable', value: account.usage.fable_weekly, short: false },
+  const quotaCells: (QuotaGridCell | null)[] = [
+    account.usage.five_hour ? { label: '5시간', usedPercent: account.usage.five_hour.used_percent, resetAt: account.usage.five_hour.resets_at, short: true, kind: 'short' } : null,
+    account.usage.seven_day ? { label: '7일', usedPercent: account.usage.seven_day.used_percent, resetAt: account.usage.seven_day.resets_at, short: false, kind: 'weekly' } : null,
+    account.usage.fable_weekly ? { label: 'Fable', usedPercent: account.usage.fable_weekly.used_percent, resetAt: account.usage.fable_weekly.resets_at, short: false, kind: 'fable' } : null,
   ];
   const dotColor = !account.enabled ? t.colors.textMuted
     : account.auth_state === 'needs_relogin' ? t.colors.error
@@ -584,34 +593,11 @@ function AccountRow({
         </GlassButton>
       </View>
     </View>
-    {quotas.some(quota => quota.value) ? <View style={styles.quotaGrid}>
-      {quotas.map(quota => <QuotaGauge key={quota.label} label={quota.label} value={quota.value} short={quota.short} compact={compact} />)}
-    </View> : <View style={styles.idleRow}>
+    {quotaCells.some(Boolean) ? <ProviderQuotaGrid prefix={`claude-quota-${account.id}`} cells={quotaCells} /> : <View style={styles.idleRow}>
       <Text style={styles.metaText}>{account.auth_state === 'needs_relogin' ? '인증 만료로 사용량 조회 중단' : '미측정 (실제 호출 시 갱신)'}</Text>
       <Text style={styles.metaText}>{observedAtLabel(account.observed_at)}</Text>
     </View>}
     {confirmingDelete ? <DeleteConfirmation accountId={account.id} busy={busy} onCancel={onCancelDelete} onConfirm={onConfirmDelete} /> : null}
-  </View>;
-}
-
-function QuotaGauge({ label, value, short, compact }: { label: string; value: ClaudeAccount['usage']['five_hour']; short: boolean; compact: boolean }) {
-  const t = useTokens();
-  const styles = useMemo(() => makeClaudePoolStyles(t), [t]);
-  if (!value) return <View style={styles.quotaColumn} accessibilityElementsHidden />;
-  const used = Math.max(0, Math.min(100, value.used_percent));
-  const color = used >= 95 ? t.colors.error : used >= 80 ? t.colors.warning : t.colors.accent;
-  return <View testID={`claude-quota-${label}`} style={styles.quotaColumn}>
-    <View style={compact ? styles.quotaCompactLabelRow : styles.quotaLabelRow}>
-      <Text numberOfLines={1} style={styles.quotaName}>{label}</Text>
-      {compact ? <Text style={styles.quotaPercent}>{Math.round(value.used_percent)}%</Text> : <View style={styles.quotaValueGroup}>
-        <Text style={styles.quotaPercent}>{Math.round(value.used_percent)}%</Text>
-        <Text numberOfLines={1} style={styles.quotaReset}>{quotaResetLabel(value, short)}</Text>
-      </View>}
-    </View>
-    {compact ? <Text numberOfLines={1} style={styles.quotaReset}>{quotaResetLabel(value, short)}</Text> : null}
-    <View style={styles.quotaTrack}>
-      <View style={[styles.quotaFill, { width: `${used}%`, backgroundColor: color }]} />
-    </View>
   </View>;
 }
 

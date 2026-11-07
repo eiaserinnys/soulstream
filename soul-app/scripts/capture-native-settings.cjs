@@ -81,9 +81,10 @@ async function main() {
           const detail = category === 'recurring-jobs' ? page.getByTestId('wide-recurring-jobs-panel') : page.getByTestId('settings-detail-' + category);
           await detail.waitFor();
           if (category === 'backends') {
-            await page.getByTestId('claude-usage-action').click();
-            await page.getByTestId('backend-provider-codex-usage-action').click();
-            await page.getByTestId('usage-provider-codex').waitFor();
+            await page.getByTestId('provider-panel').waitFor();
+            await page.getByTestId('provider-row-claude').waitFor();
+            await page.getByTestId('provider-row-codex').waitFor();
+            await page.getByTestId('provider-panel-updated').waitFor();
           }
           if (category === 'recurring-jobs') {
             await page.screenshot({ path: path.join(output, `${phase}-${entry}-jobs-list-${viewport.width}.png`) });
@@ -165,7 +166,10 @@ async function main() {
           result.interactions.push({ viewport: viewport.width, check: 'photo tile and preview resolve the same bundled fallback', sameSource: true });
         }
         if (state === 'nodes-error') { await page.getByText('노드를 불러오지 못했습니다. 다시 시도해 주세요.', { exact: true }).waitFor(); await page.getByText('다시 시도', { exact: true }).click(); }
-        if (state === 'usage-error') { await page.getByTestId('claude-usage-action').click(); await page.getByText('사용량 조회 중 오류가 발생했습니다. 다시 시도해 주세요.', { exact: true }).waitFor(); assert.equal(await page.getByTestId('usage-fill-5h').count(), 0); }
+        if (state === 'usage-error') {
+          await page.getByTestId('provider-panel-refresh').click();
+          await page.getByTestId('provider-panel-refresh-error').waitFor();
+        }
         if (state === 'empty') await page.getByText('등록된 반복 작업이 없습니다.', { exact: true }).waitFor();
         await page.screenshot({ path: path.join(output, `${phase}-state-${state}-${viewport.width}.png`) });
         result.interactions.push({ viewport: viewport.width, check: `actual component ${state}` });

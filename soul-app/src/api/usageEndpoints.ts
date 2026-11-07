@@ -45,5 +45,8 @@ export function createUsageEndpoints({ base, authFetch, readJson }: ApiRequestCo
     getUsageSummary: (): Promise<AppUsageSummarySnapshot> =>
       authFetch(`${base}/api/usage/summary`)
         .then((response) => readJson<AppUsageSummarySnapshot>(response, 'getUsageSummary')),
+    refreshUsageSummary: (): Promise<AppUsageSummarySnapshot> =>
+      authFetch(`${base}/api/usage/refresh`, { method: 'POST' })
+        .then((response) => readJson<AppUsageSummarySnapshot>(response, 'refreshUsageSummary')),
   };
 }

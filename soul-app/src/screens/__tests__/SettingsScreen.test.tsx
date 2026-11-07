@@ -53,6 +53,8 @@ const mockApi = {
   submitClaudeCode: jest.fn(),
   deleteClaudeToken: jest.fn(),
   getProviderUsage: jest.fn(),
+  getUsageSummary: jest.fn(),
+  refreshUsageSummary: jest.fn(),
   getAuthStatus: jest.fn(),
 };
 
@@ -68,6 +70,16 @@ beforeEach(() => {
   });
   mockApi.getClaudeAuthStatus.mockResolvedValue({ has_token: false });
   mockApi.getClaudeProfile.mockResolvedValue(null);
+  mockApi.getUsageSummary.mockResolvedValue({
+    generatedAt: '2026-11-07T05:00:00.000Z',
+    collectedAt: null,
+    nodes: [],
+  });
+  mockApi.refreshUsageSummary.mockResolvedValue({
+    generatedAt: '2026-11-07T05:00:00.000Z',
+    collectedAt: null,
+    nodes: [],
+  });
   mockApi.getAuthStatus.mockResolvedValue({
     authenticated: true,
     user: {
@@ -194,10 +206,23 @@ describe('SettingsScreen — 익명 연결 테스트', () => {
 describe('SettingsScreen — backend node mode 분기', () => {
   it('one selected backend scope supplies both provider sections', async () => {
     mockApi.getConfig.mockResolvedValueOnce({ mode: 'single', nodeId: 'me' });
+    mockApi.getUsageSummary.mockResolvedValueOnce({
+      generatedAt: '2026-11-07T05:00:00.000Z',
+      collectedAt: null,
+      nodes: [{
+        nodeId: 'me', fetchedAt: '2026-11-07T05:00:00.000Z', stale: false, staleSince: null,
+        providers: {
+          claude: null,
+          codex: { status: 'error', weeklyRemainingPercent: null, weeklyResetAt: null, shortRemainingPercent: null, shortResetAt: null, quotas: [] },
+          antigravity: null,
+          opencode_go: null,
+        },
+      }],
+    });
     const screen = render(<SettingsScreen category="backends"/>);
     expect(await screen.findByText('me')).toBeTruthy();
     expect(screen.getByTestId('backend-provider-claude')).toBeTruthy();
-    expect(screen.getByTestId('backend-provider-codex')).toBeTruthy();
+    expect(await screen.findByTestId('provider-row-codex')).toBeTruthy();
   });
   it('배경 설정 컨트롤을 렌더한다', async () => {
     mockApi.getConfig.mockResolvedValueOnce({ mode: 'single', nodeId: 'me' });

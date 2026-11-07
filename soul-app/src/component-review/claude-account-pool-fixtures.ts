@@ -1,5 +1,6 @@
 import type { ClaudeAccount, ClaudeAccountList, ClaudeAuthLoginFlow } from '../../../packages/soul-ui/src/lib/usage-summary';
 import type { NodeProviderSectionsApi } from '../components/settings/NodeProviderSections';
+import { reviewUsageSummary } from './usage-summary-fixtures';
 
 export const claudePoolReviewList: ClaudeAccountList = {
   mode: 'pool',
@@ -36,10 +37,37 @@ export const claudePoolReviewList: ClaudeAccountList = {
   fable_pool: { available_count: 2, total_count: 3, best_weekly_remaining_percent: 82, best_weekly_resets_at: '2026-10-30T12:00:00.000Z', earliest_available_at: '2026-10-28T14:30:00.000Z' },
 };
 
-export function createClaudePoolReviewApi(): NodeProviderSectionsApi {
-  let current: ClaudeAccountList = claudePoolReviewList;
+// Provider panel capture uses the three accounts the design calls out: a normal
+// first-priority account, a 5-hour-blocked account, and an unmeasured idle one.
+// ReviewClaudePoolPas keeps the four-account list above.
+export const providerPanelClaudeReviewList: ClaudeAccountList = {
+  ...claudePoolReviewList,
+  accounts: claudePoolReviewList.accounts.filter(account => account.id !== 'review-old'),
+  pool: { ...claudePoolReviewList.pool!, available_count: 2, total_count: 3 },
+  fable_pool: { ...claudePoolReviewList.fable_pool!, available_count: 2, total_count: 3 },
+};
+
+export function createClaudePoolReviewApi(state?: string | null): NodeProviderSectionsApi {
+  const legacy = state === 'legacy' || state === 'legacy-stale';
+  let current: ClaudeAccountList = legacy
+    ? { mode: 'legacy', accounts: [], pool: null, fable_pool: null }
+    : providerPanelClaudeReviewList;
   let flow: ClaudeAuthLoginFlow | null = null;
   return {
+    getUsageSummary: async () => state === 'loading'
+      ? new Promise<never>(() => {})
+      : reviewUsageSummary('node-a', state ?? null),
+    refreshUsageSummary: async () => {
+      if (state === 'refresh-error') throw new Error('공개 예시 새로고침 실패');
+      return reviewUsageSummary('node-a', state ?? null);
+    },
+    getClaudeAuthStatus: async () => ({ has_token: legacy }),
+    getClaudeProfile: async () => legacy
+      ? { email: 'legacy@example.invalid', display_name: '공개 예시 계정', has_claude_max: true }
+      : null,
+    startClaudeAuth: async () => ({ authUrl: 'fixture' }),
+    submitClaudeCode: async () => ({ ok: true } as unknown as Response),
+    deleteClaudeToken: async () => ({ ok: true } as unknown as Response),
     getClaudeAuthAccounts: async () => current,
     patchClaudeAuthAccount: async (_nodeId, accountId, patch) => {
       current = { ...current, accounts: current.accounts.map(account => account.id === accountId ? { ...account, ...patch } : account) };
