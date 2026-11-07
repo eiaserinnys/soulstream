@@ -49,6 +49,12 @@ import {
   normalizeClaudeModel,
 } from "./claude_options.js";
 import {
+  DEFAULT_CLAUDE_TRANSIENT_429_MAX_RETRIES,
+  TRANSIENT_429_CONTINUATION_PROMPT,
+  isTransientClaude429ErrorMessage,
+  parseTransient429RetryDelayMs,
+} from "./claude_transient_rate_limit_retry.js";
+import {
   assertClaudeAccountPoolOverrides,
   buildClaudeAccountPoolEnvironment,
   useLocalClaudeAccountPoolResume,
@@ -83,6 +89,7 @@ function isAccountPoolExhausted(
 }
 
 export {
+  CLAUDE_MAX_RETRIES_ENV,
   CLAUDE_OAUTH_TOKEN_ENV,
   CLAUDE_PROMPT_SUGGESTION_ENV,
   buildClaudeEnvironment,
@@ -193,6 +200,10 @@ export interface ClaudeAdapterConfig {
     ClaudeSessionClientRegistry,
     "acquire" | "close" | "release" | "reserve"
   > & { acquireAfterClose?: (sessionId: string) => Promise<ClaudeClient> };
+  /** 일시적 429 재시도 상한. 미지정 시 {@link DEFAULT_CLAUDE_TRANSIENT_429_MAX_RETRIES}. */
+  transient429MaxRetries?: number;
+  /** 지정하면 메시지 파싱 대신 이 대기 시간(ms)을 쓴다. */
+  transient429RetryDelayMs?: number;
 }
 
 export class ClaudeEngineAdapter
@@ -224,6 +235,8 @@ export class ClaudeEngineAdapter
     ClaudeSessionClientRegistry,
     "acquire" | "close" | "release" | "reserve"
   > & { acquireAfterClose?: (sessionId: string) => Promise<ClaudeClient> };
+  private readonly transient429MaxRetries: number;
+  private readonly transient429RetryDelayMs?: number;
   private activeClient: ClaudeClient | null = null;
   private activeExecution: Promise<void> | null = null;
   private persistentSessionId: string | null = null;
@@ -250,6 +263,9 @@ export class ClaudeEngineAdapter
     this.resolvedMcpServers = config.resolvedMcpServers;
     this.internalMcpUrl = config.internalMcpUrl;
     this.persistentSessionRegistry = config.persistentSessionRegistry;
+    this.transient429MaxRetries =
+      config.transient429MaxRetries ?? DEFAULT_CLAUDE_TRANSIENT_429_MAX_RETRIES;
+    this.transient429RetryDelayMs = config.transient429RetryDelayMs;
     this.logger = logger;
   }
 
@@ -536,18 +552,10 @@ export class ClaudeEngineAdapter
         }
       }
 
-      const client = accountClient ?? await this.resolveClient(params.agentSessionId);
-      accountClient = client;
-      this.activeClient = client;
-      const events = this.persistentSessionRegistry
-        ? client.runPersistent?.(options, controller.signal)
-        : client.run(options, controller.signal);
-      if (!events) {
-        throw new Error("Persistent Claude client does not implement runPersistent()");
-      }
-      for await (const clientEvent of events) {
-        this.trackInputRequest(clientEvent);
+      let observedSessionId = options.resumeSessionId;
+      let transient429Attempt = 0;
 
+      const emitClientEvent = async (clientEvent: ClaudeClientEvent): Promise<void> => {
         if (clientEvent.type === "text") {
           lastText = clientEvent.text;
         }
@@ -570,10 +578,100 @@ export class ClaudeEngineAdapter
             input: { questions: clientEvent.questions },
           }));
         }
+      };
 
-        if (clientEvent.type === "error" && clientEvent.fatal !== false) {
-          throw new ClaudeClientFatalEventError(clientEvent.message);
+      for (;;) {
+        // 일시적 429 직전에 방출되는 합성 실패 이벤트는 재시도하면 소비자에게
+        // 보이지 않아야 하므로 잠시 보류한다. 일반 이벤트가 오면 순서대로 방출한다.
+        let pendingTransient429Events: ClaudeClientEvent[] = [];
+        let transient429RetryMessage: string | null = null;
+        const client = accountClient
+          ?? await this.resolveClient(params.agentSessionId, transient429Attempt > 0);
+        accountClient = client;
+        this.activeClient = client;
+        const events = this.persistentSessionRegistry
+          ? client.runPersistent?.(options, controller.signal)
+          : client.run(options, controller.signal);
+        if (!events) {
+          throw new Error("Persistent Claude client does not implement runPersistent()");
         }
+
+        for await (const clientEvent of events) {
+          this.trackInputRequest(clientEvent);
+
+          if (clientEvent.type === "session") {
+            observedSessionId = clientEvent.sessionId;
+          }
+
+          if (clientEvent.type === "error" && clientEvent.fatal !== false) {
+            if (
+              isTransientClaude429ErrorMessage(clientEvent.message, clientEvent.errorCode)
+              && transient429Attempt < this.transient429MaxRetries
+            ) {
+              transient429RetryMessage = clientEvent.message;
+              pendingTransient429Events = [];
+              break;
+            }
+            for (const buffered of pendingTransient429Events) {
+              await emitClientEvent(buffered);
+            }
+            pendingTransient429Events = [];
+            await emitClientEvent(clientEvent);
+            throw new ClaudeClientFatalEventError(clientEvent.message);
+          }
+
+          if (isTransient429SyntheticFailureEvent(clientEvent)) {
+            pendingTransient429Events.push(clientEvent);
+            continue;
+          }
+          if (clientEvent.type === "context_usage" && pendingTransient429Events.length > 0) {
+            pendingTransient429Events.push(clientEvent);
+            continue;
+          }
+
+          for (const buffered of pendingTransient429Events) {
+            await emitClientEvent(buffered);
+          }
+          pendingTransient429Events = [];
+          await emitClientEvent(clientEvent);
+        }
+
+        for (const buffered of pendingTransient429Events) {
+          await emitClientEvent(buffered);
+        }
+        if (transient429RetryMessage === null) return;
+
+        transient429Attempt += 1;
+        const delayMs = this.transient429RetryDelayMs
+          ?? parseTransient429RetryDelayMs(transient429RetryMessage);
+        await emitClientEvent({
+          type: "progress",
+          text: `일시적 429(용량 제한) 응답으로 ${Math.max(1, Math.round(delayMs / 1000))}초 후 재시도합니다 (${transient429Attempt}/${this.transient429MaxRetries})`,
+        });
+
+        // 같은 keep-alive 연결은 같은 과부하 셀에 계속 부딪히므로 프로세스를 닫고
+        // 새 연결로 다시 연다.
+        if (this.persistentSessionRegistry && params.agentSessionId) {
+          await this.persistentSessionRegistry.close(
+            params.agentSessionId,
+            "explicit_cancel",
+          );
+          this.persistentSessionId = null;
+          this.activeClient = null;
+          accountClient = null;
+          this.inputRequests.clear();
+        }
+
+        if (!await this.waitForTransient429RetryDelay(delayMs, controller.signal)) return;
+
+        options = observedSessionId
+          ? {
+              ...options,
+              resumeSessionId: observedSessionId,
+              prompt: TRANSIENT_429_CONTINUATION_PROMPT,
+              inputUuid: randomUUID(),
+            }
+          : { ...options, inputUuid: randomUUID() };
       }
     } catch (err) {
       if (controller.signal.aborted) {
@@ -935,6 +1033,25 @@ export class ClaudeEngineAdapter
     this.inputRequests.clear();
   }
 
+  private waitForTransient429RetryDelay(
+    delayMs: number,
+    signal: AbortSignal,
+  ): Promise<boolean> {
+    if (signal.aborted || this.closed) return Promise.resolve(false);
+    if (delayMs <= 0) return Promise.resolve(true);
+    return new Promise<boolean>((resolve) => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (ready: boolean): void => {
+        if (timer !== undefined) clearTimeout(timer);
+        signal.removeEventListener("abort", onAbort);
+        resolve(ready);
+      };
+      const onAbort = (): void => finish(false);
+      timer = setTimeout(() => finish(!this.closed), delayMs);
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+  }
+
   private trackInputRequest(event: ClaudeClientEvent): void {
     if (event.type === "input_request") {
       if (!this.inputRequests.has(event.requestId)) {
@@ -955,6 +1072,25 @@ export class ClaudeEngineAdapter
 }
 
 class ClaudeClientFatalEventError extends Error {}
+
+/**
+ * CLI가 일시적 429로 턴을 끝낼 때 방출하는 합성 실패 이벤트인지 판별한다.
+ * 재시도가 성공하면 이 이벤트들은 소비자에게 보이지 않아야 한다.
+ */
+function isTransient429SyntheticFailureEvent(event: ClaudeClientEvent): boolean {
+  if (event.type === "assistant_error") {
+    return event.errorType === "rate_limit" && event.model === "<synthetic>";
+  }
+  if (event.type === "text") {
+    return event.text.trimStart().startsWith("API Error:")
+      && isTransientClaude429ErrorMessage(event.text);
+  }
+  if (event.type === "result") {
+    return event.success === false
+      && isTransientClaude429ErrorMessage(event.error ?? event.output);
+  }
+  return false;
+}
 
 function nowSeconds(): number {
   return Date.now() / 1000;

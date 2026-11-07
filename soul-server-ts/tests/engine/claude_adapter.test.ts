@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import pino from "pino";
 
 import {
+  CLAUDE_MAX_RETRIES_ENV,
   CLAUDE_OAUTH_TOKEN_ENV,
   CLAUDE_PROMPT_SUGGESTION_ENV,
   ClaudeEngineAdapter,
@@ -14,6 +15,12 @@ import {
   type ClaudeClientEvent,
   type ClaudeRunOptions,
 } from "../../src/engine/claude_adapter.js";
+import {
+  DEFAULT_CLAUDE_TRANSIENT_429_MAX_RETRIES,
+  TRANSIENT_429_CONTINUATION_PROMPT,
+  isTransientClaude429ErrorMessage,
+  parseTransient429RetryDelayMs,
+} from "../../src/engine/claude_transient_rate_limit_retry.js";
 import { ClaudeSessionClientRegistry } from "../../src/engine/claude_session_client_registry.js";
 import {
   AGENT_COMMON_FILES_DIR_ENV,
@@ -66,6 +73,46 @@ function makeClient(events: ClaudeClientEvent[], captured: ClaudeRunOptions[]): 
     async *run(options: ClaudeRunOptions): AsyncIterable<ClaudeClientEvent> {
       captured.push(options);
       yield* clientEvents(events);
+    },
+    async interrupt() {
+      return true;
+    },
+    async close() {
+      // no-op
+    },
+  };
+}
+
+const TRANSIENT_429_OVERLOADED_TEXT =
+  "API Error: Request rejected (429) · Upstream request failed: [overloaded] the server is overloaded; retry shortly";
+
+function transient429FailureEvents(sessionId: string): ClaudeClientEvent[] {
+  return [
+    { type: "session", sessionId },
+    { type: "assistant_error", errorType: "rate_limit", model: "<synthetic>" },
+    { type: "text", text: TRANSIENT_429_OVERLOADED_TEXT },
+    {
+      type: "result",
+      success: false,
+      output: TRANSIENT_429_OVERLOADED_TEXT,
+      error: TRANSIENT_429_OVERLOADED_TEXT,
+    },
+    { type: "context_usage", usedTokens: 10, maxTokens: 100, percent: 10 },
+    { type: "error", fatal: true, message: TRANSIENT_429_OVERLOADED_TEXT },
+  ];
+}
+
+function makeAttemptClient(
+  attempts: Array<() => ClaudeClientEvent[]>,
+  captured: ClaudeRunOptions[],
+): ClaudeClient {
+  let attemptIndex = 0;
+  return {
+    async *run(options: ClaudeRunOptions): AsyncIterable<ClaudeClientEvent> {
+      captured.push(options);
+      const build = attempts[Math.min(attemptIndex, attempts.length - 1)];
+      attemptIndex += 1;
+      yield* clientEvents(build());
     },
     async interrupt() {
       return true;
@@ -1163,6 +1210,42 @@ describe("ClaudeEngineAdapter options parity", () => {
     expect(buildClaudeEnvironment()).toBeUndefined();
   });
 
+  it("ANTHROPIC_BASE_URL이 있으면 CLAUDE_CODE_MAX_RETRIES 기본값을 1로 제한한다", () => {
+    const env = buildClaudeEnvironment({
+      processEnv: {
+        HOME: "/home/test",
+        ANTHROPIC_BASE_URL: "https://opencode.example.test/go",
+      },
+    });
+
+    expect(env).toMatchObject({
+      ANTHROPIC_BASE_URL: "https://opencode.example.test/go",
+      [CLAUDE_MAX_RETRIES_ENV]: "1",
+    });
+  });
+
+  it("명시된 CLAUDE_CODE_MAX_RETRIES는 보존한다", () => {
+    const fromProcessEnv = buildClaudeEnvironment({
+      processEnv: {
+        ANTHROPIC_BASE_URL: "https://opencode.example.test/go",
+        [CLAUDE_MAX_RETRIES_ENV]: "5",
+      },
+    });
+    expect(fromProcessEnv?.[CLAUDE_MAX_RETRIES_ENV]).toBe("5");
+
+    const fromExtraEnv = buildClaudeEnvironment({
+      processEnv: { ANTHROPIC_BASE_URL: "https://opencode.example.test/go" },
+      extraEnv: { [CLAUDE_MAX_RETRIES_ENV]: "7" },
+    });
+    expect(fromExtraEnv?.[CLAUDE_MAX_RETRIES_ENV]).toBe("7");
+  });
+
+  it("ANTHROPIC_BASE_URL이 없으면 CLAUDE_CODE_MAX_RETRIES를 주입하지 않는다", () => {
+    const env = buildClaudeEnvironment({ processEnv: { HOME: "/home/test" } });
+
+    expect(env).not.toHaveProperty(CLAUDE_MAX_RETRIES_ENV);
+  });
+
   it("어댑터가 SCRATCH_WORKSPACE_DIR를 extraEnv보다 마지막에 덮어쓴다", async () => {
     await withProcessEnvValue(AGENT_COMMON_FILES_DIR_ENV, "/srv/agent-common", async () => {
       const captured: ClaudeRunOptions[] = [];
@@ -1741,6 +1824,234 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     await expect(engine.compact("claude-sess-1")).resolves.toEqual(compactResult);
 
     expect(compact).toHaveBeenCalledWith("claude-sess-1");
+  });
+});
+
+describe("Claude transient 429 retry", () => {
+  it("일시적 429 메시지를 구독·계정 한도 소진과 구분한다", () => {
+    expect(isTransientClaude429ErrorMessage(
+      "API Error: Request rejected (429) · Upstream request failed: "
+      + "[prefill_cap_refused] the cell is at capacity; retry shortly (after 30 s)",
+    )).toBe(true);
+    expect(isTransientClaude429ErrorMessage(TRANSIENT_429_OVERLOADED_TEXT)).toBe(true);
+    expect(isTransientClaude429ErrorMessage("rate_limit_error")).toBe(true);
+
+    expect(isTransientClaude429ErrorMessage(
+      "You've hit your usage limit. Try again later.",
+    )).toBe(false);
+    expect(isTransientClaude429ErrorMessage(
+      "429 rate_limit_error",
+      "claude_rate_limit_stop_failure",
+    )).toBe(false);
+    expect(isTransientClaude429ErrorMessage(
+      "429 rate_limit_error",
+      "claude_usage_limit_stop",
+    )).toBe(false);
+    expect(isTransientClaude429ErrorMessage("400 invalid JSON")).toBe(false);
+    expect(isTransientClaude429ErrorMessage(undefined)).toBe(false);
+    expect(isTransientClaude429ErrorMessage(null)).toBe(false);
+  });
+
+  it("재시도 대기 시간을 메시지의 after N s에서 읽고 1~60초로 제한한다", () => {
+    expect(parseTransient429RetryDelayMs("retry shortly (after 30 s)")).toBe(30_000);
+    expect(parseTransient429RetryDelayMs("no hint")).toBe(15_000);
+    expect(parseTransient429RetryDelayMs("retry shortly (after 999 s)")).toBe(60_000);
+    expect(parseTransient429RetryDelayMs("retry shortly (after 0 s)")).toBe(1_000);
+    expect(parseTransient429RetryDelayMs("no hint", 5)).toBe(5);
+  });
+
+  it("일시적 429에서 세션을 이어 재시도하고 성공하면 complete로 끝난다", async () => {
+    const captured: ClaudeRunOptions[] = [];
+    const client = makeAttemptClient(
+      [
+        () => transient429FailureEvents("claude-sess-retry"),
+        () => [
+          { type: "session", sessionId: "claude-sess-retry" },
+          { type: "text", text: "재개 완료" },
+          { type: "complete", result: "재개 완료" },
+        ],
+      ],
+      captured,
+    );
+    const engine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/claude-work",
+        client,
+        processEnv: {},
+        transient429RetryDelayMs: 0,
+      },
+      silentLogger,
+    );
+    const seen: SSEEventPayload[] = [];
+
+    for await (const event of engine.execute({ prompt: "hi" })) {
+      seen.push(event);
+    }
+
+    expect(captured).toHaveLength(2);
+    expect(captured[0]?.prompt).toBe("hi");
+    expect(captured[0]?.resumeSessionId).toBeUndefined();
+    expect(captured[1]).toMatchObject({
+      resumeSessionId: "claude-sess-retry",
+      prompt: TRANSIENT_429_CONTINUATION_PROMPT,
+    });
+    expect(typeof captured[1]?.inputUuid).toBe("string");
+    expect(captured[1]?.inputUuid).not.toBe(captured[0]?.inputUuid);
+
+    expect(seen.map((event) => event.type)).toEqual([
+      "session",
+      "progress",
+      "session",
+      "assistant_message",
+      "complete",
+    ]);
+    expect(seen[1]).toMatchObject({ type: "progress" });
+    expect((seen[1] as { text?: string }).text).toContain("1/3");
+    expect(seen[3]).toMatchObject({ type: "assistant_message", content: "재개 완료" });
+    expect(seen.some((event) => event.type === "assistant_error")).toBe(false);
+    expect(seen.some((event) => event.type === "error")).toBe(false);
+    expect(seen.some(
+      (event) => event.type === "assistant_message" && event.content === TRANSIENT_429_OVERLOADED_TEXT,
+    )).toBe(false);
+    expect(seen.some((event) => event.type === "result")).toBe(false);
+  });
+
+  it("일시적 429 재시도 시 영속 세션을 닫고 새 연결로 다시 연다", async () => {
+    const captured: ClaudeRunOptions[] = [];
+    const closeReasons: string[] = [];
+    let clientNumber = 0;
+    const registry = new ClaudeSessionClientRegistry(
+      () => {
+        clientNumber += 1;
+        const attempt = clientNumber;
+        return {
+          async *run(): AsyncIterable<ClaudeClientEvent> {
+            throw new Error("legacy run must remain unreachable behind runtime-v2");
+          },
+          async *runPersistent(options): AsyncIterable<ClaudeClientEvent> {
+            captured.push(options);
+            if (attempt === 1) {
+              yield* clientEvents(transient429FailureEvents("claude-sess-persistent"));
+              return;
+            }
+            yield { type: "session", sessionId: "claude-sess-persistent" };
+            yield { type: "complete", result: "done" };
+          },
+          async close(reason) {
+            closeReasons.push(reason ?? "default");
+          },
+        };
+      },
+      { idleTtlMs: 300_000, maxEntries: 16 },
+    );
+    const engine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/claude-work",
+        client: makeClient([], []),
+        persistentSessionRegistry: registry,
+        processEnv: {},
+        transient429RetryDelayMs: 0,
+      },
+      silentLogger,
+    );
+
+    for await (const _ of engine.execute({
+      agentSessionId: "agent-session-1",
+      prompt: "hi",
+    })) {
+      // drain
+    }
+
+    expect(clientNumber).toBe(2);
+    expect(closeReasons[0]).toBe("explicit_cancel");
+    expect(captured).toHaveLength(2);
+    expect(captured[1]).toMatchObject({
+      resumeSessionId: "claude-sess-persistent",
+      prompt: TRANSIENT_429_CONTINUATION_PROMPT,
+    });
+
+    await engine.close();
+    await registry.shutdown();
+  });
+
+  it("3회 재시도를 모두 실패하면 마지막 오류를 방출하고 종료한다", async () => {
+    const captured: ClaudeRunOptions[] = [];
+    const client = makeAttemptClient(
+      Array.from(
+        { length: DEFAULT_CLAUDE_TRANSIENT_429_MAX_RETRIES + 1 },
+        () => () => transient429FailureEvents("claude-sess-retry"),
+      ),
+      captured,
+    );
+    const engine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/claude-work",
+        client,
+        processEnv: {},
+        transient429RetryDelayMs: 0,
+      },
+      silentLogger,
+    );
+    const seen: SSEEventPayload[] = [];
+
+    await expect(async () => {
+      for await (const event of engine.execute({ prompt: "hi" })) {
+        seen.push(event);
+      }
+    }).rejects.toThrow(TRANSIENT_429_OVERLOADED_TEXT);
+
+    expect(captured).toHaveLength(DEFAULT_CLAUDE_TRANSIENT_429_MAX_RETRIES + 1);
+    expect(captured[3]).toMatchObject({
+      resumeSessionId: "claude-sess-retry",
+      prompt: TRANSIENT_429_CONTINUATION_PROMPT,
+    });
+    expect(seen.filter((event) => event.type === "progress")).toHaveLength(
+      DEFAULT_CLAUDE_TRANSIENT_429_MAX_RETRIES,
+    );
+    const finalResult = seen.find((event) => event.type === "result");
+    expect(finalResult).toMatchObject({ type: "result", success: false });
+    expect(seen.at(-1)).toMatchObject({
+      type: "error",
+      fatal: true,
+      message: TRANSIENT_429_OVERLOADED_TEXT,
+    });
+  });
+
+  it("일반 오류와 구독 한도 오류는 429 재시도를 하지 않는다", async () => {
+    const failures: ClaudeClientEvent[] = [
+      { type: "error", fatal: true, message: "400 invalid JSON" },
+      { type: "error", fatal: true, message: "You've hit your usage limit. Try again later." },
+      {
+        type: "error",
+        fatal: true,
+        message: TRANSIENT_429_OVERLOADED_TEXT,
+        errorCode: "claude_rate_limit_stop_failure",
+      },
+    ];
+
+    for (const failure of failures) {
+      const captured: ClaudeRunOptions[] = [];
+      const client = makeAttemptClient([() => [failure]], captured);
+      const engine = new ClaudeEngineAdapter(
+        {
+          workspaceDir: "/tmp/claude-work",
+          client,
+          processEnv: {},
+          transient429RetryDelayMs: 0,
+        },
+        silentLogger,
+      );
+      const seen: SSEEventPayload[] = [];
+
+      await expect(async () => {
+        for await (const event of engine.execute({ prompt: "hi" })) {
+          seen.push(event);
+        }
+      }).rejects.toThrow(failure.message);
+
+      expect(captured).toHaveLength(1);
+      expect(seen.some((event) => event.type === "progress")).toBe(false);
+    }
   });
 });
 
