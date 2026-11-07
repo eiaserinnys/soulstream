@@ -27,8 +27,8 @@ export interface CardBoardWorkspaceHandle { openCreate(): void; openExpanded(): 
 
 /** Workspace owns scope and restore snapshots, including across native Modal remounts. */
 export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
-  api: ApiClient | null; folderId?: string; cardDisplay: FolderCardDisplay; onOpen(id: string): void; externalHeader?: boolean; reserveHomeComposerSpace?: boolean; onExpandedClose?(): void;
-}>(function CardBoardWorkspace({ api, folderId, cardDisplay, onOpen, externalHeader = false, reserveHomeComposerSpace = false, onExpandedClose }, ref) {
+  api: ApiClient | null; folderId?: string; cardDisplay: FolderCardDisplay; onOpen(id: string): void; externalHeader?: boolean; reserveHomeComposerSpace?: boolean; onExpandedClose?(): void; railOverlayWidth?: number;
+}>(function CardBoardWorkspace({ api, folderId, cardDisplay, onOpen, externalHeader = false, reserveHomeComposerSpace = false, onExpandedClose, railOverlayWidth = 0 }, ref) {
   const t = useTokens();
   const duo = useDuoSideBand();
   const insets = useSafeAreaInsets();
@@ -71,6 +71,7 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
   ]);
   const completedCount = completed.cards.length;
   const board = (initialPosition: BoardPosition = position.current, expandedBoard = false) => <CardBoard api={api} cards={[...cards.filter(card=>card.status!=='done'),...completed.cards]} phone={expandedBoard ? phone : true} completed={completed}
+    railOverlayWidth={expandedBoard ? 0 : railOverlayWidth}
     reserveHomeComposerSpace={!expandedBoard && reserveHomeComposerSpace}
     includeCompleted={cardDisplay.includeCompleted} hideEmptyLanes={!expandedBoard} initialPosition={initialPosition}
     onPositionChange={(next) => { position.current = next; }}
@@ -93,12 +94,12 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
   </View>;
   return <View testID="card-board-workspace" style={{ flex: 1, position: 'relative', paddingHorizontal: 0, paddingTop: t.uiSpacing.sm, paddingBottom: t.cardLayout.padding, gap: t.uiSpacing.md }}>
     {externalHeader ? null : heading()}
-    {error ? <View style={{ gap: t.uiSpacing.sm }}>
+    {error ? <View style={{ gap: t.uiSpacing.sm, paddingRight: railOverlayWidth }}>
       <Text style={{ ...t.foundation.typography.body, color: t.colors.error }}>{error}</Text>
       <GlassButton accessibilityLabel="보드 다시 조회" onPress={refresh}><Text style={{ ...t.foundation.typography.body, color: t.colors.textPrimary }}>다시 시도</Text></GlassButton>
     </View> : null}
     {board()}
-    {loading && !expanded ? <AutomaticRefreshIndicator testID="card-board-auto-progress" style={{ top: 0, right: 0 }} /> : null}
+    {loading && !expanded ? <AutomaticRefreshIndicator testID="card-board-auto-progress" style={{ top: 0, right: railOverlayWidth }} /> : null}
     {adding ? <CardCreateSheet api={api} folderId={folderId} onClose={() => setAdding(false)} /> : null}
     {expanded ? <AppModalSurface visible modalId="modal_card_detail" sideBand={duo ? <DuoRailOverride /> : undefined} sideBandWidth={duo ? insets.right : 0} {...(phone
       ? { variant: 'expanded' as const, presentationStyle: 'pageSheet' as const }

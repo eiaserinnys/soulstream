@@ -84,7 +84,9 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
   const [view, setView] = useState(params.get('view'));
   const navigationRef = useNavigationContainerRef<any>();
   const phoneChat = phone && view === 'chat';
-  const api = useMemo(() => createReviewApi('normal', { entryShell: true }), []);
+  const boardParam = params.get('board');
+  const api = useMemo(() => createReviewApi(boardParam === 'loading' ? 'loading' : 'normal', { entryShell: true,
+    board: boardParam === 'review-last' ? 'review-last' : boardParam === 'ops' || boardParam === 'loading' ? 'ops' : undefined }), [boardParam]);
   useEffect(() => installEntryShellPublicHarness(), []);
   useEffect(() => {
     const projectView = params.get('project-view');

@@ -1,5 +1,5 @@
 import type { ApiClient } from '../api/client';
-import type { CardDto, CardPatch, CardStatus } from '../api/cardTypes';
+import type { CardCheckItem, CardDto, CardPatch, CardStatus } from '../api/cardTypes';
 import type { CatalogFolder, Session, SessionEvent } from '../api/types';
 import type { PlannerFolder } from '../api/plannerTypes';
 import { reviewSessionEventsUrl } from './chat-fixtures';
@@ -69,6 +69,57 @@ export function makeCard(status: CardStatus): CardDto {
     archived: false, version: 1, createdAt: time, updatedAt: time,completedAt:status==='done'?new Date().toISOString():null };
 }
 export const initialCards = (['todo', 'queued', 'running', 'blocked', 'review', 'on_hold', 'done', 'cancelled'] as const).map(makeCard);
+/** 데일리 보드 캡처용 운영 형태 카드. 여러 열에 카드가 세 장 이상이고 제목이 길며 진행 표시가 있다. */
+export type BoardFixture = 'ops' | 'review-last';
+function boardFixtureItem(id: number, title: string, display: CardCheckItem['display']): CardCheckItem {
+  return { id, title, state: display === 'doing' ? 'doing' : 'done',
+    result: display === 'doing' ? null : '확인한 결과를 적었습니다.',
+    evidence: [], caveat: null, rev: 1,
+    confirmed: display === 'confirmed' ? { at: time, rev: 1 } : null,
+    fixOpen: 0, reopened: null, from: null, createdAt: time,
+    reportedAt: display === 'doing' ? null : time, display };
+}
+function boardFixtureCard(status: CardStatus, index: number, title: string, items: CardCheckItem[]): CardDto {
+  return { ...makeCard(status), id: `public-board-${status}-${index}`, title,
+    request: '운영 형태의 긴 지시문입니다. 카드 열이 사이드바 아래로 이어져도 제목과 본문의 줄 수가 유지되는지 확인합니다.',
+    latestActivity: { kind: 'report', format: 'markdown', createdAt: time,
+      body: '보고 본문입니다. 진행 표시와 함께 카드의 높이가 정해집니다.\n두 번째 줄도 같은 폭에서 확인합니다.' },
+    items, positionKey: String.fromCharCode(96 + index) };
+}
+const boardFixtureTitles: Record<string, [string, CardCheckItem['display']][]> = {
+  todo: [
+    ['새 드래프트 카드: 듀오 바깥 화면에서 사이드바 아래로 이어지는 카드 열의 제목과 본문을 확인합니다', 'todo'],
+    ['드래프트 카드 둘: 카드가 잘리지 않고 화면 오른쪽 끝까지 이어지는지 확인하는 긴 제목', 'todo'],
+    ['드래프트 카드 셋: 열 간격과 카드 높이가 그대로인지 확인합니다', 'todo'],
+  ],
+  queued: [
+    ['대기 카드 하나: 다음 실행 순서를 기다리는 카드의 긴 제목이 줄바꿈으로 표시됩니다', 'doing'],
+    ['대기 카드 둘: 사이드바가 덮는 영역까지 카드가 보이는지 확인합니다', 'doing'],
+    ['대기 카드 셋: 큐 위치 표시와 카드 높이가 유지되는지 확인합니다', 'doing'],
+  ],
+  running: [
+    ['실행 중 카드 하나: 듀오 바깥 화면의 카드 열이 사이드바 아래로 이어지는 동안 진행 표시를 확인합니다', 'doing'],
+    ['실행 중 카드 둘: 보고 본문이 두 줄로 표시되고 카드 높이가 유지되는지 확인하는 긴 제목', 'reported'],
+    ['실행 중 카드 셋: 확인 항목 진행 표시가 카드 폭 안에서 줄바꿈되는지 확인합니다', 'doing'],
+  ],
+  review: [
+    ['검수 대기 카드 하나: 사이드바 왼쪽 경계에서 열이 멈추는지 확인하는 운영 형태의 긴 제목', 'reported'],
+    ['검수 대기 카드 둘: 확인 항목이 여러 개일 때 진행 표시와 카드 높이를 확인합니다', 'reported'],
+    ['검수 대기 카드 셋: 결과 본문과 확인 항목이 함께 표시되는 카드입니다', 'confirmed'],
+  ],
+  on_hold: [
+    ['보류 카드 하나: 검수 대기 다음 열이 사이드바 아래로 이어지는지 확인하는 긴 제목', 'doing'],
+    ['보류 카드 둘: 보류 사유가 있는 카드의 표시와 높이를 확인합니다', 'reported'],
+    ['보류 카드 셋: 마지막 카드의 아래쪽 여백까지 확인합니다', 'doing'],
+  ],
+};
+export function boardFixtureCards(fixture: BoardFixture): CardDto[] {
+  const statuses: CardStatus[] = fixture === 'review-last' ? ['todo', 'queued', 'running', 'review'] : ['todo', 'queued', 'running', 'review', 'on_hold'];
+  return statuses.flatMap((status) => (boardFixtureTitles[status] ?? [])
+    .map(([title, display], index) => boardFixtureCard(status, index + 1, title,
+      [boardFixtureItem(1, '확인 항목 하나: 결과와 진행 표시를 함께 봅니다', display),
+        boardFixtureItem(2, '확인 항목 둘: 확인과 볼 것 표시가 함께 나옵니다', index % 2 ? 'confirmed' : 'reported')])));
+}
 export const folderTabReviewFolders: CatalogFolder[] = folders.map(folder => ({ ...folder, projectPageId: folder.id }));
 
 export const starredFolders: PlannerFolder[] = folders.map((folder) => ({
@@ -91,11 +142,13 @@ export const fixtureOptions = [
 
 export function createReviewApi(state: FixtureState = 'normal', options: { assignment?:AssignmentScenario; pendingExecution?:boolean; home?: boolean; entryShell?: boolean; emptyReview?: boolean; emptyCards?: boolean; failWrites?: boolean; completed?: 'none' | 'only'; manyCompleted?:boolean;
   directCardTouch?: boolean;
+  board?: BoardFixture;
   folderSessionPages?: FolderSessionPageScenario;
   onFolderSessionPageRequest?(pageId: string, cursor: string | null, releaseResponse?: () => void): void;
   onCardMutation?(mutation: ReviewCardMutation): void;
   onCreateCard?(body: Parameters<ApiClient['createCard']>[0]): void } = {}) {
-  const cards = new Map((options.emptyCards ? [] : initialCards).map((card) => [card.id, { ...card }]));
+  const cards = new Map((options.emptyCards || options.board ? [] : initialCards).map((card) => [card.id, { ...card }]));
+  if (options.board) for (const card of boardFixtureCards(options.board)) cards.set(card.id, { ...card });
   const failedDirectReads = new Set<string>();
   if (options.directCardTouch) for (const [id, title] of [
     ['public-direct-done', '완료 카드 실제 본문·담당 홀드'],

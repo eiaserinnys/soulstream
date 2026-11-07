@@ -35,7 +35,7 @@ import { useNodeConnectivityStream } from '../hooks/useNodeConnectivityStream';
 import { GlassSurface } from '../components/GlassSurface';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTokens, type DesignTokens } from '../theme';
-import { DuoSideBandContext, DUO_RAIL_TAB_ORDER, INITIAL_ROOT_TAB, PhoneRailModeContext, RAIL_MIN_INSET_WIDTH, ROOT_TAB_ORDER } from './tabContract';
+import { DuoRailOverlayContext, DuoSideBandContext, DUO_RAIL_TAB_ORDER, INITIAL_ROOT_TAB, PhoneRailModeContext, RAIL_MIN_INSET_WIDTH, ROOT_TAB_ORDER } from './tabContract';
 import { DUO_RAIL_END_INSET, getDuoRailTopOffset, hasDuoSideBand, splitDuoRailBackAction, useDuoSideBand } from './duoSideBand';
 import { useActiveDuoRailOverride, usePhoneRailActions, useRegisterDuoRailOverride, useRegisterPhoneRailActions, type PhoneRailAction } from './phoneRailActions';
 import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
@@ -237,8 +237,11 @@ function PhoneRailTabBar({ state, descriptors, navigation, insets, duoSideBand }
   }, [active, host.store, navigation, nestedState?.index, panelHistory, select]);
   return <View
     testID="phone-rail-tab-rail"
+    pointerEvents={duoSideBand ? 'box-none' : undefined}
     style={{
-      position: 'relative',
+      ...(duoSideBand
+        ? { position: 'absolute' as const, top: 0, right: 0, bottom: 0, zIndex: 1 }
+        : { position: 'relative' as const }),
       width: Math.max(insets.right, RAIL_MIN_INSET_WIDTH),
       paddingBottom: duoSideBand ? 0 : compact ? insets.bottom : Math.max(insets.bottom, t.uiSpacing.xxl),
       alignItems: 'center',
@@ -349,6 +352,12 @@ function rootScreenOptions(section: RootSectionKey) {
   };
 }
 
+/** 듀오 레일 아래로 들이지 않을 화면을 레일 폭만큼 비운다. 폭이 0이어도 같은 View로 감싼다. */
+function DuoRailReserve({ children }: { children: React.ReactNode }) {
+  const width = React.useContext(DuoRailOverlayContext);
+  return <View style={{ flex: 1, paddingRight: width }}>{children}</View>;
+}
+
 function PhoneDailyHistoryScreen({ navigation }: NativeStackScreenProps<DailyStackParamList, 'DailyHistory'>) {
   const dailyRef = useRef<DailyPlannerScreenHandle>(null);
   const duo = useDuoSideBand();
@@ -390,7 +399,10 @@ function DailyNavigator() {
   const t = useTokens();
   const duo = useDuoSideBand();
   return (
-    <DailyStack.Navigator screenOptions={stackScreenOptions(t)}>
+    <DailyStack.Navigator screenOptions={stackScreenOptions(t)}
+      screenLayout={({ route, children }) => route.name === 'Daily'
+        ? <>{children}</>
+        : <DuoRailReserve>{children}</DuoRailReserve>}>
       <DailyStack.Screen name="Daily" component={PhoneCardHome} options={{ ...rootScreenOptions('DailyTab'), headerShown: !duo }} />
       <DailyStack.Screen name="DailyHistory" component={PhoneDailyHistoryScreen} options={{ title: '데일리 기록', headerShown: !duo }} />
       <DailyStack.Screen
@@ -655,15 +667,18 @@ function PhoneTabNavigator({ initialTab }: { initialTab?: string }) {
   const railMode = insets.right >= RAIL_MIN_INSET_WIDTH;
   const outerDuoSideBand = React.useContext(DuoSideBandContext);
   const duoSideBand = outerDuoSideBand ?? hasDuoSideBand(insets);
+  const duoRailWidth = duoSideBand ? Math.max(insets.right, RAIL_MIN_INSET_WIDTH) : 0;
   return (
     <Tab.Navigator
       tabBar={railMode ? (props) => <PhoneRailTabBar {...props} duoSideBand={duoSideBand} /> : undefined}
-      screenLayout={({ children }) => (
+      screenLayout={({ route, children }) => (
         <PhoneRailModeContext.Provider value={railMode}>
           <DuoSideBandContext.Provider value={duoSideBand}>
+          <DuoRailOverlayContext.Provider value={duoRailWidth}>
           <SafeAreaInsetsContext.Provider value={railMode ? { ...insets, right: 0 } : insets}>
-            {children}
+            {route.name === 'DailyTab' ? children : <DuoRailReserve>{children}</DuoRailReserve>}
           </SafeAreaInsetsContext.Provider>
+          </DuoRailOverlayContext.Provider>
           </DuoSideBandContext.Provider>
         </PhoneRailModeContext.Provider>
       )}
