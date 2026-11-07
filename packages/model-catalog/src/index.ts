@@ -37,6 +37,8 @@ export const ModelPresetSchema = z.object({
     z.record(NonEmptyMcpNameSchema, z.array(NonEmptyMcpNameSchema)),
   ).optional(),
   usage_model_id: z.string().trim().min(1).optional(),
+  /** Subscription usage source joined by the orchestrator usage overlay. */
+  usage_provider: z.literal("opencode_go").optional(),
   supported_efforts: z.array(ReasoningEffortSchema).nonempty().optional(),
   default_effort: ReasoningEffortSchema.optional(),
 }).superRefine((preset, ctx) => {

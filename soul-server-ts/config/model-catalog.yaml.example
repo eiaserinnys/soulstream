@@ -142,6 +142,7 @@ presets:
     label: DeepSeek - Flash 4.1
     backend: claude
     model: deepseek-v4.1-flash
+    usage_provider: opencode_go
     supported_efforts: [low, high, max]
     default_effort: max
     env:

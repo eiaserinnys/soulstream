@@ -1,4 +1,4 @@
-export type ProviderLimitProvider = "claude" | "codex" | "antigravity";
+export type ProviderLimitProvider = "claude" | "codex" | "antigravity" | "opencode_go";
 
 export type ProviderLimitRejection = {
   readonly rejectedUntil: string | null;

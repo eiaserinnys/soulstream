@@ -57,7 +57,7 @@ function summary(
         fetchedAt: now.toISOString(),
         stale,
         staleSince: stale ? now.toISOString() : null,
-        providers: { claude, codex: null, antigravity: null },
+        providers: { claude, codex: null, antigravity: null, opencode_go: null },
       },
     ],
   };
@@ -71,10 +71,12 @@ function quotaSummary(
     claude: null,
     codex: null,
     antigravity: null,
+    opencode_go: null,
   } as {
     claude: UsageSummaryProvider | null;
     codex: UsageSummaryProvider | null;
     antigravity: UsageSummaryProvider | null;
+    opencode_go: UsageSummaryProvider | null;
   };
   providers[providerName] = provider({ quotas: [quota] });
   return {
@@ -396,6 +398,7 @@ describe("resolvePresetAvailability", () => {
               }],
             }),
             antigravity: null,
+            opencode_go: null,
           },
         }],
       },
@@ -554,6 +557,7 @@ describe("resolvePresetAvailability", () => {
             ],
           }),
           antigravity: null,
+          opencode_go: null,
         },
       }],
     };
@@ -1082,6 +1086,7 @@ it("rejects an Antigravity preset after quota error and selects the usable fallb
               model: "gpt-6.1-sol", remainingPercent: 81, resetAt: resetSeconds }] }),
             antigravity: provider({ quotas: [{ id: "antigravity:weekly", label: "7일", window: "7d",
               model: "gemini-4-argon", remainingPercent: 90, resetAt: resetSeconds }] }),
+            opencode_go: null,
           },
         }],
       }),
@@ -1104,4 +1109,95 @@ it("rejects an Antigravity preset after quota error and selects the usable fallb
   });
   expect(service.chooseUsablePreset("node-a", ["gemini-4-argon", "claude-opus", "codex-6.1-sol"]))
     .toBe("codex-6.1-sol");
+});
+
+describe("OpenCode Go preset availability", () => {
+  const goPreset: StaticModelPreset = {
+    id: "deepseek-flash-4.1",
+    label: "DeepSeek - Flash 4.1",
+    backend: "claude",
+    available: true,
+    usage_provider: "opencode_go",
+    usage_model_id: "deepseek-v4.1-flash",
+  };
+  const weeklyResetAt = now.getTime() / 1_000 + 3 * 24 * 60 * 60;
+
+  function goSummary(overrides: Partial<UsageSummaryProvider> = {}): UsageSummarySnapshot {
+    return {
+      generatedAt: now.toISOString(),
+      collectedAt: now.toISOString(),
+      nodes: [{
+        nodeId: "node-a",
+        fetchedAt: now.toISOString(),
+        stale: false,
+        staleSince: null,
+        providers: {
+          claude: null,
+          codex: null,
+          antigravity: null,
+          opencode_go: provider({
+            weeklyRemainingPercent: 82,
+            weeklyResetAt,
+            shortRemainingPercent: 98,
+            shortResetAt: weeklyResetAt - 3 * 24 * 60 * 60,
+            quotas: [
+              { id: "opencode_go:rolling", label: "5시간", window: "5h", model: null, remainingPercent: 98, resetAt: weeklyResetAt - 3 * 24 * 60 * 60 },
+              { id: "opencode_go:weekly", label: "7일", window: "7d", model: null, remainingPercent: 82, resetAt: weeklyResetAt },
+              { id: "opencode_go:monthly", label: "월", window: "monthly", model: null, remainingPercent: 91, resetAt: weeklyResetAt + 20 * 24 * 60 * 60 },
+            ],
+            ...overrides,
+          }),
+        },
+      }],
+    };
+  }
+
+  it("resolves the weekly headroom from the collector-shaped sample", () => {
+    const availability = resolvePresetAvailability("node-a", goPreset, goSummary(), now);
+
+    expect(availability).toMatchObject({
+      id: "deepseek-flash-4.1",
+      available: true,
+      reason: null,
+      usage_warning: false,
+    });
+    expect(availability.weekly_headroom).toMatchObject({
+      status: "ok",
+      remaining_percent: 82,
+      quota_label: "7일",
+    });
+  });
+
+  it("reports a rate-limited 5시간 window as quota_exhausted with its label", () => {
+    const availability = resolvePresetAvailability("node-a", goPreset, goSummary({
+      shortRemainingPercent: 0,
+      quotas: [
+        { id: "opencode_go:rolling", label: "5시간", window: "5h", model: null, remainingPercent: 0, resetAt: weeklyResetAt - 3 * 24 * 60 * 60 },
+        { id: "opencode_go:weekly", label: "7일", window: "7d", model: null, remainingPercent: 82, resetAt: weeklyResetAt },
+      ],
+    }), now);
+
+    expect(availability).toMatchObject({
+      available: true,
+      reason: "quota_exhausted",
+      reason_label: "5시간 사용량 제한",
+    });
+    expect(availability.resets_at).toBe(new Date((weeklyResetAt - 3 * 24 * 60 * 60) * 1_000).toISOString());
+  });
+
+  it("keeps the preset selectable with a warning when the Go usage request failed", () => {
+    const availability = resolvePresetAvailability("node-a", goPreset, goSummary({
+      status: "error",
+      weeklyRemainingPercent: null,
+      weeklyResetAt: null,
+      quotas: [],
+    }), now);
+
+    expect(availability).toMatchObject({
+      available: true,
+      reason: null,
+      usage_warning: true,
+    });
+    expect(availability.weekly_headroom).toMatchObject({ status: "unavailable", remaining_percent: null });
+  });
 });

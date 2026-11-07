@@ -13,6 +13,11 @@ const usage: ProviderUsageSnapshot = { generatedAt: '2026-10-04T00:00:00Z', prov
     { ...quota('antigravity:gemini:5h', 4.0193), label: '5시간', window: '5h' },
     { ...quota('antigravity:gemini:weekly', 4.0193), label: '7일', window: '7d' },
   ] },
+  opencode_go: { status: 'auto', source: 'https://opencode.ai/inference/go/v1/usage', planType: '구독', quotas: [
+    { ...quota('opencode_go:rolling', 2), label: '5시간', window: '5h', resetAt: 1794044581 },
+    { ...quota('opencode_go:weekly', 18), label: '7일', window: '7d', resetAt: 1794182400 },
+    { ...quota('opencode_go:monthly', 9), label: '월', window: 'monthly', resetAt: 1796563056 },
+  ] },
 } };
 let policy: SessionReviewPolicyPayload = { policy: { key: 'session_review_policy', sourceAllowlist: ['slack'], version: 1, updatedBy: '공개 예시', updatedAt: '2026-10-04T00:00:00Z' }, conditionalRules: [], sourceCatalog: ['slack', 'soul-app', 'external-llm', 'clipper', 'llm', 'agent', 'system', 'cron', 'channel_observer'].map(source => ({ source, label: source, description: '공개 예시 출처', automatic: ['llm', 'agent', 'system', 'cron', 'channel_observer'].includes(source) })) };
 let jobs: RecurringJobDto[] = Array.from({ length: 12 }, (_, index) => ({
@@ -241,6 +246,14 @@ export const nativeSettingsReviewApi = { ...dialogueApi, ...persistentSessionFix
   getAuthStatus: async () => ({ authenticated: true, user: { isAdmin: true } }),
   listNodes: async () => { if (state() === 'nodes-error') throw new Error('공개 예시 오류'); return { nodes: Array.from({ length: 8 }, (_, index) => ({ nodeId: index === 0 ? 'public-node' : `public-node-${index}` })) }; },
   getProviderUsage: async () => { if (state() === 'usage-error') throw new Error('공개 예시 오류'); return usage; },
+  // The backends screen mounts the legacy Claude provider section, which asks
+  // for the account list and auth state before it can render any provider.
+  getClaudeAuthAccounts: async () => ({ mode: 'legacy', accounts: [], pool: null, fable_pool: null }),
+  getClaudeAuthStatus: async () => ({ has_token: false }),
+  getClaudeProfile: async () => null,
+  startClaudeAuth: async () => { throw new Error('공개 예시에서는 실제 계정 로그인을 시작하지 않습니다.'); },
+  submitClaudeCode: async () => ({ ok: true }),
+  deleteClaudeToken: async () => ({ ok: true }),
   listRecurringJobs: async () => ({ jobs: state() === 'empty' ? [] : jobs }),
   createRecurringJob: async (input: any) => { const job = { ...jobs[0], ...input, job_id: 'review-created', version: 1 }; jobs = [...jobs, job]; return { job }; },
   updateRecurringJob: async (id: string, input: any) => { const job = jobs.find(item => item.job_id === id)!; if (input.expected_version !== job.version) throw new ApiHttpError('conflict', 409, '{}'); const saved = { ...job, ...input, version: job.version + 1 }; jobs = jobs.map(item => item.job_id === id ? saved : item); return { job: saved }; },

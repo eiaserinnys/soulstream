@@ -64,6 +64,7 @@
     "GOOGLE_CLOUD_PROJECT": { "owner": "provider_usage", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },
     "GOOGLE_CLOUD_PROJECT_ID": { "owner": "provider_usage", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },
     "GEMINI_API_KEY": { "owner": "provider_usage", "kind": "credential", "identity_scope": "deployment", "normalization": "presence" },
+    "OPENCODE_GO_API_KEY": { "owner": "provider_usage", "kind": "credential", "identity_scope": "deployment", "normalization": "presence" },
     "GEMINI_OAUTH_CLIENT_ID": { "owner": "provider_usage", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },
     "GEMINI_OAUTH_CLIENT_SECRET": { "owner": "provider_usage", "kind": "credential", "identity_scope": "deployment", "normalization": "presence" },
     "PATH": { "owner": "process", "kind": "non_secret", "identity_scope": "ambient" },

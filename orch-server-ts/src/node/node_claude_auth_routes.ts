@@ -111,7 +111,7 @@ type CallbackQuery = {
   state?: string;
 };
 
-const PROVIDERS = new Set(["claude", "codex", "antigravity"]);
+const PROVIDERS = new Set(["claude", "codex", "antigravity", "opencode_go"]);
 
 export const nodeClaudeAuthRouteAuthRequirements = {
   ...claudeAccountPoolRouteAuthRequirements,
@@ -344,7 +344,7 @@ export function registerNodeClaudeAuthRoutes(
     async (request, reply) => {
       const params = request.params;
       if (!PROVIDERS.has(params.provider)) {
-        return detail(reply, 400, "provider must be one of: claude, codex, antigravity");
+        return detail(reply, 400, "provider must be one of: claude, codex, antigravity, opencode_go");
       }
       return sendDataCommand(reply, options, params.node_id, {
         type: "provider_usage_get",

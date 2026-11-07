@@ -81,7 +81,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
   if (claudeAccounts) await seedLegacyClaudeAccount({ env, accounts: claudeAccounts, claudeAuth, logger });
   const claudeLoginService = claudeAccounts ? composeClaudeLoginService({ accounts: claudeAccounts, claudeAuth, logger }) : undefined;
   const providerUsage = new ProviderUsageService({
-    claudeAuth, claudeAccounts, modelCatalog, logger,
+    claudeAuth, claudeAccounts, modelCatalog, logger, opencodeGo: { apiKey: process.env.OPENCODE_GO_API_KEY },
     antigravity: {
       cliPath: antigravityCliPath?.path,
       environment: antigravityEnvironment(process.env),

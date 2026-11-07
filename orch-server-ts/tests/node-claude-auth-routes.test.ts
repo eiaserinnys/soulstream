@@ -506,6 +506,7 @@ describe("Claude account-pool REST routes", () => {
           },
           codex: null,
           antigravity: null,
+          opencode_go: null,
         },
       }],
     };
