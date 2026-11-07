@@ -25,8 +25,17 @@ export async function applySessionCardReplacement(sql:SqlClient,sessionId:string
   await sql`UPDATE cards SET assignee_kind='session',assignee_session_id=${sessionId},assignee_agent_id=NULL,
     node_id=${row.payload_json.target.nodeId},model_preset=${row.payload_json.target.modelPreset},
     version=version+1,updated_at=NOW(),updated_session_id=${row.actor_session_id},updated_event_id=NULL WHERE id=${row.card_id}`;
-  await sql`UPDATE sessions SET caller_session_id=${sessionId} WHERE card_id=${row.card_id}
-    AND caller_session_id=${oldId} AND session_id<>${sessionId}`;
+  const reassignedChildren=await sql<Array<{session_id:string}>>`
+    UPDATE sessions SET caller_session_id=${sessionId} WHERE card_id=${row.card_id}
+      AND caller_session_id=${oldId} AND session_id<>${sessionId}
+    RETURNING session_id`;
+  if(reassignedChildren.length>0){
+    const childSessionIds=reassignedChildren.map(child=>child.session_id);
+    await sql`UPDATE session_delivery_relation_consumptions SET caller_session_id=${sessionId}
+      WHERE caller_session_id=${oldId}
+        AND split_part(relation_key,':',1)='child_session'
+        AND split_part(relation_key,':',2)=ANY(${childSessionIds}::text[])`;
+  }
   await appendFolderOperation(repositorySql,{id:randomUUID(),folderId:card.folder_id,targetKind:"card",targetId:row.card_id,
     operationType:"update_card",actorKind:"agent",actorSessionId:row.actor_session_id,actorUserId:row.actor_user_id,actorEventId:null,
     payload:{assignee:{kind:"session",sessionId},replacement:{from_session_id:oldId,to_session_id:sessionId,dispatch_operation_id:row.operation_id}}});

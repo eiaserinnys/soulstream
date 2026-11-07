@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { buildDeterministicDeliveryIdentity } from "@soulstream/wire-schema/delivery";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
@@ -11,7 +12,8 @@ import {
   relayCanonicalErrorTx,
 } from "../src/cards/card_work_error_delivery.js";
 import type { RepositorySql } from "../src/cards/control_plane/card_types.js";
-import type { SessionDeliveryRow } from "../src/control_plane/control_plane_types.js";
+import type { RecordObservedChildCompletionParams, SessionDeliveryRow } from "../src/control_plane/control_plane_types.js";
+import { SessionDeliveryRepository } from "../src/control_plane/repositories/session_delivery_repository.js";
 import {
   appendCardEventTx,
   prepareCardWorkSchema,
@@ -31,6 +33,28 @@ const createInput = (idempotencyKey: string, overrides: Partial<Extract<Dispatch
   idempotencyKey,
   ...overrides,
 });
+
+const childCompletionObservation = (
+  childSessionId: string,
+  observedRevision: number,
+  callerSessionId: string,
+  source: string,
+): RecordObservedChildCompletionParams => {
+  const relationKey = `child_session:${childSessionId}:${observedRevision}`;
+  const identity = buildDeterministicDeliveryIdentity({
+    targetSessionId: callerSessionId,
+    relationKey,
+    intent: "completion_notification",
+  });
+  return {
+    childSessionId,
+    observedRevision,
+    relationKey,
+    completionId: identity.completionId,
+    callerSessionId,
+    consumedTurnId: `mcp:${source}:${childSessionId}:${observedRevision}`,
+  };
+};
 
 function createStack(options: { allowFolder?: (folderId: string) => boolean; launch?: (input: unknown) => Promise<unknown> } = {}) {
   const sql = createBoardYjsSqlAdapter(h.liveSql);
@@ -497,5 +521,109 @@ describe("card work dispatch transaction contracts", () => {
       registrationId: unrelatedProof.registrationId,
     }));
     expect(unrelated).toBeNull();
+  }, 60000);
+
+  it("moves consumed child completions to the replacement owner so it can observe the child again", async () => {
+    const stack = createStack();
+    const made = await stack.cards.createCard({actorKind:"user",actorSessionId:null,actorUserId:"user",folderId:"work",
+      title:"소비된 자식 카드",request:"요청",assignee:{kind:"agent",agentId:"old-agent"},nodeId:"node-a",modelPreset:"old-model"});
+    const otherCard = await stack.cards.createCard({actorKind:"user",actorSessionId:null,actorUserId:"user",folderId:"work",
+      title:"다른 카드",request:"다른 요청",assignee:{kind:"agent",agentId:"worker"},nodeId:"node-a",modelPreset:"model-a"});
+    const cardId = made.operation.target_id;
+    const oldId = `consumed-old-${cardId}`, childId = `consumed-child-${cardId}`, otherChildId = `consumed-other-${cardId}`;
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,folder_id,model_preset,caller_session_id)
+      VALUES (${oldId},'node-a','old-agent','error',${cardId},'work','old-model',NULL),
+        (${childId},'node-a','worker','running',${cardId},'work','model-a',${oldId}),
+        (${otherChildId},'node-a','worker','running',${otherCard.operation.target_id},'work','model-a',${oldId})`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_agent_id=NULL,assignee_session_id=${oldId} WHERE id=${cardId}`;
+    const childRevision = await recordWorkReceipt(h, childId, "completed", undefined);
+    const otherRevision = await recordWorkReceipt(h, otherChildId, "completed", undefined);
+    const deliveries = new SessionDeliveryRepository(h.sql);
+    const childObservation = childCompletionObservation(childId, childRevision, oldId, "old_owner");
+    const otherObservation = childCompletionObservation(otherChildId, otherRevision, oldId, "old_owner");
+    await deliveries.recordObservedChildCompletions([childObservation]);
+    await deliveries.recordObservedChildCompletions([otherObservation]);
+    const untouchedRelation = `runtime_relation:keep:${cardId}`;
+    await h.sql`INSERT INTO session_delivery_relation_consumptions(relation_key,completion_id,caller_session_id,consumed_turn_id)
+      VALUES (${untouchedRelation},'completion:keep',${oldId},'turn:keep')`;
+
+    const service = new CardWorkDispatchService({...stack.optionsForService,isNodeConnected:()=>true,
+      validateTarget:async(target:any)=>target} as any);
+    const kick = service.kick.bind(service);
+    let initialKick: Promise<void> | undefined;
+    service.kick = receipt => { initialKick = kick(receipt); return initialKick; };
+    const options = {cards:{workDispatchServiceProvider:async()=>service}} as any;
+    const response = await cardHandlers.dispatch_work(options,{card_id:cardId,replace_assignee:true,request:"이어 주세요",
+      brief:"완료 기준",node_id:"node-a",idempotency_key:`consumed-replace-${cardId}`},
+      {principal:"internal",callerSessionId:"caller-session",nodeId:"node-a"});
+    expect(response.isError).not.toBe(true);
+    const receipt = response.structuredContent as {request_id:string};
+    await initialKick;
+    const request = (await h.sql`SELECT * FROM card_execution_requests WHERE id=${receipt.request_id}`)[0]!;
+    const now = new Date();
+    await new SessionMutationRepository(h.sql).registerSession({idempotencyKey:`consumed-register-${cardId}`,
+      sessionId:request.session_id,nodeId:"node-a",agentId:"old-agent",claudeSessionId:null,sessionType:"agent",
+      prompt:"교체",clientId:null,status:"initializing",createdAt:now,updatedAt:now,callerSessionId:null,
+      predecessorSessionId:null,modelPreset:"model-a",cardId});
+    const newSessionId = request.session_id as string;
+
+    await expect(deliveries.getRelationConsumption(childObservation.relationKey)).resolves.toMatchObject({
+      caller_session_id:newSessionId, consumed_turn_id:childObservation.consumedTurnId});
+    await expect(deliveries.recordObservedChildCompletions([
+      childCompletionObservation(childId, childRevision, newSessionId, "new_owner")]))
+      .resolves.toEqual({status:"recorded"});
+    await expect(deliveries.recordObservedChildCompletions([
+      childCompletionObservation(childId, childRevision, newSessionId, "new_owner")]))
+      .resolves.toEqual({status:"recorded"});
+    await expect(deliveries.getRelationConsumption(otherObservation.relationKey))
+      .resolves.toMatchObject({caller_session_id:oldId});
+    await expect(deliveries.getRelationConsumption(untouchedRelation))
+      .resolves.toMatchObject({caller_session_id:oldId});
+  }, 60000);
+
+  it("repairs a historical child consumption left under the previous owner and keeps strict callers rejected", async () => {
+    const deliveries = new SessionDeliveryRepository(h.sql);
+    const suffix = `history-${Date.now()}`;
+    const previousOwner = `${suffix}-previous`, currentOwner = `${suffix}-current`;
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,folder_id,model_preset,caller_session_id)
+      VALUES (${previousOwner},'node-a','owner','error','work','model-a',NULL),
+        (${currentOwner},'node-a','owner','running','work','model-a',NULL)`;
+    const childId = `${suffix}-child`;
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,folder_id,model_preset,caller_session_id)
+      VALUES (${childId},'node-a','worker','running','work','model-a',${currentOwner})`;
+    const revision = await recordWorkReceipt(h, childId, "completed", undefined);
+    const observation = childCompletionObservation(childId, revision, currentOwner, "new_owner");
+    const consumedAt = new Date("2026-11-07T10:00:00Z");
+    await h.sql`INSERT INTO session_delivery_relation_consumptions(relation_key,completion_id,caller_session_id,consumed_turn_id,consumed_at)
+      VALUES (${observation.relationKey},${observation.completionId},${previousOwner},
+        ${`mcp:get_session_summary:${childId}:${revision}`},${consumedAt})`;
+
+    await expect(deliveries.recordObservedChildCompletions([observation])).resolves.toEqual({status:"recorded"});
+    await expect(deliveries.getRelationConsumption(observation.relationKey)).resolves.toMatchObject({
+      caller_session_id:currentOwner,
+      consumed_turn_id:`mcp:get_session_summary:${childId}:${revision}`,
+      consumed_at:consumedAt,
+    });
+
+    const mismatchChildId = `${suffix}-mismatch-child`;
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,folder_id,model_preset,caller_session_id)
+      VALUES (${mismatchChildId},'node-a','worker','running','work','model-a',${currentOwner})`;
+    const mismatchRevision = await recordWorkReceipt(h, mismatchChildId, "completed", undefined);
+    const mismatchObservation = childCompletionObservation(mismatchChildId, mismatchRevision, currentOwner, "new_owner");
+    await h.sql`INSERT INTO session_delivery_relation_consumptions(relation_key,completion_id,caller_session_id,consumed_turn_id)
+      VALUES (${mismatchObservation.relationKey},'completion:not-the-observed-identity',${previousOwner},'turn:stale')`;
+    await expect(deliveries.recordObservedChildCompletions([mismatchObservation]))
+      .rejects.toThrow("Completion relation identity conflict");
+    await expect(deliveries.getRelationConsumption(mismatchObservation.relationKey)).resolves.toMatchObject({
+      caller_session_id:previousOwner, completion_id:"completion:not-the-observed-identity"});
+
+    const strictRelation = `child_session:${suffix}-strict-child:7`;
+    await h.sql`INSERT INTO session_delivery_relation_consumptions(relation_key,completion_id,caller_session_id,consumed_turn_id)
+      VALUES (${strictRelation},'completion:strict',${previousOwner},'turn:strict')`;
+    await expect(deliveries.recordRelationConsumed({relationKey:strictRelation,completionId:"completion:strict",
+      callerSessionId:currentOwner,consumedTurnId:"turn:strict-again"}))
+      .rejects.toThrow("Completion relation identity conflict");
+    await expect(deliveries.getRelationConsumption(strictRelation))
+      .resolves.toMatchObject({caller_session_id:previousOwner});
   }, 60000);
 });

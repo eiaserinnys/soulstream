@@ -231,7 +231,12 @@ export async function recordObservedChildCompletions(
     const writeOrder = [...params].sort((left, right) =>
       left.relationKey.localeCompare(right.relationKey));
     for (const observation of writeOrder) {
-      await recordRelationConsumedInTransaction(transaction, observation);
+      // The child row was share-locked and validated against the canonical
+      // parent above, so a tombstone left under the previous assignee follows
+      // that parent instead of rejecting a legitimate observation.
+      await recordRelationConsumedInTransaction(transaction, observation, {
+        allowReassignedChildCaller: true,
+      });
     }
     return { status: "recorded" };
   });
@@ -240,6 +245,7 @@ export async function recordObservedChildCompletions(
 async function recordRelationConsumedInTransaction(
   transaction: SqlClient,
   params: RecordSessionDeliveryRelationConsumptionParams,
+  options: { allowReassignedChildCaller?: boolean } = {},
 ): Promise<RecordSessionDeliveryRelationConsumptionResult> {
   await lockRelation(transaction, params.relationKey);
   const insertedRows =
@@ -260,7 +266,23 @@ async function recordRelationConsumedInTransaction(
         FROM session_delivery_relation_consumptions
         WHERE relation_key = ${params.relationKey}
       `;
-  const relation = relationRows[0];
+  let relation = relationRows[0];
+  if (
+    relation &&
+    options.allowReassignedChildCaller &&
+    relation.completion_id === params.completionId &&
+    relation.caller_session_id !== params.callerSessionId
+  ) {
+    const reassignedRows =
+      await transaction<SessionDeliveryRelationConsumptionRow[]>`
+        UPDATE session_delivery_relation_consumptions
+        SET caller_session_id = ${params.callerSessionId}
+        WHERE relation_key = ${params.relationKey}
+          AND completion_id = ${params.completionId}
+        RETURNING *
+      `;
+    relation = reassignedRows[0];
+  }
   if (
     !relation ||
     relation.completion_id !== params.completionId ||
