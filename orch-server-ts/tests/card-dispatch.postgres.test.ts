@@ -60,7 +60,7 @@ describe("card dispatch and session lifecycle", () => {
                 }[]> `SELECT event_append(${p.sessionId},${p.eventType},${p.payload},${p.searchableText},${p.createdAt},${p.dedupeKey ?? null}) AS id`;
                 return rows[0]!.id;
             } }, undefined, change => { changes.push(change); dispatcher.acceptMutation(change); });
-        dispatcher = new CardDispatcher({ deliveryExists: async id => deliveries.has(id), repository: repo, cards: async () => cards,
+        dispatcher = new CardDispatcher({ deliveryExists: async id => deliveries.has(id), abandonDelivery: async () => {}, repository: repo, cards: async () => cards,
             resolveTarget: card => ({ nodeId: card.node_id ?? 'eiaserinnys', agentId: card.assignee_agent_id!, modelPreset: card.model_preset ?? 'default-model',
                 available, reason: available ? null : '사용량 제한' }), launch, sendMessage: messages, notify, warn });
     }, 60000);

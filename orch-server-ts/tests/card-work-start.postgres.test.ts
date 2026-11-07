@@ -109,7 +109,7 @@ it.each(["review","queued","blocked","on_hold","done","cancelled","running"])("s
     expect(ended.map(r=>r.card_id)).toContain(id);
     expect(ended.map(r=>r.card_id)).not.toContain(untouched);
     const warnings:string[]=[];
-    const dispatcher=new CardDispatcher({ deliveryExists: async () => false,repository:new CardDispatchRepository(async()=>createBoardYjsSqlAdapter(h.liveSql)),
+    const dispatcher=new CardDispatcher({ deliveryExists: async () => false,abandonDelivery:async()=>{},repository:new CardDispatchRepository(async()=>createBoardYjsSqlAdapter(h.liveSql)),
       cards:async()=>cards,resolveTarget:()=>({nodeId:"node",agentId:"profile",modelPreset:"model",available:true,reason:null}),
       launch:async()=>{},sendMessage:async()=>{},notify:async()=>{},warn:m=>warnings.push(m),
       orchestration:{enabled:async()=>enabled,ownsSession:async()=>false,kick:async()=>{}}});
@@ -132,7 +132,7 @@ it.each(["review","queued","blocked","on_hold","done","cancelled","running"])("s
     await recordWorkReceipt(h,"owner","error",null,"limit_hit");
     const ended=await endedCardWork(createBoardYjsSqlAdapter(h.liveSql),"owner");
     expect(ended.find(w=>w.card_id===id)?.terminal_session).toMatchObject({status:"error",termination_reason:"limit_hit"});
-    const dispatcher=new CardDispatcher({ deliveryExists: async () => false,repository:new CardDispatchRepository(async()=>createBoardYjsSqlAdapter(h.liveSql)),
+    const dispatcher=new CardDispatcher({ deliveryExists: async () => false,abandonDelivery:async()=>{},repository:new CardDispatchRepository(async()=>createBoardYjsSqlAdapter(h.liveSql)),
       cards:async()=>cards,resolveTarget:()=>({nodeId:"node",agentId:"profile",modelPreset:"model",available:true,reason:null}),
       launch:async()=>{},sendMessage:async()=>{},notify:async()=>{},warn:m=>{throw new Error(m);},
       orchestration:{enabled:async()=>true,ownsSession:async()=>false,kick:async()=>{}}});

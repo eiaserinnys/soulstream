@@ -33,7 +33,7 @@ describe("only the current assignee's quota termination blocks a card", () => {
     cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx });
     repo = new CardDispatchRepository(async () => sql);
     dispatcher = new CardDispatcher({ repository: repo, cards: async () => cards, resolveTarget: target,
-      launch, sendMessage, notify: async () => {}, deliveryExists: async () => false, warn });
+      launch, sendMessage, notify: async () => {}, deliveryExists: async () => false, abandonDelivery: async () => {}, warn });
   }, 60000);
   beforeEach(async () => {
     await dispatcher.drain();
