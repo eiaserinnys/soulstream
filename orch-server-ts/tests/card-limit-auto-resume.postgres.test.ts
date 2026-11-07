@@ -160,8 +160,8 @@ describe("short quota windows resume the card assignee automatically", () => {
     await dispatcher.checkLimits(); await dispatcher.drain();
     const wakes = resumeDeliveries();
     expect(wakes).toHaveLength(1);
-    expect(wakes[0][0]).toBe("owner");
-    expect(wakes[0][1]).toBe("한도가 풀려 재개한다. 첫 행동은 WIP 커밋이다.");
+    expect(wakes[0]![0]).toBe("owner");
+    expect(wakes[0]![1]).toBe("한도가 풀려 재개한다. 첫 행동은 WIP 커밋이다.");
     expect((await cards.getCard(id))!.card).toMatchObject({ status: "running", blocked_kind: null,
       blocked_detail: null, queue_position_key: null });
     expect((await cards.getCard(id))!.card.now).toMatchObject({ text: "담당이 이어서 진행합니다", turn: "agent" });
@@ -219,7 +219,7 @@ describe("short quota windows resume the card assignee automatically", () => {
     expect((await cards.getCard(id))!.card).toMatchObject({ status: "blocked", blocked_kind: "limit",
       blocked_detail: "세션 사용량 한도" });
     expect(limitNotices()).toHaveLength(1);
-    expect(limitNotices()[0][0]).toBe("pas");
+    expect(limitNotices()[0]![0]).toBe("pas");
     messages.mockClear();
     clock = BASE + 79 * HOUR;
     await dispatcher.checkLimits(); await dispatcher.drain();
@@ -259,7 +259,7 @@ describe("short quota windows resume the card assignee automatically", () => {
     await dispatcher.checkLimits(); await dispatcher.drain();
     const wakes = resumeDeliveries();
     expect(wakes).toHaveLength(2);
-    expect(wakes[0][3]?.deliveryId).not.toBe(wakes[1][3]?.deliveryId);
+    expect(wakes[0]![3]?.deliveryId).not.toBe(wakes[1]![3]?.deliveryId);
     expect((await cards.getCard(id))!.card.status).toBe("running");
   });
 

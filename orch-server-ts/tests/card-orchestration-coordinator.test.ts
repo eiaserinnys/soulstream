@@ -100,6 +100,7 @@ function harness(state = durableState(), options: {
     occupancy: vi.fn(async () => ({ ...state.occupancy })),
     settings: vi.fn(async () => ({ nodeConcurrency: { ...state.capacity } })),
     ownerSession: vi.fn(async (id: string) => state.ownerSessions.get(id) ?? null),
+    limitAutoResumeAt: vi.fn(async () => null),
     rejectionReason: vi.fn(async () => null),
   };
   const ensureFolder = vi.fn(async () => "system-folder");
