@@ -1,5 +1,7 @@
 import { DEFAULT_CONFIG } from "./persistent_decision_config.js";
 
+export const MIN_CONVERSATION_HEADROOM_TOKENS = 80_000;
+
 export type DecisionTrigger = "arrival" | "turn_end" | "limit_hit";
 export type Provider = "claude" | "codex" | "antigravity";
 export type DecisionAction =
@@ -72,6 +74,7 @@ interface DecisionContext {
   presetConfig: PresetDecisionConfig;
   idleSeconds: number;
   checkpointTokens: number;
+  effectiveBudgetTokens: number;
   checkpointSource: CheckpointSource;
 }
 
@@ -134,11 +137,11 @@ export function decidePersistentGeneration(
       );
     }
 
-    if (input.context_tokens > config.budget_tokens) {
+    if (input.context_tokens > context.effectiveBudgetTokens) {
       return newGenerationResult(
         context,
         "arrival.warm.over_budget",
-        "문맥이 예산을 넘어 새 세대를 엽니다.",
+        `문맥이 예산 ${context.effectiveBudgetTokens} 토큰을 넘어 새 세대를 엽니다.`,
         config,
       );
     }
@@ -146,17 +149,17 @@ export function decidePersistentGeneration(
       context,
       "continue",
       "arrival.warm.within_budget",
-      "캐시가 따뜻하고 문맥이 예산 안에 있어 현재 세대를 이어갑니다.",
+      `캐시가 따뜻하고 문맥이 예산 ${context.effectiveBudgetTokens} 토큰 안에 있어 현재 세대를 이어갑니다.`,
     );
   }
 
   if (input.trigger === "turn_end") {
-    if (input.context_tokens > config.budget_tokens) {
+    if (input.context_tokens > context.effectiveBudgetTokens) {
       return createResult(
         context,
         "let_cool",
         "turn_end.over_budget",
-        "문맥이 예산을 넘었으므로 세대를 식히고 다음 입력에서 다시 판단합니다.",
+        `문맥이 예산 ${context.effectiveBudgetTokens} 토큰을 넘었으므로 세대를 식히고 다음 입력에서 다시 판단합니다.`,
       );
     }
 
@@ -266,13 +269,16 @@ function createDecisionContext(
 ): DecisionContext {
   const presetConfig = presetConfigFor(input, config, input.current_preset);
   const measuredCheckpoint = input.checkpoint_tokens_by_preset[input.current_preset];
+  const checkpointTokens = measuredCheckpoint ?? presetConfig.checkpoint_default_tokens;
+  const effectiveBudgetTokens = Math.max(config.budget_tokens, checkpointTokens + MIN_CONVERSATION_HEADROOM_TOKENS);
   return {
     input,
     config,
     presetConfig,
     idleSeconds:
       (Date.parse(input.now) - Date.parse(input.last_call_ended_at)) / 1_000,
-    checkpointTokens: measuredCheckpoint ?? presetConfig.checkpoint_default_tokens,
+    checkpointTokens,
+    effectiveBudgetTokens,
     checkpointSource: measuredCheckpoint === undefined ? "default" : "measured",
   };
 }
@@ -298,7 +304,7 @@ function createResult(
       checkpoint_tokens: context.checkpointTokens,
       checkpoint_source: context.checkpointSource,
       cache_ttl_seconds: context.presetConfig.cache_ttl_seconds,
-      budget_tokens: context.config.budget_tokens,
+      budget_tokens: context.effectiveBudgetTokens,
       ...snapshotExtras,
     },
   };

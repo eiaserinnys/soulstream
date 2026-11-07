@@ -1486,7 +1486,9 @@ export class TaskExecutor {
       }
       task.claudeContextUsage = contextRecovery.compactCompleted
         ? undefined
-        : contextRecovery.latestContextUsage ?? task.claudeContextUsage;
+        : contextRecovery.latestContextUsage
+          ? { ...contextRecovery.latestContextUsage, observedAtMs: Date.now() }
+          : task.claudeContextUsage;
       if (contextRecovery.promptTooLongMessage !== undefined) {
         const previousSessionId = task.pendingClaudeBackendRolloverFrom
           ?? task.codexThreadId;
@@ -1792,7 +1794,9 @@ export class TaskExecutor {
       }
       task.claudeContextUsage = contextRecovery.compactCompleted
         ? undefined
-        : contextRecovery.latestContextUsage ?? task.claudeContextUsage;
+        : contextRecovery.latestContextUsage
+          ? { ...contextRecovery.latestContextUsage, observedAtMs: Date.now() }
+          : task.claudeContextUsage;
       if (
         contextRecovery.promptTooLongMessage !== undefined
         && task.claudeBackendRolloverCycleFrom !== undefined

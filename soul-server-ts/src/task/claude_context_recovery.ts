@@ -1,6 +1,9 @@
 import type { SSEEventPayload } from "../engine/protocol.js";
 
 export const CLAUDE_CONTEXT_PREEMPTIVE_COMPACT_RATIO = 0.85;
+export const CLAUDE_CONTEXT_PREEMPTIVE_COMPACT_MAX_TOKENS = 280_000;
+export const CLAUDE_CONTEXT_COLD_CACHE_IDLE_MS = 55 * 60 * 1_000;
+export const CLAUDE_CONTEXT_COLD_CACHE_COMPACT_TOKENS = 160_000;
 export const CLAUDE_CONTEXT_ASCII_CHARS_PER_TOKEN = 3.5;
 export const CLAUDE_CONTEXT_TOKEN_SAFETY_MARGIN = 1.25;
 export const CLAUDE_BACKEND_ROLLOVER_LIMIT = 1;
@@ -31,6 +34,7 @@ export interface ClaudeContextRecoveryObservation {
 export interface ClaudeContextUsage {
   usedTokens: number;
   maxTokens: number;
+  observedAtMs?: number;
 }
 
 export interface ClaudeEstimatedTurnInput {
@@ -113,13 +117,37 @@ export function truncateClaudeTextToEstimatedTokens(
   return `${characters.join("")}${suffix}`;
 }
 
+export function claudePreemptiveCompactThresholdTokens(
+  maxTokens: number,
+  options?: { idleMs?: number },
+): number {
+  const standardThreshold = Math.min(
+    maxTokens * CLAUDE_CONTEXT_PREEMPTIVE_COMPACT_RATIO,
+    CLAUDE_CONTEXT_PREEMPTIVE_COMPACT_MAX_TOKENS,
+  );
+  if (
+    options?.idleMs !== undefined
+    && Number.isFinite(options.idleMs)
+    && options.idleMs >= CLAUDE_CONTEXT_COLD_CACHE_IDLE_MS
+  ) {
+    return Math.min(standardThreshold, CLAUDE_CONTEXT_COLD_CACHE_COMPACT_TOKENS);
+  }
+  return standardThreshold;
+}
+
 export function shouldPreemptivelyCompact(
   usage: ClaudeContextUsage | undefined,
   incomingEstimatedTokens: number,
+  options?: { idleMs?: number; nowMs?: number },
 ): boolean {
   if (!usage || usage.maxTokens <= 0) return false;
-  return (usage.usedTokens + Math.max(0, incomingEstimatedTokens)) / usage.maxTokens
-    >= CLAUDE_CONTEXT_PREEMPTIVE_COMPACT_RATIO;
+  const idleMs = options?.idleMs ?? (usage.observedAtMs !== undefined
+    ? Math.max(0, (options?.nowMs ?? Date.now()) - usage.observedAtMs)
+    : undefined);
+  const threshold = claudePreemptiveCompactThresholdTokens(usage.maxTokens, {
+    ...(idleMs !== undefined ? { idleMs } : {}),
+  });
+  return usage.usedTokens + Math.max(0, incomingEstimatedTokens) >= threshold;
 }
 
 export function fatalPromptTooLongEvent(message: string): SSEEventPayload {
