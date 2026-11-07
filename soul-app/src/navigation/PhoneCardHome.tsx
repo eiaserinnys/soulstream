@@ -11,6 +11,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import type { CardBoardWorkspaceHandle } from '../components/planner/CardBoardWorkspace';
 import { openPhoneChat } from './phoneSessionNavigation';
 import { useDuoSideBand } from './duoSideBand';
+import { DuoRailOverlayContext } from './tabContract';
 import { usePhoneConversationKeyboard } from './usePhoneConversationKeyboard';
 import { useRegisterPhoneRailActions, type PhoneRailAction } from './phoneRailActions';
 import { DuoSafeTop } from './DuoSafeTop';
@@ -22,6 +23,7 @@ export function PhoneCardHome({ navigation }: NativeStackScreenProps<DailyStackP
   const boardRef = useRef<CardBoardWorkspaceHandle>(null);
   const cardDisplay = useCardDisplay();
   const duo = useDuoSideBand();
+  const railOverlayWidth = React.useContext(DuoRailOverlayContext);
   const railActions = useMemo<PhoneRailAction[]>(() => [
     { id: 'create', label: '드래프트 카드 추가', icon: 'add-outline', onPress: () => boardRef.current?.openCreate() },
     { id: 'completed', label: '완료·취소 숨김', menuLabel: cardDisplay.includeCompleted ? '완료 카드 숨기기' : '완료 카드 보이기', icon: cardDisplay.includeCompleted ? 'eye-outline' : 'eye-off-outline',
@@ -39,6 +41,6 @@ export function PhoneCardHome({ navigation }: NativeStackScreenProps<DailyStackP
       <CompletedCardsToggle {...cardDisplay} />
     </View>,
   }); }, [navigation, t, cardDisplay.includeCompleted, cardDisplay.onChange]);
-  return <DuoSafeTop><CardHomeScreen ref={boardRef} externalHeader cardDisplay={cardDisplay} onOpen={(cardId) => navigation.navigate('CardDetail', { cardId })}
+  return <DuoSafeTop><CardHomeScreen ref={boardRef} externalHeader cardDisplay={cardDisplay} railOverlayWidth={railOverlayWidth} onOpen={(cardId) => navigation.navigate('CardDetail', { cardId })}
     onSessionCreated={id => { openPhoneChat(navigation, id); }} /></DuoSafeTop>;
 }

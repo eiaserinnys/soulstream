@@ -12,23 +12,23 @@ import { FloatingSessionComposer } from '../components/planner/FloatingSessionCo
 import { usePhoneRailMode } from '../navigation/tabContract';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-function PhoneHomeComposerHost({ api, bottomOffset, onCoveredHeightChange, onSessionCreated }: {
-  api: ApiClient | null; bottomOffset: number; onCoveredHeightChange(height: number): void; onSessionCreated?(sessionId: string): void;
+function PhoneHomeComposerHost({ api, bottomOffset, railOverlayWidth, onCoveredHeightChange, onSessionCreated }: {
+  api: ApiClient | null; bottomOffset: number; railOverlayWidth: number; onCoveredHeightChange(height: number): void; onSessionCreated?(sessionId: string): void;
 }) {
   const t = useTokens();
   const [keyboardOverlap, setKeyboardOverlap] = useState(0);
   return <AppKeyboardAvoidingView testID="card-home-screen" pointerEvents="box-none"
     behavior={Platform.OS === 'ios' ? 'padding' : undefined} onOverlapChange={setKeyboardOverlap} style={StyleSheet.absoluteFill}>
     <FloatingSessionComposer api={api} onCoveredHeightChange={onCoveredHeightChange} onSessionCreated={onSessionCreated}
-      style={{ position: 'absolute', left: t.uiSpacing.lg, right: t.uiSpacing.lg,
+      style={{ position: 'absolute', left: t.uiSpacing.lg, right: t.uiSpacing.lg + railOverlayWidth,
         bottom: keyboardOverlap > 0 ? keyboardOverlap + t.uiSpacing.md : bottomOffset }} />
   </AppKeyboardAvoidingView>;
 }
 
 export const CardHomeScreen = forwardRef<CardBoardWorkspaceHandle, {
   onOpen(id: string): void; onSessionCreated?(id: string): void;
-  externalHeader?: boolean; cardDisplay?: FolderCardDisplay; api?: ApiClient | null;
-}>(function CardHomeScreen({ onOpen, onSessionCreated, externalHeader, cardDisplay: controlledDisplay, api: injectedApi }, ref) {
+  externalHeader?: boolean; cardDisplay?: FolderCardDisplay; api?: ApiClient | null; railOverlayWidth?: number;
+}>(function CardHomeScreen({ onOpen, onSessionCreated, externalHeader, cardDisplay: controlledDisplay, api: injectedApi, railOverlayWidth = 0 }, ref) {
   const t = useTokens();
   const railMode = usePhoneRailMode();
   const insets = useSafeAreaInsets();
@@ -41,10 +41,10 @@ export const CardHomeScreen = forwardRef<CardBoardWorkspaceHandle, {
   const api = useMemo(() => injectedApi !== undefined ? injectedApi : serverUrl ? createApiClient(serverUrl) : null, [injectedApi, serverUrl]);
   const cardDisplay = useCardDisplay();
   return <View testID="card-home-content" collapsable={false}
-    style={{ flex: 1, minHeight: 0, position: 'relative', backgroundColor: t.colors.background }}>
+    style={{ flex: 1, minHeight: 0, position: 'relative', isolation: 'isolate', backgroundColor: t.colors.background }}>
     <View style={{ flex: 1, minHeight: 0 }}>
-      <CardBoardWorkspace ref={ref} api={api} cardDisplay={controlledDisplay ?? cardDisplay} externalHeader={externalHeader} onOpen={onOpen} reserveHomeComposerSpace />
+      <CardBoardWorkspace ref={ref} api={api} cardDisplay={controlledDisplay ?? cardDisplay} externalHeader={externalHeader} onOpen={onOpen} reserveHomeComposerSpace railOverlayWidth={railOverlayWidth} />
     </View>
-    <PhoneHomeComposerHost api={api} bottomOffset={bottomOffset} onCoveredHeightChange={onCoveredHeightChange} onSessionCreated={onSessionCreated} />
+    <PhoneHomeComposerHost api={api} bottomOffset={bottomOffset} railOverlayWidth={railOverlayWidth} onCoveredHeightChange={onCoveredHeightChange} onSessionCreated={onSessionCreated} />
   </View>;
 });

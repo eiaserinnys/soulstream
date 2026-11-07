@@ -18,12 +18,13 @@ export { BOARD_COLUMNS } from '../../lib/card-board-layout';
 
 /** Compact paper owns size; lanes own peek and snap. Detail reads only follow explicit actions. */
 export function CardBoard({ api, cards, onOpen, includeCompleted = true,
-  phone: controlledPhone, initialPosition, onPositionChange,completed, reserveHomeComposerSpace = false, hideEmptyLanes = false }: {
+  phone: controlledPhone, initialPosition, onPositionChange,completed, reserveHomeComposerSpace = false, hideEmptyLanes = false, railOverlayWidth = 0 }: {
   api: ApiClient | null; cards: readonly CardDto[]; onOpen(id: string, target?: number): void;
   includeCompleted?: boolean;
   phone?: boolean; initialPosition?: BoardPosition; onPositionChange?(position: BoardPosition): void; hideEmptyLanes?: boolean;
   completed?:CompletedBrowser;
   reserveHomeComposerSpace?: boolean;
+  railOverlayWidth?: number;
 }) {
   const t = useTokens();
   const devicePhone = useDeviceType() === 'phone';
@@ -38,7 +39,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   const frameRef = useRef<View>(null);
   const scroll = useRef<ScrollView>(null);
   const [frame, setFrame] = useState<BoardFrame>({ x: 0, y: 0, width: 0, height: 0 });
-  const viewport = frame.width || window.width;
+  const viewport = (frame.width || window.width) - railOverlayWidth;
   const geometry = boardLaneGeometry(viewport, paper.width, t.uiSpacing.sm, phone,columns,paper.gap);
   const offsets = columns.map((_, index) => boardLaneOffset(index, viewport, geometry, columns.length));
   const preferredLane = columns.findIndex(([status]) => status === 'review');
@@ -144,7 +145,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
       const current = dragRef.current; if (!current) return;
       const f = frameLatest.current;
       const x = current.event.absoluteX - f.x;
-      const direction = x < t.hitTarget.min ? -1 : x > f.width - t.hitTarget.min ? 1 : 0;
+      const direction = x < t.hitTarget.min ? -1 : x > f.width - railOverlayWidth - t.hitTarget.min ? 1 : 0;
       if (direction) moveTo(position.current.x + direction * t.uiSpacing.lg, false);
     }, 80);
   };
@@ -154,7 +155,8 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
   };
   const drop = (card: CardDto, event: BoardDragEvent) => {
     const boardFrame = frameLatest.current;
-    const next = boardDropStatus(event.absoluteX, event.absoluteY, boardFrame, geometryRef.current, position.current.x, card.status, columnsRef.current);
+    const next = boardDropStatus(event.absoluteX, event.absoluteY,
+      { ...boardFrame, width: boardFrame.width - railOverlayWidth }, geometryRef.current, position.current.x, card.status, columnsRef.current);
     if (!next) { Alert.alert('카드 이동 취소', '다른 단계의 레인 위에서 놓아 주세요.'); return; }
     void action.transition(card, next);
   };
@@ -170,7 +172,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
       onScroll={(event) => { position.current.x = columns.length ? event.nativeEvent.contentOffset.x : 0;
         const lane = columns.length ? boardNearestLane(position.current.x, offsets) : -1;
         position.current.lane = lane >= 0 ? columns[lane]?.[0] : undefined; savePosition(); }}
-      contentContainerStyle={{ gap: geometry.gap, paddingHorizontal: geometry.inset, alignItems: 'stretch' }}>
+      contentContainerStyle={{ gap: geometry.gap, paddingLeft: geometry.inset, paddingRight: geometry.inset + railOverlayWidth, alignItems: 'stretch' }}>
       {hideEmptyLanes && columns.length === 0 ? <View testID="card-board-empty" style={{ paddingHorizontal: t.uiSpacing.sm, paddingTop: t.uiSpacing.xs }}>
         <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>카드가 없습니다.</Text>
       </View> : null}
