@@ -172,7 +172,7 @@ export function CardBoard({ api, cards, onOpen, includeCompleted = true,
       onScroll={(event) => { position.current.x = columns.length ? event.nativeEvent.contentOffset.x : 0;
         const lane = columns.length ? boardNearestLane(position.current.x, offsets) : -1;
         position.current.lane = lane >= 0 ? columns[lane]?.[0] : undefined; savePosition(); }}
-      contentContainerStyle={{ gap: geometry.gap, paddingLeft: geometry.inset, paddingRight: geometry.inset + railOverlayWidth, alignItems: 'stretch' }}>
+      contentContainerStyle={{ gap: geometry.gap, paddingHorizontal: geometry.inset, paddingRight: geometry.inset + railOverlayWidth, alignItems: 'stretch' }}>
       {hideEmptyLanes && columns.length === 0 ? <View testID="card-board-empty" style={{ paddingHorizontal: t.uiSpacing.sm, paddingTop: t.uiSpacing.xs }}>
         <Text style={{ ...t.foundation.typography.body, color: t.colors.textSecondary }}>카드가 없습니다.</Text>
       </View> : null}
