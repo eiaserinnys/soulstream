@@ -132,7 +132,7 @@ describe("short quota windows resume the card assignee automatically", () => {
     expect(card).toMatchObject({ status: "blocked", blocked_kind: "limit",
       blocked_detail: "사용량 한도, 17:00 자동 재개" });
     expect(card.now).toMatchObject({ text: "사용량 한도로 멈춤, 17:00에 저절로 이어집니다", turn: "outside" });
-    expect(limitNotices()).toHaveLength(0);
+    expect(messages).not.toHaveBeenCalled();
   });
 
   it("B: does nothing before the reset and is not an orchestration candidate", async () => {
@@ -158,6 +158,7 @@ describe("short quota windows resume the card assignee automatically", () => {
     messages.mockClear();
     clock = BASE + 3 * HOUR + 1000;
     await dispatcher.checkLimits(); await dispatcher.drain();
+    expect(messages).toHaveBeenCalledTimes(1);
     const wakes = resumeDeliveries();
     expect(wakes).toHaveLength(1);
     expect(wakes[0]![0]).toBe("owner");
@@ -237,13 +238,14 @@ describe("short quota windows resume the card assignee automatically", () => {
     await limitHit(endedAt, resetsAt);
     expect((await cards.getCard(id))!.card).toMatchObject({ status: "blocked", blocked_kind: "limit",
       blocked_detail: "사용량 한도, 20:00 자동 재개" });
-    messages.mockClear();
     clock = resetsAt - 1000;
     await dispatcher.checkLimits(); await dispatcher.drain();
-    expect(resumeDeliveries()).toHaveLength(0);
+    expect(messages).toHaveBeenCalledTimes(1);
+    expect(resumeDeliveries()).toHaveLength(1);
     clock = resetsAt + 1000;
     await dispatcher.checkLimits(); await dispatcher.drain();
-    expect(resumeDeliveries()).toHaveLength(1);
+    expect(messages).toHaveBeenCalledTimes(2);
+    expect(resumeDeliveries()).toHaveLength(2);
     expect((await cards.getCard(id))!.card.status).toBe("running");
   });
 

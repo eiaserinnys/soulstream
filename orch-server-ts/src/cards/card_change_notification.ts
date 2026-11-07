@@ -20,6 +20,10 @@ export function buildCardChangeNotification(change:CardChangeNotificationChange,
   const op=result.operation;
   const kind=op.operation_type === "add_card_comment" ? "comment" : "state";
   const sessionId=previousAssigneeSessionId ?? (kind === "comment" ? fallbackSessionId : null);
+  // A session that just ran into its quota gains nothing from the block itself, and a limit resume
+  // already delivered the wake-up message; either one would only run it back into the same limit.
+  if (kind === "state" && op.actor_kind === "system" && ((card.status === "blocked" && card.blocked_kind === "limit")
+    || (op.operation_type === "resume_card" && card.status === "running"))) return null;
   if (!sessionId || op.actor_session_id === sessionId || kind === "state" && (card.status === "done" || card.status === "on_hold" && previousStatus !== "running")) return null;
   const actor=op.actor_kind === "user" ? "사용자" : op.actor_session_id ? `세션 ${op.actor_session_id}` : op.actor_kind === "system" ? "시스템" : op.actor_kind;
   const target=`카드 「${card.title}」(${card.id})`;
