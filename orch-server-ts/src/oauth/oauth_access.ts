@@ -93,8 +93,10 @@ function normalizeOAuthEmail(email: string): string {
 export function oauthScopeForRoute(method: string, pathname: string): OAuthScope | null {
   const path = pathname.split("?", 1)[0] ?? pathname;
   if (path.startsWith("/api/conversations/v1/")) return "conversations";
-  if (method.toUpperCase() !== "GET") return null;
-  if (path === "/api/cards" || path.startsWith("/api/cards/")) return "cards:read";
+  const upper = method.toUpperCase();
+  if ((path === "/api/cards" || path.startsWith("/api/cards/")) && (upper === "GET" || upper === "POST" || upper === "PATCH"))
+    return "cards:read";
+  if (upper !== "GET") return null;
   if (path === "/api/folders" || path.startsWith("/api/folders/")) return "folders:read";
   return null;
 }

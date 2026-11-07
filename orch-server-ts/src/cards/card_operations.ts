@@ -76,7 +76,15 @@ export async function executeCardOperation(service:CardControlPlaneService,opera
   })();
   return serializeCardMutation(result);
 }
-export function serializeCardDetail(detail:NonNullable<Awaited<ReturnType<CardControlPlaneService["getCard"]>>>) {
+export type CardDetail = NonNullable<Awaited<ReturnType<CardControlPlaneService["getCard"]>>>;
+export class CardOperationError extends Error {
+  readonly code = "INVALID_CARD_REQUEST";
+  constructor(message: string, readonly statusCode: number) {
+    super(message);
+    this.name = "CardOperationError";
+  }
+}
+export function serializeCardDetail(detail:CardDetail) {
   return { card:serializeCardRow(detail.card),reports:detail.reports.map(serializeCardRow),questions:detail.questions.map(serializeCardRow),
     comments:detail.comments.map(serializeCardRow),sessions:detail.sessions.map(serializeCardRow),notes:detail.notes.map(serializeCardRow),nowHistory:detail.nowHistory };
 }

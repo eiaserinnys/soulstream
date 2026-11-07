@@ -10,7 +10,15 @@ import type { FolderActorParams } from "./control_plane/card_types.js";
 export type CardRouteBodyOptions = Pick<FolderRouteOptions, "cardServiceProvider" | "provider">;
 type ResolveAccess = () => FolderAccess | Promise<FolderAccess>;
 
-class CardNotFoundError extends Error {
+export const sendCardMessageSchema = z
+  .object({
+    sessionId: z.string().min(1).nullable().optional(),
+    text: z.string().min(1),
+    idempotencyKey: z.string().min(1).optional(),
+  })
+  .strict();
+
+export class CardNotFoundError extends Error {
   readonly statusCode = 404;
   readonly body = { detail: { error: { code: "CARD_NOT_FOUND" } } };
 }

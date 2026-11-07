@@ -17,6 +17,7 @@ import { findCardSessionByOrdinal, findCardsByNumber, readCardChildOrdinals, rea
 import type { SupervisedCardSnapshot } from "./supervised_card_context.js";
 import { acceptQueuedWork, validateWorkExecution, invalidWork, type CardWorkExecution } from "./card_work_lifecycle.js";
 import { CardMcpReadService } from "./card_mcp_read.js";
+import { readCardSessionMessages, type CardSessionMessagesQuery } from "./card_session_messages.js";
 import { randomUUID } from "node:crypto";
 import { generateKeyBetween } from "@soulstream/fractional-position";
 import { CardRepository } from "./control_plane/card_repository.js";
@@ -114,6 +115,10 @@ export class CardControlPlaneService {
       this.repo.listAllCardNotes(cardId),this.repo.listCardNowHistory(cardId),
     ]);
     return { card:(await this.repo.projectCards([card]))[0]!,reports,questions,comments,sessions,notes,nowHistory };
+  }
+  async getCardSessionMessages(cardId: string, query?: CardSessionMessagesQuery) {
+    const detail=await this.getCard(cardId);
+    return detail ? await readCardSessionMessages(this.repoSql, detail, query) : null;
   }
   listReports(cardId: string) { return this.repo.listReports(cardId); }
   listConfirmedItemsSinceLastCommentDelivery(cardId:string,throughAt:Date) {
