@@ -2,7 +2,8 @@
 .v3-surface,
 .approved-dialog,
 .project-purpose-dialog {
-  --v3-space-1: var(--v3-card-gap);
+  /* body 포털에 렌더되는 대화상자는 .v3-shell 의 값을 상속받지 못하므로 기본값을 둔다. */
+  --v3-space-1: var(--v3-card-gap, 4px);
   --v3-space-2: 8px;
   --v3-space-3: 12px;
   --v3-space-4: 16px;

@@ -21,11 +21,12 @@
     {출력}/provider-panel-settings-{폭}-{테마}.png
     {출력}/provider-panel-login-sheet-{폭}-{테마}.png
     {출력}/provider-panel-loading-{폭}-{테마}.png
-    {출력}/measurements.json   (열 시작 좌표·막대 위쪽 좌표·정렬 판정·로딩 이동량)
-    {출력}/report.json         (프레임별 텍스트 잘림·선택 규칙과 종합 판정)
+    {출력}/measurements.json   (열 시작 좌표·막대 위쪽 좌표·막대 높이·정렬 판정·로딩 이동량)
+    {출력}/report.json         (프레임별 텍스트 잘림·막대 높이·선택 규칙과 종합 판정)
 
 표준 출력에는 캡처마다 한 줄, 마지막에 판정 요약을 남긴다.
 열 좌표나 로딩 중 막대 위치가 1px 넘게 어긋나거나, 한도 칸 글자가 잘리거나,
+게이지 막대 높이가 3.5px 미만이거나 막대가 아예 없거나,
 공급자 이름이 선택되거나 계정 이메일이 선택되지 않으면 종료 코드 1로 끝난다.
 """
 
@@ -47,6 +48,7 @@ STATE_NODE = {
     "codex": "sample-provider-codex",
 }
 TOLERANCE_PX = 1.0
+MIN_TRACK_HEIGHT_PX = 3.5
 
 AUTH_CONFIG = {"authEnabled": True, "devModeEnabled": False}
 AUTH_STATUS = {
@@ -82,7 +84,9 @@ MEASURE_SCRIPT = """
       };
     });
     const trackTops = Array.from(row.querySelectorAll('.c724-quota-track')).filter(outsideAccounts).map((track) => round(track.getBoundingClientRect().y));
-    return { provider: row.getAttribute('data-provider-id'), cells, trackTops };
+    // 펼친 계정 목록의 게이지도 같은 클래스라 행 안의 막대를 모두 잰다. 토큰이 없으면 높이가 0 이 된다.
+    const trackHeights = Array.from(row.querySelectorAll('.c724-quota-track')).map((track) => round(track.getBoundingClientRect().height));
+    return { provider: row.getAttribute('data-provider-id'), cells, trackTops, trackHeights };
   });
 }
 """
@@ -128,6 +132,12 @@ Object.defineProperty(navigator.serviceWorker, 'controller', { configurable: tru
 
 def install_page(context, theme: str) -> None:
     context.add_init_script(INIT_SCRIPT.replace("__THEME__", theme))
+    # 아래 구체 경로가 나중에 등록되어 우선한다. 나머지 API 는 즉시 빈 응답으로 끝내
+    # 존재하지 않는 서버(127.0.0.1:9)를 기다리는 시간 초과를 없앤다.
+    context.route(
+        "**/api/**",
+        lambda route: route.fulfill(status=200, content_type="application/json", body="{}"),
+    )
     context.route(
         "**/api/auth/config",
         lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(AUTH_CONFIG)),
@@ -352,6 +362,20 @@ def main() -> int:
         for frame in frames_out
         if frame["capture"].startswith("pool-expanded-") and not frame["accountEmails"]
     ]
+    # 게이지 막대는 토큰이 없으면 높이 0 이 되어 사라진다. 프레임마다 막대 높이를 잰다.
+    track_height_failures = [
+        {"capture": entry["capture"], "provider": row["provider"], "height": height}
+        for entry in rows_out
+        for row in entry["rows"]
+        for height in row["trackHeights"]
+        if height < MIN_TRACK_HEIGHT_PX
+    ]
+    # 막대가 하나도 그려지지 않은 프레임은 위 목록이 비어 통과처럼 보이므로 따로 잡는다.
+    missing_track_frames = [
+        entry["capture"]
+        for entry in rows_out
+        if not any(row["trackHeights"] for row in entry["rows"])
+    ]
     alignment_failures = [entry["capture"] for entry in rows_out if not entry["alignment"]["aligned"]]
     jump_failures = [jump["capture"] for jump in jumps if jump["deltaPx"] is None or jump["deltaPx"] > TOLERANCE_PX]
 
@@ -374,6 +398,12 @@ def main() -> int:
                 "passed": not account_selection_failures and not missing_account_emails,
                 "failures": account_selection_failures,
                 "missingFrames": missing_account_emails,
+            },
+            "quotaTrackHeight": {
+                "passed": not track_height_failures and not missing_track_frames,
+                "minimumPx": MIN_TRACK_HEIGHT_PX,
+                "failures": track_height_failures,
+                "missingFrames": missing_track_frames,
             },
             "columnAlignment": {
                 "passed": not alignment_failures,
@@ -399,11 +429,18 @@ def main() -> int:
     for jump in jumps:
         print(f"로딩→완료 막대 이동 {jump['capture']}: {jump['deltaPx']}px")
     print(f"한도 칸 글자 잘림: {len(clipping_failures)}건 (프레임 {len(frames_out)}건 검사)")
+    print(
+        f"게이지 막대 높이: {MIN_TRACK_HEIGHT_PX}px 미만 {len(track_height_failures)}건, "
+        f"막대 없는 프레임 {len(missing_track_frames)}건"
+    )
 
     failed_groups = [
         f"정렬 어긋남: {', '.join(alignment_failures)}" if alignment_failures else "",
         f"로딩 이동: {', '.join(jump_failures)}" if jump_failures else "",
         f"글자 잘림: {', '.join(sorted({item['capture'] for item in clipping_failures}))}" if clipping_failures else "",
+        f"막대 높이 부족: {', '.join(sorted({item['capture'] for item in track_height_failures}))}"
+        if track_height_failures else "",
+        f"막대 없음: {', '.join(missing_track_frames)}" if missing_track_frames else "",
         f"공급자 이름 선택 가능: {', '.join(sorted({item['capture'] for item in provider_selection_failures}))}"
         if provider_selection_failures else "",
         f"공급자 이름 없음: {', '.join(missing_provider_names)}" if missing_provider_names else "",
@@ -417,6 +454,7 @@ def main() -> int:
         return 1
     print(
         f"판정: 프레임 {len(frames_out)}건에서 한도 칸 글자 잘림 없음, "
+        f"게이지 막대 높이 {MIN_TRACK_HEIGHT_PX}px 이상, "
         f"공급자 이름 선택 차단·계정 이메일 선택 허용, "
         f"열 시작선과 막대 위쪽이 {TOLERANCE_PX}px 안"
     )

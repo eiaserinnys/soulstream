@@ -58,7 +58,7 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
   }
 
   return (
-    <div className="h-full flex flex-col overflow-hidden min-h-0">
+    <div className="flex flex-col min-h-0">
       <ScrollArea data-testid="node-panel-scroll" className="flex-1 min-h-0">
         <div data-testid="node-panel-scroll-body" className="space-y-2 p-2">
           <CogitoHealthPanel request={request} />
