@@ -42,6 +42,7 @@ export interface OpenContentLinkNavigationArgs {
   activeSessionId?: string | null;
   leavePersistent?: () => void;
   openImage?: (source: ImageURISource) => void;
+  openPersistentCard?: (cardId: string) => void;
   openAttachment?: (view: AttachmentView, items?: readonly AttachmentView[], initialIndex?: number) => void;
   attachmentLinks?: readonly AttachmentLink[];
   attachmentLabel?: string;
@@ -62,10 +63,14 @@ function failureMessage(target: InternalLinkTarget): string | null {
   }
 }
 
-function isTabletMain(navigation: ContentLinkNavigation): boolean {
+function topRouteName(navigation: ContentLinkNavigation): string | undefined {
   const state = navigation.getState?.();
   const index = state?.index ?? ((state?.routes?.length ?? 0) - 1);
-  return state?.routes?.[index]?.name === 'Main';
+  return state?.routes?.[index]?.name;
+}
+
+function isTabletMain(navigation: ContentLinkNavigation): boolean {
+  return topRouteName(navigation) === 'Main';
 }
 
 function openPhoneFolder(
@@ -140,6 +145,7 @@ export async function openContentLinkNavigation({
   activeSessionId,
   leavePersistent,
   openImage,
+  openPersistentCard,
   openAttachment,
   readContext,
   attachmentLinks,
@@ -223,6 +229,8 @@ export async function openContentLinkNavigation({
   if (target.kind === 'card') {
     if (device !== 'phone' && isTabletMain(navigation)) {
       useUIStore.getState().openCardOverlay(target.cardId, activeSessionId);
+    } else if (device !== 'phone' && openPersistentCard && topRouteName(navigation) === 'PersistentSession') {
+      openPersistentCard(target.cardId);
     } else if (navigation.push) {
       if (!isSameTopRouteTarget(navigation, 'CardDetail', 'cardId', target.cardId)) {
         navigation.push('CardDetail', { cardId: target.cardId });

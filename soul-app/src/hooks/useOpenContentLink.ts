@@ -41,6 +41,7 @@ export function useOpenContentLink(readContext?: AttachmentReadContext, links?: 
     activeSessionId: useUIStore.getState().activeSessionId,
     leavePersistent: persistentHost ? () => persistentHost.store.getState().leave() : undefined,
     openImage: imageHost?.openImage,
+    openPersistentCard: persistentHost ? (cardId) => persistentHost.store.getState().openCardOverlay(cardId) : undefined,
     openAttachment: imageHost ? (view, items, initialIndex) => imageHost.openAttachment(view, items, initialIndex, restoreFocus) : undefined,
     readContext: attachmentReadContext,
     openExternal: (url) => WebBrowser.openBrowserAsync(url),

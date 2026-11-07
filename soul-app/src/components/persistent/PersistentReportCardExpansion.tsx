@@ -20,10 +20,9 @@ import { ReportComposerFocusContext } from './useReportComposerScroll';
 
 type Lookup = { key: string; number: number; cardId: string | null; loading: boolean; error?: string };
 
-export function PersistentReportCardExpansion({ api, entry, onOpenCard }: {
+export function PersistentReportCardExpansion({ api, entry }: {
   api: ApiClient | null;
   entry: PersistentReportEntry;
-  onOpenCard?(cardId: string): void;
 }) {
   const t = useTokens();
   const onInputFocusChange = useContext(ReportComposerFocusContext);
@@ -71,9 +70,8 @@ export function PersistentReportCardExpansion({ api, entry, onOpenCard }: {
   const focusComposer = useCallback(() => composer.current?.focus(), []);
   const handleOpenCard = useCallback(() => {
     if (!cardId) return;
-    if (onOpenCard) onOpenCard(cardId);
-    else void openLink(`/?card=${encodeURIComponent(cardId)}`);
-  }, [cardId, onOpenCard, openLink]);
+    void openLink(`/?card=${encodeURIComponent(cardId)}`);
+  }, [cardId, openLink]);
   const handleRetry = useCallback(async () => {
     if (!api) return;
     if (!entry.card_id && number !== null && currentLookup?.error) {

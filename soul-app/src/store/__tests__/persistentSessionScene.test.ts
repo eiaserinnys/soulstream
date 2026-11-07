@@ -66,6 +66,15 @@ test('보고와 목록 버튼, PAS 탭과 오른쪽 밀기는 각각 정해진 �
   expect(store.getState().scene).toBe('conversation');
 });
 
+test('PAS 카드 오버레이는 장면을 바꾸지 않고 열고 닫는다', () => {
+  const store = createPersistentSessionScene();
+  store.getState().open(session('pas-1'));
+  store.getState().openCardOverlay('card-1');
+  expect(store.getState()).toMatchObject({ scene: 'conversation', selectedCardId: 'card-1' });
+  store.getState().closeCard();
+  expect(store.getState()).toMatchObject({ scene: 'conversation', selectedCardId: null });
+});
+
 test('보고 카드 상세를 닫으면 reports 장면의 목록으로 돌아온다', () => {
   const store = createPersistentSessionScene();
   store.getState().open(session('pas-1'));

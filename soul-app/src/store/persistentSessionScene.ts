@@ -23,6 +23,7 @@ export interface PersistentSessionScene {
   setReportAvailability: (count: number, available: boolean) => void;
   selectCard: (cardId: string | null) => void;
   selectReportCard: (selectedCardId: string) => void;
+  openCardOverlay: (selectedCardId: string) => void;
   closeCard: () => void;
   swipe: (direction: 'left' | 'right') => void;
 }
@@ -55,6 +56,7 @@ export function createPersistentSessionScene() {
       state.reportCount === reportCount && state.hasReports === hasReports ? state : { reportCount, hasReports }),
     selectCard: (selectedCardId) => set({ scene: 'cards', selectedCardId }),
     selectReportCard: (selectedCardId) => set({ scene: 'reports', selectedCardId }),
+    openCardOverlay: (selectedCardId) => set({ selectedCardId }),
     closeCard: () => set({ selectedCardId: null }),
     swipe: (direction) => {
       const state = get();
