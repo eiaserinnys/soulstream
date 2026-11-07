@@ -16,7 +16,7 @@ import { CardDispatchTab } from "./CardDispatchTab";
  * V3 설정 탭과 운영 패널을 조합한다.
  */
 
-import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from "react";
 import {
   Dialog,
   DialogPopup,
@@ -32,6 +32,7 @@ import {
   type WallpaperMode,
 } from "@seosoyoung/soul-ui";
 import { NodePanel } from "./NodePanel";
+import { V3_CARD_GAP_PX } from "../v3/v3-layout-metrics";
 import { UserManagementTab } from "./UserManagementTab";
 import { OwnedAgentsTab } from "./OwnedAgentsTab";
 import { AgentProfileEditorTab } from "./AgentProfileEditorTab";
@@ -174,7 +175,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
   const close = () => { if (saving || saveInFlight.current) return; if (hasChanges) setDiscardPrompt(true); else onOpenChange(false); };
   return (
     <Dialog open={open} onOpenChange={next => { if (!next) close(); }}>
-      <DialogPopup className="approved-dialog config-dialog max-w-5xl" closeProps={{ disabled: saving, onClick: event => { event.preventDefault(); close(); } }}>
+      <DialogPopup className="approved-dialog config-dialog max-w-5xl" closeProps={{ disabled: saving, onClick: event => { event.preventDefault(); close(); } }} style={{ "--v3-card-gap": `${V3_CARD_GAP_PX}px` } as CSSProperties}>
         <DialogHeader>
           <DialogTitle>설정</DialogTitle>
           <DialogDescription>
@@ -222,7 +223,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
               ) : selectedTab === LIQUID_GLASS_TAB_NAME ? (
                 <LiquidGlassTab preference={api ? {value:localGlass,set:patch=>setLocalGlass(value=>({...value,...patch}))} : undefined} />
               ) : selectedTab === NODES_TAB_NAME ? (
-                <div className="h-[420px] overflow-hidden rounded border border-border">
+                <div className="rounded border border-border">
                   <NodePanel request={api?.request} sampleNodes={api?.nodes} />
                 </div>
               ) : selectedTab === RECURRING_JOBS_TAB_NAME ? (

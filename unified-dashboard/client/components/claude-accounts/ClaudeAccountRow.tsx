@@ -1,6 +1,7 @@
 import { Button, DashboardIconCap, Switch } from "@seosoyoung/soul-ui";
 import { ArrowDown, ArrowUp, RotateCcw, Trash2 } from "lucide-react";
-import type { ClaudeAccount, ClaudeAccountUsageWindow } from "@seosoyoung/soul-ui";
+import type { ClaudeAccount, ClaudeAccountUsageWindow, ProviderQuotaSlot, ProviderQuotaSlots } from "@seosoyoung/soul-ui";
+import { ProviderQuotaGrid } from "./ProviderQuotaGrid";
 
 type Props = {
   account: ClaudeAccount;
@@ -25,29 +26,19 @@ function localClock(value: string | null): string | null {
     : null;
 }
 
-function resetLabel(window: ClaudeAccountUsageWindow | null): string {
-  if (!window?.resets_at) return "미측정";
-  const reset = new Date(window.resets_at);
-  if (!Number.isFinite(reset.getTime())) return "미측정";
-  if (window.used_percent >= 100) {
-    const time = new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hour12: false }).format(reset);
-    return `${time} 해제`;
-  }
-  const minutes = Math.max(0, Math.ceil((reset.getTime() - Date.now()) / 60_000));
-  if (minutes < 60) return `${minutes}분 후`;
-  if (minutes < 12 * 60) return `${Math.ceil(minutes / 60)}시간 후`;
-  return new Intl.DateTimeFormat("ko-KR", {
-    weekday: "short",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).format(reset);
-}
-
-function quotaColor(usedPercent: number): string {
-  if (usedPercent >= 95) return "var(--color-red-500)";
-  if (usedPercent >= 80) return "var(--color-amber-500)";
-  return "var(--v3-accent)";
+function windowSlot(
+  kind: ProviderQuotaSlot["kind"],
+  label: string,
+  window: ClaudeAccountUsageWindow | null,
+): ProviderQuotaSlot | null {
+  if (!window) return null;
+  const reset = window.resets_at ? new Date(window.resets_at).getTime() : NaN;
+  return {
+    kind,
+    label,
+    usedPercent: Math.min(100, Math.max(0, window.used_percent)),
+    resetAt: Number.isFinite(reset) ? Math.floor(reset / 1000) : null,
+  };
 }
 
 function statusColor(account: ClaudeAccount): string {
@@ -70,22 +61,6 @@ function accountStatus(account: ClaudeAccount): string | null {
   return null;
 }
 
-function QuotaCell({ label, value }: { label: string; value: ClaudeAccountUsageWindow | null }) {
-  const used = value ? Math.min(100, Math.max(0, value.used_percent)) : 0;
-  return <div className="c724-quota-cell">
-    <div className="c724-quota-label-row">
-      <span className="c724-quota-name">{label}</span>
-      <div className="flex items-baseline gap-1.5 min-w-0">
-        <span className="c724-quota-pct">{value ? `${Math.round(value.used_percent)}%` : "—"}</span>
-        <span className="c724-quota-reset">{resetLabel(value)}</span>
-      </div>
-    </div>
-    <div className="c724-quota-track" aria-hidden="true">
-      {value ? <div className="c724-quota-fill" style={{ width: `${used}%`, backgroundColor: quotaColor(used) }} /> : null}
-    </div>
-  </div>;
-}
-
 export function ClaudeAccountRow({
   account,
   index,
@@ -105,6 +80,11 @@ export function ClaudeAccountRow({
   const hasUsage = account.usage.five_hour !== null || account.usage.seven_day !== null || account.usage.fable_weekly !== null;
   const observed = account.observed_at ? localClock(account.observed_at) : null;
   const showPriority = enabledCount > 1 && account.enabled;
+  const slots: ProviderQuotaSlots = [
+    windowSlot("short", "5시간", account.usage.five_hour),
+    windowSlot("weekly", "7일", account.usage.seven_day),
+    windowSlot("fable", "Fable", account.usage.fable_weekly),
+  ];
 
   return <div
     className="c724-account-row"
@@ -116,7 +96,7 @@ export function ClaudeAccountRow({
     <div className="c724-account-top">
       <div className="c724-account-identity">
         <span className="c724-status-dot" style={{ backgroundColor: statusColor(account) }} />
-        <span className="c724-account-email" title={account.email}>{account.email}</span>
+        <span className="c724-account-email" data-selectable="true" title={account.email}>{account.email}</span>
         {account.plan ? <span className="c724-badge c724-badge-neutral">{account.plan}</span> : null}
         {showPriority ? <span className="c724-badge c724-badge-accent">{index + 1}순위</span> : null}
         {status ? <span className={`c724-badge ${account.auth_state === "needs_relogin" ? "c724-badge-danger" : account.blocked ? "c724-badge-warn" : "c724-badge-neutral"}`}>{status}</span> : null}
@@ -144,11 +124,7 @@ export function ClaudeAccountRow({
       </div>
     </div>
 
-    {hasUsage ? <div className="c724-quota-grid" aria-label={`${account.email} 사용량`}>
-      <QuotaCell label="5시간" value={account.usage.five_hour} />
-      <QuotaCell label="7일" value={account.usage.seven_day} />
-      <QuotaCell label="Fable" value={account.usage.fable_weekly} />
-    </div> : <div className="c724-idle-row">
+    {hasUsage ? <ProviderQuotaGrid slots={slots} label={`${account.email} 사용량`} /> : <div className="c724-idle-row">
       <span className="c724-meta-inline">{account.auth_state === "needs_relogin" ? "인증 만료로 사용량 조회 중단" : "미측정 (실제 호출 시 갱신)"}</span>
       <span className="c724-meta-inline">{observed ? `${observed} ${account.auth_state === "idle" ? "확인" : "갱신"}` : ""}</span>
     </div>}

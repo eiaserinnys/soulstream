@@ -1,11 +1,157 @@
 import type { ConfigModalApi } from "../components/ConfigModal";
 import { createOwnedAgentsFixture } from "./owned-agents-fixture";
 import { createPersistentSessionsFixture } from "./persistent-sessions-fixture";
-import type { SessionStory } from "@seosoyoung/soul-ui";
+import type { ClaudeAccount, ClaudeAccountList, SessionStory, UsageSummaryProvider, UsageSummaryQuota, UsageSummarySnapshot } from "@seosoyoung/soul-ui";
 import type { RecurringJob, RecurringJobRun } from "../lib/recurring-jobs";
 import type { AssignmentData } from "./AgentNodeAssignmentFields";
 import { reviewFolder, reviewFolders } from "./components-review-fixtures";
 const now = "2026-10-03T00:00:00Z";
+
+const usageFixtureNowSeconds = Math.floor(Date.now() / 1000);
+const usageFixtureHour = 60 * 60;
+const usageFixtureDay = 24 * usageFixtureHour;
+const usageFixtureResetSoon = usageFixtureNowSeconds + 3 * usageFixtureHour;
+const usageFixtureResetWeek = usageFixtureNowSeconds + 5 * usageFixtureDay;
+const usageFixtureResetMonth = usageFixtureNowSeconds + 11 * usageFixtureDay;
+
+function usageFixtureIso(epochSeconds: number): string {
+  return new Date(epochSeconds * 1000).toISOString();
+}
+
+function usageFixtureQuota(
+  id: string,
+  label: string,
+  window: string | null,
+  remainingPercent: number,
+  resetAt: number | null,
+): UsageSummaryQuota {
+  return { id, label, window, model: null, remainingPercent, resetAt };
+}
+
+function usageFixtureProvider(
+  quotas: UsageSummaryQuota[],
+  overrides: Partial<UsageSummaryProvider> = {},
+): UsageSummaryProvider {
+  return {
+    status: "auto",
+    weeklyRemainingPercent: null,
+    weeklyResetAt: null,
+    shortRemainingPercent: null,
+    shortResetAt: null,
+    quotas,
+    ...overrides,
+  };
+}
+
+const usageFixtureClaudeQuotas = (): UsageSummaryQuota[] => [
+  usageFixtureQuota("claude:5h", "5시간", "5h", 76, usageFixtureResetSoon),
+  usageFixtureQuota("claude:weekly", "7일", "7d", 87, usageFixtureResetWeek),
+  usageFixtureQuota("claude:weekly_scoped:fable", "Fable", "7d", 82, usageFixtureResetWeek),
+];
+
+const usageFixtureOpencodeQuotas = (): UsageSummaryQuota[] => [
+  usageFixtureQuota("opencode:short", "5시간", "5h", 70, usageFixtureResetSoon),
+  usageFixtureQuota("opencode:weekly", "7일", "168h", 55, usageFixtureResetWeek),
+  usageFixtureQuota("opencode:monthly", "월간", "monthly", 30, usageFixtureResetMonth),
+];
+
+// 168시간 한도 하나만 있는 공급자. 둘째 칸에만 값이 차고 1·3열은 빈 채로 남는다.
+const usageFixtureCodexQuotas = (): UsageSummaryQuota[] => [
+  usageFixtureQuota("codex:weekly", "7일", "168h", 48, usageFixtureResetWeek),
+];
+
+const usageFixtureAntigravityQuotas = (): UsageSummaryQuota[] => [
+  usageFixtureQuota("antigravity:short", "5시간", "5h", 81, usageFixtureResetSoon),
+  usageFixtureQuota("antigravity:weekly", "7일", "7d", 56, usageFixtureResetWeek),
+];
+
+const usageFixturePoolAccounts: ClaudeAccount[] = [
+  {
+    id: "sample-main",
+    email: "eiaserinnys@gmail.com",
+    plan: "Max 20x",
+    enabled: true,
+    priority: 1,
+    auth_state: "ok",
+    usage: {
+      five_hour: { used_percent: 24, resets_at: usageFixtureIso(usageFixtureResetSoon) },
+      seven_day: { used_percent: 13, resets_at: usageFixtureIso(usageFixtureResetWeek) },
+      fable_weekly: { used_percent: 18, resets_at: usageFixtureIso(usageFixtureResetWeek) },
+    },
+    observed_at: usageFixtureIso(usageFixtureNowSeconds - 6 * usageFixtureHour),
+    blocked: null,
+    active_sessions: 2,
+  },
+  {
+    id: "sample-secondary",
+    email: "eiaserinnys.sub@gmail.com",
+    plan: "Max 5x",
+    enabled: true,
+    priority: 2,
+    auth_state: "ok",
+    usage: {
+      five_hour: { used_percent: 100, resets_at: usageFixtureIso(usageFixtureResetSoon) },
+      seven_day: { used_percent: 68, resets_at: usageFixtureIso(usageFixtureResetWeek) },
+      fable_weekly: { used_percent: 82, resets_at: usageFixtureIso(usageFixtureResetWeek) },
+    },
+    observed_at: usageFixtureIso(usageFixtureNowSeconds - 8 * usageFixtureHour),
+    blocked: { until: usageFixtureIso(usageFixtureResetSoon), scope: "all" },
+    active_sessions: 0,
+  },
+];
+
+function usageSummaryFixture(refreshed: boolean): UsageSummarySnapshot {
+  const fetchedAt = refreshed ? new Date().toISOString() : usageFixtureIso(usageFixtureNowSeconds - 4 * 60);
+  const poolList = { accounts: usageFixturePoolAccounts, pool: {
+    available_count: 1,
+    total_count: 2,
+    best_weekly_remaining_percent: 87,
+    best_weekly_resets_at: usageFixtureIso(usageFixtureResetWeek),
+    earliest_available_at: usageFixtureIso(usageFixtureResetSoon),
+  }, fable_pool: null };
+  return {
+    generatedAt: new Date().toISOString(),
+    collectedAt: usageFixtureIso(usageFixtureNowSeconds - 4 * 60),
+    nodes: [
+      {
+        nodeId: "sample-node",
+        fetchedAt,
+        stale: false,
+        staleSince: null,
+        providers: {
+          claude: usageFixtureProvider(usageFixtureClaudeQuotas(), {
+            mode: "pool",
+            ...poolList,
+            weeklyRemainingPercent: 87,
+            weeklyResetAt: usageFixtureResetWeek,
+            shortRemainingPercent: 76,
+            shortResetAt: usageFixtureResetSoon,
+          }),
+          opencode_go: usageFixtureProvider(usageFixtureOpencodeQuotas()),
+          codex: usageFixtureProvider(usageFixtureCodexQuotas()),
+          antigravity: usageFixtureProvider(usageFixtureAntigravityQuotas()),
+        },
+      },
+      {
+        nodeId: "sample-usage-node",
+        fetchedAt: usageFixtureIso(usageFixtureNowSeconds - 25 * 60),
+        stale: true,
+        staleSince: usageFixtureIso(usageFixtureNowSeconds - 25 * 60),
+        providers: {
+          claude: usageFixtureProvider(usageFixtureClaudeQuotas(), { mode: "legacy" }),
+          opencode_go: usageFixtureProvider([], { status: "not_configured" }),
+          codex: null,
+          antigravity: usageFixtureProvider([], { status: "error" }),
+        },
+      },
+    ],
+  };
+}
+
+const usageFixtureAccountLists: Record<string, ClaudeAccountList> = {
+  "sample-node": { mode: "pool", accounts: usageFixturePoolAccounts, pool: usageSummaryFixture(false).nodes[0]!.providers.claude?.pool ?? null, fable_pool: null },
+  "sample-usage-node": { mode: "legacy", accounts: [], pool: null, fable_pool: null },
+};
 const persistentSettingsTimeline = [
   { id: 106, event_type: "complete", payload: { usage: { input_tokens: 14320, output_tokens: 2840 }, turn_cost_usd: 0.62 }, created_at: "2026-10-06T03:40:12.418Z" },
   { id: 105, event_type: "user_message", payload: { text: "요약해 주세요." }, created_at: "2026-10-06T03:39:00.000Z" },
@@ -383,12 +529,18 @@ export function createDialoguesApi() {
         manifest: { sources: [{ id: "sample", label: "샘플 컨텍스트", status: "ok", chars: 100, token_estimate: 25 }] },
       };
     else if (path.endsWith("/agents")) value = { agents: dialoguesAssignment.agents };
-    else if (path.includes("/claude-auth/"))
-      value = path.endsWith("/headless/start")
-        ? { authUrl: "/dialogues#sample-auth" }
-        : path.endsWith("/profile")
-          ? { account: { email: "sample@example.invalid", display_name: "검수 계정", has_claude_max: true } }
-          : { has_token: true };
+    else if (path === "/api/usage/summary" || path === "/api/usage/refresh")
+      value = usageSummaryFixture(path === "/api/usage/refresh");
+    else if (path.includes("/claude-auth/")) {
+      const authNodeId = path.match(/^\/api\/nodes\/([^/]+)\/claude-auth\//)?.[1] ?? "";
+      value = path.endsWith("/accounts")
+        ? usageFixtureAccountLists[authNodeId] ?? { mode: "legacy", accounts: [], pool: null, fable_pool: null }
+        : path.endsWith("/headless/start")
+          ? { authUrl: "/dialogues#sample-auth" }
+          : path.endsWith("/profile")
+            ? { account: { email: "sample@example.invalid", display_name: "검수 계정", has_claude_max: true } }
+            : { has_token: true };
+    }
     else if (path.endsWith("/provider-usage")) value = path === "/api/nodes/sample-usage-node/provider-usage" ? { generatedAt: "2026-10-14T00:00:00Z", providers: {
       claude: { status: "auto", source: "public-fixture", planType: "Max", quotas: [
         { id: "claude:weekly", label: "7일", window: "7d", model: null, unit: null, used: null, remaining: null, limit: null, usedPercent: 50, remainingPercent: 50, resetAt: 1792515242, source: "public-fixture" },

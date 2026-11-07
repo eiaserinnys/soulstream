@@ -1,8 +1,9 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "@seosoyoung/soul-ui";
-import { Plus } from "lucide-react";
-import type { ClaudeAccount, ClaudeAccountDeleteResult, ClaudeAccountList, ClaudeAuthLoginFlow } from "@seosoyoung/soul-ui";
+import { Button, DashboardIconCap } from "@seosoyoung/soul-ui";
+import { ChevronDown, ChevronUp, Plus } from "lucide-react";
+import type { ClaudeAccount, ClaudeAccountDeleteResult, ClaudeAccountList, ClaudeAuthLoginFlow, ProviderQuotaSlots } from "@seosoyoung/soul-ui";
+import { ProviderQuotaGrid, ProviderQuotaSkeleton } from "./ProviderQuotaGrid";
 import {
   accountPath,
   ClaudeAuthRequestError,
@@ -19,6 +20,8 @@ type Props = {
   nodeId: string;
   request: typeof fetch;
   initialList: ClaudeAccountList;
+  slots: ProviderQuotaSlots;
+  loading?: boolean;
 };
 
 function ordered(accounts: readonly ClaudeAccount[]): ClaudeAccount[] {
@@ -30,19 +33,25 @@ function ordered(accounts: readonly ClaudeAccount[]): ClaudeAccount[] {
   });
 }
 
+/** 앱의 poolAvailabilityLabel 과 같은 문구를 쓴다. 주간 잔여는 게이지가 이미 보여 준다. */
 function summaryText(list: ClaudeAccountList): string {
   const pool = list.pool;
   if (!pool) return `${list.accounts.length}개 계정`;
-  const weekly = pool.best_weekly_remaining_percent;
-  if (pool.total_count === 1) return `주간 잔여 ${weekly === null ? "—" : `${Math.round(weekly)}%`}`;
-  return `${pool.available_count}/${pool.total_count} 가용${weekly === null ? "" : ` (주간 최대 잔여 ${Math.round(weekly)}%)`}`;
+  return `${pool.available_count}/${pool.total_count} 가용`;
+}
+
+function localClock(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
 }
 
 function existingAccountId(error: unknown): string | null {
   return error instanceof ClaudeAuthRequestError ? error.apiError?.existing_account_id ?? null : null;
 }
 
-export function ClaudeAccountPoolPanel({ nodeId, request, initialList }: Props) {
+export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = false }: Props) {
   const queryClient = useQueryClient();
   const queryKey = useMemo(() => ["claude-auth-accounts", nodeId] as const, [nodeId]);
   const query = useQuery({
@@ -54,6 +63,7 @@ export function ClaudeAccountPoolPanel({ nodeId, request, initialList }: Props) 
   const list = query.data ?? initialList;
   const accounts = useMemo(() => ordered(list.accounts), [list.accounts]);
   const enabledCount = accounts.filter((account) => account.enabled).length;
+  const [expanded, setExpanded] = useState(false);
   const [busyAccountId, setBusyAccountId] = useState<string | null>(null);
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [loginFlow, setLoginFlow] = useState<ClaudeAuthLoginFlow | null>(null);
@@ -198,48 +208,78 @@ export function ClaudeAccountPoolPanel({ nodeId, request, initialList }: Props) 
     ? accounts.find((account) => account.id === loginFlow.account_id) ?? null
     : null;
 
-  return <div className="border-t border-border px-3 py-3">
-    <section className="c724-pool-section" data-testid="claude-account-pool-panel">
-      <div className="c724-pool-header">
-        <div className="c724-pool-title-group">
-          <span className="c724-pool-title">Claude 계정</span>
-          <span className="c724-pool-summary">{summaryText(list)}</span>
-        </div>
-        <Button variant="outline" size="sm" disabled={busyAccountId !== null || loginFlow !== null} onClick={() => void beginLogin()}>
-          <Plus className="size-4" aria-hidden="true" /> 계정 추가
-        </Button>
-      </div>
+  const available = list.pool?.available_count ?? accounts.filter((account) => account.enabled && account.auth_state !== "idle" && !account.blocked).length;
+  const earliestAvailableAt = list.pool?.earliest_available_at ?? null;
+  const poolBlocked = list.pool !== null && list.pool.available_count < list.pool.total_count && earliestAvailableAt !== null;
+  const releaseLabel = poolBlocked ? localClock(earliestAvailableAt) : null;
+  const sessionCount = accounts.reduce((total, account) => total + account.active_sessions, 0);
+  const statusColor = available > 0
+    ? "var(--color-emerald-400)"
+    : enabledCount > 0
+      ? "var(--color-amber-400)"
+      : "var(--v3-text-tertiary)";
 
+  return <div className="c724-account-row" data-testid="claude-pool-row" data-provider-id="claude">
+    <div
+      className="c724-account-top"
+      data-expandable="true"
+      data-testid="claude-pool-row-header"
+      aria-expanded={expanded}
+      onClick={() => setExpanded((current) => !current)}
+    >
+      <div className="c724-account-identity">
+        <span className="c724-status-dot" style={{ backgroundColor: statusColor }} />
+        <span className="c724-account-email">Claude</span>
+        <span className="c724-pool-summary">{summaryText(list)}</span>
+        {!expanded && releaseLabel ? <span className="c724-badge c724-badge-warn">{releaseLabel} 해제</span> : null}
+        {sessionCount > 0 ? <span className="c724-meta-inline">세션 {sessionCount}</span> : null}
+      </div>
+      <div className="c724-account-actions" onClick={(event) => event.stopPropagation()}>
+        {expanded ? <Button variant="outline" size="sm" disabled={busyAccountId !== null || loginFlow !== null} onClick={() => void beginLogin()}>
+          <Plus className="size-4" aria-hidden="true" /> 계정 추가
+        </Button> : null}
+        {!expanded ? <span className="c724-meta-inline">계정 {accounts.length}</span> : null}
+        <DashboardIconCap size="small" label={expanded ? "계정 접기" : "계정 펼치기"} aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
+          {expanded ? <ChevronUp className="size-4" aria-hidden="true" /> : <ChevronDown className="size-4" aria-hidden="true" />}
+        </DashboardIconCap>
+      </div>
+    </div>
+
+    {expanded ? <div className="c724-pool-account-body">
       {notice ? <p className="c724-pool-notice" role="status">{notice}</p> : null}
       {actionError ? <p className="c724-pool-error" role="alert">{actionError}</p> : null}
       <div className="c724-account-list">
-        {accounts.map((account, index) => <ClaudeAccountRow
-          key={account.id}
-          account={account}
-          index={index}
-          enabledCount={enabledCount}
-          busy={busyAccountId !== null || loginFlow !== null}
-          confirmingDelete={confirmingDeleteId === account.id}
-          highlighted={highlightAccountId === account.id}
-          onEnabledChange={(enabled) => void patchAccount(account.id, { enabled })}
-          onMove={(direction) => moveAccount(account, index, direction)}
-          onRelogin={() => void beginLogin(account.id)}
-          onRequestDelete={() => { setConfirmingDeleteId(account.id); setActionError(null); setNotice(null); }}
-          onCancelDelete={() => setConfirmingDeleteId(null)}
-          onDelete={() => void deleteAccount(account.id)}
-        />)}
+        {accounts.map((account, index) => <div key={account.id} className="c724-pool-account-item">
+          <ClaudeAccountRow
+            account={account}
+            index={index}
+            enabledCount={enabledCount}
+            busy={busyAccountId !== null || loginFlow !== null}
+            confirmingDelete={confirmingDeleteId === account.id}
+            highlighted={highlightAccountId === account.id}
+            onEnabledChange={(enabled) => void patchAccount(account.id, { enabled })}
+            onMove={(direction) => moveAccount(account, index, direction)}
+            onRelogin={() => void beginLogin(account.id)}
+            onRequestDelete={() => { setConfirmingDeleteId(account.id); setActionError(null); setNotice(null); }}
+            onCancelDelete={() => setConfirmingDeleteId(null)}
+            onDelete={() => void deleteAccount(account.id)}
+          />
+        </div>)}
       </div>
-      {loginFlow ? <ClaudeAuthLoginSheet
-        nodeId={nodeId}
-        request={request}
-        account={loginAccount}
-        isAdditionalAccount={!loginFlow.account_id && accounts.length > 0}
-        initialFlow={loginFlow}
-        onClose={() => setLoginFlow(null)}
-        onComplete={completeCurrentLogin}
-        onExistingAccount={handleExistingAccount}
-        onRestart={() => startLogin(loginFlow.account_id)}
-      /> : null}
-    </section>
+    </div> : loading ? <ProviderQuotaSkeleton /> : slots.some((slot) => slot !== null)
+      ? <ProviderQuotaGrid slots={slots} label="Claude 사용량" />
+      : null}
+
+    {loginFlow ? <ClaudeAuthLoginSheet
+      nodeId={nodeId}
+      request={request}
+      account={loginAccount}
+      isAdditionalAccount={!loginFlow.account_id && accounts.length > 0}
+      initialFlow={loginFlow}
+      onClose={() => setLoginFlow(null)}
+      onComplete={completeCurrentLogin}
+      onExistingAccount={handleExistingAccount}
+      onRestart={() => startLogin(loginFlow.account_id)}
+    /> : null}
   </div>;
 }

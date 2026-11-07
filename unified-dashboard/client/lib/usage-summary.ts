@@ -18,3 +18,20 @@ export async function fetchUsageSummary(
   }
   return await response.json() as UsageSummarySnapshot;
 }
+
+export async function refreshUsageSummary(
+  request: typeof fetch = fetch,
+): Promise<UsageSummarySnapshot> {
+  const response = await request("/api/usage/refresh", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { Accept: "application/json" },
+  });
+  if (!response.ok) {
+    throw new HttpResponseError(
+      `사용량을 새로 고치지 못했습니다 (${response.status})`,
+      response.status,
+    );
+  }
+  return await response.json() as UsageSummarySnapshot;
+}

@@ -5,37 +5,12 @@
   overflow: hidden;
 }
 
-.c724-pool-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--v3-space-2);
-}
-
-.c724-pool-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--v3-space-3);
-  min-height: var(--v3-action-size);
-}
-
-.c724-pool-title-group {
-  display: flex;
-  align-items: baseline;
-  gap: var(--v3-space-2);
-  min-width: 0;
-}
-
-.c724-pool-title {
-  font: var(--v3-type-body) var(--v3-font-family);
-  font-weight: 600;
-  color: var(--foreground);
-}
-
 .c724-pool-summary {
   font: var(--v3-type-meta) var(--v3-font-family);
   color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
+  /* 화면 틀을 이루는 글이라 끌어서 선택되지 않는다. */
+  user-select: none;
 }
 
 .c724-account-list {
@@ -73,7 +48,6 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--v3-space-3);
-  min-height: var(--v3-action-size);
 }
 
 .c724-account-identity {
@@ -99,6 +73,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* 기본은 공급자 이름이라 선택되지 않는다. 계정 이메일은 data-selectable 로 되살린다. */
+  user-select: none;
+}
+
+.c724-account-email[data-selectable="true"] {
+  user-select: text;
 }
 
 .c724-badge {
@@ -124,13 +104,13 @@
 }
 
 .c724-badge-warn {
-  background: color-mix(in oklch, var(--color-amber-500) 24%, transparent);
-  color: var(--color-amber-300);
+  background: color-mix(in oklch, var(--color-amber-500) 20%, transparent);
+  color: color-mix(in oklch, var(--color-amber-500) 58%, var(--foreground));
 }
 
 .c724-badge-danger {
-  background: color-mix(in oklch, var(--color-red-500) 24%, transparent);
-  color: var(--color-red-300);
+  background: color-mix(in oklch, var(--color-red-500) 20%, transparent);
+  color: color-mix(in oklch, var(--color-red-500) 58%, var(--foreground));
 }
 
 .c724-meta-inline {
@@ -170,7 +150,6 @@
 .c724-quota-label-row {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
   gap: var(--v3-space-1);
   min-width: 0;
 }
@@ -190,6 +169,7 @@
   color: var(--foreground);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  margin-left: auto;
 }
 
 .c724-quota-reset {
@@ -199,6 +179,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.c724-quota-skeleton-label {
+  visibility: hidden;
 }
 
 .c724-quota-track {
@@ -285,6 +269,8 @@
 .c724-pool-error {
   font: var(--v3-type-body) var(--v3-font-family);
   color: var(--color-red-300);
+  /* 오류 문구는 읽고 옮겨 적는 글이라 선택된다. */
+  user-select: text;
 }
 
 .c724-login-error svg {
@@ -309,4 +295,70 @@
 .c724-pool-notice {
   font: var(--v3-type-meta) var(--v3-font-family);
   color: var(--muted-foreground);
+}
+
+.c724-pool-account-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+}
+
+.c724-pool-account-item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+  padding-top: var(--v3-space-3);
+  border-top: 1px solid var(--border);
+}
+
+.c724-pool-account-item .c724-account-row {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.c724-account-top[data-expandable="true"] {
+  cursor: pointer;
+  user-select: none;
+}
+
+.c724-badge,
+.c724-quota-label-row,
+.c724-meta-inline {
+  user-select: none;
+}
+
+.c724-auth-code-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--v3-space-2);
+}
+
+@media (max-width: 520px) {
+  .c724-quota-label-row {
+    flex-wrap: wrap;
+    row-gap: var(--v3-space-1);
+  }
+
+  .c724-quota-reset {
+    flex: 1 0 100%;
+  }
+
+  .c724-pool-account-item .c724-account-top {
+    flex-wrap: wrap;
+    row-gap: var(--v3-space-2);
+  }
+
+  .c724-pool-account-item .c724-account-identity {
+    flex: 1 0 100%;
+  }
+
+  .c724-pool-account-item .c724-account-email {
+    max-width: calc(100% - var(--v3-space-5));
+  }
+
+  .c724-pool-account-item .c724-account-actions {
+    margin-left: auto;
+  }
 }
