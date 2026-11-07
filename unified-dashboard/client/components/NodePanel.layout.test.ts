@@ -5,12 +5,17 @@
 import { createElement } from "react";
 import { flushSync } from "react-dom";
 import { createRoot, type Root } from "react-dom/client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useOrchestratorStore, type OrchestratorNode } from "../store/orchestrator-store";
 
 vi.mock("@seosoyoung/soul-ui", async () => {
   const React = await import("react");
+  const usage = await import("../../../packages/soul-ui/src/lib/usage-summary");
   return {
+    ...usage,
+    DashboardIconCap: ({ label, ...props }: { label?: string; [key: string]: unknown }) =>
+      React.createElement("button", { type: "button", "aria-label": label, ...props }),
     cn: (...classes: unknown[]) => classes.filter(Boolean).join(" "),
     nodeIdToHue: () => 220,
     useTheme: () => ["dark"],
@@ -34,10 +39,10 @@ vi.mock("./CogitoHealthPanel", async () => {
   };
 });
 
-vi.mock("./NodeClaudeAuthGate", async () => {
+vi.mock("./NodeProvidersPanel", async () => {
   const React = await import("react");
   return {
-    NodeClaudeAuthGate: ({ nodeId }: { nodeId: string }) =>
+    NodeProvidersPanel: ({ nodeId }: { nodeId: string }) =>
       React.createElement("div", { "data-testid": "node-auth-panel" }, nodeId),
   };
 });
@@ -84,8 +89,9 @@ describe("NodePanel layout", () => {
   });
 
   it("keeps cogito and node cards inside one scroll surface with separated cards", () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     flushSync(() => {
-      root?.render(createElement(NodePanel));
+      root?.render(createElement(QueryClientProvider, { client }, createElement(NodePanel)));
     });
 
     const scroll = container?.querySelector<HTMLElement>('[data-testid="node-panel-scroll"]');

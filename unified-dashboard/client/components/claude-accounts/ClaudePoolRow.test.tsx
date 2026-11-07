@@ -4,12 +4,14 @@ import { act, StrictMode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ClaudeAccount, ClaudeAccountList, ClaudeAuthLoginFlow } from "@seosoyoung/soul-ui";
-import { ClaudeAccountPoolPanel } from "./ClaudeAccountPoolPanel";
+import type { ClaudeAccount, ClaudeAccountList, ClaudeAuthLoginFlow, ProviderQuotaSlots } from "@seosoyoung/soul-ui";
+import { ClaudePoolRow } from "./ClaudePoolRow";
 
 vi.mock("@seosoyoung/soul-ui", async () => {
   const React = await import("react");
+  const usage = await import("../../../../packages/soul-ui/src/lib/usage-summary");
   return {
+    ...usage,
     Button: ({ children, render, variant: _variant, size: _size, ...props }: Record<string, unknown> & { children?: unknown; render?: React.ReactElement }) => {
       if (render) return React.cloneElement(render, { ...props, children } as never);
       return React.createElement("button", { type: "button", ...props }, children as never);
@@ -81,6 +83,12 @@ function flow(state: ClaudeAuthLoginFlow["state"], overrides: Partial<ClaudeAuth
   };
 }
 
+const SUMMARY_SLOTS: ProviderQuotaSlots = [
+  { kind: "short", label: "5시간", usedPercent: 30, resetAt: null },
+  { kind: "weekly", label: "7일", usedPercent: 45, resetAt: null },
+  { kind: "fable", label: "Fable", usedPercent: 12, resetAt: null },
+];
+
 let host: HTMLDivElement;
 let root: Root;
 let client: QueryClient;
@@ -108,7 +116,7 @@ async function settle() {
 }
 
 async function mount(initial: ClaudeAccountList, request: typeof fetch, strict = false) {
-  const panel = <ClaudeAccountPoolPanel nodeId="node-a" request={request} initialList={initial} />;
+  const panel = <ClaudePoolRow nodeId="node-a" request={request} initialList={initial} slots={SUMMARY_SLOTS} />;
   await act(async () => root.render(strict
     ? <StrictMode><QueryClientProvider client={client}>{panel}</QueryClientProvider></StrictMode>
     : <QueryClientProvider client={client}>{panel}</QueryClientProvider>));
@@ -125,7 +133,69 @@ function button(label: string, within: ParentNode = host): HTMLButtonElement {
   return found;
 }
 
-describe("ClaudeAccountPoolPanel", () => {
+function header(): HTMLElement {
+  return host.querySelector<HTMLElement>('[data-testid="claude-pool-row-header"]')!;
+}
+
+async function expand() {
+  await act(async () => header().dispatchEvent(new MouseEvent("click", { bubbles: true })));
+  await settle();
+}
+
+describe("ClaudePoolRow", () => {
+  it("shows the pool summary with the summary gauges while collapsed", async () => {
+    const initial = list([account("first", 1), account("second", 2)]);
+    await mount(initial, vi.fn(async () => data(initial)) as unknown as typeof fetch);
+
+    expect(accountIds()).toEqual([]);
+    expect(host.querySelector(".c724-pool-summary")?.textContent).toBe("2/2 가용 (주간 최대 잔여 88%)");
+    expect(host.textContent).toContain("계정 2");
+    expect(host.querySelectorAll(".c724-quota-cell")).toHaveLength(3);
+  });
+
+  it("reveals the account list and the add button when the header is expanded", async () => {
+    const initial = list([account("first", 1), account("second", 2)]);
+    await mount(initial, vi.fn(async () => data(initial)) as unknown as typeof fetch);
+
+    await expand();
+
+    expect(accountIds()).toEqual(["first", "second"]);
+    expect(host.textContent).toContain("계정 추가");
+    expect(host.querySelectorAll(".c724-quota-cell")).toHaveLength(6);
+    expect(host.querySelector(".c724-pool-account-item")).not.toBeNull();
+  });
+
+  it("keeps the expanded state when a switch inside an account row is toggled", async () => {
+    const initial = list([account("first", 1), account("second", 2)]);
+    const requestMock = vi.fn<typeof fetch>(async (input, init) => {
+      if (init?.method === "PATCH") return data(list([account("first", 1), { ...account("second", 2), enabled: false }]));
+      return data(initial);
+    });
+    await mount(initial, requestMock as unknown as typeof fetch);
+    await expand();
+
+    const second = host.querySelector('[data-account-id="second"]')!;
+    await act(async () => button("second@example.test 사용", second).click());
+    await settle();
+
+    expect(accountIds()).toEqual(["first", "second"]);
+    expect(host.textContent).toContain("계정 추가");
+  });
+
+  it("collapses the account list again through the collapse cap", async () => {
+    const initial = list([account("first", 1)]);
+    await mount(initial, vi.fn(async () => data(initial)) as unknown as typeof fetch);
+
+    await expand();
+    expect(accountIds()).toEqual(["first"]);
+
+    await act(async () => button("계정 접기").click());
+    await settle();
+
+    expect(accountIds()).toEqual([]);
+    expect(host.textContent).toContain("계정 1");
+  });
+
   it("renders ranked rows with three horizontal quota cells and disabled boundary arrows", async () => {
     const second = account("second", 2);
     const initial = list([account("first", 1), {
@@ -133,6 +203,7 @@ describe("ClaudeAccountPoolPanel", () => {
       usage: { ...second.usage, five_hour: { used_percent: 100, resets_at: reset } },
     }]);
     await mount(initial, vi.fn(async () => data(initial)) as unknown as typeof fetch);
+    await expand();
 
     expect(accountIds()).toEqual(["first", "second"]);
     expect(host.querySelectorAll(".c724-quota-cell")).toHaveLength(6);
@@ -156,6 +227,7 @@ describe("ClaudeAccountPoolPanel", () => {
   it("hides priority arrows when only one account is enabled", async () => {
     const initial = list([account("enabled", 1), { ...account("disabled", 2), enabled: false }]);
     await mount(initial, vi.fn(async () => data(initial)) as unknown as typeof fetch);
+    await expand();
 
     expect(host.querySelectorAll('button[aria-label^="우선순위"]')).toHaveLength(0);
   });
@@ -175,6 +247,7 @@ describe("ClaudeAccountPoolPanel", () => {
       return data(serverList);
     });
     await mount(initial, requestMock as unknown as typeof fetch);
+    await expand();
 
     await act(async () => button("우선순위 올리기", host.querySelector('[data-account-id="second"]')!).click());
     await settle();
@@ -218,6 +291,7 @@ describe("ClaudeAccountPoolPanel", () => {
       return data(initial);
     });
     await mount(initial, requestMock as unknown as typeof fetch);
+    await expand();
 
     const second = host.querySelector('[data-account-id="second"]')!;
     await act(async () => button("second@example.test 사용", second).click());
@@ -251,6 +325,7 @@ describe("ClaudeAccountPoolPanel", () => {
       .mockResolvedValueOnce(data(list([account("first", 1), added])));
     let resolveCode!: (response: Response) => void;
     await mount(initial, requestMock as unknown as typeof fetch);
+    await expand();
 
     await act(async () => button("계정 추가").click());
     await settle();
@@ -301,6 +376,7 @@ describe("ClaudeAccountPoolPanel", () => {
       .mockResolvedValueOnce(data(flow("done", { account_id: "first" })))
       .mockResolvedValueOnce(data(refreshed));
     await mount(initial, requestMock as unknown as typeof fetch);
+    await expand();
 
     await act(async () => button("재로그인", host.querySelector('[data-account-id="first"]')!).click());
     await settle();
@@ -320,6 +396,7 @@ describe("ClaudeAccountPoolPanel", () => {
       .mockRejectedValueOnce(new Error("offline"))
       .mockResolvedValueOnce(data(flow("url_ready")));
     await mount(initial, requestMock as unknown as typeof fetch);
+    await expand();
 
     await act(async () => button("계정 추가").click());
     await settle();
@@ -337,6 +414,7 @@ describe("ClaudeAccountPoolPanel", () => {
       .mockResolvedValueOnce(data(flow("url_ready")))
       .mockResolvedValueOnce(Response.json({ code: "account_exists", message: "duplicate", existing_account_id: "existing" }, { status: 409 }));
     await mount(initial, requestMock as unknown as typeof fetch);
+    await expand();
 
     await act(async () => button("계정 추가").click());
     await settle();
@@ -359,6 +437,7 @@ describe("ClaudeAccountPoolPanel", () => {
       error: { code: "account_identity_mismatch", message: "identity mismatch", existing_account_id: "existing" },
     })));
     await mount(initial, requestMock as unknown as typeof fetch);
+    await expand();
 
     await act(async () => button("재로그인", host.querySelector('[data-account-id="first"]')!).click());
     await settle();
@@ -374,6 +453,7 @@ describe("ClaudeAccountPoolPanel", () => {
       .mockResolvedValueOnce(data(flow("url_ready")))
       .mockResolvedValueOnce(data(flow("cancelled")));
     await mount(initial, requestMock as unknown as typeof fetch);
+    await expand();
 
     await act(async () => button("계정 추가").click());
     await settle();
@@ -390,6 +470,7 @@ describe("ClaudeAccountPoolPanel", () => {
       .mockResolvedValueOnce(data(flow("url_ready")))
       .mockResolvedValueOnce(data(flow("cancelled")));
     await mount(initial, requestMock as unknown as typeof fetch, true);
+    await expand();
 
     await act(async () => button("계정 추가").click());
     await settle();

@@ -23,7 +23,7 @@ export interface ClaudeAuthFlowParams {
   basePath: string;
   /**
    * 인증 상태 조회 경로 (basePath 기준). 기본값 "/token".
-   * NodeClaudeAuthPanel은 "/status"를 사용한다.
+   * NodeProvidersPanel은 "/status"를 사용한다.
    */
   statusPath?: string;
   /** 토큰 보유 상태가 true가 된 직후 호출 (예: profile 로드) */
@@ -61,7 +61,7 @@ export interface ClaudeAuthFlowState<U> {
 /**
  * Claude Code OAuth PKCE 플로우 공통 훅.
  *
- * ClaudeAuthTab(로컬 서버)과 NodeClaudeAuthPanel(원격 노드)이 동일한
+ * ClaudeAuthTab(로컬 서버)과 NodeProvidersPanel(원격 노드)이 동일한
  * start → popup → code input → submit → status 사이클을 사용하므로 추출.
  *
  * basePath만 다를 뿐 endpoint 구조는 동일하다:
