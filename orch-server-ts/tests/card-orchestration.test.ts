@@ -103,12 +103,12 @@ describe("server owns card orchestration admission", () => {
     expect(clamped.startsWith("앞😀앞😀")).toBe(true);
     expect(clamped.endsWith("끝🌙끝🌙")).toBe(true);
   });
-  it("enabled policy never enters legacy FIFO or limit resume", async () => {
+  it("enabled policy never enters legacy FIFO dispatch", async () => {
     const policy = vi.fn(async () => true),
       kick = vi.fn(async () => {}),
       queued = vi.fn(),
-      limited = vi.fn();
-    const d = new CardDispatcher({ deliveryExists: async () => false,
+      limited = vi.fn(async () => []);
+    const d = new CardDispatcher({ deliveryExists: async () => false, abandonDelivery: async () => {},
       repository: { queued, limited } as never,
       cards: vi.fn() as never,
       resolveTarget: vi.fn() as never,
@@ -122,12 +122,13 @@ describe("server owns card orchestration admission", () => {
     await d.dispatch();
     expect(kick).toHaveBeenCalledTimes(2);
     expect(queued).not.toHaveBeenCalled();
-    expect(limited).not.toHaveBeenCalled();
+    // The dispatcher tick owns short limit windows even when orchestration decides dispatch.
+    expect(limited).toHaveBeenCalledTimes(1);
   });
   it("decision terminal reconciles without triggering a new decision run", async () => {
     const kick = vi.fn(async () => {}),
       decisionEnded = vi.fn(async () => {});
-    const d = new CardDispatcher({ deliveryExists: async () => false,
+    const d = new CardDispatcher({ deliveryExists: async () => false, abandonDelivery: async () => {},
       repository: { ownerSession: async () => ({status:"completed"}), reminderFacts: async () => [] } as never,
       cards: vi.fn() as never,
       resolveTarget: vi.fn() as never,

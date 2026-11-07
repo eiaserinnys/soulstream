@@ -12,6 +12,25 @@ describe("committed card reference notifications",()=>{
   it("uses actual actor, locked before/after state and exact owner",()=>{
     expect(buildCardChangeNotification(change())).toMatchObject({sessionId:"owner",text:"사용자가 카드 「작업」(card)를 대기→실행 중으로 변경했습니다",deliveryId:"card:card:state:op:owner"});
   });
+  it("keeps a quota-limited session asleep instead of waking it with the block itself",()=>{
+    const c=change({previousStatus:"running",committedCard:{id:"card",title:"작업",status:"blocked",blocked_kind:"limit",assignee_session_id:"owner"}});
+    c.result.operation.actor_kind="system";
+    expect(buildCardChangeNotification(c)).toBeNull();
+  });
+  it("does not wake the owner twice when a system limit resume already sent its own message",()=>{
+    const c=change({previousStatus:"blocked",committedCard:{id:"card",title:"작업",status:"running",assignee_session_id:"owner"},
+      result:{operation:{id:"op",target_id:"card",operation_type:"resume_card",actor_kind:"system",actor_session_id:null,payload_json:{session_id:"owner"}},snapshot:{cards:[]}}});
+    expect(buildCardChangeNotification(c)).toBeNull();
+  });
+  it("still notifies the owner about a system block that is not a quota limit",()=>{
+    const c=change({previousStatus:"running",committedCard:{id:"card",title:"작업",status:"blocked",blocked_kind:"no_report",assignee_session_id:"owner"}});
+    c.result.operation.actor_kind="system";
+    expect(buildCardChangeNotification(c)).toMatchObject({sessionId:"owner",text:"시스템가 카드 「작업」(card)를 실행 중→막힘으로 변경했습니다"});
+  });
+  it("still notifies the owner when a user blocks the card",()=>{
+    const c=change({previousStatus:"running",committedCard:{id:"card",title:"작업",status:"blocked",blocked_kind:"limit",assignee_session_id:"owner"}});
+    expect(buildCardChangeNotification(c)).toMatchObject({sessionId:"owner",text:"사용자가 카드 「작업」(card)를 실행 중→막힘으로 변경했습니다"});
+  });
   it("notifies a running owner about a hold so the session can stop, and keeps idle owners asleep",()=>{
     const running=change({previousStatus:"running",committedCard:{id:"card",title:"작업",status:"on_hold",assignee_session_id:"owner"}});
     expect(buildCardChangeNotification(running)).toMatchObject({sessionId:"owner",text:"사용자가 카드 「작업」(card)를 실행 중→보류로 변경했습니다"});

@@ -18,6 +18,7 @@ describe("durable card status reminders", () => {
   const makeDispatcher = () => new CardDispatcher({ repository: repo, cards: async () => cards,
     resolveTarget: vi.fn() as never, launch: vi.fn(), notify: vi.fn(), sendMessage: messages, warn,
     deliveryExists: async (id: string) => (await h.sql`SELECT delivery_id FROM session_deliveries WHERE delivery_id=${id}`).length > 0,
+    abandonDelivery: async () => {},
     now: () => now, orchestration: { enabled: async () => true, kick, ownsSession: async () => false } } as CardDispatcherOptions);
   beforeAll(async () => {
     h = await createPagePostgresHarness(); await prepareCardWorkSchema(h); await prepareCardReminderSchema(h);

@@ -3,6 +3,7 @@ import { cardAttachmentPaths } from "./card_attachment_paths.js";
 import { buildCardChangeNotification, cardStatusLabels, type CardChangeDelivery } from "./card_change_notification.js";
 import { buildCardStatusReminder, MAX_REMINDERS_PER_TICK } from "./card_status_reminder.js";
 import { buildCardBlockedNotice, buildCardDoneNotice, buildCardQuestionNotice, buildCardReviewNotice, selectCardBoardNotice } from "./card_board_notice.js";
+import { formatLimitResumeClock, type LimitResumeOwner } from "./card_limit_auto_resume.js";
 import { randomUUID } from "node:crypto";
 import type { NodeRegistryEvent } from "../node/registry_types.js";
 import { isTerminalSessionStatus } from "../session/session_status.js";
@@ -47,6 +48,7 @@ export type CardDispatcherOptions = {
     sendMessage: (sessionId: string, text: string, admission?:{runId:string;executionToken:string;cardId:string}, changeDelivery?:CardChangeDelivery, attachments?:readonly CardAttachment[]) => Promise<void>;
     prepareAttachments?: (card: CardRow, targetNodeId: string) => Promise<void>;
     deliveryExists: (deliveryId: string) => Promise<boolean>;
+    abandonDelivery: (deliveryId: string, reason: string) => Promise<void>;
     notify: (input: CardNotification) => Promise<unknown>;
     warn: (message: string) => void;
     now?: () => number;
@@ -70,7 +72,7 @@ export class CardDispatcher {
         await previous;
     } while (previous !== this.pending); }
     dispatch(): Promise<void> { return this.enqueue(() => this.dispatchOnce()); }
-    checkLimits(): Promise<void> { return this.enqueue(async () => { if (await this.options.orchestration?.enabled()) { await this.options.orchestration!.kick(); return; } await this.resumeLimits(); await this.dispatchOnce(); }); }
+    checkLimits(): Promise<void> { return this.enqueue(async () => { await this.resumeAutoLimits(); if (await this.options.orchestration?.enabled()) { await this.options.orchestration!.kick(); return; } await this.resumeLimits(); await this.dispatchOnce(); }); }
     async tick(): Promise<void> {
         const now = this.options.now?.() ?? Date.now();
         if (now - this.lastLimitCheck < 60000)
@@ -95,11 +97,11 @@ export class CardDispatcher {
             await this.checkReminders(sessionId);
             if (await this.options.orchestration?.ownsSession(sessionId)) { await this.options.orchestration?.decisionEnded?.(sessionId); return; }
             for (const work of await this.options.repository.endedWork(sessionId)) {
-              const limited=isUsageLimitTermination(work.terminal_session);
-              if (!limited) continue;
+              if (!isUsageLimitTermination(work.terminal_session)) continue;
               const cards=await this.options.cards(),detail=await cards.getCard(work.card_id);
-              if (detail?.card.status === "running" && detail.card.assignee_session_id === sessionId)
-                await cards.setCardStatus({actorKind:"system",actorSessionId:null,cardId:work.card_id,expectedVersion:detail.card.version,status:"blocked",blockedKind:"limit",blockedDetail:"세션 사용량 한도"});
+              const owner=await this.options.repository.ownerSession(sessionId);
+              if (detail?.card.status === "running" && detail.card.assignee_session_id === sessionId && owner)
+                await this.blockForLimit(detail.card, owner);
             }
             await this.reconcileTerminal(sessionId);
             await this.dispatchOnce();
@@ -184,17 +186,18 @@ export class CardDispatcher {
         const committed = change.committedCard;
         const kind = committed ? selectCardBoardNotice({operationType:op.operation_type, actorKind:op.actor_kind, previousStatus, committed}) : null;
         if (kind && committed) {
-            let text: string;
+            let text: string | null;
             if (kind === "blocked") {
                 const owner = committed.assignee_session_id ? await this.options.repository.ownerSession(committed.assignee_session_id) : null;
-                text = buildCardBlockedNotice(committed, owner);
+                const autoResume = committed.blocked_kind === "limit" && owner ? await this.options.repository.limitAutoResumeAt(owner) : null;
+                text = autoResume ? null : buildCardBlockedNotice(committed, owner);
             } else if (kind === "question") {
                 const question = [...detail.questions].reverse().find(q => q.answer == null && q.withdrawn_at == null
                     && q.session_id === op.actor_session_id && q.text === payload.text);
                 text = buildCardQuestionNotice(committed, payload.text as string, payload.options as string[], question?.id as string | undefined);
             } else if (kind === "review") text = buildCardReviewNotice(committed);
             else text = buildCardDoneNotice(committed);
-            for (const sessionId of await this.options.repository.boardSessions(committed.id)) {
+            if (text !== null) for (const sessionId of await this.options.repository.boardSessions(committed.id)) {
                 if (sessionId === committed.assignee_session_id || sessionId === op.actor_session_id) continue;
                 const deliveryId = `card-${kind}:${committed.id}:${op.id}:${sessionId}`;
                 try {
@@ -228,13 +231,65 @@ export class CardDispatcher {
             return;
         if (await this.options.repository.hasExplicitWork(session.card_id)) return;
         if (!isUsageLimitTermination(session)) return;
-        await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: session.card_id, expectedVersion: detail.card.version,
-            status: "blocked", blockedKind: "limit", blockedDetail: "세션 사용량 한도" });
+        await this.blockForLimit(detail.card, session);
+    }
+    private async blockForLimit(card: CardRow, session: LimitResumeOwner): Promise<void> {
+        const cards = await this.options.cards();
+        const resumeAt = await this.options.repository.limitAutoResumeAt(session);
+        const clock = resumeAt ? formatLimitResumeClock(resumeAt) : null;
+        await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, expectedVersion: card.version,
+            status: "blocked", blockedKind: "limit", blockedDetail: clock ? `사용량 한도, ${clock} 자동 재개` : "세션 사용량 한도" });
+        if (clock) await cards.updateCardNow({ actorKind: "system", actorSessionId: null, cardId: card.id,
+            now: `사용량 한도로 멈춤, ${clock}에 저절로 이어집니다`, turn: "outside" });
+    }
+    private async resumeAutoLimits(): Promise<void> {
+        for (const card of await this.options.repository.limited()) {
+            try {
+                await this.resumeAutoLimitedCard(card);
+            } catch (error) { this.options.warn(`card ${card.id} limit auto resume failed: ${String(error)}`); }
+        }
+    }
+    private async resumeAutoLimitedCard(card: DispatchCard): Promise<void> {
+        const owner = card.assignee_session_id ? await this.options.repository.ownerSession(card.assignee_session_id) : null;
+        if (!owner) return;
+        if (await this.options.repository.hasPendingExecution(card.id)) return;
+        const cards = await this.options.cards();
+        if (!isTerminalSessionStatus(owner.status ?? undefined)) {
+            await cards.resumeLimitedCard({ cardId: card.id, sessionId: owner.session_id });
+            await cards.updateCardNow({ actorKind: "system", actorSessionId: null, cardId: card.id, now: "담당이 이어서 진행합니다", turn: "agent" });
+            return;
+        }
+        const resumeAt = await this.options.repository.limitAutoResumeAt(owner);
+        if (!resumeAt || resumeAt.getTime() > (this.options.now?.() ?? Date.now())) return;
+        const target = this.options.resolveTarget({ ...card, node_id: owner.node_id, assignee_agent_id: owner.agent_id }, owner.model_preset);
+        if (!target.available) return;
+        try {
+            if (this.options.prepareAttachments)
+                await this.options.prepareAttachments(card, owner.node_id!);
+            else
+                cardAttachmentPaths(card.attachments ?? [], owner.node_id!);
+        } catch (error) {
+            await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, expectedVersion: card.version,
+                status: "blocked", blockedKind: "no_report", blockedDetail: String(error) });
+            return;
+        }
+        const deliveryId = `card-limit-resume:${card.id}:${owner.termination_event_id}:${Date.now()}`;
+        try {
+            await this.deliver(card, owner.session_id, "한도가 풀려 재개한다. 첫 행동은 WIP 커밋이다.",
+                { deliveryId, actorKind: "system", actorSessionId: null });
+        } catch (error) {
+            await this.options.abandonDelivery(deliveryId, String(error));
+            this.options.warn(`card ${card.id} limit auto resume delivery failed: ${String(error)}`);
+            return;
+        }
+        await cards.resumeLimitedCard({ cardId: card.id, sessionId: owner.session_id });
+        await cards.updateCardNow({ actorKind: "system", actorSessionId: null, cardId: card.id, now: "담당이 이어서 진행합니다", turn: "agent" });
     }
     private async resumeLimits(): Promise<void> {
         const cards = await this.options.cards();
         for (const card of await this.options.repository.limited()) {
             const session = card.assignee_session_id ? await this.options.repository.ownerSession(card.assignee_session_id) : null;
+            if (session && await this.options.repository.limitAutoResumeAt(session)) continue;
             const target = this.options.resolveTarget(card, session?.model_preset);
             if (!target.available)
                 continue;

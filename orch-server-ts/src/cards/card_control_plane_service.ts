@@ -285,7 +285,7 @@ export class CardControlPlaneService {
     const at=typeof previous?.updatedAt === "string" ? previous.updatedAt : new Date().toISOString();
     const now=makeCardNow({text:params.now,turn:params.turn,...(params.ask===undefined?{}:{ask:params.ask})},at,params.actorSessionId);
     return this.mutateCard(params,"update_card_now",now as unknown as Record<string,unknown>,async(sql,card,eventId)=>{
-      assertAssignedCardSession(card,params);
+      if (params.actorKind !== "system") assertAssignedCardSession(card,params);
       await this.patch(sql,card,{now:sql.json(now)},params,eventId);
     });
   }
@@ -471,6 +471,17 @@ export class CardControlPlaneService {
       await this.checkAdmission(sql,{...params,nodeId:params.nodeId??card.node_id??"eiaserinnys"});
       await this.patch(sql,card,{status:params.admission ? "queued" : "running",blocked_kind:null,blocked_detail:null,
         ...(!params.admission ? {queue_position_key:null} : {})},actor,eventId);
+    });
+  }
+  /** 이미 돌던 담당을 잇는 일이라 배정 판단의 대상이 아니다. */
+  resumeLimitedCard(params:{cardId:string;sessionId:string}) {
+    const actor={actorKind:"system" as const,actorSessionId:null,...params};
+    return this.mutateCard(actor,"resume_card",{session_id:params.sessionId},async(sql,card,eventId)=>{
+      if (card.status !== "blocked" || card.blocked_kind !== "limit"
+        || card.assignee_kind !== "session" || card.assignee_session_id !== params.sessionId)
+        throw invalid("Only the currently assigned limit-blocked card may resume");
+      await assertNoPendingCardExecution(sql,card.id);
+      await this.patch(sql,card,{status:"running",blocked_kind:null,blocked_detail:null,queue_position_key:null},actor,eventId);
     });
   }
   private prepareAddComment(params:AddCommentParams,commentId:string) {

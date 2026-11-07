@@ -32,7 +32,7 @@ describe("card comments HTTP, storage, and delivery", () => {
         return rows[0]!.id;
       },
     }, { emitCardUpdated: cardUpdated, emitFolderUpdated: async () => {} }, change => dispatcher.acceptMutation(change));
-    dispatcher = new CardDispatcher({ deliveryExists: async () => false,
+    dispatcher = new CardDispatcher({ deliveryExists: async () => false, abandonDelivery: async () => {},
       repository: new CardDispatchRepository(async () => sql),
       cards: async () => cards,
       resolveTarget: () => ({ nodeId: "eiaserinnys", agentId: "roselin", modelPreset: null, available: true, reason: null }),

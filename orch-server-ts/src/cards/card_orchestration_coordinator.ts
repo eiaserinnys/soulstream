@@ -123,6 +123,11 @@ export class CardOrchestrationCoordinator {
       const owner = card.assignee_session_id
         ? await this.options.dispatch.ownerSession(card.assignee_session_id)
         : null;
+      // Short limit windows are resumed by the dispatcher tick, never by a dispatch decision.
+      if (owner && await this.options.dispatch.limitAutoResumeAt(owner)) {
+        skippedReasons.push("limit_auto_resume");
+        continue;
+      }
       const execution = classifyExecution(card, owner);
       if (execution.mode === "skip") skippedReasons.push(execution.reason);
       else resumableLimited.push(card);
