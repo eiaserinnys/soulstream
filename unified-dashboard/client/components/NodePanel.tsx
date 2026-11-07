@@ -46,7 +46,10 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
     try {
       const snapshot = await refreshUsageSummary(request ?? fetch);
       queryClient.setQueryData(["usage-summary"], snapshot);
-      await queryClient.refetchQueries({ queryKey: ["claude-auth-accounts", nodeId] });
+      await queryClient.refetchQueries(
+        { queryKey: ["claude-auth-accounts", nodeId] },
+        { throwOnError: true },
+      );
     } catch {
       setRefreshFailedNodeId(nodeId);
     } finally {
@@ -56,9 +59,6 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
 
   return (
     <div className="h-full flex flex-col overflow-hidden min-h-0">
-      <div className="px-3 py-1.5 shrink-0 border-b border-border">
-        <span className="text-sm font-semibold">Nodes</span>
-      </div>
       <ScrollArea data-testid="node-panel-scroll" className="flex-1 min-h-0">
         <div data-testid="node-panel-scroll-body" className="space-y-2 p-2">
           <CogitoHealthPanel request={request} />
@@ -114,6 +114,10 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
                       ) : isExpanded && updated ? (
                         <span className="text-xs text-muted-foreground">{updated} 갱신</span>
                       ) : null}
+                      {/* 실패 배지는 새로 고침 단추 왼쪽에 붙여, 나타날 때 단추가 밀리지 않게 한다. */}
+                      {isExpanded && refreshFailedNodeId === node.nodeId ? (
+                        <span className="c724-badge c724-badge-danger">갱신 실패</span>
+                      ) : null}
                       {isExpanded ? (
                         <DashboardIconCap
                           size="small"
@@ -126,9 +130,6 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
                         >
                           <RotateCcw className={cn("size-4", refreshingNodeId === node.nodeId && "animate-spin")} aria-hidden="true" />
                         </DashboardIconCap>
-                      ) : null}
-                      {isExpanded && refreshFailedNodeId === node.nodeId ? (
-                        <span className="c724-badge c724-badge-danger">갱신 실패</span>
                       ) : null}
                       <div
                         className={cn(

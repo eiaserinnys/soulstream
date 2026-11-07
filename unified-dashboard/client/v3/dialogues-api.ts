@@ -55,9 +55,14 @@ const usageFixtureOpencodeQuotas = (): UsageSummaryQuota[] => [
   usageFixtureQuota("opencode:monthly", "월간", "monthly", 30, usageFixtureResetMonth),
 ];
 
+// 168시간 한도 하나만 있는 공급자. 둘째 칸에만 값이 차고 1·3열은 빈 채로 남는다.
 const usageFixtureCodexQuotas = (): UsageSummaryQuota[] => [
-  usageFixtureQuota("codex:5h", "5시간", "5h", 90, usageFixtureResetSoon),
-  usageFixtureQuota("codex:weekly", "7일", "168h", 80, usageFixtureResetWeek),
+  usageFixtureQuota("codex:weekly", "7일", "168h", 48, usageFixtureResetWeek),
+];
+
+const usageFixtureAntigravityQuotas = (): UsageSummaryQuota[] => [
+  usageFixtureQuota("antigravity:short", "5시간", "5h", 81, usageFixtureResetSoon),
+  usageFixtureQuota("antigravity:weekly", "7일", "7d", 56, usageFixtureResetWeek),
 ];
 
 const usageFixturePoolAccounts: ClaudeAccount[] = [
@@ -124,7 +129,7 @@ function usageSummaryFixture(refreshed: boolean): UsageSummarySnapshot {
           }),
           opencode_go: usageFixtureProvider(usageFixtureOpencodeQuotas()),
           codex: usageFixtureProvider(usageFixtureCodexQuotas()),
-          antigravity: null,
+          antigravity: usageFixtureProvider(usageFixtureAntigravityQuotas()),
         },
       },
       {

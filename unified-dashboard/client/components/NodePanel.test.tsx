@@ -191,6 +191,39 @@ describe("NodePanel", () => {
     expect(providers()).not.toBeNull();
   });
 
+  it("keeps the account data and marks the failure when only the account refetch fails", async () => {
+    const accounts = { mode: "legacy", accounts: [], pool: null, fable_pool: null };
+    client.setQueryData(["claude-auth-accounts", "node-a"], accounts);
+    let failAccounts = false;
+    const request = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path.endsWith("/api/usage/refresh")) return data(snapshot(summaryNode("2026-11-07T16:05:00+09:00")));
+      if (path.endsWith("/claude-auth/accounts")) {
+        if (failAccounts) throw new TypeError("accounts down");
+        return data(accounts);
+      }
+      return data(snapshot(summaryNode("2026-11-07T15:50:00+09:00")));
+    });
+
+    await mount(request as unknown as typeof fetch);
+    await expand();
+    failAccounts = true;
+
+    const refreshCap = head().querySelector<HTMLButtonElement>('button[aria-label="사용량 새로 고침"]')!;
+    await act(async () => refreshCap.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await settle();
+
+    // 요약 갱신은 성공했으므로 새 시각이 반영되고, 계정 재조회 실패만 배지로 드러난다.
+    expect(providers()?.dataset.fetchedAt).toBe("2026-11-07T16:05:00+09:00");
+    const failed = Array.from(head().querySelectorAll<HTMLElement>(".c724-badge-danger"))
+      .find((badge) => badge.textContent === "갱신 실패");
+    expect(failed).toBeDefined();
+    expect(client.getQueryData(["claude-auth-accounts", "node-a"])).toEqual(accounts);
+
+    // 배지는 새로 고침 단추 왼쪽에 있어야 단추가 밀리지 않는다.
+    expect(failed!.compareDocumentPosition(refreshCap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it("does not collapse the node when the refresh cap is pressed", async () => {
     const request = vi.fn(async () => data(snapshot(summaryNode("2026-11-07T15:50:00+09:00"))));
 

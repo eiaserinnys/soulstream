@@ -127,10 +127,27 @@ const NODE_BY_STATE: Record<ProviderPanelReviewState, string> = {
   codex: "sample-provider-codex",
 };
 
+/** 남은 비율이 아니라 게이지에 찍히는 사용 비율이다(5시간 38% = remaining 62). */
 const CLAUDE_QUOTAS = (): UsageSummaryQuota[] => [
-  quota("claude:5h", "5시간", "5h", 76, resetSoon),
-  quota("claude:weekly", "7일", "7d", 87, resetWeek),
-  quota("claude:weekly_scoped:fable", "Fable", "7d", 82, resetWeek),
+  quota("claude:5h", "5시간", "5h", 62, resetSoon),
+  quota("claude:weekly", "7일", "7d", 66, resetWeek),
+  quota("claude:weekly_scoped:fable", "Fable", "7d", 88, resetWeek),
+];
+
+const OPENCODE_QUOTAS = (): UsageSummaryQuota[] => [
+  quota("opencode:short", "5시간", "5h", 75, resetSoon),
+  quota("opencode:weekly", "7일", "168h", 39, resetWeek),
+  quota("opencode:monthly", "월간", "monthly", 52, resetMonth),
+];
+
+// 168시간 한도 하나만 있는 공급자는 둘째 칸에만 값이 차고 1·3열은 빈 채로 남아야 한다.
+const CODEX_ONLY_WEEKLY = (): UsageSummaryQuota[] => [
+  quota("codex:weekly", "7일", "168h", 48, resetWeek),
+];
+
+const ANTIGRAVITY_QUOTAS = (): UsageSummaryQuota[] => [
+  quota("antigravity:short", "5시간", "5h", 81, resetSoon),
+  quota("antigravity:weekly", "7일", "7d", 56, resetWeek),
 ];
 
 function summaryNode(state: ProviderPanelReviewState): UsageSummaryNode {
@@ -142,43 +159,43 @@ function summaryNode(state: ProviderPanelReviewState): UsageSummaryNode {
       accounts: poolList.accounts,
       pool: poolList.pool,
       fable_pool: poolList.fable_pool,
-      weeklyRemainingPercent: 87,
+      weeklyRemainingPercent: 66,
       weeklyResetAt: resetWeek,
-      shortRemainingPercent: 76,
+      shortRemainingPercent: 62,
       shortResetAt: resetSoon,
     })
     : providerOf(CLAUDE_QUOTAS(), {
       mode: "legacy",
-      weeklyRemainingPercent: 87,
+      weeklyRemainingPercent: 66,
       weeklyResetAt: resetWeek,
-      shortRemainingPercent: 76,
+      shortRemainingPercent: 62,
       shortResetAt: resetSoon,
     });
 
-  const opencodeGo = providerOf([
-    quota("opencode:short", "5시간", "5h", 70, resetSoon),
-    quota("opencode:weekly", "7일", "168h", 55, resetWeek),
-    quota("opencode:monthly", "월간", "monthly", 30, resetMonth),
-  ]);
+  const opencodeGo = state === "legacy"
+    ? providerOf([], { status: "not_configured" })
+    : providerOf(OPENCODE_QUOTAS());
 
   const codex = state === "pool"
-    ? null
+    ? providerOf(CODEX_ONLY_WEEKLY())
     : state === "legacy"
-      ? providerOf([], { status: "not_configured" })
+      ? null
       : providerOf([
         quota("codex:5h", "5시간", "5h", 90, resetSoon),
         quota("codex:weekly", "7일", "168h", 80, resetWeek),
       ]);
 
-  const antigravity = state === "legacy"
-    ? providerOf([], { status: "error" })
-    : null;
+  const antigravity = state === "pool"
+    ? providerOf(ANTIGRAVITY_QUOTAS())
+    : state === "legacy"
+      ? providerOf([], { status: "error" })
+      : null;
 
   return {
     nodeId,
     fetchedAt: isoIn(nowSeconds - 4 * 60),
     stale: state === "legacy",
-    staleSince: state === "legacy" ? isoIn(nowSeconds - 25 * 60) : null,
+    staleSince: state === "legacy" ? "2026-11-07T15:20:00+09:00" : null,
     providers: {
       claude,
       opencode_go: opencodeGo,

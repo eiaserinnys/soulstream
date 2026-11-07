@@ -326,10 +326,24 @@ describe("NodeProvidersPanel", () => {
 
     const row = rowOf("claude")!;
     expect(row.querySelector(".c724-account-email")?.textContent).toBe("Claude");
-    expect(row.querySelector(".c724-pool-summary")?.textContent).toBe("주간 잔여 88%");
+    expect(row.querySelector(".c724-pool-summary")?.textContent).toBe("1/1 가용");
     expect(row.textContent).toContain("계정 1");
     expect(row.textContent).not.toContain("Anthropic 인증");
     expect(rowCells(row).map((cell) => cell?.name)).toEqual(["5시간", "7일", "Fable"]);
+  });
+
+  it("falls back to the legacy Claude row when the pool accounts API is missing", async () => {
+    const request = legacyRequest((path) => path.endsWith("/claude-auth/accounts")
+      ? data({ code: "not_found", message: "Not found" }, 404)
+      : null);
+    await mount(summaryNode({ claude: provider(CLAUDE_QUOTAS) }), request);
+
+    const row = host.querySelector('[data-testid="legacy-claude-row"]');
+    expect(row).not.toBeNull();
+    // 스켈레톤에 갇히지 않고 토큰 삭제와 재로그인을 계속 쓸 수 있어야 한다.
+    expect(host.querySelector('[data-testid="provider-quota-skeleton"]')).toBeNull();
+    expect(row!.querySelector('button[aria-label="토큰 삭제"]')).not.toBeNull();
+    expect(row!.querySelector('button[aria-label="재로그인"]')).not.toBeNull();
   });
 
   it("keeps the Claude row and shows a gauge skeleton while the summary loads", async () => {

@@ -222,7 +222,7 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
               ) : selectedTab === LIQUID_GLASS_TAB_NAME ? (
                 <LiquidGlassTab preference={api ? {value:localGlass,set:patch=>setLocalGlass(value=>({...value,...patch}))} : undefined} />
               ) : selectedTab === NODES_TAB_NAME ? (
-                <div className="h-[420px] overflow-hidden rounded border border-border">
+                <div className="rounded border border-border">
                   <NodePanel request={api?.request} sampleNodes={api?.nodes} />
                 </div>
               ) : selectedTab === RECURRING_JOBS_TAB_NAME ? (

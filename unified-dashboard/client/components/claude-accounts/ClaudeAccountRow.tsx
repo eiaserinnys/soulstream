@@ -96,7 +96,7 @@ export function ClaudeAccountRow({
     <div className="c724-account-top">
       <div className="c724-account-identity">
         <span className="c724-status-dot" style={{ backgroundColor: statusColor(account) }} />
-        <span className="c724-account-email" title={account.email}>{account.email}</span>
+        <span className="c724-account-email" data-selectable="true" title={account.email}>{account.email}</span>
         {account.plan ? <span className="c724-badge c724-badge-neutral">{account.plan}</span> : null}
         {showPriority ? <span className="c724-badge c724-badge-accent">{index + 1}순위</span> : null}
         {status ? <span className={`c724-badge ${account.auth_state === "needs_relogin" ? "c724-badge-danger" : account.blocked ? "c724-badge-warn" : "c724-badge-neutral"}`}>{status}</span> : null}

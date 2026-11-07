@@ -97,6 +97,8 @@ function LegacyClaudeRow({ nodeId, request, slots, loading }: {
     basePath,
     statusPath: "/status",
     onTokenDeleted: () => setProfile(null),
+    // 재로그인으로 다른 계정이 되면 이전 프로필이 남지 않도록 다시 읽는다.
+    onAuthenticated: () => { void fetchProfile(); },
   });
 
   const authenticated = flow.tokenStatus?.has_token === true;
@@ -186,10 +188,14 @@ export function NodeProvidersPanel({ nodeId, request, node, loading }: Props) {
   const list = accounts.data ?? null;
   const claudeSlots = providerQuotaSlots(node?.providers.claude ?? null);
 
+  // 풀 API 가 없는 서버에서는 조회가 실패한다. 그때 스켈레톤에 갇히지 않고
+  // 레거시 인증 행으로 내려가 로그인과 토큰 삭제를 계속 쓸 수 있게 한다.
+  // 배경 재조회가 실패해도 React Query 는 마지막 성공 데이터를 유지하므로,
+  // 한 번 풀로 읽힌 노드는 풀 행에 그대로 머문다.
   return <div className="c724-account-list" data-testid="node-providers-panel">
-    {list === null
+    {accounts.isPending
       ? <PendingClaudeRow />
-      : list.mode === "pool"
+      : list && list.mode === "pool"
         ? <ClaudePoolRow
           nodeId={nodeId}
           request={request}

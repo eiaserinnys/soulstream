@@ -33,12 +33,18 @@ function ordered(accounts: readonly ClaudeAccount[]): ClaudeAccount[] {
   });
 }
 
+/** 앱의 poolAvailabilityLabel 과 같은 문구를 쓴다. 주간 잔여는 게이지가 이미 보여 준다. */
 function summaryText(list: ClaudeAccountList): string {
   const pool = list.pool;
   if (!pool) return `${list.accounts.length}개 계정`;
-  const weekly = pool.best_weekly_remaining_percent;
-  if (pool.total_count === 1) return `주간 잔여 ${weekly === null ? "—" : `${Math.round(weekly)}%`}`;
-  return `${pool.available_count}/${pool.total_count} 가용${weekly === null ? "" : ` (주간 최대 잔여 ${Math.round(weekly)}%)`}`;
+  return `${pool.available_count}/${pool.total_count} 가용`;
+}
+
+function localClock(value: string | null): string | null {
+  if (!value) return null;
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return null;
+  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
 }
 
 function existingAccountId(error: unknown): string | null {
@@ -203,7 +209,15 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
     : null;
 
   const available = list.pool?.available_count ?? accounts.filter((account) => account.enabled && account.auth_state !== "idle" && !account.blocked).length;
-  const statusColor = available > 0 ? "var(--color-emerald-400)" : "var(--v3-text-tertiary)";
+  const earliestAvailableAt = list.pool?.earliest_available_at ?? null;
+  const poolBlocked = list.pool !== null && list.pool.available_count < list.pool.total_count && earliestAvailableAt !== null;
+  const releaseLabel = poolBlocked ? localClock(earliestAvailableAt) : null;
+  const sessionCount = accounts.reduce((total, account) => total + account.active_sessions, 0);
+  const statusColor = available > 0
+    ? "var(--color-emerald-400)"
+    : enabledCount > 0
+      ? "var(--color-amber-400)"
+      : "var(--v3-text-tertiary)";
 
   return <div className="c724-account-row" data-testid="claude-pool-row" data-provider-id="claude">
     <div
@@ -217,12 +231,14 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
         <span className="c724-status-dot" style={{ backgroundColor: statusColor }} />
         <span className="c724-account-email">Claude</span>
         <span className="c724-pool-summary">{summaryText(list)}</span>
+        {!expanded && releaseLabel ? <span className="c724-badge c724-badge-warn">{releaseLabel} 해제</span> : null}
+        {sessionCount > 0 ? <span className="c724-meta-inline">세션 {sessionCount}</span> : null}
       </div>
       <div className="c724-account-actions" onClick={(event) => event.stopPropagation()}>
         {expanded ? <Button variant="outline" size="sm" disabled={busyAccountId !== null || loginFlow !== null} onClick={() => void beginLogin()}>
           <Plus className="size-4" aria-hidden="true" /> 계정 추가
         </Button> : null}
-        <span className="c724-meta-inline">계정 {accounts.length}</span>
+        {!expanded ? <span className="c724-meta-inline">계정 {accounts.length}</span> : null}
         <DashboardIconCap size="small" label={expanded ? "계정 접기" : "계정 펼치기"} aria-expanded={expanded} onClick={() => setExpanded((current) => !current)}>
           {expanded ? <ChevronUp className="size-4" aria-hidden="true" /> : <ChevronDown className="size-4" aria-hidden="true" />}
         </DashboardIconCap>
@@ -250,7 +266,9 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
           />
         </div>)}
       </div>
-    </div> : loading ? <ProviderQuotaSkeleton /> : <ProviderQuotaGrid slots={slots} label="Claude 사용량" />}
+    </div> : loading ? <ProviderQuotaSkeleton /> : slots.some((slot) => slot !== null)
+      ? <ProviderQuotaGrid slots={slots} label="Claude 사용량" />
+      : null}
 
     {loginFlow ? <ClaudeAuthLoginSheet
       nodeId={nodeId}

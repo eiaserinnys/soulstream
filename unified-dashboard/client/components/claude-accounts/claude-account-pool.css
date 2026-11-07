@@ -9,6 +9,8 @@
   font: var(--v3-type-meta) var(--v3-font-family);
   color: var(--muted-foreground);
   font-variant-numeric: tabular-nums;
+  /* 화면 틀을 이루는 글이라 끌어서 선택되지 않는다. */
+  user-select: none;
 }
 
 .c724-account-list {
@@ -71,6 +73,12 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* 기본은 공급자 이름이라 선택되지 않는다. 계정 이메일은 data-selectable 로 되살린다. */
+  user-select: none;
+}
+
+.c724-account-email[data-selectable="true"] {
+  user-select: text;
 }
 
 .c724-badge {
@@ -142,7 +150,6 @@
 .c724-quota-label-row {
   display: flex;
   align-items: baseline;
-  justify-content: space-between;
   gap: var(--v3-space-1);
   min-width: 0;
 }
@@ -162,6 +169,7 @@
   color: var(--foreground);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  margin-left: auto;
 }
 
 .c724-quota-reset {
@@ -261,6 +269,8 @@
 .c724-pool-error {
   font: var(--v3-type-body) var(--v3-font-family);
   color: var(--color-red-300);
+  /* 오류 문구는 읽고 옮겨 적는 글이라 선택된다. */
+  user-select: text;
 }
 
 .c724-login-error svg {
@@ -331,7 +341,7 @@
     row-gap: var(--v3-space-1);
   }
 
-  .c724-quota-name {
+  .c724-quota-reset {
     flex: 1 0 100%;
   }
 
