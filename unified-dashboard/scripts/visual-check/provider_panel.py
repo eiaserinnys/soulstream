@@ -19,6 +19,7 @@
 
     {출력}/provider-panel-{상태}-{폭}-{테마}.png
     {출력}/provider-panel-settings-{폭}-{테마}.png
+    {출력}/provider-panel-login-sheet-{폭}-{테마}.png
     {출력}/provider-panel-loading-{폭}-{테마}.png
     {출력}/measurements.json   (열 시작 좌표·막대 위쪽 좌표·정렬 판정·로딩 이동량)
 
@@ -184,6 +185,21 @@ def capture_settings(page: Page, base: str, out: Path, width: int, theme: str, r
     capture(page, out / f"provider-panel-settings-{width}-{theme}.png", rows_out, f"settings-{width}-{theme}")
 
 
+def capture_login_sheet(page: Page, base: str, out: Path, width: int, theme: str) -> None:
+    """계정 연결 시트는 같은 배지 CSS 를 쓰므로 이번 변경으로 달라지지 않았는지 함께 본다."""
+    page.goto(f"{base}/components?sample=claude-accounts&state=pool")
+    settle(page)
+    open_expanded_node(page, STATE_NODE["pool"])
+    page.get_by_role("button", name="계정 펼치기").click()
+    page.wait_for_selector(".c724-pool-account-item", state="visible")
+    page.get_by_role("button", name="계정 추가").click()
+    page.wait_for_selector(".c724-auth-sheet", state="visible")
+    page.evaluate("() => document.fonts.ready")
+    path = out / f"provider-panel-login-sheet-{width}-{theme}.png"
+    page.screenshot(path=str(path), animations="disabled")
+    print(f"login-sheet-{width}-{theme}: {path.as_posix()}")
+
+
 LOADING_MEASURE_SCRIPT = """
 () => Array.from(document.querySelectorAll('[data-testid="provider-quota-skeleton"] .c724-quota-track'))
   .map((track) => Math.round(track.getBoundingClientRect().y * 10) / 10)
@@ -231,6 +247,7 @@ def main() -> int:
                     for state in STATES:
                         capture_state(page, base, out, state, width, theme, rows_out)
                     capture_settings(page, base, out, width, theme, rows_out)
+                    capture_login_sheet(page, base, out, width, theme)
                     loading_tops[f"{width}-{theme}"] = capture_loading(page, base, out, width, theme)
                     context.close()
         finally:
