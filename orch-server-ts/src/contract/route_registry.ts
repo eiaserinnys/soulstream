@@ -216,6 +216,13 @@ const TYPESCRIPT_ADDITIVE_ROUTES: readonly TypeScriptAdditiveRoute[] = [
     family: "node_proxy",
   },
   {
+    methods: ["POST"],
+    path: "/api/usage/refresh",
+    name: "refresh_usage_summary",
+    authRequired: true,
+    family: "node_proxy",
+  },
+  {
     methods: ["GET"],
     path: "/api/session-statistics",
     name: "get_session_statistics",

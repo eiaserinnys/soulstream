@@ -58,6 +58,7 @@ const usageNode=(nodeId:string,claude:number|null,codex:number|null,fable=false)
   codex:codex===null?null:usageProvider(codex),
 
   antigravity:null,
+  opencode_go:null,
  },
 });
 const usageSummaryFixture:UsageSummarySnapshot={generatedAt:'2026-10-13T08:00:00.000Z',collectedAt:null,nodes:[usageNode('node-1',73,38,true),usageNode('node-2',61,42),usageNode('node-3',null,null)]};

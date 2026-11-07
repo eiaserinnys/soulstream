@@ -715,6 +715,7 @@ function createUsageSummaryRoutes() {
         nodes: [],
       }),
       getLimitRejection: () => null,
+      collectOnce: async () => undefined,
       getClaudePoolAccountsForAvailability: (_nodeId: string, accounts: readonly UsageSummaryClaudeAccount[]) => accounts,
     },
   };

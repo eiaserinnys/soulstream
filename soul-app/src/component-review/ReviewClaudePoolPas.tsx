@@ -37,6 +37,7 @@ export function ReviewClaudePoolPas() {
       },
       codex: { status: 'auto', weeklyRemainingPercent: 44, weeklyResetAt: 1_793_318_400, shortRemainingPercent: null, shortResetAt: null, quotas: [] },
       antigravity: null,
+      opencode_go: null,
     },
   });
   return <SafeAreaView testID="claude-pool-pas-review" edges={['bottom']} style={{ flex: 1, padding: t.foundation.pageInset,

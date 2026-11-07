@@ -21,6 +21,7 @@ const usage: UsageSummarySnapshot = {
       },
       codex: null,
       antigravity: null,
+      opencode_go: null,
     },
   }],
 };

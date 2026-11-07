@@ -4,7 +4,7 @@ import { createSseStream } from "../sse/sse_stream.js";
 import type { UsageSummaryService } from "./usage_summary_service.js";
 
 export type UsageSummaryRouteOptions = {
-  readonly service: Pick<UsageSummaryService, "getSummary"> &
+  readonly service: Pick<UsageSummaryService, "getSummary" | "collectOnce"> &
     Partial<Pick<UsageSummaryService, "subscribe">>;
   readonly replayOnlyForTests?: boolean;
 };
@@ -12,6 +12,7 @@ export type UsageSummaryRouteOptions = {
 export const usageSummaryRouteAuthRequirements = {
   "GET /api/usage/summary": true,
   "GET /api/usage/stream": true,
+  "POST /api/usage/refresh": true,
 } as const;
 
 export function registerUsageSummaryRoutes(
@@ -19,6 +20,11 @@ export function registerUsageSummaryRoutes(
   options: UsageSummaryRouteOptions,
 ): void {
   app.get("/api/usage/summary", async () => options.service.getSummary());
+
+  app.post("/api/usage/refresh", async () => {
+    await options.service.collectOnce();
+    return options.service.getSummary();
+  });
 
   app.get("/api/usage/stream", async (request, reply) => {
     reply

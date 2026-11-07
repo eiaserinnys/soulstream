@@ -6,10 +6,12 @@ import {
   formatUsageUpdatedLabel,
   formatWeeklyRemainingPercent,
   nextUsageSummaryNodeId,
+  providerQuotaSlots,
   selectUsageSummaryNode,
   weeklyUsageGauges,
   type UsageSummaryNode,
   type UsageSummaryProvider,
+  type UsageSummaryQuota,
   type UsageSummarySnapshot,
 } from "./usage-summary";
 
@@ -35,6 +37,7 @@ function node(
       claude: null,
       codex: null,
       antigravity: null,
+      opencode_go: null,
       ...providers,
     },
   };
@@ -144,6 +147,7 @@ describe("usage summary projection", () => {
       },
       codex: { ...emptyProvider, weeklyRemainingPercent: 73, weeklyResetAt: 300 },
       antigravity: null,
+      opencode_go: null,
     };
 
     const legacyProviders = { ...providers, gemini: { ...emptyProvider, weeklyRemainingPercent: 99 } };
@@ -177,6 +181,104 @@ describe("usage summary projection", () => {
     expect(formatUsageUpdatedLabel(fetchedAt, true)).toBe("마지막 10/11 01:09 갱신");
     expect(formatUsageUpdatedLabel(null, false)).toBe("갱신 대기 중");
     expect(formatUsageUpdatedLabel("invalid", false)).toBe("갱신 대기 중");
+  });
+});
+
+function quota(
+  id: string,
+  label: string,
+  window: string | null,
+  model: string | null,
+  remainingPercent: number | null,
+  resetAt: number | null = null,
+  purpose?: UsageSummaryQuota["purpose"],
+): UsageSummaryQuota {
+  return { id, label, window, model, remainingPercent, resetAt, purpose };
+}
+
+function provider(
+  quotas: readonly UsageSummaryQuota[],
+  status: UsageSummaryProvider["status"] = "auto",
+): UsageSummaryProvider {
+  return { ...emptyProvider, status, quotas };
+}
+
+describe("provider quota slots", () => {
+  it("lays out the Claude account pool as short, weekly and Fable", () => {
+    expect(providerQuotaSlots(provider([
+      quota("claude:five_hour", "5시간", "5h", null, 74, 1_200),
+      quota("claude:seven_day", "7일", "7d", null, 52, 2_400),
+      quota("claude:weekly_scoped:fable", "Fable", "7d", "fable", 31, 3_600),
+    ]))).toEqual([
+      { kind: "short", label: "5시간", usedPercent: 26, resetAt: 1_200 },
+      { kind: "weekly", label: "7일", usedPercent: 48, resetAt: 2_400 },
+      { kind: "fable", label: "Fable", usedPercent: 69, resetAt: 3_600 },
+    ]);
+  });
+
+  it("lays out OpenCode Go monthly as the third slot", () => {
+    expect(providerQuotaSlots(provider([
+      quota("opencode_go:rolling", "5시간", "5h", null, 88, 600, "execution"),
+      quota("opencode_go:weekly", "7일", "7d", null, 41, 7_200, "execution"),
+      quota("opencode_go:monthly", "월", "monthly", null, 12, 43_200, "execution"),
+    ]))).toEqual([
+      { kind: "short", label: "5시간", usedPercent: 12, resetAt: 600 },
+      { kind: "weekly", label: "7일", usedPercent: 59, resetAt: 7_200 },
+      { kind: "monthly", label: "월간", usedPercent: 88, resetAt: 43_200 },
+    ]);
+  });
+
+  it("keeps a Codex 168h quota in the weekly slot without pulling it forward", () => {
+    expect(providerQuotaSlots(provider([
+      quota("codex:7d", "7일", "168h", null, 80, 900),
+    ]))).toEqual([
+      null,
+      { kind: "weekly", label: "7일", usedPercent: 20, resetAt: 900 },
+      null,
+    ]);
+  });
+
+  it("skips code review quotas and model-scoped windows", () => {
+    expect(providerQuotaSlots(provider([
+      quota("codex:5h", "5시간", "5h", null, 64, 300),
+      quota("codex:code_review", "리뷰", "5h", null, 5, 300, "code_review"),
+      quota("codex:7d", "7일", "168h", null, 70, 900),
+      quota("codex:gpt-5:secondary", "gpt-5 7일", "168h", "gpt-5", 30, 900),
+    ]))).toEqual([
+      { kind: "short", label: "5시간", usedPercent: 36, resetAt: 300 },
+      { kind: "weekly", label: "7일", usedPercent: 30, resetAt: 900 },
+      null,
+    ]);
+  });
+
+  it("ignores legacy model-scoped weekly quotas and non-execution monthly credit", () => {
+    expect(providerQuotaSlots(provider([
+      quota("claude:five_hour", "5시간", "5h", null, 20, 100),
+      quota("claude:seven_day", "7일", "7d", null, 40, 200),
+      quota("claude:seven_day_sonnet", "Sonnet 7일", "7d", "sonnet", 90, 200),
+      quota("claude:monthly_extra", "월간 추가", "monthly", null, 90, 300, "other"),
+    ]))).toEqual([
+      { kind: "short", label: "5시간", usedPercent: 80, resetAt: 100 },
+      { kind: "weekly", label: "7일", usedPercent: 60, resetAt: 200 },
+      null,
+    ]);
+  });
+
+  it("returns empty slots unless the provider is collecting automatically", () => {
+    const quotas = [quota("claude:five_hour", "5시간", "5h", null, 20, 100)];
+    expect(providerQuotaSlots(null)).toEqual([null, null, null]);
+    expect(providerQuotaSlots(provider(quotas, "not_configured"))).toEqual([null, null, null]);
+    expect(providerQuotaSlots(provider(quotas, "error"))).toEqual([null, null, null]);
+  });
+
+  it("turns remaining percent into used percent and keeps the reset time", () => {
+    expect(providerQuotaSlots(provider([
+      quota("claude:five_hour", "5시간", "5h", null, 26, 1_700_000_000),
+    ]))).toEqual([
+      { kind: "short", label: "5시간", usedPercent: 74, resetAt: 1_700_000_000 },
+      null,
+      null,
+    ]);
   });
 });
 

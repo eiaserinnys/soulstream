@@ -181,6 +181,7 @@ describe("live attachment input admission wiring", () => {
       usageSummaryRoutes: { service: {
         getSummary: () => ({ generatedAt: "2026-07-20T10:00:00.000Z", collectedAt: null, nodes: [] }),
         getLimitRejection: () => null,
+        collectOnce: async () => undefined,
         getClaudePoolAccountsForAvailability: (_nodeId, accounts) => accounts,
       } },
       sessionStatisticsRepositoryProvider: async () => ({
