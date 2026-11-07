@@ -88,6 +88,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
       // Required by the existing process-runner startup configuration.
       stateDirectory: env.SOUL_RUNNER_STATE_DIR!,
     },
+    opencodeGo: { apiKey: process.env.OPENCODE_GO_API_KEY },
   });
   const eventOutbox = await EventOutbox.open(env.EVENT_OUTBOX_DIR);
   const eventOutboxPump = new EventOutboxPump(eventOutbox, (error) => {

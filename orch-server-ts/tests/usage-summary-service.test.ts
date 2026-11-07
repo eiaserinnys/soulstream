@@ -503,9 +503,81 @@ describe("UsageSummaryService", () => {
         fetchedAt: null,
         stale: true,
         staleSince: "2026-07-20T10:00:00.000Z",
-        providers: { claude: null, codex: null, antigravity: null },
+        providers: { claude: null, codex: null, antigravity: null, opencode_go: null },
       },
     ]);
+  });
+
+  it("requests OpenCode Go only from nodes that advertise the preset and keeps the snapshot command count", async () => {
+    const registry = fakeRegistry(["go-node", "plain-node"]);
+    registry.getConnectedNode("go-node")!.modelPresets = [
+      {
+        id: "deepseek-flash-4.1",
+        label: "DeepSeek - Flash 4.1",
+        backend: "claude",
+        available: true,
+        usage_provider: "opencode_go",
+      },
+    ];
+    registry.getConnectedNode("plain-node")!.modelPresets = [];
+    const goLimits = {
+      status: "auto",
+      source: "https://opencode.ai/inference/go/v1/usage",
+      sourceKind: "remote",
+      observedAt: "2026-07-20T09:59:00.000Z",
+      weeklyUsedPercent: 18,
+      weeklyResetAt: 1_800_000_000,
+      shortUsedPercent: 2,
+      shortResetAt: 1_799_000_000,
+      quotas: [
+        { id: "opencode_go:rolling", label: "5시간", window: "5h", model: null, remainingPercent: 98, resetAt: 1_799_000_000 },
+        { id: "opencode_go:weekly", label: "7일", window: "7d", model: null, remainingPercent: 82, resetAt: 1_800_000_000 },
+        { id: "opencode_go:monthly", label: "월", window: "monthly", model: null, remainingPercent: 91, resetAt: 1_810_000_000 },
+      ],
+    };
+    const bridge = {
+      sendPendingCommand: vi.fn(async ({ node, command }: {
+        node: { nodeId: string };
+        command: { message: { provider?: string } };
+      }) => {
+        const provider = command.message.provider;
+        if (provider === undefined) {
+          const response = successResponse(10, 20);
+          if (node.nodeId === "go-node") {
+            Object.assign(response.data.providers, { opencode_go: goLimits });
+          }
+          return response;
+        }
+        throw new Error(`unexpected provider query: ${provider}`);
+      }),
+    } as unknown as UsageSummaryBridge;
+    const service = new UsageSummaryService({
+      registry,
+      bridge,
+      pollIntervalMs: 300_000,
+      sharedAccountGroups: [],
+      now: () => new Date("2026-07-20T10:00:00.000Z"),
+    });
+
+    await service.collectOnce();
+
+    expect(registry.createCommand).toHaveBeenCalledTimes(2);
+    expect((registry.createCommand as unknown as { mock: { calls: unknown[][] } }).mock.calls
+      .map(([, payload]) => payload)).toEqual([
+      { type: "provider_usage_get" },
+      { type: "provider_usage_get" },
+    ]);
+    const nodes = service.getSummary().nodes;
+    expect(nodes[0]).toMatchObject({
+      nodeId: "go-node",
+      providers: { opencode_go: { weeklyRemainingPercent: 82 } },
+    });
+    expect(nodes[0]?.providers.opencode_go?.quotas.map((quota) => quota.id))
+      .toEqual(["opencode_go:rolling", "opencode_go:weekly", "opencode_go:monthly"]);
+    expect(nodes[1]).toMatchObject({
+      nodeId: "plain-node",
+      providers: { opencode_go: { status: "not_configured", weeklyRemainingPercent: null, quotas: [] } },
+    });
   });
 
   it("starts immediately and repeats at the configured interval", async () => {
@@ -853,7 +925,7 @@ it("ignores the legacy Gemini key at the snapshot boundary even when it is malfo
   await service.collectOnce();
   const node = service.getSummary().nodes[0]!;
   expect(node.stale).toBe(false);
-  expect(Object.keys(node.providers)).toEqual(['claude', 'codex', 'antigravity']);
+  expect(Object.keys(node.providers)).toEqual(['claude', 'codex', 'antigravity', 'opencode_go']);
 });
 
 it("requests only Claude and Codex from a worker that does not advertise Antigravity", async () => {

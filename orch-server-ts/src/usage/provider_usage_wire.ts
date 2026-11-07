@@ -75,6 +75,9 @@ export function parseProviderUsageSnapshot(value: unknown): ProviderUsageSnapsho
       antigravity: providers.antigravity === undefined
         ? NOT_CONFIGURED_PROVIDER_LIMITS
         : parseProviderLimits(providers.antigravity, "antigravity"),
+      opencode_go: providers.opencode_go === undefined
+        ? NOT_CONFIGURED_PROVIDER_LIMITS
+        : parseProviderLimits(providers.opencode_go, "opencode_go"),
     },
   };
 }

@@ -96,6 +96,13 @@ export function NodeProviderSections({
         usageError={usageErrors.antigravity ?? null}
         onRefreshUsage={() => void refreshUsage('antigravity')}
       /></View>,
+      <View key="opencode_go" style={groupStyle}><ProviderUsageSection
+        provider="opencode_go"
+        usage={usage}
+        loadingUsage={Boolean(loadingProviders.opencode_go)}
+        usageError={usageErrors.opencode_go ?? null}
+        onRefreshUsage={() => void refreshUsage('opencode_go')}
+      /></View>,
   ];
   return workspace ? <SettingsSection id="provider-groups" title="AI 연결과 사용량" flattened fullWidthChildIndexes={claudePoolMode ? [0] : []}>{groups}</SettingsSection> : <>{groups}</>;
 }

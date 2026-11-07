@@ -13,7 +13,7 @@ export function ProviderUsageSection({
   usageError,
   onRefreshUsage,
 }: {
-  provider: 'codex' | 'antigravity';
+  provider: 'codex' | 'antigravity' | 'opencode_go';
   usage: ProviderUsageSnapshot | null;
   loadingUsage: boolean;
   usageError: string | null;
@@ -26,7 +26,11 @@ export function ProviderUsageSection({
   return (
     <View testID={`backend-provider-${provider}`} style={[styles.provider, workspace && { paddingTop: 0, marginTop: 0, borderTopWidth: 0 }]}>
       <View style={styles.headingRow}>
-        <Text style={styles.title}>{provider === 'codex' ? 'Codex' : 'Antigravity'}</Text>
+        <Text style={styles.title}>{{
+          codex: 'Codex',
+          antigravity: 'Antigravity',
+          opencode_go: 'OpenCode Go',
+        }[provider]}</Text>
         <GlassButton
           testID={`backend-provider-${provider}-usage-action`}
           surfaceTestID={`backend-provider-${provider}-usage-action-surface`}

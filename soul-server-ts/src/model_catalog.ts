@@ -67,7 +67,7 @@ export interface AdvertisedModelPreset {
    * Internal server-to-server join metadata. Public model preset APIs strip it.
    * null means the preset uses its own API-key endpoint and has no usage overlay.
    */
-  usage_provider: "claude" | "codex" | "antigravity" | null;
+  usage_provider: "claude" | "codex" | "antigravity" | "opencode_go" | null;
   usage_model_id?: string;
   /**
    * Advertised effort levels. Absent means this preset has no effort control;
@@ -148,11 +148,14 @@ export class ModelCatalog {
     return this.list().map((preset) => {
       const available = isModelPresetEnvResolvable(preset.env, processEnv);
       const usesAnthropicApiKey = Boolean(preset.env?.[ANTHROPIC_API_KEY_ENV]);
-      const usageProvider = usesAnthropicApiKey
-        ? null
-        : preset.backend === "claude" || preset.backend === "codex" || preset.backend === "antigravity"
-          ? preset.backend
-          : null;
+      // An explicit usage_provider wins: the OpenCode Go preset carries an
+      // Anthropic API key for its compatible endpoint but bills against Go.
+      const usageProvider = preset.usage_provider
+        ?? (usesAnthropicApiKey
+          ? null
+          : preset.backend === "claude" || preset.backend === "codex" || preset.backend === "antigravity"
+            ? preset.backend
+            : null);
       const advertisedEfforts = toAdvertisedEfforts(preset.supported_efforts);
       return {
         id: preset.id,

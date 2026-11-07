@@ -15,6 +15,11 @@ import {
 } from "./claude_auth.js";
 import { collectAntigravityUsage, type AntigravityUsageConfig } from "./antigravity_usage.js";
 import {
+  collectOpencodeGoUsage,
+  OPENCODE_GO_USAGE_URL,
+  type OpencodeGoUsageConfig,
+} from "./opencode_go_usage.js";
+import {
   claudeLimitsFromAccountPool,
   type ClaudeAccountPoolSummary,
   type ClaudeAccountService,
@@ -37,7 +42,7 @@ import {
   withinProviderUsageTimeout,
 } from "./provider_usage_telemetry.js";
 
-export type ProviderUsageName = "claude" | "codex" | "antigravity";
+export type ProviderUsageName = "claude" | "codex" | "antigravity" | "opencode_go";
 
 export interface ProviderQuota {
   id: string;
@@ -101,6 +106,7 @@ export interface ProviderUsageCommandHandler {
 
 export interface ProviderUsageServiceConfig {
   antigravity?: AntigravityUsageConfig;
+  opencodeGo?: OpencodeGoUsageConfig;
   claudeAuth?: ClaudeAuthCommandHandler;
   claudeAccounts?: Pick<ClaudeAccountService, "getAccountListWithBestProjection">;
   modelCatalog?: Pick<ModelCatalog, "list">;
@@ -223,14 +229,15 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
   }
 
   async fetchSnapshot(): Promise<ProviderUsageSnapshot> {
-    const [claude, codex, antigravity] = await Promise.all([
+    const [claude, codex, antigravity, opencodeGo] = await Promise.all([
       this.fetchProvider("claude"),
       this.fetchProvider("codex"),
       this.fetchProvider("antigravity"),
+      this.fetchProvider("opencode_go"),
     ]);
     return {
       generatedAt: new Date().toISOString(),
-      providers: { claude, codex, antigravity },
+      providers: { claude, codex, antigravity, opencode_go: opencodeGo },
     };
   }
 
@@ -313,6 +320,11 @@ export class ProviderUsageService implements ProviderUsageCommandHandler {
         return this.fetchCodexLimits(signal, deadlineAtMs, attempts);
       case "antigravity":
         return collectAntigravityUsage(this.config.antigravity, signal);
+      case "opencode_go":
+        return collectOpencodeGoUsage(
+          { ...this.config.opencodeGo, fetchImpl: this.config.fetchImpl ?? this.config.opencodeGo?.fetchImpl },
+          signal,
+        );
     }
   }
 
@@ -627,6 +639,8 @@ function primaryProviderEndpoint(provider: ProviderUsageName): string {
       return CODEX_USAGE_URLS[0];
     case "antigravity":
       return "agy:/usage";
+    case "opencode_go":
+      return OPENCODE_GO_USAGE_URL;
   }
 }
 

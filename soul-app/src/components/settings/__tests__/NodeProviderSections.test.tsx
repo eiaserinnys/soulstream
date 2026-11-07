@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
@@ -117,6 +117,44 @@ test('Codex usage remains available while Claude is unauthenticated', async () =
   expect(screen.queryByText('준비 중')).toBeNull();
 });
 
+test('OpenCode Go reuses the provider section and renders its three windows', async () => {
+  const quota = (id: string, label: string, window: string, usedPercent: number) => ({
+    id, label, window, unit: null, used: null, remaining: null, limit: null,
+    usedPercent, remainingPercent: 100 - usedPercent, resetAt: 1799000000, model: null,
+    source: 'https://opencode.ai/inference/go/v1/usage',
+  });
+  api.getProviderUsage.mockResolvedValue({
+    generatedAt: '2026-11-07T05:22:00.000Z',
+    providers: {
+      claude: { status: 'not_configured', source: '', planType: null, quotas: [] },
+      codex: { status: 'not_configured', source: '', planType: null, quotas: [] },
+      antigravity: { status: 'not_configured', source: '', planType: null, quotas: [] },
+      opencode_go: {
+        status: 'auto',
+        source: 'https://opencode.ai/inference/go/v1/usage',
+        planType: '구독',
+        quotas: [
+          quota('opencode_go:rolling', '5시간', '5h', 2),
+          quota('opencode_go:weekly', '7일', '7d', 18),
+          quota('opencode_go:monthly', '월', 'monthly', 9),
+        ],
+      },
+    },
+  });
+  const screen = render(<NodeProviderSections nodeId="node-a" serverUrl="https://soul.test" />);
+
+  expect(screen.getByTestId('backend-provider-opencode_go')).toBeTruthy();
+  expect(screen.getByText('OpenCode Go')).toBeTruthy();
+
+  fireEvent.press(screen.getByTestId('backend-provider-opencode_go-usage-action'));
+
+  expect(await screen.findByTestId('usage-provider-opencode_go')).toBeTruthy();
+  expect(screen.getByTestId('usage-bar-opencode_go:rolling')).toBeTruthy();
+  expect(screen.getByTestId('usage-bar-opencode_go:weekly')).toBeTruthy();
+  expect(screen.getByTestId('usage-bar-opencode_go:monthly')).toBeTruthy();
+  expect(screen.getByText('18%')).toBeTruthy();
+});
+
 test('an older worker without Antigravity can refresh after another provider was loaded', async () => {
   const missing = { status: 'not_configured', source: '', planType: null, quotas: [] };
   api.getProviderUsage.mockResolvedValue({ generatedAt: '', providers: { claude: missing, codex: missing, gemini: missing } });
@@ -129,7 +167,7 @@ test('an older worker without Antigravity can refresh after another provider was
   });
   expect(api.getProviderUsage).toHaveBeenCalledTimes(2);
   expect(screen.getByTestId('backend-provider-antigravity')).toBeTruthy();
-  expect(screen.getByText('사용량 데이터 없음')).toBeTruthy();
+  expect(within(screen.getByTestId('backend-provider-antigravity')).getByText('사용량 데이터 없음')).toBeTruthy();
 });
 
 test('workspace pool uses the full-width card and hides the duplicate Claude usage card', async () => {

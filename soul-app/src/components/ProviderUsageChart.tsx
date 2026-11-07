@@ -12,6 +12,7 @@ const PROVIDER_LABELS: Record<ProviderName, string> = {
   claude: 'Claude Code',
   codex: 'Codex',
   antigravity: 'Antigravity',
+  opencode_go: 'OpenCode Go',
 };
 
 export function formatResetsAt(epochSeconds: number | null): string | null {
@@ -99,7 +100,7 @@ export function ProviderUsageChart({
               {limits.status === 'error'
                 ? '오류'
                 : limits.status === 'not_configured'
-                  ? 'OAuth 없음'
+                  ? provider === 'opencode_go' ? '키 없음' : 'OAuth 없음'
                   : limits.planType ?? '조회됨'}
             </Text>
           </View>

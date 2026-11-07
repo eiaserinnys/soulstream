@@ -106,3 +106,21 @@ test('rounds the remaining percent and accessible used percent', () => {
 });
 
 test('labels the existing Antigravity provider chart', () => { const screen = render(React.createElement(ProviderUsageChart, { usage: { generatedAt: '2026-10-14T00:00:00Z', providers: { antigravity: { status: 'auto', source: 'agy:/usage', planType: null, quotas: [quota({ label: '7일', remainingPercent: 99 })] } } } as any })); expect(screen.getByText('Antigravity')).toBeTruthy(); });
+
+test('OpenCode Go shows its label and reports a missing key distinctly', () => {
+  const usage = {
+    generatedAt: '2026-11-07T05:22:00.000Z',
+    providers: {
+      codex: { status: 'not_configured', source: '', planType: null, quotas: [] },
+      opencode_go: { status: 'not_configured', source: '', planType: null, quotas: [] },
+    },
+  } as any;
+
+  const go = render(React.createElement(ProviderUsageChart, { usage, providers: ['opencode_go'] }));
+  expect(go.getByText('OpenCode Go')).toBeTruthy();
+  expect(go.getByText('키 없음')).toBeTruthy();
+  expect(go.queryByText('OAuth 없음')).toBeNull();
+
+  const codex = render(React.createElement(ProviderUsageChart, { usage, providers: ['codex'] }));
+  expect(codex.getByText('OAuth 없음')).toBeTruthy();
+});

@@ -84,4 +84,4 @@ Users and agents can exchange files within sessions (`register_attachment`, `att
 Soulstream tracks two distinct usage layers:
 
 - **Session token and cost statistics**: `list_turn_usage` and `summarize_turn_usage` (and the dashboard's `UsageStatsTab` via `/api/usage/...` statistics routes) aggregate per-turn input tokens, cached tokens, output tokens, and list-price cost estimates across sessions, agents, and models.
-- **Provider quota headroom**: `orch-server-ts` polls connected nodes (`provider_usage_get`) at `USAGE_SUMMARY_POLL_INTERVAL_SECONDS` and serves `GET /api/usage/summary` to display Claude, Codex, and Antigravity weekly quota percentages and reset times in the settings view, persistent assistant session, and iOS widget.
+- **Provider quota headroom**: `orch-server-ts` polls connected nodes (`provider_usage_get`) at `USAGE_SUMMARY_POLL_INTERVAL_SECONDS` and serves `GET /api/usage/summary` to display Claude, Codex, Antigravity, and OpenCode Go weekly quota percentages and reset times in the settings view, persistent assistant session, and iOS widget.

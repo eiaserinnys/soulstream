@@ -75,6 +75,19 @@ describe("ModelCatalog", () => {
     });
   });
 
+  it("advertises the OpenCode Go subscription usage provider only for the Go preset", () => {
+    const catalog = new ModelCatalog(
+      path.resolve(process.cwd(), "config/model-catalog.yaml.example"),
+    );
+    const byId = new Map(catalog.advertise().map((entry) => [entry.id, entry]));
+
+    expect(byId.get("deepseek-flash-4.1")).toMatchObject({
+      usage_provider: "opencode_go",
+      usage_model_id: "deepseek-v4.1-flash",
+    });
+    expect(byId.get("kimi-2")?.usage_provider).toBeNull();
+  });
+
   it("advertises the OpenCode DeepSeek preset without a usage provider or effort control", () => {
     const catalog = new ModelCatalog(
       path.resolve(process.cwd(), "config/model-catalog.yaml.example"),

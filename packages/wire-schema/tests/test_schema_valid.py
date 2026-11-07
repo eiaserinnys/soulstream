@@ -1034,7 +1034,14 @@ def test_antigravity_usage_provider_is_advertised():
     schema = _load_schema()
     preset = schema["$defs"]["NodeRegister"]["properties"]["model_presets"]["items"]
     assert "antigravity" in preset["properties"]["usage_provider"]["enum"]
-    assert 'usage_provider: "claude" | "codex" | "antigravity" | null' in GENERATED_TS_PATH.read_text(encoding="utf-8")
+    assert 'usage_provider: "claude" | "codex" | "antigravity" | "opencode_go" | null' in GENERATED_TS_PATH.read_text(encoding="utf-8")
+
+
+def test_opencode_go_usage_provider_is_advertised():
+    schema = _load_schema()
+    preset = schema["$defs"]["NodeRegister"]["properties"]["model_presets"]["items"]
+    assert "opencode_go" in preset["properties"]["usage_provider"]["enum"]
+    assert 'usage_provider: "claude" | "codex" | "antigravity" | "opencode_go" | null' in GENERATED_TS_PATH.read_text(encoding="utf-8")
 
 
 def test_attachment_identity_fields_are_optional_on_commands_and_events() -> None:

@@ -69,6 +69,6 @@ describe("Antigravity account usage", () => {
 it('retires standalone Gemini commands and excludes it from full snapshots', async () => {
   const service = new ProviderUsageService({ homeDir: '/nonexistent-354-fixture-home' });
   const snapshot = await service.fetchSnapshot();
-  expect(Object.keys(snapshot.providers)).toEqual(['claude', 'codex', 'antigravity']);
-  await expect(new ProviderUsageCommands({ providerUsage: service }).handle({ type: 'provider_usage_get', provider: 'gemini' })).rejects.toThrow('provider must be one of: claude, codex, antigravity');
+  expect(Object.keys(snapshot.providers)).toEqual(['claude', 'codex', 'antigravity', 'opencode_go']);
+  await expect(new ProviderUsageCommands({ providerUsage: service }).handle({ type: 'provider_usage_get', provider: 'gemini' })).rejects.toThrow('provider must be one of: claude, codex, antigravity, opencode_go');
 });

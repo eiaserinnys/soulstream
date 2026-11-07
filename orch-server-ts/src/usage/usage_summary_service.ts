@@ -30,7 +30,7 @@ import { providerRequestKey, resolveProviderOwners } from "./usage_summary_accou
 
 export const USAGE_SUMMARY_NODE_TIMEOUT_MS = 15_000;
 
-export const USAGE_SUMMARY_PROVIDER_NAMES = ["claude", "codex", "antigravity"] as const;
+export const USAGE_SUMMARY_PROVIDER_NAMES = ["claude", "codex", "antigravity", "opencode_go"] as const;
 
 export type UsageSummaryProviderName = (typeof USAGE_SUMMARY_PROVIDER_NAMES)[number];
 
@@ -327,13 +327,14 @@ export class UsageSummaryService {
           }
           return request;
         };
-        const [claude, codex, antigravity] = await Promise.all([
+        const [claude, codex, antigravity, opencodeGo] = await Promise.all([
           requiredProvider("claude"),
           requiredProvider("codex"),
           requiredProvider("antigravity"),
+          requiredProvider("opencode_go"),
         ]);
         const snapshot: ProviderUsageSnapshot = {
-          providers: { claude, codex, antigravity },
+          providers: { claude, codex, antigravity, opencode_go: opencodeGo },
         };
         state.snapshot = snapshot;
         state.fetchedAt = this.now().toISOString();
@@ -395,14 +396,26 @@ export class UsageSummaryService {
       if (!supportsAntigravity) {
         requests.set(providerRequestKey(node.nodeId, "antigravity"), Promise.resolve(NOT_CONFIGURED_PROVIDER_LIMITS));
       }
-      const ownedProviders = USAGE_SUMMARY_PROVIDER_NAMES.filter((provider) =>
+      // Go usage is requested only where the node advertises the preset; other
+      // nodes stay not_configured without a command, like Antigravity above.
+      const advertisesOpencodeGo = advertisesOpencodeGoUsage(node);
+      if (!advertisesOpencodeGo) {
+        requests.set(providerRequestKey(node.nodeId, "opencode_go"), Promise.resolve(NOT_CONFIGURED_PROVIDER_LIMITS));
+      }
+      const requestableProviders = USAGE_SUMMARY_PROVIDER_NAMES.filter((provider) =>
         (provider !== "antigravity" || supportsAntigravity) &&
+        (provider !== "opencode_go" || advertisesOpencodeGo),
+      );
+      const ownedProviders = requestableProviders.filter((provider) =>
         (providerOwners.get(providerRequestKey(node.nodeId, provider)) ?? node.nodeId)
           === node.nodeId,
       );
-      if (ownedProviders.length === USAGE_SUMMARY_PROVIDER_NAMES.length) {
+      // A single full-snapshot command replaces the per-provider ones only when
+      // the node serves every usage source it can offer, exactly as before: a
+      // node without the Antigravity backend keeps per-provider commands.
+      if (supportsAntigravity && ownedProviders.length === requestableProviders.length) {
         const snapshot = this.fetchNodeSnapshot(node.nodeId);
-        for (const provider of USAGE_SUMMARY_PROVIDER_NAMES) {
+        for (const provider of requestableProviders) {
           requests.set(
             providerRequestKey(node.nodeId, provider),
             snapshot.then((result) => result.providers[provider]),
@@ -464,11 +477,12 @@ function summarizeNode(state: MutableNodeState): UsageSummaryNode {
     stale: state.staleSince !== null,
     staleSince: state.staleSince,
     providers: state.snapshot === null
-      ? { claude: null, codex: null, antigravity: null }
+      ? { claude: null, codex: null, antigravity: null, opencode_go: null }
       : {
           claude: summarizeProvider(state.snapshot.providers.claude),
           codex: summarizeProvider(state.snapshot.providers.codex),
           antigravity: summarizeProvider(state.snapshot.providers.antigravity),
+          opencode_go: summarizeProvider(state.snapshot.providers.opencode_go),
         },
   };
 }
@@ -496,6 +510,14 @@ function summarizeProvider(limits: ProviderLimits): UsageSummaryProvider {
 function remainingPercent(usedPercent: number | null): number | null {
   if (usedPercent === null) return null;
   return Math.max(0, Math.min(100, 100 - usedPercent));
+}
+
+/** Go is a subscription on the account behind the node's key, not a backend. */
+function advertisesOpencodeGoUsage(node: NodeConnectionSnapshot): boolean {
+  return (node.modelPresets ?? []).some((preset) =>
+    typeof preset === "object" && preset !== null
+    && (preset as { usage_provider?: unknown }).usage_provider === "opencode_go",
+  );
 }
 
 function stringValue(value: unknown): string {

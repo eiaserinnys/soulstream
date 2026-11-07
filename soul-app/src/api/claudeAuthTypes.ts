@@ -22,7 +22,7 @@ export type AccountProfile = {
   has_claude_max: boolean;
 };
 
-export type ProviderName = 'claude' | 'codex' | 'antigravity';
+export type ProviderName = 'claude' | 'codex' | 'antigravity' | 'opencode_go';
 
 export type ProviderQuota = {
   id: string;
