@@ -41,6 +41,16 @@ test('404 status is preserved by the existing JSON error boundary', async () => 
   });
 });
 
+test('refresh posts and applies the new snapshot through the same authenticated boundary', async () => {
+  const api = createApiClient('https://usage.example');
+
+  await expect(api.refreshUsageSummary()).resolves.toMatchObject({ nodes: [] });
+  const [url, init] = (global.fetch as jest.Mock).mock.calls[0] as [string, RequestInit];
+  expect(url).toBe('https://usage.example/api/usage/refresh');
+  expect(init.method).toBe('POST');
+  expect((init.headers as Headers).get('Authorization')).toBe('Bearer usage-jwt');
+});
+
 test('statistics overview and day use the same authenticated query boundary', async () => {
   const api = createApiClient('https://usage.example');
   const query = { period: 'month' as const, anchor: '2026-10-17', provider: 'codex' as const, model: 'gpt-6-luna', project_ids: ['project-web-dashboard'] };

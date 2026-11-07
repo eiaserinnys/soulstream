@@ -3,6 +3,7 @@ import type { SessionReviewPolicyPayload } from '../api/settingsEndpoints';
 import type { ProviderUsageSnapshot, ProviderQuota } from '../api/claudeAuthTypes';
 import { ApiHttpError } from '../api/clientCore';
 import { dialogueApi } from './dialogue-fixtures';
+import { reviewUsageSummary } from './usage-summary-fixtures';
 
 // Public in-memory DTO fixtures only. No production configuration or credentials.
 const quota = (id: string, usedPercent: number | null): ProviderQuota => ({ id, label: `공개 예시 ${id}`, usedPercent, remainingPercent: usedPercent === null ? null : 100 - usedPercent, window: null, unit: null, model: null, source: 'public-fixture', used: null, remaining: null, limit: null, resetAt: 1800000000 });
@@ -246,6 +247,11 @@ export const nativeSettingsReviewApi = { ...dialogueApi, ...persistentSessionFix
   getAuthStatus: async () => ({ authenticated: true, user: { isAdmin: true } }),
   listNodes: async () => { if (state() === 'nodes-error') throw new Error('공개 예시 오류'); return { nodes: Array.from({ length: 8 }, (_, index) => ({ nodeId: index === 0 ? 'public-node' : `public-node-${index}` })) }; },
   getProviderUsage: async () => { if (state() === 'usage-error') throw new Error('공개 예시 오류'); return usage; },
+  getUsageSummary: async () => reviewUsageSummary('public-node', state()),
+  refreshUsageSummary: async () => {
+    if (state() === 'usage-error') throw new Error('공개 예시 오류');
+    return reviewUsageSummary('public-node', state());
+  },
   // The backends screen mounts the legacy Claude provider section, which asks
   // for the account list and auth state before it can render any provider.
   getClaudeAuthAccounts: async () => ({ mode: 'legacy', accounts: [], pool: null, fable_pool: null }),
