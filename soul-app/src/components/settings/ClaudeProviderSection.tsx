@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -21,12 +21,12 @@ import { DisclosureIcon } from '../DisclosureIcon';
 import { GlassButton } from '../GlassSurface';
 import {
   ClaudeAccountPoolSection,
-  poolSummaryLabel,
+  poolAvailabilityLabel,
   type ClaudeAccountPoolApi,
   type ClaudeAccountPoolSectionHandle,
 } from './ClaudeAccountPoolSection';
 import { makeClaudePoolStyles } from './claudeAccountPoolStyles';
-import { ProviderQuotaGrid, providerQuotaCells } from './ProviderQuotaGrid';
+import { ProviderQuotaGrid, ProviderQuotaSkeleton, providerQuotaCells } from './ProviderQuotaGrid';
 import { SettingsDivider } from './SettingsSection';
 
 export type ClaudeProviderApi = ClaudeAccountPoolApi & Pick<ApiClient,
@@ -62,9 +62,8 @@ function ProviderHeaderLoading({ testID, name }: { testID: string; name: string 
         <View style={[poolStyles.statusDot, { backgroundColor: t.colors.textMuted }]} />
         <Text style={poolStyles.providerName}>{name}</Text>
       </View>
-      <ActivityIndicator testID="claude-provider-loading" size="small" color={t.colors.accent} />
     </View>
-    <ActivityIndicator testID="claude-gauge-loading" size="small" color={t.colors.accent} />
+    <ProviderQuotaSkeleton testID="claude-gauge-loading" />
   </View>;
 }
 
@@ -78,39 +77,37 @@ export function ClaudeProviderSection({
 }: Props) {
   const jwt = useAuthStore(state => state.jwt);
   const [list, setList] = useState<ClaudeAccountList | null>(null);
-  const [listVersion, setListVersion] = useState(0);
   const [listUnavailable, setListUnavailable] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const [loginStarting, setLoginStarting] = useState(false);
   const listRevision = useRef(0);
+  const listRef = useRef<ClaudeAccountList | null>(null);
   const poolRef = useRef<ClaudeAccountPoolSectionHandle>(null);
 
+  const applyList = useCallback((next: ClaudeAccountList | null) => {
+    listRef.current = next;
+    setList(next);
+  }, []);
+
   useEffect(() => {
-    setList(null);
-    setListVersion(0);
+    applyList(null);
     setListUnavailable(false);
     setExpanded(false);
-  }, [nodeId]);
+  }, [applyList, nodeId]);
 
   useEffect(() => {
     const request = ++listRevision.current;
     if (!nodeId) return;
     setListUnavailable(false);
     void api.getClaudeAuthAccounts(nodeId).then(result => {
-      if (request === listRevision.current) {
-        setList(result);
-        // Remount the account panel only when a fetched list arrives, not when
-        // the refresh starts, so an expanded panel never resets to old data.
-        setListVersion(value => value + 1);
-      }
+      if (request === listRevision.current) applyList(result);
     }).catch(() => {
-      if (request === listRevision.current) {
-        setList(null);
-        setListUnavailable(true);
-      }
+      // A failed refresh keeps the account screen the reader is already using.
+      // The legacy fallback is only for a failed initial load.
+      if (request === listRevision.current && listRef.current === null) setListUnavailable(true);
     });
     return () => { ++listRevision.current; };
-  }, [api, nodeId, jwt, reloadKey]);
+  }, [api, applyList, nodeId, jwt, reloadKey]);
 
   const pool = list?.mode === 'pool' ? list : null;
   if (!list) {
@@ -136,10 +133,9 @@ export function ClaudeProviderSection({
       onToggle={() => setExpanded(value => !value)}
       nodeId={nodeId}
       api={api}
-      listVersion={listVersion}
       loginStarting={loginStarting}
       onLoginStartingChange={setLoginStarting}
-      onListChange={setList}
+      onListChange={applyList}
       poolRef={poolRef}
     />;
   }
@@ -163,7 +159,6 @@ function PoolClaudeRow({
   onToggle,
   nodeId,
   api,
-  listVersion,
   loginStarting,
   onLoginStartingChange,
   onListChange,
@@ -176,7 +171,6 @@ function PoolClaudeRow({
   onToggle(): void;
   nodeId: string;
   api: ClaudeProviderApi;
-  listVersion: number;
   loginStarting: boolean;
   onLoginStartingChange(starting: boolean): void;
   onListChange(list: ClaudeAccountList): void;
@@ -185,7 +179,7 @@ function PoolClaudeRow({
   const t = useTokens();
   const styles = useMemo(() => makeClaudePoolStyles(t), [t]);
   const cells = providerQuotaCells(summaryProvider);
-  const summary = poolSummaryLabel(list.pool);
+  const summary = poolAvailabilityLabel(list.pool);
   const earliest = list.pool?.earliest_available_at;
   const blocked = list.pool !== null && list.pool.available_count < list.pool.total_count && earliest !== null;
   const sessionCount = list.accounts.reduce((total, account) => total + account.active_sessions, 0);
@@ -206,10 +200,9 @@ function PoolClaudeRow({
           {summary ? <Text style={styles.metaText}>{summary}</Text> : null}
           {blocked ? <Text style={styles.blockedBadge}>{localClock(earliest ?? null) ?? ''} 해제</Text> : null}
           {sessionCount > 0 ? <Text style={styles.sessionText}>세션 {sessionCount}</Text> : null}
-          {loadingSummary ? <ActivityIndicator testID="claude-provider-loading" size="small" color={t.colors.accent} /> : null}
         </View>
         <View style={styles.headerControls}>
-          <Text style={styles.metaText}>계정 {list.accounts.length}</Text>
+          {!expanded ? <Text style={styles.metaText}>계정 {list.accounts.length}</Text> : null}
           {expanded ? <GlassButton testID="claude-account-add" size="compact"
             accessibilityLabel="Claude 계정 추가" onPress={() => poolRef.current?.startLogin()} disabled={loginStarting}>
             {loginStarting ? <ActivityIndicator size="small" color={t.colors.accent} />
@@ -224,14 +217,14 @@ function PoolClaudeRow({
           </GlassButton>
         </View>
       </View>
-      {loadingSummary ? <ActivityIndicator testID="claude-gauge-loading" size="small" color={t.colors.accent} />
+      {loadingSummary ? <ProviderQuotaSkeleton testID="claude-gauge-loading" />
         : !expanded && cells.some(Boolean) ? <ProviderQuotaGrid prefix="provider-quota-claude" cells={cells} /> : null}
     </Pressable>
     {expanded ? <>
       <SettingsDivider />
       <ClaudeAccountPoolSection
         ref={poolRef}
-        key={`${nodeId}:${listVersion}`}
+        key={nodeId}
         showHeader={false}
         nodeId={nodeId}
         initialList={list}
@@ -367,7 +360,6 @@ function LegacyClaudeRow({
       <View style={poolStyles.accountIdentity}>
         <View style={[poolStyles.statusDot, { backgroundColor: dotColor }]} />
         <Text style={poolStyles.providerName}>Claude</Text>
-        {loadingSummary ? <ActivityIndicator testID="claude-provider-loading" size="small" color={t.colors.accent} /> : null}
         {profile ? <Text numberOfLines={1} style={styles.email}>{profile.email}</Text> : null}
         {profile?.has_claude_max ? <Text style={styles.badge}>Claude Max</Text> : null}
         {authStatus !== null ? <Text style={poolStyles.metaText}>{authStatus.has_token ? '인증됨' : '미인증'}</Text> : null}
@@ -430,7 +422,7 @@ function LegacyClaudeRow({
       </View>
     </View> : null}
 
-    {loadingSummary ? <ActivityIndicator testID="claude-gauge-loading" size="small" color={t.colors.accent} />
+    {loadingSummary ? <ProviderQuotaSkeleton testID="claude-gauge-loading" />
       : cells.some(Boolean) ? <ProviderQuotaGrid prefix="provider-quota-claude" cells={cells} /> : null}
     {claudeError ? <Text accessibilityRole="alert" style={styles.error}>{claudeError}</Text> : null}
   </View>;
@@ -440,7 +432,7 @@ function makeStyles(t: DesignTokens) {
   return StyleSheet.create({
     provider: { gap: t.spacing.md },
     headingRow: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.md, minWidth: 0 },
-    headingControls: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.xs },
+    headingControls: { flexDirection: 'row', alignItems: 'center', gap: t.spacing.xs, marginRight: -(t.hitTarget.min - t.foundation.iconFrame.compact) / 2 },
     email: { ...t.foundation.typography.body, minWidth: 0, flexShrink: 1, color: t.colors.textTertiary },
     badge: {
       ...t.foundation.typography.label,

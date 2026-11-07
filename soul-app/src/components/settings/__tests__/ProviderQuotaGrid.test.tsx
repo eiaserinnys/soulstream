@@ -5,35 +5,44 @@ import { ProviderQuotaGrid, quotaResetLabel, type QuotaGridCell } from '../Provi
 
 const cells: (QuotaGridCell | null)[] = [
   null,
-  { label: '7일', usedPercent: 58, resetAt: 1_800_000_000, short: false },
+  { label: '7일', usedPercent: 58, resetAt: 1_800_000_000, short: false, kind: 'weekly' },
   null,
 ];
 
-test('an empty window keeps its three-column cell and track without a bar', () => {
+test('an empty window keeps its three-column cell and renders no text or track', () => {
   const screen = render(<ProviderQuotaGrid prefix="provider-quota-codex" cells={cells} />);
 
   const hidden = { includeHiddenElements: true };
-  expect(screen.getByTestId('provider-quota-codex-0', hidden)).toBeTruthy();
+  expect(screen.getByTestId('provider-quota-codex-0', hidden).children).toHaveLength(0);
   expect(screen.getByTestId('provider-quota-codex-1', hidden)).toBeTruthy();
-  expect(screen.getByTestId('provider-quota-codex-2', hidden)).toBeTruthy();
+  expect(screen.getByTestId('provider-quota-codex-2', hidden).children).toHaveLength(0);
   expect(screen.queryByTestId('provider-quota-codex-bar-0', hidden)).toBeNull();
   expect(screen.getByTestId('provider-quota-codex-bar-1', hidden)).toBeTruthy();
   expect(screen.queryByTestId('provider-quota-codex-bar-2', hidden)).toBeNull();
 });
 
-test('a short window that is fully used names the release clock and other windows use the weekday clock', () => {
-  const short = quotaResetLabel(1_800_000_000, 100, true);
-  const weekly = quotaResetLabel(1_800_000_000, 100, false);
+test('reset labels use a date for monthly windows and name the release clock when exhausted', () => {
+  jest.useFakeTimers().setSystemTime(new Date(2026, 10, 7, 12, 0));
+  const inTwoHours = new Date(2026, 10, 7, 14, 30);
+  const inFourDays = new Date(2026, 10, 11, 14, 0);
+  const inTwentyDays = new Date(2026, 10, 27, 10, 0);
 
-  expect(short).toMatch(/^\d{2}:\d{2} 해제$/);
-  expect(weekly).toMatch(/^[일월화수목금토] \d{2}:\d{2}$/);
+  expect(quotaResetLabel(inTwoHours.getTime() / 1000, 100, true, 'short')).toBe('14:30 해제');
+  expect(quotaResetLabel(inTwoHours.getTime() / 1000, 42, true, 'short')).toBe('3시간 후');
+  expect(quotaResetLabel(inFourDays.getTime() / 1000, 100, false, 'weekly')).toBe('14:00 해제');
+  expect(quotaResetLabel(inFourDays.getTime() / 1000, 42, false, 'weekly')).toBe('수 14:00');
+  expect(quotaResetLabel(inTwentyDays.getTime() / 1000, 100, false, 'monthly')).toBe('11/27 해제');
+  expect(quotaResetLabel(inTwentyDays.getTime() / 1000, 42, false, 'monthly')).toBe('11/27');
+  jest.useRealTimers();
 });
 
 test('epoch seconds and ISO strings both produce the same reset label', () => {
-  const iso = '2026-11-07T14:30:00.000Z';
+  jest.useFakeTimers().setSystemTime(new Date(2026, 10, 7, 12, 0));
+  const iso = '2026-11-07T14:30:00';
   const epoch = Math.floor(new Date(iso).getTime() / 1000);
 
-  expect(quotaResetLabel(epoch, 100, true)).toBe(quotaResetLabel(iso, 100, true));
-  expect(quotaResetLabel(null, 100, true)).toBe('—');
-  expect(quotaResetLabel('not-a-date', 100, true)).toBe('—');
+  expect(quotaResetLabel(epoch, 100, true, 'short')).toBe(quotaResetLabel(iso, 100, true, 'short'));
+  expect(quotaResetLabel(null, 100, true, 'short')).toBe('—');
+  expect(quotaResetLabel('not-a-date', 100, true, 'short')).toBe('—');
+  jest.useRealTimers();
 });

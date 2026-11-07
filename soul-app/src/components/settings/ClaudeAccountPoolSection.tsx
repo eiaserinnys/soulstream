@@ -19,7 +19,7 @@ import { useDeviceType, useTokens } from '../../theme';
 import { makeClaudePoolStyles } from './claudeAccountPoolStyles';
 import { ClaudeAccountLoginFlowPanel } from './ClaudeAccountLoginFlowPanel';
 import { GlassButton } from '../GlassSurface';
-import { ProviderQuotaGrid } from './ProviderQuotaGrid';
+import { ProviderQuotaGrid, type QuotaGridCell } from './ProviderQuotaGrid';
 import { SettingsDivider } from './SettingsSection';
 
 export type ClaudeAccountPoolApi = Pick<ApiClient,
@@ -103,6 +103,11 @@ export function poolSummaryLabel(pool: ClaudeAccountPool | null): string | null 
   return `${pool.available_count}/${pool.total_count} 가용${pool.best_weekly_remaining_percent === null ? '' : ` (주간 최대 잔여 ${Math.round(pool.best_weekly_remaining_percent)}%)`}`;
 }
 
+export function poolAvailabilityLabel(pool: ClaudeAccountPool | null): string | null {
+  if (!pool) return null;
+  return `${pool.available_count}/${pool.total_count} 가용`;
+}
+
 function observedAtLabel(value: string | null): string {
   if (!value) return '';
   const observed = new Date(value);
@@ -159,6 +164,7 @@ export const ClaudeAccountPoolSection = forwardRef<ClaudeAccountPoolSectionHandl
   const t = useTokens();
   const styles = useMemo(() => makeClaudePoolStyles(t), [t]);
   const [accountList, setAccountList] = useState<ClaudeAccountList>(initialList);
+  useEffect(() => { setAccountList(initialList); }, [initialList]);
   const accounts = accountList.accounts;
   const pool = accountList.pool;
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
@@ -542,10 +548,10 @@ function AccountRow({
   const compact = useDeviceType() === 'phone';
   const styles = useMemo(() => makeClaudePoolStyles(t), [t]);
   const statusLabel = authStateLabel(account);
-  const quotaCells = [
-    account.usage.five_hour ? { label: '5시간', usedPercent: account.usage.five_hour.used_percent, resetAt: account.usage.five_hour.resets_at, short: true } : null,
-    account.usage.seven_day ? { label: '7일', usedPercent: account.usage.seven_day.used_percent, resetAt: account.usage.seven_day.resets_at, short: false } : null,
-    account.usage.fable_weekly ? { label: 'Fable', usedPercent: account.usage.fable_weekly.used_percent, resetAt: account.usage.fable_weekly.resets_at, short: false } : null,
+  const quotaCells: (QuotaGridCell | null)[] = [
+    account.usage.five_hour ? { label: '5시간', usedPercent: account.usage.five_hour.used_percent, resetAt: account.usage.five_hour.resets_at, short: true, kind: 'short' } : null,
+    account.usage.seven_day ? { label: '7일', usedPercent: account.usage.seven_day.used_percent, resetAt: account.usage.seven_day.resets_at, short: false, kind: 'weekly' } : null,
+    account.usage.fable_weekly ? { label: 'Fable', usedPercent: account.usage.fable_weekly.used_percent, resetAt: account.usage.fable_weekly.resets_at, short: false, kind: 'fable' } : null,
   ];
   const dotColor = !account.enabled ? t.colors.textMuted
     : account.auth_state === 'needs_relogin' ? t.colors.error

@@ -60,7 +60,6 @@ export function AIBackendSettingsSection({
         </View>
       ) : (
         <View style={{ padding: t.cardLayout.padding, gap: t.spacing.md }}>
-          <Text style={styles.notice}>선택한 노드의 계정과 사용량을 조회합니다. 실행 노드는 바뀌지 않습니다.</Text>
           <SettingsOptionRow label="조회 노드" selected={selected?.nodeId ?? ''} options={visibleNodes.map(node => ({ id: node.nodeId, label: node.nodeId }))} onSelect={setSelectedNode} emptyLabel="연결된 노드 없음"/>
         </View>
       )}

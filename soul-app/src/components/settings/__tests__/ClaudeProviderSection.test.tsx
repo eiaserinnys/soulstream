@@ -110,8 +110,8 @@ beforeEach(() => {
     .mockResolvedValue({ type: 'cancel' });
 });
 
-function renderProvider(api: jest.Mocked<ClaudeProviderApi>, reloadKey = 0) {
-  return render(
+function providerElement(api: jest.Mocked<ClaudeProviderApi>, reloadKey = 0) {
+  return (
     <ClaudeProviderSection
       nodeId="node-x"
       api={api}
@@ -119,8 +119,12 @@ function renderProvider(api: jest.Mocked<ClaudeProviderApi>, reloadKey = 0) {
       loadingSummary={false}
       reloadKey={reloadKey}
       onTokenDeleted={onTokenDeleted}
-    />,
+    />
   );
+}
+
+function renderProvider(api: jest.Mocked<ClaudeProviderApi>, reloadKey = 0) {
+  return render(providerElement(api, reloadKey));
 }
 
 test('legacy mode keeps the existing login action and Claude account details', async () => {
@@ -213,7 +217,7 @@ test('pool mode starts collapsed, shows the summary gauge, and expands into the 
   const screen = renderProvider(api);
 
   expect(await screen.findByText('계정 3')).toBeTruthy();
-  expect(screen.getByText('2/3 가용 (주간 최대 잔여 87%)')).toBeTruthy();
+  expect(screen.getByText('2/3 가용')).toBeTruthy();
   expect(screen.queryByTestId('claude-account-pool-section')).toBeNull();
   expect(screen.getByTestId('provider-quota-claude-0')).toBeTruthy();
   expect(screen.getByTestId('provider-quota-claude-1')).toBeTruthy();
@@ -223,6 +227,7 @@ test('pool mode starts collapsed, shows the summary gauge, and expands into the 
 
   expect(await screen.findByTestId('claude-account-pool-section')).toBeTruthy();
   expect(screen.getAllByTestId(/^claude-account-row-/)).toHaveLength(3);
+  expect(screen.queryByText('계정 3')).toBeNull();
   expect(screen.queryByTestId('provider-quota-claude-0')).toBeNull();
 
   fireEvent.press(screen.getByTestId('claude-account-add'));
@@ -240,17 +245,55 @@ test('a node level refresh reloads the Claude account list', async () => {
   const screen = renderProvider(api, 0);
 
   await waitFor(() => expect(api.getClaudeAuthAccounts).toHaveBeenCalledTimes(1));
-  screen.rerender(
-    <ClaudeProviderSection
-      nodeId="node-x"
-      api={api}
-      summaryProvider={claudeSummaryProvider}
-      loadingSummary={false}
-      reloadKey={1}
-      onTokenDeleted={onTokenDeleted}
-    />,
-  );
+  screen.rerender(providerElement(api, 1));
   await waitFor(() => expect(api.getClaudeAuthAccounts).toHaveBeenCalledTimes(2));
+});
+
+test('a failed account refresh keeps the loaded pool list instead of falling back to legacy', async () => {
+  const api = createApi();
+  api.getClaudeAuthAccounts
+    .mockResolvedValueOnce(poolList)
+    .mockRejectedValueOnce(new Error('offline'));
+  const screen = renderProvider(api);
+
+  expect(await screen.findByText('계정 3')).toBeTruthy();
+  screen.rerender(providerElement(api, 1));
+  await waitFor(() => expect(api.getClaudeAuthAccounts).toHaveBeenCalledTimes(2));
+
+  expect(screen.getByText('계정 3')).toBeTruthy();
+  expect(screen.getByText('2/3 가용')).toBeTruthy();
+  expect(screen.getByTestId('claude-provider-header')).toBeTruthy();
+  expect(screen.queryByTestId('claude-login-action')).toBeNull();
+});
+
+test('a completed refresh keeps an in-progress account login and applies the new list', async () => {
+  const api = createApi();
+  const updatedList: ClaudeAccountList = {
+    ...poolList,
+    accounts: poolList.accounts.map(account => account.id === 'review-one'
+      ? { ...account, email: 'updated@example.invalid' }
+      : account),
+  };
+  api.getClaudeAuthAccounts
+    .mockResolvedValueOnce(poolList)
+    .mockResolvedValueOnce(updatedList);
+  const screen = renderProvider(api);
+
+  expect(await screen.findByText('계정 3')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('claude-provider-header'));
+  expect(await screen.findByTestId('claude-account-pool-section')).toBeTruthy();
+  fireEvent.press(screen.getByTestId('claude-account-add'));
+  expect(await screen.findByTestId('claude-login-flow')).toBeTruthy();
+  fireEvent.changeText(screen.getByTestId('claude-login-code'), 'code#state');
+
+  screen.rerender(providerElement(api, 1));
+  await waitFor(() => expect(api.getClaudeAuthAccounts).toHaveBeenCalledTimes(2));
+
+  expect(await screen.findByText('updated@example.invalid')).toBeTruthy();
+  expect(screen.getByTestId('claude-login-flow')).toBeTruthy();
+  expect(screen.getByTestId('claude-login-code').props.value).toBe('code#state');
+  expect(api.cancelClaudeAuthLogin).not.toHaveBeenCalled();
+  expect(screen.getByTestId('claude-account-pool-section')).toBeTruthy();
 });
 
 test('summary load shows progress in the Claude row and gauge area', async () => {
@@ -266,7 +309,7 @@ test('summary load shows progress in the Claude row and gauge area', async () =>
     />,
   );
 
-  await waitFor(() => expect(screen.getByTestId('claude-provider-loading')).toBeTruthy());
-  expect(screen.getByTestId('claude-gauge-loading')).toBeTruthy();
+  await waitFor(() => expect(screen.getByTestId('claude-gauge-loading')).toBeTruthy());
+  expect(screen.queryByTestId('claude-provider-loading')).toBeNull();
   expect(screen.queryByTestId('provider-quota-claude-0')).toBeNull();
 });

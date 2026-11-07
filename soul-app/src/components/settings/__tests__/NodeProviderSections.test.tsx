@@ -315,7 +315,7 @@ test('the Claude row expands to the account panel without toggling on inner cont
   expect(screen.getByTestId('provider-quota-claude-0')).toBeTruthy();
 });
 
-test('refreshing keeps an expanded pool panel and remounts it with the fetched accounts', async () => {
+test('refreshing keeps an expanded pool panel and applies the fetched accounts without remounting', async () => {
   const api = createApi();
   api.getClaudeAuthAccounts
     .mockResolvedValueOnce(poolClaudeList)

@@ -16,14 +16,19 @@ The script opens the public-fixture review page (?section=claudePool). It does
 not contact a node or the real provider APIs; every API answer comes from the
 component-review fixtures. It captures the four requested states at iPad 820
 and iPhone 390 in light and dark, plus one delayed-summary loading frame, and
-records each quota grid's three cell left coordinates and track/bar vertical
-coordinates. Column lefts must agree within 1px across rows, and the three
-track tops must agree within 1px inside a row.
+records each quota grid's three cell left coordinates, track/bar vertical
+coordinates, and each circular icon button's visual circle right edge. Column
+lefts must agree within 1px across rows, the three track tops must agree within
+1px inside a row, and the circle right edges must agree with the gauge track
+right edge within 1px. The -screen.png files capture the whole
+settings-section-backends root after the inner ScrollView returns to the top,
+so the first node card and the last provider row are both present.
 """
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 import urllib.parse
@@ -66,6 +71,7 @@ METRICS_SCRIPT = r"""
     return {
       left: round(bounds.left),
       top: round(bounds.top),
+      right: round(bounds.right),
       width: round(bounds.width),
       height: round(bounds.height),
     };
@@ -84,13 +90,15 @@ METRICS_SCRIPT = r"""
       const indexMatch = testId.match(/-(\d+)$/);
       if (!indexMatch) continue;
       const index = Number(indexMatch[1]);
-      const track = element.lastElementChild;
       const bar = element.querySelector(`[data-testid$="-bar-${index}"]`);
+      const track = bar ? bar.parentElement : null;
       found.push({
         index,
         testId,
         ...rect(element),
+        childCount: element.children.length,
         trackTop: track ? rect(track).top : null,
+        trackRight: track ? rect(track).right : null,
         trackHeight: track ? rect(track).height : null,
         barTop: bar ? rect(bar).top : null,
         barWidth: bar ? rect(bar).width : null,
@@ -111,11 +119,49 @@ METRICS_SCRIPT = r"""
     const accountId = rowId.slice('claude-account-row-'.length);
     accountRows.push({ row: rowId, accountId, cells: cellsFor(row, accountId) });
   }
+  const circleButtons = [];
+  const buttons = [];
+  for (const id of ['provider-panel-refresh', 'claude-provider-toggle', 'claude-delete-action']) {
+    const element = document.querySelector(`[data-testid="${id}"]`);
+    if (element) buttons.push(element);
+  }
+  if (!document.querySelector('[data-testid="claude-delete-action"]')) {
+    const login = document.querySelector('[data-testid="claude-login-action"]');
+    if (login) buttons.push(login);
+  }
+  for (const element of document.querySelectorAll('[data-testid^="claude-account-delete-"]')) {
+    const id = element.getAttribute('data-testid') || '';
+    if (id.startsWith('claude-account-delete-confirmation-')
+      || id === 'claude-account-delete-cancel'
+      || id.startsWith('claude-account-delete-confirm-')) continue;
+    buttons.push(element);
+  }
+  for (const element of buttons) {
+    const bounds = element.getBoundingClientRect();
+    let visual = null;
+    for (const child of element.querySelectorAll('*')) {
+      const childRect = child.getBoundingClientRect();
+      const radius = parseFloat(getComputedStyle(child).borderTopLeftRadius) || 0;
+      if (childRect.width > 0 && childRect.width < bounds.width - 1 && radius >= childRect.width / 2 - 0.5) {
+        visual = childRect;
+        break;
+      }
+    }
+    circleButtons.push({
+      id: element.getAttribute('data-testid'),
+      ...rect(element),
+      visualRight: visual ? round(visual.right) : null,
+      visualWidth: visual ? round(visual.width) : null,
+    });
+  }
+  const skeleton = document.querySelector('[data-testid="claude-gauge-loading"]');
   const panel = document.querySelector('[data-testid="provider-panel"]');
   return {
     panel: panel ? rect(panel) : null,
+    skeleton: skeleton ? rect(skeleton) : null,
     providerRows,
     accountRows,
+    circleButtons,
     text: panel ? panel.innerText : '',
   };
 }
@@ -146,6 +192,32 @@ def alignment_failures(metrics: dict, label: str) -> list[dict]:
             failures.append({"check": "track top", "label": label, "row": row["row"], "values": tops})
         if len(bar_tops) >= 2 and max(bar_tops) - min(bar_tops) > 1.0:
             failures.append({"check": "bar top", "label": label, "row": row["row"], "values": bar_tops})
+        for cell in row["cells"]:
+            if cell["barWidth"] is None and cell["childCount"] != 0:
+                failures.append({"check": "empty cell content", "label": label, "row": row["row"],
+                                 "cell": cell["testId"], "childCount": cell["childCount"]})
+            if cell["barWidth"] is not None and cell["trackRight"] is not None \
+                    and abs(cell["trackRight"] - cell["right"]) > 1.0:
+                failures.append({"check": "track right", "label": label, "row": row["row"],
+                                 "cell": cell["testId"], "trackRight": cell["trackRight"], "right": cell["right"]})
+
+    def right_edge(cell: dict) -> float:
+        return cell["trackRight"] if cell["trackRight"] is not None else cell["right"]
+
+    rights = [right_edge(row["cells"][2]) for row in grids if len(row["cells"]) == 3]
+    skeleton = metrics.get("skeleton")
+    if skeleton is not None:
+        rights.append(skeleton["right"])
+    if rights:
+        if max(rights) - min(rights) > 1.0:
+            failures.append({"check": "gauge right line", "label": label, "values": rights})
+        reference = max(rights)
+        for button in metrics.get("circleButtons", []):
+            if button["visualRight"] is None:
+                failures.append({"check": "circle button visual", "label": label, "button": button["id"]})
+            elif abs(button["visualRight"] - reference) > 1.0:
+                failures.append({"check": "circle button right", "label": label, "button": button["id"],
+                                 "visualRight": button["visualRight"], "reference": reference})
     return failures
 
 
@@ -173,6 +245,31 @@ def wait_for_panel(page: Page) -> None:
 
 def settle(page: Page) -> None:
     page.wait_for_timeout(250)
+
+
+def reset_inner_scroll(page: Page) -> None:
+    """Return the review page's inner ScrollView to the top before a full capture."""
+    page.evaluate("""
+    () => {
+      for (const element of document.querySelectorAll('*')) {
+        const style = getComputedStyle(element);
+        if ((style.overflowY === 'auto' || style.overflowY === 'scroll')
+          && element.scrollHeight > element.clientHeight) {
+          element.scrollTop = 0;
+        }
+      }
+    }
+    """)
+    page.wait_for_timeout(50)
+
+
+def capture_full_screen(page: Page, output: Path, name: str) -> None:
+    reset_inner_scroll(page)
+    root = page.locator('[data-testid="settings-section-backends"]')
+    if count(root) > 0:
+        root.screenshot(path=str(output / name))
+    else:
+        page.screenshot(path=str(output / name))
 
 
 def capture_state(
@@ -207,7 +304,13 @@ def capture_state(
         page.get_by_test_id("provider-row-opencode_go").wait_for()
         page.get_by_test_id("provider-row-codex").wait_for()
         page.get_by_test_id("provider-row-antigravity").wait_for()
+        assert_text(page, "claude-provider-header", "2/3 가용", failures, label)
+        assert_text(page, "claude-provider-header", "계정 3", failures, label)
         assert_text(page, "provider-quota-opencode_go-2", "월간", failures, label)
+        monthly = page.get_by_test_id("provider-quota-opencode_go-2")
+        if count(monthly) == 0 or not re.search(r"\d{1,2}/\d{1,2}", monthly.first.inner_text()):
+            failures.append({"check": "monthly reset date", "label": label,
+                             "actual": monthly.first.inner_text() if count(monthly) else None})
         assert_text(page, "provider-quota-codex-1", "7일", failures, label)
         if count(page.get_by_test_id("provider-quota-codex-bar-0")) != 0:
             failures.append({"check": "codex first cell blank", "label": label})
@@ -221,6 +324,10 @@ def capture_state(
             failures.append({"check": "pool add button", "label": label})
         if count(page.get_by_test_id("provider-quota-claude-0")) != 0:
             failures.append({"check": "collapsed Claude gauge hidden while expanded", "label": label})
+        assert_text(page, "claude-provider-header", "2/3 가용", failures, label)
+        header = page.get_by_test_id("claude-provider-header").first.inner_text()
+        if "계정 3" in header or "주간 최대 잔여" in header:
+            failures.append({"check": "expanded header summary", "label": label, "actual": header})
     if state_name == "legacy-stale":
         page.get_by_test_id("provider-row-opencode_go").wait_for()
         page.get_by_test_id("provider-row-antigravity").wait_for()
@@ -237,7 +344,7 @@ def capture_state(
 
     panel = page.get_by_test_id("provider-panel").first
     panel.screenshot(path=str(output / f"provider-panel-{state_name}-{width}-{theme}.png"))
-    page.screenshot(path=str(output / f"provider-panel-{state_name}-{width}-{theme}-screen.png"))
+    capture_full_screen(page, output, f"provider-panel-{state_name}-{width}-{theme}-screen.png")
     metrics = page.evaluate(METRICS_SCRIPT)
     grid_failures = alignment_failures(metrics, label)
     failures.extend(grid_failures)
@@ -252,6 +359,7 @@ def capture_state(
         "panel": metrics["panel"],
         "providerRows": metrics["providerRows"],
         "accountRows": metrics["accountRows"],
+        "circleButtons": metrics["circleButtons"],
         "text": metrics["text"],
         "alignmentFailures": grid_failures,
     }
@@ -324,14 +432,24 @@ def main() -> int:
                         page.get_by_test_id("provider-panel").first.screenshot(
                             path=str(output / f"provider-panel-loading-{width}-{theme}.png"),
                         )
+                        capture_full_screen(page, output, f"provider-panel-loading-{width}-{theme}-screen.png")
+                        if count(page.get_by_test_id("claude-provider-loading")) != 0:
+                            failures.append({"check": "duplicate header spinner", "label": loading_label})
                         metrics = page.evaluate(METRICS_SCRIPT)
+                        grid_failures = alignment_failures(metrics, loading_label)
+                        failures.extend(grid_failures)
                         result["loadingFrames"].append({
                             "state": "loading",
                             "width": width,
                             "theme": theme,
                             "capture": f"provider-panel-loading-{width}-{theme}.png",
+                            "screenCapture": f"provider-panel-loading-{width}-{theme}-screen.png",
+                            "panel": metrics["panel"],
                             "providerRows": metrics["providerRows"],
+                            "circleButtons": metrics["circleButtons"],
                             "text": metrics["text"],
+                            "skeleton": metrics["skeleton"],
+                            "alignmentFailures": grid_failures,
                         })
                     finally:
                         context.close()
