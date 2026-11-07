@@ -7,6 +7,14 @@ import {
 } from "../../src/task/claude_context_recovery.js";
 
 describe("Claude context token estimation", () => {
+  it("uses capped and cold-cache thresholds while retaining the 200K threshold", () => {
+    expect(shouldPreemptivelyCompact({ usedTokens: 275_000, maxTokens: 1_000_000 }, 10_000)).toBe(true);
+    expect(shouldPreemptivelyCompact({ usedTokens: 250_000, maxTokens: 1_000_000 }, 10_000)).toBe(false);
+    expect(shouldPreemptivelyCompact({ usedTokens: 159_999, maxTokens: 200_000 }, 10_000)).toBe(false);
+    expect(shouldPreemptivelyCompact({ usedTokens: 160_000, maxTokens: 200_000 }, 10_000)).toBe(true);
+    expect(shouldPreemptivelyCompact({ usedTokens: 155_000, maxTokens: 1_000_000 }, 10_000, { idleMs: 55 * 60_000 })).toBe(true);
+    expect(shouldPreemptivelyCompact({ usedTokens: 155_000, maxTokens: 1_000_000, observedAtMs: 1_000 }, 10_000, { nowMs: 3_601_000 })).toBe(true);
+  });
   it("applies class-aware conservative estimates with one shared safety margin", () => {
     expect(estimateClaudeTextTokens("a".repeat(35))).toBe(13);
     expect(estimateClaudeTextTokens("한".repeat(10))).toBe(13);

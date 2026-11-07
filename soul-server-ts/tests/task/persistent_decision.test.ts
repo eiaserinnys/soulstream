@@ -76,6 +76,24 @@ function makeInput(overrides: Partial<DecisionInput> = {}): DecisionInput {
 }
 
 const decisionCases: DecisionCase[] = [
+  ...(["arrival", "turn_end"] as const).flatMap((trigger) => [
+    {
+      name: `${trigger} respects headroom above a large measured checkpoint`,
+      input: { trigger, context_tokens: 180_000, checkpoint_tokens_by_preset: { "claude-opus": 140_000 } },
+      expected: trigger === "arrival"
+        ? { action: "continue" as const, rule: "arrival.warm.within_budget" }
+        : { action: "schedule_keepalive" as const, rule: "turn_end.keepalive" },
+      expectedSnapshot: { budget_tokens: 220_000 },
+    },
+    {
+      name: `${trigger} exceeds the effective budget`,
+      input: { trigger, context_tokens: 220_001, checkpoint_tokens_by_preset: { "claude-opus": 140_000 } },
+      expected: trigger === "arrival"
+        ? { action: "new_generation" as const, rule: "arrival.warm.over_budget" }
+        : { action: "let_cool" as const, rule: "turn_end.over_budget" },
+      expectedSnapshot: { budget_tokens: 220_000 },
+    },
+  ]),
   {
     name: "arrival.cold.over_ratio",
     input: {

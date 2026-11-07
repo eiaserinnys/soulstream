@@ -13,7 +13,7 @@ import type {
 import { CLAUDE_OAUTH_TOKEN_ENV } from "../../src/engine/claude_options.js";
 import { UnknownModelPresetError } from "../../src/model_catalog.js";
 import {
-  CLAUDE_CONTEXT_PREEMPTIVE_COMPACT_RATIO,
+  claudePreemptiveCompactThresholdTokens,
   estimateClaudeTurnInputTokens,
 } from "../../src/task/claude_context_recovery.js";
 import {
@@ -5110,8 +5110,7 @@ describe("TaskExecutor multi-turn (B-4)", () => {
         return input;
       });
     const maxContextTokens = 1_000_000;
-    const compactThresholdTokens =
-      maxContextTokens * CLAUDE_CONTEXT_PREEMPTIVE_COMPACT_RATIO;
+    const compactThresholdTokens = claudePreemptiveCompactThresholdTokens(maxContextTokens);
     const firstTurnUsedTokens = compactThresholdTokens - 1;
     let preparedInputAtCompact: TaskTurnInput | undefined;
     let preparedInputTokensAtCompact = 0;

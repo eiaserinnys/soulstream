@@ -247,6 +247,8 @@ export function findSection(markdown: string, section: string): FindSectionResul
 export function stripCompileHeader(markdown: string): string {
   const newline = markdown.indexOf("\n");
   const firstLine = newline === -1 ? markdown : markdown.slice(0, newline);
-  if (!/^# .+<!--\s*node:[^>]+-->.*$/.test(firstLine)) return markdown;
-  return newline === -1 ? "" : markdown.slice(newline + 1);
+  const withoutRootHeader = /^# .+<!--\s*node:[^>]+-->.*$/.test(firstLine)
+    ? (newline === -1 ? "" : markdown.slice(newline + 1))
+    : markdown;
+  return withoutRootHeader.replace(/^(#{1,6}[ \t]+.+?)[ \t]*<!--[ \t]*node:[^>]+-->[ \t]*$/gm, "$1");
 }

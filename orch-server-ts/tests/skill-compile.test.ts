@@ -24,7 +24,7 @@ function setup(markdown: string, options: {
   const current = skill("main", "main-body");
   const allSkills = options.skills ?? [current];
   const available = options.bodies ?? {};
-  const readBody = vi.fn(async (nodeId: string) => {
+  const readBody = vi.fn(async (nodeId: string, _options?: { depth?: number }) => {
     const value = available[nodeId];
     if (!value) throw new Error(`missing body ${nodeId}`);
     return value;
@@ -55,6 +55,27 @@ function setup(markdown: string, options: {
 }
 
 describe("load_skill compiler", () => {
+  it.each([undefined, "Child"])("includes a non-sharded catalog subtree (section: %s)", async (section) => {
+    const h = setup(`\`\`\`link\ninclude: models\n${section ? `section: "${section}"\n` : ""}\`\`\``, {
+      catalogs: [catalog("models", ["model.choice"])],
+      bodies: { "body-models": body("body-models", "Overview\n## Child\nModel details") },
+    });
+    const result = await h.run();
+    expect(h.readBody).toHaveBeenCalledWith("body-models", { depth: 2 });
+    expect(result.compiled_markdown).toContain("Model details");
+  });
+
+  it.each([false, true])("picks a catalog with sharded=%s at the appropriate depth", async (sharded) => {
+    const entry = catalog("models", ["model.choice"]);
+    const h = setup("```link\npick: catalog\naxis: [model.choice]\n```", {
+      catalogs: [sharded ? { ...entry, shards: [{ name: "part", nodeId: "part", cues: [] }] } : entry],
+      bodies: { "body-models": body("body-models", "## Child\nModel details") },
+    });
+    const result = await h.run();
+    if (sharded) expect(h.readBody).toHaveBeenCalledWith("body-models");
+    else expect(h.readBody).toHaveBeenCalledWith("body-models", { depth: 2 });
+    expect(result.compiled_markdown).toContain("Model details");
+  });
   it("does not load catalogs or call Jev when the skill has no pick", async () => {
     const h = setup("# Main\n\nPlain instructions.\n");
     const result = await h.run();
@@ -487,6 +508,8 @@ describe("load_skill compiler", () => {
     expect(result.warnings.map(({ code }) => code)).toEqual(expect.arrayContaining(["invalid_link_block", "nested_link_unresolved"]));
     expect(result.links.some(({ kind }) => kind === "pick")).toBe(false);
     expect(h.readBody.mock.calls.map(([nodeId]) => nodeId)).toEqual(["guide-body", "body-palette"]);
+    expect(h.readBody).toHaveBeenCalledWith("guide-body");
+    expect(h.readBody).toHaveBeenCalledWith("body-palette");
   });
 
   it("quotes every line of a multiline call target description", async () => {

@@ -183,12 +183,13 @@ export const skillHandlers = {
         entryVersion: entryMetadata.version,
         body,
         skills: catalog,
-        readBody: (bodyNodeId) => loadAtomNodeBody({
+        readBody: (bodyNodeId, readOptions) => loadAtomNodeBody({
           bodyNodeId,
           nodeId: skills.nodeId,
           atom,
           logger: skills.logger!,
           httpClient: skills.httpClient,
+          ...(readOptions?.depth !== undefined ? { depth: readOptions.depth } : {}),
         }),
         loadCatalogs: () => loadDomainCatalog({
           nodeId: skills.catalogsNodeId ?? DEFAULT_DOMAIN_CATALOG_NODE_ID,

@@ -22,6 +22,7 @@ export interface AtomNodeMetadata {
 export interface LoadAtomNodeBodyInput {
   nodeId: string;
   bodyNodeId: string;
+  depth?: number;
   atom: AtomFetchConfig;
   logger: CatalogLogger;
   httpClient: AtomHttpClient;
@@ -33,6 +34,10 @@ const nodeMetadataCache = new Map<string, { expiresAt: number; metadata: AtomNod
 
 function cacheKey(serverUrl: string, nodeId: string): string {
   return `${serverUrl.replace(/\/+$/u, "")}:${nodeId}`;
+}
+
+function bodyCacheKey(serverUrl: string, nodeId: string, depth: number): string {
+  return `${cacheKey(serverUrl, nodeId)}:d${depth}`;
 }
 
 function atomHeaders(atom: AtomFetchConfig): Record<string, string> {
@@ -97,7 +102,8 @@ export async function loadAtomNodeMetadata({
 export async function loadAtomNodeBody(input: LoadAtomNodeBodyInput): Promise<LoadedAtomBody> {
   const { bodyNodeId, atom, httpClient } = input;
   if (!atom.enabled || !atom.serverUrl) throw new Error("Atom integration is not configured");
-  const key = cacheKey(atom.serverUrl, bodyNodeId);
+  const depth = input.depth ?? 0;
+  const key = bodyCacheKey(atom.serverUrl, bodyNodeId, depth);
   const cached = bodyCache.get(key);
   if (cached && cached.expiresAt > Date.now()) return cached.body;
 
@@ -105,7 +111,7 @@ export async function loadAtomNodeBody(input: LoadAtomNodeBodyInput): Promise<Lo
     loadAtomNodeMetadata(input),
     (async () => {
       const url = new URL(atomUrl(atom, `/api/tree/${encodeURIComponent(bodyNodeId)}/compile`));
-      url.searchParams.set("depth", "0");
+      url.searchParams.set("depth", String(depth));
       url.searchParams.set("include_ids", "true");
       const response = await httpClient.get({ url: url.toString(), headers: atomHeaders(atom) });
       const result = response.body as { markdown?: unknown } | null;

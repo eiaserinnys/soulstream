@@ -75,7 +75,7 @@ export interface CompileSkillInput {
   entryVersion: number;
   body: LoadedAtomBody;
   skills: SkillCatalogEntry[];
-  readBody: (nodeId: string) => Promise<LoadedAtomBody>;
+  readBody: (nodeId: string, options?: { depth?: number }) => Promise<LoadedAtomBody>;
   loadCatalogs: () => Promise<DomainCatalogEntry[]>;
   score: (input: SkillScoreInput) => Promise<Array<{ key: string; score: number }>>;
   intent?: string;
@@ -245,7 +245,9 @@ async function compileWithinDeadline(input: CompileSkillInput, deadlineAt: numbe
         let targetBody: LoadedAtomBody;
         try {
           ensureTime();
-          targetBody = await input.readBody(bodyNodeId);
+          targetBody = targetCatalog && !targetCatalog.shards?.length
+            ? await input.readBody(bodyNodeId, { depth: 2 })
+            : await input.readBody(bodyNodeId);
           ensureTime();
         } catch {
           brokenIncludes.push({ line: block.line, target: targetName, ...(fields.section ? { section: fields.section } : {}), cause: "본문 조회 실패" });
@@ -333,7 +335,9 @@ async function compileWithinDeadline(input: CompileSkillInput, deadlineAt: numbe
           continue;
         }
         ensureTime();
-        const selectedBody = await input.readBody(selection.catalog.bodyNodeId);
+        const selectedBody = selection.catalog.shards?.length
+          ? await input.readBody(selection.catalog.bodyNodeId)
+          : await input.readBody(selection.catalog.bodyNodeId, { depth: 2 });
         ensureTime();
         const source = sourceFor(selectedBody);
         expandedCatalogSources.set(normalizedName(selection.catalog.name), source);
