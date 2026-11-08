@@ -1,9 +1,11 @@
 import React from 'react';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { AttachmentReadError } from '../../api/attachmentEndpoints';
 import type { AttachmentView } from '../../lib/attachment-view';
 import { LIGHT_COLORS } from '../../theme/colors';
+import { useTokens } from '../../theme';
+import { DuoSideBandContext, DuoTopBandContext } from '../../navigation/tabContract';
 import { PlannerMarkdownText } from '../planner/PlannerMarkdownText';
 import { AttachmentPreviewModal } from '../AttachmentPreviewModal';
 
@@ -46,6 +48,10 @@ beforeEach(() => {
   mockReadAttachmentText.mockResolvedValue({ text: '<b>plain text</b> **not markdown**', truncated: false });
   mockReadAttachmentMedia.mockReset();
   mockReadAttachmentMedia.mockResolvedValue({ uri: 'data:video/mp4;base64,AAAA', mimeType: 'video/mp4' });
+});
+
+afterEach(() => {
+  jest.restoreAllMocks();
 });
 
 test('text preview renders bounded content as plain text and omits MIME from the modal header', async () => {
@@ -322,6 +328,41 @@ test.each([
   expect(screen.getByText('빈 파일')).toBeTruthy();
   expect(screen.queryByTestId(mediaKind === 'video' ? 'attachment-preview-video' : 'attachment-preview-audio')).toBeNull();
   expect(mockReadAttachmentMedia).not.toHaveBeenCalled();
+});
+
+test('일반 태블릿의 문서 미리보기는 프레임 높이에 맞춘 A4 폭 제한을 유지한다', async () => {
+  jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({
+    width: 1180, height: 820, scale: 1, fontScale: 1,
+  });
+  const t = renderHook(() => useTokens()).result.current;
+  mockReadAttachmentText.mockResolvedValue({ text: '# 문서', truncated: false });
+  const screen = render(<AttachmentPreviewModal item={makeView({ name: '보고.md', mimeType: 'text/markdown' })}
+    onClose={jest.fn()} />);
+
+  await waitFor(() => expect(screen.getByTestId('attachment-preview-markdown')).toBeTruthy());
+  expect(StyleSheet.flatten(screen.getByTestId('chat-image-viewer-surface').props.style).width).toBe('100%');
+  fireEvent(screen.getByTestId('chat-image-viewer-frame'), 'layout', { nativeEvent: { layout: { height: 500 } } });
+  expect(StyleSheet.flatten(screen.getByTestId('chat-image-viewer-surface').props.style).width)
+    .toBe(Math.round(500 * Math.SQRT2) + t.spacing.md * 2);
+});
+
+test.each([
+  ['DuoSideBandContext', DuoSideBandContext],
+  ['DuoTopBandContext', DuoTopBandContext],
+] as const)('듀오 펼침(%s)에서는 문서 미리보기가 A4 제한 없이 전체 폭을 쓴다', async (_name, Context) => {
+  jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({
+    width: 951, height: 669, scale: 1, fontScale: 1,
+  });
+  mockReadAttachmentText.mockResolvedValue({ text: '# 문서', truncated: false });
+  const screen = render(
+    <Context.Provider value={true}>
+      <AttachmentPreviewModal item={makeView({ name: '보고.md', mimeType: 'text/markdown' })} onClose={jest.fn()} />
+    </Context.Provider>,
+  );
+
+  await waitFor(() => expect(screen.getByTestId('attachment-preview-markdown')).toBeTruthy());
+  fireEvent(screen.getByTestId('chat-image-viewer-frame'), 'layout', { nativeEvent: { layout: { height: 500 } } });
+  expect(StyleSheet.flatten(screen.getByTestId('chat-image-viewer-surface').props.style).width).toBe('100%');
 });
 
 test('media 403 failures have no retry and 503 failures can be retried', async () => {

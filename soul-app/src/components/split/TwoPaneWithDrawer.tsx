@@ -80,6 +80,20 @@ export function TwoPaneWithDrawer() {
   const { backAction, mainActions } = splitDuoRailBackAction(override?.actions);
   const railBottom = Math.max(keyboardOverlap, insets.bottom, t.uiSpacing.xxl);
   const navigation = React.useContext(NavigationContext);
+  // 위에 transparentModal 문서가 떠 있는 동안에는 뒤에 깔린 화면의 떠 있는 띠를 숨긴다.
+  const [screenFocused, setScreenFocused] = useState(() => (
+    typeof navigation?.isFocused === 'function' ? navigation.isFocused() : true
+  ));
+  useEffect(() => {
+    setScreenFocused(typeof navigation?.isFocused === 'function' ? navigation.isFocused() : true);
+    if (typeof navigation?.addListener !== 'function') return;
+    const unsubFocus = navigation.addListener('focus', () => setScreenFocused(true));
+    const unsubBlur = navigation.addListener('blur', () => setScreenFocused(false));
+    return () => {
+      unsubFocus?.();
+      unsubBlur?.();
+    };
+  }, [navigation]);
   const persistentHost = useOptionalPersistentSessionHost();
   const cardDisplay = useCardDisplay(activeSection.kind === 'project' ? activeSection.folderId : undefined);
   const searchActive = useSearchStore(state => state.tabletActive);
@@ -349,7 +363,7 @@ export function TwoPaneWithDrawer() {
         <FolderWorkspaceReadOverlay />
       </TabletSafeAreaFrame>
     </SafeAreaView>
-    {topBandMain && showRootNavigation && !cardBoardExpanded && !settingsVisible ? <View
+    {screenFocused && topBandMain && showRootNavigation && !cardBoardExpanded && !settingsVisible ? <View
       testID="duo-top-band" accessibilityRole="toolbar" accessibilityLabel="메인 도구" pointerEvents="box-none"
       style={{ position: 'absolute', top: DUO_TOP_BAND_STATUS_CENTER_Y - RAIL_CAPSULE_WIDTH / 2,
         left: insets.left + t.tabletShell.outerInset, flexDirection: 'row', gap: t.uiSpacing.sm }}>
@@ -360,7 +374,7 @@ export function TwoPaneWithDrawer() {
         {[...layout.screen].reverse().map(renderRailAction)}
       </RailCapsule> : null}
     </View> : null}
-    {duo && !cardBoardExpanded && !settingsVisible ? <AppKeyboardAvoidingView
+    {screenFocused && duo && !cardBoardExpanded && !settingsVisible ? <AppKeyboardAvoidingView
       pointerEvents="box-none" behavior="padding" onOverlapChange={setKeyboardOverlap}
       style={StyleSheet.absoluteFill}>
       {layout.exit ? <View pointerEvents="box-none" style={{ position: 'absolute', top: getDuoRailTopOffset(screenWidth, screenHeight),
@@ -381,7 +395,7 @@ export function TwoPaneWithDrawer() {
         </RailCapsule> : null}
       </View> : null}
     </AppKeyboardAvoidingView> : null}
-    {topBandMain && !showRootNavigation && !cardBoardExpanded && !settingsVisible
+    {screenFocused && topBandMain && !showRootNavigation && !cardBoardExpanded && !settingsVisible
       ? <DuoRailOverride bandWidth={DUO_SIDE_BAND_WIDTH} topOffset={insets.top + t.tabletShell.outerInset} />
       : null}
     </View>

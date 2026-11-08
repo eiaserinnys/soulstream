@@ -16,6 +16,7 @@ import { GlassButton, GlassSurface } from './GlassSurface';
 import { ImageViewerPages } from './ImageViewerPages';
 import { AttachmentViewerFooter } from './AttachmentViewerFooter';
 import { formatAttachmentByteSize } from './AttachmentFileRow';
+import { useDuoSideBand, useDuoTopBand } from '../navigation/duoSideBand';
 
 export function AttachmentViewerModal(props: ImageViewerModalProps) {
   const t = useTokens();
@@ -53,11 +54,13 @@ function ChatRefinedImageViewerContent({
   const attachment = createSessionVisualRoles(t).chat.attachment;
   const [currentIndex, setCurrentIndex] = useState(clampIndex(initialIndex, sources.length));
   const documentLayout = layout === 'document';
+  // 듀오 펼침에서는 가용 폭을 이미 다 쓰므로 A4 비율 폭 제한을 두지 않는다.
+  const duoBand = useDuoSideBand() || useDuoTopBand();
   // Document pages fill the available height. On tablets the page is never
   // wider than a landscape A-series sheet (height x sqrt 2); phones keep the
   // inherited side insets.
   const [documentFrameHeight, setDocumentFrameHeight] = useState(0);
-  const documentWidth = documentLayout && device !== 'phone' && documentFrameHeight > 0
+  const documentWidth = documentLayout && device !== 'phone' && !duoBand && documentFrameHeight > 0
     ? Math.min(window.width - insets.left - insets.right - t.spacing.md * 2,
       Math.round(documentFrameHeight * Math.SQRT2) + t.spacing.md * 2)
     : null;
