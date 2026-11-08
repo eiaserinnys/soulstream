@@ -6,14 +6,14 @@ import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import { useTokens } from '../theme';
 import { PersistentSessionPortrait, useOptionalPersistentSessionHost, usePersistentSessionHost } from './PersistentSessionContext';
 import type { TabletStackParamList } from './TabletNavigator';
-import { RailCapsuleItem } from '../components/navigation/RailCapsule';
+import { RailCapsuleItem, railCapsuleIconColor } from '../components/navigation/RailCapsule';
 
 function ConnectedEntry({ rail }: { rail: boolean }) {
   const t = useTokens();
   const host = usePersistentSessionHost();
   const navigation = useNavigation<NativeStackNavigationProp<TabletStackParamList>>();
   const onPress = () => void host.requestEntry(() => navigation.navigate('PersistentSession'));
-  const portrait = host.loading ? <ActivityIndicator testID="persistent-entry-loading" color={t.colors.accent} />
+  const portrait = host.loading ? <ActivityIndicator testID="persistent-entry-loading" color={rail ? railCapsuleIconColor(t, true) : t.colors.accent} />
     : <PersistentSessionPortrait session={host.portrait} size={t.iconSize.navigation} />;
   if (rail) return <RailCapsuleItem testID="tablet-persistent-entry" label="영구 세션 열기" onPress={onPress}>
     {portrait}

@@ -60,8 +60,8 @@ test('레일 캡슐은 다크·라이트 모두 밝은 리퀴드 글래스 스�
   expect(light.getByTestId('capsule-surface').props.tintColor).toBe('rgba(242, 242, 247, 0.56)');
 });
 
-test('밝은 캡슐 위 아이콘 색상은 확정 팔레트 값(다크 textSecondary·라이트 textMuted·accent)을 쓴다', () => {
-  expect(railCapsuleIconColor({ mode: 'dark' }, false)).toBe('#2f3137');
+test('밝은 캡슐 위 아이콘 색상은 확정 보완 값(다크 #111111·라이트 textMuted·accent)을 쓴다', () => {
+  expect(railCapsuleIconColor({ mode: 'dark' }, false)).toBe('#111111');
   expect(railCapsuleIconColor({ mode: 'dark' }, true)).toBe('#0a84ff');
   expect(railCapsuleIconColor({ mode: 'light' }, false)).toBe('#53575d');
   expect(railCapsuleIconColor({ mode: 'light' }, true)).toBe('#0a84ff');

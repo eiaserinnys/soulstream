@@ -9,17 +9,21 @@ export const RAIL_CAPSULE_WIDTH = 48;
 
 /**
  * 캡슐은 다크 테마에서도 밝은 리퀴드 글래스로 렌더되므로 아이콘 색은 앱 테마가 아니라
- * 캡슐의 밝은 표면을 기준으로 고른다. 비선택 아이콘은 다크에서 LIGHT textSecondary,
- * 라이트에서 LIGHT textMuted이고, 선택 아이콘과 배지·점은 LIGHT accent를 쓴다.
- * 실측 대비: 비선택 다크 4.44:1(어두운 캔버스 위)·11.7:1(밝은 카드 위), 라이트 7.06:1.
+ * 캡슐의 밝은 표면을 기준으로 고른다. 비선택 아이콘은 다크에서 #111111, 라이트에서
+ * LIGHT textMuted(#53575d)이고, 선택 아이콘과 배지·점은 LIGHT accent를 쓴다.
+ * 다크 비선택 값은 확정 보완 명세가 지정한 #111111이며, LIGHT_COLORS.textPrimary는
+ * 이 리포에서 #000000이라 값이 달라 레일 전용 상수로 둔다.
+ * 실측 대비: 비선택 다크 6.44:1(어두운 캔버스 위)·16.99:1(밝은 카드 위), 라이트 7.06:1.
  * 선택 accent는 캡슐 위 1.24~3.54:1로, 확정 디자인의 팔레트 제약을 따른 결과다.
  */
+const DARK_RAIL_UNSELECTED_ICON = '#111111';
+
 export function railCapsuleIconColor(
   t: Pick<DesignTokens, 'mode'>,
   selected = false,
 ): string {
   if (selected) return LIGHT_COLORS.accent;
-  return t.mode === 'dark' ? LIGHT_COLORS.textSecondary : LIGHT_COLORS.textMuted;
+  return t.mode === 'dark' ? DARK_RAIL_UNSELECTED_ICON : LIGHT_COLORS.textMuted;
 }
 export const RAIL_ITEM_HEIGHT = 50;
 export function railCapsuleLength(count: number, compact: boolean, tokens: { spacingXs: number; uiSpacingXs: number; hitTargetMin: number }) {
