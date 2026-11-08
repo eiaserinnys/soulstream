@@ -51,7 +51,7 @@ export type { FolderTreeOption } from "./folder-tree-options";
 export { getChildFolders, getFolderBreadcrumbs, getRootFolders } from "./folder-catalog";
 export { getInheritedFolderPrompts } from "./folder-prompt-inheritance";
 export type { InheritedFolderPrompt } from "./folder-prompt-inheritance";
-export { formatWorkspaceTime } from "./format-workspace-time";
+export { formatWorkspaceTime, formatWorkspaceTime as formatBoardWorkspaceTime } from "./format-workspace-time";
 export { createBoardWorkspaceOperations } from "./board-workspace-operations";
 export type {
   BoardWorkspaceApiConfig,
