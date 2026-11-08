@@ -748,6 +748,10 @@ import { join } from "node:path";
 const configDir = process.env.CLAUDE_CONFIG_DIR;
 const logEvent = (event) => appendFileSync(join(configDir, "signals.log"), event + "\\n");
 
+// 기록 파일 생성과 핸들러 준비 사이에 느린 CLI 초기화를 재현한다.
+appendFileSync(join(configDir, "signals.log"), "");
+await new Promise((resolve) => setTimeout(resolve, 200));
+
 process.stdin.resume();
 process.stdin.on("end", () => logEvent("stdin_eof"));
 process.on("SIGTERM", () => {
@@ -792,7 +796,23 @@ setInterval(() => {}, 1000);
       killGracePeriodMs: 80,
     });
 
+    // 100ms는 CLI 초기화 시간의 상한이 아니다. 실제 timeout 콜백만 준비 뒤에 전달하고,
+    // 종료 유예 타이머와 자식 프로세스는 실제 시간으로 실행한다.
+    const timeoutReady = deferred();
+    const scheduleTimeout = globalThis.setTimeout;
+    const timeoutTimer = vi.spyOn(globalThis, "setTimeout").mockImplementationOnce(
+      (callback, ms, ...args) => scheduleTimeout(() => {
+        void timeoutReady.promise.then(() => callback(...args));
+      }, ms),
+    );
     const timeoutFlow = await timeoutService.start();
+    expect(timeoutTimer).toHaveBeenCalledWith(expect.any(Function), 100);
+    timeoutTimer.mockRestore();
+    await waitFor(
+      () => timeoutService.status({ login_id: timeoutFlow.login_id }),
+      (flow) => flow.state === "url_ready",
+    );
+    timeoutReady.resolve();
     const timedOut = await waitFor(
       () => timeoutService.status({ login_id: timeoutFlow.login_id }),
       (flow) => flow.state === "failed",
