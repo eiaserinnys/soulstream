@@ -4,6 +4,7 @@ import { PassThrough } from "node:stream";
 
 import { describe, expect, it, vi } from "vitest";
 
+import { parseDarwinAvailableMemory } from "../../src/upstream/darwin_memory.js";
 import {
   NodeResourceCollector,
   type NodeResourceCollectorOptions,
@@ -16,6 +17,24 @@ function cpu(user: number, idle: number) {
     times: { user, nice: 0, sys: 0, idle, irq: 0 },
   }];
 }
+
+function execFileSyncStub(
+  implementation: () => string,
+): NonNullable<NodeResourceCollectorOptions["execFileSync"]> {
+  return implementation as unknown as NonNullable<NodeResourceCollectorOptions["execFileSync"]>;
+}
+
+const DARWIN_VM_STAT_16384 = [
+  "Mach Virtual Memory Statistics: (page size of 16384 bytes)",
+  "Pages free:                                  10.",
+  "Pages active:                               100.",
+  "Pages inactive:                              20.",
+  "Pages speculative:                            5.",
+  "Pages throttled:                              0.",
+  "Pages wired down:                            50.",
+  "Pages purgeable:                              5.",
+  '"Translation faults":                     1234.',
+].join("\n");
 
 describe("NodeResourceCollector", () => {
   it("collects Linux CPU, available memory, filesystem and disk queue deltas", () => {
@@ -33,6 +52,7 @@ describe("NodeResourceCollector", () => {
       if (path === "/proc/diskstats") return `${diskSamples[diskIndex++]!}\n`;
       throw new Error(`unexpected path ${path}`);
     });
+    const execFileSync = vi.fn();
     const collector = new NodeResourceCollector({
       diskPath: "/",
       platform: "linux",
@@ -42,6 +62,7 @@ describe("NodeResourceCollector", () => {
       loadavg: () => [0.456, 0.2, 0.1],
       readFileSync,
       statfsSync: () => ({ blocks: 200, bsize: 1024, bavail: 50 }) as never,
+      execFileSync: execFileSync as unknown as NonNullable<NodeResourceCollectorOptions["execFileSync"]>,
       now: () => new Date(nowMs),
     });
 
@@ -73,6 +94,7 @@ describe("NodeResourceCollector", () => {
       diskQueue: { device: "sda", inFlight: 3, avgQueueDepth: 0.1, busyPercent: 5 },
     });
     expect(readFileSync).toHaveBeenCalledWith("/proc/meminfo", "utf8");
+    expect(execFileSync).not.toHaveBeenCalled();
     collector.close();
   });
 
@@ -142,5 +164,140 @@ describe("NodeResourceCollector", () => {
     expect(spawnTypeperf).toHaveBeenCalledOnce();
     collector.close();
     expect(process.kill).toHaveBeenCalledOnce();
+  });
+});
+
+describe("NodeResourceCollector Darwin", () => {
+  it("reads available memory from vm_stat and keeps the disk queue null", () => {
+    const execFileSync = vi.fn(() => DARWIN_VM_STAT_16384);
+    const collector = new NodeResourceCollector({
+      diskPath: "/",
+      platform: "darwin",
+      cpus: () => cpu(10, 90),
+      totalmem: () => 1024 * 1024,
+      freemem: () => 1,
+      loadavg: () => [1.5, 1, 0.5],
+      statfsSync: () => ({ blocks: 100, bsize: 1024, bavail: 25 }) as never,
+      execFileSync: execFileSync as unknown as NonNullable<NodeResourceCollectorOptions["execFileSync"]>,
+      now: () => new Date(0),
+    });
+
+    expect(collector.collectSync()).toEqual({
+      collectedAt: "1970-01-01T00:00:00.000Z",
+      cpu: { usagePercent: 10, cores: 1, loadAvg1m: 1.5 },
+      memory: {
+        usagePercent: 45.3,
+        usedBytes: 475_136,
+        availableBytes: 573_440,
+        totalBytes: 1_048_576,
+      },
+      disk: {
+        path: "/",
+        usagePercent: 75,
+        usedBytes: 76_800,
+        availableBytes: 25_600,
+        totalBytes: 102_400,
+      },
+      diskQueue: null,
+    });
+    expect(execFileSync).toHaveBeenCalledWith(
+      "/usr/bin/vm_stat",
+      [],
+      expect.objectContaining({
+        timeout: 1000,
+        encoding: "utf8",
+        env: expect.objectContaining({ LC_ALL: "C" }),
+      }),
+    );
+    collector.close();
+  });
+
+  it("clamps vm_stat memory to totalmem", () => {
+    const collector = new NodeResourceCollector({
+      diskPath: "/",
+      platform: "darwin",
+      cpus: () => cpu(1, 1),
+      totalmem: () => 1024,
+      freemem: () => 1,
+      loadavg: () => [0, 0, 0],
+      statfsSync: () => ({ blocks: 1, bsize: 1, bavail: 1 }) as never,
+      execFileSync: execFileSyncStub(() => [
+        "Mach Virtual Memory Statistics: (page size of 16384 bytes)",
+        "Pages free:                            10000000.",
+        "Pages inactive:                               0.",
+        "Pages purgeable:                              0.",
+      ].join("\n")),
+      now: () => new Date(0),
+    });
+
+    expect(collector.collectSync().memory).toEqual({
+      usagePercent: 0,
+      usedBytes: 0,
+      availableBytes: 1024,
+      totalBytes: 1024,
+    });
+    collector.close();
+  });
+
+  it("falls back to freemem when vm_stat fails or cannot be parsed", () => {
+    const failing = new NodeResourceCollector({
+      diskPath: "/",
+      platform: "darwin",
+      cpus: () => cpu(1, 1),
+      totalmem: () => 1024,
+      freemem: () => 256,
+      loadavg: () => [0, 0, 0],
+      statfsSync: () => ({ blocks: 1, bsize: 1, bavail: 1 }) as never,
+      execFileSync: execFileSyncStub(() => {
+        throw new Error("vm_stat missing");
+      }),
+      now: () => new Date(0),
+    });
+    expect(failing.collectSync().memory.availableBytes).toBe(256);
+    failing.close();
+
+    const unparsable = new NodeResourceCollector({
+      diskPath: "/",
+      platform: "darwin",
+      cpus: () => cpu(1, 1),
+      totalmem: () => 1024,
+      freemem: () => 128,
+      loadavg: () => [0, 0, 0],
+      statfsSync: () => ({ blocks: 1, bsize: 1, bavail: 1 }) as never,
+      execFileSync: execFileSyncStub(() => "unexpected output"),
+      now: () => new Date(0),
+    });
+    expect(unparsable.collectSync().memory.availableBytes).toBe(128);
+    unparsable.close();
+  });
+});
+
+describe("parseDarwinAvailableMemory", () => {
+  it("sums free, inactive and purgeable pages and accepts trailing dots", () => {
+    expect(parseDarwinAvailableMemory(DARWIN_VM_STAT_16384)).toBe(573_440);
+  });
+
+  it("supports 4096 byte pages and page counts without a trailing dot", () => {
+    const output = [
+      "Mach Virtual Memory Statistics: (page size of 4096 bytes)",
+      "Pages free:                                  100",
+      "Pages inactive:                              200",
+      "Pages purgeable:                             300",
+    ].join("\n");
+    expect(parseDarwinAvailableMemory(output)).toBe(600 * 4096);
+  });
+
+  it("returns undefined when the page size or a required page count is missing", () => {
+    expect(parseDarwinAvailableMemory("")).toBeUndefined();
+    expect(parseDarwinAvailableMemory([
+      "Pages free: 10.",
+      "Pages inactive: 20.",
+      "Pages purgeable: 5.",
+    ].join("\n"))).toBeUndefined();
+    expect(parseDarwinAvailableMemory([
+      "Mach Virtual Memory Statistics: (page size of 16384 bytes)",
+      "Pages free: 10.",
+      "Pages inactive: 20.",
+    ].join("\n"))).toBeUndefined();
   });
 });

@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# macOS has no GNU realpath/flock/free/timeout and no fixed /home/eias account,
+# so a Darwin build hook hands the whole pipeline to a Python runner instead.
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+  exec python3 "$script_dir/build_core_darwin.py"
+fi
+
 script_dir="$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")"
 # Haniel may call this from a node-specific checkout; the account paths below
 # intentionally match the host that owns this build hook.
