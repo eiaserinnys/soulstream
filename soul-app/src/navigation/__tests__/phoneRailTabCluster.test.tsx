@@ -60,11 +60,11 @@ test('레일 캡슐은 다크·라이트 모두 밝은 리퀴드 글래스 스�
   expect(light.getByTestId('capsule-surface').props.tintColor).toBe('rgba(242, 242, 247, 0.56)');
 });
 
-test('밝은 캡슐 위 아이콘 색상은 확정 보완 값(다크 #111111·라이트 textMuted·accent)을 쓴다', () => {
+test('밝은 캡슐 위 아이콘 색상은 확정 보완 값(다크 #111111·라이트 textMuted·선택 #002b66)을 쓴다', () => {
   expect(railCapsuleIconColor({ mode: 'dark' }, false)).toBe('#111111');
-  expect(railCapsuleIconColor({ mode: 'dark' }, true)).toBe('#0a84ff');
+  expect(railCapsuleIconColor({ mode: 'dark' }, true)).toBe('#002b66');
   expect(railCapsuleIconColor({ mode: 'light' }, false)).toBe('#53575d');
-  expect(railCapsuleIconColor({ mode: 'light' }, true)).toBe('#0a84ff');
+  expect(railCapsuleIconColor({ mode: 'light' }, true)).toBe('#002b66');
 });
 
 test('가로 캡슐은 세 항목을 regular 크기로 배치한다', () => {
@@ -84,8 +84,15 @@ test('숫자와 점의 우선순위와 비활성 상태를 노출한다', () => 
     <RailCapsuleItem testID="dot" label="커멘트" dot disabled onPress={disabledPress}><Text>아이콘</Text></RailCapsuleItem>
   </RailCapsule></NavigationContainer>);
   expect(screen.getByTestId('count-badge')).toBeTruthy();
+  expect(StyleSheet.flatten(screen.getByTestId('count-badge').props.style)).toMatchObject({
+    backgroundColor: '#d8ebff',
+    color: '#002b66',
+  });
   expect(screen.queryByTestId('count-dot')).toBeNull();
   expect(screen.getByTestId('dot-dot')).toBeTruthy();
+  expect(StyleSheet.flatten(screen.getByTestId('dot-dot').props.style)).toMatchObject({
+    backgroundColor: '#002b66',
+  });
   expect(screen.getByLabelText('커멘트').props.accessibilityState.disabled).toBe(true);
 });
 

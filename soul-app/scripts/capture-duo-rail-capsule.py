@@ -7,10 +7,11 @@
   렌더되고, 흰색 스페큘러 경계(`rgba(255, 255, 255, 0.78)`)와 backdrop blur를 유지한다.
   회귀 기준은 이전의 탁한 회색(`#4c4a4f`)이 아니라 밝은 유리다.
 - 캡슐 안 아이콘은 캡슐의 밝은 표면을 기준으로 고른 색을 쓴다. 다크 테마 비선택
-  `rgb(17, 17, 17)`, 라이트 테마 비선택 `rgb(83, 87, 93)`, 선택 `rgb(10, 132, 255)`.
-  비선택 아이콘은 어두운 캔버스(`#0f0f0f`)와 밝은 포스트잇(`#eee8f6`) 양쪽에서
-  WCAG AA 4.5:1 이상이어야 한다.
-- 배지·점 색상이 밝은 캡슐용 토큰(`#d8ebff`/`#0a84ff`)을 쓴다.
+  `rgb(17, 17, 17)`, 라이트 테마 비선택 `rgb(83, 87, 93)`, 선택 `rgb(0, 43, 102)`.
+  선택·비선택 아이콘 모두 어두운 캔버스(`#0f0f0f`)와 밝은 포스트잇(`#eee8f6`)
+  양쪽에서 WCAG AA 4.5:1 이상이어야 한다.
+- 배지·점 색상은 배경 `#d8ebff`, 글자·점 `rgb(0, 43, 102)`를 쓰며 배지 글자 대비도
+  AA 4.5:1 이상이다.
 - 캡슐 크기 계약(폭 48, 알약 반경)이 그대로다.
 - 불변: 캡슐이 아닌 chrome(하단 탭바 유리)은 다크 테마에서 계속 어두운 유리를 쓴다.
 - 리뷰 화면 `?theme=dark`는 루트 프레임과 NavigationContainer 배경을 `#0f0f0f`로 칠한다.
@@ -52,7 +53,7 @@ CAPSULE_FRAMES = [
 THEMES = ("dark", "light")
 
 UNSELECTED_ICON_RGB = {"dark": (17, 17, 17), "light": (83, 87, 93)}
-SELECTED_ICON_RGB = (10, 132, 255)
+SELECTED_ICON_RGB = (0, 43, 102)
 SPECULAR_BORDER = "rgba(255, 255, 255, 0.78)"
 DARK_CANVAS_RGB = (15, 15, 15)
 BRIGHT_POSTIT_RGB = (238, 232, 246)
@@ -329,6 +330,8 @@ def capture_capsule_frame(browser: Browser, base: str, out: Path, frame_id: str,
                                   composite(fill_rgb, fill_alpha, backdrop)), 2)
         for key, backdrop in zip(ratios, backdrops)
     }
+    checks.check(f"{prefix} 선택 아이콘 AA 4.5:1",
+                 all(value >= AA_CONTRAST for value in selected_ratios.values()), selected_ratios)
     checks.check(f"{prefix} 페이지 오류 없음", not errors, errors)
     return {"url": url, "screenshot": screenshot, "metrics": metrics,
             "contrast": {"unselected": ratios, "selected": selected_ratios}}
@@ -354,11 +357,13 @@ def capture_badge_states(browser: Browser, base: str, out: Path, checks: Checks)
                 checks.check(f"{prefix} 배지 존재", badge is not None, metrics)
                 checks.check(f"{prefix} 배경 #d8ebff", badge and badge["backgroundColor"] == "rgb(216, 235, 255)",
                              badge)
-                checks.check(f"{prefix} 글자 #0a84ff", badge and badge["color"] == "rgb(10, 132, 255)", badge)
+                checks.check(f"{prefix} 글자 #002b66", badge and badge["color"] == "rgb(0, 43, 102)", badge)
+                badge_ratio = round(contrast_ratio((0, 43, 102), (216, 235, 255)), 2)
+                checks.check(f"{prefix} 배지 글자 AA 4.5:1", badge_ratio >= AA_CONTRAST, badge_ratio)
             else:
                 dot = metrics["dots"][0] if metrics["dots"] else None
                 checks.check(f"{prefix} 점 존재", dot is not None, metrics)
-                checks.check(f"{prefix} 점 #0a84ff", dot and dot["backgroundColor"] == "rgb(10, 132, 255)", dot)
+                checks.check(f"{prefix} 점 #002b66", dot and dot["backgroundColor"] == "rgb(0, 43, 102)", dot)
             checks.check(f"{prefix} 페이지 오류 없음", not errors, errors)
             states[f"{view}-{theme}"] = {"url": url, "screenshot": screenshot, "metrics": metrics}
     return states
@@ -383,6 +388,10 @@ def capture_non_capsule_chrome(browser: Browser, base: str, out: Path, checks: C
     checks.check("불변: 하단 탭바 chrome은 어두운 유리", bool(glass) and all(luminance_ok), glass)
     checks.check("불변: 하단 탭바에 blur 유지",
                  bool(glass) and all("blur(" in (entry["backdropFilter"] or "") for entry in glass), glass)
+    expected_border = "rgba(42, 42, 46, 0.74)"
+    checks.check("불변: 하단 탭바 chrome 경계 유지",
+                 bool(glass) and all(entry["borderColor"] == expected_border for entry in glass),
+                 [entry["borderColor"] for entry in glass])
     checks.check("불변: 하단 탭바 페이지 오류 없음", not errors, errors)
     return {"url": url, "screenshot": screenshot, "glass": glass}
 

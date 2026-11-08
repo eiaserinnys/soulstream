@@ -15,6 +15,7 @@ import {
 import { CompactTouchTarget } from './CompactTouchTarget';
 import { BlurView, type BlurTint } from 'expo-blur';
 import {
+  createLightChromeGlassRole,
   createPrimitiveRoles,
   createPlannerVisualRoles,
   createSurfaceRoles,
@@ -168,7 +169,14 @@ function GlassSurfaceImpl({
   }, [isDevelopmentBuild, nestedSameRole, violationMessage]);
 
   const resolvedRole: SurfaceRoleName = nestedSameRole ? 'canvas' : role;
-  const surface = nestedSameRole ? getSurfaceRole(roles, resolvedRole) : requestedSurface;
+  const defaultSurface = nestedSameRole
+    ? getSurfaceRole(roles, resolvedRole)
+    : requestedSurface;
+  // 일반 chrome의 알파·경계는 그대로 두고, 라이트 스킴이 명시된 캡슐만 밝은 유리로 렌더한다.
+  const surface =
+    colorScheme === 'light' && resolvedRole === 'chrome'
+      ? createLightChromeGlassRole(effectiveTokens)
+      : defaultSurface;
   const reduceTransparency = useReduceTransparency();
   const surfaceKind = resolveGlassSurfaceKind({
     nativeGlassAvailable: canUseNativeGlass(),

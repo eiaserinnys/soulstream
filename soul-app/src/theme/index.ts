@@ -28,7 +28,7 @@ export {
 export type { DesignTokens } from './tokens';
 export type { FoundationTokens } from './tokens';
 export { DARK_COLORS, LIGHT_COLORS } from './colors';
-export { createSurfaceRoles, getSurfaceRole, SURFACE_ROLE_NAMES } from './surfaceRoles';
+export { createLightChromeGlassRole, createSurfaceRoles, getSurfaceRole, SURFACE_ROLE_NAMES } from './surfaceRoles';
 export { createPrimitiveRoles, PRIMITIVE_ROLE_NAMES } from './surfacePrimitives';
 export type { PrimitiveRoleDefinition, PrimitiveRoleName, PrimitiveRoles } from './surfacePrimitives';
 export type { SurfaceRoleDefinition, SurfaceRoleName, SurfaceRoles } from './surfaceRoles';

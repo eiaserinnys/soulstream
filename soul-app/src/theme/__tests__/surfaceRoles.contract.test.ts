@@ -4,6 +4,7 @@ import type { DesignTokens } from '../tokens';
 import { DARK_COLORS, LIGHT_COLORS } from '../tokens';
 import {
   SURFACE_ROLE_NAMES,
+  createLightChromeGlassRole,
   createSurfaceRoles,
 } from '../surfaceRoles';
 
@@ -162,30 +163,41 @@ describe('surface role contract', () => {
     expect(roles.modal.materialStyle.blur.borderColor).toBe(semanticGlassExact[mode].stroke);
   });
 
-  test('chrome 역할은 라이트에서 밝은 반투명 리퀴드 글래스와 흰색 스페큘러 림을 제공한다', () => {
-    const roles = createSurfaceRoles(tokens('light'));
-
-    expect(roles.chrome.nativeTintColor).toBe('rgba(242, 242, 247, 0.56)');
-    expect(roles.chrome.blurColor).toBe('rgba(242, 242, 247, 0.62)');
-    expect(roles.chrome.materialStyle.blur.borderColor).toBe(
-      'rgba(255, 255, 255, 0.78)',
-    );
-  });
-
-  test('chrome 역할의 blur 경계는 다크에서도 유리 가장자리 하이라이트를 유지한다', () => {
-    const roles = createSurfaceRoles(tokens('dark'));
-
-    expect(roles.chrome.materialStyle.blur.borderColor).toBe(
-      'rgba(255, 255, 255, 0.22)',
-    );
-  });
-
   test.each([
-    ['light', 'rgba(242, 242, 247, 0.92)'],
-    ['dark', 'rgba(28, 28, 30, 0.92)'],
-  ] as const)('chrome의 토큰 배경은 %s 모드에서도 0.92 알파를 유지한다', (mode, expected) => {
-    expect(createSurfaceRoles(tokens(mode)).chrome.tokenStyle.backgroundColor).toBe(
-      expected,
+    [
+      'light',
+      'rgba(242, 242, 247, 0.68)',
+      'rgba(242, 242, 247, 0.92)',
+      'rgba(209, 209, 214, 0.74)',
+    ],
+    [
+      'dark',
+      'rgba(28, 28, 30, 0.68)',
+      'rgba(28, 28, 30, 0.92)',
+      'rgba(42, 42, 46, 0.74)',
+    ],
+  ] as const)(
+    '기본 chrome 역할은 %s 모드에서 기존 틴트·배경 알파와 경계를 유지한다',
+    (mode, nativeTint, blurColor, borderColor) => {
+      const roles = createSurfaceRoles(tokens(mode));
+
+      expect(roles.chrome.nativeTintColor).toBe(nativeTint);
+      expect(roles.chrome.blurColor).toBe(blurColor);
+      expect(roles.chrome.tokenStyle.backgroundColor).toBe(blurColor);
+      expect(roles.chrome.materialStyle.blur.borderColor).toBe(borderColor);
+    },
+  );
+
+  test('캡슐 전용 라이트 chrome은 밝은 틴트와 흰색 스페큘러 림을 제공한다', () => {
+    const capsuleChrome = createLightChromeGlassRole(tokens('light'));
+
+    expect(capsuleChrome.nativeTintColor).toBe('rgba(242, 242, 247, 0.56)');
+    expect(capsuleChrome.blurColor).toBe('rgba(242, 242, 247, 0.62)');
+    expect(capsuleChrome.tokenStyle.backgroundColor).toBe(
+      'rgba(242, 242, 247, 0.92)',
+    );
+    expect(capsuleChrome.materialStyle.blur.borderColor).toBe(
+      'rgba(255, 255, 255, 0.78)',
     );
   });
 

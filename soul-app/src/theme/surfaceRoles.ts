@@ -36,7 +36,6 @@ const CHROME_NATIVE_TINT_ALPHA = 0.68;
 const LIGHT_CHROME_GLASS_TINT_ALPHA = 0.56;
 const LIGHT_CHROME_GLASS_BLUR_ALPHA = 0.62;
 const LIGHT_CHROME_SPECULAR_BORDER = 'rgba(255, 255, 255, 0.78)';
-const DARK_CHROME_SPECULAR_BORDER = 'rgba(255, 255, 255, 0.22)';
 const SEMANTIC_GLASS_PALETTE = {
   light: {
     glassSoft: { translucent: 'rgba(231, 237, 245, 0.56)', solid: '#e7edf5' },
@@ -77,22 +76,12 @@ export function createSurfaceRoles(t: DesignTokens): SurfaceRoles {
     chrome: role({
       compositesBackdrop: true,
       nativeGlass: true,
-      nativeTintColor:
-        t.mode === 'light'
-          ? withAlpha(c.surface, LIGHT_CHROME_GLASS_TINT_ALPHA)
-          : withAlpha(c.surface, CHROME_NATIVE_TINT_ALPHA),
-      blurColor:
-        t.mode === 'light'
-          ? withAlpha(c.surface, LIGHT_CHROME_GLASS_BLUR_ALPHA)
-          : withAlpha(c.surface, CHROME_CONTENT_ALPHA),
-      tokenBackgroundColor: withAlpha(c.surface, CHROME_CONTENT_ALPHA),
+      nativeTintColor: withAlpha(c.surface, CHROME_NATIVE_TINT_ALPHA),
+      blurColor: withAlpha(c.surface, CHROME_CONTENT_ALPHA),
       fallbackColor: c.surface,
       borderRadius: 0,
       blurIntensity: 74,
-      blurBorderColor:
-        t.mode === 'light'
-          ? LIGHT_CHROME_SPECULAR_BORDER
-          : DARK_CHROME_SPECULAR_BORDER,
+      blurBorderColor: withAlpha(c.border, 0.74),
       solidBorderColor: c.border,
     }),
     glassSoft: role({
@@ -150,6 +139,28 @@ export function createSurfaceRoles(t: DesignTokens): SurfaceRoles {
       blurIntensity: 0,
     }),
   };
+}
+
+/**
+ * 라이트 테마의 레일 캡슐 전용 chrome 변형.
+ *
+ * 일반 chrome의 알파·경계는 불변으로 두고, 다크 테마에서도 밝게 보여야 하는 캡슐만
+ * 이 역할로 렌더한다. 흰색 스페큘러 림과 낮은 틴트 알파가 밝은 리퀴드 글래스 질감을 만든다.
+ */
+export function createLightChromeGlassRole(t: DesignTokens): SurfaceRoleDefinition {
+  const c = t.colors;
+  return role({
+    compositesBackdrop: true,
+    nativeGlass: true,
+    nativeTintColor: withAlpha(c.surface, LIGHT_CHROME_GLASS_TINT_ALPHA),
+    blurColor: withAlpha(c.surface, LIGHT_CHROME_GLASS_BLUR_ALPHA),
+    tokenBackgroundColor: withAlpha(c.surface, CHROME_CONTENT_ALPHA),
+    fallbackColor: c.surface,
+    borderRadius: 0,
+    blurIntensity: 74,
+    blurBorderColor: LIGHT_CHROME_SPECULAR_BORDER,
+    solidBorderColor: c.border,
+  });
 }
 
 export function getSurfaceRole(
