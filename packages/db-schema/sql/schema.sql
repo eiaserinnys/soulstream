@@ -2511,7 +2511,7 @@ CREATE OR REPLACE FUNCTION event_search(
     created_at      TIMESTAMPTZ,
     score           FLOAT
 ) LANGUAGE sql STABLE AS $$
-    WITH document_rows AS NOT MATERIALIZED (
+    WITH RECURSIVE document_rows AS NOT MATERIALIZED (
  SELECT k.session_id,m.event_id AS id,m.created_at,m.doc_len
  FROM event_search_documents m
  JOIN event_search_session_keys k USING(session_key)
@@ -2596,15 +2596,65 @@ CREATE OR REPLACE FUNCTION event_search(
           AND (p_event_types IS NULL OR m.event_type_id=ANY(ARRAY(
              SELECT event_type_id FROM event_search_event_types WHERE event_type=ANY(p_event_types))))
     ),
-    -- Unscoped searches keep the term-first path, which avoids scanning every
-    -- event when the caller supplied no session IDs.
-    global_matching_postings AS (
-        SELECT q.term, t.session_id, t.event_id, t.term_freq, t.doc_len,
-               df.doc_count, t.created_at
-        FROM query_terms q
-        JOIN query_term_document_frequencies df ON df.term = q.term
-        JOIN posting_rows t ON t.term = q.term
+    global_term_pool AS MATERIALIZED (
+        SELECT term_id, term, doc_count, 'exact'::text AS kind, NULL::float AS prefix_score
+        FROM resolved_terms WHERE p_session_ids IS NULL
+        UNION ALL
+        SELECT d.term_id, d.term, event_search_document_frequency(d.term)::float,
+               'prefix', max(0.000001 + LEAST(length(q.term)::float / GREATEST(length(d.term),1),1.0)*0.000001)
+        FROM korean_prefix_terms q
+        JOIN event_search_dictionary d ON left(d.term,3)=q.prefix AND d.term ~ '[가-힣]'
         WHERE p_session_ids IS NULL
+        GROUP BY d.term_id,d.term
+    ),
+    global_ordered_terms AS MATERIALIZED (
+        SELECT *, row_number() OVER (PARTITION BY kind ORDER BY doc_count,term_id) AS rn,
+                  count(*) OVER (PARTITION BY kind) AS n
+        FROM global_term_pool
+    ),
+    -- A global query reads at most 40000 postings. Exact terms get the whole
+    -- budget unless Korean prefix expansion applies, in which case 10000 is
+    -- reserved for prefix terms so common exact terms cannot starve them.
+    global_budget AS (
+        SELECT 'exact'::text AS kind,
+               (CASE WHEN EXISTS (SELECT 1 FROM korean_prefix_terms)
+                     THEN 30000 ELSE 40000 END)::bigint AS budget
+        UNION ALL
+        SELECT 'prefix'::text, 10000::bigint
+    ),
+    -- Each term's share is the remaining budget divided by the terms left.
+    -- A term never reads more than 4000 postings once its share exceeds that,
+    -- so a query mixing several common terms keeps only each term's newest.
+    global_allocations AS (
+        SELECT t.*,
+               CASE WHEN t.doc_count <= b.budget/t.n THEN t.doc_count::bigint
+                    ELSE LEAST(4000::bigint, b.budget/t.n) END AS quota,
+               b.budget AS remaining
+        FROM global_ordered_terms t
+        JOIN global_budget b USING(kind)
+        WHERE t.rn=1
+        UNION ALL
+        SELECT t.*, CASE WHEN t.doc_count <= (a.remaining-a.quota)/(t.n-t.rn+1) THEN t.doc_count::bigint ELSE LEAST(4000::bigint,(a.remaining-a.quota)/(t.n-t.rn+1)) END,a.remaining-a.quota
+        FROM global_allocations a JOIN global_ordered_terms t ON t.kind=a.kind AND t.rn=a.rn+1
+    ),
+    global_bounded_postings AS MATERIALIZED (
+        SELECT q.*,p.session_key,p.event_id,p.term_freq
+        FROM global_allocations q
+        CROSS JOIN LATERAL (
+            SELECT p.session_key,p.event_id,p.term_freq
+            FROM event_search_postings p WHERE p.term_id=q.term_id
+            ORDER BY p.session_key DESC,p.event_id DESC LIMIT q.quota
+        ) p
+        WHERE q.kind='exact'
+    ),
+    global_matching_postings AS (
+        SELECT q.term,k.session_id,q.event_id,q.term_freq,m.doc_len,q.doc_count,m.created_at
+        FROM global_bounded_postings q
+        JOIN event_search_documents m USING(session_key,event_id)
+        JOIN event_search_session_keys k USING(session_key)
+        WHERE q.kind='exact'
+          AND (p_event_types IS NULL OR m.event_type_id=ANY(ARRAY(
+             SELECT event_type_id FROM event_search_event_types WHERE event_type=ANY(p_event_types))))
     ),
     matching_postings AS (
         SELECT * FROM scoped_matching_postings
@@ -2709,27 +2759,21 @@ CREATE OR REPLACE FUNCTION event_search(
         GROUP BY e.id, e.session_id, e.created_at
     ),
     global_prefix_postings AS MATERIALIZED (
-        SELECT t.session_id, t.event_id, MAX(t.created_at) AS created_at,
-            MAX(
-                0.000001 +
-                LEAST(
-                    length(q.term)::FLOAT /
-                    GREATEST(length(t.term), 1)::FLOAT,
-                    1.0
-                ) * 0.000001
-            )::FLOAT AS score
-        FROM korean_prefix_terms q
-        JOIN posting_rows t
-          ON left(t.term, 3) = q.prefix
-        WHERE p_session_ids IS NULL
-          AND t.term ~ '[가-힣]'
-          AND (p_prefix_limit > 0 OR p_limit IS NULL
-               OR (SELECT count FROM exact_count) < p_limit)
-          AND NOT EXISTS (
-              SELECT 1 FROM scored_candidates s
-              WHERE s.session_id = t.session_id AND s.id = t.event_id
-          )
-        GROUP BY t.session_id, t.event_id
+        SELECT k.session_id,p.event_id,MAX(m.created_at) AS created_at,MAX(q.prefix_score)::float AS score
+        FROM global_allocations q
+        CROSS JOIN LATERAL (
+            SELECT p.session_key,p.event_id FROM event_search_postings p
+            WHERE p.term_id=q.term_id
+            ORDER BY p.session_key DESC,p.event_id DESC LIMIT q.quota
+        ) p
+        JOIN event_search_documents m USING(session_key,event_id)
+        JOIN event_search_session_keys k USING(session_key)
+        WHERE q.kind='prefix'
+          AND (p_event_types IS NULL OR m.event_type_id=ANY(ARRAY(
+             SELECT event_type_id FROM event_search_event_types WHERE event_type=ANY(p_event_types))))
+          AND (p_prefix_limit>0 OR p_limit IS NULL OR (SELECT count FROM exact_count)<p_limit)
+          AND NOT EXISTS(SELECT 1 FROM scored_candidates s WHERE s.session_id=k.session_id AND s.id=p.event_id)
+        GROUP BY k.session_id,p.event_id
     ),
     global_prefix_scored AS (
         SELECT posting.event_id AS id, posting.session_id, posting.created_at, posting.score

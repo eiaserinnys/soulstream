@@ -592,6 +592,10 @@
     {
       "id": "146_flat_folder_markdown_documents.sql",
       "sha256": "07c8cdccf295bf11cef7548cf0e944964b9250a9ac7a77ee07f7b3b295b10484"
+    },
+    {
+      "id": "147_event_search_global_posting_budget.sql",
+      "sha256": "1ac2cae6e1e5a0acb3d348a2bc808f903ee4469325b9980f78cf8b8938be222b"
     }
   ]
 }
