@@ -1,24 +1,35 @@
 import { createHash } from "node:crypto";
-import { createConnection, createServer, type Server } from "node:net";
+import { createConnection, createServer } from "node:net";
 import { resolve, win32 } from "node:path";
+
+import {
+  isDarwinKernelLockHeld,
+  tryAcquireDarwinKernelLock,
+} from "./runner_darwin_kernel_lock.js";
 
 const LOCK_NAME_PREFIX = "soulstream-runner-lock-";
 
 /**
- * A process-lifetime lock backed by a kernel-owned listening endpoint.
+ * A process-lifetime lock backed by a kernel-owned exclusive resource.
  *
- * Linux abstract Unix sockets and Windows named pipes have the two properties
- * the former owner file did not: bind is exclusive, and the OS releases the
- * endpoint when the process dies. The filesystem path is only the stable input
- * to the endpoint name; no lease, pid probe, or timeout participates in the
- * ownership decision.
+ * Linux abstract Unix sockets, Windows named pipes, and Darwin SQLite
+ * EXCLUSIVE transactions share the two properties the former owner file did
+ * not: acquisition is exclusive, and the OS releases ownership when the
+ * process dies. The filesystem path is only the stable input to the lock name;
+ * no lease, pid probe, or timeout participates in the ownership decision.
  */
 export class RunnerKernelLock {
   private released = false;
 
-  private constructor(private readonly server: Server) {}
+  private constructor(private readonly releaseKernelLock: () => Promise<void>) {}
 
   static async tryAcquire(path: string): Promise<RunnerKernelLock | null> {
+    if (process.platform === "darwin") {
+      const lock = tryAcquireDarwinKernelLock(path);
+      return lock === null
+        ? null
+        : new RunnerKernelLock(async () => { lock.release(); });
+    }
     const server = createServer((socket) => socket.destroy());
     const acquired = await new Promise<boolean>((resolveAcquire, reject) => {
       const onError = (error: NodeJS.ErrnoException) => {
@@ -38,10 +49,18 @@ export class RunnerKernelLock {
       server.listen(runnerKernelLockEndpoint(path));
     });
     if (!acquired) return null;
-    return new RunnerKernelLock(server);
+    return new RunnerKernelLock(async () => {
+      await new Promise<void>((resolveClose, reject) => {
+        server.close((error) => {
+          if (error) reject(error);
+          else resolveClose();
+        });
+      });
+    });
   }
 
   static async isHeld(path: string): Promise<boolean> {
+    if (process.platform === "darwin") return isDarwinKernelLockHeld(path);
     return await new Promise<boolean>((resolveHeld, reject) => {
       const socket = createConnection(runnerKernelLockEndpoint(path));
       socket.once("connect", () => {
@@ -62,12 +81,7 @@ export class RunnerKernelLock {
   async release(): Promise<void> {
     if (this.released) return;
     this.released = true;
-    await new Promise<void>((resolveClose, reject) => {
-      this.server.close((error) => {
-        if (error) reject(error);
-        else resolveClose();
-      });
-    });
+    await this.releaseKernelLock();
   }
 }
 

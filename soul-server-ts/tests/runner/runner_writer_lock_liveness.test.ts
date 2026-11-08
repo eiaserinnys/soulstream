@@ -6,17 +6,24 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ProcessOwnershipLockDependencies } from
   "../../src/runner/runner_process_lock.js";
+import { darwinKernelLockPath } from "../../src/runner/runner_darwin_kernel_lock.js";
 import {
   inspectRunnerWriterLock,
   RunnerWriterLock,
 } from "../../src/runner/runner_writer_lock.js";
 
 const directories: string[] = [];
+const darwinLockFiles: string[] = [];
 
 afterEach(async () => {
   await Promise.all(directories.splice(0).map(
     async (directory) => await rm(directory, { recursive: true, force: true }),
   ));
+  await Promise.all(darwinLockFiles.splice(0).flatMap((lockFile) => [
+    rm(lockFile, { force: true }),
+    rm(`${lockFile}-journal`, { force: true }),
+  ]));
+  vi.restoreAllMocks();
 });
 
 describe("runner writer lock liveness", () => {
@@ -32,6 +39,24 @@ describe("runner writer lock liveness", () => {
       kind: "held",
       owner: owner.owner,
     })));
+    await owner.release();
+    await expect(inspectRunnerWriterLock(path)).resolves.toEqual({ kind: "free" });
+  });
+
+  it.skipIf(process.platform === "win32")("reads Darwin liveness from the SQLite kernel lock alone", async () => {
+    const path = await temporaryPath();
+    darwinLockFiles.push(darwinKernelLockPath(path));
+    vi.spyOn(process, "platform", "get").mockReturnValue("darwin");
+
+    const owner = await RunnerWriterLock.acquire(path);
+    const observed = await Promise.all(
+      Array.from({ length: 6 }, async () => await inspectRunnerWriterLock(path)),
+    );
+    expect(observed).toEqual(Array.from({ length: 6 }, () => ({
+      kind: "held",
+      owner: owner.owner,
+    })));
+
     await owner.release();
     await expect(inspectRunnerWriterLock(path)).resolves.toEqual({ kind: "free" });
   });

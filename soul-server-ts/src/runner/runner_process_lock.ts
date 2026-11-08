@@ -7,6 +7,12 @@ import { promisify } from "node:util";
 const LOCK_RETRY_MS = 50;
 const WINDOWS_EPOCH_OFFSET_TICKS = 621_355_968_000_000_000n;
 const PROCESS_START_IDENTITY_TOLERANCE_MS = 2_000;
+const DARWIN_PROCESS_PROBE_TIMEOUT_MS = 2_000;
+const DARWIN_LSTART_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const DARWIN_LSTART_MONTHS = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
 const execFileAsync = promisify(execFile);
 const currentProcessFallbackIdentity = `node-start-${Math.round(
   Date.now() - process.uptime() * 1_000,
@@ -196,11 +202,16 @@ export function processStartIdentitiesMatch(left: string, right: string): boolea
 
 function processStartEpochMs(
   identity: string,
-): { kind: "node" | "windows"; value: number } | null {
+): { kind: "node" | "windows" | "darwin"; value: number } | null {
   const nodeMatch = /^node-start-(\d+)$/.exec(identity);
   if (nodeMatch) {
     const epochMs = Number(nodeMatch[1]);
     return Number.isSafeInteger(epochMs) ? { kind: "node", value: epochMs } : null;
+  }
+  const darwinMatch = /^darwin-process-(\d+)$/.exec(identity);
+  if (darwinMatch) {
+    const epochMs = Number(darwinMatch[1]);
+    return Number.isSafeInteger(epochMs) ? { kind: "darwin", value: epochMs } : null;
   }
   const windowsMatch = /^windows-process-(\d+)$/.exec(identity);
   if (!windowsMatch) return null;
@@ -210,6 +221,42 @@ function processStartEpochMs(
   } catch {
     return null;
   }
+}
+
+/**
+ * Parses the `ps -o lstart=` shape, for example `Sun Nov  8 01:57:19 2026`.
+ *
+ * The weekday and month tables plus Date.UTC keep the conversion independent
+ * of the runtime's non-standard Date.parse behavior. A component mismatch
+ * (out-of-range fields normalized by Date, or a weekday that does not belong
+ * to the parsed date) is malformed output, not an identity.
+ */
+function parseDarwinLstart(value: string): number | null {
+  const match =
+    /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) (Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) (\d{1,2}) (\d{2}):(\d{2}):(\d{2}) (\d{4})$/
+      .exec(value.replace(/\s+/g, " ").trim());
+  if (!match) return null;
+  const weekday = match[1]!;
+  const month = match[2]!;
+  const dayOfMonth = Number(match[3]!);
+  const hours = Number(match[4]!);
+  const minutes = Number(match[5]!);
+  const seconds = Number(match[6]!);
+  const year = Number(match[7]!);
+  const monthIndex = DARWIN_LSTART_MONTHS.indexOf(month);
+  const epochMs = Date.UTC(year, monthIndex, dayOfMonth, hours, minutes, seconds);
+  if (!Number.isSafeInteger(epochMs)) return null;
+  const parsed = new Date(epochMs);
+  if (
+    parsed.getUTCFullYear() !== year
+    || parsed.getUTCMonth() !== monthIndex
+    || parsed.getUTCDate() !== dayOfMonth
+    || parsed.getUTCHours() !== hours
+    || parsed.getUTCMinutes() !== minutes
+    || parsed.getUTCSeconds() !== seconds
+    || parsed.getUTCDay() !== DARWIN_LSTART_WEEKDAYS.indexOf(weekday)
+  ) return null;
+  return epochMs;
 }
 
 export function isProcessAlive(pid: number): boolean {
@@ -227,12 +274,46 @@ export function isProcessAlive(pid: number): boolean {
  * On Windows this migration reader stays on `Get-Process`: changing its source
  * would invalidate persisted `windows-process-<ticks>` identities because CIM
  * `CreationDate` and `StartTime` do not have identical precision.
+ *
+ * Darwin has neither `/proc` nor PowerShell, so the start time comes from
+ * `/bin/ps -o lstart=` in a fixed C locale and UTC timezone. That source is
+ * second-precision and is only consulted for legacy ownership records; the
+ * schema-2 runner liveness decision is the kernel lock.
  */
-export async function readProcessStartIdentity(pid: number): Promise<ProcessStartIdentityProbe> {
+export async function readProcessStartIdentity(
+  pid: number,
+  platform: NodeJS.Platform = process.platform,
+): Promise<ProcessStartIdentityProbe> {
   if (!Number.isSafeInteger(pid) || pid <= 0) {
     throw new Error(`process start identity pid must be positive: ${pid}`);
   }
-  if (process.platform === "win32") {
+  if (platform === "darwin") {
+    let stdout: string;
+    try {
+      const result = await execFileAsync(
+        "/bin/ps",
+        ["-p", String(pid), "-o", "lstart="],
+        {
+          timeout: DARWIN_PROCESS_PROBE_TIMEOUT_MS,
+          encoding: "utf8",
+          env: { ...process.env, LC_ALL: "C", TZ: "UTC" },
+        },
+      );
+      stdout = result.stdout;
+    } catch (error) {
+      if ((error as { code?: unknown }).code !== 1) return { kind: "unavailable" };
+      return isProcessAlive(pid) ? { kind: "unavailable" } : { kind: "absent" };
+    }
+    const normalized = stdout.trim();
+    if (!normalized) {
+      return isProcessAlive(pid) ? { kind: "unavailable" } : { kind: "absent" };
+    }
+    const epochMs = parseDarwinLstart(normalized);
+    return epochMs === null
+      ? { kind: "unavailable" }
+      : { kind: "identity", value: `darwin-process-${epochMs}` };
+  }
+  if (platform === "win32") {
     try {
       const { stdout } = await execFileAsync(
         "powershell.exe",
@@ -260,7 +341,7 @@ export async function readProcessStartIdentity(pid: number): Promise<ProcessStar
       return { kind: "unavailable" };
     }
   }
-  if (process.platform !== "linux") return { kind: "unavailable" };
+  if (platform !== "linux") return { kind: "unavailable" };
   try {
     const stat = await readFile(`/proc/${pid}/stat`, "utf8");
     const closeParen = stat.lastIndexOf(")");

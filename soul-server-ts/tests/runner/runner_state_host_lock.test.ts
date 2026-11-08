@@ -2,21 +2,28 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   RunnerStateHostLock,
   runnerStateHostLockPath,
 } from "../../src/runner/runner_state_host_lock.js";
 import { runnerKernelLockEndpoint } from "../../src/runner/runner_kernel_lock.js";
+import { darwinKernelLockPath } from "../../src/runner/runner_darwin_kernel_lock.js";
 import { processStartIdentitiesMatch } from "../../src/runner/runner_process_lock.js";
 
 const directories: string[] = [];
+const darwinLockFiles: string[] = [];
 
 afterEach(async () => {
   await Promise.all(directories.splice(0).map(
     async (directory) => await rm(directory, { recursive: true, force: true }),
   ));
+  await Promise.all(darwinLockFiles.splice(0).flatMap((lockFile) => [
+    rm(lockFile, { force: true }),
+    rm(`${lockFile}-journal`, { force: true }),
+  ]));
+  vi.restoreAllMocks();
 });
 
 describe("RunnerStateHostLock", () => {
@@ -53,6 +60,21 @@ describe("RunnerStateHostLock", () => {
     await replacement.release();
   });
 
+  it.skipIf(process.platform === "win32")("uses exclusive Darwin SQLite ownership for the host lifetime", async () => {
+    const stateDirectory = await temporaryStateDirectory();
+    trackDarwinLockFile(runnerStateHostLockPath(stateDirectory));
+    vi.spyOn(process, "platform", "get").mockReturnValue("darwin");
+
+    const first = await RunnerStateHostLock.acquire(stateDirectory);
+
+    await expect(RunnerStateHostLock.acquire(stateDirectory))
+      .rejects.toThrow("runner state host ownership already held");
+
+    await first.release();
+    const replacement = await RunnerStateHostLock.acquire(stateDirectory);
+    await replacement.release();
+  });
+
   it("ignores abandoned owner-file residue from the former directory lock", async () => {
     const stateDirectory = await temporaryStateDirectory();
     const oldLockDirectory = runnerStateHostLockPath(stateDirectory);
@@ -64,6 +86,10 @@ describe("RunnerStateHostLock", () => {
     await lock.release();
   });
 });
+
+function trackDarwinLockFile(lockPath: string): void {
+  darwinLockFiles.push(darwinKernelLockPath(lockPath));
+}
 
 async function temporaryStateDirectory(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), "runner-state-owner-"));
