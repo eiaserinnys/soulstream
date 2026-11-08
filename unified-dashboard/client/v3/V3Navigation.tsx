@@ -94,7 +94,7 @@ export function V3Navigation({
   onRenameProject(folder: CatalogFolder, title: string): Promise<void>;
   onDeleteProject(folder: CatalogFolder): Promise<void>;
   onReorderProjects(items: CatalogFolderReorderItem[]): Promise<void>;
-  projectHasContents(folderId: string): boolean;
+  projectHasContents(folderId: string): Promise<boolean>;
 }) {
   const surfaceRef = useRef<HTMLElement>(null);
   const webglActive = useGlassSurface(surfaceRef, { enabled: true });
@@ -153,8 +153,15 @@ export function V3Navigation({
     }
   }, [folders, onReorderProjects, setProjectExpanded]);
 
-  const requestDeleteProject = useCallback((folder: CatalogFolder) => {
-    if (projectHasContents(folder.id)) setDeleteTarget(folder);
+  const requestDeleteProject = useCallback(async (folder: CatalogFolder) => {
+    let hasContents: boolean;
+    try {
+      hasContents = await projectHasContents(folder.id);
+    } catch (cause) {
+      setError(`폴더 내용 확인 실패 · ${errorText(cause)}`);
+      return;
+    }
+    if (hasContents) setDeleteTarget(folder);
     else void onDeleteProject(folder).catch((cause) => setError(`폴더 보관 실패 · ${errorText(cause)}`));
   }, [onDeleteProject, projectHasContents]);
 
@@ -317,7 +324,7 @@ export function V3Navigation({
           copyId: () => navigator.clipboard.writeText(contextMenu.folder.id),
           createFolder: () => setProjectDialog({ mode: "create", parentFolderId: contextMenu.folder.id, parentName: contextMenu.folder.name }),
           edit: () => setProjectDialog({ mode: "edit", folder: contextMenu.folder }),
-          remove: () => requestDeleteProject(contextMenu.folder),
+          remove: () => { void requestDeleteProject(contextMenu.folder); },
         }).concat(contextMenu.folder.projectPageId && !isSystemFolderId(contextMenu.folder.id) ? [
           { label: starredFolderIds.includes(contextMenu.folder.projectPageId) ? "별표 해제" : "별표 추가",
             onSelect: () => toggleFolderStar(contextMenu.folder) },

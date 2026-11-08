@@ -13,7 +13,6 @@ export * from "./stores";
 export * from "./lib";
 export * from "./hooks";
 export * from "./components";
-export * from "./board-workspace";
 export * from "./folder-status";
 export * from "./page";
 export * from "./pending-mutation-registry";

@@ -1,7 +1,6 @@
 import type { CatalogBoardItem, MarkdownDocument } from "../shared/types";
 
 export interface BoardWorkspaceApiConfig {
-  updateBoardItemPositionUrl: (id: string) => string;
   moveBoardItemToFolderUrl: (id: string) => string;
   createMarkdownDocumentUrl: string;
   initBoardAssetUrl: (folderId: string) => string;
@@ -12,8 +11,8 @@ export interface CreateMarkdownDocumentRequest {
   folderId: string;
   title: string;
   body: string;
-  x: number;
-  y: number;
+  x?: number;
+  y?: number;
 }
 
 export interface CreateMarkdownDocumentResponse {
@@ -71,7 +70,6 @@ interface UploadedPart {
 }
 
 export interface BoardWorkspaceOperations {
-  updateBoardItemPosition: (boardItemId: string, x: number, y: number) => Promise<void>;
   moveBoardItemToFolder: (
     input: MoveBoardItemToFolderInput,
   ) => Promise<MoveBoardItemToFolderResponse>;
@@ -112,21 +110,6 @@ function uploadBlobWithProgress(
 export function createBoardWorkspaceOperations(
   config: BoardWorkspaceApiConfig,
 ): BoardWorkspaceOperations {
-  async function updateBoardItemPosition(
-    boardItemId: string,
-    x: number,
-    y: number,
-  ): Promise<void> {
-    const res = await fetch(config.updateBoardItemPositionUrl(boardItemId), {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ x, y }),
-    });
-    if (!res.ok) {
-      throw new Error(`Update board item position failed: ${res.status}`);
-    }
-  }
-
   async function moveBoardItemToFolder(
     input: MoveBoardItemToFolderInput,
   ): Promise<MoveBoardItemToFolderResponse> {
@@ -241,7 +224,6 @@ export function createBoardWorkspaceOperations(
   }
 
   return {
-    updateBoardItemPosition,
     moveBoardItemToFolder,
     createMarkdownDocument,
     uploadBoardAsset,

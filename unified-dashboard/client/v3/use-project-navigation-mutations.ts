@@ -17,6 +17,9 @@ import {
   reorderProjectFolders,
 } from "./project-folder-actions";
 import { projectHasContents } from "./project-form-model";
+import { fetchFolderBoardItems } from "./folder-inline-board-api";
+import { cardRequest } from "@seosoyoung/soul-ui/cards/card-api";
+import type { CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 
 const readFolders = () => useDashboardStore.getState().catalog?.folders ?? [];
 
@@ -61,9 +64,26 @@ export function useProjectNavigationMutations({
     reorderProjectFolders(items, reorderFoldersOptimistic, readFolders)
   ), []);
 
-  const hasProjectContents = useCallback((folderId: string) => {
+  const hasProjectContents = useCallback(async (folderId: string): Promise<boolean> => {
     const catalog = useDashboardStore.getState().catalog;
-    return catalog ? projectHasContents(folderId, catalog) : false;
+    const folders = catalog?.folders ?? [];
+    const sessions = catalog?.sessions ?? {};
+    if (projectHasContents(folderId, { folders, sessions, hasCards: false, hasDocuments: false })) {
+      return true;
+    }
+    const [cards, items] = await Promise.all([
+      cardRequest<{ cards: CardRow[] }>(
+        `/api/cards?${new URLSearchParams({ includeCompleted: "true", folderId })}`,
+      ),
+      fetchFolderBoardItems(folderId),
+    ]);
+    return projectHasContents(folderId, {
+      folders,
+      sessions,
+      hasCards: cards.cards.length > 0,
+      hasDocuments: items.some((item) => item.itemType === "markdown"),
+      hasResources: items.some((item) => item.itemType !== "markdown"),
+    });
   }, []);
 
   return {

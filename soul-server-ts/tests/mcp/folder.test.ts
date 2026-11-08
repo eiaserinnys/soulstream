@@ -79,7 +79,7 @@ describe("folder and checklist MCP contract", () => {
     const client = await clientFor(runtime());
     const names = (await client.listTools()).tools.map((tool) => tool.name);
     expect(names).toEqual(expect.arrayContaining([...mutationNames, ...readNames,
-      "browse_folder", "search_folder_items", "move_board_item_to_folder"]));
+      "browse_folder", "search_folder_items"]));
     for (const name of [...mutationNames, ...readNames]) {
       expect(names.filter((candidate) => candidate === name)).toHaveLength(1);
     }
@@ -133,12 +133,11 @@ describe("folder and checklist MCP contract", () => {
       .toEqual({ include_archived: false, limit: 100, cursor: "20" });
   });
 
-  it("moves board items and creates markdown with one folder_id", async () => {
+  it("creates markdown with one folder_id", async () => {
     const forwarded = vi.spyOn(persistenceHostTransport, "fetchOrchResponse").mockImplementation(async () =>
       new Response(JSON.stringify(jsonResult({ ok: true })), { status: 200 }));
     const client = await clientFor(runtime());
     for (const [name, args] of [
-      ["move_board_item_to_folder", { board_item_id: "markdown:doc-1", folder_id: "folder-1", idempotency_key: "move-1" }],
       ["create_markdown_document", { folder_id: "folder-1", title: "Note", body: "Text" }],
     ] as const) {
       const result = await client.callTool({ name, arguments: args });

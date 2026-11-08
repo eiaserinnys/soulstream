@@ -51,17 +51,15 @@ describe("project form model", () => {
       { status: "open" as const, version: 1, archived: false, id: "root", name: "Root", sortOrder: 0, parentFolderId: null },
       { status: "open" as const, version: 1, archived: false, id: "child", name: "Child", sortOrder: 0, parentFolderId: "root" },
     ];
-    expect(projectHasContents("empty", { folders, sessions: {}, boardItems: [] })).toBe(false);
-    expect(projectHasContents("root", { folders, sessions: {}, boardItems: [] })).toBe(true);
+    const empty = { folders, sessions: {}, hasCards: false, hasDocuments: false };
+    expect(projectHasContents("empty", empty)).toBe(false);
+    expect(projectHasContents("root", empty)).toBe(true);
     expect(projectHasContents("child", {
-      folders,
-      sessions: { "session-1": { folderId: "child", displayName: null } },
-      boardItems: [],
+      ...empty,
+      sessions: { "session-1": { folderId: "child" } },
     })).toBe(true);
-    expect(projectHasContents("empty", {
-      folders,
-      sessions: {},
-      boardItems: [{ id: "markdown:1", folderId: "empty", itemType: "markdown", itemId: "1", x: 0, y: 0 }],
-    })).toBe(true);
+    expect(projectHasContents("empty", { ...empty, hasCards: true })).toBe(true);
+    expect(projectHasContents("empty", { ...empty, hasDocuments: true })).toBe(true);
+    expect(projectHasContents("empty", { ...empty, hasResources: true })).toBe(true);
   });
 });

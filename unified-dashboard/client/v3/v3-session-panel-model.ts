@@ -1,6 +1,5 @@
 import {
   getSessionActivityMs,
-  type CatalogBoardItem,
   type CatalogFolder,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
@@ -56,34 +55,15 @@ export function sessionPanelTitle(session: SessionSummary): string {
     ?? "제목 없는 세션";
 }
 
-export function sessionWorkspaceTargetFromBoardItems(
-  boardItems: readonly CatalogBoardItem[],
-  sessionId: string,
-): SessionWorkspaceTarget | null {
-  const primary = primarySessionBoardItem(boardItems, sessionId);
-  if (!primary) return null;
-  return { kind: "folder", folderId: primary.folderId };
+export function sessionWorkspaceTarget(session: Pick<SessionSummary, "folderId">): SessionWorkspaceTarget {
+  return session.folderId ? { kind: "folder", folderId: session.folderId } : { kind: "standalone" };
 }
 
 export function sessionPanelAffiliation(
-  boardItems: readonly CatalogBoardItem[],
   folders: readonly CatalogFolder[],
-  sessionId: string,
-  assignedFolderId?: string | null,
+  folderId: string | null | undefined,
 ): string | null {
-  const folderId = assignedFolderId === undefined ? primarySessionBoardItem(boardItems, sessionId)?.folderId : assignedFolderId;
   return folders.find((folder) => folder.id === folderId)?.name.trim() || null;
-}
-
-function primarySessionBoardItem(
-  boardItems: readonly CatalogBoardItem[],
-  sessionId: string,
-): CatalogBoardItem | undefined {
-  return boardItems.find((item) => (
-    item.itemType === "session"
-      && item.itemId === sessionId
-      && (item.membershipKind ?? "primary") === "primary"
-  ));
 }
 
 function sessionTimestamp(session: SessionSummary): number {

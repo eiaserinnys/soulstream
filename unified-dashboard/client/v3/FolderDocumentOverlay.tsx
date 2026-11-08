@@ -1,4 +1,4 @@
-import "./v3-folder-board.css";
+import "./v3-folder-document-overlay.css";
 import { LiquidGlassCard } from "@seosoyoung/soul-ui/components/LiquidGlassCard";
 import type { ReactNode, Ref, MouseEventHandler, AnimationEventHandler } from "react";
 import { DashboardIconCap } from "@seosoyoung/soul-ui";

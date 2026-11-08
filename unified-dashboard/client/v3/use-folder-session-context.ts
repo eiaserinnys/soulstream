@@ -17,8 +17,7 @@ import type { PageSessionDefaults } from "./folder-workspace-page-api";
  *
  * 상위 폴더 → 이 폴더 순으로 컨텍스트를 병합해 succession 모달/컨텍스트 칩에
  * 넣을 `contextItems`와 배정 기본값(`effectiveSessionDefaults`)을 만든다.
- * `FolderDetailPane`(폴더 패널)과 `FolderBoardWorkspace`(보드
- * 세션 리스트의 새 세션 버튼)가 이 훅을 공유해 동일한 컨테이너 상속 경로를 쓴다.
+ * 폴더 세션 생성 진입점이 이 훅을 공유해 동일한 컨테이너 상속 경로를 쓴다.
  */
 export function useFolderSessionContext({
   folderPageId,

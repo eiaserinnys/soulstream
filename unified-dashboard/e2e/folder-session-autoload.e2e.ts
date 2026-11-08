@@ -2,7 +2,6 @@ import { expect, test, type Page } from "@playwright/test";
 import { installV3VisualQaRoutes } from "./v3-visual-fixtures";
 
 // Only HTTP data is replaced. Scrolling, layout and IntersectionObserver are Chromium's.
-type Surface = "detail" | "board";
 function session(folderId: string, index: number) {
   return { agentSessionId: `${folderId}-auto-${index}`, folderId, displayName: `자동 세션 ${index}`,
     status: "completed", eventCount: 0, nodeId: "eiaserinnys", agentId: "roselin_codex",
@@ -72,111 +71,105 @@ async function setup(page: Page, { first = 30, total = 70, fail = false, delayed
     releaseTargeted: () => { targetedReleases.splice(0).forEach(release => release()); },
     updateFirst: () => { updatedFirst = true; } };
 }
-async function open(page: Page, surface: Surface) {
+async function open(page: Page) {
   await page.goto("/v3", { waitUntil: "domcontentloaded" });
   await page.getByTestId("v3-all-projects").getByRole("button", { name: "소울스트림", exact: true }).click();
   await expect(page.locator(".v3-task-title-button")).toHaveText("소울스트림");
-  if (surface === "board") {
-    await page.getByRole("button", { name: "폴더 보드 열기", exact: true }).click();
-    await page.getByRole("tab", { name: /세션/ }).click();
-  }
-  return page.locator(surface === "board" ? ".v3-folder-board-resource-content" : ".v3-planner-scroll");
+  return page.locator(".v3-planner-scroll");
 }
-async function wheel(page: Page, surface: Surface, delta = 10000) {
-  const scroller = page.locator(surface === "board" ? ".v3-folder-board-resource-content" : ".v3-planner-scroll");
+async function wheel(page: Page, delta = 10000) {
+  const scroller = page.locator(".v3-planner-scroll");
   const box = (await scroller.boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.wheel(0, delta);
 }
 
-for (const surface of ["detail", "board"] as const) {
-  for (const width of [1440, 1024]) {
-    test(`${surface}: captures visible appended sessions · ${width}`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 1000 });
-      const network = await setup(page, { total: 50, delayed: true });
-      const scroller = await open(page, surface);
-      await wheel(page, surface);
-      await expect.poll(() => network.cursors.length).toBe(1);
-      network.release();
-      const appended = scroller.locator('[data-session-id="folder-amber-auto-49"]');
-      await expect(appended).toHaveCount(1);
-      await wheel(page, surface);
-      await expect(appended).toBeInViewport();
-      await page.screenshot({ path: `e2e/test-results/folder-session-autoload/appended-${surface}-${width}.png` });
-    });
-
-    test(`${surface}: wheel appends, preserves visible row, deduplicates and stops at end · ${width}`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 1000 });
-      const network = await setup(page, { delayed: true, delayTargeted: true });
-      const scroller = await open(page, surface);
-      if (process.env.AUTOLOAD_BEFORE) await page.screenshot({ path: `e2e/test-results/folder-session-autoload/before-${surface}-1440.png` });
-      await expect(page.getByRole("button", { name: "이전 세션 더 보기", exact: true })).toHaveCount(0);
-      await wheel(page, surface);
-      await expect.poll(() => network.cursors.length).toBe(1);
-      // Select an actually visible row after the wheel has settled, before releasing HTTP.
-      const anchor = await scroller.locator("[data-session-id]").evaluateAll(rows => {
-        const visible = rows.find(row => { const r = row.getBoundingClientRect(); return r.top > 150 && r.bottom < 850; });
-        return visible ? { id: visible.getAttribute("data-session-id"), top: visible.getBoundingClientRect().top } : null;
-      });
-      expect(anchor).not.toBeNull();
-      network.release();
-      await expect(scroller.locator(`[data-session-id="folder-amber-auto-49"]`)).toHaveCount(1);
-      await expect.poll(() => network.targetedPending()).toBe(1);
-      const after = await scroller.locator(`[data-session-id="${anchor!.id}"]`).boundingBox();
-      expect(Math.abs(after!.y - anchor!.top)).toBeLessThanOrEqual(2);
-      network.releaseTargeted();
-      await expect.poll(() => network.targetedCompleted()).toBe(1);
-      await expect.poll(async () => Math.abs(await scroller.locator(`[data-session-id="${anchor!.id}"]`).evaluate(row => row.getBoundingClientRect().top) - anchor!.top)).toBeLessThanOrEqual(2);
-      await test.info().attach("position-and-requests", { body: JSON.stringify({ surface, anchor, afterPage: after!.y,
-        afterTargeted: await scroller.locator(`[data-session-id="${anchor!.id}"]`).evaluate(row => row.getBoundingClientRect().top), cursors: network.cursors }), contentType: "application/json" });
-      await page.screenshot({ path: `e2e/test-results/folder-session-autoload/loaded-${surface}-${width}.png` });
-      await wheel(page, surface, 10000);
-      await page.keyboard.press("End");
-      await expect.poll(() => network.cursors.length).toBe(2);
-      await wheel(page, surface, 10000);
-      network.release();
-      await expect(scroller.locator('[data-session-id="folder-amber-auto-69"]')).toHaveCount(1);
-      await expect.poll(() => network.targetedPending()).toBe(2);
-      network.releaseTargeted();
-      expect(new Set(network.cursors).size).toBe(network.cursors.length);
-      await expect(scroller.locator(".v3-run-load-more")).toHaveCount(0);
-      await wheel(page, surface, 10000);
-      await page.waitForTimeout(500);
-      expect(network.cursors).toHaveLength(2);
-    });
-  }
-
-  test(`${surface}: short initial list fills without input`, async ({ page }) => {
-    await page.setViewportSize({ width: 1440, height: 1000 });
-    const network = await setup(page, { first: 1, total: 3 });
-    const scroller = await open(page, surface);
-    await expect(scroller.locator('[data-session-id="folder-amber-auto-2"]')).toHaveCount(1);
-    expect(network.cursors).toEqual(["1"]);
-    await expect(scroller.locator(".v3-run-load-more")).toHaveCount(0);
+for (const width of [1440, 1024]) {
+  test(`captures visible appended sessions · ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const network = await setup(page, { total: 50, delayed: true });
+    const scroller = await open(page);
+    await wheel(page);
+    await expect.poll(() => network.cursors.length).toBe(1);
+    network.release();
+    const appended = scroller.locator('[data-session-id="folder-amber-auto-49"]');
+    await expect(appended).toHaveCount(1);
+    await wheel(page);
+    await expect(appended).toBeInViewport();
+    await page.screenshot({ path: `e2e/test-results/folder-session-autoload/appended-detail-${width}.png` });
   });
 
-  for (const width of [1440, 1024]) {
-    test(`${surface}: failure pauses and retry resumes · ${width}`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 1000 });
-      const network = await setup(page, { first: 1, total: 3, fail: true });
-      const scroller = await open(page, surface);
-      await expect(scroller.getByText("세션을 더 불러오지 못했습니다", { exact: true })).toBeVisible();
-      await wheel(page, surface);
-      await page.screenshot({ path: `e2e/test-results/folder-session-autoload/error-${surface}-${width}.png` });
-      await page.waitForTimeout(2000);
-      expect(network.cursors).toEqual(["1"]);
-      await scroller.getByRole("button", { name: "다시 시도", exact: true }).click();
-      await expect(scroller.locator('[data-session-id="folder-amber-auto-2"]')).toHaveCount(1);
-      await page.screenshot({ path: `e2e/test-results/folder-session-autoload/loaded-${surface}-${width}.png` });
-      expect(network.cursors).toEqual(["1", "1"]);
+  test(`wheel appends, preserves visible row, deduplicates and stops at end · ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const network = await setup(page, { delayed: true, delayTargeted: true });
+    const scroller = await open(page);
+    if (process.env.AUTOLOAD_BEFORE) await page.screenshot({ path: `e2e/test-results/folder-session-autoload/before-detail-1440.png` });
+    await expect(page.getByRole("button", { name: "이전 세션 더 보기", exact: true })).toHaveCount(0);
+    await wheel(page);
+    await expect.poll(() => network.cursors.length).toBe(1);
+    // Select an actually visible row after the wheel has settled, before releasing HTTP.
+    const anchor = await scroller.locator("[data-session-id]").evaluateAll(rows => {
+      const visible = rows.find(row => { const r = row.getBoundingClientRect(); return r.top > 150 && r.bottom < 850; });
+      return visible ? { id: visible.getAttribute("data-session-id"), top: visible.getBoundingClientRect().top } : null;
     });
-  }
+    expect(anchor).not.toBeNull();
+    network.release();
+    await expect(scroller.locator(`[data-session-id="folder-amber-auto-49"]`)).toHaveCount(1);
+    await expect.poll(() => network.targetedPending()).toBe(1);
+    const after = await scroller.locator(`[data-session-id="${anchor!.id}"]`).boundingBox();
+    expect(Math.abs(after!.y - anchor!.top)).toBeLessThanOrEqual(2);
+    network.releaseTargeted();
+    await expect.poll(() => network.targetedCompleted()).toBe(1);
+    await expect.poll(async () => Math.abs(await scroller.locator(`[data-session-id="${anchor!.id}"]`).evaluate(row => row.getBoundingClientRect().top) - anchor!.top)).toBeLessThanOrEqual(2);
+    await test.info().attach("position-and-requests", { body: JSON.stringify({ anchor, afterPage: after!.y,
+      afterTargeted: await scroller.locator(`[data-session-id="${anchor!.id}"]`).evaluate(row => row.getBoundingClientRect().top), cursors: network.cursors }), contentType: "application/json" });
+    await page.screenshot({ path: `e2e/test-results/folder-session-autoload/loaded-detail-${width}.png` });
+    await wheel(page, 10000);
+    await page.keyboard.press("End");
+    await expect.poll(() => network.cursors.length).toBe(2);
+    await wheel(page, 10000);
+    network.release();
+    await expect(scroller.locator('[data-session-id="folder-amber-auto-69"]')).toHaveCount(1);
+    await expect.poll(() => network.targetedPending()).toBe(2);
+    network.releaseTargeted();
+    expect(new Set(network.cursors).size).toBe(network.cursors.length);
+    await expect(scroller.locator(".v3-run-load-more")).toHaveCount(0);
+    await wheel(page, 10000);
+    await page.waitForTimeout(500);
+    expect(network.cursors).toHaveLength(2);
+  });
+}
+
+test(`short initial list fills without input`, async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  const network = await setup(page, { first: 1, total: 3 });
+  const scroller = await open(page);
+  await expect(scroller.locator('[data-session-id="folder-amber-auto-2"]')).toHaveCount(1);
+  expect(network.cursors).toEqual(["1"]);
+  await expect(scroller.locator(".v3-run-load-more")).toHaveCount(0);
+});
+
+for (const width of [1440, 1024]) {
+  test(`failure pauses and retry resumes · ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const network = await setup(page, { first: 1, total: 3, fail: true });
+    const scroller = await open(page);
+    await expect(scroller.getByText("세션을 더 불러오지 못했습니다", { exact: true })).toBeVisible();
+    await wheel(page);
+    await page.screenshot({ path: `e2e/test-results/folder-session-autoload/error-detail-${width}.png` });
+    await page.waitForTimeout(2000);
+    expect(network.cursors).toEqual(["1"]);
+    await scroller.getByRole("button", { name: "다시 시도", exact: true }).click();
+    await expect(scroller.locator('[data-session-id="folder-amber-auto-2"]')).toHaveCount(1);
+    await page.screenshot({ path: `e2e/test-results/folder-session-autoload/loaded-detail-${width}.png` });
+    expect(network.cursors).toEqual(["1", "1"]);
+  });
 }
 
 test("late A page stays out of folder B", async ({ page }) => {
   const network = await setup(page, { first: 1, total: 3, delayed: true });
-  await open(page, "detail");
-  await wheel(page, "detail");
+  await open(page);
+  await wheel(page);
   await expect.poll(() => network.cursors.length).toBe(1);
   await page.getByTestId("v3-all-projects").getByRole("button", { name: "Soulstream 운영", exact: true }).click();
   await expect(page.locator('[data-session-id="folder-ops-auto-0"]')).toHaveCount(1);
@@ -187,7 +180,7 @@ test("late A page stays out of folder B", async ({ page }) => {
 
 test("same-folder aggregate refresh retains appended history", async ({ page }) => {
   const network = await setup(page, { first: 1, total: 21 });
-  const scroller = await open(page, "detail");
+  const scroller = await open(page);
   // The baseline branch reproduces the existing button flow before automatic loading exists.
   if (process.env.AUTOLOAD_BEFORE) await page.getByRole("button", { name: "이전 세션 더 보기", exact: true }).click();
   await expect(scroller.locator('[data-session-id="folder-amber-auto-20"]')).toHaveCount(1);

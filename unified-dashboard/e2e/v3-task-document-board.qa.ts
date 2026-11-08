@@ -14,17 +14,19 @@ const result = await runPlaywrightLifecycle({
   lockName: "pr-bi-v3-task-document-board",
   timeoutMs: 180_000,
 }, async ({ browser }) => ({
-  dark: await verifyTheme(browser, "dark"),
-  light: await verifyTheme(browser, "light"),
+  darkWide: await verifyTheme(browser, "dark", 1440, "wide"),
+  darkNarrow: await verifyTheme(browser, "dark", 1024, "narrow"),
+  lightWide: await verifyTheme(browser, "light", 1440, "wide"),
+  lightNarrow: await verifyTheme(browser, "light", 1024, "narrow"),
 }));
 
 console.log(JSON.stringify({ ok: true, residualProcesses: 0, ...result }, null, 2));
 
-async function verifyTheme(browser: Browser, theme: "dark" | "light") {
+async function verifyTheme(browser: Browser, theme: "dark" | "light", width: number, size: "wide" | "narrow") {
   const context = await browser.newContext({
     colorScheme: theme,
     reducedMotion: "reduce",
-    viewport: { width: 1440, height: 1000 },
+    viewport: { width, height: 1000 },
   });
   const page = await context.newPage();
   const errors: string[] = [];
@@ -35,8 +37,8 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
   await preparePage(page, theme);
 
   try {
-    await page.goto(`${baseUrl}/v3`, { waitUntil: "domcontentloaded" });
-    await page.getByTestId("v3-task-task-alpha").click();
+    await page.goto(`${baseUrl}/`, { waitUntil: "domcontentloaded" });
+    await page.getByTestId("v3-starred-task-row-task-alpha").click();
     const inlineBoard = page.getByTestId("v3-inline-board");
     await inlineBoard.waitFor({ state: "visible", timeout: 20_000 });
 
@@ -46,16 +48,6 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
 
     const existingMarkdownRow = inlineBoard.locator('[data-board-kind="markdown"]').first();
     const existingTitle = ((await existingMarkdownRow.locator("span").first().innerText()).replace(/^📄\s*/, "")).trim();
-    const initialMarkdownCount = await inlineBoard.locator('[data-board-kind="markdown"]').count();
-    const createButton = inlineBoard.getByRole("button", { name: "＋ 마크다운" });
-    await createButton.click();
-    const createInput = inlineBoard.getByRole("textbox", { name: "마크다운 이름" });
-    await createInput.waitFor({ state: "visible" });
-    assert(
-      await inlineBoard.locator('[data-board-kind="markdown"]').count() === initialMarkdownCount + 1,
-      "Y.Doc 생성 후 마크다운 행이 즉시 추가되지 않았습니다.",
-    );
-    await createInput.press("Escape");
 
     const renameButton = inlineBoard.getByRole("button", { name: `${existingTitle} 이름 수정` });
     await renameButton.click();
@@ -66,8 +58,13 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       response.url().includes("/api/markdown-documents/doc-inline")
       && response.request().method() === "PUT"
     ));
-    await inlineBoard.getByRole("button", { name: "저장" }).click();
+    const renameReread = page.waitForResponse((response) => (
+      response.url().includes("/api/markdown-documents/doc-inline")
+      && response.request().method() === "GET"
+    ));
+    await inlineBoard.getByRole("button", { name: "마크다운 이름 변경 저장" }).click();
     await renameResponse;
+    await renameReread;
     await page.waitForTimeout(200);
     const boardTextAfterRename = await inlineBoard.innerText();
     assert(
@@ -91,20 +88,23 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
       && response.request().method() === "PUT"
       && response.status() === 409
     ));
-    await inlineBoard.getByRole("button", { name: "저장" }).click();
+    await inlineBoard.getByRole("button", { name: "마크다운 이름 변경 저장" }).click();
     await conflictResponse;
     await inlineBoard.getByRole("alert").waitFor({ state: "visible" });
-    const restoredInput = inlineBoard.getByRole("textbox", { name: "마크다운 이름" });
-    assert(await restoredInput.inputValue() === renamedTitle, "실패 뒤 원래 문서 이름이 복구되지 않았습니다.");
+    const retryInput = inlineBoard.getByRole("textbox", { name: "마크다운 이름" });
+    assert(await retryInput.inputValue() === failedTitle, "저장 실패 뒤 입력한 이름이 유지되지 않았습니다.");
+    await retryInput.press("Escape");
+    await inlineBoard.getByRole("textbox", { name: "마크다운 이름" }).waitFor({ state: "hidden" });
+    assert((await inlineBoard.innerText()).includes(renamedTitle), "저장 실패 뒤 원래 문서 이름이 복구되지 않았습니다.");
 
     const unexpectedErrors = errors.filter((message) => !message.includes("409 (Conflict)"));
     assert(unexpectedErrors.length === 0, `브라우저 오류가 발생했습니다: ${unexpectedErrors.join(" | ")}`);
-    await capture(page, theme, "01-board-documents");
+    await capture(page, theme, `${size}-01-board-documents`);
     return {
+      width,
       legacyMountEntranceHidden: true,
-      markdownCreatedThroughYDoc: true,
       markdownRenamedInline: true,
-      renameRollbackOnFailure: true,
+      renameErrorKeepsRetryValue: true,
       browserErrors: unexpectedErrors.length,
     };
   } finally {

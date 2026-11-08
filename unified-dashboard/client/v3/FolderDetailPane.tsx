@@ -3,7 +3,7 @@ import { FolderCardSection } from "./FolderCardSection";
 import { useEffect, useMemo, useRef, useState, type RefObject, type ReactNode } from "react";
 import { Button, DashboardIconCap, Dialog, DialogDescription, DialogFooter, DialogHeader, DialogPopup, DialogTitle, retainEqualValue, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
-import { LayoutDashboard, MoreHorizontal, Star } from "lucide-react";
+import { MoreHorizontal, Star } from "lucide-react";
 
 import type { PlannerFolder } from "./planner-data";
 import { plannerStatusPresentation } from "./planner-model";
@@ -56,7 +56,6 @@ export function FolderDetailPane({
   onReturnToToday,
   folderInToday,
   onToggleFolderToday,
-  onOpenBoard,
   folderMoveTargets,
   onOpenSession,
   onRenameFolderTitle,
@@ -88,7 +87,6 @@ export function FolderDetailPane({
   onReturnToToday(): void;
   folderInToday: boolean;
   onToggleFolderToday(): Promise<void>;
-  onOpenBoard(): void;
   folderMoveTargets: readonly PlannerFolder[];
   onOpenSession(session: SessionSummary): void;
   onRenameFolderTitle(title: string): Promise<void>;
@@ -222,9 +220,6 @@ export function FolderDetailPane({
       <Star className="h-4 w-4" fill={folderStar.starred ? "currentColor" : "none"} aria-hidden="true" />
     </DashboardIconCap>
     <FolderTodayToggle inToday={folderInToday} onToggle={onToggleFolderToday} />
-    <DashboardIconCap label="폴더 보드 열기" onClick={onOpenBoard}>
-      <LayoutDashboard className="h-4 w-4" aria-hidden="true" />
-    </DashboardIconCap>
     <DashboardIconCap label="폴더 메뉴" onClick={(event) => setFolderMenu({ x: event.clientX, y: event.clientY })}>
       <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
     </DashboardIconCap>

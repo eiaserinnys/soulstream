@@ -48,7 +48,6 @@ export interface WorkspaceVisibility {
 export interface FolderWorkspaceChatVisibility {
   hasActiveSession: boolean;
   hasFolder: boolean;
-  boardOpen: boolean;
   chatOpen: boolean;
   mobileMode: boolean;
   mobileChatTab: boolean;
@@ -82,7 +81,6 @@ export function reduceWorkspaceEscape(state: WorkspaceVisibility): WorkspaceVisi
 export function isFolderWorkspaceChatVisible({
   hasActiveSession,
   hasFolder,
-  boardOpen,
   chatOpen,
   mobileMode,
   mobileChatTab,
@@ -91,7 +89,7 @@ export function isFolderWorkspaceChatVisible({
     !hasActiveSession
     || (mobileMode && !mobileChatTab)
   ) return false;
-  if (!hasFolder || boardOpen) return true;
+  if (!hasFolder) return true;
   return chatOpen;
 }
 

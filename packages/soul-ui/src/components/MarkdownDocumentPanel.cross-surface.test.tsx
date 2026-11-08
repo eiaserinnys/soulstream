@@ -19,7 +19,7 @@ import {
   updateMarkdownYjsTitle,
   upsertBoardYjsItem,
   type BoardYjsRuntime,
-} from "../board-workspace";
+} from "../lib/board-yjs-client";
 import { MarkdownDocumentPanel } from "./MarkdownDocumentPanel";
 
 describe("MarkdownDocumentPanel container ownership", () => {

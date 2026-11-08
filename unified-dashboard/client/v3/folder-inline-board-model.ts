@@ -1,9 +1,4 @@
-import {
-  BOARD_TILE_HEIGHT,
-  BOARD_TILE_WIDTH,
-  findEmptyPlacement,
-  type CatalogBoardItem,
-} from "@seosoyoung/soul-ui";
+import type { CatalogBoardItem } from "@seosoyoung/soul-ui";
 
 export interface FolderBoardMarkdownDocument {
   pageId: string;
@@ -38,16 +33,6 @@ export function patchBoardMarkdownTitle(
         },
       }
     : item);
-}
-
-export function findFolderMarkdownPlacement(
-  items: readonly CatalogBoardItem[],
-): { x: number; y: number } {
-  return findEmptyPlacement({
-    existingItems: items,
-    preferredPoint: { x: 0, y: 0 },
-    size: { width: BOARD_TILE_WIDTH, height: BOARD_TILE_HEIGHT },
-  })[0] ?? { x: 0, y: 0 };
 }
 
 export function metadataText(item: CatalogBoardItem, key: string): string {

@@ -162,8 +162,8 @@ export function DialoguesOverlaySamples({
   if (id === "document-reader") return <DocumentReaderDialog documentId="sample-linked-document" request={readSampleDocument} onClose={onClose}/>;
   if (id === "document-overlay")
     return createPortal(
-      <div className="v3-workspace-scrim is-chat-open is-task-board">
-        <div className="v3-workspace is-board-open v3-folder-board-workspace">
+      <div className="v3-workspace-scrim is-chat-open is-document-overlay">
+        <div className="v3-workspace is-board-open">
           <FolderDocumentOverlay
             expanded={expanded}
             projectTitle="검수 프로젝트"

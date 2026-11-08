@@ -9,7 +9,6 @@ import {
   useDashboardStore,
 } from "@seosoyoung/soul-ui";
 import { SessionDeleteDialog, SessionContinueErrorDialog } from "@seosoyoung/soul-ui/components/SessionDialogViews";
-import { BoardRenameDialog, BoardMoveDialog } from "@seosoyoung/soul-ui/board-workspace/BoardWorkspaceDialogViews";
 import { createPageApiClient } from "@seosoyoung/soul-ui/page";
 import { useLocalDialogueUpload } from "./use-local-dialogue-upload";
 import { ConfigModal } from "../components/ConfigModal";
@@ -40,8 +39,7 @@ export function DialoguesSamples({
   onClose(): void;
   onChanged(): void;
 }) {
-  const [input, setInput] = useState(api.local.sessionName),
-    [selected, setSelected] = useState("");
+  const [input, setInput] = useState(api.local.sessionName);
   const upload = useLocalDialogueUpload();
   const pageApi = useMemo(() => createPageApiClient({ fetch: api.request }), [api]);
   // 설정 탭의 폴더 선택기는 대시보드 저장소의 카탈로그를 읽는다. 검수 창에는 카탈로그 스트림이 없어 검수 폴더를 넣어 둔다.
@@ -261,29 +259,6 @@ export function DialoguesSamples({
   if (id === "document-delete")
     return (
       <MarkdownDeleteDialog open title="검수 문서" onOpenChange={openChange} onConfirm={() => done("문서 삭제")} />
-    );
-  if (id.startsWith("rename-"))
-    return (
-      <BoardRenameDialog
-        kind={id === "rename-markdown" ? "markdown" : id === "rename-folder" ? "folder" : "frame"}
-        value={input}
-        onChange={setInput}
-        onClose={onClose}
-        onSubmit={() => done(`보드 이름 변경 · ${input}`)}
-      />
-    );
-  if (id.startsWith("board-move-"))
-    return (
-      <BoardMoveDialog
-        open
-        pending={false}
-        error={null}
-        targets={dialoguesFolders.map((folder) => ({ id: folder.id, title: folder.name }))}
-        selectedFolderId={selected}
-        onSelect={setSelected}
-        onMove={() => done("보드 항목 이동")}
-        onClose={onClose}
-      />
     );
   if (id === "settings" || id === "user-create" || id === "user-edit")
     return (

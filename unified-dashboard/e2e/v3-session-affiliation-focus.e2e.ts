@@ -1,4 +1,4 @@
-import { expect, test, type Page, type Route } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 
@@ -12,7 +12,7 @@ const outputRoot = path.resolve(
 test.describe.configure({ mode: "serial" });
 
 for (const theme of ["dark", "light"] as const) {
-  test(`cached affiliation and session-row focus stay aligned in ${theme} mode`, async ({ browser }) => {
+  test(`folder affiliation and session-row focus stay aligned in ${theme} mode`, async ({ browser }) => {
     const context = await browser.newContext({
       colorScheme: theme,
       reducedMotion: "reduce",
@@ -21,19 +21,18 @@ for (const theme of ["dark", "light"] as const) {
     const page = await context.newPage();
     const browserErrors: string[] = [];
     const sessionRequests: string[] = [];
-    let folderBoardRequests = 0;
+    let boardItemRequests = 0;
     page.on("pageerror", (error) => browserErrors.push(error.message));
     page.on("request", (request) => {
       const url = new URL(request.url());
       if (url.pathname === "/api/sessions") sessionRequests.push(url.search);
+      if (url.pathname === "/api/board-items") boardItemRequests += 1;
     });
 
     await preparePage(page, theme);
+    // The panel affiliation comes from the session folder, so an empty board must not hide it.
     await page.route("**/api/board-items?**", async (route) => {
-      const url = new URL(route.request().url());
-      if (!url.searchParams.has("folder_id")) return route.fallback();
-      folderBoardRequests += 1;
-      await fulfillJson(route, cachedFolderBoardItems());
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ boardItems: [] }) });
     });
 
     try {
@@ -66,10 +65,10 @@ for (const theme of ["dark", "light"] as const) {
       expect(ellipsis).toEqual({ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" });
       await capture(page, theme, "02-panel-affiliation");
 
-      const requestsBeforeCachedClick = folderBoardRequests;
+      const requestsBeforeCachedClick = boardItemRequests;
       await panelRow.locator(".v3-run-open").click();
       await assertFocusedSession(page);
-      expect(folderBoardRequests).toBe(requestsBeforeCachedClick);
+      expect(boardItemRequests).toBe(requestsBeforeCachedClick);
       expect(sessionRequests.every((query) => query.includes("session_id="))).toBe(true);
       expect(browserErrors).toEqual([]);
       await capture(page, theme, "03-cached-round-trip-focus");
@@ -116,31 +115,6 @@ async function assertFocusedSession(page: Page) {
   });
   expect(visibility.top).toBeLessThan(visibility.viewportHeight);
   expect(visibility.bottom).toBeGreaterThan(0);
-}
-
-function cachedFolderBoardItems() {
-  const sessionItem = (sessionId: string, y: number) => ({
-    id: `session:${sessionId}`,
-    folderId: "rb-alpha",
-    itemType: "session",
-    itemId: sessionId,
-    x: 24,
-    y,
-  });
-  return {
-    boardItems: [
-      sessionItem("run-alpha-1", 0),
-      sessionItem("run-alpha-2", 72),
-    ],
-  };
-}
-
-async function fulfillJson(route: Route, payload: unknown) {
-  await route.fulfill({
-    status: 200,
-    contentType: "application/json",
-    body: JSON.stringify(payload),
-  });
 }
 
 async function capture(page: Page, theme: string, name: string) {

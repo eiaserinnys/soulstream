@@ -119,48 +119,6 @@ export const dialoguesInventory = [
     component: "MarkdownDeleteDialog",
   },
   {
-    section: "documents",
-    id: "rename-markdown",
-    name: "보드 문서 이름 변경",
-    component: "BoardRenameDialog",
-  },
-  {
-    section: "documents",
-    id: "rename-folder",
-    name: "보드 폴더 이름 변경",
-    component: "BoardRenameDialog",
-  },
-  {
-    section: "documents",
-    id: "rename-frame",
-    name: "보드 프레임 이름 변경",
-    component: "BoardRenameDialog",
-  },
-  {
-    section: "documents",
-    id: "board-move-session",
-    name: "보드 세션 이동",
-    component: "BoardMoveDialog",
-  },
-  {
-    section: "documents",
-    id: "board-move-markdown",
-    name: "보드 문서 이동",
-    component: "BoardMoveDialog",
-  },
-  {
-    section: "documents",
-    id: "board-move-asset",
-    name: "보드 파일 이동",
-    component: "BoardMoveDialog",
-  },
-  {
-    section: "documents",
-    id: "board-move-custom",
-    name: "보드 커스텀 뷰 이동",
-    component: "BoardMoveDialog",
-  },
-  {
     section: "settings",
     id: "settings",
     name: "서버 설정 · 모든 탭",

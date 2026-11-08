@@ -60,7 +60,6 @@ describe("task workspace chat visibility", () => {
     isFolderWorkspaceChatVisible({
       hasActiveSession: true,
       hasFolder: true,
-      boardOpen: false,
       chatOpen: true,
       mobileMode: false,
       mobileChatTab: false,
@@ -73,11 +72,10 @@ describe("task workspace chat visibility", () => {
     expect(visibility({ hasActiveSession: false })).toBe(false);
   });
 
-  it("treats the desktop board chat as visible and gates every mobile layout by its chat tab", () => {
-    expect(visibility({ boardOpen: true, chatOpen: false })).toBe(true);
+  it("keeps a standalone chat visible and gates every mobile layout by its chat tab", () => {
     expect(visibility({ hasFolder: false, chatOpen: false })).toBe(true);
-    expect(visibility({ boardOpen: true, mobileMode: true, mobileChatTab: false })).toBe(false);
-    expect(visibility({ boardOpen: true, mobileMode: true, mobileChatTab: true })).toBe(true);
+    expect(visibility({ mobileMode: true, mobileChatTab: false })).toBe(false);
+    expect(visibility({ mobileMode: true, mobileChatTab: true })).toBe(true);
   });
 });
 

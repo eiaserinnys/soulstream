@@ -9,7 +9,6 @@ const DISCLOSURE_SOURCES = [
   "../../../packages/soul-ui/src/components/ClaudeRuntimeNotificationsPanel.tsx",
   "../../../packages/soul-ui/src/components/ClaudeRuntimeSchedulesPanel.tsx",
   "../../../packages/soul-ui/src/components/ClaudeRuntimeTasksPanel.tsx",
-  "../../../packages/soul-ui/src/board-workspace/BoardWorkspaceMinimap.tsx",
 ] as const;
 
 describe("disclosure action icon contract", () => {

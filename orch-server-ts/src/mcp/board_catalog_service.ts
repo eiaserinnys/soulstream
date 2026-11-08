@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import type { CatalogBoardItemRow, MarkdownDocumentRow } from "../board-yjs/board_yjs_types.js";
 import type { BoardMcpStore, BoardMcpFolderMutations } from "./board_catalog_types.js";
-import { CatalogBoardItemService, type CatalogBoardItemMoveResult, type CatalogBoardYjsPort } from "./board_catalog_items.js";
+import { CatalogBoardItemService, type CatalogBoardYjsPort } from "./board_catalog_items.js";
 import { boardItemsDelta, serializeCatalogFolders, sessionAssignmentFromRow, type CatalogMutationDelta, type CatalogSessionsDelta } from "./board_catalog_delta.js";
 import { FolderBrowseService, type FolderBrowseResult, type FolderBrowseItem, type FolderSessionItem, createFolderBrowseStore } from "./board_folder_browse.js";
 import type { CustomViewBroadcasterPort } from "./board_custom_view_service.js";
@@ -239,23 +239,6 @@ export class CatalogService {
       sessionsDelta,
       boardItemsDelta: boardItemsDelta(delta.boardItems, delta.deletedBoardItemIds),
     });
-  }
-
-  async updateBoardItemPosition(
-    boardItemId: string,
-    x: number,
-    y: number,
-  ): Promise<void> {
-    await this.boardItems.updateBoardItemPosition(boardItemId, x, y);
-  }
-
-  async moveBoardItemToFolder(params: {
-    boardItemId: string;
-    folderId: string;
-    position?: { x: number; y: number };
-    idempotencyKey: string;
-  }): Promise<CatalogBoardItemMoveResult> {
-    return await this.boardItems.moveBoardItemToFolder(params);
   }
 
   async createMarkdownDocument(params: {

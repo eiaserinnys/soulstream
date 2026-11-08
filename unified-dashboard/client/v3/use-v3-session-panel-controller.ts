@@ -74,7 +74,6 @@ export function useV3SessionPanelController({
     try {
       const resolved = await resolveSessionFolderWorkspace({
         session,
-        boardItems: catalog?.boardItems ?? [],
         currentFolderEntries,
         loadFolderById: (folderId) => loadPlannerFolderById(api, folderId,{includeCompleted:false}),
       });
@@ -108,7 +107,7 @@ export function useV3SessionPanelController({
       notify(`세션의 폴더 열기 실패 · ${message} · ${detail}`);
       return false;
     }
-  }, [api, catalog?.boardItems, currentFolderEntries, notify, onClearFolder, onSelectFolder, setActiveSession, setActiveSessionSummary, setActiveTab, setChatOpen]);
+  }, [api, currentFolderEntries, notify, onClearFolder, onSelectFolder, setActiveSession, setActiveSessionSummary, setActiveTab, setChatOpen]);
 
   const openSession = useCallback(async (session: SessionSummary) => {
     const requestSequence = ++openRequestSequence.current;

@@ -1,4 +1,4 @@
-import type { CatalogState } from "@seosoyoung/soul-ui";
+import type { CatalogFolder } from "@seosoyoung/soul-ui";
 
 import type { ProjectPageDetails } from "./project-page-details";
 
@@ -77,9 +77,17 @@ export function projectFormValueFromDetails(
 
 export function projectHasContents(
   folderId: string,
-  catalog: Pick<CatalogState, "folders" | "sessions" | "boardItems">,
+  input: {
+    folders: readonly CatalogFolder[];
+    sessions: Readonly<Record<string, { folderId?: string | null }>>;
+    hasCards: boolean;
+    hasDocuments: boolean;
+    hasResources?: boolean;
+  },
 ): boolean {
-  return catalog.folders.some((folder) => folder.parentFolderId === folderId)
-    || Object.values(catalog.sessions).some((assignment) => assignment.folderId === folderId)
-    || (catalog.boardItems ?? []).some((item) => item.folderId === folderId);
+  return input.folders.some((folder) => folder.parentFolderId === folderId)
+    || Object.values(input.sessions).some((assignment) => assignment.folderId === folderId)
+    || input.hasCards
+    || input.hasDocuments
+    || (input.hasResources ?? false);
 }

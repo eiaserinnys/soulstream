@@ -60,7 +60,6 @@ async function verifyTheme(browser: Browser, theme: "dark" | "light") {
     const detailCaps = await auditVisibleCaps(detail);
     for (const label of [
       "오늘 플래너로 돌아가기",
-      "폴더 보드 열기",
       "폴더 설명 편집",
       "컨텍스트 추가",
       "마크다운 추가",

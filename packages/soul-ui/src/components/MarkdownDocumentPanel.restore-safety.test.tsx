@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
 
-import type { BoardYjsRuntime } from "../board-workspace";
+import type { BoardYjsRuntime } from "../lib/board-yjs-client";
 import {
   catalogBoardItemsFromYDoc,
   createMarkdownYjsDocument,
@@ -19,7 +19,7 @@ import {
   updateMarkdownYjsBody,
   updateMarkdownYjsTitle,
   upsertBoardYjsItem,
-} from "../board-workspace";
+} from "../lib/board-yjs-client";
 import { useDashboardStore } from "../stores/dashboard-store";
 import { MarkdownDocumentPanel } from "./MarkdownDocumentPanel";
 

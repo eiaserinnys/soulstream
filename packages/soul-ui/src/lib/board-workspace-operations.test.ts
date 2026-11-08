@@ -46,7 +46,6 @@ class MockXMLHttpRequest {
 
 function makeOperations() {
   return createBoardWorkspaceOperations({
-    updateBoardItemPositionUrl: (id) => `/api/board-items/${id}/position`,
     moveBoardItemToFolderUrl: (id) => `/api/board-items/${id}/folder`,
     createMarkdownDocumentUrl: "/api/markdown-documents",
     initBoardAssetUrl: (folderId) => `/api/board/${folderId}/assets/init`,

@@ -1,12 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { CatalogState } from "../shared/types";
-import {
-  getChildFolders,
-  getFolderBreadcrumbs,
-  getFolderDirectChildCount,
-  getRootFolders,
-} from "./board-workspace-helpers";
+import { getChildFolders, getFolderBreadcrumbs, getRootFolders } from "./folder-catalog";
 
 const catalog: CatalogState = {
   folders: [
@@ -16,14 +11,10 @@ const catalog: CatalogState = {
     { status: "open", version: 1, archived: false, id: "child-b", name: "Child B", sortOrder: 1, parentFolderId: "root-a" },
     { status: "open", version: 1, archived: false, id: "grandchild", name: "Grandchild", sortOrder: 0, parentFolderId: "child-a" },
   ],
-  sessions: {
-    "sess-root": { folderId: "root-a", displayName: "Root Session" },
-    "sess-child": { folderId: "child-a", displayName: "Child Session" },
-    "sess-grand": { folderId: "grandchild", displayName: "Grand Session" },
-  },
+  sessions: {},
 };
 
-describe("board workspace folder helpers", () => {
+describe("folder catalog helpers", () => {
   it("getChildFolders returns direct child folders only", () => {
     expect(getChildFolders(catalog.folders, "root-a").map((f) => f.id)).toEqual([
       "child-a",
@@ -44,11 +35,5 @@ describe("board workspace folder helpers", () => {
       "child-a",
       "grandchild",
     ]);
-  });
-
-  it("getFolderDirectChildCount counts only direct sessions and child folders", () => {
-    expect(getFolderDirectChildCount(catalog, "root-a")).toBe(3);
-    expect(getFolderDirectChildCount(catalog, "child-a")).toBe(2);
-    expect(getFolderDirectChildCount(catalog, "grandchild")).toBe(1);
   });
 });

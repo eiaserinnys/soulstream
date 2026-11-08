@@ -35,27 +35,8 @@ export const boardTools = {
         folder_id: z.string().optional(),
       },
     }, audience: "all" },
-  update_board_item_position: { name: "update_board_item_position", config: {
-      description: "보드 항목 좌표 갱신. 좌표는 서버에서 20px 격자에 스냅된다.",
-      inputSchema: {
-        board_item_id: z.string().min(1),
-        x: z.number(),
-        y: z.number(),
-      },
-    }, audience: "all" },
-  move_board_item_to_folder: { name: "move_board_item_to_folder", config: {
-      description:
-        "기존 보드 항목을 다른 폴더로 이동한다.",
-      inputSchema: {
-        board_item_id: z.string().min(1),
-        folder_id: z.string().min(1),
-        x: z.number().optional(),
-        y: z.number().optional(),
-        idempotency_key: z.string().min(1),
-      },
-    }, audience: "all" },
   create_markdown_document: { name: "create_markdown_document", timeoutMs: 60000, config: {
-      description: "현재 보드 폴더에 마크다운 문서와 보드 카드를 생성.",
+      description: "폴더에 마크다운 문서를 생성.",
       inputSchema: {
         folder_id: z.string().min(1),
         title: z.string().min(1),

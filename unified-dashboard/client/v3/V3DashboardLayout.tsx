@@ -100,7 +100,6 @@ function V3DashboardContent() {
     setChatOpen(false);
     setMobileTab(selectedFolderId ? "projects" : "today");
   }, [cardNavigation.close, selectedFolderId]);
-  const [boardOverlayOpen, setBoardOverlayOpen] = useState(false);
   const [markdownDocumentsRevision, setMarkdownDocumentsRevision] = useState(0);
   const [detailChatVisible, setDetailChatVisible] = useState(false);
   const [sessionDefaults, setSessionDefaults] = useState<PageSessionDefaults | null>(null);
@@ -225,7 +224,6 @@ function V3DashboardContent() {
     cardNavigation.close();
     if (!preserveSession) {
       setChatOpen(false);
-      setBoardOverlayOpen(false);
       setActiveSessionSummary(null);
       setActiveSession(null);
     }
@@ -605,8 +603,17 @@ function V3DashboardContent() {
     onCreateSubfolder={() => setChildFolderDialog({ mode: "create", parentFolderId: selectedFolder.id, parentName: selectedFolder.name })}
     onRenameChild={(folder) => setChildFolderDialog({ mode: "edit", folder })}
     onArchiveChild={(folder) => {
-      if (projectNavigationMutations.projectHasContents(folder.id)) setChildArchiveTarget(folder);
-      else void projectNavigationMutations.onDeleteProject(folder).catch((error) => notifyWriteFailure("폴더 보관", error));
+      void (async () => {
+        let hasContents: boolean;
+        try {
+          hasContents = await projectNavigationMutations.projectHasContents(folder.id);
+        } catch (error) {
+          notifyWriteFailure("폴더 내용 확인", error);
+          return;
+        }
+        if (hasContents) setChildArchiveTarget(folder);
+        else void projectNavigationMutations.onDeleteProject(folder).catch((error) => notifyWriteFailure("폴더 보관", error));
+      })();
     }}
     onCompleteFolder={plannerActions.completeFolder}
     onToggleFolderToday={plannerActions.toggleFolderToday}
@@ -675,7 +682,6 @@ function V3DashboardContent() {
               onReturnToToday={returnToPlanner}
               folderInToday={todayFolderIds.has(workspaceFolderEntry.page.id)}
               onToggleFolderToday={toggleSelectedToday}
-              onOpenBoard={() => setBoardOverlayOpen(true)}
               folderMoveTargets={currentFolderEntries}
               onOpenSession={openSession}
               onRenameFolderTitle={async (title) => { await renameSelectedFolder(title); }}
@@ -699,12 +705,12 @@ function V3DashboardContent() {
       <div className="v3-session-panel-resize" data-testid="v3-session-panel-resize-handle" aria-hidden="true">
         <DragHandle onDrag={resizeSessionPanel} widthPx={V3_PANEL_GAP_PX} />
       </div>
-      <V3SessionPanel ref={sessionPanel.panelRef} sessions={panelSessions} boardItems={catalog?.boardItems ?? []} folders={catalog?.folders ?? []} nodeConnectivity={nodeConnectivity} activeSessionId={activeSessionKey} acknowledgedReviewIds={acknowledgedReviewIds} onOpenSession={sessionPanel.openFeedSession} onAcknowledged={acknowledgeReview} />
+      <V3SessionPanel ref={sessionPanel.panelRef} sessions={panelSessions} folders={catalog?.folders ?? []} nodeConnectivity={nodeConnectivity} activeSessionId={activeSessionKey} acknowledgedReviewIds={acknowledgedReviewIds} onOpenSession={sessionPanel.openFeedSession} onAcknowledged={acknowledgeReview} />
       {cardNavigation.cardId ? <CardWorkspace cardId={cardNavigation.cardId} initialSessionId={cardNavigation.initialSessionId} folders={catalog?.folders??[]} onClose={closeCardWorkspace} onCloseChat={() => setMobileTab("today")} onOpenSession={openSession}
         mobileMode={mobileMode} mobileTab={mobileTab} activeSession={chatOpen?activeSession:undefined}
         chatInputDisabled={chatInputDisabled} fileUploadUrl={fileUploadUrl} historyEnabled={historyEnabled}
         sessionStreamActive={detailActive} sessionConnectionStatus={sessionConnectionStatus} reconnectSession={reconnectSession} onAcknowledgedReview={acknowledgeReview}/> : null}
-      {!cardNavigation.cardId && ((chatOpen && activeSession) || (boardOverlayOpen && workspaceFolderEntry)) ? (
+      {!cardNavigation.cardId && chatOpen && activeSession ? (
         <FolderWorkspace
           task={workspaceFolderEntry}
           folderSections={folderSections}
@@ -740,7 +746,7 @@ function V3DashboardContent() {
           folderInToday={workspaceFolderEntry ? todayFolderIds.has(workspaceFolderEntry.page.id) : false}
           onReturnToToday={returnToPlanner}
           onToggleFolderToday={() => workspaceFolderEntry ? plannerActions.toggleFolderToday(workspaceFolderEntry) : Promise.reject(new Error("연결된 폴더가 없습니다"))}
-          onCloseWorkspace={() => { setChatOpen(false); setBoardOverlayOpen(false); setActiveSessionSummary(null); setActiveSession(null); if (!workspaceFolderEntry) closeWorkspace(); }}
+          onCloseWorkspace={() => { setChatOpen(false); setActiveSessionSummary(null); setActiveSession(null); if (!workspaceFolderEntry) closeWorkspace(); }}
           onCloseChat={() => { if (mobileMode) switchMobileTab("task"); else setChatOpen(false); }}
           onOpenSession={openSession}
           onRenameFolderTitle={(title) => workspaceFolderEntry ? plannerActions.renameFolderPageTitle(workspaceFolderEntry, title) : Promise.reject(new Error("연결된 폴더가 없습니다"))}
@@ -748,8 +754,6 @@ function V3DashboardContent() {
 
           onFolderBlocksChanged={applyFolderBlocks}
           onAcknowledgedReview={acknowledgeReview}
-          forceBoardOpen={boardOverlayOpen}
-          onCloseBoard={() => setBoardOverlayOpen(false)}
           onArchiveFolder={selectedFolder ? () => projectNavigationMutations.onDeleteProject(selectedFolder) : undefined}
           markdownDocumentsRevision={markdownDocumentsRevision}
           onMarkdownDocumentEditorClosed={() => setMarkdownDocumentsRevision((current) => current + 1)}

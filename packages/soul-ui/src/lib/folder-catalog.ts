@@ -1,5 +1,4 @@
 import type { CatalogFolder } from "../shared/types";
-export { getFolderDirectChildCount } from "./board-workspace-items";
 
 export function getChildFolders(
   folders: readonly CatalogFolder[],
@@ -23,12 +22,10 @@ export function getFolderBreadcrumbs(
   const path: CatalogFolder[] = [];
   const seen = new Set<string>();
   let current = byId.get(folderId);
-
   while (current && !seen.has(current.id)) {
     path.push(current);
     seen.add(current.id);
     current = current.parentFolderId ? byId.get(current.parentFolderId) : undefined;
   }
-
   return path.reverse();
 }

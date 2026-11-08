@@ -80,16 +80,6 @@ export function createBoardLocalPorts(options: McpHostOptions) {
   const mutations: BoardMcpMutationPort = {
     moveSessionToFolder: (sessionId, folderId) => board("move-session-to-folder", service =>
       service.moveSessionToFolder(sessionId, folderId)),
-    updateBoardItemPosition: async (folderId, boardItemId, x, y) => {
-      await board("update-board-item-position", service =>
-        service.updateBoardItemPosition({ folderId }, boardItemId, x, y));
-    },
-    // The only authorized behavior fix: the old worker sends targetFolderId, but the host expects folderId.
-    moveBoardItemToFolder: ({ boardItem, targetFolderId, ...rest }) => {
-      const { createdAt, updatedAt, ...item } = boardItem;
-      return board("move-board-item-to-folder", service =>
-        service.moveBoardItemToContainer({ ...rest, boardItem: item, targetScope: { folderId: targetFolderId } }));
-    },
     createMarkdownDocument: input => board("create-markdown-document", service =>
       service.createMarkdownDocument(input)),
     updateMarkdownDocument: (folderId, documentId, fields) => board("update-markdown-document", service =>
