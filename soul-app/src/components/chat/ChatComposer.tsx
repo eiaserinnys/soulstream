@@ -158,6 +158,7 @@ export function ChatComposer({
     >
       <ComposerSurface
         presentation={presentation}
+        embedded={embedded}
         testID="chat-composer-box"
         style={focusAccent && focusAccentActive
           ? [composerSurfaceStyle, { borderColor: t.colors.accent }]
@@ -311,18 +312,23 @@ export function ChatComposer({
 
 function ComposerSurface({
   presentation,
+  embedded,
   testID,
   style,
   children,
   onLayout,
 }: {
   presentation: 'default' | 'manuscript';
+  embedded?: boolean;
   testID: string;
   style: React.ComponentProps<typeof View>['style'];
   children: React.ReactNode;
   onLayout?: React.ComponentProps<typeof View>['onLayout'];
 }) {
-  return presentation === 'manuscript'
-    ? <View testID={testID} style={style} onLayout={onLayout}>{children}</View>
-    : <GlassSurface role="glassDense" testID={testID} style={style} onLayout={onLayout}>{children}</GlassSurface>;
+  // 떠 있는 합성기 프레임 안에서는 바깥 유리 하나만 남기고 내부 박스를 없앤다.
+  if (presentation === 'manuscript' || embedded) {
+    return <View testID={testID} style={[style, embedded ? { borderWidth: 0, borderColor: 'transparent' } : undefined]}
+      onLayout={onLayout}>{children}</View>;
+  }
+  return <GlassSurface role="glassDense" testID={testID} style={style} onLayout={onLayout}>{children}</GlassSurface>;
 }

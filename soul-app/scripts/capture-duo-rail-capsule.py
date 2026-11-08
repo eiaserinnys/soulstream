@@ -3,8 +3,8 @@
 
 무엇을 검수하나
 ---------------
-- 다크·라이트 테마 모두에서 레일 캡슐(`RailCapsule`)이 밝고 반투명한 프로스트 유리로
-  렌더되고, 흰색 스페큘러 경계(`rgba(255, 255, 255, 0.78)`)와 backdrop blur를 유지한다.
+- 다크·라이트 테마 모두에서 레일 캡슐(`RailCapsule`)이 밝고 반투명한 리퀴드 유리로
+  렌더되고, 불투명 틴트나 인위적 외곽선 없이 backdrop blur와 정확한 24pt 곡률을 쓴다.
   회귀 기준은 이전의 탁한 회색(`#4c4a4f`)이 아니라 밝은 유리다.
 - 캡슐 안 아이콘은 캡슐의 밝은 표면을 기준으로 고른 색을 쓴다. 다크 테마 비선택
   `rgb(17, 17, 17)`, 라이트 테마 비선택 `rgb(83, 87, 93)`, 선택 `rgb(0, 43, 102)`.
@@ -12,8 +12,12 @@
   양쪽에서 WCAG AA 4.5:1 이상이어야 한다.
 - 배지·점 색상은 배경 `#d8ebff`, 글자·점 `rgb(0, 43, 102)`를 쓰며 배지 글자 대비도
   AA 4.5:1 이상이다.
-- 캡슐 크기 계약(폭 48, 알약 반경)이 그대로다.
-- 불변: 캡슐이 아닌 chrome(하단 탭바 유리)은 다크 테마에서 계속 어두운 유리를 쓴다.
+- 캡슐 크기 계약(폭 48)과 24pt 곡률, 외곽선 0을 유지한다.
+- context·nav 캡슐 사이에는 compact 4px, 기본 8px의 레이아웃 간격이 남는다.
+- 떠 있는 새 대화 합성기는 바깥 유리 한 겹만 쓰고, 내부 입력 박스는 backdrop filter와
+  경계선을 중복해 만들지 않는다.
+- 불변: 캡슐이 아닌 chrome(하단 탭바 유리)은 다크 테마에서 계속 어두운 유리를 쓰고
+  외곽선을 두지 않는다.
 - 리뷰 화면 `?theme=dark`는 루트 프레임과 NavigationContainer 배경을 `#0f0f0f`로 칠한다.
 
 실행 방법
@@ -54,7 +58,6 @@ THEMES = ("dark", "light")
 
 UNSELECTED_ICON_RGB = {"dark": (17, 17, 17), "light": (83, 87, 93)}
 SELECTED_ICON_RGB = (0, 43, 102)
-SPECULAR_BORDER = "rgba(255, 255, 255, 0.78)"
 DARK_CANVAS_RGB = (15, 15, 15)
 BRIGHT_POSTIT_RGB = (238, 232, 246)
 LIGHT_BACKDROP_RGB = (255, 255, 255)
@@ -103,6 +106,25 @@ MEASURE_JS = r"""
 }
 """
 
+CLUSTER_GAP_JS = r"""
+([contextTestId, navTestId]) => {
+  const round = (value) => Math.round(value * 100) / 100;
+  const box = (testId) => {
+    const element = document.querySelector(`[data-testid="${testId}"]`);
+    if (!element) return null;
+    const r = element.getBoundingClientRect();
+    return { top: round(r.top), bottom: round(r.bottom), height: round(r.height) };
+  };
+  const context = box(contextTestId);
+  const nav = box(navTestId);
+  return {
+    context,
+    nav,
+    gap: context && nav ? round(nav.top - context.bottom) : null,
+  };
+}
+"""
+
 BADGE_JS = r"""
 () => {
   const info = (element) => {
@@ -131,9 +153,36 @@ TAB_BAR_GLASS_JS = r"""
   return glass.map((element) => ({
     backgroundColor: getComputedStyle(element).backgroundColor,
     borderColor: getComputedStyle(element).borderTopColor,
+    borderWidth: getComputedStyle(element).borderTopWidth,
     backdropFilter: getComputedStyle(element).backdropFilter
       || getComputedStyle(element).webkitBackdropFilter,
   }));
+}
+"""
+
+COMPOSER_JS = r"""
+() => {
+  const frame = document.querySelector('[data-testid="card-composer"]');
+  const box = frame ? frame.querySelector('[data-testid="chat-composer-box"]') : null;
+  if (!frame || !box) return null;
+  const boxStyle = getComputedStyle(box);
+  const glassLayers = [...frame.querySelectorAll('*')].filter((element) => {
+    const style = getComputedStyle(element);
+    return (style.backdropFilter || style.webkitBackdropFilter || 'none') !== 'none';
+  });
+  return {
+    box: {
+      backdropFilter: boxStyle.backdropFilter || boxStyle.webkitBackdropFilter || 'none',
+      borderWidth: boxStyle.borderTopWidth,
+      backgroundColor: boxStyle.backgroundColor,
+    },
+    glassLayers: glassLayers.map((element) => ({
+      borderWidth: getComputedStyle(element).borderTopWidth,
+      borderRadius: getComputedStyle(element).borderTopLeftRadius,
+      backdropFilter: getComputedStyle(element).backdropFilter
+        || getComputedStyle(element).webkitBackdropFilter,
+    })),
+  };
 }
 """
 
@@ -282,6 +331,10 @@ def capture_capsule_frame(browser: Browser, base: str, out: Path, frame_id: str,
     page, errors = open_page(context, base, url)
     settle(page, capsule_test_id)
     metrics = page.evaluate(MEASURE_JS, capsule_test_id)
+    cluster_gap = None
+    if frame_id in ("outer-portrait", "outer-landscape"):
+        cluster_gap = page.evaluate(
+            CLUSTER_GAP_JS, ["duo-rail-context-capsule", "phone-rail-tab-cluster"])
     screenshot = shot(page, out, f"capsule-{frame_id}-{theme}", width, height)
     page.close()
     context.close()
@@ -291,7 +344,7 @@ def capture_capsule_frame(browser: Browser, base: str, out: Path, frame_id: str,
     checks.check(f"{prefix} 캡슐 존재", capsule is not None, metrics)
     checks.check(f"{prefix} 캡슐 폭 48", capsule and abs(capsule["rect"]["width"] - 48) <= 1,
                  capsule["rect"] if capsule else None)
-    checks.check(f"{prefix} 알약 반경", capsule and capsule["borderRadius"] == "999px",
+    checks.check(f"{prefix} 24pt 곡률", capsule and capsule["borderRadius"] == "24px",
                  capsule["borderRadius"] if capsule else None)
 
     fill_rgb, fill_alpha = parse_rgb(capsule["backgroundColor"])
@@ -301,8 +354,14 @@ def capture_capsule_frame(browser: Browser, base: str, out: Path, frame_id: str,
     checks.check(f"{prefix} 캡슐이 반투명", fill_alpha < 1, capsule["backgroundColor"])
     checks.check(f"{prefix} backdrop blur", "blur(" in (capsule["backdropFilter"] or ""),
                  capsule["backdropFilter"])
-    checks.check(f"{prefix} 스페큘러 경계", capsule["borderColor"] == SPECULAR_BORDER,
-                 capsule["borderColor"])
+    checks.check(f"{prefix} 외곽선 0", capsule["borderWidth"] == "0px", capsule["borderWidth"])
+
+    if cluster_gap is not None:
+        expected_gap = 4 if width > height else 8
+        checks.check(f"{prefix} 캡슐 사이 레이아웃 간격 {expected_gap}px",
+                     cluster_gap["gap"] is not None
+                     and abs(cluster_gap["gap"] - expected_gap) <= 0.5,
+                     cluster_gap)
 
     expected_unselected = f"rgb({UNSELECTED_ICON_RGB[theme][0]}, {UNSELECTED_ICON_RGB[theme][1]}, {UNSELECTED_ICON_RGB[theme][2]})"
     expected_selected = f"rgb({SELECTED_ICON_RGB[0]}, {SELECTED_ICON_RGB[1]}, {SELECTED_ICON_RGB[2]})"
@@ -334,6 +393,7 @@ def capture_capsule_frame(browser: Browser, base: str, out: Path, frame_id: str,
                  all(value >= AA_CONTRAST for value in selected_ratios.values()), selected_ratios)
     checks.check(f"{prefix} 페이지 오류 없음", not errors, errors)
     return {"url": url, "screenshot": screenshot, "metrics": metrics,
+            "clusterGap": cluster_gap,
             "contrast": {"unselected": ratios, "selected": selected_ratios}}
 
 
@@ -377,6 +437,7 @@ def capture_non_capsule_chrome(browser: Browser, base: str, out: Path, checks: C
     page, errors = open_page(context, base, url)
     settle(page, "phone-tab-DailyTab")
     glass = page.evaluate(TAB_BAR_GLASS_JS)
+    composer = page.evaluate(COMPOSER_JS)
     screenshot = shot(page, out, "invariant-tabbar-dark", 393, 852)
     page.close()
     context.close()
@@ -388,12 +449,21 @@ def capture_non_capsule_chrome(browser: Browser, base: str, out: Path, checks: C
     checks.check("불변: 하단 탭바 chrome은 어두운 유리", bool(glass) and all(luminance_ok), glass)
     checks.check("불변: 하단 탭바에 blur 유지",
                  bool(glass) and all("blur(" in (entry["backdropFilter"] or "") for entry in glass), glass)
-    expected_border = "rgba(42, 42, 46, 0.74)"
-    checks.check("불변: 하단 탭바 chrome 경계 유지",
-                 bool(glass) and all(entry["borderColor"] == expected_border for entry in glass),
-                 [entry["borderColor"] for entry in glass])
+    checks.check("불변: 하단 탭바 chrome 외곽선 0",
+                 bool(glass) and all(entry["borderWidth"] == "0px" for entry in glass),
+                 [entry["borderWidth"] for entry in glass])
+    checks.check("새 대화 합성기 존재", composer is not None, composer)
+    if composer:
+        checks.check("새 대화 바깥 유리 한 겹", len(composer["glassLayers"]) == 1, composer["glassLayers"])
+        checks.check("새 대화 바깥 유리 외곽선 0",
+                     all(layer["borderWidth"] == "0px" for layer in composer["glassLayers"]),
+                     [layer["borderWidth"] for layer in composer["glassLayers"]])
+        checks.check("새 대화 내부 입력 박스 backdrop 없음",
+                     composer["box"]["backdropFilter"] == "none", composer["box"])
+        checks.check("새 대화 내부 입력 박스 경계선 0",
+                     composer["box"]["borderWidth"] == "0px", composer["box"])
     checks.check("불변: 하단 탭바 페이지 오류 없음", not errors, errors)
-    return {"url": url, "screenshot": screenshot, "glass": glass}
+    return {"url": url, "screenshot": screenshot, "glass": glass, "composer": composer}
 
 
 def main() -> int:

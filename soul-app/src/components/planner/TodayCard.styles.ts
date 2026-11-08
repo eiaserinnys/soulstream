@@ -18,7 +18,7 @@ export function todayCardStyles(t: DesignTokens) {
     chips: { minWidth: 0, flexDirection: 'row', flexWrap: 'nowrap', alignItems: 'center', gap: s.xs + s.xxs },
     chipFrame: { minWidth: 0, maxWidth: '100%', flexShrink: 1 },
     chip: { minWidth: 0, flexShrink: 1, height: t.controlHeight.chip, maxWidth: '100%', paddingHorizontal: s.sm + s.xxs,
-      borderRadius: round, backgroundColor: t.colors.surfaceCode, borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border },
+      borderRadius: round, backgroundColor: t.colors.surfaceCode },
     chipText: { ...type.meta, color: t.colors.textSecondary, flexShrink: 1 },
     disabled: { opacity: 0.45 },
   });

@@ -1,16 +1,18 @@
 import React, { useMemo } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useTokens } from '../../theme';
+import type { SurfaceRoleName } from '../../theme/surfaceRoles';
 import { AppGlassCard } from '../AppGlassCard';
 
 /** Long text stays in a regular foreground view above the native glass layer. */
-export function PlannerForegroundCard({ children, testID, glassTestID, foregroundTestID, style, cornerRadius }: {
+export function PlannerForegroundCard({ children, testID, glassTestID, foregroundTestID, style, cornerRadius, role = 'glassCard' }: {
   children: React.ReactNode;
   testID?: string;
   glassTestID?: string;
   foregroundTestID?: string;
   style?: StyleProp<ViewStyle>;
   cornerRadius?: number;
+  role?: SurfaceRoleName;
 }) {
   const t = useTokens();
   const styles = useMemo(() => StyleSheet.create({
@@ -20,7 +22,7 @@ export function PlannerForegroundCard({ children, testID, glassTestID, foregroun
   }), [t]);
   return (
     <View testID={testID} style={[styles.frame, style]}>
-      <AppGlassCard testID={glassTestID} cornerRadius={cornerRadius} style={styles.glass} />
+      <AppGlassCard testID={glassTestID} role={role} cornerRadius={cornerRadius} style={styles.glass} />
       <View testID={foregroundTestID} style={styles.foreground}>{children}</View>
     </View>
   );

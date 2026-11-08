@@ -17,54 +17,34 @@ exports[`ChatComposer 공통 한 줄 시작과 입력 표면 계약을 snapshot�
   <View
     style={
       [
-        {
-          "backgroundColor": "transparent",
-        },
         [
-          [
-            {
-              "overflow": "hidden",
-            },
-            {},
-            {
-              "borderColor": "#d1d1d6",
-              "borderRadius": 22,
-              "borderWidth": 0.5,
-              "minHeight": 56,
-              "paddingHorizontal": 6,
-              "paddingVertical": 3.5,
-            },
-            {
-              "borderBottomLeftRadius": 14,
-              "borderBottomRightRadius": 14,
-              "borderRadius": 14,
-              "borderTopLeftRadius": 14,
-              "borderTopRightRadius": 14,
-            },
-          ],
           {
-            "backgroundColor": "rgba(216, 227, 238, 0.76)",
+            "overflow": "hidden",
+          },
+          {},
+          {
+            "borderColor": "#d1d1d6",
+            "borderRadius": 22,
+            "borderWidth": 0.5,
+            "minHeight": 56,
+            "paddingHorizontal": 6,
+            "paddingVertical": 3.5,
+          },
+          {
+            "borderBottomLeftRadius": 14,
+            "borderBottomRightRadius": 14,
+            "borderRadius": 14,
+            "borderTopLeftRadius": 14,
+            "borderTopRightRadius": 14,
           },
         ],
+        {
+          "backgroundColor": "#d8e3ee",
+        },
       ]
     }
     testID="chat-composer-box"
   >
-    <ViewManagerAdapter_ExpoBlur
-      blurMethod="none"
-      blurReductionFactor={4}
-      intensity={48}
-      style={
-        {
-          "bottom": 0,
-          "left": 0,
-          "position": "absolute",
-          "right": 0,
-          "top": 0,
-        }
-      }
-      tint="light"
-    />
     <View
       collapsable={false}
       style={

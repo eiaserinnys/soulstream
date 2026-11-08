@@ -79,22 +79,23 @@ describe('GlassSurface render paths and composition', () => {
   });
 
   test('native GlassView 지원 경로를 렌더한다', async () => {
-    const screen = render(<GlassSurface role="glassCard" testID="surface" />);
-    expect(screen.getByTestId('native-surface').props.tintColor).toBeTruthy();
+    const screen = render(<GlassSurface role="chrome" testID="surface" />);
+    expect(screen.getByTestId('native-surface')).toBeTruthy();
     await waitFor(() => expect(AccessibilityInfo.isReduceTransparencyEnabled).toHaveBeenCalled());
   });
 
-  test('colorScheme="light"는 다크 앱 모드에서도 밝은 리퀴드 글래스 스킴과 틴트를 강제한다', () => {
+  test('colorScheme="light"는 다크 앱 모드에서도 밝은 리퀴드 글래스 스킴을 강제하고 틴트를 두지 않는다', () => {
     const screen = render(
       <GlassSurface role="chrome" colorScheme="light" testID="capsule" />,
     );
     const native = screen.getByTestId('native-capsule');
 
     expect(native.props.colorScheme).toBe('light');
-    expect(native.props.tintColor).toBe('rgba(242, 242, 247, 0.56)');
+    expect(native.props.tintColor).toBeUndefined();
+    expect(native.props.borderRadius).toBe(0);
   });
 
-  test('colorScheme="light"의 blur fallback은 밝은 fill과 흰색 스페큘러 경계를 쓴다', () => {
+  test('colorScheme="light"의 blur fallback은 밝은 fill만 쓰고 외곽선을 두지 않는다', () => {
     mockNativeAvailable.mockReturnValue(false);
     render(<GlassSurface role="chrome" colorScheme="light" testID="capsule" />);
     const props = mockBlurProps.get('capsule');
@@ -102,29 +103,32 @@ describe('GlassSurface render paths and composition', () => {
 
     expect(props?.tint).toBe('light');
     expect(backgroundColorOf(style)).toBe('rgba(242, 242, 247, 0.62)');
-    expect(style.borderColor).toBe('rgba(255, 255, 255, 0.78)');
+    expect(style.borderColor).toBeUndefined();
+    expect(style.borderWidth).toBeUndefined();
   });
 
-  test('colorScheme를 주지 않은 다크 chrome은 기존 어두운 유리 스킴을 유지한다', () => {
+  test('colorScheme를 주지 않은 다크 chrome은 어두운 유리 스킴을 유지하고 틴트를 두지 않는다', () => {
     const screen = render(<GlassSurface role="chrome" testID="chrome" />);
     const native = screen.getByTestId('native-chrome');
 
     expect(native.props.colorScheme).toBe('dark');
-    expect(native.props.tintColor).toBe('rgba(28, 28, 30, 0.68)');
+    expect(native.props.tintColor).toBeUndefined();
   });
 
-  test('native Liquid Glass는 수동 border 없이 role 반경이 호출부 radius override를 이긴다', () => {
+  test('native Liquid Glass는 호출부 cornerRadius를 borderRadius prop과 style에 함께 전달한다', () => {
     const screen = render(
-      <GlassSurface role="glassSoft" testID="surface" style={squareRadiusOverride} />,
+      <GlassSurface role="chrome" testID="surface" cornerRadius={24} />,
     );
-    const style = StyleSheet.flatten(screen.getByTestId('native-surface').props.style);
+    const native = screen.getByTestId('native-surface');
+    const style = StyleSheet.flatten(native.props.style);
 
     expectRoleRadius(style, 24);
+    expect(native.props.borderRadius).toBe(24);
     expect(style.borderWidth).toBeUndefined();
     expect(style.borderColor).toBeUndefined();
   });
 
-  test('native GlassView는 glassSoft/card/dense의 서로 다른 semantic tint를 소비한다', () => {
+  test('native가 가능해도 콘텐츠 역할은 솔리드 fallback 색으로 렌더한다', () => {
     const screen = render(
       <View>
         <GlassSurface role="glassSoft" testID="soft" />
@@ -132,35 +136,36 @@ describe('GlassSurface render paths and composition', () => {
         <GlassSurface role="glassDense" testID="dense" />
       </View>,
     );
-    const tints = ['soft', 'card', 'dense'].map((id) => (
-      screen.getByTestId(`native-${id}`).props.tintColor
+    const fills = ['soft', 'card', 'dense'].map((id) => (
+      backgroundColorOf(screen.getByTestId(id).props.style)
     ));
-    expect(tints.every(Boolean)).toBe(true);
-    expect(new Set(tints)).toHaveProperty('size', 3);
+    expect(fills).toEqual(['#0f1115', '#0d1017', '#0b0e15']);
+    expect(screen.queryByTestId('native-soft')).toBeNull();
+    expect(screen.queryByTestId('blur-soft')).toBeNull();
   });
 
   test('native 미지원이면 BlurView fallback을 렌더한다', () => {
     mockNativeAvailable.mockReturnValue(false);
-    const screen = render(<GlassSurface role="glassSoft" testID="surface" />);
+    render(<GlassSurface role="chrome" testID="surface" />);
     expect(backgroundColorOf(mockBlurProps.get('surface')?.style))
       .toBeTruthy();
   });
 
-  test('Blur fallback은 role 반경과 명시적 경계선을 유지한다', () => {
+  test('Blur fallback은 role 반경을 유지하고 chrome에는 경계선을 두지 않는다', () => {
     mockNativeAvailable.mockReturnValue(false);
     render(
-      <GlassSurface role="glassSoft" testID="surface" style={squareRadiusOverride} />,
+      <GlassSurface role="chrome" testID="surface" cornerRadius={24} />,
     );
     const style = StyleSheet.flatten(
       mockBlurProps.get('surface')?.style,
     ) as ViewStyle;
 
     expectRoleRadius(style, 24);
-    expect(style.borderWidth).toBeGreaterThan(0);
-    expect(style.borderColor).toBeTruthy();
+    expect(style.borderWidth).toBeUndefined();
+    expect(style.borderColor).toBeUndefined();
   });
 
-  test('Blur fallback도 glassSoft/card/dense의 서로 다른 semantic fill을 소비한다', () => {
+  test('콘텐츠 역할은 native 불가 환경에서도 같은 솔리드 fill을 쓴다', () => {
     mockNativeAvailable.mockReturnValue(false);
     const screen = render(
       <View>
@@ -170,16 +175,16 @@ describe('GlassSurface render paths and composition', () => {
       </View>,
     );
     const fills = ['soft', 'card', 'dense'].map((id) => (
-      backgroundColorOf(mockBlurProps.get(id)?.style)
+      backgroundColorOf(screen.getByTestId(id).props.style)
     ));
-    expect(fills.every(Boolean)).toBe(true);
-    expect(new Set(fills)).toHaveProperty('size', 3);
+    expect(fills).toEqual(['#0f1115', '#0d1017', '#0b0e15']);
+    expect(screen.queryByTestId('blur-soft')).toBeNull();
   });
 
   test('Reduce Transparency initial/event/recovery/unsubscribe를 반영한다', async () => {
     reduceTransparency = true;
     (AccessibilityInfo.isReduceTransparencyEnabled as jest.Mock).mockResolvedValue(true);
-    const screen = render(<GlassSurface role="glassCard" testID="surface" />);
+    const screen = render(<GlassSurface role="chrome" testID="surface" />);
 
     await waitFor(() => {
       const solid = screen.getByTestId('surface');
@@ -262,13 +267,13 @@ describe('GlassSurface render paths and composition', () => {
     )).toThrow('Nested GlassSurface role is not allowed: glassCard');
   });
 
-  test('보드 모달의 상세 패널은 바깥 패널과 별개인 유리 표면을 쓴다', () => {
+  test('보드 모달의 상세 패널은 바깥 패널과 별개인 솔리드 표면을 쓴다', () => {
     const screen = render(<GlassSurface role="glassSoft">
       <AppModalSurface visible variant="board" modalId="modal_card_detail" onRequestClose={() => {}}>
         <GlassSurface role="glassSoft" testID="board-detail" />
       </AppModalSurface>
     </GlassSurface>);
-    expect(screen.getByTestId('native-board-detail')).toBeTruthy();
+    expect(backgroundColorOf(screen.getByTestId('board-detail').props.style)).toBe('#0f1115');
   });
 
   test('불투명 nativeSheet는 같은 역할이 중첩돼도 glass 규약 위반이 아니다', () => {
@@ -365,10 +370,10 @@ test('오늘 전경 카드의 명시적 토큰 반경은 native와 fallback 표�
   const { DESIGN_RADIUS } = require('../../theme');
   mockNativeAvailable.mockReturnValue(true);
   mockApiAvailable.mockReturnValue(true);
-  const screen = render(<PlannerForegroundCard glassTestID="today-radius" cornerRadius={DESIGN_RADIUS.lg}><Text>오늘</Text></PlannerForegroundCard>);
+  const screen = render(<PlannerForegroundCard role="chrome" glassTestID="today-radius" cornerRadius={DESIGN_RADIUS.lg}><Text>오늘</Text></PlannerForegroundCard>);
   expect(StyleSheet.flatten(screen.getByTestId('native-today-radius').props.style).borderRadius).toBe(16);
   screen.unmount();
   mockNativeAvailable.mockReturnValue(false);
-  const fallback = render(<PlannerForegroundCard glassTestID="today-radius" cornerRadius={DESIGN_RADIUS.lg}><Text>오늘</Text></PlannerForegroundCard>);
+  const fallback = render(<PlannerForegroundCard role="chrome" glassTestID="today-radius" cornerRadius={DESIGN_RADIUS.lg}><Text>오늘</Text></PlannerForegroundCard>);
   expect(StyleSheet.flatten(fallback.getByTestId('blur-today-radius').props.style).borderRadius).toBe(16);
 });

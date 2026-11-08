@@ -16,7 +16,8 @@ export type SurfaceRoleName = typeof SURFACE_ROLE_NAMES[number];
 export interface SurfaceRoleDefinition {
   compositesBackdrop: boolean;
   nativeGlass: boolean;
-  nativeTintColor: string;
+  /** iOS 26 리퀴드 글래스에는 불투명 틴트를 입히지 않는다. */
+  nativeTintColor: string | undefined;
   blurColor: string;
   fallbackColor: string;
   borderRadius: number;
@@ -32,10 +33,8 @@ export interface SurfaceRoleDefinition {
 export type SurfaceRoles = Record<SurfaceRoleName, SurfaceRoleDefinition>;
 
 const CHROME_CONTENT_ALPHA = 0.92;
-const CHROME_NATIVE_TINT_ALPHA = 0.68;
-const LIGHT_CHROME_GLASS_TINT_ALPHA = 0.56;
+const CHROME_BLUR_ALPHA = 0.58;
 const LIGHT_CHROME_GLASS_BLUR_ALPHA = 0.62;
-const LIGHT_CHROME_SPECULAR_BORDER = 'rgba(255, 255, 255, 0.78)';
 const SEMANTIC_GLASS_PALETTE = {
   light: {
     glassSoft: { translucent: 'rgba(231, 237, 245, 0.56)', solid: '#e7edf5' },
@@ -50,8 +49,9 @@ const SEMANTIC_GLASS_PALETTE = {
     stroke: 'rgba(255, 255, 255, 0.12)',
   },
 } as const;
+// 콘텐츠 카드·시트·입력은 논 리퀴드 글래스(솔리드 표면)로 렌더한다.
 // 실기기에서 카드 글래스를 되돌려야 할 때 바꾸는 단일 스위치.
-export const CARD_NATIVE_GLASS_ENABLED = true;
+export const CARD_NATIVE_GLASS_ENABLED = false;
 export const MODAL_BACKDROP_COLOR = 'rgba(0, 0, 0, 0.35)';
 
 /**
@@ -76,17 +76,16 @@ export function createSurfaceRoles(t: DesignTokens): SurfaceRoles {
     chrome: role({
       compositesBackdrop: true,
       nativeGlass: true,
-      nativeTintColor: withAlpha(c.surface, CHROME_NATIVE_TINT_ALPHA),
-      blurColor: withAlpha(c.surface, CHROME_CONTENT_ALPHA),
+      nativeTintColor: undefined,
+      blurColor: withAlpha(c.surface, CHROME_BLUR_ALPHA),
+      tokenBackgroundColor: withAlpha(c.surface, CHROME_CONTENT_ALPHA),
       fallbackColor: c.surface,
       borderRadius: 0,
       blurIntensity: 74,
-      blurBorderColor: withAlpha(c.border, 0.74),
-      solidBorderColor: c.border,
     }),
     glassSoft: role({
       compositesBackdrop: true,
-      nativeGlass: true,
+      nativeGlass: false,
       nativeTintColor: semanticGlass.glassSoft.translucent,
       blurColor: semanticGlass.glassSoft.translucent,
       fallbackColor: semanticGlass.glassSoft.solid,
@@ -108,7 +107,7 @@ export function createSurfaceRoles(t: DesignTokens): SurfaceRoles {
     }),
     glassDense: role({
       compositesBackdrop: true,
-      nativeGlass: true,
+      nativeGlass: false,
       nativeTintColor: semanticGlass.glassDense.translucent,
       blurColor: semanticGlass.glassDense.translucent,
       fallbackColor: semanticGlass.glassDense.solid,
@@ -118,7 +117,7 @@ export function createSurfaceRoles(t: DesignTokens): SurfaceRoles {
     modal: role({
       // 앱이 직접 dim과 겹침을 소유하는 overFullScreen 표면.
       compositesBackdrop: true,
-      nativeGlass: true,
+      nativeGlass: false,
       nativeTintColor: semanticGlass.glassSoft.translucent,
       blurColor: semanticGlass.glassSoft.translucent,
       fallbackColor: semanticGlass.glassSoft.solid,
@@ -144,22 +143,20 @@ export function createSurfaceRoles(t: DesignTokens): SurfaceRoles {
 /**
  * 라이트 테마의 레일 캡슐 전용 chrome 변형.
  *
- * 일반 chrome의 알파·경계는 불변으로 두고, 다크 테마에서도 밝게 보여야 하는 캡슐만
- * 이 역할로 렌더한다. 흰색 스페큘러 림과 낮은 틴트 알파가 밝은 리퀴드 글래스 질감을 만든다.
+ * 다크 테마에서도 밝게 보여야 하는 캡슐만 이 역할로 렌더한다. iOS 26 리퀴드 글래스는
+ * 불투명 틴트와 인위적 외곽선 없이 굴절과 하이라이트를 스스로 만든다.
  */
 export function createLightChromeGlassRole(t: DesignTokens): SurfaceRoleDefinition {
   const c = t.colors;
   return role({
     compositesBackdrop: true,
     nativeGlass: true,
-    nativeTintColor: withAlpha(c.surface, LIGHT_CHROME_GLASS_TINT_ALPHA),
+    nativeTintColor: undefined,
     blurColor: withAlpha(c.surface, LIGHT_CHROME_GLASS_BLUR_ALPHA),
     tokenBackgroundColor: withAlpha(c.surface, CHROME_CONTENT_ALPHA),
     fallbackColor: c.surface,
     borderRadius: 0,
     blurIntensity: 74,
-    blurBorderColor: LIGHT_CHROME_SPECULAR_BORDER,
-    solidBorderColor: c.border,
   });
 }
 
@@ -177,7 +174,7 @@ export function getSurfaceRole(
 function role(input: {
   compositesBackdrop: boolean;
   nativeGlass: boolean;
-  nativeTintColor: string;
+  nativeTintColor?: string;
   blurColor: string;
   tokenBackgroundColor?: string;
   fallbackColor: string;
