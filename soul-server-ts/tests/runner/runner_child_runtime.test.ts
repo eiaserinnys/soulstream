@@ -201,6 +201,8 @@ describe("buildDurableRunnerEvent", () => {
 
     await setRunnerOomScore("win32", scorePath);
     expect(await readFile(scorePath, "utf8")).toBe("0\n");
+    await setRunnerOomScore("darwin", scorePath);
+    expect(await readFile(scorePath, "utf8")).toBe("0\n");
     await setRunnerOomScore("linux", scorePath);
     expect(await readFile(scorePath, "utf8")).toBe("500\n");
   });

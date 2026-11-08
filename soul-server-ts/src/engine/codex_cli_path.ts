@@ -12,7 +12,9 @@ export type CodexCliPathSource =
   | "WINDOWS_APPDATA_NPM"
   | "WINDOWS_USERPROFILE_NPM"
   | "HOME_NPM_GLOBAL"
-  | "HOME_LOCAL_BIN";
+  | "HOME_LOCAL_BIN"
+  | "HOMEBREW_ARM64_BIN"
+  | "HOMEBREW_INTEL_BIN";
 
 export interface CodexCliPathResolution {
   path: string;
@@ -97,6 +99,24 @@ function candidateCodexCliPaths(
         joinExecutablePath(home, ".local", "bin"),
         "codex",
         "HOME_LOCAL_BIN",
+        env.PATHEXT,
+        platform,
+      ),
+    );
+  }
+  if (platform === "darwin") {
+    candidates.push(
+      ...executableCandidatesInDirectory(
+        "/opt/homebrew/bin",
+        "codex",
+        "HOMEBREW_ARM64_BIN",
+        env.PATHEXT,
+        platform,
+      ),
+      ...executableCandidatesInDirectory(
+        "/usr/local/bin",
+        "codex",
+        "HOMEBREW_INTEL_BIN",
         env.PATHEXT,
         platform,
       ),

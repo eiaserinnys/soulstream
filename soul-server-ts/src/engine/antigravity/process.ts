@@ -3,12 +3,17 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { createInterface } from "node:readline";
 import type { Logger } from "pino";
 import { antigravityEnvironment } from "../antigravity_env.js";
+import {
+  readDarwinProcessTable,
+  type DarwinProcessRow,
+} from "./darwin_process_table.js";
 import { parseAntigravityEvent, type AntigravityEvent, type AntigravityExit } from "./events.js";
 
 type DescendantIdentity = { pid: number; startTime: string };
 
 /** Follow the CLI's current descendants, including children owned by other threads. */
 export function snapshotAntigravityDescendants(pid: number): DescendantIdentity[] {
+  if (process.platform === "darwin") return snapshotDarwinDescendants(pid);
   if (!existsSync("/proc")) return [];
   const descendants: DescendantIdentity[] = [];
   const seen = new Set([pid]);
@@ -39,8 +44,31 @@ export function snapshotAntigravityDescendants(pid: number): DescendantIdentity[
   return descendants;
 }
 
+function snapshotDarwinDescendants(pid: number): DescendantIdentity[] {
+  const childrenByParent = new Map<number, DarwinProcessRow[]>();
+  for (const row of readDarwinProcessTable()) {
+    const siblings = childrenByParent.get(row.ppid);
+    if (siblings) siblings.push(row);
+    else childrenByParent.set(row.ppid, [row]);
+  }
+  const descendants: DescendantIdentity[] = [];
+  const seen = new Set([pid]);
+  const pending = [pid];
+  while (pending.length) {
+    const parent = pending.pop()!;
+    for (const child of childrenByParent.get(parent) ?? []) {
+      if (seen.has(child.pid)) continue;
+      seen.add(child.pid);
+      descendants.push({ pid: child.pid, startTime: child.startTime });
+      pending.push(child.pid);
+    }
+  }
+  return descendants;
+}
+
 /** One SIGTERM per surviving identity, after CLI close. No escalation or waiting. */
 export function cleanUpAntigravityDescendants(descendants: readonly DescendantIdentity[]): number {
+  if (process.platform === "darwin") return cleanUpDarwinDescendants(descendants);
   if (!existsSync("/proc")) return 0;
   let count = 0;
   for (const child of descendants) {
@@ -52,6 +80,23 @@ export function cleanUpAntigravityDescendants(descendants: readonly DescendantId
       count += 1;
     } catch (error) {
       if (!["ENOENT", "ESRCH"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
+    }
+  }
+  return count;
+}
+
+function cleanUpDarwinDescendants(descendants: readonly DescendantIdentity[]): number {
+  const byPid = new Map(readDarwinProcessTable().map((row) => [row.pid, row]));
+  let count = 0;
+  for (const child of descendants) {
+    const row = byPid.get(child.pid);
+    if (!row || row.startTime !== child.startTime || row.status.startsWith("Z")) continue;
+    try {
+      process.kill(child.pid, "SIGTERM");
+      count += 1;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ESRCH") continue;
+      throw error;
     }
   }
   return count;
@@ -87,13 +132,25 @@ export function launchAntigravityProcess(options: {
       exitGraceTimer = undefined;
     }
   }
+  function snapshotDescendants(pid: number): DescendantIdentity[] {
+    try {
+      return snapshotAntigravityDescendants(pid);
+    } catch {
+      // A missing process table must not block the group SIGINT or SIGKILL.
+      options.logger.warn(
+        { reason: "process_table_unavailable" },
+        "Antigravity descendant snapshot unavailable",
+      );
+      return [];
+    }
+  }
   function armExitGraceTimer(): void {
     if (closed) return;
     clearExitGraceTimer();
     exitGraceTimer = setTimeout(() => {
       exitGraceTimer = undefined;
       if (closed || !child.pid) return;
-      descendants = snapshotAntigravityDescendants(child.pid);
+      descendants = snapshotDescendants(child.pid);
       try {
         process.kill(-child.pid, "SIGKILL");
         if (sawResult) forcedAfterResult = true;
@@ -122,7 +179,7 @@ export function launchAntigravityProcess(options: {
   });
   function signalGroup(armGraceAfterInterrupt = false): boolean {
     if (closed || !child.pid) return false;
-    descendants = snapshotAntigravityDescendants(child.pid);
+    descendants = snapshotDescendants(child.pid);
     try {
       process.kill(-child.pid, "SIGINT");
       if (armGraceAfterInterrupt) armExitGraceTimer();

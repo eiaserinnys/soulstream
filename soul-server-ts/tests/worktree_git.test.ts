@@ -101,6 +101,42 @@ describe("WorktreeGit", () => {
       .toBe(true);
   });
 
+  it("treats a symlinked macOS path and its real path as the same worktree on darwin", () => {
+    const root = mkdtempSync(join(tmpdir(), "worktree-same-path-"));
+    roots.push(root);
+    const real = join(root, "real");
+    mkdirSync(real);
+    const link = join(root, "link");
+    symlinkSync(real, link, "dir");
+
+    expect(samePath(join(link, "absent-worktree"), join(real, "absent-worktree"), "darwin"))
+      .toBe(true);
+    expect(samePath(join(link, "absent-worktree"), join(real, "absent-worktree"), "linux"))
+      .toBe(false);
+  });
+
+  it("accepts an aliased path that canonicalizes inside the projects root on darwin", async () => {
+    const { projectsRoot } = makeRepository();
+    const alias = `${projectsRoot}-alias`;
+    symlinkSync(projectsRoot, alias, "dir");
+    roots.push(alias);
+    const worktrees = new WorktreeGit({ projectsRoot, timeoutMs: 5_000 });
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+    try {
+      await expect(worktrees.pruneMissingWorktree({
+        repoId: "demo",
+        path: join(alias, "absent-worktree"),
+        worktreeId: "worktree-alias",
+      })).resolves.toBeUndefined();
+    } finally {
+      Object.defineProperty(process, "platform", {
+        value: originalPlatform,
+        configurable: true,
+      });
+    }
+  });
+
   it("creates a marked linked worktree without changing the base checkout", async () => {
     const { projectsRoot, repo } = makeRepository();
     const baseBranch = git(repo, "branch", "--show-current");

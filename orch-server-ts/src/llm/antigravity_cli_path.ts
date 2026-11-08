@@ -1,7 +1,13 @@
 import { accessSync, constants, statSync } from "node:fs";
 import { delimiter, posix, win32 } from "node:path";
 
-type PathSource = "AGY_CLI_PATH" | "PATH" | "HOME_LOCAL_BIN";
+type PathSource =
+  | "AGY_CLI_PATH"
+  | "PATH"
+  | "HOME_LOCAL_BIN"
+  | "HOME_NPM_GLOBAL"
+  | "HOMEBREW_ARM64_BIN"
+  | "HOMEBREW_INTEL_BIN";
 export function resolveAntigravityCliPath(
   configuredPath: string | null | undefined,
   env: NodeJS.ProcessEnv,
@@ -18,6 +24,15 @@ export function resolveAntigravityCliPath(
   }
   if (env.HOME) {
     for (const name of names) candidates.push({ path: pathApi.join(env.HOME, ".local", "bin", name), source: "HOME_LOCAL_BIN" });
+  }
+  if (platform === "darwin") {
+    if (env.HOME) {
+      for (const name of names) candidates.push({ path: pathApi.join(env.HOME, ".npm-global", "bin", name), source: "HOME_NPM_GLOBAL" });
+    }
+    for (const name of names) {
+      candidates.push({ path: pathApi.join("/opt/homebrew/bin", name), source: "HOMEBREW_ARM64_BIN" });
+      candidates.push({ path: pathApi.join("/usr/local/bin", name), source: "HOMEBREW_INTEL_BIN" });
+    }
   }
   return candidates.find(candidate => {
     try {

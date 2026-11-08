@@ -24,12 +24,12 @@ describe("session engine OOM score", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
-  it("does nothing outside Linux", async () => {
+  it.each(["win32", "darwin"] as const)("does nothing outside Linux (%s)", async (platform) => {
     const writeFile = vi.fn(async () => undefined);
     const warn = vi.fn();
 
     const applied = await setSessionEngineOomScore(4321, {
-      platform: "win32",
+      platform,
       writeFile,
       logger: { warn },
     });

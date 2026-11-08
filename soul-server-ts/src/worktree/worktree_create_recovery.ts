@@ -9,6 +9,7 @@ import {
 } from "node:fs";
 import { join, resolve } from "node:path";
 
+import { canonicalWorktreePath } from "./worktree_canonical_path.js";
 import {
   GitProcessError,
   runBoundedProcess,
@@ -488,9 +489,11 @@ function preserved(path: string, reason: string): WorktreePartialRecoveryError {
 }
 
 function samePath(left: string, right: string): boolean {
-  const normalizedLeft = resolve(left);
-  const normalizedRight = resolve(right);
-  return process.platform === "win32"
-    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
-    : normalizedLeft === normalizedRight;
+  if (process.platform === "win32") {
+    return resolve(left).toLowerCase() === resolve(right).toLowerCase();
+  }
+  if (process.platform === "darwin") {
+    return canonicalWorktreePath(left) === canonicalWorktreePath(right);
+  }
+  return resolve(left) === resolve(right);
 }

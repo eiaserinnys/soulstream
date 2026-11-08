@@ -19,6 +19,7 @@ import { createHash } from "node:crypto";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { basename, isAbsolute, join, relative, resolve, win32 } from "node:path";
 
+import { canonicalWorktreePath } from "./worktree_canonical_path.js";
 import { GitProcessError, runBoundedProcess } from "./worktree_process.js";
 import { removeIgnoredWorktreePaths } from "./worktree_ignored_cleanup.js";
 import {
@@ -300,7 +301,7 @@ export class WorktreeGit {
     allowMissingBranch?: boolean;
   }): Promise<WorktreeRemovalWorkspaceState> {
     const repo = this.resolveRepository(input.repoId);
-    const path = resolve(input.path);
+    const path = this.canonicalInputPath(input.path);
     this.assertPathInsideProjectsRoot(path);
     const registration = await this.rawRegistration(repo, path);
     const pathStat = lstatIfPresent(path);
@@ -362,7 +363,7 @@ export class WorktreeGit {
     expectedSha: string;
   }): Promise<void> {
     const repo = this.resolveRepository(input.repoId);
-    const path = resolve(input.path);
+    const path = this.canonicalInputPath(input.path);
     this.assertPathInsideProjectsRoot(path);
     if (await this.rawRegistration(repo, path)) {
       throw new WorktreeGitError(
@@ -408,7 +409,7 @@ export class WorktreeGit {
     worktreeId: string;
   }): Promise<void> {
     const repo = this.resolveRepository(input.repoId);
-    const path = resolve(input.path);
+    const path = this.canonicalInputPath(input.path);
     this.assertPathInsideProjectsRoot(path);
     if (existsSync(path)) {
       throw new WorktreeGitError("WORKTREE_PATH_REAPPEARED", path);
@@ -727,10 +728,17 @@ export class WorktreeGit {
   }
 
   private assertPathInsideProjectsRoot(path: string): void {
-    const absolute = isAbsolute(path) ? resolve(path) : resolve(this.projectsRoot, path);
+    const resolved = isAbsolute(path) ? resolve(path) : resolve(this.projectsRoot, path);
+    const absolute = process.platform === "darwin"
+      ? canonicalWorktreePath(resolved)
+      : resolved;
     const rel = relative(this.projectsRoot, absolute);
     if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return;
     throw new WorktreeGitError("PATH_OUTSIDE_PROJECTS_ROOT", absolute);
+  }
+
+  private canonicalInputPath(path: string): string {
+    return process.platform === "darwin" ? canonicalWorktreePath(path) : resolve(path);
   }
 
   private async privateGitDirectory(worktree: string): Promise<string> {
@@ -935,6 +943,9 @@ export function samePath(
 ): boolean {
   if (platform === "win32") {
     return win32.resolve(left).toLowerCase() === win32.resolve(right).toLowerCase();
+  }
+  if (platform === "darwin") {
+    return canonicalWorktreePath(left) === canonicalWorktreePath(right);
   }
   return resolve(left) === resolve(right);
 }
