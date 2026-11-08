@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import { beforeAll, afterAll, it, expect } from 'vitest';
 import { createPagePostgresHarness, type PagePostgresHarness } from './page/page_postgres_harness.js';
-import { createBoardYjsSqlAdapter } from '../src/board-yjs/board_yjs_sql.js';
+import { createFolderContentSqlAdapter } from '../src/board/folder_content_sql.js';
 import { CardControlPlaneService } from '../src/cards/card_control_plane_service.js';
 import { registerCardRoutes } from '../src/cards/card_routes.js';
 import { appendCardEventTx } from './card-work-postgres-fixture.js';
@@ -15,7 +15,7 @@ beforeAll(async()=>{
  h=await createPagePostgresHarness();
  await h.sql`INSERT INTO folders(id,name) VALUES('free','상태')`;
  await h.sql`INSERT INTO sessions(session_id,status) VALUES('owner','running'),('other','running')`;
- cards=new CardControlPlaneService(createBoardYjsSqlAdapter(h.liveSql),{appendEventTx:appendCardEventTx});
+ cards=new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql),{appendEventTx:appendCardEventTx});
 },60000);
 afterAll(async()=>h?.cleanup());
 it.each(['user','agent'] as const)('allows reportless %s transitions with open questions, archive, completion and reopening',async actor=>{

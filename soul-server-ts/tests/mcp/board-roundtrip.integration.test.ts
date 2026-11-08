@@ -29,10 +29,10 @@ const cases: readonly [string, string, Record<string, unknown>, boolean?, McpReq
   ["document stale version", "update_markdown_document", { document_id: "doc-1", expected_version: 999, body: "새 본문" }, true],
   ["document empty update", "update_markdown_document", { document_id: "doc-1", expected_version: 1 }, true],
   ["update document missing", "update_markdown_document", { document_id: "missing", expected_version: 1, body: "본문" }, true],
-  ["update orphan document", "update_markdown_document", { document_id: "orphan", expected_version: 1, body: "본문" }, true],
+  ["update orphan document", "update_markdown_document", { document_id: "orphan", expected_version: 1, body: "본문" }],
   ["delete document", "delete_markdown_document", { document_id: "doc-1" }],
   ["delete missing document", "delete_markdown_document", { document_id: "missing" }],
-  ["delete orphan document", "delete_markdown_document", { document_id: "orphan" }, true],
+  ["delete orphan document", "delete_markdown_document", { document_id: "orphan" }],
   ["get prompt", "get_folder_system_prompt", { folder_id: "00000000-0000-4000-8000-000000000001" }],
   ["get missing prompt", "get_folder_system_prompt", { folder_id: "missing" }, true],
   ["set prompt", "set_folder_system_prompt", { folder_id: "00000000-0000-4000-8000-000000000001", system_prompt: "새 지침" }],
@@ -139,7 +139,7 @@ describe("folder-board-custom-view MCP roundtrip", () => {
 
 // Exact relative paths in parsed text/structuredContent/events; no blanket UUID masking.
 const randomIdPaths: Record<string, readonly string[]> = {
-  // CatalogBoardItemService.createMarkdownDocument: documentId=randomUUID(); BoardYjs model repeats it.
+  // The created document and compatibility item share a generated identifier.
   create_markdown_document: ["document.id", "boardItem.id", "boardItem.itemId"],
 };
 export function mask(tool: string, value: unknown, path: string[] = []): unknown {
@@ -155,7 +155,10 @@ function maskEvents(tool: string, events: unknown[]): unknown {
   if (tool !== "create_markdown_document") return mask(tool, events);
   return events.map((event, index) => {
     const record = event as { board_items_delta: Record<string, { id: string; itemId: string }> };
-    if (index !== 0) return mask(tool, event);
+    if (index !== 0) {
+      const later = event as { type: string; page_id?: string };
+      return mask(tool, later.type === "page_updated" ? { ...later, page_id: "<random-id>" } : later);
+    }
     expect(Object.keys(record.board_items_delta)).toHaveLength(1);
     const [item] = Object.values(record.board_items_delta);
     return mask(tool, { ...record, board_items_delta: { "<random-board-id>": { ...item, id: "<random-id>", itemId: "<random-id>" } } });

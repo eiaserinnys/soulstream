@@ -4,7 +4,7 @@ import { readFile } from "node:fs/promises";
 import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CardControlPlaneService } from "../../../orch-server-ts/src/cards/card_control_plane_service.js";
-import { createBoardYjsSqlAdapter } from "../../../orch-server-ts/src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../../../orch-server-ts/src/board/folder_content_sql.js";
 import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_routes.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "../../../orch-server-ts/tests/page/page_postgres_harness.js";
 import { appendCardEventTx, prepareCardWorkSchema } from "../../../orch-server-ts/tests/card-work-postgres-fixture.js";
@@ -29,7 +29,7 @@ describe("card orchestrator MCP roundtrip", () => {
     await prepareCardWorkSchema(h);
     await h.sql`CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version INTEGER NOT NULL DEFAULT 1,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_by TEXT NOT NULL)`;
     await h.sql.unsafe(await readFile(new URL("../../../packages/db-schema/sql/migrations/113_card_orchestration.sql", import.meta.url), "utf8"));
-    const cards = new CardControlPlaneService(createBoardYjsSqlAdapter(h.liveSql), { appendEventTx: appendCardEventTx }, {
+    const cards = new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql), { appendEventTx: appendCardEventTx }, {
       emitFolderUpdated: async () => {}, emitCardUpdated: async () => {},
     });
     const options = { cardServiceProvider: async () => cards,

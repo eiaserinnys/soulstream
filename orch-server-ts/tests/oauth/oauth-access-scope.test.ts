@@ -85,8 +85,29 @@ describe("OAuth resource scopes", () => {
     expect(oauthScopeForRoute("POST", "/api/folders")).toBeNull();
     expect(oauthScopeForRoute("PATCH", "/api/folders/folder-1")).toBeNull();
     expect(oauthScopeForRoute("DELETE", "/api/cards/card-1")).toBeNull();
-    expect(oauthScopeForRoute("GET", "/api/sessions")).toBeNull();
     expect(oauthScopeForRoute("POST", "/api/sessions")).toBeNull();
+  });
+
+  it("allows only the specified folder content and session routes for cards tokens", () => {
+    for (const [method, path] of [
+      ["GET", "/api/board-items"],
+      ["GET", "/api/markdown-documents"],
+      ["POST", "/api/markdown-documents"],
+      ["GET", "/api/markdown-documents/doc-1"],
+      ["PUT", "/api/markdown-documents/doc-1"],
+      ["PATCH", "/api/markdown-documents/doc-1"],
+      ["GET", "/api/sessions"],
+      ["GET", "/api/sessions/session-1/conversation"],
+      ["POST", "/api/sessions/session-1/intervene"],
+    ]) expect(oauthScopeForRoute(method!, path!)).toBe("cards:read");
+    for (const [method, path] of [
+      ["DELETE", "/api/markdown-documents/doc-1"],
+      ["GET", "/api/sessions/session-1"],
+      ["POST", "/api/sessions/session-1/approve"],
+      ["GET", "/api/sessions/session-1/conversation/extra"],
+    ]) expect(oauthScopeForRoute(method!, path!)).toBeNull();
+    expect(requireOAuthScope({ ...access, scopes: ["cards:read"] }, "folders:read")).toEqual({ ok: true });
+    expect(requireOAuthScope({ ...access, scopes: ["folders:read"] }, "cards:read")).toMatchObject({ ok: false });
   });
 
   it("checks a resolved token for the requested scope", () => {

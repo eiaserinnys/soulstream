@@ -13,7 +13,7 @@ import { SessionDeliveryRepository } from "../control_plane/repositories/session
 import type { SessionDeliveryRow, SqlClient as DeliverySqlClient } from "../control_plane/control_plane_types.js";
 import { sessionDeliveryInterventionPayload } from "../session/session_delivery_intervention_payload.js";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
-import { BoardYjsSqlResolver } from "../board-yjs/board_yjs_sql.js";
+import { FolderContentSqlResolver } from "../board/folder_content_sql.js";
 import type { SessionCommandRouter } from "../session/session_command_router.js";
 import type { SessionCommandTransportBridge } from "../session/session_command_transport.js";
 import { createRecurringSession } from "../session/recurring_session_creation.js";
@@ -79,7 +79,7 @@ export async function createCardDispatchRuntime(options: {
   resolveSessionOwner: SessionOwnerResolver;
   findUserByEmail: DashboardUserRepository["findUserByEmail"];
 }) {
-  const resolver = new BoardYjsSqlResolver(options.sqlResolver);
+  const resolver = new FolderContentSqlResolver(options.sqlResolver);
   const resolveSql = () => resolver.resolveSql();
   const cardDispatchRepository = new CardDispatchRepository(resolveSql);
   const attachmentReadRepository = createLiveAttachmentReadRepository(options.sqlResolver);

@@ -9,36 +9,24 @@ import {
 } from "../board/board_item_routes.js";
 import type { LiveDbSqlResolver } from "./live_db_sql.js";
 import type { LiveFolderProvider } from "./live_folder_route_provider.js";
-import { CustomViewProjectionRepository } from "../board-yjs/custom_view_projection_repository.js";
+import { CustomViewProjectionRepository } from "../board/custom_view_repository.js";
+import { FolderContentRepository } from "../board/folder_content_repository.js";
 
 export function createLiveMarkdownDocumentRouteProvider(
   sqlResolver: LiveDbSqlResolver,
   folderProvider: LiveFolderProvider,
 ): MarkdownDocumentRouteProvider {
   const customViews = new CustomViewProjectionRepository(sqlResolver);
+  const documents = new FolderContentRepository(sqlResolver);
   return {
     listFolders: folderProvider.listFolders,
+    async listMarkdownDocuments(input) {
+      const result = await documents.listMarkdownDocuments(input);
+      return { documents: result.documents.map(document => ({ ...document })), nextCursor: result.nextCursor };
+    },
     async getMarkdownDocument(documentId) {
-      const sql = await sqlResolver.resolveSql();
-      const rows = await sql`
-        SELECT
-          md.id,
-          md.title,
-          md.body,
-          md.version,
-          md.created_at,
-          md.updated_at,
-          bi.folder_id
-        FROM markdown_documents md
-        LEFT JOIN board_items bi
-          ON bi.item_type = 'markdown'
-         AND bi.item_id = md.id
-         AND bi.membership_kind = 'primary'
-        WHERE md.id = ${documentId}
-        ORDER BY bi.created_at
-        LIMIT 1
-      `;
-      return rows[0] ? serializeMarkdownDocumentRow(rows[0]) : null;
+      const document = await documents.getMarkdownDocument(documentId);
+      return document ? { ...document } : null;
     },
     async getCustomView(customViewId) {
       const result = await customViews.getCustomView(customViewId);

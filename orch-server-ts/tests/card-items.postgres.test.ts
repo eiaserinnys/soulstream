@@ -1,6 +1,6 @@
 import Fastify from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { registerCardRoutes } from "../src/cards/card_routes.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
@@ -23,8 +23,8 @@ describe("card check-item locked mutations", () => {
     await h.sql`INSERT INTO folders(id,name) VALUES ('items','확인 항목')`;
     await h.sql`INSERT INTO sessions(session_id,status) VALUES ('owner','running'),('other','running')`;
     const broadcaster = { emitCardUpdated: cardUpdated, emitFolderUpdated: async () => {} };
-    cards = new CardControlPlaneService(createBoardYjsSqlAdapter(h.liveSql), { appendEventTx: appendCardEventTx }, broadcaster, onMutation);
-    peerCards = new CardControlPlaneService(createBoardYjsSqlAdapter(h.peerLiveSql), { appendEventTx: appendCardEventTx }, broadcaster, peerOnMutation);
+    cards = new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql), { appendEventTx: appendCardEventTx }, broadcaster, onMutation);
+    peerCards = new CardControlPlaneService(createFolderContentSqlAdapter(h.peerLiveSql), { appendEventTx: appendCardEventTx }, broadcaster, peerOnMutation);
   }, 60_000);
 
   afterAll(async () => h?.cleanup());

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardMcpReadService, type CardMcpGetInput } from "../src/cards/card_mcp_read.js";
 import { CardMcpReadRepository } from "../src/cards/control_plane/card_mcp_read_repository.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
@@ -45,7 +45,7 @@ describe("Card MCP read storage contract", () => {
 
   beforeAll(async () => {
     h = await createPagePostgresHarness();
-    reader = new CardMcpReadService(createBoardYjsSqlAdapter(h.liveSql)) as unknown as typeof reader;
+    reader = new CardMcpReadService(createFolderContentSqlAdapter(h.liveSql)) as unknown as typeof reader;
     await h.sql.unsafe(
       "INSERT INTO folders(id,name) VALUES ('pas-a','PAS A'),('pas-b','PAS B'),('list-only','List only'),('claude','system'),('llm','system')",
     );
@@ -398,7 +398,7 @@ describe("Card MCP read storage contract", () => {
   it("keeps current fingerprints and pages in one read-only repeatable-read snapshot", async () => {
     await seedCard({ id: "read-snapshot" });
     await h.sql`INSERT INTO card_questions(id,card_id,text) VALUES ('snapshot-q','read-snapshot','답변 대기')`;
-    const repository = new CardMcpReadRepository(createBoardYjsSqlAdapter(h.liveSql));
+    const repository = new CardMcpReadRepository(createFolderContentSqlAdapter(h.liveSql));
     const before = await reader.getCard("read-snapshot", {}, null);
     const snapshot = await repository.withCardSnapshot("read-snapshot", null, async ({ sql, current }) => {
       const [mode] = await sql`SELECT current_setting('transaction_isolation') AS isolation,

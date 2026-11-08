@@ -1,6 +1,5 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { resolveLocalBoardYjsService } from "../board/board_yjs_host_proxy.js";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
 import type { McpHostOptions } from "./types.js";
 import { executeMcpTool, findMcpTool } from "./tool_executor.js";
@@ -14,10 +13,8 @@ const requestSchema = z.object({
     execution: z.object({ registrationId: z.string().min(1), executionCommandId: z.string().min(1) }).strict().optional() }),
 });
 
-export function resolveMcpExecutionOptions(app: FastifyInstance, options: McpHostOptions): McpHostOptions {
-  return options.board === undefined ? options : { ...options, board: { ...options.board,
-    host: { ...options.board.host, get service() { return resolveLocalBoardYjsService(app, options.board.host); } },
-  } };
+export function resolveMcpExecutionOptions(_app: FastifyInstance, options: McpHostOptions): McpHostOptions {
+  return options;
 }
 
 export function registerMcpHostRoutes(app: FastifyInstance, options: McpHostOptions): void {

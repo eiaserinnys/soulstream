@@ -1,8 +1,8 @@
 // Orchestrator-owned MCP catalog composition; legacy worker service remains for other callers.
 import { randomUUID } from "node:crypto";
-import type { CatalogBoardItemRow, MarkdownDocumentRow } from "../board-yjs/board_yjs_types.js";
+import type { CatalogBoardItemRow, MarkdownDocumentRow } from "../board/folder_content_types.js";
 import type { BoardMcpStore, BoardMcpFolderMutations } from "./board_catalog_types.js";
-import { CatalogBoardItemService, type CatalogBoardYjsPort } from "./board_catalog_items.js";
+import { CatalogBoardItemService, type CatalogFolderContentPort } from "./board_catalog_items.js";
 import { boardItemsDelta, serializeCatalogFolders, sessionAssignmentFromRow, type CatalogMutationDelta, type CatalogSessionsDelta } from "./board_catalog_delta.js";
 import { FolderBrowseService, type FolderBrowseResult, type FolderBrowseItem, type FolderSessionItem, createFolderBrowseStore } from "./board_folder_browse.js";
 import type { CustomViewBroadcasterPort } from "./board_custom_view_service.js";
@@ -64,13 +64,12 @@ export class CatalogService {
   constructor(
     private readonly db: BoardMcpStore,
     private readonly broadcaster: Required<Pick<CustomViewBroadcasterPort, "emitCatalogUpdated">>,
-    boardYjsService: CatalogBoardYjsPort,
+    folderContentHost: CatalogFolderContentPort,
     private readonly folderService: BoardMcpFolderMutations,
   ) {
     this.boardItems = new CatalogBoardItemService(
       db,
-      boardYjsService,
-      (delta) => this.broadcastCatalog(delta),
+      folderContentHost,
     );
     this.folderBrowser = new FolderBrowseService(createFolderBrowseStore(db));
   }
@@ -171,9 +170,8 @@ export class CatalogService {
     sessionIds: string[],
     folderId: string | null,
   ): Promise<void> {
-    for (const sessionId of sessionIds) {
-      await this.boardItems.moveSessionToFolder(sessionId, folderId);
-    }
+    const result = await this.boardItems.moveSessionsToFolder(sessionIds, folderId);
+    if (result.didCommit) await this.broadcastCatalog({ sessionIds: result.sessionIds });
   }
 
   /**

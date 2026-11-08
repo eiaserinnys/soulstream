@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createSessionOutputAttachmentValidation } from "../src/attachments/session_output_attachment_validation.js";
 import type { TrustedAttachmentProducer } from "../src/cards/card_attachment_policy.js";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 
 describe("session output attachment validation PostgreSQL contract", () => {
@@ -14,7 +14,7 @@ describe("session output attachment validation PostgreSQL contract", () => {
     harness = await createPagePostgresHarness();
     await harness.sql`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS execution_command_id TEXT`;
     validate = createSessionOutputAttachmentValidation({
-      sql: createBoardYjsSqlAdapter(harness.liveSql),
+      sql: createFolderContentSqlAdapter(harness.liveSql),
     });
   }, 60_000);
 

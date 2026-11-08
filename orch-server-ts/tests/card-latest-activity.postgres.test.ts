@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { projectCardActivity } from "../src/cards/card_latest_activity.js";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { registerCardRoutes } from "../src/cards/card_routes.js";
 import { PlannerRepository } from "../src/planner/planner_repository.js";
@@ -56,7 +56,7 @@ it("uses one projection query for multiple cards and none for an empty authorize
 });
 
 it("keeps authorized list results and detail/store refresh contracts additive", async () => {
-  const service = new CardControlPlaneService(createBoardYjsSqlAdapter(h.liveSql), { appendEventTx: async () => 1 });
+  const service = new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql), { appendEventTx: async () => 1 });
   const app = Fastify();
   registerCardRoutes(app, {
     provider: { listFolders: () => [{ id: 'activity-a' }, { id: 'activity-b' }], listSessionAssignments: () => ({}) },

@@ -51,7 +51,7 @@ export const liveFactoryImplementedProviderPaths = [
   { owner: "board.assets", path: "boardAssetRoutes.provider" },
   { owner: "board.items", path: "boardItemRoutes.accessProvider" },
   { owner: "board.items", path: "boardItemRoutes.provider" },
-  { owner: "board.yjs-host", path: "runtime" },
+  { owner: "folder.content", path: "runtime.flatFolderContentRoutes" },
   { owner: "cogito", path: "cogitoRoutes.briefCollector" },
   { owner: "cogito", path: "cogitoRoutes.provider" },
   { owner: "cogito", path: "cogitoRoutes.searchProvider" },

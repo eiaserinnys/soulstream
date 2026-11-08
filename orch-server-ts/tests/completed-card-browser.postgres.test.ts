@@ -1,7 +1,7 @@
 import Fastify from "fastify";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { registerCardRoutes } from "../src/cards/card_routes.js";
 import { PlannerRepository } from "../src/planner/planner_repository.js";
@@ -22,7 +22,7 @@ beforeAll(async () => {
     FROM generate_series(1,1000) AS i`;
   await h.sql`INSERT INTO cards(id,folder_id,title,request,position_key,status)
     VALUES ('active','public','활성 카드','','a','running')`;
-  const service = new CardControlPlaneService(createBoardYjsSqlAdapter(h.liveSql), { appendEventTx: async () => 1 });
+  const service = new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql), { appendEventTx: async () => 1 });
   app = Fastify();
   registerCardRoutes(app, {
     provider: { listFolders: () => [{id:'public'},{id:'private'}], listSessionAssignments: () => ({}) },
@@ -75,7 +75,7 @@ it('aggregate/snapshot excludes completed before activity projection and retains
     const aggregate=await repo.getFolder('public',{limit:20,includeCompleted});
     expect(aggregate?.cards).toHaveLength(includeCompleted===false?1:501);
   }
-  const service=new CardControlPlaneService(createBoardYjsSqlAdapter(h.liveSql),{appendEventTx:async()=>1});
+  const service=new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql),{appendEventTx:async()=>1});
   expect((await service.getFolder('public',false))?.cards.map(card=>card.id)).toEqual(['active']);
 });
 it('measures the existing 1000-card fixture response and database plan', async () => {

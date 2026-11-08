@@ -17,7 +17,7 @@ describe("TaskCreation", () => {
     const placement = new Promise<void>((resolve) => {
       finishPlacement = resolve;
     });
-    h.upsertSessionBoardItem.mockImplementation(async () => {
+    h.moveSessionToFolder.mockImplementation(async () => {
       placementStarted();
       await placement;
       return {} as never;
@@ -63,7 +63,7 @@ describe("TaskCreation", () => {
       order.push("metadata");
       return 1;
     });
-    h.upsertSessionBoardItem.mockImplementation(async () => {
+    h.moveSessionToFolder.mockImplementation(async () => {
       order.push("folder");
       return {} as never;
     });
@@ -167,7 +167,7 @@ describe("TaskCreation", () => {
     await h.creation.waitForDeferredEffects(task.agentSessionId);
 
     expect(h.tasks.get(task.agentSessionId)).toBe(task);
-    expect(h.upsertSessionBoardItem).toHaveBeenCalled();
+    expect(h.moveSessionToFolder).toHaveBeenCalled();
     expect(h.assignSessionToFolder).not.toHaveBeenCalled();
     expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "folder-1");
     expect(task.creationWarnings).toEqual([{
@@ -241,12 +241,7 @@ describe("TaskCreation", () => {
       value: { source: "slack", display_name: "Alice" },
     }, { waitForAck: true });
     expect(h.assignSessionToFolder).not.toHaveBeenCalled();
-    expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
-      folderId: "folder-42",
-      sessionId: "sess-1",
-      x: 0,
-      y: 160,
-    });
+    expect(h.moveSessionToFolder).toHaveBeenCalledWith("sess-1", "folder-42");
     expect(h.getFolderById).not.toHaveBeenCalled();
     expect(h.emitCatalogUpdated).toHaveBeenCalledWith(
       [],
@@ -306,10 +301,7 @@ describe("TaskCreation", () => {
         agent_id: "coordinator",
       }),
     }, { waitForAck: true });
-    expect(h.upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
-      folderId: "rb-1",
-      sessionId: "sess-fire-and-forget",
-    }));
+    expect(h.moveSessionToFolder).toHaveBeenCalledWith("sess-fire-and-forget", "rb-1");
   });
 
   it("uses the session type default folder when no folderId is provided", async () => {
@@ -332,16 +324,11 @@ describe("TaskCreation", () => {
 
     expect(h.getFolderById).toHaveBeenCalledWith("llm");
     expect(h.assignSessionToFolder).not.toHaveBeenCalled();
-    expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
-      folderId: "llm",
-      sessionId: "sess-default",
-      x: 0,
-      y: 160,
-    });
+    expect(h.moveSessionToFolder).toHaveBeenCalledWith("sess-default", "llm");
     expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "llm");
   });
 
-  it("places an explicitly assigned folder session through that folder Y.Doc before catalog broadcast", async () => {
+  it("assigns an explicitly selected folder before catalog broadcast", async () => {
     const h = makeHarness();
     h.getBoardItemsByFolder.mockResolvedValueOnce([
       {
@@ -364,17 +351,12 @@ describe("TaskCreation", () => {
     await h.creation.waitForDeferredEffects(task.agentSessionId);
 
     expect(h.assignSessionToFolder).not.toHaveBeenCalled();
-    expect(h.getBoardItemsByFolder).toHaveBeenCalledWith("folder-42");
-    expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
-      folderId: "folder-42",
-      sessionId: "sess-folder-immediate",
-      x: 280,
-      y: 160,
-    });
-    expect(h.upsertSessionBoardItem.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(h.getBoardItemsByFolder).not.toHaveBeenCalled();
+    expect(h.moveSessionToFolder).toHaveBeenCalledWith("sess-folder-immediate", "folder-42");
+    expect(h.moveSessionToFolder.mock.invocationCallOrder[0]).toBeLessThan(
       h.emitCatalogUpdated.mock.invocationCallOrder[0],
     );
-    expect(h.upsertSessionBoardItem.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(h.moveSessionToFolder.mock.invocationCallOrder[0]).toBeLessThan(
       h.emitSessionCreated.mock.invocationCallOrder[0],
     );
   });
@@ -391,7 +373,7 @@ describe("TaskCreation", () => {
     await h.creation.waitForDeferredEffects(task.agentSessionId);
 
     expect(h.assignSessionToFolder).not.toHaveBeenCalled();
-    expect(h.upsertSessionBoardItem).not.toHaveBeenCalled();
+    expect(h.moveSessionToFolder).not.toHaveBeenCalled();
     expect(h.emitCatalogUpdated).not.toHaveBeenCalled();
     expect(h.emitSessionCreated).toHaveBeenCalledWith(task, null);
     expect(h.tasks.get("sess-no-folder")).toBe(task);
@@ -424,15 +406,10 @@ describe("TaskCreation", () => {
     await h.creation.waitForDeferredEffects(task.agentSessionId);
 
     expect(h.assignSessionToFolder).not.toHaveBeenCalled();
-    expect(h.getBoardItemsByFolder).toHaveBeenCalledWith("rb-1");
+    expect(h.getBoardItemsByFolder).not.toHaveBeenCalled();
     expect(h.getBoardItems).not.toHaveBeenCalled();
-    expect(h.upsertSessionBoardItem).toHaveBeenCalledWith({
-      folderId: "rb-1",
-      sessionId: "sess-task",
-      x: 280,
-      y: 160,
-    });
-    expect(h.upsertSessionBoardItem.mock.invocationCallOrder[0]).toBeLessThan(
+    expect(h.moveSessionToFolder).toHaveBeenCalledWith("sess-task", "rb-1");
+    expect(h.moveSessionToFolder.mock.invocationCallOrder[0]).toBeLessThan(
       h.getAllFolders.mock.invocationCallOrder[0],
     );
     expect(h.emitCatalogUpdated.mock.invocationCallOrder[0]).toBeLessThan(
@@ -441,7 +418,7 @@ describe("TaskCreation", () => {
     expect(h.emitSessionCreated).toHaveBeenCalledWith(task, "rb-1");
   });
 
-  it("preserves an existing delegated session card position during idempotent creation", async () => {
+  it("assigns an existing delegated session without reading board positions", async () => {
     const h = makeHarness();
     h.getBoardItemsByFolder.mockResolvedValueOnce(
       [{
@@ -465,11 +442,7 @@ describe("TaskCreation", () => {
     });
     await h.creation.waitForDeferredEffects(task.agentSessionId);
 
-    expect(h.upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
-      sessionId: "sess-task",
-      x: 840,
-      y: 480,
-    }));
+    expect(h.moveSessionToFolder).toHaveBeenCalledWith("sess-task", "rb-1");
   });
 
   it("logs target folder and leaves assignment unchanged when atomic placement fails", async () => {
@@ -478,7 +451,7 @@ describe("TaskCreation", () => {
       child: () => logger,
     } as unknown as typeof silentLogger;
     const h = makeHarness({ logger });
-    h.upsertSessionBoardItem.mockRejectedValueOnce(new Error("host proxy 401"));
+    h.moveSessionToFolder.mockRejectedValueOnce(new Error("host proxy 401"));
 
     const task = await h.creation.createTask({
       agentSessionId: "sess-task-fallback",
@@ -499,13 +472,13 @@ describe("TaskCreation", () => {
         assignedFolderId: null,
         targetFolderId: "rb-1",
       }),
-      expect.stringContaining("atomic placement was not applied"),
+      "session folder assignment failed",
     );
   });
 
   it("isolates atomic placement, catalog, and session_created broadcast failures after DB registration", async () => {
     const h = makeHarness();
-    h.upsertSessionBoardItem.mockRejectedValueOnce(new Error("folder failed"));
+    h.moveSessionToFolder.mockRejectedValueOnce(new Error("folder failed"));
     h.emitCatalogUpdated.mockRejectedValueOnce(new Error("catalog failed"));
     h.emitSessionCreated.mockRejectedValueOnce(new Error("ws closed"));
 

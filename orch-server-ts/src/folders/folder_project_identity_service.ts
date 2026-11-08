@@ -77,8 +77,7 @@ export class FolderProjectIdentityService {
           operations: initialFolderOperations(name, input.description ?? "", id, randomUUID, input.initialContext) },
       } : {}),
     });
-    const persist = (boardApplications: import("../board-yjs/board_yjs_types.js").BoardYjsDocumentApplication[]) => this.config.repository.create({
-      boardApplications,
+    const result = await this.config.repository.create({
       id,
       pageId: id,
       name,
@@ -92,9 +91,6 @@ export class FolderProjectIdentityService {
       pageOperationId: this.createOperationId(),
       pageApplication,
     });
-    const result = await this.config.withBoardApplication({ folderId: id,
-      parentFolderId: input.parentFolderId ?? null, previousParentFolderId: null,
-      title: name, archived: false }, persist);
     return await this.hydrate(result);
   }
 
@@ -137,10 +133,7 @@ export class FolderProjectIdentityService {
       idempotencyKey: pageKey("update_folder", input.actor, input.idempotencyKey),
       reason: input.reason,
     });
-    const parentFolderId = Object.hasOwn(update, "parentFolderId") ? update.parentFolderId ?? null : binding.parentFolderId;
-    const result = await this.config.withBoardApplication({ folderId: binding.folderId, parentFolderId,
-      previousParentFolderId: binding.parentFolderId, title, archived }, async (boardApplications) => this.config.repository.mutate({
-      boardApplications,
+    const result = await this.config.repository.mutate({
       binding,
       expectedVersion: input.expectedVersion,
       title,
@@ -152,7 +145,7 @@ export class FolderProjectIdentityService {
       operationId: this.createOperationId(),
       pageOperationId: this.createOperationId(),
       pageApplication,
-    }));
+    });
     return await this.hydrate(result);
   }
 
@@ -168,9 +161,7 @@ export class FolderProjectIdentityService {
     const pageApplication = await this.pageMutation(binding, input);
     const title = pageApplication.replica.page.title;
     const archived = pageApplication.replica.page.archived;
-    const result = await this.config.withBoardApplication({ folderId: binding.folderId,
-      parentFolderId: binding.parentFolderId, previousParentFolderId: binding.parentFolderId, title, archived },
-      async (boardApplications) => this.config.repository.mutate({ boardApplications,
+    const result = await this.config.repository.mutate({
       binding,
       expectedVersion: binding.version,
       title,
@@ -182,7 +173,7 @@ export class FolderProjectIdentityService {
       operationId: this.createOperationId(),
       pageOperationId: this.createOperationId(),
       pageApplication,
-    }));
+    });
     await this.config.hydratePage(result.pageId);
     if (!result.idempotent) await this.config.onCommitted?.();
     return toMutationResult(

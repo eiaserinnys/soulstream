@@ -29,6 +29,7 @@ import type { RuntimeLiveTextSnapshot } from
   "../runtime/session_event_hub.js";
 import type { SessionHistoryResetReason } from
   "./session_feed_contract.js";
+import { registerSessionConversationRoute } from "./session_conversation_routes.js";
 
 export type SessionHistoryRouteOptions = {
   provider: SessionHistoryProvider;
@@ -91,6 +92,10 @@ export function registerSessionHistoryRoutes(
   options: SessionHistoryRouteOptions,
 ): void {
   const service = new SessionHistoryReadService({ provider: options.provider });
+  if (options.provider.readConversation) registerSessionConversationRoute(app, {
+    read: options.provider.readConversation.bind(options.provider),
+    ensureAccess: (request, reply) => ensureSessionAccess(options, request, reply),
+  });
   registerSessionTurnSummaryRoute(app, {
     read: (sessionId, query) => service.readTurnSummaries(sessionId, query),
     ensureAccess: (request, reply) =>

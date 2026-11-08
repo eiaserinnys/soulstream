@@ -135,7 +135,7 @@ describe("route registry", () => {
       ["GET", "/api/sessions/stream", "control_plane"],
       ["GET", "/api/sessions/{session_id}/events", "control_plane"],
       ["POST", "/api/execute", "control_plane"],
-      ["POST", "/api/board-yjs/host/{operation}", "board_yjs_proxy"],
+      ["POST", "/internal/folder-content/{operation}", "folder_content"],
       ["POST", "/api/page-yjs/host/{operation}", "page_yjs"],
       ["WEBSOCKET", "/yjs/page/{pageId}", "page_yjs"],
       ["GET", "/api/folders/{folder_id}", "folder"],

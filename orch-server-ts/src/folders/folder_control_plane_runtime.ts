@@ -1,11 +1,13 @@
-import { BoardYjsSqlResolver } from "../board-yjs/board_yjs_sql.js";
+import { FolderContentRepository } from "../board/folder_content_repository.js";
+import { FolderContentSqlResolver } from "../board/folder_content_sql.js";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 import { FolderControlPlaneService } from "./folder_control_plane_service.js";
 
 export function createFolderControlPlaneServiceProvider(
   sqlResolver: LiveDbSqlResolver,
 ): () => Promise<FolderControlPlaneService> {
-  const resolver = new BoardYjsSqlResolver(sqlResolver);
+  const resolver = new FolderContentSqlResolver(sqlResolver);
+  const content = new FolderContentRepository(sqlResolver);
   let service: FolderControlPlaneService | undefined;
-  return async () => service ??= new FolderControlPlaneService(await resolver.resolveSql());
+  return async () => service ??= new FolderControlPlaneService(await resolver.resolveSql(), () => content.getBoardItems());
 }

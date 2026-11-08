@@ -13,7 +13,6 @@ describe("orch-server-ts contract fixture reader", () => {
   it("loads the full #289 fixture pack from the Python orch contract directory", () => {
     expect(Object.keys(fixtures).sort()).toEqual([...CONTRACT_FIXTURE_NAMES].sort());
     expect(Object.values(CONTRACT_FIXTURE_FILES).sort()).toEqual([
-      "board_yjs_host_proxy.json",
       "db_function_contract.json",
       "fake_node_reconnect.json",
       "route_inventory.json",
@@ -59,22 +58,6 @@ describe("orch-server-ts contract fixture reader", () => {
       lastEventIdBeforeOldest: 0,
       expectedLatestId: 3,
     });
-  });
-
-  it("keeps board Y.Doc host proxy cardinality and no-direct-mutation contract", () => {
-    expect(fixtures.boardYjsHostProxy.cardinality).toEqual({
-      zeroHostsStatus: 503,
-      twoHostsStatus: 503,
-      oneHostStatus: 200,
-    });
-    expect(fixtures.boardYjsHostProxy.proxy.forwardedHeaders).toContain("authorization");
-    expect(fixtures.boardYjsHostProxy.directOperations).toHaveLength(9);
-    expect(new Set(
-      fixtures.boardYjsHostProxy.directOperations.map((item) => item.operation),
-    ).size).toBe(9);
-    expect(fixtures.boardYjsHostProxy.negativeAssertions).toContain(
-      "catalog_service.create_markdown_document is not called for markdown write routes",
-    );
   });
 
   it("keeps DB function contract signatures for the orchestrator boundary", () => {

@@ -13,7 +13,7 @@ import type { CallToolResult } from "@soulstream/mcp-contract";
 import type { FolderControlPlaneHostRouteOptions } from "../folders/folder_control_plane_host_route.js";
 import type { CardRouteBodyOptions } from "../cards/card_route_body.js";
 import type { FolderAccess } from "../folders/folder_route_access.js";
-import type { BoardYjsHostProxyRouteOptions } from "../board/board_yjs_host_proxy.js";
+import type { FlatFolderContentHost } from "../board/flat_folder_content_host.js";
 import type { NodeAgentProfileProvider } from "../node/node_agent_profile_routes.js";
 import type { InMemorySseReplayBroadcaster, SessionStreamEvent } from "../sse/replay_broadcaster.js";
 import type { CatalogDeltaFolderProvider } from "../runtime/catalog_delta_broadcaster.js";
@@ -59,7 +59,7 @@ export interface McpHostOptions {
     workDispatchServiceProvider?: (authorizeFolder: (folderId: string, actor: DispatchWorkActor) => Promise<void>) => Promise<CardWorkDispatchService>;
     runConfirm?: { intervalMs: number; timeoutMs: number } };
   board: {
-    host: BoardYjsHostProxyRouteOptions;
+    host: FlatFolderContentHost;
     getSession: (id: string) => Promise<{ folder_id: string | null } | null>;
     listAgentProfiles: NodeAgentProfileProvider["listAgentProfiles"];
     broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>;

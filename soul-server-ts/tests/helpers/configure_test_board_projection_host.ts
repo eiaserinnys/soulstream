@@ -1,4 +1,4 @@
-import { BoardProjectionReadRepository } from "../../../orch-server-ts/src/board-yjs/board_projection_read_repository.js";
+import { FolderContentRepository } from "../../../orch-server-ts/src/board/folder_content_repository.js";
 import { createLiveDbSqlResolver } from "../../../orch-server-ts/src/runtime/live_db_sql.js";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 
@@ -6,10 +6,10 @@ import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 export function configureTestBoardProjectionReadHost(
   db: SessionDB,
   sql: SqlClient,
-): BoardProjectionReadRepository {
-  const repository = new BoardProjectionReadRepository(
+): FolderContentRepository {
+  const repository = new FolderContentRepository(
     createLiveDbSqlResolver({ sql: sql as never }),
   );
-  db.configureBoardProjectionHost(repository as never);
+  db.configureFolderContentHost(repository as never);
   return repository;
 }

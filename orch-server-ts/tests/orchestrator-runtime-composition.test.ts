@@ -92,13 +92,6 @@ describe("orchestrator runtime composition harness", () => {
     };
     const runtime = createOrchestratorRuntimeComposition({
       config,
-      boardYjsRoutes: {
-        createService: () => ({
-          handleConnection: vi.fn(),
-          handleContainerConnection: vi.fn(),
-          close: vi.fn(async () => undefined),
-        } as never),
-      },
       pageYjsRoutes: routeOptions,
     });
     await runtime.app.ready();

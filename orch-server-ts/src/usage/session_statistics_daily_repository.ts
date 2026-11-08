@@ -1,4 +1,4 @@
-import type { BoardYjsSql } from "../board-yjs/board_yjs_sql.js";
+import type { FolderContentSql } from "../board/folder_content_sql.js";
 import type { SessionStatisticsDailyState } from "./session_statistics_daily_state.js";
 import { SessionStatisticsDailyGroupRepository, saveDailyGroups } from "./session_statistics_daily_group_repository.js";
 import type { SessionStatisticsReadRequest } from "./session_statistics_types.js";
@@ -14,7 +14,7 @@ export interface SessionStatisticsDailyRepositoryPort {
 }
 
 export class SessionStatisticsDailyRepository implements SessionStatisticsDailyRepositoryPort {
-  constructor(private readonly sql: BoardYjsSql) {}
+  constructor(private readonly sql: FolderContentSql) {}
 
   loadOverview(since: string, before: string, version: number, input: SessionStatisticsReadRequest, sessionIds: readonly string[]) {
     return new SessionStatisticsDailyGroupRepository(this.sql).loadOverview(since, before, version, input, sessionIds);

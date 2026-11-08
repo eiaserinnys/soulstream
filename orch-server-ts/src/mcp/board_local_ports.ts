@@ -1,7 +1,5 @@
 import { executeFolderHostOperation } from "../folders/folder_control_plane_host_route.js";
 import { describeFolderOperationError } from "../folders/folder_workspace_routes.js";
-import { CustomViewRevisionConflictError, type BoardProjectionHost } from "../board-yjs/board_projection_types.js";
-import type { BoardYjsService } from "../board-yjs/board_yjs_service.js";
 import type { McpHostOptions } from "./types.js";
 import type { BoardMcpMutationPort, BoardMcpStore, FolderRow } from "./board_catalog_types.js";
 
@@ -29,24 +27,7 @@ export function createBoardLocalPorts(options: McpHostOptions) {
     }
   }
 
-  async function board<T>(
-    operation: string,
-    invoke: (service: BoardYjsService, projectionHost?: BoardProjectionHost) => Promise<T>,
-  ): Promise<T> {
-    try {
-      const service = options.board.host.service;
-      if (!service) throw new Error("Orchestrator Board Yjs service is required");
-      return await invoke(service, options.board.host.projectionHost);
-    } catch (error) {
-      if (operation === "patch-custom-view-record" && error instanceof CustomViewRevisionConflictError) throw error;
-      throw new Error(`board Yjs host proxy ${operation} failed: ${error instanceof Error ? error.message : "Board Yjs host operation failed"}`);
-    }
-  }
-
-  function projection(host: BoardProjectionHost | undefined): BoardProjectionHost {
-    if (!host) throw new Error("Orchestrator board projection host is required");
-    return host;
-  }
+  const host = options.board.host;
 
   const store: BoardMcpStore = {
     getAllFolders: () => folderRead("get_all", async () =>
@@ -63,47 +44,25 @@ export function createBoardLocalPorts(options: McpHostOptions) {
     getSessionAssignmentsByIds: sessionIds => folderRead("get_session_assignments", async () =>
       await (await options.folders.serviceProvider()).getSessionAssignmentsByIds(sessionIds)),
     getSession: async id => wire(await options.board.getSession(id)),
-    listFolderItems: params => board("list-folder-items", (_service, host) =>
-      projection(host).listFolderItems(params)),
-    getBoardItemsByFolder: folderId => board("get-board-items-by-folder", (_service, host) =>
-      projection(host).getBoardItemsByFolder(folderId)),
-    getBoardItemById: boardItemId => board("get-board-item", (_service, host) =>
-      projection(host).getBoardItemById(boardItemId)),
-    getPrimarySessionBoardItem: sessionId => board("get-primary-session-board-item", (_service, host) =>
-      projection(host).getPrimarySessionBoardItem(sessionId)),
-    getMarkdownDocument: documentId => board("get-markdown-document", (_service, host) =>
-      projection(host).getMarkdownDocument(documentId)),
-    getMarkdownDocumentBoardItem: documentId => board("get-markdown-document-board-item", (_service, host) =>
-      projection(host).getMarkdownDocumentBoardItem(documentId)),
+    listFolderItems: params => host.reads.listFolderItems(params),
+    getBoardItemsByFolder: folderId => host.reads.getBoardItemsByFolder(folderId),
+    getBoardItemById: boardItemId => host.reads.getBoardItemById(boardItemId),
+    getPrimarySessionBoardItem: sessionId => host.reads.getPrimarySessionBoardItem(sessionId),
+    getMarkdownDocument: documentId => host.reads.getMarkdownDocument(documentId),
+    getMarkdownDocumentBoardItem: documentId => host.reads.getMarkdownDocumentBoardItem(documentId),
   };
 
   const mutations: BoardMcpMutationPort = {
-    moveSessionToFolder: (sessionId, folderId) => board("move-session-to-folder", service =>
-      service.moveSessionToFolder(sessionId, folderId)),
-    createMarkdownDocument: input => board("create-markdown-document", service =>
-      service.createMarkdownDocument(input)),
-    updateMarkdownDocument: (folderId, documentId, fields) => board("update-markdown-document", service =>
-      service.updateMarkdownDocument({ folderId }, documentId, fields)),
-    deleteMarkdownDocument: async (folderId, documentId) => {
-      await board("delete-markdown-document", service =>
-        service.deleteMarkdownDocument({ folderId }, documentId));
-    },
-    upsertSessionBoardItem: input => board("upsert-session-board-item", service =>
-      service.upsertSessionBoardItem(input)),
-    getCustomView: customViewId => board("get-custom-view", (_service, host) =>
-      projection(host).getCustomView(customViewId)),
-    listCustomViews: params => board("list-custom-views", (_service, host) =>
-      projection(host).listCustomViews(params)),
-    createCustomViewRecord: input => board("create-custom-view-record", (_service, host) =>
-      projection(host).createCustomViewRecord(input)),
-    patchCustomViewRecord: input => board("patch-custom-view-record", (_service, host) =>
-      projection(host).patchCustomViewRecord(input)),
-    upsertCustomViewBoardItem: input => board("upsert-custom-view-board-item", service =>
-      service.upsertCustomViewBoardItem(input)),
-    removeBoardItem: async (folderId, boardItemId) => {
-      await board("remove-board-item", service =>
-        service.removeBoardItem({ folderId }, boardItemId));
-    },
+    moveSessionsToFolder: (sessionIds, folderId) => host.sessions.moveSessionsToFolder(sessionIds, folderId),
+    createMarkdownDocument: input => host.documents.create(input),
+    updateMarkdownDocument: (documentId, fields) => host.documents.update(documentId, fields),
+    deleteMarkdownDocument: documentId => host.documents.delete(documentId),
+    getCustomView: id => host.customViews.getCustomView(id),
+    listCustomViews: params => host.customViews.listCustomViews(params),
+    createCustomViewRecord: input => host.customViews.createCustomViewRecord(input),
+    patchCustomViewRecord: input => host.customViews.patchCustomViewRecord(input),
+    upsertCustomViewBoardItem: input => host.upsertCustomViewBoardItem(input),
+    removeBoardItem: (folderId, boardItemId) => host.removeBoardItem(folderId, boardItemId),
   };
 
   return { store, mutations, folders: {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { createPostgresQueryAdapter } from "../src/runtime/postgres_query_adapter.js";
 import type { LivePostgresSql } from "../src/runtime/live_db_sql.js";
 import { CardRepository } from "../src/cards/control_plane/card_repository.js";
@@ -54,7 +54,7 @@ function expectSynchronousHelper(
 describe("card control-plane postgres.js adapter", () => {
   it("returns object helpers synchronously instead of wrapping them in Promise", () => {
     const { rawSql } = createSqlHarness();
-    const sql = createBoardYjsSqlAdapter(rawSql);
+    const sql = createFolderContentSqlAdapter(rawSql);
 
     const helper = sql({ title: "renamed" });
 
@@ -117,7 +117,7 @@ describe("card control-plane postgres.js adapter", () => {
 
   it("executes patchFolderTx with a synchronous SET helper", async () => {
     const { calls, helpers, rawSql } = createSqlHarness();
-    const sql = createBoardYjsSqlAdapter(rawSql);
+    const sql = createFolderContentSqlAdapter(rawSql);
     const repository = new CardRepository(sql);
 
     await sql.begin((transaction) =>

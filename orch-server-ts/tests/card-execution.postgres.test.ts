@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { beforeAll, afterAll, describe, it, expect, vi } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { prepareCardWorkSchema, appendCardEventTx, recordWorkReceipt } from "./card-work-postgres-fixture.js";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
 import { createCardDispatchRuntime } from "../src/cards/card_dispatch_runtime.js";
@@ -21,7 +21,7 @@ describe("user card execution transport",()=>{
     await h.sql`CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version INTEGER NOT NULL DEFAULT 1,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_by TEXT NOT NULL)`;
     await h.sql.unsafe(await readFile(new URL('../../packages/db-schema/sql/migrations/113_card_orchestration.sql',import.meta.url),'utf8'));
     await h.sql`INSERT INTO folders(id,name) VALUES('work','작업'),('target','대상')`;
-    cards=new CardControlPlaneService(createBoardYjsSqlAdapter(h.liveSql),{appendEventTx:appendCardEventTx});
+    cards=new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql),{appendEventTx:appendCardEventTx});
   },60000);
   afterAll(async()=>h?.cleanup());
   type FailureHooks=Pick<CardExecutionOptions,"onConfirmedFailureTx"|"onConfirmedFailureCommitted">;
@@ -38,7 +38,7 @@ describe("user card execution transport",()=>{
     });
     const ensure=vi.fn(async(input:any)=>{await recordWorkReceipt(h,input.sessionId,"running",proof);return {state:"started" as const,execution:proof};});
     if(owner){const id=`owner-${cardId}`;await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,model_preset) VALUES(${id},'node','profile','completed',${cardId},'owner-model')`;await h.sql`UPDATE cards SET assignee_kind='session',assignee_agent_id=NULL,assignee_session_id=${id} WHERE id=${cardId}`;}
-    const service=new CardExecutionService({sql:createBoardYjsSqlAdapter(h.liveSql),cards,validate:async(card)=>({nodeId:card.node_id!,agentId:card.assignee_agent_id!,modelPreset:card.model_preset!}),launch,ensure,...hooks});
+    const service=new CardExecutionService({sql:createFolderContentSqlAdapter(h.liveSql),cards,validate:async(card)=>({nodeId:card.node_id!,agentId:card.assignee_agent_id!,modelPreset:card.model_preset!}),launch,ensure,...hooks});
     return {service,cardId,launch,ensure,proof};
   }
   const actor={actorKind:"user" as const,actorSessionId:null,actorUserId:"user"};
@@ -72,7 +72,7 @@ describe("user card execution transport",()=>{
     expect(await h.sql`SELECT actor_user_id FROM card_execution_requests WHERE id=${result.execution.requestId}`)
       .toEqual([{actor_user_id:ownerEmail}]);
 
-    const repository=new CardDispatchRepository(async()=>createBoardYjsSqlAdapter(h.liveSql));
+    const repository=new CardDispatchRepository(async()=>createFolderContentSqlAdapter(h.liveSql));
     const resolve=createSessionOwnerResolver({
       getSession:async id=>(await h.sql`SELECT * FROM sessions WHERE session_id=${id}`)[0]??null,
       findUserByEmail:async email=>email===ownerEmail?{email,isAdmin:true,allowedFolderIds:[]}:null,
@@ -100,7 +100,7 @@ describe("user card execution transport",()=>{
   });
   it("sends verified owners on system execution commands and resolves direct browser executions",async()=>{
     const ownerEmail="owner@example.test";
-    const repository=new CardDispatchRepository(async()=>createBoardYjsSqlAdapter(h.liveSql));
+    const repository=new CardDispatchRepository(async()=>createFolderContentSqlAdapter(h.liveSql));
     const findUserByEmail=async(email:string)=>email===ownerEmail?{email,isAdmin:true,allowedFolderIds:[]}:null;
     const resolveSessionOwner=createSessionOwnerResolver({
       getSession:async id=>(await h.sql`SELECT * FROM sessions WHERE session_id=${id}`)[0]??null,
@@ -221,7 +221,7 @@ describe("user card execution transport",()=>{
     const f=await fixture("pending");const result=await f.service.execute(input(f.cardId,"lost"));
     await recordWorkReceipt(h,result.execution.sessionId,"running",f.proof);
     const request=(await h.sql<CardExecutionRequest[]>`SELECT * FROM card_execution_requests WHERE id=${result.execution.requestId}`)[0]!;
-    expect(await readCardExecutionRegistration(createBoardYjsSqlAdapter(h.liveSql),request)).toEqual(f.proof);
+    expect(await readCardExecutionRegistration(createFolderContentSqlAdapter(h.liveSql),request)).toEqual(f.proof);
     await recordWorkReceipt(h,result.execution.sessionId,"completed",null);
     const checked=await f.service.observe(f.cardId,result.execution.requestId,actor);
     expect(checked.execution.state).toBe("started");expect(f.ensure).not.toHaveBeenCalled();expect(f.launch).toHaveBeenCalledTimes(1);
@@ -312,7 +312,7 @@ describe("user card execution transport",()=>{
     const launchStarted=new Promise<void>(resolve=>{signalLaunch=resolve;});
     const launchGate=new Promise<void>(resolve=>{releaseLaunch=resolve;});
     const launch=vi.fn(async()=>{signalLaunch();await launchGate;});
-    const service=new CardExecutionService({sql:createBoardYjsSqlAdapter(h.liveSql),cards,
+    const service=new CardExecutionService({sql:createFolderContentSqlAdapter(h.liveSql),cards,
       validate:async card=>({nodeId:card.node_id!,agentId:card.assignee_agent_id!,modelPreset:card.model_preset!}),
       launch,ensure:async()=>({state:"started" as const,execution:{registrationId:"unused",executionCommandId:"unused"}})});
     const params=input(cardId,"external-reservation");
@@ -362,7 +362,7 @@ describe("user card execution transport",()=>{
     const second=await f.service.execute(input(f.cardId,'undelivered'));
     expect(second.execution).toMatchObject({...first.execution,state:'started'});
     expect(f.launch.mock.calls[0]![0]).toEqual(f.launch.mock.calls[1]![0]);
-    const replay=new CardExecutionService({sql:createBoardYjsSqlAdapter(h.liveSql),cards,
+    const replay=new CardExecutionService({sql:createFolderContentSqlAdapter(h.liveSql),cards,
       validate:async()=>{throw new Error('catalog unavailable');},launch:f.launch,ensure:f.ensure});
     // HTTP success was lost: same POST after first execution completed is only replay.
     await recordWorkReceipt(h,first.execution.sessionId,'completed',null);
@@ -395,7 +395,7 @@ describe("user card execution transport",()=>{
     const f=await fixture("pending");const result=await f.service.execute(input(f.cardId,"scan-restart"));
     expect(result.execution.state).toBe("pending");
     await recordWorkReceipt(h,result.execution.sessionId,"running",f.proof);
-    const restarted=new CardExecutionService({sql:createBoardYjsSqlAdapter(h.liveSql),cards,
+    const restarted=new CardExecutionService({sql:createFolderContentSqlAdapter(h.liveSql),cards,
       validate:async card=>({nodeId:card.node_id!,agentId:card.assignee_agent_id!,modelPreset:card.model_preset!}),launch:vi.fn(),ensure:vi.fn()});
     const warn=vi.fn();
     await restarted.observePendingForNode("node",warn);
@@ -429,7 +429,7 @@ describe("user card execution transport",()=>{
     const f=await fixture("pending");const mine=await f.service.execute(input(f.cardId,"scan-mine"));
     await recordWorkReceipt(h,mine.execution.sessionId,"running",f.proof);
     const otherCard=(await cards.createCard({actorKind:"user",actorSessionId:null,folderId:"work",title:"다른 노드",request:"원문",assignee:{kind:"agent",agentId:"profile"},nodeId:"other",modelPreset:"model"})).operation.target_id;
-    const otherService=new CardExecutionService({sql:createBoardYjsSqlAdapter(h.liveSql),cards,
+    const otherService=new CardExecutionService({sql:createFolderContentSqlAdapter(h.liveSql),cards,
       validate:async card=>({nodeId:card.node_id!,agentId:card.assignee_agent_id!,modelPreset:card.model_preset!}),
       launch:vi.fn(async(value:any)=>{await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,model_preset) VALUES(${value.sessionId},'other','profile','initializing',${otherCard},'model')`;}),ensure:vi.fn()});
     const other=await otherService.execute(input(otherCard,"scan-other"));
@@ -444,7 +444,7 @@ describe("user card execution transport",()=>{
     await h.sql`UPDATE sessions SET status='error' WHERE session_id=${broken.execution.sessionId}`;
     const okCard=(await cards.createCard({actorKind:"user",actorSessionId:null,folderId:"work",title:"정상 확인",request:"원문",assignee:{kind:"agent",agentId:"profile"},nodeId:"node",modelPreset:"model"})).operation.target_id;
     const okProof={registrationId:`reg-ok-${okCard}`,executionCommandId:`cmd-ok-${okCard}`};
-    const okService=new CardExecutionService({sql:createBoardYjsSqlAdapter(h.liveSql),cards,
+    const okService=new CardExecutionService({sql:createFolderContentSqlAdapter(h.liveSql),cards,
       validate:async card=>({nodeId:card.node_id!,agentId:card.assignee_agent_id!,modelPreset:card.model_preset!}),
       launch:vi.fn(async(value:any)=>{await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,model_preset) VALUES(${value.sessionId},'node','profile','initializing',${okCard},'model')`;}),ensure:vi.fn()});
     const ok=await okService.execute(input(okCard,"scan-ok"));

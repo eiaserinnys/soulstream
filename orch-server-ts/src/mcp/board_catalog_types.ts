@@ -1,7 +1,7 @@
 import type { FolderControlPlaneService } from "../folders/folder_control_plane_service.js";
-import type { BoardProjectionHost } from "../board-yjs/board_projection_types.js";
-import type { CatalogBoardYjsPort } from "./board_catalog_items.js";
-import type { CustomViewBoardYjsPort } from "./board_custom_view_service.js";
+import type { BoardProjectionHost } from "../board/folder_content_types.js";
+import type { CatalogFolderContentPort } from "./board_catalog_items.js";
+import type { CustomViewFolderContentPort } from "./board_custom_view_service.js";
 
 export type FolderRow = Awaited<ReturnType<FolderControlPlaneService["getAllFolders"]>>[number];
 export interface BoardMcpStore extends Pick<BoardProjectionHost,
@@ -18,4 +18,4 @@ export interface BoardMcpFolderMutations {
   setFolderArchived(input: { actorKind: "system"; actorSessionId: null; folderId: string; expectedVersion: number;
     archived: boolean; idempotencyKey: string }): Promise<unknown>;
 }
-export type BoardMcpMutationPort = CatalogBoardYjsPort & CustomViewBoardYjsPort;
+export type BoardMcpMutationPort = CatalogFolderContentPort & CustomViewFolderContentPort;

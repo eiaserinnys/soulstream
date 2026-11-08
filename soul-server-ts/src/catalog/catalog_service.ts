@@ -10,7 +10,7 @@ import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import {
   CatalogBoardItemService,
   type CatalogBoardItemMoveResult,
-  type CatalogBoardYjsPort,
+  type CatalogFolderContentPort,
 } from "./catalog_board_item_service.js";
 import {
   boardItemsDelta,
@@ -27,12 +27,11 @@ export class CatalogService {
   constructor(
     private readonly db: SessionDB,
     private readonly broadcaster: SessionBroadcaster,
-    boardYjsService?: CatalogBoardYjsPort,
+    folderContentHost: CatalogFolderContentPort,
   ) {
     this.boardItems = new CatalogBoardItemService(
       db,
-      boardYjsService,
-      (delta) => this.broadcastCatalog(delta),
+      folderContentHost,
     );
   }
 
@@ -65,14 +64,6 @@ export class CatalogService {
       sessionsDelta,
       boardItemsDelta(delta.boardItems, delta.deletedBoardItemIds),
     );
-  }
-
-  async updateBoardItemPosition(
-    boardItemId: string,
-    x: number,
-    y: number,
-  ): Promise<void> {
-    await this.boardItems.updateBoardItemPosition(boardItemId, x, y);
   }
 
   async moveBoardItemToFolder(params: {

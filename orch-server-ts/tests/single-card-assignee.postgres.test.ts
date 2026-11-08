@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { beforeAll, beforeEach, afterAll, describe, it, expect } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { prepareCardWorkSchema, appendCardEventTx } from "./card-work-postgres-fixture.js";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { cardHandlers } from "../src/mcp/card_handlers.js";
 import { cardTools } from "@soulstream/mcp-contract";
@@ -24,7 +24,7 @@ describe("single card ownership", () => {
     await h.sql`INSERT INTO folders(id,name) VALUES ('f','폴더'),('g','다른 폴더')`;
     await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,model_preset,status,execution_registration_id,execution_command_id)
       VALUES ('owner','node','roselin','sol','running','reg','cmd'),('peer','node','roselin','sol','running','reg2','cmd2'),('wrong','node','other','luna','running','reg3','cmd3')`;
-    cards = new CardControlPlaneService(createBoardYjsSqlAdapter(h.liveSql), { appendEventTx: appendCardEventTx });
+    cards = new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql), { appendEventTx: appendCardEventTx });
   }, 60000);
   beforeEach(async () => { await h.sql`DELETE FROM folder_operations`; await h.sql`DELETE FROM cards`; await h.sql`DELETE FROM events`; await h.sql`UPDATE sessions SET card_id=NULL,caller_session_id=NULL`; });
   afterAll(async () => h?.cleanup());
@@ -69,7 +69,7 @@ describe("single card ownership", () => {
   });
   it("serializes concurrent ownership of different cards into one success and one readable 422", async () => {
     const a = await make(null), b = await make(null);
-    const peer = new CardControlPlaneService(createBoardYjsSqlAdapter(h.peerLiveSql), { appendEventTx: appendCardEventTx });
+    const peer = new CardControlPlaneService(createFolderContentSqlAdapter(h.peerLiveSql), { appendEventTx: appendCardEventTx });
     const results = await Promise.allSettled([cards.patchCard({ ...human, cardId: a, assignee: { kind: "session", sessionId: "owner" } }), peer.patchCard({ ...human, cardId: b, assignee: { kind: "session", sessionId: "owner" } })]);
     expect(results.filter(r => r.status === "fulfilled")).toHaveLength(1);
     const failure = results.find(r => r.status === "rejected") as PromiseRejectedResult;

@@ -4,7 +4,7 @@ import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { fileURLToPath } from "node:url";
 
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import type { LivePostgresSql } from "../src/runtime/live_db_sql.js";
 import { registerFolderRoutes } from "../src/folders/folder_routes.js";
@@ -20,7 +20,7 @@ describe("card number storage over PostgreSQL and HTTP", () => {
   beforeAll(async () => {
     h = await createFullSchemaPostgresHarness();
     await h.sql`INSERT INTO folders(id,name) VALUES (${folderId},'Card numbers'),(${movedFolderId},'Moved cards')`;
-    cards = new CardControlPlaneService(createBoardYjsSqlAdapter(h.sql as unknown as LivePostgresSql), {
+    cards = new CardControlPlaneService(createFolderContentSqlAdapter(h.sql as unknown as LivePostgresSql), {
       appendEventTx: async () => 0,
     }, {
       emitFolderUpdated: async () => {},

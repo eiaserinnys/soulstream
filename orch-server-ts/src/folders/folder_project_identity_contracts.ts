@@ -1,5 +1,3 @@
-import type { BoardYjsService } from "../board-yjs/board_yjs_service.js";
-import type { BoardYjsDocumentApplication } from "../board-yjs/board_yjs_types.js";
 import type { InitialFolderContext } from "@soulstream/page-model";
 import type {
   PageMutationActor,
@@ -71,7 +69,6 @@ export interface FolderProjectIdentityRepository {
     operationId: string;
     pageOperationId: string;
     pageApplication: PageMutationApplication;
-    boardApplications?: BoardYjsDocumentApplication[];
   }): Promise<FolderProjectIdentityMutationResult>;
   mutate(input: {
     binding: FolderProjectBinding;
@@ -85,7 +82,6 @@ export interface FolderProjectIdentityRepository {
     operationId: string;
     pageOperationId: string;
     pageApplication: PageMutationApplication;
-    boardApplications?: BoardYjsDocumentApplication[];
   }): Promise<FolderProjectIdentityMutationResult>;
   findByFolderId(folderId: string): Promise<FolderProjectBinding | null>;
   findByPageId(pageId: string): Promise<FolderProjectBinding | null>;
@@ -95,7 +91,6 @@ export interface FolderProjectIdentityRepository {
 
 export interface FolderProjectIdentityServiceConfig {
   repository: FolderProjectIdentityRepository;
-  withBoardApplication: BoardYjsService["withFolderBoardApplication"];
   createId?: () => string;
   createOperationId?: () => string;
   hydratePage: (pageId: string) => Promise<void>;

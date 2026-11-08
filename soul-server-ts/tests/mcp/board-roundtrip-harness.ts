@@ -3,12 +3,13 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import Fastify from "fastify";
 import { vi } from "vitest";
-import { createBoardProjectionHost } from "../../../orch-server-ts/src/board-yjs/board_projection_host.js";
-import { BoardYjsMoveRepository } from "../../../orch-server-ts/src/board-yjs/board_yjs_move_repository.js";
-import { BoardYjsRepository } from "../../../orch-server-ts/src/board-yjs/board_yjs_repository.js";
-import { BoardYjsService } from "../../../orch-server-ts/src/board-yjs/board_yjs_service.js";
-import { createBoardYjsSqlAdapter } from "../../../orch-server-ts/src/board-yjs/board_yjs_sql.js";
-import { registerBoardYjsHostProxyRoutes } from "../../../orch-server-ts/src/board/board_yjs_host_proxy.js";
+import { FlatFolderContentHost } from "../../../orch-server-ts/src/board/flat_folder_content_host.js";
+import { MarkdownDocumentService } from "../../../orch-server-ts/src/board/markdown_document_service.js";
+import { createFolderContentSqlAdapter } from "../../../orch-server-ts/src/board/folder_content_sql.js";
+import { registerFlatFolderContentRoutes } from "../../../orch-server-ts/src/board/flat_folder_content_routes.js";
+import { SessionFolderMoveRepository } from "../../../orch-server-ts/src/session/session_folder_move_repository.js";
+import { SessionFolderMoveService } from "../../../orch-server-ts/src/session/session_folder_move_service.js";
+import { broadcastCatalogDelta } from "../../../orch-server-ts/src/runtime/catalog_delta_broadcaster.js";
 import { CardControlPlaneService } from "../../../orch-server-ts/src/cards/card_control_plane_service.js";
 import { registerPersistenceHostRoutes } from "../../../orch-server-ts/src/control_plane/persistence_host_routes.js";
 import { SessionReadRepository } from "../../../orch-server-ts/src/control_plane/repositories/session_read_repository.js";
@@ -23,11 +24,10 @@ import { createLiveFolderProvider } from "../../../orch-server-ts/src/runtime/li
 import { broadcastTargetedSessionCatalogDelta, withSessionCatalogMutationBroadcasts } from "../../../orch-server-ts/src/runtime/live_session_catalog_mutation_broadcaster.js";
 import { registerSessionCatalogRoutes } from "../../../orch-server-ts/src/session/session_catalog_routes.js";
 import { InMemorySseReplayBroadcaster, type SessionStreamEvent } from "../../../orch-server-ts/src/sse/replay_broadcaster.js";
-import { SessionBoardMoveService } from "../../../orch-server-ts/src/session/session_board_move_service.js";
 import { createFullSchemaPostgresHarness } from "../../../orch-server-ts/tests/board_yjs_postgres_harness.js";
 import { AgentRegistry } from "../../src/agent_registry.js";
 import { CatalogService } from "../../src/catalog/catalog_service.js";
-import { BoardYjsHostClient } from "../../src/collaboration/board_yjs_host_client.js";
+import { FlatFolderContentHostClient } from "../../src/catalog/flat_folder_content_host_client.js";
 import { SessionDataHostClient } from "../../src/control_plane/session_data_host_client.js";
 import { SessionDB } from "../../src/db/session_db.js";
 import { FolderHostClient } from "../../src/folder/folder_host_client.js";
@@ -47,39 +47,35 @@ export async function createBoardRoundtripHarness() {
     events.push(event);
     return { id: "test-event", payload: event } as never;
   });
-  const sql = createBoardYjsSqlAdapter(h.sql as never);
+  const sql = createFolderContentSqlAdapter(h.sql as never);
   const cards = new CardControlPlaneService(sql, { appendEventTx: async () => 1 }, {
     emitFolderUpdated: async () => {}, emitCardUpdated: async () => {},
   });
-  const identity = new FolderProjectIdentityService({
-    repository: new SqlFolderProjectIdentityRepository(resolver),
-    withBoardApplication: async (_input, persist) => persist([]), hydratePage: async () => {},
-  });
-  const folders = { serviceProvider: async () => new FolderControlPlaneService(sql),
-    cardServiceProvider: async () => cards, identity, authBearerToken: "service-token" };
-  const repository = new BoardYjsRepository(resolver);
-  const projectionHost = createBoardProjectionHost(resolver, repository);
-  const moves = new BoardYjsMoveRepository(resolver);
+  const identityRepository = new SqlFolderProjectIdentityRepository(resolver);
+  const identity = new FolderProjectIdentityService({ repository: identityRepository, hydratePage: async () => {} });
+  const moves = new SessionFolderMoveRepository(resolver);
   const sessionMoveCommit = vi.spyOn(moves, "commitSessionMove");
-  const sessionReads = new SessionReadRepository(h.sql);
-  let board: BoardYjsService;
-  let mover: SessionBoardMoveService;
-  const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn(), trace: vi.fn() } as never;
-  const makeBoard = () => {
-    board = new BoardYjsService({ repository, logger,
-      auth: { authBearerToken: "service-token", environment: "production", dashboardAuthEnabled: false,
-        resolveDashboardUserFromHeaders: async () => null },
-      moveSessionBoardItem: input => mover.moveSessionBoardItem(input),
-      persistBoardItemMove: input => moves.commitBoardItemMove(input),
-    });
-    mover = new SessionBoardMoveService({ board, repository: moves,
-      onBoardMoveCommitted: async ({ sessionIds, movedBoardItem }) => {
-        await broadcastTargetedSessionCatalogDelta(folderProvider, broadcaster, sessionIds,
-          movedBoardItem ? { [movedBoardItem.id]: movedBoardItem } : {});
-      },
-    });
+  const mover = new SessionFolderMoveService({ repository: moves });
+  const notify = async (mutation: import("../../../orch-server-ts/src/board/markdown_document_service.js").MarkdownMutation) => {
+    await broadcastCatalogDelta(folderProvider, broadcaster, { boardItemsDelta: Object.fromEntries([
+      ...(mutation.boardItems ?? []).map(item => [item.id, item]),
+      ...(mutation.deletedBoardItemIds ?? []).map(id => [id, null]),
+    ]) });
+    for (const folderId of mutation.folderIds) broadcaster.append({ type: "folder_updated", folderId });
+    broadcaster.append({ type: "page_updated", page_id: mutation.documentId, version: mutation.version });
   };
-  makeBoard();
+  const host = new FlatFolderContentHost(resolver, new MarkdownDocumentService(resolver, notify), mover,
+    async (folderId, parentFolderId, idempotencyKey) => {
+      const folder = await identityRepository.findByFolderId(folderId);
+      if (!folder) throw new Error("folder not found");
+      await identity.mutateFromFolder({ folderId, expectedVersion: folder.version, update: { parentFolderId },
+        actor: { actorKind: "system" }, idempotencyKey });
+    }, async (item) => { await broadcastCatalogDelta(folderProvider, broadcaster, { boardItemsDelta: { [item.id]: item } }); });
+  const projectionHost = host.customViews;
+  const folders = { serviceProvider: async () => new FolderControlPlaneService(sql, () => host.reads.getBoardItems()),
+    cardServiceProvider: async () => cards, identity, authBearerToken: "service-token" };
+  const sessionReads = new SessionReadRepository(h.sql);
+  const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn(), trace: vi.fn() } as never;
   const app = Fastify();
   const catalogRepository = createLiveDbCatalogRepository({ sqlResolver: resolver,
     sessionMoves: { moveSessionsToFolder: (ids, folderId) => mover.moveSessionsToFolder(ids, folderId) },
@@ -87,7 +83,6 @@ export async function createBoardRoundtripHarness() {
   registerSessionCatalogRoutes(app, { provider: withSessionCatalogMutationBroadcasts(
     catalogRepository.sessionCatalogProvider, folderProvider, broadcaster,
   ) });
-  const host = { authBearerToken: "service-token", projectionHost, createService: () => board };
   let distinguishRemote = false;
   const listAgentProfiles = vi.fn(async (nodeId: string) => ({ roselin: { name: distinguishRemote && nodeId === "other-node" ? "다른 노드 이름" : "로젤린" } }));
   const oldBroadcaster = {
@@ -99,13 +94,12 @@ export async function createBoardRoundtripHarness() {
     },
   };
   registerFolderControlPlaneHostRoute(app, folders);
-  // Getter ensures each reset uses a fresh real Y.Doc service rather than a stale document cache.
-  registerBoardYjsHostProxyRoutes(app, { ...host, get service() { return board; } });
+  registerFlatFolderContentRoutes(app, { host, authBearerToken: "service-token" });
   registerPersistenceHostRoutes(app, { authBearerToken: "service-token", repositoryProvider: async () => ({ sessionReads }) as never });
   const executionOptions = { authBearerToken: "service-token", folders,
     cards: { cardServiceProvider: folders.cardServiceProvider, provider: { listFolders: () => [], listSessionAssignments: () => ({}) },
       resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) },
-    board: { host: { ...host, get service() { return board; } }, getSession: (id: string) => sessionReads.getSession(id),
+    board: { host, getSession: (id: string) => sessionReads.getSession(id),
       listAgentProfiles,
       broadcaster,
       catalogFolderProvider: folderProvider,
@@ -116,10 +110,10 @@ export async function createBoardRoundtripHarness() {
   const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });
   const orch = { baseUrl, headers: { authorization: "Bearer service-token" } };
   const clientConfig = { orch, logger };
-  const boardClient = new BoardYjsHostClient(clientConfig);
+  const boardClient = new FlatFolderContentHostClient(clientConfig);
   const db = new SessionDB();
   db.configureFolderHost(new FolderHostClient(clientConfig));
-  db.configureBoardProjectionHost(boardClient);
+  db.configureFolderContentHost(boardClient);
   // Actual old session HTTP read, used only by the generated-session enrollment branch.
   db.configureSessionDataHost(new SessionDataHostClient(clientConfig));
   const agentRegistry = new AgentRegistry([{ id: "roselin", name: "로젤린" } as never]);
@@ -127,7 +121,7 @@ export async function createBoardRoundtripHarness() {
     catalogService: new CatalogService(db, oldBroadcaster as never, boardClient),
   } as unknown as McpRuntime;
   async function seed() {
-    await board.close(); makeBoard(); events.length = 0;
+    events.length = 0;
     // Only the disposable harness-owned schema is cleared; no environment DATABASE_URL is used.
     const tables = await h.sql<{ tablename: string }[]>`SELECT tablename FROM pg_tables WHERE schemaname=current_schema()`;
     await h.sql.unsafe(`TRUNCATE ${tables.map(t => '"' + t.tablename.replaceAll('"', '""') + '"').join(",")} RESTART IDENTITY CASCADE`);
@@ -154,7 +148,7 @@ export async function createBoardRoundtripHarness() {
       ('subfolder:child','00000000-0000-4000-8000-000000000001','primary','subfolder','00000000-0000-4000-8000-000000000003',840,0,'{}'),
       ('frame:frame-1','00000000-0000-4000-8000-000000000001','primary','frame','frame-1',840,160,'{}'),
       ('ref:doc-1','00000000-0000-4000-8000-000000000001','reference','markdown','ref-doc',560,160,'{}')`;
-    await board.upsertCustomViewBoardItem({ folderId: "00000000-0000-4000-8000-000000000001", boardItemId: "custom_view:cv-1", customViewId: "cv-1",
+    await host.upsertCustomViewBoardItem({ folderId: "00000000-0000-4000-8000-000000000001", boardItemId: "custom_view:cv-1", customViewId: "cv-1",
       title: "뷰", html: "<p>before</p>", revision: 1, x: 0, y: 320 });
     await projectionHost.createCustomViewRecord({ id: "cv-1", boardItemId: "custom_view:cv-1", title: "뷰", html: "<p>before</p>",
       actorKind: "agent", actorSessionId: "header-session", idempotencyKey: "seed-view" });
@@ -179,5 +173,5 @@ export async function createBoardRoundtripHarness() {
       return { status: response.status, body: await response.json() };
     },
     distinguishRemoteNames(value: boolean) { distinguishRemote = value; },
-    async cleanup() { await board.close(); await app.close(); await h.cleanup(); } };
+    async cleanup() { await app.close(); await h.cleanup(); } };
 }

@@ -7,8 +7,8 @@ import type { Logger } from "pino";
 import { AgentAtomContextSchema } from "../agent_registry.js";
 import {
   authenticateDashboardHttpRequest,
-  type BoardYjsAuthConfig,
-} from "../collaboration/board_yjs_auth.js";
+  type DashboardHttpAuthConfig,
+} from "./dashboard_http_auth.js";
 import type { AtomFetchConfig, AtomContextSpec } from "./atom_context.js";
 import { hostOsConditionValue } from "./host_os.js";
 import {
@@ -19,7 +19,7 @@ import {
 export interface ContextPreviewRouteConfig {
   nodeId: string;
   atom: AtomFetchConfig;
-  auth: BoardYjsAuthConfig;
+  auth: DashboardHttpAuthConfig;
   logger: Pick<Logger, "warn">;
 }
 
@@ -89,7 +89,7 @@ function parsePreviewBody(body: PreviewBody | undefined, nodeId: string): Previe
 
 async function authorize(
   headers: IncomingHttpHeaders,
-  auth: BoardYjsAuthConfig,
+  auth: DashboardHttpAuthConfig,
 ): Promise<string | null> {
   try {
     await authenticateDashboardHttpRequest({ requestHeaders: headers, config: auth });

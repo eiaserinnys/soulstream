@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { buildDeterministicDeliveryIdentity } from "@soulstream/wire-schema/delivery";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { CardExecutionService, readCardExecutionRegistration, type CardExecutionRequest } from "../src/cards/card_execution_service.js";
 import type { DispatchWorkInput } from "../src/cards/card_work_dispatch_service.js";
@@ -57,7 +57,7 @@ const childCompletionObservation = (
 };
 
 function createStack(options: { allowFolder?: (folderId: string) => boolean; launch?: (input: unknown) => Promise<unknown> } = {}) {
-  const sql = createBoardYjsSqlAdapter(h.liveSql);
+  const sql = createFolderContentSqlAdapter(h.liveSql);
   const cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx });
   const launch = vi.fn(options.launch ?? (async () => undefined));
   const execution = new CardExecutionService({

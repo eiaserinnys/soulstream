@@ -3,7 +3,7 @@ import { callWithReferenceTranslation, cardTools } from "@soulstream/mcp-contrac
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { prepareCardWorkSchema, appendCardEventTx } from "./card-work-postgres-fixture.js";
 import { unusedClusterDependencies } from "./mcp-cluster-unused-fixture.js";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
 import { CardDispatcher } from "../src/cards/card_dispatcher.js";
@@ -25,7 +25,7 @@ describe("external MCP card writes", () => {
     await prepareCardWorkSchema(h);
     await h.sql`CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version INTEGER NOT NULL DEFAULT 1,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_by TEXT NOT NULL)`;
     await h.sql`INSERT INTO system_settings(setting_key,value,updated_by) VALUES ('card_dispatch','{"nodeConcurrency":{"default":1}}','migration')`;
-    const sql = createBoardYjsSqlAdapter(h.liveSql);
+    const sql = createFolderContentSqlAdapter(h.liveSql);
     cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx }, undefined,
       change => dispatcher.acceptMutation(change));
     dispatcher = new CardDispatcher({ deliveryExists: async () => false, abandonDelivery: async () => {}, repository: new CardDispatchRepository(async () => sql), cards: async () => cards,

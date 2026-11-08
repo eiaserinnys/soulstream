@@ -1,6 +1,6 @@
 import type { Logger } from "pino";
 
-import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
+import type { FlatFolderContentHostClient } from "../catalog/flat_folder_content_host_client.js";
 import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
 import type { ContextItem } from "../context/prompt_assembler.js";
 import type { SessionDB } from "../db/session_db.js";
@@ -10,7 +10,6 @@ import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments"
 import { defaultFolderIdForSessionType } from "../system_folders.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import {
-  boardItemsDelta,
   serializeCatalogFolders,
   sessionAssignmentFromRow,
 } from "../catalog/catalog_delta.js";
@@ -30,9 +29,6 @@ import {
   type TaskCreationHook,
 } from "./task_creation_hook.js";
 import { initialSessionReview } from "./session_review.js";
-import {
-  sessionBoardItemPosition,
-} from "./session_board_position.js";
 import { resolveStructuralCallerSessionId } from "./delegation_relationship.js";
 import type { AgentProfile } from "../agent_registry.js";
 import { toStoredReasoningEffort } from "./session_effort_storage.js";
@@ -96,7 +92,7 @@ export interface TaskCreationDeps {
   db: SessionDB;
   sessionMutations: SessionMutationHost;
   persistence?: EventPersistence;
-  boardYjsService?: Pick<BoardYjsHostClient, "upsertSessionBoardItem">;
+  folderContentHost?: Pick<FlatFolderContentHostClient, "moveSessionToFolder">;
   broadcaster: SessionBroadcaster;
   logger: Logger;
   taskCreationHook?: TaskCreationHook;
@@ -400,17 +396,10 @@ export class TaskCreation {
         }
       }
       if (targetFolderId) {
-        if (!this.deps.boardYjsService) {
-          throw new Error("Board Yjs service is required for session placement");
+        if (!this.deps.folderContentHost) {
+          throw new Error("Folder content host is required for session placement");
         }
-        const boardItems = await this.deps.db.getBoardItemsByFolder(targetFolderId);
-        const [x, y] = sessionBoardItemPosition(boardItems, sessionId);
-        await this.deps.boardYjsService.upsertSessionBoardItem({
-          folderId: targetFolderId,
-          sessionId,
-          x,
-          y,
-        });
+        await this.deps.folderContentHost.moveSessionToFolder(sessionId, targetFolderId);
         assigned = targetFolderId;
       }
     } catch (err) {
@@ -423,23 +412,22 @@ export class TaskCreation {
           assignedFolderId: assigned,
           targetFolderId,
         },
-        "session folder assignment or board item enrollment failed; atomic placement was not applied",
+        "session folder assignment failed",
       );
     }
 
     if (assigned !== null) {
       try {
-        const [folders, session, boardItem] = await Promise.all([
+        const [folders, session] = await Promise.all([
           this.deps.db.getAllFolders(),
           this.deps.db.getSession(sessionId),
-          this.deps.db.getPrimarySessionBoardItem(sessionId),
         ]);
         await this.deps.broadcaster.emitCatalogUpdated(
           serializeCatalogFolders(folders),
           session
             ? { [sessionId]: sessionAssignmentFromRow(session) }
             : {},
-          boardItemsDelta(boardItem ? [boardItem] : []),
+          {},
         );
       } catch (err) {
         this.deps.logger.warn(

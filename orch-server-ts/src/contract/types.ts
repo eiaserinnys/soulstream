@@ -110,25 +110,6 @@ export type FakeNodeReconnectFixture = ContractFixture & {
   };
 };
 
-export type BoardYjsHostProxyFixture = ContractFixture & {
-  cardinality: {
-    zeroHostsStatus: number;
-    twoHostsStatus: number;
-    oneHostStatus: number;
-  };
-  proxy: {
-    method: "POST";
-    route: string;
-    upstreamPath: string;
-    forwardedHeaders: string[];
-  };
-  directOperations: Array<{
-    operation: string;
-    body: Record<string, unknown>;
-  }>;
-  negativeAssertions: string[];
-};
-
 export type DbFunctionContractFixture = ContractFixture & {
   functions: Array<{
     name: string;
@@ -143,6 +124,5 @@ export type OrchContractFixtures = {
   upstreamWsWire: UpstreamWsWireFixture;
   sseReplayGap: SseReplayGapFixture;
   fakeNodeReconnect: FakeNodeReconnectFixture;
-  boardYjsHostProxy: BoardYjsHostProxyFixture;
   dbFunctionContract: DbFunctionContractFixture;
 };

@@ -4,7 +4,6 @@ import {
   MarkdownDocumentRouteError,
   createApp,
   parseOrchServerConfig,
-  type BoardYjsHostProxyRouteOptions,
   type MarkdownDocumentAccessProvider,
   type MarkdownDocumentRecord,
   type MarkdownDocumentRouteProvider,
@@ -48,6 +47,7 @@ type ProviderCall =
 function createHarness(overrides: Partial<MarkdownDocumentRouteProvider> = {}) {
   const calls: ProviderCall[] = [];
   const provider: MarkdownDocumentRouteProvider = {
+    async listMarkdownDocuments() { return { documents: [], nextCursor: null }; },
     async listFolders() {
       calls.push(["listFolders"]);
       return folders;
@@ -82,13 +82,11 @@ export function createAppWithMarkdownDocuments(
   access: { restricted: boolean; allowedFolderIds?: string[] },
   overrides: Partial<MarkdownDocumentRouteProvider> = {},
   serviceOverrides: Record<string, unknown> = {},
-  includeBoardYjsProxyRoutes = false,
-  hostProxyOverrides: Partial<BoardYjsHostProxyRouteOptions> = {},
 ) {
   const harness = createHarness(overrides);
   const accessProvider = createAccessProvider(access, harness.calls);
   const service = {
-    createMarkdownDocument: vi.fn(async (input) => ({
+    create: vi.fn(async (input) => ({
       document: {
         id: "doc-1",
         folderId: input.folderId,
@@ -98,28 +96,22 @@ export function createAppWithMarkdownDocuments(
       },
       boardItem: { id: "markdown:doc-1" },
     })),
-    updateMarkdownDocument: vi.fn(async () => ({
+    update: vi.fn(async () => ({
       id: "doc/one",
       folderId: "folder-a-child",
       title: "New",
       body: "Before",
       version: 8,
     })),
-    deleteMarkdownDocument: vi.fn(async () => undefined),
+    delete: vi.fn(async () => undefined),
     ...serviceOverrides,
-  } as unknown as NonNullable<BoardYjsHostProxyRouteOptions["service"]>;
-  const hostProxy = {
-    authBearerToken: "test-token",
-    service,
-    ...hostProxyOverrides,
   };
   const app = createApp({
     config,
-    ...(includeBoardYjsProxyRoutes ? { boardYjsHostProxyRoutes: hostProxy } : {}),
     markdownDocumentRoutes: {
       provider: harness.provider,
       accessProvider,
-      hostProxy,
+      serviceProvider: () => service as never,
     },
   });
   return { app, calls: harness.calls, service };

@@ -160,7 +160,7 @@ describe("Folder project identity PostgreSQL transaction", () => {
       ),
       createId: () => id,
       createOperationId: () => operationIds.shift() ?? crypto.randomUUID(),
-      withBoardApplication: async (_input, persist) => persist([]),
+
       hydratePage: async () => undefined,
     });
   }

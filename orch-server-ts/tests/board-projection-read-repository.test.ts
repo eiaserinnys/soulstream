@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { BoardProjectionReadRepository } from
-  "../src/board-yjs/board_projection_read_repository.js";
+import { FolderContentRepository } from
+  "../src/board/folder_content_repository.js";
 import type { LivePostgresSql } from "../src/runtime/live_db_sql.js";
 
 interface SqlCall {
@@ -29,7 +29,7 @@ function createMockSql(
   return { sql, calls };
 }
 
-describe("BoardProjectionReadRepository.listFolderItems", () => {
+describe("FolderContentRepository.listFolderItems", () => {
   it("scopes and enriches a page in one orchestrator query", async () => {
     const { sql, calls } = createMockSql(() => [{
       bi_id: "session:session-1",
@@ -79,7 +79,7 @@ describe("BoardProjectionReadRepository.listFolderItems", () => {
       scanned_items: 2000,
       search_truncated: true,
     }]);
-    const repository = new BoardProjectionReadRepository({
+    const repository = new FolderContentRepository({
       resolveSql: vi.fn(async () => sql),
       close: vi.fn(),
     });
@@ -95,7 +95,7 @@ describe("BoardProjectionReadRepository.listFolderItems", () => {
     });
 
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.query).toContain("FROM board_items bi");
+    expect(calls[0]?.query).toContain("FROM flat_items bi");
     expect(calls[0]?.query).toContain("LEFT JOIN sessions");
     expect(calls[0]?.query).toContain("LEFT JOIN markdown_documents");
     expect(calls[0]?.values).toEqual(expect.arrayContaining([
@@ -143,7 +143,7 @@ describe("BoardProjectionReadRepository.listFolderItems", () => {
       frame_count: 0,
       custom_view_count: 0,
     }]);
-    const repository = new BoardProjectionReadRepository({
+    const repository = new FolderContentRepository({
       resolveSql: vi.fn(async () => sql),
       close: vi.fn(),
     });
@@ -171,20 +171,20 @@ describe("BoardProjectionReadRepository.listFolderItems", () => {
   });
 });
 
-describe("BoardProjectionReadRepository.getBoardItemsByFolder", () => {
+describe("FolderContentRepository.getBoardItemsByFolder", () => {
   it("returns only rows belonging to the requested folder", async () => {
-    const rows = ["folder-1", "folder-2"].map((folderId) => ({
-      id: `markdown:${folderId}`, folder_id: folderId, membership_kind: "primary",
-      x: 0, y: 0, metadata: {}, created_at: null, updated_at: null,
-    }));
-    const { sql, calls } = createMockSql((call) => rows.filter((row) => row.folder_id === call.values[0]));
-    const repository = new BoardProjectionReadRepository({ resolveSql: vi.fn(async () => sql), close: vi.fn() });
+    const { sql, calls } = createMockSql((call) => [{
+      bi_id: `markdown:${call.values[0]}`, bi_folder_id: call.values[0], bi_membership_kind: "primary",
+      bi_item_type: "markdown", bi_item_id: call.values[0], bi_x: 0, bi_y: 0, bi_metadata: {},
+      bi_created_at: null, bi_updated_at: null, total_count: 1, markdown_count: 1,
+    }]);
+    const repository = new FolderContentRepository({ resolveSql: vi.fn(async () => sql), close: vi.fn() });
     for (const folderId of ["folder-1", "folder-2"]) {
       expect(await repository.getBoardItemsByFolder(folderId)).toEqual([
         expect.objectContaining({ id: `markdown:${folderId}`, folderId }),
       ]);
     }
     expect(calls).toHaveLength(2);
-    expect(calls.every((call) => call.query.includes("WHERE folder_id = ?"))).toBe(true);
+    expect(calls.every((call) => call.query.includes("WHERE md.folder_id = ?"))).toBe(true);
   });
 });

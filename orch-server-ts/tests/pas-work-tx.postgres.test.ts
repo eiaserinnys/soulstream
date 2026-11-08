@@ -2,14 +2,14 @@ import { readFile } from "node:fs/promises";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { prepareCardWorkSchema } from "./card-work-postgres-fixture.js";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { CardExecutionService } from "../src/cards/card_execution_service.js";
 import type { RepositorySql } from "../src/cards/control_plane/card_types.js";
 
 describe("PAS work transaction storage", () => {
   let h: PagePostgresHarness;
-  let sql: ReturnType<typeof createBoardYjsSqlAdapter>;
+  let sql: ReturnType<typeof createFolderContentSqlAdapter>;
   let cards: CardControlPlaneService;
   let execution: CardExecutionService;
   let sequence = 0;
@@ -28,7 +28,7 @@ describe("PAS work transaction storage", () => {
     await h.sql`INSERT INTO folders(id,name) VALUES (${folderId},'PAS 작업')`;
     await h.sql`INSERT INTO sessions(session_id,folder_id,status,agent_id,node_id,model_preset)
       VALUES ('pas-agent',${folderId},'running','roselin','eiaserinnys','codex-6-luna')`;
-    sql = createBoardYjsSqlAdapter(h.liveSql);
+    sql = createFolderContentSqlAdapter(h.liveSql);
     const db = {
       appendEventTx: async (tx: RepositorySql, p: {
         sessionId: string; eventType: string; payload: string; searchableText: string; createdAt: Date; dedupeKey?: string | null;

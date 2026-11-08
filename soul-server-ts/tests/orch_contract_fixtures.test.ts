@@ -86,7 +86,6 @@ describe("orch contract fixtures", () => {
       "upstream_ws_wire.json",
       "sse_replay_gap.json",
       "fake_node_reconnect.json",
-      "board_yjs_host_proxy.json",
       "db_function_contract.json",
     ]) {
       expect(loadFixture<{ version: number }>(name).version).toBe(1);

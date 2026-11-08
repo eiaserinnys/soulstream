@@ -60,6 +60,7 @@ export function isRequestedTimelineEventType(value: string): value is RequestedT
 }
 
 export type SessionHistoryProvider = {
+  readConversation?: (sessionId: string, limit?: string) => Promise<import("./session_conversation_projection.js").CardSessionMessages | null>;
   readViewport: (sessionId: string, yMin: number, yMax: number) => Promise<unknown>;
   readMessages: (
     sessionId: string,

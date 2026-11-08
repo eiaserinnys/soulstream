@@ -556,46 +556,9 @@ CREATE TRIGGER board_delete_session_refs_trigger
 AFTER DELETE ON sessions
 FOR EACH ROW EXECUTE FUNCTION board_delete_session_refs();
 
-CREATE OR REPLACE FUNCTION board_assert_session_ydoc_refs_removed()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-BEGIN
-    IF EXISTS (
-        SELECT 1
-        FROM board_yjs_catalog_cache cache
-        WHERE (
-            jsonb_typeof(cache.board_items) <> 'array'
-            AND cache.board_items::text LIKE '%' || OLD.session_id || '%'
-        ) OR EXISTS (
-            SELECT 1
-            FROM jsonb_array_elements(
-                CASE WHEN jsonb_typeof(cache.board_items) = 'array'
-                    THEN cache.board_items ELSE '[]'::jsonb END
-            ) AS entry(value)
-            WHERE (
-                entry.value ->> 'id' = 'session:' || OLD.session_id
-                OR (
-                    COALESCE(entry.value ->> 'itemType', entry.value ->> 'item_type') = 'session'
-                    AND COALESCE(entry.value ->> 'itemId', entry.value ->> 'item_id') = OLD.session_id
-                )
-            )
-        )
-    ) THEN
-        RAISE EXCEPTION
-            'session % still has a board Y.Doc card; remove canonical card before deleting session',
-            OLD.session_id
-            USING ERRCODE = '23503';
-    END IF;
-    RETURN OLD;
-END;
-$$;
-
-DROP TRIGGER IF EXISTS board_assert_session_ydoc_refs_removed_trigger ON sessions;
-CREATE TRIGGER board_assert_session_ydoc_refs_removed_trigger
-BEFORE DELETE ON sessions
-FOR EACH ROW EXECUTE FUNCTION board_assert_session_ydoc_refs_removed();
-
 CREATE TABLE IF NOT EXISTS markdown_documents (
     id          TEXT PRIMARY KEY,
+    folder_id   TEXT REFERENCES folders(id) ON DELETE CASCADE,
     title       TEXT NOT NULL,
     body        TEXT NOT NULL DEFAULT '',
     version     INTEGER NOT NULL DEFAULT 1,
@@ -659,6 +622,75 @@ CREATE TABLE IF NOT EXISTS board_items (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT uq_board_items_folder_item UNIQUE (folder_id, item_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_markdown_documents_folder_id ON markdown_documents(folder_id);
+
+CREATE OR REPLACE FUNCTION flat_markdown_sync_legacy_membership()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+  affected_ids TEXT[] := ARRAY[]::TEXT[];
+  document_id TEXT;
+  selected_folder TEXT;
+BEGIN
+  IF TG_OP <> 'INSERT' THEN
+    IF OLD.item_type = 'markdown' THEN
+      affected_ids := array_append(affected_ids, OLD.item_id);
+    END IF;
+  END IF;
+  IF TG_OP <> 'DELETE' THEN
+    IF NEW.item_type = 'markdown' THEN
+      affected_ids := array_append(affected_ids, NEW.item_id);
+    END IF;
+  END IF;
+  FOR document_id IN SELECT DISTINCT unnest(affected_ids)
+  LOOP
+    IF TG_OP = 'DELETE' THEN
+      IF NOT EXISTS (SELECT 1 FROM folders WHERE id = OLD.folder_id) THEN
+        CONTINUE;
+      END IF;
+    END IF;
+    SELECT bi.folder_id INTO selected_folder
+    FROM board_items bi JOIN folders f ON f.id = bi.folder_id
+    WHERE bi.item_type = 'markdown' AND bi.item_id = document_id
+    ORDER BY (bi.membership_kind = 'primary') DESC,
+      bi.updated_at DESC NULLS LAST,
+      bi.created_at DESC NULLS LAST, bi.id ASC
+    LIMIT 1;
+    UPDATE markdown_documents
+    SET folder_id = selected_folder
+    WHERE id = document_id AND folder_id IS DISTINCT FROM selected_folder;
+  END LOOP;
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS flat_markdown_sync_legacy_membership_trigger ON board_items;
+CREATE TRIGGER flat_markdown_sync_legacy_membership_trigger
+AFTER INSERT OR UPDATE OR DELETE ON board_items
+FOR EACH ROW EXECUTE FUNCTION flat_markdown_sync_legacy_membership();
+
+CREATE OR REPLACE FUNCTION flat_markdown_fill_folder_on_insert()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.folder_id IS NULL THEN
+    SELECT bi.folder_id INTO NEW.folder_id
+    FROM board_items bi
+    JOIN folders f ON f.id = bi.folder_id
+    WHERE bi.item_type = 'markdown' AND bi.item_id = NEW.id
+    ORDER BY (bi.membership_kind = 'primary') DESC,
+      bi.updated_at DESC NULLS LAST,
+      bi.created_at DESC NULLS LAST,
+      bi.id ASC
+    LIMIT 1;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS flat_markdown_fill_folder_on_insert_trigger ON markdown_documents;
+CREATE TRIGGER flat_markdown_fill_folder_on_insert_trigger
+BEFORE INSERT ON markdown_documents
+FOR EACH ROW EXECUTE FUNCTION flat_markdown_fill_folder_on_insert();
 
 CREATE TABLE IF NOT EXISTS board_yjs_documents (
     name        TEXT PRIMARY KEY,

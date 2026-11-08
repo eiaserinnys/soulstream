@@ -2,13 +2,13 @@ import type { Extension, onAuthenticatePayload } from "@hocuspocus/server";
 import type { FastifyBaseLogger } from "fastify";
 
 import {
-  authenticateBoardYjsConnection,
-  type BoardYjsAuthConfig,
-} from "../board-yjs/board_yjs_auth.js";
+  authenticateSocketConnection,
+  type SocketAuthConfig,
+} from "../auth/socket_auth.js";
 import { getPageYjsDocumentName } from "./page_yjs_model.js";
 
 export function createPageYjsAuthExtension(
-  auth: BoardYjsAuthConfig,
+  auth: SocketAuthConfig,
   logger?: FastifyBaseLogger,
 ): Extension {
   return {
@@ -21,7 +21,7 @@ export function createPageYjsAuthExtension(
       ) {
         throw new Error("Page Yjs route pageId does not match document name");
       }
-      const result = await authenticateBoardYjsConnection({
+      const result = await authenticateSocketConnection({
         token: payload.token,
         requestHeaders: payload.requestHeaders,
         config: auth,

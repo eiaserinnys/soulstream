@@ -1,7 +1,6 @@
 import pino from "pino";
 import { vi } from "vitest";
 
-import type { BoardYjsHostClient } from "../../src/collaboration/board_yjs_host_client.js";
 import type { SessionDB } from "../../src/db/session_db.js";
 import type { EventPersistence } from "../../src/db/event_persistence.js";
 import { TaskCreation } from "../../src/task/task_creation.js";
@@ -47,20 +46,8 @@ export function makeTaskCreationHarness(options: {
     getBoardItems,
   } as unknown as SessionDB;
 
-  const upsertSessionBoardItem = vi.fn(async (
-    input: Parameters<BoardYjsHostClient["upsertSessionBoardItem"]>[0],
-  ) => {
-    projectedFolderId = input.folderId;
-    return {
-      id: `session:${input.sessionId}`,
-      folderId: input.folderId,
-      membershipKind: "primary" as const,
-      itemType: "session" as const,
-      itemId: input.sessionId,
-      x: input.x,
-      y: input.y,
-      metadata: {},
-    };
+  const moveSessionToFolder = vi.fn(async (_sessionId: string, folderId: string | null) => {
+    projectedFolderId = folderId;
   });
 
   const emitCatalogUpdated = vi.fn().mockResolvedValue(undefined);
@@ -76,7 +63,7 @@ export function makeTaskCreationHarness(options: {
     db,
     sessionMutations: { registerSession } as never,
     persistence: { enqueueMetadataEffect: appendMetadata } as unknown as EventPersistence,
-    boardYjsService: { upsertSessionBoardItem },
+    folderContentHost: { moveSessionToFolder },
     broadcaster,
     logger: options.logger ?? silentLogger,
     taskCreationHook: options.taskCreationHook,
@@ -98,7 +85,7 @@ export function makeTaskCreationHarness(options: {
     getPrimarySessionBoardItem,
     getBoardItemsByFolder,
     getBoardItems,
-    upsertSessionBoardItem,
+    moveSessionToFolder,
     emitCatalogUpdated,
     emitSessionCreated,
   };

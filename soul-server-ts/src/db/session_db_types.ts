@@ -99,6 +99,7 @@ export interface CatalogBoardItemRow {
 
 export interface MarkdownDocumentRow {
   id: string;
+  folderId: string | null;
   title: string;
   body: string;
   version: number;
@@ -190,16 +191,6 @@ export interface ListFolderItemsResult {
     scannedItems: number;
     truncated: boolean;
   } | null;
-}
-
-export interface BoardYjsSeed {
-  boardItems: CatalogBoardItemRow[];
-  markdownDocuments: MarkdownDocumentRow[];
-}
-
-export interface BoardYjsReplica {
-  boardItems: CatalogBoardItemRow[];
-  markdownDocuments: MarkdownDocumentRow[];
 }
 
 /** `session_get` 반환 행 (sessions 테이블 컬럼 매핑). */

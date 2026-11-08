@@ -4,7 +4,7 @@ import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
 import { UnknownModelPresetError, type ModelCatalog } from "../model_catalog.js";
-import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
+import type { FlatFolderContentHostClient } from "../catalog/flat_folder_content_host_client.js";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import type { PersistentResumeObserver } from "../context/persistent_jev_observer.js";
 import type { AcknowledgeReviewOutcome, SessionDB } from "../db/session_db.js";
@@ -114,7 +114,7 @@ export class TaskManager {
      */
     contextBuilder?: ExecutionContextBuilder,
     private readonly agentRegistry?: AgentRegistry,
-    private readonly boardYjsService?: Pick<BoardYjsHostClient, "upsertSessionBoardItem">,
+    private readonly folderContentHost?: Pick<FlatFolderContentHostClient, "moveSessionToFolder">,
     taskCreationHook?: TaskCreationHook,
     private readonly deliveryRuntimeV2Enabled = false,
     sessionRuntimeControl?: ClaudeSessionRuntimeControl,
@@ -175,7 +175,7 @@ export class TaskManager {
       db,
       sessionMutations: this.sessionMutations,
       persistence,
-      boardYjsService,
+      folderContentHost,
       broadcaster,
       logger,
       taskCreationHook,

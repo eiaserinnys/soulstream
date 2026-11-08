@@ -3,7 +3,7 @@ import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { startPostgresTestContainer } from "../../packages/db-schema/scripts/postgres-test-container.mjs";
 import { waitForPostgres } from "./persistent-session-settings-world.js";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { PersistentReportService } from "../src/session/persistent_report_service.js";
 import { createReportTimelineAppender } from "../src/session/report_timeline_publisher.js";
@@ -12,7 +12,7 @@ import type { ReportTimelineLine } from "../../packages/wire-schema/src/persiste
 describe("PAS report timeline on production PostgreSQL schema", () => {
   let sql: ReturnType<typeof postgres>;
   let stop: () => void;
-  let adapted: ReturnType<typeof createBoardYjsSqlAdapter>;
+  let adapted: ReturnType<typeof createFolderContentSqlAdapter>;
   let dbPort: ConstructorParameters<typeof CardControlPlaneService>[1];
   const hub = { publish: vi.fn() };
   const warn = vi.fn();
@@ -43,7 +43,7 @@ describe("PAS report timeline on production PostgreSQL schema", () => {
     await sql`INSERT INTO sessions(session_id,folder_id,node_id,agent_id,metadata) VALUES
       ('pas','timeline-folder','test-node','timeline-agent',${sql.json([{type:"persistent_session",value:{enabled:true}}])}),
       ('pas-order','timeline-folder','test-node','timeline-agent',${sql.json([{type:"persistent_session",value:{enabled:true}}])})`;
-    adapted = createBoardYjsSqlAdapter(sql as never);
+    adapted = createFolderContentSqlAdapter(sql as never);
     dbPort = { appendEventTx: async (tx: any, p: { sessionId: string; eventType: string; payload: string; searchableText: string; createdAt: Date; dedupeKey?: string | null }) => {
       const rows = await tx<{id:number}[]>`SELECT event_append(${p.sessionId},${p.eventType},${p.payload},${p.searchableText},${p.createdAt},${p.dedupeKey ?? null}) AS id`;
       return rows[0]!.id;

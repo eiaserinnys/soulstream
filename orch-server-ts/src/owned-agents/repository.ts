@@ -1,4 +1,4 @@
-import { BoardYjsSqlResolver, type BoardYjsQuerySql } from "../board-yjs/board_yjs_sql.js";
+import { FolderContentSqlResolver, type FolderContentQuerySql } from "../board/folder_content_sql.js";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 import { OwnedAgentError, type OwnedAgentRepository, type OwnedAgent, type AgentCredential, type CredentialRecord } from "./types.js";
 type Row = Record<string, unknown>;
@@ -8,7 +8,7 @@ const agent = (r: Row): OwnedAgent => ({ id: String(r.id), ownerEmail: String(r.
   enabled: Boolean(r.enabled), createdAt: date(r.created_at), updatedAt: date(r.updated_at) });
 const key = (r: Row): AgentCredential => ({ id: String(r.id), agentId: String(r.agent_id), createdAt: date(r.created_at),
   lastUsedAt: nullableDate(r.last_used_at), revokedAt: nullableDate(r.revoked_at) });
-async function credential(sql: BoardYjsQuerySql, hash: string): Promise<CredentialRecord | null> {
+async function credential(sql: FolderContentQuerySql, hash: string): Promise<CredentialRecord | null> {
   const rows = await sql`SELECT c.id,c.agent_id,c.created_at,c.last_used_at,c.revoked_at,
     a.owner_email,a.name,a.enabled,a.created_at AS agent_created_at,a.updated_at AS agent_updated_at
     FROM external_agent_credentials c JOIN external_agents a ON a.id=c.agent_id WHERE c.token_hash=${hash}`;
@@ -16,8 +16,8 @@ async function credential(sql: BoardYjsQuerySql, hash: string): Promise<Credenti
   return r ? { ...key(r), agent: agent({ ...r, id: r.agent_id, created_at: r.agent_created_at, updated_at: r.agent_updated_at }) } : null;
 }
 export class SqlOwnedAgentRepository implements OwnedAgentRepository {
-  private readonly resolver: BoardYjsSqlResolver;
-  constructor(resolver: LiveDbSqlResolver) { this.resolver = new BoardYjsSqlResolver(resolver); }
+  private readonly resolver: FolderContentSqlResolver;
+  constructor(resolver: LiveDbSqlResolver) { this.resolver = new FolderContentSqlResolver(resolver); }
   async list(email: string) { const sql = await this.resolver.resolveSql();
     return (await sql`SELECT * FROM external_agents WHERE owner_email=${email} ORDER BY created_at,id`).map(agent); }
   async find(id: string) { const sql = await this.resolver.resolveSql();

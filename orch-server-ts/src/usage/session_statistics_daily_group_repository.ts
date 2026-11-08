@@ -1,4 +1,4 @@
-import type { BoardYjsQuerySql, BoardYjsSql } from "../board-yjs/board_yjs_sql.js";
+import type { FolderContentQuerySql, FolderContentSql } from "../board/folder_content_sql.js";
 import { createSessionStatisticsDailyGroups, dailyFolderPair } from "./session_statistics_daily_groups.js";
 import type { DailyBatch } from "./session_statistics_daily_repository.js";
 import type { DailySessionState } from "./session_statistics_daily_state.js";
@@ -6,7 +6,7 @@ import type { SessionStatisticsReadRequest } from "./session_statistics_types.js
 
 /** Current folder/card membership invalidates only the affected dates. */
 export class SessionStatisticsDailyGroupRepository {
-  constructor(private readonly sql: BoardYjsSql) {}
+  constructor(private readonly sql: FolderContentSql) {}
 
   async staleDays(since: string, before: string, version: number): Promise<string[]> {
     const rows = await this.sql<readonly { day: string }[]>`
@@ -96,7 +96,7 @@ export class SessionStatisticsDailyGroupRepository {
   }
 }
 
-export async function saveDailyGroups(sql: BoardYjsQuerySql, day: string, version: number,
+export async function saveDailyGroups(sql: FolderContentQuerySql, day: string, version: number,
   sessions: readonly DailySessionState[]): Promise<void> {
   await sql`DELETE FROM session_statistics_daily_groups WHERE day = ${day}::date AND aggregation_version = ${version}`;
   const groups = createSessionStatisticsDailyGroups(sessions);

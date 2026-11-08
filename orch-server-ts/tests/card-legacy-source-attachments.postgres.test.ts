@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { prepareCardWorkSchema } from "./card-work-postgres-fixture.js";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { collectCardAttachmentRefs } from "../src/cards/card_attachment_refs.js";
 import {
@@ -97,7 +97,7 @@ describe("legacy card attachment location parsing", () => {
 
 describe("legacy card attachment references against PostgreSQL", () => {
   let h: PagePostgresHarness;
-  let sql: ReturnType<typeof createBoardYjsSqlAdapter>;
+  let sql: ReturnType<typeof createFolderContentSqlAdapter>;
   let cards: CardControlPlaneService;
   let sequence = 0;
   const folderId = "legacy-source-folder";
@@ -111,7 +111,7 @@ describe("legacy card attachment references against PostgreSQL", () => {
     await h.sql`INSERT INTO folders(id,name) VALUES (${folderId},'레거시 첨부')`;
     await h.sql`INSERT INTO sessions(session_id,folder_id,status,agent_id,node_id,model_preset)
       VALUES ('legacy-session',${folderId},'running','roselin','eiaserinnys','codex-6-luna')`;
-    sql = createBoardYjsSqlAdapter(h.liveSql);
+    sql = createFolderContentSqlAdapter(h.liveSql);
     const db = {
       appendEventTx: async (tx: RepositorySql, p: {
         sessionId: string; eventType: string; payload: string; searchableText: string; createdAt: Date; dedupeKey?: string | null;

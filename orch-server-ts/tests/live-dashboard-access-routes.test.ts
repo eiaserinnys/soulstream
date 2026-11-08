@@ -7,7 +7,6 @@ import {
   parseOrchServerConfig,
   type AuthJwtHelper,
   type BoardItemRouteProvider,
-  type BoardYjsHostProxyRouteOptions,
   type DashboardUserRecord,
   type DashboardUserRepository,
   type FolderRouteProvider,
@@ -156,10 +155,6 @@ function createRouteApp() {
     jwt: createJwt(),
     repository: createUserRepository(),
   });
-  const hostProxy = {
-    registry: {},
-    httpClient: vi.fn(async () => ({ statusCode: 200, body: {} })),
-  } as unknown as BoardYjsHostProxyRouteOptions;
   const app = createApp({
     config,
     authRoutes: {
@@ -184,12 +179,12 @@ function createRouteApp() {
     boardItemRoutes: {
       provider: createBoardItemProvider(),
       accessProvider,
-      hostProxy,
+      host: {} as never,
     },
     markdownDocumentRoutes: {
       provider: createMarkdownProvider(),
       accessProvider,
-      hostProxy,
+      serviceProvider: () => ({} as never),
     },
 
   });
@@ -224,6 +219,7 @@ function createBoardItemProvider(): BoardItemRouteProvider {
 function createMarkdownProvider(): MarkdownDocumentRouteProvider {
   return {
     listFolders: vi.fn(async () => folders),
+    listMarkdownDocuments: vi.fn(async () => ({ documents: [], nextCursor: null })),
 
     getMarkdownDocument: vi.fn(async (documentId) => {
       if (documentId === "doc-child") return { id: "doc-child", folderId: "folder-a-child" };

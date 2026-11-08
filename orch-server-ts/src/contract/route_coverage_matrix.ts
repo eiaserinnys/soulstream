@@ -14,8 +14,8 @@ import { workerAttachmentRouteAuthRequirements } from "../attachments/worker_att
 import { authRouteAuthRequirements } from "../auth/auth_routes.js";
 import { boardAssetRouteAuthRequirements } from "../board/board_asset_routes.js";
 import { boardItemRouteAuthRequirements } from "../board/board_item_routes.js";
-import { boardYjsHostProxyRouteAuthRequirements } from "../board/board_yjs_host_proxy.js";
-import { boardYjsRouteAuthRequirements } from "../board-yjs/board_yjs_route.js";
+import { flatFolderContentRouteAuthRequirements } from "../board/flat_folder_content_routes.js";
+import { sessionConversationRouteAuthRequirements } from "../session/session_conversation_routes.js";
 import { markdownDocumentRouteAuthRequirements } from "../board/markdown_document_routes.js";
 import { cogitoRouteAuthRequirements } from "../cogito/cogito_routes.js";
 import { executeProxyRouteAuthRequirements } from "../execute/execute_proxy_routes.js";
@@ -65,8 +65,7 @@ export const routeCoverageOwners = [
   { owner: "auth", authRequirements: authRouteAuthRequirements },
   { owner: "board.assets", authRequirements: boardAssetRouteAuthRequirements },
   { owner: "board.items", authRequirements: boardItemRouteAuthRequirements },
-  { owner: "board.yjs-host", authRequirements: boardYjsHostProxyRouteAuthRequirements },
-  { owner: "board.yjs", authRequirements: boardYjsRouteAuthRequirements },
+  { owner: "folder.content", authRequirements: flatFolderContentRouteAuthRequirements },
   { owner: "cogito", authRequirements: cogitoRouteAuthRequirements },
   { owner: "execute", authRequirements: executeProxyRouteAuthRequirements },
   { owner: "llm.ephemeral", authRequirements: ephemeralLlmRouteAuthRequirements },
@@ -99,6 +98,7 @@ export const routeCoverageOwners = [
     owner: "session.history",
     authRequirements: {
       ...sessionHistoryRouteAuthRequirements,
+      ...sessionConversationRouteAuthRequirements,
       ...sessionEventAttachmentRouteAuthRequirements,
     },
   },
@@ -147,7 +147,6 @@ export const tsOnlyRouteKeys = [
   "POST /api/card-orchestration/decision/authorize",
   "POST /api/card-orchestration/worker/authorize",
   "WEBSOCKET /ws/node/control",
-  "WEBSOCKET /yjs/{folderId}",
   "GET /api/nodes/{node_id}/model-presets",
   "GET /api/nodes/{node_id}/claude-auth/accounts",
   "PATCH /api/nodes/{node_id}/claude-auth/accounts/{id}",

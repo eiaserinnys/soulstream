@@ -9,7 +9,7 @@
 import Fastify from "fastify";
 import fs from "node:fs";
 import path from "node:path";
-import { createBoardYjsSqlAdapter } from "../../../orch-server-ts/src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../../../orch-server-ts/src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../../../orch-server-ts/src/cards/card_control_plane_service.js";
 import { registerMcpHostRoutes } from "../../../orch-server-ts/src/mcp/mcp_host_routes.js";
 
@@ -101,7 +101,7 @@ function createMockSql() {
     if (text.includes("board_yjs_catalog_cache")) {
       return Promise.resolve([]);
     }
-    if (text.includes("scoped AS") && text.includes("FROM board_items bi")) {
+    if (text.includes("scoped AS") && text.includes("FROM flat_items bi")) {
       const itemTypes = values.find((value): value is string[] =>
         Array.isArray(value) && value.every((item) => typeof item === "string")
           && value.some((item) => ["session", "markdown", "asset"].includes(item))
@@ -305,13 +305,13 @@ function makeRuntime(configPath: string, agentRegistry: AgentRegistry): McpRunti
   smokeSql = sql;
   smokeProjection = configureTestBoardProjectionReadHost(db, sql);
   db.configureFolderHost(
-    new FolderControlPlaneService(sql as never) as unknown as FolderHostClient,
+    new FolderControlPlaneService(sql as never, () => smokeProjection.getBoardItems()) as unknown as FolderHostClient,
   );
   const broadcaster = {
     emitCatalogUpdated: vi.fn().mockResolvedValue(undefined),
     emitSessionDeleted: vi.fn().mockResolvedValue(undefined),
   } as unknown as SessionBroadcaster;
-  const catalogService = new CatalogService(db, broadcaster, undefined);
+  const catalogService = new CatalogService(db, broadcaster, {} as never);
   const taskManager = {
     listTasks: () => [],
     getTask: () => undefined,
@@ -412,13 +412,13 @@ describe("MCP SDK client smoke", () => {
     const runtime = makeRuntime(configPath, agentRegistry);
     smokeRuntime = runtime;
     orch = Fastify();
-    const cards = new CardControlPlaneService(createBoardYjsSqlAdapter(smokeSql as never), { appendEventTx: async () => 1 }, { emitFolderUpdated: async () => {}, emitCardUpdated: async () => {} });
+    const cards = new CardControlPlaneService(createFolderContentSqlAdapter(smokeSql as never), { appendEventTx: async () => 1 }, { emitFolderUpdated: async () => {}, emitCardUpdated: async () => {} });
     registerMcpHostRoutes(orch, { authBearerToken: "smoke-token", folders: {
-      authBearerToken: "smoke-token", serviceProvider: async () => new FolderControlPlaneService(smokeSql as never),
+      authBearerToken: "smoke-token", serviceProvider: async () => new FolderControlPlaneService(smokeSql as never, () => smokeProjection.getBoardItems()),
       cardServiceProvider: async () => cards, identity: { create: vi.fn(), mutateFromFolder: renameFolder },
-    }, cards: undefined as never, board: { host: { authBearerToken: "smoke-token", service: {} as never, projectionHost: smokeProjection as never },
+    }, cards: undefined as never, board: { host: { reads: smokeProjection } as never,
       getSession: async () => null, listAgentProfiles: async () => ({ "codex-default": { name: "Codex" } }),
-      broadcaster: { append: () => {} } as never,
+      broadcaster: { append: () => {} } as never, catalogFolderProvider: {} as never,
     } });
     smokeOrchConfig = { baseUrl: await orch.listen({ host: "127.0.0.1", port: 0 }), headers: { authorization: "Bearer smoke-token" } };
     server = await buildInternalMcpServer({

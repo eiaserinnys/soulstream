@@ -31,7 +31,7 @@ describe("TaskCreation durable ACK boundary", () => {
       order.push("metadata");
       return 1;
     });
-    h.upsertSessionBoardItem.mockImplementation(async () => {
+    h.moveSessionToFolder.mockImplementation(async () => {
       order.push("folder");
       return {} as never;
     });
@@ -52,7 +52,7 @@ describe("TaskCreation durable ACK boundary", () => {
 
     expect(h.tasks.get(task.agentSessionId)).toBe(task);
     expect(order).toEqual(["register", "metadata", "binding-intent"]);
-    expect(h.upsertSessionBoardItem).not.toHaveBeenCalled();
+    expect(h.moveSessionToFolder).not.toHaveBeenCalled();
     expect(h.emitSessionCreated).not.toHaveBeenCalled();
     await expect(h.creation.createTask({
       agentSessionId: "sess-durable-ack",

@@ -1,91 +1,45 @@
-import type { FastifyInstance, FastifyReply } from "fastify";
-import { randomUUID } from "node:crypto";
-
-import { MarkdownDocumentVersionConflictError } from "../board-yjs/markdown_document_version.js";
-import {
-  resolveLocalBoardYjsService,
-  sendBoardYjsHostProxyError,
-  type BoardYjsHostProxyRouteOptions,
-} from "./board_yjs_host_proxy.js";
-import type {
-  MarkdownDocumentRecord,
-} from "./markdown_document_routes.js";
+import type { FastifyReply } from "fastify";
+import type { MarkdownDocumentService } from "./markdown_document_service.js";
+import { MarkdownDocumentVersionConflictError } from "./markdown_document_version.js";
+import type { MarkdownDocumentRecord } from "./markdown_document_routes.js";
 
 export async function createLocalMarkdownDocument(
-  app: FastifyInstance,
-  reply: FastifyReply,
-  hostProxy: BoardYjsHostProxyRouteOptions,
-  input: {
-    folderId: string;
-    title: string;
-    body: string;
-    x?: number;
-    y?: number;
-  },
+  reply: FastifyReply, service: MarkdownDocumentService,
+  input: { folderId: string; title: string; body: string; documentId?: string; x?: number; y?: number },
 ): Promise<FastifyReply> {
-  try {
-    const created = await resolveLocalBoardYjsService(app, hostProxy).createMarkdownDocument({
-      folderId: input.folderId,
-      title: input.title,
-      body: input.body,
-      ...(input.x !== undefined && input.y !== undefined ? { x: input.x, y: input.y } : {}),
-      documentId: randomUUID(),
-    });
-    return reply.code(201).send(created);
-  } catch (error) {
-    return sendBoardYjsHostProxyError(reply, error);
-  }
+  try { return reply.code(201).send(await service.create(input)); }
+  catch (error) { return sendError(reply, error); }
 }
 
 export async function updateLocalMarkdownDocument(
-  app: FastifyInstance,
-  reply: FastifyReply,
-  hostProxy: BoardYjsHostProxyRouteOptions,
-  existing: MarkdownDocumentRecord,
-  documentId: string,
+  reply: FastifyReply, service: MarkdownDocumentService, documentId: string,
   fields: { expectedVersion: number; title?: string; body?: string },
 ): Promise<FastifyReply> {
   try {
-    const updated = await resolveLocalBoardYjsService(app, hostProxy)
-      .updateMarkdownDocument(documentContainer(existing), documentId, fields);
-    if (updated === null) return reply.code(404).send({ detail: "Document not found" });
-    return reply.send(updated);
+    const result = await service.update(documentId, fields);
+    return result === null ? reply.code(404).send({ detail: "Document not found" }) : reply.send(result);
   } catch (error) {
-    if (error instanceof MarkdownDocumentVersionConflictError) {
-      return reply.code(409).send({
-        detail: "Markdown document version conflict",
-        expectedVersion: error.expectedVersion,
-        actualVersion: error.actualVersion,
-      });
-    }
-    return sendBoardYjsHostProxyError(reply, error);
+    if (error instanceof MarkdownDocumentVersionConflictError) return reply.code(409).send({
+      detail: "Markdown document version conflict", expectedVersion: error.expectedVersion, actualVersion: error.actualVersion,
+    });
+    return sendError(reply, error);
   }
 }
 
 export async function deleteLocalMarkdownDocument(
-  app: FastifyInstance,
-  reply: FastifyReply,
-  hostProxy: BoardYjsHostProxyRouteOptions,
-  existing: MarkdownDocumentRecord,
-  documentId: string,
+  reply: FastifyReply, service: MarkdownDocumentService, documentId: string,
 ): Promise<FastifyReply> {
-  try {
-    await resolveLocalBoardYjsService(app, hostProxy)
-      .deleteMarkdownDocument(documentContainer(existing), documentId);
-    return reply.code(204).send();
-  } catch (error) {
-    return sendBoardYjsHostProxyError(reply, error);
-  }
+  try { await service.delete(documentId); return reply.code(204).send(); }
+  catch (error) { return sendError(reply, error); }
 }
 
 export function documentFolderId(document: MarkdownDocumentRecord): string | null {
   return stringOrNull(document.folderId) ?? stringOrNull(document.folder_id);
 }
 
-function documentContainer(document: MarkdownDocumentRecord): { folderId: string } {
-  const folderId = documentFolderId(document);
-  if (folderId === null) throw new Error("Markdown document folder not found");
-  return { folderId };
+function sendError(reply: FastifyReply, error: unknown): FastifyReply {
+  const status = typeof error === "object" && error !== null && "statusCode" in error && typeof error.statusCode === "number" ? error.statusCode : 500;
+  return reply.code(status).send({ detail: error instanceof Error ? error.message : "Document operation failed" });
 }
 
 function stringOrNull(value: unknown): string | null {

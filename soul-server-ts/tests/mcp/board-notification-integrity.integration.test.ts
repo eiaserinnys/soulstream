@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createBoardRoundtripHarness } from "./board-roundtrip-harness.js";
 
-// Reuse the SDK -> worker forward -> orch host -> disposable PG/Y.Doc roundtrip.
+// Reuse the SDK -> worker forward -> orch host -> disposable PostgreSQL roundtrip.
 const source = "00000000-0000-4000-8000-000000000001";
 const target = "00000000-0000-4000-8000-000000000002";
 const context = { callerSessionId: "header-session" };
@@ -38,7 +38,7 @@ describe("public board notification integrity", () => {
     expect(deltas()[0]!.board_items_delta[item.id]).toMatchObject({ folderId: source });
   });
 
-  it("publishes descendants and the root board item once through move_sessions_to_folder", async () => {
+  it("publishes descendants once through move_sessions_to_folder", async () => {
     await h.seed();
     await h.h.sql`INSERT INTO sessions(session_id,node_id,status,agent_id,display_name,folder_id,caller_session_id)
       VALUES('child','test-node','running','roselin','자식',${source},'header-session'),
@@ -48,30 +48,29 @@ describe("public board notification integrity", () => {
     await assertFolders(deltas()[0]!);
     expect(Object.keys(deltas()[0]!.sessions_delta).sort()).toEqual(["child", "grandchild", "header-session"]);
     for (const assignment of Object.values(deltas()[0]!.sessions_delta)) expect(assignment.folderId).toBe(target);
-    expect(deltas()[0]!.board_items_delta["session:header-session"]).toMatchObject({ folderId: target });
+    expect(deltas()[0]!.board_items_delta).toEqual({});
     h.events.length = 0;
     await call("move_sessions_to_folder", { session_ids: ["header-session"], folder_id: target });
     expect(deltas()).toHaveLength(0);
   });
 
-  it("publishes one notification per committed root and zero for no changes", async () => {
+  it("publishes one notification for the committed batch and zero for no changes", async () => {
     await h.seed();
     await call("move_sessions_to_folder", { session_ids: ["header-session", "argument-session"], folder_id: target });
-    expect(deltas()).toHaveLength(2);
-    expect(deltas().map(event => Object.keys(event.board_items_delta))).toEqual([
-      ["session:header-session"], ["session:argument-session"],
-    ]);
+    expect(deltas()).toHaveLength(1);
+    expect(Object.keys(deltas()[0]!.sessions_delta).sort()).toEqual(["argument-session", "header-session"]);
+    expect(deltas()[0]!.board_items_delta).toEqual({});
     h.events.length = 0;
     await call("move_sessions_to_folder", { session_ids: ["header-session", "argument-session"], folder_id: target });
     await call("move_sessions_to_folder", { session_ids: [], folder_id: target });
     expect(deltas()).toHaveLength(0);
   });
 
-  it.each(["tree", "child-only", "primary-only"])("commits a real null detach once and skips repeated writes and notifications (%s)", async state => {
+  it.each(["tree", "child-only"])("commits a real null detach once and skips repeated writes and notifications (%s)", async state => {
     await h.seed();
     const root = state === "child-only" ? "generated" : "header-session";
     await h.h.sql`INSERT INTO sessions(session_id,node_id,status,agent_id,folder_id,caller_session_id)
-      VALUES('child','test-node','running','roselin',${state === "primary-only" ? null : source},${root})`;
+      VALUES('child','test-node','running','roselin',${source},${root})`;
     if (state !== "tree") await h.h.sql`UPDATE sessions SET folder_id=NULL WHERE session_id=${root}`;
     h.sessionMoveCommit.mockClear();
     const args = { session_ids: [root] };
@@ -83,7 +82,6 @@ describe("public board notification integrity", () => {
     for (const assignment of Object.values(deltas()[0]!.sessions_delta)) expect(assignment.folderId).toBeNull();
     const assignments = await h.h.sql`SELECT session_id,folder_id,xmin::text FROM sessions WHERE session_id IN (${root},'child') ORDER BY session_id`;
     expect(assignments.every(row => row.folder_id === null)).toBe(true);
-    expect(await h.h.sql`SELECT id FROM board_items WHERE item_type='session' AND membership_kind='primary' AND item_id IN (${root},'child')`).toEqual([]);
     const documents = await h.h.sql`SELECT name,revision FROM board_yjs_documents ORDER BY name`;
     h.events.length = 0;
     h.sessionMoveCommit.mockClear();

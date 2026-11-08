@@ -1,4 +1,4 @@
-import type { CatalogBoardItemRow } from "../board-yjs/board_yjs_types.js";
+import type { CatalogBoardItemRow } from "../board/folder_content_types.js";
 import type { FolderRow } from "./board_catalog_types.js";
 import type { SessionAssignmentRecord } from "../folders/folder_routes.js";
 

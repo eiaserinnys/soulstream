@@ -34,6 +34,10 @@ export async function inspectSchemaShape(sql) {
     sql`
       SELECT
         (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('sessions')) AS sessions,
+        to_regclass('idx_markdown_documents_folder_id') IS NOT NULL AS markdown_folder_index,
+        EXISTS (SELECT 1 FROM pg_trigger WHERE tgrelid = to_regclass('sessions')
+          AND tgname = 'board_assert_session_ydoc_refs_removed_trigger' AND NOT tgisinternal)
+          AS legacy_session_assertion,
         (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('folders')) AS folders,
         (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('checklist_sections')) AS checklist_sections,
         (SELECT relkind::text FROM pg_class WHERE oid = to_regclass('checklist_items')) AS checklist_items,
@@ -59,6 +63,7 @@ export async function inspectSchemaShape(sql) {
       WHERE table_schema = current_schema()
         AND (
           (table_name = 'cards' AND column_name IN ('folder_id', 'request'))
+          OR (table_name = 'markdown_documents' AND column_name = 'folder_id')
           OR (table_name = 'sessions' AND column_name = 'card_id')
           OR (table_name = 'task_items'
             AND column_name IN ('parent_id', 'section_id'))
@@ -110,6 +115,9 @@ export async function inspectSchemaShape(sql) {
     cardQuestions: relations[0]?.card_questions ?? null,
     cardsHaveFolderRequest: ['folder_id','request'].every(name=>columns.some(row=>row.table_name==='cards' && row.column_name===name)),
     sessionsHaveCard: columns.some(row=>row.table_name==='sessions' && row.column_name==='card_id'),
+    markdownDocumentsHaveFolder: columns.some(row => row.table_name === 'markdown_documents' && row.column_name === 'folder_id'),
+    markdownFolderIndex: relations[0]?.markdown_folder_index === true,
+    legacySessionAssertion: relations[0]?.legacy_session_assertion === true,
     tasks: relations[0]?.tasks ?? null,
     taskSections: relations[0]?.task_sections ?? null,
     runbooks: relations[0]?.runbooks ?? null,
@@ -280,6 +288,10 @@ export async function runMigrations(
       }
       if (initial.state !== "current") {
         throw new Error(`migration ledger is complete but schema state is ${initial.state}`);
+      }
+      if (!initial.shape.markdownDocumentsHaveFolder || !initial.shape.markdownFolderIndex
+        || initial.shape.legacySessionAssertion) {
+        throw new Error("flat folder markdown schema verification failed");
       }
       return planReport(mode, initial);
     }

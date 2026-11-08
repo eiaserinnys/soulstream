@@ -4,14 +4,14 @@ import type { FastifyInstance } from "fastify";
 
 import {
   authenticateDashboardHttpRequest,
-  type BoardYjsAuthConfig,
-} from "../collaboration/board_yjs_auth.js";
+  type DashboardHttpAuthConfig,
+} from "../context/dashboard_http_auth.js";
 import { MarkdownDocumentVersionConflictError } from "../db/markdown_document_version.js";
 import type { CatalogService } from "./catalog_service.js";
 
 export interface MarkdownDocumentHttpRouteConfig {
   service: CatalogService;
-  auth: BoardYjsAuthConfig;
+  auth: DashboardHttpAuthConfig;
 }
 
 interface MarkdownDocumentCreateBody {
@@ -112,7 +112,7 @@ export function registerMarkdownDocumentHttpRoutes(
 
 async function authorize(
   requestHeaders: IncomingHttpHeaders,
-  config: BoardYjsAuthConfig,
+  config: DashboardHttpAuthConfig,
 ): Promise<ReturnType<typeof errorDetail> | null> {
   try {
     await authenticateDashboardHttpRequest({ requestHeaders, config });

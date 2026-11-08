@@ -8,7 +8,7 @@ export type RouteFamily =
   | "public_config"
   | "auth"
   | "control_plane"
-  | "board_yjs_proxy"
+  | "folder_content"
   | "page_yjs"
   | "folder"
   | "dashboard_static"
@@ -467,7 +467,7 @@ export function classifyRouteFamily(path: string): RouteFamily {
   if (isControlPlanePath(path)) return "control_plane";
   if (path.startsWith("/api/auth/") || path.startsWith("/api/oauth/") || path.startsWith("/.well-known/")) return "auth";
   if (path.includes("/claude-auth/") || path.includes("/provider-usage")) return "auth";
-  if (path.startsWith("/api/board-yjs/")) return "board_yjs_proxy";
+  if (path.startsWith("/internal/folder-content/")) return "folder_content";
   if (
     path === "/api/pages" ||
     path.startsWith("/api/pages/") ||

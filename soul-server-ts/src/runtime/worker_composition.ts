@@ -3,7 +3,7 @@ import { AgentConfigService } from "../agent_config_service.js";
 import { FileAttachmentStore } from "../attachments/file_manager.js";
 import { ProviderUsageService } from "../auth/provider_usage.js";
 import { CatalogService } from "../catalog/catalog_service.js";
-import { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
+import { FlatFolderContentHostClient } from "../catalog/flat_folder_content_host_client.js";
 import { DEFAULT_COGITO_CONTEXT_LIMITS } from "../context/cogito_context.js";
 import { ExecutionContextBuilder } from "../context/context_builder.js";
 import { createAssignedCardSnapshotRecorder } from "../context/assigned_card_snapshot_recorder.js";
@@ -155,11 +155,11 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     dashboardAuthEnabled: Boolean(env.GOOGLE_CLIENT_ID),
     jwtSecret: env.JWT_SECRET,
   };
-  const boardYjsService = new BoardYjsHostClient(orchHostClientDeps);
-  db.configureBoardProjectionHost(boardYjsService);
+  const folderContentHost = new FlatFolderContentHostClient(orchHostClientDeps);
+  db.configureFolderContentHost(folderContentHost);
   logger.info(
     { nodeId: env.SOULSTREAM_NODE_ID },
-    "Board Yjs mutations and projections delegated to orchestrator",
+    "Folder content delegated to orchestrator",
   );
   const sessionPageBindingRepository = db.sessionPageBindings();
   const pageHost = new PageYjsHostClient(orchHostClientDeps);
@@ -168,7 +168,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     nodeId: env.SOULSTREAM_NODE_ID,
     repository: sessionPageBindingRepository,
     pageHost,
-    legacyProjection: new SessionLegacyProjection(db, boardYjsService),
+    legacyProjection: new SessionLegacyProjection(db, folderContentHost),
     logger,
   });
   sessionPageBindingService.start();
@@ -250,7 +250,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     persistence,
     contextBuilder,
     agentRegistry,
-    boardYjsService,
+    folderContentHost,
     sessionPageBindingService,
     env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
     claudeSessionClientRegistry,
@@ -350,7 +350,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
   const catalogService = new CatalogService(
     db,
     broadcaster,
-    boardYjsService,
+    folderContentHost,
   );
   const llmAdapters = {
     ...(env.LLM_OPENAI_API_KEY ? { openai: new OpenAIAdapter(env.LLM_OPENAI_API_KEY) } : {}),

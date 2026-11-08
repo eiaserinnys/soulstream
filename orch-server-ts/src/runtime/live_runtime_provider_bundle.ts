@@ -15,8 +15,8 @@ import { LiveProviderFactoryError } from "./live_provider_factory_inventory.js";
 import type { LiveAttachmentInputAdmission } from "../attachments/live_attachment_input_admission.js";
 
 export type LiveRuntimeProviderBundle = {
-  readonly boardYjsHostProxyRoutes:
-    OrchestratorRuntimeServices["routeOptions"]["boardYjsHostProxyRoutes"];
+  readonly flatFolderContentRoutes:
+    NonNullable<OrchestratorRuntimeServices["routeOptions"]["flatFolderContentRoutes"]>;
   readonly nodeSnapshotRoutes:
     OrchestratorRuntimeServices["routeOptions"]["nodeSnapshotRoutes"];
   readonly nodeWsRoute: OrchestratorRuntimeServices["routeOptions"]["nodeWsRoute"];
@@ -55,7 +55,7 @@ export function buildLiveRuntimeProviderBundle(
     "runtime.sessionHistoryProvider",
   );
   return {
-    boardYjsHostProxyRoutes: services.routeOptions.boardYjsHostProxyRoutes,
+    flatFolderContentRoutes: requireRuntimeRouteOption(services.routeOptions.flatFolderContentRoutes, "folder.content", "runtime.flatFolderContentRoutes"),
     nodeSnapshotRoutes: services.routeOptions.nodeSnapshotRoutes,
     nodeWsRoute: services.routeOptions.nodeWsRoute,
     sessionActionCommandRoutes: {

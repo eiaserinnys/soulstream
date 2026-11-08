@@ -11,7 +11,7 @@ import type {
   PageListDto,
 } from "@soulstream/page-model";
 
-import type { BoardYjsAuthConfig } from "../board-yjs/board_yjs_auth.js";
+import type { SocketAuthConfig } from "../auth/socket_auth.js";
 import {
   PageMutationCore,
   type CreatePageMutationInput,
@@ -85,7 +85,7 @@ export interface PageYjsServiceConfig {
   createOperationId?: () => string;
   createPageId?: () => string;
   now?: () => Date;
-  auth?: BoardYjsAuthConfig;
+  auth?: SocketAuthConfig;
   logger?: FastifyBaseLogger;
   onPageUpdated?: PageUpdatedObserver;
   mutateFolderIdentity?: (
