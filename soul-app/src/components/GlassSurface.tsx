@@ -134,7 +134,8 @@ export interface GlassClusterContainerProps {
  * 떠 있는 유리 클러스터의 컨테이너.
  *
  * iOS 26에서는 인접한 GlassView를 GlassContainer로 묶어 하나의 유리 덩어리로 합쳐 그린다.
- * 네이티브 합성이 불가능한 환경(웹, Reduce Transparency, 구형 OS)에서는 동일 레이아웃의 View로 대체한다.
+ * 네이티브 합성이 불가능한 환경(웹, Reduce Transparency, 구형 OS)에서는 같은 style과
+ * `spacing`만큼의 레이아웃 gap을 쓰는 View로 대체한다.
  */
 export function GlassClusterContainer({
   children,
@@ -145,15 +146,16 @@ export function GlassClusterContainer({
 }: GlassClusterContainerProps) {
   const reduceTransparency = useReduceTransparency();
   const GlassContainer = loadGlassEffect()?.GlassContainer;
+  const resolvedStyle = spacing !== undefined ? [{ gap: spacing }, style] : style;
   if (!reduceTransparency && canUseNativeGlass() && GlassContainer) {
     return (
-      <GlassContainer spacing={spacing} style={style} testID={testID} pointerEvents={pointerEvents}>
+      <GlassContainer spacing={spacing} style={resolvedStyle} testID={testID} pointerEvents={pointerEvents}>
         {children}
       </GlassContainer>
     );
   }
   return (
-    <View testID={testID} style={style} pointerEvents={pointerEvents}>
+    <View testID={testID} style={resolvedStyle} pointerEvents={pointerEvents}>
       {children}
     </View>
   );

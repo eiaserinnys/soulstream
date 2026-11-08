@@ -13,6 +13,7 @@
 - 배지·점 색상은 배경 `#d8ebff`, 글자·점 `rgb(0, 43, 102)`를 쓰며 배지 글자 대비도
   AA 4.5:1 이상이다.
 - 캡슐 크기 계약(폭 48)과 24pt 곡률, 외곽선 0을 유지한다.
+- context·nav 캡슐 사이에는 compact 4px, 기본 8px의 레이아웃 간격이 남는다.
 - 떠 있는 새 대화 합성기는 바깥 유리 한 겹만 쓰고, 내부 입력 박스는 backdrop filter와
   경계선을 중복해 만들지 않는다.
 - 불변: 캡슐이 아닌 chrome(하단 탭바 유리)은 다크 테마에서 계속 어두운 유리를 쓰고
@@ -101,6 +102,25 @@ MEASURE_JS = r"""
     } : null,
     icons: iconLeaves.map((element) => getComputedStyle(element).color),
     fullFrameBackgrounds: fullFrame,
+  };
+}
+"""
+
+CLUSTER_GAP_JS = r"""
+([contextTestId, navTestId]) => {
+  const round = (value) => Math.round(value * 100) / 100;
+  const box = (testId) => {
+    const element = document.querySelector(`[data-testid="${testId}"]`);
+    if (!element) return null;
+    const r = element.getBoundingClientRect();
+    return { top: round(r.top), bottom: round(r.bottom), height: round(r.height) };
+  };
+  const context = box(contextTestId);
+  const nav = box(navTestId);
+  return {
+    context,
+    nav,
+    gap: context && nav ? round(nav.top - context.bottom) : null,
   };
 }
 """
@@ -311,6 +331,10 @@ def capture_capsule_frame(browser: Browser, base: str, out: Path, frame_id: str,
     page, errors = open_page(context, base, url)
     settle(page, capsule_test_id)
     metrics = page.evaluate(MEASURE_JS, capsule_test_id)
+    cluster_gap = None
+    if frame_id in ("outer-portrait", "outer-landscape"):
+        cluster_gap = page.evaluate(
+            CLUSTER_GAP_JS, ["duo-rail-context-capsule", "phone-rail-tab-cluster"])
     screenshot = shot(page, out, f"capsule-{frame_id}-{theme}", width, height)
     page.close()
     context.close()
@@ -331,6 +355,13 @@ def capture_capsule_frame(browser: Browser, base: str, out: Path, frame_id: str,
     checks.check(f"{prefix} backdrop blur", "blur(" in (capsule["backdropFilter"] or ""),
                  capsule["backdropFilter"])
     checks.check(f"{prefix} 외곽선 0", capsule["borderWidth"] == "0px", capsule["borderWidth"])
+
+    if cluster_gap is not None:
+        expected_gap = 4 if width > height else 8
+        checks.check(f"{prefix} 캡슐 사이 레이아웃 간격 {expected_gap}px",
+                     cluster_gap["gap"] is not None
+                     and abs(cluster_gap["gap"] - expected_gap) <= 0.5,
+                     cluster_gap)
 
     expected_unselected = f"rgb({UNSELECTED_ICON_RGB[theme][0]}, {UNSELECTED_ICON_RGB[theme][1]}, {UNSELECTED_ICON_RGB[theme][2]})"
     expected_selected = f"rgb({SELECTED_ICON_RGB[0]}, {SELECTED_ICON_RGB[1]}, {SELECTED_ICON_RGB[2]})"
@@ -362,6 +393,7 @@ def capture_capsule_frame(browser: Browser, base: str, out: Path, frame_id: str,
                  all(value >= AA_CONTRAST for value in selected_ratios.values()), selected_ratios)
     checks.check(f"{prefix} 페이지 오류 없음", not errors, errors)
     return {"url": url, "screenshot": screenshot, "metrics": metrics,
+            "clusterGap": cluster_gap,
             "contrast": {"unselected": ratios, "selected": selected_ratios}}
 
 

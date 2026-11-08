@@ -147,6 +147,7 @@ test('듀오 레일은 백·현재 화면 조작·전체 내비게이션을 한 
   expect(screen.getByTestId('duo-rail-context-capsule')).toBeTruthy();
   expect(screen.getByTestId('phone-rail-action-edit')).toBeTruthy();
   expect(screen.getByTestId('phone-rail-tab-cluster')).toBeTruthy();
+  expect(StyleSheet.flatten(screen.getByTestId('duo-rail-bottom-cluster').props.style)).toMatchObject({ gap: 8 });
   expect(screen.queryByTestId('phone-tab-DailyTab')).toBeNull();
   for (const name of ['FolderTab', 'PersistentTab', 'FeedTab']) expect(screen.getByTestId(`phone-tab-${name}`)).toBeTruthy();
   screen.rerender(scene(true));
@@ -293,6 +294,7 @@ test('compact 듀오 레일은 세 컨텍스트 액션 높이에 맞춰 캡슐�
 
   expect(screen.queryByTestId('duo-rail-context-scroll')).toBeNull();
   expect(screen.getByTestId('phone-rail-action-more')).toBeTruthy();
+  expect(StyleSheet.flatten(screen.getByTestId('duo-rail-bottom-cluster').props.style)).toMatchObject({ gap: 4 });
   expect(StyleSheet.flatten(screen.getByTestId('duo-rail-context-capsule').props.style).height).toBe(178);
   expect(screen.getByTestId('duo-rail-top-stack')).toBeTruthy();
   for (const id of ['one', 'two', 'three']) {
