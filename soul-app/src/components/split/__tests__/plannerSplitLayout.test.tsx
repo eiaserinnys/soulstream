@@ -93,13 +93,39 @@ describe('iPad v3 planner shell', () => {
     </DuoTopBandContext.Provider></DuoSideBandContext.Provider></ThemeProvider>);
     expect(screen.getByTestId('duo-top-band')).toBeTruthy();
     const navigation = within(screen.getByTestId('duo-top-band-navigation-capsule'));
-    const items = navigation.UNSAFE_getAllByType(View).filter(node => ['duo-main-menu', 'tablet-persistent-entry', 'duo-main-settings'].includes(node.props.testID));
-    expect(items.map(node => node.props.testID)).toEqual(['duo-main-menu', 'tablet-persistent-entry', 'duo-main-settings']);
+    const items = navigation.UNSAFE_getAllByType(View).filter(node => ['duo-main-menu', 'duo-main-feed', 'tablet-persistent-entry', 'duo-main-settings'].includes(node.props.testID));
+    expect(items.map(node => node.props.testID)).toEqual(['duo-main-menu', 'duo-main-feed', 'tablet-persistent-entry', 'duo-main-settings']);
     expect(screen.queryByTestId('tablet-feed-header')).toBeNull();
+    // 기본 화면은 카드 보드가 전체 폭을 차지하고 피드 열과 스플리터를 상시 배치하지 않는다.
+    expect(StyleSheet.flatten(screen.getByTestId('split-panel-main').props.style).flex).toBe(1);
+    expect(screen.queryByTestId('splitter')).toBeNull();
+    expect(screen.getByTestId('duo-folder-drawer').props.pointerEvents).toBe('none');
+    expect(screen.getByTestId('duo-feed-drawer').props.pointerEvents).toBe('none');
     fireEvent.press(screen.getByTestId('duo-main-search'));
     expect(useSearchStore.getState().tabletActive).toBe(true);
+    expect(screen.getByTestId('duo-feed-drawer').props.pointerEvents).toBe('auto');
+    // 폴더 단추는 검색과 피드를 닫고 서랍을 열며, 같은 단추로 다시 닫는다.
     fireEvent.press(screen.getByTestId('duo-main-menu'));
+    expect(useSearchStore.getState().tabletActive).toBe(false);
     expect(screen.getByTestId('planner-navigation').props.accessibilityState.expanded).toBe(true);
+    expect(screen.getByTestId('duo-main-menu').props.accessibilityState.selected).toBe(true);
+    expect(screen.getByTestId('duo-folder-drawer').props.pointerEvents).toBe('auto');
+    fireEvent.press(screen.getByTestId('duo-main-menu'));
+    expect(screen.getByTestId('planner-navigation').props.accessibilityState.expanded).toBe(false);
+    expect(screen.getByTestId('duo-main-menu').props.accessibilityState.selected).toBe(false);
+    expect(screen.getByTestId('duo-folder-drawer').props.pointerEvents).toBe('none');
+    // 피드 단추는 피드 서랍을 열고, 그 상태에서 폴더 단추를 누르면 피드가 닫히고 폴더가 열린다.
+    fireEvent.press(screen.getByTestId('duo-main-feed'));
+    expect(screen.getByTestId('duo-feed-drawer').props.pointerEvents).toBe('auto');
+    expect(screen.getByTestId('duo-main-feed').props.accessibilityState.selected).toBe(true);
+    fireEvent.press(screen.getByTestId('duo-main-menu'));
+    expect(screen.getByTestId('duo-feed-drawer').props.pointerEvents).toBe('none');
+    expect(screen.getByTestId('duo-main-feed').props.accessibilityState.selected).toBe(false);
+    expect(screen.getByTestId('duo-folder-drawer').props.pointerEvents).toBe('auto');
+    // 바깥 어두운 배경을 탭하면 열린 서랍이 닫힌다.
+    fireEvent.press(screen.getByTestId('duo-drawer-backdrop'));
+    expect(screen.getByTestId('duo-folder-drawer').props.pointerEvents).toBe('none');
+    expect(screen.getByTestId('duo-main-menu').props.accessibilityState.selected).toBe(false);
     expect(screen.getByTestId('duo-top-band')).toBeTruthy();
     fireEvent.press(screen.getByTestId('duo-main-settings'));
     expect(useUIStore.getState().settingsVisible).toBe(true);
@@ -130,11 +156,23 @@ describe('iPad v3 planner shell', () => {
     expect(screen.getByTestId('duo-main-completed').props.accessibilityState.selected).toBe(true);
     fireEvent.press(screen.getByTestId('duo-main-completed'));
     expect(screen.getByTestId('duo-main-completed').props.accessibilityState.selected).toBe(false);
+    // 가로 듀오도 기본 화면은 스플리터 없이 보드가 전체 폭을 쓴다.
+    expect(StyleSheet.flatten(screen.getByTestId('split-panel-main').props.style).flex).toBe(1);
+    expect(screen.queryByTestId('splitter')).toBeNull();
+    expect(screen.getByTestId('duo-main-menu')).toBeTruthy();
+    fireEvent.press(screen.getByTestId('duo-main-feed'));
+    expect(screen.getByTestId('duo-feed-drawer').props.pointerEvents).toBe('auto');
+    expect(screen.getByTestId('duo-main-feed').props.accessibilityState.selected).toBe(true);
+    fireEvent.press(screen.getByTestId('duo-main-feed'));
+    expect(screen.getByTestId('duo-feed-drawer').props.pointerEvents).toBe('none');
+    expect(screen.getByTestId('duo-main-feed').props.accessibilityState.selected).toBe(false);
     fireEvent.press(screen.getByLabelText('세션 검색'));
     expect(screen.getByLabelText('검색 닫기').props.accessibilityState.selected).toBe(true);
     expect(screen.queryByTestId('tablet-feed-header')).toBeNull();
+    expect(screen.getByTestId('duo-feed-drawer').props.pointerEvents).toBe('auto');
     fireEvent.press(screen.getByLabelText('검색 닫기'));
     expect(useSearchStore.getState().tabletActive).toBe(false);
+    expect(screen.getByTestId('duo-feed-drawer').props.pointerEvents).toBe('none');
     await act(async () => { useUIStore.setState({ activeSection: { kind: 'project', folderId: 'folder-1', projectPageId: 'page-1' } }); });
     expect(screen.queryByTestId('duo-main-create')).toBeNull();
     expect(screen.getByTestId('duo-main-menu')).toBeTruthy();

@@ -19,7 +19,7 @@ import { SplitPanelSurface } from './SplitPanelSurface';
 import { TabletSafeAreaFrame } from './TabletSafeAreaFrame';
 import { TabletSessionFeedPane } from './TabletSessionFeedPane';
 import { TabletHomeComposerHost } from './TabletHomeComposerHost';
-import { clampTwoPaneMiddleDrag, resolveTwoPaneMiddleWidth } from './paneWidths';
+import { clampTwoPaneMiddleDrag, PANE_SPECS, resolveTwoPaneMiddleWidth } from './paneWidths';
 import { DUO_RAIL_END_INSET, DUO_SIDE_BAND_WIDTH, DUO_TOP_BAND_STATUS_CENTER_Y, DUO_TOP_BAND_STATUS_RESERVE, getDuoRailTopOffset, splitDuoRailBackAction, useDuoSideBand, useDuoTopBand } from '../../navigation/duoSideBand';
 import { DuoTopBandMainContext } from '../../navigation/tabContract';
 import { useSearchStore } from '../../store/searchStore';
@@ -38,6 +38,8 @@ import { duoRailLayout } from '../../navigation/duoRailLayout';
 import type { PhoneRailAction } from '../../navigation/phoneRailActions';
 
 const DRAWER_WIDTH = 280;
+const FEED_DRAWER_WIDTH = 360;
+const DRAWER_SHADOW_MARGIN = 24;
 const ANIM_MS = 240;
 
 /**
@@ -55,6 +57,9 @@ const ANIM_MS = 240;
  * - 항목 선택 시 드로어 자동 닫힘 (SidebarPane.onItemSelected 콜백)
  * - 백드롭 탭으로도 닫힘
  * - Animated.timing 슬라이드 (240ms)
+ *
+ * 듀오 펼침(안쪽 세로·가로)에서는 카드 보드가 전체 폭을 쓰고, 좌측 폴더와 우측 피드는
+ * 상단/우측 띠의 단추로 여닫는 슬라이드 오버레이가 된다.
  */
 export function TwoPaneWithDrawer() {
   const t = useTokens();
@@ -64,6 +69,7 @@ export function TwoPaneWithDrawer() {
   const duo = useDuoSideBand();
   const duoTopBand = useDuoTopBand();
   const topBandMain = duoTopBand && !duo;
+  const duoBand = duo || topBandMain;
   const override = useActiveDuoRailOverrideEntry();
   const mainRef = useRef<MainListPaneHandle>(null);
   const [keyboardOverlap, setKeyboardOverlap] = useState(0);
@@ -91,25 +97,9 @@ export function TwoPaneWithDrawer() {
   const setPaneMiddleWidthTwoPane = useUIStore((s) => s.setPaneMiddleWidthTwoPane);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
-  // -DRAWER_WIDTH(닫힘) ~ 0(열림) 사이에서 보간.
-  const slideX = useRef(new Animated.Value(-DRAWER_WIDTH)).current;
-  // 0(닫힘) ~ 1(열림) — 백드롭 opacity.
-  const backdrop = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.timing(slideX, {
-      toValue: drawerOpen ? 0 : -DRAWER_WIDTH,
-      duration: ANIM_MS,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-    Animated.timing(backdrop, {
-      toValue: drawerOpen ? 0.4 : 0,
-      duration: ANIM_MS,
-      easing: Easing.out(Easing.cubic),
-      useNativeDriver: true,
-    }).start();
-  }, [drawerOpen, slideX, backdrop]);
+  const [feedOpen, setFeedOpen] = useState(false);
+  const feedPanelOpen = duoBand && (feedOpen || searchActive);
+  const overlayOpen = drawerOpen || feedPanelOpen;
 
   const rowWidth = measuredRowWidth
     ?? screenWidth - insets.left - insets.right - 2 * t.tabletShell.outerInset;
@@ -120,6 +110,82 @@ export function TwoPaneWithDrawer() {
     paneMiddleWidth,
     paneMiddleWidthTwoPane,
   });
+  const feedDrawerWidth = Math.min(
+    FEED_DRAWER_WIDTH,
+    Math.max(PANE_SPECS.feed.min, rowWidth - t.tabletShell.panelGap),
+  );
+  // -DRAWER_WIDTH(닫힘) ~ 0(열림) 사이에서 보간. 그림자가 바깥 여백에 비치지 않도록
+  // 그림자 여유(DRAWER_SHADOW_MARGIN)까지 밀어 둔다.
+  const drawerClosedX = -(DRAWER_WIDTH + DRAWER_SHADOW_MARGIN);
+  const feedClosedX = feedDrawerWidth + DRAWER_SHADOW_MARGIN;
+  const slideX = useRef(new Animated.Value(drawerClosedX)).current;
+  const feedSlideX = useRef(new Animated.Value(feedClosedX)).current;
+  // 0(닫힘) ~ 0.4(열림) — 백드롭 opacity.
+  const backdrop = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    setDrawerOpen(false);
+    setFeedOpen(false);
+  }, [activeSection]);
+
+  useEffect(() => {
+    if (folderOverlayVisible || settingsVisible || cardBoardExpanded) {
+      setDrawerOpen(false);
+      setFeedOpen(false);
+    }
+  }, [folderOverlayVisible, settingsVisible, cardBoardExpanded]);
+
+  useEffect(() => {
+    Animated.timing(slideX, {
+      toValue: drawerOpen ? 0 : drawerClosedX,
+      duration: ANIM_MS,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+    Animated.timing(feedSlideX, {
+      toValue: feedPanelOpen ? 0 : feedClosedX,
+      duration: ANIM_MS,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+    Animated.timing(backdrop, {
+      toValue: overlayOpen ? 0.4 : 0,
+      duration: ANIM_MS,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [drawerOpen, drawerClosedX, feedPanelOpen, feedClosedX, overlayOpen, slideX, feedSlideX, backdrop]);
+
+  const closeOverlays = () => {
+    setDrawerOpen(false);
+    setFeedOpen(false);
+    if (useSearchStore.getState().tabletActive) {
+      useSearchStore.getState().closeTabletSearch();
+    }
+  };
+  const toggleDrawer = () => {
+    if (drawerOpen) {
+      setDrawerOpen(false);
+    } else {
+      setFeedOpen(false);
+      if (useSearchStore.getState().tabletActive) {
+        useSearchStore.getState().closeTabletSearch();
+      }
+      setDrawerOpen(true);
+    }
+  };
+  const toggleFeed = () => {
+    if (feedOpen && !searchActive) {
+      setFeedOpen(false);
+    } else {
+      setDrawerOpen(false);
+      if (searchActive) {
+        useSearchStore.getState().closeTabletSearch();
+      }
+      setFeedOpen(true);
+    }
+  };
+
   const rootScreen: PhoneRailAction[] = showRootNavigation ? [
     ...(board ? [
       { id: 'create', label: '드래프트 카드 추가', icon: 'add-outline' as const, onPress: () => mainRef.current?.openCreate() },
@@ -129,22 +195,40 @@ export function TwoPaneWithDrawer() {
       { id: 'expand', label: '보드 확대', icon: 'expand-outline' as const, onPress: () => mainRef.current?.openExpanded() },
     ] : []),
     { id: 'search', label: searchActive ? '검색 닫기' : '세션 검색', icon: 'search-outline', selected: searchActive,
-      onPress: () => searchActive ? useSearchStore.getState().closeTabletSearch() : useSearchStore.getState().openTabletSearch() },
+      onPress: () => {
+        if (searchActive) {
+          useSearchStore.getState().closeTabletSearch();
+        } else {
+          setDrawerOpen(false);
+          useSearchStore.getState().openTabletSearch();
+        }
+      } },
     ...(activeSection.kind === 'project' ? [{ id: 'view', kind: 'view' as const, label: board ? '기존 보기' : '카드 보드',
       icon: board ? 'list-outline' as const : 'grid-outline' as const,
       onPress: () => useUIStore.getState().setMainPaneView(activeSection.folderId, board ? 'existing' : 'board') }] : []),
   ] : [];
+  const feedSelected = feedOpen && !searchActive;
   const rootNav: PhoneRailAction[] = showRootNavigation ? [
     ...(persistentHost && navigation ? [{ id: 'pas', kind: 'nav' as const, label: '영구 세션 열기', icon: 'person-circle-outline' as const,
       onPress: () => { void persistentHost.requestEntry(() => navigation.navigate('PersistentSession' as never)); } }] : []),
-    { id: 'drawer', kind: 'nav', label: '메뉴', icon: 'menu', onPress: () => setDrawerOpen(true) },
+    { id: 'drawer', kind: 'nav', label: drawerOpen ? '폴더 닫기' : ROOT_SECTION_CONFIG.FolderTab.title,
+      menuLabel: drawerOpen ? '폴더 닫기' : '폴더 열기', icon: ROOT_SECTION_CONFIG.FolderTab.icon,
+      selected: drawerOpen, onPress: toggleDrawer },
+    { id: 'feed', kind: 'nav', label: feedSelected ? '피드 닫기' : ROOT_SECTION_CONFIG.FeedTab.title,
+      menuLabel: feedSelected ? '피드 닫기' : '피드 열기', icon: ROOT_SECTION_CONFIG.FeedTab.icon,
+      selected: feedSelected, onPress: toggleFeed },
     { id: 'settings', kind: 'settings', label: ROOT_SECTION_CONFIG.SettingsTab.title, icon: ROOT_SECTION_CONFIG.SettingsTab.icon,
       onPress: () => useUIStore.getState().openSettings() },
   ] : [];
   const menu = mainActions.find(item => item.kind === 'menu') ?? null;
   const layout = duoRailLayout({ exit: topBandMain ? null : backAction?.disabled ? null : backAction,
     screen: [...mainActions.filter(item => item.kind !== 'menu' && item.kind !== 'rare'), ...rootScreen],
-    nav: topBandMain ? [...rootNav.filter(item => item.id === 'drawer'), ...rootNav.filter(item => item.id !== 'drawer')] : rootNav,
+    nav: topBandMain
+      ? [
+          ...rootNav.filter(item => item.id === 'drawer' || item.id === 'feed'),
+          ...rootNav.filter(item => item.id !== 'drawer' && item.id !== 'feed'),
+        ]
+      : rootNav,
     rare: mainActions.filter(item => item.kind === 'rare'), menu, length: topBandMain ? screenWidth : screenHeight,
     statusReserve: topBandMain ? DUO_TOP_BAND_STATUS_RESERVE : getDuoRailTopOffset(screenWidth, screenHeight),
     endReserve: topBandMain ? insets.left + t.tabletShell.outerInset : Math.max(insets.bottom, t.uiSpacing.xxl),
@@ -176,58 +260,85 @@ export function TwoPaneWithDrawer() {
             key: layoutKey,
           })}
         >
-          <SplitPanelSurface testID="split-panel-main" style={[styles.pane, { width: resolvedMiddleWidth }]}>
+          <SplitPanelSurface testID="split-panel-main" style={[styles.pane, duoBand ? { flex: 1 } : { width: resolvedMiddleWidth }]}>
             <MainListPane
               ref={mainRef}
-              onMenuPress={() => setDrawerOpen(true)}
+              onMenuPress={toggleDrawer}
               showSearch
-              paneWidth={resolvedMiddleWidth}
+              paneWidth={duoBand ? rowWidth : resolvedMiddleWidth}
             />
           </SplitPanelSurface>
-          <Splitter
-            initialWidth={resolvedMiddleWidth}
-            onWidthChange={(width) => setPaneMiddleWidthTwoPane(clampTwoPaneMiddleDrag(width, {
-              rowWidth,
-              panelGap: t.tabletShell.panelGap,
-            }))}
-          />
-          <SplitPanelSurface testID="split-panel-session" style={[styles.pane, { flex: 1 }]}>
-            <TabletSessionFeedPane />
-          </SplitPanelSurface>
+          {!duoBand ? (
+            <>
+              <Splitter
+                initialWidth={resolvedMiddleWidth}
+                onWidthChange={(width) => setPaneMiddleWidthTwoPane(clampTwoPaneMiddleDrag(width, {
+                  rowWidth,
+                  panelGap: t.tabletShell.panelGap,
+                }))}
+              />
+              <SplitPanelSurface testID="split-panel-session" style={[styles.pane, { flex: 1 }]}>
+                <TabletSessionFeedPane />
+              </SplitPanelSurface>
+            </>
+          ) : null}
         </View>
         </DuoTopBandMainContext.Provider>
 
         <TabletHomeComposerHost />
-        {/* 드로어 오버레이 — pointerEvents로 닫힘 상태에선 터치 통과 */}
-        <Animated.View
-          pointerEvents={drawerOpen ? 'auto' : 'none'}
-          style={[
-            styles.backdrop,
-            {
-              opacity: backdrop,
-              backgroundColor: t.colors.textPrimary,
-            },
-          ]}
-        >
-          <TouchableWithoutFeedback onPress={() => setDrawerOpen(false)}>
-            <View style={StyleSheet.absoluteFill} />
-          </TouchableWithoutFeedback>
-        </Animated.View>
-        <Animated.View
-          pointerEvents={drawerOpen ? 'auto' : 'none'}
-          style={[
-            styles.drawer,
-            {
-              width: DRAWER_WIDTH,
-              transform: [{ translateX: slideX }],
-              backgroundColor: 'transparent',
-            },
-          ]}
-        >
-          <SplitPanelSurface testID="split-panel-sidebar" style={styles.drawerPanel}>
-            <SidebarPane onItemSelected={() => setDrawerOpen(false)} active={drawerOpen} />
-          </SplitPanelSurface>
-        </Animated.View>
+        {/* 서랍 오버레이 — 닫힌 서랍과 그림자가 바깥 여백으로 비치지 않게 클리핑한다. */}
+        <View pointerEvents="box-none" style={styles.overlayClip}>
+          <Animated.View
+            pointerEvents={overlayOpen ? 'auto' : 'none'}
+            style={[
+              styles.backdrop,
+              {
+                opacity: backdrop,
+                backgroundColor: t.colors.textPrimary,
+              },
+            ]}
+          >
+            <TouchableWithoutFeedback onPress={closeOverlays}>
+              <View testID="duo-drawer-backdrop" style={StyleSheet.absoluteFill} />
+            </TouchableWithoutFeedback>
+          </Animated.View>
+          <Animated.View
+            testID="duo-folder-drawer"
+            pointerEvents={drawerOpen ? 'auto' : 'none'}
+            style={[
+              styles.drawer,
+              {
+                width: DRAWER_WIDTH,
+                transform: [{ translateX: slideX }],
+                backgroundColor: 'transparent',
+              },
+            ]}
+          >
+            <SplitPanelSurface testID="split-panel-sidebar" style={styles.drawerPanel}>
+              <SidebarPane onItemSelected={() => setDrawerOpen(false)} active={drawerOpen} />
+            </SplitPanelSurface>
+          </Animated.View>
+          {duoBand ? (
+            <DuoTopBandMainContext.Provider value={topBandMain}>
+              <Animated.View
+                testID="duo-feed-drawer"
+                pointerEvents={feedPanelOpen ? 'auto' : 'none'}
+                style={[
+                  styles.feedDrawer,
+                  {
+                    width: feedDrawerWidth,
+                    transform: [{ translateX: feedSlideX }],
+                    backgroundColor: 'transparent',
+                  },
+                ]}
+              >
+                <SplitPanelSurface testID="split-panel-session" style={styles.drawerPanel}>
+                  <TabletSessionFeedPane />
+                </SplitPanelSurface>
+              </Animated.View>
+            </DuoTopBandMainContext.Provider>
+          ) : null}
+        </View>
         <FolderWorkspaceReadOverlay />
       </TabletSafeAreaFrame>
     </SafeAreaView>
@@ -281,6 +392,10 @@ function makeStyles(t: DesignTokens) {
       zIndex: 0,
     },
     pane: { height: '100%' },
+    overlayClip: {
+      ...StyleSheet.absoluteFill,
+      overflow: 'hidden',
+    },
     backdrop: {
       ...StyleSheet.absoluteFill,
     },
@@ -295,6 +410,18 @@ function makeStyles(t: DesignTokens) {
       shadowOpacity: 0.2,
       shadowRadius: 12,
       shadowOffset: { width: 2, height: 0 },
+      elevation: 8,
+    },
+    feedDrawer: {
+      position: 'absolute',
+      top: 0,
+      bottom: 0,
+      right: 0,
+      borderRadius: t.foundation.radius.panel,
+      shadowColor: '#000',
+      shadowOpacity: 0.2,
+      shadowRadius: 12,
+      shadowOffset: { width: -2, height: 0 },
       elevation: 8,
     },
     drawerPanel: { flex: 1 },
