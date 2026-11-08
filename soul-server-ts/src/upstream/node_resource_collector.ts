@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import type { ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -7,6 +7,8 @@ import type {
   NodeDiskQueueMetrics,
   NodeResourceSnapshot,
 } from "@soulstream/wire-schema/node-resources";
+
+import { parseDarwinAvailableMemory } from "./darwin_memory.js";
 
 type DiskSample = {
   device: string;
@@ -27,6 +29,7 @@ export interface NodeResourceCollectorOptions {
   statfsSync?: typeof fs.statfsSync;
   now?: () => Date;
   spawnTypeperf?: typeof spawn;
+  execFileSync?: typeof execFileSync;
 }
 
 const TYPEPERF_COUNTERS = [
@@ -48,6 +51,7 @@ export class NodeResourceCollector {
   private readonly readFileSync: (path: string, encoding: "utf8") => string;
   private readonly statfsSync: typeof fs.statfsSync;
   private readonly now: () => Date;
+  private readonly execFileSync: typeof execFileSync;
   private readonly diskPath: string;
   private previousCpuSample: { total: number; idle: number } | undefined;
   private previousDiskSample: (DiskSample & { sampledAtMs: number }) | undefined;
@@ -64,6 +68,7 @@ export class NodeResourceCollector {
     this.readFileSync = options.readFileSync ?? ((path, encoding) => fs.readFileSync(path, encoding));
     this.statfsSync = options.statfsSync ?? fs.statfsSync;
     this.now = options.now ?? (() => new Date());
+    this.execFileSync = options.execFileSync ?? execFileSync;
     this.diskPath = options.diskPath;
     if (this.platform === "win32" && options.enableWindowsTypeperf !== false) {
       this.startWindowsTypeperf(options.spawnTypeperf ?? spawn);
@@ -91,7 +96,7 @@ export class NodeResourceCollector {
     this.previousCpuSample = { total: cpuTotal, idle: cpuIdle };
 
     const totalBytes = this.totalmem();
-    const availableBytes = this.readAvailableMemory();
+    const availableBytes = this.readAvailableMemory(totalBytes);
     const usedBytes = Math.max(0, totalBytes - availableBytes);
     const memory = {
       usagePercent: totalBytes > 0
@@ -145,7 +150,13 @@ export class NodeResourceCollector {
     this.typeperfProcess = undefined;
   }
 
-  private readAvailableMemory(): number {
+  private readAvailableMemory(totalBytes: number): number {
+    if (this.platform === "darwin") {
+      const darwinBytes = this.readDarwinAvailableMemory();
+      if (darwinBytes !== undefined) {
+        return clamp(darwinBytes, 0, totalBytes);
+      }
+    }
     if (this.platform === "linux") {
       try {
         const meminfo = this.readFileSync("/proc/meminfo", "utf8");
@@ -156,6 +167,20 @@ export class NodeResourceCollector {
       }
     }
     return this.freemem();
+  }
+
+  private readDarwinAvailableMemory(): number | undefined {
+    try {
+      const output = this.execFileSync("/usr/bin/vm_stat", [], {
+        timeout: 1000,
+        encoding: "utf8",
+        env: { ...process.env, LC_ALL: "C" },
+      });
+      return parseDarwinAvailableMemory(output);
+    } catch {
+      // Keep the OS free memory value when vm_stat is unavailable or unparsable.
+      return undefined;
+    }
   }
 
   private collectLinuxDiskQueue(nowMs: number): NodeDiskQueueMetrics | null {

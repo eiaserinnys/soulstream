@@ -1,0 +1,92 @@
+# Haniel macOS node example
+#
+# Reference fragment only. Copy the entries below into the operator's real
+# `haniel.yaml` (for example `~/haniel-root/haniel.yaml`) and replace the
+# placeholder accounts and directories. The launchd side that keeps Haniel
+# itself running is described in deploy/macos/README.md; launchd is not part of
+# this file.
+#
+# Assumptions:
+# - The soulstream checkout is `./src/soulstream` under the Haniel root, and the
+#   service directory is `./services/soulstream`.
+# - Python 3.11 or newer is installed because the Darwin build hook
+#   (`deploy/haniel/build-core.sh` -> `build_core_darwin.py`) is Python.
+# - `node` on the service PATH is 22.13 or newer so `node:sqlite` loads without
+#   flags. Node 22.12 works only with `--experimental-sqlite` and is not the
+#   supported configuration for this node.
+# - Homebrew prefix is `/opt/homebrew` on Apple silicon and `/usr/local` on
+#   Intel. Keep both on PATH; the unused one is harmless.
+
+repos:
+  soulstream-server-src:
+    release_manifest: deploy/release-manifest-worker.json
+
+services:
+  soulstream-soul-server-ts:
+    run: node src/soulstream/soul-server-ts/dist/main.js
+    cwd: ./services/soulstream
+    release_env_file: ./services/soulstream/.env.soul-server-ts
+    repo: soulstream-server-src
+    restart_delay: 3
+    after: []
+    ready: http://127.0.0.1:4205/health
+    enabled: true
+    hooks:
+      # The shell hook dispatches to the Python runner on Darwin. Do not replace
+      # this with the Linux pnpm/realpath pipeline; it needs GNU tools.
+      post_pull: bash src/soulstream/deploy/haniel/build-core.sh
+    reflect: false
+
+install:
+  configs:
+    soul-server-ts-env:
+      path: ./services/soulstream/.env.soul-server-ts
+      keys:
+        - key: SOULSTREAM_NODE_ID
+          prompt: "Node ID to register with the orchestrator (for example your-mac-node-ts)"
+          default: your-mac-node-ts
+        - key: SOULSTREAM_UPSTREAM_URL
+          default: wss://your-orchestrator.example/ws/node
+        - key: AUTH_BEARER_TOKEN
+          prompt: "Orchestrator bearer token; never commit a default"
+        - key: EVENT_OUTBOX_DIR
+          default: .local/event-outbox
+        - key: HOST
+          default: 127.0.0.1
+        - key: PORT
+          default: '4205'
+        - key: MCP_ENABLED
+          default: 'true'
+        - key: MCP_PATH
+          default: /mcp
+        - key: MCP_INTERNAL_PORT
+          default: '4206'
+        - key: MCP_REQUIRE_AUTH
+          default: 'true'
+        - key: ENVIRONMENT
+          default: production
+        - key: LOG_LEVEL
+          default: info
+        - key: SOUL_RUNNER_PROCESS_ENABLED
+          default: 'true'
+        # Darwin limits a Unix socket pathname to 103 UTF-8 bytes. The runner
+        # appends a 24 character session slug and `/runner.sock`, so keep the
+        # state root short. `/var/folders/...` paths are too long.
+        - key: SOUL_RUNNER_STATE_DIR
+          default: /tmp/ss-run
+        - key: SOUL_RUNNER_ARTIFACT_DIR
+          default: /Users/your-user/haniel-root/services/soulstream/soul-server-ts/dist/runner
+        - key: SOUL_RUNNER_RELEASES_DIR
+          default: /Users/your-user/haniel-root/services/soulstream/state/runner-releases
+        - key: SOUL_RUNNER_LEASE_TIMEOUT_MS
+          default: '1800000'
+        - key: SOUL_RUNNER_REAPER_INTERVAL_MS
+          default: '15000'
+        - key: SOUL_RUNNER_TERMINAL_RETENTION_MS
+          default: '86400000'
+        - key: AGENTS_CONFIG_PATH
+          default: /Users/your-user/haniel-root/state/config/agents.yaml
+        - key: MODEL_CATALOG_PATH
+          default: /Users/your-user/haniel-root/state/config/model-catalog.yaml
+        - key: DASH_USER_NAME
+          default: your-dashboard-user
