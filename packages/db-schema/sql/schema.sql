@@ -1287,7 +1287,8 @@ CREATE TABLE IF NOT EXISTS event_search_postings (
     term_id INTEGER NOT NULL
         REFERENCES event_search_dictionary(term_id),
     term_freq INTEGER NOT NULL
-) WITH (autovacuum_vacuum_insert_scale_factor = 0.05);
+) WITH (autovacuum_vacuum_insert_scale_factor = 0,
+        autovacuum_vacuum_insert_threshold = 100000);
 
 CREATE UNIQUE INDEX IF NOT EXISTS event_search_postings_term_cover
     ON event_search_postings (term_id, session_key, event_id)
@@ -1310,7 +1311,8 @@ CREATE TABLE IF NOT EXISTS event_search_documents (
     created_at TIMESTAMPTZ,
     PRIMARY KEY (session_key, event_id)
         INCLUDE (doc_len, event_type_id, created_at)
-) WITH (autovacuum_vacuum_insert_scale_factor = 0.05);
+) WITH (autovacuum_vacuum_insert_scale_factor = 0,
+        autovacuum_vacuum_insert_threshold = 5000);
 
 CREATE INDEX IF NOT EXISTS event_search_dictionary_korean_prefix
     ON event_search_dictionary (left(term, 3)) INCLUDE (term_id)
