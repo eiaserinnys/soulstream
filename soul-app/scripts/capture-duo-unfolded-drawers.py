@@ -78,6 +78,16 @@ MEASURE_JS = r"""
     window: { width: innerWidth, height: innerHeight },
     safeFrame: box(byTestId('tablet-safe-area-frame')),
     main: box(byTestId('split-panel-main')),
+    mainRadius: (() => {
+      const element = byTestId('split-panel-main');
+      return element ? getComputedStyle(element).borderRadius : null;
+    })(),
+    overlayClip: (() => {
+      const clip = folderDrawer ? folderDrawer.parentElement : null;
+      if (!clip) return null;
+      const style = getComputedStyle(clip);
+      return { borderRadius: style.borderRadius, overflow: style.overflow };
+    })(),
     splitter: box(byTestId('splitter-touch-zone')) || box(byTestId('splitter')),
     sessions: [...document.querySelectorAll('[data-testid="split-panel-session"]')].map(box),
     folderDrawer: box(folderDrawer),
@@ -237,6 +247,11 @@ def capture_duo_frame(context: BrowserContext, base: str, out: Path, frame_id: s
     checks.check(f"{frame_id} 기본 피드 서랍 닫힘",
                  metrics["feedDrawer"] is not None and metrics["feedDrawer"]["left"] >= right - 0.5,
                  metrics["feedDrawer"])
+    checks.check(f"{frame_id} 오버레이 클리핑 곡률이 패널과 같음",
+                 metrics["overlayClip"] is not None
+                 and metrics["overlayClip"]["borderRadius"] == metrics["mainRadius"]
+                 and metrics["overlayClip"]["overflow"] == "hidden",
+                 {"clip": metrics["overlayClip"], "main": metrics["mainRadius"]})
 
     # b) 폴더 서랍: 열림 → 같은 단추로 닫힘.
     page.get_by_test_id("duo-main-menu").click()

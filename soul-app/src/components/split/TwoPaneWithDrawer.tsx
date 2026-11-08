@@ -132,8 +132,11 @@ export function TwoPaneWithDrawer() {
     if (folderOverlayVisible || settingsVisible || cardBoardExpanded) {
       setDrawerOpen(false);
       setFeedOpen(false);
+      if (duoBand && useSearchStore.getState().tabletActive) {
+        useSearchStore.getState().closeTabletSearch();
+      }
     }
-  }, [folderOverlayVisible, settingsVisible, cardBoardExpanded]);
+  }, [folderOverlayVisible, settingsVisible, cardBoardExpanded, duoBand]);
 
   useEffect(() => {
     Animated.timing(slideX, {
@@ -159,7 +162,7 @@ export function TwoPaneWithDrawer() {
   const closeOverlays = () => {
     setDrawerOpen(false);
     setFeedOpen(false);
-    if (useSearchStore.getState().tabletActive) {
+    if (duoBand && useSearchStore.getState().tabletActive) {
       useSearchStore.getState().closeTabletSearch();
     }
   };
@@ -168,7 +171,7 @@ export function TwoPaneWithDrawer() {
       setDrawerOpen(false);
     } else {
       setFeedOpen(false);
-      if (useSearchStore.getState().tabletActive) {
+      if (duoBand && useSearchStore.getState().tabletActive) {
         useSearchStore.getState().closeTabletSearch();
       }
       setDrawerOpen(true);
@@ -305,6 +308,8 @@ export function TwoPaneWithDrawer() {
           <Animated.View
             testID="duo-folder-drawer"
             pointerEvents={drawerOpen ? 'auto' : 'none'}
+            accessibilityElementsHidden={!drawerOpen}
+            importantForAccessibility={drawerOpen ? 'auto' : 'no-hide-descendants'}
             style={[
               styles.drawer,
               {
@@ -323,6 +328,8 @@ export function TwoPaneWithDrawer() {
               <Animated.View
                 testID="duo-feed-drawer"
                 pointerEvents={feedPanelOpen ? 'auto' : 'none'}
+                accessibilityElementsHidden={!feedPanelOpen}
+                importantForAccessibility={feedPanelOpen ? 'auto' : 'no-hide-descendants'}
                 style={[
                   styles.feedDrawer,
                   {
@@ -395,6 +402,7 @@ function makeStyles(t: DesignTokens) {
     overlayClip: {
       ...StyleSheet.absoluteFill,
       overflow: 'hidden',
+      borderRadius: t.foundation.radius.panel,
     },
     backdrop: {
       ...StyleSheet.absoluteFill,
