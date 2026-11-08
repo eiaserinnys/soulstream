@@ -119,7 +119,9 @@ it('traverses every card without duplicates or gaps in status-group and update o
   const pageSizes: number[] = [];
   let cursor: string | null = null;
   do {
-    const query: URLSearchParams = new URLSearchParams({limit:'3',includeClosed:'true',q:'pagedpage',...(cursor ? {cursor} : {})});
+    // limit 4 puts the first page boundary between the two same-updated_at running cards,
+    // so a cursor that forgets the id tie-break drops one of them instead of passing silently.
+    const query: URLSearchParams = new URLSearchParams({limit:'4',includeClosed:'true',q:'pagedpage',...(cursor ? {cursor} : {})});
     const response = await app.inject(`/api/cards?${query}`);
     expect(response.statusCode).toBe(200);
     const page:{cards:{id:string}[];nextCursor:string | null} = response.json();
@@ -135,7 +137,7 @@ it('traverses every card without duplicates or gaps in status-group and update o
   expect(ids).toEqual(expected.map(row=>row.id));
   expect(ids).toHaveLength(11);
   expect(new Set(ids).size).toBe(ids.length);
-  expect(pageSizes).toEqual([3,3,3,2]);
+  expect(pageSizes).toEqual([4,4,3]);
 });
 
 it('searches paged cards by title, request and #number and rejects malformed cursors', async () => {
