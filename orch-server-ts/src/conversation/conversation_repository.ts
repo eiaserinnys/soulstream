@@ -53,4 +53,16 @@ export class ConversationRepository {
   }
   async executionInstruction(id: string, instruction: string): Promise<void> { await this.sql`UPDATE conversation_executions SET instruction_id=${instruction} WHERE session_id=${id}`; }
   async releasePending(id: string, pending: boolean): Promise<void> { await this.sql`UPDATE conversation_executions SET release_pending=${pending} WHERE session_id=${id}`; }
+  /** Thread binding and last-activity time for each session, for adoption candidates. */
+  async adoptionTargets(sessionIds: readonly string[]): Promise<Map<string, AdoptionTarget>> {
+    if (sessionIds.length === 0) return new Map();
+    const rows = await this.sql<Array<AdoptionTarget & { session_id: string }>>`
+      SELECT s.session_id, e.thread_id, b.account_id, COALESCE(s.updated_at, s.created_at) AS updated_at
+      FROM sessions s
+      LEFT JOIN conversation_executions e ON e.session_id = s.session_id
+      LEFT JOIN conversation_bindings b ON b.session_id = e.thread_id
+      WHERE s.session_id = ANY(${this.sql.array([...sessionIds])}::text[])`;
+    return new Map(rows.map(row => [row.session_id, row]));
+  }
 }
+export type AdoptionTarget = { thread_id: string | null; account_id: string | null; updated_at: Date | string };

@@ -10,14 +10,14 @@ import type { SessionCreateRouteResponse } from "../session/session_create_route
 import { ConversationRepository } from "./conversation_repository.js";
 import { ConversationCatalog, type ConversationModel } from "./conversation_catalog.js";
 import { ConversationExecutions } from "./conversation_execution.js";
-import { ConversationError, type Binding, type EnsureRequest, type Execution, type ExecutionRequest, type PatchRequest, type Thread } from "./conversation_types.js";
+import { ConversationError, type AdoptableCandidate, type Binding, type EnsureRequest, type Execution, type ExecutionRequest, type PatchRequest, type Thread } from "./conversation_types.js";
 
 type Caller = FastifyRequest;
 type Deps = {
   sql: SqlClient;
   access: Pick<SessionResourceAccessProvider, "requireFolderAccess" | "requireSessionAccess">;
   reads: () => Promise<{ getSession(id: string): Promise<HostSessionRow | null> }>;
-  persistent: Pick<PersistentSessionSettingsService, "get" | "update" | "listInstructions" | "addInstruction" | "updateInstruction">;
+  persistent: Pick<PersistentSessionSettingsService, "get" | "update" | "list" | "listInstructions" | "addInstruction" | "updateInstruction">;
   catalog: ConversationCatalog;
   create: (request: Caller, body: Record<string, unknown>, id: string, logger: Pick<Caller["log"], "warn">) => Promise<SessionCreateRouteResponse>;
   waitForCreatedSession: (id: string, nodeId: string) => Promise<boolean>;
@@ -74,6 +74,35 @@ export class ConversationService {
       }
     }
     return { refs, ...(nextCursor ? { next_cursor: nextCursor } : {}) };
+  }
+  async adoptable(request: Caller, account: string) {
+    const listed = await this.deps.persistent.list(request);
+    const targets = await this.repo.adoptionTargets(listed.sessions.map(session => session.session_id));
+    const candidates: AdoptableCandidate[] = [];
+    for (const session of listed.sessions) {
+      const target = targets.get(session.session_id);
+      if (!target) continue;
+      if (target.account_id !== null && target.account_id !== account) continue;
+      const nodeId = session.node_id;
+      const preset = session.runtime.current_model.model_preset;
+      const modelId = nodeId !== null && preset !== null ? this.deps.catalog.idFor(nodeId, preset) : null;
+      const model = modelId === null ? undefined : await this.model(modelId);
+      const profile = nodeId !== null && session.agent_id !== null
+        ? { id: session.agent_id, label: await this.deps.catalog.profileLabel(nodeId, session.agent_id) }
+        : undefined;
+      candidates.push({ id: target.thread_id ?? session.session_id, title: session.display_name ?? "",
+        ...(profile ? { profile } : {}),
+        ...(modelId === null ? {} : { model: { id: modelId, label: model?.label ?? modelId,
+          ...(model?.group ? { group: model.group } : {}) } }),
+        updated_at: isoTime(target.updated_at) });
+    }
+    candidates.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    const seen = new Set<string>();
+    return { candidates: candidates.filter(candidate => {
+      if (seen.has(candidate.id)) return false;
+      seen.add(candidate.id);
+      return true;
+    }) };
   }
   async byKey(request: Caller, account: string, namespace: string, key: string) {
     let binding = await this.repo.byKey(account, namespace, key);
@@ -374,6 +403,7 @@ export class ConversationService {
   async requireExecutionAccess(request: Caller, id: string) { await this.deps.access.requireSessionAccess({ request, sessionId:id }); }
   get historySql(): SqlClient { return this.deps.sql; }
 }
+function isoTime(value: Date | string) { return (value instanceof Date ? value : new Date(value)).toISOString(); }
 function notFound() { return new ConversationError(404, "not_found", "Thread not found"); }
 function pendingError(id: string) { return new ConversationError(504, "pending", "Thread creation is pending", id); }
 function isStatus(error: unknown, status: number) { return typeof error === "object" && error !== null && "statusCode" in error && error.statusCode === status; }
