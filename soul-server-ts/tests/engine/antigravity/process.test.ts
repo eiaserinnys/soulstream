@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { once } from "node:events";
 import { readFileSync } from "node:fs";
 import pino from "pino";
@@ -7,7 +7,13 @@ import { AntigravityEventMapper } from "../../../src/engine/antigravity/events.j
 import { snapshotAntigravityDescendants, cleanUpAntigravityDescendants, launchAntigravityProcess } from "../../../src/engine/antigravity/process.js";
 
 function live(pid: number) {
-  try { return readFileSync(`/proc/${pid}/stat`, "utf8").split(") ").at(-1)!.split(" ")[0] !== "Z"; }
+  try {
+    if (process.platform === "darwin") {
+      return !execFileSync("/bin/ps", ["-p", String(pid), "-o", "stat="], { encoding: "utf8" })
+        .trim().startsWith("Z");
+    }
+    return readFileSync(`/proc/${pid}/stat`, "utf8").split(") ").at(-1)!.split(" ")[0] !== "Z";
+  }
   catch { return false; }
 }
 async function gone(pid: number) {
@@ -31,10 +37,15 @@ describe("Antigravity process descendants", () => {
     try {
       const snapshot = snapshotAntigravityDescendants(parent.pid!);
       const child = snapshot.find(x => x.pid === pid)!;
-      expect(child).toBeDefined(); expect(child.startTime).toMatch(/^\d+$/);
+      expect(child).toBeDefined();
+      expect(child.startTime).toMatch(process.platform === "darwin"
+        ? /^\w{3} \w{3} \d{1,2} \d{2}:\d{2}:\d{2} \d{4}$/
+        : /^\d+$/);
       expect(snapshot.some(x => x.pid === parent.pid)).toBe(false);
-      const stat = readFileSync(`/proc/${pid}/stat`, "utf8").split(") ").at(-1)!.split(" ");
-      expect(Number(stat[2])).toBe(pid); // separate PGID
+      if (process.platform !== "darwin") {
+        const stat = readFileSync(`/proc/${pid}/stat`, "utf8").split(") ").at(-1)!.split(" ");
+        expect(Number(stat[2])).toBe(pid); // separate PGID
+      }
       expect(cleanUpAntigravityDescendants([{ ...child, startTime: "different-starttime" }])).toBe(0);
       expect(live(pid)).toBe(true);
       expect(cleanUpAntigravityDescendants(snapshot)).toBe(1);

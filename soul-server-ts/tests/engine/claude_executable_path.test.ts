@@ -2,11 +2,22 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { configureClaudeExecutablePath } from "../../src/engine/claude_executable_path.js";
 
 import { makeTempDirSync } from "../helpers/temp_dir.js";
+import { addVirtualFile, resetVirtualFs } from "../helpers/virtual_fs.js";
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  const { virtualFs } = await import("../helpers/virtual_fs.js");
+  return virtualFs(actual);
+});
+
+afterEach(() => {
+  resetVirtualFs();
+});
 
 describe("Claude executable startup preflight", () => {
   it("accepts the explicit host executable capability", () => {
@@ -112,6 +123,89 @@ describe("Claude executable startup preflight", () => {
       PATH: "",
     }, "linux", { error: vi.fn() })).toThrow(
       /Source: PATH\/PATHEXT\. Searched candidates: \(no candidates\)/,
+    );
+  });
+
+  it("darwin에서 PATH 뒤 HOME 설치 위치를 차례로 찾는다", () => {
+    const home = makeTempDirSync("claude-darwin-home-");
+    try {
+      const localBin = join(home, ".local", "bin");
+      mkdirSync(localBin, { recursive: true });
+      const localCli = join(localBin, "claude");
+      writeFileSync(localCli, "", { mode: 0o755 });
+
+      expect(configureClaudeExecutablePath(
+        { PATH: "", HOME: home },
+        "darwin",
+        { error: vi.fn() },
+      )).toBe(localCli);
+
+      rmSync(localCli);
+      const npmBin = join(home, ".npm-global", "bin");
+      mkdirSync(npmBin, { recursive: true });
+      const npmCli = join(npmBin, "claude");
+      writeFileSync(npmCli, "", { mode: 0o755 });
+
+      expect(configureClaudeExecutablePath(
+        { PATH: "", HOME: home },
+        "darwin",
+        { error: vi.fn() },
+      )).toBe(npmCli);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("darwin에서도 PATH 후보가 HOME 설치 위치보다 앞선다", () => {
+    const dir = makeTempDirSync("claude-darwin-path-order-");
+    const home = makeTempDirSync("claude-darwin-path-home-");
+    try {
+      const pathCli = join(dir, "claude");
+      writeFileSync(pathCli, "", { mode: 0o755 });
+      const homeBin = join(home, ".local", "bin");
+      mkdirSync(homeBin, { recursive: true });
+      writeFileSync(join(homeBin, "claude"), "", { mode: 0o755 });
+
+      expect(configureClaudeExecutablePath(
+        { PATH: dir, HOME: home },
+        "darwin",
+        { error: vi.fn() },
+      )).toBe(pathCli);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it("darwin에서 HOME이 없으면 Homebrew 접두사를 계속 찾는다", () => {
+    addVirtualFile("/opt/homebrew/bin/claude");
+    addVirtualFile("/usr/local/bin/claude");
+
+    expect(configureClaudeExecutablePath(
+      { PATH: "" },
+      "darwin",
+      { error: vi.fn() },
+    )).toBe("/opt/homebrew/bin/claude");
+
+    resetVirtualFs();
+    addVirtualFile("/opt/homebrew/bin/claude", false);
+    addVirtualFile("/usr/local/bin/claude");
+
+    expect(configureClaudeExecutablePath(
+      { PATH: "" },
+      "darwin",
+      { error: vi.fn() },
+    )).toBe("/usr/local/bin/claude");
+  });
+
+  it("darwin에서 후보가 모두 없으면 Homebrew 접두사까지 진단에 남긴다", () => {
+    addVirtualFile("/opt/homebrew/bin/claude", false);
+    addVirtualFile("/usr/local/bin/claude", false);
+    expect(() => configureClaudeExecutablePath({
+      PATH: "",
+      HOME: "",
+    }, "darwin", { error: vi.fn() })).toThrow(
+      /\/opt\/homebrew\/bin\/claude.*\/usr\/local\/bin\/claude/s,
     );
   });
 });

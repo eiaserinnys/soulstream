@@ -1,11 +1,18 @@
 import { chmodSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { resolveCodexCliPath } from "../../src/engine/codex_cli_path.js";
 
 import { makeTempDirSync } from "../helpers/temp_dir.js";
+import { addVirtualFile, resetVirtualFs } from "../helpers/virtual_fs.js";
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  const { virtualFs } = await import("../helpers/virtual_fs.js");
+  return virtualFs(actual);
+});
 
 const tempDirs: string[] = [];
 
@@ -25,6 +32,7 @@ function makeFile(path: string): void {
 }
 
 afterEach(() => {
+  resetVirtualFs();
   for (const dir of tempDirs.splice(0)) {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -158,5 +166,40 @@ describe("resolveCodexCliPath", () => {
     chmodSync(codex, 0o644);
 
     expect(resolveCodexCliPath({ PATH: dir, HOME: "" })).toBeUndefined();
+  });
+
+  it("darwin에서 HOME이 없으면 Homebrew ARM64 접두사를 찾는다", () => {
+    addVirtualFile("/opt/homebrew/bin/codex");
+    addVirtualFile("/usr/local/bin/codex");
+
+    expect(resolveCodexCliPath({ PATH: "", HOME: "" }, "darwin")).toEqual({
+      path: "/opt/homebrew/bin/codex",
+      source: "HOMEBREW_ARM64_BIN",
+    });
+  });
+
+  it("darwin에서 ARM64 설치가 실행 가능하지 않으면 Homebrew Intel 접두사를 찾는다", () => {
+    addVirtualFile("/opt/homebrew/bin/codex", false);
+    addVirtualFile("/usr/local/bin/codex");
+
+    expect(resolveCodexCliPath({ PATH: "", HOME: "" }, "darwin")).toEqual({
+      path: "/usr/local/bin/codex",
+      source: "HOMEBREW_INTEL_BIN",
+    });
+  });
+
+  it("darwin에서 HOME 후보가 Homebrew 접두사보다 앞선다", () => {
+    const home = makeTempDir();
+    const binDir = join(home, ".local", "bin");
+    mkdirSync(binDir, { recursive: true });
+    const codex = join(binDir, "codex");
+    makeExecutable(codex);
+    addVirtualFile("/opt/homebrew/bin/codex");
+    addVirtualFile("/usr/local/bin/codex");
+
+    expect(resolveCodexCliPath({ PATH: "", HOME: home }, "darwin")).toEqual({
+      path: codex,
+      source: "HOME_LOCAL_BIN",
+    });
   });
 });

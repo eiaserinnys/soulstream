@@ -39,6 +39,18 @@ import {
   sanitizeChildProcessEnv,
 } from "../src/runtime/child_process_env.js";
 
+import { addVirtualFile, resetVirtualFs } from "./helpers/virtual_fs.js";
+
+vi.mock("node:fs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:fs")>();
+  const { virtualFs } = await import("./helpers/virtual_fs.js");
+  return virtualFs(actual);
+});
+
+afterEach(() => {
+  resetVirtualFs();
+});
+
 // mkdtempSync 결과를 회수하지 않으면 실행마다 /tmp에 디렉토리가 쌓인다.
 const trackedTempDirs: string[] = [];
 
@@ -440,6 +452,43 @@ describe("Codex turn summary provider", () => {
     })).toEqual({
       path: "/configured/codex",
       source: "CODEX_CLI_PATH",
+    });
+  });
+
+  it("finds the Homebrew prefixes on Darwin when HOME candidates are absent", () => {
+    addVirtualFile("/opt/homebrew/bin/codex");
+    addVirtualFile("/usr/local/bin/codex");
+
+    expect(resolveCodexCliPath(null, { PATH: "" }, "darwin")).toEqual({
+      path: "/opt/homebrew/bin/codex",
+      source: "HOMEBREW_ARM64_BIN",
+    });
+
+    resetVirtualFs();
+    addVirtualFile("/opt/homebrew/bin/codex", false);
+    addVirtualFile("/usr/local/bin/codex");
+
+    expect(resolveCodexCliPath(null, { PATH: "" }, "darwin")).toEqual({
+      path: "/usr/local/bin/codex",
+      source: "HOMEBREW_INTEL_BIN",
+    });
+  });
+
+  it("keeps the HOME install ahead of the Homebrew prefixes on Darwin", () => {
+    const home = trackTempDir(join(tmpdir(), "turn-summary-codex-darwin-home-"));
+    const bin = join(home, ".local", "bin");
+    mkdirSync(bin, { recursive: true });
+    const codexPath = join(bin, "codex");
+    writeFileSync(codexPath, "#!/bin/sh\n", "utf8");
+    chmodSync(codexPath, 0o755);
+    addVirtualFile("/opt/homebrew/bin/codex");
+
+    expect(resolveCodexCliPath(null, {
+      HOME: home,
+      PATH: "",
+    }, "darwin")).toEqual({
+      path: codexPath,
+      source: "HOME_LOCAL_BIN",
     });
   });
 

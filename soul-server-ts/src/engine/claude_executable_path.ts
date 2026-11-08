@@ -2,6 +2,7 @@ import {
   executableCandidatesInPath,
   findSpawnableExecutable,
   inspectExecutablePath,
+  joinExecutablePath,
 } from "./executable_path.js";
 
 type EnvLike = NodeJS.ProcessEnv | Record<string, string | undefined>;
@@ -66,8 +67,23 @@ function claudePathCandidates(
   env: EnvLike,
   platform: NodeJS.Platform,
 ): string[] {
-  return executableCandidatesInPath("claude", env, platform, "PATH")
+  const candidates = executableCandidatesInPath("claude", env, platform, "PATH")
     .map((candidate) => candidate.path);
+  if (platform !== "darwin") return candidates;
+  // macOS launches do not inherit an interactive shell PATH. Keep PATH first,
+  // then the npm and Homebrew install locations used by the GUI launch path.
+  const home = nonEmpty(env.HOME);
+  if (home) {
+    candidates.push(
+      joinExecutablePath(home, ".local", "bin", "claude"),
+      joinExecutablePath(home, ".npm-global", "bin", "claude"),
+    );
+  }
+  candidates.push(
+    joinExecutablePath("/opt/homebrew/bin", "claude"),
+    joinExecutablePath("/usr/local/bin", "claude"),
+  );
+  return candidates;
 }
 
 function resolutionError(

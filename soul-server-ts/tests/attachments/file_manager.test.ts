@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { mkdir, readFile, readdir, rm } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, win32 } from "node:path";
 
@@ -34,6 +34,32 @@ afterEach(async () => {
 });
 
 describe("FileAttachmentStore", () => {
+  it("uploads and reads through a symlinked base directory without canonicalizing it", async () => {
+    const realBase = await makeTempDir();
+    const parent = await makeTempDir();
+    const linkBase = join(parent, "attachments");
+    await symlink(realBase, linkBase, "dir");
+    const store = new FileAttachmentStore(linkBase);
+
+    const begun = await store.beginFileUpload({
+      uploadId: "upload-symlink",
+      sessionId: "sess-symlink",
+      filename: "note.txt",
+      expectedSize: 6,
+    });
+    expect(begun.next_chunk_index).toBe(0);
+    await store.appendFileUploadChunk({
+      uploadId: "upload-symlink",
+      chunk: Buffer.from("linked"),
+      chunkIndex: 0,
+    });
+    const saved = await store.finishFileUpload({ uploadId: "upload-symlink" });
+
+    expect(saved.path.startsWith(linkBase)).toBe(true);
+    const downloaded = await store.downloadAttachment(saved.path);
+    expect(Buffer.from(downloaded.content_b64, "base64").toString("utf8")).toBe("linked");
+  });
+
   it("stores files with ISO timestamp prefix and sanitized original filename", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-06-01T00:45:30.123Z"));
