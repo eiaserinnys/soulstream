@@ -1,7 +1,7 @@
 import type { CardRow, FolderRow, FolderSnapshot, FolderOperationRow, SqlClient, RepositorySql } from "./card_types.js";
 import { normalizeOperation } from "./card_models.js";
 import { projectCardActivity } from "../card_latest_activity.js";
-import { completedCardCursor, type CompletedCardQuery } from "../completed_card_query.js";
+import { completedCardCursor, pagedCardCursor, type CompletedCardQuery, type PagedCardQuery } from "../completed_card_query.js";
 import { projectCardAttachmentRows } from "../card_attachment_projection.js";
 
 export class CardRepositoryRead {
@@ -51,6 +51,32 @@ export class CardRepositoryRead {
     const page = rows.slice(0,params.limit), last = page.at(-1);
     const nextCursor = rows.length > params.limit && last ? completedCardCursor(last.cursor_time,last.id) : null;
     const cards = page.map(({ cursor_time: _cursorTime, ...card }) => card as CardRow);
+    return { cards: await this.projectCards(cards), nextCursor };
+  }
+  async listPagedCards(params: PagedCardQuery) {
+    // PostgreSQL does not allow a SELECT alias in WHERE, so the ranked rows are filtered one level out.
+    const rows = await this.sql<(CardRow & { status_rank: number; cursor_time: string })[]>`SELECT * FROM (
+      SELECT cards.*,
+        CASE status WHEN 'todo' THEN 1 WHEN 'queued' THEN 2 WHEN 'running' THEN 3 WHEN 'blocked' THEN 4
+          WHEN 'review' THEN 5 WHEN 'on_hold' THEN 6 WHEN 'done' THEN 7 WHEN 'cancelled' THEN 8 ELSE 9 END AS status_rank,
+        updated_at::text AS cursor_time
+      FROM cards
+      WHERE archived=FALSE
+        AND (${params.folderId ?? null}::text IS NULL OR folder_id=${params.folderId ?? null})
+        AND (${params.status ?? null}::text IS NULL OR status=${params.status ?? null})
+        AND (${params.allowedFolderIds ?? null}::text[] IS NULL OR folder_id=ANY(${params.allowedFolderIds ?? null}::text[]))
+        AND (${params.includeClosed} OR status NOT IN ('done','cancelled'))
+        AND (${params.q ?? ""} = '' OR strpos(lower(title),lower(${params.q ?? ""})) > 0
+          OR strpos(lower(request),lower(${params.q ?? ""})) > 0
+          OR strpos('#' || COALESCE(number::text,''),lower(${params.q ?? ""})) > 0)
+    ) ranked
+    WHERE (${params.after?.rank ?? null}::int IS NULL OR status_rank > ${params.after?.rank ?? null}::int
+      OR (status_rank = ${params.after?.rank ?? null}::int
+        AND (updated_at,id COLLATE "C") < (${params.after?.time ?? null}::text::timestamptz,${params.after?.id ?? null}::text COLLATE "C")))
+    ORDER BY status_rank ASC,updated_at DESC,id COLLATE "C" DESC LIMIT ${params.limit + 1}`;
+    const page = rows.slice(0,params.limit), last = page.at(-1);
+    const nextCursor = rows.length > params.limit && last ? pagedCardCursor(Number(last.status_rank),last.cursor_time,last.id) : null;
+    const cards = page.map(({ status_rank: _statusRank, cursor_time: _cursorTime, ...card }) => card as CardRow);
     return { cards: await this.projectCards(cards), nextCursor };
   }
   async getCard(cardId: string): Promise<CardRow | null> {

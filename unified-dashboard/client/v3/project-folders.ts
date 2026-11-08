@@ -1,4 +1,4 @@
-import type { CatalogFolder } from "@seosoyoung/soul-ui";
+import { getFolderNameSortKey, type CatalogFolder } from "@seosoyoung/soul-ui";
 
 export interface FlatProjectFolder {
   folder: CatalogFolder;
@@ -53,6 +53,7 @@ export function flattenProjectFolders(folders: readonly CatalogFolder[]): FlatPr
 
 function compareFolders(left: CatalogFolder, right: CatalogFolder): number {
   return left.sortOrder - right.sortOrder
+    || getFolderNameSortKey(left.name).localeCompare(getFolderNameSortKey(right.name), "ko")
     || left.name.localeCompare(right.name, "ko")
     || left.id.localeCompare(right.id);
 }

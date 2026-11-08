@@ -78,6 +78,81 @@ it('aggregate/snapshot excludes completed before activity projection and retains
   const service=new CardControlPlaneService(createBoardYjsSqlAdapter(h.liveSql),{appendEventTx:async()=>1});
   expect((await service.getFolder('public',false))?.cards.map(card=>card.id)).toEqual(['active']);
 });
+type PagedCardFixture = {
+  id: string; status: string; updatedAt: string; title: string; request?: string; number?: number | null;
+};
+async function seedPagedCards(rows: readonly PagedCardFixture[]) {
+  await h.sql`DELETE FROM cards WHERE id LIKE 'paged-%'`;
+  for (const row of rows)
+    await h.sql`INSERT INTO cards(id,folder_id,title,request,position_key,status,updated_at,number)
+      VALUES (${row.id},'public',${row.title},${row.request ?? row.title},${row.id},${row.status},
+        ${row.updatedAt}::timestamptz,${row.number ?? null})`;
+}
+
+it('pages active cards in status-group order and excludes closed cards when includeClosed=false', async () => {
+  await seedPagedCards([
+    {id:'paged-excl-todo', status:'todo', updatedAt:'2026-11-01 00:00:00+00', title:'pagedexcl todo'},
+    {id:'paged-excl-run', status:'running', updatedAt:'2026-11-02 00:00:00+00', title:'pagedexcl running'},
+    {id:'paged-excl-done', status:'done', updatedAt:'2026-11-03 00:00:00+00', title:'pagedexcl done'},
+    {id:'paged-excl-cancel', status:'cancelled', updatedAt:'2026-11-04 00:00:00+00', title:'pagedexcl cancel'},
+  ]);
+  const page = (await app.inject('/api/cards?limit=50&includeClosed=false&q=pagedexcl')).json();
+  expect(page.cards.map((c:{id:string})=>c.id)).toEqual(['paged-excl-todo','paged-excl-run']);
+  expect(page.nextCursor).toBeNull();
+});
+
+it('traverses every card without duplicates or gaps in status-group and update order', async () => {
+  await seedPagedCards([
+    {id:'paged-page-todo-a', status:'todo', updatedAt:'2026-11-02 00:00:01+00', title:'pagedpage todo a'},
+    {id:'paged-page-todo-b', status:'todo', updatedAt:'2026-11-02 00:00:02+00', title:'pagedpage todo b'},
+    {id:'paged-page-queued', status:'queued', updatedAt:'2026-11-02 00:00:03+00', title:'pagedpage queued'},
+    {id:'paged-page-blocked', status:'blocked', updatedAt:'2026-11-02 00:00:04+00', title:'pagedpage blocked'},
+    {id:'paged-page-run-a', status:'running', updatedAt:'2026-11-02 00:00:05+00', title:'pagedpage run a'},
+    {id:'paged-page-run-b', status:'running', updatedAt:'2026-11-02 00:00:05+00', title:'pagedpage run b'},
+    {id:'paged-page-review', status:'review', updatedAt:'2026-11-02 00:00:06+00', title:'pagedpage review'},
+    {id:'paged-page-hold', status:'on_hold', updatedAt:'2026-11-02 00:00:07+00', title:'pagedpage hold'},
+    {id:'paged-page-done-a', status:'done', updatedAt:'2026-11-02 00:00:08+00', title:'pagedpage done a'},
+    {id:'paged-page-done-b', status:'done', updatedAt:'2026-11-02 00:00:09+00', title:'pagedpage done b'},
+    {id:'paged-page-cancel', status:'cancelled', updatedAt:'2026-11-02 00:00:10+00', title:'pagedpage cancel'},
+  ]);
+  const ids: string[] = [];
+  const pageSizes: number[] = [];
+  let cursor: string | null = null;
+  do {
+    // limit 4 puts the first page boundary between the two same-updated_at running cards,
+    // so a cursor that forgets the id tie-break drops one of them instead of passing silently.
+    const query: URLSearchParams = new URLSearchParams({limit:'4',includeClosed:'true',q:'pagedpage',...(cursor ? {cursor} : {})});
+    const response = await app.inject(`/api/cards?${query}`);
+    expect(response.statusCode).toBe(200);
+    const page:{cards:{id:string}[];nextCursor:string | null} = response.json();
+    pageSizes.push(page.cards.length);
+    ids.push(...page.cards.map(card=>card.id));
+    cursor = page.nextCursor;
+  } while (cursor);
+  const expected = await h.sql`SELECT id FROM cards WHERE folder_id='public' AND archived=FALSE
+    AND (strpos(lower(title),'pagedpage') > 0 OR strpos(lower(request),'pagedpage') > 0 OR strpos('#' || COALESCE(number::text,''),'pagedpage') > 0)
+    ORDER BY CASE status WHEN 'todo' THEN 1 WHEN 'queued' THEN 2 WHEN 'running' THEN 3 WHEN 'blocked' THEN 4
+      WHEN 'review' THEN 5 WHEN 'on_hold' THEN 6 WHEN 'done' THEN 7 WHEN 'cancelled' THEN 8 ELSE 9 END,
+      updated_at DESC, id COLLATE "C" DESC`;
+  expect(ids).toEqual(expected.map(row=>row.id));
+  expect(ids).toHaveLength(11);
+  expect(new Set(ids).size).toBe(ids.length);
+  expect(pageSizes).toEqual([4,4,3]);
+});
+
+it('searches paged cards by title, request and #number and rejects malformed cursors', async () => {
+  await seedPagedCards([
+    {id:'paged-num-target', status:'todo', updatedAt:'2026-11-05 00:00:00+00', title:'번호 검색 카드', request:'pagednum 요청', number:987001},
+    {id:'paged-num-other', status:'running', updatedAt:'2026-11-05 00:00:01+00', title:'pagednum 다른 카드', request:'pagednum 요청'},
+  ]);
+  const byWord = (await app.inject('/api/cards?limit=10&includeClosed=true&q=pagednum')).json();
+  expect(byWord.cards.map((c:{id:string})=>c.id)).toEqual(['paged-num-target','paged-num-other']);
+  const byNumber = (await app.inject('/api/cards?limit=10&includeClosed=true&q=%23987001')).json();
+  expect(byNumber.cards.map((c:{id:string})=>c.id)).toEqual(['paged-num-target']);
+  expect(byNumber.nextCursor).toBeNull();
+  expect((await app.inject('/api/cards?limit=10&includeClosed=false&cursor=broken')).statusCode).toBe(400);
+});
+
 it('measures the existing 1000-card fixture response and database plan', async () => {
   const started=performance.now();
   const response=await app.inject('/api/cards?status=done&limit=60');

@@ -26,6 +26,18 @@ describe("project folder tree", () => {
     expect(flattenProjectFolders(folders)).toHaveLength(78);
   });
 
+  it("skips a leading emoji and its trailing spaces when comparing sibling names", () => {
+    const folders: CatalogFolder[] = [
+      folder("zebra", "🍎 Zebra", 0),
+      folder("apple", "🐟 Apple", 0),
+      folder("project", "✨ 프로젝트", 0),
+      folder("plain", "가나다", 0),
+    ];
+
+    expect(flattenProjectFolders(folders).map(({ folder: item }) => item.id))
+      .toEqual(["plain", "project", "apple", "zebra"]);
+  });
+
   it("keeps child structure available while callers decide which branches are visible", () => {
     const folders: CatalogFolder[] = [
       folder("root", "Root", 0),
