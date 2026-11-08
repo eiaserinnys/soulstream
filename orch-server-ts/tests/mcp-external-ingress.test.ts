@@ -92,15 +92,14 @@ describe("orchestrator dedicated external MCP ingress", () => {
     expect(await client.listResourceTemplates()).toMatchObject({ resourceTemplates: [] });
     await expect(client.readResource({ uri: "ui://missing" })).rejects.toMatchObject({ code: -32602 });
   });
-  it("resolves the same lazy board service for real external and internal tool execution", async () => {
+  it("uses the same flat folder read host for external and internal tool execution", async () => {
     const document = { id: "document", title: "문서", body: "본문", version: 1 };
     const getMarkdownDocument = vi.fn(async () => document);
-    const createService = vi.fn(() => ({}));
     const app = createApp({ config: parseOrchServerConfig({ environment: "test", databaseUrl: "unused", authBearerToken: "internal" }),
       externalIngress: ingress,
       mcpHostRoutes: { ...unusedClusterDependencies, authBearerToken: "internal",
         cluster: { ...unusedClusterDependencies.cluster, readSession: async () => null },
-        board: { host: { authBearerToken: "internal", createService, projectionHost: { getMarkdownDocument } } },
+        board: { host: { reads: { getMarkdownDocument } } },
       } as unknown as McpHostOptions,
     });
     cleanup.push(() => app.close());
@@ -111,7 +110,6 @@ describe("orchestrator dedicated external MCP ingress", () => {
     const internal = await app.inject({ method: "POST", url: "/api/mcp/host/get_markdown_document", headers: { authorization: "Bearer internal" },
       payload: { args: { document_id: "document" }, context: { principal: "internal", caller_session_id: "session", node_id: "other-node" } } });
     expect(internal.json()).toMatchObject({ structuredContent: document });
-    expect(createService).toHaveBeenCalledTimes(1);
     expect(getMarkdownDocument).toHaveBeenCalledTimes(2);
   });
   it("detects a changed description in the inventory comparator", async () => {

@@ -261,7 +261,7 @@ describe("production auth guard", () => {
       method: "GET",
       routeUrl: "/yjs/:folderId",
       websocket: true,
-    })).toBe(false);
+    })).toBeUndefined();
     expect(resolveProductionRouteAuthRequirement({
       method: "GET",
       routeUrl: "/yjs/:containerKind/:containerId",

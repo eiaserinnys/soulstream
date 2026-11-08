@@ -407,94 +407,35 @@ describe("kstDate", () => {
 });
 
 describe("SessionLegacyProjection", () => {
-  it("replays folder placement through the atomic Board Yjs host operation", async () => {
-    const upsertSessionBoardItem = vi.fn(async () => null);
-    const db = {
-      getFolderById: vi.fn(async () => ({ id: "folder-1" })),
-      getBoardItemsByFolder: vi.fn(async () => []),
-    };
-    const projection = new SessionLegacyProjection(
-      db as never,
-      { upsertSessionBoardItem } as never,
-    );
-
-    await projection.project(binding({
-      legacy_folder_id: "folder-1",
-    }));
-
-    expect(upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
-      folderId: "folder-1",
-      sessionId: "sess-1",
-    }));
+  it("replays folder placement through the flat folder host", async () => {
+    const moveSessionToFolder = vi.fn(async (_sessionId: string, _folderId: string | null) => undefined);
+    const db = { getFolderById: vi.fn(async () => ({ id: "folder-1" })),
+      getBoardItemsByFolder: vi.fn(async () => []) };
+    const projection = new SessionLegacyProjection(db as never, { moveSessionToFolder } as never);
+    await projection.project(binding({ legacy_folder_id: "folder-1" }));
+    expect(moveSessionToFolder).toHaveBeenCalledWith("sess-1", "folder-1");
+    expect(db.getBoardItemsByFolder).not.toHaveBeenCalled();
   });
 
-  it("replays folder placement into the same first-free grid policy as initial creation", async () => {
-    const upsertSessionBoardItem = vi.fn(async () => ({}));
-    const db = {
-      getFolderById: vi.fn(async () => ({ id: "rb-1" })),
-      getBoardItemsByFolder: vi.fn(async () => [
-        { folderId: "rb-1", x: 0, y: 160 },
-        { folderId: "rb-1", x: 280, y: 160 },
-      ]),
-    };
-    const projection = new SessionLegacyProjection(
-      db as never,
-      { upsertSessionBoardItem } as never,
-    );
-    await projection.project(binding({
-      legacy_folder_id: "rb-1",
-    }));
-
-    expect(upsertSessionBoardItem).toHaveBeenCalledWith(expect.objectContaining({
-      sessionId: "sess-1",
-      x: 560,
-      y: 160,
-    }));
-    expect(db.getBoardItemsByFolder).toHaveBeenCalledWith("rb-1");
+  it("assigns the folder without reading board coordinates", async () => {
+    const moveSessionToFolder = vi.fn(async (_sessionId: string, _folderId: string | null) => undefined);
+    const db = { getFolderById: vi.fn(async () => ({ id: "rb-1" })),
+      getBoardItemsByFolder: vi.fn(async () => [{ x: 0, y: 160 }, { x: 280, y: 160 }]) };
+    const projection = new SessionLegacyProjection(db as never, { moveSessionToFolder } as never);
+    await projection.project(binding({ legacy_folder_id: "rb-1" }));
+    expect(moveSessionToFolder).toHaveBeenCalledWith("sess-1", "rb-1");
+    expect(db.getBoardItemsByFolder).not.toHaveBeenCalled();
   });
 
-  it("preserves an existing session board item's coordinates across crash replay", async () => {
-    const boardItems: Array<Record<string, unknown> & { x: number; y: number }> = [
-      {
-        id: "other",
-        folderId: "rb-1",
-        itemId: "other",
-        itemType: "session",
-        x: 0,
-        y: 160,
-      },
-    ];
-    const calls: Array<{ x: number; y: number }> = [];
-    const upsertSessionBoardItem = vi.fn(async (input: { sessionId: string; x: number; y: number }) => {
-      calls.push({ x: input.x, y: input.y });
-      const existing = boardItems.find((item) => item.id === `session:${input.sessionId}`);
-      if (existing) Object.assign(existing, { x: input.x, y: input.y });
-      else boardItems.push({
-        id: `session:${input.sessionId}`,
-        folderId: "rb-1",
-        itemId: input.sessionId,
-        itemType: "session",
-        x: input.x,
-        y: input.y,
-      });
-      return {};
-    });
-    const getBoardItemsByFolder = vi.fn(async () => boardItems.map((item) => ({ ...item })));
-    const db = {
-      getFolderById: vi.fn(async () => ({ id: "rb-1" })),
-      getBoardItemsByFolder,
-    };
-    const projection = new SessionLegacyProjection(db as never, { upsertSessionBoardItem } as never);
-    const row = binding({
-      legacy_folder_id: "rb-1",
-      page_state: "bound",
-    });
-
-    await projection.project(row); // upsert succeeded, outbox completion crashes
-    await projection.project(row); // durable replay
-
-    expect(calls).toEqual([{ x: 280, y: 160 }, { x: 280, y: 160 }]);
-    expect(getBoardItemsByFolder).toHaveBeenCalledTimes(2);
-    expect(getBoardItemsByFolder).toHaveBeenCalledWith("rb-1");
+  it("replays the same session and folder after a completion crash", async () => {
+    const moveSessionToFolder = vi.fn(async (_sessionId: string, _folderId: string | null) => undefined);
+    const db = { getFolderById: vi.fn(async () => ({ id: "rb-1" })),
+      getBoardItemsByFolder: vi.fn(async () => []) };
+    const projection = new SessionLegacyProjection(db as never, { moveSessionToFolder } as never);
+    const row = binding({ legacy_folder_id: "rb-1", page_state: "bound" });
+    await projection.project(row);
+    await projection.project(row);
+    expect(moveSessionToFolder.mock.calls).toEqual([["sess-1", "rb-1"], ["sess-1", "rb-1"]]);
+    expect(db.getBoardItemsByFolder).not.toHaveBeenCalled();
   });
 });

@@ -121,6 +121,6 @@ describe("card MCP contract", () => {
     await h.creation.createTask({ agentSessionId: "session-1", prompt: "작업", folderId: "folder-1", cardId: "card-1" } as any);
     await h.creation.waitForDeferredEffects("session-1");
     expect(h.registerSession.mock.calls[0][0]).toMatchObject({ cardId: "card-1" });
-    expect(h.upsertSessionBoardItem.mock.calls[0][0]).not.toHaveProperty("cardId");
+    expect(h.moveSessionToFolder).toHaveBeenCalledWith("session-1", "folder-1");
   });
 });
