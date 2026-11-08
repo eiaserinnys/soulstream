@@ -32,7 +32,7 @@ import { RecurringJobEditorScreen } from '../screens/RecurringJobEditorScreen';
 import { RecurringJobHistoryScreen } from '../screens/RecurringJobHistoryScreen';
 import { useSessionsStream } from '../hooks/useSessionsStream';
 import { useNodeConnectivityStream } from '../hooks/useNodeConnectivityStream';
-import { GlassSurface } from '../components/GlassSurface';
+import { GlassClusterContainer, GlassSurface } from '../components/GlassSurface';
 import { SafeAreaInsetsContext, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTokens, type DesignTokens } from '../theme';
 import { DuoRailOverlayContext, DuoSideBandContext, DUO_RAIL_TAB_ORDER, INITIAL_ROOT_TAB, PhoneRailModeContext, RAIL_MIN_INSET_WIDTH, ROOT_TAB_ORDER } from './tabContract';
@@ -173,11 +173,11 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
       style={{ position: 'absolute', top: topOffset, left: 0, right: 0, alignItems: 'center' }}>
       <RailCapsule testID="duo-rail-back-capsule" compact={layout.compact}>{renderOverrideAction(layout.exit)}</RailCapsule>
     </View> : null}
-    <View pointerEvents="box-none" style={{ position: 'absolute', bottom: Math.max(bottomReserve, keyboardOverlap), left: 0, right: 0,
-      alignItems: 'center', gap: layout.compact ? t.uiSpacing.xs : t.uiSpacing.sm }}>
+    <GlassClusterContainer pointerEvents="box-none" spacing={layout.compact ? t.uiSpacing.xs : t.uiSpacing.sm}
+      style={{ position: 'absolute', bottom: Math.max(bottomReserve, keyboardOverlap), left: 0, right: 0, alignItems: 'center' }}>
       {layout.screen.length ? <RailCapsule testID="duo-rail-context-capsule" compact={layout.compact}>{layout.screen.map(renderAction)}</RailCapsule> : null}
       {layout.nav.length ? <RailCapsule testID="phone-rail-tab-cluster" compact={layout.compact}>{layout.nav.map(renderAction)}</RailCapsule> : null}
-    </View>
+    </GlassClusterContainer>
   </AppKeyboardAvoidingView>;
 }
 

@@ -42,7 +42,7 @@ import { DUO_RAIL_CENTER_FROM_END, DUO_TOP_BAND_RAIL_TOP } from '../duoSideBand'
 beforeEach(() => { mockSessionData.sessions = []; mockRequestEntry.mockClear(); });
 afterEach(() => { usePhoneRailActions.setState({ overrides: [] }); useSettingsStore.setState({ appearance: 'dark' }); });
 
-test('레일 캡슐은 다크·라이트 모두 밝은 리퀴드 글래스 스킴을 쓴다', () => {
+test('레일 캡슐은 다크·라이트 모두 틴트 없는 밝은 리퀴드 글래스와 24pt 곡률을 쓴다', () => {
   const Capsule = RailCapsule as React.ComponentType<any>;
   const scene = () => <NavigationContainer><Capsule testID="capsule-surface">
     {['one', 'two'].map(id => <RailCapsuleItem key={id} testID={id} label={id} onPress={jest.fn()}><Text>{id}</Text></RailCapsuleItem>)}
@@ -51,13 +51,18 @@ test('레일 캡슐은 다크·라이트 모두 밝은 리퀴드 글래스 스�
   useSettingsStore.setState({ appearance: 'dark' });
   const dark = render(scene());
   expect(dark.getByTestId('capsule-surface').props.colorScheme).toBe('light');
-  expect(dark.getByTestId('capsule-surface').props.tintColor).toBe('rgba(242, 242, 247, 0.56)');
+  expect(dark.getByTestId('capsule-surface').props.tintColor).toBeUndefined();
+  expect(dark.getByTestId('capsule-surface').props.borderRadius).toBe(24);
+  expect(dark.getByTestId('capsule-surface').props.isInteractive).toBe(true);
+  expect(StyleSheet.flatten(dark.getByTestId('capsule-surface').props.style).borderWidth).toBeUndefined();
   dark.unmount();
 
   useSettingsStore.setState({ appearance: 'light' });
   const light = render(scene());
   expect(light.getByTestId('capsule-surface').props.colorScheme).toBe('light');
-  expect(light.getByTestId('capsule-surface').props.tintColor).toBe('rgba(242, 242, 247, 0.56)');
+  expect(light.getByTestId('capsule-surface').props.tintColor).toBeUndefined();
+  expect(light.getByTestId('capsule-surface').props.borderRadius).toBe(24);
+  expect(light.getByTestId('capsule-surface').props.isInteractive).toBe(true);
 });
 
 test('밝은 캡슐 위 아이콘 색상은 확정 보완 값(다크 #111111·라이트 textMuted·선택 #002b66)을 쓴다', () => {

@@ -58,7 +58,7 @@ export function RailCapsule({ children, testID, compact = false, direction = 'co
     alignItems: 'center' }}>
     <RailCapsuleItemContext.Provider value={{ compact, single, direction }}>{children}</RailCapsuleItemContext.Provider>
   </View>;
-  return <GlassSurface role="chrome" testID={testID} colorScheme="light" cornerRadius={t.foundation.radius.round}
+  return <GlassSurface role="chrome" testID={testID} colorScheme="light" isInteractive cornerRadius={RAIL_CAPSULE_WIDTH / 2}
     style={{ width: row ? length : RAIL_CAPSULE_WIDTH, height: row ? RAIL_CAPSULE_WIDTH : length }}>
     {content}
   </GlassSurface>;

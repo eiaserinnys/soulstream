@@ -120,10 +120,11 @@ describe('surface role contract', () => {
     expect(roles.canvas.tokenStyle.backgroundColor).toBe('transparent');
     expect(roles.canvas.nativeGlass).toBe(false);
     expect(roles.chrome.nativeGlass).toBe(true);
-    expect(roles.glassSoft.nativeGlass).toBe(true);
-    expect(roles.glassCard.nativeGlass).toBe(true);
-    expect(roles.glassDense.nativeGlass).toBe(true);
-    expect(roles.modal.nativeGlass).toBe(true);
+    // 떠 있는 내비게이션·컨트롤만 리퀴드 글래스다. 콘텐츠 카드·시트·입력은 솔리드 표면이다.
+    expect(roles.glassSoft.nativeGlass).toBe(false);
+    expect(roles.glassCard.nativeGlass).toBe(false);
+    expect(roles.glassDense.nativeGlass).toBe(false);
+    expect(roles.modal.nativeGlass).toBe(false);
     expect(roles.modal.compositesBackdrop).toBe(true);
     expect(roles.nativeSheet.nativeGlass).toBe(false);
     expect(roles.nativeSheet.compositesBackdrop).toBe(false);
@@ -164,41 +165,33 @@ describe('surface role contract', () => {
   });
 
   test.each([
-    [
-      'light',
-      'rgba(242, 242, 247, 0.68)',
-      'rgba(242, 242, 247, 0.92)',
-      'rgba(209, 209, 214, 0.74)',
-    ],
-    [
-      'dark',
-      'rgba(28, 28, 30, 0.68)',
-      'rgba(28, 28, 30, 0.92)',
-      'rgba(42, 42, 46, 0.74)',
-    ],
+    ['light', 'rgba(242, 242, 247, 0.58)', 'rgba(242, 242, 247, 0.92)'],
+    ['dark', 'rgba(28, 28, 30, 0.58)', 'rgba(28, 28, 30, 0.92)'],
   ] as const)(
-    '기본 chrome 역할은 %s 모드에서 기존 틴트·배경 알파와 경계를 유지한다',
-    (mode, nativeTint, blurColor, borderColor) => {
+    '기본 chrome 역할은 %s 모드에서 틴트 없이 블러·토큰 배경만 남긴다',
+    (mode, blurColor, tokenBackgroundColor) => {
       const roles = createSurfaceRoles(tokens(mode));
 
-      expect(roles.chrome.nativeTintColor).toBe(nativeTint);
+      expect(roles.chrome.nativeTintColor).toBeUndefined();
       expect(roles.chrome.blurColor).toBe(blurColor);
-      expect(roles.chrome.tokenStyle.backgroundColor).toBe(blurColor);
-      expect(roles.chrome.materialStyle.blur.borderColor).toBe(borderColor);
+      expect(roles.chrome.tokenStyle.backgroundColor).toBe(tokenBackgroundColor);
+      expect(roles.chrome.materialStyle.native).toEqual({});
+      expect(roles.chrome.materialStyle.blur).toEqual({});
+      expect(roles.chrome.materialStyle.solid).toEqual({});
     },
   );
 
-  test('캡슐 전용 라이트 chrome은 밝은 틴트와 흰색 스페큘러 림을 제공한다', () => {
+  test('캡슐 전용 라이트 chrome도 틴트와 스페큘러 림 없이 같은 계약을 쓴다', () => {
     const capsuleChrome = createLightChromeGlassRole(tokens('light'));
 
-    expect(capsuleChrome.nativeTintColor).toBe('rgba(242, 242, 247, 0.56)');
+    expect(capsuleChrome.nativeTintColor).toBeUndefined();
     expect(capsuleChrome.blurColor).toBe('rgba(242, 242, 247, 0.62)');
     expect(capsuleChrome.tokenStyle.backgroundColor).toBe(
       'rgba(242, 242, 247, 0.92)',
     );
-    expect(capsuleChrome.materialStyle.blur.borderColor).toBe(
-      'rgba(255, 255, 255, 0.78)',
-    );
+    expect(capsuleChrome.materialStyle.native).toEqual({});
+    expect(capsuleChrome.materialStyle.blur).toEqual({});
+    expect(capsuleChrome.materialStyle.solid).toEqual({});
   });
 
   test('iPad 세 패널은 공통 panel surface를 쓰고 제목 바만 glass로 감싸지 않는다', () => {

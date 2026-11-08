@@ -38,6 +38,7 @@ export type GlassColorScheme = 'auto' | 'light' | 'dark';
 
 type ExpoGlassEffectModule = {
   GlassView: React.ComponentType<any>;
+  GlassContainer?: React.ComponentType<any>;
   isLiquidGlassAvailable: () => boolean;
   isGlassEffectAPIAvailable: () => boolean;
 };
@@ -120,6 +121,44 @@ export function GlassSurface(props: GlassSurfaceProps) {
   return <GlassSurfaceImpl {...props} />;
 }
 
+export interface GlassClusterContainerProps {
+  children: React.ReactNode;
+  /** 인접한 GlassView 사이에서 UIKit이 합쳐 그릴 간격. */
+  spacing?: number;
+  style?: StyleProp<ViewStyle>;
+  testID?: string;
+  pointerEvents?: ViewStyle['pointerEvents'];
+}
+
+/**
+ * 떠 있는 유리 클러스터의 컨테이너.
+ *
+ * iOS 26에서는 인접한 GlassView를 GlassContainer로 묶어 하나의 유리 덩어리로 합쳐 그린다.
+ * 네이티브 합성이 불가능한 환경(웹, Reduce Transparency, 구형 OS)에서는 동일 레이아웃의 View로 대체한다.
+ */
+export function GlassClusterContainer({
+  children,
+  spacing,
+  style,
+  testID,
+  pointerEvents,
+}: GlassClusterContainerProps) {
+  const reduceTransparency = useReduceTransparency();
+  const GlassContainer = loadGlassEffect()?.GlassContainer;
+  if (!reduceTransparency && canUseNativeGlass() && GlassContainer) {
+    return (
+      <GlassContainer spacing={spacing} style={style} testID={testID} pointerEvents={pointerEvents}>
+        {children}
+      </GlassContainer>
+    );
+  }
+  return (
+    <View testID={testID} style={style} pointerEvents={pointerEvents}>
+      {children}
+    </View>
+  );
+}
+
 interface GlassSurfaceImplProps extends GlassSurfaceProps {
   /** Internal primitive renderer that can keep fallback interaction semantics. */
   renderContent?: (surfaceKind: GlassSurfaceKind) => React.ReactNode;
@@ -184,9 +223,8 @@ function GlassSurfaceImpl({
     nativeGlassEnabled: surface.nativeGlass,
   });
   const resolvedBlurTint = resolveGlassBlurTint(effectiveMode);
-  const radiusStyle = createSurfaceRadiusStyle(
-    cornerRadius ?? surface.borderRadius,
-  );
+  const resolvedCornerRadius = cornerRadius ?? surface.borderRadius;
+  const radiusStyle = createSurfaceRadiusStyle(resolvedCornerRadius);
   const surfaceStyle = [
     styles.surface,
     surface.materialStyle[surfaceKind],
@@ -210,6 +248,7 @@ function GlassSurfaceImpl({
         colorScheme={resolvedColorScheme}
         tintColor={surface.nativeTintColor}
         isInteractive={isInteractive}
+        borderRadius={resolvedCornerRadius}
         style={surfaceStyle}
         onLayout={onLayout}
       >

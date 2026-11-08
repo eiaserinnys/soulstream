@@ -181,6 +181,13 @@ test('embedded delegates only outer padding; regular minimumBottomPadding and in
   expect(StyleSheet.flatten(screen.UNSAFE_getAllByType(View)[0].props.style).paddingBottom).toBe(32);
   screen.rerender(<ChatComposer {...props} embedded />);
   expect(StyleSheet.flatten(screen.getByTestId('chat-composer-row').props.style)).toMatchObject({ paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 });
-  expect(StyleSheet.flatten(screen.getByTestId('chat-composer-box').props.style)).toEqual(inner);
+  const embeddedBox = StyleSheet.flatten(screen.getByTestId('chat-composer-box').props.style);
+  expect(embeddedBox).toMatchObject({
+    minHeight: inner.minHeight,
+    paddingHorizontal: inner.paddingHorizontal,
+    paddingVertical: inner.paddingVertical,
+    borderWidth: 0,
+    borderColor: 'transparent',
+  });
   expect(StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style)).toEqual(send);
 });

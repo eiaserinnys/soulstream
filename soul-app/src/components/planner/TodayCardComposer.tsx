@@ -94,7 +94,7 @@ export function TodayCardComposer({ api, onCreated, autoFocus = false, onCollaps
     <Text style={styles.chipText} numberOfLines={1}>{content} ▾</Text>
   </CompactTouchTarget>;
   return <>
-    <PlannerForegroundCard testID="card-composer" style={styles.frame} cornerRadius={t.radius.lg}>
+    <PlannerForegroundCard testID="card-composer" role="chrome" style={styles.frame} cornerRadius={t.radius.lg}>
       <View testID="card-composer-layout" style={styles.composerLayout}>
         <View testID="card-composer-chips" style={styles.chips}>
           {chip('폴더 선택', `📁 ${folders.find((folder) => folder.id === value.folderId)?.name ?? '폴더 선택'}`, 'folder')}
