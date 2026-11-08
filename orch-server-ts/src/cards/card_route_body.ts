@@ -33,6 +33,11 @@ export async function listCardRouteBody(options: CardRouteBodyOptions, input: un
     const page = await service.listCompletedCards({ ...query, allowedFolderIds });
     return { cards: page.cards.map(serializeCardRow), nextCursor: page.nextCursor };
   }
+  if (query.paged) {
+    const page = await service.listPagedCards({ folderId: query.folderId, status: query.status,
+      includeClosed: query.includeClosed, allowedFolderIds, q: query.q, limit: query.limit, after: query.pagedAfter });
+    return { cards: page.cards.map(serializeCardRow), nextCursor: page.nextCursor };
+  }
   const cards = await service.listCards({ ...query, allowedFolderIds });
   return { cards: (await service.projectCards(cards)).map(serializeCardRow) };
 }

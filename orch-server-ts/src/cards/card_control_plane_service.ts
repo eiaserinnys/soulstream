@@ -106,6 +106,7 @@ export class CardControlPlaneService {
   listOperations(folderId: string,limit?: number,offset?: number) { return this.repo.listOperations(folderId,limit,offset); }
   listCards(params: Parameters<CardRepository["listCards"]>[0]={}) { return this.repo.listCards(params); }
   listCompletedCards(params: Parameters<CardRepository["listCompletedCards"]>[0]) { return this.repo.listCompletedCards(params); }
+  listPagedCards(params: Parameters<CardRepository["listPagedCards"]>[0]) { return this.repo.listPagedCards(params); }
   projectCards(cards: readonly CardRow[]) { return this.repo.projectCards(cards); }
   async getCard(cardId: string) {
     const card=await this.repo.getCard(cardId);
