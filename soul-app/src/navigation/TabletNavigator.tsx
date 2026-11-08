@@ -14,7 +14,7 @@ import { usePersistentSessionHost } from './PersistentSessionContext';
 import { AppGlassCard } from '../components/AppGlassCard';
 import { FOLDER_WORKSPACE_BACKDROP_COLOR, getCardDetailPaneWidth, getFolderWorkspaceOverlayWidth } from '../lib/folder-workspace-layout';
 import { createSurfaceRoles, useTokens } from '../theme';
-import { useDuoSideBand } from './duoSideBand';
+import { useDuoSideBand, useDuoTopBand } from './duoSideBand';
 import { DuoRailOverride } from '../components/navigation/DuoRailOverride';
 
 export type TabletStackParamList = {
@@ -54,30 +54,35 @@ function TabletCardDetail({ route, navigation }: NativeStackScreenProps<TabletSt
   </TabletDetailScreenFrame>;
 }
 
-function TabletMarkdownDocument({ route, navigation }: NativeStackScreenProps<TabletStackParamList, 'MarkdownDocument'>) {
+export function TabletMarkdownDocument({ route, navigation }: NativeStackScreenProps<TabletStackParamList, 'MarkdownDocument'>) {
   const visible = useIsFocused();
   const serverUrl = useSettingsStore(state => state.serverUrl);
   const api = useMemo(() => serverUrl ? createApiClient(serverUrl) : null, [serverUrl]);
-  return <TabletDetailScreenFrame navigation={navigation} testID="persistent-tablet-document-sheet" accessibilityLabel="문서 닫기">
+  return <TabletDetailScreenFrame navigation={navigation} testID="persistent-tablet-document-sheet" accessibilityLabel="문서 닫기" fullWidthOnDuo>
     <MarkdownDocumentContent visible={visible} api={api} documentId={route.params.documentId}
       onClose={() => navigation.goBack()} />
   </TabletDetailScreenFrame>;
 }
 
-function TabletDetailScreenFrame({ navigation, testID, accessibilityLabel, children }: {
+function TabletDetailScreenFrame({ navigation, testID, accessibilityLabel, fullWidthOnDuo = false, children }: {
   navigation: { goBack(): void };
   testID: string;
   accessibilityLabel: string;
+  fullWidthOnDuo?: boolean;
   children: React.ReactNode;
 }) {
   const t = useTokens();
   const duo = useDuoSideBand();
+  const duoTopBand = useDuoTopBand();
+  const duoBand = duo || duoTopBand;
   const focused = useIsFocused();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const safeWidth = Math.max(0, width - insets.left - insets.right);
-  const sheetWidth = getCardDetailPaneWidth(getFolderWorkspaceOverlayWidth(safeWidth));
   const outerInset = t.tabletShell.outerInset;
+  const sheetWidth = fullWidthOnDuo && duoBand
+    ? Math.max(0, safeWidth - outerInset * 2)
+    : getCardDetailPaneWidth(getFolderWorkspaceOverlayWidth(safeWidth));
   return <View style={{ flex: 1, display: focused ? 'flex' : 'none' }}>
     <TouchableWithoutFeedback onPress={() => navigation.goBack()} accessibilityLabel={accessibilityLabel}>
       <View style={[StyleSheet.absoluteFill, { backgroundColor: FOLDER_WORKSPACE_BACKDROP_COLOR }]} />

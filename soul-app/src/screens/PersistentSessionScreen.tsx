@@ -465,12 +465,12 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       {settingsOpen && session ? <PersistentSessionPasSettingsModal sessionId={session.session_id} nodeId={session.node_id ?? ''}
         onClose={() => setSettingsOpen(false)} /> : null}
     </View>
-    {!phone && (duoSideBand || duoTopBand) && railLayout.exit ? <View style={{ position: 'absolute',
+    {active && !phone && (duoSideBand || duoTopBand) && railLayout.exit ? <View style={{ position: 'absolute',
       top: duoTopBand ? DUO_TOP_BAND_RAIL_TOP : getDuoRailTopOffset(windowWidth, windowHeight),
       right: duoTopBand ? DUO_RAIL_CENTER_FROM_END - RAIL_CAPSULE_WIDTH / 2 : (insets.right - RAIL_CAPSULE_WIDTH + DUO_RAIL_END_INSET) / 2 }}>
       <RailCapsule testID="duo-rail-back-capsule" compact={railLayout.compact}>{renderRailAction(railLayout.exit)}</RailCapsule>
     </View> : null}
-    {!phone && (duoSideBand || duoTopBand) && railLayout.screen.length ? <View testID="persistent-session-duo-band" style={{
+    {active && !phone && (duoSideBand || duoTopBand) && railLayout.screen.length ? <View testID="persistent-session-duo-band" style={{
       position: 'absolute', bottom: railBottom, alignItems: 'center',
       ...(duoTopBand ? { right: DUO_RAIL_CENTER_FROM_END - RAIL_CAPSULE_WIDTH / 2 }
         : { right: 0, width: insets.right, paddingRight: DUO_RAIL_END_INSET }) }}>

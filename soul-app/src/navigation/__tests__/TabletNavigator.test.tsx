@@ -9,8 +9,9 @@ jest.mock('../../screens/SettingsScreen', () => ({ SettingsScreen: () => null })
 import React from 'react';
 import { act, render, renderHook } from '@testing-library/react-native';
 import { StyleSheet, Text, View } from 'react-native';
-import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets, type EdgeInsets } from 'react-native-safe-area-context';
 import { createSurfaceRoles, useTokens } from '../../theme';
+import { DuoSideBandContext, DuoTopBandContext } from '../tabContract';
 import { TabletNavigator } from '../TabletNavigator';
 import { PersistentSessionProvider, usePersistentSessionHost } from '../PersistentSessionContext';
 import { PersistentSessionScreen } from '../../screens/PersistentSessionScreen';
@@ -32,12 +33,17 @@ const safeAreaMetrics = {
   insets: { top: 24, right: 0, bottom: 20, left: 0 },
 };
 
-function renderTabletDetail(kind: 'card' | 'document', dimensions: { width: number; height: number }) {
+function renderTabletDetail(kind: 'card' | 'document', dimensions: { width: number; height: number }, options: {
+  insets?: EdgeInsets;
+  duoSideBand?: boolean;
+  duoTopBand?: boolean;
+} = {}) {
   const dimensionsSpy = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({
     ...dimensions,
     scale: 1,
     fontScale: 1,
   });
+  const insets = options.insets ?? safeAreaMetrics.insets;
   mockFocusState.current = true;
   resetNavigationCapture();
   const navigator = render(<PersistentSessionProvider><Probe /><TabletNavigator /></PersistentSessionProvider>);
@@ -49,10 +55,14 @@ function renderTabletDetail(kind: 'card' | 'document', dimensions: { width: numb
   const route = kind === 'card' ? { params: { cardId: 'card-1' } } : { params: { documentId: 'doc-1' } };
   const screen = render(<SafeAreaProvider initialMetrics={{
     frame: { ...safeAreaMetrics.frame, ...dimensions },
-    insets: safeAreaMetrics.insets,
+    insets,
   }}>
-    <PersistentSessionProvider>{React.createElement(component, { route, navigation: { goBack: jest.fn() } })}</PersistentSessionProvider>
-    <SafeAreaInsetsProbe />
+    <DuoSideBandContext.Provider value={options.duoSideBand ?? null}>
+      <DuoTopBandContext.Provider value={options.duoTopBand ?? null}>
+        <PersistentSessionProvider>{React.createElement(component, { route, navigation: { goBack: jest.fn() } })}</PersistentSessionProvider>
+        <SafeAreaInsetsProbe />
+      </DuoTopBandContext.Provider>
+    </DuoSideBandContext.Provider>
   </SafeAreaProvider>);
 
   const detailFrame = screen.UNSAFE_getAllByType(View).find((node) => {
@@ -87,6 +97,58 @@ test.each([
   expect(document.style).toEqual(card.style);
   expect(card.insets).toBe('24:20');
   expect(card.screen.getByTestId(card.testID)).toBeTruthy();
+  expect(document.screen.getByTestId(document.testID)).toBeTruthy();
+  card.screen.unmount();
+  document.screen.unmount();
+});
+
+test('아이폰 듀오 안쪽 가로에서는 문서 시트만 전체 가용 폭을 쓰고 카드 상세는 기존 폭을 지킨다', () => {
+  const dimensions = { width: 951, height: 669 };
+  const options = { insets: { top: 24, right: 84, bottom: 24, left: 0 }, duoSideBand: true };
+  const card = renderTabletDetail('card', dimensions, options);
+  const document = renderTabletDetail('document', dimensions, options);
+
+  expect(card.style).toEqual({
+    position: 'absolute',
+    top: 24 + 12,
+    right: 84 + 12,
+    bottom: 12,
+    width: 390,
+  });
+  expect(document.style).toEqual({
+    position: 'absolute',
+    top: 24 + 12,
+    right: 84 + 12,
+    bottom: 12,
+    width: 843,
+  });
+  expect(card.insets).toBe('24:24');
+  expect(document.screen.getByTestId(document.testID)).toBeTruthy();
+  card.screen.unmount();
+  document.screen.unmount();
+});
+
+test('아이폰 듀오 안쪽 세로에서는 문서 시트만 전체 가용 폭을 쓰고 카드 상세는 기존 폭을 지킨다', () => {
+  const dimensions = { width: 669, height: 951 };
+  const options = { insets: { top: 82, right: 0, bottom: 24, left: 0 }, duoTopBand: true };
+  const card = renderTabletDetail('card', dimensions, options);
+  const document = renderTabletDetail('document', dimensions, options);
+
+  expect(card.style).toEqual({
+    position: 'absolute',
+    top: 82 + 12,
+    right: 12,
+    bottom: 12,
+    width: 301,
+  });
+  expect(document.style).toEqual({
+    position: 'absolute',
+    top: 82 + 12,
+    right: 12,
+    bottom: 12,
+    width: 645,
+  });
+  expect(card.insets).toBe('82:24');
   expect(document.screen.getByTestId(document.testID)).toBeTruthy();
   card.screen.unmount();
   document.screen.unmount();

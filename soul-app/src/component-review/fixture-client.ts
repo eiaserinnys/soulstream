@@ -441,6 +441,9 @@ export function createApiClient(baseUrl = ''): ApiClient {
     const params = new URLSearchParams(window.location.search);
     const multiPasSample = params.get('sample') === 'pas-layout'
       && (params.get('count') === '2' || params.get('multiPas') === '1');
+    const documentStateValue = params.get('documentState');
+    const documentState: ContentLinkDocumentState = documentStateValue === 'loading' || documentStateValue === 'slow'
+      || documentStateValue === 'error' ? documentStateValue : 'ready';
     const api = {
       ...entryShellApi,
       ...nativeSettingsApi,
@@ -451,6 +454,7 @@ export function createApiClient(baseUrl = ''): ApiClient {
       getFeedPage: entryShellApi.getFeedPage,
       getSessionsByIds: entryShellApi.getSessionsByIds,
       catalogStreamUrl: entryShellApi.catalogStreamUrl,
+      getMarkdownDocument: createContentLinkReviewApi(documentState).getMarkdownDocument,
     };
     // 데일리 보드 캡처는 운영 형태 카드로 바꾼다(보드=ops, 보드=review-last). 로딩은 응답을 붙잡는다.
     const boardParam = params.get('board');

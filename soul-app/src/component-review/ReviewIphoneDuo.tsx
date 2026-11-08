@@ -26,7 +26,8 @@ import {
 } from '../components/planner/FolderWorkspaceReadOverlay';
 import { getFolderWorkspaceOverlayWidth } from '../lib/folder-workspace-layout';
 import { createReviewApi, entryShellCardId, entryShellFolders } from './fixtures';
-import { installEntryShellPublicHarness } from './fixture-client';
+import { contentLinkDocumentId, installEntryShellPublicHarness } from './fixture-client';
+import { TabletMarkdownDocument, type TabletStackParamList } from '../navigation/TabletNavigator';
 import { EntryShellAlertHarness, ReviewEntryShell } from './ReviewEntryShell';
 import { ReviewPersistentCardOverlay } from './ReviewPersistentCardOverlay';
 import { useChatStore } from '../store/chatStore';
@@ -62,7 +63,7 @@ export const IPHONE_DUO_FRAMES = [
   { id: 'inner-landscape-short', label: '안쪽 가로(높이 626)', width: 890, height: 626, rail: false, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
 ] as const;
 
-const MainReviewStack = createNativeStackNavigator();
+const MainReviewStack = createNativeStackNavigator<TabletStackParamList>();
 
 function DuoBadgeReview({ dot }: { dot: boolean }) {
   useRegisterDuoRailOverride('review-badge', true, [
@@ -104,6 +105,12 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
           <NavigationContainer ref={navigationRef} onReady={() => {
             if (phoneChat) navigationRef.navigate('FeedTab', { screen: 'Chat', params: { sessionId: 'public-shell-session-0' } });
             if (!phone && params.get('overlay') === 'card-with-chat') useUIStore.getState().openCardOverlay(sampleCardId, 'public-shell-session-0');
+            const docParam = params.get('doc');
+            if (!phone && docParam) {
+              navigationRef.navigate('MarkdownDocument', {
+                documentId: docParam === '1' ? contentLinkDocumentId : docParam,
+              });
+            }
           }}>
             <View style={{ width: frame.width, height: frame.height, overflow: 'hidden' }}>
               {view && !phoneChat ? <View style={{ flex: 1, flexDirection: 'row' }}>
@@ -125,6 +132,8 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
               </View> : phone ? <TabNavigator initialTab={phoneChat ? 'FeedTab' : selectedTab} /> : <MainReviewStack.Navigator screenOptions={{ headerShown: false }}>
                 <MainReviewStack.Screen name="Main" component={TwoPaneWithDrawer} />
                 <MainReviewStack.Screen name="PersistentSession" component={DuoPasCardOverlayStage} />
+                <MainReviewStack.Screen name="MarkdownDocument" component={TabletMarkdownDocument}
+                  options={{ presentation: 'transparentModal' }} />
               </MainReviewStack.Navigator>}
             </View>
             <EntryShellAlertHarness />
