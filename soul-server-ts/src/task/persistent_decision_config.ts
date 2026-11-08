@@ -17,6 +17,21 @@ const codexSol: PresetDecisionConfig = {
   checkpoint_default_tokens: 33_000,
 };
 
+/**
+ * Gemini/Antigravity cache TTL is 240s and writes are not billed separately.
+ * Keepalive is not available for antigravity (persistent_decision.ts emits
+ * `turn_end.no_keepalive_provider`), so it never gets a keepalive turn.
+ *
+ * The spec fields read_discount/keepalive_enabled/B_turn/B_Hard/H_min/G_min are
+ * not part of PresetDecisionConfig; the representable subset is mapped here.
+ */
+const antigravity: PresetDecisionConfig = {
+  read_mult: 0.05,
+  write_mult: 1.0,
+  cache_ttl_seconds: 240,
+  checkpoint_default_tokens: 33_000,
+};
+
 export const DEFAULT_CONFIG: PersistentDecisionConfig = {
   presets: {
     "claude-opus": claudeOpus,
@@ -25,8 +40,7 @@ export const DEFAULT_CONFIG: PersistentDecisionConfig = {
   provider_defaults: {
     claude: claudeOpus,
     codex: codexSol,
-    // Gemini cache TTL has not been measured; use the Codex values temporarily.
-    antigravity: codexSol,
+    antigravity,
   },
   budget_tokens: 120_000,
   cold_ratio: 1.25,

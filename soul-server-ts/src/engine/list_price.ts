@@ -34,6 +34,27 @@ export function claudeTurnCostUsd(usage: unknown, model: string | null | undefin
   const cacheWriteTotal = cacheCreatedTotal ?? cacheWrite5m + cacheWrite1h;
   const cacheWriteUnknown = cacheWriteTotal - cacheWrite5m - cacheWrite1h;
 
+  const normalizedModel = typeof model === "string" ? model.trim().toLowerCase() : undefined;
+  if (
+    normalizedModel !== undefined
+    && (normalizedModel.startsWith("deepseek-")
+      || normalizedModel.startsWith("opencode/deepseek-"))
+  ) {
+    // Claude Code can drive a DeepSeek-compatible endpoint; its usage arrives in
+    // Anthropic shape but must be priced with DeepSeek rates.
+    const deepseekResult = priceInferenceUsage({
+      provider: "deepseek",
+      model: model ?? null,
+      input_total: input + cacheRead + cacheWriteTotal,
+      cache_read: cacheRead,
+      cache_write_5m: 0,
+      cache_write_1h: 0,
+      cache_write_unknown: 0,
+      output_total: output,
+    });
+    return legacyCostUsd(deepseekResult);
+  }
+
   const result = priceInferenceUsage({
     provider: "claude",
     model: model ?? null,
@@ -45,6 +66,35 @@ export function claudeTurnCostUsd(usage: unknown, model: string | null | undefin
     output_total: output,
   });
   return legacyCostUsd(result);
+}
+
+/**
+ * Antigravity usage is reported in the whole-conversation shape the engine emits:
+ * `input_tokens` already includes cache reads and `reasoning_output_tokens` holds
+ * thinking tokens, which Gemini prices as output.
+ */
+export function antigravityTurnCostUsd(usage: unknown, model: unknown): number | undefined {
+  if (!isRecord(usage)) return undefined;
+  const inputTotal = nonNegativeNumber(usage.input_tokens) ?? 0;
+  const cachedInput = nonNegativeNumber(usage.cached_input_tokens) ?? 0;
+  const outputTotal = (nonNegativeNumber(usage.output_tokens) ?? 0)
+    + (nonNegativeNumber(usage.reasoning_output_tokens) ?? 0);
+  const result = priceInferenceUsage({
+    provider: "antigravity",
+    model: typeof model === "string" ? model : null,
+    input_total: inputTotal,
+    cache_read: cachedInput,
+    cache_write_5m: 0,
+    cache_write_1h: 0,
+    cache_write_unknown: 0,
+    output_total: outputTotal,
+  });
+  return legacyCostUsd(result);
+}
+
+function nonNegativeNumber(value: unknown): number | undefined {
+  const number = finiteNumber(value);
+  return number !== undefined && number >= 0 ? number : undefined;
 }
 
 export function codexTurnCostUsd(

@@ -300,6 +300,48 @@ describe("ClaudeSessionClientRegistry", () => {
     },
   );
 
+  it("forwards the fallback run options through the fenced compact proxy", async () => {
+    let finishPreviousChild!: () => void;
+    const previousChildExit = new Promise<void>((resolve) => {
+      finishPreviousChild = resolve;
+    });
+    const compact = vi.fn().mockResolvedValue(undefined);
+    const clients: ClaudeClient[] = [];
+    const registry = new ClaudeSessionClientRegistry(
+      (): ClaudeClient => {
+        const isPreviousClient = clients.length === 0;
+        const client: ClaudeClient = {
+          async *run() {},
+          compact,
+          close: async () => {
+            if (isPreviousClient) await previousChildExit;
+          },
+        };
+        clients.push(client);
+        return client;
+      },
+      { idleTtlMs: 1_000, maxEntries: 4 },
+    );
+
+    registry.acquire("session-a");
+    registry.release("session-a");
+    const retirement = registry.close("session-a");
+    const replacement = registry.acquire("session-a");
+    const fallback: ClaudeRunOptions = {
+      prompt: "queued turn",
+      workspaceDir: "/tmp/claude-registry",
+    };
+
+    const compacting = replacement.compact!("session-a", fallback);
+    await Promise.resolve();
+    expect(compact).not.toHaveBeenCalled();
+
+    finishPreviousChild();
+    await Promise.all([compacting, retirement]);
+    expect(compact).toHaveBeenCalledWith("session-a", fallback);
+    await registry.shutdown();
+  });
+
   it("does not evict an idle entry while runtime signals are waiting in the hook pump", async () => {
     const close = vi.fn().mockResolvedValue(undefined);
     const activity = {

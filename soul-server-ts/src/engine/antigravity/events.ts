@@ -1,6 +1,13 @@
 import type { SSEEventPayload } from "../protocol.js";
+import { makeContextUsagePayload } from "../context_usage.js";
+import { antigravityTurnCostUsd } from "../list_price.js";
 import { ANTIGRAVITY_QUOTA_ERROR_CODE } from "../usage_limit_stop.js";
 import { splitAntigravityGatewayToolName } from "./mcp_gateway.js";
+
+export interface AntigravityFirstCall {
+  input_tokens: number;
+  cached_input_tokens: number;
+}
 
 export interface AntigravityUsage {
   input_tokens: number;
@@ -57,6 +64,9 @@ export class AntigravityEventMapper {
   private readonly text = new Map<number, string>();
   private completedResponse: string | undefined;
   private sawErrorMessage = false;
+  /** First model step with input tokens; priced from the whole input incl. cache. */
+  firstCall: AntigravityFirstCall | null = null;
+  private lastContextTokens = 0;
 
   constructor(private readonly turnId: string, private readonly resuming = false, private readonly gatewayServerName?: string) {}
 
@@ -74,10 +84,19 @@ export class AntigravityEventMapper {
     if (step.state === "DONE" && step.usage && !this.counted.has(index)) {
       this.counted.add(index);
       const u = step.usage;
+      const stepInputTokens = (u.input_tokens ?? 0) + (u.cache_read_tokens ?? 0);
+      const stepOutputTokens = u.output_tokens ?? 0;
       this.usage = addAntigravityUsage(this.usage, {
-        input_tokens: (u.input_tokens ?? 0) + (u.cache_read_tokens ?? 0), cached_input_tokens: u.cache_read_tokens ?? 0,
-        output_tokens: u.output_tokens ?? 0, reasoning_output_tokens: u.thinking_tokens ?? 0,
+        input_tokens: stepInputTokens, cached_input_tokens: u.cache_read_tokens ?? 0,
+        output_tokens: stepOutputTokens, reasoning_output_tokens: u.thinking_tokens ?? 0,
       });
+      if (stepInputTokens > 0) {
+        this.firstCall ??= {
+          input_tokens: stepInputTokens,
+          cached_input_tokens: u.cache_read_tokens ?? 0,
+        };
+        this.lastContextTokens = stepInputTokens + stepOutputTokens;
+      }
     }
     const events: SSEEventPayload[] = [];
     if (step.step_type === "agent_response") {
@@ -131,6 +150,15 @@ export class AntigravityEventMapper {
       ...(this.model !== undefined ? { model: this.model } : {}),
     };
     const usage = this.usage !== undefined ? { usage: this.usage } : {};
+    const billing = {
+      ...(this.usage !== undefined && antigravityTurnCostUsd(this.usage, this.model) !== undefined
+        ? { turn_cost_usd: antigravityTurnCostUsd(this.usage, this.model) }
+        : {}),
+      ...(this.firstCall !== null ? { first_call: this.firstCall } : {}),
+    };
+    const contextUsage = this.lastContextTokens > 0
+      ? makeContextUsagePayload(this.lastContextTokens, 1_000_000)
+      : undefined;
     // agy 1.3.5 can report a historical ERROR_MESSAGE in a resumed result.
     // The stream contains only this execution's steps; a matching DONE response
     // without a new error step proves recovery. Preserve all actual close errors.
@@ -142,8 +170,11 @@ export class AntigravityEventMapper {
       && (result?.status === "SUCCESS" || recovered)
       && ((exit.code === 0 && exit.signal === null) || exit.forcedAfterResult === true)
     ) {
-      return [{ type: "complete", ...common, status: "completed", ...usage,
-        ...(result.response !== undefined ? { result: result.response } : {}) }];
+      return [
+        ...(contextUsage ? [contextUsage] : []),
+        { type: "complete", ...common, status: "completed", ...usage, ...billing,
+          ...(result.response !== undefined ? { result: result.response } : {}) },
+      ];
     }
     const registryError = result?.error?.includes("not found in registry");
     const message = registryError
@@ -155,12 +186,16 @@ export class AntigravityEventMapper {
       const quotaFields = { error_code: ANTIGRAVITY_QUOTA_ERROR_CODE,
         ...(resetsAt !== undefined ? { resets_at: resetsAt } : {}) };
       return [
+        ...(contextUsage ? [contextUsage] : []),
         { type: "credential_alert", status: "rejected", ...common,
           ...(resetsAt !== undefined ? { resets_at: resetsAt } : {}) } as SSEEventPayload,
-        { type: "error", ...common, ...usage, fatal: true, message, ...quotaFields } as SSEEventPayload,
+        { type: "error", ...common, ...usage, ...billing, fatal: true, message, ...quotaFields } as SSEEventPayload,
       ];
     }
-    return [{ type: "error", ...common, ...usage, fatal: true, message }];
+    return [
+      ...(contextUsage ? [contextUsage] : []),
+      { type: "error", ...common, ...usage, ...billing, fatal: true, message },
+    ];
   }
 }
 

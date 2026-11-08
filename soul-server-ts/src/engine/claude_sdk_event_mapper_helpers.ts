@@ -1,10 +1,18 @@
 import type { ClaudeClientEvent } from "./claude_client_event.js";
 import { contextUsagePercent } from "./context_usage.js";
 import {
+  asArray,
+  asNullableString,
   asNumber,
   asRecord,
   asString,
+  asStringArray,
+  firstString,
 } from "./claude_sdk_helpers.js";
+import { isRecoverableExecutionDiagnostic, resultErrorCode } from "./claude_sdk_diagnostics.js";
+import { attachClaudeResultInputReceipt } from "./claude_sdk_event_metadata.js";
+import { claudeTurnCostUsd } from "./list_price.js";
+import { readTranscriptTurnIterationUsage } from "./claude_sdk_transcript_usage.js";
 
 const STRIPPED_HOOK_OUTPUT = "[stripped: persisted in tool_result]";
 const GENERIC_HOOK_OUTPUT_FIELDS = new Set([
@@ -12,6 +20,8 @@ const GENERIC_HOOK_OUTPUT_FIELDS = new Set([
   "tool_responses",
   "tool_response_chunks",
 ]);
+/** OpenCode Go와 호환 엔드포인트는 modelUsage에 contextWindow를 주지 않는다. */
+const DEEPSEEK_COMPATIBLE_CONTEXT_WINDOW = 262_144;
 
 export function messageContent(message: Record<string, unknown>): unknown[] {
   const nested = asRecord(message.message);
@@ -83,6 +93,22 @@ export function lastIterationUsage(usage: unknown): Record<string, unknown> | un
   return undefined;
 }
 
+/**
+ * Tool-only assistant messages can be reported with all-zero usage by
+ * Anthropic-compatible endpoints. Those must not become the turn's first call
+ * or the latest context measurement.
+ */
+export function hasPositiveIterationUsage(usage: unknown): boolean {
+  const record = asRecord(usage);
+  if (!record) return false;
+  const total =
+    (asNumber(record.input_tokens) ?? 0) +
+    (asNumber(record.output_tokens) ?? 0) +
+    (asNumber(record.cache_read_input_tokens) ?? 0) +
+    (asNumber(record.cache_creation_input_tokens) ?? 0);
+  return total > 0;
+}
+
 export function firstCallInput(usage: unknown): {
   inputTokens: number;
   cachedInputTokens: number;
@@ -139,8 +165,7 @@ function resolveContextWindow(
   model: string | undefined,
 ): number | undefined {
   const records = asRecord(modelUsage);
-  if (!records) return undefined;
-  const candidates = Object.entries(records)
+  const candidates = Object.entries(records ?? {})
     .map(([key, value]) => {
       const record = asRecord(value);
       const contextWindow = asNumber(record?.contextWindow)
@@ -159,7 +184,30 @@ function resolveContextWindow(
     if (canonical?.contextWindow !== undefined) return canonical.contextWindow;
   }
   const windows = new Set(candidates.map((candidate) => candidate.contextWindow));
-  return windows.size === 1 ? candidates[0]?.contextWindow : undefined;
+  const declared = windows.size === 1 ? candidates[0]?.contextWindow : undefined;
+  if (declared !== undefined) return declared;
+  return resolveCompatibleModelContextWindow(model, records);
+}
+
+function resolveCompatibleModelContextWindow(
+  model: string | undefined,
+  records: Record<string, unknown> | undefined,
+): number | undefined {
+  const modelIds = [
+    ...(model === undefined ? [] : [model]),
+    ...(records === undefined ? [] : Object.keys(records)),
+  ];
+  return modelIds.some(isDeepSeekCompatibleModelId)
+    ? DEEPSEEK_COMPATIBLE_CONTEXT_WINDOW
+    : undefined;
+}
+
+function isDeepSeekCompatibleModelId(modelId: string): boolean {
+  const normalized = modelId.trim().toLowerCase();
+  return normalized.startsWith("deepseek-")
+    || normalized.startsWith("opencode/deepseek-")
+    || normalized === "kimi-for-coding"
+    || normalized === "k3";
 }
 
 /**
@@ -244,4 +292,153 @@ function epochNumberToIso(value: number | undefined): string | undefined {
   if (value === undefined) return undefined;
   const millis = value > 1_000_000_000_000 ? value : value * 1_000;
   return new Date(millis).toISOString();
+}
+
+export interface ResultIterationUsage {
+  firstIterationUsage: unknown;
+  latestIterationUsage: unknown;
+  resultLastIterationUsage: Record<string, unknown> | undefined;
+}
+
+/**
+ * Chooses the iteration usage for this turn: live stream values when they are
+ * positive, otherwise transcript usage anchored to the turn's assistant UUIDs.
+ *
+ * Zero-token result iterations are the same hole as zero-token assistant
+ * messages: they must not become the turn's context measurement.
+ */
+export function resolveResultIterationUsage(input: {
+  transcriptPath: string | undefined;
+  turnFirstAssistantUuid: string | undefined;
+  turnLastAssistantUuid: string | undefined;
+  resultUsage: unknown;
+  firstIterationUsage: unknown;
+  latestIterationUsage: unknown;
+}): ResultIterationUsage {
+  const lastResultUsage = lastIterationUsage(input.resultUsage);
+  const resultLastIterationUsage = hasPositiveIterationUsage(lastResultUsage)
+    ? lastResultUsage
+    : undefined;
+  let firstIterationUsage = input.firstIterationUsage;
+  let latestIterationUsage = input.latestIterationUsage;
+  if (
+    input.transcriptPath !== undefined
+    && (
+      firstCallInput(firstIterationUsage) === undefined
+      || (resultLastIterationUsage === undefined && latestIterationUsage === undefined)
+    )
+  ) {
+    const recovered = readTranscriptTurnIterationUsage(
+      input.transcriptPath,
+      input.turnFirstAssistantUuid,
+      input.turnLastAssistantUuid,
+    );
+    if (recovered !== undefined) {
+      if (firstCallInput(firstIterationUsage) === undefined && recovered.first !== undefined) {
+        firstIterationUsage = recovered.first;
+      }
+      if (latestIterationUsage === undefined && recovered.last !== undefined) {
+        latestIterationUsage = recovered.last;
+      }
+    }
+  }
+  return { firstIterationUsage, latestIterationUsage, resultLastIterationUsage };
+}
+
+export interface ClaudeResultMessageMapperContext {
+  latestIterationModel: string | undefined;
+  firstIterationUsage: unknown;
+  latestIterationUsage: unknown;
+  transcriptPath: string | undefined;
+  turnFirstAssistantUuid: string | undefined;
+  turnLastAssistantUuid: string | undefined;
+  withSdkMessageDedupe(
+    events: ClaudeClientEvent[],
+    message: Record<string, unknown>,
+  ): ClaudeClientEvent[];
+}
+
+export function mapClaudeResultMessage(
+  message: Record<string, unknown>,
+  context: ClaudeResultMessageMapperContext,
+): ClaudeClientEvent[] {
+  const success = message.subtype === "success" && message.is_error !== true;
+  const output = success
+    ? asString(message.result) ?? ""
+    : firstString(asArray(message.errors)) ??
+      asString(message.result) ??
+      asString(message.subtype) ??
+      "";
+  const usage = message.usage;
+  const totalCostUsd = asNumber(message.total_cost_usd);
+  const stopReason = asNullableString(message.stop_reason);
+  const terminalReason = asNullableString(message.terminal_reason);
+  const modelUsage = asRecord(message.modelUsage);
+  const model = context.latestIterationModel;
+  const turnCostUsd = claudeTurnCostUsd(usage, model);
+  const iterationUsage = resolveResultIterationUsage({
+    transcriptPath: context.transcriptPath,
+    turnFirstAssistantUuid: context.turnFirstAssistantUuid,
+    turnLastAssistantUuid: context.turnLastAssistantUuid,
+    resultUsage: message.usage,
+    firstIterationUsage: context.firstIterationUsage,
+    latestIterationUsage: context.latestIterationUsage,
+  });
+  const firstCall = firstCallInput(iterationUsage.firstIterationUsage);
+  const resultEvent: ClaudeClientEvent = {
+    type: "result",
+    success,
+    output,
+    error: success ? null : output,
+    ...(usage !== undefined ? { usage } : {}),
+    ...(model !== undefined ? { model } : {}),
+    ...(turnCostUsd !== undefined ? { turnCostUsd } : {}),
+    ...(firstCall !== undefined ? { firstCall } : {}),
+    totalCostUsd: totalCostUsd ?? null,
+    ...(stopReason !== undefined ? { stopReason } : {}),
+    ...(terminalReason !== undefined ? { terminalReason } : {}),
+    errors: asStringArray(message.errors),
+    ...(modelUsage !== undefined ? { modelUsage } : {}),
+    permissionDenials: permissionDenialsToStrings(message.permission_denials),
+  };
+  const contextUsageEvent = makeContextUsageEvent(
+    iterationUsage.resultLastIterationUsage ?? iterationUsage.latestIterationUsage,
+    message.modelUsage,
+    context.latestIterationModel,
+  );
+
+  if (!success) {
+    const errorEvent: ClaudeClientEvent = {
+      type: "error",
+      message: output || "Claude SDK result indicated failure",
+      fatal: !isRecoverableExecutionDiagnostic(message),
+      errorCode: resultErrorCode(message),
+    };
+    const events = context.withSdkMessageDedupe([
+      resultEvent,
+      ...(contextUsageEvent ? [contextUsageEvent] : []),
+      errorEvent,
+    ], message);
+    attachClaudeResultInputReceipt(events, message);
+    return events;
+  }
+
+  const claudeSessionId = asString(message.session_id);
+  const completeEvent: ClaudeClientEvent = {
+    type: "complete",
+    result: output,
+    ...(claudeSessionId !== undefined ? { claudeSessionId } : {}),
+    ...(usage !== undefined ? { usage } : {}),
+    ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
+    ...(model !== undefined ? { model } : {}),
+    ...(turnCostUsd !== undefined ? { turnCostUsd } : {}),
+    ...(firstCall !== undefined ? { firstCall } : {}),
+  };
+  const events = context.withSdkMessageDedupe([
+    resultEvent,
+    ...(contextUsageEvent ? [contextUsageEvent] : []),
+    completeEvent,
+  ], message);
+  attachClaudeResultInputReceipt(events, message);
+  return events;
 }

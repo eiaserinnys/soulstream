@@ -1272,6 +1272,158 @@ describe("ClaudeSdkClient", () => {
     expect(events[1]).not.toHaveProperty("firstCall");
   });
 
+  it("recovers zero-token iteration usage and first call from the turn transcript", () => {
+    const transcriptPath = writeTranscriptFixture([
+      { uuid: "older-turn", usage: { input_tokens: 900, output_tokens: 900, cache_read_input_tokens: 9_000 } },
+      { uuid: "turn-first", usage: { input_tokens: 12, output_tokens: 4, cache_read_input_tokens: 400 } },
+      {
+        uuid: "turn-last",
+        usage: {
+          input_tokens: 6,
+          output_tokens: 8,
+          cache_read_input_tokens: 5_000,
+          cache_creation_input_tokens: 100,
+        },
+      },
+    ]);
+    const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState());
+    mapper.recordTranscriptPath(transcriptPath);
+    mapZeroTokenAssistant(mapper, "turn-first");
+    mapZeroTokenAssistant(mapper, "turn-last");
+
+    const events = mapper.mapSdkMessage(sdkSuccessResult("claude-sess-transcript", "done", {
+      usage: { iterations: [] },
+      modelUsage: { "claude-sonnet-5-5": { contextWindow: 1_000_000 } },
+    }));
+
+    // 6 input + 8 output + 5,000 cache read + 100 cache creation of the last step.
+    expect(events.find((event) => event.type === "context_usage")).toMatchObject({
+      type: "context_usage",
+      usedTokens: 5_114,
+      maxTokens: 1_000_000,
+      percent: 0.5,
+    });
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      firstCall: { inputTokens: 412, cachedInputTokens: 400 },
+    });
+  });
+
+  it("prices a DeepSeek-compatible turn recovered from transcript usage", () => {
+    const transcriptPath = writeTranscriptFixture([
+      { uuid: "turn-first", usage: { input_tokens: 12, output_tokens: 4, cache_read_input_tokens: 400 } },
+      {
+        uuid: "turn-last",
+        usage: {
+          input_tokens: 6,
+          output_tokens: 8,
+          cache_read_input_tokens: 5_000,
+          cache_creation_input_tokens: 100,
+        },
+      },
+    ]);
+    const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState());
+    mapper.recordTranscriptPath(transcriptPath);
+    mapZeroTokenAssistant(mapper, "turn-first", "deepseek-v4.1-flash");
+    mapZeroTokenAssistant(mapper, "turn-last", "deepseek-v4.1-flash");
+
+    const events = mapper.mapSdkMessage(sdkSuccessResult("claude-sess-deepseek", "done", {
+      usage: {
+        input_tokens: 15,
+        cache_read_input_tokens: 150,
+        output_tokens: 53,
+        iterations: [],
+      },
+      modelUsage: { "deepseek-v4.1-flash": { contextWindow: 200_000 } },
+    }));
+
+    // (15 non-cache input * 0.3 + 150 cached * 0.006 + 53 output * 1.2) / 1M
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      model: "deepseek-v4.1-flash",
+      turnCostUsd: 0.000069,
+      firstCall: { inputTokens: 412, cachedInputTokens: 400 },
+    });
+    expect(events.find((event) => event.type === "result")).toMatchObject({
+      turnCostUsd: 0.000069,
+    });
+  });
+
+  it("treats a zero-token result iteration as missing and recovers from the transcript", () => {
+    const transcriptPath = writeTranscriptFixture([
+      { uuid: "turn-first", usage: { input_tokens: 12, output_tokens: 4, cache_read_input_tokens: 400 } },
+      {
+        uuid: "turn-last",
+        usage: {
+          input_tokens: 6,
+          output_tokens: 8,
+          cache_read_input_tokens: 5_000,
+          cache_creation_input_tokens: 100,
+        },
+      },
+    ]);
+    const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState());
+    mapper.recordTranscriptPath(transcriptPath);
+    mapZeroTokenAssistant(mapper, "turn-first");
+    mapZeroTokenAssistant(mapper, "turn-last");
+
+    const events = mapper.mapSdkMessage(sdkSuccessResult("claude-sess-zero-result", "done", {
+      usage: {
+        input_tokens: 0,
+        output_tokens: 0,
+        iterations: [{ type: "message", input_tokens: 0, output_tokens: 0 }],
+      },
+      modelUsage: { "claude-sonnet-5-5": { contextWindow: 1_000_000 } },
+    }));
+
+    expect(events.find((event) => event.type === "context_usage")).toMatchObject({
+      type: "context_usage",
+      usedTokens: 5_114,
+      maxTokens: 1_000_000,
+      percent: 0.5,
+    });
+    expect(events.find((event) => event.type === "complete")).toMatchObject({
+      firstCall: { inputTokens: 412, cachedInputTokens: 400 },
+    });
+  });
+
+  it("uses the DeepSeek-compatible window when modelUsage carries no contextWindow", () => {
+    const transcriptPath = writeTranscriptFixture([
+      { uuid: "turn-first", usage: { input_tokens: 12, output_tokens: 4, cache_read_input_tokens: 400 } },
+      {
+        uuid: "turn-last",
+        usage: {
+          input_tokens: 6,
+          output_tokens: 8,
+          cache_read_input_tokens: 5_000,
+          cache_creation_input_tokens: 100,
+        },
+      },
+    ]);
+    const mapDeepSeekTurn = (overrides: Record<string, unknown>) => {
+      const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState());
+      mapper.recordTranscriptPath(transcriptPath);
+      mapZeroTokenAssistant(mapper, "turn-first", "deepseek-v4.1-flash");
+      mapZeroTokenAssistant(mapper, "turn-last", "deepseek-v4.1-flash");
+      return mapper.mapSdkMessage(sdkSuccessResult(
+        "claude-sess-deepseek-window",
+        "done",
+        { usage: { iterations: [] }, ...overrides },
+      ));
+    };
+
+    for (const overrides of [
+      { modelUsage: { "deepseek-v4.1-flash": { inputTokens: 1_200, outputTokens: 80 } } },
+      { modelUsage: undefined },
+    ]) {
+      expect(mapDeepSeekTurn(overrides).find((event) => event.type === "context_usage"))
+        .toMatchObject({
+          type: "context_usage",
+          usedTokens: 5_114,
+          maxTokens: 262_144,
+          percent: 2,
+        });
+    }
+  });
+
   it("initial image attachments are embedded as Claude image content blocks", async () => {
     const dir = makeTempDirSync("claude-image-");
     try {
@@ -4749,6 +4901,41 @@ async function* sdkMessages(messages: unknown[]): AsyncGenerator<SDKMessage> {
   for (const message of messages) {
     yield message as SDKMessage;
   }
+}
+
+function writeTranscriptFixture(
+  entries: Array<{ uuid: string; usage: Record<string, number> }>,
+): string {
+  const directory = makeTempDirSync("claude-transcript-");
+  const path = join(directory, "session.jsonl");
+  writeFileSync(
+    path,
+    `${entries.map((entry) => JSON.stringify({
+      type: "assistant",
+      uuid: entry.uuid,
+      message: { role: "assistant", content: [], usage: entry.usage },
+    })).join("\n")}\n`,
+  );
+  return path;
+}
+
+function mapZeroTokenAssistant(
+  mapper: ClaudeSdkEventMapper,
+  uuid: string,
+  model?: string,
+): void {
+  mapper.mapSdkMessage({
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [{ type: "text", text: uuid }],
+      ...(model === undefined ? {} : { model }),
+      usage: { input_tokens: 0, output_tokens: 0 },
+    },
+    parent_tool_use_id: null,
+    uuid,
+    session_id: "claude-sess-transcript",
+  } as unknown as SDKMessage);
 }
 
 function makeQuery(

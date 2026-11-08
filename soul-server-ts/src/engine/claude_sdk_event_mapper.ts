@@ -3,10 +3,8 @@ import { randomUUID } from "node:crypto";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 
 import type { ClaudeClientEvent } from "./claude_client_event.js";
-import { claudeTurnCostUsd } from "./list_price.js";
 import { attachClaudeBackgroundProvenance } from "./claude_background_provenance.js";
 import {
-  attachClaudeResultInputReceipt,
   attachClaudeRuntimeSdkSession,
   attachClaudeToolResultEnvelope,
   copyClaudeSdkEventMetadata,
@@ -21,27 +19,17 @@ import {
 import { mapClaudeSystemMessage } from "./claude_sdk_system_event_mapper.js";
 import {
   coerceResetsAt,
-  firstCallInput,
-  lastIterationUsage,
-  makeContextUsageEvent,
+  hasPositiveIterationUsage,
+  mapClaudeResultMessage,
   messageContent,
-  permissionDenialsToStrings,
   userMessageText,
 } from "./claude_sdk_event_mapper_helpers.js";
 import { makeModeEventsFromToolUse } from "./claude_sdk_tool_event_mapper.js";
 import {
-  asArray,
-  asNullableString,
   asNumber,
   asRecord,
   asString,
-  asStringArray,
-  firstString,
 } from "./claude_sdk_helpers.js";
-import {
-  isRecoverableExecutionDiagnostic,
-  resultErrorCode,
-} from "./claude_sdk_diagnostics.js";
 import { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
 
 export class ClaudeSdkEventMapper {
@@ -60,6 +48,9 @@ export class ClaudeSdkEventMapper {
   private firstIterationUsage: unknown;
   private latestIterationModel: string | undefined;
   private currentSdkSessionId: string | undefined;
+  private transcriptPath: string | undefined;
+  private turnFirstAssistantUuid: string | undefined;
+  private turnLastAssistantUuid: string | undefined;
 
   constructor(runtimeState: ClaudeRuntimeState) {
     this.runtimeState = runtimeState;
@@ -80,6 +71,12 @@ export class ClaudeSdkEventMapper {
     this.firstIterationUsage = undefined;
     this.latestIterationModel = undefined;
     this.currentSdkSessionId = undefined;
+    this.turnFirstAssistantUuid = undefined;
+    this.turnLastAssistantUuid = undefined;
+  }
+
+  recordTranscriptPath(path: string | undefined): void {
+    if (path) this.transcriptPath = path;
   }
 
   getCompactHookEventCount(): number {
@@ -182,12 +179,18 @@ export class ClaudeSdkEventMapper {
     const events: ClaudeClientEvent[] = [];
     const nestedMessage = asRecord(message.message);
     if (typeof message.parent_tool_use_id !== "string") {
-      if (nestedMessage?.usage !== undefined) {
-        this.firstIterationUsage ??= nestedMessage.usage;
-        this.latestIterationUsage = nestedMessage.usage;
+      const usage = nestedMessage?.usage;
+      if (usage !== undefined && hasPositiveIterationUsage(usage)) {
+        this.firstIterationUsage ??= usage;
+        this.latestIterationUsage = usage;
       }
       const model = asString(nestedMessage?.model) ?? asString(message.model);
       if (model !== undefined) this.latestIterationModel = model;
+      const uuid = asString(message.uuid);
+      if (uuid !== undefined) {
+        this.turnFirstAssistantUuid ??= uuid;
+        this.turnLastAssistantUuid = uuid;
+      }
     }
     const error = asString(message.error);
     if (error) {
@@ -284,79 +287,21 @@ export class ClaudeSdkEventMapper {
   }
 
   mapResultMessage(message: Record<string, unknown>): ClaudeClientEvent[] {
-    const success = message.subtype === "success" && message.is_error !== true;
-    const output = success
-      ? asString(message.result) ?? ""
-      : firstString(asArray(message.errors)) ??
-        asString(message.result) ??
-        asString(message.subtype) ??
-        "";
-    const usage = message.usage;
-    const totalCostUsd = asNumber(message.total_cost_usd);
-    const stopReason = asNullableString(message.stop_reason);
-    const terminalReason = asNullableString(message.terminal_reason);
-    const modelUsage = asRecord(message.modelUsage);
-    const model = this.latestIterationModel;
-    const turnCostUsd = claudeTurnCostUsd(usage, model);
-    const firstCall = firstCallInput(this.firstIterationUsage);
-    const resultEvent: ClaudeClientEvent = {
-      type: "result",
-      success,
-      output,
-      error: success ? null : output,
-      ...(usage !== undefined ? { usage } : {}),
-      ...(model !== undefined ? { model } : {}),
-      ...(turnCostUsd !== undefined ? { turnCostUsd } : {}),
-      ...(firstCall !== undefined ? { firstCall } : {}),
-      totalCostUsd: totalCostUsd ?? null,
-      ...(stopReason !== undefined ? { stopReason } : {}),
-      ...(terminalReason !== undefined ? { terminalReason } : {}),
-      errors: asStringArray(message.errors),
-      ...(modelUsage !== undefined ? { modelUsage } : {}),
-      permissionDenials: permissionDenialsToStrings(message.permission_denials),
-    };
-    const contextUsageEvent = makeContextUsageEvent(
-      lastIterationUsage(message.usage) ?? this.latestIterationUsage,
-      message.modelUsage,
-      this.latestIterationModel,
-    );
+    const events = mapClaudeResultMessage(message, {
+      latestIterationModel: this.latestIterationModel,
+      firstIterationUsage: this.firstIterationUsage,
+      latestIterationUsage: this.latestIterationUsage,
+      transcriptPath: this.transcriptPath,
+      turnFirstAssistantUuid: this.turnFirstAssistantUuid,
+      turnLastAssistantUuid: this.turnLastAssistantUuid,
+      withSdkMessageDedupe: (mappedEvents, mappedMessage) =>
+        this.withSdkMessageDedupe(mappedEvents, mappedMessage),
+    });
     this.latestIterationUsage = undefined;
     this.firstIterationUsage = undefined;
     this.latestIterationModel = undefined;
-
-    if (!success) {
-      const errorEvent: ClaudeClientEvent = {
-        type: "error",
-        message: output || "Claude SDK result indicated failure",
-        fatal: !isRecoverableExecutionDiagnostic(message),
-        errorCode: resultErrorCode(message),
-      };
-      const events = this.withSdkMessageDedupe([
-        resultEvent,
-        ...(contextUsageEvent ? [contextUsageEvent] : []),
-        errorEvent,
-      ], message);
-      attachClaudeResultInputReceipt(events, message);
-      return events;
-    }
-
-    const claudeSessionId = asString(message.session_id);
-    const completeEvent: ClaudeClientEvent = {
-      type: "complete",
-      result: output,
-      ...(claudeSessionId !== undefined ? { claudeSessionId } : {}),
-      ...(usage !== undefined ? { usage } : {}),
-      ...(totalCostUsd !== undefined ? { totalCostUsd } : {}),
-      ...(model !== undefined ? { model } : {}),
-      ...(turnCostUsd !== undefined ? { turnCostUsd } : {}),
-      ...(firstCall !== undefined ? { firstCall } : {}),
-    };
-    const events = this.withSdkMessageDedupe([
-      resultEvent,
-      ...(contextUsageEvent ? [contextUsageEvent] : []),
-      completeEvent,
-    ], message);
-    attachClaudeResultInputReceipt(events, message);
+    this.turnFirstAssistantUuid = undefined;
+    this.turnLastAssistantUuid = undefined;
     return events;
   }
 

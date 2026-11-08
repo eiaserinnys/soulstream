@@ -38,7 +38,7 @@ describe("AntigravityEventMapper", () => {
     expect(mapper.accept(step(1, { text_delta: "next" }))[0]?.item_id).toBe("1");
     expect(new AntigravityEventMapper("turn-b").accept(step(0, { text_delta: "resume" }))[0]?.turn_id).toBe("turn-b");
   });
-  it("counts each model DONE once, adds cache to input, keeps thinking inside output, ignores result cumulative usage", () => {
+  it("counts each model DONE once, adds cache to input, keeps thinking inside output, ignores result cumulative usage, and reports first call, last context, and priced cost", () => {
     const mapper = new AntigravityEventMapper("turn-a");
     mapper.accept(init);
     const done = step(1, { usage: { input_tokens: 10, cache_read_tokens: 100, output_tokens: 20, thinking_tokens: 15, total_tokens: 30 } });
@@ -46,7 +46,19 @@ describe("AntigravityEventMapper", () => {
     mapper.accept(step(2, { usage: { input_tokens: 5, cache_read_tokens: 50, output_tokens: 10, thinking_tokens: 8 } }));
     mapper.accept({ event: "result", result: { status: "SUCCESS", response: "끝", usage: { input_tokens: 9999 } } });
     expect(mapper.usage).toEqual({ input_tokens: 165, cached_input_tokens: 150, output_tokens: 30, reasoning_output_tokens: 23 });
-    expect(mapper.terminal({ code: 0, signal: null }, false)).toMatchObject([{ type: "complete", result: "끝", model: "gemini-3.8-flash", usage: mapper.usage }]);
+    expect(mapper.firstCall).toEqual({ input_tokens: 110, cached_input_tokens: 100 });
+    expect(mapper.terminal({ code: 0, signal: null }, false)).toMatchObject([
+      { type: "context_usage", used_tokens: 65, max_tokens: 1_000_000, percent: 0 },
+      {
+        type: "complete",
+        result: "끝",
+        model: "gemini-3.8-flash",
+        usage: mapper.usage,
+        first_call: { input_tokens: 110, cached_input_tokens: 100 },
+        // (15 non-cache input * 0.75 + 150 cached * 0.075 + 53 output * 3.75) / 1M
+        turn_cost_usd: 0.000221,
+      },
+    ]);
   });
   it("pairs repeated ACTIVE and DONE-only tools, unwraps MCP to the existing Codex naming, gives resumed turns distinct IDs", () => {
     const call = step(3, { step_type: "tool", tool_info: { name: "call_mcp_tool", parameters: { ServerName: "probe", ToolName: "echo", Arguments: { text: "한글" } }, output: "답" } });

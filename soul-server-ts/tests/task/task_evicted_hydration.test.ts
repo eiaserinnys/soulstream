@@ -296,6 +296,39 @@ describe("hydrateEvictedTaskFromSessionRow", () => {
     expect(task?.persistentGeneration?.firstCall).toBeUndefined();
   });
 
+  it("restores the last observed Claude context usage from metadata", () => {
+    const task = hydrateEvictedTaskFromSessionRow(
+      makeRow({
+        metadata: [{
+          type: "claude_context_usage",
+          value: { used_tokens: 170_000, max_tokens: 200_000, observed_at_ms: 1_763_000_000_000 },
+        }],
+      }),
+      makeLogger(),
+    );
+
+    expect(task?.claudeContextUsage).toEqual({
+      usedTokens: 170_000,
+      maxTokens: 200_000,
+      observedAtMs: 1_763_000_000_000,
+    });
+  });
+
+  it.each([
+    ["explicit clear", null],
+    ["zero used tokens", { used_tokens: 0, max_tokens: 200_000 }],
+    ["negative max tokens", { used_tokens: 1_000, max_tokens: -1 }],
+    ["string values", { used_tokens: "1000", max_tokens: "200000" }],
+  ])("ignores unusable persisted context usage (%s)", (_label, value) => {
+    const task = hydrateEvictedTaskFromSessionRow(
+      makeRow({ metadata: [{ type: "claude_context_usage", value }] }),
+      makeLogger(),
+    );
+
+    expect(task).not.toBeNull();
+    expect(task?.claudeContextUsage).toBeUndefined();
+  });
+
   it("restores the session cost base from metadata", () => {
     const task = hydrateEvictedTaskFromSessionRow(
       makeRow({

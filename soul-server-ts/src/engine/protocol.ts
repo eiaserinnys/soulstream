@@ -280,7 +280,14 @@ export interface EnginePort {
  * 호출자가 `"compact" in engine` 검사로 분기.
  */
 export interface SupportsCompact {
-  compact(sessionId: string): Promise<CompactedContextUsage | undefined>;
+  /**
+   * `fallbackParams` describes the session's next turn for engines whose compact
+   * runs in a fresh process that has no previous run context yet.
+   */
+  compact(
+    sessionId: string,
+    fallbackParams?: EngineExecuteParams,
+  ): Promise<CompactedContextUsage | undefined>;
 }
 
 export interface CompactedContextUsage {

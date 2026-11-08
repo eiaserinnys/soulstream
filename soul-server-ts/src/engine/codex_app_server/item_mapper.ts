@@ -220,6 +220,17 @@ export function mapItemCompleted(
         } as SSEEventPayload,
       ];
 
+    case "contextCompaction":
+      return [
+        {
+          type: "compact",
+          trigger: "auto",
+          message: "Codex context compacted (auto)",
+          timestamp: context.timestamp,
+          ...rawContext(context.method, context),
+        } as SSEEventPayload,
+      ];
+
     default:
       return [];
   }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  antigravityTurnCostUsd,
   claudeTurnCostUsd,
   codexTurnCostUsd,
   LIST_PRICES,
@@ -103,6 +104,36 @@ describe("list price turn cost", () => {
     expect(codexTurnCostUsd({ input_tokens: 1, cached_input_tokens: 0, output_tokens: 1 }, "gpt-5.6-sol"))
       .toBeUndefined();
     expect(claudeTurnCostUsd(null, "claude-opus-5-5")).toBeUndefined();
+  });
+
+  it("prices a DeepSeek-compatible Claude endpoint with DeepSeek rates", () => {
+    const usage = {
+      input_tokens: 15,
+      cache_read_input_tokens: 150,
+      output_tokens: 53,
+    };
+
+    // (15 non-cache input * 0.3 + 150 cached * 0.006 + 53 output * 1.2) / 1M
+    expect(claudeTurnCostUsd(usage, "deepseek-v4.1-flash")).toBe(0.000069);
+    expect(claudeTurnCostUsd(usage, "opencode/deepseek-v4.1-flash-free")).toBe(0.000069);
+    expect(claudeTurnCostUsd(usage, "deepseek-v4.1-flash-1017")).toBe(0.000069);
+    expect(claudeTurnCostUsd(usage, "gemini-3.8-flash")).toBeUndefined();
+  });
+
+  it("prices Antigravity usage with thinking tokens as output", () => {
+    const usage = {
+      input_tokens: 165,
+      cached_input_tokens: 150,
+      output_tokens: 30,
+      reasoning_output_tokens: 23,
+    };
+
+    // (15 non-cache input * 0.75 + 150 cached * 0.075 + 53 output * 3.75) / 1M
+    expect(antigravityTurnCostUsd(usage, "gemini-3.8-flash")).toBe(0.000221);
+    // (15 * 2 + 150 * 0.1 + 53 * 10) / 1M
+    expect(antigravityTurnCostUsd(usage, "gemini-4-argon")).toBe(0.000575);
+    expect(antigravityTurnCostUsd(usage, "gemini-unknown")).toBeUndefined();
+    expect(antigravityTurnCostUsd(null, "gemini-3.8-flash")).toBeUndefined();
   });
 });
 

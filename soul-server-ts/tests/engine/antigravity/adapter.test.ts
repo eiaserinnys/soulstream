@@ -116,7 +116,16 @@ describe("AntigravityEngineAdapter", () => {
     const { engine, directory, state } = fixture();
     const frames: unknown[] = [];
     await engine.executeToFrameChannel(input, { emit: async (frame: unknown) => { frames.push(frame); } } as never);
-    expect(frames).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "engine_event", payload: expect.objectContaining({ type: "complete", usage: { input_tokens: 5, cached_input_tokens: 3, output_tokens: 4, reasoning_output_tokens: 1 } }) })]));
+    expect(frames).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: "engine_event", payload: expect.objectContaining({
+        type: "context_usage", used_tokens: 9, max_tokens: 1_000_000,
+      }) }),
+      expect.objectContaining({ kind: "engine_event", payload: expect.objectContaining({
+        type: "complete",
+        usage: { input_tokens: 5, cached_input_tokens: 3, output_tokens: 4, reasoning_output_tokens: 1 },
+        first_call: { input_tokens: 5, cached_input_tokens: 3 },
+      }) }),
+    ]));
     expect(readdirSync(agents).filter(name => name.startsWith("soulstream-"))).toEqual([]);
     expect(existsSync(join(state, "antigravity-agent"))).toBe(false);
     expect(existsSync(join(directory, ".agents"))).toBe(false);
@@ -157,14 +166,14 @@ describe("AntigravityEngineAdapter", () => {
     expect(existsSync(join(state,"antigravity-agent"))).toBe(false);
     const resume = { ...input, resumeSessionId: "fixture-conversation", prompt: "다음" };
     const next = await collect(engine, resume);
-    expect(next.find(x=>x.type==='complete')).toMatchObject({ usage: { input_tokens:10,cached_input_tokens:6,output_tokens:8,reasoning_output_tokens:2 } });
+    expect(next.find(x=>x.type==='complete')).toMatchObject({ usage: { input_tokens:10,cached_input_tokens:6,output_tokens:8,reasoning_output_tokens:2 }, first_call: { input_tokens: 5, cached_input_tokens: 3 } });
     expect((await collect(engine,resume)).find(x=>x.type==='complete')).toMatchObject({ usage: { input_tokens:5,cached_input_tokens:3,output_tokens:4,reasoning_output_tokens:1 } });
     await engine.close();
   });
   it("adds carry to an error too and clears it", async () => {
     const { engine } = fixture();
     for await (const event of engine.execute({ ...input, model: "blocking" })) if(event.type==='assistant_message') await engine.interrupt();
-    expect((await collect(engine, { ...input, resumeSessionId:"fixture-conversation", model:"bad-exit" })).find(x=>x.type==='error')).toMatchObject({ usage:{input_tokens:10,output_tokens:8} });
+    expect((await collect(engine, { ...input, resumeSessionId:"fixture-conversation", model:"bad-exit" })).find(x=>x.type==='error')).toMatchObject({ usage:{input_tokens:10,output_tokens:8}, first_call: { input_tokens: 5, cached_input_tokens: 3 } });
     expect((await collect(engine)).find(x=>x.type==='complete')).toMatchObject({ usage:{input_tokens:5,output_tokens:4} });
     await engine.close();
   });
