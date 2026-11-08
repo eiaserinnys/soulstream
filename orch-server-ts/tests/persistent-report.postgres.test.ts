@@ -304,7 +304,9 @@ describe("PAS reports on production PostgreSQL schema", () => {
     await sql`INSERT INTO sessions(session_id,folder_id,node_id,session_type,metadata) VALUES
       ('hold-owner-a','report-folder','test-node',NULL,${sql.json(enabled)}),
       ('hold-owner-b','report-folder','test-node',NULL,${sql.json(enabled)})`;
+    const asked: string[] = [];
     const withBoard = new CardControlPlaneService(adapted, dbPort, undefined, undefined, publish, undefined, undefined, async ({ cardId, questionId }) => {
+      asked.push(questionId);
       await reports.placeQuestion(cardId, questionId);
     });
     const cardId = (await withBoard.createCard({ actorKind: "agent", actorSessionId: "hold-owner-a", actorUserId: null,
@@ -319,6 +321,7 @@ describe("PAS reports on production PostgreSQL schema", () => {
     expect((await reports.get("hold-owner-a")).some(entry => entry.key === `cq_${questionId}`)).toBe(false);
     await withBoard.setCardStatus({ ...human, cardId, status: "review" });
     expect((await reports.get("hold-owner-a")).some(entry => entry.key === `cq_${questionId}`)).toBe(true);
+    expect(asked).toEqual([questionId]);
     expect((await reports.get("hold-owner-a")).some(entry => entry.key === `card_${cardId}`)).toBe(false);
     expect((await reports.get("hold-owner-b")).some(entry => entry.key === `cq_${questionId}` || entry.key === `card_${cardId}`)).toBe(false);
 
@@ -328,6 +331,11 @@ describe("PAS reports on production PostgreSQL schema", () => {
 
     await withBoard.askQuestion({ actorKind: "agent", actorSessionId: "hold-owner-a", actorUserId: null, cardId, text: "두 번째 질문", options: ["진행"] });
     const secondQuestionId = String((await withBoard.getCard(cardId))!.questions.at(-1)!.id);
+    await withBoard.setCardStatus({ ...human, cardId, status: "on_hold" });
+    await withBoard.askQuestion({ actorKind: "agent", actorSessionId: "hold-owner-a", actorUserId: null, cardId, text: "보류 중 질문", options: ["진행"] });
+    const heldQuestionId = String((await withBoard.getCard(cardId))!.questions.at(-1)!.id);
+    expect(asked).toEqual([questionId, secondQuestionId, heldQuestionId]);
+    expect((await reports.get("hold-owner-a")).some(entry => entry.key === `cq_${heldQuestionId}`)).toBe(true);
     await withBoard.setCardStatus({ ...human, cardId, status: "on_hold" });
     await withBoard.setCardStatus({ ...human, cardId, status: "done" });
     expect((await reports.get("hold-owner-a")).some(entry => entry.key === `cq_${secondQuestionId}`)).toBe(false);
