@@ -102,7 +102,9 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
       <SafeAreaInsetsContext.Provider value={frame.insets}>
         <DuoSideBandContext.Provider value={duo}>
           <PersistentSessionProvider>
-          <NavigationContainer ref={navigationRef} onReady={() => {
+          <NavigationContainer ref={navigationRef}
+            theme={{ ...DefaultTheme, colors: { ...DefaultTheme.colors, background: t.colors.background } }}
+            onReady={() => {
             if (phoneChat) navigationRef.navigate('FeedTab', { screen: 'Chat', params: { sessionId: 'public-shell-session-0' } });
             if (!phone && params.get('overlay') === 'card-with-chat') useUIStore.getState().openCardOverlay(sampleCardId, 'public-shell-session-0');
             const docParam = params.get('doc');
@@ -112,7 +114,7 @@ function DuoMainLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRA
               });
             }
           }}>
-            <View style={{ width: frame.width, height: frame.height, overflow: 'hidden' }}>
+            <View style={{ width: frame.width, height: frame.height, overflow: 'hidden', backgroundColor: t.colors.background }}>
               {view && !phoneChat ? <View style={{ flex: 1, flexDirection: 'row' }}>
                 <SafeAreaInsetsContext.Provider value={{ ...frame.insets, right: 0 }}>
                   <View style={{ flex: 1, paddingTop: frame.insets.top, paddingBottom: frame.insets.bottom }}>
@@ -212,8 +214,9 @@ function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { fr
           <DuoSideBandContext.Provider value={duoSideBand}>
           <DuoTopBandContext.Provider value={frameId.startsWith('inner-portrait')}>
           <PersistentSessionProvider>
-          <NavigationContainer>
-          <View style={{ flex: 1, flexDirection: 'row', width: frame.width, height: frame.height, overflow: 'hidden' }}>
+          <NavigationContainer
+            theme={{ ...DefaultTheme, colors: { ...DefaultTheme.colors, background: t.colors.background } }}>
+          <View style={{ flex: 1, flexDirection: 'row', width: frame.width, height: frame.height, overflow: 'hidden', backgroundColor: t.colors.background }}>
             <SafeAreaInsetsContext.Provider value={frame.rail ? { ...frame.insets, right: 0 } : frame.insets}>
               <View style={{ width: frame.rail ? frame.width - frame.insets.right : frame.width, height: frame.height }}>
                 {frame.rail && openedCardId ? <View style={{ flex: 1, paddingTop: frame.insets.top + t.uiSpacing.md, paddingBottom: frame.insets.bottom }}>

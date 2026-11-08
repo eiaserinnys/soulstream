@@ -24,7 +24,7 @@ import { DUO_RAIL_END_INSET, DUO_SIDE_BAND_WIDTH, DUO_TOP_BAND_STATUS_CENTER_Y, 
 import { DuoTopBandMainContext } from '../../navigation/tabContract';
 import { useSearchStore } from '../../store/searchStore';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
-import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem } from '../navigation/RailCapsule';
+import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem, railCapsuleIconColor } from '../navigation/RailCapsule';
 import { TabletPersistentEntry } from '../../navigation/TabletPersistentEntry';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -257,7 +257,7 @@ export function TwoPaneWithDrawer() {
       ? `duo-rail-action-${item.id}` : `duo-main-${item.id === 'drawer' ? 'menu' : item.id}`;
     return <RailCapsuleItem key={item.id} testID={testID} label={item.label} selected={item.selected}
       badgeCount={item.badgeCount} dot={item.dot} disabled={item.disabled} onPress={item.onPress}>
-      <Ionicons name={item.icon} color={item.selected ? t.colors.accent : t.colors.textMuted} size={t.iconSize.standard} />
+      <Ionicons name={item.icon} color={railCapsuleIconColor(t, item.selected)} size={t.iconSize.standard} />
     </RailCapsuleItem>;
   };
 

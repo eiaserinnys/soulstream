@@ -4,6 +4,7 @@ import type { DesignTokens } from '../tokens';
 import { DARK_COLORS, LIGHT_COLORS } from '../tokens';
 import {
   SURFACE_ROLE_NAMES,
+  createLightChromeGlassRole,
   createSurfaceRoles,
 } from '../surfaceRoles';
 
@@ -160,6 +161,44 @@ describe('surface role contract', () => {
     expect(roles.modal.fallbackColor).toBe(semanticGlassExact[mode].glassSoft.solid);
     expect(roles.modal.materialStyle.native).toEqual({});
     expect(roles.modal.materialStyle.blur.borderColor).toBe(semanticGlassExact[mode].stroke);
+  });
+
+  test.each([
+    [
+      'light',
+      'rgba(242, 242, 247, 0.68)',
+      'rgba(242, 242, 247, 0.92)',
+      'rgba(209, 209, 214, 0.74)',
+    ],
+    [
+      'dark',
+      'rgba(28, 28, 30, 0.68)',
+      'rgba(28, 28, 30, 0.92)',
+      'rgba(42, 42, 46, 0.74)',
+    ],
+  ] as const)(
+    '기본 chrome 역할은 %s 모드에서 기존 틴트·배경 알파와 경계를 유지한다',
+    (mode, nativeTint, blurColor, borderColor) => {
+      const roles = createSurfaceRoles(tokens(mode));
+
+      expect(roles.chrome.nativeTintColor).toBe(nativeTint);
+      expect(roles.chrome.blurColor).toBe(blurColor);
+      expect(roles.chrome.tokenStyle.backgroundColor).toBe(blurColor);
+      expect(roles.chrome.materialStyle.blur.borderColor).toBe(borderColor);
+    },
+  );
+
+  test('캡슐 전용 라이트 chrome은 밝은 틴트와 흰색 스페큘러 림을 제공한다', () => {
+    const capsuleChrome = createLightChromeGlassRole(tokens('light'));
+
+    expect(capsuleChrome.nativeTintColor).toBe('rgba(242, 242, 247, 0.56)');
+    expect(capsuleChrome.blurColor).toBe('rgba(242, 242, 247, 0.62)');
+    expect(capsuleChrome.tokenStyle.backgroundColor).toBe(
+      'rgba(242, 242, 247, 0.92)',
+    );
+    expect(capsuleChrome.materialStyle.blur.borderColor).toBe(
+      'rgba(255, 255, 255, 0.78)',
+    );
   });
 
   test('iPad 세 패널은 공통 panel surface를 쓰고 제목 바만 glass로 감싸지 않는다', () => {

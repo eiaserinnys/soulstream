@@ -84,6 +84,35 @@ describe('GlassSurface render paths and composition', () => {
     await waitFor(() => expect(AccessibilityInfo.isReduceTransparencyEnabled).toHaveBeenCalled());
   });
 
+  test('colorScheme="light"는 다크 앱 모드에서도 밝은 리퀴드 글래스 스킴과 틴트를 강제한다', () => {
+    const screen = render(
+      <GlassSurface role="chrome" colorScheme="light" testID="capsule" />,
+    );
+    const native = screen.getByTestId('native-capsule');
+
+    expect(native.props.colorScheme).toBe('light');
+    expect(native.props.tintColor).toBe('rgba(242, 242, 247, 0.56)');
+  });
+
+  test('colorScheme="light"의 blur fallback은 밝은 fill과 흰색 스페큘러 경계를 쓴다', () => {
+    mockNativeAvailable.mockReturnValue(false);
+    render(<GlassSurface role="chrome" colorScheme="light" testID="capsule" />);
+    const props = mockBlurProps.get('capsule');
+    const style = StyleSheet.flatten(props?.style) as ViewStyle;
+
+    expect(props?.tint).toBe('light');
+    expect(backgroundColorOf(style)).toBe('rgba(242, 242, 247, 0.62)');
+    expect(style.borderColor).toBe('rgba(255, 255, 255, 0.78)');
+  });
+
+  test('colorScheme를 주지 않은 다크 chrome은 기존 어두운 유리 스킴을 유지한다', () => {
+    const screen = render(<GlassSurface role="chrome" testID="chrome" />);
+    const native = screen.getByTestId('native-chrome');
+
+    expect(native.props.colorScheme).toBe('dark');
+    expect(native.props.tintColor).toBe('rgba(28, 28, 30, 0.68)');
+  });
+
   test('native Liquid Glass는 수동 border 없이 role 반경이 호출부 radius override를 이긴다', () => {
     const screen = render(
       <GlassSurface role="glassSoft" testID="surface" style={squareRadiusOverride} />,

@@ -33,6 +33,9 @@ export type SurfaceRoles = Record<SurfaceRoleName, SurfaceRoleDefinition>;
 
 const CHROME_CONTENT_ALPHA = 0.92;
 const CHROME_NATIVE_TINT_ALPHA = 0.68;
+const LIGHT_CHROME_GLASS_TINT_ALPHA = 0.56;
+const LIGHT_CHROME_GLASS_BLUR_ALPHA = 0.62;
+const LIGHT_CHROME_SPECULAR_BORDER = 'rgba(255, 255, 255, 0.78)';
 const SEMANTIC_GLASS_PALETTE = {
   light: {
     glassSoft: { translucent: 'rgba(231, 237, 245, 0.56)', solid: '#e7edf5' },
@@ -138,6 +141,28 @@ export function createSurfaceRoles(t: DesignTokens): SurfaceRoles {
   };
 }
 
+/**
+ * 라이트 테마의 레일 캡슐 전용 chrome 변형.
+ *
+ * 일반 chrome의 알파·경계는 불변으로 두고, 다크 테마에서도 밝게 보여야 하는 캡슐만
+ * 이 역할로 렌더한다. 흰색 스페큘러 림과 낮은 틴트 알파가 밝은 리퀴드 글래스 질감을 만든다.
+ */
+export function createLightChromeGlassRole(t: DesignTokens): SurfaceRoleDefinition {
+  const c = t.colors;
+  return role({
+    compositesBackdrop: true,
+    nativeGlass: true,
+    nativeTintColor: withAlpha(c.surface, LIGHT_CHROME_GLASS_TINT_ALPHA),
+    blurColor: withAlpha(c.surface, LIGHT_CHROME_GLASS_BLUR_ALPHA),
+    tokenBackgroundColor: withAlpha(c.surface, CHROME_CONTENT_ALPHA),
+    fallbackColor: c.surface,
+    borderRadius: 0,
+    blurIntensity: 74,
+    blurBorderColor: LIGHT_CHROME_SPECULAR_BORDER,
+    solidBorderColor: c.border,
+  });
+}
+
 export function getSurfaceRole(
   roles: SurfaceRoles,
   roleName: string | undefined,
@@ -154,6 +179,7 @@ function role(input: {
   nativeGlass: boolean;
   nativeTintColor: string;
   blurColor: string;
+  tokenBackgroundColor?: string;
   fallbackColor: string;
   borderRadius: number;
   blurIntensity: number;
@@ -189,7 +215,7 @@ function role(input: {
     },
     tokenStyle: {
       ...solidStyle,
-      backgroundColor: input.blurColor,
+      backgroundColor: input.tokenBackgroundColor ?? input.blurColor,
       borderRadius: input.borderRadius,
     },
   };

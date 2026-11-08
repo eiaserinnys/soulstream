@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTokens } from '../../theme';
 import { useActiveDuoRailOverride } from '../../navigation/phoneRailActions';
 import { DUO_RAIL_END_INSET, getDuoRailTopOffset, splitDuoRailBackAction } from '../../navigation/duoSideBand';
-import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem } from './RailCapsule';
+import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem, railCapsuleIconColor } from './RailCapsule';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import { duoRailLayout } from '../../navigation/duoRailLayout';
 
@@ -28,7 +28,7 @@ export function DuoRailOverride({ topOffset, bandWidth }: { topOffset?: number; 
     tokens: { spacingXs: t.spacing.xs, uiSpacingXs: t.uiSpacing.xs, uiSpacingSm: t.uiSpacing.sm, hitTargetMin: t.hitTarget.min } });
   const renderAction = (action: typeof actions[number]) => <RailCapsuleItem key={action.id} testID={`duo-rail-action-${action.id}`} label={action.label}
         selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
-        <Ionicons name={action.icon} size={t.iconSize.standard} color={action.selected ? t.colors.accent : t.colors.textMuted} />
+        <Ionicons name={action.icon} size={t.iconSize.standard} color={railCapsuleIconColor(t, action.selected)} />
       </RailCapsuleItem>;
   return <AppKeyboardAvoidingView pointerEvents="box-none" onOverlapChange={setKeyboardOverlap} style={StyleSheet.absoluteFill}>
   <View testID="duo-rail-override-host" pointerEvents="box-none" style={{ position: 'absolute', right: 0, top: 0, bottom: 0, width: railBandWidth, alignItems: 'center', paddingRight: DUO_RAIL_END_INSET }}>
