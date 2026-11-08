@@ -7,7 +7,6 @@ import { verifyServiceBearerAuthorization } from "./auth/service_bearer.js";
 import { SqlOwnedAgentRepository } from "./owned-agents/repository.js";
 import type { OnPersistentReportPosted, PublishPersistentReports } from "./session/persistent_report_service.js";
 import { createReportTimelineAppender, type AppendReportTimeline } from "./session/report_timeline_publisher.js";
-import { CARD_QUESTION_KEY_PREFIX } from "@soulstream/wire-schema/persistent-report";
 import { OwnedAgentService } from "./owned-agents/service.js";
 import { createSessionOwnerResolver } from "./session/session_owner.js";
 import { ExternalEventsService, credentialOwner } from "./external_events/service.js";
@@ -100,7 +99,7 @@ import { createPageUpdatedEmitter } from "./runtime/page_updated_broadcaster.js"
 import { createCardOrchestrationAccess } from "./cards/card_orchestration_access.js";
 import { createCardDispatchRuntime } from "./cards/card_dispatch_runtime.js";
 import { CardDispatchRepository } from "./cards/card_dispatch_repository.js";
-import { placeCardQuestionOnOwnerBoards, resolveCardOwnerEmail } from "./cards/card_question_board.js";
+import { resolveCardOwnerEmail } from "./cards/card_question_board.js";
 import { cardRouteErrorResponse } from "./cards/card_route_body.js";
 import { applyCardQuestionReply } from "./session/card_question_reply.js";
 import { dashboardFolderActor } from "./folders/folder_workspace_routes.js";
@@ -635,29 +634,23 @@ export async function createLiveProductionApplication(
         findUserByEmail: dbCatalogRepository.adminUsersRepository.findUserByEmail,
         resolveSessionOwner,
       });
-      const outcome = await placeCardQuestionOnOwnerBoards({
-        questionId, ownerEmail, resolveSessionOwner,
-        listPersistentSessions: async () => (await persistenceRepositoryProvider()).sessionReads.listPersistentSessions(),
-        putQuestion: async (boardSessionId,qid) => (await persistenceRepositoryProvider()).persistentReports!.putQuestion(boardSessionId,qid),
-      });
-      if (ownerEmail && outcome.changed.length > 0) {
-        const boardSessionId = [...outcome.changed].sort()[0]!;
-        const entries = await (await persistenceRepositoryProvider()).persistentReports!.get(boardSessionId);
-        const entry = entries.find(item => item.key === `${CARD_QUESTION_KEY_PREFIX}${questionId}` && item.state === "open");
+      const outcome = await (await persistenceRepositoryProvider()).persistentReports!.placeQuestion(cardId, questionId);
+      if (ownerEmail) {
         const cardService = await cardDispatchRuntime?.serviceProvider();
         const cardDetail = await cardService?.getCard(cardId);
-        if (entry && cardDetail) {
-          await pushNotifier.notifyPersistentReport({
+        if (cardDetail) {
+          const questionText = cardDetail.questions.find(item => String(item.id) === questionId)?.text;
+          await pushNotifier.notifyCardQuestion({
             ownerEmail,
-            sessionId: boardSessionId,
-            entry,
             cardId,
             questionId,
             folderId: cardDetail.card.folder_id,
+            cardTitle: cardDetail.card.title,
+            question: typeof questionText === "string" ? questionText : "",
           });
         }
       }
-      if (outcome.placed.length === 0 || outcome.failed.length > 0)
+      if (outcome.failed.length > 0)
         context.warn(`카드 질문 ${questionId} 판 게시: 성공 ${outcome.placed.length}, 실패 ${outcome.failed.length}`);
     },
     usageSnapshot: () => usageSummaryService.getSummary(),

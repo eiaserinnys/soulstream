@@ -14,7 +14,7 @@ NDJSON의 init.model과 최종 SUCCESS 결과를 읽는다. output_schema가 있
 
 PAS 전화면의 `PersistentSessionChatView(showReport)` → `PersistentReportProvider` → `PersistentReportDeck`만 보고를 켠다. 일반 column과 카드 overlay에는 표시하지 않는다. provider는 기존 선택 key·단일 답 receipt·임시 답을 소유한다.
 
-담당이 카드 질문을 남기면 서버가 그 카드 소유 사용자의 판에 `cq_<질문ID>` ask 장을 만들어 기존 metadata 방송으로 내보낸다. 판에서 그 장에 답하면 서버가 카드 답으로 접수하고 `reason:'card_question_answered'` ACK를 돌려주며, 웹·앱은 채팅 echo를 기다리지 않고 그 요청의 pending 슬롯만 해제한다.
+담당이 카드 질문을 남기면 서버가 그 카드를 시킨 PAS의 판에 `cq_<질문ID>` ask 장을 만들어 기존 metadata 방송으로 내보낸다. 감독 PAS가 없으면 판에는 오르지 않고 휴대폰 알림만 간다. 판에서 그 장에 답하면 서버가 카드 답으로 접수하고 `reason:'card_question_answered'` ACK를 돌려주며, 웹·앱은 채팅 echo를 기다리지 않고 그 요청의 pending 슬롯만 해제한다.
 
 보고 답은 `usePersistentReportSend` → `setPendingChatSend` → `submitIntervention.context_items`로 직접 보낸다. 「제목: 선택지」와 `persistent_report_reply {key,option}`, 원본 장 identity를 세션별 pending 칸에 싣고 초안·첨부·되돌리기는 건드리지 않는다. see 장과 선택지 없는 열린 ask 장은 「제목: 확인했어」와 `persistent_report_closed {key,title}`만 보내고, 전송이 시작된 뒤 기존 인증된 PAS DELETE로 닫는다. 일반 입력창의 자유 답은 기존 `getMessageContext`의 정확한 일치 조건과 visible 문맥을 유지한다. 채팅 답 안의 1단계 단추는 기존 `appendGeneratedText` 경로다.
 

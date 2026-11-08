@@ -220,6 +220,45 @@ describe("PushNotifier", () => {
     expect(repository.deleteToken).toHaveBeenCalledWith("owner@example.com", "device-dead");
   });
 
+  it("sends a card question with the card_question payload and a 24-character card title", async () => {
+    const harness = createHarness();
+
+    expect(await harness.notifier.notifyCardQuestion({
+      ownerEmail: " owner@example.com ",
+      cardId: "card-a",
+      questionId: "question-a",
+      folderId: "folder-a",
+      cardTitle: "카드 제목이 아주 길어서 스물네 글자를 넘기는 경우의 제목입니다",
+      question: "어느 쪽으로 진행할까요?",
+    })).toBe(true);
+
+    expect(harness.provider.send).toHaveBeenCalledOnce();
+    expect(harness.provider.send).toHaveBeenCalledWith(
+      "token-1",
+      "확인 요청: 카드 제목이 아주 길어서 스물네 글자를 넘…",
+      "어느 쪽으로 진행할까요?",
+      { kind: "card_question", cardId: "card-a", questionId: "question-a", folderId: "folder-a" },
+    );
+  });
+
+  it("skips a card question in a folder excluded from notifications", async () => {
+    const excluded = createHarness({
+      catalog: createCatalog({
+        folders: [{ id: "folder-a", settings: { excludeFromNotification: true } }],
+      }),
+    });
+
+    expect(await excluded.notifier.notifyCardQuestion({
+      ownerEmail: "owner@example.com",
+      cardId: "card-a",
+      questionId: "question-a",
+      folderId: "folder-a",
+      cardTitle: "카드",
+      question: "질문",
+    })).toBe(false);
+    expect(excluded.provider.send).not.toHaveBeenCalled();
+  });
+
   it("flush and close wait for tracked report sends", async () => {
     let releaseSend!: () => void;
     const blocked = new Promise<void>(resolve => { releaseSend = resolve; });

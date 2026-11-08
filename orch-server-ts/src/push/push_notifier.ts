@@ -2,6 +2,7 @@ import type { NodeRegistryEvent } from "../node/registry.js";
 import type { CardNotification } from "../cards/card_dispatcher.js";
 import type { PersistentReportEntry } from "@soulstream/wire-schema/persistent-report";
 import type { PushNotificationData } from "@soulstream/wire-schema/push-notification";
+import { clip } from "../session/persistent_report_service.js";
 import type { PushRegistrationRepository } from "./push_routes.js";
 import { SessionForegroundObserverTracker } from "./session_foreground_observer_tracker.js";
 
@@ -169,6 +170,44 @@ export class PushNotifier {
   /** Session events continue to update in-app state through their existing SSE path. */
   accept(events: readonly NodeRegistryEvent[]): void {
     void events;
+  }
+
+  async notifyCardQuestion(input: {
+    ownerEmail: string;
+    cardId: string;
+    questionId: string;
+    folderId: string;
+    cardTitle: string;
+    question: string;
+  }): Promise<boolean> {
+    if (this.closed || !input.ownerEmail.trim()) return false;
+    return this.trackSend(this.notifyCardQuestionOwner(input));
+  }
+
+  private async notifyCardQuestionOwner(input: {
+    ownerEmail: string;
+    cardId: string;
+    questionId: string;
+    folderId: string;
+    cardTitle: string;
+    question: string;
+  }): Promise<boolean> {
+    try {
+      if (await this.folderExcludes(input.folderId)) return false;
+    } catch (error) {
+      this.warn(`Push folder settings lookup failed for ${input.cardId}`, error);
+    }
+    return this.sendToEmail(
+      input.ownerEmail.trim(),
+      `확인 요청: ${clip(input.cardTitle, 24)}`,
+      truncate(input.question, PUSH_BODY_MAX),
+      {
+        kind: "card_question",
+        cardId: input.cardId,
+        questionId: input.questionId,
+        folderId: input.folderId,
+      },
+    );
   }
 
   async flush(): Promise<void> {
