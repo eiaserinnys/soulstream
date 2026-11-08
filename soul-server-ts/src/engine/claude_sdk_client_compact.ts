@@ -29,6 +29,8 @@ export interface ClaudeSdkClientCompactOptions {
   runtimeState: ClaudeRuntimeState;
   toolPermissionController: ClaudeSdkToolPermissionController;
   lastRunOptions(): ClaudeRunOptions | null;
+  /** Options supplied by a fresh runner boundary that has not run a turn yet. */
+  fallbackRunOptions?: ClaudeRunOptions;
   lastWorkspaceDir(): string | null;
   lastEnv(): Record<string, string> | undefined;
   persistentSession(): ClaudeSdkPersistentSession | null;
@@ -44,11 +46,12 @@ export async function compactClaudeSdkSession(
   sessionId: string,
   context: ClaudeSdkClientCompactOptions,
 ): Promise<CompactedContextUsage | undefined> {
-  const previousOptions = context.lastRunOptions();
-  const workspaceDir = context.lastWorkspaceDir();
+  const previousOptions = context.lastRunOptions() ?? context.fallbackRunOptions ?? null;
+  const workspaceDir = context.lastWorkspaceDir() ?? previousOptions?.workspaceDir ?? null;
   if (!workspaceDir || !previousOptions) {
     throw new Error("ClaudeSdkClient.compact requires a previous run context");
   }
+  const env = context.lastEnv() ?? previousOptions.env;
 
   const persistentSession = context.persistentSession();
   if (persistentSession?.snapshot().queryLifecycle === "open") {
@@ -56,7 +59,7 @@ export async function compactClaudeSdkSession(
       previousOptions,
       workspaceDir,
       sessionId,
-      context.lastEnv(),
+      env,
     );
     options.inputUuid = randomUUID();
     let observedCompactBoundary = false;
@@ -85,7 +88,7 @@ export async function compactClaudeSdkSession(
       previousOptions,
       workspaceDir,
       sessionId,
-      context.lastEnv(),
+      env,
     ),
     abortController: controller,
     output,

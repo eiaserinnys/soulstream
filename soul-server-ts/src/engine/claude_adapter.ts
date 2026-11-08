@@ -165,7 +165,10 @@ export interface ClaudeClient {
     options: ClaudeRunOptions,
     signal: AbortSignal,
   ): AsyncIterable<ClaudeClientEvent>;
-  compact?(sessionId: string): Promise<CompactedContextUsage | undefined>;
+  compact?(
+    sessionId: string,
+    fallbackRunOptions?: ClaudeRunOptions,
+  ): Promise<CompactedContextUsage | undefined>;
   sendControlFrame?(
     frame: RunnerControlFrame,
   ): Promise<boolean> | boolean;
@@ -827,15 +830,97 @@ export class ClaudeEngineAdapter
         };
   }
 
-  async compact(sessionId: string): Promise<CompactedContextUsage | undefined> {
+  async compact(
+    sessionId: string,
+    fallbackParams?: EngineExecuteParams,
+  ): Promise<CompactedContextUsage | undefined> {
     if (!sessionId) {
       throw new Error("ClaudeEngineAdapter.compact requires sessionId");
+    }
+    if (!this.activeClient && fallbackParams) {
+      return await this.compactWithFallbackRun(sessionId, fallbackParams);
     }
     const client = this.activeClient ?? this.client;
     if (!client.compact) {
       throw new Error("Claude client does not support compact");
     }
     return await client.compact(sessionId);
+  }
+
+  /**
+   * A runner that was restarted for a fresh turn has no previous run options yet.
+   * The turn boundary hands over the next turn's params so compact can build one
+   * (including an account-pool lease that must be released afterwards).
+   */
+  private async compactWithFallbackRun(
+    sessionId: string,
+    params: EngineExecuteParams,
+  ): Promise<CompactedContextUsage | undefined> {
+    const fallback = await this.buildCompactFallbackRunOptions(params);
+    try {
+      const client = await this.resolveClient(params.agentSessionId, true);
+      if (!client.compact) {
+        throw new Error("Claude client does not support compact");
+      }
+      return await client.compact(sessionId, fallback.options);
+    } finally {
+      await fallback.release?.();
+    }
+  }
+
+  private async buildCompactFallbackRunOptions(params: EngineExecuteParams): Promise<{
+    options: ClaudeRunOptions;
+    release?: () => Promise<void>;
+  }> {
+    const options = this.buildRunOptions(params);
+    if (!(this.claudeAccountPoolEnabled && params.claudeAccountPoolTarget === true)) {
+      return { options };
+    }
+    const sessionId = params.agentSessionId;
+    const model = options.model;
+    const accountPort = this.claudeAccountTurnPort;
+    if (!sessionId || !model || !accountPort) {
+      throw new Error("Claude account pool compact is missing session, model, or account service");
+    }
+    assertClaudeAccountPoolOverrides(params.extraEnv);
+    if (options.env && Object.hasOwn(options.env, "ANTHROPIC_BASE_URL")) {
+      throw new Error("Claude account pool does not allow ANTHROPIC_BASE_URL");
+    }
+    const turnId = params.inputUuid ?? randomUUID();
+    const account = await accountPort.select({
+      session_id: sessionId,
+      turn_id: turnId,
+      model,
+      exclude_ids: [],
+    });
+    if (isAccountPoolExhausted(account)) {
+      throw new Error("Claude account pool is exhausted for compact");
+    }
+    let released = false;
+    const release = async (): Promise<void> => {
+      if (released) return;
+      released = true;
+      await accountPort.release({
+        session_id: sessionId,
+        account_id: account.account_id,
+        turn_id: turnId,
+      });
+    };
+    return {
+      options: {
+        ...options,
+        env: buildClaudeAccountPoolEnvironment(options.env, account),
+        ...(options.sessionStore
+          ? {
+              sessionStore: useLocalClaudeAccountPoolResume(
+                options.sessionStore,
+                account.config_dir,
+              ),
+            }
+          : {}),
+      },
+      release,
+    };
   }
 
   async backgroundClaudeRuntimeTasks(
@@ -923,8 +1008,8 @@ export class ClaudeEngineAdapter
 
   private buildRunOptions(
     params: EngineExecuteParams,
-    channel: InProcessRunnerFrameChannel,
-    signal: AbortSignal,
+    channel?: InProcessRunnerFrameChannel,
+    signal?: AbortSignal,
   ): ClaudeRunOptions {
     const model = normalizeClaudeModel(params.model);
     const claudeEffort = toClaudeSdkEffort(params.reasoningEffort);
@@ -969,7 +1054,7 @@ export class ClaudeEngineAdapter
         ? { autoMemoryEnabled: params.claudeAutoMemoryEnabled }
         : {}),
       env,
-      ...(params.scheduleToolUseEnabled && params.agentSessionId
+      ...(params.scheduleToolUseEnabled && params.agentSessionId && channel && signal
         ? {
             runnerRequest: (frame: Extract<RunnerEventFrame, { kind: "request" }>) =>
               channel.request(frame, {

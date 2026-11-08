@@ -11,7 +11,13 @@ import { sseEventsFromRunnerFrames } from "../../runner/engine_event_stream.js";
 import type { EngineExecuteParams, EngineInterventionResult, EnginePort, EngineUserInput, SSEEventPayload } from "../protocol.js";
 import { withScratchWorkspaceEnv } from "../scratch_workspace_env.js";
 import { antigravityMcpGatewayUpstreams, writeAntigravityAgentDefinition, writeAntigravityMcpGatewayConfig } from "./agent_definition.js";
-import { addAntigravityUsage, AntigravityEventMapper, type AntigravityUsage } from "./events.js";
+import { antigravityTurnCostUsd } from "../list_price.js";
+import {
+  addAntigravityUsage,
+  AntigravityEventMapper,
+  type AntigravityFirstCall,
+  type AntigravityUsage,
+} from "./events.js";
 import { resolveAntigravityMcpGatewayLaunch } from "./mcp_schema_proxy_launch.js";
 import { antigravityGatewayServerName } from "./mcp_gateway.js";
 import { antigravityArguments, antigravityUserMessage } from "./params.js";
@@ -36,6 +42,7 @@ export class AntigravityEngineAdapter implements EnginePort {
   private executing = false;
   private active?: { process: ReturnType<typeof launchAntigravityProcess>; cleanedUp: Promise<unknown> };
   private usageCarry?: AntigravityUsage;
+  private firstCallCarry?: AntigravityFirstCall;
 
   constructor(private readonly options: AntigravityAdapterOptions, private readonly logger: Logger) {
     this.workspaceDir = options.workspaceDir;
@@ -97,25 +104,43 @@ export class AntigravityEngineAdapter implements EnginePort {
       const terminalEvents = mapper.terminal(exit, process.interrupted);
       if (terminalEvents.length > 0) {
         const usage = addAntigravityUsage(this.usageCarry, mapper.usage);
+        const firstCall = this.firstCallCarry ?? mapper.firstCall ?? undefined;
         this.usageCarry = undefined;
+        this.firstCallCarry = undefined;
         for (let i = 0; i < terminalEvents.length; i += 1) {
           const event = terminalEvents[i]!;
+          const isLast = i === terminalEvents.length - 1;
           yield engineEventFrame({
             ...event,
-            ...(i === terminalEvents.length - 1 && usage ? { usage } : {}),
+            ...(isLast && usage
+              ? {
+                  usage,
+                  ...(firstCall ? { first_call: firstCall } : {}),
+                  ...(antigravityTurnCostUsd(usage, mapper.model) !== undefined
+                    ? { turn_cost_usd: antigravityTurnCostUsd(usage, mapper.model) }
+                    : {}),
+                }
+              : {}),
           } as SSEEventPayload);
         }
       } else {
         this.usageCarry = addAntigravityUsage(this.usageCarry, mapper.usage);
+        this.firstCallCarry ??= mapper.firstCall ?? undefined;
       }
     } catch (error) {
       if (process) { process.interrupt(); await process.done; }
       await definition?.remove();
       const usage = addAntigravityUsage(this.usageCarry, mapper.usage);
+      const firstCall = this.firstCallCarry ?? mapper.firstCall ?? undefined;
       this.usageCarry = undefined;
+      this.firstCallCarry = undefined;
       yield engineEventFrame({ type: "error", fatal: true,
         message: error instanceof Error ? error.message : String(error), timestamp: Date.now() / 1000,
         ...(mapper.model ? { model: mapper.model } : {}), ...(usage ? { usage } : {}),
+        ...(firstCall ? { first_call: firstCall } : {}),
+        ...(usage && antigravityTurnCostUsd(usage, mapper.model) !== undefined
+          ? { turn_cost_usd: antigravityTurnCostUsd(usage, mapper.model) }
+          : {}),
       });
     } finally {
       // If a frame consumer stops early, keep ownership until the CLI closes.

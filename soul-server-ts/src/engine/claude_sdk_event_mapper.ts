@@ -22,12 +22,14 @@ import { mapClaudeSystemMessage } from "./claude_sdk_system_event_mapper.js";
 import {
   coerceResetsAt,
   firstCallInput,
+  hasPositiveIterationUsage,
   lastIterationUsage,
   makeContextUsageEvent,
   messageContent,
   permissionDenialsToStrings,
   userMessageText,
 } from "./claude_sdk_event_mapper_helpers.js";
+import { readTranscriptTurnIterationUsage } from "./claude_sdk_transcript_usage.js";
 import { makeModeEventsFromToolUse } from "./claude_sdk_tool_event_mapper.js";
 import {
   asArray,
@@ -60,6 +62,9 @@ export class ClaudeSdkEventMapper {
   private firstIterationUsage: unknown;
   private latestIterationModel: string | undefined;
   private currentSdkSessionId: string | undefined;
+  private transcriptPath: string | undefined;
+  private turnFirstAssistantUuid: string | undefined;
+  private turnLastAssistantUuid: string | undefined;
 
   constructor(runtimeState: ClaudeRuntimeState) {
     this.runtimeState = runtimeState;
@@ -80,6 +85,12 @@ export class ClaudeSdkEventMapper {
     this.firstIterationUsage = undefined;
     this.latestIterationModel = undefined;
     this.currentSdkSessionId = undefined;
+    this.turnFirstAssistantUuid = undefined;
+    this.turnLastAssistantUuid = undefined;
+  }
+
+  recordTranscriptPath(path: string | undefined): void {
+    if (path) this.transcriptPath = path;
   }
 
   getCompactHookEventCount(): number {
@@ -182,12 +193,18 @@ export class ClaudeSdkEventMapper {
     const events: ClaudeClientEvent[] = [];
     const nestedMessage = asRecord(message.message);
     if (typeof message.parent_tool_use_id !== "string") {
-      if (nestedMessage?.usage !== undefined) {
-        this.firstIterationUsage ??= nestedMessage.usage;
-        this.latestIterationUsage = nestedMessage.usage;
+      const usage = nestedMessage?.usage;
+      if (usage !== undefined && hasPositiveIterationUsage(usage)) {
+        this.firstIterationUsage ??= usage;
+        this.latestIterationUsage = usage;
       }
       const model = asString(nestedMessage?.model) ?? asString(message.model);
       if (model !== undefined) this.latestIterationModel = model;
+      const uuid = asString(message.uuid);
+      if (uuid !== undefined) {
+        this.turnFirstAssistantUuid ??= uuid;
+        this.turnLastAssistantUuid = uuid;
+      }
     }
     const error = asString(message.error);
     if (error) {
@@ -298,7 +315,36 @@ export class ClaudeSdkEventMapper {
     const modelUsage = asRecord(message.modelUsage);
     const model = this.latestIterationModel;
     const turnCostUsd = claudeTurnCostUsd(usage, model);
-    const firstCall = firstCallInput(this.firstIterationUsage);
+    let firstIterationUsage = this.firstIterationUsage;
+    let latestIterationUsage = this.latestIterationUsage;
+    const lastResultUsage = lastIterationUsage(message.usage);
+    // Zero-token result iterations are the same hole as zero-token assistant
+    // messages: they must not become the turn's context measurement.
+    const resultLastIterationUsage = hasPositiveIterationUsage(lastResultUsage)
+      ? lastResultUsage
+      : undefined;
+    if (
+      this.transcriptPath !== undefined
+      && (
+        firstCallInput(firstIterationUsage) === undefined
+        || (resultLastIterationUsage === undefined && latestIterationUsage === undefined)
+      )
+    ) {
+      const recovered = readTranscriptTurnIterationUsage(
+        this.transcriptPath,
+        this.turnFirstAssistantUuid,
+        this.turnLastAssistantUuid,
+      );
+      if (recovered !== undefined) {
+        if (firstCallInput(firstIterationUsage) === undefined && recovered.first !== undefined) {
+          firstIterationUsage = recovered.first;
+        }
+        if (latestIterationUsage === undefined && recovered.last !== undefined) {
+          latestIterationUsage = recovered.last;
+        }
+      }
+    }
+    const firstCall = firstCallInput(firstIterationUsage);
     const resultEvent: ClaudeClientEvent = {
       type: "result",
       success,
@@ -316,13 +362,15 @@ export class ClaudeSdkEventMapper {
       permissionDenials: permissionDenialsToStrings(message.permission_denials),
     };
     const contextUsageEvent = makeContextUsageEvent(
-      lastIterationUsage(message.usage) ?? this.latestIterationUsage,
+      resultLastIterationUsage ?? latestIterationUsage,
       message.modelUsage,
       this.latestIterationModel,
     );
     this.latestIterationUsage = undefined;
     this.firstIterationUsage = undefined;
     this.latestIterationModel = undefined;
+    this.turnFirstAssistantUuid = undefined;
+    this.turnLastAssistantUuid = undefined;
 
     if (!success) {
       const errorEvent: ClaudeClientEvent = {

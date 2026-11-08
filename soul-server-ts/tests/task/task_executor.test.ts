@@ -4965,6 +4965,9 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     await task.executionPromise;
 
     expect(compact).toHaveBeenCalledTimes(1);
+    // After-turn compaction has no prepared input for the next turn, so it keeps
+    // the single-argument adapter call.
+    expect(compact.mock.calls[0]).toHaveLength(1);
     expect(compact).toHaveBeenCalledWith("claude-session-1");
     expect(mocks.persistEvent).toHaveBeenCalledWith(
       task.agentSessionId,
@@ -4972,6 +4975,220 @@ describe("TaskExecutor multi-turn (B-4)", () => {
       undefined,
       expect.stringMatching(/^in-process:/),
     );
+  });
+
+  it("턴 종료 관측 context telemetry를 claude_context_usage 메타데이터로 남긴다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "claude-session-1";
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        yield {
+          type: "context_usage",
+          used_tokens: 123_456,
+          max_tokens: 200_000,
+          percent: 61.7,
+        } as SSEEventPayload;
+        yield { type: "complete", result: "done" } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+
+    executor.startNewExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(task.claudeContextUsage).toMatchObject({
+      usedTokens: 123_456,
+      maxTokens: 200_000,
+    });
+    expect(task.claudeContextUsage?.observedAtMs).toEqual(expect.any(Number));
+    const contextUsageCalls = mocks.enqueueMetadataEffect.mock.calls.filter(
+      (call) => (call[1] as { type?: string }).type === "claude_context_usage",
+    );
+    expect(contextUsageCalls).toHaveLength(1);
+    expect(contextUsageCalls[0]).toEqual([
+      "sess-1",
+      expect.objectContaining({
+        type: "claude_context_usage",
+        value: {
+          used_tokens: 123_456,
+          max_tokens: 200_000,
+          observed_at_ms: expect.any(Number),
+        },
+      }),
+      {
+        replaceExistingType: "claude_context_usage",
+        registrationId: expect.stringMatching(/^in-process:/),
+      },
+    ]);
+    expect(task.metadata).toEqual([
+      expect.objectContaining({ type: "claude_context_usage" }),
+    ]);
+  });
+
+  it("관측값이 그대로면 claude_context_usage 메타데이터를 다시 쓰지 않는다", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "claude-session-1";
+    task.claudeContextUsage = {
+      usedTokens: 123_456,
+      maxTokens: 200_000,
+      observedAtMs: 1_763_000_000_000,
+    };
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        yield { type: "complete", result: "done" } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+
+    executor.startNewExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(task.claudeContextUsage).toEqual({
+      usedTokens: 123_456,
+      maxTokens: 200_000,
+      observedAtMs: 1_763_000_000_000,
+    });
+    expect(mocks.enqueueMetadataEffect.mock.calls.filter(
+      (call) => (call[1] as { type?: string }).type === "claude_context_usage",
+    )).toEqual([]);
+  });
+
+  it("context usage 메타데이터 저장이 실패해도 완료된 턴을 실패로 만들지 않는다", async () => {
+    const mocks = makeMocks();
+    const warn = vi.spyOn(silentLogger, "warn");
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "claude-session-1";
+    mocks.enqueueMetadataEffect.mockRejectedValueOnce(new Error("db down"));
+    const engine: EnginePort = {
+      backendId: "claude",
+      workspaceDir: "/tmp/claude-roselin",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        yield {
+          type: "context_usage",
+          used_tokens: 123_456,
+          max_tokens: 200_000,
+          percent: 61.7,
+        } as SSEEventPayload;
+        yield { type: "complete", result: "done" } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+
+    try {
+      executor.startNewExecution(task, claudeAgent);
+      await task.executionPromise;
+
+      expect(task.status).toBe("completed");
+      expect(task.claudeContextUsage).toMatchObject({
+        usedTokens: 123_456,
+        maxTokens: 200_000,
+      });
+      expect(warn).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: "sess-1" }),
+        "claude context usage metadata persistence failed",
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("recovered runner의 턴 종료 관측이 임계치를 넘으면 post-turn compact를 한 번 실행한다", async () => {
+    const mocks = makeMocks();
+    const dispatcher = {
+      dispatch: vi.fn(),
+      executeFrames: vi.fn(),
+      recoverFrames: vi.fn(() => frameStream([
+        {
+          type: "context_usage",
+          used_tokens: 180_000,
+          max_tokens: 200_000,
+          percent: 90,
+        } as SSEEventPayload,
+        { type: "complete", result: "recovered", timestamp: 2 } as SSEEventPayload,
+      ])),
+      registrationId: vi.fn(() => "registration-1"),
+      prepareSession: vi.fn(async () => {}),
+      interrupt: vi.fn(async () => true),
+      close: vi.fn(async () => {}),
+      detachHost: vi.fn(async () => {}),
+      sendControlFrame: vi.fn(async () => true),
+      requestContext: vi.fn(),
+      waitForSessionAck: vi.fn(async () => 12),
+      recoverPendingInterventions: vi.fn(async () => []),
+      invoke: vi.fn(),
+    };
+    const runner: TaskRunnerRuntime = {
+      // The recovered runner must expose compact() through the process proxy so
+      // the post-turn preemptive compact can reach the child process.
+      engine: new RunnerProcessEngineProxy(
+        "claude",
+        claudeAgent.workspace_dir,
+        dispatcher as never,
+      ),
+      dispatcher: dispatcher as never,
+      eventPersistence: "runner",
+    };
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.profileId = claudeAgent.id;
+    task.codexThreadId = "claude-recovered";
+
+    await executor.recoverRunnerExecution(
+      task,
+      claudeAgent,
+      runner,
+      "execute-recovered",
+    );
+
+    expect(dispatcher.invoke.mock.calls.filter((call) => call[0] === "compact"))
+      .toEqual([["compact", ["claude-recovered"], "turn"]]);
+    const compactPersist = mocks.persistEvent.mock.calls.find(
+      (call) => (call[1] as { type?: string }).type === "compact",
+    );
+    expect(compactPersist?.[1]).toMatchObject({
+      type: "compact",
+      trigger: "auto_preemptive",
+    });
+    expect(task.status).toBe("completed");
   });
 
   it("Claude compact 이벤트는 P3 wire 그대로 persist/broadcast된다", async () => {
@@ -5167,6 +5384,16 @@ describe("TaskExecutor multi-turn (B-4)", () => {
     }
 
     expect(compact).toHaveBeenCalledTimes(1);
+    // The pre-turn path forwards the prepared next input so the SDK compacts with
+    // the same model/account/tool policy the next turn will use.
+    expect(compact.mock.calls[0]).toHaveLength(2);
+    expect(compact).toHaveBeenCalledWith(
+      "claude-preturn-compact",
+      expect.objectContaining({
+        agentSessionId: task.agentSessionId,
+        prompt: expect.stringContaining("already queued"),
+      }),
+    );
     expect(preparedInputAtCompact?.interventions?.map(({ text }) => text)).toEqual([
       "already queued",
     ]);

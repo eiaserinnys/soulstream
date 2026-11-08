@@ -83,6 +83,22 @@ export function lastIterationUsage(usage: unknown): Record<string, unknown> | un
   return undefined;
 }
 
+/**
+ * Tool-only assistant messages can be reported with all-zero usage by
+ * Anthropic-compatible endpoints. Those must not become the turn's first call
+ * or the latest context measurement.
+ */
+export function hasPositiveIterationUsage(usage: unknown): boolean {
+  const record = asRecord(usage);
+  if (!record) return false;
+  const total =
+    (asNumber(record.input_tokens) ?? 0) +
+    (asNumber(record.output_tokens) ?? 0) +
+    (asNumber(record.cache_read_input_tokens) ?? 0) +
+    (asNumber(record.cache_creation_input_tokens) ?? 0);
+  return total > 0;
+}
+
 export function firstCallInput(usage: unknown): {
   inputTokens: number;
   cachedInputTokens: number;

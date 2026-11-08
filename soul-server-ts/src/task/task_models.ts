@@ -397,6 +397,18 @@ export interface ClaudeRuntimeState {
 }
 
 /**
+ * Latest Claude context window telemetry, observed from a turn's context_usage event.
+ *
+ * Persisted in session metadata so a restarted process can re-evaluate preemptive
+ * compaction before the next turn instead of forgetting the last observation.
+ */
+export interface ObservedClaudeContextUsage {
+  usedTokens: number;
+  maxTokens: number;
+  observedAtMs?: number;
+}
+
+/**
  * Task — Codex 세션 1개의 런타임 상태.
  *
  * 단일 turn 모델 (Codex 단일턴, B-3 범위) — 멀티턴은 B-4 검토.
@@ -576,7 +588,7 @@ export interface Task {
   pendingClaudeBackendRolloverFrom?: string;
 
   /** Latest Claude context window telemetry retained between turns for incoming-size gating. */
-  claudeContextUsage?: { usedTokens: number; maxTokens: number; observedAtMs?: number };
+  claudeContextUsage?: ObservedClaudeContextUsage;
 
   /** 진행 중 runner의 단일 정본. 엔진 capability와 command dispatcher는 원자적으로 구성된다. */
   runner?: TaskRunnerRuntime;

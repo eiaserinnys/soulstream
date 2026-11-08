@@ -19,6 +19,7 @@ import {
   extractAgentsSessionItemsFromMetadata,
   extractCallerInfoFromMetadata,
   extractClaudeBackendRolloverState,
+  extractClaudeContextUsageFromMetadata,
   extractClaudePermissionModeFromMetadata,
   extractSessionCostFromMetadata,
   extractPersistentGeneration,
@@ -105,6 +106,7 @@ export function hydrateEvictedTaskFromSessionRow(
   const agentsRunState = extractAgentsRunStateFromMetadata(metadata);
   const agentsSessionItems = extractAgentsSessionItemsFromMetadata(metadata);
   const claudePermissionMode = extractClaudePermissionModeFromMetadata(metadata);
+  const claudeContextUsage = extractClaudeContextUsageFromMetadata(metadata);
   const storedReasoningEffort = readStoredReasoningEffort(row.reasoning_effort);
   const terminationReason = terminationReasonFromRow(row.termination_reason);
   const terminalEventId = positiveEventId(row.termination_event_id);
@@ -167,6 +169,7 @@ export function hydrateEvictedTaskFromSessionRow(
     agentsConversationId: agentsRunState?.conversationId,
     agentsSessionItems,
     claudePermissionMode,
+    ...(claudeContextUsage === undefined ? {} : { claudeContextUsage }),
     claudeBackendRolloverAttempts: claudeBackendRollover.attempts,
     ...(rolloverCycleFrom === undefined
       ? {}

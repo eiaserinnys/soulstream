@@ -105,19 +105,32 @@ function buildClaudeExtraEnv(params: {
  * TaskExecutor decides when turns start and how yielded events are drained; this class decides
  * which task/agent runtime policy is consumed or forwarded for that single turn.
  */
+interface ResolvedTurnPolicy {
+  backend: ReturnType<typeof effectiveTaskBackend>;
+  provider: UsageStatsProvider;
+  effectiveModel: AgentProfile["model"];
+  turnReasoningEffort: ReturnType<typeof resolveTurnReasoningEffort>;
+  effectiveAllowedTools: AgentProfile["allowed_tools"];
+  effectiveDisallowedTools: AgentProfile["disallowed_tools"];
+  effectiveClaudePermissionMode: AgentProfile["claude_permission_mode"];
+  opencodeMcpToolAllowlist: ReturnType<typeof resolveOpenCodeMcpToolAllowlist>;
+  claudeAccountPoolTarget: boolean;
+  extraEnv: Record<string, string> | undefined;
+}
+
 export class TaskEngineTurnRunner {
   constructor(private readonly deps: TaskEngineTurnRunnerDeps) {}
 
-  executeTurn({
-    task,
-    agent,
-    runner,
-    input,
-  }: TaskEngineTurnRunnerParams): AsyncIterable<SSEEventPayload> {
-    const { engine, dispatcher } = runner;
-    const queuedToolApproval = task.agentsQueuedToolApproval;
-    task.agentsQueuedToolApproval = undefined;
-
+  /**
+   * Task/agent runtime policy consumed by one Claude run. Shared by normal
+   * turns and by compact fallback params so a compact that has to spawn a new
+   * client resolves the same env, account pool, model and effort.
+   */
+  private resolveTurnPolicy(
+    task: Task,
+    agent: AgentProfile,
+    engineBackendId: AgentProfile["backend"],
+  ): ResolvedTurnPolicy {
     // Single legacy-compat boundary: the effective backend is known here, so a
     // pre-089 unrecorded row can replay exactly what it used to get.
     const turnReasoningEffort = resolveTurnReasoningEffort(
@@ -129,9 +142,6 @@ export class TaskEngineTurnRunner {
       },
       effectiveTaskBackend(task, agent),
     );
-    const effectiveAllowedTools = task.allowedTools ?? agent.allowed_tools;
-    const effectiveDisallowedTools = task.disallowedTools ?? agent.disallowed_tools;
-    const effectiveClaudePermissionMode = task.claudePermissionMode ?? agent.claude_permission_mode;
     const effectiveModel = task.model ?? agent.model;
     const backend = effectiveTaskBackend(task, agent);
     const provider = usageProviderForExecution(backend, effectiveModel ?? null);
@@ -141,7 +151,7 @@ export class TaskEngineTurnRunner {
       this.deps.modelCatalog,
     );
     const hasResolvedPreset = task.modelPresetBackend !== undefined;
-    const claudeProfileEnv = engine.backendId === "claude"
+    const claudeProfileEnv = engineBackendId === "claude"
       ? buildClaudeExtraEnv({
           profileEnv: hasResolvedPreset ? (task.modelPresetEnv ?? {}) : agent.env,
           sourceLabel: hasResolvedPreset ? "model preset" : "agents.yaml",
@@ -155,7 +165,7 @@ export class TaskEngineTurnRunner {
       && backend === "claude"
       && provider !== "kimi"
       && claudeProfileEnv?.ANTHROPIC_BASE_URL === undefined;
-    const claudeExtraEnv = engine.backendId === "claude"
+    const claudeExtraEnv = engineBackendId === "claude"
       ? {
           ...(claudeProfileEnv ?? {}),
           ...(!claudeAccountPoolTarget
@@ -168,6 +178,98 @@ export class TaskEngineTurnRunner {
     const extraEnv = claudeExtraEnv && Object.keys(claudeExtraEnv).length > 0
       ? claudeExtraEnv
       : undefined;
+    return {
+      backend,
+      provider,
+      effectiveModel,
+      turnReasoningEffort,
+      effectiveAllowedTools: task.allowedTools ?? agent.allowed_tools,
+      effectiveDisallowedTools: task.disallowedTools ?? agent.disallowed_tools,
+      effectiveClaudePermissionMode: task.claudePermissionMode ?? agent.claude_permission_mode,
+      opencodeMcpToolAllowlist,
+      claudeAccountPoolTarget,
+      extraEnv,
+    };
+  }
+
+  /**
+   * Fallback run params for a compact that must spawn a fresh client (no active
+   * client in this process). The compact itself performs no turn, so the prompt
+   * only satisfies the execute-params contract.
+   */
+  buildCompactExecuteParams(
+    task: Task,
+    agent: AgentProfile,
+    turnInput?: TaskEngineTurnInput,
+  ): EngineExecuteParams {
+    const policy = this.resolveTurnPolicy(task, agent, effectiveTaskBackend(task, agent));
+    return {
+      agentSessionId: task.agentSessionId,
+      prompt: turnInput?.prompt ?? "",
+      sessionCost: task.sessionCost ?? {
+        usd: 0,
+        partial: task.codexThreadId !== undefined,
+      },
+      ...(turnInput?.inputUuid ? { inputUuid: turnInput.inputUuid } : {}),
+      ...(turnInput?.turnOrigin ? { turnOrigin: turnInput.turnOrigin } : {}),
+      ...(turnInput?.imageAttachmentPaths !== undefined
+        ? { imageAttachmentPaths: turnInput.imageAttachmentPaths }
+        : {}),
+      ...(policy.effectiveModel !== undefined ? { model: policy.effectiveModel } : {}),
+      ...(policy.turnReasoningEffort !== undefined
+        ? { reasoningEffort: policy.turnReasoningEffort }
+        : {}),
+      ...(turnInput?.systemPrompt !== undefined
+        ? { systemPrompt: turnInput.systemPrompt }
+        : {}),
+      ...(policy.effectiveAllowedTools !== undefined
+        ? { allowedTools: policy.effectiveAllowedTools }
+        : {}),
+      ...(policy.effectiveDisallowedTools !== undefined
+        ? { disallowedTools: policy.effectiveDisallowedTools }
+        : {}),
+      ...(task.useMcp !== undefined ? { useMcp: task.useMcp } : {}),
+      ...(policy.opencodeMcpToolAllowlist !== undefined
+        ? { opencodeMcpToolAllowlist: policy.opencodeMcpToolAllowlist }
+        : {}),
+      ...(policy.effectiveClaudePermissionMode !== undefined
+        ? { claudePermissionMode: policy.effectiveClaudePermissionMode }
+        : {}),
+      ...(agent.claude_auto_memory_enabled !== undefined
+        ? { claudeAutoMemoryEnabled: agent.claude_auto_memory_enabled }
+        : {}),
+      ...(agent.max_turns !== undefined ? { maxTurns: agent.max_turns } : {}),
+      ...(policy.extraEnv !== undefined ? { extraEnv: policy.extraEnv } : {}),
+      ...(this.deps.scheduleToolHandler !== undefined
+        ? { scheduleToolUseEnabled: true }
+        : {}),
+      ...(policy.claudeAccountPoolTarget ? { claudeAccountPoolTarget: true } : {}),
+    };
+  }
+
+  executeTurn({
+    task,
+    agent,
+    runner,
+    input,
+  }: TaskEngineTurnRunnerParams): AsyncIterable<SSEEventPayload> {
+    const { engine, dispatcher } = runner;
+    const queuedToolApproval = task.agentsQueuedToolApproval;
+    task.agentsQueuedToolApproval = undefined;
+
+    const policy = this.resolveTurnPolicy(task, agent, engine.backendId);
+    const {
+      backend,
+      provider,
+      effectiveModel,
+      turnReasoningEffort,
+      effectiveAllowedTools,
+      effectiveDisallowedTools,
+      effectiveClaudePermissionMode,
+      opencodeMcpToolAllowlist,
+      claudeAccountPoolTarget,
+      extraEnv,
+    } = policy;
 
     const executeParams: EngineExecuteParams = {
       agentSessionId: task.agentSessionId,

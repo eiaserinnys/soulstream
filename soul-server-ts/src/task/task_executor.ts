@@ -62,9 +62,11 @@ import {
   isTerminalTaskStatus,
   type ExecutionActivation,
   type InterventionMessage,
+  type ObservedClaudeContextUsage,
   type Task,
   type TaskStatus,
 } from "./task_models.js";
+import { buildClaudeContextUsageMetadataEntry } from "./task_metadata.js";
 import {
   dequeueInterventionsInLane,
   enqueueInterventionOnce,
@@ -1484,11 +1486,14 @@ export class TaskExecutor {
       if (lastAcknowledgedEventId !== null) {
         task.lastEventId = lastAcknowledgedEventId;
       }
-      task.claudeContextUsage = contextRecovery.compactCompleted
-        ? undefined
-        : contextRecovery.latestContextUsage
-          ? { ...contextRecovery.latestContextUsage, observedAtMs: Date.now() }
-          : task.claudeContextUsage;
+      await this.setClaudeContextUsage(
+        task,
+        contextRecovery.compactCompleted
+          ? undefined
+          : contextRecovery.latestContextUsage
+            ? { ...contextRecovery.latestContextUsage, observedAtMs: Date.now() }
+            : task.claudeContextUsage,
+      );
       if (contextRecovery.promptTooLongMessage !== undefined) {
         const previousSessionId = task.pendingClaudeBackendRolloverFrom
           ?? task.codexThreadId;
@@ -1528,7 +1533,7 @@ export class TaskExecutor {
           task.claudeBackendRolloverAttempts = nextAttempts;
           task.claudeBackendRolloverCycleFrom = previousSessionId;
           task.pendingClaudeBackendRolloverFrom = previousSessionId;
-          task.claudeContextUsage = undefined;
+          await this.setClaudeContextUsage(task, undefined);
           turnInput = await this.turnInputBuilder.prepareBackendRolloverTurnInput(
             task,
             agent,
@@ -1723,6 +1728,51 @@ export class TaskExecutor {
     task.pendingClaudeBackendRolloverFrom = undefined;
   }
 
+  /**
+   * Single writer for `task.claudeContextUsage`.
+   *
+   * Persists the observation so a restarted process can restore it before the
+   * next pre-turn compaction check (see `hydrateTaskFromEvictedRow`). Equal
+   * values return immediately without enqueueing: turns that never observe
+   * context usage must not grow the metadata stream.
+   */
+  private async setClaudeContextUsage(
+    task: Task,
+    next: ObservedClaudeContextUsage | undefined,
+  ): Promise<void> {
+    const previous = task.claudeContextUsage;
+    if (
+      previous?.usedTokens === next?.usedTokens
+      && previous?.maxTokens === next?.maxTokens
+      && previous?.observedAtMs === next?.observedAtMs
+    ) {
+      return;
+    }
+    task.claudeContextUsage = next;
+    const metadataEntry = buildClaudeContextUsageMetadataEntry(next ?? null);
+    task.metadata = [
+      ...(task.metadata ?? []).filter((entry) => entry.type !== "claude_context_usage"),
+      metadataEntry,
+    ];
+    try {
+      await this.persistence.enqueueMetadataEffect(
+        task.agentSessionId,
+        metadataEntry,
+        {
+          replaceExistingType: "claude_context_usage",
+          ...(task.executionRegistration
+            ? { registrationId: task.executionRegistration.registrationId }
+            : {}),
+        },
+      );
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "claude context usage metadata persistence failed",
+      );
+    }
+  }
+
   private async compactClaudeContextIfNeeded(
     task: Task,
     agent: AgentProfile,
@@ -1738,9 +1788,14 @@ export class TaskExecutor {
     ) {
       return false;
     }
+    const compactParams = incoming === undefined
+      ? undefined
+      : this.engineTurnRunner.buildCompactExecuteParams(task, agent, incoming);
     try {
-      const compactedContextUsage = await (runner.engine as EnginePort & SupportsCompact)
-        .compact(task.codexThreadId);
+      const compactedContextUsage = compactParams === undefined
+        ? await (runner.engine as EnginePort & SupportsCompact).compact(task.codexThreadId)
+        : await (runner.engine as EnginePort & SupportsCompact)
+          .compact(task.codexThreadId, compactParams);
       await this.engineEventPublisher.publishEngineEvent(task, {
         type: "compact",
         trigger: "auto_preemptive",
@@ -1766,7 +1821,7 @@ export class TaskExecutor {
       );
       return false;
     } finally {
-      task.claudeContextUsage = undefined;
+      await this.setClaudeContextUsage(task, undefined);
     }
   }
 
@@ -1792,11 +1847,21 @@ export class TaskExecutor {
         });
         this.collectClaudeRuntimeTaskFollowup(task, event);
       }
-      task.claudeContextUsage = contextRecovery.compactCompleted
-        ? undefined
-        : contextRecovery.latestContextUsage
-          ? { ...contextRecovery.latestContextUsage, observedAtMs: Date.now() }
-          : task.claudeContextUsage;
+      await this.setClaudeContextUsage(
+        task,
+        contextRecovery.compactCompleted
+          ? undefined
+          : contextRecovery.latestContextUsage
+            ? { ...contextRecovery.latestContextUsage, observedAtMs: Date.now() }
+            : task.claudeContextUsage,
+      );
+      if (
+        terminalObservation === undefined
+        && contextRecovery.preemptiveCompactNeeded
+        && !contextRecovery.compactCompleted
+      ) {
+        await this.compactClaudeContextIfNeeded(task, agent, runner);
+      }
       if (
         contextRecovery.promptTooLongMessage !== undefined
         && task.claudeBackendRolloverCycleFrom !== undefined

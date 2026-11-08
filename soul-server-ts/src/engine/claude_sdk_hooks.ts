@@ -63,8 +63,10 @@ export function buildClaudeSdkHooks(params: {
       {
         hooks: [
           async (input) => {
-            const trigger = asString(asRecord(input)?.trigger) ?? "auto";
+            const record = asRecord(input);
+            const trigger = asString(record?.trigger) ?? "auto";
             eventMapper.recordCompactHookTrigger(trigger);
+            eventMapper.recordTranscriptPath(asString(record?.transcript_path));
             return {};
           },
         ],
@@ -207,6 +209,7 @@ export function buildClaudeSdkHooks(params: {
               },
               "Claude Stop hook fired",
             );
+            eventMapper.recordTranscriptPath(asString(record?.transcript_path));
             return {};
           },
         ],
@@ -218,6 +221,9 @@ export function buildClaudeSdkHooks(params: {
       {
         hooks: [
           async (input, toolUseID) => {
+            eventMapper.recordTranscriptPath(
+              asString(asRecord(input)?.transcript_path),
+            );
             for (const event of makeGenericHookEvents(hookEventName, input, toolUseID)) {
               output.push(event);
             }

@@ -367,9 +367,9 @@ export class ClaudeSessionClientRegistry implements ClaudeSessionRuntimeControl 
           };
         }
         if (property === "compact" && target.compact) {
-          return async (sessionId: string) => {
+          return async (sessionId: string, fallbackRunOptions?: ClaudeRunOptions) => {
             await previousClose;
-            return await target.compact!(sessionId);
+            return await target.compact!(sessionId, fallbackRunOptions);
           };
         }
         if (property === "close" && target.close) {

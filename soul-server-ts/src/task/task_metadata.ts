@@ -1,5 +1,6 @@
 import type {
   CallerInfo,
+  ObservedClaudeContextUsage,
   PersistentGenerationFirstCall,
   PersistentGenerationPending,
   PersistentGenerationState,
@@ -33,6 +34,57 @@ export function extractSessionCostFromMetadata(metadata: unknown): SessionCostBa
       && typeof cost.partial === "boolean"
       ? { usd: cost.usd, partial: cost.partial }
       : undefined;
+  }
+  return undefined;
+}
+
+export function buildClaudeContextUsageMetadataEntry(
+  usage: ObservedClaudeContextUsage | null,
+): Record<string, unknown> {
+  return {
+    type: "claude_context_usage",
+    value: usage === null
+      ? null
+      : {
+          used_tokens: usage.usedTokens,
+          max_tokens: usage.maxTokens,
+          ...(usage.observedAtMs === undefined
+            ? {}
+            : { observed_at_ms: usage.observedAtMs }),
+        },
+    timestamp: new Date().toISOString(),
+  };
+}
+
+export function extractClaudeContextUsageFromMetadata(
+  metadata: unknown,
+): ObservedClaudeContextUsage | undefined {
+  if (!Array.isArray(metadata)) return undefined;
+  for (let i = metadata.length - 1; i >= 0; i--) {
+    const entry = metadata[i];
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    const record = entry as Record<string, unknown>;
+    if (record.type !== "claude_context_usage") continue;
+    const value = record.value;
+    if (value === null) return undefined;
+    if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+    const usage = value as Record<string, unknown>;
+    const usedTokens = usage.used_tokens;
+    const maxTokens = usage.max_tokens;
+    if (
+      !nonNegativeFiniteNumber(usedTokens)
+      || !nonNegativeFiniteNumber(maxTokens)
+      || usedTokens <= 0
+      || maxTokens <= 0
+    ) {
+      return undefined;
+    }
+    const observedAtMs = usage.observed_at_ms;
+    return {
+      usedTokens,
+      maxTokens,
+      ...(nonNegativeFiniteNumber(observedAtMs) ? { observedAtMs } : {}),
+    };
   }
   return undefined;
 }

@@ -372,8 +372,14 @@ export class ClaudeSdkClient implements ClaudeClient {
     }
   }
 
-  async compact(sessionId: string): Promise<CompactedContextUsage | undefined> {
-    const compact = () => compactClaudeSdkSession(sessionId, this.compactContext);
+  async compact(
+    sessionId: string,
+    fallbackRunOptions?: ClaudeRunOptions,
+  ): Promise<CompactedContextUsage | undefined> {
+    const compact = () => compactClaudeSdkSession(sessionId, {
+      ...this.compactContext,
+      ...(fallbackRunOptions === undefined ? {} : { fallbackRunOptions }),
+    });
     if (!this.lastRunOptions?.trackChildExit) return compact();
     const releaseTurn = await this.turnMutex.acquire();
     try {
