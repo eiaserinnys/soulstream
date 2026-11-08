@@ -22,6 +22,11 @@ export interface RunnerProcessPaths {
 }
 
 export const LINUX_UNIX_SOCKET_PATH_MAX_BYTES = 107;
+/**
+ * Darwin `sockaddr_un.sun_path` is a 104-byte array; reserving the NUL
+ * terminator leaves 103 bytes for the pathname.
+ */
+export const DARWIN_UNIX_SOCKET_PATH_MAX_BYTES = 103;
 const RUNNER_SESSION_SLUG_LENGTH = 24;
 const RUNNER_SOCKET_FILE_NAME = "runner.sock";
 const RUNNER_STATE_INFRASTRUCTURE_PREFIX = "_";
@@ -50,11 +55,14 @@ export function assertRunnerStateDirectoryCompatible(
   platform: NodeJS.Platform = process.platform,
 ): void {
   if (platform === "win32") return;
+  const maximumBytes = platform === "darwin"
+    ? DARWIN_UNIX_SOCKET_PATH_MAX_BYTES
+    : LINUX_UNIX_SOCKET_PATH_MAX_BYTES;
   const socketPathBytes = runnerSocketPathByteLength(stateDirectory);
-  if (socketPathBytes > LINUX_UNIX_SOCKET_PATH_MAX_BYTES) {
+  if (socketPathBytes > maximumBytes) {
     throw new Error(
       `SOUL_RUNNER_STATE_DIR produces a ${socketPathBytes} byte runner socket path; `
-      + `maximum is ${LINUX_UNIX_SOCKET_PATH_MAX_BYTES} bytes`,
+      + `maximum is ${maximumBytes} bytes`,
     );
   }
 }

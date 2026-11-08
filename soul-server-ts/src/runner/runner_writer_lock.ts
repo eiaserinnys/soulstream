@@ -12,6 +12,9 @@ import {
 import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 
 const KERNEL_LOCK_SCHEMA_VERSION = 2;
+// Persisted record compatibility only: this value names the OS-exclusive
+// kernel ownership contract, not a listening endpoint string. Darwin holds the
+// same contract with a SQLite EXCLUSIVE transaction instead of a socket.
 const KERNEL_LOCK_KIND = "kernel-endpoint";
 
 interface KernelWriterLockRecord extends ProcessLockOwner {

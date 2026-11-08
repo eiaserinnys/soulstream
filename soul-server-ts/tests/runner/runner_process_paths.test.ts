@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import {
+  DARWIN_UNIX_SOCKET_PATH_MAX_BYTES,
   isRunnerRegistrationDirectoryName,
   LINUX_UNIX_SOCKET_PATH_MAX_BYTES,
   runnerProcessPaths,
@@ -22,6 +23,45 @@ describe("runner process path portability", () => {
       "session-a",
       "linux",
     )).toThrow(/SOUL_RUNNER_STATE_DIR.*108 byte runner socket path.*107/);
+  });
+
+  it("accepts the exact Darwin sockaddr_un pathname boundary", () => {
+    const paths = runnerProcessPaths(`/${"a".repeat(65)}`, "session-a", "darwin");
+    expect(Buffer.byteLength(paths.socketPath, "utf8")).toBe(
+      DARWIN_UNIX_SOCKET_PATH_MAX_BYTES,
+    );
+    expect(paths.socketKind).toBe("unix_socket");
+  });
+
+  it("rejects a Darwin runner socket pathname above 103 bytes", () => {
+    expect(() => runnerProcessPaths(
+      `/${"a".repeat(66)}`,
+      "session-a",
+      "darwin",
+    )).toThrow(/SOUL_RUNNER_STATE_DIR.*104 byte runner socket path.*103/);
+  });
+
+  it("measures the Darwin limit in UTF-8 bytes for non-ASCII state directories", () => {
+    expect(() => runnerProcessPaths(
+      `/${"가".repeat(20)}`,
+      "session-a",
+      "darwin",
+    )).not.toThrow();
+    expect(() => runnerProcessPaths(
+      `/${"가".repeat(23)}`,
+      "session-a",
+      "darwin",
+    )).toThrow(/107 byte runner socket path.*103/);
+  });
+
+  it("rejects a long real /var/folders state directory on Darwin", () => {
+    const macStateDirectory =
+      "/var/folders/2x/8m1y3k5v6b7n9q0r2s4t6u8w0000gn/T/soulstream-runner-state";
+    expect(() => runnerProcessPaths(
+      macStateDirectory,
+      "session-a",
+      "darwin",
+    )).toThrow(/109 byte runner socket path.*103/);
   });
 
   it("does not apply the Unix pathname limit to Windows named pipes", () => {
