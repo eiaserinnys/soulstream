@@ -13,24 +13,29 @@ describe("v3 task document board unification", () => {
     expect(detail).not.toContain("mountedDocuments");
   });
 
-  it("keeps markdown creation and inline rename on the task board list", () => {
+  it("keeps markdown creation and inline rename on the flat REST path", () => {
     const inlineBoard = read("./FolderInlineBoard.tsx");
 
     expect(inlineBoard).toContain("<DashboardIconCap");
     expect(inlineBoard).toContain('label="마크다운 추가"');
-    expect(inlineBoard).toContain("useBoardYjsRuntime");
+    expect(inlineBoard).toContain("fetchFolderBoardItems");
+    expect(inlineBoard).toContain("createMarkdownDocument");
+    expect(inlineBoard).toContain("renameMarkdownDocument");
+    expect(inlineBoard).toContain("deleteMarkdownDocument");
+    expect(inlineBoard).toContain("moveBoardItemToFolder");
+    expect(inlineBoard).not.toContain("useBoardYjsRuntime");
+    expect(inlineBoard).not.toContain("boardSync");
+    expect(inlineBoard).not.toContain("/api/board-yjs");
     expect(inlineBoard).not.toContain("activeBoardDocumentId");
     expect(inlineBoard).not.toContain("setActiveBoardDocument");
     expect(inlineBoard).not.toContain("onDeletedActiveDocument");
-    expect(inlineBoard).toContain("renameMarkdownDocument");
     expect(inlineBoard).toContain("patchBoardMarkdownTitle");
     expect(inlineBoard).toContain("마크다운 이름 변경 취소");
     expect(inlineBoard).toContain('variant="inline"');
   });
 
-  it("expands inline markdown to its content while preserving the board scroll owner", () => {
+  it("expands inline markdown to its content without capturing the board scroll", () => {
     const css = read("./v3-context-menus.css");
-    const boardCss = read("./v3-folder-board.css");
     const inlineBoard = read("./FolderInlineBoard.tsx");
     const editorCss = read("./v3-folder-workspace.css");
     const editor = read("./FolderDescriptionPanel.tsx");
@@ -45,9 +50,6 @@ describe("v3 task document board unification", () => {
     expect(inlineMarkdownRule).not.toMatch(/^\s*height\s*:/m);
     expect(inlineMarkdownRule).not.toMatch(/^\s*max-height\s*:/m);
     expect(inlineMarkdownRule).not.toMatch(/^\s*overflow(?:-y)?\s*:\s*(?:auto|scroll)/m);
-    expect(boardCss).toMatch(
-      /\.v3-folder-board-resource-content\s*\{[^}]*overflow:\s*auto;/s,
-    );
     expect(sharedSurfaceRule).toMatch(/display:\s*grid/);
     expect(sharedSurfaceRule).toMatch(/grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto/);
     expect(sharedSurfaceRule).toMatch(/gap:\s*var\(--v3-space-2\)/);

@@ -5,7 +5,7 @@ import {
   getMarkdownPreview,
   subscribeBoardYjsRuntime,
   type BoardYjsRuntime,
-} from "../board-workspace";
+} from "../lib/board-yjs-client";
 import type { BoardContainerRef } from "../shared/types";
 
 export function useBoardRuntime(container: BoardContainerRef | null): BoardYjsRuntime | null {

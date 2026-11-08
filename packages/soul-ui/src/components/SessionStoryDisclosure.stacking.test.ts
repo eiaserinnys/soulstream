@@ -85,7 +85,7 @@ describe("SessionStoryDisclosure stacking contract", () => {
 
   it("lifts the shared folder/card chat header above its review banner and message list", () => {
     const source = readSource("../../../../unified-dashboard/client/v3/WorkspaceSessionColumn.tsx");
-    for (const surface of ["FolderBoardWorkspace", "CardWorkspace"]) {
+    for (const surface of ["CardWorkspace"]) {
       expect(readSource(`../../../../unified-dashboard/client/v3/${surface}.tsx`)).toContain("<WorkspaceSessionColumn");
     }
     expect(readSource("../../../../unified-dashboard/client/v3/V3DashboardLayout.tsx")).toContain("<CardWorkspace");

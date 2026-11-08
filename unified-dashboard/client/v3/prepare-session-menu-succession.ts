@@ -2,6 +2,8 @@ import type { CatalogState, SessionSummary } from "@seosoyoung/soul-ui";
 import { folderProjectContextSources, mergeProjectContextPages } from "./project-context-inheritance";
 import { fetchProjectPageDetails } from "./project-page-details";
 import { buildFolderSessionContextItems } from "./folder-session-context-items";
+import { fetchFolderBoardItems } from "./folder-inline-board-api";
+import { boardMarkdownDocuments } from "./folder-inline-board-model";
 
 /** Resolve inherited defaults before mounting the existing form's initial state. */
 export async function prepareSessionMenuSuccession(session:SessionSummary,folderId:string|null,catalog:CatalogState|null) {
@@ -20,8 +22,10 @@ export async function prepareSessionMenuSuccession(session:SessionSummary,folder
     folderTitle:folder?.name ?? "세션",folderId,folderPageId:pageId,currentSession:session,
     predecessorOptions:[{sessionId:session.agentSessionId,label:session.displayName ?? "제목 없는 세션",runNumber:null}],
     contextItems:buildFolderSessionContextItems(merged,blocks,pageId),
-    documentOptions:(catalog?.boardItems ?? []).filter(item=>item.folderId===folderId && item.itemType==="markdown")
-      .map(item=>({pageId:item.itemId,title:typeof item.metadata?.title==="string"?item.metadata.title:"문서"})),
+    documentOptions: folderId
+      ? boardMarkdownDocuments(await fetchFolderBoardItems(folderId))
+        .map(document=>({pageId:document.pageId,title:document.title}))
+      : [],
     pageDefaults:defaults ? {
       agentId:defaults.agentId,nodeId:defaults.nodeId,modelPreset:defaults.modelPreset,
       sourcePageId:defaults.source.pageId,sourceBlockId:defaults.blockId,

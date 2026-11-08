@@ -89,43 +89,6 @@ export const boardHandlers = {
     };
     return call(a);
   },
-  update_board_item_position: async (o, a, c) => {
-    const service = services(o, c);
-    const call: (input: Args) => Promise<CallToolResult> = async ({ board_item_id, x, y }) => {
-      try {
-        await service.catalog.updateBoardItemPosition(board_item_id, x, y);
-        return jsonResult({ ok: true, board_item_id });
-      } catch (err) {
-        return errorResult(err instanceof Error ? err.message : String(err));
-      }
-    };
-    return call(a);
-  },
-  move_board_item_to_folder: async (o, a, c) => {
-    const service = services(o, c);
-    const call: (input: Args) => Promise<CallToolResult> = async ({ board_item_id, folder_id, x, y, idempotency_key }) => {
-      try {
-        if ((x === undefined) !== (y === undefined)) {
-          return errorResult("x and y must be supplied together");
-        }
-        const result = await service.catalog.moveBoardItemToFolder({
-          boardItemId: board_item_id,
-          folderId: folder_id,
-          ...(x !== undefined && y !== undefined ? { position: { x, y } } : {}),
-          idempotencyKey: idempotency_key,
-        });
-        return jsonResult({
-          ok: true,
-          board_item: result.boardItem,
-          ...(result.enrolled ? { enrolled: true } : {}),
-          idempotency_key,
-        });
-      } catch (err) {
-        return errorResult(err instanceof Error ? err.message : String(err));
-      }
-    };
-    return call(a);
-  },
   create_markdown_document: async (o, a, c) => {
     const service = services(o, c);
     const call: (input: Args) => Promise<CallToolResult> = async ({ folder_id, title, body, x, y }) => {

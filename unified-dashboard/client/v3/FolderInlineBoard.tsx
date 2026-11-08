@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   CustomViewIframe,
   DashboardIconCap,
@@ -6,11 +6,9 @@ import {
   deleteMarkdownDocument,
   renameMarkdownDocument,
   retainEqualValue,
-  useBoardYjsRuntime,
   useCustomViewBindings,
   useDashboardStore,
   type CatalogBoardItem,
-  type CatalogState,
   type CustomViewDocument,
   type MarkdownDocument,
 } from "@seosoyoung/soul-ui";
@@ -28,13 +26,12 @@ import { InlineMarkdownCard } from "./InlineMarkdownCard";
 import { FolderDescriptionPanel } from "./FolderDescriptionPanel";
 import { FolderDocumentContextMenu, type FolderDocumentContextTarget } from "./FolderDocumentContextMenu";
 import { documentContextMenuTargetForKey } from "./document-context-menu-keyboard";
-import { moveBoardItemToFolder } from "../lib/board-workspace-operations";
+import { createMarkdownDocument, moveBoardItemToFolder } from "../lib/board-workspace-operations";
 import "./v3-context-menus.css";
 import { useV3InvalidationKey, useV3PageInvalidationKey } from "./v3-live-invalidation-plane";
 import { loadConfirmedResult } from "./planner-query-state";
 import {
   boardMarkdownDocuments,
-  findFolderMarkdownPlacement,
   metadataText,
   metadataVersion,
   patchBoardMarkdownTitle,
@@ -50,12 +47,6 @@ interface MarkdownRenameState {
 }
 
 const COLLAPSED_BOARD_ITEM_LIMIT = 5;
-
-const INLINE_ITEM_TYPES = new Set<CatalogBoardItem["itemType"]>([
-  "markdown",
-  "custom_view",
-  "asset",
-]);
 
 export function FolderInlineBoard({
   folderId,
@@ -76,6 +67,8 @@ export function FolderInlineBoard({
   const [renameState, setRenameState] = useState<MarkdownRenameState | null>(null);
   const [documentContext, setDocumentContext] = useState<FolderDocumentContextTarget | null>(null);
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState("");
   const itemInvalidationKey = useV3InvalidationKey(["catalog", "folder", "replay"]);
   const pageInvalidationKey = useV3PageInvalidationKey(
     items.filter((item) => item.itemType === "markdown").map((item) => item.itemId),
@@ -87,24 +80,13 @@ export function FolderInlineBoard({
   const removeBoardItem = useDashboardStore((state) => state.removeBoardItem);
   const loadedFolderIdRef = useRef<string | null>(null);
   itemsRef.current = items;
-  const boardCatalog = useMemo<CatalogState>(() => ({
-    folders: [],
-    sessions: {},
-    boardItems: items,
-    sessionList: [],
-  }), [items]);
-  const boardSync = useBoardYjsRuntime({
-    container: status === "ready" ? { kind: "folder", id: folderId } : null,
-    resolvedFolderId: folderId,
-    catalog: boardCatalog,
-    selectionItemId: null,
-  });
 
   useEffect(() => {
     setExpandedId(null);
     setBoardExpanded(false);
     setRenameState(null);
     setDocumentContext(null);
+    setCreateError("");
     departedItemIdsRef.current.clear();
   }, [folderId]);
 
@@ -138,33 +120,32 @@ export function FolderInlineBoard({
   }, [itemInvalidationKey, folderId]);
 
   useEffect(() => {
-    if (!boardSync.hasSynced || !boardSync.boardItems) return;
-    setItems((current) => retainEqualValue(
-      current,
-      mergeRuntimeItems(boardSync.boardItems ?? [], current)
-        .filter((item) => !departedItemIdsRef.current.has(item.id)),
-    ));
-  }, [boardSync.boardItems, boardSync.hasSynced]);
-
-  useEffect(() => {
     onMarkdownDocumentsChanged(boardMarkdownDocuments(items));
   }, [items, onMarkdownDocumentsChanged]);
 
-  const createMarkdown = () => {
-    if (!boardSync.runtime || !boardSync.hasSynced) return;
-    const placement = findFolderMarkdownPlacement(items);
-    const result = boardSync.runtime.createMarkdownDocument({
-      title: "제목 없는 문서",
-      body: "",
-      ...placement,
-    });
-    setItems((current) => retainEqualValue(current, [...current, result.boardItem]));
-    setRenameState({
-      documentId: result.document.id,
-      input: result.document.title,
-      pending: false,
-      error: "",
-    });
+  const createMarkdown = async () => {
+    if (status !== "ready" || creating) return;
+    setCreating(true);
+    setCreateError("");
+    try {
+      const result = await createMarkdownDocument({
+        folderId,
+        title: "제목 없는 문서",
+        body: "",
+      });
+      setItems((current) => retainEqualValue(current, [...current, result.boardItem]));
+      addBoardItem(result.boardItem);
+      setRenameState({
+        documentId: result.document.id,
+        input: result.document.title,
+        pending: false,
+        error: "",
+      });
+    } catch {
+      setCreateError("문서를 만들지 못했습니다.");
+    } finally {
+      setCreating(false);
+    }
   };
 
   const beginRename = (item: CatalogBoardItem) => {
@@ -208,9 +189,6 @@ export function FolderInlineBoard({
         title,
         expectedVersion: version,
       });
-      if (boardSync.runtime && !boardSync.runtime.isProviderBacked) {
-        boardSync.runtime.updateMarkdownTitle(item.itemId, updated.title);
-      }
       setItems((current) => patchBoardMarkdownTitle(current, item.itemId, updated.title, updated.version));
       setRenameState(null);
     } catch (error) {
@@ -228,12 +206,9 @@ export function FolderInlineBoard({
     const result = await moveBoardItemToFolder({
       boardItemId: item.id,
       folderId: target.folderId,
-      x: item.x,
-      y: item.y,
       idempotencyKey: createMoveIdempotencyKey(item.id, target.folderId),
     });
     departedItemIdsRef.current.add(item.id);
-    boardSync.runtime?.deleteBoardItem(item.id);
     setItems((current) => current.filter((candidate) => candidate.id !== item.id));
     removeBoardItem(item.id);
     addBoardItem(result.boardItem);
@@ -241,12 +216,7 @@ export function FolderInlineBoard({
   };
 
   const deleteMarkdown = async (item: CatalogBoardItem) => {
-    if (boardSync.runtime?.isProviderBacked) {
-      boardSync.runtime.deleteMarkdownDocument(item.itemId);
-    } else {
-      await deleteMarkdownDocument(item.itemId);
-      boardSync.runtime?.deleteMarkdownDocument(item.itemId);
-    }
+    await deleteMarkdownDocument(item.itemId);
     departedItemIdsRef.current.add(item.id);
     setItems((current) => current.filter((candidate) => candidate.id !== item.id));
     removeBoardItem(item.id);
@@ -271,14 +241,15 @@ export function FolderInlineBoard({
         <DashboardIconCap
           size="small"
           label="마크다운 추가"
-          disabled={!boardSync.runtime || !boardSync.hasSynced}
-          onClick={createMarkdown}
+          disabled={status !== "ready" || creating}
+          onClick={() => { void createMarkdown(); }}
         >
           <FilePlus2 className="h-4 w-4" aria-hidden="true" />
         </DashboardIconCap>
       </div>
       {status === "loading" ? <p className="v3-detail-empty">보드 항목을 불러오는 중…</p> : null}
       {status === "error" ? <p className="v3-inline-board-error" role="alert">보드 항목을 불러오지 못했습니다.</p> : null}
+      {createError ? <p className="v3-inline-board-error" role="alert">{createError}</p> : null}
       {status === "ready" && items.length === 0 ? <p className="v3-detail-empty">보드에 표시할 문서가 없습니다.</p> : null}
       <div className="v3-inline-board-list">
         {(boardExpanded ? items : items.slice(0, COLLAPSED_BOARD_ITEM_LIMIT)).map((item) => {
@@ -460,17 +431,3 @@ function InlineAsset({ item }: { item: CatalogBoardItem }) {
   );
 }
 
-function mergeRuntimeItems(
-  runtimeItems: readonly CatalogBoardItem[],
-  currentItems: readonly CatalogBoardItem[],
-): CatalogBoardItem[] {
-  const currentById = new Map(currentItems.map((item) => [item.id, item]));
-  return runtimeItems.filter((item) => INLINE_ITEM_TYPES.has(item.itemType)).map((item) => {
-    if (item.itemType !== "asset") return item;
-    const current = currentById.get(item.id);
-    const signedUrl = current?.metadata?.signedUrl;
-    return typeof signedUrl === "string"
-      ? { ...item, metadata: { ...(item.metadata ?? {}), signedUrl } }
-      : item;
-  });
-}

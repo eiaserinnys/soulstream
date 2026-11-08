@@ -3,7 +3,7 @@ import { useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { CatalogBoardItem, CatalogFolder, SessionReviewAcknowledgeResult, SessionSummary } from "@seosoyoung/soul-ui";
+import type { CatalogFolder, SessionReviewAcknowledgeResult, SessionSummary } from "@seosoyoung/soul-ui";
 
 const acknowledgeSessionReview = vi.hoisted(() => vi.fn());
 
@@ -55,8 +55,7 @@ describe("V3SessionPanel", () => {
     flushSync(() => {
       root.render(
         <V3SessionPanel
-          sessions={[session("running-1", "running"), session("review-1", "completed")]}
-          boardItems={affiliationBoardItems("running-1")}
+          sessions={[session("running-1", "running", "project-folder"), session("review-1", "completed")]}
           folders={projectFolders}
           nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["eiaserinnys"]) }}
           activeSessionId={null}
@@ -104,7 +103,6 @@ describe("V3SessionPanel", () => {
       return (
         <V3SessionPanel
           sessions={sessions}
-          boardItems={[]}
           folders={[]}
           nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["eiaserinnys"]) }}
           activeSessionId={null}
@@ -136,7 +134,6 @@ describe("V3SessionPanel", () => {
       root.render(
         <V3SessionPanel
           sessions={[{ ...session("offline-1", "running"), nodeId: "node-offline" }]}
-          boardItems={[]}
           folders={[]}
           nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["eiaserinnys"]) }}
           activeSessionId={null}
@@ -157,7 +154,6 @@ describe("V3SessionPanel", () => {
       root.render(
         <V3SessionPanel
           sessions={[{ ...session("offline-1", "running"), nodeId: "node-offline" }]}
-          boardItems={[]}
           folders={[]}
           nodeConnectivity={{ ready: true, connectedNodeIds: new Set(["node-offline"]) }}
           activeSessionId={null}
@@ -177,9 +173,10 @@ describe("V3SessionPanel", () => {
   });
 });
 
-function session(agentSessionId: string, status: "running" | "completed"): SessionSummary {
+function session(agentSessionId: string, status: "running" | "completed", folderId: string | null = null): SessionSummary {
   return {
     agentSessionId,
+    folderId,
     displayName: agentSessionId,
     status,
     reviewState: status === "completed" ? "needs_review" : null,
@@ -200,15 +197,3 @@ function session(agentSessionId: string, status: "running" | "completed"): Sessi
 const projectFolders: CatalogFolder[] = [
   { status: "open" as const, version: 1, archived: false, id: "project-folder", name: "소울스트림", sortOrder: 0, projectPageId: "project-page" },
 ];
-
-function affiliationBoardItems(sessionId: string): CatalogBoardItem[] {
-  return [{
-    id: `session:${sessionId}`,
-    folderId: "project-folder",
-    membershipKind: "primary",
-    itemType: "session",
-    itemId: sessionId,
-    x: 0,
-    y: 0,
-  }];
-}

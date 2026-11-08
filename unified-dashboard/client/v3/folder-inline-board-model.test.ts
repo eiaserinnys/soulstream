@@ -3,7 +3,6 @@ import type { CatalogBoardItem } from "@seosoyoung/soul-ui";
 
 import {
   boardMarkdownDocuments,
-  findFolderMarkdownPlacement,
   patchBoardMarkdownTitle,
 } from "./folder-inline-board-model";
 
@@ -27,17 +26,6 @@ describe("task inline board model", () => {
     expect(next[0]).toMatchObject({ metadata: { title: "후", version: 3 } });
     expect(next[1]).toBe(original[1]);
   });
-
-  it("places new markdown without overlapping existing tiles", () => {
-    const placement = findFolderMarkdownPlacement([
-      { ...item("markdown", "doc-1", { title: "문서" }), x: 400, y: 0 },
-    ]);
-
-    expect(overlaps(
-      { ...placement, width: 280, height: 160 },
-      { x: 400, y: 0, width: 280, height: 160 },
-    )).toBe(false);
-  });
 });
 
 function item(
@@ -54,14 +42,4 @@ function item(
     y: 0,
     metadata,
   };
-}
-
-function overlaps(
-  a: { x: number; y: number; width: number; height: number },
-  b: { x: number; y: number; width: number; height: number },
-): boolean {
-  return a.x < b.x + b.width
-    && a.x + a.width > b.x
-    && a.y < b.y + b.height
-    && a.y + a.height > b.y;
 }

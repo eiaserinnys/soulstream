@@ -43,12 +43,11 @@ describe("v3 icon action cap contract", () => {
   it.each([
     ["./FolderCardSection.tsx", ["카드 추가"]],
     ["../../../packages/soul-ui/src/folder-status/FolderCompletionAction.tsx", ["actionLabel"]],
-    ["./FolderDetailPane.tsx", ["오늘 플래너로 돌아가기", "별표", "폴더 보드 열기"]],
+    ["./FolderDetailPane.tsx", ["오늘 플래너로 돌아가기", "별표"]],
     ["./FolderTodayToggle.tsx", ["todayPlannerMenuLabel"]],
     ["./FolderDescriptionPanel.tsx", ["편집"]],
     ["./FolderInlineBoard.tsx", ["마크다운 추가", "마크다운 이름 변경 저장", "마크다운 이름 변경 취소"]],
     ["./FolderSessionHistory.tsx", ["새 세션"]],
-    ["./FolderBoardPane.tsx", ["폴더 상세로 돌아가기", "폴더 보드 닫기"]],
     ["./FolderWorkspace.tsx", ["폴더 창 닫기"]],
     ["./PlannerViews.tsx", ["아침 정리"]],
     ["./FolderWorkspaceSections.tsx", ["하위 폴더 더 보기"]],
@@ -90,11 +89,9 @@ describe("v3 icon action cap contract", () => {
     expect(headers).toContain('{onClose ? <DashboardIconCap label="채팅 닫기" onClick={onClose}');
   });
 
-  it("forwards the document overlay height toggle to its shared cap", () => {
-    const workspace = read("./FolderBoardWorkspace.tsx");
+  it("keeps the document overlay height toggle on its shared cap", () => {
     const overlay = read("./FolderDocumentOverlay.tsx");
 
-    expect(workspace).toMatch(/<FolderDocumentOverlay\b[^>]*expanded=\{overlayExpanded\}[^>]*onToggleExpanded=\{\(\) => setOverlayExpanded\(current=>!current\)\}/);
     expect(overlay).toContain('label={expanded ? "문서 편집기 높이 축소" : "문서 편집기 높이 확장"}');
     expect(overlay).toContain("aria-pressed={expanded}");
     expect(overlay).toContain("onClick={onToggleExpanded}");

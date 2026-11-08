@@ -22,7 +22,6 @@ import {
 } from "./folder-workspace-run-model";
 import { FolderDetailPane } from "./FolderDetailPane";
 import type { FolderSectionFocusRequest } from "./FolderSectionNavigation";
-import { FolderBoardWorkspace } from "./FolderBoardWorkspace";
 import { V3SessionReviewBanner } from "./V3SessionReviewBanner";
 import { SessionPanelHeader } from "./WorkspacePanelHeaders";
 import type { MobilePlannerTab } from "./mobile-planner-state";
@@ -70,8 +69,6 @@ export function FolderWorkspace({
   onSaveDescription,
   onFolderBlocksChanged,
   onAcknowledgedReview,
-  forceBoardOpen = false,
-  onCloseBoard,
   onArchiveFolder,
   markdownDocumentsRevision,
   onMarkdownDocumentEditorClosed,
@@ -117,8 +114,6 @@ export function FolderWorkspace({
   onSaveDescription(markdown: string): Promise<void>;
   onFolderBlocksChanged(blocks: PlannerFolder["blocks"]): void;
   onAcknowledgedReview(result: SessionReviewAcknowledgeResult): void;
-  forceBoardOpen?: boolean;
-  onCloseBoard(): void;
   onArchiveFolder?: () => Promise<void>;
   markdownDocumentsRevision: number;
   onMarkdownDocumentEditorClosed(): void;
@@ -127,15 +122,12 @@ export function FolderWorkspace({
   const chatSurfaceRef = useRef<HTMLElement>(null);
   const draggingPointer = useRef<number | null>(null);
   const [splitPercent, setSplitPercent] = useState(DEFAULT_WORKSPACE_SPLIT);
-  const [boardOpen, setBoardOpen] = useState(false);
   const [visibleTitle, setVisibleTitle] = useState(task?.page.title ?? "");
-  const chatWebglActive = useGlassSurface(chatSurfaceRef, { enabled: chatOpen && !boardOpen });
+  const chatWebglActive = useGlassSurface(chatSurfaceRef, { enabled: chatOpen });
   const activeSessionKey = useDashboardStore((state) => state.activeSessionKey);
-  const setActiveBoardDocument = useDashboardStore((state) => state.setActiveBoardDocument);
   const chatVisible = isFolderWorkspaceChatVisible({
     hasActiveSession: activeSession !== undefined,
     hasFolder: task !== null,
-    boardOpen,
     chatOpen,
     mobileMode,
     mobileChatTab: mobileTab === "chat",
@@ -147,7 +139,6 @@ export function FolderWorkspace({
   }, [chatVisible, onChatVisibilityChange]);
 
   useEffect(() => {
-    setBoardOpen(false);
     setVisibleTitle(task?.page.title ?? "");
   }, [task?.page.id, task?.page.title]);
 
@@ -250,42 +241,6 @@ export function FolderWorkspace({
     );
   }
 
-  if (boardOpen || forceBoardOpen) {
-    return (
-      <FolderBoardWorkspace
-        task={visibleTitle === task.page.title ? task : { ...task, page: { ...task.page, title: visibleTitle } }}
-        projectFolderId={projectFolderId}
-        projectTitle={projectTitle}
-        sessions={sessions}
-        runSessionLoadStates={runSessionLoadStates}
-        runHistoryTotal={runHistoryTotal}
-        runHistoryHasMore={runHistoryHasMore}
-        runHistoryLoading={runHistoryLoading}
-        runHistoryFailed={runHistoryFailed}
-        activeSession={activeSession}
-        chatInputDisabled={chatInputDisabled}
-        fileUploadUrl={fileUploadUrl}
-        mobileMode={mobileMode}
-        mobileTab={mobileTab}
-        historyEnabled={historyEnabled}
-        sessionStreamActive={sessionStreamActive}
-        sessionConnectionStatus={sessionConnectionStatus}
-        reconnectSession={reconnectSession}
-        folderMoveTargets={folderMoveTargets}
-        folders={folders}
-        contextInvalidationKey={contextInvalidationKey}
-        markdownDocumentsRevision={markdownDocumentsRevision}
-        sessionDefaults={sessionDefaults}
-        onMarkdownDocumentEditorClosed={onMarkdownDocumentEditorClosed}
-        onClose={() => { setBoardOpen(false); onCloseBoard(); }}
-        onOpenSession={onOpenSession}
-        onLoadMoreRuns={onLoadMoreRuns}
-
-        onAcknowledgedReview={onAcknowledgedReview}
-      />
-    );
-  }
-
   return (
     <div className={`v3-workspace-scrim${chatOpen ? " is-chat-open" : ""}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onCloseWorkspace(); }}>
       <div
@@ -318,12 +273,6 @@ export function FolderWorkspace({
           folderInToday={folderInToday}
           onReturnToToday={onReturnToToday}
           onToggleFolderToday={onToggleFolderToday}
-          onOpenBoard={() => {
-            const state = useDashboardStore.getState();
-            state.setActiveBoardDocument(null);
-            state.setActiveCustomView(null);
-            setBoardOpen(true);
-          }}
           onOpenSession={onOpenSession}
           onRenameFolderTitle={async (title) => {
             const renamedTitle = await onRenameFolderTitle(title);

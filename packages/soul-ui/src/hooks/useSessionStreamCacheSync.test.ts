@@ -10,7 +10,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { CatalogState } from "../shared/types";
 import { useDashboardStore } from "../stores/dashboard-store";
-import { getChildFolders } from "../board-workspace/board-workspace-helpers";
+import { getChildFolders } from "../lib/folder-catalog";
 import { useSessionStreamCacheSync } from "./useSessionStreamCacheSync";
 import { useSessionStreamSSE } from "./useSessionStreamSSE";
 

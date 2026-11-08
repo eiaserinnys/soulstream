@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import type { CatalogBoardItem, SessionSummary } from "@seosoyoung/soul-ui";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { SessionSummary } from "@seosoyoung/soul-ui";
 
 import {
   resolveSessionForOpen,
@@ -8,6 +8,10 @@ import {
   SessionWorkspaceResolutionError,
 } from "./v3-session-workspace";
 import type { PlannerFolder } from "./planner-data";
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 describe("resolveSessionForOpen", () => {
   it("reuses a matching summary without fetching", async () => {
@@ -45,152 +49,59 @@ describe("resolveSessionForOpen", () => {
 });
 
 describe("resolveSessionWorkspace", () => {
-  it("uses the session folder before a cached board item", async () => {
-    const fetchImplementation = vi.fn();
+  it("opens the folder named by the session summary without any board lookup", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
     const result = await resolveSessionWorkspace({
       session: session("session-a", "folder-a"),
-      boardItems: [boardItem("session-a", "task-a")],
-      fetchImplementation: fetchImplementation as typeof globalThis.fetch,
     });
 
     expect(result).toEqual({ target: { kind: "folder", folderId: "folder-a" } });
-    expect(fetchImplementation).not.toHaveBeenCalled();
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  it("opens a truly unassigned session standalone after a targeted canonical lookup", async () => {
-    const fetchImplementation = vi.fn(async () => json({ boardItems: [] }));
+  it("opens a session without a folder standalone without any board lookup", async () => {
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
     const result = await resolveSessionWorkspace({
       session: session("session-a", null),
-      boardItems: [],
-      fetchImplementation: fetchImplementation as typeof globalThis.fetch,
     });
 
-    expect(result).toEqual({ target: { kind: "standalone" }, loadedBoardItems: [] });
-    expect(fetchImplementation).toHaveBeenCalledWith(
-      "/api/board-items?sessionId=session-a",
-      expect.objectContaining({ credentials: "same-origin" }),
-    );
-  });
-
-  it("performs one targeted session lookup when daily and project collections do not contain its task", async () => {
-    const items = [boardItem("session-a", "task-a")];
-    const fetchImplementation = vi.fn(async () => new Response(JSON.stringify({ boardItems: items }), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }));
-
-    const result = await resolveSessionWorkspace({
-      session: session("session-a", null),
-      boardItems: [],
-      fetchImplementation: fetchImplementation as typeof globalThis.fetch,
-    });
-
-    expect(fetchImplementation).toHaveBeenCalledTimes(1);
-    expect(fetchImplementation).toHaveBeenCalledWith(
-      "/api/board-items?sessionId=session-a",
-      expect.objectContaining({ credentials: "same-origin" }),
-    );
-    expect(result).toEqual({
-      target: { kind: "folder", folderId: "task-a" },
-      loadedBoardItems: items,
-    });
-  });
-
-  it.each([
-    ["an empty board item list", { boardItems: [] }],
-    ["a payload without boardItems", {}],
-  ])("opens standalone after %s", async (_label, payload) => {
-    const fetchImplementation = vi.fn(async () => new Response(JSON.stringify(payload), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }));
-
-    const result = await resolveSessionWorkspace({
-      session: session("session-a", null),
-      boardItems: [],
-      fetchImplementation: fetchImplementation as typeof globalThis.fetch,
-    });
-
-    expect(fetchImplementation).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({
-      target: { kind: "standalone" },
-      loadedBoardItems: [],
-    });
-  });
-
-  it("rejects an unsuccessful folder lookup with the HTTP status", async () => {
-    const fetchImplementation = vi.fn(async () => new Response("unavailable", { status: 503 }));
-
-    await expect(resolveSessionWorkspace({
-      session: session("session-a", null),
-      boardItems: [],
-      fetchImplementation: fetchImplementation as typeof globalThis.fetch,
-    })).rejects.toThrow("세션의 폴더를 불러오지 못했습니다 (503)");
-    expect(fetchImplementation).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ target: { kind: "standalone" } });
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });
 
 describe("resolveSessionFolderWorkspace", () => {
-  it("target-loads a task outside daily and loaded project pages by its task id", async () => {
-    const target = plannerTask("task-outside-page", "task-outside", "in_progress");
+  it("reuses a loaded folder entry for the session folder", async () => {
+    const loaded = plannerTask("folder-page", "folder-a", "in_progress");
+    const loadFolderById = vi.fn();
+    const result = await resolveSessionFolderWorkspace({
+      session: session("session-a", "folder-a"),
+      currentFolderEntries: [loaded],
+      loadFolderById,
+    });
+
+    expect(result.task).toBe(loaded);
+    expect(loadFolderById).not.toHaveBeenCalled();
+  });
+
+  it("target-loads a folder outside the currently loaded entries by its folder id", async () => {
+    const target = plannerTask("folder-page", "folder-a", "in_progress");
     const loadFolderById = vi.fn(async () => target);
     const result = await resolveSessionFolderWorkspace({
-      session: session("session-a", null),
-      boardItems: [],
+      session: session("session-a", "folder-a"),
       currentFolderEntries: [],
       loadFolderById,
-      fetchImplementation: vi.fn(async () => json({
-        boardItems: [boardItem("session-a", "task-outside")],
-      })) as typeof globalThis.fetch,
     });
 
     expect(result.task).toBe(target);
-    expect(loadFolderById).toHaveBeenCalledWith("task-outside");
+    expect(loadFolderById).toHaveBeenCalledWith("folder-a");
   });
 
-  it("reuses a completed owning task even when it is absent from daily membership", async () => {
-    const completed = plannerTask("task-complete-page", "task-complete", "completed");
-    const loadFolderById = vi.fn();
-    const result = await resolveSessionFolderWorkspace({
-      session: session("session-a", null),
-      boardItems: [boardItem("session-a", "task-complete")],
-      currentFolderEntries: [completed],
-      loadFolderById,
-    });
-
-    expect(result.task).toBe(completed);
-    expect(loadFolderById).not.toHaveBeenCalled();
-  });
-
-  it("keeps membership lookup failures distinct from owning-task load failures", async () => {
-    const loadFolderById = vi.fn();
+  it("keeps the owning folder load failure distinct from a truly unassigned session", async () => {
     const promise = resolveSessionFolderWorkspace({
-      session: session("session-a", null),
-      boardItems: [],
-      currentFolderEntries: [],
-      loadFolderById,
-      fetchImplementation: vi.fn(async () => new Response("unavailable", {
-        status: 503,
-      })) as typeof globalThis.fetch,
-    });
-
-    await expect(promise).rejects.toMatchObject({
-      phase: "membership",
-      message: "세션의 소속 폴더를 확인하지 못했습니다.",
-    });
-    expect(loadFolderById).not.toHaveBeenCalled();
-  });
-
-  it("distinguishes an owning-task load failure from a truly unassigned session", async () => {
-    const lookup = vi.fn(async () => json({
-      boardItems: [boardItem("session-a", "task-missing")],
-    })) as typeof globalThis.fetch;
-    const promise = resolveSessionFolderWorkspace({
-      session: session("session-a", null),
-      boardItems: [],
+      session: session("session-a", "missing-folder"),
       currentFolderEntries: [],
       loadFolderById: async () => { throw new Error("Not Found"); },
-      fetchImplementation: lookup,
     });
     await expect(promise).rejects.toBeInstanceOf(SessionWorkspaceResolutionError);
     await expect(promise).rejects.toMatchObject({
@@ -200,10 +111,8 @@ describe("resolveSessionFolderWorkspace", () => {
 
     await expect(resolveSessionFolderWorkspace({
       session: session("session-unassigned", null),
-      boardItems: [],
       currentFolderEntries: [],
       loadFolderById: vi.fn(),
-      fetchImplementation: vi.fn(async () => json({ boardItems: [] })) as typeof globalThis.fetch,
     })).resolves.toMatchObject({ task: null, workspace: { target: { kind: "standalone" } } });
   });
 });
@@ -215,28 +124,6 @@ function session(agentSessionId: string, folderId: string | null): SessionSummar
     status: "running",
     createdAt: "2026-07-16T00:00:00Z",
   } as SessionSummary;
-}
-
-function json(body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status: 200,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-function boardItem(
-  sessionId: string,
-  folderId: string,
-): CatalogBoardItem {
-  return {
-    id: `board-${sessionId}`,
-    folderId,
-    itemType: "session",
-    itemId: sessionId,
-    membershipKind: "primary",
-    x: 0,
-    y: 0,
-  };
 }
 
 function plannerTask(

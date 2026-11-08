@@ -67,7 +67,7 @@ describe("V3Navigation frame contract", () => {
         onRenameProject={vi.fn(async () => undefined)}
         onDeleteProject={vi.fn(async () => undefined)}
         onReorderProjects={vi.fn(async () => undefined)}
-        projectHasContents={vi.fn(() => false)}
+        projectHasContents={vi.fn(async () => false)}
       />,
     );
 
@@ -112,7 +112,7 @@ describe("V3Navigation frame contract", () => {
         onRenameProject={vi.fn(async () => undefined)}
         onDeleteProject={vi.fn(async () => undefined)}
         onReorderProjects={vi.fn(async () => undefined)}
-        projectHasContents={vi.fn(() => false)}
+        projectHasContents={vi.fn(async () => false)}
       />,
     );
 
@@ -156,7 +156,7 @@ describe("V3Navigation frame contract", () => {
         onRenameProject={vi.fn(async () => undefined)}
         onDeleteProject={vi.fn(async () => undefined)}
         onReorderProjects={vi.fn(async () => undefined)}
-        projectHasContents={vi.fn(() => false)}
+        projectHasContents={vi.fn(async () => false)}
       />,
     ));
     const handle = container.querySelector<HTMLButtonElement>(

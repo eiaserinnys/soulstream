@@ -8,7 +8,7 @@ const PLANNER_CSS_PATH = fileURLToPath(new URL("./v3-planner.css", import.meta.u
 const SESSION_PANEL_CSS_PATH = fileURLToPath(new URL("./v3-session-panel.css", import.meta.url));
 const RUN_HISTORY_CSS_PATH = fileURLToPath(new URL("./v3-run-history.css", import.meta.url));
 const WORKSPACE_CSS_PATH = fileURLToPath(new URL("./v3-folder-workspace.css", import.meta.url));
-const BOARD_CSS_PATH = fileURLToPath(new URL("./v3-folder-board.css", import.meta.url));
+const DOCUMENT_OVERLAY_CSS_PATH = fileURLToPath(new URL("./v3-folder-document-overlay.css", import.meta.url));
 const STATUS_CHIP_CSS_PATH = fileURLToPath(new URL("./v3-status-chip.css", import.meta.url));
 
 function source(name: string): string {
@@ -146,11 +146,11 @@ describe("v3 panel scroll contract", () => {
 
   it("preserves the workspace detail, chat, and board internal scroll boundaries", () => {
     const css = readFileSync(WORKSPACE_CSS_PATH, "utf8");
-    const boardCss = readFileSync(BOARD_CSS_PATH, "utf8");
+    const documentOverlayCss = readFileSync(DOCUMENT_OVERLAY_CSS_PATH, "utf8");
 
     expect(ruleBody(css, ".v3-detail-scroll")).toMatch(/overflow-y:\s*auto/);
     expect(ruleBody(css, ".v3-detail-pane--inline .v3-detail-scroll")).toMatch(/overflow:\s*visible/);
-    expect(ruleBody(boardCss, ".v3-full-board")).toMatch(/overflow:\s*hidden/);
+    expect(ruleBody(documentOverlayCss, ".v3-board-document-content")).toMatch(/overflow:\s*hidden/);
     expect(ruleBody(css, ".v3-chat-content")).toMatch(/min-height:\s*0/);
     expect(ruleBody(css, ".v3-chat-content")).toMatch(/flex:\s*1/);
   });

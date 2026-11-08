@@ -275,4 +275,152 @@ describe("FolderInlineBoard document context menu", () => {
     await vi.waitFor(() => expect(boardContainer.querySelector(".v3-inline-markdown")?.textContent)
       .toContain("오버레이 저장 후 본문"));
   });
+
+  it("creates markdown through REST without board coordinates and starts renaming", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith("/api/board-items?")) return jsonResponse({ boardItems: [] });
+      if (url === "/api/markdown-documents" && init?.method === "POST") {
+        return jsonResponse({
+          document: { id: "doc-new", title: "제목 없는 문서", body: "", version: 1 },
+          boardItem: {
+            ...documentItem,
+            id: "markdown:doc-new",
+            itemId: "doc-new",
+            metadata: { title: "제목 없는 문서", version: 1 },
+          },
+        }, 201);
+      }
+      throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`);
+    });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+    mountBoard();
+    await vi.waitFor(() => expect(container!.textContent).toContain("0개"));
+
+    flushSync(() => container!.querySelector<HTMLButtonElement>('[aria-label="마크다운 추가"]')!.click());
+    await vi.waitFor(() => expect(container!.querySelector('[aria-label="마크다운 이름"]')).not.toBeNull());
+
+    const createCall = fetchMock.mock.calls.find(([input, init]) => (
+      String(input) === "/api/markdown-documents" && init?.method === "POST"
+    ));
+    expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
+      folderId: "task-1",
+      title: "제목 없는 문서",
+      body: "",
+    });
+    expect(useDashboardStore.getState().catalog?.boardItems?.some((item) => item.id === "markdown:doc-new"))
+      .toBe(true);
+  });
+
+  it("keeps the board unchanged when markdown creation fails", async () => {
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith("/api/board-items?")) return jsonResponse({ boardItems: [] });
+      if (url === "/api/markdown-documents" && init?.method === "POST") {
+        return jsonResponse({ error: "boom" }, 500);
+      }
+      throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`);
+    }) as typeof globalThis.fetch;
+    mountBoard();
+    await vi.waitFor(() => expect(container!.textContent).toContain("0개"));
+
+    flushSync(() => container!.querySelector<HTMLButtonElement>('[aria-label="마크다운 추가"]')!.click());
+    await vi.waitFor(() => expect(container!.textContent).toContain("문서를 만들지 못했습니다."));
+    expect(container!.querySelector('[aria-label="마크다운 이름"]')).toBeNull();
+    expect(container!.querySelectorAll(".v3-inline-board-item")).toHaveLength(0);
+  });
+
+  it("renames markdown through REST with the expected version", async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith("/api/board-items?")) return jsonResponse({ boardItems: [documentItem] });
+      if (url === "/api/markdown-documents/doc-1" && init?.method === "PUT") {
+        return jsonResponse({ id: "doc-1", title: "새 제목", body: "", version: 2 });
+      }
+      // updateMarkdownDocument reads the document back to confirm the saved version.
+      if (url === "/api/markdown-documents/doc-1") {
+        return jsonResponse({ id: "doc-1", title: "새 제목", body: "", version: 2 });
+      }
+      throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`);
+    });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+    mountBoard();
+    await vi.waitFor(() => expect(container!.textContent).toContain("실수로 만든 문서"));
+
+    flushSync(() => container!.querySelector<HTMLButtonElement>('[aria-label="실수로 만든 문서 이름 수정"]')!.click());
+    const input = container!.querySelector<HTMLInputElement>('[aria-label="마크다운 이름"]');
+    expect(input).not.toBeNull();
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    flushSync(() => {
+      setValue.call(input, "새 제목");
+      input!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    flushSync(() => container!.querySelector<HTMLButtonElement>('[aria-label="마크다운 이름 변경 저장"]')!.click());
+    await vi.waitFor(() => expect(container!.textContent).toContain("새 제목"));
+
+    const putCall = fetchMock.mock.calls.find(([request, init]) => (
+      String(request) === "/api/markdown-documents/doc-1" && init?.method === "PUT"
+    ));
+    expect(JSON.parse(String(putCall?.[1]?.body))).toMatchObject({
+      title: "새 제목",
+      expectedVersion: 1,
+    });
+  });
+
+  it("deletes markdown only after confirmation and keeps the row when deletion fails", async () => {
+    let deleteAttempt = 0;
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith("/api/board-items?")) return jsonResponse({ boardItems: [documentItem] });
+      if (url === "/api/markdown-documents/doc-1" && init?.method === "DELETE") {
+        deleteAttempt += 1;
+        return deleteAttempt === 1 ? jsonResponse({ error: "boom" }, 500) : new Response(null, { status: 204 });
+      }
+      throw new Error(`Unexpected request: ${init?.method ?? "GET"} ${url}`);
+    });
+    globalThis.fetch = fetchMock as typeof globalThis.fetch;
+    mountBoard();
+    await vi.waitFor(() => expect(container!.textContent).toContain("실수로 만든 문서"));
+
+    flushSync(() => container!.querySelector<HTMLElement>(".v3-inline-board-row")!.dispatchEvent(
+      new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 40, clientY: 30 }),
+    ));
+    const removeAction = Array.from(document.body.querySelectorAll<HTMLElement>("[role='menuitem']"))
+      .find((item) => item.textContent?.trim() === "문서 삭제");
+    expect(removeAction).not.toBeUndefined();
+    flushSync(() => removeAction!.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "DELETE")).toBe(false);
+
+    const confirm = () => Array.from(document.body.querySelectorAll<HTMLButtonElement>("button"))
+      .find((button) => button.textContent?.trim() === "삭제");
+    await vi.waitFor(() => expect(confirm()).not.toBeUndefined());
+    flushSync(() => confirm()!.click());
+    await vi.waitFor(() => expect(document.body.textContent).toContain("마크다운 문서를 삭제하지 못했습니다 (500)"));
+    expect(container!.querySelector(".v3-inline-board-row")).not.toBeNull();
+
+    flushSync(() => confirm()!.click());
+    await vi.waitFor(() => expect(container!.querySelector(".v3-inline-board-row")).toBeNull());
+    expect(deleteAttempt).toBe(2);
+  });
+
+  function mountBoard(folderId = "task-1") {
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+    flushSync(() => {
+      root!.render(createElement(FolderInlineBoard, {
+        folderId,
+        api: {} as PageApiClient,
+        folderMoveTargets: [],
+        onMarkdownDocumentsChanged: vi.fn(),
+      }));
+    });
+  }
 });
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}

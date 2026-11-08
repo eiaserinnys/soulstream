@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogPopup, DialogHeader, DialogTitle, DialogPanel, MarkdownContent, type MarkdownDocument } from "@seosoyoung/soul-ui";
 import { removeOverlappingDocumentHeading } from "@seosoyoung/soul-ui/lib/markdown-document-heading";
-import "./v3-folder-board.css";
+import "./v3-folder-document-overlay.css";
 
 export function DocumentReaderDialog({ documentId, onClose, request = globalThis.fetch }: {
   documentId: string | null;

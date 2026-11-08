@@ -1,5 +1,5 @@
 import type { AssignedCardContextSnapshotEvent } from "@soulstream/wire-schema/assigned-card-context-snapshot";
-import { formatBoardWorkspaceTime } from "../board-workspace/board-workspace-items";
+import { formatWorkspaceTime } from "./format-workspace-time";
 
 type Snapshot = AssignedCardContextSnapshotEvent["capture"]["snapshot"];
 
@@ -16,7 +16,7 @@ export function formatAssignedCardContextSnapshot(snapshot: Snapshot): string {
 function reportLabel(card: Snapshot["cards"][number]): string {
   if (!Object.prototype.hasOwnProperty.call(card,"latestReportAt")) return "마지막 보고 시각 확인 불가";
   if (card.latestReportAt === null) return "보고 없음";
-  const formatted = formatBoardWorkspaceTime(card.latestReportAt);
+  const formatted = formatWorkspaceTime(card.latestReportAt);
   return formatted === "..." ? "마지막 보고 시각 확인 불가" : `마지막 보고 ${formatted}`;
 }
 

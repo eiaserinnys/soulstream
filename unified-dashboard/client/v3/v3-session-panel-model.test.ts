@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { CatalogBoardItem, CatalogFolder, SessionSummary } from "@seosoyoung/soul-ui";
+import type { CatalogFolder, SessionSummary } from "@seosoyoung/soul-ui";
 
 import {
   sessionPanelGroups,
   sessionPanelAffiliation,
   sessionPanelTitle,
-  sessionWorkspaceTargetFromBoardItems,
+  sessionWorkspaceTarget,
 } from "./v3-session-panel-model";
 
 describe("v3 session panel model", () => {
@@ -87,25 +87,20 @@ describe("v3 session panel model", () => {
       .toBe("제목 없는 세션");
   });
 
-  it("opens the folder that owns the primary session board item", () => {
-    const items: CatalogBoardItem[] = [
-      boardItem("reference", "other-folder"),
-      boardItem("primary", "folder-a"),
-    ];
-    expect(sessionWorkspaceTargetFromBoardItems(items, "session-a"))
+  it("opens the session folder straight from the session summary", () => {
+    expect(sessionWorkspaceTarget({ folderId: "folder-a" }))
       .toEqual({ kind: "folder", folderId: "folder-a" });
-    expect(sessionWorkspaceTargetFromBoardItems(items, "missing")).toBeNull();
+    expect(sessionWorkspaceTarget({ folderId: null }))
+      .toEqual({ kind: "standalone" });
   });
 
-  it("uses the owning folder name for session affiliation", () => {
+  it("uses the session folder name for session affiliation", () => {
     const folders: CatalogFolder[] = [
-      { status: "open" as const, version: 1, archived: false, id: "folder-a", name: "소울스트림", sortOrder: 0 },
+      { status: "open" as const, version: 1, archived: false, id: "folder-a", name: "  소울스트림  ", sortOrder: 0 },
     ];
-    expect(sessionPanelAffiliation([boardItem("primary", "folder-a")], folders, "session-a"))
-      .toBe("소울스트림");
-    expect(sessionPanelAffiliation([], folders, "session-a")).toBeNull();
-    expect(sessionPanelAffiliation([], folders, "session-a", "folder-a")).toBe("소울스트림");
-    expect(sessionPanelAffiliation([boardItem("primary", "folder-a")], folders, "session-a", null)).toBeNull();
+    expect(sessionPanelAffiliation(folders, "folder-a")).toBe("소울스트림");
+    expect(sessionPanelAffiliation(folders, null)).toBeNull();
+    expect(sessionPanelAffiliation(folders, "missing-folder")).toBeNull();
   });
 });
 
@@ -116,19 +111,4 @@ function session(
   updatedAt: string,
 ): SessionSummary {
   return { agentSessionId: id, status, reviewState, updatedAt, eventCount: 0 };
-}
-
-function boardItem(
-  membershipKind: CatalogBoardItem["membershipKind"],
-  folderId: string,
-): CatalogBoardItem {
-  return {
-    id: `${membershipKind}:${folderId}`,
-    folderId,
-    membershipKind,
-    itemType: "session",
-    itemId: "session-a",
-    x: 0,
-    y: 0,
-  };
 }

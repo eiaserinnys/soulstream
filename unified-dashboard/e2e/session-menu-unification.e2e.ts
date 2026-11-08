@@ -159,7 +159,7 @@ test("an unassigned session moves through REST and updates the returned tree imm
   await capture(page,"wide-unassigned-move-after-rest");
 });
 
-test("folder history, expanded board rows and session board tiles share the complete menu",async({page})=>{
+test("folder history rows keep the complete menu",async({page})=>{
   await page.setViewportSize({width:1440,height:1000});
   await setup(page);
   await page.goto("/");
@@ -168,13 +168,6 @@ test("folder history, expanded board rows and session board tiles share the comp
   await menu(page,history);
   await capture(page,"wide-folder-history-menu");
   await page.keyboard.press("Escape");
-  await page.getByRole("button",{name:"폴더 보드 열기",exact:true}).click();
-  await page.getByTestId("v3-folder-board-resources").getByRole("tab",{name:/세션/}).click();
-  await menu(page,page.getByTestId("v3-folder-board-resources").locator(".v3-run-row").first());
-  await capture(page,"wide-expanded-board-row-menu");
-  await page.keyboard.press("Escape");
-  await menu(page,page.getByTestId("board-session-tile").last());
-  await capture(page,"wide-board-session-tile-menu");
 });
 
 

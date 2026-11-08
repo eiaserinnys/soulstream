@@ -3,7 +3,6 @@ import { createBoardRoundtripHarness } from "./board-roundtrip-harness.js";
 import type { McpRequestContext } from "../../src/mcp/request_context.js";
 
 const context: McpRequestContext = { callerSessionId: "header-session" };
-const move = { board_item_id: "markdown:doc-1", folder_id: "00000000-0000-4000-8000-000000000001", idempotency_key: "move" };
 const view = { folder_id: "00000000-0000-4000-8000-000000000001", html: "<p>새 뷰</p>", idempotency_key: "create-view" };
 const patch = { custom_view_id: "cv-1", expected_revision: 1, html: "<p>after</p>", idempotency_key: "patch-view" };
 // Each existing handler's explicit errors and each required production branch is listed here.
@@ -22,18 +21,6 @@ const cases: readonly [string, string, Record<string, unknown>, boolean?, McpReq
   ["archive missing", "delete_folder", { folder_id: "missing" }, true],
   ["move sessions", "move_sessions_to_folder", { session_ids: ["header-session"], folder_id: "00000000-0000-4000-8000-000000000002" }],
   ["remove sessions", "move_sessions_to_folder", { session_ids: ["header-session"] }],
-  ["update snapped position", "update_board_item_position", { board_item_id: "markdown:doc-1", x: 13, y: -31 }],
-  ["position missing", "update_board_item_position", { board_item_id: "missing", x: 1, y: 2 }, true],
-  ["same folder position", "move_board_item_to_folder", { ...move, x: 13, y: 31 }],
-  ["same folder unchanged", "move_board_item_to_folder", move],
-  ["partial x", "move_board_item_to_folder", { ...move, x: 1 }, true],
-  ["partial y", "move_board_item_to_folder", { ...move, y: 1 }, true],
-  ["enroll generated", "move_board_item_to_folder", { ...move, board_item_id: "session:generated" }],
-  ["move missing folder", "move_board_item_to_folder", { ...move, folder_id: "missing" }, true],
-  ["move missing item", "move_board_item_to_folder", { ...move, board_item_id: "missing" }, true],
-  ["move missing session", "move_board_item_to_folder", { ...move, board_item_id: "session:missing" }, true],
-  ["move reference", "move_board_item_to_folder", { ...move, board_item_id: "ref:doc-1" }, true],
-  ["move frame", "move_board_item_to_folder", { ...move, board_item_id: "frame:frame-1" }, true],
   ["create document positioned", "create_markdown_document", { folder_id: "00000000-0000-4000-8000-000000000001", title: "문서", body: "본문", x: 13, y: 31 }],
   ["create document automatic position", "create_markdown_document", { folder_id: "00000000-0000-4000-8000-000000000001", title: "문서" }],
   ["get document", "get_markdown_document", { document_id: "doc-1" }],
@@ -120,13 +107,6 @@ describe("folder-board-custom-view MCP roundtrip", () => {
       expect(items(hidden).some(item => item.type === "custom_view")).toBe(false);
       expect(items(shown).find(item => item.type === "custom_view")).toMatchObject({ archived: true });
     }
-  });
-  it("records the legacy targetFolderId failure and actually moves on the new path", async () => {
-    const args = { ...move, folder_id: "00000000-0000-4000-8000-000000000002", x: 13, y: 31 };
-    await h.seed(); const next = await h.call("move_board_item_to_folder", args, context);
-    expect(next.isError).not.toBe(true);
-    expect(next.structuredContent).toMatchObject({ ok: true, board_item: { id: "markdown:doc-1", folderId: "00000000-0000-4000-8000-000000000002", x: 20, y: 40 }, idempotency_key: "move" });
-    expect(await h.projectionHost.getBoardItemById("markdown:doc-1")).toMatchObject({ folderId: "00000000-0000-4000-8000-000000000002", x: 20, y: 40 });
   });
   it("creates once for the same custom-view key and emits no duplicate notification", async () => {
     const run = async () => {

@@ -1875,7 +1875,7 @@
     "name": "create_folder"
   },
   {
-    "description": "현재 보드 폴더에 마크다운 문서와 보드 카드를 생성.",
+    "description": "폴더에 마크다운 문서를 생성.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -3945,42 +3945,6 @@
       "type": "object"
     },
     "name": "match_skill_catalogs"
-  },
-  {
-    "description": "기존 보드 항목을 다른 폴더로 이동한다.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
-    "inputSchema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "properties": {
-        "board_item_id": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "folder_id": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "idempotency_key": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "x": {
-          "type": "number"
-        },
-        "y": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "board_item_id",
-        "folder_id",
-        "idempotency_key"
-      ],
-      "type": "object"
-    },
-    "name": "move_board_item_to_folder"
   },
   {
     "description": "카드를 다른 폴더로 옮기고 after_card_id 뒤에 놓는다.",
@@ -8405,34 +8369,6 @@
       "type": "object"
     },
     "name": "update_agent_profile"
-  },
-  {
-    "description": "보드 항목 좌표 갱신. 좌표는 서버에서 20px 격자에 스냅된다.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
-    "inputSchema": {
-      "$schema": "http://json-schema.org/draft-07/schema#",
-      "properties": {
-        "board_item_id": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "x": {
-          "type": "number"
-        },
-        "y": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "board_item_id",
-        "x",
-        "y"
-      ],
-      "type": "object"
-    },
-    "name": "update_board_item_position"
   },
   {
     "description": "다음 세션이 이어받을 담당 카드의 인계 요약을 고쳐 씁니다. 진행의 자세한 기록은 add_card_note에 씁니다. 다른 세션이 담당인 카드에는 담당 세션만 씁니다.",

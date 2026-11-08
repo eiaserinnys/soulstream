@@ -1,5 +1,5 @@
 import type { CatalogFolder } from "../shared/types";
-import { getFolderBreadcrumbs } from "./board-workspace-helpers";
+import { getFolderBreadcrumbs } from "./folder-catalog";
 
 export interface InheritedFolderPrompt {
   folderId: string;

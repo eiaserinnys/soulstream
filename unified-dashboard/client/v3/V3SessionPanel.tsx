@@ -12,12 +12,11 @@ import {
   type MouseEvent,
 } from "react";
 import {
-  useSessionMenu, useDashboardStore,
+  useSessionMenu,
   SessionReviewAcknowledgeError,
   acknowledgeSessionReview,
   useGlassSurface,
   type SessionReviewAcknowledgeResult,
-  type CatalogBoardItem,
   type CatalogFolder,
   type SessionSummary,
 } from "@seosoyoung/soul-ui";
@@ -32,7 +31,6 @@ import type { SessionNodeConnectivity } from "./session-node-connectivity";
 
 interface V3SessionPanelProps {
   sessions: readonly SessionSummary[];
-  boardItems: readonly CatalogBoardItem[];
   folders: readonly CatalogFolder[];
   nodeConnectivity: SessionNodeConnectivity;
   activeSessionId: string | null;
@@ -43,7 +41,6 @@ interface V3SessionPanelProps {
 
 export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(function V3SessionPanel({
   sessions,
-  boardItems,
   folders,
   nodeConnectivity,
   activeSessionId,
@@ -51,7 +48,6 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
   onOpenSession,
   onAcknowledged,
 }, forwardedRef) {
-  const assignments = useDashboardStore(s=>s.catalog?.sessions);
   const cards = useCardStore(s=>s.byId);
   const reviewCards = Object.values(cards).filter(card=>card.status==="review"&&!card.archived);
   const surfaceRef = useRef<HTMLElement>(null);
@@ -63,8 +59,8 @@ export const V3SessionPanel = forwardRef<HTMLElement, V3SessionPanelProps>(funct
   );
   const affiliations = useMemo(() => new Map(sessions.map((session) => [
     session.agentSessionId,
-    (session.cardId ? cards[session.cardId]?.title : null) ?? sessionPanelAffiliation(boardItems, folders, session.agentSessionId, assignments?.[session.agentSessionId]?.folderId),
-   ])), [boardItems, folders, sessions, cards, assignments]);
+    (session.cardId ? cards[session.cardId]?.title : null) ?? sessionPanelAffiliation(folders, session.folderId),
+   ])), [folders, sessions, cards]);
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const openSessionMenu = useSessionMenu();

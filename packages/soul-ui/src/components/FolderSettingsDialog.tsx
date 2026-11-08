@@ -21,7 +21,7 @@ import {
 import { Button } from "./ui/button";
 import { useServerStatus } from "../hooks/useServerStatus";
 import { AtomNodeSelector } from "./AtomNodeSelector";
-import { getInheritedFolderPrompts } from "../board-workspace/folder-prompt-inheritance";
+import { getInheritedFolderPrompts } from "../lib/folder-prompt-inheritance";
 import type { AtomContextNodeSettings, CatalogFolder, FolderSettings } from "../shared/types";
 
 const settingsSchema = z.object({
