@@ -34,7 +34,7 @@ import { usePersistentSessionHost, usePersistentSessionScene } from '../navigati
 import { usePhoneRailMode } from '../navigation/tabContract';
 import { DUO_RAIL_CENTER_FROM_END, DUO_RAIL_END_INSET, DUO_SIDE_BAND_WIDTH, DUO_TOP_BAND_RAIL_TOP, DUO_TOP_BAND_STATUS_CENTER_Y, DUO_TOP_BAND_STATUS_RESERVE, getDuoRailTopOffset, splitDuoRailBackAction, useDuoSideBand, useDuoTopBand } from '../navigation/duoSideBand';
 import { AppKeyboardAvoidingView } from '../components/AppKeyboardAvoidingView';
-import { RAIL_CAPSULE_WIDTH, railCapsuleLength, RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
+import { RAIL_CAPSULE_WIDTH, railCapsuleLength, RailCapsule, RailCapsuleItem, railCapsuleIconColor } from '../components/navigation/RailCapsule';
 import { useActiveDuoRailOverrideEntry, type PhoneRailAction } from '../navigation/phoneRailActions';
 import { duoRailLayout } from '../navigation/duoRailLayout';
 import { usePasContextMenu } from '../components/persistent/usePasContextMenu';
@@ -339,7 +339,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     const testID = railOverride?.length ? `duo-rail-action-${item.id}` : `persistent-session-duo-${item.id}`;
     return <RailCapsuleItem key={item.id} testID={testID} label={item.label} selected={item.selected}
       badgeCount={item.badgeCount} dot={item.dot} disabled={item.disabled} onPress={item.onPress}>
-      <Ionicons name={item.icon} size={t.iconSize.standard} color={item.selected ? t.colors.accent : t.colors.textMuted} />
+      <Ionicons name={item.icon} size={t.iconSize.standard} color={railCapsuleIconColor(t, item.selected)} />
     </RailCapsuleItem>;
   };
   return <SafeAreaView testID="persistent-session-safe-area" edges={phone

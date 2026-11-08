@@ -18,7 +18,9 @@ import {
   createPrimitiveRoles,
   createPlannerVisualRoles,
   createSurfaceRoles,
+  DARK_COLORS,
   getSurfaceRole,
+  LIGHT_COLORS,
   useTokens,
   type DesignTokens,
   type PrimitiveRoleDefinition,
@@ -31,7 +33,7 @@ import {
 import { reportSanitizedEasObserveError } from '../lib/eas-observe-crash-reporting';
 
 type GlassStyle = 'clear' | 'regular' | 'none';
-type GlassColorScheme = 'auto' | 'light' | 'dark';
+export type GlassColorScheme = 'auto' | 'light' | 'dark';
 
 type ExpoGlassEffectModule = {
   GlassView: React.ComponentType<any>;
@@ -107,6 +109,8 @@ export interface GlassSurfaceProps {
   isInteractive?: boolean;
   /** Used by foreground card primitives for a token-defined corner radius. */
   cornerRadius?: number;
+  /** Forces the glass appearance independently of the app theme (e.g. bright rail capsule in dark mode). */
+  colorScheme?: GlassColorScheme;
   testID?: string;
   onLayout?: (event: LayoutChangeEvent) => void;
 }
@@ -127,12 +131,23 @@ function GlassSurfaceImpl({
   isInteractive = false,
   testID,
   cornerRadius,
+  colorScheme = 'auto',
   onLayout,
   renderContent,
 }: GlassSurfaceImplProps) {
   const t = useTokens();
   const ancestorRoles = React.useContext(SurfaceRoleContext);
-  const roles = createSurfaceRoles(t);
+  const effectiveMode: DesignTokens['mode'] =
+    colorScheme === 'light' || colorScheme === 'dark' ? colorScheme : t.mode;
+  const effectiveTokens: DesignTokens =
+    effectiveMode === t.mode
+      ? t
+      : {
+          ...t,
+          mode: effectiveMode,
+          colors: effectiveMode === 'light' ? LIGHT_COLORS : DARK_COLORS,
+        };
+  const roles = createSurfaceRoles(effectiveTokens);
   const requestedSurface = getSurfaceRole(roles, role);
   const nestedSameRole =
     requestedSurface.compositesBackdrop && ancestorRoles.includes(role);
@@ -160,7 +175,7 @@ function GlassSurfaceImpl({
     reduceTransparency,
     nativeGlassEnabled: surface.nativeGlass,
   });
-  const resolvedBlurTint = resolveGlassBlurTint(t.mode);
+  const resolvedBlurTint = resolveGlassBlurTint(effectiveMode);
   const radiusStyle = createSurfaceRadiusStyle(
     cornerRadius ?? surface.borderRadius,
   );
@@ -178,12 +193,13 @@ function GlassSurfaceImpl({
 
   if (surfaceKind === 'native') {
     const { GlassView } = loadGlassEffect()!;
-    const colorScheme: GlassColorScheme = t.mode === 'dark' ? 'dark' : 'light';
+    const resolvedColorScheme: GlassColorScheme =
+      effectiveMode === 'dark' ? 'dark' : 'light';
     return (
       <GlassView
         testID={testID}
         glassEffectStyle="regular"
-        colorScheme={colorScheme}
+        colorScheme={resolvedColorScheme}
         tintColor={surface.nativeTintColor}
         isInteractive={isInteractive}
         style={surfaceStyle}

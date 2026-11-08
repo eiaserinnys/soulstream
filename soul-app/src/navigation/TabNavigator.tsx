@@ -38,7 +38,7 @@ import { useTokens, type DesignTokens } from '../theme';
 import { DuoRailOverlayContext, DuoSideBandContext, DUO_RAIL_TAB_ORDER, INITIAL_ROOT_TAB, PhoneRailModeContext, RAIL_MIN_INSET_WIDTH, ROOT_TAB_ORDER } from './tabContract';
 import { DUO_RAIL_END_INSET, getDuoRailTopOffset, hasDuoSideBand, splitDuoRailBackAction, useDuoSideBand } from './duoSideBand';
 import { useActiveDuoRailOverride, usePhoneRailActions, useRegisterDuoRailOverride, useRegisterPhoneRailActions, type PhoneRailAction } from './phoneRailActions';
-import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
+import { RAIL_CAPSULE_WIDTH, RailCapsule, RailCapsuleItem, railCapsuleIconColor } from '../components/navigation/RailCapsule';
 import { duoRailLayout } from './duoRailLayout';
 import { AppKeyboardAvoidingView } from '../components/AppKeyboardAvoidingView';
 import { usePasContextMenu } from '../components/persistent/usePasContextMenu';
@@ -95,7 +95,6 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
 }) {
   const t = useTokens();
   const [keyboardOverlap, setKeyboardOverlap] = useState(0);
-  const c = t.colors;
   const scene = usePersistentSessionScene(state => state.scene);
   const hasMultiplePas = usePersistentSessionScene(state => state.sessions.length > 1);
   const selectedCardId = usePersistentSessionScene(state => state.selectedCardId);
@@ -111,7 +110,7 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
   const topOffset = getDuoRailTopOffset(windowWidth, windowHeight);
   const renderOverrideAction = (action: PhoneRailAction) => <RailCapsuleItem key={action.id} testID={`phone-rail-action-${action.id}`}
     label={action.label} selected={action.selected} badgeCount={action.badgeCount} dot={action.dot} disabled={action.disabled} onPress={action.onPress}>
-    <Ionicons name={action.icon} color={action.selected ? c.accent : c.textMuted} size={t.iconSize.standard} />
+    <Ionicons name={action.icon} color={railCapsuleIconColor(t, action.selected)} size={t.iconSize.standard} />
   </RailCapsuleItem>;
   const persistentLabel = active !== 'PersistentTab'
     ? '영구 세션 열기'
@@ -119,7 +118,7 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
   const renderTab = (name: keyof RootTabParamList) => {
     const config = ROOT_SECTION_CONFIG[name];
     const selected = name === active;
-    const color = selected ? c.accent : c.textMuted;
+    const color = railCapsuleIconColor(t, selected);
     return <RailCapsuleItem key={name} testID={`phone-tab-${name}`} role="tab"
       label={name === 'PersistentTab' ? persistentLabel : config.title} selected={selected} onPress={() => onSelect(name)}>
       {name === 'PersistentTab'
@@ -164,8 +163,8 @@ export function PhoneRailTabCluster({ active, onSelect, duoSideBand = false, com
       : item.id === 'pas-reports' ? 'phone-rail-pas-reports' : `phone-rail-action-${item.id}`;
     return <RailCapsuleItem key={item.id} testID={testID} role={isTab ? 'tab' : 'button'} label={item.label}
       selected={item.selected} badgeCount={item.badgeCount} dot={item.dot} disabled={item.disabled} onPress={item.onPress}>
-      {item.id === 'PersistentTab' ? <PersistentPhoneTabIcon color={item.selected ? c.accent : c.textMuted} size={t.iconSize.standard} active={!!item.selected} />
-        : <Ionicons name={item.icon} color={item.selected ? c.accent : c.textMuted} size={t.iconSize.standard} />}
+      {item.id === 'PersistentTab' ? <PersistentPhoneTabIcon color={railCapsuleIconColor(t, item.selected)} size={t.iconSize.standard} active={!!item.selected} />
+        : <Ionicons name={item.icon} color={railCapsuleIconColor(t, item.selected)} size={t.iconSize.standard} />}
     </RailCapsuleItem>;
   };
   return <AppKeyboardAvoidingView testID="duo-rail-column" pointerEvents="box-none" onOverlapChange={setKeyboardOverlap}

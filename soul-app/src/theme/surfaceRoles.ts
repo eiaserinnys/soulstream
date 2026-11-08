@@ -33,6 +33,10 @@ export type SurfaceRoles = Record<SurfaceRoleName, SurfaceRoleDefinition>;
 
 const CHROME_CONTENT_ALPHA = 0.92;
 const CHROME_NATIVE_TINT_ALPHA = 0.68;
+const LIGHT_CHROME_GLASS_TINT_ALPHA = 0.56;
+const LIGHT_CHROME_GLASS_BLUR_ALPHA = 0.62;
+const LIGHT_CHROME_SPECULAR_BORDER = 'rgba(255, 255, 255, 0.78)';
+const DARK_CHROME_SPECULAR_BORDER = 'rgba(255, 255, 255, 0.22)';
 const SEMANTIC_GLASS_PALETTE = {
   light: {
     glassSoft: { translucent: 'rgba(231, 237, 245, 0.56)', solid: '#e7edf5' },
@@ -73,12 +77,22 @@ export function createSurfaceRoles(t: DesignTokens): SurfaceRoles {
     chrome: role({
       compositesBackdrop: true,
       nativeGlass: true,
-      nativeTintColor: withAlpha(c.surface, CHROME_NATIVE_TINT_ALPHA),
-      blurColor: withAlpha(c.surface, CHROME_CONTENT_ALPHA),
+      nativeTintColor:
+        t.mode === 'light'
+          ? withAlpha(c.surface, LIGHT_CHROME_GLASS_TINT_ALPHA)
+          : withAlpha(c.surface, CHROME_NATIVE_TINT_ALPHA),
+      blurColor:
+        t.mode === 'light'
+          ? withAlpha(c.surface, LIGHT_CHROME_GLASS_BLUR_ALPHA)
+          : withAlpha(c.surface, CHROME_CONTENT_ALPHA),
+      tokenBackgroundColor: withAlpha(c.surface, CHROME_CONTENT_ALPHA),
       fallbackColor: c.surface,
       borderRadius: 0,
       blurIntensity: 74,
-      blurBorderColor: withAlpha(c.border, 0.74),
+      blurBorderColor:
+        t.mode === 'light'
+          ? LIGHT_CHROME_SPECULAR_BORDER
+          : DARK_CHROME_SPECULAR_BORDER,
       solidBorderColor: c.border,
     }),
     glassSoft: role({
@@ -154,6 +168,7 @@ function role(input: {
   nativeGlass: boolean;
   nativeTintColor: string;
   blurColor: string;
+  tokenBackgroundColor?: string;
   fallbackColor: string;
   borderRadius: number;
   blurIntensity: number;
@@ -189,7 +204,7 @@ function role(input: {
     },
     tokenStyle: {
       ...solidStyle,
-      backgroundColor: input.blurColor,
+      backgroundColor: input.tokenBackgroundColor ?? input.blurColor,
       borderRadius: input.borderRadius,
     },
   };

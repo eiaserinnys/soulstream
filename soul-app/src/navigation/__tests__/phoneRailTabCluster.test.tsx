@@ -1,5 +1,15 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
+jest.mock('expo-glass-effect', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return {
+    GlassView: ({ testID, ...props }: Record<string, unknown>) =>
+      React.createElement(View, { ...props, testID }),
+    isLiquidGlassAvailable: () => true,
+    isGlassEffectAPIAvailable: () => true,
+  };
+});
 const mockShowMenu = jest.fn();
 const mockSetSettingsOpen = jest.fn();
 const mockRequestEntry = jest.fn();
@@ -21,15 +31,41 @@ import { PhoneRailTabCluster, RAIL_MIN_INSET_WIDTH } from '../TabNavigator';
 import { StyleSheet, View } from 'react-native';
 import { usePhoneRailActions, useRegisterDuoRailOverride } from '../phoneRailActions';
 import { PhoneRailModeContext } from '../tabContract';
-import { RailCapsule, RailCapsuleItem } from '../../components/navigation/RailCapsule';
+import { RailCapsule, RailCapsuleItem, railCapsuleIconColor } from '../../components/navigation/RailCapsule';
 import { Text } from 'react-native';
+import { useSettingsStore } from '../../store/settingsStore';
 import { DuoRailOverride } from '../../components/navigation/DuoRailOverride';
 import { AppKeyboardAvoidingView } from '../../components/AppKeyboardAvoidingView';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { DUO_RAIL_CENTER_FROM_END, DUO_TOP_BAND_RAIL_TOP } from '../duoSideBand';
 
 beforeEach(() => { mockSessionData.sessions = []; mockRequestEntry.mockClear(); });
-afterEach(() => { usePhoneRailActions.setState({ overrides: [] }); });
+afterEach(() => { usePhoneRailActions.setState({ overrides: [] }); useSettingsStore.setState({ appearance: 'dark' }); });
+
+test('레일 캡슐은 다크·라이트 모두 밝은 리퀴드 글래스 스킴을 쓴다', () => {
+  const Capsule = RailCapsule as React.ComponentType<any>;
+  const scene = () => <NavigationContainer><Capsule testID="capsule-surface">
+    {['one', 'two'].map(id => <RailCapsuleItem key={id} testID={id} label={id} onPress={jest.fn()}><Text>{id}</Text></RailCapsuleItem>)}
+  </Capsule></NavigationContainer>;
+
+  useSettingsStore.setState({ appearance: 'dark' });
+  const dark = render(scene());
+  expect(dark.getByTestId('capsule-surface').props.colorScheme).toBe('light');
+  expect(dark.getByTestId('capsule-surface').props.tintColor).toBe('rgba(242, 242, 247, 0.56)');
+  dark.unmount();
+
+  useSettingsStore.setState({ appearance: 'light' });
+  const light = render(scene());
+  expect(light.getByTestId('capsule-surface').props.colorScheme).toBe('light');
+  expect(light.getByTestId('capsule-surface').props.tintColor).toBe('rgba(242, 242, 247, 0.56)');
+});
+
+test('밝은 캡슐 위 아이콘 색상은 확정 팔레트 값(다크 textSecondary·라이트 textMuted·accent)을 쓴다', () => {
+  expect(railCapsuleIconColor({ mode: 'dark' }, false)).toBe('#2f3137');
+  expect(railCapsuleIconColor({ mode: 'dark' }, true)).toBe('#0a84ff');
+  expect(railCapsuleIconColor({ mode: 'light' }, false)).toBe('#53575d');
+  expect(railCapsuleIconColor({ mode: 'light' }, true)).toBe('#0a84ff');
+});
 
 test('가로 캡슐은 세 항목을 regular 크기로 배치한다', () => {
   const RowCapsule = RailCapsule as React.ComponentType<any>;

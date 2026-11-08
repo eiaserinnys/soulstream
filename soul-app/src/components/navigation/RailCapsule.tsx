@@ -2,10 +2,25 @@ import React from 'react';
 import { Text, View, type AccessibilityRole } from 'react-native';
 import { PlatformPressable } from '@react-navigation/elements';
 import { GLASS_BUTTON_BORDER_WIDTH, GlassSurface } from '../GlassSurface';
-import { useTokens } from '../../theme';
+import { LIGHT_COLORS, useTokens, type DesignTokens } from '../../theme';
 import { STATUS_DOT_SIZE } from '../chat/StatusDot';
 
 export const RAIL_CAPSULE_WIDTH = 48;
+
+/**
+ * 캡슐은 다크 테마에서도 밝은 리퀴드 글래스로 렌더되므로 아이콘 색은 앱 테마가 아니라
+ * 캡슐의 밝은 표면을 기준으로 고른다. 비선택 아이콘은 다크에서 LIGHT textSecondary,
+ * 라이트에서 LIGHT textMuted이고, 선택 아이콘과 배지·점은 LIGHT accent를 쓴다.
+ * 실측 대비: 비선택 다크 4.44:1(어두운 캔버스 위)·11.7:1(밝은 카드 위), 라이트 7.06:1.
+ * 선택 accent는 캡슐 위 1.24~3.54:1로, 확정 디자인의 팔레트 제약을 따른 결과다.
+ */
+export function railCapsuleIconColor(
+  t: Pick<DesignTokens, 'mode'>,
+  selected = false,
+): string {
+  if (selected) return LIGHT_COLORS.accent;
+  return t.mode === 'dark' ? LIGHT_COLORS.textSecondary : LIGHT_COLORS.textMuted;
+}
 export const RAIL_ITEM_HEIGHT = 50;
 export function railCapsuleLength(count: number, compact: boolean, tokens: { spacingXs: number; uiSpacingXs: number; hitTargetMin: number }) {
   if (count === 0) return 0;
@@ -38,7 +53,7 @@ export function RailCapsule({ children, testID, compact = false, direction = 'co
     alignItems: 'center' }}>
     <RailCapsuleItemContext.Provider value={{ compact, single, direction }}>{children}</RailCapsuleItemContext.Provider>
   </View>;
-  return <GlassSurface role="chrome" testID={testID} cornerRadius={t.foundation.radius.round}
+  return <GlassSurface role="chrome" testID={testID} colorScheme="light" cornerRadius={t.foundation.radius.round}
     style={{ width: row ? length : RAIL_CAPSULE_WIDTH, height: row ? RAIL_CAPSULE_WIDTH : length }}>
     {content}
   </GlassSurface>;
@@ -60,9 +75,9 @@ export function RailCapsuleItem({ children, testID, label, onPress, selected, ba
     <View style={{ position: 'relative' }}>
       {children}
       {count && count > 0 ? <Text testID={`${testID}-badge`} style={{ position: 'absolute', top: -t.spacing.xxs, right: -t.spacing.xxs,
-        ...t.foundation.typography.label, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.accentTint,
-        color: t.colors.accent, paddingHorizontal: t.uiSpacing.xs, fontWeight: '700' }}>{count}</Text>
-        : dot ? <View testID={`${testID}-dot`} style={{ position: 'absolute', top: 0, right: 0, width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round, backgroundColor: t.colors.accent }} /> : null}
+        ...t.foundation.typography.label, borderRadius: t.foundation.radius.round, backgroundColor: LIGHT_COLORS.accentTint,
+        color: LIGHT_COLORS.accent, paddingHorizontal: t.uiSpacing.xs, fontWeight: '700' }}>{count}</Text>
+        : dot ? <View testID={`${testID}-dot`} style={{ position: 'absolute', top: 0, right: 0, width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round, backgroundColor: LIGHT_COLORS.accent }} /> : null}
     </View>
   </PlatformPressable>;
 }

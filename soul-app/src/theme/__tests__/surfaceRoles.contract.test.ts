@@ -162,6 +162,33 @@ describe('surface role contract', () => {
     expect(roles.modal.materialStyle.blur.borderColor).toBe(semanticGlassExact[mode].stroke);
   });
 
+  test('chrome 역할은 라이트에서 밝은 반투명 리퀴드 글래스와 흰색 스페큘러 림을 제공한다', () => {
+    const roles = createSurfaceRoles(tokens('light'));
+
+    expect(roles.chrome.nativeTintColor).toBe('rgba(242, 242, 247, 0.56)');
+    expect(roles.chrome.blurColor).toBe('rgba(242, 242, 247, 0.62)');
+    expect(roles.chrome.materialStyle.blur.borderColor).toBe(
+      'rgba(255, 255, 255, 0.78)',
+    );
+  });
+
+  test('chrome 역할의 blur 경계는 다크에서도 유리 가장자리 하이라이트를 유지한다', () => {
+    const roles = createSurfaceRoles(tokens('dark'));
+
+    expect(roles.chrome.materialStyle.blur.borderColor).toBe(
+      'rgba(255, 255, 255, 0.22)',
+    );
+  });
+
+  test.each([
+    ['light', 'rgba(242, 242, 247, 0.92)'],
+    ['dark', 'rgba(28, 28, 30, 0.92)'],
+  ] as const)('chrome의 토큰 배경은 %s 모드에서도 0.92 알파를 유지한다', (mode, expected) => {
+    expect(createSurfaceRoles(tokens(mode)).chrome.tokenStyle.backgroundColor).toBe(
+      expected,
+    );
+  });
+
   test('iPad 세 패널은 공통 panel surface를 쓰고 제목 바만 glass로 감싸지 않는다', () => {
     const panel = read('components/split/SplitPanelSurface.tsx');
     expect(panel).toContain('role="glassSoft"');
