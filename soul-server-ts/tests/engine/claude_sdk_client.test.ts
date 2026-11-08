@@ -1385,6 +1385,45 @@ describe("ClaudeSdkClient", () => {
     });
   });
 
+  it("uses the DeepSeek-compatible window when modelUsage carries no contextWindow", () => {
+    const transcriptPath = writeTranscriptFixture([
+      { uuid: "turn-first", usage: { input_tokens: 12, output_tokens: 4, cache_read_input_tokens: 400 } },
+      {
+        uuid: "turn-last",
+        usage: {
+          input_tokens: 6,
+          output_tokens: 8,
+          cache_read_input_tokens: 5_000,
+          cache_creation_input_tokens: 100,
+        },
+      },
+    ]);
+    const mapDeepSeekTurn = (overrides: Record<string, unknown>) => {
+      const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState());
+      mapper.recordTranscriptPath(transcriptPath);
+      mapZeroTokenAssistant(mapper, "turn-first", "deepseek-v4.1-flash");
+      mapZeroTokenAssistant(mapper, "turn-last", "deepseek-v4.1-flash");
+      return mapper.mapSdkMessage(sdkSuccessResult(
+        "claude-sess-deepseek-window",
+        "done",
+        { usage: { iterations: [] }, ...overrides },
+      ));
+    };
+
+    for (const overrides of [
+      { modelUsage: { "deepseek-v4.1-flash": { inputTokens: 1_200, outputTokens: 80 } } },
+      { modelUsage: undefined },
+    ]) {
+      expect(mapDeepSeekTurn(overrides).find((event) => event.type === "context_usage"))
+        .toMatchObject({
+          type: "context_usage",
+          usedTokens: 5_114,
+          maxTokens: 262_144,
+          percent: 2,
+        });
+    }
+  });
+
   it("initial image attachments are embedded as Claude image content blocks", async () => {
     const dir = makeTempDirSync("claude-image-");
     try {
