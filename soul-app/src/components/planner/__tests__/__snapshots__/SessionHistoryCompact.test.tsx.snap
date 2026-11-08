@@ -20,53 +20,33 @@ exports[`폴더 기본 세션 목록 렌더는 보완 전과 같다 1`] = `
     <View
       style={
         [
-          {
-            "backgroundColor": "transparent",
-          },
           [
-            [
-              {
-                "overflow": "hidden",
-              },
-              {
-                "borderColor": "rgba(0, 0, 0, 0.1)",
-                "borderWidth": 0.5,
-              },
-              {
-                "marginHorizontal": 0,
-                "marginVertical": 0,
-              },
-              {
-                "borderBottomLeftRadius": 18,
-                "borderBottomRightRadius": 18,
-                "borderRadius": 18,
-                "borderTopLeftRadius": 18,
-                "borderTopRightRadius": 18,
-              },
-            ],
             {
-              "backgroundColor": "rgba(224, 232, 242, 0.64)",
+              "overflow": "hidden",
+            },
+            {
+              "borderColor": "#d1d1d6",
+              "borderWidth": 0.5,
+            },
+            {
+              "marginHorizontal": 0,
+              "marginVertical": 0,
+            },
+            {
+              "borderBottomLeftRadius": 18,
+              "borderBottomRightRadius": 18,
+              "borderRadius": 18,
+              "borderTopLeftRadius": 18,
+              "borderTopRightRadius": 18,
             },
           ],
+          {
+            "backgroundColor": "#e0e8f2",
+          },
         ]
       }
       testID="task-run-surface-root"
     >
-      <ViewManagerAdapter_ExpoBlur
-        blurMethod="none"
-        blurReductionFactor={4}
-        intensity={62}
-        style={
-          {
-            "bottom": 0,
-            "left": 0,
-            "position": "absolute",
-            "right": 0,
-            "top": 0,
-          }
-        }
-        tint="light"
-      />
       <View
         accessibilityLabel="담당 세션, 대기, 로젤린, NaN일 전"
         accessibilityRole="button"
@@ -332,53 +312,33 @@ exports[`폴더 기본 세션 목록 렌더는 보완 전과 같다 1`] = `
     <View
       style={
         [
-          {
-            "backgroundColor": "transparent",
-          },
           [
-            [
-              {
-                "overflow": "hidden",
-              },
-              {
-                "borderColor": "rgba(0, 0, 0, 0.1)",
-                "borderWidth": 0.5,
-              },
-              {
-                "marginHorizontal": 0,
-                "marginVertical": 0,
-              },
-              {
-                "borderBottomLeftRadius": 18,
-                "borderBottomRightRadius": 18,
-                "borderRadius": 18,
-                "borderTopLeftRadius": 18,
-                "borderTopRightRadius": 18,
-              },
-            ],
             {
-              "backgroundColor": "rgba(224, 232, 242, 0.64)",
+              "overflow": "hidden",
+            },
+            {
+              "borderColor": "#d1d1d6",
+              "borderWidth": 0.5,
+            },
+            {
+              "marginHorizontal": 0,
+              "marginVertical": 0,
+            },
+            {
+              "borderBottomLeftRadius": 18,
+              "borderBottomRightRadius": 18,
+              "borderRadius": 18,
+              "borderTopLeftRadius": 18,
+              "borderTopRightRadius": 18,
             },
           ],
+          {
+            "backgroundColor": "#e0e8f2",
+          },
         ]
       }
       testID="task-run-surface-child"
     >
-      <ViewManagerAdapter_ExpoBlur
-        blurMethod="none"
-        blurReductionFactor={4}
-        intensity={62}
-        style={
-          {
-            "bottom": 0,
-            "left": 0,
-            "position": "absolute",
-            "right": 0,
-            "top": 0,
-          }
-        }
-        tint="light"
-      />
       <View
         accessibilityLabel="작업 세션, 대기, 로젤린, NaN일 전"
         accessibilityRole="button"

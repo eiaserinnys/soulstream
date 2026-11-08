@@ -10,8 +10,9 @@ import { useSettingsStore } from '../../../store/settingsStore';
 import { DESIGN_HIT_TARGET, DESIGN_SPACING, PHONE_FOUNDATION, TABLET_FOUNDATION, TABLET_HIT_TARGET } from '../../../theme';
 
 test.each([
-  ['dark', 'rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.06)', 'rgba(255, 255, 255, 0.12)'],
-  ['light', 'rgba(0, 0, 0, 0.08)', 'rgba(0, 0, 0, 0.06)', 'rgba(0, 0, 0, 0.1)'],
+  // 콘텐츠 역할(glassCard)은 솔리드 표면이므로 stroke는 불투명 토큰 경계(c.border)를 쓴다.
+  ['dark', 'rgba(255, 255, 255, 0.08)', 'rgba(255, 255, 255, 0.06)', '#2a2a2e'],
+  ['light', 'rgba(0, 0, 0, 0.08)', 'rgba(0, 0, 0, 0.06)', '#d1d1d6'],
 ] as const)('%s grouped sheet는 idle·pressed·divider·stroke exact 역할을 실제 렌더한다', (
   mode,
   dividerColor,
