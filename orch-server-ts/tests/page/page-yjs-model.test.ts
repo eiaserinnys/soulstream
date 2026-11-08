@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as Y from "yjs";
 
-import { parseBoardYjsDocumentName } from "../../src/board-yjs/board_yjs_model.js";
 import {
   BLOCKS_MAP,
   PAGE_META_MAP,
@@ -27,7 +26,6 @@ describe("orch page Yjs model", () => {
     expect(parsePageYjsDocumentName("page:")).toBeNull();
     expect(parsePageYjsDocumentName("board:task:rb-1")).toBeNull();
     expect(parsePageYjsDocumentName("board-folder:folder-1")).toBeNull();
-    expect(parseBoardYjsDocumentName("page:page-1")).toBeNull();
   });
 
   it("round-trips flat blocks, Y.Text ref attributes, and Y.Map properties", () => {

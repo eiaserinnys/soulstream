@@ -46,7 +46,7 @@ try {
     createId: () => ids.shift() ?? crypto.randomUUID(),
     createOperationId: operationIdFactory(),
     hydratePage: async () => undefined,
-    withBoardApplication: async (_folderId, prepare) => await prepare([]),
+
   });
   registerFolderRoutes(app, {
     provider: {

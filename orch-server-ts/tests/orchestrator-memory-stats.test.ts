@@ -31,7 +31,6 @@ describe("createOrchestratorMemoryStatsCollector", () => {
       foregroundObservers: {
         getStats: () => ({ sessions: 2, observers: 3 }),
       },
-      boardYjsDocuments: () => 9,
       pageYjsDocuments: () => 10,
       collectorOptions: {
         memoryUsage: () => ({
@@ -58,7 +57,6 @@ describe("createOrchestratorMemoryStatsCollector", () => {
       pending_commands: 4,
       push_notifier: 9,
       foreground_observers: 3,
-      board_yjs_documents: 9,
       page_yjs_documents: 10,
     });
     expect(approxBytes).not.toHaveBeenCalled();
@@ -86,7 +84,6 @@ describe("createOrchestratorMemoryStatsCollector", () => {
         entries: 3,
         details: { sessions: 2 },
       },
-      board_yjs_documents: { entries: 9 },
       page_yjs_documents: { entries: 10 },
     });
     expect(approxBytes).toHaveBeenCalledTimes(1);

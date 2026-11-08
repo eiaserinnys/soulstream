@@ -611,7 +611,7 @@ describe("live provider factory boundary", () => {
       runtimeServices.routeOptions.sseReplayRoutes.session.loadSnapshot,
     );
     expect(bundle.runtime).toEqual({
-      boardYjsHostProxyRoutes: runtimeServices.routeOptions.boardYjsHostProxyRoutes,
+      flatFolderContentRoutes: runtimeServices.routeOptions.flatFolderContentRoutes,
       nodeSnapshotRoutes: runtimeServices.routeOptions.nodeSnapshotRoutes,
       nodeWsRoute: runtimeServices.routeOptions.nodeWsRoute,
       sessionActionCommandRoutes: {
@@ -724,6 +724,7 @@ function createUsageSummaryRoutes() {
 function createRuntimeServices(dependencies: LiveProviderDependencies) {
   return createOrchestratorRuntimeServices({
     config,
+    flatFolderContentRoutes: { host: {} as never, authBearerToken: "test-token" },
     loadSessionSnapshot: async () => dependencies.dbCatalogRepository.loadSessionSnapshot(),
     sessionHistoryProvider:
       dependencies.dbCatalogRepository.sessionHistoryProvider,

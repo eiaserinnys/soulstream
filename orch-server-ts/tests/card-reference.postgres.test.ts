@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import {
   findCardSessionByOrdinal,
@@ -14,7 +14,7 @@ import { createFullSchemaPostgresHarness, type FullSchemaPostgresHarness } from 
 // Real PostgreSQL: the ordinal order and the number lookup are SQL, so they are checked against rows.
 describe("card number references over PostgreSQL", () => {
   let h: FullSchemaPostgresHarness;
-  let sql: ReturnType<typeof createBoardYjsSqlAdapter>;
+  let sql: ReturnType<typeof createFolderContentSqlAdapter>;
   let cards: CardControlPlaneService;
   const open = "folder-open";
   const closed = "folder-closed";
@@ -31,7 +31,7 @@ describe("card number references over PostgreSQL", () => {
 
   beforeAll(async () => {
     h = await createFullSchemaPostgresHarness();
-    sql = createBoardYjsSqlAdapter(h.sql as unknown as LivePostgresSql);
+    sql = createFolderContentSqlAdapter(h.sql as unknown as LivePostgresSql);
     cards = new CardControlPlaneService(sql, { appendEventTx: async () => 0 }, { emitFolderUpdated: async () => {}, emitCardUpdated: async () => {} });
     await h.sql`INSERT INTO folders(id,name) VALUES (${open},'열린 폴더'),(${closed},'막힌 폴더')`;
     a = await insertCard("card-a", open, longTitle);

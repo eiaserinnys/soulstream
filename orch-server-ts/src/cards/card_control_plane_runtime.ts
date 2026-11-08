@@ -1,4 +1,4 @@
-import { BoardYjsSqlResolver } from "../board-yjs/board_yjs_sql.js";
+import { FolderContentSqlResolver } from "../board/folder_content_sql.js";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 import type { InMemorySseReplayBroadcaster, SessionStreamEvent } from "../sse/replay_broadcaster.js";
 import { CardControlPlaneService, type CardMutationChange } from "./card_control_plane_service.js";
@@ -16,7 +16,7 @@ export function createCardControlPlaneServiceProvider(options: {
   corsAllowedOrigins?: readonly string[];
   onQuestionAsked?: (input:{cardId:string;questionId:string})=>void | Promise<void>;
 }): () => Promise<CardControlPlaneService> {
-  const resolver=new BoardYjsSqlResolver(options.sqlResolver);
+  const resolver=new FolderContentSqlResolver(options.sqlResolver);
   let service: CardControlPlaneService | undefined;
   return async () => {
     if (service) return service;

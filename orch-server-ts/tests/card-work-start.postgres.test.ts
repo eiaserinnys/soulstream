@@ -6,7 +6,7 @@ import { CardDispatcher } from "../src/cards/card_dispatcher.js";
 import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
 import { beforeAll, beforeEach, afterAll, describe, expect, it } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { appendCardEventTx, prepareCardWorkSchema, recordWorkReceipt, consumeCardDelivery } from "./card-work-postgres-fixture.js";
 
@@ -25,8 +25,8 @@ describe("explicit manual card work", () => {
     await h.sql.unsafe(await readFile(new URL('../../packages/db-schema/sql/migrations/113_card_orchestration.sql',import.meta.url),'utf8'));
     await h.sql`UPDATE system_settings SET value=jsonb_set(value,'{enabled}','true') WHERE setting_key='card_orchestration'`;
     await recordWorkReceipt(h,"owner","running",execution);
-    repo=new CardOrchestrationRepository(async()=>createBoardYjsSqlAdapter(h.liveSql));
-    cards = new CardControlPlaneService(createBoardYjsSqlAdapter(h.liveSql), { appendEventTx: appendCardEventTx });
+    repo=new CardOrchestrationRepository(async()=>createFolderContentSqlAdapter(h.liveSql));
+    cards = new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql), { appendEventTx: appendCardEventTx });
   }, 60000);
   beforeEach(async () => { await h.sql`UPDATE cards SET archived=TRUE`; });
   afterAll(async () => h?.cleanup());
@@ -105,11 +105,11 @@ it.each(["review","queued","blocked","on_hold","done","cancelled","running"])("s
     await cards.startCardWork({...declaration(reported,`reported-work-${enabled}`),actorSessionId:"other",execution:{registrationId:"other-reg",executionCommandId:"other-command"}});
     await cards.addReport({actorKind:"agent",actorSessionId:"owner",cardId:reported,title:"보고",body:"증거",format:"markdown"});
     await recordWorkReceipt(h,"owner","completed",null);
-    const ended=await endedCardWork(createBoardYjsSqlAdapter(h.liveSql),"owner");
+    const ended=await endedCardWork(createFolderContentSqlAdapter(h.liveSql),"owner");
     expect(ended.map(r=>r.card_id)).toContain(id);
     expect(ended.map(r=>r.card_id)).not.toContain(untouched);
     const warnings:string[]=[];
-    const dispatcher=new CardDispatcher({ deliveryExists: async () => false,abandonDelivery:async()=>{},repository:new CardDispatchRepository(async()=>createBoardYjsSqlAdapter(h.liveSql)),
+    const dispatcher=new CardDispatcher({ deliveryExists: async () => false,abandonDelivery:async()=>{},repository:new CardDispatchRepository(async()=>createFolderContentSqlAdapter(h.liveSql)),
       cards:async()=>cards,resolveTarget:()=>({nodeId:"node",agentId:"profile",modelPreset:"model",available:true,reason:null}),
       launch:async()=>{},sendMessage:async()=>{},notify:async()=>{},warn:m=>warnings.push(m),
       orchestration:{enabled:async()=>enabled,ownsSession:async()=>false,kick:async()=>{}}});
@@ -123,16 +123,16 @@ it.each(["review","queued","blocked","on_hold","done","cancelled","running"])("s
     await cards.patchCard({actorKind:"user",actorSessionId:null,cardId:id,archived:true});
     const fresh=await make();
     await cards.startCardWork({...declaration(fresh,`later-work-${enabled}`),execution:{...execution}});
-    expect((await endedCardWork(createBoardYjsSqlAdapter(h.liveSql),"owner")).map(r=>r.card_id)).not.toContain(fresh);
+    expect((await endedCardWork(createFolderContentSqlAdapter(h.liveSql),"owner")).map(r=>r.card_id)).not.toContain(fresh);
   });
   it("classifies quota termination from the declared execution's canonical receipt",async()=>{
     await h.sql`UPDATE system_settings SET value=jsonb_set(value,'{enabled}','true') WHERE setting_key='card_orchestration'`;
     const id=await make();
     await cards.startCardWork(declaration(id,"limited-work"));
     await recordWorkReceipt(h,"owner","error",null,"limit_hit");
-    const ended=await endedCardWork(createBoardYjsSqlAdapter(h.liveSql),"owner");
+    const ended=await endedCardWork(createFolderContentSqlAdapter(h.liveSql),"owner");
     expect(ended.find(w=>w.card_id===id)?.terminal_session).toMatchObject({status:"error",termination_reason:"limit_hit"});
-    const dispatcher=new CardDispatcher({ deliveryExists: async () => false,abandonDelivery:async()=>{},repository:new CardDispatchRepository(async()=>createBoardYjsSqlAdapter(h.liveSql)),
+    const dispatcher=new CardDispatcher({ deliveryExists: async () => false,abandonDelivery:async()=>{},repository:new CardDispatchRepository(async()=>createFolderContentSqlAdapter(h.liveSql)),
       cards:async()=>cards,resolveTarget:()=>({nodeId:"node",agentId:"profile",modelPreset:"model",available:true,reason:null}),
       launch:async()=>{},sendMessage:async()=>{},notify:async()=>{},warn:m=>{throw new Error(m);},
       orchestration:{enabled:async()=>true,ownsSession:async()=>false,kick:async()=>{}}});

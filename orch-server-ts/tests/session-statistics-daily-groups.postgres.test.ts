@@ -3,7 +3,7 @@ import { createFullSchemaPostgresHarness, type FullSchemaPostgresHarness } from 
 import { SessionStatisticsRepository } from "../src/usage/session_statistics_repository.js";
 import { buildDailyOverview } from "../src/usage/session_statistics_daily_merge.js";
 import { createSessionStatisticsDailyState } from "../src/usage/session_statistics_daily_state.js";
-import type { BoardYjsSql } from "../src/board-yjs/board_yjs_sql.js";
+import type { FolderContentSql } from "../src/board/folder_content_sql.js";
 import type { SessionStatisticsReadRequest, SessionStatisticsReadResult } from "../src/usage/session_statistics_types.js";
 import { read, usageRow, fact } from "./fixtures/session_statistics_aggregation.fixtures.js";
 
@@ -28,7 +28,7 @@ describe("daily groups PostgreSQL membership and fallback", () => {
     await sql`INSERT INTO cards (id, folder_id, position_key, title) VALUES ('c', 'f2', 'a0', 'C')`;
     await sql`INSERT INTO sessions (session_id, folder_id, card_id, created_at) VALUES
       ('session-1', 'f1', null, '2026-10-19T00:00:00Z'), ('s2', null, 'c', '2026-10-19T00:00:00Z')`;
-    repository = new SessionStatisticsRepository(sql as unknown as BoardYjsSql);
+    repository = new SessionStatisticsRepository(sql as unknown as FolderContentSql);
     const source: SessionStatisticsReadResult = read([usageRow(), usageRow({ session_id: "s2",
       fact: fact({ session_id: "s2", known_cost_usd: null }) })], {}, undefined, [
       { sessionId: "session-1", folderId: "f1", cardFolderId: null, projectId: "f1", projectLabel: "One" },

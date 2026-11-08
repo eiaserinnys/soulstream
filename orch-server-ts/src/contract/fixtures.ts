@@ -3,7 +3,6 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type {
-  BoardYjsHostProxyFixture,
   DbFunctionContractFixture,
   FakeNodeReconnectFixture,
   OrchContractFixtures,
@@ -17,7 +16,6 @@ export const CONTRACT_FIXTURE_NAMES = [
   "upstreamWsWire",
   "sseReplayGap",
   "fakeNodeReconnect",
-  "boardYjsHostProxy",
   "dbFunctionContract",
 ] as const;
 
@@ -26,7 +24,6 @@ export const CONTRACT_FIXTURE_FILES = {
   upstreamWsWire: "upstream_ws_wire.json",
   sseReplayGap: "sse_replay_gap.json",
   fakeNodeReconnect: "fake_node_reconnect.json",
-  boardYjsHostProxy: "board_yjs_host_proxy.json",
   dbFunctionContract: "db_function_contract.json",
 } as const;
 
@@ -60,10 +57,6 @@ export function loadContractFixtures(fixtureDir = resolveContractFixtureDir()): 
     ),
     fakeNodeReconnect: loadContractFixture<FakeNodeReconnectFixture>(
       CONTRACT_FIXTURE_FILES.fakeNodeReconnect,
-      fixtureDir,
-    ),
-    boardYjsHostProxy: loadContractFixture<BoardYjsHostProxyFixture>(
-      CONTRACT_FIXTURE_FILES.boardYjsHostProxy,
       fixtureDir,
     ),
     dbFunctionContract: loadContractFixture<DbFunctionContractFixture>(

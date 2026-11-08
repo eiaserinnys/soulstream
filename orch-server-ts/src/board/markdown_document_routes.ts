@@ -4,11 +4,10 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   isBoardFolderAllowed,
   normalizeBoardAccess,
+  visibleBoardFolderIds,
   type BoardAccess,
 } from "./board_access.js";
-import {
-  type BoardYjsHostProxyRouteOptions,
-} from "./board_yjs_host_proxy.js";
+import type { MarkdownDocumentService } from "./markdown_document_service.js";
 import {
   createLocalMarkdownDocument,
   deleteLocalMarkdownDocument,
@@ -38,6 +37,7 @@ export type CustomViewRecord = {
 export type MarkdownDocumentAccess = BoardAccess;
 
 export type MarkdownDocumentRouteProvider = {
+  listMarkdownDocuments: (input: { folderId?: string; search?: string; cursor?: string; limit: number; allowedFolderIds?: readonly string[] }) => Promise<{ documents: readonly MarkdownDocumentRecord[]; nextCursor: string | null }>;
   listFolders: () =>
     | Promise<readonly MarkdownDocumentFolderRecord[]>
     | readonly MarkdownDocumentFolderRecord[];
@@ -58,7 +58,7 @@ export type MarkdownDocumentAccessProvider = {
 export type MarkdownDocumentRouteOptions = {
   provider: MarkdownDocumentRouteProvider;
   accessProvider: MarkdownDocumentAccessProvider;
-  hostProxy: BoardYjsHostProxyRouteOptions;
+  serviceProvider: () => MarkdownDocumentService;
 };
 
 export class MarkdownDocumentRouteError extends Error {
@@ -86,10 +86,12 @@ type Validation<T> =
   | { ok: false; message: string; statusCode?: number };
 
 export const markdownDocumentRouteAuthRequirements = {
+  "GET /api/markdown-documents": true,
   "POST /api/markdown-documents": true,
   "GET /api/markdown-documents/:document_id": true,
   "GET /api/custom-views/:custom_view_id": true,
   "PUT /api/markdown-documents/:document_id": true,
+  "PATCH /api/markdown-documents/:document_id": true,
   "DELETE /api/markdown-documents/:document_id": true,
 } as const;
 
@@ -97,6 +99,23 @@ export function registerMarkdownDocumentRoutes(
   app: FastifyInstance,
   options: MarkdownDocumentRouteOptions,
 ): void {
+  app.get<{ Querystring: { folderId?: string; search?: string; cursor?: string; limit?: string } }>("/api/markdown-documents", async (request, reply) => {
+    const folders = await options.provider.listFolders();
+    const access = normalizeBoardAccess(await options.accessProvider.resolveAccess(request));
+    const query = request.query;
+    if (query.folderId && !isBoardFolderAllowed(access, folders, query.folderId)) return folderAccessDenied(reply);
+    const rawLimit = query.limit === undefined ? 100 : Number(query.limit);
+    if (!Number.isInteger(rawLimit) || rawLimit < 1) return reply.code(422).send({ detail: "Invalid limit" });
+    try {
+      return await options.provider.listMarkdownDocuments({
+        ...(query.folderId ? { folderId: query.folderId } : {}),
+        ...(query.search ? { search: query.search } : {}),
+        ...(query.cursor ? { cursor: query.cursor } : {}),
+        limit: Math.min(rawLimit, 200),
+        ...(access.restricted ? { allowedFolderIds: [...visibleBoardFolderIds(access, folders)] } : {}),
+      });
+    } catch (error) { return sendMarkdownDocumentRouteError(reply, error, 422); }
+  });
   app.post("/api/markdown-documents", async (request, reply) => {
     const body = parseCreateBody(request.body);
     if (!body.ok) return validationError(reply, body);
@@ -113,17 +132,19 @@ export function registerMarkdownDocumentRoutes(
       body: string;
       x?: number;
       y?: number;
+      documentId?: string;
     } = {
       folderId: body.value.folderId,
       title: body.value.title,
       body: body.value.body,
     };
+    if (body.value.documentId !== undefined) payload.documentId = body.value.documentId;
     if (body.value.x !== undefined && body.value.y !== undefined) {
       payload.x = body.value.x;
       payload.y = body.value.y;
     }
 
-    return await createLocalMarkdownDocument(app, reply, options.hostProxy, payload);
+    return await createLocalMarkdownDocument(reply, options.serviceProvider(), payload);
   });
 
   app.get<{ Params: MarkdownDocumentParams }>(
@@ -160,9 +181,9 @@ export function registerMarkdownDocumentRoutes(
     },
   );
 
-  app.put<{ Params: MarkdownDocumentParams }>(
+  app.route<{ Params: MarkdownDocumentParams }>({ method: ["PUT", "PATCH"], url:
     "/api/markdown-documents/:document_id",
-    async (request, reply) => {
+    handler: async (request, reply) => {
       const body = parseUpdateBody(request.body);
       if (!body.ok) return validationError(reply, body);
 
@@ -178,15 +199,13 @@ export function registerMarkdownDocumentRoutes(
       }
 
       return await updateLocalMarkdownDocument(
-        app,
         reply,
-        options.hostProxy,
-        existing,
+        options.serviceProvider(),
         documentId,
         body.value,
       );
     },
-  );
+  });
 
   app.delete<{ Params: MarkdownDocumentParams }>(
     "/api/markdown-documents/:document_id",
@@ -203,18 +222,17 @@ export function registerMarkdownDocumentRoutes(
       }
 
       return await deleteLocalMarkdownDocument(
-        app,
         reply,
-        options.hostProxy,
-        existing,
+        options.serviceProvider(),
         documentId,
       );
     },
   );
 }
 
-function parseCreateBody(body: unknown): Validation<{ folderId: string; title: string; body: string; x?: number; y?: number }> {
+function parseCreateBody(body: unknown): Validation<{ folderId: string; title: string; body: string; x?: number; y?: number; documentId?: string }> {
   const parsed = z.object({ folderId: z.string().min(1), title: z.string(), body: z.string().default(""),
+    documentId: z.string().max(200).refine(value => value.trim().length > 0).optional(),
     x: z.number().finite().optional(), y: z.number().finite().optional(),
   }).strict().refine(value => (value.x === undefined) === (value.y === undefined), "x and y must be supplied together").safeParse(body);
   return parsed.success ? { ok: true, value: parsed.data } : { ok: false, message: parsed.error.message, statusCode: 422 };

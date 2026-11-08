@@ -1,3 +1,5 @@
+import { FolderContentSqlResolver } from "../board/folder_content_sql.js";
+import { readSessionConversation } from "../session/session_conversation_projection.js";
 import type {
   SessionHistoryEventRecord,
   SessionHistoryProvider,
@@ -60,6 +62,15 @@ class LiveSessionHistoryProvider implements SessionHistoryProvider {
     const storyRepository = new SessionStoryRepository(sqlResolver);
     this.storyReader = new SessionStoryReadService(storyRepository);
     this.turnSummaryReader = new SessionTurnSummaryReadService(storyRepository);
+  }
+
+  async readConversation(sessionId: string, limit?: string) {
+    const sql = await new FolderContentSqlResolver(this.sqlResolver).resolveSql();
+    const sessions = await sql<Record<string, unknown>[]>`
+      SELECT session_id, card_id, folder_id, display_name, node_id, agent_id, status,
+        created_at, caller_session_id, updated_at FROM sessions WHERE session_id = ${sessionId}
+    `;
+    return sessions[0] ? await readSessionConversation(sql, sessionId, sessions[0], null, limit) : null;
   }
 
   async readViewport(sessionId: string, yMin: number, yMax: number): Promise<unknown> {

@@ -588,6 +588,10 @@
     {
       "id": "145_event_search_scoped_prefix_guard.sql",
       "sha256": "bae43554b97293745baddd25012f70e48f82aeda4b079b60f14850fd12c7474d"
+    },
+    {
+      "id": "146_flat_folder_markdown_documents.sql",
+      "sha256": "07c8cdccf295bf11cef7548cf0e944964b9250a9ac7a77ee07f7b3b295b10484"
     }
   ]
 }

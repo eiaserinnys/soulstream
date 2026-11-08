@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { createBoardYjsSqlAdapter } from "../../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../../src/board/folder_content_sql.js";
 import { projectCardAttachmentRows } from "../../src/cards/card_attachment_projection.js";
 import {
   AttachmentTransportConnectionError,
@@ -146,7 +146,7 @@ describePostgres("legacy card attachment compatibility through PostgreSQL and HT
   });
 
   it("projects the old link and preserves authorized bytes, downloads, ranges, and offline failure", async () => {
-    const sql = createBoardYjsSqlAdapter(h.liveSql);
+    const sql = createFolderContentSqlAdapter(h.liveSql);
     const stored = (await h.sql.unsafe(
       "SELECT id,request,attachment_refs FROM cards WHERE id=$1",
       [CARD_ID],

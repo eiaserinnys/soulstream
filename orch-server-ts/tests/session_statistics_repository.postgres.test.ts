@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import postgres from "postgres";
 
-import type { BoardYjsSql } from "../src/board-yjs/board_yjs_sql.js";
+import type { FolderContentSql } from "../src/board/folder_content_sql.js";
 import type { EventIngressQuerySql } from "../src/node/event_ingress_repository.js";
 import {
   SESSION_STATISTICS_PROJECTION_SETTING_KEY,
@@ -47,7 +47,7 @@ describePostgres("session statistics repository", () => {
       })}, version = version + 1
       WHERE setting_key = ${SESSION_STATISTICS_PROJECTION_SETTING_KEY}
     `;
-    const repository = new SessionStatisticsRepository(sql as unknown as BoardYjsSql);
+    const repository = new SessionStatisticsRepository(sql as unknown as FolderContentSql);
     const request: SessionStatisticsReadRequest = {
       query: { period: "all", anchor: "2026-10-20" }, timezone: "Asia/Seoul", asOf: "2026-10-20T00:00:00Z",
       access: { restricted: true, allowedFolderIds: ["earliest-visible"] },
@@ -119,7 +119,7 @@ describePostgres("session statistics repository", () => {
       { id: "allowed-root", name: "Allowed project", parentFolderId: null },
       { id: "allowed-child", name: "Child folder", parentFolderId: "allowed-root" },
     ];
-    const repository = new SessionStatisticsRepository(sql as unknown as BoardYjsSql);
+    const repository = new SessionStatisticsRepository(sql as unknown as FolderContentSql);
     const request: SessionStatisticsReadRequest = {
       query: { period: "week", anchor: "2026-10-19" },
       timezone: "Asia/Seoul",

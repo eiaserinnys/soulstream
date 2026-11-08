@@ -48,7 +48,7 @@ describe("live DB markdown document route provider", () => {
     });
     expect(harness.normalizedCalls()).toEqual([
       "SELECT * FROM folder_get_all()",
-      expect.stringContaining("FROM markdown_documents md"),
+      expect.stringContaining("FROM markdown_documents WHERE id"),
     ]);
     expect(harness.calls.at(-1)?.values).toEqual(["doc-1"]);
   });

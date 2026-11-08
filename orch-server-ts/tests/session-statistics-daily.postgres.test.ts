@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createFullSchemaPostgresHarness, type FullSchemaPostgresHarness } from "./board_yjs_postgres_harness.js";
 import { SessionStatisticsDailyRepository } from "../src/usage/session_statistics_daily_repository.js";
 import { SessionStatisticsRepository } from "../src/usage/session_statistics_repository.js";
-import type { BoardYjsSql } from "../src/board-yjs/board_yjs_sql.js";
+import type { FolderContentSql } from "../src/board/folder_content_sql.js";
 import type { SessionStatisticsReadRequest } from "../src/usage/session_statistics_types.js";
 import { createSessionStatisticsDailyState } from "../src/usage/session_statistics_daily_state.js";
 import { read, usageRow } from "./fixtures/session_statistics_aggregation.fixtures.js";
@@ -16,7 +16,7 @@ describe("daily statistics PostgreSQL storage", () => {
     const sql = harness.sql;
     const counts = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM sessions`;
     expect(counts[0]?.count).toBe(0);
-    const repository = new SessionStatisticsDailyRepository(sql as unknown as BoardYjsSql);
+    const repository = new SessionStatisticsDailyRepository(sql as unknown as FolderContentSql);
     const state = createSessionStatisticsDailyState(read([usageRow()]), "2026-10-19");
     await repository.save(state, "20");
     const loaded = await repository.load("2026-10-19", "2026-10-20", 1, ["session-1"]);
@@ -34,7 +34,7 @@ describe("daily statistics PostgreSQL storage", () => {
     await sql`UPDATE system_settings SET value = '{"state":"ready","normalization_version":1,"covered_since":"2026-10-01T00:00:00Z"}'::jsonb
       WHERE setting_key = 'session_statistics_projection_v1'`;
     await sql`INSERT INTO sessions (session_id, created_at) VALUES ('daily-slice-test', '2026-10-01T00:00:00Z')`;
-    const repository = new SessionStatisticsRepository(sql as unknown as BoardYjsSql);
+    const repository = new SessionStatisticsRepository(sql as unknown as FolderContentSql);
     const input: SessionStatisticsReadRequest = { query: { period: "week", anchor: "2026-10-19" },
       asOf: "2026-10-20T00:00:00Z", timezone: "Asia/Seoul", day: null,
       access: { restricted: false, allowedFolderIds: [] }, visibleFolders: [] };

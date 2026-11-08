@@ -1,13 +1,13 @@
 import { randomUUID } from "node:crypto";
 import * as Y from "yjs";
-import type { BoardYjsQuerySql } from "../board-yjs/board_yjs_sql.js";
+import type { FolderContentQuerySql } from "../board/folder_content_sql.js";
 import { PageMutationCore, type PageMutationActor, type PageBatchOperation } from "../page/page_mutation_core.js";
 import { assertDatabaseMutationVersion, commitPageMutationInTransaction } from "../page/page_repository.js";
 import { readPageYDocReplica } from "../page/page_yjs_model.js";
 import type { PageUpdatedNotification } from "../page/page_update_notifications.js";
 
 /** Called only by the folder identity transaction and the one-time migration. */
-export async function reconcileFolderParentMounts(sql: BoardYjsQuerySql, input: {
+export async function reconcileFolderParentMounts(sql: FolderContentQuerySql, input: {
   pageId: string; title: string; previousParentFolderId: string | null;
   parentFolderId: string | null; actor: PageMutationActor; idempotencyKey: string;
 }): Promise<{ updates: PageUpdatedNotification[]; added: number }> {
@@ -70,7 +70,7 @@ export async function reconcileFolderParentMounts(sql: BoardYjsQuerySql, input: 
   return { updates, added };
 }
 
-export async function backfillFolderParentMounts(sql: BoardYjsQuerySql): Promise<number> {
+export async function backfillFolderParentMounts(sql: FolderContentQuerySql): Promise<number> {
   const missing = await sql<readonly { id: string; name: string; page_id: string; parent_folder_id: string }[]>`
     SELECT f.id, f.name, f.project_page_id AS page_id, f.parent_folder_id
     FROM folders f JOIN folders p ON p.id = f.parent_folder_id

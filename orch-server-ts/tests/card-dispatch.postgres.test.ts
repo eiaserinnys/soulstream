@@ -2,7 +2,7 @@ import { prepareCardReminderSchema } from "./card-reminder-postgres-fixture.js";
 import Fastify from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService, type CardMutationChange } from "../src/cards/card_control_plane_service.js";
 import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
 import { CardDispatcher, type CardDispatcherOptions } from "../src/cards/card_dispatcher.js";
@@ -52,7 +52,7 @@ describe("card dispatch and session lifecycle", () => {
         await h.sql `CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version INTEGER NOT NULL DEFAULT 1,
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_by TEXT NOT NULL)`;
         await h.sql `INSERT INTO system_settings(setting_key,value,updated_by) VALUES ('card_dispatch','{"nodeConcurrency":{"default":1}}','migration')`;
-        const sql = createBoardYjsSqlAdapter(h.liveSql);
+        const sql = createFolderContentSqlAdapter(h.liveSql);
         repo = new CardDispatchRepository(async () => sql);
         cards = new CardControlPlaneService(sql, { appendEventTx: async (tx, p) => {
                 const rows = await tx<{
@@ -430,7 +430,7 @@ describe("card dispatch and session lifecycle", () => {
         expect((await cards.getCard(next))!.card.status).toBe('queued');
     });
     it("returns 409 for a stale settings PUT and rejects negative or fractional concurrency", async () => {
-        const sql = createBoardYjsSqlAdapter(h.liveSql);
+        const sql = createFolderContentSqlAdapter(h.liveSql);
         const app = Fastify();
         registerCardDispatchSettingsRoutes(app, { currentEmail: () => human.actorUserId, isAdminEmail: () => true,
             get: () => readCardDispatchSettings(sql), put: input => updateCardDispatchSettings(sql, input) });

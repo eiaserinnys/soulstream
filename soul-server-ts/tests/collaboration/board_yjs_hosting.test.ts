@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { BoardYjsHostClient } from "../../src/collaboration/board_yjs_host_client.js";
+import { FlatFolderContentHostClient } from "../../src/catalog/flat_folder_content_host_client.js";
 
 function createSilentLogger() {
   return {
@@ -22,7 +22,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe("board Yjs orchestrator delegation", () => {
+describe("flat folder content orchestrator delegation", () => {
   it("worker source has no node-host mode or direct board persistence writer", () => {
     const sourceRoot = fileURLToPath(new URL("../../src/", import.meta.url));
     const forbidden = [
@@ -51,7 +51,7 @@ describe("board Yjs orchestrator delegation", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const client = new BoardYjsHostClient({
+    const client = new FlatFolderContentHostClient({
       orch: {
         baseUrl: "http://orch.local",
         headers: { authorization: "Bearer test-token" },
@@ -59,27 +59,17 @@ describe("board Yjs orchestrator delegation", () => {
       logger: createSilentLogger() as never,
     });
 
-    await client.updateBoardItemPosition(
-      "folder-1",
-      "markdown:doc-1",
-      120,
-      240,
-    );
+    await client.moveSessionToFolder("session-1", "folder-1");
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://orch.local/api/board-yjs/host/update-board-item-position");
+    expect(url).toBe("http://orch.local/internal/folder-content/move-session-to-folder");
     expect(init.method).toBe("POST");
     expect(init.headers).toEqual({
       authorization: "Bearer test-token",
       "content-type": "application/json",
     });
-    expect(JSON.parse(init.body as string)).toEqual({
-      folderId: "folder-1",
-      boardItemId: "markdown:doc-1",
-      x: 120,
-      y: 240,
-    });
+    expect(JSON.parse(init.body as string)).toEqual({ sessionId: "session-1", folderId: "folder-1" });
   });
 
   it("reads folder items through the explicit host route", async () => {
@@ -89,7 +79,7 @@ describe("board Yjs orchestrator delegation", () => {
       scan: null,
     }), { status: 200, headers: { "content-type": "application/json" } }));
     vi.stubGlobal("fetch", fetchMock);
-    const client = new BoardYjsHostClient({
+    const client = new FlatFolderContentHostClient({
       orch: { baseUrl: "http://orch.local", headers: { authorization: "Bearer test-token" } },
       logger: createSilentLogger() as never,
     });
@@ -97,7 +87,7 @@ describe("board Yjs orchestrator delegation", () => {
       itemTypes: null, limit: 20, cursor: 0 };
     await client.listFolderItems(params);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toBe("http://orch.local/api/board-yjs/host/list-folder-items");
+    expect(url).toBe("http://orch.local/internal/folder-content/list-folder-items");
     expect(JSON.parse(init.body as string)).toEqual(params);
   });
 });

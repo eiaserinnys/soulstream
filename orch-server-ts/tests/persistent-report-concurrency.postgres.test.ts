@@ -3,7 +3,7 @@ import postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { startPostgresTestContainer } from "../../packages/db-schema/scripts/postgres-test-container.mjs";
 import { waitForPostgres } from "./persistent-session-settings-world.js";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import type { SqlClient, FolderDbPort } from "../src/cards/control_plane/card_types.js";
 import { PersistentReportService, type PublishPersistentReports } from "../src/session/persistent_report_service.js";
@@ -64,7 +64,7 @@ describe("PAS report commit and lock ordering on production schema", () => {
     await waitForPostgres(sql);
     await sql.unsafe(readFileSync(new URL("../../packages/db-schema/sql/schema.sql", import.meta.url), "utf8"));
     expect(Number((await sql`SELECT COUNT(*) AS n FROM sessions`)[0]!.n)).toBe(0);
-    adapted = createBoardYjsSqlAdapter(sql as never);
+    adapted = createFolderContentSqlAdapter(sql as never);
   }, 90_000);
   afterAll(async () => { await sql?.end({ timeout: 2 }); stop?.(); });
 

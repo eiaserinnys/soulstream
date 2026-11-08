@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import type { SqlClient } from "../src/control_plane/control_plane_types.js";
 import { SessionReadRepository } from "../src/control_plane/repositories/session_read_repository.js";
 import type { LivePostgresSql } from "../src/runtime/live_db_sql.js";
@@ -15,7 +15,7 @@ describe("active child sessions carry their card reference", () => {
   beforeAll(async () => {
     h = await createFullSchemaPostgresHarness();
     // The runtime hands this repository the board-yjs adapter, cast to the driver's type.
-    repository = new SessionReadRepository(createBoardYjsSqlAdapter(h.sql as unknown as LivePostgresSql) as unknown as SqlClient);
+    repository = new SessionReadRepository(createFolderContentSqlAdapter(h.sql as unknown as LivePostgresSql) as unknown as SqlClient);
     await h.sql`INSERT INTO folders(id,name) VALUES ('folder-a','A')`;
     numbered = (await h.sql<{ id: string; number: number }[]>`
       INSERT INTO cards(id,folder_id,position_key,title) VALUES ('card-numbered','folder-a','a','번호 있는 카드') RETURNING id,number`)[0]!;

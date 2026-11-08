@@ -1,7 +1,7 @@
 import {
-  BoardYjsSqlResolver,
-  type BoardYjsQuerySql,
-} from "../board-yjs/board_yjs_sql.js";
+  FolderContentSqlResolver,
+  type FolderContentQuerySql,
+} from "../board/folder_content_sql.js";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 
 import type {
@@ -15,10 +15,10 @@ import type {
 type Row = Record<string, unknown>;
 
 export class SqlRecurringJobRepository implements RecurringJobRepository {
-  private readonly sqlResolver: BoardYjsSqlResolver;
+  private readonly sqlResolver: FolderContentSqlResolver;
 
   constructor(resolver: LiveDbSqlResolver) {
-    this.sqlResolver = new BoardYjsSqlResolver(resolver);
+    this.sqlResolver = new FolderContentSqlResolver(resolver);
   }
 
   async findJobForOwner(
@@ -340,7 +340,7 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
   }
 
   private async currentOrConflictWith(
-    sql: BoardYjsQuerySql,
+    sql: FolderContentQuerySql,
     jobId: string,
     ownerEmail: string,
   ): Promise<RecurringJobConflict | null> {
@@ -352,7 +352,7 @@ export class SqlRecurringJobRepository implements RecurringJobRepository {
 }
 
 async function createRunWithCollisionLookup(
-  sql: BoardYjsQuerySql,
+  sql: FolderContentQuerySql,
   input: RecurringJobRun,
 ): Promise<RecurringRunCreation> {
   const created = await insertRun(sql, input);
@@ -371,7 +371,7 @@ async function createRunWithCollisionLookup(
 }
 
 async function createManualRunWithCollisionRecord(
-  sql: BoardYjsQuerySql,
+  sql: FolderContentQuerySql,
   input: RecurringJobRun,
 ): Promise<RecurringRunCreation> {
   const created = await insertRun(sql, input);
@@ -398,7 +398,7 @@ async function createManualRunWithCollisionRecord(
 }
 
 async function findManualRunByIdempotency(
-  sql: BoardYjsQuerySql,
+  sql: FolderContentQuerySql,
   jobId: string,
   idempotencyKey: string | null,
 ): Promise<RecurringJobRun | null> {
@@ -411,7 +411,7 @@ async function findManualRunByIdempotency(
 }
 
 async function insertRun(
-  sql: BoardYjsQuerySql,
+  sql: FolderContentQuerySql,
   input: RecurringJobRun,
 ): Promise<RecurringJobRun | null> {
   const rows = await sql<Row[]>`
@@ -429,7 +429,7 @@ async function insertRun(
 }
 
 async function cancelAutomaticPendingRunsWith(
-  sql: BoardYjsQuerySql,
+  sql: FolderContentQuerySql,
   jobId: string,
   reason: { code: string; message: string },
   now: Date,
@@ -444,7 +444,7 @@ async function cancelAutomaticPendingRunsWith(
 }
 
 async function cancelPendingRunsOnArchiveWith(
-  sql: BoardYjsQuerySql,
+  sql: FolderContentQuerySql,
   jobId: string,
   reason: { code: string; message: string },
   now: Date,

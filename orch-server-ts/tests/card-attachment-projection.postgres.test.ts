@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { CardRepositoryRead } from "../src/cards/control_plane/card_repository_read.js";
 import type { CardMcpGetInput } from "../src/cards/card_mcp_read.js";
@@ -41,7 +41,7 @@ describe("card attachment evidence projection", () => {
       "INSERT INTO sessions(session_id,status) VALUES ($1,'running'),($2,'running')",
       [ASSIGNEE, MEMBER],
     );
-    const sql = createBoardYjsSqlAdapter(h.liveSql);
+    const sql = createFolderContentSqlAdapter(h.liveSql);
     cardRepository = new CardRepositoryRead(sql, [OWN_ORIGIN]);
     cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx }, {
       emitFolderUpdated: async () => {},

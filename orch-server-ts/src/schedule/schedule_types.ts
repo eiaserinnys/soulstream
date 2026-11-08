@@ -1,6 +1,6 @@
-import type { BoardYjsSql } from "../board-yjs/board_yjs_sql.js";
+import type { FolderContentSql } from "../board/folder_content_sql.js";
 
-export type SqlClient = BoardYjsSql;
+export type SqlClient = FolderContentSql;
 export type SoulstreamScheduleKind = "wakeup" | "cron";
 export type SoulstreamScheduleStatus =
   | "active"

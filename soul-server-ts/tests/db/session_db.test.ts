@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import { SessionDB, type SqlClient } from "../../src/db/session_db.js";
 import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
 import { ClaudeTranscriptRepository } from "../../../orch-server-ts/src/control_plane/repositories/claude_transcript_repository.js";
+import { configureTestBoardProjectionReadHost } from "../helpers/configure_test_board_projection_host.js";
 
 interface MockCall {
   fragments: string[];
@@ -53,7 +54,8 @@ function createMockSql(resultFor?: (call: MockCall) => unknown[]) {
 
 function createFolderHostedDb(sql: SqlClient): SessionDB {
   const db = new SessionDB();
-  db.configureFolderHost(new FolderControlPlaneService(sql as never) as never);
+  const reads = configureTestBoardProjectionReadHost(db, sql);
+  db.configureFolderHost(new FolderControlPlaneService(sql as never, () => reads.getBoardItems()) as never);
   return db;
 }
 
@@ -186,7 +188,7 @@ describe("SessionDB folder ops (B-5)", () => {
     expect(await createFolderHostedDb(emptySql).getDefaultFolder("missing")).toBeNull();
   });
 
-  it("getCatalog → catalog cache 우선 + legacy read-only fallback으로 boardItems를 합성", async () => {
+  it("getCatalog → 평면 저장소에서 boardItems를 읽는다", async () => {
     const createdAt = new Date("2026-06-03T00:00:00.000Z");
     const folderRows = [
       {
@@ -233,14 +235,15 @@ describe("SessionDB folder ops (B-5)", () => {
       const text = call.fragments.join("|");
       if (text.includes("folder_get_all")) return folderRows;
       if (text.includes("catalog_get_sessions")) return sessionRows;
-      if (text.includes("FROM board_yjs_catalog_cache")) {
-        return [{ folder_id: "f1", board_items: cachedBoardItems }];
+      if (text.includes("UNION ALL") && text.includes("FROM markdown_documents")) {
+        return cachedBoardItems.map(item => ({
+          id: item.id, folder_id: item.folderId, membership_kind: item.membershipKind,
+          item_type: item.itemType, item_id: item.itemId, x: item.x, y: item.y,
+          metadata: item.metadata, created_at: new Date(item.createdAt), updated_at: new Date(item.updatedAt),
+        }));
       }
       if (text.includes("board_yjs_documents") || text.includes("board_yjs_updates")) {
         throw new Error("catalog must not decode or compact Yjs documents");
-      }
-      if (text.includes("board_item_get_all")) {
-        throw new Error("catalog must not read all board_items when cache exists");
       }
       if (text.includes("INSERT INTO board_items") || text.includes("DELETE FROM board_items")) {
         throw new Error("catalog must not write board_items");
@@ -296,7 +299,7 @@ describe("SessionDB folder ops (B-5)", () => {
     ]);
     expect(secondCatalog.boardItems).toEqual(catalog.boardItems);
     expect(calls.filter((call) =>
-      call.fragments.join("|").includes("FROM board_yjs_catalog_cache")
+      call.fragments.join("|").includes("FROM markdown_documents")
     )).toHaveLength(2);
     expect(calls.some((call) =>
       call.fragments.join("|").includes("board_yjs_documents") ||
@@ -334,7 +337,7 @@ describe("SessionDB.getPrimarySessionBoardItem", () => {
       createdAt: "2026-07-07T00:00:00.000Z",
       updatedAt: "2026-07-07T00:00:00.000Z",
     });
-    db.configureBoardProjectionHost({ getPrimarySessionBoardItem } as never);
+    db.configureFolderContentHost({ getPrimarySessionBoardItem } as never);
 
     const item = await db.getPrimarySessionBoardItem("s1");
 
@@ -361,7 +364,7 @@ describe("SessionDB.getPrimarySessionBoardItem", () => {
     const { sql, calls } = createMockSql();
     const db = new SessionDB();
     const getPrimarySessionBoardItem = vi.fn().mockResolvedValue(null);
-    db.configureBoardProjectionHost({ getPrimarySessionBoardItem } as never);
+    db.configureFolderContentHost({ getPrimarySessionBoardItem } as never);
 
     await expect(db.getPrimarySessionBoardItem("missing")).resolves.toBeNull();
     expect(getPrimarySessionBoardItem).toHaveBeenCalledWith("missing");

@@ -2,7 +2,7 @@ import Fastify from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { createLiveDbSqlResolver } from "../src/runtime/live_db_sql.js";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { executeCardOperation } from "../src/cards/card_operations.js";
 import { registerFolderRoutes, type FolderRouteOptions } from "../src/folders/folder_routes.js";
@@ -24,7 +24,7 @@ describe("cards storage, HTTP and planner", () => {
     h = await createPagePostgresHarness();
     await h.sql`INSERT INTO folders(id,name) VALUES ('cards-a','A'),('cards-b','B')`;
     await h.sql`INSERT INTO sessions(session_id,folder_id,status) VALUES ('card-agent','cards-a','running')`;
-    cards = new CardControlPlaneService(createBoardYjsSqlAdapter(h.liveSql), {
+    cards = new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql), {
       appendEventTx: async (sql,p) => {
         const rows=await sql<{ id:number }[]>`INSERT INTO events(session_id,id,event_type,payload,dedupe_key)
           SELECT ${p.sessionId},COALESCE(max(id),0)+1,${p.eventType},${sql.json(JSON.parse(p.payload))},${p.dedupeKey ?? null}
@@ -180,7 +180,7 @@ describe("cards storage, HTTP and planner", () => {
   it("preserves folder status with cards instead of sections", async () => {
     const resolver=createLiveDbSqlResolver({ sql:h.liveSql });
     const identity=new FolderProjectIdentityService({ repository:new SqlFolderProjectIdentityRepository(resolver),
-      withBoardApplication:async (_input,persist)=>persist([]),hydratePage:async ()=>undefined });
+      hydratePage:async ()=>undefined });
     const services={ identity,cards };
     await executeFolderOperation(services,'set_folder_status',{ status:'completed',expectedVersion:1,idempotencyKey:key() },{ folderId:'cards-a' },human);
     const snapshot=(await cards.getFolder('cards-a'))!;

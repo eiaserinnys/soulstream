@@ -3,8 +3,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { SessionDeliveryRepository } from
   "../../../orch-server-ts/src/control_plane/repositories/session_delivery_repository.js";
-import { createBoardYjsSqlAdapter } from
-  "../../../orch-server-ts/src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from
+  "../../../orch-server-ts/src/board/folder_content_sql.js";
 import { registerPersistenceHostRoutes } from
   "../../../orch-server-ts/src/control_plane/persistence_host_routes.js";
 import type { PersistenceHostRepositories } from
@@ -24,8 +24,8 @@ describePostgres("session delivery retry policy PostgreSQL contract", () => {
 
   beforeAll(async () => {
     harness = await createFullSchemaPostgresHarness();
-    const productionSql = createBoardYjsSqlAdapter(
-      harness.sql as unknown as Parameters<typeof createBoardYjsSqlAdapter>[0],
+    const productionSql = createFolderContentSqlAdapter(
+      harness.sql as unknown as Parameters<typeof createFolderContentSqlAdapter>[0],
     );
     repository = new SessionDeliveryRepository(productionSql);
     registerPersistenceHostRoutes(app, {

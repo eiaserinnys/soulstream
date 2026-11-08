@@ -1,6 +1,6 @@
 import { SessionStatisticsDailyRepository } from "./session_statistics_daily_repository.js";
 import type { UsageStatsOverview } from "@soulstream/wire-schema/session-statistics";
-import type { BoardYjsQuerySql, BoardYjsSql } from "../board-yjs/board_yjs_sql.js";
+import type { FolderContentQuerySql, FolderContentSql } from "../board/folder_content_sql.js";
 import { SESSION_STATISTICS_PROJECTION_SETTING_KEY } from "./session_statistics_backfill.js";
 import {
   createCanonicalSessionStatisticsFacts,
@@ -56,7 +56,7 @@ type CostSource = {
 
 export class SessionStatisticsRepository implements SessionStatisticsRepositoryPort {
   readonly daily: SessionStatisticsDailyRepository;
-  constructor(private readonly sql: BoardYjsSql) {
+  constructor(private readonly sql: FolderContentSql) {
     this.daily = new SessionStatisticsDailyRepository(sql);
   }
 
@@ -163,7 +163,7 @@ export class SessionStatisticsRepository implements SessionStatisticsRepositoryP
 }
 
 async function readAuthorizedSessions(
-  sql: BoardYjsQuerySql,
+  sql: FolderContentQuerySql,
   input: SessionStatisticsReadRequest,
 ): Promise<SessionStatisticsScopeSession[]> {
   const visibleFolderIds = [...new Set(input.visibleFolders.map((folder) => folder.id))];
@@ -221,7 +221,7 @@ function resolveVisibleProject(
   return { id: current.id, label };
 }
 
-async function readProjectionState(sql: BoardYjsQuerySql): Promise<ProjectionState> {
+async function readProjectionState(sql: FolderContentQuerySql): Promise<ProjectionState> {
   const rows = await sql<readonly ProjectionSqlRow[]>`
     SELECT value, version
     FROM system_settings
@@ -267,7 +267,7 @@ function parseJson(value: string): unknown {
 }
 
 async function readAuthorizedEarliest(
-  sql: BoardYjsQuerySql,
+  sql: FolderContentQuerySql,
   input: SessionStatisticsReadRequest,
 ): Promise<string | null> {
   const visibleFolderIds = [...new Set(input.visibleFolders.map((folder) => folder.id))];
@@ -303,7 +303,7 @@ function buildProjectionStatus(
 }
 
 async function readSelectedCostDecimals(
-  sql: BoardYjsQuerySql,
+  sql: FolderContentQuerySql,
   asOf: string,
   rows: readonly CanonicalSessionStatisticsRow[],
 ): Promise<ReadonlyMap<string, string>> {

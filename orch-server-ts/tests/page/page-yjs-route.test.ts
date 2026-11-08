@@ -7,9 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import WebSocket from "ws";
 import * as Y from "yjs";
 
-import { BoardYjsService } from "../../src/board-yjs/board_yjs_service.js";
-import { DASHBOARD_AUTH_COOKIE_NAME } from "../../src/board-yjs/board_yjs_auth.js";
-import { registerBoardYjsRoutes } from "../../src/board-yjs/board_yjs_route.js";
+import { DASHBOARD_AUTH_COOKIE_NAME } from "../../src/auth/socket_auth.js";
 import { createPageYDocSnapshot } from "../../src/page/page_yjs_model.js";
 import { registerPageYjsRoutes } from "../../src/page/page_yjs_route.js";
 import { PageYjsService } from "../../src/page/page_service.js";
@@ -191,19 +189,11 @@ describe("orch public page Yjs routes", () => {
     }
   }, 30_000);
 
-  it("closes a corrupted page with 1008 while board WS and dashboard health remain healthy", async () => {
+  it("closes a corrupted page with 1008 while dashboard health remains healthy", async () => {
     const pageRepository = new MemoryPageRepository();
     pageRepository.snapshots.set("page:broken", Uint8Array.of(255, 255, 255));
-    const boardRepository = new MemoryBoardRepository();
     const app = Fastify({ logger: false });
     app.get("/api/health", async () => ({ status: "ok" }));
-    registerBoardYjsRoutes(app, {
-      createService: (logger) => new BoardYjsService({
-        repository: boardRepository,
-        logger,
-        auth: productionAuth(),
-      }),
-    });
     registerPageYjsRoutes(app, {
       createService: (logger) => createPageService(pageRepository, productionAuth(), logger),
       authBearerToken: "service-token",
@@ -215,8 +205,6 @@ describe("orch public page Yjs routes", () => {
       );
       expect(close).toEqual({ code: 1008, reason: "invalid page document" });
 
-      const board = connectBoardProvider(`${address.replace("http", "ws")}/yjs/folder-1`);
-      await waitForSync(board);
       const health = await fetch(`${address}/api/health`);
       expect(health.status).toBe(200);
       await expect(health.json()).resolves.toEqual({ status: "ok" });
@@ -296,18 +284,6 @@ function connectProvider(
     document: new Y.Doc(),
     ...(options.token === undefined ? {} : { token: options.token }),
     WebSocketPolyfill,
-  } as HocuspocusProviderConfiguration & { WebSocketPolyfill: typeof WebSocket });
-  providers.push(provider);
-  return provider;
-}
-
-function connectBoardProvider(url: string): HocuspocusProvider {
-  const provider = new HocuspocusProvider({
-    url,
-    name: "board-folder:folder-1",
-    document: new Y.Doc(),
-    token: "service-token",
-    WebSocketPolyfill: WebSocket,
   } as HocuspocusProviderConfiguration & { WebSocketPolyfill: typeof WebSocket });
   providers.push(provider);
   return provider;
@@ -434,51 +410,5 @@ class MemoryPageRepository {
   async getPageBacklinks() { return { items: [], next_cursor: null }; }
   async commitPageMutation(): Promise<never> {
     throw new Error("not used in websocket route tests");
-  }
-}
-
-class MemoryBoardRepository {
-  readonly snapshots = new Map<string, Uint8Array>();
-  readonly revisions = new Map<string, number>();
-
-  async loadBoardYjsSnapshot(documentName: string) {
-    const snapshot = this.snapshots.get(documentName);
-    return snapshot
-      ? { snapshot, revision: this.revisions.get(documentName) ?? 1 }
-      : null;
-  }
-  async getBoardYjsSnapshot(documentName: string): Promise<Uint8Array | null> {
-    return this.snapshots.get(documentName) ?? null;
-  }
-
-  async resolveBoardYjsFolderScope(container: { folderId: string }) {
-    return {
-      ...container,
-    };
-  }
-
-  async backfillTaskBoardItemsIntoSnapshot(
-    _documentName: string,
-    _container: unknown,
-    snapshot: { snapshot: Uint8Array; revision: number },
-  ) {
-    return snapshot;
-  }
-
-  async loadBoardYjsSeed() {
-    return { boardItems: [], markdownDocuments: [] };
-  }
-
-  async storeBoardYjsSnapshot(
-    documentName: string,
-    snapshot: Uint8Array,
-    expectedRevision: number | null,
-  ) {
-    const actualRevision = this.revisions.get(documentName) ?? null;
-    if (expectedRevision !== actualRevision) return null;
-    const revision = (actualRevision ?? 0) + 1;
-    this.snapshots.set(documentName, snapshot);
-    this.revisions.set(documentName, revision);
-    return { snapshot, revision };
   }
 }

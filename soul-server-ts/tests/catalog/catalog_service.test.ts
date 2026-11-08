@@ -43,9 +43,9 @@ function createMockSql(resultFor?: (call: MockCall) => unknown[]) {
 
 function createSessionDb(sql: SqlClient): SessionDB {
   const db = new SessionDB();
-  configureTestBoardProjectionReadHost(db, sql);
+  const reads = configureTestBoardProjectionReadHost(db, sql);
   db.configureFolderHost(
-    new FolderControlPlaneService(sql as never) as unknown as FolderHostClient,
+    new FolderControlPlaneService(sql as never, () => reads.getBoardItems()) as unknown as FolderHostClient,
   );
   return db;
 }
@@ -105,182 +105,29 @@ function setupSqlWithCatalog() {
   });
 }
 
-describe("CatalogService board items", () => {
-  it("moves a primary board item to a folder through Board Yjs", async () => {
-    const boardItem = { id: "markdown:doc-1", folderId: "source", membershipKind: "primary", itemType: "markdown", itemId: "doc-1", x: 0, y: 0, metadata: {} };
-    const moved = { ...boardItem, folderId: "target" };
-    const db = {
-      getFolderById: vi.fn().mockResolvedValue({ id: "target" }),
-      getBoardItemById: vi.fn().mockResolvedValue(boardItem),
-      getAllFolders: vi.fn().mockResolvedValue([]),
-    } as unknown as SessionDB;
-    const boardYjsService = { moveBoardItemToFolder: vi.fn().mockResolvedValue(moved) };
-    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster, boardYjsService as never);
-
-    await expect(svc.moveBoardItemToFolder({ boardItemId: boardItem.id, folderId: "target", idempotencyKey: "move-1" }))
-      .resolves.toEqual({ boardItem: moved, enrolled: false });
-    expect(boardYjsService.moveBoardItemToFolder).toHaveBeenCalledWith({ boardItem, targetFolderId: "target", idempotencyKey: "move-1" });
-    expect(emitCatalogUpdated).toHaveBeenCalled();
-  });
-
-  it("createMarkdownDocument는 orch Board Yjs mutation port만 사용한다", async () => {
-    const db = {
-      getAllFolders: vi.fn().mockResolvedValue([]),
-    } as unknown as SessionDB;
-    const boardYjsService = {
-      createMarkdownDocument: vi.fn().mockResolvedValue({
-        document: { id: "doc-1", title: "Note", body: "Body", version: 1 },
-        boardItem: { id: "markdown:doc-1", folderId: "f1", itemType: "markdown", itemId: "doc-1", x: 60, y: 100 },
-      }),
-    };
-    const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster, boardYjsService as never);
-
-    const result = await svc.createMarkdownDocument({
-      folderId: "f1",
-      title: "Note",
-      body: "Body",
-      x: 59,
-      y: 101,
-    });
-
-    expect(boardYjsService.createMarkdownDocument).toHaveBeenCalledWith({
-      folderId: "f1",
-      title: "Note",
-      body: "Body",
-      x: 60,
-      y: 100,
-      documentId: expect.stringMatching(/^[0-9a-f-]{36}$/i),
-    });
-    expect(result.document.id).toBe("doc-1");
-    expect(emitCatalogUpdated).toHaveBeenCalledWith(
-      [],
-      {},
-      {
-        "markdown:doc-1": expect.objectContaining({
-          id: "markdown:doc-1",
-          itemType: "markdown",
-          itemId: "doc-1",
-        }),
-      },
-    );
-  });
-
-  it("updateBoardItemPosition는 board item의 container를 찾아 orch port를 갱신", async () => {
-    const db = {
-      getBoardItemById: vi.fn().mockResolvedValue({
-        id: "markdown:doc-1",
-        folderId: "f1",
-        itemType: "markdown",
-        itemId: "doc-1",
-        x: 0,
-        y: 0,
-      }),
-      getAllFolders: vi.fn().mockResolvedValue([]),
-    } as unknown as SessionDB;
-    const boardYjsService = {
-      updateBoardItemPosition: vi.fn().mockResolvedValue(undefined),
-    };
-    const { broadcaster } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster, boardYjsService as never);
-
-    await svc.updateBoardItemPosition("markdown:doc-1", 59, 101);
-
-    expect(boardYjsService.updateBoardItemPosition).toHaveBeenCalledWith(
-      "f1",
-      "markdown:doc-1",
-      60,
-      100,
-    );
-  });
-
-  it("updateMarkdownDocument는 orch Board Yjs mutation port만 사용한다", async () => {
-    const db = {
-      getMarkdownDocumentBoardItem: vi.fn().mockResolvedValue({
-        id: "markdown:doc-1",
-        folderId: "f1",
-        itemType: "markdown",
-        itemId: "doc-1",
-        x: 0,
-        y: 0,
-      }),
-      getAllFolders: vi.fn().mockResolvedValue([]),
-    } as unknown as SessionDB;
-    const boardYjsService = {
-      updateMarkdownDocument: vi.fn().mockResolvedValue({ id: "doc-1", title: "New", body: "Body", version: 2 }),
-    };
-    const { broadcaster } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster, boardYjsService as never);
-
-    const result = await svc.updateMarkdownDocument("doc-1", {
-      title: "New",
-      body: "Body",
-      expectedVersion: 1,
-    });
-
-    expect(boardYjsService.updateMarkdownDocument).toHaveBeenCalledWith(
-      "f1",
-      "doc-1",
-      { title: "New", body: "Body", expectedVersion: 1 },
-    );
-    expect(result).toEqual({ id: "doc-1", title: "New", body: "Body", version: 2 });
-  });
-
-  it("deleteMarkdownDocument는 orch Board Yjs mutation port만 사용한다", async () => {
-    const db = {
-      getMarkdownDocumentBoardItem: vi.fn().mockResolvedValue({
-        id: "markdown:doc-1",
-        folderId: "f1",
-        itemType: "markdown",
-        itemId: "doc-1",
-        x: 0,
-        y: 0,
-      }),
-      getAllFolders: vi.fn().mockResolvedValue([]),
-    } as unknown as SessionDB;
-    const boardYjsService = {
+describe("CatalogService folder content", () => {
+  it("forwards folder content mutations without emitting duplicate catalog events", async () => {
+    const boardItem = { id: "markdown:doc-1", folderId: "target", itemType: "markdown", itemId: "doc-1", x: 0, y: 0, metadata: {} };
+    const document = { id: "doc-1", folderId: "target", title: "Note", body: "Body", version: 1 };
+    const host = {
+      moveBoardItemToFolder: vi.fn().mockResolvedValue(boardItem),
+      createMarkdownDocument: vi.fn().mockResolvedValue({ document, boardItem }),
+      updateMarkdownDocument: vi.fn().mockResolvedValue({ ...document, version: 2 }),
       deleteMarkdownDocument: vi.fn().mockResolvedValue(undefined),
     };
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster, boardYjsService as never);
-
+    const svc = new CatalogService({} as SessionDB, broadcaster, host as never);
+    const move = { boardItemId: boardItem.id, folderId: "target", idempotencyKey: "move-1" };
+    await expect(svc.moveBoardItemToFolder(move)).resolves.toEqual({ boardItem, enrolled: false });
+    expect(host.moveBoardItemToFolder).toHaveBeenCalledWith(move);
+    await expect(svc.createMarkdownDocument({ folderId: "target", title: "Note", body: "Body" }))
+      .resolves.toEqual({ document, boardItem });
+    expect(host.createMarkdownDocument).toHaveBeenCalledWith(expect.objectContaining({ folderId: "target", title: "Note", body: "Body" }));
+    await svc.updateMarkdownDocument("doc-1", { title: "New", expectedVersion: 1 });
+    expect(host.updateMarkdownDocument).toHaveBeenCalledWith("", "doc-1", { title: "New", expectedVersion: 1 });
     await svc.deleteMarkdownDocument("doc-1");
-
-    expect(boardYjsService.deleteMarkdownDocument).toHaveBeenCalledWith(
-      "f1",
-      "doc-1",
-    );
-    expect(emitCatalogUpdated).toHaveBeenCalledWith(
-      [],
-      {},
-      { "markdown:doc-1": null },
-    );
-  });
-
-  it("orphan markdown projection은 worker DB에서 조용히 고치지 않는다", async () => {
-    const db = {
-      getMarkdownDocumentBoardItem: vi.fn().mockResolvedValue(null),
-      getMarkdownDocument: vi.fn().mockResolvedValue({
-        id: "doc-orphan",
-        title: "Orphan",
-        body: "",
-        version: 1,
-      }),
-      getAllFolders: vi.fn().mockResolvedValue([]),
-    } as unknown as SessionDB;
-    const { broadcaster } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster, {
-      updateMarkdownDocument: vi.fn(),
-      deleteMarkdownDocument: vi.fn(),
-    } as never);
-
-    await expect(svc.updateMarkdownDocument("doc-orphan", {
-      title: "New",
-      expectedVersion: 1,
-    })).rejects.toThrow("markdown document board item not found");
-    await expect(svc.deleteMarkdownDocument("doc-orphan"))
-      .rejects.toThrow("markdown document board item not found");
+    expect(host.deleteMarkdownDocument).toHaveBeenCalledWith("", "doc-1");
+    expect(emitCatalogUpdated).not.toHaveBeenCalled();
   });
 });
 
@@ -293,6 +140,7 @@ describe("CatalogService.broadcastSessionDeletion", () => {
     const svc = new CatalogService(
       db,
       broadcaster,
+      {} as never,
     );
 
     await svc.broadcastSessionDeletion("s1", ["session:s1"]);
@@ -311,7 +159,7 @@ describe("CatalogService.broadcastCatalog", () => {
     const { sql, calls } = setupSqlWithCatalog();
     const db = createSessionDb(sql);
     const { broadcaster, emitCatalogUpdated } = createBroadcasterMock();
-    const svc = new CatalogService(db, broadcaster);
+    const svc = new CatalogService(db, broadcaster, {} as never);
 
     await svc.broadcastCatalog();
 

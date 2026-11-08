@@ -1,12 +1,10 @@
 import { reconcileFolderParentMounts } from "./folder_parent_mounts.js";
 import { isDeepStrictEqual } from "node:util";
 import { appendFolderOperation } from "./folder_operation_store.js";
-import { syncBoardYjsReplicaWithSql } from "../board-yjs/board_yjs_replica_sync.js";
-import { storePageDocument } from "../page/page_repository_projection.js";
 import { CardVersionConflict } from "../cards/control_plane/card_models.js";
 import { Buffer } from "node:buffer";
 
-import { BoardYjsSqlResolver, type BoardYjsQuerySql } from "../board-yjs/board_yjs_sql.js";
+import { FolderContentSqlResolver, type FolderContentQuerySql } from "../board/folder_content_sql.js";
 import {
   assertDatabaseMutationVersion,
   commitPageMutationInTransaction,
@@ -28,10 +26,10 @@ type OperationRow = Record<string, unknown> & {
 };
 
 export class SqlFolderProjectIdentityRepository implements FolderProjectIdentityRepository {
-  private readonly sqlResolver: BoardYjsSqlResolver;
+  private readonly sqlResolver: FolderContentSqlResolver;
 
   constructor(resolver: LiveDbSqlResolver) {
-    this.sqlResolver = new BoardYjsSqlResolver(resolver);
+    this.sqlResolver = new FolderContentSqlResolver(resolver);
   }
 
   async findMutationByIdempotencyKey(
@@ -75,10 +73,6 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
           ${input.actor.actorSessionId ?? null}, ${pageCommit.operation.actor_event_id ?? null}
         )
       `;
-      for (const application of input.boardApplications ?? []) {
-        await storePageDocument(transaction, application.documentName, application.snapshot);
-        await syncBoardYjsReplicaWithSql(transaction, application.scope, application.replica, application.documentName);
-      }
       const mounts = await reconcileFolderParentMounts(transaction, {
         pageId: input.pageId, title: input.name, previousParentFolderId: null,
         parentFolderId: input.parentFolderId, actor: input.actor, idempotencyKey: input.idempotencyKey,
@@ -135,10 +129,6 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
           AND project_page_id = ${input.binding.pageId}
       `;
 
-      for (const application of input.boardApplications ?? []) {
-        await storePageDocument(transaction, application.documentName, application.snapshot);
-        await syncBoardYjsReplicaWithSql(transaction, application.scope, application.replica, application.documentName);
-      }
       const parentFolderId = hasParent ? input.update.parentFolderId ?? null : input.binding.parentFolderId;
       const mounts = parentFolderId !== input.binding.parentFolderId
         ? await reconcileFolderParentMounts(transaction, {
@@ -189,7 +179,7 @@ export class SqlFolderProjectIdentityRepository implements FolderProjectIdentity
 }
 
 async function commitPage(
-  sql: BoardYjsQuerySql,
+  sql: FolderContentQuerySql,
   input: { pageId?: string; pageOperationId: string; pageApplication: Parameters<typeof commitPageMutationInTransaction>[1]["application"] },
 ) {
   const pageId = input.pageId ?? input.pageApplication.replica.page.id;
@@ -202,11 +192,11 @@ async function commitPage(
   return await commitPageMutationInTransaction(sql, commitInput);
 }
 
-async function lock(sql: BoardYjsQuerySql, id: string): Promise<void> {
+async function lock(sql: FolderContentQuerySql, id: string): Promise<void> {
   await sql`SELECT pg_advisory_xact_lock(hashtextextended(${id}, 0))`;
 }
 
-async function assertParent(sql: BoardYjsQuerySql, parentFolderId: string | null, folderId?: string): Promise<void> {
+async function assertParent(sql: FolderContentQuerySql, parentFolderId: string | null, folderId?: string): Promise<void> {
   if (parentFolderId === null) return;
   const rows = await sql<readonly { exists: boolean }[]>`
     SELECT EXISTS(
@@ -225,7 +215,7 @@ async function assertParent(sql: BoardYjsQuerySql, parentFolderId: string | null
 }
 
 async function bindingRows(
-  sql: BoardYjsQuerySql,
+  sql: FolderContentQuerySql,
   by: "folder" | "page",
   id: string,
   forUpdate = false,
@@ -296,7 +286,7 @@ function folderRow(row: Record<string, unknown>): FolderProjectRecord | null {
 }
 
 async function findOperation(
-  sql: BoardYjsQuerySql,
+  sql: FolderContentQuerySql,
   idempotencyKey: string,
 ): Promise<OperationRow | null> {
   const rows = await sql<readonly OperationRow[]>`
@@ -306,7 +296,7 @@ async function findOperation(
 }
 
 async function insertOperation(
-  sql: BoardYjsQuerySql,
+  sql: FolderContentQuerySql,
   input: {
     id: string;
     folderId: string;
@@ -326,7 +316,7 @@ async function insertOperation(
 }
 
 async function readResult(
-  sql: BoardYjsQuerySql,
+  sql: FolderContentQuerySql,
   operation: OperationRow,
   idempotent: boolean,
   pageCommit?: FolderProjectIdentityMutationResult["pageCommit"],
@@ -344,7 +334,7 @@ async function readResult(
   };
 }
 
-async function pageCommitFromOperation(sql: BoardYjsQuerySql, operation: OperationRow) {
+async function pageCommitFromOperation(sql: FolderContentQuerySql, operation: OperationRow) {
   const operationId = stringValue(operation.payload_json?.page_operation_id);
   if (!operationId) throw new Error(`folder operation has no page operation: ${operation.id}`);
   const rows = await sql<readonly Record<string, unknown>[]>`

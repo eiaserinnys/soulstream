@@ -18,7 +18,7 @@ import type {
 } from "../control_plane/session_data_host_client.js";
 import type { CardReferenceLookupResult, GenerationCheckpointMaterial, GenerationCheckpointReadLimits, SessionReadPeriod, SupervisedCardSnapshot } from "@soulstream/mcp-contract";
 import type { SessionPageBindingRepository } from "../page/session_page_binding_repository.js";
-import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
+import type { FlatFolderContentHostClient } from "../catalog/flat_folder_content_host_client.js";
 import type { FolderHostClient } from "../folder/folder_host_client.js";
 import type { FolderService } from "../folder/folder_service.js";
 import type { ClaudeRuntimeHostClient } from "../control_plane/persistence_host_clients.js";
@@ -41,7 +41,7 @@ export class SessionDB {
   private folderReader?: Pick<FolderService, "getFolder" | "getCard">;
   private scheduleHost?: ScheduleHostClient;
   private sessionPageBindingRepository?: SessionPageBindingRepository;
-  private boardProjectionHost?: BoardYjsHostClient;
+  private folderContentHost?: FlatFolderContentHostClient;
   private sessionDeliveryHost?: SessionDeliveryHostClient;
   private claudeBackgroundTaskHost?: ClaudeRuntimeHostClient;
   private sessionDataHost?: SessionDataHost;
@@ -99,8 +99,8 @@ export class SessionDB {
     this.sessionDataHost = host;
   }
 
-  configureBoardProjectionHost(host: BoardYjsHostClient): void {
-    this.boardProjectionHost = host;
+  configureFolderContentHost(host: FlatFolderContentHostClient): void {
+    this.folderContentHost = host;
   }
 
   schedules(): ScheduleHostClient {
@@ -197,35 +197,35 @@ export class SessionDB {
   }
 
   async getBoardItems(): Promise<CatalogBoardItemRow[]> {
-    return await this.requireBoardProjectionHost().getBoardItems();
+    return await this.requireFolderContentHost().getBoardItems();
   }
 
   async getBoardItemsByFolder(folderId: string): Promise<CatalogBoardItemRow[]> {
-    return await this.requireBoardProjectionHost().getBoardItemsByFolder(folderId);
+    return await this.requireFolderContentHost().getBoardItemsByFolder(folderId);
   }
 
   listFolderItems(params: ListFolderItemsParams): Promise<ListFolderItemsResult> {
-    return this.requireBoardProjectionHost().listFolderItems(params);
+    return this.requireFolderContentHost().listFolderItems(params);
   }
 
   async getBoardItemById(boardItemId: string): Promise<CatalogBoardItemRow | null> {
-    return await this.requireBoardProjectionHost().getBoardItemById(boardItemId);
+    return await this.requireFolderContentHost().getBoardItemById(boardItemId);
   }
 
   async getBoardItemIdsForSession(sessionId: string): Promise<string[]> {
-    return await this.requireBoardProjectionHost().getBoardItemIdsForSession(sessionId);
+    return await this.requireFolderContentHost().getBoardItemIdsForSession(sessionId);
   }
 
   async getPrimarySessionBoardItem(sessionId: string): Promise<CatalogBoardItemRow | null> {
-    return await this.requireBoardProjectionHost().getPrimarySessionBoardItem(sessionId);
+    return await this.requireFolderContentHost().getPrimarySessionBoardItem(sessionId);
   }
 
   async getMarkdownDocumentBoardItem(documentId: string): Promise<CatalogBoardItemRow | null> {
-    return await this.requireBoardProjectionHost().getMarkdownDocumentBoardItem(documentId);
+    return await this.requireFolderContentHost().getMarkdownDocumentBoardItem(documentId);
   }
 
   async getMarkdownDocument(documentId: string): Promise<MarkdownDocumentRow | null> {
-    return await this.requireBoardProjectionHost().getMarkdownDocument(documentId);
+    return await this.requireFolderContentHost().getMarkdownDocument(documentId);
   }
 
   async listSessionsSummary(params: {
@@ -443,8 +443,8 @@ export class SessionDB {
     return this.sessionDataHost;
   }
 
-  private requireBoardProjectionHost(): BoardYjsHostClient {
-    if (!this.boardProjectionHost) throw new Error("board projection host is not configured");
-    return this.boardProjectionHost;
+  private requireFolderContentHost(): FlatFolderContentHostClient {
+    if (!this.folderContentHost) throw new Error("folder content host is not configured");
+    return this.folderContentHost;
   }
 }

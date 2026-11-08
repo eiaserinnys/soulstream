@@ -1,4 +1,5 @@
-import type { BoardYjsSql } from "../board-yjs/board_yjs_sql.js";
+import type { FolderContentSql } from "../board/folder_content_sql.js";
+import type { CatalogBoardItemRow } from "../board/folder_content_types.js";
 
 interface FolderRow {
   id: string;
@@ -16,7 +17,7 @@ interface FolderRow {
 type FolderDbRow = Omit<FolderRow, "settings"> & { settings: unknown; archived?: boolean };
 
 export class FolderControlPlaneService {
-  constructor(private readonly sql: BoardYjsSql) {}
+  constructor(private readonly sql: FolderContentSql, private readonly getBoardItems: () => Promise<CatalogBoardItemRow[]>) {}
 
   async assignSessionToFolder(sessionId: string, folderId: string | null): Promise<void> {
     await this.sql`SELECT session_assign_folder(${sessionId}, ${folderId})`;
@@ -70,34 +71,7 @@ export class FolderControlPlaneService {
       sessions[row.session_id] = { folderId: row.folder_id, displayName: row.display_name };
     }
 
-    const folderIds = folders.map((folder) => folder.id);
-    const cacheRows = folderIds.length === 0
-      ? []
-      : await this.sql<readonly { folder_id: string; board_items: unknown }[]>`
-          SELECT folder_id, board_items
-          FROM board_yjs_catalog_cache
-          WHERE folder_id = ANY(${this.sql.array(folderIds)}::text[])
-        `;
-    const cachedFolderIds = new Set(cacheRows.map((row) => row.folder_id));
-    const boardItems = cacheRows.flatMap((row) => (
-      Array.isArray(row.board_items)
-        ? row.board_items.flatMap((item) => normalizeCachedBoardItem(item))
-        : []
-    ));
-    const missingFolderIds = folderIds.filter((id) => !cachedFolderIds.has(id));
-    if (missingFolderIds.length > 0) {
-      const legacyRows = await this.sql<readonly Record<string, unknown>[]>`
-        SELECT * FROM board_items
-        WHERE folder_id = ANY(${this.sql.array(missingFolderIds)}::text[])
-      `;
-      boardItems.push(...legacyRows.map(legacyBoardItem));
-    }
-    boardItems.sort((left, right) => (
-      String(left.folderId).localeCompare(String(right.folderId)) ||
-      Number(left.y) - Number(right.y) ||
-      Number(left.x) - Number(right.x) ||
-      String(left.id).localeCompare(String(right.id))
-    ));
+    const boardItems = await this.getBoardItems();
     return {
       folders: folders.map((folder) => ({
         id: folder.id,
@@ -116,17 +90,6 @@ export class FolderControlPlaneService {
   }
 }
 
-function normalizeCachedBoardItem(value: unknown): Array<Record<string, unknown>> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return [];
-  const item = value as Record<string, unknown>;
-  return [{
-    id: item.id, folderId: item.folderId, itemType: item.itemType, itemId: item.itemId,
-    x: item.x, y: item.y, metadata: item.metadata,
-    createdAt: item.createdAt, updatedAt: item.updatedAt,
-    membershipKind: item.membershipKind ?? "primary",
-  }];
-}
-
 function folderFromRow(row: FolderDbRow): FolderRow {
   return {
     id: row.id,
@@ -140,20 +103,5 @@ function folderFromRow(row: FolderDbRow): FolderRow {
     archived: Boolean(row.archived),
     status: row.status, version: Number(row.version),
     ...(row.created_at ? { created_at: row.created_at } : {}),
-  };
-}
-
-function legacyBoardItem(row: Record<string, unknown>) {
-  return {
-    id: row.id,
-    folderId: row.folder_id,
-    membershipKind: row.membership_kind ?? "primary",
-    itemType: row.item_type,
-    itemId: row.item_id,
-    x: Number(row.x),
-    y: Number(row.y),
-    metadata: row.metadata && typeof row.metadata === "object" ? row.metadata : {},
-    ...(row.created_at ? { createdAt: new Date(row.created_at as string | Date).toISOString() } : {}),
-    ...(row.updated_at ? { updatedAt: new Date(row.updated_at as string | Date).toISOString() } : {}),
   };
 }

@@ -1,9 +1,9 @@
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type {
-  BoardYjsQuerySql,
-} from "../../board-yjs/board_yjs_sql.js";
+  FolderContentQuerySql,
+} from "../../board/folder_content_sql.js";
 
-export type RepositorySql = BoardYjsQuerySql;
+export type RepositorySql = FolderContentQuerySql;
 export type SqlClient = RepositorySql & {
   begin<T>(callback: (sql: RepositorySql) => Promise<T>): Promise<T>;
 };

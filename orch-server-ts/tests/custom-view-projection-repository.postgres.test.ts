@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { CustomViewProjectionRepository } from
-  "../src/board-yjs/custom_view_projection_repository.js";
+  "../src/board/custom_view_repository.js";
 import { CustomViewRevisionConflictError } from
-  "../src/board-yjs/board_projection_types.js";
+  "../src/board/folder_content_types.js";
 import { createLiveDbSqlResolver } from "../src/runtime/live_db_sql.js";
 import {
   createPagePostgresHarness,

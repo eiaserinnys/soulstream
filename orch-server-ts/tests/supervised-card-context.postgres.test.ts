@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { readSupervisedCardContext } from "../src/cards/supervised_card_context.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 
@@ -47,7 +47,7 @@ describe("readSupervisedCardContext", () => {
         ('q-archived-card', 'archived-card', 'owner', '보관 카드 질문', NULL, NOW())
     `);
 
-    const sql = createBoardYjsSqlAdapter(harness.liveSql);
+    const sql = createFolderContentSqlAdapter(harness.liveSql);
     const snapshot = await readSupervisedCardContext(sql, {
       sessionId: "owner",
       folderIds: ["folder-a"],
@@ -102,7 +102,7 @@ describe("readSupervisedCardContext", () => {
       "SELECT id, number FROM cards WHERE id IN ('numbered-run', 'numbered-blocked')",
     )).map((row) => [row.id, row.number]));
 
-    const snapshot = await readSupervisedCardContext(createBoardYjsSqlAdapter(harness.liveSql), {
+    const snapshot = await readSupervisedCardContext(createFolderContentSqlAdapter(harness.liveSql), {
       sessionId: "owner",
       folderIds: ["folder-a"],
       cardLimit: 60,

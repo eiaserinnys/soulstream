@@ -29,7 +29,6 @@ export type OrchestratorMemoryStatsComponents = {
   readonly foregroundObservers: {
     getStats: () => { sessions: number; observers: number };
   };
-  readonly boardYjsDocuments: () => number;
   readonly pageYjsDocuments: () => number;
   readonly collectorOptions?: MemoryStatsCollectorOptions;
 };
@@ -77,10 +76,6 @@ export function createOrchestratorMemoryStatsCollector(
     details: () => ({
       sessions: components.foregroundObservers.getStats().sessions,
     }),
-  });
-  collector.registerSource({
-    name: "board_yjs_documents",
-    entries: components.boardYjsDocuments,
   });
   collector.registerSource({
     name: "page_yjs_documents",

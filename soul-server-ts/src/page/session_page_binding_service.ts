@@ -1,7 +1,7 @@
 import type { Logger } from "pino";
 import { projectSessionBindingWarnings } from "@soulstream/page-model";
 
-import type { BoardYjsHostClient } from "../collaboration/board_yjs_host_client.js";
+import type { FlatFolderContentHostClient } from "../catalog/flat_folder_content_host_client.js";
 import type { SessionDB } from "../db/session_db.js";
 import { defaultFolderIdForSessionType } from "../system_folders.js";
 import {
@@ -10,9 +10,6 @@ import {
   type TaskCreationHook,
   type TaskCreationHookParams,
 } from "../task/task_creation_hook.js";
-import {
-  sessionBoardItemPosition,
-} from "../task/session_board_position.js";
 import type { PageYjsHostClient } from "./page_host_client.js";
 import { decideSessionPageEnrollment } from "./session_page_enrollment_policy.js";
 import {
@@ -262,10 +259,7 @@ export class SessionPageBindingService implements TaskCreationHook {
 export class SessionLegacyProjection implements LegacyProjectionPort {
   constructor(
     private readonly db: SessionDB,
-    private readonly boardYjsService: Pick<
-      BoardYjsHostClient,
-      "upsertSessionBoardItem" | "moveSessionToFolder"
-    >,
+    private readonly folderContentHost: Pick<FlatFolderContentHostClient, "moveSessionToFolder">,
   ) {}
 
   async project(binding: SessionPageBindingRow): Promise<void> {
@@ -273,19 +267,12 @@ export class SessionLegacyProjection implements LegacyProjectionPort {
       if (!await this.db.getFolderById(binding.legacy_folder_id)) {
         throw new ManualRepairError(`stale legacy folder: ${binding.legacy_folder_id}`);
       }
-      const boardItems = await this.db.getBoardItemsByFolder(binding.legacy_folder_id);
-      const [x, y] = sessionBoardItemPosition(boardItems, binding.session_id);
-      await this.boardYjsService.upsertSessionBoardItem({
-        folderId: binding.legacy_folder_id,
-        sessionId: binding.session_id,
-        x,
-        y,
-      });
+      await this.folderContentHost.moveSessionToFolder(binding.session_id, binding.legacy_folder_id);
       return;
     }
     const folderId = defaultFolderIdForSessionType(binding.session_type);
     if (await this.db.getFolderById(folderId)) {
-      await this.boardYjsService.moveSessionToFolder(binding.session_id, folderId);
+      await this.folderContentHost.moveSessionToFolder(binding.session_id, folderId);
     }
   }
 }

@@ -4,7 +4,7 @@ import {
   createPagePostgresHarness,
   type PagePostgresHarness,
 } from "./page/page_postgres_harness.js";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardOrchestrationRepository,type OrchestrationRun } from "../src/cards/card_orchestration_repository.js";
 import { CardOrchestrationCoordinator } from "../src/cards/card_orchestration_coordinator.js";
 import {
@@ -20,7 +20,7 @@ describe("durable card orchestration admissions", () => {
   let h: PagePostgresHarness,
     repo: CardOrchestrationRepository,
     cards: CardControlPlaneService,
-    settingsSql: ReturnType<typeof createBoardYjsSqlAdapter>;
+    settingsSql: ReturnType<typeof createFolderContentSqlAdapter>;
   const target = {
     agentId: "ariella-orchestrator",
     nodeId: "eiaserinnys",
@@ -48,7 +48,7 @@ describe("durable card orchestration admissions", () => {
     );
     await h.sql`INSERT INTO folders(id,name) VALUES('orchestration-folder','실험')`;
     await h.sql`CREATE TABLE soulstream_schedules(schedule_id TEXT PRIMARY KEY,session_id TEXT,source_tool TEXT,tool_use_id TEXT,status TEXT)`;
-    const sql = createBoardYjsSqlAdapter(h.liveSql);
+    const sql = createFolderContentSqlAdapter(h.liveSql);
     settingsSql = sql;
     repo = new CardOrchestrationRepository(async () => sql);
     cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx });
@@ -197,7 +197,7 @@ describe("durable card orchestration admissions", () => {
       target,
     };
     const other = new CardOrchestrationRepository(async () =>
-      createBoardYjsSqlAdapter(h.peerLiveSql),
+      createFolderContentSqlAdapter(h.peerLiveSql),
     );
     const claims = await Promise.all([repo.claim(input), other.claim(input)]);
     expect(claims.filter(Boolean)).toHaveLength(1);
@@ -291,7 +291,7 @@ describe("durable card orchestration admissions", () => {
       r = (await repo.claim(input))!;
     await repo.finish(r, "completed", "all_deferred");
     const restarted = new CardOrchestrationRepository(async () =>
-      createBoardYjsSqlAdapter(h.peerLiveSql),
+      createFolderContentSqlAdapter(h.peerLiveSql),
     );
     expect(await restarted.claim(input)).toBeNull();
     expect(await restarted.isDuplicate("defer")).toBe(true);
@@ -453,7 +453,7 @@ describe("durable card orchestration admissions", () => {
     await h.sql`INSERT INTO events(session_id,id,event_type,payload) VALUES(${sid},1,'session_ended','{"termination_reason":"limit_hit"}')`;
     const identity={scheduleId:`resume-after-limit:${sid}:1:0`,sessionId:sid,sourceTool:'ResumeAfterLimit',toolUseId:'ResumeAfterLimit:1'};
     await h.sql`INSERT INTO soulstream_schedules VALUES(${identity.scheduleId},${sid},${identity.sourceTool},${identity.toolUseId},'firing')`;
-    const sql=createBoardYjsSqlAdapter(h.liveSql);
+    const sql=createFolderContentSqlAdapter(h.liveSql);
     expect(await hasContinuousLimitWindow(sql,identity,1)).toBe(false);
     await h.sql`UPDATE system_settings SET value=jsonb_set(value,'{enabled}','false') WHERE setting_key='card_orchestration'`;
     expect(await hasContinuousLimitWindow(sql,identity,1)).toBe(true);

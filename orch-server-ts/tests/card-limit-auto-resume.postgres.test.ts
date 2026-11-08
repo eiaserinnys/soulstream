@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { prepareCardReminderSchema } from "./card-reminder-postgres-fixture.js";
 import { appendCardEventTx, prepareCardWorkSchema, recordWorkReceipt } from "./card-work-postgres-fixture.js";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
 import { CardDispatcher } from "../src/cards/card_dispatcher.js";
@@ -42,7 +42,7 @@ describe("short quota windows resume the card assignee automatically", () => {
     await h.sql.unsafe(schema.match(/CREATE TABLE IF NOT EXISTS session_delivery_notification_outbox \([\s\S]*?\n\);/)![0]);
     await h.sql.unsafe(schema.match(/ALTER TABLE session_delivery_notification_outbox\n    ADD COLUMN IF NOT EXISTS projection_state[\s\S]*?;/)![0]);
     await h.sql`UPDATE system_settings SET value=jsonb_set(value,'{enabled}','true') WHERE setting_key='card_orchestration'`;
-    const sql = createBoardYjsSqlAdapter(h.liveSql);
+    const sql = createFolderContentSqlAdapter(h.liveSql);
     deliveries = new SessionDeliveryRepository(h.liveSql as never);
     cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx }, undefined,
       change => dispatcher.acceptMutation(change));
@@ -107,7 +107,7 @@ describe("short quota windows resume the card assignee automatically", () => {
     return terminalId;
   }
   function makeCoordinator() {
-    const sql = createBoardYjsSqlAdapter(h.liveSql);
+    const sql = createFolderContentSqlAdapter(h.liveSql);
     const orchestration = new CardOrchestrationRepository(async () => sql);
     const judge = { agentId: "judge", nodeId: "node", modelPreset: "judge-model", minimumRemainingPercent: 15 };
     return new CardOrchestrationCoordinator({ repository: orchestration, dispatch: repo, cards: async () => cards,

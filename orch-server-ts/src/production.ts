@@ -24,11 +24,11 @@ import { fileURLToPath } from "node:url";
 import type { FastifyInstance } from "fastify";
 
 import { createApp, type CreateAppOptions } from "./app.js";
-import { BoardYjsRepository } from "./board-yjs/board_yjs_repository.js";
-import { BoardYjsMoveRepository } from "./board-yjs/board_yjs_move_repository.js";
-import { BoardYjsService } from "./board-yjs/board_yjs_service.js";
-import type { CatalogBoardItemRow } from "./board-yjs/board_yjs_types.js";
-import { createBoardProjectionHost } from "./board-yjs/board_projection_host.js";
+import { FlatFolderContentHost } from "./board/flat_folder_content_host.js";
+import { MarkdownDocumentService } from "./board/markdown_document_service.js";
+import { SessionFolderMoveRepository } from "./session/session_folder_move_repository.js";
+import { SessionFolderMoveService } from "./session/session_folder_move_service.js";
+import { broadcastCatalogDelta } from "./runtime/catalog_delta_broadcaster.js";
 import { PageRepository } from "./page/page_repository.js";
 import { PageYjsService } from "./page/page_service.js";
 import { SqlFolderProjectIdentityRepository } from "./folders/folder_project_identity_repository.js";
@@ -104,7 +104,7 @@ import { placeCardQuestionOnOwnerBoards, resolveCardOwnerEmail } from "./cards/c
 import { cardRouteErrorResponse } from "./cards/card_route_body.js";
 import { applyCardQuestionReply } from "./session/card_question_reply.js";
 import { dashboardFolderActor } from "./folders/folder_workspace_routes.js";
-import { BoardYjsSqlResolver } from "./board-yjs/board_yjs_sql.js";
+import { FolderContentSqlResolver } from "./board/folder_content_sql.js";
 import { relayCanonicalErrorTx } from "./cards/card_work_error_delivery.js";
 import type { RepositorySql } from "./cards/control_plane/card_types.js";
 import type { CardDispatcher } from "./cards/card_dispatcher.js";
@@ -126,7 +126,6 @@ import type { LiveSystemPortraitAssetBoundary } from "./runtime/live_system_conf
 import { UsageSummaryService } from "./usage/usage_summary_service.js";
 import { SessionDeletionRepository } from "./session/session_deletion_repository.js";
 import { SessionDeletionService } from "./session/session_deletion_service.js";
-import { SessionBoardMoveService } from "./session/session_board_move_service.js";
 import { sessionDeliveryInterventionPayload } from
   "./session/session_delivery_intervention_payload.js";
 import { PersistentSessionSettingsService } from "./session/persistent_session_settings_service.js";
@@ -235,46 +234,19 @@ export async function createLiveProductionApplication(
   const reportSearchCancelError = (error: unknown) => {
     context.warn(`Search database cancellation failed; closing request-owned connection: ${String(error)}`);
   };
-  let boardYjsService: BoardYjsService | undefined;
-  let emitBoardYjsSessionCatalogDelta:
-    | ((sessionIds: readonly string[], movedBoardItem: CatalogBoardItemRow | null) => Promise<void>)
-    | undefined;
-  const boardYjsMoveRepository = new BoardYjsMoveRepository(sqlResolver);
-  const sessionBoardMoveService = new SessionBoardMoveService({
-    board: {
-      async withSessionBoardMoveApplications(input, persist) {
-        if (!boardYjsService) throw new Error("Board Yjs service is not initialized");
-        return await boardYjsService.withSessionBoardMoveApplications(input, persist);
-      },
-    },
-    repository: boardYjsMoveRepository,
-    // Board/Yjs owns this post-commit emission. REST calls moveSessionToFolder instead,
-    // whose route wrapper remains its single catalog-delta owner.
+  const sessionFolderMoveService = new SessionFolderMoveService({
+    repository: new SessionFolderMoveRepository(sqlResolver),
     onFoldersMoveCommitted: async (folderIds) => {
-      for (const folderId of folderIds) runtimeServices.sessionBroadcaster.append({type:"folder_updated",folderId});
+      for (const folderId of folderIds) runtimeServices.sessionBroadcaster.append({ type: "folder_updated", folderId });
     },
     onCardsMoveCommitted: async (cards) => {
       for (const card of cards) {
-        runtimeServices.sessionBroadcaster.append({type:"card_updated",cardId:card.cardId,folderId:card.sourceFolderId});
-        runtimeServices.sessionBroadcaster.append({type:"card_updated",cardId:card.cardId,folderId:card.folderId});
+        runtimeServices.sessionBroadcaster.append({ type: "card_updated", cardId: card.cardId, folderId: card.sourceFolderId });
+        runtimeServices.sessionBroadcaster.append({ type: "card_updated", cardId: card.cardId, folderId: card.folderId });
       }
     },
-    onBoardMoveCommitted: async ({ sessionIds, movedBoardItem }) => {
-      if (!emitBoardYjsSessionCatalogDelta) {
-        throw new Error("Board/Yjs catalog delta emitter is not initialized");
-      }
-      await emitBoardYjsSessionCatalogDelta(sessionIds, movedBoardItem);
-    },
   });
-  const sessionDeletionService = new SessionDeletionService({
-    board: {
-      async withBoardItemRemovalApplications(boardItems, persist) {
-        if (!boardYjsService) throw new Error("Board Yjs service is not initialized");
-        return await boardYjsService.withBoardItemRemovalApplications(boardItems, persist);
-      },
-    },
-    repository: new SessionDeletionRepository(sqlResolver),
-  });
+  const sessionDeletionService = new SessionDeletionService({ repository: new SessionDeletionRepository(sqlResolver) });
   let publishPersistentReports: PublishPersistentReports = () => undefined;
   let notifyPersistentReportPosted: OnPersistentReportPosted = () => undefined;
   let appendReportTimeline: AppendReportTimeline = async () => undefined;
@@ -307,8 +279,6 @@ export async function createLiveProductionApplication(
     eventIngressRepository,
     async (sessionId, eventId) => await cardDispatchRuntime?.kickCanonicalWorkError(sessionId, eventId),
   );
-  const boardYjsRepository = new BoardYjsRepository(sqlResolver);
-  const boardProjectionHost = createBoardProjectionHost(sqlResolver, boardYjsRepository);
   const pageRepository = new PageRepository(sqlResolver);
   const folderProjectIdentityRepository = new SqlFolderProjectIdentityRepository(sqlResolver);
   const plannerRepository = new PlannerRepository(sqlResolver);
@@ -324,7 +294,7 @@ export async function createLiveProductionApplication(
     typesafeApiKey: config.typesafe_api_key,
     onSearchCancelError: reportSearchCancelError,
     sessionDeletion: sessionDeletionService,
-    sessionMoves: sessionBoardMoveService,
+    sessionMoves: sessionFolderMoveService,
   });
   const pushRepository = createLivePushRegistrationRepository({ sqlResolver });
   const uiEventRepository = createLiveUiEventRepository({ sqlResolver });
@@ -394,6 +364,34 @@ export async function createLiveProductionApplication(
   let providers: LiveOrchestratorProviderBundle;
   let pageYjsService: PageYjsService | undefined;
   let folderProjectIdentityService: FolderProjectIdentityService | undefined;
+  const markdownDocuments = new MarkdownDocumentService(sqlResolver, async mutation => {
+    await broadcastCatalogDelta(dbCatalogRepository.folderRouteProvider, runtimeServices.sessionBroadcaster, {
+      boardItemsDelta: Object.fromEntries([
+        ...(mutation.boardItems ?? []).map(item => [item.id, item] as const),
+        ...(mutation.deletedBoardItemIds ?? []).map(id => [id, null] as const),
+      ]),
+    });
+    for (const folderId of mutation.folderIds) runtimeServices.sessionBroadcaster.append({ type: "folder_updated", folderId });
+    runtimeServices.sessionBroadcaster.append({ type: "page_updated", page_id: mutation.documentId, version: mutation.version });
+  });
+  const flatFolderContentHost = new FlatFolderContentHost(sqlResolver, markdownDocuments, sessionFolderMoveService,
+    async (folderId, parentFolderId, idempotencyKey) => {
+      if (!folderProjectIdentityService) throw new Error("Folder identity service is unavailable");
+      const folder = await folderProjectIdentityRepository.findByFolderId(folderId);
+      if (!folder) throw Object.assign(new Error("Folder not found"), { statusCode: 404 });
+      await folderProjectIdentityService.mutateFromFolder({ folderId, expectedVersion: folder.version,
+        update: { parentFolderId }, actor: { actorKind: "system" }, idempotencyKey });
+    }, async (item, sourceFolderId, sessionIds) => {
+      if (sessionIds) {
+        await broadcastTargetedSessionCatalogDelta(dbCatalogRepository.folderRouteProvider,
+          runtimeServices.sessionBroadcaster, sessionIds, { [item.id]: item });
+      } else {
+        await broadcastCatalogDelta(dbCatalogRepository.folderRouteProvider, runtimeServices.sessionBroadcaster,
+          { boardItemsDelta: { [item.id]: item } });
+      }
+      runtimeServices.sessionBroadcaster.append({ type: "folder_updated", folderId: sourceFolderId });
+      runtimeServices.sessionBroadcaster.append({ type: "folder_updated", folderId: item.folderId });
+    });
   let turnSummaryPipeline: LiveTurnSummaryPipeline | undefined;
   let recurringJobScheduler: RecurringJobScheduler | undefined;
   let cardDispatcher: CardDispatcher | undefined;
@@ -425,24 +423,7 @@ export async function createLiveProductionApplication(
       (events) => recurringJobScheduler?.accept(events),
       (events) => cardDispatcher?.accept(events),
     ],
-    boardYjsRoutes: {
-      createService: (logger) => boardYjsService ??= new BoardYjsService({
-        repository: boardYjsRepository,
-        logger,
-        moveSessionBoardItem: async (input) =>
-          await sessionBoardMoveService.moveSessionBoardItem(input),
-        persistBoardItemMove: async ({ boardApplications }) =>
-          await boardYjsMoveRepository.commitBoardItemMove({ boardApplications }),
-        auth: {
-          authBearerToken: config.auth_bearer_token,
-          environment: config.environment,
-          dashboardAuthEnabled: Boolean(config.google_client_id),
-          resolveDashboardUserFromHeaders: (headers) =>
-            providers.authenticatedUserResolvers.resolveUserFromHeaders(headers),
-        },
-      }),
-    },
-    boardProjectionHost,
+    flatFolderContentRoutes: { host: flatFolderContentHost, authBearerToken: config.auth_bearer_token, environment: config.environment },
     pageYjsRoutes: {
       authBearerToken: config.auth_bearer_token,
       browserReads: pageRepository,
@@ -480,13 +461,6 @@ export async function createLiveProductionApplication(
       }),
     },
   });
-  emitBoardYjsSessionCatalogDelta = async (sessionIds, movedBoardItem) =>
-    await broadcastTargetedSessionCatalogDelta(
-      dbCatalogRepository.folderRouteProvider,
-      runtimeServices.sessionBroadcaster,
-      sessionIds,
-      movedBoardItem ? { [movedBoardItem.id]: movedBoardItem } : {},
-    );
   appendReportTimeline = createReportTimelineAppender({
     resolveSql: () => sqlResolver.resolveSql(),
     eventHub: runtimeServices.sessionEventHub,
@@ -527,8 +501,6 @@ export async function createLiveProductionApplication(
     registry,
     pushNotifier,
     foregroundObservers,
-    boardYjsDocuments: () =>
-      boardYjsService?.getStats().activeDocuments ?? 0,
     pageYjsDocuments: () =>
       pageYjsService?.getPersistenceDiagnostics().activeDocuments ?? 0,
   });
@@ -599,10 +571,6 @@ export async function createLiveProductionApplication(
   }
   folderProjectIdentityService = new FolderProjectIdentityService({
     repository: folderProjectIdentityRepository,
-    withBoardApplication: async (input, persist) => {
-      if (!boardYjsService) throw new Error("Board service is not initialized");
-      return await boardYjsService.withFolderBoardApplication(input, persist);
-    },
     hydratePage: async (pageId) => {
       if (!pageYjsService) throw new Error("Page Yjs service is not initialized");
       await pageYjsService.hydrateCommittedPage(`page:${pageId}`);
@@ -630,7 +598,7 @@ export async function createLiveProductionApplication(
   const ownedAgentRepository = new SqlOwnedAgentRepository(sqlResolver);
   const ownedAgentService = new OwnedAgentService(ownedAgentRepository,
     dbCatalogRepository.adminUsersRepository.findUserByEmail, config.mcp_external_ingress_bearer_token);
-  const cardExecutionOwnerResolver = new BoardYjsSqlResolver(sqlResolver);
+  const cardExecutionOwnerResolver = new FolderContentSqlResolver(sqlResolver);
   const cardExecutionOwnerRepository = new CardDispatchRepository(() => cardExecutionOwnerResolver.resolveSql());
   const resolveSessionOwner = createSessionOwnerResolver({
     getSession: async id => (await persistenceRepositoryProvider()).sessionReads.getSession(id),
@@ -1125,10 +1093,9 @@ export function buildProductionRouteOptions(
     boardAssetRoutes: providers.boardAssetRoutes,
     boardItemRoutes: {
       ...providers.boardItemRoutes,
-      hostProxy: providers.runtime.boardYjsHostProxyRoutes,
+      host: providers.runtime.flatFolderContentRoutes.host,
     },
-    boardYjsHostProxyRoutes: providers.runtime.boardYjsHostProxyRoutes,
-    boardYjsRoutes: runtime.routeOptions.boardYjsRoutes,
+    flatFolderContentRoutes: providers.runtime.flatFolderContentRoutes,
     pageYjsRoutes: runtime.routeOptions.pageYjsRoutes,
     cogitoRoutes: providers.cogitoRoutes,
     executeProxyRoutes: providers.executeProxyRoutes,
@@ -1150,7 +1117,7 @@ export function buildProductionRouteOptions(
           readSession: async id => (await persistenceRepositoryProvider()).sessionReads.getSession(id),
         },
         board: {
-          host: providers.runtime.boardYjsHostProxyRoutes,
+          host: providers.runtime.flatFolderContentRoutes.host,
           getSession: async id => (await persistenceRepositoryProvider()).sessionReads.getSession(id),
           listAgentProfiles: nodeId => providers.nodeAgentProfileRoutes.provider.listAgentProfiles(nodeId),
           broadcaster: runtime.sessionBroadcaster,
@@ -1197,7 +1164,7 @@ export function buildProductionRouteOptions(
     },
     markdownDocumentRoutes: {
       ...providers.markdownDocumentRoutes,
-      hostProxy: providers.runtime.boardYjsHostProxyRoutes,
+      serviceProvider: () => providers.runtime.flatFolderContentRoutes.host.documents,
     },
     nodeAgentProfileRoutes: providers.nodeAgentProfileRoutes,
     agentProfileRoutes: providers.agentProfileRoutes,

@@ -59,7 +59,7 @@ function makeRuntime(warn: (...args: unknown[]) => void = () => {}): McpRuntime 
     emitCatalogUpdated: vi.fn().mockResolvedValue(undefined),
     emitSessionDeleted: vi.fn().mockResolvedValue(undefined),
   } as unknown as SessionBroadcaster;
-  const catalogService = new CatalogService(db, broadcaster);
+  const catalogService = new CatalogService(db, broadcaster, {} as never);
   const agentRegistry = new AgentRegistry([
     {
       id: "codex-default",

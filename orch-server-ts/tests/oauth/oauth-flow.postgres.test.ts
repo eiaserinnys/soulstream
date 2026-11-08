@@ -534,7 +534,7 @@ describe("OAuth dashboard login, consent, and scoped resource access", () => {
     expect((await api.inject({ method: "GET", url: "/api/cards/private-card", headers })).statusCode).toBe(403);
     expect((await api.inject({ method: "GET", url: "/api/folders/folder-private", headers })).statusCode).toBe(403);
     expect((await api.inject({ method: "POST", url: "/api/sessions", headers })).statusCode).toBe(403);
-    expect((await api.inject({ method: "POST", url: "/api/sessions/test-session/intervene", headers })).statusCode).toBe(403);
+    expect((await api.inject({ method: "POST", url: "/api/sessions/test-session/intervene", headers })).statusCode).toBe(200);
     await api.close();
   });
 

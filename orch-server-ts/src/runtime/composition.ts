@@ -3,9 +3,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { createApp } from "../app.js";
 import type { OrchServerTsConfig } from "../config.js";
 import type { RouteOwnerManifest } from "../contract/route_owner_manifest.js";
-import type { BoardYjsHostProxyRouteOptions } from "../board/board_yjs_host_proxy.js";
-import type { BoardYjsRouteOptions } from "../board-yjs/board_yjs_route.js";
-import type { BoardProjectionHost } from "../board-yjs/board_projection_types.js";
+import type { FlatFolderContentRouteOptions } from "../board/flat_folder_content_routes.js";
 import type { PageYjsRouteOptions } from "../page/page_yjs_route.js";
 import type {
   NodeCommandClock,
@@ -81,8 +79,7 @@ export type OrchestratorRuntimeCompositionOptions = {
   sessionHistoryProvider?: SessionHistoryProvider;
   sessionHistoryKeepaliveMs?: number;
   sessionHistoryCloseAfterHistorySync?: boolean;
-  boardYjsRoutes?: BoardYjsRouteOptions;
-  boardProjectionHost?: BoardProjectionHost;
+  flatFolderContentRoutes?: FlatFolderContentRouteOptions;
   pageYjsRoutes?: PageYjsRouteOptions;
   nodeHttpFetch?: LiveNodeHttpFetch;
   nodeHttpRequestTimeoutMs?: number;
@@ -103,8 +100,7 @@ export type OrchestratorRuntimeRouteOptions = {
   sessionHistoryRoutes?: SessionHistoryRouteOptions;
   sessionSnapshotRoutes: SessionSnapshotRouteOptions;
   sseReplayRoutes: SseReplayRouteOptions;
-  boardYjsHostProxyRoutes: BoardYjsHostProxyRouteOptions;
-  boardYjsRoutes?: BoardYjsRouteOptions;
+  flatFolderContentRoutes?: FlatFolderContentRouteOptions;
   pageYjsRoutes?: PageYjsRouteOptions;
 };
 
@@ -162,14 +158,6 @@ export function createOrchestratorRuntimeServices(
     fetch: options.nodeHttpFetch,
     timeoutMs: options.nodeHttpRequestTimeoutMs,
   });
-  const boardYjsRoutes = options.boardYjsRoutes === undefined
-    ? undefined
-    : {
-        createService: memoizeBoardYjsServiceFactory(
-          options.boardYjsRoutes.createService,
-        ),
-      };
-
   const routeOptions: OrchestratorRuntimeRouteOptions = {
     nodeWsRoute: {
       registry,
@@ -269,18 +257,7 @@ export function createOrchestratorRuntimeServices(
       keepaliveMs: options.sseKeepaliveMs,
       replayOnlyForTests: options.sseReplayOnlyForTests,
     },
-    boardYjsHostProxyRoutes: {
-      authBearerToken: options.config.authBearerToken,
-      ...(boardYjsRoutes === undefined
-        ? {}
-        : { createService: boardYjsRoutes.createService }),
-      ...(options.boardProjectionHost === undefined
-        ? {}
-        : { projectionHost: options.boardProjectionHost }),
-    },
-    ...(boardYjsRoutes === undefined
-      ? {}
-      : { boardYjsRoutes }),
+    ...(options.flatFolderContentRoutes === undefined ? {} : { flatFolderContentRoutes: options.flatFolderContentRoutes }),
     ...(options.pageYjsRoutes === undefined
       ? {}
       : { pageYjsRoutes: options.pageYjsRoutes }),
@@ -318,16 +295,6 @@ function requestQueryValue(query: unknown, key: string): unknown {
   if (typeof query !== "object" || query === null || !(key in query)) return undefined;
   const value = (query as Record<string, unknown>)[key];
   return Array.isArray(value) ? value[0] : value;
-}
-
-function memoizeBoardYjsServiceFactory(
-  createService: BoardYjsRouteOptions["createService"],
-): BoardYjsRouteOptions["createService"] {
-  let service: ReturnType<BoardYjsRouteOptions["createService"]> | undefined;
-  return (logger) => {
-    service ??= createService(logger);
-    return service;
-  };
 }
 
 export function createOrchestratorRuntimeComposition(

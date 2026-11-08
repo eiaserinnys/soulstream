@@ -3,7 +3,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vites
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { prepareCardReminderSchema } from "./card-reminder-postgres-fixture.js";
 import { appendCardEventTx, prepareCardWorkSchema, recordWorkReceipt } from "./card-work-postgres-fixture.js";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
 import { CardDispatcher } from "../src/cards/card_dispatcher.js";
@@ -29,7 +29,7 @@ describe("only the current assignee's quota termination blocks a card", () => {
     await h.sql`CREATE TABLE system_settings(setting_key TEXT PRIMARY KEY,value JSONB NOT NULL,version INTEGER NOT NULL DEFAULT 1,updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),updated_by TEXT NOT NULL)`;
     await h.sql`INSERT INTO system_settings(setting_key,value,updated_by) VALUES('card_dispatch','{"nodeConcurrency":{"default":2}}','test')`;
     await h.sql.unsafe(await readFile(new URL('../../packages/db-schema/sql/migrations/113_card_orchestration.sql', import.meta.url), 'utf8'));
-    const sql = createBoardYjsSqlAdapter(h.liveSql);
+    const sql = createFolderContentSqlAdapter(h.liveSql);
     cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx });
     repo = new CardDispatchRepository(async () => sql);
     dispatcher = new CardDispatcher({ repository: repo, cards: async () => cards, resolveTarget: target,
@@ -110,7 +110,7 @@ describe("only the current assignee's quota termination blocks a card", () => {
   it("coordinator recovery admits the limited owner rather than the newest child", async () => {
     const id = await make(); await ended("owner", "limit_hit"); await child(id); await ended("child", "limit_hit");
     await h.sql`UPDATE system_settings SET value=jsonb_set(value,'{enabled}','true') WHERE setting_key='card_orchestration'`;
-    const orchestration = new CardOrchestrationRepository(async () => createBoardYjsSqlAdapter(h.liveSql));
+    const orchestration = new CardOrchestrationRepository(async () => createFolderContentSqlAdapter(h.liveSql));
     const judge = { agentId: "judge", nodeId: "node", modelPreset: "judge-model", minimumRemainingPercent: 15 };
     const card = (await cards.getCard(id))!.card;
     const run = (await orchestration.claim({ inputHash: id, policyVersion: 1,
@@ -121,7 +121,7 @@ describe("only the current assignee's quota termination blocks a card", () => {
     await h.sql`UPDATE card_orchestration_runs SET lease_expires_at=NOW()-INTERVAL '1 second' WHERE id=${run.id}`;
     available = true;
     const coordinator = new CardOrchestrationCoordinator({ repository: orchestration, dispatch: repo, cards: async () => cards,
-      settings: async () => readCardOrchestrationSettings(createBoardYjsSqlAdapter(h.liveSql)), resolveTarget: target,
+      settings: async () => readCardOrchestrationSettings(createFolderContentSqlAdapter(h.liveSql)), resolveTarget: target,
       resolveSessionTarget: async card => {
         const resolved = await resolveCardSessionTarget(card, id => repo.ownerSession(id), () => ({ available, reason: null }));
         return { nodeId: resolved.nodeId ?? "", agentId: resolved.agentId ?? "", modelPreset: resolved.modelPreset ?? null,

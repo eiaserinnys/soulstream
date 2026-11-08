@@ -3,75 +3,27 @@ import { describe, expect, it, vi } from "vitest";
 import { CatalogBoardItemService } from "../../src/catalog/catalog_board_item_service.js";
 
 describe("CatalogBoardItemService.createMarkdownDocument", () => {
-  it("uses the folder-scoped read and selects the first free grid position", async () => {
-    const folderId = "root";
-    const scopedItems = [
-      {
-        id: "markdown:occupied-1",
-        folderId,
-        itemType: "markdown" as const,
-        itemId: "occupied-1",
-        x: 0,
-        y: 0,
-        metadata: {},
-      },
-      {
-        id: "markdown:occupied-2",
-        folderId,
-        itemType: "markdown" as const,
-        itemId: "occupied-2",
-        x: 280,
-        y: 0,
-        metadata: {},
-      },
-    ];
-    const getBoardItemsByFolder = vi.fn(async () => scopedItems);
-    const getBoardItems = vi.fn(async () => scopedItems);
-    const createMarkdownDocument = vi.fn(async (input: {
-      documentId: string;
-      folderId: string;
-      title: string;
-      body: string;
-      x: number;
-      y: number;
-    }) => ({
-      document: {
-        id: input.documentId,
-        title: input.title,
-        body: input.body,
-        version: 1,
-      },
-      boardItem: {
-        id: `markdown:${input.documentId}`,
-        folderId: input.folderId,
-        itemType: "markdown" as const,
-        itemId: input.documentId,
-        x: input.x,
-        y: input.y,
-        metadata: {},
-      },
-    }));
+  it("delegates document creation without reading folder grid positions", async () => {
+    const getBoardItemsByFolder = vi.fn();
+    const getBoardItems = vi.fn();
+    const created = {
+      document: { id: "doc-1", folderId: "root", title: "Note", body: "Body", version: 1 },
+      boardItem: { id: "markdown:doc-1", folderId: "root", itemType: "markdown" as const,
+        itemId: "doc-1", x: 0, y: 0, metadata: {} },
+    };
+    const createMarkdownDocument = vi.fn(async () => created);
     const service = new CatalogBoardItemService(
       { getBoardItemsByFolder, getBoardItems } as never,
       { createMarkdownDocument } as never,
-      vi.fn(async () => undefined),
     );
-
     const result = await service.createMarkdownDocument({
-      folderId,
-      title: "Note",
-      body: "Body",
+      documentId: "doc-1", folderId: "root", title: "Note", body: "Body",
     });
-
-    expect(getBoardItemsByFolder).toHaveBeenCalledWith(folderId);
+    expect(getBoardItemsByFolder).not.toHaveBeenCalled();
     expect(getBoardItems).not.toHaveBeenCalled();
-    expect(createMarkdownDocument).toHaveBeenCalledWith(expect.objectContaining({
-      folderId,
-      title: "Note",
-      body: "Body",
-      x: 560,
-      y: 0,
-    }));
-    expect(result.boardItem).toMatchObject({ x: 560, y: 0 });
+    expect(createMarkdownDocument).toHaveBeenCalledWith({
+      documentId: "doc-1", folderId: "root", title: "Note", body: "Body", x: undefined, y: undefined,
+    });
+    expect(result).toBe(created);
   });
 });

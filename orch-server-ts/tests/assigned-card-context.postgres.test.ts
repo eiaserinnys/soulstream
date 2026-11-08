@@ -1,6 +1,6 @@
 import { afterAll,beforeAll,beforeEach,describe,expect,it,vi } from "vitest";
 import { createPagePostgresHarness,type PagePostgresHarness } from "./page/page_postgres_harness.js";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { readAssignedCardContext } from "../src/cards/assigned_card_context.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import type { CardMutationChange } from "../src/cards/card_control_plane_service.js";
@@ -20,7 +20,7 @@ describe("bounded assigned cards and locked mutation snapshots",()=>{
       ('i1','owned','user','comment','예전',NOW()-INTERVAL '2 minutes'),('i2','owned','user','comment','최신 커멘트',NOW())`;
     await h.sql`INSERT INTO card_reports(id,card_id,title,format,body,session_id,created_at)
       VALUES ('r1','owned','보고','html','<p>최신 보고</p>','owner',NOW()-INTERVAL '1 minute')`;
-    const sql=createBoardYjsSqlAdapter(h.liveSql),tracked=vi.fn(sql);
+    const sql=createFolderContentSqlAdapter(h.liveSql),tracked=vi.fn(sql);
     const snapshot=await readAssignedCardContext(tracked as unknown as typeof sql,'owner');
     expect(tracked).toHaveBeenCalledTimes(1);expect(snapshot.total).toBe(1);expect(snapshot.omitted).toBe(0);
     expect(snapshot.cards).toEqual([expect.objectContaining({id:'owned',status:'done',hasItems:false,latestCommentAt:expect.any(String),latestReportAt:expect.any(String)})]);
@@ -34,7 +34,7 @@ describe("bounded assigned cards and locked mutation snapshots",()=>{
     await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,status,assignee_kind,assignee_session_id,items)
       VALUES ('empty-items','f','a','옛 카드','요청','running','session','owner','[]'::jsonb),
         ('has-items','f','b','새 카드','요청','running','session','owner','[{"id":1,"title":"결과"}]'::jsonb)`;
-    const snapshot=await readAssignedCardContext(createBoardYjsSqlAdapter(h.liveSql),'owner');
+    const snapshot=await readAssignedCardContext(createFolderContentSqlAdapter(h.liveSql),'owner');
     expect(Object.fromEntries(snapshot.cards.map(card=>[card.id,card.hasItems]))).toEqual({
       'empty-items':false,'has-items':true,
     });
@@ -43,7 +43,7 @@ describe("bounded assigned cards and locked mutation snapshots",()=>{
     await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,status,assignee_kind,assignee_session_id)
       VALUES ('owned','f','a','담당 카드','요청','todo','session','owner')`;
     await h.sql`UPDATE sessions SET card_id='owned' WHERE session_id='subtask'`;
-    const sql=createBoardYjsSqlAdapter(h.liveSql);
+    const sql=createFolderContentSqlAdapter(h.liveSql);
 
     expect(await readAssignedCardContext(sql,'owner')).toMatchObject({total:1,cards:[{id:'owned',status:'todo'}]});
     expect(await readAssignedCardContext(sql,'subtask')).toMatchObject({total:0,cards:[]});
@@ -51,7 +51,7 @@ describe("bounded assigned cards and locked mutation snapshots",()=>{
   it("captures state and owner under lock, independent of stale pre-lock read or post-commit reassignment",async()=>{
     await h.sql`INSERT INTO cards(id,folder_id,position_key,title,request,status,assignee_session_id) VALUES ('locked','f','100','경합','요청','todo','other')`;
     const changes:CardMutationChange[]=[];
-    const service=new CardControlPlaneService(createBoardYjsSqlAdapter(h.liveSql),{appendEventTx:async()=>0},undefined,c=>changes.push(c));
+    const service=new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql),{appendEventTx:async()=>0},undefined,c=>changes.push(c));
     await h.lockSql.begin(async tx=>{
       await tx`SELECT id FROM cards WHERE id='locked' FOR UPDATE`;
       // An in-flight mutation reads todo/other before it waits for this row lock.

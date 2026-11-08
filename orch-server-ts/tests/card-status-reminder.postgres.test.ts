@@ -2,7 +2,7 @@ import { beforeAll, beforeEach, afterEach, afterAll, describe, it, expect, vi } 
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { prepareCardWorkSchema, appendCardEventTx, recordWorkReceipt } from "./card-work-postgres-fixture.js";
 import { prepareCardReminderSchema } from "./card-reminder-postgres-fixture.js";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
 import { CardDispatcher, type CardDispatcherOptions } from "../src/cards/card_dispatcher.js";
@@ -23,7 +23,7 @@ describe("durable card status reminders", () => {
   beforeAll(async () => {
     h = await createPagePostgresHarness(); await prepareCardWorkSchema(h); await prepareCardReminderSchema(h);
     await h.sql`INSERT INTO folders(id,name) VALUES ('f','폴더')`;
-    const sql = createBoardYjsSqlAdapter(h.liveSql);
+    const sql = createFolderContentSqlAdapter(h.liveSql);
     repo = new CardDispatchRepository(async () => sql);
     cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx });
   }, 60000);

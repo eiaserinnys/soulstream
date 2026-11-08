@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { createBoardYjsSqlAdapter } from "../src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import {
   AttachmentReadError,
@@ -28,7 +28,7 @@ describe("card item evidence attachment ids", () => {
   beforeAll(async () => {
     h = await createPagePostgresHarness();
     await h.sql`INSERT INTO folders(id,name) VALUES ('item-attachments','첨부 증거')`;
-    cards = new CardControlPlaneService(createBoardYjsSqlAdapter(h.liveSql), { appendEventTx: appendCardEventTx });
+    cards = new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql), { appendEventTx: appendCardEventTx });
   }, 60_000);
 
   afterAll(async () => h?.cleanup());

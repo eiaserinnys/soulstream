@@ -96,6 +96,11 @@ export function oauthScopeForRoute(method: string, pathname: string): OAuthScope
   const upper = method.toUpperCase();
   if ((path === "/api/cards" || path.startsWith("/api/cards/")) && (upper === "GET" || upper === "POST" || upper === "PATCH"))
     return "cards:read";
+  if ((upper === "GET" && (path === "/api/board-items" || path === "/api/sessions"))
+    || ((upper === "GET" || upper === "POST") && path === "/api/markdown-documents")
+    || ((upper === "GET" || upper === "PUT" || upper === "PATCH") && /^\/api\/markdown-documents\/[^/]+$/.test(path))
+    || (upper === "GET" && /^\/api\/sessions\/[^/]+\/conversation$/.test(path))
+    || (upper === "POST" && /^\/api\/sessions\/[^/]+\/intervene$/.test(path))) return "cards:read";
   if (upper !== "GET") return null;
   if (path === "/api/folders" || path.startsWith("/api/folders/")) return "folders:read";
   return null;
@@ -105,7 +110,8 @@ export function requireOAuthScope(
   access: OAuthResourceAccess | null,
   scope: OAuthScope,
 ): OAuthScopeCheck {
-  return access?.scopes.includes(scope)
+  return (access?.scopes.includes(scope)
+    || (scope === "folders:read" && access?.scopes.includes("cards:read")))
     ? { ok: true }
     : { ok: false, statusCode: 403, detail: "Insufficient OAuth scope" };
 }

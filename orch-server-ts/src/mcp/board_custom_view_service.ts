@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 
-import type { CatalogBoardItemRow } from "../board-yjs/board_yjs_types.js";
-import type { CustomViewRow, BoardProjectionHost, CustomViewWithBoardItem } from "../board-yjs/board_projection_types.js";
+import type { CatalogBoardItemRow } from "../board/folder_content_types.js";
+import type { CustomViewRow, BoardProjectionHost, CustomViewWithBoardItem } from "../board/folder_content_types.js";
 import type { FolderRow } from "./board_catalog_types.js";
 import { boardItemsDelta } from "./board_catalog_delta.js";
 import type { CatalogDelta } from "../runtime/catalog_delta_broadcaster.js";
 import {
   CustomViewRevisionConflictError,
-} from "../board-yjs/board_projection_types.js";
+} from "../board/folder_content_types.js";
 
 export { CustomViewRevisionConflictError };
 
@@ -15,7 +15,7 @@ export interface CustomViewDbPort {
   getAllFolders(): Promise<FolderRow[]>;
 }
 
-export interface CustomViewBoardYjsPort extends Pick<BoardProjectionHost, "getCustomView" | "listCustomViews" | "createCustomViewRecord" | "patchCustomViewRecord"> {
+export interface CustomViewFolderContentPort extends Pick<BoardProjectionHost, "getCustomView" | "listCustomViews" | "createCustomViewRecord" | "patchCustomViewRecord"> {
   upsertCustomViewBoardItem(input: {
     folderId: string;
     boardItemId: string;
@@ -55,7 +55,7 @@ export interface CustomViewActor {
 export class CustomViewService {
   constructor(
     private readonly db: CustomViewDbPort,
-    private readonly boardYjsService: CustomViewBoardYjsPort,
+    private readonly folderContentHost: CustomViewFolderContentPort,
     private readonly broadcaster?: CustomViewBroadcasterPort,
   ) {}
 
@@ -69,7 +69,7 @@ export class CustomViewService {
   }): Promise<CustomViewMutationResult> {
     await this.requireFolder(params.folderId);
     const customViewId = customViewIdForIdempotencyKey(params.idempotencyKey);
-    const existing = await this.boardYjsService.getCustomView(customViewId);
+    const existing = await this.folderContentHost.getCustomView(customViewId);
     if (existing) {
       return { ...existing, idempotent: true };
     }
@@ -77,7 +77,7 @@ export class CustomViewService {
     const title = normalizeTitle(params.title);
     const html = params.html;
     const boardItemId = `custom_view:${customViewId}`;
-    const boardItem = await this.boardYjsService.upsertCustomViewBoardItem({
+    const boardItem = await this.folderContentHost.upsertCustomViewBoardItem({
       folderId: params.folderId,
       boardItemId,
       customViewId,
@@ -88,7 +88,7 @@ export class CustomViewService {
       y: params.y ?? 0,
     });
     try {
-      const { customView, eventId } = await this.boardYjsService.createCustomViewRecord({
+      const { customView, eventId } = await this.folderContentHost.createCustomViewRecord({
         id: customViewId,
         boardItemId,
         title,
@@ -101,7 +101,7 @@ export class CustomViewService {
       await this.broadcast(params.actorSessionId, result);
       return result;
     } catch (err) {
-      await this.boardYjsService.removeBoardItem(params.folderId, boardItemId)
+      await this.folderContentHost.removeBoardItem(params.folderId, boardItemId)
         .catch(() => undefined);
       throw err;
     }
@@ -114,13 +114,13 @@ export class CustomViewService {
     title?: string | null;
     idempotencyKey: string;
   }): Promise<CustomViewMutationResult> {
-    const existing = await this.boardYjsService.getCustomView(params.customViewId);
+    const existing = await this.folderContentHost.getCustomView(params.customViewId);
     if (!existing) throw new Error(`custom view not found: ${params.customViewId}`);
     if (isIdempotentPatchRetry(existing.customView, params)) {
       return { ...existing, idempotent: true };
     }
 
-    const { customView, eventId } = await this.boardYjsService.patchCustomViewRecord({
+    const { customView, eventId } = await this.folderContentHost.patchCustomViewRecord({
       customViewId: params.customViewId,
       boardItemId: existing.boardItem.id,
       expectedRevision: params.expectedRevision,
@@ -133,7 +133,7 @@ export class CustomViewService {
       idempotencyKey: params.idempotencyKey,
     });
 
-    const boardItem = await this.boardYjsService.upsertCustomViewBoardItem({
+    const boardItem = await this.folderContentHost.upsertCustomViewBoardItem({
       folderId: existing.boardItem.folderId,
       boardItemId: existing.boardItem.id,
       customViewId: customView.id,
@@ -150,7 +150,7 @@ export class CustomViewService {
   }
 
   async getCustomView(customViewId: string): Promise<CustomViewWithBoardItem | null> {
-    return await this.boardYjsService.getCustomView(customViewId);
+    return await this.folderContentHost.getCustomView(customViewId);
   }
 
   async listCustomViews(params: {
@@ -159,7 +159,7 @@ export class CustomViewService {
     limit?: number;
   }): Promise<CustomViewWithBoardItem[]> {
     await this.requireFolder(params.folderId);
-    return await this.boardYjsService.listCustomViews(params);
+    return await this.folderContentHost.listCustomViews(params);
   }
 
   private async requireFolder(folderId: string): Promise<void> {

@@ -1,5 +1,5 @@
-import type { BoardItemType, CatalogBoardItemRow } from "../board-yjs/board_yjs_types.js";
-import type { ListFolderItemsParams, ListFolderItemsResult } from "../board-yjs/board_projection_types.js";
+import type { BoardItemType, CatalogBoardItemRow } from "../board/folder_content_types.js";
+import type { ListFolderItemsParams, ListFolderItemsResult } from "../board/folder_content_types.js";
 import type { BoardMcpStore, FolderRow } from "./board_catalog_types.js";
 import { FOLDER_SEARCH_SCAN_LIMIT } from "@soulstream/mcp-contract";
 

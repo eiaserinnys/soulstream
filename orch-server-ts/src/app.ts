@@ -34,14 +34,7 @@ import {
   registerWorkerAttachmentRoutes,
   type WorkerAttachmentRouteOptions,
 } from "./attachments/worker_attachment_routes.js";
-import {
-  registerBoardYjsHostProxyRoutes,
-  type BoardYjsHostProxyRouteOptions,
-} from "./board/board_yjs_host_proxy.js";
-import {
-  registerBoardYjsRoutes,
-  type BoardYjsRouteOptions,
-} from "./board-yjs/board_yjs_route.js";
+import { registerFlatFolderContentRoutes, type FlatFolderContentRouteOptions } from "./board/flat_folder_content_routes.js";
 import {
   registerPageYjsRoutes,
   type PageYjsRouteOptions,
@@ -241,8 +234,7 @@ export type CreateAppOptions = {
   publicStatusRoutes?: PublicStatusRouteOptions;
   userBackgroundRoutes?: UserBackgroundRouteOptions;
   userPreferencesRoutes?: UserPreferencesRouteOptions;
-  boardYjsHostProxyRoutes?: BoardYjsHostProxyRouteOptions;
-  boardYjsRoutes?: BoardYjsRouteOptions;
+  flatFolderContentRoutes?: FlatFolderContentRouteOptions;
   pageYjsRoutes?: PageYjsRouteOptions;
   boardAssetRoutes?: BoardAssetRouteOptions;
   boardItemRoutes?: BoardItemRouteOptions;
@@ -431,14 +423,11 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
       environment: options.config.environment,
     });
   }
-  if (options.boardYjsHostProxyRoutes !== undefined) {
-    registerBoardYjsHostProxyRoutes(app, {
-      ...options.boardYjsHostProxyRoutes,
+  if (options.flatFolderContentRoutes !== undefined) {
+    registerFlatFolderContentRoutes(app, {
+      ...options.flatFolderContentRoutes,
       environment: options.config.environment,
     });
-  }
-  if (options.boardYjsRoutes !== undefined) {
-    registerBoardYjsRoutes(app, options.boardYjsRoutes);
   }
   if (options.pageYjsRoutes !== undefined) {
     registerPageYjsRoutes(app, {

@@ -5,7 +5,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { CardControlPlaneService } from "../../../orch-server-ts/src/cards/card_control_plane_service.js";
-import { createBoardYjsSqlAdapter } from "../../../orch-server-ts/src/board-yjs/board_yjs_sql.js";
+import { createFolderContentSqlAdapter } from "../../../orch-server-ts/src/board/folder_content_sql.js";
 import type { FolderControlPlaneHostRouteOptions } from "../../../orch-server-ts/src/folders/folder_control_plane_host_route.js";
 import { FolderControlPlaneService } from "../../../orch-server-ts/src/folders/folder_control_plane_service.js";
 import { FolderProjectIdentityService } from "../../../orch-server-ts/src/folders/folder_project_identity_service.js";
@@ -53,7 +53,7 @@ describe("folder object orchestrator MCP roundtrip", () => {
 
   beforeAll(async () => {
     h = await createPagePostgresHarness();
-    const sql = createBoardYjsSqlAdapter(h.liveSql);
+    const sql = createFolderContentSqlAdapter(h.liveSql);
     const cards = new CardControlPlaneService(sql, { appendEventTx: async () => 1 }, {
       emitFolderUpdated: async () => {}, emitCardUpdated: async () => {},
     });
@@ -61,9 +61,9 @@ describe("folder object orchestrator MCP roundtrip", () => {
       repository: new SqlFolderProjectIdentityRepository(createLiveDbSqlResolver({ sql: h.liveSql })),
       createId: () => `00000000-0000-4000-8000-${String(++sequence).padStart(12, "0")}`,
       createOperationId: () => `10000000-0000-4000-8000-${String(++operationSequence).padStart(12, "0")}`,
-      withBoardApplication: async (_input, persist) => persist([]), hydratePage: async () => {},
+      hydratePage: async () => {},
     });
-    const options = { serviceProvider: async () => new FolderControlPlaneService(sql),
+    const options = { serviceProvider: async () => new FolderControlPlaneService(sql, async () => []),
       cardServiceProvider: async () => cards, identity, authBearerToken: "service-token" };
     folderHostOptions = options;
     app = Fastify();

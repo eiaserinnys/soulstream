@@ -43,7 +43,7 @@ describe("session deletion ingress inventory", () => {
     expect(source("orch-server-ts/src/control_plane/persistence_host_routes.ts")).toContain(
       'delete_session: ["sessionMutations", null, "deleteSession"]',
     );
-    expect(source("packages/db-schema/sql/schema.sql")).toContain(
+    expect(source("packages/db-schema/sql/schema.sql")).not.toContain(
       "CREATE TRIGGER board_assert_session_ydoc_refs_removed_trigger",
     );
     expect(source("packages/db-schema/sql/schema.sql")).toContain(
