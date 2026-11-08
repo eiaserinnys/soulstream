@@ -50,6 +50,7 @@ import { createLiveMarkdownDocumentRouteProvider } from "./live_markdown_documen
 import type { MarkdownDocumentRouteProvider } from "../board/markdown_document_routes.js";
 import { createLiveSessionHistoryProvider } from "./live_session_history_provider.js";
 import { createLiveCogitoSearchProvider } from "./live_cogito_search_provider.js";
+import type { LiveCogitoSearchTiming } from "./live_cogito_search_response.js";
 import {
   buildSessionBackendCatalog,
   serializeSessionRow,
@@ -140,6 +141,7 @@ export type CreateLiveDbCatalogRepositoryOptions = {
   readonly searchDbConnectionFactory?: LiveSearchDbConnectionFactory;
   readonly typesafeApiKey?: string | null;
   readonly onSearchCancelError?: (error: unknown) => void;
+  readonly onSearchTiming?: (timing: LiveCogitoSearchTiming) => void;
   readonly configProvider?: LiveConfigProviderBoundary;
   readonly registry?: InMemoryNodeRegistry;
   readonly sessionSnapshotLimit?: number;
@@ -190,6 +192,7 @@ export function createLiveDbCatalogRepository(
       agentProfileRepository.snapshot(),
     ),
     onCancelError: options.onSearchCancelError,
+    onSearchTiming: options.onSearchTiming,
   });
   const folderProvider = createLiveFolderProvider(sqlResolver);
   const boardItemProvider = createLiveBoardItemRouteProvider(

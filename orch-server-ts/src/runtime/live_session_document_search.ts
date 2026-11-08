@@ -13,6 +13,7 @@ import {
   runSearchQuery,
 } from "./live_session_search_candidates.js";
 import type {
+  LiveSearchDbConnectionFactory,
   LiveSearchPendingQuery,
   LiveSearchSql,
 } from "./live_db_sql.js";
@@ -22,11 +23,67 @@ type SessionSourceRow = Omit<SessionDocumentRecord, "summary">;
 type SessionDigestRow = { readonly session_id: string; readonly highlight: string | null };
 type SessionSummarySourceRow = SessionSummaryEvent & { readonly session_id: string };
 
+const DOCUMENT_INDEX_INITIALIZATION_TIMEOUT_MS = 30_000;
+
 export class LiveSessionDocumentSearch {
   readonly index = new SessionDocumentSearchIndex();
   private initialized = false;
   private watermarkMs = 0;
   private refreshPromise: Promise<number> | undefined;
+  private initializationPromise: Promise<void> | undefined;
+
+  constructor(private readonly connectionFactory: LiveSearchDbConnectionFactory) {}
+
+  get isInitialized(): boolean {
+    return this.initialized;
+  }
+
+  ensureInitialized(): Promise<void> {
+    if (this.initialized) return Promise.resolve();
+    this.initializationPromise ??= this.initializeIndex()
+      .finally(() => { this.initializationPromise = undefined; });
+    return this.initializationPromise;
+  }
+
+  private async initializeIndex(): Promise<void> {
+    const startedAt = Date.now();
+    const deadlineAt = startedAt + DOCUMENT_INDEX_INITIALIZATION_TIMEOUT_MS;
+    const activeQuery: ActiveQuery = {};
+    const signal = new AbortController().signal;
+    const connection = await this.connectionFactory.open(DOCUMENT_INDEX_INITIALIZATION_TIMEOUT_MS);
+    try {
+      await connection.sql.setStatementTimeout?.(DOCUMENT_INDEX_INITIALIZATION_TIMEOUT_MS);
+      const sessions = await runSearchQuery(activeQuery, () => connection.sql`
+        SELECT
+          session_id,
+          display_name,
+          left(prompt, 2000) AS prompt,
+          left(last_assistant_text, 400) AS last_assistant_text,
+          created_at,
+          agent_id
+        FROM sessions
+        WHERE COALESCE(session_type, '') <> 'llm'
+      `, signal, deadlineAt, connection.sql, deadlineAt - Date.now()) as readonly SessionSourceRow[];
+      const digests = await runSearchQuery(activeQuery, () => connection.sql`
+        SELECT session_id, left(highlight, 1500) AS highlight
+        FROM session_digests
+      `, signal, deadlineAt, connection.sql, deadlineAt - Date.now()) as readonly SessionDigestRow[];
+      const events = await runSearchQuery(activeQuery, () => connection.sql`
+        SELECT
+          session_id,
+          id AS event_id,
+          left(payload->>'content', 1500) AS content
+        FROM events
+        WHERE event_type = 'turn_summary'
+        ORDER BY session_id, id
+      `, signal, deadlineAt, connection.sql, deadlineAt - Date.now()) as readonly SessionSummarySourceRow[];
+      this.index.initialize(assembleSessionDocumentRecords(sessions, digests, events));
+      this.initialized = true;
+      this.watermarkMs = startedAt;
+    } finally {
+      await connection.close();
+    }
+  }
 
   refresh(input: {
     readonly sql: LiveSearchSql;
@@ -34,9 +91,16 @@ export class LiveSessionDocumentSearch {
     readonly deadlineAt: number;
     readonly signal: AbortSignal;
   }): Promise<number> {
+    if (!this.initialized) return this.waitForInitialization(input.signal, input.deadlineAt);
     if (this.refreshPromise) return waitForSharedRefresh(this.refreshPromise, input.signal, input.deadlineAt);
     this.refreshPromise = this.refreshInternal(input).finally(() => { this.refreshPromise = undefined; });
     return this.refreshPromise;
+  }
+
+  private async waitForInitialization(signal: AbortSignal, deadlineAt: number): Promise<number> {
+    const startedAt = Date.now();
+    await waitForSharedRefresh(this.ensureInitialized(), signal, deadlineAt);
+    return Math.max(0, Date.now() - startedAt);
   }
 
   private async refreshInternal(input: {
@@ -47,37 +111,6 @@ export class LiveSessionDocumentSearch {
   }): Promise<number> {
     const startedAt = Date.now();
     assertSearchMayContinue(input.signal, input.deadlineAt);
-    if (!this.initialized) {
-      const sessions = await runSearchQuery(input.activeQuery, () => input.sql`
-        SELECT
-          session_id,
-          display_name,
-          left(prompt, 2000) AS prompt,
-          left(last_assistant_text, 400) AS last_assistant_text,
-          created_at,
-          agent_id
-        FROM sessions
-        WHERE COALESCE(session_type, '') <> 'llm'
-      `, input.signal, input.deadlineAt, input.sql, input.deadlineAt - Date.now()) as readonly SessionSourceRow[];
-      const digests = await runSearchQuery(input.activeQuery, () => input.sql`
-        SELECT session_id, left(highlight, 1500) AS highlight
-        FROM session_digests
-      `, input.signal, input.deadlineAt, input.sql, input.deadlineAt - Date.now()) as readonly SessionDigestRow[];
-      const events = await runSearchQuery(input.activeQuery, () => input.sql`
-        SELECT
-          session_id,
-          id AS event_id,
-          left(payload->>'content', 1500) AS content
-        FROM events
-        WHERE event_type = 'turn_summary'
-        ORDER BY session_id, id
-      `, input.signal, input.deadlineAt, input.sql, input.deadlineAt - Date.now()) as readonly SessionSummarySourceRow[];
-      this.index.initialize(assembleSessionDocumentRecords(sessions, digests, events));
-      this.initialized = true;
-      this.watermarkMs = startedAt;
-      return Math.max(0, Date.now() - startedAt);
-    }
-
     const roster = await runSearchQuery(input.activeQuery, () => input.sql`
       SELECT session_id, display_name
       FROM sessions
@@ -151,11 +184,11 @@ export class LiveSessionDocumentSearch {
   }
 }
 
-function waitForSharedRefresh(
-  sharedRefresh: Promise<number>,
+function waitForSharedRefresh<T>(
+  sharedRefresh: Promise<T>,
   signal: AbortSignal,
   deadlineAt: number,
-): Promise<number> {
+): Promise<T> {
   assertSearchMayContinue(signal, deadlineAt);
   return new Promise((resolve, reject) => {
     const cleanup = () => signal.removeEventListener("abort", onAbort);

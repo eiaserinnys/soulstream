@@ -126,14 +126,15 @@ describe("session document search index", () => {
       },
     ) as unknown as LiveSearchSql;
 
-    await new LiveSessionDocumentSearch().refresh({
+    const search = await initializedDocumentSearch();
+    await search.refresh({
       sql,
       activeQuery: {},
       deadlineAt: Date.now() + 10_000,
       signal: new AbortController().signal,
     });
 
-    expect(statementTimeouts).toHaveLength(3);
+    expect(statementTimeouts).toHaveLength(2);
     expect(statementTimeouts.every((timeoutMs) => timeoutMs > 3_000)).toBe(true);
   });
 
@@ -154,7 +155,7 @@ describe("session document search index", () => {
     }, {
       setStatementTimeout: async (_timeoutMs: number) => undefined,
     }) as unknown as LiveSearchSql;
-    const search = new LiveSessionDocumentSearch();
+    const search = await initializedDocumentSearch();
     const ownerController = new AbortController();
     const ownerRefresh = search.refresh({
       sql, activeQuery: {}, deadlineAt: Date.now() + 5_000, signal: ownerController.signal,
@@ -173,7 +174,7 @@ describe("session document search index", () => {
 
     releaseOwnerQuery([]);
     await expect(ownerRefresh).resolves.toBeGreaterThanOrEqual(0);
-    expect(queryCount).toBe(3);
+    expect(queryCount).toBe(2);
   });
 
   it("keeps the last assistant answer as a preview when cold sessions have no summary", async () => {
@@ -184,14 +185,11 @@ describe("session document search index", () => {
       if (text.includes("FROM session_digests")) return [];
       return [];
     });
-    const search = new LiveSessionDocumentSearch();
-
-    await search.refresh({
-      sql,
-      activeQuery: {},
-      deadlineAt: Date.now() + 10_000,
-      signal: new AbortController().signal,
+    const search = new LiveSessionDocumentSearch({
+      open: async () => ({ sql, close: async () => undefined }),
     });
+
+    await search.ensureInitialized();
 
     expect(calls).toHaveLength(3);
     expect(calls.map((call) => call.text)).toEqual(expect.arrayContaining([
@@ -217,14 +215,11 @@ describe("session document search index", () => {
       }
       return [];
     });
-    const search = new LiveSessionDocumentSearch();
-
-    await search.refresh({
-      sql,
-      activeQuery: {},
-      deadlineAt: Date.now() + 10_000,
-      signal: new AbortController().signal,
+    const search = new LiveSessionDocumentSearch({
+      open: async () => ({ sql, close: async () => undefined }),
     });
+
+    await search.ensureInitialized();
 
     expect(search.index.get("a")?.card.summary).toBe("하이라이트 요약");
     expect(search.index.get("a")?.answerPreview).toBe("마지막 답변");
@@ -280,7 +275,10 @@ describe("session document search index", () => {
       }
       return [];
     });
-    const search = new LiveSessionDocumentSearch();
+    const search = new LiveSessionDocumentSearch({
+      open: async () => ({ sql, close: async () => undefined }),
+    });
+    await search.ensureInitialized();
     const input = {
       sql,
       activeQuery: {},
@@ -327,6 +325,19 @@ function record(
     created_at: "2026-09-29T00:00:00.000Z",
     agent_id: "roselin",
   };
+}
+
+async function initializedDocumentSearch() {
+  const search = new LiveSessionDocumentSearch({
+    open: async () => ({
+      sql: Object.assign(() => Promise.resolve([] as readonly Record<string, unknown>[]), {
+        setStatementTimeout: async (_timeoutMs: number) => undefined,
+      }) as unknown as LiveSearchSql,
+      close: async () => undefined,
+    }),
+  });
+  await search.ensureInitialized();
+  return search;
 }
 
 function createRefreshSql(

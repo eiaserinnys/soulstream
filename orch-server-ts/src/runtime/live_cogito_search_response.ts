@@ -23,6 +23,11 @@ export type LiveCogitoSearchTiming = {
   readonly expansionWaitMs: number;
   readonly semanticSqlMs: number;
   readonly navigationSqlMs: number;
+  readonly documentIndexInitialized: boolean;
+  readonly status: "complete" | "partial";
+  readonly partialStage: "lexical" | "semantic" | "navigation" | null;
+  readonly partialReason: "timeout" | "cancelled" | "error" | null;
+  readonly sessionResultCount: number;
   readonly projectionMs: number;
   readonly totalMs: number;
 };
@@ -50,7 +55,10 @@ export function finalizeLiveCogitoSearchResponse(input: {
   readonly startedAt: number;
   readonly productSearch: ProductSearchResponseState | undefined;
   readonly dbCancelFailed: boolean;
-  readonly timing: Omit<LiveCogitoSearchTiming, "projectionMs" | "totalMs">;
+  readonly timing: Omit<
+    LiveCogitoSearchTiming,
+    "projectionMs" | "totalMs" | "status" | "partialStage" | "partialReason" | "sessionResultCount"
+  >;
   readonly onSearchTiming?: (timing: LiveCogitoSearchTiming) => void;
 }): CogitoSearchResponse {
   const projectionStartedAt = Date.now();
@@ -65,7 +73,12 @@ export function finalizeLiveCogitoSearchResponse(input: {
       ? {}
       : {
         session_results: input.productSearch.shouldExpand
-          ? input.productSearch.expandedSessionResults ?? []
+          ? input.productSearch.expandedSessionResults
+            ?? projectSessionSearchResults(
+              input.searchRows,
+              input.params.q,
+              input.candidateLimit,
+            ).slice(0, input.params.top_k)
           : projectSessionSearchResults(
             input.searchRows,
             input.params.q,
@@ -100,8 +113,13 @@ export function finalizeLiveCogitoSearchResponse(input: {
   };
   const projectionMs = Math.max(0, Date.now() - projectionStartedAt);
   try {
+    const incompleteSearch = input.productSearch?.incompleteSearch;
     input.onSearchTiming?.({
       ...input.timing,
+      status: incompleteSearch === undefined ? "complete" : "partial",
+      partialStage: incompleteSearch?.stage ?? null,
+      partialReason: incompleteSearch?.reason ?? null,
+      sessionResultCount: response.session_results?.length ?? 0,
       projectionMs,
       totalMs: Math.max(0, Date.now() - input.startedAt),
     });

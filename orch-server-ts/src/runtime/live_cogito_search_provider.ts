@@ -13,6 +13,7 @@ import {
   buildSessionSearchRrfPool,
   filterTitleResultsToIndexedSessions,
   orderSessionSearchResults,
+  type SessionSearchPoolCandidate,
   type SessionSearchPoolResult,
   withSessionCardExcerpt,
 } from "../search/session_search_rrf.js";
@@ -66,7 +67,7 @@ export function createLiveCogitoSearchProvider(
   options: CreateLiveCogitoSearchProviderOptions,
 ): CogitoSearchProvider {
   const acquireSearchSlot = createSearchConcurrencyLimiter(SEARCH_DB_CONCURRENCY_LIMIT);
-  const documentSearch = new LiveSessionDocumentSearch();
+  const documentSearch = new LiveSessionDocumentSearch(options.searchDbConnectionFactory);
   return {
     async search(params) {
       const startedAt = Date.now();
@@ -132,6 +133,16 @@ export function createLiveCogitoSearchProvider(
       } = { status: "partial", reason: "error", latency_ms: 0 };
       const searchRows: SessionSearchCandidateRow[] = [];
       let expandedSessionResults: CogitoSearchResponse["session_results"];
+      const finalizeSessionResults = (
+        pool: readonly SessionSearchPoolCandidate[],
+        relevanceBySession: ReadonlyMap<string, number> | null,
+      ) => orderSessionSearchResults(pool, relevanceBySession)
+        .slice(0, params.top_k)
+        .map((candidate) => withSessionCardExcerpt(
+          candidate,
+          documentSearch.index.get(candidate.session_id)?.answerPreview ?? null,
+          params.exclude_session_request_excerpt === true,
+        ));
       const recordMetadataResult = (
         result: SessionMetadataCandidateResult,
         stage: "lexical" | "semantic",
@@ -263,12 +274,17 @@ export function createLiveCogitoSearchProvider(
               assertSearchMayContinue(signal, deadlineAt);
               const remainingBudgetMs = Math.max(1, Math.floor(deadlineAt - Date.now() - 1_000));
               await connection.sql.setStatementTimeout?.(remainingBudgetMs);
-              documentIndexBuildMs = await documentSearch.refresh({
-                sql: connection.sql,
-                activeQuery,
-                deadlineAt,
-                signal,
-              });
+              const documentIndexStartedAt = Date.now();
+              try {
+                await documentSearch.refresh({
+                  sql: connection.sql,
+                  activeQuery,
+                  deadlineAt,
+                  signal,
+                });
+              } finally {
+                documentIndexBuildMs = Math.max(0, Date.now() - documentIndexStartedAt);
+              }
               const lexicalTitles = projectSessionSearchResults(searchRows, params.q, candidateLimit);
               const titleResults = filterTitleResultsToIndexedSessions(
                 lexicalTitles,
@@ -281,13 +297,7 @@ export function createLiveCogitoSearchProvider(
                 (sessionId) => documentSearch.index.get(sessionId)!.card,
                 50,
               );
-              expandedSessionResults = orderSessionSearchResults(titleOnlyPool, null)
-                .slice(0, params.top_k)
-                .map((candidate) => withSessionCardExcerpt(
-                  candidate,
-                  documentSearch.index.get(candidate.session_id)?.answerPreview ?? null,
-                  params.exclude_session_request_excerpt === true,
-                ));
+              expandedSessionResults = finalizeSessionResults(titleOnlyPool, null);
               const documentHits = documentSearch.index.search(params.q, 300);
               const documentById = new Map(documentHits.map((hit) => [hit.session_id, hit]));
               const documentQueryStartedAt = Date.now();
@@ -337,6 +347,7 @@ export function createLiveCogitoSearchProvider(
                 50,
               );
               documentSource = { status: "complete" };
+              expandedSessionResults = finalizeSessionResults(pool, null);
               const rerank = await rerankSessionDocuments(
                 options.typesafeApiKey ?? null,
                 params.q,
@@ -359,13 +370,7 @@ export function createLiveCogitoSearchProvider(
                   reason: rerank.reason,
                 };
               }
-              expandedSessionResults = orderSessionSearchResults(pool, rerank.scores)
-                .slice(0, params.top_k)
-                .map((candidate) => withSessionCardExcerpt(
-                  candidate,
-                  documentSearch.index.get(candidate.session_id)?.answerPreview ?? null,
-                  params.exclude_session_request_excerpt === true,
-                ));
+              expandedSessionResults = finalizeSessionResults(pool, rerank.scores);
             } catch (error) {
               const reason = sourceFailureReason(error, signal, deadlineAt, deadlineExpired);
               documentSource = { status: "partial", reason };
@@ -483,9 +488,14 @@ export function createLiveCogitoSearchProvider(
           expansionWaitMs,
           semanticSqlMs,
           navigationSqlMs,
+          documentIndexInitialized: documentSearch.isInitialized,
         },
         onSearchTiming: options.onSearchTiming,
       });
+    },
+    async warmup() {
+      await documentSearch.ensureInitialized();
+      return documentSearch.index.size;
     },
   };
 }
