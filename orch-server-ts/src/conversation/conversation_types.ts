@@ -26,6 +26,12 @@ export type Thread = {
   profile?: { id: string; label: string }; execution_id?: string;
   created_at: string; archived: boolean;
 };
+export type AdoptableCandidate = {
+  id: string; title: string;
+  profile?: { id: string; label: string };
+  model?: { id: string; label: string; group?: { id: string; label: string } };
+  updated_at: string;
+};
 export class ConversationError extends Error {
   constructor(readonly status: number, readonly code: string, message: string, readonly threadId?: string) { super(message); }
 }
