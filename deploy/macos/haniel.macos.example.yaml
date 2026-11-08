@@ -75,7 +75,7 @@ install:
         - key: SOUL_RUNNER_STATE_DIR
           default: /tmp/ss-run
         - key: SOUL_RUNNER_ARTIFACT_DIR
-          default: /Users/your-user/haniel-root/services/soulstream/soul-server-ts/dist/runner
+          default: /Users/your-user/haniel-root/services/soulstream/src/soulstream/soul-server-ts/dist/runner
         - key: SOUL_RUNNER_RELEASES_DIR
           default: /Users/your-user/haniel-root/services/soulstream/state/runner-releases
         - key: SOUL_RUNNER_LEASE_TIMEOUT_MS

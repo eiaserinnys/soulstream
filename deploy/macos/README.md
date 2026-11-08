@@ -12,16 +12,18 @@
 ## 1. 선행 조건 점검
 
 ```bash
-cd ~/haniel-root
+cd ~/haniel-root/services/soulstream/src/soulstream
 SOUL_RUNNER_STATE_DIR=/tmp/ss-run bash deploy/macos/check-macos-node.sh
 ```
+
+`soulstream` 체크아웃은 `haniel.macos.example.yaml`의 `cwd`와 `run`이 가리키는 `./services/soulstream/src/soulstream`에 있다.
 
 점검 항목은 다음과 같다.
 
 - `uname -s`가 `Darwin`인지, 아키텍처가 `arm64` 또는 `x86_64`인지
 - Python 3.11 이상인지 (Haniel과 Darwin 빌드 실행기의 전제)
 - Node 22.12 이상인지와 `node:sqlite`를 플래그 없이 읽을 수 있는지. 실제 `require("node:sqlite")` 프로브로 확인한다
-- `pnpm`, `git` 설치 여부
+- `pnpm`, `git` 설치 여부. 없으면 FAIL이며 설치는 빌드의 필수 선행 조건이다
 - CLI 백엔드 `claude`, `codex`, `agy`의 발견 경로. 없으면 WARN이며 필수 실패는 아니다
 - `SOUL_RUNNER_STATE_DIR`의 소켓 경로 UTF-8 바이트 길이. runner는 상태 디렉토리 아래에 24자 슬러그와 `/runner.sock`을 붙이므로 Darwin의 103바이트 상한을 넘지 않아야 한다
 

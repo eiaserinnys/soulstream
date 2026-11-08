@@ -91,7 +91,19 @@ check_node() {
   fi
 }
 
-check_command() {
+check_required_command() {
+  local name="$1"
+  local label="$2"
+  local path
+  path="$(command -v "$name" 2>/dev/null || true)"
+  if [ -n "$path" ]; then
+    pass "$label: $path"
+  else
+    fail "$label: not found in PATH (required for install and build)"
+  fi
+}
+
+check_optional_command() {
   local name="$1"
   local label="$2"
   local path
@@ -131,11 +143,11 @@ printf 'Soulstream macOS node preflight checks\n\n'
 check_platform
 check_python
 check_node
-check_command pnpm "pnpm"
-check_command git "git"
-check_command claude "cli claude"
-check_command codex "cli codex"
-check_command agy "cli agy"
+check_required_command pnpm "pnpm"
+check_required_command git "git"
+check_optional_command claude "cli claude"
+check_optional_command codex "cli codex"
+check_optional_command agy "cli agy"
 check_runner_state_dir
 printf '\n'
 

@@ -211,33 +211,74 @@ class RunStepTests(unittest.TestCase):
         terminate.assert_called_once_with(process)
 
 
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.now += seconds
+
+
 class TerminateBuildProcessTests(unittest.TestCase):
-    def test_sends_sigterm_then_sigkill_when_the_group_ignores_sigterm(self) -> None:
+    def test_sends_sigterm_then_sigkill_when_the_parent_ignores_sigterm(self) -> None:
         process = FakeProcess([
             subprocess.TimeoutExpired(cmd="build", timeout=2),
             0,
         ])
         signals: list[tuple[int, int]] = []
+        clock = FakeClock()
 
         build_core.terminate_build_process(
             process,
             kill_group=lambda pid, signum: signals.append((pid, signum)),
+            sleep=clock.sleep,
+            clock=clock,
         )
 
         self.assertEqual(signals, [(4242, build_core.signal.SIGTERM), (4242, build_core.signal.SIGKILL)])
         self.assertEqual(process.wait_calls, [build_core.TERMINATION_GRACE_SECONDS] * 2)
 
-    def test_stops_after_sigterm_when_the_process_exits(self) -> None:
+    def test_kills_the_group_when_the_parent_exits_but_children_remain(self) -> None:
         process = FakeProcess([0])
         signals: list[tuple[int, int]] = []
+        clock = FakeClock()
 
         build_core.terminate_build_process(
             process,
             kill_group=lambda pid, signum: signals.append((pid, signum)),
+            sleep=clock.sleep,
+            clock=clock,
+        )
+
+        real_signals = [call for call in signals if call[1] != 0]
+        self.assertEqual(real_signals, [(4242, build_core.signal.SIGTERM), (4242, build_core.signal.SIGKILL)])
+        self.assertTrue(any(call[1] == 0 for call in signals))
+        self.assertGreaterEqual(clock.now, build_core.TERMINATION_GRACE_SECONDS)
+        self.assertEqual(process.wait_calls, [build_core.TERMINATION_GRACE_SECONDS])
+
+    def test_stops_after_sigterm_when_the_group_is_gone(self) -> None:
+        process = FakeProcess([0])
+        signals: list[tuple[int, int]] = []
+        clock = FakeClock()
+
+        def kill_group(pid: int, signum: int) -> None:
+            if signum == 0:
+                raise ProcessLookupError
+            signals.append((pid, signum))
+
+        build_core.terminate_build_process(
+            process,
+            kill_group=kill_group,
+            sleep=clock.sleep,
+            clock=clock,
         )
 
         self.assertEqual(signals, [(4242, build_core.signal.SIGTERM)])
         self.assertEqual(process.wait_calls, [build_core.TERMINATION_GRACE_SECONDS])
+        self.assertEqual(clock.now, 0.0)
 
     def test_ignores_a_process_group_that_already_exited(self) -> None:
         def missing_group(pid: int, signum: int) -> None:

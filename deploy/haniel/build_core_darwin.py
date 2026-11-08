@@ -24,6 +24,7 @@ MINIMUM_AVAILABLE_MIB = 2000
 MEMORY_WAIT_SECONDS = 60
 STEP_TIMEOUT_SECONDS = 900
 TERMINATION_GRACE_SECONDS = 2.0
+GROUP_POLL_SECONDS = 0.05
 LOCK_PATH = Path("/tmp/soulstream-heavy-verify.lock")
 VM_STAT_PATH = "/usr/bin/vm_stat"
 
@@ -195,11 +196,42 @@ def acquire_build_lock(lock_path: Path = LOCK_PATH) -> int:
     return descriptor
 
 
-def _wait_with_grace(process: subprocess.Popen, grace_seconds: float) -> bool:
+def _reap_process(process: subprocess.Popen, timeout: float) -> bool:
     try:
-        process.wait(timeout=grace_seconds)
+        process.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
         return False
+    return True
+
+
+def _signal_group(pid: int, signum: int, kill_group: Callable[[int, int], None]) -> None:
+    try:
+        kill_group(pid, signum)
+    except ProcessLookupError:
+        pass
+
+
+def _group_exists(pid: int, kill_group: Callable[[int, int], None]) -> bool:
+    try:
+        kill_group(pid, 0)
+    except ProcessLookupError:
+        return False
+    return True
+
+
+def _wait_for_group_exit(
+    pid: int,
+    grace_seconds: float,
+    kill_group: Callable[[int, int], None],
+    sleep: Callable[[float], None],
+    clock: Callable[[], float],
+) -> bool:
+    deadline = clock() + grace_seconds
+    while _group_exists(pid, kill_group):
+        remaining = deadline - clock()
+        if remaining <= 0:
+            return False
+        sleep(min(GROUP_POLL_SECONDS, remaining))
     return True
 
 
@@ -208,19 +240,29 @@ def terminate_build_process(
     *,
     grace_seconds: float = TERMINATION_GRACE_SECONDS,
     kill_group: Callable[[int, int], None] = os.killpg,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
 ) -> None:
-    """Terminates the build's process group: SIGTERM, then SIGKILL after grace."""
-    try:
-        kill_group(process.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        pass
-    if _wait_with_grace(process, grace_seconds):
+    """Terminates the build's process group: SIGTERM, then SIGKILL after grace.
+
+    The parent command (corepack, pnpm) can exit while children stay in the same
+    process group. Waiting only for the parent would leave those children alive,
+    so the grace period ends only when a signal 0 probe reports that the whole
+    group is gone.
+    """
+    _signal_group(process.pid, signal.SIGTERM, kill_group)
+    parent_reaped = _reap_process(process, grace_seconds)
+    if parent_reaped and _wait_for_group_exit(
+        process.pid,
+        grace_seconds,
+        kill_group,
+        sleep,
+        clock,
+    ):
         return
-    try:
-        kill_group(process.pid, signal.SIGKILL)
-    except ProcessLookupError:
-        pass
-    _wait_with_grace(process, grace_seconds)
+    _signal_group(process.pid, signal.SIGKILL, kill_group)
+    if not parent_reaped:
+        _reap_process(process, grace_seconds)
 
 
 def run_step(
