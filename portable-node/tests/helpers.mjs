@@ -19,7 +19,10 @@ export const TOKEN = "test-node-token-7f3a";
 export const NODE_USER = "soulstream-node";
 
 export async function makeTempRoot(name) {
-  return mkdtemp(join(tmpdir(), `portable-${name}-`));
+  // macOS의 os.tmpdir()은 /var/folders/.../T/처럼 길어 러너 소켓 경로 한계(103바이트)를 넘는다.
+  // 실행기의 검사와 한계값은 그대로 두고, 시험 임시 루트만 darwin에서 짧은 /tmp를 쓴다.
+  const base = process.platform === "darwin" ? "/tmp" : tmpdir();
+  return mkdtemp(join(base, `portable-${name}-`));
 }
 
 export function sha256(buffer) {
