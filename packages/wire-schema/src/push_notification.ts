@@ -16,4 +16,11 @@ export type PersistentReportPushData = {
   folderId?: string;
 };
 
-export type PushNotificationData = CardReviewPushData | PersistentReportPushData;
+export type CardQuestionPushData = {
+  kind: 'card_question';
+  cardId: string;
+  questionId: string;
+  folderId: string;
+};
+
+export type PushNotificationData = CardReviewPushData | PersistentReportPushData | CardQuestionPushData;

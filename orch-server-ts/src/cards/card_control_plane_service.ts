@@ -617,10 +617,14 @@ export class CardControlPlaneService {
     try {
       await this.reports.syncCard(cardId,{scanBoards:questionChanged || leftBoard});
       if (previousStatus !== committedCard.status) await this.reports.recordCardTimeline(cardId);
-      if (previousStatus === "on_hold" && !isCardOffBoard(committedCard.status) && this.onQuestionAsked) {
+      // 보류에서 돌아온 카드의 열린 질문은 감독 PAS 판에만 다시 올린다. 휴대폰 알림은 질문을 남길 때(askQuestion) 한 번뿐이다.
+      if (previousStatus === "on_hold" && !isCardOffBoard(committedCard.status)) {
         const openQuestions=await this.repoSql<{id:string}[]>`SELECT id FROM card_questions
           WHERE card_id=${cardId} AND answer IS NULL AND withdrawn_at IS NULL ORDER BY asked_at,id`;
-        for (const question of openQuestions) await this.onQuestionAsked({cardId,questionId:question.id});
+        for (const question of openQuestions) {
+          const outcome=await this.reports.placeQuestion(cardId,question.id);
+          if (outcome.failed.length>0) this.warn(`카드 질문 ${question.id} 판 재게시 실패: ${outcome.failed.length}`);
+        }
       }
     } catch (error) { this.warn(`PAS report sync failed after card ${cardId} committed: ${String(error)}`); }
   }

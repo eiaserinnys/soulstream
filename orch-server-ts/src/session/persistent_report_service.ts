@@ -103,9 +103,23 @@ export class PersistentReportService {
     return result;
   }
   /**
-   * 담당이 남긴 카드 질문을 그 카드 소유 사용자의 「지금의 보고」 판에 `cq_<질문ID>` 장으로 올린다.
-   * 이미 답했거나 철회한 질문, 끝난 카드는 no-op. 판이 가득 차면 errors를 돌려주고(호출자가 경고만 한다) 질문 자체는 그대로 남는다.
+   * 담당이 남긴 카드 질문을 그 카드를 시킨 PAS(감독 세션)의 판에만 `cq_<질문ID>` 장으로 올린다.
+   * 감독 PAS가 없으면(사용자가 웹에서 직접 만든 카드 등) 어느 판에도 오르지 않고 빈 결과를 돌려준다.
    */
+  async placeQuestion(cardId: string, questionId: string): Promise<{ placed: string[]; failed: string[]; changed: string[] }> {
+    const placed: string[] = [];
+    const failed: string[] = [];
+    const changed: string[] = [];
+    for (const sessionId of await this.connectedSessions(this.sql, cardId)) {
+      const result = await this.putQuestion(sessionId, questionId);
+      if (result.ok) {
+        placed.push(sessionId);
+        if (result.changed) changed.push(sessionId);
+      } else failed.push(sessionId);
+    }
+    return { placed, failed, changed };
+  }
+  /** 판에 올릴 질문 장 하나를 만든다. 이미 답했거나 철회한 질문, 끝난 카드는 no-op이며 판이 가득 차면 errors를 돌려준다. */
   async putQuestion(sessionId: string, questionId: string): Promise<PersistentReportResult> {
     let timelineLine: ReportTimelineLine | undefined;
     const result = await this.mutate(sessionId, async (sql, entries) => {
@@ -356,8 +370,8 @@ function cardSituationText(card: Pick<CardStateRow, "now" | "blocked_detail">): 
     || "";
 }
 
-/** 길이가 바뀌는 글은 말줄임으로 끊는다. 코드포인트로 max를 넘으면 앞 max-1자 + 「…」, 아니면 원문. */
-function clip(text: string, max: number): string {
+/** 길이가 바뀌는 글은 말줄임으로 끊는다. 코드포인트로 max를 넘으면 앞 max-1자 + 「…」, 아니면 원문. 카드 질문 푸시 제목도 같은 규칙을 쓴다. */
+export function clip(text: string, max: number): string {
   const chars = [...text];
   return chars.length > max ? `${chars.slice(0, max - 1).join("").trimEnd()}…` : text;
 }

@@ -2,16 +2,13 @@ import { readFileSync } from "node:fs";
 import postgres from "postgres";
 import Fastify from "fastify";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import type { ReportTimelineLine } from "@soulstream/wire-schema/persistent-report";
 import { startPostgresTestContainer } from "../../packages/db-schema/scripts/postgres-test-container.mjs";
 import { waitForPostgres } from "./persistent-session-settings-world.js";
 import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { PersistentReportService } from "../src/session/persistent_report_service.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
-import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
 import { mutateCardRouteBody } from "../src/cards/card_route_body.js";
-import { placeCardQuestionOnOwnerBoards, resolveCardOwnerEmail } from "../src/cards/card_question_board.js";
-import { SessionReadRepository } from "../src/control_plane/repositories/session_read_repository.js";
-import { createSessionOwnerResolver } from "../src/session/session_owner.js";
 import { registerPersistentSessionSettingsRoutes } from "../src/session/persistent_session_settings_routes.js";
 import type { PersistentSessionSettingsService } from "../src/session/persistent_session_settings_service.js";
 import { intervenePayload } from "../src/session/session_action_command_payloads.js";
@@ -302,20 +299,15 @@ describe("PAS reports on production PostgreSQL schema", () => {
     expect((await reports.get('pas')).map(e=>e.key)).toEqual([`card_${cardId}`]);
     expect((await reports.get('pas-unrelated-on-hold')).some(e=>e.key==='ordinary-card')).toBe(false);
   });
-  it("restores open questions to owner boards after leaving on hold before restoring the card entry", async () => {
+  it("restores open questions to the supervising PAS after leaving on hold before restoring the card entry", async () => {
     const enabled = [{ type: "persistent_session", value: { enabled: true } }, { type: "caller_info", value: { source: "browser", email: "director@example.com" } }];
     await sql`INSERT INTO sessions(session_id,folder_id,node_id,session_type,metadata) VALUES
       ('hold-owner-a','report-folder','test-node',NULL,${sql.json(enabled)}),
       ('hold-owner-b','report-folder','test-node',NULL,${sql.json(enabled)})`;
-    const reads = new SessionReadRepository(sql as never);
-    const findUserByEmail = async (email: string) => ({ email, isAdmin: false, allowedFolderIds: [] });
-    const resolveOwner = createSessionOwnerResolver({ getSession: id => reads.getSession(id), findUserByEmail, findExternalAgent: async () => null });
-    const dispatch = new CardDispatchRepository(async () => sql as never);
+    const asked: string[] = [];
     const withBoard = new CardControlPlaneService(adapted, dbPort, undefined, undefined, publish, undefined, undefined, async ({ cardId, questionId }) => {
-      const ownerEmail = await resolveCardOwnerEmail(cardId, { cardCreatorActor: id => dispatch.cardCreatorActor(id), findUserByEmail, resolveSessionOwner: resolveOwner });
-      await placeCardQuestionOnOwnerBoards({ questionId, ownerEmail, resolveSessionOwner: resolveOwner,
-        listPersistentSessions: () => reads.listPersistentSessions(),
-        putQuestion: (sessionId, qid) => reports.putQuestion(sessionId, qid) });
+      asked.push(questionId);
+      await reports.placeQuestion(cardId, questionId);
     });
     const cardId = (await withBoard.createCard({ actorKind: "agent", actorSessionId: "hold-owner-a", actorUserId: null,
       folderId: "report-folder", title: "열린 질문 복원", request: "", assignee: { kind: "session", sessionId: "hold-owner-a" } })).operation.target_id;
@@ -328,11 +320,10 @@ describe("PAS reports on production PostgreSQL schema", () => {
     await withBoard.setCardStatus({ ...human, cardId, status: "on_hold" });
     expect((await reports.get("hold-owner-a")).some(entry => entry.key === `cq_${questionId}`)).toBe(false);
     await withBoard.setCardStatus({ ...human, cardId, status: "review" });
-    for (const sessionId of ["hold-owner-a", "hold-owner-b"]) {
-      const entries = await reports.get(sessionId);
-      expect(entries.some(entry => entry.key === `cq_${questionId}`)).toBe(true);
-      expect(entries.some(entry => entry.key === `card_${cardId}`)).toBe(false);
-    }
+    expect((await reports.get("hold-owner-a")).some(entry => entry.key === `cq_${questionId}`)).toBe(true);
+    expect(asked).toEqual([questionId]);
+    expect((await reports.get("hold-owner-a")).some(entry => entry.key === `card_${cardId}`)).toBe(false);
+    expect((await reports.get("hold-owner-b")).some(entry => entry.key === `cq_${questionId}` || entry.key === `card_${cardId}`)).toBe(false);
 
     await withBoard.answerQuestion({ ...human, cardId, questionId, answer: "진행" });
     expect((await reports.get("hold-owner-a")).some(entry => entry.key === `cq_${questionId}`)).toBe(false);
@@ -340,6 +331,11 @@ describe("PAS reports on production PostgreSQL schema", () => {
 
     await withBoard.askQuestion({ actorKind: "agent", actorSessionId: "hold-owner-a", actorUserId: null, cardId, text: "두 번째 질문", options: ["진행"] });
     const secondQuestionId = String((await withBoard.getCard(cardId))!.questions.at(-1)!.id);
+    await withBoard.setCardStatus({ ...human, cardId, status: "on_hold" });
+    await withBoard.askQuestion({ actorKind: "agent", actorSessionId: "hold-owner-a", actorUserId: null, cardId, text: "보류 중 질문", options: ["진행"] });
+    const heldQuestionId = String((await withBoard.getCard(cardId))!.questions.at(-1)!.id);
+    expect(asked).toEqual([questionId, secondQuestionId, heldQuestionId]);
+    expect((await reports.get("hold-owner-a")).some(entry => entry.key === `cq_${heldQuestionId}`)).toBe(true);
     await withBoard.setCardStatus({ ...human, cardId, status: "on_hold" });
     await withBoard.setCardStatus({ ...human, cardId, status: "done" });
     expect((await reports.get("hold-owner-a")).some(entry => entry.key === `cq_${secondQuestionId}`)).toBe(false);
@@ -507,47 +503,68 @@ describe("PAS reports on production PostgreSQL schema", () => {
       .toMatchObject({action:'reject',code:'CARD_QUESTION_OPTION_INVALID',status:422});
     expect((await cards.getCard(otherId))!.questions.at(-1)!.answer).toBeNull();
   });
-  it("places a new question only on the owner's boards and leaves questions asked before the feature untouched", async () => {
+  it("places a new question only on the supervising PAS and leaves questions asked before the feature untouched", async () => {
     const enabled = (email: string) => [{ type: "persistent_session", value: { enabled: true } }, { type: "caller_info", value: { source: "browser", email } }];
     await sql`INSERT INTO sessions(session_id,folder_id,node_id,session_type,metadata) VALUES
       ('owner-a','report-folder','test-node',NULL,${sql.json(enabled('director@example.com'))}),
       ('owner-b','report-folder','test-node',NULL,${sql.json(enabled('director@example.com'))}),
       ('owner-other','report-folder','test-node',NULL,${sql.json(enabled('other@example.com'))}),
       ('owner-llm','report-folder','test-node','llm',${sql.json(enabled('director@example.com'))})`;
-    const reads = new SessionReadRepository(sql as never);
-    const findUserByEmail = async (email: string) => ({ email, isAdmin: false, allowedFolderIds: [] });
-    const resolveOwner = createSessionOwnerResolver({ getSession: id => reads.getSession(id), findUserByEmail, findExternalAgent: async () => null });
-    const dispatch = new CardDispatchRepository(async () => sql as never);
-    let placement: Awaited<ReturnType<typeof placeCardQuestionOnOwnerBoards>> | undefined;
+    const agent = { actorKind: "agent" as const, actorSessionId: "owner-a", actorUserId: null };
+    let placement: Awaited<ReturnType<PersistentReportService["placeQuestion"]>> | undefined;
     const withBoard = new CardControlPlaneService(adapted, dbPort, undefined, undefined, publish, undefined, undefined, async ({ cardId, questionId }) => {
-      const ownerEmail = await resolveCardOwnerEmail(cardId, { cardCreatorActor: id => dispatch.cardCreatorActor(id), findUserByEmail, resolveSessionOwner: resolveOwner });
-      placement = await placeCardQuestionOnOwnerBoards({ questionId, ownerEmail, resolveSessionOwner: resolveOwner,
-        listPersistentSessions: () => reads.listPersistentSessions(),
-        putQuestion: (sessionId, qid) => reports.putQuestion(sessionId, qid) });
+      placement = await reports.placeQuestion(cardId, questionId);
     });
-    const cardId = (await withBoard.createCard({ ...human, folderId: 'report-folder', title: '게시 대상', request: '' })).operation.target_id;
+    const cardId = (await withBoard.createCard({ ...agent, folderId: 'report-folder', title: '게시 대상', request: '',
+      assignee: { kind: 'session', sessionId: 'owner-a' } })).operation.target_id;
     await cards.askQuestion({ ...human, cardId, text: '이전 질문', options: ['진행'] });
     const oldId = String((await withBoard.getCard(cardId))!.questions.at(-1)!.id);
     expect((await reports.get('owner-a')).some(e => e.question_id === oldId)).toBe(false);
-    await withBoard.askQuestion({ ...human, cardId, text: '새 질문', options: ['진행', '중단'] });
+    await withBoard.askQuestion({ ...agent, cardId, text: '새 질문', options: ['진행', '중단'] });
     const newId = String((await withBoard.getCard(cardId))!.questions.at(-1)!.id);
     expect(newId).not.toBe(oldId);
-    expect(placement?.placed.slice().sort()).toEqual(['owner-a','owner-b']);
+    expect(placement?.placed).toEqual(['owner-a']);
     expect(placement?.failed).toEqual([]);
-    expect(placement?.changed.slice().sort()).toEqual(['owner-a','owner-b']);
-    const repeated = await placeCardQuestionOnOwnerBoards({ questionId:newId, ownerEmail:'director@example.com', resolveSessionOwner:resolveOwner,
-      listPersistentSessions:()=>reads.listPersistentSessions(), putQuestion:(sessionId,qid)=>reports.putQuestion(sessionId,qid) });
-    expect(repeated.placed.slice().sort()).toEqual(['owner-a','owner-b']);
+    expect(placement?.changed).toEqual(['owner-a']);
+    const repeated = await reports.placeQuestion(cardId, newId);
+    expect(repeated.placed).toEqual(['owner-a']);
     expect(repeated.failed).toEqual([]);
     expect(repeated.changed).toEqual([]);
-    for (const s of ['owner-a', 'owner-b']) {
-      const placed = (await reports.get(s)).filter(e => e.question_id === newId);
-      expect(placed).toHaveLength(1);
-      expect(placed[0]).toMatchObject({ key: `cq_${newId}`, kind: 'ask', options: ['진행', '중단'] });
-    }
-    expect((await reports.get('owner-other')).filter(e => e.question_id === newId)).toHaveLength(0);
-    expect((await reports.get('owner-llm')).filter(e => e.question_id === newId)).toHaveLength(0);
+    const placed = (await reports.get('owner-a')).filter(e => e.question_id === newId);
+    expect(placed).toHaveLength(1);
+    expect(placed[0]).toMatchObject({ key: `cq_${newId}`, kind: 'ask', options: ['진행', '중단'] });
+    for (const s of ['owner-b', 'owner-other', 'owner-llm'])
+      expect((await reports.get(s)).filter(e => e.question_id === newId)).toHaveLength(0);
     expect((await reports.get('owner-a')).some(e => e.question_id === oldId)).toBe(false);
     expect((await withBoard.answerQuestion({ ...human, cardId, questionId: oldId, answer: '진행' })).operation).toBeTruthy();
+  });
+  it("keeps a question off an unrelated PAS of the same owner and places nothing without a supervising PAS", async () => {
+    const enabled = [{ type: "persistent_session", value: { enabled: true } }, { type: "caller_info", value: { source: "browser", email: "director@example.com" } }];
+    await sql`INSERT INTO sessions(session_id,folder_id,node_id,session_type,metadata) VALUES
+      ('sup-a','report-folder','test-node',NULL,${sql.json(enabled)}),
+      ('sup-b','report-folder','test-node',NULL,${sql.json(enabled)})`;
+    const timeline: { sessionId: string; line: ReportTimelineLine }[] = [];
+    const questionReports = new PersistentReportService(adapted, publish, undefined, async (sessionId, line) => {
+      timeline.push({ sessionId, line });
+    });
+    const withBoard = new CardControlPlaneService(adapted, dbPort, undefined, undefined, publish, undefined, undefined, async ({ cardId, questionId }) => {
+      await questionReports.placeQuestion(cardId, questionId);
+    });
+    const agent = { actorKind: "agent" as const, actorSessionId: "sup-a", actorUserId: null };
+    const cardId = (await withBoard.createCard({ ...agent, folderId: 'report-folder', title: '감독 판 질문', request: '',
+      assignee: { kind: 'session', sessionId: 'sup-a' } })).operation.target_id;
+    await withBoard.askQuestion({ ...agent, cardId, text: '어느 판에 오를까요?', options: ['진행'] });
+    const questionId = String((await withBoard.getCard(cardId))!.questions.at(-1)!.id);
+    expect((await questionReports.get('sup-a')).map(e => e.key)).toEqual([`cq_${questionId}`]);
+    expect((await questionReports.get('sup-b')).some(e => e.key === `cq_${questionId}`)).toBe(false);
+    expect(timeline.map(item => item.sessionId)).toEqual(['sup-a']);
+    expect(timeline[0]!.line).toMatchObject({ line_key: `card:${cardId}`, status: 'question', card_id: cardId });
+
+    const unsupervized = (await cards.createCard({ ...human, folderId: 'report-folder', title: '감독 없음', request: '' })).operation.target_id;
+    await cards.askQuestion({ ...human, cardId: unsupervized, text: '감독 없는 질문', options: ['진행'] });
+    const unsupervizedQuestionId = String((await cards.getCard(unsupervized))!.questions.at(-1)!.id);
+    expect(await questionReports.placeQuestion(unsupervized, unsupervizedQuestionId)).toEqual({ placed: [], failed: [], changed: [] });
+    await sql`UPDATE sessions SET metadata=${sql.json([{ type: "other", value: "test cleanup" }])}
+      WHERE session_id IN ('sup-a','sup-b')`;
   });
 });
