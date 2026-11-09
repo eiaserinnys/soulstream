@@ -7,6 +7,7 @@ import { RootNavigator } from './src/navigation/RootNavigator';
 import { navigationRef } from './src/navigation/navigationRef';
 import { initPushNotifications } from './src/services/pushNotifications';
 import { useTokens } from './src/theme';
+import { AppAppearanceSync } from './src/theme/AppAppearanceSync';
 import { UsageWidgetCredentialSync } from './src/widgets/usageWidgetBridge';
 import { AppNoticeBanner } from './src/components/AppNoticeBanner';
 import { useNavigationViewUsageEvents } from './src/navigation/useNavigationViewUsageEvents';
@@ -44,6 +45,7 @@ export default function App() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
+        <AppAppearanceSync />
         <UsageWidgetCredentialSync />
         <ThemedNavigationRoot />
       </SafeAreaProvider>

@@ -1,27 +1,28 @@
 import React from 'react';
-import { ActivityIndicator } from 'react-native';
+import { ActivityIndicator, type ColorValue } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { LiquidGlassButton } from '../components/LiquidGlassButton';
 import { useTokens } from '../theme';
 import { PersistentSessionPortrait, useOptionalPersistentSessionHost, usePersistentSessionHost } from './PersistentSessionContext';
 import type { TabletStackParamList } from './TabletNavigator';
-import { RailCapsuleItem, railCapsuleIconColor } from '../components/navigation/RailCapsule';
+import { RailCapsuleItem } from '../components/navigation/RailCapsule';
 
 function ConnectedEntry({ rail }: { rail: boolean }) {
   const t = useTokens();
   const host = usePersistentSessionHost();
   const navigation = useNavigation<NativeStackNavigationProp<TabletStackParamList>>();
   const onPress = () => void host.requestEntry(() => navigation.navigate('PersistentSession'));
-  const portrait = host.loading ? <ActivityIndicator testID="persistent-entry-loading" color={rail ? railCapsuleIconColor(t, true) : t.colors.accent} />
+  const portrait = (color?: ColorValue) => host.loading
+    ? <ActivityIndicator testID="persistent-entry-loading" color={color ?? t.colors.accent} />
     : <PersistentSessionPortrait session={host.portrait} size={t.iconSize.navigation} />;
   if (rail) return <RailCapsuleItem testID="tablet-persistent-entry" label="영구 세션 열기" onPress={onPress}>
-    {portrait}
+    {color => portrait(color)}
   </RailCapsuleItem>;
   return <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
     testID="tablet-persistent-entry" accessibilityLabel="영구 세션 열기"
     onPress={onPress}>
-    {portrait}
+    {portrait()}
   </LiquidGlassButton>;
 }
 export function TabletPersistentEntry({ rail = false }: { rail?: boolean } = {}) {

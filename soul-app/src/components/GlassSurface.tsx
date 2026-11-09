@@ -15,7 +15,6 @@ import {
 import { CompactTouchTarget } from './CompactTouchTarget';
 import { BlurView, type BlurTint } from 'expo-blur';
 import {
-  createLightChromeGlassRole,
   createPrimitiveRoles,
   createPlannerVisualRoles,
   createSurfaceRoles,
@@ -34,7 +33,7 @@ import {
 import { reportSanitizedEasObserveError } from '../lib/eas-observe-crash-reporting';
 
 type GlassStyle = 'clear' | 'regular' | 'none';
-export type GlassColorScheme = 'auto' | 'light' | 'dark';
+export type GlassColorScheme = 'auto' | 'light' | 'dark' | 'adaptive';
 
 type ExpoGlassEffectModule = {
   GlassView: React.ComponentType<any>;
@@ -45,6 +44,12 @@ type ExpoGlassEffectModule = {
 
 let glassEffectModule: ExpoGlassEffectModule | null | undefined;
 const SurfaceRoleContext = React.createContext<readonly SurfaceRoleName[]>([]);
+const AdaptiveNativeGlassContext = React.createContext(false);
+
+/** 자식이 적응형 native 리퀴드 글래스 위에 있는지 알려 준다. */
+export function useAdaptiveNativeGlass(): boolean {
+  return React.useContext(AdaptiveNativeGlassContext);
+}
 
 /** Native modals are separate compositing layers, even when React retains their ancestry. */
 export function GlassSurfaceBoundary({ children }: { children: React.ReactNode }) {
@@ -210,14 +215,9 @@ function GlassSurfaceImpl({
   }, [isDevelopmentBuild, nestedSameRole, violationMessage]);
 
   const resolvedRole: SurfaceRoleName = nestedSameRole ? 'canvas' : role;
-  const defaultSurface = nestedSameRole
+  const surface = nestedSameRole
     ? getSurfaceRole(roles, resolvedRole)
     : requestedSurface;
-  // 일반 chrome의 알파·경계는 그대로 두고, 라이트 스킴이 명시된 캡슐만 밝은 유리로 렌더한다.
-  const surface =
-    colorScheme === 'light' && resolvedRole === 'chrome'
-      ? createLightChromeGlassRole(effectiveTokens)
-      : defaultSurface;
   const reduceTransparency = useReduceTransparency();
   const surfaceKind = resolveGlassSurfaceKind({
     nativeGlassAvailable: canUseNativeGlass(),
@@ -233,16 +233,29 @@ function GlassSurfaceImpl({
     style,
     radiusStyle,
   ] as StyleProp<ViewStyle>;
+  // native 유리는 UIKit이 연속 곡률로 그리고 가장자리 그림자까지 모양 밖에 그린다.
+  // 호스트가 원형 곡률로 잘라 내면 그 조각이 외곽선처럼 남으므로 자르지 않는다.
+  const nativeSurfaceStyle = [
+    surface.materialStyle.native,
+    style,
+    radiusStyle,
+    { overflow: 'visible', borderCurve: 'continuous' },
+  ] as StyleProp<ViewStyle>;
   const content = (
-    <SurfaceRoleContext.Provider value={[...ancestorRoles, resolvedRole]}>
-      {renderContent ? renderContent(surfaceKind) : children}
-    </SurfaceRoleContext.Provider>
+    <AdaptiveNativeGlassContext.Provider
+      value={surfaceKind === 'native' && colorScheme === 'adaptive'}
+    >
+      <SurfaceRoleContext.Provider value={[...ancestorRoles, resolvedRole]}>
+        {renderContent ? renderContent(surfaceKind) : children}
+      </SurfaceRoleContext.Provider>
+    </AdaptiveNativeGlassContext.Provider>
   );
 
   if (surfaceKind === 'native') {
     const { GlassView } = loadGlassEffect()!;
-    const resolvedColorScheme: GlassColorScheme =
-      effectiveMode === 'dark' ? 'dark' : 'light';
+    // 'adaptive'는 스킴을 고정하지 않고 앱 외양(UIKit)을 따르게 한다.
+    const resolvedColorScheme: 'auto' | 'light' | 'dark' =
+      colorScheme === 'adaptive' ? 'auto' : effectiveMode === 'dark' ? 'dark' : 'light';
     return (
       <GlassView
         testID={testID}
@@ -251,7 +264,7 @@ function GlassSurfaceImpl({
         tintColor={surface.nativeTintColor}
         isInteractive={isInteractive}
         borderRadius={resolvedCornerRadius}
-        style={surfaceStyle}
+        style={nativeSurfaceStyle}
         onLayout={onLayout}
       >
         {content}

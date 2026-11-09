@@ -1,5 +1,5 @@
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, View, type ColorValue } from 'react-native';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { GLASS_BUTTON_BORDER_WIDTH } from '../components/GlassSurface';
@@ -33,7 +33,7 @@ export function PhonePersistentSession({ navigation }: { navigation: any }) {
     onOpenPhoneCard={openCard} onHome={home} />;
 }
 
-export function PersistentPhoneTabIcon({ color, size, active }: { color: string; size: number; active: boolean }) {
+export function PersistentPhoneTabIcon({ color, size, active }: { color: ColorValue; size: number; active: boolean }) {
   const host = usePersistentSessionHost();
   const scene = usePersistentSessionScene(state => state.scene);
   if (host.loading) return <ActivityIndicator testID="persistent-entry-loading" size="small" color={color} />;

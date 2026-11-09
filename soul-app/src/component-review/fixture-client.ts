@@ -464,8 +464,24 @@ export function createApiClient(baseUrl = ''): ApiClient {
         ? { ...api, listCards: async () => ({ cards: boardFixtureCards(boardParam) }),
           listCompletedCards: async () => ({ cards: [], nextCursor: null }) }
         : api;
+    // PAS 목록의 로딩·빈 목록·실패 화면 캡처용 상태. board=ops보다 우선한다.
+    const pasState = params.get('state');
+    const pasStateApi = pasState === 'loading'
+      ? { listCards: () => new Promise<never>(() => {}), listCompletedCards: () => new Promise<never>(() => {}) }
+      : pasState === 'empty'
+        ? { listCards: async () => ({ cards: [] }), listCompletedCards: async () => ({ cards: [], nextCursor: null }) }
+        : pasState === 'error'
+          ? { listCards: async () => { throw new Error('공개 예시: 카드 목록을 불러오지 못했습니다.'); },
+            listCompletedCards: async () => ({ cards: [], nextCursor: null }) }
+          : null;
     return new URLSearchParams(window.location.search).get('sample') === 'pas-layout'
       ? { ...api, ...createReviewCardApi(),
+        // PAS 카드 목록 캡처도 운영 형태 카드로 바꾼다(보드=ops). 기본 미리보기 카드는 2장뿐이다.
+        ...(boardParam === 'ops' || boardParam === 'review-last'
+          ? { listCards: async () => ({ cards: boardFixtureCards(boardParam) }),
+            listCompletedCards: async () => ({ cards: [], nextCursor: null }) }
+          : {}),
+        ...(pasStateApi ?? {}),
         ...(multiPasSample ? { listPersistentSessions: async () => {
           const result = await nativeSettingsApi.listPersistentSessions();
           const sessions = result.sessions.slice(0, 2).map((session, index) => ({
