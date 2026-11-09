@@ -85,12 +85,22 @@ export interface PersistentSessionHistoryResult {
 export const sessionTools = {
   list_sessions: { name: "list_sessions", audience: "all", timeoutMs: 35_000, config: {
       description:
-        "세션 목록을 페이지네이션하여 조회한다. 경량 필드만 반환 (Python list_sessions 정합).",
+        "세션 목록을 페이지네이션하여 조회한다. 기간을 제한할 때 since와 until을 함께 지정하며, 둘 다 생략하면 기간 제한 없이 조회한다. "
+        + "기간을 지정하면 그 기간에 이벤트가 있는 세션만 반환한다. 진행 중 세션은 확인 시각을 until로 고정한다"
+        + "(예: since=2026-10-23T00:00:00+09:00, until=2026-10-23T03:00:00+09:00). 경량 필드만 반환 (Python list_sessions 정합).",
       inputSchema: {
         cursor: z.number().int().min(0).default(0),
         limit: z.number().int().min(1).max(100).default(20),
-        since: z.string().min(1).optional(),
-        until: z.string().min(1).optional(),
+        since: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("오프셋이 포함된 ISO 8601 시각. 시작을 포함하며 until과 함께 지정한다."),
+        until: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("오프셋이 포함된 ISO 8601 시각. 끝은 제외하며 since와 함께 지정한다."),
         search: z.string().optional(),
         folder_id: z.string().optional(),
         folder_name: z.string().optional(),
@@ -227,7 +237,7 @@ export const sessionTools = {
     } },
   get_session_turn_summaries: { name: "get_session_turn_summaries", audience: "all", config: {
       description:
-        "세션 턴 요약을 개수(count), 단건(index), 범위(range) 모드로 조회한다.",
+        "세션 턴 요약을 개수(count), 단건(index), 범위(range) 모드로 조회한다. 기간을 제한할 때 since와 until을 함께 지정하며, 기간 조회는 range 모드에서만 지원한다.",
       inputSchema: {
         session_id: z.string(),
         mode: z.enum(["count", "index", "range"]),
@@ -235,8 +245,16 @@ export const sessionTools = {
         from_turn_number: z.number().int().positive().optional(),
         to_turn_number: z.number().int().positive().optional(),
         limit: z.number().int().min(1).max(100).default(50),
-        since: z.string().min(1).optional(),
-        until: z.string().min(1).optional(),
+        since: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("오프셋이 포함된 ISO 8601 시각. 시작을 포함하며 until과 함께 지정한다."),
+        until: z
+          .string()
+          .min(1)
+          .optional()
+          .describe("오프셋이 포함된 ISO 8601 시각. 끝은 제외하며 since와 함께 지정한다."),
       },
     } },
   expand_session_turn: { name: "expand_session_turn", audience: "all", config: {
