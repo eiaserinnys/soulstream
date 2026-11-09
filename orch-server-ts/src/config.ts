@@ -55,6 +55,7 @@ export type OrchServerEnvironmentConfig = Partial<ExternalIngressEnvironmentConf
   readonly antigravity_cli_path: string | null;
   readonly model_catalog_path: string | null;
   readonly typesafe_api_key: string;
+  readonly portable_node_github_read_token: string | null;
   readonly turn_summary_openai_key: string;
   readonly usage_summary_poll_interval_seconds: number;
   readonly usage_summary_shared_accounts: readonly UsageSummarySharedAccountGroup[];
@@ -91,6 +92,7 @@ export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
   "AGY_CLI_PATH",
   "MODEL_CATALOG_PATH",
   "TYPESAFE_API_KEY",
+  "PORTABLE_NODE_GITHUB_READ_TOKEN",
   "TURN_SUMMARY_OPENAI_KEY",
   "USAGE_SUMMARY_POLL_INTERVAL_SECONDS",
   "USAGE_SUMMARY_SHARED_ACCOUNTS",
@@ -166,6 +168,7 @@ export function loadOrchServerEnvironment(
     antigravity_cli_path: optionalString(env.AGY_CLI_PATH),
     model_catalog_path: optionalString(env.MODEL_CATALOG_PATH),
     typesafe_api_key: env.TYPESAFE_API_KEY ?? "",
+    portable_node_github_read_token: optionalString(env.PORTABLE_NODE_GITHUB_READ_TOKEN),
     turn_summary_openai_key: env.TURN_SUMMARY_OPENAI_KEY ?? "",
     usage_summary_poll_interval_seconds: parsePositiveInteger(
       env.USAGE_SUMMARY_POLL_INTERVAL_SECONDS,
