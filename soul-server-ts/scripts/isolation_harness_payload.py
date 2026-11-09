@@ -263,6 +263,16 @@ def case_gitflow(args: dict) -> None:
         "rc": git(owned, "show-ref", "--head")["rc"],
         "has_packed": os.path.exists(os.path.join(args["common_dir"], "packed-refs")),
     }
+    # 상자 안 ssh가 /etc/ssh/ssh_config.d(호스트 root 소유)를 Include로 읽을 때
+    # user namespace에서 uid 65534로 보여 "Bad owner or permissions"로 죽는지 본다.
+    # `-G`는 설정만 해석하고 네트워크를 쓰지 않는다.
+    ssh_config = run(["/usr/bin/ssh", "-G", "github.com"], timeout=60)
+    ssh_stderr = ssh_config["err"] or ""
+    steps["ssh_config"] = {
+        "rc": ssh_config["rc"],
+        "bad_owner": "Bad owner" in ssh_stderr,
+        "err": head(ssh_stderr) if ssh_config["rc"] != 0 else "",
+    }
     emit("gitflow", steps=steps)
 
 
