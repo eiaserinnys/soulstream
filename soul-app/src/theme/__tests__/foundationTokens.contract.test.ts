@@ -47,9 +47,9 @@ describe('iOS UI v0.1 foundation token contract', () => {
       outerInset: 12,
       panelGap: 12,
       header: {
-        minHeight: 60,
+        minHeight: 72,
         paddingHorizontal: 20,
-        paddingVertical: 6,
+        paddingVertical: 12,
       },
       folderPane: {
         fraction: 0.46,
