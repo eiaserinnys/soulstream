@@ -14,6 +14,7 @@ export function sha256Hex(value: string): string {
 export class InMemoryNodeCredentialRepository implements NodeCredentialRepository {
   readonly rows: NodeCredentialRow[] = [];
   failLoad = false;
+  failNextInsert = false;
 
   async loadActive() {
     if (this.failLoad) throw new Error("database unavailable");
@@ -28,6 +29,22 @@ export class InMemoryNodeCredentialRepository implements NodeCredentialRepositor
   }
 
   async insert(input: NodeCredentialInsert): Promise<NodeCredentialRow> {
+    if (this.failNextInsert) {
+      this.failNextInsert = false;
+      throw new Error("database unavailable");
+    }
+    // Mirror the real constraints: token_sha256 is globally UNIQUE and the
+    // uq_node_credentials_active_node partial index allows one active row per
+    // node_id.
+    const duplicated =
+      this.rows.some(row => row.token_sha256 === input.token_sha256) ||
+      this.rows.some(row => row.node_id === input.node_id && row.revoked_at === null);
+    if (duplicated) {
+      throw Object.assign(
+        new Error("duplicate key value violates unique constraint"),
+        { code: "23505" },
+      );
+    }
     const row: NodeCredentialRow = {
       ...input,
       created_at: new Date("2026-11-09T00:00:00.000Z"),

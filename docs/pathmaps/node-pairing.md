@@ -18,10 +18,14 @@ first wave; they land in P2 and must add their step here.
 2. The node polls `POST /api/node-pair/poll` with `device_code`. Until an
    operator approves, the response is `{status: "pending"}`. Missing, expired,
    or already-consumed codes return 404. Pending pairings live in orchestrator
-   memory only; a restart losing them is intended.
+   memory only; a restart losing them is intended. Each entry carries its own
+   `unref`'d TTL timer, so an approved-but-never-polled token is dropped from
+   memory when the ten minutes elapse, without waiting for the next request.
 3. An operator approves with the internal MCP tool `approve_node_pairing`.
    The service normalizes the user code (case, hyphen, whitespace), re-approves
-   idempotently with the same result, and refuses with 409 when the node id
+   idempotently with the same result (concurrent approvals of one code share a
+   single in-flight attempt, and a failed attempt stays retryable), and refuses
+   with 409 when the node id
    already has an active credential (`node_credentials`), is connected to this
    orchestrator (`NodeSnapshotService.getNode`), or appears in the stored node
    inventory (`soulstream_node_heartbeats`, written by the soul-server

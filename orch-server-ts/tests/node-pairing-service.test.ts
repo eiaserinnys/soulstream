@@ -16,11 +16,20 @@ async function createHarness() {
   const connected = new Set<string>();
   const stored = new Set<string>();
   let now = START_NOW;
+  const scheduled: Array<() => void> = [];
+  const cleared: unknown[] = [];
   const service = new NodePairingService({
     store,
     isNodeConnected: nodeId => connected.has(nodeId),
     hasStoredNode: nodeId => stored.has(nodeId),
     now: () => now,
+    setTimer: callback => {
+      scheduled.push(callback);
+      return scheduled.length;
+    },
+    clearTimer: handle => {
+      cleared.push(handle);
+    },
   });
   return {
     repository,
@@ -28,10 +37,15 @@ async function createHarness() {
     service,
     connected,
     stored,
+    scheduled,
+    cleared,
     advance(ms: number) {
       now += ms;
     },
     now: () => now,
+    runExpiryTimers() {
+      for (const callback of [...scheduled]) callback();
+    },
   };
 }
 
@@ -80,6 +94,52 @@ describe("NodePairingService", () => {
 
     expect(again).toEqual(first);
     expect(harness.repository.rows).toHaveLength(1);
+  });
+
+  it("approving the same user code concurrently yields one credential for both callers", async () => {
+    const harness = await createHarness();
+    const start = await harness.service.start({ node_id: "node-h", company_pc: true });
+
+    const [first, second] = await Promise.all([
+      harness.service.approve(start.user_code),
+      harness.service.approve(start.user_code),
+    ]);
+
+    expect(second).toEqual(first);
+    expect(harness.repository.rows).toHaveLength(1);
+    expect(harness.store.hasActiveNode("node-h")).toBe(true);
+  });
+
+  it("releases the in-flight approval after a failure so a retry can succeed", async () => {
+    const harness = await createHarness();
+    const start = await harness.service.start({ node_id: "node-i", company_pc: true });
+    harness.repository.failNextInsert = true;
+
+    await expect(harness.service.approve(start.user_code))
+      .rejects.toThrow("database unavailable");
+
+    const approval = await harness.service.approve(start.user_code);
+    expect(approval.node_id).toBe("node-i");
+    expect(harness.repository.rows).toHaveLength(1);
+  });
+
+  it("drops the plaintext token and device code when the TTL elapses without a poll", async () => {
+    const harness = await createHarness();
+    const start = await harness.service.start({ node_id: "node-j", company_pc: true });
+    const approval = await harness.service.approve(start.user_code);
+    expect(approval.node_id).toBe("node-j");
+
+    const internals = harness.service as unknown as {
+      byDeviceCode: Map<string, { token?: string }>;
+      byUserCode: Map<string, unknown>;
+    };
+    expect(internals.byDeviceCode.get(start.device_code)?.token).toBeTypeOf("string");
+
+    harness.advance(10 * 60 * 1000 + 1);
+    harness.runExpiryTimers();
+
+    expect(internals.byDeviceCode.size).toBe(0);
+    expect(internals.byUserCode.size).toBe(0);
   });
 
   it("expires pairings after ten minutes and treats them as missing", async () => {

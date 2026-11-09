@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { NodeCredentialStore } from "../src/node_credentials/index.js";
+import {
+  NodeCredentialConflictError,
+  NodeCredentialStore,
+} from "../src/node_credentials/index.js";
 import {
   InMemoryNodeCredentialRepository,
   createInitializedStore,
@@ -53,6 +56,20 @@ describe("NodeCredentialStore", () => {
     expect(repository.rows).toHaveLength(1);
     expect(repository.rows[0]!.token_sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(repository.rows[0]!.token_sha256).not.toBe(created.token);
+  });
+
+  it("treats a repeated token hash as a credential conflict", async () => {
+    const repository = new InMemoryNodeCredentialRepository();
+    const store = new NodeCredentialStore({
+      repository,
+      randomBytes: () => Buffer.alloc(32, 7),
+    });
+    await store.initialize();
+    await store.createCredential({ node_id: "node-x", company_pc: false });
+
+    await expect(store.createCredential({ node_id: "node-y", company_pc: false }))
+      .rejects.toBeInstanceOf(NodeCredentialConflictError);
+    expect(repository.rows).toHaveLength(1);
   });
 
   it("revokes a credential, notifies listeners once, and stays idempotent", async () => {

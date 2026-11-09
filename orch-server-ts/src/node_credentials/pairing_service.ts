@@ -62,6 +62,10 @@ export type NodePairingServiceOptions = {
   hasStoredNode: (nodeId: string) => boolean | Promise<boolean>;
   now?: () => number;
   randomBytes?: (size: number) => Buffer;
+  /** Schedules the entry expiry; injected in tests. Defaults to an unref'd timer. */
+  setTimer?: (callback: () => void, delayMs: number) => unknown;
+  /** Cancels a scheduled expiry when the entry is removed first. */
+  clearTimer?: (handle: unknown) => void;
 };
 
 type PairingEntry = {
@@ -73,6 +77,9 @@ type PairingEntry = {
   expires_at_ms: number;
   approval?: NodePairingApproval;
   token?: string;
+  /** Concurrent approvals of the same code await this one attempt. */
+  approval_in_flight?: Promise<NodePairingApproval>;
+  expiry_timer?: unknown;
 };
 
 /**
@@ -85,6 +92,8 @@ export class NodePairingService implements NodePairingHostOptions {
   private readonly hasStoredNode: (nodeId: string) => boolean | Promise<boolean>;
   private readonly now: () => number;
   private readonly randomBytes: (size: number) => Buffer;
+  private readonly setTimer: (callback: () => void, delayMs: number) => unknown;
+  private readonly clearTimer: (handle: unknown) => void;
   private readonly byDeviceCode = new Map<string, PairingEntry>();
   private readonly byUserCode = new Map<string, PairingEntry>();
 
@@ -94,6 +103,8 @@ export class NodePairingService implements NodePairingHostOptions {
     this.hasStoredNode = options.hasStoredNode;
     this.now = options.now ?? (() => Date.now());
     this.randomBytes = options.randomBytes ?? randomBytes;
+    this.setTimer = options.setTimer ?? defaultSetTimer;
+    this.clearTimer = options.clearTimer ?? defaultClearTimer;
   }
 
   async start(input: unknown): Promise<NodePairingStarted> {
@@ -127,6 +138,7 @@ export class NodePairingService implements NodePairingHostOptions {
     };
     this.byDeviceCode.set(deviceCode, entry);
     this.byUserCode.set(userCode, entry);
+    entry.expiry_timer = this.setTimer(() => this.expireEntry(entry), NODE_PAIRING_TTL_MS);
     return {
       device_code: deviceCode,
       user_code: entry.display_user_code,
@@ -161,6 +173,22 @@ export class NodePairingService implements NodePairingHostOptions {
     if (entry === undefined) throw notFound();
     if (entry.approval !== undefined) return { ...entry.approval };
 
+    // Concurrent approvals of the same user code share one attempt, so the
+    // losing request never reaches the INSERT and turns into a 409.
+    const running = entry.approval_in_flight;
+    if (running !== undefined) return { ...(await running) };
+
+    const attempt = this.completeApproval(entry);
+    entry.approval_in_flight = attempt;
+    try {
+      return { ...(await attempt) };
+    } finally {
+      // A failed attempt must leave the entry retryable by a later approval.
+      if (entry.approval_in_flight === attempt) entry.approval_in_flight = undefined;
+    }
+  }
+
+  private async completeApproval(entry: PairingEntry): Promise<NodePairingApproval> {
     if (this.store.hasActiveNode(entry.node_id)) {
       throw new NodePairingError(
         "conflict",
@@ -203,7 +231,7 @@ export class NodePairingService implements NodePairingHostOptions {
     };
     entry.approval = approval;
     entry.token = created.token;
-    return { ...approval };
+    return approval;
   }
 
   async list(includeRevoked: boolean): Promise<NodeCredentialRecord[]> {
@@ -241,12 +269,36 @@ export class NodePairingService implements NodePairingHostOptions {
   private cleanupExpired(): void {
     const now = this.now();
     for (const entry of [...this.byDeviceCode.values()]) {
-      if (entry.expires_at_ms <= now) {
-        this.byDeviceCode.delete(entry.device_code);
-        this.byUserCode.delete(entry.user_code);
-      }
+      if (entry.expires_at_ms <= now) this.removeEntry(entry);
     }
   }
+
+  /** Fires on the entry's own TTL timer, even when no request arrives. */
+  private expireEntry(entry: PairingEntry): void {
+    entry.expiry_timer = undefined;
+    if (this.byDeviceCode.get(entry.device_code) !== entry) return;
+    this.byDeviceCode.delete(entry.device_code);
+    this.byUserCode.delete(entry.user_code);
+  }
+
+  private removeEntry(entry: PairingEntry): void {
+    this.byDeviceCode.delete(entry.device_code);
+    this.byUserCode.delete(entry.user_code);
+    if (entry.expiry_timer !== undefined) {
+      this.clearTimer(entry.expiry_timer);
+      entry.expiry_timer = undefined;
+    }
+  }
+}
+
+function defaultSetTimer(callback: () => void, delayMs: number): unknown {
+  const handle = setTimeout(callback, delayMs);
+  handle.unref();
+  return handle;
+}
+
+function defaultClearTimer(handle: unknown): void {
+  clearTimeout(handle as ReturnType<typeof setTimeout>);
 }
 
 function normalizeUserCode(value: string): string {
