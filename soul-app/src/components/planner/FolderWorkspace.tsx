@@ -464,7 +464,7 @@ export function FolderWorkspace({
               testID="task-workspace-tablet-title-read"
               accessibilityRole="button"
               accessibilityLabel={visibleTitle ? `폴더 제목 ${visibleTitle}` : '폴더 제목'}
-              accessibilityHint="눌러서 이름 편집"
+              accessibilityHint="이름을 편집합니다"
               style={[styles.tabletTitleRead, {
                 minHeight: t.hitTarget.min,
                 paddingVertical: tabletTitleLayout.verticalPadding,

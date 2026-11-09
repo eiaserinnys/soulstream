@@ -156,7 +156,7 @@ test('태블릿 폴더 제목은 세 줄 읽기에서 시작하고 누르면 세
   const read = screen.getByTestId('task-workspace-tablet-title-read');
   expect(read.props.accessibilityRole).toBe('button');
   expect(read.props.accessibilityLabel).toBe('폴더 제목 실제 업무 제목');
-  expect(read.props.accessibilityHint).toBe('눌러서 이름 편집');
+  expect(read.props.accessibilityHint).toBe('이름을 편집합니다');
   const text = screen.getByTestId('task-workspace-tablet-title-text');
   expect(text.props.numberOfLines).toBe(3);
   expect(text.props.ellipsizeMode).toBe('tail');

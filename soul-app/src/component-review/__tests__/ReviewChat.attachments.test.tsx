@@ -28,7 +28,7 @@ afterEach(() => {
 test('surface none 표본은 오늘 카드 입력과 선택 칩을 그대로 쓴다', () => {
   const screen = render(<ReviewChat />);
   const sample = within(screen.getByTestId('review-chat-composer-surface-none'));
-  expect(sample.UNSAFE_getByType(TodayCardComposer).props.api).toBeNull();
+  expect(sample.UNSAFE_getByType(TodayCardComposer).props.api).not.toBeNull();
   expect(sample.getByTestId('card-folder-chip')).toBeTruthy();
   expect(sample.getByTestId('card-execution-chip')).toBeTruthy();
   expect(sample.getByTestId('chat-composer-box')).toBeTruthy();

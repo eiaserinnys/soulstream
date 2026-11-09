@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ScrollView, Switch, Text, View, useWindowDimensions } from 'react-native';
 import { useTokens } from '../theme';
 import { ChatBody } from '../components/chat/ChatBody';
@@ -15,7 +15,7 @@ import { LabeledDivider } from '../components/chat/LabeledDivider';
 import { AttachmentImage, ChatRefinedImageGallery } from '../components/AttachmentImage';
 import { SettingsSegmentedControl } from '../components/settings/SettingsSegmentedControl';
 import { GlassButton } from '../components/GlassSurface';
-import { message, reviewComposerAttachment, sessions } from './fixtures';
+import { createReviewApi, message, reviewComposerAttachment, sessions } from './fixtures';
 import { ReviewSection } from './ReviewSection';
 import { TodayCardComposer } from '../components/planner/TodayCardComposer';
 import { formatAssignedCardContextSnapshot } from '../components/chat/turnSummaryProjection';
@@ -384,6 +384,7 @@ export function ReviewChat() {
   const t = useTokens();
   const { width } = useWindowDimensions();
   const styles = makeStyles(t);
+  const composerApi = useMemo(() => createReviewApi(), []);
   const [input, setInput] = useState('');
   const [sent, setSent] = useState('');
   const [state, setState] = useState<typeof options[number]['value']>('normal');
@@ -444,7 +445,7 @@ export function ReviewChat() {
     </ReviewSection>
     <ReviewSection title="입력창 · embedded · surface none (오늘 카드 입력과 같은 바깥 프레임)">
       <View testID="review-chat-composer-surface-none" style={{ padding: t.uiSpacing.md }}>
-        <TodayCardComposer api={null} />
+        <TodayCardComposer api={composerApi} />
       </View>
     </ReviewSection>
     <ReviewSection title="사용자 말풍선 · 일반·개입·전송 실패">
