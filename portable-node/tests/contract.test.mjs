@@ -16,6 +16,7 @@ import {
   PORTABLE_RUNNER_DIRECTORY,
   RUNNER_RELEASE_ARTIFACTS,
   SHA256_PATTERN,
+  fetchCurrentRelease,
 } from "../lib/release.mjs";
 import {
   DARWIN_UNIX_SOCKET_PATH_MAX_BYTES,
@@ -92,6 +93,24 @@ test("P3 묶음 상수와 실행기 상수가 같다", async () => {
   assert.match(`sha256-${"a".repeat(64)}`, SHA256_PATTERN);
   assert.doesNotMatch(`sha256-${"A".repeat(64)}`, SHA256_PATTERN);
   assert.doesNotMatch("a".repeat(64), SHA256_PATTERN);
+});
+
+test("릴리스 응답의 sha256이 접두사 없는 hex면 RELEASE_MALFORMED로 거부한다", async () => {
+  const body = {
+    contract_version: 1,
+    source_commit: "1".repeat(40),
+    sha256: "a".repeat(64),
+    size: 1,
+    download_path: "/api/node/releases/downloads/bundle-1",
+  };
+  await assert.rejects(
+    fetchCurrentRelease({
+      upstream: "http://127.0.0.1:1",
+      token: "test-token",
+      fetchJsonImpl: async () => ({ status: 200, ok: true, body }),
+    }),
+    (error) => error.code === "RELEASE_MALFORMED",
+  );
 });
 
 test("fixture 묶음이 P3 메타데이터 형식과 같다", async (t) => {

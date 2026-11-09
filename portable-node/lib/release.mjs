@@ -393,11 +393,19 @@ export async function fetchCurrentRelease({ upstream, token, timeoutMs = 15000, 
   for (const field of ["source_commit", "sha256", "download_path"]) {
     if (!body[field]) throw new ReleaseError(`릴리스 응답에 ${field}가 없습니다.`, "RELEASE_MALFORMED");
   }
+  if (typeof body.sha256 !== "string" || !SHA256_PATTERN.test(body.sha256)) {
+    throw new ReleaseError(`릴리스 응답의 sha256 형식이 올바르지 않습니다 (${body.sha256}).`, "RELEASE_MALFORMED");
+  }
   return body;
 }
 
+/** 릴리스 응답의 sha256은 `sha256-<hex>`다. 내려받기 검증과 키에는 hex 부분만 쓴다. */
+function sha256Hex(value) {
+  return String(value).replace(/^sha256-/, "");
+}
+
 export function releaseKey(release) {
-  return `${String(release.source_commit).slice(0, 12)}-${String(release.sha256).slice(0, 12)}`;
+  return `${String(release.source_commit).slice(0, 12)}-${sha256Hex(release.sha256).slice(0, 12)}`;
 }
 
 export function releaseDir(stateRoot, release) {
@@ -527,7 +535,7 @@ export async function installRelease({ stateRoot, upstream, token, release, log 
   const bundlePath = join(stateRoot, "cache", "downloads", `node-${releaseKey(release)}.tar.gz`);
   await downloadFile(bundleUrl, bundlePath, {
     headers: { authorization: `Bearer ${token}` },
-    expectedSha256: release.sha256,
+    expectedSha256: sha256Hex(release.sha256),
     expectedSize: release.size,
     onProgress: ({ bytes }) => log(`앱 묶음: ${Math.round(bytes / 1048576)}MiB`),
   });
