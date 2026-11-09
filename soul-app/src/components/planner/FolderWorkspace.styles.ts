@@ -10,6 +10,8 @@ export function makeFolderWorkspaceStyles(t: DesignTokens) {
     tabletHeader: {
       borderWidth: 0,
       backgroundColor: 'transparent',
+      // 제목 첫 줄과 오른쪽 48 버튼들이 같은 위 끝에서 시작한다.
+      alignItems: 'flex-start',
     },
     tabletTitle: {
       flex: 1,
@@ -18,6 +20,10 @@ export function makeFolderWorkspaceStyles(t: DesignTokens) {
       padding: 0,
       borderWidth: 0,
       backgroundColor: 'transparent',
+    },
+    tabletTitleRead: {
+      flex: 1,
+      flexDirection: 'row',
     },
     closeButton: {
       minWidth: planner.actionColumn,
