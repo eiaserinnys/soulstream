@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { fetchJson } from "./download.mjs";
 
 export const STATE_ROOT_PLACEHOLDER = "__STATE_ROOT__";
+/** P4b 구성 변환이 soulstream MCP 주소에 남기는 포트 자리표시자. */
+export const SOUL_HOST_PORT_PLACEHOLDER = "__SOUL_HOST_PORT__";
 
 const CONFIG_FILES = [
   { key: "agents", file: "agents.yaml" },
@@ -58,6 +60,23 @@ export function substituteStateRoot(value, stateRoot) {
   if (value && typeof value === "object") {
     const out = {};
     for (const [key, item] of Object.entries(value)) out[key] = substituteStateRoot(item, stateRoot);
+    return out;
+  }
+  return value;
+}
+
+/**
+ * soulstream MCP는 127.0.0.1:MCP_INTERNAL_PORT의 내부 리스너가 서비스한다.
+ * 변환이 남긴 주소의 포트 자리표시자를 이번 실행의 그 포트로 바꾼다.
+ */
+function substituteSoulHostPort(value, hostPort) {
+  if (typeof value === "string") {
+    return value.split(SOUL_HOST_PORT_PLACEHOLDER).join(String(hostPort));
+  }
+  if (Array.isArray(value)) return value.map((item) => substituteSoulHostPort(item, hostPort));
+  if (value && typeof value === "object") {
+    const out = {};
+    for (const [key, item] of Object.entries(value)) out[key] = substituteSoulHostPort(item, hostPort);
     return out;
   }
   return value;
@@ -147,22 +166,23 @@ export async function fetchBootstrap({
   return response.body;
 }
 
-export async function writeConfigGeneration({ bootstrap, stateRoot, configRoot }) {
+export async function writeConfigGeneration({ bootstrap, stateRoot, configRoot, hostPort }) {
   const generation = sanitizeGeneration(bootstrap.config_generation);
   const dir = join(configRoot, generation);
   await mkdir(dir, { recursive: true, mode: 0o700 });
 
+  const resolve = (value) => substituteSoulHostPort(substituteStateRoot(value, stateRoot), hostPort);
   const files = {};
   for (const { key, file } of CONFIG_FILES) {
     const path = join(dir, file);
-    await writeFile(path, serializeConfigValue(substituteStateRoot(bootstrap[key], stateRoot)), {
+    await writeFile(path, serializeConfigValue(resolve(bootstrap[key])), {
       mode: 0o600,
     });
     files[key] = path;
   }
 
   const envPath = join(dir, "env.json");
-  const rawEnv = substituteStateRoot(bootstrap.env ?? {}, stateRoot);
+  const rawEnv = resolve(bootstrap.env ?? {});
   await writeFile(envPath, `${JSON.stringify(rawEnv, null, 2)}\n`, { mode: 0o600 });
   files.env = envPath;
 

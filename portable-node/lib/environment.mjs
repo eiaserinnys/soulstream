@@ -148,6 +148,8 @@ export function buildChildEnv({
     SOULSTREAM_NODE_ID: node.node_id,
     SOULSTREAM_UPSTREAM_URL: defaults.node_ws_url,
     AUTH_BEARER_TOKEN: node.token,
+    // P4b 변환이 soulstream MCP Authorization 헤더에 남긴 env 참조를 채운다.
+    PORTABLE_LOCAL_MCP_AUTHORIZATION: `Bearer ${node.token}`,
     ENVIRONMENT: "production",
     HOST: "127.0.0.1",
     PORT: String(ports.host),

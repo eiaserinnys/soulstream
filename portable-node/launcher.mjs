@@ -219,6 +219,7 @@ async function stageSwitch({ context, release }) {
     bootstrap,
     stateRoot: context.stateRoot,
     configRoot: join(context.stateRoot, "config"),
+    hostPort: context.ports.mcp,
   });
   const installed = await installRelease({
     stateRoot: context.stateRoot,

@@ -49,6 +49,7 @@ export async function prepareCandidate({ stateRoot, defaults, node, runtimes, po
     bootstrap,
     stateRoot,
     configRoot: join(stateRoot, "config"),
+    hostPort: ports.mcp,
   });
   const installed = await installRelease({
     stateRoot,
