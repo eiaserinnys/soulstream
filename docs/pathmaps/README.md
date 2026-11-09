@@ -18,3 +18,4 @@
 | [OAuth 로그인과 API 인증](oauth-authentication.md) | Google 로그인·OAuth 동의·인가 코드·bearer scope·폴더 ACL·caller_info |
 | [OAuth와 대화 제공자](oauth-to-conversation.md) | 로그인 계정·대화 스레드·외부 키와 세션 생성 |
 | [무설치 노드 릴리스 묶음](portable-release-bundle.md) | platform 무관 payload 빌드·pack·tarball·노드 쪽 bind·`ReleaseManifestV1` |
+| [무설치 노드 Git 읽기 프록시](portable-node-git-proxy.md) | 노드 자격 Basic 인증·두 repo allowlist·upload-pack 스트림 중계·receive-pack 차단·orch 전용 GitHub 토큰 |

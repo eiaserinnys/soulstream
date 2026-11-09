@@ -37,6 +37,8 @@ const REDACTED_LOG_PATHS = [
   "turn_summary_openai_key",
   "TYPESAFE_API_KEY",
   "typesafe_api_key",
+  "PORTABLE_NODE_GITHUB_READ_TOKEN",
+  "portable_node_github_read_token",
   "*.authorization",
   "*.cookie",
   "*.token",
@@ -51,6 +53,8 @@ const REDACTED_LOG_PATHS = [
   "*.turn_summary_openai_key",
   "*.TYPESAFE_API_KEY",
   "*.typesafe_api_key",
+  "*.PORTABLE_NODE_GITHUB_READ_TOKEN",
+  "*.portable_node_github_read_token",
 ] as const;
 
 const HTTP_REQUEST_RECEIVE_TIMEOUT_MS = 300_000;

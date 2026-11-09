@@ -44,6 +44,7 @@ endpoint remains unavailable until login and consent are integrated.
 - `SKILL_CATALOG_NODE_ID`: Atom node ID for the shared skill catalog.
 - `DOMAIN_CATALOG_NODE_ID`: Atom node ID for domain catalogs used by `load_skill`.
 - `TYPESAFE_API_KEY`: optional API key for Jev reranking in expanded session search (when absent, expanded search returns partial RRF results; see [`orch-server-ts/docs/session-search-deployment.md`](../../orch-server-ts/docs/session-search-deployment.md)).
+- `PORTABLE_NODE_GITHUB_READ_TOKEN`: optional GitHub read token the orchestrator uses for the portable node Git proxy. When absent, `/api/node/git/*` answers 503 `PORTABLE_NODE_GIT_DISABLED` and portable nodes cannot clone or fetch the workspace and common-files repositories.
 - `CODEX_CLI_PATH`: optional path override for the Codex CLI binary on ephemeral routes.
 - `AGY_CLI_PATH`: optional path override for the Antigravity (`agy`) CLI binary.
 - `MODEL_CATALOG_PATH`: optional path to a model catalog YAML file.

@@ -791,6 +791,10 @@ export async function createLiveProductionApplication(
       lifecycle,
       cardDispatchRuntime.workDispatchServiceProvider,
       nodePairingService,
+      {
+        nodeCredentials: nodeCredentialStore,
+        githubReadToken: config.portable_node_github_read_token,
+      },
       productionSql,
     ),
     persistentContextRoutes: {
@@ -1089,6 +1093,7 @@ export function buildProductionRouteOptions(
   lifecycle?: OrchestratorLifecycle,
   workDispatchServiceProvider?: NonNullable<McpHostOptions["cards"]["workDispatchServiceProvider"]>,
   nodePairing?: NodePairingService,
+  nodeGitProxy?: NonNullable<CreateAppOptions["nodeGitProxyRoutes"]>,
   conversationSql?: SqlClient,
 ): CreateAppOptions {
   const sessionAccessProvider = providers.sessionCatalogRoutes.accessProvider;
@@ -1232,6 +1237,7 @@ export function buildProductionRouteOptions(
     },
     nodeSnapshotRoutes: providers.runtime.nodeSnapshotRoutes,
     ...(nodePairing ? { nodePairRoutes: { service: nodePairing } } : {}),
+    ...(nodeGitProxy ? { nodeGitProxyRoutes: nodeGitProxy } : {}),
     nodeWsRoute: providers.runtime.nodeWsRoute,
     publicStatusRoutes: {
       ...providers.publicStatusRoutes,

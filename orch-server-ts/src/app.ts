@@ -112,6 +112,10 @@ import {
   type NodePairingRouteOptions,
 } from "./node_credentials/pairing_routes.js";
 import {
+  registerNodeGitProxyRoutes,
+  type NodeGitProxyRouteOptions,
+} from "./node_git/node_git_proxy_routes.js";
+import {
   registerPushRoutes,
   type PushRouteOptions,
 } from "./push/push_routes.js";
@@ -221,6 +225,7 @@ export type CreateAppOptions = {
   nodeWsRoute?: NodeWsRouteOptions;
   nodeSnapshotRoutes?: NodeSnapshotRouteOptions;
   nodePairRoutes?: NodePairingRouteOptions;
+  nodeGitProxyRoutes?: NodeGitProxyRouteOptions;
   sessionActionCommandRoutes?: SessionActionCommandRouteOptions;
   sessionBackgroundScheduleRoutes?: SessionBackgroundScheduleRouteOptions;
   sessionResumeAfterLimitRoutes?: SessionResumeAfterLimitRouteOptions;
@@ -305,6 +310,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.nodePairRoutes !== undefined) {
     registerNodePairingRoutes(app, options.nodePairRoutes);
+  }
+  if (options.nodeGitProxyRoutes !== undefined) {
+    registerNodeGitProxyRoutes(app, options.nodeGitProxyRoutes);
   }
   if (options.sessionCommandRoutes !== undefined) {
     registerSessionCommandRoutes(app, {
