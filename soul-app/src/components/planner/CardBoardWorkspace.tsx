@@ -27,8 +27,8 @@ export interface CardBoardWorkspaceHandle { openCreate(): void; openExpanded(): 
 
 /** Workspace owns scope and restore snapshots, including across native Modal remounts. */
 export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
-  api: ApiClient | null; folderId?: string; cardDisplay: FolderCardDisplay; onOpen(id: string): void; externalHeader?: boolean; reserveHomeComposerSpace?: boolean; onExpandedClose?(): void; railOverlayWidth?: number;
-}>(function CardBoardWorkspace({ api, folderId, cardDisplay, onOpen, externalHeader = false, reserveHomeComposerSpace = false, onExpandedClose, railOverlayWidth = 0 }, ref) {
+  api: ApiClient | null; folderId?: string; title?: string; cardDisplay: FolderCardDisplay; onOpen(id: string): void; externalHeader?: boolean; reserveHomeComposerSpace?: boolean; onExpandedClose?(): void; railOverlayWidth?: number;
+}>(function CardBoardWorkspace({ api, folderId, title, cardDisplay, onOpen, externalHeader = false, reserveHomeComposerSpace = false, onExpandedClose, railOverlayWidth = 0 }, ref) {
   const t = useTokens();
   const duo = useDuoSideBand();
   const insets = useSafeAreaInsets();
@@ -81,8 +81,17 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
       if (expandedBoard && !phone && Platform.OS !== 'web' && target !== undefined) nativeDetailFocus.current = target;
       onOpen(id);
     }} />;
-  const heading = (expandedBoard = false) => <View style={{ paddingHorizontal: expandedBoard && !phone ? 0 : t.cardLayout.padding, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: t.uiSpacing.sm }}>
-    <View style={{ flexGrow: 1 }}><PlannerSectionHeader title={folderId ? '현재 폴더 · 카드' : '전체 · 카드'} /></View>
+  const heading = (expandedBoard = false) => {
+    // 제목을 넘긴 호출지(세로 검색 머리의 카드 보드)만 폴더 이름을 한 줄 말줄임으로
+    // 단추 셋과 같은 줄에 둔다. 확대 보드와 제목 없는 호출지는 지금 그대로다.
+    const titled = !expandedBoard && title !== undefined;
+    const headingTitle = !expandedBoard && title !== undefined
+      ? title
+      : folderId ? '현재 폴더 · 카드' : '전체 · 카드';
+    return <View style={{ paddingHorizontal: expandedBoard && !phone ? 0 : t.cardLayout.padding, flexDirection: 'row', alignItems: 'center', flexWrap: titled ? 'nowrap' : 'wrap', gap: t.uiSpacing.sm }}>
+    <View style={titled ? { flexGrow: 1, flexShrink: 1, minWidth: 0 } : { flexGrow: 1 }}>
+      <PlannerSectionHeader testID={titled ? 'card-board-heading-title' : undefined} variant={titled ? 'board' : 'default'} title={headingTitle} />
+    </View>
     {!(duo && expandedBoard) ? <><LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round} testID="card-board-create"
       surfaceTestID="card-board-create-visual" accessibilityLabel="드래프트 카드 추가" onPress={() => setAdding(true)}>
       <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
@@ -92,6 +101,7 @@ export const CardBoardWorkspace = forwardRef<CardBoardWorkspaceHandle, {
       <Ionicons name={expanded ? 'close-outline' : 'expand-outline'} size={t.iconSize.standard} color={t.colors.textPrimary} />
     </LiquidGlassButton> : null}</> : null}
   </View>;
+  };
   return <View testID="card-board-workspace" style={{ flex: 1, position: 'relative', paddingHorizontal: 0, paddingTop: t.uiSpacing.sm, paddingBottom: t.cardLayout.padding, gap: t.uiSpacing.md }}>
     {externalHeader ? null : heading()}
     {error ? <View style={{ gap: t.uiSpacing.sm, paddingRight: railOverlayWidth }}>

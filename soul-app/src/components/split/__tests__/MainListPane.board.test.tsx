@@ -1,4 +1,5 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
+jest.mock('react-native-gesture-handler', () => ({ ...jest.requireActual('react-native-gesture-handler'), GestureHandlerRootView: require('react-native').View }));
 jest.mock('../../planner/FolderWorkspace', () => ({ FolderWorkspace: (props: any) => {
   const React = require('react'); const { Text, Pressable } = require('react-native');
   return React.createElement(Pressable, { testID: 'folder-existing', onPress: () => props.cardDisplay.onChange(true) },
@@ -9,11 +10,12 @@ jest.mock('../../planner/DailyHeaderActions', () => ({ DailyHeaderActions: () =>
 jest.mock('../../../api/client', () => ({ createApiClient: () => ({ listCards: mockList, listCompletedCards: mockCompleted, listNodes: async () => ({ nodes: [] }) }) }));
 jest.mock('../../planner/CardDetailSheet', () => ({ CardDetailSheet: () => null }));
 import React from 'react';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { MainListPane } from '../MainListPane';
 import { useUIStore } from '../../../store/uiStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { useCardStore } from '../../../store/cardStore';
+import { useSessionStore } from '../../../store/sessionStore';
 import { cardFixture } from '../../../test-support/cards';
 import { DuoSideBandContext, DuoTopBandMainContext } from '../../../navigation/tabContract';
 const mockList = jest.fn();
@@ -43,7 +45,7 @@ test('듀오 프로젝트에서는 본문 탭 없이 레일의 보기 변경을 
 });
 
 beforeEach(() => {
-  useUIStore.setState({ mainPaneViews: { global: 'board' }, floatingComposerBottomInset: 0 });
+  useUIStore.setState({ mainPaneViews: { global: 'board' }, floatingComposerBottomInset: 0, selectedCardId: null, folderOverlayVisible: false });
   useSettingsStore.setState({ serverUrl: 'https://test.example', cardIncludeCompleted: {} });
   useCardStore.setState({ rows: {}, details: {} });
   mockList.mockReset().mockResolvedValue({ cards: [cardFixture({ id: 'draft', status: 'todo' })] });
@@ -165,4 +167,39 @@ test('넓은 목록 패널은 기존 보드 액션을 그대로 노출한다', a
   await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
   expect(screen.getByLabelText('보드 확대')).toBeTruthy();
   expect(screen.queryByTestId('board-header-overflow-button')).toBeNull();
+});
+
+test('세로 목록 칸 보드 머리는 폴더 이름과 보드 단추 셋을 한 줄에 두고 머리에는 보드 단추가 없다', async () => {
+  useSessionStore.setState({
+    catalog: { folders: [{ id: 'folder-1', name: '공개 예시 폴더 01' }], sessions: {} } as never,
+  });
+  useUIStore.setState({ activeSection: { kind: 'project', folderId: 'folder-1', projectPageId: 'page-1' }, mainPaneViews: {} });
+  const screen = render(<MainListPane showSearch paneWidth={456} />);
+  expect(screen.UNSAFE_getByType(require('../../search/SessionSearchField').SessionSearchField)).toBeTruthy();
+  expect(screen.getByLabelText('기존 보기')).toBeTruthy();
+  expect(screen.getByLabelText('카드 보드')).toBeTruthy();
+
+  await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
+  await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
+  const header = within(screen.getByTestId('tablet-main-header'));
+  expect(header.queryByTestId('board-header-overflow-button')).toBeNull();
+  expect(header.queryByLabelText('보드 메뉴')).toBeNull();
+  for (const label of ['드래프트 카드 추가', '완료·취소 숨김', '보드 확대']) {
+    expect(header.queryByLabelText(label)).toBeNull();
+  }
+  expect(screen.getByLabelText('기존 보기')).toBeTruthy();
+
+  expect(screen.getByText('공개 예시 폴더 01')).toBeTruthy();
+  expect(screen.getAllByLabelText('드래프트 카드 추가')).toHaveLength(1);
+  expect(screen.getAllByLabelText('완료·취소 숨김')).toHaveLength(1);
+  expect(screen.getAllByLabelText('보드 확대')).toHaveLength(1);
+
+  expect(screen.getByTestId('completed-cards-toggle-on')).toBeTruthy();
+  await act(async () => fireEvent.press(screen.getByLabelText('완료·취소 숨김')));
+  await waitFor(() => expect(screen.getByTestId('completed-cards-toggle-off')).toBeTruthy());
+
+  await act(async () => fireEvent.press(screen.getByLabelText('드래프트 카드 추가')));
+  expect(screen.getByLabelText('카드 제목')).toBeTruthy();
+  await act(async () => fireEvent.press(screen.getByLabelText('보드 확대')));
+  expect(screen.getByTestId('card-board-expanded')).toBeTruthy();
 });

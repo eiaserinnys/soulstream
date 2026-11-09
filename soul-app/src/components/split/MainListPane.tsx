@@ -102,6 +102,7 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
         {onMenuPress ? (
           <LiquidGlassButton
             iconOnly
+            borderRadius={t.foundation.radius.round}
             onPress={onMenuPress}
             accessibilityLabel="메뉴"
             contentStyle={styles.headerAction}
@@ -113,6 +114,7 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
           {effectiveShowSearch ? (
             <SessionSearchField
               ref={searchInputRef}
+              compact
               value={searchQuery}
               autoFocus={false}
               onFocus={useSearchStore.getState().openTabletSearch}
@@ -156,13 +158,14 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
         <TabletPersistentEntry />
         </View>
       </TabletPaneHeader> : null}
-      {!duo && !effectiveShowSearch && activeSection.kind === 'project' ? <View style={{ paddingHorizontal: t.tabletShell.header.paddingHorizontal, paddingBottom: t.uiSpacing.sm }}>
+      {!duo && activeSection.kind === 'project' ? <View style={{ paddingHorizontal: t.tabletShell.header.paddingHorizontal, paddingBottom: t.uiSpacing.sm }}>
         <SettingsSegmentedControl<'existing' | 'board'> id="tablet-card-view" value={view} onChange={setView}
           options={[{ value: 'existing', label: '기존 보기' }, { value: 'board', label: '카드 보드' }]} />
       </View> : null}
       <View style={styles.body}>
         {visited[viewKey] ? <View style={{ flex: 1, display: view === 'board' ? 'flex' : 'none' }}>
-          <CardBoardWorkspace ref={boardRef} externalHeader key={displayOwner} api={api} folderId={activeSection.kind === 'project' ? activeSection.folderId : undefined}
+          <CardBoardWorkspace ref={boardRef} externalHeader={!effectiveShowSearch} key={displayOwner} api={api} folderId={activeSection.kind === 'project' ? activeSection.folderId : undefined}
+            title={effectiveShowSearch ? title : undefined}
             cardDisplay={cardDisplay} reserveHomeComposerSpace onOpen={(id) => useUIStore.getState().openCardOverlay(id)} />
         </View> : null}
         {view === 'existing' && activeSection.kind === 'daily' ? (
