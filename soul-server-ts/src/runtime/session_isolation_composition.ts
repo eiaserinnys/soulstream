@@ -32,7 +32,10 @@ import type { WorktreeService } from "../worktree/worktree_service.js";
 
 export interface SessionIsolationCompositionDeps {
   env: Env;
-  worktreeService?: Pick<WorktreeService, "list" | "listRepositoryIds"> | undefined;
+  worktreeService?: Pick<
+    WorktreeService,
+    "listSessionAttachments" | "listRepositoryIds"
+  > | undefined;
   mcpConfigService: Pick<McpConfigService, "resolveMcpProfile">;
   codexCliPath?: CodexCliPathResolution | undefined;
 }
@@ -281,12 +284,12 @@ interface WorktreeFacts {
 }
 
 /**
- * 이 세션이 소유하거나 붙은 worktree만 고른다. `worktreeService.list`는
- * 레코드와 git 발견을 합친 행을 돌려주므로 필드 타입을 여기서 좁힌다.
+ * 이 세션이 소유하거나 붙은 worktree만 고른다. `listSessionAttachments`는
+ * 세션 관련 레코드 행만 돌려주므로 필드 타입을 여기서 좁힌다.
  * 턴 게이트와 prepare가 이 함수 하나를 공유한다.
  */
 async function collectSessionWorktrees(args: {
-  worktreeService: Pick<WorktreeService, "list"> | undefined;
+  worktreeService: Pick<WorktreeService, "listSessionAttachments"> | undefined;
   actorSessionId: string;
   taskWorktreeId: string | undefined;
 }): Promise<SessionWorktrees> {
@@ -300,7 +303,10 @@ async function collectSessionWorktrees(args: {
   }
   let rows: Array<Record<string, unknown>>;
   try {
-    rows = await args.worktreeService.list({ actorSessionId: args.actorSessionId });
+    rows = await args.worktreeService.listSessionAttachments({
+      actorSessionId: args.actorSessionId,
+      taskWorktreeId: args.taskWorktreeId,
+    });
   } catch (error) {
     throw new SessionIsolationUnavailableError(
       "SESSION_ISOLATION_UNAVAILABLE: worktree inventory failed",
@@ -343,7 +349,10 @@ async function collectSessionWorktrees(args: {
  * 아는 전부를 넘겨, 같은 턴에 만든 새 워크트리도 바로 커밋할 수 있게 한다.
  */
 async function collectWorktreeFacts(args: {
-  worktreeService: Pick<WorktreeService, "list" | "listRepositoryIds"> | undefined;
+  worktreeService: Pick<
+    WorktreeService,
+    "listSessionAttachments" | "listRepositoryIds"
+  > | undefined;
   projectsRoot: string | undefined;
   actorSessionId: string;
   taskWorktreeId: string | undefined;

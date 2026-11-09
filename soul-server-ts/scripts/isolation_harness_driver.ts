@@ -169,7 +169,7 @@ const task = {
 } as unknown as Task;
 
 const worktreeService = {
-  async list(): Promise<Record<string, unknown>[]> {
+  async listSessionAttachments(): Promise<Record<string, unknown>[]> {
     return job.worktrees;
   },
   listRepositoryIds(): string[] {

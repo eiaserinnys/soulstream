@@ -6,7 +6,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, sep } from "node:path";
 
 import type { WorktreeExecutionResolver } from "../task/task_executor.js";
-import { WorktreeGit } from "./worktree_git.js";
+import { WorktreeGit, type WorktreeListEntry } from "./worktree_git.js";
 import { RepositoryLock } from "./worktree_repository_lock.js";
 import { removeWorktreeLocked } from "./worktree_removal.js";
 import { sweepWorktrees } from "./worktree_sweep.js";
@@ -113,13 +113,7 @@ export class WorktreeService implements WorktreeExecutionResolver {
           path: discovered.path,
           branch: discovered.branch ?? null,
           head: discovered.head,
-          discoveryKind: discovered.kind === "unmanaged"
-            ? "unmanaged_adoptable"
-            : discovered.kind === "external"
-              ? "unmanaged_external"
-              : discovered.kind === "missing"
-                ? "managed_missing"
-                : discovered.kind,
+          discoveryKind: discoveryKindFor(discovered.kind),
           dirty,
           dbState: record?.state ?? null,
           ownerKind: record ? (record.ownerFolderId ? "folder" : "session") : null,
@@ -161,6 +155,73 @@ export class WorktreeService implements WorktreeExecutionResolver {
       });
     }
     return result;
+  }
+
+  /**
+   * 이 세션과 관련된 worktree 레코드만 행으로 돌려준다. 격리 부착 집합
+   * 수집 전용이며, 관련 레코드의 리포만 git으로 확인하고 dirty는 보지 않는다.
+   * `list`처럼 기한 안에서 실행한다.
+   */
+  async listSessionAttachments(input: {
+    actorSessionId: string;
+    taskWorktreeId?: string;
+  }): Promise<Array<Record<string, unknown>>> {
+    return await this.options.git.withOperationDeadline(
+      async () => await this.listSessionAttachmentsWithinDeadline(input),
+    );
+  }
+
+  private async listSessionAttachmentsWithinDeadline(input: {
+    actorSessionId: string;
+    taskWorktreeId?: string;
+  }): Promise<Array<Record<string, unknown>>> {
+    const records = await this.options.host.list({
+      actorSessionId: input.actorSessionId,
+      nodeId: this.options.nodeId,
+    });
+    const related = records.filter((record) =>
+      (!record.ownerFolderId && record.createdBySessionId === input.actorSessionId)
+      || record.activeSessionId === input.actorSessionId
+      || record.id === input.taskWorktreeId);
+    if (related.length === 0) return [];
+    const registered = new Set(this.options.git.listRepositoryIds());
+    // 레코드는 자기 repoId 리포에서 발견된 경로와만 짝짓는다. 다른 리포의
+    // 목록에 같은 경로가 있어도 그 레코드의 리포 사실로 쓰지 않는다.
+    const discoveredByRepo = new Map<string, Map<string, WorktreeListEntry>>();
+    for (const repoId of new Set(related.map((record) => record.repoId))) {
+      if (!registered.has(repoId)) continue;
+      const byPath = new Map<string, WorktreeListEntry>();
+      for (const discovered of await this.options.git.list(repoId)) {
+        byPath.set(discovered.path, discovered);
+      }
+      discoveredByRepo.set(repoId, byPath);
+    }
+    const observedAt = new Date().toISOString();
+    return related.map((record) => {
+      const discovered = discoveredByRepo.get(record.repoId)?.get(record.canonicalPath);
+      return {
+        worktreeId: record.id,
+        nodeId: this.options.nodeId,
+        repoId: record.repoId,
+        path: record.canonicalPath,
+        branch: record.branch,
+        head: record.createdFromSha,
+        discoveryKind: discovered ? discoveryKindFor(discovered.kind) : "managed_missing",
+        dirty: null,
+        dbState: record.state,
+        ownerKind: record.ownerFolderId ? "folder" : "session",
+        ownerId: record.ownerFolderId ?? record.createdBySessionId,
+        mutableByCaller: record.mutableByCaller ?? false,
+        adoptionAllowed: false,
+        lockReason: discovered?.lockedReason ?? null,
+        activeSessionId: record.activeSessionId ?? null,
+        setupMode: record.setupMode,
+        setupRequired: record.setupRequired,
+        setupStatus: record.setupStatus,
+        remoteStatus: "unknown",
+        observedAt,
+      };
+    });
   }
 
   /**
@@ -557,6 +618,16 @@ function containsPath(parent: string, child: string): boolean {
   const path = relative(parent, child);
   return path === ""
     || (path !== ".." && !path.startsWith(`..${sep}`) && !isAbsolute(path));
+}
+
+function discoveryKindFor(kind: WorktreeListEntry["kind"]): string {
+  return kind === "unmanaged"
+    ? "unmanaged_adoptable"
+    : kind === "external"
+      ? "unmanaged_external"
+      : kind === "missing"
+        ? "managed_missing"
+        : kind;
 }
 
 function createResult(
