@@ -17,9 +17,9 @@ export function createPostItRoles(t: DesignTokens, variant: PostItVariant = 'ful
   const footerHeight = t.hitTarget.min * scale;
   return {
     width: 320 * scale * size, height,
-    padding, gap, footerHeight,
+    padding, paddingTop: padding + gap, gap, footerHeight,
     // Initial conservative line count; Text layout uses the actual remaining space.
-    bodyLines: Math.floor((height - padding * 2 - footerHeight - lineHeight * 2 - gap * 2) / lineHeight),
+    bodyLines: Math.floor((height - padding * 2 - footerHeight - lineHeight * 2 - gap * 3) / lineHeight),
     title: { ...t.foundation.typography.cardTitle, color: POST_IT_COLORS.textPrimary },
     body: { ...t.foundation.typography.body, color: POST_IT_COLORS.textPrimary },
     label: { ...t.foundation.typography.meta, color: POST_IT_COLORS.textSecondary },

@@ -32,10 +32,13 @@ test.each(['phone', 'tablet'] as const)('%s paper follows feed typography while 
   expect(full.width).toBeCloseTo(282.35294);
   expect(full.height).toBeCloseTo(247.05882);
   expect(compact.padding).toBeCloseTo(14.11765);
+  expect(compact.paddingTop).toBeCloseTo(compact.padding + compact.gap);
+  expect(full.paddingTop).toBeCloseTo(full.padding + full.gap);
   expect(compact.gap).toBeCloseTo(7.05882);
   expect(compact.footerHeight).toBeCloseTo(foundation.hitTarget * 15 / 17);
-  expect(compact.bodyLines).toBe(3);
-  expect(Math.floor((compact.height - compact.padding * 2 - compact.footerHeight
-    - compact.title.lineHeight - compact.gap * 2) / compact.body.lineHeight)).toBe(4);
+  expect(compact.bodyLines).toBe(2);
+  expect(full.bodyLines).toBe(4);
+  expect(Math.floor((compact.height - compact.paddingTop - compact.padding - compact.footerHeight
+    - compact.gap - compact.title.lineHeight - compact.gap) / compact.body.lineHeight)).toBe(3);
   expect(t.hitTarget.min).toBe(tablet ? 48 : 44);
 });

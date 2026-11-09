@@ -114,7 +114,7 @@ export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = '
           {!duo && active === 'recurring-jobs' && jobs.kind !== 'list' ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="반복 작업 이전 화면으로 돌아가기" onPress={back}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>{jobs.kind === 'history' ? '편집' : '목록'}</Text></TouchableOpacity> : null}
           {!duo && active === 'persistent' && persistent.kind !== 'list' ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="영구 에이전트 세션 이전 화면으로 돌아가기" onPress={back}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>목록</Text></TouchableOpacity> : null}
           <Text style={styles.title}>{title}</Text>
-          {!duo && onClose ? <TouchableOpacity testID="settings-modal-close" accessibilityRole="button" accessibilityLabel="설정 닫기" style={styles.headerAction} onPress={close}><Text style={styles.actionText}>완료</Text></TouchableOpacity> : null}
+          {!duo && onClose ? <GlassButton testID="settings-modal-close" accessibilityLabel="설정 닫기" iconOnly size="compact" borderRadius={t.foundation.radius.round} frameStyle={styles.headerClose} onPress={close}><Ionicons name="close" size={t.iconSize.standard} color={t.colors.textPrimary}/></GlassButton> : null}
         </View> : null}
         <View testID={wide ? 'settings-wide-layout' : 'settings-compact-layout'} style={[styles.body, wide && styles.wide]}>
           <ScrollView testID={wide ? 'settings-sidebar-scroll' : 'settings-phone-index'} style={[wide ? styles.sidebar : styles.root, (connectionOnly || (!wide && active)) && styles.hidden]} accessibilityElementsHidden={connectionOnly || (!wide && active !== null)} importantForAccessibility={connectionOnly || (!wide && active !== null) ? 'no-hide-descendants' : 'auto'} contentContainerStyle={styles.index}>
@@ -138,6 +138,8 @@ function makeStyles(t: DesignTokens) { return StyleSheet.create({
   sidebar: { width: 240, flexGrow: 0, borderRightWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, backgroundColor: t.colors.surfaceMuted }, index: { paddingBottom: t.spacing.xl },
   header: { minHeight: t.hitTarget.min + t.spacing.sm, paddingHorizontal: t.foundation.pageInset, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: t.spacing.sm },
   headerAction: { minHeight: t.hitTarget.min, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: t.spacing.xxs },
+  // 헤더 끝 아이콘 단추는 hit frame 여백만큼 바깥으로 당겨 시각 원의 끝을 카드 끝선에 맞춘다(CardDetail.styles의 iconOverhang 관례).
+  headerClose: { marginRight: -(t.hitTarget.min - t.foundation.iconFrame.compact) / 2 },
   title: { flex: 1, ...t.foundation.typography.navigation, color: t.colors.textPrimary }, actionText: { ...t.foundation.typography.body, color: t.colors.accent, fontWeight: '600' }, primaryText: { ...t.foundation.typography.body, color: t.colors.accentText, fontWeight: '700' },
   introduction: { padding: t.foundation.pageInset, gap: t.spacing.sm }, introTitle: { ...t.foundation.typography.section, color: t.colors.textPrimary }, help: { ...t.foundation.typography.body, color: t.colors.textSecondary },
   footer: { flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.sm, padding: t.cardLayout.padding, borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border }, footerAction: { flexGrow: 1 },

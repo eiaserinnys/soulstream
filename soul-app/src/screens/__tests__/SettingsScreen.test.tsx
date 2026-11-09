@@ -125,6 +125,15 @@ test('first connection keeps screen-owned insets on all four edges', async () =>
   });
 });
 
+test('header close is a glass X button, not a 완료 text action', async () => {
+  mockApi.getConfig.mockResolvedValue({ mode: 'single', nodeId: 'me' });
+  const screen = render(<SettingsScreen showAdmin={false} onClose={jest.fn()} />);
+
+  const close = within(screen.getByTestId('settings-modal-close'));
+  expect(close.UNSAFE_getByType('Ionicons' as any).props.name).toBe('close');
+  expect(within(screen.getByTestId('settings-modal-header')).queryByText('완료')).toBeNull();
+});
+
 test('parent-owned bottom inset keeps the screen top and side insets', async () => {
   mockApi.getConfig.mockResolvedValue({ mode: 'single', nodeId: 'me' });
   const screen = render(<SettingsScreen showAdmin={false} bottomSafeAreaOwner="parent" />);

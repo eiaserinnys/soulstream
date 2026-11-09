@@ -165,7 +165,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
           backgroundColor: roles.paper, borderRadius: roles.radius, transform: [{ rotate: `${postItRotation(card.id)}deg` }] }}>
           <Pressable ref={openTarget} testID={`postit-open-${card.id}`} onPress={open} accessibilityLabel={`${displayTitle} 카드 상세`}
             {...directHoldProps}
-            style={{ flex: 1, minHeight: t.hitTarget.min, padding: roles.padding, paddingBottom: roles.padding + roles.footerHeight + roles.gap }}>
+            style={{ flex: 1, minHeight: t.hitTarget.min, padding: roles.padding, paddingTop: roles.paddingTop, paddingBottom: roles.padding + roles.footerHeight + roles.gap }}>
             <Text testID={`postit-title-${card.id}`} style={roles.title} numberOfLines={2}>{displayTitle}</Text>
             <View testID={`postit-body-area-${card.id}`} style={{ marginTop: roles.gap, flex: 1, minHeight: 0, overflow: 'hidden' }}
               onLayout={(event) => setBodyLines(Math.max(1, Math.floor(event.nativeEvent.layout.height / roles.body.lineHeight)))}>
