@@ -166,3 +166,24 @@ test('넓은 목록 패널은 기존 보드 액션을 그대로 노출한다', a
   expect(screen.getByLabelText('보드 확대')).toBeTruthy();
   expect(screen.queryByTestId('board-header-overflow-button')).toBeNull();
 });
+
+test('세로 목록 칸에서도 폴더 보기 전환과 보드 메뉴를 쓴다', async () => {
+  useUIStore.setState({ activeSection: { kind: 'project', folderId: 'folder-1', projectPageId: 'page-1' } });
+  const screen = render(<MainListPane showSearch paneWidth={456} />);
+  expect(screen.UNSAFE_getByType(require('../../search/SessionSearchField').SessionSearchField)).toBeTruthy();
+  expect(screen.getByLabelText('기존 보기')).toBeTruthy();
+  expect(screen.getByLabelText('카드 보드')).toBeTruthy();
+
+  await act(async () => fireEvent.press(screen.getByLabelText('카드 보드')));
+  await waitFor(() => expect(screen.getByTestId('postit-card-draft')).toBeTruthy());
+  expect(screen.getByTestId('board-header-overflow-button')).toBeTruthy();
+  expect(screen.queryByLabelText('보드 확대')).toBeNull();
+  expect(screen.queryByLabelText('드래프트 카드 추가')).toBeNull();
+
+  fireEvent.press(screen.getByTestId('board-header-overflow-button'));
+  expect(screen.getByTestId('board-header-overflow-menu')).toBeTruthy();
+  expect(screen.getByTestId('board-header-overflow-hide-done')).toBeTruthy();
+  expect(screen.getByTestId('board-header-overflow-expand')).toBeTruthy();
+  await act(async () => fireEvent.press(screen.getByTestId('board-header-overflow-create')));
+  expect(screen.getByLabelText('카드 제목')).toBeTruthy();
+});

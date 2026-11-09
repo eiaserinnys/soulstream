@@ -73,7 +73,7 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
   useEffect(() => { if (view === 'board') setVisited(old => old[viewKey] ? old : { ...old, [viewKey]: true }); }, [view, viewKey]);
   const folderId = activeSection.kind === 'project' ? activeSection.folderId : undefined;
   const cardDisplay = useCardDisplay(folderId);
-  const compactHeader = !duo && paneWidth !== undefined && paneWidth < MAIN_LIST_HEADER_OVERFLOW_MAX_WIDTH;
+  const compactHeader = !duo && ((paneWidth !== undefined && paneWidth < MAIN_LIST_HEADER_OVERFLOW_MAX_WIDTH) || effectiveShowSearch);
   const [overflowOpen, setOverflowOpen] = useState(false);
   const setActiveSection = useUIStore((state) => state.setActiveSection);
   const folders = useSessionStore((state) => state.catalog.folders);
@@ -129,7 +129,7 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
           )}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
-        {view === 'board' && !effectiveShowSearch && compactHeader ? (
+        {view === 'board' && compactHeader ? (
           <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
             testID="board-header-overflow-button" accessibilityLabel="보드 메뉴"
             accessibilityState={{ expanded: overflowOpen }}
@@ -137,7 +137,7 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
             <Ionicons name="ellipsis-horizontal" size={t.iconSize.standard} color={t.colors.textPrimary} />
           </LiquidGlassButton>
         ) : null}
-        {view === 'board' && !effectiveShowSearch && !compactHeader ? <>
+        {view === 'board' && !compactHeader ? <>
           <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
             accessibilityLabel="드래프트 카드 추가" onPress={() => boardRef.current?.openCreate()}>
             <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
@@ -156,7 +156,7 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
         <TabletPersistentEntry />
         </View>
       </TabletPaneHeader> : null}
-      {!duo && !effectiveShowSearch && activeSection.kind === 'project' ? <View style={{ paddingHorizontal: t.tabletShell.header.paddingHorizontal, paddingBottom: t.uiSpacing.sm }}>
+      {!duo && activeSection.kind === 'project' ? <View style={{ paddingHorizontal: t.tabletShell.header.paddingHorizontal, paddingBottom: t.uiSpacing.sm }}>
         <SettingsSegmentedControl<'existing' | 'board'> id="tablet-card-view" value={view} onChange={setView}
           options={[{ value: 'existing', label: '기존 보기' }, { value: 'board', label: '카드 보드' }]} />
       </View> : null}
