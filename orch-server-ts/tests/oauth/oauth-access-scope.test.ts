@@ -4,6 +4,7 @@ import type { SqlClient } from "../../src/control_plane/control_plane_types.js";
 import { createLiveAuthenticatedUserResolvers } from "../../src/runtime/live_authenticated_user_resolver.js";
 import { createLiveDashboardAccessProvider } from "../../src/runtime/live_dashboard_access_provider.js";
 import { registerProductionAuthGuard } from "../../src/runtime/production_auth_guard.js";
+import { registerUsageSummaryRoutes } from "../../src/usage/usage_summary_routes.js";
 import {
   createOAuthAccessTokenResolver,
   oauthScopeForRoute,
@@ -72,6 +73,41 @@ describe("OAuth resource scopes", () => {
     expect(oauthScopeForRoute("GET", "/api/folders/folder-1")).toBe("folders:read");
   });
 
+  it("maps only the usage summary GET to the usage read scope", () => {
+    expect(oauthScopeForRoute("GET", "/api/usage/summary")).toBe("usage:read");
+    expect(oauthScopeForRoute("GET", "/api/usage/summary?window=1")).toBe("usage:read");
+    for (const [method, path] of [
+      ["POST", "/api/usage/refresh"],
+      ["GET", "/api/usage/stream"],
+      ["GET", "/api/usage/summary/x"],
+      ["POST", "/api/usage/summary"],
+    ]) expect(oauthScopeForRoute(method!, path!)).toBeNull();
+  });
+
+  it("admits a usage read token only to the usage summary route", async () => {
+    const usage: OAuthResourceAccess = { ...access, scopes: ["usage:read"] };
+    const cards: OAuthResourceAccess = { ...access, scopes: ["cards:read"] };
+    const app = Fastify();
+    registerProductionAuthGuard(app, {
+      resolveTokenAccess: async () => ({ ok: false, statusCode: 401, detail: "Authentication required" }),
+      resolveOAuthAccess: async request => request.headers.authorization === "Bearer usage-token"
+        ? usage
+        : request.headers.authorization === "Bearer cards-token" ? cards : null,
+    });
+    registerUsageSummaryRoutes(app, {
+      service: {
+        getSummary: () => ({ generatedAt: "2026-11-09T00:00:00.000Z", collectedAt: null, nodes: [] }),
+        collectOnce: async () => {},
+      },
+    });
+    const headers = { authorization: "Bearer usage-token" };
+    expect((await app.inject({ method: "GET", url: "/api/usage/summary", headers })).statusCode).toBe(200);
+    expect((await app.inject({ method: "GET", url: "/api/usage/summary", headers: { authorization: "Bearer cards-token" } })).statusCode).toBe(403);
+    expect((await app.inject({ method: "POST", url: "/api/usage/refresh", headers })).statusCode).toBe(403);
+    expect((await app.inject({ method: "GET", url: "/api/usage/stream", headers })).statusCode).toBe(403);
+    await app.close();
+  });
+
   it("lets the card read scope write card status, comments and messages", () => {
     for (const method of ["POST", "PATCH"]) {
       expect(oauthScopeForRoute(method, "/api/cards")).toBe("cards:read");
@@ -119,6 +155,12 @@ describe("OAuth resource scopes", () => {
       detail: "Insufficient OAuth scope",
     });
     expect(requireOAuthScope(null, "conversations")).toMatchObject({ ok: false });
+  });
+
+  it("does not derive the usage read scope from another scope", () => {
+    expect(requireOAuthScope({ ...access, scopes: ["cards:read", "folders:read", "conversations"] }, "usage:read"))
+      .toEqual({ ok: false, statusCode: 403, detail: "Insufficient OAuth scope" });
+    expect(requireOAuthScope({ ...access, scopes: ["usage:read"] }, "cards:read")).toMatchObject({ ok: false });
   });
 
   it("uses the verified Google profile for OAuth caller identity", async () => {
