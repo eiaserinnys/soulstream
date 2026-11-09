@@ -35,7 +35,7 @@ import { CardNowPanel } from './CardNowPanel';
 import { CardNotes } from './CardNotes';
 import { CardRequestView } from './CardRequestView';
 import { SettingsSegmentedControl } from '../settings/SettingsSegmentedControl';
-import { resolveTabletBottomSafeAreaPadding } from '../split/tabletShellInsets';
+import { resolveChatComposerBottomGap, resolveChatPaneMinimumBottomPadding } from '../split/tabletShellInsets';
 import { ChatPaneMinimumBottomPaddingContext } from '../split/ChatPane';
 import { summarizeCardItems } from '../../lib/card-check-item-summary';
 import { useDuoSideBand } from '../../navigation/duoSideBand';
@@ -163,10 +163,14 @@ export function CardDetailContent(props: CardDetailContentProps) {
   const avatar = resolveSessionCardAvatar(identity, serverUrl);
   const locked = pending || statusAction.pending || comments.pending || composerBusy;
   const question = [...(detail?.questions ?? [])].reverse().find(item => item.answer === null && !item.withdrawnAt);
+  // 옆 대화 입력 상자와 같은 식으로 바닥 간격을 정한다(커멘트 상자와 대화 입력의 위아래 끝을 맞춘다).
   const dockBottom = keyboardOverlap > 0
     ? t.uiSpacing.sm
     : tablet
-      ? panelMinimumBottomPadding ?? (resolveTabletBottomSafeAreaPadding(insets.bottom, t.tabletShell.outerInset) + t.uiSpacing.sm)
+      ? resolveChatComposerBottomGap(
+        resolveChatPaneMinimumBottomPadding(panelMinimumBottomPadding, insets.bottom, t.tabletShell.outerInset),
+        t.spacing.sm,
+      )
       : insets.bottom + t.uiSpacing.sm;
   const setTab = (next: CardDetailTab) => {
     setTabChoice({ cardId, value: next });
@@ -317,11 +321,11 @@ export function CardDetailContent(props: CardDetailContentProps) {
         <SettingsSegmentedControl<CardDetailTab> id="card-detail" variant="detail" value={tab} options={tabOptions} onChange={setTab} />
       </View> : null}
       <View style={styles.bodyFrame}>
-        {detail && tab === 'sessions' ? <View testID="card-sessions" style={{ flex: 1, marginBottom: dockBottom }}>
+        {detail && tab === 'sessions' ? <View testID="card-sessions" style={{ flex: 1, marginBottom: dockBottom + dockHeight + t.uiSpacing.sm }}>
           <FolderSessionHistory scrollMemoryKey={JSON.stringify(['card', cardId])} api={api} small virtualized sessionIds={sessionIds} sessionSummaries={sessionSummaries} onOpenSession={openSession}
-            contentContainerStyle={[styles.content, { paddingBottom: dockHeight + t.uiSpacing.xxl }]} />
-        </View> : <ScrollView testID="card-detail-scroll" ref={scroll} style={{ marginBottom: dockBottom }}
-          contentContainerStyle={[styles.content, { paddingBottom: dockHeight + t.uiSpacing.xxl }]}
+            contentContainerStyle={[styles.content, { paddingBottom: t.uiSpacing.xxl }]} />
+        </View> : <ScrollView testID="card-detail-scroll" ref={scroll} style={{ marginBottom: dockBottom + dockHeight + t.uiSpacing.sm }}
+          contentContainerStyle={[styles.content, { paddingBottom: t.uiSpacing.xxl }]}
           keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}
           onScroll={event => { scrollOffsetRef.current = event.nativeEvent.contentOffset.y; scrollMemory.onScroll(event); }} onScrollBeginDrag={scrollMemory.onScrollBeginDrag}
           onLayout={scrollMemory.onLayout} scrollEventThrottle={16}

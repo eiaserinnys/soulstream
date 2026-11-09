@@ -158,6 +158,10 @@ export function initializeReview() {
     };
   }
   if (entryShell) {
+    // 캡처가 제목을 입력창에 타이핑하지 않고 표본 데이터로 넣을 수 있게 한다.
+    // 캡처가 피드에서 열어 덮개를 보는 표본 세션(공개 예시 세션 10)의 폴더 이름을 바꾼다.
+    const folderTitleOverride = new URLSearchParams(window.location.search).get('folderTitle');
+    if (folderTitleOverride) entryShellFolders[9].name = folderTitleOverride;
     useSessionStore.setState({
       sessions: {},
       catalog: { folders: [], sessions: {} },

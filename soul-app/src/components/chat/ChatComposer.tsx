@@ -16,6 +16,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { GlassSurface } from '../GlassSurface';
 import { CompactTouchTarget } from '../CompactTouchTarget';
+import { resolveChatComposerBottomGap } from '../split/tabletShellInsets';
 import { createSessionVisualRoles, useTokens } from '../../theme';
 import { ADD_GLYPH_INSET_RATIO, makeStyles } from './ChatBody.styles';
 import { AttachmentPickerButton } from './AttachmentPickerButton';
@@ -155,7 +156,7 @@ export function ChatComposer({
       style={[
         presentation === 'manuscript' ? styles.manuscriptInputRow : styles.inputRow,
         embedded ? { paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 }
-          : { paddingBottom: Math.max(t.spacing.sm, minimumBottomPadding) },
+          : { paddingBottom: resolveChatComposerBottomGap(minimumBottomPadding, t.spacing.sm) },
       ]}
       onLayout={onComposerBoxLayout ? handleComposerRowLayout : undefined}
     >

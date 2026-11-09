@@ -2,7 +2,7 @@ import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 // Existing title/description editing stays together; this change extracts the virtual scroll owner.
 // The remaining 500+ line coordinator is preserved to avoid changing unrelated editing behavior.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { createApiClient, type ApiClient } from '../../api/client';
@@ -75,11 +75,9 @@ export function FolderWorkspace({
   // 카드 패널 머리와 같은 관례: 한 줄이 머리 버튼(48) 가운데에 서고 세 줄까지 자란다.
   const tabletTitleLayout = useMemo(() => {
     const lineHeight = t.foundation.typography.navigation.lineHeight;
-    const verticalPadding = (t.hitTarget.min - lineHeight) / 2;
     return {
       minHeight: t.hitTarget.min,
-      maxHeight: verticalPadding * 2 + lineHeight * 3,
-      verticalPadding,
+      verticalPadding: (t.hitTarget.min - lineHeight) / 2,
     };
   }, [t]);
   const selector = useMemo(() => selectPlannerFolder(folderPageId), [folderPageId]);
@@ -148,6 +146,7 @@ export function FolderWorkspace({
   const [saving, setSaving] = useState(false);
   const [, setDescriptionServerRevision] = useState(0);
   const [editingPhoneTitle, setEditingPhoneTitle] = useState(false);
+  const [editingTabletTitle, setEditingTabletTitle] = useState(false);
   const [successionId, setSuccessionId] = useState<string | null | undefined>(undefined);
   const [newFolderDraft, setNewFolderDraft] = useState<{ parentPageId: string } | null>(null);
   const togglePending = useRef(false);
@@ -436,21 +435,47 @@ export function FolderWorkspace({
     <AppKeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
       {tablet ? (
         <TabletPaneHeader testID="task-workspace-tablet-header" style={styles.tabletHeader}>
-          <GrowingMultilineInput
-            testID="task-workspace-tablet-title"
-            value={visibleTitle}
-            onChangeText={(value) => {
-              titleDraft.current = value;
-              plannerFolderTitleSaveCoordinator.setDraft(folderSummary.page.id, value, scopeGeneration);
-              setTitle(value);
-            }}
-            onBlur={queueTabletTitleSave}
-            accessibilityLabel="폴더 제목"
-            style={styles.tabletTitle}
-            minHeight={tabletTitleLayout.minHeight}
-            maxHeight={tabletTitleLayout.maxHeight}
-            verticalPadding={tabletTitleLayout.verticalPadding}
-          />
+          {editingTabletTitle ? (
+            <GrowingMultilineInput
+              testID="task-workspace-tablet-title"
+              autoFocus
+              value={visibleTitle}
+              onChangeText={(value) => {
+                titleDraft.current = value;
+                plannerFolderTitleSaveCoordinator.setDraft(folderSummary.page.id, value, scopeGeneration);
+                setTitle(value);
+              }}
+              onBlur={() => {
+                queueTabletTitleSave();
+                setEditingTabletTitle(false);
+              }}
+              accessibilityLabel="폴더 제목"
+              style={styles.tabletTitle}
+              minHeight={tabletTitleLayout.minHeight}
+              maxHeight={Number.POSITIVE_INFINITY}
+              verticalPadding={tabletTitleLayout.verticalPadding}
+            />
+          ) : (
+            <Pressable
+              testID="task-workspace-tablet-title-read"
+              accessibilityRole="button"
+              accessibilityLabel="폴더 제목"
+              style={styles.tabletTitleRead}
+              onPress={() => setEditingTabletTitle(true)}
+            >
+              <Text
+                testID="task-workspace-tablet-title-text"
+                numberOfLines={3}
+                ellipsizeMode="tail"
+                style={[styles.tabletTitle, {
+                  minHeight: tabletTitleLayout.minHeight,
+                  paddingVertical: tabletTitleLayout.verticalPadding,
+                }]}
+              >
+                {visibleTitle}
+              </Text>
+            </Pressable>
+          )}
           {!duo ? toggleActions : null}
           {!duo && onClose ? (
             <TouchableOpacity

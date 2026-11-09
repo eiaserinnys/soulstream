@@ -17,6 +17,8 @@ import { SettingsSegmentedControl } from '../components/settings/SettingsSegment
 import { GlassButton } from '../components/GlassSurface';
 import { message, reviewComposerAttachment, sessions } from './fixtures';
 import { ReviewSection } from './ReviewSection';
+import { PlannerForegroundCard } from '../components/planner/PlannerForegroundCard';
+import { todayCardStyles } from '../components/planner/TodayCard.styles';
 import { formatAssignedCardContextSnapshot } from '../components/chat/turnSummaryProjection';
 import type { SessionEvent } from '../api/types';
 import { useChatStore } from '../store/chatStore';
@@ -383,6 +385,7 @@ export function ReviewChat() {
   const t = useTokens();
   const { width } = useWindowDimensions();
   const styles = makeStyles(t);
+  const todayStyles = todayCardStyles(t);
   const [input, setInput] = useState('');
   const [sent, setSent] = useState('');
   const [state, setState] = useState<typeof options[number]['value']>('normal');
@@ -439,6 +442,18 @@ export function ReviewChat() {
           onPickAttachment={() => setAttachment(true)} uploading={state === 'uploading'}
           sending={state === 'sending'} disabled={state === 'disabled'} voiceControls={null}
           inputAccessibilityLabel="embedded 예시 메시지" />
+      </View>
+    </ReviewSection>
+    <ReviewSection title="입력창 · embedded · surface none (오늘 카드 입력과 같은 바깥 프레임)">
+      <View testID="review-chat-composer-surface-none" style={{ padding: t.uiSpacing.md }}>
+        <PlannerForegroundCard role="chrome" style={todayStyles.frame} cornerRadius={t.radius.lg}>
+          <View style={todayStyles.composerLayout}>
+            <ChatComposer embedded surface="none" input={state === 'sending' ? '' : input} onChangeInput={setInput} onSend={() => { setSent(input); setInput(''); }}
+              onPickAttachment={() => setAttachment(true)} uploading={state === 'uploading'}
+              sending={state === 'sending'} disabled={state === 'disabled'} voiceControls={null}
+              inputAccessibilityLabel="surface none 예시 메시지" />
+          </View>
+        </PlannerForegroundCard>
       </View>
     </ReviewSection>
     <ReviewSection title="사용자 말풍선 · 일반·개입·전송 실패">

@@ -21,6 +21,10 @@ export function makeFolderWorkspaceStyles(t: DesignTokens) {
       borderWidth: 0,
       backgroundColor: 'transparent',
     },
+    tabletTitleRead: {
+      flex: 1,
+      flexDirection: 'row',
+    },
     closeButton: {
       minWidth: planner.actionColumn,
       minHeight: planner.actionColumn,
