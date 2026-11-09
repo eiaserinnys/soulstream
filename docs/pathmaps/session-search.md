@@ -8,11 +8,30 @@ Expanded search in `live_cogito_search_provider.ts` obtains A0 from the same met
 
 Persistent-session Jev observations reuse the expanded `search_sessions` path with `session_search_mode=expanded`, `include_session_results=true`, `search_session_id=true`, and `top_k=16` (the `limit + 1` pattern). The service filters expanded results to its allowed folder IDs, excludes folderless results and the current session, keeps provider order, and takes at most 15. The expanded provider forwards the evaluation signal and deadline through document search and Jev reranking; the service then scores the full candidate set for the observation.
 
-`live_session_document_search.ts` applies folder, node, status, backend, and updated-after filters to the document candidates and hydrates the session and folder fields. Its cold build uses flat session, digest, and turn-summary reads; both session reads include `last_assistant_text` clipped to 400 characters. The cold build runs outside the request: `ensureInitialized()` shares one build across callers on its own connection with a 30-second budget, and the orchestrator warms it 10 seconds after startup. A request waits for that build only within its own deadline; if it stops waiting, the build continues and the next request reuses it. Session document summaries contain only the digest highlight or ordered turn-summary events. The last assistant answer is whitespace-normalized and clipped to 160 Unicode code points as `answerPreview`; it is excluded from both document bigrams and the Jev card. Each request refreshes changed IDs whose `sessions.created_at` or `sessions.updated_at` is within the overlap, along with updated digests, new turn-summary events, and a full name-roster comparison for renames and deletions. Keeping `sessions.updated_at` in that overlap refreshes previews when the last answer changes. BM25 linearly scans the code points once, using a first-codepoint bitmap to skip irrelevant positions; it does not retain an inverted index or full request/summary text.
+`live_session_document_search.ts` applies folder, node, status, backend, and updated-after filters to the document candidates and hydrates the session and folder fields. Its cold build uses flat session, digest, and turn-summary reads; both session reads include `last_assistant_text` clipped to 400 characters. The cold build runs outside the request: `ensureInitialized()` shares one build across callers on its own connection with a 60-second budget, and the orchestrator warms it 10 seconds after startup. A request waits for that build only within its own deadline; if it stops waiting, the build continues and the next request reuses it. Session document summaries contain only the digest highlight or ordered turn-summary events. The last assistant answer is whitespace-normalized and clipped to 160 Unicode code points as `answerPreview`; it is excluded from both document bigrams and the Jev card. Each request refreshes changed IDs whose `sessions.created_at` or `sessions.updated_at` is within the overlap, along with updated digests, new turn-summary events, and a full name-roster comparison for renames and deletions. Keeping `sessions.updated_at` in that overlap refreshes previews when the last answer changes. BM25 linearly scans the code points once, using a first-codepoint bitmap to skip irrelevant positions; it does not retain an inverted index or full request/summary text.
 
 The provider fuses the filtered A0 list and the top 100 filtered document candidates with RRF (`k=60`), retaining 50 candidates. `jev_session_reranker.ts` sends their C3 cards to Jev. Successful scores order the response by relevance, with RRF as the tie-breaker. All expanded hits choose the excerpt from the C3 card summary, then `answerPreview`, then the card's cleaned first request; if none exist, the existing excerpt remains. The excerpt and `best_match.excerpt` share the same value, clipped to 160 Unicode code points; `evidence` is unchanged.
 
 Session results expose `created_at` and `updated_at` as ISO timestamp strings.
+
+## Deadlines
+
+Each deadline is at least twice the observed production duration. The per-request clamp in `live_db_sql.ts` still reduces each statement timeout to the remaining request budget.
+
+| Path | Deadline | Measured basis |
+| --- | ---: | --- |
+| Session document index cold build (`live_session_document_search.ts`) | 60 s | index ready 19.8 s and 28.2 s after startup |
+| `search_session_history` handler request (`session_query_handlers.ts`) | 10 s | server 3.7–3.9 s; first SQL 3.4 s |
+| Search request budget when the caller passes no deadline (`live_db_sql.ts` `LIVE_SEARCH_REQUEST_BUDGET_MS`) | 8 s | history search 3.9 s; keeps 2 s inside the 10 s handler deadline for metadata reads |
+| Search DB statement timeout (`live_db_sql.ts`; the `runSearchQuery` default per-query cap in `live_session_search_candidates.ts` uses the same constant) | 8 s | first `event_search` SQL 3.4 s; later 0.1–2.1 s |
+| Cogito search deadline (`cogito_routes.ts`) | 10 s | same `event_search` SQL |
+| Expanded product session search deadline (`cogito_routes.ts`) | 15 s | expanded session search 5.7 s and 6.7 s |
+| `search_sessions` MCP relay (`session_tools.ts`) | 20 s | longer than the expanded search deadline |
+| `search_session_history` MCP relay (`session_tools.ts`) | 15 s | longer than the handler request deadline |
+| Persistent Jev observation window (`persistent_jev_observer.ts`) | 20 s | candidate reads 0.4–1.6 s + session search up to 6.7 s + Jev scoring 0.26–0.36 s |
+| Host route budget validation (`persistent_context_host_routes.ts`) | 20 s | accepts the observation window |
+| Jev scoring budget (`persistent_context_service.ts`) | remaining evaluation budget | gives the observation window to scoring |
+| `scorePersistentCandidates` budget validation (`typesafe_client.ts`) | 20 s | accepts the observation window |
 
 ## Failure and response
 

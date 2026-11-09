@@ -195,7 +195,7 @@ export const sessionQueryHandlers = {
       include_story,
       top_k,
     }: SessionArgs<"search_session_history">, extra: { signal: AbortSignal }) => {
-      const deadlineSignal = AbortSignal.timeout(4_800);
+      const deadlineSignal = AbortSignal.timeout(10_000);
       const requestSignal = AbortSignal.any([extra.signal, deadlineSignal]);
       try {
         const callerSessionId = (context.principal === "external" ? undefined : context.callerSessionId ?? undefined);

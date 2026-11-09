@@ -201,7 +201,7 @@ export const sessionTools = {
         session_id: z.string(),
       },
     } },
-  search_session_history: { name: "search_session_history", audience: "all", config: {
+  search_session_history: { name: "search_session_history", audience: "all", timeoutMs: 15000, config: {
       description:
         "이벤트 텍스트 검색 (BM25, Python SessionSearchEngine 정합). "
         + '툴 사용 기록은 event_types: ["tool_start","tool_result"]를 명시해 검색한다. '
@@ -256,7 +256,7 @@ export const sessionTools = {
         max_chars: z.number().int().min(1000).max(60000).default(20000),
       },
     } },
-  search_sessions: { name: "search_sessions", audience: "all", timeoutMs: 15000, config: {
+  search_sessions: { name: "search_sessions", audience: "all", timeoutMs: 20000, config: {
       description:
         "과거 세션을 뜻으로 찾는다. 검색어가 가리키는 작업이나 대화를 한 세션을 관련도 순으로 돌려준다. "
         + "원문 이벤트 조각(특정 문장, 도구 출력)이 필요하면 search_session_history를 쓴다.",

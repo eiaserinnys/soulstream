@@ -213,7 +213,7 @@ export async function scorePersistentCandidates({
   signal,
   fetchImpl = fetch,
 }: ScorePersistentCandidatesInput): Promise<RelevanceScore[]> {
-  if (!Number.isInteger(budgetMs) || budgetMs <= 0 || budgetMs > 3_000) {
+  if (!Number.isInteger(budgetMs) || budgetMs <= 0 || budgetMs > 20_000) {
     throw new Error("Persistent candidate score budget is invalid");
   }
   if (!apiKey) throw new Error("Typesafe API key is unavailable");

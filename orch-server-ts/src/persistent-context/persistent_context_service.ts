@@ -53,6 +53,13 @@ export function createPersistentContextService(options: {
   readonly typesafeApiKey: string;
   readonly logMissingInput: (sessionId: string, elapsedMs: number) => void;
   readonly logNullReason: (reason: PersistentContextNullReason, sessionId: string, elapsedMs: number) => void;
+  readonly logFinished?: (
+    sessionId: string,
+    elapsedMs: number,
+    searchMs: number,
+    jevMs: number,
+    selectedCount: number,
+  ) => void;
   readonly fetchImpl?: typeof fetch;
 }): PersistentContextService {
   return {
@@ -105,6 +112,7 @@ export function createPersistentContextService(options: {
         }
 
         const request = clipUtf8(input.request, MAX_REQUEST_BYTES);
+        const searchStartedAt = Date.now();
         const searched = await options.searchProvider.search({
           q: request,
           top_k: 16,
@@ -119,6 +127,7 @@ export function createPersistentContextService(options: {
           signal: input.signal,
           deadlineAt: input.deadlineAt,
         });
+        const searchMs = Math.max(0, Date.now() - searchStartedAt);
         if (!mayContinue(input)) {
           logNull("cancelled_or_deadline");
           return { observation: null };
@@ -166,12 +175,13 @@ export function createPersistentContextService(options: {
           return { observation: null };
         }
         let scores: RelevanceScore[];
+        const jevStartedAt = Date.now();
         try {
           scores = await scorePersistentCandidates({
             query: request,
             items,
             apiKey: options.typesafeApiKey,
-            budgetMs: Math.min(3_000, remainingBudgetMs),
+            budgetMs: remainingBudgetMs,
             signal: input.signal,
             fetchImpl: options.fetchImpl,
           });
@@ -179,6 +189,7 @@ export function createPersistentContextService(options: {
           logNull(mayContinue(input) ? "jev_failed" : "cancelled_or_deadline");
           return { observation: null };
         }
+        const jevMs = Math.max(0, Date.now() - jevStartedAt);
         if (!mayContinue(input)) {
           logNull("cancelled_or_deadline");
           return { observation: null };
@@ -251,6 +262,13 @@ export function createPersistentContextService(options: {
           logNull("cancelled_or_deadline");
           return { observation: null };
         }
+        options.logFinished?.(
+          input.sessionId,
+          Math.max(0, Date.now() - startedAt),
+          searchMs,
+          jevMs,
+          selected.length,
+        );
         return { observation };
       } catch {
         logNull(mayContinue(input) ? "unexpected_error" : "cancelled_or_deadline");

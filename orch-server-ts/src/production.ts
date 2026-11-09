@@ -786,6 +786,9 @@ export async function createLiveProductionApplication(
         logNullReason: (reason, sessionId, elapsedMs) => context.warn(
           `Persistent context evaluation skipped: reason ${reason}, session ${sessionId}, elapsed_ms ${elapsedMs}`,
         ),
+        logFinished: (sessionId, elapsedMs, searchMs, jevMs, selectedCount) => context.warn(
+          `Persistent context evaluation finished: session ${sessionId}, elapsed_ms ${elapsedMs}, search_ms ${searchMs}, jev_ms ${jevMs}, selected ${selectedCount}`,
+        ),
       }),
     },
     r2SettingsRoutes: {

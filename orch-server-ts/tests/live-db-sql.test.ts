@@ -112,7 +112,7 @@ describe("live Postgres SQL resolver", () => {
       postgresFactory,
     });
 
-    const one = await factory.open(5_000);
+    const one = await factory.open(10_000);
     const two = await factory.open(2_500);
 
     expect(one.sql).not.toBe(two.sql);
@@ -221,7 +221,7 @@ describe("live Postgres SQL resolver", () => {
         await runQuery(() => sql``);
       });
 
-      expect(setStatementTimeout.mock.calls).toEqual([[3_000], [1_750]]);
+      expect(setStatementTimeout.mock.calls).toEqual([[8_000], [5_750]]);
       expect(factory.open).toHaveBeenCalledOnce();
       expect(close).toHaveBeenCalledOnce();
     } finally {

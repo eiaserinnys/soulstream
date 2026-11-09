@@ -24,7 +24,7 @@ interface PersistentJevObserverDeps {
   fetchImpl?: typeof fetch;
 }
 
-const OBSERVATION_WINDOW_MS = 3_000;
+const OBSERVATION_WINDOW_MS = 20_000;
 const OBSERVATION_PATH = "/api/persistent-context/host/evaluate";
 
 export function createPersistentJevObserver(

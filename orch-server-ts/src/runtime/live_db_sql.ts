@@ -100,9 +100,10 @@ const DEFAULT_POSTGRES_MAX_CONNECTIONS = 10;
 // is the explicit server-side equivalent for executable commands.
 const DEFAULT_POSTGRES_STATEMENT_TIMEOUT_MS = 30_000;
 const DEFAULT_POSTGRES_CLOSE_TIMEOUT_SECONDS = 5;
-export const SEARCH_DB_STATEMENT_TIMEOUT_MS = 3_000;
+export const SEARCH_DB_STATEMENT_TIMEOUT_MS = 8_000;
 const SEARCH_DB_CLOSE_TIMEOUT_SECONDS = 1;
-const LIVE_SEARCH_REQUEST_BUDGET_MS = 4_000;
+// Twice the measured 3.9 s history search, leaving 2 s of the 10 s handler deadline for metadata reads.
+const LIVE_SEARCH_REQUEST_BUDGET_MS = 8_000;
 
 export class LiveSearchDeadlineError extends Error {
   readonly statusCode = 504;
