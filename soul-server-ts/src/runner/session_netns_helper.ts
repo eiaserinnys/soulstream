@@ -25,6 +25,14 @@ import {
   assertIsolationToolchainReady,
 } from "./session_isolation_preflight.js";
 import {
+  DEFAULT_NETWORK_READY_TIMEOUT_MS,
+  NETNS_HELPER_STATUS_FD,
+  awaitNetnsHelperNetworkReady,
+  isReadableStream,
+  readChildStream,
+  statusChannelFor,
+} from "./session_netns_helper_status.js";
+import {
   buildNftRuleset,
   buildPastaArgv,
   collectHostAddresses,
@@ -33,8 +41,16 @@ import {
   parseSandboxDnsForwardAddress,
 } from "./session_network_policy.js";
 
-/** netns helper의 상태 보고 fd(`--status-fd 3`). */
-export const NETNS_HELPER_STATUS_FD = 3;
+export {
+  DEFAULT_NETWORK_READY_TIMEOUT_MS,
+  NETNS_HELPER_STATUS_FD,
+  awaitNetnsHelperNetworkReady,
+} from "./session_netns_helper_status.js";
+export type {
+  NetnsHelperStatus,
+  NetnsHelperStatusName,
+} from "./session_netns_helper_status.js";
+
 /** netns helper의 제어 입력 fd(`--control-fd 4`). */
 export const NETNS_HELPER_CONTROL_FD = 4;
 
@@ -51,15 +67,7 @@ const HOST_HELPER_ENVIRONMENT: Readonly<Record<string, string>> = Object.freeze(
 });
 
 export const DEFAULT_HANDSHAKE_TIMEOUT_MS = 30_000;
-export const DEFAULT_NETWORK_READY_TIMEOUT_MS = 30_000;
 export const DEFAULT_TERMINATE_GRACE_MS = 2_000;
-
-export type NetnsHelperStatusName = "firewall-ready" | "network-ready" | "error";
-
-export interface NetnsHelperStatus {
-  status: NetnsHelperStatusName;
-  message?: string;
-}
 
 export interface IsolationLaunchDependencies {
   /** 상자 실행 전 확인. 실패하면 SESSION_ISOLATION_UNAVAILABLE을 던진다. */
@@ -95,141 +103,6 @@ export const defaultIsolationLaunchDependencies: IsolationLaunchDependencies = {
   terminateGraceMs: DEFAULT_TERMINATE_GRACE_MS,
 };
 
-type StatusWaiter = {
-  wanted: NetnsHelperStatusName;
-  resolve: () => void;
-  reject: (error: Error) => void;
-  timer: NodeJS.Timeout;
-};
-
-/** helper 상태 채널의 줄 단위 JSON을 해석하고, 원하는 상태를 기다린다. */
-class HelperStatusChannel {
-  private buffer = "";
-  private failure: Error | null = null;
-  private readonly received: NetnsHelperStatus[] = [];
-  private readonly waiters: StatusWaiter[] = [];
-
-  constructor(stream: unknown) {
-    if (!isReadableStream(stream)) {
-      this.failure = new SessionIsolationUnavailableError(
-        "netns helper status channel is missing",
-      );
-      return;
-    }
-    stream.setEncoding?.("utf8");
-    stream.on("data", (chunk: string | Buffer) => {
-      this.consume(typeof chunk === "string" ? chunk : chunk.toString("utf8"));
-    });
-    stream.on("end", () => {
-      this.fail(new SessionIsolationUnavailableError(
-        "netns helper exited before reporting readiness",
-      ));
-    });
-    stream.on("error", () => {
-      this.fail(new SessionIsolationUnavailableError("netns helper status channel failed"));
-    });
-  }
-
-  wait(wanted: NetnsHelperStatusName, timeoutMs: number): Promise<void> {
-    if (this.failure !== null) return Promise.reject(this.failure);
-    const index = this.received.findIndex((entry) => entry.status === wanted);
-    if (index !== -1) {
-      this.received.splice(index, 1);
-      return Promise.resolve();
-    }
-    return new Promise<void>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const waiterIndex = this.waiters.findIndex((entry) => entry.timer === timer);
-        if (waiterIndex !== -1) this.waiters.splice(waiterIndex, 1);
-        reject(new SessionIsolationUnavailableError(
-          `netns helper did not report ${wanted} within ${timeoutMs}ms`,
-        ));
-      }, timeoutMs);
-      this.waiters.push({ wanted, resolve, reject, timer });
-    });
-  }
-
-  private consume(chunk: string): void {
-    this.buffer += chunk;
-    let newline = this.buffer.indexOf("\n");
-    while (newline !== -1) {
-      const line = this.buffer.slice(0, newline).trim();
-      this.buffer = this.buffer.slice(newline + 1);
-      if (line.length > 0) this.handleLine(line);
-      newline = this.buffer.indexOf("\n");
-    }
-  }
-
-  private handleLine(line: string): void {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(line);
-    } catch {
-      this.fail(new SessionIsolationUnavailableError(
-        `netns helper sent a malformed status line: ${line}`,
-      ));
-      return;
-    }
-    const message = parsed as Partial<NetnsHelperStatus> | null;
-    const status = message?.status;
-    if (status === "error") {
-      const detail = typeof message?.message === "string" ? message.message : "unknown error";
-      this.fail(new SessionIsolationUnavailableError(`netns helper failed: ${detail}`));
-      return;
-    }
-    if (status !== "firewall-ready" && status !== "network-ready") {
-      this.fail(new SessionIsolationUnavailableError(
-        `netns helper sent an unknown status: ${line}`,
-      ));
-      return;
-    }
-    this.received.push({ status });
-    const waiterIndex = this.waiters.findIndex((waiter) => waiter.wanted === status);
-    const waiter = waiterIndex === -1 ? undefined : this.waiters.splice(waiterIndex, 1)[0];
-    if (waiter !== undefined) {
-      clearTimeout(waiter.timer);
-      waiter.resolve();
-    }
-  }
-
-  private fail(error: Error): void {
-    if (this.failure === null) this.failure = error;
-    for (const waiter of this.waiters.splice(0)) {
-      clearTimeout(waiter.timer);
-      waiter.reject(this.failure);
-    }
-  }
-}
-
-const statusChannels = new WeakMap<ChildProcess, HelperStatusChannel>();
-
-function statusChannelFor(child: ChildProcess, stream: unknown): HelperStatusChannel {
-  const existing = statusChannels.get(child);
-  if (existing !== undefined) return existing;
-  const created = new HelperStatusChannel(stream);
-  statusChannels.set(child, created);
-  return created;
-}
-
-/**
- * helper의 `network-ready` 보고를 기다린다. 상자 실행과 같은 상태 채널을
- * 공유하므로, 대체 어댑터를 끼워 실제 실행을 관찰할 때도 이 함수를 쓴다.
- */
-export function awaitNetnsHelperNetworkReady(
-  child: ChildProcess,
-  timeoutMs: number = DEFAULT_NETWORK_READY_TIMEOUT_MS,
-): Promise<void> {
-  const channel = statusChannelFor(
-    child,
-    readChildStream(child, NETNS_HELPER_STATUS_FD),
-  );
-  return channel.wait("network-ready", timeoutMs);
-}
-
-/**
- * 실제 프로세스를 다루는 유일한 어댑터. 상태 채널은 launch와 공유해야 하므로
- * 프로세스 객체를 키로 한 WeakMap에 보관한다.
- */
 export function createIsolationProcessPorts(): IsolationProcessPorts {
   return {
     spawn(input) {
@@ -281,7 +154,7 @@ export function launchIsolatedSession(
     : parseSandboxDnsForwardAddress(sandboxResolvConf);
   if (dnsForward4 === null) {
     throw new SessionIsolationUnavailableError(
-      `sandbox resolv.conf has no nameserver: ${input.resolvConfPath}`,
+      `sandbox resolv.conf is not exactly the single forward nameserver line: ${input.resolvConfPath}`,
     );
   }
 
@@ -311,6 +184,9 @@ export function launchIsolatedSession(
     nftRuleset,
     hostNetnsInode: dependencies.hostNetnsInode(),
     networkTimeoutMs: dependencies.networkReadyTimeoutMs,
+    // helper가 bwrap argv에 `--json-status-fd`를 끼워 넣고, bwrap이 mount를
+    // 마치고 자식 pid를 보고할 때까지 `network-ready`를 내지 않는다.
+    bwrapPath: input.tools.bwrap,
     launch: { argv: launchArgv, cwd: input.cwd, env: input.env },
   };
 
@@ -387,12 +263,35 @@ export function launchIsolatedSession(
         },
       });
       pastaProcess = pasta;
-      pasta.on("error", () => undefined);
       collectDiagnostics(pasta, (text) => {
         pastaDiagnostics = `${pastaDiagnostics}${text}`.slice(-4000);
       });
+      // pasta는 상자의 바깥 절반이다. ready 전이든 뒤든 pasta가 끝나거나
+      // error를 내면 상자는 성립하지 않거나 이미 반쪽이므로, 기존 dispose
+      // 경로 하나로 내린다. ready 전이면 그 거부가 ready를 실패시킨다.
+      let rejectPastaStopped: (error: Error) => void = () => undefined;
+      const pastaStopped = new Promise<never>((_resolve, reject) => {
+        rejectPastaStopped = reject;
+      });
+      void pastaStopped.catch(() => undefined);
+      let pastaStopReported = false;
+      const reportPastaStop = (reason: string): void => {
+        if (!pastaStopReported) {
+          pastaStopReported = true;
+          rejectPastaStopped(new SessionIsolationUnavailableError(reason));
+        }
+        void dispose();
+      };
+      pasta.on("error", (error: Error) => {
+        reportPastaStop(`pasta failed: ${error.message}`);
+      });
+      pasta.on("exit", (code: number | null, signal: NodeJS.Signals | null) => {
+        reportPastaStop(
+          `pasta exited before the session ended (code ${String(code)}, signal ${String(signal)})`,
+        );
+      });
       await withTimeout(
-        ports.awaitNetworkReady(helperProcess),
+        Promise.race([ports.awaitNetworkReady(helperProcess), pastaStopped]),
         dependencies.networkReadyTimeoutMs,
         "network readiness",
       );
@@ -428,7 +327,9 @@ function launchWithoutIsolation(
   const child = ports.spawn({
     command: input.original.command,
     args: [...input.original.args],
-    options: { cwd: input.cwd, env: input.env, stdio: input.stdio },
+    // 상자 밖 경로는 지금처럼 spawn에 signal을 그대로 넘겨 취소한다.
+    // 상자 안 경로는 helper와 pasta까지 회수해야 하므로 직접 dispose한다.
+    options: { cwd: input.cwd, env: input.env, stdio: input.stdio, signal: input.signal },
   });
   child.on("error", () => undefined);
   const completion = waitForCompletion(child);
@@ -457,17 +358,6 @@ function withStatusAndControlStreams(stdio: SpawnOptions["stdio"]): SpawnOptions
       ? [stdio, stdio, stdio]
       : ["pipe", "pipe", "pipe"];
   return [...base, "pipe", "pipe"] as SpawnOptions["stdio"];
-}
-
-function readChildStream(child: ChildProcess, fd: number): unknown {
-  const streams: ReadonlyArray<unknown> | undefined = child.stdio;
-  return streams?.[fd];
-}
-
-function isReadableStream(value: unknown): value is NodeJS.ReadableStream {
-  return typeof value === "object" && value !== null
-    && typeof (value as { on?: unknown }).on === "function"
-    && typeof (value as { read?: unknown }).read === "function";
 }
 
 function isWritableStream(value: unknown): value is NodeJS.WritableStream {

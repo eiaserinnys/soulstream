@@ -62,6 +62,30 @@ describe("sandbox resolv.conf", () => {
   it("reads the forward address back from the generated file", () => {
     expect(parseSandboxDnsForwardAddress(buildSessionResolvConf())).toBe("192.0.2.53");
   });
+
+  it("rejects a file with a second nameserver line", () => {
+    expect(parseSandboxDnsForwardAddress(
+      "nameserver 192.0.2.53\nnameserver 1.1.1.1\n",
+    )).toBeNull();
+  });
+
+  it("rejects extra directives around the forward line", () => {
+    expect(parseSandboxDnsForwardAddress(
+      "search example.test\nnameserver 192.0.2.53\n",
+    )).toBeNull();
+    expect(parseSandboxDnsForwardAddress(
+      "# generated\nnameserver 192.0.2.53\n",
+    )).toBeNull();
+  });
+
+  it("requires exactly the generated text, including the trailing newline", () => {
+    expect(parseSandboxDnsForwardAddress("nameserver 192.0.2.53")).toBeNull();
+  });
+
+  it("rejects a different forward address or an empty file", () => {
+    expect(parseSandboxDnsForwardAddress("nameserver 100.100.100.100\n")).toBeNull();
+    expect(parseSandboxDnsForwardAddress("")).toBeNull();
+  });
 });
 
 describe("host address collection", () => {
@@ -222,6 +246,18 @@ describe("pasta argv", () => {
       expect(index).toBeGreaterThan(-1);
       expect(argv[index + 1]).toBe("none");
     }
+  });
+
+  it("leaves the netns teardown to pasta's default exit behavior", () => {
+    const argv = buildPastaArgv({
+      pastaPath: "/usr/local/bin/pasta",
+      namespaceOwnerPid: 4242,
+      forwardedPorts: [],
+      dnsForward4: "192.0.2.53",
+      hostResolver: "100.100.100.100",
+    });
+    // --no-netns-quit를 주면 netns가 사라져도 pasta가 남는다.
+    expect(argv).not.toContain("--no-netns-quit");
   });
 
   it("refuses a pid that is not a positive integer", () => {

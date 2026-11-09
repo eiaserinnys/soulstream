@@ -89,15 +89,16 @@ export function parseHostIpv4Resolver(resolvConf: string): string | null {
   return null;
 }
 
-/** sandbox resolv.conf가 선언한 DNS 전달 주소를 읽는다. */
+/**
+ * sandbox resolv.conf가 정확히 전달 주소 한 줄인지 확인한다.
+ *
+ * 첫 IPv4 nameserver만 받으면 같은 파일에 다른 resolver가 덧붙어 있어도
+ * 통과한다. sandbox는 이 파일 하나로 DNS를 쓰므로, 내용 전체가 우리가 쓰는
+ * `buildSessionResolvConf()`와 같은지만 본다. 다르면 null이고, 호출자가
+ * SESSION_ISOLATION_UNAVAILABLE로 거부한다.
+ */
 export function parseSandboxDnsForwardAddress(resolvConf: string): string | null {
-  for (const line of resolvConf.split(/\r?\n/)) {
-    const match = /^\s*nameserver\s+(\S+)\s*$/.exec(line);
-    const candidate = match?.[1];
-    if (candidate === undefined) continue;
-    if (isIpv4Literal(candidate)) return candidate;
-  }
-  return null;
+  return resolvConf === buildSessionResolvConf() ? ISOLATION_DNS_FORWARD_ADDRESS : null;
 }
 
 /**
