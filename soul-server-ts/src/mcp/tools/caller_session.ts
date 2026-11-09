@@ -4,7 +4,9 @@ import {
 import type { CallerInfo } from "../../task/task_models.js";
 import {
   getCurrentMcpCallerSessionId,
+  getCurrentMcpPrincipal,
   SOULSTREAM_AGENT_SESSION_HEADER,
+
 } from "../request_context.js";
 import type { McpRuntime } from "../runtime.js";
 
@@ -12,6 +14,8 @@ import type { McpRuntime } from "../runtime.js";
 export function resolveEffectiveCallerSessionId(
   explicitCallerSessionId: string | null | undefined,
 ): string | undefined {
+  const principal = getCurrentMcpPrincipal();
+  if (principal.tier === "restricted") return principal.sessionId;
   return cleanSessionId(explicitCallerSessionId) ?? getCurrentMcpCallerSessionId();
 }
 

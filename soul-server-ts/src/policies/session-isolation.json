@@ -1,0 +1,514 @@
+{
+  "version": 1,
+  "tools": {
+    "add_card_comment": {
+      "category": "allow"
+    },
+    "add_card_item": {
+      "category": "allow"
+    },
+    "add_card_note": {
+      "category": "allow"
+    },
+    "add_card_report": {
+      "category": "allow"
+    },
+    "add_persistent_instruction": {
+      "category": "deny"
+    },
+    "apply_remote_agent_profile_update": {
+      "category": "deny"
+    },
+    "archive_folder": {
+      "category": "allow"
+    },
+    "archive_recurring_job": {
+      "category": "deny"
+    },
+    "ask_card_question": {
+      "category": "allow"
+    },
+    "attach_session_output": {
+      "category": "allow"
+    },
+    "background_claude_tasks": {
+      "category": "allow"
+    },
+    "batch_page_operations": {
+      "category": "allow"
+    },
+    "browse_folder": {
+      "category": "allow"
+    },
+    "create_agent_session": {
+      "category": "inherit",
+      "guard": "create-local-session"
+    },
+    "create_card": {
+      "category": "guarded",
+      "guard": "draft-card"
+    },
+    "create_custom_view": {
+      "category": "allow"
+    },
+    "create_folder": {
+      "category": "allow"
+    },
+    "create_markdown_document": {
+      "category": "allow"
+    },
+    "create_page": {
+      "category": "allow"
+    },
+    "create_recurring_job": {
+      "category": "deny"
+    },
+    "create_remote_agent_session": {
+      "category": "deny"
+    },
+    "create_worktree": {
+      "category": "guarded",
+      "guard": "worktree-create"
+    },
+    "delete_folder": {
+      "category": "deny"
+    },
+    "delete_markdown_document": {
+      "category": "allow"
+    },
+    "delete_session": {
+      "category": "deny"
+    },
+    "delete_worktree_branch": {
+      "category": "guarded",
+      "guard": "owned-worktree"
+    },
+    "dispatch_work": {
+      "category": "deny"
+    },
+    "download_session_history": {
+      "category": "allow"
+    },
+    "expand_session_turn": {
+      "category": "allow"
+    },
+    "find_page": {
+      "category": "allow"
+    },
+    "get_agents_config": {
+      "category": "deny"
+    },
+    "get_backlinks": {
+      "category": "allow"
+    },
+    "get_card": {
+      "category": "allow"
+    },
+    "get_card_orchestration_settings": {
+      "category": "allow"
+    },
+    "get_claude_background_task_output": {
+      "category": "allow"
+    },
+    "get_custom_view": {
+      "category": "allow"
+    },
+    "get_daily_page": {
+      "category": "allow"
+    },
+    "get_folder": {
+      "category": "allow"
+    },
+    "get_folder_system_prompt": {
+      "category": "allow"
+    },
+    "get_markdown_document": {
+      "category": "allow"
+    },
+    "get_page": {
+      "category": "allow"
+    },
+    "get_page_markdown": {
+      "category": "allow"
+    },
+    "get_recurring_job": {
+      "category": "allow"
+    },
+    "get_session_event": {
+      "category": "allow"
+    },
+    "get_session_highlight": {
+      "category": "allow"
+    },
+    "get_session_name": {
+      "category": "allow"
+    },
+    "get_session_story": {
+      "category": "allow"
+    },
+    "get_session_summary": {
+      "category": "allow"
+    },
+    "get_session_turn_summaries": {
+      "category": "allow"
+    },
+    "list_agents_config_snapshots": {
+      "category": "allow"
+    },
+    "list_card_notes": {
+      "category": "allow"
+    },
+    "list_cards": {
+      "category": "allow"
+    },
+    "list_child_folders": {
+      "category": "allow"
+    },
+    "list_claude_background_tasks": {
+      "category": "allow"
+    },
+    "list_custom_views": {
+      "category": "allow"
+    },
+    "list_external_llm_recipients": {
+      "category": "allow"
+    },
+    "list_folder_operations": {
+      "category": "allow"
+    },
+    "list_folders": {
+      "category": "allow"
+    },
+    "list_live_cards": {
+      "category": "allow"
+    },
+    "list_local_agents": {
+      "category": "allow"
+    },
+    "list_mcp_profiles": {
+      "category": "allow"
+    },
+    "list_mcp_registry": {
+      "category": "allow"
+    },
+    "list_node_agents": {
+      "category": "allow"
+    },
+    "list_node_model_presets": {
+      "category": "allow"
+    },
+    "list_nodes": {
+      "category": "allow"
+    },
+    "list_persistent_instructions": {
+      "category": "allow"
+    },
+    "list_persistent_session_history": {
+      "category": "allow"
+    },
+    "list_recurring_job_runs": {
+      "category": "allow"
+    },
+    "list_recurring_jobs": {
+      "category": "allow"
+    },
+    "list_remote_agents_config_snapshots": {
+      "category": "allow"
+    },
+    "list_session_events": {
+      "category": "allow"
+    },
+    "list_sessions": {
+      "category": "allow"
+    },
+    "list_turn_usage": {
+      "category": "allow"
+    },
+    "list_user_messages": {
+      "category": "allow"
+    },
+    "list_worktrees": {
+      "category": "allow"
+    },
+    "load_skill": {
+      "category": "allow"
+    },
+    "match_skill_catalogs": {
+      "category": "allow"
+    },
+    "move_card": {
+      "category": "allow"
+    },
+    "move_folder": {
+      "category": "allow"
+    },
+    "move_sessions_to_folder": {
+      "category": "allow"
+    },
+    "observe_node_services": {
+      "category": "allow"
+    },
+    "patch_custom_view": {
+      "category": "allow"
+    },
+    "plan_agent_mcp_profile_update": {
+      "category": "deny"
+    },
+    "plan_agent_profile_update": {
+      "category": "deny"
+    },
+    "plan_remote_agent_profile_update": {
+      "category": "deny"
+    },
+    "preview_recurring_schedule": {
+      "category": "allow"
+    },
+    "publish_chat_ui": {
+      "category": "allow"
+    },
+    "put_report_entry": {
+      "category": "allow"
+    },
+    "reflect_brief": {
+      "category": "allow"
+    },
+    "reflect_cluster_brief": {
+      "category": "allow"
+    },
+    "reflect_refresh": {
+      "category": "allow"
+    },
+    "reflect_service": {
+      "category": "allow"
+    },
+    "register_attachment": {
+      "category": "allow"
+    },
+    "register_existing_mcp_agent": {
+      "category": "deny"
+    },
+    "remove_report_entry": {
+      "category": "allow"
+    },
+    "remove_worktree": {
+      "category": "guarded",
+      "guard": "owned-worktree"
+    },
+    "rename_folder": {
+      "category": "allow"
+    },
+    "report_card_item": {
+      "category": "allow"
+    },
+    "request_card_review": {
+      "category": "allow"
+    },
+    "request_session_generation_rollover": {
+      "category": "deny"
+    },
+    "resolve_attachment": {
+      "category": "allow"
+    },
+    "rollback_agents_config": {
+      "category": "deny"
+    },
+    "rollback_remote_agents_config": {
+      "category": "deny"
+    },
+    "run_card": {
+      "category": "deny"
+    },
+    "run_recurring_job": {
+      "category": "deny"
+    },
+    "search_cards": {
+      "category": "allow"
+    },
+    "search_folder_items": {
+      "category": "allow"
+    },
+    "search_session_history": {
+      "category": "allow"
+    },
+    "search_sessions": {
+      "category": "allow"
+    },
+    "search_skills": {
+      "category": "allow"
+    },
+    "send_message_to_session": {
+      "category": "guarded",
+      "guard": "message-recipient"
+    },
+    "send_to_external_llm": {
+      "category": "allow"
+    },
+    "set_agent_atom_contexts": {
+      "category": "deny"
+    },
+    "set_agent_mcp_profile": {
+      "category": "deny"
+    },
+    "set_card_items": {
+      "category": "allow"
+    },
+    "set_card_status": {
+      "category": "guarded",
+      "guard": "card-status"
+    },
+    "set_folder_status": {
+      "category": "allow"
+    },
+    "set_folder_system_prompt": {
+      "category": "deny"
+    },
+    "set_session_name": {
+      "category": "allow"
+    },
+    "set_session_persistent": {
+      "category": "deny"
+    },
+    "show_live_card_view": {
+      "category": "allow"
+    },
+    "start_card_work": {
+      "category": "allow"
+    },
+    "stop_claude_background_task": {
+      "category": "deny"
+    },
+    "summarize_turn_usage": {
+      "category": "allow"
+    },
+    "transfer_card_assignee": {
+      "category": "deny"
+    },
+    "unarchive_folder": {
+      "category": "allow"
+    },
+    "update_agent_profile": {
+      "category": "deny"
+    },
+    "update_card_brief": {
+      "category": "allow"
+    },
+    "update_card_now": {
+      "category": "allow"
+    },
+    "update_card_orchestration_settings": {
+      "category": "deny"
+    },
+    "update_markdown_document": {
+      "category": "allow"
+    },
+    "update_persistent_instruction": {
+      "category": "deny"
+    },
+    "update_persistent_session_settings": {
+      "category": "deny"
+    },
+    "update_recurring_job": {
+      "category": "deny"
+    },
+    "upsert_page_markdown": {
+      "category": "allow"
+    },
+    "withdraw_card_question": {
+      "category": "allow"
+    }
+  },
+  "localMcp": {
+    "requiredServerId": "soulstream",
+    "optional": [
+      {
+        "serverId": "atom",
+        "nodeId": "eiaserinnys",
+        "port": 4200
+      },
+      {
+        "serverId": "serendipity",
+        "nodeId": "eiaserinnys",
+        "port": 4002
+      },
+      {
+        "serverId": "eb-lore",
+        "nodeId": "eiaserinnys",
+        "port": 3109
+      },
+      {
+        "serverId": "outline",
+        "nodeId": "eiaserinnys",
+        "port": 3103
+      },
+      {
+        "serverId": "eb-lore",
+        "nodeId": "eias-linegames-wsl",
+        "port": 3108
+      },
+      {
+        "serverId": "outline",
+        "nodeId": "eias-linegames-wsl",
+        "port": 3103
+      }
+    ]
+  },
+  "filesystem": {
+    "sessionWorktreeRelativeRoot": ".projects/.isolated",
+    "credentialRelativeDirectory": ".local/share/soulstream/credentials/codex",
+    "isolatedCacheRelativeRoot": ".local/share/soulstream/isolated-cache",
+    "writableWorkspaceRelativeDirectories": [
+      ".local/tmp",
+      ".local/artifacts"
+    ],
+    "additionalSensitiveRoots": [
+      "/home/eias/.claude",
+      "/home/eias/.claude-accounts",
+      "/home/eias/.claude-accounts/profiles",
+      "/home/eias/.codex",
+      "/home/eias/.gemini",
+      "/home/eias/.pm2",
+      "/home/eias/haniel-root/haniel.yaml",
+      "/home/eias/haniel-root/services/soulstream",
+      "/home/eias/migration/netcup-core-bootstrap/prod-state",
+      "/home/eias/migration/netcup-core-bootstrap/production-staging/config",
+      "/home/eias/migration/netcup-core-bootstrap/production-staging/control",
+      "/home/eias/migration/netcup-core-bootstrap/production-staging/haniel-orchestrator",
+      "/home/eias/migration/netcup-core-bootstrap/production-staging/secrets",
+      "/home/eias/migration/netcup-core-bootstrap/production-staging/sentinel-shared",
+      "/mnt",
+      "/run/WSL",
+      "/run/docker.sock",
+      "/run/user/1000",
+      "/var/run/docker.sock"
+    ]
+  },
+  "testDatabases": [],
+  "network": {
+    "mode": "pasta-nft",
+    "dnsForward4": "192.0.2.53",
+    "deniedIpv4": [
+      "0.0.0.0/8",
+      "10.0.0.0/8",
+      "100.64.0.0/10",
+      "127.0.0.0/8",
+      "169.254.0.0/16",
+      "172.16.0.0/12",
+      "192.0.0.0/24",
+      "192.0.2.0/24",
+      "192.168.0.0/16",
+      "198.18.0.0/15",
+      "198.51.100.0/24",
+      "203.0.113.0/24",
+      "224.0.0.0/4",
+      "240.0.0.0/4"
+    ],
+    "deniedIpv6": [
+      "::/128",
+      "::1/128",
+      "::ffff:0:0/96",
+      "fc00::/7",
+      "fe80::/10",
+      "ff00::/8"
+    ]
+  }
+}

@@ -230,10 +230,20 @@ describe("session isolation contract", () => {
     };
     walk(sourceRoot);
 
+    // MCP 표면(레인 A)은 계약 타입을 소비한다. 이 목록은 계약을 import하는 전체
+    // 모듈 인벤토리이며, turn path(engine/runner/task)는 아래 네 파일 그대로다.
     expect(importers.sort()).toEqual([
       "engine/protocol.ts",
+      "mcp/auth.ts",
+      "mcp/isolation_tool_guards.ts",
+      "mcp/request_context.ts",
+      "mcp/tool_access.ts",
+      "mcp/tools/node_services_observation.ts",
+      "mcp/transport.ts",
       "runner/frame_protocol.ts",
+      "security/restricted_mcp_config.ts",
       "security/session_execution_policy.ts",
+      "security/session_isolation_policy.ts",
       "task/task_manager.ts",
       "task/task_models.ts",
     ]);
