@@ -23,7 +23,6 @@ export async function ensureStateLayout(stateRoot) {
     "runtimes",
     "config",
     "releases",
-    "common",
     "outbox",
     "cache",
     "incoming",
