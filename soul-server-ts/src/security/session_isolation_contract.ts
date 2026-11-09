@@ -125,6 +125,8 @@ export interface IsolationPolicy {
     writableWorkspaceRelativeDirectories: [".local/tmp", ".local/artifacts"];
     /** 노드별 실제 경로, 비밀 값 없음. */
     additionalSensitiveRoots: string[];
+    /** 가린 루트 아래에서 읽기만 허용할 디렉터리. 노드별 실제 경로. */
+    readOnlyReexposedPaths: string[];
   };
   testDatabases: { nodeId: string; hostPort: number; sandboxPort: number }[];
   network: {

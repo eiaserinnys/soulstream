@@ -42,6 +42,7 @@ function makePolicy(
       isolatedCacheRelativeRoot: ".local/share/soulstream/isolated-cache",
       writableWorkspaceRelativeDirectories: [".local/tmp", ".local/artifacts"],
       additionalSensitiveRoots,
+      readOnlyReexposedPaths: [],
     },
     testDatabases: [],
     network: {
@@ -526,6 +527,35 @@ describe("prepareIsolationPlan", () => {
       prepareIsolationPlan(fixture.input, fixture.ports),
       SESSION_ISOLATION_UNAVAILABLE,
     );
+  });
+
+  it("reopens masked roots read-only and skips missing re-exposed paths", async () => {
+    const fixture = await makeFixture();
+    const reexposed = join(fixture.sensitive, "logs");
+    mkdirSync(reexposed, { recursive: true, mode: 0o700 });
+    const missing = join(fixture.sensitive, "missing-logs");
+    fixture.input.policy = {
+      ...fixture.input.policy,
+      filesystem: {
+        ...fixture.input.policy.filesystem,
+        readOnlyReexposedPaths: [reexposed, missing],
+      },
+    };
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+
+    // 가린 루트 아래의 재노출 디렉터리는 RO bind 하나로 올라간다.
+    expect(prepared.spec.masks).toContainEqual({
+      path: fixture.sensitive,
+      kind: "directory",
+    });
+    expect(bindingOf(prepared.spec.bindings, reexposed)).toEqual({
+      source: reexposed,
+      destination: reexposed,
+      writable: false,
+    });
+    // 없는 경로는 세션 시작을 막지 않고 건너뛴다.
+    expect(bindingOf(prepared.spec.bindings, missing)).toBeUndefined();
   });
 
   it("masks the credential root for every backend and reopens it only for Codex", async () => {

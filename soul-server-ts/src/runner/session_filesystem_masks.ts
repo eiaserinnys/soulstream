@@ -168,6 +168,11 @@ export async function prepareIsolationMasks(
     await rebindReadOnly(agentCommonFiles, false);
   }
 
+  // 7b. 가린 루트 아래에서 읽기만 허용할 디렉터리. 없으면 건너뛴다.
+  for (const path of input.policy.filesystem.readOnlyReexposedPaths) {
+    await rebindReadOnly(path, false);
+  }
+
   // 8. WSL은 /mnt와 /run/WSL이 필수다. 없으면 restricted를 시작하지 않는다.
   if (wsl) {
     await addMask("/mnt", true);

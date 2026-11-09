@@ -36,6 +36,7 @@ const policy: IsolationPolicy = {
     isolatedCacheRelativeRoot: ".local/share/soulstream/isolated-cache",
     writableWorkspaceRelativeDirectories: [".local/tmp", ".local/artifacts"],
     additionalSensitiveRoots: [],
+    readOnlyReexposedPaths: [],
   },
   testDatabases: [],
   network: { mode: "pasta-nft", dnsForward4: "192.0.2.53", deniedIpv4: [], deniedIpv6: [] },

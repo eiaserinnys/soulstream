@@ -38,6 +38,7 @@ const policy: IsolationPolicy = {
     isolatedCacheRelativeRoot: ".local/share/soulstream/isolated-cache",
     writableWorkspaceRelativeDirectories: [".local/tmp", ".local/artifacts"],
     additionalSensitiveRoots: ["/home/eias/.ssh"],
+    readOnlyReexposedPaths: [],
   },
   testDatabases: [{ nodeId: "node-a", hostPort: 5432, sandboxPort: 15432 }],
   network: {

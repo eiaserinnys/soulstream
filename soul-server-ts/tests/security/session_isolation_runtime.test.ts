@@ -29,6 +29,7 @@ const BASE_POLICY: IsolationPolicy = parseIsolationPolicy({
     isolatedCacheRelativeRoot: ".local/share/soulstream/isolated-cache",
     writableWorkspaceRelativeDirectories: [".local/tmp", ".local/artifacts"],
     additionalSensitiveRoots: [],
+    readOnlyReexposedPaths: [],
   },
   testDatabases: [],
   network: {
@@ -202,6 +203,7 @@ describe("valid policy merge", () => {
         isolatedCacheRelativeRoot: ".local/share/soulstream/isolated-cache",
         writableWorkspaceRelativeDirectories: [".local/tmp", ".local/artifacts"],
         additionalSensitiveRoots: [],
+        readOnlyReexposedPaths: [],
       },
       testDatabases: [],
       network: {
