@@ -25,6 +25,7 @@ import type { Task } from "../src/task/task_models.js";
 
 interface Job {
   sessionId: string;
+  nodeId: string;
   backend: "opencode" | "claude";
   workspaceDir: string;
   hostWorkspaceRoot: string;
@@ -114,7 +115,7 @@ const settingsEnv = {
   SESSION_ISOLATION_MODE: "enforce",
   SESSION_ISOLATION_PASTA_PATH: job.pastaPath,
   SESSION_ISOLATION_LOCAL_MCP: job.localMcp,
-  SOULSTREAM_NODE_ID: "eiaserinnys",
+  SOULSTREAM_NODE_ID: job.nodeId,
   AUTH_BEARER_TOKEN: job.hostBearerToken,
   MCP_INTERNAL_PORT: job.internalMcpPort,
   MCP_PATH: "/mcp",

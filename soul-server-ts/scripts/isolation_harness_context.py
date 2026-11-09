@@ -46,10 +46,14 @@ NODE = shutil.which("node") or "/usr/bin/node"
 TSX_LOADER = SOUL_SERVER / "node_modules" / "tsx" / "dist" / "loader.mjs"
 DRIVER = SCRIPTS / "isolation_harness_driver.ts"
 PAYLOAD = SCRIPTS / "isolation_harness_payload.py"
+CLI_PATH = SCRIPTS / "verify-session-isolation.py"
 SERVICE_DIR = "/home/eias/migration/netcup-core-bootstrap/production-staging/repo"
-HOME = Path("/home/eias")
+# 노드별 경로는 CLI(`--service-dir`, `--workspace`, `--pasta`)로 갈아 끼운다.
+# 기본값은 eiaserinnys 값이고, HOME만 실행 사용자의 홈으로 따른다.
+HOME = Path.home()
+WORKSPACE = HOME / "workspace"
 PROD = HOME / "migration" / "netcup-core-bootstrap"
-REAL_PROJECTS = HOME / "workspace" / ".projects"
+REAL_PROJECTS = WORKSPACE / ".projects"
 CACHE_ROOT = HOME / ".local/share/soulstream/isolated-cache"
 PASTA = str(
     HOME / ".local/share/soulstream/isolation-tools/eiaserinnys/passt"
@@ -136,7 +140,7 @@ def start_job(ctx: dict, label: str, job: dict, timeout: int, heavy: bool = Fals
     write_job(job_path, job)
     return DriverRun(
         command=driver_command(job_path, heavy, timeout),
-        cwd=SERVICE_DIR,
+        cwd=ctx["service_dir"],
         env=ctx["driver_env"],
         stderr_path=ctx["run_root"] / "logs" / f"{label}.err",
         registry=ctx["registry"],
@@ -189,11 +193,12 @@ def build_job(ctx: dict, sid: str, case: str, args: dict, **overrides: object) -
     job: dict = {
         "sessionId": sid,
         "backend": "opencode",
+        "nodeId": ctx["node_id"],
         "workspaceDir": str(fixture["ws"]),
         "hostWorkspaceRoot": str(fixture["ws"]),
         "runnerStateDir": str(fixture["runner_state"]),
         "projectsRoot": str(fixture["ws"] / ".projects"),
-        "pastaPath": PASTA,
+        "pastaPath": ctx["pasta"],
         "internalMcpPort": ctx["internal_port"],
         "localMcp": f"harness-approved:{ctx['listener'].port}",
         "hostBearerToken": "harness-synthetic-host-bearer",
@@ -329,7 +334,8 @@ def sentinel_alive(pid: int, starttime: int) -> bool:
 
 __all__ = [
     "SCRIPTS", "SOUL_SERVER", "WORKTREE", "NODE", "TSX_LOADER", "DRIVER", "PAYLOAD",
-    "SERVICE_DIR",
+    "CLI_PATH",
+    "SERVICE_DIR", "WORKSPACE",
     "HOME", "PROD", "REAL_PROJECTS", "CACHE_ROOT", "PASTA", "HEAVY", "LOCK_PATHS",
     "MASKED", "DummyListener", "HarnessSafetyError", "descendants", "dir_listing",
     "emit", "Judge", "host_facts", "tree_fingerprint", "driver_command", "start_job",

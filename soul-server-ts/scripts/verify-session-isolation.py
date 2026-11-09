@@ -46,9 +46,17 @@ from isolation_harness_axes_runtime import (  # noqa: E402
     axis_termination,
     axis_timing,
 )
+from isolation_harness_axis_signal import (  # noqa: E402
+    axis_signal_box,
+    handshake,
+    run_controller,
+)
 from isolation_harness_context import (  # noqa: E402
     NODE,
+    PASTA,
+    SERVICE_DIR,
     TSX_LOADER,
+    WORKSPACE,
     DummyListener,
     HarnessSafetyError,
     OwnedChildren,
@@ -79,7 +87,6 @@ AXES = {
 }
 
 UNEXECUTED = {
-    "signal": "안전 규칙 3: 코드만 두고 실행하지 않는다(--axis signal --acknowledge-signal-axis 필요)",
     "test-db": "전용 시험 Postgres가 아직 없다(런북 단계)",
     "wsl": "WSL interop는 WSL 노드 단계",
     "internal-mcp": "직접 내부 MCP·transport·guard·관측 MCP는 enforce 서버가 필요하다",
@@ -145,6 +152,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="카드 #1111 restricted 통합 하네스")
     parser.add_argument("--axis", default="all", help="쉼표 목록(1..15, signal) 또는 all")
     parser.add_argument("--acknowledge-signal-axis", action="store_true")
+    parser.add_argument("--signal-dry-run", action="store_true",
+                        help="신호 축을 kill(-1) 없이 같은 흐름으로 돌린다")
+    parser.add_argument("--inside-outer-box", action="store_true",
+                        help=argparse.SUPPRESS)
+    parser.add_argument("--host-pidns-inode", type=int, default=None,
+                        help=argparse.SUPPRESS)
+    parser.add_argument("--node-id", default="eiaserinnys",
+                        help="드라이버의 SOULSTREAM_NODE_ID")
+    parser.add_argument("--service-dir", default=SERVICE_DIR,
+                        help="드라이버 실행 cwd(운영 체크아웃)")
+    parser.add_argument("--workspace", default=str(WORKSPACE),
+                        help="run_root 기준 디렉터리")
+    parser.add_argument("--pasta", default=PASTA, help="pasta 실행 경로")
     parser.add_argument("--keep", action="store_true", help="시험 루트를 남긴다")
     args = parser.parse_args()
 
@@ -154,32 +174,62 @@ def main() -> int:
     else:
         names = [part.strip() for part in selection.split(",") if part.strip()]
 
-    if "signal" in names and not args.acknowledge_signal_axis:
-        emit("REFUSED", axis="signal", reason="안전 규칙 3: --acknowledge-signal-axis 필요")
-        names = [name for name in names if name != "signal"]
+    if "signal" in names:
+        # 신호 축은 다른 축과 섞지 않는다.
+        if len(names) != 1:
+            emit("REFUSED", axis="signal", reason="신호 축은 다른 축과 함께 실행하지 않는다")
+            return 2
+        if not args.acknowledge_signal_axis:
+            emit("REFUSED", axis="signal",
+                 reason="안전 규칙 3: --acknowledge-signal-axis 필요")
+            return 3
+        if not args.inside_outer_box:
+            # 호스트 controller는 신호를 보내지 않고 바깥 PID 상자만 띄운다.
+            return run_controller(args)
+        facts, allowed = handshake(args.host_pidns_inode, args.inside_outer_box)
+        emit("SIGNAL_BOX", **facts)
+        if not allowed:
+            emit("REFUSED", axis="signal", reason="바깥 PID 상자 handshake 실패",
+                 checks=facts["checks"])
+            return 4
 
-    known = {str(number) for number in AXES}
+    known = {str(number) for number in AXES} | {"signal"}
     unknown = [name for name in names if name not in known and name not in UNEXECUTED]
     if unknown:
         emit("REFUSED", reason=f"알 수 없는 축: {unknown}")
         return 2
 
-    run_root = Path("/home/eias/workspace/.local/tmp/card1111-harness") / (
+    run_root = Path(args.workspace) / ".local/tmp/card1111-harness" / (
         time.strftime("%Y%m%d-%H%M%S") + "-" + uuid.uuid4().hex[:6])
     (run_root / "jobs").mkdir(parents=True, exist_ok=True)
     (run_root / "logs").mkdir(parents=True, exist_ok=True)
 
     ctx = build_context(run_root)
+    ctx.update(node_id=args.node_id, service_dir=args.service_dir,
+               pasta=args.pasta, signal_dry_run=args.signal_dry_run)
     emit("START", run_root=str(run_root), host=ctx["host"], axes=names,
          node=os.uname().nodename, uid=os.getuid(), payload=sys.executable,
-         driver_cwd="/home/eias/migration/netcup-core-bootstrap/production-staging/repo",
-         driver_node=NODE, tsx_loader=str(TSX_LOADER))
+         driver_cwd=args.service_dir, driver_node=NODE, tsx_loader=str(TSX_LOADER))
     emit("SELFTEST", **red_selftest())
 
     results: dict[str, dict] = {}
     try:
         ctx["fixture"] = build_fixture(run_root)
         for name in names:
+            if name == "signal":
+                started = time.monotonic()
+                try:
+                    outcome = axis_signal_box(ctx)
+                except Exception as error:  # 하네스 자체 결함도 결과로 남긴다
+                    outcome = {"status": "fail",
+                               "failures": [f"{type(error).__name__}: {error}"],
+                               "evidence": "하네스 예외"}
+                outcome["axis"] = "signal"
+                outcome["name"] = "signal"
+                outcome["duration_s"] = round(time.monotonic() - started, 1)
+                results[name] = outcome
+                emit("RESULT", **outcome)
+                continue
             if name in UNEXECUTED:
                 results[name] = {"status": "not-executed", "evidence": UNEXECUTED[name],
                                  "failures": []}

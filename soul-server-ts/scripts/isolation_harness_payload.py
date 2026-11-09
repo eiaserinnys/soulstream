@@ -17,6 +17,7 @@ import os
 import shutil
 import signal
 import socket
+import subprocess
 import sys
 import time
 
@@ -253,24 +254,64 @@ def case_gitflow(args: dict) -> None:
     emit("gitflow", steps=steps)
 
 
+def _stop_owned_sleeper(sleeper: subprocess.Popen) -> int:
+    """자기 Popen으로 띄운 sleeper만 종료한다(#1102 재발 방지)."""
+    pid = sleeper.pid
+    if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 1:
+        raise RuntimeError("refusing to signal a non-owned sleeper pid")
+    sleeper.terminate()
+    return pid
+
+
 def case_signal(args: dict) -> None:
-    """안전 규칙 3: 코드만. controller가 --axis signal을 명시할 때만 도달한다."""
+    """안전 규칙 3·spec §14: 바깥 PID 상자 handshake 뒤에만 도달한다.
+
+    실제 kill(-1)은 이 함수의 마지막 else 분기 하나뿐이다. dry-run은 그
+    분기에 도달하지 않고, 자기 Popen으로 띄운 sleeper를 그 객체로 종료한다.
+    `host_pidns_inode`는 controller(바깥 상자)의 pid ns inode다.
+    """
     if not args.get("acknowledge"):
         emit("signal_axis", executed=False, reason="controller did not acknowledge")
         return
+    dry_run = args.get("dry_run") is True
+    sleeper = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(300)"],
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    emit("signal_sleeper", pid=sleeper.pid)
     host_inode = args.get("host_pidns_inode")
     own_inode = ns_inode("/proc/self/ns/pid")
     own_pid = os.getpid()
+    # 두 값이 모두 int이고 서로 다를 때만 통과한다. None끼리 비교로
+    # 자동 통과하던 구멍을 막는다.
+    both_int = (
+        isinstance(host_inode, int) and not isinstance(host_inode, bool)
+        and isinstance(own_inode, int) and not isinstance(own_inode, bool)
+    )
     checks = {
-        "pidns_differs_from_host": own_inode is not None and own_inode != host_inode,
+        "pidns_differs_from_host": both_int and own_inode != host_inode,
         "pid_is_small": own_pid < 100,
     }
-    emit("signal_precheck", own_pid=own_pid, own_pidns_inode=own_inode, checks=checks)
+    emit("signal_precheck", own_pid=own_pid, own_pidns_inode=own_inode,
+         host_pidns_inode=host_inode, checks=checks)
     if not all(checks.values()):
         emit("signal_aborted", reason="precheck failed")
+        _stop_owned_sleeper(sleeper)
+        sleeper.wait(timeout=5)
         return
-    os.kill(-1, signal.SIGTERM)
-    emit("signal_sent")
+    if dry_run:
+        emit("signal_would_send", signal="SIGTERM", dry_run=True)
+        _stop_owned_sleeper(sleeper)
+    else:
+        os.kill(-1, signal.SIGTERM)
+        emit("signal_sent")
+    try:
+        returncode = sleeper.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        returncode = None
+    emit("signal_sleeper_exit", returncode=returncode, timed_out=returncode is None)
 
 
 CASES = {
