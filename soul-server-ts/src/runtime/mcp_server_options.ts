@@ -1,10 +1,7 @@
 import type { Env } from "../config.js";
 import type { McpRestrictedAuthConfig } from "../mcp/auth.js";
 import type { McpRuntime } from "../mcp/runtime.js";
-import {
-  createIsolationPolicyProvider,
-  defaultIsolationPolicyPath,
-} from "../security/session_isolation_policy.js";
+import { createIsolationPolicyProvider } from "../security/session_isolation_policy.js";
 import type { ServerParams } from "../server.js";
 
 export function buildMcpServerOptions(
@@ -29,12 +26,12 @@ export function buildMcpServerOptions(
 /**
  * restricted 요청의 DB 존재 확인과 격리 정책 공급.
  *
- * 정책 파일은 release 상대 경로(기본)에서 읽는다. 읽기·검증 실패는 restricted
- * 요청만 거부하고 full 요청은 그대로 동작한다(정책을 503으로 알린다).
+ * 정책은 빌드 산출물(main.js)에 포함된 정본 JSON을 읽는다. 읽기·검증 실패는
+ * restricted 요청만 거부하고 full 요청은 그대로 동작한다(정책을 503으로 알린다).
  */
 export function buildRestrictedAuth(runtime: McpRuntime): McpRestrictedAuthConfig {
   return {
-    policyProvider: createIsolationPolicyProvider({ path: defaultIsolationPolicyPath() }),
+    policyProvider: createIsolationPolicyProvider(),
     sessionExists: async (sessionId) => (await runtime.db.getSession(sessionId)) !== null,
   };
 }

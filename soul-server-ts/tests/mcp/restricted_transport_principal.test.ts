@@ -5,16 +5,15 @@
  * restricted B의 세션도, full 세션도 빌릴 수 없다. full 동작은 그대로다.
  * 정책 로드 실패는 restricted만 503으로 막고 full은 계속 동작한다.
  */
+import { fileURLToPath } from "node:url";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { buildInternalMcpServer } from "../../src/server.js";
 import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { SessionDB } from "../../src/db/session_db.js";
 import { createRestrictedMcpToken } from "../../src/security/restricted_mcp_auth.js";
-import {
-  defaultIsolationPolicyPath,
-  loadIsolationPolicyFile,
-} from "../../src/security/session_isolation_policy.js";
+import { loadIsolationPolicyFile } from "../../src/security/session_isolation_policy.js";
 import type { McpRestrictedAuthConfig } from "../../src/mcp/auth.js";
 
 const KEY = "test-transport-key-0001";
@@ -22,7 +21,10 @@ const SESSION_A = "11111111-1111-4111-8111-111111111111";
 const SESSION_B = "22222222-2222-4222-8222-222222222222";
 const TOKEN_A = createRestrictedMcpToken(SESSION_A, KEY);
 const TOKEN_B = createRestrictedMcpToken(SESSION_B, KEY);
-const loadedPolicy = loadIsolationPolicyFile(defaultIsolationPolicyPath());
+const POLICY_PATH = fileURLToPath(
+  new URL("../../src/policies/session-isolation.json", import.meta.url),
+);
+const loadedPolicy = loadIsolationPolicyFile(POLICY_PATH);
 
 function silentLogger() {
   const noop = () => {};

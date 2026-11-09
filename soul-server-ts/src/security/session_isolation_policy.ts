@@ -1,19 +1,21 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { isIP } from "node:net";
-import { fileURLToPath } from "node:url";
 
 import { z } from "zod";
+
+import isolationPolicyDocument from "../policies/session-isolation.json" with { type: "json" };
 
 import type { IsolationPolicy } from "./session_isolation_contract.js";
 import { ISOLATION_POLICY_UNAVAILABLE } from "./session_execution_policy.js";
 
 /**
- * restricted 실행 정책 파일의 정본 loader.
+ * restricted 실행 정책의 정본 loader.
  *
  * 정본은 리포 추적 `src/policies/session-isolation.json` 하나이며 노드별 복사본을
- * 두지 않는다. 로드·검증 실패는 restricted 시작만 거부하고 full 서버는 그대로
- * 동작한다. 빈 정책으로 fallback하지 않는다.
+ * 두지 않는다. 기본 provider는 그 JSON을 빌드 산출물(main.js)에 말아 넣어 읽고,
+ * 경로를 준 provider만 파일을 읽는다(시험용). 로드·검증 실패는 restricted 시작만
+ * 거부하고 full 서버는 그대로 동작한다. 빈 정책으로 fallback하지 않는다.
  */
 
 const TOOL_GUARDS = [
@@ -98,8 +100,9 @@ export class IsolationPolicyFileError extends Error {
   }
 }
 
-export function defaultIsolationPolicyPath(): string {
-  return fileURLToPath(new URL("../policies/session-isolation.json", import.meta.url));
+export function loadBundledIsolationPolicy(): LoadedIsolationPolicy {
+  const policy = parseIsolationPolicy(isolationPolicyDocument);
+  return { policy, digest: computeIsolationPolicyDigest(policy) };
 }
 
 export function parseIsolationPolicy(raw: unknown): IsolationPolicy {
@@ -141,12 +144,13 @@ export function loadIsolationPolicyFile(
 export function createIsolationPolicyProvider(
   deps: IsolationPolicyLoaderDependencies = {},
 ): IsolationPolicyProvider {
-  const path = deps.path ?? defaultIsolationPolicyPath();
   let cached: LoadedIsolationPolicy | undefined;
   return {
     get(): LoadedIsolationPolicy {
       if (cached) return cached;
-      cached = loadIsolationPolicyFile(path, deps);
+      cached = deps.path
+        ? loadIsolationPolicyFile(deps.path, deps)
+        : loadBundledIsolationPolicy();
       return cached;
     },
   };

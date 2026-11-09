@@ -2,9 +2,10 @@
  * restricted 실행 정책 정본(§4) 검증.
  *
  * 136 도구의 분류(100/29/6/1), inventory fixture와의 전수 일치, digest 안정성,
- * 잘못된 정책의 거부, loader의 실패 처리(빈 정책 fallback 금지), source 상대 경로.
+ * 잘못된 정책의 거부, loader의 실패 처리(빈 정책 fallback 금지), 번들 인라인
+ * 기본 provider와 리포 JSON의 동일성.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { describe, expect, it, vi } from "vitest";
@@ -13,13 +14,14 @@ import { ISOLATION_POLICY_UNAVAILABLE } from "../../src/security/session_executi
 import {
   computeIsolationPolicyDigest,
   createIsolationPolicyProvider,
-  defaultIsolationPolicyPath,
   IsolationPolicyFileError,
   loadIsolationPolicyFile,
   parseIsolationPolicy,
 } from "../../src/security/session_isolation_policy.js";
 
-const policyPath = defaultIsolationPolicyPath();
+const policyPath = fileURLToPath(
+  new URL("../../src/policies/session-isolation.json", import.meta.url),
+);
 const policyText = readFileSync(policyPath, "utf8");
 const rawPolicy = JSON.parse(policyText) as Record<string, unknown> & {
   tools: Record<string, { category: string; guard?: string }>;
@@ -99,12 +101,14 @@ describe("session isolation policy canonical file", () => {
     expect(computeIsolationPolicyDigest(parseIsolationPolicy(changed))).not.toBe(digest);
   });
 
-  it("resolves the policy from the source tree relative to the module", () => {
-    expect(policyPath).toBe(
-      fileURLToPath(new URL("../../src/policies/session-isolation.json", import.meta.url)),
-    );
-    expect(policyPath.endsWith("/src/policies/session-isolation.json")).toBe(true);
-    expect(existsSync(policyPath)).toBe(true);
+  it("serves the bundled policy with the same policy and digest as the canonical file", () => {
+    // 경로 없는 기본 provider는 번들에 인라인된 정본 JSON을 쓰고, 파일을
+    // 경로로 읽은 결과와 정책·digest가 같아야 한다.
+    const bundled = createIsolationPolicyProvider().get();
+    const fromFile = loadIsolationPolicyFile(policyPath);
+
+    expect(bundled.policy).toEqual(fromFile.policy);
+    expect(bundled.digest).toBe(fromFile.digest);
   });
 });
 

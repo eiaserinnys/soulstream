@@ -12,7 +12,6 @@ import {
   parseIsolationLocalMcpList,
   parseIsolationTestDatabasePair,
   sessionIsolationSettingsFromEnv,
-  sessionNetnsHelperScriptPath,
   ISOLATION_TOOL_PATHS,
 } from "../../src/security/session_isolation_runtime.js";
 import {
@@ -215,7 +214,7 @@ describe("valid policy merge", () => {
     const source = createSessionIsolationPolicySource(
       { localMcp: [{ serverId: "alpha", port: 4100 }], testDatabase: null },
       "node-a",
-      { readFile: () => filePolicy },
+      { path: "/policy.json", readFile: () => filePolicy },
     );
     const loaded = source.get();
     expect(loaded.digest).toBe(computeIsolationPolicyDigest(loaded.policy));
@@ -297,7 +296,9 @@ describe("restricted auth classification", () => {
 });
 
 describe("isolation runtime composition", () => {
-  it("exposes the fixed tool paths and module relative helper script", () => {
+  it("exposes the fixed host tool paths without a host-side helper path", () => {
+    // netns helper는 러너 릴리스 스냅샷 안에 있으므로 호스트 런타임이 경로를
+    // 만들지 않는다. 스폰 조립이 release.runnerModuleRoot 기준으로 정한다.
     const runtime = createSessionIsolationRuntime({
       nodeId: "node-a",
       settings: sessionIsolationSettingsFromEnv({
@@ -313,9 +314,8 @@ describe("isolation runtime composition", () => {
       setpriv: ISOLATION_TOOL_PATHS.setpriv,
       nft: ISOLATION_TOOL_PATHS.nft,
       pasta: "/usr/bin/pasta",
-      netnsHelper: sessionNetnsHelperScriptPath(),
     });
-    expect(sessionNetnsHelperScriptPath()).toMatch(/scripts\/session-netns-helper\.py$/);
+    expect(runtime.tools).not.toHaveProperty("netnsHelper");
   });
 
   it("classifies auth through the runtime using configured credentials", () => {

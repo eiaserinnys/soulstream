@@ -6,6 +6,8 @@
  * - guard 실패는 orchestrator 전달 전에 MCP_POLICY_DENIED로 끝난다.
  * - caller_session_id 선언 도구는 인증된 restricted 세션으로 강제된다.
  */
+import { fileURLToPath } from "node:url";
+
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { buildInternalMcpServer } from "../../src/server.js";
@@ -13,10 +15,7 @@ import type { McpRuntime } from "../../src/mcp/runtime.js";
 import { SessionDB } from "../../src/db/session_db.js";
 import type { SessionExecutionChain } from "../../src/db/session_db_types.js";
 import { createRestrictedMcpToken } from "../../src/security/restricted_mcp_auth.js";
-import {
-  defaultIsolationPolicyPath,
-  loadIsolationPolicyFile,
-} from "../../src/security/session_isolation_policy.js";
+import { loadIsolationPolicyFile } from "../../src/security/session_isolation_policy.js";
 import type { McpRestrictedAuthConfig } from "../../src/mcp/auth.js";
 
 const KEY = "test-restricted-key-0001";
@@ -24,7 +23,10 @@ const SESSION_A = "11111111-1111-4111-8111-111111111111";
 const SESSION_B = "22222222-2222-4222-8222-222222222222";
 const OTHER = "33333333-3333-4333-8333-333333333333";
 const TOKEN_A = createRestrictedMcpToken(SESSION_A, KEY);
-const loadedPolicy = loadIsolationPolicyFile(defaultIsolationPolicyPath());
+const POLICY_PATH = fileURLToPath(
+  new URL("../../src/policies/session-isolation.json", import.meta.url),
+);
+const loadedPolicy = loadIsolationPolicyFile(POLICY_PATH);
 
 function silentLogger() {
   const noop = () => {};
