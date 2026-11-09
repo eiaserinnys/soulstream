@@ -238,6 +238,9 @@ def axis_git(ctx: dict) -> dict:
     judge.check("harness" in (steps.get("upstream") or {}).get("value", ""), "upstream 설정")
     judge.check((steps.get("packed_refs") or {}).get("has_packed") is True,
                 "packed-refs 존재 경로")
+    ssh_config = steps.get("ssh_config") or {}
+    judge.check(ssh_config.get("rc") == 0, "상자 안 ssh -G 성공")
+    judge.check(ssh_config.get("bad_owner") is False, "ssh 설정 소유자 검사 통과")
     after = {name: tree_fingerprint(common / name) for name in before}
     for name in ("config", "packed-refs", "hooks", "info"):
         judge.check(before[name] == after[name], f"호스트 {name} 불변")

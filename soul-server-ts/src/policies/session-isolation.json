@@ -484,6 +484,7 @@
       "/home/eias/migration/netcup-core-bootstrap/production-staging/haniel-orchestrator",
       "/home/eias/migration/netcup-core-bootstrap/production-staging/secrets",
       "/home/eias/migration/netcup-core-bootstrap/production-staging/sentinel-shared",
+      "/etc/ssh/ssh_config.d",
       "/mnt",
       "/run/WSL",
       "/run/docker.sock",

@@ -113,7 +113,7 @@ export async function assertNoSharedMainStoreInodes(
     if (!nodeModulesFact) continue;
     if (nodeModulesFact.kind === "symlink") {
       throw new IsolationSharedDependencyInodeError(
-        `node_modules가 symlink입니다: ${nodeModules}`,
+        `node_modules가 symlink입니다: ${nodeModules} (격리 세션에는 create_worktree를 setup="none"으로 만든 워크트리를 붙이고, 의존성은 그 안에 독립 설치한다)`,
       );
     }
     if (nodeModulesFact.kind !== "directory") continue;
