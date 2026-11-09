@@ -172,6 +172,24 @@ export async function verifyCodexGrant(facts: CodexGrantFacts): Promise<void> {
     );
   }
 
+  // canonical 쪽 auth.lock 파일 자체는 아직 없을 수 있다. 원래 위치의 링크만 본다.
+  const originalLock = join(facts.homeDirectory, ".codex", CODEX_LOCK_FILE);
+  const originalLockStats = await statForAuth(originalLock, "Codex auth.lock 원래 위치");
+  if (!originalLockStats.isSymbolicLink()) {
+    throw new IsolationAuthUnavailableError("Codex auth.lock 원래 위치가 symlink가 아닙니다");
+  }
+  let lockTarget: string;
+  try {
+    lockTarget = await readlink(originalLock);
+  } catch (error) {
+    throw new IsolationAuthUnavailableError("Codex auth.lock symlink를 읽을 수 없습니다", error);
+  }
+  if (lockTarget !== join(canonicalDirectory, CODEX_LOCK_FILE)) {
+    throw new IsolationAuthUnavailableError(
+      "Codex auth.lock symlink가 canonical 파일을 가리키지 않습니다",
+    );
+  }
+
   if (!facts.codexExecutable) {
     throw new IsolationAuthUnavailableError("codex 실행 파일 경로가 준비되지 않았습니다");
   }

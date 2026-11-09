@@ -46,6 +46,7 @@ interface CodexFixture {
   canonical: string;
   authJson: string;
   homeAuthJson: string;
+  homeAuthLock: string;
   codexExecutable: string;
 }
 
@@ -60,7 +61,16 @@ async function createCodexFixture(): Promise<CodexFixture> {
   mkdirSync(codexDirectory, { recursive: true, mode: 0o700 });
   const homeAuthJson = join(codexDirectory, "auth.json");
   symlinkSync(authJson, homeAuthJson);
-  return { root, canonical, authJson, homeAuthJson, codexExecutable: join(root, "bin", "codex") };
+  const homeAuthLock = join(codexDirectory, "auth.lock");
+  symlinkSync(join(canonical, "auth.lock"), homeAuthLock);
+  return {
+    root,
+    canonical,
+    authJson,
+    homeAuthJson,
+    homeAuthLock,
+    codexExecutable: join(root, "bin", "codex"),
+  };
 }
 
 function createCodexPorts(fixture: CodexFixture, version = "0.167.0") {
@@ -102,6 +112,27 @@ describe("session isolation host ports — auth preparation", () => {
     const { ports } = createCodexPorts(fixture);
     unlinkSync(fixture.homeAuthJson);
     symlinkSync(join(fixture.canonical, "auth.lock"), fixture.homeAuthJson);
+
+    await expect(ports.verifyAuthPreparation(codexPreparation(fixture))).rejects.toBeInstanceOf(
+      IsolationAuthUnavailableError,
+    );
+  });
+
+  it("codex-grant는 원래 위치의 auth.lock symlink가 없으면 거절한다", async () => {
+    const fixture = await createCodexFixture();
+    const { ports } = createCodexPorts(fixture);
+    unlinkSync(fixture.homeAuthLock);
+
+    await expect(ports.verifyAuthPreparation(codexPreparation(fixture))).rejects.toBeInstanceOf(
+      IsolationAuthUnavailableError,
+    );
+  });
+
+  it("codex-grant는 원래 위치의 auth.lock이 일반 파일이면 거절한다", async () => {
+    const fixture = await createCodexFixture();
+    const { ports } = createCodexPorts(fixture);
+    unlinkSync(fixture.homeAuthLock);
+    writeFileSync(fixture.homeAuthLock, "", { mode: 0o600 });
 
     await expect(ports.verifyAuthPreparation(codexPreparation(fixture))).rejects.toBeInstanceOf(
       IsolationAuthUnavailableError,
@@ -199,8 +230,7 @@ describe("session isolation host ports — credentials", () => {
     expect(recording.calls[0]?.command).toBe("gh");
     expect(recording.calls[0]?.args).toEqual(["auth", "token"]);
     expect(recording.calls[0]?.options.timeoutMs).toBe(10000);
-    expect(Object.keys(recording.calls[0]?.options.env ?? {}).sort()).toEqual(["HOME", "PATH"]);
-    expect(recording.calls[0]?.options.env?.HOME).toBe(deps.homeDirectory);
+    expect(recording.calls[0]?.options.env).toBeUndefined();
   });
 
   it("prepareGitHubCredential은 gh 실패나 빈 출력에서 빈 객체를 돌려준다", async () => {

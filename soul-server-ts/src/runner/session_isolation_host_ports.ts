@@ -60,7 +60,6 @@ const GH_TIMEOUT_MS = 10_000;
 const GIT_TIMEOUT_MS = 15_000;
 const PNPM_TIMEOUT_MS = 30_000;
 const MAX_COMMAND_BUFFER_BYTES = 1024 * 1024;
-const FALLBACK_PATH = "/usr/local/bin:/usr/bin:/bin";
 
 export type IsolationHostRunCommand = (
   command: string,
@@ -241,12 +240,10 @@ export function createIsolationHostPorts(
     },
 
     async prepareGitHubCredential(): Promise<Record<string, string>> {
+      // env를 넘기지 않아 호스트 프로세스 환경을 그대로 상속한다(gh는 상자 밖 호스트에서
+      // 돈다). 기본 runCommand는 env 미지정 시 execFile 기본값 process.env를 쓴다.
       const result = await runCommand("gh", ["auth", "token"], {
         timeoutMs: GH_TIMEOUT_MS,
-        env: {
-          HOME: deps.homeDirectory,
-          PATH: process.env.PATH ?? FALLBACK_PATH,
-        },
       });
       const token = result.stdout.trim();
       if (result.exitCode === 0 && token.length > 0) return { GH_TOKEN: token };
