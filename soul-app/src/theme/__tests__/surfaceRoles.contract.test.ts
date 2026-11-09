@@ -4,7 +4,6 @@ import type { DesignTokens } from '../tokens';
 import { DARK_COLORS, LIGHT_COLORS } from '../tokens';
 import {
   SURFACE_ROLE_NAMES,
-  createLightChromeGlassRole,
   createSurfaceRoles,
 } from '../surfaceRoles';
 
@@ -180,19 +179,6 @@ describe('surface role contract', () => {
       expect(roles.chrome.materialStyle.solid).toEqual({});
     },
   );
-
-  test('캡슐 전용 라이트 chrome도 틴트와 스페큘러 림 없이 같은 계약을 쓴다', () => {
-    const capsuleChrome = createLightChromeGlassRole(tokens('light'));
-
-    expect(capsuleChrome.nativeTintColor).toBeUndefined();
-    expect(capsuleChrome.blurColor).toBe('rgba(242, 242, 247, 0.62)');
-    expect(capsuleChrome.tokenStyle.backgroundColor).toBe(
-      'rgba(242, 242, 247, 0.92)',
-    );
-    expect(capsuleChrome.materialStyle.native).toEqual({});
-    expect(capsuleChrome.materialStyle.blur).toEqual({});
-    expect(capsuleChrome.materialStyle.solid).toEqual({});
-  });
 
   test('iPad 세 패널은 공통 panel surface를 쓰고 제목 바만 glass로 감싸지 않는다', () => {
     const panel = read('components/split/SplitPanelSurface.tsx');

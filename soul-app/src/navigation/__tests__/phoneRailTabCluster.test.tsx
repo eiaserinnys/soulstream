@@ -1,13 +1,22 @@
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('@expo/vector-icons/MaterialCommunityIcons', () => 'MaterialCommunityIcons');
+let mockNativeGlass = true;
 jest.mock('expo-glass-effect', () => {
   const React = require('react');
   const { View } = require('react-native');
   return {
     GlassView: ({ testID, ...props }: Record<string, unknown>) =>
       React.createElement(View, { ...props, testID }),
-    isLiquidGlassAvailable: () => true,
-    isGlassEffectAPIAvailable: () => true,
+    isLiquidGlassAvailable: () => mockNativeGlass,
+    isGlassEffectAPIAvailable: () => mockNativeGlass,
+  };
+});
+jest.mock('expo-blur', () => {
+  const React = require('react');
+  const { View } = require('react-native');
+  return {
+    BlurView: ({ testID, ...props }: Record<string, unknown>) =>
+      React.createElement(View, { ...props, testID }),
   };
 });
 const mockShowMenu = jest.fn();
@@ -31,7 +40,7 @@ import { PhoneRailTabCluster, RAIL_MIN_INSET_WIDTH } from '../TabNavigator';
 import { StyleSheet, View } from 'react-native';
 import { usePhoneRailActions, useRegisterDuoRailOverride } from '../phoneRailActions';
 import { PhoneRailModeContext } from '../tabContract';
-import { RailCapsule, RailCapsuleItem, railCapsuleIconColor } from '../../components/navigation/RailCapsule';
+import { RailCapsule, RailCapsuleItem } from '../../components/navigation/RailCapsule';
 import { Text } from 'react-native';
 import { useSettingsStore } from '../../store/settingsStore';
 import { DuoRailOverride } from '../../components/navigation/DuoRailOverride';
@@ -39,10 +48,10 @@ import { AppKeyboardAvoidingView } from '../../components/AppKeyboardAvoidingVie
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 import { DUO_RAIL_CENTER_FROM_END, DUO_TOP_BAND_RAIL_TOP } from '../duoSideBand';
 
-beforeEach(() => { mockSessionData.sessions = []; mockRequestEntry.mockClear(); });
+beforeEach(() => { mockNativeGlass = true; mockSessionData.sessions = []; mockRequestEntry.mockClear(); });
 afterEach(() => { usePhoneRailActions.setState({ overrides: [] }); useSettingsStore.setState({ appearance: 'dark' }); });
 
-test('레일 캡슐은 다크·라이트 모두 틴트 없는 밝은 리퀴드 글래스와 24pt 곡률을 쓴다', () => {
+test('레일 캡슐은 다크·라이트 모두 틴트 없는 적응형 리퀴드 글래스와 24pt 곡률을 쓴다', () => {
   const Capsule = RailCapsule as React.ComponentType<any>;
   const scene = () => <NavigationContainer><Capsule testID="capsule-surface">
     {['one', 'two'].map(id => <RailCapsuleItem key={id} testID={id} label={id} onPress={jest.fn()}><Text>{id}</Text></RailCapsuleItem>)}
@@ -50,7 +59,8 @@ test('레일 캡슐은 다크·라이트 모두 틴트 없는 밝은 리퀴드 �
 
   useSettingsStore.setState({ appearance: 'dark' });
   const dark = render(scene());
-  expect(dark.getByTestId('capsule-surface').props.colorScheme).toBe('light');
+  // native GlassView에는 스킴을 고정하지 않는 'auto'가 간다(앱 외양을 UIKit이 따른다).
+  expect(dark.getByTestId('capsule-surface').props.colorScheme).toBe('auto');
   expect(dark.getByTestId('capsule-surface').props.tintColor).toBeUndefined();
   expect(dark.getByTestId('capsule-surface').props.borderRadius).toBe(24);
   expect(dark.getByTestId('capsule-surface').props.isInteractive).toBe(true);
@@ -59,17 +69,76 @@ test('레일 캡슐은 다크·라이트 모두 틴트 없는 밝은 리퀴드 �
 
   useSettingsStore.setState({ appearance: 'light' });
   const light = render(scene());
-  expect(light.getByTestId('capsule-surface').props.colorScheme).toBe('light');
+  expect(light.getByTestId('capsule-surface').props.colorScheme).toBe('auto');
   expect(light.getByTestId('capsule-surface').props.tintColor).toBeUndefined();
   expect(light.getByTestId('capsule-surface').props.borderRadius).toBe(24);
   expect(light.getByTestId('capsule-surface').props.isInteractive).toBe(true);
 });
 
-test('밝은 캡슐 위 아이콘 색상은 확정 보완 값(다크 #111111·라이트 textMuted·선택 #002b66)을 쓴다', () => {
-  expect(railCapsuleIconColor({ mode: 'dark' }, false)).toBe('#111111');
-  expect(railCapsuleIconColor({ mode: 'dark' }, true)).toBe('#002b66');
-  expect(railCapsuleIconColor({ mode: 'light' }, false)).toBe('#53575d');
-  expect(railCapsuleIconColor({ mode: 'light' }, true)).toBe('#002b66');
+test('적응형 native 레일은 iOS 동적 색으로 아이콘·배지·점을 칠한다', () => {
+  const colors: Record<string, unknown> = {};
+  const screen = render(<NavigationContainer><RailCapsule testID="adaptive-capsule">
+    <RailCapsuleItem testID="native-unselected" label="미선택" onPress={jest.fn()}>
+      {color => { colors.unselected = color; return <Text>u</Text>; }}
+    </RailCapsuleItem>
+    <RailCapsuleItem testID="native-selected" label="선택" selected badgeCount={2} onPress={jest.fn()}>
+      {color => { colors.selected = color; return <Text>s</Text>; }}
+    </RailCapsuleItem>
+    <RailCapsuleItem testID="native-dot" label="점" dot onPress={jest.fn()}>
+      {color => { colors.dot = color; return <Text>d</Text>; }}
+    </RailCapsuleItem>
+  </RailCapsule></NavigationContainer>);
+
+  expect(colors).toEqual({ unselected: { semantic: ['label'] }, selected: { semantic: ['systemBlue'] }, dot: { semantic: ['label'] } });
+  expect(StyleSheet.flatten(screen.getByTestId('native-selected-badge').props.style)).toMatchObject({
+    backgroundColor: { semantic: ['systemBlue'] },
+    color: '#ffffff',
+  });
+  expect(StyleSheet.flatten(screen.getByTestId('native-dot-dot').props.style)).toMatchObject({
+    backgroundColor: { semantic: ['systemBlue'] },
+  });
+});
+
+test('대체 경로 레일은 하단 탭바 토큰으로 아이콘·배지·점을 칠한다', () => {
+  mockNativeGlass = false;
+  function FallbackScene({ onColor }: { onColor: (key: string, color: unknown) => void }) {
+    return <NavigationContainer><RailCapsule testID="fallback-capsule">
+      <RailCapsuleItem testID="fallback-unselected" label="미선택" onPress={jest.fn()}>
+        {color => { onColor('unselected', color); return <Text>u</Text>; }}
+      </RailCapsuleItem>
+      <RailCapsuleItem testID="fallback-selected" label="선택" selected badgeCount={2} onPress={jest.fn()}>
+        {color => { onColor('selected', color); return <Text>s</Text>; }}
+      </RailCapsuleItem>
+      <RailCapsuleItem testID="fallback-dot" label="점" dot onPress={jest.fn()}>
+        {color => { onColor('dot', color); return <Text>d</Text>; }}
+      </RailCapsuleItem>
+    </RailCapsule></NavigationContainer>;
+  }
+
+  useSettingsStore.setState({ appearance: 'dark' });
+  const darkColors: Record<string, unknown> = {};
+  const dark = render(<FallbackScene onColor={(key, color) => { darkColors[key] = color; }} />);
+  expect(darkColors).toEqual({ unselected: '#d4d4db', selected: '#4A9EFF', dot: '#d4d4db' });
+  expect(StyleSheet.flatten(dark.getByTestId('fallback-selected-badge').props.style)).toMatchObject({
+    backgroundColor: '#173552',
+    color: '#4A9EFF',
+  });
+  expect(StyleSheet.flatten(dark.getByTestId('fallback-dot-dot').props.style)).toMatchObject({
+    backgroundColor: '#4A9EFF',
+  });
+  dark.unmount();
+
+  useSettingsStore.setState({ appearance: 'light' });
+  const lightColors: Record<string, unknown> = {};
+  const light = render(<FallbackScene onColor={(key, color) => { lightColors[key] = color; }} />);
+  expect(lightColors).toEqual({ unselected: '#53575d', selected: '#0a84ff', dot: '#53575d' });
+  expect(StyleSheet.flatten(light.getByTestId('fallback-selected-badge').props.style)).toMatchObject({
+    backgroundColor: '#d8ebff',
+    color: '#0a84ff',
+  });
+  expect(StyleSheet.flatten(light.getByTestId('fallback-dot-dot').props.style)).toMatchObject({
+    backgroundColor: '#0a84ff',
+  });
 });
 
 test('가로 캡슐은 세 항목을 regular 크기로 배치한다', () => {
@@ -90,13 +159,13 @@ test('숫자와 점의 우선순위와 비활성 상태를 노출한다', () => 
   </RailCapsule></NavigationContainer>);
   expect(screen.getByTestId('count-badge')).toBeTruthy();
   expect(StyleSheet.flatten(screen.getByTestId('count-badge').props.style)).toMatchObject({
-    backgroundColor: '#d8ebff',
-    color: '#002b66',
+    backgroundColor: { semantic: ['systemBlue'] },
+    color: '#ffffff',
   });
   expect(screen.queryByTestId('count-dot')).toBeNull();
   expect(screen.getByTestId('dot-dot')).toBeTruthy();
   expect(StyleSheet.flatten(screen.getByTestId('dot-dot').props.style)).toMatchObject({
-    backgroundColor: '#002b66',
+    backgroundColor: { semantic: ['systemBlue'] },
   });
   expect(screen.getByLabelText('커멘트').props.accessibilityState.disabled).toBe(true);
 });

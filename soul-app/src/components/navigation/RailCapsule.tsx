@@ -1,31 +1,11 @@
 import React from 'react';
-import { Text, View, type AccessibilityRole } from 'react-native';
+import { PlatformColor, Text, View, type AccessibilityRole, type ColorValue } from 'react-native';
 import { PlatformPressable } from '@react-navigation/elements';
-import { GLASS_BUTTON_BORDER_WIDTH, GlassSurface } from '../GlassSurface';
-import { LIGHT_COLORS, useTokens, type DesignTokens } from '../../theme';
+import { GLASS_BUTTON_BORDER_WIDTH, GlassSurface, useAdaptiveNativeGlass } from '../GlassSurface';
+import { useTokens } from '../../theme';
 import { STATUS_DOT_SIZE } from '../chat/StatusDot';
 
 export const RAIL_CAPSULE_WIDTH = 48;
-
-/**
- * 캡슐은 다크 테마에서도 밝은 리퀴드 글래스로 렌더되므로 아이콘 색은 앱 테마가 아니라
- * 캡슐의 밝은 표면을 기준으로 고른다. 비선택 아이콘은 다크에서 #111111, 라이트에서
- * LIGHT textMuted(#53575d)이고, 선택 아이콘과 배지·점은 짙은 남색 #002b66을 쓴다.
- * 다크 비선택 값은 확정 보완 명세가 지정한 #111111이며, LIGHT_COLORS.textPrimary는
- * 이 리포에서 #000000이라 값이 달라 레일 전용 상수로 둔다.
- * 실측 대비: 비선택 다크 6.44:1(어두운 캔버스 위)·16.99:1(밝은 카드 위), 라이트 7.06:1.
- * 선택 #002b66은 밝은 캡슐 위 4.6~13.3:1, #d8ebff 배지 위 11.2:1로 AA를 넘는다.
- */
-const DARK_RAIL_UNSELECTED_ICON = '#111111';
-export const RAIL_CAPSULE_SELECTED_ACCENT = '#002b66';
-
-export function railCapsuleIconColor(
-  t: Pick<DesignTokens, 'mode'>,
-  selected = false,
-): string {
-  if (selected) return RAIL_CAPSULE_SELECTED_ACCENT;
-  return t.mode === 'dark' ? DARK_RAIL_UNSELECTED_ICON : LIGHT_COLORS.textMuted;
-}
 export const RAIL_ITEM_HEIGHT = 50;
 export function railCapsuleLength(count: number, compact: boolean, tokens: { spacingXs: number; uiSpacingXs: number; hitTargetMin: number }) {
   if (count === 0) return 0;
@@ -58,31 +38,42 @@ export function RailCapsule({ children, testID, compact = false, direction = 'co
     alignItems: 'center' }}>
     <RailCapsuleItemContext.Provider value={{ compact, single, direction }}>{children}</RailCapsuleItemContext.Provider>
   </View>;
-  return <GlassSurface role="chrome" testID={testID} colorScheme="light" isInteractive cornerRadius={RAIL_CAPSULE_WIDTH / 2}
+  return <GlassSurface role="chrome" testID={testID} colorScheme="adaptive" isInteractive cornerRadius={RAIL_CAPSULE_WIDTH / 2}
     style={{ width: row ? length : RAIL_CAPSULE_WIDTH, height: row ? RAIL_CAPSULE_WIDTH : length }}>
     {content}
   </GlassSurface>;
 }
 
+type RailCapsuleItemChildren = React.ReactNode | ((iconColor: ColorValue) => React.ReactNode);
+
 export function RailCapsuleItem({ children, testID, label, onPress, selected, badge, badgeCount, dot, disabled = false, role = 'button' }: {
-  children: React.ReactNode; testID: string; label: string; onPress: () => void;
+  children: RailCapsuleItemChildren; testID: string; label: string; onPress: () => void;
   selected?: boolean; badge?: number; badgeCount?: number; dot?: boolean; disabled?: boolean; role?: AccessibilityRole;
 }) {
   const t = useTokens();
+  // iOS 26 native 유리는 배경에 따라 밝기가 바뀌므로 iOS 동적 색을 쓰고,
+  // 웹·Reduce Transparency·구형 OS 대체 경로는 하단 탭바와 같은 앱 테마 토큰을 쓴다.
+  const adaptiveNative = useAdaptiveNativeGlass();
   const { compact, single, direction } = React.useContext(RailCapsuleItemContext);
   const count = badgeCount ?? badge;
   const itemLength = compact ? t.hitTarget.min : RAIL_ITEM_HEIGHT;
+  const iconColor: ColorValue = adaptiveNative
+    ? PlatformColor(selected ? 'systemBlue' : 'label')
+    : selected ? t.colors.accent : t.colors.textMuted;
+  const badgeBackgroundColor: ColorValue = adaptiveNative ? PlatformColor('systemBlue') : t.colors.accentTint;
+  const badgeTextColor: ColorValue = adaptiveNative ? '#ffffff' : t.colors.accent;
+  const dotColor: ColorValue = adaptiveNative ? PlatformColor('systemBlue') : t.colors.accent;
   return <PlatformPressable testID={testID} accessibilityRole={role} accessibilityLabel={label}
     accessibilityState={{ ...(selected === undefined ? {} : { selected }), disabled }} disabled={disabled} onPress={disabled ? undefined : onPress}
     style={{ width: single ? RAIL_CAPSULE_WIDTH : direction === 'row' ? itemLength : RAIL_CAPSULE_WIDTH - 4,
       height: single ? RAIL_CAPSULE_WIDTH : direction === 'row' ? RAIL_CAPSULE_WIDTH - 4 : itemLength,
       alignItems: 'center', justifyContent: 'center', opacity: disabled ? 0.55 : 1 }}>
     <View style={{ position: 'relative' }}>
-      {children}
+      {typeof children === 'function' ? children(iconColor) : children}
       {count && count > 0 ? <Text testID={`${testID}-badge`} style={{ position: 'absolute', top: -t.spacing.xxs, right: -t.spacing.xxs,
-        ...t.foundation.typography.label, borderRadius: t.foundation.radius.round, backgroundColor: LIGHT_COLORS.accentTint,
-        color: RAIL_CAPSULE_SELECTED_ACCENT, paddingHorizontal: t.uiSpacing.xs, fontWeight: '700' }}>{count}</Text>
-        : dot ? <View testID={`${testID}-dot`} style={{ position: 'absolute', top: 0, right: 0, width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round, backgroundColor: RAIL_CAPSULE_SELECTED_ACCENT }} /> : null}
+        ...t.foundation.typography.label, borderRadius: t.foundation.radius.round, backgroundColor: badgeBackgroundColor,
+        color: badgeTextColor, paddingHorizontal: t.uiSpacing.xs, fontWeight: '700' }}>{count}</Text>
+        : dot ? <View testID={`${testID}-dot`} style={{ position: 'absolute', top: 0, right: 0, width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round, backgroundColor: dotColor }} /> : null}
     </View>
   </PlatformPressable>;
 }

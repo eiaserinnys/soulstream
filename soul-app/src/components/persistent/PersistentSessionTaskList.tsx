@@ -16,9 +16,11 @@ export interface PersistentSessionTaskListProps {
   api: ApiClient | null;
   onOpenCard(cardId: string): void;
   visible?: boolean;
+  /** 떠 있는 레일 캡슐 뒤로 목록을 잇기 위해 스크롤 내용에 더하는 안쪽 여백. */
+  contentInset?: { top?: number; bottom?: number };
 }
 
-export function PersistentSessionTaskList({ api, onOpenCard, visible = true }: PersistentSessionTaskListProps) {
+export function PersistentSessionTaskList({ api, onOpenCard, visible = true, contentInset }: PersistentSessionTaskListProps) {
   const t = useTokens();
   const serverUrl = useSettingsStore(state => state.serverUrl);
   const jwt = useAuthStore(state => state.jwt);
@@ -60,7 +62,8 @@ export function PersistentSessionTaskList({ api, onOpenCard, visible = true }: P
 
   return <ScrollView testID="persistent-task-list" showsVerticalScrollIndicator={false}
     style={{ marginHorizontal: -t.uiSpacing.sm, ...hiddenStyle }}
-    contentContainerStyle={{ gap: t.uiSpacing.xxl, paddingHorizontal: t.uiSpacing.sm }}>
+    contentContainerStyle={{ gap: t.uiSpacing.xxl, paddingHorizontal: t.uiSpacing.sm,
+      paddingTop: contentInset?.top, paddingBottom: contentInset?.bottom }}>
     {groups.map((group) => <View key={group.status} testID={`persistent-task-group-${group.status}`} style={{ gap: t.uiSpacing.md }}>
       <PlannerSectionHeader testID={`persistent-task-group-header-${group.status}`} countTestID={`persistent-task-group-count-${group.status}`}
         title={group.label} variant="quiet" count={group.cards.length} countSuffix="개" expanded={!collapsedTaskGroups.includes(group.status)}

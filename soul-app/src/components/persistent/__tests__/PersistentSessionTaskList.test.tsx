@@ -101,6 +101,20 @@ test('드래프트만 처음 접히고 모든 상태 머리에서 개수와 펼�
   expect(screen.getByTestId('card-row-task-todo-summary')).toBeTruthy();
 });
 
+test('contentInset은 스크롤 내용의 위아래 여백에 더한다', async () => {
+  const cards = [cardFixture({ id: 'inset-task', status: 'running' })];
+  const screen = render(<PersistentSessionTaskList api={{ listCards: jest.fn().mockResolvedValue({ cards }) } as any}
+    onOpenCard={jest.fn()} contentInset={{ top: 56, bottom: 152 }} />);
+
+  await waitFor(() => expect(screen.getByTestId('persistent-task-group-running')).toBeTruthy());
+  const tokens = renderHook(() => useTokens()).result.current;
+  expect(StyleSheet.flatten(screen.getByTestId('persistent-task-list').props.contentContainerStyle)).toMatchObject({
+    paddingTop: 56,
+    paddingBottom: 152,
+    paddingHorizontal: tokens.uiSpacing.sm,
+  });
+});
+
 test('요약 중 목록을 display none으로 숨겼다가 되돌아와도 요청과 목록 상태를 유지한다', async () => {
   const cards = [cardFixture({ id: 'visible-task', status: 'running' })];
   const listCards = jest.fn().mockResolvedValue({ cards });

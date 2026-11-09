@@ -34,7 +34,7 @@ import { usePersistentSessionHost, usePersistentSessionScene } from '../navigati
 import { usePhoneRailMode } from '../navigation/tabContract';
 import { DUO_RAIL_CENTER_FROM_END, DUO_RAIL_END_INSET, DUO_SIDE_BAND_WIDTH, DUO_TOP_BAND_RAIL_TOP, DUO_TOP_BAND_STATUS_CENTER_Y, DUO_TOP_BAND_STATUS_RESERVE, getDuoRailTopOffset, splitDuoRailBackAction, useDuoSideBand, useDuoTopBand } from '../navigation/duoSideBand';
 import { AppKeyboardAvoidingView } from '../components/AppKeyboardAvoidingView';
-import { RAIL_CAPSULE_WIDTH, railCapsuleLength, RailCapsule, RailCapsuleItem, railCapsuleIconColor } from '../components/navigation/RailCapsule';
+import { RAIL_CAPSULE_WIDTH, railCapsuleLength, RailCapsule, RailCapsuleItem } from '../components/navigation/RailCapsule';
 import { useActiveDuoRailOverrideEntry, type PhoneRailAction } from '../navigation/phoneRailActions';
 import { duoRailLayout } from '../navigation/duoRailLayout';
 import { usePasContextMenu } from '../components/persistent/usePasContextMenu';
@@ -334,12 +334,13 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
         { configuredNodeId: session.node_id, selectedNodeId: nextNodeId });
     }} />;
   const taskList = <PersistentSessionTaskList api={api} visible={!selectedCardId}
-    onOpenCard={openCard} />;
+    onOpenCard={openCard}
+    contentInset={duoTopBand ? { top: usageInColumn ? 0 : rightControlsHeight, bottom: railColumnBottom } : undefined} />;
   const renderRailAction = (item: PhoneRailAction) => {
     const testID = railOverride?.length ? `duo-rail-action-${item.id}` : `persistent-session-duo-${item.id}`;
     return <RailCapsuleItem key={item.id} testID={testID} label={item.label} selected={item.selected}
       badgeCount={item.badgeCount} dot={item.dot} disabled={item.disabled} onPress={item.onPress}>
-      <Ionicons name={item.icon} size={t.iconSize.standard} color={railCapsuleIconColor(t, item.selected)} />
+      {color => <Ionicons name={item.icon} size={t.iconSize.standard} color={color} />}
     </RailCapsuleItem>;
   };
   return <SafeAreaView testID="persistent-session-safe-area" edges={phone
@@ -437,7 +438,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       </View> : null}
       {usageInColumn ? <View testID="persistent-session-usage-column" style={{ position: 'absolute',
         top: headerHeight + rightControlsHeight,
-        bottom: duoTopBand ? railColumnBottom : Math.max(insets.bottom, keyboardOverlap), right: rightColumnOffset,
+        bottom: duoTopBand ? 0 : Math.max(insets.bottom, keyboardOverlap), right: rightColumnOffset,
         width: widths.tasks, paddingHorizontal: t.uiSpacing.sm, gap: t.spacing.xl }}>
         {weeklyUsage}
         {scene === 'cards' ? <View testID="persistent-session-card-panel" style={{ flex: 1, minHeight: 0 }}>
@@ -445,8 +446,8 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
         </View> : null}
       </View> : null}
       {scene === 'cards' && !usageInColumn ? <View testID="persistent-session-card-panel" style={{ position: 'absolute',
-        top: phone || duoSideBand ? headerHeight : headerHeight + rightControlsHeight,
-        ...(phone ? { bottom: 0 } : { maxHeight: duoTopBand ? Math.max(0, (app?.height ?? windowHeight) - railColumnBottom - headerHeight - rightControlsHeight)
+        top: phone || duoSideBand || duoTopBand ? headerHeight : headerHeight + rightControlsHeight,
+        ...(phone ? { bottom: 0 } : { maxHeight: duoTopBand ? Math.max(0, (app?.height ?? windowHeight) - headerHeight)
           : !phone && hasWeeklyUsage && geometry
           ? Math.max(0, geometry.lineY - usageHeight - t.spacing.xl - (headerHeight + rightControlsHeight))
           : Math.max(0, (portrait && geometry ? geometry.lineY : app?.height ?? 0) - headerHeight - rightControlsHeight - t.uiSpacing.md) }),

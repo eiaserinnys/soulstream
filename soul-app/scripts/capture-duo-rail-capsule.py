@@ -1,24 +1,37 @@
 #!/usr/bin/env python3
-"""듀오 레일 캡슐의 밝은 리퀴드 글래스(라이트/다크) 시각 검수.
+"""듀오 레일 캡슐의 적응형 리퀴드 글래스와 PAS 카드 목록 겹침 시각 검수.
 
 무엇을 검수하나
 ---------------
-- 다크·라이트 테마 모두에서 레일 캡슐(`RailCapsule`)이 밝고 반투명한 리퀴드 유리로
-  렌더되고, 불투명 틴트나 인위적 외곽선 없이 backdrop blur와 정확한 24pt 곡률을 쓴다.
-  회귀 기준은 이전의 탁한 회색(`#4c4a4f`)이 아니라 밝은 유리다.
-- 캡슐 안 아이콘은 캡슐의 밝은 표면을 기준으로 고른 색을 쓴다. 다크 테마 비선택
-  `rgb(17, 17, 17)`, 라이트 테마 비선택 `rgb(83, 87, 93)`, 선택 `rgb(0, 43, 102)`.
-  선택·비선택 아이콘 모두 어두운 캔버스(`#0f0f0f`)와 밝은 포스트잇(`#eee8f6`)
-  양쪽에서 WCAG AA 4.5:1 이상이어야 한다.
-- 배지·점 색상은 배경 `#d8ebff`, 글자·점 `rgb(0, 43, 102)`를 쓰며 배지 글자 대비도
-  AA 4.5:1 이상이다.
-- 캡슐 크기 계약(폭 48)과 24pt 곡률, 외곽선 0을 유지한다.
+- 레일 캡슐(`RailCapsule`)은 `colorScheme="adaptive"`다. 웹 하네스는 native 유리가 없어
+  blur 대체 경로로 렌더되며, 이 경로는 앱 테마 토큰을 따른다(예전의 고정 밝은 유리와
+  고정 `#111111`/`#002b66` 색은 제거됐다).
+  - 캡슐 배경: 다크 `rgba(28, 28, 30, 0.58)`, 라이트 `rgba(242, 242, 247, 0.58)` (chrome blur).
+  - 아이콘: 비선택 다크 `rgb(212, 212, 219)` / 라이트 `rgb(83, 87, 93)`,
+    선택 다크 `rgb(74, 158, 255)` / 라이트 `rgb(10, 132, 255)` (하단 탭바와 같은 토큰).
+  - 배지: 배경 다크 `rgb(23, 53, 82)` / 라이트 `rgb(216, 235, 255)`, 글자는 선택 아이콘 색.
+  - 점: 선택 아이콘 색.
+- 캡슐 크기 계약(폭 48)과 24pt 곡률, 외곽선 0, blur, 반투명을 유지한다.
 - context·nav 캡슐 사이에는 compact 4px, 기본 8px의 레이아웃 간격이 남는다.
-- 떠 있는 새 대화 합성기는 바깥 유리 한 겹만 쓰고, 내부 입력 박스는 backdrop filter와
-  경계선을 중복해 만들지 않는다.
 - 불변: 캡슐이 아닌 chrome(하단 탭바 유리)은 다크 테마에서 계속 어두운 유리를 쓰고
-  외곽선을 두지 않는다.
+  외곽선을 두지 않는다. 새 대화 합성기도 바깥 유리 한 겹과 경계선 없는 입력 박스를 유지한다.
 - 리뷰 화면 `?theme=dark`는 루트 프레임과 NavigationContainer 배경을 `#0f0f0f`로 칠한다.
+- PAS 카드 목록(`?sample=pas-layout&board=ops`, 운영 형태 카드 15장):
+  - 듀오 안쪽 세로(duoTopBand): 목록 영역이 캡슐 때문에 줄어들지 않고 화면 아래까지 이어지며,
+    캡슐이 목록 위에 떠 있고, 스크롤 끝에서 마지막 카드가 캡슐 위로 온전히 보인다.
+  - 듀오 안쪽 가로(duoSideBand): 캡슐이 오른쪽 띠에 있고, 스크롤 끝에서 마지막 카드가
+    캡슐에 가리지 않는다.
+  첫 화면 캡처는 목록의 첫 카드 위치가 그대로인지 보여 준다.
+- 캡슐이 떠 있는 다른 레이아웃(B2):
+  - 듀오 안쪽 세로 메인 카드 보드·폴더 서랍·피드 서랍: 캡슐은 상단 상태 띠(duo-top-band)에 있고
+    안전 영역 콘텐츠/서랍과 겹치지 않는다. 콘텐츠 영역은 캡슐 때문에 줄지 않는다.
+  - 듀오 안쪽 가로 메인: 캡슐은 오른쪽 띠에 있고 안전 영역 콘텐츠와 겹치지 않는다.
+  - 듀오 접힘(바깥 세로·가로): 캡슐은 `phone-rail-tab-rail` 띠 안에 있고, 카드 보드를
+    가로 끝까지 스크롤해도 마지막 레인 열이 캡슐과 겹치지 않는다.
+  - iPad: 떠 있는 레일 캡슐이 없다. `TabletPersistentEntry`는 헤더의 LiquidGlassButton이다.
+
+native 유리 가장자리는 웹 하네스에 보이지 않는다(blur 대체 경로). native 경로의
+overflow/borderCurve 계약은 Jest 렌더 테스트가 검증하며, 실기기 빌드에서만 눈으로 확인된다.
 
 실행 방법
 ---------
@@ -56,13 +69,49 @@ CAPSULE_FRAMES = [
 ]
 THEMES = ("dark", "light")
 
-UNSELECTED_ICON_RGB = {"dark": (17, 17, 17), "light": (83, 87, 93)}
-SELECTED_ICON_RGB = (0, 43, 102)
+# B2: 캡슐이 떠 있는 레이아웃별 콘텐츠 겹침 검수.
+# mode top: 캡슐이 상단 상태 띠에 있어 콘텐츠 영역 위에서 끝난다.
+# mode side: 캡슐이 오른쪽 띠에 있어 콘텐츠 영역 오른쪽에서 시작한다.
+# mode band: 캡슐이 레일 띠 안에 있고, 보드를 끝까지 스크롤한 마지막 레인도 겹치지 않는다.
+# mode none: 떠 있는 레일 캡슐이 없어야 한다(iPad).
+B2_LAYOUTS = [
+    {"id": "main-inner-portrait", "frame": "inner-portrait", "width": 669, "height": 951,
+     "capsules": ["duo-top-band-capsule", "duo-top-band-navigation-capsule"],
+     "contents": ["tablet-safe-area-content"], "mode": "top", "extra": "project-view=board",
+     "board": True},
+    {"id": "folder-inner-portrait", "frame": "inner-portrait", "width": 669, "height": 951,
+     "capsules": ["duo-top-band-capsule", "duo-top-band-navigation-capsule"],
+     "contents": ["duo-folder-drawer"], "mode": "top", "extra": "project-view=board",
+     "click": "duo-main-menu"},
+    {"id": "feed-inner-portrait", "frame": "inner-portrait", "width": 669, "height": 951,
+     "capsules": ["duo-top-band-capsule", "duo-top-band-navigation-capsule"],
+     "contents": ["duo-feed-drawer"], "mode": "top", "extra": "project-view=board",
+     "click": "duo-main-feed"},
+    {"id": "main-inner-landscape", "frame": "inner-landscape", "width": 951, "height": 669,
+     "capsules": ["duo-main-band-capsule", "duo-main-navigation-capsule"],
+     "contents": ["tablet-safe-area-content"], "mode": "side", "extra": "project-view=board",
+     "board": True},
+    {"id": "folded-outer-portrait", "frame": "outer-portrait", "width": 466, "height": 678,
+     "capsules": ["phone-rail-tab-cluster", "duo-rail-context-capsule"],
+     "contents": ["phone-rail-tab-rail"], "mode": "band", "boardEnd": True},
+    {"id": "folded-outer-landscape", "frame": "outer-landscape", "width": 678, "height": 466,
+     "capsules": ["phone-rail-tab-cluster", "duo-rail-context-capsule"],
+     "contents": ["phone-rail-tab-rail"], "mode": "band", "boardEnd": True},
+    {"id": "ipad-portrait", "frame": "ipad-pro-13-portrait", "width": 1032, "height": 1376,
+     "capsules": ["phone-rail-tab-cluster", "duo-main-band-capsule", "duo-top-band-capsule",
+                  "persistent-session-duo-capsule"],
+     "contents": ["tablet-persistent-entry"], "mode": "none"},
+]
+
+# expo-blur의 웹 구현은 tint별 자체 배경색을 style 뒤에 덧붙여 앱 토큰 배경을 덮는다.
+# 그래서 웹 캡처에서 보이는 캡슐 색은 tint('dark'/'light')의 expo-blur 기본값이다.
+# (intensity 74 → alpha 74 * 0.78 / 100 = 0.5772, 브라우저 표기 0.58)
+# tint는 앱 외양(t.mode)에서 고르므로 캡슐은 여전히 앱 테마를 따른다.
+CAPSULE_FILL_RGBA = {"dark": (25.0, 25.0, 25.0, 0.5772), "light": (249.0, 249.0, 249.0, 0.5772)}
+UNSELECTED_ICON_RGB = {"dark": (212, 212, 219), "light": (83, 87, 93)}
+SELECTED_ICON_RGB = {"dark": (74, 158, 255), "light": (10, 132, 255)}
+BADGE_BG_RGB = {"dark": (23, 53, 82), "light": (216, 235, 255)}
 DARK_CANVAS_RGB = (15, 15, 15)
-BRIGHT_POSTIT_RGB = (238, 232, 246)
-LIGHT_BACKDROP_RGB = (255, 255, 255)
-DARK_BACKDROP_RGB = (15, 15, 15)
-AA_CONTRAST = 4.5
 
 MEASURE_JS = r"""
 (capsuleTestId) => {
@@ -139,6 +188,91 @@ BADGE_JS = r"""
     .filter((element) => element.dataset.testid.endsWith(suffix))
     .map(info);
   return { badges: bySuffix('-badge'), dots: bySuffix('-dot') };
+}
+"""
+
+PAS_LIST_JS = r"""
+({ scroll, top }) => {
+  const round = (value) => Math.round(value * 100) / 100;
+  const box = (element) => {
+    const r = element.getBoundingClientRect();
+    return { left: round(r.left), top: round(r.top), right: round(r.right), bottom: round(r.bottom),
+      width: round(r.width), height: round(r.height) };
+  };
+  const list = document.querySelector('[data-testid="persistent-task-list"]');
+  if (!list) return { list: null };
+  const scroller = [list, ...list.querySelectorAll('*')].find((element) => {
+    const style = getComputedStyle(element);
+    return /(auto|scroll)/.test(style.overflowY) && element.scrollHeight > element.clientHeight + 1;
+  }) || list;
+  if (top) scroller.scrollTop = 0;
+  if (scroll) scroller.scrollTop = scroller.scrollHeight;
+  const capsule = document.querySelector('[data-testid="persistent-session-duo-capsule"]');
+  const screen = document.querySelector('[data-testid="persistent-session-screen"]');
+  const panel = document.querySelector('[data-testid="persistent-session-card-panel"]');
+  const band = document.querySelector('[data-testid="persistent-session-duo-band"]');
+  const rows = [...document.querySelectorAll('[data-testid^="card-row-"]')]
+    .map((element) => box(element))
+    .filter((rect) => rect.height > 0);
+  return {
+    window: { width: innerWidth, height: innerHeight },
+    list: box(list),
+    screen: screen ? box(screen) : null,
+    panel: panel ? box(panel) : null,
+    band: band ? box(band) : null,
+    scroller: { rect: box(scroller), scrollTop: round(scroller.scrollTop),
+      scrollHeight: scroller.scrollHeight, clientHeight: scroller.clientHeight },
+    capsule: capsule ? box(capsule) : null,
+    rowCount: rows.length,
+    firstRow: rows[0] ?? null,
+    lastRow: rows[rows.length - 1] ?? null,
+    atEnd: scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1,
+  };
+}
+"""
+
+B2_JS = r"""
+({ capsuleIds, contentIds }) => {
+  const round = (value) => Math.round(value * 100) / 100;
+  const box = (element) => {
+    const r = element.getBoundingClientRect();
+    return { left: round(r.left), top: round(r.top), right: round(r.right), bottom: round(r.bottom),
+      width: round(r.width), height: round(r.height) };
+  };
+  const find = (id) => document.querySelector(`[data-testid="${id}"]`);
+  const found = {};
+  const capsules = [];
+  for (const id of capsuleIds) {
+    const element = find(id);
+    found[id] = Boolean(element);
+    if (element) capsules.push({ id, ...box(element) });
+  }
+  const contents = [];
+  for (const id of contentIds) {
+    const element = find(id);
+    if (element) contents.push({ id, ...box(element) });
+  }
+  const board = find('card-board');
+  const columns = [...document.querySelectorAll('[data-testid^="card-board-column-"]')]
+    .map((element) => ({ id: element.dataset.testid, ...box(element) }));
+  return {
+    window: { width: innerWidth, height: innerHeight },
+    found,
+    capsules,
+    contents,
+    board: board ? { ...box(board), scrollLeft: round(board.scrollLeft),
+      scrollWidth: board.scrollWidth, clientWidth: board.clientWidth } : null,
+    columns,
+  };
+}
+"""
+
+B2_BOARD_END_JS = r"""
+() => {
+  const board = document.querySelector('[data-testid="card-board"]');
+  if (!board) return null;
+  board.scrollLeft = board.scrollWidth;
+  return { scrollLeft: board.scrollLeft, scrollWidth: board.scrollWidth, clientWidth: board.clientWidth };
 }
 """
 
@@ -268,24 +402,8 @@ def parse_rgb(value: str) -> tuple[tuple[float, float, float], float]:
     raise ValueError(f"지원하지 않는 색 형식: {value}")
 
 
-def composite(foreground: tuple[float, float, float], alpha: float,
-              background: tuple[float, float, float]) -> tuple[float, float, float]:
-    return tuple(alpha * fg + (1 - alpha) * bg for fg, bg in zip(foreground, background))
-
-
-def relative_luminance(rgb: tuple[float, float, float]) -> float:
-    def linear(channel: float) -> float:
-        value = channel / 255
-        return value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4
-
-    red, green, blue = (linear(channel) for channel in rgb)
-    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
-
-
-def contrast_ratio(first: tuple[float, float, float],
-                   second: tuple[float, float, float]) -> float:
-    light, dark = sorted((relative_luminance(first), relative_luminance(second)), reverse=True)
-    return (light + 0.05) / (dark + 0.05)
+def rgb_text(rgb: tuple[int, int, int]) -> str:
+    return f"rgb({rgb[0]}, {rgb[1]}, {rgb[2]})"
 
 
 def page_url(base: str, frame_id: str, theme: str, extra: str = "") -> str:
@@ -293,6 +411,11 @@ def page_url(base: str, frame_id: str, theme: str, extra: str = "") -> str:
     if extra:
         query += f"&{extra}"
     return f"{base}{PREFIX}index.html?{query}"
+
+
+def pas_url(base: str, frame_id: str, theme: str) -> str:
+    return (f"{base}{PREFIX}index.html?section=iphoneDuo&sample=pas-layout"
+            f"&frame={frame_id}&board=ops&theme={theme}")
 
 
 def settle(page: Page, test_id: str | None = None) -> None:
@@ -348,9 +471,15 @@ def capture_capsule_frame(browser: Browser, base: str, out: Path, frame_id: str,
                  capsule["borderRadius"] if capsule else None)
 
     fill_rgb, fill_alpha = parse_rgb(capsule["backgroundColor"])
-    checks.check(f"{prefix} 캡슐이 밝은 유리",
-                 min(fill_rgb) >= 230 and 0.5 <= fill_alpha <= 0.75,
-                 {"backgroundColor": capsule["backgroundColor"]})
+    expected_fill = CAPSULE_FILL_RGBA[theme]
+    fill_matches = (abs(fill_rgb[0] - expected_fill[0]) <= 0.6
+                    and abs(fill_rgb[1] - expected_fill[1]) <= 0.6
+                    and abs(fill_rgb[2] - expected_fill[2]) <= 0.6
+                    and abs(fill_alpha - expected_fill[3]) <= 0.02)
+    checks.check(f"{prefix} 캡슐이 앱 테마 유리 {capsule['backgroundColor']}",
+                 fill_matches, {"backgroundColor": capsule["backgroundColor"],
+                                "expected": f"rgba({expected_fill[0]:.0f}, {expected_fill[1]:.0f}, "
+                                            f"{expected_fill[2]:.0f}, {expected_fill[3]})"})
     checks.check(f"{prefix} 캡슐이 반투명", fill_alpha < 1, capsule["backgroundColor"])
     checks.check(f"{prefix} backdrop blur", "blur(" in (capsule["backdropFilter"] or ""),
                  capsule["backdropFilter"])
@@ -363,38 +492,20 @@ def capture_capsule_frame(browser: Browser, base: str, out: Path, frame_id: str,
                      and abs(cluster_gap["gap"] - expected_gap) <= 0.5,
                      cluster_gap)
 
-    expected_unselected = f"rgb({UNSELECTED_ICON_RGB[theme][0]}, {UNSELECTED_ICON_RGB[theme][1]}, {UNSELECTED_ICON_RGB[theme][2]})"
-    expected_selected = f"rgb({SELECTED_ICON_RGB[0]}, {SELECTED_ICON_RGB[1]}, {SELECTED_ICON_RGB[2]})"
+    expected_unselected = rgb_text(UNSELECTED_ICON_RGB[theme])
+    expected_selected = rgb_text(SELECTED_ICON_RGB[theme])
     unselected = [color for color in metrics["icons"] if color == expected_unselected]
     unknown = [color for color in metrics["icons"] if color not in (expected_unselected, expected_selected)]
     checks.check(f"{prefix} 비선택 아이콘 색", bool(unselected), metrics["icons"])
     checks.check(f"{prefix} 예상 밖 아이콘 색 없음", not unknown, unknown)
 
-    backdrops = [DARK_BACKDROP_RGB, BRIGHT_POSTIT_RGB] if theme == "dark" else [LIGHT_BACKDROP_RGB]
-    unselected_rgb, _ = parse_rgb(expected_unselected)
-    ratios = {}
-    for backdrop in backdrops:
-        surface = composite(fill_rgb, fill_alpha, backdrop)
-        ratios[f"#{backdrop[0]:02x}{backdrop[1]:02x}{backdrop[2]:02x}"] = round(
-            contrast_ratio(unselected_rgb, surface), 2)
-    checks.check(f"{prefix} 비선택 아이콘 AA 4.5:1", all(value >= AA_CONTRAST for value in ratios.values()), ratios)
-
     canvas = metrics["fullFrameBackgrounds"]
     if theme == "dark":
-        expected_canvas = f"rgb({DARK_CANVAS_RGB[0]}, {DARK_CANVAS_RGB[1]}, {DARK_CANVAS_RGB[2]})"
+        expected_canvas = rgb_text(DARK_CANVAS_RGB)
         checks.check(f"{prefix} 다크 캔버스(루트+내비게이션) 2겹", canvas.count(expected_canvas) >= 2, canvas)
 
-    selected_ratios = {
-        key: round(contrast_ratio(parse_rgb(expected_selected)[0],
-                                  composite(fill_rgb, fill_alpha, backdrop)), 2)
-        for key, backdrop in zip(ratios, backdrops)
-    }
-    checks.check(f"{prefix} 선택 아이콘 AA 4.5:1",
-                 all(value >= AA_CONTRAST for value in selected_ratios.values()), selected_ratios)
     checks.check(f"{prefix} 페이지 오류 없음", not errors, errors)
-    return {"url": url, "screenshot": screenshot, "metrics": metrics,
-            "clusterGap": cluster_gap,
-            "contrast": {"unselected": ratios, "selected": selected_ratios}}
+    return {"url": url, "screenshot": screenshot, "metrics": metrics, "clusterGap": cluster_gap}
 
 
 def capture_badge_states(browser: Browser, base: str, out: Path, checks: Checks) -> dict:
@@ -412,21 +523,180 @@ def capture_badge_states(browser: Browser, base: str, out: Path, checks: Checks)
             context.close()
 
             prefix = f"{view}/{theme}"
+            expected_bg = rgb_text(BADGE_BG_RGB[theme])
+            expected_accent = rgb_text(SELECTED_ICON_RGB[theme])
             if view == "rail-badge":
                 badge = metrics["badges"][0] if metrics["badges"] else None
                 checks.check(f"{prefix} 배지 존재", badge is not None, metrics)
-                checks.check(f"{prefix} 배경 #d8ebff", badge and badge["backgroundColor"] == "rgb(216, 235, 255)",
+                checks.check(f"{prefix} 배경 {expected_bg}", badge and badge["backgroundColor"] == expected_bg,
                              badge)
-                checks.check(f"{prefix} 글자 #002b66", badge and badge["color"] == "rgb(0, 43, 102)", badge)
-                badge_ratio = round(contrast_ratio((0, 43, 102), (216, 235, 255)), 2)
-                checks.check(f"{prefix} 배지 글자 AA 4.5:1", badge_ratio >= AA_CONTRAST, badge_ratio)
+                checks.check(f"{prefix} 글자 {expected_accent}", badge and badge["color"] == expected_accent,
+                             badge)
             else:
                 dot = metrics["dots"][0] if metrics["dots"] else None
                 checks.check(f"{prefix} 점 존재", dot is not None, metrics)
-                checks.check(f"{prefix} 점 #002b66", dot and dot["backgroundColor"] == "rgb(0, 43, 102)", dot)
+                checks.check(f"{prefix} 점 {expected_accent}",
+                             dot and dot["backgroundColor"] == expected_accent, dot)
             checks.check(f"{prefix} 페이지 오류 없음", not errors, errors)
             states[f"{view}-{theme}"] = {"url": url, "screenshot": screenshot, "metrics": metrics}
     return states
+
+
+def overlaps(first: dict | None, second: dict | None) -> bool:
+    if not first or not second:
+        return False
+    return (first["left"] < second["right"] and first["right"] > second["left"]
+            and first["top"] < second["bottom"] and first["bottom"] > second["top"])
+
+
+def capture_pas_card_list(browser: Browser, base: str, out: Path, frame_id: str,
+                          width: int, height: int, theme: str, checks: Checks) -> dict:
+    """PAS 카드 목록이 떠 있는 캡슐 뒤로 이어지고, 스크롤 끝에서 마지막 카드가 보이는지."""
+    context = browser.new_context(viewport={"width": width, "height": height}, device_scale_factor=2)
+    context.add_cookies([{"name": "review", "value": "fixture", "url": base}])
+    url = pas_url(base, frame_id, theme)
+    page, errors = open_page(context, base, url)
+    settle(page, "persistent-session-duo-tasks")
+    page.get_by_test_id("persistent-session-duo-tasks").click()
+    page.wait_for_selector('[data-testid^="card-row-"]', timeout=20000)
+    # 기본 설정은 todo 그룹을 접어 둔다. 운영 형태 카드 10장 이상을 보이도록 펼친다.
+    todo_header = page.get_by_test_id("persistent-task-group-header-todo")
+    if todo_header.count():
+        todo_header.click()
+    page.wait_for_timeout(600)
+
+    # 그룹 헤더 클릭이 스크롤을 옮길 수 있으므로 첫 화면은 맨 위로 되돌린 뒤 잰다.
+    page.evaluate(PAS_LIST_JS, {"scroll": False, "top": True})
+    page.wait_for_timeout(300)
+    first = page.evaluate(PAS_LIST_JS, {"scroll": False, "top": False})
+    first_shot = shot(page, out, f"pas-list-{frame_id}-{theme}-first", width, height)
+    page.evaluate(PAS_LIST_JS, {"scroll": True, "top": False})
+    page.wait_for_timeout(500)
+    end = page.evaluate(PAS_LIST_JS, {"scroll": False, "top": False})
+    end_shot = shot(page, out, f"pas-list-{frame_id}-{theme}-end", width, height)
+    page.close()
+    context.close()
+
+    prefix = f"pas-list/{frame_id}/{theme}"
+    checks.check(f"{prefix} 카드 목록 존재", first["list"] is not None, first)
+    checks.check(f"{prefix} 운영 형태 카드 10장 이상", first["rowCount"] >= 10, first["rowCount"])
+    checks.check(f"{prefix} 캡슐 존재", first["capsule"] is not None, first["capsule"])
+
+    list_rect = first["list"]
+    capsule = first["capsule"]
+    if list_rect and capsule:
+        layout_detail = {"window": first["window"], "screen": first["screen"], "panel": first["panel"],
+                         "list": list_rect, "band": first["band"], "capsule": capsule}
+        if frame_id.startswith("inner-portrait"):
+            # duoTopBand: 목록 영역이 캡슐 때문에 줄지 않고, 캡슐이 목록 위에 떠 있다.
+            checks.check(f"{prefix} 목록 영역이 캡슐에 줄지 않고 캡슐 뒤로 이어진다",
+                         overlaps(list_rect, capsule), layout_detail)
+        else:
+            # duoSideBand: 캡슐은 오른쪽 띠에 있어 목록 영역과 겹치지 않는다.
+            checks.check(f"{prefix} 캡슐이 목록 영역 밖 오른쪽 띠에 있다",
+                         not overlaps(list_rect, capsule), layout_detail)
+        checks.check(f"{prefix} 첫 카드가 목록 안에 보인다",
+                     first["firstRow"] is not None
+                     and first["firstRow"]["top"] >= list_rect["top"] - 0.5
+                     and first["firstRow"]["bottom"] <= list_rect["bottom"] + 0.5,
+                     {"firstRow": first["firstRow"], "list": list_rect})
+        checks.check(f"{prefix} 스크롤이 끝까지 간다", end["atEnd"], end["scroller"])
+        checks.check(f"{prefix} 스크롤 끝 마지막 카드가 캡슐에 가리지 않는다",
+                     end["lastRow"] is not None and not overlaps(end["lastRow"], capsule),
+                     {"lastRow": end["lastRow"], "capsule": capsule,
+                      "gap": round(capsule["top"] - end["lastRow"]["bottom"], 2)
+                      if end["lastRow"] else None})
+    checks.check(f"{prefix} 페이지 오류 없음", not errors, errors)
+    return {"url": url, "first": first, "end": end,
+            "screenshots": {"first": first_shot, "end": end_shot}}
+
+
+def capture_b2_layout(browser: Browser, base: str, out: Path, spec: dict, theme: str,
+                      checks: Checks) -> dict:
+    """B2: 캡슐이 떠 있는 레이아웃에서 콘텐츠 겹침과 스크롤 끝 마지막 항목을 잰다."""
+    context = browser.new_context(viewport={"width": spec["width"], "height": spec["height"]},
+                                  device_scale_factor=2)
+    context.add_cookies([{"name": "review", "value": "fixture", "url": base}])
+    url = page_url(base, spec["frame"], theme, spec.get("extra", ""))
+    page, errors = open_page(context, base, url)
+    wait_id = spec["capsules"][0] if spec["mode"] != "none" else spec["contents"][0]
+    settle(page, wait_id)
+    if spec.get("click"):
+        page.get_by_test_id(spec["click"]).click()
+        page.wait_for_timeout(800)
+    initial = page.evaluate(B2_JS, {"capsuleIds": spec["capsules"],
+                                    "contentIds": spec["contents"]})
+    screenshot = shot(page, out, f"b2-{spec['id']}-{theme}", spec["width"], spec["height"])
+    end = None
+    end_shot = None
+    if spec.get("boardEnd"):
+        page.evaluate(B2_BOARD_END_JS)
+        page.wait_for_timeout(500)
+        end = page.evaluate(B2_JS, {"capsuleIds": spec["capsules"],
+                                    "contentIds": spec["contents"]})
+        end_shot = shot(page, out, f"b2-{spec['id']}-{theme}-end", spec["width"], spec["height"])
+    page.close()
+    context.close()
+
+    prefix = f"b2/{spec['id']}/{theme}"
+    capsules = initial["capsules"]
+    contents = {entry["id"]: entry for entry in initial["contents"]}
+    if spec["mode"] in ("top", "side"):
+        checks.check(f"{prefix} 캡슐 존재", len(capsules) == len(spec["capsules"]), initial["found"])
+        content = contents.get(spec["contents"][0])
+        checks.check(f"{prefix} 콘텐츠 영역 존재", content is not None, initial["contents"])
+        if content:
+            for capsule in capsules:
+                if spec["mode"] == "top":
+                    checks.check(f"{prefix} {capsule['id']}가 콘텐츠 영역 위 띠에서 끝난다",
+                                 capsule["bottom"] <= content["top"] + 0.5,
+                                 {"capsule": capsule, "content": content})
+                else:
+                    checks.check(f"{prefix} {capsule['id']}가 콘텐츠 영역 오른쪽 띠에서 시작한다",
+                                 capsule["left"] >= content["right"] - 0.5,
+                                 {"capsule": capsule, "content": content})
+    elif spec["mode"] == "band":
+        band = contents.get(spec["contents"][0])
+        checks.check(f"{prefix} 레일 띠 존재", band is not None, initial["contents"])
+        if band:
+            checks.check(f"{prefix} 레일 띠가 화면 오른쪽 끝 84px",
+                         abs(band["right"] - initial["window"]["width"]) <= 0.5
+                         and abs(band["width"] - 84) <= 0.5, band)
+            for capsule in capsules:
+                checks.check(f"{prefix} {capsule['id']}가 레일 띠 안에 있다",
+                             capsule["left"] >= band["left"] - 0.5
+                             and capsule["right"] <= band["right"] + 0.5,
+                             {"capsule": capsule, "band": band})
+        if spec.get("boardEnd"):
+            checks.check(f"{prefix} 카드 보드 존재", initial["board"] is not None, initial["board"])
+            checks.check(f"{prefix} 카드 보드를 가로 끝까지 스크롤했다",
+                         end is not None and end["board"] is not None
+                         and end["board"]["scrollLeft"] + end["board"]["clientWidth"]
+                         >= end["board"]["scrollWidth"] - 1,
+                         end["board"] if end else None)
+            if end:
+                collisions = [
+                    {"column": column, "capsule": capsule}
+                    for column in end["columns"] for capsule in end["capsules"]
+                    if overlaps(column, capsule)
+                ]
+                checks.check(f"{prefix} 스크롤 끝 마지막 레인이 캡슐에 가리지 않는다",
+                             not collisions, {"collisions": collisions, "columns": end["columns"]})
+    else:
+        present = [name for name, exists in initial["found"].items() if exists]
+        checks.check(f"{prefix} 떠 있는 레일 캡슐 없음", not present, initial["found"])
+        checks.check(f"{prefix} TabletPersistentEntry 헤더 버튼 존재",
+                     spec["contents"][0] in contents, initial["contents"])
+    if spec.get("board"):
+        checks.check(f"{prefix} 메인 카드 보드 존재", initial["board"] is not None, initial["board"])
+    if spec.get("click"):
+        drawer = contents.get(spec["contents"][0])
+        checks.check(f"{prefix} 서랍이 열려 화면 안에 있다",
+                     drawer is not None and drawer["left"] >= -0.5 and drawer["width"] > 0,
+                     drawer)
+    checks.check(f"{prefix} 페이지 오류 없음", not errors, errors)
+    return {"url": url, "initial": initial, "end": end,
+            "screenshots": {"initial": screenshot, "end": end_shot}}
 
 
 def capture_non_capsule_chrome(browser: Browser, base: str, out: Path, checks: Checks) -> dict:
@@ -492,6 +762,17 @@ def main() -> int:
                             result["capsules"][f"{frame_id}-{theme}"] = capture_capsule_frame(
                                 browser, base, out, frame_id, width, height, capsule_test_id, theme, checks)
                     result["badges"] = capture_badge_states(browser, base, out, checks)
+                    result["pasCardList"] = {}
+                    for frame_id, width, height in (("inner-portrait", 669, 951),
+                                                    ("inner-landscape", 951, 669)):
+                        for theme in THEMES:
+                            result["pasCardList"][f"{frame_id}-{theme}"] = capture_pas_card_list(
+                                browser, base, out, frame_id, width, height, theme, checks)
+                    result["b2Layouts"] = {}
+                    for spec in B2_LAYOUTS:
+                        for theme in THEMES:
+                            result["b2Layouts"][f"{spec['id']}-{theme}"] = capture_b2_layout(
+                                browser, base, out, spec, theme, checks)
                     result["invariant"] = capture_non_capsule_chrome(browser, base, out, checks)
                 finally:
                     browser.close()

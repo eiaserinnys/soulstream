@@ -34,7 +34,6 @@ export type SurfaceRoles = Record<SurfaceRoleName, SurfaceRoleDefinition>;
 
 const CHROME_CONTENT_ALPHA = 0.92;
 const CHROME_BLUR_ALPHA = 0.58;
-const LIGHT_CHROME_GLASS_BLUR_ALPHA = 0.62;
 const SEMANTIC_GLASS_PALETTE = {
   light: {
     glassSoft: { translucent: 'rgba(231, 237, 245, 0.56)', solid: '#e7edf5' },
@@ -138,26 +137,6 @@ export function createSurfaceRoles(t: DesignTokens): SurfaceRoles {
       blurIntensity: 0,
     }),
   };
-}
-
-/**
- * 라이트 테마의 레일 캡슐 전용 chrome 변형.
- *
- * 다크 테마에서도 밝게 보여야 하는 캡슐만 이 역할로 렌더한다. iOS 26 리퀴드 글래스는
- * 불투명 틴트와 인위적 외곽선 없이 굴절과 하이라이트를 스스로 만든다.
- */
-export function createLightChromeGlassRole(t: DesignTokens): SurfaceRoleDefinition {
-  const c = t.colors;
-  return role({
-    compositesBackdrop: true,
-    nativeGlass: true,
-    nativeTintColor: undefined,
-    blurColor: withAlpha(c.surface, LIGHT_CHROME_GLASS_BLUR_ALPHA),
-    tokenBackgroundColor: withAlpha(c.surface, CHROME_CONTENT_ALPHA),
-    fallbackColor: c.surface,
-    borderRadius: 0,
-    blurIntensity: 74,
-  });
 }
 
 export function getSurfaceRole(

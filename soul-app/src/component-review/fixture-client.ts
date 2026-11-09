@@ -466,6 +466,11 @@ export function createApiClient(baseUrl = ''): ApiClient {
         : api;
     return new URLSearchParams(window.location.search).get('sample') === 'pas-layout'
       ? { ...api, ...createReviewCardApi(),
+        // PAS 카드 목록 캡처도 운영 형태 카드로 바꾼다(보드=ops). 기본 미리보기 카드는 2장뿐이다.
+        ...(boardParam === 'ops' || boardParam === 'review-last'
+          ? { listCards: async () => ({ cards: boardFixtureCards(boardParam) }),
+            listCompletedCards: async () => ({ cards: [], nextCursor: null }) }
+          : {}),
         ...(multiPasSample ? { listPersistentSessions: async () => {
           const result = await nativeSettingsApi.listPersistentSessions();
           const sessions = result.sessions.slice(0, 2).map((session, index) => ({

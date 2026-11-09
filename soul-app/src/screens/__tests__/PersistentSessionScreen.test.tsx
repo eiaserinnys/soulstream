@@ -47,8 +47,8 @@ jest.mock('../../components/chat/ChatBody', () => {
 });
 jest.mock('../../components/persistent/PersistentSessionTaskList', () => {
   const { Pressable, View } = require('react-native');
-  return { PersistentSessionTaskList: ({ onOpenCard, visible = true }: any) => <View testID="persistent-task-list-mock"
-    style={{ display: visible ? 'flex' : 'none' }}><Pressable testID="choose-card" onPress={() => onOpenCard('card-1')} /></View> };
+  return { PersistentSessionTaskList: ({ onOpenCard, visible = true, contentInset }: any) => <View testID="persistent-task-list-mock"
+    contentInset={contentInset} style={{ display: visible ? 'flex' : 'none' }}><Pressable testID="choose-card" onPress={() => onOpenCard('card-1')} /></View> };
 });
 jest.mock('../../components/persistent/SwayCharacter', () => ({ SwayCharacter: () => null }));
 jest.mock('../../components/persistent/PersistentSessionCardOverlay', () => {
@@ -1133,6 +1133,70 @@ test('듀오 안쪽 세로는 상단 띠에 헤더와 레일을 놓고 보고 �
   fireEvent.press(view.getByTestId('persistent-session-duo-reports'));
   expect(view.queryByTestId('persistent-session-reports-cover')).toBeNull();
   view.unmount(); measure.mockRestore(); dimensions.mockRestore();
+});
+
+test('듀오 안쪽 세로 카드 장면은 목록을 화면 끝까지 잇고 캡슐 자리만 안쪽 여백으로 비운다', () => {
+  mockDevice = 'tabletPortrait';
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 669, height: 951, scale: 1, fontScale: 1 });
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 0, 669, 951);
+    else if (this.props.testID === 'persistent-session-conversation') callback(0, 86, 669, 865);
+  });
+  const view = render(<SafeAreaInsetsContext.Provider value={{ top: 82, bottom: 24, left: 0, right: 0 }}>
+    <DuoSideBandContext.Provider value={false}><DuoTopBandContext.Provider value>
+      <NavigationContainer><ScreenHarness /></NavigationContainer>
+    </DuoTopBandContext.Provider></DuoSideBandContext.Provider>
+  </SafeAreaInsetsContext.Provider>);
+  act(() => {
+    store.getState().open({ session_id: 'pas-top-band-cards', persistent: true } as any);
+    view.getByTestId('persistent-session-screen').props.onLayout();
+  });
+  fireEvent.press(view.getByTestId('persistent-session-duo-tasks'));
+
+  expect(store.getState().scene).toBe('cards');
+  const panel = StyleSheet.flatten(view.getByTestId('persistent-session-card-panel').props.style);
+  expect(panel).toMatchObject({ top: 86, maxHeight: 865 });
+  // 캡슐은 더보기 메뉴 + 카드 목록 + 보고 세 항목(높이 168)이고 화면 아래 32에 떠 있다.
+  expect(view.getByTestId('persistent-task-list-mock').props.contentInset).toEqual({ top: 56, bottom: 208 });
+  view.unmount(); measure.mockRestore(); dimensions.mockRestore();
+});
+
+test('듀오 안쪽 세로 주간 사용량 열도 카드 목록을 캡슐 뒤까지 잇는다', () => {
+  mockDevice = 'tabletPortrait';
+  const originalIsPad = Object.getOwnPropertyDescriptor(Platform, 'isPad');
+  Object.defineProperty(Platform, 'isPad', { configurable: true, value: false });
+  const payload = Buffer.from(JSON.stringify({ email: 'screen@example.com', exp: 2_000_000_000 })).toString('base64url');
+  useAuthStore.setState({ jwt: `header.${payload}.signature` });
+  useSettingsStore.setState({ serverUrl: 'https://screen.test' });
+  useSettingsStore.getState().setPersistentSessionShowWeeklyUsage('https://screen.test', 'screen@example.com', true);
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 669, height: 951, scale: 1, fontScale: 1 });
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 0, 669, 951);
+    else if (this.props.testID === 'persistent-session-conversation') callback(0, 86, 669, 865);
+  });
+  const view = render(<SafeAreaInsetsContext.Provider value={{ top: 82, bottom: 24, left: 0, right: 0 }}>
+    <DuoSideBandContext.Provider value={false}><DuoTopBandContext.Provider value>
+      <NavigationContainer><ScreenHarness /></NavigationContainer>
+    </DuoTopBandContext.Provider></DuoSideBandContext.Provider>
+  </SafeAreaInsetsContext.Provider>);
+  act(() => {
+    store.getState().open({ session_id: 'pas-top-band-usage', persistent: true, node_id: 'node-1' } as any);
+    view.getByTestId('persistent-session-screen').props.onLayout();
+  });
+  fireEvent.press(view.getByTestId('persistent-session-duo-tasks'));
+
+  expect(store.getState().scene).toBe('cards');
+  expect(StyleSheet.flatten(view.getByTestId('persistent-session-usage-column').props.style)).toMatchObject({
+    top: 142,
+    bottom: 0,
+  });
+  // 사용량이 붙으면 캡슐은 더보기 + 사용량 + 카드 목록 + 보고 네 항목(높이 220)이 된다.
+  expect(view.getByTestId('persistent-task-list-mock').props.contentInset).toEqual({ top: 0, bottom: 260 });
+  view.unmount(); measure.mockRestore(); dimensions.mockRestore();
+  useAuthStore.setState({ jwt: null });
+  useSettingsStore.setState({ serverUrl: '', persistentSessionDevicePrefs: {} } as never);
+  if (originalIsPad) Object.defineProperty(Platform, 'isPad', originalIsPad);
+  else Reflect.deleteProperty(Platform, 'isPad');
 });
 
 test('듀오 안쪽 세로는 보고가 없으면 보고 레일 버튼을 비활성화한다', () => {
