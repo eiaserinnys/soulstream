@@ -9,7 +9,7 @@
   검색창 폭은 두 보기에서 같고, 머리 높이는 피드 머리와 같은 72다.
 - 세로 카드 보드의 자체 머리 줄에 폴더 이름이 한 줄 말줄임으로 나오고, 드래프트 카드 추가,
   완료·취소 숨김, 보드 확대 단추 셋이 같은 줄 오른쪽에 세로 가운데로 놓인다. 단추 셋을
-  눌러 카드 제목 입력, 완료 숨김 전환, 확대 보드 열기를 확인한다.
+  눌러 카드 제목 입력, 완료 숨김 전환, 확대 보드 열고 닫기를 확인한다.
 - 폴더 이름이 아주 길 때(서버가 서빙하는 번들 문자열을 바꿔 넣음)와 목록 칸이 가장 좁은
   280 안팎(616x900)일 때도 제목 한 줄 말줄임과 단추 셋 한 줄을 확인한다.
 - iPad 가로(1210x834, ThreePaneLayout)의 전환 줄과 단독 보드 단추, 듀오 안쪽 세로 화면,
@@ -456,6 +456,20 @@ def check_expanded(prefix: str, metrics: dict, checks: Checks) -> None:
                  expanded is not None and expanded["visible"], expanded)
 
 
+def check_expanded_closed(prefix: str, metrics: dict, checks: Checks,
+                          expected_title: str) -> None:
+    checks.check(f"{prefix} 확대 보드 닫기 단추로 확대 보드 닫힘",
+                 metrics["cardBoardExpanded"] is None, metrics["cardBoardExpanded"])
+    checks.check(f"{prefix} 확대 보드를 닫으면 보드 머리 단추가 「보드 확대」로 돌아온다",
+                 visible_label_count(metrics, "보드 확대") == 1
+                 and visible_label_count(metrics, "보드 확대 닫기") == 0,
+                 metrics["labelCounts"])
+    heading = metrics["boardHeadingText"]
+    checks.check(f"{prefix} 확대 보드를 닫은 뒤 보드 머리 제목이 그대로",
+                 heading is not None and heading["text"].startswith(expected_title[:4]),
+                 heading)
+
+
 def capture_portrait(context: BrowserContext, base: str, out: Path, frame_id: str,
                      width: int, height: int, checks: Checks,
                      expected_title: str = FOLDER_TITLE,
@@ -528,8 +542,7 @@ def capture_portrait(context: BrowserContext, base: str, out: Path, frame_id: st
         checks.check(f"{name} 완료·취소 숨김 단추가 되돌아온다",
                      restored["completedToggleState"] == "on", restored["completedToggleState"])
 
-        # 생성 시트를 먼저 확인한다. 확대 보드는 검수 하니스에서 읽기 오버레이가 머리를
-        # 덮어 닫기 단추를 누를 수 없으므로 맨 뒤에 열고 그대로 페이지를 닫는다.
+        # 생성 시트를 먼저 확인하고 확대 보드를 맨 뒤에 열고 닫는다.
         try:
             page.get_by_label("드래프트 카드 추가", exact=True).first.click(timeout=8000)
             page.get_by_label("카드 제목", exact=True).first.wait_for(state="visible", timeout=8000)
@@ -565,6 +578,24 @@ def capture_portrait(context: BrowserContext, base: str, out: Path, frame_id: st
             "notes": list(notes),
         }
         check_expanded(name, expanded, checks)
+
+        # 확대 보드가 열린 동안에는 모달 뒤 보드 머리의 확대 단추도 「보드 확대 닫기」라는
+        # 이름이 된다. 모달 안의 닫기 단추를 누르도록 card-board-expanded 안에서 찾는다.
+        try:
+            (page.get_by_test_id("card-board-expanded")
+             .get_by_label("보드 확대 닫기", exact=True).first.click(timeout=8000))
+            page.get_by_test_id("card-board-expanded").wait_for(state="detached", timeout=8000)
+            page.wait_for_timeout(700)
+        except Exception as error:  # noqa: BLE001
+            notes.append(f"expand close: {error}")
+        closed = measure(page)
+        states[f"{theme}-board-expanded-closed"] = {
+            "url": url,
+            "screenshot": shot(page, out, f"{name}-board-expanded-closed", width, height),
+            "metrics": closed,
+            "notes": list(notes),
+        }
+        check_expanded_closed(name, closed, checks, expected_title)
         checks.check(f"{name} 페이지 오류 없음", not errors, errors)
         page.close()
     return states
