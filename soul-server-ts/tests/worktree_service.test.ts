@@ -1543,6 +1543,27 @@ describe("WorktreeService.listSessionAttachments", () => {
     expect(git.inspectDirty).not.toHaveBeenCalled();
     expect(git.listRepositoryIds).not.toHaveBeenCalled();
   });
+
+  it("matches a record only against its own repository's discovered worktrees", async () => {
+    const { service, git } = attachmentFixture([
+      record({ id: "wt-alias", repoId: "repo-alias", createdBySessionId: "session-a" }),
+      record({ id: "wt-b", repoId: "repo-b", createdBySessionId: "session-a" }),
+    ], {
+      "repo-b": [discovered("/projects/wt-alias"), discovered("/projects/wt-b")],
+    });
+
+    const rows = await service.listSessionAttachments({ actorSessionId: "session-a" });
+
+    expect(rows).toEqual([
+      expect.objectContaining({
+        worktreeId: "wt-alias",
+        repoId: "repo-alias",
+        discoveryKind: "managed_missing",
+      }),
+      expect.objectContaining({ worktreeId: "wt-b", repoId: "repo-b", discoveryKind: "managed" }),
+    ]);
+    expect(git.list.mock.calls).toEqual([["repo-b"]]);
+  });
 });
 
 class MemoryWorktreeHost implements WorktreeHost {

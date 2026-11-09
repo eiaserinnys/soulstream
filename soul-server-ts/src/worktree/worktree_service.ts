@@ -185,16 +185,20 @@ export class WorktreeService implements WorktreeExecutionResolver {
       || record.id === input.taskWorktreeId);
     if (related.length === 0) return [];
     const registered = new Set(this.options.git.listRepositoryIds());
-    const discoveredByPath = new Map<string, WorktreeListEntry>();
+    // 레코드는 자기 repoId 리포에서 발견된 경로와만 짝짓는다. 다른 리포의
+    // 목록에 같은 경로가 있어도 그 레코드의 리포 사실로 쓰지 않는다.
+    const discoveredByRepo = new Map<string, Map<string, WorktreeListEntry>>();
     for (const repoId of new Set(related.map((record) => record.repoId))) {
       if (!registered.has(repoId)) continue;
+      const byPath = new Map<string, WorktreeListEntry>();
       for (const discovered of await this.options.git.list(repoId)) {
-        discoveredByPath.set(discovered.path, discovered);
+        byPath.set(discovered.path, discovered);
       }
+      discoveredByRepo.set(repoId, byPath);
     }
     const observedAt = new Date().toISOString();
     return related.map((record) => {
-      const discovered = discoveredByPath.get(record.canonicalPath);
+      const discovered = discoveredByRepo.get(record.repoId)?.get(record.canonicalPath);
       return {
         worktreeId: record.id,
         nodeId: this.options.nodeId,
