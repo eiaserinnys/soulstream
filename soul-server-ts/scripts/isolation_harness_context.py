@@ -301,18 +301,28 @@ def write_ops(ctx: dict, session_dir: str, sandbox_dir: str) -> list[dict]:
         ("write_local_incoming", f"{ws}/.local/incoming/harness-write.txt", "write"),
         ("write_prod_repo", f"{MASKED['prod_repo']}/harness-write.txt", "write"),
         ("write_prod_config", f"{MASKED['prod_config']}/harness-write.txt", "write"),
+        ("write_reexposed_log_dir", f"{MASKED['prod_config']}/logs/harness-write.txt", "write"),
         ("read_prod_repo_package", f"{MASKED['prod_repo']}/package.json", "read"),
+        ("read_reexposed_log",
+         f"{MASKED['prod_config']}/logs/soulstream-soul-server-ts.log", "read"),
         ("read_tmp_symlink", f"{ws}/.local/tmp/link-to-etc-hostname", "read"),
         ("list_prod_config", str(MASKED["prod_config"]), "list"),
         ("list_prod_secrets", str(MASKED["prod_secrets"]), "list"),
         ("list_prod_state_runner", str(MASKED["prod_state"] / "runner"), "list"),
         ("list_agent_common", str(MASKED["agent_common"]), "list"),
+        ("list_rclone_config", str(HOME / ".config/rclone"), "list"),
+        ("list_backups", str(HOME / "backups"), "list"),
         ("read_env_dotenv", f"{MASKED['prod_repo']}/.env.soul-server-ts", "read"),
         ("lstat_env_dotenv", f"{MASKED['prod_repo']}/.env.soul-server-ts", "lstat"),
         ("read_devnull", "/dev/null", "read"),
         ("lstat_devnull", "/dev/null", "lstat"),
         ("read_codex_auth", str(MASKED["codex_auth"]), "read"),
         ("read_claude_creds", str(MASKED["claude_creds"]), "read"),
+        ("read_kaleidoscope_env", str(HOME / "services/kaleidoscope/shared/.env"), "read"),
+        ("read_migration_orch_env", str(PROD / "config/orch.env"), "read"),
+        ("read_vault_init", str(HOME / ".vault/init.txt"), "read"),
+        ("read_workspace_env_local", str(WORKSPACE / ".env.local"), "read"),
+        ("read_cron_jobs_env", str(HOME / "cron-jobs/.env"), "read"),
         ("list_run_user", "/run/user/1000", "list"),
         ("lstat_docker_sock", "/run/docker.sock", "lstat"),
     ]
@@ -346,12 +356,20 @@ def judge_files(judge: Judge, results: dict, ops: list[dict]) -> None:
     if "read_tmp_symlink" in tested:
         judge.check(symlink.get("ok") is True and symlink.get("bytes", 0) > 0,
                     ".local/tmp symlink 실경로 읽기 성공")
-    for ident in ("list_prod_config", "list_prod_secrets", "list_run_user"):
+    reexposed = results.get("read_reexposed_log", {})
+    for ident in ("list_prod_secrets", "list_run_user"):
         if ident not in tested:
             continue
         entry = results.get(ident, {})
         judge.check(entry.get("ok") is True and entry.get("count") == 0,
                     f"{ident} 가림(빈 디렉터리)")
+    if "list_prod_config" in tested:
+        # config/logs를 RO로 다시 열므로 config에는 logs 하나만 보인다.
+        # 재노출 대상이 실행되지 않았으면 빈 디렉터리다.
+        expected = 1 if reexposed.get("ok") is True else 0
+        entry = results.get("list_prod_config", {})
+        judge.check(entry.get("ok") is True and entry.get("count") == expected,
+                    f"list_prod_config 가림(기대 {expected}개)")
     runner = results.get("list_prod_state_runner", {})
     if "list_prod_state_runner" in tested:
         judge.check(runner.get("ok") is False and runner.get("errno") == "ENOENT",
@@ -360,6 +378,27 @@ def judge_files(judge: Judge, results: dict, ops: list[dict]) -> None:
     if "list_agent_common" in tested:
         judge.check(common.get("ok") is True and common.get("count", 0) > 0,
                     "agent-common-files RO 재노출")
+    for ident in ("read_kaleidoscope_env", "read_migration_orch_env", "read_vault_init",
+                  "read_workspace_env_local", "read_cron_jobs_env"):
+        if ident not in tested:
+            continue
+        entry = results.get(ident, {})
+        judge.check(entry.get("ok") is False or entry.get("bytes") == 0,
+                    f"{ident} 가림(읽기 실패 또는 0바이트)")
+    for ident in ("list_rclone_config", "list_backups"):
+        if ident not in tested:
+            continue
+        entry = results.get(ident, {})
+        judge.check(entry.get("ok") is True and entry.get("count") == 0,
+                    f"{ident} 가림(빈 디렉터리)")
+    if "read_reexposed_log" in tested:
+        judge.check(reexposed.get("ok") is True and reexposed.get("bytes", 0) > 0,
+                    "서비스 로그 RO 재노출(읽기 성공)")
+    reexposed_write = results.get("write_reexposed_log_dir", {})
+    if "write_reexposed_log_dir" in tested:
+        judge.check(reexposed_write.get("ok") is False
+                    and reexposed_write.get("errno") == "EROFS",
+                    "서비스 로그 디렉터리 쓰기 거부(EROFS)")
     for ident in (op["id"] for op in ops if op["id"].startswith("read_env_")):
         entry = results.get(ident)
         if entry is None:

@@ -158,7 +158,8 @@ def case_files(args: dict) -> None:
         if mode == "read":
             try:
                 with open(path, "rb") as handle:
-                    results[ident] = {"ok": True, "bytes": len(handle.read())}
+                    # 로그처럼 큰 파일은 앞 4KiB만 읽는다. 내용은 세지 않는다.
+                    results[ident] = {"ok": True, "bytes": len(handle.read(4096))}
             except OSError as exc:
                 results[ident] = {"ok": False, "errno": err_name(exc)}
         elif mode == "write":

@@ -51,6 +51,7 @@ const filesystemSchema = z.object({
     z.literal(".local/artifacts"),
   ]),
   additionalSensitiveRoots: z.array(z.string().min(1)),
+  readOnlyReexposedPaths: z.array(z.string().min(1)),
 }).strict();
 
 const networkSchema = z.object({

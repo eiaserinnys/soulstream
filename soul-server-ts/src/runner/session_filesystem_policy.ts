@@ -68,6 +68,9 @@ export function validateIsolationPreparationInput(
   for (const root of input.policy.filesystem.additionalSensitiveRoots) {
     requireAbsolute(root, "민감 루트");
   }
+  for (const path of input.policy.filesystem.readOnlyReexposedPaths) {
+    requireAbsolute(path, "재노출 경로");
+  }
   for (const [path, label] of [
     [input.workspaceDir, "workspace"],
     [input.sessionDirectory, "session"],
