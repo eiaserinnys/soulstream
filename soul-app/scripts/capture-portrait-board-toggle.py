@@ -11,6 +11,8 @@
   변경 전후가 같다.
 - 목록 칸 머리(tablet-main-header)와 피드 머리(tablet-feed-header)의 높이, 전환 줄과
   머리의 좌우 끝 좌표, 머리 안 버튼 목록, 검색창 폭, 페이지 오류를 JSON으로 남긴다.
+- 세로 목록 칸 머리는 높이 72로 피드 머리와 위아래 끝이 1px 이내로 같고, 검색창 높이는
+  48로 메뉴·PAS 단추와 세로 가운데가 1px 이내로 맞는다. 가로 사이드바 검색창은 52 그대로다.
 
 실행 방법
 ---------
@@ -254,6 +256,43 @@ def check_header_row(prefix: str, metrics: dict, checks: Checks) -> None:
     checks.check(f"{prefix} 피드 머리 존재", feed_header is not None, feed_header)
 
 
+def vertical_center(box: dict | None) -> float | None:
+    if not box:
+        return None
+    return round(box["top"] + box["height"] / 2, 2)
+
+
+def check_header_alignment(prefix: str, metrics: dict, checks: Checks, state: str) -> None:
+    """세로 목록 칸 머리가 피드 머리와 같은 72이고 줄 안 요소가 세로 가운데인지 본다."""
+    main_header = metrics["mainHeader"]
+    feed_header = metrics["feedHeader"]
+    checks.check(f"{prefix} {state} 머리 높이 72",
+                 main_header is not None and abs(main_header["height"] - 72) <= EDGE_TOLERANCE,
+                 main_header)
+    checks.check(f"{prefix} {state} 머리 위아래 끝 피드 머리와 일치",
+                 bool(main_header and feed_header
+                      and abs(main_header["top"] - feed_header["top"]) <= EDGE_TOLERANCE
+                      and abs(main_header["bottom"] - feed_header["bottom"]) <= EDGE_TOLERANCE),
+                 {"main": main_header and {"top": main_header["top"], "bottom": main_header["bottom"]},
+                  "feed": feed_header and {"top": feed_header["top"], "bottom": feed_header["bottom"]}})
+    search = metrics["searchInput"]
+    centers = {"검색창": vertical_center(search)}
+    for button in metrics["buttons"]:
+        if button["label"] in ("메뉴", "영구 세션 열기"):
+            centers[button["label"]] = vertical_center(button["box"])
+    values = [value for value in centers.values() if value is not None]
+    checks.check(f"{prefix} {state} 검색창 높이 48과 단추 세로 가운데",
+                 search is not None and abs(search["height"] - 48) <= EDGE_TOLERANCE
+                 and len(values) == 3 and max(values) - min(values) <= EDGE_TOLERANCE,
+                 {"search": search, "centers": centers})
+
+
+def check_sidebar_search(prefix: str, metrics: dict, checks: Checks) -> None:
+    search = metrics["searchInput"]
+    checks.check(f"{prefix} 사이드바 검색창 높이 52 유지",
+                 search is not None and abs(search["height"] - 52) <= EDGE_TOLERANCE, search)
+
+
 def check_toggle(prefix: str, metrics: dict, checks: Checks) -> None:
     track = metrics["toggleTrack"]
     checks.check(f"{prefix} 기존 보기/카드 보드 전환 줄 보임",
@@ -319,6 +358,7 @@ def capture_portrait(context: BrowserContext, base: str, out: Path, frame_id: st
         check_toggle(name, existing, checks)
         check_search(name, existing, checks)
         check_header_row(name, existing, checks)
+        check_header_alignment(name, existing, checks, "기존 보기")
         checks.check(f"{name} 기존 보기 폴더 본문",
                      existing["mainTitle"] is not None, existing["mainTitle"])
 
@@ -336,6 +376,7 @@ def capture_portrait(context: BrowserContext, base: str, out: Path, frame_id: st
             "notes": list(notes),
         }
         check_board_actions(name, board, checks)
+        check_header_alignment(name, board, checks, "카드 보드")
 
         try:
             page.get_by_test_id("board-header-overflow-button").click(timeout=8000)
@@ -391,6 +432,7 @@ def capture_landscape(context: BrowserContext, base: str, out: Path, frame_id: s
         }
         check_toggle(name, existing, checks)
         check_header_row(name, existing, checks)
+        check_sidebar_search(name, existing, checks)
 
         try:
             page.get_by_test_id("settings-segment-tablet-card-view-board").click(timeout=8000)

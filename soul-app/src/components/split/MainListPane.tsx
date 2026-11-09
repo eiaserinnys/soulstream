@@ -113,6 +113,7 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
           {effectiveShowSearch ? (
             <SessionSearchField
               ref={searchInputRef}
+              compact
               value={searchQuery}
               autoFocus={false}
               onFocus={useSearchStore.getState().openTabletSearch}

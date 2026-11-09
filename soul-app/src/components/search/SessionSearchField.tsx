@@ -20,6 +20,7 @@ export const SessionSearchField = forwardRef<TextInput, {
   placeholder?: string;
   testID?: string;
   accessibilityLabel?: string;
+  compact?: boolean;
 }>(function SessionSearchField({
   value,
   onChangeText,
@@ -31,12 +32,13 @@ export const SessionSearchField = forwardRef<TextInput, {
   placeholder = '세션 및 대화 검색',
   testID = 'session-search-input',
   accessibilityLabel = '세션 및 대화 검색',
+  compact = false,
 }, ref) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
   return (
-    <GlassSurface role="glassDense" style={styles.surface}>
-      <View style={styles.field}>
+    <GlassSurface role="glassDense" style={[styles.surface, compact && styles.compactHeight]}>
+      <View style={[styles.field, compact && styles.compactHeight]}>
         <Ionicons
           name="search-outline"
           color={t.colors.textMuted}
@@ -53,7 +55,7 @@ export const SessionSearchField = forwardRef<TextInput, {
           clearButtonMode="while-editing"
           placeholder={placeholder}
           placeholderTextColor={t.colors.textPlaceholder}
-          style={styles.input}
+          style={[styles.input, compact && styles.compactHeight]}
           onChangeText={onChangeText}
           onSubmitEditing={onSubmitEditing}
           onFocus={onFocus}
@@ -118,6 +120,9 @@ function makeStyles(t: DesignTokens) {
     },
     activeFilter: {
       borderColor: t.colors.accent,
+    },
+    compactHeight: {
+      minHeight: t.hitTarget.min,
     },
   });
 }
