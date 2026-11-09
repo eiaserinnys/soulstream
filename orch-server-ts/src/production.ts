@@ -36,6 +36,7 @@ import { SqlNodeCredentialRepository } from "./node_credentials/credential_repos
 import { NodeCredentialStore } from "./node_credentials/credential_store.js";
 import type { NodeCredentialResolver } from "./node_credentials/types.js";
 import { NodePairingService } from "./node_credentials/pairing_service.js";
+import { PortableConfigService } from "./node_bootstrap/portable_config_service.js";
 import { PlannerRepository } from "./planner/planner_repository.js";
 import {
   createEnvironmentConfigProvider,
@@ -230,6 +231,11 @@ export async function createLiveProductionApplication(
   overrides: LiveProductionApplicationOverrides = {},
 ): Promise<ProductionApplication> {
   const buildId=await readDashboardBuildId(config.dashboard_dir,config.environment);
+  const portableConfigService = new PortableConfigService({
+    configDir: config.portable_node_config_dir,
+    secretsFile: config.portable_node_secrets_file,
+    servingSourceCommit: buildId,
+  });
   const appConfig = toOrchServerTsConfig(config);
   const configProvider = createEnvironmentConfigProvider(config);
   const sqlResolver = overrides.sqlResolver ??
@@ -810,6 +816,21 @@ export async function createLiveProductionApplication(
       nodeCredentials: nodeCredentialStore,
       releasesDir: config.portable_node_releases_dir,
       currentSourceCommit: buildId,
+    },
+    agentProfileRoutes: {
+      ...providers.agentProfileRoutes,
+      portableRuntimeProfileTransform: {
+        authBearerToken: config.auth_bearer_token,
+        environment: config.environment,
+        nodeCredentials: nodeCredentialStore,
+        transform: (companyPc) => portableConfigService.transform(companyPc),
+      },
+    },
+    nodeBootstrapRoutes: {
+      service: portableConfigService,
+      authBearerToken: config.auth_bearer_token,
+      environment: config.environment,
+      nodeCredentials: nodeCredentialStore,
     },
     persistentContextRoutes: {
       authBearerToken: config.auth_bearer_token,
