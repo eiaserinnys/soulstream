@@ -36,13 +36,14 @@ export function defaultNodeId(hostname) {
   return slug.length >= 2 ? slug : "portable-node";
 }
 
-export async function startPairing({ upstream, nodeId, companyPc, timeoutMs, fetchJsonImpl = fetchJson }) {
+export async function startPairing({ upstream, nodeId, timeoutMs, fetchJsonImpl = fetchJson }) {
   validateNodeId(nodeId);
   const url = new URL("/api/node-pair/start", upstream).toString();
   const response = await fetchJsonImpl(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ node_id: nodeId, company_pc: Boolean(companyPc) }),
+    // 참여 API는 boolean company_pc를 요구하지만 무설치 노드는 회사 PC를 묻지 않는다.
+    body: JSON.stringify({ node_id: nodeId, company_pc: false }),
     timeoutMs,
   });
   if (response.status === 429) {

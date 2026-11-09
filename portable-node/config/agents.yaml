@@ -1,0 +1,13 @@
+agents:
+  - id: claude-default
+    name: Claude
+    backend: claude
+    default_preset: claude-opus
+    workspace_dir: __STATE_ROOT__/workspace
+    mcp_profile: portable-default
+  - id: codex-default
+    name: Codex
+    backend: codex
+    default_preset: codex-6.1-sol
+    workspace_dir: __STATE_ROOT__/workspace
+    mcp_profile: portable-default

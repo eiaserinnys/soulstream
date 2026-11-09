@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { createServer } from "node:http";
-import { chmod, cp, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -97,16 +97,16 @@ export async function makeSourceRepo(root) {
 }
 
 /**
- * 가짜 오케스트레이터. 참여/릴리스/구성 응답만 돌려준다.
- * state.current, state.bootstrap, state.bundle, state.pairing 으로 시나리오를 바꾼다.
+ * 가짜 오케스트레이터. 참여/릴리스 응답만 돌려준다.
+ * state.current, state.bundles, state.pairing 으로 시나리오를 바꾼다.
  */
 export async function startFakeOrchestrator({ root, token = TOKEN }) {
   const state = {
     token,
     current: null,
-    bootstrap: null,
     bundles: new Map(),
     fixtures: new Map(),
+    requestPaths: [],
     pairingCount: 0,
     pollCount: 0,
     pairingExpiresAt: new Date(Date.now() + 600000).toISOString(),
@@ -115,6 +115,7 @@ export async function startFakeOrchestrator({ root, token = TOKEN }) {
   };
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, "http://127.0.0.1");
+    state.requestPaths.push(url.pathname);
     const chunks = [];
     for await (const chunk of request) chunks.push(chunk);
     const body = Buffer.concat(chunks);
@@ -194,24 +195,6 @@ export async function startFakeOrchestrator({ root, token = TOKEN }) {
       }
       response.writeHead(200, { "content-type": "application/gzip", "content-length": bundle.length });
       response.end(bundle);
-      return;
-    }
-    if (url.pathname === "/api/node/bootstrap" && request.method === "POST") {
-      if (!bearer) {
-        sendJson(401, { error: "unauthorized" });
-        return;
-      }
-      const parsed = JSON.parse(body.toString("utf8") || "{}");
-      state.lastBootstrapRequest = parsed;
-      if (!state.bootstrap) {
-        sendJson(409, { code: "TRUST_CLASSIFICATION_PENDING" });
-        return;
-      }
-      if (state.bootstrap.source_commit && state.bootstrap.source_commit !== parsed.source_commit) {
-        sendJson(409, { code: "VERSION_MISMATCH" });
-        return;
-      }
-      sendJson(200, state.bootstrap);
       return;
     }
     sendJson(404, { error: "unknown" });
@@ -368,23 +351,6 @@ export function releaseRecord({ sourceCommit, bundle, key }) {
   };
 }
 
-export function bootstrapPayload(sourceCommit) {
-  return {
-    config_generation: `gen-${sourceCommit.slice(0, 8)}`,
-    source_commit: sourceCommit,
-    agents: "agents: []\n",
-    model_catalog: { presets: [] },
-    mcp_registry: { servers: [] },
-    mcp_profiles: { profiles: [] },
-    env: {
-      ATOM_SERVER_URL: "https://atom.example.invalid",
-      ATOM_API_KEY: "atom-secret-value",
-      EXTRA_FROM_BOOTSTRAP: "yes",
-      GH_TOKEN: "bootstrap-forbidden",
-    },
-  };
-}
-
 export async function writeDefaults(root, upstream, overrides = {}) {
   const defaults = {
     schema_version: 1,
@@ -410,7 +376,7 @@ export function launcherEnv({ stateDir, defaultsPath, lockPath, answers, extra =
     PORTABLE_NODE_STATE_DIR: stateDir,
     PORTABLE_NODE_DEFAULTS: defaultsPath,
     PORTABLE_NODE_RUNTIME_LOCK: lockPath,
-    PORTABLE_NODE_ANSWERS: JSON.stringify(answers ?? { node_id: "portable-test-node", company_pc: false }),
+    PORTABLE_NODE_ANSWERS: JSON.stringify(answers ?? { node_id: "portable-test-node" }),
     PORTABLE_NODE_TEST_SKIP_CODEX_LOGIN: "1",
     ...extra,
   };
@@ -503,6 +469,16 @@ export async function pathExists(path) {
   }
 }
 
+export const CONFIG_GENERATION_PATTERN = /^local-[0-9a-f]{12}$/;
+
+/** 실행기가 만든 구성 세대 폴더 목록(내용 기반 이름이라 판과 무관하게 하나여야 한다). */
+export async function configGenerations(stateDir) {
+  const entries = await readdir(join(stateDir, "config"), { withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isDirectory() && CONFIG_GENERATION_PATTERN.test(entry.name))
+    .map((entry) => join(stateDir, "config", entry.name));
+}
+
 /** 한 시험에 필요한 가짜 오케스트레이터·소스 체크아웃·런타임을 한 번에 만든다. */
 export async function makeScenario(name, { checkIntervalSecs = 3600 } = {}) {
   const root = await makeTempRoot(name);
@@ -521,9 +497,6 @@ export async function makeScenario(name, { checkIntervalSecs = 3600 } = {}) {
     const bundle = await makeBundle(root, { sourceCommit, ...options });
     orch.state.bundles.set(key, bundle.bytes);
     orch.state.current = releaseRecord({ sourceCommit, bundle, key });
-    const bootstrap = bootstrapPayload(sourceCommit);
-    if (options.bootstrapEnv) Object.assign(bootstrap.env, options.bootstrapEnv);
-    orch.state.bootstrap = bootstrap;
     return { bundle, release: orch.state.current };
   };
   const env = (extra = {}) => launcherEnv({ stateDir, defaultsPath, lockPath: lock.path, extra });

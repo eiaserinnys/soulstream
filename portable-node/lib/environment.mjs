@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { delimiter, dirname, join } from "node:path";
-import { filterEnv, formatEnvFile } from "./config.mjs";
+import { formatEnvFile } from "./config.mjs";
 import { run } from "./git.mjs";
 import { PORTABLE_RUNNER_DIRECTORY, runBind } from "./release.mjs";
 
@@ -115,7 +115,7 @@ export async function ensureCodexLogin({ stateRoot, codexExecutable }) {
 
 /**
  * 부모 환경을 통째로 물려주지 않는다. OS 실행에 필요한 최소 키만 가져오고,
- * 나머지는 launcher가 소유한 명시 값과 bootstrap이 허용 목록으로 준 값만 쓴다.
+ * 나머지는 launcher가 소유한 명시 값만 쓴다.
  */
 export function buildChildEnv({
   stateRoot,
@@ -125,14 +125,11 @@ export function buildChildEnv({
   releaseDir,
   runtimes,
   ports,
-  extraEnv,
 }) {
   const inherited = {};
   for (const key of ["SystemRoot", "SystemDrive", "ComSpec", "PATHEXT", "WINDIR", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "TZ"]) {
     if (process.env[key] !== undefined) inherited[key] = process.env[key];
   }
-  const { env: fromBootstrap, rejected } = filterEnv(extraEnv ?? {});
-  if (rejected.length > 0) log(`허용하지 않는 환경 키를 버렸습니다: ${rejected.join(", ")}`);
   const home = join(stateRoot, "home");
   const pathParts = [
     join(stateRoot, "bin"),
@@ -144,11 +141,10 @@ export function buildChildEnv({
   ].filter((part) => part.length > 0);
   return {
     ...inherited,
-    ...fromBootstrap,
     SOULSTREAM_NODE_ID: node.node_id,
     SOULSTREAM_UPSTREAM_URL: defaults.node_ws_url,
     AUTH_BEARER_TOKEN: node.token,
-    // P4b 변환이 soulstream MCP Authorization 헤더에 남긴 env 참조를 채운다.
+    // 실행기 기본 설정의 soulstream MCP Authorization 헤더가 env로 참조한다.
     PORTABLE_LOCAL_MCP_AUTHORIZATION: `Bearer ${node.token}`,
     ENVIRONMENT: "production",
     HOST: "127.0.0.1",
@@ -176,7 +172,6 @@ export function buildChildEnv({
     CODEX_HOME: join(stateRoot, "codex"),
     WORKTREE_MCP_ENABLED: "true",
     WORKTREE_PROJECTS_ROOT: join(stateRoot, "workspace", ".projects"),
-    ATOM_ENABLED: "true",
     SESSION_ISOLATION_MODE: "off",
     DISABLE_AUTOUPDATER: "1",
     PATH: pathParts.join(delimiter),
@@ -203,7 +198,6 @@ export async function prepareRelease({
   releaseDir,
   runtimes,
   ports,
-  extraEnv,
 }) {
   const env = buildChildEnv({
     stateRoot,
@@ -213,7 +207,6 @@ export async function prepareRelease({
     releaseDir,
     runtimes,
     ports,
-    extraEnv,
   });
   const envFile = join(releaseDir, ".env.soul-server-ts");
   await writeFile(envFile, formatEnvFile(env), { mode: 0o600 });
