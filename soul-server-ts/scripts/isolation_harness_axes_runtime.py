@@ -388,7 +388,10 @@ def axis_claude_auth(ctx: dict) -> dict:
 def axis_timing(ctx: dict) -> dict:
     judge = Judge()
     real_projects = Path(ctx["workspace"]) / ".projects"
-    repos = sorted(path.name for path in real_projects.iterdir() if (path / ".git").is_dir())
+    # 운영 listRepositoryIds와 같이 링크가 아닌 디렉터리와 링크가 아닌 .git만 고른다.
+    repos = sorted(path.name for path in real_projects.iterdir()
+                   if path.is_dir() and not path.is_symlink()
+                   and (path / ".git").is_dir() and not (path / ".git").is_symlink())
     subs = ("objects", "refs", "logs", "worktrees")
     before = {name: {sub: (real_projects / name / ".git" / sub).is_dir() for sub in subs}
               for name in repos}

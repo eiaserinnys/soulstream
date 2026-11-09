@@ -68,6 +68,8 @@
 
 `soul-server-ts/scripts/verify-session-isolation.py`는 운영 코드의 prepare·argv·policy를 그대로 쓰고 CLI 대신 payload만 바꿔 `composeSessionIsolation` → `applyRestrictedRunnerIsolation` → `launchIsolatedSession`까지 돈다. 축은 열다섯이다: network, privilege, internet, network-failure, files, dynamic-worktree, git, cache, gh, termination, heavy-work, observe, local-mask, claude-auth, timing. `test-db`, `wsl`, `internal-mcp`, `unit-covered`는 아직 하네스가 실행하지 않는다(전용 시험 Postgres 없음, WSL 노드 단계, enforce 서버 필요, 기존 단위 시험이 정본).
 
+하네스의 운영 대상 상수(`PROD`, `MASKED`)와 운영 로그 경로는 eiaserinnys 배치다. 다른 노드에서는 files 축의 운영 대상 점검과 observe 축의 운영 로그 읽기를 판정할 수 없으므로 그 노드의 카나리 세션으로 확인한다. timing 축은 운영 `listRepositoryIds`와 같이 심볼릭 링크가 아닌 `.projects` 리포만 등록한다.
+
 신호 축은 따로다. `--axis signal --acknowledge-signal-axis` 없이는 돌지 않고 다른 축과 섞지도 않는다. 이 축은 호스트 controller가 신호를 보내지 않고 바깥 bwrap PID 상자 안에서 handshake한 뒤, payload 자신의 PID 네임스페이스 안 프로세스에만 신호를 보낸다. 운영 호스트 PID 네임스페이스에서는 돌리지 않는다. 하네스는 먼저 음수·0·1·미등록 PID 신호를 거부하는 자체 시험을 통과해야 한다.
 
 ## 남은 위험
@@ -79,6 +81,7 @@
 - (아직 막지 않음) 시험 DB 하나를 여러 격리 세션이 함께 쓴다. 새 컨테이너가 필요한 시험은 `TEST_DATABASE_URL`이 있으면 실패할 수 있다.
 - (아직 막지 않음) 비밀 경로 가림은 노드별 목록 방식이다. 홈 전체를 가리고 허용 목록만 여는 방식은 하지 않았다. 새 비밀 폴더가 생기면 정책 목록에 더해야 한다.
 - (아직 막지 않음) Windows 노드는 대상이 아니다. win32는 판정이 full/"windows"로 끝나고 상자를 만들지 않는다.
+- (알려진 한계) git view는 `packed-refs`를 파일 하나로 RO bind하므로 상자 안 git은 그 파일을 rename으로 교체하지 못한다(EBUSY). `packed-refs`에 든 ref 삭제는 실패한다. eias-linegames-wsl의 git은 loose ref를 prune할 때도 packed-refs를 다시 쓰므로 `fetch --prune`이 rc 0으로 끝나면서 stale 원격 추적 ref를 남긴다. 브랜치 정리는 상자 밖 세션이 한다.
 - (알려진 한계) 턴 도중 접근 토큰이 만료되면 그 턴은 인증 오류로 끝난다. 다음 턴의 선택은 갱신된 토큰으로 이어진다.
 
 이 장을 갱신해야 하는 변경 부류: 격리 판정식·정책 JSON과 스키마·mask와 mount 순서·인증 준비·네트워크 정책·restricted MCP principal과 도구 분류·관측 도구·restricted 워크트리·릴리스 env allowlist 변경.
