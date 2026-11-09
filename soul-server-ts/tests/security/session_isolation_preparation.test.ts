@@ -351,6 +351,7 @@ describe("prepareIsolationPlan", () => {
       join(fixture.home, ".claude-accounts"),
       join(fixture.home, ".gemini"),
       join(fixture.home, ".pm2"),
+      join(fixture.home, ".local/share/soulstream/credentials"),
       "/run/user/1000",
       fixture.sensitive,
       dirname(fixture.sessionDir),
@@ -501,6 +502,98 @@ describe("prepareIsolationPlan", () => {
     expect(masks).toContainEqual({ path: fixture.sensitive, kind: "directory" });
   });
 
+  it("refuses when an existing symlink mask target cannot be resolved", async () => {
+    const fixture = await makeFixture({
+      sensitiveRoots: ({ root }) => [join(root, "alias-root")],
+    });
+    const aliasRoot = join(fixture.root, "alias-root");
+    symlinkSync(fixture.sensitive, aliasRoot);
+    fixture.options.realPathFailures = [aliasRoot];
+    fixture.ports = createFakeHostPorts(fixture.options);
+
+    await expectErrorCode(
+      prepareIsolationPlan(fixture.input, fixture.ports),
+      SESSION_ISOLATION_UNAVAILABLE,
+    );
+  });
+
+  it("refuses when an existing directory mask target cannot be resolved", async () => {
+    const fixture = await makeFixture();
+    fixture.options.realPathFailures = [fixture.sensitive];
+    fixture.ports = createFakeHostPorts(fixture.options);
+
+    await expectErrorCode(
+      prepareIsolationPlan(fixture.input, fixture.ports),
+      SESSION_ISOLATION_UNAVAILABLE,
+    );
+  });
+
+  it("masks the credential root for every backend and reopens it only for Codex", async () => {
+    const credentialRootOf = (fixture: Fixture): string =>
+      join(fixture.home, ".local/share/soulstream/credentials");
+
+    const codex = await makeFixture();
+    const codexPlan = await prepareIsolationPlan(codex.input, codex.ports);
+    expect(codexPlan.spec.masks).toContainEqual({
+      path: credentialRootOf(codex),
+      kind: "directory",
+    });
+    expect(bindingOf(codexPlan.spec.bindings, codex.canonicalCodex)).toMatchObject({
+      writable: true,
+    });
+
+    for (const backend of ["claude", "opencode"] as const) {
+      const fixture = await makeFixture({
+        backend,
+        authPreparation: { kind: "apikey-env" },
+      });
+      const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+      expect(prepared.spec.masks).toContainEqual({
+        path: credentialRootOf(fixture),
+        kind: "directory",
+      });
+      expect(
+        bindingOf(prepared.spec.bindings, fixture.canonicalCodex),
+      ).toBeUndefined();
+    }
+  });
+
+  it("masks service env files and backups at the dotenv directory top level", async () => {
+    const fixture = await makeFixture();
+    const serviceDir = join(fixture.root, "service-env");
+    touch(fixture.root, "service-env/.env.soul-server-ts", "A=1", 0o600);
+    touch(fixture.root, "service-env/.env.soul-server-ts.before-20261106-x", "B=2", 0o600);
+    touch(fixture.root, "service-env/.env.local", "C=3", 0o600);
+    const envTarget = touch(fixture.root, "service-env/env-target", "D=4", 0o600);
+    symlinkSync(envTarget, join(serviceDir, ".env"));
+    touch(fixture.root, "service-env/package.json", "{}", 0o644);
+    touch(fixture.root, "service-env/sub/.env.nested", "E=5", 0o600);
+
+    fixture.options.serviceEnvironmentDir = serviceDir;
+    fixture.ports = createFakeHostPorts(fixture.options);
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+    const masks = prepared.spec.masks;
+
+    for (const path of [
+      join(serviceDir, ".env.soul-server-ts"),
+      join(serviceDir, ".env.soul-server-ts.before-20261106-x"),
+      join(serviceDir, ".env.local"),
+    ]) {
+      expect(masks).toContainEqual({ path, kind: "file" });
+    }
+    // `.env` symlink는 bwrap destination 제약 때문에 실경로만 가린다.
+    expect(masks).toContainEqual({ path: envTarget, kind: "file" });
+    expect(masks.some((mask) => mask.path === join(serviceDir, ".env"))).toBe(false);
+    expect(
+      masks.some((mask) => mask.path === join(serviceDir, "package.json")),
+    ).toBe(false);
+    // 하위 디렉터리로는 내려가지 않는다.
+    expect(
+      masks.some((mask) => mask.path === join(serviceDir, "sub/.env.nested")),
+    ).toBe(false);
+  });
+
   it("rejects a Gemini/Antigravity restricted start before producing a spec", async () => {
     const fixture = await makeFixture({
       backend: "antigravity",
@@ -553,6 +646,11 @@ describe("prepareIsolationPlan", () => {
       join(fixture.sessionDir, "sandbox", "claude-config"),
     );
     expect(prepared.spec.masks).toContainEqual({ path: tokenFile, kind: "file" });
+    expect(prepared.spec.masks).toContainEqual({
+      path: join(fixture.home, ".local/share/soulstream/credentials"),
+      kind: "directory",
+    });
+    expect(bindingOf(prepared.spec.bindings, fixture.canonicalCodex)).toBeUndefined();
     expect(prepared.contextNotice).not.toContain("test-oauth-token");
     expect(prepared.contextNotice).not.toContain(tokenFile);
     expect(fixture.ports.calls.verifyAuthPreparation).toBe(1);

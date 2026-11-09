@@ -52,6 +52,8 @@ export async function prepareIsolationMasks(
     }
     const fact = await ports.lstatPath(path);
     if (!fact) {
+      // 없는 대상만 required=false에서 건너뛴다. 있는 대상의 확인 실패는
+      // required와 무관하게 거절한다(모르는 채로 노출하지 않는다).
       if (required) {
         throw new SessionIsolationUnavailableError(
           `필수 mask 대상을 찾을 수 없습니다: ${path}`,
@@ -67,36 +69,37 @@ export async function prepareIsolationMasks(
       try {
         real = await ports.resolveRealPath(path);
       } catch {
-        if (required) {
-          throw new SessionIsolationUnavailableError(
-            `필수 mask symlink의 실경로를 찾을 수 없습니다: ${path}`,
-          );
-        }
-        return;
+        throw new SessionIsolationUnavailableError(
+          `mask symlink의 실경로를 확인할 수 없습니다: ${path}`,
+        );
       }
       const realFact = await ports.lstatPath(real);
       if (!realFact) {
-        if (required) {
-          throw new SessionIsolationUnavailableError(
-            `필수 mask symlink의 실경로가 없습니다: ${path}`,
-          );
-        }
-        return;
+        throw new SessionIsolationUnavailableError(
+          `mask symlink의 실경로가 없습니다: ${path}`,
+        );
       }
       addEntry(real, realFact.kind === "directory" ? "directory" : "file");
       return;
     }
 
     addEntry(path, fact.kind === "directory" ? "directory" : "file");
+    let real: string;
     try {
-      const real = await ports.resolveRealPath(path);
-      if (real === path) return;
-      const realFact = await ports.lstatPath(real);
-      if (!realFact) return;
-      addEntry(real, realFact.kind === "directory" ? "directory" : "file");
+      real = await ports.resolveRealPath(path);
     } catch {
-      // 실경로를 확인할 수 없으면 논리 경로 mask만 둔다.
+      throw new SessionIsolationUnavailableError(
+        `mask 대상의 실경로를 확인할 수 없습니다: ${path}`,
+      );
     }
+    if (real === path) return;
+    const realFact = await ports.lstatPath(real);
+    if (!realFact) {
+      throw new SessionIsolationUnavailableError(
+        `mask 대상의 실경로가 없습니다: ${path}`,
+      );
+    }
+    addEntry(real, realFact.kind === "directory" ? "directory" : "file");
   };
 
   const rebindReadOnly = async (
@@ -129,14 +132,22 @@ export async function prepareIsolationMasks(
   // PM2는 socket까지 mask하고 로그만 RO로 다시 연다.
   await rebindReadOnly(join(input.homeDirectory, ".pm2/logs"), false);
 
-  // 2. user bus·keyring.
+  // 2. 자격 루트. backend와 무관하게 디렉터리 mask로 두고, Codex 세션만
+  // canonical Codex 디렉터리를 auth binding으로 그 아래 RW 재노출한다.
+  // B1은 mask → child bind → remount-ro 순서로 적용한다.
+  const credentialRoot = dirname(
+    join(input.homeDirectory, input.policy.filesystem.credentialRelativeDirectory),
+  );
+  await addMask(credentialRoot, false);
+
+  // 3. user bus·keyring.
   await addMask(`/run/user/${input.uid}`, false);
 
-  // 3. docker socket alias.
+  // 4. docker socket alias.
   await addMask("/run/docker.sock", false);
   await addMask("/var/run/docker.sock", false);
 
-  // 4. runner state: SOUL_RUNNER_STATE_DIR 전체를 가리고 현재 세션 sandbox만
+  // 5. runner state: SOUL_RUNNER_STATE_DIR 전체를 가리고 현재 세션 sandbox만
   // plan에서 RW로 다시 연다. sessionDirectory는 runnerProcessPaths의 <state>/<slug>다.
   const stateRoot = dirname(input.sessionDirectory);
   if (stateRoot === input.sessionDirectory || stateRoot === "/") {
@@ -146,21 +157,34 @@ export async function prepareIsolationMasks(
   }
   await addMask(stateRoot, true);
 
-  // 5. 노드별 민감 루트.
+  // 6. 노드별 민감 루트.
   for (const root of input.policy.filesystem.additionalSensitiveRoots) {
     await addMask(root, false);
   }
 
-  // 6. masked prod-state 아래 승인된 공통 skill/script 디렉터리만 RO 재노출.
+  // 7. masked prod-state 아래 승인된 공통 skill/script 디렉터리만 RO 재노출.
   const agentCommonFiles = await ports.resolveAgentCommonFilesDirectory();
   if (agentCommonFiles) {
     await rebindReadOnly(agentCommonFiles, false);
   }
 
-  // 7. WSL은 /mnt와 /run/WSL이 필수다. 없으면 restricted를 시작하지 않는다.
+  // 8. WSL은 /mnt와 /run/WSL이 필수다. 없으면 restricted를 시작하지 않는다.
   if (wsl) {
     await addMask("/mnt", true);
     await addMask("/run/WSL", true);
+  }
+
+  // 9. 서비스 env 파일. dotenv가 읽는 디렉터리의 최상위에서 `.env`로 시작하는
+  // file/symlink만 가린다. 수동 편집이 만드는 `.before-*` 백업도 함께 걸리고,
+  // 하위 디렉터리로는 내려가지 않는다. symlink는 실경로를 가린다.
+  const serviceEnvironmentDirectory = await ports.resolveServiceEnvironmentDirectory();
+  if (serviceEnvironmentDirectory) {
+    const entries = await ports.listDirectory(serviceEnvironmentDirectory);
+    for (const entry of entries) {
+      if (!entry.name.startsWith(".env")) continue;
+      if (entry.kind !== "file" && entry.kind !== "symlink") continue;
+      await addMask(join(serviceEnvironmentDirectory, entry.name), false);
+    }
   }
 
   for (const mask of args.extraMasks) {

@@ -298,6 +298,11 @@ export interface IsolationHostPorts {
   readClaudeOauthToken(): Promise<string>;
   /** 공통 파일 디렉터리 경로만 조회한다. 내용(비밀)은 읽지 않는다. */
   resolveAgentCommonFilesDirectory(): Promise<string | null>;
+  /**
+   * 서버 dotenv가 `.env.soul-server-ts`를 읽는 디렉터리 경로만 조회한다.
+   * env 파일 내용(비밀)은 읽지 않는다. 없으면 null.
+   */
+  resolveServiceEnvironmentDirectory(): Promise<string | null>;
 }
 
 /** B1이 쓰는 프로세스 포트. 실제 프로세스를 다루는 곳은 이 어댑터뿐이다. */

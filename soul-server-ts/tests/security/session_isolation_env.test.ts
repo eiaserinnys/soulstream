@@ -69,6 +69,34 @@ describe("buildRestrictedSessionEnv", () => {
     expect(env.WSL_INTEROP).toBe("/run/WSL/8_interop");
   });
 
+  it("removes forbidden keys introduced by additions and keeps the approved test DB", () => {
+    const env = build({
+      additions: {
+        SSH_AUTH_SOCK: "/run/user/1000/ssh.sock",
+        DATABASE_URL: "postgres://prod@127.0.0.1/soulstream",
+        DOCKER_HOST: "unix:///run/docker.sock",
+        SCCACHE_DIR: "/home/eias/.cache/sccache",
+        TEST_DATABASE_URL: "postgres://tester@127.0.0.1:15432/soulstream_test",
+      },
+    });
+
+    for (const key of [
+      "SSH_AUTH_SOCK",
+      "DATABASE_URL",
+      "DOCKER_HOST",
+      "SCCACHE_DIR",
+    ]) {
+      expect(env).not.toHaveProperty(key);
+    }
+    expect(env.TEST_DATABASE_URL).toBe(
+      "postgres://tester@127.0.0.1:15432/soulstream_test",
+    );
+
+    // additions가 승인 시험 DB를 주지 않으면 base의 값도 남지 않는다.
+    const withoutApproval = build({ additions: { SSH_AUTH_SOCK: "/tmp/ssh.sock" } });
+    expect(withoutApproval).not.toHaveProperty("TEST_DATABASE_URL");
+  });
+
   it("removes WSL_INTEROP only inside WSL", () => {
     expect(build({ wsl: true })).not.toHaveProperty("WSL_INTEROP");
   });

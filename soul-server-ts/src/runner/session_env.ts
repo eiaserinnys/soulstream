@@ -81,12 +81,25 @@ export function buildRestrictedSessionEnv(
   const env: Record<string, string> = {};
   for (const [key, value] of Object.entries(input.baseEnv)) {
     if (value === undefined) continue;
-    if (isRemovedKey(key)) continue;
     env[key] = value;
   }
   for (const [key, value] of Object.entries(input.additions)) {
     env[key] = value;
   }
+
+  // base와 additions를 합친 결과 전체에 §11 제거 정책을 다시 적용한다.
+  // additions로 관리 자격이 되살아나지 않게 하는 경계다. 예외는 승인된
+  // 시험 DB 하나뿐이고, 그 키도 additions가 제공한 경우에만 남긴다.
+  const keepsTestDatabase = Object.prototype.hasOwnProperty.call(
+    input.additions,
+    "TEST_DATABASE_URL",
+  );
+  for (const key of Object.keys(env)) {
+    if (!isRemovedKey(key)) continue;
+    if (key === "TEST_DATABASE_URL" && keepsTestDatabase) continue;
+    delete env[key];
+  }
+
   env.AUTH_BEARER_TOKEN = input.restrictedCredential;
   if (input.wsl) delete env.WSL_INTEROP;
 

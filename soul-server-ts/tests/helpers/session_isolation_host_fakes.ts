@@ -40,8 +40,12 @@ export interface FakeHostPortsOptions {
   lockFilePaths?: Record<string, string>;
   mainStorePath?: string | null;
   agentCommonFilesDir?: string | null;
+  /** dotenv가 .env.soul-server-ts를 읽는 디렉터리. 없으면 마스킹하지 않는다. */
+  serviceEnvironmentDir?: string | null;
   claudeOauthToken?: string;
   gitCommonDirs?: Record<string, string>;
+  /** 실경로 확인만 실패시키는 절대 경로. lstat 등 다른 포트는 정상 응답한다. */
+  realPathFailures?: string[];
   githubCredential?: Record<string, string>;
   sanitizeMcpServers?: (
     servers: readonly ResolvedMcpServer[],
@@ -170,6 +174,9 @@ export function createFakeHostPorts(options: FakeHostPortsOptions): FakeHostPort
       chmodSync(destination, mode);
     },
     async resolveRealPath(path: string): Promise<string> {
+      if (options.realPathFailures?.includes(path)) {
+        throw new Error(`EACCES: ${path}`);
+      }
       const override = systemFact(path);
       if (override !== undefined) {
         if (override === null) throw new Error(`ENOENT: ${path}`);
@@ -248,6 +255,9 @@ export function createFakeHostPorts(options: FakeHostPortsOptions): FakeHostPort
     },
     async resolveAgentCommonFilesDirectory(): Promise<string | null> {
       return options.agentCommonFilesDir ?? null;
+    },
+    async resolveServiceEnvironmentDirectory(): Promise<string | null> {
+      return options.serviceEnvironmentDir ?? null;
     },
   };
 

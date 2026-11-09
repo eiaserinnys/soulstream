@@ -99,6 +99,7 @@ describe("session isolation contract", () => {
       resolveMainPackageStorePath: vi.fn(async () => null),
       readClaudeOauthToken: vi.fn(async () => "token"),
       resolveAgentCommonFilesDirectory: vi.fn(async () => null),
+      resolveServiceEnvironmentDirectory: vi.fn(async () => null),
     };
     const input: IsolationPreparationInput = {
       decision: {
