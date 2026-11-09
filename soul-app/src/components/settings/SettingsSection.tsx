@@ -33,7 +33,7 @@ export function SettingsSection({
   return (
     <View testID={`settings-section-${id}`} style={styles.section}>
       {!workspace ? <Text style={styles.title}>{title}</Text> : null}
-      {workspace ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.md }}>
+      {workspace ? <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: t.spacing.md }}>
         {visibleChildren.map((child, index) => {
           const fullWidth = fullWidthChildIndexes.includes(index);
           return <SettingsSurface key={isValidElement(child) ? child.key ?? index : index} flattened={flattened} role="glassSoft" style={[styles.surface, flattened && styles.flattenedSurface, { width: fullWidth ? '100%' : workspace.columns && visibleChildren.length > 1 ? '47%' : '100%', flexGrow: fullWidth ? 0 : 1 }, contentStyle]}>{child}</SettingsSurface>;
