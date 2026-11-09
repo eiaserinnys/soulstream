@@ -1,0 +1,2168 @@
+{
+  "sourceSyncCommit": "1f15e59e3747fc5de5e245babf16753cce8a7367",
+  "method": "Actual-source bounded checks plus source-mapped TLA+ models; see README.md for limitations.",
+  "runtime": "v24.22.1",
+  "tlcRelease": "v1.7.4",
+  "tlcReportedVersion": "2.19",
+  "tlcSha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+  "integrationPass": true,
+  "integrationChecks": [
+    {
+      "subsystem": "runner",
+      "kind": "actual-source",
+      "pass": true,
+      "exitCode": 0,
+      "log": "tools/state-verification/.output/runner/source-check.log",
+      "results": "tools/state-verification/.output/runner/results.json"
+    },
+    {
+      "subsystem": "runner",
+      "kind": "TLC",
+      "config": "Recovery.cfg",
+      "pass": true,
+      "exitCode": 0,
+      "expectedViolation": null,
+      "observedViolation": null,
+      "log": "tools/state-verification/.output/runner/models/Recovery/tlc.log",
+      "distinctStates": 64
+    },
+    {
+      "subsystem": "runner",
+      "kind": "TLC",
+      "config": "Recovery-owner-mutant.cfg",
+      "pass": true,
+      "exitCode": 12,
+      "expectedViolation": "NoNewExecutionDamage",
+      "observedViolation": "NoNewExecutionDamage",
+      "log": "tools/state-verification/.output/runner/models/Recovery-owner-mutant/tlc.log",
+      "distinctStates": 22
+    },
+    {
+      "subsystem": "runner",
+      "kind": "TLC",
+      "config": "Recovery-replay-mutant.cfg",
+      "pass": true,
+      "exitCode": 12,
+      "expectedViolation": "NoRetirementBeforeReplay",
+      "observedViolation": "NoRetirementBeforeReplay",
+      "log": "tools/state-verification/.output/runner/models/Recovery-replay-mutant/tlc.log",
+      "distinctStates": 50
+    },
+    {
+      "subsystem": "cards",
+      "kind": "actual-source",
+      "pass": true,
+      "exitCode": 0,
+      "log": "tools/state-verification/.output/cards/source-check.log",
+      "results": "tools/state-verification/.output/cards/results.json"
+    },
+    {
+      "subsystem": "cards",
+      "kind": "TLC",
+      "config": "CardWorkerLaunch.cfg",
+      "pass": true,
+      "exitCode": 0,
+      "expectedViolation": null,
+      "observedViolation": null,
+      "log": "tools/state-verification/.output/cards/models/CardWorkerLaunch/tlc.log",
+      "distinctStates": 57
+    },
+    {
+      "subsystem": "cards",
+      "kind": "TLC",
+      "config": "CardWorkerLaunch.skip-claim.cfg",
+      "pass": true,
+      "exitCode": 12,
+      "expectedViolation": "AtMostOneLaunch",
+      "observedViolation": "AtMostOneLaunch",
+      "log": "tools/state-verification/.output/cards/models/CardWorkerLaunch.skip-claim/tlc.log",
+      "distinctStates": 40
+    },
+    {
+      "subsystem": "cards",
+      "kind": "TLC",
+      "config": "CardWorkerLaunch.ignore-accepted.cfg",
+      "pass": true,
+      "exitCode": 12,
+      "expectedViolation": "AcceptedNotRejected",
+      "observedViolation": "AcceptedNotRejected",
+      "log": "tools/state-verification/.output/cards/models/CardWorkerLaunch.ignore-accepted/tlc.log",
+      "distinctStates": 41
+    },
+    {
+      "subsystem": "delivery",
+      "kind": "actual-source",
+      "pass": true,
+      "exitCode": 0,
+      "log": "tools/state-verification/.output/delivery/source-check.log",
+      "results": "tools/state-verification/.output/delivery/results.json"
+    },
+    {
+      "subsystem": "outbox",
+      "kind": "actual-source",
+      "pass": true,
+      "exitCode": 0,
+      "log": "tools/state-verification/.output/outbox/source-check.log",
+      "results": "tools/state-verification/.output/outbox/results.json"
+    },
+    {
+      "subsystem": "outbox",
+      "kind": "TLC",
+      "config": "OutboxPublish.cfg",
+      "pass": true,
+      "exitCode": 0,
+      "expectedViolation": null,
+      "observedViolation": null,
+      "log": "tools/state-verification/.output/outbox/models/OutboxPublish/tlc.log",
+      "distinctStates": 18
+    },
+    {
+      "subsystem": "outbox",
+      "kind": "TLC",
+      "config": "OutboxPublish-mutant.cfg",
+      "pass": true,
+      "exitCode": 12,
+      "expectedViolation": "NeverPublishOnStaleConnection",
+      "observedViolation": "NeverPublishOnStaleConnection",
+      "log": "tools/state-verification/.output/outbox/models/OutboxPublish-mutant/tlc.log",
+      "distinctStates": 14
+    }
+  ],
+  "actualSourceResults": {
+    "runner": {
+      "schemaVersion": 1,
+      "revision": "1f15e59e3747fc5de5e245babf16753cce8a7367",
+      "runtime": "v24.22.1",
+      "method": "Finite input enumeration executing mechanically extracted original TypeScript function bodies with native Node type stripping. Dependency boundaries use explicit mocks. Mutants edit actual extracted source guard conditions.",
+      "scope": "Function-level synchronous observations and awaited dependency results; not concurrent schedules, real process termination, kernel locks, SQL, IPC or end-to-end deployment.",
+      "sourceHashes": {
+        "runner_process_registry": "9ad42da88ee86f0d6f2b6e2706fbacd8294d381b1cf8f4c2affbba8b562fbdf3",
+        "runner_recovery_disposition": "c6fb794173ba767fbbcd7196c3daa8d3c88174288ef2e3c8a0087d1307eee431"
+      },
+      "baseline": {
+        "name": "baseline",
+        "cases": {
+          "classification": 96,
+          "reaped_cleanup": 48,
+          "recovery_disposition": 48
+        },
+        "assertions": 194,
+        "failures": [],
+        "passed": true
+      },
+      "mutants": [
+        {
+          "name": "mutant_disable_new_owner_guard",
+          "cases": {
+            "classification": 96,
+            "reaped_cleanup": 48,
+            "recovery_disposition": 48
+          },
+          "assertions": 194,
+          "failures": [
+            {
+              "property": "old_cleanup_does_not_touch_new_execution",
+              "input": {
+                "hasPromise": false,
+                "hasActivation": false,
+                "active": true,
+                "currentId": "new",
+                "oldAlive": false,
+                "calls": [
+                  "retireAttached",
+                  "invalidate",
+                  "recoverOffline"
+                ]
+              }
+            },
+            {
+              "property": "old_cleanup_does_not_touch_new_execution",
+              "input": {
+                "hasPromise": false,
+                "hasActivation": false,
+                "active": true,
+                "currentId": "new",
+                "oldAlive": true,
+                "calls": [
+                  "retireAttached",
+                  "terminate",
+                  "invalidate",
+                  "recoverOffline"
+                ]
+              }
+            },
+            {
+              "property": "old_cleanup_does_not_touch_new_execution",
+              "input": {
+                "hasPromise": false,
+                "hasActivation": true,
+                "active": false,
+                "currentId": "new",
+                "oldAlive": false,
+                "calls": [
+                  "retireAttached",
+                  "invalidate",
+                  "recoverOffline"
+                ]
+              }
+            },
+            {
+              "property": "old_cleanup_does_not_touch_new_execution",
+              "input": {
+                "hasPromise": false,
+                "hasActivation": true,
+                "active": false,
+                "currentId": "new",
+                "oldAlive": true,
+                "calls": [
+                  "retireAttached",
+                  "terminate",
+                  "invalidate",
+                  "recoverOffline"
+                ]
+              }
+            },
+            {
+              "property": "old_cleanup_does_not_touch_new_execution",
+              "input": {
+                "hasPromise": false,
+                "hasActivation": true,
+                "active": true,
+                "currentId": "new",
+                "oldAlive": false,
+                "calls": [
+                  "retireAttached",
+                  "invalidate",
+                  "recoverOffline"
+                ]
+              }
+            },
+            {
+              "property": "old_cleanup_does_not_touch_new_execution",
+              "input": {
+                "hasPromise": false,
+                "hasActivation": true,
+                "active": true,
+                "currentId": "new",
+                "oldAlive": true,
+                "calls": [
+                  "retireAttached",
+                  "terminate",
+                  "invalidate",
+                  "recoverOffline"
+                ]
+              }
+            },
+            {
+              "property": "old_cleanup_does_not_touch_new_execution",
+              "input": {
+                "hasPromise": true,
+                "hasActivation": false,
+                "active": false,
+                "currentId": "new",
+                "oldAlive": false,
+                "calls": [
+                  "retireAttached",
+                  "invalidate",
+                  "recoverOffline"
+                ]
+              }
+            },
+            {
+              "property": "old_cleanup_does_not_touch_new_execution",
+              "input": {
+                "hasPromise": true,
+                "hasActivation": false,
+                "active": false,
+                "currentId": "new",
+                "oldAlive": true,
+                "calls": [
+                  "retireAttached",
+                  "terminate",
+                  "invalidate",
+                  "recoverOffline"
+                ]
+              }
+            },
+            {
+              "property": "old_cleanup_does_not_touch_new_execution",
+              "input": {
+                "hasPromise": true,
+                "hasActivation": false,
+                "active": true,
+                "currentId": "new",
+                "oldAlive": false,
+                "calls": [
+                  "retireAttached",
+                  "invalidate",
+                  "recoverOffline"
+                ]
+              }
+            },
+            {
+              "property": "old_cleanup_does_not_touch_new_execution",
+              "input": {
+                "hasPromise": true,
+                "hasActivation": false,
+                "active": true,
+                "currentId": "new",
+                "oldAlive": true,
+                "calls": [
+                  "retireAttached",
+                  "terminate",
+                  "invalidate",
+                  "recoverOffline"
+                ]
+              }
+            },
+            {
+              "property": "old_cleanup_does_not_touch_new_execution",
+              "input": {
+                "hasPromise": true,
+                "hasActivation": true,
+                "active": false,
+                "currentId": "new",
+                "oldAlive": false,
+                "calls": [
+                  "retireAttached",
+                  "invalidate",
+                  "recoverOffline"
+                ]
+              }
+            },
+            {
+              "property": "old_cleanup_does_not_touch_new_execution",
+              "input": {
+                "hasPromise": true,
+                "hasActivation": true,
+                "active": false,
+                "currentId": "new",
+                "oldAlive": true,
+                "calls": [
+                  "retireAttached",
+                  "terminate",
+                  "invalidate",
+                  "recoverOffline"
+                ]
+              }
+            },
+            {
+              "property": "old_cleanup_does_not_touch_new_execution",
+              "input": {
+                "hasPromise": true,
+                "hasActivation": true,
+                "active": true,
+                "currentId": "new",
+                "oldAlive": false,
+                "calls": [
+                  "retireAttached",
+                  "invalidate",
+                  "recoverOffline"
+                ]
+              }
+            },
+            {
+              "property": "old_cleanup_does_not_touch_new_execution",
+              "input": {
+                "hasPromise": true,
+                "hasActivation": true,
+                "active": true,
+                "currentId": "new",
+                "oldAlive": true,
+                "calls": [
+                  "retireAttached",
+                  "terminate",
+                  "invalidate",
+                  "recoverOffline"
+                ]
+              }
+            }
+          ],
+          "passed": false
+        },
+        {
+          "name": "mutant_disable_replay_guard",
+          "cases": {
+            "classification": 96,
+            "reaped_cleanup": 48,
+            "recovery_disposition": 48
+          },
+          "assertions": 194,
+          "failures": [
+            {
+              "property": "no_retire_without_successful_replay",
+              "input": {
+                "disposition": "replay_terminal",
+                "alive": true,
+                "replayed": false,
+                "outcome": "registration_invalidated",
+                "calls": [
+                  "offline",
+                  "terminate",
+                  "retire"
+                ]
+              }
+            },
+            {
+              "property": "no_retire_without_successful_replay",
+              "input": {
+                "disposition": "replay_terminal_dead",
+                "alive": false,
+                "replayed": false,
+                "calls": [
+                  "offline",
+                  "retire"
+                ]
+              }
+            },
+            {
+              "property": "no_retire_without_successful_replay",
+              "input": {
+                "disposition": "replay_terminal_dead",
+                "alive": false,
+                "replayed": false,
+                "outcome": "registration_invalidated",
+                "calls": [
+                  "offline",
+                  "retire"
+                ]
+              }
+            },
+            {
+              "property": "no_retire_without_successful_replay",
+              "input": {
+                "disposition": "replay_terminal_dead",
+                "alive": false,
+                "replayed": false,
+                "outcome": "registration_absent",
+                "calls": [
+                  "offline",
+                  "retire"
+                ]
+              }
+            },
+            {
+              "property": "no_retire_without_successful_replay",
+              "input": {
+                "disposition": "replay_terminal_dead",
+                "alive": true,
+                "replayed": false,
+                "calls": [
+                  "offline",
+                  "terminate",
+                  "retire"
+                ]
+              }
+            },
+            {
+              "property": "no_retire_without_successful_replay",
+              "input": {
+                "disposition": "replay_terminal_dead",
+                "alive": true,
+                "replayed": false,
+                "outcome": "registration_invalidated",
+                "calls": [
+                  "offline",
+                  "terminate",
+                  "retire"
+                ]
+              }
+            },
+            {
+              "property": "no_retire_without_successful_replay",
+              "input": {
+                "disposition": "replay_terminal_dead",
+                "alive": true,
+                "replayed": false,
+                "outcome": "registration_absent",
+                "calls": [
+                  "offline",
+                  "terminate",
+                  "retire"
+                ]
+              }
+            }
+          ],
+          "passed": false
+        },
+        {
+          "name": "mutant_dead_terminal_as_live",
+          "cases": {
+            "classification": 96,
+            "reaped_cleanup": 48,
+            "recovery_disposition": 48
+          },
+          "assertions": 194,
+          "failures": [
+            {
+              "property": "classification_truth_table",
+              "input": {
+                "life": "completed",
+                "alive": false,
+                "retired": false,
+                "age": 0,
+                "expected": "replay_terminal_dead",
+                "actual": "replay_terminal"
+              }
+            },
+            {
+              "property": "classification_truth_table",
+              "input": {
+                "life": "completed",
+                "alive": false,
+                "retired": false,
+                "age": 9,
+                "expected": "replay_terminal_dead",
+                "actual": "replay_terminal"
+              }
+            },
+            {
+              "property": "classification_truth_table",
+              "input": {
+                "life": "completed",
+                "alive": false,
+                "retired": false,
+                "age": 10,
+                "expected": "replay_terminal_dead",
+                "actual": "replay_terminal"
+              }
+            },
+            {
+              "property": "classification_truth_table",
+              "input": {
+                "life": "completed",
+                "alive": false,
+                "retired": false,
+                "age": 11,
+                "expected": "replay_terminal_dead",
+                "actual": "replay_terminal"
+              }
+            },
+            {
+              "property": "classification_truth_table",
+              "input": {
+                "life": "failed",
+                "alive": false,
+                "retired": false,
+                "age": 0,
+                "expected": "replay_terminal_dead",
+                "actual": "replay_terminal"
+              }
+            },
+            {
+              "property": "classification_truth_table",
+              "input": {
+                "life": "failed",
+                "alive": false,
+                "retired": false,
+                "age": 9,
+                "expected": "replay_terminal_dead",
+                "actual": "replay_terminal"
+              }
+            },
+            {
+              "property": "classification_truth_table",
+              "input": {
+                "life": "failed",
+                "alive": false,
+                "retired": false,
+                "age": 10,
+                "expected": "replay_terminal_dead",
+                "actual": "replay_terminal"
+              }
+            },
+            {
+              "property": "classification_truth_table",
+              "input": {
+                "life": "failed",
+                "alive": false,
+                "retired": false,
+                "age": 11,
+                "expected": "replay_terminal_dead",
+                "actual": "replay_terminal"
+              }
+            }
+          ],
+          "passed": false
+        }
+      ],
+      "expectedOutcome": true
+    },
+    "cards": {
+      "sourceCommit": "1f15e59e3747fc5de5e245babf16753cce8a7367",
+      "source": "orch-server-ts/src/cards/card_orchestration_workers.ts",
+      "runtime": "v24.22.1",
+      "method": "Execute actual repository class through injected in-memory repository, card and transport ports; not PostgreSQL or real node integration.",
+      "bounds": {
+        "cards": 1,
+        "dispatches": 1,
+        "controllers": [
+          1,
+          2,
+          3
+        ],
+        "reconciliationRepeats": 3,
+        "cardStatuses": [
+          "todo",
+          "queued",
+          "blocked",
+          "running",
+          "review",
+          "on_hold",
+          "done",
+          "cancelled"
+        ],
+        "transportOutcomes": [
+          "accepted",
+          "uncertain",
+          "rejected"
+        ]
+      },
+      "checks": [
+        {
+          "variant": "baseline",
+          "cases": 25,
+          "pass": true,
+          "violations": [],
+          "totalViolations": 0
+        },
+        {
+          "variant": "mutant_remove_accepted_timeout_guard",
+          "cases": 25,
+          "pass": false,
+          "violations": [
+            {
+              "property": "AcceptedUnobservedNotRejected",
+              "status": "todo",
+              "expired": true,
+              "after": {
+                "dispatch": "rejected",
+                "card": "todo",
+                "launches": 0
+              },
+              "trace": [
+                "dispatch -> rejected: Worker launch was never accepted before its deadline"
+              ]
+            },
+            {
+              "property": "AcceptedUnobservedNotRejected",
+              "status": "queued",
+              "expired": true,
+              "after": {
+                "dispatch": "rejected",
+                "card": "blocked",
+                "launches": 0
+              },
+              "trace": [
+                "card -> blocked",
+                "dispatch -> rejected: Worker launch was never accepted before its deadline"
+              ]
+            },
+            {
+              "property": "AcceptedUnobservedNotRejected",
+              "status": "blocked",
+              "expired": true,
+              "after": {
+                "dispatch": "rejected",
+                "card": "blocked",
+                "launches": 0
+              },
+              "trace": [
+                "dispatch -> rejected: Worker launch was never accepted before its deadline"
+              ]
+            },
+            {
+              "property": "AcceptedUnobservedNotRejected",
+              "status": "running",
+              "expired": true,
+              "after": {
+                "dispatch": "rejected",
+                "card": "blocked",
+                "launches": 0
+              },
+              "trace": [
+                "card -> blocked",
+                "dispatch -> rejected: Worker launch was never accepted before its deadline"
+              ]
+            }
+          ],
+          "totalViolations": 8
+        },
+        {
+          "variant": "mutant_ignore_claim_result",
+          "cases": 25,
+          "pass": false,
+          "violations": [
+            {
+              "property": "AtMostOneLaunchFromAtomicClaim",
+              "controllers": 2,
+              "transport": "accepted",
+              "launches": 2,
+              "trace": [
+                "atomic claim succeeds",
+                "launch #1",
+                "launch #2"
+              ]
+            },
+            {
+              "property": "AtMostOneLaunchFromAtomicClaim",
+              "controllers": 2,
+              "transport": "uncertain",
+              "launches": 2,
+              "trace": [
+                "atomic claim succeeds",
+                "launch #1",
+                "launch #2",
+                "warning: worker launch awaiting observation: Error: transport timeout; acceptance unknown",
+                "warning: worker launch awaiting observation: Error: transport timeout; acceptance unknown"
+              ]
+            },
+            {
+              "property": "AtMostOneLaunchFromAtomicClaim",
+              "controllers": 2,
+              "transport": "rejected",
+              "launches": 2,
+              "trace": [
+                "atomic claim succeeds",
+                "launch #1",
+                "launch #2",
+                "card -> blocked",
+                "dispatch -> rejected: Error: node rejected",
+                "controller exception: CAS conflict"
+              ]
+            },
+            {
+              "property": "AtMostOneLaunchFromAtomicClaim",
+              "controllers": 3,
+              "transport": "accepted",
+              "launches": 3,
+              "trace": [
+                "atomic claim succeeds",
+                "launch #1",
+                "launch #2",
+                "launch #3"
+              ]
+            }
+          ],
+          "totalViolations": 6
+        }
+      ],
+      "findings": [
+        {
+          "kind": "observed source behavior; full end-to-end reachability/policy not proven",
+          "scenario": "An older unaccepted expired dispatch is reconciled after a later direct status edit to running",
+          "outcome": {
+            "cardStatus": "blocked",
+            "cardVersion": 8,
+            "dispatchState": "rejected"
+          },
+          "trace": [
+            "card -> blocked",
+            "dispatch -> rejected: Worker launch was never accepted before its deadline"
+          ],
+          "rationale": "reject() rereads the current card and uses its fresh version; it checks only running/queued, not dispatch identity, admittedCardVersion or intervening status changes. This harness cannot establish the production reachability or intended semantics of every reassignment path."
+        }
+      ],
+      "scope": "SQL claim atomicity and snapshot semantics are port assumptions. Covers controller branch logic, not worker execution registration, DB isolation, authorization routes, leases or end-to-end exactly-once execution."
+    },
+    "delivery": {
+      "sourceCommit": "1f15e59e3747fc5de5e245babf16753cce8a7367",
+      "sourceFile": "soul-server-ts/src/task/task_intervention_queue.ts",
+      "sourceSha256": "7f9a462e92e923c009f1dbd5f4e1229635928b71c601515e476de02083171450",
+      "runtime": "v24.22.1",
+      "method": "Breadth-first finite-state exploration using original production functions, not a hand-transcribed implementation",
+      "bounds": {
+        "logicalMessages": 4,
+        "maximumEnqueueCallsPerIdentity": 2,
+        "identityModes": [
+          "delivery",
+          "runner",
+          "both"
+        ],
+        "maximumQueueLength": 4
+      },
+      "assumptions": [
+        "No enqueue after a message has been removed for consumption; downstream deduplication and receipts are outside this check.",
+        "Repeated enqueue carries exactly the same immutable message and identity.",
+        "Each synchronous function call is one atomic step; no database, network, process crash, or asynchronous engine call is modeled."
+      ],
+      "properties": [
+        "QueueIdentityUnique",
+        "ReenqueueIsIdempotent",
+        "DrainConservesMessages",
+        "RuntimeFollowupIsIsolated",
+        "QueuePriorityAndStableFifo",
+        "NonemptyQueueMakesProgress"
+      ],
+      "baseline": [
+        {
+          "pass": true,
+          "identityMode": "delivery",
+          "distinctStates": 3529,
+          "transitions": 7236,
+          "maximumQueue": 4
+        },
+        {
+          "pass": true,
+          "identityMode": "runner",
+          "distinctStates": 3529,
+          "transitions": 7236,
+          "maximumQueue": 4
+        },
+        {
+          "pass": true,
+          "identityMode": "both",
+          "distinctStates": 3529,
+          "transitions": 7236,
+          "maximumQueue": 4
+        }
+      ],
+      "mutants": [
+        {
+          "name": "duplicate-new-enqueue",
+          "detected": true,
+          "runs": [
+            {
+              "pass": false,
+              "identityMode": "delivery",
+              "statesVisited": 1,
+              "statesDiscovered": 1,
+              "transitions": 1,
+              "property": "QueueIdentityUnique",
+              "detail": "A logical identity occurs more than once in the pending queue.",
+              "trace": [
+                {
+                  "action": "Init",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 0,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1",
+                  "after": {
+                    "queue": [
+                      "H1",
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                }
+              ]
+            },
+            {
+              "pass": false,
+              "identityMode": "runner",
+              "statesVisited": 1,
+              "statesDiscovered": 1,
+              "transitions": 1,
+              "property": "QueueIdentityUnique",
+              "detail": "A logical identity occurs more than once in the pending queue.",
+              "trace": [
+                {
+                  "action": "Init",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 0,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1",
+                  "after": {
+                    "queue": [
+                      "H1",
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                }
+              ]
+            },
+            {
+              "pass": false,
+              "identityMode": "both",
+              "statesVisited": 1,
+              "statesDiscovered": 1,
+              "transitions": 1,
+              "property": "QueueIdentityUnique",
+              "detail": "A logical identity occurs more than once in the pending queue.",
+              "trace": [
+                {
+                  "action": "Init",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 0,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1",
+                  "after": {
+                    "queue": [
+                      "H1",
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "remove-identity-deduplication",
+          "detected": true,
+          "runs": [
+            {
+              "pass": false,
+              "identityMode": "delivery",
+              "statesVisited": 2,
+              "statesDiscovered": 5,
+              "transitions": 5,
+              "property": "ReenqueueIsIdempotent",
+              "detail": "Re-enqueue changed a queue that already contained the logical identity.",
+              "trace": [
+                {
+                  "action": "Init",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 0,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1",
+                  "after": {
+                    "queue": [
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1 again",
+                  "after": {
+                    "queue": [
+                      "H1",
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 2,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                }
+              ]
+            },
+            {
+              "pass": false,
+              "identityMode": "runner",
+              "statesVisited": 2,
+              "statesDiscovered": 5,
+              "transitions": 5,
+              "property": "ReenqueueIsIdempotent",
+              "detail": "Re-enqueue changed a queue that already contained the logical identity.",
+              "trace": [
+                {
+                  "action": "Init",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 0,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1",
+                  "after": {
+                    "queue": [
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1 again",
+                  "after": {
+                    "queue": [
+                      "H1",
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 2,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                }
+              ]
+            },
+            {
+              "pass": false,
+              "identityMode": "both",
+              "statesVisited": 2,
+              "statesDiscovered": 5,
+              "transitions": 5,
+              "property": "ReenqueueIsIdempotent",
+              "detail": "Re-enqueue changed a queue that already contained the logical identity.",
+              "trace": [
+                {
+                  "action": "Init",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 0,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1",
+                  "after": {
+                    "queue": [
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1 again",
+                  "after": {
+                    "queue": [
+                      "H1",
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 2,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "lose-retained-runtime-followup",
+          "detected": true,
+          "runs": [
+            {
+              "pass": false,
+              "identityMode": "delivery",
+              "statesVisited": 9,
+              "statesDiscovered": 40,
+              "transitions": 43,
+              "property": "DrainConservesMessages",
+              "detail": "Draining lost or duplicated a pending logical identity.",
+              "trace": [
+                {
+                  "action": "Init",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 0,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1",
+                  "after": {
+                    "queue": [
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue R",
+                  "after": {
+                    "queue": [
+                      "H1",
+                      "R"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 1
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "drain => H1",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 1
+                    },
+                    "consumed": [
+                      "H1"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "pass": false,
+              "identityMode": "runner",
+              "statesVisited": 9,
+              "statesDiscovered": 40,
+              "transitions": 43,
+              "property": "DrainConservesMessages",
+              "detail": "Draining lost or duplicated a pending logical identity.",
+              "trace": [
+                {
+                  "action": "Init",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 0,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1",
+                  "after": {
+                    "queue": [
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue R",
+                  "after": {
+                    "queue": [
+                      "H1",
+                      "R"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 1
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "drain => H1",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 1
+                    },
+                    "consumed": [
+                      "H1"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "pass": false,
+              "identityMode": "both",
+              "statesVisited": 9,
+              "statesDiscovered": 40,
+              "transitions": 43,
+              "property": "DrainConservesMessages",
+              "detail": "Draining lost or duplicated a pending logical identity.",
+              "trace": [
+                {
+                  "action": "Init",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 0,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1",
+                  "after": {
+                    "queue": [
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue R",
+                  "after": {
+                    "queue": [
+                      "H1",
+                      "R"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 1
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "drain => H1",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 1
+                    },
+                    "consumed": [
+                      "H1"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "mix-runtime-followup-with-ordinary-input",
+          "detected": true,
+          "runs": [
+            {
+              "pass": false,
+              "identityMode": "delivery",
+              "statesVisited": 9,
+              "statesDiscovered": 40,
+              "transitions": 43,
+              "property": "RuntimeFollowupIsIsolated",
+              "detail": "Runtime follow-up shared one model input batch with another logical message.",
+              "trace": [
+                {
+                  "action": "Init",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 0,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1",
+                  "after": {
+                    "queue": [
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue R",
+                  "after": {
+                    "queue": [
+                      "H1",
+                      "R"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 1
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "drain => H1+R",
+                  "after": {
+                    "queue": [
+                      "R"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 1
+                    },
+                    "consumed": [
+                      "H1",
+                      "R"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "pass": false,
+              "identityMode": "runner",
+              "statesVisited": 9,
+              "statesDiscovered": 40,
+              "transitions": 43,
+              "property": "RuntimeFollowupIsIsolated",
+              "detail": "Runtime follow-up shared one model input batch with another logical message.",
+              "trace": [
+                {
+                  "action": "Init",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 0,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1",
+                  "after": {
+                    "queue": [
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue R",
+                  "after": {
+                    "queue": [
+                      "H1",
+                      "R"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 1
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "drain => H1+R",
+                  "after": {
+                    "queue": [
+                      "R"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 1
+                    },
+                    "consumed": [
+                      "H1",
+                      "R"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "pass": false,
+              "identityMode": "both",
+              "statesVisited": 9,
+              "statesDiscovered": 40,
+              "transitions": 43,
+              "property": "RuntimeFollowupIsIsolated",
+              "detail": "Runtime follow-up shared one model input batch with another logical message.",
+              "trace": [
+                {
+                  "action": "Init",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 0,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1",
+                  "after": {
+                    "queue": [
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue R",
+                  "after": {
+                    "queue": [
+                      "H1",
+                      "R"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 1
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "drain => H1+R",
+                  "after": {
+                    "queue": [
+                      "R"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 1
+                    },
+                    "consumed": [
+                      "H1",
+                      "R"
+                    ]
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "reverse-priority",
+          "detected": true,
+          "runs": [
+            {
+              "pass": false,
+              "identityMode": "delivery",
+              "statesVisited": 2,
+              "statesDiscovered": 7,
+              "transitions": 7,
+              "property": "QueuePriorityAndStableFifo",
+              "detail": "Queue order is not high-before-low with stable FIFO inside each lane.",
+              "trace": [
+                {
+                  "action": "Init",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 0,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1",
+                  "after": {
+                    "queue": [
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue C",
+                  "after": {
+                    "queue": [
+                      "C",
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 1,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                }
+              ]
+            },
+            {
+              "pass": false,
+              "identityMode": "runner",
+              "statesVisited": 2,
+              "statesDiscovered": 7,
+              "transitions": 7,
+              "property": "QueuePriorityAndStableFifo",
+              "detail": "Queue order is not high-before-low with stable FIFO inside each lane.",
+              "trace": [
+                {
+                  "action": "Init",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 0,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1",
+                  "after": {
+                    "queue": [
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue C",
+                  "after": {
+                    "queue": [
+                      "C",
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 1,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                }
+              ]
+            },
+            {
+              "pass": false,
+              "identityMode": "both",
+              "statesVisited": 2,
+              "statesDiscovered": 7,
+              "transitions": 7,
+              "property": "QueuePriorityAndStableFifo",
+              "detail": "Queue order is not high-before-low with stable FIFO inside each lane.",
+              "trace": [
+                {
+                  "action": "Init",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 0,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1",
+                  "after": {
+                    "queue": [
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue C",
+                  "after": {
+                    "queue": [
+                      "C",
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 1,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "never-drain-ordinary-input",
+          "detected": true,
+          "runs": [
+            {
+              "pass": false,
+              "identityMode": "delivery",
+              "statesVisited": 2,
+              "statesDiscovered": 9,
+              "transitions": 9,
+              "property": "NonemptyQueueMakesProgress",
+              "detail": "A nonempty queue produced an empty batch.",
+              "trace": [
+                {
+                  "action": "Init",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 0,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1",
+                  "after": {
+                    "queue": [
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "drain => empty",
+                  "after": {
+                    "queue": [
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                }
+              ]
+            },
+            {
+              "pass": false,
+              "identityMode": "runner",
+              "statesVisited": 2,
+              "statesDiscovered": 9,
+              "transitions": 9,
+              "property": "NonemptyQueueMakesProgress",
+              "detail": "A nonempty queue produced an empty batch.",
+              "trace": [
+                {
+                  "action": "Init",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 0,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1",
+                  "after": {
+                    "queue": [
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "drain => empty",
+                  "after": {
+                    "queue": [
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                }
+              ]
+            },
+            {
+              "pass": false,
+              "identityMode": "both",
+              "statesVisited": 2,
+              "statesDiscovered": 9,
+              "transitions": 9,
+              "property": "NonemptyQueueMakesProgress",
+              "detail": "A nonempty queue produced an empty batch.",
+              "trace": [
+                {
+                  "action": "Init",
+                  "after": {
+                    "queue": [],
+                    "enqueues": {
+                      "H1": 0,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "enqueue H1",
+                  "after": {
+                    "queue": [
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                },
+                {
+                  "action": "drain => empty",
+                  "after": {
+                    "queue": [
+                      "H1"
+                    ],
+                    "enqueues": {
+                      "H1": 1,
+                      "H2": 0,
+                      "C": 0,
+                      "R": 0
+                    },
+                    "consumed": []
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "pass": true
+    },
+    "outbox": {
+      "sourceCommit": "1f15e59e3747fc5de5e245babf16753cce8a7367",
+      "runtime": "v24.22.1",
+      "sourceSha256": "905d943d67e0a4c7008a66458c8cca2dc3f720b532b181ba4f723bd0a785c7fe",
+      "protocolSha256": "a12e08da9fdee3e04f577edf9b3836c3108a5efc6e9dac1f4e15fc2f102d806b",
+      "method": "Unchanged production EventOutboxPump class, built-in Node type erasure, deterministic asynchronous store and transport ports.",
+      "scope": "Six scheduled cases. Actual disk writes, PostgreSQL receipt transactions, batch sizes above one, packet reordering, OS failure and liveness excluded.",
+      "checks": [
+        {
+          "variant": "baseline",
+          "pass": true,
+          "cases": [
+            {
+              "property": "NeverPublishOnStaleConnection",
+              "boundary": "read",
+              "pass": true,
+              "oldSends": 0,
+              "newSends": 1,
+              "trace": [
+                "connect generation 1",
+                "pause at read",
+                "disconnect",
+                "reconnect generation 3",
+                "old await resolves",
+                "old sends=0, new sends=1"
+              ]
+            },
+            {
+              "property": "NeverPublishOnStaleConnection",
+              "boundary": "local",
+              "pass": true,
+              "oldSends": 0,
+              "newSends": 1,
+              "trace": [
+                "connect generation 1",
+                "pause at local",
+                "disconnect",
+                "reconnect generation 3",
+                "old await resolves",
+                "old sends=0, new sends=1"
+              ]
+            },
+            {
+              "property": "InvalidAckCannotAdvanceCursor",
+              "kind": "wrong-stream",
+              "pass": true,
+              "rejected": true,
+              "acked": 0
+            },
+            {
+              "property": "InvalidAckCannotAdvanceCursor",
+              "kind": "wrong-sequence",
+              "pass": true,
+              "rejected": true,
+              "acked": 0
+            },
+            {
+              "property": "InvalidAckCannotAdvanceCursor",
+              "kind": "wrong-range",
+              "pass": true,
+              "rejected": true,
+              "acked": 0
+            },
+            {
+              "property": "MatchingAckAdvancesDurableCursor",
+              "kind": "valid",
+              "pass": true,
+              "rejected": false,
+              "acked": 1
+            }
+          ]
+        },
+        {
+          "variant": "remove_post_local_publication_fence",
+          "pass": false,
+          "cases": [
+            {
+              "property": "NeverPublishOnStaleConnection",
+              "boundary": "read",
+              "pass": true,
+              "oldSends": 0,
+              "newSends": 1,
+              "trace": [
+                "connect generation 1",
+                "pause at read",
+                "disconnect",
+                "reconnect generation 3",
+                "old await resolves",
+                "old sends=0, new sends=1"
+              ]
+            },
+            {
+              "property": "NeverPublishOnStaleConnection",
+              "boundary": "local",
+              "pass": false,
+              "oldSends": 1,
+              "newSends": 0,
+              "trace": [
+                "connect generation 1",
+                "pause at local",
+                "disconnect",
+                "reconnect generation 3",
+                "old await resolves",
+                "old sends=1, new sends=0"
+              ]
+            },
+            {
+              "property": "InvalidAckCannotAdvanceCursor",
+              "kind": "wrong-stream",
+              "pass": true,
+              "rejected": true,
+              "acked": 0
+            },
+            {
+              "property": "InvalidAckCannotAdvanceCursor",
+              "kind": "wrong-sequence",
+              "pass": true,
+              "rejected": true,
+              "acked": 0
+            },
+            {
+              "property": "InvalidAckCannotAdvanceCursor",
+              "kind": "wrong-range",
+              "pass": true,
+              "rejected": true,
+              "acked": 0
+            },
+            {
+              "property": "MatchingAckAdvancesDurableCursor",
+              "kind": "valid",
+              "pass": true,
+              "rejected": false,
+              "acked": 1
+            }
+          ]
+        },
+        {
+          "variant": "remove_ack_stream_check",
+          "pass": false,
+          "cases": [
+            {
+              "property": "NeverPublishOnStaleConnection",
+              "boundary": "read",
+              "pass": true,
+              "oldSends": 0,
+              "newSends": 1,
+              "trace": [
+                "connect generation 1",
+                "pause at read",
+                "disconnect",
+                "reconnect generation 3",
+                "old await resolves",
+                "old sends=0, new sends=1"
+              ]
+            },
+            {
+              "property": "NeverPublishOnStaleConnection",
+              "boundary": "local",
+              "pass": true,
+              "oldSends": 0,
+              "newSends": 1,
+              "trace": [
+                "connect generation 1",
+                "pause at local",
+                "disconnect",
+                "reconnect generation 3",
+                "old await resolves",
+                "old sends=0, new sends=1"
+              ]
+            },
+            {
+              "property": "InvalidAckCannotAdvanceCursor",
+              "kind": "wrong-stream",
+              "pass": false,
+              "rejected": false,
+              "acked": 1
+            },
+            {
+              "property": "InvalidAckCannotAdvanceCursor",
+              "kind": "wrong-sequence",
+              "pass": true,
+              "rejected": true,
+              "acked": 0
+            },
+            {
+              "property": "InvalidAckCannotAdvanceCursor",
+              "kind": "wrong-range",
+              "pass": true,
+              "rejected": true,
+              "acked": 0
+            },
+            {
+              "property": "MatchingAckAdvancesDurableCursor",
+              "kind": "valid",
+              "pass": true,
+              "rejected": false,
+              "acked": 1
+            }
+          ]
+        },
+        {
+          "variant": "remove_ack_sequence_mapping",
+          "pass": false,
+          "cases": [
+            {
+              "property": "NeverPublishOnStaleConnection",
+              "boundary": "read",
+              "pass": true,
+              "oldSends": 0,
+              "newSends": 1,
+              "trace": [
+                "connect generation 1",
+                "pause at read",
+                "disconnect",
+                "reconnect generation 3",
+                "old await resolves",
+                "old sends=0, new sends=1"
+              ]
+            },
+            {
+              "property": "NeverPublishOnStaleConnection",
+              "boundary": "local",
+              "pass": true,
+              "oldSends": 0,
+              "newSends": 1,
+              "trace": [
+                "connect generation 1",
+                "pause at local",
+                "disconnect",
+                "reconnect generation 3",
+                "old await resolves",
+                "old sends=0, new sends=1"
+              ]
+            },
+            {
+              "property": "InvalidAckCannotAdvanceCursor",
+              "kind": "wrong-stream",
+              "pass": true,
+              "rejected": true,
+              "acked": 0
+            },
+            {
+              "property": "InvalidAckCannotAdvanceCursor",
+              "kind": "wrong-sequence",
+              "pass": false,
+              "rejected": false,
+              "acked": 1
+            },
+            {
+              "property": "InvalidAckCannotAdvanceCursor",
+              "kind": "wrong-range",
+              "pass": true,
+              "rejected": true,
+              "acked": 0
+            },
+            {
+              "property": "MatchingAckAdvancesDurableCursor",
+              "kind": "valid",
+              "pass": true,
+              "rejected": false,
+              "acked": 1
+            }
+          ]
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,26 @@
+---
+title: "Outbox: reconnect during publication"
+---
+stateDiagram-v2
+  state "Legend" as legend {
+    lg0: normal
+  }
+  class lg0 blue
+  s0: Waiting
+  s1: Reading durable event
+  s2: Applying locally
+  s3: Discarding stale send
+  s4: Waiting for ACK
+  [*] --> s0
+  s0 --> s1: event is ready
+  s1 --> s2: durable read finishes
+  s1 --> s3: durable read finishes
+  s2 --> s4: local handling finishes
+  s2 --> s3: local handling finishes
+  s4 --> s0: central ACK arrives
+  s3 --> s1: event is ready
+  class s0 blue
+  class s1 blue
+  class s2 blue
+  class s3 blue
+  class s4 blue

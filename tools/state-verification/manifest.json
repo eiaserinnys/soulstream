@@ -1,0 +1,60 @@
+{
+  "sourceSyncCommit": "1f15e59e3747fc5de5e245babf16753cce8a7367",
+  "testedNode": "24.22.1",
+  "tlcRelease": "v1.7.4",
+  "tlcReportedVersion": "2.19",
+  "tlcSha256": "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88",
+  "subsystems": {
+    "runner": {
+      "script": "verify.mjs",
+      "model": "Recovery.tla",
+      "configs": [
+        {
+          "file": "Recovery.cfg"
+        },
+        {
+          "file": "Recovery-owner-mutant.cfg",
+          "violates": "NoNewExecutionDamage"
+        },
+        {
+          "file": "Recovery-replay-mutant.cfg",
+          "violates": "NoRetirementBeforeReplay"
+        }
+      ]
+    },
+    "cards": {
+      "script": "check_workers.mjs",
+      "model": "CardWorkerLaunch.tla",
+      "configs": [
+        {
+          "file": "CardWorkerLaunch.cfg"
+        },
+        {
+          "file": "CardWorkerLaunch.skip-claim.cfg",
+          "violates": "AtMostOneLaunch"
+        },
+        {
+          "file": "CardWorkerLaunch.ignore-accepted.cfg",
+          "violates": "AcceptedNotRejected"
+        }
+      ]
+    },
+    "delivery": {
+      "script": "check-delivery-queue.mjs",
+      "configs": []
+    },
+    "outbox": {
+      "script": "check-outbox.mjs",
+      "model": "OutboxPublish.tla",
+      "configs": [
+        {
+          "file": "OutboxPublish.cfg"
+        },
+        {
+          "file": "OutboxPublish-mutant.cfg",
+          "violates": "NeverPublishOnStaleConnection"
+        }
+      ]
+    }
+  }
+}

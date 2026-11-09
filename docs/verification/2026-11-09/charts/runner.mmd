@@ -1,0 +1,28 @@
+---
+title: "Soulstream runner recovery: observed finite model"
+---
+stateDiagram-v2
+  state "Reaped cleanup" as s0 {
+    s1: Old registration ready
+    s2: Execution protected
+    s3: Old registration recovered
+    s4: Cleanup skipped
+  }
+  state "Terminal replay" as s5 {
+    s6: Terminal registration
+    s7: Replaying records
+    s8: Replay skipped
+    s9: Replay complete
+    s10: Preserved for retry
+    s11: Registration retired
+  }
+  [*] --> s1
+  [*] --> s6
+  [*] --> s2
+  s1 --> s3: Apply cleanup
+  s6 --> s7: Recover offline
+  s2 --> s4: Owner guard blocks cleanup
+  s7 --> s8: Replay did not run
+  s7 --> s9: Replay succeeded
+  s8 --> s10: Keep registration
+  s9 --> s11: Retire after replay
