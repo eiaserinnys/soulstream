@@ -52,7 +52,7 @@ authorization-code flow with PKCE. Discover the issuer at
 `POST /api/oauth/register`, using loopback callback URIs and no client secret.
 The registered `client_name` is shown on the person's consent screen.
 
-Request `conversations`, `cards:read`, and/or `folders:read` at
+Request `conversations`, `cards:read`, `folders:read`, and/or `usage:read` at
 `GET /api/oauth/authorize`. The interaction uses the existing Google dashboard
 login and checks `ALLOWED_EMAIL` again before showing consent. Allowing returns
 the authorization code to the loopback callback; cancelling returns the
@@ -64,11 +64,12 @@ days.
 
 OAuth bearer access is limited to read routes: `cards:read` allows `GET
 /api/cards` and its read subroutes; `folders:read` allows `GET /api/folders` and
-its read subroutes. Both routes apply the signed-in account's existing folder
-ACL. `conversations` authorizes the conversation provider routes documented
-below. OAuth tokens do not authorize the legacy session intervention or MCP
-routes. See the [OAuth authentication path map](pathmaps/oauth-authentication.md)
-for the server-side flow and caller identity fields.
+its read subroutes; `usage:read` allows only `GET /api/usage/summary`. The card
+and folder routes apply the signed-in account's existing folder ACL.
+`conversations` authorizes the conversation provider routes documented below.
+OAuth tokens do not authorize the legacy session intervention or MCP routes.
+See the [OAuth authentication path map](pathmaps/oauth-authentication.md) for
+the server-side flow and caller identity fields.
 
 ## Typical bot flow
 

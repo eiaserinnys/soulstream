@@ -2,7 +2,7 @@ import type { AuthUserAuthorizer } from "../auth/auth_routes.js";
 import type { SqlClient } from "../control_plane/control_plane_types.js";
 import { oauthAdapter } from "./oauth_adapter.js";
 
-export const oauthScopes = ["conversations", "cards:read", "folders:read"] as const;
+export const oauthScopes = ["conversations", "cards:read", "folders:read", "usage:read"] as const;
 
 export type OAuthScope = (typeof oauthScopes)[number];
 
@@ -102,6 +102,7 @@ export function oauthScopeForRoute(method: string, pathname: string): OAuthScope
     || (upper === "GET" && /^\/api\/sessions\/[^/]+\/conversation$/.test(path))
     || (upper === "POST" && /^\/api\/sessions\/[^/]+\/intervene$/.test(path))) return "cards:read";
   if (upper !== "GET") return null;
+  if (path === "/api/usage/summary") return "usage:read";
   if (path === "/api/folders" || path.startsWith("/api/folders/")) return "folders:read";
   return null;
 }

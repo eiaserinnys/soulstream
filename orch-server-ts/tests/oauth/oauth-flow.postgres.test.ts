@@ -45,10 +45,10 @@ async function start() {
   });
   await app.listen({ host: "127.0.0.1", port: Number(new URL(issuer).port) });
 }
-async function register(redirect = "http://127.0.0.1:10001/callback") {
+async function register(redirect = "http://127.0.0.1:10001/callback", scope?: string) {
   const response = await fetch(`${issuer}/api/oauth/register`, {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ client_name: "Test", redirect_uris: [redirect], grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], token_endpoint_auth_method: "none" }),
+    body: JSON.stringify({ client_name: "Test", redirect_uris: [redirect], grant_types: ["authorization_code", "refresh_token"], response_types: ["code"], token_endpoint_auth_method: "none", ...(scope ? { scope } : {}) }),
   });
   return { response, data: await response.json() as Record<string, string> };
 }
@@ -189,14 +189,18 @@ async function fetchWithCookies(
   return response;
 }
 
-async function beginInteraction(clientId: string, cookies = new Map<string, string>()) {
+async function beginInteraction(
+  clientId: string,
+  cookies = new Map<string, string>(),
+  scope = "conversations cards:read folders:read",
+) {
   const params = new URLSearchParams({
     response_type: "code",
     client_id: clientId,
     redirect_uri: "http://127.0.0.1:10002/callback",
     code_challenge: challenge,
     code_challenge_method: "S256",
-    scope: "conversations cards:read folders:read",
+    scope,
     state: "interaction-state",
   });
   const response = await fetchWithCookies(`/api/oauth/authorize?${params}`, cookies);
@@ -209,8 +213,9 @@ async function beginInteraction(clientId: string, cookies = new Map<string, stri
 async function loginThroughGoogle(
   clientId: string,
   cookies = new Map<string, string>(),
+  scope = "conversations cards:read folders:read",
 ): Promise<{ interactionPath: string; cookies: Map<string, string>; view?: Record<string, unknown>; lastResponse: Response }> {
-  const started = await beginInteraction(clientId, cookies);
+  const started = await beginInteraction(clientId, cookies, scope);
   let response = await fetchWithCookies(started.interactionPath, cookies, { headers: { accept: "application/json" } });
   const loginLocation = response.headers.get("location");
   if (!loginLocation) return { ...started, lastResponse: response };
@@ -286,7 +291,7 @@ describe("OAuth authorization server", () => {
     expect(meta.headers.get("content-type")).toContain("application/json");
     const value = await meta.json() as { issuer: string; scopes_supported: string[]; grant_types_supported: string[]; code_challenge_methods_supported: string[] };
     expect(value.issuer).toBe(issuer);
-    expect(value.scopes_supported.sort()).toEqual(["cards:read", "conversations", "folders:read"]);
+    expect(value.scopes_supported.sort()).toEqual(["cards:read", "conversations", "folders:read", "usage:read"]);
     expect(value.grant_types_supported.sort()).toEqual(["authorization_code", "refresh_token"]);
     expect(value.code_challenge_methods_supported).toEqual(["S256"]);
     const resource = await fetch(`${issuer}/.well-known/oauth-protected-resource`);
@@ -559,5 +564,25 @@ describe("OAuth dashboard login, consent, and scoped resource access", () => {
     expect(`${callback.origin}${callback.pathname}`).toBe("http://127.0.0.1:10002/callback");
     expect(callback.searchParams.get("error")).toBe("access_denied");
     expect(callback.searchParams.get("state")).toBe("interaction-state");
+  });
+
+  it("registers a usage-only client, shows its permission, and issues its token", async () => {
+    const { response: registration, data: client } = await register("http://127.0.0.1:10001/callback", "usage:read");
+    expect(registration.status).toBe(201);
+    expect(client.client_id).toBeTruthy();
+    const flow = await loginThroughGoogle(client.client_id!, new Map(), "usage:read");
+    expect(flow.view).toMatchObject({ clientName: "Test", permissions: "사용량 읽기" });
+    const accepted = await fetchWithCookies(flow.interactionPath, flow.cookies, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({ csrf: String(flow.view?.csrf), action: "allow" }),
+    });
+    const callback = await followInteractionRedirects(accepted, flow.cookies);
+    const code = callback.searchParams.get("code");
+    expect(code).toBeTruthy();
+    const token = await codeToken(client.client_id!, code!, "http://127.0.0.1:10002/callback");
+    expect(token.response.status).toBe(200);
+    const resolveOAuthToken = createOAuthAccessTokenResolver(sql, dependencies.authorizeUser);
+    expect(await resolveOAuthToken(token.data.access_token as string)).toMatchObject({ scopes: ["usage:read"] });
   });
 });

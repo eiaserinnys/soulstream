@@ -41,6 +41,7 @@ production auth guard checks the matching scope before route execution:
 | --- | --- |
 | `GET /api/cards` and read subroutes | `cards:read` |
 | `GET /api/folders` and read subroutes | `folders:read` |
+| `GET /api/usage/summary` | `usage:read` |
 | every other protected route | rejected for OAuth credentials |
 
 The existing `live_dashboard_access_provider.ts` resolves the same verified
