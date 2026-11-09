@@ -28,6 +28,12 @@ import { TypingIndicator } from '../components/chat/TypingIndicator';
 import type { PersistentTurnUsageMode } from '../api/persistentSessionEndpoints';
 import { appendAttachmentPathNotes } from '../utils/attachmentPathNotes';
 
+// 검수 창 번들은 로컬 서버에서 열린다. 표본이 외부 주소를 부르면 캡처 검사의
+// External request 검사가 늘 실패하므로 현재 주소를 쓴다.
+const reviewOrigin = typeof window === 'undefined'
+  ? 'https://soulstream.eiaserinnys.me'
+  : window.location?.origin ?? 'https://soulstream.eiaserinnys.me';
+
 const options = [
   { value: 'normal', label: '기본' }, { value: 'sending', label: '전송 중' },
   { value: 'uploading', label: '첨부 업로드 중' }, { value: 'attachment-only', label: '첨부만 전송' },
@@ -133,7 +139,7 @@ export const persistentChatEvents: SessionEvent[] = [
     node_id: 'eiaserinnys',
   } },
   { id: '929', type: 'assistant_message', data: {
-    text: '![정사각 썸네일](https://soulstream.eiaserinnys.me/icon-192.png)',
+    text: `![정사각 썸네일](${reviewOrigin}/icon-192.png)`,
   } },
   { id: '930', type: 'session_notification', data: {
     delivery_id: PAS_REVIEW_COMPLETION_DELIVERY_ID,
@@ -566,8 +572,7 @@ export function ReviewChat() {
 
 function ReviewChatPasImageSample() {
   const t = useTokens();
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://soulstream.eiaserinnys.me';
-  const attachmentUrl = (path: string) => `${origin}/api/attachments/files?${new URLSearchParams({ nodeId: 'eiaserinnys', path })}`;
+  const attachmentUrl = (path: string) => `${reviewOrigin}/api/attachments/files?${new URLSearchParams({ nodeId: 'eiaserinnys', path })}`;
   const assistantText = [
     '링크만 붙였군요. 비교 이미지를 바로 보여드리겠습니다.',
     '',
@@ -579,7 +584,7 @@ function ReviewChatPasImageSample() {
     '',
     `![폰 변경 시안](${attachmentUrl(pasImagePaths[1])})`,
     '',
-    `![정사각 앱 아이콘](${origin}/icon-192.png)`,
+    `![정사각 앱 아이콘](${reviewOrigin}/icon-192.png)`,
   ].join('\n');
   const session = { ...sessions[0], nodeId: 'eiaserinnys' };
   return <ScrollView testID="review-pas-chat-images" style={{ flex: 1, backgroundColor: t.colors.background }}
