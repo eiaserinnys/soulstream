@@ -31,8 +31,10 @@ export function FloatingSessionComposer({ api, style, composerStyle, triggerStyl
         <GlassButton testID="home-session-composer-trigger" surfaceTestID="home-session-composer-trigger-surface"
           accessibilityLabel="새 대화" variant="primary" borderRadius={t.foundation.radius.round}
           contentStyle={{ paddingHorizontal: t.uiSpacing.lg, gap: t.uiSpacing.xs }} onPress={() => { setOpened(true); setExpanded(true); }}>
-          <Ionicons name="add" size={t.iconSize.standard} color={t.colors.accentText} />
-          <Text style={{ ...t.foundation.typography.body, fontWeight: '600', color: t.colors.accentText }}>새 대화</Text>
+          {({ contentColor }) => (<>
+            <Ionicons name="add" size={t.iconSize.standard} color={contentColor} />
+            <Text style={{ ...t.foundation.typography.body, fontWeight: '600', color: contentColor }}>새 대화</Text>
+          </>)}
         </GlassButton>
       </View> : null}
   </View>;

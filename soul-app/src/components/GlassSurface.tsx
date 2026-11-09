@@ -344,9 +344,22 @@ export function resolveGlassBlurTint(
   return override ?? (mode === 'dark' ? 'dark' : 'light');
 }
 
+/** 함수형 children이 받는 상태. contentColor는 활성·비활성에 따라 단추가 정한다. */
+export interface GlassButtonContentState {
+  contentColor: string;
+}
+
+/** 비활성일 때 글자는 바탕과 읽히도록 역할이 정한 disabledContentColor를 쓴다. */
+export function resolveGlassButtonContentColor(
+  primitive: Pick<PrimitiveRoleDefinition, 'contentColor' | 'disabledContentColor'>,
+  disabled: boolean,
+): string {
+  return disabled ? primitive.disabledContentColor : primitive.contentColor;
+}
+
 export interface GlassButtonProps {
   onPress: () => void;
-  children: React.ReactNode;
+  children: React.ReactNode | ((state: GlassButtonContentState) => React.ReactNode);
   disabled?: boolean;
   hitSlop?: number;
   accessibilityLabel?: string;
@@ -390,8 +403,12 @@ export function GlassButton({
   const t = useTokens();
   const [focused, setFocused] = React.useState(false);
   const [plainPressed, setPlainPressed] = React.useState(false);
-  const buttonPrimitive = createPrimitiveRoles(t)[variant === 'primary' ? 'buttonPrimary' : 'buttonSecondary'];
-  const primitive = createPrimitiveRoles(t).iconFrame;
+  const roles = createPrimitiveRoles(t);
+  const buttonPrimitive = roles[variant === 'primary' ? 'buttonPrimary' : 'buttonSecondary'];
+  const primitive = roles.iconFrame;
+  const resolvedChildren = typeof children === 'function'
+    ? children({ contentColor: resolveGlassButtonContentColor(buttonPrimitive, !!disabled) })
+    : children;
   const paper = variant === 'paper';
   const plain = variant === 'plain';
   const standardMinHeight = Math.max(t.hitTarget.min, buttonPrimitive.minHeight);
@@ -442,7 +459,7 @@ export function GlassButton({
         iconBoundaryStyle,
       ]}
     >
-      {children}
+      {resolvedChildren}
     </Pressable>
   );
   if (plain && iconOnly && size !== 'standard') {
@@ -485,7 +502,7 @@ export function GlassButton({
             ? { backgroundColor: resolvePlainButtonBackground(buttonPrimitive, false, plainPressed, focused) }
             : undefined]}
         >
-          {children}
+          {resolvedChildren}
         </View>
       </Pressable>
     );
@@ -499,7 +516,7 @@ export function GlassButton({
       return <CompactTouchTarget testID={testID} frameStyle={compactFrameStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole}
         onFocus={() => { if (!disabled) setFocused(true); }} onBlur={() => setFocused(false)}
         accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={{ disabled: !!disabled, ...accessibilityState }}>
-        <View testID={surfaceTestID} style={[style, paperSurfaceStyle, { width: visualSize, height: visualSize, alignItems: 'center', justifyContent: 'center' }]}>{children}</View>
+        <View testID={surfaceTestID} style={[style, paperSurfaceStyle, { width: visualSize, height: visualSize, alignItems: 'center', justifyContent: 'center' }]}>{resolvedChildren}</View>
       </CompactTouchTarget>;
     }
     return <View testID={surfaceTestID} style={[paperSurfaceStyle, style]}>{renderButton(false)}</View>;
@@ -512,12 +529,12 @@ export function GlassButton({
     return <CompactTouchTarget testID={testID} frameStyle={compactFrameStyle} onPress={onPress} disabled={disabled} accessibilityRole={accessibilityRole}
       onFocus={() => { if (!disabled) setFocused(true); }} onBlur={() => setFocused(false)}
       accessibilityLabel={accessibilityLabel} accessibilityHint={accessibilityHint} accessibilityState={{ disabled: !!disabled, ...accessibilityState }}>
-      {variant === 'primary' ? <View testID={surfaceTestID} style={[style, visualStyle, { backgroundColor: buttonPrimitive.backgroundColor }, compactFocusStyle]}>{children}</View>
-        : <GlassSurfaceImpl role={buttonPrimitive.surfaceRole} testID={surfaceTestID} isInteractive cornerRadius={resolvedRadius} style={[style, visualStyle, compactFocusStyle]}>{children}</GlassSurfaceImpl>}
+      {variant === 'primary' ? <View testID={surfaceTestID} style={[style, visualStyle, { backgroundColor: buttonPrimitive.backgroundColor }, compactFocusStyle]}>{resolvedChildren}</View>
+        : <GlassSurfaceImpl role={buttonPrimitive.surfaceRole} testID={surfaceTestID} isInteractive cornerRadius={resolvedRadius} style={[style, visualStyle, compactFocusStyle]}>{resolvedChildren}</GlassSurfaceImpl>}
     </CompactTouchTarget>;
   }
 
-  if (variant === 'primary') {
+  if (variant === 'primary' && !disabled) {
     return (
       <View testID={surfaceTestID} style={[style, iconBoundaryStyle]}>
         {renderButton(false)}
@@ -525,9 +542,11 @@ export function GlassButton({
     );
   }
 
+  // 비활성 primary는 보조 단추와 같은 chrome 판 위에 기본 단추의 치수와
+  // 투명한 Pressable 바탕을 유지한다(카드 #1119).
   return (
     <GlassSurfaceImpl
-      role={buttonPrimitive.surfaceRole}
+      role={variant === 'primary' ? roles.buttonSecondary.surfaceRole : buttonPrimitive.surfaceRole}
       testID={surfaceTestID}
       isInteractive
       cornerRadius={resolvedRadius}

@@ -155,8 +155,15 @@ async function runViewport(browser, base, options, name) {
   await tab('surfaces');
   await page.getByLabel('예시 주요 동작', { exact: true }).click();
   assert.match(await page.getByTestId('review-button-count').textContent(), /1/);
+  // 「주요 비활성」 표본은 카드 #1119에서 추가했다. 변경 전 번들에는 없으므로 있으면 기록만 한다.
+  const disabledPrimarySamples = await page.getByLabel('예시 주요 비활성', { exact: true }).count();
   await shot('surfaces');
-  result.interactions.push(name + ': 유리 대체 표면·실제 버튼');
+  await page.goto(`${base}${prefix}index.html?section=surfaces&theme=dark`);
+  await page.getByTestId('component-review').waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await shot('surfaces-dark');
+  result.interactions.push(name + ': 유리 대체 표면·실제 버튼(주요 비활성 표본 '
+    + (disabledPrimarySamples ? '있음' : '없음') + ')·다크');
   const storage = await page.evaluate(() => ({ auth: localStorage.getItem('soul-auth'), settings: localStorage.getItem('soul-app-settings') }));
   assert.match(storage.auth, /public-sentinel/);
   assert.match(storage.settings, /must-not-read.invalid/);

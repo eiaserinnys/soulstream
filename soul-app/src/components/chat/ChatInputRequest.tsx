@@ -383,12 +383,14 @@ export const ChatInputRequest = memo(function ChatInputRequest({
                 accessibilityLabel="선택한 답변 보내기"
                 style={styles.submitButton}
               >
-                {isSubmitting ? (
-                  <ActivityIndicator color={t.colors.accentText} />
-                ) : null}
-                <Text style={styles.submitButtonText}>
-                  {isSubmitting ? '보내는 중' : '답변 보내기'}
-                </Text>
+                {({ contentColor }) => (<>
+                  {isSubmitting ? (
+                    <ActivityIndicator color={contentColor} />
+                  ) : null}
+                  <Text style={[styles.submitButtonText, { color: contentColor }]}>
+                    {isSubmitting ? '보내는 중' : '답변 보내기'}
+                  </Text>
+                </>)}
               </GlassButton>
             ) : isSubmitting ? (
               <View style={styles.submittingRow}>

@@ -307,11 +307,11 @@ export function SessionReviewPolicySettingsSection({
             onPress={() => void save()}
             disabled={!changed || loading || saving || forbidden}
           >
-            {saving ? (
-              <ActivityIndicator size="small" color={t.colors.accentText} />
+            {({ contentColor }) => (saving ? (
+              <ActivityIndicator size="small" color={contentColor} />
             ) : (
-              <Text style={styles.primaryText}>정책 저장</Text>
-            )}
+              <Text style={[styles.primaryText, { color: contentColor }]}>정책 저장</Text>
+            ))}
           </GlassButton> : null}
         </View>
       </View>
