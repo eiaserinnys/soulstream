@@ -16,6 +16,7 @@ export interface WorkerStartupRuntime {
   createUpstreamAdapter(): WorkerStartupAdapter;
   upstreamRegistrationReady: Promise<void>;
   runnerRecoveryCoordinator?: WorkerStartupCoordinator;
+  runnerOrphanReaper?: { start(): void };
   claudeRuntimeStartupRecovery?: WorkerStartupRecovery;
 }
 
@@ -44,6 +45,8 @@ export async function startWorkerRuntime<
   const upstreamRun = upstreamAdapter.run();
   options.logger.info("Upstream adapter startup initiated");
   void upstreamRun.catch(options.onUpstreamFailure);
+
+  runtime.runnerOrphanReaper?.start();
 
   const runnerRecovery = runtime.runnerRecoveryCoordinator;
   if (runnerRecovery) {

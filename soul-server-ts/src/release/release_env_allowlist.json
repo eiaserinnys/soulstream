@@ -29,6 +29,7 @@
     "CODEX_DETACHED_RESULT_RETENTION_MS": { "owner": "codex", "kind": "non_secret", "identity_scope": "deployment", "normalization": "number" },
     "EVENT_OUTBOX_DIR": { "owner": "event_outbox", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "SOUL_RUNNER_PROCESS_ENABLED": { "owner": "runner", "kind": "non_secret", "identity_scope": "deployment", "normalization": "boolean" },
+    "SOUL_RUNNER_OWNER": { "owner": "runner", "kind": "non_secret", "identity_scope": "ambient" },
     "SOUL_RUNNER_STATE_DIR": { "owner": "runner", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "SOUL_RUNNER_ARTIFACT_DIR": { "owner": "runner", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "SOUL_RUNNER_RELEASES_DIR": { "owner": "runner", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },

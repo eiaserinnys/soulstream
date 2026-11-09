@@ -135,6 +135,10 @@ export class CodexAppServerEngineAdapter implements EnginePort {
         { agentId: config.agentId ?? "unknown", ...event },
         "Codex detached command terminal-result retention expired",
       ),
+      onDetachedCommandExpired: ({ threadId, turnId, itemId }) => this.logger.warn(
+        { threadId, turnId, itemId },
+        "Codex detached command retention expired while running",
+      ),
     });
     this.unsubscribeDetachedCommandNotifications = this.client.onNotification(
       (notification) => this.detachedCommandActivity.observe(notification),

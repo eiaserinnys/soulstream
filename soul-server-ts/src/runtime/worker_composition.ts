@@ -50,7 +50,7 @@ import { composeClaudeRuntime, composeClaudeAccountServices, createClaudeAccount
 import { composeClaudeLoginService, seedLegacyClaudeAccount } from "./claude_login_runtime_composition.js";
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
 import { createEngineFactory } from "./engine_factory.js";
-import { backgroundLifecycleObserver, composeRunnerProcessRuntime, composeRunnerRecoveryCoordinator } from "./runner_process_composition.js";
+import { backgroundLifecycleObserver, composeRunnerOrphanReaper, composeRunnerProcessRuntime, composeRunnerRecoveryCoordinator } from "./runner_process_composition.js";
 import { composeSessionIsolation } from "./session_isolation_composition.js";
 import { resolveNodeServicesObservation } from "../mcp/node_services_observation_config.js";
 import type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
@@ -62,8 +62,7 @@ import { composePurposeDecisionRunner, composeWorkerAdmissionAuthorizer } from "
 export type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 export async function composeWorkerRuntime(params: WorkerCompositionParams): Promise<WorkerComposition> {
   const { env, logger, agentRegistry, mcpConfigService, codexCliPath, antigravityCliPath, agentProfileSource } = params;
-  const modelCatalog =
-    params.modelCatalog ?? new ModelCatalog(env.MODEL_CATALOG_PATH, logger, nodeEffortCapabilities(env.CODEX_ADAPTER_MODE));
+  const modelCatalog = params.modelCatalog ?? new ModelCatalog(env.MODEL_CATALOG_PATH, logger, nodeEffortCapabilities(env.CODEX_ADAPTER_MODE));
   let upstreamAdapter: UpstreamAdapter | null = null;
   const agentConfigService = new AgentConfigService({
     configPath: env.AGENTS_CONFIG_PATH,
@@ -492,6 +491,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     eventOutboxPump,
     eventOutboxPumpMux,
     ...(runnerRecoveryCoordinator ? { runnerRecoveryCoordinator } : {}),
+    ...composeRunnerOrphanReaper({ runnerProcess, logger, intervalMs: env.SOUL_RUNNER_REAPER_INTERVAL_MS }),
     ...(runnerProcess ? { runnerStateHostOwnership: runnerProcess.hostOwnership } : {}),
     upstreamRegistrationReady: params.releaseActivationState.waitUntilReady(),
     createUpstreamAdapter,
