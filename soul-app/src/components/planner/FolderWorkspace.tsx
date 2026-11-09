@@ -460,17 +460,18 @@ export function FolderWorkspace({
               testID="task-workspace-tablet-title-read"
               accessibilityRole="button"
               accessibilityLabel="폴더 제목"
-              style={styles.tabletTitleRead}
+              style={[styles.tabletTitleRead, {
+                minHeight: tabletTitleLayout.minHeight,
+                paddingVertical: tabletTitleLayout.verticalPadding,
+              }]}
               onPress={() => setEditingTabletTitle(true)}
             >
+              {/* 위아래 여백은 바깥 Pressable이 갖는다. Text가 여백을 가지면 말줄임 아래 여백에 다음 줄이 그려진다. */}
               <Text
                 testID="task-workspace-tablet-title-text"
                 numberOfLines={3}
                 ellipsizeMode="tail"
-                style={[styles.tabletTitle, {
-                  minHeight: tabletTitleLayout.minHeight,
-                  paddingVertical: tabletTitleLayout.verticalPadding,
-                }]}
+                style={styles.tabletTitle}
               >
                 {visibleTitle}
               </Text>

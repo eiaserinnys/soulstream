@@ -224,6 +224,10 @@ MEASURE_JS = r"""
       lineClamp: style.webkitLineClamp,
       display: style.display,
       minHeight: style.minHeight,
+      // 위아래 여백은 바깥 Pressable이 갖는다. Text에 여백이 남으면 말줄임 아래 여백에 다음 줄이 그려진다.
+      container: box(byTestId('task-workspace-tablet-title-read')),
+      computedPaddingTop: style.paddingTop,
+      computedPaddingBottom: style.paddingBottom,
     };
     title = {
       box: metrics.box, text: titleRead.text, rows: null, fontSize: metrics.fontSize,
@@ -510,18 +514,36 @@ def check_title_read(prefix: str, metrics: dict, checks: Checks) -> None:
     if title is None:
         return
     natural = title["naturalLineCount"]
-    height = title["box"]["height"]
-    visible_lines = round((height - TITLE_VERTICAL_PADDING * 2) / TITLE_LINE_HEIGHT)
-    expected = TITLE_VERTICAL_PADDING * 2 + visible_lines * TITLE_LINE_HEIGHT
+    container = title["container"]
+    height = None if container is None else container["height"]
+    visible_lines = (None if height is None
+                     else round((height - TITLE_VERTICAL_PADDING * 2) / TITLE_LINE_HEIGHT))
+    expected = (None if visible_lines is None
+                else TITLE_VERTICAL_PADDING * 2 + visible_lines * TITLE_LINE_HEIGHT)
     checks.check(f"{prefix} 읽기 제목 상자 높이 {expected} ({visible_lines}줄)",
-                 natural is not None and visible_lines in (1, 2, 3)
+                 container is not None and natural is not None
+                 and visible_lines in (1, 2, 3)
                  and abs(height - expected) <= EDGE_TOLERANCE,
-                 {"height": height, "expected": expected,
+                 {"height": height, "expected": expected, "container": container,
                   "naturalLineCount": natural, "lineCount": title["lineCount"],
                   "text": title["text"]})
     if natural is None:
         checks.check(f"{prefix} 읽기 제목 줄수 측정", False, title)
         return
+    # 글자 Text는 여백 없이 줄 높이만 차지해야 한다(최대 세 줄 78).
+    text_height = title["box"]["height"]
+    text_expected = (None if visible_lines is None else visible_lines * TITLE_LINE_HEIGHT)
+    checks.check(f"{prefix} 읽기 제목 글자 상자 높이 {text_expected} ({visible_lines}줄, 여백 제외)",
+                 text_expected is not None and text_expected <= TITLE_LINE_HEIGHT * 3
+                 and abs(text_height - text_expected) <= EDGE_TOLERANCE,
+                 {"height": text_height, "expected": text_expected,
+                  "computedPaddingTop": title["computedPaddingTop"],
+                  "computedPaddingBottom": title["computedPaddingBottom"]})
+    checks.check(f"{prefix} 읽기 제목 글자 위아래 여백 0",
+                 title["computedPaddingTop"] == "0px"
+                 and title["computedPaddingBottom"] == "0px",
+                 {"computedPaddingTop": title["computedPaddingTop"],
+                  "computedPaddingBottom": title["computedPaddingBottom"]})
     if natural > 3:
         checks.check(f"{prefix} 세 줄 넘는 제목 말줄임",
                      str(title["lineClamp"]) == "3" and visible_lines == 3,
@@ -759,8 +781,9 @@ def capture_entry(context: BrowserContext, base: str, out: Path, frame_id: str,
             }
             title = one_line["titleRead"]
             checks.check(f"{name} 한 줄 제목 상자 높이 {TITLE_MIN_HEIGHT}",
-                         title is not None
-                         and abs(title["box"]["height"] - TITLE_MIN_HEIGHT) <= EDGE_TOLERANCE,
+                         title is not None and title["container"] is not None
+                         and abs(title["container"]["height"] - TITLE_MIN_HEIGHT)
+                         <= EDGE_TOLERANCE,
                          title)
             checks.check(f"{name} 한 줄 머리 높이 {HEADER_MIN_HEIGHT}",
                          one_line["headers"]["task-workspace-tablet-header"] is not None
@@ -789,8 +812,8 @@ def capture_entry(context: BrowserContext, base: str, out: Path, frame_id: str,
             }
             two_title = two_line["titleRead"]
             checks.check(f"{name} 두 줄 제목 상자 높이 {TITLE_TWO_LINE_HEIGHT}",
-                         two_title is not None
-                         and abs(two_title["box"]["height"] - TITLE_TWO_LINE_HEIGHT)
+                         two_title is not None and two_title["container"] is not None
+                         and abs(two_title["container"]["height"] - TITLE_TWO_LINE_HEIGHT)
                          <= EDGE_TOLERANCE,
                          two_title)
             checks.check(f"{name} 두 줄 머리 높이 {TWO_LINE_HEADER_HEIGHT}",

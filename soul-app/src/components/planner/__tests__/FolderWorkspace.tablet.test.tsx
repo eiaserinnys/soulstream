@@ -159,14 +159,20 @@ test('태블릿 폴더 제목은 세 줄 읽기에서 시작하고 누르면 세
   const text = screen.getByTestId('task-workspace-tablet-title-text');
   expect(text.props.numberOfLines).toBe(3);
   expect(text.props.ellipsizeMode).toBe('tail');
-  const readStyle = StyleSheet.flatten(text.props.style);
+  // 위아래 여백과 최소 높이는 바깥 Pressable이 갖고, 글자 Text는 여백 없이 줄 높이만 차지한다.
+  const readStyle = StyleSheet.flatten(read.props.style);
   expect(readStyle).toMatchObject({
+    flex: 1,
+    flexDirection: 'row',
     minHeight: t.current.hitTarget.min,
-    padding: 0,
     paddingVertical: verticalPadding,
   });
-  expect(readStyle.maxHeight).toBeUndefined();
-  expect(readStyle.height).toBeUndefined();
+  const textStyle = StyleSheet.flatten(text.props.style);
+  expect(textStyle).toMatchObject({ padding: 0 });
+  expect(textStyle.paddingVertical).toBeUndefined();
+  expect(textStyle.minHeight).toBeUndefined();
+  expect(textStyle.maxHeight).toBeUndefined();
+  expect(textStyle.height).toBeUndefined();
   expect(screen.queryByTestId('task-workspace-tablet-title')).toBeNull();
 
   fireEvent.press(read);
