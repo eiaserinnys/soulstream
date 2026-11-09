@@ -1,6 +1,7 @@
 import React from 'react';
 import { Alert, Modal, StyleSheet, Text } from 'react-native';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
+import { useTokens } from '../../../theme';
 import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 let mockDimensions = { width: 390, height: 844, scale: 1, fontScale: 1 };
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({ __esModule: true, default: () => mockDimensions }));
@@ -137,4 +138,14 @@ test('settings remount restores the recurring editor, name and prompt; discard c
   await act(async () => { view.rerender(shell(true, true)); });
   expect(view.getByTestId('settings-server-input')).toBeTruthy();
   view.unmount();
+});
+
+test('변경 버리기 보조 단추는 link 글자를 쓴다', async () => {
+  useSettingsStore.setState({ serverUrl: 'https://soul.test' });
+  const tokens = renderHook(() => useTokens()).result.current;
+  const screen = render(<SettingsScreen category="connection" showAdmin={false} />);
+  fireEvent.changeText(screen.getByTestId('settings-server-input'), 'https://dirty.test');
+  expect(await screen.findByLabelText('변경 버리기')).toBeTruthy();
+  expect(StyleSheet.flatten(screen.getByText('변경 버리기').props.style).color)
+    .toBe(tokens.colors.link);
 });
