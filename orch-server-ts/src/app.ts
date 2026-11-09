@@ -112,6 +112,10 @@ import {
   type NodePairingRouteOptions,
 } from "./node_credentials/pairing_routes.js";
 import {
+  registerNodeReleaseRoutes,
+  type NodeReleaseRouteOptions,
+} from "./node_releases/node_release_routes.js";
+import {
   registerPushRoutes,
   type PushRouteOptions,
 } from "./push/push_routes.js";
@@ -221,6 +225,7 @@ export type CreateAppOptions = {
   nodeWsRoute?: NodeWsRouteOptions;
   nodeSnapshotRoutes?: NodeSnapshotRouteOptions;
   nodePairRoutes?: NodePairingRouteOptions;
+  nodeReleaseRoutes?: NodeReleaseRouteOptions;
   sessionActionCommandRoutes?: SessionActionCommandRouteOptions;
   sessionBackgroundScheduleRoutes?: SessionBackgroundScheduleRouteOptions;
   sessionResumeAfterLimitRoutes?: SessionResumeAfterLimitRouteOptions;
@@ -305,6 +310,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.nodePairRoutes !== undefined) {
     registerNodePairingRoutes(app, options.nodePairRoutes);
+  }
+  if (options.nodeReleaseRoutes !== undefined) {
+    registerNodeReleaseRoutes(app, options.nodeReleaseRoutes);
   }
   if (options.sessionCommandRoutes !== undefined) {
     registerSessionCommandRoutes(app, {

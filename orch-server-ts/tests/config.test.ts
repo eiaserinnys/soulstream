@@ -102,6 +102,7 @@ describe("orch-server-ts config scaffold", () => {
       codex_cli_path: null,
       antigravity_cli_path: null,
       model_catalog_path: null,
+      portable_node_releases_dir: null,
       typesafe_api_key: "",
       turn_summary_openai_key: "turn-summary-key",
       usage_summary_poll_interval_seconds: 300,

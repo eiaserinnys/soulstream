@@ -199,6 +199,13 @@ function createAllOptInRouteApp() {
     nodeClaudeAuthRoutes: inert,
     nodeSnapshotRoutes: inert,
     nodePairRoutes: { service: inert },
+    nodeReleaseRoutes: {
+      authBearerToken: "test-token",
+      environment: "test",
+      nodeCredentials: null,
+      releasesDir: null,
+      currentSourceCommit: "dev",
+    },
     nodeWsRoute: { registry: inert },
     pageYjsRoutes: {
       authBearerToken: "test-token",

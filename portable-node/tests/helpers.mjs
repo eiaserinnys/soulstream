@@ -362,7 +362,7 @@ export function releaseRecord({ sourceCommit, bundle, key }) {
   return {
     contract_version: 1,
     source_commit: sourceCommit,
-    sha256: bundle.sha256,
+    sha256: `sha256-${bundle.sha256}`,
     size: bundle.size,
     download_path: `/api/node/releases/downloads/${key}`,
   };
