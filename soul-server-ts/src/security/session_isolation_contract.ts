@@ -211,7 +211,7 @@ export interface IsolationLaunchInput {
     unshare: string;
     setpriv: string;
     nft: string;
-    supervisor: string;
+    netnsHelper: string;
   };
 }
 
@@ -270,7 +270,7 @@ export interface IsolationProcessPorts {
     args: readonly string[];
     options: SpawnOptions;
   }): ChildProcess;
-  /** supervisor가 nft·라우트·bind 준비를 마쳤다고 알릴 때 완료된다. */
+  /** netns 헬퍼가 nft·라우트·bind 준비를 마쳤다고 알릴 때 완료된다. */
   awaitNetworkReady(child: ChildProcess): Promise<void>;
   /** 이 실행이 소유한 프로세스만 해제한다. `pid`는 검증된 양의 정수다. */
   kill(pid: number, signal: NodeJS.Signals): boolean;

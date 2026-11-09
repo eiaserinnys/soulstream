@@ -196,7 +196,7 @@ describe("session isolation contract", () => {
         unshare: "/usr/bin/unshare",
         setpriv: "/usr/bin/setpriv",
         nft: "/usr/sbin/nft",
-        supervisor: "/home/eias/workspace/runner/session-network-supervisor.py",
+        netnsHelper: "/home/eias/workspace/runner/session-netns-helper.py",
       },
     };
 
