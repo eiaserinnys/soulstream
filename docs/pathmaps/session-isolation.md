@@ -1,6 +1,6 @@
 # 세션 격리
 
-최종 대조 커밋 SHA: `c845fbf3e53714ee69565320e7b68c52e9f9bf41`
+최종 대조 커밋 SHA: `a268865f3ba8ae2c095d78f4cf3b57978c3d7557`
 
 > 범위 주석: 격리는 두 층이다. OS 경계(unshare netns + nft + pasta + setpriv + bwrap)와 서버가 인증하는 MCP principal(full/restricted)이다. 어느 한 층이 다른 층을 대신하지 않는다.
 
