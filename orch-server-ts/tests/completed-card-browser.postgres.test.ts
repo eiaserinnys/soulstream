@@ -97,7 +97,7 @@ it('pages active cards in status-group order and excludes closed cards when incl
     {id:'paged-excl-cancel', status:'cancelled', updatedAt:'2026-11-04 00:00:00+00', title:'pagedexcl cancel'},
   ]);
   const page = (await app.inject('/api/cards?limit=50&includeClosed=false&q=pagedexcl')).json();
-  expect(page.cards.map((c:{id:string})=>c.id)).toEqual(['paged-excl-run','paged-excl-todo']);
+  expect(page.cards.map((c:{id:string})=>c.id)).toEqual(['paged-excl-todo','paged-excl-run']);
   expect(page.nextCursor).toBeNull();
 });
 
@@ -119,9 +119,9 @@ it('traverses every card without duplicates or gaps in status-group and update o
   const pageSizes: number[] = [];
   let cursor: string | null = null;
   do {
-    // limit 3 puts the first page boundary between the two same-updated_at running cards,
+    // limit 4 puts the first page boundary between the two same-updated_at running cards,
     // so a cursor that forgets the id tie-break drops one of them instead of passing silently.
-    const query: URLSearchParams = new URLSearchParams({limit:'3',includeClosed:'true',q:'pagedpage',...(cursor ? {cursor} : {})});
+    const query: URLSearchParams = new URLSearchParams({limit:'4',includeClosed:'true',q:'pagedpage',...(cursor ? {cursor} : {})});
     const response = await app.inject(`/api/cards?${query}`);
     expect(response.statusCode).toBe(200);
     const page:{cards:{id:string}[];nextCursor:string | null} = response.json();
@@ -131,13 +131,13 @@ it('traverses every card without duplicates or gaps in status-group and update o
   } while (cursor);
   const expected = await h.sql`SELECT id FROM cards WHERE folder_id='public' AND archived=FALSE
     AND (strpos(lower(title),'pagedpage') > 0 OR strpos(lower(request),'pagedpage') > 0 OR strpos('#' || COALESCE(number::text,''),'pagedpage') > 0)
-    ORDER BY CASE status WHEN 'review' THEN 1 WHEN 'blocked' THEN 2 WHEN 'running' THEN 3 WHEN 'queued' THEN 4
-      WHEN 'todo' THEN 5 WHEN 'on_hold' THEN 6 WHEN 'done' THEN 7 WHEN 'cancelled' THEN 8 ELSE 9 END,
+    ORDER BY CASE status WHEN 'todo' THEN 1 WHEN 'queued' THEN 2 WHEN 'running' THEN 3 WHEN 'blocked' THEN 4
+      WHEN 'review' THEN 5 WHEN 'on_hold' THEN 6 WHEN 'done' THEN 7 WHEN 'cancelled' THEN 8 ELSE 9 END,
       updated_at DESC, id COLLATE "C" DESC`;
   expect(ids).toEqual(expected.map(row=>row.id));
   expect(ids).toHaveLength(11);
   expect(new Set(ids).size).toBe(ids.length);
-  expect(pageSizes).toEqual([3,3,3,2]);
+  expect(pageSizes).toEqual([4,4,3]);
 });
 
 it('searches paged cards by title, request and #number and rejects malformed cursors', async () => {
@@ -146,7 +146,7 @@ it('searches paged cards by title, request and #number and rejects malformed cur
     {id:'paged-num-other', status:'running', updatedAt:'2026-11-05 00:00:01+00', title:'pagednum 다른 카드', request:'pagednum 요청'},
   ]);
   const byWord = (await app.inject('/api/cards?limit=10&includeClosed=true&q=pagednum')).json();
-  expect(byWord.cards.map((c:{id:string})=>c.id)).toEqual(['paged-num-other','paged-num-target']);
+  expect(byWord.cards.map((c:{id:string})=>c.id)).toEqual(['paged-num-target','paged-num-other']);
   const byNumber = (await app.inject('/api/cards?limit=10&includeClosed=true&q=%23987001')).json();
   expect(byNumber.cards.map((c:{id:string})=>c.id)).toEqual(['paged-num-target']);
   expect(byNumber.nextCursor).toBeNull();
