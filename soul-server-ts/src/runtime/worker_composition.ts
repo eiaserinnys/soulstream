@@ -263,7 +263,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
   worktreeService = composeWorktreeService(env, orchHostClientDeps,
     () => listActiveTaskWorkspaceDirs(taskManager.listTasks(), (profileId) => agentRegistry.get(profileId)?.workspace_dir));
   const worktreeSweeper = composeWorktreeSweeper(worktreeService, logger);
-  const sessionIsolation = composeSessionIsolation(env);
+  const sessionIsolation = composeSessionIsolation({ env, worktreeService, mcpConfigService, codexCliPath });
   const nodeServicesObservation = resolveNodeServicesObservation(env);
   db.configureScheduleHost(new ScheduleHostClient(orchHostClientDeps));
   const scheduleService = new SoulstreamScheduleService(db.schedules(), broadcaster, persistence, logger);
@@ -290,6 +290,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     reconcileClaudeTranscriptAppend: (task) => taskRuntime.claudeRuntimeTaskFollowup.reconcileTranscriptAppend(task),
     observeClaudeRuntime: backgroundLifecycleObserver(claudeRuntime.backgroundLifecycle),
     releaseManifest: params.releaseActivationState.manifest,
+    isolationHost: sessionIsolation?.host,
   });
   params.releaseActivationState.markPrewarmed({
     host: "verified",

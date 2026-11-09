@@ -253,13 +253,17 @@ export function createRunnerProcessRuntimeFactory(
         }),
       };
     })();
+    const spawnedProcess = spawnInput.then(async (input) => await spawner.spawn(input));
+    // 준비가 스폰보다 먼저 실패하면 디스패처는 이 약속에 도달하지 못한다.
+    // 거부를 여기서 관측해 unhandled rejection으로 남기지 않는다.
+    void spawnedProcess.catch(() => undefined);
     return createRuntime(
       task,
       agent,
       backend,
       snapshots,
       spawnInput,
-      spawnInput.then(async (input) => await spawner.spawn(input)),
+      spawnedProcess,
     );
   }) as RunnerProcessRuntimeFactory;
   // Adoption, live terminal replay, and offline replay reuse the registered

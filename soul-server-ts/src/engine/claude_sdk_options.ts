@@ -1,6 +1,7 @@
 import type { Options as ClaudeSdkOptions } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
+import type { RunnerIsolationChildConfig } from "../runner/runner_isolation_config.js";
 import type { ClaudeRunOptions } from "./claude_adapter.js";
 import type { ClaudeClientEvent } from "./claude_client_event.js";
 import type { EventQueue } from "./claude_sdk_event_queue.js";
@@ -14,6 +15,38 @@ import { isolationError, launchIsolatedChild } from "./isolated_session_launch.j
 import { spawnClaudeSessionEngine } from "./session_engine_oom_score.js";
 
 const CLAUDE_CODE_EXECPATH_ENV = "CLAUDE_CODE_EXECPATH";
+
+export interface ClaudeIsolationWiring {
+  /** SDK 옵션으로 펼칠 격리 배선. off면 빈 객체다. */
+  options(abortController: AbortController): {
+    isolation?: RunnerIsolationChildConfig;
+    onIsolationFailure?: (error: Error) => void;
+  };
+  /** 준비 실패로 중단된 턴의 오류. 없으면 undefined. */
+  failure(): Error | undefined;
+}
+
+/**
+ * 격리 준비 실패를 턴 오류로 고정하고 실행을 즉시 중단한다. 중단된 턴이
+ * full 실행으로 흐르지 않도록 실패를 호출자가 읽을 수 있게 보관한다.
+ */
+export function claudeIsolationWiring(
+  isolation: RunnerIsolationChildConfig | undefined,
+): ClaudeIsolationWiring {
+  let failure: Error | undefined;
+  return {
+    options: (abortController) => isolation
+      ? {
+          isolation,
+          onIsolationFailure: (error: Error) => {
+            failure = error;
+            abortController.abort();
+          },
+        }
+      : {},
+    failure: () => failure,
+  };
+}
 
 interface BuildClaudeSdkOptionsParams {
   options: ClaudeRunOptions;

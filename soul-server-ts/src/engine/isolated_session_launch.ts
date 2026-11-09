@@ -1,4 +1,5 @@
 import type { ChildProcess, SpawnOptions } from "node:child_process";
+import type { Readable, Writable } from "node:stream";
 
 import type { Logger } from "pino";
 
@@ -39,8 +40,15 @@ export function restrictedChildEnv(
   });
 }
 
+/** 어댑터 셋이 모두 stdio=pipe로 띄우므로 스트림이 반드시 있다. */
+export type IsolatedChildProcess = ChildProcess & {
+  stdin: Writable;
+  stdout: Readable;
+  stderr: Readable;
+};
+
 export interface IsolatedChildLaunch {
-  child: ChildProcess;
+  child: IsolatedChildProcess;
   ready: Promise<void>;
   dispose(): Promise<void>;
   /** ready가 거부됐으면 그 오류. CLI 종료 뒤 어댑터가 턴 오류로 쓴다. */
@@ -84,11 +92,21 @@ export function launchIsolatedChild(input: LaunchIsolatedChildInput): IsolatedCh
   // B1이 ready 실패에서 이미 dispose한다. 이 거부는 여기서 관측만 유지한다.
   void ready.catch(() => undefined);
   return {
-    child: result.child,
+    child: requirePipedChild(result.child),
     ready,
     dispose: result.dispose,
     failure: () => failure,
   };
+}
+
+function requirePipedChild(child: ChildProcess): IsolatedChildProcess {
+  const { stdin, stdout, stderr } = child;
+  if (!stdin || !stdout || !stderr) {
+    throw new SessionIsolationUnavailableError(
+      "SESSION_ISOLATION_UNAVAILABLE: isolated child was spawned without piped stdio",
+    );
+  }
+  return Object.assign(child, { stdin, stdout, stderr });
 }
 
 /** 턴 실패 메시지에 코드가 남도록 항상 SESSION_ISOLATION_UNAVAILABLE을 붙인다. */

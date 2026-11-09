@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
+import type { Readable, Writable } from "node:stream";
 import type { Logger } from "pino";
 import type { RunnerIsolationChildConfig } from "../../runner/runner_isolation_config.js";
 import {
@@ -112,6 +113,8 @@ export function launchOpenCodeProcess(options: {
       stdio: ["pipe", "pipe", "pipe"],
     });
   }
+  // 두 경로 모두 stdio=pipe로 띄운다. 파이프가 없으면 프로그래밍 오류다.
+  const io = pipedChildStreams(child);
   let failure: string | undefined;
   let interrupted = false;
   let initialized = false;
@@ -119,9 +122,9 @@ export function launchOpenCodeProcess(options: {
   let rateLimitDetected = false;
   let rateLimitSessionId: string | undefined;
   let descendants: ReturnType<typeof snapshotAntigravityDescendants> = [];
-  const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+  const lines = createInterface({ input: io.stdout, crlfDelay: Infinity });
   const iterator = lines[Symbol.asyncIterator]();
-  child.stdin.on("error", (error: Error) => { failure ??= error.message; });
+  io.stdin.on("error", (error: Error) => { failure ??= error.message; });
   child.on("error", () => { failure ??= "OpenCode CLI failed to start"; });
 
   const done = new Promise<OpenCodeExit>((resolve) => {
@@ -184,7 +187,7 @@ export function launchOpenCodeProcess(options: {
     return initialized ? signalGroup() : true;
   }
 
-  const stderrLines = createInterface({ input: child.stderr, crlfDelay: Infinity });
+  const stderrLines = createInterface({ input: io.stderr, crlfDelay: Infinity });
   stderrLines.on("line", (line) => {
     if (rateLimitDetected) return;
     const match = parseOpenCode119RateLimitLogLine(line);
@@ -202,7 +205,7 @@ export function launchOpenCodeProcess(options: {
     }
   }
 
-  child.stdin.end(options.input, "utf8");
+  io.stdin.end(options.input, "utf8");
   return {
     events: events(),
     done,
@@ -210,4 +213,16 @@ export function launchOpenCodeProcess(options: {
     markInitialized,
     interrupt,
   };
+}
+
+function pipedChildStreams(child: ChildProcess): {
+  stdin: Writable;
+  stdout: Readable;
+  stderr: Readable;
+} {
+  const { stdin, stdout, stderr } = child;
+  if (!stdin || !stdout || !stderr) {
+    throw new Error("OpenCode child process was started without piped stdio");
+  }
+  return { stdin, stdout, stderr };
 }
