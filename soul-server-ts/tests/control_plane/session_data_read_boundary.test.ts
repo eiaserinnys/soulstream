@@ -44,7 +44,11 @@ describe("worker session-data read boundary", () => {
       if (violations.length > 0) matches.set(relative(SOURCE_ROOT, file), violations);
     }
 
-    expect(Object.fromEntries([...matches].sort())).toEqual({});
+    // session_env.ts는 §11 restricted env에서 host DATABASE_URL을 제거할 때
+    // 키 이름만 쓰고 값을 읽지 않는다. 다른 worker 코드의 사용은 계속 금지한다.
+    expect(Object.fromEntries([...matches].sort())).toEqual({
+      "runner/session_env.ts": ["DATABASE_URL"],
+    });
   });
 });
 
