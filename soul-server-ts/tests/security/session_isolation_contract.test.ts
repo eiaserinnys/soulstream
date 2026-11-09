@@ -87,6 +87,18 @@ describe("session isolation contract", () => {
       prepareGitHubCredential: vi.fn(async () => ({ GH_TOKEN: "fake" })),
       issueRestrictedCredential: vi.fn(async (sessionId: string) => `ssr1.${sessionId}`),
       sanitizeMcpServers: vi.fn(async (servers) => servers),
+      lstatPath: vi.fn(async () => null),
+      listDirectory: vi.fn(async () => []),
+      readSymlink: vi.fn(async () => null),
+      detectWsl: vi.fn(async () => false),
+      ensureLockFile: vi.fn(async () => {}),
+      ensureSymlink: vi.fn(async () => {}),
+      hashFileSha512: vi.fn(async () => ""),
+      resolveGitCommonDir: vi.fn(async (repositoryPath: string) => `${repositoryPath}/.git`),
+      resolveNodeId: vi.fn(async () => "node-a"),
+      resolveMainPackageStorePath: vi.fn(async () => null),
+      readClaudeOauthToken: vi.fn(async () => "token"),
+      resolveAgentCommonFilesDirectory: vi.fn(async () => null),
     };
     const input: IsolationPreparationInput = {
       decision: {
@@ -230,9 +242,17 @@ describe("session isolation contract", () => {
     };
     walk(sourceRoot);
 
+    // B2 준비 모듈은 계약 타입을 쓰는 계획 모듈이며 턴 경로에 연결되지 않는다.
     expect(importers.sort()).toEqual([
       "engine/protocol.ts",
       "runner/frame_protocol.ts",
+      "runner/session_auth_preparation.ts",
+      "runner/session_filesystem_cache.ts",
+      "runner/session_filesystem_git.ts",
+      "runner/session_filesystem_locks.ts",
+      "runner/session_filesystem_masks.ts",
+      "runner/session_filesystem_plan.ts",
+      "runner/session_filesystem_policy.ts",
       "security/session_execution_policy.ts",
       "task/task_manager.ts",
       "task/task_models.ts",
