@@ -38,11 +38,23 @@ import { readStoredPersistentSettings } from "@soulstream/wire-schema/persistent
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import {
   createInProcessTaskRunnerRuntime,
+  createTaskRunnerRuntime,
   type TaskRunnerRuntime,
 } from "../runner/task_runner_runtime.js";
 import type { RunnerRegistration } from "../runner/runner_process_registry.js";
 import { RunnerOrphanedSpawnError } from "../runner/runner_process_dispatcher.js";
 import type { RunnerPhaseObservation } from "../runner/runner_phase_observation.js";
+import {
+  SESSION_ISOLATION_UNAVAILABLE,
+  SessionIsolationUnavailableError,
+} from "../runner/session_filesystem_errors.js";
+import {
+  desiredRunnerIsolation,
+  fullRunnerIsolation,
+  runnerIsolationAllowsReuse,
+  type RunnerIsolationIdentity,
+  type SessionIsolationTurnGate,
+} from "../security/session_isolation_turn.js";
 
 import { assertGenericTaskExecution } from "./task_orchestration_purpose.js";
 import type { CompletionNotifier } from "./completion_notifier.js";
@@ -146,6 +158,12 @@ export interface RunnerProcessRuntimeFactory {
     backend: BackendId,
     snapshots: RunnerSnapshotPersistence,
   ): TaskRunnerRuntime;
+  /**
+   * 이 팩토리가 restricted 실행을 실제로 준비할 수 있는지. 미설정/false면
+   * restricted 턴은 full로 내려가지 않고 `SESSION_ISOLATION_UNAVAILABLE`로
+   * 실패한다(fail-closed). full 턴에는 영향이 없다.
+   */
+  readonly isolationSupported?: boolean;
   recover?(
     task: Task,
     registration: RunnerRegistration,
@@ -244,6 +262,12 @@ export class TaskExecutor {
     private readonly waitForAttachmentRefs?: (sessionId: string) => Promise<unknown>,
     private readonly prepareAttachmentInput?: PrepareAttachmentInput,
     private readonly claudeAccountPoolEnabled = false,
+    /**
+     * 약한 모델 세션 격리 판정 포트. `SESSION_ISOLATION_MODE=off`면 undefined로
+     * 주입되어 판정 호출이 0회다. enforce일 때만 CLI 세션 턴마다 정확히 한 번
+     * `resolveDecision`을 부른다.
+     */
+    private readonly sessionIsolation?: SessionIsolationTurnGate,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -822,13 +846,25 @@ export class TaskExecutor {
     backend: BackendId,
     retainedRunner: TaskRunnerRuntime | undefined,
   ): Promise<TaskRunnerRuntime> {
+    const desiredIsolation = await this.resolveRunnerIsolation(task);
     let reusableRunner = retainedRunner;
-    if (reusableRunner && reusableRunner.engine.backendId !== backend) {
+    if (reusableRunner && (
+      reusableRunner.engine.backendId !== backend
+      || !runnerIsolationAllowsReuse(reusableRunner.isolation, desiredIsolation)
+    )) {
       await reusableRunner.dispatcher.close();
       releaseTaskRunner(task, reusableRunner);
       reusableRunner = undefined;
     }
-    const runner = reusableRunner ?? (this.runnerProcessFactory
+    if (!reusableRunner && desiredIsolation.tier === "restricted"
+      && this.runnerProcessFactory?.isolationSupported !== true) {
+      // restricted는 격리를 실제로 준비하는 러너 프로세스 경로 전용이다.
+      // 준비 능력이 없으면 in-process로도, 일반 러너로도 내려가지 않는다.
+      throw new SessionIsolationUnavailableError(
+        `${SESSION_ISOLATION_UNAVAILABLE}: restricted execution requires an isolation-capable runner process path`,
+      );
+    }
+    let runner = reusableRunner ?? (this.runnerProcessFactory
       ? this.runnerProcessFactory(task, agent, backend, this.snapshotPersistenceFor(task))
       : createInProcessTaskRunnerRuntime(
           task.modelPresetBackend
@@ -836,7 +872,39 @@ export class TaskExecutor {
             : this.engineFactory(agent),
         ));
     if (reusableRunner) releaseTaskRunner(task, reusableRunner);
+    if (!runner.isolation && desiredIsolation.tier === "restricted") {
+      runner = createTaskRunnerRuntime(
+        runner.engine,
+        runner.dispatcher,
+        runner.eventPersistence,
+        desiredIsolation,
+      );
+    }
     return runner;
+  }
+
+  /**
+   * 이번 턴의 격리 판정과 러너 재사용 기준. off(포트 미주입)와 LLM 세션은
+   * 판정 호출 0회다. enforce + CLI 세션이면 정확히 한 번 부른다.
+   */
+  private async resolveRunnerIsolation(task: Task): Promise<RunnerIsolationIdentity> {
+    const gate = this.sessionIsolation;
+    if (!gate) return fullRunnerIsolation();
+    if ((task.sessionType ?? "claude") !== "claude") {
+      task.executionSecurity = undefined;
+      return fullRunnerIsolation();
+    }
+    const decision = await gate.resolveDecision(
+      task.agentSessionId,
+      task.modelPreset ?? null,
+    );
+    task.executionSecurity = decision ?? undefined;
+    if (decision?.tier !== "restricted") return fullRunnerIsolation();
+    return desiredRunnerIsolation(
+      decision,
+      gate.policyDigest(),
+      task.worktreeId ? [task.worktreeId] : [],
+    );
   }
 
   private startExecutionWithoutRegistration(
