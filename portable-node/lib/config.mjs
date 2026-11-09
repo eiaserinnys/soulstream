@@ -83,12 +83,6 @@ function validateBootstrapBody(body) {
   if (body.env !== undefined && (body.env === null || typeof body.env !== "object" || Array.isArray(body.env))) {
     throw new BootstrapError("구성 응답의 env 형태가 올바르지 않습니다.", "MALFORMED_BOOTSTRAP");
   }
-  if (
-    body.repositories !== undefined &&
-    (body.repositories === null || typeof body.repositories !== "object" || Array.isArray(body.repositories))
-  ) {
-    throw new BootstrapError("구성 응답의 repositories 형태가 올바르지 않습니다.", "MALFORMED_BOOTSTRAP");
-  }
 }
 
 function validateGenerationField(generation) {
@@ -172,12 +166,6 @@ export async function writeConfigGeneration({ bootstrap, stateRoot, configRoot }
   await writeFile(envPath, `${JSON.stringify(rawEnv, null, 2)}\n`, { mode: 0o600 });
   files.env = envPath;
 
-  const repositoriesPath = join(dir, "repositories.json");
-  await writeFile(repositoriesPath, `${JSON.stringify(bootstrap.repositories ?? {}, null, 2)}\n`, {
-    mode: 0o600,
-  });
-  files.repositories = repositoriesPath;
-
   const metaPath = join(dir, "bootstrap.json");
   await writeFile(
     metaPath,
@@ -216,6 +204,5 @@ export function formatEnvFile(env) {
 
 export async function readConfigGeneration(dir) {
   const envRaw = await readFile(join(dir, "env.json"), "utf8");
-  const repositoriesRaw = await readFile(join(dir, "repositories.json"), "utf8");
-  return { env: JSON.parse(envRaw), repositories: JSON.parse(repositoriesRaw) };
+  return { env: JSON.parse(envRaw) };
 }

@@ -8,14 +8,5 @@
   "pairing_poll_interval_secs": 3,
   "restart_delay_ms": 3000,
   "ready_window_ms": 10000,
-  "shutdown_grace_ms": 20000,
-  "repositories": {
-    "workspace": {
-      "proxy_path": "/api/node/git/seosoyoung_workspace",
-      "sparse_patterns": ["/*", "!/.local/artifacts/"]
-    },
-    "common": {
-      "proxy_path": "/api/node/git/seosoyoung-common"
-    }
-  }
+  "shutdown_grace_ms": 20000
 }

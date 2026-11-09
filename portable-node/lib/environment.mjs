@@ -172,7 +172,6 @@ export function buildChildEnv({
     CLAUDE_ACCOUNT_POOL_ENABLED: "true",
     CLAUDE_ACCOUNTS_DIR: join(stateRoot, "claude-accounts"),
     CODEX_HOME: join(stateRoot, "codex"),
-    AGENT_COMMON_FILES_DIR: join(stateRoot, "common"),
     WORKTREE_MCP_ENABLED: "true",
     WORKTREE_PROJECTS_ROOT: join(stateRoot, "workspace", ".projects"),
     ATOM_ENABLED: "true",

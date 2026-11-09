@@ -1,4 +1,4 @@
-// 시험 픽스처: 가짜 오케스트레이터(HTTP)와 로컬 bare 리포, 가짜 런타임/앱 묶음을 만든다.
+// 시험 픽스처: 가짜 오케스트레이터(HTTP)와 가짜 런타임/앱 묶음을 만든다.
 // 실제 오케스트레이터·실제 로그인·실제 런타임 다운로드는 쓰지 않는다.
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -16,7 +16,6 @@ import {
 
 export const PORTABLE_SOURCE = dirname(dirname(fileURLToPath(import.meta.url)));
 export const TOKEN = "test-node-token-7f3a";
-export const NODE_USER = "soulstream-node";
 
 export async function makeTempRoot(name) {
   // macOS의 os.tmpdir()은 /var/folders/.../T/처럼 길어 러너 소켓 경로 한계(103바이트)를 넘는다.
@@ -97,96 +96,11 @@ export async function makeSourceRepo(root) {
   };
 }
 
-/** workspace와 common bare 리포를 만들고 파일을 커밋한다. */
-export async function makeBareRepos(root) {
-  const gitRoot = join(root, "git");
-  await mkdir(gitRoot, { recursive: true });
-  const make = async (name, files) => {
-    const bare = join(gitRoot, `${name}.git`);
-    const work = join(root, `work-${name}`);
-    await git(root, ["init", "--bare", "--quiet", bare]);
-    await git(bare, ["symbolic-ref", "HEAD", "refs/heads/main"], { allowFail: true });
-    for (const [key, value] of [
-      ["uploadpack.allowFilter", "true"],
-      ["uploadpack.allowAnySHA1InWant", "true"],
-    ]) {
-      await git(bare, ["config", key, value], { allowFail: true });
-    }
-    await mkdir(work, { recursive: true });
-    await git(work, ["init", "--quiet", "-b", "main"]);
-    await git(work, ["config", "user.email", "test@example.invalid"]);
-    await git(work, ["config", "user.name", "portable test"]);
-    for (const [path, content] of Object.entries(files)) {
-      await mkdir(dirname(join(work, path)), { recursive: true });
-      await writeFile(join(work, path), content);
-    }
-    await git(work, ["add", "-A"]);
-    await git(work, ["commit", "--quiet", "-m", "init"]);
-    await git(work, ["remote", "add", "origin", bare]);
-    await git(work, ["push", "--quiet", "origin", "main"]);
-    return { bare, work };
-  };
-  const workspace = await make("seosoyoung_workspace", {
-    "README.md": "workspace\n",
-    "notes/today.md": "note\n",
-    ".local/artifacts/big.bin": "should not be checked out\n",
-  });
-  const common = await make("seosoyoung-common", { "skills/readme.md": "skills\n" });
-  return { gitRoot, workspace, common };
-}
-
-function cgiToResponse(buffer) {
-  const separator = buffer.indexOf("\r\n\r\n");
-  const headerText = separator >= 0 ? buffer.subarray(0, separator).toString("utf8") : "";
-  const body = separator >= 0 ? buffer.subarray(separator + 4) : buffer;
-  const headers = {};
-  let status = 200;
-  for (const line of headerText.split("\r\n")) {
-    const index = line.indexOf(":");
-    if (index < 0) continue;
-    const key = line.slice(0, index).trim().toLowerCase();
-    const value = line.slice(index + 1).trim();
-    if (key === "status") status = Number(value.split(" ")[0]);
-    else headers[key] = value;
-  }
-  return { status, headers, body };
-}
-
-export function gitBackend({ gitRoot, pathInfo, query, method, contentType, body, protocol }) {
-  return new Promise((resolve, reject) => {
-    const child = spawn("git", ["http-backend"], {
-      env: {
-        ...process.env,
-        GIT_PROJECT_ROOT: gitRoot,
-        GIT_HTTP_EXPORT_ALL: "1",
-        PATH_INFO: pathInfo,
-        QUERY_STRING: query ?? "",
-        REQUEST_METHOD: method,
-        CONTENT_TYPE: contentType ?? "",
-        REMOTE_USER: NODE_USER,
-        REMOTE_ADDR: "127.0.0.1",
-        HTTP_GIT_PROTOCOL: protocol ?? "",
-        GIT_CONFIG_NOSYSTEM: "1",
-      },
-    });
-    const chunks = [];
-    let stderr = "";
-    child.stdout.on("data", (chunk) => chunks.push(chunk));
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", reject);
-    child.on("close", () => resolve(cgiToResponse(Buffer.concat(chunks))));
-    child.stdin.on("error", () => {});
-    child.stdin.end(body ?? Buffer.alloc(0));
-  });
-}
-
 /**
- * 가짜 오케스트레이터. 참여/릴리스/구성/Git 프록시 응답만 돌려준다.
+ * 가짜 오케스트레이터. 참여/릴리스/구성 응답만 돌려준다.
  * state.current, state.bootstrap, state.bundle, state.pairing 으로 시나리오를 바꾼다.
  */
-export async function startFakeOrchestrator({ root, gitRoot, token = TOKEN }) {
+export async function startFakeOrchestrator({ root, token = TOKEN }) {
   const state = {
     token,
     current: null,
@@ -198,7 +112,6 @@ export async function startFakeOrchestrator({ root, gitRoot, token = TOKEN }) {
     pairingExpiresAt: new Date(Date.now() + 600000).toISOString(),
     pollPendingOnce: true,
     revoked: false,
-    gitRoot,
   };
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, "http://127.0.0.1");
@@ -299,31 +212,6 @@ export async function startFakeOrchestrator({ root, gitRoot, token = TOKEN }) {
         return;
       }
       sendJson(200, state.bootstrap);
-      return;
-    }
-    if (url.pathname.startsWith("/api/node/git/")) {
-      const authorization = request.headers.authorization ?? "";
-      const expected = `Basic ${Buffer.from(`${NODE_USER}:${state.token}`).toString("base64")}`;
-      if (authorization !== expected) {
-        response.writeHead(401, { "www-authenticate": 'Basic realm="git"' });
-        response.end("auth required");
-        return;
-      }
-      const rest = url.pathname.slice("/api/node/git/".length);
-      const slash = rest.indexOf("/");
-      const repo = rest.slice(0, slash);
-      const tail = rest.slice(slash);
-      const backend = await gitBackend({
-        gitRoot,
-        pathInfo: `/${repo}.git${tail}`,
-        query: url.searchParams.toString(),
-        method: request.method,
-        contentType: request.headers["content-type"],
-        protocol: request.headers["git-protocol"],
-        body,
-      });
-      response.writeHead(backend.status, backend.headers);
-      response.end(backend.body);
       return;
     }
     sendJson(404, { error: "unknown" });
@@ -494,10 +382,6 @@ export function bootstrapPayload(sourceCommit) {
       EXTRA_FROM_BOOTSTRAP: "yes",
       GH_TOKEN: "bootstrap-forbidden",
     },
-    repositories: {
-      workspace: { proxy_path: "/api/node/git/seosoyoung_workspace" },
-      common: { proxy_path: "/api/node/git/seosoyoung-common" },
-    },
   };
 }
 
@@ -513,13 +397,6 @@ export async function writeDefaults(root, upstream, overrides = {}) {
     restart_delay_ms: 300,
     ready_window_ms: 500,
     shutdown_grace_ms: 3000,
-    repositories: {
-      workspace: {
-        proxy_path: "/api/node/git/seosoyoung_workspace",
-        sparse_patterns: ["/*", "!/.local/artifacts/"],
-      },
-      common: { proxy_path: "/api/node/git/seosoyoung-common" },
-    },
     ...overrides,
   };
   const path = join(root, "defaults.json");
@@ -626,13 +503,12 @@ export async function pathExists(path) {
   }
 }
 
-/** 한 시험에 필요한 가짜 오케스트레이터·소스 체크아웃·리포·런타임을 한 번에 만든다. */
+/** 한 시험에 필요한 가짜 오케스트레이터·소스 체크아웃·런타임을 한 번에 만든다. */
 export async function makeScenario(name, { checkIntervalSecs = 3600 } = {}) {
   const root = await makeTempRoot(name);
   const source = await makeSourceRepo(root);
   const stateDir = join(root, "state");
-  const repos = await makeBareRepos(root);
-  const orch = await startFakeOrchestrator({ root, gitRoot: repos.gitRoot });
+  const orch = await startFakeOrchestrator({ root });
   const lock = await makeRuntimeLock(root, orch.url);
   for (const [kind, bytes] of Object.entries(lock.archives)) {
     orch.state.fixtures.set(`${kind}.tar.gz`, bytes);
@@ -655,7 +531,7 @@ export async function makeScenario(name, { checkIntervalSecs = 3600 } = {}) {
     await orch.close();
     await rm(root, { recursive: true, force: true });
   };
-  return { root, source, stateDir, repos, orch, lock, defaultsPath, publish, env, close };
+  return { root, source, stateDir, orch, lock, defaultsPath, publish, env, close };
 }
 
 export { relative };
