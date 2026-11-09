@@ -4041,7 +4041,7 @@
     "name": "move_sessions_to_folder"
   },
   {
-    "description": "Haniel 노드의 서비스 상태와 로그를 읽기 전용으로 관측한다. 고정 GET(/api/status, /api/services, 서비스 로그, 배포 대기)만 호출하며 재시작·배포 같은 제어는 하지 않는다.",
+    "description": "Haniel 노드의 서비스 상태와 로그를 읽기 전용으로 관측한다. 고정 GET(dashboard: /api/status, /api/services, 서비스 로그 / orch: /api/orch/pending, /api/orch/nodes)만 호출하며 재시작·배포 같은 제어는 하지 않는다.",
     "execution": {
       "taskSupport": "forbidden"
     },

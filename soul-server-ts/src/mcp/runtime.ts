@@ -68,14 +68,21 @@ export interface McpRuntime {
   chatUiPublisher?: ChatUiPublisher;
   /**
    * `observe_node_services` 읽기 전용 Haniel client 설정.
-   * 하나라도 없으면 이 도구만 NODE_SERVICES_OBSERVATION_NOT_CONFIGURED를 반환한다.
+   * dashboard(status/services/logs)와 orch(pending/nodes)는 주소와 토큰이 다르다.
+   * 한쪽만 없으면 그쪽 결과만 NODE_SERVICES_OBSERVATION_NOT_CONFIGURED가 되고,
+   * 둘 다 없으면 이 도구 전체가 NOT_CONFIGURED다.
    */
   nodeServicesObservation?: NodeServicesObservationConfig;
 }
 
-export interface NodeServicesObservationConfig {
+export interface NodeServicesObservationEndpointConfig {
   baseUrl: string;
   tokenFile: string;
+}
+
+export interface NodeServicesObservationConfig {
+  dashboard?: NodeServicesObservationEndpointConfig;
+  orch?: NodeServicesObservationEndpointConfig;
   /** 시험 주입 포트. 기본은 global fetch. */
   fetchImpl?: typeof fetch;
   /** 시험 주입 포트. 기본은 node:fs readFile. */

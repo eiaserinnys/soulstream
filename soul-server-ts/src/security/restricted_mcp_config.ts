@@ -8,9 +8,9 @@ import type { IsolationPolicy } from "./session_isolation_contract.js";
  *
  * full config를 파일에 쓴 뒤 지우지 않는다. 이 helper는 resolved profile의
  * 서버 목록에서 (1) Soulstream upstream을 노드 내부 MCP URL + ssr1로 강제하고,
- * (2) 정책이 승인한 localhost MCP만 canonical 127.0.0.1 포트로 남기며,
- * (3) 관리·미승인 local·사설 endpoint를 제거한다. 외부 공개 MCP는 기존 인증을
- * 유지한다. 반환값은 sanitizedServers와 approvedLocalMcp뿐이다.
+ * (2) 정책이 이 노드에 승인한 loopback MCP만 canonical 127.0.0.1 포트로 남기며,
+ * (3) 관리·미승인 local·사설 endpoint를 제거한다. 외부 공개 MCP는 URL과 기존
+ * 인증을 그대로 유지한다. 반환값은 sanitizedServers와 approvedLocalMcp뿐이다.
  */
 
 /** 정제 config와 pasta 전달에서 항상 제거하는 관리용 upstream. */
@@ -38,8 +38,8 @@ export interface SanitizeRestrictedMcpInput {
   restrictedToken: string;
   localMcpPolicy: IsolationPolicy["localMcp"];
   actualInternalMcpUrl: string;
-  /** 주어지면 정책의 nodeId가 일치하는 승인만 적용한다. */
-  nodeId?: string;
+  /** 이 노드의 승인만 적용한다. 다른 노드의 승인을 빌려 쓰지 않는다. */
+  nodeId: string;
 }
 
 export interface SanitizedRestrictedMcp {
@@ -65,8 +65,11 @@ export function sanitizeRestrictedMcpServers(
 
     const endpoint = parseEndpoint(server.url);
     if (!endpoint) continue;
-    const approval = findApproval(input, name, endpoint.port);
-    if (approval) {
+    // 승인과 정규화는 원래 endpoint가 loopback일 때만 적용한다. 이름·포트가
+    // 같아도 외부 URL을 127.0.0.1로 바꾸면 그 서버의 인증이 로컬 서비스로 간다.
+    if (isLoopbackHost(endpoint.hostname)) {
+      const approval = findApproval(input, name, endpoint.port);
+      if (!approval) continue;
       sanitizedServers.push(withCanonicalLocalUrl(server, endpoint));
       const key = `${approval.serverId}:${approval.port}`;
       approved.set(key, { serverId: approval.serverId, hostPort: approval.port });
@@ -120,7 +123,7 @@ function findApproval(
   return input.localMcpPolicy.optional.find((entry) =>
     entry.serverId === serverId
     && entry.port === port
-    && (input.nodeId === undefined || entry.nodeId === input.nodeId));
+    && entry.nodeId === input.nodeId);
 }
 
 function isSoulstreamUpstream(server: ResolvedMcpServer, name: string | undefined): boolean {
@@ -151,6 +154,22 @@ function parseEndpoint(rawUrl: string): ParsedEndpoint | undefined {
   }
   const port = url.port === "" ? undefined : Number(url.port);
   return { url, hostname: url.hostname, port };
+}
+
+/** loopback만 판정한다. hostname은 DNS로 해석하지 않고 literal만 본다. */
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  if (host === "::1") return true;
+  if (host.startsWith("::ffff:")) {
+    const mapped = host.slice("::ffff:".length);
+    return isIP(mapped) === 4 && isLoopbackIpv4(mapped);
+  }
+  return isIP(host) === 4 && isLoopbackIpv4(host);
+}
+
+function isLoopbackIpv4(address: string): boolean {
+  return address.split(".")[0] === "127";
 }
 
 /** localhost·사설·예약 대역. hostname은 DNS로 해석하지 않고 literal만 판정한다. */

@@ -87,14 +87,14 @@ const resolvedServers: ResolvedMcpServer[] = [
   server({ type: "sse", name: "public-sse", url: "https://sse.example.com/sse" }),
 ];
 
-function sanitize(nodeId?: string) {
+function sanitize(nodeId = "eiaserinnys") {
   return sanitizeRestrictedMcpServers({
     resolvedServers,
     authenticatedSessionId: SESSION_A,
     restrictedToken: RESTRICTED_TOKEN,
     localMcpPolicy: policy.localMcp,
     actualInternalMcpUrl: INTERNAL_URL,
-    ...(nodeId ? { nodeId } : {}),
+    nodeId,
   });
 }
 
@@ -160,10 +160,39 @@ describe("sanitizeRestrictedMcpServers", () => {
     expect(sanitizedServers.find((entry) => entry.name === "public-sse")).toBeDefined();
   });
 
-  it("filters approvals by nodeId when provided", () => {
+  it("applies only the approvals of the given node", () => {
     const wsl = sanitize("eias-linegames-wsl");
     expect(wsl.sanitizedServers.map((entry) => entry.name)).not.toContain("atom");
     expect(wsl.sanitizedServers.map((entry) => entry.name)).toContain("outline");
     expect(wsl.approvedLocalMcp).toEqual([{ serverId: "outline", hostPort: 3103 }]);
+  });
+
+  it("does not turn an external endpoint with a matching name and port into a local one", () => {
+    const externalServers: ResolvedMcpServer[] = [
+      server({
+        type: "streamable_http",
+        name: "atom",
+        url: "https://mcp.example.com:4200/mcp",
+        headers: { Authorization: "Bearer external-atom-token" },
+      }),
+      server({
+        type: "streamable_http",
+        name: "outline",
+        url: "https://mcp.example.com:3103/mcp",
+        headers: { Authorization: "Bearer external-outline-token" },
+      }),
+    ];
+    const { sanitizedServers, approvedLocalMcp } = sanitizeRestrictedMcpServers({
+      resolvedServers: externalServers,
+      authenticatedSessionId: SESSION_A,
+      restrictedToken: RESTRICTED_TOKEN,
+      localMcpPolicy: policy.localMcp,
+      actualInternalMcpUrl: INTERNAL_URL,
+      nodeId: "eiaserinnys",
+    });
+
+    expect(sanitizedServers.find((entry) => entry.name === "atom")).toEqual(externalServers[0]);
+    expect(sanitizedServers.find((entry) => entry.name === "outline")).toEqual(externalServers[1]);
+    expect(approvedLocalMcp).toEqual([]);
   });
 });

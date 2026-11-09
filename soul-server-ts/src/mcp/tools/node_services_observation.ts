@@ -3,13 +3,15 @@
  *
  * 계약(세션 격리 스펙 §5):
  * - 입력은 ObservationOptions뿐이다. URL·path·method·임의 query를 받지 않는다.
- * - 호출 가능한 endpoint는 아래 네 종류가 전부다. 제어 메서드와 다른 경로는
+ * - 호출 가능한 endpoint는 아래 다섯 종류가 전부다. 제어 메서드와 다른 경로는
  *   client 코드에 존재하지 않는다.
+ *   dashboard: /api/status, /api/services, /api/services/{name}/logs
+ *   orch:      /api/orch/pending, /api/orch/nodes
  * - redirect를 따라 다른 endpoint로 가지 않는다(redirect: "error").
- * - bearer는 tokenFile에서 읽어 Authorization 헤더로만 쓰고, 반환값·로그·CLI env에
- *   넣지 않는다.
- * - HANIEL_API_URL/HANIEL_API_TOKEN_FILE 중 하나라도 미설정이면 이 도구만
- *   NODE_SERVICES_OBSERVATION_NOT_CONFIGURED를 반환한다.
+ * - bearer는 각 endpoint의 tokenFile에서 읽어 Authorization 헤더로만 쓰고,
+ *   반환값·로그·CLI env에 넣지 않는다.
+ * - 한쪽 설정이 없으면 그쪽 결과만 NODE_SERVICES_OBSERVATION_NOT_CONFIGURED로
+ *   표시하고 다른 쪽은 그대로 돌려준다. 둘 다 없으면 도구 전체가 NOT_CONFIGURED다.
  */
 import { readFile as defaultReadFile } from "node:fs/promises";
 
@@ -18,7 +20,11 @@ import { z } from "zod";
 
 import type { ObservationOptions } from "../../security/session_isolation_contract.js";
 import { errorResult, jsonResult } from "../result.js";
-import type { McpRuntime, NodeServicesObservationConfig } from "../runtime.js";
+import type {
+  McpRuntime,
+  NodeServicesObservationConfig,
+  NodeServicesObservationEndpointConfig,
+} from "../runtime.js";
 
 export const NODE_SERVICES_OBSERVATION_NOT_CONFIGURED =
   "NODE_SERVICES_OBSERVATION_NOT_CONFIGURED";
@@ -33,7 +39,8 @@ type HanielReadRequest =
   | { kind: "status" }
   | { kind: "services" }
   | { kind: "logs"; service: string; lines: number }
-  | { kind: "pending" };
+  | { kind: "pending" }
+  | { kind: "nodes" };
 
 export function registerNodeServicesObservationTool(
   server: McpServer,
@@ -43,7 +50,7 @@ export function registerNodeServicesObservationTool(
     "observe_node_services",
     {
       description:
-        "Haniel 노드의 서비스 상태와 로그를 읽기 전용으로 관측한다. 고정 GET(/api/status, /api/services, 서비스 로그, 배포 대기)만 호출하며 재시작·배포 같은 제어는 하지 않는다.",
+        "Haniel 노드의 서비스 상태와 로그를 읽기 전용으로 관측한다. 고정 GET(dashboard: /api/status, /api/services, 서비스 로그 / orch: /api/orch/pending, /api/orch/nodes)만 호출하며 재시작·배포 같은 제어는 하지 않는다.",
       inputSchema: {
         service: z.string().min(1).optional(),
         include_logs: z.boolean().optional(),
@@ -60,9 +67,11 @@ export async function observeNodeServices(
   input: ObservationOptions,
 ) {
   const config = runtime.nodeServicesObservation;
-  if (!config || !config.baseUrl || !config.tokenFile) {
+  const dashboard = usableEndpoint(config?.dashboard);
+  const orch = usableEndpoint(config?.orch);
+  if (!dashboard && !orch) {
     return errorResult(
-      "observe_node_services is not configured on this node (HANIEL_API_URL / HANIEL_API_TOKEN_FILE missing).",
+      "observe_node_services is not configured on this node (dashboard and orch Haniel settings missing).",
       { code: NODE_SERVICES_OBSERVATION_NOT_CONFIGURED },
     );
   }
@@ -82,35 +91,58 @@ export async function observeNodeServices(
     });
   }
 
-  let baseUrl: string;
+  let dashboardBase: string | undefined;
+  let orchBase: string | undefined;
   try {
-    baseUrl = normalizeBaseUrl(config.baseUrl);
+    if (dashboard) dashboardBase = normalizeBaseUrl("dashboard", dashboard.baseUrl);
+    if (orch) orchBase = normalizeBaseUrl("orch", orch.baseUrl);
   } catch (error) {
     return errorResult(errorMessage(error), {
       code: "NODE_SERVICES_OBSERVATION_FAILED",
     });
   }
 
-  try {
-    const client = createHanielReadClient(config, baseUrl);
-    const status = await client.get({ kind: "status" });
-    const services = await client.get({ kind: "services" });
-    const result: Record<string, unknown> = { status, services };
+  const fetchImpl = config?.fetchImpl ?? fetch;
+  const readFileImpl = config?.readFileImpl ?? ((path: string) => defaultReadFile(path, "utf8"));
 
-    if (includeLogs && service) {
-      const names = serviceNames(services);
-      if (!names.includes(service)) {
-        return errorResult(`unknown service: ${service}`, {
-          code: "NODE_SERVICES_OBSERVATION_INVALID_SERVICE",
-          details: { services: names },
-        });
+  try {
+    const result: Record<string, unknown> = {};
+
+    if (dashboard && dashboardBase) {
+      const client = createHanielReadClient(dashboard, dashboardBase, fetchImpl, readFileImpl);
+      const status = await client.get({ kind: "status" });
+      const services = await client.get({ kind: "services" });
+      const dashboardResult: Record<string, unknown> = { status, services };
+
+      if (includeLogs && service) {
+        const names = serviceNames(services);
+        if (!names.includes(service)) {
+          return errorResult(`unknown service: ${service}`, {
+            code: "NODE_SERVICES_OBSERVATION_INVALID_SERVICE",
+            details: { services: names },
+          });
+        }
+        const logs = await client.get({ kind: "logs", service, lines });
+        dashboardResult.logs = truncateLogs(logs, lines);
       }
-      const logs = await client.get({ kind: "logs", service, lines });
-      result.logs = truncateLogs(logs, lines);
+      result.dashboard = dashboardResult;
+    } else {
+      result.dashboard = notConfigured();
     }
-    if (includePending) {
-      result.pending = await client.get({ kind: "pending" });
+
+    if (orch && orchBase) {
+      const client = createHanielReadClient(orch, orchBase, fetchImpl, readFileImpl);
+      const orchResult: Record<string, unknown> = {
+        nodes: await client.get({ kind: "nodes" }),
+      };
+      if (includePending) {
+        orchResult.pending = await client.get({ kind: "pending" });
+      }
+      result.orch = orchResult;
+    } else {
+      result.orch = notConfigured();
     }
+
     return jsonResult(result);
   } catch (error) {
     return errorResult(errorMessage(error), {
@@ -124,15 +156,14 @@ interface HanielReadClient {
 }
 
 function createHanielReadClient(
-  config: NodeServicesObservationConfig,
+  endpoint: NodeServicesObservationEndpointConfig,
   baseUrl: string,
+  fetchImpl: typeof fetch,
+  readFileImpl: (path: string) => Promise<string>,
 ): HanielReadClient {
-  const fetchImpl = config.fetchImpl ?? fetch;
-  const readFileImpl = config.readFileImpl ?? ((path: string) => defaultReadFile(path, "utf8"));
-
   return {
     async get(request: HanielReadRequest): Promise<unknown> {
-      const token = await readToken(config.tokenFile, readFileImpl);
+      const token = await readToken(endpoint.tokenFile, readFileImpl);
       const path = fixedPath(request);
       const response = await fetchImpl(`${baseUrl}${path}`, {
         method: "GET",
@@ -162,7 +193,20 @@ function fixedPath(request: HanielReadRequest): string {
       return `/api/services/${encodeURIComponent(request.service)}/logs?lines=${request.lines}`;
     case "pending":
       return "/api/orch/pending";
+    case "nodes":
+      return "/api/orch/nodes";
   }
+}
+
+function usableEndpoint(
+  endpoint: NodeServicesObservationEndpointConfig | undefined,
+): NodeServicesObservationEndpointConfig | undefined {
+  if (!endpoint || !endpoint.baseUrl || !endpoint.tokenFile) return undefined;
+  return endpoint;
+}
+
+function notConfigured(): { code: string } {
+  return { code: NODE_SERVICES_OBSERVATION_NOT_CONFIGURED };
 }
 
 async function readToken(
@@ -176,16 +220,16 @@ async function readToken(
   return token;
 }
 
-function normalizeBaseUrl(value: string): string {
+function normalizeBaseUrl(side: string, value: string): string {
   const trimmed = value.trim().replace(/\/+$/, "");
   let parsed: URL;
   try {
     parsed = new URL(trimmed);
   } catch {
-    throw new Error("HANIEL_API_URL is not a valid URL.");
+    throw new Error(`${side} Haniel base URL is not a valid URL.`);
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("HANIEL_API_URL must be an http(s) URL.");
+    throw new Error(`${side} Haniel base URL must be an http(s) URL.`);
   }
   return trimmed;
 }
