@@ -1,5 +1,7 @@
 node_modules/
 dist/
+dist-portable/
+dist-portable-release/
 .env
 .env.soul-server-ts
 .env.local
