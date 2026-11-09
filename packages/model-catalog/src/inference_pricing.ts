@@ -14,6 +14,7 @@ type ModelRates = {
 // Existing rows retain their earlier values unless the snapshot metadata names them as refreshed.
 export const LIST_PRICES = {
   "claude-opus-5-5": { input: 4, cacheRead: 0.2, cacheWrite5m: 5, cacheWrite1h: 8, output: 20 },
+  "claude-fable-5-2": { input: 8, cacheRead: 0.2, cacheWrite5m: 10, cacheWrite1h: 16, output: 40 },
   "claude-fable-5-1": { input: 10, cacheRead: 0.25, cacheWrite5m: 12.5, cacheWrite1h: 20, output: 50 },
   "claude-opus-5": { input: 5, cacheRead: 0.5, cacheWrite5m: 6.25, cacheWrite1h: 10, output: 25 },
   "claude-sonnet-5-5": { input: 2, cacheRead: 0.1, cacheWrite5m: 2.5, cacheWrite1h: 4, output: 10 },
@@ -35,7 +36,7 @@ export const PRICE_SNAPSHOT_METADATA = {
   model_mapping_version: "exact-provider-model-v1",
   legacy_rows_last_checked_at: "2026-10-05",
   refreshed_model_rows: {
-    claude: ["claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5"],
+    claude: ["claude-opus-5-5", "claude-fable-5-2", "claude-fable-5-1", "claude-sonnet-5-5"],
     codex: ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna"],
     antigravity: ["gemini-4-argon", "gemini-3.8-flash"],
     deepseek: [
@@ -103,6 +104,7 @@ type ModelPrice = {
 
 const MODEL_PRICES: Record<string, ModelPrice> = {
   "claude:claude-opus-5-5": { rates: LIST_PRICES["claude-opus-5-5"], source: CLAUDE_PRICING_SOURCE },
+  "claude:claude-fable-5-2": { rates: LIST_PRICES["claude-fable-5-2"], source: CLAUDE_PRICING_SOURCE },
   "claude:claude-fable-5-1": { rates: LIST_PRICES["claude-fable-5-1"], source: CLAUDE_PRICING_SOURCE },
   "claude:claude-opus-5": { rates: LIST_PRICES["claude-opus-5"], source: CLAUDE_PRICING_SOURCE },
   "claude:claude-sonnet-5-5": { rates: LIST_PRICES["claude-sonnet-5-5"], source: CLAUDE_PRICING_SOURCE },
@@ -129,6 +131,7 @@ const MODEL_PRICES: Record<string, ModelPrice> = {
 
 const EXACT_MODEL_ALIASES: Record<string, string> = {
   "claude:claude-opus-5-5": "claude:claude-opus-5-5",
+  "claude:claude-fable-5-2": "claude:claude-fable-5-2",
   "claude:claude-fable-5-1": "claude:claude-fable-5-1",
   "claude:claude-opus-5": "claude:claude-opus-5",
   "claude:claude-sonnet-5-5": "claude:claude-sonnet-5-5",

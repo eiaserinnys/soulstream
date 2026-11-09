@@ -21,6 +21,7 @@ describe("list price turn cost", () => {
   it("keeps the approved model price rows", () => {
     expect(LIST_PRICES).toEqual({
       "claude-opus-5-5": { input: 4, cacheRead: 0.2, cacheWrite5m: 5, cacheWrite1h: 8, output: 20 },
+      "claude-fable-5-2": { input: 8, cacheRead: 0.2, cacheWrite5m: 10, cacheWrite1h: 16, output: 40 },
       "claude-fable-5-1": { input: 10, cacheRead: 0.25, cacheWrite5m: 12.5, cacheWrite1h: 20, output: 50 },
       "claude-opus-5": { input: 5, cacheRead: 0.5, cacheWrite5m: 6.25, cacheWrite1h: 10, output: 25 },
       "claude-sonnet-5-5": { input: 2, cacheRead: 0.1, cacheWrite5m: 2.5, cacheWrite1h: 4, output: 10 },
@@ -74,6 +75,7 @@ describe("list price turn cost", () => {
 
   it("normalizes only dated and bracketed suffixes before exact model matching", () => {
     expect(normalizePricedModelId("claude-haiku-4-5-20251001")).toBe("claude-haiku-4-5");
+    expect(normalizePricedModelId("claude-fable-5-2[1m]")).toBe("claude-fable-5-2");
     expect(normalizePricedModelId("claude-fable-5-1[1m]")).toBe("claude-fable-5-1");
     expect(normalizePricedModelId("claude-opus-5-5")).toBe("claude-opus-5-5");
     expect(normalizePricedModelId("gpt-6-sol")).toBe("gpt-6-sol");
@@ -148,6 +150,7 @@ describe("fixed inference price reference", () => {
   };
 
   it.each([
+    ["claude", "claude-fable-5-2", 0.04722],
     ["claude", "claude-fable-5-1", 0.059025],
     ["codex", "gpt-6-astra", 0.0591],
     ["antigravity", "gemini-4-argon", 0.01181],
