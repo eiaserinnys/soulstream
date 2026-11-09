@@ -263,6 +263,7 @@ describe("session isolation contract", () => {
       "runner/session_filesystem_masks.ts",
       "runner/session_filesystem_plan.ts",
       "runner/session_filesystem_policy.ts",
+      "runner/session_isolation_host_ports.ts",
       "runner/session_isolation_preflight.ts",
       "runner/session_isolation_process.ts",
       "runner/session_netns_helper.ts",
