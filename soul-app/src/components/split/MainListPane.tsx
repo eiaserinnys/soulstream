@@ -73,7 +73,7 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
   useEffect(() => { if (view === 'board') setVisited(old => old[viewKey] ? old : { ...old, [viewKey]: true }); }, [view, viewKey]);
   const folderId = activeSection.kind === 'project' ? activeSection.folderId : undefined;
   const cardDisplay = useCardDisplay(folderId);
-  const compactHeader = !duo && ((paneWidth !== undefined && paneWidth < MAIN_LIST_HEADER_OVERFLOW_MAX_WIDTH) || effectiveShowSearch);
+  const compactHeader = !duo && paneWidth !== undefined && paneWidth < MAIN_LIST_HEADER_OVERFLOW_MAX_WIDTH;
   const [overflowOpen, setOverflowOpen] = useState(false);
   const setActiveSection = useUIStore((state) => state.setActiveSection);
   const folders = useSessionStore((state) => state.catalog.folders);
@@ -102,6 +102,7 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
         {onMenuPress ? (
           <LiquidGlassButton
             iconOnly
+            borderRadius={t.foundation.radius.round}
             onPress={onMenuPress}
             accessibilityLabel="메뉴"
             contentStyle={styles.headerAction}
@@ -130,7 +131,7 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
           )}
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm }}>
-        {view === 'board' && compactHeader ? (
+        {view === 'board' && !effectiveShowSearch && compactHeader ? (
           <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
             testID="board-header-overflow-button" accessibilityLabel="보드 메뉴"
             accessibilityState={{ expanded: overflowOpen }}
@@ -138,7 +139,7 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
             <Ionicons name="ellipsis-horizontal" size={t.iconSize.standard} color={t.colors.textPrimary} />
           </LiquidGlassButton>
         ) : null}
-        {view === 'board' && !compactHeader ? <>
+        {view === 'board' && !effectiveShowSearch && !compactHeader ? <>
           <LiquidGlassButton iconOnly borderRadius={t.foundation.radius.round}
             accessibilityLabel="드래프트 카드 추가" onPress={() => boardRef.current?.openCreate()}>
             <Ionicons name="add-outline" size={t.iconSize.standard} color={t.colors.textPrimary} />
@@ -163,7 +164,8 @@ export const MainListPane = forwardRef<MainListPaneHandle, {
       </View> : null}
       <View style={styles.body}>
         {visited[viewKey] ? <View style={{ flex: 1, display: view === 'board' ? 'flex' : 'none' }}>
-          <CardBoardWorkspace ref={boardRef} externalHeader key={displayOwner} api={api} folderId={activeSection.kind === 'project' ? activeSection.folderId : undefined}
+          <CardBoardWorkspace ref={boardRef} externalHeader={!effectiveShowSearch} key={displayOwner} api={api} folderId={activeSection.kind === 'project' ? activeSection.folderId : undefined}
+            title={effectiveShowSearch ? title : undefined}
             cardDisplay={cardDisplay} reserveHomeComposerSpace onOpen={(id) => useUIStore.getState().openCardOverlay(id)} />
         </View> : null}
         {view === 'existing' && activeSection.kind === 'daily' ? (
