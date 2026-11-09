@@ -93,6 +93,11 @@ export interface ClaudeAccountSelectionInput {
   exclude_ids?: string[];
 }
 
+/** restricted(격리) 선택 옵션. 러너 요청 필드가 아니라 호스트 내부에서만 쓴다. */
+export interface ClaudeAccountSelectionOptions {
+  requireAccessTokenCredential?: boolean;
+}
+
 export interface ClaudeAccountSelectionResult {
   account_id: string;
   config_dir: string;
@@ -105,6 +110,20 @@ export interface ClaudeAccountSelectionExhausted {
   available_count: 0;
   earliest_available_at: string | null;
 }
+
+/** restricted(격리) 선택 응답에만 붙는 접근 토큰. 호스트 내부 전달용이다. */
+export interface ClaudeAccountAccessTokenCredential {
+  kind: "access-token";
+  access_token: string;
+}
+
+/**
+ * restricted 선택 결과. 계정 목록·영속 바인딩에는 이 값을 넣지 않는다.
+ * 호스트가 러너로 넘길 때만 쓴다.
+ */
+export type ClaudeAccountSelectionWithCredential = ClaudeAccountSelectionResult & {
+  credential: ClaudeAccountAccessTokenCredential;
+};
 
 export type ClaudeAccountSelectionResponse =
   | ClaudeAccountSelectionResult

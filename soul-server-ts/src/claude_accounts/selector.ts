@@ -240,6 +240,22 @@ export function countSelectableCandidates(params: SelectCandidateParams): number
   return getEligibleCandidates(params).length;
 }
 
+/**
+ * restricted(격리) 선택에서 자격(접근 토큰) 검사 대상이 되는 후보. 사용량
+ * 소진은 자격 축이 아니므로 여기서 빼지 않는다. 자격이 있는 계정이 전부
+ * 소진이면 기존 selector가 pool_exhausted를 낸다.
+ */
+export function getCredentialEligibleCandidates(
+  params: SelectCandidateParams,
+): SelectableAccountCandidate[] {
+  const excludeSet = new Set(params.excludeIds ?? []);
+  return params.candidates.filter((candidate) =>
+    candidate.enabled
+    && (candidate.auth_state === "ok" || candidate.auth_state === "idle")
+    && !excludeSet.has(candidate.id)
+    && !isBlockedForModel(candidate.blocks, params.model, params.nowMs));
+}
+
 export function selectBestCandidate(
   params: SelectCandidateParams,
 ): SelectableAccountCandidate | null {
