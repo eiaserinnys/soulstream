@@ -41,6 +41,7 @@ describe("ModelCatalog", () => {
       "claude-sonnet",
       "claude-opus",
       "claude-fable",
+      "claude-fable-5.2",
       "codex-6-astra",
       "codex-6.1-sol",
       "codex-6-sol",
@@ -391,13 +392,14 @@ describe("model preset trusted execution", () => {
   const trustedPresetIds = [
     "claude-opus",
     "claude-fable",
+    "claude-fable-5.2",
     "codex-6-astra",
     "codex-6.1-sol",
     "codex-6-sol",
     "gemini-4-argon",
   ];
 
-  it("marks exactly the six trusted presets in the example catalog", () => {
+  it("marks exactly the seven trusted presets in the example catalog", () => {
     const catalog = new ModelCatalog(
       path.resolve(process.cwd(), "config/model-catalog.yaml.example"),
     );
@@ -409,13 +411,21 @@ describe("model preset trusted execution", () => {
     ).toEqual([...trustedPresetIds].sort());
   });
 
-  it("marks exactly the six trusted presets in the shared default catalog", () => {
+  it("marks exactly the seven trusted presets in the shared default catalog", () => {
     expect(
       DEFAULT_MODEL_CATALOG.presets
         .filter((preset) => preset.trusted_execution === true)
         .map((preset) => preset.id)
         .sort(),
     ).toEqual([...trustedPresetIds].sort());
+  });
+
+  it("ships Fable 5.2 with a medium default effort in the shared default catalog", () => {
+    const preset = DEFAULT_MODEL_CATALOG.presets.find((entry) => entry.id === "claude-fable-5.2");
+    expect(preset).toMatchObject({
+      default_effort: "medium",
+      trusted_execution: true,
+    });
   });
 
   it("rejects a string trusted_execution at the schema boundary", () => {

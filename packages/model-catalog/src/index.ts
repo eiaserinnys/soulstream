@@ -93,7 +93,8 @@ export const DEFAULT_MODEL_CATALOG: ModelCatalogConfig = {
   presets: [
     { id: "claude-sonnet", label: "Claude - Sonnet", backend: "claude", model: "sonnet", supported_efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "xhigh" },
     { id: "claude-opus", label: "Claude - Opus", backend: "claude", model: "opus", supported_efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "xhigh", trusted_execution: true },
-    { id: "claude-fable", label: "Claude - Fable", backend: "claude", model: "claude-fable-5-1[1m]", usage_model_id: "fable", supported_efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "high", trusted_execution: true },
+    { id: "claude-fable", label: "Claude - Fable 5.1", backend: "claude", model: "claude-fable-5-1[1m]", usage_model_id: "fable", supported_efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "high", trusted_execution: true },
+    { id: "claude-fable-5.2", label: "Claude - Fable 5.2", backend: "claude", model: "claude-fable-5-2[1m]", usage_model_id: "fable", supported_efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "medium", trusted_execution: true },
     { id: "codex-6-astra", label: "Codex - 6 Astra", backend: "codex", model: "gpt-6-astra", supported_efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], default_effort: "medium", trusted_execution: true },
     { id: "codex-6.1-sol", label: "Codex - 6.1 Sol", backend: "codex", model: "gpt-6.1-sol", supported_efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], default_effort: "high", trusted_execution: true },
     { id: "codex-6-sol", label: "Codex - 6 Sol", backend: "codex", model: "gpt-6-sol", supported_efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], default_effort: "xhigh", trusted_execution: true },
