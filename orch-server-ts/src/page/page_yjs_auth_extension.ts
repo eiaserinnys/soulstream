@@ -26,6 +26,12 @@ export function createPageYjsAuthExtension(
         requestHeaders: payload.requestHeaders,
         config: auth,
       });
+      if (result.principal !== undefined) {
+        // Hocuspocus keeps this context object on the connection, so a revoked
+        // node credential can close exactly the sockets that it authenticated.
+        (payload.context as Record<string, unknown>).credentialId =
+          result.principal.credential_id;
+      }
       logger?.debug(
         {
           documentName: payload.documentName,

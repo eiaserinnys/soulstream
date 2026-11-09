@@ -62,6 +62,7 @@ export type FolderRouteOptions = {
   >;
   authBearerToken?: string;
   environment?: string;
+  nodeCredentials: import("../node_credentials/types.js").NodeCredentialResolver | null;
   cardServiceProvider?: () => Promise<CardControlPlaneService>;
   cardExecutionServiceProvider?: () => Promise<import("../cards/card_execution_service.js").CardExecutionService>;
   sendCardSessionMessage?: (
@@ -114,6 +115,7 @@ export function registerFolderRoutes(
       identity: options.projectIdentityService,
       authBearerToken: options.authBearerToken ?? "",
       environment: options.environment,
+      nodeCredentials: options.nodeCredentials,
     });
   }
   app.get("/api/folders", async (request, reply) => {

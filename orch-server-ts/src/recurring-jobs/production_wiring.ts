@@ -1,4 +1,5 @@
 import type { LiveAuthenticatedUserResolvers } from "../runtime/live_authenticated_user_resolver.js";
+import type { NodeCredentialResolver } from "../node_credentials/types.js";
 
 import { RecurringJobScheduler } from "./scheduler.js";
 import type { RecurringJobRouteActorResolver } from "./recurring_job_routes.js";
@@ -14,6 +15,7 @@ export type ProductionRecurringJobWiringOptions = {
   >;
   readonly authBearerToken: string;
   readonly environment?: string;
+  readonly nodeCredentials: NodeCredentialResolver | null;
   readonly onError: (error: unknown, operation: string) => void;
   readonly onTick?: () => Promise<void>;
 };
@@ -55,6 +57,7 @@ export function createProductionRecurringJobWiring(
       service,
       authBearerToken: options.authBearerToken,
       environment: options.environment,
+      nodeCredentials: options.nodeCredentials,
     },
   };
 }

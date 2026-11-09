@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import type {
   AgentAttachmentRegistration,
   AgentAttachmentRegistrationInput,
@@ -16,6 +17,7 @@ export type SessionOutputAttachmentValidation = (input: {
 export type AgentAttachmentRouteOptions = {
   readonly authBearerToken: string;
   readonly environment: string;
+  readonly nodeCredentials: NodeCredentialResolver | null;
   readonly register: AgentAttachmentRegistration;
   readonly validateSessionOutput?: SessionOutputAttachmentValidation;
 };
@@ -59,8 +61,11 @@ export function registerAgentAttachmentRoutes(
     instance.addHook("onRequest", async (request, reply) => {
       const authorization = verifyServiceBearerAuthorization(
         request.headers.authorization,
-        options.authBearerToken,
-        options.environment,
+        {
+          configuredToken: options.authBearerToken,
+          environment: options.environment,
+          nodeCredentials: options.nodeCredentials,
+        },
       );
       if (!authorization.ok) {
         return reply.code(authorization.statusCode).send({

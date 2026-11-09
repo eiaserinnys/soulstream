@@ -8,6 +8,7 @@ import {
   type AdminAccessProvider,
 } from "../admin/admin_access.js";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import {
   CardOrchestrationSettingsError,
   type OrchestrationSettings,
@@ -21,6 +22,7 @@ export type CardOrchestrationRouteOptions = AdminAccessProvider & {
   }): Promise<OrchestrationSettings>;
   authBearerToken: string;
   environment?: string;
+  nodeCredentials: NodeCredentialResolver | null;
   resolveCaller(
     sessionId: string,
   ): Promise<{ ownerEmail: string; purpose?: string | null } | null>;
@@ -57,8 +59,11 @@ export function registerCardOrchestrationRoutes(
     async (request, reply) => {
       const auth = verifyServiceBearerAuthorization(
         request.headers.authorization,
-        options.authBearerToken,
-        options.environment,
+        {
+          configuredToken: options.authBearerToken,
+          environment: options.environment,
+          nodeCredentials: options.nodeCredentials,
+        },
       );
       if (!auth.ok)
         return reply

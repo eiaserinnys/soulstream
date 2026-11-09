@@ -22,6 +22,7 @@ describe("production recurring job wiring", () => {
     const reserveAndDispatchDueJob = vi.spyOn(service, "reserveAndDispatchDueJob")
       .mockResolvedValue(null);
     const wiring = createProductionRecurringJobWiring({
+      nodeCredentials: null,
       service,
       repository,
       authenticatedUserResolvers: createAuthenticatedUserResolvers(),
@@ -88,6 +89,7 @@ describe("production recurring job wiring", () => {
 function createWiring() {
   const repository = {} as RecurringJobRepository;
   return createProductionRecurringJobWiring({
+    nodeCredentials: null,
     service: new RecurringJobService({ repository }),
     repository,
     authenticatedUserResolvers: createAuthenticatedUserResolvers(),

@@ -126,7 +126,11 @@ export function registerCardRoutes(app: FastifyInstance, options: FolderRouteOpt
 async function cardActor(request: FastifyRequest, options: FolderRouteOptions) {
   const sessionId = request.headers["x-soulstream-agent-session-id"];
   if (typeof sessionId === "string" && sessionId) {
-    const verification = verifyServiceBearerAuthorization(request.headers.authorization, options.authBearerToken ?? "", options.environment);
+    const verification = verifyServiceBearerAuthorization(request.headers.authorization, {
+      configuredToken: options.authBearerToken ?? "",
+      environment: options.environment,
+      nodeCredentials: options.nodeCredentials,
+    });
     if (!verification.ok) throw Object.assign(new Error("Trusted service authorization required"), { statusCode: verification.statusCode });
     return { actorKind: "agent" as const, actorSessionId: sessionId };
   }

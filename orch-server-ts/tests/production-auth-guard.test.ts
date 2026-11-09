@@ -50,6 +50,7 @@ describe("production auth guard", () => {
       productionAuth: { resolveTokenAccess },
       workerAttachmentRoutes: {
         authBearerToken: serviceBearer,
+        nodeCredentials: null,
         environment: "production",
         service: {
           metadata,

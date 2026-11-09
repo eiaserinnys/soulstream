@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import { CustomViewRevisionConflictError } from "./folder_content_types.js";
 import { dispatchFlatReadOperation, getFlatReadOperationSchema, isFlatReadOperation } from "./flat_folder_content_operations.js";
 import type { FlatFolderContentHost } from "./flat_folder_content_host.js";
@@ -21,12 +22,16 @@ const schemas = {
   "remove-board-item": z.object({ folderId: z.string().min(1), boardItemId: z.string().min(1) }).strict(),
 } as const;
 
-export type FlatFolderContentRouteOptions = { host: FlatFolderContentHost; authBearerToken: string; environment?: string };
+export type FlatFolderContentRouteOptions = { host: FlatFolderContentHost; authBearerToken: string; environment?: string; nodeCredentials: NodeCredentialResolver | null };
 export const flatFolderContentRouteAuthRequirements = { "POST /internal/folder-content/:operation": true } as const;
 
 export function registerFlatFolderContentRoutes(app: FastifyInstance, options: FlatFolderContentRouteOptions): void {
   app.post<{ Params: { operation: string } }>("/internal/folder-content/:operation", async (request, reply) => {
-    const auth = verifyServiceBearerAuthorization(request.headers.authorization, options.authBearerToken, options.environment);
+    const auth = verifyServiceBearerAuthorization(request.headers.authorization, {
+      configuredToken: options.authBearerToken,
+      environment: options.environment,
+      nodeCredentials: options.nodeCredentials,
+    });
     if (!auth.ok) return reply.code(auth.statusCode).send({ detail: { error: { code: "UNAUTHORIZED", message: auth.reason } } });
     const operation = request.params.operation;
     const schema = schemas[operation as keyof typeof schemas] ?? getFlatReadOperationSchema(operation);

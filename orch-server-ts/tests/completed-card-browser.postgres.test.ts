@@ -25,6 +25,7 @@ beforeAll(async () => {
   const service = new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql), { appendEventTx: async () => 1 });
   app = Fastify();
   registerCardRoutes(app, {
+    nodeCredentials: null,
     provider: { listFolders: () => [{id:'public'},{id:'private'}], listSessionAssignments: () => ({}) },
     accessProvider: { resolveAccess: () => ({restricted:true,allowedFolderIds:['public']}) },
     resolveDashboardUserId: () => 'fixture', cardServiceProvider: async () => service,

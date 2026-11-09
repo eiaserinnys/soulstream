@@ -16,6 +16,7 @@ import type {
 } from "../auth/auth_routes.js";
 import { AUTH_COOKIE_NAME } from "../auth/auth_routes.js";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import {
   extractDashboardJwtToken,
   type LiveAuthenticatedUserResolver,
@@ -57,6 +58,8 @@ export type CreateLiveAuthTokenResolverOptions = {
   readonly jwt?: AuthJwtHelper;
   readonly cookieName?: string;
   readonly resolveDashboardUser?: LiveAuthenticatedUserResolver;
+  /** Node pairing credentials; `null` is explicit outside production composition. */
+  readonly nodeCredentials: NodeCredentialResolver | null;
 };
 
 export type CreateLiveAuthUserAuthorizerOptions = {
@@ -162,7 +165,12 @@ export function createLiveAuthTokenResolver(
     const environment = requiredSnapshotString(snapshot, "environment");
     const googleClientId = requiredSnapshotString(snapshot, "google_client_id");
 
-    const bearer = verifyServiceBearer(request, configuredBearer ?? "", environment);
+    const bearer = verifyServiceBearer(
+      request,
+      configuredBearer ?? "",
+      environment,
+      options.nodeCredentials,
+    );
     if (bearer.ok) return { ok: true };
 
     if (googleClientId.length > 0) {
@@ -341,11 +349,15 @@ function verifyServiceBearer(
   request: Parameters<AuthTokenResolver>[0],
   configuredBearer: string,
   environment: string,
+  nodeCredentials: NodeCredentialResolver | null,
 ): AuthTokenAccessResult {
   const verification = verifyServiceBearerAuthorization(
     request.headers.authorization,
-    configuredBearer,
-    environment,
+    {
+      configuredToken: configuredBearer,
+      environment,
+      nodeCredentials,
+    },
   );
   if (verification.ok) return { ok: true };
   if (verification.reason === "not_configured") {

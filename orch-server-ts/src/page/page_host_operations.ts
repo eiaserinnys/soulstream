@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { BlockOperationDto, PageLinkKind } from "@soulstream/page-model";
 
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import {
   PageMutationValidationError,
   PageMutationVersionConflictError,
@@ -17,6 +18,7 @@ export interface PageYjsHostOperationOptions {
   service: PageYjsService;
   authBearerToken: string;
   environment?: string;
+  nodeCredentials: NodeCredentialResolver | null;
 }
 
 const id = z.string().trim().min(1);
@@ -174,8 +176,11 @@ export async function handlePageYjsHostOperation(
 
   const authorization = verifyServiceBearerAuthorization(
     request.headers.authorization,
-    options.authBearerToken,
-    options.environment,
+    {
+      configuredToken: options.authBearerToken,
+      environment: options.environment,
+      nodeCredentials: options.nodeCredentials,
+    },
   );
   if (!authorization.ok) {
     return errorReply(reply, authorization.statusCode, "UNAUTHORIZED", `Page Yjs host bearer token is ${authorization.reason}`);

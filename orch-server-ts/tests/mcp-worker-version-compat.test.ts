@@ -22,7 +22,7 @@ const oldWorkerBody = { args: {}, context: { principal: "internal", caller_sessi
 afterEach(() => vi.unstubAllGlobals());
 
 it("accepts a new worker forward at the old host and an old worker body at the new host", async () => {
-  const options = { ...unusedClusterDependencies, authBearerToken: "test-host", board: undefined as never,
+  const options = { ...unusedClusterDependencies, authBearerToken: "test-host", nodeCredentials: null, board: undefined as never,
     cards: undefined as never, folders: undefined as never, externalLlm: { getSession: async () => ({}) } };
   const server = new McpServer({ name: "worker-version-compat", version: "test" });
   registerExternalLlmTools(server, { nodeId: "worker", orch: { baseUrl: "http://orch.test", headers: { authorization: "Bearer test-host" } } } as unknown as McpRuntime);

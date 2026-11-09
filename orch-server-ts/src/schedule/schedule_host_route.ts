@@ -1,12 +1,14 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import type { SoulstreamScheduleRepository } from "./schedule_repository.js";
 
 export interface ScheduleHostRouteOptions {
   repositoryProvider: () => Promise<SoulstreamScheduleRepository>;
   authBearerToken: string;
   environment?: string;
+  nodeCredentials: NodeCredentialResolver | null;
 }
 
 const operations = {
@@ -33,8 +35,11 @@ export function registerScheduleHostRoute(app: FastifyInstance, options: Schedul
     async (request, reply) => {
       const authorization = verifyServiceBearerAuthorization(
         request.headers.authorization,
-        options.authBearerToken,
-        options.environment,
+        {
+          configuredToken: options.authBearerToken,
+          environment: options.environment,
+          nodeCredentials: options.nodeCredentials,
+        },
       );
       if (!authorization.ok) {
         return errorReply(reply, authorization.statusCode, "UNAUTHORIZED", `bearer token is ${authorization.reason}`);

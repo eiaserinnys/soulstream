@@ -64,6 +64,7 @@ function harness(options: HarnessOptions = {}) {
   const service = { metadata, content } as ReturnType<typeof createWorkerAttachmentRead>;
   const app = Fastify({ logger: false });
   registerWorkerAttachmentRoutes(app, {
+    nodeCredentials: null,
     authBearerToken: options.token ?? SERVICE_TOKEN,
     environment: "production",
     service,

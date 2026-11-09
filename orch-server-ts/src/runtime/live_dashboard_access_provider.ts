@@ -10,6 +10,7 @@ import {
   type AuthUserPayloadExtra,
 } from "../auth/auth_routes.js";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import type { BoardItemAccessProvider } from "../board/board_item_routes.js";
 import type { MarkdownDocumentAccessProvider } from "../board/markdown_document_routes.js";
 import type { FolderAccessProvider } from "../folders/folder_routes.js";
@@ -68,6 +69,8 @@ export type CreateLiveDashboardAccessProviderOptions = {
   readonly cookieName?: string;
   readonly verifyDashboardToken?: LiveDashboardTokenVerifier;
   readonly resolveOAuthAccess?: (request: FastifyRequest) => Promise<OAuthResourceAccess | null>;
+  /** Node pairing credentials; `null` is explicit outside production composition. */
+  readonly nodeCredentials: NodeCredentialResolver | null;
 };
 
 export type DashboardAccessResolveContext = {
@@ -133,6 +136,7 @@ export function createLiveDashboardAccessProvider(
         resolveOAuthAccess: options.resolveOAuthAccess,
         cookieName,
         accessEmail: context?.accessEmail,
+        nodeCredentials: options.nodeCredentials,
       });
       if (identity.mode === "service_token" && identity.accessEmail === null) {
         return serviceTokenAccessWithoutEmail();
@@ -209,6 +213,7 @@ async function resolveAccessIdentity(input: {
   readonly resolveOAuthAccess?: (request: FastifyRequest) => Promise<OAuthResourceAccess | null>;
   readonly cookieName: string;
   readonly accessEmail?: string | null;
+  readonly nodeCredentials: NodeCredentialResolver | null;
 }): Promise<AccessIdentity> {
   if (isServiceCaller(input.request)) return { mode: "service_token", accessEmail: input.accessEmail ?? null };
   const snapshot = await input.configProvider.getConfig();
@@ -229,7 +234,12 @@ async function resolveAccessIdentity(input: {
     }
   }
 
-  const bearer = verifyServiceBearer(input.request, configuredBearer ?? "", environment);
+  const bearer = verifyServiceBearer(
+    input.request,
+    configuredBearer ?? "",
+    environment,
+    input.nodeCredentials,
+  );
   if (bearer.ok) return { mode: "service_token", accessEmail };
 
   if (googleClientId.length > 0) {
@@ -346,11 +356,15 @@ function verifyServiceBearer(
   request: FastifyRequest,
   configuredBearer: string,
   environment: string,
+  nodeCredentials: NodeCredentialResolver | null,
 ): AuthTokenAccessResult {
   const verification = verifyServiceBearerAuthorization(
     request.headers.authorization,
-    configuredBearer,
-    environment,
+    {
+      configuredToken: configuredBearer,
+      environment,
+      nodeCredentials,
+    },
   );
   if (verification.ok) return { ok: true };
   if (verification.reason === "not_configured") {

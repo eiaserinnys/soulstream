@@ -139,7 +139,7 @@ describe("card check-item locked mutations", () => {
     const cardId=await makeCard();
     await cards.setCardItems({...assignee,cardId,items:["확인 결과"]});
     const app=Fastify();
-    registerCardRoutes(app,{provider:{listFolders:()=>[{id:"items"}],listSessionAssignments:()=>({})},
+    registerCardRoutes(app,{ nodeCredentials: null,provider:{listFolders:()=>[{id:"items"}],listSessionAssignments:()=>({})},
       accessProvider:{resolveAccess:()=>({restricted:false})},resolveDashboardUserId:()=>"director",
       cardServiceProvider:async()=>cards,authBearerToken:"service",environment:"test"});
     try{

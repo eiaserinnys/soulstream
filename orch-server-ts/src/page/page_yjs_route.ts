@@ -1,5 +1,6 @@
 import type { FastifyBaseLogger, FastifyInstance } from "fastify";
 
+import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import { registerWebsocketPlugin } from "../websocket_plugin.js";
 import {
   registerPageBrowserRoutes,
@@ -22,6 +23,7 @@ export interface PageYjsRouteOptions {
   createService: (logger: FastifyBaseLogger) => PageYjsService;
   authBearerToken: string;
   environment?: string;
+  nodeCredentials: NodeCredentialResolver | null;
   resolveBrowserUser?: PageBrowserRouteOptions["resolveUser"];
   browserReads?: PageBrowserRouteOptions["reads"];
   resolveAgentId?: PageBrowserRouteOptions["resolveAgentId"];
@@ -40,6 +42,7 @@ export function registerPageYjsRoutes(
     service,
     authBearerToken: options.authBearerToken,
     environment: options.environment,
+    nodeCredentials: options.nodeCredentials,
   });
   if (options.resolveBrowserUser) {
     if (!options.browserReads) {

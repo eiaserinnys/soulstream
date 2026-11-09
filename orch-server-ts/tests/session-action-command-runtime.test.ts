@@ -20,6 +20,7 @@ const config = parseOrchServerConfig({
 describe("session action command runtime opt-in", () => {
   it("keeps routes off in runtime composition unless explicitly enabled", async () => {
     const disabled = createOrchestratorRuntimeComposition({
+      nodeCredentials: null,
       config,
       loadSessionSnapshot: async () => ({ sessions: [] }),
     });
@@ -37,6 +38,7 @@ describe("session action command runtime opt-in", () => {
     await disabled.app.close();
 
     const enabled = createOrchestratorRuntimeComposition({
+      nodeCredentials: null,
       config,
       enableSessionActionCommandRoutes: true,
       loadSessionSnapshot: async () => ({ sessions: [] }),

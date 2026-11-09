@@ -14,6 +14,25 @@ describe("orch socket auth", () => {
     })).resolves.toEqual({ source: "bearer", subject: "bearer" });
   });
 
+  it("returns the node principal for a node pairing token", async () => {
+    const principal = {
+      credential_id: "credential-1",
+      node_id: "node-1",
+      company_pc: false,
+    };
+    await expect(authenticateSocketConnection({
+      token: "node-token",
+      requestHeaders: {},
+      config: productionAuth({
+        authBearerToken: "service-token",
+        nodeCredentials: {
+          resolve: (token: string) => (token === "node-token" ? principal : null),
+          onRevoked: () => () => {},
+        },
+      }),
+    })).resolves.toEqual({ source: "bearer", subject: "bearer", principal });
+  });
+
   it("reuses the dashboard user resolver for cookie authentication", async () => {
     const resolveDashboardUserFromHeaders = vi.fn().mockResolvedValue({
       payload: { sub: "user-1" },
@@ -60,6 +79,7 @@ describe("orch socket auth", () => {
       requestHeaders: {},
       config: {
         authBearerToken: "",
+        nodeCredentials: null,
         environment: "development",
         dashboardAuthEnabled: false,
         resolveDashboardUserFromHeaders: vi.fn().mockResolvedValue(null),
@@ -73,6 +93,7 @@ describe("orch socket auth", () => {
       requestHeaders: {},
       config: {
         authBearerToken: "service-token",
+        nodeCredentials: null,
         environment: "development",
         dashboardAuthEnabled: false,
         resolveDashboardUserFromHeaders: vi.fn().mockResolvedValue(null),
@@ -94,6 +115,7 @@ function productionAuth(
 ) {
   return {
     authBearerToken: "",
+    nodeCredentials: null,
     environment: "production",
     dashboardAuthEnabled: false,
     resolveDashboardUserFromHeaders: vi.fn().mockResolvedValue(null),

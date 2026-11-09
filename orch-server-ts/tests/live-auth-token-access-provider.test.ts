@@ -10,6 +10,7 @@ describe("live auth token access resolver", () => {
   it("accepts configured service Bearer before trying dashboard JWT", async () => {
     const jwt = jwtVerifier();
     const resolver = createLiveAuthTokenResolver({
+      nodeCredentials: null,
       configProvider: configWith({
         auth_bearer_token: "service-token",
         environment: "production",
@@ -27,6 +28,7 @@ describe("live auth token access resolver", () => {
 
   it("preserves Python bearer config error and dev bypass semantics", async () => {
     const production = createLiveAuthTokenResolver({
+      nodeCredentials: null,
       configProvider: configWith({
         auth_bearer_token: "",
         environment: "production",
@@ -36,6 +38,7 @@ describe("live auth token access resolver", () => {
       jwt: jwtVerifier(),
     });
     const development = createLiveAuthTokenResolver({
+      nodeCredentials: null,
       configProvider: configWith({
         auth_bearer_token: "",
         environment: "development",
@@ -55,6 +58,7 @@ describe("live auth token access resolver", () => {
   it("falls back to dashboard JWT cookie or Bearer only when auth is enabled", async () => {
     const jwt = jwtVerifier("dashboard-jwt");
     const resolver = createLiveAuthTokenResolver({
+      nodeCredentials: null,
       configProvider: configWith({
         auth_bearer_token: "service-token",
         environment: "production",
@@ -79,6 +83,7 @@ describe("live auth token access resolver", () => {
       email: "user@example.com",
     }));
     const resolver = createLiveAuthTokenResolver({
+      nodeCredentials: null,
       configProvider: configWith({
         auth_bearer_token: "service-token",
         environment: "production",
@@ -100,6 +105,7 @@ describe("live auth token access resolver", () => {
   it("keeps Python verify_auth JWT fallback when production service Bearer is not configured", async () => {
     const jwt = jwtVerifier("dashboard-jwt");
     const resolver = createLiveAuthTokenResolver({
+      nodeCredentials: null,
       configProvider: configWith({
         auth_bearer_token: "",
         environment: "production",
@@ -122,6 +128,7 @@ describe("live auth token access resolver", () => {
   it("does not turn auth-disabled JWT dependency into a bypass", async () => {
     const jwt = jwtVerifier("dashboard-jwt");
     const resolver = createLiveAuthTokenResolver({
+      nodeCredentials: null,
       configProvider: configWith({
         auth_bearer_token: "service-token",
         environment: "production",

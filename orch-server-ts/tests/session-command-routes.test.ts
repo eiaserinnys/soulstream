@@ -88,7 +88,7 @@ describe("session command HTTP route harness", () => {
         type: "session_created", requestId: message.requestId, agentSessionId: message.agentSessionId,
       });
     } } });
-    const app = createApp({ config, sessionCommandRoutes: { router, bridge } });
+    const app = createApp({ config, sessionCommandRoutes: { nodeCredentials: null, router, bridge } });
     try {
       const result = await app.inject({ method: "POST", url: "/api/sessions", payload: {
         initial_instruction: "첨부를 확인해줘", profile: "claude-roselin", [key]: ["/node-b/draft/image.png"],
@@ -122,6 +122,7 @@ describe("session command HTTP route harness", () => {
       const app = createApp({ config, sessionCommandRoutes: {
         router: harness.router,
         bridge: harness.bridge,
+        nodeCredentials: null,
         createSessionLifecycle,
         ...(admit === undefined ? {} : { admitAttachmentInput: admit }),
       } });
@@ -289,7 +290,7 @@ describe("session command HTTP route harness", () => {
     const { router, bridge } = createHarness();
     const app = createApp({
       config,
-      sessionCommandRoutes: { router, bridge },
+      sessionCommandRoutes: { nodeCredentials: null, router, bridge },
     });
 
     expect(sessionCommandRouteAuthRequirements).toEqual({
@@ -321,7 +322,7 @@ describe("session command HTTP route harness", () => {
     const { router, bridge } = createHarness();
     const app = createApp({
       config,
-      sessionCommandRoutes: { router, bridge },
+      sessionCommandRoutes: { nodeCredentials: null, router, bridge },
     });
 
     const unauthorized = await app.inject({
@@ -380,7 +381,7 @@ describe("session command HTTP route harness", () => {
         },
       },
     });
-    const app = createApp({ config, sessionCommandRoutes: { router, bridge } });
+    const app = createApp({ config, sessionCommandRoutes: { nodeCredentials: null, router, bridge } });
 
     const legacy = await app.inject({
       method: "POST",
@@ -422,7 +423,7 @@ describe("session command HTTP route harness", () => {
       connectionId,
       transport: { send },
     });
-    const app = createApp({ config, sessionCommandRoutes: { router, bridge } });
+    const app = createApp({ config, sessionCommandRoutes: { nodeCredentials: null, router, bridge } });
     expect((await app.inject({
       method: "POST",
       url: "/api/sessions",
@@ -476,6 +477,7 @@ describe("session command HTTP route harness", () => {
       sessionCommandRoutes: {
         router,
         bridge,
+        nodeCredentials: null,
         modelPresetAvailability: { requireAvailable },
       },
     });
@@ -529,7 +531,7 @@ describe("session command HTTP route harness", () => {
     });
     const app = createApp({
       config,
-      sessionCommandRoutes: { router, bridge },
+      sessionCommandRoutes: { nodeCredentials: null, router, bridge },
     });
 
     const response = await app.inject({
@@ -589,7 +591,7 @@ describe("session command HTTP route harness", () => {
         },
       },
     });
-    const app = createApp({ config, sessionCommandRoutes: { router, bridge } });
+    const app = createApp({ config, sessionCommandRoutes: { nodeCredentials: null, router, bridge } });
     const recoveryId = "8c55c4d8-625b-4b1f-92ec-81dcb52ae453";
 
     const response = await app.inject({
@@ -636,7 +638,7 @@ describe("session command HTTP route harness", () => {
     });
     const app = createApp({
       config,
-      sessionCommandRoutes: { router, bridge },
+      sessionCommandRoutes: { nodeCredentials: null, router, bridge },
     });
 
     const response = await app.inject({
@@ -683,6 +685,7 @@ describe("session command HTTP route harness", () => {
       sessionCommandRoutes: {
         router,
         bridge,
+        nodeCredentials: null,
         timeoutMs: 1,
         createSessionReconcileTimeoutMs: 50,
       },
@@ -728,7 +731,7 @@ describe("session command HTTP route harness", () => {
         },
       },
     });
-    const app = createApp({ config, sessionCommandRoutes: { router, bridge } });
+    const app = createApp({ config, sessionCommandRoutes: { nodeCredentials: null, router, bridge } });
 
     const response = await app.inject({
       method: "POST",
@@ -767,7 +770,7 @@ describe("session command HTTP route harness", () => {
         },
       },
     });
-    const app = createApp({ config, sessionCommandRoutes: { router, bridge } });
+    const app = createApp({ config, sessionCommandRoutes: { nodeCredentials: null, router, bridge } });
 
     const response = await app.inject({
       method: "POST",
@@ -797,6 +800,7 @@ describe("session command HTTP route harness", () => {
       sessionCommandRoutes: {
         router,
         bridge,
+        nodeCredentials: null,
         timeoutMs: 1,
         createSessionReconcileTimeoutMs: 0,
       },
@@ -864,7 +868,7 @@ describe("session command HTTP route harness", () => {
       });
       const app = createApp({
         config,
-        sessionCommandRoutes: { router, bridge },
+        sessionCommandRoutes: { nodeCredentials: null, router, bridge },
       });
 
       const response = await app.inject({
@@ -894,7 +898,7 @@ describe("session command HTTP route harness", () => {
     const { registry, transports, router, bridge } = createHarness();
     const app = createApp({
       config,
-      sessionCommandRoutes: { router, bridge },
+      sessionCommandRoutes: { nodeCredentials: null, router, bridge },
     });
 
     expect(
@@ -978,7 +982,7 @@ describe("session command HTTP route harness", () => {
       });
       const app = createApp({
         config,
-        sessionCommandRoutes: { router, bridge },
+        sessionCommandRoutes: { nodeCredentials: null, router, bridge },
       });
 
       const response = await app.inject({
@@ -1001,7 +1005,7 @@ describe("session command HTTP route harness", () => {
     const { router, bridge } = createHarness();
     const app = createApp({
       config,
-      sessionCommandRoutes: { router, bridge },
+      sessionCommandRoutes: { nodeCredentials: null, router, bridge },
     });
 
     expect(
@@ -1046,7 +1050,7 @@ describe("session command HTTP route harness", () => {
     const { router, bridge } = createHarness();
     const app = createApp({ config });
 
-    registerSessionCommandRoutes(app, { router, bridge });
+    registerSessionCommandRoutes(app, { nodeCredentials: null, router, bridge });
 
     expect(
       await app.inject({

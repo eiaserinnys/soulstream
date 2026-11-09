@@ -76,6 +76,7 @@ it("requires service bearer and exact run identity before one-shot server author
   const app = Fastify(),
     authorize = vi.fn(async () => true);
   registerCardOrchestrationDecisionRoutes(app, {
+    nodeCredentials: null,
     authBearerToken: "service-token",
     environment: "test",
     authorizeDecision: authorize,
@@ -137,6 +138,7 @@ it("authorizes a worker only with service bearer and exact admitted card identit
   const app = Fastify(),
     authorize = vi.fn(async () => true);
   registerCardOrchestrationDecisionRoutes(app, {
+    nodeCredentials: null,
     authBearerToken: "service-token",
     environment: "test",
     authorizeDecision: vi.fn(async () => false),

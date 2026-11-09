@@ -133,6 +133,7 @@ describe("cards storage, HTTP and planner", () => {
     if (from === 'queued' || from === 'blocked') expect(before.queue_position_key).not.toBeNull();
     const app=Fastify();
     registerFolderRoutes(app,{
+      nodeCredentials: null,
       provider:{listFolders:()=>[{id:'cards-a'}],listSessionAssignments:()=>({})},
       accessProvider:{resolveAccess:()=>({restricted:true,allowedFolderIds:['cards-a']})},
       resolveDashboardUserId:()=>human.actorUserId,cardServiceProvider:async()=>cards,
@@ -193,7 +194,7 @@ describe("cards storage, HTTP and planner", () => {
     const app=Fastify();
     const options={ provider:{ listFolders:()=>[{id:'cards-a'},{id:'cards-b'}],listSessionAssignments:()=>({}) },
       accessProvider:{ resolveAccess:()=>({restricted:true,allowedFolderIds:['cards-a']}) },resolveDashboardUserId:()=>human.actorUserId,
-      cardServiceProvider:async ()=>cards,authBearerToken:'service-test',environment:'production' } satisfies FolderRouteOptions;
+      cardServiceProvider:async ()=>cards,authBearerToken:'service-test',nodeCredentials:null,environment:'production' } satisfies FolderRouteOptions;
     registerFolderRoutes(app,options);
     try {
       const created=await app.inject({ method:'POST',url:'/api/cards',payload:{folderId:'cards-a',title:'HTTP',request:'원문',idempotencyKey:key()} });
@@ -214,6 +215,7 @@ describe("cards storage, HTTP and planner", () => {
   it("returns linked session ancestry and allows human status changes through the real HTTP routes", async () => {
     const app=Fastify();
     registerFolderRoutes(app,{
+      nodeCredentials: null,
       provider:{listFolders:()=>[{id:'cards-a'}],listSessionAssignments:()=>({})},
       accessProvider:{resolveAccess:()=>({restricted:true,allowedFolderIds:['cards-a']})},
       resolveDashboardUserId:()=>human.actorUserId,cardServiceProvider:async()=>cards,

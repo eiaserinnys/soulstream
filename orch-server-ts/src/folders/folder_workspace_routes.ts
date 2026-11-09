@@ -77,7 +77,7 @@ async function allowed(request: FastifyRequest, options: FolderRouteOptions, fol
   return isFolderAllowed(normalizeAccess(await options.accessProvider.resolveAccess(request)), await options.provider.listFolders(), folderId);
 }
 
-export async function dashboardFolderActor(request: FastifyRequest, options: FolderRouteOptions): Promise<FolderActorParams> {
+export async function dashboardFolderActor(request: FastifyRequest, options: Pick<FolderRouteOptions, "resolveDashboardUserId">): Promise<FolderActorParams> {
   const userId = await options.resolveDashboardUserId?.(request) ?? null;
   if (!userId) throw Object.assign(new Error("Authentication required"), { statusCode: 401 });
   return { actorKind: "user", actorSessionId: null, actorUserId: userId };

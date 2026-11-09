@@ -1,12 +1,14 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import type { PersistenceHostRepositories } from "./persistence_host_runtime.js";
 
 export interface PersistenceHostRouteOptions {
   repositoryProvider: () => Promise<PersistenceHostRepositories>;
   authBearerToken: string;
   environment?: string;
+  nodeCredentials: NodeCredentialResolver | null;
 }
 
 type RepositoryKey = keyof PersistenceHostRepositories;
@@ -157,8 +159,11 @@ function registerDomain(
       const timing = beginHostTiming(request, domain, request.params.operation);
       const authorization = verifyServiceBearerAuthorization(
         request.headers.authorization,
-        options.authBearerToken,
-        options.environment,
+        {
+          configuredToken: options.authBearerToken,
+          environment: options.environment,
+          nodeCredentials: options.nodeCredentials,
+        },
       );
       if (!authorization.ok) {
         return sendTimed(request, reply, timing, authorization.statusCode, () =>

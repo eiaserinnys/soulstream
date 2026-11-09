@@ -13,6 +13,7 @@ describe("persistent context host route", () => {
     const app = Fastify(); apps.push(app);
     const evaluatePersistentCandidates = vi.fn(async (_input: PersistentContextEvaluationInput) => ({ observation: null }));
     registerPersistentContextHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: "service-secret",
       service: { evaluatePersistentCandidates } as unknown as PersistentContextService,
       logNullReason: vi.fn(),
@@ -37,6 +38,7 @@ describe("persistent context host route", () => {
     const app = Fastify(); apps.push(app);
     const evaluatePersistentCandidates = vi.fn(async (_input: PersistentContextEvaluationInput) => ({ observation: null }));
     registerPersistentContextHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: "service-secret",
       service: { evaluatePersistentCandidates } as unknown as PersistentContextService,
       logNullReason: vi.fn(),
@@ -59,6 +61,7 @@ describe("persistent context host route", () => {
     const app = Fastify(); apps.push(app);
     const evaluatePersistentCandidates = vi.fn(async (_input: PersistentContextEvaluationInput) => ({ observation: null }));
     registerPersistentContextHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: "service-secret",
       service: { evaluatePersistentCandidates } as unknown as PersistentContextService,
       logNullReason: vi.fn(),
@@ -89,6 +92,7 @@ describe("persistent context host route", () => {
       return { observation: { input_id: "input", selected: [] } };
     });
     registerPersistentContextHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: "service-secret",
       service: { evaluatePersistentCandidates } as unknown as PersistentContextService,
       logNullReason,
@@ -118,6 +122,7 @@ describe("persistent context host route", () => {
     const logNullReason = vi.fn();
     const evaluatePersistentCandidates = vi.fn(async () => ({ observation: null }));
     registerPersistentContextHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: "service-secret",
       service: { evaluatePersistentCandidates } as unknown as PersistentContextService,
       logNullReason,

@@ -477,6 +477,7 @@ describe("OAuth dashboard login, consent, and scoped resource access", () => {
       resolveOAuthToken,
     });
     const accessProvider = createLiveDashboardAccessProvider({
+      nodeCredentials: null,
       configProvider: dependencies.configProvider,
       jwt: dependencies.jwt,
       repository: {
@@ -506,6 +507,7 @@ describe("OAuth dashboard login, consent, and scoped resource access", () => {
     } as unknown as CardControlPlaneService;
     let callerInfo: Awaited<ReturnType<typeof userResolvers.resolveCallerInfo>>;
     registerFolderRoutes(api, {
+      nodeCredentials: null,
       provider: {
         listFolders: () => [{ id: "folder-allowed" }, { id: "folder-private" }],
         listSessionAssignments: () => ({}),

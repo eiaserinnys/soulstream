@@ -50,7 +50,7 @@ function harness(reason: "quota" | "env" | "auth" = "quota") {
       registry.receiveNodeMessage("quota-node", { type: "session_created",
         requestId: command.requestId, agentSessionId: command.agentSessionId });
     } } });
-  const sessions = { router: new SessionCommandRouter({ registry }), bridge, modelPresetAvailability: availability };
+  const sessions = { nodeCredentials: null, router: new SessionCommandRouter({ registry }), bridge, modelPresetAvailability: availability };
   const acks: Record<string, unknown>[] = [];
   let sourceSeq = 0;
   let eventId = 100;
