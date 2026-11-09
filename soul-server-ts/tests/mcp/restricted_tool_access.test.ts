@@ -66,11 +66,12 @@ function makeRuntime(): { runtime: McpRuntime; db: SessionDB; worktreeList: Retu
 async function startServer(
   restricted: McpRestrictedAuthConfig | undefined,
   auth = { requireAuth: true, bearerToken: KEY, allowedHosts: ["127.0.0.1", "localhost"] },
+  statelessTransport = false,
 ): Promise<Harness> {
   const { runtime, db, worktreeList } = makeRuntime();
   const server = await buildInternalMcpServer({
     logger: silentLogger(),
-    statelessTransport: false,
+    statelessTransport,
     runtime,
     path: "/mcp",
     auth,
@@ -119,6 +120,26 @@ async function rpc(
       accept: "application/json, text/event-stream",
       authorization,
       "mcp-session-id": sessionId,
+    },
+    body: JSON.stringify(body),
+  });
+  expect(res.status).toBe(200);
+  const text = await res.text();
+  const data = text.split("\n").find((line) => line.startsWith("data: "))?.slice("data: ".length);
+  return JSON.parse(data ?? text) as Record<string, any>;
+}
+
+async function statelessRpc(
+  baseUrl: string,
+  authorization: string,
+  body: Record<string, unknown>,
+): Promise<Record<string, any>> {
+  const res = await fetch(`${baseUrl}/mcp`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+      authorization,
     },
     body: JSON.stringify(body),
   });
@@ -211,5 +232,33 @@ describe("restricted MCP tool surface", () => {
     expect(payload.result?.isError).toBeUndefined();
     expect(harness.worktreeList).toHaveBeenCalledTimes(1);
     expect(harness.worktreeList.mock.calls[0]?.[0]).toMatchObject({ actorSessionId: SESSION_A });
+  });
+});
+
+describe("restricted MCP surface in stateless mode", () => {
+  it("keeps the restricted tool surface on each POST without a session id", async () => {
+    const harness = await startServer(restrictedConfig, undefined, true);
+    try {
+      const restricted = await statelessRpc(harness.baseUrl, `Bearer ${TOKEN_A}`, {
+        jsonrpc: "2.0", method: "tools/list", params: {}, id: 10,
+      });
+      const restrictedNames: string[] = (restricted.result?.tools ?? []).map(
+        (tool: { name: string }) => tool.name,
+      );
+      expect(restrictedNames).toHaveLength(107);
+      expect(restrictedNames).not.toContain("delete_session");
+
+      const full = await statelessRpc(harness.baseUrl, `Bearer ${KEY}`, {
+        jsonrpc: "2.0", method: "tools/list", params: {}, id: 11,
+      });
+      const fullNames: string[] = (full.result?.tools ?? []).map(
+        (tool: { name: string }) => tool.name,
+      );
+      expect(fullNames).toHaveLength(136);
+      expect(fullNames).toContain("delete_session");
+    } finally {
+      if (harness.server.closeMcp) await harness.server.closeMcp();
+      await harness.server.close();
+    }
   });
 });
