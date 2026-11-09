@@ -3,8 +3,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 export const AGGREGATE_SCHEMA_VERSION = "soulstream.reflect.aggregate.v1";
 export const DEFAULT_BRIEF_TIMEOUT_SECONDS = 5;
-export const COGITO_SEARCH_DEADLINE_MS = 4_700;
-export const COGITO_PRODUCT_EXPANDED_SEARCH_DEADLINE_MS = 10_000;
+export const COGITO_SEARCH_DEADLINE_MS = 10_000;
+export const COGITO_PRODUCT_EXPANDED_SEARCH_DEADLINE_MS = 15_000;
 
 export type CogitoNode = {
   id: string;

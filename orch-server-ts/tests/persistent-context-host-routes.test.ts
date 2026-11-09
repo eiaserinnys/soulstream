@@ -25,12 +25,34 @@ describe("persistent context host route", () => {
     const invalidBudget = await app.inject({
       method: "POST", url: "/api/persistent-context/host/evaluate",
       headers: { authorization: "Bearer service-secret" },
-      payload: { args: { session_id: "session", input_id: "input", request: "요청", budget_ms: 3001 } },
+      payload: { args: { session_id: "session", input_id: "input", request: "요청", budget_ms: 20001 } },
     });
 
     expect(unauthorized.statusCode).toBe(401);
     expect(invalidBudget.statusCode).toBe(400);
     expect(evaluatePersistentCandidates).not.toHaveBeenCalled();
+  });
+
+  it("accepts the maximum observation budget and forwards its deadline", async () => {
+    const app = Fastify(); apps.push(app);
+    const evaluatePersistentCandidates = vi.fn(async (_input: PersistentContextEvaluationInput) => ({ observation: null }));
+    registerPersistentContextHostRoutes(app, {
+      authBearerToken: "service-secret",
+      service: { evaluatePersistentCandidates } as unknown as PersistentContextService,
+      logNullReason: vi.fn(),
+    });
+    const before = Date.now();
+    const response = await app.inject({
+      method: "POST", url: "/api/persistent-context/host/evaluate",
+      headers: { authorization: "Bearer service-secret" },
+      payload: { args: { session_id: "session", input_id: "input", request: "요청", budget_ms: 20000 } },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(evaluatePersistentCandidates).toHaveBeenCalledTimes(1);
+    const input = evaluatePersistentCandidates.mock.calls[0]?.[0];
+    expect(input?.deadlineAt).toBeGreaterThanOrEqual(before + 19_900);
+    expect(input?.deadlineAt).toBeLessThanOrEqual(before + 20_100);
   });
 
   it("forwards the budget deadline and emits only an observation envelope", async () => {

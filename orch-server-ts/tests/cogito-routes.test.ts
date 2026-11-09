@@ -367,7 +367,7 @@ describe("cogito route harness", () => {
         method: "GET",
         url: "/cogito/search?q=hello",
       });
-      await vi.advanceTimersByTimeAsync(4_700);
+      await vi.advanceTimersByTimeAsync(COGITO_SEARCH_DEADLINE_MS);
       const response = await responsePromise;
 
       expect(response.statusCode).toBe(504);

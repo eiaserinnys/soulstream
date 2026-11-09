@@ -23,7 +23,7 @@ type SessionSourceRow = Omit<SessionDocumentRecord, "summary">;
 type SessionDigestRow = { readonly session_id: string; readonly highlight: string | null };
 type SessionSummarySourceRow = SessionSummaryEvent & { readonly session_id: string };
 
-const DOCUMENT_INDEX_INITIALIZATION_TIMEOUT_MS = 30_000;
+const DOCUMENT_INDEX_INITIALIZATION_TIMEOUT_MS = 60_000;
 
 export class LiveSessionDocumentSearch {
   readonly index = new SessionDocumentSearchIndex();

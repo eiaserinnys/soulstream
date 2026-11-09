@@ -60,7 +60,7 @@ describe("createPersistentJevObserver", () => {
         budget_ms: expect.any(Number),
       },
     });
-    expect(JSON.parse(String(init.body)).args.budget_ms).toBeLessThanOrEqual(3000);
+    expect(JSON.parse(String(init.body)).args.budget_ms).toBeLessThanOrEqual(20000);
     expect(enqueueEvent).toHaveBeenCalledWith("session-1", expect.objectContaining({
       type: "debug",
       kind: "persistent_jev_candidates",
@@ -142,7 +142,7 @@ describe("createPersistentJevObserver", () => {
 
     await observer({ sessionId: "session-1", inputId: "input-1", request: "mismatch" });
 
-    now.mockReturnValueOnce(1000).mockReturnValueOnce(1000).mockReturnValueOnce(4001);
+    now.mockReturnValueOnce(1000).mockReturnValueOnce(1000).mockReturnValueOnce(21001);
     const lateResult = observer({ sessionId: "session-1", inputId: "input-2", request: "late" });
     late.resolve(new Response(JSON.stringify({ observation: validObservation("input-2") }), { status: 200 }));
     await lateResult;

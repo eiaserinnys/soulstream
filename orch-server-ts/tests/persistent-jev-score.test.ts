@@ -22,6 +22,21 @@ describe("scorePersistentCandidates", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it("accepts the full observation budget", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ answers: {
+      a: { score: 2 },
+    } }), { status: 200 }));
+
+    await expect(scorePersistentCandidates({
+      query: "현재 요청",
+      items: [{ key: "a", text: "과거 A" }],
+      apiKey: "test-key",
+      budgetMs: 20_000,
+      fetchImpl,
+    })).resolves.toEqual([{ key: "a", score: 2 }]);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("fails the whole score set when one candidate score is absent or invalid", async () => {
     const fetchImpl = vi.fn(async () => new Response(JSON.stringify({ answers: {
       a: { score: 2 },

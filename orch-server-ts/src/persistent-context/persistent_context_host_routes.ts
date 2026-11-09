@@ -86,7 +86,7 @@ function readInput(value: unknown): {
     || typeof input_id !== "string" || input_id.trim().length === 0
     || typeof request !== "string" || request.trim().length === 0
     || typeof budgetMs !== "number" || !Number.isInteger(budgetMs)
-    || budgetMs <= 0 || budgetMs > 3_000) {
+    || budgetMs <= 0 || budgetMs > 20_000) {
     return null;
   }
   return {
