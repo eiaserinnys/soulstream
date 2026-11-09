@@ -12,10 +12,15 @@
      (duo-rail-action-back, 이름 「설정 닫기」)가 그대로 보인다.
    - 변경 전 상태(`--phase before`)는 헤더에 글자 「완료」가 있고 유리 원이 없다.
 2. 포스트잇 카드 제목 위 여백
-   - 카드 위 끝에서 제목까지가 변경 전보다 gap만큼 늘고(paddingTop), 왼쪽·오른쪽·아래
-     여백과 푸터 위치는 그대로다.
+   - 카드 위 끝에서 제목까지가 변경 전보다 gap만큼 늘고(paddingTop), 왼쪽·오른쪽
+     여백과 푸터 위치는 그대로다. 아래 여백은 늘어난 제목 위 gap을 상쇄하도록
+     푸터 간격(footerGap)만큼 줄어든다.
    - 두 줄 제목 카드에서 제목은 두 줄을 유지하고, 본문 요약 1줄과 「볼 것」 줄의
      글자는 잘리지 않는다(넘침 1px 이하).
+   - 본문 칸의 자식(진행 줄·본문·「볼 것」 상자)은 네이티브처럼 줄어들지 않고
+     (flexShrink 0), 「볼 것」 상자의 자연 높이와 아래끝이 본문 칸 안에 들어온다.
+     상자 아래끝에서 푸터 완료 원 단추 윗면까지는 제목↔본문 사이 간격(gap)과 같은
+     리듬(2px 이내)이다.
    - 카드 크기(width/height)는 그대로다.
 
 실행 방법
@@ -65,6 +70,9 @@ BOARD_FRAMES = [
 # 거의 확실한 시각 차이만 잡고 픽셀 반올림은 허용한다.
 ALIGN_TOLERANCE_PX = 1.0
 SIZE_TOLERANCE_PX = 0.5
+# 「볼 것」 상자는 본문 칸의 남는 높이(slack)만큼 칸 아래끝보다 위에 놓인다.
+# 그래서 상자 아래끝→완료 원 윗면의 시각 간격은 제목 리듬(gap)보다 slack만큼 크다.
+RHYTHM_TOLERANCE_PX = 2.0
 
 HIDE_SCROLLBAR_CSS = "::-webkit-scrollbar { width: 0; height: 0; } * { scrollbar-width: none; }"
 
@@ -138,6 +146,10 @@ BOARD_MEASURE_JS = r"""
   const styleOf = (element) => (element ? getComputedStyle(element) : null);
   const byId = (id) => document.querySelector(`[data-testid="${id}"]`);
   const cards = [...document.querySelectorAll('[data-testid^="postit-card-"]')].map((card) => {
+    // 카드가 ±0.8° 회전해 있으면 자식의 getBoundingClientRect는 회전을 감싼 AABB라
+    // 높이가 최대 2.76pt 부풀어 줄어든 글자를 가린다. 측정 동안만 회전을 끈다.
+    const rotation = card.style.transform;
+    card.style.transform = 'none';
     const id = card.dataset.testid.slice('postit-card-'.length);
     const open = byId(`postit-open-${id}`);
     const title = byId(`postit-title-${id}`);
@@ -146,6 +158,7 @@ BOARD_MEASURE_JS = r"""
     const ask = byId(`postit-${id}-ask-preview`);
     const footer = byId(`postit-footer-${id}`);
     const progress = byId(`postit-${id}-item-summary`);
+    const complete = byId(`postit-complete-${id}`);
     const openStyle = styleOf(open);
     const titleStyle = styleOf(title);
     const bodyStyle = styleOf(body);
@@ -157,9 +170,20 @@ BOARD_MEASURE_JS = r"""
     const footerRect = box(footer);
     const bodyAreaRect = box(bodyArea);
     const askRect = box(ask);
-    const askTextBottom = askRect && askStyle
-      ? round(askRect.bottom - parseFloat(askStyle.paddingBottom || '0'))
-      : null;
+    const completeRect = box(complete);
+    // 「볼 것」 상자의 자연 높이(줄 높이 + 위아래 padding). 웹이 flex-shrink로
+    // 상자를 줄이면 getBoundingClientRect는 줄어든 높이를 돌려주므로, 글자가 잘렸는지는
+    // 줄어든 상자 끝이 아니라 자연 높이로 계산한다. 상자는 numberOfLines 1(compact)이다.
+    const askPaddingTop = askStyle ? parseFloat(askStyle.paddingTop || '0') : null;
+    const askPaddingBottom = askStyle ? parseFloat(askStyle.paddingBottom || '0') : null;
+    const askLineHeight = askStyle && askStyle.lineHeight !== 'normal' ? parseFloat(askStyle.lineHeight) : null;
+    const askNaturalHeight = askLineHeight !== null && askPaddingTop !== null && askPaddingBottom !== null
+      ? round(askLineHeight + askPaddingTop + askPaddingBottom) : null;
+    const askTextBottom = askRect && askNaturalHeight !== null && askPaddingBottom !== null
+      ? round(askRect.top + askNaturalHeight - askPaddingBottom) : null;
+    const askNaturalBottom = askRect && askNaturalHeight !== null
+      ? round(askRect.top + askNaturalHeight) : null;
+    const askToCompleteGap = askRect && completeRect ? round(completeRect.top - askRect.bottom) : null;
     const footerImages = footer
       ? [...footer.querySelectorAll('*')].filter((element) => {
           if (element.tagName === 'IMG') return true;
@@ -167,7 +191,7 @@ BOARD_MEASURE_JS = r"""
           return background && background !== 'none';
         }).length
       : 0;
-    return {
+    const result = {
       id,
       card: cardRect,
       cardSize: { width: card.offsetWidth, height: card.offsetHeight },
@@ -190,11 +214,19 @@ BOARD_MEASURE_JS = r"""
       progress: box(progress),
       progressText: progress ? (progress.textContent || '').trim() : null,
       ask: askRect,
+      askLineHeight,
+      askNaturalHeight,
+      askShrunk: askRect && askNaturalHeight !== null ? round(askRect.height - askNaturalHeight) : null,
       askTextBottom,
-      askTextClipped: askRect && askStyle && bodyAreaRect
+      askTextClipped: askRect && askTextBottom !== null && bodyAreaRect
         ? round(askTextBottom - bodyAreaRect.bottom) > 0
         : null,
       askBoxOverflow: askRect && bodyAreaRect ? round(askRect.bottom - bodyAreaRect.bottom) : null,
+      askNaturalBottom,
+      askNaturalOverflow: askNaturalBottom !== null && bodyAreaRect
+        ? round(askNaturalBottom - bodyAreaRect.bottom) : null,
+      complete: completeRect,
+      askToCompleteGap,
       footer: footerRect,
       footerInset: footerStyle ? {
         bottom: round(parseFloat(footerStyle.bottom)),
@@ -205,6 +237,8 @@ BOARD_MEASURE_JS = r"""
       footerText: footer ? (footer.textContent || '').trim() : null,
       footerImages,
     };
+    card.style.transform = rotation;
+    return result;
   });
   return {
     window: { width: innerWidth, height: innerHeight },
@@ -438,8 +472,25 @@ def capture_board(browser: Browser, base: str, out: Path, frame_id: str, width: 
                      bool(card["titleLineHeight"]) and card["title"]
                      and card["title"]["height"] >= card["titleLineHeight"] * 1.9,
                      {"title": card["title"], "lineHeight": card["titleLineHeight"]})
+        checks.check(f"{label} 본문 글자 줄지 않음(flexShrink 0)",
+                     bool(card["bodyLineHeight"]) and card["body"] is not None
+                     and card["body"]["height"] >= card["bodyLineHeight"] - ALIGN_TOLERANCE_PX,
+                     {"height": card["body"] and card["body"]["height"],
+                      "lineHeight": card["bodyLineHeight"]})
+        checks.check(f"{label} 「볼 것」 상자 줄지 않음(flexShrink 0)",
+                     card["ask"] is None or (card["askNaturalHeight"] is not None
+                     and card["ask"]["height"] >= card["askNaturalHeight"] - ALIGN_TOLERANCE_PX),
+                     {"height": card["ask"] and card["ask"]["height"],
+                      "naturalHeight": card["askNaturalHeight"], "shrunk": card["askShrunk"]})
+        checks.check(f"{label} 「볼 것」 상자 자연 아래끝 ≤ 본문 칸 아래끝",
+                     card["askNaturalOverflow"] is None or card["askNaturalOverflow"] <= ALIGN_TOLERANCE_PX,
+                     {"naturalOverflow": card["askNaturalOverflow"], "bodyArea": card["bodyArea"]})
         checks.check(f"{label} 「볼 것」 글자 잘리지 않음", card["askTextClipped"] is False,
                      {"askTextBottom": card["askTextBottom"], "bodyArea": card["bodyArea"]})
+        checks.check(f"{label} 「볼 것」↔완료 버튼 간격 = 제목 리듬(2px)",
+                     card["askToCompleteGap"] is None or (card["paddingGap"] is not None
+                     and abs(card["askToCompleteGap"] - card["paddingGap"]) <= RHYTHM_TOLERANCE_PX),
+                     {"askToCompleteGap": card["askToCompleteGap"], "paddingGap": card["paddingGap"]})
         checks.check(f"{label} 「볼 것」 상자 넘침 1px 이하",
                      card["askBoxOverflow"] is None or card["askBoxOverflow"] <= ALIGN_TOLERANCE_PX,
                      card["askBoxOverflow"])
@@ -512,6 +563,8 @@ def compare_phases(before: dict, after: dict, checks: Checks) -> dict:
                 "sizeBefore": prior["cardSize"],
                 "sizeAfter": card["cardSize"],
                 "askBoxOverflow": {"before": prior["askBoxOverflow"], "after": card["askBoxOverflow"]},
+                "askNaturalOverflow": {"before": prior.get("askNaturalOverflow"),
+                                       "after": card["askNaturalOverflow"]},
             }
             deltas.append(entry)
             label = f"전후 board/{key}/{card['id']}"
@@ -524,18 +577,23 @@ def compare_phases(before: dict, after: dict, checks: Checks) -> dict:
                          and prior["titleOffsetFromCardTop"] is not None
                          and abs((card["titleOffsetFromCardTop"] - prior["titleOffsetFromCardTop"]) - gap) <= ALIGN_TOLERANCE_PX,
                          entry["titleOffset"])
-            checks.check(f"{label} 왼쪽/오른쪽/아래 여백 그대로",
-                         abs(entry["leftDelta"]) <= 0.01 and abs(entry["rightDelta"]) <= 0.01
-                         and abs(entry["bottomDelta"]) <= 0.01, entry)
+            checks.check(f"{label} 왼쪽/오른쪽 여백 그대로",
+                         abs(entry["leftDelta"]) <= 0.01 and abs(entry["rightDelta"]) <= 0.01, entry)
+            checks.check(f"{label} 아래 여백은 제목 위 gap만큼 회수(줄어듦)",
+                         entry["bottomDelta"] <= 0.01
+                         and (gap is None or entry["bottomDelta"] >= -gap - 0.01),
+                         {"before": prior["padding"]["bottom"], "after": card["padding"]["bottom"],
+                          "delta": entry["bottomDelta"]})
             checks.check(f"{label} 푸터 위치 그대로", abs(entry["footerDelta"]) <= SIZE_TOLERANCE_PX,
                          entry["footerDelta"])
             checks.check(f"{label} 카드 크기 그대로",
                          abs(card["cardSize"]["width"] - prior["cardSize"]["width"]) <= SIZE_TOLERANCE_PX
                          and abs(card["cardSize"]["height"] - prior["cardSize"]["height"]) <= SIZE_TOLERANCE_PX,
                          entry["sizeBefore"])
-            checks.check(f"{label} 「볼 것」 상자 넘침 1px 이하",
-                         card["askBoxOverflow"] is None or card["askBoxOverflow"] <= ALIGN_TOLERANCE_PX,
-                         entry["askBoxOverflow"])
+            checks.check(f"{label} 「볼 것」 상자 자연 넘침 1px 이하",
+                         card["askNaturalOverflow"] is None
+                         or card["askNaturalOverflow"] <= ALIGN_TOLERANCE_PX,
+                         entry["askNaturalOverflow"])
         summary["board"][key] = deltas
     return summary
 

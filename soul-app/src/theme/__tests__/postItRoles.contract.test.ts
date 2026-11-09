@@ -36,9 +36,24 @@ test.each(['phone', 'tablet'] as const)('%s paper follows feed typography while 
   expect(full.paddingTop).toBeCloseTo(full.padding + full.gap);
   expect(compact.gap).toBeCloseTo(7.05882);
   expect(compact.footerHeight).toBeCloseTo(foundation.hitTarget * 15 / 17);
-  expect(compact.bodyLines).toBe(2);
+  expect(compact.footerGap).toBeCloseTo(DESIGN_SPACING.xxs * 15 / 17);
+  expect(full.footerGap).toBeCloseTo(full.gap);
+  expect(compact.paddingBottom).toBeCloseTo(compact.padding + compact.footerHeight + compact.footerGap);
+  expect(full.paddingBottom).toBeCloseTo(full.padding + full.footerHeight + full.footerGap);
+  expect(compact.bodyLines).toBe(3);
   expect(full.bodyLines).toBe(4);
-  expect(Math.floor((compact.height - compact.paddingTop - compact.padding - compact.footerHeight
-    - compact.gap - compact.title.lineHeight - compact.gap) / compact.body.lineHeight)).toBe(3);
+  expect(Math.floor((compact.height - compact.paddingTop - compact.paddingBottom
+    - compact.title.lineHeight * 2 - compact.gap) / compact.body.lineHeight)).toBe(compact.bodyLines);
+  expect(Math.floor((full.height - full.paddingTop - full.paddingBottom
+    - full.title.lineHeight * 2 - full.gap) / full.body.lineHeight)).toBe(full.bodyLines);
+  // 최악 조합(두 줄 제목 + 진행 줄 + now 본문 + 「볼 것」 상자)이 본문 칸에 들어와야 한다.
+  // 네이티브 자식은 기본 flexShrink 0이라 넘치면 그대로 잘리므로 역할 값만으로 보장한다.
+  for (const variant of [compact, full]) {
+    const bodyArea = variant.height - variant.paddingTop - variant.paddingBottom
+      - variant.title.lineHeight * 2 - variant.gap;
+    const worstContent = variant.label.lineHeight + variant.body.lineHeight
+      + variant.label.lineHeight + t.uiSpacing.xs * 2;
+    expect(bodyArea).toBeGreaterThanOrEqual(worstContent);
+  }
   expect(t.hitTarget.min).toBe(tablet ? 48 : 44);
 });
