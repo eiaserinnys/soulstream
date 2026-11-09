@@ -10,6 +10,7 @@ import { buildMcpOptions } from "./claude_sdk_mcp_options.js";
 import { makeCacheableSystemPrompt } from "./claude_sdk_prompt.js";
 import type { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
 import type { ClaudeSdkToolPermissionController } from "./claude_sdk_tool_permissions.js";
+import { isolationError, launchIsolatedChild } from "./isolated_session_launch.js";
 import { spawnClaudeSessionEngine } from "./session_engine_oom_score.js";
 
 const CLAUDE_CODE_EXECPATH_ENV = "CLAUDE_CODE_EXECPATH";
@@ -50,11 +51,29 @@ export function buildClaudeSdkOptions({
     cwd: options.workspaceDir,
     ...(options.trackChildExit || process.platform === "linux"
       ? {
-          spawnClaudeCodeProcess: (spawnOptions) => spawnClaudeSessionEngine(
-            spawnOptions,
-            logger,
-            options.trackChildExit ? onChildProcessClosed : undefined,
-          ),
+          spawnClaudeCodeProcess: (spawnOptions) => {
+            if (options.isolation) {
+              const launch = launchIsolatedChild({
+                isolation: options.isolation,
+                command: spawnOptions.command,
+                args: spawnOptions.args,
+                cwd: spawnOptions.cwd,
+                env: spawnOptions.env,
+                stdio: "pipe",
+                ...(spawnOptions.signal ? { signal: spawnOptions.signal } : {}),
+                logger,
+              });
+              void launch.ready.catch((error: unknown) => {
+                options.onIsolationFailure?.(isolationError(error));
+              });
+              return launch.child;
+            }
+            return spawnClaudeSessionEngine(
+              spawnOptions,
+              logger,
+              options.trackChildExit ? onChildProcessClosed : undefined,
+            );
+          },
         }
       : {}),
     ...(options.env !== undefined ? { env: options.env } : {}),

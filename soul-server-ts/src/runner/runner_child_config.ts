@@ -8,6 +8,7 @@ import {
   AgentsSdkMcpServerSchema,
 } from "../agent_registry.js";
 import { assertRunnerJsonValue } from "./frame_protocol.js";
+import { RunnerIsolationChildConfigSchema } from "./runner_isolation_config.js";
 
 const RunnerProcessPathsSchema = z.object({
   sessionDirectory: z.string().min(1),
@@ -63,6 +64,7 @@ const RunnerChildConfigFields = {
   resolvedMcpServers: z.array(AgentsSdkMcpServerSchema).optional(),
   codexHome: z.string().min(1).nullable(),
   rolloutRoot: z.string().min(1).nullable(),
+  isolation: RunnerIsolationChildConfigSchema.optional(),
 };
 
 // Runner configs are consumed by the immutable snapshot selected by codeSha,

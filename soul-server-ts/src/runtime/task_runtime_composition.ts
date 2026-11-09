@@ -28,10 +28,7 @@ import { ClaudeRuntimeTaskFollowupController } from
 import type { StartExecutionCallback, TaskManager } from "../task/task_manager.js";
 import type { TransientEventLogAggregator } from
   "../task/transient_event_log_aggregator.js";
-import {
-  createSessionIsolationRuntime,
-  sessionIsolationSettingsFromEnv,
-} from "../security/session_isolation_runtime.js";
+import type { SessionIsolationRuntime } from "../security/session_isolation_runtime.js";
 import type { SessionIsolationTurnGate } from "../security/session_isolation_turn.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import { ScheduleDispatcher } from "../schedule/schedule_dispatcher.js";
@@ -69,6 +66,7 @@ export interface TaskRuntimeCompositionParams {
   transientEventLogAggregator: TransientEventLogAggregator;
   worktreeResolver?: WorktreeExecutionResolver;
   sessionMutations?: Pick<SessionMutationHost, "setModelSelection">;
+  sessionIsolationRuntime?: SessionIsolationRuntime;
 }
 
 export function createWorkerAttachmentRuntime(
@@ -185,12 +183,7 @@ export function composeTaskRuntime(
   });
 
   // off에서는 게이트를 만들지 않는다 — 판정 호출도 정책 파일 읽기도 0회다.
-  const isolationRuntime = env.SESSION_ISOLATION_MODE === "off"
-    ? undefined
-    : createSessionIsolationRuntime({
-        nodeId: env.SOULSTREAM_NODE_ID,
-        settings: sessionIsolationSettingsFromEnv(env),
-      });
+  const isolationRuntime = params.sessionIsolationRuntime;
   const sessionIsolationGate: SessionIsolationTurnGate | undefined = isolationRuntime
     ? {
         resolveDecision: async (sessionId, effectiveTurnPreset) =>

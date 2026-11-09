@@ -1,10 +1,16 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
 import type { Logger } from "pino";
+import type { RunnerIsolationChildConfig } from "../../runner/runner_isolation_config.js";
 import {
   cleanUpAntigravityDescendants,
   snapshotAntigravityDescendants,
 } from "../antigravity/process.js";
+import {
+  type IsolatedChildLaunch,
+  isolationError,
+  launchIsolatedChild,
+} from "../isolated_session_launch.js";
 
 export interface OpenCodeExit {
   code: number | null;
@@ -82,14 +88,30 @@ export function launchOpenCodeProcess(options: {
   env: NodeJS.ProcessEnv;
   input: string;
   logger: Pick<Logger, "warn">;
+  isolation?: RunnerIsolationChildConfig;
 }) {
-  const child = spawn(options.executablePath, options.args, {
-    cwd: options.cwd,
-    env: options.env,
-    shell: false,
-    detached: true,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+  let launch: IsolatedChildLaunch | undefined;
+  let child: ChildProcess;
+  if (options.isolation) {
+    launch = launchIsolatedChild({
+      isolation: options.isolation,
+      command: options.executablePath,
+      args: options.args,
+      cwd: options.cwd,
+      env: options.env,
+      stdio: ["pipe", "pipe", "pipe"],
+      logger: options.logger,
+    });
+    child = launch.child;
+  } else {
+    child = spawn(options.executablePath, options.args, {
+      cwd: options.cwd,
+      env: options.env,
+      shell: false,
+      detached: true,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+  }
   let failure: string | undefined;
   let interrupted = false;
   let initialized = false;
@@ -104,27 +126,42 @@ export function launchOpenCodeProcess(options: {
 
   const done = new Promise<OpenCodeExit>((resolve) => {
     child.once("close", (code, signal) => {
-      closed = true;
-      try {
-        const terminatedProcessCount = cleanUpAntigravityDescendants(descendants);
-        if (terminatedProcessCount > 0) options.logger.warn(
-          { terminatedProcessCount }, "OpenCode interrupted tool descendants received SIGTERM",
-        );
-      } catch {
-        failure ??= "OpenCode tool descendant cleanup failed";
-      }
-      resolve({
-        code,
-        signal,
-        ...(failure ? { error: failure } : {}),
-        rateLimitDetected,
-        ...(rateLimitSessionId ? { rateLimitSessionId } : {}),
+      void readySettled.then(() => {
+        closed = true;
+        try {
+          const terminatedProcessCount = cleanUpAntigravityDescendants(descendants);
+          if (terminatedProcessCount > 0) options.logger.warn(
+            { terminatedProcessCount }, "OpenCode interrupted tool descendants received SIGTERM",
+          );
+        } catch {
+          failure ??= "OpenCode tool descendant cleanup failed";
+        }
+        resolve({
+          code,
+          signal,
+          ...(failure ? { error: failure } : {}),
+          rateLimitDetected,
+          ...(rateLimitSessionId ? { rateLimitSessionId } : {}),
+        });
       });
     });
   });
 
+  void launch?.ready.catch((error: unknown) => {
+    failure ??= isolationError(error).message;
+  });
+  // ready 판정이 끝난 뒤에 close를 확정한다. 격리 준비 실패가 종료 코드에
+  // 묻히지 않고 exit.error로 드러나야 한다.
+  const readySettled = launch
+    ? launch.ready.then(() => undefined, () => undefined)
+    : Promise.resolve();
+
   function signalGroup(): boolean {
     if (closed || !child.pid) return false;
+    if (launch) {
+      void launch.dispose();
+      return true;
+    }
     descendants = snapshotAntigravityDescendants(child.pid);
     try {
       process.kill(-child.pid, "SIGINT");

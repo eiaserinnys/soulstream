@@ -24,8 +24,9 @@ import { ClaudeSessionClientRegistry } from
   "../engine/claude_session_client_registry.js";
 import { CodexEngineAdapter } from "../engine/codex_adapter.js";
 import { CodexAppServerEngineAdapter } from "../engine/codex_app_server/index.js";
-import type { EnginePort } from "../engine/protocol.js";
+import type { EngineExecuteParams, EnginePort, SSEEventPayload } from "../engine/protocol.js";
 import type { RunnerChildConfig } from "./runner_process_spawn.js";
+import { SessionIsolationUnavailableError } from "./session_filesystem_errors.js";
 import type { RunnerHostRequestClient } from "./runner_host_request_client.js";
 import {
   applyRunnerClaudeRuntimeObservationResult,
@@ -36,6 +37,18 @@ const HOST_REQUEST_ATTEMPT_TIMEOUT_MS = 1_800_000;
 const HOST_REQUEST_DEADLINE_MS = HOST_REQUEST_ATTEMPT_TIMEOUT_MS;
 
 export function createRunnerChildEngine(
+  config: RunnerChildConfig,
+  host: RunnerHostRequestClient,
+  logger: Logger,
+): EnginePort {
+  assertIsolatableBackend(config);
+  const engine = createRunnerChildEnginePort(config, host, logger);
+  return config.isolation
+    ? withIsolationContextNotice(engine, config.isolation.contextNotice)
+    : engine;
+}
+
+function createRunnerChildEnginePort(
   config: RunnerChildConfig,
   host: RunnerHostRequestClient,
   logger: Logger,
@@ -60,6 +73,7 @@ export function createRunnerChildEngine(
       processEnv: process.env,
       resolvedMcpServers: config.resolvedMcpServers,
       internalMcpUrl: config.internalMcpUrl,
+      ...(config.isolation ? { isolation: config.isolation } : {}),
     }, logger);
   }
   if (config.backend === "codex") {
@@ -77,6 +91,7 @@ export function createRunnerChildEngine(
         ...(config.resolvedMcpServers
           ? { resolvedMcpServers: config.resolvedMcpServers }
           : {}),
+        ...(config.isolation ? { isolation: config.isolation } : {}),
       }, logger);
     }
     if (config.resolvedMcpServers) {
@@ -183,7 +198,41 @@ export function createRunnerChildEngine(
       ? { resolvedMcpServers: config.resolvedMcpServers }
       : {}),
     ...(registry ? { persistentSessionRegistry: registry } : {}),
+    ...(config.isolation ? { isolation: config.isolation } : {}),
   }, logger);
+}
+
+/** 격리를 지원하는 러너 경로가 있는 backend만 통과시킨다. */
+function assertIsolatableBackend(config: RunnerChildConfig): void {
+  if (!config.isolation) return;
+  if (config.backend === "claude" || config.backend === "opencode") return;
+  if (config.backend === "codex" && config.codexAdapterMode === "app-server") return;
+  throw new SessionIsolationUnavailableError(
+    `SESSION_ISOLATION_UNAVAILABLE: backend ${config.backend} has no isolated runner path`,
+  );
+}
+
+/**
+ * 새 restricted 러너의 첫 턴에만 격리 안내를 앞에 붙인다. 러너를 재사용하는
+ * 턴에는 붙지 않고, 정책·attach 변경으로 러너가 다시 만들어지면 다시 붙는다.
+ */
+function withIsolationContextNotice(engine: EnginePort, notice: string): EnginePort {
+  let pending = true;
+  return new Proxy(engine, {
+    get(target, prop) {
+      if (prop === "execute") {
+        return (params: EngineExecuteParams): AsyncIterable<SSEEventPayload> => {
+          const first = pending;
+          pending = false;
+          return target.execute(first
+            ? { ...params, prompt: `${notice}\n\n${params.prompt}` }
+            : params);
+        };
+      }
+      const value = Reflect.get(target, prop, target);
+      return typeof value === "function" ? value.bind(target) : value;
+    },
+  }) as EnginePort;
 }
 
 class HostClaudeAccountTurnPort implements ClaudeAccountTurnPort {

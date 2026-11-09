@@ -270,6 +270,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.lastWorkspaceDir = options.workspaceDir;
     this.lastEnv = options.env;
     this.lastRunOptions = options;
+    let isolationFailure: Error | undefined;
     let persistentSession = this.persistentSession;
     const nextConfigDir = options.env?.CLAUDE_CONFIG_DIR ?? null;
     if (
@@ -322,6 +323,15 @@ export class ClaudeSdkClient implements ClaudeClient {
         ...(options.trackChildExit
           ? { onChildProcessClosed: (closed) => this.trackChildExit(closed) }
           : {}),
+        ...(options.isolation
+          ? {
+              isolation: options.isolation,
+              onIsolationFailure: (error: Error) => {
+                isolationFailure = error;
+                abortController.abort();
+              },
+            }
+          : {}),
       });
       let createdSession!: ClaudeSdkPersistentSession;
       createdSession = new ClaudeSdkPersistentSession({
@@ -368,7 +378,7 @@ export class ClaudeSdkClient implements ClaudeClient {
         yield event;
       }
     } catch (err) {
-      throw this.normalizeExecutionError(err);
+      throw isolationFailure ?? this.normalizeExecutionError(err);
     }
   }
 
