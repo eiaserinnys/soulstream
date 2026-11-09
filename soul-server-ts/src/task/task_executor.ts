@@ -1328,7 +1328,7 @@ export class TaskExecutor {
     return promise;
   }
 
-  async recoverRegisteredRunner(
+  recoverRegisteredRunner(
     task: Task,
     registration: RunnerRegistration,
     commandId: string | undefined,
@@ -1336,7 +1336,26 @@ export class TaskExecutor {
     onAttemptCreated?: (runner: TaskRunnerRuntime) => (() => void) | undefined,
     phaseObservation?: RunnerPhaseObservation,
   ): Promise<void> {
+    // 가드는 기존 호출 규약대로 동기 예외다. 턴 판정(await)은 그 뒤에서 한다.
     assertGenericTaskExecution(task, registration.config?.agent?.id);
+    return this.recoverRegisteredRunnerAfterGuard(
+      task,
+      registration,
+      commandId,
+      mode,
+      onAttemptCreated,
+      phaseObservation,
+    );
+  }
+
+  private async recoverRegisteredRunnerAfterGuard(
+    task: Task,
+    registration: RunnerRegistration,
+    commandId: string | undefined,
+    mode: "adopt" | "replay" | "offline",
+    onAttemptCreated?: (runner: TaskRunnerRuntime) => (() => void) | undefined,
+    phaseObservation?: RunnerPhaseObservation,
+  ): Promise<void> {
     const config = registration.config;
     if (mode !== "offline") {
       // 보관된 자식 설정은 이번 턴의 판정과 완전히 같을 때만 이어 쓴다(tier,
