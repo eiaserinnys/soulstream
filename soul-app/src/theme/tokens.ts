@@ -250,9 +250,11 @@ export const TABLET_SHELL_LAYOUT = {
   outerInset: 12,
   panelGap: 12,
   header: {
-    minHeight: 60,
+    // 카드 패널과 설정 시트 머리와 같은 관례: 태블릿 hitTarget.min 48 + uiSpacing.md 12 * 2,
+    // 제목 가운데가 위 끝에서 36.
+    minHeight: 72,
     paddingHorizontal: 20,
-    paddingVertical: 6,
+    paddingVertical: 12,
   },
   folderPane: {
     fraction: 0.46,

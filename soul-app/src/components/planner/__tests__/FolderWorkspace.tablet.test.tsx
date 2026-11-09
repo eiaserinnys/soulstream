@@ -62,6 +62,7 @@ import { useAuthStore } from '../../../store/authStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { useUIStore } from '../../../store/uiStore';
 import { resetAuthScopeForTest } from '../../../lib/auth-scope';
+import { TABLET_SHELL_LAYOUT } from '../../../theme';
 import type { ApiClient } from '../../../api/client';
 
 const plannerFolder = {
@@ -138,9 +139,9 @@ test('iPad 업무 제목은 공통 shell header 리듬을 쓴다', () => {
   );
 
   expect(header).toEqual(expect.objectContaining({
-    minHeight: 60,
-    paddingHorizontal: 20,
-    paddingVertical: 6,
+    minHeight: TABLET_SHELL_LAYOUT.header.minHeight,
+    paddingHorizontal: TABLET_SHELL_LAYOUT.header.paddingHorizontal,
+    paddingVertical: TABLET_SHELL_LAYOUT.header.paddingVertical,
     alignItems: 'center',
   }));
   expect(header.height).toBeUndefined();

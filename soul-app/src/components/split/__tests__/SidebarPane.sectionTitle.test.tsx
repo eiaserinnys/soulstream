@@ -36,6 +36,7 @@ import { act, render } from '@testing-library/react-native';
 import { SafeAreaProvider, type Metrics } from 'react-native-safe-area-context';
 import { useSessionStore } from '../../../store/sessionStore';
 import { ROOT_SECTION_CONFIG } from '../../../navigation/rootSectionConfig';
+import { TABLET_SHELL_LAYOUT } from '../../../theme';
 import { SidebarPane } from '../SidebarPane';
 
 test('iPad 사이드바 chrome은 단색 시스템 아이콘과 하나의 section-title 역할을 쓴다', () => {
@@ -64,9 +65,9 @@ test('iPad 사이드바 chrome은 단색 시스템 아이콘과 하나의 sectio
     expect(icon.props.color).toBeTruthy();
   }
   expect(header).toEqual(expect.objectContaining({
-    minHeight: 60,
-    paddingHorizontal: 20,
-    paddingVertical: 6,
+    minHeight: TABLET_SHELL_LAYOUT.header.minHeight,
+    paddingHorizontal: TABLET_SHELL_LAYOUT.header.paddingHorizontal,
+    paddingVertical: TABLET_SHELL_LAYOUT.header.paddingVertical,
     alignItems: 'center',
   }));
 });

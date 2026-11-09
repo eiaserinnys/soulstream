@@ -57,7 +57,7 @@ test.each([
   expect(style.height).toBeUndefined();
   expect(style.minHeight).toBe(TABLET_SHELL_LAYOUT.header.minHeight);
   expect(style.paddingHorizontal).toBe(20);
-  expect(style.paddingVertical).toBe(6);
+  expect(style.paddingVertical).toBe(TABLET_SHELL_LAYOUT.header.paddingVertical);
   expect(screen.getByTestId('chat-body').props.keyboardOffset).toBeUndefined();
   expect(screen.getByTestId('chat-body').props.minimumBottomPadding).toBe(
     Math.max(0, bottomInset - TABLET_SHELL_LAYOUT.outerInset),

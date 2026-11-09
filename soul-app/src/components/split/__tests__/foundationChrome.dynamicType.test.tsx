@@ -38,6 +38,7 @@ import { ThreePaneLayout } from '../ThreePaneLayout';
 import { TwoPaneWithDrawer } from '../TwoPaneWithDrawer';
 import { useSessionStore } from '../../../store/sessionStore';
 import { useUIStore } from '../../../store/uiStore';
+import { TABLET_SHELL_LAYOUT } from '../../../theme';
 
 beforeEach(() => {
   useSessionStore.setState({ catalog: { folders: [], sessions: {} } });
@@ -62,9 +63,9 @@ test.each([1, 2])('iPad fontScale %s custom headers keep one-line tail, semantic
   expect(mainTitle.props.children).toBe('카드');
 
   expect(mainHeader.height).toBeUndefined();
-  expect(mainHeader.minHeight).toBe(60);
+  expect(mainHeader.minHeight).toBe(TABLET_SHELL_LAYOUT.header.minHeight);
   expect(mainHeader.paddingHorizontal).toBe(20);
-  expect(mainHeader.paddingVertical).toBe(6);
+  expect(mainHeader.paddingVertical).toBe(TABLET_SHELL_LAYOUT.header.paddingVertical);
   expect(mainTitle.props.numberOfLines).toBe(1);
   expect(mainTitle.props.ellipsizeMode).toBe('tail');
   expect(mainTitle.props.allowFontScaling).not.toBe(false);
@@ -93,9 +94,9 @@ test.each([1, 2])('iPad fontScale %s custom headers keep one-line tail, semantic
     const feedTitle = feed.getByTestId('root-header-title-FeedTab');
     const feedIcon = feed.getByTestId('root-header-icon-FeedTab');
     expect(feedHeader.height).toBeUndefined();
-    expect(feedHeader.minHeight).toBe(60);
+    expect(feedHeader.minHeight).toBe(TABLET_SHELL_LAYOUT.header.minHeight);
     expect(feedHeader.paddingHorizontal).toBe(20);
-    expect(feedHeader.paddingVertical).toBe(6);
+    expect(feedHeader.paddingVertical).toBe(TABLET_SHELL_LAYOUT.header.paddingVertical);
     expect(feedTitle.props.numberOfLines).toBe(1);
     expect(feedTitle.props.ellipsizeMode).toBe('tail');
     expect(feedTitle.props.allowFontScaling).not.toBe(false);
