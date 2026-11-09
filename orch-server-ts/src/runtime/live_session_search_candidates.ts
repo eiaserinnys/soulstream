@@ -6,9 +6,10 @@ import {
 import type { CogitoSearchParams } from "../cogito/cogito_routes.js";
 import type { SessionSearchCandidateRow } from "../search/session_search_projection.js";
 import type { SessionBackendCatalogEntry } from "./live_session_serialization.js";
-import type {
-  LiveSearchPendingQuery,
-  LiveSearchSql,
+import {
+  SEARCH_DB_STATEMENT_TIMEOUT_MS,
+  type LiveSearchPendingQuery,
+  type LiveSearchSql,
 } from "./live_db_sql.js";
 
 export type QueryVariant = {
@@ -316,7 +317,7 @@ export async function runSearchQuery<T extends readonly Record<string, unknown>[
   signal: AbortSignal | undefined,
   deadlineAt: number,
   sql?: LiveSearchSql,
-  statementTimeoutCapMs = 3_000,
+  statementTimeoutCapMs = SEARCH_DB_STATEMENT_TIMEOUT_MS,
 ): Promise<T> {
   assertSearchMayContinue(signal, deadlineAt);
   try {
