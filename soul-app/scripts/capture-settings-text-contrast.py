@@ -481,6 +481,50 @@ def text_family_gap(secondary: dict | None, primary: dict | None) -> dict:
             "primaryText": (primary or {}).get("text")}
 
 
+def footer_discard_sample(entry: dict, key: str, phase: str, theme: str,
+                          checks: Checks) -> dict:
+    """하단 「변경 버리기」의 픽셀 대비와 글자색을 기록하고 단계별로 검사한다."""
+    buttons = (entry.get("footer") or {}).get("buttons") or []
+    if len(buttons) != 2:
+        return {}
+    discard = dict(buttons[0].get("sample") or {})
+    discard["text"] = buttons[0].get("text")
+    discard["box"] = buttons[0].get("box")
+    discard["pixelContrast"] = measure_pixel_contrast(
+        entry.get("footerScreenshot"), buttons[0].get("box"))
+    contrast = (discard["pixelContrast"] or {}).get("contrast")
+    detail = {"text": discard.get("text"), "contrast": contrast,
+              "pixelText": (discard["pixelContrast"] or {}).get("text")}
+    if phase == "before":
+        if theme == "light":
+            checks.check(f"{key} 변경 전 결함 재현: 하단 「변경 버리기」 픽셀 대비 "
+                         f"{CONTRAST_MIN}:1 미만",
+                         contrast is not None and contrast < CONTRAST_MIN, detail)
+    else:
+        checks.check(f"{key} 하단 「변경 버리기」 픽셀 대비 {CONTRAST_MIN}:1 이상",
+                     contrast is not None and contrast >= CONTRAST_MIN, detail)
+    return discard
+
+
+def footer_discard_family(entry: dict, key: str, phase: str, theme: str,
+                          link_sample: dict | None, checks: Checks) -> dict:
+    """「변경 버리기」 글자 픽셀을 같은 화면의 활성 link 보조 단추와 대조한다."""
+    discard = entry.get("footerDiscard") or {}
+    family = text_family_gap(discard.get("pixelContrast"),
+                             (link_sample or {}).get("pixelContrast"))
+    entry["footerDiscardFamily"] = family
+    if phase == "before":
+        if theme == "light":
+            checks.check(f"{key} 변경 전 하단 「변경 버리기」 글자가 link 보조 단추와 다른 계열",
+                         family["gap"] is not None
+                         and family["gap"] > TEXT_FAMILY_CHROMA_TOLERANCE, family)
+    else:
+        checks.check(f"{key} 하단 「변경 버리기」 글자가 link 보조 단추와 같은 계열",
+                     family["gap"] is not None
+                     and family["gap"] <= TEXT_FAMILY_CHROMA_TOLERANCE, family)
+    return family
+
+
 def open_settings(browser: Browser, base: str, frame_id: str, width: int, height: int, theme: str):
     context = browser.new_context(viewport={"width": width, "height": height},
                                   device_scale_factor=2)
@@ -549,13 +593,9 @@ def capture_connection(browser: Browser, base: str, out: Path, phase: str, frame
             detail = {"labels": [button.get("text") for button in footer_buttons],
                       "widths": [button["box"]["width"] for button in footer_buttons],
                       "gap": width_gap}
-            if phase == "before":
-                checks.check(f"{key} 변경 전 결함 재현: 하단 단추 폭 차이가 "
-                             f"{FOOTER_WIDTH_TOLERANCE_PX}px 초과",
-                             width_gap > FOOTER_WIDTH_TOLERANCE_PX, detail)
-            else:
-                checks.check(f"{key} 하단 단추 폭 차이가 {FOOTER_WIDTH_TOLERANCE_PX}px 이내",
-                             width_gap <= FOOTER_WIDTH_TOLERANCE_PX, detail)
+            checks.check(f"{key} 하단 단추 폭 차이가 {FOOTER_WIDTH_TOLERANCE_PX}px 이내",
+                         width_gap <= FOOTER_WIDTH_TOLERANCE_PX, detail)
+            entry["footerDiscard"] = footer_discard_sample(entry, key, phase, theme, checks)
 
         test_connection = entry["samples"]["testConnection"]
         save = entry["samples"]["save"]
@@ -581,26 +621,17 @@ def capture_connection(browser: Browser, base: str, out: Path, phase: str, frame
         entry["samples"]["testConnectionDisabledContrast"] = test_connection_pixel
         family = text_family_gap(test_connection_pixel, pixel)
         entry["samples"]["testConnectionFamily"] = family
-        if phase == "before":
-            checks.check(f"{key} 변경 전 결함 재현: 비활성 보조 글자 픽셀이 저장 버튼 글자색 계열이 아님",
-                         family["gap"] is not None
-                         and family["gap"] > TEXT_FAMILY_CHROMA_TOLERANCE, family)
-            checks.check(f"{key} 변경 전 비활성 보조 글자색이 link",
-                         test_connection is not None
-                         and test_connection["contentColor"] == LINK_RGB[theme],
-                         {"contentColor": (test_connection or {}).get("contentColor")})
-        else:
-            checks.check(f"{key} 비활성 보조 글자 픽셀이 저장 버튼과 같은 색 계열",
-                         family["gap"] is not None
-                         and family["gap"] <= TEXT_FAMILY_CHROMA_TOLERANCE, family)
-            checks.check(f"{key} 비활성 보조 글자색이 textPrimary",
-                         test_connection is not None
-                         and test_connection["contentColor"] == TEXT_PRIMARY_RGB[theme],
-                         {"contentColor": (test_connection or {}).get("contentColor")})
-            checks.check(f"{key} 비활성 보조 픽셀 대비 {CONTRAST_MIN}:1 이상",
-                         test_connection_pixel is not None
-                         and test_connection_pixel["contrast"] >= CONTRAST_MIN,
-                         test_connection_pixel)
+        checks.check(f"{key} 비활성 보조 글자 픽셀이 저장 버튼과 같은 색 계열",
+                     family["gap"] is not None
+                     and family["gap"] <= TEXT_FAMILY_CHROMA_TOLERANCE, family)
+        checks.check(f"{key} 비활성 보조 글자색이 textPrimary",
+                     test_connection is not None
+                     and test_connection["contentColor"] == TEXT_PRIMARY_RGB[theme],
+                     {"contentColor": (test_connection or {}).get("contentColor")})
+        checks.check(f"{key} 비활성 보조 픽셀 대비 {CONTRAST_MIN}:1 이상",
+                     test_connection_pixel is not None
+                     and test_connection_pixel["contrast"] >= CONTRAST_MIN,
+                     test_connection_pixel)
 
         page.get_by_test_id("settings-server-input").fill(original_url or "https://example.test")
         settle(page)
@@ -623,6 +654,7 @@ def capture_connection(browser: Browser, base: str, out: Path, phase: str, frame
                      and enabled_save["ariaDisabled"] != "true",
                      {"opacity": enabled_save["opacity"] if enabled_save else None,
                       "ariaDisabled": enabled_save["ariaDisabled"] if enabled_save else None})
+        footer_discard_family(entry, key, phase, theme, enabled_connection, checks)
     finally:
         page.close()
         context.close()
@@ -707,13 +739,9 @@ def capture_review_policy(browser: Browser, base: str, out: Path, phase: str, fr
             detail = {"labels": [button.get("text") for button in footer_buttons],
                       "widths": [button["box"]["width"] for button in footer_buttons],
                       "gap": width_gap}
-            if phase == "before":
-                checks.check(f"{key} 변경 전 결함 재현: 하단 단추 폭 차이가 "
-                             f"{FOOTER_WIDTH_TOLERANCE_PX}px 초과",
-                             width_gap > FOOTER_WIDTH_TOLERANCE_PX, detail)
-            else:
-                checks.check(f"{key} 하단 단추 폭 차이가 {FOOTER_WIDTH_TOLERANCE_PX}px 이내",
-                             width_gap <= FOOTER_WIDTH_TOLERANCE_PX, detail)
+            checks.check(f"{key} 하단 단추 폭 차이가 {FOOTER_WIDTH_TOLERANCE_PX}px 이내",
+                         width_gap <= FOOTER_WIDTH_TOLERANCE_PX, detail)
+            entry["footerDiscard"] = footer_discard_sample(entry, key, phase, theme, checks)
         page.get_by_test_id("review-policy-switch-slack").click()
         settle(page)
 
@@ -761,25 +789,16 @@ def capture_review_policy(browser: Browser, base: str, out: Path, phase: str, fr
         pixel = (save_disabled or {}).get("pixelContrast")
         checks.check(f"{key} 비활성 primary 픽셀 대비 {CONTRAST_MIN}:1 이상",
                      pixel is not None and pixel["contrast"] >= CONTRAST_MIN, pixel)
-        if phase == "before":
-            checks.check(f"{key} 변경 전 결함 재현: 비활성 보조 글자 픽셀이 저장 버튼 글자색 계열이 아님",
-                         family["gap"] is not None
-                         and family["gap"] > TEXT_FAMILY_CHROMA_TOLERANCE, family)
-            checks.check(f"{key} 변경 전 비활성 보조 글자색이 link",
-                         entry["empty"] is not None
-                         and entry["empty"]["contentColor"] == LINK_RGB[theme],
-                         {"contentColor": (entry["empty"] or {}).get("contentColor")})
-        else:
-            checks.check(f"{key} 비활성 보조 글자 픽셀이 저장 버튼과 같은 색 계열",
-                         family["gap"] is not None
-                         and family["gap"] <= TEXT_FAMILY_CHROMA_TOLERANCE, family)
-            checks.check(f"{key} 비활성 보조 글자색이 textPrimary",
-                         entry["empty"] is not None
-                         and entry["empty"]["contentColor"] == TEXT_PRIMARY_RGB[theme],
-                         {"contentColor": (entry["empty"] or {}).get("contentColor")})
-            checks.check(f"{key} 비활성 보조 픽셀 대비 {CONTRAST_MIN}:1 이상",
-                         add_pixel is not None and add_pixel["contrast"] >= CONTRAST_MIN,
-                         add_pixel)
+        checks.check(f"{key} 비활성 보조 글자 픽셀이 저장 버튼과 같은 색 계열",
+                     family["gap"] is not None
+                     and family["gap"] <= TEXT_FAMILY_CHROMA_TOLERANCE, family)
+        checks.check(f"{key} 비활성 보조 글자색이 textPrimary",
+                     entry["empty"] is not None
+                     and entry["empty"]["contentColor"] == TEXT_PRIMARY_RGB[theme],
+                     {"contentColor": (entry["empty"] or {}).get("contentColor")})
+        checks.check(f"{key} 비활성 보조 픽셀 대비 {CONTRAST_MIN}:1 이상",
+                     add_pixel is not None and add_pixel["contrast"] >= CONTRAST_MIN,
+                     add_pixel)
         if entry["enabled"] is not None:
             checks.check(f"{key} 활성 보조 글자색이 link",
                          entry["enabled"]["contentColor"] == LINK_RGB[theme],
@@ -790,6 +809,7 @@ def capture_review_policy(browser: Browser, base: str, out: Path, phase: str, fr
                      and save_enabled["ariaDisabled"] != "true",
                      {"opacity": save_enabled["opacity"] if save_enabled else None,
                       "ariaDisabled": save_enabled["ariaDisabled"] if save_enabled else None})
+        footer_discard_family(entry, key, phase, theme, entry["enabled"], checks)
     finally:
         page.close()
         context.close()
@@ -899,6 +919,7 @@ def compare_phases(before: dict, after: dict, checks: Checks) -> dict:
     primary: dict = {}
     secondary: dict = {}
     footer: dict = {}
+    discarded: dict = {}
     color_fields = ("backgroundColor", "contentColor", "opacity")
     for screen in ("connection", "reviewPolicy"):
         for key, current in after.get("screens", {}).get(screen, {}).items():
@@ -999,8 +1020,8 @@ def compare_phases(before: dict, after: dict, checks: Checks) -> dict:
             new_secondary, new_secondary_enabled = secondary_states(current, screen)
             if old_secondary and new_secondary:
                 checks.check(
-                    f"전후 {screen}/{key} 비활성 보조 글자색이 link에서 textPrimary로 바뀜",
-                    old_secondary.get("contentColor") == link
+                    f"전후 {screen}/{key} 비활성 보조 글자색 textPrimary 유지",
+                    old_secondary.get("contentColor") == text_primary
                     and new_secondary.get("contentColor") == text_primary,
                     {"before": old_secondary.get("contentColor"),
                      "after": new_secondary.get("contentColor")})
@@ -1009,9 +1030,9 @@ def compare_phases(before: dict, after: dict, checks: Checks) -> dict:
                 new_family = text_family_gap(new_secondary.get("pixelContrast"),
                                              new_disabled.get("pixelContrast"))
                 checks.check(
-                    f"전후 {screen}/{key} 비활성 보조 글자 픽셀 계열: 다름 → 저장 버튼과 같음",
+                    f"전후 {screen}/{key} 비활성 보조 글자 픽셀이 저장 버튼과 같은 계열 유지",
                     old_family["gap"] is not None and new_family["gap"] is not None
-                    and old_family["gap"] > TEXT_FAMILY_CHROMA_TOLERANCE
+                    and old_family["gap"] <= TEXT_FAMILY_CHROMA_TOLERANCE
                     and new_family["gap"] <= TEXT_FAMILY_CHROMA_TOLERANCE,
                     {"before": old_family, "after": new_family})
                 secondary_delta = {
@@ -1049,13 +1070,14 @@ def compare_phases(before: dict, after: dict, checks: Checks) -> dict:
             prior = before.get("screens", {}).get(screen, {}).get(key)
             if not prior or not current:
                 continue
+            theme = key.rsplit("/", 1)[-1]
             old_gap = prior.get("footerWidthGap")
             new_gap = current.get("footerWidthGap")
             checks.check(
-                f"전후 {screen}/{key} 하단 단추 폭 차이가 큼 → "
-                f"{FOOTER_WIDTH_TOLERANCE_PX}px 이내",
+                f"{screen}/{key} 하단 단추 폭 차이 {FOOTER_WIDTH_TOLERANCE_PX}px 이내 유지",
                 old_gap is not None and new_gap is not None
-                and old_gap > FOOTER_WIDTH_TOLERANCE_PX >= new_gap,
+                and old_gap <= FOOTER_WIDTH_TOLERANCE_PX
+                and new_gap <= FOOTER_WIDTH_TOLERANCE_PX,
                 {"before": old_gap, "after": new_gap})
             old_buttons = (prior.get("footer") or {}).get("buttons") or []
             new_buttons = (current.get("footer") or {}).get("buttons") or []
@@ -1084,7 +1106,38 @@ def compare_phases(before: dict, after: dict, checks: Checks) -> dict:
                     all(abs(value) <= ALIGN_TOLERANCE_PX
                         for value in edges.values()), edges)
             footer[f"{screen}/{key}"] = {"before": old_gap, "after": new_gap}
-    return {"cards": summary, "primary": primary, "secondary": secondary, "footer": footer}
+            old_discard = prior.get("footerDiscard") or {}
+            new_discard = current.get("footerDiscard") or {}
+            if old_discard and new_discard:
+                old_contrast = (old_discard.get("pixelContrast") or {}).get("contrast")
+                new_contrast = (new_discard.get("pixelContrast") or {}).get("contrast")
+                old_pixel_text = (old_discard.get("pixelContrast") or {}).get("text")
+                new_pixel_text = (new_discard.get("pixelContrast") or {}).get("text")
+                old_family = (prior.get("footerDiscardFamily") or {}).get("gap")
+                new_family = (current.get("footerDiscardFamily") or {}).get("gap")
+                checks.check(
+                    f"전후 {screen}/{key} 하단 「변경 버리기」 글자색 accent → link 계열",
+                    old_family is not None and new_family is not None
+                    and old_family > TEXT_FAMILY_CHROMA_TOLERANCE
+                    and new_family <= TEXT_FAMILY_CHROMA_TOLERANCE,
+                    {"before": {"pixelText": old_pixel_text, "familyGap": old_family},
+                     "after": {"pixelText": new_pixel_text, "familyGap": new_family}})
+                checks.check(
+                    f"{screen}/{key} 하단 「변경 버리기」 픽셀 대비 {CONTRAST_MIN}:1 이상",
+                    new_contrast is not None and new_contrast >= CONTRAST_MIN,
+                    {"before": old_contrast, "after": new_contrast})
+                checks.check(
+                    f"{screen}/{key} 하단 「변경 버리기」 글자가 link 보조 단추와 같은 계열",
+                    old_family is not None and new_family is not None
+                    and new_family <= TEXT_FAMILY_CHROMA_TOLERANCE,
+                    {"before": old_family, "after": new_family})
+                discarded[f"{screen}/{key}"] = {
+                    "before": {"pixelText": old_pixel_text,
+                               "contrast": old_contrast, "familyGap": old_family},
+                    "after": {"pixelText": new_pixel_text,
+                              "contrast": new_contrast, "familyGap": new_family}}
+    return {"cards": summary, "primary": primary, "secondary": secondary,
+            "footer": footer, "discard": discarded}
 
 
 def main() -> int:

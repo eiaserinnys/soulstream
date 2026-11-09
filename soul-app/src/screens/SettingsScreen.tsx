@@ -126,7 +126,7 @@ export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = '
           <View style={[styles.root, !active && styles.hidden, { paddingBottom: columnBottomInset }]} accessibilityElementsHidden={!active} importantForAccessibility={!active ? 'no-hide-descendants' : 'auto'}>
             <SettingsContent flattened category={active ?? 'display'} showAdmin={isAdmin} connectionOnly={connectionOnly}/>
             {scope ? <View testID="settings-active-footer" style={[styles.footer, { paddingBottom: t.spacing.md + extraBottomPadding }]}>
-              {scope.dirty ? <GlassButton accessibilityLabel="변경 버리기" onPress={() => active && guard(active, () => undefined)} style={styles.footerAction}><Text style={styles.actionText}>변경 버리기</Text></GlassButton> : null}
+              {scope.dirty ? <GlassButton accessibilityLabel="변경 버리기" tone="link" onPress={() => active && guard(active, () => undefined)} style={styles.footerAction}>{({ contentColor }) => (<Text style={[styles.actionText, { color: contentColor }]}>변경 버리기</Text>)}</GlassButton> : null}
               <GlassButton variant="primary" testID={scope.saveTestID ?? 'settings-scope-save'} accessibilityLabel={scope.saveLabel ?? '저장'} disabled={scope.busy || scope.canSave === false} onPress={() => void scope.save()} style={styles.footerAction}>{({ contentColor }) => (<Text style={[styles.primaryText, { color: contentColor }]}>{scope.busy ? '처리 중…' : scope.saveLabel ?? '저장'}</Text>)}</GlassButton>
             </View> : null}
           </View>
@@ -143,7 +143,7 @@ function makeStyles(t: DesignTokens) { return StyleSheet.create({
   // 헤더 끝 아이콘 단추는 hit frame 여백만큼 바깥으로 당겨 시각 원의 끝을 카드 끝선에 맞춘다(CardDetail.styles의 iconOverhang 관례).
   headerBack: { marginLeft: -(t.hitTarget.min - t.foundation.iconFrame.compact) / 2 },
   headerClose: { marginRight: -(t.hitTarget.min - t.foundation.iconFrame.compact) / 2 },
-  title: { flex: 1, ...t.foundation.typography.navigation, color: t.colors.textPrimary }, actionText: { ...t.foundation.typography.body, color: t.colors.accent, fontWeight: '600' }, primaryText: { ...t.foundation.typography.body, color: t.colors.accentText, fontWeight: '700' },
+  title: { flex: 1, ...t.foundation.typography.navigation, color: t.colors.textPrimary }, actionText: { ...t.foundation.typography.body, fontWeight: '600' }, primaryText: { ...t.foundation.typography.body, color: t.colors.accentText, fontWeight: '700' },
   introduction: { padding: t.foundation.pageInset, gap: t.spacing.sm }, introTitle: { ...t.foundation.typography.section, color: t.colors.textPrimary }, help: { ...t.foundation.typography.body, color: t.colors.textSecondary },
   footer: { flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.sm, padding: t.cardLayout.padding, borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border }, footerAction: { flex: 1, minWidth: 140 },
 }); }
