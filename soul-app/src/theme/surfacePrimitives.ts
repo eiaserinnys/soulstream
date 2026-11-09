@@ -79,6 +79,7 @@ export function createPrimitiveRoles(t: DesignTokens): PrimitiveRoles {
       surfaceRole: 'chrome',
       radius: t.foundation.radius.field,
       minHeight: t.foundation.minHeight.secondary,
+      disabledColor: 'transparent',
     },
     input: {
       ...neutral,

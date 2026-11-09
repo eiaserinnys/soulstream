@@ -74,16 +74,17 @@ export function SettingsFormGroup({ title, children }: { title?: string; childre
   return <View style={styles.group}>{title ? <Text style={styles.heading}>{title}</Text> : null}{children}</View>;
 }
 
-export function SettingsToggleRow({ label, value, onValueChange, disabled, testID, help }: {
+export function SettingsToggleRow({ label, value, onValueChange, disabled, testID, help, divider = true }: {
   label: string;
   value: boolean;
   onValueChange(value: boolean): void;
   disabled?: boolean;
   testID?: string;
   help?: string;
+  divider?: boolean;
 }) {
   const styles = useSettingsFormStyles();
-  return <View style={styles.listRow}>
+  return <View style={[styles.listRow, divider === false && styles.listRowNoDivider]}>
     <View style={styles.grow}>
       <Text style={styles.body}>{label}</Text>
       {help ? <Text style={styles.help}>{help}</Text> : null}
@@ -115,6 +116,7 @@ function makeStyles(t: DesignTokens) {
     help: { ...t.foundation.typography.body, color: t.colors.textMuted },
     error: { ...t.foundation.typography.body, color: t.colors.error },
     listRow: { flexDirection: 'row', gap: t.spacing.sm, alignItems: 'center', minHeight: t.hitTarget.min, paddingVertical: t.spacing.sm, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.colors.border },
+    listRowNoDivider: { borderBottomWidth: 0 },
     body: { ...t.foundation.typography.body, color: t.colors.textPrimary },
     disclosure: { color: t.colors.textMuted, fontSize: t.iconSize.standard },
     input: { minHeight: t.hitTarget.min, borderWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, borderRadius: t.foundation.radius.field, color: t.colors.textPrimary, paddingHorizontal: t.spacing.sm, paddingVertical: t.spacing.sm, ...t.foundation.typography.body },
