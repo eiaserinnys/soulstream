@@ -34,6 +34,8 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 
 | 19. shutdown lock 해제 | `soul-server-ts/src/runner/runner_child_runtime.ts:RunnerChildRuntime.shutdown` (L157–171), `runner_writer_lock.ts:RunnerWriterLock.release` | engine→socket→local lifecycle timer→lifecycle/outbox→schema-2 metadata→kernel endpoint 순서로 child 자원을 닫는다. | 중복 shutdown은 no-op; metadata owner가 바뀌면 오류다. metadata unlink와 endpoint close 사이 transient unavailable은 종료 신호 뒤 polling에서만 재관측한다. |
 
+격리 세션이면 위 5단계로 뜬 runner가 여는 엔진 child는 detached runner child와 별개로 bwrap 상자 안에서 시작한다. 판정·상자 준비·시작·종료는 [세션 격리](session-isolation.md)를 따른다.
+
 ## Claude 계정 풀 P4
 
 새 Claude runner는 `runner_process_runtime_factory.ts:createRunnerProcessRuntimeFactory`가 `claudeAccountPool.enabled/accountsDir`를 child config에 싣고, `runner_child_config.ts:parseRunnerChildConfig`는 이 추가 필드가 없는 기존 config도 읽는다. `runner_child_engine_factory.ts:createRunnerChildEngine`은 runner SQLite에 현재 계정 턴 상태를 열고 `claude_accounts(select/reject/release)`를 host-call로 전달한다. `runner_process_runtime_factory.ts:applyRunnerHostCall`은 요청의 session ID를 현재 task와 대조한다. 살아 있는 child adoption은 기존 child와 SQLite 상태를 그대로 붙이며, 계정 교체는 `claude_sdk_client.ts:closePersistentAndSettle`이 Query/pump 종료와 실제 child close를 확인한 뒤 다음 Query를 만들도록 직렬화한다.

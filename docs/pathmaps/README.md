@@ -9,6 +9,7 @@
 | [메시지에서 종단까지](message-to-terminal.md) | 메시지 접수·라우팅·전이·실행·종단·투영·통지 |
 | [재시작 복구](restart-recovery.md) | boot 1회 pass·node-ready replay·maintenance replay·runner recovery |
 | [러너 생애주기](runner-lifecycle.md) | spawn·등록·identity/lock·adopt·terminate·dispose |
+| [세션 격리](session-isolation.md) | 격리 판정·상자 준비(mask·인증·네트워크)·내부 MCP 가드·관측 도구 |
 | [세션 삭제](session-deletion.md) | MCP 삭제·drain·runtime close·registration retirement·중앙 삭제·GC |
 | [전달 원장](delivery-ledger.md) | `session_deliveries.state`·`aggregate_state` 전이와 작성자 |
 | [세션 검색](session-search.md) | `/cogito/search` 모드 분기·A0·문서 색인·RRF·Jev·partial 응답 |

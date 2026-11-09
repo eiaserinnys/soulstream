@@ -57,3 +57,7 @@ browser caller and supplies server-owned `transport: "oauth"`,
 Google account's email, display name, and picture in OAuth storage; the token
 resolver uses those fields for `caller_info`. Request-body `caller_info` cannot
 replace them.
+
+## Isolated session MCP principal
+
+An isolated session authenticates internal MCP calls with a restricted principal token, not with the dashboard bearer above. Token verification order, policy loading, and failure codes are in [session isolation](session-isolation.md).
