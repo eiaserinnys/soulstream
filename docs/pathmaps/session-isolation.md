@@ -62,7 +62,7 @@
 
 릴리스 정체성은 `soul-server-ts/src/release/release_env_allowlist.json` 하나만 읽는다. 새 env 키는 여기에 owner·kind·identity_scope(필요하면 normalization)를 등재해야 하며, deployment 범위 값만 매니페스트 digest에 들어가고 ambient 값은 들지 않는다. 값은 dotenv가 읽은 배포 env 문서의 선언에서만 오고 ambient process env를 다시 읽지 않는다. 매니페스트는 `soul-server-ts/scripts/write_release_manifest.ts`로 다시 쓰고, 빌드 쪽은 `scripts/build_with_release_env.mjs`를 쓴다.
 
-설정은 프로세스 기동 시 읽으므로 노드의 soul-server를 재시작해야 적용된다. 끌 때는 `SESSION_ISOLATION_MODE`를 off로 되돌리는 것으로 충분하고, 다음 턴부터 판정도 상자도 만들지 않는다.
+설정은 프로세스 기동 시 읽으므로 노드의 soul-server를 재시작해야 적용된다. 끌 때는 `SESSION_ISOLATION_MODE`를 off로 되돌리는 것으로 충분하고, 다음 턴부터 판정도 상자도 만들지 않는다. 켜고 끄며 재시작할 때 진행 중이던 턴은 시작할 때의 격리(상자 안 또는 밖)로 끝나고, 그 세션의 다음 턴부터 새 판정의 러너로 바뀐다.
 
 ### 통합 하네스
 

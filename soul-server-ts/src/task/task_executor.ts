@@ -42,7 +42,6 @@ import {
   type TaskRunnerRuntime,
 } from "../runner/task_runner_runtime.js";
 import type { RunnerRegistration } from "../runner/runner_process_registry.js";
-import { runnerIsolationIdentityFromConfig } from "../runner/runner_isolation_config.js";
 import { RunnerOrphanedSpawnError } from "../runner/runner_process_dispatcher.js";
 import type { RunnerPhaseObservation } from "../runner/runner_phase_observation.js";
 import {
@@ -1366,19 +1365,8 @@ export class TaskExecutor {
     phaseObservation?: RunnerPhaseObservation,
   ): Promise<void> {
     const config = registration.config;
-    if (mode !== "offline") {
-      // 보관된 자식 설정은 이번 턴의 판정과 완전히 같을 때만 이어 쓴다(tier,
-      // 정책 digest, 부착 워크트리 집합). 다르면 이어 쓰지 않고 실패시켜 기존
-      // 정상 종료 경로가 등록을 닫게 한다 — 다음 실행 진입이나 복구 때 새 러너를 만든다.
-      const desired = await this.resolveRunnerIsolation(task);
-      const stored = runnerIsolationIdentityFromConfig(config.isolation);
-      if (!runnerIsolationAllowsReuse(stored, desired)) {
-        throw new SessionIsolationUnavailableError(
-          "SESSION_ISOLATION_UNAVAILABLE: stored runner isolation does not match"
-            + ` this turn (stored ${stored?.tier ?? "full"}, desired ${desired.tier})`,
-        );
-      }
-    }
+    // 격리는 턴이 시작될 때 정해지고, 진행 중인 턴은 시작할 때의 격리로 끝난다.
+    // 판정이 바뀌었으면 다음 턴에서 takeOrCreateRunner가 이 러너를 닫고 새로 만든다.
     const runner = this.runnerProcessFactory?.recover?.(
       task,
       registration,

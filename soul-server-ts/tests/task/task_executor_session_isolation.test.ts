@@ -14,8 +14,10 @@ import {
   createTaskRunnerRuntime,
   type TaskRunnerRuntime,
 } from "../../src/runner/task_runner_runtime.js";
+import { engineEventFrame } from "../../src/runner/frame_protocol.js";
 import { IsolationPreparationPolicyError } from "../../src/runner/session_filesystem_errors.js";
 import { RunnerProcessDispatcher } from "../../src/runner/runner_process_dispatcher.js";
+import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import { createRunnerProcessRuntimeFactory } from "../../src/runner/runner_process_runtime_factory.js";
 import type { RunnerIsolationChildConfig } from "../../src/runner/runner_isolation_config.js";
 import type { RunnerProcessRuntimeFactory } from "../../src/task/task_executor.js";
@@ -182,7 +184,107 @@ function makeRecoveredRunner(engine: EnginePort, restricted: boolean): TaskRunne
   return { ...recovered, engine: fake.engine, dispatcher: fake.dispatcher, eventPersistence: "host" };
 }
 
+function makeRestrictedRegistration(): RunnerRegistration {
+  return {
+    config: {
+      sessionId: "sess-1",
+      agent: claudeAgent,
+      backend: "claude",
+      codeSha: "release-test",
+      snapshotPath: "/release/test",
+      isolation: {
+        spec: { policyDigest: "digest-1" },
+        attachedWorktreeIds: ["wt-a"],
+      } as unknown as RunnerIsolationChildConfig,
+    },
+  } as unknown as RunnerRegistration;
+}
+
+function makeRecoveredProcessRunner(engine: EnginePort) {
+  const dispatcher = {
+    dispatch: vi.fn(),
+    executeFrames: vi.fn(),
+    recoverFrames: vi.fn(() => (async function* () {
+      yield engineEventFrame({ type: "complete", result: "recovered", timestamp: 1 });
+    })()),
+    registrationId: vi.fn(() => "registration-1"),
+    prepareSession: vi.fn(async () => {}),
+    interrupt: vi.fn(async () => true),
+    close: vi.fn(async () => {}),
+    detachHost: vi.fn(async () => {}),
+    sendControlFrame: vi.fn(async () => true),
+    requestContext: vi.fn(),
+    waitForSessionAck: vi.fn(async () => null),
+    recoverPendingInterventions: vi.fn(async () => []),
+  };
+  const runner: TaskRunnerRuntime = {
+    engine,
+    dispatcher: dispatcher as never,
+    eventPersistence: "runner",
+    isolation: {
+      tier: "restricted",
+      policyDigest: "digest-1",
+      attachedWorktreeIds: ["wt-a"],
+    },
+  };
+  return { runner, dispatcher };
+}
+
 describe("TaskExecutor turn isolation gate", () => {
+  it.each([
+    { name: "no gate (mode off)", decision: undefined },
+    {
+      name: "the turn now decides full",
+      decision: {
+        sessionId: "sess-1",
+        tier: "full",
+        policyVersion: 1,
+        reason: "trusted",
+        presetId: null,
+      } as const,
+    },
+  ])(
+    "adopts a stored restricted runner when isolation changed since the turn started ($name)",
+    async ({ decision }) => {
+      const { runner, dispatcher } = makeRecoveredProcessRunner(makeEngine([]));
+      const registration = makeRestrictedRegistration();
+      const recover = vi.fn(
+        (..._args: Parameters<NonNullable<RunnerProcessRuntimeFactory["recover"]>>) => runner,
+      );
+      const factory = vi.fn(() => {
+        throw new Error("adoption must not spawn a fresh runner");
+      }) as unknown as RunnerProcessRuntimeFactory;
+      factory.recover = recover;
+      factory.isolationSupported = true;
+      const gate = decision === undefined ? undefined : makeGate(decision);
+      const executor = makeExecutor(makeEngine([]), gate, factory);
+      const task = makeTask();
+      const attempts: TaskRunnerRuntime[] = [];
+
+      const completion = executor.recoverRegisteredRunner(
+        task,
+        registration,
+        "execute-old",
+        "adopt",
+        (attempt) => {
+          attempts.push(attempt);
+          return undefined;
+        },
+      );
+
+      await expect(completion).resolves.toBeUndefined();
+
+      expect(recover).toHaveBeenCalledOnce();
+      expect(recover.mock.calls[0]?.[1]).toBe(registration);
+      expect(recover.mock.calls[0]?.[3]).toBe("adopt");
+      expect(dispatcher.recoverFrames).toHaveBeenCalledWith("execute-old", undefined);
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0]?.isolation?.tier).toBe("restricted");
+      if (gate) expect(gate.resolveDecision).not.toHaveBeenCalled();
+      expect(task.executionSecurity).toBeUndefined();
+    },
+  );
+
   it.each([
     { name: "reuses recovered restricted for the same restricted turn", stored: true, tier: "restricted", reused: true },
     { name: "replaces recovered restricted for a full turn", stored: true, tier: "full", reused: false },
