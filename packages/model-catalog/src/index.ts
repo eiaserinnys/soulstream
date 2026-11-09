@@ -32,6 +32,11 @@ export const ModelPresetSchema = z.object({
   backend: AgentBackendSchema,
   model: z.string().trim().min(1, "model preset model required"),
   env: z.record(z.string(), z.string()).optional(),
+  /**
+   * Only a literal boolean `true` marks a preset as trusted for unrestricted
+   * execution. An absent field, `false`, or any string value is untrusted.
+   */
+  trusted_execution: z.boolean().optional(),
   mcp_tool_allowlist: z.record(
     NonEmptyMcpNameSchema,
     z.record(NonEmptyMcpNameSchema, z.array(NonEmptyMcpNameSchema)),
@@ -87,11 +92,11 @@ export type ModelCatalogConfig = z.infer<typeof ModelCatalogSchema>;
 export const DEFAULT_MODEL_CATALOG: ModelCatalogConfig = {
   presets: [
     { id: "claude-sonnet", label: "Claude - Sonnet", backend: "claude", model: "sonnet", supported_efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "xhigh" },
-    { id: "claude-opus", label: "Claude - Opus", backend: "claude", model: "opus", supported_efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "xhigh" },
-    { id: "claude-fable", label: "Claude - Fable", backend: "claude", model: "claude-fable-5-1[1m]", usage_model_id: "fable", supported_efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "high" },
-    { id: "codex-6-astra", label: "Codex - 6 Astra", backend: "codex", model: "gpt-6-astra", supported_efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], default_effort: "medium" },
-    { id: "codex-6.1-sol", label: "Codex - 6.1 Sol", backend: "codex", model: "gpt-6.1-sol", supported_efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], default_effort: "high" },
-    { id: "codex-6-sol", label: "Codex - 6 Sol", backend: "codex", model: "gpt-6-sol", supported_efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], default_effort: "xhigh" },
+    { id: "claude-opus", label: "Claude - Opus", backend: "claude", model: "opus", supported_efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "xhigh", trusted_execution: true },
+    { id: "claude-fable", label: "Claude - Fable", backend: "claude", model: "claude-fable-5-1[1m]", usage_model_id: "fable", supported_efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "high", trusted_execution: true },
+    { id: "codex-6-astra", label: "Codex - 6 Astra", backend: "codex", model: "gpt-6-astra", supported_efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], default_effort: "medium", trusted_execution: true },
+    { id: "codex-6.1-sol", label: "Codex - 6.1 Sol", backend: "codex", model: "gpt-6.1-sol", supported_efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], default_effort: "high", trusted_execution: true },
+    { id: "codex-6-sol", label: "Codex - 6 Sol", backend: "codex", model: "gpt-6-sol", supported_efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], default_effort: "xhigh", trusted_execution: true },
     { id: "codex-6-luna", label: "Codex - 6 Luna", backend: "codex", model: "gpt-6-luna", supported_efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "xhigh" },
     { id: "codex-5.6-sol", label: "Codex - 5.6 Sol", backend: "codex", model: "gpt-5.6-sol", supported_efforts: ["low", "medium", "high", "xhigh", "max", "ultra"], default_effort: "xhigh" },
     { id: "codex-5.6-luna", label: "Codex - 5.6 Luna", backend: "codex", model: "gpt-5.6-luna", supported_efforts: ["low", "medium", "high", "xhigh", "max"], default_effort: "xhigh" },
@@ -99,7 +104,7 @@ export const DEFAULT_MODEL_CATALOG: ModelCatalogConfig = {
     { id: "kimi-2", label: "Kimi - 2", backend: "claude", model: "kimi-for-coding" },
     { id: "kimi-3", label: "Kimi - 3", backend: "claude", model: "k3" },
     { id: "gemini-3.8-flash", label: "Gemini - 3.8 Flash", backend: "antigravity", model: "gemini-3.8-flash", supported_efforts: ["low", "medium", "high"], default_effort: "low" },
-    { id: "gemini-4-argon", label: "Gemini - 4 Argon", backend: "antigravity", model: "gemini-4-argon", supported_efforts: ["low", "medium", "high"], default_effort: "high" },
+    { id: "gemini-4-argon", label: "Gemini - 4 Argon", backend: "antigravity", model: "gemini-4-argon", supported_efforts: ["low", "medium", "high"], default_effort: "high", trusted_execution: true },
     { id: "opencode-deepseek-v4.1-flash-free", label: "OpenCode - DeepSeek V4.1 Flash Free", backend: "opencode", model: "opencode/deepseek-v4.1-flash-free" },
   ],
 };

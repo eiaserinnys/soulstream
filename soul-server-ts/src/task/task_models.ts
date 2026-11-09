@@ -25,6 +25,7 @@ import type {
   ReasoningEffort,
 } from "../engine/protocol.js";
 import type { SessionCostBase } from "../engine/session_cost.js";
+import type { ExecutionSecurityDecision } from "../security/session_isolation_contract.js";
 import type { DeliveryIntent } from "./delivery_contract.js";
 import type { AgentProfile } from "../agent_registry.js";
 import type { TaskRunnerRuntime } from "../runner/task_runner_runtime.js";
@@ -496,6 +497,11 @@ export interface Task {
   modelPresetBackend?: BackendId;
   /** Runtime env bundle resolved from modelPreset. Values never cross the wire. */
   modelPresetEnv?: Record<string, string>;
+  /**
+   * Runtime-only execution security decision for this session's turns. Never
+   * persisted and not part of the persistence wire.
+   */
+  executionSecurity?: ExecutionSecurityDecision;
   /** Legacy per-task Claude OAuth token. Claude Code now resolves auth from its own config. */
   oauthToken?: string;
   /** 추론 모델 effort override. Codex는 ThreadOptions.modelReasoningEffort로 전달. */

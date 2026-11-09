@@ -1,6 +1,7 @@
 import type {
   ListSessionSummaryRow,
   RunningSessionSummaryRow,
+  SessionExecutionChain,
   SessionRow,
   UpstreamSessionDumpRow,
 } from "../db/session_db_types.js";
@@ -38,6 +39,7 @@ export const SESSION_DATA_READ_OPERATIONS = [
   "turn_excerpt",
   "resume_context",
   "generation_checkpoint_material",
+  "caller_chain",
 ] as const;
 
 export interface SessionEventRow {
@@ -133,6 +135,7 @@ export interface SessionDataHost {
     sessionId: string,
     limits: GenerationCheckpointReadLimits,
   ): Promise<GenerationCheckpointMaterial>;
+  getSessionCallerChain(sessionId: string): Promise<SessionExecutionChain>;
 }
 
 export class SessionDataHostError extends Error {
@@ -251,6 +254,10 @@ export class SessionDataHostClient implements SessionDataHost {
     limits: GenerationCheckpointReadLimits,
   ): Promise<GenerationCheckpointMaterial> {
     return this.generationCheckpoint("generation_checkpoint_material", [sessionId, limits]);
+  }
+
+  getSessionCallerChain(sessionId: string): Promise<SessionExecutionChain> {
+    return this.turnCritical("caller_chain", [sessionId]);
   }
 
   private interactive<T>(operation: string, args: unknown[], signal?: AbortSignal): Promise<T> {

@@ -41,6 +41,19 @@ export interface HostPersistentSessionRow extends Record<string, unknown> {
   created_at: Date;
 }
 
+export interface HostSessionExecutionChainRow extends Record<string, unknown> {
+  session_id: string;
+  caller_session_id: string | null;
+  model_preset: string | null;
+  model: string | null;
+  agent_id: string | null;
+}
+
+export interface HostSessionExecutionChain {
+  root: HostSessionExecutionChainRow | null;
+  ancestors: HostSessionExecutionChainRow[];
+}
+
 export class SessionReadRepository {
   constructor(private readonly sql: SqlClient) {}
 
@@ -76,6 +89,55 @@ export class SessionReadRepository {
       if (current) replacement = { current_assignee_session_id: current };
     }
     return { ...session, card_assignee_replacement: replacement };
+  }
+
+  /**
+   * Reads the session row and its caller ancestry in one query. The visited array
+   * stops a cycle from looping and the depth cap bounds a pathological chain; in
+   * either case the last row keeps a non-null `caller_session_id` with no next row,
+   * which the isolation policy treats as unresolved ancestry.
+   */
+  async getSessionCallerChain(sessionId: string): Promise<HostSessionExecutionChain> {
+    const rows = await this.sql<Array<HostSessionExecutionChainRow & { depth: number | string }>>`
+      WITH RECURSIVE chain AS (
+        SELECT
+          s.session_id,
+          s.caller_session_id,
+          s.model_preset,
+          s.model,
+          s.agent_id,
+          0 AS depth,
+          ARRAY[s.session_id] AS visited
+        FROM sessions s
+        WHERE s.session_id = ${sessionId}
+        UNION ALL
+        SELECT
+          s.session_id,
+          s.caller_session_id,
+          s.model_preset,
+          s.model,
+          s.agent_id,
+          chain.depth + 1,
+          chain.visited || s.session_id
+        FROM chain
+        JOIN sessions s ON s.session_id = chain.caller_session_id
+        WHERE NOT (s.session_id = ANY(chain.visited))
+          AND chain.depth < 64
+      )
+      SELECT session_id, caller_session_id, model_preset, model, agent_id
+      FROM chain
+      ORDER BY depth ASC
+    `;
+    const [root, ...ancestors] = rows;
+    if (root === undefined) return { root: null, ancestors: [] };
+    const project = (row: HostSessionExecutionChainRow): HostSessionExecutionChainRow => ({
+      session_id: row.session_id,
+      caller_session_id: row.caller_session_id,
+      model_preset: row.model_preset,
+      model: row.model,
+      agent_id: row.agent_id,
+    });
+    return { root: project(root), ancestors: ancestors.map((row) => project(row)) };
   }
 
   /**

@@ -17,6 +17,7 @@ import type {
   SessionEventEnvelope,
   UsageSnapshotV1,
 } from "@soulstream/wire-schema";
+import type { ExecutionSecurityDecision } from "../security/session_isolation_contract.js";
 import {
   MODEL_REASONING_EFFORTS,
   type AgentBackend,
@@ -139,6 +140,11 @@ export interface EngineExecuteParams {
   resumeSessionId?: string;
   /** One-shot Claude recovery: start fresh and atomically replace this durable predecessor. */
   backendSessionRolloverFrom?: string;
+  /**
+   * 이번 턴의 실행 보안 판정. Unit1은 계약만 고정하고 실행 경로에 연결하지
+   * 않는다. 격리 실행기(B1/B2)가 붙을 때 이 값으로 분기한다.
+   */
+  executionSecurity?: ExecutionSecurityDecision;
   model?: string | null;
   /**
    * Resolved reasoning effort for this turn. Codex maps it to

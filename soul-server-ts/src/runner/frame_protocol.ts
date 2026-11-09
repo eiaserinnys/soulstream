@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AgentBackendSchema, MODEL_REASONING_EFFORTS } from "@soulstream/model-catalog";
+import type { ExecutionSecurityDecision } from "../security/session_isolation_contract.js";
 import {
   stripRunnerJsonUndefined,
   withRunnerJsonContract as withJsonContract,
@@ -73,6 +74,20 @@ const ExecutionInputV1Schema = z.object({
   parts: z.union([z.array(InputMaterialPartV1Schema), z.null()]),
 });
 
+export const ExecutionSecurityDecisionSchema: z.ZodType<ExecutionSecurityDecision> = z.object({
+  sessionId: z.string().min(1),
+  tier: z.enum(["full", "restricted"]),
+  policyVersion: z.literal(1),
+  reason: z.enum([
+    "trusted",
+    "untrusted-preset",
+    "inherited",
+    "unresolved-ancestry",
+    "windows",
+  ]),
+  presetId: z.string().nullable(),
+});
+
 export const RunnerExecuteParamsSchema = withJsonContract(z.object({
   agentSessionId: z.string().min(1),
   prompt: z.string(),
@@ -96,6 +111,7 @@ export const RunnerExecuteParamsSchema = withJsonContract(z.object({
   imageAttachmentPaths: z.array(z.string()).optional(),
   resumeSessionId: z.string().optional(),
   backendSessionRolloverFrom: z.string().min(1).optional(),
+  executionSecurity: ExecutionSecurityDecisionSchema.optional(),
   model: z.string().nullable().optional(),
   reasoningEffort: z.enum(MODEL_REASONING_EFFORTS).optional(),
   systemPrompt: z.string().optional(),

@@ -30,7 +30,7 @@ import {
   type SessionTurnSummaryCounts,
 } from "./session_story_types.js";
 import type { SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
-import type { CatalogBoardItemRow, CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, ListFolderItemsParams, ListFolderItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RunningSessionSummaryRow, SessionRow, FolderSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
+import type { CatalogBoardItemRow, CatalogFolderRow, CatalogSessionAssignmentRow, ClaudeTranscriptEntry, ClaudeTranscriptKey, ClaudeTranscriptSessionSummary, FolderRow, ListFolderItemsParams, ListFolderItemsResult, ListSessionSummaryRow, MarkdownDocumentRow, RunningSessionSummaryRow, SessionExecutionChain, SessionRow, FolderSnapshot, UpstreamSessionDumpRow } from "./session_db_types.js";
 
 export type * from "./session_db_types.js";
 
@@ -385,6 +385,10 @@ export class SessionDB {
     limits: GenerationCheckpointReadLimits,
   ): Promise<GenerationCheckpointMaterial> {
     return await this.requireSessionDataHost().getGenerationCheckpointMaterial(sessionId, limits);
+  }
+
+  async getSessionCallerChain(sessionId: string): Promise<SessionExecutionChain> {
+    return await this.requireSessionDataHost().getSessionCallerChain(sessionId);
   }
 
   async appendClaudeTranscriptEntries(
