@@ -769,7 +769,8 @@ CREATE TABLE IF NOT EXISTS events (
     dedupe_key      TEXT,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     PRIMARY KEY (session_id, id)
-);
+) WITH (autovacuum_vacuum_insert_scale_factor = 0,
+        autovacuum_vacuum_insert_threshold = 200000);
 
 CREATE TABLE IF NOT EXISTS session_statistics_facts (
     session_id TEXT NOT NULL,

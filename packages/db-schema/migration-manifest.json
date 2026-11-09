@@ -600,6 +600,10 @@
     {
       "id": "148_event_search_insert_vacuum_threshold.sql",
       "sha256": "a7ee8a0be79fe1deda81eed6d6f0bf138f8a6266e821de40425dcb03e2a43b80"
+    },
+    {
+      "id": "149_events_insert_vacuum_threshold.sql",
+      "sha256": "06bb703f0d6ec6847dae3573c71a6219069d42aadec80ebce37b1f54ab035ee8"
     }
   ]
 }
