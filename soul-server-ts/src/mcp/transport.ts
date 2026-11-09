@@ -12,6 +12,10 @@
  *   - POST + 모르는 Mcp-Session-Id → 404.
  *   - GET + Mcp-Session-Id → SSE 스트림 시작. 없음 → 400. 모름 → 404.
  *   - DELETE + Mcp-Session-Id → 세션 종료. 없음 → 400. 모름 → 404.
+ *
+ * 모든 요청은 매번 인증 계층을 지나 principal(full | restricted session)을 판정하고,
+ * stateful 세션은 최초 principal과 같은 요청만 받는다. restricted 요청은 그 세션의
+ * 도구 정책과 함께 McpServer를 만든다.
  */
 import { randomUUID } from "node:crypto";
 
@@ -19,22 +23,35 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from "@modelcontextprotocol/sdk/types.js";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { checkMcpAuth, type McpAuthConfig } from "./auth.js";
+import {
+  resolveMcpPrincipal,
+  type McpAuthConfig,
+  type McpRestrictedAuthConfig,
+  type McpPrincipalResolution,
+} from "./auth.js";
 import {
   SOULSTREAM_AGENT_SESSION_HEADER,
   withMcpRequestContext,
+  type McpRequestContext,
 } from "./request_context.js";
 import type { McpRuntime } from "./runtime.js";
 import { buildMcpServer } from "./server.js";
+import type { McpToolAccess } from "./tool_access.js";
+import type { McpPrincipal } from "../security/session_isolation_contract.js";
 
 export interface McpRouteConfig {
   path: string;
   auth: McpAuthConfig;
   statelessTransport: boolean;
+  /** 없으면 restricted 자격 증명을 받지 않는다(MCP_REQUIRE_AUTH=false 포함). */
+  restricted?: McpRestrictedAuthConfig;
 }
+
+type AuthenticatedResolution = Extract<McpPrincipalResolution, { ok: true }>;
 
 interface SessionEntry {
   transport: StreamableHTTPServerTransport;
+  principal: McpPrincipal;
 }
 
 interface StatelessEntry {
@@ -56,10 +73,10 @@ export function registerMcpRoutes(
   const statelessEntries = new Set<StatelessEntry>();
 
   const path = config.path;
-  const guard = (
+  const authenticate = async (
     req: FastifyRequest,
     reply: FastifyReply,
-  ): { ok: true } | { ok: false } => {
+  ): Promise<AuthenticatedResolution | undefined> => {
     const headers = {
       host: typeof req.headers.host === "string" ? req.headers.host : undefined,
       authorization:
@@ -67,23 +84,24 @@ export function registerMcpRoutes(
           ? req.headers.authorization
           : undefined,
     };
-    const check = checkMcpAuth(config.auth, headers);
-    if (!check.ok) {
-      reply.code(check.status ?? 401).send({
+    const resolution = await resolveMcpPrincipal(config.auth, headers, config.restricted);
+    if (!resolution.ok) {
+      reply.code(resolution.status).send({
         jsonrpc: "2.0",
         error: {
           code: -32001,
-          message: check.message ?? "unauthorized",
+          message: resolution.message,
         },
         id: null,
       });
-      return { ok: false };
+      return undefined;
     }
-    return { ok: true };
+    return resolution;
   };
 
   fastify.post(path, async (req, reply) => {
-    if (!guard(req, reply).ok) return;
+    const resolution = await authenticate(req, reply);
+    if (!resolution) return;
     reply.hijack();
     try {
       if (config.statelessTransport) {
@@ -92,9 +110,10 @@ export function registerMcpRoutes(
           reply,
           statelessEntries,
           runtime,
+          resolution,
         );
       } else {
-        await dispatchPost(req, reply, sessions, runtime);
+        await dispatchPost(req, reply, sessions, runtime, resolution);
       }
     } catch (err) {
       runtime.logger.error(
@@ -106,13 +125,14 @@ export function registerMcpRoutes(
   });
 
   fastify.get(path, async (req, reply) => {
-    if (!guard(req, reply).ok) return;
+    const resolution = await authenticate(req, reply);
+    if (!resolution) return;
     reply.hijack();
     try {
       if (config.statelessTransport) {
         writeJsonRpcError(reply, 405, "method not allowed in stateless mode");
       } else {
-        await dispatchGet(req, reply, sessions);
+        await dispatchGet(req, reply, sessions, resolution);
       }
     } catch (err) {
       runtime.logger.error({ err }, "MCP GET dispatch threw");
@@ -121,13 +141,14 @@ export function registerMcpRoutes(
   });
 
   fastify.delete(path, async (req, reply) => {
-    if (!guard(req, reply).ok) return;
+    const resolution = await authenticate(req, reply);
+    if (!resolution) return;
     reply.hijack();
     try {
       if (config.statelessTransport) {
         writeJsonRpcError(reply, 405, "method not allowed in stateless mode");
       } else {
-        await dispatchDelete(req, reply, sessions);
+        await dispatchDelete(req, reply, sessions, resolution);
       }
     } catch (err) {
       runtime.logger.error({ err }, "MCP DELETE dispatch threw");
@@ -159,13 +180,10 @@ async function dispatchStatelessPost(
   reply: FastifyReply,
   active: Set<StatelessEntry>,
   runtime: McpRuntime,
+  resolution: AuthenticatedResolution,
 ): Promise<void> {
   await withMcpRequestContext(
-    {
-      callerSessionId: headerValue(
-        req.headers[SOULSTREAM_AGENT_SESSION_HEADER],
-      ),
-    },
+    requestContext(resolution.principal, req),
     async () => {
 
       // SDK official stateless mode: a fresh transport and McpServer per POST.
@@ -174,7 +192,7 @@ async function dispatchStatelessPost(
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined,
       });
-      const server = buildMcpServer(runtime);
+      const server = buildMcpServer(runtime, toolAccess(resolution));
       const entry: StatelessEntry = { transport, server };
       active.add(entry);
       let closed = false;
@@ -217,18 +235,19 @@ async function dispatchPost(
   reply: FastifyReply,
   sessions: Map<string, SessionEntry>,
   runtime: McpRuntime,
+  resolution: AuthenticatedResolution,
 ): Promise<void> {
   const sessionId = headerValue(req.headers["mcp-session-id"]);
   const body = req.body;
 
   if (sessionId && sessions.has(sessionId)) {
     const entry = sessions.get(sessionId)!;
+    if (!samePrincipal(entry.principal, resolution.principal)) {
+      writeJsonRpcError(reply, 403, "principal mismatch");
+      return;
+    }
     await withMcpRequestContext(
-      {
-        callerSessionId: headerValue(
-          req.headers[SOULSTREAM_AGENT_SESSION_HEADER],
-        ),
-      },
+      requestContext(resolution.principal, req),
       async () => {
         await entry.transport.handleRequest(req.raw, reply.raw, body);
       },
@@ -240,7 +259,7 @@ async function dispatchPost(
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (newId: string) => {
-        sessions.set(newId, { transport });
+        sessions.set(newId, { transport, principal: resolution.principal });
       },
     });
     transport.onclose = () => {
@@ -250,13 +269,9 @@ async function dispatchPost(
       }
     };
     await withMcpRequestContext(
-      {
-        callerSessionId: headerValue(
-          req.headers[SOULSTREAM_AGENT_SESSION_HEADER],
-        ),
-      },
+      requestContext(resolution.principal, req),
       async () => {
-        const server = buildMcpServer(runtime);
+        const server = buildMcpServer(runtime, toolAccess(resolution));
         await server.connect(transport);
         await transport.handleRequest(req.raw, reply.raw, body);
       },
@@ -276,6 +291,7 @@ async function dispatchGet(
   req: FastifyRequest,
   reply: FastifyReply,
   sessions: Map<string, SessionEntry>,
+  resolution: AuthenticatedResolution,
 ): Promise<void> {
   const sessionId = headerValue(req.headers["mcp-session-id"]);
   if (!sessionId) {
@@ -287,13 +303,23 @@ async function dispatchGet(
     writeJsonRpcError(reply, 404, `unknown session: ${sessionId}`);
     return;
   }
-  await entry.transport.handleRequest(req.raw, reply.raw);
+  if (!samePrincipal(entry.principal, resolution.principal)) {
+    writeJsonRpcError(reply, 403, "principal mismatch");
+    return;
+  }
+  await withMcpRequestContext(
+    requestContext(resolution.principal, req),
+    async () => {
+      await entry.transport.handleRequest(req.raw, reply.raw);
+    },
+  );
 }
 
 async function dispatchDelete(
   req: FastifyRequest,
   reply: FastifyReply,
   sessions: Map<string, SessionEntry>,
+  resolution: AuthenticatedResolution,
 ): Promise<void> {
   const sessionId = headerValue(req.headers["mcp-session-id"]);
   if (!sessionId) {
@@ -305,7 +331,40 @@ async function dispatchDelete(
     writeJsonRpcError(reply, 404, `unknown session: ${sessionId}`);
     return;
   }
-  await entry.transport.handleRequest(req.raw, reply.raw);
+  if (!samePrincipal(entry.principal, resolution.principal)) {
+    writeJsonRpcError(reply, 403, "principal mismatch");
+    return;
+  }
+  await withMcpRequestContext(
+    requestContext(resolution.principal, req),
+    async () => {
+      await entry.transport.handleRequest(req.raw, reply.raw);
+    },
+  );
+}
+
+function requestContext(principal: McpPrincipal, req: FastifyRequest): McpRequestContext {
+  if (principal.tier === "restricted") {
+    return { principal, callerSessionId: principal.sessionId };
+  }
+  return {
+    principal,
+    callerSessionId: headerValue(req.headers[SOULSTREAM_AGENT_SESSION_HEADER]),
+  };
+}
+
+function toolAccess(resolution: AuthenticatedResolution): McpToolAccess | undefined {
+  if (resolution.principal.tier !== "restricted") return undefined;
+  if (!resolution.policy) {
+    throw new Error("restricted principal without isolation policy");
+  }
+  return { principal: resolution.principal, policy: resolution.policy };
+}
+
+function samePrincipal(left: McpPrincipal, right: McpPrincipal): boolean {
+  if (left.tier !== right.tier) return false;
+  if (left.tier === "full" || right.tier === "full") return true;
+  return left.sessionId === right.sessionId;
 }
 
 function headerValue(h: string | string[] | undefined): string | undefined {

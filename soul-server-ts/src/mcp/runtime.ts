@@ -66,4 +66,18 @@ export interface McpRuntime {
   worktreeService?: WorktreeService;
   /** Durable event publisher used by the internal publish_chat_ui tool. */
   chatUiPublisher?: ChatUiPublisher;
+  /**
+   * `observe_node_services` 읽기 전용 Haniel client 설정.
+   * 하나라도 없으면 이 도구만 NODE_SERVICES_OBSERVATION_NOT_CONFIGURED를 반환한다.
+   */
+  nodeServicesObservation?: NodeServicesObservationConfig;
+}
+
+export interface NodeServicesObservationConfig {
+  baseUrl: string;
+  tokenFile: string;
+  /** 시험 주입 포트. 기본은 global fetch. */
+  fetchImpl?: typeof fetch;
+  /** 시험 주입 포트. 기본은 node:fs readFile. */
+  readFileImpl?: (path: string) => Promise<string>;
 }
