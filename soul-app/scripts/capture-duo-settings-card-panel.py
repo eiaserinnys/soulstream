@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""듀오 설정 시트 닫기 단추와 포스트잇 카드 제목 위 여백의 전후 시각 검수.
+"""듀오 설정 시트 닫기 단추와 카드 패널 머리 제목 자리의 전후 시각 검수.
 
 무엇을 검수하나
 ---------------
@@ -25,28 +25,26 @@
      본문 내용 끝선과 맞는다(넓은 2단 레이아웃은 헤더가 사이드바 위에 걸쳐 있어
      헤더 줄 기준으로 재고, 본문 카드 끝선과의 차이를 함께 기록한다).
    - 헤더에 글자 「설정」「목록」「편집」이 남지 않는다.
-2. 포스트잇 카드 제목 위 여백
-   - 카드 위 끝에서 제목까지가 변경 전보다 gap만큼 늘고(paddingTop), 왼쪽·오른쪽
-     여백과 푸터 위치는 그대로다. 아래 여백은 늘어난 제목 위 gap을 상쇄하도록
-     푸터 간격(footerGap)만큼 줄어든다.
-   - 두 줄 제목 카드에서 제목은 두 줄을 유지하고, 본문 요약 1줄과 「볼 것」 줄의
-     글자는 잘리지 않는다(넘침 1px 이하).
-   - 본문 칸의 자식(진행 줄·본문·「볼 것」 상자)은 네이티브처럼 줄어들지 않고
-     (flexShrink 0), 「볼 것」 상자의 자연 높이와 아래끝이 본문 칸 안에 들어온다.
-     상자 아래끝에서 푸터 완료 원 단추 윗면까지는 제목↔본문 사이 간격(gap)과 같은
-     리듬(2px 이내)이다.
-   - 카드 크기(width/height)는 그대로다.
+2. 카드 패널 머리 제목 자리
+   - 보드에서 첫 포스트잇을 눌러 연 카드 패널에서, 제목 첫 줄의 세로 가운데가 오른쪽
+     완료 단추 시각 원의 세로 가운데와 1px 이내다. 두 줄 제목에서도 첫 줄이 단추와
+     같은 높이에서 시작한다.
+   - 제목 위 자리(header.top → title.top)는 그 프레임의 한 줄 제목 자리
+     (header paddingTop + (hitTarget.min - lineHeight)/2)와 1px 이내로 같다.
+     두 줄 이상 제목은 이 자리에서 아래로 자란다.
+   - 안쪽 가로(두 줄), 안쪽 세로(한 줄), 바깥 세로(두 줄) 세 프레임과 light/dark 두
+     테마를 확인하고, 페이지 오류가 없다.
 
 실행 방법
 ---------
 1. 번들을 만든다(리포지토리 루트에서, heavy_verify runner 경유):
        node soul-app/scripts/export-components.mjs
 2. 변경 전(프로덕션 파일 세 개를 되돌린 번들)과 후의 번들을 각각 만들어 실행한다:
-       python3 -P soul-app/scripts/capture-duo-settings-postit.py --phase before \
+       python3 -P soul-app/scripts/capture-duo-settings-card-panel.py --phase before \
            --bundle unified-dashboard/dist/assets/ios-components --out .local/tmp/card1095/visual/before
-       python3 -P soul-app/scripts/capture-duo-settings-postit.py --phase after \
+       python3 -P soul-app/scripts/capture-duo-settings-card-panel.py --phase after \
            --bundle unified-dashboard/dist/assets/ios-components --out .local/tmp/card1095/visual/after \
-           --compare .local/tmp/card1095/visual/before/duo-settings-postit.json
+           --compare .local/tmp/card1095/visual/before/duo-settings-card-panel.json
    안전 영역 이동 전후를 비교할 때는 변경 전 결과를 --baseline에 추가한다.
 
 스크립트는 로컬 HTTP 서버로 번들만 제공하며 외부 네트워크를 호출하지 않는다.
@@ -54,7 +52,8 @@ API 응답은 component-review 공개 fixture(`/api/auth/status`)만 흉내 낸�
 캡처 페이지에는 스크롤바 폭을 0으로 두는 스타일을 넣는다. iOS에는 스크롤바가 없고,
 헤더 내용 끝선과 본문 카드 끝선의 정렬을 재는 데 브라우저 스크롤바 폭이 끼면 안 된다.
 
-500줄을 넘는 이유: 두 화면의 측정 JS가 Playwright 인자로 넘길 문자열이라 이 파일에 함께 있다.
+500줄을 넘는 이유: 설정 화면과 카드 패널의 측정 JS가 Playwright 인자로 넘길 문자열이라
+이 파일에 함께 있다.
 서버·측정·비교가 한 실행 단위라 파일을 쪼개면 실행 절차만 흩어진다.
 """
 from __future__ import annotations
@@ -86,16 +85,16 @@ NESTED_FRAMES = [
     ("inner-portrait", 669, 951, True, ("list", "editor", "history")),
     ("ipad-pro-13-portrait", 1032, 1376, True, ("list", "editor")),
 ]
-BOARD_FRAMES = [
-    ("inner-portrait", 669, 951),
-    ("inner-landscape", 951, 669),
+# 카드 패널: (frame, width, height, expectedTitleLines). 안쪽 가로는 두 줄, 안쪽 세로는
+# 한 줄, 바깥 세로는 두 줄 제목이다. 한 줄 프레임이 제목 위 자리의 기준값을 준다.
+CARD_PANEL_FRAMES = [
+    ("inner-landscape", 951, 669, 2),
+    ("inner-portrait", 669, 951, 1),
+    ("outer-portrait", 466, 678, 2),
 ]
 # 거의 확실한 시각 차이만 잡고 픽셀 반올림은 허용한다.
 ALIGN_TOLERANCE_PX = 1.0
 SIZE_TOLERANCE_PX = 0.5
-# 「볼 것」 상자는 본문 칸의 남는 높이(slack)만큼 칸 아래끝보다 위에 놓인다.
-# 그래서 상자 아래끝→완료 원 윗면의 시각 간격은 제목 리듬(gap)보다 slack만큼 크다.
-RHYTHM_TOLERANCE_PX = 2.0
 
 HIDE_SCROLLBAR_CSS = "::-webkit-scrollbar { width: 0; height: 0; } * { scrollbar-width: none; }"
 
@@ -163,7 +162,7 @@ SETTINGS_MEASURE_JS = r"""
 }
 """
 
-BOARD_MEASURE_JS = r"""
+CARD_PANEL_MEASURE_JS = r"""
 () => {
   const round = (value) => Math.round(value * 100) / 100;
   const box = (element) => {
@@ -174,105 +173,24 @@ BOARD_MEASURE_JS = r"""
   };
   const styleOf = (element) => (element ? getComputedStyle(element) : null);
   const byId = (id) => document.querySelector(`[data-testid="${id}"]`);
-  const cards = [...document.querySelectorAll('[data-testid^="postit-card-"]')].map((card) => {
-    // 카드가 ±0.8° 회전해 있으면 자식의 getBoundingClientRect는 회전을 감싼 AABB라
-    // 높이가 최대 2.76pt 부풀어 줄어든 글자를 가린다. 측정 동안만 회전을 끈다.
-    const rotation = card.style.transform;
-    card.style.transform = 'none';
-    const id = card.dataset.testid.slice('postit-card-'.length);
-    const open = byId(`postit-open-${id}`);
-    const title = byId(`postit-title-${id}`);
-    const body = byId(`postit-body-${id}`);
-    const bodyArea = byId(`postit-body-area-${id}`);
-    const ask = byId(`postit-${id}-ask-preview`);
-    const footer = byId(`postit-footer-${id}`);
-    const progress = byId(`postit-${id}-item-summary`);
-    const complete = byId(`postit-complete-${id}`);
-    const openStyle = styleOf(open);
-    const titleStyle = styleOf(title);
-    const bodyStyle = styleOf(body);
-    const bodyAreaStyle = styleOf(bodyArea);
-    const askStyle = styleOf(ask);
-    const footerStyle = styleOf(footer);
-    const cardRect = box(card);
-    const titleRect = box(title);
-    const footerRect = box(footer);
-    const bodyAreaRect = box(bodyArea);
-    const askRect = box(ask);
-    const completeRect = box(complete);
-    // 「볼 것」 상자의 자연 높이(줄 높이 + 위아래 padding). 웹이 flex-shrink로
-    // 상자를 줄이면 getBoundingClientRect는 줄어든 높이를 돌려주므로, 글자가 잘렸는지는
-    // 줄어든 상자 끝이 아니라 자연 높이로 계산한다. 상자는 numberOfLines 1(compact)이다.
-    const askPaddingTop = askStyle ? parseFloat(askStyle.paddingTop || '0') : null;
-    const askPaddingBottom = askStyle ? parseFloat(askStyle.paddingBottom || '0') : null;
-    const askLineHeight = askStyle && askStyle.lineHeight !== 'normal' ? parseFloat(askStyle.lineHeight) : null;
-    const askNaturalHeight = askLineHeight !== null && askPaddingTop !== null && askPaddingBottom !== null
-      ? round(askLineHeight + askPaddingTop + askPaddingBottom) : null;
-    const askTextBottom = askRect && askNaturalHeight !== null && askPaddingBottom !== null
-      ? round(askRect.top + askNaturalHeight - askPaddingBottom) : null;
-    const askNaturalBottom = askRect && askNaturalHeight !== null
-      ? round(askRect.top + askNaturalHeight) : null;
-    const askToCompleteGap = askRect && completeRect ? round(completeRect.top - askRect.bottom) : null;
-    const footerImages = footer
-      ? [...footer.querySelectorAll('*')].filter((element) => {
-          if (element.tagName === 'IMG') return true;
-          const background = styleOf(element).backgroundImage;
-          return background && background !== 'none';
-        }).length
-      : 0;
-    const result = {
-      id,
-      card: cardRect,
-      cardSize: { width: card.offsetWidth, height: card.offsetHeight },
-      padding: openStyle ? {
-        top: round(parseFloat(openStyle.paddingTop)),
-        left: round(parseFloat(openStyle.paddingLeft)),
-        right: round(parseFloat(openStyle.paddingRight)),
-        bottom: round(parseFloat(openStyle.paddingBottom)),
-      } : null,
-      paddingGap: bodyAreaStyle ? round(parseFloat(bodyAreaStyle.marginTop)) : null,
-      title: titleRect,
-      titleText: title ? (title.textContent || '').trim() : null,
-      titleLineHeight: titleStyle ? round(parseFloat(titleStyle.lineHeight)) : null,
-      titleOffsetFromCardTop: cardRect && titleRect ? round(titleRect.top - cardRect.top) : null,
-      bodyClamp: bodyStyle ? (bodyStyle.webkitLineClamp || '') : '',
-      body: box(body),
-      bodyLineHeight: bodyStyle ? round(parseFloat(bodyStyle.lineHeight)) : null,
-      bodyText: body ? (body.textContent || '').trim() : '',
-      bodyArea: bodyAreaRect,
-      progress: box(progress),
-      progressText: progress ? (progress.textContent || '').trim() : null,
-      ask: askRect,
-      askLineHeight,
-      askNaturalHeight,
-      askShrunk: askRect && askNaturalHeight !== null ? round(askRect.height - askNaturalHeight) : null,
-      askTextBottom,
-      askTextClipped: askRect && askTextBottom !== null && bodyAreaRect
-        ? round(askTextBottom - bodyAreaRect.bottom) > 0
-        : null,
-      askBoxOverflow: askRect && bodyAreaRect ? round(askRect.bottom - bodyAreaRect.bottom) : null,
-      askNaturalBottom,
-      askNaturalOverflow: askNaturalBottom !== null && bodyAreaRect
-        ? round(askNaturalBottom - bodyAreaRect.bottom) : null,
-      complete: completeRect,
-      askToCompleteGap,
-      footer: footerRect,
-      footerInset: footerStyle ? {
-        bottom: round(parseFloat(footerStyle.bottom)),
-        left: round(parseFloat(footerStyle.left)),
-        right: round(parseFloat(footerStyle.right)),
-      } : null,
-      footerBottomGap: footerRect && cardRect ? round(cardRect.bottom - footerRect.bottom) : null,
-      footerText: footer ? (footer.textContent || '').trim() : null,
-      footerImages,
-    };
-    card.style.transform = rotation;
-    return result;
-  });
+  const header = byId('card-detail-header');
+  const title = byId('card-detail-title');
+  const completeVisual = byId('card-detail-complete-visual');
+  // 시각 원 → CompactTouchTarget의 surface 래퍼 → 44/48pt hit frame 순서다.
+  const completeFrame = completeVisual && completeVisual.parentElement
+    ? completeVisual.parentElement.parentElement : null;
+  const headerStyle = styleOf(header);
+  const titleStyle = styleOf(title);
   return {
     window: { width: innerWidth, height: innerHeight },
-    boardFrame: box(byId('card-board-frame')),
-    cards,
+    header: box(header),
+    headerPaddingTop: headerStyle ? round(parseFloat(headerStyle.paddingTop)) : null,
+    title: box(title),
+    titleText: title ? (title.textContent || '').trim() : null,
+    titleLineHeight: titleStyle && titleStyle.lineHeight !== 'normal'
+      ? round(parseFloat(titleStyle.lineHeight)) : null,
+    completeVisual: box(completeVisual),
+    completeFrame: box(completeFrame),
   };
 }
 """
@@ -462,9 +380,10 @@ def settings_url(base: str, frame_id: str, theme: str) -> str:
     return f"{base}{PREFIX}index.html?section=iphoneDuo&sample=settings-layout&frame={frame_id}&theme={theme}"
 
 
-def board_url(base: str, frame_id: str, theme: str) -> str:
+def card_panel_url(base: str, frame_id: str, theme: str) -> str:
+    # board=ops를 붙이지 않는다. ops fixture 카드는 상세가 열리지 않는다.
     query = (f"section=iphoneDuo&sample=main-layout&frame={frame_id}"
-             f"&board=ops&project-view=board&theme={theme}")
+             f"&project-view=board&theme={theme}")
     return f"{base}{PREFIX}index.html?{query}"
 
 
@@ -817,81 +736,55 @@ def compare_inset_baseline(before: dict, after: dict, checks: Checks) -> None:
                          {'before': a, 'after': b})
 
 
-def capture_board(browser: Browser, base: str, out: Path, frame_id: str, width: int, height: int,
-                  theme: str, checks: Checks) -> dict:
+def capture_card_panel(browser: Browser, base: str, out: Path, frame_id: str, width: int, height: int,
+                       expected_lines: int, theme: str, checks: Checks) -> dict:
     context = browser.new_context(viewport={"width": width, "height": height}, device_scale_factor=2)
     context.add_cookies([{"name": "review", "value": "fixture", "url": base}])
-    url = board_url(base, frame_id, theme)
+    url = card_panel_url(base, frame_id, theme)
     page, errors = open_page(context, base, url)
-    page.wait_for_selector('[data-testid^="postit-card-"]', state="attached", timeout=20000)
+    page.wait_for_selector('[data-testid^="postit-open-"]', state="attached", timeout=20000)
     settle(page)
-    metrics = page.evaluate(BOARD_MEASURE_JS)
-    screenshot = shot(page, out, f"board-{frame_id}-{theme}", width, height)
+    board = shot(page, out, f"board-{frame_id}-{theme}", width, height)
+    page.locator('[data-testid^="postit-open-"]').first.click()
+    page.wait_for_timeout(1500)
+    metrics = page.evaluate(CARD_PANEL_MEASURE_JS)
+    panel = shot(page, out, f"card-panel-{frame_id}-{theme}", width, height)
     page.close()
     context.close()
 
-    prefix = f"board/{frame_id}/{theme}"
-    cards = metrics["cards"]
-    checks.check(f"{prefix} 카드 존재(6장 이상)", len(cards) >= 6, len(cards))
+    prefix = f"card-panel/{frame_id}/{theme}"
     checks.check(f"{prefix} 페이지 오류 없음", not errors, errors)
-    long_titles = [card for card in cards if len(card["titleText"] or "") > 24]
-    checks.check(f"{prefix} 긴 제목 카드 존재", bool(long_titles), len(long_titles))
-    two_line = [card for card in long_titles if card["title"] and card["titleLineHeight"]
-                and card["title"]["height"] >= card["titleLineHeight"] * 1.9]
-    checks.check(f"{prefix} 긴 제목은 두 줄", len(two_line) == len(long_titles),
-                 {"long": len(long_titles), "twoLine": len(two_line)})
-    progress_cards = [card for card in cards if card["progress"] is not None]
-    checks.check(f"{prefix} 진행 표시(볼 것 줄) 존재", bool(progress_cards), len(progress_cards))
-    ask_cards = [card for card in cards if card["ask"] is not None]
-    checks.check(f"{prefix} 「볼 것」 말풍선 존재", bool(ask_cards), len(ask_cards))
-    avatar_cards = [card for card in cards if card["footerImages"] > 0]
-    checks.check(f"{prefix} 담당 아바타 이미지 존재", bool(avatar_cards), len(avatar_cards))
-    for card in cards:
-        label = f"{prefix}/{card['id']}"
-        checks.check(f"{label} 본문 요약 1줄",
-                     bool(card["bodyLineHeight"]) and card["body"] is not None
-                     and card["body"]["height"] <= card["bodyLineHeight"] * 1.5
-                     and bool(card["bodyText"]),
-                     {"height": card["body"] and card["body"]["height"],
-                      "lineHeight": card["bodyLineHeight"], "clamp": card["bodyClamp"]})
-        checks.check(f"{label} 제목 두 줄 유지",
-                     bool(card["titleLineHeight"]) and card["title"]
-                     and card["title"]["height"] >= card["titleLineHeight"] * 1.9,
-                     {"title": card["title"], "lineHeight": card["titleLineHeight"]})
-        checks.check(f"{label} 본문 글자 줄지 않음(flexShrink 0)",
-                     bool(card["bodyLineHeight"]) and card["body"] is not None
-                     and card["body"]["height"] >= card["bodyLineHeight"] - ALIGN_TOLERANCE_PX,
-                     {"height": card["body"] and card["body"]["height"],
-                      "lineHeight": card["bodyLineHeight"]})
-        checks.check(f"{label} 「볼 것」 상자 줄지 않음(flexShrink 0)",
-                     card["ask"] is None or (card["askNaturalHeight"] is not None
-                     and card["ask"]["height"] >= card["askNaturalHeight"] - ALIGN_TOLERANCE_PX),
-                     {"height": card["ask"] and card["ask"]["height"],
-                      "naturalHeight": card["askNaturalHeight"], "shrunk": card["askShrunk"]})
-        checks.check(f"{label} 「볼 것」 상자 자연 아래끝 ≤ 본문 칸 아래끝",
-                     card["askNaturalOverflow"] is None or card["askNaturalOverflow"] <= ALIGN_TOLERANCE_PX,
-                     {"naturalOverflow": card["askNaturalOverflow"], "bodyArea": card["bodyArea"]})
-        checks.check(f"{label} 「볼 것」 글자 잘리지 않음", card["askTextClipped"] is False,
-                     {"askTextBottom": card["askTextBottom"], "bodyArea": card["bodyArea"]})
-        checks.check(f"{label} 「볼 것」↔완료 버튼 간격 = 제목 리듬(2px)",
-                     card["askToCompleteGap"] is None or (card["paddingGap"] is not None
-                     and abs(card["askToCompleteGap"] - card["paddingGap"]) <= RHYTHM_TOLERANCE_PX),
-                     {"askToCompleteGap": card["askToCompleteGap"], "paddingGap": card["paddingGap"]})
-        checks.check(f"{label} 「볼 것」 상자 넘침 1px 이하",
-                     card["askBoxOverflow"] is None or card["askBoxOverflow"] <= ALIGN_TOLERANCE_PX,
-                     card["askBoxOverflow"])
-        checks.check(f"{label} 카드 폭 225.88", card["cardSize"]["width"]
-                     and abs(card["cardSize"]["width"] - 225.88) <= ALIGN_TOLERANCE_PX,
-                     card["cardSize"])
-        checks.check(f"{label} 카드 높이 197.65", card["cardSize"]["height"]
-                     and abs(card["cardSize"]["height"] - 197.65) <= ALIGN_TOLERANCE_PX,
-                     card["cardSize"])
-    return {"url": url, "screenshot": screenshot, "metrics": metrics, "errors": errors}
+    header, title = metrics["header"], metrics["title"]
+    visual, frame = metrics["completeVisual"], metrics["completeFrame"]
+    line_height = metrics["titleLineHeight"]
+    checks.check(f"{prefix} 카드 패널 머리와 제목 존재", header is not None and title is not None,
+                 {"header": header, "title": title})
+    if header is None or title is None or line_height is None:
+        return {"url": url, "screenshots": [board, panel], "metrics": metrics, "errors": errors}
+    checks.check(f"{prefix} 제목 {expected_lines}줄",
+                 abs(title["height"] - line_height * expected_lines) <= ALIGN_TOLERANCE_PX,
+                 {"height": title["height"], "lineHeight": line_height,
+                  "expectedLines": expected_lines, "text": metrics["titleText"]})
+    title_center = title["top"] + line_height / 2
+    checks.check(f"{prefix} 제목 첫 줄 가운데 = 완료 원 가운데(1px)",
+                 visual is not None
+                 and abs(title_center - center_y(visual)) <= ALIGN_TOLERANCE_PX,
+                 {"titleFirstLineCenter": rounded(title_center),
+                  "completeCenter": rounded(center_y(visual)) if visual else None})
+    title_top_gap = title["top"] - header["top"]
+    expected_gap = (metrics["headerPaddingTop"] + (frame["height"] - line_height) / 2
+                    if frame is not None and metrics["headerPaddingTop"] is not None else None)
+    checks.check(f"{prefix} 제목 위 자리 = 한 줄 기준값(1px)",
+                 expected_gap is not None and abs(title_top_gap - expected_gap) <= ALIGN_TOLERANCE_PX,
+                 {"gap": rounded(title_top_gap), "expected": rounded(expected_gap),
+                  "headerPaddingTop": metrics["headerPaddingTop"],
+                  "completeFrame": frame and frame["height"]})
+    return {"url": url, "screenshots": [board, panel], "metrics": metrics, "errors": errors}
 
 
 def compare_phases(before: dict, after: dict, checks: Checks) -> dict:
-    """변경 전/후 측정값을 카드·시트 키로 맞춰 계약 델타를 검사한다."""
-    summary: dict = {"settings": {}, "board": {}}
+    """변경 전/후 측정값을 설정 시트 키로 맞춰 계약 델타를 검사한다."""
+    summary: dict = {"settings": {}}
 
     for key, after_sheet in after.get("settings", {}).items():
         before_sheet = before.get("settings", {}).get(key)
@@ -925,62 +818,6 @@ def compare_phases(before: dict, after: dict, checks: Checks) -> dict:
                          entry["close"])
         summary["settings"][key] = entry
 
-    for key, after_board in after.get("board", {}).items():
-        before_board = before.get("board", {}).get(key)
-        if not before_board:
-            continue
-        before_cards = {card["id"]: card for card in before_board["metrics"]["cards"]}
-        deltas = []
-        for card in after_board["metrics"]["cards"]:
-            prior = before_cards.get(card["id"])
-            if not prior:
-                continue
-            gap = card["paddingGap"]
-            entry = {
-                "id": card["id"],
-                "paddingTop": {"before": prior["padding"]["top"], "after": card["padding"]["top"]},
-                "gap": gap,
-                "titleOffset": {"before": prior["titleOffsetFromCardTop"],
-                                "after": card["titleOffsetFromCardTop"]},
-                "leftDelta": rounded(card["padding"]["left"] - prior["padding"]["left"]),
-                "rightDelta": rounded(card["padding"]["right"] - prior["padding"]["right"]),
-                "bottomDelta": rounded(card["padding"]["bottom"] - prior["padding"]["bottom"]),
-                "footerDelta": rounded(card["footerBottomGap"] - prior["footerBottomGap"]),
-                "sizeBefore": prior["cardSize"],
-                "sizeAfter": card["cardSize"],
-                "askBoxOverflow": {"before": prior["askBoxOverflow"], "after": card["askBoxOverflow"]},
-                "askNaturalOverflow": {"before": prior.get("askNaturalOverflow"),
-                                       "after": card["askNaturalOverflow"]},
-            }
-            deltas.append(entry)
-            label = f"전후 board/{key}/{card['id']}"
-            checks.check(f"{label} 제목 위 여백 +gap",
-                         gap is not None
-                         and abs((card["padding"]["top"] - prior["padding"]["top"]) - gap) <= 0.05,
-                         entry["paddingTop"])
-            checks.check(f"{label} 제목 위치 +gap",
-                         card["titleOffsetFromCardTop"] is not None
-                         and prior["titleOffsetFromCardTop"] is not None
-                         and abs((card["titleOffsetFromCardTop"] - prior["titleOffsetFromCardTop"]) - gap) <= ALIGN_TOLERANCE_PX,
-                         entry["titleOffset"])
-            checks.check(f"{label} 왼쪽/오른쪽 여백 그대로",
-                         abs(entry["leftDelta"]) <= 0.01 and abs(entry["rightDelta"]) <= 0.01, entry)
-            checks.check(f"{label} 아래 여백은 제목 위 gap만큼 회수(줄어듦)",
-                         entry["bottomDelta"] <= 0.01
-                         and (gap is None or entry["bottomDelta"] >= -gap - 0.01),
-                         {"before": prior["padding"]["bottom"], "after": card["padding"]["bottom"],
-                          "delta": entry["bottomDelta"]})
-            checks.check(f"{label} 푸터 위치 그대로", abs(entry["footerDelta"]) <= SIZE_TOLERANCE_PX,
-                         entry["footerDelta"])
-            checks.check(f"{label} 카드 크기 그대로",
-                         abs(card["cardSize"]["width"] - prior["cardSize"]["width"]) <= SIZE_TOLERANCE_PX
-                         and abs(card["cardSize"]["height"] - prior["cardSize"]["height"]) <= SIZE_TOLERANCE_PX,
-                         entry["sizeBefore"])
-            checks.check(f"{label} 「볼 것」 상자 자연 넘침 1px 이하",
-                         card["askNaturalOverflow"] is None
-                         or card["askNaturalOverflow"] <= ALIGN_TOLERANCE_PX,
-                         entry["askNaturalOverflow"])
-        summary["board"][key] = deltas
     return summary
 
 
@@ -990,7 +827,7 @@ def main() -> int:
     parser.add_argument("--out", required=True, help="캡처와 JSON을 저장할 디렉토리")
     parser.add_argument("--phase", required=True, choices=("before", "after"),
                         help="프로덕션 변경 전/후 번들")
-    parser.add_argument("--compare", help="비교할 반대 단계의 duo-settings-postit.json")
+    parser.add_argument("--compare", help="비교할 반대 단계의 duo-settings-card-panel.json")
     parser.add_argument("--baseline", help="안전 영역 변경 전 측정 JSON")
     args = parser.parse_args()
 
@@ -1001,7 +838,7 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
 
     result: dict = {"phase": args.phase, "passed": False, "errors": [], "warnings": [],
-                    "settings": {}, "nested": {}, "tab": {}, "board": {}}
+                    "settings": {}, "nested": {}, "tab": {}, "cardPanel": {}}
     checks = Checks()
     try:
         with BundleServer(bundle_root) as server:
@@ -1028,11 +865,12 @@ def main() -> int:
                         checks.check(f"settings/{theme} 듀오 세로와 가로 제목 위 여백 동일",
                                      abs(portrait_gap - landscape_gap) <= ALIGN_TOLERANCE_PX,
                                      {'portrait': portrait_gap, 'landscape': landscape_gap})
-                    for frame_id, width, height in BOARD_FRAMES:
+                    for frame_id, width, height, expected_lines in CARD_PANEL_FRAMES:
                         for theme in THEMES:
-                            key = f"board/{frame_id}/{theme}"
-                            result["board"][key] = capture_board(
-                                browser, base, out, frame_id, width, height, theme, checks)
+                            key = f"card-panel/{frame_id}/{theme}"
+                            result["cardPanel"][key] = capture_card_panel(
+                                browser, base, out, frame_id, width, height, expected_lines,
+                                theme, checks)
                 finally:
                     browser.close()
         if args.compare:
@@ -1047,7 +885,7 @@ def main() -> int:
     finally:
         result["checks"] = checks.entries
         result["generatedAt"] = datetime.now(timezone.utc).isoformat()
-        (out / "duo-settings-postit.json").write_text(
+        (out / "duo-settings-card-panel.json").write_text(
             json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps({
         "phase": result["phase"],

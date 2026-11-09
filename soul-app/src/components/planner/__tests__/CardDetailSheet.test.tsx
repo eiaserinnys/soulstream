@@ -183,6 +183,20 @@ test('제목과 양 끝 단추가 내용 끝선에 맞는 스타일을 쓴다', 
     left: StyleSheet.flatten(screen.getByLabelText('뒤로').props.style).marginLeft,
   }).toEqual({ flex: undefined, flexGrow: undefined, maxWidth: '100%', lines: 3, right: -overhang, left: -overhang });
 });
+test('두 줄 제목도 첫 줄이 오른쪽 동작 단추와 같은 자리에서 시작한다', async () => {
+  const api = { getCard: jest.fn().mockResolvedValue(detail) };
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByTestId('card-detail-complete-visual')).toBeTruthy());
+  const tokens = renderHook(() => useTokens()).result.current;
+  const header = screen.getByTestId('card-detail-header');
+  const rowChild = header.children[0];
+  if (typeof rowChild === 'string') throw new Error('머리 첫 자식이 제목 줄이 아니다');
+  const titleRow = StyleSheet.flatten(rowChild.props.style);
+  const titleSurface = StyleSheet.flatten(screen.getByTestId('card-detail-title-surface').props.style);
+  expect(titleRow).toMatchObject({ flexDirection: 'row', alignItems: 'flex-start', gap: tokens.uiSpacing.sm });
+  expect(titleSurface.paddingVertical).toBeCloseTo(
+    (tokens.hitTarget.min - tokens.foundation.typography.section.lineHeight) / 2);
+});
 test('키보드가 열리면 상황판을 숨기고 커멘트 입력에 필요한 공간을 확보한다', async () => {
   const scrollToEnd = jest.spyOn(ScrollView.prototype, 'scrollToEnd').mockImplementation(() => {});
   const withNow = { ...detail, card: { ...card, now: { text: '상황판', turn: 'user' as const, ask: '확인', updatedAt: card.updatedAt, sessionId: 's1' } } };
