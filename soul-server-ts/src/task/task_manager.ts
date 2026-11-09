@@ -56,6 +56,11 @@ import {
 } from "./claude_runtime_control.js";
 import { TaskClaudeRuntimeControlRoute } from "./task_claude_runtime_control_route.js";
 import { resolveModelPresetSelection } from "./task_model_preset.js";
+import {
+  IsolationPolicyUnavailableError,
+  resolveExecutionSecurityDecision,
+} from "../security/session_execution_policy.js";
+import type { ExecutionSecurityDecision } from "../security/session_isolation_contract.js";
 import type { PrepareAttachmentInput } from "./prepare_attachment_input.js";
 import {
   resolveEffortPreset,
@@ -346,6 +351,45 @@ export class TaskManager {
 
   getTask(sessionId: string): Task | undefined {
     return this.tasks.get(sessionId);
+  }
+
+  /**
+   * 이번 턴의 실행 보안 판정. LLM 프록시 세션은 실행 계층을 지나지 않으므로
+   * 어떤 읽기도 하지 않고 즉시 `null`을 돌려준다. 판정에 필요한 읽기가
+   * 실패하면 턴을 진행하지 않고 `ISOLATION_POLICY_UNAVAILABLE`로 거절한다.
+   */
+  async resolveExecutionSecurity(
+    sessionId: string,
+    effectiveTurnPreset: string | null | undefined,
+  ): Promise<ExecutionSecurityDecision | null> {
+    let task = this.tasks.get(sessionId);
+    if (!task) {
+      try {
+        task = await this.loadEvictedTask(sessionId) ?? undefined;
+      } catch (error) {
+        throw new IsolationPolicyUnavailableError(sessionId, error);
+      }
+    }
+    if (!task) throw new IsolationPolicyUnavailableError(sessionId);
+    if (task.sessionType === "llm") return null;
+
+    return await resolveExecutionSecurityDecision(sessionId, effectiveTurnPreset, {
+      platform: process.platform,
+      readSession: (id) => this.db.getSessionCallerChain(id),
+      readNodePreset: (agentId) => {
+        if (agentId === null) return null;
+        return this.agentRegistry?.get(agentId)?.default_preset ?? null;
+      },
+      isTrustedPreset: (presetId) => {
+        if (!this.modelCatalog) return false;
+        try {
+          return this.modelCatalog.resolve(presetId).trusted_execution === true;
+        } catch (error) {
+          if (error instanceof UnknownModelPresetError) return false;
+          throw error;
+        }
+      },
+    });
   }
 
   async getScheduleResumeState(sessionId: string): Promise<{

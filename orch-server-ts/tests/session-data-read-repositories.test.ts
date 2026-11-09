@@ -68,6 +68,63 @@ describe("session-data read repositories", () => {
     expect(summaryQuery!.indexOf("LIMIT")).toBeLessThan(summaryQuery!.indexOf("FROM events"));
   });
 
+  it("reads the caller chain in one recursive query with a cycle guard", async () => {
+    const { sql, calls } = createSql((text) => {
+      if (!text.includes("WITH RECURSIVE chain")) return [];
+      return [
+        {
+          session_id: "s1",
+          caller_session_id: "caller",
+          model_preset: "claude-opus",
+          model: "opus",
+          agent_id: "seosoyoung",
+          depth: 0,
+        },
+        {
+          session_id: "caller",
+          caller_session_id: null,
+          model_preset: null,
+          model: null,
+          agent_id: "roselin",
+          depth: 1,
+        },
+      ];
+    });
+    const repository = new SessionReadRepository(sql);
+
+    const chain = await repository.getSessionCallerChain("s1");
+
+    expect(chain.root).toEqual({
+      session_id: "s1",
+      caller_session_id: "caller",
+      model_preset: "claude-opus",
+      model: "opus",
+      agent_id: "seosoyoung",
+    });
+    expect(chain.ancestors).toEqual([{
+      session_id: "caller",
+      caller_session_id: null,
+      model_preset: null,
+      model: null,
+      agent_id: "roselin",
+    }]);
+    const queries = calls.filter((call) => call.text.includes("WITH RECURSIVE chain"));
+    expect(queries).toHaveLength(1);
+    expect(queries[0]?.text).toContain("visited");
+    expect(queries[0]?.text).toContain("depth <");
+    expect(queries[0]?.values).toEqual(["s1"]);
+  });
+
+  it("returns an empty chain root when the session row is missing", async () => {
+    const { sql } = createSql(() => []);
+    const repository = new SessionReadRepository(sql);
+
+    await expect(repository.getSessionCallerChain("missing")).resolves.toEqual({
+      root: null,
+      ancestors: [],
+    });
+  });
+
   it("owns event read operations and preserves payload contracts", async () => {
     const now = new Date("2026-08-06T00:00:00.000Z");
     const event = {

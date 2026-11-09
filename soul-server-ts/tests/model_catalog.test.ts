@@ -5,10 +5,12 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 
+import { DEFAULT_MODEL_CATALOG } from "@soulstream/model-catalog";
 import {
   loadModelCatalog,
   ModelCatalog,
   ModelCatalogSchema,
+  parseModelCatalogYaml,
 } from "../src/model_catalog.js";
 
 import { makeTempDirSync } from "./helpers/temp_dir.js";
@@ -383,4 +385,67 @@ it("advertises the Antigravity usage provider for both account presets", () => {
     { id: "gemini-3.8-flash", usage_provider: "antigravity" },
     { id: "gemini-4-argon", usage_provider: "antigravity" },
   ]);
+});
+
+describe("model preset trusted execution", () => {
+  const trustedPresetIds = [
+    "claude-opus",
+    "claude-fable",
+    "codex-6-astra",
+    "codex-6.1-sol",
+    "codex-6-sol",
+    "gemini-4-argon",
+  ];
+
+  it("marks exactly the six trusted presets in the example catalog", () => {
+    const catalog = new ModelCatalog(
+      path.resolve(process.cwd(), "config/model-catalog.yaml.example"),
+    );
+    expect(
+      catalog.list()
+        .filter((preset) => preset.trusted_execution === true)
+        .map((preset) => preset.id)
+        .sort(),
+    ).toEqual([...trustedPresetIds].sort());
+  });
+
+  it("marks exactly the six trusted presets in the shared default catalog", () => {
+    expect(
+      DEFAULT_MODEL_CATALOG.presets
+        .filter((preset) => preset.trusted_execution === true)
+        .map((preset) => preset.id)
+        .sort(),
+    ).toEqual([...trustedPresetIds].sort());
+  });
+
+  it("rejects a string trusted_execution at the schema boundary", () => {
+    expect(() => parseModelCatalogYaml(`
+presets:
+  - id: weak
+    label: Weak
+    backend: claude
+    model: weak
+    trusted_execution: "true"
+`)).toThrow(ZodError);
+  });
+
+  it("accepts only boolean trusted_execution values", () => {
+    const catalog = parseModelCatalogYaml(`
+presets:
+  - id: trusted
+    label: Trusted
+    backend: claude
+    model: opus
+    trusted_execution: true
+  - id: isolated
+    label: Isolated
+    backend: claude
+    model: sonnet
+    trusted_execution: false
+`);
+    expect(catalog.presets).toMatchObject([
+      { id: "trusted", trusted_execution: true },
+      { id: "isolated", trusted_execution: false },
+    ]);
+  });
 });

@@ -1,7 +1,7 @@
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
-import type { AgentRegistry } from "../../src/agent_registry.js";
+import { AgentRegistry } from "../../src/agent_registry.js";
 import type { FlatFolderContentHostClient } from "../../src/catalog/flat_folder_content_host_client.js";
 import type { SessionMutationHost } from "../../src/control_plane/persistence_host_clients.js";
 import type { SessionDB } from "../../src/db/session_db.js";
@@ -19,6 +19,10 @@ import type {
 } from "../../src/task/task_intervention_route.js";
 import { TaskManager as ProductionTaskManager } from "../../src/task/task_manager.js";
 import type { TaskCreationHook } from "../../src/task/task_creation_hook.js";
+import type { SessionExecutionChain } from "../../src/db/session_db_types.js";
+import {
+  ISOLATION_POLICY_UNAVAILABLE,
+} from "../../src/security/session_execution_policy.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
@@ -2817,5 +2821,219 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
     expect(task.interventionQueue).toHaveLength(1);
     expect(task.interventionQueue[0].text).toBe("새 메시지");
     expect(task.prompt).toBe("새 메시지");
+  });
+});
+
+describe("TaskManager.resolveExecutionSecurity", () => {
+  function makeSecurityManager(options: {
+    chain?: SessionExecutionChain;
+    chainError?: Error;
+    defaultPreset?: string | null;
+  } = {}) {
+    const mocks = makeMocks();
+    const getSessionCallerChain = vi.fn(async (sessionId: string) => {
+      if (options.chainError) throw options.chainError;
+      return options.chain ?? {
+        root: {
+          session_id: sessionId,
+          caller_session_id: null,
+          model_preset: null,
+          model: null,
+          agent_id: null,
+        },
+        ancestors: [],
+      } satisfies SessionExecutionChain;
+    });
+    (mocks.db as unknown as {
+      getSessionCallerChain: typeof getSessionCallerChain;
+    }).getSessionCallerChain = getSessionCallerChain;
+    const catalog = {
+      resolve: (id: string) => {
+        if (id === "claude-opus") {
+          return {
+            id,
+            label: "Claude - Opus",
+            backend: "claude" as const,
+            model: "opus",
+            trusted_execution: true,
+          };
+        }
+        if (id === "deepseek-flash-4.1") {
+          return {
+            id,
+            label: "DeepSeek - Flash 4.1",
+            backend: "claude" as const,
+            model: "deepseek-v4.1-flash",
+          };
+        }
+        throw new UnknownModelPresetError(id);
+      },
+    };
+    const agentRegistry = new AgentRegistry([{
+      id: "seosoyoung",
+      name: "서소영",
+      backend: "claude",
+      workspace_dir: "/tmp/seosoyoung",
+      default_preset: options.defaultPreset ?? null,
+    }]);
+    const tm = new TaskManager(
+      "n",
+      mocks.db,
+      mocks.broadcaster,
+      silentLogger,
+      undefined, // persistence
+      undefined, // contextBuilder
+      agentRegistry,
+      undefined, // folderContentHost
+      undefined, // taskCreationHook
+      false, // deliveryRuntimeV2Enabled
+      undefined, // sessionRuntimeControl
+      catalog as never, // modelCatalog
+    );
+    return { tm, mocks, getSessionCallerChain };
+  }
+
+  it("returns null for an LLM session without reading the caller chain", async () => {
+    const { tm, getSessionCallerChain } = makeSecurityManager();
+    await tm.createTask({
+      agentSessionId: "sess-llm",
+      prompt: "x",
+      profileId: "seosoyoung",
+      sessionType: "llm",
+    });
+
+    await expect(
+      tm.resolveExecutionSecurity("sess-llm", "deepseek-flash-4.1"),
+    ).resolves.toBeNull();
+    expect(getSessionCallerChain).not.toHaveBeenCalled();
+  });
+
+  it("reads the caller chain once and keeps a trusted CLI session full", async () => {
+    const { tm, getSessionCallerChain } = makeSecurityManager({
+      chain: {
+        root: {
+          session_id: "sess-cli",
+          caller_session_id: null,
+          model_preset: "claude-opus",
+          model: "opus",
+          agent_id: "seosoyoung",
+        },
+        ancestors: [],
+      },
+    });
+    await tm.createTask({
+      agentSessionId: "sess-cli",
+      prompt: "x",
+      profileId: "seosoyoung",
+      sessionType: "claude",
+      modelPreset: "claude-opus",
+    });
+
+    await expect(
+      tm.resolveExecutionSecurity("sess-cli", "claude-opus"),
+    ).resolves.toEqual({
+      sessionId: "sess-cli",
+      tier: "full",
+      policyVersion: 1,
+      reason: "trusted",
+      presetId: "claude-opus",
+    });
+    expect(getSessionCallerChain).toHaveBeenCalledTimes(1);
+    expect(getSessionCallerChain).toHaveBeenCalledWith("sess-cli");
+  });
+
+  it("inherits restriction from an untrusted caller", async () => {
+    const { tm } = makeSecurityManager({
+      chain: {
+        root: {
+          session_id: "sess-cli",
+          caller_session_id: "caller-weak",
+          model_preset: "claude-opus",
+          model: "opus",
+          agent_id: "seosoyoung",
+        },
+        ancestors: [{
+          session_id: "caller-weak",
+          caller_session_id: null,
+          model_preset: "deepseek-flash-4.1",
+          model: null,
+          agent_id: "roselin",
+        }],
+      },
+    });
+    await tm.createTask({
+      agentSessionId: "sess-cli",
+      prompt: "x",
+      profileId: "seosoyoung",
+      modelPreset: "claude-opus",
+    });
+
+    await expect(
+      tm.resolveExecutionSecurity("sess-cli", "claude-opus"),
+    ).resolves.toMatchObject({ tier: "restricted", reason: "inherited" });
+  });
+
+  it("resolves an unselected caller through the agent profile default", async () => {
+    const { tm } = makeSecurityManager({
+      defaultPreset: "claude-opus",
+      chain: {
+        root: {
+          session_id: "sess-cli",
+          caller_session_id: "caller-unselected",
+          model_preset: "claude-opus",
+          model: "opus",
+          agent_id: "seosoyoung",
+        },
+        ancestors: [{
+          session_id: "caller-unselected",
+          caller_session_id: null,
+          model_preset: null,
+          model: null,
+          agent_id: "seosoyoung",
+        }],
+      },
+    });
+    await tm.createTask({
+      agentSessionId: "sess-cli",
+      prompt: "x",
+      profileId: "seosoyoung",
+      modelPreset: "claude-opus",
+    });
+
+    await expect(
+      tm.resolveExecutionSecurity("sess-cli", "claude-opus"),
+    ).resolves.toMatchObject({ tier: "full", reason: "trusted" });
+  });
+
+  it("rejects with the unavailable policy error when the chain read fails", async () => {
+    const cause = new Error("host read failed");
+    const { tm } = makeSecurityManager({ chainError: cause });
+    await tm.createTask({
+      agentSessionId: "sess-cli",
+      prompt: "x",
+      profileId: "seosoyoung",
+      modelPreset: "claude-opus",
+    });
+
+    await expect(
+      tm.resolveExecutionSecurity("sess-cli", "claude-opus"),
+    ).rejects.toMatchObject({
+      name: "IsolationPolicyUnavailableError",
+      code: ISOLATION_POLICY_UNAVAILABLE,
+      sessionId: "sess-cli",
+      cause,
+    });
+  });
+
+  it("rejects with the unavailable policy error when the session is not loaded", async () => {
+    const { tm, getSessionCallerChain } = makeSecurityManager();
+
+    await expect(
+      tm.resolveExecutionSecurity("sess-missing", "claude-opus"),
+    ).rejects.toMatchObject({
+      code: ISOLATION_POLICY_UNAVAILABLE,
+      sessionId: "sess-missing",
+    });
+    expect(getSessionCallerChain).not.toHaveBeenCalled();
   });
 });

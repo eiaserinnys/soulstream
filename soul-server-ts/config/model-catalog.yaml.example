@@ -55,6 +55,7 @@ presets:
     model: opus
     supported_efforts: [low, medium, high, xhigh, max]
     default_effort: xhigh
+    trusted_execution: true
   - id: claude-fable
     label: Claude - Fable
     backend: claude
@@ -62,12 +63,14 @@ presets:
     usage_model_id: fable
     supported_efforts: [low, medium, high, xhigh, max]
     default_effort: high
+    trusted_execution: true
   - id: codex-6-astra
     label: Codex - 6 Astra
     backend: codex
     model: gpt-6-astra
     supported_efforts: [low, medium, high, xhigh, max, ultra]
     default_effort: medium
+    trusted_execution: true
   # 261001: GPT-6 계열 세 프리셋을 실제 노드 카탈로그에 맞춰 추가했다.
   # gpt-6.1-sol은 codex 0.159.0부터 model/list에 나타난다. 그보다 낮은 CLI에서는
   # "계정에서 지원하지 않는 모델"로 거절되므로 CLI를 먼저 올린다.
@@ -77,12 +80,14 @@ presets:
     model: gpt-6.1-sol
     supported_efforts: [low, medium, high, xhigh, max, ultra]
     default_effort: high
+    trusted_execution: true
   - id: codex-6-sol
     label: Codex - 6 Sol
     backend: codex
     model: gpt-6-sol
     supported_efforts: [low, medium, high, xhigh, max, ultra]
     default_effort: xhigh
+    trusted_execution: true
   - id: codex-6-luna
     label: Codex - 6 Luna
     backend: codex
@@ -168,6 +173,7 @@ presets:
     model: gemini-4-argon
     supported_efforts: [low, medium, high]
     default_effort: high
+    trusted_execution: true
 
   - id: opencode-deepseek-v4.1-flash-free
     label: "OpenCode - DeepSeek V4.1 Flash Free"

@@ -11,6 +11,8 @@ import {
 import {
   applyModelPresetRuntime,
   effectiveTaskBackend,
+  resolveEffectiveTurnPreset,
+  resolveModelPresetSelection,
   resolveOpenCodeMcpToolAllowlist,
 } from "../../src/task/task_model_preset.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -178,5 +180,135 @@ describe("task model preset runtime", () => {
     });
     expect(task.modelPresetBackend).toBeUndefined();
     expect(effectiveTaskBackend(task, agent)).toBe("codex");
+  });
+});
+
+describe("effective turn preset", () => {
+  const claudeOpus: ModelPreset = {
+    id: "claude-opus",
+    label: "Claude - Opus",
+    backend: "claude",
+    model: "opus",
+    trusted_execution: true,
+  };
+  const codex61: ModelPreset = {
+    id: "codex-6.1-sol",
+    label: "Codex - 6.1 Sol",
+    backend: "codex",
+    model: "gpt-6.1-sol",
+    trusted_execution: true,
+  };
+  const deepseek: ModelPreset = {
+    id: "deepseek-flash-4.1",
+    label: "DeepSeek - Flash 4.1",
+    backend: "claude",
+    model: "deepseek-v4.1-flash",
+  };
+  const presets: Record<string, ModelPreset> = {
+    "claude-opus": claudeOpus,
+    "codex-6.1-sol": codex61,
+    "deepseek-flash-4.1": deepseek,
+    "codex-sol": {
+      id: "codex-sol",
+      label: "Codex - 5.6 Sol",
+      backend: "codex",
+      model: "gpt-5.6-sol",
+    },
+  };
+  const catalog = { resolve: (id: string) => presets[id]! };
+  const seosoyoung: AgentProfile = {
+    ...agent,
+    id: "seosoyoung",
+    name: "서소영",
+    backend: "claude",
+    default_preset: "claude-opus",
+  };
+
+  it("returns the same preset as the existing execution path for an explicit request", () => {
+    const request = { model: null, modelPreset: "codex-6.1-sol" };
+
+    expect(resolveEffectiveTurnPreset({ request }, agent, catalog)).toEqual(
+      resolveModelPresetSelection(request, agent, catalog),
+    );
+  });
+
+  it("uses the stored preset when the request omits a selection", () => {
+    const stored = { model: "gpt-6.1-sol", modelPreset: "codex-6.1-sol" };
+
+    expect(
+      resolveEffectiveTurnPreset({ stored }, agent, catalog),
+    ).toEqual(resolveModelPresetSelection(stored, agent, catalog));
+  });
+
+  it("keeps the seosoyoung claude-opus default path when nothing is selected", () => {
+    expect(
+      resolveEffectiveTurnPreset(
+        { request: { model: null, modelPreset: null }, stored: { model: null, modelPreset: null } },
+        seosoyoung,
+        catalog,
+      )?.id,
+    ).toBe("claude-opus");
+    expect(resolveEffectiveTurnPreset({}, seosoyoung, catalog)?.id).toBe("claude-opus");
+  });
+
+  it("does not treat a stored raw model as a preset selection", () => {
+    expect(
+      resolveEffectiveTurnPreset(
+        { stored: { model: "opus", modelPreset: null } },
+        seosoyoung,
+        catalog,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("does not let a request raw model fall through to the stored preset", () => {
+    expect(
+      resolveEffectiveTurnPreset(
+        {
+          request: { model: "raw-model", modelPreset: null },
+          stored: { model: "gpt-6.1-sol", modelPreset: "codex-6.1-sol" },
+        },
+        agent,
+        catalog,
+      ),
+    ).toBeUndefined();
+  });
+
+  it("drops a removed stored preset to no selection", () => {
+    const resolve = vi.fn(() => {
+      throw new UnknownModelPresetError("removed-preset");
+    });
+
+    expect(
+      resolveEffectiveTurnPreset(
+        { stored: { model: "persisted-model", modelPreset: "removed-preset" } },
+        agent,
+        { resolve },
+      ),
+    ).toBeUndefined();
+  });
+
+  it("keeps the existing unknown-preset error for an explicit request", () => {
+    expect(() =>
+      resolveEffectiveTurnPreset(
+        { request: { model: null, modelPreset: "removed-preset" } },
+        agent,
+        {
+          resolve: () => {
+            throw new UnknownModelPresetError("removed-preset");
+          },
+        },
+      ),
+    ).toThrow(UnknownModelPresetError);
+  });
+
+  it("returns no preset when request, stored value, and agent default are absent", () => {
+    expect(
+      resolveEffectiveTurnPreset(
+        { request: { model: null, modelPreset: null }, stored: { model: null, modelPreset: null } },
+        { ...agent, default_preset: null },
+        catalog,
+      ),
+    ).toBeUndefined();
   });
 });

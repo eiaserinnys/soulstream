@@ -36,6 +36,7 @@ describe("SessionDataHostClient", () => {
       "turn_excerpt",
       "resume_context",
       "generation_checkpoint_material",
+      "caller_chain",
     ]);
   });
 
@@ -88,6 +89,7 @@ describe("SessionDataHostClient", () => {
           childSessionTotal: 0,
           totals: { turnSummaries: 0 },
         },
+        caller_chain: { root: null, ancestors: [] },
       };
       return new Response(JSON.stringify(result[operation ?? ""]), { status: 200 });
     });
@@ -124,6 +126,7 @@ describe("SessionDataHostClient", () => {
       () => client.getTurnExcerpt("s1"),
       () => client.getResumeContext("s1", 15),
       () => client.getGenerationCheckpointMaterial("s1", { recentEventLimit: 20, unsummarizedEventLimit: 200 }),
+      () => client.getSessionCallerChain("s1"),
     ];
 
     for (const call of calls) await call();
@@ -379,5 +382,38 @@ describe("SessionDataHostClient", () => {
 
       expect(dump.sessions[0]?.metadata).toEqual(metadata);
     });
+  });
+
+  it("reads the caller chain as one host operation", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      root: {
+        session_id: "session-a",
+        caller_session_id: "session-b",
+        model_preset: "deepseek-flash-4.1",
+        model: null,
+        agent_id: "roselin",
+      },
+      ancestors: [{
+        session_id: "session-b",
+        caller_session_id: null,
+        model_preset: null,
+        model: null,
+        agent_id: "seosoyoung",
+      }],
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new SessionDataHostClient({
+      orch: { baseUrl: "http://orchestrator.test", headers: {} },
+      logger,
+    });
+
+    const chain = await client.getSessionCallerChain("session-a");
+
+    expect(chain.root?.model_preset).toBe("deepseek-flash-4.1");
+    expect(chain.ancestors).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0][0])).toContain("/caller_chain");
+    const init = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(String(init.body))).toEqual({ args: ["session-a"] });
   });
 });

@@ -232,6 +232,25 @@ export interface SessionRow {
   worktree_id?: string | null;
 }
 
+/** 호출자 계보를 한 번의 host 읽기로 가져올 때의 행. */
+export interface SessionExecutionChainRow {
+  session_id: string;
+  caller_session_id: string | null;
+  model_preset: string | null;
+  model: string | null;
+  agent_id: string | null;
+}
+
+/**
+ * `caller_chain` host 연산의 반환. `root`가 null이면 세션 행 자체가 없고,
+ * `ancestors`는 가까운 호출자부터 차례로 담긴다. 순환에서 끊겼거나 더 읽을
+ * 호출자가 남아 있으면 마지막 행의 `caller_session_id`가 비어 있지 않다.
+ */
+export interface SessionExecutionChain {
+  root: SessionExecutionChainRow | null;
+  ancestors: SessionExecutionChainRow[];
+}
+
 export interface RunningSessionSummaryRow {
   session_id: string;
   display_name: string | null;
