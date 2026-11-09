@@ -1,0 +1,50 @@
+name: portable-node
+
+on:
+  pull_request:
+    paths:
+      - "portable-node/**"
+      - ".github/workflows/portable-node.yml"
+  push:
+    branches: [main]
+    paths:
+      - "portable-node/**"
+      - ".github/workflows/portable-node.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: 실행기 계약 시험(가짜 오케스트레이터·로컬 bare 리포)
+        run: node --test --test-concurrency=2 "portable-node/tests/*.test.mjs"
+
+  bootstrap:
+    name: bootstrap (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: start.sh 기동 확인
+        if: runner.os != 'Windows'
+        run: sh portable-node/start.sh --self-test
+      - name: start.cmd·bootstrap.ps1 기동 확인
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: portable-node\start.cmd --self-test

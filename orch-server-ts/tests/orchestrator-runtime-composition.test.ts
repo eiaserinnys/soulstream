@@ -86,12 +86,14 @@ describe("orchestrator runtime composition harness", () => {
     const service = pageServiceDouble();
     const routeOptions = {
       authBearerToken: "test-token",
+      nodeCredentials: null,
       createService: vi.fn(() => service),
       browserReads: service,
       resolveBrowserUser: vi.fn(async () => ({ email: "user@example.com" })),
     };
     const runtime = createOrchestratorRuntimeComposition({
       config,
+      nodeCredentials: null,
       pageYjsRoutes: routeOptions,
     });
     await runtime.app.ready();
@@ -118,6 +120,7 @@ describe("orchestrator runtime composition harness", () => {
 
   it("shares node websocket registration, transport, and session command routing", async () => {
     const runtime = createOrchestratorRuntimeComposition({
+      nodeCredentials: null,
       config,
       nowMs: () => 1_700_000_000_000,
       requestIdGenerator: ({ sequence, commandType }) =>
@@ -208,6 +211,7 @@ describe("orchestrator runtime composition harness", () => {
 
   it("bridges direct websocket session updates into the session SSE replay broadcaster", async () => {
     const runtime = createOrchestratorRuntimeComposition({
+      nodeCredentials: null,
       config,
       sessionSseInstanceId: "runtime-session-stream",
       loadSessionSnapshot: async () => ({ sessions: [] }),
@@ -259,6 +263,7 @@ describe("orchestrator runtime composition harness", () => {
     const onNodeEventSinkError = vi.fn();
     const laterSink = vi.fn();
     const runtime = createOrchestratorRuntimeComposition({
+      nodeCredentials: null,
       config,
       onNodeEventSinkError,
       additionalNodeEventSinks: [
@@ -294,6 +299,7 @@ describe("orchestrator runtime composition harness", () => {
       total: 1,
     }));
     const runtime = createOrchestratorRuntimeComposition({
+      nodeCredentials: null,
       config,
       sessionSseInstanceId: "runtime-session-stream",
       loadSessionSnapshot,
@@ -334,6 +340,7 @@ describe("orchestrator runtime composition harness", () => {
 
   it("uses registry session cache for GET sessions and the default session stream snapshot", async () => {
     const runtime = createOrchestratorRuntimeComposition({
+      nodeCredentials: null,
       config,
       sessionSseInstanceId: "runtime-session-stream",
       sseReplayOnlyForTests: true,
@@ -393,6 +400,7 @@ describe("orchestrator runtime composition harness", () => {
 
   it("shares registry node state with GET nodes, node stream snapshot, and node stream events", async () => {
     const runtime = createOrchestratorRuntimeComposition({
+      nodeCredentials: null,
       config,
       nowMs: () => 1_700_000_000_000,
       sseReplayOnlyForTests: true,

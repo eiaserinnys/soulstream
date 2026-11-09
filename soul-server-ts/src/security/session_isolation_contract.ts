@@ -125,6 +125,8 @@ export interface IsolationPolicy {
     writableWorkspaceRelativeDirectories: [".local/tmp", ".local/artifacts"];
     /** 노드별 실제 경로, 비밀 값 없음. */
     additionalSensitiveRoots: string[];
+    /** 가린 루트 아래에서 읽기만 허용할 디렉터리. 노드별 실제 경로. */
+    readOnlyReexposedPaths: string[];
   };
   testDatabases: { nodeId: string; hostPort: number; sandboxPort: number }[];
   network: {
@@ -239,6 +241,20 @@ export type WrapSessionCommand = (
   plan: SessionIsolationSpec,
 ) => SessionCommand;
 
+/** 경로 자체의 상태. 심볼릭 링크는 따라가지 않는다. */
+export interface HostPathFact {
+  kind: "file" | "directory" | "symlink" | "other";
+  dev: number;
+  ino: number;
+  /** 하드링크 수. 1이면 다른 경로와 inode를 공유하지 않는다. */
+  nlink: number;
+}
+
+export interface HostDirectoryEntry {
+  name: string;
+  kind: HostPathFact["kind"];
+}
+
 /** B2가 쓰는 호스트 부수효과 포트. */
 export interface IsolationHostPorts {
   ensureDirectory(path: string, mode: number): Promise<void>;
@@ -257,6 +273,38 @@ export interface IsolationHostPorts {
     servers: readonly ResolvedMcpServer[],
     policy: IsolationPolicy,
   ): Promise<readonly ResolvedMcpServer[]>;
+  /** 메타데이터만 읽는다. 파일 내용(비밀)은 읽지 않는다. 없으면 null. */
+  lstatPath(path: string): Promise<HostPathFact | null>;
+  /** 이름과 종류만 읽는다. 파일 내용은 읽지 않는다. */
+  listDirectory(path: string): Promise<HostDirectoryEntry[]>;
+  /** 링크 대상 경로만 읽는다. 대상 파일의 내용은 읽지 않는다. */
+  readSymlink(path: string): Promise<string | null>;
+  /** 커널 표식만 확인한다. 입력이나 헤더로 바꿀 수 없다. */
+  detectWsl(): Promise<boolean>;
+  /** 기존 내용을 자르지 않고 lock 파일을 연다. 일반 파일이 아니면 거절한다. */
+  ensureLockFile(path: string, mode: number): Promise<void>;
+  /** 링크만 만든다. 대상 파일의 내용은 읽지 않는다. */
+  ensureSymlink(target: string, path: string): Promise<void>;
+  /** 파일 내용을 SHA-512로 요약한다. 원문은 돌려주지 않는다. */
+  hashFileSha512(path: string): Promise<string>;
+  /** git common 디렉터리의 절대 경로만 조회한다. 파일 내용은 읽지 않는다. */
+  resolveGitCommonDir(repositoryPath: string): Promise<string>;
+  /** 이 노드의 식별자만 조회한다. 비밀을 읽지 않는다. */
+  resolveNodeId(): Promise<string>;
+  /** pnpm 주 저장소 경로만 조회한다. 없으면 null. 비밀을 읽지 않는다. */
+  resolveMainPackageStorePath(): Promise<string | null>;
+  /**
+   * 제한 세션에 줄 Claude OAuth 토큰. 다른 파일 내용은 읽지 않으며,
+   * 토큰은 메모리에서만 쓰고 로그·직렬화에 넣지 않는다.
+   */
+  readClaudeOauthToken(): Promise<string>;
+  /** 공통 파일 디렉터리 경로만 조회한다. 내용(비밀)은 읽지 않는다. */
+  resolveAgentCommonFilesDirectory(): Promise<string | null>;
+  /**
+   * 서버 dotenv가 `.env.soul-server-ts`를 읽는 디렉터리 경로만 조회한다.
+   * env 파일 내용(비밀)은 읽지 않는다. 없으면 null.
+   */
+  resolveServiceEnvironmentDirectory(): Promise<string | null>;
 }
 
 /** B1이 쓰는 프로세스 포트. 실제 프로세스를 다루는 곳은 이 어댑터뿐이다. */

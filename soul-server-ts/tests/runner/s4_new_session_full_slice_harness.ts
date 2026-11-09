@@ -116,6 +116,14 @@ export class ProductionFullSliceHarness {
       `await import(${JSON.stringify(pathToFileURL(childFixturePath).href)});\n`,
     );
     await writeFile(
+      join(artifactDirectory, "session-netns-helper.py"),
+      "#!/usr/bin/env python3\n",
+    );
+    await writeFile(
+      join(artifactDirectory, "session_netns_network.py"),
+      "#!/usr/bin/env python3\n",
+    );
+    await writeFile(
       agentsConfigPath,
       [
         "agents:",

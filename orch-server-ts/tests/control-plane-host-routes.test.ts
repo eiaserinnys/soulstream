@@ -23,7 +23,7 @@ describe("control-plane host routes", () => {
   it("authenticates sweep candidates and carries the node sweeper actor on removal operations", async () => {
     const methods = { sweepCandidates: vi.fn(async () => []), beginRemove: vi.fn(async () => ({})), restoreReady: vi.fn(async () => ({})), finishRemove: vi.fn(async () => ({})) };
     const app = Fastify(); apps.push(app);
-    registerPersistenceHostRoutes(app, { authBearerToken: token, environment: "production", repositoryProvider: async () => ({ worktrees: methods }) as unknown as PersistenceHostRepositories });
+    registerPersistenceHostRoutes(app, { nodeCredentials: null, authBearerToken: token, environment: "production", repositoryProvider: async () => ({ worktrees: methods }) as unknown as PersistenceHostRepositories });
     for (const [operation, method] of [["sweep_candidates", "sweepCandidates"], ["begin_remove", "beginRemove"], ["restore_ready", "restoreReady"], ["finish_remove", "finishRemove"]] as const) {
       const payload = { args: [operation === "sweep_candidates" ? { node_id: "node-a" } : { sweeper_node_id: "node-a", worktree_id: "wt" }] };
       const url = `/api/worktrees/host/${operation}`;
@@ -38,6 +38,7 @@ describe("control-plane host routes", () => {
     const snapshot={capturedAt:"2026-10-02T00:00:00Z",total:0,omitted:0,cards:[]};
     const getAssignedCardContext=vi.fn(async()=>snapshot),app=Fastify();apps.push(app);
     registerFolderControlPlaneHostRoute(app,{
+      nodeCredentials: null,
       authBearerToken:token,environment:"production",serviceProvider:async()=>({}) as FolderControlPlaneService,
       cardServiceProvider:async()=>({getAssignedCardContext}) as unknown as CardControlPlaneService,
     });
@@ -52,6 +53,7 @@ describe("control-plane host routes", () => {
     const results = [{ ref: "#412", kind: "card", id: "card-uuid", title: "제목" }, { ref: "#9999", error: "#9999 번호의 카드가 없습니다." }];
     const resolveReferences = vi.fn(async () => results), app = Fastify(); apps.push(app);
     registerFolderControlPlaneHostRoute(app, {
+      nodeCredentials: null,
       authBearerToken: token, environment: "production", serviceProvider: async () => ({}) as FolderControlPlaneService,
       cardServiceProvider: async () => ({ resolveReferences }) as unknown as CardControlPlaneService,
     });
@@ -79,6 +81,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({ eventReads: { searchEvents } }) as unknown as PersistenceHostRepositories,
     });
@@ -121,6 +124,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({ storyReads: { searchSessionDigests } }) as unknown as PersistenceHostRepositories,
     });
@@ -156,6 +160,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({ historySearch: { search: searchHistory } }) as unknown as PersistenceHostRepositories,
     });
@@ -181,6 +186,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({
         sessionReads: { getSession: vi.fn(async () => ({ sessionId: "session-1" })) },
@@ -215,6 +221,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerScheduleHostRoute(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({ claimDueSchedules }) as unknown as SoulstreamScheduleRepository,
     });
@@ -242,6 +249,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerScheduleHostRoute(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({ hasContinuousLimitWindow }) as unknown as SoulstreamScheduleRepository,
     });
@@ -276,6 +284,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerScheduleHostRoute(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({ createScheduleIfAbsent }) as unknown as SoulstreamScheduleRepository,
     });
@@ -311,6 +320,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerScheduleHostRoute(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({ touchNodeHeartbeat }) as unknown as SoulstreamScheduleRepository,
     });
@@ -331,6 +341,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({
         sessionMutations: { acknowledgeReview },
@@ -354,6 +365,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({
         sessionMutations: { setModelSelection },
@@ -391,6 +403,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({
         claudeBackgroundTasks: { terminalize },
@@ -434,6 +447,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({
         claudeBackgroundTasks: { activeForSession },
@@ -457,6 +471,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({
         claudeBackgroundTasks: { resolveGeneration },
@@ -488,6 +503,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({
         claudeBackgroundTasks: {
@@ -571,6 +587,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({
         deliveries: { notifications },
@@ -622,6 +639,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({
         claudeTranscripts: { appendClaudeTranscriptEntriesIdempotent },
@@ -678,6 +696,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({
         claudeTranscripts: {
@@ -735,6 +754,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({
         claudeTranscripts: { appendClaudeTranscriptEntries },
@@ -763,6 +783,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({
         sessionMutations: { transitionSession },
@@ -843,6 +864,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => repositories,
     });
@@ -888,6 +910,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({
         sessionMutations: { deleteSession },
@@ -935,6 +958,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({
         worktrees: { beginRemove },
@@ -958,6 +982,7 @@ describe("control-plane host routes", () => {
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
+      nodeCredentials: null,
       authBearerToken: token,
       repositoryProvider: async () => ({}) as PersistenceHostRepositories,
     });

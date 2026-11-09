@@ -182,7 +182,7 @@ export async function buildPersistentSettingsApp(
       },
       commands,
       createSession: (request, body, log) =>
-        executeCreateSessionRoute({ ...commands, modelPresetAvailability: presets }, request, body, log),
+        executeCreateSessionRoute({ nodeCredentials: null, ...commands, modelPresetAvailability: presets }, request, body, log),
       presets,
       profiles: {
         listAgentProfiles: async (nodeId) =>

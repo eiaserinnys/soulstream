@@ -20,7 +20,11 @@ export function resolveMcpExecutionOptions(_app: FastifyInstance, options: McpHo
 export function registerMcpHostRoutes(app: FastifyInstance, options: McpHostOptions): void {
   const executionOptions = resolveMcpExecutionOptions(app, options);
   app.post<{ Params: { tool: string } }>("/api/mcp/host/:tool", async (request, reply) => {
-    const authorization = verifyServiceBearerAuthorization(request.headers.authorization, options.authBearerToken, options.environment);
+    const authorization = verifyServiceBearerAuthorization(request.headers.authorization, {
+      configuredToken: options.authBearerToken,
+      environment: options.environment,
+      nodeCredentials: options.nodeCredentials,
+    });
     if (!authorization.ok) return reply.code(authorization.statusCode).send({ detail: { error: { code: "UNAUTHORIZED", message: `bearer token is ${authorization.reason}` } } });
     const parsed = requestSchema.safeParse(request.body);
     if (!parsed.success) return reply.code(422).send({ detail: { error: { code: "INVALID_MCP_REQUEST", message: parsed.error.message } } });

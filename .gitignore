@@ -37,6 +37,9 @@ unified-dashboard/e2e/test-results/
 .env.*.local
 orch-server-ts/config/turn-summary.local.yaml
 
+# portable-node 상태(자격·런타임·config·클론)
+portable-node/.state/
+
 # Runtime data (soulstream_runtime에서만 존재)
 logs/
 /data/

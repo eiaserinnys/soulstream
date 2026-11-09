@@ -15,6 +15,7 @@ import type { ModelCatalog } from "../model_catalog.js";
 import type { SessionPageBindingService } from "../page/session_page_binding_service.js";
 import type { RealtimeBroker } from "../realtime/realtime_broker.js";
 import type { RunnerRecoveryCoordinator } from "../runner/runner_recovery_coordinator.js";
+import type { RunnerOrphanReaper } from "../runner/runner_orphan_reaper.js";
 import type { RunnerStateHostLock } from "../runner/runner_state_host_lock.js";
 import type { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import type { ServerInstance } from "../server.js";
@@ -68,6 +69,7 @@ export interface WorkerComposition extends TaskRuntimeComposition {
   eventOutboxPump: EventOutboxPump;
   eventOutboxPumpMux: EventOutboxPumpMux;
   runnerRecoveryCoordinator?: RunnerRecoveryCoordinator;
+  runnerOrphanReaper?: RunnerOrphanReaper;
   runnerStateHostOwnership?: RunnerStateHostLock;
   upstreamRegistrationReady: Promise<void>;
   createUpstreamAdapter(): UpstreamAdapter;

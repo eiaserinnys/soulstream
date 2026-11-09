@@ -38,6 +38,7 @@ const policy: IsolationPolicy = {
     isolatedCacheRelativeRoot: ".local/share/soulstream/isolated-cache",
     writableWorkspaceRelativeDirectories: [".local/tmp", ".local/artifacts"],
     additionalSensitiveRoots: ["/home/eias/.ssh"],
+    readOnlyReexposedPaths: [],
   },
   testDatabases: [{ nodeId: "node-a", hostPort: 5432, sandboxPort: 15432 }],
   network: {
@@ -87,6 +88,19 @@ describe("session isolation contract", () => {
       prepareGitHubCredential: vi.fn(async () => ({ GH_TOKEN: "fake" })),
       issueRestrictedCredential: vi.fn(async (sessionId: string) => `ssr1.${sessionId}`),
       sanitizeMcpServers: vi.fn(async (servers) => servers),
+      lstatPath: vi.fn(async () => null),
+      listDirectory: vi.fn(async () => []),
+      readSymlink: vi.fn(async () => null),
+      detectWsl: vi.fn(async () => false),
+      ensureLockFile: vi.fn(async () => {}),
+      ensureSymlink: vi.fn(async () => {}),
+      hashFileSha512: vi.fn(async () => ""),
+      resolveGitCommonDir: vi.fn(async (repositoryPath: string) => `${repositoryPath}/.git`),
+      resolveNodeId: vi.fn(async () => "node-a"),
+      resolveMainPackageStorePath: vi.fn(async () => null),
+      readClaudeOauthToken: vi.fn(async () => "token"),
+      resolveAgentCommonFilesDirectory: vi.fn(async () => null),
+      resolveServiceEnvironmentDirectory: vi.fn(async () => null),
     };
     const input: IsolationPreparationInput = {
       decision: {
@@ -209,7 +223,7 @@ describe("session isolation contract", () => {
     expect(wrapSessionCommand(original, { ...spec, enabled: false })).toEqual(original);
   });
 
-  it("is not wired into the turn path", () => {
+  it("keeps the complete contract importer inventory", () => {
     const sourceRoot = path.resolve(process.cwd(), "src");
     const modules = ["session_execution_policy.js", "session_isolation_contract.js"];
     const importers: string[] = [];
@@ -230,10 +244,39 @@ describe("session isolation contract", () => {
     };
     walk(sourceRoot);
 
+    // B3b가 계약 타입을 러너 공장·턴 게이트·조립 경로까지 연결했다. 아래 목록은
+    // 계약을 import하는 전체 모듈 인벤토리이며, 새 연결이 생기면 함께 갱신한다.
     expect(importers.sort()).toEqual([
       "engine/protocol.ts",
+      "engine/session_isolation.ts",
+      "mcp/auth.ts",
+      "mcp/isolation_tool_guards.ts",
+      "mcp/request_context.ts",
+      "mcp/tool_access.ts",
+      "mcp/tools/node_services_observation.ts",
+      "mcp/transport.ts",
       "runner/frame_protocol.ts",
+      "runner/runner_isolation_config.ts",
+      "runner/runner_process_isolation.ts",
+      "runner/session_auth_preparation.ts",
+      "runner/session_filesystem_cache.ts",
+      "runner/session_filesystem_git.ts",
+      "runner/session_filesystem_locks.ts",
+      "runner/session_filesystem_masks.ts",
+      "runner/session_filesystem_plan.ts",
+      "runner/session_filesystem_policy.ts",
+      "runner/session_isolation_host_ports.ts",
+      "runner/session_isolation_preflight.ts",
+      "runner/session_isolation_process.ts",
+      "runner/session_netns_helper.ts",
+      "runner/session_network_policy.ts",
+      "runtime/session_isolation_composition.ts",
+      "security/restricted_mcp_config.ts",
       "security/session_execution_policy.ts",
+      "security/session_isolation_policy.ts",
+      "security/session_isolation_runtime.ts",
+      "security/session_isolation_turn.ts",
+      "task/task_executor.ts",
       "task/task_manager.ts",
       "task/task_models.ts",
     ]);

@@ -108,6 +108,18 @@ import {
 } from "./node/node_snapshot_routes.js";
 import { registerNodeWsRoute, type NodeWsRouteOptions } from "./node/ws_route.js";
 import {
+  registerNodePairingRoutes,
+  type NodePairingRouteOptions,
+} from "./node_credentials/pairing_routes.js";
+import {
+  registerNodeReleaseRoutes,
+  type NodeReleaseRouteOptions,
+} from "./node_releases/node_release_routes.js";
+import {
+  registerNodeBootstrapRoutes,
+  type NodeBootstrapRouteOptions,
+} from "./node_bootstrap/node_bootstrap_routes.js";
+import {
   registerPushRoutes,
   type PushRouteOptions,
 } from "./push/push_routes.js";
@@ -216,6 +228,9 @@ export type CreateAppOptions = {
   contextBundleRoutes?: ContextBundleRouteOptions;
   nodeWsRoute?: NodeWsRouteOptions;
   nodeSnapshotRoutes?: NodeSnapshotRouteOptions;
+  nodePairRoutes?: NodePairingRouteOptions;
+  nodeReleaseRoutes?: NodeReleaseRouteOptions;
+  nodeBootstrapRoutes?: NodeBootstrapRouteOptions;
   sessionActionCommandRoutes?: SessionActionCommandRouteOptions;
   sessionBackgroundScheduleRoutes?: SessionBackgroundScheduleRouteOptions;
   sessionResumeAfterLimitRoutes?: SessionResumeAfterLimitRouteOptions;
@@ -297,6 +312,15 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.nodeSnapshotRoutes !== undefined) {
     registerNodeSnapshotRoutes(app, options.nodeSnapshotRoutes);
+  }
+  if (options.nodePairRoutes !== undefined) {
+    registerNodePairingRoutes(app, options.nodePairRoutes);
+  }
+  if (options.nodeReleaseRoutes !== undefined) {
+    registerNodeReleaseRoutes(app, options.nodeReleaseRoutes);
+  }
+  if (options.nodeBootstrapRoutes !== undefined) {
+    registerNodeBootstrapRoutes(app, options.nodeBootstrapRoutes);
   }
   if (options.sessionCommandRoutes !== undefined) {
     registerSessionCommandRoutes(app, {

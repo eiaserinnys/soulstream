@@ -1,12 +1,11 @@
-import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
-import dotenv from "dotenv";
 
 import { parseEnv } from "../src/config.js";
 import { hashArtifactSet } from "../src/runner/runner_release_materializer.js";
+import { readDeclaredEnvDocument } from "../src/release/declared_env_document.js";
 import {
   declaredExecutablePath,
   deploymentEnvIdentity,
@@ -16,6 +15,10 @@ import {
   executableIdentity,
   hashReleaseFileSet,
 } from "../src/release/release_artifacts.js";
+import {
+  migrationSchemaGeneration,
+  wireSchemaGeneration,
+} from "../src/release/release_generations.js";
 import { buildReleaseManifest, canonicalJson } from "../src/release/release_manifest.js";
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -37,15 +40,14 @@ const envFilePath = resolve(
     ?? process.env.HANIEL_SERVICE_ENV_FILE?.trim()
     ?? resolve(repositoryRoot, ".env.soul-server-ts"),
 );
-const declaredEnv = await readDeclaredEnv(envFilePath);
+const envDocument = await readDeclaredEnvDocument(envFilePath);
+if (!envDocument.present) {
+  // No declared document: the service that starts this bundle must also have none.
+  process.stdout.write(`release manifest: no deployment env document at ${envFilePath}\n`);
+}
+const declaredEnv = envDocument.declared;
 const env = parseEnv({ ...process.env, ...declaredEnv });
 const runnerReleaseId = await hashArtifactSet(runnerRoot);
-const migrationManifestRaw = await readFile(migrationManifestPath, "utf8");
-const migrationManifest = JSON.parse(migrationManifestRaw) as {
-  migrations: Array<{ id: string; sha256: string }>;
-};
-const latestMigration = migrationManifest.migrations.at(-1);
-if (!latestMigration) throw new Error("migration manifest is empty");
 
 const manifest = buildReleaseManifest({
   sourceCommit: execFileSync("git", ["rev-parse", "HEAD"], {
@@ -55,8 +57,10 @@ const manifest = buildReleaseManifest({
   hostBundleHash: await hashReleaseFileSet(distRoot, HOST_RELEASE_ARTIFACTS),
   runnerReleaseId,
   runnerArtifactHash: runnerReleaseId,
-  schemaGeneration: `${latestMigration.id}:${latestMigration.sha256}:${sha256(migrationManifestRaw)}`,
-  wireGeneration: sha256(await readFile(wireSchemaPath)),
+  schemaGeneration: migrationSchemaGeneration(
+    await readFile(migrationManifestPath, "utf8"),
+  ),
+  wireGeneration: wireSchemaGeneration(await readFile(wireSchemaPath)),
   nodeVersion: process.versions.node,
   platform: process.platform,
   arch: process.arch,
@@ -77,21 +81,6 @@ await writeFile(resolve(distRoot, "release-manifest.json"), canonicalJson(
 process.stdout.write(
   `release manifest written: ${manifest.manifest_id} cohort=${manifest.release_cohort_id}\n`,
 );
-
-async function readDeclaredEnv(path: string): Promise<Record<string, string>> {
-  try {
-    return dotenv.parse(await readFile(path, "utf8"));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    // No declared document: the service that starts this bundle must also have none.
-    process.stdout.write(`release manifest: no deployment env document at ${path}\n`);
-    return {};
-  }
-}
-
-function sha256(value: string | Buffer): string {
-  return `sha256-${createHash("sha256").update(value).digest("hex")}`;
-}
 
 function optionValue(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);

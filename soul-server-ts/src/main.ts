@@ -283,6 +283,7 @@ async function main(): Promise<void> {
     }
     runtime.worktreeSweeper?.stop();
     runtime.sessionPageBindingService.stop();
+    await runtime.runnerOrphanReaper?.stop();
     await runtime.runnerRecoveryCoordinator?.stop();
     try {
       await runtime.claudeLoginService?.shutdown();

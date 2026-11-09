@@ -53,6 +53,7 @@ import { resolveProducedAttachmentExecutionContext } from "../attachments/produc
 import { EVENT_ARCHIVE_HOST_DEADLINE_MS } from "./runner_event_archive.js";
 import type { createProducedAttachmentRegistration } from "../attachments/produced_attachment_registration.js";
 import { RunnerClaudeAccountTurnStateStore } from "./claude_account_turn_state_store.js";
+import { applyRestrictedRunnerIsolation, withRecoveredRunnerIsolation, type RunnerIsolationHost } from "./runner_process_isolation.js";
 
 type RunnerEnv = Pick<Env,
   | "SOUL_RUNNER_STATE_DIR"
@@ -113,6 +114,7 @@ export interface RunnerProcessRuntimeFactoryOptions {
       RunnerProcessSpawner,
       "terminate" | "retireTerminalRegistration"
     >>;
+  isolationHost?: RunnerIsolationHost; // restricted 러너 준비 경로. 없으면 fail-closed다.
 }
 
 export function createRunnerProcessRuntimeFactory(
@@ -213,15 +215,12 @@ export function createRunnerProcessRuntimeFactory(
       rolloutRoot: codexHome ? join(codexHome, "sessions") : null,
       childProcessEnv,
       prepareSnapshot: async () => await options.releasePool.ensureRelease(release),
+    })).then(async (base) => await applyRestrictedRunnerIsolation(base, {
+      task, agent, isolationHost: options.isolationHost,
     }));
-    return createRuntime(
-      task,
-      agent,
-      backend,
-      snapshots,
-      spawnInput,
-      spawnInput.then(async (input) => await spawner.spawn(input)),
-    );
+    const spawnedProcess = spawnInput.then(async (input) => await spawner.spawn(input));
+    void spawnedProcess.catch(() => undefined); // 준비 실패 시 디스패처가 못 받는 거부를 관측만 한다.
+    return createRuntime(task, agent, backend, snapshots, spawnInput, spawnedProcess);
   }) as RunnerProcessRuntimeFactory;
   // Adoption, live terminal replay, and offline replay reuse the registered
   // child/config rather than resolving current profile MCP settings.
@@ -240,7 +239,7 @@ export function createRunnerProcessRuntimeFactory(
       options.releasePool,
       storedRuntimeMcpConfig(config),
     );
-    return createRuntime(
+    return withRecoveredRunnerIsolation(createRuntime(
       task,
       config.agent,
       config.backend,
@@ -251,8 +250,9 @@ export function createRunnerProcessRuntimeFactory(
         : adoptRegisteredRunner(spawner, registration, options),
       mode,
       phaseObservation,
-    );
+    ), config.isolation);
   };
+  factory.isolationSupported = options.isolationHost !== undefined; // host가 주입됐을 때만
   return factory;
 }
 

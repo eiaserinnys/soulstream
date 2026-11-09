@@ -7,6 +7,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 
 import type { ResolvedMcpServer } from "../mcp_config_service.js";
+import type { RunnerIsolationChildConfig } from "../runner/runner_isolation_config.js";
 import { sseEventsFromRunnerFrames } from "../runner/engine_event_stream.js";
 import {
   DEFAULT_RUNNER_REQUEST_TIMEOUT_MS,
@@ -145,6 +146,10 @@ export interface ClaudeRunOptions {
     request: ClaudeAccountRateLimitSwitchRequest,
     signal: AbortSignal,
   ) => Promise<ClaudeAccountRateLimitSwitchDecision>;
+  /** restricted 러너 격리 설정. 있으면 CLI를 netns 헬퍼로만 띄운다. */
+  isolation?: RunnerIsolationChildConfig;
+  /** 격리 러너가 CLI 시작 전에 실패했을 때 그 턴을 실패시킨다. */
+  onIsolationFailure?: (error: Error) => void;
 }
 
 export interface ClaudeAccountRateLimitSwitchRequest {
@@ -207,6 +212,7 @@ export interface ClaudeAdapterConfig {
   transient429MaxRetries?: number;
   /** 지정하면 메시지 파싱 대신 이 대기 시간(ms)을 쓴다. */
   transient429RetryDelayMs?: number;
+  isolation?: RunnerIsolationChildConfig;
 }
 
 export class ClaudeEngineAdapter
@@ -240,6 +246,7 @@ export class ClaudeEngineAdapter
   > & { acquireAfterClose?: (sessionId: string) => Promise<ClaudeClient> };
   private readonly transient429MaxRetries: number;
   private readonly transient429RetryDelayMs?: number;
+  private readonly isolation?: RunnerIsolationChildConfig;
   private activeClient: ClaudeClient | null = null;
   private activeExecution: Promise<void> | null = null;
   private persistentSessionId: string | null = null;
@@ -269,6 +276,7 @@ export class ClaudeEngineAdapter
     this.transient429MaxRetries =
       config.transient429MaxRetries ?? DEFAULT_CLAUDE_TRANSIENT_429_MAX_RETRIES;
     this.transient429RetryDelayMs = config.transient429RetryDelayMs;
+    this.isolation = config.isolation;
     this.logger = logger;
   }
 
@@ -1067,6 +1075,7 @@ export class ClaudeEngineAdapter
       ...(this.sessionStoreFlush !== undefined ? { sessionStoreFlush: this.sessionStoreFlush } : {}),
       ...(this.loadTimeoutMs !== undefined ? { loadTimeoutMs: this.loadTimeoutMs } : {}),
       ...(this.trackChildExit ? { trackChildExit: true } : {}),
+      ...(this.isolation ? { isolation: this.isolation } : {}),
     };
   }
 

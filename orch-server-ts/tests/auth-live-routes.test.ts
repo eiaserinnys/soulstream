@@ -55,7 +55,7 @@ describe("auth routes with live providers", () => {
         httpClient: { post: vi.fn(), get: vi.fn() },
         jwt,
         nativeVerifier: createLiveAuthNativeVerifier({ configProvider: liveConfig, googleClient }),
-        resolveTokenAccess: createLiveAuthTokenResolver({ configProvider: liveConfig, jwt }),
+        resolveTokenAccess: createLiveAuthTokenResolver({ nodeCredentials: null, configProvider: liveConfig, jwt }),
         authorizeUser: createLiveAuthUserAuthorizer({ configProvider: liveConfig }),
       },
     });
@@ -125,7 +125,7 @@ describe("auth routes with live providers", () => {
         httpClient: { post: vi.fn(), get: vi.fn() },
         jwt,
         nativeVerifier: vi.fn(),
-        resolveTokenAccess: createLiveAuthTokenResolver({ configProvider: liveConfig, jwt }),
+        resolveTokenAccess: createLiveAuthTokenResolver({ nodeCredentials: null, configProvider: liveConfig, jwt }),
         authorizeUser: createLiveAuthUserAuthorizer({ configProvider: liveConfig }),
       },
     });

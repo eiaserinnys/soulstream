@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import {
   createInput,
   serializeJob,
@@ -14,6 +15,7 @@ export type RecurringJobHostRouteOptions = {
   readonly service: RecurringJobService;
   readonly authBearerToken: string;
   readonly environment?: string;
+  readonly nodeCredentials: NodeCredentialResolver | null;
 };
 
 const operations = new Set([
@@ -41,8 +43,11 @@ export function registerRecurringJobHostRoutes(
     async (request, reply) => {
       const authorization = verifyServiceBearerAuthorization(
         request.headers.authorization,
-        options.authBearerToken,
-        options.environment,
+        {
+          configuredToken: options.authBearerToken,
+          environment: options.environment,
+          nodeCredentials: options.nodeCredentials,
+        },
       );
       if (!authorization.ok) return hostError(reply, authorization.statusCode, "UNAUTHORIZED", `bearer token is ${authorization.reason}`);
       const result = await executeRecurringJobHostOperation(options.service, request.params.operation, request.body);

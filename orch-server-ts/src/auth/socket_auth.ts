@@ -2,12 +2,15 @@ import type { IncomingHttpHeaders } from "node:http";
 
 import { AUTH_COOKIE_NAME } from "./auth_routes.js";
 import { verifyServiceBearerAuthorization } from "./service_bearer.js";
+import type { NodeCredentialResolver, NodePrincipal } from "../node_credentials/types.js";
 
 export const DASHBOARD_AUTH_COOKIE_NAME = AUTH_COOKIE_NAME;
 
 export interface SocketAuthConfig {
   authBearerToken: string;
   environment: string;
+  /** Node pairing credentials; `null` is explicit outside production composition. */
+  nodeCredentials: NodeCredentialResolver | null;
   dashboardAuthEnabled: boolean;
   resolveDashboardUserFromHeaders: (
     headers: Pick<IncomingHttpHeaders, "authorization" | "cookie">,
@@ -26,6 +29,8 @@ export interface SocketAuthInput {
 export interface SocketAuthResult {
   source: "bearer" | "cookie" | "development";
   subject: string;
+  /** Present only when a node pairing credential authenticated the socket. */
+  principal?: NodePrincipal;
 }
 
 export async function authenticateSocketConnection({
@@ -38,11 +43,16 @@ export async function authenticateSocketConnection({
     : requestHeaders.authorization;
   const serviceBearer = verifyServiceBearerAuthorization(
     serviceAuthorization,
-    config.authBearerToken,
-    config.environment,
+    {
+      configuredToken: config.authBearerToken,
+      environment: config.environment,
+      nodeCredentials: config.nodeCredentials,
+    },
   );
   if (serviceBearer.ok && !serviceBearer.developmentBypass) {
-    return { source: "bearer", subject: "bearer" };
+    return serviceBearer.principal === undefined
+      ? { source: "bearer", subject: "bearer" }
+      : { source: "bearer", subject: "bearer", principal: serviceBearer.principal };
   }
 
   if (config.dashboardAuthEnabled) {

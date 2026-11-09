@@ -146,7 +146,7 @@ describe("production operations logging", () => {
     const app = createApp({
       config: productionConfig,
       logDestination: capture.stream,
-      nodeWsRoute: { registry: new InMemoryNodeRegistry() },
+      nodeWsRoute: { nodeCredentials: null, registry: new InMemoryNodeRegistry() },
     });
 
     await app.ready();

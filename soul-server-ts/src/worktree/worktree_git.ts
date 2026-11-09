@@ -1,6 +1,7 @@
 import {
   existsSync,
   lstatSync,
+  mkdirSync,
   readdirSync,
   rmSync,
   readFileSync,
@@ -100,6 +101,11 @@ export class WorktreeGit {
     mode: "new" | "existing";
     worktreeId: string;
     startPoint?: string;
+    /**
+     * restricted 세션 전용 destination root(서버 계산). 미지정 시 projectsRoot.
+     * public MCP 인자가 아니며 도구 입력으로 노출하지 않는다.
+     */
+    baseDirectory?: string;
   }): Promise<WorktreeListEntry> {
     const repo = this.resolveRepository(input.repoId);
     await this.validateBranch(repo, input.branch);
@@ -109,7 +115,9 @@ export class WorktreeGit {
       .replace(/[^A-Za-z0-9._-]+/g, "-")
       .replace(/^-+|-+$/g, "")
       .slice(0, 48) || "worktree";
-    const path = join(this.projectsRoot, `${basename(repo)}--${slug}-${suffix}`);
+    const baseDirectory = input.baseDirectory ?? this.projectsRoot;
+    mkdirSync(baseDirectory, { recursive: true });
+    const path = join(baseDirectory, `${basename(repo)}--${slug}-${suffix}`);
     const hasOrigin = await this.hasRemote(repo, "origin");
     if (hasOrigin) await this.git(repo, ["fetch", "--prune", "origin"]);
     let args: string[];

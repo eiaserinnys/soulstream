@@ -1,10 +1,17 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { createInterface } from "node:readline";
+import type { Readable, Writable } from "node:stream";
 import type { Logger } from "pino";
+import type { RunnerIsolationChildConfig } from "../../runner/runner_isolation_config.js";
 import {
   cleanUpAntigravityDescendants,
   snapshotAntigravityDescendants,
 } from "../antigravity/process.js";
+import {
+  type IsolatedChildLaunch,
+  isolationError,
+  launchIsolatedChild,
+} from "../isolated_session_launch.js";
 
 export interface OpenCodeExit {
   code: number | null;
@@ -82,14 +89,32 @@ export function launchOpenCodeProcess(options: {
   env: NodeJS.ProcessEnv;
   input: string;
   logger: Pick<Logger, "warn">;
+  isolation?: RunnerIsolationChildConfig;
 }) {
-  const child = spawn(options.executablePath, options.args, {
-    cwd: options.cwd,
-    env: options.env,
-    shell: false,
-    detached: true,
-    stdio: ["pipe", "pipe", "pipe"],
-  });
+  let launch: IsolatedChildLaunch | undefined;
+  let child: ChildProcess;
+  if (options.isolation) {
+    launch = launchIsolatedChild({
+      isolation: options.isolation,
+      command: options.executablePath,
+      args: options.args,
+      cwd: options.cwd,
+      env: options.env,
+      stdio: ["pipe", "pipe", "pipe"],
+      logger: options.logger,
+    });
+    child = launch.child;
+  } else {
+    child = spawn(options.executablePath, options.args, {
+      cwd: options.cwd,
+      env: options.env,
+      shell: false,
+      detached: true,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+  }
+  // 두 경로 모두 stdio=pipe로 띄운다. 파이프가 없으면 프로그래밍 오류다.
+  const io = pipedChildStreams(child);
   let failure: string | undefined;
   let interrupted = false;
   let initialized = false;
@@ -97,34 +122,49 @@ export function launchOpenCodeProcess(options: {
   let rateLimitDetected = false;
   let rateLimitSessionId: string | undefined;
   let descendants: ReturnType<typeof snapshotAntigravityDescendants> = [];
-  const lines = createInterface({ input: child.stdout, crlfDelay: Infinity });
+  const lines = createInterface({ input: io.stdout, crlfDelay: Infinity });
   const iterator = lines[Symbol.asyncIterator]();
-  child.stdin.on("error", (error: Error) => { failure ??= error.message; });
+  io.stdin.on("error", (error: Error) => { failure ??= error.message; });
   child.on("error", () => { failure ??= "OpenCode CLI failed to start"; });
 
   const done = new Promise<OpenCodeExit>((resolve) => {
     child.once("close", (code, signal) => {
-      closed = true;
-      try {
-        const terminatedProcessCount = cleanUpAntigravityDescendants(descendants);
-        if (terminatedProcessCount > 0) options.logger.warn(
-          { terminatedProcessCount }, "OpenCode interrupted tool descendants received SIGTERM",
-        );
-      } catch {
-        failure ??= "OpenCode tool descendant cleanup failed";
-      }
-      resolve({
-        code,
-        signal,
-        ...(failure ? { error: failure } : {}),
-        rateLimitDetected,
-        ...(rateLimitSessionId ? { rateLimitSessionId } : {}),
+      void readySettled.then(() => {
+        closed = true;
+        try {
+          const terminatedProcessCount = cleanUpAntigravityDescendants(descendants);
+          if (terminatedProcessCount > 0) options.logger.warn(
+            { terminatedProcessCount }, "OpenCode interrupted tool descendants received SIGTERM",
+          );
+        } catch {
+          failure ??= "OpenCode tool descendant cleanup failed";
+        }
+        resolve({
+          code,
+          signal,
+          ...(failure ? { error: failure } : {}),
+          rateLimitDetected,
+          ...(rateLimitSessionId ? { rateLimitSessionId } : {}),
+        });
       });
     });
   });
 
+  void launch?.ready.catch((error: unknown) => {
+    failure ??= isolationError(error).message;
+  });
+  // ready 판정이 끝난 뒤에 close를 확정한다. 격리 준비 실패가 종료 코드에
+  // 묻히지 않고 exit.error로 드러나야 한다.
+  const readySettled = launch
+    ? launch.ready.then(() => undefined, () => undefined)
+    : Promise.resolve();
+
   function signalGroup(): boolean {
     if (closed || !child.pid) return false;
+    if (launch) {
+      void launch.dispose();
+      return true;
+    }
     descendants = snapshotAntigravityDescendants(child.pid);
     try {
       process.kill(-child.pid, "SIGINT");
@@ -147,7 +187,7 @@ export function launchOpenCodeProcess(options: {
     return initialized ? signalGroup() : true;
   }
 
-  const stderrLines = createInterface({ input: child.stderr, crlfDelay: Infinity });
+  const stderrLines = createInterface({ input: io.stderr, crlfDelay: Infinity });
   stderrLines.on("line", (line) => {
     if (rateLimitDetected) return;
     const match = parseOpenCode119RateLimitLogLine(line);
@@ -165,7 +205,7 @@ export function launchOpenCodeProcess(options: {
     }
   }
 
-  child.stdin.end(options.input, "utf8");
+  io.stdin.end(options.input, "utf8");
   return {
     events: events(),
     done,
@@ -173,4 +213,16 @@ export function launchOpenCodeProcess(options: {
     markInitialized,
     interrupt,
   };
+}
+
+function pipedChildStreams(child: ChildProcess): {
+  stdin: Writable;
+  stdout: Readable;
+  stderr: Readable;
+} {
+  const { stdin, stdout, stderr } = child;
+  if (!stdin || !stdout || !stderr) {
+    throw new Error("OpenCode child process was started without piped stdio");
+  }
+  return { stdin, stdout, stderr };
 }

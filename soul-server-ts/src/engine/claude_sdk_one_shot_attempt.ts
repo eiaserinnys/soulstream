@@ -75,6 +75,7 @@ export async function* runClaudeSdkOneShotAttempt(
     signal.addEventListener("abort", abortSdk, { once: true });
   }
 
+  let isolationFailure: Error | undefined;
   const queryOptions = buildClaudeSdkOptions({
     options,
     abortController,
@@ -87,6 +88,15 @@ export async function* runClaudeSdkOneShotAttempt(
     ...(options.trackChildExit
       ? { onChildProcessClosed: (closed) => context.trackChildExit(closed) }
       : {}),
+    ...(options.isolation
+      ? {
+          isolation: options.isolation,
+          onIsolationFailure: (error: Error) => {
+            isolationFailure = error;
+            abortController.abort();
+          },
+        }
+      : {}),
   });
   let query: ClaudeSdkQuery;
   context.setActiveInput(input);
@@ -95,7 +105,8 @@ export async function* runClaudeSdkOneShotAttempt(
   } catch (err) {
     context.closeActiveInput(input);
     signal.removeEventListener("abort", abortSdk);
-    throw context.normalizeExecutionError(err, queryOptions.pathToClaudeCodeExecutable);
+    throw isolationFailure
+      ?? context.normalizeExecutionError(err, queryOptions.pathToClaudeCodeExecutable);
   }
   context.setActiveQuery(query);
   const pump = pumpLegacyClaudeQuery({
@@ -193,7 +204,8 @@ export async function* runClaudeSdkOneShotAttempt(
     await pump;
     return switchRequest;
   } catch (err) {
-    throw context.normalizeExecutionError(err, queryOptions.pathToClaudeCodeExecutable);
+    throw isolationFailure
+      ?? context.normalizeExecutionError(err, queryOptions.pathToClaudeCodeExecutable);
   } finally {
     signal.removeEventListener("abort", abortSdk);
     context.clearActiveQuery(query);

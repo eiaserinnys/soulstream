@@ -1,8 +1,10 @@
 import React from 'react';
+import { StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { OwnedAgentsSettingsSection } from '../OwnedAgentsSettingsSection';
 import * as Clipboard from 'expo-clipboard';
 import type { OwnedAgent, OwnedAgentKey } from '../../../api/ownedAgentsEndpoints';
+import { LIGHT_COLORS } from '../../../theme/colors';
 jest.mock('expo-clipboard', () => ({ setStringAsync: jest.fn().mockResolvedValue(undefined) }));
 
 const credential: OwnedAgentKey = { id: 'k1', createdAt: '2026-10-04T00:00:00Z', lastUsedAt: null, revokedAt: null, isExistingConnection: true };
@@ -44,7 +46,9 @@ test('preserves failed name input, retries, renames and toggles', async () => {
   const screen = render(<OwnedAgentsSettingsSection flattened={false} api={api} />);
   await screen.findByText('아직 등록한 에이전트가 없습니다.');
   fireEvent.press(screen.getByLabelText('에이전트 추가'));
+  expect(StyleSheet.flatten(screen.getByText('저장').props.style).color).toBe(LIGHT_COLORS.textPrimary);
   fireEvent.changeText(screen.getByLabelText('에이전트 이름'), '새 도우미');
+  expect(StyleSheet.flatten(screen.getByText('저장').props.style).color).toBe(LIGHT_COLORS.accentText);
   api.createOwnedAgent.mockRejectedValueOnce(new Error('HTTP 503'));
   fireEvent.press(screen.getByLabelText('저장'));
   await screen.findByText(/HTTP 503/);

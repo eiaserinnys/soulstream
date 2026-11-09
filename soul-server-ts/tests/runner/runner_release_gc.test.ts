@@ -1,4 +1,4 @@
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,6 +14,7 @@ import type {
 } from "../../src/runner/runner_release_materializer.js";
 import {
   BuildArtifactReleaseMaterializer,
+  hashArtifactSet,
   RUNNER_RELEASE_ARTIFACTS,
 } from "../../src/runner/runner_release_materializer.js";
 import { RunnerReleasePool } from "../../src/runner/runner_release_pool.js";
@@ -157,6 +158,8 @@ describe("RunnerReleaseGarbageCollector", () => {
     await mkdir(artifacts, { recursive: true });
     await writeFile(join(artifacts, "package.json"), "{\"type\":\"module\"}\n");
     await writeFile(join(artifacts, "runner_entry.js"), "export const ready = true;\n");
+    await writeFile(join(artifacts, "session-netns-helper.py"), "#!/usr/bin/env python3\n");
+    await writeFile(join(artifacts, "session_netns_network.py"), "# network helper\n");
     const materializer = new BuildArtifactReleaseMaterializer(artifacts);
     const pool = new RunnerReleasePool(join(root, "runner-releases"), materializer);
     const release = await pool.resolveCurrentRelease();
@@ -198,6 +201,69 @@ describe("RunnerReleaseGarbageCollector", () => {
       expect.objectContaining({ releaseId: release.releaseId }),
       "runner release GC retained release because release verification failed",
     );
+  });
+
+  it("removes a fully acknowledged legacy two-artifact release after full verification", async () => {
+    const root = await temporaryDirectory();
+    const artifacts = join(root, "build-artifacts");
+    await mkdir(artifacts, { recursive: true });
+    await writeFile(join(artifacts, "package.json"), "{\"type\":\"module\"}\n");
+    await writeFile(join(artifacts, "runner_entry.js"), "export const ready = true;\n");
+    await writeFile(join(artifacts, "session-netns-helper.py"), "#!/usr/bin/env python3\n");
+    await writeFile(join(artifacts, "session_netns_network.py"), "# network helper\n");
+    const materializer = new BuildArtifactReleaseMaterializer(artifacts);
+    const pool = new RunnerReleasePool(join(root, "runner-releases"), materializer);
+    const current = await pool.resolveCurrentRelease();
+    await pool.ensureRelease(current);
+
+    const legacyArtifacts = ["package.json", "runner_entry.js"];
+    const legacyStaging = join(root, "runner-releases", "legacy-two-artifact");
+    await mkdir(legacyStaging, { recursive: true });
+    await writeFile(join(legacyStaging, "package.json"), "{\"type\":\"module\"}\n");
+    await writeFile(join(legacyStaging, "runner_entry.js"), "export const legacy = true;\n");
+    const legacyId = await hashArtifactSet(legacyStaging, legacyArtifacts);
+    const legacyRoot = join(root, "runner-releases", legacyId);
+    await rename(legacyStaging, legacyRoot);
+    await writeFile(join(legacyRoot, ".runner-release.json"), `${JSON.stringify({
+      schemaVersion: 1,
+      releaseId: legacyId,
+      hashAlgorithm: "sha256",
+      artifacts: legacyArtifacts,
+    })}\n`);
+    const legacy = pool.describe(legacyId);
+
+    const inspect = vi.fn(async (currentRegistration: RunnerRegistration) => ({
+      registration: currentRegistration,
+      acknowledgedThrough: 2,
+      latestDurableSourceSeq: 2,
+      incompleteDurableWork: false,
+      durableRecordCount: 2,
+      unacknowledgedIpcFrameCount: 0,
+      pendingInterventionCount: 0,
+    }));
+    const logger = { info: vi.fn(), warn: vi.fn() };
+    const collector = new RunnerReleaseGarbageCollector(
+      pool,
+      join(root, "runner-state"),
+      logger as never,
+      {
+        scan: vi.fn(async () => ({
+          registrations: [registration({ codeSha: legacyId })],
+          errors: [],
+        })),
+        inspect,
+      },
+    );
+
+    await expect(collector.collect()).resolves.toEqual({
+      removed: [legacyId],
+      retained: [{ releaseId: current.releaseId, reason: "no_final_ack_evidence" }],
+    });
+    expect(logger.warn).not.toHaveBeenCalled();
+    await expect(readFile(join(legacy.releaseRoot, ".runner-release.json")))
+      .rejects.toMatchObject({ code: "ENOENT" });
+    // 남은 prewarmed 릴리스는 0555라 시험 정리 전에 정상 경로로 지운다.
+    await materializer.remove(current);
   });
 
   it("does not fail closed on reserved runner-state infrastructure", async () => {

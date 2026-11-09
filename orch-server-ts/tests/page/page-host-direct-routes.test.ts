@@ -12,6 +12,7 @@ describe("orch-local Page Yjs host operation routes", () => {
   it("requires a service bearer and validates the Zod boundary", async () => {
     const app = Fastify({ logger: false });
     registerPageYjsHostOperationRoutes(app, {
+      nodeCredentials: null,
       service: serviceDouble(),
       authBearerToken: "service-token",
     });
@@ -44,6 +45,7 @@ describe("orch-local Page Yjs host operation routes", () => {
     const service = serviceDouble();
     const app = Fastify({ logger: false });
     registerPageYjsHostOperationRoutes(app, {
+      nodeCredentials: null,
       service,
       authBearerToken: "service-token",
     });
@@ -127,6 +129,7 @@ describe("orch-local Page Yjs host operation routes", () => {
     const service = serviceDouble();
     const app = Fastify({ logger: false });
     registerPageYjsHostOperationRoutes(app, {
+      nodeCredentials: null,
       service,
       authBearerToken: "service-token",
     });
@@ -179,7 +182,7 @@ describe("orch-local Page Yjs host operation routes", () => {
   it("dispatches read operations, strips omitted blocks, and applies backlink defaults", async () => {
     const service = serviceDouble();
     const app = Fastify({ logger: false });
-    registerPageYjsHostOperationRoutes(app, { service, authBearerToken: "service-token" });
+    registerPageYjsHostOperationRoutes(app, { nodeCredentials: null, service, authBearerToken: "service-token" });
     try {
       const headers = { authorization: "Bearer service-token" };
       const page = await app.inject({
@@ -234,7 +237,7 @@ describe("orch-local Page Yjs host operation routes", () => {
     vi.spyOn(service, "getPage")
       .mockRejectedValue(new PageYjsPageNotFoundError("missing-page"));
     const app = Fastify({ logger: false });
-    registerPageYjsHostOperationRoutes(app, { service, authBearerToken: "service-token" });
+    registerPageYjsHostOperationRoutes(app, { nodeCredentials: null, service, authBearerToken: "service-token" });
     try {
       const response = await app.inject({
         method: "POST",
@@ -260,7 +263,7 @@ describe("orch-local Page Yjs host operation routes", () => {
   it("delegates daily get-or-create with agent provenance and no client idempotency key", async () => {
     const service = serviceDouble();
     const app = Fastify({ logger: false });
-    registerPageYjsHostOperationRoutes(app, { service, authBearerToken: "service-token" });
+    registerPageYjsHostOperationRoutes(app, { nodeCredentials: null, service, authBearerToken: "service-token" });
     try {
       const response = await app.inject({
         method: "POST",
@@ -289,6 +292,7 @@ describe("orch-local Page Yjs host operation routes", () => {
       .mockRejectedValueOnce(new Error("write failed"));
     const app = Fastify({ logger: false });
     registerPageYjsHostOperationRoutes(app, {
+      nodeCredentials: null,
       service,
       authBearerToken: "service-token",
     });

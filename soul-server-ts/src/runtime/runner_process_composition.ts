@@ -4,12 +4,14 @@ import type { Env } from "../config.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { ExecutionRegistration } from "../task/execution_registration.js";
+import type { ClaudeBackgroundTaskLifecycle } from "../task/claude_background_task_lifecycle.js";
 import type { RunnerProcessRuntimeFactory } from "../task/task_executor.js";
 import {
   createRunnerProcessRuntimeFactory,
   type RunnerProcessRuntimeFactoryOptions,
 } from "../runner/runner_process_runtime_factory.js";
 import { RunnerRecoveryCoordinator } from "../runner/runner_recovery_coordinator.js";
+import { RunnerOrphanReaper } from "../runner/runner_orphan_reaper.js";
 import { listLiveRunnerSessionIds } from "../runner/runner_process_registry.js";
 import { RunnerRegistrationScanCache } from "../runner/runner_registration_scan_cache.js";
 import { RunnerReleaseGarbageCollector } from "../runner/runner_release_gc.js";
@@ -28,6 +30,15 @@ export interface RunnerProcessComposition {
   hostOwnership: RunnerStateHostLock;
   sessionGarbageCollector: RunnerSessionGarbageCollector;
   closedTailDrainer: ClosedRunnerTailDrainer;
+}
+
+export function composeRunnerOrphanReaper(options: {
+  runnerProcess: RunnerProcessComposition | undefined;
+  logger: Logger;
+  intervalMs: number;
+}): { runnerOrphanReaper?: RunnerOrphanReaper } {
+  if (!options.runnerProcess || process.platform !== "linux") return {};
+  return { runnerOrphanReaper: new RunnerOrphanReaper({ logger: options.logger, intervalMs: options.intervalMs }) };
 }
 
 export type RunnerReconciliationReporter = {
@@ -214,6 +225,15 @@ export function composeRunnerReconciliationReporter(
     },
     waitForRunnerReconciliation: async () => await coordinator.scanOnce(),
   };
+}
+
+/** 백그라운드 수명주기 관측기는 하나뿐이다. 없으면 옵션 자체를 두지 않는다. */
+export function backgroundLifecycleObserver(
+  lifecycle: ClaudeBackgroundTaskLifecycle | undefined,
+): RunnerProcessRuntimeFactoryOptions["observeClaudeRuntime"] {
+  if (!lifecycle) return undefined;
+  return (sessionId, event, idempotencyKey, execution) =>
+    lifecycle.observe(sessionId, event, idempotencyKey, execution);
 }
 
 function required(value: string | undefined, key: string): string {

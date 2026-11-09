@@ -36,6 +36,8 @@ describe("runner process composition feature gate", () => {
     await import("node:fs/promises").then(({ mkdir }) => mkdir(artifacts));
     await writeFile(join(artifacts, "package.json"), '{"type":"module"}\n');
     await writeFile(join(artifacts, "runner_entry.js"), "export const ready = true;\n");
+    await writeFile(join(artifacts, "session-netns-helper.py"), "#!/usr/bin/env python3\n");
+    await writeFile(join(artifacts, "session_netns_network.py"), "#!/usr/bin/env python3\n");
 
     const composed = await composeRunnerProcessRuntime(true, {
       env: {
@@ -65,6 +67,8 @@ describe("runner process composition feature gate", () => {
     await import("node:fs/promises").then(({ mkdir }) => mkdir(artifacts));
     await writeFile(join(artifacts, "package.json"), '{"type":"module"}\n');
     await writeFile(join(artifacts, "runner_entry.js"), "export const ready = true;\n");
+    await writeFile(join(artifacts, "session-netns-helper.py"), "#!/usr/bin/env python3\n");
+    await writeFile(join(artifacts, "session_netns_network.py"), "#!/usr/bin/env python3\n");
     const options = {
       env: {
         SOUL_RUNNER_STATE_DIR: join(root, "state"),

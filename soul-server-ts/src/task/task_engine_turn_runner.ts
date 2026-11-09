@@ -210,6 +210,7 @@ export class TaskEngineTurnRunner {
         usd: 0,
         partial: task.codexThreadId !== undefined,
       },
+      ...(task.executionSecurity ? { executionSecurity: task.executionSecurity } : {}),
       ...(turnInput?.inputUuid ? { inputUuid: turnInput.inputUuid } : {}),
       ...(turnInput?.turnOrigin ? { turnOrigin: turnInput.turnOrigin } : {}),
       ...(turnInput?.imageAttachmentPaths !== undefined
@@ -278,6 +279,9 @@ export class TaskEngineTurnRunner {
         usd: 0,
         partial: task.codexThreadId !== undefined,
       },
+      // 격리 판정은 TaskExecutor가 턴 시작 때 한 번 계산해 task에 둔다.
+      // off거나 LLM 세션이면 필드 자체가 없다.
+      ...(task.executionSecurity ? { executionSecurity: task.executionSecurity } : {}),
       ...(input.inputUuid ? { inputUuid: input.inputUuid } : {}),
       ...(input.runnerInterventionId
         ? { runnerInterventionId: input.runnerInterventionId }

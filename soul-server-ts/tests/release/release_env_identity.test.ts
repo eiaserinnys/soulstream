@@ -51,6 +51,7 @@ const LIVE_SERVICE_AMBIENT: NodeJS.ProcessEnv = {
   PATHEXT: ".COM;.EXE",
   APPDATA: "C:/Users/eias/AppData/Roaming",
   USERPROFILE: "C:/Users/eias",
+  SOUL_RUNNER_OWNER: "123:linux-proc-456",
   JWT_SECRET: "runtime-injected",
   GOOGLE_CLIENT_ID: "runtime-injected-client",
   DASH_USER_PORTRAIT: "/runtime/portrait.png",
@@ -103,6 +104,7 @@ describe("deployment env identity", () => {
       APPDATA: "D:/Other/AppData",
       USERPROFILE: "D:/Other",
       PATHEXT: ".EXE",
+      SOUL_RUNNER_OWNER: "789:linux-proc-987",
     });
 
     expect(rebooted).toBe(buildSideIdentity());
@@ -157,7 +159,7 @@ describe("deployment env identity", () => {
       .filter((key) => releaseEnvAllowlistEntry(key)!.identity_scope === "ambient");
     const hashed = new Set(deploymentIdentityKeys());
 
-    expect(ambient).toEqual(["APPDATA", "CODEX_HOME", "HOME", "PATH", "PATHEXT", "USERPROFILE"]);
+    expect(ambient).toEqual(["APPDATA", "CODEX_HOME", "HOME", "PATH", "PATHEXT", "SOUL_RUNNER_OWNER", "USERPROFILE"]);
     expect(ambient.filter((key) => hashed.has(key))).toEqual([]);
     for (const key of releaseEnvAllowlistKeys()) {
       const entry = releaseEnvAllowlistEntry(key)!;
@@ -190,6 +192,8 @@ describe("release manifest startup verification", () => {
     await writeFile(join(root, "upstream/control_inbox_worker_entry.js"), "// control\n", "utf8");
     await writeFile(join(runnerRoot, "package.json"), '{"type":"module"}\n', "utf8");
     await writeFile(join(runnerRoot, "runner_entry.js"), "// runner\n", "utf8");
+    await writeFile(join(runnerRoot, "session-netns-helper.py"), "#!/usr/bin/env python3\n", "utf8");
+    await writeFile(join(runnerRoot, "session_netns_network.py"), "# network helper\n", "utf8");
 
     const declared = { ...DECLARED_ENV };
     const { hashArtifactSet } = await import("../../src/runner/runner_release_materializer.js");
@@ -252,6 +256,8 @@ describe("release manifest startup verification", () => {
     await writeFile(join(root, "upstream/control_inbox_worker_entry.js"), "// control\n", "utf8");
     await writeFile(join(runnerRoot, "package.json"), '{"type":"module"}\n', "utf8");
     await writeFile(join(runnerRoot, "runner_entry.js"), "// runner\n", "utf8");
+    await writeFile(join(runnerRoot, "session-netns-helper.py"), "#!/usr/bin/env python3\n", "utf8");
+    await writeFile(join(runnerRoot, "session_netns_network.py"), "# network helper\n", "utf8");
 
     const { hashArtifactSet } = await import("../../src/runner/runner_release_materializer.js");
     const { HOST_RELEASE_ARTIFACTS, hashReleaseFileSet } = await import(

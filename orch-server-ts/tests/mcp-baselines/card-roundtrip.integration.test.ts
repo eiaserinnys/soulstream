@@ -34,7 +34,7 @@ describe("card orchestrator MCP roundtrip", () => {
     });
     const options = { cardServiceProvider: async () => cards,
       provider: { listFolders: async () => [{ id: "cards-a" }, { id: "cards-b" }, { id: "claude" }], listSessionAssignments: () => ({}) },
-      accessProvider: createLiveDashboardAccessProvider({ configProvider: {
+      accessProvider: createLiveDashboardAccessProvider({ nodeCredentials: null, configProvider: {
         getConfig: async () => ({ auth_bearer_token: "service-token", environment: "production", google_client_id: "" }),
       } as never, jwt: { verifyToken: async () => null } as never, repository: { findUserByEmail: async () => null } }),
       authBearerToken: "service-token" };

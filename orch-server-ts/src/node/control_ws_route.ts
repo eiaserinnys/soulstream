@@ -7,6 +7,15 @@ import type {
   NodeCommandTransportHub,
 } from "./transport_hub.js";
 import { verifyNodeWsBearer } from "./ws_auth.js";
+import { NODE_ID_MISMATCH_REJECT_REASON } from "./ws_frame_controller.js";
+import type {
+  NodeCredentialResolver,
+  NodePrincipal,
+} from "../node_credentials/types.js";
+import {
+  NODE_CREDENTIAL_REVOKED_CLOSE_CODE,
+  NODE_CREDENTIAL_REVOKED_REASON,
+} from "../node_credentials/revocation.js";
 
 const INVALID_JSON_CLOSE_CODE = 1003;
 const POLICY_VIOLATION_CLOSE_CODE = 1008;
@@ -17,25 +26,43 @@ export function registerNodeControlWsRoute(
   app: FastifyInstance,
   options: {
     registry: InMemoryNodeRegistry;
+    nodeCredentials: NodeCredentialResolver | null;
     transportHub?: NodeCommandTransportHub;
     eventSink?: (events: NodeRegistryEvent[]) => void;
   },
   security: { environment: string; authBearerToken: string },
   registrationTimeoutMs: number,
 ): void {
+  // The principal resolved in preValidation rides the same Fastify request
+  // object into the websocket handler; the value never leaves this route.
+  const principalByRequest = new WeakMap<object, NodePrincipal | null>();
+  const connectionsByCredential = new Map<string, Set<() => void>>();
+  const unsubscribeRevocations = options.nodeCredentials?.onRevoked((principal) => {
+    const closers = connectionsByCredential.get(principal.credential_id);
+    if (closers === undefined) return;
+    for (const close of Array.from(closers)) close();
+  }) ?? undefined;
+  if (unsubscribeRevocations !== undefined) {
+    app.addHook("onClose", async () => {
+      unsubscribeRevocations();
+    });
+  }
   app.get("/ws/node/control", {
     websocket: true,
     preValidation: async (request, reply) => {
       const auth = verifyNodeWsBearer({
         environment: security.environment,
         configuredToken: security.authBearerToken,
+        nodeCredentials: options.nodeCredentials,
         authorization: request.headers.authorization,
       });
       if (!auth.ok) {
         return reply.code(auth.statusCode).send({ detail: auth.detail });
       }
+      principalByRequest.set(request, auth.principal ?? null);
     },
-  }, (socket, _request) => {
+  }, (socket, request) => {
+    const principal = principalByRequest.get(request) ?? null;
     const transport: NodeCommandTransport = {
       send: (data) => socket.send(data),
     };
@@ -43,6 +70,7 @@ export function registerNodeControlWsRoute(
     let attachment: NodeCommandTransportAttachment | undefined;
     let finalized = false;
     let registrationTimer: ReturnType<typeof setTimeout> | undefined;
+    let unregisterRevocation: (() => void) | undefined;
 
     const finalize = (reason: string): void => {
       if (finalized) return;
@@ -52,6 +80,8 @@ export function registerNodeControlWsRoute(
         options.transportHub.detach(attachment);
       }
       attachment = undefined;
+      unregisterRevocation?.();
+      unregisterRevocation = undefined;
       app.log.info({
         nodeId: source?.nodeId,
         connectionId: source?.connectionId,
@@ -80,6 +110,24 @@ export function registerNodeControlWsRoute(
     const isCurrentSource = (): boolean => source !== undefined
       && options.registry.getConnectedNode(source.nodeId)?.connectionId
         === source.connectionId;
+
+    if (principal !== null) {
+      const credentialId = principal.credential_id;
+      const closers = connectionsByCredential.get(credentialId)
+        ?? new Set<() => void>();
+      connectionsByCredential.set(credentialId, closers);
+      const closeForRevocation = (): void => {
+        closeAndFinalize(
+          NODE_CREDENTIAL_REVOKED_CLOSE_CODE,
+          NODE_CREDENTIAL_REVOKED_REASON,
+        );
+      };
+      closers.add(closeForRevocation);
+      unregisterRevocation = () => {
+        closers.delete(closeForRevocation);
+        if (closers.size === 0) connectionsByCredential.delete(credentialId);
+      };
+    }
 
     registrationTimer = setTimeout(() => {
       closeAndFinalize(
@@ -112,6 +160,13 @@ export function registerNodeControlWsRoute(
           || current.capabilities.control_channel_v1 !== true
         ) {
           closeAndFinalize(POLICY_VIOLATION_CLOSE_CODE, "STALE_NODE_CONNECTION");
+          return;
+        }
+        if (principal !== null && frame.node_id !== principal.node_id) {
+          closeAndFinalize(
+            POLICY_VIOLATION_CLOSE_CODE,
+            NODE_ID_MISMATCH_REJECT_REASON,
+          );
           return;
         }
         source = { nodeId: frame.node_id, connectionId: frame.connection_id };

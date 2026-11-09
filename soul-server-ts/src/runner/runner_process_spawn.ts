@@ -165,6 +165,7 @@ export class RunnerProcessSpawner {
         : {}),
       codexHome: input.codexHome,
       rolloutRoot: input.rolloutRoot,
+      ...(input.isolation ? { isolation: input.isolation } : {}),
     };
     const validatedConfig = parseRunnerChildConfig(config);
     await writeFileAtomically(paths.configPath, JSON.stringify(validatedConfig));

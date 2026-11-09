@@ -54,12 +54,15 @@ export type OrchServerEnvironmentConfig = Partial<ExternalIngressEnvironmentConf
   readonly codex_cli_path: string | null;
   readonly antigravity_cli_path: string | null;
   readonly model_catalog_path: string | null;
+  readonly portable_node_config_dir: string | null;
+  readonly portable_node_secrets_file: string | null;
   readonly typesafe_api_key: string;
   readonly turn_summary_openai_key: string;
   readonly usage_summary_poll_interval_seconds: number;
   readonly usage_summary_shared_accounts: readonly UsageSummarySharedAccountGroup[];
   readonly soul_runner_process_enabled: boolean;
   readonly soul_runner_lease_timeout_ms: number;
+  readonly portable_node_releases_dir: string | null;
 };
 
 export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
@@ -90,12 +93,15 @@ export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
   "CODEX_CLI_PATH",
   "AGY_CLI_PATH",
   "MODEL_CATALOG_PATH",
+  "PORTABLE_NODE_CONFIG_DIR",
+  "PORTABLE_NODE_SECRETS_FILE",
   "TYPESAFE_API_KEY",
   "TURN_SUMMARY_OPENAI_KEY",
   "USAGE_SUMMARY_POLL_INTERVAL_SECONDS",
   "USAGE_SUMMARY_SHARED_ACCOUNTS",
   "SOUL_RUNNER_PROCESS_ENABLED",
   "SOUL_RUNNER_LEASE_TIMEOUT_MS",
+  "PORTABLE_NODE_RELEASES_DIR",
 ] as const;
 
 export type OrchServerEnvironmentVariable =
@@ -165,6 +171,8 @@ export function loadOrchServerEnvironment(
     codex_cli_path: optionalString(env.CODEX_CLI_PATH),
     antigravity_cli_path: optionalString(env.AGY_CLI_PATH),
     model_catalog_path: optionalString(env.MODEL_CATALOG_PATH),
+    portable_node_config_dir: optionalString(env.PORTABLE_NODE_CONFIG_DIR),
+    portable_node_secrets_file: optionalString(env.PORTABLE_NODE_SECRETS_FILE),
     typesafe_api_key: env.TYPESAFE_API_KEY ?? "",
     turn_summary_openai_key: env.TURN_SUMMARY_OPENAI_KEY ?? "",
     usage_summary_poll_interval_seconds: parsePositiveInteger(
@@ -185,6 +193,7 @@ export function loadOrchServerEnvironment(
       "SOUL_RUNNER_LEASE_TIMEOUT_MS",
       DEFAULT_SOUL_RUNNER_LEASE_TIMEOUT_MS,
     ),
+    portable_node_releases_dir: optionalString(env.PORTABLE_NODE_RELEASES_DIR),
   };
 }
 

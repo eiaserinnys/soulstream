@@ -5,6 +5,12 @@ import {
 } from "node:child_process";
 
 import { terminateWindowsProcessTree } from "../../process/terminate_windows_process_tree.js";
+import type { RunnerIsolationChildConfig } from "../../runner/runner_isolation_config.js";
+import {
+  isolationError,
+  launchIsolatedChild,
+  restrictedChildEnv,
+} from "../isolated_session_launch.js";
 import { setSessionEngineOomScore } from "../session_engine_oom_score.js";
 import type { AppServerTransportUrl } from "./protocol.js";
 import type { AppServerJsonMessage, AppServerTransport } from "./transport.js";
@@ -38,6 +44,7 @@ export interface StdioAppServerTransportOptions {
   spawnProcess?: StdioSpawnProcess;
   terminateProcessTree?: (pid: number) => Promise<void>;
   applyOomScore?: (pid: number | undefined) => void;
+  isolation?: RunnerIsolationChildConfig;
 }
 
 const NOOP_LOGGER: AppServerTransportLogger = {
@@ -85,12 +92,30 @@ class StdioAppServerTransport implements AppServerTransport {
     const platform = options.platform ?? process.platform;
     this.platform = platform;
     this.terminateProcessTree = options.terminateProcessTree;
-    this.child = spawnProcess(command, args, {
-      cwd: options.cwd,
-      env: options.env,
-      stdio: "pipe",
-      ...(needsWindowsCommandShell(command, platform) ? { shell: true } : {}),
-    });
+    if (options.isolation) {
+      const launch = launchIsolatedChild({
+        isolation: options.isolation,
+        command,
+        args,
+        cwd: options.cwd,
+        env: restrictedChildEnv(options.isolation, options.env ?? process.env),
+        stdio: "pipe",
+        logger: this.logger,
+      });
+      this.child = launch.child as unknown as AppServerChildProcess;
+      void launch.ready.catch((error: unknown) => {
+        const failure = isolationError(error);
+        this.emitError(failure);
+        this.finishClose(failure);
+      });
+    } else {
+      this.child = spawnProcess(command, args, {
+        cwd: options.cwd,
+        env: options.env,
+        stdio: "pipe",
+        ...(needsWindowsCommandShell(command, platform) ? { shell: true } : {}),
+      });
+    }
     const applyOomScore = options.applyOomScore ?? ((pid: number | undefined) => {
       void setSessionEngineOomScore(pid, { platform, logger: this.logger });
     });

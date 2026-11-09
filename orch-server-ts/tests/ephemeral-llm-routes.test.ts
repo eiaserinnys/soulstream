@@ -20,7 +20,7 @@ describe("ephemeral LLM routes", () => {
       spawnDurationMs: 10, peakConcurrentSpawns: 1, usage: { input_tokens: 3, output_tokens: 2 } };
     const generate = vi.fn(async () => result);
     const antigravityGenerate = vi.fn(async () => result);
-    const app = createApp({ config, ephemeralLlmRoutes: { authBearerToken: "service-token",
+    const app = createApp({ config, ephemeralLlmRoutes: { authBearerToken: "service-token", nodeCredentials: null,
       generator: { generate }, antigravityGenerator: { generate: antigravityGenerate } } });
     const response = await app.inject({ method: "POST", url: "/api/llm/ephemeral",
       headers: { authorization: "Bearer service-token" },
@@ -38,7 +38,7 @@ describe("ephemeral LLM routes", () => {
 
   it.each(["minimal", "xhigh", "max"])("rejects unsupported Antigravity effort %s", async (effort) => {
     const generate = vi.fn();
-    const app = createApp({ config, ephemeralLlmRoutes: { authBearerToken: "service-token", generator: { generate },
+    const app = createApp({ config, ephemeralLlmRoutes: { authBearerToken: "service-token", nodeCredentials: null, generator: { generate },
       antigravityGenerator: { generate } } });
     const response = await app.inject({ method: "POST", url: "/api/llm/ephemeral",
       headers: { authorization: "Bearer service-token" }, payload: {
@@ -57,7 +57,7 @@ describe("ephemeral LLM routes", () => {
     const generate = vi.fn(async () => { throw new AntigravityEphemeralExecutionError(code, "quota original", {
       attempts: 1, latencyMs: 10, spawnDurationMs: 10, peakConcurrentSpawns: 1,
     }); });
-    const app = createApp({ config, ephemeralLlmRoutes: { authBearerToken: "service-token", generator: { generate },
+    const app = createApp({ config, ephemeralLlmRoutes: { authBearerToken: "service-token", nodeCredentials: null, generator: { generate },
       antigravityGenerator: { generate } } });
     const response = await app.inject({ method: "POST", url: "/api/llm/ephemeral",
       headers: { authorization: "Bearer service-token" }, payload: { prompt: "hello", model: "gemini-4-argon", backend: "antigravity" } });
@@ -70,7 +70,7 @@ describe("ephemeral LLM routes", () => {
     const generate = vi.fn();
     const app = createApp({
       config,
-      ephemeralLlmRoutes: { authBearerToken: "service-token", generator: { generate } },
+      ephemeralLlmRoutes: { authBearerToken: "service-token", nodeCredentials: null, generator: { generate } },
     });
 
     const response = await app.inject({
@@ -91,7 +91,7 @@ describe("ephemeral LLM routes", () => {
     const generate = vi.fn();
     const app = createApp({
       config,
-      ephemeralLlmRoutes: { authBearerToken: "service-token", generator: { generate } },
+      ephemeralLlmRoutes: { authBearerToken: "service-token", nodeCredentials: null, generator: { generate } },
     });
 
     const response = await app.inject({
@@ -129,7 +129,7 @@ describe("ephemeral LLM routes", () => {
       }));
       const app = createApp({
         config,
-        ephemeralLlmRoutes: { authBearerToken: "service-token", generator: { generate } },
+        ephemeralLlmRoutes: { authBearerToken: "service-token", nodeCredentials: null, generator: { generate } },
       });
       const outputSchema = {
         type: "object",
@@ -189,7 +189,7 @@ describe("ephemeral LLM routes", () => {
     });
     const app = createApp({
       config,
-      ephemeralLlmRoutes: { authBearerToken: "service-token", generator: { generate } },
+      ephemeralLlmRoutes: { authBearerToken: "service-token", nodeCredentials: null, generator: { generate } },
     });
 
     const response = await app.inject({

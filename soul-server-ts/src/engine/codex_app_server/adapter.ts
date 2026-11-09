@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import type { ResolvedMcpServer } from "../../mcp_config_service.js";
+import type { RunnerIsolationChildConfig } from "../../runner/runner_isolation_config.js";
 import { sseEventsFromRunnerFrames } from "../../runner/engine_event_stream.js";
 import type { InProcessRunnerFrameChannel } from "../../runner/in_process_frame_channel.js";
 import {
@@ -100,6 +101,7 @@ export interface CodexAppServerAdapterConfig {
   codexDetachedResultRetentionMs?: number;
   requestTimeoutMs?: number;
   startupRequestTimeoutMs?: number;
+  isolation?: RunnerIsolationChildConfig;
 }
 
 export class CodexAppServerEngineAdapter implements EnginePort {
@@ -132,6 +134,10 @@ export class CodexAppServerEngineAdapter implements EnginePort {
       onTerminalResultExpired: (event) => this.logger.info(
         { agentId: config.agentId ?? "unknown", ...event },
         "Codex detached command terminal-result retention expired",
+      ),
+      onDetachedCommandExpired: ({ threadId, turnId, itemId }) => this.logger.warn(
+        { threadId, turnId, itemId },
+        "Codex detached command retention expired while running",
       ),
     });
     this.unsubscribeDetachedCommandNotifications = this.client.onNotification(
@@ -506,6 +512,7 @@ export class CodexAppServerEngineAdapter implements EnginePort {
       cwd: config.workspaceDir,
       env,
       logger: logger as AppServerTransportLogger,
+      ...(config.isolation ? { isolation: config.isolation } : {}),
     });
     return new CodexAppServerClient(transport, {
       requestTimeoutMs: config.requestTimeoutMs,

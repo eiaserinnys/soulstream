@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 import type { ResolvedMcpServer } from "../../mcp_config_service.js";
 import { runnerProcessPaths } from "../../runner/runner_process_paths.js";
+import type { RunnerIsolationChildConfig } from "../../runner/runner_isolation_config.js";
 import { engineEventFrame, type RunnerEventFrame } from "../../runner/frame_protocol.js";
 import type { InProcessRunnerFrameChannel } from "../../runner/in_process_frame_channel.js";
 import { sseEventsFromRunnerFrames } from "../../runner/engine_event_stream.js";
@@ -55,6 +56,7 @@ export interface OpenCodeAdapterOptions {
   processEnv: NodeJS.ProcessEnv;
   resolvedMcpServers?: ResolvedMcpServer[];
   internalMcpUrl?: string;
+  isolation?: RunnerIsolationChildConfig;
 }
 
 export class OpenCodeEngineAdapter implements EnginePort {
@@ -135,6 +137,7 @@ export class OpenCodeEngineAdapter implements EnginePort {
         }),
         input: params.prompt,
         logger: this.logger,
+        ...(this.options.isolation ? { isolation: this.options.isolation } : {}),
       });
       const cleanedUp = process.done;
       this.active = { process, cleanedUp };

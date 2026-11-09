@@ -147,6 +147,7 @@ describe("live dashboard access provider route wiring", () => {
 
 function createRouteApp() {
   const accessProvider = createLiveDashboardAccessProvider({
+    nodeCredentials: null,
     configProvider: configWith({
       auth_bearer_token: "service-token",
       google_client_id: "google-client",
@@ -175,7 +176,7 @@ function createRouteApp() {
       resolveTokenAccess: vi.fn(async () => ({ ok: true as const })),
       userPayloadExtra: accessProvider.userPayloadExtra,
     },
-    folderRoutes: { provider: createFolderProvider(), accessProvider, cardServiceProvider: async () => ({ getFolder: async (id: string) => ({ folder: { id }, cards: [] }) } as never) },
+    folderRoutes: { provider: createFolderProvider(), accessProvider, nodeCredentials: null, cardServiceProvider: async () => ({ getFolder: async (id: string) => ({ folder: { id }, cards: [] }) } as never) },
     boardItemRoutes: {
       provider: createBoardItemProvider(),
       accessProvider,

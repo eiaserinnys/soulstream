@@ -20,6 +20,7 @@ import { createLiveAttachmentReadOptions } from "./live_attachment_read_provider
 import type { CreateLiveAttachmentReadOptions } from "./live_attachment_read_provider.js";
 import type { CogitoRouteOptions } from "../cogito/cogito_routes.js";
 import type { OrchestratorRuntimeServices } from "./composition.js";
+import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import {
   createLiveAuthHttpClient,
   createLiveAuthJwtHelper,
@@ -209,6 +210,8 @@ export type CreateLiveOrchestratorProviderBundleOptions = {
   readonly dbSqlResolver?: LiveDbSqlResolver;
   readonly readPageAttachmentEvidence?: CreateLiveAttachmentReadOptions["readPageAttachmentEvidence"];
   readonly findSessionNode?: (sessionId: string) => Promise<string | null>;
+  /** Node pairing credentials shared by every bearer-auth consumer. */
+  readonly nodeCredentials: NodeCredentialResolver | null;
   readonly agentAttachmentRegistration?: {
     readonly authBearerToken: string;
     readonly environment: string;
@@ -280,7 +283,10 @@ export function createLiveOrchestratorProviderBundle(
       const config = await options.dependencies.configProvider.getConfig();
       const token = config.auth_bearer_token;
       return typeof token === "string" && token.length > 0 &&
-        verifyServiceBearerAuthorization(request.headers.authorization, token).ok;
+        verifyServiceBearerAuthorization(request.headers.authorization, {
+          configuredToken: token,
+          nodeCredentials: options.nodeCredentials,
+        }).ok;
     },
   });
   const dashboardAccessProvider = createLiveDashboardAccessProvider({
@@ -289,6 +295,7 @@ export function createLiveOrchestratorProviderBundle(
     repository: options.dependencies.dbCatalogRepository.adminUsersRepository,
     verifyDashboardToken: authenticatedUserResolvers.verifyToken,
     resolveOAuthAccess: authenticatedUserResolvers.resolveOAuthAccess,
+    nodeCredentials: options.nodeCredentials,
   });
   const sessionResourceAccessProvider = createSessionResourceAccessProvider({
     accessProvider: dashboardAccessProvider,
@@ -374,6 +381,7 @@ export function createLiveOrchestratorProviderBundle(
     : {
         authBearerToken: options.agentAttachmentRegistration.authBearerToken,
         environment: options.agentAttachmentRegistration.environment,
+        nodeCredentials: options.nodeCredentials,
         register: createAgentAttachmentRegistration({
           sql: options.agentAttachmentRegistration.sql,
           commit: commits!,
@@ -394,6 +402,7 @@ export function createLiveOrchestratorProviderBundle(
     return {
       authBearerToken: registration.authBearerToken,
       environment: registration.environment,
+      nodeCredentials: options.nodeCredentials,
       service: createWorkerAttachmentRead({
         access: createWorkerAttachmentAccess({
           repository,
@@ -468,6 +477,7 @@ export function createLiveOrchestratorProviderBundle(
         configProvider: options.dependencies.configProvider,
         jwt: authJwt,
         resolveDashboardUser: authenticatedUserResolvers.resolveUser,
+        nodeCredentials: options.nodeCredentials,
       }),
       authorizeUser,
       userPayloadExtra: dashboardAccessProvider.userPayloadExtra,

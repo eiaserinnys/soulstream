@@ -44,6 +44,7 @@ function setup(overrides = {}) {
     currentEmail: () => "admin@example.com",
     isAdminEmail: (email: string) => email === "admin@example.com",
     authBearerToken: "service-token",
+    nodeCredentials: null,
     environment: "test",
     resolveCaller: async () => ({
       ownerEmail: "admin@example.com",

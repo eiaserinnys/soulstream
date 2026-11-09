@@ -59,7 +59,7 @@ async function createSession(
       },
     },
   });
-  const app = createApp({ config, sessionCommandRoutes: { router, bridge } });
+  const app = createApp({ config, sessionCommandRoutes: { nodeCredentials: null, router, bridge } });
   const response = await app.inject({
     method: "POST",
     url: "/api/sessions",

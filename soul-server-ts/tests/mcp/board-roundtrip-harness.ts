@@ -73,7 +73,7 @@ export async function createBoardRoundtripHarness() {
     }, async (item) => { await broadcastCatalogDelta(folderProvider, broadcaster, { boardItemsDelta: { [item.id]: item } }); });
   const projectionHost = host.customViews;
   const folders = { serviceProvider: async () => new FolderControlPlaneService(sql, () => host.reads.getBoardItems()),
-    cardServiceProvider: async () => cards, identity, authBearerToken: "service-token" };
+    cardServiceProvider: async () => cards, identity, authBearerToken: "service-token", nodeCredentials: null };
   const sessionReads = new SessionReadRepository(h.sql);
   const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn(), debug: vi.fn(), trace: vi.fn() } as never;
   const app = Fastify();
@@ -94,8 +94,8 @@ export async function createBoardRoundtripHarness() {
     },
   };
   registerFolderControlPlaneHostRoute(app, folders);
-  registerFlatFolderContentRoutes(app, { host, authBearerToken: "service-token" });
-  registerPersistenceHostRoutes(app, { authBearerToken: "service-token", repositoryProvider: async () => ({ sessionReads }) as never });
+  registerFlatFolderContentRoutes(app, { nodeCredentials: null, host, authBearerToken: "service-token" });
+  registerPersistenceHostRoutes(app, { nodeCredentials: null, authBearerToken: "service-token", repositoryProvider: async () => ({ sessionReads }) as never });
   const executionOptions = { authBearerToken: "service-token", folders,
     cards: { cardServiceProvider: folders.cardServiceProvider, provider: { listFolders: () => [], listSessionAssignments: () => ({}) },
       resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) },

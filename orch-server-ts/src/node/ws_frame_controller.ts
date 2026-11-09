@@ -4,19 +4,30 @@ import type {
   NodeRegistrationPayload,
   NodeRegistryEvent,
 } from "./registry_types.js";
+import type { NodePrincipal } from "../node_credentials/types.js";
+
+export const NODE_ID_MISMATCH_REJECT_REASON = "node_id does not match node credential";
 
 export type NodeWsFrameRegistrationRejectCode =
   | "EXPECTED_NODE_REGISTER"
   | "NODE_ID_REQUIRED"
-  | "NODE_ID_INVALID";
+  | "NODE_ID_INVALID"
+  | "NODE_ID_MISMATCH";
 
 export type NodeWsFrameControllerOptions = {
   registry: InMemoryNodeRegistry;
+  /**
+   * Principal resolved from a node pairing credential at upgrade time. When
+   * present, every registration frame must name that node.
+   */
+  principal?: NodePrincipal | null;
 };
 
 export type NodeWsFrameRegistrationRejectedResult = {
   type: "registration_rejected";
   code: NodeWsFrameRegistrationRejectCode;
+  /** WebSocket close reason; falls back to `code` when absent. */
+  reason?: string;
   messageType: string;
 };
 
@@ -82,6 +93,7 @@ export type NodeWsFrameCloseResult =
 
 export class NodeWsFrameController {
   private readonly registry: InMemoryNodeRegistry;
+  private readonly principal: NodePrincipal | null;
   private registered:
     | {
         nodeId: string;
@@ -92,6 +104,7 @@ export class NodeWsFrameController {
 
   constructor(options: NodeWsFrameControllerOptions) {
     this.registry = options.registry;
+    this.principal = options.principal ?? null;
   }
 
   handleFrame(frame: Record<string, unknown>): NodeWsFrameControllerResult {
@@ -142,11 +155,34 @@ export class NodeWsFrameController {
     };
   }
 
+  /**
+   * A node pairing credential may only register its own node. A registration
+   * frame without a usable node_id is left to the existing validation path.
+   */
+  private registrationNodeIdMismatch(
+    frame: Record<string, unknown>,
+  ): NodeWsFrameRegistrationRejectedResult | undefined {
+    if (this.principal === null) return undefined;
+    if (typeof frame.node_id !== "string" || frame.node_id.length === 0) {
+      return undefined;
+    }
+    if (frame.node_id === this.principal.node_id) return undefined;
+    return {
+      type: "registration_rejected",
+      code: "NODE_ID_MISMATCH",
+      reason: NODE_ID_MISMATCH_REJECT_REASON,
+      messageType: messageType(frame),
+    };
+  }
+
   private handleRegistrationFrame(
     frame: Record<string, unknown>,
   ): NodeWsFrameRegistrationRejectedResult | NodeWsFrameRegisteredResult {
     const rejection = validateRegistrationFrame(frame);
     if (rejection !== undefined) return rejection;
+
+    const mismatch = this.registrationNodeIdMismatch(frame);
+    if (mismatch !== undefined) return mismatch;
 
     const registration = frame as NodeRegistrationPayload;
     const result = this.registry.registerNode(registration);
@@ -167,10 +203,14 @@ export class NodeWsFrameController {
     frame: Record<string, unknown>,
   ):
     | NodeWsFrameRegistrationRefreshedResult
-    | NodeWsFrameRegistrationRefreshIgnoredResult {
+    | NodeWsFrameRegistrationRefreshIgnoredResult
+    | NodeWsFrameRegistrationRejectedResult {
     if (this.registered === undefined) {
       throw new Error("registration refresh received before registration");
     }
+
+    const mismatch = this.registrationNodeIdMismatch(frame);
+    if (mismatch !== undefined) return mismatch;
 
     const events = this.registry.refreshNodeRegistration(
       this.registered,

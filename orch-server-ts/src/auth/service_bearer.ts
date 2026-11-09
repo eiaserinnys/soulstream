@@ -1,12 +1,28 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
+import type { NodeCredentialResolver, NodePrincipal } from "../node_credentials/types.js";
+
 export type ServiceBearerVerification =
-  | { readonly ok: true; readonly developmentBypass?: boolean }
+  | {
+      readonly ok: true;
+      readonly developmentBypass?: boolean;
+      readonly principal?: NodePrincipal;
+    }
   | {
       readonly ok: false;
       readonly reason: "missing" | "malformed" | "invalid" | "not_configured";
       readonly statusCode: 401 | 503;
     };
+
+export type ServiceBearerOptions = {
+  readonly configuredToken: string;
+  readonly environment?: string;
+  /**
+   * Node pairing credentials. `null` is explicit in tests and non-production
+   * composition; production always passes the initialized credential store.
+   */
+  readonly nodeCredentials: NodeCredentialResolver | null;
+};
 
 type ParsedBearerAuthorization =
   | { readonly kind: "missing" }
@@ -22,10 +38,10 @@ export function extractBearerToken(
 
 export function verifyServiceBearerAuthorization(
   authorization: string | string[] | undefined,
-  configuredToken: string,
-  environment = "production",
+  options: ServiceBearerOptions,
 ): ServiceBearerVerification {
-  if (configuredToken.length === 0) {
+  const environment = options.environment ?? "production";
+  if (options.configuredToken.length === 0) {
     return environment.toLowerCase() === "production"
       ? { ok: false, reason: "not_configured", statusCode: 503 }
       : { ok: true, developmentBypass: true };
@@ -38,10 +54,14 @@ export function verifyServiceBearerAuthorization(
   if (parsed.kind === "malformed") {
     return { ok: false, reason: "malformed", statusCode: 401 };
   }
-  if (!constantTimeStringEqual(parsed.token, configuredToken)) {
-    return { ok: false, reason: "invalid", statusCode: 401 };
+  if (constantTimeStringEqual(parsed.token, options.configuredToken)) {
+    return { ok: true };
   }
-  return { ok: true };
+  const principal = options.nodeCredentials?.resolve(parsed.token) ?? null;
+  if (principal !== null) {
+    return { ok: true, principal };
+  }
+  return { ok: false, reason: "invalid", statusCode: 401 };
 }
 
 function parseBearerAuthorization(

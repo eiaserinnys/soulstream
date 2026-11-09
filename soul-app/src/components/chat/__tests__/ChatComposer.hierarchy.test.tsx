@@ -173,11 +173,12 @@ test.each([
   ]);
 });
 
-test('embedded delegates only outer padding; regular minimumBottomPadding and inner controls stay unchanged', () => {
+test('embedded keeps the glassDense box and zeroes only outer padding; surface none drops the box', () => {
   const props = { input: '본문', onChangeInput: jest.fn(), onPickAttachment: jest.fn(), onSend: jest.fn(), uploading: false, sending: false, voiceControls: null, minimumBottomPadding: 32 };
   const screen = render(<ChatComposer {...props} />);
   const inner = StyleSheet.flatten(screen.getByTestId('chat-composer-box').props.style);
   const send = StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style);
+  expect(inner.backgroundColor).toBeTruthy();
   expect(StyleSheet.flatten(screen.UNSAFE_getAllByType(View)[0].props.style).paddingBottom).toBe(32);
   screen.rerender(<ChatComposer {...props} embedded />);
   expect(StyleSheet.flatten(screen.getByTestId('chat-composer-row').props.style)).toMatchObject({ paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 });
@@ -186,8 +187,13 @@ test('embedded delegates only outer padding; regular minimumBottomPadding and in
     minHeight: inner.minHeight,
     paddingHorizontal: inner.paddingHorizontal,
     paddingVertical: inner.paddingVertical,
-    borderWidth: 0,
-    borderColor: 'transparent',
+    borderWidth: inner.borderWidth,
+    backgroundColor: inner.backgroundColor,
   });
+  screen.rerender(<ChatComposer {...props} embedded surface="none" />);
+  expect(StyleSheet.flatten(screen.getByTestId('chat-composer-row').props.style)).toMatchObject({ paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 });
+  const noneBox = StyleSheet.flatten(screen.getByTestId('chat-composer-box').props.style);
+  expect(noneBox).toMatchObject({ borderWidth: 0, borderColor: 'transparent' });
+  expect(noneBox.backgroundColor).toBeUndefined();
   expect(StyleSheet.flatten(screen.getByTestId('chat-composer-send-button').props.style)).toEqual(send);
 });

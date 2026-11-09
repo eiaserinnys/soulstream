@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import { AttachmentReadError } from "./attachment_read_service.js";
 import {
   bindAttachmentReadAbortSignal,
@@ -14,6 +15,7 @@ type WorkerAttachmentParams = { readonly attachment_id: string };
 export type WorkerAttachmentRouteOptions = {
   readonly authBearerToken: string;
   readonly environment: string;
+  readonly nodeCredentials: NodeCredentialResolver | null;
   readonly service: ReturnType<typeof createWorkerAttachmentRead>;
 };
 
@@ -33,8 +35,11 @@ export function registerWorkerAttachmentRoutes(
     instance.addHook("onRequest", async (request, reply) => {
       const authorization = verifyServiceBearerAuthorization(
         request.headers.authorization,
-        options.authBearerToken,
-        options.environment,
+        {
+          configuredToken: options.authBearerToken,
+          environment: options.environment,
+          nodeCredentials: options.nodeCredentials,
+        },
       );
       if (!authorization.ok) {
         setPrivateReadHeaders(reply);

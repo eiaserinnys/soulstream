@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import type { AdmittedAttachmentInput } from "../attachments/attachment_input_admission.js";
 import { parseAttachmentIds, parseAttachmentPaths } from "./session_action_command_payloads.js";
 import { isUuid } from "../http/uuid.js";
@@ -53,6 +54,7 @@ export type SessionCommandRouteOptions = {
   admitAttachmentInput?: SessionCreateAttachmentAdmission;
   worktreeAuthBearerToken?: string;
   environment?: string;
+  nodeCredentials: NodeCredentialResolver | null;
 };
 
 export const sessionCommandRouteAuthRequirements = {
@@ -183,8 +185,11 @@ export async function executeCreateSessionRoute(
     if (body.worktree_id !== undefined) {
       const authorization = isServiceCaller(request) ? { ok: true as const } : verifyServiceBearerAuthorization(
         request.headers.authorization,
-        options.worktreeAuthBearerToken ?? "",
-        options.environment,
+        {
+          configuredToken: options.worktreeAuthBearerToken ?? "",
+          environment: options.environment,
+          nodeCredentials: options.nodeCredentials,
+        },
       );
       if (!authorization.ok) {
         return { status: authorization.statusCode, body: {

@@ -103,16 +103,16 @@ export async function createClusterRoundtripFixture() {
   const nodes = { snapshotService, broadcaster: new InMemoryNodeStreamBroadcaster({ snapshotService }) };
   const folders = [{ id: "allowed-folder", parentId: null }, { id: "forbidden-folder", parentId: null }, { id: "inherited-folder", parentId: null }];
   const jwt = { verifyToken: async () => null } as never;
-  const accessProvider = createLiveDashboardAccessProvider({ jwt, configProvider: { getConfig: async () => ({ auth_bearer_token: "service-token", environment: "production", google_client_id: "" }) } as never,
+  const accessProvider = createLiveDashboardAccessProvider({ nodeCredentials: null, jwt, configProvider: { getConfig: async () => ({ auth_bearer_token: "service-token", environment: "production", google_client_id: "" }) } as never,
     repository: { findUserByEmail: async email => ({ email, isAdmin: email === "owner@example.com", allowedFolderIds: ["allowed-folder"] }) } });
   const access = createSessionResourceAccessProvider({ accessProvider, repository: { getSessionAccessRecord: async () => null, listFoldersForAccess: async () => folders } });
-  const sessions = { router: new SessionCommandRouter({ registry }), bridge,
+  const sessions = { nodeCredentials: null, router: new SessionCommandRouter({ registry }), bridge,
     createSessionLifecycle: createSessionCreateLifecycle({ resolveCallerInfo: createLiveAuthenticatedUserResolvers({ jwt }).resolveCallerInfo,
       access, boardItems: { getCatalogSnapshot: async () => ({ folders, boardItems: [] }) } as never }) };
   const recurring = recurringFixture();
-  const recurringJobs = { authBearerToken: "service-token", service: recurring.service };
+  const recurringJobs = { authBearerToken: "service-token", nodeCredentials: null, service: recurring.service };
   let settings: OrchestrationSettings;
-  const cardOrchestration = { authBearerToken: "service-token", currentEmail: async () => "owner@example.com", resolveEmail: async () => "owner@example.com", isAdminEmail: async (email: string) => email === "owner@example.com",
+  const cardOrchestration = { authBearerToken: "service-token", nodeCredentials: null, currentEmail: async () => "owner@example.com", resolveEmail: async () => "owner@example.com", isAdminEmail: async (email: string) => email === "owner@example.com",
     resolveCaller: async (id: string) => ({ ownerEmail: callerEmail(id) ?? "", purpose: id === "decision" ? "card_orchestration_decision" : null }),
     validateFolder: async () => true, get: async () => settings,
     put: async (input: { policy: unknown; expectedVersion: number; updatedBy: string }) => {
@@ -125,14 +125,14 @@ export async function createClusterRoundtripFixture() {
   registerCogitoRoutes(app, cogito); registerSessionCommandRoutes(app, sessions);
   registerRecurringJobHostRoutes(app, recurringJobs); registerCardOrchestrationRoutes(app, cardOrchestration);
   app.get<{ Params: { sessionId: string } }>("/api/persistence/sessions/:sessionId", async request => ({ session: await readSession(request.params.sessionId) }));
-  const executionOptions = { board: undefined as never, authBearerToken: "service-token", recurringJobs, cardOrchestration,
+  const executionOptions = { board: undefined as never, authBearerToken: "service-token", nodeCredentials: null, recurringJobs, cardOrchestration,
     resolveSessionOwner: async (id: string) => {
       const email = callerEmail(id);
       return email ? { ownerEmail: email, callerInfo: { source: "browser", email } } : null;
     },
     cluster: { nodes, nodeAgentProfiles, cogito, sessions, readSession, logger: { warn: recurring.changeWarn } },
     cards: { provider: {} as never, resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) },
-    folders: { authBearerToken: "service-token", serviceProvider: async () => { throw new Error("unused folders"); } } };
+    folders: { authBearerToken: "service-token", nodeCredentials: null, serviceProvider: async () => { throw new Error("unused folders"); } } };
 
   registerMcpHostRoutes(app, executionOptions);
   const baseUrl = await app.listen({ host: "127.0.0.1", port: 0 });

@@ -169,6 +169,7 @@ function scheduleApp(repository: Partial<SoulstreamScheduleRepository>) {
   const app = Fastify();
   apps.push(app);
   registerScheduleHostRoute(app, {
+    nodeCredentials: null,
     authBearerToken: token,
     repositoryProvider: async () => repository as SoulstreamScheduleRepository,
   });
@@ -179,6 +180,7 @@ function persistenceApp(repository: object) {
   const app = Fastify();
   apps.push(app);
   registerPersistenceHostRoutes(app, {
+    nodeCredentials: null,
     authBearerToken: token,
     repositoryProvider: async () => repository as PersistenceHostRepositories,
   });

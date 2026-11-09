@@ -24,7 +24,7 @@ it.each(['user','agent'] as const)('allows reportless %s transitions with open q
  await h.sql`UPDATE cards SET archived=TRUE WHERE id=${id}`;
  await h.sql`INSERT INTO card_questions(id,card_id,session_id,text) VALUES(${key()},${id},'owner','미답')`;
  const app=Fastify();
- registerCardRoutes(app,{provider:{listFolders:()=>[{id:'free'}],listSessionAssignments:()=>({})},accessProvider:{resolveAccess:()=>({restricted:false})},
+ registerCardRoutes(app,{ nodeCredentials: null,provider:{listFolders:()=>[{id:'free'}],listSessionAssignments:()=>({})},accessProvider:{resolveAccess:()=>({restricted:false})},
   resolveDashboardUserId:()=>human.actorUserId,authBearerToken:'service',environment:'production',cardServiceProvider:async()=>cards});
  const headers=actor==='agent'?{authorization:'Bearer service','x-soulstream-agent-session-id':'owner'}:{};
  try {

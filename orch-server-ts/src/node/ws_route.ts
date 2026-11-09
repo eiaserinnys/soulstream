@@ -27,11 +27,27 @@ import type {
 } from "./release_activation_receipt_repository.js";
 import { parseReleaseActivationRegistration } from
   "./release_activation_registration.js";
+import type {
+  NodeCredentialResolver,
+  NodePrincipal,
+} from "../node_credentials/types.js";
+import {
+  NODE_CREDENTIAL_REVOKED_CLOSE_CODE,
+  NODE_CREDENTIAL_REVOKED_REASON,
+} from "../node_credentials/revocation.js";
 
 const INVALID_JSON_CLOSE_CODE = 1003;
 const POLICY_VIOLATION_CLOSE_CODE = 1008;
 const REGISTRATION_TIMEOUT_CLOSE_CODE = 4001;
 const INTERNAL_ERROR_CLOSE_CODE = 1011;
+/**
+ * A live node registration already belongs to an authentication identity, and
+ * only that identity may replace it. Sharing the service bearer token is the
+ * legacy identity; a node pairing credential is identified by its id.
+ */
+export const NODE_ID_HELD_BY_DIFFERENT_CREDENTIAL_REASON =
+  "node_id is held by a different credential";
+const LEGACY_AUTH_IDENTITY = "legacy";
 /**
  * A registering node only has to park the frames it emits during one receipt
  * round trip. Anything past that is a flood, not a handshake, and gets the
@@ -43,6 +59,8 @@ const DEFAULT_APP_HEARTBEAT_TIMEOUT_MS = 30_000;
 
 export type NodeWsRouteOptions = {
   registry: InMemoryNodeRegistry;
+  /** Node pairing credentials; `null` is explicit outside production composition. */
+  nodeCredentials: NodeCredentialResolver | null;
   transportHub?: NodeCommandTransportHub;
   eventSink?: NodeRegistryEventSink;
   eventIngress?: NodeEventIngressCommitter;
@@ -73,6 +91,24 @@ export function registerNodeWsRoute(
     options.registrationTimeoutMs,
   );
   const heartbeatTimeoutMs = resolveHeartbeatTimeoutMs(options.heartbeatTimeoutMs);
+  // The principal resolved in preValidation rides the same Fastify request
+  // object into the websocket handler; the value never leaves this route.
+  const principalByRequest = new WeakMap<object, NodePrincipal | null>();
+  const connectionsByCredential = new Map<string, Set<() => void>>();
+  const connectionIdentities = new Map<
+    string,
+    { connectionId: string; identity: string }
+  >();
+  const unsubscribeRevocations = options.nodeCredentials?.onRevoked((principal) => {
+    const closers = connectionsByCredential.get(principal.credential_id);
+    if (closers === undefined) return;
+    for (const close of Array.from(closers)) close();
+  }) ?? undefined;
+  if (unsubscribeRevocations !== undefined) {
+    app.addHook("onClose", async () => {
+      unsubscribeRevocations();
+    });
+  }
   registerWebsocketPlugin(app);
   app.after(() => {
     registerNodeControlWsRoute(
@@ -87,14 +123,23 @@ export function registerNodeWsRoute(
         const auth = verifyNodeWsBearer({
           environment: security.environment,
           configuredToken: security.authBearerToken,
+          nodeCredentials: options.nodeCredentials,
           authorization: request.headers.authorization,
         });
         if (!auth.ok) {
           return reply.code(auth.statusCode).send({ detail: auth.detail });
         }
+        principalByRequest.set(request, auth.principal ?? null);
       },
-    }, (socket, _request) => {
-      const controller = new NodeWsFrameController({ registry: options.registry });
+    }, (socket, request) => {
+      const principal = principalByRequest.get(request) ?? null;
+      const connectionIdentity = principal === null
+        ? LEGACY_AUTH_IDENTITY
+        : principal.credential_id;
+      const controller = new NodeWsFrameController({
+        registry: options.registry,
+        principal,
+      });
       const transport: NodeCommandTransport = {
         send: (data) => socket.send(data),
       };
@@ -106,6 +151,7 @@ export function registerNodeWsRoute(
       let deferredFrames: Record<string, unknown>[] | undefined;
       let registrationTimer: ReturnType<typeof setTimeout> | undefined;
       let heartbeatTimer: ReturnType<typeof setTimeout> | undefined;
+      let unregisterRevocation: (() => void) | undefined;
 
       app.log.info({
         path: "/ws/node",
@@ -125,10 +171,19 @@ export function registerNodeWsRoute(
         attachment = undefined;
         ingressController?.stop();
         ingressController = undefined;
+        unregisterRevocation?.();
+        unregisterRevocation = undefined;
         emitEvents(
           options.eventSink,
           eventsFromControllerCloseResult(controller.close(reason)),
         );
+        if (registeredSource !== undefined) {
+          const held = connectionIdentities.get(registeredSource.nodeId);
+          if (held?.connectionId === registeredSource.connectionId) {
+            connectionIdentities.delete(registeredSource.nodeId);
+          }
+          registeredSource = undefined;
+        }
       };
       const closeAndFinalize = (
         code: number,
@@ -143,6 +198,24 @@ export function registerNodeWsRoute(
           finalize(cleanupReason);
         }
       };
+      if (principal !== null) {
+        const credentialId = principal.credential_id;
+        const closers = connectionsByCredential.get(credentialId)
+          ?? new Set<() => void>();
+        connectionsByCredential.set(credentialId, closers);
+        const closeForRevocation = (): void => {
+          closeAndFinalize(
+            NODE_CREDENTIAL_REVOKED_CLOSE_CODE,
+            NODE_CREDENTIAL_REVOKED_REASON,
+            "node_credential_revoked",
+          );
+        };
+        closers.add(closeForRevocation);
+        unregisterRevocation = () => {
+          closers.delete(closeForRevocation);
+          if (closers.size === 0) connectionsByCredential.delete(credentialId);
+        };
+      }
       const clearRegistrationTimer = (): void => {
         if (registrationTimer === undefined) return;
         clearTimeout(registrationTimer);
@@ -182,10 +255,37 @@ export function registerNodeWsRoute(
         }
       };
 
+      /**
+       * A live node registration belongs to the identity that created it.
+       * Reconnects from the same identity keep replacing the old connection;
+       * an identity change must not take the node over.
+       */
+      const registrationIdentityConflict = (
+        frame: Record<string, unknown>,
+      ): string | undefined => {
+        if (registeredSource !== undefined) return undefined;
+        if (frame.type !== "node_register") return undefined;
+        const nodeId = frame.node_id;
+        if (typeof nodeId !== "string" || nodeId.length === 0) return undefined;
+        // A credential-bound connection naming another node is rejected by the
+        // frame controller with its own reason; leave that decision to it.
+        if (principal !== null && nodeId !== principal.node_id) return undefined;
+        if (options.registry.getConnectedNode(nodeId) === undefined) return undefined;
+        const holder = connectionIdentities.get(nodeId);
+        return holder?.identity === connectionIdentity
+          ? undefined
+          : NODE_ID_HELD_BY_DIFFERENT_CREDENTIAL_REASON;
+      };
+
       const handleFrame = (
         frame: Record<string, unknown>,
         activationReceipt?: ReleaseActivationReceiptRecord,
       ): void => {
+        const identityConflict = registrationIdentityConflict(frame);
+        if (identityConflict !== undefined) {
+          closeAndFinalize(POLICY_VIOLATION_CLOSE_CODE, identityConflict);
+          return;
+        }
         if (
           options.eventIngress !== undefined
           && registeredSource !== undefined
@@ -209,6 +309,10 @@ export function registerNodeWsRoute(
             nodeId: result.nodeId,
             connectionId: result.connectionId,
           };
+          connectionIdentities.set(result.nodeId, {
+            connectionId: result.connectionId,
+            identity: connectionIdentity,
+          });
         }
         if (result.type === "registered" && options.transportHub !== undefined) {
           clearRegistrationTimer();
@@ -235,7 +339,10 @@ export function registerNodeWsRoute(
           armHeartbeatTimer();
         }
         if (result.type === "registration_rejected") {
-          closeAndFinalize(POLICY_VIOLATION_CLOSE_CODE, result.code);
+          closeAndFinalize(
+            POLICY_VIOLATION_CLOSE_CODE,
+            result.reason ?? result.code,
+          );
           return;
         }
         emitEvents(options.eventSink, eventsFromControllerResult(result));

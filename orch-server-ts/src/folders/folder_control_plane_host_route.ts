@@ -8,6 +8,7 @@ import { folderOperationError } from "./folder_workspace_routes.js";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import type { FolderControlPlaneService } from "./folder_control_plane_service.js";
 
 export interface FolderControlPlaneHostRouteOptions {
@@ -16,6 +17,7 @@ export interface FolderControlPlaneHostRouteOptions {
   identity?: Pick<FolderProjectIdentityService, "create" | "mutateFromFolder">;
   authBearerToken: string;
   environment?: string;
+  nodeCredentials: NodeCredentialResolver | null;
 }
 
 const operations = new Set([
@@ -43,8 +45,11 @@ export function registerFolderControlPlaneHostRoute(
     async (request, reply) => {
       const authorization = verifyServiceBearerAuthorization(
         request.headers.authorization,
-        options.authBearerToken,
-        options.environment,
+        {
+          configuredToken: options.authBearerToken,
+          environment: options.environment,
+          nodeCredentials: options.nodeCredentials,
+        },
       );
       if (!authorization.ok) {
         return errorReply(reply, authorization.statusCode, "UNAUTHORIZED", `bearer token is ${authorization.reason}`);

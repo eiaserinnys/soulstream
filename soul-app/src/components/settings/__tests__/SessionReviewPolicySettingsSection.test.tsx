@@ -1,12 +1,13 @@
 import React from 'react';
-import { Alert } from 'react-native';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { Alert, StyleSheet } from 'react-native';
+import { fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
 
 jest.mock('../../../api/client', () => ({ createApiClient: jest.fn() }));
 
 import { createApiClient } from '../../../api/client';
 import { ApiHttpError } from '../../../api/clientCore';
 import type { SessionReviewPolicyPayload } from '../../../api/settingsEndpoints';
+import { useTokens } from '../../../theme';
 import { SessionReviewPolicySettingsSection } from '../SessionReviewPolicySettingsSection';
 
 const initialPayload: SessionReviewPolicyPayload = {
@@ -93,6 +94,23 @@ test('loads and edits the global review source allowlist', async () => {
   }));
   expect(await screen.findByText(/정책 v5을 저장했습니다/)).toBeTruthy();
 }, 15_000);
+
+test('추가 보조 단추는 활성에서 link, 비활성에서 textPrimary 글자를 쓴다', async () => {
+  const tokens = renderHook(() => useTokens()).result.current;
+  const screen = render(
+    <SessionReviewPolicySettingsSection
+      flattened
+      serverUrl="https://soul.test"
+    />,
+  );
+
+  await screen.findByTestId('review-policy-source-slack');
+  expect(StyleSheet.flatten(screen.getByText('추가').props.style).color)
+    .toBe(tokens.colors.textPrimary);
+  fireEvent.changeText(screen.getByTestId('review-policy-source-input'), 'clipper');
+  expect(StyleSheet.flatten(screen.getByText('추가').props.style).color)
+    .toBe(tokens.colors.link);
+});
 
 test('labels an added automatic source and warns before it is saved', async () => {
   const screen = render(

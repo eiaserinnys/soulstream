@@ -49,13 +49,13 @@ function turnCompleted(
 }
 
 describe("CodexDetachedCommandActivityTracker", () => {
-  it("retains only a root command that outlives its turn, with no running TTL", () => {
+  it("expires a running detached command at the turn deadline once", () => {
     let now = 1_000;
-    const onTerminalResultExpired = vi.fn();
+    const onDetachedCommandExpired = vi.fn();
     const tracker = new CodexDetachedCommandActivityTracker({
       terminalResultRetentionMs: 100,
       now: () => now,
-      onTerminalResultExpired,
+      onDetachedCommandExpired,
     });
     tracker.beginForeground("thread-root", "turn-root");
     tracker.observe(commandNotification("item/started", "command-a"));
@@ -67,44 +67,50 @@ describe("CodexDetachedCommandActivityTracker", () => {
     });
 
     tracker.observe(turnCompleted());
-    now += 12 * 60 * 60_000;
+    now += 100;
     expect(tracker.snapshot()).toMatchObject({
-      activeForegroundCount: 0,
-      detachedRunningCount: 1,
-      retainedTerminalResultCount: 0,
-    });
-
-    tracker.observe(commandNotification("item/completed", "command-a"));
-    expect(tracker.snapshot()).toEqual({
       activeForegroundCount: 0,
       detachedRunningCount: 0,
-      retainedTerminalResultCount: 1,
-      earliestRetainedTerminalDeadlineAtMs: now + 100,
+      retainedTerminalResultCount: 0,
     });
 
-    tracker.beginForeground("thread-root", "turn-successor");
-    now += 99;
-    expect(tracker.snapshot()).toMatchObject({
-      activeForegroundCount: 1,
-      retainedTerminalResultCount: 1,
-      earliestRetainedTerminalDeadlineAtMs: now + 1,
-    });
-    now += 1;
-    expect(tracker.snapshot()).toMatchObject({
-      activeForegroundCount: 1,
-      retainedTerminalResultCount: 0,
-      earliestRetainedTerminalDeadlineAtMs: null,
-    });
-    expect(onTerminalResultExpired).toHaveBeenCalledOnce();
-    expect(onTerminalResultExpired).toHaveBeenCalledWith({
+    expect(onDetachedCommandExpired).toHaveBeenCalledOnce();
+    expect(onDetachedCommandExpired).toHaveBeenCalledWith({
       threadId: "thread-root",
       turnId: "turn-root",
       itemId: "command-a",
       deadlineAtMs: now,
-      reason: "consumption unobserved / retention expired",
     });
     tracker.snapshot();
+    expect(onDetachedCommandExpired).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the turn deadline when a detached command completes after 29 minutes", () => {
+    let now = 1_000;
+    const onTerminalResultExpired = vi.fn();
+    const tracker = new CodexDetachedCommandActivityTracker({
+      terminalResultRetentionMs: 30 * 60_000,
+      now: () => now,
+      onTerminalResultExpired,
+    });
+    tracker.beginForeground("thread-root", "turn-root");
+    tracker.observe(commandNotification("item/started", "command-a"));
+    tracker.observe(turnCompleted());
+    const deadlineAtMs = now + 30 * 60_000;
+    now += 29 * 60_000;
+    tracker.observe(commandNotification("item/completed", "command-a"));
+    expect(tracker.snapshot()).toMatchObject({
+      detachedRunningCount: 0,
+      retainedTerminalResultCount: 1,
+      earliestRetainedTerminalDeadlineAtMs: deadlineAtMs,
+    });
+    now = deadlineAtMs;
+    expect(tracker.snapshot()).toMatchObject({ retainedTerminalResultCount: 0 });
     expect(onTerminalResultExpired).toHaveBeenCalledOnce();
+    expect(onTerminalResultExpired).toHaveBeenCalledWith({
+      threadId: "thread-root", turnId: "turn-root", itemId: "command-a",
+      deadlineAtMs, reason: "consumption unobserved / retention expired",
+    });
   });
 
   it("does not retain foreground-completed or foreign-thread commands", () => {

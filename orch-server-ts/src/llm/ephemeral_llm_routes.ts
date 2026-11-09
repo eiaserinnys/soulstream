@@ -2,6 +2,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import { z } from "zod";
 
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import {
   CODEX_REASONING_EFFORTS,
   CodexEphemeralExecutionError,
@@ -19,6 +20,7 @@ export const EPHEMERAL_LLM_MAX_TIMEOUT_MS = 120_000;
 export type EphemeralLlmRouteOptions = {
   readonly authBearerToken: string;
   readonly environment?: string;
+  readonly nodeCredentials: NodeCredentialResolver | null;
   readonly generator: Pick<CodexEphemeralExecutor, "generate">;
   readonly antigravityGenerator?: Pick<AntigravityEphemeralExecutor, "generate">;
 };
@@ -51,8 +53,11 @@ export function registerEphemeralLlmRoutes(
   app.post("/api/llm/ephemeral", async (request, reply) => {
     const authorization = verifyServiceBearerAuthorization(
       request.headers.authorization,
-      options.authBearerToken,
-      options.environment,
+      {
+        configuredToken: options.authBearerToken,
+        environment: options.environment,
+        nodeCredentials: options.nodeCredentials,
+      },
     );
     if (!authorization.ok) {
       return errorReply(

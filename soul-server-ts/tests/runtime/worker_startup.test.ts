@@ -33,6 +33,7 @@ describe("worker startup ordering", () => {
       createUpstreamAdapter: () => upstreamAdapter,
       upstreamRegistrationReady: Promise.resolve(),
       runnerRecoveryCoordinator,
+      runnerOrphanReaper: { start: vi.fn(() => { order.push("orphan-reaper"); }) },
     };
 
     const started = await Promise.race([
@@ -54,7 +55,8 @@ describe("worker startup ordering", () => {
     ]);
 
     expect(started).toEqual({ runtime, upstreamAdapter });
-    expect(order).toEqual(["compose", "listen", "adapter", "scan"]);
+    expect(order).toEqual(["compose", "listen", "adapter", "orphan-reaper", "scan"]);
+    expect(runtime.runnerOrphanReaper.start).toHaveBeenCalledOnce();
     expect(runnerRecoveryCoordinator.start).toHaveBeenCalledOnce();
     expect(info.mock.calls.map(([message]) => message)).toEqual([
       "Worker runtime composition starting",

@@ -604,6 +604,10 @@
     {
       "id": "149_events_insert_vacuum_threshold.sql",
       "sha256": "06bb703f0d6ec6847dae3573c71a6219069d42aadec80ebce37b1f54ab035ee8"
+    },
+    {
+      "id": "150_node_credentials.sql",
+      "sha256": "6da4544d18c90c137cca68b577291d381e976dc7253a4ed44403a6c848771303"
     }
   ]
 }

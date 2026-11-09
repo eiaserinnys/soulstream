@@ -94,7 +94,7 @@ export function CardNowPanel({
               {completePrompt || entry.turn !== 'user' || !entry.ask ? <Text style={[styles.turnLabel, { color: completePrompt ? t.colors.statusCompleted : turnLabelColor }]}>{completePrompt ? '모두 확인했습니다' : turnLabel(entry.turn)}</Text> : null}
               <Text numberOfLines={3} style={styles.turnText}>{bandText}</Text>
               {completePrompt ? <GlassButton testID="card-now-complete" size="compact" variant="primary" borderRadius={t.foundation.radius.round} disabled={completeDisabled || !onComplete} accessibilityLabel="완료" onPress={() => onComplete?.()}>
-                <Text style={styles.completeText}>완료</Text>
+                {({ contentColor }) => (<Text style={[styles.completeText, { color: contentColor }]}>완료</Text>)}
               </GlassButton> : null}
             </>
           ) : (

@@ -29,7 +29,7 @@ describe("recurring job routes", () => {
     const app = createApp({
       config,
       recurringJobRoutes: { service, resolveActor: async () => browserActor },
-      recurringJobHostRoutes: { service, authBearerToken: "service-token" },
+      recurringJobHostRoutes: { service, authBearerToken: "service-token", nodeCredentials: null },
     });
     try {
       const ui = await app.inject({ method: "POST", url: "/api/recurring-jobs", payload: createBody("ui-create") });
@@ -81,7 +81,7 @@ describe("recurring job routes", () => {
     const app = createApp({
       config,
       recurringJobRoutes: { service, resolveActor: async () => browserActor },
-      recurringJobHostRoutes: { service, authBearerToken: "service-token" },
+      recurringJobHostRoutes: { service, authBearerToken: "service-token", nodeCredentials: null },
     });
     const { schedule_expressions: _scheduleExpressions, ...base } = createBody("once-create");
     try {
@@ -136,7 +136,7 @@ describe("recurring job routes", () => {
     const { service, validateTarget } = persistedService();
     const app = createApp({
       config,
-      recurringJobHostRoutes: { service, authBearerToken: "service-token" },
+      recurringJobHostRoutes: { service, authBearerToken: "service-token", nodeCredentials: null },
     });
     try {
       const created = await app.inject({

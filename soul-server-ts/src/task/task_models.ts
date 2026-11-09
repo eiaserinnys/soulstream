@@ -433,6 +433,8 @@ export interface Task {
   worktreeId?: string;
   /** Runtime-only path revalidated immediately before every execution. */
   resolvedWorkspaceDir?: string;
+  /** Runtime-only: 워크트리 치환 전 에이전트 프로필의 workspace_dir. 격리 계획의 host 기준 경로다. */
+  profileWorkspaceDir?: string;
 
   /** Agent registry 프로필 id (sessions.agent_id 컬럼). */
   profileId?: string;

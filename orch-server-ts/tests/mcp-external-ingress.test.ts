@@ -72,7 +72,7 @@ describe("orchestrator dedicated external MCP ingress", () => {
       productionAuth: { resolveTokenAccess }, externalIngress: ingress,
       mcpHostRoutes: { ...unusedClusterDependencies, board: undefined as never, cards: undefined as never,
         cluster: { ...unusedClusterDependencies.cluster, readSession: async () => null },
-        folders: undefined as never, authBearerToken: "internal" },
+        folders: undefined as never, nodeCredentials: null, authBearerToken: "internal" },
     });
     cleanup.push(() => app.close());
     const denied = await app.inject({ method: "POST", url: "/dot", payload: {}, headers: { authorization: "Bearer wrong" } });

@@ -38,6 +38,12 @@ export interface CreateWorktreeInput {
   expectedHead?: string;
   setup?: WorktreeSetupMode;
   requireSetup?: boolean;
+  /**
+   * restricted 세션 여부. true면 서버가 세션 전용 루트
+   * (projectsRoot/.isolated/<session-id>)를 destination으로 쓰고 setup=none을 강제하며
+   * adopt와 foreign worktree 재사용을 거부한다.
+   */
+  restricted?: boolean;
 }
 
 interface ResolvedCreateWorktreeInput extends CreateWorktreeInput {
@@ -64,6 +70,11 @@ export class WorktreeService implements WorktreeExecutionResolver {
     return await this.options.git.withOperationDeadline(
       async () => await this.listWithinDeadline(input),
     );
+  }
+
+  /** 이 노드가 체크아웃으로 아는 등록 리포 id. 격리 Git view의 대상 목록이다. */
+  listRepositoryIds(): string[] {
+    return this.options.git.listRepositoryIds();
   }
 
   private async listWithinDeadline(input: {
@@ -152,6 +163,21 @@ export class WorktreeService implements WorktreeExecutionResolver {
     return result;
   }
 
+  /**
+   * restricted 세션의 worktree 소유 판정. 생성자(createdBySessionId)가
+   * authenticated sessionId와 같아야 한다. 조회 실패는 소유 아님으로 본다.
+   */
+  async ownsWorktree(actorSessionId: string, worktreeId: string): Promise<boolean> {
+    return await this.options.git.withOperationDeadline(async () => {
+      const [record] = await this.options.host.list({
+        actorSessionId,
+        nodeId: this.options.nodeId,
+        worktreeId,
+      });
+      return Boolean(record && record.createdBySessionId === actorSessionId);
+    });
+  }
+
   async create(input: CreateWorktreeInput): Promise<Record<string, unknown>> {
     return await this.options.git.withOperationDeadline(
       async () => await this.createWithinDeadline(input),
@@ -161,15 +187,22 @@ export class WorktreeService implements WorktreeExecutionResolver {
 
   private async createWithinDeadline(input: CreateWorktreeInput): Promise<Record<string, unknown>> {
     validateRepoId(input.repoId);
+    // restricted의 destination root는 서버가 계산한다. public 인자가 아니다.
+    const restrictedRoot = input.restricted
+      ? join(this.options.projectsRoot, ".isolated", input.actorSessionId)
+      : undefined;
+    // foreign worktree는 폴더 단위 mutable 권한만으로 재사용하지 않는다.
+    const reusable = (record: WorktreeRecord) =>
+      record.branch === input.branch
+      && record.state === "ready"
+      && record.mutableByCaller === true
+      && (restrictedRoot === undefined || record.createdBySessionId === input.actorSessionId);
     const knownRecords = await this.options.host.list({
       actorSessionId: input.actorSessionId,
       nodeId: this.options.nodeId,
       repoId: input.repoId,
     });
-    const existing = knownRecords.find((record) =>
-      record.branch === input.branch
-      && record.state === "ready"
-      && record.mutableByCaller === true);
+    const existing = knownRecords.find(reusable);
     const repoPath = join(this.options.projectsRoot, input.repoId);
     const effectiveInput = resolveCreateInput(input, repoPath, existing);
     validateCreateInput(effectiveInput);
@@ -193,10 +226,7 @@ export class WorktreeService implements WorktreeExecutionResolver {
         nodeId: this.options.nodeId,
         repoId: input.repoId,
       });
-      const lockedExisting = currentRecords.find((record) =>
-        record.branch === input.branch
-        && record.state === "ready"
-        && record.mutableByCaller === true);
+      const lockedExisting = currentRecords.find(reusable);
       if (lockedExisting) {
         await this.options.git.resolveManagedWorkspace({
           repoId: lockedExisting.repoId,
@@ -211,6 +241,8 @@ export class WorktreeService implements WorktreeExecutionResolver {
         entry.kind === "managed"
         && entry.branch === input.branch
         && entry.identity
+        // restricted는 자기 세션 루트 밖 orphan을 복구·인계하지 않는다.
+        && (restrictedRoot === undefined || containsPath(restrictedRoot, entry.path))
         && !currentRecords.some((record) =>
           record.id === entry.identity || record.canonicalPath === entry.path));
       if (orphan) {
@@ -256,6 +288,7 @@ export class WorktreeService implements WorktreeExecutionResolver {
             mode: effectiveInput.mode,
             worktreeId,
             ...(effectiveInput.startPoint ? { startPoint: effectiveInput.startPoint } : {}),
+            ...(restrictedRoot ? { baseDirectory: restrictedRoot } : {}),
           });
       const setup = await setupSharedDependencies({
         projectsRoot: this.options.projectsRoot,
@@ -459,10 +492,10 @@ function resolveCreateInput(
   }
 
   const setup = input.setup ?? (
-    input.mode === "adopt" ? "none" : defaultWorktreeSetupMode(repoPath)
+    input.restricted || input.mode === "adopt" ? "none" : defaultWorktreeSetupMode(repoPath)
   );
   const requireSetup = input.requireSetup ?? (
-    input.mode === "adopt" ? false : setup === "shared_dependencies"
+    input.restricted || input.mode === "adopt" ? false : setup === "shared_dependencies"
   );
   return { ...input, setup, requireSetup };
 }
@@ -474,6 +507,20 @@ function validateRepoId(repoId: string): void {
 }
 
 function validateCreateInput(input: ResolvedCreateWorktreeInput): void {
+  if (input.restricted) {
+    if (input.mode === "adopt") {
+      throw new WorktreeServiceError(
+        "WORKTREE_RESTRICTED_ADOPT_FORBIDDEN",
+        "restricted sessions cannot adopt an existing worktree path",
+      );
+    }
+    if (input.setup !== "none" || input.requireSetup) {
+      throw new WorktreeServiceError(
+        "WORKTREE_RESTRICTED_SETUP_FORBIDDEN",
+        "restricted sessions must create worktrees with setup=none",
+      );
+    }
+  }
   if (input.requireSetup && input.setup === "none") {
     throw new WorktreeServiceError(
       "INVALID_REQUEST",

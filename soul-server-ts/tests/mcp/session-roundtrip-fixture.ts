@@ -95,7 +95,7 @@ export async function createSessionRoundtripFixture() {
   const folderService = { getAllFolders: async () => { fail("get_all"); return [{ id: "folder", name: "폴더" }]; } };
   // Legacy list_sessions resolves the folder through its existing host route.
   registerFolderControlPlaneHostRoute(app, { authBearerToken: "token", serviceProvider: async () => folderService } as any);
-  registerPersistenceHostRoutes(app, { authBearerToken: "token", repositoryProvider: async () => repositories });
+  registerPersistenceHostRoutes(app, { nodeCredentials: null, authBearerToken: "token", repositoryProvider: async () => repositories });
   const cogito = { provider: { listConnectedNodes: () => [] }, briefCollector: { reflectBrief: async () => ({}) },
     searchProvider: { search: async (params: any) => {
       if (failure === "cogito") throw new Error("search unavailable");

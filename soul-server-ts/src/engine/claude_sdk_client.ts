@@ -28,7 +28,7 @@ import {
   type EventQueue,
 } from "./claude_sdk_event_queue.js";
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
-import { buildClaudeSdkOptions } from "./claude_sdk_options.js";
+import { buildClaudeSdkOptions, claudeIsolationWiring } from "./claude_sdk_options.js";
 import {
   ClaudeSdkPersistentSession,
   type ClaudeDetachedEventSink,
@@ -270,6 +270,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.lastWorkspaceDir = options.workspaceDir;
     this.lastEnv = options.env;
     this.lastRunOptions = options;
+    const isolationWiring = claudeIsolationWiring(options.isolation);
     let persistentSession = this.persistentSession;
     const nextConfigDir = options.env?.CLAUDE_CONFIG_DIR ?? null;
     if (
@@ -322,6 +323,7 @@ export class ClaudeSdkClient implements ClaudeClient {
         ...(options.trackChildExit
           ? { onChildProcessClosed: (closed) => this.trackChildExit(closed) }
           : {}),
+        ...isolationWiring.options(abortController),
       });
       let createdSession!: ClaudeSdkPersistentSession;
       createdSession = new ClaudeSdkPersistentSession({
@@ -368,7 +370,7 @@ export class ClaudeSdkClient implements ClaudeClient {
         yield event;
       }
     } catch (err) {
-      throw this.normalizeExecutionError(err);
+      throw isolationWiring.failure() ?? this.normalizeExecutionError(err);
     }
   }
 

@@ -216,6 +216,14 @@ export class P0R2FullSliceHarness {
       join(artifactDirectory, "runner_entry.js"),
       `await import(${JSON.stringify(pathToFileURL(childFixturePath).href)});\n`,
     );
+    await writeFile(
+      join(artifactDirectory, "session-netns-helper.py"),
+      "#!/usr/bin/env python3\n",
+    );
+    await writeFile(
+      join(artifactDirectory, "session_netns_network.py"),
+      "#!/usr/bin/env python3\n",
+    );
     const agentsConfigPath = join(root, "agents.yaml");
     const registryPath = join(root, "mcp-registry.yaml");
     const profilesPath = join(root, "mcp-profiles.yaml");

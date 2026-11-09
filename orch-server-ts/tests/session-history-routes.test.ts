@@ -47,10 +47,12 @@ describe("session history/read-only route harness", () => {
 
   it("wires runtime composition history routes only when an explicit provider is supplied", async () => {
     const withoutProvider = createOrchestratorRuntimeComposition({
+      nodeCredentials: null,
       config,
       sseReplayOnlyForTests: true,
     });
     const withProvider = createOrchestratorRuntimeComposition({
+      nodeCredentials: null,
       config,
       sseReplayOnlyForTests: true,
       sessionHistoryProvider: createProvider({

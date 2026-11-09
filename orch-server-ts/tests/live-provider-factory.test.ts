@@ -107,6 +107,7 @@ describe("live provider factory boundary", () => {
     );
 
     const bundle = createLiveOrchestratorProviderBundle({
+      nodeCredentials: null,
       dependencies,
       runtimeServices,
       usageSummaryRoutes: createUsageSummaryRoutes(),
@@ -139,6 +140,7 @@ describe("live provider factory boundary", () => {
       location: { endpoint: "https://r2.example.test", bucket: "attachments" },
     }));
     const bundle = createLiveOrchestratorProviderBundle({
+      nodeCredentials: null,
       dependencies,
       runtimeServices,
       usageSummaryRoutes: createUsageSummaryRoutes(),
@@ -171,6 +173,7 @@ describe("live provider factory boundary", () => {
       const runtimeServices = createRuntimeServices(dependencies);
       const resolveAttachmentStorage = vi.fn(async () => null);
       const bundle = createLiveOrchestratorProviderBundle({
+        nodeCredentials: null,
         dependencies,
         runtimeServices,
         usageSummaryRoutes: createUsageSummaryRoutes(),
@@ -202,6 +205,7 @@ describe("live provider factory boundary", () => {
     const runtimeServices = createRuntimeServices(dependencies);
 
     expect(() => createLiveOrchestratorProviderBundle({
+      nodeCredentials: null,
       dependencies,
       runtimeServices,
       usageSummaryRoutes: createUsageSummaryRoutes(),
@@ -352,6 +356,7 @@ describe("live provider factory boundary", () => {
     );
 
     const bundle = createLiveOrchestratorProviderBundle({
+      nodeCredentials: null,
       dependencies,
       runtimeServices,
       usageSummaryRoutes: createUsageSummaryRoutes(),
@@ -648,6 +653,7 @@ describe("live provider factory boundary", () => {
     const dependencies = createLiveDependencies();
     const runtimeServices = createRuntimeServices(dependencies);
     const bundle = createLiveOrchestratorProviderBundle({
+      nodeCredentials: null,
       dependencies,
       runtimeServices,
       usageSummaryRoutes: createUsageSummaryRoutes(),
@@ -724,7 +730,8 @@ function createUsageSummaryRoutes() {
 function createRuntimeServices(dependencies: LiveProviderDependencies) {
   return createOrchestratorRuntimeServices({
     config,
-    flatFolderContentRoutes: { host: {} as never, authBearerToken: "test-token" },
+    nodeCredentials: null,
+    flatFolderContentRoutes: { nodeCredentials: null, host: {} as never, authBearerToken: "test-token" },
     loadSessionSnapshot: async () => dependencies.dbCatalogRepository.loadSessionSnapshot(),
     sessionHistoryProvider:
       dependencies.dbCatalogRepository.sessionHistoryProvider,
@@ -872,6 +879,7 @@ function createOwnedUploadHarness(options: {
   const resolveReadStorage = vi.fn(async () => binding as never);
   const readPageAttachmentEvidence = options.readPageAttachmentEvidence ?? (async () => null);
   const bundle = createLiveOrchestratorProviderBundle({
+    nodeCredentials: null,
     dependencies,
     runtimeServices,
     usageSummaryRoutes: createUsageSummaryRoutes(),

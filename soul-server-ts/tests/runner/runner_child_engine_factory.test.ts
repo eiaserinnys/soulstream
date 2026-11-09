@@ -19,6 +19,111 @@ afterEach(async () => {
   ));
 });
 
+function makeOpenCodeChildConfig(isolation?: Record<string, unknown>) {
+  return parseRunnerChildConfig({
+    schemaVersion: 1,
+    sessionId: "session-opencode",
+    backend: "opencode",
+    agent: {
+      id: "agent-opencode",
+      name: "OpenCode Agent",
+      backend: "opencode",
+      workspace_dir: "/workspace/opencode",
+    },
+    paths: {
+      sessionDirectory: "/runner/session-opencode",
+      databasePath: "/runner/session-opencode/runner.sqlite",
+      socketPath: "/runner/session-opencode/runner.sock",
+      pidPath: "/runner/session-opencode/runner.pid",
+      lockPath: "/runner/session-opencode/runner.lock",
+      configPath: "/runner/session-opencode/runner-config.json",
+      logPath: "/runner/session-opencode/runner.log",
+    },
+    codeSha: "sha-opencode",
+    snapshotPath: "/release/sha-opencode/soul-server-ts",
+    codexAdapterMode: "sdk",
+    claudeRuntimeV2Enabled: false,
+    claudeRuntimeIdleTtlMs: 300_000,
+    claudeRuntimeMaxEntries: 16,
+    claudeRuntimeTurnTimeoutMs: 1_800_000,
+    internalMcpUrl: "http://127.0.0.1:4308/mcp/internal",
+    codexHome: null,
+    rolloutRoot: null,
+    ...(isolation ? { isolation } : {}),
+  });
+}
+
+function restrictedIsolation() {
+  return {
+    spec: {
+      version: 1,
+      enabled: true,
+      sessionId: "session-opencode",
+      backend: "opencode",
+      workspaceDir: "/workspace/opencode",
+      scratchWorkspaceDir: "/workspace/opencode",
+      sandboxDirectory: "/sandbox/restricted",
+      sessionWorktreeRoot: "/sandbox/restricted/worktrees",
+      authKind: "apikey-env",
+      policyDigest: "digest-1",
+      bindings: [],
+      masks: [],
+      heavyWorkLockBindings: [],
+      hostProcLocksBinding: {
+        source: "/srv/host/lock",
+        destination: "/run/lock",
+        writable: true,
+      },
+      approvedLocalMcp: [],
+      approvedTestDatabase: null,
+    },
+    resolvConfPath: "/run/systemd/resolve/stub-resolv.conf",
+    wsl: false,
+    tools: {
+      bwrap: "/usr/bin/bwrap",
+      pasta: "/usr/bin/pasta",
+      unshare: "/usr/bin/unshare",
+      setpriv: "/usr/bin/setpriv",
+      nft: "/usr/sbin/nft",
+      netnsHelper: "/opt/netns-helper.py",
+    },
+    envKeys: ["AUTH_BEARER_TOKEN"],
+    contextNotice: "격리 세션 안내",
+    attachedWorktreeIds: [],
+  };
+}
+
+describe("createRunnerChildEngine OpenCode session directory", () => {
+  it("puts the restricted OpenCode settings under the reopened sandbox", () => {
+    const config = makeOpenCodeChildConfig(restrictedIsolation());
+    const engine = createRunnerChildEngine(
+      config,
+      { call: vi.fn() } as never,
+      pino({ level: "silent" }),
+    );
+    const options = (engine as unknown as {
+      options: { sessionDirectory?: string };
+    }).options;
+
+    // B2가 runner state를 가리므로 설정·지시·XDG는 sandbox 안이어야 읽힌다.
+    expect(options.sessionDirectory).toBe("/sandbox/restricted/opencode");
+  });
+
+  it("keeps the runner state session directory without isolation", () => {
+    const config = makeOpenCodeChildConfig();
+    const engine = createRunnerChildEngine(
+      config,
+      { call: vi.fn() } as never,
+      pino({ level: "silent" }),
+    );
+    const options = (engine as unknown as {
+      options: { sessionDirectory?: string };
+    }).options;
+
+    expect(options.sessionDirectory).toBe("/runner/session-opencode");
+  });
+});
+
 describe("createRunnerChildEngine Claude account service bridge", () => {
   it("sends account operations to the host service for the runner session", async () => {
     const stateDirectory = await mkdtemp(join(tmpdir(), "runner-child-account-pool-"));

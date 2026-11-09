@@ -47,12 +47,14 @@ describe("identity page commit → live Y.Doc synchronization", () => {
         repository,
         auth: {
           authBearerToken: "service-token",
+          nodeCredentials: null,
           environment: "production",
           dashboardAuthEnabled: false,
           resolveDashboardUserFromHeaders: async () => null,
         },
       });
       registerPageYjsRoutes(app, {
+        nodeCredentials: null,
         createService: () => service,
         authBearerToken: "service-token",
       });

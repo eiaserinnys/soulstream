@@ -14,6 +14,10 @@ import {
   WORKTREE_CREATE_TIMEOUT_DEFAULT_MS,
   WORKTREE_CREATE_TIMEOUT_MAX_MS,
 } from "./worktree/worktree_timeouts.js";
+import {
+  parseIsolationLocalMcpList,
+  parseIsolationTestDatabasePair,
+} from "./security/session_isolation_runtime.js";
 
 /**
  * 환경 변수 스키마. design-principles §4(명시적 실패) — 필수 키 default 없음.
@@ -220,6 +224,27 @@ export const EnvSchema = z
       (value) => value === "" ? undefined : value,
       z.string().min(1).optional(),
     ),
+    /**
+     * 약한 모델 세션 격리 스위치. off면 턴 경로가 판정·정책 파일을 건드리지
+     * 않고 기존 실행 경로 그대로 돈다. enforce면 CLI 세션만 매 턴 판정한다.
+     */
+    SESSION_ISOLATION_MODE: z.enum(["off", "enforce"]).default("off"),
+    /** pasta 실행 파일 절대 경로. enforce + Linux에서 필수. */
+    SESSION_ISOLATION_PASTA_PATH: z.string().min(1).optional(),
+    /** `serverId:port` 쉼표 목록. 유효 정책 localMcp.optional에 더해진다. */
+    SESSION_ISOLATION_LOCAL_MCP: z.string().optional(),
+    /** `hostPort:sandboxPort`. SESSION_ISOLATION_TEST_DATABASE_URL과 짝. */
+    SESSION_ISOLATION_TEST_DATABASE: z.string().optional(),
+    /** 시험 전용 DB URL. 준비 입력에만 쓰고 설정·러너 config·로그로 내보내지 않는다. */
+    SESSION_ISOLATION_TEST_DATABASE_URL: z.string().optional(),
+    /** restricted Claude OAuth 토큰 파일·계정 ID. 둘 다 있거나 둘 다 없어야 한다. */
+    ISOLATED_CLAUDE_TOKEN_FILE: z.string().min(1).optional(),
+    ISOLATED_CLAUDE_ACCOUNT_ID: z.string().min(1).optional(),
+    /** Haniel 관측 MCP 쌍. 짝마다 둘 다 있거나 둘 다 없어야 한다. */
+    HANIEL_DASHBOARD_URL: z.string().optional(),
+    HANIEL_DASHBOARD_TOKEN_FILE: z.string().optional(),
+    HANIEL_ORCH_URL: z.string().optional(),
+    HANIEL_ORCH_TOKEN_FILE: z.string().optional(),
   })
   .superRefine((env, ctx) => {
     const internalMcpPort = env.MCP_INTERNAL_PORT ?? env.PORT + 1;
@@ -256,6 +281,13 @@ export const EnvSchema = z
         path: ["MCP_REQUIRE_AUTH"],
         message:
           "MCP_REQUIRE_AUTH must be true when ENVIRONMENT=production and MCP_ENABLED",
+      });
+    }
+    if (env.SESSION_ISOLATION_MODE === "enforce" && !env.MCP_REQUIRE_AUTH) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["SESSION_ISOLATION_MODE"],
+        message: "SESSION_ISOLATION_MODE=enforce requires MCP_REQUIRE_AUTH=true",
       });
     }
     // 3) 비-loopback HOST + MCP_ENABLED → REQUIRE_AUTH 또는 ALLOWED_HOSTS 강제. path 다름.
@@ -337,6 +369,57 @@ export const EnvSchema = z
           });
         }
       }
+    }
+    // restricted 실행 스위치. Windows는 스위치를 무시하므로 경로를 요구하지 않는다.
+    if (env.SESSION_ISOLATION_MODE === "enforce" && process.platform !== "win32") {
+      if (!env.SESSION_ISOLATION_PASTA_PATH) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["SESSION_ISOLATION_PASTA_PATH"],
+          message:
+            "SESSION_ISOLATION_PASTA_PATH is required when SESSION_ISOLATION_MODE=enforce",
+        });
+      } else if (!isAbsolute(env.SESSION_ISOLATION_PASTA_PATH)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["SESSION_ISOLATION_PASTA_PATH"],
+          message: "SESSION_ISOLATION_PASTA_PATH must be an absolute path",
+        });
+      }
+    }
+    for (const [left, right] of [
+      ["SESSION_ISOLATION_TEST_DATABASE", "SESSION_ISOLATION_TEST_DATABASE_URL"],
+      ["ISOLATED_CLAUDE_TOKEN_FILE", "ISOLATED_CLAUDE_ACCOUNT_ID"],
+      ["HANIEL_DASHBOARD_URL", "HANIEL_DASHBOARD_TOKEN_FILE"],
+      ["HANIEL_ORCH_URL", "HANIEL_ORCH_TOKEN_FILE"],
+    ] as const) {
+      const hasLeft = env[left] !== undefined && env[left] !== "";
+      const hasRight = env[right] !== undefined && env[right] !== "";
+      if (hasLeft !== hasRight) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [hasLeft ? right : left],
+          message: `${left} and ${right} must be set together`,
+        });
+      }
+    }
+    try {
+      parseIsolationLocalMcpList(env.SESSION_ISOLATION_LOCAL_MCP);
+    } catch (error) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["SESSION_ISOLATION_LOCAL_MCP"],
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+    try {
+      parseIsolationTestDatabasePair(env.SESSION_ISOLATION_TEST_DATABASE);
+    } catch (error) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["SESSION_ISOLATION_TEST_DATABASE"],
+        message: error instanceof Error ? error.message : String(error),
+      });
     }
   })
   .transform((env) => ({

@@ -23,6 +23,7 @@ function setup({ user = "user@example.com", restricted = false } = {}) {
   const app = Fastify(); apps.push(app);
   const listSessionAssignments = vi.fn(() => ({ a: { folderId: "f" }, b: { folderId: "other" } }));
   registerFolderRoutes(app, {
+    nodeCredentials: null,
     provider: { listFolders: () => [{ id: "f" }, { id: "other" }], listSessionAssignments },
     accessProvider: { resolveAccess: () => ({ restricted, allowedFolderIds: ["f"] }) },
     resolveDashboardUserId: () => user || null, projectIdentityService: identity as unknown as FolderRouteOptions["projectIdentityService"],

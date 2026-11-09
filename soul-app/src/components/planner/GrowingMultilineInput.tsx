@@ -15,7 +15,8 @@ interface GrowingMultilineInputProps extends Omit<
   'multiline' | 'scrollEnabled' | 'value'
 > {
   value: string;
-  outerScrollRef: React.RefObject<ScrollView | null>;
+  /** 바깥 ScrollView가 없으면(예: 폴더 칸 머리) 넘기지 않는다. */
+  outerScrollRef?: React.RefObject<ScrollView | null>;
   minHeight: number;
   maxHeight: number;
   verticalPadding: number;
@@ -55,7 +56,7 @@ export function GrowingMultilineInput({
   const [layout, setLayout] = useState<GrowingInputLayout>(initialLayout);
 
   const ensureOuterVisibility = useCallback(() => {
-    outerScrollRef.current?.scrollToEnd({ animated: true });
+    outerScrollRef?.current?.scrollToEnd({ animated: true });
   }, [outerScrollRef]);
   const cancelScheduledOuterVisibility = useCallback(() => {
     if (outerVisibilityFrame.current === null) return;
@@ -162,6 +163,8 @@ export function GrowingMultilineInput({
       value={value}
       multiline
       allowFontScaling
+      // 웹 textarea의 기본 rows(2)가 한 줄 제목의 높이를 2줄로 잡는다.
+      {...(Platform.OS === 'web' ? { rows: 1 } : {})}
       scrollEnabled={layout.scrollEnabled}
       style={[style, {
         minHeight,

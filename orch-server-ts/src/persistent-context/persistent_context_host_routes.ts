@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import type { PersistentContextNullReason, PersistentContextService } from "./persistent_context_service.js";
 
 export const persistentContextRouteAuthRequirements = {
@@ -12,6 +13,7 @@ export type PersistentContextHostRouteOptions = {
   readonly authBearerToken: string;
   readonly logNullReason: (reason: PersistentContextNullReason, sessionId: string, elapsedMs: number) => void;
   readonly environment?: string;
+  readonly nodeCredentials: NodeCredentialResolver | null;
 };
 
 export function registerPersistentContextHostRoutes(
@@ -22,8 +24,11 @@ export function registerPersistentContextHostRoutes(
     const receivedAt = Date.now();
     const authorization = verifyServiceBearerAuthorization(
       request.headers.authorization,
-      options.authBearerToken,
-      options.environment,
+      {
+        configuredToken: options.authBearerToken,
+        environment: options.environment,
+        nodeCredentials: options.nodeCredentials,
+      },
     );
     if (!authorization.ok) {
       return reply.code(authorization.statusCode).send({
