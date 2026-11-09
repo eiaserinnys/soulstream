@@ -101,6 +101,7 @@ describe("live dashboard DB access provider", () => {
         : null
     );
     const provider = createLiveDashboardAccessProvider({
+      nodeCredentials: null,
       configProvider: configWith({
         auth_bearer_token: "service-token",
         google_client_id: "google-client",
@@ -232,6 +233,7 @@ function createProviderHarness() {
     }),
   };
   const provider = createLiveDashboardAccessProvider({
+    nodeCredentials: null,
     configProvider: configWith({
       auth_bearer_token: "service-token",
       google_client_id: "google-client",

@@ -34,6 +34,7 @@ import { SqlFolderProjectIdentityRepository } from "./folders/folder_project_ide
 import { FolderProjectIdentityService } from "./folders/folder_project_identity_service.js";
 import { SqlNodeCredentialRepository } from "./node_credentials/credential_repository.js";
 import { NodeCredentialStore } from "./node_credentials/credential_store.js";
+import type { NodeCredentialResolver } from "./node_credentials/types.js";
 import { NodePairingService } from "./node_credentials/pairing_service.js";
 import { PlannerRepository } from "./planner/planner_repository.js";
 import {
@@ -405,9 +406,24 @@ export async function createLiveProductionApplication(
   let recurringJobScheduler: RecurringJobScheduler | undefined;
   let cardDispatcher: CardDispatcher | undefined;
   let usageSummaryService: UsageSummaryService | undefined;
+  const nodeCredentialRepository = new SqlNodeCredentialRepository(
+    async () => await sqlResolver.resolveSql(),
+  );
+  const nodeCredentialStore = new NodeCredentialStore({ repository: nodeCredentialRepository });
+  const nodeCredentialInit = await nodeCredentialStore.initialize();
+  if (!nodeCredentialInit.ok) {
+    context.warn(warningMessage(
+      "node credential store initialization failed; every node credential token resolves to null until restart",
+      nodeCredentialInit.error,
+    ));
+  }
+  nodeCredentialStore.onRevoked((principal) => {
+    pageYjsService?.closeConnectionsForCredential(principal.credential_id);
+  });
   const runtimeServices = createOrchestratorRuntimeServices({
     config: appConfig,
     registry,
+    nodeCredentials: nodeCredentialStore,
     eventIngress: eventIngressCommitter,
     onCommittedProviderEvent: (input) => usageSummaryService!.observeProviderExecution(input),
     releaseActivationReceipts: new ReleaseActivationReceiptRepository(sqlResolver),
@@ -432,9 +448,10 @@ export async function createLiveProductionApplication(
       (events) => recurringJobScheduler?.accept(events),
       (events) => cardDispatcher?.accept(events),
     ],
-    flatFolderContentRoutes: { host: flatFolderContentHost, authBearerToken: config.auth_bearer_token, environment: config.environment },
+    flatFolderContentRoutes: { host: flatFolderContentHost, authBearerToken: config.auth_bearer_token, environment: config.environment, nodeCredentials: nodeCredentialStore },
     pageYjsRoutes: {
       authBearerToken: config.auth_bearer_token,
+      nodeCredentials: nodeCredentialStore,
       browserReads: pageRepository,
       plannerReads: plannerRepository,
       starredFolderOrder: plannerRepository,
@@ -463,6 +480,7 @@ export async function createLiveProductionApplication(
         auth: {
           authBearerToken: config.auth_bearer_token,
           environment: config.environment,
+          nodeCredentials: nodeCredentialStore,
           dashboardAuthEnabled: Boolean(config.google_client_id),
           resolveDashboardUserFromHeaders: (headers) =>
             providers.authenticatedUserResolvers.resolveUserFromHeaders(headers),
@@ -537,6 +555,7 @@ export async function createLiveProductionApplication(
     providers = createLiveOrchestratorProviderBundle({
       dependencies,
       runtimeServices,
+      nodeCredentials: nodeCredentialStore,
       uiEventRepository,
       usageSummaryRoutes: { service: usageSummaryService },
       sessionStatisticsRepositoryProvider: async () =>
@@ -578,17 +597,6 @@ export async function createLiveProductionApplication(
     await dbCatalogRepository.close();
     throw error;
   }
-  const nodeCredentialRepository = new SqlNodeCredentialRepository(
-    async () => await sqlResolver.resolveSql(),
-  );
-  const nodeCredentialStore = new NodeCredentialStore({ repository: nodeCredentialRepository });
-  const nodeCredentialInit = await nodeCredentialStore.initialize();
-  if (!nodeCredentialInit.ok) {
-    context.warn(warningMessage(
-      "node credential store initialization failed; every node credential token resolves to null until restart",
-      nodeCredentialInit.error,
-    ));
-  }
   const nodePairingService = new NodePairingService({
     store: nodeCredentialStore,
     isNodeConnected: (nodeId) =>
@@ -621,6 +629,7 @@ export async function createLiveProductionApplication(
   const ephemeralAntigravityPath = resolveAntigravityCliPath(config.antigravity_cli_path, ephemeralProcessEnv)?.path;
   const ephemeralLlmRoutes: EphemeralLlmRouteOptions = {
     authBearerToken: appConfig.authBearerToken,
+    nodeCredentials: nodeCredentialStore,
     generator: new CodexEphemeralExecutor({
       ...(ephemeralCodexPath === undefined ? {} : { codexPath: ephemeralCodexPath }),
       processEnv: ephemeralProcessEnv,
@@ -743,6 +752,7 @@ export async function createLiveProductionApplication(
     authenticatedUserResolvers: providers.authenticatedUserResolvers,
     authBearerToken: config.auth_bearer_token,
     environment: config.environment,
+    nodeCredentials: nodeCredentialStore,
     onError: (error, operation) => context.warn(warningMessage(`recurring jobs ${operation}`, error)),
     onTick:()=>cardDispatchRuntime.dispatcher.tick(),
   });
@@ -776,6 +786,7 @@ export async function createLiveProductionApplication(
       providers,
       persistenceRepositoryProvider,
       usageSummaryService!,
+      nodeCredentialStore,
       config.cors_allowed_origins,
       folderProjectIdentityService,
       memoryStats,
@@ -795,6 +806,7 @@ export async function createLiveProductionApplication(
     ),
     persistentContextRoutes: {
       authBearerToken: config.auth_bearer_token,
+      nodeCredentials: nodeCredentialStore,
       logNullReason: (reason, sessionId, elapsedMs) => context.warn(
         `Persistent context evaluation skipped: reason ${reason}, session ${sessionId}, elapsed_ms ${elapsedMs}`,
       ),
@@ -835,10 +847,10 @@ export async function createLiveProductionApplication(
       ...providers.adminUsersRoutes.provider,
       ...cardDispatchRuntime.orchestrationSettingsRoutes,
       ...orchestrationAccess,
-      authBearerToken: config.auth_bearer_token,environment:config.environment,
+      authBearerToken: config.auth_bearer_token,environment:config.environment,nodeCredentials: nodeCredentialStore,
     },
     cardOrchestrationDecisionRoutes: {
-      authBearerToken:config.auth_bearer_token,environment:config.environment,
+      authBearerToken:config.auth_bearer_token,environment:config.environment,nodeCredentials: nodeCredentialStore,
       authorizeDecision:cardDispatchRuntime.authorizeDecision,
       authorizeWorker:cardDispatchRuntime.authorizeWorker,
     },
@@ -1076,6 +1088,7 @@ export function buildProductionRouteOptions(
     CreateAppOptions["persistenceHostRoutes"]
   >["repositoryProvider"],
   usageSummary: UsageSummaryService,
+  nodeCredentials: NodeCredentialResolver | null,
   corsAllowedOrigins: readonly string[] = [],
   folderProjectIdentityService?: FolderProjectIdentityService,
   memoryStats?: ReturnType<typeof createOrchestratorMemoryStatsCollector>,
@@ -1128,7 +1141,11 @@ export function buildProductionRouteOptions(
         ...providers.runtime.sessionActionCommandRoutes,
         deliveryRepositoryProvider: async () => (await persistenceRepositoryProvider()).deliveries,
       })), liveEvents: providers.runtime.sessionHistoryRoutes.liveEvents, closeAfterHistorySync: providers.runtime.sessionHistoryRoutes.closeAfterHistorySync, resolveAccount: async (request) => {
-      const service = verifyServiceBearerAuthorization(request.headers.authorization, config.authBearerToken, config.environment);
+      const service = verifyServiceBearerAuthorization(request.headers.authorization, {
+        configuredToken: config.authBearerToken,
+        environment: config.environment,
+        nodeCredentials,
+      });
       if (service.ok && !service.developmentBypass) return "service-token";
       const email = await providers.authenticatedUserResolvers.resolveEmail(request);
       if (email) return email.trim().toLowerCase();
@@ -1159,6 +1176,7 @@ export function buildProductionRouteOptions(
         sessionMessages: providers.runtime.sessionActionCommandRoutes,
         persistentSessionSettings: persistentSessionSettingsService,
         authBearerToken: config.authBearerToken,
+        nodeCredentials,
         ...(nodePairing ? { nodePairing } : {}),
         ...(mcpSkills ? { skills: mcpSkills } : {}),
         cards: { cardServiceProvider, provider: providers.folderRoutes.provider, resolveAccess: serviceTokenAccessWithoutEmail,
@@ -1198,11 +1216,13 @@ export function buildProductionRouteOptions(
           cardServiceProvider,
           identity: folderProjectIdentityService,
           authBearerToken: config.authBearerToken,
+          nodeCredentials,
         },
       },
     } : {}),
     folderRoutes: {
       ...providers.folderRoutes,
+      nodeCredentials,
       ...(cardExecutionServiceProvider ? {cardExecutionServiceProvider} : {}),
       ...(cardServiceProvider ? { cardServiceProvider } : {}),
       ...(cardServiceProvider ? {
@@ -1245,12 +1265,14 @@ export function buildProductionRouteOptions(
           scheduleHostRoutes: {
             repositoryProvider: scheduleRepositoryProvider,
             authBearerToken: config.authBearerToken,
+            nodeCredentials,
           },
         }
       : {}),
     persistenceHostRoutes: {
       repositoryProvider: persistenceRepositoryProvider,
       authBearerToken: config.authBearerToken,
+      nodeCredentials,
     },
     sessionActionCommandRoutes: {
       ...providers.runtime.sessionActionCommandRoutes,

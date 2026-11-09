@@ -58,6 +58,8 @@ import {
 export type OrchestratorRuntimeCompositionOptions = {
   config: OrchServerTsConfig;
   registry?: InMemoryNodeRegistry;
+  /** Node pairing credentials shared by the node websocket and command routes. */
+  nodeCredentials: import("../node_credentials/types.js").NodeCredentialResolver | null;
   routeOwners?: RouteOwnerManifest;
   exposeLocalHealthRoute?: boolean;
   nowMs?: NodeCommandClock;
@@ -161,6 +163,7 @@ export function createOrchestratorRuntimeServices(
   const routeOptions: OrchestratorRuntimeRouteOptions = {
     nodeWsRoute: {
       registry,
+      nodeCredentials: options.nodeCredentials,
       transportHub: transports,
       eventSink: composeEventSinks(
         options.onNodeEventSinkError ?? ((error, sinkIndex) => {
@@ -197,6 +200,7 @@ export function createOrchestratorRuntimeServices(
       router: sessionRouter,
       bridge: sessionBridge,
       timeoutMs: options.commandTimeoutMs,
+      nodeCredentials: options.nodeCredentials,
     },
     ...(options.enableSessionActionCommandRoutes === true
       ? {

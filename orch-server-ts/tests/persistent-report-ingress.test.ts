@@ -49,7 +49,7 @@ describe('report ingress uses existing message and persistence boundaries',()=>{
   it('authenticates the central host and preserves snake-case entry keys',async()=>{
     const put=vi.fn(async()=>({ok:true,entries:[],persistent_report:[]}));
     const app=Fastify();
-    registerPersistenceHostRoutes(app,{authBearerToken:'test-service',environment:'test',repositoryProvider:async()=>({persistentReports:{put}} as unknown as PersistenceHostRepositories)});
+    registerPersistenceHostRoutes(app,{ nodeCredentials: null,authBearerToken:'test-service',environment:'test',repositoryProvider:async()=>({persistentReports:{put}} as unknown as PersistenceHostRepositories)});
     const args=['own-pas',{key:'r1',card_numbers:[270],question_id:'q1'}];
     expect((await app.inject({method:'POST',url:'/api/session-data/host/put_report_entry',payload:{args}})).statusCode).toBe(401);
     expect((await app.inject({method:'POST',url:'/api/session-data/host/put_report_entry',headers:{authorization:'Bearer test-service'},payload:{args}})).statusCode).toBe(200);

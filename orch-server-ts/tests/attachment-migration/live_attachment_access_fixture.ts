@@ -31,6 +31,7 @@ export async function createLiveTestAttachmentService(
   }
   const resolver = createLiveDbSqlResolver({ sql });
   const dashboardAccessProvider = createLiveDashboardAccessProvider({
+    nodeCredentials: null,
     configProvider: {
       getConfig: () => ({}),
       requireConfig: (key: string) => { throw new Error(`unexpected config lookup for ${key}`); },

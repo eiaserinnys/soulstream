@@ -59,6 +59,7 @@ it("keeps authorized list results and detail/store refresh contracts additive", 
   const service = new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql), { appendEventTx: async () => 1 });
   const app = Fastify();
   registerCardRoutes(app, {
+    nodeCredentials: null,
     provider: { listFolders: () => [{ id: 'activity-a' }, { id: 'activity-b' }], listSessionAssignments: () => ({}) },
     accessProvider: { resolveAccess: () => ({ restricted: true, allowedFolderIds: ['activity-a'] }) },
     resolveDashboardUserId: () => 'fixture', cardServiceProvider: async () => service,

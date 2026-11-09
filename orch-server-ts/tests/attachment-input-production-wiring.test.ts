@@ -167,7 +167,8 @@ describe("live attachment input admission wiring", () => {
     });
     const runtimeServices = createOrchestratorRuntimeServices({
       config,
-      flatFolderContentRoutes: { host: {} as never, authBearerToken: "test-token" },
+      nodeCredentials: null,
+      flatFolderContentRoutes: { nodeCredentials: null, host: {} as never, authBearerToken: "test-token" },
       loadSessionSnapshot: async () => ({ sessions: [] }) as never,
       sessionHistoryProvider: {} as never,
       enableSessionActionCommandRoutes: true,
@@ -177,6 +178,7 @@ describe("live attachment input admission wiring", () => {
     const dependencies = createFactoryDependencies(repository);
     const findSessionNode = vi.fn(async () => "node-a");
     const bundle = createLiveOrchestratorProviderBundle({
+      nodeCredentials: null,
       dependencies,
       runtimeServices,
       usageSummaryRoutes: { service: {

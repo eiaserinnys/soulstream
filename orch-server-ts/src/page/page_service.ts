@@ -53,6 +53,11 @@ import {
 } from "./page_update_notifications.js";
 import { syncCommittedPageSnapshot } from "./page_committed_snapshot_sync.js";
 
+import {
+  NODE_CREDENTIAL_REVOKED_CLOSE_CODE,
+  NODE_CREDENTIAL_REVOKED_REASON,
+} from "../node_credentials/revocation.js";
+
 export interface PageServiceRepository extends PageYjsPersistenceRepository {
   getPageMutationByIdempotencyKey(
     idempotencyKey: string,
@@ -351,6 +356,27 @@ export class PageYjsService {
   handleConnection(socket: WebSocket, request: IncomingMessage, pageId: string): void {
     socket.pause();
     void this.openConnection(socket, request, pageId);
+  }
+
+  /**
+   * Close every live Yjs connection authenticated by a revoked node credential.
+   * The credential id is stamped into the Hocuspocus connection context by the
+   * auth extension. Returns the number of connections closed.
+   */
+  closeConnectionsForCredential(credentialId: string): number {
+    let closed = 0;
+    for (const document of this.hocuspocus.documents.values()) {
+      for (const connection of document.getConnections()) {
+        const context = connection.context as { credentialId?: unknown } | undefined;
+        if (context?.credentialId !== credentialId) continue;
+        connection.close({
+          code: NODE_CREDENTIAL_REVOKED_CLOSE_CODE,
+          reason: NODE_CREDENTIAL_REVOKED_REASON,
+        });
+        closed += 1;
+      }
+    }
+    return closed;
   }
   assertWebsocketAuthConfigured(): void {
     if (this.config.auth === undefined) {

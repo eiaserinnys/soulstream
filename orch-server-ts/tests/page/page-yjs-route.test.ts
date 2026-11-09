@@ -23,6 +23,7 @@ describe("orch public page Yjs routes", () => {
     const service = pageServiceDouble();
     const app = Fastify({ logger: false });
     registerPageYjsRoutes(app, {
+      nodeCredentials: null,
       createService: () => service,
       authBearerToken: "service-token",
     });
@@ -89,6 +90,7 @@ describe("orch public page Yjs routes", () => {
       handleConnection(socket, request, pageId);
     };
     registerPageYjsRoutes(app, {
+      nodeCredentials: null,
       createService: () => service,
       authBearerToken: "service-token",
     });
@@ -195,6 +197,7 @@ describe("orch public page Yjs routes", () => {
     const app = Fastify({ logger: false });
     app.get("/api/health", async () => ({ status: "ok" }));
     registerPageYjsRoutes(app, {
+      nodeCredentials: null,
       createService: (logger) => createPageService(pageRepository, productionAuth(), logger),
       authBearerToken: "service-token",
     });
@@ -220,6 +223,7 @@ function createPageApp(
 ) {
   const app = Fastify({ logger: false });
   registerPageYjsRoutes(app, {
+    nodeCredentials: null,
     createService: (logger) => createPageService(repository, auth, logger),
     authBearerToken: auth.authBearerToken,
   });
@@ -244,6 +248,7 @@ function productionAuth(overrides: Partial<{
   const verifyDashboardJwt = verifyDashboardToken ?? vi.fn().mockResolvedValue(null);
   return {
     authBearerToken: "service-token",
+    nodeCredentials: null,
     environment: "production",
     dashboardAuthEnabled: false,
     ...configOverrides,

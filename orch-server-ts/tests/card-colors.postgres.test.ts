@@ -56,6 +56,7 @@ describe("card post-it color storage over PostgreSQL and HTTP", () => {
   it("assigns a database color once and preserves it across PATCH, reads, status, and retries", async () => {
     const app = Fastify();
     registerFolderRoutes(app, {
+      nodeCredentials: null,
       provider: { listFolders: () => [{ id: folderId }], listSessionAssignments: () => ({}) },
       accessProvider: { resolveAccess: () => ({ restricted: true, allowedFolderIds: [folderId] }) },
       resolveDashboardUserId: () => userId,

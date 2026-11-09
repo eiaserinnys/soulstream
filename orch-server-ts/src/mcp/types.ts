@@ -42,6 +42,8 @@ export interface McpHostOptions {
   sessions?: SessionMcpDependencies;
   persistentSessionSettings?: PersistentSessionSettingsService;
   authBearerToken: string;
+  /** Node pairing credentials; `null` is explicit outside production composition. */
+  nodeCredentials: import("../node_credentials/types.js").NodeCredentialResolver | null;
   recurringJobs: RecurringJobHostRouteOptions;
   cardOrchestration: CardOrchestrationRouteOptions;
   cluster: {

@@ -49,6 +49,7 @@ try {
 
   });
   registerFolderRoutes(app, {
+    nodeCredentials: null,
     provider: {
       listFolders: async () => await listFolders(),
       listSessionAssignments: () => ({}),

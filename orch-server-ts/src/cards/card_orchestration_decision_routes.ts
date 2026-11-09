@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
+import type { NodeCredentialResolver } from "../node_credentials/types.js";
 const identitySchema = z
   .object({
     sessionId: z.uuid(),
@@ -16,6 +17,7 @@ type ExecutionIdentity = z.infer<typeof identitySchema>;
 export type CardOrchestrationDecisionRouteOptions = {
   authBearerToken: string;
   environment?: string;
+  nodeCredentials: NodeCredentialResolver | null;
   authorizeDecision(input: ExecutionIdentity): Promise<boolean>;
   authorizeWorker(
     input: ExecutionIdentity & { cardId: string },
@@ -38,8 +40,11 @@ export function registerCardOrchestrationDecisionRoutes(
     app.post(path, async (request, reply) => {
       const auth = verifyServiceBearerAuthorization(
         request.headers.authorization,
-        options.authBearerToken,
-        options.environment,
+        {
+          configuredToken: options.authBearerToken,
+          environment: options.environment,
+          nodeCredentials: options.nodeCredentials,
+        },
       );
       if (!auth.ok)
         return reply

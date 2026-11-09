@@ -32,7 +32,7 @@ describe("external MCP card writes", () => {
       resolveTarget: () => ({ nodeId: "node", agentId: "roselin", modelPreset: null, available: true, reason: null }),
       launch: async () => {}, sendMessage: messages, notify, warn: warnings });
     executionOptions = { ...unusedClusterDependencies, board: undefined as never,
-      authBearerToken: "token", folders: undefined as never, cards: {
+      authBearerToken: "token", nodeCredentials: null, folders: undefined as never, cards: {
         cardServiceProvider: async () => cards,
         provider: { listFolders: async () => [{ id: "a" }, { id: "b" }], listSessionAssignments: () => ({}) },
         resolveAccess: () => access,

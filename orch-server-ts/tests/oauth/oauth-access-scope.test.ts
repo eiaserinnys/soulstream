@@ -32,6 +32,7 @@ describe("OAuth resource scopes", () => {
     const isServiceBearer = async (request: import("fastify").FastifyRequest) => request.headers.authorization === "Bearer service-token";
     const users = createLiveAuthenticatedUserResolvers({ jwt, resolveOAuthToken, isServiceBearer });
     const accessProvider = createLiveDashboardAccessProvider({
+      nodeCredentials: null,
       configProvider: { getConfig: async () => ({ auth_bearer_token: "service-token", environment: "production", google_client_id: "client" }), requireConfig: async (key: string) => key },
       jwt, verifyDashboardToken: users.verifyToken, resolveOAuthAccess: users.resolveOAuthAccess,
       repository: { findUserByEmail: async () => ({ email: access.email, isAdmin: false, allowedFolderIds: ["allowed"] }) },

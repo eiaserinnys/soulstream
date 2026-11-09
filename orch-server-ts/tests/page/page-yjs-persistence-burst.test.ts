@@ -277,6 +277,7 @@ function createHarness(
     ...options,
   });
   registerPageYjsRoutes(app, {
+    nodeCredentials: null,
     createService: () => service,
     authBearerToken: "service-token",
   });
@@ -321,6 +322,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 5_000): Promise<voi
 function productionAuth() {
   return {
     authBearerToken: "service-token",
+    nodeCredentials: null,
     environment: "production",
     dashboardAuthEnabled: false,
     resolveDashboardUserFromHeaders: async () => null,

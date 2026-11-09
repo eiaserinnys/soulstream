@@ -88,7 +88,7 @@ describe("Node WS Fastify route harness", () => {
     const { registry } = createRegistry();
     const app = createApp({
       config: productionConfig,
-      nodeWsRoute: { registry },
+      nodeWsRoute: { registry, nodeCredentials: null },
     });
 
     await app.ready();
@@ -114,7 +114,7 @@ describe("Node WS Fastify route harness", () => {
         databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
         authBearerToken: "",
       }),
-      nodeWsRoute: { registry },
+      nodeWsRoute: { registry, nodeCredentials: null },
     });
 
     await app.ready();
@@ -135,7 +135,7 @@ describe("Node WS Fastify route harness", () => {
     const app = createApp({
       config: productionConfig,
       productionAuth: { resolveTokenAccess },
-      nodeWsRoute: { registry },
+      nodeWsRoute: { registry, nodeCredentials: null },
     });
 
     await app.ready();
@@ -179,7 +179,7 @@ describe("Node WS Fastify route harness", () => {
     }>((resolve) => { resolvePersist = resolve; }));
     const app = createApp({
       config: explicitTestConfig,
-      nodeWsRoute: { registry, releaseActivationReceipts: { persist } },
+      nodeWsRoute: { registry, nodeCredentials: null, releaseActivationReceipts: { persist } },
     });
 
     await app.ready();
@@ -238,7 +238,7 @@ describe("Node WS Fastify route harness", () => {
     }>((resolve) => { resolvePersist = resolve; }));
     const app = createApp({
       config: explicitTestConfig,
-      nodeWsRoute: { registry, releaseActivationReceipts: { persist } },
+      nodeWsRoute: { registry, nodeCredentials: null, releaseActivationReceipts: { persist } },
     });
 
     await app.ready();
@@ -303,7 +303,7 @@ describe("Node WS Fastify route harness", () => {
     const persist = vi.fn();
     const app = createApp({
       config: explicitTestConfig,
-      nodeWsRoute: { registry, releaseActivationReceipts: { persist } },
+      nodeWsRoute: { registry, nodeCredentials: null, releaseActivationReceipts: { persist } },
     });
     const { runner_artifact_hash: _omitted, ...incompleteManifest } = releaseManifest;
 
@@ -341,7 +341,7 @@ describe("Node WS Fastify route harness", () => {
     const { registry, sessionCache } = createRegistry();
     const app = createApp({
       config: explicitTestConfig,
-      nodeWsRoute: { registry },
+      nodeWsRoute: { registry, nodeCredentials: null },
     });
 
     await app.ready();
@@ -420,6 +420,7 @@ describe("Node WS Fastify route harness", () => {
     const app = createApp({
       config: explicitTestConfig,
       nodeWsRoute: {
+        nodeCredentials: null,
         registry,
         eventSink,
         eventIngress: { commitBatch },
@@ -481,7 +482,7 @@ describe("Node WS Fastify route harness", () => {
     const { registry } = createRegistry();
     const app = createApp({
       config: explicitTestConfig,
-      nodeWsRoute: { registry },
+      nodeWsRoute: { registry, nodeCredentials: null },
     });
 
     await app.ready();
@@ -511,7 +512,7 @@ describe("Node WS Fastify route harness", () => {
     const { registry } = createRegistry();
     const app = createApp({
       config: explicitTestConfig,
-      nodeWsRoute: { registry, heartbeatTimeoutMs: 40 },
+      nodeWsRoute: { registry, nodeCredentials: null, heartbeatTimeoutMs: 40 },
     });
 
     await app.ready();
@@ -538,7 +539,7 @@ describe("Node WS Fastify route harness", () => {
     const { registry } = createRegistry();
     const app = createApp({
       config: explicitTestConfig,
-      nodeWsRoute: { registry, registrationTimeoutMs: 20 },
+      nodeWsRoute: { registry, nodeCredentials: null, registrationTimeoutMs: 20 },
     });
 
     await app.ready();
@@ -556,7 +557,7 @@ describe("Node WS Fastify route harness", () => {
     const { registry } = createRegistry();
     const app = createApp({
       config: explicitTestConfig,
-      nodeWsRoute: { registry },
+      nodeWsRoute: { registry, nodeCredentials: null },
     });
 
     await app.ready();
@@ -577,7 +578,7 @@ describe("Node WS Fastify route harness", () => {
     const { registry } = createRegistry();
     const app = createApp({
       config: explicitTestConfig,
-      nodeWsRoute: { registry },
+      nodeWsRoute: { registry, nodeCredentials: null },
     });
 
     await app.ready();
@@ -599,7 +600,7 @@ describe("Node WS Fastify route harness", () => {
     const transportHub = new NodeCommandTransportHub();
     const app = createApp({
       config: explicitTestConfig,
-      nodeWsRoute: { registry, transportHub },
+      nodeWsRoute: { registry, nodeCredentials: null, transportHub },
     });
 
     await app.ready();
@@ -627,7 +628,7 @@ describe("Node WS Fastify route harness", () => {
     const transportHub = new NodeCommandTransportHub();
     const app = createApp({
       config: explicitTestConfig,
-      nodeWsRoute: { registry, transportHub },
+      nodeWsRoute: { registry, nodeCredentials: null, transportHub },
     });
 
     await app.ready();
@@ -747,7 +748,7 @@ describe("Node WS Fastify route harness", () => {
     const { registry } = createRegistry();
     const app = createApp({
       config: explicitTestConfig,
-      nodeWsRoute: { registry, transportHub: new NodeCommandTransportHub() },
+      nodeWsRoute: { registry, nodeCredentials: null, transportHub: new NodeCommandTransportHub() },
     });
 
     await app.ready();
@@ -797,7 +798,7 @@ describe("Node WS Fastify route harness", () => {
     const transportHub = new NodeCommandTransportHub();
     const app = createApp({
       config: explicitTestConfig,
-      nodeWsRoute: { registry, transportHub },
+      nodeWsRoute: { registry, nodeCredentials: null, transportHub },
     });
 
     await app.ready();
@@ -817,7 +818,7 @@ describe("Node WS Fastify route harness", () => {
     const { registry } = createRegistry();
     const app = createApp({
       config: explicitTestConfig,
-      nodeWsRoute: { registry },
+      nodeWsRoute: { registry, nodeCredentials: null },
     });
 
     await app.ready();
@@ -839,7 +840,7 @@ describe("Node WS Fastify route harness", () => {
     const transportHub = new NodeCommandTransportHub();
     const app = createApp({
       config: explicitTestConfig,
-      nodeWsRoute: { registry, transportHub },
+      nodeWsRoute: { registry, nodeCredentials: null, transportHub },
     });
 
     await app.ready();
@@ -899,7 +900,7 @@ describe("Node WS Fastify route harness", () => {
     });
     const app = createApp({
       config: explicitTestConfig,
-      nodeWsRoute: { registry, eventSink },
+      nodeWsRoute: { registry, nodeCredentials: null, eventSink },
     });
 
     await app.ready();

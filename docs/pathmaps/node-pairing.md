@@ -1,9 +1,10 @@
 # Node pairing and credentials
 
 Scope: device-code pairing for a new participant node, the `node_credentials`
-table, and the in-memory credential resolver placed in composition. Bearer
-inspection wiring and node_id matching are out of scope for this chapter's
-first wave; they land in P2 and must add their step here.
+table, the in-memory credential resolver placed in composition, and the P2
+bearer propagation that lets those tokens authenticate service routes and node
+websockets. The shared service bearer token keeps every behaviour it had before
+P2.
 
 ## Pairing flow
 
@@ -55,6 +56,66 @@ live SQL resolver, initializes the store, and passes the same `NodePairingServic
 to `nodePairRoutes` (public routes) and `mcpHostRoutes.nodePairing` (admin
 tools). There is no global singleton; the resolver instance lives in the
 composition root.
+
+## Bearer propagation (P2)
+
+`verifyServiceBearerAuthorization(authorization, options)` takes its
+configuration as an options object: `configuredToken`, an optional
+`environment` (default `production`), and a required nullable
+`nodeCredentials` resolver. Order of decisions:
+
+1. Empty `configuredToken`: 503 `not_configured` in production, development
+   bypass otherwise.
+2. Missing or malformed header: 401.
+3. Token equal to the shared service token: accepted with no principal.
+4. Otherwise `nodeCredentials?.resolve(token)`: a principal is accepted with
+   `{ ok: true, principal }`; anything else is 401 `invalid`.
+
+Every service route option type carries a required
+`nodeCredentials: NodeCredentialResolver | null` next to `authBearerToken`, and
+the same resolver is passed to the node WS, control WS, socket auth and page
+Yjs auth. `null` is written only by tests and non-production composition;
+`tests/node-credential-composition-contract.test.ts` fails the build if the
+literal appears under `orch-server-ts/src` or `soul-server-ts/src`.
+`orch-server-ts/src/production.ts` creates and initializes the store before the
+live provider bundle is built and passes that single instance everywhere. If
+`initialize()` fails, the orchestrator only warns, every node token resolves to
+null, and the shared-token paths behave exactly as before.
+
+## Node websocket binding (P2)
+
+- `/ws/node` keeps the principal resolved in `preValidation` on the connection.
+  The first `node_register` and every later catalog refresh (`node_register`
+  while registered) reject when the frame's `node_id` differs from
+  `principal.node_id`: close code 1008, reason
+  `node_id does not match node credential`, before any registry call.
+  Connections authenticated by the shared token carry no principal and keep
+  registering any node id.
+- A live registration belongs to the identity that created it: `legacy` for the
+  shared token, `credential_id` for a node token. A new connection registering
+  a node id held by a different identity is closed with 1008 and reason
+  `node_id is held by a different credential`; the live connection and its
+  registry entry stay intact. The same identity reconnecting still replaces
+  the old connection (`replaced_by_reconnect`).
+- `/ws/node/control` `node_control_register` keeps its existing connection_id
+  and `control_channel_v1` checks, then rejects a frame whose `node_id` differs
+  from the connection principal with 1008 and the mismatch reason.
+
+## Revocation (P2)
+
+`NodeCredentialStore.revokeCredential` notifies `onRevoked` listeners after the
+row is marked revoked. The orchestrator subscribes twice:
+
+- `/ws/node` and `/ws/node/control` each keep a `credential_id -> closers` set
+  for their live connections and close the matching ones with 1008 and reason
+  `node credential revoked`.
+- `PageYjsService.closeConnectionsForCredential` closes Yjs connections whose
+  Hocuspocus context carries the revoked `credentialId`, stamped by
+  `createPageYjsAuthExtension` during `onAuthenticate`, using the same close
+  code and reason.
+
+The next HTTP request with the revoked token resolves to null and receives 401
+from `verifyServiceBearerAuthorization`.
 
 ## Tables and files
 

@@ -10,6 +10,7 @@ describe("runtime push ride-along", () => {
   it("delivers node events to the additional sink without replacing canonical sinks", () => {
     const rideAlong = vi.fn();
     const services = createOrchestratorRuntimeServices({
+      nodeCredentials: null,
       config: parseOrchServerConfig({
         environment: "test",
         databaseUrl: "postgres://unused/unused",

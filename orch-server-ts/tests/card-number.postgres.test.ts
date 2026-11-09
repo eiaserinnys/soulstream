@@ -33,6 +33,7 @@ describe("card number storage over PostgreSQL and HTTP", () => {
   function makeApp() {
     const app = Fastify();
     registerFolderRoutes(app, {
+      nodeCredentials: null,
       provider: { listFolders: () => [{ id: folderId }, { id: movedFolderId }], listSessionAssignments: () => ({}) },
       accessProvider: { resolveAccess: () => ({ restricted: true, allowedFolderIds: [folderId, movedFolderId] }) },
       resolveDashboardUserId: () => userId,

@@ -473,6 +473,7 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
       repository: liveRepository,
       auth: {
         authBearerToken: "service-token",
+        nodeCredentials: null,
         environment: "production",
         dashboardAuthEnabled: false,
         resolveDashboardUserFromHeaders: async () => null,
@@ -480,6 +481,7 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
       logger: app.log,
     });
     registerPageYjsRoutes(app, {
+      nodeCredentials: null,
       createService: () => liveService,
       authBearerToken: "service-token",
     });
@@ -823,6 +825,7 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
       repository,
       auth: {
         authBearerToken: "service-token",
+        nodeCredentials: null,
         environment: "production",
         dashboardAuthEnabled: false,
         resolveDashboardUserFromHeaders: async () => null,
@@ -830,6 +833,7 @@ describe("PageYjsService PostgreSQL mutation integration", () => {
       logger: app.log,
     });
     registerPageYjsRoutes(app, {
+      nodeCredentials: null,
       createService: () => raceService,
       authBearerToken: "service-token",
     });

@@ -194,7 +194,7 @@ describe("card dispatch and session lifecycle", () => {
     it("stores structured attachments over HTTP, reads them and launches then resumes with paths", async () => {
         const attachments=[{nodeId:"eiaserinnys",path:"/incoming/upload/image.png",name:"그림.png",mimeType:"image/png"}];
         const app=Fastify();
-        registerCardRoutes(app,{cardServiceProvider:async()=>cards,provider:{listFolders:()=>[{id:"dispatch-folder"}],listSessionAssignments:()=>({})},accessProvider:{resolveAccess:()=>({restricted:false,allowedFolderIds:[]})},resolveDashboardUserId:()=>human.actorUserId,environment:"test"});
+        registerCardRoutes(app,{ nodeCredentials: null,cardServiceProvider:async()=>cards,provider:{listFolders:()=>[{id:"dispatch-folder"}],listSessionAssignments:()=>({})},accessProvider:{resolveAccess:()=>({restricted:false,allowedFolderIds:[]})},resolveDashboardUserId:()=>human.actorUserId,environment:"test"});
         try {
             const made=await app.inject({method:"POST",url:"/api/cards",payload:{folderId:"dispatch-folder",title:"첨부",request:"원문",queue:true,attachments,assignee:{kind:"agent",agentId:"roselin"},idempotencyKey:key()}});
             expect(made.statusCode).toBe(201);const id=made.json().card.id;
@@ -450,7 +450,7 @@ describe("card dispatch and session lifecycle", () => {
     it("accepts the agent question HTTP contract and returns 201 without replaying the alert", async () => {
         const { id, sessionId } = await start();
         const app = Fastify();
-        registerCardRoutes(app, { cardServiceProvider: async () => cards, provider: { listFolders: () => [{ id: 'dispatch-folder' }], listSessionAssignments: () => ({}) },
+        registerCardRoutes(app, { nodeCredentials: null, cardServiceProvider: async () => cards, provider: { listFolders: () => [{ id: 'dispatch-folder' }], listSessionAssignments: () => ({}) },
             accessProvider: { resolveAccess: () => ({ restricted: false, allowedFolderIds: [] }) }, authBearerToken: 'test', environment: 'production' });
         try {
             const request = { method: 'POST' as const, url: `/api/cards/${id}/questions`, headers: { 'x-soulstream-agent-session-id': sessionId, authorization: 'Bearer test' },
