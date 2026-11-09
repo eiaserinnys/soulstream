@@ -116,10 +116,6 @@ import {
   type NodeReleaseRouteOptions,
 } from "./node_releases/node_release_routes.js";
 import {
-  registerNodeBootstrapRoutes,
-  type NodeBootstrapRouteOptions,
-} from "./node_bootstrap/node_bootstrap_routes.js";
-import {
   registerPushRoutes,
   type PushRouteOptions,
 } from "./push/push_routes.js";
@@ -230,7 +226,6 @@ export type CreateAppOptions = {
   nodeSnapshotRoutes?: NodeSnapshotRouteOptions;
   nodePairRoutes?: NodePairingRouteOptions;
   nodeReleaseRoutes?: NodeReleaseRouteOptions;
-  nodeBootstrapRoutes?: NodeBootstrapRouteOptions;
   sessionActionCommandRoutes?: SessionActionCommandRouteOptions;
   sessionBackgroundScheduleRoutes?: SessionBackgroundScheduleRouteOptions;
   sessionResumeAfterLimitRoutes?: SessionResumeAfterLimitRouteOptions;
@@ -318,9 +313,6 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.nodeReleaseRoutes !== undefined) {
     registerNodeReleaseRoutes(app, options.nodeReleaseRoutes);
-  }
-  if (options.nodeBootstrapRoutes !== undefined) {
-    registerNodeBootstrapRoutes(app, options.nodeBootstrapRoutes);
   }
   if (options.sessionCommandRoutes !== undefined) {
     registerSessionCommandRoutes(app, {

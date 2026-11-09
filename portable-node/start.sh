@@ -97,6 +97,7 @@ sync_boot() {
   cp "$SCRIPT_DIR/launcher.mjs" "$BOOT_DIR/launcher.mjs"
   cp "$SCRIPT_DIR/defaults.json" "$BOOT_DIR/defaults.json"
   cp -R "$SCRIPT_DIR/lib" "$BOOT_DIR/lib"
+  cp -R "$SCRIPT_DIR/config" "$BOOT_DIR/config"
 }
 
 install_node() {

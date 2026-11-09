@@ -2,8 +2,16 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { git, makeScenario, readJsonFile, startShim, waitFor, waitForStarted } from "./helpers.mjs";
+import { basename, join } from "node:path";
+import {
+  configGenerations,
+  git,
+  makeScenario,
+  readJsonFile,
+  startShim,
+  waitFor,
+  waitForStarted,
+} from "./helpers.mjs";
 
 const childMarker = (stateDir) => join(stateDir, "home", "child-ran.txt");
 
@@ -44,10 +52,12 @@ test("새 판은 current 커밋으로만 맞추고 로컬 상태를 보존한다
     assert.equal(head, commitB, "current가 가리키는 커밋에 맞춰야 합니다.");
     assert.notEqual(head, commitC, "origin/main 끝을 따라가면 안 됩니다.");
     assert.ok(existsSync(join(stateDir, "workspace", "local-notes.txt")), "상태 폴더가 보존되어야 합니다.");
-    assert.ok(existsSync(join(stateDir, "config", `gen-${commitB.slice(0, 8)}`)));
+    const generations = await configGenerations(stateDir);
+    assert.equal(generations.length, 1, "템플릿 내용이 같으면 세대 폴더도 하나입니다.");
     assert.ok(existsSync(join(stateDir, "releases", commitB)));
     const active = await readJsonFile(join(stateDir, "active-release.json"));
     assert.equal(active.source_commit, commitB);
+    assert.equal(active.config_generation, basename(generations[0]));
   } finally {
     shim.stop();
     await shim.exit;

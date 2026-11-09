@@ -4,7 +4,7 @@ import { hostname } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
-import { fetchBootstrap, platformKey, writeConfigGeneration } from "./lib/config.mjs";
+import { platformKey, writeConfigGeneration } from "./lib/config.mjs";
 import { awaitApproval, defaultNodeId, startPairing, validateNodeId } from "./lib/pairing.mjs";
 import { alignCheckout, assertGit, gitEnv, run } from "./lib/git.mjs";
 import {
@@ -59,21 +59,17 @@ async function askQuestions(defaultName) {
   const injected = process.env.PORTABLE_NODE_ANSWERS;
   if (injected) {
     const parsed = JSON.parse(injected);
-    return { nodeId: parsed.node_id, companyPc: Boolean(parsed.company_pc) };
+    return { nodeId: parsed.node_id };
   }
   if (!process.stdin.isTTY) {
     throw new Error(
-      "첫 실행 질문에 답할 터미널이 없습니다. PORTABLE_NODE_ANSWERS 환경변수로 node_id와 company_pc를 주십시오.",
+      "첫 실행 질문에 답할 터미널이 없습니다. PORTABLE_NODE_ANSWERS 환경변수로 node_id를 주십시오.",
     );
   }
   const rl = createInterface({ input: process.stdin, output: process.stdout });
   try {
     const answer = (await rl.question(`노드 이름 [${defaultName}]: `)).trim();
-    const company = (await rl.question("회사 PC입니까? [y/N]: ")).trim().toLowerCase();
-    return {
-      nodeId: answer.length > 0 ? answer : defaultName,
-      companyPc: company === "y" || company === "yes",
-    };
+    return { nodeId: answer.length > 0 ? answer : defaultName };
   } finally {
     rl.close();
   }
@@ -83,11 +79,10 @@ async function firstRun({ stateRoot, defaults }) {
   const suggested = defaultNodeId(hostname());
   const answers = await askQuestions(suggested);
   const nodeId = validateNodeId(answers.nodeId);
-  log(`참여를 요청합니다: ${nodeId} (${answers.companyPc ? "회사 PC" : "개인 PC"})`);
+  log(`참여를 요청합니다: ${nodeId}`);
   const pairing = await startPairing({
     upstream: defaults.upstream,
     nodeId,
-    companyPc: answers.companyPc,
     timeoutMs: defaults.json_timeout_ms,
   });
   process.stdout.write(
@@ -143,29 +138,6 @@ async function waitForCurrent({ defaults, node }) {
   }
 }
 
-async function waitForBootstrap({ defaults, node, sourceCommit }) {
-  for (;;) {
-    try {
-      return await fetchBootstrap({
-        upstream: defaults.upstream,
-        token: node.token,
-        sourceCommit,
-        timeoutMs: defaults.json_timeout_ms,
-      });
-    } catch (error) {
-      if (error.code === "TRUST_CLASSIFICATION_PENDING") {
-        log(error.message);
-        await sleep((error.retryAfterSecs ?? 30) * 1000);
-        continue;
-      }
-      if (error.code === "VERSION_MISMATCH") {
-        throw new Error(`${error.message} 실행기를 다시 시작하면 새 판에 맞춥니다.`);
-      }
-      throw error;
-    }
-  }
-}
-
 async function checkoutIsClean(repoRoot, stateRoot) {
   const status = await run("git", ["-C", repoRoot, "status", "--porcelain"], { env: gitEnv(stateRoot) });
   return status.code === 0 && status.stdout.trim() === "";
@@ -210,15 +182,11 @@ async function requestReentry({ path, previous, reason, key, message, loopMessag
  * 하나라도 실패하면 아무것도 바꾸지 않고 현재 판을 계속 실행한다.
  */
 async function stageSwitch({ context, release }) {
-  const bootstrap = await waitForBootstrap({
-    defaults: context.defaults,
-    node: context.node,
-    sourceCommit: release.source_commit,
-  });
   const configGeneration = await writeConfigGeneration({
-    bootstrap,
+    templatesDir: join(context.portableDir, "config"),
     stateRoot: context.stateRoot,
     configRoot: join(context.stateRoot, "config"),
+    hostPort: context.ports.mcp,
   });
   const installed = await installRelease({
     stateRoot: context.stateRoot,
@@ -239,7 +207,6 @@ async function stageSwitch({ context, release }) {
   const plan = runtimePlan(lock, platformKey());
   const nodeChange = await ensureNodeForPlan({ stateRoot: context.stateRoot, plan });
   const runtimes = await installRuntimes({ stateRoot: context.stateRoot, plan, log });
-  const extraEnv = (await readJson(configGeneration.files.env)) ?? {};
   await prepareRelease({
     stateRoot: context.stateRoot,
     defaults: context.defaults,
@@ -248,7 +215,6 @@ async function stageSwitch({ context, release }) {
     releaseDir: installed.dir,
     runtimes,
     ports: context.ports,
-    extraEnv,
   });
   return { ok: true, nodeChange };
 }
@@ -369,8 +335,16 @@ async function main() {
   let activeRelease = release;
   let updatesDisabled = false;
   try {
-    const bootstrap = await waitForBootstrap({ defaults, node, sourceCommit: release.source_commit });
-    const candidate = await prepareCandidate({ stateRoot, defaults, node, runtimes, ports, release, bootstrap, log });
+    const candidate = await prepareCandidate({
+      stateRoot,
+      defaults,
+      node,
+      runtimes,
+      ports,
+      release,
+      templatesDir: join(portableDir, "config"),
+      log,
+    });
     supervisor = await startCandidate({ stateRoot, defaults, release, candidate, log });
   } catch (error) {
     log(`새 판 준비·기동에 실패했습니다: ${error.message}`);
@@ -382,6 +356,7 @@ async function main() {
       ports,
       previous,
       from: release,
+      templatesDir: join(portableDir, "config"),
       log,
     });
     if (!restored) throw error;

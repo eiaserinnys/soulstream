@@ -5,6 +5,7 @@ import { readdir, readFile, stat } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 import {
   TOKEN,
+  configGenerations,
   makeScenario,
   pathExists,
   readJsonFile,
@@ -15,7 +16,7 @@ import {
 test("첫 실행: 참여→판 맞춤→구성→묶음→빈 작업 폴더→감독 기동", async (t) => {
   const scenario = await makeScenario("first-run");
   t.after(scenario.close);
-  const { source, stateDir, publish, env } = scenario;
+  const { source, stateDir, orch, publish, env } = scenario;
   await publish(source.firstCommit);
   const handle = startLauncher({
     portableDir: source.portableDir,
@@ -36,6 +37,13 @@ test("첫 실행: 참여→판 맞춤→구성→묶음→빈 작업 폴더→�
     assert.match(output, /ABCD-EFGH/);
     assert.match(output, /참여가 승인되었습니다/);
     assert.match(output, /soul-server를 시작했습니다/);
+    assert.equal(output.includes("회사 PC"), false, "첫 실행은 노드 이름만 묻습니다.");
+    assert.equal(orch.state.lastPairStart.company_pc, false, "참여 API에는 boolean false를 보냅니다.");
+    assert.equal(
+      orch.state.requestPaths.includes("/api/node/bootstrap"),
+      false,
+      "실행기는 구성 내려주기를 부르지 않습니다.",
+    );
 
     const nodePath = join(stateDir, "node.json");
     const node = await readJsonFile(nodePath);
@@ -49,10 +57,13 @@ test("첫 실행: 참여→판 맞춤→구성→묶음→빈 작업 폴더→�
       assert.equal((await stat(nodePath)).mode & 0o777, 0o600);
     }
 
-    const configDir = join(stateDir, "config", `gen-${source.firstCommit.slice(0, 8)}`);
-    for (const file of ["agents.yaml", "model-catalog.yaml", "mcp-registry.yaml", "mcp-profiles.yaml", "env.json"]) {
+    const generations = await configGenerations(stateDir);
+    assert.equal(generations.length, 1, "구성 세대 폴더는 하나입니다.");
+    const configDir = generations[0];
+    for (const file of ["agents.yaml", "model-catalog.yaml", "mcp-registry.yaml", "mcp-profiles.yaml"]) {
       assert.ok(existsSync(join(configDir, file)), file);
     }
+    assert.equal(existsSync(join(configDir, "env.json")), false);
 
     const releaseDir = join(stateDir, "releases", source.firstCommit);
     assert.ok(existsSync(join(releaseDir, "portable-release.json")));
@@ -81,8 +92,10 @@ test("첫 실행: 참여→판 맞춤→구성→묶음→빈 작업 폴더→�
     assert.equal("AGENT_COMMON_FILES_DIR" in childEnv, false, "공통 폴더를 child env에 넣지 않습니다.");
     assert.equal(childEnv.GIT_CONFIG_GLOBAL, join(stateDir, "git", "gitconfig"));
     assert.equal(childEnv.PATH.split(delimiter)[0], join(stateDir, "bin"));
-    assert.equal(childEnv.ATOM_API_KEY, "atom-secret-value");
-    assert.equal(childEnv.EXTRA_FROM_BOOTSTRAP, "yes");
+    assert.equal("ATOM_ENABLED" in childEnv, false);
+    assert.equal("ATOM_API_KEY" in childEnv, false);
+    assert.equal("EXTRA_FROM_BOOTSTRAP" in childEnv, false);
+    assert.equal(childEnv.PORTABLE_LOCAL_MCP_AUTHORIZATION, `Bearer ${TOKEN}`);
     assert.equal(childEnv.SESSION_ISOLATION_MODE, "off");
     assert.equal(childEnv.DISABLE_AUTOUPDATER, "1");
     assert.equal(childEnv.CODEX_ADAPTER_MODE, "app-server");

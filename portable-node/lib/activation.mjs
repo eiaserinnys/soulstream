@@ -1,10 +1,10 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { sanitizeGeneration, writeConfigGeneration } from "./config.mjs";
+import { writeConfigGeneration } from "./config.mjs";
 import { prepareRelease } from "./environment.mjs";
 import { ensureRuntime, installRelease, releaseMarkerPath, runtimeInstallDir } from "./release.mjs";
 import { ChildSupervisor } from "./supervisor.mjs";
-import { readJson, writeStateFile } from "./state.mjs";
+import { writeStateFile } from "./state.mjs";
 
 /** P3 payload는 main.js를 묶음 루트에 둔다(dist/가 아니다). */
 export function makeSupervisor({ env, dir, defaults, log }) {
@@ -44,11 +44,12 @@ export async function installRuntimes({ stateRoot, plan, log = () => {} }) {
 }
 
 /** 구성·payload·바인딩을 한 번에 준비한다. child는 아직 건드리지 않는다. */
-export async function prepareCandidate({ stateRoot, defaults, node, runtimes, ports, release, bootstrap, log = () => {} }) {
+export async function prepareCandidate({ stateRoot, defaults, node, runtimes, ports, release, templatesDir, log = () => {} }) {
   const configGeneration = await writeConfigGeneration({
-    bootstrap,
+    templatesDir,
     stateRoot,
     configRoot: join(stateRoot, "config"),
+    hostPort: ports.mcp,
   });
   const installed = await installRelease({
     stateRoot,
@@ -57,7 +58,6 @@ export async function prepareCandidate({ stateRoot, defaults, node, runtimes, po
     release,
     log,
   });
-  const extraEnv = (await readJson(configGeneration.files.env)) ?? {};
   const prepared = await prepareRelease({
     stateRoot,
     defaults,
@@ -66,7 +66,6 @@ export async function prepareCandidate({ stateRoot, defaults, node, runtimes, po
     releaseDir: installed.dir,
     runtimes,
     ports,
-    extraEnv,
   });
   return { configGeneration, installed, prepared };
 }
@@ -99,6 +98,7 @@ export async function rollbackToPrevious({
   ports,
   previous,
   from,
+  templatesDir,
   log,
 }) {
   if (!previous || previous.source_commit === from.source_commit) return null;
@@ -107,25 +107,21 @@ export async function rollbackToPrevious({
     log("이전 판 묶음이 없어 되돌릴 수 없습니다.");
     return null;
   }
-  let configGeneration;
   try {
-    configGeneration = sanitizeGeneration(previous.config_generation);
-  } catch {
-    log("이전 판 구성 세대를 읽지 못해 되돌릴 수 없습니다.");
-    return null;
-  }
-  try {
-    const configDir = join(stateRoot, "config", configGeneration);
-    const extraEnv = (await readJson(join(configDir, "env.json"))) ?? {};
+    const configGeneration = await writeConfigGeneration({
+      templatesDir,
+      stateRoot,
+      configRoot: join(stateRoot, "config"),
+      hostPort: ports.mcp,
+    });
     const prepared = await prepareRelease({
       stateRoot,
       defaults,
       node,
-      configDir,
+      configDir: configGeneration.dir,
       releaseDir: dir,
       runtimes,
       ports,
-      extraEnv,
     });
     const supervisor = makeSupervisor({ env: prepared.env, dir, defaults, log });
     const result = await supervisor.start();

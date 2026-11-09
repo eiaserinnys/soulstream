@@ -62,7 +62,8 @@ test("재진입 뒤 bind가 실패하면 마지막으로 검증된 판으로 되
     assert.equal(rollback.from, secondCommit);
     assert.equal(rollback.to, source.firstCommit);
     assert.match(shim.output, /새 판 준비·기동에 실패했습니다/);
-    assert.match(shim.output, /이전 판/);
+    // rollback.json은 기동 성공 뒤에 쓰이고, "이전 판" 로그는 그 다음 줄이라 조금 기다린다.
+    await waitFor(() => shim.output.includes("이전 판"), { timeoutMs: 60000 });
 
     await waitFor(async () => (await readFile(childMarker(stateDir), "utf8")) !== markerBefore, {
       timeoutMs: 60000,

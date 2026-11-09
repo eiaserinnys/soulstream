@@ -122,6 +122,7 @@ function Sync-Boot {
     Copy-Item -LiteralPath (Join-Path $PortableDir "launcher.mjs") -Destination $BootDir
     Copy-Item -LiteralPath (Join-Path $PortableDir "defaults.json") -Destination $BootDir
     Copy-Item -LiteralPath (Join-Path $PortableDir "lib") -Destination $BootDir -Recurse
+    Copy-Item -LiteralPath (Join-Path $PortableDir "config") -Destination $BootDir -Recurse
 }
 
 New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
