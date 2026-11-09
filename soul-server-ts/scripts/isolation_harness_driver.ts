@@ -281,12 +281,6 @@ async function main(): Promise<void> {
   emit("prepared", prepareFacts(prepared));
 
   const abortController = job.abortAfterMs === undefined ? null : new AbortController();
-  if (job.abortAfterMs !== undefined) {
-    setTimeout(() => {
-      emit("abort", { afterMs: job.abortAfterMs });
-      abortController!.abort();
-    }, job.abortAfterMs);
-  }
 
   const tools = {
     ...config.tools,
@@ -364,6 +358,12 @@ async function main(): Promise<void> {
     return;
   }
   emit("ready", { helperPid: launch.child.pid ?? null, payloadProgram: job.payload.program });
+  if (job.abortAfterMs !== undefined) {
+    setTimeout(() => {
+      emit("abort", { afterMs: job.abortAfterMs });
+      abortController!.abort();
+    }, job.abortAfterMs);
+  }
 
   const runTimer = new Promise<"run-timeout">((resolve) => {
     setTimeout(() => resolve("run-timeout"), job.runTimeoutMs ?? 300_000);

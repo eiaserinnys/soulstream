@@ -6,7 +6,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import socket
 import subprocess
+import uuid
 
 from pathlib import Path
 
@@ -14,6 +16,7 @@ from isolation_harness_context import (
     CACHE_ROOT,
     Judge,
     build_job,
+    available_mask_ops,
     descendants,
     failure_event,
     finish_job,
@@ -33,9 +36,30 @@ from isolation_harness_context import (
 def axis_network(ctx: dict) -> dict:
     judge = Judge()
     sid = new_session_id("axis1-network")
+    denied = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    abstract = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    abstract_name = "harness-unapproved-" + uuid.uuid4().hex
+    denied.bind(("127.0.0.1", ctx["denied_port"]))
+    denied.listen(4)
+    abstract.bind("\0" + abstract_name)
+    abstract.listen(4)
+    try:
+        with socket.create_connection(("127.0.0.1", ctx["denied_port"]), timeout=3):
+            pass
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as probe:
+            probe.settimeout(3)
+            probe.connect("\0" + abstract_name)
+        return _axis_network_with_listeners(ctx, judge, sid, abstract_name)
+    finally:
+        denied.close()
+        abstract.close()
+
+
+def _axis_network_with_listeners(ctx: dict, judge: Judge, sid: str, abstract_name: str) -> dict:
+    judge.note("미승인 TCP 및 abstract unix 리스너에 호스트 연결 성공")
     args = {"approved_port": ctx["listener"].port, "denied_port": ctx["denied_port"],
             "host_ip": ctx["host"]["host_ip"], "docker_bridge": "172.17.0.1",
-            "hold_seconds": 12}
+            "abstract_name": abstract_name, "hold_seconds": 12}
     run = start_job(ctx, "axis1", build_job(ctx, sid, "network", args), 240)
     ready = run.wait_for("ready", 120)
     counters: dict = {"ok": False, "reason": "ready 없음"}
@@ -156,13 +180,14 @@ def axis_files(ctx: dict) -> dict:
     judge.check(facts.get("sessionWorktreeRoot") == session_dir,
                 "sessionWorktreeRoot == 계산값")
     sandbox_dir = str(facts.get("sandboxDirectory", ""))
+    ops = available_mask_ops(judge, write_ops(ctx, session_dir, sandbox_dir))
     run = finish_job(start_job(ctx, "axis5", build_job(
-        ctx, sid, "files", {"ops": write_ops(ctx, session_dir, sandbox_dir)}), 300), 300)
+        ctx, sid, "files", {"ops": ops}), 300), 300)
     results = payload_map(run).get("files", {}).get("results", {})
-    judge_files(judge, results)
-    return {"status": "fail" if judge.failures else "pass",
+    judge_files(judge, results, ops)
+    return {"status": "fail" if judge.failures else "partial" if judge.unexecuted else "pass",
             "evidence": "; ".join(judge.evidence), "failures": judge.failures,
-            "details": results}
+            "unexecuted": judge.unexecuted, "details": results}
 
 
 def axis_dynamic_worktree(ctx: dict) -> dict:
@@ -228,7 +253,7 @@ def axis_cache(ctx: dict) -> dict:
     judge = Judge()
     fixture = ctx["fixture"]
     main_store = Path(ctx["host"]["main_store"]) if ctx["host"].get("main_store") else None
-    store_before = tree_fingerprint(main_store) if main_store else {}
+    store_before = tree_fingerprint(main_store, limit=50) if main_store else {}
     expected = str(CACHE_ROOT / "pnpm-store")
     a = finish_job(start_job(ctx, "axis8-a", build_job(
         ctx, new_session_id("axis8-cache-a"), "cache",
@@ -248,7 +273,7 @@ def axis_cache(ctx: dict) -> dict:
     for label, events in (("A", events_a), ("B", events_b)):
         judge.check((events.get("playwright_cache_write") or {}).get("ok") is False,
                     f"세션 {label} Playwright cache 쓰기 거부")
-    store_after = tree_fingerprint(main_store) if main_store else {}
+    store_after = tree_fingerprint(main_store, limit=50) if main_store else {}
     judge.check(store_before == store_after, "호스트 pnpm 주 store 불변")
     return {"status": "fail" if judge.failures else "pass",
             "evidence": "; ".join(judge.evidence), "failures": judge.failures,

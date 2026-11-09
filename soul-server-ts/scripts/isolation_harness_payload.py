@@ -91,7 +91,7 @@ def case_network(args: dict) -> None:
     }
     abstract = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
-        abstract.connect("\0harness-unapproved-abstract")
+        abstract.connect("\0" + args["abstract_name"])
         results["abstract_unix"] = {"ok": True}
     except OSError as exc:
         results["abstract_unix"] = {"ok": False, "errno": err_name(exc)}
@@ -101,6 +101,18 @@ def case_network(args: dict) -> None:
     hold = float(args.get("hold_seconds", 0))
     if hold > 0:
         time.sleep(hold)
+
+
+def case_claude_auth(args: dict) -> None:
+    token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+    try:
+        with open(args["token_file"], "rb") as handle:
+            handle.read(1)
+        readable = True
+    except OSError:
+        readable = False
+    emit("claude_auth", token_present=token is not None,
+         token_matches=token == args["expected_token"], token_file_readable=readable)
 
 
 NODE_FETCH = (
@@ -315,6 +327,7 @@ def case_signal(args: dict) -> None:
 
 
 CASES = {
+    "claude-auth": case_claude_auth,
     "probe": case_probe,
     "network": case_network,
     "internet": case_internet,

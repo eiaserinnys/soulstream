@@ -14,6 +14,7 @@ from isolation_harness_context import (
     MASKED,
     REAL_PROJECTS,
     Judge,
+    available_mask_ops,
     build_job,
     descendants,
     dir_listing,
@@ -28,7 +29,6 @@ from isolation_harness_context import (
     start_sentinel,
     sentinel_alive,
     tree_fingerprint,
-    wait_group_gone,
 )
 from isolation_harness_fixture import list_processes
 
@@ -56,43 +56,79 @@ def axis_gh(ctx: dict) -> dict:
             "details": {"gh": event, "ghConfigDir": child.get("ghConfigDir")}}
 
 
+def ready_identities(run, judge: Judge, label: str) -> list[dict]:
+    ready = run.wait_for("ready", 120)
+    payload_ready = run.wait_payload("ready", 120) if ready else None
+    recorded = descendants(run.pid) if payload_ready else []
+    helper = (ready or {}).get("helperPid")
+    roles = {"helper": [], "pasta": [], "bwrap": [], "payload": []}
+    for entry in recorded:
+        pid, comm = entry["pid"], entry["comm"]
+        if pid == helper:
+            roles["helper"].append(pid)
+        if comm.startswith("pasta"):
+            roles["pasta"].append(pid)
+        if comm.startswith("bwrap"):
+            roles["bwrap"].append(pid)
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as handle:
+                is_payload = b"isolation_harness_payload.py" in handle.read()
+        except OSError:
+            is_payload = False
+        if is_payload:
+            roles["payload"].append(pid)
+    judge.check(ready is not None and payload_ready is not None,
+                f"{label}: helper와 payload ready")
+    for role, pids in roles.items():
+        judge.check(bool(pids), f"{label}: {role} identity 기록")
+    return recorded
+
+
+def wait_identities_gone(recorded: list[dict], timeout: float) -> list[dict]:
+    deadline = time.monotonic() + timeout
+    while True:
+        processes = list_processes()
+        alive = [entry for entry in recorded
+                 if processes.get(entry["pid"], {}).get("starttime") == entry["starttime"]]
+        if not alive or time.monotonic() >= deadline:
+            return alive
+        time.sleep(0.2)
+
+
 def axis_termination(ctx: dict) -> dict:
     judge = Judge()
     sentinel = start_sentinel(ctx)
     sentinel_start = list_processes()[sentinel]["starttime"]
-    survivors: dict[str, dict] = {}
-    helper_pid = None
+    identities: dict[str, list[dict]] = {}
+    survivors: dict[str, list[dict]] = {}
     try:
-        normal = finish_job(start_job(ctx, "axis10-normal", build_job(
-            ctx, new_session_id("axis10-normal"), "true", {}), 240), 240)
+        normal = start_job(ctx, "axis10-normal", build_job(
+            ctx, new_session_id("axis10-normal"), "sleep", {"seconds": 6}), 240)
+        identities["normal"] = ready_identities(normal, judge, "normal")
+        finish_job(normal, 240)
         exit_event = (normal.events("exit") or [{}])[-1]
         judge.check(exit_event.get("code") == 0, "정상 종료 exit code 0")
-        judge.check(wait_group_gone(normal.pid, 15) == [], "정상 종료 뒤 sandbox 회수")
+        survivors["normal"] = wait_identities_gone(identities["normal"], 15)
+        judge.check(not survivors["normal"], "정상 종료 뒤 기록된 자손 회수")
         judge.check(sentinel_alive(sentinel, sentinel_start), "정상 종료 뒤 sentinel 생존")
 
-        abort = finish_job(start_job(ctx, "axis10-abort", build_job(
-            ctx, new_session_id("axis10-abort"), "sleep", {}, abortAfterMs=1500), 240), 240)
+        abort = start_job(ctx, "axis10-abort", build_job(
+            ctx, new_session_id("axis10-abort"), "sleep", {}, abortAfterMs=4000), 240)
+        identities["abort"] = ready_identities(abort, judge, "abort")
+        finish_job(abort, 240)
         judge.check(bool(abort.events("abort")), "abort 전달")
-        judge.check(wait_group_gone(abort.pid, 15) == [], "abort 뒤 sandbox 회수")
+        survivors["abort"] = wait_identities_gone(identities["abort"], 15)
+        judge.check(not survivors["abort"], "abort 뒤 기록된 자손 회수")
         judge.check(sentinel_alive(sentinel, sentinel_start), "abort 뒤 sentinel 생존")
 
         parent = start_job(ctx, "axis10-parent", build_job(
             ctx, new_session_id("axis10-parent"), "sleep", {}), 240)
-        ready = parent.wait_for("ready", 120)
-        helper_pid = (ready or {}).get("helperPid")
-        recorded = descendants(parent.pid)
-        judge.check(ready is not None and len(recorded) > 0,
-                    f"ready 시점 자손 {len(recorded)}개 기록")
+        identities["parent"] = ready_identities(parent, judge, "parent")
         parent.kill_owned(signal.SIGKILL)
         parent.wait_exit(15)
-        leftover = wait_group_gone(parent.pid, 20)
-        judge.check(leftover == [], "드라이버 사망 뒤 sandbox 회수")
+        survivors["parent"] = wait_identities_gone(identities["parent"], 20)
+        judge.check(not survivors["parent"], "드라이버 사망 뒤 기록된 자손 회수")
         judge.check(sentinel_alive(sentinel, sentinel_start), "부모 종료 뒤 sentinel 생존")
-        processes = list_processes()
-        survivors = {str(pid): {"comm": processes.get(pid, {}).get("comm"),
-                                "ppid": processes.get(pid, {}).get("ppid"),
-                                "pgrp": processes.get(pid, {}).get("pgrp")}
-                     for pid in leftover}
     finally:
         try:
             ctx["registry"].kill(sentinel, signal.SIGKILL)
@@ -100,8 +136,8 @@ def axis_termination(ctx: dict) -> dict:
             pass
     return {"status": "fail" if judge.failures else "pass",
             "evidence": "; ".join(judge.evidence), "failures": judge.failures,
-            "details": {"sentinel": sentinel, "helperPid": helper_pid,
-                        "parentSurvivors": survivors}}
+            "details": {"sentinel": sentinel, "identities": identities,
+                        "survivors": survivors}}
 
 
 def axis_heavy_work(ctx: dict) -> dict:
@@ -160,6 +196,9 @@ def axis_local_mask(ctx: dict) -> dict:
     judge = Judge()
     sid = new_session_id("axis13-local")
     ws = ctx["fixture"]["ws"]
+    scratch = ws / "existing-scratch"
+    scratch.mkdir()
+    ctx = {**ctx, "base_env": {**ctx["base_env"], "SCRATCH_WORKSPACE_DIR": str(scratch)}}
     listing_before = dir_listing(ws, 64)
     probe = finish_job(start_job(ctx, "axis13-probe", build_job(
         ctx, sid, "probe", probe_args(ctx)), 240), 240)
@@ -175,19 +214,26 @@ def axis_local_mask(ctx: dict) -> dict:
          "path": str(ctx["fixture"]["runner_state"])},
         {"id": "write_sandbox", "mode": "write", "path": f"{sandbox_dir}/harness-write.txt"},
     ]
+    ops = available_mask_ops(judge, ops)
     run = finish_job(start_job(ctx, "axis13", build_job(ctx, sid, "files", {"ops": ops}), 240), 240)
     results = payload_map(run).get("files", {}).get("results", {})
-    judge.check((results.get("read_sibling_runner") or {}).get("ok") is False,
-                "이웃 runner 설정 읽기 실패")
-    judge.check((results.get("read_host_environ") or {}).get("ok") is False,
-                "호스트 /proc/<pid>/environ 읽기 실패")
-    judge.check((results.get("list_runner_state") or {}).get("count") == 1,
-                "runner state 루트에는 현재 세션 sandbox만 보임")
-    judge.check((results.get("write_sandbox") or {}).get("ok") is True, "mask 아래 sandbox RW")
+    tested = {op["id"] for op in ops}
+    if "read_sibling_runner" in tested:
+        judge.check((results.get("read_sibling_runner") or {}).get("ok") is False,
+                    "이웃 runner 설정 읽기 실패")
+    if "read_host_environ" in tested:
+        judge.check((results.get("read_host_environ") or {}).get("ok") is False,
+                    "호스트 /proc/<pid>/environ 읽기 실패")
+    if "list_runner_state" in tested:
+        judge.check((results.get("list_runner_state") or {}).get("count") == 1,
+                    "runner state 루트에는 현재 세션 sandbox만 보임")
+    if "write_sandbox" in tested:
+        judge.check((results.get("write_sandbox") or {}).get("ok") is True, "mask 아래 sandbox RW")
     added = [name for name in dir_listing(ws, 64) if name not in listing_before]
     judge.check(added == [], f"새 scratch 없음(추가 {added})")
-    return {"status": "fail" if judge.failures else "pass",
+    return {"status": "fail" if judge.failures else "partial" if judge.unexecuted else "pass",
             "evidence": "; ".join(judge.evidence), "failures": judge.failures,
+            "unexecuted": judge.unexecuted,
             "details": {"checks": checks, "files": results, "added": added}}
 
 
@@ -200,19 +246,24 @@ def axis_claude_auth(ctx: dict) -> dict:
     missing_text = f"{missing.get('name', '')} {missing.get('message', '')}".lower()
     judge.check("auth" in missing_text, "token 파일 없음 → 준비 거부(fail-closed)")
     token_file = ctx["run_root"] / "synthetic-claude-token"
-    token_file.write_text("harness-synthetic-token-not-a-secret\n", encoding="utf-8")
+    token = "harness-synthetic-token-not-a-secret"
+    token_file.write_text(token + "\n", encoding="utf-8")
     token_file.chmod(0o600)
     run_ok = finish_job(start_job(ctx, "axis14-ok", build_job(
-        ctx, new_session_id("axis14-ok"), "true", {}, backend="claude",
-        prepareOnly="assembly",
+        ctx, new_session_id("axis14-ok"), "claude-auth",
+        {"expected_token": token, "token_file": str(token_file)}, backend="claude",
         claudePair={"tokenFile": str(token_file), "accountId": "harness-account"}), 240), 240)
-    ok = (run_ok.events("assembly_ok") or [{}])[-1]
+    ok = (run_ok.events("prepared") or [{}])[-1]
     auth_kind = (ok.get("isolation") or {}).get("authKind")
-    judge.check(ok.get("event") == "assembly_ok", "합성 token으로 준비 성공")
+    judge.check(ok.get("event") == "prepared", "합성 token으로 준비 성공")
     judge.check(auth_kind == "claude-oauth-token", "authKind claude-oauth-token")
+    payload = payload_map(run_ok).get("claude_auth", {})
+    judge.check(payload.get("token_present") is True, "상자 env에 token 키 존재")
+    judge.check(payload.get("token_matches") is True, "상자 token이 합성 값과 일치")
+    judge.check(payload.get("token_file_readable") is False, "상자에서 token 파일 읽기 실패")
     return {"status": "fail" if judge.failures else "pass",
             "evidence": "; ".join(judge.evidence), "failures": judge.failures,
-            "details": {"missing": missing, "ok_authKind": auth_kind}}
+            "details": {"missing": missing, "ok_authKind": auth_kind, "payload": payload}}
 
 
 def axis_timing(ctx: dict) -> dict:

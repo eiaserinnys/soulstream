@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """카드 #1111 restricted 통합 하네스의 fixture·프로세스 지원.
 
-안전 규칙 2의 pid 규율이 이 파일 하나에 모여 있다. 하네스가 신호를 보내는
-대상은 `OwnedChildren`에 등록된 자식뿐이고, 등록은 `Popen.pid`(int, >1)로만
-한다. killpg는 `start_new_session=True`로 만든 그룹에만 쓴다.
+안전 규칙 2의 pid 규율은 `isolation_harness_children`에 모여 있다. 하네스가
+신호를 보내는 대상은 `OwnedChildren`에 등록된 Popen 자식뿐이다.
 
 비밀값은 읽어도 출력하지 않는다. 호스트 파일 지문은 크기·mtime·sha256만
 남기고 내용은 담지 않는다.
@@ -23,6 +22,8 @@ import time
 import uuid
 from pathlib import Path
 
+from isolation_harness_children import HarnessError, HarnessSafetyError, OwnedChildren
+
 GIT = "/usr/bin/git"
 BASE_ENV_ALLOWLIST = (
     "PATH", "LANG", "LANGUAGE", "LC_ALL", "LC_CTYPE", "TZ", "TERM",
@@ -31,58 +32,8 @@ BASE_ENV_ALLOWLIST = (
 )
 
 
-class HarnessError(RuntimeError):
-    pass
-
-
-class HarnessSafetyError(HarnessError):
-    pass
-
-
 class HarnessTimeout(HarnessError):
     pass
-
-
-class OwnedChildren:
-    """하네스가 직접 띄운 자식만 신호 대상으로 허용한다(#1102 재발 방지)."""
-
-    def __init__(self) -> None:
-        self._pids: set[int] = set()
-
-    def register(self, pid: object) -> int:
-        if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 1:
-            raise HarnessSafetyError(f"refusing to register a non-harness pid: {pid!r}")
-        self._pids.add(pid)
-        return pid
-
-    def assert_owned(self, pid: object) -> int:
-        if isinstance(pid, bool) or not isinstance(pid, int) or pid <= 1:
-            raise HarnessSafetyError(f"refusing to signal a non-positive pid: {pid!r}")
-        if pid not in self._pids:
-            raise HarnessSafetyError(f"refusing to signal a pid this harness did not start: {pid}")
-        return pid
-
-    def forget(self, pid: int) -> None:
-        self._pids.discard(pid)
-
-    def kill(self, pid: object, sig: int = signal.SIGKILL) -> None:
-        os.kill(self.assert_owned(pid), sig)
-
-    def kill_group(self, pid: object, sig: int = signal.SIGKILL) -> None:
-        target = self.assert_owned(pid)
-        try:
-            group = os.getpgid(target)
-        except ProcessLookupError:
-            return
-        if group != target:
-            raise HarnessSafetyError(
-                f"refusing killpg: pid {target} is not a harness-created session leader"
-            )
-        os.killpg(group, sig)
-
-    @property
-    def pids(self) -> set[int]:
-        return set(self._pids)
 
 
 def curated_base_env(overrides: dict[str, str] | None = None) -> dict[str, str]:
@@ -361,7 +312,7 @@ class DriverRun:
             bufsize=0,
             start_new_session=True,
         )
-        self.pid = registry.register(self.proc.pid)
+        self.pid = registry.register(self.proc)
         assert self.proc.stdout is not None
         self._fd = self.proc.stdout.fileno()
         os.set_blocking(self._fd, False)
@@ -434,21 +385,38 @@ class DriverRun:
             found = self.events(name)
             if found:
                 return found[-1]
-            if self.proc.poll() is not None and self.eof:
+            if self.poll() is not None and self.eof:
                 return None
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 return None
             self.pump(min(0.5, remaining))
 
+    def poll(self) -> int | None:
+        code = self.proc.poll()
+        if code is not None:
+            self.registry.forget(self.pid)
+        return code
+
+    def wait_payload(self, name: str, timeout: float) -> dict | None:
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            found = [event for event in self.payload() if event.get("event") == name]
+            if found:
+                return found[-1]
+            if self.poll() is not None and self.eof:
+                return None
+            self.pump(min(0.2, max(0, deadline - time.monotonic())))
+        return None
+
     def wait_exit(self, timeout: float) -> int | None:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             self.pump(min(0.5, max(0.01, deadline - time.monotonic())))
-            if self.proc.poll() is not None and self.eof:
+            if self.poll() is not None and self.eof:
                 break
         self.pump(0.05)
-        self.returncode = self.proc.poll()
+        self.returncode = self.poll()
         return self.returncode
 
     def terminate_owned(self, sig: int = signal.SIGTERM) -> None:

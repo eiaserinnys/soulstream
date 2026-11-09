@@ -9,6 +9,7 @@ job 생성·프로세스 회수·판정 도구를 담는다.
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import shutil
 import socket
@@ -89,6 +90,7 @@ class Judge:
     def __init__(self) -> None:
         self.failures: list[str] = []
         self.evidence: list[str] = []
+        self.unexecuted: list[str] = []
 
     def check(self, ok: object, message: str) -> bool:
         if ok:
@@ -120,12 +122,61 @@ def host_facts() -> dict:
     }
 
 
-def tree_fingerprint(path: Path) -> dict:
+def tree_fingerprint(path: Path, limit: int | None = None) -> dict:
     facts = file_fingerprint(path)
     if path.is_dir():
-        facts["entries"] = dir_listing(path, 32)
         facts["ino"] = os.stat(path).st_ino
+        files = []
+        for root, dirs, names in os.walk(path):
+            dirs.sort()
+            for name in sorted(names):
+                item = Path(root) / name
+                if item.is_file() and not item.is_symlink():
+                    files.append(item)
+                    if limit is not None and len(files) == limit:
+                        break
+            if limit is not None and len(files) == limit:
+                break
+        samples = []
+        for item in files:
+            info = item.stat()
+            digest = hashlib.sha256()
+            with item.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(65536), b""):
+                    digest.update(chunk)
+            samples.append((str(item.relative_to(path)), info.st_ino, info.st_size,
+                            info.st_mtime_ns, digest.hexdigest()))
+        facts["files"] = samples
     return facts
+
+
+def host_readable(op: dict) -> bool:
+    """내용은 보존하거나 출력하지 않고 호스트의 존재·가독성만 확인한다."""
+    path = op["path"]
+    try:
+        if op["mode"] == "list":
+            with os.scandir(path):
+                return True
+        if op["mode"] == "lstat":
+            os.lstat(path)
+            return os.access(path, os.R_OK)
+        with open(path, "rb") as handle:
+            handle.read(1)
+        return True
+    except OSError:
+        return False
+
+
+def available_mask_ops(judge: Judge, ops: list[dict]) -> list[dict]:
+    available = []
+    for op in ops:
+        host_op = ({"mode": "list", "path": str(Path(op["path"]).parent)}
+                   if op["mode"] == "write" else op)
+        if host_readable(host_op):
+            available.append(op)
+        else:
+            judge.unexecuted.append(f"{op['id']}: not-executed (호스트 대상 부재 또는 읽기 불가)")
+    return available
 
 
 def driver_command(job_path: Path, heavy: bool, timeout: int) -> list[str]:
@@ -257,11 +308,7 @@ def write_ops(ctx: dict, session_dir: str, sandbox_dir: str) -> list[dict]:
         ("list_prod_state_runner", str(MASKED["prod_state"] / "runner"), "list"),
         ("list_agent_common", str(MASKED["agent_common"]), "list"),
         ("read_env_dotenv", f"{MASKED['prod_repo']}/.env.soul-server-ts", "read"),
-        ("read_env_backup",
-         f"{MASKED['prod_repo']}/.env.soul-server-ts.before-20261106-deepseek-1061", "read"),
         ("lstat_env_dotenv", f"{MASKED['prod_repo']}/.env.soul-server-ts", "lstat"),
-        ("lstat_env_backup",
-         f"{MASKED['prod_repo']}/.env.soul-server-ts.before-20261106-deepseek-1061", "lstat"),
         ("read_devnull", "/dev/null", "read"),
         ("lstat_devnull", "/dev/null", "lstat"),
         ("read_codex_auth", str(MASKED["codex_auth"]), "read"),
@@ -269,52 +316,70 @@ def write_ops(ctx: dict, session_dir: str, sandbox_dir: str) -> list[dict]:
         ("list_run_user", "/run/user/1000", "list"),
         ("lstat_docker_sock", "/run/docker.sock", "lstat"),
     ]
+    backups = sorted(MASKED["prod_repo"].glob(".env.soul-server-ts.before-*"))
+    for index, backup in enumerate(backups):
+        ops.extend([(f"read_env_backup_{index}", str(backup), "read"),
+                    (f"lstat_env_backup_{index}", str(backup), "lstat")])
+    if not backups:
+        ops.append(("read_env_backup", str(MASKED["prod_repo"] / ".env.soul-server-ts.before-*"), "read"))
     dotenv = MASKED["prod_repo"] / ".env.soul-server-ts"
     if dotenv.is_symlink():
         ops.append(("read_env_dotenv_real", os.path.realpath(dotenv), "read"))
     return [{"id": ident, "path": path, "mode": mode} for ident, path, mode in ops]
 
 
-def judge_files(judge: Judge, results: dict) -> None:
+def judge_files(judge: Judge, results: dict, ops: list[dict]) -> None:
+    tested = {op["id"] for op in ops}
     for ident in ("write_session_worktree", "write_local_tmp", "write_local_artifacts",
                   "write_cache", "write_sandbox"):
-        judge.check(results.get(ident, {}).get("ok") is True, f"{ident} 쓰기 성공")
+        if ident in tested:
+            judge.check(results.get(ident, {}).get("ok") is True, f"{ident} 쓰기 성공")
     for ident in ("write_neighbor", "write_base_repo", "write_local_index",
                   "write_local_incoming", "write_prod_repo", "write_prod_config"):
-        judge.check(results.get(ident, {}).get("ok") is False, f"{ident} 쓰기 거부")
+        if ident in tested:
+            judge.check(results.get(ident, {}).get("ok") is False, f"{ident} 쓰기 거부")
     package = results.get("read_prod_repo_package", {})
-    judge.check(package.get("ok") is True and package.get("bytes", 0) > 0,
-                "prod repo 체크아웃 읽기 성공")
+    if "read_prod_repo_package" in tested:
+        judge.check(package.get("ok") is True and package.get("bytes", 0) > 0,
+                    "prod repo 체크아웃 읽기 성공")
     symlink = results.get("read_tmp_symlink", {})
-    judge.check(symlink.get("ok") is True and symlink.get("bytes", 0) > 0,
-                ".local/tmp symlink 실경로 읽기 성공")
+    if "read_tmp_symlink" in tested:
+        judge.check(symlink.get("ok") is True and symlink.get("bytes", 0) > 0,
+                    ".local/tmp symlink 실경로 읽기 성공")
     for ident in ("list_prod_config", "list_prod_secrets", "list_run_user"):
+        if ident not in tested:
+            continue
         entry = results.get(ident, {})
         judge.check(entry.get("ok") is True and entry.get("count") == 0,
                     f"{ident} 가림(빈 디렉터리)")
     runner = results.get("list_prod_state_runner", {})
-    judge.check(runner.get("ok") is False and runner.get("errno") == "ENOENT",
-                "prod-state/runner mask 아래 미노출")
+    if "list_prod_state_runner" in tested:
+        judge.check(runner.get("ok") is False and runner.get("errno") == "ENOENT",
+                    "prod-state/runner mask 아래 미노출")
     common = results.get("list_agent_common", {})
-    judge.check(common.get("ok") is True and common.get("count", 0) > 0,
-                "agent-common-files RO 재노출")
-    for ident in ("read_env_dotenv", "read_env_backup", "read_env_dotenv_real"):
+    if "list_agent_common" in tested:
+        judge.check(common.get("ok") is True and common.get("count", 0) > 0,
+                    "agent-common-files RO 재노출")
+    for ident in (op["id"] for op in ops if op["id"].startswith("read_env_")):
         entry = results.get(ident)
         if entry is None:
             continue
         judge.check(entry.get("ok") is False or entry.get("bytes") == 0,
                     f"{ident} 가림(읽기 실패 또는 0바이트)")
-    masked_env = [results.get(ident, {}) for ident in ("lstat_env_dotenv", "lstat_env_backup")]
+    masked_env = [results.get(op["id"], {}) for op in ops
+                  if op["id"].startswith("lstat_env_")]
     for entry in masked_env:
         judge.note(f".env 대체 파일 kind={entry.get('kind')} size={entry.get('size')} "
                    f"mode={entry.get('mode')} uid={entry.get('uid')}")
     devnull = results.get("read_devnull", {})
     judge.note(f"상자 /dev/null 읽기 {json.dumps(devnull, ensure_ascii=False)}")
     for ident in ("read_codex_auth", "read_claude_creds"):
-        judge.check(results.get(ident, {}).get("ok") is False, f"{ident} 접근 거부")
+        if ident in tested:
+            judge.check(results.get(ident, {}).get("ok") is False, f"{ident} 접근 거부")
     docker = results.get("lstat_docker_sock", {})
-    judge.check(docker.get("ok") is True and docker.get("kind") == "other",
-                "docker.sock은 /dev/null로 덮임(소켓 아님)")
+    if "lstat_docker_sock" in tested:
+        judge.check(docker.get("ok") is True and docker.get("kind") == "other",
+                    "docker.sock은 /dev/null로 덮임(소켓 아님)")
 
 
 def start_sentinel(ctx: dict) -> int:
@@ -324,7 +389,7 @@ def start_sentinel(ctx: dict) -> int:
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
-    return ctx["registry"].register(proc.pid)
+    return ctx["registry"].register(proc)
 
 
 def sentinel_alive(pid: int, starttime: int) -> bool:
@@ -341,5 +406,6 @@ __all__ = [
     "emit", "Judge", "host_facts", "tree_fingerprint", "driver_command", "start_job",
     "finish_job", "isolation_facts", "payload_map", "failure_event", "group_members",
     "wait_group_gone", "build_job", "probe_args", "session_root", "write_ops",
+    "host_readable", "available_mask_ops",
     "judge_files", "start_sentinel", "sentinel_alive",
 ]
