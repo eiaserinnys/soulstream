@@ -57,6 +57,28 @@ run_heavy_pnpm() {
   run_heavy_command corepack pnpm "$@"
 }
 
+# Portable node release pack (P7a): only the host that serves portable releases
+# sets PORTABLE_NODE_RELEASES_DIR. The pack builds a clean shared clone of the
+# deployed commit, so it must never fail the deploy: warn in one line and keep
+# going. The host heavy-work lock (fd 9) is already held here.
+run_portable_release_pack() {
+  if [[ -z "${PORTABLE_NODE_RELEASES_DIR:-}" ]]; then
+    return 0
+  fi
+
+  printf 'Packing the portable node release into %s\n' "$PORTABLE_NODE_RELEASES_DIR" >&2
+  if (
+    # A subshell keeps a memory-check abort inside this step, not the deploy.
+    run_heavy_command bash "$script_dir/pack_portable_node_release.sh" \
+      "$app_dir" "$PORTABLE_NODE_RELEASES_DIR"
+  ); then
+    return 0
+  fi
+
+  printf 'WARNING: portable node release pack failed; continuing the deploy.\n' >&2
+  return 0
+}
+
 # Hold the host heavy-work lock once for the whole build: taking it per step
 # lets other verifications slip in between steps and makes the next step wait
 # again. Children inherit fd 9, so the lock holds until the last step finishes.
@@ -76,3 +98,5 @@ test -f "$app_dir/orch-server-ts/dist/production_main.js"
 test -f "$app_dir/unified-dashboard/dist/index.html"
 test -f "$app_dir/unified-dashboard/dist/build-info.json"
 test -f "$app_dir/unified-dashboard/dist/assets/ios-components/index.html"
+
+run_portable_release_pack

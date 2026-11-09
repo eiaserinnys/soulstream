@@ -1,6 +1,6 @@
 # 무설치 노드 릴리스 묶음
 
-> 범위 주석: 플랫폼 무관 payload를 만드는 빌드·pack 경로와, 노드에서 payload를 검증하고 `ReleaseManifestV1`을 쓰는 bind 경로만 다룬다. 배포 연결(eiaserinnys `post_pull`, orch `current` 응답, 판 전환)은 P7의 몫이며 이 지도에 없다.
+> 범위 주석: 플랫폼 무관 payload를 만드는 빌드·pack 경로와, 노드에서 payload를 검증하고 `ReleaseManifestV1`을 쓰는 bind 경로만 다룬다. 배포 연결(eiaserinnys `post_pull`, orch `current` 응답, 판 전환)은 P7의 몫이며 이 지도에 없다. 판 파일은 배포 훅 `deploy/haniel/build-core.sh`가 빌드와 산출물 확인을 마친 뒤 `PORTABLE_NODE_RELEASES_DIR`가 설정된 호스트에서만 `deploy/haniel/pack_portable_node_release.sh`로 만들고, 이 스크립트는 배포 커밋의 깨끗한 공유 클론을 pack해 `<판 폴더>/<커밋>/`에 원자적으로 게시하며 최근 3개 커밋 폴더만 남긴다. pack이 실패하면 한 줄 경고만 남기고 배포는 성공으로 끝난다.
 
 > 경계 주석: 기존 `pnpm run build`(`dist/` + `dist/release-manifest.json` + `verify:bundle`)와 기존 기동 검증(`main.ts` → `release_runtime.ts` → `release_manifest.ts`)은 이 경로 때문에 바뀌지 않는다. payload는 별도 출력(`dist-portable/`)에서 만들고, 노드가 스스로 manifest를 쓰기 전에는 기동하지 않는다.
 
