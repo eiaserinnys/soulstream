@@ -148,7 +148,7 @@ export function PersistentSessionPasSettingsModal({ sessionId, nodeId, onClose }
           onPress={() => savePasRef.current()}
           style={styles.footerAction}
         >
-          <Text style={styles.primaryText}>{saveStatus.busy ? '저장 중…' : '저장'}</Text>
+          {({ contentColor }) => (<Text style={[styles.primaryText, { color: contentColor }]}>{saveStatus.busy ? '저장 중…' : '저장'}</Text>)}
         </GlassButton>
       </View> : null}
     </AppKeyboardAvoidingView>

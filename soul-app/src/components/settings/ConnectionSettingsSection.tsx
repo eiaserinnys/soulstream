@@ -116,7 +116,7 @@ export function ConnectionSettingsSection({
             onPress={onSave}
             disabled={!url.trim()}
           >
-            <Text style={styles.primaryText}>연결 저장</Text>
+            {({ contentColor }) => (<Text style={[styles.primaryText, { color: contentColor }]}>연결 저장</Text>)}
           </GlassButton> : null}
         </View>
       </View>

@@ -127,7 +127,7 @@ export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = '
             <SettingsContent flattened category={active ?? 'display'} showAdmin={isAdmin} connectionOnly={connectionOnly}/>
             {scope ? <View testID="settings-active-footer" style={[styles.footer, { paddingBottom: t.spacing.md + extraBottomPadding }]}>
               {scope.dirty ? <GlassButton accessibilityLabel="변경 버리기" onPress={() => active && guard(active, () => undefined)} style={styles.footerAction}><Text style={styles.actionText}>변경 버리기</Text></GlassButton> : null}
-              <GlassButton variant="primary" testID={scope.saveTestID ?? 'settings-scope-save'} accessibilityLabel={scope.saveLabel ?? '저장'} disabled={scope.busy || scope.canSave === false} onPress={() => void scope.save()} style={styles.footerAction}><Text style={styles.primaryText}>{scope.busy ? '처리 중…' : scope.saveLabel ?? '저장'}</Text></GlassButton>
+              <GlassButton variant="primary" testID={scope.saveTestID ?? 'settings-scope-save'} accessibilityLabel={scope.saveLabel ?? '저장'} disabled={scope.busy || scope.canSave === false} onPress={() => void scope.save()} style={styles.footerAction}>{({ contentColor }) => (<Text style={[styles.primaryText, { color: contentColor }]}>{scope.busy ? '처리 중…' : scope.saveLabel ?? '저장'}</Text>)}</GlassButton>
             </View> : null}
           </View>
         </View>

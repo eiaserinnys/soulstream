@@ -126,11 +126,11 @@ export function LoginScreen() {
         onPress={() => void handleLogin()}
         disabled={!request || loading}
       >
-        {loading ? (
-          <ActivityIndicator color={t.colors.accentText} />
+        {({ contentColor }) => (loading ? (
+          <ActivityIndicator color={contentColor} />
         ) : (
-          <Text style={styles.btnText}>Google로 로그인</Text>
-        )}
+          <Text style={[styles.btnText, { color: contentColor }]}>Google로 로그인</Text>
+        ))}
       </GlassButton>
 
       {error && <Text style={styles.error} accessibilityRole="alert">{error}</Text>}

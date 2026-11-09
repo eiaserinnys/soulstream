@@ -25,12 +25,15 @@ export function ReviewSurfaces() {
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.sm, alignItems: 'center' }}>
         <GlassButton accessibilityLabel="예시 보조 동작" onPress={() => setCount((v) => v + 1)}><Text style={label}>보조 동작</Text></GlassButton>
         <GlassButton variant="primary" accessibilityLabel="예시 주요 동작" onPress={() => setCount((v) => v + 1)}>
-          <Text style={{ ...label, color: t.colors.accentText }}>주요 동작</Text>
+          {({ contentColor }) => <Text style={{ ...label, color: contentColor }}>주요 동작</Text>}
         </GlassButton>
         <LiquidGlassButton iconOnly accessibilityLabel="예시 아이콘 동작" onPress={() => setCount((v) => v + 1)}>
           <Ionicons name="add" size={t.iconSize.standard} color={t.colors.textPrimary} />
         </LiquidGlassButton>
         <GlassButton disabled onPress={() => setCount((v) => v + 1)}><Text style={label}>비활성</Text></GlassButton>
+        <GlassButton variant="primary" disabled accessibilityLabel="예시 주요 비활성" onPress={() => setCount((v) => v + 1)}>
+          {({ contentColor }) => <Text style={{ ...label, color: contentColor }}>주요 비활성</Text>}
+        </GlassButton>
       </View>
       <Text testID="review-button-count" style={label}>로컬 버튼 동작: {count}</Text>
     </ReviewSection>

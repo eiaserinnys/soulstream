@@ -67,7 +67,7 @@ export function ClaudeAccountLoginFlowPanel({ flow, code, error, starting, submi
         autoCapitalize="none" autoCorrect={false} />
       <GlassButton testID="claude-login-submit" accessibilityLabel="인증 코드 확인" onPress={onSubmit}
         disabled={!code.trim() || submitting || verifying} variant="primary">
-        {submitting ? <ActivityIndicator size="small" color={t.colors.accent} /> : <Text style={styles.primaryButtonText}>{failed ? '다시 확인' : '확인'}</Text>}
+        {({ contentColor }) => submitting ? <ActivityIndicator size="small" color={contentColor} /> : <Text style={[styles.primaryButtonText, { color: contentColor }]}>{failed ? '다시 확인' : '확인'}</Text>}
       </GlassButton>
     </> : null}
     {flow.state === 'code_submitted' || flow.state === 'verifying' ? <GlassButton testID="claude-login-cancel" accessibilityLabel="인증 취소" onPress={onCancel} disabled={cancelling || submitting}>
