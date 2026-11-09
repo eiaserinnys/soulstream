@@ -72,6 +72,9 @@ before(async () => {
     `MODEL_CATALOG_PATH=${join(appRoot, "missing-model-catalog.yaml")}`,
     "SOUL_RUNNER_PROCESS_ENABLED=true",
     `SOUL_RUNNER_STATE_DIR=${join(appRoot, "runner-state")}`,
+    // config.ts requires an explicit artifact directory whenever the runner
+    // process is enabled; the payload ships that directory next to main.js.
+    `SOUL_RUNNER_ARTIFACT_DIR=${join(releaseDirectory, "runner")}`,
     `SOUL_RUNNER_RELEASES_DIR=${join(appRoot, "releases")}`,
     "",
   ].join("\n"), "utf8");
@@ -120,9 +123,9 @@ test("the tarball lists and hashes every delivered file", async () => {
   );
   assert.equal(onDisk.some((relativePath) => relativePath.endsWith(".map")), false);
   assert.equal(
-    onDisk.some((relativePath) => relativePath.startsWith("chunks/")),
+    onDisk.some((relativePath) => /^chunk-[A-Z0-9]+\.js$/.test(relativePath)),
     true,
-    "chunk files must be delivered and listed",
+    "bundled chunk files must be delivered and listed",
   );
   for (const file of metadata.files) {
     const contents = await readFile(join(releaseDirectory, ...file.path.split("/")));
@@ -219,7 +222,7 @@ test("the runner release prewarms and the runner entry loads from the payload al
     "--releases", join(temporaryRoot, "prewarm-releases"),
   ], { cwd: releaseDirectory, env: CLEAN_AMBIENT, timeoutMs: 60_000 });
   assert.equal(prewarm.code, 0, prewarm.output);
-  const release = JSON.parse(prewarm.stdout.trim());
+  const release = JSON.parse(prewarm.output.trim());
   assert.match(release.release_id, /^sha256-[0-9a-f]{64}$/);
   const entries = (await readdir(release.release_root)).sort();
   assert.deepEqual(entries, [".runner-release.json", "package.json", "runner_entry.js"]);
