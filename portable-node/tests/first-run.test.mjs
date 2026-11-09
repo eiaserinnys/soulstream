@@ -1,11 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { readFile, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { delimiter, join } from "node:path";
 import {
   TOKEN,
-  git,
   makeScenario,
   pathExists,
   readJsonFile,
@@ -13,7 +12,7 @@ import {
   waitForStarted,
 } from "./helpers.mjs";
 
-test("첫 실행: 참여→판 맞춤→구성→묶음→두 리포→감독 기동", async (t) => {
+test("첫 실행: 참여→판 맞춤→구성→묶음→빈 작업 폴더→감독 기동", async (t) => {
   const scenario = await makeScenario("first-run");
   t.after(scenario.close);
   const { source, stateDir, publish, env } = scenario;
@@ -69,11 +68,8 @@ test("첫 실행: 참여→판 맞춤→구성→묶음→두 리포→감독 �
     assert.match(envFile, new RegExp(`AUTH_BEARER_TOKEN=${TOKEN}`));
 
     const workspace = join(stateDir, "workspace");
-    assert.ok(existsSync(join(workspace, "notes", "today.md")));
-    assert.equal(existsSync(join(workspace, ".local", "artifacts")), false);
-    const filter = await git(workspace, ["config", "--get", "remote.origin.partialclonefilter"]);
-    assert.equal(filter.stdout.trim(), "blob:none");
-    assert.ok(existsSync(join(stateDir, "common", "skills", "readme.md")));
+    assert.ok(existsSync(workspace), "작업 폴더는 첫 실행에서 만듭니다.");
+    assert.deepEqual(await readdir(workspace), [], "작업 폴더는 비어 있어야 합니다.");
 
     const childEnv = await readJsonFile(join(stateDir, "home", "child-env.json"));
     assert.equal(childEnv.AUTH_BEARER_TOKEN, TOKEN);
@@ -82,9 +78,8 @@ test("첫 실행: 참여→판 맞춤→구성→묶음→두 리포→감독 �
     assert.equal(childEnv.USERPROFILE, join(stateDir, "home"));
     assert.equal(childEnv.CODEX_HOME, join(stateDir, "codex"));
     assert.equal(childEnv.SOUL_RUNNER_ARTIFACT_DIR, join(releaseDir, "runner"));
-    assert.equal(childEnv.AGENT_COMMON_FILES_DIR, join(stateDir, "common"));
+    assert.equal("AGENT_COMMON_FILES_DIR" in childEnv, false, "공통 폴더를 child env에 넣지 않습니다.");
     assert.equal(childEnv.GIT_CONFIG_GLOBAL, join(stateDir, "git", "gitconfig"));
-    assert.equal(childEnv.AGENT_COMMON_FILES_DIR, join(stateDir, "common"));
     assert.equal(childEnv.PATH.split(delimiter)[0], join(stateDir, "bin"));
     assert.equal(childEnv.ATOM_API_KEY, "atom-secret-value");
     assert.equal(childEnv.EXTRA_FROM_BOOTSTRAP, "yes");

@@ -1,22 +1,12 @@
 #!/usr/bin/env node
-import { existsSync } from "node:fs";
-import { readFile, rm } from "node:fs/promises";
+import { readFile, mkdir, rm } from "node:fs/promises";
 import { hostname } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createInterface } from "node:readline/promises";
 import { fetchBootstrap, platformKey, writeConfigGeneration } from "./lib/config.mjs";
 import { awaitApproval, defaultNodeId, startPairing, validateNodeId } from "./lib/pairing.mjs";
-import {
-  alignCheckout,
-  assertGit,
-  cloneFull,
-  cloneWorkspace,
-  gitEnv,
-  run,
-  syncRepo,
-  writeCredentialHelper,
-} from "./lib/git.mjs";
+import { alignCheckout, assertGit, gitEnv, run } from "./lib/git.mjs";
 import {
   ensureRuntime,
   fetchCurrentRelease,
@@ -173,38 +163,6 @@ async function waitForBootstrap({ defaults, node, sourceCommit }) {
       }
       throw error;
     }
-  }
-}
-
-async function ensureRepos({ stateRoot, defaults }) {
-  const workspaceDir = join(stateRoot, "workspace");
-  const commonDir = join(stateRoot, "common");
-  const workspaceConfig = defaults.repositories.workspace;
-  const commonConfig = defaults.repositories.common;
-  if (!existsSync(join(workspaceDir, ".git"))) {
-    log("private workspace 리포를 처음 받습니다…");
-    await cloneWorkspace({
-      stateRoot,
-      target: workspaceDir,
-      upstream: defaults.upstream,
-      proxyPath: workspaceConfig.proxy_path,
-      sparsePatterns: workspaceConfig.sparse_patterns,
-    });
-  } else {
-    const sync = await syncRepo({ stateRoot, dir: workspaceDir });
-    if (!sync.ok) log(`경고: workspace를 앞으로 보내지 못했습니다. ${sync.message}`);
-  }
-  if (!existsSync(join(commonDir, ".git"))) {
-    log("private common 리포를 처음 받습니다…");
-    await cloneFull({
-      stateRoot,
-      target: commonDir,
-      upstream: defaults.upstream,
-      proxyPath: commonConfig.proxy_path,
-    });
-  } else {
-    const sync = await syncRepo({ stateRoot, dir: commonDir });
-    if (!sync.ok) log(`경고: common을 앞으로 보내지 못했습니다. ${sync.message}`);
   }
 }
 
@@ -366,7 +324,6 @@ async function main() {
   if (!node) node = await firstRun({ stateRoot, defaults });
 
   await assertGit();
-  await writeCredentialHelper(stateRoot, { nodePath: process.execPath });
 
   const release = await waitForCurrent({ defaults, node });
   const alignment = await alignCheckout({ stateRoot, root: repoRoot, sourceCommit: release.source_commit });
@@ -400,7 +357,7 @@ async function main() {
   if (reentry) await rm(reentryPath, { force: true });
 
   const runtimes = await installRuntimes({ stateRoot, plan, log });
-  await ensureRepos({ stateRoot, defaults });
+  await mkdir(join(stateRoot, "workspace"), { recursive: true, mode: 0o700 });
   const ports = await ensurePorts(stateRoot, node, (updated) =>
     writeStateFile(join(stateRoot, "node.json"), updated),
   );
