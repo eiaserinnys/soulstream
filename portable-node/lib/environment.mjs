@@ -209,6 +209,9 @@ export async function prepareRelease({
     ports,
   });
   const envFile = join(releaseDir, ".env.soul-server-ts");
+  // child env의 WORKTREE_PROJECTS_ROOT는 parseEnv가 실재하는 절대 경로 폴더로 요구한다.
+  // 첫 실행·판 전환 staging·rollback이 모두 여기를 거치므로 여기서 한 번 만든다.
+  await mkdir(join(stateRoot, "workspace", ".projects"), { recursive: true, mode: 0o700 });
   await writeFile(envFile, formatEnvFile(env), { mode: 0o600 });
   await runBind({ releaseDir, nodePath: process.execPath, envFile, env });
   return { env, envFile };

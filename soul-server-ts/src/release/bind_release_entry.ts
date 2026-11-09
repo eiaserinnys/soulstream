@@ -1,6 +1,6 @@
 import { writeSync } from "node:fs";
 
-import { bindPortableRelease } from "./bind_release.js";
+import { bindErrorLines, bindPortableRelease } from "./bind_release.js";
 
 const USAGE = "--release-dir <dir> --env-file <file>";
 
@@ -13,8 +13,7 @@ try {
     + `${result.envDocumentPresent ? "" : " (no env document)"}\n`,
   );
 } catch (error) {
-  const message = error instanceof Error ? error.message : String(error);
-  writeSync(2, `bind-release: ${(message.split("\n")[0] ?? message).trim()}\n`);
+  for (const line of bindErrorLines(error)) writeSync(2, `${line}\n`);
   process.exit(1);
 }
 
