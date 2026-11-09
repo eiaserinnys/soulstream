@@ -312,6 +312,8 @@ def write_ops(ctx: dict, session_dir: str, sandbox_dir: str) -> list[dict]:
         ("list_agent_common", str(MASKED["agent_common"]), "list"),
         ("list_rclone_config", str(HOME / ".config/rclone"), "list"),
         ("list_backups", str(HOME / "backups"), "list"),
+        ("list_prod_repo_local", f"{MASKED['prod_repo']}/.local", "list"),
+        ("list_prod_orch_local", f"{MASKED['prod_repo']}/orch-server-ts/.local", "list"),
         ("read_env_dotenv", f"{MASKED['prod_repo']}/.env.soul-server-ts", "read"),
         ("lstat_env_dotenv", f"{MASKED['prod_repo']}/.env.soul-server-ts", "lstat"),
         ("read_devnull", "/dev/null", "read"),
@@ -385,7 +387,8 @@ def judge_files(judge: Judge, results: dict, ops: list[dict]) -> None:
         entry = results.get(ident, {})
         judge.check(entry.get("ok") is False or entry.get("bytes") == 0,
                     f"{ident} 가림(읽기 실패 또는 0바이트)")
-    for ident in ("list_rclone_config", "list_backups"):
+    for ident in ("list_rclone_config", "list_backups", "list_prod_repo_local",
+                  "list_prod_orch_local"):
         if ident not in tested:
             continue
         entry = results.get(ident, {})

@@ -520,7 +520,10 @@
       "/home/eias/workspace/.local/secrets",
       "/home/eias/workspace/.local/config-snapshots",
       "/home/eias/workspace/.local/roam-evidence-auth",
-      "/home/eias/workspace/.local/roam-fixed-storage-auth"
+      "/home/eias/workspace/.local/roam-fixed-storage-auth",
+      "/home/eias/.local/share/pki",
+      "/home/eias/migration/netcup-core-bootstrap/production-staging/repo/.local",
+      "/home/eias/migration/netcup-core-bootstrap/production-staging/repo/orch-server-ts/.local"
     ],
     "readOnlyReexposedPaths": [
       "/home/eias/migration/netcup-core-bootstrap/production-staging/repo",
