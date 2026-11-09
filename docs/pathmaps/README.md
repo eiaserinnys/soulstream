@@ -14,6 +14,7 @@
 | [세션 검색](session-search.md) | `/cogito/search` 모드 분기·A0·문서 색인·RRF·Jev·partial 응답 |
 | [타이머 목록](timers-inventory.md) | 복구·전달·러너 경로의 cadence·owner·유지 판정 |
 | [폴더와 카드](folder-card-storage.md) | 폴더 identity·부모 mount·카드·보드·planner·108/109 이관 |
+| [노드 참여와 자격](node-pairing.md) | device-code 참여·`node_credentials`·자격 resolver·승인/목록/취소 MCP |
 | [OAuth 로그인과 API 인증](oauth-authentication.md) | Google 로그인·OAuth 동의·인가 코드·bearer scope·폴더 ACL·caller_info |
 | [OAuth와 대화 제공자](oauth-to-conversation.md) | 로그인 계정·대화 스레드·외부 키와 세션 생성 |
 | [무설치 노드 릴리스 묶음](portable-release-bundle.md) | platform 무관 payload 빌드·pack·tarball·노드 쪽 bind·`ReleaseManifestV1` |

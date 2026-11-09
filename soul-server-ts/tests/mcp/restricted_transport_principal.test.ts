@@ -160,7 +160,7 @@ describe("stateful principal binding", () => {
 
     const fullList = await listTools(baseUrl, `Bearer ${KEY}`, sessionId);
     const fullPayload = await payloadOf(fullList);
-    expect(fullPayload.result?.tools).toHaveLength(136);
+    expect(fullPayload.result?.tools).toHaveLength(139);
 
     const borrowed = await listTools(baseUrl, `Bearer ${TOKEN_A}`, sessionId);
     expect(borrowed.status).toBe(403);
@@ -186,7 +186,7 @@ describe("stateful principal binding", () => {
 
     const fullSession = await initialize(baseUrl, `Bearer ${KEY}`);
     const fullList = await listTools(baseUrl, `Bearer ${KEY}`, fullSession);
-    expect((await payloadOf(fullList)).result?.tools).toHaveLength(136);
+    expect((await payloadOf(fullList)).result?.tools).toHaveLength(139);
   });
 
   it("refuses restricted credentials when MCP_REQUIRE_AUTH is false", async () => {

@@ -1039,6 +1039,27 @@
     "name": "apply_remote_agent_profile_update"
   },
   {
+    "description": "장치에 표시된 승인 코드를 승인해 새 노드의 자격 증명을 발급합니다. 이미 승인된 코드는 같은 결과를 돌려주고 새 자격 증명을 만들지 않습니다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "user_code": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "user_code"
+      ],
+      "type": "object"
+    },
+    "name": "approve_node_pairing"
+  },
+  {
     "description": "폴더를 보관한다. 변경 결과는 폴더 또는 카드와 operation을 반환한다. 전체 카드 목록은 get_folder로 조회한다. 세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.",
     "execution": {
       "taskSupport": "forbidden"
@@ -3477,6 +3498,26 @@
       "type": "object"
     },
     "name": "list_node_agents"
+  },
+  {
+    "annotations": {
+      "readOnlyHint": true
+    },
+    "description": "노드 자격 증명 목록을 조회합니다. 취소된 자격 증명은 include_revoked로 포함합니다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "include_revoked": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "name": "list_node_credentials"
   },
   {
     "description": "특정 노드가 광고한 모델 preset id와 현재 가용성·사용량 경고를 조회.",
@@ -6448,6 +6489,28 @@
       "type": "object"
     },
     "name": "resolve_attachment"
+  },
+  {
+    "description": "노드 자격 증명을 취소합니다. 이미 취소된 자격 증명은 같은 취소 시각을 돌려줍니다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "credential_id": {
+          "format": "uuid",
+          "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "credential_id"
+      ],
+      "type": "object"
+    },
+    "name": "revoke_node_credential"
   },
   {
     "annotations": {

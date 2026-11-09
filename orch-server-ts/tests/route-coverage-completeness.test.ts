@@ -198,6 +198,7 @@ function createAllOptInRouteApp() {
     },
     nodeClaudeAuthRoutes: inert,
     nodeSnapshotRoutes: inert,
+    nodePairRoutes: { service: inert },
     nodeWsRoute: { registry: inert },
     pageYjsRoutes: {
       authBearerToken: "test-token",

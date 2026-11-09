@@ -1,7 +1,7 @@
 /**
  * restricted 실행 정책 정본(§4) 검증.
  *
- * 136 도구의 분류(100/29/6/1), inventory fixture와의 전수 일치, digest 안정성,
+ * 139 도구의 분류(100/32/6/1), inventory fixture와의 전수 일치, digest 안정성,
  * 잘못된 정책의 거부, loader의 실패 처리(빈 정책 fallback 금지), 번들 인라인
  * 기본 provider와 리포 JSON의 동일성.
  */
@@ -43,20 +43,20 @@ function namesByCategory(policy: { tools: Record<string, { category: string }> }
 }
 
 describe("session isolation policy canonical file", () => {
-  it("classifies all 136 inventory tools exactly once (100 allow / 29 deny / 6 guarded / 1 inherit)", () => {
+  it("classifies all 139 inventory tools exactly once (100 allow / 32 deny / 6 guarded / 1 inherit)", () => {
     const policy = parseIsolationPolicy(rawPolicy);
     const names = Object.keys(policy.tools).sort();
 
-    expect(names).toHaveLength(136);
+    expect(names).toHaveLength(139);
     expect(names).toEqual([...fixtureNames].sort());
     expect(namesByCategory(policy, "allow")).toHaveLength(100);
-    expect(namesByCategory(policy, "deny")).toHaveLength(29);
+    expect(namesByCategory(policy, "deny")).toHaveLength(32);
     expect(namesByCategory(policy, "guarded")).toHaveLength(6);
     expect(namesByCategory(policy, "inherit")).toHaveLength(1);
 
     const categories = ["allow", "deny", "guarded", "inherit"] as const;
     const buckets = categories.map((category) => new Set(namesByCategory(policy, category)));
-    expect(buckets.reduce((sum, bucket) => sum + bucket.size, 0)).toBe(136);
+    expect(buckets.reduce((sum, bucket) => sum + bucket.size, 0)).toBe(139);
     for (let left = 0; left < buckets.length; left += 1) {
       for (let right = left + 1; right < buckets.length; right += 1) {
         const intersection = [...buckets[left]].filter((name) => buckets[right].has(name));

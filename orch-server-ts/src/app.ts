@@ -108,6 +108,10 @@ import {
 } from "./node/node_snapshot_routes.js";
 import { registerNodeWsRoute, type NodeWsRouteOptions } from "./node/ws_route.js";
 import {
+  registerNodePairingRoutes,
+  type NodePairingRouteOptions,
+} from "./node_credentials/pairing_routes.js";
+import {
   registerPushRoutes,
   type PushRouteOptions,
 } from "./push/push_routes.js";
@@ -216,6 +220,7 @@ export type CreateAppOptions = {
   contextBundleRoutes?: ContextBundleRouteOptions;
   nodeWsRoute?: NodeWsRouteOptions;
   nodeSnapshotRoutes?: NodeSnapshotRouteOptions;
+  nodePairRoutes?: NodePairingRouteOptions;
   sessionActionCommandRoutes?: SessionActionCommandRouteOptions;
   sessionBackgroundScheduleRoutes?: SessionBackgroundScheduleRouteOptions;
   sessionResumeAfterLimitRoutes?: SessionResumeAfterLimitRouteOptions;
@@ -297,6 +302,9 @@ export function createApp(options: CreateAppOptions): FastifyInstance {
   }
   if (options.nodeSnapshotRoutes !== undefined) {
     registerNodeSnapshotRoutes(app, options.nodeSnapshotRoutes);
+  }
+  if (options.nodePairRoutes !== undefined) {
+    registerNodePairingRoutes(app, options.nodePairRoutes);
   }
   if (options.sessionCommandRoutes !== undefined) {
     registerSessionCommandRoutes(app, {

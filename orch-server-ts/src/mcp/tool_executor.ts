@@ -15,6 +15,7 @@ import { pageHandlers } from "./page_handlers.js";
 import { liveCardHandlers } from "./live_card_handlers.js";
 import { skillHandlers } from "./skill_handlers.js";
 import { persistentSessionSettingsHandlers } from "./persistent_session_settings_handlers.js";
+import { nodePairingHandlers } from "./node_pairing_handlers.js";
 
 export const mcpToolHandlers = {
   ...sessionMessageHandlers,
@@ -31,6 +32,7 @@ export const mcpToolHandlers = {
   ...skillHandlers,
   ...sessionHandlers,
   ...persistentSessionSettingsHandlers,
+  ...nodePairingHandlers,
 } satisfies Record<McpToolName, McpToolHandler>;
 
 export function findMcpTool(name: string) {

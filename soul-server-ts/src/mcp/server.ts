@@ -32,6 +32,7 @@ import { registerExternalLlmTools } from "./tools/external_llm.js";
 import { registerChatUiTools } from "./tools/chat_ui.js";
 import { registerPersistentReportTools } from "./tools/persistent_report.js";
 import { registerAttachmentTools } from "./tools/attachments.js";
+import { registerNodePairingTools } from "./tools/node_pairing.js";
 
 export function buildMcpServer(runtime: McpRuntime, access?: McpToolAccess): McpServer {
   const server = new McpServer({
@@ -61,6 +62,7 @@ export function buildMcpServer(runtime: McpRuntime, access?: McpToolAccess): Mcp
   registerChatUiTools(inventoryServer, runtime);
   registerPersistentReportTools(inventoryServer, runtime);
   registerAttachmentTools(inventoryServer, runtime);
+  registerNodePairingTools(inventoryServer, runtime);
   registerNodeServicesObservationTool(inventoryServer, runtime);
   return server;
 }

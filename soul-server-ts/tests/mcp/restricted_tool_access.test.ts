@@ -256,7 +256,7 @@ describe("restricted MCP surface in stateless mode", () => {
       const fullNames: string[] = (full.result?.tools ?? []).map(
         (tool: { name: string }) => tool.name,
       );
-      expect(fullNames).toHaveLength(136);
+      expect(fullNames).toHaveLength(139);
       expect(fullNames).toContain("delete_session");
     } finally {
       if (harness.server.closeMcp) await harness.server.closeMcp();

@@ -38,10 +38,15 @@ describe("production orchestrator entrypoint", () => {
       ordinal: 88,
     };
     const unexpectedSqlStatements: string[] = [];
+    const nodeCredentialQueries: string[] = [];
     const sqlTransactions: Promise<unknown>[] = [];
     const schemaQuery = vi.fn(async (strings: TemplateStringsArray) => {
       const statement = strings.join(" ");
       if (statement.includes("FROM schema_migrations")) return [databaseSchema];
+      if (statement.includes("FROM node_credentials")) {
+        nodeCredentialQueries.push(statement);
+        return [];
+      }
       if (statement.includes("FROM users")) {
         return [{
           email: "dashboard@example.com",
@@ -107,9 +112,16 @@ describe("production orchestrator entrypoint", () => {
       version: "0.1.0",
       database_schema: databaseSchema,
     });
-    // OAuth storage also uses the shared resolver alongside the existing adapters.
-    expect(sqlResolver.resolveSql).toHaveBeenCalledTimes(6);
-    expect(schemaQuery).toHaveBeenCalledOnce();
+    // The node credential store loads its active-token map once during
+    // composition, through the shared resolver.
+    expect(nodeCredentialQueries).toHaveLength(1);
+    expect(nodeCredentialQueries[0]).toContain("WHERE revoked_at IS NULL");
+    // OAuth storage and the node credential store also use the shared resolver
+    // alongside the existing adapters: six composition reads plus one for the
+    // credential store.
+    expect(sqlResolver.resolveSql).toHaveBeenCalledTimes(7);
+    // Health reads schema_migrations; the credential store read is the other.
+    expect(schemaQuery).toHaveBeenCalledTimes(2);
     expect(application.app.hasRoute({
       method: "GET",
       url: "/api/session-statistics",
