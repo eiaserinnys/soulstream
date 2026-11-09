@@ -59,7 +59,8 @@ test("템플릿을 치환해 sha256 기반 세대 폴더에 쓰고 env.json은 �
     assert.equal(rendered.files[key], join(rendered.dir, file));
   }
   const agents = await readFile(join(rendered.dir, "agents.yaml"), "utf8");
-  assert.ok(agents.includes(`workspace_dir: ${join(stateRoot, "workspace")}`));
+  // 템플릿의 `/workspace`는 그대로 남는다. Windows에서는 섞인 구분자가 되며 cwd로 그대로 쓰인다.
+  assert.ok(agents.includes(`workspace_dir: ${stateRoot}/workspace`));
   const registry = await readFile(join(rendered.dir, "mcp-registry.yaml"), "utf8");
   assert.ok(registry.includes("url: http://127.0.0.1:41117/mcp"));
   assert.equal(existsSync(join(rendered.dir, "env.json")), false);
