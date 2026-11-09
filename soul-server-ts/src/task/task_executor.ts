@@ -1344,7 +1344,7 @@ export class TaskExecutor {
     onAttemptCreated?: (runner: TaskRunnerRuntime) => (() => void) | undefined,
     phaseObservation?: RunnerPhaseObservation,
   ): Promise<void> {
-    // 가드는 기존 호출 규약대로 동기 예외다. 턴 판정(await)은 그 뒤에서 한다.
+    // 가드는 기존 호출 규약대로 동기 예외다. 재부착은 턴 판정을 다시 하지 않는다.
     assertGenericTaskExecution(task, registration.config?.agent?.id);
     return this.recoverRegisteredRunnerAfterGuard(
       task,
