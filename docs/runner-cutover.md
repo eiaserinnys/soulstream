@@ -22,7 +22,7 @@
 ## 컷오버 순서
 
 1. 각 노드에서 `PORT+1`의 점유 여부를 먼저 실측한다. 이미 쓰는 서비스가 있으면 해당 노드의 free 포트를 골라 `MCP_INTERNAL_PORT` env에 선반영하되 nginx upstream에는 추가하지 않는다. 그 뒤 전체 노드에 동일 코드를 배포한다. 모든 flag는 OFF이므로 기존 거동이 유지된다.
-2. soul-server 빌드 산출물에 `dist/runner/package.json`, `dist/runner/runner_entry.js`가 있고 release isolation 검증이 통과했는지 확인한다.
+2. soul-server 빌드 산출물에 `dist/runner/package.json`, `dist/runner/runner_entry.js`, `dist/runner/session-netns-helper.py`, `dist/runner/session_netns_network.py` 네 개가 있고 release isolation 검증이 통과했는지 확인한다.
 3. soul-server의 실제 runner 진행 lease와 orch의 disconnect 재접속 유예 창을 각 노드 운영 조건에 맞게 설정한다.
 4. orch에서 `SOUL_RUNNER_PROCESS_ENABLED=true`를 설정하고 orch를 재시작한다.
 5. MCP를 쓰는 soul-server는 `MCP_ENABLED=true`와 production auth 설정을 먼저 적용한다. `MCP_INTERNAL_PORT`는 명시하거나 `PORT+1` 파생값을 사용하되, nginx 설정에 이 포트를 추가하지 않았는지 확인한다. 내부 Claude SDK와 러너 소비자는 loopback listener의 stateless `/mcp/internal`을 사용하며, host 재시작 뒤 stale `Mcp-Session-Id`도 request-scoped transport로 처리한다.
