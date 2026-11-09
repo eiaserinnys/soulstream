@@ -248,6 +248,7 @@ describe("session isolation contract", () => {
     // 모듈 인벤토리이며, turn path(engine/runner/task)는 아래 네 파일 그대로다.
     expect(importers.sort()).toEqual([
       "engine/protocol.ts",
+      "engine/session_isolation.ts",
       "mcp/auth.ts",
       "mcp/isolation_tool_guards.ts",
       "mcp/request_context.ts",
@@ -262,6 +263,10 @@ describe("session isolation contract", () => {
       "runner/session_filesystem_masks.ts",
       "runner/session_filesystem_plan.ts",
       "runner/session_filesystem_policy.ts",
+      "runner/session_isolation_preflight.ts",
+      "runner/session_isolation_process.ts",
+      "runner/session_netns_helper.ts",
+      "runner/session_network_policy.ts",
       "security/restricted_mcp_config.ts",
       "security/session_execution_policy.ts",
       "security/session_isolation_policy.ts",
