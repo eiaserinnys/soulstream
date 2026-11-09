@@ -1860,6 +1860,81 @@ describe("ClaudeEngineAdapter fake client flow", () => {
     expect(close).toHaveBeenCalledTimes(1);
   });
 
+  it("carries the newly selected account token into the next turn's SDK environment", async () => {
+    const captured: ClaudeRunOptions[] = [];
+    const selections = [
+      {
+        account_id: "account-a",
+        config_dir: "/sandbox/claude-config",
+        available_count: 1,
+        credential: { kind: "access-token" as const, access_token: "token-a" },
+      },
+      {
+        account_id: "account-b",
+        config_dir: "/sandbox/claude-config",
+        available_count: 1,
+        credential: { kind: "access-token" as const, access_token: "token-b" },
+      },
+    ];
+    let selectionIndex = 0;
+    const accountPort = {
+      select: vi.fn(async () => selections[Math.min(selectionIndex++, selections.length - 1)]!),
+      reject: vi.fn(),
+      release: vi.fn(async () => undefined),
+    };
+    const client: ClaudeClient = {
+      async *run(): AsyncIterable<ClaudeClientEvent> {
+        throw new Error("legacy run must remain unreachable behind runtime-v2");
+      },
+      async *runPersistent(options): AsyncIterable<ClaudeClientEvent> {
+        captured.push(options);
+        yield { type: "complete", result: "done" };
+      },
+      async close() {
+        // no-op
+      },
+    };
+    const registry = new ClaudeSessionClientRegistry(
+      () => client,
+      { idleTtlMs: 300_000, maxEntries: 16 },
+    );
+    const engine = new ClaudeEngineAdapter({
+      workspaceDir: "/tmp/claude-work",
+      processEnv: {},
+      claudeAccountPoolEnabled: true,
+      trackChildExit: true,
+      claudeAccountTurnPort: accountPort,
+      persistentSessionRegistry: registry,
+    }, silentLogger);
+
+    for await (const _ of engine.execute({
+      agentSessionId: "session-pool-token",
+      prompt: "first",
+      inputUuid: "turn-pool-token-1",
+      model: "claude-sonnet-4.5",
+      claudeAccountPoolTarget: true,
+    })) { /* drain */ }
+    for await (const _ of engine.execute({
+      agentSessionId: "session-pool-token",
+      prompt: "second",
+      inputUuid: "turn-pool-token-2",
+      model: "claude-sonnet-4.5",
+      claudeAccountPoolTarget: true,
+    })) { /* drain */ }
+
+    expect(accountPort.select).toHaveBeenCalledTimes(2);
+    expect(captured).toHaveLength(2);
+    expect(captured[0]?.env).toMatchObject({
+      CLAUDE_CONFIG_DIR: "/sandbox/claude-config",
+      CLAUDE_CODE_OAUTH_TOKEN: "token-a",
+    });
+    expect(captured[1]?.env).toMatchObject({
+      CLAUDE_CONFIG_DIR: "/sandbox/claude-config",
+      CLAUDE_CODE_OAUTH_TOKEN: "token-b",
+    });
+    await registry.shutdown();
+  });
+
   it("runtime-v2 backend rollover closes the exhausted Query owner and acquires a fresh client", async () => {
     const closes: Array<ReturnType<typeof vi.fn>> = [];
     const captured: ClaudeRunOptions[] = [];

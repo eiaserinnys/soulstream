@@ -172,6 +172,119 @@ describe("ClaudeSdkClient persistent runtime", () => {
     await client.close();
   });
 
+  it("restarts the persistent Query when only the access token changes between turns", async () => {
+    const harnesses = [makeHarness(), makeHarness()];
+    let queryIndex = 0;
+    const client = new ClaudeSdkClient({
+      query: (params) => harnesses[queryIndex++]!.queryFn(params),
+    }, silentLogger);
+
+    const first = collect(client.runPersistent({
+      ...runOptions("first"),
+      model: "claude-sonnet-4.5",
+      trackChildExit: true,
+      env: {
+        CLAUDE_CONFIG_DIR: "/sandbox/claude-config",
+        CLAUDE_CODE_OAUTH_TOKEN: "token-a",
+      },
+    }, abortSignal()));
+    const firstInput = await harnesses[0]!.nextInput();
+    harnesses[0]!.push(sdkResult("sdk-session", firstInput.uuid, "first done"));
+    await first;
+
+    const second = collect(client.runPersistent({
+      ...runOptions("second"),
+      model: "claude-sonnet-4.5",
+      trackChildExit: true,
+      env: {
+        CLAUDE_CONFIG_DIR: "/sandbox/claude-config",
+        CLAUDE_CODE_OAUTH_TOKEN: "token-b",
+      },
+    }, abortSignal()));
+    await vi.waitFor(() => expect(harnesses[1]!.captured).toHaveLength(1));
+    const secondInput = await harnesses[1]!.nextInput();
+    expect(harnesses[0]!.close).toHaveBeenCalledOnce();
+    expect(harnesses[1]!.captured[0]?.options?.env).toMatchObject({
+      CLAUDE_CONFIG_DIR: "/sandbox/claude-config",
+      CLAUDE_CODE_OAUTH_TOKEN: "token-b",
+    });
+    harnesses[1]!.push(sdkResult("sdk-session", secondInput.uuid, "second done"));
+    await second;
+    await client.close();
+  });
+
+  it("reuses the persistent Query when the access token is unchanged between turns", async () => {
+    const harness = makeHarness();
+    let queryIndex = 0;
+    const client = new ClaudeSdkClient({
+      query: (params) => {
+        queryIndex += 1;
+        return harness.queryFn(params);
+      },
+    }, silentLogger);
+    const env = {
+      CLAUDE_CONFIG_DIR: "/sandbox/claude-config",
+      CLAUDE_CODE_OAUTH_TOKEN: "token-a",
+    };
+
+    const first = collect(client.runPersistent({
+      ...runOptions("first"),
+      model: "claude-sonnet-4.5",
+      trackChildExit: true,
+      env,
+    }, abortSignal()));
+    const firstInput = await harness.nextInput();
+    harness.push(sdkResult("sdk-session", firstInput.uuid, "first done"));
+    await first;
+
+    const second = collect(client.runPersistent({
+      ...runOptions("second"),
+      model: "claude-sonnet-4.5",
+      trackChildExit: true,
+      env: { ...env },
+    }, abortSignal()));
+    const secondInput = await harness.nextInput();
+    expect(queryIndex).toBe(1);
+    expect(harness.close).not.toHaveBeenCalled();
+    harness.push(sdkResult("sdk-session", secondInput.uuid, "second done"));
+    await second;
+    await client.close();
+  });
+
+  it("reuses the persistent Query across turns with no credential (full path)", async () => {
+    const harness = makeHarness();
+    let queryIndex = 0;
+    const client = new ClaudeSdkClient({
+      query: (params) => {
+        queryIndex += 1;
+        return harness.queryFn(params);
+      },
+    }, silentLogger);
+
+    const first = collect(client.runPersistent({
+      ...runOptions("first"),
+      model: "claude-sonnet-4.5",
+      trackChildExit: true,
+      env: { CLAUDE_CONFIG_DIR: "/accounts/a" },
+    }, abortSignal()));
+    const firstInput = await harness.nextInput();
+    harness.push(sdkResult("sdk-session", firstInput.uuid, "first done"));
+    await first;
+
+    const second = collect(client.runPersistent({
+      ...runOptions("second"),
+      model: "claude-sonnet-4.5",
+      trackChildExit: true,
+      env: { CLAUDE_CONFIG_DIR: "/accounts/a" },
+    }, abortSignal()));
+    const secondInput = await harness.nextInput();
+    expect(queryIndex).toBe(1);
+    expect(harness.close).not.toHaveBeenCalled();
+    harness.push(sdkResult("sdk-session", secondInput.uuid, "second done"));
+    await second;
+    await client.close();
+  });
+
   it("reuses the Query and carries second-turn usage across a paired rate-limit account switch", async () => {
     const lifecycle: string[] = [];
     const runtimeEvents: import("../../src/engine/claude_client_event.js").ClaudeClientEvent[] = [];

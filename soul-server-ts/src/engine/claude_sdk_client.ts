@@ -30,6 +30,11 @@ import {
 import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import { buildClaudeSdkOptions, claudeIsolationWiring } from "./claude_sdk_options.js";
 import {
+  claudePersistentQueryIdentity,
+  claudePersistentQueryIdentityMatches,
+  type ClaudePersistentQueryIdentity,
+} from "./claude_sdk_persistent_identity.js";
+import {
   ClaudeSdkPersistentSession,
   type ClaudeDetachedEventSink,
   type ClaudeRuntimeEventSink,
@@ -102,8 +107,7 @@ export class ClaudeSdkClient implements ClaudeClient {
   private lastEnv: Record<string, string> | undefined;
   private lastRunOptions: ClaudeRunOptions | null = null;
   private persistentSession: ClaudeSdkPersistentSession | null = null;
-  private persistentConfigDir: string | null = null;
-  private persistentConfigDirKnown = false;
+  private persistentIdentity: ClaudePersistentQueryIdentity | null = null;
   private readonly accountQuerySettlement: ClaudeAccountQuerySettlement;
   private readonly accountTurnDriver = new ClaudeSdkAccountTurnDriver();
   private readonly childExitPromises = new Set<Promise<void>>();
@@ -272,14 +276,14 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.lastRunOptions = options;
     const isolationWiring = claudeIsolationWiring(options.isolation);
     let persistentSession = this.persistentSession;
-    const nextConfigDir = options.env?.CLAUDE_CONFIG_DIR ?? null;
+    // 설정 경로가 같아도 계정 자격이 바뀌면 이전 토큰을 실은 CLI를 계속 쓰게
+    // 된다. 경로와 자격이 모두 같을 때만 지속 Query를 다시 쓴다.
+    const nextIdentity = claudePersistentQueryIdentity(options.env);
     if (
       options.trackChildExit
       &&
       persistentSession
-      && this.persistentConfigDirKnown
-      && this.persistentConfigDir !== nextConfigDir
-      && (this.persistentConfigDir !== null || nextConfigDir !== null)
+      && !claudePersistentQueryIdentityMatches(this.persistentIdentity, nextIdentity)
     ) {
       await this.closePersistentAndSettle(persistentSession, "explicit_cancel");
       persistentSession = null;
@@ -357,8 +361,7 @@ export class ClaudeSdkClient implements ClaudeClient {
       });
       this.persistentSession = createdSession;
       persistentSession = createdSession;
-      this.persistentConfigDir = nextConfigDir;
-      this.persistentConfigDirKnown = true;
+      this.persistentIdentity = nextIdentity;
     }
     if (usageCarry) persistentSession.setUsageCarry(usageCarry);
     onSession?.(persistentSession);
@@ -448,8 +451,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     await persistent.settled();
     await this.waitForChildExitAndSettleAccountQueries();
     if (this.persistentSession === persistent) this.persistentSession = null;
-    this.persistentConfigDir = null;
-    this.persistentConfigDirKnown = false;
+    this.persistentIdentity = null;
   }
 
   private trackChildExit(closed: Promise<void>): void {
