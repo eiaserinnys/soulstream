@@ -58,7 +58,11 @@ function OwnedAgentsPanel({ flattened, api }: { flattened: boolean; api: OwnedAg
   }
   function closeKey() { setToken(null); setCopied(false); setCopyError(false); }
   function action(label: string, onPress: () => void, disabled = busy, primary = false) {
-    return <GlassButton accessibilityLabel={label} onPress={onPress} disabled={disabled} variant={primary ? 'primary' : 'secondary'} contentStyle={s.buttonContent}><Text style={primary ? s.primary : s.button}>{label}</Text></GlassButton>;
+    return <GlassButton accessibilityLabel={label} onPress={onPress} disabled={disabled} variant={primary ? 'primary' : 'secondary'} contentStyle={s.buttonContent}>
+      {primary
+        ? ({ contentColor }: { contentColor: string }) => <Text style={[s.primary, { color: contentColor }]}>{label}</Text>
+        : <Text style={s.button}>{label}</Text>}
+    </GlassButton>;
   }
   const existing = data?.existingConnection;
   return <SettingsSection id="owned-agents" title="내 에이전트" flattened={flattened}>
