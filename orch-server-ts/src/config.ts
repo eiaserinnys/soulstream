@@ -60,6 +60,7 @@ export type OrchServerEnvironmentConfig = Partial<ExternalIngressEnvironmentConf
   readonly usage_summary_shared_accounts: readonly UsageSummarySharedAccountGroup[];
   readonly soul_runner_process_enabled: boolean;
   readonly soul_runner_lease_timeout_ms: number;
+  readonly portable_node_releases_dir: string | null;
 };
 
 export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
@@ -96,6 +97,7 @@ export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
   "USAGE_SUMMARY_SHARED_ACCOUNTS",
   "SOUL_RUNNER_PROCESS_ENABLED",
   "SOUL_RUNNER_LEASE_TIMEOUT_MS",
+  "PORTABLE_NODE_RELEASES_DIR",
 ] as const;
 
 export type OrchServerEnvironmentVariable =
@@ -185,6 +187,7 @@ export function loadOrchServerEnvironment(
       "SOUL_RUNNER_LEASE_TIMEOUT_MS",
       DEFAULT_SOUL_RUNNER_LEASE_TIMEOUT_MS,
     ),
+    portable_node_releases_dir: optionalString(env.PORTABLE_NODE_RELEASES_DIR),
   };
 }
 

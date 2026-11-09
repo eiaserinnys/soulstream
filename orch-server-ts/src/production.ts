@@ -804,6 +804,13 @@ export async function createLiveProductionApplication(
       nodePairingService,
       productionSql,
     ),
+    nodeReleaseRoutes: {
+      authBearerToken: config.auth_bearer_token,
+      environment: config.environment,
+      nodeCredentials: nodeCredentialStore,
+      releasesDir: config.portable_node_releases_dir,
+      currentSourceCommit: buildId,
+    },
     persistentContextRoutes: {
       authBearerToken: config.auth_bearer_token,
       nodeCredentials: nodeCredentialStore,
