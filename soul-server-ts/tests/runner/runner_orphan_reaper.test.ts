@@ -77,14 +77,16 @@ describe("RunnerOrphanReaper", () => {
     expect(f.kill.mock.calls).toEqual([[101, "SIGTERM"]]);
   });
 
-  it("rechecks identity immediately before a signal", async () => {
-    const f = fixture({ 101: { ppid: 1, marker: owner, identity: "a" } });
-    f.readIdentity.mockImplementation(async (pid) => pid === 101
-      ? (f.readIdentity.mock.calls.filter(([p]) => p === 101).length === 1
-        ? { kind: "identity", value: "a" } : { kind: "identity", value: "b" })
-      : { kind: "absent" });
-    await f.reaper.sweep();
-    expect(f.kill).not.toHaveBeenCalled();
+  it("refuses a pid reused during candidate collection or before the signal", async () => {
+    for (const stableReads of [1, 2]) {
+      const f = fixture({ 101: { ppid: 1, marker: owner, identity: "a" } });
+      f.readIdentity.mockImplementation(async (pid) => pid === 101
+        ? (f.readIdentity.mock.calls.filter(([p]) => p === 101).length <= stableReads
+          ? { kind: "identity", value: "a" } : { kind: "identity", value: "b" })
+        : { kind: "absent" });
+      await f.reaper.sweep();
+      expect(f.kill).not.toHaveBeenCalled();
+    }
   });
 
   it("ignores children of unrelated live parents and exempt owners", async () => {
@@ -98,16 +100,39 @@ describe("RunnerOrphanReaper", () => {
     expect(f.kill).not.toHaveBeenCalled();
   });
 
-  it("skips a different uid, unreadable environment, pid 1 and self", async () => {
+  it("skips a different uid and an unreadable environment", async () => {
     const f = fixture({
-      1: { ppid: 1, marker: owner, identity: "one" },
-      [self]: { ppid: 1 },
       101: { ppid: 1, uid: 1001, marker: owner, identity: "a" },
       102: { ppid: 1, marker: owner, identity: "b", unreadable: true },
-      500: { ppid: 1, marker: owner, identity: "linux-proc-123" },
+      103: { ppid: 1, marker: owner, identity: "c" },
     });
     await f.reaper.sweep();
-    expect(f.kill).not.toHaveBeenCalled();
+    expect(f.kill.mock.calls).toEqual([[103, "SIGTERM"]]);
+  });
+
+  it("never signals pid 0, pid 1, self, or the marker's owner", async () => {
+    const kill = vi.fn();
+    const environReads = new Map<number, number>();
+    const reaper = new RunnerOrphanReaper({
+      platform: "linux", selfPid: self, uid: 1000,
+      listPids: async () => ["-1", "0", "1", String(self), "500"],
+      readProc: async (pid, file) => {
+        if (file === "status") return "PPid:\t1\nUid:\t1000\t1000\t1000\t1000\n";
+        if (file === "environ") {
+          const count = environReads.get(pid) ?? 0;
+          environReads.set(pid, count + 1);
+          // Ancestor exemption is empty; a candidate read would reveal the marker.
+          return (pid === self || pid === 1) && count === 0 ? "" : `SOUL_RUNNER_OWNER=${owner}\0`;
+        }
+        return "test-process";
+      },
+      readIdentity: async (pid) => pid === 500
+        ? { kind: "identity", value: "linux-proc-reused" }
+        : { kind: "identity", value: `identity-${pid}` },
+      kill, now: () => 0, logger: { info: vi.fn(), warn: vi.fn() },
+    });
+    await reaper.sweep();
+    expect(kill).not.toHaveBeenCalled();
   });
 
   it("finds every member of a same-owner orphan chain", async () => {

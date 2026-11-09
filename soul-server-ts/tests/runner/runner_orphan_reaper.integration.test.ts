@@ -10,8 +10,19 @@ import { readProcessStartIdentity } from "../../src/runner/runner_process_lock.j
 
 const childCode = `
   const { spawn } = require('node:child_process');
-  const grandchild = spawn('sleep', ['300'], { detached: true, stdio: 'ignore' });
+  // Until the test acknowledges the PID, EOF makes the unarmed child exit.
+  const grandchild = spawn('sh', ['-c', 'IFS= read -r ready || exit; exec sleep 300'],
+    { detached: true, stdio: ['pipe', 'ignore', 'ignore'] });
   console.log(JSON.stringify({ grandchild: grandchild.pid }));
+  let armed = false;
+  const timeout = setTimeout(() => process.exit(1), 6000);
+  process.stdin.once('data', () => {
+    armed = true;
+    clearTimeout(timeout);
+    grandchild.stdin.end('ready\\n');
+    console.log(JSON.stringify({ armed: true }));
+  });
+  process.stdin.once('end', () => { if (!armed) process.exit(1); });
   setInterval(() => {}, 1000);
 `;
 const runnerCode = `
@@ -21,8 +32,11 @@ const runnerCode = `
   const start = stat.slice(stat.lastIndexOf(')') + 1).trim().split(/\\s+/)[19];
   process.env.SOUL_RUNNER_OWNER = process.pid + ':linux-proc-' + start;
   const child = spawn(process.execPath, ['-e', process.env.TEST_CHILD_CODE],
-    { stdio: ['ignore', 'inherit', 'inherit'], env: process.env });
+    { stdio: ['pipe', 'inherit', 'inherit'], env: process.env });
   console.log(JSON.stringify({ child: child.pid }));
+  const timeout = setTimeout(() => process.exit(1), 6000);
+  process.stdin.once('data', () => { clearTimeout(timeout); child.stdin.end('ready\\n'); });
+  process.stdin.once('end', () => process.exit(1));
   setInterval(() => {}, 1000);
 `;
 
@@ -44,11 +58,19 @@ async function waitUntilStopped(pids: number[]): Promise<void> {
   throw new Error(`test processes did not stop: ${pids.join(", ")}`);
 }
 
+async function waitForSleep(pid: number): Promise<void> {
+  for (let n = 0; n < 100; n++) {
+    if ((await readFile(`/proc/${pid}/comm`, "utf8")).trim() === "sleep") return;
+    await delay(20);
+  }
+  throw new Error("setsid grandchild did not start sleep");
+}
+
 describe.skipIf(process.platform !== "linux")("runner orphan reaper integration", () => {
   it("cleans the test runner's child and setsid grandchild only after the runner dies", async () => {
     const runner = spawn(process.execPath, ["-e", runnerCode], {
       env: { ...process.env, TEST_CHILD_CODE: childCode },
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: ["pipe", "pipe", "pipe"],
     });
     const allowed = new Set<number>();
     const identities = new Map<number, string>();
@@ -67,6 +89,7 @@ describe.skipIf(process.platform !== "linux")("runner orphan reaper integration"
     };
     let child = 0;
     let grandchild = 0;
+    let acknowledged = false;
     const remember = (pid: number): void => {
       allowed.add(pid);
       identityReadings.push(readProcessStartIdentity(pid).then((probe) => {
@@ -83,10 +106,14 @@ describe.skipIf(process.platform !== "linux")("runner orphan reaper integration"
           new Promise<void>((resolve, reject) => {
             lines.on("line", (line) => {
               try {
-                const item = JSON.parse(line) as { child?: number; grandchild?: number };
+                const item = JSON.parse(line) as { child?: number; grandchild?: number; armed?: boolean };
                 if (item.child) { child = item.child; remember(child); }
                 if (item.grandchild) { grandchild = item.grandchild; remember(grandchild); }
-                if (child && grandchild) resolve();
+                if (child && grandchild && !acknowledged) {
+                  acknowledged = true;
+                  runner.stdin.write("ready\n");
+                }
+                if (item.armed) resolve();
               } catch (error) { reject(error); }
             });
             lines.on("close", () => { if (!child || !grandchild) reject(new Error("runner output closed")); });
@@ -96,6 +123,7 @@ describe.skipIf(process.platform !== "linux")("runner orphan reaper integration"
       } finally { lines.close(); }
       expect(child).toBeGreaterThan(1);
       expect(grandchild).toBeGreaterThan(1);
+      await waitForSleep(grandchild);
       for (const pid of allowed) {
         const probe = await readProcessStartIdentity(pid);
         if (probe.kind !== "identity") throw new Error(`no identity for test pid ${pid}`);
@@ -120,6 +148,7 @@ describe.skipIf(process.platform !== "linux")("runner orphan reaper integration"
       expect(signals.some(([pid]) => pid === grandchild)).toBe(true);
       expect(rejected).toEqual([]);
     } finally {
+      runner.stdin.destroy();
       await Promise.all(identityReadings);
       for (const pid of allowed) {
         const probe = await readProcessStartIdentity(pid);

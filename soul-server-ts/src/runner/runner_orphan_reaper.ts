@@ -6,7 +6,7 @@ import { readProcessStartIdentity, type ProcessStartIdentityProbe } from "./runn
 type ProcFile = "status" | "environ" | "comm";
 type Signal = "SIGTERM" | "SIGKILL";
 type Owner = { marker: string; pid: number; identity: string };
-type Candidate = { pid: number; ppid: number; owner: Owner };
+type Candidate = { pid: number; ppid: number; owner: Owner; identity: string };
 type Signalled = { identity: string; termAtMs: number };
 
 export interface RunnerOrphanReaperOptions {
@@ -73,6 +73,8 @@ export class RunnerOrphanReaper {
       if (!/^\d+$/.test(entry)) continue;
       const pid = Number(entry);
       if (!this.safePid(pid)) continue;
+      const identity = await this.readIdentity(pid);
+      if (identity.kind !== "identity") continue;
       let status: string;
       let environ: string;
       try {
@@ -89,7 +91,10 @@ export class RunnerOrphanReaper {
           || (identity.kind === "identity" && identity.value !== owner.identity);
         owners.set(owner.marker, dead);
       }
-      if (dead) possible.set(pid, { pid, ppid: info.ppid, owner });
+      if (!dead) continue;
+      const checked = await this.readIdentity(pid);
+      if (checked.kind !== "identity" || checked.value !== identity.value) continue;
+      possible.set(pid, { pid, ppid: info.ppid, owner, identity: identity.value });
     }
 
     const candidates = new Map<number, Candidate>();
@@ -131,11 +136,9 @@ export class RunnerOrphanReaper {
   }
 
   private async signalCandidate(candidate: Candidate): Promise<void> {
-    const { pid, owner } = candidate;
-    const identity = await this.readIdentity(pid);
-    if (identity.kind !== "identity") return;
+    const { pid, owner, identity } = candidate;
     const previous = this.signalled.get(pid);
-    if (previous && previous.identity !== identity.value) {
+    if (previous && previous.identity !== identity) {
       this.signalled.delete(pid);
       return;
     }
@@ -145,11 +148,11 @@ export class RunnerOrphanReaper {
     let comm: string;
     try { comm = (await this.readProc(pid, "comm")).trim(); } catch { return; }
     const checked = await this.readIdentity(pid);
-    if (checked.kind !== "identity" || checked.value !== identity.value) return;
+    if (checked.kind !== "identity" || checked.value !== identity) return;
     if (!this.safePid(pid)) throw new Error("unsafe runner orphan pid");
     try {
       this.kill(pid, signal);
-      if (!previous) this.signalled.set(pid, { identity: identity.value, termAtMs: now });
+      if (!previous) this.signalled.set(pid, { identity, termAtMs: now });
       this.options.logger.info({ pid, ownerPid: owner.pid, comm, signal }, "Signalled runner orphan");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ESRCH") {
