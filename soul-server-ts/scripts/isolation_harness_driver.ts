@@ -10,10 +10,20 @@
  * 개수·boolean만 낸다.
  */
 
-import { readFileSync } from "node:fs";
+import { createHash, randomBytes } from "node:crypto";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 
 import type { AgentProfile } from "../src/agent_registry.js";
+import { ClaudeAccountService } from "../src/claude_accounts/service.js";
+import type { ClaudeProfileCredentialRenewer } from "../src/claude_accounts/credential_renewal.js";
+import { readProfileCredentialsReadOnly } from "../src/claude_accounts/usage.js";
 import type { Env } from "../src/config.js";
+import {
+  buildClaudeAccountPoolEnvironment,
+  type ClaudeAccountTurnSelection,
+} from "../src/engine/claude_account_pool.js";
+import { applyRunnerHostCall } from "../src/runner/runner_process_runtime_factory.js";
 import { applyRestrictedRunnerIsolation } from "../src/runner/runner_process_isolation.js";
 import type { SpawnRunnerProcessInput } from "../src/runner/runner_process_spawn.js";
 import {
@@ -34,7 +44,18 @@ interface Job {
   pastaPath: string;
   internalMcpPort: number;
   localMcp?: string;
-  claudePair?: { tokenFile: string; accountId: string };
+  /**
+   * 합성 계정 풀. 실제 계정·자격 파일을 읽지 않는다. `mode`가 select-only면
+   * 러너를 띄우지 않고 선택 결과(또는 fail-closed)만 본다.
+   */
+  claudeAuth?: {
+    accountsDir: string;
+    homeDir: string;
+    model: string;
+    excludeIds: string[];
+    mode?: "launch" | "select-only";
+    renewFails?: boolean;
+  };
   hostBearerToken: string;
   registries: { repoId: string; path: string }[];
   worktrees: Record<string, unknown>[];
@@ -121,10 +142,10 @@ const settingsEnv = {
   MCP_PATH: "/mcp",
   SOUL_RUNNER_STATE_DIR: job.runnerStateDir,
   WORKTREE_PROJECTS_ROOT: job.projectsRoot,
-  ...(job.claudePair
+  ...(job.claudeAuth
     ? {
-        ISOLATED_CLAUDE_TOKEN_FILE: job.claudePair.tokenFile,
-        ISOLATED_CLAUDE_ACCOUNT_ID: job.claudePair.accountId,
+        CLAUDE_ACCOUNT_POOL_ENABLED: "true",
+        CLAUDE_ACCOUNTS_DIR: job.claudeAuth.accountsDir,
       }
     : {}),
 } as unknown as Env;
@@ -135,6 +156,7 @@ const agent = {
 } as unknown as AgentProfile;
 
 const task = {
+  agentSessionId: job.sessionId,
   executionSecurity: {
     sessionId: job.sessionId,
     tier: "restricted",
@@ -229,6 +251,155 @@ function prepareFacts(prepared: Awaited<ReturnType<typeof applyRestrictedRunnerI
   };
 }
 
+type PreparedIsolation = Awaited<ReturnType<typeof applyRestrictedRunnerIsolation>>;
+
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+/**
+ * 합성 계정 풀의 갱신기. 실제 CLI를 실행하지 않고 만료된 자격 파일만 새
+ * 토큰으로 바꾼다. `fail`이면 아무것도 바꾸지 않아 갱신 실패를 흉내 낸다.
+ */
+function syntheticCredentialRenewer(options: {
+  fail: boolean;
+  calls: Map<string, number>;
+}): ClaudeProfileCredentialRenewer {
+  return {
+    async renew(input: { accountId: string; profileDir: string }): Promise<void> {
+      options.calls.set(input.accountId, (options.calls.get(input.accountId) ?? 0) + 1);
+      if (options.fail) return;
+      const accessToken = `harness-renewed-${randomBytes(18).toString("hex")}`;
+      const credentialPath = join(input.profileDir, ".credentials.json");
+      writeFileSync(
+        credentialPath,
+        JSON.stringify({
+          claudeAiOauth: {
+            accessToken,
+            refreshToken: "harness-synthetic-refresh",
+            expiresAt: Date.now() + 2 * 60 * 60_000,
+          },
+        }),
+        { mode: 0o600 },
+      );
+      chmodSync(credentialPath, 0o600);
+    },
+  };
+}
+
+interface RestrictedSelectionResult {
+  turn: ClaudeAccountTurnSelection;
+  tokenSha256: string;
+  launchEnv: Record<string, string>;
+  facts: Record<string, unknown>;
+}
+
+/**
+ * 호스트 러너가 restricted Claude 턴에서 하는 선택을 그대로 부른다. 계정
+ * 풀 서비스, 자격 판정, config_dir 치환, 턴 환경 합성이 모두 운영 코드다.
+ * 토큰 원문은 이 프로세스 밖으로 내보내지 않고 해시·boolean만 남긴다.
+ */
+async function selectRestrictedClaudeTurn(
+  prepared: PreparedIsolation,
+  job: Job,
+  selection: { excludeIds: string[]; renewFails: boolean },
+): Promise<RestrictedSelectionResult> {
+  const auth = job.claudeAuth;
+  const config = prepared.isolation;
+  if (!auth || !config) throw new Error("claudeAuth job requires a prepared restricted runner");
+  const configDirectory = join(config.spec.sandboxDirectory, "claude-config");
+  mkdirSync(auth.homeDir, { recursive: true, mode: 0o700 });
+  const renewCalls = new Map<string, number>();
+  const service = new ClaudeAccountService({
+    accountsDir: auth.accountsDir,
+    homeDir: auth.homeDir,
+    now: () => Date.now(),
+    credentialRenewer: syntheticCredentialRenewer({
+      fail: selection.renewFails,
+      calls: renewCalls,
+    }),
+    // 선택은 네트워크를 쓰지 않는다. 실수로 나가면 실패하게 둔다.
+    fetchImpl: async () => {
+      throw new Error("harness account pool network disabled");
+    },
+  });
+  const selected = await applyRunnerHostCall(
+    {
+      correlationId: `harness-selection-${Date.now()}`,
+      service: "claude_accounts",
+      operation: "select",
+      args: [
+        job.sessionId,
+        {
+          session_id: job.sessionId,
+          model: auth.model,
+          turn_id: "harness-turn",
+          exclude_ids: selection.excludeIds,
+        },
+      ],
+    },
+    task,
+    {
+      async persistRunState() {
+        return;
+      },
+      async persistSessionItems() {
+        return;
+      },
+    },
+    { claudeAccounts: service } as never,
+    () => undefined,
+    { configDirectory },
+  ) as ClaudeAccountTurnSelection | { pool_exhausted: true };
+  if ("pool_exhausted" in selected) {
+    throw new Error("restricted Claude selection unexpectedly exhausted the pool");
+  }
+  const credential = selected.credential;
+  if (!credential || credential.kind !== "access-token" || credential.access_token.length === 0) {
+    throw new Error("restricted Claude selection returned no access token");
+  }
+  const profile = readProfileCredentialsReadOnly(
+    join(auth.accountsDir, "profiles", selected.account_id),
+  );
+  const launchEnv = buildClaudeAccountPoolEnvironment(
+    (prepared.childProcessEnv ?? {}) as Record<string, string>,
+    selected,
+  );
+  return {
+    turn: selected,
+    tokenSha256: sha256Hex(credential.access_token),
+    launchEnv,
+    facts: {
+      accountId: selected.account_id,
+      configDirInSandbox: selected.config_dir === configDirectory,
+      profileTokenMatchesSelection: profile?.accessToken === credential.access_token,
+      envTokenMatchesSelection: launchEnv.CLAUDE_CODE_OAUTH_TOKEN === credential.access_token,
+      envCredentialKeysAbsent:
+        launchEnv.ANTHROPIC_API_KEY === undefined
+        && launchEnv.ANTHROPIC_AUTH_TOKEN === undefined
+        && launchEnv.CLAUDE_AUTH_TOKEN_PATH === undefined,
+      envConfigDirMatches: launchEnv.CLAUDE_CONFIG_DIR === configDirectory,
+      renewCalls: Object.fromEntries(renewCalls),
+    },
+  };
+}
+
+function claudeAuthPayloadArgs(
+  job: Job,
+  selected: RestrictedSelectionResult,
+): string[] {
+  const args = [...job.payload.args];
+  const raw = args[2];
+  const parsed = raw === undefined ? {} : JSON.parse(raw) as Record<string, unknown>;
+  args[2] = JSON.stringify({
+    ...parsed,
+    expected_token_sha256: selected.tokenSha256,
+    config_dir: selected.turn.config_dir,
+    accounts_dir: job.claudeAuth!.accountsDir,
+  });
+  return args;
+}
+
 async function main(): Promise<void> {
   if (job.prepareOnly === "prepare") {
     const runs = job.prepareRuns ?? 1;
@@ -280,6 +451,40 @@ async function main(): Promise<void> {
   const config = prepared.isolation!;
   emit("prepared", prepareFacts(prepared));
 
+  let launchEnv = (prepared.childProcessEnv ?? {}) as Record<string, string>;
+  let payloadArgs = [...job.payload.args];
+  if (job.claudeAuth) {
+    if (job.claudeAuth.mode === "select-only") {
+      // 후보가 없으면 CLI를 띄우기 전에 닫혀야 한다. 여기서 실패하면
+      // payload는 한 줄도 실행되지 않는다.
+      try {
+        await selectRestrictedClaudeTurn(prepared, job, {
+          excludeIds: job.claudeAuth.excludeIds,
+          renewFails: job.claudeAuth.renewFails ?? false,
+        });
+        emit("claude_selection_unexpected", { reason: "selection succeeded" });
+        exitSoon(11);
+      } catch (error) {
+        emit("claude_selection_unavailable", describeError(error));
+        exitSoon(0);
+      }
+      return;
+    }
+    try {
+      const selected = await selectRestrictedClaudeTurn(prepared, job, {
+        excludeIds: job.claudeAuth.excludeIds,
+        renewFails: job.claudeAuth.renewFails ?? false,
+      });
+      emit("claude_selection", selected.facts);
+      launchEnv = selected.launchEnv;
+      payloadArgs = claudeAuthPayloadArgs(job, selected);
+    } catch (error) {
+      emit("claude_selection_failed", describeError(error));
+      exitSoon(12);
+      return;
+    }
+  }
+
   const abortController = job.abortAfterMs === undefined ? null : new AbortController();
 
   const tools = {
@@ -289,11 +494,11 @@ async function main(): Promise<void> {
   };
   const launch = launchIsolatedSession(
     {
-      original: { command: job.payload.program, args: job.payload.args },
+      original: { command: job.payload.program, args: payloadArgs },
       plan: config.spec,
       resolvConfPath: config.resolvConfPath,
       cwd: config.spec.workspaceDir,
-      env: (prepared.childProcessEnv ?? {}) as Record<string, string>,
+      env: launchEnv,
       stdio: ["ignore", "pipe", "pipe"],
       tools,
       ...(abortController ? { signal: abortController.signal } : {}),

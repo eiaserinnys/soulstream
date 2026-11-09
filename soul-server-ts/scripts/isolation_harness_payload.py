@@ -12,6 +12,7 @@ pid namespace inode와 자기 pid를 확인해 하나라도 아니면 중단한�
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -103,16 +104,50 @@ def case_network(args: dict) -> None:
         time.sleep(hold)
 
 
-def case_claude_auth(args: dict) -> None:
-    token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+def _readable(path: str) -> bool:
     try:
-        with open(args["token_file"], "rb") as handle:
+        with open(path, "rb") as handle:
             handle.read(1)
-        readable = True
+        return True
     except OSError:
-        readable = False
-    emit("claude_auth", token_present=token is not None,
-         token_matches=token == args["expected_token"], token_file_readable=readable)
+        return False
+
+
+def case_claude_auth(args: dict) -> None:
+    # 환경의 토큰 원문은 내보내지 않는다. 해시 비교 결과만 남긴다.
+    token = os.environ.get("CLAUDE_CODE_OAUTH_TOKEN")
+    actual = hashlib.sha256(token.encode()).hexdigest() if token else None
+    config_dir = os.environ.get("CLAUDE_CONFIG_DIR", "")
+    accounts_dir = args.get("accounts_dir", "")
+    profiles = ("account-a", "account-b", "account-c")
+    try:
+        with os.scandir(accounts_dir) as entries:
+            accounts_dir_entries = sorted(entry.name for entry in entries)
+    except OSError:
+        accounts_dir_entries = None
+    readable = {
+        name: _readable(os.path.join(accounts_dir, "profiles", name, ".credentials.json"))
+        for name in profiles
+    }
+    writable = False
+    try:
+        with open(os.path.join(config_dir, "harness-write.txt"), "w", encoding="utf-8") as handle:
+            handle.write("ok")
+        writable = True
+    except OSError:
+        pass
+    emit("claude_auth",
+         token_present=token is not None,
+         token_matches=actual == args.get("expected_token_sha256"),
+         config_dir_matches=config_dir == args.get("config_dir"),
+         config_dir_writable=writable,
+         projects_present=os.path.isdir(os.path.join(config_dir, "projects")),
+         accounts_dir_entries=accounts_dir_entries,
+         credential_files_readable=readable,
+         other_credential_env_present={
+             key: key in os.environ
+             for key in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_AUTH_TOKEN_PATH")
+         })
 
 
 NODE_FETCH = (
