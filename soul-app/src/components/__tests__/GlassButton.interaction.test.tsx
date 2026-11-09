@@ -105,6 +105,22 @@ describe('GlassButton interaction contract', () => {
     expect(button.props.accessibilityState).toEqual({ disabled: true });
   });
 
+  test('disabled secondary는 바탕을 칠하지 않고 opacity로 비활성을 표시한다', () => {
+    const screen = render(
+      <GlassButton variant="secondary" testID="secondary" disabled onPress={() => undefined}>
+        <Text>추가</Text>
+      </GlassButton>,
+    );
+    const button = screen.getByTestId('secondary');
+    const style = StyleSheet.flatten(button.props.style);
+    expect(style.backgroundColor).toBe('transparent');
+    expect(style.opacity).toBe(0.55);
+    expect(button.props.accessibilityState).toEqual({ disabled: true });
+    const tokens = renderHook(() => useTokens()).result.current;
+    expect(resolvePaperButtonBackground(tokens, createPrimitiveRoles(tokens).buttonSecondary, true, false))
+      .toBe('transparent');
+  });
+
   test('iPad는 48pt hit target을 유지한다', () => {
     mockDimensions = { width: 1024, height: 1366, scale: 2, fontScale: 1 };
     const screen = render(

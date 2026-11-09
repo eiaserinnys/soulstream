@@ -47,7 +47,7 @@ export function ConnectionSettingsSection({
 
   return (
     <SettingsSection id="connection" title="연결" flattened={flattened}>
-      {savedUrl !== undefined ? <View style={styles.block}><Text style={styles.rowLabel}>현재 연결</Text><Text style={styles.result}>{savedUrl || '저장된 연결 없음'}</Text><Text style={styles.result}>저장 유형: {SERVER_OPTIONS.find(option => option.value === savedType)?.label ?? '미확인'}</Text><Text style={styles.result}>확인된 실행 모드: {runtimeMode === 'orchestrator' ? '오케스트레이터' : runtimeMode === 'single' ? '단일 서버' : '미확인'}</Text>{saved ? <Text style={styles.ok}>이 기기에 연결 설정을 저장했습니다.</Text> : null}</View> : null}
+      {savedUrl !== undefined ? <View style={styles.block}><Text style={styles.rowLabel}>현재 연결</Text><Text style={styles.savedValue}>{savedUrl || '저장된 연결 없음'}</Text><Text style={styles.savedValue}>저장 유형: {SERVER_OPTIONS.find(option => option.value === savedType)?.label ?? '미확인'}</Text><Text style={styles.savedValue}>확인된 실행 모드: {runtimeMode === 'orchestrator' ? '오케스트레이터' : runtimeMode === 'single' ? '단일 서버' : '미확인'}</Text>{saved ? <Text style={[styles.savedValue, styles.ok]}>이 기기에 연결 설정을 저장했습니다.</Text> : null}</View> : null}
       <View style={styles.block}>
         <Text style={styles.rowLabel}>서버 URL</Text>
         <TextInput
@@ -149,6 +149,7 @@ function makeStyles(t: DesignTokens) {
     },
     resultIcon: { ...t.foundation.typography.body, fontWeight: '800' },
     result: { ...t.foundation.typography.body, flex: 1 },
+    savedValue: { ...t.foundation.typography.body, color: t.colors.textPrimary },
     ok: { color: t.colors.successText },
     fail: { color: t.colors.errorText },
     actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.sm },

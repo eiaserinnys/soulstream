@@ -179,6 +179,7 @@ export function DisplaySettingsSection({
           disabled={!email || !serverUrl}
           help={!serverUrl ? '서버 연결 후 사용할 수 있습니다.' : !email ? '로그인하면 사용할 수 있습니다.' : undefined}
           testID="settings-persistent-session-open-on-start"
+          divider={false}
           onValueChange={(value) => setOpenOnStart(serverUrl, email, value)}
         />
       </View>
