@@ -441,11 +441,6 @@
         "port": 3103
       },
       {
-        "serverId": "kaleidoscope",
-        "nodeId": "eiaserinnys",
-        "port": 4219
-      },
-      {
         "serverId": "eb-lore",
         "nodeId": "eias-linegames-wsl",
         "port": 3108
