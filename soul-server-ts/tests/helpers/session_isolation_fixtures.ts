@@ -27,7 +27,10 @@ export function isolationSpec(overrides: Partial<SessionIsolationSpec> = {}): Se
     sessionWorktreeRoot: "/home/eias/workspace/.projects/.isolated",
     authKind: "claude-oauth-token",
     policyDigest: "digest-1",
-    bindings: [{ source: "/home/eias/workspace", destination: "/home/eias/workspace", writable: true }],
+    bindings: [
+      { source: "/home/eias/workspace", destination: "/home/eias/workspace", writable: true },
+      { source: "/run/soulstream/isolated/s1/resolv.conf", destination: "/etc/resolv.conf", writable: false },
+    ],
     masks: [{ path: "/home/eias/workspace/.env", kind: "file" }],
     heavyWorkLockBindings: ["/tmp/soulstream-heavy-verify.lock"].map((lockPath) => ({
       source: lockPath,

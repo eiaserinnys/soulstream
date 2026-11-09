@@ -256,6 +256,7 @@ function composeBindings(args: {
   maskRebindings: readonly MountBinding[];
   gitBindings: readonly MountBinding[];
   resolvConfPath: string;
+  resolvConfDestination: string;
 }): MountBinding[] {
   const bindings: MountBinding[] = [];
   const seen = new Map<string, boolean>();
@@ -295,7 +296,7 @@ function composeBindings(args: {
   for (const binding of args.gitBindings) push(binding);
   push({
     source: args.resolvConfPath,
-    destination: "/etc/resolv.conf",
+    destination: args.resolvConfDestination,
     writable: false,
   });
   return bindings;
@@ -384,6 +385,7 @@ export const prepareIsolationPlan: PrepareIsolationPlan = async (input, ports) =
   }
 
   const resolvConfPath = join(sandbox, "resolv.conf");
+  const resolvConfDestination = await ports.resolveRealPath("/etc/resolv.conf");
   await ports.writeFile(
     resolvConfPath,
     `nameserver ${input.policy.network.dnsForward4}\n`,
@@ -403,6 +405,7 @@ export const prepareIsolationPlan: PrepareIsolationPlan = async (input, ports) =
     maskRebindings: maskPlan.rebindings,
     gitBindings,
     resolvConfPath,
+    resolvConfDestination,
   });
   const masks = maskPlan.masks;
 

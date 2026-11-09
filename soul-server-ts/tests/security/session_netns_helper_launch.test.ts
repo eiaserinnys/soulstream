@@ -118,6 +118,24 @@ describe("launchIsolatedSession startup sequence", () => {
     expect(argv[resolv + 1]).toBe("/etc/resolv.conf");
   });
 
+  it("uses only the planned resolver mount when the host resolver is a symlink", () => {
+    const source = "/run/soulstream/isolated/s1/resolv.conf";
+    const destination = "/mnt/wsl/resolv.conf";
+    const plan = isolationSpec({
+      bindings: [{ source, destination, writable: false }],
+      masks: [{ path: "/mnt", kind: "directory" }],
+    });
+    const fake = createFakePorts();
+
+    launchIsolatedSession(launchInput({ plan }), fake.ports, testDependencies());
+    const argv = readControlPayload(fake.helper).launch.argv;
+    const resolv = argv.indexOf(source);
+
+    expect(argv.slice(resolv - 1, resolv + 2)).toEqual(["--ro-bind", source, destination]);
+    expect(argv.filter((arg) => arg === source)).toHaveLength(1);
+    expect(argv).not.toContain("/etc/resolv.conf");
+  });
+
   it("sends the bwrap path so the helper can wait for its status handshake", () => {
     const fake = createFakePorts();
 
