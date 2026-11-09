@@ -19,6 +19,9 @@
     "apply_remote_agent_profile_update": {
       "category": "deny"
     },
+    "approve_node_pairing": {
+      "category": "deny"
+    },
     "archive_folder": {
       "category": "allow"
     },
@@ -194,6 +197,9 @@
     "list_node_agents": {
       "category": "allow"
     },
+    "list_node_credentials": {
+      "category": "deny"
+    },
     "list_node_model_presets": {
       "category": "allow"
     },
@@ -308,6 +314,9 @@
     },
     "resolve_attachment": {
       "category": "allow"
+    },
+    "revoke_node_credential": {
+      "category": "deny"
     },
     "rollback_agents_config": {
       "category": "deny"
