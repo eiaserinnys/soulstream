@@ -1,0 +1,150 @@
+{
+  "_comment": "고정 런타임 판과 공식 배포 URL·sha256. start.sh와 bootstrap.ps1이 이 파일을 줄 단위로 읽으므로 들여쓰기 2칸 구조를 유지한다. sha256 출처는 Node SHASUMS256.txt, Claude manifest.json, Codex release assets[].digest, python-build-standalone release assets[].digest다.",
+  "schema_version": 1,
+  "runtimes": {
+    "node": {
+      "version": "22.23.4",
+      "source": "https://nodejs.org/dist/v22.23.4/SHASUMS256.txt",
+      "platforms": {
+        "win-x64": {
+          "url": "https://nodejs.org/dist/v22.23.4/node-v22.23.4-win-x64.zip",
+          "sha256": "cbc74b5e0982c9dbb41525fd8fb5dcd32fbee237863f7829072f4639a1ce5f20",
+          "archive": "zip",
+          "executable": "node.exe"
+        },
+        "linux-x64": {
+          "url": "https://nodejs.org/dist/v22.23.4/node-v22.23.4-linux-x64.tar.gz",
+          "sha256": "b8492284c76a54baf58d61668dd0e41ee0fc98adabf9503d30f05d08f55b4406",
+          "archive": "tar.gz",
+          "executable": "bin/node"
+        },
+        "linux-arm64": {
+          "url": "https://nodejs.org/dist/v22.23.4/node-v22.23.4-linux-arm64.tar.gz",
+          "sha256": "f7a1e486dbc8b286847815b477d4fb5e9fb963ed4489c3e1588853d685f589f9",
+          "archive": "tar.gz",
+          "executable": "bin/node"
+        },
+        "darwin-arm64": {
+          "url": "https://nodejs.org/dist/v22.23.4/node-v22.23.4-darwin-arm64.tar.gz",
+          "sha256": "c9e1dbc748b33ed2d14f42445191ecaf14c56259c7a9a26d0042c49ec2b66428",
+          "archive": "tar.gz",
+          "executable": "bin/node"
+        },
+        "darwin-x64": {
+          "url": "https://nodejs.org/dist/v22.23.4/node-v22.23.4-darwin-x64.tar.gz",
+          "sha256": "efcc2b0db6f94bf53eddb038fe2b370277a042bd29e4f19b8f8e23598795b819",
+          "archive": "tar.gz",
+          "executable": "bin/node"
+        }
+      }
+    },
+    "claude": {
+      "version": "2.1.219",
+      "source": "https://downloads.claude.ai/claude-code-releases/2.1.219/manifest.json",
+      "platforms": {
+        "win-x64": {
+          "url": "https://downloads.claude.ai/claude-code-releases/2.1.219/win32-x64/claude.exe",
+          "sha256": "10f4c1f85b07f3cf6b8fff930fd26ecd475bd146a378acfafa559a6db9d89637",
+          "archive": "binary",
+          "executable": "claude.exe"
+        },
+        "linux-x64": {
+          "url": "https://downloads.claude.ai/claude-code-releases/2.1.219/linux-x64/claude",
+          "sha256": "22cfd6f5b3061c0391ba84e9cf8c9deaa37783aac18b004d42ec061e98f00691",
+          "archive": "binary",
+          "executable": "claude"
+        },
+        "linux-arm64": {
+          "url": "https://downloads.claude.ai/claude-code-releases/2.1.219/linux-arm64/claude",
+          "sha256": "1f834b322ba9d1291cc7ffeff16a6795a59145bda279dbd59cd7ecebc7b7f15a",
+          "archive": "binary",
+          "executable": "claude"
+        },
+        "darwin-arm64": {
+          "url": "https://downloads.claude.ai/claude-code-releases/2.1.219/darwin-arm64/claude",
+          "sha256": "a8e806faaefac53c7a0f26523d8a45c60dbef3407b14ef990c75765d08febc82",
+          "archive": "binary",
+          "executable": "claude"
+        },
+        "darwin-x64": {
+          "url": "https://downloads.claude.ai/claude-code-releases/2.1.219/darwin-x64/claude",
+          "sha256": "03be9f988ed88391b4a5f08e4c5dc317ce2fffa4a9dc66c01106326e7698ee76",
+          "archive": "binary",
+          "executable": "claude"
+        }
+      }
+    },
+    "codex": {
+      "version": "0.155.1",
+      "source": "https://api.github.com/repos/openai/codex/releases/tags/rust-v0.155.1",
+      "platforms": {
+        "win-x64": {
+          "url": "https://github.com/openai/codex/releases/download/rust-v0.155.1/codex-x86_64-pc-windows-msvc.exe.tar.gz",
+          "sha256": "0e1a86a712e028273ff7e9d1494cc82faa97b8a2032b28e9de5eb467ec1bb754",
+          "archive": "tar.gz",
+          "executable": "codex-x86_64-pc-windows-msvc.exe"
+        },
+        "linux-x64": {
+          "url": "https://github.com/openai/codex/releases/download/rust-v0.155.1/codex-x86_64-unknown-linux-musl.tar.gz",
+          "sha256": "a0ef8b2debc3bf747e07b1a039354de31300ac0dcc2276498ba281470b5d9115",
+          "archive": "tar.gz",
+          "executable": "codex-x86_64-unknown-linux-musl"
+        },
+        "linux-arm64": {
+          "url": "https://github.com/openai/codex/releases/download/rust-v0.155.1/codex-aarch64-unknown-linux-musl.tar.gz",
+          "sha256": "d6c7e62fbd688d52ee04f3929d0613705d32a920a42db7a139e366eaf1f4a2d7",
+          "archive": "tar.gz",
+          "executable": "codex-aarch64-unknown-linux-musl"
+        },
+        "darwin-arm64": {
+          "url": "https://github.com/openai/codex/releases/download/rust-v0.155.1/codex-aarch64-apple-darwin.tar.gz",
+          "sha256": "5e5a51470dce2423f9d96bd191d0bbc4cc0e2848a6833df5178eaf47a07a3768",
+          "archive": "tar.gz",
+          "executable": "codex-aarch64-apple-darwin"
+        },
+        "darwin-x64": {
+          "url": "https://github.com/openai/codex/releases/download/rust-v0.155.1/codex-x86_64-apple-darwin.tar.gz",
+          "sha256": "ff22ad0bf28b8568dbfb28ef0ea64451fe5170fa0f9118bf764ca6cb24c27791",
+          "archive": "tar.gz",
+          "executable": "codex-x86_64-apple-darwin"
+        }
+      }
+    },
+    "python": {
+      "version": "3.12.16+20261026",
+      "source": "https://api.github.com/repos/astral-sh/python-build-standalone/releases/tags/20261026",
+      "platforms": {
+        "win-x64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.12.16%2B20261026-x86_64-pc-windows-msvc-install_only.tar.gz",
+          "sha256": "590dfcbe3a34c07301e6332e13e2188b98655cd072b08afa45a7998dc4c22bc5",
+          "archive": "tar.gz",
+          "executable": "python.exe"
+        },
+        "linux-x64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.12.16%2B20261026-x86_64-unknown-linux-gnu-install_only.tar.gz",
+          "sha256": "6a79e922e50006b601f29e688407659da1c2b86ebcd4e9c7254cf234be8b89de",
+          "archive": "tar.gz",
+          "executable": "bin/python3"
+        },
+        "linux-arm64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.12.16%2B20261026-aarch64-unknown-linux-gnu-install_only.tar.gz",
+          "sha256": "a945427411dc6851a1393533b74a4a1ac434321ae397f2ec69897a9b4fde032b",
+          "archive": "tar.gz",
+          "executable": "bin/python3"
+        },
+        "darwin-arm64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.12.16%2B20261026-aarch64-apple-darwin-install_only.tar.gz",
+          "sha256": "fbf4afef53c2a6b72bb741bc06d5671a9dfaf87bd84e5aa73ac9b3d0d589f14e",
+          "archive": "tar.gz",
+          "executable": "bin/python3"
+        },
+        "darwin-x64": {
+          "url": "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.12.16%2B20261026-x86_64-apple-darwin-install_only.tar.gz",
+          "sha256": "a962e47df522889eaa7ff0d6a56203f1079f68aabb65ffdbe8455f362bc769f3",
+          "archive": "tar.gz",
+          "executable": "bin/python3"
+        }
+      }
+    }
+  }
+}
