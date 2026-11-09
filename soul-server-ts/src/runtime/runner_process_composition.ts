@@ -11,6 +11,7 @@ import {
   type RunnerProcessRuntimeFactoryOptions,
 } from "../runner/runner_process_runtime_factory.js";
 import { RunnerRecoveryCoordinator } from "../runner/runner_recovery_coordinator.js";
+import { RunnerOrphanReaper } from "../runner/runner_orphan_reaper.js";
 import { listLiveRunnerSessionIds } from "../runner/runner_process_registry.js";
 import { RunnerRegistrationScanCache } from "../runner/runner_registration_scan_cache.js";
 import { RunnerReleaseGarbageCollector } from "../runner/runner_release_gc.js";
@@ -29,6 +30,15 @@ export interface RunnerProcessComposition {
   hostOwnership: RunnerStateHostLock;
   sessionGarbageCollector: RunnerSessionGarbageCollector;
   closedTailDrainer: ClosedRunnerTailDrainer;
+}
+
+export function composeRunnerOrphanReaper(options: {
+  runnerProcess: RunnerProcessComposition | undefined;
+  logger: Logger;
+  intervalMs: number;
+}): { runnerOrphanReaper?: RunnerOrphanReaper } {
+  if (!options.runnerProcess || process.platform !== "linux") return {};
+  return { runnerOrphanReaper: new RunnerOrphanReaper({ logger: options.logger, intervalMs: options.intervalMs }) };
 }
 
 export type RunnerReconciliationReporter = {
