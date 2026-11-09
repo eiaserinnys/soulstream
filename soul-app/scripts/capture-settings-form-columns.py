@@ -12,7 +12,9 @@
      (결함 재현), 변경 후(after) 번들은 통과해야 한다.
    - 1열 배치(columns가 꺼지는 폭)에서도 카드가 늘어나지 않아 빈 공간이 1px 이내다.
 2. 나머지 설정 항목의 2열 배치도 같은 계약을 지킨다. 항목마다 카드별 측정값을 JSON에
-   남긴다. 하네스에서 열리지 않는 항목은 건너뛰고 사유를 JSON에 남긴다.
+   남긴다. 반복 작업과 영구 에이전트 세션은 목록 항목을 눌러 편집기를 연 뒤 잰다
+   (편집기도 같은 SettingsSection 2열 행을 쓴다). 잴 수 없는 항목은 건너뛰고 사유를
+   JSON에 남긴다.
 3. 1열 배치(듀오 세로·가로)는 변경 전후 카드 좌표가 1px 이내로 같다(`--compare`).
    2열 배치는 늘어남 제거로 높이가 의도적으로 달라지므로 왼쪽 끝과 폭만 비교한다.
 
@@ -33,6 +35,9 @@
 API 응답은 component-review 공개 fixture(`/api/auth/status`)만 흉내 낸다.
 서버·페이지·정리·캡처 도우미와 설정 프레임 정의는 기존
 `soul-app/scripts/capture-duo-settings-postit.py`에서 그대로 불러다 쓴다.
+
+이 파일은 리포에 두는 단일 시각 검수 스크립트라 측정 JS와 검사 문자열을 한 파일에 둔다.
+그래서 500줄을 넘는다(공통 rules-extra module-size-limit의 사유 명시 예외).
 """
 from __future__ import annotations
 
@@ -88,6 +93,11 @@ EXTRA_FRAMES = (
     ("ipad-pro-13-landscape", 1376, 1032),
 )
 EXTRA_THEME = "dark"
+# 목록 항목을 눌러야 편집기가 열리는 항목: (목록 항목, 편집기 그룹 섹션) testID.
+EDITOR_BY_CATEGORY = {
+    "recurring-jobs": ("recurring-job-review-job-0", "settings-section-recurring-editor-groups"),
+    "persistent": ("persistent-session-review-pas-1", "settings-section-persistent-editor-groups"),
+}
 # 픽셀 반올림만 허용한다. 같은 줄 판정, 빈 공간 비교, 전후 좌표 비교에 같이 쓴다.
 ALIGN_TOLERANCE_PX = 1.0
 
@@ -346,13 +356,26 @@ def capture_categories(browser: Browser, base: str, out: Path, phase: str, frame
                     settle(page)
                     entry["pageErrors"] = errors[seen_errors:]
                     seen_errors = len(errors)
+                    editor = EDITOR_BY_CATEGORY.get(category)
+                    if editor is not None:
+                        if page.get_by_test_id(editor[0]).count() == 0:
+                            raise LookupError(f"목록 항목이 없음: {editor[0]}")
+                        page.get_by_test_id(editor[0]).first.click()
+                        settle(page)
+                        entry["pageErrors"] += errors[seen_errors:]
+                        seen_errors = len(errors)
+                        entry["listItem"] = editor[0]
                     metrics = page.evaluate(MEASURE_JS)
                     after_markers = set(metrics["markers"])
-                    # 상세 화면 testID가 없는 항목(recurring-jobs, persistent)은 보이는
-                    # settings-* 표식 집합이 바뀌었는지로 열림을 판정한다.
-                    opened = bool(metrics["details"].get(category)) \
-                        or after_markers != before_markers
+                    # 상세 화면 testID가 없는 항목은 settings-* 표식 변화로 열림을 판정한다.
+                    if editor is not None:
+                        opened = any(sec["id"] == editor[1] for sec in metrics["sections"])
+                    else:
+                        opened = bool(metrics["details"].get(category)) \
+                            or after_markers != before_markers
                     if not opened:
+                        if editor is not None:
+                            raise LookupError(f"편집기가 열리지 않음: {editor[1]}")
                         reason = (entry["pageErrors"][0] if entry["pageErrors"]
                                   else "화면이 바뀌지 않음")
                         entry["skipped"] = f"하네스에서 이 항목이 열리지 않음: {reason}"
