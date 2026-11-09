@@ -119,28 +119,67 @@ describe("wrapSessionCommand", () => {
     expect(args[procIndex + 1]).toBe("/proc/locks");
   });
 
-  it("orders parent masks, allowed binds, and final file masks", () => {
+  it("orders ancestor binds before descendant masks and file masks last", () => {
     const args = buildBwrapFlags(isolationSpec());
-    const directoryMask = indexOfPair(args, "--tmpfs", "/home/eias/workspace/.local");
     const workspaceBind = indexOfPair(args, "--bind", "/home/eias/workspace");
+    const directoryMask = indexOfPair(args, "--tmpfs", "/home/eias/workspace/.local");
     const fileMask = args.indexOf("/home/eias/workspace/.env");
     const chdir = indexOfPair(args, "--chdir", "/home/eias/workspace");
-    expect(directoryMask).toBeGreaterThan(-1);
-    expect(directoryMask).toBeLessThan(workspaceBind);
-    expect(workspaceBind).toBeLessThan(fileMask);
+    expect(workspaceBind).toBeGreaterThan(-1);
+    expect(directoryMask).toBeGreaterThan(workspaceBind);
+    expect(fileMask).toBeGreaterThan(directoryMask);
     expect(fileMask).toBeLessThan(chdir);
   });
 
-  it("masks a directory with a read-only tmpfs and a file with /dev/null", () => {
-    const args = buildBwrapFlags(isolationSpec());
-    const directoryIndex = indexOfPair(args, "--tmpfs", "/home/eias/workspace/.local");
-    expect(args.slice(directoryIndex, directoryIndex + 4)).toEqual([
-      "--tmpfs",
-      "/home/eias/workspace/.local",
-      "--remount-ro",
-      "/home/eias/workspace/.local",
+  it("mounts an approved child bind after the directory mask that hides its parent", () => {
+    const stateDir = "/run/soulstream/isolated";
+    const sandbox = `${stateDir}/s1/sandbox`;
+    const args = buildBwrapFlags(isolationSpec({
+      bindings: [{ source: sandbox, destination: sandbox, writable: true }],
+      masks: [{ path: stateDir, kind: "directory" }],
+      heavyWorkLockBindings: [],
+    }));
+    const mask = indexOfPair(args, "--tmpfs", stateDir);
+    const childBind = indexOfPair(args, "--bind", sandbox);
+    const remount = indexOfPair(args, "--remount-ro", stateDir);
+    expect(mask).toBeGreaterThan(-1);
+    // 빈 RO tmpfs가 먼저 오면 bwrap이 그 아래 mountpoint를 만들지 못한다.
+    expect(childBind).toBeGreaterThan(mask);
+    expect(remount).toBeGreaterThan(childBind);
+  });
+
+  it("keeps masks under a read-only bind instead of letting the bind hide them", () => {
+    const workspace = "/home/eias/workspace";
+    const args = buildBwrapFlags(isolationSpec({
+      bindings: [{ source: workspace, destination: workspace, writable: false }],
+      masks: [
+        { path: `${workspace}/.env`, kind: "file" },
+        { path: `${workspace}/.local`, kind: "directory" },
+      ],
+      heavyWorkLockBindings: [],
+    }));
+    const workspaceBind = indexOfPair(args, "--ro-bind", workspace);
+    const dirMask = indexOfPair(args, "--tmpfs", `${workspace}/.local`);
+    const remount = indexOfPair(args, "--remount-ro", `${workspace}/.local`);
+    const fileMask = args.indexOf(`${workspace}/.env`);
+    expect(workspaceBind).toBeGreaterThan(-1);
+    expect(dirMask).toBeGreaterThan(workspaceBind);
+    expect(remount).toBeGreaterThan(dirMask);
+    expect(fileMask).toBeGreaterThan(remount);
+    expect(args.slice(fileMask - 2, fileMask + 1)).toEqual([
+      "--ro-bind",
+      "/dev/null",
+      `${workspace}/.env`,
     ]);
+  });
+
+  it("masks a directory with a tmpfs and remounts it read-only after the binds", () => {
+    const args = buildBwrapFlags(isolationSpec());
+    expect(indexOfPair(args, "--tmpfs", "/home/eias/workspace/.local")).toBeGreaterThan(-1);
+    const remount = indexOfPair(args, "--remount-ro", "/home/eias/workspace/.local");
+    expect(remount).toBeGreaterThan(indexOfPair(args, "--bind", "/home/eias/workspace"));
     const fileIndex = args.indexOf("/home/eias/workspace/.env");
+    expect(remount).toBeLessThan(fileIndex);
     expect(args.slice(fileIndex - 2, fileIndex + 1)).toEqual([
       "--ro-bind",
       "/dev/null",

@@ -31,17 +31,24 @@ export const BWRAP_BASE_FLAGS: readonly string[] = Object.freeze([
 ]);
 
 /**
- * §7의 mount 순서를 만든다.
+ * §11의 mount 순서를 만든다.
  *
  * 1. 고정 base(`--ro-bind / /` 등)와 호출자가 넘긴 추가 mount
- * 2. directory mask(`--tmpfs` + `--remount-ro`)
- * 3. 계획의 일반 bind와 heavy-work-lock 파일 bind
+ * 2. directory mask(`--tmpfs`)와 계획의 bind를 **destination 경로 순서**로
+ *    섞어서 낸다. 조상이 먼저 오고, 같은 경로면 tmpfs가 먼저다.
+ * 3. directory mask의 `--remount-ro` — 모든 bind가 끝난 뒤에 건다.
  * 4. `/proc/locks` 읽기 전용 bind
  * 5. file mask(`--ro-bind /dev/null`)를 마지막에
  *
- * file mask를 마지막에 두는 이유는, mask한 부모 아래에 다시 승인된 경로를
- * 되살리는 바인드가 앞서 있어야 하기 때문이다. `/proc/locks` bind는 base의
- * `--proc /proc`이 만든 새 procfs를 덮는다.
+ * 순서가 곧 의미다. mask한 부모 아래에 다시 승인된 경로를 되살리는 bind가
+ * 있으면(세션 sandbox, `~/.pm2/logs`, 공통 파일 디렉터리) 부모 tmpfs가 먼저
+ * 놓여야 그 아래에 mountpoint를 만들 수 있다. 반대로 부모를 RO로 여는 bind
+ * 아래에 있는 mask는 부모 bind가 나중에 오면 덮여 사라지므로, 부모 bind가
+ * mask보다 먼저 와야 한다. tmpfs를 곧바로 `--remount-ro`하면 빈 RO tmpfs가
+ * 되어 그 아래 bind가 mountpoint를 만들지 못하고 모든 restricted 세션이
+ * 시작에 실패한다.
+ *
+ * `/proc/locks` bind는 base의 `--proc /proc`이 만든 새 procfs를 덮는다.
  */
 export function buildBwrapFlags(
   plan: SessionIsolationSpec,
@@ -58,17 +65,27 @@ export function buildBwrapFlags(
     flags.push(...renderMount(mount));
   }
 
-  for (const mask of plan.masks) {
-    if (mask.kind !== "directory") continue;
-    flags.push("--tmpfs", mask.path, "--remount-ro", mask.path);
+  const directoryMasks = plan.masks.filter((mask) => mask.kind === "directory");
+  const mounts: PlannedMount[] = [
+    ...directoryMasks.map((mask) => ({ path: mask.path, binding: null })),
+    ...plan.bindings.map((binding) => ({ path: binding.destination, binding })),
+    ...plan.heavyWorkLockBindings.map((binding) => ({ path: binding.destination, binding })),
+  ];
+  mounts.sort(comparePlannedMounts);
+  for (const mount of mounts) {
+    if (mount.binding === null) {
+      flags.push("--tmpfs", mount.path);
+    } else {
+      flags.push(...renderMount(mount.binding));
+    }
   }
 
-  for (const binding of plan.bindings) {
-    flags.push(...renderMount(binding));
+  // bind가 모두 끝난 뒤에 건다. remount-ro는 그 경로에 지금 올라와 있는
+  // tmpfs mount 하나에만 걸리고, 그 아래에 얹힌 bind는 그대로 남는다.
+  for (const mask of directoryMasks) {
+    flags.push("--remount-ro", mask.path);
   }
-  for (const binding of plan.heavyWorkLockBindings) {
-    flags.push(...renderMount(binding));
-  }
+
   flags.push(...renderMount(plan.hostProcLocksBinding));
 
   for (const mask of plan.masks) {
@@ -78,6 +95,34 @@ export function buildBwrapFlags(
 
   flags.push("--chdir", plan.workspaceDir);
   return flags;
+}
+
+/** 한 경로에 놓을 mount. `binding === null`이면 directory mask(tmpfs)다. */
+interface PlannedMount {
+  readonly path: string;
+  readonly binding: MountBinding | null;
+}
+
+function comparePlannedMounts(left: PlannedMount, right: PlannedMount): number {
+  const components = comparePathComponents(left.path, right.path);
+  if (components !== 0) return components;
+  if (left.binding === null && right.binding !== null) return -1;
+  if (left.binding !== null && right.binding === null) return 1;
+  return 0;
+}
+
+/** 경로를 구성 요소 단위로 비교한다. 조상이 자손보다 먼저 온다. */
+function comparePathComponents(left: string, right: string): number {
+  const leftParts = left.split("/").filter((part) => part.length > 0);
+  const rightParts = right.split("/").filter((part) => part.length > 0);
+  const limit = Math.min(leftParts.length, rightParts.length);
+  for (let index = 0; index < limit; index += 1) {
+    const leftPart = leftParts[index] ?? "";
+    const rightPart = rightParts[index] ?? "";
+    if (leftPart === rightPart) continue;
+    return leftPart < rightPart ? -1 : 1;
+  }
+  return leftParts.length - rightParts.length;
 }
 
 /** bwrap 실행 파일 경로와 원래 argv를 합쳐 실제 spawn argv를 만든다. */
