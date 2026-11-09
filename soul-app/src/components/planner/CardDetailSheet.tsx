@@ -271,7 +271,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
       setFrameWidth((current) => current === next ? current : next);
     }}>
       <View testID="card-detail-header" style={styles.header}>
-        <View style={styles.headerRow}>
+        <View style={styles.titleRow}>
           {!duo ? <GlassButton iconOnly size="compact" borderRadius={t.foundation.radius.round} accessibilityLabel="뒤로" onPress={onClose} frameStyle={styles.backFrame}>
             <Ionicons testID="card-detail-back-icon" name="chevron-back" size={t.foundation.typography.body.fontSize} color={t.colors.textPrimary} />
           </GlassButton> : null}

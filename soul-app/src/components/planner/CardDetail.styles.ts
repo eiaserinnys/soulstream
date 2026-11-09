@@ -6,15 +6,17 @@ export function cardDetailStyles(t: DesignTokens) {
   const s = t.uiSpacing;
   const iconOverhang = (t.hitTarget.min - t.foundation.iconFrame.compact) / 2;
   const sendNoticeSurfaceHeight = t.controlHeight.chip + s.xs + s.xxs;
+  const titlePaddingVertical = (t.hitTarget.min - type.section.lineHeight) / 2;
   return StyleSheet.create({
     container: { flex: 1 },
     frame: { flex: 1, minHeight: 0 },
     header: { paddingHorizontal: t.foundation.pageInset, paddingVertical: s.md, gap: s.sm },
     headerRow: { flexDirection: 'row', alignItems: 'center', gap: s.sm },
+    titleRow: { flexDirection: 'row', alignItems: 'flex-start', gap: s.sm },
     headerActions: { flexDirection: 'row', alignItems: 'center', marginRight: -iconOverhang },
     backFrame: { marginLeft: -iconOverhang },
     titleHitFrame: { flex: 1, minWidth: 0, alignSelf: 'stretch', alignItems: 'stretch', justifyContent: 'center' },
-    titleHitSurface: { flex: 1, minWidth: 0, width: '100%', alignSelf: 'stretch', alignItems: 'flex-start', justifyContent: 'center' },
+    titleHitSurface: { flex: 1, minWidth: 0, width: '100%', alignSelf: 'stretch', alignItems: 'flex-start', justifyContent: 'center', paddingVertical: titlePaddingVertical },
     heading: { flex: 1, minWidth: 0, ...type.section, color: t.colors.textPrimary },
     title: { minWidth: 0, maxWidth: '100%', ...type.section, color: t.colors.textPrimary },
     chips: { flex: 1, minWidth: 0, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: s.xs },
