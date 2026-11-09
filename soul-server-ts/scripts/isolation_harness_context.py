@@ -318,7 +318,7 @@ def write_ops(ctx: dict, session_dir: str, sandbox_dir: str) -> list[dict]:
         ("lstat_devnull", "/dev/null", "lstat"),
         ("read_codex_auth", str(MASKED["codex_auth"]), "read"),
         ("read_claude_creds", str(MASKED["claude_creds"]), "read"),
-        ("read_kaleidoscope_env", str(HOME / "services/kaleidoscope/shared/.env"), "read"),
+        ("read_service_shared_env", str(HOME / "services/mcp-servers/shared/.env"), "read"),
         ("read_migration_orch_env", str(PROD / "config/orch.env"), "read"),
         ("read_vault_init", str(HOME / ".vault/init.txt"), "read"),
         ("read_workspace_env_local", str(WORKSPACE / ".env.local"), "read"),
@@ -378,7 +378,7 @@ def judge_files(judge: Judge, results: dict, ops: list[dict]) -> None:
     if "list_agent_common" in tested:
         judge.check(common.get("ok") is True and common.get("count", 0) > 0,
                     "agent-common-files RO 재노출")
-    for ident in ("read_kaleidoscope_env", "read_migration_orch_env", "read_vault_init",
+    for ident in ("read_service_shared_env", "read_migration_orch_env", "read_vault_init",
                   "read_workspace_env_local", "read_cron_jobs_env"):
         if ident not in tested:
             continue
