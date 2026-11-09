@@ -414,6 +414,31 @@ describe("parseEnv", () => {
       expect(env.MCP_REQUIRE_AUTH).toBe(false);
     });
 
+    it("rejects enforced isolation without MCP authentication at startup", () => {
+      try {
+        parseEnv({ ...minimal, SESSION_ISOLATION_MODE: "enforce",
+          SESSION_ISOLATION_PASTA_PATH: "/usr/bin/pasta", MCP_REQUIRE_AUTH: "false" });
+        expect.fail("expected an isolation configuration error");
+      } catch (error) {
+        expect(error).toBeInstanceOf(ZodError);
+        expect((error as ZodError).issues).toEqual(expect.arrayContaining([
+          expect.objectContaining({ path: ["SESSION_ISOLATION_MODE"] }),
+        ]));
+      }
+    });
+
+    it("accepts enforced isolation when MCP authentication is enabled", () => {
+      const env = parseEnv({ ...minimal, SESSION_ISOLATION_MODE: "enforce",
+        SESSION_ISOLATION_PASTA_PATH: "/usr/bin/pasta", MCP_REQUIRE_AUTH: "true" });
+      expect(env.SESSION_ISOLATION_MODE).toBe("enforce");
+    });
+
+    it("accepts isolation off without MCP authentication", () => {
+      const env = parseEnv({ ...minimal, SESSION_ISOLATION_MODE: "off", MCP_REQUIRE_AUTH: "false" });
+      expect(env.SESSION_ISOLATION_MODE).toBe("off");
+      expect(env.MCP_REQUIRE_AUTH).toBe(false);
+    });
+
     it("MCP_ALLOWED_HOSTS default csv → string[] 변환", () => {
       const env = parseEnv(minimal);
       expect(env.MCP_ALLOWED_HOSTS).toEqual(["localhost", "127.0.0.1"]);

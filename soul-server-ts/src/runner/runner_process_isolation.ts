@@ -11,8 +11,18 @@ import {
   buildRestrictedSessionEnv,
 } from "./session_env.js";
 import { SessionIsolationUnavailableError } from "./session_filesystem_errors.js";
-import type { RunnerIsolationChildConfig } from "./runner_isolation_config.js";
+import { runnerIsolationIdentityFromConfig, type RunnerIsolationChildConfig } from "./runner_isolation_config.js";
 import type { SpawnRunnerProcessInput } from "./runner_process_spawn.js";
+import type { TaskRunnerRuntime } from "./task_runner_runtime.js";
+
+/** 저장된 자식 설정의 격리 정체성을 복구 런타임에 보존한다. */
+export function withRecoveredRunnerIsolation(
+  runtime: TaskRunnerRuntime,
+  isolation: RunnerIsolationChildConfig | undefined,
+): TaskRunnerRuntime {
+  const identity = runnerIsolationIdentityFromConfig(isolation);
+  return identity ? { ...runtime, isolation: identity } : runtime;
+}
 
 /** B1·B2가 쓰는 실행 파일 경로. 모두 절대 경로다. */
 export interface IsolationToolPaths {

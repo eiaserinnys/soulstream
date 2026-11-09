@@ -283,6 +283,13 @@ export const EnvSchema = z
           "MCP_REQUIRE_AUTH must be true when ENVIRONMENT=production and MCP_ENABLED",
       });
     }
+    if (env.SESSION_ISOLATION_MODE === "enforce" && !env.MCP_REQUIRE_AUTH) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["SESSION_ISOLATION_MODE"],
+        message: "SESSION_ISOLATION_MODE=enforce requires MCP_REQUIRE_AUTH=true",
+      });
+    }
     // 3) 비-loopback HOST + MCP_ENABLED → REQUIRE_AUTH 또는 ALLOWED_HOSTS 강제. path 다름.
     const isLoopback = env.HOST === "127.0.0.1" || env.HOST === "localhost";
     if (

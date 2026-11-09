@@ -95,12 +95,6 @@ async function prepareRunnerIsolation(
   request: RunnerIsolationPreparationRequest,
 ): Promise<PreparedRunnerIsolation> {
   const { env } = deps;
-  // 무인증 MCP 노드에서는 restricted 자식이 내부 MCP를 부를 자격이 없다.
-  if (!env.MCP_REQUIRE_AUTH) {
-    throw new SessionIsolationUnavailableError(
-      "SESSION_ISOLATION_UNAVAILABLE: restricted execution requires MCP authentication",
-    );
-  }
   const decision = request.task.executionSecurity;
   if (!decision || decision.tier !== "restricted") {
     throw new SessionIsolationUnavailableError(

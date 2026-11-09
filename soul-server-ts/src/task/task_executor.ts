@@ -1369,7 +1369,7 @@ export class TaskExecutor {
     if (mode !== "offline") {
       // 보관된 자식 설정은 이번 턴의 판정과 완전히 같을 때만 이어 쓴다(tier,
       // 정책 digest, 부착 워크트리 집합). 다르면 이어 쓰지 않고 실패시켜 기존
-      // 정상 종료 경로가 등록을 닫게 한다 — 다음 턴이 새 러너를 만든다.
+      // 정상 종료 경로가 등록을 닫게 한다 — 다음 실행 진입이나 복구 때 새 러너를 만든다.
       const desired = await this.resolveRunnerIsolation(task);
       const stored = runnerIsolationIdentityFromConfig(config.isolation);
       if (!runnerIsolationAllowsReuse(stored, desired)) {

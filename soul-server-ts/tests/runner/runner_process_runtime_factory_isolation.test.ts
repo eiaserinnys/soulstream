@@ -468,19 +468,6 @@ describe("session isolation host preparation", () => {
     return { prepared, captured };
   }
 
-  it("rejects a restricted turn before preparation when the node does not require MCP auth", async () => {
-    const composition = makeComposition({
-      env: enforcementEnv({ MCP_REQUIRE_AUTH: false }),
-    });
-
-    await expect(composition.host.prepare({ task: makeTask(), agent, backend: "claude" }))
-      .rejects.toThrow(
-        "SESSION_ISOLATION_UNAVAILABLE: restricted execution requires MCP authentication",
-      );
-    expect(isolationModuleMocks.createIsolationHostPorts).not.toHaveBeenCalled();
-    expect(isolationModuleMocks.prepareIsolationPlan).not.toHaveBeenCalled();
-  });
-
   it("keeps the pre-worktree profile path as the host workspace root", async () => {
     const worktreeService = {
       list: vi.fn(async () => [{

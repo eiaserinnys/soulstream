@@ -53,7 +53,7 @@ import { resolveProducedAttachmentExecutionContext } from "../attachments/produc
 import { EVENT_ARCHIVE_HOST_DEADLINE_MS } from "./runner_event_archive.js";
 import type { createProducedAttachmentRegistration } from "../attachments/produced_attachment_registration.js";
 import { RunnerClaudeAccountTurnStateStore } from "./claude_account_turn_state_store.js";
-import { applyRestrictedRunnerIsolation, type RunnerIsolationHost } from "./runner_process_isolation.js";
+import { applyRestrictedRunnerIsolation, withRecoveredRunnerIsolation, type RunnerIsolationHost } from "./runner_process_isolation.js";
 
 type RunnerEnv = Pick<Env,
   | "SOUL_RUNNER_STATE_DIR"
@@ -239,7 +239,7 @@ export function createRunnerProcessRuntimeFactory(
       options.releasePool,
       storedRuntimeMcpConfig(config),
     );
-    return createRuntime(
+    return withRecoveredRunnerIsolation(createRuntime(
       task,
       config.agent,
       config.backend,
@@ -250,7 +250,7 @@ export function createRunnerProcessRuntimeFactory(
         : adoptRegisteredRunner(spawner, registration, options),
       mode,
       phaseObservation,
-    );
+    ), config.isolation);
   };
   factory.isolationSupported = options.isolationHost !== undefined; // host가 주입됐을 때만
   return factory;
