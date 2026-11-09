@@ -57,8 +57,8 @@ export class CardRepositoryRead {
     // PostgreSQL does not allow a SELECT alias in WHERE, so the ranked rows are filtered one level out.
     const rows = await this.sql<(CardRow & { status_rank: number; cursor_time: string })[]>`SELECT * FROM (
       SELECT cards.*,
-        CASE status WHEN 'review' THEN 1 WHEN 'blocked' THEN 2 WHEN 'running' THEN 3 WHEN 'queued' THEN 4
-          WHEN 'todo' THEN 5 WHEN 'on_hold' THEN 6 WHEN 'done' THEN 7 WHEN 'cancelled' THEN 8 ELSE 9 END AS status_rank,
+        CASE status WHEN 'todo' THEN 1 WHEN 'queued' THEN 2 WHEN 'running' THEN 3 WHEN 'blocked' THEN 4
+          WHEN 'review' THEN 5 WHEN 'on_hold' THEN 6 WHEN 'done' THEN 7 WHEN 'cancelled' THEN 8 ELSE 9 END AS status_rank,
         updated_at::text AS cursor_time
       FROM cards
       WHERE archived=FALSE
