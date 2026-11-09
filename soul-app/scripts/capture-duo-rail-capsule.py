@@ -19,9 +19,17 @@
 - PAS 카드 목록(`?sample=pas-layout&board=ops`, 운영 형태 카드 15장):
   - 듀오 안쪽 세로(duoTopBand): 목록 영역이 캡슐 때문에 줄어들지 않고 화면 아래까지 이어지며,
     캡슐이 목록 위에 떠 있고, 스크롤 끝에서 마지막 카드가 캡슐 위로 온전히 보인다.
+  - 듀오 안쪽 세로에서 목록 스크롤 영역의 아래 끝은 화면 아래 끝과 같고(1px 허용), 스크롤 끝에서
+    마지막 카드와 캡슐 사이 간격은 8px다. 주간 사용량 열이 켜진 경로도 같은 값을 낸다.
+  - 로딩·빈 목록·실패 화면(`state=loading|empty|error`)의 스피너·글자·다시 시도 단추는
+    상단 홈 캡슐(`duo-rail-back-capsule`)과 겹치지 않는다.
   - 듀오 안쪽 가로(duoSideBand): 캡슐이 오른쪽 띠에 있고, 스크롤 끝에서 마지막 카드가
     캡슐에 가리지 않는다.
-  첫 화면 캡처는 목록의 첫 카드 위치가 그대로인지 보여 준다.
+  첫 화면 캡처는 목록의 첫 카드 위치가 그대로인지 보여 준다. 중간 스크롤 캡처는 목록이
+  캡슐 뒤로 이어지는 모습을 보여 준다.
+- 듀오 펼침 가로 메인 보드(`board-corner-*`): 오른쪽 위 모서리 확대 캡처에서 숨은 카드 시트
+  그림자가 보드 오른쪽 가장자리에 어두운 띠나 네모 조각을 만들지 않는다(그림자 알파 0).
+  공용 `CardPanelOverlayFrame`을 쓰는 PAS 카드 시트의 열림 상태도 함께 캡처해 그림자가 남는지 본다.
 - 캡슐이 떠 있는 다른 레이아웃(B2):
   - 듀오 안쪽 세로 메인 카드 보드·폴더 서랍·피드 서랍: 캡슐은 상단 상태 띠(duo-top-band)에 있고
     안전 영역 콘텐츠/서랍과 겹치지 않는다. 콘텐츠 영역은 캡슐 때문에 줄지 않는다.
@@ -51,6 +59,7 @@ from __future__ import annotations
 import argparse
 import json
 import mimetypes
+import re
 import threading
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -192,7 +201,7 @@ BADGE_JS = r"""
 """
 
 PAS_LIST_JS = r"""
-({ scroll, top }) => {
+({ scroll, top, mid }) => {
   const round = (value) => Math.round(value * 100) / 100;
   const box = (element) => {
     const r = element.getBoundingClientRect();
@@ -206,11 +215,13 @@ PAS_LIST_JS = r"""
     return /(auto|scroll)/.test(style.overflowY) && element.scrollHeight > element.clientHeight + 1;
   }) || list;
   if (top) scroller.scrollTop = 0;
+  if (mid) scroller.scrollTop = Math.round((scroller.scrollHeight - scroller.clientHeight) / 2);
   if (scroll) scroller.scrollTop = scroller.scrollHeight;
   const capsule = document.querySelector('[data-testid="persistent-session-duo-capsule"]');
   const screen = document.querySelector('[data-testid="persistent-session-screen"]');
   const panel = document.querySelector('[data-testid="persistent-session-card-panel"]');
   const band = document.querySelector('[data-testid="persistent-session-duo-band"]');
+  const usageColumn = document.querySelector('[data-testid="persistent-session-usage-column"]');
   const rows = [...document.querySelectorAll('[data-testid^="card-row-"]')]
     .map((element) => box(element))
     .filter((rect) => rect.height > 0);
@@ -220,6 +231,7 @@ PAS_LIST_JS = r"""
     screen: screen ? box(screen) : null,
     panel: panel ? box(panel) : null,
     band: band ? box(band) : null,
+    usageColumn: usageColumn ? box(usageColumn) : null,
     scroller: { rect: box(scroller), scrollTop: round(scroller.scrollTop),
       scrollHeight: scroller.scrollHeight, clientHeight: scroller.clientHeight },
     capsule: capsule ? box(capsule) : null,
@@ -228,6 +240,77 @@ PAS_LIST_JS = r"""
     lastRow: rows[rows.length - 1] ?? null,
     atEnd: scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1,
   };
+}
+"""
+
+STATE_JS = r"""
+() => {
+  const round = (value) => Math.round(value * 100) / 100;
+  const box = (element) => {
+    if (!element) return null;
+    const r = element.getBoundingClientRect();
+    return { left: round(r.left), top: round(r.top), right: round(r.right), bottom: round(r.bottom) };
+  };
+  const q = (id) => document.querySelector(`[data-testid="${id}"]`);
+  // Text 요소의 상자에는 paddingTop이 포함되므로, 캡슐과 겹치는지는 글자 줄 사각형으로 잰다.
+  const lineRects = (element) => {
+    if (!element) return [];
+    const range = document.createRange();
+    range.selectNodeContents(element);
+    return [...range.getClientRects()]
+      .map((rect) => ({ left: round(rect.left), top: round(rect.top), right: round(rect.right), bottom: round(rect.bottom) }));
+  };
+  const errorText = q('persistent-task-list-error');
+  const textRects = lineRects(errorText);
+  const emptyText = q('persistent-task-list-empty');
+  const emptyTextRects = lineRects(emptyText);
+  const errorState = q('persistent-task-list-error-state');
+  return {
+    window: { width: innerWidth, height: innerHeight },
+    panel: box(q('persistent-session-card-panel')),
+    home: box(q('duo-rail-back-capsule')),
+    capsule: box(q('persistent-session-duo-capsule')),
+    loading: box(q('persistent-task-list-loading')),
+    spinner: box(q('persistent-task-list-loading')?.firstElementChild),
+    errorState: box(errorState),
+    errorText: box(errorText),
+    errorTextRects: textRects,
+    retryButton: box(errorState?.lastElementChild),
+    empty: box(emptyText),
+    emptyTextRects,
+  };
+}
+"""
+
+BOARD_EDGE_JS = r"""
+() => {
+  const round = (value) => Math.round(value * 100) / 100;
+  const pane = document.querySelector('[data-testid="split-panel-main"]');
+  if (!pane) return { pane: null, sheet: null };
+  const sheet = document.querySelector('[data-testid="task-workspace-sheet"]');
+  const r = pane.getBoundingClientRect();
+  const paneStyle = getComputedStyle(pane);
+  const sheetStyle = sheet ? getComputedStyle(sheet) : null;
+  return {
+    window: { width: innerWidth, height: innerHeight },
+    pane: { left: round(r.left), top: round(r.top), right: round(r.right), bottom: round(r.bottom),
+      backgroundColor: paneStyle.backgroundColor, borderRadius: paneStyle.borderTopRightRadius,
+      borderColor: paneStyle.borderTopColor, borderWidth: paneStyle.borderTopWidth },
+    sheet: sheet ? { boxShadow: sheetStyle.boxShadow, opacity: sheetStyle.opacity,
+      transform: sheetStyle.transform } : null,
+  };
+}
+"""
+
+OPEN_SHEET_JS = r"""
+() => {
+  const round = (value) => Math.round(value * 100) / 100;
+  const sheet = document.querySelector('[data-testid="persistent-card-overlay-sheet"]');
+  if (!sheet) return { sheet: null };
+  const style = getComputedStyle(sheet);
+  const r = sheet.getBoundingClientRect();
+  return { sheet: { left: round(r.left), top: round(r.top), right: round(r.right), bottom: round(r.bottom),
+    boxShadow: style.boxShadow, opacity: style.opacity, transform: style.transform } };
 }
 """
 
@@ -406,6 +489,14 @@ def rgb_text(rgb: tuple[int, int, int]) -> str:
     return f"rgb({rgb[0]}, {rgb[1]}, {rgb[2]})"
 
 
+def shadow_max_alpha(value: str | None) -> float:
+    """box-shadow 문자열에서 가장 큰 알파를 읽는다. none/투명 그림자는 0."""
+    if not value or value.strip() == "none":
+        return 0.0
+    alphas = [float(match.group(1)) for match in re.finditer(r"rgba\([^)]*,\s*([0-9.]+)\)", value)]
+    return max(alphas) if alphas else 1.0
+
+
 def page_url(base: str, frame_id: str, theme: str, extra: str = "") -> str:
     query = f"section=iphoneDuo&sample=main-layout&frame={frame_id}&board=ops&theme={theme}"
     if extra:
@@ -413,9 +504,11 @@ def page_url(base: str, frame_id: str, theme: str, extra: str = "") -> str:
     return f"{base}{PREFIX}index.html?{query}"
 
 
-def pas_url(base: str, frame_id: str, theme: str) -> str:
-    return (f"{base}{PREFIX}index.html?section=iphoneDuo&sample=pas-layout"
-            f"&frame={frame_id}&board=ops&theme={theme}")
+def pas_url(base: str, frame_id: str, theme: str, extra: str = "") -> str:
+    query = (f"section=iphoneDuo&sample=pas-layout&frame={frame_id}&board=ops&theme={theme}")
+    if extra:
+        query += f"&{extra}"
+    return f"{base}{PREFIX}index.html?{query}"
 
 
 def settle(page: Page, test_id: str | None = None) -> None:
@@ -566,13 +659,17 @@ def capture_pas_card_list(browser: Browser, base: str, out: Path, frame_id: str,
     page.wait_for_timeout(600)
 
     # 그룹 헤더 클릭이 스크롤을 옮길 수 있으므로 첫 화면은 맨 위로 되돌린 뒤 잰다.
-    page.evaluate(PAS_LIST_JS, {"scroll": False, "top": True})
+    page.evaluate(PAS_LIST_JS, {"scroll": False, "top": True, "mid": False})
     page.wait_for_timeout(300)
-    first = page.evaluate(PAS_LIST_JS, {"scroll": False, "top": False})
+    first = page.evaluate(PAS_LIST_JS, {"scroll": False, "top": False, "mid": False})
     first_shot = shot(page, out, f"pas-list-{frame_id}-{theme}-first", width, height)
-    page.evaluate(PAS_LIST_JS, {"scroll": True, "top": False})
+    page.evaluate(PAS_LIST_JS, {"scroll": False, "top": False, "mid": True})
+    page.wait_for_timeout(400)
+    mid = page.evaluate(PAS_LIST_JS, {"scroll": False, "top": False, "mid": False})
+    mid_shot = shot(page, out, f"pas-list-{frame_id}-{theme}-mid", width, height)
+    page.evaluate(PAS_LIST_JS, {"scroll": True, "top": False, "mid": False})
     page.wait_for_timeout(500)
-    end = page.evaluate(PAS_LIST_JS, {"scroll": False, "top": False})
+    end = page.evaluate(PAS_LIST_JS, {"scroll": False, "top": False, "mid": False})
     end_shot = shot(page, out, f"pas-list-{frame_id}-{theme}-end", width, height)
     page.close()
     context.close()
@@ -606,9 +703,158 @@ def capture_pas_card_list(browser: Browser, base: str, out: Path, frame_id: str,
                      {"lastRow": end["lastRow"], "capsule": capsule,
                       "gap": round(capsule["top"] - end["lastRow"]["bottom"], 2)
                       if end["lastRow"] else None})
+        if frame_id == "inner-portrait":
+            # R1: duoTopBand에서 패널 paddingBottom이 0이라야 목록이 화면 아래 끝까지 이어진다.
+            checks.check(f"{prefix} 목록이 화면 아래 끝까지 이어진다",
+                         abs(list_rect["bottom"] - first["window"]["height"]) <= 1,
+                         {"list": list_rect, "panel": first["panel"], "window": first["window"]})
+            gap = round(capsule["top"] - end["lastRow"]["bottom"], 2) if end["lastRow"] else None
+            checks.check(f"{prefix} 스크롤 끝 마지막 카드와 캡슐 간격 8px",
+                         gap is not None and abs(gap - 8) <= 1,
+                         {"gap": gap, "lastRow": end["lastRow"], "capsule": capsule})
+    checks.check(f"{prefix} 페이지 오류 없음", not errors, errors)
+    return {"url": url, "first": first, "mid": mid, "end": end,
+            "screenshots": {"first": first_shot, "mid": mid_shot, "end": end_shot}}
+
+
+def capture_pas_usage_list(browser: Browser, base: str, out: Path, width: int, height: int,
+                           theme: str, checks: Checks) -> dict:
+    """주간 사용량 열이 켜진(usageInColumn) PAS 목록도 같은 아래 끝과 끝 간격인지."""
+    context = browser.new_context(viewport={"width": width, "height": height}, device_scale_factor=2)
+    context.add_cookies([{"name": "review", "value": "fixture", "url": base}])
+    url = pas_url(base, "inner-portrait", theme)
+    page, errors = open_page(context, base, url)
+    settle(page, "persistent-session-duo-tasks")
+    page.get_by_test_id("persistent-session-duo-tasks").click()
+    page.wait_for_selector('[data-testid^="card-row-"]', timeout=20000)
+    todo_header = page.get_by_test_id("persistent-task-group-header-todo")
+    if todo_header.count():
+        todo_header.click()
+    # 레일의 주간 사용량 캡슐을 눌러 사용량 열 경로로 만든다.
+    page.get_by_test_id("persistent-session-duo-usage").click()
+    page.wait_for_timeout(900)
+    page.evaluate(PAS_LIST_JS, {"scroll": False, "top": True, "mid": False})
+    page.wait_for_timeout(300)
+    first = page.evaluate(PAS_LIST_JS, {"scroll": False, "top": False, "mid": False})
+    first_shot = shot(page, out, f"pas-usage-{theme}-first", width, height)
+    page.evaluate(PAS_LIST_JS, {"scroll": True, "top": False, "mid": False})
+    page.wait_for_timeout(500)
+    end = page.evaluate(PAS_LIST_JS, {"scroll": False, "top": False, "mid": False})
+    end_shot = shot(page, out, f"pas-usage-{theme}-end", width, height)
+    page.close()
+    context.close()
+
+    prefix = f"pas-usage/{theme}"
+    checks.check(f"{prefix} 사용량 열(usageInColumn) 경로다", first["usageColumn"] is not None,
+                 first["usageColumn"])
+    checks.check(f"{prefix} 목록이 화면 아래 끝까지 이어진다",
+                 first["list"] is not None
+                 and abs(first["list"]["bottom"] - first["window"]["height"]) <= 1,
+                 {"list": first["list"], "window": first["window"], "panel": first["panel"]})
+    checks.check(f"{prefix} 스크롤이 끝까지 간다", end["atEnd"], end["scroller"])
+    gap = (round(first["capsule"]["top"] - end["lastRow"]["bottom"], 2)
+           if first["capsule"] and end["lastRow"] else None)
+    checks.check(f"{prefix} 스크롤 끝 마지막 카드와 캡슐 간격 8px",
+                 gap is not None and abs(gap - 8) <= 1,
+                 {"gap": gap, "lastRow": end["lastRow"], "capsule": first["capsule"]})
     checks.check(f"{prefix} 페이지 오류 없음", not errors, errors)
     return {"url": url, "first": first, "end": end,
             "screenshots": {"first": first_shot, "end": end_shot}}
+
+
+def capture_pas_states(browser: Browser, base: str, out: Path, width: int, height: int,
+                       checks: Checks) -> dict:
+    """로딩·빈 목록·실패 화면이 상단 홈 캡슐과 겹치지 않는지."""
+    states: dict[str, dict] = {}
+    for state in ("loading", "empty", "error"):
+        for theme in THEMES:
+            context = browser.new_context(viewport={"width": width, "height": height},
+                                          device_scale_factor=2)
+            context.add_cookies([{"name": "review", "value": "fixture", "url": base}])
+            url = pas_url(base, "inner-portrait", theme, f"state={state}")
+            page, errors = open_page(context, base, url)
+            settle(page, "persistent-session-duo-tasks")
+            page.get_by_test_id("persistent-session-duo-tasks").click()
+            page.wait_for_timeout(1200)
+            metrics = page.evaluate(STATE_JS)
+            screenshot = shot(page, out, f"pas-state-{state}-{theme}", width, height)
+            page.close()
+            context.close()
+
+            prefix = f"pas-state/{state}/{theme}"
+            home = metrics["home"]
+            checks.check(f"{prefix} 홈 캡슐 존재", home is not None, metrics)
+            checks.check(f"{prefix} 페이지 오류 없음", not errors, errors)
+            if state == "loading":
+                rects = [metrics["spinner"]]
+                checks.check(f"{prefix} 로딩 화면 존재", metrics["loading"] is not None, metrics)
+            elif state == "empty":
+                rects = metrics["emptyTextRects"] or [metrics["empty"]]
+                checks.check(f"{prefix} 빈 목록 화면 존재", metrics["empty"] is not None, metrics)
+            else:
+                rects = [*metrics["errorTextRects"], metrics["retryButton"]]
+                checks.check(f"{prefix} 실패 화면 존재", metrics["errorState"] is not None, metrics)
+                checks.check(f"{prefix} 다시 시도 단추 존재", metrics["retryButton"] is not None, metrics)
+            present = [rect for rect in rects if rect]
+            checks.check(f"{prefix} 상태 내용이 홈 캡슐과 겹치지 않는다",
+                         home is not None and bool(present)
+                         and all(not overlaps(rect, home) for rect in present),
+                         {"home": home, "content": rects})
+            states[f"{state}-{theme}"] = {"url": url, "screenshot": screenshot, "metrics": metrics}
+    return states
+
+
+def capture_board_corner(browser: Browser, base: str, out: Path, theme: str,
+                         checks: Checks) -> dict:
+    """R3: 듀오 펼침 가로 메인 보드 오른쪽 위 모서리 확대와 숨은 카드 시트 그림자."""
+    context = browser.new_context(viewport={"width": 951, "height": 669}, device_scale_factor=2)
+    context.add_cookies([{"name": "review", "value": "fixture", "url": base}])
+    url = page_url(base, "inner-landscape", theme, "project-view=board")
+    page, errors = open_page(context, base, url)
+    settle(page, "card-board")
+    metrics = page.evaluate(BOARD_EDGE_JS)
+    corner_path = out / f"board-corner-{theme}.png"
+    if metrics["pane"]:
+        pane = metrics["pane"]
+        page.screenshot(path=str(corner_path), clip={
+            "x": max(0, pane["right"] - 140), "y": max(0, pane["top"] - 16),
+            "width": 160, "height": 160})
+    page.close()
+    context.close()
+
+    prefix = f"board-corner/{theme}"
+    checks.check(f"{prefix} 보드 패널 존재", metrics["pane"] is not None, metrics)
+    checks.check(f"{prefix} 숨은 카드 시트가 그림자를 비추지 않는다",
+                 metrics["sheet"] is not None
+                 and shadow_max_alpha(metrics["sheet"]["boxShadow"]) == 0,
+                 metrics["sheet"])
+    checks.check(f"{prefix} 페이지 오류 없음", not errors, errors)
+    return {"url": url, "screenshot": str(corner_path), "metrics": metrics}
+
+
+def capture_open_card_overlay(browser: Browser, base: str, out: Path, checks: Checks) -> dict:
+    """공용 CardPanelOverlayFrame을 쓰는 다른 화면(PAS 카드 시트)의 열림 상태 그림자 불변."""
+    context = browser.new_context(viewport={"width": 669, "height": 951}, device_scale_factor=2)
+    context.add_cookies([{"name": "review", "value": "fixture", "url": base}])
+    url = pas_url(base, "inner-portrait", "light")
+    page, errors = open_page(context, base, url)
+    settle(page, "persistent-session-duo-tasks")
+    page.get_by_test_id("persistent-session-duo-tasks").click()
+    page.wait_for_selector('[data-testid^="card-row-"]', timeout=20000)
+    page.locator('[data-testid^="card-row-"]').first.click()
+    page.wait_for_timeout(1400)
+    metrics = page.evaluate(OPEN_SHEET_JS)
+    screenshot = shot(page, out, "open-card-overlay-inner-portrait-light", 669, 951)
+    page.close()
+    context.close()
+
+    checks.check("공용 카드 시트(열림)가 화면에 있다", metrics["sheet"] is not None, metrics)
+    checks.check("공용 카드 시트(열림) 그림자 유지",
+                 metrics["sheet"] is not None
+                 and shadow_max_alpha(metrics["sheet"]["boxShadow"]) > 0.2,
+                 metrics["sheet"])
+    checks.check("공용 카드 시트(열림) 페이지 오류 없음", not errors, errors)
+    return {"url": url, "screenshot": screenshot, "metrics": metrics}
 
 
 def capture_b2_layout(browser: Browser, base: str, out: Path, spec: dict, theme: str,
@@ -768,6 +1014,16 @@ def main() -> int:
                         for theme in THEMES:
                             result["pasCardList"][f"{frame_id}-{theme}"] = capture_pas_card_list(
                                 browser, base, out, frame_id, width, height, theme, checks)
+                    result["pasUsageList"] = {}
+                    for theme in THEMES:
+                        result["pasUsageList"][theme] = capture_pas_usage_list(
+                            browser, base, out, 669, 951, theme, checks)
+                    result["pasStates"] = capture_pas_states(browser, base, out, 669, 951, checks)
+                    result["boardCorner"] = {}
+                    for theme in THEMES:
+                        result["boardCorner"][theme] = capture_board_corner(
+                            browser, base, out, theme, checks)
+                    result["openCardOverlay"] = capture_open_card_overlay(browser, base, out, checks)
                     result["b2Layouts"] = {}
                     for spec in B2_LAYOUTS:
                         for theme in THEMES:

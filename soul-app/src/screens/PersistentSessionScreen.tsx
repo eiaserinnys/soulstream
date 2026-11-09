@@ -333,9 +333,13 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       useSettingsStore.getState().setPersistentSessionWeeklyUsageNodeSelection(serverUrl, email,
         { configuredNodeId: session.node_id, selectedNodeId: nextNodeId });
     }} />;
+  // 목록과 상태 화면(로딩·빈 목록·실패)이 같은 위 여백을 쓰도록 한 곳에서 계산한다.
+  const taskListContentInset = duoTopBand
+    ? { top: usageInColumn ? 0 : rightControlsHeight, bottom: railColumnBottom }
+    : undefined;
   const taskList = <PersistentSessionTaskList api={api} visible={!selectedCardId}
     onOpenCard={openCard}
-    contentInset={duoTopBand ? { top: usageInColumn ? 0 : rightControlsHeight, bottom: railColumnBottom } : undefined} />;
+    contentInset={taskListContentInset} />;
   const renderRailAction = (item: PhoneRailAction) => {
     const testID = railOverride?.length ? `duo-rail-action-${item.id}` : `persistent-session-duo-${item.id}`;
     return <RailCapsuleItem key={item.id} testID={testID} label={item.label} selected={item.selected}
@@ -457,7 +461,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
         borderRadius: phone ? 0 : t.foundation.radius.card,
         borderWidth: 0, borderColor: t.persistentSession.line,
         paddingHorizontal: phone ? t.foundation.pageInset : t.uiSpacing.sm,
-        paddingTop: phone ? t.uiSpacing.md : 0, paddingBottom: phone ? 0 : bottomSafeAreaInset }}>
+        paddingTop: phone ? t.uiSpacing.md : 0, paddingBottom: phone || duoTopBand ? 0 : bottomSafeAreaInset }}>
         {taskList}
       </View> : null}
       <PersistentSessionCardOverlay api={api} cardId={selectedCardId}

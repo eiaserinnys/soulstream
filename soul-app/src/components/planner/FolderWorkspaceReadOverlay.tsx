@@ -358,7 +358,8 @@ export function CardPanelOverlayFrame({ visible, width, onClose, onHidden, testI
         <View testID={`${testID}-backdrop-close`} style={StyleSheet.absoluteFill} />
       </TouchableWithoutFeedback>
     </Animated.View>
-    <Animated.View testID={`${testID}-sheet`} style={[styles.sheet, { width, right: sheetRight, top: sheetTop, transform: [{ translateX }] }]}>
+    <Animated.View testID={`${testID}-sheet`} style={[styles.sheet, { width, right: sheetRight, top: sheetTop, transform: [{ translateX }] },
+      visible ? null : styles.sheetHidden]}>
       <AppGlassCard role="glassSoft" testID={`${testID}-sheet-surface`}
         style={[styles.sheetSurface, direction === 'column' ? styles.sheetSurfaceColumn : null]}>
         <ChatPaneMinimumBottomPaddingContext.Provider value={chatPaneMinimumBottomPadding}>
@@ -499,6 +500,9 @@ function makeStyles(t: DesignTokens) {
       shadowOffset: { width: -4, height: 0 },
       elevation: 16,
     },
+    // 닫힌 시트는 폭만큼 오른쪽으로 밀려 오버레이 가장자리 바로 밖에 선다. 그림자를 그대로 두면
+    // 왼쪽 번짐(18+4px)이 오버레이 안쪽 패널 가장자리에 어두운 띠와 모서리 네모 조각으로 비친다.
+    sheetHidden: { shadowOpacity: 0, elevation: 0 },
     sheetSurface: {
       flex: 1,
       flexDirection: 'row',

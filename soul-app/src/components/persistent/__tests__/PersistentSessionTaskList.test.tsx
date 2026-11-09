@@ -115,6 +115,23 @@ test('contentInset은 스크롤 내용의 위아래 여백에 더한다', async 
   });
 });
 
+test('로딩·빈 목록·실패 화면도 목록과 같은 위 여백(contentInset.top)을 받는다', async () => {
+  const loading = render(<PersistentSessionTaskList api={{ listCards: () => new Promise<never>(() => {}) } as any}
+    onOpenCard={jest.fn()} contentInset={{ top: 56, bottom: 152 }} />);
+  await waitFor(() => expect(loading.getByTestId('persistent-task-list-loading')).toBeTruthy());
+  expect(StyleSheet.flatten(loading.getByTestId('persistent-task-list-loading').props.style).paddingTop).toBe(56);
+
+  const empty = render(<PersistentSessionTaskList api={{ listCards: jest.fn().mockResolvedValue({ cards: [] }) } as any}
+    onOpenCard={jest.fn()} contentInset={{ top: 56, bottom: 152 }} />);
+  await waitFor(() => expect(empty.getByTestId('persistent-task-list-empty')).toBeTruthy());
+  expect(StyleSheet.flatten(empty.getByTestId('persistent-task-list-empty').props.style).paddingTop).toBe(56);
+
+  const error = render(<PersistentSessionTaskList api={{ listCards: jest.fn().mockRejectedValue(new Error('일시적인 조회 실패')) } as any}
+    onOpenCard={jest.fn()} contentInset={{ top: 56, bottom: 152 }} />);
+  await waitFor(() => expect(error.getByTestId('persistent-task-list-error-state')).toBeTruthy());
+  expect(StyleSheet.flatten(error.getByTestId('persistent-task-list-error-state').props.style).paddingTop).toBe(56);
+});
+
 test('요약 중 목록을 display none으로 숨겼다가 되돌아와도 요청과 목록 상태를 유지한다', async () => {
   const cards = [cardFixture({ id: 'visible-task', status: 'running' })];
   const listCards = jest.fn().mockResolvedValue({ cards });

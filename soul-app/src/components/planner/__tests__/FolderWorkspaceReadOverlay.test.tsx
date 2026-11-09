@@ -179,6 +179,21 @@ test('닫힌 카드 시트는 오른쪽 레일 칸을 포함해 화면 밖으로
   expect(typeof translateX === 'number' ? translateX : translateX.__getValue?.()).toBe(669);
 });
 
+test('닫힌 카드 시트는 가장자리 뒤로 그림자를 비추지 않고, 열린 시트는 그림자를 유지한다', () => {
+  const closed = render(
+    <CardPanelOverlayFrame visible={false} width={585} sheetRight={84} onClose={jest.fn()}>
+      <ChatPane active />
+    </CardPanelOverlayFrame>,
+  );
+  expect(StyleSheet.flatten(closed.getByTestId('task-workspace-sheet').props.style).shadowOpacity).toBe(0);
+  const open = render(
+    <CardPanelOverlayFrame visible width={585} sheetRight={84} onClose={jest.fn()}>
+      <ChatPane active />
+    </CardPanelOverlayFrame>,
+  );
+  expect(StyleSheet.flatten(open.getByTestId('task-workspace-sheet').props.style).shadowOpacity).toBe(0.28);
+});
+
 test('상단 띠 레일 범위는 side band만 켜고 디바이스 판정은 유지한다', () => {
   function Probe({ testID }: { testID: string }) {
     return <View testID={testID} accessibilityLabel={`${useDuoSideBand()}|${useDeviceType()}`} />;
