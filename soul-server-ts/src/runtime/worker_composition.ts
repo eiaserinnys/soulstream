@@ -50,7 +50,9 @@ import { composeClaudeRuntime, composeClaudeAccountServices, createClaudeAccount
 import { composeClaudeLoginService, seedLegacyClaudeAccount } from "./claude_login_runtime_composition.js";
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
 import { createEngineFactory } from "./engine_factory.js";
-import { composeRunnerProcessRuntime, composeRunnerRecoveryCoordinator } from "./runner_process_composition.js";
+import { backgroundLifecycleObserver, composeRunnerProcessRuntime, composeRunnerRecoveryCoordinator } from "./runner_process_composition.js";
+import { composeSessionIsolation } from "./session_isolation_composition.js";
+import { resolveNodeServicesObservation } from "../mcp/node_services_observation_config.js";
 import type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 import { composeWorkerUpstreamAdapter } from "./worker_upstream_composition.js";
 import { buildMcpServerOptions } from "./mcp_server_options.js";
@@ -261,6 +263,8 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
   worktreeService = composeWorktreeService(env, orchHostClientDeps,
     () => listActiveTaskWorkspaceDirs(taskManager.listTasks(), (profileId) => agentRegistry.get(profileId)?.workspace_dir));
   const worktreeSweeper = composeWorktreeSweeper(worktreeService, logger);
+  const sessionIsolation = composeSessionIsolation({ env, worktreeService, mcpConfigService, codexCliPath });
+  const nodeServicesObservation = resolveNodeServicesObservation(env);
   db.configureScheduleHost(new ScheduleHostClient(orchHostClientDeps));
   const scheduleService = new SoulstreamScheduleService(db.schedules(), broadcaster, persistence, logger);
   const engineFactory = createEngineFactory({
@@ -284,15 +288,9 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     producedAttachments: attachmentRuntime.mcpRuntime.producedAttachments,
     buildChildProcessEnv: () => claudeAuth.buildProcessEnv(process.env), publishDetachedClaudeEvent,
     reconcileClaudeTranscriptAppend: (task) => taskRuntime.claudeRuntimeTaskFollowup.reconcileTranscriptAppend(task),
-    observeClaudeRuntime: claudeRuntime.backgroundLifecycle
-      ? (sessionId, event, idempotencyKey, execution) =>
-        claudeRuntime.backgroundLifecycle!.observe(
-          sessionId,
-          event,
-          idempotencyKey,
-          execution,
-        ) : undefined,
+    observeClaudeRuntime: backgroundLifecycleObserver(claudeRuntime.backgroundLifecycle),
     releaseManifest: params.releaseActivationState.manifest,
+    isolationHost: sessionIsolation?.host,
   });
   params.releaseActivationState.markPrewarmed({
     host: "verified",
@@ -321,6 +319,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     ...(runnerProcess ? { runnerProcessFactory: runnerProcess.runtimeFactory } : {}),
     ...(worktreeService ? { worktreeResolver: worktreeService } : {}),
     sessionMutations,
+    sessionIsolation,
   });
   taskManager.setCompletionNotifier(taskRuntime.completionNotifier);
   const runnerRecoveryCoordinator = await composeRunnerRecoveryCoordinator({
@@ -404,6 +403,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
       },
     },
     ...(worktreeService ? { worktreeService } : {}),
+    ...(nodeServicesObservation ? { nodeServicesObservation } : {}),
   };
   const attachmentStore = new FileAttachmentStore(env.INCOMING_FILE_DIR, logger);
   const server = await buildServer({

@@ -222,7 +222,7 @@ describe("session isolation contract", () => {
     expect(wrapSessionCommand(original, { ...spec, enabled: false })).toEqual(original);
   });
 
-  it("is not wired into the turn path", () => {
+  it("keeps the complete contract importer inventory", () => {
     const sourceRoot = path.resolve(process.cwd(), "src");
     const modules = ["session_execution_policy.js", "session_isolation_contract.js"];
     const importers: string[] = [];
@@ -243,9 +243,8 @@ describe("session isolation contract", () => {
     };
     walk(sourceRoot);
 
-    // B2 준비 모듈은 계약 타입을 쓰는 계획 모듈이며 턴 경로에 연결되지 않는다.
-    // MCP 표면(레인 A)은 계약 타입을 소비한다. 이 목록은 계약을 import하는 전체
-    // 모듈 인벤토리이며, turn path(engine/runner/task)는 아래 네 파일 그대로다.
+    // B3b가 계약 타입을 러너 공장·턴 게이트·조립 경로까지 연결했다. 아래 목록은
+    // 계약을 import하는 전체 모듈 인벤토리이며, 새 연결이 생기면 함께 갱신한다.
     expect(importers.sort()).toEqual([
       "engine/protocol.ts",
       "engine/session_isolation.ts",
@@ -256,6 +255,8 @@ describe("session isolation contract", () => {
       "mcp/tools/node_services_observation.ts",
       "mcp/transport.ts",
       "runner/frame_protocol.ts",
+      "runner/runner_isolation_config.ts",
+      "runner/runner_process_isolation.ts",
       "runner/session_auth_preparation.ts",
       "runner/session_filesystem_cache.ts",
       "runner/session_filesystem_git.ts",
@@ -268,9 +269,13 @@ describe("session isolation contract", () => {
       "runner/session_isolation_process.ts",
       "runner/session_netns_helper.ts",
       "runner/session_network_policy.ts",
+      "runtime/session_isolation_composition.ts",
       "security/restricted_mcp_config.ts",
       "security/session_execution_policy.ts",
       "security/session_isolation_policy.ts",
+      "security/session_isolation_runtime.ts",
+      "security/session_isolation_turn.ts",
+      "task/task_executor.ts",
       "task/task_manager.ts",
       "task/task_models.ts",
     ]);

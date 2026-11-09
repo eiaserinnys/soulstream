@@ -28,6 +28,8 @@ import { ClaudeRuntimeTaskFollowupController } from
 import type { StartExecutionCallback, TaskManager } from "../task/task_manager.js";
 import type { TransientEventLogAggregator } from
   "../task/transient_event_log_aggregator.js";
+import type { SessionIsolationComposition } from "./session_isolation_composition.js";
+import type { SessionIsolationTurnGate } from "../security/session_isolation_turn.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import { ScheduleDispatcher } from "../schedule/schedule_dispatcher.js";
 import type { SoulstreamScheduleService } from "../schedule/schedule_service.js";
@@ -64,6 +66,7 @@ export interface TaskRuntimeCompositionParams {
   transientEventLogAggregator: TransientEventLogAggregator;
   worktreeResolver?: WorktreeExecutionResolver;
   sessionMutations?: Pick<SessionMutationHost, "setModelSelection">;
+  sessionIsolation?: SessionIsolationComposition;
 }
 
 export function createWorkerAttachmentRuntime(
@@ -179,6 +182,19 @@ export function composeTaskRuntime(
     sourceNode: env.SOULSTREAM_NODE_ID,
   });
 
+  // off에서는 게이트를 만들지 않는다 — 판정 호출도 정책 파일 읽기도 0회다.
+  const sessionIsolation = params.sessionIsolation;
+  const sessionIsolationGate: SessionIsolationTurnGate | undefined = sessionIsolation
+    ? {
+        resolveDecision: async (sessionId, effectiveTurnPreset) =>
+          await taskManager.resolveExecutionSecurity(sessionId, effectiveTurnPreset),
+        // restricted 판정일 때만 호출된다. full 턴은 정책 파일을 읽지 않는다.
+        policyDigest: () => sessionIsolation.runtime.policySource.get().digest,
+        // prepare가 기록하는 부착 집합과 같은 수집 함수를 쓴다.
+        worktreeAttachmentIds: async (sessionId, taskWorktreeId) =>
+          await sessionIsolation.worktreeAttachmentIds(sessionId, taskWorktreeId),
+      }
+    : undefined;
   taskExecutor = new TaskExecutor(
     engineFactory,
     db,
@@ -210,6 +226,7 @@ export function composeTaskRuntime(
     params.waitForAttachmentRefs,
     params.prepareAttachmentInput,
     env.CLAUDE_ACCOUNT_POOL_ENABLED,
+    sessionIsolationGate,
   );
   completionDeliveryRecoveryWorker?.start();
   const scheduleDispatcher = new ScheduleDispatcher(

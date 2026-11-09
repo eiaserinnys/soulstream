@@ -4,6 +4,7 @@ import type { Env } from "../config.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { ExecutionRegistration } from "../task/execution_registration.js";
+import type { ClaudeBackgroundTaskLifecycle } from "../task/claude_background_task_lifecycle.js";
 import type { RunnerProcessRuntimeFactory } from "../task/task_executor.js";
 import {
   createRunnerProcessRuntimeFactory,
@@ -214,6 +215,15 @@ export function composeRunnerReconciliationReporter(
     },
     waitForRunnerReconciliation: async () => await coordinator.scanOnce(),
   };
+}
+
+/** 백그라운드 수명주기 관측기는 하나뿐이다. 없으면 옵션 자체를 두지 않는다. */
+export function backgroundLifecycleObserver(
+  lifecycle: ClaudeBackgroundTaskLifecycle | undefined,
+): RunnerProcessRuntimeFactoryOptions["observeClaudeRuntime"] {
+  if (!lifecycle) return undefined;
+  return (sessionId, event, idempotencyKey, execution) =>
+    lifecycle.observe(sessionId, event, idempotencyKey, execution);
 }
 
 function required(value: string | undefined, key: string): string {

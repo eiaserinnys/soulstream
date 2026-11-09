@@ -72,6 +72,11 @@ export class WorktreeService implements WorktreeExecutionResolver {
     );
   }
 
+  /** 이 노드가 체크아웃으로 아는 등록 리포 id. 격리 Git view의 대상 목록이다. */
+  listRepositoryIds(): string[] {
+    return this.options.git.listRepositoryIds();
+  }
+
   private async listWithinDeadline(input: {
     actorSessionId: string;
     repoId?: string;
