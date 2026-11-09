@@ -381,6 +381,7 @@ class ShellScriptSyntaxTests(unittest.TestCase):
     def test_shell_scripts_pass_bash_syntax_check(self) -> None:
         for relative in (
             "deploy/haniel/build-core.sh",
+            "deploy/haniel/pack_portable_node_release.sh",
             "deploy/macos/check-macos-node.sh",
         ):
             completed = subprocess.run(
