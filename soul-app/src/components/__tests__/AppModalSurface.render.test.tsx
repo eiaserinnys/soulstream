@@ -75,6 +75,19 @@ test('expanded modal keeps the requested native presentation in the same surface
 });
 
 test.each([
+  [0, 'default', { top: 'additive', bottom: 'additive', left: 'additive', right: 'additive' }],
+  [84, 'default', { top: 'additive', bottom: 'additive', left: 'additive', right: 'off' }],
+  [0, 'content', { top: 'additive', bottom: 'off', left: 'additive', right: 'additive' }],
+  [84, 'content', { top: 'additive', bottom: 'off', left: 'additive', right: 'off' }],
+] as const)('expanded sheet inset owner %s/%s preserves the other edges', (sideBandWidth, owner, edges) => {
+  const screen = render(<AppModalSurface visible variant="expanded" modalId="modal_settings"
+    presentationStyle="pageSheet" sideBandWidth={sideBandWidth}
+    {...(owner === 'content' ? { bottomInsetOwner: 'content' as const } : {})}
+    safeAreaTestID="sheet-insets" onRequestClose={jest.fn()}><View /></AppModalSurface>);
+  expect(screen.getByTestId('sheet-insets').props.edges).toEqual(edges);
+});
+
+test.each([
   ['light', LIGHT_COLORS.surface],
   ['dark', DARK_COLORS.surface],
 ] as const)('expanded %s modal fills the duo system band with the surface token', (mode, sheetColor) => {

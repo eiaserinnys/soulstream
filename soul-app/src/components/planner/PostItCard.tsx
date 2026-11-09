@@ -165,17 +165,17 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
           backgroundColor: roles.paper, borderRadius: roles.radius, transform: [{ rotate: `${postItRotation(card.id)}deg` }] }}>
           <Pressable ref={openTarget} testID={`postit-open-${card.id}`} onPress={open} accessibilityLabel={`${displayTitle} 카드 상세`}
             {...directHoldProps}
-            style={{ flex: 1, minHeight: t.hitTarget.min, padding: roles.padding, paddingBottom: roles.padding + roles.footerHeight + roles.gap }}>
+            style={{ flex: 1, minHeight: t.hitTarget.min, padding: roles.padding, paddingTop: roles.paddingTop, paddingBottom: roles.paddingBottom }}>
             <Text testID={`postit-title-${card.id}`} style={roles.title} numberOfLines={2}>{displayTitle}</Text>
             <View testID={`postit-body-area-${card.id}`} style={{ marginTop: roles.gap, flex: 1, minHeight: 0, overflow: 'hidden' }}
               onLayout={(event) => setBodyLines(Math.max(1, Math.floor(event.nativeEvent.layout.height / roles.body.lineHeight)))}>
-              {itemSummary.total ? <View testID={`postit-${card.id}-item-summary`} style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xxs }}>
+              {itemSummary.total ? <View testID={`postit-${card.id}-item-summary`} style={{ flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.xxs, flexShrink: 0 }}>
                 {itemSummary.unconfirmed.map((item) => <View key={item.id} accessibilityElementsHidden importantForAccessibility="no-hide-descendants"
                   style={{ width: STATUS_DOT_SIZE, height: STATUS_DOT_SIZE, borderRadius: t.foundation.radius.round,
                     backgroundColor: cardItemDisplayColor(item.display, t.colors) }} />)}
                 {cardProgressText(itemSummary) ? <Text style={roles.label} accessibilityLabel={cardProgressText(itemSummary)}>{cardProgressText(itemSummary)}</Text> : null}
               </View> : null}
-              <Text testID={`postit-body-${card.id}`} style={roles.body} numberOfLines={card.now ? 1 : Math.max(1, bodyLines - (itemSummary.total ? 1 : 0))} ellipsizeMode="tail">
+              <Text testID={`postit-body-${card.id}`} style={{ ...roles.body, flexShrink: 0 }} numberOfLines={card.now ? 1 : Math.max(1, bodyLines - (itemSummary.total ? 1 : 0))} ellipsizeMode="tail">
                 {card.now?.text ? card.now.text : <>
                   <Text testID={`postit-activity-chip-${card.id}`} style={{ ...roles.label, fontWeight: '600', backgroundColor: roles.colors.surfaceCode }}>
                     {activity?.kind === 'report' ? '[보고]' : '[지시]'}
@@ -183,7 +183,7 @@ export const PostItCard = forwardRef<PostItCardHandle, PostItCardProps>(function
                 </>}
               </Text>
               {card.now?.turn === 'user' && askPreview ? <Text testID={`postit-${card.id}-ask-preview`} accessibilityLabel={askPreview} numberOfLines={variant === 'compact' ? 1 : 2} ellipsizeMode="tail"
-                style={{ ...roles.label, color: roles.body.color, backgroundColor: withAlphaColor(roles.colors.warning, 0.12), borderRadius: t.foundation.radius.chip, paddingHorizontal: t.uiSpacing.sm, paddingVertical: t.uiSpacing.xs }}>
+                style={{ ...roles.label, color: roles.body.color, backgroundColor: withAlphaColor(roles.colors.warning, 0.12), borderRadius: t.foundation.radius.chip, paddingHorizontal: t.uiSpacing.sm, paddingVertical: t.uiSpacing.xs, flexShrink: 0 }}>
                 {itemSummary.needsReview ? <Text style={{ color: roles.colors.warningText, fontWeight: '700' }}>볼 것 {itemSummary.needsReview}</Text> : null}{card.now.ask ? `${itemSummary.needsReview ? ' ' : ''}${card.now.ask}` : ''}
               </Text> : null}
             </View>

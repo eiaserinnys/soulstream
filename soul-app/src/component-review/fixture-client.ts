@@ -461,7 +461,9 @@ export function createApiClient(baseUrl = ''): ApiClient {
     const boardApi = boardParam === 'loading'
       ? { ...api, listCards: () => new Promise<never>(() => {}), listCompletedCards: () => new Promise<never>(() => {}) }
       : boardParam === 'ops' || boardParam === 'review-last'
-        ? { ...api, listCards: async () => ({ cards: boardFixtureCards(boardParam) }),
+        ? { ...api, listCards: async (folderId?: string) => ({
+          // useCardList는 요청한 폴더의 카드만 남긴다. 픽스처 카드는 열린 폴더 소속으로 돌려준다.
+          cards: boardFixtureCards(boardParam).map(card => folderId ? { ...card, folderId } : card) }),
           listCompletedCards: async () => ({ cards: [], nextCursor: null }) }
         : api;
     // PAS 목록의 로딩·빈 목록·실패 화면 캡처용 상태. board=ops보다 우선한다.

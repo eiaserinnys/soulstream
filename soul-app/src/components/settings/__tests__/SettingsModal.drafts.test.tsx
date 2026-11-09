@@ -95,7 +95,10 @@ test('배경 업로드 실패는 성공으로 표시하지 않고 정제된 오�
   alert.mockRestore();
 });
 
-test('폰 설정 목록을 왕복해도 반복 작업 편집기의 이름과 내용을 유지한다', async () => {
+test('폰 편집기에서 뒤로는 버리기 확인을 거치고 계속 편집이면 입력을 유지한다', async () => {
+  // 헤더는 CardDetail처럼 뒤로 원 하나와 X 원 하나만 둔다. 편집기의 뒤로는
+  // 반복 작업 목록으로 가므로 입력이 있으면 먼저 버리기 확인을 거친다.
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(jest.fn());
   const screen = render(<SettingsModal visible onClose={jest.fn()} />);
   await act(async () => {});
   if (mockDeviceType === 'phone') fireEvent(screen.getByTestId('settings-safe-area'), 'layout', { nativeEvent: { layout: { width: 390 } } });
@@ -104,7 +107,27 @@ test('폰 설정 목록을 왕복해도 반복 작업 편집기의 이름과 내
   await act(async () => {});
   fireEvent.changeText(screen.getByLabelText('작업 이름'), '보존할 이름');
   fireEvent.changeText(screen.getByLabelText('작업 내용'), '보존할 내용');
-  fireEvent.press(screen.getByLabelText('모든 설정으로 돌아가기'));
+  fireEvent.press(screen.getByLabelText('반복 작업 이전 화면으로 돌아가기'));
+  expect(alert).toHaveBeenCalledWith('저장하지 않은 변경', expect.any(String), expect.any(Array));
+  // 「계속 편집」은 취소라 콜백이 없다. 확인 창이 뜬 동안 편집기와 입력이 그대로다.
+  expect(alert.mock.calls[0][2]!.map(action => action.text)).toContain('계속 편집');
+  expect(screen.getByLabelText('작업 이름').props.value).toBe('보존할 이름');
+  expect(screen.getByLabelText('작업 내용').props.value).toBe('보존할 내용');
+  alert.mockRestore();
+});
+
+test('설정 목록을 왕복해도 반복 작업 편집기의 이름과 내용을 유지한다', async () => {
+  mockDeviceType = 'tabletPortrait';
+  const screen = render(<SettingsModal visible onClose={jest.fn()} />);
+  await act(async () => {});
+  fireEvent(screen.getByTestId('settings-safe-area'), 'layout', { nativeEvent: { layout: { width: 1024 } } });
+  fireEvent.press(screen.getByTestId('settings-category-recurring-jobs'));
+  fireEvent.press(await screen.findByText('새 작업'));
+  await act(async () => {});
+  fireEvent.changeText(screen.getByLabelText('작업 이름'), '보존할 이름');
+  fireEvent.changeText(screen.getByLabelText('작업 내용'), '보존할 내용');
+  // 넓은 화면은 사이드바가 남아 다른 항목을 열었다 돌아와도 편집기가 살아 있다.
+  fireEvent.press(screen.getByTestId('settings-category-display'));
   fireEvent.press(screen.getByTestId('settings-category-recurring-jobs'));
   expect(screen.getByLabelText('작업 이름').props.value).toBe('보존할 이름');
   expect(screen.getByLabelText('작업 내용').props.value).toBe('보존할 내용');

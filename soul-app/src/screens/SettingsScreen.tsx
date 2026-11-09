@@ -1,8 +1,8 @@
 import { useOptionalLayoutContinuity } from '../navigation/LayoutContinuityContext';
 import { SETTINGS_WORKSPACE_CONTINUITY_KEY, type SettingsWorkspaceContinuityState } from '../navigation/settingsWorkspaceContinuity';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { BackHandler, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { BackHandler, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { AppKeyboardAvoidingView } from '../components/AppKeyboardAvoidingView';
 import { GlassButton } from '../components/GlassSurface';
@@ -21,7 +21,7 @@ export const SETTINGS_FORM_COLUMNS_MIN_WIDTH = 700;
 
 interface Props {
   extraBottomPadding?: number;
-  bottomSafeAreaOwner?: 'screen' | 'parent';
+  bottomSafeAreaOwner?: 'screen' | 'parent' | 'columns';
   showTitle?: boolean;
   flattened?: boolean;
   category?: SettingsCategory;
@@ -38,6 +38,8 @@ interface Props {
 /** All three entry points share this stable host and the production form controllers. */
 export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = 'screen', flattened = false, category: initialCategory, showAdmin, onClose, connectionOnly = false, registerCloseRequest, initialPersistentDestination, active: screenActive = true }: Props = {}) {
   const t = useTokens();
+  const insets = useSafeAreaInsets();
+  const columnBottomInset = bottomSafeAreaOwner === 'columns' ? insets.bottom : 0;
   const styles = useMemo(() => makeStyles(t), [t]);
   const window = useWindowDimensions();
   const device = useDeviceType();
@@ -106,22 +108,22 @@ export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = '
       left: 'additive',
       right: railMode ? 'off' : 'additive',
       top: 'additive',
-      bottom: bottomSafeAreaOwner === 'parent' ? 'off' : 'additive',
+      bottom: bottomSafeAreaOwner === 'screen' ? 'additive' : 'off',
     }} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
       <AppKeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {!(duo && !wide && !active && !onClose) ? <View testID="settings-modal-header" style={styles.header}>
-          {!duo && !connectionOnly && !wide && active ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="모든 설정으로 돌아가기" onPress={() => setCategory(null)}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>설정</Text></TouchableOpacity> : null}
-          {!duo && active === 'recurring-jobs' && jobs.kind !== 'list' ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="반복 작업 이전 화면으로 돌아가기" onPress={back}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>{jobs.kind === 'history' ? '편집' : '목록'}</Text></TouchableOpacity> : null}
-          {!duo && active === 'persistent' && persistent.kind !== 'list' ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="영구 에이전트 세션 이전 화면으로 돌아가기" onPress={back}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>목록</Text></TouchableOpacity> : null}
+          {!duo && !connectionOnly && !wide && active && !nestedSettings ? <GlassButton testID="settings-modal-back" accessibilityLabel="모든 설정으로 돌아가기" iconOnly size="compact" borderRadius={t.foundation.radius.round} frameStyle={styles.headerBack} onPress={() => setCategory(null)}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.textPrimary}/></GlassButton> : null}
+          {!duo && active === 'recurring-jobs' && jobs.kind !== 'list' ? <GlassButton testID="settings-modal-back" accessibilityLabel="반복 작업 이전 화면으로 돌아가기" iconOnly size="compact" borderRadius={t.foundation.radius.round} frameStyle={styles.headerBack} onPress={back}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.textPrimary}/></GlassButton> : null}
+          {!duo && active === 'persistent' && persistent.kind !== 'list' ? <GlassButton testID="settings-modal-back" accessibilityLabel="영구 에이전트 세션 이전 화면으로 돌아가기" iconOnly size="compact" borderRadius={t.foundation.radius.round} frameStyle={styles.headerBack} onPress={back}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.textPrimary}/></GlassButton> : null}
           <Text style={styles.title}>{title}</Text>
-          {!duo && onClose ? <TouchableOpacity testID="settings-modal-close" accessibilityRole="button" accessibilityLabel="설정 닫기" style={styles.headerAction} onPress={close}><Text style={styles.actionText}>완료</Text></TouchableOpacity> : null}
+          {!duo && onClose ? <GlassButton testID="settings-modal-close" accessibilityLabel="설정 닫기" iconOnly size="compact" borderRadius={t.foundation.radius.round} frameStyle={styles.headerClose} onPress={close}><Ionicons name="close" size={t.iconSize.standard} color={t.colors.textPrimary}/></GlassButton> : null}
         </View> : null}
         <View testID={wide ? 'settings-wide-layout' : 'settings-compact-layout'} style={[styles.body, wide && styles.wide]}>
-          <ScrollView testID={wide ? 'settings-sidebar-scroll' : 'settings-phone-index'} style={[wide ? styles.sidebar : styles.root, (connectionOnly || (!wide && active)) && styles.hidden]} accessibilityElementsHidden={connectionOnly || (!wide && active !== null)} importantForAccessibility={connectionOnly || (!wide && active !== null) ? 'no-hide-descendants' : 'auto'} contentContainerStyle={styles.index}>
+          <ScrollView testID={wide ? 'settings-sidebar-scroll' : 'settings-phone-index'} style={[wide ? styles.sidebar : styles.root, (connectionOnly || (!wide && active)) && styles.hidden]} accessibilityElementsHidden={connectionOnly || (!wide && active !== null)} importantForAccessibility={connectionOnly || (!wide && active !== null) ? 'no-hide-descendants' : 'auto'} contentContainerStyle={[styles.index, { paddingBottom: t.spacing.xl + columnBottomInset }]}>
             {!wide ? <View style={styles.introduction}><Text style={styles.introTitle}>내 작업 환경</Text><Text style={styles.help}>변경할 항목을 선택하세요.</Text></View> : null}
             <SettingsCategorySidebar compact={!wide} selected={active} onSelect={setCategory} showAdmin={isAdmin} dirty={Object.keys(scopes).filter(id => scopes[id as SettingsCategory]?.dirty) as SettingsCategory[]}/>
           </ScrollView>
-          <View style={[styles.root, !active && styles.hidden]} accessibilityElementsHidden={!active} importantForAccessibility={!active ? 'no-hide-descendants' : 'auto'}>
+          <View style={[styles.root, !active && styles.hidden, { paddingBottom: columnBottomInset }]} accessibilityElementsHidden={!active} importantForAccessibility={!active ? 'no-hide-descendants' : 'auto'}>
             <SettingsContent flattened category={active ?? 'display'} showAdmin={isAdmin} connectionOnly={connectionOnly}/>
             {scope ? <View testID="settings-active-footer" style={[styles.footer, { paddingBottom: t.spacing.md + extraBottomPadding }]}>
               {scope.dirty ? <GlassButton accessibilityLabel="변경 버리기" onPress={() => active && guard(active, () => undefined)} style={styles.footerAction}><Text style={styles.actionText}>변경 버리기</Text></GlassButton> : null}
@@ -136,8 +138,11 @@ export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = '
 function makeStyles(t: DesignTokens) { return StyleSheet.create({
   root: { flex: 1, minHeight: 0, minWidth: 0 }, body: { flex: 1, minHeight: 0 }, wide: { flexDirection: 'row' }, hidden: { display: 'none' },
   sidebar: { width: 240, flexGrow: 0, borderRightWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, backgroundColor: t.colors.surfaceMuted }, index: { paddingBottom: t.spacing.xl },
-  header: { minHeight: t.hitTarget.min + t.spacing.sm, paddingHorizontal: t.foundation.pageInset, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: t.spacing.sm },
-  headerAction: { minHeight: t.hitTarget.min, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: t.spacing.xxs },
+  // CardDetail 관례: 단추가 없는 상태도 원 단추의 hit 높이와 위아래 여백을 확보한다.
+  header: { minHeight: t.hitTarget.min + t.uiSpacing.md * 2, paddingHorizontal: t.foundation.pageInset, paddingVertical: t.uiSpacing.md, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', alignContent: 'center', gap: t.uiSpacing.sm },
+  // 헤더 끝 아이콘 단추는 hit frame 여백만큼 바깥으로 당겨 시각 원의 끝을 카드 끝선에 맞춘다(CardDetail.styles의 iconOverhang 관례).
+  headerBack: { marginLeft: -(t.hitTarget.min - t.foundation.iconFrame.compact) / 2 },
+  headerClose: { marginRight: -(t.hitTarget.min - t.foundation.iconFrame.compact) / 2 },
   title: { flex: 1, ...t.foundation.typography.navigation, color: t.colors.textPrimary }, actionText: { ...t.foundation.typography.body, color: t.colors.accent, fontWeight: '600' }, primaryText: { ...t.foundation.typography.body, color: t.colors.accentText, fontWeight: '700' },
   introduction: { padding: t.foundation.pageInset, gap: t.spacing.sm }, introTitle: { ...t.foundation.typography.section, color: t.colors.textPrimary }, help: { ...t.foundation.typography.body, color: t.colors.textSecondary },
   footer: { flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.sm, padding: t.cardLayout.padding, borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border }, footerAction: { flexGrow: 1 },

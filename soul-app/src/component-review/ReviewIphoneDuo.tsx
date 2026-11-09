@@ -1,9 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { DefaultTheme, NavigationContainer, useNavigationContainerRef } from '@react-navigation/native';
+import { DefaultTheme, NavigationContainer, ThemeProvider, useNavigationContainerRef } from '@react-navigation/native';
 import { ScrollView, Text, View } from 'react-native';
 import {
   SafeAreaFrameContext,
   SafeAreaInsetsContext,
+  SafeAreaView,
   type EdgeInsets,
   type Rect,
 } from 'react-native-safe-area-context';
@@ -38,6 +39,7 @@ import { createReviewCardApi } from './ReviewPasCardExpand';
 import { FolderWorkspace } from '../components/planner/FolderWorkspace';
 import { DuoRailOverride } from '../components/navigation/DuoRailOverride';
 import { useRegisterDuoRailOverride } from '../navigation/phoneRailActions';
+import { AppGlassCard } from '../components/AppGlassCard';
 
 const PAS_LAYOUT_FRAMES = {
   'inner-landscape': { width: 951, height: 669, rail: false, insets: { top: 24, right: 84, bottom: 24, left: 0 } },
@@ -242,6 +244,43 @@ function DuoPasLayoutReview({ frameId, reportsEmpty, initialReportsScene }: { fr
     </SafeAreaFrameContext.Provider>;
 }
 
+/** SettingsModal(AppModalSurface expanded + DuoRailOverride)를 프레임 안에서 재현한다. */
+function DuoSettingsLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT_FRAMES }) {
+  const t = useTokens();
+  const frame = PAS_LAYOUT_FRAMES[frameId];
+  const duo = frame.insets.right >= RAIL_MIN_INSET_WIDTH && frame.insets.left === 0;
+  const frameRect: Rect = { x: 0, y: 0, width: frame.width, height: frame.height };
+  // 레일 캡슐(@react-navigation/elements PlatformPressable)이 navigation 테마를 읽는다.
+  return <ThemeProvider value={DefaultTheme}>
+    <SafeAreaFrameContext.Provider value={frameRect}>
+      <SafeAreaInsetsContext.Provider value={frame.insets}>
+        <PhoneRailModeContext.Provider value={frame.rail}>
+          <DuoSideBandContext.Provider value={duo}>
+            <View testID="settings-layout-stage" style={{ width: frame.width, height: frame.height, overflow: 'hidden', backgroundColor: t.colors.background }}>
+              {/* 실기기 pageSheet처럼 시트 위 끝을 보이게 한다. 안전 영역 위쪽은 배경(딤)만 보이고,
+                  시트는 그 아래에서 시작한다. SafeAreaView의 top 여백은 시트 위치가 대신한다. */}
+              <View style={{ flex: 1, paddingRight: duo ? frame.insets.right : 0 }}>
+                <View testID="settings-layout-sheet-frame"
+                  style={{ flex: 1, marginTop: frame.insets.top,
+                    borderTopLeftRadius: t.foundation.radius.card, borderTopRightRadius: t.foundation.radius.card,
+                    overflow: 'hidden' }}>
+                  <AppGlassCard role="nativeSheet" style={{ flex: 1 }}>
+                    <SafeAreaView testID="settings-layout-safe-area"
+                      edges={duo ? ['left'] : ['left', 'right']} style={{ flex: 1 }}>
+                      <SettingsScreen flattened bottomSafeAreaOwner="columns" onClose={() => {}} />
+                    </SafeAreaView>
+                  </AppGlassCard>
+                </View>
+              </View>
+              {duo ? <DuoRailOverride /> : null}
+            </View>
+          </DuoSideBandContext.Provider>
+        </PhoneRailModeContext.Provider>
+      </SafeAreaInsetsContext.Provider>
+    </SafeAreaFrameContext.Provider>
+  </ThemeProvider>;
+}
+
 function DuoPasReviewRail({ duoSideBand, compact }: { duoSideBand: boolean; compact: boolean }) {
   const host = usePersistentSessionHost();
   return <PhoneRailTabCluster active="PersistentTab" duoSideBand={duoSideBand} compact={compact}
@@ -262,6 +301,11 @@ export function ReviewIphoneDuo() {
     if (!frameId || !PAS_LAYOUT_FRAMES[frameId]) return null;
     return <DuoPasLayoutReview frameId={frameId} reportsEmpty={new URLSearchParams(window.location.search).get('reports') === '0'}
       initialReportsScene={new URLSearchParams(window.location.search).get('scene') === 'reports'} />;
+  }
+  if (sample === 'settings-layout') {
+    const frameId = new URLSearchParams(window.location.search).get('frame') as keyof typeof PAS_LAYOUT_FRAMES | null;
+    if (!frameId || !PAS_LAYOUT_FRAMES[frameId]) return null;
+    return <DuoSettingsLayoutReview frameId={frameId} />;
   }
   if (sample === 'main-layout') {
     const frameId = new URLSearchParams(window.location.search).get('frame') as keyof typeof PAS_LAYOUT_FRAMES | null;

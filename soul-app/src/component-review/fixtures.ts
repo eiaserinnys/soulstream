@@ -84,6 +84,10 @@ function boardFixtureCard(status: CardStatus, index: number, title: string, item
     request: '운영 형태의 긴 지시문입니다. 카드 열이 사이드바 아래로 이어져도 제목과 본문의 줄 수가 유지되는지 확인합니다.',
     latestActivity: { kind: 'report', format: 'markdown', createdAt: time,
       body: '보고 본문입니다. 진행 표시와 함께 카드의 높이가 정해집니다.\n두 번째 줄도 같은 폭에서 확인합니다.' },
+    assigneeSessionId: 'public-shell-session-0',
+    now: { text: '지금 확인할 내용입니다. 본문이 한 줄로 줄어 제목과 「볼 것」 줄 사이의 간격을 확인합니다.',
+      turn: 'user' as const, ask: '확인 항목 결과와 다음 진행을 함께 봐 주세요.', updatedAt: time,
+      sessionId: 'public-shell-session-0' },
     items, positionKey: String.fromCharCode(96 + index) };
 }
 const boardFixtureTitles: Record<string, [string, CardCheckItem['display']][]> = {
