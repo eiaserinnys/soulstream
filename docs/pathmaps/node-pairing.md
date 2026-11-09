@@ -104,15 +104,18 @@ null, and the shared-token paths behave exactly as before.
 ## Revocation (P2)
 
 `NodeCredentialStore.revokeCredential` notifies `onRevoked` listeners after the
-row is marked revoked. The orchestrator subscribes twice:
+row is marked revoked. The orchestrator subscribes three times, once each for
+`/ws/node`, `/ws/node/control` and Yjs:
 
 - `/ws/node` and `/ws/node/control` each keep a `credential_id -> closers` set
   for their live connections and close the matching ones with 1008 and reason
   `node credential revoked`.
-- `PageYjsService.closeConnectionsForCredential` closes Yjs connections whose
-  Hocuspocus context carries the revoked `credentialId`, stamped by
-  `createPageYjsAuthExtension` during `onAuthenticate`, using the same close
-  code and reason.
+- `PageYjsService.closeConnectionsForCredential` closes the Yjs document
+  connections whose Hocuspocus context carries the revoked `credentialId`,
+  stamped by `createPageYjsAuthExtension` during `onAuthenticate`. Hocuspocus
+  `Connection.close()` drops the document connection and requires a new
+  authentication, so the document is no longer reachable; it does not close
+  the physical WebSocket with 1008.
 
 The next HTTP request with the revoked token resolves to null and receives 401
 from `verifyServiceBearerAuthorization`.
