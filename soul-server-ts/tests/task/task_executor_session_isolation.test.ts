@@ -8,14 +8,19 @@ import type {
   EnginePort,
   SSEEventPayload,
 } from "../../src/engine/protocol.js";
-import type { SessionIsolationTurnGate } from "../../src/security/session_isolation_turn.js";
+import type {
+  RunnerIsolationIdentity,
+  SessionIsolationTurnGate,
+} from "../../src/security/session_isolation_turn.js";
 import {
   createInProcessTaskRunnerRuntime,
   createTaskRunnerRuntime,
   type TaskRunnerRuntime,
 } from "../../src/runner/task_runner_runtime.js";
+import { engineEventFrame } from "../../src/runner/frame_protocol.js";
 import { IsolationPreparationPolicyError } from "../../src/runner/session_filesystem_errors.js";
 import { RunnerProcessDispatcher } from "../../src/runner/runner_process_dispatcher.js";
+import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
 import { createRunnerProcessRuntimeFactory } from "../../src/runner/runner_process_runtime_factory.js";
 import type { RunnerIsolationChildConfig } from "../../src/runner/runner_isolation_config.js";
 import type { RunnerProcessRuntimeFactory } from "../../src/task/task_executor.js";
@@ -61,12 +66,16 @@ function makeMocks() {
   return { ...persistenceDouble, db, broadcaster };
 }
 
-function makeEngine(turns: EngineExecuteParams[]): EnginePort {
+function makeEngine(
+  turns: EngineExecuteParams[],
+  onExecute?: () => void,
+): EnginePort {
   return {
     backendId: "claude",
     workspaceDir: "/tmp/claude-roselin",
     async *execute(params): AsyncIterable<SSEEventPayload> {
       turns.push(params);
+      onExecute?.();
       yield {
         type: "assistant_message",
         content: "done",
@@ -90,6 +99,7 @@ function makeExecutor(
   engine: EnginePort,
   gate?: SessionIsolationTurnGate,
   runnerProcessFactory?: RunnerProcessRuntimeFactory,
+  queuedTerminalResume?: (task: Task) => void | Promise<void>,
 ): TaskExecutor {
   const mocks = makeMocks();
   return new TaskExecutor(
@@ -106,7 +116,7 @@ function makeExecutor(
     undefined, // 11 modelCatalog
     runnerProcessFactory, // 12 runnerProcessFactory
     undefined, // 13 transientEventLogAggregator
-    undefined, // 14 queuedTerminalResume
+    queuedTerminalResume, // 14
     undefined, // 15 worktreeResolver
     undefined, // 16 sessionMutations
     undefined, // 17 persistentDecisionRuntime
@@ -182,7 +192,206 @@ function makeRecoveredRunner(engine: EnginePort, restricted: boolean): TaskRunne
   return { ...recovered, engine: fake.engine, dispatcher: fake.dispatcher, eventPersistence: "host" };
 }
 
+function makeRestrictedRegistration(): RunnerRegistration {
+  return {
+    config: {
+      sessionId: "sess-1",
+      agent: claudeAgent,
+      backend: "claude",
+      codeSha: "release-test",
+      snapshotPath: "/release/test",
+      isolation: {
+        spec: { policyDigest: "digest-1" },
+        attachedWorktreeIds: ["wt-a"],
+      } as unknown as RunnerIsolationChildConfig,
+    },
+  } as unknown as RunnerRegistration;
+}
+
+function makeRecoveredProcessRunner(engine: EnginePort) {
+  const dispatcher = {
+    dispatch: vi.fn(),
+    executeFrames: vi.fn(),
+    recoverFrames: vi.fn(() => (async function* () {
+      yield engineEventFrame({ type: "complete", result: "recovered", timestamp: 1 });
+    })()),
+    registrationId: vi.fn(() => "registration-1"),
+    prepareSession: vi.fn(async () => {}),
+    interrupt: vi.fn(async () => true),
+    close: vi.fn(async () => {}),
+    detachHost: vi.fn(async () => {}),
+    sendControlFrame: vi.fn(async () => true),
+    requestContext: vi.fn(),
+    waitForSessionAck: vi.fn(async () => null),
+    recoverPendingInterventions: vi.fn(async () => []),
+  };
+  const runner: TaskRunnerRuntime = {
+    engine,
+    dispatcher: dispatcher as never,
+    eventPersistence: "runner",
+    isolation: {
+      tier: "restricted",
+      policyDigest: "digest-1",
+      attachedWorktreeIds: ["wt-a"],
+    },
+  };
+  return { runner, dispatcher };
+}
+
+/**
+ * 재부착된 러너. 복구 프레임은 complete 하나이고, 다음 턴은 in-process
+ * dispatcher로 실제 실행된다. dispatcher.close는 관찰만 한다.
+ */
+function makeAdoptableRunner(
+  engine: EnginePort,
+  isolation?: RunnerIsolationIdentity,
+) {
+  const base = createInProcessTaskRunnerRuntime(engine);
+  const dispatcher = Object.assign(base.dispatcher, {
+    recoverFrames: vi.fn(() => (async function* () {
+      yield engineEventFrame({ type: "complete", result: "recovered", timestamp: 1 });
+    })()),
+  });
+  return {
+    runner: createTaskRunnerRuntime(
+      base.engine,
+      dispatcher,
+      base.eventPersistence,
+      isolation,
+    ),
+    dispatcher,
+    close: vi.spyOn(dispatcher, "close"),
+  };
+}
+
+function makeQueuedNextTurn() {
+  return {
+    text: "queued next turn",
+    user: "user",
+    deliveryId: "delivery-next-turn",
+  };
+}
+
 describe("TaskExecutor turn isolation gate", () => {
+  it.each([
+    { name: "no gate (mode off)", decision: undefined },
+    {
+      name: "the turn now decides full",
+      decision: {
+        sessionId: "sess-1",
+        tier: "full",
+        policyVersion: 1,
+        reason: "trusted",
+        presetId: null,
+      } as const,
+    },
+  ])(
+    "adopts a stored restricted runner when isolation changed since the turn started ($name)",
+    async ({ decision }) => {
+      const { runner, dispatcher } = makeRecoveredProcessRunner(makeEngine([]));
+      const registration = makeRestrictedRegistration();
+      const recover = vi.fn(
+        (..._args: Parameters<NonNullable<RunnerProcessRuntimeFactory["recover"]>>) => runner,
+      );
+      const factory = vi.fn(() => {
+        throw new Error("adoption must not spawn a fresh runner");
+      }) as unknown as RunnerProcessRuntimeFactory;
+      factory.recover = recover;
+      factory.isolationSupported = true;
+      const gate = decision === undefined ? undefined : makeGate(decision);
+      const executor = makeExecutor(makeEngine([]), gate, factory);
+      const task = makeTask();
+      const attempts: TaskRunnerRuntime[] = [];
+
+      const completion = executor.recoverRegisteredRunner(
+        task,
+        registration,
+        "execute-old",
+        "adopt",
+        (attempt) => {
+          attempts.push(attempt);
+          return undefined;
+        },
+      );
+
+      await expect(completion).resolves.toBeUndefined();
+
+      expect(recover).toHaveBeenCalledOnce();
+      expect(recover.mock.calls[0]?.[1]).toBe(registration);
+      expect(recover.mock.calls[0]?.[3]).toBe("adopt");
+      expect(dispatcher.recoverFrames).toHaveBeenCalledWith("execute-old", undefined);
+      expect(attempts).toHaveLength(1);
+      expect(attempts[0]?.isolation?.tier).toBe("restricted");
+      if (gate) expect(gate.resolveDecision).not.toHaveBeenCalled();
+      expect(task.executionSecurity).toBeUndefined();
+    },
+  );
+
+  it("finishes an adopted execution on its starting isolation and replaces the runner on the next execution", async () => {
+    const recoveredTurns: EngineExecuteParams[] = [];
+    const recovered = makeAdoptableRunner(makeEngine(recoveredTurns), {
+      tier: "restricted",
+      policyDigest: "digest-1",
+      attachedWorktreeIds: ["wt-a"],
+    });
+    const freshTurns: EngineExecuteParams[] = [];
+    const observedIsolations: Array<RunnerIsolationIdentity | undefined> = [];
+    const task = makeTask({ interventionQueue: [makeQueuedNextTurn()] });
+    const factory = vi.fn(
+      () => createInProcessTaskRunnerRuntime(makeEngine(freshTurns, () => {
+        observedIsolations.push(task.runner?.isolation);
+      })),
+    ) as unknown as RunnerProcessRuntimeFactory;
+    factory.isolationSupported = true;
+    factory.recover = vi.fn(() => recovered.runner);
+    const gate = makeGate({
+      sessionId: "sess-1",
+      tier: "full",
+      policyVersion: 1,
+      reason: "trusted",
+      presetId: null,
+    });
+    const resumeQueuedAfterTerminal = vi.fn();
+    const executor = makeExecutor(
+      makeEngine([]),
+      gate,
+      factory,
+      resumeQueuedAfterTerminal,
+    );
+
+    await executor.recoverRegisteredRunner(
+      task,
+      makeRestrictedRegistration(),
+      "execute-old",
+      "adopt",
+    );
+
+    // 복구된 실행은 시작할 때의 격리(restricted)로 큐의 다음 턴까지 소비하고 끝난다.
+    expect(recoveredTurns).toHaveLength(1);
+    expect(recoveredTurns[0]?.prompt).toBe("queued next turn");
+    expect(task.interventionQueue).toEqual([]);
+    expect(resumeQueuedAfterTerminal).not.toHaveBeenCalled();
+    expect(gate.resolveDecision).not.toHaveBeenCalled();
+    expect(recovered.close).toHaveBeenCalledTimes(1);
+    expect(factory).not.toHaveBeenCalled();
+
+    // 다음 실행은 실행 시작에서 판정을 다시 내리고 takeOrCreateRunner로 러너를 바꾼다.
+    task.interventionQueue.push({
+      text: "next execution turn",
+      user: "user",
+      deliveryId: "delivery-next-execution",
+    });
+    executor.startNewExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(gate.resolveDecision).toHaveBeenCalledTimes(1);
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(freshTurns).toHaveLength(1);
+    expect(freshTurns[0]?.prompt).toBe("next execution turn");
+    expect(freshTurns[0]?.executionSecurity).toMatchObject({ tier: "full" });
+    expect(observedIsolations).toEqual([undefined]);
+  });
+
   it.each([
     { name: "reuses recovered restricted for the same restricted turn", stored: true, tier: "restricted", reused: true },
     { name: "replaces recovered restricted for a full turn", stored: true, tier: "full", reused: false },
