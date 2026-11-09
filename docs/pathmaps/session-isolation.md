@@ -1,0 +1,83 @@
+# 세션 격리
+
+최종 대조 커밋 SHA: `c845fbf3e53714ee69565320e7b68c52e9f9bf41`
+
+> 범위 주석: 격리는 두 층이다. OS 경계(unshare netns + nft + pasta + setpriv + bwrap)와 서버가 인증하는 MCP principal(full/restricted)이다. 어느 한 층이 다른 층을 대신하지 않는다.
+
+> 스위치 경계: `SESSION_ISOLATION_MODE`의 기본값은 off다. off에서는 격리 runtime을 만들지 않고 턴 경로가 판정 호출도 정책 파일 읽기도 하지 않는다. 아래 표의 경로는 enforce에서만 돈다.
+
+| 단계 | 파일:심볼(라인) | 이 단계가 소유한 사실 | 거부/분기 조건 |
+| --- | --- | --- | --- |
+| 1. 설정 모드 해석 | `soul-server-ts/src/config.ts` (L231–247), `soul-server-ts/src/security/session_isolation_runtime.ts:sessionIsolationSettingsFromEnv` (L131), `parseMode` (L175) | `SESSION_ISOLATION_MODE`는 off/enforce 둘만 받는다. enforce는 비-win32에서 `SESSION_ISOLATION_PASTA_PATH` 절대 경로를 요구한다. 짝 키는 둘 다 있거나 둘 다 없어야 한다. | 모르는 mode·빈 경로·상대 경로·짝 불일치는 기동 설정 검증에서 거부된다. |
+| 2. 격리 runtime 조립 | `soul-server-ts/src/runtime/session_isolation_composition.ts:composeSessionIsolation` (L59), `soul-server-ts/src/runtime/task_runtime_composition.ts` (L185–197) | off면 격리 runtime과 실행 게이트를 만들지 않는다. 판정 호출 0회, 정책 파일 읽기 0회다. enforce에서만 정책 source와 호스트 포트를 조립한다. | 스위치가 off면 아래 단계로 진입하지 않는다. |
+| 3. 실효 프리셋의 trusted 판정 | `soul-server-ts/src/task/task_manager.ts:resolveExecutionSecurity` (L362–394) | 턴의 실효 프리셋을 모델 카탈로그의 `trusted_execution` 표시로 판정한다. llm 세션은 판정 대상이 아니다. | 카탈로그에 없는 프리셋은 trusted=false다. 정책 파일 읽기 실패는 `IsolationPolicyUnavailableError`로 fail-closed다. |
+| 4. 격리 판정식 | `soul-server-ts/src/security/session_execution_policy.ts:resolveExecutionSecurityDecision` (L47) | Linux이고, 실효 프리셋이 trusted가 아니거나 호출자 세션이 격리이면 restricted다. 호출자 사슬은 DB 세션 행을 따라 읽는다. | win32는 full/"windows"다. 사슬을 확정할 수 없으면(행 누락·불일치·순환·깊이 초과) restricted/"unresolved-ancestry", 미신뢰 조상이 있으면 restricted/"inherited", 그 밖에는 full/"trusted"다. |
+| 5. 유효 정책과 digest | `soul-server-ts/src/security/session_isolation_policy.ts:createIsolationPolicyProvider` (L145), `loadIsolationPolicyFile` (L124), `computeIsolationPolicyDigest` (L120), `session_isolation_runtime.ts:applyNodeIsolationPolicy` (L200) | 번들 정책에 노드 env의 로컬 MCP·시험 DB 항목을 병합한 결과가 유효 정책이고, digest는 병합 결과의 canonical JSON sha256이다. | 빈 정책 fallback이 없다. 파일 오류는 `ISOLATION_POLICY_UNAVAILABLE`이다. |
+| 6. 턴 결정 고정·재사용 | `soul-server-ts/src/task/task_executor.ts` (L916–923, L931–959, L1375), `soul-server-ts/src/security/session_isolation_turn.ts:runnerIsolationAllowsReuse` (L63) | 게이트가 없으면 full, claude가 아닌 sessionType은 full로 두고 executionSecurity를 비운다. restricted면 워크트리 attachment를 모아 격리를 실을 수 있는 runner 경로로만 간다. | restricted인데 격리 가능한 runner 경로가 없으면 `SessionIsolationUnavailableError`다. 러너 재사용은 tier·정책 digest·워크트리 집합이 모두 같을 때만 허용한다. |
+| 7. enforce 사전 조건 | `soul-server-ts/src/config.ts` superRefine (L249–424), `soul-server-ts/src/runner/session_isolation_preflight.ts:assertIsolationToolchainReady` (L57) | enforce는 `MCP_REQUIRE_AUTH=true`와 pasta 절대 경로를 요구한다. preflight는 상자 도구 여섯 개의 절대·실행 가능, workspace/cwd/resolv 절대 경로, resolv 존재, user namespace 허용치를 부작용 없이 검사한다. | 하나라도 어긋나면 상자를 만들기 전에 fail-closed다. |
+| 8. 준비 입력 검증 | `soul-server-ts/src/runner/session_filesystem_policy.ts:validateIsolationPreparationInput` (L22) | restricted 전용이다. sessionId 형식, backend, 정책 version 1, 비어 있지 않은 digest, 고정 literal(워크트리 상대 루트·자격 상대 디렉터리·격리 캐시 루트·쓰기 디렉터리 목록·네트워크 모드)을 확인한다. | literal과 다르거나 절대 경로가 아니면 계획을 만들지 않는다. |
+| 9. mask 계획 | `soul-server-ts/src/runner/session_filesystem_masks.ts:prepareIsolationMasks` (L35) | 번호 순서로 모은다. 1) 홈의 CLI 설정·에이전트 상태 폴더(필요한 로그만 RO 재노출) 2) 자격 루트(정책 상대 디렉터리의 부모) 3) user bus·keyring 4) docker socket 별칭 둘 5) runner 상태 루트(필수, 현재 세션 sandbox만 RW 재노출) 6) 정책 JSON의 `additionalSensitiveRoots` 7) 승인된 공통 파일 디렉터리 RO 7b) `readOnlyReexposedPaths` RO 8) WSL이면 `/mnt`·`/run/WSL`(필수) 9) 서비스 env 파일(`.env`로 시작하는 최상위 file/symlink, 비재귀). 심볼릭 링크는 실경로로 가린다. | 필수 mask 대상이 없거나 실경로를 확인할 수 없으면 시작하지 않는다. 있는 대상의 확인 실패는 필수가 아니어도 거부다. |
+| 10. 쓰기 영역과 bind 계획 | `soul-server-ts/src/runner/session_filesystem_plan.ts:prepareIsolationPlan` (L308), `composeBindings` (L246) | 쓰기 가능한 곳은 워크트리, 세션 디렉터리와 sandbox, 세션 워크트리 루트, `.local/tmp`, `.local/artifacts`, 격리 캐시다. 그 밖은 RO bind이고 workspace는 워크트리가 없을 때만 RO로 연다. mask 재노출이 bind 계획에 섞인다. | worktree inode 불일치나 상대 경로는 계획을 만들지 않는다. |
+| 11. 격리 캐시 | `soul-server-ts/src/runner/session_filesystem_cache.ts:prepareIsolatedCache` (L59), `isolatedCacheEnvironment` (L77), `assertNoSharedMainStoreInodes` (L103) | 노드별 격리 캐시에 패키지·XDG·코어팩·pip·uv·cargo 하위 디렉터리를 만들고 env로 가리킨다. 메인 store와 inode를 공유하는 경로는 거부한다. 이 검사는 표본이며 증명이 아니다. | 캐시 경로가 공유 inode symlink면 시작하지 않는다. |
+| 12. git view | `soul-server-ts/src/runner/session_filesystem_git.ts:prepareGitView` (L82) | repo별 view root를 만들어 원래 common dir 자리에 건다. objects/refs/logs/worktrees는 공유 RW, hooks/info는 RO, packed-refs는 RO, config는 0600 사본, HEAD는 0644 사본이다. gc·maintenance를 끄는 git config를 병합한다. | common dir가 호스트 `git rev-parse` 결과와 다르면 실패한다. |
+| 13. heavy work lock | `soul-server-ts/src/runner/session_filesystem_locks.ts:prepareHeavyWorkLocks` (L30) | 호스트의 heavy work lock 네 파일을 보장하고 `/proc/locks`를 RO로 연다. | lock 경로가 일반 파일이 아니거나 `/proc/locks`가 파일이 아니면 실패한다. |
+| 14. 인증 준비 분류 | `soul-server-ts/src/security/session_isolation_runtime.ts:classifyIsolatedAuth` (L271) | backend와 설정으로 codex-grant, claude(API key 또는 격리 토큰), opencode(API key), unavailable을 가른다. | unavailable이면 restricted 시작을 거부한다. |
+| 15. Codex grant | `soul-server-ts/src/runner/session_auth_preparation.ts:prepareCodexGrant` (L42), `soul-server-ts/src/runner/session_isolation_host_ports_auth.ts:verifyCodexGrant` (L120), `assertCodexWriterVersion` (L103) | sandbox 아래 Codex 홈 0700에 정본 자격 폴더의 파일 링크를 만들고 `CODEX_HOME`을 준다. 정본 자격 폴더는 RW bind로 재노출한다. 원래 자리의 링크 대상·권한·단일 링크·writer version을 검증한다. | 링크 대상·권한·writer version이 어긋나면 시작을 거부한다. |
+| 16. Claude 격리 토큰 | `soul-server-ts/src/runner/session_auth_preparation.ts:prepareClaude` (L106), `soul-server-ts/src/runner/session_isolation_host_ports_auth.ts:assertClaudeTokenFile` (L44), `soul-server-ts/src/runner/session_isolation_host_ports.ts:readClaudeOauthToken` (L385) | sandbox 아래 Claude config 0700과 `CLAUDE_CONFIG_DIR`을 준다. API key 경로는 env 통과이고, OAuth 경로는 토큰을 메모리에서 읽어 자식 env로 넣고 토큰 파일 실경로를 mask한다. | 토큰 파일이 절대 경로·일반 파일·단일 링크·소유자·권한 조건을 어기면 시작을 거부한다. |
+| 17. OpenCode 세션 XDG | `soul-server-ts/src/runner/session_auth_preparation.ts:prepareOpenCodeApiKey` (L137), `soul-server-ts/src/runner/runner_child_engine_factory.ts` (L75–77) | OpenCode는 API key env 통과이고, 세션 XDG는 sandbox 아래 세션 전용 디렉터리를 쓴다. | 키가 없으면 그 backend로 restricted를 시작하지 않는다. |
+| 18. 인증 불가 거부 | `soul-server-ts/src/runner/session_auth_preparation.ts:prepareRestrictedAuth` (L143), `soul-server-ts/src/engine/isolated_session_launch.ts:isolationError` (L113) | 준비가 안 되면 `IsolationAuthUnavailableError`(코드 `ISOLATION_AUTH_UNAVAILABLE`)로 시작을 거부한다. | 정책에 없는 backend와 antigravity restricted는 명시 오류다. |
+| 19. 로컬 MCP·시험 DB 승인 | `soul-server-ts/src/runner/session_filesystem_plan.ts:resolveApprovedLocalMcp` (L160), `resolveApprovedTestDatabase` (L198), `soul-server-ts/src/security/restricted_mcp_config.ts:findApproval` (L117) | loopback 로컬 MCP는 정책의 serverId+port+nodeId 승인 항목과 일치할 때만 연다. 시험 DB는 승인된 hostPort·loopback·이름에 test가 들어간 URL만 받아 sandbox 포트로 rewrite한다. URL은 메모리에만 둔다. | 승인 없음·비loopback·쿼리나 프래그먼트·이름 조건 불일치는 거부한다. |
+| 20. 네트워크 정책 | `soul-server-ts/src/runner/session_network_policy.ts:buildPastaArgv` (L185), `computePastaForwardedPorts` (L113), `buildNftRuleset` (L136), `buildSessionResolvConf` (L14) | unshare한 netns에 pasta를 붙이고 전달 포트는 승인된 로컬 MCP·시험 DB 포트뿐이다. nft는 DNS forward, 호스트 주소 거부, loopback 시험 DB 허용, 차단 대역 거부를 소유한다. resolv.conf는 한 줄이다. | 포트·주소 계산이 맞지 않으면 helper가 네트워크 준비 보고를 하지 않는다. |
+| 21. 상자 기동 시퀀스 | `soul-server-ts/src/runner/session_netns_helper.ts:launchIsolatedSession` (L132) | preflight → unshare → nft·방화벽 준비 보고 → pasta → 경로 확인·네트워크 준비 보고 → setpriv로 capability 제거 → bwrap 실행 순서다. 고정 sleep 없이 보고가 실제로 도착해야 ready다. | 보고가 없거나 helper가 죽으면 실패로 수렴하고 dispose가 자식을 정리한다. |
+| 22. bwrap mount 순서 | `soul-server-ts/src/engine/session_isolation.ts:buildBwrapFlags` (L53–98), `BWRAP_BASE_FLAGS` (L12–31) | base는 `--ro-bind / /`, `--dev`, `--proc`, `/tmp`·`/var/tmp` tmpfs 1777이고 `--unshare-pid --die-with-parent --new-session`을 쓴다. net/user namespace는 여기서 만들지 않는다. 디렉터리 mask(tmpfs)와 bind를 destination 경로 순서로 섞어 조상 먼저, 같은 경로면 tmpfs 먼저 놓는다. 모든 bind 뒤에 mask에 `--remount-ro`, 그 뒤 `/proc/locks` RO, 파일 mask는 `--ro-bind /dev/null`로 마지막, `--chdir` 순서다. | 순서가 어긋나면 부모 bind가 mask를 덮거나 빈 RO tmpfs가 되어 restricted 시작이 실패한다. |
+| 23. 상자 안 프로세스 시작·종료 | `soul-server-ts/src/engine/isolated_session_launch.ts:launchIsolatedChild` (L70), `restrictedChildEnv` (L19), `soul-server-ts/src/runner/session_isolation_process.ts:assertOwnedProcessId` (L13), `terminateOwnedProcess` (L23), `stopImmediately` (L46), `waitForCompletion` (L57) | restricted env만 실어 상자 안에서 엔진 child를 띄운다. PID는 1보다 큰 양의 정수만 인정하고 SIGTERM → 유예 → SIGKILL 한 경로로 끝낸다. abort signal도 dispose로 수렴한다. PID 네임스페이스 경계는 [러너 생애주기](runner-lifecycle.md)의 생애주기와 이어진다. | 소유로 증명되지 않은 PID에는 신호하지 않는다. |
+| 24. 러너 경계 배선 | `soul-server-ts/src/runner/runner_process_isolation.ts:applyRestrictedRunnerIsolation` (L136), `soul-server-ts/src/runner/runner_process_runtime_factory.ts` (L218–220, L242–253), `soul-server-ts/src/runner/runner_isolation_config.ts` (L54, L75) | restricted일 때만 child config에 격리 spec·도구 경로·환경 키·워크트리 집합·안내문을 싣고 MCP 서버 목록을 살균하며 Claude 계정 풀을 끈다. recover와 adopt는 저장된 child config에서 같은 정체성을 복원한다. | full과 restricted 사이의 러너 재사용은 금지한다. Codex restricted는 app-server adapter일 때만 성립한다. |
+| 25. 자식 env 경계 | `soul-server-ts/src/runner/session_env.ts:buildRestrictedSessionEnv` (L78), `RESTRICTED_ENV_REMOVED_KEYS` (L7–18), `mergeRestrictedGitConfiguration` (L47) | 서버·DB·SSH·docker·pm2·Rust 래퍼 관련 키와 접두사 env를 지운 뒤 `AUTH_BEARER_TOKEN`을 restricted 토큰으로 바꾼다. 시험 DB URL은 격리 준비가 제공했을 때만 남긴다. WSL_INTEROP는 지운다. full 비밀값이 자식 env에 중복되지 않는지 검사한다. | full 비밀값 중복이 발견되면 시작하지 않는다. |
+| 26. restricted principal 인증 | `soul-server-ts/src/mcp/auth.ts:resolveRestrictedPrincipal` (L77), `soul-server-ts/src/security/restricted_mcp_auth.ts:verifyRestrictedMcpToken` (L43) | restricted 토큰은 형식 → 상수 시간 서명 검증 → DB 세션 존재 → 정책 로드 순서로 확인한다. 실패는 401 또는 503(`ISOLATION_AUTH_UNAVAILABLE`, `ISOLATION_POLICY_UNAVAILABLE`)이다. | 형식·서명·세션·정책 중 하나라도 어긋나면 요청을 실행하지 않는다. |
+| 27. restricted MCP 서버 목록 | `soul-server-ts/src/security/restricted_mcp_config.ts:sanitizeRestrictedMcpServers` (L50) | soulstream 내부 upstream은 restricted 토큰으로 고정하고 stdio는 env·headers를 지운다. loopback은 노드 승인 항목만 남기고 private·self-host는 지운다. 외부 공개 서버는 유지하고 관리 upstream은 제거한다. | 승인 없는 loopback은 목록에서 빠진다. |
+| 28. 도구 정책과 가드 | `soul-server-ts/src/mcp/tool_access.ts:createInventoryMcpServer` (L28), `restrictedToolHandler` (L57), `isAllowedForRestricted` (L86), `soul-server-ts/src/mcp/isolation_tool_guards.ts` (L22–41) | 정책은 allow/deny/guarded/inherit 네 갈래다. deny와 분류 없는 도구는 등록 단계에서 disable되어 tools/list에도 핸들러에도 도달하지 않는다. guarded는 핸들러 전에 다섯 가드(draft-card, card-status, worktree-create, owned-worktree, message-recipient)를 지난다. inherit(create_agent_session)은 caller_session_id를 강제한다. | restricted principal에 정책이 없으면 도구 접근이 성립하지 않는다. 가드가 거절하면 핸들러를 부르지 않고 `MCP_POLICY_DENIED`다. |
+| 29. 관측 도구 | `soul-server-ts/src/mcp/tools/node_services_observation.ts:registerNodeServicesObservationTool` (L45), `observeNodeServices` (L65), `fixedPath` (L186), `soul-server-ts/src/mcp/node_services_observation_config.ts:resolveNodeServicesObservation` (L18) | 고정 GET 몇 개(대시보드 status·services·logs, orch pending·nodes)만 읽는다. redirect는 error, timeout 10초, 로그 최대 200줄이다. full 세션에도 적용되고 짝 env가 없으면 `NOT_CONFIGURED`다. | 고정 목록 밖 경로·리다이렉트·시간 초과는 읽지 않는다. |
+| 30. 워크트리 지정 실행 | `soul-server-ts/src/worktree/worktree_service.ts:createWithinDeadline` (L188–199), `ownsWorktree` (L170), `soul-server-ts/src/runtime/session_isolation_composition.ts:collectSessionWorktrees` (L286), `collectWorktreeFacts` (L343), `soul-server-ts/src/mcp/tools/worktree.ts` (L63) | restricted의 새 워크트리는 `projectsRoot/.isolated/<sessionId>` 아래에 만들고 setup=none을 강제한다. 세션이 소유하거나 부착한 워크트리만 상자에 RW로 들어간다. | adopt·adopt_path·공유 setup·다른 세션 소유 재사용은 거부한다. 지정 워크트리를 쓸 수 없으면 그 턴은 시작하지 않는다. |
+
+## 운영 절차
+
+### 노드에서 켜고 끄기
+
+`.env`에 두는 격리·관측 키는 아래와 같다. 값이 아니라 키와 역할만 적는다.
+
+| 키 | 역할 |
+| --- | --- |
+| `SESSION_ISOLATION_MODE` | off/enforce. 기본 off |
+| `SESSION_ISOLATION_PASTA_PATH` | pasta 실행 파일 절대 경로. enforce + 비-win32에서 필수 |
+| `MCP_REQUIRE_AUTH` | enforce가 true를 요구한다 |
+| `SESSION_ISOLATION_LOCAL_MCP` | `serverId:port` 쉼표 목록. 유효 정책의 localMcp에 더한다 |
+| `SESSION_ISOLATION_TEST_DATABASE` | `hostPort:sandboxPort` |
+| `SESSION_ISOLATION_TEST_DATABASE_URL` | 시험 DB URL. `SESSION_ISOLATION_TEST_DATABASE`와 짝 |
+| `ISOLATED_CLAUDE_TOKEN_FILE` | restricted Claude 토큰 파일 경로 |
+| `ISOLATED_CLAUDE_ACCOUNT_ID` | 위 파일과 짝 |
+| `HANIEL_DASHBOARD_URL`, `HANIEL_DASHBOARD_TOKEN_FILE` | 관측 도구 대시보드 짝 |
+| `HANIEL_ORCH_URL`, `HANIEL_ORCH_TOKEN_FILE` | 관측 도구 orch 짝 |
+
+짝 키는 둘 다 있거나 둘 다 없어야 한다. 하나만 있으면 기동 설정 검증이 거부한다.
+
+릴리스 정체성은 `soul-server-ts/src/release/release_env_allowlist.json` 하나만 읽는다. 새 env 키는 여기에 owner·kind·identity_scope(필요하면 normalization)를 등재해야 하며, deployment 범위 값만 매니페스트 digest에 들어가고 ambient 값은 들지 않는다. 값은 dotenv가 읽은 배포 env 문서의 선언에서만 오고 ambient process env를 다시 읽지 않는다. 매니페스트는 `soul-server-ts/scripts/write_release_manifest.ts`로 다시 쓰고, 빌드 쪽은 `scripts/build_with_release_env.mjs`를 쓴다.
+
+설정은 프로세스 기동 시 읽으므로 노드의 soul-server를 재시작해야 적용된다. 끌 때는 `SESSION_ISOLATION_MODE`를 off로 되돌리는 것으로 충분하고, 다음 턴부터 판정도 상자도 만들지 않는다.
+
+### 통합 하네스
+
+`soul-server-ts/scripts/verify-session-isolation.py`는 운영 코드의 prepare·argv·policy를 그대로 쓰고 CLI 대신 payload만 바꿔 `composeSessionIsolation` → `applyRestrictedRunnerIsolation` → `launchIsolatedSession`까지 돈다. 축은 열다섯이다: network, privilege, internet, network-failure, files, dynamic-worktree, git, cache, gh, termination, heavy-work, observe, local-mask, claude-auth, timing. `test-db`, `wsl`, `internal-mcp`, `unit-covered`는 아직 하네스가 실행하지 않는다(전용 시험 Postgres 없음, WSL 노드 단계, enforce 서버 필요, 기존 단위 시험이 정본).
+
+신호 축은 따로다. `--axis signal --acknowledge-signal-axis` 없이는 돌지 않고 다른 축과 섞지도 않는다. 이 축은 호스트 controller가 신호를 보내지 않고 바깥 bwrap PID 상자 안에서 handshake한 뒤, payload 자신의 PID 네임스페이스 안 프로세스에만 신호를 보낸다. 운영 호스트 PID 네임스페이스에서는 돌리지 않는다. 하네스는 먼저 음수·0·1·미등록 PID 신호를 거부하는 자체 시험을 통과해야 한다.
+
+## 남은 위험
+
+- (일부러 남김) git push와 gh가 상자 안에서 동작해야 하므로 `~/.ssh`, `~/.gitconfig`, `~/.config/gh`는 상자에서 읽힌다. 격리 세션도 GitHub에 푸시하고 PR을 머지할 권한이 있다.
+- (일부러 남김) 엔진이 쓰는 일부 API 키와 외부 MCP 인증은 상자 안에 보인다. 엔진이 그 인증으로 동작해야 하기 때문이다.
+- (일부러 남김) 강한 세션이 격리 세션의 산출물(스크립트, 시험)을 실행하면 그 실행은 격리 밖에서 돈다. 격리는 약한 모델 세션의 실행에만 건다.
+- (아직 막지 않음) `.local/tmp`는 세션끼리 공유하는 쓰기 영역이다. 한 격리 세션이 다른 세션의 파일을 읽고 쓸 수 있다.
+- (아직 막지 않음) 시험 DB 하나를 여러 격리 세션이 함께 쓴다. 새 컨테이너가 필요한 시험은 `TEST_DATABASE_URL`이 있으면 실패할 수 있다.
+- (아직 막지 않음) 비밀 경로 가림은 노드별 목록 방식이다. 홈 전체를 가리고 허용 목록만 여는 방식은 하지 않았다. 새 비밀 폴더가 생기면 정책 목록에 더해야 한다.
+- (아직 막지 않음) Windows 노드는 대상이 아니다. win32는 판정이 full/"windows"로 끝나고 상자를 만들지 않는다.
+
+이 장을 갱신해야 하는 변경 부류: 격리 판정식·정책 JSON과 스키마·mask와 mount 순서·인증 준비·네트워크 정책·restricted MCP principal과 도구 분류·관측 도구·restricted 워크트리·릴리스 env allowlist 변경.
