@@ -31,7 +31,7 @@ export interface ExecutionSecurityPolicyPorts {
   readSession(sessionId: string): Promise<SessionExecutionChain>;
   /** 에이전트 프로필의 기본 프리셋. 없으면 null. */
   readNodePreset(agentId: string | null): string | null;
-  /** 카탈로그에서 해당 프리셋이 literal boolean true로 표시됐는지. */
+  /** 카탈로그에서 해당 프리셋이 literal boolean true로 표시됐는지. 미등록은 false. */
   isTrustedPreset(presetId: string): boolean;
 }
 

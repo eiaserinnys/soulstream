@@ -354,9 +354,10 @@ export class TaskManager {
   }
 
   /**
-   * 이번 턴의 실행 보안 판정. LLM 프록시 세션은 실행 계층을 지나지 않으므로
-   * 어떤 읽기도 하지 않고 즉시 `null`을 돌려준다. 판정에 필요한 읽기가
-   * 실패하면 턴을 진행하지 않고 `ISOLATION_POLICY_UNAVAILABLE`로 거절한다.
+   * 이번 턴의 실행 보안 판정. LLM 프록시 세션임을 확인한 뒤에는 caller 계보를
+   * 읽지 않고 `null`을 돌려준다(호출자는 이 메서드 자체를 부르지 않는다).
+   * 판정에 필요한 읽기가 실패하면 턴을 진행하지 않고
+   * `ISOLATION_POLICY_UNAVAILABLE`로 거절한다.
    */
   async resolveExecutionSecurity(
     sessionId: string,

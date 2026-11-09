@@ -9,6 +9,10 @@ import {
   type ModelPreset,
 } from "../../src/model_catalog.js";
 import {
+  resolveExecutionSecurityDecision,
+  type ExecutionSecurityPolicyPorts,
+} from "../../src/security/session_execution_policy.js";
+import {
   applyModelPresetRuntime,
   effectiveTaskBackend,
   resolveEffectiveTurnPreset,
@@ -310,5 +314,43 @@ describe("effective turn preset", () => {
         catalog,
       ),
     ).toBeUndefined();
+  });
+
+  it("judges the seosoyoung default claude-opus path full", async () => {
+    const preset = resolveEffectiveTurnPreset(
+      {
+        request: { model: null, modelPreset: null },
+        stored: { model: null, modelPreset: null },
+      },
+      seosoyoung,
+      catalog,
+    );
+
+    const decision = await resolveExecutionSecurityDecision(
+      "music-recommendation",
+      preset?.id,
+      {
+        platform: "linux",
+        readSession: async (sessionId) => ({
+          root: {
+            session_id: sessionId,
+            caller_session_id: null,
+            model_preset: null,
+            model: null,
+            agent_id: null,
+          },
+          ancestors: [],
+        }),
+        readNodePreset: () => null,
+        isTrustedPreset: (presetId) =>
+          catalog.resolve(presetId).trusted_execution === true,
+      } satisfies ExecutionSecurityPolicyPorts,
+    );
+
+    expect(decision).toMatchObject({
+      tier: "full",
+      reason: "trusted",
+      presetId: "claude-opus",
+    });
   });
 });

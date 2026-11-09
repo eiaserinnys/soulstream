@@ -246,8 +246,8 @@ describe("session execution policy", () => {
       readSession: vi.fn(async () => chain(
         row({ session_id: "s1", caller_session_id: "a" }),
         [
-          row({ session_id: "a", caller_session_id: "b", model_preset: "deepseek-flash-4.1" }),
-          row({ session_id: "b", model_preset: "deepseek-flash-4.1" }),
+          row({ session_id: "a", caller_session_id: "b", model_preset: "codex-6.1-sol" }),
+          row({ session_id: "b", model_preset: "codex-6.1-sol" }),
         ],
       )),
     });
@@ -255,8 +255,21 @@ describe("session execution policy", () => {
     await resolveExecutionSecurityDecision("s1", "claude-opus", ports);
 
     expect(
-      ports.isTrustedPreset.mock.calls.filter(([id]) => id === "deepseek-flash-4.1"),
+      ports.isTrustedPreset.mock.calls.filter(([id]) => id === "codex-6.1-sol"),
     ).toHaveLength(1);
+  });
+
+  it("restricts when the session row is missing from the chain read", async () => {
+    const ports = makePorts({
+      readSession: vi.fn(async () => chain(null)),
+    });
+
+    await expect(
+      resolveExecutionSecurityDecision("s1", "claude-opus", ports),
+    ).resolves.toMatchObject({
+      tier: "restricted",
+      reason: "unresolved-ancestry",
+    });
   });
 
   it("reports the unavailable policy error type", () => {

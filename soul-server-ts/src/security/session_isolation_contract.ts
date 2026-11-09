@@ -33,13 +33,10 @@ export type RestrictedAuthKind =
   | "apikey-env"
   | "unavailable";
 
-/** 내부 MCP가 보는 restricted 세션의 신원. 토큰 원문은 담지 않는다. */
-export interface McpPrincipal {
-  sessionId: string;
-  sessionType: "claude" | "llm";
-  tier: ExecutionTier;
-  presetId: string | null;
-}
+/** 내부 MCP가 보는 세션의 신원. 토큰 원문은 담지 않는다. */
+export type McpPrincipal =
+  | { tier: "full" }
+  | { tier: "restricted"; sessionId: string };
 
 export type IsolationBackend = "claude" | "codex" | "opencode" | "antigravity";
 
