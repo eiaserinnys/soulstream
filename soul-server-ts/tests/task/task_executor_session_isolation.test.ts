@@ -9,7 +9,11 @@ import type {
   SSEEventPayload,
 } from "../../src/engine/protocol.js";
 import type { SessionIsolationTurnGate } from "../../src/security/session_isolation_turn.js";
-import { createInProcessTaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
+import {
+  createInProcessTaskRunnerRuntime,
+  createTaskRunnerRuntime,
+  type TaskRunnerRuntime,
+} from "../../src/runner/task_runner_runtime.js";
 import { IsolationPreparationPolicyError } from "../../src/runner/session_filesystem_errors.js";
 import type { RunnerProcessRuntimeFactory } from "../../src/task/task_executor.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
@@ -112,11 +116,31 @@ function makeExecutor(
 
 function makeGate(
   decision: Awaited<ReturnType<SessionIsolationTurnGate["resolveDecision"]>>,
-): SessionIsolationTurnGate & { resolveDecision: ReturnType<typeof vi.fn> } {
+  attachedWorktreeIds: readonly string[] = [],
+): SessionIsolationTurnGate & {
+  resolveDecision: ReturnType<typeof vi.fn>;
+  worktreeAttachmentIds: ReturnType<typeof vi.fn>;
+} {
   return {
     resolveDecision: vi.fn().mockResolvedValue(decision),
     policyDigest: () => "digest-1",
-  } as unknown as SessionIsolationTurnGate & { resolveDecision: ReturnType<typeof vi.fn> };
+    worktreeAttachmentIds: vi.fn().mockResolvedValue(attachedWorktreeIds),
+  } as unknown as SessionIsolationTurnGate & {
+    resolveDecision: ReturnType<typeof vi.fn>;
+    worktreeAttachmentIds: ReturnType<typeof vi.fn>;
+  };
+}
+
+function makeRestrictedRunner(
+  engine: EnginePort,
+  attachedWorktreeIds: readonly string[],
+): TaskRunnerRuntime {
+  const base = createInProcessTaskRunnerRuntime(engine);
+  return createTaskRunnerRuntime(base.engine, base.dispatcher, "host", {
+    tier: "restricted",
+    policyDigest: "digest-1",
+    attachedWorktreeIds,
+  });
 }
 
 describe("TaskExecutor turn isolation gate", () => {
@@ -204,6 +228,7 @@ describe("TaskExecutor turn isolation gate", () => {
         new IsolationPreparationPolicyError("policy file is missing"),
       ),
       policyDigest: () => "digest-1",
+      worktreeAttachmentIds: vi.fn().mockResolvedValue([]),
     } as unknown as SessionIsolationTurnGate;
     const executor = makeExecutor(makeEngine(turns), gate);
     const task = makeTask({ modelPreset: "claude-opus", modelPresetBackend: "claude" });
@@ -238,5 +263,70 @@ describe("TaskExecutor turn isolation gate", () => {
     expect(factoryCalls).toBe(0);
     expect(turns).toHaveLength(0);
     expect(`${task.error ?? ""}`).toContain("SESSION_ISOLATION_UNAVAILABLE");
+  });
+
+  it("reuses a retained restricted runner when the mount set is unchanged", async () => {
+    const retainedTurns: EngineExecuteParams[] = [];
+    const retained = makeRestrictedRunner(makeEngine(retainedTurns), ["wt-a"]);
+    const gate = makeGate({
+      sessionId: "sess-1",
+      tier: "restricted",
+      policyVersion: 1,
+      reason: "untrusted-preset",
+      presetId: "deepseek-flash-4.1",
+    }, ["wt-a"]);
+    let factoryCalls = 0;
+    const factory = (() => {
+      factoryCalls += 1;
+      return createInProcessTaskRunnerRuntime(makeEngine([]));
+    }) as RunnerProcessRuntimeFactory;
+    factory.isolationSupported = true;
+    const executor = makeExecutor(makeEngine([]), gate, factory);
+    const task = makeTask({
+      modelPreset: "deepseek-flash-4.1",
+      modelPresetBackend: "claude",
+      runner: retained,
+      runnerRetainedForDetachedWork: true,
+    });
+
+    executor.startNewExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(gate.worktreeAttachmentIds).toHaveBeenCalledWith("sess-1", undefined);
+    expect(factoryCalls).toBe(0);
+    expect(retainedTurns).toHaveLength(1);
+  });
+
+  it("drops a retained restricted runner when the mount set changed", async () => {
+    const retainedTurns: EngineExecuteParams[] = [];
+    const retained = makeRestrictedRunner(makeEngine(retainedTurns), ["wt-a"]);
+    const freshTurns: EngineExecuteParams[] = [];
+    const gate = makeGate({
+      sessionId: "sess-1",
+      tier: "restricted",
+      policyVersion: 1,
+      reason: "untrusted-preset",
+      presetId: "deepseek-flash-4.1",
+    }, ["wt-a", "wt-b"]);
+    let factoryCalls = 0;
+    const factory = (() => {
+      factoryCalls += 1;
+      return createInProcessTaskRunnerRuntime(makeEngine(freshTurns));
+    }) as RunnerProcessRuntimeFactory;
+    factory.isolationSupported = true;
+    const executor = makeExecutor(makeEngine([]), gate, factory);
+    const task = makeTask({
+      modelPreset: "deepseek-flash-4.1",
+      modelPresetBackend: "claude",
+      runner: retained,
+      runnerRetainedForDetachedWork: true,
+    });
+
+    executor.startNewExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(factoryCalls).toBe(1);
+    expect(retainedTurns).toHaveLength(0);
+    expect(freshTurns).toHaveLength(1);
   });
 });

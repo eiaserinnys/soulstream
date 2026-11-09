@@ -16,6 +16,14 @@ export interface SessionIsolationTurnGate {
   ): Promise<ExecutionSecurityDecision | null>;
   /** 유효 정책 digest. restricted 실행·재사용 판정의 단일 기준이다. */
   policyDigest(): string;
+  /**
+   * 이 세션이 이번 턴에 실제로 mount하는 worktree id 전체. prepare가 기록하는
+   * child config 값과 같은 수집 함수에서 나온다. full 턴은 호출하지 않는다.
+   */
+  worktreeAttachmentIds(
+    sessionId: string,
+    taskWorktreeId: string | undefined,
+  ): Promise<readonly string[]>;
 }
 
 /**

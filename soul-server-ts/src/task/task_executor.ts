@@ -400,6 +400,7 @@ export class TaskExecutor {
   ): Promise<void> {
     if (!task.worktreeId) {
       task.resolvedWorkspaceDir = undefined;
+      task.profileWorkspaceDir = undefined;
       return this.startExecutionWithResolvedRegistrationRecord(
         task,
         agent,
@@ -470,6 +471,9 @@ export class TaskExecutor {
       return;
     }
     task.resolvedWorkspaceDir = workspaceDir;
+    // 아래에서 agent를 워크트리 경로로 치환하기 전의 프로필 경로를 남긴다.
+    // 격리 계획의 hostWorkspaceRoot는 이 값을 쓴다.
+    task.profileWorkspaceDir = agent.workspace_dir;
     return await this.startExecutionWithResolvedRegistrationRecord(
       task,
       { ...agent, workspace_dir: workspaceDir },
@@ -942,11 +946,16 @@ export class TaskExecutor {
     }
     task.executionSecurity = decision ?? undefined;
     if (decision?.tier !== "restricted") return fullRunnerIsolation();
-    return desiredRunnerIsolation(
-      decision,
-      gate.policyDigest(),
-      task.worktreeId ? [task.worktreeId] : [],
-    );
+    let attachedWorktreeIds: readonly string[];
+    try {
+      attachedWorktreeIds = await gate.worktreeAttachmentIds(
+        task.agentSessionId,
+        task.worktreeId,
+      );
+    } catch (error) {
+      throw isolateGateFailure(error);
+    }
+    return desiredRunnerIsolation(decision, gate.policyDigest(), attachedWorktreeIds);
   }
 
   private startExecutionWithoutRegistration(

@@ -12,6 +12,8 @@ import type {
 } from "../claude_accounts/types.js";
 import type { ClaudeAccountTurnPort } from "../engine/claude_account_pool.js";
 
+import { join } from "node:path";
+
 import { AgentsEngineAdapter } from "../engine/agents_adapter.js";
 import { AntigravityEngineAdapter } from "../engine/antigravity/adapter.js";
 import { OpenCodeEngineAdapter } from "../engine/opencode/adapter.js";
@@ -68,7 +70,11 @@ function createRunnerChildEnginePort(
     return new OpenCodeEngineAdapter({
       workspaceDir: config.agent.workspace_dir,
       agentId: config.agent.id,
-      sessionDirectory: config.paths.sessionDirectory,
+      // B2는 runner state를 가리고 sandbox만 다시 연다. restricted CLI의
+      // 설정·지시·XDG 디렉터리는 그 sandbox 안에서 만들어야 읽힌다.
+      sessionDirectory: config.isolation
+        ? join(config.isolation.spec.sandboxDirectory, "opencode")
+        : config.paths.sessionDirectory,
       executablePath: config.opencodeCliPath,
       processEnv: process.env,
       resolvedMcpServers: config.resolvedMcpServers,

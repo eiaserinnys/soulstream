@@ -12,6 +12,7 @@ import {
 } from "./session_env.js";
 import { SessionIsolationUnavailableError } from "./session_filesystem_errors.js";
 import type { RunnerIsolationChildConfig } from "./runner_isolation_config.js";
+import type { SpawnRunnerProcessInput } from "./runner_process_spawn.js";
 
 /** B1·B2가 쓰는 실행 파일 경로. 모두 절대 경로다. */
 export interface IsolationToolPaths {
@@ -28,6 +29,8 @@ export interface PreparedRunnerIsolation {
   plan: PreparedIsolationPlan;
   wsl: boolean;
   tools: IsolationToolPaths;
+  /** prepare가 실제로 mount한 워크트리 id. 재사용 판정과 같은 수집 함수에서 나온다. */
+  attachedWorktreeIds: readonly string[];
 }
 
 export interface RunnerIsolationPreparationRequest {
@@ -102,5 +105,55 @@ export function isolationChildConfigFromPlan(input: {
     envKeys: Object.keys(input.plan.env).sort(),
     contextNotice: input.plan.contextNotice,
     attachedWorktreeIds: [...new Set(input.attachedWorktreeIds)].sort(),
+  };
+}
+
+/**
+ * restricted 턴의 스폰 입력을 만드는 유일한 조립 경로. full 턴은 받은 입력을
+ * 그대로 돌려주고 host를 부르지 않는다. 지원하지 않는 backend는 prepare 전에
+ * 거부해 호스트 부수효과를 만들지 않는다.
+ */
+export async function applyRestrictedRunnerIsolation(
+  base: SpawnRunnerProcessInput,
+  context: {
+    task: Task;
+    agent: AgentProfile;
+    isolationHost: RunnerIsolationHost | undefined;
+  },
+): Promise<SpawnRunnerProcessInput> {
+  if (context.task.executionSecurity?.tier !== "restricted") return base;
+  const { isolationHost } = context;
+  if (!isolationHost) {
+    throw new SessionIsolationUnavailableError(
+      "SESSION_ISOLATION_UNAVAILABLE: restricted execution requires an isolation host",
+    );
+  }
+  const backend = restrictedIsolationBackend(base.backend);
+  if (backend === "codex" && base.codexAdapterMode !== "app-server") {
+    throw new SessionIsolationUnavailableError(
+      "SESSION_ISOLATION_UNAVAILABLE: backend codex has no isolated runner path",
+    );
+  }
+  const prepared = await isolationHost.prepare({
+    task: context.task,
+    agent: context.agent,
+    backend,
+  });
+  return {
+    ...base,
+    resolvedMcpServers: [...prepared.plan.sanitizedServers],
+    // 계정 풀이 CLAUDE_CONFIG_DIR·토큰을 바꾸지 못하게 restricted에서는 끈다.
+    claudeAccountPool: undefined,
+    childProcessEnv: buildRestrictedRunnerChildEnv({
+      baseEnv: base.childProcessEnv ?? {},
+      plan: prepared.plan,
+      wsl: prepared.wsl,
+    }),
+    isolation: isolationChildConfigFromPlan({
+      plan: prepared.plan,
+      tools: prepared.tools,
+      wsl: prepared.wsl,
+      attachedWorktreeIds: prepared.attachedWorktreeIds,
+    }),
   };
 }

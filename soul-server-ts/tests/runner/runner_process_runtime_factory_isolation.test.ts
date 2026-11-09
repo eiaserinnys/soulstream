@@ -1,5 +1,5 @@
 import pino from "pino";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
 import { composeSessionIsolation } from
@@ -12,6 +12,27 @@ import type { PreparedRunnerIsolation, RunnerIsolationHost } from
 import type { SessionIsolationSpec } from
   "../../src/security/session_isolation_contract.js";
 import type { Task } from "../../src/task/task_models.js";
+
+// 호스트 준비는 실제 bwrap/pasta/FS를 건드리지 않는다. 포트와 계획만 가짜로 둔다.
+const isolationModuleMocks = vi.hoisted(() => ({
+  prepareIsolationPlan: vi.fn(async (input: Record<string, unknown>, _ports: unknown) => ({
+    spec: { sessionId: input.sessionId },
+    sanitizedServers: [],
+    env: { AUTH_BEARER_TOKEN: "ssr1-test-credential" },
+    resolvConfPath: "/run/systemd/resolve/stub-resolv.conf",
+    contextNotice: "격리 세션 안내",
+  })),
+  createIsolationHostPorts: vi.fn(() => ({
+    resolveGitCommonDir: async (repositoryPath: string) => `/git-common${repositoryPath}`,
+    detectWsl: async () => false,
+  })),
+}));
+vi.mock("../../src/runner/session_filesystem_plan.js", () => ({
+  prepareIsolationPlan: isolationModuleMocks.prepareIsolationPlan,
+}));
+vi.mock("../../src/runner/session_isolation_host_ports.js", () => ({
+  createIsolationHostPorts: isolationModuleMocks.createIsolationHostPorts,
+}));
 
 const HOST_BEARER = "host-full-bearer-secret";
 const HOST_DATABASE_URL = "postgres://host-db-secret";
@@ -96,6 +117,7 @@ function makePrepared(): PreparedRunnerIsolation {
       nft: "/usr/sbin/nft",
       netnsHelper: "/opt/netns-helper.py",
     },
+    attachedWorktreeIds: [],
   };
 }
 
@@ -120,6 +142,8 @@ function makeFactory(options: {
   isolationHost?: RunnerIsolationHost;
   childProcessEnv?: NodeJS.ProcessEnv;
   resolvedMcpServers?: readonly unknown[];
+  backend?: "claude" | "codex" | "opencode";
+  turnAgent?: AgentProfile;
 }) {
   const spawn = vi.fn(async () => {
     throw new Error("captured isolation spawn input");
@@ -156,7 +180,7 @@ function makeFactory(options: {
     spawner: { adopt: vi.fn(), spawn },
     ...(options.isolationHost ? { isolationHost: options.isolationHost } : {}),
   });
-  const runtime = factory(options.task, agent, "claude", {
+  const runtime = factory(options.task, options.turnAgent ?? agent, options.backend ?? "claude", {
     persistRunState: vi.fn(async () => undefined),
     persistSessionItems: vi.fn(async () => undefined),
   });
@@ -166,6 +190,8 @@ function makeFactory(options: {
 describe("runner process factory restricted wiring", () => {
   it("prepares once and replaces env, MCP servers and pool for a restricted turn", async () => {
     const prepared = makePrepared();
+    // prepare가 실제로 mount한 집합. task.worktreeId 하나만 기록하면 안 된다.
+    prepared.attachedWorktreeIds = ["worktree-1", "worktree-attached"];
     const prepare = vi.fn(async () => prepared);
     const task = makeTask({
       worktreeId: "worktree-1",
@@ -206,8 +232,10 @@ describe("runner process factory restricted wiring", () => {
       envKeys: string[];
       contextNotice: string;
       spec: unknown;
+      attachedWorktreeIds: string[];
     };
     expect(isolation.spec).toEqual(prepared.plan.spec);
+    expect(isolation.attachedWorktreeIds).toEqual(["worktree-1", "worktree-attached"]);
     expect(isolation.envKeys).toEqual([
       "AUTH_BEARER_TOKEN",
       "CLAUDE_CODE_OAUTH_TOKEN",
@@ -301,6 +329,21 @@ describe("runner process factory restricted wiring", () => {
     expect(spawn).not.toHaveBeenCalled();
   });
 
+  it("rejects a restricted Codex sdk turn before preparation", async () => {
+    const prepare = vi.fn(async () => makePrepared());
+    const { runtime, spawn } = makeFactory({
+      task: makeTask(),
+      isolationHost: { prepare },
+      backend: "codex",
+    });
+
+    await expect(runtime.dispatcher.prepareSession("session-restricted")).rejects.toThrow(
+      "SESSION_ISOLATION_UNAVAILABLE: backend codex has no isolated runner path",
+    );
+    expect(prepare).not.toHaveBeenCalled();
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
   it("advertises isolation support only when the host is wired", async () => {
     const withoutHost = makeFactory({ task: makeTask() });
     expect(withoutHost.factory.isolationSupported).toBe(false);
@@ -345,6 +388,7 @@ describe("session isolation composition switch", () => {
     const enforceEnv = {
       SESSION_ISOLATION_MODE: "enforce",
       SESSION_ISOLATION_PASTA_PATH: "/usr/bin/pasta",
+      MCP_REQUIRE_AUTH: true,
       SOULSTREAM_NODE_ID: "node-test",
     } as unknown as Env;
     const worktreeService = { list: vi.fn(async () => []) };
@@ -367,5 +411,158 @@ describe("session isolation composition switch", () => {
       backend: "claude",
     })).rejects.toThrow("SESSION_ISOLATION_UNAVAILABLE: isolation host is used only for restricted turns");
     expect(worktreeService.list).not.toHaveBeenCalled();
+  });
+});
+
+// 호스트 준비 경로는 가짜 포트와 가짜 계획으로만 확인한다(실행 파일·FS 없음).
+describe("session isolation host preparation", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  function enforcementEnv(overrides: Record<string, unknown> = {}): Env {
+    return {
+      SESSION_ISOLATION_MODE: "enforce",
+      SESSION_ISOLATION_PASTA_PATH: "/usr/bin/pasta",
+      MCP_REQUIRE_AUTH: true,
+      SOULSTREAM_NODE_ID: "node-test",
+      SOUL_RUNNER_STATE_DIR: "/runner",
+      WORKTREE_PROJECTS_ROOT: "/projects",
+      MCP_INTERNAL_PORT: 4308,
+      MCP_PATH: "/mcp",
+      AUTH_BEARER_TOKEN: HOST_BEARER,
+      ...overrides,
+    } as unknown as Env;
+  }
+
+  function makeComposition(options: {
+    env?: Env;
+    worktreeService?: {
+      list: ReturnType<typeof vi.fn>;
+      listRepositoryIds: ReturnType<typeof vi.fn>;
+    };
+  }) {
+    const composition = composeSessionIsolation({
+      env: options.env ?? enforcementEnv(),
+      ...(options.worktreeService
+        ? { worktreeService: options.worktreeService as never }
+        : {}),
+      mcpConfigService: { resolveMcpProfile: vi.fn(() => null) } as never,
+    });
+    expect(composition).toBeDefined();
+    return composition!;
+  }
+
+  async function prepareAndCapture(
+    composition: ReturnType<typeof makeComposition>,
+    task: Task,
+    turnAgent: AgentProfile = agent,
+  ) {
+    const prepared = await composition.host.prepare({
+      task,
+      agent: turnAgent,
+      backend: "opencode",
+    });
+    const captured = isolationModuleMocks.prepareIsolationPlan.mock.calls[0]?.[0] as unknown as
+      Record<string, unknown>;
+    return { prepared, captured };
+  }
+
+  it("rejects a restricted turn before preparation when the node does not require MCP auth", async () => {
+    const composition = makeComposition({
+      env: enforcementEnv({ MCP_REQUIRE_AUTH: false }),
+    });
+
+    await expect(composition.host.prepare({ task: makeTask(), agent, backend: "claude" }))
+      .rejects.toThrow(
+        "SESSION_ISOLATION_UNAVAILABLE: restricted execution requires MCP authentication",
+      );
+    expect(isolationModuleMocks.createIsolationHostPorts).not.toHaveBeenCalled();
+    expect(isolationModuleMocks.prepareIsolationPlan).not.toHaveBeenCalled();
+  });
+
+  it("keeps the pre-worktree profile path as the host workspace root", async () => {
+    const worktreeService = {
+      list: vi.fn(async () => [{
+        worktreeId: "worktree-1",
+        repoId: "repo-a",
+        path: "/projects/repo-a--worktree",
+        discoveryKind: "managed",
+        dbState: "ready",
+        ownerKind: "session",
+        ownerId: "session-restricted",
+        activeSessionId: "session-restricted",
+      }]),
+      listRepositoryIds: vi.fn(() => ["repo-a"]),
+    };
+    const composition = makeComposition({ worktreeService });
+    // 워크트리 턴이면 agent는 이미 워크트리 경로로 치환된 채 들어온다.
+    const worktreeAgent: AgentProfile = {
+      ...agent,
+      workspace_dir: "/projects/repo-a--worktree",
+    };
+
+    const { captured } = await prepareAndCapture(
+      composition,
+      makeTask({
+        worktreeId: "worktree-1",
+        profileWorkspaceDir: "/agents/claude-restricted",
+      }),
+      worktreeAgent,
+    );
+
+    expect(captured.hostWorkspaceRoot).toBe("/agents/claude-restricted");
+    // workspaceDir와 scratch는 이번 턴의 해석 값(워크트리 경로)을 유지한다.
+    expect(captured.workspaceDir).toBe("/projects/repo-a--worktree");
+    expect(captured.scratchWorkspaceDir).toBe("/projects/repo-a--worktree");
+  });
+
+  it("feeds the turn gate and the child config from one mount-set collection", async () => {
+    const row = (overrides: Record<string, unknown>) => ({
+      worktreeId: null,
+      repoId: "repo-a",
+      path: "/projects/repo-a--worktree",
+      discoveryKind: "managed",
+      dbState: "ready",
+      ownerKind: "session",
+      ownerId: "session-other",
+      activeSessionId: null,
+      ...overrides,
+    });
+    const worktreeService = {
+      list: vi.fn(async () => [
+        row({ worktreeId: "wt-owned", ownerId: "session-restricted", activeSessionId: null }),
+        row({ worktreeId: "wt-attached", activeSessionId: "session-restricted" }),
+        row({ worktreeId: "wt-task", repoId: "repo-b" }),
+      ]),
+      listRepositoryIds: vi.fn(() => ["repo-a", "repo-b"]),
+    };
+    const composition = makeComposition({ worktreeService });
+
+    await expect(composition.worktreeAttachmentIds("session-restricted", "wt-task"))
+      .resolves.toEqual(["wt-attached", "wt-owned", "wt-task"]);
+    const { prepared } = await prepareAndCapture(
+      composition,
+      makeTask({ worktreeId: "wt-task" }),
+    );
+    expect(prepared.attachedWorktreeIds).toEqual(["wt-attached", "wt-owned", "wt-task"]);
+  });
+
+  it("registers every repository the node knows even on a first turn without worktrees", async () => {
+    const worktreeService = {
+      list: vi.fn(async () => []),
+      listRepositoryIds: vi.fn(() => ["repo-b", "repo-a"]),
+    };
+    const composition = makeComposition({ worktreeService });
+
+    const { captured, prepared } = await prepareAndCapture(composition, makeTask());
+
+    expect(captured.registeredRepositories).toEqual([
+      { repoId: "repo-a", canonicalPath: "/projects/repo-a" },
+      { repoId: "repo-b", canonicalPath: "/projects/repo-b" },
+    ]);
+    expect(captured.ownedWorktrees).toEqual([]);
+    expect(captured.attachedWorktrees).toEqual([]);
+    expect(prepared.attachedWorktreeIds).toEqual([]);
   });
 });

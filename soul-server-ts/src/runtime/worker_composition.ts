@@ -319,7 +319,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     ...(runnerProcess ? { runnerProcessFactory: runnerProcess.runtimeFactory } : {}),
     ...(worktreeService ? { worktreeResolver: worktreeService } : {}),
     sessionMutations,
-    sessionIsolationRuntime: sessionIsolation?.runtime,
+    sessionIsolation,
   });
   taskManager.setCompletionNotifier(taskRuntime.completionNotifier);
   const runnerRecoveryCoordinator = await composeRunnerRecoveryCoordinator({

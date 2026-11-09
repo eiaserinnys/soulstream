@@ -53,13 +53,7 @@ import { resolveProducedAttachmentExecutionContext } from "../attachments/produc
 import { EVENT_ARCHIVE_HOST_DEADLINE_MS } from "./runner_event_archive.js";
 import type { createProducedAttachmentRegistration } from "../attachments/produced_attachment_registration.js";
 import { RunnerClaudeAccountTurnStateStore } from "./claude_account_turn_state_store.js";
-import {
-  buildRestrictedRunnerChildEnv,
-  isolationChildConfigFromPlan,
-  restrictedIsolationBackend,
-  type RunnerIsolationHost,
-} from "./runner_process_isolation.js";
-import { SessionIsolationUnavailableError } from "./session_filesystem_errors.js";
+import { applyRestrictedRunnerIsolation, type RunnerIsolationHost } from "./runner_process_isolation.js";
 
 type RunnerEnv = Pick<Env,
   | "SOUL_RUNNER_STATE_DIR"
@@ -120,8 +114,7 @@ export interface RunnerProcessRuntimeFactoryOptions {
       RunnerProcessSpawner,
       "terminate" | "retireTerminalRegistration"
     >>;
-  /** restricted 러너를 실제로 준비하는 유일한 경로. 없으면 restricted는 fail-closed다. */
-  isolationHost?: RunnerIsolationHost;
+  isolationHost?: RunnerIsolationHost; // restricted 러너 준비 경로. 없으면 fail-closed다.
 }
 
 export function createRunnerProcessRuntimeFactory(
@@ -177,94 +170,57 @@ export function createRunnerProcessRuntimeFactory(
     const codexHome = backend === "codex"
       ? childProcessEnv.CODEX_HOME?.trim() || join(homedir(), ".codex")
       : null;
-    const spawnInput = (async (): Promise<SpawnRunnerProcessInput> => {
-      const release = options.releaseManifest
+    const spawnInput = Promise.resolve().then(() => (
+      options.releaseManifest
         ? options.releasePool.describe(options.releaseManifest.runner_release_id)
-        : await options.releasePool.resolveCurrentRelease();
-      const base: SpawnRunnerProcessInput = {
-        stateDirectory,
-        sessionId: task.agentSessionId,
-        backend,
-        agent,
-        // `codeSha` is a legacy field name for the opaque release id.
-        codeSha: release.releaseId,
-        releaseManifestId: options.releaseManifest?.manifest_id ?? release.releaseId,
-        runtimeEnvIdentity: agentRuntimeEnvIdentity(agent),
-        snapshotPath: release.runnerModuleRoot,
-        codexAdapterMode: options.env.CODEX_ADAPTER_MODE,
-        codexCliPath: options.codexCliPath?.path,
-        antigravityCliPath: options.antigravityCliPath?.path,
-        ...(backend === "opencode" && options.env.OPENCODE_CLI_PATH
-          ? { opencodeCliPath: options.env.OPENCODE_CLI_PATH }
-          : {}),
-        codexDetachedResultRetentionMs:
-          options.env.CODEX_DETACHED_RESULT_RETENTION_MS,
-        codexAppServerRequestTimeoutMs:
-          options.env.CODEX_APP_SERVER_REQUEST_TIMEOUT_MS,
-        codexAppServerStartupTimeoutMs:
-          options.env.CODEX_APP_SERVER_STARTUP_TIMEOUT_MS,
-        claudeRuntimeV2Enabled: options.env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
-        ...(backend === "claude" && options.env.CLAUDE_ACCOUNT_POOL_ENABLED
-          ? {
-              claudeAccountPool: {
-                enabled: true,
-                accountsDir: required(options.env.CLAUDE_ACCOUNTS_DIR, "CLAUDE_ACCOUNTS_DIR"),
-              },
-            }
-          : {}),
-        claudeRuntimeIdleTtlMs: options.env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
-        claudeRuntimeMaxEntries: options.env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
-        claudeRuntimeTurnTimeoutMs: options.env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
-        runnerLeaseTimeoutMs: options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
-        incomingFileDir: options.env.INCOMING_FILE_DIR,
-        ...runtimeMcpConfig,
-        codexHome,
-        rolloutRoot: codexHome ? join(codexHome, "sessions") : null,
-        childProcessEnv,
-        prepareSnapshot: async () => await options.releasePool.ensureRelease(release),
-      };
-      if (task.executionSecurity?.tier !== "restricted") return base;
-      const isolationHost = options.isolationHost;
-      if (!isolationHost) {
-        throw new SessionIsolationUnavailableError(
-          "SESSION_ISOLATION_UNAVAILABLE: restricted execution requires an isolation host",
-        );
-      }
-      const prepared = await isolationHost.prepare({
-        task,
-        agent,
-        backend: restrictedIsolationBackend(backend),
-      });
-      return {
-        ...base,
-        resolvedMcpServers: [...prepared.plan.sanitizedServers],
-        // 계정 풀이 CLAUDE_CONFIG_DIR·토큰을 바꾸지 못하게 restricted에서는 끈다.
-        claudeAccountPool: undefined,
-        childProcessEnv: buildRestrictedRunnerChildEnv({
-          baseEnv: childProcessEnv,
-          plan: prepared.plan,
-          wsl: prepared.wsl,
-        }),
-        isolation: isolationChildConfigFromPlan({
-          plan: prepared.plan,
-          tools: prepared.tools,
-          wsl: prepared.wsl,
-          attachedWorktreeIds: task.worktreeId ? [task.worktreeId] : [],
-        }),
-      };
-    })();
-    const spawnedProcess = spawnInput.then(async (input) => await spawner.spawn(input));
-    // 준비가 스폰보다 먼저 실패하면 디스패처는 이 약속에 도달하지 못한다.
-    // 거부를 여기서 관측해 unhandled rejection으로 남기지 않는다.
-    void spawnedProcess.catch(() => undefined);
-    return createRuntime(
-      task,
-      agent,
+        : options.releasePool.resolveCurrentRelease()
+    )).then((release) => ({
+      stateDirectory,
+      sessionId: task.agentSessionId,
       backend,
-      snapshots,
-      spawnInput,
-      spawnedProcess,
-    );
+      agent,
+      // `codeSha` is a legacy field name for the opaque release id.
+      codeSha: release.releaseId,
+      releaseManifestId: options.releaseManifest?.manifest_id ?? release.releaseId,
+      runtimeEnvIdentity: agentRuntimeEnvIdentity(agent),
+      snapshotPath: release.runnerModuleRoot,
+      codexAdapterMode: options.env.CODEX_ADAPTER_MODE,
+      codexCliPath: options.codexCliPath?.path,
+      antigravityCliPath: options.antigravityCliPath?.path,
+      ...(backend === "opencode" && options.env.OPENCODE_CLI_PATH
+        ? { opencodeCliPath: options.env.OPENCODE_CLI_PATH }
+        : {}),
+      codexDetachedResultRetentionMs:
+        options.env.CODEX_DETACHED_RESULT_RETENTION_MS,
+      codexAppServerRequestTimeoutMs:
+        options.env.CODEX_APP_SERVER_REQUEST_TIMEOUT_MS,
+      codexAppServerStartupTimeoutMs:
+        options.env.CODEX_APP_SERVER_STARTUP_TIMEOUT_MS,
+      claudeRuntimeV2Enabled: options.env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
+      ...(backend === "claude" && options.env.CLAUDE_ACCOUNT_POOL_ENABLED
+        ? {
+            claudeAccountPool: {
+              enabled: true,
+              accountsDir: required(options.env.CLAUDE_ACCOUNTS_DIR, "CLAUDE_ACCOUNTS_DIR"),
+            },
+          }
+        : {}),
+      claudeRuntimeIdleTtlMs: options.env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
+      claudeRuntimeMaxEntries: options.env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
+      claudeRuntimeTurnTimeoutMs: options.env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
+      runnerLeaseTimeoutMs: options.env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
+      incomingFileDir: options.env.INCOMING_FILE_DIR,
+      ...runtimeMcpConfig,
+      codexHome,
+      rolloutRoot: codexHome ? join(codexHome, "sessions") : null,
+      childProcessEnv,
+      prepareSnapshot: async () => await options.releasePool.ensureRelease(release),
+    })).then(async (base) => await applyRestrictedRunnerIsolation(base, {
+      task, agent, isolationHost: options.isolationHost,
+    }));
+    const spawnedProcess = spawnInput.then(async (input) => await spawner.spawn(input));
+    void spawnedProcess.catch(() => undefined); // 준비 실패 시 디스패처가 못 받는 거부를 관측만 한다.
+    return createRuntime(task, agent, backend, snapshots, spawnInput, spawnedProcess);
   }) as RunnerProcessRuntimeFactory;
   // Adoption, live terminal replay, and offline replay reuse the registered
   // child/config rather than resolving current profile MCP settings.
@@ -296,8 +252,7 @@ export function createRunnerProcessRuntimeFactory(
       phaseObservation,
     );
   };
-  // approval flag: host ports가 주입된 경우에만 restricted를 지원한다.
-  factory.isolationSupported = options.isolationHost !== undefined;
+  factory.isolationSupported = options.isolationHost !== undefined; // host가 주입됐을 때만
   return factory;
 }
 

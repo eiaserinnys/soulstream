@@ -32,7 +32,7 @@ import type { WorktreeService } from "../worktree/worktree_service.js";
 
 export interface SessionIsolationCompositionDeps {
   env: Env;
-  worktreeService?: Pick<WorktreeService, "list"> | undefined;
+  worktreeService?: Pick<WorktreeService, "list" | "listRepositoryIds"> | undefined;
   mcpConfigService: Pick<McpConfigService, "resolveMcpProfile">;
   codexCliPath?: CodexCliPathResolution | undefined;
 }
@@ -42,6 +42,14 @@ export interface SessionIsolationComposition {
   runtime: SessionIsolationRuntime;
   /** restricted 러너 준비 경로. 팩토리에 주입될 때만 isolationSupported가 true가 된다. */
   host: RunnerIsolationHost;
+  /**
+   * 이 세션이 실제로 mount하는 worktree id 전체(소유+부착). prepare의 mount
+   * 집합과 같은 수집 함수를 쓰므로 재사용 판정과 child config가 어긋나지 않는다.
+   */
+  worktreeAttachmentIds(
+    sessionId: string,
+    taskWorktreeId: string | undefined,
+  ): Promise<readonly string[]>;
 }
 
 /**
@@ -57,7 +65,15 @@ export function composeSessionIsolation(
     nodeId: env.SOULSTREAM_NODE_ID,
     settings: sessionIsolationSettingsFromEnv(env),
   });
-  return { runtime, host: createRunnerIsolationHost(deps, runtime) };
+  return {
+    runtime,
+    host: createRunnerIsolationHost(deps, runtime),
+    worktreeAttachmentIds: async (sessionId, taskWorktreeId) => (await collectSessionWorktrees({
+      worktreeService: deps.worktreeService,
+      actorSessionId: sessionId,
+      taskWorktreeId,
+    })).worktreeIds,
+  };
 }
 
 function createRunnerIsolationHost(
@@ -79,6 +95,12 @@ async function prepareRunnerIsolation(
   request: RunnerIsolationPreparationRequest,
 ): Promise<PreparedRunnerIsolation> {
   const { env } = deps;
+  // 무인증 MCP 노드에서는 restricted 자식이 내부 MCP를 부를 자격이 없다.
+  if (!env.MCP_REQUIRE_AUTH) {
+    throw new SessionIsolationUnavailableError(
+      "SESSION_ISOLATION_UNAVAILABLE: restricted execution requires MCP authentication",
+    );
+  }
   const decision = request.task.executionSecurity;
   if (!decision || decision.tier !== "restricted") {
     throw new SessionIsolationUnavailableError(
@@ -128,7 +150,9 @@ async function prepareRunnerIsolation(
     backend,
     workspaceDir: request.agent.workspace_dir,
     sessionDirectory: sessionDirectoryFor(stateDirectory, decision.sessionId),
-    hostWorkspaceRoot: request.agent.workspace_dir,
+    // 워크트리 턴이면 agent는 워크트리 경로로 치환돼 있다. B2의 host 검사는
+    // 치환 전 프로필 경로를 기준으로 한다.
+    hostWorkspaceRoot: request.task.profileWorkspaceDir ?? request.agent.workspace_dir,
     homeDirectory,
     uid,
     policy: loaded.policy,
@@ -159,7 +183,12 @@ async function prepareRunnerIsolation(
       plan.spec.masks,
     );
   }
-  return { plan, wsl: await ports.detectWsl(), tools };
+  return {
+    plan,
+    wsl: await ports.detectWsl(),
+    tools,
+    attachedWorktreeIds: worktrees.worktreeIds,
+  };
 }
 
 function isolationTools(runtime: SessionIsolationRuntime): IsolationToolPaths {
@@ -241,30 +270,37 @@ interface EligibleWorktree {
   path: string;
 }
 
+interface SessionWorktrees {
+  owned: EligibleWorktree[];
+  attached: EligibleWorktree[];
+  /** 소유와 부착을 합친 실제 mount 집합. 정렬·중복 제거. */
+  worktreeIds: readonly string[];
+}
+
 interface WorktreeFacts {
   owned: WorktreeAttachment[];
   attached: WorktreeAttachment[];
   repositories: RegisteredRepository[];
+  worktreeIds: readonly string[];
 }
 
 /**
  * 이 세션이 소유하거나 붙은 worktree만 고른다. `worktreeService.list`는
  * 레코드와 git 발견을 합친 행을 돌려주므로 필드 타입을 여기서 좁힌다.
+ * 턴 게이트와 prepare가 이 함수 하나를 공유한다.
  */
-async function collectWorktreeFacts(args: {
+async function collectSessionWorktrees(args: {
   worktreeService: Pick<WorktreeService, "list"> | undefined;
-  projectsRoot: string | undefined;
   actorSessionId: string;
   taskWorktreeId: string | undefined;
-  resolveCommonDir(repositoryPath: string): Promise<string>;
-}): Promise<WorktreeFacts> {
+}): Promise<SessionWorktrees> {
   if (!args.worktreeService) {
     if (args.taskWorktreeId) {
       throw new SessionIsolationUnavailableError(
         "SESSION_ISOLATION_UNAVAILABLE: this turn runs in a worktree but the worktree service is unavailable",
       );
     }
-    return { owned: [], attached: [], repositories: [] };
+    return { owned: [], attached: [], worktreeIds: [] };
   }
   let rows: Array<Record<string, unknown>>;
   try {
@@ -301,9 +337,28 @@ async function collectWorktreeFacts(args: {
       "SESSION_ISOLATION_UNAVAILABLE: this turn's worktree is not usable by the session",
     );
   }
-  const selected = [...owned, ...attached];
-  if (selected.length === 0) {
-    return { owned: [], attached: [], repositories: [] };
+  const worktreeIds = [...new Set([...owned, ...attached].map((worktree) => worktree.worktreeId))]
+    .sort();
+  return { owned, attached, worktreeIds };
+}
+
+/**
+ * 격리 계획 입력의 worktree 사실. 등록 리포는 부착 여부와 무관하게 이 노드가
+ * 아는 전부를 넘겨, 같은 턴에 만든 새 워크트리도 바로 커밋할 수 있게 한다.
+ */
+async function collectWorktreeFacts(args: {
+  worktreeService: Pick<WorktreeService, "list" | "listRepositoryIds"> | undefined;
+  projectsRoot: string | undefined;
+  actorSessionId: string;
+  taskWorktreeId: string | undefined;
+  resolveCommonDir(repositoryPath: string): Promise<string>;
+}): Promise<WorktreeFacts> {
+  const worktrees = await collectSessionWorktrees(args);
+  const repoIds = args.worktreeService
+    ? [...args.worktreeService.listRepositoryIds()].sort()
+    : [];
+  if (worktrees.worktreeIds.length === 0 && repoIds.length === 0) {
+    return { owned: [], attached: [], repositories: [], worktreeIds: [] };
   }
   const projectsRoot = args.projectsRoot;
   if (!projectsRoot) {
@@ -311,22 +366,19 @@ async function collectWorktreeFacts(args: {
       "SESSION_ISOLATION_UNAVAILABLE: WORKTREE_PROJECTS_ROOT is required for worktree attachments",
     );
   }
-  const repoIds = [...new Set(selected.map((worktree) => worktree.repoId))];
   const commonDirectories = new Map<string, string>();
+  const repositories: RegisteredRepository[] = [];
   for (const repoId of repoIds) {
     // B2가 등록 리포 경로로 resolve하는 값과 같은 입력에서 받는다.
-    commonDirectories.set(
-      repoId,
-      await args.resolveCommonDir(join(projectsRoot, repoId)),
-    );
+    const canonicalPath = join(projectsRoot, repoId);
+    commonDirectories.set(repoId, await args.resolveCommonDir(canonicalPath));
+    repositories.push({ repoId, canonicalPath });
   }
   return {
-    owned: owned.map((worktree) => toAttachment(worktree, commonDirectories)),
-    attached: attached.map((worktree) => toAttachment(worktree, commonDirectories)),
-    repositories: repoIds.map((repoId) => ({
-      repoId,
-      canonicalPath: join(projectsRoot, repoId),
-    })),
+    owned: worktrees.owned.map((worktree) => toAttachment(worktree, commonDirectories)),
+    attached: worktrees.attached.map((worktree) => toAttachment(worktree, commonDirectories)),
+    repositories,
+    worktreeIds: worktrees.worktreeIds,
   };
 }
 
