@@ -565,6 +565,107 @@ describe("ClaudeEngineAdapter options parity", () => {
     expect(state.clear).toHaveBeenCalledWith("p5-turn");
   });
 
+  it("switches to a successor account with only its access token after a rate limit", async () => {
+    const configDir = mkdtempSync(join(tmpdir(), "claude-pool-switch-"));
+    roots.push(configDir);
+    mkdirSync(join(configDir, "projects"));
+    const accounts = [
+      {
+        account_id: "account-a",
+        config_dir: configDir,
+        available_count: 2,
+        credential: { kind: "access-token" as const, access_token: "token-a" },
+      },
+      {
+        account_id: "account-b",
+        config_dir: configDir,
+        available_count: 2,
+        credential: { kind: "access-token" as const, access_token: "token-b" },
+      },
+    ];
+    const attempts: ClaudeRunOptions[] = [];
+    const client: ClaudeClient = {
+      async *run() {},
+      async *runPersistent(initialOptions, signal) {
+        let options = initialOptions;
+        for (let index = 0; index < accounts.length; index += 1) {
+          attempts.push(options);
+          options.onAccountQueryStarted?.();
+          if (index > 0) {
+            await options.onAccountQueryClosed?.("registry_ttl");
+            return;
+          }
+          await options.onAccountQueryClosed?.("account_switch");
+          const decision = await options.onAccountRateLimit!({
+            info: { rateLimitType: "five_hour", resetsAt: "2026-11-10T05:00:00.000Z" },
+            sessionId: "switch-session",
+            inputUuid: "switch-turn",
+            inputDelivery: "delivered",
+          }, signal);
+          if (decision.kind !== "switch") throw new Error("unexpected account switch decision");
+          options = { ...options, ...decision.options };
+        }
+      },
+      async close() {},
+    };
+    const accountTurnPort = {
+      select: vi.fn(async (input: { exclude_ids: string[] }) =>
+        accounts.find((account) => !input.exclude_ids.includes(account.account_id))!),
+      reject: vi.fn(async () => undefined),
+      release: vi.fn(async () => undefined),
+    };
+    const writes: unknown[] = [];
+    const state = {
+      read: () => null,
+      write: vi.fn(async (next: unknown) => { writes.push(structuredClone(next)); }),
+      clear: vi.fn(async () => undefined),
+    };
+    const registry = {
+      acquire: () => client,
+      close: vi.fn().mockResolvedValue(true),
+      release: vi.fn(),
+      reserve: vi.fn(),
+    };
+    const engine = new ClaudeEngineAdapter({
+      workspaceDir: "/tmp/claude-work",
+      processEnv: { PATH: "/usr/bin", CLAUDE_CODE_OAUTH_TOKEN: "inherited-oauth" },
+      claudeAccountPoolEnabled: true,
+      trackChildExit: true,
+      claudeAccountTurnPort: accountTurnPort as never,
+      claudeAccountTurnState: state,
+      persistentSessionRegistry: registry,
+    }, silentLogger);
+
+    for await (const _ of engine.execute({
+      agentSessionId: "switch-session",
+      inputUuid: "switch-turn",
+      prompt: "original user input",
+      model: "claude-sonnet-4.5",
+      claudeAccountPoolTarget: true,
+    })) {
+      // drain
+    }
+
+    expect(accountTurnPort.select.mock.calls.map(([input]) => input.exclude_ids)).toEqual([
+      [],
+      ["account-a"],
+    ]);
+    expect(accountTurnPort.reject).toHaveBeenCalledWith(expect.objectContaining({
+      account_id: "account-a",
+      scope: "all",
+    }));
+    expect(attempts.map((attempt) => attempt.env?.CLAUDE_CODE_OAUTH_TOKEN))
+      .toEqual(["token-a", "token-b"]);
+    for (const attempt of attempts) {
+      expect(attempt.env).not.toHaveProperty("ANTHROPIC_API_KEY");
+      expect(attempt.env?.CLAUDE_CONFIG_DIR).toBe(configDir);
+    }
+    expect(attempts[1]?.resumeSessionId).toBe("switch-session");
+    expect(JSON.stringify(writes)).not.toContain("token-a");
+    expect(JSON.stringify(writes)).not.toContain("token-b");
+    expect(state.clear).toHaveBeenCalledWith("switch-turn");
+  });
+
   it("returns the pool exhaustion code and recovery time when no account is initially available", async () => {
     const client: ClaudeClient = {
       run: vi.fn(async function* () {}),

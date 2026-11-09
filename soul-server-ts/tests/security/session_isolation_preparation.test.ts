@@ -13,6 +13,8 @@ import {
   SESSION_ISOLATION_UNAVAILABLE,
 } from "../../src/runner/session_filesystem_errors.js";
 import { prepareIsolationPlan } from "../../src/runner/session_filesystem_plan.js";
+import { isolationChildConfigFromPlan } from
+  "../../src/runner/runner_process_isolation.js";
 import { makeTempDir } from "../helpers/temp_dir.js";
 import {
   createFakeHostPorts,
@@ -655,35 +657,64 @@ describe("prepareIsolationPlan", () => {
     );
   });
 
-  it("prepares a Claude OAuth token without exposing it", async () => {
+  it("prepares a Claude OAuth session without injecting a token", async () => {
     const fixture = await makeFixture();
-    const tokenFile = touch(fixture.root, "home/claude-oauth-token", "test-oauth-token", 0o600);
+    const accountsDir = join(fixture.root, "claude-accounts");
+    mkdirSync(join(accountsDir, "profiles", "account-a"), { recursive: true, mode: 0o700 });
+    touch(
+      fixture.root,
+      "claude-accounts/profiles/account-a/.credentials.json",
+      JSON.stringify({
+        claudeAiOauth: {
+          accessToken: "synthetic-access-token",
+          refreshToken: "synthetic-refresh-token",
+          expiresAt: Date.now() + 3_600_000,
+        },
+      }),
+      0o600,
+    );
 
     fixture.input.backend = "claude";
-    fixture.input.authPreparation = {
-      kind: "claude-oauth-token",
-      claudeTokenFile: tokenFile,
-      credentialAccountId: "account-1",
-    };
-    fixture.options.claudeOauthToken = "test-oauth-token";
+    fixture.input.authPreparation = { kind: "claude-oauth-token" };
+    fixture.input.claudeAccountsDir = accountsDir;
     fixture.ports = createFakeHostPorts(fixture.options);
 
     const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
 
     expect(prepared.spec.authKind).toBe("claude-oauth-token");
-    expect(prepared.env.CLAUDE_CODE_OAUTH_TOKEN).toBe("test-oauth-token");
-    expect(prepared.env.CLAUDE_CONFIG_DIR).toBe(
-      join(fixture.sessionDir, "sandbox", "claude-config"),
-    );
-    expect(prepared.spec.masks).toContainEqual({ path: tokenFile, kind: "file" });
+    expect(prepared.env).not.toHaveProperty("CLAUDE_CODE_OAUTH_TOKEN");
+    const configDirectory = join(fixture.sessionDir, "sandbox", "claude-config");
+    expect(prepared.env.CLAUDE_CONFIG_DIR).toBe(configDirectory);
+    expect(lstatSync(configDirectory).isDirectory()).toBe(true);
+    expect(lstatSync(join(configDirectory, "projects")).isDirectory()).toBe(true);
+    expect(prepared.spec.masks).toContainEqual({ path: accountsDir, kind: "directory" });
     expect(prepared.spec.masks).toContainEqual({
       path: join(fixture.home, ".local/share/soulstream/credentials"),
       kind: "directory",
     });
     expect(bindingOf(prepared.spec.bindings, fixture.canonicalCodex)).toBeUndefined();
-    expect(prepared.contextNotice).not.toContain("test-oauth-token");
-    expect(prepared.contextNotice).not.toContain(tokenFile);
-    expect(fixture.ports.calls.verifyAuthPreparation).toBe(1);
+    expect(prepared.contextNotice).not.toContain(accountsDir);
+    // restricted Claude OAuth는 호스트 자격 값을 미리 읽지 않는다.
+    expect(fixture.ports.calls.verifyAuthPreparation).toBe(0);
+
+    // 러너 자식 설정에는 키 이름만 있고 자격 값은 없다.
+    const childConfig = isolationChildConfigFromPlan({
+      plan: prepared,
+      tools: {
+        bwrap: "/usr/bin/bwrap",
+        pasta: "/usr/bin/pasta",
+        unshare: "/usr/bin/unshare",
+        setpriv: "/usr/bin/setpriv",
+        nft: "/usr/sbin/nft",
+        netnsHelper: "/release/sha/session-netns-helper.py",
+      },
+      wsl: false,
+      attachedWorktreeIds: [],
+    });
+    expect(childConfig.envKeys).toContain("CLAUDE_CONFIG_DIR");
+    expect(childConfig.envKeys).not.toContain("CLAUDE_CODE_OAUTH_TOKEN");
+    expect(JSON.stringify(childConfig)).not.toContain("synthetic-access-token");
+    expect(JSON.stringify(childConfig)).not.toContain("synthetic-refresh-token");
   });
 
   it("keeps apikey-env presets on their existing environment", async () => {

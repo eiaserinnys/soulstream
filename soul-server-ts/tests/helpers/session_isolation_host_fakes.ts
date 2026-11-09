@@ -42,7 +42,6 @@ export interface FakeHostPortsOptions {
   agentCommonFilesDir?: string | null;
   /** dotenv가 .env.soul-server-ts를 읽는 디렉터리. 없으면 마스킹하지 않는다. */
   serviceEnvironmentDir?: string | null;
-  claudeOauthToken?: string;
   gitCommonDirs?: Record<string, string>;
   /** 실경로 확인만 실패시키는 절대 경로. lstat 등 다른 포트는 정상 응답한다. */
   realPathFailures?: string[];
@@ -248,10 +247,6 @@ export function createFakeHostPorts(options: FakeHostPortsOptions): FakeHostPort
     },
     async resolveMainPackageStorePath(): Promise<string | null> {
       return options.mainStorePath ?? null;
-    },
-    async readClaudeOauthToken(): Promise<string> {
-      if (options.claudeOauthToken === undefined) throw new Error("no claude oauth token");
-      return options.claudeOauthToken;
     },
     async resolveAgentCommonFilesDirectory(): Promise<string | null> {
       return options.agentCommonFilesDir ?? null;

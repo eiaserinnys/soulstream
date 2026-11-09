@@ -39,10 +39,7 @@ import {
   IsolationPreparationPolicyError,
   SessionIsolationUnavailableError,
 } from "./session_filesystem_errors.js";
-import {
-  assertClaudeTokenFile,
-  verifyCodexGrant,
-} from "./session_isolation_host_ports_auth.js";
+import { verifyCodexGrant } from "./session_isolation_host_ports_auth.js";
 
 export { VERIFIED_CODEX_WRITER_VERSIONS } from "./session_isolation_host_ports_auth.js";
 
@@ -77,7 +74,6 @@ export interface IsolationHostPortDependencies {
   uid: number;
   agentCommonFilesDirectory: string | null;
   serviceEnvironmentDirectory: string | null;
-  claudeTokenFile: string | null;
   /** restricted Codex가 실제로 띄울 실행 파일의 절대 경로. writer 판 확인에 쓴다 */
   codexExecutable: string | null;
   /** 시험 주입용. 기본값은 node:child_process execFile 기반 */
@@ -228,7 +224,8 @@ export function createIsolationHostPorts(
           });
           return;
         case "claude-oauth-token":
-          await assertClaudeTokenFile(preparation.claudeTokenFile, deps.uid);
+          // 접근 토큰은 계정 풀 선택 응답으로만 들어온다. 준비 시점에는
+          // 확인할 자격 파일이 없다.
           return;
         case "apikey-env":
           return;
@@ -380,15 +377,6 @@ export function createIsolationHostPorts(
         })();
       }
       return mainPackageStorePathPromise;
-    },
-
-    async readClaudeOauthToken(): Promise<string> {
-      const tokenFile = await assertClaudeTokenFile(deps.claudeTokenFile ?? undefined, deps.uid);
-      const token = (await readFile(tokenFile, "utf8")).trim();
-      if (token.length === 0) {
-        throw new IsolationAuthUnavailableError("Claude OAuth token이 비어 있습니다");
-      }
-      return token;
     },
 
     async resolveAgentCommonFilesDirectory(): Promise<string | null> {

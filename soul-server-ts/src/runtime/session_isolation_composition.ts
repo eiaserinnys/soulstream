@@ -129,7 +129,6 @@ async function prepareRunnerIsolation(
     agentCommonFilesDirectory: process.env.AGENT_COMMON_FILES_DIR ?? null,
     // dotenv가 읽는 디렉터리는 프로세스 cwd다(main.ts의 상대 경로 계약).
     serviceEnvironmentDirectory: process.cwd(),
-    claudeTokenFile: runtime.settings.claudeTokenFile,
     codexExecutable,
   });
   const worktrees = await collectWorktreeFacts({
@@ -164,6 +163,9 @@ async function prepareRunnerIsolation(
         : (request.agent.env ?? null),
       homeDirectory,
     }),
+    ...(runtime.settings.claudeAccountsDir !== null
+      ? { claudeAccountsDir: runtime.settings.claudeAccountsDir }
+      : {}),
     ...(runtime.settings.testDatabaseUrl !== null
       ? { testDatabaseUrl: runtime.settings.testDatabaseUrl }
       : {}),

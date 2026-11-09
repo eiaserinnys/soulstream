@@ -58,7 +58,6 @@ export function createDeps(
     uid: process.getuid?.() ?? 1000,
     agentCommonFilesDirectory: null,
     serviceEnvironmentDirectory: null,
-    claudeTokenFile: null,
     codexExecutable: null,
     osreleasePath: join(root, "proc-sys-kernel-osrelease"),
     runCommand: createRecordingRunCommand().runCommand,

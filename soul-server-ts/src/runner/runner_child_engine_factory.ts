@@ -8,9 +8,11 @@ import type {
   ClaudeAccountRejectInput,
   ClaudeAccountReleaseInput,
   ClaudeAccountSelectionInput,
-  ClaudeAccountSelectionResponse,
 } from "../claude_accounts/types.js";
-import type { ClaudeAccountTurnPort } from "../engine/claude_account_pool.js";
+import type {
+  ClaudeAccountTurnPort,
+  ClaudeAccountTurnResponse,
+} from "../engine/claude_account_pool.js";
 
 import { join } from "node:path";
 
@@ -127,7 +129,10 @@ function createRunnerChildEnginePort(
   const sessionStore = new HostSessionStore(host);
   const accountPoolEnabled = config.claudeAccountPool?.enabled === true;
   const claudeAccountTurnPort = accountPoolEnabled
-    ? new HostClaudeAccountTurnPort(host)
+    ? new HostClaudeAccountTurnPort(host, {
+        requireAccessTokenCredential:
+          config.isolation?.spec.authKind === "claude-oauth-token",
+      })
     : undefined;
   const registry = config.claudeRuntimeV2Enabled || accountPoolEnabled
     ? new ClaudeSessionClientRegistry(
@@ -242,15 +247,27 @@ function withIsolationContextNotice(engine: EnginePort, notice: string): EngineP
 }
 
 class HostClaudeAccountTurnPort implements ClaudeAccountTurnPort {
-  constructor(private readonly host: RunnerHostRequestClient) {}
+  constructor(
+    private readonly host: RunnerHostRequestClient,
+    private readonly options: { requireAccessTokenCredential: boolean },
+  ) {}
 
-  async select(input: ClaudeAccountSelectionInput): Promise<ClaudeAccountSelectionResponse> {
-    return await this.host.call(
+  async select(input: ClaudeAccountSelectionInput): Promise<ClaudeAccountTurnResponse> {
+    const response = await this.host.call(
       "claude_accounts",
       "select",
       [input.session_id, input],
       hostOptions(),
-    ) as ClaudeAccountSelectionResponse;
+    ) as ClaudeAccountTurnResponse;
+    if (this.options.requireAccessTokenCredential && !("pool_exhausted" in response)) {
+      if (
+        response.credential?.kind !== "access-token"
+        || response.credential.access_token.length === 0
+      ) {
+        throw new Error("restricted Claude account selection returned no access token");
+      }
+    }
+    return response;
   }
 
   async reject(input: ClaudeAccountRejectInput): Promise<void> {

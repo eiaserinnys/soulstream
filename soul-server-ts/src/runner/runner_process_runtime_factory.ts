@@ -9,7 +9,14 @@ import type { Logger } from "pino";
 
 import type { Env } from "../config.js";
 import type { ClaudeClientEvent } from "../engine/claude_client_event.js";
-import type { ClaudeAccountTurnPort } from "../engine/claude_account_pool.js";
+import type {
+  ClaudeAccountTurnPort,
+  ClaudeAccountTurnResponse,
+} from "../engine/claude_account_pool.js";
+import type {
+  ClaudeAccountSelectionInput,
+  ClaudeAccountSelectionOptions,
+} from "../claude_accounts/types.js";
 import type {
   EngineRunStateSnapshot,
   EngineSessionItemsSnapshot,
@@ -54,6 +61,7 @@ import { EVENT_ARCHIVE_HOST_DEADLINE_MS } from "./runner_event_archive.js";
 import type { createProducedAttachmentRegistration } from "../attachments/produced_attachment_registration.js";
 import { RunnerClaudeAccountTurnStateStore } from "./claude_account_turn_state_store.js";
 import { applyRestrictedRunnerIsolation, withRecoveredRunnerIsolation, type RunnerIsolationHost } from "./runner_process_isolation.js";
+import type { RunnerIsolationChildConfig } from "./runner_isolation_config.js";
 
 type RunnerEnv = Pick<Env,
   | "SOUL_RUNNER_STATE_DIR"
@@ -77,12 +85,23 @@ type RunnerEnv = Pick<Env,
   | "MCP_PATH"
 > & Partial<Pick<Env, "OPENCODE_CLI_PATH">>;
 
+/**
+ * 호스트가 restricted(격리) 선택을 부를 때만 쓰는 확장 계약. 이 옵션은
+ * 러너 IPC 요청 필드가 아니며, 전체(full) 러너 경로에는 나타나지 않는다.
+ */
+export type HostClaudeAccountService = ClaudeAccountTurnPort & {
+  select(
+    input: ClaudeAccountSelectionInput,
+    options?: ClaudeAccountSelectionOptions,
+  ): Promise<ClaudeAccountTurnResponse>;
+};
+
 export interface RunnerProcessRuntimeFactoryOptions {
   env: RunnerEnv;
   logger: Logger;
   pumpMux: EventOutboxPumpMux;
   sessionStore: IdempotentClaudeSessionStore;
-  claudeAccounts?: ClaudeAccountTurnPort;
+  claudeAccounts?: HostClaudeAccountService;
   producedAttachments?: Pick<
     ReturnType<typeof createProducedAttachmentRegistration>,
     "register"
@@ -135,6 +154,7 @@ export function createRunnerProcessRuntimeFactory(
     runnerProcess: SpawnedRunnerProcess | Promise<SpawnedRunnerProcess> | null,
     recoveryMode?: "adopt" | "replay" | "offline",
     phaseObservation?: RunnerPhaseObservation,
+    storedIsolation?: RunnerIsolationChildConfig,
   ) => {
     const dispatcher = new RunnerProcessDispatcher({
       spawn,
@@ -151,6 +171,9 @@ export function createRunnerProcessRuntimeFactory(
         snapshots,
         options,
         registerPostResponse,
+        call.service === "claude_accounts"
+          ? await resolveRestrictedClaudeAccountContext(storedIsolation, spawn)
+          : undefined,
       ),
     });
     const engine = new RunnerProcessEngineProxy(
@@ -250,6 +273,7 @@ export function createRunnerProcessRuntimeFactory(
         : adoptRegisteredRunner(spawner, registration, options),
       mode,
       phaseObservation,
+      config.isolation,
     ), config.isolation);
   };
   factory.isolationSupported = options.isolationHost !== undefined; // host가 주입됐을 때만
@@ -356,6 +380,27 @@ function storedRuntimeMcpConfig(
   };
 }
 
+interface RestrictedClaudeAccountContext {
+  configDirectory: string;
+}
+
+/**
+ * restricted Claude OAuth 러너인지는 호스트가 만든(또는 복구한) 러너 설정에서만
+ * 판정한다. 자식이 보낸 모드·경로로 판정하지 않는다.
+ */
+async function resolveRestrictedClaudeAccountContext(
+  storedIsolation: RunnerIsolationChildConfig | undefined,
+  spawn: SpawnRunnerProcessInput | Promise<SpawnRunnerProcessInput>,
+): Promise<RestrictedClaudeAccountContext | undefined> {
+  const isolation = storedIsolation ?? (await Promise.resolve(spawn)).isolation;
+  if (!isolation) return undefined;
+  if (isolation.spec.backend !== "claude") return undefined;
+  if (isolation.spec.authKind !== "claude-oauth-token") return undefined;
+  return {
+    configDirectory: join(isolation.spec.sandboxDirectory, "claude-config"),
+  };
+}
+
 export async function applyRunnerHostCall(
   call: RunnerHostCall,
   task: Task,
@@ -371,6 +416,7 @@ export async function applyRunnerHostCall(
   },
   options: RunnerProcessRuntimeFactoryOptions,
   registerPostResponse: (continuation: () => Promise<void>) => void = () => undefined,
+  restrictedClaudeAccount?: RestrictedClaudeAccountContext,
 ): Promise<unknown> {
   const expectedSessionId = task.agentSessionId;
   if (call.service === "claude_accounts") {
@@ -389,10 +435,19 @@ export async function applyRunnerHostCall(
       throw new Error("runner Claude account request session mismatch");
     }
     switch (call.operation) {
-      case "select":
-        return await service.select(
-          input as unknown as Parameters<ClaudeAccountTurnPort["select"]>[0],
-        );
+      case "select": {
+        const selectInput = input as unknown as Parameters<ClaudeAccountTurnPort["select"]>[0];
+        if (!restrictedClaudeAccount) return await service.select(selectInput);
+        const selection = await service.select(selectInput, {
+          requireAccessTokenCredential: true,
+        });
+        if ("pool_exhausted" in selection) return selection;
+        // 호스트 프로필 경로 대신 이 세션 sandbox의 쓰기 가능한 설정을 쓴다.
+        return {
+          ...selection,
+          config_dir: restrictedClaudeAccount.configDirectory,
+        };
+      }
       case "reject":
         await service.reject(input as unknown as Parameters<ClaudeAccountTurnPort["reject"]>[0]);
         return null;

@@ -83,14 +83,12 @@ export interface SessionIsolationSpec {
 }
 
 /**
- * 호스트가 준비한 restricted 인증 재료. 토큰 원문이 아니라 경로와
- * 식별자만 담고, 실제 값은 B1이 만든 자식 환경에만 넣는다.
+ * 호스트가 준비한 restricted 인증 재료. 토큰 원문을 담지 않는다. Claude
+ * OAuth의 접근 토큰은 계정 풀 선택 응답으로만, 그 턴의 자식 환경에 넣는다.
  */
 export interface IsolatedAuthPreparation {
   kind: RestrictedAuthKind;
-  credentialAccountId?: string;
   canonicalCodexDirectory?: string;
-  claudeTokenFile?: string;
 }
 
 export type IsolationToolGuard =
@@ -181,6 +179,8 @@ export interface IsolationPreparationInput {
   attachedWorktrees: readonly WorktreeAttachment[];
   registeredRepositories: readonly RegisteredRepository[];
   authPreparation: IsolatedAuthPreparation;
+  /** restricted Claude OAuth가 실제 쓰는 계정 풀 루트. mask 대상이다. */
+  claudeAccountsDir?: string;
   testDatabaseUrl?: string;
   scratchWorkspaceDir: string;
 }
@@ -293,11 +293,6 @@ export interface IsolationHostPorts {
   resolveNodeId(): Promise<string>;
   /** pnpm 주 저장소 경로만 조회한다. 없으면 null. 비밀을 읽지 않는다. */
   resolveMainPackageStorePath(): Promise<string | null>;
-  /**
-   * 제한 세션에 줄 Claude OAuth 토큰. 다른 파일 내용은 읽지 않으며,
-   * 토큰은 메모리에서만 쓰고 로그·직렬화에 넣지 않는다.
-   */
-  readClaudeOauthToken(): Promise<string>;
   /** 공통 파일 디렉터리 경로만 조회한다. 내용(비밀)은 읽지 않는다. */
   resolveAgentCommonFilesDirectory(): Promise<string | null>;
   /**

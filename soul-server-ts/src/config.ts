@@ -237,9 +237,6 @@ export const EnvSchema = z
     SESSION_ISOLATION_TEST_DATABASE: z.string().optional(),
     /** 시험 전용 DB URL. 준비 입력에만 쓰고 설정·러너 config·로그로 내보내지 않는다. */
     SESSION_ISOLATION_TEST_DATABASE_URL: z.string().optional(),
-    /** restricted Claude OAuth 토큰 파일·계정 ID. 둘 다 있거나 둘 다 없어야 한다. */
-    ISOLATED_CLAUDE_TOKEN_FILE: z.string().min(1).optional(),
-    ISOLATED_CLAUDE_ACCOUNT_ID: z.string().min(1).optional(),
     /** Haniel 관측 MCP 쌍. 짝마다 둘 다 있거나 둘 다 없어야 한다. */
     HANIEL_DASHBOARD_URL: z.string().optional(),
     HANIEL_DASHBOARD_TOKEN_FILE: z.string().optional(),
@@ -389,7 +386,6 @@ export const EnvSchema = z
     }
     for (const [left, right] of [
       ["SESSION_ISOLATION_TEST_DATABASE", "SESSION_ISOLATION_TEST_DATABASE_URL"],
-      ["ISOLATED_CLAUDE_TOKEN_FILE", "ISOLATED_CLAUDE_ACCOUNT_ID"],
       ["HANIEL_DASHBOARD_URL", "HANIEL_DASHBOARD_TOKEN_FILE"],
       ["HANIEL_ORCH_URL", "HANIEL_ORCH_TOKEN_FILE"],
     ] as const) {

@@ -206,6 +206,102 @@ describe("createRunnerChildEngine Claude account service bridge", () => {
     }
   });
 
+  it("requires an access token for a restricted Claude runner", async () => {
+    const stateDirectory = await mkdtemp(join(tmpdir(), "runner-child-claude-credential-"));
+    directories.push(stateDirectory);
+    const databasePath = join(stateDirectory, "runner.sqlite");
+    const outbox = await RunnerSqliteEventOutbox.create(databasePath);
+    outbox.close();
+    const isolation = restrictedIsolation();
+    const config = parseRunnerChildConfig({
+      schemaVersion: 1,
+      sessionId: "session-restricted",
+      backend: "claude",
+      agent: {
+        id: "agent-restricted",
+        name: "Restricted Agent",
+        backend: "claude",
+        workspace_dir: "/workspace/restricted",
+      },
+      paths: {
+        sessionDirectory: stateDirectory,
+        databasePath,
+        socketPath: join(stateDirectory, "runner.sock"),
+        pidPath: join(stateDirectory, "runner.pid"),
+        lockPath: join(stateDirectory, "runner.lock"),
+        configPath: join(stateDirectory, "runner-config.json"),
+        logPath: join(stateDirectory, "runner.log"),
+      },
+      codeSha: "sha-restricted",
+      snapshotPath: "/release/sha-restricted/soul-server-ts",
+      codexAdapterMode: "sdk",
+      claudeRuntimeV2Enabled: false,
+      claudeAccountPool: { enabled: true, accountsDir: "/accounts" },
+      claudeRuntimeIdleTtlMs: 300_000,
+      claudeRuntimeMaxEntries: 16,
+      claudeRuntimeTurnTimeoutMs: 1_800_000,
+      internalMcpUrl: "http://127.0.0.1:4308/mcp/internal",
+      codexHome: null,
+      rolloutRoot: null,
+      isolation: {
+        ...isolation,
+        spec: {
+          ...isolation.spec,
+          sessionId: "session-restricted",
+          backend: "claude",
+          workspaceDir: "/workspace/restricted",
+          scratchWorkspaceDir: "/workspace/restricted",
+          authKind: "claude-oauth-token",
+        },
+      },
+    });
+    const responses: unknown[] = [
+      { account_id: "account-a", config_dir: "/sandbox/restricted/claude-config", available_count: 1 },
+      {
+        account_id: "account-a",
+        config_dir: "/sandbox/restricted/claude-config",
+        available_count: 1,
+        credential: { kind: "access-token", access_token: "token-a" },
+      },
+      { pool_exhausted: true, available_count: 0, earliest_available_at: null },
+    ];
+    const hostCall = vi.fn(async () => responses.shift());
+    const engine = createRunnerChildEngine(
+      config,
+      { call: hostCall } as never,
+      pino({ level: "silent" }),
+    );
+    const accountPort = (engine as unknown as {
+      claudeAccountTurnPort: {
+        select(input: object): Promise<unknown>;
+        reject(input: object): Promise<void>;
+        release(input: object): Promise<void>;
+      };
+    }).claudeAccountTurnPort;
+    const selectInput = {
+      session_id: "session-restricted",
+      turn_id: "turn-a",
+      model: "claude-sonnet-4.5",
+      exclude_ids: [],
+    };
+
+    try {
+      await expect(accountPort.select(selectInput)).rejects.toThrow(
+        "restricted Claude account selection returned no access token",
+      );
+      await expect(accountPort.select(selectInput)).resolves.toMatchObject({
+        credential: { kind: "access-token", access_token: "token-a" },
+      });
+      await expect(accountPort.select(selectInput)).resolves.toEqual({
+        pool_exhausted: true,
+        available_count: 0,
+        earliest_available_at: null,
+      });
+    } finally {
+      await engine.close?.();
+    }
+  });
+
   it("keeps legacy runner Query, compact, spawn, SQLite, and host protocol wiring when the pool flag is absent", async () => {
     const stateDirectory = await mkdtemp(join(tmpdir(), "runner-child-legacy-claude-"));
     directories.push(stateDirectory);
