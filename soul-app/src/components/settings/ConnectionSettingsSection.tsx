@@ -96,16 +96,17 @@ export function ConnectionSettingsSection({
             testID="settings-test-connection"
             surfaceTestID="settings-test-connection-surface"
             accessibilityLabel="연결 확인"
+            tone="link"
             style={styles.action}
             contentStyle={styles.secondaryButtonContent}
             onPress={onTest}
             disabled={testing || !url.trim()}
           >
-            {testing ? (
-              <ActivityIndicator size="small" color={t.colors.accent} />
+            {({ contentColor }) => (testing ? (
+              <ActivityIndicator size="small" color={contentColor} />
             ) : (
-              <Text style={styles.secondaryText}>연결 확인</Text>
-            )}
+              <Text style={[styles.secondaryText, { color: contentColor }]}>연결 확인</Text>
+            ))}
           </GlassButton>
           {!hideSave ? <GlassButton
             variant="primary"
@@ -157,7 +158,6 @@ function makeStyles(t: DesignTokens) {
     secondaryButtonContent: { minHeight: t.foundation.minHeight.secondary },
     secondaryText: {
       ...t.foundation.typography.body,
-      color: t.colors.link,
       fontWeight: '600',
     },
     primaryText: {

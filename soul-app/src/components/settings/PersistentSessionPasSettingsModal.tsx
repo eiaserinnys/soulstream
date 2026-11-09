@@ -173,6 +173,6 @@ function makeStyles(t: DesignTokens) {
     pane: { flex: 1, minHeight: 0 },
     hidden: { display: 'none' },
     footer: { flexDirection: 'row', gap: t.spacing.sm, paddingHorizontal: t.foundation.pageInset, paddingVertical: t.cardLayout.padding, paddingBottom: t.spacing.md, borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border },
-    footerAction: { flexGrow: 1 },
+    footerAction: { flex: 1, minWidth: 140 },
   });
 }

@@ -270,11 +270,14 @@ export function SessionReviewPolicySettingsSection({
           <GlassButton
             testID="review-policy-add"
             accessibilityLabel="출처 추가"
+            tone="link"
             style={styles.smallButton}
             onPress={addSource}
             disabled={!draft.trim() || loading || saving}
           >
-            <Text style={styles.secondaryText}>추가</Text>
+            {({ contentColor }) => (
+              <Text style={[styles.secondaryText, { color: contentColor }]}>추가</Text>
+            )}
           </GlassButton>
         </View>
 
@@ -293,11 +296,14 @@ export function SessionReviewPolicySettingsSection({
           <GlassButton
             testID="review-policy-reload"
             accessibilityLabel="검수 정책 다시 불러오기"
+            tone="link"
             style={styles.action}
             onPress={reload}
             disabled={loading || saving || forbidden}
           >
-            <Text style={styles.secondaryText}>다시 불러오기</Text>
+            {({ contentColor }) => (
+              <Text style={[styles.secondaryText, { color: contentColor }]}>다시 불러오기</Text>
+            )}
           </GlassButton>
           {!workspace ? <GlassButton
             variant="primary"
@@ -465,7 +471,6 @@ function makeStyles(t: DesignTokens) {
     action: { flex: 1, minWidth: 140 },
     secondaryText: {
       ...t.foundation.typography.body,
-      color: t.colors.link,
       fontWeight: '600',
     },
     primaryText: {
