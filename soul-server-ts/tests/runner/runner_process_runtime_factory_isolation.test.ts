@@ -420,7 +420,7 @@ describe("session isolation composition switch", () => {
       MCP_REQUIRE_AUTH: true,
       SOULSTREAM_NODE_ID: "node-test",
     } as unknown as Env;
-    const worktreeService = { list: vi.fn(async () => []) };
+    const worktreeService = { listSessionAttachments: vi.fn(async () => []) };
     const composition = composeSessionIsolation({
       env: enforceEnv,
       worktreeService: worktreeService as never,
@@ -439,7 +439,7 @@ describe("session isolation composition switch", () => {
       agent,
       backend: "claude",
     })).rejects.toThrow("SESSION_ISOLATION_UNAVAILABLE: isolation host is used only for restricted turns");
-    expect(worktreeService.list).not.toHaveBeenCalled();
+    expect(worktreeService.listSessionAttachments).not.toHaveBeenCalled();
   });
 });
 
@@ -467,7 +467,7 @@ describe("session isolation host preparation", () => {
   function makeComposition(options: {
     env?: Env;
     worktreeService?: {
-      list: ReturnType<typeof vi.fn>;
+      listSessionAttachments: ReturnType<typeof vi.fn>;
       listRepositoryIds: ReturnType<typeof vi.fn>;
     };
   }) {
@@ -499,7 +499,7 @@ describe("session isolation host preparation", () => {
 
   it("keeps the pre-worktree profile path as the host workspace root", async () => {
     const worktreeService = {
-      list: vi.fn(async () => [{
+      listSessionAttachments: vi.fn(async () => [{
         worktreeId: "worktree-1",
         repoId: "repo-a",
         path: "/projects/repo-a--worktree",
@@ -546,7 +546,7 @@ describe("session isolation host preparation", () => {
       ...overrides,
     });
     const worktreeService = {
-      list: vi.fn(async () => [
+      listSessionAttachments: vi.fn(async () => [
         row({ worktreeId: "wt-owned", ownerId: "session-restricted", activeSessionId: null }),
         row({ worktreeId: "wt-attached", activeSessionId: "session-restricted" }),
         row({ worktreeId: "wt-task", repoId: "repo-b" }),
@@ -566,7 +566,7 @@ describe("session isolation host preparation", () => {
 
   it("registers every repository the node knows even on a first turn without worktrees", async () => {
     const worktreeService = {
-      list: vi.fn(async () => []),
+      listSessionAttachments: vi.fn(async () => []),
       listRepositoryIds: vi.fn(() => ["repo-b", "repo-a"]),
     };
     const composition = makeComposition({ worktreeService });

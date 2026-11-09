@@ -19,7 +19,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import * as dependencyLinks from "../src/worktree/worktree_dependency_links.js";
 import { GitProcessError } from "../src/worktree/worktree_process.js";
-import { WorktreeGit } from "../src/worktree/worktree_git.js";
+import { WorktreeGit, type WorktreeListEntry } from "../src/worktree/worktree_git.js";
 import { RepositoryLock } from "../src/worktree/worktree_repository_lock.js";
 import { WorktreeService, WorktreeServiceError } from "../src/worktree/worktree_service.js";
 import type { WorktreeHost, WorktreeRecord } from "../src/worktree/worktree_types.js";
@@ -1395,6 +1395,153 @@ describe("WorktreeService restricted sessions", () => {
     await expect(service.ownsWorktree("session-a", worktreeId)).resolves.toBe(true);
     await expect(service.ownsWorktree("session-b", worktreeId)).resolves.toBe(false);
     await expect(service.ownsWorktree("session-a", "missing-worktree")).resolves.toBe(false);
+  });
+});
+
+describe("WorktreeService.listSessionAttachments", () => {
+  function record(overrides: Partial<WorktreeRecord> & Pick<WorktreeRecord, "id">): WorktreeRecord {
+    return {
+      id: overrides.id,
+      nodeId: "node-a",
+      repoId: "repo-a",
+      canonicalPath: `/projects/${overrides.id}`,
+      branch: `branch/${overrides.id}`,
+      createdFromSha: `sha-${overrides.id}`,
+      ownerFolderId: null,
+      createdBySessionId: "session-other",
+      state: "ready",
+      setupMode: "none",
+      setupRequired: false,
+      setupStatus: "not_requested",
+      managedPaths: [],
+      worktreeIdentity: overrides.id,
+      branchDeleteExpectedSha: null,
+      branchDeleteMarkerRef: null,
+      lastErrorCode: null,
+      lastErrorMessage: null,
+      ...overrides,
+    };
+  }
+
+  function discovered(path: string, kind: WorktreeListEntry["kind"] = "managed"): WorktreeListEntry {
+    return { path, head: "sha", kind };
+  }
+
+  function attachmentFixture(
+    records: WorktreeRecord[],
+    discoveredByRepo: Record<string, WorktreeListEntry[]> = {},
+  ) {
+    const host = {
+      list: vi.fn(async (input: { nodeId: string }) =>
+        records.filter((candidate) => candidate.nodeId === input.nodeId)),
+    };
+    const git = {
+      withOperationDeadline: vi.fn(async (action: () => Promise<unknown>) => await action()),
+      listRepositoryIds: vi.fn(() => ["repo-a", "repo-b", "repo-c"]),
+      list: vi.fn(async (repoId: string) => discoveredByRepo[repoId] ?? []),
+      inspectDirty: vi.fn(),
+    };
+    const service = new WorktreeService({
+      nodeId: "node-a",
+      projectsRoot: "/projects",
+      git: git as unknown as WorktreeGit,
+      createTimeoutMs: 5_000,
+      lock: {} as RepositoryLock,
+      host: host as unknown as WorktreeHost,
+      listActiveWorkspaceDirs: () => [],
+    });
+    return { service, git, host };
+  }
+
+  it("queries Git only for repositories of matching session records", async () => {
+    const { service, git } = attachmentFixture([
+      record({ id: "wt-a", repoId: "repo-a", createdBySessionId: "session-a" }),
+    ]);
+
+    const rows = await service.listSessionAttachments({ actorSessionId: "session-a" });
+
+    expect(git.list.mock.calls).toEqual([["repo-a"]]);
+    expect(git.inspectDirty).not.toHaveBeenCalled();
+    expect(rows).toHaveLength(1);
+  });
+
+  it("returns owned, attached, and task records with list-compatible fields", async () => {
+    const { service, git } = attachmentFixture([
+      record({ id: "wt-owned", createdBySessionId: "session-a" }),
+      record({
+        id: "wt-attached",
+        repoId: "repo-b",
+        createdBySessionId: "session-other",
+        activeSessionId: "session-a",
+      }),
+      record({ id: "wt-task", createdBySessionId: "session-other" }),
+      record({ id: "wt-other", createdBySessionId: "session-b" }),
+      record({
+        id: "wt-folder",
+        ownerFolderId: "folder-1",
+        createdBySessionId: "session-b",
+        activeSessionId: "session-b",
+      }),
+      record({ id: "wt-missing", repoId: "repo-c", createdBySessionId: "session-a" }),
+    ], {
+      "repo-a": [discovered("/projects/wt-owned"), discovered("/projects/wt-task")],
+      "repo-b": [discovered("/projects/wt-attached")],
+    });
+
+    const rows = await service.listSessionAttachments({
+      actorSessionId: "session-a",
+      taskWorktreeId: "wt-task",
+    });
+
+    expect(rows.map((row) => row.worktreeId))
+      .toEqual(["wt-owned", "wt-attached", "wt-task", "wt-missing"]);
+    expect(rows).toEqual([
+      expect.objectContaining({
+        worktreeId: "wt-owned",
+        nodeId: "node-a",
+        repoId: "repo-a",
+        path: "/projects/wt-owned",
+        branch: "branch/wt-owned",
+        head: "sha-wt-owned",
+        discoveryKind: "managed",
+        dirty: null,
+        dbState: "ready",
+        ownerKind: "session",
+        ownerId: "session-a",
+        mutableByCaller: false,
+        adoptionAllowed: false,
+        lockReason: null,
+        activeSessionId: null,
+        setupMode: "none",
+        setupRequired: false,
+        setupStatus: "not_requested",
+        remoteStatus: "unknown",
+      }),
+      expect.objectContaining({
+        worktreeId: "wt-attached",
+        repoId: "repo-b",
+        discoveryKind: "managed",
+        ownerKind: "session",
+        ownerId: "session-other",
+        activeSessionId: "session-a",
+      }),
+      expect.objectContaining({ worktreeId: "wt-task", discoveryKind: "managed" }),
+      expect.objectContaining({ worktreeId: "wt-missing", discoveryKind: "managed_missing" }),
+    ]);
+    expect(git.list.mock.calls).toEqual([["repo-a"], ["repo-b"], ["repo-c"]]);
+    expect(git.inspectDirty).not.toHaveBeenCalled();
+  });
+
+  it("skips Git entirely when no record belongs to the session", async () => {
+    const { service, git } = attachmentFixture([
+      record({ id: "wt-other", createdBySessionId: "session-b" }),
+    ]);
+
+    await expect(service.listSessionAttachments({ actorSessionId: "session-a" })).resolves.toEqual([]);
+
+    expect(git.list).not.toHaveBeenCalled();
+    expect(git.inspectDirty).not.toHaveBeenCalled();
+    expect(git.listRepositoryIds).not.toHaveBeenCalled();
   });
 });
 
