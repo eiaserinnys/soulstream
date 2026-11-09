@@ -1,6 +1,6 @@
 import Fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 
-import type { McpAuthConfig } from "./mcp/auth.js";
+import type { McpAuthConfig, McpRestrictedAuthConfig } from "./mcp/auth.js";
 import type { McpRuntime } from "./mcp/runtime.js";
 import { internalMcpPath } from "./mcp/endpoint_paths.js";
 import { registerMcpRoutes } from "./mcp/transport.js";
@@ -42,6 +42,7 @@ export interface ServerParams {
     runtime: McpRuntime;
     path: string;
     auth: McpAuthConfig;
+    restricted?: McpRestrictedAuthConfig;
   };
   /** Node-local Cogito search route retained for MCP session-history search. */
   cogito?: CogitoSearchRouteConfig;
@@ -62,6 +63,7 @@ export interface InternalMcpServerParams {
   path: string;
   auth: McpAuthConfig;
   statelessTransport: boolean;
+  restricted?: McpRestrictedAuthConfig;
 }
 
 export type ServerInstance = FastifyInstance & {
@@ -108,6 +110,7 @@ export async function buildServer(params: ServerParams): Promise<ServerInstance>
       path: internalMcpPath(params.mcp.path),
       auth: params.mcp.auth,
       statelessTransport: true,
+      ...(params.mcp.restricted ? { restricted: params.mcp.restricted } : {}),
     });
     fastify.internalMcpServer = internalMcpServer;
     fastify.closeMcp = async () => {
@@ -146,6 +149,7 @@ export async function buildInternalMcpServer(
     path: params.path,
     auth: params.auth,
     statelessTransport: params.statelessTransport,
+    ...(params.restricted ? { restricted: params.restricted } : {}),
   });
   fastify.closeMcp = closeInternalMcp;
   return fastify;

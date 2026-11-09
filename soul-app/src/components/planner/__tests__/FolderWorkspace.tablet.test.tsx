@@ -51,7 +51,7 @@ jest.mock('../SessionSuccessionHost', () => ({ SessionSuccessionHost: () => null
 
 import React from 'react';
 import { Alert, PixelRatio, StyleSheet } from 'react-native';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
 import type { PlannerFolder, PlannerToday } from '../../../api/plannerTypes';
 import { usePlannerStore } from '../../../store/plannerStore';
 import { useSessionStore } from '../../../store/sessionStore';
@@ -62,7 +62,7 @@ import { useAuthStore } from '../../../store/authStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { useUIStore } from '../../../store/uiStore';
 import { resetAuthScopeForTest } from '../../../lib/auth-scope';
-import { TABLET_SHELL_LAYOUT } from '../../../theme';
+import { TABLET_SHELL_LAYOUT, useTokens } from '../../../theme';
 import type { ApiClient } from '../../../api/client';
 
 const plannerFolder = {
@@ -142,9 +142,76 @@ test('iPad 업무 제목은 공통 shell header 리듬을 쓴다', () => {
     minHeight: TABLET_SHELL_LAYOUT.header.minHeight,
     paddingHorizontal: TABLET_SHELL_LAYOUT.header.paddingHorizontal,
     paddingVertical: TABLET_SHELL_LAYOUT.header.paddingVertical,
-    alignItems: 'center',
+    alignItems: 'flex-start',
   }));
   expect(header.height).toBeUndefined();
+});
+
+test('태블릿 폴더 제목은 세 줄 읽기에서 시작하고 누르면 세 줄 제한 없이 자라는 입력을 연다', () => {
+  // fireEvent는 마지막 render의 트리에서만 동작하므로 토큰을 먼저 읽고 화면을 나중에 그린다.
+  const { result: t } = renderHook(useTokens);
+  const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
+  const lineHeight = t.current.foundation.typography.navigation.lineHeight;
+  const verticalPadding = (t.current.hitTarget.min - lineHeight) / 2;
+  const read = screen.getByTestId('task-workspace-tablet-title-read');
+  expect(read.props.accessibilityRole).toBe('button');
+  expect(read.props.accessibilityLabel).toBe('폴더 제목 실제 업무 제목');
+  expect(read.props.accessibilityHint).toBe('이름을 편집합니다');
+  const text = screen.getByTestId('task-workspace-tablet-title-text');
+  expect(text.props.numberOfLines).toBe(3);
+  expect(text.props.ellipsizeMode).toBe('tail');
+  // 위아래 여백과 최소 높이는 바깥 Pressable이 갖고, 글자 Text는 여백 없이 줄 높이만 차지한다.
+  const readStyle = StyleSheet.flatten(read.props.style);
+  expect(readStyle).toMatchObject({
+    flex: 1,
+    flexDirection: 'row',
+    minHeight: t.current.hitTarget.min,
+    paddingVertical: verticalPadding,
+  });
+  const textStyle = StyleSheet.flatten(text.props.style);
+  expect(textStyle).toMatchObject({ padding: 0 });
+  expect(textStyle.paddingVertical).toBeUndefined();
+  expect(textStyle.minHeight).toBeUndefined();
+  expect(textStyle.maxHeight).toBeUndefined();
+  expect(textStyle.height).toBeUndefined();
+  expect(screen.queryByTestId('task-workspace-tablet-title')).toBeNull();
+
+  fireEvent.press(read);
+
+  const input = screen.getByTestId('task-workspace-tablet-title');
+  const inputStyle = StyleSheet.flatten(input.props.style);
+  expect(inputStyle).toMatchObject({
+    minHeight: t.current.hitTarget.min,
+    maxHeight: Number.POSITIVE_INFINITY,
+    paddingVertical: verticalPadding,
+    paddingHorizontal: 0,
+  });
+  expect(inputStyle.height).toBeUndefined();
+  expect(input.props.multiline).toBe(true);
+  expect(input.props.autoFocus).toBe(true);
+});
+
+test('빈 폴더 제목의 읽기 단추는 기본 접근성 이름을 쓴다', () => {
+  usePlannerStore.getState().setSelectedFolderSnapshot({
+    ...plannerFolder, page: { ...plannerFolder.page, title: '' },
+  });
+  const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
+  expect(screen.getByTestId('task-workspace-tablet-title-read').props.accessibilityLabel).toBe('폴더 제목');
+});
+
+test('편집 중 다른 폴더로 바꾸면 이전 초안을 저장하고 새 폴더는 읽기 상태로 연다', async () => {
+  const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
+  fireEvent.press(screen.getByTestId('task-workspace-tablet-title-read'));
+  fireEvent.changeText(screen.getByTestId('task-workspace-tablet-title'), '첫 폴더 초안');
+  const second = { ...plannerFolder, page: { ...plannerFolder.page, id: 'task-2', title: '두 번째 폴더' }, folderId: 'task-2' };
+  await act(async () => {
+    usePlannerStore.getState().setSelectedFolderSnapshot(second);
+    useSessionStore.setState({ catalog: { folders: [folder, { ...folder, id: 'task-2', name: '두 번째 폴더', projectPageId: 'task-2' }], sessions: {} } });
+    screen.rerender(<FolderWorkspace api={null} folderPageId="task-2" />);
+  });
+  expect(screen.queryByTestId('task-workspace-tablet-title')).toBeNull();
+  expect(screen.getByTestId('task-workspace-tablet-title-read').props.accessibilityLabel).toBe('폴더 제목 두 번째 폴더');
+  await waitFor(() => expect(mockRenameFolder).toHaveBeenCalledWith('task-1', '첫 폴더 초안'));
 });
 
 test('phone 폴더 화면의 여섯 섹션은 같은 머리와 전경 텍스트 배치를 쓴다', () => {
@@ -457,6 +524,7 @@ test('같은 pageId의 A→B 전환은 제목·설명 draft를 이전 계정에�
   usePlannerStore.getState().setSelectedFolderSnapshot(described);
   const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
 
+  fireEvent.press(screen.getByTestId('task-workspace-tablet-title-read'));
   fireEvent.changeText(screen.getByTestId('task-workspace-tablet-title'), 'A 미저장 제목');
   fireEvent.press(screen.getByTestId('task-description-edit-action'));
   fireEvent.changeText(screen.getByTestId('task-description-input'), 'A 미저장 설명');
@@ -482,6 +550,7 @@ test('같은 pageId의 A→B 전환은 제목·설명 draft를 이전 계정에�
 test('iPad 제목 focus 상태에서 헤더를 닫아도 최신 snapshot을 먼저 저장한다', async () => {
   const close = jest.fn();
   const screen = render(<FolderWorkspace api={null} folderPageId="task-1" onClose={close} />);
+  fireEvent.press(screen.getByTestId('task-workspace-tablet-title-read'));
   const title = screen.getByTestId('task-workspace-tablet-title');
 
   fireEvent.changeText(title, 'focus 상태 최신 제목');
@@ -501,7 +570,7 @@ test('dirty 저장이 없으면 외부 큐가 서버 제목 갱신을 가리지 
     });
   });
 
-  await waitFor(() => expect(screen.getByDisplayValue('서버에서 갱신된 제목')).toBeTruthy());
+  await waitFor(() => expect(screen.getByText('서버에서 갱신된 제목')).toBeTruthy());
   expect(mockRenameFolder).not.toHaveBeenCalled();
 });
 
@@ -511,6 +580,7 @@ test('iPad 업무 오버레이는 실제 제목 하나만 frameless 편집 헤�
     <FolderWorkspace api={null} folderPageId="task-1" onClose={close} />,
   );
 
+  fireEvent.press(screen.getByTestId('task-workspace-tablet-title-read'));
   const title = screen.getByTestId('task-workspace-tablet-title');
   expect(title.props.value).toBe('실제 업무 제목');
   expect(screen.queryByTestId('task-workspace-title-heading')).toBeNull();
@@ -556,11 +626,11 @@ test('iPad 제목 저장 중 추가 입력은 제출 snapshot과 분리해 다�
     release = () => resolve(undefined);
   }));
   const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
-  const title = screen.getByTestId('task-workspace-tablet-title');
-
-  fireEvent.changeText(title, '첫 제출 제목');
-  fireEvent(title, 'blur');
-  fireEvent.changeText(title, '저장 중 추가 제목');
+  fireEvent.press(screen.getByTestId('task-workspace-tablet-title-read'));
+  fireEvent.changeText(screen.getByTestId('task-workspace-tablet-title'), '첫 제출 제목');
+  fireEvent(screen.getByTestId('task-workspace-tablet-title'), 'blur');
+  fireEvent.press(screen.getByTestId('task-workspace-tablet-title-read'));
+  fireEvent.changeText(screen.getByTestId('task-workspace-tablet-title'), '저장 중 추가 제목');
   await act(async () => { release(); });
 
   expect(mockRenameFolder).toHaveBeenCalledWith('task-1', '첫 제출 제목');
@@ -578,18 +648,18 @@ test('iPad 제목은 저장 중 재입력·재blur한 최신 snapshot을 직렬 
       releaseSecond = () => resolve(undefined);
     }));
   const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
-  const title = screen.getByTestId('task-workspace-tablet-title');
-
-  fireEvent.changeText(title, '첫 제출 제목');
-  fireEvent(title, 'blur');
-  fireEvent.changeText(title, '최신 제출 제목');
-  fireEvent(title, 'blur');
+  fireEvent.press(screen.getByTestId('task-workspace-tablet-title-read'));
+  fireEvent.changeText(screen.getByTestId('task-workspace-tablet-title'), '첫 제출 제목');
+  fireEvent(screen.getByTestId('task-workspace-tablet-title'), 'blur');
+  fireEvent.press(screen.getByTestId('task-workspace-tablet-title-read'));
+  fireEvent.changeText(screen.getByTestId('task-workspace-tablet-title'), '최신 제출 제목');
+  fireEvent(screen.getByTestId('task-workspace-tablet-title'), 'blur');
 
   expect(mockRenameFolder).toHaveBeenCalledTimes(1);
   await act(async () => { releaseFirst(); });
   await waitFor(() => expect(mockRenameFolder).toHaveBeenCalledTimes(2));
   expect(mockRenameFolder).toHaveBeenNthCalledWith(2, 'task-1', '최신 제출 제목');
-  expect(screen.getByDisplayValue('최신 제출 제목')).toBeTruthy();
+  expect(screen.getByText('최신 제출 제목')).toBeTruthy();
 
   await act(async () => { releaseSecond(); });
 });
@@ -599,13 +669,14 @@ test('iPad 제목 저장 실패는 최신 draft를 dirty로 남겨 다음 blur�
     .mockRejectedValueOnce(new Error('network'))
     .mockResolvedValueOnce(undefined);
   const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
-  const title = screen.getByTestId('task-workspace-tablet-title');
+  fireEvent.press(screen.getByTestId('task-workspace-tablet-title-read'));
+  fireEvent.changeText(screen.getByTestId('task-workspace-tablet-title'), '실패 후 남을 제목');
+  await act(async () => { fireEvent(screen.getByTestId('task-workspace-tablet-title'), 'blur'); });
+  expect(screen.getByText('실패 후 남을 제목')).toBeTruthy();
 
-  fireEvent.changeText(title, '실패 후 남을 제목');
-  await act(async () => { fireEvent(title, 'blur'); });
-  expect(screen.getByDisplayValue('실패 후 남을 제목')).toBeTruthy();
-
-  await act(async () => { fireEvent(title, 'blur'); });
+  // press가 만든 입력은 act가 끝나야 그려지므로 blur를 별도 act로 보낸다.
+  fireEvent.press(screen.getByTestId('task-workspace-tablet-title-read'));
+  await act(async () => { fireEvent(screen.getByTestId('task-workspace-tablet-title'), 'blur'); });
   await waitFor(() => expect(mockRenameFolder).toHaveBeenCalledTimes(2));
   expect(mockRenameFolder).toHaveBeenNthCalledWith(2, 'task-1', '실패 후 남을 제목');
 });
@@ -618,12 +689,12 @@ test('iPad 제목 큐는 패널이 닫혀도 응답 역전을 막고 대기 중 
     }))
     .mockResolvedValueOnce(undefined);
   const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
-  const title = screen.getByTestId('task-workspace-tablet-title');
-
-  fireEvent.changeText(title, '느린 첫 제목');
-  fireEvent(title, 'blur');
-  fireEvent.changeText(title, '닫기 전 최신 제목');
-  fireEvent(title, 'blur');
+  fireEvent.press(screen.getByTestId('task-workspace-tablet-title-read'));
+  fireEvent.changeText(screen.getByTestId('task-workspace-tablet-title'), '느린 첫 제목');
+  fireEvent(screen.getByTestId('task-workspace-tablet-title'), 'blur');
+  fireEvent.press(screen.getByTestId('task-workspace-tablet-title-read'));
+  fireEvent.changeText(screen.getByTestId('task-workspace-tablet-title'), '닫기 전 최신 제목');
+  fireEvent(screen.getByTestId('task-workspace-tablet-title'), 'blur');
   screen.unmount();
 
   expect(mockRenameFolder).toHaveBeenCalledTimes(1);
@@ -641,11 +712,11 @@ test('첫 저장 중 닫기는 focus 중 최신 제목을 외부 큐에 남겨 �
     .mockResolvedValueOnce(undefined);
   const close = jest.fn();
   const screen = render(<FolderWorkspace api={null} folderPageId="task-1" onClose={close} />);
-  const title = screen.getByTestId('task-workspace-tablet-title');
-
-  fireEvent.changeText(title, '첫 저장');
-  fireEvent(title, 'blur');
-  fireEvent.changeText(title, '닫기 시 최신');
+  fireEvent.press(screen.getByTestId('task-workspace-tablet-title-read'));
+  fireEvent.changeText(screen.getByTestId('task-workspace-tablet-title'), '첫 저장');
+  fireEvent(screen.getByTestId('task-workspace-tablet-title'), 'blur');
+  fireEvent.press(screen.getByTestId('task-workspace-tablet-title-read'));
+  fireEvent.changeText(screen.getByTestId('task-workspace-tablet-title'), '닫기 시 최신');
   fireEvent.press(screen.getByTestId('task-workspace-close'));
   screen.unmount();
 
@@ -662,6 +733,7 @@ test('닫은 직후 다른 업무를 열어도 두 업무의 제목 큐가 서�
     }))
     .mockResolvedValue(undefined);
   const first = render(<FolderWorkspace api={null} folderPageId="task-1" onClose={jest.fn()} />);
+  fireEvent.press(first.getByTestId('task-workspace-tablet-title-read'));
   fireEvent.changeText(first.getByTestId('task-workspace-tablet-title'), '첫 업무 최신');
   fireEvent.press(first.getByTestId('task-workspace-close'));
   first.unmount();
@@ -674,6 +746,7 @@ test('닫은 직후 다른 업무를 열어도 두 업무의 제목 큐가 서�
   usePlannerStore.getState().setSelectedFolderSnapshot(secondFolder);
   useSessionStore.setState({ catalog: { folders: [{ ...folder, id: 'task-2', name: '두 번째 업무', projectPageId: 'task-2' }], sessions: {} } });
   const second = render(<FolderWorkspace api={null} folderPageId="task-2" onClose={jest.fn()} />);
+  fireEvent.press(second.getByTestId('task-workspace-tablet-title-read'));
   fireEvent.changeText(second.getByTestId('task-workspace-tablet-title'), '둘째 업무 최신');
   fireEvent.press(second.getByTestId('task-workspace-close'));
 
@@ -685,13 +758,14 @@ test('닫은 직후 다른 업무를 열어도 두 업무의 제목 큐가 서�
 test('닫기 저장 실패는 remount 뒤 최신 draft와 재시도 상태를 보존한다', async () => {
   mockRenameFolder.mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce(undefined);
   const first = render(<FolderWorkspace api={null} folderPageId="task-1" onClose={jest.fn()} />);
+  fireEvent.press(first.getByTestId('task-workspace-tablet-title-read'));
   fireEvent.changeText(first.getByTestId('task-workspace-tablet-title'), '실패한 닫기 제목');
   await act(async () => { fireEvent.press(first.getByTestId('task-workspace-close')); });
   first.unmount();
 
   usePlannerStore.getState().setSelectedFolderSnapshot(plannerFolder);
   const second = render(<FolderWorkspace api={null} folderPageId="task-1" onClose={jest.fn()} />);
-  expect(second.getByDisplayValue('실패한 닫기 제목')).toBeTruthy();
+  expect(second.getByText('실패한 닫기 제목')).toBeTruthy();
   fireEvent.press(second.getByTestId('task-workspace-close'));
 
   await waitFor(() => expect(mockRenameFolder).toHaveBeenCalledTimes(2));

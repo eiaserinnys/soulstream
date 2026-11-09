@@ -2,7 +2,7 @@ import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 // Existing title/description editing stays together; this change extracts the virtual scroll owner.
 // The remaining 500+ line coordinator is preserved to avoid changing unrelated editing behavior.
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Platform, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Platform, Pressable, ScrollView, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { AppKeyboardAvoidingView } from '../AppKeyboardAvoidingView';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { createApiClient, type ApiClient } from '../../api/client';
@@ -24,6 +24,7 @@ import { FolderSessionHistory } from './FolderSessionHistory';
 import { FolderCards, type FolderCardsHandle } from './FolderCards';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
 import { FolderWorkspaceList } from './FolderWorkspaceList';
+import { GrowingMultilineInput } from './GrowingMultilineInput';
 import { AppGlassCard } from '../AppGlassCard';
 import { FolderBoardContent } from './FolderBoardContent';
 import { TabletMarkdownEditor, type TabletMarkdownSaveAttempt } from './TabletMarkdownEditor';
@@ -71,6 +72,14 @@ export function FolderWorkspace({
   const tablet = useDeviceType() !== 'phone';
   const duo = useDuoBandOwnsPanelActions();
   const styles = useMemo(() => makeFolderWorkspaceStyles(t), [t]);
+  // 카드 패널 머리와 같은 관례: 한 줄이 머리 버튼(48) 가운데에 서고 세 줄까지 자란다.
+  const tabletTitleLayout = useMemo(() => {
+    const lineHeight = t.foundation.typography.navigation.lineHeight;
+    return {
+      minHeight: t.hitTarget.min,
+      verticalPadding: (t.hitTarget.min - lineHeight) / 2,
+    };
+  }, [t]);
   const selector = useMemo(() => selectPlannerFolder(folderPageId), [folderPageId]);
   const storedFolderSummary = usePlannerStore(selector);
   const folders = useSessionStore((state) => state.catalog.folders);
@@ -137,6 +146,7 @@ export function FolderWorkspace({
   const [saving, setSaving] = useState(false);
   const [, setDescriptionServerRevision] = useState(0);
   const [editingPhoneTitle, setEditingPhoneTitle] = useState(false);
+  const [editingTabletTitle, setEditingTabletTitle] = useState(false);
   const [successionId, setSuccessionId] = useState<string | null | undefined>(undefined);
   const [newFolderDraft, setNewFolderDraft] = useState<{ parentPageId: string } | null>(null);
   const togglePending = useRef(false);
@@ -274,6 +284,10 @@ export function FolderWorkspace({
   useEffect(() => {
     if (tablet) setEditingPhoneTitle(false);
   }, [tablet]);
+
+  useEffect(() => {
+    setEditingTabletTitle(false);
+  }, [folderSummary?.page.id]);
 
   if (!folderSummary) {
     return <View style={styles.empty}><Text style={styles.emptyText}>폴더를 불러오는 중입니다.</Text></View>;
@@ -425,19 +439,49 @@ export function FolderWorkspace({
     <AppKeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
       {tablet ? (
         <TabletPaneHeader testID="task-workspace-tablet-header" style={styles.tabletHeader}>
-          <TextInput
-            testID="task-workspace-tablet-title"
-            value={visibleTitle}
-            onChangeText={(value) => {
-              titleDraft.current = value;
-              plannerFolderTitleSaveCoordinator.setDraft(folderSummary.page.id, value, scopeGeneration);
-              setTitle(value);
-            }}
-            onBlur={queueTabletTitleSave}
-            multiline
-            accessibilityLabel="폴더 제목"
-            style={styles.tabletTitle}
-          />
+          {editingTabletTitle ? (
+            <GrowingMultilineInput
+              testID="task-workspace-tablet-title"
+              autoFocus
+              value={visibleTitle}
+              onChangeText={(value) => {
+                titleDraft.current = value;
+                plannerFolderTitleSaveCoordinator.setDraft(folderSummary.page.id, value, scopeGeneration);
+                setTitle(value);
+              }}
+              onBlur={() => {
+                queueTabletTitleSave();
+                setEditingTabletTitle(false);
+              }}
+              accessibilityLabel="폴더 제목"
+              style={styles.tabletTitle}
+              minHeight={tabletTitleLayout.minHeight}
+              maxHeight={Number.POSITIVE_INFINITY}
+              verticalPadding={tabletTitleLayout.verticalPadding}
+            />
+          ) : (
+            <Pressable
+              testID="task-workspace-tablet-title-read"
+              accessibilityRole="button"
+              accessibilityLabel={visibleTitle ? `폴더 제목 ${visibleTitle}` : '폴더 제목'}
+              accessibilityHint="이름을 편집합니다"
+              style={[styles.tabletTitleRead, {
+                minHeight: t.hitTarget.min,
+                paddingVertical: tabletTitleLayout.verticalPadding,
+              }]}
+              onPress={() => setEditingTabletTitle(true)}
+            >
+              {/* 위아래 여백은 바깥 Pressable이 갖는다. Text가 여백을 가지면 말줄임 아래 여백에 다음 줄이 그려진다. */}
+              <Text
+                testID="task-workspace-tablet-title-text"
+                numberOfLines={3}
+                ellipsizeMode="tail"
+                style={styles.tabletTitle}
+              >
+                {visibleTitle}
+              </Text>
+            </Pressable>
+          )}
           {!duo ? toggleActions : null}
           {!duo && onClose ? (
             <TouchableOpacity

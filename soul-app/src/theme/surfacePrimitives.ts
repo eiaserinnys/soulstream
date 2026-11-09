@@ -28,6 +28,7 @@ export interface PrimitiveRoleDefinition {
   focusedColor: string;
   disabledColor: string;
   contentColor: string;
+  disabledContentColor: string;
 }
 
 export type PrimitiveRoles = Record<PrimitiveRoleName, PrimitiveRoleDefinition>;
@@ -37,8 +38,11 @@ export function createPrimitiveRoles(t: DesignTokens): PrimitiveRoles {
     padding: { horizontal: t.spacing.md, vertical: t.spacing.sm },
     pressedColor: t.colors.accentTint,
     focusedColor: t.colors.accentTint,
-    disabledColor: t.colors.textDisabled,
+    // 비활성은 바탕을 칠하지 않고 opacity로만 표시한다. 글자는 바탕 위에서 읽히도록
+    // 역할이 정한다(카드 #1116, #1119).
+    disabledColor: 'transparent',
     contentColor: t.colors.textPrimary,
+    disabledContentColor: t.colors.textPrimary,
   };
   const neutral = {
     ...base,
@@ -79,7 +83,6 @@ export function createPrimitiveRoles(t: DesignTokens): PrimitiveRoles {
       surfaceRole: 'chrome',
       radius: t.foundation.radius.field,
       minHeight: t.foundation.minHeight.secondary,
-      disabledColor: 'transparent',
     },
     input: {
       ...neutral,

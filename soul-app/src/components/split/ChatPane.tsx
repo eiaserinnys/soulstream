@@ -10,7 +10,7 @@ import { getSessionDisplayName } from '../../lib/session-display-name';
 import { useTokens, type DesignTokens } from '../../theme';
 import { createSurfaceRoles } from '../../theme/surfaceRoles';
 import { TabletPaneHeader } from './TabletPaneHeader';
-import { resolveTabletBottomSafeAreaPadding } from './tabletShellInsets';
+import { resolveChatPaneMinimumBottomPadding } from './tabletShellInsets';
 import { useDuoSideBand } from '../../navigation/duoSideBand';
 
 /** A containing card panel may provide the bottom clearance it actually reserves. */
@@ -29,7 +29,8 @@ export function ChatPane({ active = true, sessionId: sessionIdOverride, onClose,
   const styles = useMemo(() => makeStyles(t), [t]);
   const insets = useSafeAreaInsets();
   const panelMinimumBottomPadding = useContext(ChatPaneMinimumBottomPaddingContext);
-  const minimumBottomPadding = panelMinimumBottomPadding ?? resolveTabletBottomSafeAreaPadding(
+  const minimumBottomPadding = resolveChatPaneMinimumBottomPadding(
+    panelMinimumBottomPadding,
     insets.bottom,
     t.tabletShell.outerInset,
   );

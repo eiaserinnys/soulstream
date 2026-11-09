@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ScrollView, Switch, Text, View, useWindowDimensions } from 'react-native';
 import { useTokens } from '../theme';
 import { ChatBody } from '../components/chat/ChatBody';
@@ -15,8 +15,9 @@ import { LabeledDivider } from '../components/chat/LabeledDivider';
 import { AttachmentImage, ChatRefinedImageGallery } from '../components/AttachmentImage';
 import { SettingsSegmentedControl } from '../components/settings/SettingsSegmentedControl';
 import { GlassButton } from '../components/GlassSurface';
-import { message, reviewComposerAttachment, sessions } from './fixtures';
+import { createReviewApi, message, reviewComposerAttachment, sessions } from './fixtures';
 import { ReviewSection } from './ReviewSection';
+import { TodayCardComposer } from '../components/planner/TodayCardComposer';
 import { formatAssignedCardContextSnapshot } from '../components/chat/turnSummaryProjection';
 import type { SessionEvent } from '../api/types';
 import { useChatStore } from '../store/chatStore';
@@ -27,6 +28,12 @@ import { ThinkingEvent } from '../components/events/ThinkingEvent';
 import { TypingIndicator } from '../components/chat/TypingIndicator';
 import type { PersistentTurnUsageMode } from '../api/persistentSessionEndpoints';
 import { appendAttachmentPathNotes } from '../utils/attachmentPathNotes';
+
+// 검수 창 번들은 로컬 서버에서 열린다. 표본이 외부 주소를 부르면 캡처 검사의
+// External request 검사가 늘 실패하므로 현재 주소를 쓴다.
+const reviewOrigin = typeof window === 'undefined'
+  ? 'https://soulstream.eiaserinnys.me'
+  : window.location?.origin ?? 'https://soulstream.eiaserinnys.me';
 
 const options = [
   { value: 'normal', label: '기본' }, { value: 'sending', label: '전송 중' },
@@ -133,7 +140,7 @@ export const persistentChatEvents: SessionEvent[] = [
     node_id: 'eiaserinnys',
   } },
   { id: '929', type: 'assistant_message', data: {
-    text: '![정사각 썸네일](https://soulstream.eiaserinnys.me/icon-192.png)',
+    text: `![정사각 썸네일](${reviewOrigin}/icon-192.png)`,
   } },
   { id: '930', type: 'session_notification', data: {
     delivery_id: PAS_REVIEW_COMPLETION_DELIVERY_ID,
@@ -383,6 +390,7 @@ export function ReviewChat() {
   const t = useTokens();
   const { width } = useWindowDimensions();
   const styles = makeStyles(t);
+  const composerApi = useMemo(() => createReviewApi(), []);
   const [input, setInput] = useState('');
   const [sent, setSent] = useState('');
   const [state, setState] = useState<typeof options[number]['value']>('normal');
@@ -439,6 +447,11 @@ export function ReviewChat() {
           onPickAttachment={() => setAttachment(true)} uploading={state === 'uploading'}
           sending={state === 'sending'} disabled={state === 'disabled'} voiceControls={null}
           inputAccessibilityLabel="embedded 예시 메시지" />
+      </View>
+    </ReviewSection>
+    <ReviewSection title="입력창 · embedded · surface none (오늘 카드 입력과 같은 바깥 프레임)">
+      <View testID="review-chat-composer-surface-none" style={{ padding: t.uiSpacing.md }}>
+        <TodayCardComposer api={composerApi} />
       </View>
     </ReviewSection>
     <ReviewSection title="사용자 말풍선 · 일반·개입·전송 실패">
@@ -566,8 +579,7 @@ export function ReviewChat() {
 
 function ReviewChatPasImageSample() {
   const t = useTokens();
-  const origin = typeof window !== 'undefined' ? window.location.origin : 'https://soulstream.eiaserinnys.me';
-  const attachmentUrl = (path: string) => `${origin}/api/attachments/files?${new URLSearchParams({ nodeId: 'eiaserinnys', path })}`;
+  const attachmentUrl = (path: string) => `${reviewOrigin}/api/attachments/files?${new URLSearchParams({ nodeId: 'eiaserinnys', path })}`;
   const assistantText = [
     '링크만 붙였군요. 비교 이미지를 바로 보여드리겠습니다.',
     '',
@@ -579,7 +591,7 @@ function ReviewChatPasImageSample() {
     '',
     `![폰 변경 시안](${attachmentUrl(pasImagePaths[1])})`,
     '',
-    `![정사각 앱 아이콘](${origin}/icon-192.png)`,
+    `![정사각 앱 아이콘](${reviewOrigin}/icon-192.png)`,
   ].join('\n');
   const session = { ...sessions[0], nodeId: 'eiaserinnys' };
   return <ScrollView testID="review-pas-chat-images" style={{ flex: 1, backgroundColor: t.colors.background }}

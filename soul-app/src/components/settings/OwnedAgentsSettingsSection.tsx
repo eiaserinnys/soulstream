@@ -58,7 +58,12 @@ function OwnedAgentsPanel({ flattened, api }: { flattened: boolean; api: OwnedAg
   }
   function closeKey() { setToken(null); setCopied(false); setCopyError(false); }
   function action(label: string, onPress: () => void, disabled = busy, primary = false) {
-    return <GlassButton accessibilityLabel={label} onPress={onPress} disabled={disabled} variant={primary ? 'primary' : 'secondary'} contentStyle={s.buttonContent}><Text style={primary ? s.primary : s.button}>{label}</Text></GlassButton>;
+    return <GlassButton accessibilityLabel={label} onPress={onPress} disabled={disabled} variant={primary ? 'primary' : 'secondary'} tone={primary ? undefined : 'link'} contentStyle={s.buttonContent}>
+      {({ contentColor }: { contentColor: string }) =>
+        primary
+          ? <Text style={[s.primary, { color: contentColor }]}>{label}</Text>
+          : <Text style={[s.button, { color: contentColor }]}>{label}</Text>}
+    </GlassButton>;
   }
   const existing = data?.existingConnection;
   return <SettingsSection id="owned-agents" title="내 에이전트" flattened={flattened}>
@@ -140,7 +145,7 @@ function makeStyles(t: DesignTokens) {
     heading: { ...t.foundation.typography.section, color: t.colors.textPrimary },
     meta: { ...t.foundation.typography.meta, color: t.colors.textSecondary },
     error: { ...t.foundation.typography.body, color: t.colors.errorText },
-    button: { ...t.foundation.typography.body, color: t.colors.link, fontWeight: '600' },
+    button: { ...t.foundation.typography.body, fontWeight: '600' },
     primary: { ...t.foundation.typography.body, color: t.colors.accentText, fontWeight: '700' },
     buttonContent: { minHeight: t.foundation.minHeight.secondary },
     modal: { flexShrink: 1 },

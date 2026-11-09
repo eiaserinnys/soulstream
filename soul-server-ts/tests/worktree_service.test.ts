@@ -1300,8 +1300,107 @@ describe("WorktreeService", () => {
   });
 });
 
+describe("WorktreeService restricted sessions", () => {
+  it("creates under the session-scoped root with setup=none even for a pnpm repo", async () => {
+    const { repo, projectsRoot, service } = fixture();
+    configurePnpmRepo(repo);
+    commitFixtureChanges(repo);
+
+    const created = await service.create({
+      actorSessionId: "session-a",
+      repoId: "demo",
+      branch: "feature/restricted-create",
+      mode: "new",
+      restricted: true,
+    });
+    const expectedRoot = join(projectsRoot, ".isolated", "session-a");
+    expect(String(created.path).startsWith(`${expectedRoot}/`)).toBe(true);
+    expect(created).toMatchObject({ setupMode: "none", setupRequired: false, reused: false });
+    expect(existsSync(String(created.path))).toBe(true);
+  });
+
+  it("rejects adopt and shared setup for restricted sessions", async () => {
+    const { service } = fixture();
+    const adopt = await captureWorktreeError(service.create({
+      actorSessionId: "session-a",
+      repoId: "demo",
+      branch: "feature/restricted-adopt",
+      mode: "adopt",
+      adoptPath: "/tmp/anything",
+      expectedHead: "deadbeef",
+      restricted: true,
+    }));
+    expect(adopt.code).toBe("WORKTREE_RESTRICTED_ADOPT_FORBIDDEN");
+
+    const shared = await captureWorktreeError(service.create({
+      actorSessionId: "session-a",
+      repoId: "demo",
+      branch: "feature/restricted-shared",
+      mode: "new",
+      setup: "shared_dependencies",
+      restricted: true,
+    }));
+    expect(shared.code).toBe("WORKTREE_RESTRICTED_SETUP_FORBIDDEN");
+
+    const required = await captureWorktreeError(service.create({
+      actorSessionId: "session-a",
+      repoId: "demo",
+      branch: "feature/restricted-required",
+      mode: "new",
+      requireSetup: true,
+      restricted: true,
+    }));
+    expect(required.code).toBe("WORKTREE_RESTRICTED_SETUP_FORBIDDEN");
+  });
+
+  it("never reuses another restricted session's worktree even when the folder marks it mutable", async () => {
+    const { service, host } = fixture();
+    const created = await service.create({
+      actorSessionId: "session-a",
+      repoId: "demo",
+      branch: "feature/restricted-foreign",
+      mode: "new",
+      restricted: true,
+    });
+    host.forceMutableSessionIds.push("session-b");
+
+    let foreignError: unknown;
+    try {
+      await service.create({
+        actorSessionId: "session-b",
+        repoId: "demo",
+        branch: "feature/restricted-foreign",
+        mode: "new",
+        restricted: true,
+      });
+    } catch (error) {
+      foreignError = error;
+    }
+    expect(foreignError).toBeDefined();
+    expect((foreignError as { code?: string }).code).toBe("BRANCH_ALREADY_EXISTS");
+    expect(host.records.size).toBe(1);
+    expect(host.records.get(String(created.worktreeId))?.createdBySessionId).toBe("session-a");
+  });
+
+  it("reports ownership only to the creating restricted session", async () => {
+    const { service } = fixture();
+    const created = await service.create({
+      actorSessionId: "session-a",
+      repoId: "demo",
+      branch: "feature/restricted-owned",
+      mode: "new",
+      restricted: true,
+    });
+    const worktreeId = String(created.worktreeId);
+    await expect(service.ownsWorktree("session-a", worktreeId)).resolves.toBe(true);
+    await expect(service.ownsWorktree("session-b", worktreeId)).resolves.toBe(false);
+    await expect(service.ownsWorktree("session-a", "missing-worktree")).resolves.toBe(false);
+  });
+});
+
 class MemoryWorktreeHost implements WorktreeHost {
   readonly records = new Map<string, WorktreeRecord & { lastSessionActivityAt?: string; linkedCardsClosed?: boolean }>();
+  readonly forceMutableSessionIds: string[] = [];
   registerFailuresRemaining = 0;
   finishRemoveFailuresRemaining = 0;
 
@@ -1317,7 +1416,8 @@ class MemoryWorktreeHost implements WorktreeHost {
       .filter((record) => !input.worktreeId || record.id === input.worktreeId)
       .map((record) => ({
         ...record,
-        mutableByCaller: record.createdBySessionId === input.actorSessionId,
+        mutableByCaller: record.createdBySessionId === input.actorSessionId
+          || this.forceMutableSessionIds.includes(input.actorSessionId),
         activeSessionId: null,
       }));
   }

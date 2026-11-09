@@ -244,8 +244,16 @@ describe("session isolation contract", () => {
     walk(sourceRoot);
 
     // B2 준비 모듈은 계약 타입을 쓰는 계획 모듈이며 턴 경로에 연결되지 않는다.
+    // MCP 표면(레인 A)은 계약 타입을 소비한다. 이 목록은 계약을 import하는 전체
+    // 모듈 인벤토리이며, turn path(engine/runner/task)는 아래 네 파일 그대로다.
     expect(importers.sort()).toEqual([
       "engine/protocol.ts",
+      "mcp/auth.ts",
+      "mcp/isolation_tool_guards.ts",
+      "mcp/request_context.ts",
+      "mcp/tool_access.ts",
+      "mcp/tools/node_services_observation.ts",
+      "mcp/transport.ts",
       "runner/frame_protocol.ts",
       "runner/session_auth_preparation.ts",
       "runner/session_filesystem_cache.ts",
@@ -254,7 +262,9 @@ describe("session isolation contract", () => {
       "runner/session_filesystem_masks.ts",
       "runner/session_filesystem_plan.ts",
       "runner/session_filesystem_policy.ts",
+      "security/restricted_mcp_config.ts",
       "security/session_execution_policy.ts",
+      "security/session_isolation_policy.ts",
       "task/task_manager.ts",
       "task/task_models.ts",
     ]);
