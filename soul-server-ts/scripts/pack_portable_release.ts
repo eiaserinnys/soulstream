@@ -14,6 +14,11 @@ import {
   type PortableReleaseFile,
 } from "../src/release/portable_release.js";
 import {
+  assertCleanSourceTree,
+  assertCommitHash,
+  readSourceCommit,
+} from "../src/release/portable_pack_source.js";
+import {
   migrationSchemaGeneration,
   sha256Digest,
   wireSchemaGeneration,
@@ -23,38 +28,47 @@ import { RUNNER_RELEASE_ARTIFACTS } from "../src/runner/runner_release_materiali
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = resolve(packageRoot, "..");
-const args = process.argv.slice(2);
+const options = parseOptions(process.argv.slice(2));
 const outRoot = resolve(
-  optionValue(args, "--out") ?? join(packageRoot, "dist-portable-release"),
+  options.out ?? join(packageRoot, "dist-portable-release"),
 );
-const explicitSourceCommit = optionValue(args, "--source-commit");
-const sourceCommit = explicitSourceCommit ?? gitHead();
 const portableDist = join(packageRoot, "dist-portable");
 const runnerDist = join(packageRoot, "dist", "runner");
 
 /** Files the portable tsup build must have produced before a payload can be packed. */
 const PORTABLE_BUILD_ENTRIES = [...HOST_RELEASE_ARTIFACTS, PORTABLE_BIND_SCRIPT_FILE];
 
-await assertFileSet(portableDist, PORTABLE_BUILD_ENTRIES, "dist-portable");
-await assertFileSet(runnerDist, RUNNER_RELEASE_ARTIFACTS, "dist/runner");
-if (!explicitSourceCommit) {
-  const status = execFileSync("git", ["status", "--porcelain"], {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-  }).trim();
-  if (status.length > 0) {
-    process.stderr.write(
-      "pack-portable: the source tree is dirty; the payload is labelled with git HEAD "
-      + "but contains uncommitted work\n",
-    );
+/**
+ * The payload is labelled with `source_commit` and startup trusts that label,
+ * so the bytes in it must be exactly that commit: refuse to pack a dirty tree,
+ * rebuild both artifact sets inside the pack instead of shipping whatever was
+ * left in dist/, and prove the tree is still that commit before tarballing.
+ */
+await main().catch((error: unknown) => {
+  fail(error instanceof Error ? error.message : String(error));
+});
+
+async function main(): Promise<void> {
+  assertCleanSourceTree(repositoryRoot);
+  const packedCommit = readSourceCommit(repositoryRoot);
+
+  runPackageScript("build");
+  runPackageScript("build:portable");
+
+  assertCleanSourceTree(repositoryRoot);
+  const headAfterBuild = readSourceCommit(repositoryRoot);
+  if (headAfterBuild !== packedCommit) {
+    fail(`HEAD moved during the pack build (${packedCommit} -> ${headAfterBuild})`);
   }
+  await assertFileSet(portableDist, PORTABLE_BUILD_ENTRIES, "dist-portable");
+  await assertFileSet(runnerDist, RUNNER_RELEASE_ARTIFACTS, "dist/runner");
+
+  const summary = await packPayload(assertCommitHash(packedCommit));
+  process.stdout.write(`${JSON.stringify(summary)}\n`);
 }
 
-const summary = await packPayload();
-process.stdout.write(`${JSON.stringify(summary)}\n`);
-
-async function packPayload(): Promise<Record<string, unknown>> {
-  const releaseDirectory = join(outRoot, sanitizeSourceCommit(sourceCommit));
+async function packPayload(sourceCommit: string): Promise<Record<string, unknown>> {
+  const releaseDirectory = join(outRoot, sourceCommit);
   const payloadDirectory = join(releaseDirectory, ".payload");
   await mkdir(releaseDirectory, { recursive: true });
   await rm(payloadDirectory, { recursive: true, force: true });
@@ -152,32 +166,31 @@ async function assertFileSet(
       if (!metadata.isFile()) throw new Error(`${label}/${relativePath} is not a file`);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        throw new Error(`${label}/${relativePath} is missing: run \`pnpm run build\` and `
-          + "`pnpm run build:portable` first");
+        throw new Error(`${label}/${relativePath} is missing after the pack build`);
       }
       throw error;
     }
   }
 }
 
-function gitHead(): string {
-  return execFileSync("git", ["rev-parse", "HEAD"], {
-    cwd: repositoryRoot,
-    encoding: "utf8",
-  }).trim();
+function runPackageScript(name: string): void {
+  process.stderr.write(`pack-portable: npm run ${name}\n`);
+  execFileSync("npm", ["run", name], { cwd: packageRoot, stdio: "inherit" });
 }
 
-function sanitizeSourceCommit(value: string): string {
-  if (!/^[0-9a-f]{7,64}$/.test(value)) {
-    throw new Error(`--source-commit must be a git commit hash, got: ${value}`);
+function parseOptions(argv: string[]): { out?: string } {
+  const values = new Map<string, string>();
+  for (let index = 0; index < argv.length; index += 2) {
+    const name = argv[index];
+    if (name !== "--out") fail(`unknown argument: ${name}`);
+    const value = argv[index + 1];
+    if (!value || value.startsWith("--")) fail(`${name} requires a value`);
+    values.set(name, value);
   }
-  return value;
+  return { out: values.get("--out") };
 }
 
-function optionValue(argv: string[], name: string): string | undefined {
-  const index = argv.indexOf(name);
-  if (index === -1) return undefined;
-  const value = argv[index + 1];
-  if (!value || value.startsWith("--")) throw new Error(`${name} requires a value`);
-  return value;
+function fail(message: string): never {
+  process.stderr.write(`pack-portable: ${message}\n`);
+  process.exit(1);
 }

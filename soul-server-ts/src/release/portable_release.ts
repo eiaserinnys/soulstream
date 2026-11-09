@@ -1,4 +1,4 @@
-import { readFile, readdir } from "node:fs/promises";
+import { lstat, readFile, readdir } from "node:fs/promises";
 import { join, posix } from "node:path";
 
 import { RUNNER_RELEASE_ARTIFACTS } from "../runner/runner_release_materializer.js";
@@ -126,7 +126,12 @@ export async function verifyPortableReleasePayload(
   return { fileCount: metadata.files.length, totalBytes };
 }
 
-/** Every regular file under the payload root, as sorted POSIX-style relative paths. */
+/**
+ * Every regular file under the payload root, as sorted POSIX-style relative
+ * paths. Entries are inspected with `lstat`: a symbolic link or any other
+ * non-regular entry (device, FIFO, socket) is refused instead of being
+ * followed or listed as if it were a payload file.
+ */
 export async function listPortablePayloadFiles(
   directory: string,
   prefix = "",
@@ -135,23 +140,63 @@ export async function listPortablePayloadFiles(
   const files: string[] = [];
   for (const entry of entries) {
     const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
-    if (entry.isDirectory()) {
+    const metadata = await lstat(join(directory, ...relativePath.split("/")));
+    if (metadata.isSymbolicLink()) {
+      throw new Error(`portable release payload contains a symbolic link: ${relativePath}`);
+    }
+    if (metadata.isDirectory()) {
       files.push(...await listPortablePayloadFiles(directory, relativePath));
-    } else {
+    } else if (metadata.isFile()) {
       files.push(relativePath);
+    } else {
+      throw new Error(`portable release payload contains a non-regular file: ${relativePath}`);
     }
   }
   return files.sort((left, right) => (left < right ? -1 : left > right ? 1 : 0));
 }
 
 async function readPayloadFile(directory: string, relativePath: string): Promise<Buffer> {
-  try {
-    return await readFile(join(directory, ...relativePath.split("/")));
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      throw new Error(`portable release payload is missing file: ${relativePath}`);
+  await assertPayloadFilePath(directory, relativePath);
+  return await readFile(join(directory, ...relativePath.split("/")));
+}
+
+/**
+ * Walks from the release directory to the listed file with `lstat`, refusing
+ * any symbolic link on the way and anything that is not a regular file at the
+ * end. A digest check alone would happily read the target of a link that
+ * points outside the release directory.
+ */
+async function assertPayloadFilePath(
+  directory: string,
+  relativePath: string,
+): Promise<void> {
+  const segments = relativePath.split("/");
+  let current = directory;
+  for (const [index, segment] of segments.entries()) {
+    current = join(current, segment);
+    let metadata;
+    try {
+      metadata = await lstat(current);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new Error(`portable release payload is missing file: ${relativePath}`);
+      }
+      throw error;
     }
-    throw error;
+    const reached = segments.slice(0, index + 1).join("/");
+    if (metadata.isSymbolicLink()) {
+      throw new Error(`portable release payload contains a symbolic link: ${reached}`);
+    }
+    const isFile = index === segments.length - 1;
+    if (isFile) {
+      if (!metadata.isFile()) {
+        throw new Error(`portable release payload contains a non-regular file: ${relativePath}`);
+      }
+    } else if (!metadata.isDirectory()) {
+      throw new Error(
+        `portable release payload path component is not a directory: ${reached}`,
+      );
+    }
   }
 }
 

@@ -13,7 +13,7 @@
     "build:portable": "tsup --config tsup.portable.config.ts",
     "pack:portable": "tsx scripts/pack_portable_release.ts",
     "verify:portable": "node --test scripts/verify_portable_release.test.mjs",
-    "release:portable": "npm run build:portable && npm run pack:portable",
+    "release:portable": "npm run pack:portable",
     "dev": "tsx src/main.ts",
     "start": "node dist/main.js",
     "test": "vitest run",

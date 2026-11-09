@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -16,6 +16,7 @@ import {
 } from "../../src/release/portable_release.js";
 import { sha256Digest } from "../../src/release/release_generations.js";
 import { loadAndVerifyReleaseManifest } from "../../src/release/release_runtime.js";
+import { RUNNER_RELEASE_ARTIFACTS } from "../../src/runner/runner_release_materializer.js";
 
 /** Same declared document the build-side and startup-side identity tests use. */
 const DECLARED_ENV = {
@@ -37,16 +38,22 @@ const LIVE_SERVICE_AMBIENT: NodeJS.ProcessEnv = {
   CLAUDE_CODE_EXECPATH: "/runtime/claude",
 };
 
-/** A payload that contains everything the runtime hashes or imports. */
+/**
+ * A payload that contains everything the runtime hashes or imports. The runner
+ * entries come from the materializer's canonical artifact list, so adding an
+ * artifact there cannot leave this fixture silently out of date.
+ */
 const PAYLOAD_FILES: Readonly<Record<string, string>> = {
   "main.js": "// host bundle\n",
   "chunks/vendor.js": "// vendor chunk\n",
   "runner/runner_release_prewarm.js": "// prewarm\n",
-  "runner/runner_entry.js": "// runner\n",
-  "runner/package.json": '{"type":"module"}\n',
   "upstream/control_inbox_worker_entry.js": "// control\n",
   "bind-release.mjs": "// bind\n",
   "package.json": '{"type":"module"}\n',
+  ...Object.fromEntries(RUNNER_RELEASE_ARTIFACTS.map((artifact) => [
+    `runner/${artifact}`,
+    artifact === "package.json" ? '{"type":"module"}\n' : `// ${artifact}\n`,
+  ])),
 };
 
 const SOURCE_COMMIT = "70b09abd03d38c9fa120508be22542bf0ef88d2a";
@@ -139,6 +146,43 @@ describe("bindPortableRelease", () => {
 
     await expect(bindPortableRelease({ releaseDirectory, envFile }))
       .rejects.toThrow(/portable release file hash mismatch: main\.js/);
+    await expect(readFile(join(releaseDirectory, RELEASE_MANIFEST_FILE)))
+      .rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("refuses to bind a payload whose file is a symbolic link outside the release directory", async () => {
+    const releaseDirectory = await createReleaseDirectory();
+    const envFile = await writeEnvDocument(releaseDirectory);
+    // Same bytes, different location: only the link itself can tell this apart.
+    const outsideDirectory = await mkdtemp(join(tmpdir(), "portable-release-outside-"));
+    temporaryDirectories.push(outsideDirectory);
+    const outsideMain = join(outsideDirectory, "main.js");
+    await writeFile(outsideMain, PAYLOAD_FILES["main.js"], "utf8");
+    await rm(join(releaseDirectory, "main.js"));
+    await symlink(outsideMain, join(releaseDirectory, "main.js"));
+
+    await expect(bindPortableRelease({ releaseDirectory, envFile }))
+      .rejects.toThrow(/contains a symbolic link: main\.js/);
+    await expect(readFile(join(releaseDirectory, RELEASE_MANIFEST_FILE)))
+      .rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("refuses to bind a payload with a symbolic link in a parent path component", async () => {
+    const releaseDirectory = await createReleaseDirectory();
+    const envFile = await writeEnvDocument(releaseDirectory);
+    const outsideDirectory = await mkdtemp(join(tmpdir(), "portable-release-outside-"));
+    temporaryDirectories.push(outsideDirectory);
+    await mkdir(join(outsideDirectory, "chunks"), { recursive: true });
+    await writeFile(
+      join(outsideDirectory, "chunks/vendor.js"),
+      PAYLOAD_FILES["chunks/vendor.js"],
+      "utf8",
+    );
+    await rm(join(releaseDirectory, "chunks"), { recursive: true, force: true });
+    await symlink(join(outsideDirectory, "chunks"), join(releaseDirectory, "chunks"));
+
+    await expect(bindPortableRelease({ releaseDirectory, envFile }))
+      .rejects.toThrow(/contains a symbolic link: chunks/);
     await expect(readFile(join(releaseDirectory, RELEASE_MANIFEST_FILE)))
       .rejects.toMatchObject({ code: "ENOENT" });
   });

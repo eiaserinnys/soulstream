@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { once } from "node:events";
 import { chmod, cp, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import { createServer } from "node:net";
+import { connect, createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,11 +12,13 @@ import test, { after, before } from "node:test";
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = join(packageRoot, "..");
-const portableDist = join(packageRoot, "dist-portable");
 const hostDist = join(packageRoot, "dist");
+const tsxCli = join(packageRoot, "node_modules", "tsx", "dist", "cli.mjs");
 const execFileAsync = promisify(execFile);
 /** Ambient env a bare `node main.js` gets: no credentials, no release document, no npm. */
 const CLEAN_AMBIENT = { PATH: process.env.PATH ?? "", HOME: tmpdir() };
+/** Test-only bearer the env document declares so the MCP route requires auth. */
+const MCP_TOKEN = "portable-release-e2e-token";
 
 let temporaryRoot;
 let releaseDirectory;
@@ -25,13 +27,30 @@ let appRoot;
 let envFile;
 let packSummary;
 let sourceCommit;
+let runnerArtifacts;
 
 before(async () => {
+  // `pack:portable` labels the payload with git HEAD and refuses a dirty tree,
+  // so this test only runs from a clean commit: it must never pack local edits.
+  assert.equal(
+    execFileSync("git", ["status", "--porcelain"], {
+      cwd: repositoryRoot,
+      encoding: "utf8",
+    }).trim(),
+    "",
+    "verify:portable packs the current commit: commit or stash the working tree first",
+  );
   sourceCommit = execFileSync("git", ["rev-parse", "HEAD"], {
     cwd: repositoryRoot,
     encoding: "utf8",
   }).trim();
-  await assertPortableBuild();
+  // The runner artifact list is read from the materializer, not retyped here.
+  runnerArtifacts = JSON.parse(execFileSync(process.execPath, [
+    tsxCli,
+    "-e",
+    "import('./src/runner/runner_release_materializer.js')"
+      + ".then((module) => process.stdout.write(JSON.stringify(module.RUNNER_RELEASE_ARTIFACTS)))",
+  ], { cwd: packageRoot, encoding: "utf8" }));
   temporaryRoot = await mkdtemp(join(tmpdir(), "soulstream-portable-release-"));
   appRoot = join(temporaryRoot, "app");
   await mkdir(join(appRoot, "workspace"), { recursive: true });
@@ -46,12 +65,14 @@ before(async () => {
   ].join("\n"), "utf8");
 
   const outRoot = join(temporaryRoot, "out");
+  // No --source-commit and no bypass: the pack builds the artifact sets itself
+  // and labels the payload with the HEAD it verified, so there is nothing for
+  // this test to supply or override.
   const pack = await execFileAsync(process.execPath, [
-    join(packageRoot, "node_modules", "tsx", "dist", "cli.mjs"),
+    tsxCli,
     join(packageRoot, "scripts", "pack_portable_release.ts"),
     "--out", outRoot,
-    "--source-commit", sourceCommit,
-  ], { cwd: packageRoot, maxBuffer: 16 * 1024 * 1024 });
+  ], { cwd: packageRoot, maxBuffer: 64 * 1024 * 1024 });
   packSummary = JSON.parse(pack.stdout.trim().split("\n").at(-1));
   assert.equal(packSummary.source_commit, sourceCommit);
 
@@ -60,6 +81,7 @@ before(async () => {
   await execFileAsync("tar", ["-xzf", packSummary.tarball, "-C", releaseDirectory]);
   envFile = join(releaseDirectory, ".env.soul-server-ts");
   const port = await reservePort();
+  const mcpInternalPort = await reservePort();
   await writeFile(envFile, [
     "SOULSTREAM_NODE_ID=portable-release-e2e",
     "SOULSTREAM_UPSTREAM_URL=ws://127.0.0.1:9/ws/node",
@@ -67,6 +89,12 @@ before(async () => {
     `PORT=${port}`,
     "HOST=127.0.0.1",
     "LOG_LEVEL=error",
+    // The node-local MCP listener is what actually runs the SDK transport;
+    // require a bearer so the test proves the auth path as well as initialize.
+    "MCP_ENABLED=true",
+    "MCP_REQUIRE_AUTH=true",
+    `MCP_INTERNAL_PORT=${mcpInternalPort}`,
+    `AUTH_BEARER_TOKEN=${MCP_TOKEN}`,
     `AGENTS_CONFIG_PATH=${join(appRoot, "agents.yaml")}`,
     `AGENT_PROFILE_CACHE_PATH=${join(appRoot, "agent-profile-cache.json")}`,
     `MODEL_CATALOG_PATH=${join(appRoot, "missing-model-catalog.yaml")}`,
@@ -225,7 +253,7 @@ test("the runner release prewarms and the runner entry loads from the payload al
   const release = JSON.parse(prewarm.output.trim());
   assert.match(release.release_id, /^sha256-[0-9a-f]{64}$/);
   const entries = (await readdir(release.release_root)).sort();
-  assert.deepEqual(entries, [".runner-release.json", "package.json", "runner_entry.js"]);
+  assert.deepEqual(entries, [".runner-release.json", ...runnerArtifacts].sort());
 
   // No --config: the entry fails on its own contract, but only after the whole
   // bundled module graph loaded. A leftover bare import would fail earlier.
@@ -237,22 +265,78 @@ test("the runner release prewarms and the runner entry loads from the payload al
   assert.doesNotMatch(entry.output, /Cannot find package|ERR_MODULE_NOT_FOUND|Cannot find module/);
 });
 
-async function assertPortableBuild() {
-  for (const [directory, relativePath] of [
-    [portableDist, "main.js"],
-    [portableDist, "runner/runner_release_prewarm.js"],
-    [portableDist, "upstream/control_inbox_worker_entry.js"],
-    [portableDist, "bind-release.mjs"],
-    [join(packageRoot, "dist", "runner"), "runner_entry.js"],
-    [join(packageRoot, "dist", "runner"), "package.json"],
-    [hostDist, "release-manifest.json"],
-  ]) {
-    if (!await exists(join(directory, relativePath))) {
-      throw new Error(`${join(directory, relativePath)} is missing: run \`pnpm run build\` `
-        + "and `pnpm run build:portable` first");
-    }
+test("the bound release answers a bearer-authenticated MCP initialize", async () => {
+  const port = Number((await readFile(envFile, "utf8")).match(/^PORT=(\d+)$/m)?.[1]);
+  const mcpPort = Number(
+    (await readFile(envFile, "utf8")).match(/^MCP_INTERNAL_PORT=(\d+)$/m)?.[1],
+  );
+  // Tests run in order, but keep this one runnable on its own.
+  if (!await exists(join(releaseDirectory, "release-manifest.json"))) {
+    const bind = await runProcess(process.execPath, [
+      join(releaseDirectory, "bind-release.mjs"),
+      "--release-dir", releaseDirectory,
+      "--env-file", envFile,
+    ], { cwd: releaseDirectory, env: CLEAN_AMBIENT, timeoutMs: 60_000 });
+    assert.equal(bind.code, 0, bind.output);
   }
-}
+  const child = spawn(process.execPath, [join(releaseDirectory, "main.js")], {
+    cwd: releaseDirectory,
+    env: CLEAN_AMBIENT,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let output = "";
+  child.stdout.on("data", (chunk) => { output += chunk.toString(); });
+  child.stderr.on("data", (chunk) => { output += chunk.toString(); });
+  const initialize = {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-06-18",
+      capabilities: {},
+      clientInfo: { name: "portable-release-e2e", version: "1.0.0" },
+    },
+  };
+  try {
+    await waitForHealth(child, port, () => output);
+    const endpoint = `http://127.0.0.1:${mcpPort}/mcp/internal`;
+    const headers = {
+      "content-type": "application/json",
+      accept: "application/json, text/event-stream",
+    };
+    const anonymous = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(initialize),
+      signal: AbortSignal.timeout(15_000),
+    });
+    assert.equal(anonymous.status, 401, output);
+    await anonymous.body?.cancel();
+
+    const authorized = await fetch(endpoint, {
+      method: "POST",
+      headers: { ...headers, authorization: `Bearer ${MCP_TOKEN}` },
+      body: JSON.stringify(initialize),
+      signal: AbortSignal.timeout(15_000),
+    });
+    assert.equal(authorized.status, 200, output);
+    const payload = await readMcpPayload(authorized);
+    assert.equal(payload.jsonrpc, "2.0");
+    assert.equal(payload.id, 1);
+    assert.equal(typeof payload.result?.protocolVersion, "string");
+    assert.equal(payload.result?.serverInfo?.name, "soul-server-ts");
+  } finally {
+    await stopProcess(child);
+  }
+});
+
+test("the payload's own engine code spawns the claude CLI from a clean directory", async () => {
+  await exerciseRunnerEngineSpawn({ backend: "claude", cliEnvName: "CLAUDE_CODE_EXECPATH" });
+});
+
+test("the payload's own engine code spawns the codex app-server from a clean directory", async () => {
+  await exerciseRunnerEngineSpawn({ backend: "codex", cliEnvName: "CODEX_CLI_PATH" });
+});
 
 async function walkFiles(root, prefix = "") {
   const entries = await readdir(join(root, prefix), { withFileTypes: true });
@@ -280,6 +364,176 @@ async function waitForHealth(child, port, readOutput) {
     }
   }
   throw new Error(`main.js did not answer /health\n${readOutput()}`);
+}
+
+/**
+ * Runs the payload's own runner entry from the extracted release directory and
+ * acts as the host over its Unix socket. The point is not to finish a turn but
+ * to reach the engine spawn: the fake CLI records its argv, which proves the
+ * bundled module graph loaded and the adapter reached its child-process call
+ * without node_modules or the vendor tree.
+ */
+async function exerciseRunnerEngineSpawn({ backend, cliEnvName }) {
+  const root = join(temporaryRoot, "runner-child", backend);
+  const sessionDirectory = join(root, "session");
+  const snapshotPath = join(root, "snapshot");
+  await mkdir(sessionDirectory, { recursive: true });
+  await mkdir(snapshotPath, { recursive: true });
+
+  const databasePath = join(sessionDirectory, "runner.db");
+  const socketPath = join(sessionDirectory, "runner.sock");
+  const configPath = join(sessionDirectory, "runner-config.json");
+  const fakeCli = join(root, backend === "claude" ? "fake-claude.sh" : "fake-codex.sh");
+  const recordPath = join(root, "spawned-argv.txt");
+  await writeFile(fakeCli, `#!/bin/sh\nprintf '%s\\n' "$@" > '${recordPath}'\n`, "utf8");
+  await chmod(fakeCli, 0o755);
+
+  // The host normally creates the outbox database before spawning the child.
+  const initialized = await runProcess(process.execPath, [
+    join(releaseDirectory, "runner", "runner_release_prewarm.js"),
+    "--database", databasePath,
+  ], { cwd: releaseDirectory, env: CLEAN_AMBIENT, timeoutMs: 60_000 });
+  assert.equal(initialized.code, 0, initialized.output);
+
+  await writeFile(configPath, `${JSON.stringify({
+    schemaVersion: 1,
+    sessionId: `portable-release-${backend}`,
+    backend,
+    agent: {
+      id: `portable-release-${backend}`,
+      name: `Portable Release ${backend}`,
+      backend,
+      workspace_dir: snapshotPath,
+    },
+    paths: {
+      sessionDirectory,
+      databasePath,
+      socketPath,
+      pidPath: join(sessionDirectory, "runner.pid"),
+      lockPath: join(sessionDirectory, "runner.lock"),
+      configPath,
+    },
+    codeSha: sourceCommit,
+    snapshotPath,
+    codexAdapterMode: "app-server",
+    ...(backend === "codex" ? { codexCliPath: fakeCli } : {}),
+    claudeRuntimeV2Enabled: false,
+    claudeRuntimeIdleTtlMs: 600_000,
+    claudeRuntimeMaxEntries: 8,
+    claudeRuntimeTurnTimeoutMs: 600_000,
+    internalMcpUrl: "http://127.0.0.1:9/mcp/internal",
+    codexHome: null,
+    rolloutRoot: null,
+  }, null, 2)}\n`, "utf8");
+
+  const child = spawn(process.execPath, [
+    join(releaseDirectory, "runner", "runner_entry.js"),
+    "--config", configPath,
+  ], {
+    cwd: releaseDirectory,
+    env: {
+      ...CLEAN_AMBIENT,
+      // A real host resolves the CLI path and passes it on; the fake records
+      // the argv the payload's engine code used and exits.
+      [cliEnvName]: fakeCli,
+      ...(backend === "codex" ? { CODEX_ADAPTER_MODE: "app-server", CODEX_CLI_PATH: fakeCli } : {}),
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  let output = "";
+  child.stdout.on("data", (chunk) => { output += chunk.toString(); });
+  child.stderr.on("data", (chunk) => { output += chunk.toString(); });
+  let client;
+  try {
+    await waitForPath(socketPath, child, () => output);
+    client = connect(socketPath);
+    await once(client, "connect");
+    client.setEncoding("utf8");
+    let buffer = "";
+    client.on("data", (chunk) => {
+      buffer += chunk;
+      let newline = buffer.indexOf("\n");
+      while (newline >= 0) {
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        newline = buffer.indexOf("\n");
+        if (!line.trim()) continue;
+        const reply = hostReplyFor(JSON.parse(line));
+        if (reply) client.write(`${JSON.stringify(reply)}\n`);
+      }
+    });
+    client.write(`${JSON.stringify({
+      protocolVersion: 1,
+      channel: "command",
+      kind: "execute",
+      commandId: `portable-release-${backend}-turn`,
+      params: {
+        agentSessionId: `portable-release-${backend}-session`,
+        prompt: "portable release e2e",
+      },
+    })}\n`);
+    await waitForPath(recordPath, child, () => output);
+    const argv = (await readFile(recordPath, "utf8")).trim().split("\n");
+    if (backend === "codex") {
+      assert.equal(argv[0], "app-server", `unexpected codex argv: ${argv.join(" ")}`);
+      assert.ok(
+        argv.includes("stdio://"),
+        `codex app-server stdio flag missing: ${argv.join(" ")}`,
+      );
+    } else {
+      assert.ok(argv.length > 0, "the claude CLI was invoked without arguments");
+    }
+  } finally {
+    client?.destroy();
+    await stopProcess(child);
+  }
+  assert.doesNotMatch(output, /Cannot find package|ERR_MODULE_NOT_FOUND|Cannot find module/);
+}
+
+/**
+ * Minimal host answers for the request frames the child sends on this path.
+ * Events and snapshots need no reply; the point is only to unblock the engine.
+ */
+function hostReplyFor(frame) {
+  if (frame.channel !== "event" || frame.kind !== "request") return undefined;
+  const { operation } = frame.request ?? {};
+  const listShape = operation === "listSessions" || operation === "listSubkeys";
+  return {
+    protocolVersion: 1,
+    channel: "control",
+    kind: "response",
+    correlationId: frame.correlationId,
+    result: { status: "ok", data: listShape ? [] : null },
+  };
+}
+
+async function readMcpPayload(response) {
+  const text = await response.text();
+  if ((response.headers.get("content-type") ?? "").includes("text/event-stream")) {
+    const data = text.split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice("data:".length).trim())
+      .filter((line) => line.length > 0)
+      .at(-1);
+    assert.ok(data, `MCP SSE response carried no data line:\n${text}`);
+    return JSON.parse(data);
+  }
+  return JSON.parse(text);
+}
+
+async function waitForPath(path, child, readOutput, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await exists(path)) return;
+    if (child.exitCode !== null) {
+      throw new Error(
+        `the runner child exited while waiting for ${basename(path)} `
+        + `(code=${child.exitCode})\n${readOutput()}`,
+      );
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`timed out waiting for ${basename(path)}\n${readOutput()}`);
 }
 
 async function runProcess(command, args, options = {}) {
