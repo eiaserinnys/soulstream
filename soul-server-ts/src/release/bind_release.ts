@@ -1,6 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
+import { ZodError } from "zod";
+
 import { writeFileAtomically } from "../atomic_file_rename.js";
 import { parseEnv } from "../config.js";
 import { hashArtifactSet } from "../runner/runner_release_materializer.js";
@@ -95,4 +97,24 @@ export async function bindPortableRelease(
     canonicalJson(manifest as unknown as CanonicalJsonValue),
   );
   return { manifest, manifestPath, metadata, envDocumentPresent: present };
+}
+
+/**
+ * The stderr lines a failed bind writes. A zod error's `message` is the JSON
+ * array of issues, so its first line is just `[`; write one line per issue
+ * instead (`bind-release: <path>: <message>`). Any other error keeps the first
+ * line of its message. Only the issue path and message are printed, never the
+ * values that failed validation.
+ */
+export function bindErrorLines(error: unknown): string[] {
+  if (error instanceof ZodError && error.issues.length > 0) {
+    return error.issues.map((issue) => {
+      const path = issue.path.map(String).join(".");
+      return path.length > 0
+        ? `bind-release: ${path}: ${issue.message}`
+        : `bind-release: ${issue.message}`;
+    });
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return [`bind-release: ${(message.split("\n")[0] ?? message).trim()}`];
 }

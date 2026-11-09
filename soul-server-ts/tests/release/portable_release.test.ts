@@ -3,10 +3,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
+import { ZodError } from "zod";
 
 import { parseEnv } from "../../src/config.js";
 import {
   RELEASE_MANIFEST_FILE,
+  bindErrorLines,
   bindPortableRelease,
 } from "../../src/release/bind_release.js";
 import {
@@ -236,6 +238,36 @@ describe("bindPortableRelease", () => {
       env: parseEnv({ ...LIVE_SERVICE_AMBIENT, ...drifted }),
       declaredEnv: drifted,
     })).rejects.toThrow(/release manifest mismatch: deployment_env_identity/);
+  });
+});
+
+describe("bindErrorLines", () => {
+  it("zod 오류는 이슈마다 path와 message를 한 줄씩 쓴다", async () => {
+    const root = await mkdtemp(join(tmpdir(), "portable-bind-error-"));
+    temporaryDirectories.push(root);
+    let error: unknown;
+    try {
+      // The reported first-run failure: WORKTREE_PROJECTS_ROOT points at a folder nobody made.
+      parseEnv({
+        SOULSTREAM_NODE_ID: "portable-node",
+        SOULSTREAM_UPSTREAM_URL: "ws://127.0.0.1:5200/ws/node",
+        EVENT_OUTBOX_DIR: join(root, "outbox"),
+        WORKTREE_MCP_ENABLED: "true",
+        WORKTREE_PROJECTS_ROOT: join(root, "missing-projects"),
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(ZodError);
+    expect(bindErrorLines(error)).toEqual([
+      "bind-release: WORKTREE_PROJECTS_ROOT: WORKTREE_PROJECTS_ROOT must be an absolute existing directory",
+    ]);
+  });
+
+  it("그 밖의 오류는 메시지 첫 줄 하나로 쓴다", () => {
+    expect(bindErrorLines(new Error("binding refused\nsecond line")))
+      .toEqual(["bind-release: binding refused"]);
+    expect(bindErrorLines("boom")).toEqual(["bind-release: boom"]);
   });
 });
 

@@ -80,7 +80,19 @@ test("첫 실행: 참여→판 맞춤→구성→묶음→빈 작업 폴더→�
 
     const workspace = join(stateDir, "workspace");
     assert.ok(existsSync(workspace), "작업 폴더는 첫 실행에서 만듭니다.");
-    assert.deepEqual(await readdir(workspace), [], "작업 폴더는 비어 있어야 합니다.");
+    assert.deepEqual(await readdir(workspace), [".projects"], "작업 폴더에는 .projects만 있어야 합니다.");
+    assert.deepEqual(
+      await readdir(join(workspace, ".projects")),
+      [],
+      "작업 폴더는 비어 있어야 합니다.",
+    );
+    if (process.platform !== "win32") {
+      assert.equal(
+        (await stat(join(workspace, ".projects"))).mode & 0o777,
+        0o700,
+        "작업 폴더는 0o700으로 만듭니다.",
+      );
+    }
 
     const childEnv = await readJsonFile(join(stateDir, "home", "child-env.json"));
     assert.equal(childEnv.AUTH_BEARER_TOKEN, TOKEN);

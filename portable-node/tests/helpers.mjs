@@ -275,12 +275,28 @@ setInterval(() => {
 `;
 
 /** bind 횟수를 세어 bindFailAfter번째 호출에서 실패하게 만든다. 판마다 따로 센다. */
-const bindMainSource = (bindFailAfter = 0) => `import { readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+const bindMainSource = (bindFailAfter = 0) => `import { readFileSync, statSync, writeFileSync } from "node:fs";
+import { isAbsolute, join } from "node:path";
 const args = process.argv.slice(2);
 const value = (name) => args[args.indexOf(name) + 1];
 const releaseDir = value("--release-dir");
 const failAfter = ${Number(bindFailAfter)};
+// 실제 bind의 parseEnv처럼 env 문서의 WORKTREE_PROJECTS_ROOT가 실재하는 절대 경로 폴더인지 확인한다.
+const envText = readFileSync(value("--env-file"), "utf8");
+let projectsRoot;
+for (const line of envText.split("\\n")) {
+  if (!line.startsWith("WORKTREE_PROJECTS_ROOT=")) continue;
+  const raw = line.slice("WORKTREE_PROJECTS_ROOT=".length);
+  try { projectsRoot = raw.startsWith('"') ? JSON.parse(raw) : raw; } catch { projectsRoot = raw; }
+}
+let projectsRootDirectory = false;
+if (projectsRoot && isAbsolute(projectsRoot)) {
+  try { projectsRootDirectory = statSync(projectsRoot).isDirectory(); } catch {}
+}
+if (!projectsRootDirectory) {
+  process.stderr.write("bind-release: WORKTREE_PROJECTS_ROOT: WORKTREE_PROJECTS_ROOT must be an absolute existing directory\\n");
+  process.exit(1);
+}
 if (failAfter > 0) {
   const counterPath = join(releaseDir, "bind-counter.txt");
   let count = 0;
