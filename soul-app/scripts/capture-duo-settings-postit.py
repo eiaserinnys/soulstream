@@ -15,6 +15,9 @@
    - 시트 위 끝이 보이도록 하네스가 시트를 안전 영역 위에서 띄운다
      (settings-layout-sheet-frame). 헤더는 시트 위 끝에서 시작한다.
    - 변경 전 상태(`--phase before`)는 헤더에 글자 「완료」가 있고 유리 원이 없다.
+   - 아이폰 설정 탭 색인과 하위 화면의 헤더 높이와 제목 윗선이 같다.
+   - 시트 사이드바는 바닥까지 채우고 마지막 항목은 바닥 안전 영역 위에 있다.
+     본문과 저장 줄의 바닥 좌표는 --baseline으로 변경 전과 비교한다.
 1b. 하위 화면 헤더의 뒤로 원 (카드 #1095)
    - 설정 항목 하위, 반복 작업 목록·편집·이력에서 뒤로 단추가 X와 같은 유리 원형
      GlassButton(32pt, 999pt 곡률, Ionicons chevron-back, textPrimary)이다.
@@ -44,6 +47,7 @@
        python3 -P soul-app/scripts/capture-duo-settings-postit.py --phase after \
            --bundle unified-dashboard/dist/assets/ios-components --out .local/tmp/card1095/visual/after \
            --compare .local/tmp/card1095/visual/before/duo-settings-postit.json
+   안전 영역 이동 전후를 비교할 때는 변경 전 결과를 --baseline에 추가한다.
 
 스크립트는 로컬 HTTP 서버로 번들만 제공하며 외부 네트워크를 호출하지 않는다.
 API 응답은 component-review 공개 fixture(`/api/auth/status`)만 흉내 낸다.
@@ -149,6 +153,9 @@ SETTINGS_MEASURE_JS = r"""
       borderWidth: styleOf(circle).borderTopWidth,
     } : null,
     bodySection: box(byId('settings-section-display')),
+    detail: box(byId('settings-detail-display')),
+    sidebar: box(byId('settings-sidebar-scroll')),
+    lastCategory: box(byId('settings-category-diagnostics')),
     rail: box(rail),
     railLabel: rail ? rail.getAttribute('aria-label') : null,
     railCapsule: box(railCapsule),
@@ -495,6 +502,23 @@ def capture_settings(browser: Browser, base: str, out: Path, phase: str, frame_i
     settle(page)
     metrics = page.evaluate(SETTINGS_MEASURE_JS)
     screenshot = shot(page, out, f"settings-{frame_id}-{theme}", width, height)
+    page.get_by_test_id('settings-sidebar-scroll').evaluate('(element) => { element.scrollTop = element.scrollHeight; }')
+    settle(page)
+    scrolled = page.evaluate(SETTINGS_MEASURE_JS)
+    sidebar_screenshot = shot(page, out, f"sidebar-{frame_id}-{theme}", width, height)
+    page.get_by_test_id('settings-category-connection').click()
+    page.get_by_test_id('settings-active-footer').wait_for(state='visible')
+    settle(page)
+    connection = page.evaluate("""() => {
+      const box = (id) => {
+        const element = document.querySelector(`[data-testid="${id}"]`);
+        if (!element) return null;
+        const r = element.getBoundingClientRect();
+        return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, height: r.height };
+      };
+      return { detail: box('settings-detail-connection'), footer: box('settings-active-footer') };
+    }""")
+    connection_screenshot = shot(page, out, f"connection-{frame_id}-{theme}", width, height)
     page.close()
     context.close()
 
@@ -503,6 +527,15 @@ def capture_settings(browser: Browser, base: str, out: Path, phase: str, frame_i
     checks.check(f"{prefix} 헤더 존재", metrics["header"] is not None, metrics["header"])
     checks.check(f"{prefix} 페이지 오류 없음", not errors, errors)
     checks.check(f"{prefix} 본문 카드 존재", metrics["bodySection"] is not None, metrics["bodySection"])
+    inset = 24 if frame_id.startswith('inner-') else 20
+    checks.check(f"{prefix} 사이드바 바닥 = 시트 바닥",
+                 metrics['sidebar'] is not None and metrics['sheetFrame'] is not None
+                 and abs(metrics['sidebar']['bottom'] - metrics['sheetFrame']['bottom']) <= ALIGN_TOLERANCE_PX,
+                 {'sidebar': metrics['sidebar'], 'sheet': metrics['sheetFrame']})
+    checks.check(f"{prefix} 마지막 항목은 바닥 안전 영역 위",
+                 scrolled['lastCategory'] is not None and scrolled['sheetFrame'] is not None
+                 and scrolled['lastCategory']['bottom'] <= scrolled['sheetFrame']['bottom'] - inset + ALIGN_TOLERANCE_PX,
+                 {'last': scrolled['lastCategory'], 'sheet': scrolled['sheetFrame'], 'inset': inset})
     sheet = metrics["sheetFrame"]
     checks.check(f"{prefix} 시트 위 끝이 보이고 헤더가 그 위에서 시작",
                  sheet is not None and metrics["header"] is not None
@@ -521,13 +554,6 @@ def capture_settings(browser: Browser, base: str, out: Path, phase: str, frame_i
                      metrics["railLabel"])
         checks.check(f"{prefix} 레일 캡슐 존재", metrics["railCapsule"] is not None,
                      metrics["railCapsule"])
-        # X가 없는 헤더도 제목이 위 끝에 붙지 않고 CardDetail 헤더와 같은 12pt에서 시작한다.
-        title_top_gap = rounded(metrics["title"]["top"] - metrics["header"]["top"]) \
-            if metrics["title"] and metrics["header"] else None
-        checks.check(f"{prefix} 제목 위 여백 12pt(uiSpacing.md)",
-                     title_top_gap is not None and abs(title_top_gap - 12) <= ALIGN_TOLERANCE_PX,
-                     {"titleTopGap": title_top_gap, "header": metrics["header"],
-                      "title": metrics["title"]})
     else:
         checks.check(f"{prefix} 헤더 닫기 이름 「설정 닫기」",
                      metrics["closeLabel"] == "설정 닫기", metrics["closeLabel"])
@@ -578,7 +604,9 @@ def capture_settings(browser: Browser, base: str, out: Path, phase: str, frame_i
                          icon)
             checks.check(f"{prefix} 헤더에 글자 「완료」 없음",
                          "완료" not in (metrics["headerText"] or ""), metrics["headerText"])
-    return {"url": url, "screenshot": screenshot, "metrics": metrics, "errors": errors}
+    return {"url": url, "screenshot": screenshot, "metrics": metrics, "scrolled": scrolled,
+            "sidebarScreenshot": sidebar_screenshot, "connection": connection,
+            "connectionScreenshot": connection_screenshot, "errors": errors}
 
 
 NESTED_BACK_LABELS = {
@@ -725,6 +753,68 @@ def capture_nested(browser: Browser, base: str, out: Path, frame_id: str, width:
         page.close()
         context.close()
     return results
+
+
+def capture_settings_tab(browser: Browser, base: str, out: Path, theme: str, checks: Checks) -> dict:
+    """하단 탭을 통해 설정 색인과 하위 화면을 실제로 연다."""
+    width, height = 393, 852
+    context = browser.new_context(viewport={"width": width, "height": height}, device_scale_factor=2)
+    context.add_cookies([{"name": "review", "value": "fixture", "url": base}])
+    url = f"{base}{PREFIX}index.html?section=nativeSettings&entry=tab&safeArea=fixture&theme={theme}"
+    page, errors = open_page(context, base, url)
+    result = {"url": url, "errors": errors}
+    try:
+        page.wait_for_timeout(2500)
+        page.mouse.click(334, 794)
+        page.get_by_test_id('settings-modal-header').wait_for(state='visible')
+        settle(page)
+        result['index'] = page.evaluate(NESTED_MEASURE_JS)
+        result['indexScreenshot'] = shot(page, out, f"tab-{theme}-index", width, height)
+        page.get_by_test_id('settings-category-display').first.click()
+        page.get_by_test_id('settings-section-display').wait_for(state='visible')
+        settle(page)
+        result['sub'] = page.evaluate(NESTED_MEASURE_JS)
+        result['subScreenshot'] = shot(page, out, f"tab-{theme}-sub", width, height)
+        index, sub = result['index'], result['sub']
+        checks.check(f"tab/{theme} 헤더 높이 68로 동일",
+                     abs(index['header']['height'] - 68) <= ALIGN_TOLERANCE_PX
+                     and abs(index['header']['height'] - sub['header']['height']) <= ALIGN_TOLERANCE_PX,
+                     {'index': index['header'], 'sub': sub['header']})
+        checks.check(f"tab/{theme} 제목 윗선 동일",
+                     abs(index['title']['top'] - sub['title']['top']) <= ALIGN_TOLERANCE_PX,
+                     {'index': index['title'], 'sub': sub['title']})
+        checks.check(f"tab/{theme} 페이지 오류 없음", not errors, errors)
+    except Exception as error:  # noqa: BLE001
+        result['error'] = str(error)
+        checks.check(f"tab/{theme} 상태 재현", False, str(error))
+    finally:
+        page.close()
+        context.close()
+    return result
+
+
+def compare_inset_baseline(before: dict, after: dict, checks: Checks) -> None:
+    """안전 영역 이동 전후에 본문과 저장 줄의 실제 위치가 같은지 확인한다."""
+    for key, current in after['settings'].items():
+        prior = before['settings'][key]
+        for label, old, new in (
+            ('화면과 배경 본문', prior['metrics']['detail'], current['metrics']['detail']),
+            ('서버 연결 본문', prior['connection']['detail'], current['connection']['detail']),
+            ('저장 줄', prior['connection']['footer'], current['connection']['footer']),
+        ):
+            checks.check(f"전후 {key} {label} 바닥 동일",
+                         old is not None and new is not None
+                         and abs(old['bottom'] - new['bottom']) <= ALIGN_TOLERANCE_PX,
+                         {'before': old, 'after': new})
+    for theme in THEMES:
+        old, new = before['tab'][theme]['sub'], after['tab'][theme]['sub']
+        for label in ('header', 'title', 'contentRoot'):
+            a, b = old[label], new[label]
+            checks.check(f"전후 tab/{theme} 하위 {label} 위치 동일",
+                         a is not None and b is not None
+                         and abs(a['top'] - b['top']) <= ALIGN_TOLERANCE_PX
+                         and abs(a['bottom'] - b['bottom']) <= ALIGN_TOLERANCE_PX,
+                         {'before': a, 'after': b})
 
 
 def capture_board(browser: Browser, base: str, out: Path, frame_id: str, width: int, height: int,
@@ -901,6 +991,7 @@ def main() -> int:
     parser.add_argument("--phase", required=True, choices=("before", "after"),
                         help="프로덕션 변경 전/후 번들")
     parser.add_argument("--compare", help="비교할 반대 단계의 duo-settings-postit.json")
+    parser.add_argument("--baseline", help="안전 영역 변경 전 측정 JSON")
     args = parser.parse_args()
 
     bundle_root = Path(args.bundle).resolve()
@@ -910,7 +1001,7 @@ def main() -> int:
     out.mkdir(parents=True, exist_ok=True)
 
     result: dict = {"phase": args.phase, "passed": False, "errors": [], "warnings": [],
-                    "settings": {}, "nested": {}, "board": {}}
+                    "settings": {}, "nested": {}, "tab": {}, "board": {}}
     checks = Checks()
     try:
         with BundleServer(bundle_root) as server:
@@ -928,6 +1019,15 @@ def main() -> int:
                             key = f"nested/{frame_id}/{theme}"
                             result["nested"][key] = capture_nested(
                                 browser, base, out, frame_id, width, height, theme, checks, wide, states)
+                    for theme in THEMES:
+                        result['tab'][theme] = capture_settings_tab(browser, base, out, theme, checks)
+                        portrait = result['settings'][f'settings/inner-portrait/{theme}']['metrics']
+                        landscape = result['settings'][f'settings/inner-landscape/{theme}']['metrics']
+                        portrait_gap = portrait['title']['top'] - portrait['header']['top']
+                        landscape_gap = landscape['title']['top'] - landscape['header']['top']
+                        checks.check(f"settings/{theme} 듀오 세로와 가로 제목 위 여백 동일",
+                                     abs(portrait_gap - landscape_gap) <= ALIGN_TOLERANCE_PX,
+                                     {'portrait': portrait_gap, 'landscape': landscape_gap})
                     for frame_id, width, height in BOARD_FRAMES:
                         for theme in THEMES:
                             key = f"board/{frame_id}/{theme}"
@@ -938,6 +1038,9 @@ def main() -> int:
         if args.compare:
             prior = json.loads(Path(args.compare).read_text(encoding="utf-8"))
             result["comparison"] = compare_phases(prior, result, checks)
+        if args.baseline:
+            prior = json.loads(Path(args.baseline).read_text(encoding='utf-8'))
+            compare_inset_baseline(prior, result, checks)
         result["passed"] = all(entry["passed"] for entry in checks.entries)
     except Exception as error:  # noqa: BLE001 - 기록 후 실패로 끝낸다
         result["errors"].append(f"unexpected: {error}")

@@ -266,8 +266,8 @@ function DuoSettingsLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT
                     overflow: 'hidden' }}>
                   <AppGlassCard role="nativeSheet" style={{ flex: 1 }}>
                     <SafeAreaView testID="settings-layout-safe-area"
-                      edges={duo ? ['bottom', 'left'] : ['bottom', 'left', 'right']} style={{ flex: 1 }}>
-                      <SettingsScreen flattened onClose={() => {}} />
+                      edges={duo ? ['left'] : ['left', 'right']} style={{ flex: 1 }}>
+                      <SettingsScreen flattened bottomSafeAreaOwner="columns" onClose={() => {}} />
                     </SafeAreaView>
                   </AppGlassCard>
                 </View>

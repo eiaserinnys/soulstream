@@ -43,6 +43,7 @@ type AppModalSurfaceCommonProps = {
   safeAreaTestID?: string;
   sideBand?: React.ReactNode;
   sideBandWidth?: number;
+  bottomInsetOwner?: 'surface' | 'content';
 };
 
 type AppModalSurfaceProps = AppModalSurfaceCommonProps & (
@@ -87,6 +88,7 @@ export function AppModalSurface({
   safeAreaTestID,
   sideBand,
   sideBandWidth = 0,
+  bottomInsetOwner = 'surface',
 }: AppModalSurfaceProps) {
   const t = useTokens();
   const previousVisible = useRef(false);
@@ -165,8 +167,8 @@ export function AppModalSurface({
                   : popover
                     ? []
                     : sideBandWidth
-                      ? ['top', 'bottom', 'left']
-                    : undefined
+                      ? bottomInsetOwner === 'content' ? ['top', 'left'] : ['top', 'bottom', 'left']
+                      : bottomInsetOwner === 'content' ? ['top', 'left', 'right'] : undefined
               }
               style={
                 compact

@@ -1,6 +1,7 @@
 import React from 'react';
-import { Alert, Modal, Text } from 'react-native';
+import { Alert, Modal, StyleSheet, Text } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { SafeAreaInsetsContext } from 'react-native-safe-area-context';
 let mockDimensions = { width: 390, height: 844, scale: 1, fontScale: 1 };
 jest.mock('react-native/Libraries/Utilities/useWindowDimensions', () => ({ __esModule: true, default: () => mockDimensions }));
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
@@ -34,7 +35,7 @@ test('iPad page sheet bounds sibling sidebar/detail beneath its header', () => {
   expect(screen.getByTestId('settings-modal-safe-area').props.edges).toEqual({
     top: 'additive',
     right: 'additive',
-    bottom: 'additive',
+    bottom: 'off',
     left: 'additive',
   });
   expect(screen.getByTestId('settings-section-display').findAllByType(Text).some(text => text.props.children === '화면과 배경')).toBe(false);
@@ -48,6 +49,23 @@ test('compact width opens the index, then returns from a detail without closing'
   expect(screen.getByTestId('settings-server-input')).toBeTruthy();
   fireEvent.press(screen.getByLabelText('모든 설정으로 돌아가기'));
   expect(screen.getByTestId('settings-phone-index')).toBeTruthy(); expect(onClose).not.toHaveBeenCalled();
+});
+
+test('compact settings sheet keeps its index and save footer above the bottom inset', () => {
+  const screen = render(<SafeAreaInsetsContext.Provider value={{ top: 0, bottom: 24, left: 0, right: 0 }}>
+    <SettingsModal visible onClose={jest.fn()} />
+  </SafeAreaInsetsContext.Provider>);
+  const index = screen.getByTestId('settings-phone-index');
+  const padded = StyleSheet.flatten(index.props.contentContainerStyle).paddingBottom;
+  screen.rerender(<SafeAreaInsetsContext.Provider value={{ top: 0, bottom: 0, left: 0, right: 0 }}>
+    <SettingsModal visible onClose={jest.fn()} />
+  </SafeAreaInsetsContext.Provider>);
+  expect(padded - StyleSheet.flatten(index.props.contentContainerStyle).paddingBottom).toBe(24);
+  screen.rerender(<SafeAreaInsetsContext.Provider value={{ top: 0, bottom: 24, left: 0, right: 0 }}>
+    <SettingsModal visible onClose={jest.fn()} />
+  </SafeAreaInsetsContext.Provider>);
+  fireEvent.press(screen.getByTestId('settings-category-connection'));
+  expect(StyleSheet.flatten(screen.getByTestId('settings-active-footer').parent!.parent!.props.style).paddingBottom).toBe(24);
 });
 
 test('the open-on-start switch writes an account and server local preference immediately', async () => {
