@@ -1,6 +1,6 @@
 import { type Dirent, type Stats } from "node:fs";
 import { lstat, readdir, readlink } from "node:fs/promises";
-import { isAbsolute, join } from "node:path";
+import { join } from "node:path";
 
 import { IsolationAuthUnavailableError } from "./session_filesystem_errors.js";
 
@@ -38,35 +38,6 @@ async function statForAuth(path: string, label: string): Promise<Stats> {
   } catch (error) {
     throw new IsolationAuthUnavailableError(`${label}을 확인할 수 없습니다`, error);
   }
-}
-
-/** claude-oauth-token 파일의 정적 조건. 내용은 읽지 않는다. */
-export async function assertClaudeTokenFile(
-  path: string | undefined,
-  uid: number,
-): Promise<string> {
-  if (!path) {
-    throw new IsolationAuthUnavailableError("Claude token 파일이 준비되지 않았습니다");
-  }
-  if (!isAbsolute(path)) {
-    throw new IsolationAuthUnavailableError("Claude token 경로가 절대 경로가 아닙니다");
-  }
-  const stats = await statForAuth(path, "Claude token 파일");
-  if (!stats.isFile()) {
-    throw new IsolationAuthUnavailableError("Claude token이 일반 파일이 아닙니다");
-  }
-  if (stats.uid !== uid) {
-    throw new IsolationAuthUnavailableError("Claude token 파일 소유자가 다릅니다");
-  }
-  if (stats.nlink !== 1) {
-    throw new IsolationAuthUnavailableError(
-      "Claude token 파일이 다른 경로와 inode를 공유합니다",
-    );
-  }
-  if ((stats.mode & 0o077) !== 0) {
-    throw new IsolationAuthUnavailableError("Claude token 파일 권한이 너무 넓습니다");
-  }
-  return path;
 }
 
 /** canonical Codex 디렉터리 항목은 auth.json, auth.lock, `.auth-*` 일반 파일만 허용한다. */

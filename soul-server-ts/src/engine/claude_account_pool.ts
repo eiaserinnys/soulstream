@@ -3,17 +3,30 @@ import type { SessionKey, SessionStore } from "@anthropic-ai/claude-agent-sdk";
 import { materializeClaudeAccountTranscript } from "./claude_account_pool_transcript.js";
 
 import type {
+  ClaudeAccountAccessTokenCredential,
   ClaudeAccountRejectInput,
   ClaudeAccountReleaseInput,
+  ClaudeAccountSelectionExhausted,
   ClaudeAccountSelectionInput,
-  ClaudeAccountSelectionResponse,
   ClaudeAccountSelectionResult,
 } from "../claude_accounts/types.js";
 
-export type ClaudeAccountPoolTurn = ClaudeAccountSelectionResult;
+/**
+ * 격리 러너는 선택 응답에 접근 토큰을 받는다. 이 값은 엔진 안에서만 쓰고
+ * 턴 상태·이벤트·로그·영속 설정에 남기지 않는다.
+ */
+export type ClaudeAccountTurnSelection = ClaudeAccountSelectionResult & {
+  credential?: ClaudeAccountAccessTokenCredential;
+};
+
+export type ClaudeAccountTurnResponse =
+  | ClaudeAccountTurnSelection
+  | ClaudeAccountSelectionExhausted;
+
+export type ClaudeAccountPoolTurn = ClaudeAccountTurnSelection;
 
 export interface ClaudeAccountTurnPort {
-  select(input: ClaudeAccountSelectionInput): Promise<ClaudeAccountSelectionResponse>;
+  select(input: ClaudeAccountSelectionInput): Promise<ClaudeAccountTurnResponse>;
   reject(input: ClaudeAccountRejectInput): Promise<void>;
   release(input: ClaudeAccountReleaseInput): Promise<void>;
   restoreActiveBinding?(input: { session_id: string; account_id: string }): Promise<void>;
@@ -68,6 +81,9 @@ export function buildClaudeAccountPoolEnvironment(
   const env = { ...(baseEnv ?? {}) };
   for (const key of CREDENTIAL_ENV_KEYS) delete env[key];
   env.CLAUDE_CONFIG_DIR = turn.config_dir;
+  if (turn.credential) {
+    env.CLAUDE_CODE_OAUTH_TOKEN = turn.credential.access_token;
+  }
   return env;
 }
 /**

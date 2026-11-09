@@ -262,6 +262,27 @@ describe("runner process factory restricted wiring", () => {
     expect(JSON.stringify(childProcessEnv)).not.toContain(HOST_BEARER);
   });
 
+  it("keeps the account pool for a restricted Claude OAuth turn", async () => {
+    const prepared = makePrepared();
+    prepared.plan.spec = { ...prepared.plan.spec, authKind: "claude-oauth-token" };
+    const { runtime, spawn } = makeFactory({
+      task: makeTask(),
+      isolationHost: { prepare: vi.fn(async () => prepared) },
+    });
+
+    await expect(runtime.dispatcher.prepareSession("session-restricted"))
+      .rejects.toThrow("captured isolation spawn input");
+
+    const input = spawn.mock.calls[0]?.[0] as Record<string, unknown>;
+    // 이 경로만 계정 풀을 유지하고, 선택 계정의 토큰은 러너 host-call 응답으로만 간다.
+    expect(input.claudeAccountPool).toEqual({
+      enabled: true,
+      accountsDir: "/worker/claude-accounts",
+    });
+    const isolation = input.isolation as { spec: { authKind: string } };
+    expect(isolation.spec.authKind).toBe("claude-oauth-token");
+  });
+
   it("keeps the full baseline untouched and never prepares isolation", async () => {
     const prepare = vi.fn(async () => makePrepared());
     const childProcessEnv = {

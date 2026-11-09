@@ -1154,3 +1154,211 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
   });
 });
 
+
+describe("ClaudeAccountService restricted credential selection", () => {
+  let root: string;
+  let accountsDir: string;
+  let homeDir: string;
+  const nowMs = Date.parse("2026-11-10T01:00:00.000Z");
+
+  beforeEach(() => {
+    root = fs.mkdtempSync(path.join(os.tmpdir(), "claude-restricted-select-"));
+    accountsDir = path.join(root, "claude-accounts");
+    homeDir = path.join(root, "home");
+    fs.mkdirSync(homeDir, { recursive: true, mode: 0o700 });
+  });
+
+  afterEach(() => {
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  async function createService(options: {
+    accounts: Array<{
+      id: string;
+      credentials: { accessToken: string; expiresAt: number } | null;
+    }>;
+    renewalWrites?: (input: { accountId: string; profileDir: string }) => void;
+    usageByToken?: Record<string, unknown>;
+  }): Promise<ClaudeAccountService> {
+    const fetchImpl = vi.fn(async (_url: string, init?: RequestInit) => {
+      const auth = (init?.headers as Record<string, string> | undefined)?.Authorization ?? "";
+      const token = auth.replace(/^Bearer\s+/i, "");
+      return new Response(JSON.stringify(options.usageByToken?.[token] ?? {}), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    });
+    const service = new ClaudeAccountService({
+      accountsDir,
+      homeDir,
+      now: () => nowMs,
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      ...(options.renewalWrites
+        ? {
+            credentialRenewer: {
+              renew: vi.fn(async (input: { accountId: string; profileDir: string }) => {
+                options.renewalWrites!(input);
+              }),
+            },
+          }
+        : {}),
+    });
+    for (const account of options.accounts) {
+      const loginId = `login-${account.id}`;
+      const pending = await service.createPendingDir(loginId);
+      if (account.credentials) {
+        writeCredentials(pending, {
+          accessToken: account.credentials.accessToken,
+          expiresAt: account.credentials.expiresAt,
+        });
+      }
+      await service.registerFromPending({
+        loginId,
+        id: account.id,
+        email: `${account.id}@example.com`,
+        plan: null,
+      });
+    }
+    return service;
+  }
+
+  it("selects only candidates that can produce an access token", async () => {
+    const service = await createService({
+      accounts: [
+        {
+          id: ACC_A,
+          credentials: { accessToken: "tok-a", expiresAt: nowMs + 3600_000 },
+        },
+        { id: ACC_B, credentials: null },
+      ],
+    });
+
+    const selected = await service.select({
+      session_id: "session-restricted",
+      turn_id: "turn-1",
+      model: "claude-sonnet-4-5",
+    }, { requireAccessTokenCredential: true });
+
+    expect(selected).toEqual({
+      account_id: ACC_A,
+      config_dir: path.join(accountsDir, "profiles", ACC_A),
+      available_count: 1,
+      credential: { kind: "access-token", access_token: "tok-a" },
+    });
+    expect(JSON.stringify(selected)).not.toContain("refresh-secret");
+  });
+
+  it("computes availability and the earliest reset from credential-eligible candidates only", async () => {
+    const service = await createService({
+      accounts: [
+        {
+          id: ACC_A,
+          credentials: { accessToken: "tok-a", expiresAt: nowMs + 3600_000 },
+        },
+        { id: ACC_B, credentials: null },
+        {
+          id: ACC_C,
+          credentials: { accessToken: "tok-c", expiresAt: nowMs + 3600_000 },
+        },
+      ],
+      usageByToken: {
+        "tok-a": { five_hour: { utilization: 100, resets_at: "2026-11-10T05:00:00.000Z" } },
+        "tok-b": { five_hour: { utilization: 0, resets_at: "2026-11-10T05:00:00.000Z" } },
+        "tok-c": { five_hour: { utilization: 10, resets_at: "2026-11-10T05:00:00.000Z" } },
+      },
+    });
+    await service.getAccountList({ forceRefresh: true });
+
+    const selected = await service.select({
+      session_id: "session-restricted",
+      turn_id: "turn-1",
+      model: "claude-sonnet-4-5",
+    }, { requireAccessTokenCredential: true });
+    expect(selected).toMatchObject({ account_id: ACC_C, available_count: 1 });
+
+    const exhausted = await service.select({
+      session_id: "session-restricted-exhausted",
+      turn_id: "turn-1",
+      model: "claude-sonnet-4-5",
+      exclude_ids: [ACC_C],
+    }, { requireAccessTokenCredential: true });
+    expect(exhausted).toEqual({
+      pool_exhausted: true,
+      available_count: 0,
+      earliest_available_at: "2026-11-10T05:00:00.000Z",
+    });
+  });
+
+  it("fails closed before selection when no candidate has a usable access token", async () => {
+    const service = await createService({
+      accounts: [
+        { id: ACC_A, credentials: null },
+        {
+          id: ACC_B,
+          credentials: { accessToken: "expired-b", expiresAt: nowMs - 1000 },
+        },
+      ],
+      renewalWrites: () => undefined,
+    });
+
+    await expect(service.select({
+      session_id: "session-restricted",
+      turn_id: "turn-1",
+      model: "claude-sonnet-4-5",
+    }, { requireAccessTokenCredential: true })).rejects.toThrow(
+      "격리 Claude에서 사용할 수 있는 계정 자격이 없습니다. 호스트 자격 갱신에 실패했습니다.",
+    );
+  });
+
+  it("returns the renewed token after the host renewal succeeds", async () => {
+    const service = await createService({
+      accounts: [
+        {
+          id: ACC_A,
+          credentials: { accessToken: "expired-a", expiresAt: nowMs - 1000 },
+        },
+      ],
+      renewalWrites: ({ profileDir }) => {
+        writeCredentials(profileDir, {
+          accessToken: "renewed-a",
+          expiresAt: nowMs + 3600_000,
+        });
+      },
+    });
+
+    const selected = await service.select({
+      session_id: "session-restricted",
+      turn_id: "turn-1",
+      model: "claude-sonnet-4-5",
+    }, { requireAccessTokenCredential: true });
+
+    expect(selected).toMatchObject({
+      account_id: ACC_A,
+      credential: { kind: "access-token", access_token: "renewed-a" },
+    });
+  });
+
+  it("leaves the full selection free of credential fields", async () => {
+    const service = await createService({
+      accounts: [
+        {
+          id: ACC_A,
+          credentials: { accessToken: "tok-a", expiresAt: nowMs + 3600_000 },
+        },
+      ],
+    });
+
+    const selected = await service.select({
+      session_id: "session-full",
+      turn_id: "turn-1",
+      model: "claude-sonnet-4-5",
+    });
+
+    expect(selected).toEqual({
+      account_id: ACC_A,
+      config_dir: path.join(accountsDir, "profiles", ACC_A),
+      available_count: 1,
+    });
+    expect(selected).not.toHaveProperty("credential");
+  });
+});

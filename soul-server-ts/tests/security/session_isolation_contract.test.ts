@@ -98,7 +98,6 @@ describe("session isolation contract", () => {
       resolveGitCommonDir: vi.fn(async (repositoryPath: string) => `${repositoryPath}/.git`),
       resolveNodeId: vi.fn(async () => "node-a"),
       resolveMainPackageStorePath: vi.fn(async () => null),
-      readClaudeOauthToken: vi.fn(async () => "token"),
       resolveAgentCommonFilesDirectory: vi.fn(async () => null),
       resolveServiceEnvironmentDirectory: vi.fn(async () => null),
     };
@@ -131,7 +130,7 @@ describe("session isolation contract", () => {
         repoId: "soulstream",
         canonicalPath: "/home/eias/workspace/.projects/soulstream",
       }],
-      authPreparation: { kind: "claude-oauth-token", claudeTokenFile: "/home/eias/.claude/oauth" },
+      authPreparation: { kind: "claude-oauth-token" },
       testDatabaseUrl: "postgres://test:test@127.0.0.1:15432/test_db",
       scratchWorkspaceDir: "/home/eias/workspace/.local",
     };

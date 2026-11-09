@@ -7,6 +7,7 @@ import json
 import os
 import signal
 import time
+from pathlib import Path
 
 from isolation_harness_context import (
     HOME,
@@ -237,33 +238,152 @@ def axis_local_mask(ctx: dict) -> dict:
             "details": {"checks": checks, "files": results, "added": added}}
 
 
+def write_claude_accounts(root: Path) -> dict:
+    """합성 계정 풀. A=유효, B=만료, C=자격 없음. 실제 계정은 건드리지 않는다."""
+    nonce = f"{os.getpid()}-{int(time.time() * 1000)}"
+    tokens = {
+        "account-a": f"harness-synthetic-token-a-{nonce}",
+        "account-b": f"harness-synthetic-token-b-{nonce}",
+    }
+    profiles = root / "profiles"
+    for name in ("account-a", "account-b", "account-c"):
+        profile = profiles / name
+        profile.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(profile, 0o700)
+    now_ms = int(time.time() * 1000)
+    for name, expires_at in (("account-a", now_ms + 3_600_000),
+                             ("account-b", now_ms - 3_600_000)):
+        path = profiles / name / ".credentials.json"
+        path.write_text(json.dumps({
+            "claudeAiOauth": {
+                "accessToken": tokens[name],
+                "refreshToken": f"harness-synthetic-refresh-{name}",
+                "expiresAt": expires_at,
+            },
+        }), encoding="utf-8")
+        path.chmod(0o600)
+    accounts = [{
+        "id": name,
+        "email": f"{name}@harness.invalid",
+        "plan": "max",
+        "enabled": True,
+        "priority": None,
+        "created_at": "2026-01-01T00:00:00.000Z",
+    } for name in ("account-a", "account-b", "account-c")]
+    (root / "accounts.json").write_text(
+        json.dumps({"version": 1, "accounts": accounts}), encoding="utf-8")
+    (root / "bindings.json").write_text(
+        json.dumps({"version": 1, "bindings": {}}), encoding="utf-8")
+    (root / "blocks.json").write_text(
+        json.dumps({"version": 1, "blocks": {}}), encoding="utf-8")
+    return {"root": root, "tokens": tokens}
+
+
 def axis_claude_auth(ctx: dict) -> dict:
     judge = Judge()
-    run_missing = finish_job(start_job(ctx, "axis14-missing", build_job(
-        ctx, new_session_id("axis14-missing"), "true", {}, backend="claude",
+    # 1. 계정 풀이 꺼져 있으면 CLI를 띄우기 전에 닫힌다.
+    run_off = finish_job(start_job(ctx, "axis14-pool-off", build_job(
+        ctx, new_session_id("axis14-pool-off"), "true", {}, backend="claude",
         prepareOnly="assembly"), 240), 240)
-    missing = (run_missing.events("assembly_failed") or [{}])[-1]
-    missing_text = f"{missing.get('name', '')} {missing.get('message', '')}".lower()
-    judge.check("auth" in missing_text, "token 파일 없음 → 준비 거부(fail-closed)")
-    token_file = ctx["run_root"] / "synthetic-claude-token"
-    token = "harness-synthetic-token-not-a-secret"
-    token_file.write_text(token + "\n", encoding="utf-8")
-    token_file.chmod(0o600)
+    off = (run_off.events("assembly_failed") or [{}])[-1]
+    judge.check(off.get("name") == "IsolationAuthUnavailableError",
+                "계정 풀 없음 → IsolationAuthUnavailableError")
+    judge.check("계정 풀" in str(off.get("message")),
+                "계정 풀 없음 → 안내 문구")
+
+    fixture = write_claude_accounts(ctx["run_root"] / "axis14-accounts")
+    accounts_dir = str(fixture["root"])
+    home_dir = str(ctx["run_root"] / "axis14-home")
+    base_auth = {"accountsDir": accounts_dir, "homeDir": home_dir, "model": "opus"}
+
+    # 2. A를 제외하면 만료된 B가 갱신되어 선택되고, 상자는 B의 접근 토큰만 받는다.
     run_ok = finish_job(start_job(ctx, "axis14-ok", build_job(
-        ctx, new_session_id("axis14-ok"), "claude-auth",
-        {"expected_token": token, "token_file": str(token_file)}, backend="claude",
-        claudePair={"tokenFile": str(token_file), "accountId": "harness-account"}), 240), 240)
-    ok = (run_ok.events("prepared") or [{}])[-1]
-    auth_kind = (ok.get("isolation") or {}).get("authKind")
-    judge.check(ok.get("event") == "prepared", "합성 token으로 준비 성공")
-    judge.check(auth_kind == "claude-oauth-token", "authKind claude-oauth-token")
+        ctx, new_session_id("axis14-ok"), "claude-auth", {}, backend="claude",
+        claudeAuth={**base_auth, "excludeIds": ["account-a"]}), 240), 240)
+    prepared = (run_ok.events("prepared") or [{}])[-1]
+    isolation = prepared.get("isolation") or {}
+    judge.check(prepared.get("event") == "prepared", "합성 계정 풀로 준비 성공")
+    judge.check(isolation.get("authKind") == "claude-oauth-token",
+                "authKind claude-oauth-token")
+    judge.check((isolation.get("childEnv") or {}).get("claudeCodeOauthToken") is False,
+                "준비 결과 env에 토큰 없음")
+    selection = (run_ok.events("claude_selection") or [{}])[-1]
+    judge.check(selection.get("accountId") == "account-b", "만료 계정 B가 선택")
+    judge.check(selection.get("configDirInSandbox") is True,
+                "선택 응답 config_dir가 sandbox 설정")
+    judge.check(selection.get("profileTokenMatchesSelection") is True,
+                "선택 토큰이 갱신된 자격 파일 값")
+    judge.check(selection.get("envTokenMatchesSelection") is True,
+                "턴 env 토큰이 선택 토큰")
+    judge.check(selection.get("envCredentialKeysAbsent") is True,
+                "다른 자격 env 키 제거")
+    judge.check(selection.get("envConfigDirMatches") is True,
+                "턴 env CLAUDE_CONFIG_DIR이 sandbox 설정")
+    renew_calls = selection.get("renewCalls") or {}
+    judge.check(renew_calls.get("account-b", 0) >= 1, "만료 계정 B 갱신 실행")
+    judge.check("account-a" not in renew_calls, "제외 계정 A는 갱신하지 않음")
+    judge.check("account-c" not in renew_calls, "자격 없는 C는 갱신하지 않음")
     payload = payload_map(run_ok).get("claude_auth", {})
     judge.check(payload.get("token_present") is True, "상자 env에 token 키 존재")
-    judge.check(payload.get("token_matches") is True, "상자 token이 합성 값과 일치")
-    judge.check(payload.get("token_file_readable") is False, "상자에서 token 파일 읽기 실패")
+    judge.check(payload.get("token_matches") is True, "상자 토큰이 갱신된 B 토큰")
+    judge.check(payload.get("config_dir_matches") is True,
+                "상자 CLAUDE_CONFIG_DIR 일치")
+    judge.check(payload.get("config_dir_writable") is True,
+                "상자 sandbox 설정 쓰기 가능")
+    judge.check(payload.get("projects_present") is True, "sandbox projects 생성")
+    judge.check(payload.get("accounts_dir_entries") == [],
+                "상자에서 계정 풀 루트가 비어 있음")
+    judge.check(all(value is False for value in
+                    (payload.get("credential_files_readable") or {}).values()),
+                "상자에서 자격 파일 읽기 실패")
+    judge.check(all(value is False for value in
+                    (payload.get("other_credential_env_present") or {}).values()),
+                "다른 자격 env 키 없음")
+    judge.check((run_ok.events("exit") or [{}])[-1].get("code") == 0, "정상 종료")
+
+    # 3. 자격 후보가 하나도 없으면 CLI payload 전에 닫힌다. C는 선택되지 않는다.
+    run_empty = finish_job(start_job(ctx, "axis14-empty", build_job(
+        ctx, new_session_id("axis14-empty"), "claude-auth", {}, backend="claude",
+        claudeAuth={**base_auth, "excludeIds": ["account-a", "account-b"],
+                    "mode": "select-only"}), 240), 240)
+    empty = (run_empty.events("claude_selection_unavailable") or [{}])[-1]
+    judge.check(empty.get("name") == "IsolationAuthUnavailableError",
+                "자격 후보 0 → IsolationAuthUnavailableError")
+    judge.check("계정 자격" in str(empty.get("message")), "자격 없음 안내 문구")
+    judge.check(not run_empty.payload(), "자격 후보 0 → CLI payload 미실행")
+
+    # 4. 갱신이 실패해 만료 상태가 남아도 fail-closed다.
+    # 시나리오 2의 갱신이 B를 유효하게 만들었으므로, 만료 상태를 다시 만들려면
+    # 별도 합성 계정 루트가 필요하다.
+    renew_fixture = write_claude_accounts(ctx["run_root"] / "axis14-accounts-renew")
+    run_renew = finish_job(start_job(ctx, "axis14-renew-fail", build_job(
+        ctx, new_session_id("axis14-renew-fail"), "claude-auth", {}, backend="claude",
+        claudeAuth={**base_auth, "accountsDir": str(renew_fixture["root"]),
+                    "excludeIds": ["account-a"], "mode": "select-only",
+                    "renewFails": True}), 240), 240)
+    renew_fail = (run_renew.events("claude_selection_unavailable") or [{}])[-1]
+    judge.check(renew_fail.get("name") == "IsolationAuthUnavailableError",
+                "갱신 실패 → IsolationAuthUnavailableError")
+    judge.check(not run_renew.payload(), "갱신 실패 → CLI payload 미실행")
+
+    # 5. 하네스 산출물에 토큰 원문이 남지 않는다.
+    tokens = [*fixture["tokens"].values(), *renew_fixture["tokens"].values()]
+    leaked = [line for run in (run_ok, run_empty, run_renew, run_off)
+              for line in run.lines if any(token in line for token in tokens)]
+    for directory in ("jobs", "logs"):
+        for path in (ctx["run_root"] / directory).glob("*"):
+            try:
+                text = path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            if any(token in text for token in tokens):
+                leaked.append(str(path))
+    judge.check(not leaked, "산출물에 토큰 원문 없음")
+
     return {"status": "fail" if judge.failures else "pass",
             "evidence": "; ".join(judge.evidence), "failures": judge.failures,
-            "details": {"missing": missing, "ok_authKind": auth_kind, "payload": payload}}
+            "details": {"pool_off": off, "selection": selection, "payload": payload,
+                        "empty": empty, "renew_fail": renew_fail, "leaked": leaked}}
 
 
 def axis_timing(ctx: dict) -> dict:

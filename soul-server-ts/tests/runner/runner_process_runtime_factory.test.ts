@@ -389,6 +389,116 @@ describe("applyRunnerHostCall", () => {
     }, task, snapshots, options)).rejects.toThrow("runner Claude account request session mismatch");
   });
 
+  it("asks for a restricted credential and substitutes the sandbox config directory", async () => {
+    const selection = {
+      account_id: "account-a",
+      config_dir: "/accounts/a",
+      available_count: 2,
+      credential: { kind: "access-token" as const, access_token: "token-a" },
+    };
+    const service = {
+      select: vi.fn(async () => selection),
+      reject: vi.fn(async () => undefined),
+      release: vi.fn(async () => undefined),
+    };
+    const task = { agentSessionId: "session-a" } as Task;
+    const snapshots = {
+      persistRunState: vi.fn(async () => undefined),
+      persistSessionItems: vi.fn(async () => undefined),
+    };
+    const selectInput = {
+      session_id: "session-a",
+      turn_id: "turn-a",
+      model: "claude-sonnet-4.5",
+      exclude_ids: [],
+    };
+    const call = {
+      service: "claude_accounts" as const,
+      operation: "select",
+      args: ["session-a", selectInput],
+      correlationId: "host:restricted-select",
+    };
+
+    await expect(applyRunnerHostCall(
+      call,
+      task,
+      snapshots,
+      { claudeAccounts: service } as never,
+      undefined,
+      { configDirectory: "/sandbox/restricted/claude-config" },
+    )).resolves.toEqual({
+      ...selection,
+      config_dir: "/sandbox/restricted/claude-config",
+    });
+
+    expect(service.select).toHaveBeenCalledWith(selectInput, {
+      requireAccessTokenCredential: true,
+    });
+    // 요청 필드가 아니라 호스트 내부 옵션이어야 한다.
+    expect(selectInput).not.toHaveProperty("requireAccessTokenCredential");
+  });
+
+  it("passes restricted pool exhaustion through without inventing a credential", async () => {
+    const exhausted = {
+      pool_exhausted: true as const,
+      available_count: 0 as const,
+      earliest_available_at: "2026-11-10T05:00:00.000Z",
+    };
+    const service = {
+      select: vi.fn(async () => exhausted),
+      reject: vi.fn(async () => undefined),
+      release: vi.fn(async () => undefined),
+    };
+    const task = { agentSessionId: "session-a" } as Task;
+    const snapshots = {
+      persistRunState: vi.fn(async () => undefined),
+      persistSessionItems: vi.fn(async () => undefined),
+    };
+
+    await expect(applyRunnerHostCall({
+      service: "claude_accounts",
+      operation: "select",
+      args: ["session-a", {
+        session_id: "session-a",
+        turn_id: "turn-a",
+        model: "claude-sonnet-4.5",
+        exclude_ids: [],
+      }],
+      correlationId: "host:restricted-exhausted",
+    }, task, snapshots, { claudeAccounts: service } as never, undefined, {
+      configDirectory: "/sandbox/restricted/claude-config",
+    })).resolves.toEqual(exhausted);
+  });
+
+  it("keeps the full selection path free of credential options", async () => {
+    const account = { account_id: "account-a", config_dir: "/accounts/a", available_count: 1 };
+    const service = {
+      select: vi.fn(async () => account),
+      reject: vi.fn(async () => undefined),
+      release: vi.fn(async () => undefined),
+    };
+    const task = { agentSessionId: "session-a" } as Task;
+    const snapshots = {
+      persistRunState: vi.fn(async () => undefined),
+      persistSessionItems: vi.fn(async () => undefined),
+    };
+    const selectInput = {
+      session_id: "session-a",
+      turn_id: "turn-a",
+      model: "claude-sonnet-4.5",
+      exclude_ids: [],
+    };
+
+    await expect(applyRunnerHostCall({
+      service: "claude_accounts",
+      operation: "select",
+      args: ["session-a", selectInput],
+      correlationId: "host:full-select",
+    }, task, snapshots, { claudeAccounts: service } as never)).resolves.toEqual(account);
+
+    expect(service.select).toHaveBeenCalledWith(selectInput);
+  });
+
   it("registers transcript reconciliation after append success and runs it post-response", async () => {
     let finishAppend!: () => void;
     const appendPending = new Promise<void>((resolve) => {

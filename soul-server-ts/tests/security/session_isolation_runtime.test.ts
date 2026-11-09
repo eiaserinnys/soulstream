@@ -115,13 +115,18 @@ describe("session isolation settings", () => {
     expect(() => sessionIsolationSettingsFromEnv({
       SESSION_ISOLATION_TEST_DATABASE_URL: "postgres://test",
     })).toThrow(/must be set together/);
-    expect(() => sessionIsolationSettingsFromEnv({
-      ISOLATED_CLAUDE_TOKEN_FILE: "/tmp/token",
-    })).toThrow(/must be set together/);
-    expect(sessionIsolationSettingsFromEnv({
-      ISOLATED_CLAUDE_TOKEN_FILE: "/tmp/token",
-      ISOLATED_CLAUDE_ACCOUNT_ID: "account-1",
-    }).claudeAccountId).toBe("account-1");
+  });
+
+  it("reads the account pool switch and root for restricted Claude", () => {
+    const defaults = sessionIsolationSettingsFromEnv({});
+    expect(defaults.claudeAccountPoolEnabled).toBe(false);
+    expect(defaults.claudeAccountsDir).toBeNull();
+    const enabled = sessionIsolationSettingsFromEnv({
+      CLAUDE_ACCOUNT_POOL_ENABLED: "true",
+      CLAUDE_ACCOUNTS_DIR: "/home/tester/.claude-accounts",
+    });
+    expect(enabled.claudeAccountPoolEnabled).toBe(true);
+    expect(enabled.claudeAccountsDir).toBe("/home/tester/.claude-accounts");
   });
 });
 
@@ -153,9 +158,6 @@ describe("config parsing", () => {
     }))).toThrow(/must be set together/);
     expect(() => parseEnv(baseEnv({
       HANIEL_ORCH_TOKEN_FILE: "/tmp/orch-token",
-    }))).toThrow(/must be set together/);
-    expect(() => parseEnv(baseEnv({
-      ISOLATED_CLAUDE_TOKEN_FILE: "/tmp/claude-token",
     }))).toThrow(/must be set together/);
   });
 
@@ -227,8 +229,8 @@ describe("valid policy merge", () => {
 describe("restricted auth classification", () => {
   const common = {
     policy: BASE_POLICY,
-    claudeTokenFile: null,
-    claudeAccountId: null,
+    claudeAccountPoolEnabled: false,
+    claudeAccountsDir: null,
   };
 
   it("uses the codex grant directory under the home directory", () => {
@@ -259,9 +261,9 @@ describe("restricted auth classification", () => {
     }).kind).toBe("apikey-env");
   });
 
-  it("requires the isolated token pair for oauth claude sessions", () => {
+  it("requires the account pool for oauth claude sessions", () => {
     expect(() => classifyIsolatedAuth({ ...common, backend: "claude" })).toThrow(
-      /ISOLATED_CLAUDE_TOKEN_FILE/,
+      /계정 풀/,
     );
     try {
       classifyIsolatedAuth({ ...common, backend: "claude" });
@@ -272,13 +274,9 @@ describe("restricted auth classification", () => {
     expect(classifyIsolatedAuth({
       ...common,
       backend: "claude",
-      claudeTokenFile: "/tmp/token",
-      claudeAccountId: "account-1",
-    })).toEqual({
-      kind: "claude-oauth-token",
-      claudeTokenFile: "/tmp/token",
-      credentialAccountId: "account-1",
-    });
+      claudeAccountPoolEnabled: true,
+      claudeAccountsDir: "/home/tester/.claude-accounts",
+    })).toEqual({ kind: "claude-oauth-token" });
   });
 
   it("classifies opencode as apikey-env without demanding new keys", () => {
@@ -320,19 +318,17 @@ describe("isolation runtime composition", () => {
     expect(runtime.tools).not.toHaveProperty("netnsHelper");
   });
 
-  it("classifies auth through the runtime using configured credentials", () => {
+  it("classifies auth through the runtime using the configured account pool", () => {
     const runtime = createSessionIsolationRuntime({
       nodeId: "node-a",
       settings: sessionIsolationSettingsFromEnv({
-        ISOLATED_CLAUDE_TOKEN_FILE: "/tmp/token",
-        ISOLATED_CLAUDE_ACCOUNT_ID: "account-1",
+        CLAUDE_ACCOUNT_POOL_ENABLED: "true",
+        CLAUDE_ACCOUNTS_DIR: "/home/tester/.claude-accounts",
       }),
       policySource: { get: () => ({ policy: BASE_POLICY, digest: "digest-1" }) },
     });
     expect(runtime.classifyAuth({ backend: "claude" })).toEqual({
       kind: "claude-oauth-token",
-      claudeTokenFile: "/tmp/token",
-      credentialAccountId: "account-1",
     });
   });
 });

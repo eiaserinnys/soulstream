@@ -13,7 +13,7 @@ describe("ClaudeCliCredentialRenewer", () => {
 
   beforeEach(() => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), "credential-renewal-test-"));
-    executable = path.join(root, "fake-claude");
+    executable = path.join(root, "fake-claude.cjs");
     warn.mockReset();
   });
   afterEach(() => { vi.restoreAllMocks(); fs.rmSync(root, { recursive: true, force: true }); });
@@ -54,5 +54,28 @@ describe("ClaudeCliCredentialRenewer", () => {
       actualSetTimeout(callback, delay === 20_000 ? 150 : delay, ...args)) as typeof setTimeout);
     await new ClaudeCliCredentialRenewer({ logger, executablePath: executable }).renew({ accountId: "account-a", profileDir: root });
     expect(warn.mock.calls[0]).toEqual([{ accountId: "account-a" }, "Claude account credential renewal failed"]);
+  });
+
+  it("shares one CLI run for concurrent renewals of the same account", async () => {
+    const counterPath = path.join(root, "runs.txt");
+    fakeCli([
+      'const { appendFileSync } = require("node:fs");',
+      "appendFileSync(process.env.RENEW_COUNTER_FILE, \"run\\n\");",
+      "setTimeout(() => console.log(JSON.stringify({ loggedIn: true })), 200);",
+    ].join("\n"));
+    const renewal = new ClaudeCliCredentialRenewer({
+      logger,
+      executablePath: executable,
+      baseEnv: { PATH: process.env.PATH, RENEW_COUNTER_FILE: counterPath },
+    });
+
+    await Promise.all([
+      renewal.renew({ accountId: "account-a", profileDir: root }),
+      renewal.renew({ accountId: "account-a", profileDir: root }),
+    ]);
+    await renewal.renew({ accountId: "account-b", profileDir: root });
+
+    const runs = fs.readFileSync(counterPath, "utf8").trim().split("\n").filter(Boolean);
+    expect(runs).toHaveLength(2);
   });
 });

@@ -48,8 +48,6 @@
     "CLAUDE_ACCOUNTS_DIR": { "owner": "claude", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "CLAUDE_ACCOUNT_POOL_ENABLED": { "owner": "claude", "kind": "non_secret", "identity_scope": "deployment", "normalization": "boolean" },
     "CLAUDE_AUTH_TOKEN_PATH": { "owner": "claude", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
-    "ISOLATED_CLAUDE_TOKEN_FILE": { "owner": "claude", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
-    "ISOLATED_CLAUDE_ACCOUNT_ID": { "owner": "claude", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },
     "CLAUDE_SESSION_RUNTIME_V2_ENABLED": { "owner": "claude", "kind": "non_secret", "identity_scope": "deployment", "normalization": "boolean" },
     "CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS": { "owner": "claude", "kind": "non_secret", "identity_scope": "deployment", "normalization": "number" },
     "CLAUDE_SESSION_RUNTIME_MAX_ENTRIES": { "owner": "claude", "kind": "non_secret", "identity_scope": "deployment", "normalization": "number" },

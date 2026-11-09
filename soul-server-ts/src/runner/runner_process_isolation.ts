@@ -159,11 +159,16 @@ export async function applyRestrictedRunnerIsolation(
     agent: context.agent,
     backend,
   });
+  // 계정 풀은 restricted Claude OAuth에서만 유지한다. 그 경로는 선택 계정의
+  // 접근 토큰만 받고 config 디렉터리는 sandbox 설정으로 치환된다. 나머지
+  // restricted 경로에서는 풀이 CLAUDE_CONFIG_DIR·토큰을 바꾸지 못하게 끈다.
+  const keepClaudeAccountPool = base.backend === "claude"
+    && prepared.plan.spec.authKind === "claude-oauth-token"
+    && base.claudeAccountPool?.enabled === true;
   return {
     ...base,
     resolvedMcpServers: [...prepared.plan.sanitizedServers],
-    // 계정 풀이 CLAUDE_CONFIG_DIR·토큰을 바꾸지 못하게 restricted에서는 끈다.
-    claudeAccountPool: undefined,
+    claudeAccountPool: keepClaudeAccountPool ? base.claudeAccountPool : undefined,
     childProcessEnv: buildRestrictedRunnerChildEnv({
       baseEnv: base.childProcessEnv ?? {},
       plan: prepared.plan,

@@ -9,11 +9,14 @@ import {
 } from "./pool.js";
 import {
   countSelectableCandidates,
+  getCredentialEligibleCandidates,
   isFableModel,
   projectPublicBlockView,
   selectBestCandidate,
   type SelectableAccountCandidate,
 } from "./selector.js";
+import { resolveRestrictedAccessToken } from "./restricted_credentials.js";
+import { IsolationAuthUnavailableError } from "../runner/session_filesystem_errors.js";
 import { ClaudeAccountStore } from "./store.js";
 import { ClaudeAccountSessionActivity } from "./session_activity.js";
 import type {
@@ -25,7 +28,9 @@ import type {
   ClaudeAccountRejectInput,
   ClaudeAccountReleaseInput,
   ClaudeAccountSelectionInput,
+  ClaudeAccountSelectionOptions,
   ClaudeAccountSelectionResponse,
+  ClaudeAccountSelectionWithCredential,
   ClaudeAccountUpdatePatch,
   ClaudeAccountView,
   ClaudeLoginAccountPort,
@@ -53,6 +58,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
   readonly store: ClaudeAccountStore;
   readonly usageCollector: ClaudeAccountUsageCollector;
   private readonly now: () => number;
+  private readonly credentialRenewer: ClaudeProfileCredentialRenewer | undefined;
   private readonly sessionActivity = new ClaudeAccountSessionActivity();
   private readonly loggingInAccountIds = new Set<string>();
   private readonly needsReloginAccountIds = new Set<string>();
@@ -60,6 +66,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
 
   constructor(options: ClaudeAccountServiceOptions) {
     this.now = options.now ?? (() => Date.now());
+    this.credentialRenewer = options.credentialRenewer;
     this.store = new ClaudeAccountStore({
       accountsDir: options.accountsDir,
       homeDir: options.homeDir,
@@ -183,7 +190,8 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
 
   async select(
     input: ClaudeAccountSelectionInput,
-  ): Promise<ClaudeAccountSelectionResponse> {
+    options: ClaudeAccountSelectionOptions = {},
+  ): Promise<ClaudeAccountSelectionResponse | ClaudeAccountSelectionWithCredential> {
     const nowMs = this.now();
     const accounts = this.store.readAccounts();
     const bindings = this.store.readBindings();
@@ -213,8 +221,42 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       null;
     const boundTurnId = existingBinding?.turn_id ?? null;
 
+    // restricted(격리) Claude는 접근 토큰을 낼 수 있는 계정만 후보로 삼는다.
+    // 자격이 없는 후보는 이 선택에서 탈락하고, 남은 후보가 없으면 CLI를
+    // 띄우기 전에 닫힌다(fail-closed).
+    let accessTokens: Map<string, string> | null = null;
+    let selectionCandidates = candidates;
+    if (options.requireAccessTokenCredential === true) {
+      const credentialEligible = getCredentialEligibleCandidates({
+        candidates,
+        model: input.model,
+        excludeIds: input.exclude_ids,
+        nowMs,
+      });
+      const tokens = new Map<string, string>();
+      for (const candidate of credentialEligible) {
+        const token = await resolveRestrictedAccessToken({
+          accountId: candidate.id,
+          profileDir: this.store.profileDir(candidate.id),
+        }, {
+          ...(this.credentialRenewer
+            ? { credentialRenewer: this.credentialRenewer }
+            : {}),
+          now: this.now,
+        });
+        if (token !== null) tokens.set(candidate.id, token);
+      }
+      if (tokens.size === 0) {
+        throw new IsolationAuthUnavailableError(
+          "격리 Claude에서 사용할 수 있는 계정 자격이 없습니다. 호스트 자격 갱신에 실패했습니다.",
+        );
+      }
+      accessTokens = tokens;
+      selectionCandidates = credentialEligible.filter((candidate) => tokens.has(candidate.id));
+    }
+
     const selectionParams = {
-      candidates,
+      candidates: selectionCandidates,
       model: input.model,
       boundAccountId,
       boundTurnId,
@@ -235,7 +277,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
         pool_exhausted: true,
         available_count: 0,
         earliest_available_at: computeEarliestAvailableAt(
-          candidates,
+          selectionCandidates,
           blocks,
           isFableModel(input.model) ? "fable" : "all",
           nowMs,
@@ -260,10 +302,19 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       this.store.writeBindings(bindings);
     }
 
-    return {
+    const result = {
       account_id: chosen.id,
       config_dir: this.store.profileDir(chosen.id),
       available_count: availableCount,
+    };
+    if (!accessTokens) return result;
+    // 선택 후보는 토큰 맵을 통과한 계정뿐이므로 고른 계정의 토큰은 항상 있다.
+    return {
+      ...result,
+      credential: {
+        kind: "access-token",
+        access_token: accessTokens.get(chosen.id)!,
+      },
     };
   }
 

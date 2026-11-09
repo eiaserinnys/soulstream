@@ -80,36 +80,16 @@ async function prepareCodexGrant(
   };
 }
 
-async function maskedSecretFile(
-  ports: IsolationHostPorts,
-  tokenFile: string,
-): Promise<IsolationMask[]> {
-  const fact = await ports.lstatPath(tokenFile);
-  if (!fact || (fact.kind !== "file" && fact.kind !== "symlink")) {
-    throw new IsolationAuthUnavailableError("Claude token 파일이 일반 파일이 아닙니다");
-  }
-  // bwrap은 symlink destination에 mount하지 못한다. token이 symlink면
-  // 실경로만 가린다(실경로가 가려지면 alias로도 읽히지 않는다).
-  let real: string;
-  try {
-    real = await ports.resolveRealPath(tokenFile);
-  } catch {
-    throw new IsolationAuthUnavailableError("Claude token symlink의 실경로가 없습니다");
-  }
-  const realFact = await ports.lstatPath(real);
-  if (!realFact || realFact.kind !== "file") {
-    throw new IsolationAuthUnavailableError("Claude token 실경로가 일반 파일이 아닙니다");
-  }
-  return [{ path: real, kind: "file" }];
-}
-
 async function prepareClaude(
   input: IsolationPreparationInput,
   ports: IsolationHostPorts,
   sandboxDirectory: string,
 ): Promise<RestrictedAuthPlan> {
+  // restricted Claude의 설정 디렉터리는 sandbox 안에 두고 RW로 다시 연다.
+  // 계정이 바뀌어도 이 경로는 그대로이며, CLI가 쓰는 projects/를 미리 만든다.
   const configDirectory = join(sandboxDirectory, "claude-config");
   await ports.ensureDirectory(configDirectory, 0o700);
+  await ports.ensureDirectory(join(configDirectory, "projects"), 0o700);
   const env: Record<string, string> = { CLAUDE_CONFIG_DIR: configDirectory };
 
   if (input.authPreparation.kind === "apikey-env") {
@@ -117,21 +97,10 @@ async function prepareClaude(
     return { kind: "apikey-env", env, bindings: [], masks: [] };
   }
 
-  const preparation = preparationFor(input.authPreparation, "claude-oauth-token");
-  const tokenFile = requireAbsolute(preparation.claudeTokenFile, "Claude token 파일");
-  await ports.verifyAuthPreparation(preparation);
-  const token = await ports.readClaudeOauthToken();
-  if (token.length === 0) {
-    throw new IsolationAuthUnavailableError("Claude OAuth token이 비어 있습니다");
-  }
-  env.CLAUDE_CODE_OAUTH_TOKEN = token;
-
-  return {
-    kind: "claude-oauth-token",
-    env,
-    bindings: [],
-    masks: await maskedSecretFile(ports, tokenFile),
-  };
+  // OAuth 접근 토큰은 시작 env에 넣지 않는다. 턴마다 계정 풀 선택 응답으로만
+  // 자식 환경에 들어가고, refreshToken·프로필 원본은 상자에 들어가지 않는다.
+  preparationFor(input.authPreparation, "claude-oauth-token");
+  return { kind: "claude-oauth-token", env, bindings: [], masks: [] };
 }
 
 function prepareOpenCodeApiKey(): RestrictedAuthPlan {

@@ -169,38 +169,13 @@ describe("session isolation host ports — auth preparation", () => {
     );
   });
 
-  it("claude-oauth-token은 0600 파일을 확인하고 토큰을 trim해 읽는다", async () => {
+  it("claude-oauth-token은 호스트에서 자격 값을 미리 읽지 않는다", async () => {
     const root = await makeTempDir("host-ports-claude-");
-    const tokenFile = touch(root, "claude/token", "  claude-oauth-secret \n", 0o600);
-    const deps = createDeps(root, { claudeTokenFile: tokenFile });
-    const ports = createIsolationHostPorts(deps);
+    const ports = createIsolationHostPorts(createDeps(root));
 
     await expect(
-      ports.verifyAuthPreparation({ kind: "claude-oauth-token", claudeTokenFile: tokenFile }),
+      ports.verifyAuthPreparation({ kind: "claude-oauth-token" }),
     ).resolves.toBeUndefined();
-    await expect(ports.readClaudeOauthToken()).resolves.toBe("claude-oauth-secret");
-  });
-
-  it("claude-oauth-token은 mode 0640을 거절한다", async () => {
-    const root = await makeTempDir("host-ports-claude-mode-");
-    const tokenFile = touch(root, "claude/token", "claude-oauth-secret", 0o640);
-    const deps = createDeps(root, { claudeTokenFile: tokenFile });
-    const ports = createIsolationHostPorts(deps);
-
-    await expect(
-      ports.verifyAuthPreparation({ kind: "claude-oauth-token", claudeTokenFile: tokenFile }),
-    ).rejects.toBeInstanceOf(IsolationAuthUnavailableError);
-  });
-
-  it("readClaudeOauthToken은 빈 토큰을 거절한다", async () => {
-    const root = await makeTempDir("host-ports-claude-empty-");
-    const tokenFile = touch(root, "claude/token", " \n", 0o600);
-    const deps = createDeps(root, { claudeTokenFile: tokenFile });
-    const ports = createIsolationHostPorts(deps);
-
-    await expect(ports.readClaudeOauthToken()).rejects.toBeInstanceOf(
-      IsolationAuthUnavailableError,
-    );
   });
 
   it("apikey-env는 확인할 것이 없고 unavailable은 거절한다", async () => {

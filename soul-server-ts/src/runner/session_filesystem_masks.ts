@@ -140,6 +140,15 @@ export async function prepareIsolationMasks(
   );
   await addMask(credentialRoot, false);
 
+  // 2b. 계정 풀 자격 루트. restricted Claude OAuth만 실제 설정 경로를 가린다.
+  // 프로필 원본(.credentials.json·refreshToken)은 상자 안에서 읽을 수 없다.
+  if (
+    input.authPreparation.kind === "claude-oauth-token"
+    && input.claudeAccountsDir
+  ) {
+    await addMask(input.claudeAccountsDir, true);
+  }
+
   // 3. user bus·keyring.
   await addMask(`/run/user/${input.uid}`, false);
 

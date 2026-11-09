@@ -47,8 +47,10 @@ export interface SessionIsolationSettings {
   localMcp: readonly SessionIsolationOptionalMcp[];
   testDatabase: SessionIsolationTestDatabase | null;
   testDatabaseUrl: string | null;
-  claudeTokenFile: string | null;
-  claudeAccountId: string | null;
+  /** restricted Claude OAuth가 쓸 계정 풀이 켜져 있는지. */
+  claudeAccountPoolEnabled: boolean;
+  /** 계정 풀의 실제 루트. restricted 자식에서는 mask 대상이다. */
+  claudeAccountsDir: string | null;
 }
 
 export interface SessionIsolationSettingsEnv {
@@ -57,8 +59,8 @@ export interface SessionIsolationSettingsEnv {
   SESSION_ISOLATION_LOCAL_MCP?: string | undefined;
   SESSION_ISOLATION_TEST_DATABASE?: string | undefined;
   SESSION_ISOLATION_TEST_DATABASE_URL?: string | undefined;
-  ISOLATED_CLAUDE_TOKEN_FILE?: string | undefined;
-  ISOLATED_CLAUDE_ACCOUNT_ID?: string | undefined;
+  CLAUDE_ACCOUNT_POOL_ENABLED?: string | boolean | undefined;
+  CLAUDE_ACCOUNTS_DIR?: string | undefined;
 }
 
 export class SessionIsolationConfigError extends Error {
@@ -155,20 +157,19 @@ export function sessionIsolationSettingsFromEnv(
     "SESSION_ISOLATION_TEST_DATABASE",
     "SESSION_ISOLATION_TEST_DATABASE_URL",
   );
-  assertPair(
-    env.ISOLATED_CLAUDE_TOKEN_FILE,
-    env.ISOLATED_CLAUDE_ACCOUNT_ID,
-    "ISOLATED_CLAUDE_TOKEN_FILE",
-    "ISOLATED_CLAUDE_ACCOUNT_ID",
-  );
   return {
     mode,
     pastaPath: env.SESSION_ISOLATION_PASTA_PATH ?? null,
     localMcp: parseIsolationLocalMcpList(env.SESSION_ISOLATION_LOCAL_MCP),
     testDatabase: parseIsolationTestDatabasePair(env.SESSION_ISOLATION_TEST_DATABASE),
     testDatabaseUrl: env.SESSION_ISOLATION_TEST_DATABASE_URL ?? null,
-    claudeTokenFile: env.ISOLATED_CLAUDE_TOKEN_FILE ?? null,
-    claudeAccountId: env.ISOLATED_CLAUDE_ACCOUNT_ID ?? null,
+    claudeAccountPoolEnabled:
+      env.CLAUDE_ACCOUNT_POOL_ENABLED === true
+      || env.CLAUDE_ACCOUNT_POOL_ENABLED === "true",
+    claudeAccountsDir:
+      env.CLAUDE_ACCOUNTS_DIR !== undefined && env.CLAUDE_ACCOUNTS_DIR !== ""
+        ? env.CLAUDE_ACCOUNTS_DIR
+        : null,
   };
 }
 
@@ -260,8 +261,8 @@ export interface IsolationAuthClassificationInput {
   presetEnv?: Record<string, string> | null;
   homeDirectory?: string;
   policy: IsolationPolicy;
-  claudeTokenFile: string | null;
-  claudeAccountId: string | null;
+  claudeAccountPoolEnabled: boolean;
+  claudeAccountsDir: string | null;
 }
 
 /**
@@ -289,16 +290,12 @@ export function classifyIsolatedAuth(
     if (hasAnthropicApiKeyEnv(input.presetEnv)) {
       return { kind: "apikey-env" };
     }
-    if (!input.claudeTokenFile || !input.claudeAccountId) {
+    if (!input.claudeAccountPoolEnabled || !input.claudeAccountsDir) {
       throw new IsolationAuthUnavailableError(
-        "restricted Claude session requires ISOLATED_CLAUDE_TOKEN_FILE and ISOLATED_CLAUDE_ACCOUNT_ID",
+        "격리 Claude OAuth 실행에는 Claude 계정 풀이 필요합니다.",
       );
     }
-    return {
-      kind: "claude-oauth-token",
-      claudeTokenFile: input.claudeTokenFile,
-      credentialAccountId: input.claudeAccountId,
-    };
+    return { kind: "claude-oauth-token" };
   }
   // antigravity 등 격리 불가 backend. 호출부가 이 값으로 그 턴을 거부한다.
   return { kind: "unavailable" };
@@ -316,7 +313,10 @@ export interface SessionIsolationRuntime {
   tools: typeof ISOLATION_TOOL_PATHS & { pasta: string | null };
   policySource: SessionIsolationPolicySource;
   classifyAuth(
-    input: Omit<IsolationAuthClassificationInput, "policy" | "claudeTokenFile" | "claudeAccountId">,
+    input: Omit<
+      IsolationAuthClassificationInput,
+      "policy" | "claudeAccountPoolEnabled" | "claudeAccountsDir"
+    >,
   ): IsolatedAuthPreparation;
 }
 
@@ -351,8 +351,8 @@ export function createSessionIsolationRuntime(
       return classifyIsolatedAuth({
         ...input,
         policy,
-        claudeTokenFile: options.settings.claudeTokenFile,
-        claudeAccountId: options.settings.claudeAccountId,
+        claudeAccountPoolEnabled: options.settings.claudeAccountPoolEnabled,
+        claudeAccountsDir: options.settings.claudeAccountsDir,
       });
     },
   };
