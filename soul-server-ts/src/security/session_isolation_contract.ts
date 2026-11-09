@@ -110,27 +110,26 @@ export type IsolationToolPolicy =
   }
   | { category: "inherit"; guard: "create-local-session" };
 
-export interface IsolationFilesystemPolicy {
-  sessionWorktreeRelativeRoot: string;
-  credentialRelativeDirectory: string;
-  isolatedCacheRelativeRoot: string;
-  writableWorkspaceRelativeDirectories: string[];
-  additionalSensitiveRoots: string[];
-}
-
 /** 정책 파일에서 읽는 고정 정책. digest는 이 값에서 계산한다. */
 export interface IsolationPolicy {
   version: 1;
   tools: Record<string, IsolationToolPolicy>;
   localMcp: {
-    requiredServerId: string;
+    requiredServerId: "soulstream";
     optional: { serverId: string; nodeId: string; port: number }[];
   };
-  filesystem: IsolationFilesystemPolicy;
+  filesystem: {
+    sessionWorktreeRelativeRoot: ".projects/.isolated";
+    credentialRelativeDirectory: ".local/share/soulstream/credentials/codex";
+    isolatedCacheRelativeRoot: ".local/share/soulstream/isolated-cache";
+    writableWorkspaceRelativeDirectories: [".local/tmp", ".local/artifacts"];
+    /** 노드별 실제 경로, 비밀 값 없음. */
+    additionalSensitiveRoots: string[];
+  };
   testDatabases: { nodeId: string; hostPort: number; sandboxPort: number }[];
   network: {
     mode: "pasta-nft";
-    dnsForward4: string;
+    dnsForward4: "192.0.2.53";
     deniedIpv4: string[];
     deniedIpv6: string[];
   };
