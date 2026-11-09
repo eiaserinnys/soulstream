@@ -129,6 +129,24 @@ describe('GlassButton interaction contract', () => {
     expect(screen.getByText('저장').props.style).toMatchObject({ color: DARK_COLORS.textPrimary });
   });
 
+  test('tone="link" 함수형 children은 활성에서 link, 비활성에서 disabledContentColor를 받는다', () => {
+    const roles = createPrimitiveRoles(phoneTokens());
+    expect(resolveGlassButtonContentColor(roles.buttonSecondary, false, DARK_COLORS.link))
+      .toBe(DARK_COLORS.link);
+    expect(resolveGlassButtonContentColor(roles.buttonSecondary, true, DARK_COLORS.link))
+      .toBe(roles.buttonSecondary.disabledContentColor);
+
+    const element = (disabled: boolean) => (
+      <GlassButton tone="link" testID="link" disabled={disabled} onPress={() => undefined}>
+        {({ contentColor }) => <Text style={{ color: contentColor }}>추가</Text>}
+      </GlassButton>
+    );
+    const screen = render(element(false));
+    expect(screen.getByText('추가').props.style).toMatchObject({ color: DARK_COLORS.link });
+    screen.rerender(element(true));
+    expect(screen.getByText('추가').props.style).toMatchObject({ color: DARK_COLORS.textPrimary });
+  });
+
   test('disabled secondary는 바탕을 칠하지 않고 opacity로 비활성을 표시한다', () => {
     const screen = render(
       <GlassButton variant="secondary" testID="secondary" disabled onPress={() => undefined}>

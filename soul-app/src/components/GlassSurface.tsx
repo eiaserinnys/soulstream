@@ -353,8 +353,9 @@ export interface GlassButtonContentState {
 export function resolveGlassButtonContentColor(
   primitive: Pick<PrimitiveRoleDefinition, 'contentColor' | 'disabledContentColor'>,
   disabled: boolean,
+  activeContentColor: string = primitive.contentColor,
 ): string {
-  return disabled ? primitive.disabledContentColor : primitive.contentColor;
+  return disabled ? primitive.disabledContentColor : activeContentColor;
 }
 
 export interface GlassButtonProps {
@@ -368,6 +369,8 @@ export interface GlassButtonProps {
   accessibilityState?: AccessibilityState;
   'aria-pressed'?: boolean;
   variant?: 'primary' | 'secondary' | 'paper' | 'plain';
+  /** 'link'는 활성일 때만 글자를 링크 색으로 쓰고, 비활성 색은 그대로 역할이 정한다. */
+  tone?: 'link';
   size?: 'standard' | 'compact' | 'card';
   iconOnly?: boolean;
   borderRadius?: number;
@@ -390,6 +393,7 @@ export function GlassButton({
   accessibilityState,
   'aria-pressed': ariaPressed,
   variant = 'secondary',
+  tone,
   size = 'standard',
   iconOnly = false,
   borderRadius,
@@ -406,8 +410,9 @@ export function GlassButton({
   const roles = createPrimitiveRoles(t);
   const buttonPrimitive = roles[variant === 'primary' ? 'buttonPrimary' : 'buttonSecondary'];
   const primitive = roles.iconFrame;
+  const activeContentColor = tone === 'link' ? t.colors.link : buttonPrimitive.contentColor;
   const resolvedChildren = typeof children === 'function'
-    ? children({ contentColor: resolveGlassButtonContentColor(buttonPrimitive, !!disabled) })
+    ? children({ contentColor: resolveGlassButtonContentColor(buttonPrimitive, !!disabled, activeContentColor) })
     : children;
   const paper = variant === 'paper';
   const plain = variant === 'plain';

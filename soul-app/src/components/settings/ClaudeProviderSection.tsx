@@ -391,7 +391,7 @@ function LegacyClaudeRow({
       </View>
     </View>
 
-    {claudeError ? <GlassButton accessibilityLabel="계정 다시 조회" onPress={() => setAuthReload(value => value + 1)}><Text style={styles.actionText}>계정 다시 조회</Text></GlassButton> : null}
+    {claudeError ? <GlassButton accessibilityLabel="계정 다시 조회" tone="link" onPress={() => setAuthReload(value => value + 1)}>{({ contentColor }) => (<Text style={[styles.actionText, { color: contentColor }]}>계정 다시 조회</Text>)}</GlassButton> : null}
     {showCodeInput ? <View style={styles.codeArea}>
       <Text style={styles.codeHint}>Anthropic 페이지에 표시된 코드를 붙여넣으세요.</Text>
       <TextInput
@@ -408,16 +408,16 @@ function LegacyClaudeRow({
         autoCorrect={false}
       />
       <View style={styles.actionRow}>
-        <GlassButton testID="claude-code-confirm" style={styles.action} contentStyle={styles.buttonContent} onPress={handleSubmitCode} disabled={submitting}>
-          {submitting ? <ActivityIndicator size="small" color={t.colors.accent} /> : <Text style={styles.actionText}>확인</Text>}
+        <GlassButton testID="claude-code-confirm" tone="link" style={styles.action} contentStyle={styles.buttonContent} onPress={handleSubmitCode} disabled={submitting}>
+          {({ contentColor }) => (submitting ? <ActivityIndicator size="small" color={contentColor} /> : <Text style={[styles.actionText, { color: contentColor }]}>확인</Text>)}
         </GlassButton>
-        <GlassButton testID="claude-code-cancel" style={styles.action} contentStyle={styles.buttonContent} onPress={() => {
+        <GlassButton testID="claude-code-cancel" tone="link" style={styles.action} contentStyle={styles.buttonContent} onPress={() => {
           ++revision.current; setSubmitting(false); setLoginLoading(false);
           setShowCodeInput(false);
           setCodeValue('');
           setClaudeError(null);
         }}>
-          <Text style={styles.actionText}>취소</Text>
+          {({ contentColor }) => (<Text style={[styles.actionText, { color: contentColor }]}>취소</Text>)}
         </GlassButton>
       </View>
     </View> : null}
@@ -446,7 +446,7 @@ function makeStyles(t: DesignTokens) {
     actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.sm },
     action: { flex: 1, minWidth: 120 },
     buttonContent: { minHeight: t.foundation.minHeight.secondary },
-    actionText: { ...t.foundation.typography.body, color: t.colors.link, fontWeight: '600' },
+    actionText: { ...t.foundation.typography.body, fontWeight: '600' },
     codeArea: { gap: t.spacing.sm },
     codeHint: { ...t.foundation.typography.body, color: t.colors.textTertiary },
     codeInput: {

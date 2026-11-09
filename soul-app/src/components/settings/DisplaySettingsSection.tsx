@@ -145,27 +145,31 @@ export function DisplaySettingsSection({
               <GlassButton
                 testID="settings-upload-background"
                 surfaceTestID="settings-upload-background-surface"
+                tone="link"
                 style={styles.action}
                 contentStyle={styles.secondaryButtonContent}
                 disabled={savingBackground}
                 onPress={onPickBackground}
               >
-                {savingBackground ? (
-                  <ActivityIndicator size="small" color={t.colors.accent} />
+                {({ contentColor }) => (savingBackground ? (
+                  <ActivityIndicator size="small" color={contentColor} />
                 ) : (
-                  <Text style={styles.secondaryText}>이미지 업로드</Text>
-                )}
+                  <Text style={[styles.secondaryText, { color: contentColor }]}>이미지 업로드</Text>
+                ))}
               </GlassButton>
               {wallpaper.customImage ? (
                 <GlassButton
                   testID="settings-reset-background"
                   surfaceTestID="settings-reset-background-surface"
+                  tone="link"
                   style={styles.action}
                   contentStyle={styles.secondaryButtonContent}
                   disabled={savingBackground}
                   onPress={onResetBackground}
                 >
-                  <Text style={styles.secondaryText}>기본값 복원</Text>
+                  {({ contentColor }) => (
+                    <Text style={[styles.secondaryText, { color: contentColor }]}>기본값 복원</Text>
+                  )}
                 </GlassButton>
               ) : null}
             </View>
@@ -241,7 +245,6 @@ function makeStyles(t: DesignTokens) {
     secondaryButtonContent: { minHeight: t.foundation.minHeight.secondary },
     secondaryText: {
       ...t.foundation.typography.body,
-      color: t.colors.link,
       fontWeight: '600',
     },
   });
