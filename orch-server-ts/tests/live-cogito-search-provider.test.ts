@@ -40,6 +40,11 @@ describe("live Cogito search provider", () => {
       semanticSqlMs: expect.any(Number),
       projectionMs: expect.any(Number),
       totalMs: expect.any(Number),
+      status: "partial",
+      partialStage: "semantic",
+      partialReason: "error",
+      documentIndexInitialized: true,
+      sessionResultCount: 0,
     }));
   });
 
@@ -924,20 +929,146 @@ describe("live Cogito search provider", () => {
     expect(opens).toBe(2);
     expect(onCancelError).toHaveBeenCalledWith(closeError);
   });
+
+  it("finishes the document index build after the first request deadline and reuses it", async () => {
+    let releaseInitialization!: () => void;
+    const initializationGate = new Promise<void>((resolve) => { releaseInitialization = resolve; });
+    const harness = createSqlHarness((text) => {
+      if (text.includes("left(prompt, 2000)")) {
+        return [{
+          session_id: "session-warm",
+          display_name: "warm title",
+          prompt: "warm search target",
+          last_assistant_text: "warm answer",
+          created_at: "2026-09-23T00:00:00.000Z",
+          agent_id: "agent-a",
+        }];
+      }
+      if (text.includes("SELECT session_id, display_name")) {
+        return [{ session_id: "session-warm", display_name: "warm title" }];
+      }
+      if (text.includes("'session_metadata'::text AS event_type")) {
+        return [{
+          id: null,
+          session_id: "session-warm",
+          event_type: "session_metadata",
+          searchable_text: "warm title",
+          created_at: "2026-09-23T00:00:00.000Z",
+          score: 2,
+          match_source: "title",
+          display_name: "warm title",
+          session_prompt: "warm search target",
+          folder_id: "folder-a",
+          predecessor_session_id: null,
+          session_updated_at: "2026-09-23T00:00:00.000Z",
+          folder_name: null,
+        }];
+      }
+      return [];
+    }, (text) => (text.includes("left(prompt, 2000)") ? initializationGate : undefined));
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: connectionFactoryFor(harness.sql),
+    });
+    const params = {
+      q: "warm search",
+      top_k: 5,
+      search_session_id: true,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      include_session_results: true,
+      session_search_mode: "expanded",
+    } as const;
+
+    const firstResponse = await provider.search({
+      ...params,
+      deadlineAt: Date.now() + 1_500,
+    });
+
+    expect(firstResponse.search_status?.search).toEqual({
+      status: "partial",
+      stage: "semantic",
+      reason: "timeout",
+    });
+    expect(firstResponse.search_status?.session_sources?.session_document).toEqual({
+      status: "partial",
+      reason: "timeout",
+    });
+    releaseInitialization();
+    await expect(provider.warmup?.()).resolves.toBe(1);
+    const secondResponse = await provider.search(params);
+
+    expect(secondResponse.session_results).toMatchObject([{ session_id: "session-warm" }]);
+    expect(harness.calls.filter((call) => call.text.includes("left(prompt, 2000)"))).toHaveLength(1);
+  });
+
+  it("returns metadata candidates as partial session results when the document index build fails", async () => {
+    const harness = createSqlHarness((text) => {
+      if (text.includes("left(prompt, 2000)")) throw new Error("document index build failed");
+      if (!text.includes("'session_metadata'::text AS event_type")) return [];
+      return [{
+        id: null,
+        session_id: "session-a",
+        event_type: "session_metadata",
+        searchable_text: "cold title",
+        created_at: "2026-09-23T00:00:00.000Z",
+        score: 2,
+        match_source: "title",
+        display_name: "cold title",
+        session_prompt: "",
+        folder_id: "folder-a",
+        predecessor_session_id: null,
+        session_updated_at: "2026-09-23T00:00:00.000Z",
+        folder_name: null,
+      }];
+    });
+    const provider = createLiveCogitoSearchProvider({
+      searchDbConnectionFactory: connectionFactoryFor(harness.sql),
+    });
+
+    const response = await provider.search({
+      q: "cold title",
+      top_k: 5,
+      search_session_id: true,
+      include_turn_summaries: false,
+      include_highlight: false,
+      include_story: false,
+      include_session_results: true,
+      session_search_mode: "expanded",
+    });
+
+    expect(response.results).toEqual([]);
+    expect(response.search_status?.search).toEqual({
+      status: "partial",
+      stage: "semantic",
+      reason: "error",
+    });
+    expect(response.search_status?.session_sources?.session_document).toEqual({
+      status: "partial",
+      reason: "error",
+    });
+    expect(response.session_results).toMatchObject([{
+      session_id: "session-a",
+      title: "cold title",
+      best_match: { event_id: null, match_source: "title" },
+    }]);
+  });
 });
 
 function createSqlHarness(
   respond: (text: string, values: unknown[]) => readonly Record<string, unknown>[],
+  hold?: (text: string) => Promise<void> | undefined,
 ) {
   const calls: SqlCall[] = [];
   const run = (text: string, values: unknown[]) => {
     calls.push({ text, values });
     const queryKinds = Array.isArray(values[1]) ? values[1] as string[] : ["original"];
-    const rows = respond(text, values).map((row) => ({
+    const rows = () => respond(text, values).map((row) => ({
       query_kind: queryKinds[0] ?? "original",
       ...row,
     }));
-    return Object.assign(Promise.resolve(rows), {
+    const held = hold?.(text);
+    return Object.assign(held === undefined ? Promise.resolve(rows()) : held.then(rows), {
       cancel: () => undefined,
     });
   };

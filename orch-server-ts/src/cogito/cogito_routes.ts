@@ -89,6 +89,8 @@ export type CogitoSearchResponse = {
 
 export type CogitoSearchProvider = {
   search: (params: CogitoSearchParams) => CogitoSearchResponse | Promise<CogitoSearchResponse>;
+  /** Builds the session document index ahead of the first request; resolves with the indexed session count. */
+  warmup?: () => Promise<number>;
 };
 
 export type CogitoSearchSessionRecord = Record<string, unknown>;

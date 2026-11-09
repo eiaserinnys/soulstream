@@ -217,6 +217,9 @@ export async function createProductionOrchestrator(
   };
 }
 
+const SESSION_SEARCH_SLOW_WARN_MS = 3_000;
+const SESSION_DOCUMENT_INDEX_WARMUP_DELAY_MS = 10_000;
+
 export async function createLiveProductionApplication(
   config: OrchServerEnvironmentConfig,
   context: { readonly warn: (message: string) => void },
@@ -292,6 +295,10 @@ export async function createLiveProductionApplication(
     registry,
     typesafeApiKey: config.typesafe_api_key,
     onSearchCancelError: reportSearchCancelError,
+    onSearchTiming: (timing) => {
+      if (timing.status !== "partial" && timing.totalMs <= SESSION_SEARCH_SLOW_WARN_MS) return;
+      context.warn(`session search ${timing.status}: ${JSON.stringify(timing)}`);
+    },
     sessionDeletion: sessionDeletionService,
     sessionMoves: sessionFolderMoveService,
   });
@@ -863,6 +870,7 @@ export async function createLiveProductionApplication(
   const stableSessionOrderIndexMaintenance =
     new StableSessionOrderIndexMaintenance(sqlResolver);
   let resourcesClosed = false;
+  let documentIndexWarmupTimer: ReturnType<typeof setTimeout> | undefined;
   return {
     app,
     beginShutdown:()=>lifecycle.beginShutdown(),
@@ -880,10 +888,29 @@ export async function createLiveProductionApplication(
       maintenanceService.start();
       turnSummaryPipeline?.start?.();
       lifecycle.markReady();
+      documentIndexWarmupTimer = setTimeout(() => {
+        documentIndexWarmupTimer = undefined;
+        const startedAt = Date.now();
+        void (dbCatalogRepository.cogitoSearchProvider.warmup?.() ?? Promise.resolve(0)).then(
+          (sessionCount) => app.log.info(
+            { elapsed_ms: Math.max(0, Date.now() - startedAt), session_count: sessionCount },
+            "session document index warmup finished",
+          ),
+          (error: unknown) => app.log.warn(
+            { error: error instanceof Error ? error.message : String(error) },
+            "session document index warmup failed",
+          ),
+        );
+      }, SESSION_DOCUMENT_INDEX_WARMUP_DELAY_MS);
+      documentIndexWarmupTimer.unref();
     },
     async closeResources() {
       if (resourcesClosed) return;
       resourcesClosed = true;
+      if (documentIndexWarmupTimer !== undefined) {
+        clearTimeout(documentIndexWarmupTimer);
+        documentIndexWarmupTimer = undefined;
+      }
       await maintenanceService.stop();
       await sessionReconciliation.close();
       await recurringJobScheduler?.stop();

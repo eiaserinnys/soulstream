@@ -179,6 +179,7 @@ export const sessionQueryHandlers = {
     }
   },
   search_session_history: async (options, args, context) => {
+    const handlerStartedAt = Date.now();
     try {
       if (!options.sessions) throw new Error("session MCP dependencies are required");
       const repositories = await options.sessions.repositoryProvider();
@@ -257,7 +258,14 @@ export const sessionQueryHandlers = {
             || (deadlineSignal.aborted && cause === deadlineSignal.reason) ? "request_deadline"
             : null;
         if (timeoutKind) {
-          options.cluster?.logger.warn({ kind: timeoutKind }, "session history search timed out");
+          const searchArgs = args as SessionArgs<"search_session_history">;
+          options.cluster?.logger.warn({
+            kind: timeoutKind,
+            elapsed_ms: Math.max(0, Date.now() - handlerStartedAt),
+            scoped: searchArgs.session_ids !== undefined,
+            event_type_count: searchArgs.event_types?.length ?? 0,
+            top_k: searchArgs.top_k ?? 10,
+          }, "session history search timed out");
           return errorResult("검색 시간이 초과됐습니다. 검색어를 더 구체화하거나 세션 범위를 지정해 주세요.");
         }
         const code = typeof cause === "object" && cause !== null && "code" in cause

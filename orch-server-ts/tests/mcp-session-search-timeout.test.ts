@@ -43,7 +43,13 @@ describe("session history search errors", () => {
       const { call, warn } = setup(async () => { throw cause; });
       const result = await call();
       expect(result.structuredContent).toEqual({ error: guidance });
-      expect(warn).toHaveBeenCalledWith({ kind }, "session history search timed out");
+      expect(warn).toHaveBeenCalledWith(expect.objectContaining({
+        kind,
+        elapsed_ms: expect.any(Number),
+        scoped: false,
+        event_type_count: 0,
+        top_k: 10,
+      }), "session history search timed out");
     },
   );
 
