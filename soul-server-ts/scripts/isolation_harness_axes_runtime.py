@@ -13,7 +13,6 @@ from isolation_harness_context import (
     HOME,
     LOCK_PATHS,
     MASKED,
-    REAL_PROJECTS,
     Judge,
     available_mask_ops,
     build_job,
@@ -388,14 +387,15 @@ def axis_claude_auth(ctx: dict) -> dict:
 
 def axis_timing(ctx: dict) -> dict:
     judge = Judge()
-    repos = sorted(path.name for path in REAL_PROJECTS.iterdir() if (path / ".git").is_dir())
+    real_projects = Path(ctx["workspace"]) / ".projects"
+    repos = sorted(path.name for path in real_projects.iterdir() if (path / ".git").is_dir())
     subs = ("objects", "refs", "logs", "worktrees")
-    before = {name: {sub: (REAL_PROJECTS / name / ".git" / sub).is_dir() for sub in subs}
+    before = {name: {sub: (real_projects / name / ".git" / sub).is_dir() for sub in subs}
               for name in repos}
     job = build_job(ctx, new_session_id("axis15-timing"), "true", {})
     job.update({
-        "projectsRoot": str(REAL_PROJECTS),
-        "registries": [{"repoId": name, "path": str(REAL_PROJECTS / name)} for name in repos],
+        "projectsRoot": str(real_projects),
+        "registries": [{"repoId": name, "path": str(real_projects / name)} for name in repos],
         "worktrees": [],
         "prepareOnly": "prepare",
         "prepareRuns": 5,
@@ -407,10 +407,10 @@ def axis_timing(ctx: dict) -> dict:
     judge.check(len(durations) == 5, "prepare 5회 측정")
     started = time.perf_counter()
     for name in repos:
-        git_run(REAL_PROJECTS / name, ["rev-parse", "--git-common-dir"], timeout=60)
+        git_run(real_projects / name, ["rev-parse", "--git-common-dir"], timeout=60)
     common_pass_ms = round((time.perf_counter() - started) * 1000, 1)
     created = {name: [sub for sub in subs
-                      if not before[name][sub] and (REAL_PROJECTS / name / ".git" / sub).is_dir()]
+                      if not before[name][sub] and (real_projects / name / ".git" / sub).is_dir()]
                for name in repos}
     created = {name: found for name, found in created.items() if found}
     ordered = sorted(durations)

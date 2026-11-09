@@ -54,7 +54,6 @@ SERVICE_DIR = "/home/eias/migration/netcup-core-bootstrap/production-staging/rep
 HOME = Path.home()
 WORKSPACE = HOME / "workspace"
 PROD = HOME / "migration" / "netcup-core-bootstrap"
-REAL_PROJECTS = WORKSPACE / ".projects"
 CACHE_ROOT = HOME / ".local/share/soulstream/isolated-cache"
 PASTA = str(
     HOME / ".local/share/soulstream/isolation-tools/eiaserinnys/passt"
@@ -443,7 +442,7 @@ __all__ = [
     "SCRIPTS", "SOUL_SERVER", "WORKTREE", "NODE", "TSX_LOADER", "DRIVER", "PAYLOAD",
     "CLI_PATH",
     "SERVICE_DIR", "WORKSPACE",
-    "HOME", "PROD", "REAL_PROJECTS", "CACHE_ROOT", "PASTA", "HEAVY", "LOCK_PATHS",
+    "HOME", "PROD", "CACHE_ROOT", "PASTA", "HEAVY", "LOCK_PATHS",
     "MASKED", "DummyListener", "HarnessSafetyError", "descendants", "dir_listing",
     "emit", "Judge", "host_facts", "tree_fingerprint", "driver_command", "start_job",
     "finish_job", "isolation_facts", "payload_map", "failure_event", "group_members",
