@@ -8,7 +8,10 @@ import type {
   EnginePort,
   SSEEventPayload,
 } from "../../src/engine/protocol.js";
-import type { SessionIsolationTurnGate } from "../../src/security/session_isolation_turn.js";
+import type {
+  RunnerIsolationIdentity,
+  SessionIsolationTurnGate,
+} from "../../src/security/session_isolation_turn.js";
 import {
   createInProcessTaskRunnerRuntime,
   createTaskRunnerRuntime,
@@ -63,12 +66,16 @@ function makeMocks() {
   return { ...persistenceDouble, db, broadcaster };
 }
 
-function makeEngine(turns: EngineExecuteParams[]): EnginePort {
+function makeEngine(
+  turns: EngineExecuteParams[],
+  onExecute?: () => void,
+): EnginePort {
   return {
     backendId: "claude",
     workspaceDir: "/tmp/claude-roselin",
     async *execute(params): AsyncIterable<SSEEventPayload> {
       turns.push(params);
+      onExecute?.();
       yield {
         type: "assistant_message",
         content: "done",
@@ -92,6 +99,7 @@ function makeExecutor(
   engine: EnginePort,
   gate?: SessionIsolationTurnGate,
   runnerProcessFactory?: RunnerProcessRuntimeFactory,
+  queuedTerminalResume?: (task: Task) => void | Promise<void>,
 ): TaskExecutor {
   const mocks = makeMocks();
   return new TaskExecutor(
@@ -108,7 +116,7 @@ function makeExecutor(
     undefined, // 11 modelCatalog
     runnerProcessFactory, // 12 runnerProcessFactory
     undefined, // 13 transientEventLogAggregator
-    undefined, // 14 queuedTerminalResume
+    queuedTerminalResume, // 14
     undefined, // 15 worktreeResolver
     undefined, // 16 sessionMutations
     undefined, // 17 persistentDecisionRuntime
@@ -230,6 +238,40 @@ function makeRecoveredProcessRunner(engine: EnginePort) {
   return { runner, dispatcher };
 }
 
+/**
+ * 재부착된 러너. 복구 프레임은 complete 하나이고, 다음 턴은 in-process
+ * dispatcher로 실제 실행된다. dispatcher.close는 관찰만 한다.
+ */
+function makeAdoptableRunner(
+  engine: EnginePort,
+  isolation?: RunnerIsolationIdentity,
+) {
+  const base = createInProcessTaskRunnerRuntime(engine);
+  const dispatcher = Object.assign(base.dispatcher, {
+    recoverFrames: vi.fn(() => (async function* () {
+      yield engineEventFrame({ type: "complete", result: "recovered", timestamp: 1 });
+    })()),
+  });
+  return {
+    runner: createTaskRunnerRuntime(
+      base.engine,
+      dispatcher,
+      base.eventPersistence,
+      isolation,
+    ),
+    dispatcher,
+    close: vi.spyOn(dispatcher, "close"),
+  };
+}
+
+function makeQueuedNextTurn() {
+  return {
+    text: "queued next turn",
+    user: "user",
+    deliveryId: "delivery-next-turn",
+  };
+}
+
 describe("TaskExecutor turn isolation gate", () => {
   it.each([
     { name: "no gate (mode off)", decision: undefined },
@@ -284,6 +326,164 @@ describe("TaskExecutor turn isolation gate", () => {
       expect(task.executionSecurity).toBeUndefined();
     },
   );
+
+  it("starts a queued next turn on a new runner when the adopted runner no longer matches", async () => {
+    const recoveredTurns: EngineExecuteParams[] = [];
+    const recovered = makeAdoptableRunner(makeEngine(recoveredTurns), {
+      tier: "restricted",
+      policyDigest: "digest-1",
+      attachedWorktreeIds: ["wt-a"],
+    });
+    const freshTurns: EngineExecuteParams[] = [];
+    const factory = vi.fn(
+      () => createInProcessTaskRunnerRuntime(makeEngine(freshTurns)),
+    ) as unknown as RunnerProcessRuntimeFactory;
+    factory.isolationSupported = true;
+    factory.recover = vi.fn(() => recovered.runner);
+    const gate = makeGate({
+      sessionId: "sess-1",
+      tier: "full",
+      policyVersion: 1,
+      reason: "trusted",
+      presetId: null,
+    });
+    let executor!: TaskExecutor;
+    let nextExecution: Promise<void> | undefined;
+    const resumeQueuedAfterTerminal = vi.fn((queued: Task) => {
+      nextExecution = executor.startNewExecution(queued, claudeAgent);
+      return nextExecution;
+    });
+    executor = makeExecutor(
+      makeEngine([]),
+      gate,
+      factory,
+      resumeQueuedAfterTerminal,
+    );
+    const task = makeTask({ interventionQueue: [makeQueuedNextTurn()] });
+
+    await executor.recoverRegisteredRunner(
+      task,
+      makeRestrictedRegistration(),
+      "execute-old",
+      "adopt",
+    );
+    await vi.waitFor(() =>
+      expect(resumeQueuedAfterTerminal).toHaveBeenCalledTimes(1)
+    );
+    await nextExecution;
+
+    expect(recoveredTurns).toHaveLength(0);
+    expect(freshTurns).toHaveLength(1);
+    expect(freshTurns[0]?.prompt).toBe("queued next turn");
+    expect(freshTurns[0]?.executionSecurity).toMatchObject({ tier: "full" });
+    expect(task.interventionQueue).toEqual([]);
+    expect(recovered.close).toHaveBeenCalled();
+    expect(factory).toHaveBeenCalledTimes(1);
+  });
+
+  it("starts a queued next turn on a restricted runner when the adopted full runner no longer matches", async () => {
+    const recoveredTurns: EngineExecuteParams[] = [];
+    const recovered = makeAdoptableRunner(makeEngine(recoveredTurns));
+    const task = makeTask({ interventionQueue: [makeQueuedNextTurn()] });
+    const observedIsolations: Array<RunnerIsolationIdentity | undefined> = [];
+    const freshTurns: EngineExecuteParams[] = [];
+    const factory = vi.fn(
+      () => createInProcessTaskRunnerRuntime(makeEngine(freshTurns, () => {
+        observedIsolations.push(task.runner?.isolation);
+      })),
+    ) as unknown as RunnerProcessRuntimeFactory;
+    factory.isolationSupported = true;
+    factory.recover = vi.fn(() => recovered.runner);
+    const gate = makeGate({
+      sessionId: "sess-1",
+      tier: "restricted",
+      policyVersion: 1,
+      reason: "untrusted-preset",
+      presetId: "deepseek-flash-4.1",
+    }, ["wt-a"]);
+    let executor!: TaskExecutor;
+    let nextExecution: Promise<void> | undefined;
+    const resumeQueuedAfterTerminal = vi.fn((queued: Task) => {
+      nextExecution = executor.startNewExecution(queued, claudeAgent);
+      return nextExecution;
+    });
+    executor = makeExecutor(
+      makeEngine([]),
+      gate,
+      factory,
+      resumeQueuedAfterTerminal,
+    );
+
+    await executor.recoverRegisteredRunner(
+      task,
+      makeRestrictedRegistration(),
+      "execute-old",
+      "adopt",
+    );
+    await vi.waitFor(() =>
+      expect(resumeQueuedAfterTerminal).toHaveBeenCalledTimes(1)
+    );
+    await nextExecution;
+
+    expect(recoveredTurns).toHaveLength(0);
+    expect(freshTurns).toHaveLength(1);
+    expect(freshTurns[0]?.prompt).toBe("queued next turn");
+    expect(freshTurns[0]?.executionSecurity).toMatchObject({ tier: "restricted" });
+    expect(observedIsolations).toEqual([{
+      tier: "restricted",
+      policyDigest: "digest-1",
+      attachedWorktreeIds: ["wt-a"],
+    }]);
+    expect(task.interventionQueue).toEqual([]);
+    expect(recovered.close).toHaveBeenCalled();
+    expect(factory).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the adopted runner for a queued next turn when the isolation still matches", async () => {
+    const recoveredTurns: EngineExecuteParams[] = [];
+    const recovered = makeAdoptableRunner(makeEngine(recoveredTurns), {
+      tier: "restricted",
+      policyDigest: "digest-1",
+      attachedWorktreeIds: ["wt-a"],
+    });
+    const freshTurns: EngineExecuteParams[] = [];
+    const factory = vi.fn(
+      () => createInProcessTaskRunnerRuntime(makeEngine(freshTurns)),
+    ) as unknown as RunnerProcessRuntimeFactory;
+    factory.isolationSupported = true;
+    factory.recover = vi.fn(() => recovered.runner);
+    const gate = makeGate({
+      sessionId: "sess-1",
+      tier: "restricted",
+      policyVersion: 1,
+      reason: "untrusted-preset",
+      presetId: "deepseek-flash-4.1",
+    }, ["wt-a"]);
+    const resumeQueuedAfterTerminal = vi.fn();
+    const executor = makeExecutor(
+      makeEngine([]),
+      gate,
+      factory,
+      resumeQueuedAfterTerminal,
+    );
+    const task = makeTask({ interventionQueue: [makeQueuedNextTurn()] });
+
+    await executor.recoverRegisteredRunner(
+      task,
+      makeRestrictedRegistration(),
+      "execute-old",
+      "adopt",
+    );
+
+    expect(resumeQueuedAfterTerminal).not.toHaveBeenCalled();
+    expect(recoveredTurns).toHaveLength(1);
+    expect(recoveredTurns[0]?.prompt).toBe("queued next turn");
+    expect(recoveredTurns[0]?.executionSecurity).toMatchObject({ tier: "restricted" });
+    expect(freshTurns).toHaveLength(0);
+    expect(factory).not.toHaveBeenCalled();
+    expect(task.interventionQueue).toEqual([]);
+    expect(recovered.close).toHaveBeenCalledTimes(1);
+  });
 
   it.each([
     { name: "reuses recovered restricted for the same restricted turn", stored: true, tier: "restricted", reused: true },
