@@ -32,6 +32,10 @@ const MIGRATION_134_PATH = fileURLToPath(new URL(
   "../../../packages/db-schema/sql/migrations/134_event_search_read_v2.sql",
   import.meta.url,
 ));
+const MIGRATION_148_PATH = fileURLToPath(new URL(
+  "../../../packages/db-schema/sql/migrations/148_event_search_insert_vacuum_threshold.sql",
+  import.meta.url,
+));
 const TOKEN_LENGTH_MIGRATION_PATH = fileURLToPath(new URL(
   "../../../packages/db-schema/sql/migrations/135_event_search_token_length_limit.sql",
   import.meta.url,
@@ -80,6 +84,7 @@ describePostgres("integer event-search postings migration and backfill", () => {
     const migration132 = readFileSync(MIGRATION_132_PATH, "utf8");
     const migration133 = readFileSync(MIGRATION_133_PATH, "utf8");
     const migration134 = readFileSync(MIGRATION_134_PATH, "utf8");
+    const migration148 = readFileSync(MIGRATION_148_PATH, "utf8");
 
     await harness.sql.unsafe(`
       DROP TRIGGER IF EXISTS trg_event_search_postings_insert ON event_search_terms;
@@ -96,6 +101,7 @@ describePostgres("integer event-search postings migration and backfill", () => {
     await harness.sql.unsafe(migration133);
     await harness.sql.unsafe(migration133);
     await harness.sql.unsafe(migration134);
+    await harness.sql.unsafe(migration148);
     expect(await readPostingShape(harness.sql)).toEqual(freshShape);
 
     await harness.sql`
