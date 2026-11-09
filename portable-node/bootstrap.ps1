@@ -47,10 +47,34 @@ function Get-NodeLock($Lock, [string]$Platform) {
     }
 }
 
+function Get-RuntimeMarkerSha([string]$Directory) {
+    $markerPath = Join-Path $Directory ".portable-runtime.json"
+    if (-not (Test-Path -LiteralPath $markerPath)) { return $null }
+    try {
+        $marker = Get-Content -LiteralPath $markerPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        return $marker.sha256
+    }
+    catch {
+        return $null
+    }
+}
+
+function Write-RuntimeMarker([string]$Directory, [string]$Version, [string]$Sha256) {
+    $marker = [ordered]@{
+        kind         = "node"
+        version      = $Version
+        sha256       = $Sha256
+        installed_at = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+    }
+    $json = (ConvertTo-Json $marker) + "`n"
+    $utf8 = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText((Join-Path $Directory ".portable-runtime.json"), $json, $utf8)
+}
+
 function Install-Node($NodeLock, [string]$Platform) {
     $installDir = Join-Path $StateDir "runtimes\node\$($NodeLock.Version)\$Platform"
     $nodeExe = Join-Path $installDir $NodeLock.Executable
-    if (Test-Path -LiteralPath $nodeExe) {
+    if ((Test-Path -LiteralPath $nodeExe) -and ((Get-RuntimeMarkerSha $installDir) -eq $NodeLock.Sha256)) {
         return $nodeExe
     }
     $downloadDir = Join-Path $StateDir "cache\downloads"
@@ -88,6 +112,7 @@ function Install-Node($NodeLock, [string]$Platform) {
     if (-not (Test-Path -LiteralPath $nodeExe)) {
         Fail "Node 실행 파일을 찾지 못했습니다: $nodeExe"
     }
+    Write-RuntimeMarker $installDir $NodeLock.Version $NodeLock.Sha256
     return $nodeExe
 }
 
@@ -101,7 +126,7 @@ function Sync-Boot {
 
 New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
 $platform = Get-PlatformKey
-$attempts = 0
+# 종료 코드 75는 계획된 재진입이다. 반복 방지는 launcher의 reentry.json이 맡는다.
 while ($true) {
     $lock = Get-Lock
     $nodeLock = Get-NodeLock $lock $platform
@@ -110,6 +135,10 @@ while ($true) {
     if ($SelfTest) {
         & $nodeExe --version
         if ($LASTEXITCODE -ne 0) { Fail "Node 실행 확인에 실패했습니다." }
+        $installDir = Join-Path $StateDir "runtimes\node\$($nodeLock.Version)\$platform"
+        if ((Get-RuntimeMarkerSha $installDir) -ne $nodeLock.Sha256) {
+            Fail "Node 설치 기록이 없거나 잠금 파일과 다릅니다."
+        }
         Write-Host "[portable-node] Node 준비 확인 완료: $nodeExe"
         exit 0
     }
@@ -122,10 +151,6 @@ while ($true) {
     }
     $code = $LASTEXITCODE
     if ($code -eq 75) {
-        $attempts += 1
-        if ($attempts -ge 3) {
-            Fail "실행기 재진입이 반복됩니다. 위 오류를 확인하십시오."
-        }
         continue
     }
     exit $code

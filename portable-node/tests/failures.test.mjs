@@ -83,7 +83,7 @@ test("앱 묶음 파일 해시가 다르면 기동하지 않고 중단한다", a
   const handle = startLauncher({ portableDir: source.portableDir, env: env() });
   const result = await handle.exit;
   assert.notEqual(result.code, 0);
-  assert.match(handle.output, /앱 묶음 파일 해시가 다릅니다: dist\/main\.js/);
+  assert.match(handle.output, /앱 묶음 파일 해시가 다릅니다: main\.js/);
   assert.equal(existsSync(join(stateDir, "home", "child-ran.txt")), false);
   assert.equal(existsSync(join(stateDir, "releases", source.firstCommit)), false);
 });

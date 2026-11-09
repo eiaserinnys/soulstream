@@ -44,17 +44,45 @@ export function run(command, args, { cwd, env, input, timeoutMs = 600000 } = {})
   });
 }
 
-/** GIT_CONFIG_GLOBAL 등은 이 프로세스가 띄우는 자식에게만 준다. */
+const SYSTEM_ENV_KEYS = [
+  "PATH",
+  "Path",
+  "SystemRoot",
+  "SystemDrive",
+  "ComSpec",
+  "PATHEXT",
+  "WINDIR",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TZ",
+];
+
+/** 부모 환경을 통째로 물려주지 않고 OS 실행에 필요한 최소 키만 가져온다. */
+function baseEnv() {
+  const env = {};
+  for (const key of SYSTEM_ENV_KEYS) {
+    if (process.env[key] !== undefined) env[key] = process.env[key];
+  }
+  return env;
+}
+
+/** GIT_CONFIG_GLOBAL 등은 이 프로세스가 띄우는 자식에게만 주고, 부모의 비밀값은 넘기지 않는다. */
 export function gitEnv(stateRoot, extra = {}) {
+  const home = join(stateRoot, "home");
+  const tmp = join(stateRoot, "tmp");
   return {
-    ...process.env,
-    HOME: join(stateRoot, "home"),
-    USERPROFILE: join(stateRoot, "home"),
-    XDG_CONFIG_HOME: join(stateRoot, "home", ".config"),
+    ...baseEnv(),
+    HOME: home,
+    USERPROFILE: home,
+    XDG_CONFIG_HOME: join(home, ".config"),
     GIT_CONFIG_GLOBAL: join(stateRoot, "git", "gitconfig"),
     GIT_CONFIG_NOSYSTEM: "1",
     GIT_TERMINAL_PROMPT: "0",
     GIT_ASKPASS: "echo",
+    TMPDIR: tmp,
+    TEMP: tmp,
+    TMP: tmp,
     ...extra,
   };
 }
@@ -135,8 +163,34 @@ async function gitOrThrow(args, options, code) {
   return result;
 }
 
+/**
+ * 서버가 부분 복제를 광고하는지 전송 전에 확인한다.
+ * protocol v2 협상 줄을 GIT_TRACE_PACKET으로 받아, 서버 능력에 filter가 있는지만 본다.
+ */
+export async function assertPartialCloneSupported({ stateRoot, url }) {
+  const result = await run("git", ["-c", "protocol.version=2", "ls-remote", url, "HEAD"], {
+    env: gitEnv(stateRoot, { GIT_TRACE_PACKET: "1" }),
+    timeoutMs: 120000,
+  });
+  if (result.code !== 0) {
+    throw new GitError(
+      `리포에 연결하지 못했습니다: ${(result.stderr.trim() || result.stdout.trim()).slice(0, 500)}`,
+      "GIT_CONNECT_FAILED",
+    );
+  }
+  for (const line of `${result.stderr}\n${result.stdout}`.split(/\r?\n/)) {
+    const match = /packet:.*\bgit<\s+(.+)$/.exec(line);
+    if (match && /(^|\s)filter(\s|$)/.test(match[1])) return;
+  }
+  throw new GitError(
+    "서버가 부분 복제를 지원하지 않습니다. 전체 복제로 대신하지 않고 멈춥니다.",
+    "PARTIAL_CLONE_UNSUPPORTED",
+  );
+}
+
 export async function cloneWorkspace({ stateRoot, target, upstream, proxyPath, sparsePatterns }) {
   const url = repoUrl(upstream, proxyPath);
+  await assertPartialCloneSupported({ stateRoot, url });
   await gitOrThrow(
     ["clone", "--depth", "1", "--filter=blob:none", "--no-checkout", url, target],
     { stateRoot, timeoutMs: 3600000 },
@@ -167,11 +221,12 @@ export async function cloneFull({ stateRoot, target, upstream, proxyPath }) {
 }
 
 /**
- * 시작할 때마다 origin을 depth 1로 다시 받아 ff-only로만 전진한다.
+ * 시작할 때마다 origin을 받아 ff-only로만 전진한다.
+ * shallow 리포에 --depth 1을 다시 걸면 기존 HEAD와 이력이 끊기므로 깊이를 주지 않는다.
  * 로컬 변경을 건드리지 않으며, 실패는 경고로 남기고 계속한다.
  */
 export async function syncRepo({ stateRoot, dir }) {
-  const fetchResult = await git(["-C", dir, "fetch", "--depth", "1", "origin"], {
+  const fetchResult = await git(["-C", dir, "fetch", "origin"], {
     stateRoot,
     timeoutMs: 600000,
   });
@@ -270,9 +325,12 @@ process.stdin.on("end", () => {
   } catch {
     process.exit(0);
   }
+  const protocol = String(fields.protocol ?? "").toLowerCase();
+  const expectedProtocol = upstream.protocol.replace(/:$/, "").toLowerCase();
   const host = String(fields.host ?? "").toLowerCase();
   const path = String(fields.path ?? "").replace(/^\\/+/, "").replace(/\\/+$/, "");
   const allowed = ["api/node/git/seosoyoung_workspace", "api/node/git/seosoyoung-common"];
+  if (protocol !== expectedProtocol) process.exit(0);
   if (host !== upstream.host.toLowerCase() || !allowed.includes(path)) process.exit(0);
   process.stdout.write("username=soulstream-node\\npassword=" + state.token + "\\n");
 });

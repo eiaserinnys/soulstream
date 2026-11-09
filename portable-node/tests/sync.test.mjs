@@ -52,3 +52,41 @@ test("ff-only 동기화가 실패해도 로컬 변경을 보존하고 기동한�
     await second.exit;
   }
 });
+
+test("깊이를 다시 걸지 않는 fetch가 shallow common을 두 커밋 앞으로 보낸다", async (t) => {
+  const scenario = await makeScenario("sync-common");
+  t.after(scenario.close);
+  const { source, stateDir, repos, publish, env } = scenario;
+  await publish(source.firstCommit);
+
+  const first = startLauncher({ portableDir: source.portableDir, env: env() });
+  try {
+    await waitForStarted(first, stateDir);
+  } finally {
+    first.stop();
+    await first.exit;
+  }
+  const commonDir = join(stateDir, "common");
+  const before = (await git(commonDir, ["rev-parse", "HEAD"])).stdout.trim();
+
+  for (const name of ["c1.txt", "c2.txt"]) {
+    await writeFile(join(repos.common.work, name), `${name}\n`);
+    await git(repos.common.work, ["add", name]);
+    await git(repos.common.work, ["commit", "-m", name]);
+    await git(repos.common.work, ["push", "origin", "main"]);
+  }
+  const remoteHead = (await git(repos.common.bare, ["rev-parse", "main"])).stdout.trim();
+  assert.notEqual(remoteHead, before);
+
+  const second = startLauncher({ portableDir: source.portableDir, env: env() });
+  try {
+    await waitFor(() => second.output.includes("soul-server를 시작했습니다"), { timeoutMs: 180000 });
+    assert.doesNotMatch(second.output, /경고: common을 앞으로 보내지 못했습니다/);
+    assert.equal((await git(commonDir, ["rev-parse", "HEAD"])).stdout.trim(), remoteHead);
+    assert.ok(existsSync(join(commonDir, "c1.txt")));
+    assert.ok(existsSync(join(commonDir, "c2.txt")));
+  } finally {
+    second.stop();
+    await second.exit;
+  }
+});

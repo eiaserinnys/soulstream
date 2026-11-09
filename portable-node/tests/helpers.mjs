@@ -8,6 +8,11 @@ import { chmod, cp, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } fro
 import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  PAYLOAD_REQUIRED_FILES,
+  PORTABLE_BIND_SCRIPT_FILE,
+  PORTABLE_RELEASE_METADATA_FILE,
+} from "../lib/release.mjs";
 
 export const PORTABLE_SOURCE = dirname(dirname(fileURLToPath(import.meta.url)));
 export const TOKEN = "test-node-token-7f3a";
@@ -383,8 +388,9 @@ export async function makeRuntimeLock(root, baseUrl) {
   return { path, lock, archives };
 }
 
-const CHILD_MAIN = `import fs from "node:fs";
+const childMainSource = ({ crashOnStart = false } = {}) => `import fs from "node:fs";
 import path from "node:path";
+if (${crashOnStart ? "true" : "false"}) process.exit(1);
 const home = process.env.HOME;
 fs.writeFileSync(path.join(home, "child-env.json"), JSON.stringify(process.env, null, 2));
 fs.writeFileSync(path.join(home, "child-ran.txt"), String(Date.now()));
@@ -394,41 +400,71 @@ setInterval(() => {
 }, 500);
 `;
 
-const BIND_MAIN = `import { writeFileSync } from "node:fs";
+/** bind 횟수를 세어 bindFailAfter번째 호출에서 실패하게 만든다. 판마다 따로 센다. */
+const bindMainSource = (bindFailAfter = 0) => `import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 const args = process.argv.slice(2);
 const value = (name) => args[args.indexOf(name) + 1];
-writeFileSync(join(value("--release-dir"), "release-manifest.json"), JSON.stringify({ schema_version: 1 }));
+const releaseDir = value("--release-dir");
+const failAfter = ${Number(bindFailAfter)};
+if (failAfter > 0) {
+  const counterPath = join(releaseDir, "bind-counter.txt");
+  let count = 0;
+  try { count = Number(readFileSync(counterPath, "utf8")); } catch {}
+  count += 1;
+  writeFileSync(counterPath, String(count));
+  if (count >= failAfter) {
+    process.stderr.write("bind refused by test fixture\\n");
+    process.exit(1);
+  }
+}
+writeFileSync(join(releaseDir, "release-manifest.json"), JSON.stringify({ schema_version: 1 }));
 `;
 
-/** 앱 묶음을 만든다. tamper가 true면 설명과 다른 파일 내용을 넣는다. */
-export async function makeBundle(root, { sourceCommit, tamper = false, extraFiles = {}, unsafeLink = null }) {
-  const payload = join(root, `payload-${sourceCommit.slice(0, 8)}-${tamper ? "bad" : "ok"}-${unsafeLink ? "link" : "plain"}`);
+/**
+ * P3 형식의 앱 묶음을 만든다: payload 루트의 main.js·runner/, sha256-<hex> 설명.
+ * tamper가 true면 설명과 다른 파일 내용을 넣는다.
+ */
+export async function makeBundle(
+  root,
+  { sourceCommit, tamper = false, extraFiles = {}, unsafeLink = null, bindFailAfter = 0, crashOnStart = false },
+) {
+  const suffix = `${tamper ? "bad" : "ok"}${unsafeLink ? "-link" : ""}${bindFailAfter ? `-bind${bindFailAfter}` : ""}${crashOnStart ? "-crash" : ""}`;
+  const payload = join(root, `payload-${sourceCommit.slice(0, 8)}-${suffix}`);
   await rm(payload, { recursive: true, force: true });
-  await mkdir(join(payload, "dist"), { recursive: true });
-  await writeFile(join(payload, "package.json"), '{"type":"module"}\n');
-  await writeFile(join(payload, "bind-release.mjs"), BIND_MAIN);
-  await writeFile(join(payload, "dist/main.js"), CHILD_MAIN);
-  for (const [path, content] of Object.entries(extraFiles)) {
+
+  const contents = new Map();
+  contents.set("main.js", childMainSource({ crashOnStart }));
+  contents.set(PORTABLE_BIND_SCRIPT_FILE, bindMainSource(bindFailAfter));
+  contents.set("package.json", '{"name":"soulstream-node-portable","private":true,"type":"module"}\n');
+  for (const path of PAYLOAD_REQUIRED_FILES) {
+    if (!contents.has(path)) contents.set(path, `// fixture: ${path}\n`);
+  }
+  for (const [path, content] of Object.entries(extraFiles)) contents.set(path, content);
+  for (const [path, content] of contents) {
     await mkdir(dirname(join(payload, path)), { recursive: true });
     await writeFile(join(payload, path), content);
   }
+
   const files = [];
-  for (const path of ["package.json", "bind-release.mjs", "dist/main.js", ...Object.keys(extraFiles)]) {
+  for (const path of [...contents.keys()].sort()) {
     const bytes = await readFile(join(payload, path));
-    files.push({ path, sha256: sha256(bytes), size: bytes.length });
+    files.push({ path, sha256: `sha256-${sha256(bytes)}`, size: bytes.length });
   }
-  const manifest = { schema_version: 1, source_commit: sourceCommit, schema_generation: 1, wire_generation: 1, files };
-  await writeFile(join(payload, "portable-release.json"), JSON.stringify(manifest, null, 2));
-  if (tamper) await writeFile(join(payload, "dist/main.js"), CHILD_MAIN + "\n// tampered\n");
+  const manifest = {
+    schema_version: 1,
+    source_commit: sourceCommit,
+    schema_generation: "schema-gen-fixture",
+    wire_generation: "wire-gen-fixture",
+    files,
+  };
+  await writeFile(join(payload, PORTABLE_RELEASE_METADATA_FILE), `${JSON.stringify(manifest, null, 2)}\n`);
+  if (tamper) await writeFile(join(payload, "main.js"), `${childMainSource({ crashOnStart })}\n// tampered\n`);
   if (unsafeLink) await symlink(unsafeLink.target, join(payload, unsafeLink.path));
-  const archive = join(
-    root,
-    `bundle-${sourceCommit.slice(0, 8)}-${tamper ? "bad" : "ok"}-${unsafeLink ? "link" : "plain"}.tar.gz`,
-  );
+  const archive = join(root, `bundle-${sourceCommit.slice(0, 8)}-${suffix}.tar.gz`);
   await makeTarGz(payload, archive);
   const bytes = await readFile(archive);
-  return { bytes, sha256: sha256(bytes), size: bytes.length, dir: payload };
+  return { bytes, sha256: sha256(bytes), size: bytes.length, dir: payload, files };
 }
 
 export function releaseRecord({ sourceCommit, bundle, key }) {
@@ -550,17 +586,12 @@ export function startShim(options) {
   let accumulated = "";
   let stopping = false;
   const exit = (async () => {
-    let attempts = 0;
     for (;;) {
       if (stopping) return { code: 0, signal: null, output: accumulated };
       currentHandle = startLauncher(options);
       const result = await currentHandle.exit;
       accumulated += currentHandle.output;
-      if (result.code === 75) {
-        attempts += 1;
-        if (attempts > 4) throw new Error(`재진입이 반복됩니다: ${accumulated}`);
-        continue;
-      }
+      if (result.code === 75) continue;
       return { ...result, output: accumulated };
     }
   })();
@@ -605,13 +636,15 @@ export async function makeScenario(name, { checkIntervalSecs = 3600 } = {}) {
   }
   const defaultsPath = await writeDefaults(root, orch.url, { check_interval_secs: checkIntervalSecs });
   let publishCount = 0;
-  const publish = async (sourceCommit, { tamper = false, unsafeLink = null } = {}) => {
+  const publish = async (sourceCommit, options = {}) => {
     publishCount += 1;
     const key = `bundle-${publishCount}`;
-    const bundle = await makeBundle(root, { sourceCommit, tamper, unsafeLink });
+    const bundle = await makeBundle(root, { sourceCommit, ...options });
     orch.state.bundles.set(key, bundle.bytes);
     orch.state.current = releaseRecord({ sourceCommit, bundle, key });
-    orch.state.bootstrap = bootstrapPayload(sourceCommit);
+    const bootstrap = bootstrapPayload(sourceCommit);
+    if (options.bootstrapEnv) Object.assign(bootstrap.env, options.bootstrapEnv);
+    orch.state.bootstrap = bootstrap;
     return { bundle, release: orch.state.current };
   };
   const env = (extra = {}) => launcherEnv({ stateDir, defaultsPath, lockPath: lock.path, extra });

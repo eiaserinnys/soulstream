@@ -4,7 +4,7 @@ import { createServer } from "node:net";
 import { delimiter, dirname, join } from "node:path";
 import { filterEnv, formatEnvFile } from "./config.mjs";
 import { run } from "./git.mjs";
-import { runBind } from "./release.mjs";
+import { PORTABLE_RUNNER_DIRECTORY, runBind } from "./release.mjs";
 
 const log = (message) => process.stdout.write(`[portable-node] ${message}\n`);
 
@@ -58,7 +58,30 @@ export async function ensurePythonWrapper(stateRoot, pythonExecutable) {
   return target;
 }
 
-export async function ensureCodexLogin({ stateRoot, codexExecutable, env }) {
+/**
+ * Codex 로그인 child에는 soul-server의 prepared env를 주지 않는다.
+ * Codex가 알아야 하는 자기 홈과 OS 실행 키만 준다.
+ */
+export function buildCodexLoginEnv(stateRoot) {
+  const home = join(stateRoot, "home");
+  const tmp = join(stateRoot, "tmp");
+  const env = {
+    CODEX_HOME: join(stateRoot, "codex"),
+    HOME: home,
+    USERPROFILE: home,
+    XDG_CONFIG_HOME: join(home, ".config"),
+    TMPDIR: tmp,
+    TEMP: tmp,
+    TMP: tmp,
+  };
+  for (const key of ["PATH", "Path", "SystemRoot", "SystemDrive", "ComSpec", "PATHEXT", "WINDIR"]) {
+    if (process.env[key] !== undefined) env[key] = process.env[key];
+  }
+  return env;
+}
+
+export async function ensureCodexLogin({ stateRoot, codexExecutable }) {
+  const env = buildCodexLoginEnv(stateRoot);
   const codexHome = join(stateRoot, "codex");
   await mkdir(codexHome, { recursive: true, mode: 0o700 });
   const configPath = join(codexHome, "config.toml");
@@ -141,7 +164,7 @@ export function buildChildEnv({
     INCOMING_FILE_DIR: join(stateRoot, "incoming"),
     SOUL_RUNNER_PROCESS_ENABLED: "true",
     SOUL_RUNNER_STATE_DIR: join(stateRoot, "r"),
-    SOUL_RUNNER_ARTIFACT_DIR: join(releaseDir, "dist", "runner"),
+    SOUL_RUNNER_ARTIFACT_DIR: join(releaseDir, PORTABLE_RUNNER_DIRECTORY),
     SOUL_RUNNER_RELEASES_DIR: join(stateRoot, "runner", "releases"),
     CLAUDE_CODE_EXECPATH: runtimes.claude.executable,
     CODEX_CLI_PATH: runtimes.codex.executable,

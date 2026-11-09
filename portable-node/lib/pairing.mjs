@@ -10,16 +10,16 @@ export class PairingError extends Error {
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** P1의 노드 이름 규칙. 영문 소문자·숫자·'-'로 2~63자, 첫 글자는 영문 소문자나 숫자. */
+export const NODE_ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/;
+
 export function validateNodeId(nodeId) {
   if (typeof nodeId !== "string" || nodeId.length === 0) {
     throw new PairingError("노드 이름이 비었습니다.", "INVALID_NODE_ID");
   }
-  if (nodeId.length > 64) {
-    throw new PairingError("노드 이름은 64자 이하여야 합니다.", "INVALID_NODE_ID");
-  }
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(nodeId)) {
+  if (!NODE_ID_PATTERN.test(nodeId)) {
     throw new PairingError(
-      "노드 이름에는 영문, 숫자, '.', '_', '-'만 쓸 수 있고 첫 글자는 영문이나 숫자여야 합니다.",
+      "노드 이름은 영문 소문자와 숫자, '-'만 쓴 2~63자여야 하고 첫 글자는 영문 소문자나 숫자여야 합니다.",
       "INVALID_NODE_ID",
     );
   }
@@ -31,8 +31,9 @@ export function defaultNodeId(hostname) {
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 63);
-  return slug.length > 0 ? slug : "portable-node";
+    .slice(0, 63)
+    .replace(/-+$/g, "");
+  return slug.length >= 2 ? slug : "portable-node";
 }
 
 export async function startPairing({ upstream, nodeId, companyPc, timeoutMs, fetchJsonImpl = fetchJson }) {

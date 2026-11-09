@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { hostname } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,15 +18,21 @@ import {
   writeCredentialHelper,
 } from "./lib/git.mjs";
 import {
-  ensureAllRuntimes,
   ensureRuntime,
   fetchCurrentRelease,
   installRelease,
+  isPathInside,
   readRuntimeLock,
+  readRuntimeMarker,
+  releaseKey,
+  runtimeInstallDir,
   runtimePlan,
 } from "./lib/release.mjs";
 import { ensureCodexLogin, ensurePorts, ensurePythonWrapper, prepareRelease } from "./lib/environment.mjs";
-import { ChildSupervisor } from "./lib/supervisor.mjs";
+import { installRuntimes, prepareCandidate, rollbackToPrevious, startCandidate } from "./lib/activation.mjs";
+import { assertRunnerStatePathCompatible } from "./lib/paths.mjs";
+import { isRepeatedReentry } from "./lib/reentry.mjs";
+import { ensureStateLayout, readJson, writeStateFile } from "./lib/state.mjs";
 
 const REENTRY_EXIT_CODE = 75;
 const RETRY_DELAY_MS = 30000;
@@ -41,56 +47,6 @@ function resolvePortableDir() {
     throw new Error("PORTABLE_NODE_DIR가 필요합니다. start.sh 또는 start.cmd로 실행하십시오.");
   }
   return here;
-}
-
-async function readJson(path) {
-  try {
-    return JSON.parse(await readFile(path, "utf8"));
-  } catch (error) {
-    if (error.code === "ENOENT") return null;
-    throw error;
-  }
-}
-
-async function writeStateFile(path, value, mode = 0o600) {
-  await mkdir(dirname(path), { recursive: true, mode: 0o700 });
-  await writeFile(path, `${JSON.stringify(value, null, 2)}\n`, { mode });
-  if (process.platform !== "win32") await chmod(path, mode);
-}
-
-async function ensureStateLayout(stateRoot) {
-  await mkdir(stateRoot, { recursive: true, mode: 0o700 });
-  if (process.platform !== "win32") await chmod(stateRoot, 0o700);
-  for (const dir of [
-    "runtimes",
-    "config",
-    "releases",
-    "common",
-    "outbox",
-    "cache",
-    "incoming",
-    "codex",
-    "claude-accounts",
-    "home",
-    "tmp",
-    "git",
-    "r",
-    "bin",
-    "runner/releases",
-  ]) {
-    await mkdir(join(stateRoot, dir), { recursive: true, mode: 0o700 });
-  }
-}
-
-function checkRunnerStatePath(stateRoot) {
-  const limit = process.platform === "darwin" ? 103 : process.platform === "linux" ? 107 : 0;
-  if (limit === 0) return;
-  const length = Buffer.byteLength(join(stateRoot, "r"), "utf8");
-  if (length > limit) {
-    throw new Error(
-      `state 경로가 너무 깁니다(${length}바이트, 한계 ${limit}). 저장소를 더 짧은 경로에 clone한 뒤 다시 실행하십시오.`,
-    );
-  }
 }
 
 async function loadDefaults(portableDir) {
@@ -257,24 +213,93 @@ async function checkoutIsClean(repoRoot, stateRoot) {
   return status.code === 0 && status.stdout.trim() === "";
 }
 
-function makeSupervisor({ env, dir, defaults }) {
-  return new ChildSupervisor({
-    command: process.execPath,
-    args: [join(dir, "dist", "main.js")],
-    cwd: dir,
-    env,
-    readyWindowMs: defaults.ready_window_ms,
-    restartDelayMs: defaults.restart_delay_ms,
-    shutdownGraceMs: defaults.shutdown_grace_ms,
+/**
+ * 잠금 파일의 Node가 준비되어 있는지 본다. 다른 버전은 새 버전 폴더에 설치하고
+ * 재진입을 요청하며, 지금 실행 중인 폴더는 절대 지우지 않는다.
+ */
+async function ensureNodeForPlan({ stateRoot, plan }) {
+  const entry = plan.find((item) => item.kind === "node");
+  const dir = runtimeInstallDir(stateRoot, "node", entry.version);
+  const marker = await readRuntimeMarker(dir);
+  const installed = Boolean(marker) && marker.sha256 === entry.sha256;
+  const running = process.version === `v${entry.version}`;
+  if (installed && running) return null;
+  if (running) {
+    if (!installed) {
+      if (await isPathInside(dir, process.execPath)) {
+        log("경고: 실행 중인 Node 런타임 폴더의 기록이 잠금 파일과 다릅니다. 지우지 않고 그대로 씁니다.");
+        return null;
+      }
+      await ensureRuntime({ stateRoot, plan, kind: "node" });
+    }
+    return null;
+  }
+  if (!(await isPathInside(dir, process.execPath))) {
+    await ensureRuntime({ stateRoot, plan, kind: "node" });
+  }
+  return { entry };
+}
+
+/** 재진입 요청을 기록한다. 같은 이유·키가 이미 기록돼 있으면 진행이 아니라 반복이다. */
+async function requestReentry({ path, previous, reason, key, message, loopMessage }) {
+  if (isRepeatedReentry(previous, reason, key)) throw new Error(loopMessage);
+  await writeStateFile(path, { reason, key, at: new Date().toISOString() });
+  log(message);
+}
+
+/**
+ * 판 전환 준비. child를 멈추기 전에 구성·payload·런타임·bind를 모두 끝낸다.
+ * 하나라도 실패하면 아무것도 바꾸지 않고 현재 판을 계속 실행한다.
+ */
+async function stageSwitch({ context, release }) {
+  const bootstrap = await waitForBootstrap({
+    defaults: context.defaults,
+    node: context.node,
+    sourceCommit: release.source_commit,
+  });
+  const configGeneration = await writeConfigGeneration({
+    bootstrap,
+    stateRoot: context.stateRoot,
+    configRoot: join(context.stateRoot, "config"),
+  });
+  const installed = await installRelease({
+    stateRoot: context.stateRoot,
+    upstream: context.defaults.upstream,
+    token: context.node.token,
+    release,
     log,
   });
+  const alignment = await alignCheckout({
+    stateRoot: context.stateRoot,
+    root: context.repoRoot,
+    sourceCommit: release.source_commit,
+  });
+  if (!alignment.aligned) {
+    return { ok: false, message: alignment.message ?? "작업 트리의 변경을 보존합니다." };
+  }
+  const lock = await loadLock(context.portableDir);
+  const plan = runtimePlan(lock, platformKey());
+  const nodeChange = await ensureNodeForPlan({ stateRoot: context.stateRoot, plan });
+  const runtimes = await installRuntimes({ stateRoot: context.stateRoot, plan, log });
+  const extraEnv = (await readJson(configGeneration.files.env)) ?? {};
+  await prepareRelease({
+    stateRoot: context.stateRoot,
+    defaults: context.defaults,
+    node: context.node,
+    configDir: configGeneration.dir,
+    releaseDir: installed.dir,
+    runtimes,
+    ports: context.ports,
+    extraEnv,
+  });
+  return { ok: true, nodeChange };
 }
 
 function makeUpdateChecker(context) {
-  let switching = false;
+  const switchState = context.switchState;
   return async () => {
-    if (switching || context.updatesDisabled) return;
-    switching = true;
+    if (switchState.switching || context.updatesDisabled) return;
+    switchState.switching = true;
     try {
       const current = await fetchCurrentRelease({
         upstream: context.defaults.upstream,
@@ -282,101 +307,43 @@ function makeUpdateChecker(context) {
         timeoutMs: context.defaults.json_timeout_ms,
       });
       if (current.sha256 === context.active.sha256 && current.source_commit === context.active.source_commit) {
+        switchState.failedKey = null;
         return;
       }
-      log("새 판이 있습니다. 준비합니다.");
+      const key = releaseKey(current);
+      if (switchState.failedKey === key) return;
       if (!(await checkoutIsClean(context.repoRoot, context.stateRoot))) {
         log("경고: 소스 작업 트리에 변경이 있어 판 전환을 보류합니다. 변경을 보존합니다.");
         return;
       }
-      const bootstrap = await waitForBootstrap({
-        defaults: context.defaults,
-        node: context.node,
-        sourceCommit: current.source_commit,
-      });
-      await writeConfigGeneration({
-        bootstrap,
-        stateRoot: context.stateRoot,
-        configRoot: join(context.stateRoot, "config"),
-      });
-      await installRelease({
-        stateRoot: context.stateRoot,
-        upstream: context.defaults.upstream,
-        token: context.node.token,
-        release: current,
-        log,
-      });
-      const alignment = await alignCheckout({
-        stateRoot: context.stateRoot,
-        root: context.repoRoot,
-        sourceCommit: current.source_commit,
-      });
-      if (!alignment.aligned) {
-        log(`경고: 판 전환을 보류합니다. ${alignment.message ?? ""}`);
-        return;
+      log("새 판이 있습니다. child를 멈추기 전에 준비합니다.");
+      try {
+        const staged = await stageSwitch({ context, release: current });
+        if (!staged.ok) {
+          log(`경고: 판 전환을 보류합니다. ${staged.message}`);
+          return;
+        }
+        if (staged.nodeChange) {
+          await requestReentry({
+            path: context.reentryPath,
+            previous: context.reentry,
+            reason: "node",
+            key: `${staged.nodeChange.entry.version}:${staged.nodeChange.entry.sha256}`,
+            message: `Node ${staged.nodeChange.entry.version}으로 다시 시작합니다.`,
+            loopMessage: "실행기를 다시 시작해도 Node 런타임이 잠금 파일과 맞지 않습니다.",
+          });
+        }
+        log("준비를 마쳤습니다. child를 정상 종료하고 새 판으로 재진입합니다.");
+        await context.supervisor.stop("switch");
+        process.exit(REENTRY_EXIT_CODE);
+      } catch (error) {
+        switchState.failedKey = key;
+        log(`경고: 새 판으로 전환하지 못했습니다. 현재 판을 계속 실행합니다. ${error.message}`);
       }
-      log("child를 정상 종료하고 새 판으로 재진입합니다.");
-      await context.supervisor.stop("switch");
-      process.exit(REENTRY_EXIT_CODE);
     } finally {
-      switching = false;
+      switchState.switching = false;
     }
   };
-}
-
-async function startWithRollback({ context, release, installed, runtimes, ports, extraEnv }) {
-  const activePath = join(context.stateRoot, "active-release.json");
-  const previous = await readJson(activePath);
-  const supervisor = makeSupervisor({ env: context.prepared.env, dir: installed.dir, defaults: context.defaults });
-  const startResult = await supervisor.start();
-  if (startResult.started) {
-    await writeStateFile(activePath, {
-      source_commit: release.source_commit,
-      sha256: release.sha256,
-      config_generation: context.configGeneration,
-      activated_at: new Date().toISOString(),
-    });
-    return { supervisor, previous };
-  }
-  log(`soul-server가 기동하지 못했습니다 (code=${startResult.exit?.code}).`);
-  if (!previous || previous.source_commit === release.source_commit) {
-    throw new Error("soul-server가 기동하지 못했습니다. 위 오류를 확인하십시오.");
-  }
-  const previousDir = join(context.stateRoot, "releases", previous.source_commit);
-  if (!existsSync(join(previousDir, ".portable-verified.json"))) {
-    throw new Error("이전 판 묶음이 없어 되돌릴 수 없습니다. 위 오류를 확인하십시오.");
-  }
-  log("이전 판으로 한 번 되돌립니다.");
-  try {
-    const previousPrepared = await prepareRelease({
-      stateRoot: context.stateRoot,
-      defaults: context.defaults,
-      node: context.node,
-      configDir: join(context.stateRoot, "config", previous.config_generation ?? context.configGeneration),
-      releaseDir: previousDir,
-      runtimes,
-      ports,
-      extraEnv,
-    });
-    const previousSupervisor = makeSupervisor({
-      env: previousPrepared.env,
-      dir: previousDir,
-      defaults: context.defaults,
-    });
-    const previousResult = await previousSupervisor.start();
-    if (previousResult.started) {
-      await writeStateFile(join(context.stateRoot, "rollback.json"), {
-        from: release.source_commit,
-        to: previous.source_commit,
-        at: new Date().toISOString(),
-      });
-      log("이전 판으로 기동했습니다. 새 판 문제를 확인한 뒤 다시 시작하십시오.");
-      return { supervisor: previousSupervisor, previous, rolledBack: true };
-    }
-  } catch (error) {
-    log(`이전 판 복구도 실패했습니다: ${error.message}`);
-  }
-  throw new Error("soul-server가 기동하지 못했습니다. 위 오류를 확인하십시오.");
 }
 
 async function main() {
@@ -389,7 +356,9 @@ async function main() {
     : dirname(portableDir);
 
   await ensureStateLayout(stateRoot);
-  checkRunnerStatePath(stateRoot);
+  assertRunnerStatePathCompatible(join(stateRoot, "r"));
+  const reentryPath = join(stateRoot, "reentry.json");
+  const reentry = await readJson(reentryPath);
   const defaults = await loadDefaults(portableDir);
   const lock = await loadLock(portableDir);
 
@@ -402,75 +371,87 @@ async function main() {
   const release = await waitForCurrent({ defaults, node });
   const alignment = await alignCheckout({ stateRoot, root: repoRoot, sourceCommit: release.source_commit });
   if (alignment.aligned && alignment.changed) {
-    log("소스 판을 릴리스에 맞췄습니다. 실행기를 다시 시작합니다.");
+    await requestReentry({
+      path: reentryPath,
+      previous: reentry,
+      reason: "checkout",
+      key: release.source_commit,
+      message: "소스 판을 릴리스에 맞췄습니다. 실행기를 다시 시작합니다.",
+      loopMessage: "소스 판을 맞춘 뒤에도 커밋이 되돌아갑니다. 작업 트리를 확인하십시오.",
+    });
     process.exit(REENTRY_EXIT_CODE);
   }
   if (!alignment.aligned) log(`경고: ${alignment.message}`);
 
   const plan = runtimePlan(lock, platformKey());
-  const nodePlan = plan.find((entry) => entry.kind === "node");
-  if (process.version !== `v${nodePlan.version}`) {
-    await ensureRuntime({ stateRoot, plan, kind: "node", log });
-    log(`Node ${nodePlan.version}으로 다시 시작합니다.`);
+  const nodeChange = await ensureNodeForPlan({ stateRoot, plan });
+  if (nodeChange) {
+    const { entry } = nodeChange;
+    await requestReentry({
+      path: reentryPath,
+      previous: reentry,
+      reason: "node",
+      key: `${entry.version}:${entry.sha256}`,
+      message: `Node ${entry.version}으로 다시 시작합니다.`,
+      loopMessage: "실행기를 다시 시작해도 Node 런타임이 잠금 파일과 맞지 않습니다.",
+    });
     process.exit(REENTRY_EXIT_CODE);
   }
+  if (reentry) await rm(reentryPath, { force: true });
 
-  const runtimes = await ensureAllRuntimes({ stateRoot, lock, log });
-  const bootstrap = await waitForBootstrap({ defaults, node, sourceCommit: release.source_commit });
-  const configGeneration = await writeConfigGeneration({
-    bootstrap,
-    stateRoot,
-    configRoot: join(stateRoot, "config"),
-  });
-  const installed = await installRelease({
-    stateRoot,
-    upstream: defaults.upstream,
-    token: node.token,
-    release,
-    log,
-  });
-
+  const runtimes = await installRuntimes({ stateRoot, plan, log });
   await ensureRepos({ stateRoot, defaults });
-
   const ports = await ensurePorts(stateRoot, node, (updated) =>
     writeStateFile(join(stateRoot, "node.json"), updated),
   );
   await ensurePythonWrapper(stateRoot, runtimes.python.executable);
-  const extraEnv = (await readJson(configGeneration.files.env)) ?? {};
-  const prepared = await prepareRelease({
-    stateRoot,
-    defaults,
-    node,
-    configDir: configGeneration.dir,
-    releaseDir: installed.dir,
-    runtimes,
-    ports,
-    extraEnv,
-  });
-  await ensureCodexLogin({ stateRoot, codexExecutable: runtimes.codex.executable, env: prepared.env });
+  await ensureCodexLogin({ stateRoot, codexExecutable: runtimes.codex.executable });
+
+  const previous = await readJson(join(stateRoot, "active-release.json"));
+  let supervisor;
+  let activeRelease = release;
+  let updatesDisabled = false;
+  try {
+    const bootstrap = await waitForBootstrap({ defaults, node, sourceCommit: release.source_commit });
+    const candidate = await prepareCandidate({ stateRoot, defaults, node, runtimes, ports, release, bootstrap, log });
+    supervisor = await startCandidate({ stateRoot, defaults, release, candidate, log });
+  } catch (error) {
+    log(`새 판 준비·기동에 실패했습니다: ${error.message}`);
+    const restored = await rollbackToPrevious({
+      stateRoot,
+      defaults,
+      node,
+      runtimes,
+      ports,
+      previous,
+      from: release,
+      log,
+    });
+    if (!restored) throw error;
+    supervisor = restored.supervisor;
+    activeRelease = previous;
+    updatesDisabled = true;
+    log(`이전 판(${String(previous.source_commit).slice(0, 12)})으로 기동했습니다. 새 판 문제를 확인한 뒤 다시 시작하십시오.`);
+  }
+  log(`soul-server를 시작했습니다 (${activeRelease.source_commit.slice(0, 12)}).`);
+  log(`Claude 계정 등록은 기존 대시보드의 이 노드(${node.node_id}) 로그인 위치에서 하십시오.`);
 
   const context = {
     stateRoot,
     repoRoot,
+    portableDir,
     defaults,
     node,
-    configGeneration: configGeneration.generation,
-    prepared,
-    updatesDisabled: false,
-  };
-  const { supervisor, rolledBack } = await startWithRollback({
-    context,
-    release,
-    installed,
     runtimes,
     ports,
-    extraEnv,
-  });
-  context.updatesDisabled = Boolean(rolledBack);
-  log(`soul-server를 시작했습니다 (${release.source_commit.slice(0, 12)}).`);
-  log(`Claude 계정 등록은 기존 대시보드의 이 노드(${node.node_id}) 로그인 위치에서 하십시오.`);
-
-  const checkForUpdate = makeUpdateChecker({ ...context, active: { source_commit: release.source_commit, sha256: release.sha256 }, supervisor });
+    reentryPath,
+    reentry: null,
+    active: { source_commit: activeRelease.source_commit, sha256: activeRelease.sha256 },
+    updatesDisabled,
+    switchState: { switching: false, failedKey: null },
+    supervisor,
+  };
+  const checkForUpdate = makeUpdateChecker(context);
   const timer = setInterval(() => {
     checkForUpdate().catch((error) => log(`갱신 확인 실패: ${error.message}`));
   }, (defaults.check_interval_secs ?? 60) * 1000);

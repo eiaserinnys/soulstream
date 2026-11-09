@@ -1,5 +1,7 @@
+// 500줄을 넘기는 이유: 런타임 잠금·다운로드·P3 payload 검증·압축 안전·bind가 하나의 계약을
+// 이루고, 조각을 나누면 P3 소스와의 기계 대조(contract.test.mjs)가 흩어진다.
 import { cp, lstat, mkdir, readFile, readdir, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join, posix, sep } from "node:path";
+import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path";
 import { downloadFile, fetchJson, makeExecutable, sha256File } from "./download.mjs";
 import { platformKey } from "./config.mjs";
 import { run } from "./git.mjs";
@@ -13,6 +15,46 @@ export class ReleaseError extends Error {
 }
 
 export const RUNTIME_KINDS = ["node", "claude", "codex", "python"];
+
+// 아래 이름·값은 P3(soul-server-ts/src/release, src/runner)의 계약을 그대로 따른다.
+export const PORTABLE_RELEASE_METADATA_FILE = "portable-release.json";
+export const PORTABLE_BIND_SCRIPT_FILE = "bind-release.mjs";
+export const PORTABLE_RUNNER_DIRECTORY = "runner";
+
+/** P3 release_artifacts.ts의 HOST_RELEASE_ARTIFACTS와 같다. */
+export const HOST_RELEASE_ARTIFACTS = [
+  "main.js",
+  "runner/runner_release_prewarm.js",
+  "upstream/control_inbox_worker_entry.js",
+];
+
+/** P3 runner_release_materializer.ts의 RUNNER_RELEASE_ARTIFACTS와 같다. */
+export const RUNNER_RELEASE_ARTIFACTS = [
+  "package.json",
+  "runner_entry.js",
+  "session-netns-helper.py",
+  "session_netns_network.py",
+];
+
+/** P3 portable_release.ts의 BOUND_RELEASE_EXTRA_FILES와 같다. payload에 있어도 설명에 안 적히는 파일. */
+export const BOUND_RELEASE_EXTRA_FILES = [
+  PORTABLE_RELEASE_METADATA_FILE,
+  "release-manifest.json",
+  ".env.soul-server-ts",
+];
+
+/** P3 verifyPortableReleasePayload가 요구하는 최소 파일 목록. */
+export const PAYLOAD_REQUIRED_FILES = [
+  ...HOST_RELEASE_ARTIFACTS,
+  ...RUNNER_RELEASE_ARTIFACTS.map((name) => `${PORTABLE_RUNNER_DIRECTORY}/${name}`),
+  PORTABLE_BIND_SCRIPT_FILE,
+];
+
+export const SHA256_PATTERN = /^sha256-[0-9a-f]{64}$/;
+
+/** P3 parsePortableReleaseMetadata의 requireExactKeys 목록과 같다. */
+export const METADATA_KEYS = ["schema_version", "source_commit", "schema_generation", "wire_generation", "files"];
+export const FILE_KEYS = ["path", "sha256", "size"];
 
 export async function readRuntimeLock(portableDir) {
   const raw = await readFile(join(portableDir, "runtime-lock.json"), "utf8");
@@ -40,16 +82,46 @@ export function runtimePlan(lock, key) {
   return plan;
 }
 
-function installDir(stateRoot, kind, version) {
+export function runtimeInstallDir(stateRoot, kind, version) {
   return join(stateRoot, "runtimes", kind, version, platformKey());
 }
 
-async function readMarker(dir) {
+export async function readRuntimeMarker(dir) {
   try {
     return JSON.parse(await readFile(join(dir, ".portable-runtime.json"), "utf8"));
   } catch {
     return null;
   }
+}
+
+/** 설치 기록과 실행 파일이 모두 맞을 때만 그 런타임을 다시 쓰지 않는다. */
+export async function runtimeReady({ dir, entry }) {
+  const marker = await readRuntimeMarker(dir);
+  if (!marker || marker.sha256 !== entry.sha256) return false;
+  try {
+    await stat(join(dir, entry.executable));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** child가 parent 안(자기 자신 포함)에 있는지 실제 경로로 판정한다. */
+export async function isPathInside(parent, child) {
+  let parentReal;
+  let childReal;
+  try {
+    parentReal = await realpath(parent);
+  } catch {
+    return false;
+  }
+  try {
+    childReal = await realpath(child);
+  } catch {
+    childReal = resolve(child);
+  }
+  const rel = relative(parentReal, childReal);
+  return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
 }
 
 /**
@@ -234,15 +306,15 @@ async function normalizeSingleDirectory(dir) {
 export async function ensureRuntime({ stateRoot, plan, kind, log = () => {} }) {
   const entry = plan.find((item) => item.kind === kind);
   if (!entry) throw new ReleaseError(`런타임 계획에 ${kind}가 없습니다.`, "RUNTIME_PLAN");
-  const dir = installDir(stateRoot, kind, entry.version);
-  const marker = await readMarker(dir);
-  if (marker && marker.sha256 === entry.sha256) {
-    try {
-      await stat(join(dir, entry.executable));
-      return { kind, dir, version: entry.version, installed: false, executable: join(dir, entry.executable) };
-    } catch {
-      // 실행 파일이 사라졌으면 다시 설치한다.
-    }
+  const dir = runtimeInstallDir(stateRoot, kind, entry.version);
+  if (await runtimeReady({ dir, entry })) {
+    return { kind, dir, version: entry.version, installed: false, executable: join(dir, entry.executable) };
+  }
+  if (await isPathInside(dir, process.execPath)) {
+    throw new ReleaseError(
+      `현재 실행 중인 ${kind} 런타임 폴더는 지우거나 바꾸지 않습니다. 실행기를 다시 시작해 새 런타임을 준비하십시오.`,
+      "RUNTIME_IN_USE",
+    );
   }
 
   log(`${kind} ${entry.version} 내려받는 중…`);
@@ -294,6 +366,11 @@ export async function ensureAllRuntimes({ stateRoot, lock, log = () => {} }) {
   return results;
 }
 
+/** 검증 기록은 payload 밖에 둔다. payload 안에 두면 P3 bind가 미등록 파일로 거부한다. */
+export function releaseMarkerPath(stateRoot, sourceCommit) {
+  return join(stateRoot, "releases", `${sourceCommit}.verified.json`);
+}
+
 export async function fetchCurrentRelease({ upstream, token, timeoutMs = 15000, fetchJsonImpl = fetchJson }) {
   const url = new URL("/api/node/releases/current", upstream).toString();
   const response = await fetchJsonImpl(url, {
@@ -327,16 +404,60 @@ export function releaseDir(stateRoot, release) {
   return join(stateRoot, "releases", release.source_commit);
 }
 
+function requireExactKeys(value, keys, label) {
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  if (actual.length !== expected.length || actual.some((key, index) => key !== expected[index])) {
+    throw new ReleaseError(`${label}의 항목이 올바르지 않습니다.`, "PAYLOAD_MALFORMED");
+  }
+}
+
+/** P3 payloadPath와 같은 규칙. 백슬래시·NUL·절대 경로·드라이브·`..`·정규화 불일치를 거부한다. */
+function payloadPath(value) {
+  if (typeof value !== "string" || value.length === 0) {
+    throw new ReleaseError("앱 묶음 파일 경로가 올바르지 않습니다.", "PAYLOAD_MALFORMED");
+  }
+  if (value.includes("\\") || value.includes("\0") || value.startsWith("/") || /^[A-Za-z]:/.test(value)) {
+    throw new ReleaseError(`앱 묶음에 안전하지 않은 경로가 있습니다: ${value}`, "PAYLOAD_MALFORMED");
+  }
+  if (value === "." || value === ".." || value.startsWith("../") || posix.normalize(value) !== value) {
+    throw new ReleaseError(`앱 묶음에 안전하지 않은 경로가 있습니다: ${value}`, "PAYLOAD_MALFORMED");
+  }
+  return value;
+}
+
+/** P3 listPortablePayloadFiles와 같이 디렉터리를 걸어 내려가며 링크·특수 파일을 거부한다. */
+async function listPayloadFiles(dir, prefix = "") {
+  const found = [];
+  for (const entry of await readdir(join(dir, prefix), { withFileTypes: true })) {
+    const name = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isSymbolicLink() || (!entry.isDirectory() && !entry.isFile())) {
+      throw new ReleaseError(`앱 묶음에 허용하지 않는 파일 형식이 있습니다: ${name}`, "PAYLOAD_MALFORMED");
+    }
+    if (entry.isDirectory()) found.push(...(await listPayloadFiles(dir, name)));
+    else found.push(name);
+  }
+  return found;
+}
+
 async function validatePayload(payloadDir, release) {
-  const manifestPath = join(payloadDir, "portable-release.json");
   let manifest;
   try {
-    manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    manifest = JSON.parse(await readFile(join(payloadDir, PORTABLE_RELEASE_METADATA_FILE), "utf8"));
   } catch (error) {
     throw new ReleaseError(`앱 묶음 설명을 읽지 못했습니다: ${error.message}`, "PAYLOAD_MALFORMED");
   }
+  if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest)) {
+    throw new ReleaseError("앱 묶음 설명이 객체가 아닙니다.", "PAYLOAD_MALFORMED");
+  }
+  requireExactKeys(manifest, METADATA_KEYS, "앱 묶음 설명");
   if (manifest.schema_version !== 1) {
     throw new ReleaseError("앱 묶음 설명의 schema_version이 1이 아닙니다.", "PAYLOAD_MALFORMED");
+  }
+  for (const key of ["source_commit", "schema_generation", "wire_generation"]) {
+    if (typeof manifest[key] !== "string" || manifest[key].length === 0) {
+      throw new ReleaseError(`앱 묶음 설명의 ${key}가 올바르지 않습니다.`, "PAYLOAD_MALFORMED");
+    }
   }
   if (manifest.source_commit !== release.source_commit) {
     throw new ReleaseError("앱 묶음의 커밋이 릴리스 정보와 다릅니다.", "PAYLOAD_MISMATCH");
@@ -346,42 +467,55 @@ async function validatePayload(payloadDir, release) {
   }
   const fileNames = new Set();
   for (const entry of manifest.files) {
-    if (typeof entry.path !== "string" || entry.path.length === 0) {
-      throw new ReleaseError("앱 묶음 파일 경로가 올바르지 않습니다.", "PAYLOAD_MALFORMED");
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+      throw new ReleaseError("앱 묶음 파일 항목이 올바르지 않습니다.", "PAYLOAD_MALFORMED");
     }
-    const normalized = entry.path.replace(/\\/g, "/");
-    if (normalized.startsWith("/") || normalized.split("/").includes("..")) {
-      throw new ReleaseError(`앱 묶음에 안전하지 않은 경로가 있습니다: ${entry.path}`, "PAYLOAD_MALFORMED");
+    requireExactKeys(entry, FILE_KEYS, "앱 묶음 파일 항목");
+    const relativePath = payloadPath(entry.path);
+    if (fileNames.has(relativePath)) {
+      throw new ReleaseError(`앱 묶음 설명에 같은 파일이 두 번 있습니다: ${relativePath}`, "PAYLOAD_MALFORMED");
     }
-    const target = join(payloadDir, normalized);
-    let actual;
+    if (typeof entry.sha256 !== "string" || !SHA256_PATTERN.test(entry.sha256)) {
+      throw new ReleaseError(`앱 묶음 파일 해시 형식이 올바르지 않습니다: ${relativePath}`, "PAYLOAD_MALFORMED");
+    }
+    if (!Number.isInteger(entry.size) || entry.size < 0) {
+      throw new ReleaseError(`앱 묶음 파일 크기가 올바르지 않습니다: ${relativePath}`, "PAYLOAD_MALFORMED");
+    }
+    const target = join(payloadDir, relativePath);
+    let digest;
     try {
-      actual = await sha256File(target);
+      digest = await sha256File(target);
     } catch {
-      throw new ReleaseError(`앱 묶음에 파일이 없습니다: ${entry.path}`, "PAYLOAD_INCOMPLETE");
+      throw new ReleaseError(`앱 묶음에 파일이 없습니다: ${relativePath}`, "PAYLOAD_INCOMPLETE");
     }
-    if (actual !== entry.sha256) {
-      throw new ReleaseError(`앱 묶음 파일 해시가 다릅니다: ${entry.path}`, "PAYLOAD_MISMATCH");
+    if (`sha256-${digest}` !== entry.sha256) {
+      throw new ReleaseError(`앱 묶음 파일 해시가 다릅니다: ${relativePath}`, "PAYLOAD_MISMATCH");
     }
-    const size = (await stat(target)).size;
-    if (typeof entry.size === "number" && size !== entry.size) {
-      throw new ReleaseError(`앱 묶음 파일 크기가 다릅니다: ${entry.path}`, "PAYLOAD_MISMATCH");
+    if ((await stat(target)).size !== entry.size) {
+      throw new ReleaseError(`앱 묶음 파일 크기가 다릅니다: ${relativePath}`, "PAYLOAD_MISMATCH");
     }
-    fileNames.add(normalized);
+    fileNames.add(relativePath);
   }
-  if (!fileNames.has("bind-release.mjs")) {
-    throw new ReleaseError("앱 묶음에 bind-release.mjs가 없습니다.", "PAYLOAD_INCOMPLETE");
+  for (const required of PAYLOAD_REQUIRED_FILES) {
+    if (!fileNames.has(required)) {
+      throw new ReleaseError(`앱 묶음에 필요한 파일이 없습니다: ${required}`, "PAYLOAD_INCOMPLETE");
+    }
+  }
+  for (const actual of await listPayloadFiles(payloadDir)) {
+    if (!fileNames.has(actual) && !BOUND_RELEASE_EXTRA_FILES.includes(actual)) {
+      throw new ReleaseError(`앱 묶음에 설명에 없는 파일이 있습니다: ${actual}`, "PAYLOAD_MALFORMED");
+    }
   }
   return manifest;
 }
 
 export async function installRelease({ stateRoot, upstream, token, release, log = () => {} }) {
   const target = releaseDir(stateRoot, release);
-  const verifiedPath = join(target, ".portable-verified.json");
+  const verifiedPath = releaseMarkerPath(stateRoot, release.source_commit);
   try {
     const marker = JSON.parse(await readFile(verifiedPath, "utf8"));
     if (marker.sha256 === release.sha256 && marker.key === releaseKey(release)) {
-      await stat(join(target, "portable-release.json"));
+      await stat(join(target, PORTABLE_RELEASE_METADATA_FILE));
       return { dir: target, key: releaseKey(release), downloaded: false, release };
     }
   } catch {
@@ -424,7 +558,6 @@ export async function installRelease({ stateRoot, upstream, token, release, log 
   await mkdir(join(stateRoot, "releases"), { recursive: true });
   await rename(payloadRoot, target);
   await rm(tempDir, { recursive: true, force: true });
-  const finalDir = target;
   await writeFile(
     verifiedPath,
     `${JSON.stringify(
@@ -439,7 +572,7 @@ export async function installRelease({ stateRoot, upstream, token, release, log 
     )}\n`,
     { mode: 0o600 },
   );
-  return { dir: finalDir, key: releaseKey(release), downloaded: true, release };
+  return { dir: target, key: releaseKey(release), downloaded: true, release };
 }
 
 export async function runBind({ releaseDir: dir, nodePath, envFile, env, timeoutMs = 300000 }) {

@@ -57,7 +57,14 @@ test("첫 실행: 참여→판 맞춤→구성→묶음→두 리포→감독 �
 
     const releaseDir = join(stateDir, "releases", source.firstCommit);
     assert.ok(existsSync(join(releaseDir, "portable-release.json")));
+    assert.ok(existsSync(join(releaseDir, "main.js")), "P3 묶음은 main.js를 루트에 둡니다.");
+    assert.ok(existsSync(join(releaseDir, "runner", "runner_entry.js")));
     assert.ok(existsSync(join(releaseDir, "release-manifest.json")));
+    assert.ok(
+      existsSync(join(stateDir, "releases", `${source.firstCommit}.verified.json`)),
+      "검증 기록은 payload 밖에 있어야 합니다.",
+    );
+    assert.equal(existsSync(join(releaseDir, ".portable-verified.json")), false);
     const envFile = await readFile(join(releaseDir, ".env.soul-server-ts"), "utf8");
     assert.match(envFile, new RegExp(`AUTH_BEARER_TOKEN=${TOKEN}`));
 
@@ -74,6 +81,7 @@ test("첫 실행: 참여→판 맞춤→구성→묶음→두 리포→감독 �
     assert.equal(childEnv.HOME, join(stateDir, "home"));
     assert.equal(childEnv.USERPROFILE, join(stateDir, "home"));
     assert.equal(childEnv.CODEX_HOME, join(stateDir, "codex"));
+    assert.equal(childEnv.SOUL_RUNNER_ARTIFACT_DIR, join(releaseDir, "runner"));
     assert.equal(childEnv.AGENT_COMMON_FILES_DIR, join(stateDir, "common"));
     assert.equal(childEnv.GIT_CONFIG_GLOBAL, join(stateDir, "git", "gitconfig"));
     assert.equal(childEnv.AGENT_COMMON_FILES_DIR, join(stateDir, "common"));

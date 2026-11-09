@@ -69,6 +69,22 @@ sha256_of() {
   fi
 }
 
+# launcher가 쓰는 것과 같은 설치 기록. 런타임을 다시 쓰지 않을 판정에 쓴다.
+marker_sha() {
+  [ -f "$1/.portable-runtime.json" ] || return 0
+  awk '/"sha256"/ { line = $0; sub(/^[^:]*: *"/, "", line); sub(/".*$/, "", line); print line; exit }' \
+    "$1/.portable-runtime.json"
+}
+
+write_marker() {
+  dir=$1
+  version=$2
+  sha=$3
+  installed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  printf '{\n  "kind": "node",\n  "version": "%s",\n  "sha256": "%s",\n  "installed_at": "%s"\n}\n' \
+    "$version" "$sha" "$installed_at" >"$dir/.portable-runtime.json"
+}
+
 ensure_tools() {
   command -v curl >/dev/null 2>&1 || fail "curl이 없습니다."
   command -v tar >/dev/null 2>&1 || fail "tar가 없습니다."
@@ -91,7 +107,7 @@ install_node() {
   executable=$5
   install_dir="$STATE_DIR/runtimes/node/$version/$platform"
   node_bin="$install_dir/$executable"
-  if [ -x "$node_bin" ]; then
+  if [ -x "$node_bin" ] && [ "$(marker_sha "$install_dir")" = "$sha" ]; then
     printf '%s' "$node_bin"
     return 0
   fi
@@ -120,6 +136,7 @@ install_node() {
   rm -rf "$temp_dir"
   chmod +x "$node_bin" 2>/dev/null || true
   [ -x "$node_bin" ] || fail "Node 실행 파일을 찾지 못했습니다: $node_bin"
+  write_marker "$install_dir" "$version" "$sha"
   printf '%s' "$node_bin"
 }
 
@@ -141,22 +158,22 @@ main() {
 
   mkdir -p "$STATE_DIR"
   sync_boot
-  attempts=0
+  # 종료 코드 75는 계획된 재진입이다. 반복 방지는 launcher의 reentry.json이 맡는다.
   while :; do
     node_bin=$(install_node "$version" "$platform" "$url" "$sha" "$executable") ||
       fail "Node 준비에 실패했습니다."
     if [ "$self_test" -eq 1 ]; then
       "$node_bin" --version || fail "Node 실행 확인에 실패했습니다."
+      install_dir="$STATE_DIR/runtimes/node/$version/$platform"
+      [ -f "$install_dir/.portable-runtime.json" ] || fail "Node 설치 기록이 없습니다."
+      [ "$(marker_sha "$install_dir")" = "$sha" ] ||
+        fail "Node 설치 기록의 sha256이 잠금 파일과 다릅니다."
       printf '[portable-node] Node 준비 확인 완료: %s\n' "$node_bin"
       exit 0
     fi
     "$node_bin" "$BOOT_DIR/launcher.mjs" "$@"
     code=$?
     if [ "$code" -eq 75 ]; then
-      attempts=$((attempts + 1))
-      if [ "$attempts" -ge 3 ]; then
-        fail "실행기 재진입이 반복됩니다. 위 오류를 확인하십시오."
-      fi
       # checkout의 lock이 바뀌었을 수 있으므로 다시 읽고 boot도 새로 복사한다.
       sync_boot
       version=$(lock_value node "$platform" version)
