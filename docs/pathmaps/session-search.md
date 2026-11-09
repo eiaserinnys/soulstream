@@ -16,12 +16,13 @@ Session results expose `created_at` and `updated_at` as ISO timestamp strings.
 
 ## Deadlines
 
-Each deadline is at least twice the observed production duration. The per-request remaining-budget clamp in `live_db_sql.ts` is unchanged.
+Each deadline is at least twice the observed production duration. The per-request clamp in `live_db_sql.ts` still reduces each statement timeout to the remaining request budget.
 
 | Path | Deadline | Measured basis |
 | --- | ---: | --- |
 | Session document index cold build (`live_session_document_search.ts`) | 60 s | index ready 19.8 s and 28.2 s after startup |
 | `search_session_history` handler request (`session_query_handlers.ts`) | 10 s | server 3.7–3.9 s; first SQL 3.4 s |
+| Search request budget when the caller passes no deadline (`live_db_sql.ts` `LIVE_SEARCH_REQUEST_BUDGET_MS`) | 8 s | history search 3.9 s; keeps 2 s inside the 10 s handler deadline for metadata reads |
 | Search DB statement timeout (`live_db_sql.ts`) | 8 s | first `event_search` SQL 3.4 s; later 0.1–2.1 s |
 | Cogito search deadline (`cogito_routes.ts`) | 10 s | same `event_search` SQL |
 | Expanded product session search deadline (`cogito_routes.ts`) | 15 s | expanded session search 5.7 s and 6.7 s |

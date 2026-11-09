@@ -221,7 +221,7 @@ describe("live Postgres SQL resolver", () => {
         await runQuery(() => sql``);
       });
 
-      expect(setStatementTimeout.mock.calls).toEqual([[4_000], [1_750]]);
+      expect(setStatementTimeout.mock.calls).toEqual([[8_000], [5_750]]);
       expect(factory.open).toHaveBeenCalledOnce();
       expect(close).toHaveBeenCalledOnce();
     } finally {
