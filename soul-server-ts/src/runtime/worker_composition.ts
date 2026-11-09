@@ -51,6 +51,7 @@ import { composeClaudeLoginService, seedLegacyClaudeAccount } from "./claude_log
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
 import { createEngineFactory } from "./engine_factory.js";
 import { backgroundLifecycleObserver, composeRunnerProcessRuntime, composeRunnerRecoveryCoordinator } from "./runner_process_composition.js";
+import { RunnerOrphanReaper } from "../runner/runner_orphan_reaper.js";
 import { composeSessionIsolation } from "./session_isolation_composition.js";
 import { resolveNodeServicesObservation } from "../mcp/node_services_observation_config.js";
 import type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
@@ -344,6 +345,9 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
       }
       : {}),
   });
+  const runnerOrphanReaper = runnerProcess && process.platform === "linux"
+    ? new RunnerOrphanReaper({ logger, intervalMs: env.SOUL_RUNNER_REAPER_INTERVAL_MS })
+    : undefined;
   const folderService = new FolderService(orchHostClientDeps);
   db.configureFolderReader(folderService);
   const catalogService = new CatalogService(
@@ -492,6 +496,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     eventOutboxPump,
     eventOutboxPumpMux,
     ...(runnerRecoveryCoordinator ? { runnerRecoveryCoordinator } : {}),
+    ...(runnerOrphanReaper ? { runnerOrphanReaper } : {}),
     ...(runnerProcess ? { runnerStateHostOwnership: runnerProcess.hostOwnership } : {}),
     upstreamRegistrationReady: params.releaseActivationState.waitUntilReady(),
     createUpstreamAdapter,

@@ -23,18 +23,21 @@ export class CodexDetachedCommandActivityTracker {
   private readonly terminalResultRetentionMs: number;
   private readonly now: () => number;
   private foreground: ForegroundState | null = null;
-  private readonly detachedCommands = new Set<string>();
+  private readonly detachedCommands = new Map<string, RetainedTerminalResult>();
   private readonly terminalResults = new Map<string, RetainedTerminalResult>();
   private readonly onTerminalResultExpired?: (event: TerminalResultExpiration) => void;
+  private readonly onDetachedCommandExpired?: (event: RetainedTerminalResult) => void;
 
   constructor(options: {
     terminalResultRetentionMs: number;
     now?: () => number;
     onTerminalResultExpired?: (event: TerminalResultExpiration) => void;
+    onDetachedCommandExpired?: (event: RetainedTerminalResult) => void;
   }) {
     this.terminalResultRetentionMs = options.terminalResultRetentionMs;
     this.now = options.now ?? Date.now;
     this.onTerminalResultExpired = options.onTerminalResultExpired;
+    this.onDetachedCommandExpired = options.onDetachedCommandExpired;
   }
 
   beginForeground(threadId: string, turnId?: string): void {
@@ -52,7 +55,12 @@ export class CodexDetachedCommandActivityTracker {
   endForegroundExecution(): void {
     const foreground = this.foreground;
     if (!foreground) return;
-    for (const key of foreground.commandKeys) this.detachedCommands.add(key);
+    for (const key of foreground.commandKeys) {
+      const [threadId, turnId, itemId] = key.split("\u0000") as [string, string, string];
+      this.detachedCommands.set(key, {
+        threadId, turnId, itemId, deadlineAtMs: this.now() + this.terminalResultRetentionMs,
+      });
+    }
     this.foreground = null;
   }
 
@@ -120,13 +128,10 @@ export class CodexDetachedCommandActivityTracker {
   private completeCommand(threadId: string, turnId: string, itemId: string): void {
     const key = commandKey(threadId, turnId, itemId);
     if (this.foreground?.commandKeys.delete(key)) return;
-    if (!this.detachedCommands.delete(key)) return;
-    this.terminalResults.set(key, {
-      threadId,
-      turnId,
-      itemId,
-      deadlineAtMs: this.now() + this.terminalResultRetentionMs,
-    });
+    const detached = this.detachedCommands.get(key);
+    if (!detached) return;
+    this.detachedCommands.delete(key);
+    this.terminalResults.set(key, detached);
   }
 
   private completeForeground(threadId: string, turnId: string): void {
@@ -138,6 +143,11 @@ export class CodexDetachedCommandActivityTracker {
 
   private purgeExpiredTerminalResults(): void {
     const now = this.now();
+    for (const [key, command] of this.detachedCommands) {
+      if (command.deadlineAtMs > now) continue;
+      this.detachedCommands.delete(key);
+      this.onDetachedCommandExpired?.(command);
+    }
     for (const [key, result] of this.terminalResults) {
       if (result.deadlineAtMs > now) continue;
       this.terminalResults.delete(key);

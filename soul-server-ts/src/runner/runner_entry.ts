@@ -10,6 +10,7 @@ import { ANTIGRAVITY_MCP_GATEWAY_CONFIG_ENV, ANTIGRAVITY_MCP_GATEWAY_FLAG,
 import { RunnerChildRuntime } from "./runner_child_runtime.js";
 import { parseRunnerChildConfig } from "./runner_process_spawn.js";
 import { startRunnerLogRotation } from "./runner_log_rotation.js";
+import { readProcessStartIdentity } from "./runner_process_lock.js";
 
 if (process.argv[2] === ANTIGRAVITY_MCP_PROXY_FLAG) await runAntigravityMcpProxyMode();
 else if (process.argv[2] === ANTIGRAVITY_MCP_GATEWAY_FLAG) await runAntigravityMcpGatewayMode();
@@ -80,6 +81,18 @@ async function runSessionRunner(): Promise<void> {
     config.paths.logPath,
     (error) => logger.error({ err: error }, "Runner log rotation failed"),
   );
+  if (process.platform === "linux") {
+    delete process.env.SOUL_RUNNER_OWNER;
+    const identity = await readProcessStartIdentity(process.pid);
+    if (identity.kind === "identity") {
+      // The host runner's marker is inherited by isolated CLI processes as well.
+      // Host /proc sees their host PIDs and same UID; a live owner is never reaped.
+      // When the runner dies, the reaper can also clean an adopted bwrap and its children.
+      process.env.SOUL_RUNNER_OWNER = `${process.pid}:${identity.value}`;
+    } else {
+      logger.warn("Runner owner identity unavailable; orphan cleanup disabled for this runner");
+    }
+  }
   const runtime = new RunnerChildRuntime(config, logger);
   process.once("SIGTERM", () => { stopLogRotation(); void runtime.shutdown(); });
   process.once("SIGINT", () => { stopLogRotation(); void runtime.shutdown(); });
