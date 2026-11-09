@@ -1,7 +1,7 @@
 import { useOptionalLayoutContinuity } from '../navigation/LayoutContinuityContext';
 import { SETTINGS_WORKSPACE_CONTINUITY_KEY, type SettingsWorkspaceContinuityState } from '../navigation/settingsWorkspaceContinuity';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { BackHandler, Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { BackHandler, Platform, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { AppKeyboardAvoidingView } from '../components/AppKeyboardAvoidingView';
@@ -110,9 +110,9 @@ export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = '
     }} onLayout={event => setWidth(event.nativeEvent.layout.width)}>
       <AppKeyboardAvoidingView style={styles.root} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         {!(duo && !wide && !active && !onClose) ? <View testID="settings-modal-header" style={styles.header}>
-          {!duo && !connectionOnly && !wide && active ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="모든 설정으로 돌아가기" onPress={() => setCategory(null)}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>설정</Text></TouchableOpacity> : null}
-          {!duo && active === 'recurring-jobs' && jobs.kind !== 'list' ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="반복 작업 이전 화면으로 돌아가기" onPress={back}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>{jobs.kind === 'history' ? '편집' : '목록'}</Text></TouchableOpacity> : null}
-          {!duo && active === 'persistent' && persistent.kind !== 'list' ? <TouchableOpacity style={styles.headerAction} accessibilityRole="button" accessibilityLabel="영구 에이전트 세션 이전 화면으로 돌아가기" onPress={back}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.accent}/><Text style={styles.actionText}>목록</Text></TouchableOpacity> : null}
+          {!duo && !connectionOnly && !wide && active && !nestedSettings ? <GlassButton testID="settings-modal-back" accessibilityLabel="모든 설정으로 돌아가기" iconOnly size="compact" borderRadius={t.foundation.radius.round} frameStyle={styles.headerBack} onPress={() => setCategory(null)}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.textPrimary}/></GlassButton> : null}
+          {!duo && active === 'recurring-jobs' && jobs.kind !== 'list' ? <GlassButton testID="settings-modal-back" accessibilityLabel="반복 작업 이전 화면으로 돌아가기" iconOnly size="compact" borderRadius={t.foundation.radius.round} frameStyle={styles.headerBack} onPress={back}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.textPrimary}/></GlassButton> : null}
+          {!duo && active === 'persistent' && persistent.kind !== 'list' ? <GlassButton testID="settings-modal-back" accessibilityLabel="영구 에이전트 세션 이전 화면으로 돌아가기" iconOnly size="compact" borderRadius={t.foundation.radius.round} frameStyle={styles.headerBack} onPress={back}><Ionicons name="chevron-back" size={t.iconSize.standard} color={t.colors.textPrimary}/></GlassButton> : null}
           <Text style={styles.title}>{title}</Text>
           {!duo && onClose ? <GlassButton testID="settings-modal-close" accessibilityLabel="설정 닫기" iconOnly size="compact" borderRadius={t.foundation.radius.round} frameStyle={styles.headerClose} onPress={close}><Ionicons name="close" size={t.iconSize.standard} color={t.colors.textPrimary}/></GlassButton> : null}
         </View> : null}
@@ -136,9 +136,11 @@ export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = '
 function makeStyles(t: DesignTokens) { return StyleSheet.create({
   root: { flex: 1, minHeight: 0, minWidth: 0 }, body: { flex: 1, minHeight: 0 }, wide: { flexDirection: 'row' }, hidden: { display: 'none' },
   sidebar: { width: 240, flexGrow: 0, borderRightWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border, backgroundColor: t.colors.surfaceMuted }, index: { paddingBottom: t.spacing.xl },
-  header: { minHeight: t.hitTarget.min + t.spacing.sm, paddingHorizontal: t.foundation.pageInset, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: t.spacing.sm },
-  headerAction: { minHeight: t.hitTarget.min, justifyContent: 'center', flexDirection: 'row', alignItems: 'center', gap: t.spacing.xxs },
+  // CardDetail 헤더 관례: 위아래 12(uiSpacing.md) 여백 + 48 높이 줄이면 유리 원의 위 여백이
+  // 오른쪽 여백(pageInset)과 같아진다. 줄이 하나면 가운데, 좁아 여러 줄이 되면 alignContent로 가운데.
+  header: { paddingHorizontal: t.foundation.pageInset, paddingVertical: t.uiSpacing.md, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', alignContent: 'center', gap: t.uiSpacing.sm },
   // 헤더 끝 아이콘 단추는 hit frame 여백만큼 바깥으로 당겨 시각 원의 끝을 카드 끝선에 맞춘다(CardDetail.styles의 iconOverhang 관례).
+  headerBack: { marginLeft: -(t.hitTarget.min - t.foundation.iconFrame.compact) / 2 },
   headerClose: { marginRight: -(t.hitTarget.min - t.foundation.iconFrame.compact) / 2 },
   title: { flex: 1, ...t.foundation.typography.navigation, color: t.colors.textPrimary }, actionText: { ...t.foundation.typography.body, color: t.colors.accent, fontWeight: '600' }, primaryText: { ...t.foundation.typography.body, color: t.colors.accentText, fontWeight: '700' },
   introduction: { padding: t.foundation.pageInset, gap: t.spacing.sm }, introTitle: { ...t.foundation.typography.section, color: t.colors.textPrimary }, help: { ...t.foundation.typography.body, color: t.colors.textSecondary },

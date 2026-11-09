@@ -257,13 +257,20 @@ function DuoSettingsLayoutReview({ frameId }: { frameId: keyof typeof PAS_LAYOUT
         <PhoneRailModeContext.Provider value={frame.rail}>
           <DuoSideBandContext.Provider value={duo}>
             <View testID="settings-layout-stage" style={{ width: frame.width, height: frame.height, overflow: 'hidden', backgroundColor: t.colors.background }}>
+              {/* 실기기 pageSheet처럼 시트 위 끝을 보이게 한다. 안전 영역 위쪽은 배경(딤)만 보이고,
+                  시트는 그 아래에서 시작한다. SafeAreaView의 top 여백은 시트 위치가 대신한다. */}
               <View style={{ flex: 1, paddingRight: duo ? frame.insets.right : 0 }}>
-                <AppGlassCard role="nativeSheet" style={{ flex: 1 }}>
-                  <SafeAreaView testID="settings-layout-safe-area"
-                    edges={duo ? ['top', 'bottom', 'left'] : undefined} style={{ flex: 1 }}>
-                    <SettingsScreen flattened onClose={() => {}} />
-                  </SafeAreaView>
-                </AppGlassCard>
+                <View testID="settings-layout-sheet-frame"
+                  style={{ flex: 1, marginTop: frame.insets.top,
+                    borderTopLeftRadius: t.foundation.radius.card, borderTopRightRadius: t.foundation.radius.card,
+                    overflow: 'hidden' }}>
+                  <AppGlassCard role="nativeSheet" style={{ flex: 1 }}>
+                    <SafeAreaView testID="settings-layout-safe-area"
+                      edges={duo ? ['bottom', 'left'] : ['bottom', 'left', 'right']} style={{ flex: 1 }}>
+                      <SettingsScreen flattened onClose={() => {}} />
+                    </SafeAreaView>
+                  </AppGlassCard>
+                </View>
               </View>
               {duo ? <DuoRailOverride /> : null}
             </View>
