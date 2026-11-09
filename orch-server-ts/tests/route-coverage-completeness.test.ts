@@ -206,12 +206,6 @@ function createAllOptInRouteApp() {
       releasesDir: null,
       currentSourceCommit: "dev",
     },
-    nodeBootstrapRoutes: {
-      service: inert as never,
-      authBearerToken: "test-token",
-      environment: "test",
-      nodeCredentials: null,
-    },
     nodeWsRoute: { registry: inert },
     pageYjsRoutes: {
       authBearerToken: "test-token",

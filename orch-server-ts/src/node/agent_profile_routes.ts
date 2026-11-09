@@ -6,9 +6,6 @@ import {
 } from "@soulstream/agent-profile-contract";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 
-import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
-import { sendPortableConfigError } from "../node_bootstrap/portable_route_errors.js";
-import type { NodeCredentialResolver } from "../node_credentials/types.js";
 import type { ContextBundleRecord, ContextBundleRepository } from "./context_bundle_routes.js";
 import { parseAtomContexts, type AgentAtomContext, type ParseResult } from "./atom_contexts.js";
 
@@ -83,20 +80,9 @@ export class AgentProfileVersionConflictError extends Error {
   }
 }
 
-export type PortableRuntimeProfileTransform = {
-  readonly authBearerToken: string;
-  readonly environment: string;
-  readonly nodeCredentials: NodeCredentialResolver | null;
-  readonly transform: (companyPc: boolean) => Promise<{
-    readonly remainingAgentIds: ReadonlySet<string>;
-    readonly remainingPresetIds: ReadonlySet<string>;
-  }>;
-};
-
 export type AgentProfileRouteOptions = {
   readonly repository: AgentProfileRepository;
   readonly bundleRepository: ContextBundleRepository;
-  readonly portableRuntimeProfileTransform?: PortableRuntimeProfileTransform;
 };
 
 export const supportedPortraitMimes = [
@@ -136,43 +122,7 @@ export function registerAgentProfileRoutes(
     return reply.send({ profiles: profiles.map((profile) => projectProfile(profile, bundlesById)) });
   });
 
-  app.get("/api/agent-profiles/runtime", async (request, reply) => {
-    const portable = options.portableRuntimeProfileTransform;
-    if (portable !== undefined) {
-      const authorization = verifyServiceBearerAuthorization(request.headers.authorization, {
-        configuredToken: portable.authBearerToken,
-        environment: portable.environment,
-        nodeCredentials: portable.nodeCredentials,
-      });
-      if (!authorization.ok) {
-        return reply.code(authorization.statusCode).send({
-          code: authorization.statusCode === 503
-            ? "AGENT_PROFILE_AUTH_UNAVAILABLE"
-            : "AGENT_PROFILE_UNAUTHORIZED",
-        });
-      }
-      const principal = authorization.principal;
-      if (principal !== undefined) {
-        let remainingAgentIds: ReadonlySet<string>;
-        let remainingPresetIds: ReadonlySet<string>;
-        try {
-          const result = await portable.transform(principal.company_pc);
-          remainingAgentIds = result.remainingAgentIds;
-          remainingPresetIds = result.remainingPresetIds;
-        } catch (error) {
-          return sendPortableConfigError(request, reply, error);
-        }
-        const [profiles, bundlesById] = await Promise.all([
-          options.repository.list(),
-          loadBundlesById(),
-        ]);
-        return reply.send({
-          profiles: profiles
-            .filter((profile) => remainingAgentIds.has(profile.agentId))
-            .map((profile) => projectPortableRuntimeProfile(profile, bundlesById, remainingPresetIds)),
-        });
-      }
-    }
+  app.get("/api/agent-profiles/runtime", async (_request, reply) => {
     const [profiles, bundlesById] = await Promise.all([
       options.repository.list(),
       loadBundlesById(),
@@ -285,21 +235,6 @@ function projectRuntimeProfile(
   delete projected.context_bundles;
   delete projected.effective_atom_contexts;
   delete projected.created_at;
-  return projected;
-}
-
-function projectPortableRuntimeProfile(
-  profile: AgentProfileRecord,
-  bundlesById: ReadonlyMap<string, ContextBundleRecord>,
-  remainingPresetIds: ReadonlySet<string>,
-): Record<string, unknown> {
-  const projected = projectRuntimeProfile(profile, bundlesById);
-  if (
-    typeof projected.default_preset === "string"
-    && !remainingPresetIds.has(projected.default_preset)
-  ) {
-    projected.default_preset = null;
-  }
   return projected;
 }
 
