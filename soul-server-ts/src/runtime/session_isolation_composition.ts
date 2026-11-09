@@ -186,13 +186,13 @@ async function prepareRunnerIsolation(
 }
 
 function isolationTools(runtime: SessionIsolationRuntime): IsolationToolPaths {
-  const { bwrap, pasta, unshare, setpriv, nft, netnsHelper } = runtime.tools;
+  const { bwrap, pasta, unshare, setpriv, nft } = runtime.tools;
   if (!pasta) {
     throw new SessionIsolationUnavailableError(
       "SESSION_ISOLATION_UNAVAILABLE: SESSION_ISOLATION_PASTA_PATH is required for restricted execution",
     );
   }
-  return { bwrap, pasta, unshare, setpriv, nft, netnsHelper };
+  return { bwrap, pasta, unshare, setpriv, nft };
 }
 
 function posixUid(): number {

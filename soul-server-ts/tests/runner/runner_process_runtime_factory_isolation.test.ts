@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import pino from "pino";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -115,7 +117,6 @@ function makePrepared(): PreparedRunnerIsolation {
       unshare: "/usr/bin/unshare",
       setpriv: "/usr/bin/setpriv",
       nft: "/usr/sbin/nft",
-      netnsHelper: "/opt/netns-helper.py",
     },
     attachedWorktreeIds: [],
   };
@@ -233,7 +234,13 @@ describe("runner process factory restricted wiring", () => {
       contextNotice: string;
       spec: unknown;
       attachedWorktreeIds: string[];
+      tools: { netnsHelper: string };
     };
+    // helper는 이 러너가 실제로 스폰될 릴리스 스냅샷 안에 있다.
+    expect(input.snapshotPath).toBe("/release/sha-isolation/soul-server-ts");
+    expect(isolation.tools.netnsHelper).toBe(
+      join("/release/sha-isolation/soul-server-ts", "session-netns-helper.py"),
+    );
     expect(isolation.spec).toEqual(prepared.plan.spec);
     expect(isolation.attachedWorktreeIds).toEqual(["worktree-1", "worktree-attached"]);
     expect(isolation.envKeys).toEqual([
@@ -283,6 +290,7 @@ describe("runner process factory restricted wiring", () => {
 
     expect(prepare).not.toHaveBeenCalled();
     const input = spawn.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(input.snapshotPath).toBe("/release/sha-isolation/soul-server-ts");
     expect(input.childProcessEnv).toEqual(childProcessEnv);
     expect(input.isolation).toBeUndefined();
     expect(input.resolvedMcpServers).toEqual(mcpServers);

@@ -14,16 +14,29 @@ import { renameWithTransientRetry } from "../atomic_file_rename.js";
 
 const READY_MARKER = ".runner-release.json";
 const HASH_DOMAIN = "soulstream.runner.release.v1\0";
+const NETNS_HELPER_ARTIFACT = "session-netns-helper.py";
 
 /**
  * Complete runtime-owned file set for a runner release. Claude and Codex CLI
  * executables remain external process dependencies; JavaScript dependencies
- * are bundled into runner_entry.js and node:sqlite is built into Node.
+ * are bundled into runner_entry.js and node:sqlite is built into Node. The
+ * isolation helper scripts travel with the release so a restricted child finds
+ * them in its own snapshot instead of the host checkout.
  */
 export const RUNNER_RELEASE_ARTIFACTS = [
   "package.json",
   "runner_entry.js",
+  "session-netns-helper.py",
+  "session_netns_network.py",
 ] as const;
+
+/** Releases published before the isolation helper scripts joined the bundle. */
+const LEGACY_RUNNER_RELEASE_ARTIFACTS = ["package.json", "runner_entry.js"] as const;
+
+const KNOWN_RELEASE_ARTIFACT_SETS: readonly (readonly string[])[] = [
+  RUNNER_RELEASE_ARTIFACTS,
+  LEGACY_RUNNER_RELEASE_ARTIFACTS,
+];
 
 export interface RunnerReleaseDescriptor {
   /** Opaque release identity. The current materializer uses an artifact content hash. */
@@ -109,21 +122,26 @@ export class BuildArtifactReleaseMaterializer implements RunnerReleaseMaterializ
   }
 
   async verify(release: RunnerReleaseDescriptor): Promise<void> {
-    await this.checkReadyMarker(release);
-    const releaseId = await hashArtifactSet(release.runnerModuleRoot);
+    const marker = await this.readReadyMarker(release);
+    const releaseId = await hashArtifactSet(release.runnerModuleRoot, marker.artifacts);
     if (releaseId !== release.releaseId) {
       throw new Error(`runner release content mismatch: ${release.releaseId}`);
     }
     // Idempotently finish a publish interrupted after atomic rename but before
     // permission hardening. Content is verified before any directory is trusted.
-    await makeReleaseReadOnly(release.releaseRoot);
+    await makeReleaseReadOnly(release.releaseRoot, marker.artifacts);
   }
 
   async checkReadyMarker(release: RunnerReleaseDescriptor): Promise<void> {
+    await this.readReadyMarker(release);
+  }
+
+  private async readReadyMarker(release: RunnerReleaseDescriptor): Promise<RunnerReleaseMarker> {
     const marker = parseMarker(await readFile(join(release.releaseRoot, READY_MARKER), "utf8"));
     if (marker.releaseId !== release.releaseId) {
       throw new Error(`runner release marker mismatch: ${release.releaseId}`);
     }
+    return marker;
   }
 
   async remove(release: RunnerReleaseDescriptor): Promise<void> {
@@ -132,10 +150,13 @@ export class BuildArtifactReleaseMaterializer implements RunnerReleaseMaterializ
   }
 }
 
-export async function hashArtifactSet(directory: string): Promise<string> {
+export async function hashArtifactSet(
+  directory: string,
+  artifacts: readonly string[] = RUNNER_RELEASE_ARTIFACTS,
+): Promise<string> {
   const hash = createHash("sha256");
   hash.update(HASH_DOMAIN);
-  for (const relativePath of [...RUNNER_RELEASE_ARTIFACTS].sort()) {
+  for (const relativePath of [...artifacts].sort()) {
     const absolutePath = join(directory, relativePath);
     const metadata = await stat(absolutePath);
     if (!metadata.isFile()) {
@@ -159,17 +180,28 @@ function parseMarker(raw: string): RunnerReleaseMarker {
     || typeof value.releaseId !== "string"
     || value.hashAlgorithm !== "sha256"
     || !Array.isArray(value.artifacts)
-    || value.artifacts.length !== RUNNER_RELEASE_ARTIFACTS.length
-    || !RUNNER_RELEASE_ARTIFACTS.every((entry, index) => value.artifacts?.[index] === entry)
+    || !isKnownArtifactList(value.artifacts)
   ) {
     throw new Error("invalid runner release marker");
   }
   return value as RunnerReleaseMarker;
 }
 
-async function makeReleaseReadOnly(root: string): Promise<void> {
-  for (const relativePath of [...RUNNER_RELEASE_ARTIFACTS, READY_MARKER]) {
-    await chmod(join(root, relativePath), 0o444);
+function isKnownArtifactList(artifacts: readonly unknown[]): boolean {
+  return KNOWN_RELEASE_ARTIFACT_SETS.some(
+    (known) => known.length === artifacts.length
+      && known.every((entry, index) => artifacts[index] === entry),
+  );
+}
+
+async function makeReleaseReadOnly(
+  root: string,
+  artifacts: readonly string[] = RUNNER_RELEASE_ARTIFACTS,
+): Promise<void> {
+  for (const relativePath of [...artifacts, READY_MARKER]) {
+    // The helper is executed by the child, so it keeps its execute bits.
+    const mode = relativePath === NETNS_HELPER_ARTIFACT ? 0o555 : 0o444;
+    await chmod(join(root, relativePath), mode);
   }
   await chmod(root, 0o555);
 }

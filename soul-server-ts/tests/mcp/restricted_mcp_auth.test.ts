@@ -4,6 +4,8 @@
  * 형식·길이·HMAC 상수 시간 재계산·DB 존재·정책 공급 실패 경로, full 경로 불변,
  * 같은 listener의 REST가 ssr1을 받지 않는 것까지 확인한다.
  */
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -13,10 +15,7 @@ import {
   RESTRICTED_MCP_TOKEN_PREFIX,
   verifyRestrictedMcpToken,
 } from "../../src/security/restricted_mcp_auth.js";
-import {
-  defaultIsolationPolicyPath,
-  loadIsolationPolicyFile,
-} from "../../src/security/session_isolation_policy.js";
+import { loadIsolationPolicyFile } from "../../src/security/session_isolation_policy.js";
 import {
   resolveMcpPrincipal,
   type McpAuthConfig,
@@ -30,7 +29,10 @@ const SESSION_A = "11111111-1111-4111-8111-111111111111";
 const SESSION_B = "22222222-2222-4222-8222-222222222222";
 const HEX_SESSION = "abcdefab-cdef-4abc-8def-abcdefabcdef";
 
-const loadedPolicy = loadIsolationPolicyFile(defaultIsolationPolicyPath());
+const POLICY_PATH = fileURLToPath(
+  new URL("../../src/policies/session-isolation.json", import.meta.url),
+);
+const loadedPolicy = loadIsolationPolicyFile(POLICY_PATH);
 
 function authConfig(overrides: Partial<McpAuthConfig> = {}): McpAuthConfig {
   return {

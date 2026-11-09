@@ -190,6 +190,8 @@ describe("release manifest startup verification", () => {
     await writeFile(join(root, "upstream/control_inbox_worker_entry.js"), "// control\n", "utf8");
     await writeFile(join(runnerRoot, "package.json"), '{"type":"module"}\n', "utf8");
     await writeFile(join(runnerRoot, "runner_entry.js"), "// runner\n", "utf8");
+    await writeFile(join(runnerRoot, "session-netns-helper.py"), "#!/usr/bin/env python3\n", "utf8");
+    await writeFile(join(runnerRoot, "session_netns_network.py"), "# network helper\n", "utf8");
 
     const declared = { ...DECLARED_ENV };
     const { hashArtifactSet } = await import("../../src/runner/runner_release_materializer.js");
@@ -252,6 +254,8 @@ describe("release manifest startup verification", () => {
     await writeFile(join(root, "upstream/control_inbox_worker_entry.js"), "// control\n", "utf8");
     await writeFile(join(runnerRoot, "package.json"), '{"type":"module"}\n', "utf8");
     await writeFile(join(runnerRoot, "runner_entry.js"), "// runner\n", "utf8");
+    await writeFile(join(runnerRoot, "session-netns-helper.py"), "#!/usr/bin/env python3\n", "utf8");
+    await writeFile(join(runnerRoot, "session_netns_network.py"), "# network helper\n", "utf8");
 
     const { hashArtifactSet } = await import("../../src/runner/runner_release_materializer.js");
     const { HOST_RELEASE_ARTIFACTS, hashReleaseFileSet } = await import(

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { access, chmod, mkdtemp, mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdtemp, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
@@ -17,6 +17,15 @@ const temporaryRoot = await mkdtemp(join(tmpdir(), "soulstream-runner-release-is
 let runner;
 let releaseRoot;
 try {
+  // 정책은 빌드에 말려 들어간다. 호스트 번들이 런타임 파일 조회로 되돌아가면
+  // 배포 산출물에 정책 JSON이 없어 restricted 시작이 전부 503이 된다.
+  // 번들러 출처 주석(`// src/policies/session-isolation.json`)은 조회가 아니므로 뺀다.
+  const hostBundle = await readFile(join(packageRoot, "dist/main.js"), "utf8");
+  const executableHostBundle = hostBundle.replace(/^\/\/.*$/gm, "");
+  if (executableHostBundle.includes("policies/session-isolation.json")) {
+    throw new Error("host bundle still looks up the isolation policy file at runtime");
+  }
+
   const prewarm = await runProcess(process.execPath, [
     join(packageRoot, "dist/runner/runner_release_prewarm.js"),
     "--artifacts",
@@ -31,9 +40,27 @@ try {
     throw new Error(`runner release id is not a content hash: ${release.release_id}`);
   }
   const entries = (await readdir(release.release_root)).sort();
-  const expected = [".runner-release.json", "package.json", "runner_entry.js"];
+  const expectedArtifacts = [
+    "package.json",
+    "runner_entry.js",
+    "session-netns-helper.py",
+    "session_netns_network.py",
+  ];
+  const expected = [".runner-release.json", ...expectedArtifacts.slice().sort()];
   if (JSON.stringify(entries) !== JSON.stringify(expected)) {
     throw new Error(`runner snapshot file set mismatch: ${entries.join(", ")}`);
+  }
+  const marker = JSON.parse(
+    await readFile(join(release.release_root, ".runner-release.json"), "utf8"),
+  );
+  if (JSON.stringify(marker.artifacts) !== JSON.stringify(expectedArtifacts)) {
+    throw new Error(`runner snapshot marker artifacts mismatch: ${JSON.stringify(marker.artifacts)}`);
+  }
+  if (process.platform !== "win32") {
+    const helperMode = (await stat(join(release.release_root, "session-netns-helper.py"))).mode & 0o777;
+    if (helperMode !== 0o555) {
+      throw new Error(`runner snapshot helper is not executable: 0${helperMode.toString(8)}`);
+    }
   }
 
   const sessionId = "runner-release-isolation";

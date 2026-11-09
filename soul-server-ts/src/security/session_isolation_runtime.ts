@@ -1,6 +1,5 @@
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { IsolationAuthUnavailableError } from "../runner/session_filesystem_errors.js";
 import type {
@@ -256,11 +255,6 @@ export function createSessionIsolationPolicySource(
   };
 }
 
-/** 이 패키지의 netns 헬퍼 스크립트 절대 경로. 번들 경로는 Unit4가 다룬다. */
-export function sessionNetnsHelperScriptPath(): string {
-  return fileURLToPath(new URL("../../scripts/session-netns-helper.py", import.meta.url));
-}
-
 export interface IsolationAuthClassificationInput {
   backend: IsolationBackend | string;
   presetEnv?: Record<string, string> | null;
@@ -319,7 +313,7 @@ export interface SessionIsolationRuntime {
   mode: SessionIsolationMode;
   settings: SessionIsolationSettings;
   nodeId: string;
-  tools: typeof ISOLATION_TOOL_PATHS & { pasta: string | null; netnsHelper: string };
+  tools: typeof ISOLATION_TOOL_PATHS & { pasta: string | null };
   policySource: SessionIsolationPolicySource;
   classifyAuth(
     input: Omit<IsolationAuthClassificationInput, "policy" | "claudeTokenFile" | "claudeAccountId">,
@@ -350,7 +344,6 @@ export function createSessionIsolationRuntime(
     tools: {
       ...ISOLATION_TOOL_PATHS,
       pasta: options.settings.pastaPath,
-      netnsHelper: sessionNetnsHelperScriptPath(),
     },
     policySource,
     classifyAuth(input) {

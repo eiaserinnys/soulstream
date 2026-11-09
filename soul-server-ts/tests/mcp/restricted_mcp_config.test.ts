@@ -4,16 +4,18 @@
  * Soulstream upstream 강제·중복 제거, 관리 upstream 제거, 승인 local 정규화,
  * 미승인 private/self 제거, 외부 public 유지, stdio env/headers 제거.
  */
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
 import type { ResolvedMcpServer } from "../../src/mcp_config_service.js";
-import {
-  defaultIsolationPolicyPath,
-  loadIsolationPolicyFile,
-} from "../../src/security/session_isolation_policy.js";
+import { loadIsolationPolicyFile } from "../../src/security/session_isolation_policy.js";
 import { sanitizeRestrictedMcpServers } from "../../src/security/restricted_mcp_config.js";
 
-const policy = loadIsolationPolicyFile(defaultIsolationPolicyPath()).policy;
+const POLICY_PATH = fileURLToPath(
+  new URL("../../src/policies/session-isolation.json", import.meta.url),
+);
+const policy = loadIsolationPolicyFile(POLICY_PATH).policy;
 const SESSION_A = "11111111-1111-4111-8111-111111111111";
 const INTERNAL_URL = "http://127.0.0.1:3105/mcp";
 const RESTRICTED_TOKEN = "ssr1.11111111-1111-4111-8111-111111111111.signature";

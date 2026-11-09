@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import type { AgentProfile } from "../agent_registry.js";
 import type { BackendId } from "../engine/protocol.js";
 import type {
@@ -24,13 +26,21 @@ export function withRecoveredRunnerIsolation(
   return identity ? { ...runtime, isolation: identity } : runtime;
 }
 
-/** B1·B2가 쓰는 실행 파일 경로. 모두 절대 경로다. */
+/**
+ * B1·B2가 쓰는 호스트 실행 파일 경로. 모두 절대 경로다.
+ * netns helper는 호스트 도구가 아니라 릴리스 스냅샷 산출물이므로 스폰 조립이
+ * `snapshotPath` 기준으로 정한다.
+ */
 export interface IsolationToolPaths {
   bwrap: string;
   pasta: string;
   unshare: string;
   setpriv: string;
   nft: string;
+}
+
+/** 자식 설정이 받는 도구 경로. helper는 그 러너의 릴리스 스냅샷 안에 있다. */
+export interface IsolationChildToolPaths extends IsolationToolPaths {
   netnsHelper: string;
 }
 
@@ -103,7 +113,7 @@ export function buildRestrictedRunnerChildEnv(input: {
 /** 부모가 자식에게 넘기는 격리 설정. 비밀값은 담지 않는다. */
 export function isolationChildConfigFromPlan(input: {
   plan: PreparedIsolationPlan;
-  tools: IsolationToolPaths;
+  tools: IsolationChildToolPaths;
   wsl: boolean;
   attachedWorktreeIds: readonly string[];
 }): RunnerIsolationChildConfig {
@@ -161,7 +171,11 @@ export async function applyRestrictedRunnerIsolation(
     }),
     isolation: isolationChildConfigFromPlan({
       plan: prepared.plan,
-      tools: prepared.tools,
+      tools: {
+        ...prepared.tools,
+        // 헬퍼는 이 러너가 실제로 실행될 릴리스 스냅샷 안에 있다.
+        netnsHelper: join(base.snapshotPath, "session-netns-helper.py"),
+      },
       wsl: prepared.wsl,
       attachedWorktreeIds: prepared.attachedWorktreeIds,
     }),
