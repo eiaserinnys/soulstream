@@ -232,7 +232,12 @@ describe("session isolation contract", () => {
 
     expect(importers.sort()).toEqual([
       "engine/protocol.ts",
+      "engine/session_isolation.ts",
       "runner/frame_protocol.ts",
+      "runner/session_isolation_preflight.ts",
+      "runner/session_isolation_process.ts",
+      "runner/session_netns_helper.ts",
+      "runner/session_network_policy.ts",
       "security/session_execution_policy.ts",
       "task/task_manager.ts",
       "task/task_models.ts",
