@@ -119,7 +119,7 @@ describe("wrapSessionCommand", () => {
     expect(args[procIndex + 1]).toBe("/proc/locks");
   });
 
-  it("orders ancestor binds before descendant masks and file masks last", () => {
+  it("orders ancestor binds before descendant masks and file masks before chdir", () => {
     const args = buildBwrapFlags(isolationSpec());
     const workspaceBind = indexOfPair(args, "--bind", "/home/eias/workspace");
     const directoryMask = indexOfPair(args, "--tmpfs", "/home/eias/workspace/.local");
@@ -129,6 +129,38 @@ describe("wrapSessionCommand", () => {
     expect(directoryMask).toBeGreaterThan(workspaceBind);
     expect(fileMask).toBeGreaterThan(directoryMask);
     expect(fileMask).toBeLessThan(chdir);
+  });
+
+  it("mounts all file masks after sorted mounts and before directory remounts", () => {
+    const root = "/home/eias/haniel-root";
+    const workspace = `${root}/workspace`;
+    const nestedFile = `${root}/services/soulstream/.env.local`;
+    const workspaceFile = `${workspace}/.env`;
+    const args = buildBwrapFlags(isolationSpec({
+      bindings: [
+        { source: workspace, destination: workspace, writable: false },
+        { source: `${workspace}/.local/tmp`, destination: `${workspace}/.local/tmp`, writable: true },
+      ],
+      masks: [
+        { path: root, kind: "directory" },
+        { path: nestedFile, kind: "file" },
+        { path: workspaceFile, kind: "file" },
+      ],
+      heavyWorkLockBindings: [],
+    }));
+    const directoryMask = indexOfPair(args, "--tmpfs", root);
+    const workspaceBind = indexOfPair(args, "--ro-bind", workspace);
+    const childBind = indexOfPair(args, "--bind", `${workspace}/.local/tmp`);
+    const remount = indexOfPair(args, "--remount-ro", root);
+    expect(directoryMask).toBeGreaterThan(-1);
+    expect(workspaceBind).toBeGreaterThan(directoryMask);
+    expect(childBind).toBeGreaterThan(workspaceBind);
+    for (const path of [nestedFile, workspaceFile]) {
+      const fileMask = args.indexOf(path);
+      expect(args.slice(fileMask - 2, fileMask + 1)).toEqual(["--ro-bind", "/dev/null", path]);
+      expect(fileMask).toBeGreaterThan(childBind);
+      expect(fileMask).toBeLessThan(remount);
+    }
   });
 
   it("mounts an approved child bind after the directory mask that hides its parent", () => {
@@ -165,7 +197,7 @@ describe("wrapSessionCommand", () => {
     expect(workspaceBind).toBeGreaterThan(-1);
     expect(dirMask).toBeGreaterThan(workspaceBind);
     expect(remount).toBeGreaterThan(dirMask);
-    expect(fileMask).toBeGreaterThan(remount);
+    expect(fileMask).toBeLessThan(remount);
     expect(args.slice(fileMask - 2, fileMask + 1)).toEqual([
       "--ro-bind",
       "/dev/null",
@@ -179,7 +211,7 @@ describe("wrapSessionCommand", () => {
     const remount = indexOfPair(args, "--remount-ro", "/home/eias/workspace/.local");
     expect(remount).toBeGreaterThan(indexOfPair(args, "--bind", "/home/eias/workspace"));
     const fileIndex = args.indexOf("/home/eias/workspace/.env");
-    expect(remount).toBeLessThan(fileIndex);
+    expect(remount).toBeGreaterThan(fileIndex);
     expect(args.slice(fileIndex - 2, fileIndex + 1)).toEqual([
       "--ro-bind",
       "/dev/null",

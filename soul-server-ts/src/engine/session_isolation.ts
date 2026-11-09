@@ -36,17 +36,17 @@ export const BWRAP_BASE_FLAGS: readonly string[] = Object.freeze([
  * 1. 고정 base(`--ro-bind / /` 등)와 호출자가 넘긴 추가 mount
  * 2. directory mask(`--tmpfs`)와 계획의 bind를 **destination 경로 순서**로
  *    섞어서 낸다. 조상이 먼저 오고, 같은 경로면 tmpfs가 먼저다.
- * 3. directory mask의 `--remount-ro` — 모든 bind가 끝난 뒤에 건다.
- * 4. `/proc/locks` 읽기 전용 bind
- * 5. file mask(`--ro-bind /dev/null`)를 마지막에
+ * 3. file mask(`--ro-bind /dev/null`)
+ * 4. directory mask의 `--remount-ro` — 모든 bind와 file mask 뒤에 건다.
+ * 5. `/proc/locks` 읽기 전용 bind, 이어서 `--chdir`
  *
  * 순서가 곧 의미다. mask한 부모 아래에 다시 승인된 경로를 되살리는 bind가
  * 있으면(세션 sandbox, `~/.pm2/logs`, 공통 파일 디렉터리) 부모 tmpfs가 먼저
  * 놓여야 그 아래에 mountpoint를 만들 수 있다. 반대로 부모를 RO로 여는 bind
  * 아래에 있는 mask는 부모 bind가 나중에 오면 덮여 사라지므로, 부모 bind가
  * mask보다 먼저 와야 한다. tmpfs를 곧바로 `--remount-ro`하면 빈 RO tmpfs가
- * 되어 그 아래 bind가 mountpoint를 만들지 못하고 모든 restricted 세션이
- * 시작에 실패한다.
+ * 되어 그 아래 bind나 file mask가 mountpoint를 만들지 못하고 restricted
+ * 세션 시작에 실패한다. 따라서 file mask도 RO 전환 전에 놓는다.
  *
  * `/proc/locks` bind는 base의 `--proc /proc`이 만든 새 procfs를 덮는다.
  */
@@ -80,18 +80,18 @@ export function buildBwrapFlags(
     }
   }
 
-  // bind가 모두 끝난 뒤에 건다. remount-ro는 그 경로에 지금 올라와 있는
+  for (const mask of plan.masks) {
+    if (mask.kind !== "file") continue;
+    flags.push("--ro-bind", "/dev/null", mask.path);
+  }
+
+  // bind와 file mask가 모두 끝난 뒤에 건다. remount-ro는 그 경로에 지금 올라와 있는
   // tmpfs mount 하나에만 걸리고, 그 아래에 얹힌 bind는 그대로 남는다.
   for (const mask of directoryMasks) {
     flags.push("--remount-ro", mask.path);
   }
 
   flags.push(...renderMount(plan.hostProcLocksBinding));
-
-  for (const mask of plan.masks) {
-    if (mask.kind !== "file") continue;
-    flags.push("--ro-bind", "/dev/null", mask.path);
-  }
 
   flags.push("--chdir", plan.workspaceDir);
   return flags;
