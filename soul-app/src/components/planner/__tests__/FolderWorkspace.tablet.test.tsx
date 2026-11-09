@@ -51,7 +51,7 @@ jest.mock('../SessionSuccessionHost', () => ({ SessionSuccessionHost: () => null
 
 import React from 'react';
 import { Alert, PixelRatio, StyleSheet } from 'react-native';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, renderHook, waitFor } from '@testing-library/react-native';
 import type { PlannerFolder, PlannerToday } from '../../../api/plannerTypes';
 import { usePlannerStore } from '../../../store/plannerStore';
 import { useSessionStore } from '../../../store/sessionStore';
@@ -62,7 +62,7 @@ import { useAuthStore } from '../../../store/authStore';
 import { useSettingsStore } from '../../../store/settingsStore';
 import { useUIStore } from '../../../store/uiStore';
 import { resetAuthScopeForTest } from '../../../lib/auth-scope';
-import { TABLET_SHELL_LAYOUT } from '../../../theme';
+import { TABLET_SHELL_LAYOUT, useTokens } from '../../../theme';
 import type { ApiClient } from '../../../api/client';
 
 const plannerFolder = {
@@ -142,9 +142,28 @@ test('iPad 업무 제목은 공통 shell header 리듬을 쓴다', () => {
     minHeight: TABLET_SHELL_LAYOUT.header.minHeight,
     paddingHorizontal: TABLET_SHELL_LAYOUT.header.paddingHorizontal,
     paddingVertical: TABLET_SHELL_LAYOUT.header.paddingVertical,
-    alignItems: 'center',
+    alignItems: 'flex-start',
   }));
   expect(header.height).toBeUndefined();
+});
+
+test('태블릿 폴더 제목은 한 줄 높이에서 시작해 세 줄까지 자라고 머리 버튼과 위 끝을 맞춘다', () => {
+  const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
+  const { result: t } = renderHook(useTokens);
+  const lineHeight = t.current.foundation.typography.navigation.lineHeight;
+  const verticalPadding = (t.current.hitTarget.min - lineHeight) / 2;
+  const title = StyleSheet.flatten(
+    screen.getByTestId('task-workspace-tablet-title').props.style,
+  );
+
+  expect(title).toMatchObject({
+    minHeight: t.current.hitTarget.min,
+    maxHeight: verticalPadding * 2 + lineHeight * 3,
+    paddingVertical: verticalPadding,
+    paddingHorizontal: 0,
+  });
+  expect(title.height).toBeUndefined();
+  expect(screen.getByTestId('task-workspace-tablet-title').props.multiline).toBe(true);
 });
 
 test('phone 폴더 화면의 여섯 섹션은 같은 머리와 전경 텍스트 배치를 쓴다', () => {

@@ -4,6 +4,7 @@ import path from 'node:path';
 test('새 세션·새 카드 공통 입력과 새 세션 sheet 제품 마운트를 전수 고정한다', () => {
   expect(findProductFilesContaining(/<GrowingMultilineInput\b/)).toEqual([
     'components/planner/CardCreateSheet.tsx',
+    'components/planner/FolderWorkspace.tsx',
     'components/planner/SessionSuccessionSheet.tsx',
   ]);
 

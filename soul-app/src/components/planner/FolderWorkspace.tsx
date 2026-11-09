@@ -24,6 +24,7 @@ import { FolderSessionHistory } from './FolderSessionHistory';
 import { FolderCards, type FolderCardsHandle } from './FolderCards';
 import { useCardDisplay } from '../../hooks/useCardDisplay';
 import { FolderWorkspaceList } from './FolderWorkspaceList';
+import { GrowingMultilineInput } from './GrowingMultilineInput';
 import { AppGlassCard } from '../AppGlassCard';
 import { FolderBoardContent } from './FolderBoardContent';
 import { TabletMarkdownEditor, type TabletMarkdownSaveAttempt } from './TabletMarkdownEditor';
@@ -71,6 +72,16 @@ export function FolderWorkspace({
   const tablet = useDeviceType() !== 'phone';
   const duo = useDuoBandOwnsPanelActions();
   const styles = useMemo(() => makeFolderWorkspaceStyles(t), [t]);
+  // 카드 패널 머리와 같은 관례: 한 줄이 머리 버튼(48) 가운데에 서고 세 줄까지 자란다.
+  const tabletTitleLayout = useMemo(() => {
+    const lineHeight = t.foundation.typography.navigation.lineHeight;
+    const verticalPadding = (t.hitTarget.min - lineHeight) / 2;
+    return {
+      minHeight: t.hitTarget.min,
+      maxHeight: verticalPadding * 2 + lineHeight * 3,
+      verticalPadding,
+    };
+  }, [t]);
   const selector = useMemo(() => selectPlannerFolder(folderPageId), [folderPageId]);
   const storedFolderSummary = usePlannerStore(selector);
   const folders = useSessionStore((state) => state.catalog.folders);
@@ -425,7 +436,7 @@ export function FolderWorkspace({
     <AppKeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.container}>
       {tablet ? (
         <TabletPaneHeader testID="task-workspace-tablet-header" style={styles.tabletHeader}>
-          <TextInput
+          <GrowingMultilineInput
             testID="task-workspace-tablet-title"
             value={visibleTitle}
             onChangeText={(value) => {
@@ -434,9 +445,11 @@ export function FolderWorkspace({
               setTitle(value);
             }}
             onBlur={queueTabletTitleSave}
-            multiline
             accessibilityLabel="폴더 제목"
             style={styles.tabletTitle}
+            minHeight={tabletTitleLayout.minHeight}
+            maxHeight={tabletTitleLayout.maxHeight}
+            verticalPadding={tabletTitleLayout.verticalPadding}
           />
           {!duo ? toggleActions : null}
           {!duo && onClose ? (

@@ -40,6 +40,8 @@ interface Props {
   voiceControls: React.ReactNode;
   minimumBottomPadding?: number;
   embedded?: boolean;
+  /** 'none'은 바깥 프레임이 반투명이 아닌 자기 표면을 가진 합성기에서만 쓴다(오늘 카드). */
+  surface?: 'box' | 'none';
   onInputRef?: (input: TextInput | null) => void;
   onInputFocusChange?(focused: boolean): void;
   focusAccent?: boolean;
@@ -62,6 +64,7 @@ export function ChatComposer({
   voiceControls,
   minimumBottomPadding = 0,
   embedded = false,
+  surface = 'box',
   focusAccent = false,
   placeholder = '메시지 입력...',
   inputAccessibilityLabel,
@@ -158,7 +161,7 @@ export function ChatComposer({
     >
       <ComposerSurface
         presentation={presentation}
-        embedded={embedded}
+        surface={surface}
         testID="chat-composer-box"
         style={focusAccent && focusAccentActive
           ? [composerSurfaceStyle, { borderColor: t.colors.accent }]
@@ -312,22 +315,22 @@ export function ChatComposer({
 
 function ComposerSurface({
   presentation,
-  embedded,
+  surface,
   testID,
   style,
   children,
   onLayout,
 }: {
   presentation: 'default' | 'manuscript';
-  embedded?: boolean;
+  surface?: 'box' | 'none';
   testID: string;
   style: React.ComponentProps<typeof View>['style'];
   children: React.ReactNode;
   onLayout?: React.ComponentProps<typeof View>['onLayout'];
 }) {
-  // 떠 있는 합성기 프레임 안에서는 바깥 유리 하나만 남기고 내부 박스를 없앤다.
-  if (presentation === 'manuscript' || embedded) {
-    return <View testID={testID} style={[style, embedded ? { borderWidth: 0, borderColor: 'transparent' } : undefined]}
+  // 바깥 프레임이 따로 있는 합성기만 surface none. embedded는 바깥 padding만 0으로 둔다.
+  if (presentation === 'manuscript' || surface === 'none') {
+    return <View testID={testID} style={[style, surface === 'none' ? { borderWidth: 0, borderColor: 'transparent' } : undefined]}
       onLayout={onLayout}>{children}</View>;
   }
   return <GlassSurface role="glassDense" testID={testID} style={style} onLayout={onLayout}>{children}</GlassSurface>;
