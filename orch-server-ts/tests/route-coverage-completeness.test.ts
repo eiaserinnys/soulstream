@@ -199,10 +199,6 @@ function createAllOptInRouteApp() {
     nodeClaudeAuthRoutes: inert,
     nodeSnapshotRoutes: inert,
     nodePairRoutes: { service: inert },
-    nodeGitProxyRoutes: {
-      nodeCredentials: { resolve: () => null, onRevoked: () => () => undefined },
-      githubReadToken: "test-token",
-    },
     nodeWsRoute: { registry: inert },
     pageYjsRoutes: {
       authBearerToken: "test-token",

@@ -3,7 +3,6 @@ export const BLOCKED_CHILD_PROCESS_API_KEYS = [
   "OPENAI_API_KEY",
   "TURN_SUMMARY_OPENAI_KEY",
   "TYPESAFE_API_KEY",
-  "PORTABLE_NODE_GITHUB_READ_TOKEN",
 ] as const;
 
 export type BlockedChildProcessApiKey =

@@ -19,4 +19,3 @@
 | [OAuth와 대화 제공자](oauth-to-conversation.md) | 로그인 계정·대화 스레드·외부 키와 세션 생성 |
 | [무설치 노드 릴리스 묶음](portable-release-bundle.md) | platform 무관 payload 빌드·pack·tarball·노드 쪽 bind·`ReleaseManifestV1` |
 | [portable-node 연결](portable-node-connect.md) | 공개 clone·pairing·runtime lock·릴리스 묶음·private 리포·판 전환·감독 |
-| [무설치 노드 Git 읽기 프록시](portable-node-git-proxy.md) | 노드 자격 Basic 인증·두 repo allowlist·upload-pack 스트림 중계·receive-pack 차단·orch 전용 GitHub 토큰 |

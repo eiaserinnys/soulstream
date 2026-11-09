@@ -103,7 +103,6 @@ describe("orch-server-ts config scaffold", () => {
       antigravity_cli_path: null,
       model_catalog_path: null,
       typesafe_api_key: "",
-      portable_node_github_read_token: null,
       turn_summary_openai_key: "turn-summary-key",
       usage_summary_poll_interval_seconds: 300,
       usage_summary_shared_accounts: [
@@ -254,15 +253,6 @@ describe("orch-server-ts config scaffold", () => {
     expect(config.skill_catalog_node_id).toBe("skill-catalog-node");
     expect(config.domain_catalog_node_id).toBe("domain-catalog-node");
     expect(config.turn_summary_openai_key).toBe("");
-  });
-
-  it("maps the optional portable node Git read token as null when absent", () => {
-    expect(loadOrchServerEnvironment(minimalEnvironment()).portable_node_github_read_token)
-      .toBeNull();
-    expect(loadOrchServerEnvironment({
-      ...minimalEnvironment(),
-      PORTABLE_NODE_GITHUB_READ_TOKEN: "github-read-token",
-    }).portable_node_github_read_token).toBe("github-read-token");
   });
 
   it("requires a production bearer while preserving explicit development unauthenticated mode", () => {
