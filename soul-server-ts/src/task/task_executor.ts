@@ -957,29 +957,6 @@ export class TaskExecutor {
     return desiredRunnerIsolation(decision, gate.policyDigest(), attachedWorktreeIds);
   }
 
-  /**
-   * 재부착 러너를 다음 턴에도 쓸 수 있는지. 재부착은 진행 중인 턴을 시작할 때의
-   * 격리로 끝내기만 하고, 다음 턴은 새 실행 시작과 같은 판정·비교를 거친다.
-   * 판정 실패는 다음 턴 시작(정상 경로)이 보고하게 두고, 여기서는 재사용만
-   * 거부한다.
-   */
-  private async recoveredRunnerServesNextTurn(
-    task: Task,
-    runner: TaskRunnerRuntime,
-  ): Promise<boolean> {
-    let desiredIsolation: RunnerIsolationIdentity;
-    try {
-      desiredIsolation = await this.resolveRunnerIsolation(task);
-    } catch (error) {
-      this.logger.warn(
-        { err: error, sessionId: task.agentSessionId },
-        "recovered runner isolation re-check failed; the next turn needs a fresh execution",
-      );
-      return false;
-    }
-    return runnerIsolationAllowsReuse(runner.isolation, desiredIsolation);
-  }
-
   private startExecutionWithoutRegistration(
     task: Task,
     agent: AgentProfile,
@@ -1388,8 +1365,8 @@ export class TaskExecutor {
     phaseObservation?: RunnerPhaseObservation,
   ): Promise<void> {
     const config = registration.config;
-    // 격리는 턴이 시작될 때 정해지고, 진행 중인 턴은 시작할 때의 격리로 끝난다.
-    // 판정이 바뀌었으면 다음 턴에서 takeOrCreateRunner가 이 러너를 닫고 새로 만든다.
+    // 격리는 실행이 시작될 때 정해지고, 진행 중인 실행은 시작할 때의 격리로 끝난다.
+    // 판정이 바뀌었으면 다음 실행에서 takeOrCreateRunner가 이 러너를 닫고 새로 만든다.
     const runner = this.runnerProcessFactory?.recover?.(
       task,
       registration,
@@ -2073,31 +2050,19 @@ export class TaskExecutor {
           transition,
           terminalTurnReceipts,
         );
-        if (!await this.recoveredRunnerServesNextTurn(task, runner)) {
-          // 진행 중이던 턴은 시작할 때의 격리로 끝났다. 판정이 달라진 러너로
-          // 다음 턴을 잇지 않는다. 꺼낸 개입을 큐에 되돌리고 실행을 정상
-          // 종료하면, 큐를 관찰한 종료 경로가 새 실행을 열고
-          // takeOrCreateRunner가 이번 판정의 러너를 만든다.
-          for (const intervention of transition.interventions) {
-            enqueueInterventionOnce(task, intervention);
-          }
-          // 판정 재확인 중에 외부 취소가 끼어들 수 있다. 그때는 완료로 덮지 않는다.
-          if (task.status === "running") task.status = "completed";
-        } else {
-          this.releaseDeliveryTurn(task, turnReceipt);
-          const followupTurnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
-            task,
-            agent,
-            transition.interventions,
-          );
-          await this.consumeTurnLoop(
-            task,
-            agent,
-            runner,
-            followupTurnInput,
-            terminalTurnReceipts,
-          );
-        }
+        this.releaseDeliveryTurn(task, turnReceipt);
+        const followupTurnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
+          task,
+          agent,
+          transition.interventions,
+        );
+        await this.consumeTurnLoop(
+          task,
+          agent,
+          runner,
+          followupTurnInput,
+          terminalTurnReceipts,
+        );
       } else {
         await this.settleDeliveryTurn(
           task,

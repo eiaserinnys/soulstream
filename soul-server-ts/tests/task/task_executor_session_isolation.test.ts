@@ -327,7 +327,7 @@ describe("TaskExecutor turn isolation gate", () => {
     },
   );
 
-  it("starts a queued next turn on a new runner when the adopted runner no longer matches", async () => {
+  it("finishes an adopted execution on its starting isolation and replaces the runner on the next execution", async () => {
     const recoveredTurns: EngineExecuteParams[] = [];
     const recovered = makeAdoptableRunner(makeEngine(recoveredTurns), {
       tier: "restricted",
@@ -335,8 +335,12 @@ describe("TaskExecutor turn isolation gate", () => {
       attachedWorktreeIds: ["wt-a"],
     });
     const freshTurns: EngineExecuteParams[] = [];
+    const observedIsolations: Array<RunnerIsolationIdentity | undefined> = [];
+    const task = makeTask({ interventionQueue: [makeQueuedNextTurn()] });
     const factory = vi.fn(
-      () => createInProcessTaskRunnerRuntime(makeEngine(freshTurns)),
+      () => createInProcessTaskRunnerRuntime(makeEngine(freshTurns, () => {
+        observedIsolations.push(task.runner?.isolation);
+      })),
     ) as unknown as RunnerProcessRuntimeFactory;
     factory.isolationSupported = true;
     factory.recover = vi.fn(() => recovered.runner);
@@ -347,118 +351,6 @@ describe("TaskExecutor turn isolation gate", () => {
       reason: "trusted",
       presetId: null,
     });
-    let executor!: TaskExecutor;
-    let nextExecution: Promise<void> | undefined;
-    const resumeQueuedAfterTerminal = vi.fn((queued: Task) => {
-      nextExecution = executor.startNewExecution(queued, claudeAgent);
-      return nextExecution;
-    });
-    executor = makeExecutor(
-      makeEngine([]),
-      gate,
-      factory,
-      resumeQueuedAfterTerminal,
-    );
-    const task = makeTask({ interventionQueue: [makeQueuedNextTurn()] });
-
-    await executor.recoverRegisteredRunner(
-      task,
-      makeRestrictedRegistration(),
-      "execute-old",
-      "adopt",
-    );
-    await vi.waitFor(() =>
-      expect(resumeQueuedAfterTerminal).toHaveBeenCalledTimes(1)
-    );
-    await nextExecution;
-
-    expect(recoveredTurns).toHaveLength(0);
-    expect(freshTurns).toHaveLength(1);
-    expect(freshTurns[0]?.prompt).toBe("queued next turn");
-    expect(freshTurns[0]?.executionSecurity).toMatchObject({ tier: "full" });
-    expect(task.interventionQueue).toEqual([]);
-    expect(recovered.close).toHaveBeenCalled();
-    expect(factory).toHaveBeenCalledTimes(1);
-  });
-
-  it("starts a queued next turn on a restricted runner when the adopted full runner no longer matches", async () => {
-    const recoveredTurns: EngineExecuteParams[] = [];
-    const recovered = makeAdoptableRunner(makeEngine(recoveredTurns));
-    const task = makeTask({ interventionQueue: [makeQueuedNextTurn()] });
-    const observedIsolations: Array<RunnerIsolationIdentity | undefined> = [];
-    const freshTurns: EngineExecuteParams[] = [];
-    const factory = vi.fn(
-      () => createInProcessTaskRunnerRuntime(makeEngine(freshTurns, () => {
-        observedIsolations.push(task.runner?.isolation);
-      })),
-    ) as unknown as RunnerProcessRuntimeFactory;
-    factory.isolationSupported = true;
-    factory.recover = vi.fn(() => recovered.runner);
-    const gate = makeGate({
-      sessionId: "sess-1",
-      tier: "restricted",
-      policyVersion: 1,
-      reason: "untrusted-preset",
-      presetId: "deepseek-flash-4.1",
-    }, ["wt-a"]);
-    let executor!: TaskExecutor;
-    let nextExecution: Promise<void> | undefined;
-    const resumeQueuedAfterTerminal = vi.fn((queued: Task) => {
-      nextExecution = executor.startNewExecution(queued, claudeAgent);
-      return nextExecution;
-    });
-    executor = makeExecutor(
-      makeEngine([]),
-      gate,
-      factory,
-      resumeQueuedAfterTerminal,
-    );
-
-    await executor.recoverRegisteredRunner(
-      task,
-      makeRestrictedRegistration(),
-      "execute-old",
-      "adopt",
-    );
-    await vi.waitFor(() =>
-      expect(resumeQueuedAfterTerminal).toHaveBeenCalledTimes(1)
-    );
-    await nextExecution;
-
-    expect(recoveredTurns).toHaveLength(0);
-    expect(freshTurns).toHaveLength(1);
-    expect(freshTurns[0]?.prompt).toBe("queued next turn");
-    expect(freshTurns[0]?.executionSecurity).toMatchObject({ tier: "restricted" });
-    expect(observedIsolations).toEqual([{
-      tier: "restricted",
-      policyDigest: "digest-1",
-      attachedWorktreeIds: ["wt-a"],
-    }]);
-    expect(task.interventionQueue).toEqual([]);
-    expect(recovered.close).toHaveBeenCalled();
-    expect(factory).toHaveBeenCalledTimes(1);
-  });
-
-  it("keeps the adopted runner for a queued next turn when the isolation still matches", async () => {
-    const recoveredTurns: EngineExecuteParams[] = [];
-    const recovered = makeAdoptableRunner(makeEngine(recoveredTurns), {
-      tier: "restricted",
-      policyDigest: "digest-1",
-      attachedWorktreeIds: ["wt-a"],
-    });
-    const freshTurns: EngineExecuteParams[] = [];
-    const factory = vi.fn(
-      () => createInProcessTaskRunnerRuntime(makeEngine(freshTurns)),
-    ) as unknown as RunnerProcessRuntimeFactory;
-    factory.isolationSupported = true;
-    factory.recover = vi.fn(() => recovered.runner);
-    const gate = makeGate({
-      sessionId: "sess-1",
-      tier: "restricted",
-      policyVersion: 1,
-      reason: "untrusted-preset",
-      presetId: "deepseek-flash-4.1",
-    }, ["wt-a"]);
     const resumeQueuedAfterTerminal = vi.fn();
     const executor = makeExecutor(
       makeEngine([]),
@@ -466,7 +358,6 @@ describe("TaskExecutor turn isolation gate", () => {
       factory,
       resumeQueuedAfterTerminal,
     );
-    const task = makeTask({ interventionQueue: [makeQueuedNextTurn()] });
 
     await executor.recoverRegisteredRunner(
       task,
@@ -475,14 +366,30 @@ describe("TaskExecutor turn isolation gate", () => {
       "adopt",
     );
 
-    expect(resumeQueuedAfterTerminal).not.toHaveBeenCalled();
+    // 복구된 실행은 시작할 때의 격리(restricted)로 큐의 다음 턴까지 소비하고 끝난다.
     expect(recoveredTurns).toHaveLength(1);
     expect(recoveredTurns[0]?.prompt).toBe("queued next turn");
-    expect(recoveredTurns[0]?.executionSecurity).toMatchObject({ tier: "restricted" });
-    expect(freshTurns).toHaveLength(0);
-    expect(factory).not.toHaveBeenCalled();
     expect(task.interventionQueue).toEqual([]);
+    expect(resumeQueuedAfterTerminal).not.toHaveBeenCalled();
+    expect(gate.resolveDecision).not.toHaveBeenCalled();
     expect(recovered.close).toHaveBeenCalledTimes(1);
+    expect(factory).not.toHaveBeenCalled();
+
+    // 다음 실행은 실행 시작에서 판정을 다시 내리고 takeOrCreateRunner로 러너를 바꾼다.
+    task.interventionQueue.push({
+      text: "next execution turn",
+      user: "user",
+      deliveryId: "delivery-next-execution",
+    });
+    executor.startNewExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(gate.resolveDecision).toHaveBeenCalledTimes(1);
+    expect(factory).toHaveBeenCalledTimes(1);
+    expect(freshTurns).toHaveLength(1);
+    expect(freshTurns[0]?.prompt).toBe("next execution turn");
+    expect(freshTurns[0]?.executionSecurity).toMatchObject({ tier: "full" });
+    expect(observedIsolations).toEqual([undefined]);
   });
 
   it.each([
