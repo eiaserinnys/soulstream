@@ -36,6 +36,8 @@ export interface McpHostOptions {
   resolveSessionOwner?: import("../session/session_owner.js").SessionOwnerResolver;
   ownedAgents?: import("../owned-agents/service.js").OwnedAgentService;
   sessionMessages?: SessionActionCommandRouteOptions;
+  /** Node pairing + credential administration; absent when the host does not own the store. */
+  nodePairing?: import("../node_credentials/types.js").NodePairingHostOptions;
   externalLlm?: { service?: import("../external_events/service.js").ExternalEventsService; getSession(id: string): Promise<unknown | null> };
   sessions?: SessionMcpDependencies;
   persistentSessionSettings?: PersistentSessionSettingsService;

@@ -36,6 +36,7 @@ export * from "./node/registry.js";
 export * from "./node/session_cache.js";
 export * from "./node/transport_hub.js";
 export * from "./node/ws_frame_controller.js";
+export * from "./node_credentials/index.js";
 export {
   nodeWsRouteAuthRequirements,
   registerNodeWsRoute,

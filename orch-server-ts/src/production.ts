@@ -32,6 +32,9 @@ import { PageRepository } from "./page/page_repository.js";
 import { PageYjsService } from "./page/page_service.js";
 import { SqlFolderProjectIdentityRepository } from "./folders/folder_project_identity_repository.js";
 import { FolderProjectIdentityService } from "./folders/folder_project_identity_service.js";
+import { SqlNodeCredentialRepository } from "./node_credentials/credential_repository.js";
+import { NodeCredentialStore } from "./node_credentials/credential_store.js";
+import { NodePairingService } from "./node_credentials/pairing_service.js";
 import { PlannerRepository } from "./planner/planner_repository.js";
 import {
   createEnvironmentConfigProvider,
@@ -575,6 +578,32 @@ export async function createLiveProductionApplication(
     await dbCatalogRepository.close();
     throw error;
   }
+  const nodeCredentialRepository = new SqlNodeCredentialRepository(
+    async () => await sqlResolver.resolveSql(),
+  );
+  const nodeCredentialStore = new NodeCredentialStore({ repository: nodeCredentialRepository });
+  const nodeCredentialInit = await nodeCredentialStore.initialize();
+  if (!nodeCredentialInit.ok) {
+    context.warn(warningMessage(
+      "node credential store initialization failed; every node credential token resolves to null until restart",
+      nodeCredentialInit.error,
+    ));
+  }
+  const nodePairingService = new NodePairingService({
+    store: nodeCredentialStore,
+    isNodeConnected: (nodeId) =>
+      providers.runtime.nodeSnapshotRoutes.snapshotService.getNode(nodeId) !== undefined,
+    hasStoredNode: async (nodeId) => {
+      const sql = await sqlResolver.resolveSql();
+      const rows = await sql<readonly Record<string, unknown>[]>`
+        SELECT 1 AS present
+        FROM soulstream_node_heartbeats
+        WHERE node_id = ${nodeId}
+        LIMIT 1
+      `;
+      return rows.length > 0;
+    },
+  });
   folderProjectIdentityService = new FolderProjectIdentityService({
     repository: folderProjectIdentityRepository,
     hydratePage: async (pageId) => {
@@ -761,6 +790,7 @@ export async function createLiveProductionApplication(
       cardDispatchRuntime.executionServiceProvider,
       lifecycle,
       cardDispatchRuntime.workDispatchServiceProvider,
+      nodePairingService,
       productionSql,
     ),
     persistentContextRoutes: {
@@ -1058,6 +1088,7 @@ export function buildProductionRouteOptions(
   cardExecutionServiceProvider?: NonNullable<CreateAppOptions["folderRoutes"]>["cardExecutionServiceProvider"],
   lifecycle?: OrchestratorLifecycle,
   workDispatchServiceProvider?: NonNullable<McpHostOptions["cards"]["workDispatchServiceProvider"]>,
+  nodePairing?: NodePairingService,
   conversationSql?: SqlClient,
 ): CreateAppOptions {
   const sessionAccessProvider = providers.sessionCatalogRoutes.accessProvider;
@@ -1128,6 +1159,7 @@ export function buildProductionRouteOptions(
         sessionMessages: providers.runtime.sessionActionCommandRoutes,
         persistentSessionSettings: persistentSessionSettingsService,
         authBearerToken: config.authBearerToken,
+        ...(nodePairing ? { nodePairing } : {}),
         ...(mcpSkills ? { skills: mcpSkills } : {}),
         cards: { cardServiceProvider, provider: providers.folderRoutes.provider, resolveAccess: serviceTokenAccessWithoutEmail,
           ...(cardExecutionServiceProvider ? { cardExecutionServiceProvider } : {}),
@@ -1199,6 +1231,7 @@ export function buildProductionRouteOptions(
       usageSummary,
     },
     nodeSnapshotRoutes: providers.runtime.nodeSnapshotRoutes,
+    ...(nodePairing ? { nodePairRoutes: { service: nodePairing } } : {}),
     nodeWsRoute: providers.runtime.nodeWsRoute,
     publicStatusRoutes: {
       ...providers.publicStatusRoutes,

@@ -25,6 +25,7 @@ import { nodeAgentProfileRouteAuthRequirements } from "../node/node_agent_profil
 import { nodeClaudeAuthRouteAuthRequirements } from "../node/node_claude_auth_routes.js";
 import { nodeSnapshotRouteAuthRequirements } from "../node/node_snapshot_routes.js";
 import { nodeWsRouteAuthRequirements } from "../node/ws_route.js";
+import { nodePairingRouteAuthRequirements } from "../node_credentials/pairing_routes.js";
 import { publicStatusRouteAuthRequirements } from "../public/public_status_routes.js";
 import { pushRouteAuthRequirements } from "../push/push_routes.js";
 import { sessionActionCommandRouteAuthRequirements } from "../session/session_action_command_routes.js";
@@ -79,6 +80,7 @@ export const routeCoverageOwners = [
   { owner: "node.agent-profiles", authRequirements: nodeAgentProfileRouteAuthRequirements },
   { owner: "node.claude-auth", authRequirements: nodeClaudeAuthRouteAuthRequirements },
   { owner: "node.snapshot", authRequirements: nodeSnapshotRouteAuthRequirements },
+  { owner: "node.pairing", authRequirements: nodePairingRouteAuthRequirements },
   { owner: "node.ws", authRequirements: nodeWsRouteAuthRequirements },
   { owner: "public.status", authRequirements: publicStatusRouteAuthRequirements },
   { owner: "push", authRequirements: pushRouteAuthRequirements },
@@ -147,6 +149,8 @@ export const tsOnlyRouteKeys = [
   "POST /api/card-orchestration/decision/authorize",
   "POST /api/card-orchestration/worker/authorize",
   "WEBSOCKET /ws/node/control",
+  "POST /api/node-pair/start",
+  "POST /api/node-pair/poll",
   "GET /api/nodes/{node_id}/model-presets",
   "GET /api/nodes/{node_id}/claude-auth/accounts",
   "PATCH /api/nodes/{node_id}/claude-auth/accounts/{id}",
