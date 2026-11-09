@@ -45,9 +45,16 @@ import type { RunnerRegistration } from "../runner/runner_process_registry.js";
 import { RunnerOrphanedSpawnError } from "../runner/runner_process_dispatcher.js";
 import type { RunnerPhaseObservation } from "../runner/runner_phase_observation.js";
 import {
+  ISOLATION_AUTH_UNAVAILABLE,
+  ISOLATION_POLICY_UNAVAILABLE,
+  ISOLATION_SHARED_DEPENDENCY_INODE,
+  IsolationAuthUnavailableError,
+  IsolationPreparationPolicyError,
+  IsolationSharedDependencyInodeError,
   SESSION_ISOLATION_UNAVAILABLE,
   SessionIsolationUnavailableError,
 } from "../runner/session_filesystem_errors.js";
+import type { ExecutionSecurityDecision } from "../security/session_isolation_contract.js";
 import {
   desiredRunnerIsolation,
   fullRunnerIsolation,
@@ -187,6 +194,35 @@ function recoveredRunnerTerminalObservation(
     fact: lifecycle.execution_state,
     detail: lifecycle.terminal_error?.message ?? null,
   };
+}
+
+/**
+ * 격리 판정 포트가 던진 오류를 턴 실패 경로가 그대로 기록하는 형태로 바꾼다.
+ * 실패 경로는 `error.message`만 저장하므로 코드를 메시지 앞에 붙여 남긴다.
+ */
+function isolateGateFailure(error: unknown): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  switch ((error as { code?: unknown } | null)?.code) {
+    case ISOLATION_AUTH_UNAVAILABLE:
+      return new IsolationAuthUnavailableError(`${ISOLATION_AUTH_UNAVAILABLE}: ${message}`, error);
+    case ISOLATION_POLICY_UNAVAILABLE:
+      return new IsolationPreparationPolicyError(
+        `${ISOLATION_POLICY_UNAVAILABLE}: ${message}`,
+        error,
+      );
+    case ISOLATION_SHARED_DEPENDENCY_INODE:
+      return new IsolationSharedDependencyInodeError(
+        `${ISOLATION_SHARED_DEPENDENCY_INODE}: ${message}`,
+        error,
+      );
+    case SESSION_ISOLATION_UNAVAILABLE:
+      return new SessionIsolationUnavailableError(
+        `${SESSION_ISOLATION_UNAVAILABLE}: ${message}`,
+        error,
+      );
+    default:
+      return error instanceof Error ? error : new Error(message);
+  }
 }
 
 export interface RunnerSnapshotPersistence {
@@ -894,10 +930,15 @@ export class TaskExecutor {
       task.executionSecurity = undefined;
       return fullRunnerIsolation();
     }
-    const decision = await gate.resolveDecision(
-      task.agentSessionId,
-      task.modelPreset ?? null,
-    );
+    let decision: ExecutionSecurityDecision | null;
+    try {
+      decision = await gate.resolveDecision(
+        task.agentSessionId,
+        task.modelPreset ?? null,
+      );
+    } catch (error) {
+      throw isolateGateFailure(error);
+    }
     task.executionSecurity = decision ?? undefined;
     if (decision?.tier !== "restricted") return fullRunnerIsolation();
     return desiredRunnerIsolation(

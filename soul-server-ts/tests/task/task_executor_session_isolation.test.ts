@@ -10,6 +10,7 @@ import type {
 } from "../../src/engine/protocol.js";
 import type { SessionIsolationTurnGate } from "../../src/security/session_isolation_turn.js";
 import { createInProcessTaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
+import { IsolationPreparationPolicyError } from "../../src/runner/session_filesystem_errors.js";
 import type { RunnerProcessRuntimeFactory } from "../../src/task/task_executor.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -194,6 +195,24 @@ describe("TaskExecutor turn isolation gate", () => {
     expect(task.executionSecurity).toMatchObject({ tier: "restricted" });
     const errorText = `${task.error ?? ""}`;
     expect(errorText).toContain("SESSION_ISOLATION_UNAVAILABLE");
+  });
+
+  it("surfaces the isolation code when the decision itself is unavailable", async () => {
+    const turns: EngineExecuteParams[] = [];
+    const gate = {
+      resolveDecision: vi.fn().mockRejectedValue(
+        new IsolationPreparationPolicyError("policy file is missing"),
+      ),
+      policyDigest: () => "digest-1",
+    } as unknown as SessionIsolationTurnGate;
+    const executor = makeExecutor(makeEngine(turns), gate);
+    const task = makeTask({ modelPreset: "claude-opus", modelPresetBackend: "claude" });
+
+    executor.startNewExecution(task, claudeAgent);
+    await task.executionPromise;
+
+    expect(turns).toHaveLength(0);
+    expect(`${task.error ?? ""}`).toContain("ISOLATION_POLICY_UNAVAILABLE");
   });
 
   it("never creates a full runner for a restricted turn when the factory cannot isolate", async () => {
