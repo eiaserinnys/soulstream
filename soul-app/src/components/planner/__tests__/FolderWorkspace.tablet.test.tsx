@@ -155,7 +155,8 @@ test('태블릿 폴더 제목은 세 줄 읽기에서 시작하고 누르면 세
   const verticalPadding = (t.current.hitTarget.min - lineHeight) / 2;
   const read = screen.getByTestId('task-workspace-tablet-title-read');
   expect(read.props.accessibilityRole).toBe('button');
-  expect(read.props.accessibilityLabel).toBe('폴더 제목');
+  expect(read.props.accessibilityLabel).toBe('폴더 제목 실제 업무 제목');
+  expect(read.props.accessibilityHint).toBe('눌러서 이름 편집');
   const text = screen.getByTestId('task-workspace-tablet-title-text');
   expect(text.props.numberOfLines).toBe(3);
   expect(text.props.ellipsizeMode).toBe('tail');
@@ -188,6 +189,29 @@ test('태블릿 폴더 제목은 세 줄 읽기에서 시작하고 누르면 세
   expect(inputStyle.height).toBeUndefined();
   expect(input.props.multiline).toBe(true);
   expect(input.props.autoFocus).toBe(true);
+});
+
+test('빈 폴더 제목의 읽기 단추는 기본 접근성 이름을 쓴다', () => {
+  usePlannerStore.getState().setSelectedFolderSnapshot({
+    ...plannerFolder, page: { ...plannerFolder.page, title: '' },
+  });
+  const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
+  expect(screen.getByTestId('task-workspace-tablet-title-read').props.accessibilityLabel).toBe('폴더 제목');
+});
+
+test('편집 중 다른 폴더로 바꾸면 이전 초안을 저장하고 새 폴더는 읽기 상태로 연다', async () => {
+  const screen = render(<FolderWorkspace api={null} folderPageId="task-1" />);
+  fireEvent.press(screen.getByTestId('task-workspace-tablet-title-read'));
+  fireEvent.changeText(screen.getByTestId('task-workspace-tablet-title'), '첫 폴더 초안');
+  const second = { ...plannerFolder, page: { ...plannerFolder.page, id: 'task-2', title: '두 번째 폴더' }, folderId: 'task-2' };
+  await act(async () => {
+    usePlannerStore.getState().setSelectedFolderSnapshot(second);
+    useSessionStore.setState({ catalog: { folders: [folder, { ...folder, id: 'task-2', name: '두 번째 폴더', projectPageId: 'task-2' }], sessions: {} } });
+    screen.rerender(<FolderWorkspace api={null} folderPageId="task-2" />);
+  });
+  expect(screen.queryByTestId('task-workspace-tablet-title')).toBeNull();
+  expect(screen.getByTestId('task-workspace-tablet-title-read').props.accessibilityLabel).toBe('폴더 제목 두 번째 폴더');
+  await waitFor(() => expect(mockRenameFolder).toHaveBeenCalledWith('task-1', '첫 폴더 초안'));
 });
 
 test('phone 폴더 화면의 여섯 섹션은 같은 머리와 전경 텍스트 배치를 쓴다', () => {

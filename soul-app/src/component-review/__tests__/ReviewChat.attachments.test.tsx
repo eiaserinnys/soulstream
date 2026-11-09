@@ -6,6 +6,7 @@ import { getChatRowHorizontalInset } from '../../components/chat/ChatBody.styles
 import { useTokens } from '../../theme';
 import { useSettingsStore } from '../../store/settingsStore';
 import { ReviewChat } from '../ReviewChat';
+import { TodayCardComposer } from '../../components/planner/TodayCardComposer';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 jest.mock('../../components/chat/ChatBody', () => ({ ChatBody: () => null }));
@@ -22,6 +23,15 @@ beforeEach(() => {
 
 afterEach(() => {
   jest.restoreAllMocks();
+});
+
+test('surface none 표본은 오늘 카드 입력과 선택 칩을 그대로 쓴다', () => {
+  const screen = render(<ReviewChat />);
+  const sample = within(screen.getByTestId('review-chat-composer-surface-none'));
+  expect(sample.UNSAFE_getByType(TodayCardComposer).props.api).toBeNull();
+  expect(sample.getByTestId('card-folder-chip')).toBeTruthy();
+  expect(sample.getByTestId('card-execution-chip')).toBeTruthy();
+  expect(sample.getByTestId('chat-composer-box')).toBeTruthy();
 });
 
 test('첨부만 보낸 메시지 표본은 UserMessage에 이미지와 TXT를 연결한다', () => {

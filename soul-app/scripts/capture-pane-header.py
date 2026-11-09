@@ -219,6 +219,8 @@ MEASURE_JS = r"""
     titleRead = {
       ...metrics,
       text: (readText.textContent || '').trim().slice(0, 60),
+      fullText: readText.textContent || '',
+      accessibilityLabel: byTestId('task-workspace-tablet-title-read')?.getAttribute('aria-label'),
       lineCount: countLines(readText),
       naturalLineCount: naturalLineCount(readText),
       lineClamp: style.webkitLineClamp,
@@ -513,6 +515,10 @@ def check_title_read(prefix: str, metrics: dict, checks: Checks) -> None:
     checks.check(f"{prefix} 읽기 상태 제목 존재", title is not None, title)
     if title is None:
         return
+    expected_label = f"폴더 제목 {title['fullText']}" if title["fullText"] else "폴더 제목"
+    checks.check(f"{prefix} 읽기 제목 접근성 이름",
+                 title["accessibilityLabel"] == expected_label,
+                 {"ariaLabel": title["accessibilityLabel"], "visibleTitle": title["fullText"]})
     natural = title["naturalLineCount"]
     container = title["container"]
     height = None if container is None else container["height"]

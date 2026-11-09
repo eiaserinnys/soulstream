@@ -285,6 +285,10 @@ export function FolderWorkspace({
     if (tablet) setEditingPhoneTitle(false);
   }, [tablet]);
 
+  useEffect(() => {
+    setEditingTabletTitle(false);
+  }, [folderSummary?.page.id]);
+
   if (!folderSummary) {
     return <View style={styles.empty}><Text style={styles.emptyText}>폴더를 불러오는 중입니다.</Text></View>;
   }
@@ -459,9 +463,10 @@ export function FolderWorkspace({
             <Pressable
               testID="task-workspace-tablet-title-read"
               accessibilityRole="button"
-              accessibilityLabel="폴더 제목"
+              accessibilityLabel={visibleTitle ? `폴더 제목 ${visibleTitle}` : '폴더 제목'}
+              accessibilityHint="눌러서 이름 편집"
               style={[styles.tabletTitleRead, {
-                minHeight: tabletTitleLayout.minHeight,
+                minHeight: t.hitTarget.min,
                 paddingVertical: tabletTitleLayout.verticalPadding,
               }]}
               onPress={() => setEditingTabletTitle(true)}
