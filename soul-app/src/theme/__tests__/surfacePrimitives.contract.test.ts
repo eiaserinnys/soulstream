@@ -43,6 +43,20 @@ describe('surface primitive roles', () => {
     expect(contrastRatio(roles.error.contentColor, colors.surface)).toBeGreaterThanOrEqual(4.5);
   });
 
+  test('모든 primitive는 비활성 바탕을 글자 토큰으로 칠하지 않고 disabledContentColor를 정한다', () => {
+    for (const colors of [DARK_COLORS, LIGHT_COLORS]) {
+      const roles = createPrimitiveRoles(tokens(colors));
+      const textTokenValues = Object.entries(colors)
+        .filter(([key]) => key.startsWith('text'))
+        .map(([, value]) => value);
+      for (const name of PRIMITIVE_ROLE_NAMES) {
+        expect(roles[name].disabledColor).not.toBe(colors.textDisabled);
+        expect(textTokenValues).not.toContain(roles[name].disabledColor);
+        expect(roles[name].disabledContentColor).toBe(colors.textPrimary);
+      }
+    }
+  });
+
   test('N2 5 files / 7 authored units는 모두 primitive 정본에 배정되어 미할당 0이다', () => {
     const expected = new Map([
       ['components/AppGlassCard.tsx', ['AppGlassCard', 'AppGlassPressable']],

@@ -105,7 +105,7 @@ export function TodayCardComposer({ api, onCreated, autoFocus = false, onCollaps
             <Ionicons name="chevron-down" size={t.iconSize.compact} color={t.colors.textSecondary} />
           </GlassButton></View> : null}
         </View>
-        <ChatComposer embedded input={text} onChangeInput={setText} placeholder="무엇을 시작할까요" inputAccessibilityLabel="세션 첫 메시지"
+        <ChatComposer embedded surface="none" input={text} onChangeInput={setText} placeholder="무엇을 시작할까요" inputAccessibilityLabel="세션 첫 메시지"
           sendAccessibilityLabel="세션 시작" onPickAttachment={attachments.pickAttachment} onSend={() => { void submit(); }}
           uploading={attachments.uploading} sending={pending} disabled={pending || !api} sendDisabled={!canSend} voiceControls={null}
           onInputRef={input => { inputRef.current = input; }} />

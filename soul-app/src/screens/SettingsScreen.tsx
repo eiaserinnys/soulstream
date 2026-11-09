@@ -127,7 +127,7 @@ export function SettingsScreen({ extraBottomPadding = 0, bottomSafeAreaOwner = '
             <SettingsContent flattened category={active ?? 'display'} showAdmin={isAdmin} connectionOnly={connectionOnly}/>
             {scope ? <View testID="settings-active-footer" style={[styles.footer, { paddingBottom: t.spacing.md + extraBottomPadding }]}>
               {scope.dirty ? <GlassButton accessibilityLabel="변경 버리기" onPress={() => active && guard(active, () => undefined)} style={styles.footerAction}><Text style={styles.actionText}>변경 버리기</Text></GlassButton> : null}
-              <GlassButton variant="primary" testID={scope.saveTestID ?? 'settings-scope-save'} accessibilityLabel={scope.saveLabel ?? '저장'} disabled={scope.busy || scope.canSave === false} onPress={() => void scope.save()} style={styles.footerAction}><Text style={styles.primaryText}>{scope.busy ? '처리 중…' : scope.saveLabel ?? '저장'}</Text></GlassButton>
+              <GlassButton variant="primary" testID={scope.saveTestID ?? 'settings-scope-save'} accessibilityLabel={scope.saveLabel ?? '저장'} disabled={scope.busy || scope.canSave === false} onPress={() => void scope.save()} style={styles.footerAction}>{({ contentColor }) => (<Text style={[styles.primaryText, { color: contentColor }]}>{scope.busy ? '처리 중…' : scope.saveLabel ?? '저장'}</Text>)}</GlassButton>
             </View> : null}
           </View>
         </View>
@@ -145,7 +145,7 @@ function makeStyles(t: DesignTokens) { return StyleSheet.create({
   headerClose: { marginRight: -(t.hitTarget.min - t.foundation.iconFrame.compact) / 2 },
   title: { flex: 1, ...t.foundation.typography.navigation, color: t.colors.textPrimary }, actionText: { ...t.foundation.typography.body, color: t.colors.accent, fontWeight: '600' }, primaryText: { ...t.foundation.typography.body, color: t.colors.accentText, fontWeight: '700' },
   introduction: { padding: t.foundation.pageInset, gap: t.spacing.sm }, introTitle: { ...t.foundation.typography.section, color: t.colors.textPrimary }, help: { ...t.foundation.typography.body, color: t.colors.textSecondary },
-  footer: { flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.sm, padding: t.cardLayout.padding, borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border }, footerAction: { flexGrow: 1 },
+  footer: { flexDirection: 'row', flexWrap: 'wrap', gap: t.spacing.sm, padding: t.cardLayout.padding, borderTopWidth: StyleSheet.hairlineWidth, borderColor: t.colors.border }, footerAction: { flex: 1, minWidth: 140 },
 }); }
 
 export function FirstConnectionSettingsScreen() { return <SettingsScreen connectionOnly showTitle/>; }

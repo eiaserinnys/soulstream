@@ -31,7 +31,7 @@ import { createPrimitiveRoles } from '../../theme/surfacePrimitives';
 import { createPlannerVisualRoles } from '../../theme/plannerVisualRoles';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useTokens } from '../../theme';
-import { GlassButton, GLASS_BUTTON_BORDER_WIDTH, resolveGlassButtonBackground, resolvePaperButtonBackground } from '../GlassSurface';
+import { GlassButton, GLASS_BUTTON_BORDER_WIDTH, resolveGlassButtonBackground, resolveGlassButtonContentColor, resolvePaperButtonBackground } from '../GlassSurface';
 
 describe('GlassButton interaction contract', () => {
   beforeEach(() => {
@@ -91,18 +91,60 @@ describe('GlassButton interaction contract', () => {
     });
   });
 
-  test('primary 명시만 solid accent를 쓰고 disabled affordance를 보존한다', () => {
+  test('disabled primary는 chrome 판 위 textPrimary 글자로 그리고 기본 단추 치수를 지킨다', () => {
     const screen = render(
-      <GlassButton variant="primary" testID="primary" disabled onPress={() => undefined}>
-        <Text>저장</Text>
+      <GlassButton variant="primary" testID="primary" surfaceTestID="surface" disabled
+        onPress={() => undefined}>
+        {({ contentColor }) => <Text style={{ color: contentColor }}>저장</Text>}
       </GlassButton>,
     );
     const button = screen.getByTestId('primary');
+    const surface = StyleSheet.flatten(screen.getByTestId('surface').props.style);
     const style = StyleSheet.flatten(button.props.style);
     const primary = createPrimitiveRoles(phoneTokens()).buttonPrimary;
-    expect(style.backgroundColor).toBe(primary.disabledColor);
+    expect(surface.borderRadius).toBe(primary.radius);
+    expect(style.backgroundColor).toBe('transparent');
+    expect(style.opacity).toBe(0.55);
+    expect(style.minHeight).toBeGreaterThanOrEqual(primary.minHeight);
     expect(style.minWidth).toBeGreaterThanOrEqual(44);
+    expect(screen.getByText('저장').props.style).toMatchObject({ color: DARK_COLORS.textPrimary });
     expect(button.props.accessibilityState).toEqual({ disabled: true });
+  });
+
+  test('primary 함수형 children은 활성에서 contentColor, 비활성에서 disabledContentColor를 받는다', () => {
+    const roles = createPrimitiveRoles(phoneTokens());
+    expect(resolveGlassButtonContentColor(roles.buttonPrimary, true))
+      .toBe(roles.buttonPrimary.disabledContentColor);
+    expect(resolveGlassButtonContentColor(roles.buttonPrimary, false))
+      .toBe(roles.buttonPrimary.contentColor);
+
+    const element = (disabled: boolean) => (
+      <GlassButton variant="primary" testID="primary" disabled={disabled} onPress={() => undefined}>
+        {({ contentColor }) => <Text style={{ color: contentColor }}>저장</Text>}
+      </GlassButton>
+    );
+    const screen = render(element(false));
+    expect(screen.getByText('저장').props.style).toMatchObject({ color: DARK_COLORS.accentText });
+    screen.rerender(element(true));
+    expect(screen.getByText('저장').props.style).toMatchObject({ color: DARK_COLORS.textPrimary });
+  });
+
+  test('tone="link" 함수형 children은 활성에서 link, 비활성에서 disabledContentColor를 받는다', () => {
+    const roles = createPrimitiveRoles(phoneTokens());
+    expect(resolveGlassButtonContentColor(roles.buttonSecondary, false, DARK_COLORS.link))
+      .toBe(DARK_COLORS.link);
+    expect(resolveGlassButtonContentColor(roles.buttonSecondary, true, DARK_COLORS.link))
+      .toBe(roles.buttonSecondary.disabledContentColor);
+
+    const element = (disabled: boolean) => (
+      <GlassButton tone="link" testID="link" disabled={disabled} onPress={() => undefined}>
+        {({ contentColor }) => <Text style={{ color: contentColor }}>추가</Text>}
+      </GlassButton>
+    );
+    const screen = render(element(false));
+    expect(screen.getByText('추가').props.style).toMatchObject({ color: DARK_COLORS.link });
+    screen.rerender(element(true));
+    expect(screen.getByText('추가').props.style).toMatchObject({ color: DARK_COLORS.textPrimary });
   });
 
   test('disabled secondary는 바탕을 칠하지 않고 opacity로 비활성을 표시한다', () => {

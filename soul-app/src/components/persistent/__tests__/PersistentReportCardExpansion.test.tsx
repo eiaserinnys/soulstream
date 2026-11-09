@@ -4,7 +4,7 @@ const mockOpenCardLink = jest.fn();
 jest.mock('../../../hooks/useOpenContentLink', () => ({ useOpenContentLink: () => mockOpenCardLink }));
 
 import React from 'react';
-import { Keyboard, ScrollView, View } from 'react-native';
+import { Keyboard, ScrollView, StyleSheet, View } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';
 import type { CardCheckItem, CardComment, CardDetail } from '../../../api/cardTypes';
@@ -107,6 +107,10 @@ test('omits the checklist and comment timeline when both have no rows', async ()
   expect(screen.queryByTestId('card-timeline')).toBeNull();
   expect(screen.getByLabelText('카드 열기')).toBeTruthy();
   expect(screen.getByTestId('card-comment-composer')).toBeTruthy();
+  // PAS 보고 카드 펼침의 커멘트 입력은 embedded여도 glassDense 상자를 다시 그린다.
+  const box = StyleSheet.flatten(screen.getByTestId('chat-composer-box').props.style);
+  expect(box.backgroundColor).toBeTruthy();
+  expect(box.borderWidth).not.toBe(0);
 });
 
 test('shows a folded card read error and retries in place', async () => {

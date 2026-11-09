@@ -26,6 +26,14 @@ const server = http.createServer(async (req, res) => {
       res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/S7sAAAAASUVORK5CYII=', 'base64'));
       return;
     }
+    // 세션 메시지의 첨부 투영은 운영 앱이 실제로 부르는 경로다(useMessageAttachments).
+    // 표본에는 투영할 첨부 자산이 없으므로 빈 목록을 준다.
+    const eventAttachments = /^\/api\/sessions\/[^/]+\/events\/(\d+)\/attachments$/.exec(url.pathname);
+    if (eventAttachments && req.method === 'GET' && !req.headers.authorization) {
+      res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ event_id: Number(eventAttachments[1]), items: [] }));
+      return;
+    }
     if (url.pathname !== '/api/auth/status' || req.method !== 'GET') {
       res.writeHead(403); res.end('Unexpected API request'); return;
     }
@@ -147,8 +155,15 @@ async function runViewport(browser, base, options, name) {
   await tab('surfaces');
   await page.getByLabel('예시 주요 동작', { exact: true }).click();
   assert.match(await page.getByTestId('review-button-count').textContent(), /1/);
+  // 「주요 비활성」 표본은 카드 #1119에서 추가했다. 변경 전 번들에는 없으므로 있으면 기록만 한다.
+  const disabledPrimarySamples = await page.getByLabel('예시 주요 비활성', { exact: true }).count();
   await shot('surfaces');
-  result.interactions.push(name + ': 유리 대체 표면·실제 버튼');
+  await page.goto(`${base}${prefix}index.html?section=surfaces&theme=dark`);
+  await page.getByTestId('component-review').waitFor();
+  await page.evaluate(() => document.fonts.ready);
+  await shot('surfaces-dark');
+  result.interactions.push(name + ': 유리 대체 표면·실제 버튼(주요 비활성 표본 '
+    + (disabledPrimarySamples ? '있음' : '없음') + ')·다크');
   const storage = await page.evaluate(() => ({ auth: localStorage.getItem('soul-auth'), settings: localStorage.getItem('soul-app-settings') }));
   assert.match(storage.auth, /public-sentinel/);
   assert.match(storage.settings, /must-not-read.invalid/);
@@ -1057,7 +1072,8 @@ async function runPersistentTaskCaptures(browser, base) {
     assert.deepEqual(result.errors, []);
     assert.ok(apiRequests.some((r) => r.method === 'GET' && r.path === '/api/auth/status' && !r.authorization));
     assert.ok(apiRequests.every((r) => r.method === 'GET' && !r.authorization
-      && (r.path === '/api/auth/status' || r.path === '/api/attachments/files')));
+      && (r.path === '/api/auth/status' || r.path === '/api/attachments/files'
+        || /^\/api\/sessions\/[^/]+\/events\/\d+\/attachments$/.test(r.path))));
     result.passed = true;
     console.log(JSON.stringify(result, null, 2));
   } catch (error) {

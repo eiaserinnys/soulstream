@@ -119,7 +119,10 @@ test('담당 세션이 없으면 첨부 캡은 곧 지원 안내를 연다', asy
 });
 test('오늘 입력은 ChatComposer의 한 줄 시작·폰트·버튼을 상속하고 기본 노드를 표시한다', () => {
   const screen = render(<TodayCardComposer api={null} />);
-  expect(screen.UNSAFE_getByType(ChatComposer)).toBeTruthy();
+  expect(screen.UNSAFE_getByType(ChatComposer).props.surface).toBe('none');
+  const box = StyleSheet.flatten(screen.getByTestId('chat-composer-box').props.style);
+  expect(box).toMatchObject({ borderWidth: 0, borderColor: 'transparent' });
+  expect(box.backgroundColor).toBeUndefined();
   const contentRow = screen.getByTestId('chat-composer-content-row');
   expect(StyleSheet.flatten(contentRow.props.style)).toMatchObject({ flexDirection: 'row', flexWrap: 'nowrap' });
   expect(React.Children.toArray(contentRow.props.children).map((child: any) => child.props.testID))

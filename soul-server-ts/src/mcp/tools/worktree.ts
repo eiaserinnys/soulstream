@@ -2,6 +2,7 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { jsonResult, errorResult } from "../result.js";
+import { getCurrentMcpPrincipal } from "../request_context.js";
 import type { McpRuntime } from "../runtime.js";
 import { requireMcpMutationActor } from "./caller_session.js";
 import { WorktreeServiceError } from "../../worktree/worktree_service.js";
@@ -59,6 +60,7 @@ export function registerWorktreeTools(server: McpServer, runtime: McpRuntime): v
           repoId: repo_id,
           branch,
           mode,
+          restricted: getCurrentMcpPrincipal().tier === "restricted",
           ...(start_point ? { startPoint: start_point } : {}),
           ...(adopt_path ? { adoptPath: adopt_path } : {}),
           ...(expected_head ? { expectedHead: expected_head } : {}),

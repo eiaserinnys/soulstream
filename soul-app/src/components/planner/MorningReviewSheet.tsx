@@ -159,7 +159,7 @@ export function MorningReviewSheet({
                     onPress={() => { void runAction('today'); }}
                     contentStyle={styles.action}
                   >
-                    <Text style={styles.primaryText}>오늘로</Text>
+                    {({ contentColor }) => (<Text style={[styles.primaryText, { color: contentColor }]}>오늘로</Text>)}
                   </GlassButton>
                   <GlassButton
                     testID="morning-review-later"
