@@ -163,7 +163,7 @@ def main() -> int:
     parser.add_argument("--service-dir", default=SERVICE_DIR,
                         help="드라이버 실행 cwd(운영 체크아웃)")
     parser.add_argument("--workspace", default=str(WORKSPACE),
-                        help="run_root 기준 디렉터리")
+                        help="run_root 기준 디렉터리; payload 경로를 그대로 넘기므로 상자에서 보이는 이 워크스페이스 아래 체크아웃에서 실행")
     parser.add_argument("--pasta", default=PASTA, help="pasta 실행 경로")
     parser.add_argument("--keep", action="store_true", help="시험 루트를 남긴다")
     args = parser.parse_args()
@@ -206,7 +206,7 @@ def main() -> int:
 
     ctx = build_context(run_root)
     ctx.update(node_id=args.node_id, service_dir=args.service_dir,
-               pasta=args.pasta, signal_dry_run=args.signal_dry_run)
+               workspace=args.workspace, pasta=args.pasta, signal_dry_run=args.signal_dry_run)
     emit("START", run_root=str(run_root), host=ctx["host"], axes=names,
          node=os.uname().nodename, uid=os.getuid(), payload=sys.executable,
          driver_cwd=args.service_dir, driver_node=NODE, tsx_loader=str(TSX_LOADER))

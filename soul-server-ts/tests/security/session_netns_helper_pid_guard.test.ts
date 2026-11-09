@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { SessionIsolationUnavailableError } from "../../src/runner/session_isolation_preflight.js";
 import {
@@ -44,21 +44,27 @@ describe("pid ownership guard (#1102 regression)", () => {
   });
 
   it("refuses non-integer pids inside the real kill adapter before signaling", () => {
-    const { kill } = createIsolationProcessPorts();
-    const invalidPids: unknown[] = [
-      0,
-      1,
-      -1,
-      1.5,
-      Number.NaN,
-      Number.POSITIVE_INFINITY,
-      "4242",
-      {},
-      null,
-      undefined,
-    ];
-    for (const pid of invalidPids) {
-      expect(() => kill(pid as number, "SIGTERM")).toThrow(SessionIsolationUnavailableError);
+    const kill = vi.spyOn(process, "kill").mockImplementation(() => true);
+    try {
+      const adapter = createIsolationProcessPorts();
+      const invalidPids: unknown[] = [
+        0,
+        1,
+        -1,
+        1.5,
+        Number.NaN,
+        Number.POSITIVE_INFINITY,
+        "4242",
+        {},
+        null,
+        undefined,
+      ];
+      for (const pid of invalidPids) {
+        expect(() => adapter.kill(pid as number, "SIGTERM")).toThrow(SessionIsolationUnavailableError);
+      }
+      expect(kill).not.toHaveBeenCalled();
+    } finally {
+      kill.mockRestore();
     }
   });
 });

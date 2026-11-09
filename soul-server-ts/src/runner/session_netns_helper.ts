@@ -55,8 +55,6 @@ export type {
 export const NETNS_HELPER_CONTROL_FD = 4;
 
 const HOST_RESOLV_CONF_PATH = "/etc/resolv.conf";
-/** sandbox 안에서 호스트 `/etc/resolv.conf`를 덮는 경로. */
-const SANDBOX_RESOLV_CONF_PATH = "/etc/resolv.conf";
 
 /**
  * host 쪽 보조 프로세스(helper·pasta)에만 주는 최소 환경. 세션 환경은
@@ -167,9 +165,7 @@ export function launchIsolatedSession(
   });
   const forwardedPorts = computePastaForwardedPorts(input.plan);
 
-  const bwrapCommand = buildBwrapCommand(input.tools.bwrap, input.plan, input.original, [
-    { source: input.resolvConfPath, destination: SANDBOX_RESOLV_CONF_PATH, writable: false },
-  ]);
+  const bwrapCommand = buildBwrapCommand(input.tools.bwrap, input.plan, input.original);
   const launchArgv = [
     input.tools.setpriv,
     "--inh-caps=-all",

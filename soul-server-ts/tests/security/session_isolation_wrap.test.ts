@@ -180,6 +180,23 @@ describe("wrapSessionCommand", () => {
     expect(remount).toBeGreaterThan(childBind);
   });
 
+  it("binds the WSL resolver inside the masked mount before remounting it read-only", () => {
+    const source = "/run/soulstream/isolated/s1/resolv.conf";
+    const destination = "/mnt/wsl/resolv.conf";
+    const args = buildBwrapFlags(isolationSpec({
+      bindings: [{ source, destination, writable: false }],
+      masks: [{ path: "/mnt", kind: "directory" }],
+      heavyWorkLockBindings: [],
+    }));
+    const mask = indexOfPair(args, "--tmpfs", "/mnt");
+    const bind = indexOfPair(args, "--ro-bind", source);
+    const remount = indexOfPair(args, "--remount-ro", "/mnt");
+    expect(mask).toBeGreaterThan(-1);
+    expect(bind).toBeGreaterThan(mask);
+    expect(args[bind + 2]).toBe(destination);
+    expect(remount).toBeGreaterThan(bind);
+  });
+
   it("keeps masks under a read-only bind instead of letting the bind hide them", () => {
     const workspace = "/home/eias/workspace";
     const args = buildBwrapFlags(isolationSpec({

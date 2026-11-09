@@ -527,6 +527,7 @@ async function main(): Promise<void> {
   }
   const stderr = launch.child.stderr;
   if (stderr) stderr.setEncoding("utf8");
+  stderr?.on("data", (chunk: string) => process.stderr.write(chunk));
 
   let disposed = false;
   const shutdown = async (code: number): Promise<void> => {

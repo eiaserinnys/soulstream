@@ -140,6 +140,7 @@ async function makeFixture(overrides: FixtureOverrides = {}): Promise<Fixture> {
   });
 
   const systemFacts: FakeHostPortsOptions["systemFacts"] = {
+    "/etc/resolv.conf": { kind: "file" },
     "/run/docker.sock": { kind: "file" },
     "/var/run/docker.sock": { kind: "file", realPath: "/run/docker.sock" },
     "/run/user/1000": { kind: "directory" },
@@ -444,6 +445,33 @@ describe("prepareIsolationPlan", () => {
     expect(prepared.contextNotice).not.toContain("ssr1.");
     expect(prepared.contextNotice).not.toContain("db-secret");
     expect(prepared.contextNotice).not.toContain(fixture.canonicalCodex);
+  });
+
+  it("binds the sandbox resolver to the real path of a symlinked host resolver", async () => {
+    const fixture = await makeFixture();
+    const resolveRealPath = fixture.ports.resolveRealPath;
+    fixture.ports.resolveRealPath = async (path) => path === "/etc/resolv.conf"
+      ? "/mnt/wsl/resolv.conf"
+      : resolveRealPath(path);
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+
+    expect(bindingOf(prepared.spec.bindings, "/mnt/wsl/resolv.conf")).toEqual({
+      source: prepared.resolvConfPath,
+      destination: "/mnt/wsl/resolv.conf",
+      writable: false,
+    });
+    expect(bindingOf(prepared.spec.bindings, "/etc/resolv.conf")).toBeUndefined();
+  });
+
+  it("fails when the host resolver's real path cannot be resolved", async () => {
+    const fixture = await makeFixture();
+    fixture.options.realPathFailures = ["/etc/resolv.conf"];
+    fixture.ports = createFakeHostPorts(fixture.options);
+
+    await expect(prepareIsolationPlan(fixture.input, fixture.ports)).rejects.toThrow(
+      "EACCES: /etc/resolv.conf",
+    );
   });
 
   it("keeps the workspace read-only when no worktree is attached", async () => {
