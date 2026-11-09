@@ -309,6 +309,50 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     expect(excludedType).toHaveLength(0);
   });
 
+  it("bounds global posting reads per term and still finds rare terms in old sessions", async () => {
+    await sql`
+      INSERT INTO sessions (session_id, folder_id, display_name, status, session_type)
+      VALUES ('budget-common-old', 'folder-allowed', 'Budget old', 'idle', 'claude'),
+             ('budget-common-new', 'folder-allowed', 'Budget new', 'idle', 'claude')
+    `;
+    const commonText = "budgetcommon1 budgetcommon2 budgetcommon3 budgetcommon4 budgetcommon5 "
+      + "budgetcommon6 budgetcommon7 budgetcommon8 budgetcommon9 budgetcommon10";
+    await sql`
+      INSERT INTO events (session_id, id, event_type, searchable_text, created_at)
+      SELECT 'budget-common-old', g, 'assistant_message',
+             CASE WHEN g = 1 THEN 'rarebudgetword ' ELSE '' END || ${commonText},
+             NOW() + INTERVAL '1 hour'
+      FROM generate_series(1, 4050) AS g
+    `;
+    await sql`
+      INSERT INTO events (session_id, id, event_type, searchable_text, created_at)
+      SELECT 'budget-common-new', g, 'assistant_message', ${commonText},
+             NOW() + INTERVAL '2 hours'
+      FROM generate_series(1, 5) AS g
+    `;
+
+    const commonRows = await sql`
+      SELECT session_id, id FROM event_search(
+        ${commonText}, NULL, 5000, ARRAY['assistant_message']::text[]
+      )
+    `;
+    const commonFound = new Set(commonRows.map((row) => `${row.session_id}/${row.id}`));
+    expect(commonFound.size).toBe(4000);
+    expect(commonFound.has("budget-common-new/5")).toBe(true);
+    expect(commonFound.has("budget-common-old/4050")).toBe(true);
+    expect(commonFound.has("budget-common-old/56")).toBe(true);
+    expect(commonFound.has("budget-common-old/55")).toBe(false);
+    expect(commonFound.has("budget-common-old/1")).toBe(false);
+
+    const rareRows = await sql`
+      SELECT session_id, id FROM event_search(
+        ${"rarebudgetword"}, NULL, 5, ARRAY['assistant_message']::text[]
+      )
+    `;
+    expect(rareRows.map((row) => `${row.session_id}/${row.id}`))
+      .toEqual(["budget-common-old/1"]);
+  }, 60_000);
+
   it("reads integer postings with the same search contract and supports migration replay", async () => {
     const canonicalDefinition = schemaInstalledEventSearchDefinition;
     const canonicalIndex = await readPrefixIndexDefinition(sql);
@@ -326,6 +370,10 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     )), "utf8");
     const prefixGuardMigration = readFileSync(fileURLToPath(new URL(
       "../../packages/db-schema/sql/migrations/145_event_search_scoped_prefix_guard.sql",
+      import.meta.url,
+    )), "utf8");
+    const postingBudgetMigration = readFileSync(fileURLToPath(new URL(
+      "../../packages/db-schema/sql/migrations/147_event_search_global_posting_budget.sql",
       import.meta.url,
     )), "utf8");
 
@@ -384,8 +432,13 @@ describePostgres("session search reliability PostgreSQL integration", () => {
     expect(await readPrefixIndexDefinition(sql)).toEqual(canonicalIndex);
     await sql.begin((tx) => tx.unsafe(prefixGuardMigration));
     const afterReplay = await readFunctionDefinition(sql, "event_search");
-    expect(afterFirstMigration[0]?.definition).toBe(canonicalDefinition[0]?.definition);
-    expect(afterReplay[0]?.definition).toBe(canonicalDefinition[0]?.definition);
+    expect(afterReplay[0]?.definition).toBe(afterFirstMigration[0]?.definition);
+    await sql.begin((tx) => tx.unsafe(postingBudgetMigration));
+    const afterBudgetMigration = await readFunctionDefinition(sql, "event_search");
+    expect(afterBudgetMigration[0]?.definition).toBe(canonicalDefinition[0]?.definition);
+    await sql.begin((tx) => tx.unsafe(postingBudgetMigration));
+    const afterBudgetReplay = await readFunctionDefinition(sql, "event_search");
+    expect(afterBudgetReplay[0]?.definition).toBe(canonicalDefinition[0]?.definition);
     expect(await readPrefixIndexDefinition(sql)).toEqual(canonicalIndex);
     expect(canonicalIndex.map((row) => row.name)).toEqual(["event_search_dictionary_korean_prefix"]);
     const prefixPlan = await sql.begin(async (tx) => {

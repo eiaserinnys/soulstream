@@ -156,7 +156,7 @@ async def test_event_search_prefix_helpers_are_retained_after_write_switch():
 
 
 async def test_event_search_scoped_read_migration_is_mirrored_in_schema_sql():
-    migration_sql = _migration_sql("145_event_search_scoped_prefix_guard.sql").strip()
+    migration_sql = _migration_sql("147_event_search_global_posting_budget.sql").strip()
     schema_sql = _schema_sql()
 
     assert _function_sql(
