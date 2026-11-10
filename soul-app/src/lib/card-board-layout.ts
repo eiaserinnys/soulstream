@@ -3,8 +3,11 @@ import { completedGridLayout } from '../../../packages/soul-ui/src/cards/complet
 
 export const BOARD_COLUMNS = [
   ['todo', '드래프트'], ['queued', '대기'], ['running', '실행 중'],
+  ['awaiting_verification', '검증 대기'],
   ['blocked', '막힘'], ['review', '검수 대기'], ['on_hold', '보류'], ['done', '완료'], ['cancelled', '취소'],
 ] as const;
+/** 검증 대기는 담당이 스스로 기다리는 상태라 손으로 옮길 수 있는 목적지가 아니다. */
+export const MANUAL_STATUS_COLUMNS = BOARD_COLUMNS.filter(([status]) => status !== 'awaiting_verification');
 export const BOARD_LONG_PRESS_MS = 350;
 export const BOARD_DRAG_SLOP = 8; // Existing queue gesture threshold.
 export type BoardFrame = { x: number; y: number; width: number; height: number };
@@ -51,5 +54,6 @@ export function boardDropStatus(x: number, y: number, frame: BoardFrame, geometr
   const index = geometry.lanes.slice(0,columns.length).findIndex(lane=>local>=lane.start&&local<=lane.start+lane.width);
   if (index < 0) return null;
   const next = columns[index][0];
+  if (next === 'awaiting_verification') return null;
   return next === from && next !== 'running' ? null : next;
 }

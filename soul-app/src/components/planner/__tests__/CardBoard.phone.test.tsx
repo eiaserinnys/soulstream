@@ -24,7 +24,7 @@ test('phone initially shows review even empty, snaps by lane and preserves posit
   fireEvent(screen.getByTestId('card-board-frame'), 'layout', { nativeEvent: { layout: { width: 390, height: 600 } } });
   const board = screen.getByTestId('card-board');
   expect(board.props.snapToOffsets[0]).toBe(0);
-  expect(saved.mock.calls.at(-1)[0].x).toBe(board.props.snapToOffsets[4]);
+  expect(saved.mock.calls.at(-1)[0].x).toBe(board.props.snapToOffsets[5]);
   expect(screen.getByTestId('card-board-lane-heading-review').props.children).toEqual(expect.arrayContaining(['검수 대기 ', expect.anything()]));
   expect(StyleSheet.flatten(screen.getByTestId('card-board-column-review').props.style).width).toBeLessThan(390);
   fireEvent.scroll(board, { nativeEvent: { contentOffset: { x: 0, y: 0 } } });
@@ -71,10 +71,10 @@ test('숨김 토글은 중간 선택 레인을 유지하고 완료 선택만 가
   expect(saved.mock.calls.at(-1)[0].lane).toBe('running');
   expect(screen.queryByLabelText('완료 레인 보기')).toBeNull();
   screen.rerender(<CardBoard phone api={null} cards={[]} includeCompleted onOpen={() => {}} onPositionChange={saved} />);
-  fireEvent.scroll(screen.getByTestId('card-board'), { nativeEvent: { contentOffset: { x: screen.getByTestId('card-board').props.snapToOffsets[6], y: 0 } } });
+  fireEvent.scroll(screen.getByTestId('card-board'), { nativeEvent: { contentOffset: { x: screen.getByTestId('card-board').props.snapToOffsets[7], y: 0 } } });
   screen.rerender(<CardBoard phone api={null} cards={[]} includeCompleted={false} onOpen={() => {}} onPositionChange={saved} />);
   expect(saved.mock.calls.at(-1)[0].lane).toBe('on_hold');
-  expect(saved.mock.calls.at(-1)[0].x).toBe(screen.getByTestId('card-board').props.snapToOffsets[5]);
+  expect(saved.mock.calls.at(-1)[0].x).toBe(screen.getByTestId('card-board').props.snapToOffsets[6]);
 });
 
  test('pointer mouse pan changes horizontal position before longpress, vertical motion and secondary click do not', () => {

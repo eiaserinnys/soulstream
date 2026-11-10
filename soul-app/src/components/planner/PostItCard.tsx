@@ -7,7 +7,7 @@ import type { CardDto, CardStatus } from '../../api/cardTypes';
 import { useTokens } from '../../theme';
 import { createPostItRoles, type PostItVariant } from '../../theme/postItRoles';
 import { postItActivityText } from '../../lib/postit-activity';
-import { BOARD_COLUMNS, BOARD_LONG_PRESS_MS } from '../../lib/card-board-layout';
+import { MANUAL_STATUS_COLUMNS, BOARD_LONG_PRESS_MS } from '../../lib/card-board-layout';
 import { useCardTransition } from '../../hooks/useCardTransition';
 import { useSessionStore } from '../../store/sessionStore';
 import { useSettingsStore } from '../../store/settingsStore';
@@ -39,7 +39,7 @@ function buildPostItContextMenuActions(
     { key: 'copy-id', label: '카드 ID 복사', onSelect: async () => { await Clipboard.setStringAsync(card.id); } },
     { key: 'change-color', label: '카드 색상 변경', separatorBefore: true, disabled: pending,
       disabledReason: pending ? '카드 변경 중입니다.' : undefined, onSelect: changeColor },
-    ...BOARD_COLUMNS.map(([status, label]) => ({
+    ...MANUAL_STATUS_COLUMNS.map(([status, label]) => ({
       key: `status-${status}`,
       label,
       separatorBefore: status === 'todo',

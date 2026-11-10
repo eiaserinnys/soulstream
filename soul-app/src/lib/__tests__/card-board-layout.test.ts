@@ -20,7 +20,7 @@ test.each([390, 430])('phone %s: ordinary lanes align left and final lane ends a
   expect(g.laneWidth).toBeLessThan(width);
   expect(g.inset).toBe(8);
   expect(g.stride).toBe(g.laneWidth + g.gap);
-  expect(columns.map(([status]) => status)).toEqual(['todo', 'queued', 'running', 'blocked', 'review', 'on_hold']);
+  expect(columns.map(([status]) => status)).toEqual(['todo', 'queued', 'running', 'awaiting_verification', 'blocked', 'review', 'on_hold']);
   const offsets = boardSnapOffsets(width, g, columns.length);
   expect(offsets[0]).toBe(0);
   expect(g.inset + g.stride * 2 - offsets[2]).toBe(g.inset);
@@ -31,15 +31,29 @@ test.each([390, 430])('phone %s: ordinary lanes align left and final lane ends a
   const shown = boardSnapOffsets(width, allGeometry, allColumns.length);
   const lastShown = allGeometry.lanes[allColumns.length - 1];
   expect(allGeometry.inset + lastShown.start - shown.at(-1)! + lastShown.width).toBe(width - allGeometry.inset);
-  expect(BOARD_COLUMNS[4][0]).toBe('review');
-  expect(BOARD_COLUMNS[5][0]).toBe('on_hold');
+  expect(BOARD_COLUMNS[5][0]).toBe('review');
+  expect(BOARD_COLUMNS[6][0]).toBe('on_hold');
+});
+
+test('검증 대기로는 끌어 옮길 수 없고 그 레인에서 다른 레인으로는 옮길 수 있다', () => {
+  const columns = boardVisibleColumns(true);
+  const g = boardLaneGeometry(1100, 256, 8, false, columns, 8);
+  const frame = { x: 0, y: 0, width: 1100, height: 600 };
+  const awaiting = g.lanes.find((lane) => lane.status === 'awaiting_verification')!;
+  const review = g.lanes.find((lane) => lane.status === 'review')!;
+  expect(g.lanes.find((lane) => lane.status === 'running')!.start)
+    .toBeLessThan(awaiting.start);
+  expect(awaiting.start).toBeLessThan(g.lanes.find((lane) => lane.status === 'blocked')!.start);
+  expect(boardDropStatus(100, 100, frame, g, awaiting.start, 'review', columns)).toBeNull();
+  expect(boardDropStatus(100, 100, frame, g, awaiting.start, 'awaiting_verification', columns)).toBeNull();
+  expect(boardDropStatus(100, 100, frame, g, review.start, 'awaiting_verification', columns)).toBe('review');
 });
 
 test('wide viewport snap offsets clamp and deduplicate without end spacers', () => {
   const columns = boardVisibleColumns(false);
   const g = boardLaneGeometry(1210, 256, 8, false, columns);
   const offsets = boardSnapOffsets(1210, g, columns.length);
-  expect(offsets).toEqual([0, g.stride, g.maxScroll]);
+  expect(offsets).toEqual([0, g.stride, 2 * g.stride, g.maxScroll]);
   expect(offsets.length).toBe(new Set(offsets).size);
 });
 
@@ -60,7 +74,7 @@ test('drop uses viewport and scroll position, excludes outside and source lane',
   const scrollToDone = done.start + g.inset - (200 - frame.x) + 1;
   expect(boardDropStatus(200, 300, frame, g, scrollToDone, 'review', columns)).toBe('done');
   expect(boardDropStatus(200, 300, frame, g, scrollToDone, 'review', boardVisibleColumns(false))).toBeNull();
-  expect(boardDropStatus(200, 300, frame, g, 4 * g.stride, 'review')).toBeNull();
+  expect(boardDropStatus(200, 300, frame, g, 5 * g.stride, 'review')).toBeNull();
   expect(boardDropStatus(200, 50, frame, g, 0, 'todo')).toBeNull();
   expect(boardDropStatus(401, 300, frame, g, 0, 'todo')).toBeNull();
 });

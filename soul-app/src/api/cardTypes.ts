@@ -28,7 +28,7 @@ export type CardAttachmentEvidence =
   | { type: 'image' | 'link'; url: string; label: string }
   | CardAttachmentAssetEvidence;
 
-export type CardStatus = 'todo' | 'queued' | 'blocked' | 'running' | 'review' | 'on_hold' | 'done' | 'cancelled';
+export type CardStatus = 'todo' | 'queued' | 'blocked' | 'running' | 'awaiting_verification' | 'review' | 'on_hold' | 'done' | 'cancelled';
 export interface CardAttachment {
   nodeId: string;
   path: string;
@@ -92,6 +92,10 @@ export interface CardDto {
   createdAt: string;
   updatedAt: string;
   completedAt?: string | null;
+  /** 검증 대기 카드가 스스로 다시 확인하는 시각. Older responses omit it. */
+  wakeAt?: string | null;
+  /** 검증 대기 카드가 기다리는 대상. Older responses omit it. */
+  waitingFor?: string | null;
   latestActivity?: { kind: 'instruction' | 'report'; body: string; format: 'markdown' | 'html'; createdAt: string } | null;
   /** Omitted by older server responses. */
   items?: CardCheckItem[];
