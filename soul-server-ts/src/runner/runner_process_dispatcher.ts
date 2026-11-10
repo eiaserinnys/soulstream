@@ -1323,10 +1323,16 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   }
 
   private async replayPendingFrames(): Promise<void> {
-    if (!this.outbox || !this.activeExecution) return;
+    const execution = this.activeExecution;
+    if (!this.outbox || !execution) return;
     await this.ensurePump();
     const pending = await this.outbox.readPendingIpcFrames();
     for (const entry of pending) {
+      // The storage worker answers a message round trip later, so this read can
+      // land after the next execution is installed and describe rows the host
+      // has acknowledged since. Rows that are still pending stay in the journal
+      // and the new execution's own replay reads them fresh.
+      if (this.activeExecution !== execution) return;
       if (!this.pushActiveFrame(entry.frame, entry.frame_seq)) continue;
       const record = await this.outbox.readRecord(entry.outbox_source_seq);
       if (record) this.latestPendingRecord = record;
