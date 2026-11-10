@@ -102,6 +102,7 @@ import {
 } from "./task_turn_loop_transition.js";
 import {
   TaskTurnInputBuilder,
+  TurnInputPreparationError,
   type TaskTurnInput,
 } from "./task_turn_input_builder.js";
 import { failBlockingClaudeRuntimeWork } from "./claude_runtime_state.js";
@@ -1005,7 +1006,7 @@ export class TaskExecutor {
     activation: ExecutionActivation | undefined,
     error: unknown,
   ): Promise<void> {
-    const preparationFailure = executionPreparationFailureDetail(error);
+    const preparationFailure = executionPreparationFailure(error);
     const restsOnPriorTerminal = preparationFailure === undefined
       && activation?.hasFailureCompensation?.() === true;
     try {
@@ -1013,11 +1014,14 @@ export class TaskExecutor {
         await activation?.reject(error);
         if (isTerminalTaskStatus(task.status)) return;
       }
+      if (preparationFailure?.interventions !== undefined) {
+        this.clearPrematureUnknownTermination(task);
+      }
       // A deterministic preparation failure keeps its original code in the
       // terminal detail; the raw Error message alone drops it.
       await this.engineFailureRecovery.recoverFromOuterExecutionFailure(
         task,
-        preparationFailure ?? error,
+        preparationFailure?.detail ?? error,
       );
       task.completedAt = new Date();
       await this._finalize(task);
@@ -1040,23 +1044,46 @@ export class TaskExecutor {
   }
 
   /**
-   * Closes the one delivery whose execution admission failed before a turn.
+   * A thrown input preparation failure unwinds through `_consumeEventStream`'s
+   * finally, where the still-running task is stamped with the placeholder
+   * reason "unknown". `recordTerminationHint` then refuses to record the real
+   * aborted reason. Clearing the placeholder lets the recovery below stamp it.
+   */
+  private clearPrematureUnknownTermination(task: Task): void {
+    if (task.terminationReason !== "unknown" || task.terminationEventRecorded === true) {
+      return;
+    }
+    task.terminationReason = undefined;
+    task.terminationDetail = undefined;
+  }
+
+  /**
+   * Closes the deliveries whose turn input never reached the SDK.
    *
-   * It was never consumed, so it becomes uncertain/dead_letter rather than
-   * consumed, and it leaves the queue so no later drain replays it. Other
+   * They were never consumed, so they become uncertain/dead_letter rather than
+   * consumed, and they leave the queue so no later drain replays them. Other
    * queued input is preserved; the next explicit start reopens the drain.
    */
   private async settlePreparationFailure(
     task: Task,
     activation: ExecutionActivation | undefined,
-    detail: string,
+    failure: ExecutionPreparationFailure,
   ): Promise<void> {
     task.queuedTerminalResumeBlocked = true;
+    const owned = failure.interventions;
+    if (owned !== undefined && owned.length > 0) {
+      if (activation) activation.admissionMessage = undefined;
+      for (const message of owned) {
+        removeInterventionMessage(task, message);
+        await this.deliveryConsumption?.recordAdmissionFailure(task, message, failure.detail);
+      }
+      return;
+    }
     const message = activation?.admissionMessage;
     if (!activation || !message) return;
     activation.admissionMessage = undefined;
     removeInterventionMessage(task, message);
-    await this.deliveryConsumption?.recordAdmissionFailure(task, message, detail);
+    await this.deliveryConsumption?.recordAdmissionFailure(task, message, failure.detail);
   }
 
   private async driveQueuedAfterTerminal(task: Task): Promise<void> {
@@ -1277,9 +1304,19 @@ export class TaskExecutor {
             if (isTerminalTaskStatus(task.status)) return;
           }
           // _consumeEventStream 내부 try/catch가 못 잡는 외부 throw용 안전망.
-          await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, err);
+          const preparationFailure = executionPreparationFailure(err);
+          if (preparationFailure?.interventions !== undefined) {
+            this.clearPrematureUnknownTermination(task);
+          }
+          await this.engineFailureRecovery.recoverFromOuterExecutionFailure(
+            task,
+            preparationFailure?.detail ?? err,
+          );
           task.completedAt = new Date();
           await this._finalize(task);
+          if (preparationFailure !== undefined) {
+            await this.settlePreparationFailure(task, activation, preparationFailure);
+          }
         } finally {
           if (activation) {
             if (task.executionActivation === activation) {
@@ -2014,6 +2051,7 @@ export class TaskExecutor {
     const turnReceipt = this.beginDeliveryTurn(task, []);
     let recoveryFailed = false;
     let recoveryFailure: unknown;
+    let recoveryPreparationFailure: ExecutionPreparationFailure | undefined;
     try {
       for await (const event of this.engineTurnRunner.recoverTurn(task, runner, frames)) {
         observeClaudeContextRecoveryEvent(contextRecovery, event);
@@ -2109,9 +2147,22 @@ export class TaskExecutor {
         );
       }
     } catch (error) {
-      await this.engineFailureRecovery.recoverFromExecuteFailure(task, error);
+      const preparationFailure = executionPreparationFailure(error);
+      if (preparationFailure?.interventions !== undefined) {
+        // A typed input preparation failure owns its batch. The ordinary
+        // engine-failure route may yield to a queued successor and leave this
+        // attempt running with no terminal, so it must end as an error here.
+        this.clearPrematureUnknownTermination(task);
+        await this.engineFailureRecovery.recoverFromOuterExecutionFailure(
+          task,
+          preparationFailure.detail,
+        );
+      } else {
+        await this.engineFailureRecovery.recoverFromExecuteFailure(task, error);
+      }
       recoveryFailed = true;
       recoveryFailure = error;
+      recoveryPreparationFailure = preparationFailure;
     } finally {
       this.releaseDeliveryTurn(task, turnReceipt);
       try {
@@ -2128,6 +2179,9 @@ export class TaskExecutor {
         task,
         () => this.consumeTerminalTurnReceipts(task, terminalTurnReceipts),
       );
+      if (recoveryPreparationFailure !== undefined) {
+        await this.settlePreparationFailure(task, undefined, recoveryPreparationFailure);
+      }
     }
     // Startup adoption owns a live child. Its caller must be able to re-check
     // that ownership and replace a dead/unreachable registration. Offline
@@ -2347,12 +2401,31 @@ class ProfileWorkspaceUnavailableError extends Error {
   readonly code: string = PROFILE_WORKSPACE_UNAVAILABLE;
 }
 
+/**
+ * A preparation failure that owns the input it could not turn into SDK input.
+ *
+ * `interventions` is present only for a turn input assembly failure: those
+ * messages were dequeued but never reached the SDK, so they must close as
+ * uncertain rather than stay queued for a later replay.
+ */
+interface ExecutionPreparationFailure {
+  detail: string;
+  interventions?: readonly InterventionMessage[];
+}
+
 /** Preparation failures that repeat identically on every retry. */
-function executionPreparationFailureDetail(error: unknown): string | undefined {
+function executionPreparationFailure(
+  error: unknown,
+): ExecutionPreparationFailure | undefined {
   const isolationFailure = isolationPreparationFailureDetail(error);
-  if (isolationFailure !== undefined) return isolationFailure;
-  if (!(error instanceof ProfileWorkspaceUnavailableError)) return undefined;
-  return `${PROFILE_WORKSPACE_UNAVAILABLE}: ${error.message}`;
+  if (isolationFailure !== undefined) return { detail: isolationFailure };
+  if (error instanceof ProfileWorkspaceUnavailableError) {
+    return { detail: `${PROFILE_WORKSPACE_UNAVAILABLE}: ${error.message}` };
+  }
+  if (error instanceof TurnInputPreparationError) {
+    return { detail: error.message, interventions: error.interventions };
+  }
+  return undefined;
 }
 
 function keepaliveResultFor(

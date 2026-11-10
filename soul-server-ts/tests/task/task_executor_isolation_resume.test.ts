@@ -3,7 +3,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type { Env } from "../../src/config.js";
+import { SessionDataHostError } from
+  "../../src/control_plane/session_data_host_client.js";
 import type { SessionDB } from "../../src/db/session_db.js";
+import type { SessionDeliveryRow } from "../../src/db/session_db_types.js";
 import type {
   EngineExecuteParams,
   EnginePort,
@@ -12,6 +15,7 @@ import type {
 import { composeSessionIsolation } from
   "../../src/runtime/session_isolation_composition.js";
 import { composeTaskRuntime } from "../../src/runtime/task_runtime_composition.js";
+import { engineEventFrame } from "../../src/runner/frame_protocol.js";
 import { prepareRecoveredTask } from "../../src/runner/runner_recovery_task.js";
 import {
   createInProcessTaskRunnerRuntime,
@@ -23,6 +27,8 @@ import { IsolationPreparationPolicyError } from
   "../../src/runner/session_filesystem_errors.js";
 import type { SessionIsolationTurnGate } from
   "../../src/security/session_isolation_turn.js";
+import { QueuedDeliveryTranscriptRecovery } from
+  "../../src/task/queued_delivery_transcript_recovery.js";
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import { TaskDeliveryLedgerGate } from "../../src/task/task_delivery_ledger_gate.js";
 import type { RunnerProcessRuntimeFactory } from "../../src/task/task_executor.js";
@@ -589,6 +595,458 @@ describe("execution preparation failure", () => {
     expect(task.status).toBe("completed");
     expect(task.interventionQueue).toEqual([]);
     expect(ledger.repository.markConsumed.mock.calls[0]?.[0]).toBe("delivery-other");
+    expect(queuedTerminalResume).not.toHaveBeenCalled();
+  });
+});
+
+describe("turn input preparation failure ownership", () => {
+  function hostContextFailure(): SessionDataHostError {
+    return new SessionDataHostError({
+      operation: "list_running",
+      retryable: true,
+      message: "session-data host list_running failed",
+    });
+  }
+
+  /**
+   * A ledger double that keeps the same row predicates as the restart claim:
+   * only `queued` rows whose aggregate is neither consumed nor dead-lettered
+   * are claimed by boot recovery.
+   */
+  function makeRestartLedger(deliveryIds: readonly string[]) {
+    interface Row {
+      state: string;
+      aggregate_state: string;
+      attempt_token: string | null;
+      last_error: string | null;
+    }
+    const rows = new Map<string, Row>(
+      deliveryIds.map((deliveryId) => [deliveryId, {
+        state: "queued",
+        aggregate_state: "pending",
+        attempt_token: null,
+        last_error: null,
+      }]),
+    );
+    const rowView = (deliveryId: string): SessionDeliveryRow | null => {
+      const row = rows.get(deliveryId);
+      return row
+        ? { delivery_id: deliveryId, ...row } as unknown as SessionDeliveryRow
+        : null;
+    };
+    const repository = {
+      get: vi.fn(async (deliveryId: string) => rowView(deliveryId)),
+      markUncertain: vi.fn(async (
+        deliveryId: string,
+        _attemptToken: string | undefined,
+        reason: string,
+      ) => {
+        const row = rows.get(deliveryId);
+        if (!row) return null;
+        if (row.aggregate_state === "consumed" || row.aggregate_state === "dead_letter") {
+          return null;
+        }
+        rows.set(deliveryId, {
+          state: "uncertain",
+          aggregate_state: "dead_letter",
+          attempt_token: null,
+          last_error: reason,
+        });
+        return rowView(deliveryId);
+      }),
+      markConsumed: vi.fn(async (deliveryId: string) => {
+        const row = rows.get(deliveryId);
+        if (!row) return null;
+        rows.set(deliveryId, {
+          ...row,
+          state: "consumed",
+          aggregate_state: "consumed",
+          attempt_token: null,
+        });
+        return rowView(deliveryId);
+      }),
+      markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
+      markPendingSuperseded: vi.fn(),
+    };
+    const gate = new TaskDeliveryLedgerGate(true, repository as never);
+    const claimQueuedAfterNodeRestart = vi.fn(async (
+      _nodeId: string,
+      workerId: string,
+    ) => [...rows.entries()].flatMap(([deliveryId, row]) => (
+      row.state === "queued"
+        && row.aggregate_state !== "consumed"
+        && row.aggregate_state !== "dead_letter"
+        ? [{
+            delivery_id: deliveryId,
+            state: "claimed",
+            aggregate_state: row.aggregate_state,
+            attempt_token: workerId,
+          } as unknown as SessionDeliveryRow]
+        : []
+    )));
+    return { rows, gate, repository, claimQueuedAfterNodeRestart };
+  }
+
+  function makeInputFailureExecutor(options: {
+    ledger: ReturnType<typeof makeRestartLedger>;
+    buildFollowupContext: ReturnType<typeof vi.fn>;
+    build?: ReturnType<typeof vi.fn>;
+    queuedTerminalResume?: ReturnType<typeof vi.fn>;
+    engine?: EnginePort;
+    turns: EngineExecuteParams[];
+  }) {
+    const mocks = makeMocks();
+    const engine = options.engine ?? makeEngine(options.turns);
+    const base = createInProcessTaskRunnerRuntime(engine);
+    vi.spyOn(
+      base.dispatcher as unknown as { prepareExecutionIdentity(): Promise<unknown> },
+      "prepareExecutionIdentity",
+    ).mockResolvedValue({
+      registrationId: "registration-input",
+      pid: process.pid,
+      startIdentity: "start-input",
+      executionCommandId: "exec-input",
+    });
+    const factory = (() => ({
+      engine: base.engine,
+      dispatcher: base.dispatcher,
+      eventPersistence: "host",
+    })) as unknown as RunnerProcessRuntimeFactory;
+    factory.isolationSupported = true;
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      {
+        build: options.build ?? vi.fn().mockResolvedValue(undefined),
+        buildFollowupContext: options.buildFollowupContext,
+      } as never,
+      undefined,
+      undefined,
+      undefined,
+      options.ledger.gate,
+      undefined,
+      factory,
+      undefined,
+      options.queuedTerminalResume,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      false,
+      makeGate(),
+      { resolveProfileWorkspace: () => PROFILE_WORKSPACE },
+    );
+    return { executor, mocks, turns: options.turns };
+  }
+
+  async function startAutoResume(
+    executor: TaskExecutor,
+    task: Task,
+    message: InterventionMessage,
+    persistence: ReturnType<typeof makeMocks>["persistence"],
+  ) {
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence,
+    });
+    await transition.resume(task, message, (resumed, resumedActivation) =>
+      executor.startNewExecution(resumed, restoredAgent, resumedActivation));
+  }
+
+  /**
+   * The activation resolves at admission, so a failure after that point is
+   * observed through the task's terminal outcome and its ledger settlement.
+   */
+  async function waitForInputFailureSettlement(
+    ledger: ReturnType<typeof makeRestartLedger>,
+    mocks: ReturnType<typeof makeMocks>,
+    uncertainCount = 1,
+  ): Promise<void> {
+    await vi.waitFor(() => {
+      expect(ledger.repository.markUncertain).toHaveBeenCalledTimes(uncertainCount);
+      expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
+    });
+  }
+
+  it("closes the admitted batch and keeps it closed across a five-hour restart", async () => {
+    const ledger = makeRestartLedger(["delivery-failed", "delivery-batch-mate"]);
+    const queuedTerminalResume = vi.fn();
+    const { executor, mocks } = makeInputFailureExecutor({
+      ledger,
+      buildFollowupContext: vi.fn().mockRejectedValue(hostContextFailure()),
+      queuedTerminalResume,
+      turns: [],
+    });
+    const batchMate = userMessage({
+      deliveryId: "delivery-batch-mate",
+      text: "같이 실패한 입력",
+    });
+    const task = makeTask({ interventionQueue: [batchMate] });
+    prepareRecoveredTask(task, makeRegistration());
+    const message = userMessage({ deliveryId: "delivery-failed", text: "옛 입력" });
+
+    await startAutoResume(executor, task, message, mocks.persistence);
+    await waitForInputFailureSettlement(ledger, mocks, 2);
+    await flushDrain();
+
+    // Both ordinary messages shared the batch that never reached the SDK.
+    expect(ledger.repository.markConsumed).not.toHaveBeenCalled();
+    expect(ledger.repository.markUncertain).toHaveBeenCalledTimes(2);
+    expect(ledger.repository.markUncertain.mock.calls.map((call) => call[0]))
+      .toEqual(expect.arrayContaining(["delivery-failed", "delivery-batch-mate"]));
+    expect(ledger.repository.markUncertain).toHaveBeenCalledWith(
+      "delivery-failed",
+      undefined,
+      expect.stringContaining("list_running"),
+    );
+    expect(ledger.rows.get("delivery-failed")).toMatchObject({
+      state: "uncertain",
+      aggregate_state: "dead_letter",
+    });
+    expect(ledger.rows.get("delivery-batch-mate")).toMatchObject({
+      state: "uncertain",
+      aggregate_state: "dead_letter",
+    });
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication.mock.calls[0]?.[2])
+      .toMatchObject({
+        status: "error",
+        termination_reason: "error_aborted",
+        termination_detail: expect.stringContaining("INPUT_PREPARATION_FAILED"),
+      });
+    expect(task.status).toBe("error");
+    expect(task.interventionQueue).toEqual([]);
+    expect(task.queuedTerminalResumeBlocked).toBe(true);
+    expect(queuedTerminalResume).not.toHaveBeenCalled();
+
+    // Node restarts five hours later and claims queued rows for transcript
+    // reconciliation. The closed delivery is no longer queued, so no SDK input
+    // is rebuilt and no transcript read happens.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-10T05:00:00.000Z"));
+    const inspect = vi.fn();
+    const recovery = new QueuedDeliveryTranscriptRecovery({
+      deliveryRepository: {
+        get: ledger.repository.get,
+        markConsumed: ledger.repository.markConsumed,
+        markUncertain: ledger.repository.markUncertain,
+        retryDeliveryAttempt: vi.fn(),
+      },
+      recoveryRepository: {
+        claimQueuedAfterNodeRestart: ledger.claimQueuedAfterNodeRestart,
+        markDeliveredFromTranscript: vi.fn(),
+      },
+      transcriptReceipt: { inspect },
+      redeliverContent: vi.fn(),
+      logger: { warn: vi.fn() },
+    }, "startup-worker");
+    try {
+      await expect(recovery.recoverAfterNodeRestart("node-test"))
+        .resolves.toEqual({ claimed: 0, settled: 0 });
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(inspect).not.toHaveBeenCalled();
+  });
+
+  it("settles a follow-up batch that fails after the first turn without a second SDK input", async () => {
+    const ledger = makeRestartLedger(["delivery-initial", "delivery-followup"]);
+    const queuedTerminalResume = vi.fn();
+    const turns: EngineExecuteParams[] = [];
+    let taskRef: Task | undefined;
+    let queuedFollowup = false;
+    const engine: EnginePort = {
+      backendId: "opencode",
+      workspaceDir: ATTACHED_WORKTREE,
+      async *execute(params): AsyncIterable<SSEEventPayload> {
+        turns.push(params);
+        yield {
+          type: "assistant_message",
+          content: "first turn done",
+          timestamp: 1,
+        } as SSEEventPayload;
+        if (!queuedFollowup) {
+          queuedFollowup = true;
+          taskRef!.interventionQueue.push(userMessage({
+            deliveryId: "delivery-followup",
+            text: "실행 중 들어온 입력",
+          }));
+        }
+        yield { type: "complete", result: "first turn done" } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+      async intervene() {
+        return {
+          status: "not_delivered",
+          mechanism: "interrupt_then_next_turn",
+          reason: "next_turn_required",
+        };
+      },
+    };
+    const { executor, mocks } = makeInputFailureExecutor({
+      ledger,
+      buildFollowupContext: vi.fn()
+        .mockResolvedValueOnce({ contextItems: [] })
+        .mockRejectedValueOnce(hostContextFailure()),
+      queuedTerminalResume,
+      engine,
+      turns,
+    });
+    const task = makeTask();
+    taskRef = task;
+    prepareRecoveredTask(task, makeRegistration());
+    const message = userMessage({ deliveryId: "delivery-initial", text: "첫 입력" });
+
+    await startAutoResume(executor, task, message, mocks.persistence);
+    await waitForInputFailureSettlement(ledger, mocks);
+    await flushDrain();
+
+    // Only the first turn reached the SDK. The failed follow-up never did.
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.prompt).toContain("첫 입력");
+    expect(ledger.repository.markUncertain).toHaveBeenCalledOnce();
+    expect(ledger.repository.markUncertain).toHaveBeenCalledWith(
+      "delivery-followup",
+      undefined,
+      expect.stringContaining("list_running"),
+    );
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
+    expect(mocks.enqueueTerminalTransitionAndWaitForApplication.mock.calls[0]?.[2])
+      .toMatchObject({ status: "error", termination_reason: "error_aborted" });
+    expect(task.status).toBe("error");
+    expect(task.interventionQueue).toEqual([]);
+    expect(task.queuedTerminalResumeBlocked).toBe(true);
+    expect(queuedTerminalResume).not.toHaveBeenCalled();
+  });
+
+  it("preserves a separate waiting input and never re-mixes the failed batch on retry", async () => {
+    const ledger = makeRestartLedger([
+      "delivery-failed",
+      "delivery-waiting",
+      "delivery-retry",
+    ]);
+    const queuedTerminalResume = vi.fn();
+    const buildFollowupContext = vi.fn()
+      .mockRejectedValueOnce(hostContextFailure())
+      .mockResolvedValue({ contextItems: [] });
+    const { executor, mocks, turns } = makeInputFailureExecutor({
+      ledger,
+      buildFollowupContext,
+      queuedTerminalResume,
+      turns: [],
+    });
+    const waiting = userMessage({
+      deliveryId: "delivery-waiting",
+      deliveryIntent: "runtime_followup",
+      text: "대기 중인 런타임 후속",
+    });
+    const task = makeTask({ interventionQueue: [waiting] });
+    prepareRecoveredTask(task, makeRegistration());
+    const message = userMessage({ deliveryId: "delivery-failed", text: "실패한 입력" });
+
+    await startAutoResume(executor, task, message, mocks.persistence);
+    await waitForInputFailureSettlement(ledger, mocks);
+    await flushDrain();
+
+    expect(ledger.repository.markUncertain).toHaveBeenCalledOnce();
+    expect(ledger.repository.markUncertain.mock.calls[0]?.[0]).toBe("delivery-failed");
+    expect(task.interventionQueue.map((queued) => queued.deliveryId))
+      .toEqual(["delivery-waiting"]);
+    expect(task.queuedTerminalResumeBlocked).toBe(true);
+    expect(queuedTerminalResume).not.toHaveBeenCalled();
+
+    // A new explicit delivery C reopens the drain. The failed batch is gone
+    // from the queue and cannot rejoin the retry turn.
+    const retry = userMessage({ deliveryId: "delivery-retry", text: "새 입력" });
+    task.interventionQueue.push(retry);
+    const retryActivation = createExecutionActivation();
+    await executor.startNewExecution(task, restoredAgent, retryActivation);
+    await retryActivation.promise;
+    await flushDrain();
+
+    expect(task.queuedTerminalResumeBlocked).toBeUndefined();
+    expect(buildFollowupContext).toHaveBeenCalledTimes(3);
+    expect(turns.map((turn) => turn.prompt)).toEqual([
+      expect.stringContaining("새 입력"),
+      expect.stringContaining("대기 중인 런타임 후속"),
+    ]);
+    expect(turns.some((turn) => turn.prompt.includes("실패한 입력"))).toBe(false);
+    expect(task.interventionQueue).toEqual([]);
+    expect(ledger.repository.markUncertain).toHaveBeenCalledOnce();
+  });
+
+  it("ends a recovered execution as an error instead of yielding to a waiting input", async () => {
+    const ledger = makeRestartLedger(["delivery-failed"]);
+    const queuedTerminalResume = vi.fn();
+    const turns: EngineExecuteParams[] = [];
+    const engine = makeEngine(turns);
+    const { executor, mocks } = makeInputFailureExecutor({
+      ledger,
+      buildFollowupContext: vi.fn().mockRejectedValue(hostContextFailure()),
+      queuedTerminalResume,
+      engine,
+      turns,
+    });
+    // The real recovered-frames consumer runs; only the frames are stubbed.
+    const base = createInProcessTaskRunnerRuntime(engine);
+    const dispatcher = Object.assign(base.dispatcher, {
+      recoverFrames: vi.fn(() => (async function* () {
+        yield engineEventFrame({ type: "complete", result: "recovered", timestamp: 1 });
+      })()),
+    });
+    const runner = createTaskRunnerRuntime(
+      base.engine,
+      dispatcher,
+      base.eventPersistence,
+    );
+    const failed = userMessage({ deliveryId: "delivery-failed", text: "실패한 입력" });
+    const waiting = userMessage({
+      deliveryId: "delivery-waiting",
+      deliveryIntent: "runtime_followup",
+      text: "대기 중인 런타임 후속",
+    });
+    const task = makeTask({
+      status: "running",
+      terminationReason: undefined,
+      terminalEventId: undefined,
+      interventionQueue: [failed, waiting],
+    });
+
+    await executor.recoverRunnerExecution(
+      task,
+      restoredAgent,
+      runner,
+      "execute-old",
+      "replay",
+    );
+    await flushDrain();
+
+    // No SDK input ever received the batch, and the recovery attempt owns one
+    // error terminal even though a separate runtime follow-up is still queued.
+    expect(turns).toEqual([]);
+    expect(task.status).toBe("error");
+    const terminal = mocks.enqueueTerminalTransitionAndWaitForApplication;
+    expect(terminal).toHaveBeenCalledOnce();
+    expect(terminal.mock.calls[0]?.[2]).toMatchObject({
+      status: "error",
+      termination_reason: "error_aborted",
+    });
+    expect(ledger.repository.markConsumed).not.toHaveBeenCalled();
+    expect(ledger.repository.markUncertain).toHaveBeenCalledOnce();
+    expect(ledger.repository.markUncertain.mock.calls[0]?.[0]).toBe("delivery-failed");
+    expect(ledger.rows.get("delivery-failed")).toMatchObject({
+      state: "uncertain",
+      aggregate_state: "dead_letter",
+    });
+    expect(task.interventionQueue.map((queued) => queued.deliveryId))
+      .toEqual(["delivery-waiting"]);
+    expect(task.queuedTerminalResumeBlocked).toBe(true);
     expect(queuedTerminalResume).not.toHaveBeenCalled();
   });
 });

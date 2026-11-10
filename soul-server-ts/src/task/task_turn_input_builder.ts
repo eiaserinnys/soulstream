@@ -60,6 +60,41 @@ export function buildFollowupInputUuid(interventions: InterventionMessage[]): st
   return undefined;
 }
 
+/**
+ * A turn input assembly failure that still owns its intervention batch.
+ *
+ * The batch was already dequeued when context or attachment preparation threw,
+ * so a caller that only sees the raw error cannot tell which deliveries never
+ * reached the SDK. Carrying them lets the executor close exactly those
+ * deliveries instead of leaving them queued for a later replay.
+ */
+export class TurnInputPreparationError extends Error {
+  constructor(
+    readonly interventions: readonly InterventionMessage[],
+    cause: unknown,
+  ) {
+    super(inputPreparationFailureMessage(cause), { cause });
+    this.name = "TurnInputPreparationError";
+  }
+}
+
+function inputPreparationFailureMessage(cause: unknown): string {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  if (!isSessionDataHostError(cause)) return `INPUT_PREPARATION_FAILED: ${message}`;
+  return `INPUT_PREPARATION_FAILED: ${message}`
+    + ` (operation=${cause.operation}, retryable=${cause.retryable})`;
+}
+
+function wrapInputPreparationFailure(
+  interventions: readonly InterventionMessage[],
+  error: unknown,
+): unknown {
+  if (interventions.length === 0 || error instanceof TurnInputPreparationError) {
+    return error;
+  }
+  return new TurnInputPreparationError(interventions, error);
+}
+
 export const CLAUDE_ROLLOVER_PROMPT_MAX_CHARS = 80_000;
 export const CLAUDE_ROLLOVER_SYSTEM_PROMPT_MAX_CHARS = 60_000;
 export const CLAUDE_ROLLOVER_PROMPT_MAX_ESTIMATED_TOKENS = 100_000;
@@ -106,17 +141,21 @@ export class TaskTurnInputBuilder {
       if (!contextBuilder) {
         throw new Error("Execution context builder is required for generation rollover");
       }
-      const deliveryId = interventions[0]?.deliveryId;
-      const inputUuid = deliveryId ? buildDeliveryInputUuid(deliveryId) : undefined;
-      const context = inputUuid
-        ? await contextBuilder.buildGenerationContext(task, agent, inputUuid)
-        : await contextBuilder.buildGenerationContext(task, agent);
-      await this.requireInitialContextSources(task, context);
-      if (context.contextManifest) {
-        await this.deps.initialMessagePublisher.publishContextManifestBestEffort(task, context.contextManifest);
+      try {
+        const deliveryId = interventions[0]?.deliveryId;
+        const inputUuid = deliveryId ? buildDeliveryInputUuid(deliveryId) : undefined;
+        const context = inputUuid
+          ? await contextBuilder.buildGenerationContext(task, agent, inputUuid)
+          : await contextBuilder.buildGenerationContext(task, agent);
+        await this.requireInitialContextSources(task, context);
+        if (context.contextManifest) {
+          await this.deps.initialMessagePublisher.publishContextManifestBestEffort(task, context.contextManifest);
+        }
+        const preparedInterventions = await this.prepareInterventionCopies(task, interventions);
+        return prepareGenerationTurnInput(task, agent, context, preparedInterventions, interventions);
+      } catch (error) {
+        throw wrapInputPreparationFailure(interventions, error);
       }
-      const preparedInterventions = await this.prepareInterventionCopies(task, interventions);
-      return prepareGenerationTurnInput(task, agent, context, preparedInterventions, interventions);
     }
     if (task.interventionQueue.length > 0) {
       return this.prepareFollowupTurnInput(
@@ -161,6 +200,19 @@ export class TaskTurnInputBuilder {
   ): Promise<TaskTurnInput> {
     const firstIntervention = interventions[0];
     if (!firstIntervention) throw new Error("follow-up turn requires an intervention");
+    try {
+      return await this.buildFollowupTurnInput(task, agent, interventions, firstIntervention);
+    } catch (error) {
+      throw wrapInputPreparationFailure(interventions, error);
+    }
+  }
+
+  private async buildFollowupTurnInput(
+    task: Task,
+    agent: AgentProfile,
+    interventions: InterventionMessage[],
+    firstIntervention: InterventionMessage,
+  ): Promise<TaskTurnInput> {
     const currentCallerInfo = interventions.at(-1)?.callerInfo ?? task.callerInfo;
     const inputUuid = buildFollowupInputUuid(interventions);
     const includeFullContext = task.needsFullContextReinjection === true;

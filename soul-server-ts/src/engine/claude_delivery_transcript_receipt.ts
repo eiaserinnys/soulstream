@@ -165,7 +165,7 @@ export class ClaudeDeliveryTranscriptReceiptReader {
   ): Promise<ClaudeTranscriptTarget> {
     if (!targetSessionId) return { kind: "absent" };
     const session = await this.deps.getSession(targetSessionId);
-    if (!session?.claude_session_id) return { kind: "absent" };
+    if (!session) return { kind: "absent" };
     const profile = session.agent_id
       ? this.deps.getAgent(session.agent_id)
       : undefined;
@@ -178,7 +178,14 @@ export class ClaudeDeliveryTranscriptReceiptReader {
     if (!backend) {
       return { kind: "unavailable", reason: "target_model_preset_unavailable" };
     }
-    if (backend !== "claude") return { kind: "absent" };
+    // A non-Claude backend has no Claude transcript to read. That is not the
+    // same as an absent input: the delivery cannot be judged here, so it must
+    // stay held rather than be redelivered. Identify the backend before the
+    // session-id check because a Codex thread id is not a Claude session id.
+    if (backend !== "claude") {
+      return { kind: "unavailable", reason: "unsupported_backend" };
+    }
+    if (!session.claude_session_id) return { kind: "absent" };
     if (!session.worktree_id) {
       return { kind: "ready", session, profile, workspaceDir: profile.workspace_dir };
     }
