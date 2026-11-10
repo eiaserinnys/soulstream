@@ -14,7 +14,7 @@ import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 
 export interface ClosedRunnerTailOutbox extends EventOutboxPumpStore {
   readLatestPendingRecord(): Promise<EventOutboxRecord | null>;
-  close(): void;
+  close(): Promise<void>;
 }
 
 interface ClosedRunnerTailDrainerOptions {
@@ -95,16 +95,19 @@ export class ClosedRunnerTailDrainer {
       );
       outcome = "acknowledged";
     } finally {
-      unregister?.();
-      outbox?.close();
-      this.options.logger.info({
-        sessionId: registration.config.sessionId,
-        durationMs: Math.max(
-          0,
-          (this.options.monotonicNow ?? (() => performance.now()))() - startedAt,
-        ),
-        outcome,
-      }, "closed runner tail drain completed");
+      try {
+        unregister?.();
+        await outbox?.close();
+      } finally {
+        this.options.logger.info({
+          sessionId: registration.config.sessionId,
+          durationMs: Math.max(
+            0,
+            (this.options.monotonicNow ?? (() => performance.now()))() - startedAt,
+          ),
+          outcome,
+        }, "closed runner tail drain completed");
+      }
     }
   }
 }

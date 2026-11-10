@@ -318,7 +318,7 @@ export async function hydrateRunnerRegistration(
   try {
     bootstrap = await outbox.readBootstrap();
   } finally {
-    outbox.close();
+    await outbox.close();
   }
   const lifecycle = readRunnerSqliteLifecycle(
     registration.config.paths.databasePath,

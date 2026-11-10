@@ -572,13 +572,13 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     assertCommandAccepted(response);
     const data = response.result.status === "ok" ? response.result.data : undefined;
     if (isRecord(data) && data.status === "not_supported") {
-      this.outbox.removeInterventionFallback(interventionId);
+      await this.outbox.removeInterventionFallback(interventionId);
       return;
     }
     if (!isRecord(data) || data.status !== "discarded") {
       throw new Error("Runner child returned an invalid intervention discard result");
     }
-    this.outbox.removeInterventionFallback(interventionId);
+    await this.outbox.removeInterventionFallback(interventionId);
   }
 
   async recoverPendingInterventions(): Promise<RunnerPendingIntervention[]> {
@@ -879,7 +879,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     for (const interventionId of inspection.shadowedFallbackIds) {
       let fallbackRemoved = false;
       try {
-        this.outbox.removeInterventionFallback(interventionId);
+        await this.outbox.removeInterventionFallback(interventionId);
         fallbackRemoved = true;
       } catch (error) {
         this.options.logger.warn(
@@ -1544,7 +1544,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
         },
       },
       { name: "event pump registration", run: () => unregisterPump?.() },
-      { name: "parent outbox", run: () => outbox?.close() },
+      { name: "parent outbox", run: async () => await outbox?.close() },
       { name: "offline writer", run: () => stoppedRunnerWriter?.close() },
       { name: "offline writer lock", run: async () => await stoppedRunnerWriterLock?.release() },
     ]);

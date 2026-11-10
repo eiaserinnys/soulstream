@@ -439,7 +439,7 @@ function makeCoordinator(
           const first = batch?.events[0];
           observation.projectedRegistrations.push(first?.registration_id ?? null);
         } finally {
-          parent.close();
+          await parent.close();
         }
       },
       restartRegisteredRunner: async () => { observation.newRunnerCount += 1; },

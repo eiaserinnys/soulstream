@@ -295,7 +295,7 @@ describe("RunnerSqliteEventOutbox", () => {
       expect(onError).not.toHaveBeenCalled();
     } finally {
       pump.disconnect();
-      parent.close();
+      await parent.close();
     }
   });
 

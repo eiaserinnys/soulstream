@@ -95,6 +95,7 @@ describe("runner SQLite write inventory", () => {
     )).toEqual({});
     for (const relativePath of [
       "runner/runner_parent_outbox.ts",
+      "runner/runner_parent_outbox_storage.ts",
       "runner/runner_process_registry.ts",
       "runner/closed_runner_tail_drainer.ts",
     ]) {

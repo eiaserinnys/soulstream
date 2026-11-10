@@ -1,129 +1,111 @@
-import { dirname } from "node:path";
+import type { Worker } from "node:worker_threads";
 
-import { compareInterventionPriority } from "../task/task_intervention_queue.js";
-import type { EventOutboxRecord } from "../upstream/event_outbox.js";
+import type { EventOutboxBatch, EventOutboxRecord } from "../upstream/event_outbox.js";
 import type { EventOutboxPumpStore } from "../upstream/event_outbox_pump.js";
-import {
-  appendEventOutboxQuarantine,
-  type EventOutboxQuarantineInput,
-  type EventOutboxQuarantineResult,
+import type {
+  EventOutboxQuarantineInput,
+  EventOutboxQuarantineResult,
 } from "../upstream/event_outbox_quarantine.js";
 import type { RunnerEventFrame } from "./frame_protocol.js";
-import {
-  RunnerHostStateStore,
-  runnerHostStatePath,
+import type {
+  RunnerHostCallAppliedReceipt,
+  RunnerHostInterventionFallback,
 } from "./runner_host_state_store.js";
-import {
-  RunnerSqliteEventOutbox,
-  type RunnerBootstrapRecord,
-} from "./sqlite_event_outbox.js";
 import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
+import type {
+  RunnerParentStorageSnapshot,
+} from "./runner_parent_storage_protocol.js";
+import { RunnerParentStorageWorkerClient } from "./runner_parent_storage_worker_client.js";
 import type { RunnerSqliteTransactionObserver } from "./runner_sqlite_connection.js";
+import type { RunnerBootstrapRecord } from "./sqlite_event_outbox.js";
 
+export interface RunnerParentOutboxOptions {
+  onCheckpointAdvanced?: (acknowledgedThrough: number) => Promise<void>;
+  phaseObservation?: RunnerPhaseObservation;
+  transactionObserver?: RunnerSqliteTransactionObserver;
+  workerFactory?: (workerData: Record<string, unknown>) => Worker;
+}
+
+/**
+ * Parent-side facade over the storage worker. Only the bootstrap record and the
+ * acknowledged cursor are cached here; every database access happens in the
+ * worker that owns runner.sqlite and runner-host.sqlite.
+ */
 export class RunnerParentOutbox implements EventOutboxPumpStore {
   private bootstrap: RunnerBootstrapRecord | null = null;
+  private acknowledgedThrough: number | null = null;
 
   private constructor(
-    private readonly runner: RunnerSqliteEventOutbox,
-    private readonly host: RunnerHostStateStore,
-    private readonly sessionId: string,
+    private readonly client: RunnerParentStorageWorkerClient,
     private readonly onCheckpointAdvanced?: (acknowledgedThrough: number) => Promise<void>,
-    private readonly phaseObservation?: RunnerPhaseObservation,
   ) {}
 
   static async open(
     runnerDatabasePath: string,
     sessionId: string,
-    options: {
-      onCheckpointAdvanced?: (acknowledgedThrough: number) => Promise<void>;
-      phaseObservation?: RunnerPhaseObservation;
-      transactionObserver?: RunnerSqliteTransactionObserver;
-    } = {},
+    options: RunnerParentOutboxOptions = {},
   ): Promise<RunnerParentOutbox> {
-    const runner = await RunnerSqliteEventOutbox.openReadOnly(runnerDatabasePath, {
+    return await RunnerParentOutbox.openWithMode(
+      "normal",
+      runnerDatabasePath,
       sessionId,
-      ...(options.phaseObservation ? { phaseObservation: options.phaseObservation } : {}),
-    });
-    try {
-      const hostPath = runnerHostStatePath(runnerDatabasePath);
-      const host = RunnerHostStateStore.open(
-        hostPath,
-        options.phaseObservation
-          ? { phaseObservation: options.phaseObservation, sessionId, label: "runner host state open" }
-          : undefined,
-        {
-          sessionId,
-          ...(options.transactionObserver
-            ? { transactionObserver: options.transactionObserver }
-            : {}),
-        },
-      );
-      const outbox = new RunnerParentOutbox(
-        runner,
-        host,
-        sessionId,
-        options.onCheckpointAdvanced,
-        options.phaseObservation,
-      );
-      await outbox.readBootstrap();
-      return outbox;
-    } catch (error) {
-      runner.close();
-      throw error;
-    }
+      options,
+    );
   }
 
   static async openClosedTail(
     runnerDatabasePath: string,
     sessionId: string,
-    options: {
-      onCheckpointAdvanced?: (acknowledgedThrough: number) => Promise<void>;
-      phaseObservation?: RunnerPhaseObservation;
-      transactionObserver?: RunnerSqliteTransactionObserver;
-    } = {},
+    options: RunnerParentOutboxOptions = {},
   ): Promise<RunnerParentOutbox> {
-    const runner = await RunnerSqliteEventOutbox.openReadOnlyTail(
+    return await RunnerParentOutbox.openWithMode(
+      "closed_tail",
       runnerDatabasePath,
-      {
-        sessionId,
-        ...(options.phaseObservation ? { phaseObservation: options.phaseObservation } : {}),
-      },
+      sessionId,
+      options,
     );
+  }
+
+  private static async openWithMode(
+    mode: "normal" | "closed_tail",
+    runnerDatabasePath: string,
+    sessionId: string,
+    options: RunnerParentOutboxOptions,
+  ): Promise<RunnerParentOutbox> {
+    const client = new RunnerParentStorageWorkerClient({
+      databasePath: runnerDatabasePath,
+      sessionId,
+      ...(options.phaseObservation ? { phaseObservation: options.phaseObservation } : {}),
+      ...(options.transactionObserver
+        ? { transactionObserver: options.transactionObserver }
+        : {}),
+      ...(options.workerFactory ? { workerFactory: options.workerFactory } : {}),
+    });
+    let snapshot: RunnerParentStorageSnapshot;
     try {
-      const hostPath = runnerHostStatePath(runnerDatabasePath);
-      const host = RunnerHostStateStore.open(
-        hostPath,
-        options.phaseObservation
-          ? { phaseObservation: options.phaseObservation, sessionId, label: "runner host state open" }
-          : undefined,
-        {
-          sessionId,
-          ...(options.transactionObserver
-            ? { transactionObserver: options.transactionObserver }
-            : {}),
-        },
-      );
-      const outbox = new RunnerParentOutbox(
-        runner,
-        host,
-        sessionId,
-        options.onCheckpointAdvanced,
-        options.phaseObservation,
-      );
-      await outbox.readBootstrap();
-      return outbox;
+      snapshot = await client.open({ databasePath: runnerDatabasePath, sessionId, mode });
     } catch (error) {
-      runner.close();
+      await client.disposeAfterOpenFailure();
       throw error;
     }
+    const outbox = new RunnerParentOutbox(client, options.onCheckpointAdvanced);
+    outbox.applySnapshot(snapshot);
+    return outbox;
   }
 
   get streamId(): string {
-    return this.runner.streamId;
+    if (!this.bootstrap) {
+      throw new Error("runner bootstrap record required before event append");
+    }
+    return this.bootstrap.stream_id;
   }
 
   get ackedSeq(): number {
-    return this.bootstrap ? this.requireAcknowledgedThrough() : 0;
+    if (!this.bootstrap) return 0;
+    if (this.acknowledgedThrough === null) {
+      throw new Error("runner parent ACK checkpoint is unavailable before bootstrap");
+    }
+    return this.acknowledgedThrough;
   }
 
   onAppend(_listener: () => void): () => void {
@@ -132,72 +114,40 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
   }
 
   async readBootstrap(): Promise<RunnerBootstrapRecord | null> {
-    const bootstrap = await this.readRunnerBootstrap();
-    if (!bootstrap) return null;
-    this.host.initializeEventCheckpoint({
-      streamId: bootstrap.stream_id,
-      sessionId: bootstrap.session_id,
-      acknowledgedThrough: this.runner.ackedSeq,
-    });
-    return bootstrap;
+    const result = await this.client.readBootstrap();
+    this.applySnapshot(result.snapshot);
+    return result.value;
   }
 
-  async readBatch(maxEvents?: number) {
-    const acknowledgedThrough = await this.readAcknowledgedThrough();
-    if (acknowledgedThrough === null) return null;
-    return await this.runner.readBatchAfter(
-      acknowledgedThrough,
-      maxEvents,
-    );
+  async readBatch(maxEvents?: number): Promise<EventOutboxBatch | null> {
+    const result = await this.client.readBatch(maxEvents);
+    this.applySnapshot(result.snapshot);
+    return result.value;
   }
 
   async acknowledge(streamId: string, acknowledgedThrough: number): Promise<void> {
-    if (streamId !== this.streamId) {
-      throw new Error("runner parent ACK stream_id mismatch");
-    }
-    this.host.acknowledgeEvent({
-      streamId,
-      sessionId: this.sessionId,
-      acknowledgedThrough,
-      latestDurableSourceSeq: this.runner.latestDurableSourceSeq(),
-    });
+    const snapshot = await this.client.acknowledge(streamId, acknowledgedThrough);
+    this.applySnapshot(snapshot);
     await this.onCheckpointAdvanced?.(acknowledgedThrough);
   }
 
   async quarantineHead(
     input: EventOutboxQuarantineInput,
   ): Promise<EventOutboxQuarantineResult> {
-    const expectedHead = this.requireAcknowledgedThrough() + 1;
-    if (input.record.source_seq !== expectedHead) {
-      throw new Error("runner parent quarantine target is not the durable head");
-    }
-    const durable = await this.runner.readRecord(expectedHead);
-    if (!durable || durable.payload_hash !== input.record.payload_hash) {
-      throw new Error("runner parent quarantine target differs from durable head");
-    }
-    const result = await appendEventOutboxQuarantine(
-      dirname(this.runner.databasePath),
-      input,
-    );
-    await this.acknowledge(input.record.stream_id, expectedHead);
-    return result;
+    const result = await this.client.quarantineHead(input);
+    this.applySnapshot(result.snapshot);
+    await this.onCheckpointAdvanced?.(input.record.source_seq);
+    return result.value;
   }
 
   async readRecord(sourceSeq: number): Promise<EventOutboxRecord | null> {
-    return await this.runner.readRecord(sourceSeq);
+    return await this.client.readRecord(sourceSeq);
   }
 
   async readLatestPendingRecord(): Promise<EventOutboxRecord | null> {
-    const acknowledgedThrough = await this.readAcknowledgedThrough();
-    if (acknowledgedThrough === null) return null;
-    const read = async () => await this.runner.readLatestPendingRecordAfter(acknowledgedThrough);
-    return this.phaseObservation
-      ? await this.phaseObservation.runAsync("dbRead", {
-        sessionId: this.sessionId,
-        databasePath: this.runner.databasePath,
-        label: "runner parent pending record",
-      }, read)
-      : await read();
+    const result = await this.client.readLatestPendingRecord();
+    this.applySnapshot(result.snapshot);
+    return result.value;
   }
 
   async readPendingIpcFrames(): Promise<Array<{
@@ -205,7 +155,7 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
     outbox_source_seq: number;
     frame: Extract<RunnerEventFrame, { kind: "engine_event" }>;
   }>> {
-    return await this.runner.readPendingIpcFrames();
+    return await this.client.readPendingIpcFrames();
   }
 
   async readPendingInterventions(): Promise<Array<{
@@ -223,50 +173,29 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
     childInterventionIds: string[];
     shadowedFallbackIds: string[];
   }> {
-    const child = await this.runner.readPendingInterventions();
-    const merged = new Map(child.map((entry) => [entry.interventionId, entry]));
-    const shadowedFallbackIds: string[] = [];
-    for (const fallback of this.host.readPendingInterventionFallbacks(this.sessionId)) {
-      // runner.sqlite is the first durable owner. A later host fallback with the
-      // same deterministic identity is a recovery copy, not a second payload
-      // authority, even if regenerated prose differs.
-      if (merged.has(fallback.interventionId)) {
-        shadowedFallbackIds.push(fallback.interventionId);
-        continue;
-      }
-      merged.set(fallback.interventionId, {
-        interventionId: fallback.interventionId,
-        message: fallback.message,
-      });
-    }
-    return {
-      interventions: [...merged.values()].sort((left, right) =>
-        compareInterventionPriority(left.message, right.message)),
-      childInterventionIds: child.map((entry) => entry.interventionId),
-      shadowedFallbackIds,
-    };
+    return await this.client.inspectPendingInterventions();
   }
 
-  readInterventionFallback(interventionId: string) {
-    return this.host.readInterventionFallback(this.sessionId, interventionId);
+  async readInterventionFallback(
+    interventionId: string,
+  ): Promise<RunnerHostInterventionFallback | null> {
+    return await this.client.readInterventionFallback(interventionId);
   }
 
-  removeInterventionFallback(interventionId: string): void {
-    this.host.removeInterventionFallback(this.sessionId, interventionId);
+  async removeInterventionFallback(interventionId: string): Promise<void> {
+    await this.client.removeInterventionFallback(interventionId);
   }
 
-  /**
-   * host_acked=0 is CHECK-limited to engine_event, whose non-null outbox_source_seq has an outbox FK.
-   * stageRunnerIntervention passes requireBootstrap(), so an empty ledger also proves an empty inbox.
-   */
   async hasPendingDurableWork(): Promise<boolean> {
-    const acknowledgedThrough = await this.readAcknowledgedThrough();
-    if (acknowledgedThrough === null) return false;
-    return await this.runner.hasPendingDurableWork(acknowledgedThrough);
+    const result = await this.client.hasPendingDurableWork();
+    this.applySnapshot(result.snapshot);
+    return result.value;
   }
 
-  async readHostCallApplied(correlationId: string) {
-    return this.host.readHostCallApplied(this.sessionId, correlationId);
+  async readHostCallApplied(
+    correlationId: string,
+  ): Promise<RunnerHostCallAppliedReceipt | null> {
+    return await this.client.readHostCallApplied(correlationId);
   }
 
   async recordHostCallApplied(input: {
@@ -275,44 +204,39 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
     operation: string;
     createdAt: string;
   }): Promise<void> {
-    this.host.recordHostCallApplied({ sessionId: this.sessionId, ...input });
+    await this.client.recordHostCallApplied(input);
   }
 
   async acknowledgeHostCall(correlationId: string): Promise<void> {
-    this.host.acknowledgeHostCall(this.sessionId, correlationId);
+    await this.client.acknowledgeHostCall(correlationId);
   }
 
-  close(): void {
-    this.host.close();
-    this.runner.close();
+  close(): Promise<void> {
+    return this.client.close();
   }
 
-  private async readAcknowledgedThrough(): Promise<number | null> {
-    if (!(await this.readRunnerBootstrap())) return null;
-    return this.requireAcknowledgedThrough();
+  /** Worker-measured phase durations, kept apart from parent wait times. */
+  workerPhaseDurationsMs(): Record<string, number> {
+    return this.client.workerPhaseDurationsMs();
   }
 
-  private async readRunnerBootstrap(): Promise<RunnerBootstrapRecord | null> {
-    const bootstrap = await this.runner.readBootstrap();
-    if (bootstrap && bootstrap.session_id !== this.sessionId) {
-      throw new Error("runner parent outbox session differs from durable bootstrap");
+  private applySnapshot(snapshot: RunnerParentStorageSnapshot | undefined): void {
+    if (!snapshot) return;
+    const bootstrap = snapshot.bootstrap;
+    if (bootstrap) {
+      if (this.bootstrap && this.bootstrap.stream_id !== bootstrap.stream_id) {
+        throw new Error("runner parent ACK stream_id mismatch");
+      }
+      if (this.bootstrap && this.bootstrap.session_id !== bootstrap.session_id) {
+        throw new Error("runner parent outbox session differs from durable bootstrap");
+      }
+      this.bootstrap = bootstrap;
     }
-    this.bootstrap = bootstrap;
-    return bootstrap;
-  }
-
-  private requireAcknowledgedThrough(): number {
-    const read = () => this.host.readAcknowledgedThrough(this.streamId, this.sessionId);
-    const acknowledgedThrough = this.phaseObservation
-      ? this.phaseObservation.runSync("dbRead", {
-        sessionId: this.sessionId,
-        databasePath: runnerHostStatePath(this.runner.databasePath),
-        label: "runner parent host ACK",
-      }, read)
-      : read();
-    if (acknowledgedThrough === null) {
-      throw new Error("runner parent ACK checkpoint is unavailable before bootstrap");
+    if (snapshot.acknowledgedThrough !== null) {
+      this.acknowledgedThrough = Math.max(
+        this.acknowledgedThrough ?? 0,
+        snapshot.acknowledgedThrough,
+      );
     }
-    return acknowledgedThrough;
   }
 }
