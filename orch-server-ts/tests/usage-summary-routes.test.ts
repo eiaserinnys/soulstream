@@ -97,6 +97,8 @@ describe("usage summary route", () => {
             shortRemainingPercent: null,
             shortResetAt: null,
             quotas: [],
+            stale: false,
+            fetchedAt: "2026-10-28T04:00:00.000Z",
             mode: "pool",
             accounts: [],
             pool: null,

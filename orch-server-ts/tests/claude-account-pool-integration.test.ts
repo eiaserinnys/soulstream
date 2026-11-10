@@ -11,6 +11,7 @@ describe("Claude account-pool route and usage-summary integration", () => {
     const loggedInAccount = poolAccount("22222222-2222-4222-8222-222222222222");
     let accounts = [originalAccount];
     let failRefresh = false;
+    let now = new Date("2026-10-28T04:00:00.000Z");
     let service: UsageSummaryService;
     const harness = createClaudeAuthHarness({
       claudeAccountPoolEnabled: true,
@@ -21,18 +22,22 @@ describe("Claude account-pool route and usage-summary integration", () => {
             return { success: false, error: { code: "provider_usage_failed", message: "private worker detail" } };
           }
           const current = providerUsage(accounts);
-          return message.provider === "claude"
-            ? { success: true, data: current }
-            : {
-                success: true,
-                data: {
-                  providers: {
-                    claude: current,
-                    codex: scalarProviderUsage(),
-                    antigravity: scalarProviderUsage(),
-                  },
-                },
-              };
+          if (message.provider !== undefined) {
+            return {
+              success: true,
+              data: message.provider === "claude" ? current : scalarProviderUsage(),
+            };
+          }
+          return {
+            success: true,
+            data: {
+              providers: {
+                claude: current,
+                codex: scalarProviderUsage(),
+                antigravity: scalarProviderUsage(),
+              },
+            },
+          };
         }
         if (message.type === "claude_auth_account_update") {
           accounts = accounts.map((account) => account.id === message.account_id
@@ -66,7 +71,7 @@ describe("Claude account-pool route and usage-summary integration", () => {
       bridge: harness.bridge,
       pollIntervalMs: 300_000,
       sharedAccountGroups: [],
-      now: () => new Date("2026-10-28T04:00:00.000Z"),
+      now: () => now,
     });
     registerUsageSummaryRoutes(harness.app, { service });
     await service.collectOnce();
@@ -110,6 +115,7 @@ describe("Claude account-pool route and usage-summary integration", () => {
       await expectSummaryAndStream(origin, reader, buffered, { accountIds: [loggedInAccount.id] });
 
       failRefresh = true;
+      now = new Date("2026-10-28T04:11:00.000Z");
       const failedRefresh = await fetch(`${origin}/api/nodes/fake-node/claude-auth/accounts/${loggedInAccount.id}`, {
         method: "PATCH",
         headers: { "content-type": "application/json" },

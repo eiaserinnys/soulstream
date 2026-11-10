@@ -22,6 +22,8 @@ function provider(
     shortRemainingPercent: null,
     shortResetAt: null,
     quotas: [],
+    stale: false,
+    fetchedAt: now.toISOString(),
     ...overrides,
   };
 }

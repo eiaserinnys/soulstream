@@ -16,8 +16,10 @@ import type {
 } from "../usage/usage_summary_service.js";
 import type { UsageSummaryClaudeAccount } from "../usage/provider_usage_wire.js";
 import {
+  buildAccountPool,
   rejectionReasonLabel,
   resolveClaudePoolAvailability,
+  type ModelPresetAccountPool,
   type PoolAccountRejection,
 } from "./claude_account_pool_availability.js";
 import type { ClaudePoolAvailabilityAccount } from "../usage/claude_account_pool_observation.js";
@@ -61,6 +63,8 @@ export type ModelPresetAvailability = {
   readonly resets_at: string | null;
   readonly usage_warning: boolean;
   readonly weekly_headroom: WeeklyHeadroom | null;
+  /** Per-account pool state, present only on Claude pool presets. */
+  readonly account_pool?: ModelPresetAccountPool;
   /**
    * Canonical list of selectable efforts for this preset. Clients render choices
    * from this and nothing else — no per-frontend hardcoded table.
@@ -293,6 +297,7 @@ export function resolvePresetAvailability(
   const provider = preset.usage_provider === null
     ? null
     : nodeUsage?.providers[preset.usage_provider] ?? null;
+  const usageStale = nodeUsage === undefined || provider === null || provider.stale;
   const weeklyHeadroom = preset.usage_provider === null
     ? null
     : resolveWeeklyHeadroom(
@@ -301,7 +306,7 @@ export function resolvePresetAvailability(
           normalizedQuotaWindow(quota.window) === "7일"
           && isQuotaApplicable(preset, quota),
         ) ?? [],
-        nodeUsage?.stale ?? false,
+        usageStale,
         now,
       );
   const base = { ...publicPreset(preset), weekly_headroom: weeklyHeadroom };
@@ -318,20 +323,24 @@ export function resolvePresetAvailability(
   if (preset.usage_provider === null) return availablePreset(base, false);
 
   if (preset.usage_provider === "claude" && useClaudePool && provider?.mode === "pool") {
-    return resolveClaudePoolAvailability(
-      base,
-      isFablePreset(preset),
-      nodeUsage === undefined || nodeUsage.stale,
-      poolAccounts ?? provider.accounts ?? [],
-      isFablePreset(preset) ? provider.fable_pool : provider.pool,
-      poolRejections,
-      now,
-    );
+    const fablePreset = isFablePreset(preset);
+    const accounts = poolAccounts ?? provider.accounts ?? [];
+    const pool = fablePreset ? provider.fable_pool : provider.pool;
+    return {
+      ...resolveClaudePoolAvailability(
+        base,
+        fablePreset,
+        usageStale,
+        accounts,
+        pool,
+        poolRejections,
+        now,
+      ),
+      account_pool: buildAccountPool(accounts, pool, poolRejections, fablePreset, now),
+    };
   }
 
-  const freshProvider = nodeUsage !== undefined && !nodeUsage.stale
-    ? provider
-    : null;
+  const freshProvider = !usageStale ? provider : null;
   if (freshProvider?.status === "not_configured") {
     return {
       ...base,
@@ -358,7 +367,7 @@ export function resolvePresetAvailability(
     };
   }
 
-  if (!nodeUsage || nodeUsage.stale || provider === null) {
+  if (usageStale) {
     return availablePreset(base, true);
   }
   if (provider.status === "error") {

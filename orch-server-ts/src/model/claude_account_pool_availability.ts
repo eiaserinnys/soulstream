@@ -4,6 +4,7 @@ import type {
   UsageSummaryClaudeAccount,
   UsageSummaryClaudeAccountPool,
 } from "../usage/provider_usage_wire.js";
+import type { ClaudePoolAvailabilityAccount } from "../usage/claude_account_pool_observation.js";
 
 type AvailabilityBase = Pick<
   ModelPresetAvailability,
@@ -14,6 +15,25 @@ export type PoolAccountRejection = {
   readonly accountId: string;
   readonly scope: "all" | "fable";
   readonly rejection: Pick<ProviderLimitRejection, "rejectedUntil" | "rateLimitType">;
+};
+
+export type ModelPresetPoolAccount = {
+  readonly id: string;
+  readonly email: string;
+  readonly plan: string | null;
+  readonly enabled: boolean;
+  readonly auth_state: UsageSummaryClaudeAccount["auth_state"];
+  readonly active_sessions: number;
+  readonly remaining_percent: number | null;
+  readonly resets_at: string | null;
+  readonly blocked: boolean;
+  readonly blocked_until: string | null;
+};
+
+export type ModelPresetAccountPool = {
+  readonly available_count: number | null;
+  readonly total_count: number;
+  readonly accounts: readonly ModelPresetPoolAccount[];
 };
 
 export function resolveClaudePoolAvailability(
@@ -85,6 +105,73 @@ export function resolveClaudePoolAvailability(
     resets_at: null,
     usage_warning: stale,
   };
+}
+
+/** Display-only per-account pool state for model preset listings. */
+export function buildAccountPool(
+  accounts: readonly ClaudePoolAvailabilityAccount[],
+  pool: UsageSummaryClaudeAccountPool | null | undefined,
+  rejections: readonly PoolAccountRejection[],
+  fablePreset: boolean,
+  now: Date,
+): ModelPresetAccountPool {
+  return {
+    available_count: pool === null || pool === undefined ? null : pool.available_count,
+    total_count: pool === null || pool === undefined ? accounts.length : pool.total_count,
+    accounts: accounts.map((account) => {
+      const usage = usageWindow(fablePreset ? account.usage.fable_weekly : account.usage.seven_day);
+      const block = account.blocked !== null
+        && (account.blocked.scope === "all" || fablePreset)
+        ? account.blocked
+        : null;
+      const liveRejections = rejections.filter((item) =>
+        item.accountId === account.id
+        && (item.scope === "all" || fablePreset)
+        && isLiveRejection(item.rejection, now),
+      );
+      const ends = [
+        ...(block === null ? [] : [block.until]),
+        ...liveRejections.map((item) => item.rejection.rejectedUntil),
+      ];
+      const blocked = block !== null || liveRejections.length > 0;
+      return {
+        id: account.id,
+        email: account.email,
+        plan: account.plan,
+        enabled: account.enabled,
+        auth_state: account.auth_state,
+        active_sessions: account.active_sessions,
+        remaining_percent: usage?.remainingPercent ?? null,
+        resets_at: usage?.resetsAt ?? null,
+        blocked,
+        blocked_until: !blocked || ends.some((end) => end === null)
+          ? null
+          : latestEnd(ends),
+      };
+    }),
+  };
+}
+
+function usageWindow(
+  value: unknown,
+): { remainingPercent: number; resetsAt: string | null } | null {
+  if (typeof value !== "object" || value === null) return null;
+  const record = value as { used_percent?: unknown; resets_at?: unknown };
+  if (typeof record.used_percent !== "number" || !Number.isFinite(record.used_percent)) {
+    return null;
+  }
+  return {
+    remainingPercent: Math.max(0, Math.min(100, 100 - record.used_percent)),
+    resetsAt: typeof record.resets_at === "string" ? record.resets_at : null,
+  };
+}
+
+function latestEnd(ends: readonly (string | null)[]): string | null {
+  return ends.reduce<string | null>((latest, end) => {
+    if (end === null) return latest;
+    if (latest === null) return end;
+    return Date.parse(end) > Date.parse(latest) ? end : latest;
+  }, null);
 }
 
 function rejectedPreset(

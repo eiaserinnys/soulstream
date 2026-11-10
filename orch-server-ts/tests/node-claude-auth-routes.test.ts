@@ -502,6 +502,8 @@ describe("Claude account-pool REST routes", () => {
             shortRemainingPercent: null,
             shortResetAt: null,
             quotas: [],
+            stale: false,
+            fetchedAt: "2026-10-12T03:00:00.000Z",
             ...updatedList,
           },
           codex: null,

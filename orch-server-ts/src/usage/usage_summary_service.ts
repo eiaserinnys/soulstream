@@ -64,6 +64,8 @@ export type UsageSummaryProvider = {
   readonly shortRemainingPercent: number | null;
   readonly shortResetAt: number | null;
   readonly quotas: readonly UsageSummaryQuota[];
+  readonly stale: boolean;
+  readonly fetchedAt: string | null;
 };
 
 export type UsageSummaryNode = {
@@ -101,6 +103,11 @@ export type UsageSummaryServiceOptions = {
   readonly pollIntervalMs: number;
   readonly sharedAccountGroups: readonly UsageSummarySharedAccountGroup[];
   readonly nodeTimeoutMs?: number;
+  /**
+   * How long a provider's last successful sample stays fresh. Defaults to
+   * two missed polls plus the command timeout, so one failed cycle is forgiven.
+   */
+  readonly staleAfterMs?: number;
   readonly now?: () => Date;
   readonly onWarning?: (message: string, error?: unknown) => void;
   /** Called after collection is committed; reuse this poller to wake policy admission. */
@@ -117,9 +124,10 @@ type ProviderUsageCommandResponse = NodeCommandResponse & {
 
 type MutableNodeState = {
   readonly nodeId: string;
+  readonly firstSeenAt: string;
   snapshot: ProviderUsageSnapshot | null;
-  fetchedAt: string | null;
-  staleSince: string | null;
+  providerFetchedAt: Partial<Record<UsageSummaryProviderName, string>>;
+  disconnectedSince: string | null;
 };
 
 export class UsageSummaryService {
@@ -128,6 +136,7 @@ export class UsageSummaryService {
   private readonly pollIntervalMs: number;
   private readonly sharedAccountGroups: readonly UsageSummarySharedAccountGroup[];
   private readonly nodeTimeoutMs: number;
+  private readonly staleAfterMs: number;
   private readonly now: () => Date;
   private readonly onCollected: UsageSummaryServiceOptions["onCollected"];
   private readonly onWarning: (message: string, error?: unknown) => void;
@@ -142,11 +151,14 @@ export class UsageSummaryService {
     assertPositiveInteger(options.pollIntervalMs, "pollIntervalMs");
     const nodeTimeoutMs = options.nodeTimeoutMs ?? USAGE_SUMMARY_NODE_TIMEOUT_MS;
     assertPositiveInteger(nodeTimeoutMs, "nodeTimeoutMs");
+    const staleAfterMs = options.staleAfterMs ?? (2 * options.pollIntervalMs + nodeTimeoutMs);
+    assertPositiveInteger(staleAfterMs, "staleAfterMs");
     this.registry = options.registry;
     this.bridge = options.bridge;
     this.pollIntervalMs = options.pollIntervalMs;
     this.sharedAccountGroups = options.sharedAccountGroups;
     this.nodeTimeoutMs = nodeTimeoutMs;
+    this.staleAfterMs = staleAfterMs;
     this.now = options.now ?? (() => new Date());
     this.onCollected = options.onCollected;
     this.onWarning = options.onWarning ?? (() => undefined);
@@ -202,32 +214,44 @@ export class UsageSummaryService {
     const now = this.now().toISOString();
     const state = this.nodes.get(nodeId) ?? {
       nodeId,
+      firstSeenAt: now,
       snapshot: null,
-      fetchedAt: null,
-      staleSince: now,
+      providerFetchedAt: {},
+      disconnectedSince: null,
     };
     this.nodes.set(nodeId, state);
     try {
       if (this.activeCollection !== undefined) await this.activeCollection;
       const node = this.registry.getConnectedNode(nodeId);
-      if (node === undefined) throw new Error(`Node is not connected: ${nodeId}`);
+      if (node === undefined) {
+        state.disconnectedSince ??= this.now().toISOString();
+        throw new Error(`Node is not connected: ${nodeId}`);
+      }
 
-      const snapshot = state.snapshot === null
+      const previous = state.snapshot;
+      const fullSnapshot = previous === null;
+      const snapshot = previous === null
         ? await this.fetchNodeSnapshot(nodeId)
         : {
             providers: {
-              ...state.snapshot.providers,
+              ...previous.providers,
               claude: await this.fetchNodeProvider(nodeId, "claude"),
             },
           };
+      const fetchedAt = this.now().toISOString();
       state.snapshot = snapshot;
-      state.fetchedAt = this.now().toISOString();
-      state.staleSince = null;
-      this.collectedAt = state.fetchedAt;
+      if (fullSnapshot) {
+        for (const provider of USAGE_SUMMARY_PROVIDER_NAMES) {
+          state.providerFetchedAt[provider] = fetchedAt;
+        }
+      } else {
+        state.providerFetchedAt.claude = fetchedAt;
+      }
+      state.disconnectedSince = null;
+      this.collectedAt = fetchedAt;
       this.notifyCollected();
       return this.getSummary();
     } catch (error) {
-      state.staleSince ??= this.now().toISOString();
       this.collectedAt = this.now().toISOString();
       this.notifyCollected();
       throw error;
@@ -293,18 +317,20 @@ export class UsageSummaryService {
     const connectedIds = new Set(connectedNodes.map((node) => node.nodeId));
 
     for (const state of this.nodes.values()) {
-      if (!connectedIds.has(state.nodeId) && state.staleSince === null) {
-        state.staleSince = cycleStartedAt;
+      if (!connectedIds.has(state.nodeId)) {
+        state.disconnectedSince ??= cycleStartedAt;
       }
     }
 
     for (const node of connectedNodes) {
       const state = this.nodes.get(node.nodeId) ?? {
         nodeId: node.nodeId,
+        firstSeenAt: cycleStartedAt,
         snapshot: null,
-        fetchedAt: null,
-        staleSince: cycleStartedAt,
+        providerFetchedAt: {},
+        disconnectedSince: null,
       };
+      state.disconnectedSince = null;
       this.nodes.set(node.nodeId, state);
     }
 
@@ -317,31 +343,51 @@ export class UsageSummaryService {
     await Promise.all(connectedNodes.map(async (node) => {
       const state = this.nodes.get(node.nodeId);
       if (state === undefined) throw new Error(`Missing usage state for node ${node.nodeId}`);
-      try {
-        const requiredProvider = (provider: UsageSummaryProviderName): Promise<ProviderLimits> => {
-          const ownerId = providerOwners.get(providerRequestKey(node.nodeId, provider))
-            ?? node.nodeId;
-          const request = providerRequests.get(providerRequestKey(ownerId, provider));
-          if (request === undefined) {
-            throw new Error(`Missing ${provider} usage request for node ${node.nodeId}`);
-          }
-          return request;
-        };
-        const [claude, codex, antigravity, opencodeGo] = await Promise.all([
-          requiredProvider("claude"),
-          requiredProvider("codex"),
-          requiredProvider("antigravity"),
-          requiredProvider("opencode_go"),
-        ]);
-        const snapshot: ProviderUsageSnapshot = {
-          providers: { claude, codex, antigravity, opencode_go: opencodeGo },
-        };
-        state.snapshot = snapshot;
-        state.fetchedAt = this.now().toISOString();
-        state.staleSince = null;
-      } catch (error) {
-        state.staleSince ??= cycleStartedAt;
-        this.onWarning(`Usage summary collection failed for node ${node.nodeId}`, error);
+      const requiredProvider = (provider: UsageSummaryProviderName): Promise<ProviderLimits> => {
+        const ownerId = providerOwners.get(providerRequestKey(node.nodeId, provider))
+          ?? node.nodeId;
+        const request = providerRequests.get(providerRequestKey(ownerId, provider));
+        if (request === undefined) {
+          throw new Error(`Missing ${provider} usage request for node ${node.nodeId}`);
+        }
+        return request;
+      };
+      const results = await Promise.allSettled(USAGE_SUMMARY_PROVIDER_NAMES.map((provider) =>
+        Promise.resolve().then(() => requiredProvider(provider)),
+      ));
+      const fresh = new Map<UsageSummaryProviderName, ProviderLimits>();
+      const failedProviders: UsageSummaryProviderName[] = [];
+      let firstError: unknown;
+      results.forEach((result, index) => {
+        const provider = USAGE_SUMMARY_PROVIDER_NAMES[index];
+        if (provider === undefined) return;
+        if (result.status === "fulfilled") {
+          fresh.set(provider, result.value);
+          state.providerFetchedAt[provider] = cycleStartedAt;
+        } else {
+          failedProviders.push(provider);
+          if (firstError === undefined) firstError = result.reason;
+        }
+      });
+      const providerLimits = (provider: UsageSummaryProviderName): ProviderLimits =>
+        fresh.get(provider)
+        ?? state.snapshot?.providers[provider]
+        ?? { ...NOT_CONFIGURED_PROVIDER_LIMITS, status: "error" };
+      const snapshot: ProviderUsageSnapshot = {
+        providers: {
+          claude: providerLimits("claude"),
+          codex: providerLimits("codex"),
+          antigravity: providerLimits("antigravity"),
+          opencode_go: providerLimits("opencode_go"),
+        },
+      };
+      state.snapshot = snapshot;
+      if (failedProviders.length > 0) {
+        this.onWarning(
+          `Usage summary collection failed for node ${node.nodeId} `
+          + `(${failedProviders.join(", ")}): ${errorMessage(firstError)}`,
+          firstError,
+        );
       }
     }));
     this.collectedAt = this.now().toISOString();
@@ -365,7 +411,7 @@ export class UsageSummaryService {
   }
 
   private summarizeNode(state: MutableNodeState): UsageSummaryNode {
-    const summary = summarizeNode(state);
+    const summary = summarizeNode(state, this.staleAfterMs, this.now());
     const node = this.registry.getConnectedNode(state.nodeId);
     if (
       node === undefined
@@ -470,24 +516,60 @@ export class UsageSummaryService {
   }
 }
 
-function summarizeNode(state: MutableNodeState): UsageSummaryNode {
+function summarizeNode(
+  state: MutableNodeState,
+  staleAfterMs: number,
+  now: Date,
+): UsageSummaryNode {
+  if (state.snapshot === null) {
+    return {
+      nodeId: state.nodeId,
+      fetchedAt: null,
+      stale: true,
+      staleSince: state.disconnectedSince ?? state.firstSeenAt,
+      providers: { claude: null, codex: null, antigravity: null, opencode_go: null },
+    };
+  }
+  const providers = {} as Record<UsageSummaryProviderName, UsageSummaryProvider>;
+  let missingFetchedAt = false;
+  let earliestFetchedAt: number | null = null;
+  let earliestStaleAt: number | null = null;
+  let anyStale = false;
+  for (const provider of USAGE_SUMMARY_PROVIDER_NAMES) {
+    const fetchedAt = state.providerFetchedAt[provider] ?? null;
+    const fetchedTime = fetchedAt === null ? null : Date.parse(fetchedAt);
+    const stale = state.disconnectedSince !== null
+      || fetchedTime === null
+      || now.getTime() - fetchedTime > staleAfterMs;
+    providers[provider] = summarizeProvider(state.snapshot.providers[provider], fetchedAt, stale);
+    if (fetchedTime === null) missingFetchedAt = true;
+    else if (earliestFetchedAt === null || fetchedTime < earliestFetchedAt) {
+      earliestFetchedAt = fetchedTime;
+    }
+    if (stale) {
+      anyStale = true;
+      const staleAt = fetchedTime === null ? Date.parse(state.firstSeenAt) : fetchedTime + staleAfterMs;
+      if (earliestStaleAt === null || staleAt < earliestStaleAt) earliestStaleAt = staleAt;
+    }
+  }
+  const staleSince = state.disconnectedSince
+    ?? (earliestStaleAt === null ? null : new Date(earliestStaleAt).toISOString());
   return {
     nodeId: state.nodeId,
-    fetchedAt: state.fetchedAt,
-    stale: state.staleSince !== null,
-    staleSince: state.staleSince,
-    providers: state.snapshot === null
-      ? { claude: null, codex: null, antigravity: null, opencode_go: null }
-      : {
-          claude: summarizeProvider(state.snapshot.providers.claude),
-          codex: summarizeProvider(state.snapshot.providers.codex),
-          antigravity: summarizeProvider(state.snapshot.providers.antigravity),
-          opencode_go: summarizeProvider(state.snapshot.providers.opencode_go),
-        },
+    fetchedAt: missingFetchedAt || earliestFetchedAt === null
+      ? null
+      : new Date(earliestFetchedAt).toISOString(),
+    stale: anyStale,
+    staleSince: anyStale ? staleSince : null,
+    providers,
   };
 }
 
-function summarizeProvider(limits: ProviderLimits): UsageSummaryProvider {
+function summarizeProvider(
+  limits: ProviderLimits,
+  fetchedAt: string | null,
+  stale: boolean,
+): UsageSummaryProvider {
   return {
     status: limits.status,
     ...(limits.mode === undefined ? {} : {
@@ -504,6 +586,8 @@ function summarizeProvider(limits: ProviderLimits): UsageSummaryProvider {
     shortRemainingPercent: remainingPercent(limits.shortUsedPercent),
     shortResetAt: limits.shortResetAt,
     quotas: limits.quotas.map((quota) => ({ ...quota })),
+    stale,
+    fetchedAt,
   };
 }
 
@@ -522,6 +606,10 @@ function advertisesOpencodeGoUsage(node: NodeConnectionSnapshot): boolean {
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function assertPositiveInteger(value: number, label: string): void {

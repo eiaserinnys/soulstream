@@ -27,6 +27,7 @@ function harness(reason: "quota" | "env" | "auth" = "quota") {
         weeklyRemainingPercent: 0, weeklyResetAt: null, shortRemainingPercent: 0, shortResetAt: null,
         quotas: [{ id: "codex:weekly", label: "7일", window: "7d", model: null,
           remainingPercent: 0, resetAt: null }],
+        stale: false, fetchedAt: null,
       } } }] };
   const transports = new NodeCommandTransportHub();
   const sent: Record<string, unknown>[] = [];
