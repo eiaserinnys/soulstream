@@ -139,7 +139,33 @@ describe("sendMessageToSession relay verdict", () => {
     });
 
     expect(result).toMatchObject({ ok: false, error: "local route failed" });
+    expect(result).not.toHaveProperty("hint");
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("points at list_persistent_sessions when the target session does not exist", async () => {
+    const { logger } = silentLogger();
+    const result = await sendMessageToSession({
+      logger,
+      orch: ORCH,
+      onResume: () => {},
+      nodeId: "self",
+      sessionLookup: { getSession: async () => null },
+      taskManager: {
+        addIntervention: async () => { throw new Error("Task not found"); },
+      },
+      fetchImpl: async () => { throw new Error("relay must not be attempted"); },
+    }, {
+      targetSessionId: "20e4dae9",
+      message: "전달",
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      error: "Task not found",
+      fallback_error: "orch relay is reserved for a confirmed remote owner",
+      hint: expect.stringContaining("list_persistent_sessions"),
+    });
   });
 
   it("surfaces a queued verdict with its consumption point", async () => {

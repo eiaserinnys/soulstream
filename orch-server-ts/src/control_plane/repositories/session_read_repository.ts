@@ -37,8 +37,10 @@ export interface HostPersistentSessionRow extends Record<string, unknown> {
   model_preset: string | null;
   model: string | null;
   reasoning_effort: string | null;
+  status: string | null;
   metadata: unknown;
   created_at: Date;
+  updated_at: Date;
 }
 
 export interface HostSessionExecutionChainRow extends Record<string, unknown> {
@@ -156,8 +158,10 @@ export class SessionReadRepository {
         s.model_preset,
         s.model,
         s.reasoning_effort,
+        s.status,
         s.metadata,
-        s.created_at
+        s.created_at,
+        s.updated_at
       FROM sessions s
       WHERE s.metadata @> '[{"type":"persistent_session","value":{"enabled":true}}]'::jsonb
       ORDER BY s.created_at ASC, s.session_id ASC

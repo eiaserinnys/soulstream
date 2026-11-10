@@ -1954,7 +1954,7 @@
     "name": "list_session_events"
   },
   {
-    "description": "세션 목록을 페이지네이션하여 조회한다. 기간을 제한할 때 since와 until을 함께 지정하며, 둘 다 생략하면 기간 제한 없이 조회한다. 기간을 지정하면 그 기간에 이벤트가 있는 세션만 반환한다. 진행 중 세션은 확인 시각을 until로 고정한다(예: since=2026-10-23T00:00:00+09:00, until=2026-10-23T03:00:00+09:00). 경량 필드만 반환 (Python list_sessions 정합).",
+    "description": "세션 목록을 페이지네이션하여 조회한다. 기간을 제한할 때 since와 until을 함께 지정하며, 둘 다 생략하면 기간 제한 없이 조회한다. 기간을 지정하면 그 기간에 이벤트가 있는 세션만 반환한다. 진행 중 세션은 확인 시각을 until로 고정한다(예: since=2026-10-23T00:00:00+09:00, until=2026-10-23T03:00:00+09:00). 경량 필드만 반환 (Python list_sessions 정합). 영구 세션(PAS)을 찾을 때는 list_persistent_sessions를 쓴다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -3344,7 +3344,7 @@
     "name": "search_skills"
   },
   {
-    "description": "대상 세션에 메시지 전달. running이면 현재 턴 개입을 먼저 시도하고, 지금 전달할 수 없을 때만 next_turn 큐로 보낸다. 결과의 delivered·reason·consumeWhen을 확인한다. 종료된 세션은 auto-resume. local 실패 시 orch /intervene fallback.",
+    "description": "대상 세션에 메시지 전달. running이면 현재 턴 개입을 먼저 시도하고, 지금 전달할 수 없을 때만 next_turn 큐로 보낸다. 결과의 delivered·reason·consumeWhen을 확인한다. 종료된 세션은 auto-resume. local 실패 시 orch /intervene fallback. 영구 세션(PAS)에 보낼 때는 list_persistent_sessions로 고른 session_id 전체를 쓰고, ID를 짐작해 적지 않는다.",
     "execution": {
       "taskSupport": "forbidden"
     },

@@ -5,7 +5,7 @@ export const sessionMessageTools = {
     name: "send_message_to_session",
     config: {
       description:
-        "대상 세션에 메시지 전달. running이면 현재 턴 개입을 먼저 시도하고, 지금 전달할 수 없을 때만 next_turn 큐로 보낸다. 결과의 delivered·reason·consumeWhen을 확인한다. 종료된 세션은 auto-resume. local 실패 시 orch /intervene fallback.",
+        "대상 세션에 메시지 전달. running이면 현재 턴 개입을 먼저 시도하고, 지금 전달할 수 없을 때만 next_turn 큐로 보낸다. 결과의 delivered·reason·consumeWhen을 확인한다. 종료된 세션은 auto-resume. local 실패 시 orch /intervene fallback. 영구 세션(PAS)에 보낼 때는 list_persistent_sessions로 고른 session_id 전체를 쓰고, ID를 짐작해 적지 않는다.",
       inputSchema: {
         target_session_id: z.string(),
         message: z.string(),

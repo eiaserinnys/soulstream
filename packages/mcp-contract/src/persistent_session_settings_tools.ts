@@ -21,6 +21,25 @@ const settingFields = {
 };
 
 export const persistentSessionSettingsTools = {
+  list_persistent_sessions: {
+    name: "list_persistent_sessions",
+    audience: "internal",
+    strictInputSchema: true,
+    config: {
+      description:
+        "영구 세션(PAS) 목록을 이름, 에이전트, 노드, 상태, 마지막 활동 시각과 함께 돌려준다. "
+        + "「○○ PAS에 전해라」처럼 PAS를 찾을 때 search_sessions나 list_sessions 대신 이것을 먼저 쓴다. "
+        + "query는 이름, 에이전트, 세션 ID 일부에 부분 일치한다. "
+        + "고른 항목의 session_id 전체를 send_message_to_session의 target_session_id로 넘긴다. "
+        + "status가 completed여도 쉬는 중일 뿐이며 메시지를 보내면 깨어난다.",
+      annotations: { readOnlyHint: true },
+      inputSchema: {
+        query: z.string().optional(),
+        agent_id: z.string().min(1).optional(),
+        node_id: z.string().min(1).optional(),
+      },
+    },
+  },
   update_persistent_session_settings: {
     name: "update_persistent_session_settings",
     audience: "internal",
