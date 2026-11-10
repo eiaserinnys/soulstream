@@ -38,6 +38,12 @@ export type DeliveryMetadataWireFields = {
   resets_at?: string;
 };
 
+export type InlineAttachmentUpload = {
+  name: string;
+  mime: string;
+  data_base64: string;
+};
+
 export type InterveneNodeCommandPayload =
   ExistingSessionActionPayload<"intervene"> & DeliveryMetadataWireFields & {
     text: string;
@@ -45,6 +51,7 @@ export type InterveneNodeCommandPayload =
     attachment_paths?: string[];
     attachment_ids?: string[];
     attachment_bindings?: AttachmentPathBinding[];
+    inline_attachments?: InlineAttachmentUpload[];
     extra_context_items?: JsonObject[];
     caller_info?: JsonObject;
     _conversation_text?: string;
@@ -107,9 +114,13 @@ export function intervenePayload(
   agentSessionId: string,
   body: JsonObject,
 ): ParseResult<InterveneNodeCommandPayload> {
-  if (typeof body.text !== "string") {
+  const inlineAttachments = parseInlineAttachments(body);
+  if (!inlineAttachments.ok) return inlineAttachments;
+  const hasInlineAttachments = (inlineAttachments.value?.length ?? 0) > 0;
+  if (typeof body.text !== "string" && !(body.text === undefined && hasInlineAttachments)) {
     return { ok: false, message: "text is required" };
   }
+  const text = typeof body.text === "string" ? body.text : "";
   const user = optionalString(body.user) ?? "";
   const attachmentPaths = parseAttachmentPaths(body);
   if (!attachmentPaths.ok) return attachmentPaths;
@@ -130,7 +141,7 @@ export function intervenePayload(
   const payload: InterveneNodeCommandPayload = {
     type: "intervene",
     agentSessionId,
-    text: body.text,
+    text,
     user,
     ...deliveryMetadata.value,
   };
@@ -139,6 +150,9 @@ export function intervenePayload(
   }
   if (attachmentIds.value !== undefined && attachmentIds.value.length > 0) {
     payload.attachment_ids = attachmentIds.value;
+  }
+  if (inlineAttachments.value !== undefined && inlineAttachments.value.length > 0) {
+    payload.inline_attachments = inlineAttachments.value;
   }
   if (contextItems.value !== undefined && contextItems.value.length > 0) {
     payload.extra_context_items = contextItems.value;
@@ -345,6 +359,64 @@ function optionalObject(
 
 export function parseAttachmentPaths(body: JsonObject) {
   return optionalStringArrayAlias(body, ["attachmentPaths", "attachment_paths"]);
+}
+
+const INLINE_ATTACHMENT_MAX_COUNT = 10;
+const INLINE_ATTACHMENT_MAX_FILE_BYTES = 20 * 1024 * 1024;
+const INLINE_ATTACHMENT_MAX_TOTAL_BYTES = 30 * 1024 * 1024;
+
+/**
+ * Reads inline base64 attachments. Absent means no inline upload; an empty list is
+ * still absent for message validation purposes.
+ */
+export function parseInlineAttachments(
+  body: JsonObject,
+): ParseResult<InlineAttachmentUpload[] | undefined> {
+  const value = body.attachments;
+  if (value === undefined) return { ok: true, value: undefined };
+  if (!Array.isArray(value) || value.length > INLINE_ATTACHMENT_MAX_COUNT) {
+    return { ok: false, message: "attachments must be an array of at most 10 items" };
+  }
+
+  const uploads: InlineAttachmentUpload[] = [];
+  let totalBytes = 0;
+  for (const item of value) {
+    if (!isJsonObject(item)) {
+      return { ok: false, message: "each attachment must be a JSON object" };
+    }
+    const name = item.name;
+    if (typeof name !== "string" || name.trim().length === 0) {
+      return { ok: false, message: "attachment name must be a non-empty string" };
+    }
+    const mime = item.mime;
+    if (typeof mime !== "string") {
+      return { ok: false, message: "attachment mime must be a string" };
+    }
+    const dataBase64 = item.data_base64;
+    if (typeof dataBase64 !== "string") {
+      return { ok: false, message: "attachment data_base64 must be valid base64" };
+    }
+    const byteSize = base64ByteSize(dataBase64);
+    if (byteSize === null) {
+      return { ok: false, message: "attachment data_base64 must be valid base64" };
+    }
+    if (byteSize > INLINE_ATTACHMENT_MAX_FILE_BYTES) {
+      return { ok: false, message: "attachment exceeds the 20 MB file limit" };
+    }
+    totalBytes += byteSize;
+    if (totalBytes > INLINE_ATTACHMENT_MAX_TOTAL_BYTES) {
+      return { ok: false, message: "attachments exceed the 30 MB total limit" };
+    }
+    uploads.push({ name, mime, data_base64: dataBase64 });
+  }
+  return { ok: true, value: uploads };
+}
+
+function base64ByteSize(value: string): number | null {
+  if (value.length === 0 || value.length % 4 !== 0) return null;
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(value)) return null;
+  const padding = value.endsWith("==") ? 2 : value.endsWith("=") ? 1 : 0;
+  return (value.length / 4) * 3 - padding;
 }
 
 /**

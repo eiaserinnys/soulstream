@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import { MESSAGE_BODY_LIMIT } from "../conversation/conversation_messages.js";
 import { allowed } from "./card_route_body.js";
 import { serializeCardRow } from "../folders/folder_contracts.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
@@ -83,11 +84,12 @@ export function registerCardRoutes(app: FastifyInstance, options: FolderRouteOpt
       return messages;
     } catch (error) { const failure = cardRouteErrorResponse(error); return reply.code(failure.status).send(failure.body); }
   });
-  app.post<{ Params: { id: string } }>("/api/cards/:id/messages", async (request, reply) => {
+  app.post<{ Params: { id: string } }>("/api/cards/:id/messages", { bodyLimit: MESSAGE_BODY_LIMIT }, async (request, reply) => {
     try {
       const body = sendCardMessageSchema.parse(request.body ?? {});
       const text = body.text.trim();
-      if (!text) throw new CardOperationError("메시지 내용을 입력하십시오.", 422);
+      const attachments = body.attachments ?? [];
+      if (!text && attachments.length === 0) throw new CardOperationError("메시지 내용을 입력하십시오.", 422);
       const service = await options.cardServiceProvider!();
       const detail = await service.getCard(request.params.id);
       if (!detail) throw new CardNotFoundError();
@@ -102,7 +104,8 @@ export function registerCardRoutes(app: FastifyInstance, options: FolderRouteOpt
       if (!targetSessionId || !linked) throw new CardOperationError("메시지를 보낼 카드 연결 세션이 없습니다.", 422);
       if (!options.sendCardSessionMessage) throw new CardOperationError("카드 세션 메시지 전송이 구성되지 않았습니다.", 503);
       const result = await options.sendCardSessionMessage(request, targetSessionId,
-        { text, ...(body.idempotencyKey ? { delivery_id: body.idempotencyKey } : {}) });
+        { text, ...(body.idempotencyKey ? { delivery_id: body.idempotencyKey } : {}),
+          ...(attachments.length ? { attachments } : {}) });
       return result.status >= 200 && result.status < 300
         ? reply.code(result.status).send({ ok: true, sessionId: targetSessionId, delivery: result.body })
         : reply.code(result.status).send(result.body);

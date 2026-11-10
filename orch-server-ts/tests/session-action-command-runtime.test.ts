@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { hashDeliveryPayload } from "@soulstream/wire-schema/delivery";
 import type { FastifyRequest } from "fastify";
 import { describe, expect, it, vi } from "vitest";
@@ -62,7 +63,10 @@ describe("session intervention attachment admission", () => {
   const deliveryId = "99999999-9999-4999-8999-999999999999";
   const binding = { attachment_id: "att-a", node_id: "node-1", path: "/tmp/a.png" };
 
-  function makeApp(admitAttachmentInput?: SessionActionCommandRouteOptions["admitAttachmentInput"]) {
+  function makeApp(
+    admitAttachmentInput?: SessionActionCommandRouteOptions["admitAttachmentInput"],
+    uploadInlineAttachment?: SessionActionCommandRouteOptions["uploadInlineAttachment"],
+  ) {
     const { router, bridge } = createHarnessCore();
     const commands: Array<Record<string, any>> = [];
     const route = vi.spyOn(router, "routeExistingSessionPendingCommand").mockImplementation(
@@ -90,6 +94,7 @@ describe("session intervention attachment admission", () => {
       bridge,
       deliveryRepositoryProvider: async () => ({ register }),
       ...(admitAttachmentInput === undefined ? {} : { admitAttachmentInput }),
+      ...(uploadInlineAttachment === undefined ? {} : { uploadInlineAttachment }),
     } as unknown as SessionActionCommandRouteOptions);
     return { app, register, route, send, commands };
   }
@@ -222,6 +227,91 @@ describe("session intervention attachment admission", () => {
     expect(pathOnly.statusCode).toBe(200);
     expect(commands[0]).toMatchObject({ attachment_paths: ["/tmp/a.png"] });
     expect(commands[0]).not.toHaveProperty("attachment_ids");
+    await app.close();
+  });
+
+  it("uploads inline attachments before admission and sends the uploaded paths and ids", async () => {
+    const upload = vi.fn(async (
+      _caller: unknown,
+      sessionId: string,
+      file: { name: string; mime: string; data_base64: string },
+      uploadId: string,
+    ) => ({ path: `/data/sessions/${sessionId}/${file.name}`, name: file.name, mime: file.mime, assetId: uploadId }));
+    const admit = vi.fn(async (_caller: unknown, input: { attachmentIds?: string[]; attachmentPaths?: string[] }) => ({
+      attachment_ids: input.attachmentIds ?? [],
+      attachment_paths: input.attachmentPaths ?? [],
+      attachment_bindings: [],
+    }));
+    const { app, commands } = makeApp(admit, upload);
+    const file = { name: "a.png", mime: "image/png", data_base64: "aGVsbG8=" };
+
+    const response = await intervene(app, { text: "", attachments: [file] });
+
+    expect(response.statusCode).toBe(200);
+    const hash = createHash("sha256").update(`${deliveryId}:0:a.png`).digest("hex");
+    const uploadId = `${hash.slice(0, 8)}-${hash.slice(8, 12)}-4${hash.slice(13, 16)}-a${hash.slice(17, 20)}-${hash.slice(20, 32)}`;
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(upload.mock.calls[0]![1]).toBe("sess-1");
+    expect(upload.mock.calls[0]![2]).toEqual(file);
+    expect(upload.mock.calls[0]![3]).toBe(uploadId);
+    expect(admit).toHaveBeenCalledWith(expect.anything(), {
+      sessionId: "sess-1",
+      attachmentIds: [uploadId],
+      attachmentPaths: ["/data/sessions/sess-1/a.png"],
+    });
+    expect(commands[0]).toMatchObject({
+      text: "",
+      attachment_paths: ["/data/sessions/sess-1/a.png"],
+      attachment_ids: [uploadId],
+    });
+    expect(commands[0]).not.toHaveProperty("inline_attachments");
+    await app.close();
+  });
+
+  it("keeps uploaded inline attachments when admission returns no paths", async () => {
+    const upload = vi.fn(async (_caller: unknown, _sessionId: string, file: { name: string; mime: string }, uploadId: string) =>
+      ({ path: `/p/${file.name}`, name: file.name, mime: file.mime, assetId: uploadId }));
+    const admit = vi.fn(async () => ({ attachment_ids: [], attachment_paths: [], attachment_bindings: [] }));
+    const { app, commands } = makeApp(admit, upload);
+
+    const response = await intervene(app, {
+      text: "x", attachments: [{ name: "a.png", mime: "image/png", data_base64: "aGVsbG8=" }],
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(commands[0]).toMatchObject({ attachment_paths: ["/p/a.png"] });
+    expect(commands[0]!.attachment_ids).toHaveLength(1);
+    await app.close();
+  });
+
+  it("sends uploaded inline attachments without an admission callback", async () => {
+    const upload = vi.fn(async (_caller: unknown, _sessionId: string, file: { name: string; mime: string }, uploadId: string) =>
+      ({ path: `/p/${file.name}`, name: file.name, mime: file.mime, assetId: uploadId }));
+    const { app, commands, register } = makeApp(undefined, upload);
+
+    const response = await intervene(app, {
+      text: "", attachments: [{ name: "a.png", mime: "image/png", data_base64: "aGVsbG8=" }],
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(register).toHaveBeenCalledTimes(1);
+    expect(commands[0]).toMatchObject({ attachment_paths: ["/p/a.png"] });
+    expect(commands[0]!.attachment_ids).toHaveLength(1);
+    await app.close();
+  });
+
+  it("refuses inline attachments when inline upload is not configured", async () => {
+    const { app, register, route, send } = makeApp(vi.fn());
+
+    const response = await intervene(app, {
+      text: "x", attachments: [{ name: "a.png", mime: "image/png", data_base64: "aGVsbG8=" }],
+    });
+
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toMatchObject({ error: { code: "ATTACHMENT_INPUT_UNAVAILABLE" } });
+    expect(register).not.toHaveBeenCalled();
+    expect(route).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
     await app.close();
   });
 

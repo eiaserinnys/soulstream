@@ -1,9 +1,10 @@
 import type { ServiceCaller } from "../auth/service_caller.js";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import { buildCanonicalDeliveryPayload } from "@soulstream/wire-schema/delivery";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import { MESSAGE_BODY_LIMIT } from "../conversation/conversation_messages.js";
 
 import type { SessionDeliveryRepository } from
   "../control_plane/repositories/session_delivery_repository.js";
@@ -28,6 +29,7 @@ import {
   realtimeResolveToolApprovalPayload,
   toolApprovalPayload,
   type ApprovalParams,
+  type InlineAttachmentUpload,
   type InterveneNodeCommandPayload,
   type InterruptNodeCommandPayload,
   type JsonObject,
@@ -55,10 +57,18 @@ export type SessionActionAttachmentAdmission = (
   attachment_bindings: AttachmentPathBinding[];
 }>;
 
+export type SessionActionInlineAttachmentUpload = (
+  caller: FastifyRequest | ServiceCaller,
+  sessionId: string,
+  file: InlineAttachmentUpload,
+  uploadId: string,
+) => Promise<{ path: string; name: string; mime: string; assetId?: string }>;
+
 export type SessionActionCommandRouteOptions =
   SessionActionCommandDispatchOptions & {
     resolveCallerInfo?: SessionActionCallerInfoResolver;
     admitAttachmentInput?: SessionActionAttachmentAdmission;
+    uploadInlineAttachment?: SessionActionInlineAttachmentUpload;
     reviewAcknowledgeFallback?: SessionReviewAcknowledgeFallback;
     deliveryRepositoryProvider?: () => Promise<Pick<SessionDeliveryRepository, "register">>;
     /**
@@ -88,6 +98,7 @@ export function registerSessionActionCommandRoutes(
 ): void {
   app.post<{ Params: SessionParams }>(
     "/api/sessions/:session_id/intervene",
+    { bodyLimit: MESSAGE_BODY_LIMIT },
     async (request, reply) => {
       const result = await executeSessionIntervention(options, request, sessionParams(request).session_id, request.body);
       return reply.code(result.status).send(result.body);
@@ -250,24 +261,51 @@ async function admitAttachmentInput(
   caller: FastifyRequest | ServiceCaller,
   payload: InterveneNodeCommandPayload,
 ): Promise<{ payload: InterveneNodeCommandPayload } | { response: SessionActionResponse }> {
-  const attachmentIds = payload.attachment_ids;
-  const attachmentPaths = payload.attachment_paths;
-  if (attachmentIds === undefined && attachmentPaths === undefined) return { payload };
+  const inlineAttachments = payload.inline_attachments ?? [];
+  const basePayload: InterveneNodeCommandPayload = { ...payload };
+  delete basePayload.inline_attachments;
+  if (inlineAttachments.length > 0 && options.uploadInlineAttachment === undefined) {
+    return unavailableAttachmentInput();
+  }
+  if (payload.attachment_ids === undefined && payload.attachment_paths === undefined
+    && inlineAttachments.length === 0) {
+    return { payload: basePayload };
+  }
+
+  const attachmentIds = [...(payload.attachment_ids ?? [])];
+  const attachmentPaths = [...(payload.attachment_paths ?? [])];
+  for (const [index, file] of inlineAttachments.entries()) {
+    const uploadId = inlineUploadId(
+      `${payload.delivery_id ?? payload.agentSessionId}:${index}:${file.name}`,
+    );
+    const uploaded = await options.uploadInlineAttachment!(
+      caller, payload.agentSessionId, file, uploadId,
+    );
+    attachmentPaths.push(uploaded.path);
+    attachmentIds.push(uploaded.assetId ?? uploadId);
+  }
+
+  const withUploads: InterveneNodeCommandPayload = { ...basePayload };
+  if (attachmentPaths.length > 0) withUploads.attachment_paths = attachmentPaths;
+  if (attachmentIds.length > 0) withUploads.attachment_ids = attachmentIds;
   if (options.admitAttachmentInput === undefined) {
-    if (attachmentIds === undefined) return { payload };
-    return { response: { status: 503, body: { error: {
-      code: "ATTACHMENT_INPUT_UNAVAILABLE", message: "Attachment input is unavailable",
-    } } } };
+    return inlineAttachments.length > 0
+      ? { payload: withUploads }
+      : payload.attachment_ids === undefined
+        ? { payload }
+        : unavailableAttachmentInput();
   }
   try {
     const admitted = await options.admitAttachmentInput(caller, {
       sessionId: payload.agentSessionId,
-      ...(attachmentIds === undefined ? {} : { attachmentIds }),
-      ...(attachmentPaths === undefined ? {} : { attachmentPaths }),
+      ...(attachmentIds.length === 0 ? {} : { attachmentIds }),
+      ...(attachmentPaths.length === 0 ? {} : { attachmentPaths }),
     });
-    const admittedPayload: InterveneNodeCommandPayload = { ...payload };
-    if (admitted.attachment_paths.length > 0) admittedPayload.attachment_paths = admitted.attachment_paths;
-    if (admitted.attachment_ids.length > 0) admittedPayload.attachment_ids = admitted.attachment_ids;
+    const admittedPayload: InterveneNodeCommandPayload = { ...basePayload };
+    const admittedPaths = admitted.attachment_paths.length > 0 ? admitted.attachment_paths : attachmentPaths;
+    const admittedIds = admitted.attachment_ids.length > 0 ? admitted.attachment_ids : attachmentIds;
+    if (admittedPaths.length > 0) admittedPayload.attachment_paths = admittedPaths;
+    if (admittedIds.length > 0) admittedPayload.attachment_ids = admittedIds;
     if (admitted.attachment_bindings.length > 0) {
       admittedPayload.attachment_bindings = admitted.attachment_bindings;
     }
@@ -279,6 +317,18 @@ async function admitAttachmentInput(
       code, message: error instanceof Error ? error.message : code,
     } } } };
   }
+}
+
+function unavailableAttachmentInput(): { response: SessionActionResponse } {
+  return { response: { status: 503, body: { error: {
+    code: "ATTACHMENT_INPUT_UNAVAILABLE", message: "Attachment input is unavailable",
+  } } } };
+}
+
+/** Stable upload identity so a retried delivery reuses the same stored object. */
+function inlineUploadId(seed: string): string {
+  const digest = createHash("sha256").update(seed).digest("hex");
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
 }
 
 async function admitDurableHumanIntervention(
