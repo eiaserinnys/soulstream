@@ -3631,7 +3631,7 @@
     "annotations": {
       "readOnlyHint": true
     },
-    "description": "영구 세션(PAS) 목록을 이름, 에이전트, 노드, 상태, 마지막 활동 시각과 함께 돌려준다. 「○○ PAS에 전해라」처럼 PAS를 찾을 때 search_sessions나 list_sessions 대신 이것을 먼저 쓴다. query는 이름, 에이전트, 세션 ID 일부에 부분 일치한다. 고른 항목의 session_id 전체를 send_message_to_session의 target_session_id로 넘긴다. status가 completed여도 쉬는 중일 뿐이며 메시지를 보내면 깨어난다.",
+    "description": "영구 세션(PAS) 목록을 이름, 에이전트, 노드, 상태, 마지막 활동 시각과 함께 돌려준다. 「○○ PAS에 전해라」처럼 PAS를 찾을 때 search_sessions나 list_sessions 대신 이것을 먼저 쓴다. PAS는 몇 개뿐이므로 보통 인자 없이 불러 display_name과 agent_name으로 고른다. query는 공백으로 나눈 낱말이 모두 이름, 에이전트, 세션 ID 중 어딘가에 들어 있는 항목만 남긴다. 고른 항목의 session_id 전체를 send_message_to_session의 target_session_id로 넘긴다. status가 completed여도 쉬는 중일 뿐이며 메시지를 보내면 깨어난다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -3639,14 +3639,6 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "additionalProperties": false,
       "properties": {
-        "agent_id": {
-          "minLength": 1,
-          "type": "string"
-        },
-        "node_id": {
-          "minLength": 1,
-          "type": "string"
-        },
         "query": {
           "type": "string"
         }
