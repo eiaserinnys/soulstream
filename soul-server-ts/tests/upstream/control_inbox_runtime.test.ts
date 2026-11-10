@@ -378,7 +378,7 @@ describe("ControlInboxRuntime", () => {
 
 function failingStorage(error: Error): ControlInboxStorage {
   return {
-    initialize: () => ({ reclaimed: 0, pending: 0, replayableResults: 0 }),
+    initialize: () => ({ reclaimed: 0, pruned: 0, pending: 0, replayableResults: 0 }),
     admit: () => {
       throw error;
     },
