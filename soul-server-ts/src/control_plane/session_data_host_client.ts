@@ -1,3 +1,5 @@
+import { setTimeout as sleep } from "node:timers/promises";
+
 import type {
   ListSessionSummaryRow,
   RunningSessionSummaryRow,
@@ -257,7 +259,7 @@ export class SessionDataHostClient implements SessionDataHost {
   }
 
   getSessionCallerChain(sessionId: string): Promise<SessionExecutionChain> {
-    return this.turnCritical("caller_chain", [sessionId]);
+    return this.securityGate("caller_chain", [sessionId]);
   }
 
   private interactive<T>(operation: string, args: unknown[], signal?: AbortSignal): Promise<T> {
@@ -272,12 +274,29 @@ export class SessionDataHostClient implements SessionDataHost {
     return this.request(operation, args, 1_500, 2);
   }
 
+  /**
+   * The isolation gate refuses the turn when this read fails, so a busy host
+   * must cost latency, not the turn. The query itself answers in milliseconds;
+   * at load ~20 the host queue alone took 2-5s and the turn-critical 1.5s x 2
+   * budget refused a trusted top-level session (card #1111).
+   */
+  private securityGate<T>(operation: string, args: unknown[]): Promise<T> {
+    return this.request(operation, args, 5_000, 3, undefined, [250, 1_000]);
+  }
+
   private generationCheckpoint<T>(operation: string, args: unknown[]): Promise<T> {
     // This composite read runs once at generation rollover, so it needs more than the turn hot-path budget.
     return this.request(operation, args, 5_000, 2);
   }
 
-  private async request<T>(operation: string, args: unknown[], timeoutMs: number, attempts: number, signal?: AbortSignal): Promise<T> {
+  private async request<T>(
+    operation: string,
+    args: unknown[],
+    timeoutMs: number,
+    attempts: number,
+    signal?: AbortSignal,
+    retryDelaysMs: readonly number[] = [],
+  ): Promise<T> {
     let lastError: unknown;
     for (let attempt = 1; attempt <= attempts; attempt += 1) {
       try {
@@ -290,6 +309,8 @@ export class SessionDataHostClient implements SessionDataHost {
           || attempt === attempts) {
           break;
         }
+        const delayMs = retryDelaysMs[attempt - 1] ?? 0;
+        if (delayMs > 0) await sleep(delayMs);
       }
     }
     const retryable = lastError instanceof PersistenceHostRequestError && lastError.retryable;

@@ -161,7 +161,8 @@ export interface ExecutionActivation {
     error: unknown,
     options?: { skipFailureCompensation?: boolean },
   ): void | Promise<void>;
-  setFailureCompensation?(compensate: () => Promise<void>): void;
+  /** `compensate` receives the admission failure so the restore can record what failed. */
+  setFailureCompensation?(compensate: (error: unknown) => Promise<void>): void;
   hasFailureCompensation?(): boolean;
   /** Intervention that opened this admission, when it came from a resume. */
   admissionMessage?: InterventionMessage;
@@ -179,7 +180,7 @@ export function createExecutionActivation(): ExecutionActivation {
   let resolvePromise!: () => void;
   let rejectPromise!: (error: unknown) => void;
   let state: "pending" | "resolved" | "rejecting" | "rejected" = "pending";
-  let failureCompensation: (() => Promise<void>) | undefined;
+  let failureCompensation: ((error: unknown) => Promise<void>) | undefined;
   let rejectionSettlement: Promise<void> | undefined;
   const promise = new Promise<void>((resolveActivation, rejectActivation) => {
     resolvePromise = resolveActivation;
@@ -204,7 +205,7 @@ export function createExecutionActivation(): ExecutionActivation {
         let rejection = error;
         if (compensate) {
           try {
-            await compensate();
+            await compensate(error);
           } catch (compensationError) {
             rejection = new AggregateError(
               [error, compensationError],

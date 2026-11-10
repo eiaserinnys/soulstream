@@ -371,7 +371,12 @@ export class TaskManager {
         throw new IsolationPolicyUnavailableError(sessionId, error);
       }
     }
-    if (!task) throw new IsolationPolicyUnavailableError(sessionId);
+    if (!task) {
+      throw new IsolationPolicyUnavailableError(
+        sessionId,
+        new Error("session task is not loaded"),
+      );
+    }
     if (task.sessionType === "llm") return null;
 
     return await resolveExecutionSecurityDecision(sessionId, effectiveTurnPreset, {
