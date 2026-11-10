@@ -15,6 +15,7 @@ import type {
 import { composeSessionIsolation } from
   "../../src/runtime/session_isolation_composition.js";
 import { composeTaskRuntime } from "../../src/runtime/task_runtime_composition.js";
+import { engineEventFrame } from "../../src/runner/frame_protocol.js";
 import { prepareRecoveredTask } from "../../src/runner/runner_recovery_task.js";
 import {
   createInProcessTaskRunnerRuntime,
@@ -978,5 +979,74 @@ describe("turn input preparation failure ownership", () => {
     expect(turns.some((turn) => turn.prompt.includes("실패한 입력"))).toBe(false);
     expect(task.interventionQueue).toEqual([]);
     expect(ledger.repository.markUncertain).toHaveBeenCalledOnce();
+  });
+
+  it("ends a recovered execution as an error instead of yielding to a waiting input", async () => {
+    const ledger = makeRestartLedger(["delivery-failed"]);
+    const queuedTerminalResume = vi.fn();
+    const turns: EngineExecuteParams[] = [];
+    const engine = makeEngine(turns);
+    const { executor, mocks } = makeInputFailureExecutor({
+      ledger,
+      buildFollowupContext: vi.fn().mockRejectedValue(hostContextFailure()),
+      queuedTerminalResume,
+      engine,
+      turns,
+    });
+    // The real recovered-frames consumer runs; only the frames are stubbed.
+    const base = createInProcessTaskRunnerRuntime(engine);
+    const dispatcher = Object.assign(base.dispatcher, {
+      recoverFrames: vi.fn(() => (async function* () {
+        yield engineEventFrame({ type: "complete", result: "recovered", timestamp: 1 });
+      })()),
+    });
+    const runner = createTaskRunnerRuntime(
+      base.engine,
+      dispatcher,
+      base.eventPersistence,
+    );
+    const failed = userMessage({ deliveryId: "delivery-failed", text: "실패한 입력" });
+    const waiting = userMessage({
+      deliveryId: "delivery-waiting",
+      deliveryIntent: "runtime_followup",
+      text: "대기 중인 런타임 후속",
+    });
+    const task = makeTask({
+      status: "running",
+      terminationReason: undefined,
+      terminalEventId: undefined,
+      interventionQueue: [failed, waiting],
+    });
+
+    await executor.recoverRunnerExecution(
+      task,
+      restoredAgent,
+      runner,
+      "execute-old",
+      "replay",
+    );
+    await flushDrain();
+
+    // No SDK input ever received the batch, and the recovery attempt owns one
+    // error terminal even though a separate runtime follow-up is still queued.
+    expect(turns).toEqual([]);
+    expect(task.status).toBe("error");
+    const terminal = mocks.enqueueTerminalTransitionAndWaitForApplication;
+    expect(terminal).toHaveBeenCalledOnce();
+    expect(terminal.mock.calls[0]?.[2]).toMatchObject({
+      status: "error",
+      termination_reason: "error_aborted",
+    });
+    expect(ledger.repository.markConsumed).not.toHaveBeenCalled();
+    expect(ledger.repository.markUncertain).toHaveBeenCalledOnce();
+    expect(ledger.repository.markUncertain.mock.calls[0]?.[0]).toBe("delivery-failed");
+    expect(ledger.rows.get("delivery-failed")).toMatchObject({
+      state: "uncertain",
+      aggregate_state: "dead_letter",
+    });
+    expect(task.interventionQueue.map((queued) => queued.deliveryId))
+      .toEqual(["delivery-waiting"]);
+    expect(task.queuedTerminalResumeBlocked).toBe(true);
+    expect(queuedTerminalResume).not.toHaveBeenCalled();
   });
 });

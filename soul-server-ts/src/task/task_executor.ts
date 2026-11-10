@@ -2051,6 +2051,7 @@ export class TaskExecutor {
     const turnReceipt = this.beginDeliveryTurn(task, []);
     let recoveryFailed = false;
     let recoveryFailure: unknown;
+    let recoveryPreparationFailure: ExecutionPreparationFailure | undefined;
     try {
       for await (const event of this.engineTurnRunner.recoverTurn(task, runner, frames)) {
         observeClaudeContextRecoveryEvent(contextRecovery, event);
@@ -2146,12 +2147,22 @@ export class TaskExecutor {
         );
       }
     } catch (error) {
-      if (executionPreparationFailure(error)?.interventions !== undefined) {
+      const preparationFailure = executionPreparationFailure(error);
+      if (preparationFailure?.interventions !== undefined) {
+        // A typed input preparation failure owns its batch. The ordinary
+        // engine-failure route may yield to a queued successor and leave this
+        // attempt running with no terminal, so it must end as an error here.
         this.clearPrematureUnknownTermination(task);
+        await this.engineFailureRecovery.recoverFromOuterExecutionFailure(
+          task,
+          preparationFailure.detail,
+        );
+      } else {
+        await this.engineFailureRecovery.recoverFromExecuteFailure(task, error);
       }
-      await this.engineFailureRecovery.recoverFromExecuteFailure(task, error);
       recoveryFailed = true;
       recoveryFailure = error;
+      recoveryPreparationFailure = preparationFailure;
     } finally {
       this.releaseDeliveryTurn(task, turnReceipt);
       try {
@@ -2168,11 +2179,8 @@ export class TaskExecutor {
         task,
         () => this.consumeTerminalTurnReceipts(task, terminalTurnReceipts),
       );
-      const preparationFailure = recoveryFailed
-        ? executionPreparationFailure(recoveryFailure)
-        : undefined;
-      if (preparationFailure !== undefined) {
-        await this.settlePreparationFailure(task, undefined, preparationFailure);
+      if (recoveryPreparationFailure !== undefined) {
+        await this.settlePreparationFailure(task, undefined, recoveryPreparationFailure);
       }
     }
     // Startup adoption owns a live child. Its caller must be able to re-check
