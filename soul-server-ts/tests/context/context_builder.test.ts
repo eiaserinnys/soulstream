@@ -2018,7 +2018,7 @@ describe("ExecutionContextBuilder — 후속 턴 running_sessions delta", () => 
     updated_at: new Date("2026-07-13T00:00:00Z"),
   });
 
-  it("마커가 없으면 전체 목록을 싣고 snapshot을 반환한다", async () => {
+  it("마커가 없으면 전체 목록을 싣고 보낸 그 목록으로 마커를 갱신한다", async () => {
     const listRunningSessionsSummary = vi.fn().mockResolvedValue({
       sessions: [runningRow("session-new")],
       total: 1,
@@ -2047,9 +2047,8 @@ describe("ExecutionContextBuilder — 후속 턴 running_sessions delta", () => 
         }],
       },
     });
-    expect(ctx.runningSessionsSnapshot).toEqual({
-      sessions: [runningRow("session-new")],
-      total: 1,
+    expect(ctx.runningSessionsMarkerUpdate).toEqual({
+      marker: { "session-new": "Title session-new" },
     });
   });
 
@@ -2086,10 +2085,15 @@ describe("ExecutionContextBuilder — 후속 턴 running_sessions delta", () => 
         }],
         ended: [{ agent_session_id: "session-ended", title: "Ended title" }],
         message:
-          "Only changes since the previous turn. Sessions not listed are unchanged. Use list_sessions for the full list.",
+          "Only changes since the previous turn. started lists running sessions that were not in the previously reported list; ended lists previously reported sessions that are no longer running. Use list_sessions for the full list.",
       },
     });
-    expect(ctx.runningSessionsSnapshot?.total).toBe(2);
+    expect(ctx.runningSessionsMarkerUpdate).toEqual({
+      marker: {
+        "session-stays": "Title session-stays",
+        "session-new": "Title session-new",
+      },
+    });
   });
 
   it("마커와 지금 집합이 같으면 running_sessions를 싣지 않는다", async () => {
@@ -2105,10 +2109,12 @@ describe("ExecutionContextBuilder — 후속 턴 running_sessions delta", () => 
     const ctx = await cb.buildFollowupContext(task, codexAgent);
 
     expect(ctx.contextItems.map((item) => item.key)).not.toContain("running_sessions");
-    expect(ctx.runningSessionsSnapshot?.total).toBe(1);
+    expect(ctx.runningSessionsMarkerUpdate).toEqual({
+      marker: { "session-a": "Title session-a" },
+    });
   });
 
-  it("includeFullContext면 마커가 있어도 전체 목록과 snapshot을 싣는다", async () => {
+  it("includeFullContext면 마커가 있어도 전체 목록과 마커 갱신을 싣는다", async () => {
     const listRunningSessionsSummary = vi.fn().mockResolvedValue({
       sessions: [runningRow("session-a")],
       total: 1,
@@ -2126,13 +2132,12 @@ describe("ExecutionContextBuilder — 후속 턴 running_sessions delta", () => 
       key: "running_sessions",
       label: "Running Soulstream sessions",
     }));
-    expect(ctx.runningSessionsSnapshot).toEqual({
-      sessions: [runningRow("session-a")],
-      total: 1,
+    expect(ctx.runningSessionsMarkerUpdate).toEqual({
+      marker: { "session-a": "Title session-a" },
     });
   });
 
-  it("minimal scope면 running_sessions 항목도 snapshot도 없다", async () => {
+  it("minimal scope면 running_sessions 항목도 마커 갱신도 없다", async () => {
     const listRunningSessionsSummary = vi.fn().mockResolvedValue({
       sessions: [runningRow("session-a")],
       total: 1,
@@ -2149,8 +2154,43 @@ describe("ExecutionContextBuilder — 후속 턴 running_sessions delta", () => 
     const ctx = await cb.buildFollowupContext(task, agent);
 
     expect(ctx.contextItems.map((item) => item.key)).not.toContain("running_sessions");
-    expect(ctx.runningSessionsSnapshot).toBeUndefined();
+    expect(ctx.runningSessionsMarkerUpdate).toBeUndefined();
     expect(listRunningSessionsSummary).not.toHaveBeenCalled();
+  });
+
+  it("build 경로는 항목의 세션 목록과 마커를 같은 스냅샷에서 만든다", async () => {
+    const listRunningSessionsSummary = vi.fn().mockResolvedValue({
+      sessions: [runningRow("session-shared"), runningRow("session-snapshot-only")],
+      total: 2,
+    });
+    const getResumeContext = vi.fn().mockResolvedValue({
+      session: null,
+      folderSessions: { sessions: [], total: 0 },
+      runningSessions: {
+        sessions: [runningRow("session-resume-only"), runningRow("session-shared")],
+        total: 2,
+      },
+      predecessor: null,
+    });
+    const cb = makeBuilder({
+      listRunningSessionsSummary,
+      getResumeContext,
+    } as Partial<SessionDB>);
+
+    const ctx = await cb.build(makeTask(), codexAgent);
+    const runningItem = ctx.combinedContextItems.find((item) => item.key === "running_sessions");
+    const content = runningItem?.content as { sessions: Array<Record<string, unknown>> };
+
+    expect(content.sessions.map((session) => session.agent_session_id)).toEqual([
+      "session-shared",
+      "session-snapshot-only",
+    ]);
+    expect(ctx.runningSessionsMarkerUpdate).toEqual({
+      marker: {
+        "session-shared": "Title session-shared",
+        "session-snapshot-only": "Title session-snapshot-only",
+      },
+    });
   });
 });
 

@@ -10,7 +10,6 @@ import {
 } from "../context/context_builder.js";
 import type { PersistentCheckpointStats } from "../context/persistent_checkpoint.js";
 import { formatContextItemsWithMaterial } from "../context/prompt_assembler.js";
-import { toRunningSessionsMarker } from "../context/session_context_items.js";
 import {
   appendInputMaterialTextSegment,
   backendRolloverInputMaterialParts,
@@ -498,10 +497,8 @@ export class TaskTurnInputBuilder {
     if (task.callerInfo) {
       task.lastInjectedCallerInfo = task.callerInfo;
     }
-    if (ctx?.runningSessionsSnapshot) {
-      task.lastInjectedRunningSessions = toRunningSessionsMarker(
-        ctx.runningSessionsSnapshot,
-      );
+    if (ctx?.runningSessionsMarkerUpdate) {
+      task.lastInjectedRunningSessions = ctx.runningSessionsMarkerUpdate.marker;
     }
   }
 
@@ -516,10 +513,8 @@ export class TaskTurnInputBuilder {
     if (currentCallerInfo) {
       task.lastInjectedCallerInfo = currentCallerInfo;
     }
-    if (ctx.runningSessionsSnapshot) {
-      task.lastInjectedRunningSessions = toRunningSessionsMarker(
-        ctx.runningSessionsSnapshot,
-      );
+    if (ctx.runningSessionsMarkerUpdate) {
+      task.lastInjectedRunningSessions = ctx.runningSessionsMarkerUpdate.marker;
     }
   }
 }

@@ -46,7 +46,8 @@ import {
   fetchBoardWorkspaceContextItem,
   fetchRunningSessionsContextItem,
   fetchRunningSessionsSnapshot,
-  type RunningSessionsSnapshot,
+  toRunningSessionsMarker,
+  type RunningSessionsMarkerUpdate,
 } from "./session_context_items.js";
 import {
   NO_PAGE_ANCHOR_CONTEXT_RESOLVER,
@@ -86,8 +87,8 @@ export interface FollowupContext {
   effectiveSystemPrompt?: string;
   contextItems: ContextItem[];
   inputMaterialBreakdown?: PreparedContext["inputMaterialBreakdown"];
-  /** 이번 턴에 모델이 받은 실행 중 세션 스냅샷. 마커 기록의 기준. */
-  runningSessionsSnapshot?: RunningSessionsSnapshot;
+  /** 이번 턴 뒤 모델이 아는 실행 중 세션 집합의 갱신. 없으면 그대로 둔다. */
+  runningSessionsMarkerUpdate?: RunningSessionsMarkerUpdate;
 }
 
 /** atom 호출 설정 (config.ts env에서 주입). */
@@ -129,8 +130,8 @@ export class ExecutionContextBuilder {
         effectiveSystemPrompt: ctx.effectiveSystemPrompt,
         contextItems: ctx.combinedContextItems,
         inputMaterialBreakdown: ctx.inputMaterialBreakdown,
-        ...(ctx.runningSessionsSnapshot
-          ? { runningSessionsSnapshot: ctx.runningSessionsSnapshot }
+        ...(ctx.runningSessionsMarkerUpdate
+          ? { runningSessionsMarkerUpdate: ctx.runningSessionsMarkerUpdate }
           : {}),
       };
     }
@@ -151,35 +152,40 @@ export class ExecutionContextBuilder {
       );
     }
 
-    let runningSessionsSnapshot: RunningSessionsSnapshot | null = null;
+    let runningSessionsMarkerUpdate: RunningSessionsMarkerUpdate | undefined;
     if (!isMinimalContextScope(agent)) {
-      runningSessionsSnapshot = await fetchRunningSessionsSnapshot(
+      const snapshot = await fetchRunningSessionsSnapshot(
         this.db,
         this.logger,
         task.agentSessionId,
       );
-      if (runningSessionsSnapshot) {
+      if (snapshot) {
         const previous = task.lastInjectedRunningSessions;
-        const runningSessionsItem = previous
-          ? buildRunningSessionsDeltaContextItem(
-              previous,
-              runningSessionsSnapshot,
-              task.agentSessionId,
-            )
-          : await fetchRunningSessionsContextItem(
-              this.db,
-              this.logger,
-              task.agentSessionId,
-              {
-                sessions: runningSessionsSnapshot.sessions.slice(
-                  0,
-                  BOARD_WORKSPACE_SESSION_LIMIT,
-                ),
-                total: runningSessionsSnapshot.total,
-              },
-            );
-        if (runningSessionsItem) {
-          contextItems.push(runningSessionsItem);
+        if (previous) {
+          const runningSessionsItem = buildRunningSessionsDeltaContextItem(
+            previous,
+            snapshot,
+            task.agentSessionId,
+          );
+          if (runningSessionsItem) {
+            contextItems.push(runningSessionsItem);
+          }
+          runningSessionsMarkerUpdate =
+            snapshot.total > snapshot.sessions.length
+              ? { marker: undefined }
+              : { marker: toRunningSessionsMarker(snapshot.sessions) };
+        } else {
+          const sessions = snapshot.sessions.slice(0, BOARD_WORKSPACE_SESSION_LIMIT);
+          const runningSessionsItem = await fetchRunningSessionsContextItem(
+            this.db,
+            this.logger,
+            task.agentSessionId,
+            { sessions, total: snapshot.total },
+          );
+          if (runningSessionsItem) {
+            contextItems.push(runningSessionsItem);
+          }
+          runningSessionsMarkerUpdate = { marker: toRunningSessionsMarker(sessions) };
         }
       }
     }
@@ -197,7 +203,7 @@ export class ExecutionContextBuilder {
     if (cardAssigneeReplacementItem) contextItems.push(cardAssigneeReplacementItem);
     return {
       contextItems,
-      ...(runningSessionsSnapshot ? { runningSessionsSnapshot } : {}),
+      ...(runningSessionsMarkerUpdate ? { runningSessionsMarkerUpdate } : {}),
     };
   }
 
@@ -348,14 +354,31 @@ export class ExecutionContextBuilder {
       ],
       extractPageContextTruncation(pageContextItem),
     );
-    const runningSessionsItem = minimal
-      ? null
-      : await fetchRunningSessionsContextItem(
+    let runningSessionsItem: ContextItem | null = null;
+    let runningSessionsMarkerUpdate: RunningSessionsMarkerUpdate | undefined;
+    if (!minimal) {
+      if (runningSessionsSnapshot) {
+        const sessions = runningSessionsSnapshot.sessions.slice(
+          0,
+          BOARD_WORKSPACE_SESSION_LIMIT,
+        );
+        runningSessionsItem = await fetchRunningSessionsContextItem(
+          this.db,
+          this.logger,
+          task.agentSessionId,
+          { sessions, total: runningSessionsSnapshot.total },
+        );
+        runningSessionsMarkerUpdate = { marker: toRunningSessionsMarker(sessions) };
+      } else {
+        runningSessionsItem = await fetchRunningSessionsContextItem(
           this.db,
           this.logger,
           task.agentSessionId,
           resumeContext.runningSessions,
         );
+        runningSessionsMarkerUpdate = { marker: undefined };
+      }
+    }
     const predecessorSummaryItem = generation
       ? null
       : await buildPredecessorSummaryContextItem(
@@ -399,12 +422,12 @@ export class ExecutionContextBuilder {
       workingDir,
       maxTurns,
     });
-    const snapshotField = runningSessionsSnapshot
-      ? { runningSessionsSnapshot }
+    const markerField = runningSessionsMarkerUpdate
+      ? { runningSessionsMarkerUpdate }
       : {};
     return checkpoint
-      ? { ...prepared, checkpointStats: checkpoint.stats, ...snapshotField }
-      : { ...prepared, ...snapshotField };
+      ? { ...prepared, checkpointStats: checkpoint.stats, ...markerField }
+      : { ...prepared, ...markerField };
   }
 
   /**

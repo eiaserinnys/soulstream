@@ -157,13 +157,20 @@ export async function fetchRunningSessionsSnapshot(
   }
 }
 
-/** 마지막으로 모델에 알린 실행 중 세션 집합. 집합이 잘렸으면 undefined. */
+/**
+ * 이번 턴 뒤 모델이 아는 실행 중 세션 집합의 갱신 지시.
+ * 값이 있으면 마커를 이 값으로 바꾸고(undefined면 지운다), 없으면 그대로 둔다.
+ */
+export type RunningSessionsMarkerUpdate = {
+  marker: Record<string, string> | undefined;
+};
+
+/** 받은 세션 배열로 마커를 만든다. 잘림 판정은 호출하는 쪽이 한다. */
 export function toRunningSessionsMarker(
-  snapshot: RunningSessionsSnapshot,
-): Record<string, string> | undefined {
-  if (snapshot.total > snapshot.sessions.length) return undefined;
+  sessions: readonly RunningSessionSummaryRow[],
+): Record<string, string> {
   const marker: Record<string, string> = {};
-  for (const session of snapshot.sessions) {
+  for (const session of sessions) {
     marker[session.session_id] = session.display_name ?? session.session_id;
   }
   return marker;
@@ -208,7 +215,7 @@ export function buildRunningSessionsDeltaContextItem(
       started,
       ended,
       message:
-        "Only changes since the previous turn. Sessions not listed are unchanged. Use list_sessions for the full list.",
+        "Only changes since the previous turn. started lists running sessions that were not in the previously reported list; ended lists previously reported sessions that are no longer running. Use list_sessions for the full list.",
     },
   };
 }

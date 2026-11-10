@@ -3,7 +3,6 @@ import type { BackendRolloverContext, GenerationPreparedContext } from "../conte
 import type { InputMaterialPartV1 } from "@soulstream/wire-schema";
 import { composeFirstTurnPromptWithMaterial } from "../context/context_builder.js";
 import { formatContextItems } from "../context/prompt_assembler.js";
-import { toRunningSessionsMarker } from "../context/session_context_items.js";
 import {
   createInputMaterialPart,
   inputMaterialPartsMatchText,
@@ -224,10 +223,8 @@ export function prepareGenerationTurnInput(
   task.needsFullContextReinjection = false;
   if (task.codexThreadId) task.lastInjectedClaudeSessionId = task.codexThreadId;
   if (currentCallerInfo) task.lastInjectedCallerInfo = currentCallerInfo;
-  if (context.runningSessionsSnapshot) {
-    task.lastInjectedRunningSessions = toRunningSessionsMarker(
-      context.runningSessionsSnapshot,
-    );
+  if (context.runningSessionsMarkerUpdate) {
+    task.lastInjectedRunningSessions = context.runningSessionsMarkerUpdate.marker;
   } else {
     task.lastInjectedRunningSessions = undefined;
   }

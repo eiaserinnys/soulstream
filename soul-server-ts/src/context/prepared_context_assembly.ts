@@ -13,7 +13,7 @@ import { composeEffectiveSystemPrompt } from "./context_builder_helpers.js";
 import { buildSoulstreamContextItem } from "./soulstream_item.js";
 import { withoutSessionContextSourceMarkers } from "./session_context_sources.js";
 import type { PrimarySessionFolderContext } from "./session_folder_context.js";
-import type { RunningSessionsSnapshot } from "./session_context_items.js";
+import type { RunningSessionsMarkerUpdate } from "./session_context_items.js";
 
 export interface PreparedContext {
   /** agent atom context + folder_prompt + task.systemPrompt. */
@@ -33,8 +33,8 @@ export interface PreparedContext {
     systemParts: InputMaterialPartV1[];
     contextParts: Array<InputMaterialPartV1[] | null>;
   };
-  /** 후속 턴 실행 중 세션 delta의 기준이 되는 마지막 스냅샷. minimal scope·조회 실패면 없다. */
-  runningSessionsSnapshot?: RunningSessionsSnapshot;
+  /** 이번 턴 뒤 모델이 아는 실행 중 세션 집합의 갱신. minimal scope·조회 실패면 없다. */
+  runningSessionsMarkerUpdate?: RunningSessionsMarkerUpdate;
 }
 
 export interface PreparedContextAssemblyInput {

@@ -1073,11 +1073,16 @@ describe("TaskTurnInputBuilder", () => {
       [{ text: "계속", user: "u" }],
     );
     expect(reinjected.prompt).toContain("<running_sessions>");
+    // 재주입 경로는 항목의 세션 목록과 마커를 같은 스냅샷에서 만든다.
+    expect(reinjected.prompt).toContain('"agent_session_id": "session-c"');
     expect(task.lastInjectedRunningSessions).toEqual({
       "session-a": "Title session-a",
       "session-b": "Title session-b",
       "session-c": "Title session-c",
     });
+    for (const sessionId of Object.keys(task.lastInjectedRunningSessions ?? {})) {
+      expect(reinjected.prompt).toContain(`"agent_session_id": "${sessionId}"`);
+    }
 
     const afterReinjection = await builder.prepareFollowupTurnInput(
       task,
@@ -1085,6 +1090,79 @@ describe("TaskTurnInputBuilder", () => {
       [{ text: "계속", user: "u" }],
     );
     expect(afterReinjection.prompt).not.toContain("<running_sessions>");
+  });
+
+  it("전체 목록이 15개로 잘린 다음 턴에는 남은 세션이 started로 한 번 나간다", async () => {
+    const row = (index: number) => ({
+      session_id: `session-${String(index).padStart(2, "0")}`,
+      display_name: `Title ${index}`,
+      node_id: "node-A",
+      folder_id: null,
+      folder_name: null,
+      updated_at: new Date("2026-07-13T00:00:00Z"),
+    });
+    const sessions = Array.from({ length: 16 }, (_, idx) => row(idx + 1));
+    const listRunningSessionsSummary = vi.fn()
+      .mockResolvedValueOnce({ sessions, total: 16 })
+      .mockResolvedValueOnce({ sessions, total: 16 });
+    const db = {
+      listRunningSessionsSummary,
+      getSession: vi.fn().mockResolvedValue(null),
+      getFolderById: vi.fn().mockResolvedValue(null),
+      getResumeContext: vi.fn().mockResolvedValue({
+        session: null,
+        folderSessions: { sessions: [], total: 0 },
+        runningSessions: { sessions, total: 16 },
+        predecessor: null,
+      }),
+      getAssignedCardContext: vi.fn().mockResolvedValue({
+        capturedAt: "2026-07-13T00:00:00.000Z",
+        total: 0,
+        omitted: 0,
+        cards: [],
+      }),
+    } as unknown as SessionDB;
+    const logger = { warn: vi.fn() } as unknown as Logger;
+    const contextBuilder = new ExecutionContextBuilder(
+      db,
+      new AgentRegistry([codexAgent]),
+      { nodeId: "test-node", atom: { enabled: false, serverUrl: "", apiKey: "" } },
+      logger,
+    );
+    const builder = new TaskTurnInputBuilder({
+      contextBuilder,
+      initialMessagePublisher: {
+        publishInitialMessages: vi.fn().mockResolvedValue(undefined),
+        publishContextManifestBestEffort: vi.fn().mockResolvedValue(undefined),
+      },
+      logger,
+    });
+    const task = makeTask();
+
+    const first = await builder.prepareFollowupTurnInput(
+      task,
+      codexAgent,
+      [{ text: "계속", user: "u" }],
+    );
+    expect(first.prompt).toContain('"agent_session_id": "session-15"');
+    expect(first.prompt).not.toContain('"agent_session_id": "session-16"');
+    expect(Object.keys(task.lastInjectedRunningSessions ?? {})).toHaveLength(15);
+    expect(task.lastInjectedRunningSessions).not.toHaveProperty("session-16");
+
+    const second = await builder.prepareFollowupTurnInput(
+      task,
+      codexAgent,
+      [{ text: "계속", user: "u" }],
+    );
+    expect(second.prompt).toContain('"mode": "delta"');
+    expect(second.prompt).toContain('"agent_session_id": "session-16"');
+    expect(second.prompt).not.toContain('"agent_session_id": "session-01"');
+    expect(task.lastInjectedRunningSessions).toEqual(
+      Object.fromEntries(sessions.map((session) => [
+        session.session_id,
+        session.display_name,
+      ])),
+    );
   });
 
   it.each([
