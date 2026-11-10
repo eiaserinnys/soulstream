@@ -139,6 +139,23 @@ it("uses the saved asset id for legacy paths recorded by a conversation receipt"
   expect(result.items[0]?.attachments).toEqual([{ id: "asset-9", name: "photo.png", mime: "image/png" }]);
 });
 
+it("dedupes inline attachment paths against their paired ids without a receipt", async () => {
+  const rawPath = "/data/sessions/s1/a.png";
+  const rows: EventRow[] = [
+    {
+      id: 1,
+      event_type: "user_message",
+      payload: { text: "", attachment_ids: ["asset-1"], attachment_paths: [rawPath] },
+      created_at: new Date("2026-11-07T10:00:00Z"),
+    },
+  ];
+  const { sql } = sqlWithConversation(rows, {
+    assets: [{ id: "asset-1", original_name: "사진.png", mime_type: "image/png" }],
+  });
+  const result = await readSessionConversation(sql, "session-1", { session_id: "session-1", node_id: "node-1" }, null);
+  expect(result.items[0]?.attachments).toEqual([{ id: "asset-1", name: "사진.png", mime: "image/png" }]);
+});
+
 it("falls back to the sessions table for the node id when the session row omits it", async () => {
   const rawPath = "/data/sessions/session-1/a.png";
   const rows: EventRow[] = [

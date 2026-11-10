@@ -140,10 +140,16 @@ function enrichPayload(
   const paths = rawPathsOf(payload);
   if (paths.length > 0) {
     const metadata: Record<string, PathMetadata> = {};
-    for (const value of paths) {
+    for (const [index, value] of paths.entries()) {
       if (typeof value !== "string") continue;
       const saved = context.pathMetadata.get(value);
-      if (saved !== undefined) metadata[value] = saved;
+      if (saved === undefined) continue;
+      // 인라인 업로드는 receipt 행 없이 attachment_ids와 attachment_paths를 같은 순서로 기록한다.
+      // 짝이 맞는 자산이 있으면 saved.assetId가 없어도 붙여, 경로 항목이 자산 항목과 중복되지 않게 한다.
+      const pairedId = Array.isArray(payload.attachment_ids) ? payload.attachment_ids[index] : undefined;
+      metadata[value] = typeof pairedId === "string" && context.assetsById.has(pairedId)
+        ? { ...saved, assetId: pairedId }
+        : saved;
     }
     enriched._conversation_path_metadata = metadata;
   }

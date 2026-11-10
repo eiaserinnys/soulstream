@@ -12,6 +12,12 @@ import {
 } from "../src/index.js";
 import { createHarnessCore } from "./session-action-command-test-helpers.js";
 
+/** Mirrors the route's stable upload identity derivation. */
+function inlineUploadIdOf(seed: string): string {
+  const digest = createHash("sha256").update(seed).digest("hex");
+  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
+}
+
 const config = parseOrchServerConfig({
   environment: "test",
   databaseUrl: "postgres://soulstream_test@localhost/soulstream_test",
@@ -265,6 +271,40 @@ describe("session intervention attachment admission", () => {
       attachment_ids: [uploadId],
     });
     expect(commands[0]).not.toHaveProperty("inline_attachments");
+    await app.close();
+  });
+
+  it("gives each delivery-less inline upload request its own delivery and upload identity", async () => {
+    const upload = vi.fn(async (_caller: unknown, sessionId: string, file: { name: string; mime: string }, uploadId: string) =>
+      ({ path: `/data/sessions/${sessionId}/${file.name}`, name: file.name, mime: file.mime, assetId: uploadId }));
+    const { app, commands } = makeApp(undefined, upload);
+    const sendClipboardImage = (data: string) => app.inject({
+      method: "POST",
+      url: "/api/sessions/sess-1/intervene",
+      payload: {
+        user: "operator",
+        delivery_intent: "human_live_steer",
+        source: "browser",
+        text: "",
+        attachments: [{ name: "image.png", mime: "image/png", data_base64: data }],
+      },
+    });
+
+    const first = await sendClipboardImage("aGVsbG8=");
+    const second = await sendClipboardImage("d29ybGQ=");
+
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    expect(upload).toHaveBeenCalledTimes(2);
+    const uploadIds = upload.mock.calls.map(call => call[3] as string);
+    expect(uploadIds[0]).not.toBe(uploadIds[1]);
+    expect(commands).toHaveLength(2);
+    expect(commands[0]!.delivery_id).toEqual(expect.any(String));
+    expect(commands[0]!.delivery_id).not.toBe(commands[1]!.delivery_id);
+    for (const [index, command] of commands.entries()) {
+      expect(command.attachment_ids).toEqual([uploadIds[index]]);
+      expect(uploadIds[index]).toBe(inlineUploadIdOf(`${command.delivery_id}:0:image.png`));
+    }
     await app.close();
   });
 

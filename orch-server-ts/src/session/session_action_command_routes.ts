@@ -272,12 +272,17 @@ async function admitAttachmentInput(
     return { payload: basePayload };
   }
 
+  // 인라인 첨부는 업로드 전에 요청별 delivery_id를 확정한다. 같은 delivery_id의 재전송은
+  // 같은 업로드 ID를 재사용하고, delivery_id가 없는 새 요청은 고유한 업로드 ID를 갖는다.
+  const deliveryId = inlineAttachments.length > 0
+    ? payload.delivery_id ?? randomUUID()
+    : undefined;
+  if (deliveryId !== undefined) basePayload.delivery_id = deliveryId;
+
   const attachmentIds = [...(payload.attachment_ids ?? [])];
   const attachmentPaths = [...(payload.attachment_paths ?? [])];
   for (const [index, file] of inlineAttachments.entries()) {
-    const uploadId = inlineUploadId(
-      `${payload.delivery_id ?? payload.agentSessionId}:${index}:${file.name}`,
-    );
+    const uploadId = inlineUploadId(`${deliveryId}:${index}:${file.name}`);
     const uploaded = await options.uploadInlineAttachment!(
       caller, payload.agentSessionId, file, uploadId,
     );
