@@ -35,6 +35,11 @@ export type WorktreeBinding = {
   setupStatus: string;
 };
 
+type WorktreeListRow = WorktreeRow & {
+  mutable_by_caller: boolean;
+  active_session_id: string | null;
+};
+
 type RemovalActor = { actorSessionId: string; sweeperNodeId?: never }
   | { sweeperNodeId: string; actorSessionId?: never };
 
@@ -47,19 +52,43 @@ export class WorktreeRepository {
     repoId?: string;
     worktreeId?: string;
   }): Promise<Array<Record<string, unknown>>> {
-    const rows = await this.sql<WorktreeRow[]>`
-      SELECT w.*
+    const rows = await this.sql<WorktreeListRow[]>`
+      WITH RECURSIVE lineage(session_id) AS (
+        SELECT ${input.actorSessionId}::TEXT
+        UNION
+        SELECT sessions.caller_session_id
+        FROM sessions JOIN lineage ON sessions.session_id = lineage.session_id
+        WHERE sessions.caller_session_id IS NOT NULL
+      )
+      SELECT w.*,
+        CASE
+          WHEN w.owner_folder_id IS NOT NULL THEN COALESCE(
+            w.owner_folder_id = (
+              SELECT folder_id FROM sessions WHERE session_id = ${input.actorSessionId}
+            ),
+            false
+          )
+          ELSE w.created_by_session_id = ${input.actorSessionId}
+            OR EXISTS (
+              SELECT 1 FROM lineage WHERE session_id = w.created_by_session_id
+            )
+        END AS mutable_by_caller,
+        (
+          SELECT session_id FROM sessions
+          WHERE worktree_id = w.id AND status IN ('initializing', 'running')
+          ORDER BY created_at LIMIT 1
+        ) AS active_session_id
       FROM worktrees w
       WHERE w.node_id = ${input.nodeId}
         AND (${input.repoId ?? null}::TEXT IS NULL OR w.repo_id = ${input.repoId ?? null})
         AND (${input.worktreeId ?? null}::TEXT IS NULL OR w.id = ${input.worktreeId ?? null})
       ORDER BY w.created_at, w.id
     `;
-    return await Promise.all(rows.map(async (row) => ({
+    return rows.map((row) => ({
       ...project(row),
-      mutableByCaller: await actorOwns(this.sql, row, input.actorSessionId),
-      activeSessionId: await activeSessionId(this.sql, row.id),
-    })));
+      mutableByCaller: row.mutable_by_caller,
+      activeSessionId: row.active_session_id,
+    }));
   }
 
   async sweepCandidates(input: { nodeId: string }): Promise<Array<Record<string, unknown>>> {

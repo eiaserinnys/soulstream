@@ -1,5 +1,6 @@
 import { readOrchErrorEnvelopeText, type OrchErrorEnvelope } from "@soulstream/mcp-contract";
 import { randomUUID } from "node:crypto";
+import { setTimeout as sleep } from "node:timers/promises";
 
 import type { Logger } from "pino";
 
@@ -67,6 +68,40 @@ export class PersistenceHostRequestError extends Error {
     this.code = options?.code ?? "HOST_OPERATION_FAILED";
     this.retryable = status === undefined || status === 408 || status === 429 || status >= 500;
   }
+}
+
+export async function requestHostOperationWithRetry<T>(
+  transport: Pick<PersistenceHostTransport, "request">,
+  domain: string,
+  operation: string,
+  args: unknown[],
+  options: {
+    timeoutMs: number;
+    attempts: number;
+    signal?: AbortSignal;
+    retryDelaysMs?: readonly number[];
+  },
+): Promise<T> {
+  let lastError: unknown = undefined;
+  for (let attempt = 1; attempt <= options.attempts; attempt += 1) {
+    try {
+      return await transport.request<T>(domain, operation, args, {
+        timeoutMs: options.timeoutMs,
+        signal: options.signal,
+      });
+    } catch (error) {
+      lastError = error;
+      if (options.signal?.aborted
+        || !(error instanceof PersistenceHostRequestError)
+        || !error.retryable
+        || attempt === options.attempts) {
+        break;
+      }
+      const delayMs = options.retryDelaysMs?.[attempt - 1] ?? 0;
+      if (delayMs > 0) await sleep(delayMs);
+    }
+  }
+  throw lastError;
 }
 
 export class PersistenceHostTransport {
