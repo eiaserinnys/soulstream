@@ -42,10 +42,10 @@ const SEOSOYOUNG_PAS = makeRow({
   status: "completed",
   updated_at: new Date("2026-11-09T10:00:00.000Z"),
 });
-const KALEIDOSCOPE_PAS = makeRow({
+const WORK_PAS = makeRow({
   session_id: "aaaa1111-2222-4333-8444-555566667777",
-  display_name: "kaleidoscope · kaleidoscope 개밥먹기",
-  agent_id: "kaleidoscope-pas",
+  display_name: "workbench · 작업대 개밥먹기",
+  agent_id: "work-pas",
   folder_id: "folder-2",
   model_preset: "gemini-4-argon",
   status: "running",
@@ -65,7 +65,7 @@ function setup() {
   const service = new PersistentSessionSettingsService({
     reads: async () => ({
       getSession: async () => null,
-      listPersistentSessions: async () => [SEOSOYOUNG_PAS, KALEIDOSCOPE_PAS, HIDDEN_FOLDER_PAS],
+      listPersistentSessions: async () => [SEOSOYOUNG_PAS, WORK_PAS, HIDDEN_FOLDER_PAS],
     }),
     access: {
       resolveAccess: async () => ({ restricted: false, allowedFolderIds: [] }) as never,
@@ -84,7 +84,7 @@ function setup() {
     profiles: {
       listAgentProfiles: async () => ({
         "seosoyoung-pas": { name: "서소영 (PAS)" },
-        "kaleidoscope-pas": { name: "키키 (PAS)" },
+        "work-pas": { name: "키키 (PAS)" },
       }),
     },
   } as never);
@@ -114,8 +114,8 @@ describe("list_persistent_sessions MCP tool", () => {
       sessions: [
         {
           session_id: "aaaa1111-2222-4333-8444-555566667777",
-          display_name: "kaleidoscope · kaleidoscope 개밥먹기",
-          agent_id: "kaleidoscope-pas",
+          display_name: "workbench · 작업대 개밥먹기",
+          agent_id: "work-pas",
           agent_name: "키키 (PAS)",
           node_id: "eiaserinnys",
           status: "running",
