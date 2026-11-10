@@ -1,18 +1,26 @@
 import { performance } from "node:perf_hooks";
 import { parentPort } from "node:worker_threads";
 
+import { RunnerClaudeAccountTurnStateStore } from "./claude_account_turn_state_store.js";
+import { readClosedRunnerTailStateLocal } from "./closed_runner_tail_state.js";
+import { readAuthoritativeRunnerLifecycleLocal } from "./runner_lifecycle_reader.js";
 import { RunnerParentOutboxStorage } from "./runner_parent_outbox_storage.js";
 import {
   serializeRunnerParentStorageError,
+  type RunnerParentStorageLifecycleSummaryNotice,
   type RunnerParentStorageRequest,
   type RunnerParentStorageSnapshot,
   type RunnerParentStorageWorkerMessage,
 } from "./runner_parent_storage_protocol.js";
+import { inspectRunnerDurableStateLocal } from "./runner_process_registry.js";
+import { probeRunnerDurableRetentionLocal } from "./runner_durable_retention_probe.js";
+import { readRunnerSqliteIdentityLocal } from "./runner_registration_identity.js";
 import type {
   RunnerPhaseContext,
   RunnerPhaseExecutor,
 } from "./runner_phase_observation.js";
 import type { RunnerSqliteTransactionEvent } from "./runner_sqlite_connection.js";
+import { readRunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
 
 const port = parentPort;
 if (!port) {
@@ -20,6 +28,7 @@ if (!port) {
 }
 
 let storage: RunnerParentOutboxStorage | undefined;
+let mode: "normal" | "closed_tail" | "recovery" | undefined;
 let currentRequestId = 0;
 let phaseSequence = 0;
 
@@ -117,7 +126,7 @@ async function handle(request: RunnerParentStorageRequest): Promise<void> {
   currentRequestId = request.requestId;
   if (request.operation === "close") {
     try {
-      requireStorage().close();
+      storage?.close();
       post({
         type: "result",
         requestId: request.requestId,
@@ -164,6 +173,12 @@ async function execute(
 ): Promise<{ value: unknown; snapshot?: RunnerParentStorageSnapshot }> {
   switch (request.operation) {
     case "open":
+      if (request.input.mode === "recovery") {
+        mode = "recovery";
+        storage = undefined;
+        return { value: undefined };
+      }
+      mode = request.input.mode;
       storage = await RunnerParentOutboxStorage.open(request.input, {
         phaseExecutor,
         transactionObserver,
@@ -228,6 +243,79 @@ async function execute(
     case "acknowledgeHostCall":
       requireStorage().acknowledgeHostCall(request.input.correlationId);
       return { value: undefined };
+    case "readLifecycle": {
+      if (storage) return { value: storage.readLifecycle() };
+      requireRecoveryMode();
+      return {
+        value: readRunnerSqliteLifecycle(
+          request.input.databasePath,
+          recoveryLifecycleObservation(request.input),
+        ),
+      };
+    }
+    case "readAuthoritativeLifecycle": {
+      requireRecoveryMode();
+      const value = await readAuthoritativeRunnerLifecycleLocal(request.input.databasePath, {
+        phaseObservation: phaseExecutor,
+        ...(request.input.sessionId ? { sessionId: request.input.sessionId } : {}),
+        lifecycleSummaryOptions: {
+          onSummaryRenameFailure: (error, path, details) => {
+            postSummaryNotice({
+              type: "summary_notice",
+              requestId: currentRequestId,
+              kind: "rename_failure",
+              error: serializeRunnerParentStorageError(error),
+              path,
+              consecutiveFailures: details.consecutiveFailures,
+              severity: details.severity,
+            });
+          },
+          onSummaryRenameRecovery: (path, recoveredAfterFailures) => {
+            postSummaryNotice({
+              type: "summary_notice",
+              requestId: currentRequestId,
+              kind: "rename_recovery",
+              path,
+              recoveredAfterFailures,
+            });
+          },
+        },
+      });
+      return { value };
+    }
+    case "readClosedTail": {
+      requireRecoveryMode();
+      return {
+        value: readClosedRunnerTailStateLocal(
+          request.input.databasePath,
+          request.input.sessionId,
+          phaseExecutor,
+        ),
+      };
+    }
+    case "readSqliteIdentity": {
+      requireRecoveryMode();
+      return { value: readRunnerSqliteIdentityLocal(request.input.databasePath, phaseExecutor) };
+    }
+    case "inspectDurableState": {
+      requireRecoveryMode();
+      return { value: await inspectRunnerDurableStateLocal(request.input.registration, phaseExecutor) };
+    }
+    case "probeDurableRetention": {
+      requireRecoveryMode();
+      return {
+        value: await probeRunnerDurableRetentionLocal(request.input.registration, phaseExecutor),
+      };
+    }
+    case "readClaudeAccountTurnState": {
+      requireRecoveryMode();
+      return {
+        value: RunnerClaudeAccountTurnStateStore.readFromDatabase(
+          request.input.databasePath,
+          request.input.sessionId,
+        ),
+      };
+    }
     case "close":
       // close is handled before execute() so the port can be closed afterwards.
       throw new Error("runner parent storage close is handled separately");
@@ -235,6 +323,30 @@ async function execute(
 }
 
 function requireStorage(): RunnerParentOutboxStorage {
+  if (mode === "recovery") {
+    throw new Error("runner parent storage operation is not available in recovery mode");
+  }
   if (!storage) throw new Error("runner parent storage worker is not open");
   return storage;
+}
+
+function requireRecoveryMode(): void {
+  if (mode !== "recovery") {
+    throw new Error("runner parent recovery operation requires recovery mode");
+  }
+}
+
+function recoveryLifecycleObservation(input: {
+  databasePath: string;
+  sessionId?: string;
+}): { phaseObservation: RunnerPhaseExecutor; sessionId?: string; label: string } {
+  return {
+    phaseObservation: phaseExecutor,
+    ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+    label: "runner recovery lifecycle",
+  };
+}
+
+function postSummaryNotice(notice: RunnerParentStorageLifecycleSummaryNotice): void {
+  post(notice);
 }

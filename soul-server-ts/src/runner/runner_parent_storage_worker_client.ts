@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import { access } from "node:fs/promises";
 import { Worker } from "node:worker_threads";
 
+import type { ClaudeAccountTurnState } from "../engine/claude_account_pool.js";
+import type { ClosedRunnerTailState } from "./closed_runner_tail_state.js";
 import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 import {
   deserializeRunnerParentStorageError,
@@ -9,27 +11,46 @@ import {
   type RunnerParentStorageBootstrap,
   type RunnerParentStorageFallback,
   type RunnerParentStorageInterventionInspection,
+  type RunnerParentStorageLifecycleSummaryNotice,
   type RunnerParentStorageObservation,
   type RunnerParentStorageOperation,
   type RunnerParentStorageOperationMap,
+  type RunnerParentStorageOutboxOpenInput,
   type RunnerParentStoragePendingFrame,
   type RunnerParentStorageQuarantineInput,
   type RunnerParentStorageQuarantineResult,
   type RunnerParentStorageReceipt,
   type RunnerParentStorageRecord,
+  type RunnerParentStorageRecoveryInput,
   type RunnerParentStorageRequest,
   type RunnerParentStorageResponse,
   type RunnerParentStorageSnapshot,
   type RunnerParentStorageWorkerMessage,
 } from "./runner_parent_storage_protocol.js";
+import type {
+  RunnerDurableInspection,
+  RunnerDurableRetentionProbe,
+  RunnerRegistration,
+} from "./runner_process_registry.js";
+import type { RecoveredRunnerIdentity } from "./runner_registration_identity.js";
 import type { RunnerSqliteTransactionObserver } from "./runner_sqlite_connection.js";
+import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 
 export interface RunnerParentStorageWorkerClientOptions {
-  databasePath: string;
-  sessionId: string;
+  databasePath?: string;
+  sessionId?: string;
   phaseObservation?: RunnerPhaseObservation;
   transactionObserver?: RunnerSqliteTransactionObserver;
   workerFactory?: (workerData: Record<string, unknown>) => Worker;
+}
+
+/** Parent-only observation for one request; never sent over the wire. */
+export interface RunnerParentStorageRequestObservation {
+  phaseObservation?: RunnerPhaseObservation;
+  transactionObserver?: RunnerSqliteTransactionObserver;
+  databasePath?: string;
+  sessionId?: string;
+  onSummaryNotice?: (notice: RunnerParentStorageLifecycleSummaryNotice) => void;
 }
 
 export interface RunnerParentStorageSnapshotResult<T> {
@@ -42,6 +63,7 @@ type ClientState = "opening" | "open" | "closing" | "closed" | "failed";
 interface PendingRequest {
   resolve: (result: { value: unknown; snapshot?: RunnerParentStorageSnapshot }) => void;
   reject: (error: Error) => void;
+  observation?: RunnerParentStorageRequestObservation;
   failure?: Error;
 }
 
@@ -77,14 +99,22 @@ export class RunnerParentStorageWorkerClient {
   constructor(private readonly options: RunnerParentStorageWorkerClientOptions) {}
 
   async open(
-    input: RunnerParentStorageOperationMap["open"]["input"],
+    input: RunnerParentStorageOutboxOpenInput,
   ): Promise<RunnerParentStorageSnapshot> {
-    this.state = "opening";
-    this.worker = await this.createWorker();
-    this.attachWorker(this.worker);
+    await this.startWorker();
     const result = await this.request("open", input);
     this.state = "open";
     return this.requireSnapshot(result.snapshot, "open");
+  }
+
+  async openRecovery(): Promise<void> {
+    await this.startWorker();
+    await this.request("open", { mode: "recovery" });
+    this.state = "open";
+  }
+
+  isTerminal(): boolean {
+    return this.state === "failed" || this.state === "closed";
   }
 
   async disposeAfterOpenFailure(): Promise<void> {
@@ -177,6 +207,55 @@ export class RunnerParentStorageWorkerClient {
     await this.request("acknowledgeHostCall", { correlationId });
   }
 
+  async readLifecycle(
+    input: RunnerParentStorageRecoveryInput,
+    observation?: RunnerParentStorageRequestObservation,
+  ): Promise<RunnerLifecycleRecord | null> {
+    return (await this.request("readLifecycle", input, observation)).value;
+  }
+
+  async readAuthoritativeLifecycle(
+    input: RunnerParentStorageRecoveryInput,
+    observation?: RunnerParentStorageRequestObservation,
+  ): Promise<RunnerLifecycleRecord | null> {
+    return (await this.request("readAuthoritativeLifecycle", input, observation)).value;
+  }
+
+  async readClosedTail(
+    input: { databasePath: string; sessionId: string },
+    observation?: RunnerParentStorageRequestObservation,
+  ): Promise<ClosedRunnerTailState> {
+    return (await this.request("readClosedTail", input, observation)).value;
+  }
+
+  async readSqliteIdentity(
+    input: { databasePath: string },
+    observation?: RunnerParentStorageRequestObservation,
+  ): Promise<RecoveredRunnerIdentity | null> {
+    return (await this.request("readSqliteIdentity", input, observation)).value;
+  }
+
+  async inspectDurableState(
+    input: { registration: RunnerRegistration },
+    observation?: RunnerParentStorageRequestObservation,
+  ): Promise<RunnerDurableInspection> {
+    return (await this.request("inspectDurableState", input, observation)).value;
+  }
+
+  async probeDurableRetention(
+    input: { registration: RunnerRegistration },
+    observation?: RunnerParentStorageRequestObservation,
+  ): Promise<RunnerDurableRetentionProbe> {
+    return (await this.request("probeDurableRetention", input, observation)).value;
+  }
+
+  async readClaudeAccountTurnState(
+    input: { databasePath: string; sessionId: string },
+    observation?: RunnerParentStorageRequestObservation,
+  ): Promise<ClaudeAccountTurnState | null> {
+    return (await this.request("readClaudeAccountTurnState", input, observation)).value;
+  }
+
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise;
     if (this.state === "failed") {
@@ -216,6 +295,12 @@ export class RunnerParentStorageWorkerClient {
     return Object.fromEntries(this.workerPhaseElapsedMs);
   }
 
+  private async startWorker(): Promise<void> {
+    this.state = "opening";
+    this.worker = await this.createWorker();
+    this.attachWorker(this.worker);
+  }
+
   private async createWorker(): Promise<Worker> {
     const workerData: Record<string, unknown> = {};
     if (this.options.workerFactory) return this.options.workerFactory(workerData);
@@ -250,6 +335,7 @@ export class RunnerParentStorageWorkerClient {
   private async request<K extends RunnerParentStorageOperation>(
     operation: K,
     input: RunnerParentStorageOperationMap[K]["input"],
+    observation?: RunnerParentStorageRequestObservation,
   ): Promise<RunnerParentStorageSnapshotResult<RunnerParentStorageOperationMap[K]["output"]>> {
     if (this.state === "failed") {
       return Promise.reject(this.terminalError);
@@ -267,13 +353,17 @@ export class RunnerParentStorageWorkerClient {
         this.pending.set(requestId, {
           resolve: resolve as PendingRequest["resolve"],
           reject,
+          ...(observation ? { observation } : {}),
         });
       },
     );
-    const wait = this.options.phaseObservation
-      ? this.options.phaseObservation.runAsync("dbWorkerWait", {
-        sessionId: this.options.sessionId,
-        databasePath: this.options.databasePath,
+    const phaseObservation = observation?.phaseObservation ?? this.options.phaseObservation;
+    const sessionId = observation?.sessionId ?? this.options.sessionId;
+    const databasePath = observation?.databasePath ?? this.options.databasePath;
+    const wait = phaseObservation
+      ? phaseObservation.runAsync("dbWorkerWait", {
+        ...(sessionId ? { sessionId } : {}),
+        ...(databasePath ? { databasePath } : {}),
         label: `runner parent storage ${operation}`,
       }, async () => await inner)
       : inner;
@@ -309,6 +399,9 @@ export class RunnerParentStorageWorkerClient {
         break;
       case "transaction":
         this.handleTransaction(message);
+        break;
+      case "summary_notice":
+        this.handleSummaryNotice(message);
         break;
     }
   }
@@ -350,7 +443,9 @@ export class RunnerParentStorageWorkerClient {
     message: Extract<RunnerParentStorageObservation, { type: "phase_begin" }>,
   ): void {
     let settle: (error?: Error) => void = () => {};
-    if (this.options.phaseObservation) {
+    const phaseObservation = this.pending.get(message.requestId)?.observation?.phaseObservation
+      ?? this.options.phaseObservation;
+    if (phaseObservation) {
       let settlePhase!: (error?: Error) => void;
       const settled = new Promise<void>((resolve, reject) => {
         settlePhase = (error?: Error) => {
@@ -358,7 +453,7 @@ export class RunnerParentStorageWorkerClient {
           else resolve();
         };
       });
-      const run = this.options.phaseObservation.runAsync(
+      const run = phaseObservation.runAsync(
         message.phase,
         message.context,
         async () => await settled,
@@ -400,12 +495,24 @@ export class RunnerParentStorageWorkerClient {
   private handleTransaction(
     message: Extract<RunnerParentStorageObservation, { type: "transaction" }>,
   ): void {
-    if (!this.options.transactionObserver) return;
+    const observer = this.pending.get(message.requestId)?.observation?.transactionObserver
+      ?? this.options.transactionObserver;
+    if (!observer) return;
     try {
-      this.options.transactionObserver({
+      observer({
         ...message.event,
         transactionId: `${this.clientId}:${message.event.transactionId}`,
       });
+    } catch {
+      // Observation failures never change storage results.
+    }
+  }
+
+  private handleSummaryNotice(message: RunnerParentStorageLifecycleSummaryNotice): void {
+    const notify = this.pending.get(message.requestId)?.observation?.onSummaryNotice;
+    if (!notify) return;
+    try {
+      notify(message);
     } catch {
       // Observation failures never change storage results.
     }
