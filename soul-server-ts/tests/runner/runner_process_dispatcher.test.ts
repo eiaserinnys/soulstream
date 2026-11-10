@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import pino from "pino";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import {
   engineEventFrame,
@@ -1612,7 +1612,22 @@ describe("RunnerProcessDispatcher", () => {
     await endpoint.close();
   });
 
-  it("replays only the current registration and settles stale registration IPC frames", async () => {
+  it.each([
+    { delivery: "as soon as the storage worker answers", readDelayMs: 0 },
+    // A pending-frame read issued for the first execution answers after the
+    // second execution is installed, as a busy storage worker did in CI.
+    { delivery: "late, after the next execution starts", readDelayMs: 20 },
+  ])("replays only the current registration and settles stale registration IPC frames when pending-frame reads arrive $delivery", async ({ readDelayMs }) => {
+    if (readDelayMs > 0) {
+      const readPendingIpcFrames = RunnerParentOutbox.prototype.readPendingIpcFrames;
+      const delayedReads = vi.spyOn(RunnerParentOutbox.prototype, "readPendingIpcFrames")
+        .mockImplementation(async function (this: RunnerParentOutbox) {
+          const pending = await readPendingIpcFrames.call(this);
+          await new Promise((resolve) => setTimeout(resolve, readDelayMs));
+          return pending;
+        });
+      onTestFinished(() => delayedReads.mockRestore());
+    }
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");
     await mkdir(paths.sessionDirectory, { recursive: true });
