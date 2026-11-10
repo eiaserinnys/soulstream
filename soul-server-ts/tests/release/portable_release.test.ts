@@ -48,6 +48,7 @@ const LIVE_SERVICE_AMBIENT: NodeJS.ProcessEnv = {
 const PAYLOAD_FILES: Readonly<Record<string, string>> = {
   "main.js": "// host bundle\n",
   "chunks/vendor.js": "// vendor chunk\n",
+  "runner/runner_parent_storage_worker_entry.js": "// parent storage\n",
   "runner/runner_release_prewarm.js": "// prewarm\n",
   "upstream/control_inbox_worker_entry.js": "// control\n",
   "bind-release.mjs": "// bind\n",

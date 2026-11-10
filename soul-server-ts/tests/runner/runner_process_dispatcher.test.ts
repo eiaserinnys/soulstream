@@ -625,12 +625,15 @@ describe("RunnerProcessDispatcher", () => {
     });
 
     const recovery = collect(dispatcher.recoverFrames("execute-old"));
+    // Attach the rejection expectation before retirement so the worker-backed
+    // close path cannot surface the stream failure as an unhandled rejection.
+    const recoveryFailure = expect(recovery).rejects.toThrow(
+      "runner registration retired before terminal frame replay",
+    );
     await vi.waitFor(() => expect(dispatcher.hasActiveExecution()).toBe(true));
     await dispatcher.retireTerminalRegistration();
 
-    await expect(recovery).rejects.toThrow(
-      "runner registration retired before terminal frame replay",
-    );
+    await recoveryFailure;
     expect(dispatcher.activeExecutionCommandId()).toBeUndefined();
     expect(dispatcher.isClosed()).toBe(true);
     expect(retireTerminalRegistration).toHaveBeenCalledWith(
@@ -1805,7 +1808,9 @@ describe("RunnerProcessDispatcher", () => {
 
     try {
       const recovery = collect(dispatcher.recoverFrames("execute-old"));
-      await vi.waitFor(() => expect(connectionCount).toBe(1));
+      // The parent outbox now opens its storage in a real worker thread, so the
+      // first connection waits for that worker to start under the test loader.
+      await vi.waitFor(() => expect(connectionCount).toBe(1), { timeout: 10_000 });
       const identityBefore = await dispatcher.prepareExecutionIdentity("owner-r33");
       const hostConnection = (dispatcher as unknown as {
         connection?: RunnerIpcConnection;

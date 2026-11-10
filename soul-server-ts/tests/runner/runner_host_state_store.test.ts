@@ -204,7 +204,7 @@ describe("RunnerHostStateStore", () => {
     expect(parent.ackedSeq).toBe(event.source_seq);
     expect(await parent.readBatch()).toBeNull();
     expect(child.ackedSeq).toBe(1);
-    parent.close();
+    await parent.close();
     child.close();
   });
 
@@ -246,7 +246,7 @@ describe("RunnerHostStateStore", () => {
     } finally {
       childLock.exec("ROLLBACK");
       childLock.close();
-      parent.close();
+      await parent.close();
       child.close();
     }
   });

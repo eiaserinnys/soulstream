@@ -231,7 +231,7 @@ describe("RunnerHostStateStore observation", () => {
     });
     await parent.acknowledge(bootstrap.stream_id, event.source_seq);
     expect(parent.ackedSeq).toBe(event.source_seq);
-    parent.close();
+    await parent.close();
     child.close();
 
     expect(events).toEqual(expect.arrayContaining([

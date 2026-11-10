@@ -9,6 +9,7 @@ const EXECUTABLE_DOMAIN = "soulstream.release.executable.v1\0";
 
 export const HOST_RELEASE_ARTIFACTS = [
   "main.js",
+  "runner/runner_parent_storage_worker_entry.js",
   "runner/runner_release_prewarm.js",
   "upstream/control_inbox_worker_entry.js",
 ] as const;

@@ -83,7 +83,7 @@ describe("ClosedRunnerTailDrainer", () => {
     await expect(parent.readBatch()).resolves.toBeNull();
     await expect(parent.readLatestPendingRecord()).resolves.toBeNull();
     await expect(parent.hasPendingDurableWork()).resolves.toBe(false);
-    parent.close();
+    await parent.close();
 
     const register = vi.fn();
     const drainer = new ClosedRunnerTailDrainer({
@@ -175,7 +175,7 @@ describe("ClosedRunnerTailDrainer", () => {
         "runner parent ACK checkpoint is unavailable before bootstrap",
       );
     } finally {
-      parent.close();
+      await parent.close();
     }
   });
 
@@ -274,7 +274,7 @@ describe("ClosedRunnerTailDrainer", () => {
     ]);
     const reopened = await RunnerParentOutbox.open(databasePath, "session-a");
     await expect(reopened.readLatestPendingRecord()).resolves.toBeNull();
-    reopened.close();
+    await reopened.close();
     const childLedger = await RunnerSqliteEventOutbox.open(databasePath);
     await expect(childLedger.readRecord(2)).resolves.toMatchObject({
       event_type: "session_ended",
@@ -298,7 +298,7 @@ function fakeOutbox(tail: EventOutboxRecord | null): ClosedRunnerTailOutbox {
     acknowledge: vi.fn(async (_streamId: string, cursor: number) => {
       ackedSeq = cursor;
     }),
-    close: vi.fn(),
+    close: vi.fn(async () => {}),
   };
 }
 

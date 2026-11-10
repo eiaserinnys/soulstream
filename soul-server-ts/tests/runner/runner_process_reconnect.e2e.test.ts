@@ -98,14 +98,18 @@ describe("runner process detach/reconnect E2E", () => {
     expect(text.endsWith(EVENT_TRUNCATION_SUFFIX)).toBe(true);
     expect(Buffer.byteLength(text, "utf8")).toBeLessThanOrEqual(EVENT_STRING_MAX_BYTES);
     expect(toolResult?.truncation).toEqual({ original_bytes: 600_000, attachment: null });
-    expect(batches.flatMap((batch) => batch.events.map((event) => event.event_type)))
-      .toEqual([
-        "session",
-        "tool_start",
-        "tool_result",
-        "assistant_message",
-        "complete",
-      ]);
+    // Upstream delivery follows the worker's ACK commit, so the last batch can
+    // land just after the frame stream ends.
+    await vi.waitFor(() => {
+      expect(batches.flatMap((batch) => batch.events.map((event) => event.event_type)))
+        .toEqual([
+          "session",
+          "tool_start",
+          "tool_result",
+          "assistant_message",
+          "complete",
+        ]);
+    });
     expect(await pathExists(join(controlDirectory, "r57-interrupted"))).toBe(false);
     const lifecycle = RunnerSqliteLifecycle.open(spawned.paths.databasePath);
     expect(lifecycle.read()).toMatchObject({
@@ -242,13 +246,15 @@ describe("runner process detach/reconnect E2E", () => {
     expect(second).toHaveLength(1);
     expect(second[0]?.payload).toMatchObject({ content: "execution-2" });
     expect(isPidAlive(spawned.pid)).toBe(true);
-    expect(batches.flatMap((batch) => batch.events.map((event) => event.event_type)))
-      .toEqual([
-        "claude_runtime_hook_event",
-        "session",
-        "assistant_message",
-        "assistant_message",
-      ]);
+    await vi.waitFor(() => {
+      expect(batches.flatMap((batch) => batch.events.map((event) => event.event_type)))
+        .toEqual([
+          "claude_runtime_hook_event",
+          "session",
+          "assistant_message",
+          "assistant_message",
+        ]);
+    });
 
     await host.close();
     await waitFor(async () => !isPidAlive(spawned.pid));

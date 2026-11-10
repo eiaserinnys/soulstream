@@ -14,7 +14,7 @@ export interface RunnerPhaseContext {
 }
 
 export interface RunnerDatabaseObservationContext extends RunnerPhaseContext {
-  phaseObservation: RunnerPhaseObservation;
+  phaseObservation: RunnerPhaseExecutor;
 }
 
 export interface RunnerDatabaseObservationSample {
@@ -50,6 +50,9 @@ export interface RunnerPhaseObservation {
   databaseSummary(): RunnerDatabaseObservationSummary | undefined;
   failureFor(error: unknown): RunnerPhaseFailure | undefined;
 }
+
+/** Function-execution surface shared by the parent observer and the worker proxy. */
+export type RunnerPhaseExecutor = Pick<RunnerPhaseObservation, "runSync" | "runAsync">;
 
 export interface CreateRunnerPhaseObservationOptions {
   nodeId: string;

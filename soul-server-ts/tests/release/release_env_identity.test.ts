@@ -188,6 +188,7 @@ describe("release manifest startup verification", () => {
     await mkdir(join(root, "upstream"), { recursive: true });
     await mkdir(runnerRoot, { recursive: true });
     await writeFile(join(root, "main.js"), "// host bundle\n", "utf8");
+    await writeFile(join(root, "runner/runner_parent_storage_worker_entry.js"), "// parent storage\n", "utf8");
     await writeFile(join(root, "runner/runner_release_prewarm.js"), "// prewarm\n", "utf8");
     await writeFile(join(root, "upstream/control_inbox_worker_entry.js"), "// control\n", "utf8");
     await writeFile(join(runnerRoot, "package.json"), '{"type":"module"}\n', "utf8");
@@ -252,6 +253,7 @@ describe("release manifest startup verification", () => {
     await mkdir(join(root, "upstream"), { recursive: true });
     await mkdir(runnerRoot, { recursive: true });
     await writeFile(join(root, "main.js"), "// host bundle\n", "utf8");
+    await writeFile(join(root, "runner/runner_parent_storage_worker_entry.js"), "// parent storage\n", "utf8");
     await writeFile(join(root, "runner/runner_release_prewarm.js"), "// prewarm\n", "utf8");
     await writeFile(join(root, "upstream/control_inbox_worker_entry.js"), "// control\n", "utf8");
     await writeFile(join(runnerRoot, "package.json"), '{"type":"module"}\n', "utf8");
