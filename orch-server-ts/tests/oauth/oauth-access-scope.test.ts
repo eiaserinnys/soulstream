@@ -136,12 +136,22 @@ describe("OAuth resource scopes", () => {
       ["GET", "/api/sessions"],
       ["GET", "/api/sessions/session-1/conversation"],
       ["POST", "/api/sessions/session-1/intervene"],
+      ["GET", "/api/attachments/files"],
+      ["GET", "/api/attachments/files?nodeId=eiaserinnys&path=%2Ftmp%2Fa.png"],
+      ["GET", "/api/attachments/asset-1"],
+      ["GET", "/api/attachments/asset-1/content"],
+      ["HEAD", "/api/attachments/asset-1/content"],
     ]) expect(oauthScopeForRoute(method!, path!)).toBe("cards:read");
     for (const [method, path] of [
       ["DELETE", "/api/markdown-documents/doc-1"],
       ["GET", "/api/sessions/session-1"],
       ["POST", "/api/sessions/session-1/approve"],
       ["GET", "/api/sessions/session-1/conversation/extra"],
+      ["POST", "/api/attachments/sessions"],
+      ["DELETE", "/api/attachments/sessions/session-1"],
+      ["GET", "/api/attachments/worker/asset-1/content"],
+      ["POST", "/api/attachments/agent-register"],
+      ["POST", "/api/attachments/agent-output/validate"],
     ]) expect(oauthScopeForRoute(method!, path!)).toBeNull();
     expect(requireOAuthScope({ ...access, scopes: ["cards:read"] }, "folders:read")).toEqual({ ok: true });
     expect(requireOAuthScope({ ...access, scopes: ["folders:read"] }, "cards:read")).toMatchObject({ ok: false });
