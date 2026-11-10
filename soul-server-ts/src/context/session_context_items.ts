@@ -220,6 +220,74 @@ export function buildRunningSessionsDeltaContextItem(
   };
 }
 
+/** 이번 턴에 싣는 실행 중 세션 항목과, 그 항목을 받은 뒤 모델이 아는 집합의 갱신. */
+export interface RunningSessionsContext {
+  item: ContextItem | null;
+  markerUpdate?: RunningSessionsMarkerUpdate;
+}
+
+/** 스냅샷 앞 15개를 싣고, 마커도 실제로 실은 그 15개로 적는다. */
+async function fullRunningSessionsFromSnapshot(
+  db: SessionDB,
+  logger: Logger,
+  currentSessionId: string,
+  snapshot: RunningSessionsSnapshot,
+): Promise<RunningSessionsContext> {
+  const sessions = snapshot.sessions.slice(0, BOARD_WORKSPACE_SESSION_LIMIT);
+  return {
+    item: await fetchRunningSessionsContextItem(db, logger, currentSessionId, {
+      sessions,
+      total: snapshot.total,
+    }),
+    markerUpdate: { marker: toRunningSessionsMarker(sessions) },
+  };
+}
+
+/**
+ * 전체 목록을 싣는 턴(첫 턴, 컴팩션 뒤, 세대 교체). 목록과 마커는 한 번의 조회에서 만든다.
+ * 스냅샷 조회에 실패하면 미리 읽은 목록을 싣고 마커를 지운다(다음 후속 턴이 다시 전체를 보낸다).
+ */
+export async function resolveFullRunningSessionsContext(
+  db: SessionDB,
+  logger: Logger,
+  currentSessionId: string,
+  fallback?: SessionResumeContext["runningSessions"],
+): Promise<RunningSessionsContext> {
+  const snapshot = await fetchRunningSessionsSnapshot(db, logger, currentSessionId);
+  if (snapshot) {
+    return fullRunningSessionsFromSnapshot(db, logger, currentSessionId, snapshot);
+  }
+  return {
+    item: await fetchRunningSessionsContextItem(db, logger, currentSessionId, fallback),
+    markerUpdate: { marker: undefined },
+  };
+}
+
+/**
+ * 후속 턴. 직전 마커가 있으면 바뀐 것만 싣고, 없으면 전체 목록을 싣는다.
+ * 스냅샷 조회에 실패하면 아무것도 싣지 않고 마커도 그대로 둔다.
+ * 스냅샷이 잘렸으면 마커를 지워 다음 턴이 전체 목록을 보내게 한다.
+ */
+export async function resolveFollowupRunningSessionsContext(
+  db: SessionDB,
+  logger: Logger,
+  currentSessionId: string,
+  previous: Record<string, string> | undefined,
+): Promise<RunningSessionsContext> {
+  const snapshot = await fetchRunningSessionsSnapshot(db, logger, currentSessionId);
+  if (!snapshot) return { item: null };
+  if (!previous) {
+    return fullRunningSessionsFromSnapshot(db, logger, currentSessionId, snapshot);
+  }
+  return {
+    item: buildRunningSessionsDeltaContextItem(previous, snapshot, currentSessionId),
+    markerUpdate:
+      snapshot.total > snapshot.sessions.length
+        ? { marker: undefined }
+        : { marker: toRunningSessionsMarker(snapshot.sessions) },
+  };
+}
+
 async function fetchBoardWorkspaceFolderSessions(
   db: SessionDB,
   logger: Logger,

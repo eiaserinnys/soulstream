@@ -42,11 +42,9 @@ import {
   type FolderChainEntry,
 } from "./context_builder_helpers.js";
 import {
-  buildRunningSessionsDeltaContextItem,
   fetchBoardWorkspaceContextItem,
-  fetchRunningSessionsContextItem,
-  fetchRunningSessionsSnapshot,
-  toRunningSessionsMarker,
+  resolveFollowupRunningSessionsContext,
+  resolveFullRunningSessionsContext,
   type RunningSessionsMarkerUpdate,
 } from "./session_context_items.js";
 import {
@@ -154,40 +152,11 @@ export class ExecutionContextBuilder {
 
     let runningSessionsMarkerUpdate: RunningSessionsMarkerUpdate | undefined;
     if (!isMinimalContextScope(agent)) {
-      const snapshot = await fetchRunningSessionsSnapshot(
-        this.db,
-        this.logger,
-        task.agentSessionId,
+      const running = await resolveFollowupRunningSessionsContext(
+        this.db, this.logger, task.agentSessionId, task.lastInjectedRunningSessions,
       );
-      if (snapshot) {
-        const previous = task.lastInjectedRunningSessions;
-        if (previous) {
-          const runningSessionsItem = buildRunningSessionsDeltaContextItem(
-            previous,
-            snapshot,
-            task.agentSessionId,
-          );
-          if (runningSessionsItem) {
-            contextItems.push(runningSessionsItem);
-          }
-          runningSessionsMarkerUpdate =
-            snapshot.total > snapshot.sessions.length
-              ? { marker: undefined }
-              : { marker: toRunningSessionsMarker(snapshot.sessions) };
-        } else {
-          const sessions = snapshot.sessions.slice(0, BOARD_WORKSPACE_SESSION_LIMIT);
-          const runningSessionsItem = await fetchRunningSessionsContextItem(
-            this.db,
-            this.logger,
-            task.agentSessionId,
-            { sessions, total: snapshot.total },
-          );
-          if (runningSessionsItem) {
-            contextItems.push(runningSessionsItem);
-          }
-          runningSessionsMarkerUpdate = { marker: toRunningSessionsMarker(sessions) };
-        }
-      }
+      if (running.item) contextItems.push(running.item);
+      runningSessionsMarkerUpdate = running.markerUpdate;
     }
     const nodeResourcesItem = await resolvePasNodeResourcesContextItem(
       this.db, this.cfg.nodeResources, task, undefined, this.logger,
@@ -328,7 +297,7 @@ export class ExecutionContextBuilder {
       atomCompilation,
       taskAtomCompilation,
       boardWorkspaceItem,
-      runningSessionsSnapshot,
+      runningSessions,
     ] = await Promise.all([
       compileAtomContext(this.cfg.atom, atomSources.agent, this.logger, filterParameters),
       compileAtomContext(this.cfg.atom, atomSources.folder, this.logger, filterParameters),
@@ -343,7 +312,9 @@ export class ExecutionContextBuilder {
           ),
       minimal
         ? null
-        : fetchRunningSessionsSnapshot(this.db, this.logger, task.agentSessionId),
+        : resolveFullRunningSessionsContext(
+            this.db, this.logger, task.agentSessionId, resumeContext.runningSessions,
+          ),
     ]);
     const contextManifest = mergeContextManifests(
       [
@@ -354,31 +325,6 @@ export class ExecutionContextBuilder {
       ],
       extractPageContextTruncation(pageContextItem),
     );
-    let runningSessionsItem: ContextItem | null = null;
-    let runningSessionsMarkerUpdate: RunningSessionsMarkerUpdate | undefined;
-    if (!minimal) {
-      if (runningSessionsSnapshot) {
-        const sessions = runningSessionsSnapshot.sessions.slice(
-          0,
-          BOARD_WORKSPACE_SESSION_LIMIT,
-        );
-        runningSessionsItem = await fetchRunningSessionsContextItem(
-          this.db,
-          this.logger,
-          task.agentSessionId,
-          { sessions, total: runningSessionsSnapshot.total },
-        );
-        runningSessionsMarkerUpdate = { marker: toRunningSessionsMarker(sessions) };
-      } else {
-        runningSessionsItem = await fetchRunningSessionsContextItem(
-          this.db,
-          this.logger,
-          task.agentSessionId,
-          resumeContext.runningSessions,
-        );
-        runningSessionsMarkerUpdate = { marker: undefined };
-      }
-    }
     const predecessorSummaryItem = generation
       ? null
       : await buildPredecessorSummaryContextItem(
@@ -410,7 +356,7 @@ export class ExecutionContextBuilder {
       primaryFolder,
       pageContextItem,
       boardWorkspaceItem,
-      runningSessionsItem,
+      runningSessions,
       assignedCardItem: await this.buildAssignedCardContext(task, inputId),
       predecessorSummaryItem,
       generationCheckpointItem: checkpoint?.item ?? null,
@@ -422,12 +368,7 @@ export class ExecutionContextBuilder {
       workingDir,
       maxTurns,
     });
-    const markerField = runningSessionsMarkerUpdate
-      ? { runningSessionsMarkerUpdate }
-      : {};
-    return checkpoint
-      ? { ...prepared, checkpointStats: checkpoint.stats, ...markerField }
-      : { ...prepared, ...markerField };
+    return checkpoint ? { ...prepared, checkpointStats: checkpoint.stats } : prepared;
   }
 
   /**
