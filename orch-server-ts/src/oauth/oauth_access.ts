@@ -100,7 +100,11 @@ export function oauthScopeForRoute(method: string, pathname: string): OAuthScope
     || ((upper === "GET" || upper === "POST") && path === "/api/markdown-documents")
     || ((upper === "GET" || upper === "PUT" || upper === "PATCH") && /^\/api\/markdown-documents\/[^/]+$/.test(path))
     || (upper === "GET" && /^\/api\/sessions\/[^/]+\/conversation$/.test(path))
-    || (upper === "POST" && /^\/api\/sessions\/[^/]+\/intervene$/.test(path))) return "cards:read";
+    || (upper === "POST" && /^\/api\/sessions\/[^/]+\/intervene$/.test(path))
+    || (upper === "GET" && path === "/api/attachments/files")
+    || (upper === "GET" && /^\/api\/attachments\/(?!files$|sessions$|worker$|agent-register$|agent-output$)[^/]+$/.test(path))
+    || ((upper === "GET" || upper === "HEAD")
+      && /^\/api\/attachments\/(?!files$|sessions$|worker$|agent-register$|agent-output$)[^/]+\/content$/.test(path))) return "cards:read";
   if (upper !== "GET") return null;
   if (path === "/api/usage/summary") return "usage:read";
   if (path === "/api/folders" || path.startsWith("/api/folders/")) return "folders:read";
