@@ -253,6 +253,11 @@ export class InMemoryNodeRegistry {
     return reportedRunnerLoad(this.nodes.get(nodeId));
   }
 
+  /** 노드가 마지막으로 보고한 실행 중 세션 목록. 아직 보고가 없으면 undefined. */
+  getReportedRunningSessionIds(nodeId: string): ReadonlySet<string> | undefined {
+    return this.nodes.get(nodeId)?.runningSessionIds;
+  }
+
   listConnectedNodes(): NodeConnectionSnapshot[] {
     return this.listConnectedNodesInRegistrationOrder().sort((left, right) => {
       const nodeOrder = left.nodeId.localeCompare(right.nodeId);
