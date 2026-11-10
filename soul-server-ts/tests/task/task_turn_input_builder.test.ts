@@ -13,6 +13,7 @@ import {
   type TaskInitialMessagePublisherPort,
   buildFollowupInputUuid,
   TaskTurnInputBuilder,
+  TurnInputPreparationError,
 } from "../../src/task/task_turn_input_builder.js";
 import { estimateClaudeTextTokens } from "../../src/task/claude_context_recovery.js";
 import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
@@ -1467,6 +1468,103 @@ describe("rollover assigned-card slot",()=>{
     },"previous");
     expect(input.prompt).toContain("fresh card");expect(input.prompt).not.toContain("stale card");
     expect(input.prompt.match(/<assigned_cards>/g)).toHaveLength(1);expect(input.prompt.length).toBeLessThanOrEqual(CLAUDE_ROLLOVER_PROMPT_MAX_CHARS);
+  });
+});
+
+describe("owned input preparation failure", () => {
+  it("carries the dequeued batch and its session-data host cause", async () => {
+    const failure = new SessionDataHostError({
+      operation: "list_running",
+      retryable: true,
+      message: "session-data host list_running failed",
+    });
+    const first = { text: "첫 번째 입력", user: "u", deliveryId: "delivery-a" };
+    const second = { text: "두 번째 입력", user: "u", deliveryId: "delivery-b" };
+    const task = makeTask({ interventionQueue: [first, second] });
+    const { builder } = makeSubject({
+      contextBuilder: {
+        buildFollowupContext: vi.fn().mockRejectedValue(failure),
+      },
+    });
+
+    let caught: unknown;
+    try {
+      await builder.prepareInitialTurnInput(task, claudeAgent);
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(TurnInputPreparationError);
+    const typed = caught as TurnInputPreparationError;
+    expect(typed.interventions.map((message) => message.deliveryId))
+      .toEqual(["delivery-a", "delivery-b"]);
+    expect(typed.cause).toBe(failure);
+    expect(typed.message).toContain("INPUT_PREPARATION_FAILED");
+    expect(typed.message).toContain("list_running");
+    expect(typed.message).toContain("retryable=true");
+    // The batch is no longer waiting; the executor owns what happens to it.
+    expect(task.interventionQueue).toEqual([]);
+  });
+
+  it("carries a generation-rollover batch when its context preparation fails", async () => {
+    const failure = new Error("checkpoint read failed");
+    const intervention = {
+      text: "롤오버 입력",
+      user: "u",
+      deliveryId: "delivery-rollover",
+    };
+    const task = makeTask({
+      activeGenerationRollover: {
+        number: 2,
+        reason: "context limit",
+        requestedAt: "2026-10-05T00:00:00.000Z",
+        fromBackendSessionId: "native-old",
+        previousModelPreset: "claude-default",
+        previousBackend: "claude",
+      },
+      interventionQueue: [intervention],
+    });
+    const { builder } = makeSubject({
+      contextBuilder: {
+        buildGenerationContext: vi.fn().mockRejectedValue(failure),
+      },
+    });
+
+    await expect(builder.prepareInitialTurnInput(task, claudeAgent))
+      .rejects.toMatchObject({
+        name: "TurnInputPreparationError",
+        interventions: [intervention],
+        cause: failure,
+      });
+  });
+
+  it("carries the batch when attachment preparation is unavailable", async () => {
+    const intervention = {
+      text: "첨부 확인",
+      user: "u",
+      deliveryId: "delivery-attachment",
+      attachmentIds: ["asset-1"],
+    };
+    const { builder } = makeSubject();
+
+    await expect(builder.prepareFollowupTurnInput(
+      makeTask(),
+      claudeAgent,
+      [intervention],
+    )).rejects.toMatchObject({
+      name: "TurnInputPreparationError",
+      interventions: [intervention],
+    });
+  });
+
+  it("leaves a batch-less first turn on its existing error path", async () => {
+    const failure = new Error("context down");
+    const { builder } = makeSubject({
+      contextBuilder: { build: vi.fn().mockRejectedValue(failure) },
+    });
+
+    await expect(builder.prepareInitialTurnInput(makeTask(), claudeAgent))
+      .rejects.toBe(failure);
   });
 });
 

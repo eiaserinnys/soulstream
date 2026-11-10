@@ -269,6 +269,79 @@ describe("queued transcript recovery rolling contract", () => {
     expect(retryDeliveryAttempt).not.toHaveBeenCalled();
   });
 
+  it("holds an unsupported-backend delivery in its ledger instead of redelivering it", async () => {
+    const redeliverContent = vi.fn(async () => undefined);
+    const harness = makeDeferredHarness("unavailable", { redeliverContent });
+
+    await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
+      claimed: 1,
+      settled: 0,
+    });
+    expect(harness.retryDeliveryAttempt).toHaveBeenCalledWith(
+      "delivery-deferred",
+      "rolling-worker",
+      "unsupported_backend",
+      0,
+    );
+    expect(harness.markUncertain).not.toHaveBeenCalled();
+    expect(redeliverContent).not.toHaveBeenCalled();
+    // The ledger row survives as pending rather than being deleted or consumed.
+    await expect(harness.recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
+      claimed: 0,
+      settled: 0,
+    });
+    expect(redeliverContent).not.toHaveBeenCalled();
+  });
+
+  it("returns a queued delivery to pending when the transcript read fails transiently", async () => {
+    const claimedRow = {
+      delivery_id: "delivery-deferred",
+      intent: "human_live_steer",
+      state: "claimed",
+      aggregate_state: "pending",
+      attempt_token: "rolling-worker",
+    } as SessionDeliveryRow;
+    const retryDeliveryAttempt = vi.fn(async () => ({
+      ...claimedRow,
+      state: "pending",
+      attempt_token: null,
+    }) as SessionDeliveryRow);
+    const markUncertain = vi.fn(async () => null);
+    const redeliverContent = vi.fn(async () => undefined);
+    const recovery = new QueuedDeliveryTranscriptRecovery({
+      deliveryRepository: {
+        get: vi.fn(async () => claimedRow),
+        markConsumed: vi.fn(async () => null),
+        markUncertain,
+        retryDeliveryAttempt,
+      },
+      recoveryRepository: {
+        claimQueuedAfterNodeRestart: vi.fn(async () => [claimedRow]),
+        markDeliveredFromTranscript: vi.fn(async () => null),
+      },
+      transcriptReceipt: {
+        inspect: vi.fn(async () => {
+          throw new Error("session-data host blip");
+        }),
+      },
+      redeliverContent,
+      logger: { warn: vi.fn() },
+    }, "rolling-worker");
+
+    await expect(recovery.recoverAfterNodeRestart("node-a")).resolves.toEqual({
+      claimed: 1,
+      settled: 0,
+    });
+    expect(retryDeliveryAttempt).toHaveBeenCalledWith(
+      "delivery-deferred",
+      "rolling-worker",
+      "queued_transcript_read_failed:session-data host blip",
+      0,
+    );
+    expect(markUncertain).not.toHaveBeenCalled();
+    expect(redeliverContent).not.toHaveBeenCalled();
+  });
+
   it("returns transcript-pending input to pending for reconnect reclaim", async () => {
     const harness = makeDeferredHarness("input_pending");
 
@@ -287,12 +360,13 @@ describe("queued transcript recovery rolling contract", () => {
 });
 
 function makeDeferredHarness(
-  receiptKind: "absent" | "input_pending",
+  receiptKind: "absent" | "input_pending" | "unavailable",
   options: {
     intent?: DeliveryIntent;
     redeliverContent?: (row: SessionDeliveryRow) => Promise<void>;
   } = {},
 ) {
+  let claimable = true;
   const claimedRow = {
     delivery_id: "delivery-deferred",
     intent: options.intent ?? "human_live_steer",
@@ -323,15 +397,25 @@ function makeDeferredHarness(
       retryDeliveryAttempt,
     },
     recoveryRepository: {
-      claimQueuedAfterNodeRestart: vi.fn(async () => [claimedRow]),
+      claimQueuedAfterNodeRestart: vi.fn(async () => {
+        if (!claimable) return [];
+        claimable = false;
+        return [claimedRow];
+      }),
       markDeliveredFromTranscript: vi.fn(async () => null),
       deferQueuedTranscriptCheck,
     },
     transcriptReceipt: {
-      inspect: vi.fn(async () => ({
-        kind: receiptKind,
-        inputUuid: "delivery:delivery-deferred",
-      })),
+      inspect: vi.fn(async () => receiptKind === "unavailable"
+        ? {
+            kind: "unavailable" as const,
+            inputUuid: "delivery:delivery-deferred",
+            reason: "unsupported_backend",
+          }
+        : {
+            kind: receiptKind,
+            inputUuid: "delivery:delivery-deferred",
+          }),
     },
     ...(options.redeliverContent
       ? { redeliverContent: options.redeliverContent }

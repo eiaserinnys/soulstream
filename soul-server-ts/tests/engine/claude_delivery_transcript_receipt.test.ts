@@ -359,7 +359,7 @@ describe("Claude delivery transcript receipt", () => {
     expect(loadMessages).toHaveBeenCalledTimes(1);
   });
 
-  it("skips Claude transcript reads for a Codex preset on a Claude profile", async () => {
+  it("reports a Codex preset on a Claude profile as unsupported, not absent", async () => {
     const loadMessages = vi.fn();
     const reader = new ClaudeDeliveryTranscriptReceiptReader({
       sourceNode: "node-a",
@@ -384,7 +384,60 @@ describe("Claude delivery transcript receipt", () => {
     await expect(reader.inspect({
       delivery_id: "delivery-codex",
       target_session_id: "target",
-    } as SessionDeliveryRow)).resolves.toMatchObject({ kind: "absent" });
+    } as SessionDeliveryRow)).resolves.toEqual({
+      kind: "unavailable",
+      inputUuid: buildDeliveryInputUuid("delivery-codex"),
+      reason: "unsupported_backend",
+    });
+    expect(loadMessages).not.toHaveBeenCalled();
+  });
+
+  it("reports a Codex profile as unsupported even when its thread id is absent", async () => {
+    const loadMessages = vi.fn();
+    const reader = new ClaudeDeliveryTranscriptReceiptReader({
+      sourceNode: "node-a",
+      sessionStore: {} as never,
+      getSession: async () => ({
+        session_id: "target",
+        node_id: "node-a",
+        agent_id: "codex-profile",
+      } as SessionRow),
+      getAgent: () => ({
+        id: "codex-profile",
+        name: "Codex profile",
+        backend: "codex",
+        workspace_dir: "/workspace",
+      }),
+      loadMessages,
+    });
+
+    await expect(reader.inspect({
+      delivery_id: "delivery-codex-thread",
+      target_session_id: "target",
+    } as SessionDeliveryRow)).resolves.toMatchObject({
+      kind: "unavailable",
+      reason: "unsupported_backend",
+    });
+    expect(loadMessages).not.toHaveBeenCalled();
+  });
+
+  it("keeps an absent session absent", async () => {
+    const loadMessages = vi.fn();
+    const reader = new ClaudeDeliveryTranscriptReceiptReader({
+      sourceNode: "node-a",
+      sessionStore: {} as never,
+      getSession: async () => null,
+      getAgent: () => undefined,
+      loadMessages,
+    });
+
+    await expect(reader.inspect({
+      delivery_id: "delivery-missing-session",
+      target_session_id: "missing",
+    } as SessionDeliveryRow)).resolves.toEqual({
+      kind: "absent",
+      inputUuid: buildDeliveryInputUuid("delivery-missing-session"),
+    });
     expect(loadMessages).not.toHaveBeenCalled();
   });
 });
