@@ -10,6 +10,8 @@ import {
   openRunnerSqliteDatabase,
   openRunnerSqliteReadOnlyDatabase,
   withRunnerSqliteTransactionSync,
+  type RunnerSqliteTransactionObserver,
+  type RunnerSqliteTransactionOptions,
 } from "./runner_sqlite_connection.js";
 import type { RunnerDatabaseObservationContext } from "./runner_phase_observation.js";
 
@@ -63,35 +65,59 @@ export function runnerHostStatePath(runnerDatabasePath: string): string {
   return join(dirname(runnerDatabasePath), "runner-host.sqlite");
 }
 
+export interface RunnerHostStateStoreOptions {
+  sessionId?: string;
+  transactionObserver?: RunnerSqliteTransactionObserver;
+}
+
 export class RunnerHostStateStore {
   private closed = false;
 
   private constructor(
     private readonly database: DatabaseSync,
+    private readonly observation?: RunnerDatabaseObservationContext,
+    private readonly sessionId?: string,
+    private readonly transactionObserver?: RunnerSqliteTransactionObserver,
   ) {}
 
   static open(
     path: string,
     observation?: RunnerDatabaseObservationContext,
+    options: RunnerHostStateStoreOptions = {},
   ): RunnerHostStateStore {
-    const database = openRunnerSqliteDatabase(path, {}, observation);
-    try {
-      ensureRunnerSqliteWal(database);
-      database.exec("PRAGMA synchronous = FULL");
-      database.exec(RUNNER_HOST_STATE_DDL);
-      const version = readUserVersion(database);
-      if (version > RUNNER_HOST_STATE_SCHEMA_VERSION) {
-        throw new Error(`runner host state schema version ${version} is not supported`);
+    const initialize = (): DatabaseSync => {
+      const database = openRunnerSqliteDatabase(path, {});
+      try {
+        ensureRunnerSqliteWal(database);
+        database.exec("PRAGMA synchronous = FULL");
+        database.exec(RUNNER_HOST_STATE_DDL);
+        const version = readUserVersion(database);
+        if (version > RUNNER_HOST_STATE_SCHEMA_VERSION) {
+          throw new Error(`runner host state schema version ${version} is not supported`);
+        }
+        if (version < RUNNER_HOST_STATE_SCHEMA_VERSION) {
+          database.exec(`PRAGMA user_version = ${RUNNER_HOST_STATE_SCHEMA_VERSION}`);
+        }
+        chmodSync(path, 0o600);
+        return database;
+      } catch (error) {
+        database.close();
+        throw error;
       }
-      if (version < RUNNER_HOST_STATE_SCHEMA_VERSION) {
-        database.exec(`PRAGMA user_version = ${RUNNER_HOST_STATE_SCHEMA_VERSION}`);
-      }
-      chmodSync(path, 0o600);
-      return new RunnerHostStateStore(database);
-    } catch (error) {
-      database.close();
-      throw error;
-    }
+    };
+    const database = observation
+      ? observation.phaseObservation.runSync("dbOpen", {
+        ...(observation.sessionId ? { sessionId: observation.sessionId } : {}),
+        databasePath: path,
+        ...(observation.label ? { label: observation.label } : {}),
+      }, initialize)
+      : initialize();
+    return new RunnerHostStateStore(
+      database,
+      observation,
+      options.sessionId ?? observation?.sessionId,
+      options.transactionObserver,
+    );
   }
 
   initializeEventCheckpoint(input: {
@@ -100,7 +126,7 @@ export class RunnerHostStateStore {
     acknowledgedThrough: number;
   }): void {
     validateCheckpointInput(input);
-    this.transaction(() => {
+    this.transaction("initialize_checkpoint", () => {
       const current = this.readCheckpointRow(input.streamId);
       if (current) {
         if (current.session_id !== input.sessionId) {
@@ -127,13 +153,15 @@ export class RunnerHostStateStore {
   readAcknowledgedThrough(streamId: string, sessionId: string): number | null {
     validateIdentity(streamId, "runner host checkpoint stream id");
     validateIdentity(sessionId, "runner host checkpoint session id");
-    const row = this.readCheckpointRow(streamId);
-    if (!row) return null;
-    if (row.session_id !== sessionId) {
-      throw new Error("runner host checkpoint stream is owned by another session");
-    }
-    assertCheckpointHash(row);
-    return row.acknowledged_through;
+    return this.observedRead("runner_host.read_acknowledged_through", () => {
+      const row = this.readCheckpointRow(streamId);
+      if (!row) return null;
+      if (row.session_id !== sessionId) {
+        throw new Error("runner host checkpoint stream is owned by another session");
+      }
+      assertCheckpointHash(row);
+      return row.acknowledged_through;
+    });
   }
 
   acknowledgeEvent(input: {
@@ -152,7 +180,7 @@ export class RunnerHostStateStore {
     if (input.acknowledgedThrough > input.latestDurableSourceSeq) {
       throw new Error("runner host ACK exceeds durable runner source_seq");
     }
-    this.transaction(() => {
+    this.transaction("acknowledge_event", () => {
       const current = this.requireCheckpoint(input.streamId, input.sessionId);
       if (input.acknowledgedThrough <= current.acknowledged_through) return;
       this.updateCheckpoint(current, input.acknowledgedThrough);
@@ -173,7 +201,7 @@ export class RunnerHostStateStore {
     if (!Number.isFinite(Date.parse(input.createdAt))) {
       throw new Error("runner host receipt created_at is invalid");
     }
-    this.transaction(() => {
+    this.transaction("record_host_call_applied", () => {
       const current = this.readHostCallApplied(input.sessionId, input.correlationId);
       if (current) {
         if (current.service !== input.service || current.operation !== input.operation) {
@@ -201,24 +229,26 @@ export class RunnerHostStateStore {
   ): RunnerHostCallAppliedReceipt | null {
     validateIdentity(sessionId, "runner host receipt session id");
     validateIdentity(correlationId, "runner host receipt correlation id");
-    const row = this.database.prepare(`
-      SELECT correlation_id, service, operation
-      FROM runner_host_call_receipt
-      WHERE session_id = ? AND correlation_id = ?
-    `).get(sessionId, correlationId) as {
-      correlation_id: string;
-      service: string;
-      operation: string;
-    } | undefined;
-    return row
-      ? { correlationId: row.correlation_id, service: row.service, operation: row.operation }
-      : null;
+    return this.observedRead("runner_host.read_host_call_applied", () => {
+      const row = this.database.prepare(`
+        SELECT correlation_id, service, operation
+        FROM runner_host_call_receipt
+        WHERE session_id = ? AND correlation_id = ?
+      `).get(sessionId, correlationId) as {
+        correlation_id: string;
+        service: string;
+        operation: string;
+      } | undefined;
+      return row
+        ? { correlationId: row.correlation_id, service: row.service, operation: row.operation }
+        : null;
+    });
   }
 
   acknowledgeHostCall(sessionId: string, correlationId: string): void {
     validateIdentity(sessionId, "runner host receipt session id");
     validateIdentity(correlationId, "runner host receipt correlation id");
-    this.transaction(() => {
+    this.transaction("acknowledge_host_call", () => {
       this.database.prepare(`
         DELETE FROM runner_host_call_receipt
         WHERE session_id = ? AND correlation_id = ?
@@ -241,7 +271,7 @@ export class RunnerHostStateStore {
     }
     const messageJson = JSON.stringify(input.message);
     const eventJson = input.event === undefined ? null : JSON.stringify(input.event);
-    return this.transaction(() => {
+    return this.transaction("stage_intervention_fallback", () => {
       const current = this.readInterventionFallbackRow(
         input.sessionId,
         input.interventionId,
@@ -287,28 +317,32 @@ export class RunnerHostStateStore {
   ): RunnerHostInterventionFallback | null {
     validateIdentity(sessionId, "runner host intervention session id");
     validateIdentity(interventionId, "runner host intervention id");
-    const row = this.readInterventionFallbackRow(sessionId, interventionId);
-    return row ? normalizeInterventionFallback(row) : null;
+    return this.observedRead("runner_host.read_intervention_fallback", () => {
+      const row = this.readInterventionFallbackRow(sessionId, interventionId);
+      return row ? normalizeInterventionFallback(row) : null;
+    });
   }
 
   readPendingInterventionFallbacks(
     sessionId: string,
   ): RunnerHostInterventionFallback[] {
     validateIdentity(sessionId, "runner host intervention session id");
-    const rows = this.database.prepare(`
-      SELECT intervention_id, message_json, event_json, queued
-      FROM runner_host_intervention_fallback
-      WHERE session_id = ?
-      ORDER BY COALESCE(queued_at, staged_at), intervention_id
-    `).all(sessionId) as InterventionFallbackRow[];
-    return rows.map(normalizeInterventionFallback).sort((left, right) =>
-      compareInterventionPriority(left.message, right.message));
+    return this.observedRead("runner_host.read_pending_intervention_fallbacks", () => {
+      const rows = this.database.prepare(`
+        SELECT intervention_id, message_json, event_json, queued
+        FROM runner_host_intervention_fallback
+        WHERE session_id = ?
+        ORDER BY COALESCE(queued_at, staged_at), intervention_id
+      `).all(sessionId) as InterventionFallbackRow[];
+      return rows.map(normalizeInterventionFallback).sort((left, right) =>
+        compareInterventionPriority(left.message, right.message));
+    });
   }
 
   removeInterventionFallback(sessionId: string, interventionId: string): void {
     validateIdentity(sessionId, "runner host intervention session id");
     validateIdentity(interventionId, "runner host intervention id");
-    this.transaction(() => {
+    this.transaction("remove_intervention_fallback", () => {
       this.database.prepare(`
         DELETE FROM runner_host_intervention_fallback
         WHERE session_id = ? AND intervention_id = ?
@@ -319,7 +353,15 @@ export class RunnerHostStateStore {
   close(): void {
     if (this.closed) return;
     this.closed = true;
-    this.database.close();
+    const close = () => this.database.close();
+    if (!this.observation) {
+      close();
+      return;
+    }
+    this.observation.phaseObservation.runSync("dbClose", {
+      ...(this.sessionId ? { sessionId: this.sessionId } : {}),
+      label: "runner_host.close",
+    }, close);
   }
 
   private readCheckpointRow(streamId: string): CheckpointRow | null {
@@ -379,9 +421,31 @@ export class RunnerHostStateStore {
     return position < 0 ? 0 : position + 1;
   }
 
-  private transaction<T>(operation: () => T): T {
+  private observedRead<T>(label: string, operation: () => T): T {
+    if (!this.observation) return operation();
+    return this.observation.phaseObservation.runSync("dbRead", {
+      ...(this.sessionId ? { sessionId: this.sessionId } : {}),
+      label,
+    }, operation);
+  }
+
+  private transaction<T>(transactionLabel: string, operation: () => T): T {
     if (this.closed) throw new Error("runner host state store is closed");
-    return withRunnerSqliteTransactionSync(this.database, operation);
+    return withRunnerSqliteTransactionSync(
+      this.database,
+      operation,
+      this.transactionOptions(transactionLabel),
+    );
+  }
+
+  private transactionOptions(
+    transactionLabel: string,
+  ): Omit<RunnerSqliteTransactionOptions, "sleep" | "retryDelaysMs"> {
+    return {
+      transactionLabel: `runner_host.${transactionLabel}`,
+      ...(this.sessionId ? { sessionId: this.sessionId } : {}),
+      ...(this.transactionObserver ? { observer: this.transactionObserver } : {}),
+    };
   }
 }
 

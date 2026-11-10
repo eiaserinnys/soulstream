@@ -625,6 +625,9 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
             ...(this.options.phaseObservation
               ? { phaseObservation: this.options.phaseObservation }
               : {}),
+            ...(this.options.nodeStallMonitor
+              ? { transactionObserver: this.options.nodeStallMonitor.sqliteTransactionObserver }
+              : {}),
           },
         );
       } catch (error) {
@@ -656,6 +659,9 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
           onCheckpointAdvanced: async (ack) => await this.synchronizeChildCheckpoint(ack),
           ...(this.options.phaseObservation
             ? { phaseObservation: this.options.phaseObservation }
+            : {}),
+          ...(this.options.nodeStallMonitor
+            ? { transactionObserver: this.options.nodeStallMonitor.sqliteTransactionObserver }
             : {}),
         },
       );

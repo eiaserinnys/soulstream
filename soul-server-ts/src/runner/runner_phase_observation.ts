@@ -4,7 +4,7 @@ import type { Logger } from "pino";
 
 import type { RunnerOperationContext } from "../runtime/node_stall_monitor.js";
 
-export type RunnerDatabaseObservationPhase = "dbOpen" | "dbRead";
+export type RunnerDatabaseObservationPhase = "dbOpen" | "dbRead" | "dbClose";
 
 export interface RunnerPhaseContext {
   sessionId?: string;
@@ -67,10 +67,10 @@ export function createRunnerPhaseObservation(
 ): RunnerPhaseObservation {
   const durations: Record<string, number> = {};
   const databaseSummary: RunnerDatabaseObservationSummary = {
-    counts: { dbOpen: 0, dbRead: 0 },
-    totalMs: { dbOpen: 0, dbRead: 0 },
-    maxMs: { dbOpen: 0, dbRead: 0 },
-    failures: { dbOpen: 0, dbRead: 0 },
+    counts: { dbOpen: 0, dbRead: 0, dbClose: 0 },
+    totalMs: { dbOpen: 0, dbRead: 0, dbClose: 0 },
+    maxMs: { dbOpen: 0, dbRead: 0, dbClose: 0 },
+    failures: { dbOpen: 0, dbRead: 0, dbClose: 0 },
     recentSamples: [],
   };
   let lastFailure: { error: unknown; value: RunnerPhaseFailure } | undefined;
@@ -142,7 +142,7 @@ export function createRunnerPhaseObservation(
   ): void => {
     if (durationMs === undefined) return;
     try {
-      if (phase === "dbOpen" || phase === "dbRead") {
+      if (phase === "dbOpen" || phase === "dbRead" || phase === "dbClose") {
         databaseSummary.counts[phase] += 1;
         databaseSummary.totalMs[phase] += durationMs;
         databaseSummary.maxMs[phase] = Math.max(databaseSummary.maxMs[phase], durationMs);
@@ -230,7 +230,9 @@ export function createRunnerPhaseObservation(
     },
 
     databaseSummary(): RunnerDatabaseObservationSummary | undefined {
-      return databaseSummary.counts.dbOpen + databaseSummary.counts.dbRead > 0
+      return databaseSummary.counts.dbOpen
+        + databaseSummary.counts.dbRead
+        + databaseSummary.counts.dbClose > 0
         ? {
           counts: { ...databaseSummary.counts },
           totalMs: { ...databaseSummary.totalMs },
