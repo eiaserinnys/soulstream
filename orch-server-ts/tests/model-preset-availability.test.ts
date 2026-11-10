@@ -12,6 +12,7 @@ import type {
   UsageSummaryQuota,
   UsageSummarySnapshot,
 } from "../src/usage/usage_summary_service.js";
+import type { UsageSummaryClaudeAccount } from "../src/usage/provider_usage_wire.js";
 import {
   getProviderLimitRejection,
   observeProviderExecution,
@@ -42,6 +43,8 @@ function provider(
     shortRemainingPercent: 50,
     shortResetAt: null,
     quotas: [],
+    stale: false,
+    fetchedAt: now.toISOString(),
     ...overrides,
   };
 }
@@ -59,10 +62,22 @@ function summary(
         fetchedAt: now.toISOString(),
         stale,
         staleSince: stale ? now.toISOString() : null,
-        providers: { claude, codex: null, antigravity: null, opencode_go: null },
+        providers: {
+          claude: markProviderStale(claude, stale),
+          codex: null,
+          antigravity: null,
+          opencode_go: null,
+        },
       },
     ],
   };
+}
+
+function markProviderStale(
+  value: UsageSummaryProvider | null,
+  stale: boolean,
+): UsageSummaryProvider | null {
+  return value === null || !stale ? value : { ...value, stale: true };
 }
 
 function quotaSummary(
@@ -684,6 +699,160 @@ describe("resolvePresetAvailability", () => {
       usage_warning: true,
     });
   });
+
+  it("returns the per-account pool state on Claude pool presets", () => {
+    const accountA = {
+      ...poolAccount("account-a"),
+      usage: {
+        five_hour: null,
+        seven_day: { used_percent: 40, resets_at: "2026-07-29T03:00:00.000Z" },
+        fable_weekly: { used_percent: 20, resets_at: "2026-07-30T03:00:00.000Z" },
+      },
+    };
+    const accountB = {
+      ...poolAccount("account-b", { until: "2026-07-28T06:00:00.000Z", scope: "fable" }),
+      usage: {
+        five_hour: null,
+        seven_day: { used_percent: 110, resets_at: 123 },
+        fable_weekly: "unknown",
+      },
+    };
+    const accountC = {
+      ...poolAccount("account-c", { until: null, scope: "all" }),
+      usage: { five_hour: null, seven_day: null, fable_weekly: null },
+    };
+    const usage = summary(poolProvider([accountA, accountB, accountC], {
+      pool: poolAggregate(1, 3, null),
+      fable_pool: poolAggregate(0, 3, "2026-07-28T06:00:00.000Z"),
+    }));
+    const rejections = [
+      { accountId: "account-a", scope: "all" as const, rejection: rejection("2026-07-28T05:00:00.000Z", "five_hour") },
+      { accountId: "account-b", scope: "all" as const, rejection: rejection("2026-07-28T02:00:00.000Z", null) },
+    ];
+    const sonnetPreset = { ...preset, id: "claude-sonnet", label: "Claude - Sonnet", usage_model_id: "sonnet" };
+
+    expect(resolvePresetAvailability("node-a", sonnetPreset, usage, now, null, rejections).account_pool).toEqual({
+      available_count: 1,
+      total_count: 3,
+      accounts: [
+        {
+          id: "account-a",
+          email: "account-a@example.com",
+          plan: null,
+          enabled: true,
+          auth_state: "ok",
+          active_sessions: 0,
+          remaining_percent: 60,
+          resets_at: "2026-07-29T03:00:00.000Z",
+          blocked: true,
+          blocked_until: "2026-07-28T05:00:00.000Z",
+        },
+        {
+          id: "account-b",
+          email: "account-b@example.com",
+          plan: null,
+          enabled: true,
+          auth_state: "ok",
+          active_sessions: 0,
+          remaining_percent: 0,
+          resets_at: null,
+          blocked: false,
+          blocked_until: null,
+        },
+        {
+          id: "account-c",
+          email: "account-c@example.com",
+          plan: null,
+          enabled: true,
+          auth_state: "ok",
+          active_sessions: 0,
+          remaining_percent: null,
+          resets_at: null,
+          blocked: true,
+          blocked_until: null,
+        },
+      ],
+    });
+
+    expect(resolvePresetAvailability("node-a", preset, usage, now, null, rejections).account_pool).toEqual({
+      available_count: 0,
+      total_count: 3,
+      accounts: [
+        {
+          id: "account-a",
+          email: "account-a@example.com",
+          plan: null,
+          enabled: true,
+          auth_state: "ok",
+          active_sessions: 0,
+          remaining_percent: 80,
+          resets_at: "2026-07-30T03:00:00.000Z",
+          blocked: true,
+          blocked_until: "2026-07-28T05:00:00.000Z",
+        },
+        {
+          id: "account-b",
+          email: "account-b@example.com",
+          plan: null,
+          enabled: true,
+          auth_state: "ok",
+          active_sessions: 0,
+          remaining_percent: null,
+          resets_at: null,
+          blocked: true,
+          blocked_until: "2026-07-28T06:00:00.000Z",
+        },
+        {
+          id: "account-c",
+          email: "account-c@example.com",
+          plan: null,
+          enabled: true,
+          auth_state: "ok",
+          active_sessions: 0,
+          remaining_percent: null,
+          resets_at: null,
+          blocked: true,
+          blocked_until: null,
+        },
+      ],
+    });
+  });
+
+  it("warns only for the preset whose provider is stale on the same node", () => {
+    const usage: UsageSummarySnapshot = {
+      generatedAt: now.toISOString(),
+      collectedAt: now.toISOString(),
+      nodes: [{
+        nodeId: "node-a",
+        fetchedAt: now.toISOString(),
+        stale: true,
+        staleSince: now.toISOString(),
+        providers: {
+          claude: provider({ stale: false, fetchedAt: now.toISOString() }),
+          codex: provider({ stale: true, fetchedAt: null }),
+          antigravity: null,
+          opencode_go: null,
+        },
+      }],
+    };
+    const codexPreset: StaticModelPreset = {
+      id: "codex-6.1-sol",
+      label: "Codex - 6.1 Sol",
+      backend: "codex",
+      available: true,
+      usage_provider: "codex",
+      usage_model_id: "gpt-6.1-sol",
+    };
+
+    expect(resolvePresetAvailability("node-a", preset, usage, now)).toMatchObject({
+      available: true,
+      usage_warning: false,
+    });
+    expect(resolvePresetAvailability("node-a", codexPreset, usage, now)).toMatchObject({
+      available: true,
+      usage_warning: true,
+    });
+  });
 });
 
 describe("ModelPresetAvailabilityService static offline resolution", () => {
@@ -1014,7 +1183,7 @@ function rejection(rejectedUntil: string | null, rateLimitType: string | null): 
 }
 
 function poolProvider(
-  accounts: ReturnType<typeof poolAccount>[],
+  accounts: readonly UsageSummaryClaudeAccount[],
   overrides: {
     pool?: NonNullable<UsageSummaryProvider["pool"]>;
     fable_pool?: UsageSummaryProvider["fable_pool"];
@@ -1043,7 +1212,7 @@ function poolAggregate(
 }
 
 function poolAggregateForAccounts(
-  accounts: ReturnType<typeof poolAccount>[],
+  accounts: readonly UsageSummaryClaudeAccount[],
   scope: "all" | "fable",
 ): NonNullable<UsageSummaryProvider["pool"]> {
   const enabled = accounts.filter((account) => account.enabled);
@@ -1090,7 +1259,14 @@ it("uses Antigravity group quotas for both presets and existing availability sta
     const result = resolvePresetAvailability("node-a", agyPreset, { ...usage, nodes }, now);
     expect(result.available).toBe(true);
     expect(result.weekly_headroom?.headroom).toEqual(expect.any(Number));
-    expect(resolvePresetAvailability("node-a", agyPreset, { ...usage, nodes: [{ ...nodes[0]!, stale: true }] }, now).usage_warning).toBe(true);
+    expect(resolvePresetAvailability("node-a", agyPreset, {
+      ...usage,
+      nodes: [{
+        ...nodes[0]!,
+        stale: true,
+        providers: { ...nodes[0]!.providers, antigravity: { ...agy, stale: true } },
+      }],
+    }, now).usage_warning).toBe(true);
     expect(resolvePresetAvailability("node-a", agyPreset, { ...usage, nodes: [{ ...nodes[0]!, providers: { ...nodes[0]!.providers, antigravity: provider({ status: "not_configured" }) } }] }, now).available).toBe(false);
     expect(resolvePresetAvailability("node-a", agyPreset, { ...usage, nodes: [{ ...nodes[0]!, providers: { ...nodes[0]!.providers, antigravity: provider({ quotas: [{ ...agy.quotas[0]!, remainingPercent: 0 }] }) } }] }, now).available).toBe(true);
   }

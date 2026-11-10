@@ -32,7 +32,7 @@ export function strictOrchestrationUsage(
   };
   const deny = (reason: OrchestrationUsageReason): OrchestrationUsageEvidence => ({ ...evidence, available: false, reason });
   if (!node || !provider || provider.status !== "auto") return deny("usage_unavailable");
-  if (node.stale) return deny("usage_stale");
+  if (provider.stale) return deny("usage_stale");
   if (!evidence.source || evidence.sourceKind === "unknown" || !evidence.observedAt) return deny("usage_unproven");
   const observedMs = Date.parse(evidence.observedAt);
   if (!Number.isFinite(observedMs)) return deny("usage_unproven");

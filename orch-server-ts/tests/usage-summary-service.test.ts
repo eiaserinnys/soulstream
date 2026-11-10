@@ -6,6 +6,7 @@ import {
   type UsageSummaryRegistry,
   type UsageSummarySnapshot,
 } from "../src/usage/usage_summary_service.js";
+import { resolvePresetAvailability } from "../src/model/model_preset_availability.js";
 import { mergeClaudePoolObservations } from "../src/usage/claude_account_pool_observation.js";
 
 describe("UsageSummaryService", () => {
@@ -295,14 +296,14 @@ describe("UsageSummaryService", () => {
     const published: UsageSummarySnapshot[] = [];
     const unsubscribe = service.subscribe((snapshot) => published.push(snapshot));
     failRefresh = true;
-    now = new Date("2026-10-28T04:05:00.000Z");
+    now = new Date("2026-10-28T04:11:00.000Z");
 
     await expect(service.refreshNode("node-a")).rejects.toThrow("provider unavailable");
 
     expect(service.getSummary().nodes[0]).toMatchObject({
       fetchedAt: "2026-10-28T04:00:00.000Z",
       stale: true,
-      staleSince: "2026-10-28T04:05:00.000Z",
+      staleSince: "2026-10-28T04:10:15.000Z",
       providers: { claude: { mode: "pool", accounts: [{ id: "account-a" }] } },
     });
     expect(published).toHaveLength(1);
@@ -353,6 +354,8 @@ describe("UsageSummaryService", () => {
         remainingPercent: 84,
         resetAt: 1_753_100_000,
       }],
+      stale: false,
+      fetchedAt: expect.any(String),
     });
     expect(legacy).not.toHaveProperty("mode");
     expect(legacy).not.toHaveProperty("accounts");
@@ -470,8 +473,8 @@ describe("UsageSummaryService", () => {
       {
         nodeId: "node-a",
         fetchedAt: "2026-07-20T10:00:00.000Z",
-        stale: true,
-        staleSince: "2026-07-20T10:05:00.000Z",
+        stale: false,
+        staleSince: null,
         providers: { claude: { weeklyRemainingPercent: 84 } },
       },
       {
@@ -481,6 +484,237 @@ describe("UsageSummaryService", () => {
         staleSince: null,
       },
     ]);
+
+    now = new Date("2026-07-20T10:11:00.000Z");
+    await service.collectOnce();
+
+    expect(service.getSummary().nodes).toMatchObject([
+      {
+        nodeId: "node-a",
+        fetchedAt: "2026-07-20T10:00:00.000Z",
+        stale: true,
+        staleSince: "2026-07-20T10:10:15.000Z",
+        providers: { claude: { weeklyRemainingPercent: 84 } },
+      },
+      {
+        nodeId: "node-b",
+        fetchedAt: "2026-07-20T10:11:00.000Z",
+        stale: false,
+        staleSince: null,
+      },
+    ]);
+  });
+
+  it("keeps the last value and stays fresh within staleAfterMs after a failed cycle", async () => {
+    let now = new Date("2026-07-20T10:00:00.000Z");
+    let failClaude = false;
+    const registry = fakeRegistry(["node-a"]);
+    registry.getConnectedNode("node-a")!.supportedBackends = ["claude", "codex"];
+    const bridge = {
+      sendPendingCommand: vi.fn(async ({ command }: { command: { message: { provider: string } } }) => {
+        if (failClaude && command.message.provider === "claude") throw new Error("timeout");
+        return providerSuccessResponse(
+          command.message.provider,
+          command.message.provider === "claude" ? 16 : 20,
+        );
+      }),
+    } as unknown as UsageSummaryBridge;
+    const service = new UsageSummaryService({
+      registry,
+      bridge,
+      pollIntervalMs: 300_000,
+      sharedAccountGroups: [],
+      now: () => now,
+    });
+
+    await service.collectOnce();
+    failClaude = true;
+    now = new Date("2026-07-20T10:05:00.000Z");
+    await service.collectOnce();
+
+    expect(service.getSummary().nodes[0]).toMatchObject({
+      fetchedAt: "2026-07-20T10:00:00.000Z",
+      stale: false,
+      staleSince: null,
+      providers: {
+        claude: { weeklyRemainingPercent: 84, stale: false, fetchedAt: "2026-07-20T10:00:00.000Z" },
+        codex: { weeklyRemainingPercent: 80, stale: false, fetchedAt: "2026-07-20T10:05:00.000Z" },
+      },
+    });
+  });
+
+  it("keeps the last successful value and freshness when a fulfilled snapshot reports provider status error", async () => {
+    let now = new Date("2026-07-20T10:00:00.000Z");
+    let failClaude = false;
+    const registry = fakeRegistry(["node-a"]);
+    const onWarning = vi.fn();
+    const bridge = {
+      sendPendingCommand: vi.fn(async () => {
+        const response = successResponse(16);
+        if (!failClaude) return response;
+        return {
+          ...response,
+          data: { providers: { ...response.data.providers, claude: providerErrorLimits() } },
+        };
+      }),
+    } as unknown as UsageSummaryBridge;
+    const service = new UsageSummaryService({
+      registry,
+      bridge,
+      pollIntervalMs: 300_000,
+      sharedAccountGroups: [],
+      now: () => now,
+      onWarning,
+    });
+
+    await service.collectOnce();
+    failClaude = true;
+    now = new Date("2026-07-20T10:05:00.000Z");
+    await service.collectOnce();
+
+    const summary = service.getSummary();
+    expect(summary.nodes[0]).toMatchObject({
+      fetchedAt: "2026-07-20T10:00:00.000Z",
+      stale: false,
+      staleSince: null,
+      providers: {
+        claude: { status: "auto", weeklyRemainingPercent: 84, stale: false, fetchedAt: "2026-07-20T10:00:00.000Z" },
+        codex: { status: "auto", weeklyRemainingPercent: 20, stale: false, fetchedAt: "2026-07-20T10:05:00.000Z" },
+      },
+    });
+    expect(onWarning).toHaveBeenCalledTimes(1);
+    expect(onWarning.mock.calls[0]?.[0])
+      .toBe("Usage summary collection failed for node node-a (claude: status error)");
+    const availability = resolvePresetAvailability(
+      "node-a",
+      { id: "claude-sonnet", label: "Sonnet", backend: "claude", available: true, usage_provider: "claude" },
+      summary,
+      now,
+    );
+    expect(availability).toMatchObject({ available: true, reason: null, usage_warning: false });
+  });
+
+  it("marks only the provider stale when its status errors persist past staleAfterMs", async () => {
+    let now = new Date("2026-07-20T10:00:00.000Z");
+    let failClaude = false;
+    const registry = fakeRegistry(["node-a"]);
+    const bridge = {
+      sendPendingCommand: vi.fn(async () => {
+        const response = successResponse(16);
+        if (!failClaude) return response;
+        return {
+          ...response,
+          data: { providers: { ...response.data.providers, claude: providerErrorLimits() } },
+        };
+      }),
+    } as unknown as UsageSummaryBridge;
+    const service = new UsageSummaryService({
+      registry,
+      bridge,
+      pollIntervalMs: 300_000,
+      sharedAccountGroups: [],
+      now: () => now,
+    });
+
+    await service.collectOnce();
+    failClaude = true;
+    now = new Date("2026-07-20T10:05:00.000Z");
+    await service.collectOnce();
+    now = new Date("2026-07-20T10:11:00.000Z");
+    await service.collectOnce();
+
+    expect(service.getSummary().nodes[0]).toMatchObject({
+      stale: true,
+      staleSince: "2026-07-20T10:10:15.000Z",
+      providers: {
+        claude: { weeklyRemainingPercent: 84, stale: true, fetchedAt: "2026-07-20T10:00:00.000Z" },
+        codex: { weeklyRemainingPercent: 20, stale: false, fetchedAt: "2026-07-20T10:11:00.000Z" },
+      },
+    });
+  });
+
+  it("keeps the previous Claude value when a manual refresh receives a status error", async () => {
+    let now = new Date("2026-07-20T10:00:00.000Z");
+    let failRefresh = false;
+    const registry = fakeRegistry(["node-a"]);
+    const bridge = {
+      sendPendingCommand: vi.fn(async ({ command }: {
+        command: { message: { provider?: string } };
+      }) => {
+        if (command.message.provider === "claude") {
+          return failRefresh
+            ? { type: "provider_usage_result", success: true, data: providerErrorLimits(), provider: "claude" }
+            : providerSuccessResponse("claude", 16);
+        }
+        return successResponse(16);
+      }),
+    } as unknown as UsageSummaryBridge;
+    const service = new UsageSummaryService({
+      registry,
+      bridge,
+      pollIntervalMs: 300_000,
+      sharedAccountGroups: [],
+      now: () => now,
+    });
+
+    await service.collectOnce();
+    failRefresh = true;
+    now = new Date("2026-07-20T10:05:00.000Z");
+
+    const summary = await service.refreshNode("node-a");
+
+    expect(summary.nodes[0]).toMatchObject({
+      fetchedAt: "2026-07-20T10:00:00.000Z",
+      stale: false,
+      staleSince: null,
+      providers: {
+        claude: {
+          status: "auto",
+          weeklyRemainingPercent: 84,
+          quotas: [expect.objectContaining({ id: "claude:weekly_scoped:fable", remainingPercent: 84 })],
+          stale: false,
+          fetchedAt: "2026-07-20T10:00:00.000Z",
+        },
+      },
+    });
+  });
+
+  it("marks only the stale provider past staleAfterMs and derives staleSince from its fetchedAt", async () => {
+    let now = new Date("2026-07-20T10:00:00.000Z");
+    let failClaude = false;
+    const registry = fakeRegistry(["node-a"]);
+    registry.getConnectedNode("node-a")!.supportedBackends = ["claude", "codex"];
+    const bridge = {
+      sendPendingCommand: vi.fn(async ({ command }: { command: { message: { provider: string } } }) => {
+        if (failClaude && command.message.provider === "claude") throw new Error("timeout");
+        return providerSuccessResponse(
+          command.message.provider,
+          command.message.provider === "claude" ? 16 : 20,
+        );
+      }),
+    } as unknown as UsageSummaryBridge;
+    const service = new UsageSummaryService({
+      registry,
+      bridge,
+      pollIntervalMs: 300_000,
+      sharedAccountGroups: [],
+      now: () => now,
+    });
+
+    await service.collectOnce();
+    failClaude = true;
+    now = new Date("2026-07-20T10:11:00.000Z");
+    await service.collectOnce();
+
+    expect(service.getSummary().nodes[0]).toMatchObject({
+      fetchedAt: "2026-07-20T10:00:00.000Z",
+      stale: true,
+      staleSince: "2026-07-20T10:10:15.000Z",
+      providers: {
+        claude: { weeklyRemainingPercent: 84, stale: true, fetchedAt: "2026-07-20T10:00:00.000Z" },
+        codex: { weeklyRemainingPercent: 80, stale: false, fetchedAt: "2026-07-20T10:11:00.000Z" },
+      },
+    });
   });
 
   it("represents a first-cycle failure without inventing provider data", async () => {
@@ -497,13 +731,36 @@ describe("UsageSummaryService", () => {
 
     expect(service.getSummary()).toMatchObject({ collectedAt: null, nodes: [] });
     await service.collectOnce();
+    const errorProvider = {
+      status: "error",
+      source: null,
+      sourceKind: "unknown",
+      observedAt: null,
+      weeklyRemainingPercent: null,
+      weeklyResetAt: null,
+      shortRemainingPercent: null,
+      shortResetAt: null,
+      quotas: [],
+      stale: true,
+      fetchedAt: null,
+    };
     expect(service.getSummary().nodes).toEqual([
       {
         nodeId: "node-a",
         fetchedAt: null,
         stale: true,
         staleSince: "2026-07-20T10:00:00.000Z",
-        providers: { claude: null, codex: null, antigravity: null, opencode_go: null },
+        providers: {
+          claude: errorProvider,
+          codex: errorProvider,
+          antigravity: errorProvider,
+          opencode_go: {
+            ...errorProvider,
+            status: "not_configured",
+            stale: false,
+            fetchedAt: "2026-07-20T10:00:00.000Z",
+          },
+        },
       },
     ]);
   });
@@ -742,16 +999,43 @@ describe("UsageSummaryService", () => {
       {
         nodeId: "node-a",
         fetchedAt: "2026-07-20T10:00:00.000Z",
-        stale: true,
-        staleSince: "2026-07-20T10:05:00.000Z",
+        stale: false,
+        staleSince: null,
         providers: { codex: { weeklyRemainingPercent: 80 } },
       },
       {
         nodeId: "node-b",
         fetchedAt: "2026-07-20T10:00:00.000Z",
+        stale: false,
+        staleSince: null,
+        providers: {
+          claude: { fetchedAt: "2026-07-20T10:05:00.000Z", stale: false },
+          codex: { weeklyRemainingPercent: 80, fetchedAt: "2026-07-20T10:00:00.000Z", stale: false },
+          antigravity: { fetchedAt: "2026-07-20T10:05:00.000Z", stale: false },
+        },
+      },
+    ]);
+
+    now = new Date("2026-07-20T10:11:00.000Z");
+    await service.collectOnce();
+
+    expect(service.getSummary().nodes).toMatchObject([
+      {
+        nodeId: "node-a",
+        fetchedAt: "2026-07-20T10:00:00.000Z",
         stale: true,
-        staleSince: "2026-07-20T10:05:00.000Z",
-        providers: { codex: { weeklyRemainingPercent: 80 } },
+        staleSince: "2026-07-20T10:10:15.000Z",
+        providers: { codex: { weeklyRemainingPercent: 80, stale: true } },
+      },
+      {
+        nodeId: "node-b",
+        fetchedAt: "2026-07-20T10:00:00.000Z",
+        stale: true,
+        staleSince: "2026-07-20T10:10:15.000Z",
+        providers: {
+          claude: { fetchedAt: "2026-07-20T10:11:00.000Z", stale: false },
+          codex: { weeklyRemainingPercent: 80, stale: true },
+        },
       },
     ]);
     expect(registry.createCommand).not.toHaveBeenCalledWith(
@@ -759,6 +1043,60 @@ describe("UsageSummaryService", () => {
       expect.objectContaining({ provider: "codex" }),
       expect.anything(),
     );
+  });
+
+  it("marks a disconnected node stale immediately and clears the mark on reconnect", async () => {
+    let now = new Date("2026-07-20T10:00:00.000Z");
+    const nodes = new Map([["node-a", {
+      nodeId: "node-a",
+      connectionId: "connection-node-a",
+      connected: true,
+      supportedBackends: ["claude", "codex", "antigravity"],
+    }]]);
+    const registry = {
+      listConnectedNodes: vi.fn(() => [...nodes.values()]),
+      getConnectedNode: vi.fn((nodeId: string) => nodes.get(nodeId)),
+      createCommand: fakeCreateCommand(),
+    } as unknown as UsageSummaryRegistry;
+    const service = new UsageSummaryService({
+      registry,
+      bridge: {
+        sendPendingCommand: vi.fn(async () => successResponse(16)),
+      } as unknown as UsageSummaryBridge,
+      pollIntervalMs: 300_000,
+      sharedAccountGroups: [],
+      now: () => now,
+    });
+
+    await service.collectOnce();
+    nodes.delete("node-a");
+    now = new Date("2026-07-20T10:05:00.000Z");
+    await service.collectOnce();
+
+    expect(service.getSummary().nodes[0]).toMatchObject({
+      fetchedAt: "2026-07-20T10:00:00.000Z",
+      stale: true,
+      staleSince: "2026-07-20T10:05:00.000Z",
+      providers: {
+        claude: { weeklyRemainingPercent: 84, stale: true },
+        codex: { weeklyRemainingPercent: 20, stale: true },
+      },
+    });
+
+    nodes.set("node-a", {
+      nodeId: "node-a",
+      connectionId: "connection-node-a-2",
+      connected: true,
+      supportedBackends: ["claude", "codex", "antigravity"],
+    } as never);
+    now = new Date("2026-07-20T10:06:00.000Z");
+    await service.collectOnce();
+
+    expect(service.getSummary().nodes[0]).toMatchObject({
+      fetchedAt: "2026-07-20T10:06:00.000Z",
+      stale: false,
+      staleSince: null,
+    });
   });
 });
 
@@ -772,17 +1110,21 @@ function fakeRegistry(nodeIds: readonly string[]): UsageSummaryRegistry {
   return {
     listConnectedNodes: vi.fn(() => [...nodes.values()]),
     getConnectedNode: vi.fn((nodeId: string) => nodes.get(nodeId)),
-    createCommand: vi.fn((nodeId: string, payload: { type: string }, options?: { timeoutMs?: number }) => ({
-      fireAndForget: false,
-      requestId: `request-${nodeId}`,
-      commandType: payload.type,
-      message: { ...payload, requestId: `request-${nodeId}` },
-      result: Promise.resolve({ type: "provider_usage_result" }),
-      createdAtMs: 0,
-      expiresAtMs: options?.timeoutMs ?? 0,
-      timeoutMs: options?.timeoutMs ?? 0,
-    })),
+    createCommand: fakeCreateCommand(),
   } as unknown as UsageSummaryRegistry;
+}
+
+function fakeCreateCommand() {
+  return vi.fn((nodeId: string, payload: { type: string }, options?: { timeoutMs?: number }) => ({
+    fireAndForget: false,
+    requestId: `request-${nodeId}`,
+    commandType: payload.type,
+    message: { ...payload, requestId: `request-${nodeId}` },
+    result: Promise.resolve({ type: "provider_usage_result" }),
+    createdAtMs: 0,
+    expiresAtMs: options?.timeoutMs ?? 0,
+    timeoutMs: options?.timeoutMs ?? 0,
+  }));
 }
 
 function successResponse(
@@ -846,6 +1188,17 @@ function limits(
     shortUsedPercent,
     shortResetAt: 1_753_000_000,
     quotas,
+  };
+}
+
+function providerErrorLimits() {
+  return {
+    status: "error",
+    weeklyUsedPercent: null,
+    weeklyResetAt: null,
+    shortUsedPercent: null,
+    shortResetAt: null,
+    quotas: [],
   };
 }
 
