@@ -1,4 +1,5 @@
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
+import { hasPendingSessionModelFallback } from "@soulstream/wire-schema/model-preset-fallbacks";
 import { cardAttachmentPaths } from "./card_attachment_paths.js";
 import { buildCardChangeNotification, cardStatusLabels, type CardChangeDelivery } from "./card_change_notification.js";
 import { buildCardStatusReminder, MAX_REMINDERS_PER_TICK } from "./card_status_reminder.js";
@@ -98,6 +99,8 @@ export class CardDispatcher {
             if (await this.options.orchestration?.ownsSession(sessionId)) { await this.options.orchestration?.decisionEnded?.(sessionId); return; }
             for (const work of await this.options.repository.endedWork(sessionId)) {
               if (!isUsageLimitTermination(work.terminal_session)) continue;
+              // 일반 세션 모델 대체 pending이면 다음 세대가 이어받으므로 막힘으로 다루지 않는다.
+              if (hasPendingSessionModelFallback(work.metadata)) continue;
               const cards=await this.options.cards(),detail=await cards.getCard(work.card_id);
               const owner=await this.options.repository.ownerSession(sessionId);
               if (detail?.card.status === "running" && detail.card.assignee_session_id === sessionId && owner)
@@ -231,6 +234,8 @@ export class CardDispatcher {
             return;
         if (await this.options.repository.hasExplicitWork(session.card_id)) return;
         if (!isUsageLimitTermination(session)) return;
+        // 일반 세션 모델 대체 pending이면 다음 세대가 이어받으므로 막힘으로 다루지 않는다.
+        if (hasPendingSessionModelFallback(session.metadata)) return;
         await this.blockForLimit(detail.card, session);
     }
     private async blockForLimit(card: CardRow, session: LimitResumeOwner): Promise<void> {

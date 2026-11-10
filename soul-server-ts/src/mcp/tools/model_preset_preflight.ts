@@ -25,8 +25,35 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/** 선택 계산에 필요한 advertised preset의 정규화 형태. */
+export interface AdvertisedModelPreset {
+  id: string;
+  available: boolean;
+  weekly_headroom: { remaining_percent: number | null } | null;
+}
+
+/** advertised preset 응답에서 id, available, 주간 여유가 온전한 항목만 남긴다. */
+export function normalizeAdvertisedPresets(
+  presets: readonly unknown[],
+): AdvertisedModelPreset[] {
+  return presets.flatMap((entry) => {
+    if (!isRecord(entry) || typeof entry.id !== "string") return [];
+    if (typeof entry.available !== "boolean") return [];
+    const headroom = entry.weekly_headroom;
+    return [{
+      id: entry.id,
+      available: entry.available,
+      weekly_headroom: isRecord(headroom)
+        && (headroom.remaining_percent === null
+          || typeof headroom.remaining_percent === "number")
+        ? { remaining_percent: headroom.remaining_percent }
+        : null,
+    }];
+  });
+}
+
 /** orch의 노드 preset 목록을 읽는다. 조회 실패는 null. */
-async function loadAdvertisedPresets({
+export async function loadAdvertisedPresets({
   nodeId,
   orch,
 }: ModelPresetLookup): Promise<unknown[] | null> {
@@ -139,20 +166,7 @@ export async function preflightModelPresetFallbacks({
   const presets = await loadAdvertisedPresets({ nodeId, orch });
   if (presets === null) return warnAndUseInitial();
 
-  const advertised = presets.flatMap((entry) => {
-    if (!isRecord(entry) || typeof entry.id !== "string") return [];
-    if (typeof entry.available !== "boolean") return [];
-    const headroom = entry.weekly_headroom;
-    return [{
-      id: entry.id,
-      available: entry.available,
-      weekly_headroom: isRecord(headroom)
-        && (headroom.remaining_percent === null
-          || typeof headroom.remaining_percent === "number")
-        ? { remaining_percent: headroom.remaining_percent }
-        : null,
-    }];
-  });
+  const advertised = normalizeAdvertisedPresets(presets);
   const chosenPresetId = chooseUsablePresetId(
     [initialPresetId, ...fallbackPresetIds],
     advertised,

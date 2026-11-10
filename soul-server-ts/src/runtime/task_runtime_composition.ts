@@ -17,6 +17,7 @@ import type {
   RunnerProcessRuntimeFactory,
 } from "../task/task_executor.js";
 import { TaskExecutor } from "../task/task_executor.js";
+import { chooseSessionModelFallbackTarget } from "../task/session_model_fallback.js";
 import {
   TaskCompletionNotifier,
   type CompletionNotifier,
@@ -232,6 +233,17 @@ export function composeTaskRuntime(
       // workspace must come from the registry rather than that agent.
       resolveProfileWorkspace: (profileId: string) =>
         agentRegistry.get(profileId)?.workspace_dir,
+    },
+    {
+      chooseTarget: (task) =>
+        chooseSessionModelFallbackTarget(task, {
+          nodeId: env.SOULSTREAM_NODE_ID,
+          orch: orchProxyConfig,
+          modelCatalog,
+          logger,
+        }),
+      persistentSessions: taskManager.persistentSessions,
+      scheduleService,
     },
   );
   completionDeliveryRecoveryWorker?.start();

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildModelPresetFallbackMetadataEntry,
+  hasPendingSessionModelFallback,
   modelPresetFallbackOrder,
   readModelPresetFallbackPolicy,
   remainingModelPresetFallbacks,
@@ -67,6 +68,35 @@ describe("model preset fallback policy metadata", () => {
     expect(remainingModelPresetFallbacks(policy, "kimi-2")).toEqual([]);
     expect(remainingModelPresetFallbacks(policy, null)).toEqual([]);
     expect(remainingModelPresetFallbacks(policy, undefined)).toEqual([]);
+  });
+
+  it("detects a pending generation whose reason is a general-session model fallback", () => {
+    const generation = (pending: unknown) => [{
+      type: "persistent_generation",
+      value: { number: 1, ...(pending === undefined ? {} : { pending }) },
+    }];
+    expect(hasPendingSessionModelFallback(generation({
+      number: 2,
+      reason: "session_model_fallback",
+      target_model_preset: "codex-6.1-sol",
+    }))).toBe(true);
+    expect(hasPendingSessionModelFallback(generation({
+      number: 2,
+      reason: "user",
+    }))).toBe(false);
+    expect(hasPendingSessionModelFallback(generation(undefined))).toBe(false);
+    expect(hasPendingSessionModelFallback([])).toBe(false);
+    expect(hasPendingSessionModelFallback({})).toBe(false);
+  });
+
+  it("only reads the last persistent_generation entry", () => {
+    expect(hasPendingSessionModelFallback([
+      {
+        type: "persistent_generation",
+        value: { number: 1, pending: { number: 2, reason: "session_model_fallback" } },
+      },
+      { type: "persistent_generation", value: { number: 2 } },
+    ])).toBe(false);
   });
 
   it("builds a deduped metadata entry", () => {

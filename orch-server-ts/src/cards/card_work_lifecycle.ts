@@ -53,11 +53,14 @@ export async function acceptQueuedWork(sql: RepositorySql, card: CardRow, sessio
   return String(d.run_id);
 }
 
-/** Receipt ranges retain execution identity after sessions clears its live registration at terminal. */
+/** Receipt ranges retain execution identity after sessions clears its live registration at terminal.
+ * 판정 대상은 작업 시작 뒤 세션의 최신 종료다. 그 뒤에 새 실행이 등록됐으면(한도 재개, 대체 모델 세대) 이미 이어받은
+ * 것이므로 지난 종료로 카드를 다시 막지 않는다. 대체 순서가 바닥난 마지막 한도는 최신 종료라 그대로 막힌다. */
 export async function endedCardWork(sql: RepositorySql, sessionId: string) {
-  return sql<{card_id:string;registration_id:string;terminal_event_id:number;terminal_session:Record<string,unknown>}[]>`
+  return sql<{card_id:string;registration_id:string;terminal_event_id:number;terminal_session:Record<string,unknown>;metadata:unknown}[]>`
     SELECT work.target_id AS card_id,work.payload_json->'execution'->>'registrationId' AS registration_id,
-      terminal.event_id AS terminal_event_id,terminal.projection AS terminal_session
+      terminal.event_id AS terminal_event_id,terminal.projection AS terminal_session,
+      (SELECT metadata FROM sessions WHERE session_id=${sessionId}) AS metadata
     FROM folder_operations work JOIN cards card ON card.id=work.target_id
     JOIN LATERAL (SELECT event_id FROM event_ingress_receipts WHERE session_id=${sessionId} AND effect_application->>'applied'='true'
       AND effect_application->'canonical_execution_registration'->>'registration_id'=work.payload_json->'execution'->>'registrationId'
@@ -65,12 +68,10 @@ export async function endedCardWork(sql: RepositorySql, sessionId: string) {
       ORDER BY event_id LIMIT 1) registration ON TRUE
     JOIN LATERAL (SELECT event_id,effect_application->'canonical_session' AS projection FROM event_ingress_receipts WHERE session_id=${sessionId} AND event_id>registration.event_id
       AND effect_application->>'applied'='true' AND effect_application->'canonical_session'->>'status' IN ('completed','error','interrupted')
-      AND NOT EXISTS(SELECT 1 FROM event_ingress_receipts newer WHERE newer.session_id=${sessionId}
-        AND newer.event_id>registration.event_id AND newer.event_id<event_ingress_receipts.event_id
-        AND newer.effect_application->>'applied'='true' AND newer.effect_application->'canonical_execution_registration'->>'registration_id' IS NOT NULL
-        AND newer.effect_application->'canonical_execution_registration'->>'registration_id'<>work.payload_json->'execution'->>'registrationId')
-      ORDER BY event_id LIMIT 1) terminal ON TRUE
-    WHERE work.operation_type='start_card_work' AND work.actor_session_id=${sessionId} AND card.status='running'
+      ORDER BY event_id DESC LIMIT 1) terminal ON TRUE
+    WHERE NOT EXISTS(SELECT 1 FROM event_ingress_receipts newer WHERE newer.session_id=${sessionId} AND newer.event_id>terminal.event_id
+      AND newer.effect_application->>'applied'='true' AND newer.effect_application->'canonical_execution_registration'->>'registration_id' IS NOT NULL)
+      AND work.operation_type='start_card_work' AND work.actor_session_id=${sessionId} AND card.status='running'
       AND card.assignee_session_id=${sessionId} AND NOT card.archived
       AND work.id=(SELECT latest.id FROM folder_operations latest WHERE latest.target_id=card.id AND latest.operation_type='start_card_work' ORDER BY latest.created_at DESC,latest.id DESC LIMIT 1)`;
 }
