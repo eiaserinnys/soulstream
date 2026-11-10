@@ -594,7 +594,7 @@ describe("TaskInterventionRoute.addIntervention", () => {
     expect(runningInterventionTransition.queueOnly).not.toHaveBeenCalled();
   });
 
-  it("auto-resumes a recovered user delivery without publishing its user event twice", async () => {
+  it("does not suppress the user event when auto-resuming a recovered delivery", async () => {
     const task = makeTask({ status: "completed" });
     const deliveryId = "65656565-6565-4565-8565-656565656565";
     const recovered = admitted(deliveryId, "durable_next_turn");
@@ -629,10 +629,11 @@ describe("TaskInterventionRoute.addIntervention", () => {
       expect.objectContaining({ deliveryId, deliveryIntent: "durable_next_turn" }),
       expect.any(Function),
       expect.objectContaining({
-        publishUserMessage: false,
         afterRunningTransition: expect.any(Function),
       }),
     );
+    const resumeOptions = vi.mocked(autoResumeTransition.resume).mock.calls[0]?.[3];
+    expect(resumeOptions).not.toHaveProperty("publishUserMessage", false);
   });
 
   it.each([

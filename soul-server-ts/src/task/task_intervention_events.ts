@@ -5,7 +5,10 @@ import type { SSEEventPayload } from "../engine/protocol.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 
 import type { InterventionMessage, Task } from "./task_models.js";
-import { buildDeliveryInputUuid } from "./delivery_identity.js";
+import {
+  buildDeliveryInputDedupeKey,
+  buildDeliveryInputUuid,
+} from "./delivery_identity.js";
 import { dedupeAttachmentIds, inputAttachmentCount } from "./task_user_message_events.js";
 import { stripManagedAttachmentPathNotes } from "./prepare_attachment_input.js";
 
@@ -31,7 +34,7 @@ export function buildInterventionSentEvent(
     interventionEvent._conversation_text = message.conversationText;
   }
   if (message.deliveryId) {
-    interventionEvent._dedupe_key = `intervention_sent:${message.deliveryId}`;
+    interventionEvent._dedupe_key = buildDeliveryInputDedupeKey(message.deliveryId);
     interventionEvent.input_id = buildDeliveryInputUuid(message.deliveryId);
   }
   if (message.callerInfo) {

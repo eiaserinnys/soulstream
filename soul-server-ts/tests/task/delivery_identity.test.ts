@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildDeliveryInputDedupeKey,
   buildDeliveryInputUuid,
   buildDeterministicDeliveryIdentity,
   hashDeliveryPayload,
@@ -32,6 +33,12 @@ describe("delivery identity", () => {
       /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
     );
     expect(different).not.toBe(first);
+  });
+
+  it("derives one input dedupe key shared by the user and intervention events", () => {
+    expect(buildDeliveryInputDedupeKey("delivery-semantic-1")).toBe(
+      "delivery_input:delivery-semantic-1",
+    );
   });
 
   it("canonicalizes object key order while retaining attachment, context, and caller identity", () => {

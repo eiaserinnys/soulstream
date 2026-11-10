@@ -18,6 +18,7 @@ export interface UserMessageEventInput {
   text: string;
   conversationText?: string;
   inputId?: string;
+  dedupeKey?: string;
   user?: string;
   callerInfo?: CallerInfo;
   attachmentPaths?: string[];
@@ -47,6 +48,9 @@ export function buildUserMessageEvent(input: UserMessageEventInput): Record<stri
   }
   if (input.inputId) {
     event.input_id = input.inputId;
+  }
+  if (input.dedupeKey) {
+    event._dedupe_key = input.dedupeKey;
   }
   if (input.callerInfo) {
     event.caller_info = input.callerInfo;
