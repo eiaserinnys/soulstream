@@ -219,6 +219,41 @@ describe("SessionDataHostClient", () => {
     expect(timeoutSpy.mock.calls.map(([timeoutMs]) => timeoutMs)).toEqual([5_000, 5_000]);
   });
 
+  it("gives the isolation lineage read three 5000ms attempts with backoff", async () => {
+    // At load ~20 the host queue alone took 2-5s; 1.5s x 2 refused trusted turns.
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: "busy" }), { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ message: "busy" }), { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ root: null, ancestors: [] }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new SessionDataHostClient({
+      orch: { baseUrl: "http://orchestrator.test", headers: {} },
+      logger,
+    });
+
+    const startedAt = Date.now();
+    await expect(client.getSessionCallerChain("s1")).resolves.toEqual({ root: null, ancestors: [] });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(timeoutSpy.mock.calls.map(([timeoutMs]) => timeoutMs)).toEqual([5_000, 5_000, 5_000]);
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(1_200);
+  });
+
+  it("does not retry a lineage read the host rejects as invalid", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ message: "bad request" }), { status: 400 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new SessionDataHostClient({
+      orch: { baseUrl: "http://orchestrator.test", headers: {} },
+      logger,
+    });
+
+    await expect(client.getSessionCallerChain("s1")).rejects.toBeInstanceOf(SessionDataHostError);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("uses one host request for the complete resume context", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       session: null,

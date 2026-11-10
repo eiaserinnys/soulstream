@@ -160,7 +160,13 @@ export class AutoResumeTransition {
         );
       }
       if (terminalSnapshot) {
-        activation.setFailureCompensation?.(async () => {
+        activation.setFailureCompensation?.(async (error) => {
+          // The restored terminal repeats the previous detail, so this line is
+          // the only record of why this admission actually failed.
+          this.deps.logger.warn(
+            { err: error, sessionId: task.agentSessionId, transitionRevision },
+            "execution admission failed after the running transition; restoring the previous terminal",
+          );
           await this.compensateRunningTransition(
             task,
             terminalSnapshot,

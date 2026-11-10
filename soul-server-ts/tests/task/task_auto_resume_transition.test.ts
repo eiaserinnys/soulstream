@@ -1125,6 +1125,41 @@ describe("AutoResumeTransition", () => {
     expect(task.executionActivation).toBeUndefined();
   });
 
+  it("records the admission error before restoring the previous terminal", async () => {
+    const task = makeTerminalTask({
+      terminationReason: "error_aborted",
+      terminationDetail: "ISOLATION_POLICY_UNAVAILABLE: earlier failure",
+      terminationEventRecorded: true,
+    });
+    const persistenceDouble = makeEventPersistenceTestDouble(undefined, [], {
+      capabilityProfile: "legacy_transition_only",
+    });
+    const logger = pino({ level: "silent" });
+    const warn = vi.spyOn(logger, "warn");
+    const transition = new AutoResumeTransition({
+      logger,
+      persistence: persistenceDouble.persistence,
+    });
+    const admissionError = new Error("delivery attempt expired");
+    let activation!: NonNullable<Task["executionActivation"]>;
+
+    await transition.resume(
+      task,
+      { text: "second message", user: "agent" },
+      (_resumedTask, startedActivation) => {
+        activation = startedActivation!;
+        activation.reject(admissionError);
+      },
+    );
+
+    await expect(activation.promise).rejects.toBe(admissionError);
+    // The restored terminal repeats the earlier detail; only the log names this failure.
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ err: admissionError, sessionId: "s1" }),
+      expect.stringContaining("restoring the previous terminal"),
+    );
+  });
+
   it("stores resume message context for the executor initial-message path", async () => {
     const task = makeTerminalTask();
     const contextItem = {

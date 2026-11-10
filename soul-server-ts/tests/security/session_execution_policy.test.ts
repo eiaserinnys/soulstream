@@ -5,6 +5,7 @@ import type {
   SessionExecutionChainRow,
 } from "../../src/db/session_db_types.js";
 import {
+  describeFailureChain,
   ISOLATION_POLICY_UNAVAILABLE,
   IsolationPolicyUnavailableError,
   resolveExecutionSecurityDecision,
@@ -278,5 +279,58 @@ describe("session execution policy", () => {
     expect(error).toBeInstanceOf(Error);
     expect(error.code).toBe("ISOLATION_POLICY_UNAVAILABLE");
     expect(error.message).toContain("s1");
+  });
+
+  it("names the failed lineage read in the unavailable message", async () => {
+    // The shape SessionDataHostClient throws after its attempts time out.
+    const hostTimeout = new Error("session-data host caller_chain failed", {
+      cause: new Error("session-data host caller_chain request failed", {
+        cause: new Error("The operation was aborted due to timeout"),
+      }),
+    });
+    const ports = makePorts({ readSession: vi.fn(async () => { throw hostTimeout; }) });
+
+    const failure = await resolveExecutionSecurityDecision("s1", "claude-opus", ports)
+      .catch((error: unknown) => error);
+
+    expect(failure).toBeInstanceOf(IsolationPolicyUnavailableError);
+    expect((failure as Error).message).toBe(
+      "Isolation policy unavailable for session s1: "
+        + "session-data host caller_chain failed: "
+        + "session-data host caller_chain request failed: "
+        + "The operation was aborted due to timeout",
+    );
+  });
+
+  it("keeps the old message when no cause is known", () => {
+    expect(new IsolationPolicyUnavailableError("s1").message)
+      .toBe("Isolation policy unavailable for session s1");
+  });
+
+  it("drops a cause already contained in its wrapper and bounds the length", () => {
+    const wrapped = new Error("read failed: socket hang up", {
+      cause: new Error("socket hang up"),
+    });
+    expect(describeFailureChain(wrapped)).toBe("read failed: socket hang up");
+    expect(describeFailureChain(new Error("x".repeat(1_000))).length).toBe(400);
+    expect(describeFailureChain(undefined)).toBe("");
+  });
+
+  it("masks URL queries and credential-looking values a host error may echo", () => {
+    const echoed = new Error("session-data host caller_chain failed", {
+      cause: new Error(
+        "upstream http://internal.example/host?token=TEST_SECRET failed: "
+          + "Authorization: Bearer abc.def-123 api_key=k1 password=\"p w\" "
+          + "via https://user:pw@orch.test/x",
+      ),
+    });
+
+    const text = describeFailureChain(echoed);
+
+    expect(text).not.toMatch(/TEST_SECRET|abc\.def-123|k1|p w|user:pw/);
+    expect(text).toContain("http://internal.example/host?***");
+    expect(text).toContain("api_key=***");
+    expect(text).toContain("https://***@orch.test/x");
+    expect(text).toContain("session-data host caller_chain failed");
   });
 });
