@@ -10,11 +10,20 @@ import type { FolderActorParams } from "./control_plane/card_types.js";
 export type CardRouteBodyOptions = Pick<FolderRouteOptions, "cardServiceProvider" | "provider">;
 type ResolveAccess = () => FolderAccess | Promise<FolderAccess>;
 
+export const inlineAttachmentSchema = z
+  .object({
+    name: z.string().min(1),
+    mime: z.string(),
+    data_base64: z.string().min(1),
+  })
+  .strict();
+
 export const sendCardMessageSchema = z
   .object({
     sessionId: z.string().min(1).nullable().optional(),
-    text: z.string().min(1),
+    text: z.string().optional().default(""),
     idempotencyKey: z.string().min(1).optional(),
+    attachments: z.array(inlineAttachmentSchema).max(10).optional(),
   })
   .strict();
 

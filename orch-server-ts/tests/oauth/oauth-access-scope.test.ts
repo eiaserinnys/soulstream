@@ -136,6 +136,7 @@ describe("OAuth resource scopes", () => {
       ["GET", "/api/sessions"],
       ["GET", "/api/sessions/session-1/conversation"],
       ["POST", "/api/sessions/session-1/intervene"],
+      ["POST", "/api/sessions/session-1/interrupt"],
       ["GET", "/api/attachments/files"],
       ["GET", "/api/attachments/files?nodeId=eiaserinnys&path=%2Ftmp%2Fa.png"],
       ["GET", "/api/attachments/asset-1"],

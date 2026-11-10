@@ -100,7 +100,7 @@ export function oauthScopeForRoute(method: string, pathname: string): OAuthScope
     || ((upper === "GET" || upper === "POST") && path === "/api/markdown-documents")
     || ((upper === "GET" || upper === "PUT" || upper === "PATCH") && /^\/api\/markdown-documents\/[^/]+$/.test(path))
     || (upper === "GET" && /^\/api\/sessions\/[^/]+\/conversation$/.test(path))
-    || (upper === "POST" && /^\/api\/sessions\/[^/]+\/intervene$/.test(path))
+    || (upper === "POST" && /^\/api\/sessions\/[^/]+\/(?:intervene|interrupt)$/.test(path))
     || (upper === "GET" && path === "/api/attachments/files")
     || (upper === "GET" && /^\/api\/attachments\/(?!files$|sessions$|worker$|agent-register$|agent-output$)[^/]+$/.test(path))
     || ((upper === "GET" || upper === "HEAD")

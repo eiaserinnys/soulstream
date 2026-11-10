@@ -9,6 +9,21 @@ const MAX_LIMIT = 200;
 
 type Row = { id: number; event_type: string; payload: Record<string, unknown> | null; created_at: Date };
 
+type AssetRow = { id: string; original_name: string; mime_type: string };
+type ReceiptUpload = { path: string; name: string; mime: string; assetId?: string };
+type PathMetadata = { name: string; mime: string; assetId?: string };
+
+type AttachmentContext = {
+  nodeId: string;
+  assetsById: Map<string, AssetRow>;
+  pathMetadata: Map<string, PathMetadata>;
+};
+
+const MIME_BY_EXTENSION: Record<string, string> = {
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif",
+  webp: "image/webp", txt: "text/plain", md: "text/markdown", pdf: "application/pdf",
+};
+
 export type CardSessionMessage = {
   id: string;
   kind: Item["kind"];
@@ -36,9 +51,12 @@ export async function readSessionConversation(
   const agentLabel = labelOf(sessionRow, fallbackAgentId);
   const projection = new ConversationProjection(false);
   const items: CardSessionMessage[] = [];
+  const context = await loadAttachmentContext(sql, targetSessionId, sessionRow, rows);
   for (const row of rows) {
-    const result = projection.apply(sourceEvent(row));
+    const payload = row.payload ?? {};
+    const result = projection.apply(sourceEvent({ ...row, payload: enrichPayload(payload, context) }));
     if (!result.item) continue;
+    const attachments = resolveAttachmentIds(result.item.attachments, payload, context);
     items.push({
       id: String(row.id),
       kind: result.item.kind,
@@ -46,7 +64,7 @@ export async function readSessionConversation(
       author: authorOf(result.item.kind, agentLabel),
       text: result.item.text,
       at: result.item.at,
-      ...(result.item.attachments.length ? { attachments: result.item.attachments } : {}),
+      ...(attachments.length ? { attachments } : {}),
     });
   }
   const activity = projection.activity();
@@ -58,6 +76,121 @@ export async function readSessionConversation(
     items: items.slice(-limitOf(limit)),
   };
 }
+async function loadAttachmentContext(
+  sql: SqlClient,
+  targetSessionId: string,
+  sessionRow: Record<string, unknown> | null,
+  rows: Row[],
+): Promise<AttachmentContext | null> {
+  const ids = new Set<string>();
+  const paths = new Set<string>();
+  for (const row of rows) {
+    const payload = row.payload ?? {};
+    if (Array.isArray(payload.attachment_ids)) {
+      for (const value of payload.attachment_ids) {
+        if (typeof value === "string" && value.length > 0) ids.add(value);
+      }
+    }
+    for (const value of rawPathsOf(payload)) {
+      if (typeof value === "string" && value.length > 0) paths.add(value);
+    }
+  }
+  if (ids.size === 0 && paths.size === 0) return null;
+
+  const assetIds = [...ids];
+  const rawPaths = [...paths];
+  const assets = assetIds.length === 0 ? [] : await sql<AssetRow[]>`SELECT id,original_name,mime_type FROM file_assets
+    WHERE id = ANY(${assetIds}) AND storage_purpose = 'attachment' AND upload_status = 'committed' AND garbage_collected_at IS NULL`;
+  const receipts = rawPaths.length === 0 ? []
+    : await sql<Array<{ upload: ReceiptUpload }>>`SELECT upload FROM conversation_message_receipts, jsonb_array_elements(uploads) AS upload
+      WHERE upload->>'path' = ANY(${rawPaths})`;
+
+  const pathMetadata = new Map<string, PathMetadata>(
+    rawPaths.map(path => [path, fileDescriptorOf(path)]),
+  );
+  for (const row of receipts) {
+    pathMetadata.set(row.upload.path, {
+      name: row.upload.name,
+      mime: row.upload.mime,
+      ...(row.upload.assetId ? { assetId: row.upload.assetId } : {}),
+    });
+  }
+  let nodeId = typeof sessionRow?.node_id === "string" ? sessionRow.node_id.trim() : "";
+  if (!nodeId && rawPaths.length > 0) {
+    const nodeRows = await sql<Array<{ node_id: string }>>`SELECT node_id FROM sessions
+      WHERE session_id=${targetSessionId} LIMIT 1`;
+    nodeId = typeof nodeRows[0]?.node_id === "string" ? nodeRows[0].node_id : "";
+  }
+  return { nodeId, assetsById: new Map(assets.map(asset => [asset.id, asset])), pathMetadata };
+}
+
+function enrichPayload(
+  payload: Record<string, unknown>,
+  context: AttachmentContext | null,
+): Record<string, unknown> {
+  if (context === null) return payload;
+  const enriched: Record<string, unknown> = { ...payload };
+  if (Array.isArray(payload.attachment_ids)) {
+    enriched._conversation_attachments = payload.attachment_ids.flatMap(value => {
+      if (typeof value !== "string") return [];
+      const asset = context.assetsById.get(value);
+      return asset ? [{ id: value, name: asset.original_name, mime: asset.mime_type }] : [];
+    });
+  }
+  const paths = rawPathsOf(payload);
+  if (paths.length > 0) {
+    const metadata: Record<string, PathMetadata> = {};
+    for (const [index, value] of paths.entries()) {
+      if (typeof value !== "string") continue;
+      const saved = context.pathMetadata.get(value);
+      if (saved === undefined) continue;
+      // 인라인 업로드는 receipt 행 없이 attachment_ids와 attachment_paths를 같은 순서로 기록한다.
+      // 짝이 맞는 자산이 있으면 saved.assetId가 없어도 붙여, 경로 항목이 자산 항목과 중복되지 않게 한다.
+      const pairedId = Array.isArray(payload.attachment_ids) ? payload.attachment_ids[index] : undefined;
+      metadata[value] = typeof pairedId === "string" && context.assetsById.has(pairedId)
+        ? { ...saved, assetId: pairedId }
+        : saved;
+    }
+    enriched._conversation_path_metadata = metadata;
+  }
+  return enriched;
+}
+
+/** Turns the projection's positional `path:<index>` ids into readable content ids. */
+function resolveAttachmentIds(
+  attachments: Item["attachments"],
+  payload: Record<string, unknown>,
+  context: AttachmentContext | null,
+): Item["attachments"] {
+  if (context === null) return attachments;
+  const paths = rawPathsOf(payload);
+  return attachments.map(attachment => {
+    const match = /^path:(\d+)$/.exec(attachment.id);
+    if (match === null) return attachment;
+    const rawPath = paths[Number(match[1])];
+    if (typeof rawPath !== "string") return attachment;
+    const saved = context.pathMetadata.get(rawPath);
+    return { ...attachment, id: saved?.assetId ?? `path:${context.nodeId}:${rawPath}` };
+  });
+}
+
+function rawPathsOf(payload: Record<string, unknown>): unknown[] {
+  return Array.isArray(payload.attachments)
+    ? payload.attachments
+    : Array.isArray(payload.attachment_paths)
+      ? payload.attachment_paths
+      : [];
+}
+
+function fileDescriptorOf(path: string): { name: string; mime: string } {
+  const base = path.split(/[\\/]/).pop() ?? path;
+  const name = base
+    .replace(/^\d{4}-\d\d-\d\dT\d\d-\d\d-\d\d\.\d{3}Z-/, "")
+    .replace(/^(.+)-[0-9a-f]{32}(\.[^.]+)?$/, "$1$2");
+  const ext = name.split(".").pop()?.toLowerCase() ?? "";
+  return { name, mime: MIME_BY_EXTENSION[ext] ?? "application/octet-stream" };
+}
+
 function labelOf(sessionRow: Record<string, unknown> | null, fallback: string | null): string {
   const displayName = typeof sessionRow?.display_name === "string" ? sessionRow.display_name.trim() : "";
   const agentId = typeof sessionRow?.agent_id === "string" ? sessionRow.agent_id.trim() : "";

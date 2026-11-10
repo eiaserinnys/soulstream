@@ -20,7 +20,8 @@ import { readFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
+import type { ServiceCaller } from "./auth/service_caller.js";
 
 import { createApp, type CreateAppOptions } from "./app.js";
 import { FlatFolderContentHost } from "./board/flat_folder_content_host.js";
@@ -133,7 +134,10 @@ import { sessionDeliveryInterventionPayload } from
   "./session/session_delivery_intervention_payload.js";
 import { PersistentSessionSettingsService } from "./session/persistent_session_settings_service.js";
 import { executeCreateSessionRoute } from "./session/session_command_routes.js";
-import { executeSessionIntervention } from "./session/session_action_command_routes.js";
+import {
+  executeSessionIntervention,
+  type SessionActionInlineAttachmentUpload,
+} from "./session/session_action_command_routes.js";
 import {
   createLiveTurnSummaryPipeline,
   type LiveTurnSummaryPipeline,
@@ -1140,14 +1144,26 @@ export function buildProductionRouteOptions(
     create: (request, body, id, logger) => executeCreateSessionRoute(providers.runtime.sessionCommandRoutes, request, body, logger, id),
     waitForCreatedSession: (id, nodeId) => providers.runtime.sessionCommandRoutes.router.waitForCreatedSession(id, nodeId),
   }) : undefined;
+  const conversationPorts = conversationSql ? createConversationMessagePorts(conversationSql, providers.attachmentRoutes, {
+    ...providers.runtime.sessionActionCommandRoutes,
+    deliveryRepositoryProvider: async () => (await persistenceRepositoryProvider()).deliveries,
+  }) : undefined;
+  const uploadInlineAttachment: SessionActionInlineAttachmentUpload | undefined = conversationPorts === undefined
+    ? undefined
+    : async (caller: FastifyRequest | ServiceCaller, sessionId, file, uploadId) => {
+        if (!("headers" in caller)) {
+          throw Object.assign(new Error("Fastify request required for inline attachment upload"), {
+            code: "ATTACHMENT_INPUT_UNAVAILABLE",
+            statusCode: 503,
+          });
+        }
+        return await conversationPorts!.upload(caller, sessionId, file, uploadId);
+      };
   return {
     config,
     corsAllowedOrigins,
     ...(conversationService ? { conversationRoutes: { service: conversationService,
-      messages: new ConversationMessageService(conversationSql!,createConversationMessagePorts(conversationSql!,providers.attachmentRoutes,{
-        ...providers.runtime.sessionActionCommandRoutes,
-        deliveryRepositoryProvider: async () => (await persistenceRepositoryProvider()).deliveries,
-      })), liveEvents: providers.runtime.sessionHistoryRoutes.liveEvents, closeAfterHistorySync: providers.runtime.sessionHistoryRoutes.closeAfterHistorySync, resolveAccount: async (request) => {
+      messages: new ConversationMessageService(conversationSql!, conversationPorts!), liveEvents: providers.runtime.sessionHistoryRoutes.liveEvents, closeAfterHistorySync: providers.runtime.sessionHistoryRoutes.closeAfterHistorySync, resolveAccount: async (request) => {
       const service = verifyServiceBearerAuthorization(request.headers.authorization, {
         configuredToken: config.authBearerToken,
         environment: config.environment,
@@ -1234,7 +1250,10 @@ export function buildProductionRouteOptions(
       ...(cardServiceProvider ? { cardServiceProvider } : {}),
       ...(cardServiceProvider ? {
         sendCardSessionMessage: (request, sessionId, body) =>
-          executeSessionIntervention(providers.runtime.sessionActionCommandRoutes, request, sessionId, body),
+          executeSessionIntervention({
+            ...providers.runtime.sessionActionCommandRoutes,
+            ...(uploadInlineAttachment === undefined ? {} : { uploadInlineAttachment }),
+          }, request, sessionId, body),
       } : {}),
       authBearerToken: config.authBearerToken,
       ...(folderProjectIdentityService
@@ -1283,6 +1302,7 @@ export function buildProductionRouteOptions(
     },
     sessionActionCommandRoutes: {
       ...providers.runtime.sessionActionCommandRoutes,
+      ...(uploadInlineAttachment === undefined ? {} : { uploadInlineAttachment }),
       onHumanSessionInput: async targetSessionId => {
         if (!cardServiceProvider) return;
         const cards=await cardServiceProvider();

@@ -5,6 +5,7 @@ import { readCardSessionMessages } from "../../src/cards/card_session_messages.j
 import type { CardDetail } from "../../src/cards/card_operations.js";
 import type { SqlClient } from "../../src/cards/control_plane/card_types.js";
 import { intervenePayload } from "../../src/session/session_action_command_payloads.js";
+import { readSessionConversation } from "../../src/session/session_conversation_projection.js";
 import type { FolderRouteOptions } from "../../src/folders/folder_routes.js";
 
 const apps: ReturnType<typeof Fastify>[] = [];
@@ -26,6 +27,26 @@ function detailOf(card: Record<string, unknown>, sessions: Array<Record<string, 
   return { card, sessions } as unknown as CardDetail;
 }
 
+type ConversationData = {
+  assets?: Array<{ id: string; original_name: string; mime_type: string }>;
+  uploads?: Array<{ upload: { path: string; name: string; mime: string; assetId?: string } }>;
+  nodeId?: string | null;
+};
+
+function sqlWithConversation(rows: EventRow[], data: ConversationData = {}) {
+  const statements: string[] = [];
+  const sql = Object.assign(async (strings: TemplateStringsArray) => {
+    const statement = strings.join("?");
+    statements.push(statement);
+    if (statement.includes("FROM events")) return rows;
+    if (statement.includes("FROM file_assets")) return data.assets ?? [];
+    if (statement.includes("jsonb_array_elements(uploads)")) return data.uploads ?? [];
+    if (statement.includes("FROM sessions")) return data.nodeId ? [{ node_id: data.nodeId }] : [];
+    return [];
+  }, { json: (value: unknown) => value }) as unknown as SqlClient;
+  return { sql, statements };
+}
+
 const events: EventRow[] = [
   { id: 1, event_type: "user_message", payload: { text: "카드 앱에 탭을 붙여 주세요." }, created_at: new Date("2026-11-07T10:00:00Z") },
   { id: 2, event_type: "tool_start", payload: { tool_name: "read" }, created_at: new Date("2026-11-07T10:00:01Z") },
@@ -34,12 +55,14 @@ const events: EventRow[] = [
 ];
 
 it("projects the linked session conversation with the card agent label", async () => {
-  const { sql } = sqlWithEvents(events);
+  const { sql, statements } = sqlWithEvents(events);
   const result = await readCardSessionMessages(sql, detailOf(
     { assignee_session_id: "session-1", assignee_agent_id: "roselin" },
     [{ session_id: "session-1", display_name: "서소영", agent_id: "seosoyoung" }],
   ));
   expect(result).toMatchObject({ sessionId: "session-1", session: { sessionId: "session-1", displayName: "서소영" }, busy: false, tool: null });
+  expect(statements.some(statement => statement.includes("file_assets"))).toBe(false);
+  expect(statements.some(statement => statement.includes("jsonb_array_elements(uploads)"))).toBe(false);
   expect(result.items).toEqual([
     expect.objectContaining({ id: "1", kind: "user", role: "user", author: "사용자", text: "카드 앱에 탭을 붙여 주세요." }),
     expect.objectContaining({ id: "3", kind: "assistant", role: "assistant", author: "서소영", text: "확인했습니다." }),
@@ -78,6 +101,88 @@ it("rejects a session that is not linked to the card", async () => {
     { assignee_session_id: "session-1" },
     [{ session_id: "session-1" }],
   ), { sessionId: "session-2" })).rejects.toMatchObject({ statusCode: 422, message: "카드에 연결된 세션이 아닙니다." });
+});
+
+it("resolves attachment ids through file asset metadata", async () => {
+  const rows: EventRow[] = [
+    { id: 1, event_type: "user_message", payload: { text: "", attachment_ids: ["asset-1"] }, created_at: new Date("2026-11-07T10:00:00Z") },
+  ];
+  const { sql } = sqlWithConversation(rows, {
+    assets: [{ id: "asset-1", original_name: "사진.png", mime_type: "image/png" }],
+  });
+  const result = await readSessionConversation(sql, "session-1", { session_id: "session-1", node_id: "node-1" }, null);
+  expect(result.items).toHaveLength(1);
+  expect(result.items[0]?.text).toBe("");
+  expect(result.items[0]?.attachments).toEqual([{ id: "asset-1", name: "사진.png", mime: "image/png" }]);
+});
+
+it("keeps legacy paths readable through the session node and raw path", async () => {
+  const rawPath = "/data/sessions/session-1/2026-11-07T10-00-00.000Z-photo.png";
+  const rows: EventRow[] = [
+    { id: 1, event_type: "user_message", payload: { text: "", attachment_paths: [rawPath] }, created_at: new Date("2026-11-07T10:00:00Z") },
+  ];
+  const { sql, statements } = sqlWithConversation(rows);
+  const result = await readSessionConversation(sql, "session-1", { session_id: "session-1", node_id: "node-1" }, null);
+  expect(result.items[0]?.attachments).toEqual([{ id: `path:node-1:${rawPath}`, name: "photo.png", mime: "image/png" }]);
+  expect(statements.some(statement => statement.includes("FROM sessions"))).toBe(false);
+});
+
+it("uses the saved asset id for legacy paths recorded by a conversation receipt", async () => {
+  const rawPath = "/data/sessions/session-1/2026-11-07T10-00-00.000Z-photo.png";
+  const rows: EventRow[] = [
+    { id: 1, event_type: "user_message", payload: { text: "", attachment_paths: [rawPath] }, created_at: new Date("2026-11-07T10:00:00Z") },
+  ];
+  const { sql } = sqlWithConversation(rows, {
+    uploads: [{ upload: { path: rawPath, name: "photo.png", mime: "image/png", assetId: "asset-9" } }],
+  });
+  const result = await readSessionConversation(sql, "session-1", { session_id: "session-1", node_id: "node-1" }, null);
+  expect(result.items[0]?.attachments).toEqual([{ id: "asset-9", name: "photo.png", mime: "image/png" }]);
+});
+
+it("dedupes inline attachment paths against their paired ids without a receipt", async () => {
+  const rawPath = "/data/sessions/s1/a.png";
+  const rows: EventRow[] = [
+    {
+      id: 1,
+      event_type: "user_message",
+      payload: { text: "", attachment_ids: ["asset-1"], attachment_paths: [rawPath] },
+      created_at: new Date("2026-11-07T10:00:00Z"),
+    },
+  ];
+  const { sql } = sqlWithConversation(rows, {
+    assets: [{ id: "asset-1", original_name: "사진.png", mime_type: "image/png" }],
+  });
+  const result = await readSessionConversation(sql, "session-1", { session_id: "session-1", node_id: "node-1" }, null);
+  expect(result.items[0]?.attachments).toEqual([{ id: "asset-1", name: "사진.png", mime: "image/png" }]);
+});
+
+it("falls back to the sessions table for the node id when the session row omits it", async () => {
+  const rawPath = "/data/sessions/session-1/a.png";
+  const rows: EventRow[] = [
+    { id: 1, event_type: "user_message", payload: { text: "", attachment_paths: [rawPath] }, created_at: new Date("2026-11-07T10:00:00Z") },
+  ];
+  const { sql } = sqlWithConversation(rows, { nodeId: "node-2" });
+  const result = await readSessionConversation(sql, "session-1", { session_id: "session-1" }, null);
+  expect(result.items[0]?.attachments?.[0]?.id).toBe(`path:node-2:${rawPath}`);
+});
+
+it("accepts inline attachments without text and rejects oversized or malformed ones", () => {
+  const file = { name: "a.png", mime: "image/png", data_base64: "aGVsbG8=" };
+  expect(intervenePayload("sess-1", { attachments: [file] })).toMatchObject({
+    ok: true, value: { type: "intervene", agentSessionId: "sess-1", text: "", inline_attachments: [file] },
+  });
+  expect(intervenePayload("sess-1", { text: "보세요", attachments: [file] })).toMatchObject({
+    ok: true, value: { text: "보세요", inline_attachments: [file] },
+  });
+  expect(intervenePayload("sess-1", { attachments: [] })).toEqual({ ok: false, message: "text is required" });
+  expect(intervenePayload("sess-1", { attachments: Array.from({ length: 11 }, () => file) }))
+    .toEqual({ ok: false, message: "attachments must be an array of at most 10 items" });
+  expect(intervenePayload("sess-1", { attachments: [{ ...file, data_base64: "not base64!" }] }))
+    .toEqual({ ok: false, message: "attachment data_base64 must be valid base64" });
+  expect(intervenePayload("sess-1", { attachments: [{ ...file, name: " " }] }))
+    .toEqual({ ok: false, message: "attachment name must be a non-empty string" });
+  expect(intervenePayload("sess-1", { text: "x", attachments: "a.png" }))
+    .toEqual({ ok: false, message: "attachments must be an array of at most 10 items" });
 });
 
 function setup(user: string | null, allowedFolderIds = ["source"], override: Partial<FolderRouteOptions> = {}) {
@@ -155,6 +260,35 @@ it("rejects an empty message body after trimming", async () => {
   const response = await app.inject({ method: "POST", url: "/api/cards/card/messages", payload: { text: "   " } });
   expect(response.statusCode).toBe(422);
   expect(response.json()).toMatchObject({ detail: { error: { message: "메시지 내용을 입력하십시오." } } });
+  expect(send).not.toHaveBeenCalled();
+});
+
+it("forwards inline attachments with an empty text and keeps the trimmed text otherwise", async () => {
+  const attachments = [{ name: "a.png", mime: "image/png", data_base64: "aGVsbG8=" }];
+  const withoutText = setup("owner@example.test");
+  const empty = await withoutText.app.inject({
+    method: "POST", url: "/api/cards/card/messages", payload: { text: "   ", attachments },
+  });
+  expect(empty.statusCode).toBe(202);
+  expect(withoutText.send).toHaveBeenCalledWith(expect.anything(), "assignee-session", { text: "", attachments });
+
+  const withText = setup("owner@example.test");
+  const response = await withText.app.inject({
+    method: "POST", url: "/api/cards/card/messages", payload: { text: " 이 사진 봐 주세요 ", attachments },
+  });
+  expect(response.statusCode).toBe(202);
+  expect(withText.send).toHaveBeenCalledWith(expect.anything(), "assignee-session", {
+    text: "이 사진 봐 주세요", attachments,
+  });
+});
+
+it("rejects more than ten inline attachments before delivery", async () => {
+  const { app, send } = setup("owner@example.test");
+  const response = await app.inject({
+    method: "POST", url: "/api/cards/card/messages",
+    payload: { attachments: Array.from({ length: 11 }, () => ({ name: "a.png", mime: "image/png", data_base64: "aGVsbG8=" })) },
+  });
+  expect(response.statusCode).toBe(422);
   expect(send).not.toHaveBeenCalled();
 });
 
