@@ -3111,7 +3111,7 @@
     "name": "rename_folder"
   },
   {
-    "description": "담당 카드의 검수를 요청합니다. 확인 항목이 있으면 ask에 사용자가 볼 것을 한 줄로 적으세요. 보고나 미답 질문은 상태 변경을 막지 않습니다.",
+    "description": "담당 카드의 검수를 요청합니다. 확인 항목이 있으면 ask에 사용자가 볼 것을 한 줄로 적으세요. ask는 60자까지이며 식별자를 넣지 않습니다. 보고나 미답 질문은 상태 변경을 막지 않습니다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -3119,6 +3119,7 @@
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
         "ask": {
+          "description": "사용자가 볼 것 한 줄. 60자까지, 식별자 없이",
           "type": "string"
         },
         "caller_session_id": {
