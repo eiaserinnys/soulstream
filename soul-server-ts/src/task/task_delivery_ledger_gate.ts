@@ -420,6 +420,25 @@ export class TaskDeliveryLedgerGate {
     );
   }
 
+  /**
+   * Closes a delivery whose execution admission failed before any turn started.
+   *
+   * The delivery was never consumed, so it must not become `consumed`. The
+   * existing uncertain/dead_letter disposition is the terminal state for this
+   * input; a later duplicate is suppressed by admission instead of resumed.
+   */
+  async recordAdmissionFailure(
+    message: InterventionMessage,
+    reason: string,
+  ): Promise<void> {
+    if (!this.enabled || !isControlledMessage(message) || !message.deliveryId) return;
+    await this.requireRepository().markUncertain(
+      message.deliveryId,
+      undefined,
+      reason,
+    );
+  }
+
   async recordPendingSuperseded(
     message: InterventionMessage,
     reason: string,

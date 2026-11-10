@@ -19,6 +19,8 @@ import {
 } from "../../src/runner/frame_protocol.js";
 import { RunnerOrphanedSpawnError, RunnerProcessDispatcher } from
   "../../src/runner/runner_process_dispatcher.js";
+import { IsolationPreparationPolicyError } from
+  "../../src/runner/session_filesystem_errors.js";
 import {
   RunnerIpcConnection,
   RunnerIpcRequestTimeoutError,
@@ -492,6 +494,92 @@ describe("RunnerProcessDispatcher", () => {
       spawned.paths,
       "registration-a",
     );
+  });
+
+  it("completes close when restricted preparation fails before any spawn", async () => {
+    const terminate = vi.fn(async () => {});
+    const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
+      RunnerProcessDispatcher;
+    const failure = new IsolationPreparationPolicyError("policy unavailable");
+    Object.assign(dispatcher, {
+      ready: Promise.reject(failure),
+      spawnedProcess: undefined,
+      spawnInput: { sessionId: "session-a" },
+      options: {
+        spawner: { terminate },
+        logger: { info: vi.fn() },
+      },
+      activeExecution: undefined,
+      closed: false,
+      inFlightFrameHandlers: new Set(),
+      recentHostResponses: new Map(),
+      requestLifetimes: new Map(),
+    });
+
+    await expect(dispatcher.close()).resolves.toBeUndefined();
+
+    expect(dispatcher.isClosed()).toBe(true);
+    expect(terminate).not.toHaveBeenCalled();
+  });
+
+  it("completes terminal retirement when restricted preparation failed before any spawn", async () => {
+    const retireTerminalRegistration = vi.fn(async () => {});
+    const beforeRegistrationRetired = vi.fn(async () => {});
+    const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
+      RunnerProcessDispatcher;
+    const failure = new IsolationPreparationPolicyError("policy unavailable");
+    Object.assign(dispatcher, {
+      ready: Promise.reject(failure),
+      spawnedProcess: undefined,
+      spawnInput: { sessionId: "session-a" },
+      options: {
+        spawner: { retireTerminalRegistration },
+        logger: { info: vi.fn() },
+      },
+      activeExecution: undefined,
+      closed: false,
+      inFlightFrameHandlers: new Set(),
+      recentHostResponses: new Map(),
+      requestLifetimes: new Map(),
+    });
+
+    await expect(
+      dispatcher.retireTerminalRegistration(beforeRegistrationRetired),
+    ).resolves.toBeUndefined();
+
+    expect(dispatcher.isClosed()).toBe(true);
+    expect(beforeRegistrationRetired).not.toHaveBeenCalled();
+    expect(retireTerminalRegistration).not.toHaveBeenCalled();
+  });
+
+  it("propagates a pre-spawn failure once a child was spawned, without terminating it", async () => {
+    const terminate = vi.fn(async () => {});
+    const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
+      RunnerProcessDispatcher;
+    const failure = new IsolationPreparationPolicyError("policy unavailable");
+    const spawned = {
+      registrationId: "registration-a",
+      paths: { sessionDirectory: "/state/session-a" },
+    };
+    Object.assign(dispatcher, {
+      ready: Promise.reject(failure),
+      spawnedProcess: spawned,
+      spawnInput: { sessionId: "session-a" },
+      options: {
+        spawner: { terminate },
+        logger: { info: vi.fn() },
+      },
+      activeExecution: undefined,
+      closed: false,
+      inFlightFrameHandlers: new Set(),
+      recentHostResponses: new Map(),
+      requestLifetimes: new Map(),
+    });
+
+    await expect(dispatcher.close()).rejects.toBe(failure);
+    await expect(dispatcher.retireTerminalRegistration()).rejects.toBe(failure);
+
+    expect(terminate).not.toHaveBeenCalled();
   });
 
   it("rejects a running recovery when its exact registration is retired", async () => {

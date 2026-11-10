@@ -364,33 +364,45 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       proof: ExactRunnerProcess;
     } | undefined;
     try {
-      await this.ready;
-      const spawned = this.spawnedProcess;
-      const identity = spawned
-        ? await readRunnerRegistrationIdentity(spawned.paths.sessionDirectory)
-        : null;
-      // The child acknowledges close before its queued shutdown releases the
-      // writer lock, so capture the exact owner while that identity still exists.
-      if (spawned && identity?.registrationId === spawned.registrationId) {
-        if (identity.pid !== spawned.pid || identity.startIdentity === null) {
-          throw new Error(
-            `runner registration identity incomplete before close: ${this.spawnInput.sessionId}`,
-          );
-        }
-        retirement = {
-          spawned,
-          proof: {
-            registrationId: identity.registrationId,
-            pid: identity.pid,
-            startIdentity: identity.startIdentity,
-          },
-        };
-      }
-      this.closeCommandInFlight = true;
+      let prepared = true;
       try {
-        assertCommandAccepted(await this.dispatch(closeCommandFrame(`close:${randomUUID()}`)));
-      } finally {
-        this.closeCommandInFlight = false;
+        await this.ready;
+      } catch (error) {
+        // Preparation (e.g. restricted isolation) can reject before any child
+        // exists. There is nothing to terminate or dispatch then, and the
+        // finally below still releases host state; a failure after a spawn must
+        // propagate because ownership of the child is unproven.
+        if (this.spawnedProcess) throw error;
+        prepared = false;
+      }
+      if (prepared) {
+        const spawned = this.spawnedProcess;
+        const identity = spawned
+          ? await readRunnerRegistrationIdentity(spawned.paths.sessionDirectory)
+          : null;
+        // The child acknowledges close before its queued shutdown releases the
+        // writer lock, so capture the exact owner while that identity still exists.
+        if (spawned && identity?.registrationId === spawned.registrationId) {
+          if (identity.pid !== spawned.pid || identity.startIdentity === null) {
+            throw new Error(
+              `runner registration identity incomplete before close: ${this.spawnInput.sessionId}`,
+            );
+          }
+          retirement = {
+            spawned,
+            proof: {
+              registrationId: identity.registrationId,
+              pid: identity.pid,
+              startIdentity: identity.startIdentity,
+            },
+          };
+        }
+        this.closeCommandInFlight = true;
+        try {
+          assertCommandAccepted(await this.dispatch(closeCommandFrame(`close:${randomUUID()}`)));
+        } finally {
+          this.closeCommandInFlight = false;
+        }
       }
     } finally {
       const closeRetirement = retirement;
@@ -409,7 +421,18 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   async retireTerminalRegistration(
     beforeRegistrationRetired?: () => Promise<void>,
   ): Promise<void> {
-    await this.ready;
+    try {
+      await this.ready;
+    } catch (error) {
+      if (this.spawnedProcess) throw error;
+      // Preparation failed before spawn, so no child registration exists.
+      // Completing the foreign retire would delete a registration this host
+      // never created; only this host's own resources are ours to release.
+      this.closed = true;
+      this.abortRequestLifetimes(new Error("Runner terminal registration retired"));
+      await this.releaseHostResources("retire");
+      return;
+    }
     const spawned = this.spawnedProcess;
     if (!spawned) {
       throw new Error(
