@@ -18,6 +18,7 @@ import {
   type RunnerBootstrapRecord,
 } from "./sqlite_event_outbox.js";
 import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
+import type { RunnerSqliteTransactionObserver } from "./runner_sqlite_connection.js";
 
 export class RunnerParentOutbox implements EventOutboxPumpStore {
   private bootstrap: RunnerBootstrapRecord | null = null;
@@ -36,6 +37,7 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
     options: {
       onCheckpointAdvanced?: (acknowledgedThrough: number) => Promise<void>;
       phaseObservation?: RunnerPhaseObservation;
+      transactionObserver?: RunnerSqliteTransactionObserver;
     } = {},
   ): Promise<RunnerParentOutbox> {
     const runner = await RunnerSqliteEventOutbox.openReadOnly(runnerDatabasePath, {
@@ -44,9 +46,18 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
     });
     try {
       const hostPath = runnerHostStatePath(runnerDatabasePath);
-      const host = RunnerHostStateStore.open(hostPath, options.phaseObservation
-        ? { phaseObservation: options.phaseObservation, sessionId, label: "runner host state open" }
-        : undefined);
+      const host = RunnerHostStateStore.open(
+        hostPath,
+        options.phaseObservation
+          ? { phaseObservation: options.phaseObservation, sessionId, label: "runner host state open" }
+          : undefined,
+        {
+          sessionId,
+          ...(options.transactionObserver
+            ? { transactionObserver: options.transactionObserver }
+            : {}),
+        },
+      );
       const outbox = new RunnerParentOutbox(
         runner,
         host,
@@ -68,6 +79,7 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
     options: {
       onCheckpointAdvanced?: (acknowledgedThrough: number) => Promise<void>;
       phaseObservation?: RunnerPhaseObservation;
+      transactionObserver?: RunnerSqliteTransactionObserver;
     } = {},
   ): Promise<RunnerParentOutbox> {
     const runner = await RunnerSqliteEventOutbox.openReadOnlyTail(
@@ -79,9 +91,18 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
     );
     try {
       const hostPath = runnerHostStatePath(runnerDatabasePath);
-      const host = RunnerHostStateStore.open(hostPath, options.phaseObservation
-        ? { phaseObservation: options.phaseObservation, sessionId, label: "runner host state open" }
-        : undefined);
+      const host = RunnerHostStateStore.open(
+        hostPath,
+        options.phaseObservation
+          ? { phaseObservation: options.phaseObservation, sessionId, label: "runner host state open" }
+          : undefined,
+        {
+          sessionId,
+          ...(options.transactionObserver
+            ? { transactionObserver: options.transactionObserver }
+            : {}),
+        },
+      );
       const outbox = new RunnerParentOutbox(
         runner,
         host,

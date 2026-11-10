@@ -1534,7 +1534,16 @@ describe("RunnerProcessDispatcher", () => {
       operation: "command:execute",
     });
     expect(finishRunnerOperation).toHaveBeenCalledTimes(2);
-    expect(sqliteTransactionObserver).not.toHaveBeenCalled();
+    const observedTransactionLabels = sqliteTransactionObserver.mock.calls.map(
+      ([event]) => (event as { transactionLabel: string }).transactionLabel,
+    );
+    expect(observedTransactionLabels).toEqual(expect.arrayContaining([
+      "runner_host.initialize_checkpoint",
+      "runner_host.acknowledge_event",
+    ]));
+    expect(observedTransactionLabels.every(
+      (label) => label.startsWith("runner_host."),
+    )).toBe(true);
     await expect(dispatcher.waitForSessionAck()).resolves.toBeNull();
     await vi.waitFor(async () => {
       const observer = await RunnerSqliteEventOutbox.create(paths.databasePath);

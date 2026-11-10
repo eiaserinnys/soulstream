@@ -2560,7 +2560,7 @@ describe("RunnerRecoveryCoordinator phase observation", () => {
     expect(subject.logger.info).toHaveBeenCalledWith(expect.objectContaining({
       nodeId: "node-a",
       phaseDurationsMs: expect.objectContaining({ registration: 7 }),
-      database: expect.objectContaining({ counts: { dbOpen: 0, dbRead: 1 } }),
+      database: expect.objectContaining({ counts: { dbOpen: 0, dbRead: 1, dbClose: 0 } }),
     }), "runner recovery scan completed");
   });
 

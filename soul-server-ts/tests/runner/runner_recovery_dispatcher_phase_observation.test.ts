@@ -107,7 +107,7 @@ describe("recovery dispatcher phase observation", () => {
         expect(summary).toBeDefined();
         expect(summary?.counts.dbOpen).toBeGreaterThan(0);
         expect(summary?.counts.dbRead).toBeGreaterThan(0);
-        expect(summary?.failures).toEqual({ dbOpen: 0, dbRead: 0 });
+        expect(summary?.failures).toEqual({ dbOpen: 0, dbRead: 0, dbClose: 0 });
         expect(startedPhases).toContain("dbOpen");
         expect(startedPhases).toContain("dbRead");
         expect(finishedPhases).toEqual(startedPhases);
