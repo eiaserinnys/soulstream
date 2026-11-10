@@ -155,10 +155,12 @@ export class CardControlPlaneService {
     return {...result,card};
   }
   private async prepareCreateCardParams(sql:RepositorySql,params:CreateCardParams):Promise<CreateCardParams> {
-    if (params.actorKind !== "agent" || !params.actorSessionId || Object.hasOwn(params,"assignee")) return params;
+    if (params.actorKind !== "agent" || !params.actorSessionId) return params;
+    if (params.assignee !== undefined && params.assignee?.kind !== "agent") return params;
     const creator=(await sql<{agent_id:string;node_id:string;model_preset:string | null}[]>`SELECT agent_id,node_id,model_preset FROM sessions WHERE session_id=${params.actorSessionId}`)[0];
-    if (!creator?.agent_id) throw invalidCard("Creating session must have an agent_id");
-    return {...params,assignee:{kind:"agent",agentId:creator.agent_id},nodeId:params.nodeId ?? creator.node_id,modelPreset:params.modelPreset ?? creator.model_preset};
+    const assignee=params.assignee ?? (creator?.agent_id ? {kind:"agent" as const,agentId:creator.agent_id} : null);
+    if (!assignee) throw invalidCard("Creating session must have an agent_id");
+    return {...params,assignee,nodeId:params.nodeId ?? creator?.node_id,modelPreset:params.modelPreset ?? creator?.model_preset};
   }
   private createCardMutation(params:CreateCardParams,id:string):FolderMutateParams {
     const assignee=assigneeToFields(params.assignee);
@@ -566,8 +568,11 @@ export class CardControlPlaneService {
     payload:Record<string,unknown>,
   ):Promise<Record<string,unknown>> {
     const claim=params.actorKind === "agent" ? await this.claim(sql,card,params.actorSessionId,payload) : {};
-    if (params.actorKind === "agent" && (!params.actorSessionId || card.assignee_session_id !== params.actorSessionId))
-      throw Object.assign(new Error("Only the current assignee session may change card status. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work."), {statusCode:403});
+    const unassignedRest=params.actorKind === "agent" && Boolean(params.actorSessionId)
+      && card.assignee_session_id === null && card.assignee_kind !== "human"
+      && ["todo","queued","on_hold","cancelled"].includes(params.status);
+    if (params.actorKind === "agent" && (!params.actorSessionId || card.assignee_session_id !== params.actorSessionId) && !unassignedRest)
+      throw Object.assign(new Error("Only the current assignee session may change card status. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work. A card without an assignee session can be moved to todo, queued, on_hold or cancelled by any internal agent session."), {statusCode:403});
     return { ...claim,status:params.status,
       blocked_kind:params.status === "blocked" ? params.blockedKind ?? null : null,
       blocked_detail:params.status === "blocked" ? params.blockedDetail ?? null : null,

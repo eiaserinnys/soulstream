@@ -22,8 +22,11 @@ describe("cards storage, HTTP and planner", () => {
   const key = () => `card-test:${++sequence}`;
   beforeAll(async () => {
     h = await createPagePostgresHarness();
+    await h.sql`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS model_preset TEXT`;
     await h.sql`INSERT INTO folders(id,name) VALUES ('cards-a','A'),('cards-b','B')`;
     await h.sql`INSERT INTO sessions(session_id,folder_id,status) VALUES ('card-agent','cards-a','running')`;
+    await h.sql`INSERT INTO sessions(session_id,folder_id,status,agent_id,node_id,model_preset)
+      VALUES ('creator-session','cards-a','running','creator-agent','node-creator','preset-creator')`;
     cards = new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql), {
       appendEventTx: async (sql,p) => {
         const rows=await sql<{ id:number }[]>`INSERT INTO events(session_id,id,event_type,payload,dedupe_key)
@@ -265,5 +268,35 @@ describe("cards storage, HTTP and planner", () => {
     expect(today.running.length).toBeGreaterThan(0);
     expect(today.queued.map(c=>c.title)).toEqual(['둘째','첫']);
     expect((await planner.getFolder('cards-a',{limit:10}))!).toHaveProperty('cards');
+  });
+
+  it("fills the creating session's node and model when an explicit agent assignee is given", async () => {
+    const made=await cards.createCard({ actorKind:'agent',actorSessionId:'creator-session',folderId:'cards-a',
+      title:'기본값',request:'',queue:true,assignee:{kind:'agent',agentId:'assignee-agent'},idempotencyKey:key() });
+    const stored=await h.sql<{node_id:string|null;model_preset:string|null;assignee_kind:string|null;assignee_session_id:string|null}[]>`
+      SELECT node_id,model_preset,assignee_kind,assignee_session_id FROM cards WHERE id=${made.operation.target_id}`;
+    expect(stored[0]).toEqual({node_id:'node-creator',model_preset:'preset-creator',assignee_kind:'agent',assignee_session_id:null});
+
+    const explicit=await cards.createCard({ actorKind:'agent',actorSessionId:'creator-session',folderId:'cards-a',
+      title:'명시',request:'',queue:true,assignee:{kind:'agent',agentId:'assignee-agent'},nodeId:'node-explicit',idempotencyKey:key() });
+    const explicitStored=await h.sql<{node_id:string|null;model_preset:string|null}[]>`
+      SELECT node_id,model_preset FROM cards WHERE id=${explicit.operation.target_id}`;
+    expect(explicitStored[0]).toEqual({node_id:'node-explicit',model_preset:'preset-creator'});
+    await h.sql`DELETE FROM cards WHERE id IN (${made.operation.target_id},${explicit.operation.target_id})`;
+  });
+
+  it("lets another agent session move a card without an assignee session to a resting status but not complete it", async () => {
+    const made=await cards.createCard({ ...human,folderId:'cards-a',title:'대기 취소',request:'',
+      queue:true,assignee:{kind:'agent',agentId:'queue-agent'},idempotencyKey:key() });
+    const id=made.operation.target_id;
+    expect((await h.sql<{assignee_session_id:string|null}[]>`SELECT assignee_session_id FROM cards WHERE id=${id}`)[0]!.assignee_session_id).toBeNull();
+    await cards.setCardStatus({ ...agent,cardId:id,status:'cancelled',idempotencyKey:key() });
+    const stored=await h.sql<{status:string;assignee_session_id:string|null;assignee_kind:string|null}[]>`
+      SELECT status,assignee_session_id,assignee_kind FROM cards WHERE id=${id}`;
+    expect(stored[0]).toEqual({status:'cancelled',assignee_session_id:null,assignee_kind:'agent'});
+    await expect(cards.setCardStatus({ ...agent,cardId:id,status:'done',idempotencyKey:key() }))
+      .rejects.toMatchObject({statusCode:403});
+    expect((await h.sql<{status:string}[]>`SELECT status FROM cards WHERE id=${id}`)[0]!.status).toBe('cancelled');
+    await h.sql`DELETE FROM cards WHERE id=${id}`;
   });
 });
