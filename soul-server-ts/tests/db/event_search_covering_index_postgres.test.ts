@@ -236,6 +236,10 @@ describe.sequential("event search covering index migrations", () => {
           migrationError = error;
         }
       }
+      expect(
+        migrationError,
+        "no term length in 2600..2700 fits the legacy shape but overflows the covering index",
+      ).not.toBeNull();
       expect(String(migrationError)).toMatch(INDEX_ROW_TOO_WIDE);
 
       const afterFailure = await sql`
