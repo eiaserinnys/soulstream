@@ -988,6 +988,105 @@ describe("TaskTurnInputBuilder", () => {
     );
   });
 
+  it("records the running sessions marker on the first follow-up and resends the full list on reinjection", async () => {
+    const row = (id: string) => ({
+      session_id: id,
+      display_name: `Title ${id}`,
+      node_id: "node-A",
+      folder_id: null,
+      folder_name: null,
+      updated_at: new Date("2026-07-13T00:00:00Z"),
+    });
+    const listRunningSessionsSummary = vi.fn()
+      .mockResolvedValueOnce({ sessions: [row("session-a"), row("session-b")], total: 2 })
+      .mockResolvedValueOnce({ sessions: [row("session-a"), row("session-b")], total: 2 })
+      .mockResolvedValueOnce({
+        sessions: [row("session-a"), row("session-b"), row("session-c")],
+        total: 3,
+      })
+      .mockResolvedValueOnce({
+        sessions: [row("session-a"), row("session-b"), row("session-c")],
+        total: 3,
+      });
+    const db = {
+      getResumeContext: vi.fn().mockResolvedValue({
+        session: null,
+        folderSessions: { sessions: [], total: 0 },
+        runningSessions: { sessions: [row("session-a"), row("session-b")], total: 2 },
+        predecessor: null,
+      }),
+      listRunningSessionsSummary,
+      getSession: vi.fn().mockResolvedValue(null),
+      getFolderById: vi.fn().mockResolvedValue(null),
+      getAssignedCardContext: vi.fn().mockResolvedValue({
+        capturedAt: "2026-07-13T00:00:00.000Z",
+        total: 0,
+        omitted: 0,
+        cards: [],
+      }),
+    } as unknown as SessionDB;
+    const logger = { warn: vi.fn() } as unknown as Logger;
+    const contextBuilder = new ExecutionContextBuilder(
+      db,
+      new AgentRegistry([codexAgent]),
+      { nodeId: "test-node", atom: { enabled: false, serverUrl: "", apiKey: "" } },
+      logger,
+    );
+    const builder = new TaskTurnInputBuilder({
+      contextBuilder,
+      initialMessagePublisher: {
+        publishInitialMessages: vi.fn().mockResolvedValue(undefined),
+        publishContextManifestBestEffort: vi.fn().mockResolvedValue(undefined),
+      },
+      logger,
+    });
+    const task = makeTask();
+
+    const first = await builder.prepareFollowupTurnInput(
+      task,
+      codexAgent,
+      [{ text: "계속", user: "u" }],
+    );
+    expect(first.prompt).toContain("<running_sessions>");
+    expect(first.prompt).toContain("session-a");
+    expect(first.prompt).toContain("session-b");
+    expect(task.lastInjectedRunningSessions).toEqual({
+      "session-a": "Title session-a",
+      "session-b": "Title session-b",
+    });
+
+    const second = await builder.prepareFollowupTurnInput(
+      task,
+      codexAgent,
+      [{ text: "계속", user: "u" }],
+    );
+    expect(second.prompt).not.toContain("<running_sessions>");
+    expect(task.lastInjectedRunningSessions).toEqual({
+      "session-a": "Title session-a",
+      "session-b": "Title session-b",
+    });
+
+    task.needsFullContextReinjection = true;
+    const reinjected = await builder.prepareFollowupTurnInput(
+      task,
+      codexAgent,
+      [{ text: "계속", user: "u" }],
+    );
+    expect(reinjected.prompt).toContain("<running_sessions>");
+    expect(task.lastInjectedRunningSessions).toEqual({
+      "session-a": "Title session-a",
+      "session-b": "Title session-b",
+      "session-c": "Title session-c",
+    });
+
+    const afterReinjection = await builder.prepareFollowupTurnInput(
+      task,
+      codexAgent,
+      [{ text: "계속", user: "u" }],
+    );
+    expect(afterReinjection.prompt).not.toContain("<running_sessions>");
+  });
+
   it.each([
     ["cache keepalive", {
       text: "캐시 유지용 호출입니다. 도구를 쓰지 말고 '[SILENT]'만 답하십시오.",

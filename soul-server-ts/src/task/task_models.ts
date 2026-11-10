@@ -595,6 +595,9 @@ export interface Task {
   /** 후속 턴에 caller_info delta를 한 번만 주입하기 위한 런타임 마커. */
   lastInjectedCallerInfo?: CallerInfo;
 
+  /** 후속 턴에 실행 중 세션 delta만 주입하기 위한 런타임 마커. 마지막으로 모델에 알린 실행 중 세션 집합. */
+  lastInjectedRunningSessions?: Record<string, string>;
+
   /** compact 직후 첫 사용자 메시지에서만 full context를 재주입하기 위한 런타임 플래그. */
   needsFullContextReinjection?: boolean;
 

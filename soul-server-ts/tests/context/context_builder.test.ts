@@ -1802,7 +1802,7 @@ describe("composeFirstTurnPrompt — 합성 알고리즘", () => {
 
 describe("ExecutionContextBuilder.buildResumeContextItems — legacy follow-up wrapper", () => {
   it("legacy wrapper도 soulstream_session 재주입 없이 running_sessions와 assigned_cards를 반환한다", async () => {
-    const listRunningSessionsSummary = vi.fn().mockResolvedValue([]);
+    const listRunningSessionsSummary = vi.fn().mockResolvedValue({ sessions: [], total: 0 });
     const cb = makeBuilder({ listRunningSessionsSummary } as Partial<SessionDB>);
 
     const items = await cb.buildResumeContextItems(makeTask(), codexAgent);
@@ -1811,7 +1811,7 @@ describe("ExecutionContextBuilder.buildResumeContextItems — legacy follow-up w
   });
 
   it("legacy wrapper는 claude_session_id/caller_info delta를 running_sessions 앞에 붙인다", async () => {
-    const listRunningSessionsSummary = vi.fn().mockResolvedValue([]);
+    const listRunningSessionsSummary = vi.fn().mockResolvedValue({ sessions: [], total: 0 });
     const cb = makeBuilder({ listRunningSessionsSummary } as Partial<SessionDB>);
 
     const items = await cb.buildResumeContextItems(
@@ -1834,15 +1834,17 @@ describe("ExecutionContextBuilder.buildResumeContextItems — legacy follow-up w
 
 describe("ExecutionContextBuilder.buildFollowupContext — turn별 동적 context", () => {
   it("일반 후속 턴은 claude_session_id delta + caller_info delta + running_sessions만 끝에 싣는다", async () => {
-    const listRunningSessionsSummary = vi.fn().mockResolvedValue([
-      {
-        agent_session_id: "other-session",
-        title: "다른 세션",
+    const listRunningSessionsSummary = vi.fn().mockResolvedValue({
+      sessions: [{
+        session_id: "other-session",
+        display_name: "다른 세션",
         node_id: "node-A",
         folder_id: "folder-1",
         folder_name: "✨ 소울스트림",
-      },
-    ]);
+        updated_at: new Date("2026-07-13T00:00:00Z"),
+      }],
+      total: 1,
+    });
     const cb = makeBuilder({ listRunningSessionsSummary } as Partial<SessionDB>);
 
     const ctx = await cb.buildFollowupContext(
@@ -1885,7 +1887,7 @@ describe("ExecutionContextBuilder.buildFollowupContext — turn별 동적 contex
   });
 
   it("변경 없는 일반 후속 턴은 running_sessions와 assigned_cards를 주입한다", async () => {
-    const listRunningSessionsSummary = vi.fn().mockResolvedValue([]);
+    const listRunningSessionsSummary = vi.fn().mockResolvedValue({ sessions: [], total: 0 });
     const cb = makeBuilder({ listRunningSessionsSummary } as Partial<SessionDB>);
 
     const ctx = await cb.buildFollowupContext(
@@ -1983,7 +1985,7 @@ describe("ExecutionContextBuilder.buildFollowupContext — turn별 동적 contex
       settings: { folderPrompt: "폴더 프롬프트" },
     });
     const getCatalog = vi.fn().mockResolvedValue({ folders: [], sessions: [] });
-    const listRunningSessionsSummary = vi.fn().mockResolvedValue([]);
+    const listRunningSessionsSummary = vi.fn().mockResolvedValue({ sessions: [], total: 0 });
     const cb = makeBuilder({
       getSession,
       getFolderById,
@@ -2003,6 +2005,152 @@ describe("ExecutionContextBuilder.buildFollowupContext — turn별 동적 contex
       "assigned_cards",
     ]);
     expect(ctx.contextItems.map((item) => item.key)).not.toContain("card_assignee_replacement");
+  });
+});
+
+describe("ExecutionContextBuilder — 후속 턴 running_sessions delta", () => {
+  const runningRow = (id: string, title: string | null = `Title ${id}`) => ({
+    session_id: id,
+    display_name: title,
+    node_id: "node-A",
+    folder_id: "folder-1",
+    folder_name: "✨ 소울스트림",
+    updated_at: new Date("2026-07-13T00:00:00Z"),
+  });
+
+  it("마커가 없으면 전체 목록을 싣고 snapshot을 반환한다", async () => {
+    const listRunningSessionsSummary = vi.fn().mockResolvedValue({
+      sessions: [runningRow("session-new")],
+      total: 1,
+    });
+    const cb = makeBuilder({ listRunningSessionsSummary } as Partial<SessionDB>);
+
+    const ctx = await cb.buildFollowupContext(makeTask(), codexAgent);
+
+    expect(listRunningSessionsSummary).toHaveBeenCalledWith({
+      limit: 200,
+      excludeSessionId: "sess-1",
+    });
+    expect(ctx.contextItems).toContainEqual({
+      key: "running_sessions",
+      label: "Running Soulstream sessions",
+      content: {
+        status: "ok",
+        scope: "cluster_database_running_sessions",
+        current_session_id: "sess-1",
+        sessions: [{
+          agent_session_id: "session-new",
+          title: "Title session-new",
+          node_id: "node-A",
+          folder_id: "folder-1",
+          folder_name: "✨ 소울스트림",
+        }],
+      },
+    });
+    expect(ctx.runningSessionsSnapshot).toEqual({
+      sessions: [runningRow("session-new")],
+      total: 1,
+    });
+  });
+
+  it("마커가 있으면 새 세션과 끝난 세션만 delta로 싣는다", async () => {
+    const listRunningSessionsSummary = vi.fn().mockResolvedValue({
+      sessions: [runningRow("session-stays"), runningRow("session-new")],
+      total: 2,
+    });
+    const cb = makeBuilder({ listRunningSessionsSummary } as Partial<SessionDB>);
+    const task = makeTask({
+      lastInjectedRunningSessions: {
+        "session-stays": "Stays title",
+        "session-ended": "Ended title",
+      },
+    });
+
+    const ctx = await cb.buildFollowupContext(task, codexAgent);
+
+    expect(ctx.contextItems).toContainEqual({
+      key: "running_sessions",
+      label: "Running Soulstream sessions (changes since previous turn)",
+      content: {
+        status: "ok",
+        scope: "cluster_database_running_sessions",
+        mode: "delta",
+        current_session_id: "sess-1",
+        running_total: 2,
+        started: [{
+          agent_session_id: "session-new",
+          title: "Title session-new",
+          node_id: "node-A",
+          folder_id: "folder-1",
+          folder_name: "✨ 소울스트림",
+        }],
+        ended: [{ agent_session_id: "session-ended", title: "Ended title" }],
+        message:
+          "Only changes since the previous turn. Sessions not listed are unchanged. Use list_sessions for the full list.",
+      },
+    });
+    expect(ctx.runningSessionsSnapshot?.total).toBe(2);
+  });
+
+  it("마커와 지금 집합이 같으면 running_sessions를 싣지 않는다", async () => {
+    const listRunningSessionsSummary = vi.fn().mockResolvedValue({
+      sessions: [runningRow("session-a")],
+      total: 1,
+    });
+    const cb = makeBuilder({ listRunningSessionsSummary } as Partial<SessionDB>);
+    const task = makeTask({
+      lastInjectedRunningSessions: { "session-a": "Title session-a" },
+    });
+
+    const ctx = await cb.buildFollowupContext(task, codexAgent);
+
+    expect(ctx.contextItems.map((item) => item.key)).not.toContain("running_sessions");
+    expect(ctx.runningSessionsSnapshot?.total).toBe(1);
+  });
+
+  it("includeFullContext면 마커가 있어도 전체 목록과 snapshot을 싣는다", async () => {
+    const listRunningSessionsSummary = vi.fn().mockResolvedValue({
+      sessions: [runningRow("session-a")],
+      total: 1,
+    });
+    const cb = makeBuilder({ listRunningSessionsSummary } as Partial<SessionDB>);
+    const task = makeTask({
+      lastInjectedRunningSessions: { "session-a": "Title session-a" },
+    });
+
+    const ctx = await cb.buildFollowupContext(task, codexAgent, {
+      includeFullContext: true,
+    });
+
+    expect(ctx.contextItems).toContainEqual(expect.objectContaining({
+      key: "running_sessions",
+      label: "Running Soulstream sessions",
+    }));
+    expect(ctx.runningSessionsSnapshot).toEqual({
+      sessions: [runningRow("session-a")],
+      total: 1,
+    });
+  });
+
+  it("minimal scope면 running_sessions 항목도 snapshot도 없다", async () => {
+    const listRunningSessionsSummary = vi.fn().mockResolvedValue({
+      sessions: [runningRow("session-a")],
+      total: 1,
+    });
+    const agent: AgentProfile = { ...codexAgent, context_scope: "minimal" };
+    const cb = makeBuilder(
+      { listRunningSessionsSummary } as Partial<SessionDB>,
+      new AgentRegistry([agent]),
+    );
+    const task = makeTask({
+      lastInjectedRunningSessions: { "session-gone": "Gone title" },
+    });
+
+    const ctx = await cb.buildFollowupContext(task, agent);
+
+    expect(ctx.contextItems.map((item) => item.key)).not.toContain("running_sessions");
+    expect(ctx.runningSessionsSnapshot).toBeUndefined();
+    expect(listRunningSessionsSummary).not.toHaveBeenCalled();
   });
 });
 
