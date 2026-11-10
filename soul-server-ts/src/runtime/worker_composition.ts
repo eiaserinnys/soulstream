@@ -330,9 +330,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     taskManager,
     taskExecutor: taskRuntime.taskExecutor,
     logger,
-    ...(params.nodeStallMonitor
-      ? { nodeStallMonitor: params.nodeStallMonitor }
-      : {}),
+    ...(params.nodeStallMonitor ? { nodeStallMonitor: params.nodeStallMonitor } : {}),
     ...(claudeRuntime.backgroundLifecycle
       ? {
         terminalizeClaudeBackgroundTasks: (sessionId, execution) =>

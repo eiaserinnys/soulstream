@@ -132,11 +132,15 @@ export class RunnerRecoveryStorage {
   }
 
   private async ensureClient(): Promise<RunnerParentStorageWorkerClient> {
-    const existing = this.clientPromise;
-    if (existing) {
+    // Callers that all saw the same dead client must share one replacement;
+    // only the first one to resume swaps it, the rest await that new client.
+    for (let existing = this.clientPromise; existing; existing = this.clientPromise) {
       const client = await existing;
       if (!client.isTerminal()) return client;
-      this.clientPromise = undefined;
+      if (this.clientPromise === existing) {
+        this.clientPromise = undefined;
+        break;
+      }
     }
     if (this.closed) throw new Error("runner recovery storage is closed");
     const created = this.openClient();

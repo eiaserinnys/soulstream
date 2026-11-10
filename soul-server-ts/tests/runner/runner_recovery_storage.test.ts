@@ -404,7 +404,7 @@ describe("runner recovery storage worker boundary", () => {
     }
   });
 
-  it("fails a crashed worker request once and creates a new client on the next call", async () => {
+  it("fails a crashed worker request once and shares one new client across the next calls", async () => {
     const fixture = await createDatabase({ events: ["one"] });
     const lifecycle = RunnerSqliteLifecycle.open(fixture.databasePath);
     lifecycle.begin({
@@ -450,8 +450,15 @@ describe("runner recovery storage worker boundary", () => {
       expect([...finishedPhases].sort()).toEqual([...startedPhases].sort());
     });
 
-    await expect(storage.readSqliteIdentity({ databasePath: fixture.databasePath }))
-      .resolves.toMatchObject({ sessionId: "session-a", codeSha: "sha-a" });
+    // Both calls see the same dead client; they must share one replacement
+    // instead of each spawning a worker and orphaning the other.
+    const identities = await Promise.all([
+      storage.readSqliteIdentity({ databasePath: fixture.databasePath }),
+      storage.readSqliteIdentity({ databasePath: fixture.databasePath }),
+    ]);
+    for (const identity of identities) {
+      expect(identity).toMatchObject({ sessionId: "session-a", codeSha: "sha-a" });
+    }
     expect(factory.created).toBe(2);
   });
 
