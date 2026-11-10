@@ -110,7 +110,12 @@ describe("recovery dispatcher phase observation", () => {
         expect(summary?.failures).toEqual({ dbOpen: 0, dbRead: 0, dbClose: 0 });
         expect(startedPhases).toContain("dbOpen");
         expect(startedPhases).toContain("dbRead");
-        expect(finishedPhases).toEqual(startedPhases);
+        // dbWorkerWait wraps the worker's own DB phases, so phases end in a
+        // different order than they start, and a replay read can still be on
+        // its worker round trip here. Every started phase must still end.
+        await vi.waitFor(() => {
+          expect([...finishedPhases].sort()).toEqual([...startedPhases].sort());
+        });
         expect(summary?.recentSamples).toEqual(expect.arrayContaining([
           expect.objectContaining({
             phase: "dbOpen",
