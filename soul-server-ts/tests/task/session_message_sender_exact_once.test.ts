@@ -559,6 +559,7 @@ describe("sendMessageToSession cross-node exact-once", () => {
       lookupNodeId: null,
       failureMessage: `Task not found: ${TARGET_SESSION_ID}`,
       loadEvictedTask: async () => null,
+      expectedHint: { hint: expect.stringContaining("list_persistent_sessions") },
     },
     {
       kind: "hydration",
@@ -567,11 +568,13 @@ describe("sendMessageToSession cross-node exact-once", () => {
       loadEvictedTask: async () => {
         throw new Error(`Task hydration failed: ${TARGET_SESSION_ID}`);
       },
+      expectedHint: {},
     },
   ])("keeps $kind failures explicit without a local delivery row", async ({
     lookupNodeId,
     failureMessage,
     loadEvictedTask,
+    expectedHint,
   }) => {
     const clock = new FakeClock();
     const ledger = new SharedDeliveryLedger(clock);
@@ -609,6 +612,7 @@ describe("sendMessageToSession cross-node exact-once", () => {
       ok: false,
       error: failureMessage,
       fallback_error: "orch relay is reserved for a confirmed remote owner",
+      ...expectedHint,
     });
     expect(ledger.rows.size).toBe(0);
     expect(ledger.admissions.get("local-node") ?? 0).toBe(0);
