@@ -17,14 +17,8 @@ export const persistentSessionSettingsHandlers = {
       const owner = await options.resolveSessionOwner(callerSessionId);
       if (!owner) return errorResult("The trusted caller session has no verified owner email for persistent session settings.");
       const query = args.query as string | undefined;
-      const agentId = args.agent_id as string | undefined;
-      const nodeId = args.node_id as string | undefined;
       const result = await options.persistentSessionSettings.listForMcp(
-        {
-          ...(query === undefined ? {} : { query }),
-          ...(agentId === undefined ? {} : { agentId }),
-          ...(nodeId === undefined ? {} : { nodeId }),
-        },
+        query === undefined ? {} : { query },
         owner.ownerEmail,
       );
       return jsonResult(result);

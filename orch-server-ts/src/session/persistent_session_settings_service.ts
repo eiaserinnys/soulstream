@@ -87,8 +87,6 @@ export type PersistentSessionMcpEntry = {
 
 export type PersistentSessionMcpFilter = {
   query?: string;
-  agentId?: string;
-  nodeId?: string;
 };
 
 export class PersistentSessionSettingsService {
@@ -133,10 +131,7 @@ export class PersistentSessionSettingsService {
         const haystacks = [row.display_name, agentName, row.agent_id, row.session_id]
           .filter((value): value is string => typeof value === "string")
           .map((value) => value.toLowerCase());
-        if (!words.every((word) => haystacks.some((value) => value.includes(word)))) return false;
-        if (filter.agentId !== undefined && row.agent_id !== filter.agentId) return false;
-        if (filter.nodeId !== undefined && row.node_id !== filter.nodeId) return false;
-        return true;
+        return words.every((word) => haystacks.some((value) => value.includes(word)));
       })
       .sort((left, right) => right.updated_at.getTime() - left.updated_at.getTime())
       .map((row) => ({

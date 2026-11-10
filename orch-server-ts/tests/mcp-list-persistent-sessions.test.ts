@@ -155,11 +155,9 @@ describe("list_persistent_sessions MCP tool", () => {
     expect(sessionIds(await h.call({ query: "서소영 개밥먹기" }))).toEqual([]);
   });
 
-  it("filters by agent and node exactly and treats a blank query as no filter", async () => {
+  it("treats a blank query as no filter", async () => {
     const h = setup();
 
-    expect(sessionIds(await h.call({ agent_id: "seosoyoung-pas" }))).toEqual(["20e4dae9-8a2b-4c3d-8e4f-556677889900"]);
-    expect(sessionIds(await h.call({ node_id: "another-node" }))).toEqual([]);
     expect(sessionIds(await h.call({ query: "   " }))).toEqual([
       "aaaa1111-2222-4333-8444-555566667777",
       "20e4dae9-8a2b-4c3d-8e4f-556677889900",
@@ -201,7 +199,9 @@ describe("list_persistent_sessions MCP tool", () => {
 
     const input = z.object(definition.config.inputSchema).strict();
     expect(input.safeParse({}).success).toBe(true);
-    expect(input.safeParse({ query: "서소영", agent_id: "seosoyoung-pas", node_id: "eiaserinnys" }).success).toBe(true);
+    expect(input.safeParse({ query: "서소영" }).success).toBe(true);
+    // Exact agent and node filters invited guessed ids that hid the main PAS (카드 #1150 실측).
+    expect(input.safeParse({ agent_id: "seosoyoung" }).success).toBe(false);
     expect(input.safeParse({ caller_session_id: "forged" }).success).toBe(false);
 
     const description = definition.config.description ?? "";
