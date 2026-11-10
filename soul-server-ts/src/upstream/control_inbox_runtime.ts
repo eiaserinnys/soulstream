@@ -22,7 +22,12 @@ const HEALTHY_HEARTBEAT_AGE_MS = 250;
 const AVAILABLE_HEARTBEAT_AGE_MS = 1_000;
 
 export interface ControlInboxStorage {
-  initialize(): { reclaimed: number; pending: number; replayableResults: number };
+  initialize(): {
+    reclaimed: number;
+    pruned: number;
+    pending: number;
+    replayableResults: number;
+  };
   admit(
     commandFamily: ControlCommandFamily,
     command: Record<string, unknown>,

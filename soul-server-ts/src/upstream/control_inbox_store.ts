@@ -9,6 +9,21 @@ import type { ControlCommandFamily } from "./control_command_inventory.js";
 
 const requireNodeBuiltin = createRequire(import.meta.url);
 const CONTROL_INBOX_SCHEMA_VERSION = 1;
+const CONTROL_INBOX_ACKED_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+export const CONTROL_INBOX_CLAIM_PENDING_SQL = `
+  SELECT * FROM control_inbox
+  WHERE node_id = ? AND state = 'pending'
+  ORDER BY created_at, command_family, request_id
+  LIMIT ?
+`;
+
+export const CONTROL_INBOX_LIST_REPLAYABLE_RESULTS_SQL = `
+  SELECT * FROM control_inbox
+  WHERE node_id = ? AND state IN ('completed', 'rejected')
+    AND result_json IS NOT NULL AND result_id IS NOT NULL AND result_acked_at IS NULL
+  ORDER BY updated_at, command_family, request_id
+`;
 
 export type ControlInboxState = "pending" | "claimed" | "completed" | "rejected";
 
@@ -69,7 +84,12 @@ export class ControlInboxStore {
     this.nowMs = options.nowMs ?? Date.now;
   }
 
-  initialize(): { reclaimed: number; pending: number; replayableResults: number } {
+  initialize(): {
+    reclaimed: number;
+    pruned: number;
+    pending: number;
+    replayableResults: number;
+  } {
     if (this.database) throw new Error("ControlInboxStore is already initialized");
     mkdirSync(dirname(this.options.databasePath), { recursive: true });
     const { DatabaseSync } = requireNodeBuiltin("node:sqlite") as typeof import("node:sqlite");
@@ -97,6 +117,11 @@ export class ControlInboxStore {
         ) STRICT;
         CREATE UNIQUE INDEX IF NOT EXISTS control_inbox_result_id_uq
           ON control_inbox(result_id) WHERE result_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS control_inbox_node_state_created_idx
+          ON control_inbox(node_id, state, created_at);
+        CREATE INDEX IF NOT EXISTS control_inbox_unacked_results_idx
+          ON control_inbox(node_id, updated_at)
+          WHERE result_id IS NOT NULL AND result_acked_at IS NULL;
         PRAGMA user_version = ${CONTROL_INBOX_SCHEMA_VERSION};
       `);
       const now = this.nowMs();
@@ -107,8 +132,17 @@ export class ControlInboxStore {
         WHERE node_id = ? AND state = 'claimed'
           AND (host_generation <> ? OR lease_expires_at IS NULL OR lease_expires_at <= ?)
       `).run(now, this.options.nodeId, this.options.hostGeneration, now).changes;
+      const pruned = database.prepare(`
+        DELETE FROM control_inbox
+        WHERE node_id = ? AND state IN ('completed', 'rejected')
+          AND result_acked_at IS NOT NULL AND updated_at < ?
+      `).run(
+        this.options.nodeId,
+        now - CONTROL_INBOX_ACKED_RETENTION_MS,
+      ).changes;
       return {
         reclaimed: Number(reclaimed),
+        pruned: Number(pruned),
         pending: this.count("state = 'pending'"),
         replayableResults: this.count(
           "state IN ('completed', 'rejected') AND result_json IS NOT NULL AND result_acked_at IS NULL",
@@ -180,12 +214,8 @@ export class ControlInboxStore {
     }
     const database = this.requireDatabase();
     return this.transaction(() => {
-      const rows = database.prepare(`
-        SELECT * FROM control_inbox
-        WHERE node_id = ? AND state = 'pending'
-        ORDER BY created_at, command_family, request_id
-        LIMIT ?
-      `).all(this.options.nodeId, options.limit) as InboxRow[];
+      const rows = database.prepare(CONTROL_INBOX_CLAIM_PENDING_SQL)
+        .all(this.options.nodeId, options.limit) as InboxRow[];
       const now = this.nowMs();
       const leaseExpiresAt = now + options.leaseMs;
       const claim = database.prepare(`
@@ -252,12 +282,9 @@ export class ControlInboxStore {
   }
 
   listReplayableResults(): ControlInboxResult[] {
-    const rows = this.requireDatabase().prepare(`
-      SELECT * FROM control_inbox
-      WHERE node_id = ? AND state IN ('completed', 'rejected')
-        AND result_json IS NOT NULL AND result_id IS NOT NULL AND result_acked_at IS NULL
-      ORDER BY updated_at, command_family, request_id
-    `).all(this.options.nodeId) as InboxRow[];
+    const rows = this.requireDatabase()
+      .prepare(CONTROL_INBOX_LIST_REPLAYABLE_RESULTS_SQL)
+      .all(this.options.nodeId) as InboxRow[];
     return rows.map((row) => ({
       resultId: row.result_id!,
       nodeId: row.node_id,

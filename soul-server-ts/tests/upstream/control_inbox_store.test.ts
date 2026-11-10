@@ -1,14 +1,19 @@
 import { mkdtemp, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, describe, expect, it } from "vitest";
 
 import {
+  CONTROL_INBOX_CLAIM_PENDING_SQL,
+  CONTROL_INBOX_LIST_REPLAYABLE_RESULTS_SQL,
   ControlInboxStore,
   canonicalControlPayloadHash,
 } from "../../src/upstream/control_inbox_store.js";
 
+const requireNodeBuiltin = createRequire(import.meta.url);
+const DAY_MS = 24 * 60 * 60 * 1000;
 const roots: string[] = [];
 
 afterEach(async () => {
@@ -199,5 +204,120 @@ describe("ControlInboxStore", () => {
       expect.objectContaining({ resultId: result.resultId, requestId: "req-3" }),
     ]);
     store.close();
+  });
+
+  it("plans the claim and replay queries through the new indexes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "control-inbox-plan-"));
+    roots.push(root);
+    const databasePath = join(root, "_control", "control-inbox.sqlite");
+    const store = new ControlInboxStore({
+      databasePath,
+      nodeId: "node-a",
+      hostGeneration: "host-a",
+      nowMs: () => 1_000,
+    });
+    store.initialize();
+    const { DatabaseSync } = requireNodeBuiltin("node:sqlite") as typeof import("node:sqlite");
+    const reader = new DatabaseSync(databasePath);
+    try {
+      const claimPlan = reader
+        .prepare(`EXPLAIN QUERY PLAN ${CONTROL_INBOX_CLAIM_PENDING_SQL}`)
+        .all("node-a", 1) as Array<{ detail: string }>;
+      expect(claimPlan.map((row) => row.detail).join("\n")).toContain(
+        "control_inbox_node_state_created_idx",
+      );
+
+      const replayPlan = reader
+        .prepare(`EXPLAIN QUERY PLAN ${CONTROL_INBOX_LIST_REPLAYABLE_RESULTS_SQL}`)
+        .all("node-a") as Array<{ detail: string }>;
+      expect(replayPlan.map((row) => row.detail).join("\n")).toContain(
+        "control_inbox_unacked_results_idx",
+      );
+    } finally {
+      reader.close();
+      store.close();
+    }
+  });
+
+  it("prunes acknowledged terminal rows older than the retention window at initialize", async () => {
+    const root = await mkdtemp(join(tmpdir(), "control-inbox-prune-"));
+    roots.push(root);
+    const databasePath = join(root, "_control", "control-inbox.sqlite");
+    let now = 1_000;
+    const first = new ControlInboxStore({
+      databasePath,
+      nodeId: "node-a",
+      hostGeneration: "host-a",
+      nowMs: () => now,
+    });
+    first.initialize();
+    const command = (requestId: string) => ({
+      type: "intervene",
+      requestId,
+      agentSessionId: "session-a",
+      text: requestId,
+    });
+    for (const requestId of [
+      "old-completed",
+      "old-rejected",
+      "recent-completed",
+      "unacked-completed",
+    ]) {
+      first.admit("intervention", command(requestId));
+    }
+    const claimed = first.claimPending({ leaseMs: 30_000, limit: 10 });
+    expect(claimed).toHaveLength(4);
+    const byRequest = new Map(claimed.map((work) => [work.requestId, work]));
+    const oldCompleted = first.complete(byRequest.get("old-completed")!, {
+      type: "intervene_ack",
+      requestId: "old-completed",
+    });
+    const oldRejected = first.complete(byRequest.get("old-rejected")!, {
+      type: "error",
+      requestId: "old-rejected",
+    });
+    const recentCompleted = first.complete(byRequest.get("recent-completed")!, {
+      type: "intervene_ack",
+      requestId: "recent-completed",
+    });
+    first.complete(byRequest.get("unacked-completed")!, {
+      type: "intervene_ack",
+      requestId: "unacked-completed",
+    });
+    expect(first.acknowledgeResult(oldCompleted.resultId)).toBe(true);
+    expect(first.acknowledgeResult(oldRejected.resultId)).toBe(true);
+    now += 7 * DAY_MS;
+    expect(first.acknowledgeResult(recentCompleted.resultId)).toBe(true);
+    first.admit("intervention", command("still-pending"));
+    first.close();
+
+    now = 1_000 + 8 * DAY_MS;
+    const second = new ControlInboxStore({
+      databasePath,
+      nodeId: "node-a",
+      hostGeneration: "host-a",
+      nowMs: () => now,
+    });
+    expect(second.initialize()).toMatchObject({
+      reclaimed: 0,
+      pruned: 2,
+      pending: 1,
+      replayableResults: 1,
+    });
+    expect(second.listReplayableResults()).toEqual([
+      expect.objectContaining({ requestId: "unacked-completed" }),
+    ]);
+    expect(second.claimPending({ leaseMs: 30_000, limit: 10 })).toEqual([
+      expect.objectContaining({ requestId: "still-pending" }),
+    ]);
+    expect(second.admit("intervention", command("old-completed"))).toMatchObject({
+      status: "accepted",
+      state: "pending",
+    });
+    expect(second.admit("intervention", command("recent-completed"))).toMatchObject({
+      status: "duplicate",
+      state: "completed",
+    });
+    second.close();
   });
 });
