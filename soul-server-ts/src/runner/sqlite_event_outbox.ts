@@ -86,7 +86,7 @@ import {
   type RunnerSqliteTransactionObserver,
 } from "./runner_sqlite_connection.js";
 import { readRunnerRegistrationIdentity } from "./runner_registration_identity.js";
-import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
+import type { RunnerPhaseExecutor } from "./runner_phase_observation.js";
 
 export type { RunnerBootstrapInput, RunnerBootstrapRecord, RunnerResumeMaterial }
   from "./sqlite_event_outbox_schema.js";
@@ -96,7 +96,7 @@ type SqliteDatabase = InstanceType<typeof import("node:sqlite").DatabaseSync>;
 export interface RunnerSqliteEventOutboxOptions {
   sessionId?: string;
   transactionObserver?: RunnerSqliteTransactionObserver;
-  phaseObservation?: RunnerPhaseObservation;
+  phaseObservation?: RunnerPhaseExecutor;
 }
 
 export interface RunnerPendingDurableEvidence {
