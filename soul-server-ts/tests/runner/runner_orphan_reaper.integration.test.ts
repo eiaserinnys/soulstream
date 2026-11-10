@@ -45,7 +45,9 @@ async function alive(pid: number): Promise<boolean> {
     const status = await readFile(`/proc/${pid}/status`, "utf8");
     return !/^State:\s+Z/m.test(status);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    // ESRCH: the process exited and was reaped after open() and before read().
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ESRCH") return false;
     throw error;
   }
 }
