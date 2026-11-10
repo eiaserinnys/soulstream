@@ -53,8 +53,15 @@ export class ClaudeTurnInactivityWatchdog {
 }
 
 function isUserVisibleTurnActivity(event: ClaudeClientEvent): boolean {
-  return event.type === "text"
+  if (
+    event.type === "text"
     || event.type === "thinking"
     || event.type === "tool_start"
-    || event.type === "tool_result";
+    || event.type === "tool_result"
+  ) {
+    return true;
+  }
+  return event.type === "progress"
+    && typeof event.foregroundToolUseId === "string"
+    && event.foregroundToolUseId.length > 0;
 }

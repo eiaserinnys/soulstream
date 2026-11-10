@@ -158,6 +158,8 @@ export class ClaudeSdkEventMapper {
       linkTaskToTool: (taskId, toolUseId) =>
         this.parentIngressScopes.linkTaskToTool(taskId, toolUseId),
       isParentTaskEligible: (taskId) => this.isParentTaskEligible(taskId),
+      resolveForegroundAgentToolUseId: (taskId, messageToolUseId) =>
+        this.resolveForegroundAgentToolUseId(taskId, messageToolUseId),
     });
     for (const event of events) {
       const taskId = runtimeTaskId(event);
@@ -361,6 +363,27 @@ export class ClaudeSdkEventMapper {
     if (toolUseId && toolInput?.run_in_background === true) {
       this.backgroundAgentToolUseIds.add(toolUseId);
     }
+  }
+
+  resolveForegroundAgentToolUseId(
+    taskId: string | undefined,
+    messageToolUseId: string | undefined,
+  ): string | undefined {
+    const toolUseId = messageToolUseId
+      ?? (taskId ? this.parentIngressScopes.getTaskToolUseId(taskId) : undefined);
+    if (!toolUseId) return undefined;
+    if (this.toolNamesById.get(toolUseId) !== "Agent") return undefined;
+    if (!this.parentIngressScopes.isTopLevelToolUse(toolUseId)) return undefined;
+    if (this.emittedToolResultIds.has(toolUseId)) return undefined;
+    if (this.backgroundAgentToolUseIds.has(toolUseId)) return undefined;
+    if (
+      taskId
+      && (this.backgroundAgentTaskIds.has(taskId)
+        || this.runtimeState.hasBackgroundProvenance(taskId))
+    ) {
+      return undefined;
+    }
+    return toolUseId;
   }
 
   private mapRemoteOriginUserMessage(message: Record<string, unknown>): ClaudeClientEvent | null {

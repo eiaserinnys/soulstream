@@ -616,6 +616,31 @@ describe("Claude event mapper semantic history contract", () => {
     });
   });
 
+  it("progress preserves a foreground Agent tool use id as a stored snake_case key", () => {
+    const [payload] = mapClaudeClientEvent({
+      type: "progress",
+      text: "Running subagent",
+      foregroundToolUseId: "toolu-agent-1",
+    });
+
+    expect(payload).toEqual({
+      type: "progress",
+      text: "Running subagent",
+      foreground_tool_use_id: "toolu-agent-1",
+    });
+    expect(JSON.parse(JSON.stringify(payload))).toMatchObject({
+      type: "progress",
+      foreground_tool_use_id: "toolu-agent-1",
+    });
+  });
+
+  it("progress omits the foreground tool use key when the client event has none", () => {
+    const [payload] = mapClaudeClientEvent({ type: "progress", text: "host is alive" });
+
+    expect(payload).toEqual({ type: "progress", text: "host is alive" });
+    expect(payload).not.toHaveProperty("foreground_tool_use_id");
+  });
+
   it("golden fixture covers all P3 parity event families", () => {
     const fixture: ClaudeClientEvent[] = [
       { type: "session", sessionId: "claude-sess-1" },

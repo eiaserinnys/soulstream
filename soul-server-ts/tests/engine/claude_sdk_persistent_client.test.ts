@@ -1526,6 +1526,91 @@ describe("ClaudeSdkClient persistent runtime", () => {
     }
   });
 
+  it("keeps a foreground Agent turn alive through 25 minutes of linked task progress", async () => {
+    vi.useFakeTimers();
+    try {
+      const inactivityTimeoutMs = 20 * 60_000;
+      const harness = makeHarness();
+      const client = new ClaudeSdkClient(
+        {
+          query: harness.queryFn,
+          detachedEventSink: harness.detached,
+          persistentTurnInactivityTimeoutMs: inactivityTimeoutMs,
+        },
+        silentLogger,
+      );
+
+      const turn = collect(client.runPersistent(runOptions("long review"), abortSignal()));
+      const input = await harness.nextInput();
+      harness.push(input as SDKMessage);
+      harness.push(sdkForegroundAgentToolStart("agent-start", "toolu-agent"));
+      harness.push(sdkTaskStarted("task-agent", "toolu-agent"));
+      await vi.advanceTimersByTimeAsync(0);
+
+      for (let minute = 0; minute < 25; minute += 1) {
+        await vi.advanceTimersByTimeAsync(60_000);
+        harness.push(sdkTaskProgress("task-agent"));
+        await vi.advanceTimersByTimeAsync(0);
+      }
+
+      expect(harness.interrupt).not.toHaveBeenCalled();
+
+      harness.push(sdkToolResultInput("agent-result", "human", "toolu-agent"));
+      harness.push(sdkResult("sdk-session", input.uuid, "review complete"));
+      await expect(turn).resolves.toContainEqual(
+        expect.objectContaining({ type: "complete", result: "review complete" }),
+      );
+      await client.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("expires a foreground Agent turn exactly one interval after its last task progress", async () => {
+    vi.useFakeTimers();
+    try {
+      const inactivityTimeoutMs = 20 * 60_000;
+      const harness = makeHarness();
+      const client = new ClaudeSdkClient(
+        {
+          query: harness.queryFn,
+          detachedEventSink: harness.detached,
+          persistentTurnInactivityTimeoutMs: inactivityTimeoutMs,
+        },
+        silentLogger,
+      );
+
+      const turn = collect(client.runPersistent(runOptions("stalled review"), abortSignal()));
+      const input = await harness.nextInput();
+      harness.push(input as SDKMessage);
+      harness.push(sdkForegroundAgentToolStart("agent-start", "toolu-agent"));
+      harness.push(sdkTaskStarted("task-agent", "toolu-agent"));
+      await vi.advanceTimersByTimeAsync(0);
+
+      await vi.advanceTimersByTimeAsync(15 * 60_000);
+      harness.push(sdkTaskProgress("task-agent"));
+      await vi.advanceTimersByTimeAsync(0);
+
+      await vi.advanceTimersByTimeAsync(inactivityTimeoutMs - 1_000);
+      expect(harness.interrupt).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(1_000);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(harness.interrupt).toHaveBeenCalledTimes(1);
+
+      harness.push(sdkInterruptedResult("sdk-session", input.uuid));
+      await expect(turn).resolves.toContainEqual(
+        expect.objectContaining({
+          type: "error",
+          fatal: true,
+          errorCode: "claude_persistent_turn_timeout",
+        }),
+      );
+      await client.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps a silent runtime follow-up active past no-output timeout and routes its Result", async () => {
     vi.useFakeTimers();
     try {
@@ -2573,5 +2658,42 @@ function sdkAssistantToolStart(uuid: string, toolUseId: string): SDKMessage {
       role: "assistant",
       content: [{ type: "tool_use", id: toolUseId, name: "Upload", input: {} }],
     },
+  } as unknown as SDKMessage;
+}
+
+function sdkForegroundAgentToolStart(uuid: string, toolUseId: string): SDKMessage {
+  return {
+    type: "assistant",
+    uuid,
+    session_id: "sdk-session",
+    parent_tool_use_id: null,
+    message: {
+      id: uuid,
+      model: "claude",
+      role: "assistant",
+      content: [{ type: "tool_use", id: toolUseId, name: "Agent", input: {} }],
+    },
+  } as unknown as SDKMessage;
+}
+
+function sdkTaskStarted(taskId: string, toolUseId: string): SDKMessage {
+  return {
+    type: "system",
+    subtype: "task_started",
+    uuid: `task-started-${taskId}`,
+    session_id: "sdk-session",
+    task_id: taskId,
+    tool_use_id: toolUseId,
+  } as unknown as SDKMessage;
+}
+
+function sdkTaskProgress(taskId: string): SDKMessage {
+  return {
+    type: "system",
+    subtype: "task_progress",
+    uuid: `task-progress-${taskId}`,
+    session_id: "sdk-session",
+    task_id: taskId,
+    summary: "Running subagent",
   } as unknown as SDKMessage;
 }

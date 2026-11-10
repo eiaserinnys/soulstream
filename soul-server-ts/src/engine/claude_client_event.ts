@@ -3,7 +3,13 @@ export type ParentEventId = string | number | null;
 export type ClaudeClientEvent =
   | { type: "session"; sessionId: string; pid?: number }
   | { type: "debug"; message: string; timestamp?: number; parentEventId?: ParentEventId }
-  | { type: "progress"; text: string; timestamp?: number; parentEventId?: ParentEventId }
+  | {
+      type: "progress";
+      text: string;
+      foregroundToolUseId?: string;
+      timestamp?: number;
+      parentEventId?: ParentEventId;
+    }
   | { type: "text"; text: string; timestamp?: number; parentEventId?: ParentEventId }
   | {
       type: "thinking";
