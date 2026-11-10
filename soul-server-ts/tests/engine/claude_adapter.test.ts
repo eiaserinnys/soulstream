@@ -202,6 +202,27 @@ describe("ClaudeEngineAdapter options parity", () => {
     });
   });
 
+  it("sessionDirectory를 run options의 mcpConfigDirectory로 넘긴다", async () => {
+    const sessionDirectory = mkdtempSync(join(tmpdir(), "claude-mcp-config-adapter-"));
+    roots.push(sessionDirectory);
+    const captured: ClaudeRunOptions[] = [];
+    const engine = new ClaudeEngineAdapter(
+      {
+        workspaceDir: "/tmp/claude-work",
+        client: makeClient([], captured),
+        processEnv: {},
+        sessionDirectory,
+      },
+      silentLogger,
+    );
+
+    for await (const _ of engine.execute({ prompt: "hi" })) {
+      // drain
+    }
+
+    expect(captured[0]?.mcpConfigDirectory).toBe(sessionDirectory);
+  });
+
   it("official pool turn selects an account, sanitizes the final env, and releases the turn", async () => {
     const configDir = mkdtempSync(join(tmpdir(), "claude-pool-adapter-"));
     roots.push(configDir);

@@ -189,6 +189,7 @@ function createRunnerChildEnginePort(
   return new ClaudeEngineAdapter({
     workspaceDir: config.agent.workspace_dir,
     agentId: config.agent.id,
+    sessionDirectory: config.paths.sessionDirectory,
     processEnv: process.env,
     sessionStore,
     sessionStoreFlush: config.claudeRuntimeV2Enabled || accountPoolEnabled ? "eager" : "batched",
