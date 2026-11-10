@@ -419,8 +419,8 @@ function applyModelPresetFallbacks(
     const { model_preset_fallbacks: _empty, ...rest } = payload;
     return rest;
   }
-  const chooseUsablePreset = options.modelPresetAvailability?.chooseUsablePreset;
-  if (chooseUsablePreset === undefined || !Array.isArray(fallbacks)) {
+  const availability = options.modelPresetAvailability;
+  if (availability?.chooseUsablePreset === undefined || !Array.isArray(fallbacks)) {
     return payload;
   }
   const selection = options.router.selectNodeForCreate({
@@ -432,7 +432,8 @@ function applyModelPresetFallbacks(
   });
   const initialModelPreset = selection.modelPresetId;
   if (initialModelPreset === undefined) return payload;
-  const chosenPresetId = chooseUsablePreset(
+  // Call through the service: its method reads node availability via `this`.
+  const chosenPresetId = availability.chooseUsablePreset(
     selection.node.nodeId,
     [initialModelPreset, ...fallbacks],
   );

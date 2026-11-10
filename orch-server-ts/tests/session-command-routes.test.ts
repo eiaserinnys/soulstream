@@ -530,11 +530,19 @@ describe("session command HTTP route harness", () => {
         });
       } } });
       const requireAvailable = vi.fn();
+      // The real service reads availability through `this`; a detached call must fail here too.
+      const modelPresetAvailability = {
+        requireAvailable,
+        choose: chooseUsablePreset,
+        chooseUsablePreset(nodeId: string, candidateIds: readonly string[]): string {
+          return this.choose(nodeId, candidateIds) as string;
+        },
+      };
       const app = createApp({ config, sessionCommandRoutes: {
         router,
         bridge,
         nodeCredentials: null,
-        modelPresetAvailability: { requireAvailable, chooseUsablePreset },
+        modelPresetAvailability,
       } });
       return { app, sent, requireAvailable, chooseUsablePreset };
     }
