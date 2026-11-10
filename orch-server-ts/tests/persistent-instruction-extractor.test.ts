@@ -222,6 +222,31 @@ describe("persistent instruction extraction", () => {
     expect(prompt).not.toContain("assistant에만 있던 문장");
   });
 
+  it("excludes work-item lists from the persistent instruction prompt", async () => {
+    const generate = vi.fn().mockResolvedValue({
+      content: JSON.stringify({ standing_instructions: [] }),
+      model: "gpt-6.1-sol",
+      latencyMs: 1,
+      attempts: 1,
+    });
+    const extractor = createPersistentInstructionExtractor({
+      apiKey: "test-typesafe-key",
+      fetchImpl: async () => new Response(JSON.stringify({
+        answers: { long_term_correction: { noul: 0.8 } },
+      }), { status: 200 }),
+      generate,
+    });
+
+    await extractor.extract({
+      userText: "어떤 작업에도 두루 적용되는 행동 교정",
+      activeInstructions: [],
+    }, CONFIG);
+
+    expect(String(generate.mock.calls[0]?.[0])).toContain(
+      "특정 카드, PR, 작업을 가리키는 작업 목록(진행 상황, 검수 대기, 답을 기다리는 질문, 남은 일, 처리 순서)은 지속 지시가 아니므로 제외한다. 어떤 작업에도 두루 적용되는 행동 교정만 남긴다.",
+    );
+  });
+
   it("rejects an invalid Sol response without returning candidates", async () => {
     const extractor = createPersistentInstructionExtractor({
       apiKey: "test-typesafe-key",

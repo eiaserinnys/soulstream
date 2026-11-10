@@ -13,6 +13,10 @@ import { composeEffectiveSystemPrompt } from "./context_builder_helpers.js";
 import { buildSoulstreamContextItem } from "./soulstream_item.js";
 import { withoutSessionContextSourceMarkers } from "./session_context_sources.js";
 import type { PrimarySessionFolderContext } from "./session_folder_context.js";
+import type {
+  RunningSessionsContext,
+  RunningSessionsMarkerUpdate,
+} from "./session_context_items.js";
 
 export interface PreparedContext {
   /** agent atom context + folder_prompt + task.systemPrompt. */
@@ -32,6 +36,8 @@ export interface PreparedContext {
     systemParts: InputMaterialPartV1[];
     contextParts: Array<InputMaterialPartV1[] | null>;
   };
+  /** 이번 턴 뒤 모델이 아는 실행 중 세션 집합의 갱신. minimal scope·조회 실패면 없다. */
+  runningSessionsMarkerUpdate?: RunningSessionsMarkerUpdate;
 }
 
 export interface PreparedContextAssemblyInput {
@@ -50,7 +56,8 @@ export interface PreparedContextAssemblyInput {
   primaryFolder: PrimarySessionFolderContext | null;
   pageContextItem: ContextItem | null;
   boardWorkspaceItem: ContextItem | null;
-  runningSessionsItem: ContextItem | null;
+  /** 실행 중 세션 항목과 마커 갱신. minimal scope면 null. */
+  runningSessions: RunningSessionsContext | null;
   assignedCardItem: ContextItem | null;
   predecessorSummaryItem: ContextItem | null;
   generationCheckpointItem: ContextItem | null;
@@ -129,8 +136,8 @@ export function assemblePreparedContext(args: PreparedContextAssemblyInput): Pre
     combinedContextItems.push(checkpointContextItem);
     contextParts.push(null);
   }
-  if (args.runningSessionsItem) {
-    combinedContextItems.push(args.runningSessionsItem);
+  if (args.runningSessions?.item) {
+    combinedContextItems.push(args.runningSessions.item);
     contextParts.push(null);
   }
   if (args.cogitoContextItem) {
@@ -175,5 +182,8 @@ export function assemblePreparedContext(args: PreparedContextAssemblyInput): Pre
       systemParts: [...systemMaterial.parts],
       contextParts,
     },
+    ...(args.runningSessions?.markerUpdate
+      ? { runningSessionsMarkerUpdate: args.runningSessions.markerUpdate }
+      : {}),
   };
 }

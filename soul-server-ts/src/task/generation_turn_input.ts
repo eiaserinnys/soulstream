@@ -223,6 +223,11 @@ export function prepareGenerationTurnInput(
   task.needsFullContextReinjection = false;
   if (task.codexThreadId) task.lastInjectedClaudeSessionId = task.codexThreadId;
   if (currentCallerInfo) task.lastInjectedCallerInfo = currentCallerInfo;
+  if (context.runningSessionsMarkerUpdate) {
+    task.lastInjectedRunningSessions = context.runningSessionsMarkerUpdate.marker;
+  } else {
+    task.lastInjectedRunningSessions = undefined;
+  }
 
   const runnerInterventionIds = interventions
     .map((message) => message.runnerInterventionId)

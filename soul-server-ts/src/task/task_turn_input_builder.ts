@@ -138,7 +138,7 @@ export class TaskTurnInputBuilder {
     } else {
       await this.deps.initialMessagePublisher.publishInitialMessages(task, ctx);
     }
-    this.recordInitialContextInjection(task);
+    this.recordInitialContextInjection(task, ctx);
 
     const attachmentSource = createTaskAttachmentSource(task);
     const preparedAttachmentInput = attachmentSource
@@ -175,7 +175,7 @@ export class TaskTurnInputBuilder {
       inputId: inputUuid ?? null,
     });
     if (includeFullContext) task.needsFullContextReinjection = false;
-    if (ctx) this.recordFollowupContextInjection(task, currentCallerInfo);
+    if (ctx) this.recordFollowupContextInjection(task, currentCallerInfo, ctx);
     const preparedInterventions = await this.prepareInterventionCopies(task, interventions);
     const composed = composeInterventionTurnPrompt(preparedInterventions.map((message) => ({
       ...message,
@@ -234,7 +234,9 @@ export class TaskTurnInputBuilder {
       : task;
     const ctx = await this.buildBackendRolloverContext(taskForContext, agent);
     task.needsFullContextReinjection = false;
-    this.recordFollowupContextInjection(task, currentCallerInfo);
+    this.recordFollowupContextInjection(task, currentCallerInfo, ctx);
+    // 백엔드 교체 뒤에는 다음 후속 턴에 전체 목록을 다시 알린다.
+    task.lastInjectedRunningSessions = undefined;
 
     let replayBase: BackendRolloverReplayBase;
     let attachmentSource = failedInput.attachmentSource;
@@ -485,24 +487,34 @@ export class TaskTurnInputBuilder {
     }
   }
 
-  private recordInitialContextInjection(task: Task): void {
+  private recordInitialContextInjection(
+    task: Task,
+    ctx: PreparedContext | undefined,
+  ): void {
     if (task.codexThreadId) {
       task.lastInjectedClaudeSessionId = task.codexThreadId;
     }
     if (task.callerInfo) {
       task.lastInjectedCallerInfo = task.callerInfo;
     }
+    if (ctx?.runningSessionsMarkerUpdate) {
+      task.lastInjectedRunningSessions = ctx.runningSessionsMarkerUpdate.marker;
+    }
   }
 
   private recordFollowupContextInjection(
     task: Task,
     currentCallerInfo: Task["callerInfo"],
+    ctx: FollowupContext,
   ): void {
     if (task.codexThreadId) {
       task.lastInjectedClaudeSessionId = task.codexThreadId;
     }
     if (currentCallerInfo) {
       task.lastInjectedCallerInfo = currentCallerInfo;
+    }
+    if (ctx.runningSessionsMarkerUpdate) {
+      task.lastInjectedRunningSessions = ctx.runningSessionsMarkerUpdate.marker;
     }
   }
 }

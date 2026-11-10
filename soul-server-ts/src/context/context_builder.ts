@@ -43,7 +43,9 @@ import {
 } from "./context_builder_helpers.js";
 import {
   fetchBoardWorkspaceContextItem,
-  fetchRunningSessionsContextItem,
+  resolveFollowupRunningSessionsContext,
+  resolveFullRunningSessionsContext,
+  type RunningSessionsMarkerUpdate,
 } from "./session_context_items.js";
 import {
   NO_PAGE_ANCHOR_CONTEXT_RESOLVER,
@@ -83,6 +85,8 @@ export interface FollowupContext {
   effectiveSystemPrompt?: string;
   contextItems: ContextItem[];
   inputMaterialBreakdown?: PreparedContext["inputMaterialBreakdown"];
+  /** 이번 턴 뒤 모델이 아는 실행 중 세션 집합의 갱신. 없으면 그대로 둔다. */
+  runningSessionsMarkerUpdate?: RunningSessionsMarkerUpdate;
 }
 
 /** atom 호출 설정 (config.ts env에서 주입). */
@@ -124,6 +128,9 @@ export class ExecutionContextBuilder {
         effectiveSystemPrompt: ctx.effectiveSystemPrompt,
         contextItems: ctx.combinedContextItems,
         inputMaterialBreakdown: ctx.inputMaterialBreakdown,
+        ...(ctx.runningSessionsMarkerUpdate
+          ? { runningSessionsMarkerUpdate: ctx.runningSessionsMarkerUpdate }
+          : {}),
       };
     }
 
@@ -143,15 +150,13 @@ export class ExecutionContextBuilder {
       );
     }
 
+    let runningSessionsMarkerUpdate: RunningSessionsMarkerUpdate | undefined;
     if (!isMinimalContextScope(agent)) {
-      const runningSessionsItem = await fetchRunningSessionsContextItem(
-        this.db,
-        this.logger,
-        task.agentSessionId,
+      const running = await resolveFollowupRunningSessionsContext(
+        this.db, this.logger, task.agentSessionId, task.lastInjectedRunningSessions,
       );
-      if (runningSessionsItem) {
-        contextItems.push(runningSessionsItem);
-      }
+      if (running.item) contextItems.push(running.item);
+      runningSessionsMarkerUpdate = running.markerUpdate;
     }
     const nodeResourcesItem = await resolvePasNodeResourcesContextItem(
       this.db, this.cfg.nodeResources, task, undefined, this.logger,
@@ -165,7 +170,10 @@ export class ExecutionContextBuilder {
       task.agentSessionId,
     );
     if (cardAssigneeReplacementItem) contextItems.push(cardAssigneeReplacementItem);
-    return { contextItems };
+    return {
+      contextItems,
+      ...(runningSessionsMarkerUpdate ? { runningSessionsMarkerUpdate } : {}),
+    };
   }
 
   buildAssignedCardContext(task: Task, inputId?: string | null) {
@@ -284,20 +292,30 @@ export class ExecutionContextBuilder {
       db: this.db, logger: this.logger, task, agent, nodeId: this.cfg.nodeId,
       folderId: folder.folderId,
     });
-    const [agentAtomCompilation, atomCompilation, taskAtomCompilation, boardWorkspaceItem] =
-      await Promise.all([
-        compileAtomContext(this.cfg.atom, atomSources.agent, this.logger, filterParameters),
-        compileAtomContext(this.cfg.atom, atomSources.folder, this.logger, filterParameters),
-        compileAtomContext(this.cfg.atom, atomSources.session, this.logger, filterParameters),
-        minimal
-          ? null
-          : fetchBoardWorkspaceContextItem(
-              this.db,
-              this.logger,
-              folder.folderId,
-              resumeContext.folderSessions,
-            ),
-      ]);
+    const [
+      agentAtomCompilation,
+      atomCompilation,
+      taskAtomCompilation,
+      boardWorkspaceItem,
+      runningSessions,
+    ] = await Promise.all([
+      compileAtomContext(this.cfg.atom, atomSources.agent, this.logger, filterParameters),
+      compileAtomContext(this.cfg.atom, atomSources.folder, this.logger, filterParameters),
+      compileAtomContext(this.cfg.atom, atomSources.session, this.logger, filterParameters),
+      minimal
+        ? null
+        : fetchBoardWorkspaceContextItem(
+            this.db,
+            this.logger,
+            folder.folderId,
+            resumeContext.folderSessions,
+          ),
+      minimal
+        ? null
+        : resolveFullRunningSessionsContext(
+            this.db, this.logger, task.agentSessionId, resumeContext.runningSessions,
+          ),
+    ]);
     const contextManifest = mergeContextManifests(
       [
         agentAtomCompilation.manifest,
@@ -307,14 +325,6 @@ export class ExecutionContextBuilder {
       ],
       extractPageContextTruncation(pageContextItem),
     );
-    const runningSessionsItem = minimal
-      ? null
-      : await fetchRunningSessionsContextItem(
-          this.db,
-          this.logger,
-          task.agentSessionId,
-          resumeContext.runningSessions,
-        );
     const predecessorSummaryItem = generation
       ? null
       : await buildPredecessorSummaryContextItem(
@@ -346,7 +356,7 @@ export class ExecutionContextBuilder {
       primaryFolder,
       pageContextItem,
       boardWorkspaceItem,
-      runningSessionsItem,
+      runningSessions,
       assignedCardItem: await this.buildAssignedCardContext(task, inputId),
       predecessorSummaryItem,
       generationCheckpointItem: checkpoint?.item ?? null,
