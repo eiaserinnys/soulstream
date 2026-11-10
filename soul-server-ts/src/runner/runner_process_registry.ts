@@ -23,7 +23,14 @@ import type { ProcessIdentity } from "./runner_process_lock.js";
 import { isRunnerRegistrationDirectoryName } from "./runner_process_paths.js";
 import { readRunnerRegistrationSummary } from "./runner_registration_reader.js";
 import type { RunnerRegistrationScanCache } from "./runner_registration_scan_cache.js";
-import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
+import type {
+  RunnerPhaseExecutor,
+  RunnerPhaseObservation,
+} from "./runner_phase_observation.js";
+import {
+  withRunnerRecoveryStorage,
+  type RunnerRecoveryStorage,
+} from "./runner_recovery_storage.js";
 
 export { readRunnerRegistrationSummary } from "./runner_registration_reader.js";
 
@@ -102,6 +109,7 @@ export interface LiveRunnerSessionIdsOptions {
   onScanError?: (failure: RunnerRegistrationScan["errors"][number]) => void;
   logger?: Pick<Logger, "info">;
   phaseObservation?: RunnerPhaseObservation;
+  recoveryStorage?: RunnerRecoveryStorage;
 }
 
 export async function scanRunnerRegistrations(
@@ -211,6 +219,7 @@ export async function listLiveRunnerSessionIds(
   const result = await (options.scan ?? scanRunnerRegistrations)(options.stateDirectory, {
     ...(options.cache ? { cache: options.cache } : {}),
     ...(options.phaseObservation ? { phaseObservation: options.phaseObservation } : {}),
+    ...(options.recoveryStorage ? { recoveryStorage: options.recoveryStorage } : {}),
   });
   const errors: RunnerRegistrationScan["errors"] = [];
   const disappearedDirectories: string[] = [];
@@ -260,10 +269,12 @@ export async function listLiveRunnerSessionIds(
 export async function readRunnerRegistrationForDeletion(
   directory: string,
   phaseObservation?: RunnerPhaseObservation,
+  recoveryStorage?: RunnerRecoveryStorage,
 ): Promise<RunnerRegistration> {
   return await readRunnerRegistrationSummary(directory, {
     verifyProcessIdentity: true,
     ...(phaseObservation ? { phaseObservation } : {}),
+    ...(recoveryStorage ? { recoveryStorage } : {}),
   });
 }
 
@@ -308,6 +319,7 @@ function isReleaseGcCandidate(registration: RunnerRegistration): boolean {
 export async function hydrateRunnerRegistration(
   registration: RunnerRegistration,
   phaseObservation?: RunnerPhaseObservation,
+  recoveryStorage?: RunnerRecoveryStorage,
 ): Promise<RunnerRegistration> {
   const outbox = await RunnerParentOutbox.open(
     registration.config.paths.databasePath,
@@ -320,22 +332,30 @@ export async function hydrateRunnerRegistration(
   } finally {
     await outbox.close();
   }
-  const lifecycle = readRunnerSqliteLifecycle(
-    registration.config.paths.databasePath,
-    phaseObservation
-      ? {
-        phaseObservation,
+  const lifecycle = await withRunnerRecoveryStorage(recoveryStorage, async (storage) =>
+    await storage.readAuthoritativeLifecycle(
+      {
+        databasePath: registration.config.paths.databasePath,
         sessionId: registration.config.sessionId,
-        label: "hydrated runner lifecycle",
-      }
-      : undefined,
-  );
+      },
+      phaseObservation,
+    ));
   return { ...registration, bootstrap, lifecycle };
 }
 
 export async function inspectRunnerDurableState(
   registration: RunnerRegistration,
   phaseObservation?: RunnerPhaseObservation,
+  recoveryStorage?: RunnerRecoveryStorage,
+): Promise<RunnerDurableInspection> {
+  return await withRunnerRecoveryStorage(recoveryStorage, async (storage) =>
+    await storage.inspectDurableState(registration, phaseObservation));
+}
+
+/** Worker-only body. */
+export async function inspectRunnerDurableStateLocal(
+  registration: RunnerRegistration,
+  phaseObservation?: RunnerPhaseExecutor,
 ): Promise<RunnerDurableInspection> {
   const outbox = await RunnerSqliteEventOutbox.openReadOnly(
     registration.config.paths.databasePath,

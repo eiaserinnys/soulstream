@@ -58,6 +58,7 @@ export async function readRunnerRegistrationSummary(
       undefined,
       "config",
       options.phaseObservation,
+      options.recoveryStorage,
     );
   }
   let configStat: Stats;
@@ -96,7 +97,7 @@ export async function readRunnerRegistrationSummary(
   let hostDatabaseStat: Stats | null;
   let hostDatabaseWalStat: Stats | null;
   let lifecycle: RunnerLifecycleRecord | null;
-  let closedTailState: ReturnType<typeof readClosedRunnerTailState> | undefined;
+  let closedTailState: Awaited<ReturnType<typeof readClosedRunnerTailState>> | undefined;
   try {
     databaseStat = await stat(config.paths.databasePath);
     const hostDatabasePath = runnerHostStatePath(config.paths.databasePath);
@@ -110,10 +111,11 @@ export async function readRunnerRegistrationSummary(
       throw new Error(`runner lifecycle summary session mismatch: ${directory}`);
     }
     closedTailState = lifecycle?.execution_state === "closed"
-      ? readClosedRunnerTailState(
+      ? await readClosedRunnerTailState(
         config.paths.databasePath,
         config.sessionId,
         options.phaseObservation,
+        options.recoveryStorage,
       )
       : undefined;
   } catch (error) {
@@ -235,9 +237,10 @@ async function annotateRegistrationError(
   known?: { sessionId: string; codeSha?: string },
   stage?: RegistrationStage,
   phaseObservation?: AuthoritativeRunnerLifecycleOptions["phaseObservation"],
+  recoveryStorage?: AuthoritativeRunnerLifecycleOptions["recoveryStorage"],
 ): Promise<Error> {
   const recovered = known
-    ?? await recoverRunnerDirectoryIdentity(directory, phaseObservation)
+    ?? await recoverRunnerDirectoryIdentity(directory, phaseObservation, recoveryStorage)
     ?? undefined;
   const normalized = (error instanceof Error ? error : new Error(String(error))) as Error & {
     runnerSessionId?: string;

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
 
 import { readRunnerRegistrationSummary } from "../../src/runner/runner_registration_reader.js";
 import {
@@ -18,11 +18,12 @@ import {
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
 import { RunnerRegistrationScanCache } from "../../src/runner/runner_registration_scan_cache.js";
-import * as sqliteConnection from "../../src/runner/runner_sqlite_connection.js";
+import { RunnerRecoveryStorage } from "../../src/runner/runner_recovery_storage.js";
 import { RunnerHostStateStore, runnerHostStatePath } from "../../src/runner/runner_host_state_store.js";
 import * as processLock from "../../src/runner/runner_process_lock.js";
 
 const temporaryDirectories: string[] = [];
+const recoveryStorage = new RunnerRecoveryStorage();
 const CURRENT_PID = process.pid;
 const STALE_PID = 2_147_483_601;
 const CURRENT_START_IDENTITY = "current-runner-start";
@@ -33,6 +34,10 @@ afterEach(async () => {
   await Promise.all(temporaryDirectories.splice(0).map(
     async (directory) => await rm(directory, { recursive: true, force: true }),
   ));
+});
+
+afterAll(async () => {
+  await recoveryStorage.close();
 });
 
 describe("terminal registration scan cache", () => {
@@ -48,28 +53,32 @@ describe("terminal registration scan cache", () => {
     const cache = new RunnerRegistrationScanCache(() => now);
     const fresh = vi.fn(async () => await readRunnerRegistrationSummary(
       fixture.paths.sessionDirectory,
-      { verifyProcessIdentity: true, inspectWriterLock: async () => ({ kind: "free" }) },
+      {
+        verifyProcessIdentity: true,
+        inspectWriterLock: async () => ({ kind: "free" }),
+        recoveryStorage,
+      },
     ));
     const read = async () => await cache.read(fixture.paths.sessionDirectory, fresh);
     return { ...fixture, cache, fresh, read, advance: () => { now += 300_000; } };
   }
 
-  it("opens no SQLite DB on a repeated terminal read, while the direct reader still rechecks", async () => {
+  it("issues no recovery read on a repeated terminal read, while the direct reader still rechecks", async () => {
     const s = await subject();
-    const open = vi.spyOn(sqliteConnection, "openRunnerSqliteReadOnlyDatabase");
+    const readLifecycle = vi.spyOn(recoveryStorage, "readAuthoritativeLifecycle");
     const first = await s.read();
-    expect(open).toHaveBeenCalledOnce();
+    expect(readLifecycle).toHaveBeenCalledOnce();
     expect((await stat(`${s.paths.databasePath}-wal`)).size).toBe(0);
-    open.mockClear();
+    readLifecycle.mockClear();
     // The cold read creates WAL/shm. It cannot establish an unchanged proof.
     expect(await s.read()).toEqual(first);
-    expect(open).toHaveBeenCalledOnce();
-    open.mockClear();
+    expect(readLifecycle).toHaveBeenCalledOnce();
+    readLifecycle.mockClear();
     // Only the second full read has a stable fingerprint; the third reuses it.
     expect(await s.read()).toEqual(first);
-    expect(open).not.toHaveBeenCalled();
+    expect(readLifecycle).not.toHaveBeenCalled();
     await s.fresh();
-    expect(open).toHaveBeenCalled();
+    expect(readLifecycle).toHaveBeenCalled();
   });
 
   it.each(["runner-wal", "host-db", "host-wal", "pid"] as const)(
@@ -88,9 +97,9 @@ describe("terminal registration scan cache", () => {
         // their appearance must still invalidate the scan's previous proof.
         await appendFile(path, "changed");
       }
-      const open = vi.spyOn(sqliteConnection, "openRunnerSqliteReadOnlyDatabase");
+      const readLifecycle = vi.spyOn(recoveryStorage, "readAuthoritativeLifecycle");
       await s.read();
-      expect(open).toHaveBeenCalled();
+      expect(readLifecycle).toHaveBeenCalled();
       expect(s.fresh).toHaveBeenCalledTimes(3);
     },
   );
@@ -147,15 +156,22 @@ describe("terminal registration scan cache", () => {
     });
     host.close();
     const cache = new RunnerRegistrationScanCache();
-    const read = async () => await cache.read(fixture.paths.sessionDirectory, async () =>
+    const fresh = vi.fn(async () =>
       await readRunnerRegistrationSummary(fixture.paths.sessionDirectory, {
-        verifyProcessIdentity: true, inspectWriterLock: async () => ({ kind: "free" }),
+        verifyProcessIdentity: true,
+        inspectWriterLock: async () => ({ kind: "free" }),
+        recoveryStorage,
       }));
+    const read = async () => await cache.read(fixture.paths.sessionDirectory, fresh);
     await read();
     await read();
-    const open = vi.spyOn(sqliteConnection, "openRunnerSqliteReadOnlyDatabase");
+    const warmedFreshCalls = fresh.mock.calls.length;
+    const readLifecycle = vi.spyOn(recoveryStorage, "readAuthoritativeLifecycle");
+    const readTail = vi.spyOn(recoveryStorage, "readClosedTail");
     expect((await read()).closedTailState?.status).toBe("fully_acknowledged");
-    expect(open).not.toHaveBeenCalled();
+    expect(fresh).toHaveBeenCalledTimes(warmedFreshCalls);
+    expect(readLifecycle).not.toHaveBeenCalled();
+    expect(readTail).not.toHaveBeenCalled();
     const appender = await RunnerSqliteEventOutbox.open(fixture.paths.databasePath);
     try {
       await appender.append({
@@ -163,11 +179,14 @@ describe("terminal registration scan cache", () => {
         searchable_text: "tail", created_at: "2026-10-12T00:00:01.000Z",
         semantic_dedupe_key: null, session_effect: null,
       });
-      open.mockClear();
+      readLifecycle.mockClear();
+      readTail.mockClear();
       expect((await read()).closedTailState).toMatchObject({
         status: "requires_drain", latestDurableSourceSeq: 2, acknowledgedThrough: 1,
       });
-      expect(open).toHaveBeenCalled();
+      expect(fresh).toHaveBeenCalledTimes(warmedFreshCalls + 1);
+      expect(readLifecycle).toHaveBeenCalledOnce();
+      expect(readTail).toHaveBeenCalledOnce();
     } finally {
       appender.close();
     }
@@ -196,6 +215,7 @@ describe("terminal registration scan cache", () => {
       inspectWriterLock: async (path: string) => livePaths.has(path)
         ? { kind: "held" as const, owner: { pid: CURRENT_PID, startIdentity: CURRENT_START_IDENTITY } }
         : { kind: "free" as const },
+      recoveryStorage,
     };
     const cache = new RunnerRegistrationScanCache();
     const cachedOptions = { ...options, cache };
@@ -203,9 +223,9 @@ describe("terminal registration scan cache", () => {
     await scanRunnerRegistrations(stateDirectory, options);
     await scanRunnerRegistrations(stateDirectory, cachedOptions);
     await scanRunnerRegistrations(stateDirectory, cachedOptions);
-    const open = vi.spyOn(sqliteConnection, "openRunnerSqliteReadOnlyDatabase");
+    const readLifecycle = vi.spyOn(recoveryStorage, "readAuthoritativeLifecycle");
     async function measure(input: typeof options & { cache?: RunnerRegistrationScanCache }) {
-      open.mockClear();
+      readLifecycle.mockClear();
       let lastTick = performance.now();
       let maxTimerGapMs = 0;
       let stallsOver50Ms = 0;
@@ -224,15 +244,20 @@ describe("terminal registration scan cache", () => {
         expect(scan.errors).toEqual([]);
         expect(scan.registrations).toHaveLength(66);
         expect(scan.registrations.filter((registration) => registration.pidAlive)).toHaveLength(4);
-        return { durationMs, maxTimerGapMs, stallsOver50Ms, databaseOpens: open.mock.calls.length };
+        return {
+          durationMs,
+          maxTimerGapMs,
+          stallsOver50Ms,
+          lifecycleReads: readLifecycle.mock.calls.length,
+        };
       } finally {
         clearInterval(timer);
       }
     }
     const before = await measure(options);
     const after = await measure(cachedOptions);
-    expect(before.databaseOpens).toBe(66);
-    expect(after.databaseOpens).toBe(4);
+    expect(before.lifecycleReads).toBe(66);
+    expect(after.lifecycleReads).toBe(4);
     console.info("runner warm scan measurement", JSON.stringify({ before, after }));
   });
 
@@ -250,7 +275,11 @@ describe("terminal registration scan cache", () => {
     lifecycle.close();
     const dead = vi.fn(async () => await readRunnerRegistrationSummary(
       fixture.paths.sessionDirectory,
-      { verifyProcessIdentity: true, inspectWriterLock: async () => ({ kind: "free" }) },
+      {
+        verifyProcessIdentity: true,
+        inspectWriterLock: async () => ({ kind: "free" }),
+        recoveryStorage,
+      },
     ));
     expect((await cache.read(fixture.paths.sessionDirectory, dead)).closedTailState?.status)
       .toBe("requires_drain");
@@ -305,6 +334,7 @@ describe("runner registration reader", () => {
     await expect(readRunnerRegistrationSummary(fixture.paths.sessionDirectory, {
       verifyProcessIdentity: true,
       inspectWriterLock: async () => ({ kind: "free" }),
+      recoveryStorage,
     })).resolves.toMatchObject({
       pid: CURRENT_PID,
       pidAlive: false,
@@ -335,6 +365,7 @@ describe("runner registration reader", () => {
     const options: Parameters<typeof readRunnerRegistrationSummary>[1] = {
       verifyProcessIdentity: true,
       inspectWriterLock: async () => ({ kind: "unavailable" }),
+      recoveryStorage,
     };
 
     const first = await readRunnerRegistrationSummary(fixture.paths.sessionDirectory, options);
@@ -463,6 +494,7 @@ function heldLockOptions(startIdentity: string) {
       kind: "held",
       owner: { pid: CURRENT_PID, startIdentity },
     }),
+    recoveryStorage,
   };
   return options;
 }

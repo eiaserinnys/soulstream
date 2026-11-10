@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { readAuthoritativeRunnerLifecycle } from
   "../src/runner/runner_lifecycle_reader.js";
+import { RunnerRecoveryStorage } from "../src/runner/runner_recovery_storage.js";
 import {
   openRunnerSqliteDatabase,
   openRunnerSqliteReadOnlyDatabase,
@@ -207,24 +208,32 @@ describe("runner SQLite contention", () => {
       progressedAt: "2026-08-13T00:00:00.000Z",
     });
 
-    const { child, exited } = await holdWriteLock(
-      databasePath,
-      RUNNER_SQLITE_BUSY_TIMEOUT_MS + 200,
-    );
-    const startedAt = Date.now();
+    const storage = new RunnerRecoveryStorage();
     try {
-      await expect(readAuthoritativeRunnerLifecycle(databasePath)).resolves.toMatchObject({
-        execution_command_id: "execute-a",
-        progress_seq: 1,
-      });
-      expect(() => lifecycle.progress("execute-a", "2026-08-13T00:00:01.000Z"))
-        .toThrow(/database is locked/i);
-      expect(Date.now() - startedAt).toBeLessThan(500);
-      const [exitCode] = await exited;
-      expect(exitCode).toBe(0);
+      await storage.readAuthoritativeLifecycle({ databasePath });
+      const { child, exited } = await holdWriteLock(
+        databasePath,
+        RUNNER_SQLITE_BUSY_TIMEOUT_MS + 200,
+      );
+      const startedAt = Date.now();
+      try {
+        await expect(
+          readAuthoritativeRunnerLifecycle(databasePath, { recoveryStorage: storage }),
+        ).resolves.toMatchObject({
+          execution_command_id: "execute-a",
+          progress_seq: 1,
+        });
+        expect(() => lifecycle.progress("execute-a", "2026-08-13T00:00:01.000Z"))
+          .toThrow(/database is locked/i);
+        expect(Date.now() - startedAt).toBeLessThan(500);
+        const [exitCode] = await exited;
+        expect(exitCode).toBe(0);
+      } finally {
+        if (child.exitCode === null) child.kill();
+      }
     } finally {
-      if (child.exitCode === null) child.kill();
       lifecycle.close();
+      await storage.close();
     }
   });
 

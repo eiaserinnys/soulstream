@@ -7,12 +7,29 @@ import {
   readRunnerHostAcknowledgedThrough,
   runnerHostStatePath,
 } from "./runner_host_state_store.js";
-import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
+import type {
+  RunnerPhaseExecutor,
+  RunnerPhaseObservation,
+} from "./runner_phase_observation.js";
+import {
+  withRunnerRecoveryStorage,
+  type RunnerRecoveryStorage,
+} from "./runner_recovery_storage.js";
 
 /** Reads only durable retention metadata; null requires the existing full inspector. */
 export async function probeRunnerDurableRetention(
   registration: RunnerRegistration,
   phaseObservation?: RunnerPhaseObservation,
+  recoveryStorage?: RunnerRecoveryStorage,
+): Promise<RunnerDurableRetentionProbe> {
+  return await withRunnerRecoveryStorage(recoveryStorage, async (storage) =>
+    await storage.probeDurableRetention(registration, phaseObservation));
+}
+
+/** Worker-only body. */
+export async function probeRunnerDurableRetentionLocal(
+  registration: RunnerRegistration,
+  phaseObservation?: RunnerPhaseExecutor,
 ): Promise<RunnerDurableRetentionProbe> {
   const fallback = (): RunnerDurableRetentionProbe => ({
     registration,

@@ -1,16 +1,25 @@
+import type { ClaudeAccountTurnState } from "../engine/claude_account_pool.js";
 import type { EventOutboxBatch, EventOutboxRecord } from "../upstream/event_outbox.js";
 import type {
   EventOutboxQuarantineInput,
   EventOutboxQuarantineResult,
 } from "../upstream/event_outbox_quarantine.js";
+import type { ClosedRunnerTailState } from "./closed_runner_tail_state.js";
 import type { RunnerEventFrame } from "./frame_protocol.js";
 import type { RunnerPhaseContext } from "./runner_phase_observation.js";
+import type {
+  RunnerDurableInspection,
+  RunnerDurableRetentionProbe,
+  RunnerRegistration,
+} from "./runner_process_registry.js";
 import type {
   RunnerHostCallAppliedReceipt,
   RunnerHostInterventionFallback,
 } from "./runner_host_state_store.js";
+import type { RecoveredRunnerIdentity } from "./runner_registration_identity.js";
 import type { RunnerSqliteTransactionEvent } from "./runner_sqlite_connection.js";
 import type { RunnerBootstrapRecord } from "./sqlite_event_outbox.js";
+import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 
 export type RunnerParentStorageBootstrap = RunnerBootstrapRecord;
 export type RunnerParentStorageBatch = EventOutboxBatch;
@@ -44,13 +53,20 @@ export type RunnerParentStorageAppliedReceiptInput = {
   createdAt: string;
 };
 
+export type RunnerParentStorageOutboxOpenInput = {
+  mode: "normal" | "closed_tail";
+  databasePath: string;
+  sessionId: string;
+};
+
+export type RunnerParentStorageRecoveryInput = {
+  databasePath: string;
+  sessionId?: string;
+};
+
 export type RunnerParentStorageOperationMap = {
   open: {
-    input: {
-      databasePath: string;
-      sessionId: string;
-      mode: "normal" | "closed_tail";
-    };
+    input: RunnerParentStorageOutboxOpenInput | { mode: "recovery" };
     output: void;
   };
   readBootstrap: { input: undefined; output: RunnerParentStorageBootstrap | null };
@@ -90,6 +106,34 @@ export type RunnerParentStorageOperationMap = {
   acknowledgeHostCall: {
     input: { correlationId: string };
     output: void;
+  };
+  readLifecycle: {
+    input: RunnerParentStorageRecoveryInput;
+    output: RunnerLifecycleRecord | null;
+  };
+  readAuthoritativeLifecycle: {
+    input: RunnerParentStorageRecoveryInput;
+    output: RunnerLifecycleRecord | null;
+  };
+  readClosedTail: {
+    input: { databasePath: string; sessionId: string };
+    output: ClosedRunnerTailState;
+  };
+  readSqliteIdentity: {
+    input: { databasePath: string };
+    output: RecoveredRunnerIdentity | null;
+  };
+  inspectDurableState: {
+    input: { registration: RunnerRegistration };
+    output: RunnerDurableInspection;
+  };
+  probeDurableRetention: {
+    input: { registration: RunnerRegistration };
+    output: RunnerDurableRetentionProbe;
+  };
+  readClaudeAccountTurnState: {
+    input: { databasePath: string; sessionId: string };
+    output: ClaudeAccountTurnState | null;
   };
   close: { input: undefined; output: void };
 };
@@ -164,6 +208,25 @@ export type RunnerParentStorageObservation =
     type: "transaction";
     requestId: number;
     event: RunnerSqliteTransactionEvent;
+  }
+  | RunnerParentStorageLifecycleSummaryNotice;
+
+export type RunnerParentStorageLifecycleSummaryNotice =
+  | {
+    type: "summary_notice";
+    requestId: number;
+    kind: "rename_failure";
+    error: RunnerParentStorageSerializedError;
+    path: string;
+    consecutiveFailures: number;
+    severity: "warn" | "error";
+  }
+  | {
+    type: "summary_notice";
+    requestId: number;
+    kind: "rename_recovery";
+    path: string;
+    recoveredAfterFailures: number;
   };
 
 export type RunnerParentStorageWorkerMessage =

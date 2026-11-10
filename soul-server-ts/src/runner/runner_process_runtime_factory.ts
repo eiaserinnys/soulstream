@@ -59,9 +59,12 @@ import { agentRuntimeEnvIdentity } from "../release/release_env.js";
 import { resolveProducedAttachmentExecutionContext } from "../attachments/produced_attachment_context.js";
 import { EVENT_ARCHIVE_HOST_DEADLINE_MS } from "./runner_event_archive.js";
 import type { createProducedAttachmentRegistration } from "../attachments/produced_attachment_registration.js";
-import { RunnerClaudeAccountTurnStateStore } from "./claude_account_turn_state_store.js";
 import { applyRestrictedRunnerIsolation, withRecoveredRunnerIsolation, type RunnerIsolationHost } from "./runner_process_isolation.js";
 import type { RunnerIsolationChildConfig } from "./runner_isolation_config.js";
+import {
+  withRunnerRecoveryStorage,
+  type RunnerRecoveryStorage,
+} from "./runner_recovery_storage.js";
 
 type RunnerEnv = Pick<Env,
   | "SOUL_RUNNER_STATE_DIR"
@@ -111,6 +114,7 @@ export interface RunnerProcessRuntimeFactoryOptions {
   antigravityCliPath?: AntigravityCliPathResolution;
   releasePool: Pick<RunnerReleasePool, "resolveCurrentRelease" | "ensureRelease" | "describe">;
   releaseManifest?: ReleaseManifestV1;
+  recoveryStorage?: RunnerRecoveryStorage;
   nodeStallMonitor?: Pick<
     NodeStallMonitor,
     "beginRunnerOperation" | "sqliteTransactionObserver"
@@ -290,9 +294,12 @@ async function adoptRegisteredRunner(
     throw new Error(`registered runner is not alive: ${registration.config.sessionId}`);
   }
   if (registration.config.claudeAccountPool?.enabled) {
-    const accountState = RunnerClaudeAccountTurnStateStore.readFromDatabase(
-      registration.config.paths.databasePath,
-      registration.config.sessionId,
+    const accountState = await withRunnerRecoveryStorage(
+      options.recoveryStorage,
+      async (storage) => await storage.readClaudeAccountTurnState({
+        databasePath: registration.config.paths.databasePath,
+        sessionId: registration.config.sessionId,
+      }),
     );
     if (accountState) {
       const restore = options.claudeAccounts?.restoreActiveBinding;

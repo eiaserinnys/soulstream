@@ -5,6 +5,7 @@ import {
   classifyRunnerRegistration,
   hydrateRunnerRegistration,
   isTerminalRunnerExecutionState,
+  readRunnerRegistrationSummary,
   runnerReleaseGcCandidateFingerprint,
   scanRunnerRegistrations,
   type RunnerRegistration,
@@ -117,10 +118,15 @@ export class RunnerRecoveryCoordinator {
       leaseTimeoutMs: options.leaseTimeoutMs,
       logger: options.logger,
       ...(options.now ? { now: options.now } : {}),
-      ...(options.refreshRegistration
-        ? { refreshRegistration: options.refreshRegistration }
-        : {}),
-      ...(options.hydrate ? { hydrateRegistration: options.hydrate } : {}),
+      refreshRegistration: async (registration) => options.refreshRegistration
+        ? await options.refreshRegistration(registration)
+        : await readRunnerRegistrationSummary(registration.config.paths.sessionDirectory, {
+            verifyProcessIdentity: true,
+            ...(options.recoveryStorage ? { recoveryStorage: options.recoveryStorage } : {}),
+          }),
+      hydrateRegistration: async (registration) => options.hydrate
+        ? await options.hydrate(registration)
+        : await hydrateRunnerRegistration(registration, undefined, options.recoveryStorage),
       terminateRegistration: async (registration) => {
         await this.registrationControl.terminate(registration);
       },
@@ -181,7 +187,13 @@ export class RunnerRecoveryCoordinator {
       const scan = await observation.runAsync("registration", {}, async () =>
         await (this.options.scan ?? scanRunnerRegistrations)(
           this.options.stateDirectory,
-          { cache: this.scanCache, phaseObservation: observation },
+          {
+            cache: this.scanCache,
+            phaseObservation: observation,
+            ...(this.options.recoveryStorage
+              ? { recoveryStorage: this.options.recoveryStorage }
+              : {}),
+          },
         ));
       scanRegistrations = scan.registrations;
       await observation.runAsync("unreadable", {}, async () => {
@@ -487,6 +499,7 @@ export class RunnerRecoveryCoordinator {
       const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(
         registration,
         phaseObservation,
+        this.options.recoveryStorage,
       );
       const verifiedDisposition = classifyRunnerRegistration(
         hydrated,
@@ -542,6 +555,7 @@ export class RunnerRecoveryCoordinator {
         hydrate: (owned) => (this.options.hydrate ?? hydrateRunnerRegistration)(
           owned,
           phaseObservation,
+          this.options.recoveryStorage,
         ),
         terminate: async (owned) => {
           await this.registrationControl.terminate(owned);
@@ -652,6 +666,7 @@ export class RunnerRecoveryCoordinator {
     const hydrated = await (this.options.hydrate ?? hydrateRunnerRegistration)(
       registration,
       phaseObservation,
+      this.options.recoveryStorage,
     );
     const lifecycle = hydrated.lifecycle;
     prepareRecoveredTask(task, hydrated);
@@ -710,6 +725,7 @@ export class RunnerRecoveryCoordinator {
       hydrate: (owned) => (this.options.hydrate ?? hydrateRunnerRegistration)(
         owned,
         phaseObservation,
+        this.options.recoveryStorage,
       ),
       now: this.options.now ?? Date.now,
       leaseTimeoutMs: this.options.leaseTimeoutMs,

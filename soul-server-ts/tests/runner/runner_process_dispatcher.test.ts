@@ -496,6 +496,57 @@ describe("RunnerProcessDispatcher", () => {
     );
   });
 
+  it("does not settle the previous execution when the active execution turns over during the lifecycle read", async () => {
+    let resolveLifecycle: (value: unknown) => void = () => {};
+    const lifecycleRead = new Promise<unknown>((resolve) => {
+      resolveLifecycle = resolve;
+    });
+    const previousStream = new ProcessFrameStream(async () => {});
+    const currentStream = new ProcessFrameStream(async () => {});
+    const previous = {
+      commandId: "command-a",
+      registrationId: undefined,
+      stream: previousStream,
+      acceptsInterventions: true,
+    };
+    const current = {
+      commandId: "command-b",
+      registrationId: undefined,
+      stream: currentStream,
+      acceptsInterventions: true,
+    };
+    const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as
+      RunnerProcessDispatcher;
+    Object.assign(dispatcher, {
+      outbox: { readLifecycle: async () => await lifecycleRead },
+      spawnInput: { backend: "claude" },
+      spawnedProcess: undefined,
+      activeExecution: previous,
+      requestLifetimes: new Map(),
+    });
+
+    const reconciliation = (dispatcher as unknown as {
+      reconcileActiveLifecycleTerminal: () => Promise<boolean>;
+    }).reconcileActiveLifecycleTerminal();
+    (dispatcher as unknown as { activeExecution: unknown }).activeExecution = current;
+    resolveLifecycle({
+      session_id: "session-a",
+      runner_pid: 1001,
+      execution_command_id: "command-a",
+      execution_state: "completed",
+      progress_seq: 2,
+      progress_at: "2026-09-02T04:52:10.000Z",
+      liveness_at: "2026-09-02T04:52:10.000Z",
+      in_flight_tools: [],
+      terminal_error: null,
+    });
+
+    await expect(reconciliation).resolves.toBe(false);
+    expect(previousStream.isSettled()).toBe(false);
+    expect(currentStream.isSettled()).toBe(false);
+    expect(dispatcher.activeExecutionCommandId()).toBe("command-b");
+  });
+
   it("completes close when restricted preparation fails before any spawn", async () => {
     const terminate = vi.fn(async () => {});
     const dispatcher = Object.create(RunnerProcessDispatcher.prototype) as

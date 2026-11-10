@@ -13,6 +13,7 @@ import {
 import { withRunnerSessionMutationLock } from "./runner_session_mutation_lock.js";
 import type { RunnerSessionMutationLockObservationContext } from "./runner_session_mutation_lock.js";
 import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
+import type { RunnerRecoveryStorage } from "./runner_recovery_storage.js";
 import {
   assertOwnedSessionDirectory,
   countRetainedReasons,
@@ -61,16 +62,20 @@ export interface RunnerSessionGarbageCollectionPolicy {
 }
 
 export class RunnerSessionGarbageCollector {
+  private readonly deps: RunnerSessionGarbageCollectorDependencies;
+
   constructor(
     private readonly stateDirectory: string,
     private readonly retentionMs: number,
     private readonly logger: Pick<Logger, "info" | "warn">,
-    private readonly deps: RunnerSessionGarbageCollectorDependencies = defaultDependencies(),
+    deps?: RunnerSessionGarbageCollectorDependencies,
+    recoveryStorage?: RunnerRecoveryStorage,
   ) {
     if (!stateDirectory) throw new Error("runner state directory required for session GC");
     if (!Number.isFinite(retentionMs) || retentionMs <= 0) {
       throw new Error("runner terminal retention must be positive");
     }
+    this.deps = deps ?? defaultDependencies(recoveryStorage);
   }
 
   async collect(
@@ -454,7 +459,9 @@ function phaseDurationsWithOtherMs(
   return phaseDurationsMs;
 }
 
-function defaultDependencies(): RunnerSessionGarbageCollectorDependencies {
+function defaultDependencies(
+  recoveryStorage?: RunnerRecoveryStorage,
+): RunnerSessionGarbageCollectorDependencies {
   return {
     now: Date.now,
     monotonicNow: () => performance.now(),
@@ -462,9 +469,18 @@ function defaultDependencies(): RunnerSessionGarbageCollectorDependencies {
     refresh: async (registration, phaseObservation) => await readRunnerRegistrationForDeletion(
       registration.config.paths.sessionDirectory,
       phaseObservation,
+      recoveryStorage,
     ),
-    inspect: inspectRunnerDurableState,
-    probeRetention: probeRunnerDurableRetention,
+    inspect: async (registration, phaseObservation) => await inspectRunnerDurableState(
+      registration,
+      phaseObservation,
+      recoveryStorage,
+    ),
+    probeRetention: async (registration, phaseObservation) => await probeRunnerDurableRetention(
+      registration,
+      phaseObservation,
+      recoveryStorage,
+    ),
     removeDirectory: async (path) => await rm(path, { recursive: true }),
   };
 }
