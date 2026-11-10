@@ -141,6 +141,40 @@ it.each(["review","queued","blocked","on_hold","done","cancelled","running"])("s
     execution={registrationId:"final-reg",executionCommandId:"final-command"};
     await recordWorkReceipt(h,"owner","running",execution);
   });
+  it("keeps the card running after a fallback generation takes over a limit stop, and blocks only the last limit",async()=>{
+    const id=await make();
+    await cards.startCardWork(declaration(id,"fallback-work"));
+    const dispatcher=new CardDispatcher({ deliveryExists: async () => false,abandonDelivery:async()=>{},repository:new CardDispatchRepository(async()=>createFolderContentSqlAdapter(h.liveSql)),
+      cards:async()=>cards,resolveTarget:()=>({nodeId:"node",agentId:"profile",modelPreset:"model",available:true,reason:null}),
+      launch:async()=>{},sendMessage:async()=>{},notify:async()=>{},warn:m=>{throw new Error(m);},
+      orchestration:{enabled:async()=>true,ownsSession:async()=>false,kick:async()=>{}}});
+    const pending=(on:boolean)=>h.sql`UPDATE sessions SET metadata=${h.sql.json(on
+      ? [{type:"persistent_generation",value:{pending:{reason:"session_model_fallback",targetModelPreset:"claude-opus"}}}] : [])} WHERE session_id='owner'`;
+    const status=async()=>(await cards.getCard(id))!.card;
+    // Argon 한도: 대체 세대가 예약돼 있으면 막지 않는다.
+    await pending(true);
+    await recordWorkReceipt(h,"owner","error",null,"limit_hit");
+    await dispatcher.sessionEnded("owner");
+    expect(await status()).toMatchObject({status:"running",blocked_kind:null});
+    // Opus 세대가 새 실행으로 이어받고 pending을 지운 뒤에도 지난 Argon 한도로 다시 막지 않는다.
+    execution={registrationId:"fallback-reg",executionCommandId:"fallback-command"};
+    await recordWorkReceipt(h,"owner","running",execution);
+    await pending(false);
+    await dispatcher.sessionEnded("owner");
+    expect(await status()).toMatchObject({status:"running",blocked_kind:null});
+    expect((await endedCardWork(createFolderContentSqlAdapter(h.liveSql),"owner")).map(r=>r.card_id)).not.toContain(id);
+    await recordWorkReceipt(h,"owner","completed",null);
+    await dispatcher.sessionEnded("owner");
+    expect(await status()).toMatchObject({status:"running",blocked_kind:null});
+    // 후보가 바닥난 마지막 한도는 최신 종료이므로 막힌다.
+    execution={registrationId:"last-reg",executionCommandId:"last-command"};
+    await recordWorkReceipt(h,"owner","running",execution);
+    await recordWorkReceipt(h,"owner","error",null,"limit_hit");
+    await dispatcher.sessionEnded("owner");
+    expect(await status()).toMatchObject({status:"blocked",blocked_kind:"limit"});
+    execution={registrationId:"after-fallback-reg",executionCommandId:"after-fallback-command"};
+    await recordWorkReceipt(h,"owner","running",execution);
+  });
   it.each(["todo","question"])("starts declared %s work with an unanswered question",async status=>{
     const id=await make(status === "question" ? "blocked" : "todo");
     if(status === "question") await h.sql`UPDATE cards SET blocked_kind='question',blocked_detail='판단' WHERE id=${id}`;
