@@ -7,7 +7,14 @@ import { processStartIdentitiesMatch } from "./runner_process_lock.js";
 import { openRunnerSqliteReadOnlyDatabase } from "./runner_sqlite_connection.js";
 import { runnerRowToBootstrap } from "./sqlite_event_outbox_records.js";
 import type { RunnerEventOutboxRow } from "./sqlite_event_outbox_schema.js";
-import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
+import type {
+  RunnerPhaseExecutor,
+  RunnerPhaseObservation,
+} from "./runner_phase_observation.js";
+import {
+  withRunnerRecoveryStorage,
+  type RunnerRecoveryStorage,
+} from "./runner_recovery_storage.js";
 
 const RUNNER_IDENTITY_FILE = "runner-identity.json";
 
@@ -204,6 +211,7 @@ export async function waitForChildRunnerRegistrationIdentity(
 export async function recoverRunnerDirectoryIdentity(
   sessionDirectory: string,
   phaseObservation?: RunnerPhaseObservation,
+  recoveryStorage?: RunnerRecoveryStorage,
 ): Promise<RecoveredRunnerIdentity | null> {
   try {
     const sidecar = await readRunnerRegistrationIdentity(sessionDirectory);
@@ -212,18 +220,20 @@ export async function recoverRunnerDirectoryIdentity(
     // A corrupt sidecar is not trusted. SQLite remains an independent identity source.
   }
   try {
-    return readRunnerSqliteIdentity(
-      join(sessionDirectory, "runner.sqlite"),
-      phaseObservation,
-    );
+    return await withRunnerRecoveryStorage(recoveryStorage, async (storage) =>
+      await storage.readSqliteIdentity(
+        { databasePath: join(sessionDirectory, "runner.sqlite") },
+        phaseObservation,
+      ));
   } catch {
     return null;
   }
 }
 
-function readRunnerSqliteIdentity(
+/** Worker-only body. */
+export function readRunnerSqliteIdentityLocal(
   databasePath: string,
-  phaseObservation?: RunnerPhaseObservation,
+  phaseObservation?: RunnerPhaseExecutor,
 ): RecoveredRunnerIdentity | null {
   const database = openRunnerSqliteReadOnlyDatabase(databasePath, phaseObservation
     ? {

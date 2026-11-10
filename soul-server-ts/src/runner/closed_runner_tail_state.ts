@@ -16,7 +16,14 @@ import {
 } from "./sqlite_event_outbox_database.js";
 import { runnerRowToBootstrap } from "./sqlite_event_outbox_records.js";
 import type { RunnerEventOutboxRow } from "./sqlite_event_outbox_schema.js";
-import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
+import type {
+  RunnerPhaseExecutor,
+  RunnerPhaseObservation,
+} from "./runner_phase_observation.js";
+import {
+  withRunnerRecoveryStorage,
+  type RunnerRecoveryStorage,
+} from "./runner_recovery_storage.js";
 
 export type ClosedRunnerTailState = {
   status: "empty_prebootstrap";
@@ -36,10 +43,24 @@ export type ClosedRunnerTailState = {
 };
 
 /** Reads only immutable bootstrap identity, append head, and the host ACK cursor. */
-export function readClosedRunnerTailState(
+export async function readClosedRunnerTailState(
   databasePath: string,
   expectedSessionId: string,
   phaseObservation?: RunnerPhaseObservation,
+  recoveryStorage?: RunnerRecoveryStorage,
+): Promise<ClosedRunnerTailState> {
+  return await withRunnerRecoveryStorage(recoveryStorage, async (storage) =>
+    await storage.readClosedTail(
+      { databasePath, sessionId: expectedSessionId },
+      phaseObservation,
+    ));
+}
+
+/** Worker-only body. */
+export function readClosedRunnerTailStateLocal(
+  databasePath: string,
+  expectedSessionId: string,
+  phaseObservation?: RunnerPhaseExecutor,
 ): ClosedRunnerTailState {
   let database: DatabaseSync | undefined;
   try {

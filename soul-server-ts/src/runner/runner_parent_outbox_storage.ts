@@ -16,7 +16,7 @@ import {
 } from "./runner_host_state_store.js";
 import type { RunnerPhaseExecutor } from "./runner_phase_observation.js";
 import type {
-  RunnerParentStorageOperationMap,
+  RunnerParentStorageOutboxOpenInput,
   RunnerParentStorageSnapshot,
 } from "./runner_parent_storage_protocol.js";
 import type { RunnerSqliteTransactionObserver } from "./runner_sqlite_connection.js";
@@ -24,6 +24,10 @@ import {
   RunnerSqliteEventOutbox,
   type RunnerBootstrapRecord,
 } from "./sqlite_event_outbox.js";
+import {
+  readRunnerSqliteLifecycle,
+  type RunnerLifecycleRecord,
+} from "./sqlite_runner_lifecycle.js";
 
 export interface RunnerParentOutboxStorageOptions {
   phaseExecutor?: RunnerPhaseExecutor;
@@ -46,7 +50,7 @@ export class RunnerParentOutboxStorage {
   ) {}
 
   static async open(
-    input: RunnerParentStorageOperationMap["open"]["input"],
+    input: RunnerParentStorageOutboxOpenInput,
     options: RunnerParentOutboxStorageOptions = {},
   ): Promise<RunnerParentOutboxStorage> {
     const runnerOptions = options.phaseExecutor
@@ -155,6 +159,19 @@ export class RunnerParentOutboxStorage {
 
   async readRecord(sourceSeq: number): Promise<EventOutboxRecord | null> {
     return await this.runner.readRecord(sourceSeq);
+  }
+
+  readLifecycle(): RunnerLifecycleRecord | null {
+    return readRunnerSqliteLifecycle(
+      this.runner.databasePath,
+      this.phaseExecutor
+        ? {
+          phaseObservation: this.phaseExecutor,
+          sessionId: this.sessionId,
+          label: "runner parent outbox lifecycle",
+        }
+        : undefined,
+    );
   }
 
   async readLatestPendingRecord(): Promise<EventOutboxRecord | null> {

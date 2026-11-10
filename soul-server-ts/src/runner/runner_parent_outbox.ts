@@ -18,6 +18,7 @@ import type {
 import { RunnerParentStorageWorkerClient } from "./runner_parent_storage_worker_client.js";
 import type { RunnerSqliteTransactionObserver } from "./runner_sqlite_connection.js";
 import type { RunnerBootstrapRecord } from "./sqlite_event_outbox.js";
+import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 
 export interface RunnerParentOutboxOptions {
   onCheckpointAdvanced?: (acknowledgedThrough: number) => Promise<void>;
@@ -37,6 +38,8 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
 
   private constructor(
     private readonly client: RunnerParentStorageWorkerClient,
+    private readonly databasePath: string,
+    private readonly sessionId: string,
     private readonly onCheckpointAdvanced?: (acknowledgedThrough: number) => Promise<void>,
   ) {}
 
@@ -88,7 +91,12 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
       await client.disposeAfterOpenFailure();
       throw error;
     }
-    const outbox = new RunnerParentOutbox(client, options.onCheckpointAdvanced);
+    const outbox = new RunnerParentOutbox(
+      client,
+      runnerDatabasePath,
+      sessionId,
+      options.onCheckpointAdvanced,
+    );
     outbox.applySnapshot(snapshot);
     return outbox;
   }
@@ -142,6 +150,13 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
 
   async readRecord(sourceSeq: number): Promise<EventOutboxRecord | null> {
     return await this.client.readRecord(sourceSeq);
+  }
+
+  async readLifecycle(): Promise<RunnerLifecycleRecord | null> {
+    return await this.client.readLifecycle({
+      databasePath: this.databasePath,
+      sessionId: this.sessionId,
+    });
   }
 
   async readLatestPendingRecord(): Promise<EventOutboxRecord | null> {
