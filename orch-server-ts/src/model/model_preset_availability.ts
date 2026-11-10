@@ -4,6 +4,8 @@ import {
   resolveModelPreset,
   UnknownModelPresetError,
   MODEL_BACKENDS,
+  MODEL_PRESET_WEEKLY_HEADROOM_FLOOR_PERCENT,
+  chooseUsablePresetId,
   type ModelCatalogConfig,
   type ReasoningEffort,
   type AgentBackend,
@@ -28,8 +30,6 @@ import {
   resolveWeeklyHeadroom,
   type WeeklyHeadroom,
 } from "../usage/weekly_headroom.js";
-
-const WEEKLY_HEADROOM_FLOOR_PERCENT = 1; // Matches soul-server-ts PR #1624 generation_weekly_floor.
 
 export type StaticModelPreset = {
   readonly id: string;
@@ -199,23 +199,11 @@ export class ModelPresetAvailabilityService {
   }
 
   chooseUsablePreset(nodeId: string, candidateIds: readonly string[]): string {
-    const candidates = [...new Set(candidateIds)];
-    const firstCandidate = candidates[0]!;
-
-    const advertised = new Map(
-      (this.listForNode(nodeId) ?? []).map((preset) => [preset.id, preset]),
+    return chooseUsablePresetId(
+      candidateIds,
+      this.listForNode(nodeId) ?? [],
+      MODEL_PRESET_WEEKLY_HEADROOM_FLOOR_PERCENT,
     );
-    const ordered = candidates.flatMap((id) => {
-      const preset = advertised.get(id);
-      return preset === undefined ? [] : [preset];
-    });
-    const withHeadroom = ordered.find((preset) =>
-      preset.available
-      && (preset.weekly_headroom?.remaining_percent == null
-        || preset.weekly_headroom.remaining_percent >= WEEKLY_HEADROOM_FLOOR_PERCENT),
-    );
-    if (withHeadroom) return withHeadroom.id;
-    return ordered.find((preset) => preset.available)?.id ?? firstCandidate;
   }
 
   private resolveAvailability(

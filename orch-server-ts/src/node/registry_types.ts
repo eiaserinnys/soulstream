@@ -31,6 +31,9 @@ export type CreateSessionNodeCommandPayload =
     profile?: string;
     model?: string | null;
     model_preset?: string | null;
+    initial_model_preset?: string;
+    model_preset_fallbacks?: string[];
+    reasoningEffort?: string | null;
     attachment_paths?: string[];
     attachment_ids?: string[];
     attachment_bindings?: AttachmentPathBinding[];

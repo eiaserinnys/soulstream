@@ -185,7 +185,27 @@ describe("TaskRuntimeCommands.createSession", () => {
       systemPrompt: "system override",
       contextItems,
       attachmentPaths: ["/tmp/a.png", "/tmp/b.txt"],
+      initialModelPreset: undefined,
+      modelPresetFallbacks: undefined,
     });
+    expect(taskExecutor.startNewExecution).toHaveBeenCalledWith(task, codexAgent);
+  });
+
+  it("forwards the declared model preset fallback order to task creation", async () => {
+    const { runtime, taskManager, taskExecutor } = createRuntime();
+
+    const task = await runtime.createSession({
+      agentSessionId: "sess-fallbacks",
+      prompt: "use the fallback order",
+      profileId: codexAgent.id,
+      initialModelPreset: "gemini-4-argon",
+      modelPresetFallbacks: ["claude-opus", "codex-6.1-sol"],
+    });
+
+    expect(taskManager.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      initialModelPreset: "gemini-4-argon",
+      modelPresetFallbacks: ["claude-opus", "codex-6.1-sol"],
+    }));
     expect(taskExecutor.startNewExecution).toHaveBeenCalledWith(task, codexAgent);
   });
 
@@ -687,6 +707,25 @@ describe("upstream command families accept attachment-only input", () => {
         attachmentBindings: bindings,
       }),
     );
+  });
+
+  it("create_session maps the declared fallback order to runtime params", async () => {
+    const { runtime, taskManager } = createRuntime();
+    const { handlers } = sessionFamily(runtime);
+
+    await handlers.create_session!({
+      type: "create_session",
+      agentSessionId: "sess-fallbacks",
+      prompt: "hello",
+      profile: codexAgent.id,
+      initial_model_preset: "gemini-4-argon",
+      model_preset_fallbacks: ["claude-opus", "codex-6.1-sol"],
+    } as never);
+
+    expect(taskManager.createTask).toHaveBeenCalledWith(expect.objectContaining({
+      initialModelPreset: "gemini-4-argon",
+      modelPresetFallbacks: ["claude-opus", "codex-6.1-sol"],
+    }));
   });
 
   it("create_session still rejects a missing or non-string prompt even with attachments", async () => {

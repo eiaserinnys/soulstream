@@ -415,6 +415,7 @@ describe("live execute proxy provider", () => {
       prompt: "hello",
       profile: "defaulted-agent",
       model_preset_fallbacks: ["claude-opus", "codex-6.1-sol"],
+      reasoningEffort: "high",
       caller_info: { source: "execute-proxy" },
     }, { log: { info: logInfo } } as never);
 
@@ -434,13 +435,66 @@ describe("live execute proxy provider", () => {
       type: "create_session",
       profile: "defaulted-agent",
       model_preset: "codex-6.1-sol",
+      initial_model_preset: "gemini-4-argon",
+      model_preset_fallbacks: ["claude-opus", "codex-6.1-sol"],
     });
+    expect(sent[0]).not.toHaveProperty("reasoningEffort");
     expect(logInfo).toHaveBeenCalledWith(expect.objectContaining({
       nodeId: "node-mixed",
       firstPresetId: "gemini-4-argon",
       chosenPresetId: "codex-6.1-sol",
       skippedReason: expect.any(String),
     }), "Execute model preset fallback selected");
+  });
+
+  it("keeps the requested preset and reasoning effort when the primary preset is usable", async () => {
+    const chooseUsablePreset = vi.fn(() => "gemini-4-argon");
+    const requireAvailable = vi.fn();
+    const harness = createHarness({
+      modelPresetAvailability: { chooseUsablePreset, requireAvailable },
+    });
+    const connectionId = harness.registerNode({
+      nodeId: "node-mixed",
+      agents: [{
+        id: "defaulted-agent",
+        backend: "claude",
+        default_preset: "gemini-4-argon",
+      }],
+      supportedBackends: ["antigravity", "claude"],
+      modelPresets: [
+        { id: "gemini-4-argon", label: "Argon", backend: "antigravity", available: true, usage_provider: "antigravity" },
+        { id: "claude-opus", label: "Opus", backend: "claude", available: true, usage_provider: "claude" },
+      ],
+    });
+    const sent = harness.attachTransport("node-mixed", connectionId, (message) => {
+      harness.receive("node-mixed", connectionId, {
+        type: "session_created",
+        requestId: message.requestId,
+        agentSessionId: message.agentSessionId,
+      });
+      harness.receive("node-mixed", connectionId, {
+        type: "event",
+        agentSessionId: message.agentSessionId,
+        event: { type: "complete", result: "done", _event_id: 15 },
+      });
+    });
+
+    await harness.provider.executeNew({
+      prompt: "hello",
+      profile: "defaulted-agent",
+      model_preset_fallbacks: ["claude-opus"],
+      reasoningEffort: "high",
+      caller_info: { source: "execute-proxy" },
+    });
+
+    expect(requireAvailable).toHaveBeenCalledWith("node-mixed", "gemini-4-argon");
+    expect(sent[0]).toMatchObject({
+      type: "create_session",
+      model_preset: "gemini-4-argon",
+      initial_model_preset: "gemini-4-argon",
+      model_preset_fallbacks: ["claude-opus"],
+      reasoningEffort: "high",
+    });
   });
 
   it("closes a new execute stream when a session error update arrives", async () => {

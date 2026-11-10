@@ -28,7 +28,10 @@ import { errorResult, jsonResult } from "../result.js";
 import type { McpRuntime } from "../runtime.js";
 import { resolveMcpCallerAttribution } from "./caller_session.js";
 import { appendModelPresetLookupHint } from "./model_preset_hint.js";
-import { preflightModelPreset } from "./model_preset_preflight.js";
+import {
+  preflightModelPreset,
+  preflightModelPresetFallbacks,
+} from "./model_preset_preflight.js";
 
 export function registerSessionMgmtTools(
   server: McpServer,
@@ -72,6 +75,9 @@ export function registerSessionMgmtTools(
       inputSchema: {
         agent_id: z.string().optional(),
         model_preset: z.string().min(1).optional(),
+        model_preset_fallbacks: z.array(z.string().min(1).refine((item) => item.trim().length > 0)).optional().describe(
+          "만들 때와 실행 중 한도에서 차례로 쓸 대체 모델 preset id. 같은 노드 안에서만 쓴다",
+        ),
         /** Omit to use the selected model preset's advertised default effort. */
         reasoning_effort: ReasoningEffortToolSchema.optional(),
         prompt: z.string(),
@@ -83,7 +89,7 @@ export function registerSessionMgmtTools(
         worktree_id: z.string().uuid().optional(),
       },
     },
-    async ({ agent_id, model_preset, reasoning_effort, prompt, caller_session_id, predecessor_session_id, notify_completion, folder_id, card_id, worktree_id }) => {
+    async ({ agent_id, model_preset, model_preset_fallbacks, reasoning_effort, prompt, caller_session_id, predecessor_session_id, notify_completion, folder_id, card_id, worktree_id }) => {
       let agentResolution: AgentProfileResolution | undefined;
       let agent: AgentProfile | undefined;
       let resolvedAgentId: string;
@@ -108,13 +114,28 @@ export function registerSessionMgmtTools(
       }
 
       const selectedPresetId = model_preset ?? agent.default_preset;
-      const preflightError = await preflightModelPreset({
-        nodeId: runtime.nodeId,
-        orch: runtime.orch,
-        logger: runtime.logger,
-        selectedPresetId,
-      });
-      if (preflightError !== null) return errorResult(preflightError);
+      const fallbackPresetIds = model_preset_fallbacks ?? [];
+      let chosenPresetId = selectedPresetId;
+      if (fallbackPresetIds.length > 0) {
+        const fallbackPreflight = await preflightModelPresetFallbacks({
+          nodeId: runtime.nodeId,
+          orch: runtime.orch,
+          logger: runtime.logger,
+          initialPresetId: selectedPresetId,
+          fallbackPresetIds,
+        });
+        if (fallbackPreflight.error !== null) return errorResult(fallbackPreflight.error);
+        chosenPresetId = fallbackPreflight.chosenPresetId;
+      } else {
+        const preflightError = await preflightModelPreset({
+          nodeId: runtime.nodeId,
+          orch: runtime.orch,
+          logger: runtime.logger,
+          selectedPresetId,
+        });
+        if (preflightError !== null) return errorResult(preflightError);
+      }
+      const useFallbackEffortDefault = chosenPresetId !== selectedPresetId;
 
       // caller_info 조립 — 명시 caller_session_id 우선, 없으면 MCP request context 사용.
       const attribution = resolveMcpCallerAttribution(runtime, caller_session_id);
@@ -135,8 +156,16 @@ export function registerSessionMgmtTools(
                 agentProfileHasDbPortrait: agentResolution.portraitSource === "db",
               }
             : {}),
-          modelPreset: selectedPresetId,
-          ...(reasoning_effort !== undefined ? { reasoningEffort: reasoning_effort } : {}),
+          modelPreset: chosenPresetId,
+          ...(!useFallbackEffortDefault && reasoning_effort !== undefined
+            ? { reasoningEffort: reasoning_effort }
+            : {}),
+          ...(fallbackPresetIds.length > 0 && selectedPresetId !== undefined
+            ? {
+                initialModelPreset: selectedPresetId,
+                modelPresetFallbacks: fallbackPresetIds,
+              }
+            : {}),
           callerSessionId: resolveStructuralCallerSessionId(
             attribution.callerSessionId,
             notify_completion,

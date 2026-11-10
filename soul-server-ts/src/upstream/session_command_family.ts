@@ -44,6 +44,8 @@ interface CreateSessionCmd extends CommandLike {
   extra_context_items?: ContextItem[];
   model?: string | null;
   model_preset?: string | null;
+  initial_model_preset?: string;
+  model_preset_fallbacks?: string[];
   oauth_token?: string | null;
   allowed_tools?: string[];
   disallowed_tools?: string[];
@@ -356,6 +358,8 @@ async function handleCreateSession(
       notifyCompletion: cmd.notify_completion ?? cmd.notifyCompletion,
       model: cmd.model,
       modelPreset: cmd.model_preset,
+      initialModelPreset: cmd.initial_model_preset,
+      modelPresetFallbacks: cmd.model_preset_fallbacks,
       oauthToken: cmd.oauth_token,
       reasoningEffort: cmd.reasoningEffort,
       allowedTools: cmd.allowed_tools ?? cmd.allowedTools,

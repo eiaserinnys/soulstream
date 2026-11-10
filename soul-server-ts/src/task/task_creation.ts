@@ -7,6 +7,7 @@ import type { SessionDB } from "../db/session_db.js";
 import type { EventPersistence } from "../db/event_persistence.js";
 import type { ClaudePermissionMode, ReasoningEffort } from "../engine/protocol.js";
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
+import { buildModelPresetFallbackMetadataEntry } from "@soulstream/wire-schema/model-preset-fallbacks";
 import { defaultFolderIdForSessionType } from "../system_folders.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
 import {
@@ -57,6 +58,10 @@ export interface CreateTaskParams {
   modelPreset?: string | null;
   modelPresetBackend?: Task["modelPresetBackend"];
   modelPresetEnv?: Record<string, string>;
+  /** 만들 때 선언한 1차 preset. 대체 순서 metadata의 initial 값. */
+  initialModelPreset?: string;
+  /** 만들 때 선언한 대체 preset 순서. 비어 있지 않을 때만 metadata에 저장. */
+  modelPresetFallbacks?: string[];
   oauthToken?: string;
   reasoningEffort?: ReasoningEffort;
   /** 요청별 허용 도구 override. 없으면 AgentProfile.allowed_tools 사용. */
@@ -145,9 +150,19 @@ export class TaskCreation {
     );
     const callerMetadata = buildCallerInfoMetadataEntry(params.callerInfo);
     const permissionModeMetadata = buildClaudePermissionModeMetadataEntry(params.claudePermissionMode);
+    const modelPresetFallbacksMetadata =
+      params.initialModelPreset !== undefined
+      && params.modelPresetFallbacks !== undefined
+      && params.modelPresetFallbacks.length > 0
+        ? buildModelPresetFallbackMetadataEntry(
+            params.initialModelPreset,
+            params.modelPresetFallbacks,
+          )
+        : undefined;
     const metadata = [
       callerMetadata,
       permissionModeMetadata,
+      modelPresetFallbacksMetadata,
       ...(params.orchestrationPurpose
         ? [{ type: ORCHESTRATION_PURPOSE_TYPE, ...params.orchestrationPurpose }] : []),
     ].filter(

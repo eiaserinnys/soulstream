@@ -2072,6 +2072,14 @@ export interface CreateSession {
   profile?: string;
   model?: string | null;
   model_preset?: string | null;
+  /**
+   * 만들 때 선언한 1차 model preset(가용성 선택 전 값). 대체 순서 metadata의 initial_model_preset으로 저장된다.
+   */
+  initial_model_preset?: string;
+  /**
+   * 만들 때 선언한 대체 model preset id 목록. 비어 있지 않을 때만 metadata에 저장된다.
+   */
+  model_preset_fallbacks?: string[];
   request_id?: string;
   requestId?: string;
   folderId?: string | null;

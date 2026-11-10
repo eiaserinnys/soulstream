@@ -707,6 +707,16 @@ def test_create_session_has_reasoning_effort() -> None:
     ]
 
 
+def test_create_session_has_model_preset_fallbacks() -> None:
+    schema = _load_schema()
+    create_session = schema["$defs"]["CreateSession"]
+    initial = create_session["properties"]["initial_model_preset"]
+    fallbacks = create_session["properties"]["model_preset_fallbacks"]
+    assert initial["type"] == "string"
+    assert fallbacks["type"] == "array"
+    assert fallbacks["items"] == {"type": "string"}
+
+
 def test_intervene_has_extra_context_items() -> None:
     schema = _load_schema()
     intervene = schema["$defs"]["Intervene"]

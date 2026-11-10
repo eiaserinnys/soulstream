@@ -50,6 +50,7 @@ export const clusterHandlers = {
     const body: Args = { prompt: a.prompt, nodeId: a.node_id };
     if (a.agent_id !== undefined) body.profile = a.agent_id;
     if (a.model_preset !== undefined) body.model_preset = a.model_preset;
+    if (a.model_preset_fallbacks !== undefined) body.model_preset_fallbacks = a.model_preset_fallbacks;
     if (a.reasoning_effort !== undefined) body.reasoningEffort = a.reasoning_effort;
     // Explicit null also wins; a lookup failure has always meant no inherited folder.
     let folderId: unknown = null;

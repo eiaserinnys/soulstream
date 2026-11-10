@@ -50,7 +50,8 @@ export type SessionCommandRouteOptions = {
   timeoutMs?: number;
   createSessionReconcileTimeoutMs?: number;
   createSessionLifecycle?: SessionCreateLifecycle;
-  modelPresetAvailability?: Pick<ModelPresetAvailabilityService, "requireAvailable">;
+  modelPresetAvailability?: Pick<ModelPresetAvailabilityService, "requireAvailable">
+    & Partial<Pick<ModelPresetAvailabilityService, "chooseUsablePreset">>;
   admitAttachmentInput?: SessionCreateAttachmentAdmission;
   worktreeAuthBearerToken?: string;
   environment?: string;
@@ -245,6 +246,18 @@ export async function executeCreateSessionRoute(
     ) {
       return createBadRequest("model_preset must be a non-empty string or null");
     }
+    if (body.model_preset_fallbacks !== undefined) {
+      const fallbacks = body.model_preset_fallbacks;
+      if (
+        !Array.isArray(fallbacks)
+        || fallbacks.some((item) => typeof item !== "string")
+      ) {
+        return createBadRequest("model_preset_fallbacks must be a string array");
+      }
+      if (fallbacks.some((item) => (item as string).trim().length === 0)) {
+        return createBadRequest("model_preset_fallbacks must contain non-blank strings");
+      }
+    }
 
     try {
       const prepared = await prepareCreateSession(options.createSessionLifecycle, request, body);
@@ -255,7 +268,7 @@ export async function executeCreateSessionRoute(
         attachmentIds.value,
       );
       if ("response" in admission) return admission.response;
-      const payload = admission.payload;
+      const payload = applyModelPresetFallbacks(options, admission.payload);
       const routed = options.router.createSession(payload, {
         timeoutMs: options.timeoutMs,
         beforeCreateCommand: (selection) => {
@@ -387,6 +400,55 @@ async function admitCreateAttachments(
     ...(admitted.attachment_ids.length > 0 ? { attachment_ids: admitted.attachment_ids } : {}),
     ...(admitted.attachment_bindings.length > 0 ? { attachment_bindings: admitted.attachment_bindings } : {}),
   } };
+}
+
+/**
+ * Declared fallback order: after node/profile admission, choose the first usable
+ * candidate inside the selected node and pin that selection in the payload. The
+ * router re-derives its selection from this payload, so the chosen preset is
+ * what the node receives. A requested reasoning effort is discarded when the
+ * chosen preset differs from the declared primary.
+ */
+function applyModelPresetFallbacks(
+  options: SessionCommandRouteOptions,
+  payload: CreateSessionNodeCommandPayload,
+): CreateSessionNodeCommandPayload {
+  const fallbacks = payload.model_preset_fallbacks;
+  if (fallbacks !== undefined && Array.isArray(fallbacks) && fallbacks.length === 0) {
+    // 빈 목록은 기능 미사용 — 선언 필드 없이 이전과 같은 명령을 보낸다.
+    const { model_preset_fallbacks: _empty, ...rest } = payload;
+    return rest;
+  }
+  const availability = options.modelPresetAvailability;
+  if (availability?.chooseUsablePreset === undefined || !Array.isArray(fallbacks)) {
+    return payload;
+  }
+  const selection = options.router.selectNodeForCreate({
+    nodeId: firstNonEmptyString(payload.nodeId),
+    profileId: firstNonEmptyString(payload.profile),
+    modelPresetId: firstNonEmptyString(payload.model_preset),
+    legacyModelSpecified: firstNonEmptyString(payload.model) !== undefined,
+    worktreeRequired: firstNonEmptyString(payload.worktree_id) !== undefined,
+  });
+  const initialModelPreset = selection.modelPresetId;
+  if (initialModelPreset === undefined) return payload;
+  // Call through the service: its method reads node availability via `this`.
+  const chosenPresetId = availability.chooseUsablePreset(
+    selection.node.nodeId,
+    [initialModelPreset, ...fallbacks],
+  );
+  const { reasoningEffort, ...rest } = payload;
+  return {
+    ...rest,
+    nodeId: selection.node.nodeId,
+    profile: selection.profileId,
+    model_preset: chosenPresetId,
+    initial_model_preset: initialModelPreset,
+    model_preset_fallbacks: fallbacks,
+    ...(chosenPresetId === initialModelPreset && reasoningEffort !== undefined
+      ? { reasoningEffort }
+      : {}),
+  };
 }
 
 function createSessionPayload(

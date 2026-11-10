@@ -22,6 +22,7 @@
     "./persistent-report": "./src/persistent_report.ts",
     "./push-notification": "./src/push_notification.ts",
     "./resume-after-limit": "./src/resume_after_limit.ts",
+    "./model-preset-fallbacks": "./src/model_preset_fallbacks.ts",
     "./session-statistics": "./src/session_statistics.ts",
     "./node-resources": "./src/node_resources.ts"
   },

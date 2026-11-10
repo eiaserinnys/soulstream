@@ -52,6 +52,8 @@ export interface CreateSessionRuntimeParams {
   extraContextItems?: ContextItem[];
   model?: string | null;
   modelPreset?: string | null;
+  initialModelPreset?: string;
+  modelPresetFallbacks?: string[];
   oauthToken?: string | null;
   allowedTools?: string[];
   disallowedTools?: string[];
@@ -224,6 +226,8 @@ export class TaskRuntimeCommands {
             modelPresetEnv: preset.env,
           }
         : {}),
+      initialModelPreset: params.initialModelPreset,
+      modelPresetFallbacks: params.modelPresetFallbacks,
       oauthToken:
         (preset?.backend ?? agent.backend) === "claude"
           ? normalizeOptionalString(params.oauthToken)

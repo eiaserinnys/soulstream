@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
+import { chooseUsablePresetId } from "@soulstream/model-catalog";
+
 import {
   resolvePresetAvailability,
   type ModelPresetAvailability,
@@ -899,6 +901,71 @@ describe("ModelPresetAvailabilityService usable preset selection", () => {
       presetAvailability("codex-6.1-sol", false, null),
     ]);
     expect(service.chooseUsablePreset("node-a", candidateIds)).toBe("gemini-4-argon");
+  });
+});
+
+describe("chooseUsablePresetId", () => {
+  const candidates = ["gemini-4-argon", "claude-opus", "codex-6.1-sol"];
+
+  it("dedupes candidate ids preserving the first occurrence order", () => {
+    const presets = [
+      presetAvailability("gemini-4-argon", false, null),
+      presetAvailability("claude-opus", true, 60),
+      presetAvailability("codex-6.1-sol", true, 80),
+    ];
+    expect(chooseUsablePresetId([...candidates, "claude-opus"], presets)).toBe("claude-opus");
+  });
+
+  it("keeps the first preset when it is available with headroom or no weekly quota", () => {
+    expect(chooseUsablePresetId(candidates, [
+      presetAvailability("gemini-4-argon", true, 50),
+      presetAvailability("claude-opus", true, 60),
+      presetAvailability("codex-6.1-sol", true, 80),
+    ])).toBe("gemini-4-argon");
+    expect(chooseUsablePresetId(candidates, [
+      presetAvailability("gemini-4-argon", true, null),
+      presetAvailability("claude-opus", true, 60),
+      presetAvailability("codex-6.1-sol", true, 80),
+    ])).toBe("gemini-4-argon");
+  });
+
+  it("moves past presets below the weekly floor or unavailable", () => {
+    expect(chooseUsablePresetId(candidates, [
+      presetAvailability("gemini-4-argon", true, 0.33),
+      presetAvailability("claude-opus", false, null),
+      presetAvailability("codex-6.1-sol", true, 83),
+    ])).toBe("codex-6.1-sol");
+  });
+
+  it("falls back to the first available preset when all are below the floor", () => {
+    expect(chooseUsablePresetId(candidates, [
+      presetAvailability("gemini-4-argon", true, 0.33),
+      presetAvailability("claude-opus", true, 0.5),
+      presetAvailability("codex-6.1-sol", true, 0.75),
+    ])).toBe("gemini-4-argon");
+  });
+
+  it("skips candidate presets the node does not advertise", () => {
+    expect(chooseUsablePresetId(candidates, [
+      presetAvailability("claude-opus", true, 60),
+      presetAvailability("codex-6.1-sol", true, 80),
+    ])).toBe("claude-opus");
+  });
+
+  it("chooses the first candidate when nothing is advertised or available", () => {
+    expect(chooseUsablePresetId(candidates, [])).toBe("gemini-4-argon");
+    expect(chooseUsablePresetId(candidates, [
+      presetAvailability("gemini-4-argon", false, null),
+      presetAvailability("claude-opus", false, null),
+      presetAvailability("codex-6.1-sol", false, null),
+    ])).toBe("gemini-4-argon");
+  });
+
+  it("honors a custom headroom floor", () => {
+    expect(chooseUsablePresetId(candidates, [
+      presetAvailability("gemini-4-argon", true, 50),
+      presetAvailability("claude-opus", true, 60),
+    ], 60)).toBe("claude-opus");
   });
 });
 

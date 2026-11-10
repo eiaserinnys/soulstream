@@ -145,7 +145,7 @@ session ID가 없는 첫 턴은 입력 전달 상태가 `not_sent`로 증명된 
 
 | 경로 | 구현 | 계약 |
 | --- | --- | --- |
-| 로컬 MCP 새 세션 생성 | `soul-server-ts/src/mcp/tools/session_mgmt.ts:create_agent_session`이 `model_preset`을 우선하고 없으면 agent의 `default_preset`을 선택한다. 선택된 프리셋이 있으면 `fetchOrchResponse`로 `GET /api/nodes/:node_id/model-presets`를 한 번 요청하며 제한 시간은 2초다. | 판정은 orch의 가용 판정을 따른다. `available:false`이고 `reason:"limit_rejected"`인 경우에만 세션을 만들지 않고 사유와 해제 시각이 담긴 오류를 돌려준다. 조회 실패·시간 초과·그 밖의 응답은 기존 생성 경로를 진행하며 재시도하지 않는다. 기존 세션의 재개 경로에는 이 확인이 없다. |
+| 로컬 MCP 새 세션 생성 | `soul-server-ts/src/mcp/tools/session_mgmt.ts:create_agent_session`이 `model_preset`을 우선하고 없으면 agent의 `default_preset`을 선택한다. 선택된 프리셋이 있으면 `fetchOrchResponse`로 `GET /api/nodes/:node_id/model-presets`를 한 번 요청하며 제한 시간은 2초다. `model_preset_fallbacks`가 있으면 같은 응답을 `chooseUsablePresetId`에 넣어 1차 preset부터 차례로 쓸 preset을 고른다. | 판정은 orch의 가용 판정을 따른다. `available:false`이고 `reason:"limit_rejected"`인 경우에만 세션을 만들지 않고 사유와 해제 시각이 담긴 오류를 돌려준다. 조회 실패·시간 초과·그 밖의 응답은 기존 생성 경로를 진행하며 재시도하지 않는다. 대체 순서가 있으면 고른 preset을 쓰고, 1차와 다르면 요청 추론 수준을 버린다. 기존 세션의 재개 경로에는 이 확인이 없다. |
 
 ## 앱 PAS 전화면 진입과 대화 상태 (N5)
 
@@ -170,6 +170,7 @@ session ID가 없는 첫 턴은 입력 전달 상태가 `not_sent`로 증명된 
 
 | 경로 | 구현 | 계약 |
 | --- | --- | --- |
+| 대체 순서 선택과 metadata 저장 | `session/session_command_routes.ts:applyModelPresetFallbacks`, `runtime/live_execute_proxy_route_provider.ts:executeNew`, `soul-server-ts/src/mcp/tools/session_mgmt.ts:create_agent_session` → `task/task_creation.ts` | `model_preset_fallbacks`가 비어 있지 않으면 노드와 profile을 고정한 뒤 `chooseUsablePresetId`로 1차 preset부터 순서대로 사용 가능한 preset을 고르고 고른 preset을 `sessions.model_preset`으로 보낸다. 1차와 다르면 요청 `reasoningEffort`를 버리고 고른 preset의 카탈로그 기본값을 쓴다. 노드 명령에는 `initial_model_preset`과 원래 목록을 싣고 worker는 `{type:"model_preset_fallbacks", value:{initial_model_preset, model_preset_fallbacks}}` metadata를 실행 시작 전 ACK로 저장한다. 목록이 없거나 비면 기존 동작 그대로다. |
 | HTTP `POST /api/sessions`, 원격 MCP `create_remote_agent_session` | `session/session_command_routes.ts`와 원격 MCP 실행 경로 → `ModelPresetAvailabilityService.requireAvailable` | 기본 또는 명시 프리셋을 노드에 보내기 전에 확인한다. 실제 한도 거부 중이면 프리셋 ID, 노드, 사유 라벨, `resets_at` ISO 시각을 오류로 돌려주며 노드 생성 명령은 보내지 않는다. |
 | 실행 프록시의 새 실행 | `runtime/live_execute_proxy_route_provider.ts:executeNew` → `requireAvailable` | 새 세션 실행만 보내기 전에 확인한다. 기존 세션 재개는 이 검사를 거치지 않는다. |
 | 새 PAS 생성·기존 PAS 기본 모델 저장 | `session/persistent_session_settings_service.ts`의 `normalizeNewDefaultModel`·`normalizeDefaultModel`; 반복 작업 설정은 `recurring-jobs/target_validator.ts` | 새 PAS 생성은 일반 생성처럼 확인한다. 기존 PAS 기본 모델 변경과 반복 작업 생성·수정은 `limit_rejected`만 저장할 수 있으며 환경·인증·권한 검사는 유지한다. |

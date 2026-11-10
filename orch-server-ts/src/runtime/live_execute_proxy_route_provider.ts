@@ -108,6 +108,7 @@ export function createLiveExecuteProxyRouteProvider(
           modelPresetId: payload.model_preset,
           legacyModelSpecified: (payload.model?.trim().length ?? 0) > 0,
         });
+        const initialModelPresetId = selected.modelPresetId;
         if (
           payload.model_preset_fallbacks !== undefined
           && payload.model_preset_fallbacks.length > 0
@@ -154,6 +155,8 @@ export function createLiveExecuteProxyRouteProvider(
           backend: selected.backend,
           profileId: selected.profileId,
           modelPresetId: selected.modelPresetId,
+          initialModelPresetId,
+          skipReasoningEffort: selected.modelPresetId !== initialModelPresetId,
           admitted,
         });
         const command = options.registry.createCommand(
@@ -485,9 +488,20 @@ function createSessionCommandPayload(params: {
   backend: string;
   profileId: string;
   modelPresetId?: string;
+  initialModelPresetId?: string;
+  skipReasoningEffort?: boolean;
   admitted?: AdmittedAttachmentInput;
 }): CreateSessionNodeCommandPayload {
-  const { payload, agentSessionId, backend, profileId, modelPresetId, admitted } = params;
+  const {
+    payload,
+    agentSessionId,
+    backend,
+    profileId,
+    modelPresetId,
+    initialModelPresetId,
+    skipReasoningEffort,
+    admitted,
+  } = params;
   const command: CreateSessionNodeCommandPayload = {
     type: "create_session",
     agentSessionId,
@@ -496,6 +510,14 @@ function createSessionCommandPayload(params: {
     caller_info: payload.caller_info,
   };
   if (modelPresetId !== undefined) command.model_preset = modelPresetId;
+  if (
+    initialModelPresetId !== undefined
+    && payload.model_preset_fallbacks !== undefined
+    && payload.model_preset_fallbacks.length > 0
+  ) {
+    command.initial_model_preset = initialModelPresetId;
+    command.model_preset_fallbacks = payload.model_preset_fallbacks;
+  }
   if (payload.allowed_tools !== undefined) command.allowed_tools = payload.allowed_tools;
   if (payload.disallowed_tools !== undefined) {
     command.disallowed_tools = payload.disallowed_tools;
@@ -507,10 +529,11 @@ function createSessionCommandPayload(params: {
   if (payload.folderId !== undefined) command.folderId = payload.folderId;
   if (payload.system_prompt !== undefined) command.systemPrompt = payload.system_prompt;
   if (payload.model !== undefined) command.model = payload.model;
-  if (payload.reasoningEffort !== undefined) {
+  if (payload.reasoningEffort !== undefined && skipReasoningEffort !== true) {
     // Forwarded for every backend. The node's TaskManager is the single
     // validator, so gating by backend here would silently drop a Claude
-    // request's effort and re-introduce a second authority.
+    // request's effort and re-introduce a second authority. A fallback preset
+    // drops the request effort and uses its own catalog default instead.
     command.reasoningEffort = payload.reasoningEffort;
   }
   if (payload.extra_context_items !== undefined) {
