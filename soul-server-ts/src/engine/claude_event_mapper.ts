@@ -59,6 +59,9 @@ export function mapClaudeClientEvent(
         asSSE({
           type: "progress",
           text: event.text,
+          ...(event.foregroundToolUseId !== undefined
+            ? { foreground_tool_use_id: event.foregroundToolUseId }
+            : {}),
         }),
       ];
 

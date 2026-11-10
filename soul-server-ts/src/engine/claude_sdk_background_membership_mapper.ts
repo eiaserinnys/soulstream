@@ -61,6 +61,14 @@ export class ClaudeParentIngressScopeTracker {
     ) === "top_level";
   }
 
+  getTaskToolUseId(taskId: string): string | undefined {
+    return this.taskScopesById.get(taskId)?.toolUseId;
+  }
+
+  isTopLevelToolUse(toolUseId: string): boolean {
+    return this.toolScopesById.get(toolUseId) === "top_level";
+  }
+
   private recordToolScope(toolUseId: string, scope: ClaudeParentIngressScope): void {
     this.toolScopesById.set(toolUseId, mergeScope(this.toolScopesById.get(toolUseId), scope));
   }

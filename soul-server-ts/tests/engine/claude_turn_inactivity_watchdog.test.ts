@@ -81,4 +81,65 @@ describe("ClaudeTurnInactivityWatchdog", () => {
 
     expect(onInactive).toHaveBeenCalledWith("turn-1");
   });
+
+  it("keeps a turn alive through 25 minutes of linked foreground Agent progress", async () => {
+    const onInactive = vi.fn(async () => undefined);
+    const watchdog = new ClaudeTurnInactivityWatchdog({ timeoutMs: 1_200_000, onInactive });
+    watchdog.arm("turn-1");
+
+    for (let minute = 0; minute < 25; minute += 1) {
+      await vi.advanceTimersByTimeAsync(60_000);
+      watchdog.recordEvent("turn-1", {
+        type: "progress",
+        text: "Running subagent",
+        foregroundToolUseId: "toolu-agent-1",
+      });
+    }
+
+    expect(onInactive).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(1_200_000 - 1);
+    expect(onInactive).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(onInactive).toHaveBeenCalledOnce();
+    expect(onInactive).toHaveBeenCalledWith("turn-1");
+  });
+
+  it("does not count progress with an empty foreground tool use id", async () => {
+    const onInactive = vi.fn(async () => undefined);
+    const watchdog = new ClaudeTurnInactivityWatchdog({ timeoutMs: 600_000, onInactive });
+    watchdog.arm("turn-1");
+    await vi.advanceTimersByTimeAsync(599_000);
+    watchdog.recordEvent("turn-1", {
+      type: "progress",
+      text: "host is alive",
+      foregroundToolUseId: "",
+    });
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(onInactive).toHaveBeenCalledWith("turn-1");
+  });
+
+  it("does not transfer a previous turn's linked progress to a newly armed turn", async () => {
+    const onInactive = vi.fn(async () => undefined);
+    const watchdog = new ClaudeTurnInactivityWatchdog({ timeoutMs: 600_000, onInactive });
+    watchdog.arm("turn-1");
+    watchdog.recordEvent("turn-1", {
+      type: "progress",
+      text: "Running subagent",
+      foregroundToolUseId: "toolu-agent-1",
+    });
+    watchdog.clear("turn-1");
+    watchdog.arm("turn-2");
+    watchdog.recordEvent("turn-1", {
+      type: "progress",
+      text: "Running subagent",
+      foregroundToolUseId: "toolu-agent-1",
+    });
+
+    await vi.advanceTimersByTimeAsync(600_000);
+
+    expect(onInactive).toHaveBeenCalledOnce();
+    expect(onInactive).toHaveBeenCalledWith("turn-2");
+  });
 });

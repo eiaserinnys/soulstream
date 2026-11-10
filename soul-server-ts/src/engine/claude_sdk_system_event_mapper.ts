@@ -29,6 +29,10 @@ type ClaudeSystemMessageMapperContext = {
   makeSubagentStopEvents(agentId: string | undefined): ClaudeClientEvent[];
   linkTaskToTool(taskId: string, toolUseId: string): void;
   isParentTaskEligible(taskId: string): boolean;
+  resolveForegroundAgentToolUseId(
+    taskId: string | undefined,
+    messageToolUseId: string | undefined,
+  ): string | undefined;
 };
 
 export function mapClaudeSystemMessage(
@@ -285,7 +289,14 @@ export function mapClaudeSystemMessage(
     const summary = asString(message.summary);
     const description = asString(message.description);
     const text = summary ?? description;
-    const events: ClaudeClientEvent[] = text ? [{ type: "progress", text }] : [];
+    const foregroundToolUseId = context.resolveForegroundAgentToolUseId(taskId, toolUseId);
+    const events: ClaudeClientEvent[] = text
+      ? [{
+          type: "progress",
+          text,
+          ...(foregroundToolUseId !== undefined ? { foregroundToolUseId } : {}),
+        }]
+      : [];
     if (taskId && context.isParentTaskEligible(taskId)) {
       events.push({
         type: "claude_runtime_task_progress",
