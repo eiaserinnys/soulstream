@@ -1,4 +1,8 @@
-import { PersistenceHostTransport, type HostClientConfig } from "./persistence_host_transport.js";
+import {
+  PersistenceHostTransport,
+  requestHostOperationWithRetry,
+  type HostClientConfig,
+} from "./persistence_host_transport.js";
 import type { WorktreeHost, WorktreeRecord, WorktreeSweepCandidate } from "../worktree/worktree_types.js";
 
 export class WorktreeHostClient implements WorktreeHost {
@@ -8,8 +12,18 @@ export class WorktreeHostClient implements WorktreeHost {
     this.transport = new PersistenceHostTransport(config);
   }
 
+  /**
+   * The isolation gate refuses the session start when this read fails, so a
+   * busy host or a stalled node must cost latency, not the start (card #1178).
+   */
   list(input: Parameters<WorktreeHost["list"]>[0]): Promise<WorktreeRecord[]> {
-    return this.request("list", input);
+    return requestHostOperationWithRetry<WorktreeRecord[]>(
+      this.transport,
+      "worktrees",
+      "list",
+      [input],
+      { timeoutMs: 5_000, attempts: 3, retryDelaysMs: [250, 1_000] },
+    );
   }
 
   sweepCandidates(input: Parameters<WorktreeHost["sweepCandidates"]>[0]): Promise<WorktreeSweepCandidate[]> {

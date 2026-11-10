@@ -1,5 +1,3 @@
-import { setTimeout as sleep } from "node:timers/promises";
-
 import type {
   ListSessionSummaryRow,
   RunningSessionSummaryRow,
@@ -19,6 +17,7 @@ import {
   PersistenceHostRequestError,
   PersistenceHostTransport,
 } from "./persistence_host_clients.js";
+import { requestHostOperationWithRetry } from "./persistence_host_transport.js";
 import type { GenerationCheckpointMaterial, GenerationCheckpointReadLimits, SessionReadPeriod } from "@soulstream/mcp-contract";
 
 export const SESSION_DATA_READ_OPERATIONS = [
@@ -297,28 +296,22 @@ export class SessionDataHostClient implements SessionDataHost {
     signal?: AbortSignal,
     retryDelaysMs: readonly number[] = [],
   ): Promise<T> {
-    let lastError: unknown;
-    for (let attempt = 1; attempt <= attempts; attempt += 1) {
-      try {
-        return await this.transport.request<T>("session-data", operation, args, { timeoutMs, signal });
-      } catch (error) {
-        lastError = error;
-        if (signal?.aborted
-          || !(error instanceof PersistenceHostRequestError)
-          || !error.retryable
-          || attempt === attempts) {
-          break;
-        }
-        const delayMs = retryDelaysMs[attempt - 1] ?? 0;
-        if (delayMs > 0) await sleep(delayMs);
-      }
+    try {
+      return await requestHostOperationWithRetry<T>(
+        this.transport,
+        "session-data",
+        operation,
+        args,
+        { timeoutMs, attempts, signal, retryDelaysMs },
+      );
+    } catch (lastError) {
+      const retryable = lastError instanceof PersistenceHostRequestError && lastError.retryable;
+      throw new SessionDataHostError({
+        operation,
+        retryable,
+        message: `session-data host ${operation} failed`,
+        cause: lastError,
+      });
     }
-    const retryable = lastError instanceof PersistenceHostRequestError && lastError.retryable;
-    throw new SessionDataHostError({
-      operation,
-      retryable,
-      message: `session-data host ${operation} failed`,
-      cause: lastError,
-    });
   }
 }

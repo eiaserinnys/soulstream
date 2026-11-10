@@ -30,6 +30,45 @@ function fixture(nodeId = "node-a", active = false) {
   return { repository: new WorktreeRepository(sql), calls };
 }
 
+describe("WorktreeRepository list", () => {
+  it("computes caller mutability and the active session in one SQL statement", async () => {
+    const now = new Date("2026-10-01T00:00:00Z");
+    const row = { id: "wt", node_id: "node-a", repo_id: "demo", canonical_path: "/projects/demo--feature",
+      branch: "feature", created_from_sha: "a".repeat(40), owner_folder_id: null,
+      created_by_session_id: "owner", state: "ready", setup_mode: "none", setup_required: false,
+      setup_status: "not_requested", managed_paths: [], worktree_identity: "wt",
+      branch_delete_expected_sha: null, branch_delete_marker_ref: null,
+      last_error_code: null, last_error_message: null, created_at: now, updated_at: now,
+      removed_at: null, branch_deleted_at: null,
+      mutable_by_caller: true, active_session_id: "live" };
+    const calls: Array<{ query: string; values: unknown[] }> = [];
+    const sql = Object.assign(async (parts: TemplateStringsArray, ...values: unknown[]) => {
+      calls.push({ query: parts.join("?"), values });
+      return [row];
+    }, { begin: async (fn: (tx: unknown) => unknown) => fn(sql), json: (value: unknown) => value }) as unknown as SqlClient;
+    const repository = new WorktreeRepository(sql);
+
+    const result = await repository.list({
+      actorSessionId: "actor",
+      nodeId: "node-a",
+      repoId: "demo",
+      worktreeId: "wt",
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(result).toEqual([expect.objectContaining({ id: "wt", mutableByCaller: true, activeSessionId: "live" })]);
+    const { query, values } = calls[0]!;
+    expect(values).toContain("node-a");
+    expect(values).toContain("actor");
+    expect(query).toMatch(/WITH RECURSIVE lineage\(session_id\) AS \([\s\S]*SELECT \?::TEXT[\s\S]*\bUNION\b[\s\S]*sessions\.caller_session_id/);
+    expect(query).toMatch(/CASE[\s\S]*w\.owner_folder_id IS NOT NULL THEN COALESCE\([\s\S]*w\.owner_folder_id = \([\s\S]*SELECT folder_id FROM sessions WHERE session_id = \?/);
+    expect(query).toMatch(/EXISTS \([\s\S]*FROM lineage WHERE session_id = w\.created_by_session_id/);
+    expect(query).toMatch(/SELECT session_id FROM sessions[\s\S]*worktree_id = w\.id AND status IN \('initializing', 'running'\)[\s\S]*ORDER BY created_at LIMIT 1/);
+    expect(query).toMatch(/FROM worktrees w[\s\S]*w\.node_id = \?/);
+    expect(query).toMatch(/ORDER BY w\.created_at, w\.id\s*$/);
+  });
+});
+
 describe("WorktreeRepository sweeper", () => {
   it("queries ready node-local candidates, active bindings, linked activity and closed cards in SQL", async () => {
     const { repository, calls } = fixture();
