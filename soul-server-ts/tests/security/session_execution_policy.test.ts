@@ -315,4 +315,22 @@ describe("session execution policy", () => {
     expect(describeFailureChain(new Error("x".repeat(1_000))).length).toBe(400);
     expect(describeFailureChain(undefined)).toBe("");
   });
+
+  it("masks URL queries and credential-looking values a host error may echo", () => {
+    const echoed = new Error("session-data host caller_chain failed", {
+      cause: new Error(
+        "upstream http://internal.example/host?token=TEST_SECRET failed: "
+          + "Authorization: Bearer abc.def-123 api_key=k1 password=\"p w\" "
+          + "via https://user:pw@orch.test/x",
+      ),
+    });
+
+    const text = describeFailureChain(echoed);
+
+    expect(text).not.toMatch(/TEST_SECRET|abc\.def-123|k1|p w|user:pw/);
+    expect(text).toContain("http://internal.example/host?***");
+    expect(text).toContain("api_key=***");
+    expect(text).toContain("https://***@orch.test/x");
+    expect(text).toContain("session-data host caller_chain failed");
+  });
 });

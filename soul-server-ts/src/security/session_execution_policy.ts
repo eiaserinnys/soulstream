@@ -35,14 +35,32 @@ const FAILURE_CHAIN_MAX_DEPTH = 6;
 const FAILURE_CHAIN_MAX_CHARS = 400;
 
 /**
+ * The chain reaches the terminal detail and the delivery error, both shown to
+ * users, and a host error may echo a response body. URL queries and
+ * credential-looking values are masked before anything is kept.
+ */
+function redactFailureText(text: string): string {
+  return text
+    .replace(/\b(https?:\/\/)[^\s/@]+@/gi, "$1***@")
+    .replace(/\b(https?:\/\/[^\s?#]+)[?#]\S*/gi, "$1?***")
+    .replace(/\b(bearer|basic)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 ***")
+    .replace(
+      /\b([A-Za-z0-9_-]*(?:token|secret|password|passwd|api[_-]?key|authorization|cookie)[A-Za-z0-9_-]*)(\s*[=:]\s*)("[^"]*"|'[^']*'|[^\s,;&]+)/gi,
+      "$1$2***",
+    );
+}
+
+/**
  * `a: b: c` from an error and its `cause` links, skipping a link whose message
- * already appears in the previous one. Bounded in depth and length.
+ * already appears in the previous one. Bounded in depth and length, redacted.
  */
 export function describeFailureChain(error: unknown): string {
   const parts: string[] = [];
   let current: unknown = error;
   for (let depth = 0; depth < FAILURE_CHAIN_MAX_DEPTH && current != null; depth += 1) {
-    const message = (current instanceof Error ? current.message : String(current)).trim();
+    const message = redactFailureText(
+      (current instanceof Error ? current.message : String(current)).trim(),
+    );
     const previous = parts.at(-1);
     if (message && (previous === undefined || !previous.includes(message))) {
       parts.push(message);
