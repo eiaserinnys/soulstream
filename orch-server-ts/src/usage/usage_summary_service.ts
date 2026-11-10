@@ -229,24 +229,31 @@ export class UsageSummaryService {
       }
 
       const previous = state.snapshot;
-      const fullSnapshot = previous === null;
-      const snapshot = previous === null
-        ? await this.fetchNodeSnapshot(nodeId)
-        : {
-            providers: {
-              ...previous.providers,
-              claude: await this.fetchNodeProvider(nodeId, "claude"),
-            },
-          };
-      const fetchedAt = this.now().toISOString();
-      state.snapshot = snapshot;
-      if (fullSnapshot) {
+      let snapshot: ProviderUsageSnapshot;
+      let fetchedAt: string;
+      if (previous === null) {
+        snapshot = await this.fetchNodeSnapshot(nodeId);
+        fetchedAt = this.now().toISOString();
         for (const provider of USAGE_SUMMARY_PROVIDER_NAMES) {
-          state.providerFetchedAt[provider] = fetchedAt;
+          if (snapshot.providers[provider].status !== "error") {
+            state.providerFetchedAt[provider] = fetchedAt;
+          }
         }
       } else {
-        state.providerFetchedAt.claude = fetchedAt;
+        const claude = await this.fetchNodeProvider(nodeId, "claude");
+        fetchedAt = this.now().toISOString();
+        // A provider-level error is a failed sample: keep the previous value
+        // and its fetchedAt so a manual refresh does not raise the warning.
+        const keepPreviousClaude = claude.status === "error";
+        snapshot = {
+          providers: {
+            ...previous.providers,
+            claude: keepPreviousClaude ? previous.providers.claude : claude,
+          },
+        };
+        if (!keepPreviousClaude) state.providerFetchedAt.claude = fetchedAt;
       }
+      state.snapshot = snapshot;
       state.disconnectedSince = null;
       this.collectedAt = fetchedAt;
       this.notifyCollected();
@@ -356,22 +363,32 @@ export class UsageSummaryService {
         Promise.resolve().then(() => requiredProvider(provider)),
       ));
       const fresh = new Map<UsageSummaryProviderName, ProviderLimits>();
-      const failedProviders: UsageSummaryProviderName[] = [];
+      const failedValues = new Map<UsageSummaryProviderName, ProviderLimits>();
+      const failedProviders: string[] = [];
       let firstError: unknown;
       results.forEach((result, index) => {
         const provider = USAGE_SUMMARY_PROVIDER_NAMES[index];
         if (provider === undefined) return;
-        if (result.status === "fulfilled") {
+        // A fulfilled command can still carry a provider-level failure when the
+        // node caught a timeout or fetch error. Treat it as a failed sample so
+        // one bad cycle keeps the previous value instead of replacing it.
+        if (result.status === "fulfilled" && result.value.status !== "error") {
           fresh.set(provider, result.value);
           state.providerFetchedAt[provider] = cycleStartedAt;
-        } else {
-          failedProviders.push(provider);
-          if (firstError === undefined) firstError = result.reason;
+          return;
         }
+        if (result.status === "fulfilled") {
+          failedValues.set(provider, result.value);
+          failedProviders.push(`${provider}: status error`);
+          return;
+        }
+        failedProviders.push(provider);
+        if (firstError === undefined) firstError = result.reason;
       });
       const providerLimits = (provider: UsageSummaryProviderName): ProviderLimits =>
         fresh.get(provider)
         ?? state.snapshot?.providers[provider]
+        ?? failedValues.get(provider)
         ?? { ...NOT_CONFIGURED_PROVIDER_LIMITS, status: "error" };
       const snapshot: ProviderUsageSnapshot = {
         providers: {
@@ -383,9 +400,11 @@ export class UsageSummaryService {
       };
       state.snapshot = snapshot;
       if (failedProviders.length > 0) {
+        const reasons = failedProviders.join(", ");
         this.onWarning(
-          `Usage summary collection failed for node ${node.nodeId} `
-          + `(${failedProviders.join(", ")}): ${errorMessage(firstError)}`,
+          firstError === undefined
+            ? `Usage summary collection failed for node ${node.nodeId} (${reasons})`
+            : `Usage summary collection failed for node ${node.nodeId} (${reasons}): ${errorMessage(firstError)}`,
           firstError,
         );
       }
