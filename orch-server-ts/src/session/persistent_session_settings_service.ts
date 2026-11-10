@@ -125,16 +125,15 @@ export class PersistentSessionSettingsService {
     const rows = await (await this.deps.reads()).listPersistentSessions();
     const visible = await this.accessibleRows(SERVICE_CALLER, rows, accessEmail);
     const names = await this.agentNames(visible);
-    const query = filter.query?.trim().toLowerCase() ?? "";
+    // Every word must appear in some field, so 「서소영 PAS」 finds the agent named 「서소영 (PAS)」.
+    const words = (filter.query ?? "").toLowerCase().split(/\s+/).filter((word) => word.length > 0);
     const sessions = visible
       .filter((row) => {
         const agentName = names.get(agentKey(row)) ?? null;
-        if (query.length > 0) {
-          const haystacks = [row.display_name, agentName, row.agent_id, row.session_id];
-          if (!haystacks.some((value) => typeof value === "string" && value.toLowerCase().includes(query))) {
-            return false;
-          }
-        }
+        const haystacks = [row.display_name, agentName, row.agent_id, row.session_id]
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.toLowerCase());
+        if (!words.every((word) => haystacks.some((value) => value.includes(word)))) return false;
         if (filter.agentId !== undefined && row.agent_id !== filter.agentId) return false;
         if (filter.nodeId !== undefined && row.node_id !== filter.nodeId) return false;
         return true;

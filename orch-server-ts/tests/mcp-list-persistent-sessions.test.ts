@@ -150,6 +150,9 @@ describe("list_persistent_sessions MCP tool", () => {
     expect(sessionIds(await h.call({ query: "개밥먹기" }))).toEqual(["aaaa1111-2222-4333-8444-555566667777"]);
     expect(sessionIds(await h.call({ query: "20e4dae9" }))).toEqual(["20e4dae9-8a2b-4c3d-8e4f-556677889900"]);
     expect(sessionIds(await h.call({ query: "seosoyoung-pas" }))).toEqual(["20e4dae9-8a2b-4c3d-8e4f-556677889900"]);
+    // Words match independently: the agent is 「서소영 (PAS)」, the display name has no 「PAS」.
+    expect(sessionIds(await h.call({ query: "서소영 PAS" }))).toEqual(["20e4dae9-8a2b-4c3d-8e4f-556677889900"]);
+    expect(sessionIds(await h.call({ query: "서소영 개밥먹기" }))).toEqual([]);
   });
 
   it("filters by agent and node exactly and treats a blank query as no filter", async () => {
