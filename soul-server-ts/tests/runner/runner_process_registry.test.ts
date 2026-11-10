@@ -15,6 +15,8 @@ import {
   type RunnerRegistration,
 } from "../../src/runner/runner_process_registry.js";
 import { resolveRegisteredRunnerPid } from "../../src/runner/runner_process_spawn.js";
+import { readAuthoritativeRunnerLifecycleLocal } from
+  "../../src/runner/runner_lifecycle_reader.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import {
   RunnerHostStateStore,
@@ -676,20 +678,19 @@ describe("runner process registry", () => {
     const sleep = vi.fn();
     const onSummaryRenameFailure = vi.fn();
     const onSummaryRenameRecovery = vi.fn();
-    const scanOptions = {
-      lifecycleSummaryOptions: {
-        renameFile: () => {
-          throw Object.assign(new Error("persistent lock"), { code: "EPERM" });
-        },
-        sleep,
-        onSummaryRenameFailure,
+    const summaryOptions = {
+      renameFile: () => {
+        throw Object.assign(new Error("persistent lock"), { code: "EPERM" });
       },
+      sleep,
+      onSummaryRenameFailure,
     };
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const result = await scanRunnerRegistrations(stateDirectory, scanOptions);
-      expect(result.errors).toEqual([]);
-      expect(result.registrations[0]?.lifecycle?.runner_pid).toBe(process.pid);
+      const recovered = await readAuthoritativeRunnerLifecycleLocal(paths.databasePath, {
+        lifecycleSummaryOptions: summaryOptions,
+      });
+      expect(recovered?.runner_pid).toBe(process.pid);
     }
 
     expect(sleep).not.toHaveBeenCalled();
@@ -705,10 +706,10 @@ describe("runner process registry", () => {
       runnerLifecycleSummaryPath(paths.databasePath),
       { consecutiveFailures: 3, severity: "error" },
     );
-    const recovered = await scanRunnerRegistrations(stateDirectory, {
+    const recovered = await readAuthoritativeRunnerLifecycleLocal(paths.databasePath, {
       lifecycleSummaryOptions: { renameFile: renameSync, onSummaryRenameRecovery },
     });
-    expect(recovered.errors).toEqual([]);
+    expect(recovered?.runner_pid).toBe(process.pid);
     expect(onSummaryRenameRecovery).toHaveBeenCalledWith(
       runnerLifecycleSummaryPath(paths.databasePath),
       3,

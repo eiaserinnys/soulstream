@@ -11,7 +11,8 @@ import {
   type SpawnedRunnerProcess,
 } from "../../src/runner/runner_process_spawn.js";
 import type { RunnerRegistration } from "../../src/runner/runner_process_registry.js";
-import { readAuthoritativeRunnerLifecycle } from "../../src/runner/runner_lifecycle_reader.js";
+import { readAuthoritativeRunnerLifecycleLocal } from
+  "../../src/runner/runner_lifecycle_reader.js";
 import { runnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import {
   defaultProcessOwnershipLockDependencies,
@@ -739,7 +740,7 @@ describe("RunnerProcessSpawner", () => {
       now: () => 0,
       delay: async () => {},
     });
-    const recoveryLifecycle = await readAuthoritativeRunnerLifecycle(paths.databasePath, {
+    const recoveryLifecycle = await readAuthoritativeRunnerLifecycleLocal(paths.databasePath, {
       lifecycleSummaryOptions: {
         renameFile: persistentRenameFailure,
       },
