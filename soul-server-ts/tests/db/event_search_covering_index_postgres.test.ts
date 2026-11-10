@@ -49,6 +49,8 @@ const MANIFEST = JSON.parse(readFileSync(MANIFEST_PATH, "utf8")) as {
   migrations: Array<{ id: string; sha256: string }>;
 };
 const SCHEMA = readFileSync(CANONICAL_SCHEMA_PATH, "utf8");
+const INDEX_ROW_TOO_WIDE =
+  /index row (?:requires .* maximum size|size \d+ exceeds btree version \d+ maximum \d+)/iu;
 const databaseLeases: TestDatabaseLease[] = [];
 const itWithDatabase = hasTestDatabaseResource() ? it : it.skip;
 
@@ -198,58 +200,59 @@ describe.sequential("event search covering index migrations", () => {
   itWithDatabase("rolls back a too-wide included tuple without losing the term index", async () => {
     const url = await startPostgres();
     const sql = postgres(url, { max: 1, idle_timeout: 1 });
-    let rollbackVerified = false;
     try {
-      let firstAttempt = true;
-      for (let termBytes = 2600; termBytes <= 2700; termBytes += 1) {
-        if (!firstAttempt) {
+      // Only a few bytes of term length fit the legacy index and primary key but
+      // not the covering index, and the exact window depends on the server's btree
+      // tuple limit. Each probe rebuilds the legacy shape and runs the migration, so
+      // bisect the window instead of scanning byte by byte: a linear scan from 2600
+      // took about 80 probes and pushed this test past its timeout under load.
+      let fitsCovering = 2600;
+      let rejectedByLegacy = 2700;
+      let shapeCreated = false;
+      let migrationError: unknown = null;
+      while (migrationError === null && rejectedByLegacy - fitsCovering > 1) {
+        const termBytes = Math.floor((fitsCovering + rejectedByLegacy) / 2);
+        if (shapeCreated) {
           await sql`DROP TABLE public.event_search_terms CASCADE`;
           await sql`DROP TABLE public.event_search_term_document_frequency`;
         }
-        firstAttempt = false;
         await createLegacyShape(sql);
-        const term = makeHighEntropyTerm(termBytes);
+        shapeCreated = true;
         try {
           await sql`
             INSERT INTO public.event_search_terms (
               session_id, event_id, term, term_freq, doc_len
-            ) VALUES ('s', 1, ${term}, 1, 1)
+            ) VALUES ('s', 1, ${makeHighEntropyTerm(termBytes)}, 1, 1)
           `;
         } catch (error) {
-          if (String(error).includes("index row requires")) break;
-          throw error;
+          if (!INDEX_ROW_TOO_WIDE.test(String(error))) throw error;
+          rejectedByLegacy = termBytes;
+          continue;
         }
-
-        let migrationError: unknown = null;
         try {
           await sql.begin((tx) => tx.unsafe(MIGRATIONS[0]));
+          fitsCovering = termBytes;
         } catch (error) {
           migrationError = error;
         }
-        if (migrationError === null) continue;
-        expect(String(migrationError)).toMatch(
-          /index row (?:requires .* maximum size|size \d+ exceeds btree version \d+ maximum \d+)/iu,
-        );
-
-        const afterFailure = await sql`
-          SELECT
-            (SELECT indisvalid AND indisready
-             FROM pg_index
-             WHERE indexrelid = to_regclass('public.idx_event_search_terms_term'))
-              AS legacy_index_ready,
-            to_regclass('public.idx_event_search_terms_term_covering_101')::text
-              AS staging_index,
-            (SELECT count(*)::int FROM public.event_search_terms) AS posting_count
-        `;
-        expect(afterFailure[0]).toEqual({
-          legacy_index_ready: true,
-          staging_index: null,
-          posting_count: 1,
-        });
-        rollbackVerified = true;
-        break;
       }
-      expect(rollbackVerified).toBe(true);
+      expect(String(migrationError)).toMatch(INDEX_ROW_TOO_WIDE);
+
+      const afterFailure = await sql`
+        SELECT
+          (SELECT indisvalid AND indisready
+           FROM pg_index
+           WHERE indexrelid = to_regclass('public.idx_event_search_terms_term'))
+            AS legacy_index_ready,
+          to_regclass('public.idx_event_search_terms_term_covering_101')::text
+            AS staging_index,
+          (SELECT count(*)::int FROM public.event_search_terms) AS posting_count
+      `;
+      expect(afterFailure[0]).toEqual({
+        legacy_index_ready: true,
+        staging_index: null,
+        posting_count: 1,
+      });
     } finally {
       await sql.end({ timeout: 5 });
     }
