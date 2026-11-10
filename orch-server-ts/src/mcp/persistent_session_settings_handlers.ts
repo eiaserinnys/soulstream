@@ -3,6 +3,35 @@ import { SERVICE_CALLER } from "../auth/service_caller.js";
 import type { McpToolHandler } from "./types.js";
 
 export const persistentSessionSettingsHandlers = {
+  list_persistent_sessions: async (options, args, context) => {
+    if (context.principal !== "internal") return errorResult("internal_principal_required");
+    const callerSessionId = context.callerSessionId?.trim();
+    if (!callerSessionId || !options.resolveSessionOwner) {
+      return errorResult("A trusted Soulstream caller session is required for persistent session settings.");
+    }
+    if (!options.persistentSessionSettings) {
+      return errorResult("Persistent session settings service is unavailable.");
+    }
+
+    try {
+      const owner = await options.resolveSessionOwner(callerSessionId);
+      if (!owner) return errorResult("The trusted caller session has no verified owner email for persistent session settings.");
+      const query = args.query as string | undefined;
+      const agentId = args.agent_id as string | undefined;
+      const nodeId = args.node_id as string | undefined;
+      const result = await options.persistentSessionSettings.listForMcp(
+        {
+          ...(query === undefined ? {} : { query }),
+          ...(agentId === undefined ? {} : { agentId }),
+          ...(nodeId === undefined ? {} : { nodeId }),
+        },
+        owner.ownerEmail,
+      );
+      return jsonResult(result);
+    } catch (error) {
+      return errorResult(error instanceof Error ? error.message : String(error));
+    }
+  },
   update_persistent_session_settings: async (options, args, context) => {
     if (context.principal !== "internal") return errorResult("internal_principal_required");
     const callerSessionId = context.callerSessionId?.trim();

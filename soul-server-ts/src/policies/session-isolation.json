@@ -212,6 +212,9 @@
     "list_persistent_session_history": {
       "category": "allow"
     },
+    "list_persistent_sessions": {
+      "category": "allow"
+    },
     "list_recurring_job_runs": {
       "category": "allow"
     },

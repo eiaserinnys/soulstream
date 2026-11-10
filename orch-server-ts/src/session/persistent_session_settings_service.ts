@@ -7,7 +7,7 @@ import {
   type PersistentModelSelection,
   type PersistentSettingsPatch,
 } from "@soulstream/wire-schema/persistent-session-settings";
-import type { ServiceCaller } from "../auth/service_caller.js";
+import { SERVICE_CALLER, type ServiceCaller } from "../auth/service_caller.js";
 import { normalizeReasoningEffort } from "@soulstream/model-catalog";
 import type {
   HostPersistentSessionRow,
@@ -73,6 +73,24 @@ export type PersistentSessionSettingsServiceDeps = {
 type CallerRequest = FastifyRequest | ServiceCaller;
 type SettingsAck = { persistent: boolean; modelChange: "none" | "next_execution_start" };
 
+/** What `list_persistent_sessions` hands a caller that is about to message a PAS. */
+export type PersistentSessionMcpEntry = {
+  session_id: string;
+  display_name: string | null;
+  agent_id: string | null;
+  agent_name: string | null;
+  node_id: string | null;
+  status: string | null;
+  last_activity_at: string;
+  model_preset: string | null;
+};
+
+export type PersistentSessionMcpFilter = {
+  query?: string;
+  agentId?: string;
+  nodeId?: string;
+};
+
 export class PersistentSessionSettingsService {
   private readonly instructions: PersistentSessionInstructionsService;
 
@@ -93,6 +111,46 @@ export class PersistentSessionSettingsService {
       total: visible.length,
       create_defaults: await this.createDefaults(),
     };
+  }
+
+  /**
+   * The MCP view of the PAS list: just enough to pick a target and hand its full
+   * session_id to send_message_to_session. Runs under the service caller plus the
+   * verified caller owner, exactly like the settings write path.
+   */
+  async listForMcp(
+    filter: PersistentSessionMcpFilter,
+    accessEmail?: string | null,
+  ): Promise<{ sessions: PersistentSessionMcpEntry[]; total: number }> {
+    const rows = await (await this.deps.reads()).listPersistentSessions();
+    const visible = await this.accessibleRows(SERVICE_CALLER, rows, accessEmail);
+    const names = await this.agentNames(visible);
+    const query = filter.query?.trim().toLowerCase() ?? "";
+    const sessions = visible
+      .filter((row) => {
+        const agentName = names.get(agentKey(row)) ?? null;
+        if (query.length > 0) {
+          const haystacks = [row.display_name, agentName, row.agent_id, row.session_id];
+          if (!haystacks.some((value) => typeof value === "string" && value.toLowerCase().includes(query))) {
+            return false;
+          }
+        }
+        if (filter.agentId !== undefined && row.agent_id !== filter.agentId) return false;
+        if (filter.nodeId !== undefined && row.node_id !== filter.nodeId) return false;
+        return true;
+      })
+      .sort((left, right) => right.updated_at.getTime() - left.updated_at.getTime())
+      .map((row) => ({
+        session_id: row.session_id,
+        display_name: row.display_name,
+        agent_id: row.agent_id,
+        agent_name: names.get(agentKey(row)) ?? null,
+        node_id: row.node_id,
+        status: row.status,
+        last_activity_at: row.updated_at.toISOString(),
+        model_preset: row.model_preset,
+      }));
+    return { sessions, total: sessions.length };
   }
 
   async get(
@@ -356,12 +414,20 @@ export class PersistentSessionSettingsService {
     };
   }
 
-  private async accessibleRows(request: CallerRequest, rows: HostPersistentSessionRow[]) {
+  private async accessibleRows(
+    request: CallerRequest,
+    rows: HostPersistentSessionRow[],
+    accessEmail?: string | null,
+  ) {
     const decisions = new Map<string | null, Promise<boolean>>();
     const allowed = (folderId: string | null) => {
       let decision = decisions.get(folderId);
       if (decision === undefined) {
-        decision = this.deps.access.requireFolderAccess({ request, folderId }).then(
+        decision = this.deps.access.requireFolderAccess({
+          request,
+          folderId,
+          ...(accessEmail === undefined ? {} : { accessEmail }),
+        }).then(
           () => true,
           (error: unknown) => {
             if (error instanceof SessionResourceAccessError) return false;

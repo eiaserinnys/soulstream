@@ -87,7 +87,8 @@ export const sessionTools = {
       description:
         "세션 목록을 페이지네이션하여 조회한다. 기간을 제한할 때 since와 until을 함께 지정하며, 둘 다 생략하면 기간 제한 없이 조회한다. "
         + "기간을 지정하면 그 기간에 이벤트가 있는 세션만 반환한다. 진행 중 세션은 확인 시각을 until로 고정한다"
-        + "(예: since=2026-10-23T00:00:00+09:00, until=2026-10-23T03:00:00+09:00). 경량 필드만 반환 (Python list_sessions 정합).",
+        + "(예: since=2026-10-23T00:00:00+09:00, until=2026-10-23T03:00:00+09:00). 경량 필드만 반환 (Python list_sessions 정합). "
+        + "영구 세션(PAS)을 찾을 때는 list_persistent_sessions를 쓴다.",
       inputSchema: {
         cursor: z.number().int().min(0).default(0),
         limit: z.number().int().min(1).max(100).default(20),

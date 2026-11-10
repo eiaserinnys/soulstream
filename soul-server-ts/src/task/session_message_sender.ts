@@ -78,6 +78,8 @@ export type SendMessageToSessionResult =
       ok: false;
       error: string | null;
       fallback_error: string;
+      /** Next step for the caller when the failure is a missing target session. */
+      hint?: string;
     };
 
 export async function sendMessageToSession(
@@ -149,6 +151,13 @@ export async function sendMessageToSession(
       ok: false,
       error: localError,
       fallback_error: "orch relay is reserved for a confirmed remote owner",
+      ...(ownerNodeId === null
+        ? {
+          hint:
+            "대상 세션을 찾지 못했습니다. 세션 ID 전체가 맞는지 확인하세요. "
+            + "영구 세션(PAS)이면 list_persistent_sessions로 전체 ID를 찾습니다.",
+        }
+        : {}),
     };
   }
 
