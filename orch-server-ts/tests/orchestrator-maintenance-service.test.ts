@@ -154,4 +154,128 @@ describe("OrchestratorMaintenanceService", () => {
     expect(deliveryState).toBe("consumed");
     await service.stop();
   });
+
+  const emptySweep = () => ({
+    sessionCache: {
+      sweepExpired: () => ({
+        terminalSessions: 0,
+        disconnectedSessions: 0,
+        total: 0,
+      }),
+    },
+    pushNotifier: {
+      sweepExpired: () => ({
+        toolInputs: 0,
+        notificationEvents: 0,
+        total: 0,
+      }),
+    },
+  });
+
+  it("runs the child session check on the maintenance cadence and waits for it on stop", async () => {
+    vi.useFakeTimers();
+    const runChildSessionCheck = vi.fn(async () => {});
+    const service = new OrchestratorMaintenanceService({
+      ...emptySweep(),
+      runChildSessionCheck,
+    });
+
+    service.start();
+    await service.waitForSettled();
+    expect(runChildSessionCheck).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(ORCHESTRATOR_MAINTENANCE_INTERVAL_MS);
+    await service.waitForSettled();
+    expect(runChildSessionCheck).toHaveBeenCalledTimes(2);
+
+    await service.stop();
+    await vi.advanceTimersByTimeAsync(ORCHESTRATOR_MAINTENANCE_INTERVAL_MS);
+    expect(runChildSessionCheck).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps one in-flight child check across ticks and still checks while delivery recovery is pending", async () => {
+    vi.useFakeTimers();
+    let releaseRecovery!: () => void;
+    const recoverPendingImmediateDeliveries = vi.fn()
+      .mockImplementationOnce(
+        () => new Promise<void>((resolve) => { releaseRecovery = resolve; }),
+      )
+      .mockResolvedValue(undefined);
+    let releaseCheck!: () => void;
+    const runChildSessionCheck = vi.fn()
+      .mockImplementationOnce(
+        () => new Promise<void>((resolve) => { releaseCheck = resolve; }),
+      )
+      .mockResolvedValue(undefined);
+    const service = new OrchestratorMaintenanceService({
+      ...emptySweep(),
+      recoverPendingImmediateDeliveries,
+      runChildSessionCheck,
+    });
+
+    service.start();
+    expect(recoverPendingImmediateDeliveries).toHaveBeenCalledTimes(1);
+    expect(runChildSessionCheck).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(ORCHESTRATOR_MAINTENANCE_INTERVAL_MS);
+    expect(runChildSessionCheck).toHaveBeenCalledTimes(1);
+
+    releaseRecovery();
+    releaseCheck();
+    await service.waitForSettled();
+
+    await vi.advanceTimersByTimeAsync(ORCHESTRATOR_MAINTENANCE_INTERVAL_MS);
+    expect(runChildSessionCheck).toHaveBeenCalledTimes(2);
+    await service.stop();
+  });
+
+  it("isolates a failing child check, reports it and retries on the next tick", async () => {
+    vi.useFakeTimers();
+    const error = new Error("session query failed");
+    const runChildSessionCheck = vi.fn()
+      .mockRejectedValueOnce(error)
+      .mockResolvedValue(undefined);
+    const onChildSessionCheckError = vi.fn();
+    const sessionCache = emptySweep().sessionCache;
+    const sweepExpired = vi.spyOn(sessionCache, "sweepExpired");
+    const service = new OrchestratorMaintenanceService({
+      sessionCache,
+      pushNotifier: emptySweep().pushNotifier,
+      runChildSessionCheck,
+      onChildSessionCheckError,
+    });
+
+    service.start();
+    await service.waitForSettled();
+    expect(onChildSessionCheckError).toHaveBeenCalledWith(error);
+    expect(sweepExpired).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(ORCHESTRATOR_MAINTENANCE_INTERVAL_MS);
+    await service.waitForSettled();
+    expect(runChildSessionCheck).toHaveBeenCalledTimes(2);
+    expect(onChildSessionCheckError).toHaveBeenCalledTimes(1);
+    await service.stop();
+  });
+
+  it("waits for an in-flight child check before stop resolves", async () => {
+    vi.useFakeTimers();
+    let releaseCheck!: () => void;
+    const runChildSessionCheck = vi.fn(
+      () => new Promise<void>((resolve) => { releaseCheck = resolve; }),
+    );
+    const service = new OrchestratorMaintenanceService({
+      ...emptySweep(),
+      runChildSessionCheck,
+    });
+
+    service.start();
+    let stopped = false;
+    const stopping = service.stop().then(() => { stopped = true; });
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+
+    releaseCheck();
+    await stopping;
+    expect(stopped).toBe(true);
+  });
 });

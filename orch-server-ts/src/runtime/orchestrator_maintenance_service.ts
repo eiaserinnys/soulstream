@@ -25,6 +25,8 @@ export type OrchestratorMaintenanceServiceOptions = {
   readonly onWarning?: (event: OrchestratorMemoryLogEvent) => void;
   readonly recoverPendingImmediateDeliveries?: () => Promise<void>;
   readonly onDeliveryRecoveryError?: (error: unknown) => void;
+  readonly runChildSessionCheck?: () => Promise<void>;
+  readonly onChildSessionCheckError?: (error: unknown) => void;
   readonly intervalMs?: number;
   readonly nowMs?: () => number;
 };
@@ -44,6 +46,7 @@ export class OrchestratorMaintenanceService {
   private lastSweepStats: OrchestratorMaintenanceSweepStats | null = null;
   private lastMemoryLogAtMs: number | undefined;
   private deliveryRecovery: Promise<void> | undefined;
+  private childSessionCheck: Promise<void> | undefined;
 
   constructor(private readonly options: OrchestratorMaintenanceServiceOptions) {
     this.intervalMs = options.intervalMs ?? ORCHESTRATOR_MAINTENANCE_INTERVAL_MS;
@@ -70,7 +73,7 @@ export class OrchestratorMaintenanceService {
   }
 
   async waitForSettled(): Promise<void> {
-    await this.deliveryRecovery;
+    await Promise.all([this.deliveryRecovery, this.childSessionCheck]);
   }
 
   sweepOnce(): OrchestratorMaintenanceSweepStats {
@@ -95,6 +98,11 @@ export class OrchestratorMaintenanceService {
 
   private runMaintenanceOnce(): void {
     this.sweepOnce();
+    this.runDeliveryRecoveryOnce();
+    this.runChildSessionCheckOnce();
+  }
+
+  private runDeliveryRecoveryOnce(): void {
     const recover = this.options.recoverPendingImmediateDeliveries;
     if (!recover || this.deliveryRecovery) return;
     const recovery = recover()
@@ -103,6 +111,18 @@ export class OrchestratorMaintenanceService {
         if (this.deliveryRecovery === recovery) this.deliveryRecovery = undefined;
       });
     this.deliveryRecovery = recovery;
+  }
+
+  /** 하위 세션 무응답 확인은 즉시 전달 복구와 별개로 매 주기 돈다. 진행 중이면 다음 주기에 이어간다. */
+  private runChildSessionCheckOnce(): void {
+    const check = this.options.runChildSessionCheck;
+    if (!check || this.childSessionCheck) return;
+    const running = check()
+      .catch((error: unknown) => this.options.onChildSessionCheckError?.(error))
+      .finally(() => {
+        if (this.childSessionCheck === running) this.childSessionCheck = undefined;
+      });
+    this.childSessionCheck = running;
   }
 
   private logMemoryIfDue(stats: OrchestratorMaintenanceSweepStats): void {

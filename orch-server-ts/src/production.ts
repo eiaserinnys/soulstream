@@ -21,7 +21,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import type { ServiceCaller } from "./auth/service_caller.js";
+import { SERVICE_CALLER, type ServiceCaller } from "./auth/service_caller.js";
 
 import { createApp, type CreateAppOptions } from "./app.js";
 import { FlatFolderContentHost } from "./board/flat_folder_content_host.js";
@@ -130,6 +130,11 @@ import type { LiveSystemPortraitAssetBoundary } from "./runtime/live_system_conf
 import { UsageSummaryService } from "./usage/usage_summary_service.js";
 import { SessionDeletionRepository } from "./session/session_deletion_repository.js";
 import { SessionDeletionService } from "./session/session_deletion_service.js";
+import { ChildSessionCheckRepository } from "./session/child_session_check_repository.js";
+import {
+  CHILD_SESSION_CHECK_SOURCE,
+  ChildSessionCheckService,
+} from "./session/child_session_check_service.js";
 import { sessionDeliveryInterventionPayload } from
   "./session/session_delivery_intervention_payload.js";
 import { PersistentSessionSettingsService } from "./session/persistent_session_settings_service.js";
@@ -409,6 +414,7 @@ export async function createLiveProductionApplication(
   let turnSummaryPipeline: LiveTurnSummaryPipeline | undefined;
   let recurringJobScheduler: RecurringJobScheduler | undefined;
   let cardDispatcher: CardDispatcher | undefined;
+  let childSessionCheckService: ChildSessionCheckService | undefined;
   let usageSummaryService: UsageSummaryService | undefined;
   const nodeCredentialRepository = new SqlNodeCredentialRepository(
     async () => await sqlResolver.resolveSql(),
@@ -451,6 +457,7 @@ export async function createLiveProductionApplication(
       (events) => turnSummaryPipeline?.accept(events),
       (events) => recurringJobScheduler?.accept(events),
       (events) => cardDispatcher?.accept(events),
+      (events) => childSessionCheckService?.acceptNodeEvents(events),
     ],
     flatFolderContentRoutes: { host: flatFolderContentHost, authBearerToken: config.auth_bearer_token, environment: config.environment, nodeCredentials: nodeCredentialStore },
     pageYjsRoutes: {
@@ -880,6 +887,45 @@ export async function createLiveProductionApplication(
     warn: context.warn,
     overrides,
   });
+  const childSessionCheck = new ChildSessionCheckService({
+    store: new ChildSessionCheckRepository(
+      async () => (await sqlResolver.resolveSql()) as unknown as SqlClient,
+    ),
+    deliver: async (delivery) => {
+      const response = await executeSessionIntervention(
+        {
+          ...providers.runtime.sessionActionCommandRoutes,
+          deliveryRepositoryProvider: async () =>
+            (await persistenceRepositoryProvider()).deliveries,
+        },
+        SERVICE_CALLER,
+        delivery.callerSessionId,
+        {
+          text: delivery.text,
+          delivery_id: delivery.deliveryId,
+          delivery_intent: "human_live_steer",
+          relation_key: delivery.deliveryId,
+          completion_id: delivery.deliveryId,
+          source: CHILD_SESSION_CHECK_SOURCE,
+          caller_info: { source: "system" },
+        },
+      );
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(
+          `child session check delivery failed with status ${response.status}: ${JSON.stringify(response.body)}`,
+        );
+      }
+    },
+    nodeState: (nodeId) => {
+      if (registry.getConnectedNode(nodeId) === undefined) return { connected: false };
+      return {
+        connected: true,
+        runningSessionIds: registry.getReportedRunningSessionIds(nodeId),
+      };
+    },
+    warn: (message) => context.warn(message),
+  });
+  childSessionCheckService = childSessionCheck;
   const maintenanceService = new OrchestratorMaintenanceService({
     sessionCache: registry.sessionCache,
     pushNotifier,
@@ -912,6 +958,10 @@ export async function createLiveProductionApplication(
     },
     onDeliveryRecoveryError: (error) => {
       context.warn(warningMessage("pending immediate delivery recovery failed", error));
+    },
+    runChildSessionCheck: async () => await childSessionCheck.checkOnce(),
+    onChildSessionCheckError: (error) => {
+      context.warn(warningMessage("child session check failed", error));
     },
     onInfo: (event) => {
       app.log.info({ runtimeMemory: event }, "Orchestrator runtime memory");
