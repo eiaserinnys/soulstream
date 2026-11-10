@@ -806,4 +806,68 @@ describe("TaskDeliveryLedgerGate", () => {
     }));
   });
 
+  it("closes an admission failure as uncertain without consuming the delivery", async () => {
+    const deliveryId = "abababab-abab-4bab-8bab-abababababab";
+    const markUncertain = vi.fn().mockResolvedValue(row(deliveryId, "uncertain"));
+    const markConsumed = vi.fn();
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register: vi.fn(),
+      claimAttemptForTarget: vi.fn(),
+      beginDispatch: vi.fn(),
+      get: vi.fn(),
+      markQueued: vi.fn(),
+      markDelivered: vi.fn(),
+      markUncertain,
+      markConsumed,
+      markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
+    });
+
+    await gate.recordAdmissionFailure({
+      text: "user message",
+      user: "user",
+      deliveryId,
+      deliveryIntent: "human_live_steer",
+    }, "ISOLATION_POLICY_UNAVAILABLE: policy unavailable");
+
+    expect(markUncertain).toHaveBeenCalledWith(
+      deliveryId,
+      undefined,
+      "ISOLATION_POLICY_UNAVAILABLE: policy unavailable",
+    );
+    expect(markConsumed).not.toHaveBeenCalled();
+  });
+
+  it("leaves the ledger untouched for admission failures it does not control", async () => {
+    const markUncertain = vi.fn();
+    const gate = new TaskDeliveryLedgerGate(true, {
+      register: vi.fn(),
+      claimAttemptForTarget: vi.fn(),
+      beginDispatch: vi.fn(),
+      get: vi.fn(),
+      markQueued: vi.fn(),
+      markDelivered: vi.fn(),
+      markUncertain,
+      markConsumed: vi.fn(),
+      markConsumedByRelation: vi.fn(),
+      recordRelationConsumed: vi.fn(),
+    });
+
+    await gate.recordAdmissionFailure({
+      text: "legacy message",
+      user: "user",
+      deliveryId: "abababab-abab-4bab-8bab-abababababab",
+    }, "ISOLATION_POLICY_UNAVAILABLE: policy unavailable");
+    const disabled = new TaskDeliveryLedgerGate(false, {
+      markUncertain,
+    } as never, undefined, "node-test");
+    await disabled.recordAdmissionFailure({
+      text: "user message",
+      user: "user",
+      deliveryId: "cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd",
+    }, "ISOLATION_POLICY_UNAVAILABLE: policy unavailable");
+
+    expect(markUncertain).not.toHaveBeenCalled();
+  });
+
 });

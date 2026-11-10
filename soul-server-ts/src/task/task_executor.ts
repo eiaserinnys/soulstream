@@ -53,6 +53,7 @@ import {
   IsolationSharedDependencyInodeError,
   SESSION_ISOLATION_UNAVAILABLE,
   SessionIsolationUnavailableError,
+  isolationPreparationFailureDetail,
 } from "../runner/session_filesystem_errors.js";
 import type { ExecutionSecurityDecision } from "../security/session_isolation_contract.js";
 import {
@@ -91,6 +92,7 @@ import {
   enqueueInterventionOnce,
   isRuntimeFollowup,
   rejoinUnstartedInterventions,
+  removeInterventionMessage,
   sortInterventionsByPriority,
 } from "./task_intervention_queue.js";
 import {
@@ -240,6 +242,17 @@ export interface WorktreeExecutionResolver {
   resolveExecutionWorkspace(worktreeId: string): Promise<string>;
 }
 
+/**
+ * Reads the profile's original workspace from the agent registry.
+ *
+ * A resumed task's agent snapshot may already carry the attached worktree path
+ * as its `workspace_dir`, so it cannot answer this. The isolation plan's host
+ * root must be the profile workspace even when the execution cwd is a worktree.
+ */
+export interface ProfileWorkspaceResolver {
+  resolveProfileWorkspace(profileId: string): string | undefined;
+}
+
 interface PersistentDecisionRuntime {
   persistentSessions: Pick<PersistentSessionControl, "requestGenerationRollover">;
   providerUsage: ProviderUsageCommandHandler;
@@ -286,6 +299,7 @@ export class TaskExecutor {
       | "recordTurnStarted"
       | "discardIfConsumed"
       | "recordConsumptionFailure"
+      | "recordAdmissionFailure"
       | "recordRuntimeFollowupRelationConsumed"
     >,
     private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
@@ -304,6 +318,7 @@ export class TaskExecutor {
      * `resolveDecision`을 부른다.
      */
     private readonly sessionIsolation?: SessionIsolationTurnGate,
+    private readonly profileWorkspaceResolver?: ProfileWorkspaceResolver,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -366,6 +381,9 @@ export class TaskExecutor {
     activation?: ExecutionActivation,
   ): Promise<void> {
     assertGenericTaskExecution(task, agent.id);
+    // Any actual execution start (explicit retry or a new delivery) reopens the
+    // drain that a preparation failure closed.
+    task.queuedTerminalResumeBlocked = undefined;
     const releaseClaim = task.runnerReleaseClaim;
     if (releaseClaim) {
       return this.startExecutionAfterRunnerReleaseClaim(
@@ -417,14 +435,34 @@ export class TaskExecutor {
         `Task ${task.agentSessionId} already has an execution admission in flight`,
       );
     }
+    const profileWorkspaceDir = this.resolveProfileWorkspaceDir(agent);
+    if (!profileWorkspaceDir) {
+      const unavailable = new ProfileWorkspaceUnavailableError(
+        `${agent.id} (${task.agentSessionId})`,
+      );
+      if (transferredActivation) {
+        task.executionActivation = transferredActivation;
+        void transferredActivation.promise.catch(() => undefined);
+      }
+      return this.holdExecutionSlot(
+        task,
+        this.handleExecutionFailure(task, transferredActivation, unavailable),
+      );
+    }
     const promise = this.resolveWorktreeAndStartExecution(
       task,
       agent,
       task.worktreeId,
       this.worktreeResolver,
       transferredActivation,
+      profileWorkspaceDir,
     );
     return this.holdExecutionSlot(task, promise);
+  }
+
+  private resolveProfileWorkspaceDir(agent: AgentProfile): string | undefined {
+    if (!this.profileWorkspaceResolver) return agent.workspace_dir;
+    return this.profileWorkspaceResolver.resolveProfileWorkspace(agent.id);
   }
 
   private async resolveWorktreeAndStartExecution(
@@ -432,7 +470,8 @@ export class TaskExecutor {
     agent: AgentProfile,
     worktreeId: string,
     worktreeResolver: WorktreeExecutionResolver,
-    transferredActivation?: ExecutionActivation,
+    transferredActivation: ExecutionActivation | undefined,
+    profileWorkspaceDir: string,
   ): Promise<void> {
     let workspaceDir: string;
     try {
@@ -448,31 +487,14 @@ export class TaskExecutor {
         task.executionActivation = activation;
         void activation.promise.catch(() => undefined);
       }
-      await (async () => {
-        const compensatesRunningTransition = activation?.hasFailureCompensation?.() === true;
-        try {
-          if (compensatesRunningTransition) {
-            await activation.reject(unavailable);
-            if (isTerminalTaskStatus(task.status)) return;
-          }
-          await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, unavailable);
-          task.completedAt = new Date();
-          await this._finalize(task);
-        } finally {
-          if (activation && task.executionActivation === activation) {
-            task.executionActivation = undefined;
-          }
-          if (activation && !compensatesRunningTransition) {
-            await activation.reject(unavailable);
-          }
-        }
-      })();
+      await this.handleExecutionFailure(task, activation, unavailable);
       return;
     }
     task.resolvedWorkspaceDir = workspaceDir;
     // 아래에서 agent를 워크트리 경로로 치환하기 전의 프로필 경로를 남긴다.
-    // 격리 계획의 hostWorkspaceRoot는 이 값을 쓴다.
-    task.profileWorkspaceDir = agent.workspace_dir;
+    // 격리 계획의 hostWorkspaceRoot는 이 값을 쓴다. 복원 경로의 agent는
+    // 이미 워크트리 경로이므로 여기서 agent.workspace_dir을 쓰면 안 된다.
+    task.profileWorkspaceDir = profileWorkspaceDir;
     return await this.startExecutionWithResolvedRegistrationRecord(
       task,
       { ...agent, workspace_dir: workspaceDir },
@@ -502,26 +524,7 @@ export class TaskExecutor {
       if (!transferredActivation) throw error;
       task.executionActivation = transferredActivation;
       void transferredActivation.promise.catch(() => undefined);
-      const promise = (async () => {
-        const compensatesRunningTransition =
-          transferredActivation.hasFailureCompensation?.() === true;
-        try {
-          if (compensatesRunningTransition) {
-            await transferredActivation.reject(error);
-            if (isTerminalTaskStatus(task.status)) return;
-          }
-          await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, error);
-          task.completedAt = new Date();
-          await this._finalize(task);
-        } finally {
-          if (task.executionActivation === transferredActivation) {
-            task.executionActivation = undefined;
-          }
-          if (!compensatesRunningTransition) {
-            await transferredActivation.reject(error);
-          }
-        }
-      })();
+      const promise = this.handleExecutionFailure(task, transferredActivation, error);
       return executionSlotHeld ? promise : this.holdExecutionSlot(task, promise);
     }
 
@@ -563,24 +566,7 @@ export class TaskExecutor {
           true,
         );
       } catch (error) {
-        const compensatesRunningTransition =
-          activation?.hasFailureCompensation?.() === true;
-        try {
-          if (compensatesRunningTransition) {
-            await activation?.reject(error);
-            if (isTerminalTaskStatus(task.status)) return;
-          }
-          await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, error);
-          task.completedAt = new Date();
-          await this._finalize(task);
-        } finally {
-          if (activation && task.executionActivation === activation) {
-            task.executionActivation = undefined;
-          }
-          if (activation && !compensatesRunningTransition) {
-            await activation.reject(error);
-          }
-        }
+        await this.handleExecutionFailure(task, activation, error);
       }
     })();
     return executionSlotHeld ? execution : this.holdExecutionSlot(task, execution);
@@ -621,19 +607,21 @@ export class TaskExecutor {
         releaseActivation();
       },
     ).catch(async (err: unknown) => {
-      await activation.reject(err);
-      releaseActivation();
       if (err instanceof RunnerOrphanedSpawnError) {
+        await activation.reject(err);
+        releaseActivation();
         this.logger.error(
           { err, sessionId: task.agentSessionId, proof: err.proof },
           "Spawned runner parent initialization failed; recovery owns the live child",
         );
         return;
       }
-      if (isTerminalTaskStatus(task.status)) return;
-      await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, err);
-      task.completedAt = new Date();
-      await this._finalize(task);
+      releaseActivation();
+      if (isTerminalTaskStatus(task.status)) {
+        await activation.reject(err);
+        return;
+      }
+      await this.handleExecutionFailure(task, activation, err);
     });
     return executionSlotHeld ? promise : this.holdExecutionSlot(task, promise);
   }
@@ -970,26 +958,7 @@ export class TaskExecutor {
       try {
         runner = await this.takeOrCreateRunner(task, agent, backend, retainedRunner);
       } catch (error) {
-        const compensatesRunningTransition =
-          activation?.hasFailureCompensation?.() === true;
-        try {
-          if (compensatesRunningTransition) {
-            await activation?.reject(error);
-            if (isTerminalTaskStatus(task.status)) return;
-          }
-          await this.engineFailureRecovery.recoverFromOuterExecutionFailure(task, error);
-          task.completedAt = new Date();
-          await this._finalize(task);
-        } finally {
-          if (activation) {
-            if (task.executionActivation === activation) {
-              task.executionActivation = undefined;
-            }
-            if (!compensatesRunningTransition) {
-              await activation.reject(error);
-            }
-          }
-        }
+        await this.handleExecutionFailure(task, activation, error);
         return;
       }
       await this.startExecutionWithRunner(task, agent, runner, activation, true);
@@ -1023,6 +992,73 @@ export class TaskExecutor {
     return promise;
   }
 
+  /**
+   * Routes an execution-start failure to the one terminal outcome that owns it.
+   *
+   * A deterministic preparation failure (isolation policy, profile workspace)
+   * fails identically on every retry. Restoring the previous terminal snapshot
+   * would make the queued-input drain resume it forever, so this failure closes
+   * its own input and becomes this attempt's error terminal instead.
+   */
+  private async handleExecutionFailure(
+    task: Task,
+    activation: ExecutionActivation | undefined,
+    error: unknown,
+  ): Promise<void> {
+    const preparationFailure = executionPreparationFailureDetail(error);
+    const restsOnPriorTerminal = preparationFailure === undefined
+      && activation?.hasFailureCompensation?.() === true;
+    try {
+      if (restsOnPriorTerminal) {
+        await activation?.reject(error);
+        if (isTerminalTaskStatus(task.status)) return;
+      }
+      // A deterministic preparation failure keeps its original code in the
+      // terminal detail; the raw Error message alone drops it.
+      await this.engineFailureRecovery.recoverFromOuterExecutionFailure(
+        task,
+        preparationFailure ?? error,
+      );
+      task.completedAt = new Date();
+      await this._finalize(task);
+      if (preparationFailure !== undefined) {
+        await this.settlePreparationFailure(task, activation, preparationFailure);
+      }
+    } finally {
+      if (activation && task.executionActivation === activation) {
+        task.executionActivation = undefined;
+      }
+      if (activation && !restsOnPriorTerminal) {
+        await activation.reject(
+          error,
+          preparationFailure === undefined
+            ? undefined
+            : { skipFailureCompensation: true },
+        );
+      }
+    }
+  }
+
+  /**
+   * Closes the one delivery whose execution admission failed before a turn.
+   *
+   * It was never consumed, so it becomes uncertain/dead_letter rather than
+   * consumed, and it leaves the queue so no later drain replays it. Other
+   * queued input is preserved; the next explicit start reopens the drain.
+   */
+  private async settlePreparationFailure(
+    task: Task,
+    activation: ExecutionActivation | undefined,
+    detail: string,
+  ): Promise<void> {
+    task.queuedTerminalResumeBlocked = true;
+    const message = activation?.admissionMessage;
+    if (!activation || !message) return;
+    activation.admissionMessage = undefined;
+    removeInterventionMessage(task, message);
+    await this.deliveryConsumption?.recordAdmissionFailure(task, message, detail);
+  }
+
   private async driveQueuedAfterTerminal(task: Task): Promise<void> {
     const interventionBarrier = task.interruptRequest;
     if (interventionBarrier) {
@@ -1037,6 +1073,7 @@ export class TaskExecutor {
     }
     if (
       task.executionPromise
+      || task.queuedTerminalResumeBlocked === true
       || !isTerminalTaskStatus(task.status)
       || task.interventionQueue.length === 0
     ) return;
@@ -2302,6 +2339,20 @@ function persistentSelectionForTarget(task: Task, targetPreset: string) {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+const PROFILE_WORKSPACE_UNAVAILABLE = "PROFILE_WORKSPACE_UNAVAILABLE";
+
+class ProfileWorkspaceUnavailableError extends Error {
+  readonly code: string = PROFILE_WORKSPACE_UNAVAILABLE;
+}
+
+/** Preparation failures that repeat identically on every retry. */
+function executionPreparationFailureDetail(error: unknown): string | undefined {
+  const isolationFailure = isolationPreparationFailureDetail(error);
+  if (isolationFailure !== undefined) return isolationFailure;
+  if (!(error instanceof ProfileWorkspaceUnavailableError)) return undefined;
+  return `${PROFILE_WORKSPACE_UNAVAILABLE}: ${error.message}`;
 }
 
 function keepaliveResultFor(

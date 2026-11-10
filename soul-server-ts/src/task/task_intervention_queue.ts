@@ -58,6 +58,21 @@ export function enqueueInterventionOnce(
   return task.interventionQueue.indexOf(message) + 1;
 }
 
+/** Removes exactly the message that owned a failed admission, keeping other input. */
+export function removeInterventionMessage(
+  task: Task,
+  message: InterventionMessage,
+): boolean {
+  const index = message.deliveryId
+    ? task.interventionQueue.findIndex(
+        (queued) => queued.deliveryId === message.deliveryId,
+      )
+    : task.interventionQueue.indexOf(message);
+  if (index < 0) return false;
+  task.interventionQueue.splice(index, 1);
+  return true;
+}
+
 export function dequeueInterventions(task: Task): InterventionMessage[] {
   const drained = sortInterventionsByPriority(task.interventionQueue);
   task.interventionQueue = [];

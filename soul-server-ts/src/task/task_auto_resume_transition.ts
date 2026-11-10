@@ -109,6 +109,8 @@ export class AutoResumeTransition {
         )
       : undefined;
     const activation = createExecutionActivation();
+    // The executor settles this exact delivery if preparation fails before a turn.
+    activation.admissionMessage = message;
     task.status = "initializing";
     task.executionActivation = activation;
     void activation.promise.catch(() => undefined);

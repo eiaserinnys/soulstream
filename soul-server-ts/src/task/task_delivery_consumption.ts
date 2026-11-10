@@ -11,6 +11,7 @@ type ConsumptionRecorder = Pick<
   | "recordTurnStarted"
   | "discardIfConsumed"
   | "recordConsumptionFailure"
+  | "recordAdmissionFailure"
   | "recordRuntimeFollowupRelationConsumed"
 >;
 
@@ -38,6 +39,22 @@ export class TaskDeliveryConsumption {
         "delivery ledger consume update failed",
       );
       await this.recordBookkeepingFailure(task, intervention, err);
+    }
+  }
+
+  async recordAdmissionFailure(
+    task: Task,
+    intervention: InterventionMessage | undefined,
+    reason: string,
+  ): Promise<void> {
+    if (!intervention || !this.recorder) return;
+    try {
+      await this.recorder.recordAdmissionFailure(intervention, reason);
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId, deliveryId: intervention.deliveryId },
+        "delivery ledger admission-failure update failed",
+      );
     }
   }
 

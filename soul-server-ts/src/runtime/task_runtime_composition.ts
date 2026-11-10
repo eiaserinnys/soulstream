@@ -227,6 +227,12 @@ export function composeTaskRuntime(
     params.prepareAttachmentInput,
     env.CLAUDE_ACCOUNT_POOL_ENABLED,
     sessionIsolationGate,
+    {
+      // A recovered task's execution agent is the worktree, so the profile
+      // workspace must come from the registry rather than that agent.
+      resolveProfileWorkspace: (profileId: string) =>
+        agentRegistry.get(profileId)?.workspace_dir,
+    },
   );
   completionDeliveryRecoveryWorker?.start();
   const scheduleDispatcher = new ScheduleDispatcher(

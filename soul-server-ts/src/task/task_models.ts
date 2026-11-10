@@ -152,9 +152,19 @@ export type PendingTerminationHint = Exclude<
 export interface ExecutionActivation {
   promise: Promise<void>;
   resolve(): void;
-  reject(error: unknown): void | Promise<void>;
+  /**
+   * `skipFailureCompensation` keeps the running transition's compensation from
+   * restoring the previous terminal snapshot. A deterministic preparation
+   * failure must leave the execution's own error terminal in place instead.
+   */
+  reject(
+    error: unknown,
+    options?: { skipFailureCompensation?: boolean },
+  ): void | Promise<void>;
   setFailureCompensation?(compensate: () => Promise<void>): void;
   hasFailureCompensation?(): boolean;
+  /** Intervention that opened this admission, when it came from a resume. */
+  admissionMessage?: InterventionMessage;
 }
 
 /** Exact process-runner close owner shared by recovery and foreground admission. */
@@ -183,10 +193,12 @@ export function createExecutionActivation(): ExecutionActivation {
       failureCompensation = undefined;
       resolvePromise();
     },
-    reject: (error: unknown) => {
+    reject: (error: unknown, options) => {
       if (state !== "pending") return rejectionSettlement;
       state = "rejecting";
-      const compensate = failureCompensation;
+      const compensate = options?.skipFailureCompensation
+        ? undefined
+        : failureCompensation;
       failureCompensation = undefined;
       rejectionSettlement = (async () => {
         let rejection = error;
@@ -629,6 +641,13 @@ export interface Task {
 
   /** Single execution startup barrier. */
   executionActivation?: ExecutionActivation;
+
+  /**
+   * Runtime-only: a deterministic execution preparation failure already closed
+   * its own delivery. The queued terminal drain must not resume other queued
+   * input automatically after that failure; an explicit resume clears this.
+   */
+  queuedTerminalResumeBlocked?: boolean;
 
   /** Runtime-only explicit cancel request serialized against turn finalization. */
   interruptRequest?: Promise<boolean>;
