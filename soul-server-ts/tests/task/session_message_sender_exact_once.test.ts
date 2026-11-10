@@ -263,6 +263,9 @@ function makeOwnerNode(ledger: SharedDeliveryLedger) {
     results: 0,
   };
   const pendingDeliveryIds: string[] = [];
+  // The durable input dedupe key keeps one logical delivery to one stored
+  // user_message, so count the distinct delivery identities that reach resume.
+  const userMessageDeliveryIds = new Set<string>();
   const autoResumeTransition = {
     resume: vi.fn(async (
       resumedTask: Task,
@@ -271,7 +274,10 @@ function makeOwnerNode(ledger: SharedDeliveryLedger) {
       options?: { publishUserMessage?: boolean },
     ): Promise<AddInterventionResult> => {
       if (!message.deliveryId) throw new Error("owner received no delivery identity");
-      if (options?.publishUserMessage !== false) execution.userMessages += 1;
+      if (options?.publishUserMessage !== false) {
+        userMessageDeliveryIds.add(message.deliveryId);
+        execution.userMessages = userMessageDeliveryIds.size;
+      }
       pendingDeliveryIds.push(message.deliveryId);
       onResume(resumedTask);
       return { autoResumed: true };

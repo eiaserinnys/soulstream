@@ -6,7 +6,10 @@ import type { SessionDB } from "../../src/db/session_db.js";
 import { buildUserMessageEvent } from "../../src/task/task_user_message_events.js";
 import { publishInterventionSent } from "../../src/task/task_intervention_events.js";
 import { buildInterventionSentEvent } from "../../src/task/task_intervention_events.js";
-import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
+import {
+  buildDeliveryInputDedupeKey,
+  buildDeliveryInputUuid,
+} from "../../src/task/delivery_identity.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
@@ -40,7 +43,7 @@ describe("publishInterventionSent", () => {
       expect(payload).not.toContain("followupTaskIds");
       expect(payload).not.toContain("_dedupe_key");
       expect(record.semantic_dedupe_key).toBe(
-        "intervention_sent:deduped-intervention",
+        "delivery_input:deduped-intervention",
       );
       expect(record.payload.text).toBe(`${"a".repeat(199)}�tail`);
       expect(record.payload.input_id).toBe(buildDeliveryInputUuid("deduped-intervention"));
@@ -191,6 +194,23 @@ describe("buildInterventionSentEvent attachment identity", () => {
     expect(event.attachment_ids).toBeUndefined();
     expect(event.attachment_count).toBeUndefined();
     expect(event.attachments).toBeUndefined();
+  });
+});
+
+describe("delivery input dedupe key", () => {
+  it("gives one delivery's user and intervention events the same dedupe key", () => {
+    const userEvent = buildUserMessageEvent({
+      text: "hello",
+      dedupeKey: buildDeliveryInputDedupeKey("shared-delivery"),
+    });
+    const interventionEvent = buildInterventionSentEvent({
+      text: "hello",
+      user: "alice",
+      deliveryId: "shared-delivery",
+    });
+
+    expect(userEvent._dedupe_key).toBe("delivery_input:shared-delivery");
+    expect(interventionEvent._dedupe_key).toBe(userEvent._dedupe_key);
   });
 });
 

@@ -27,7 +27,10 @@ import {
   finishUserMessageEvent,
   persistUserMessageEvent,
 } from "./task_user_message_events.js";
-import { buildDeliveryInputUuid } from "./delivery_identity.js";
+import {
+  buildDeliveryInputDedupeKey,
+  buildDeliveryInputUuid,
+} from "./delivery_identity.js";
 
 export type AutoResumeCallback = (
   task: Task,
@@ -127,6 +130,9 @@ export class AutoResumeTransition {
           conversationText: message.conversationText,
           inputId: message.deliveryId
             ? buildDeliveryInputUuid(message.deliveryId)
+            : undefined,
+          dedupeKey: message.deliveryId
+            ? buildDeliveryInputDedupeKey(message.deliveryId)
             : undefined,
           user: message.user,
           callerInfo: message.callerInfo ?? task.callerInfo,

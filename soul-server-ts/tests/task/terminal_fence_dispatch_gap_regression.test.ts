@@ -54,7 +54,7 @@ describe("terminal fence dispatch persistence gap", () => {
     expect(repository.markQueued).toHaveBeenCalledTimes(1);
     expect(interventionSentCount(persistence.enqueueEvent.mock.calls, TEXT)).toBe(1);
     expect(persistence.enqueueEvent.mock.calls[0]?.[1]).toMatchObject({
-      _dedupe_key: `intervention_sent:${DELIVERY_ID}`,
+      _dedupe_key: `delivery_input:${DELIVERY_ID}`,
     });
     expect(repository.row(DELIVERY_ID)).toMatchObject({
       state: "dispatching",
@@ -161,7 +161,7 @@ describe("terminal fence dispatch persistence gap", () => {
         persistence.enqueueEvent.mock.calls,
         PRE_PUBLISH_TEXT,
       )).toMatchObject({
-        _dedupe_key: `intervention_sent:${PRE_PUBLISH_DELIVERY_ID}`,
+        _dedupe_key: `delivery_input:${PRE_PUBLISH_DELIVERY_ID}`,
       });
       expect({
         interventionSentEffects: interventionSentCount(

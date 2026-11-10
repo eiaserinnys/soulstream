@@ -286,9 +286,6 @@ export class TaskInterventionRoute {
           message,
           deferResumeUntilQueued,
           {
-            ...(admission.row.attempt_count > 0
-              ? { publishUserMessage: false }
-              : {}),
             ...(admittedLedgerGate
               ? {
                   afterRunningTransition: async () => {

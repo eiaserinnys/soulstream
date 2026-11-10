@@ -75,6 +75,47 @@ describe("AutoResumeTransition", () => {
     });
   });
 
+  it("keys the resumed user event by the delivery input when the message carries a delivery id", async () => {
+    const task = makeTerminalTask();
+    const persistenceDouble = makeEventPersistenceTestDouble();
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+    });
+
+    await transition.resume(task, {
+      text: "retry",
+      user: "u",
+      deliveryId: "delivery-1",
+    }, vi.fn());
+
+    const userMessage = persistenceDouble.enqueueEvent.mock.calls
+      .map(([, event]) => event)
+      .find((event) => event.type === "user_message");
+    expect((userMessage as Record<string, unknown> | undefined)?._dedupe_key)
+      .toBe("delivery_input:delivery-1");
+  });
+
+  it("leaves the resumed user event unkeyed when the message has no delivery id", async () => {
+    const task = makeTerminalTask();
+    const persistenceDouble = makeEventPersistenceTestDouble();
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+    });
+
+    await transition.resume(task, {
+      text: "resume",
+      user: "u",
+    }, vi.fn());
+
+    const userMessage = persistenceDouble.enqueueEvent.mock.calls
+      .map(([, event]) => event)
+      .find((event) => event.type === "user_message");
+    expect((userMessage as Record<string, unknown> | undefined)?._dedupe_key)
+      .toBeUndefined();
+  });
+
   it.each(["slack", "browser", "soul-app"])(
     "starts persistent resume observation for %s after the saved input without waiting for it",
     async (source) => {
