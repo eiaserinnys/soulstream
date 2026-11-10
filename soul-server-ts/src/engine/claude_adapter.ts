@@ -7,6 +7,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 
 import type { ResolvedMcpServer } from "../mcp_config_service.js";
+import { runnerProcessPaths } from "../runner/runner_process_paths.js";
 import type { RunnerIsolationChildConfig } from "../runner/runner_isolation_config.js";
 import { sseEventsFromRunnerFrames } from "../runner/engine_event_stream.js";
 import {
@@ -150,6 +151,8 @@ export interface ClaudeRunOptions {
   isolation?: RunnerIsolationChildConfig;
   /** 격리 러너가 CLI 시작 전에 실패했을 때 그 턴을 실패시킨다. */
   onIsolationFailure?: (error: Error) => void;
+  /** claude CLI의 --mcp-config 파일을 둘 0700 폴더. 격리 상자에서는 sandbox가 우선. */
+  mcpConfigDirectory?: string;
 }
 
 export interface ClaudeAccountRateLimitSwitchRequest {
@@ -213,6 +216,10 @@ export interface ClaudeAdapterConfig {
   /** 지정하면 메시지 파싱 대신 이 대기 시간(ms)을 쓴다. */
   transient429RetryDelayMs?: number;
   isolation?: RunnerIsolationChildConfig;
+  /** 세션 전용 폴더. 있으면 --mcp-config 파일을 이 아래에 둔다. */
+  sessionDirectory?: string;
+  /** 러너 상태 루트. sessionDirectory가 없을 때 세션 폴더를 역산한다. */
+  stateDirectory?: string;
 }
 
 export class ClaudeEngineAdapter
@@ -247,6 +254,8 @@ export class ClaudeEngineAdapter
   private readonly transient429MaxRetries: number;
   private readonly transient429RetryDelayMs?: number;
   private readonly isolation?: RunnerIsolationChildConfig;
+  private readonly sessionDirectory?: string;
+  private readonly stateDirectory?: string;
   private activeClient: ClaudeClient | null = null;
   private activeExecution: Promise<void> | null = null;
   private persistentSessionId: string | null = null;
@@ -277,6 +286,8 @@ export class ClaudeEngineAdapter
       config.transient429MaxRetries ?? DEFAULT_CLAUDE_TRANSIENT_429_MAX_RETRIES;
     this.transient429RetryDelayMs = config.transient429RetryDelayMs;
     this.isolation = config.isolation;
+    this.sessionDirectory = config.sessionDirectory;
+    this.stateDirectory = config.stateDirectory;
     this.logger = logger;
   }
 
@@ -1034,6 +1045,10 @@ export class ClaudeEngineAdapter
       }),
       { workspaceDir: this.workspaceDir, agentId: this.agentId },
     );
+    const mcpConfigDirectory = this.sessionDirectory
+      ?? (this.stateDirectory !== undefined && params.agentSessionId
+        ? runnerProcessPaths(this.stateDirectory, params.agentSessionId).sessionDirectory
+        : undefined);
     return {
       prompt: params.prompt,
       ...(params.inputUuid ? { inputUuid: params.inputUuid } : {}),
@@ -1076,6 +1091,7 @@ export class ClaudeEngineAdapter
       ...(this.loadTimeoutMs !== undefined ? { loadTimeoutMs: this.loadTimeoutMs } : {}),
       ...(this.trackChildExit ? { trackChildExit: true } : {}),
       ...(this.isolation ? { isolation: this.isolation } : {}),
+      ...(mcpConfigDirectory !== undefined ? { mcpConfigDirectory } : {}),
     };
   }
 

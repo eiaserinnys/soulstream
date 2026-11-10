@@ -1,4 +1,7 @@
-import type { Options as ClaudeSdkOptions } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  Options as ClaudeSdkOptions,
+  SpawnedProcess,
+} from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 
 import type { RunnerIsolationChildConfig } from "../runner/runner_isolation_config.js";
@@ -7,6 +10,7 @@ import type { ClaudeClientEvent } from "./claude_client_event.js";
 import type { EventQueue } from "./claude_sdk_event_queue.js";
 import type { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
 import { buildClaudeSdkHooks } from "./claude_sdk_hooks.js";
+import { externalizeClaudeMcpConfig } from "./claude_mcp_config_file.js";
 import { buildMcpOptions } from "./claude_sdk_mcp_options.js";
 import { makeCacheableSystemPrompt } from "./claude_sdk_prompt.js";
 import type { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
@@ -82,33 +86,43 @@ export function buildClaudeSdkOptions({
   return {
     abortController,
     cwd: options.workspaceDir,
-    ...(options.trackChildExit || process.platform === "linux"
-      ? {
-          spawnClaudeCodeProcess: (spawnOptions) => {
-            if (options.isolation) {
-              const launch = launchIsolatedChild({
-                isolation: options.isolation,
-                command: spawnOptions.command,
-                args: spawnOptions.args,
-                cwd: spawnOptions.cwd,
-                env: spawnOptions.env,
-                stdio: "pipe",
-                ...(spawnOptions.signal ? { signal: spawnOptions.signal } : {}),
-                logger,
-              });
-              void launch.ready.catch((error: unknown) => {
-                options.onIsolationFailure?.(isolationError(error));
-              });
-              return launch.child;
-            }
-            return spawnClaudeSessionEngine(
-              spawnOptions,
-              logger,
-              options.trackChildExit ? onChildProcessClosed : undefined,
-            );
-          },
+    spawnClaudeCodeProcess: (spawnOptions) => {
+      const mcpConfig = externalizeClaudeMcpConfig(
+        spawnOptions.args,
+        options.isolation?.spec.sandboxDirectory ?? options.mcpConfigDirectory,
+      );
+      let child: SpawnedProcess;
+      try {
+        if (options.isolation) {
+          const launch = launchIsolatedChild({
+            isolation: options.isolation,
+            command: spawnOptions.command,
+            args: mcpConfig.args,
+            cwd: spawnOptions.cwd,
+            env: spawnOptions.env,
+            stdio: "pipe",
+            ...(spawnOptions.signal ? { signal: spawnOptions.signal } : {}),
+            logger,
+          });
+          void launch.ready.catch((error: unknown) => {
+            options.onIsolationFailure?.(isolationError(error));
+          });
+          child = launch.child;
+        } else {
+          child = spawnClaudeSessionEngine(
+            { ...spawnOptions, args: mcpConfig.args },
+            logger,
+            options.trackChildExit ? onChildProcessClosed : undefined,
+          );
         }
-      : {}),
+      } catch (error) {
+        mcpConfig.cleanup();
+        throw error;
+      }
+      child.once("exit", mcpConfig.cleanup);
+      child.once("error", mcpConfig.cleanup);
+      return child;
+    },
     ...(options.env !== undefined ? { env: options.env } : {}),
     permissionMode,
     ...(permissionMode === "bypassPermissions" ? { allowDangerouslySkipPermissions: true } : {}),

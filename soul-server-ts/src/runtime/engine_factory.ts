@@ -151,6 +151,9 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
           ...(claudeSessionClientRegistry
             ? { persistentSessionRegistry: claudeSessionClientRegistry }
             : {}),
+          ...(env.SOUL_RUNNER_STATE_DIR
+            ? { stateDirectory: env.SOUL_RUNNER_STATE_DIR }
+            : {}),
         },
         logger,
       );

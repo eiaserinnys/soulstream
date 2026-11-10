@@ -63,7 +63,8 @@ describe("claude sdk options auto memory", () => {
 
     Object.defineProperty(process, "platform", { ...platformDescriptor, value: "darwin" });
     try {
-      expect(build({}).spawnClaudeCodeProcess).toBeUndefined();
+      // MCP 설정 파일 외부화를 위해 프로세스 훅은 플랫폼과 무관하게 항상 건다.
+      expect(build({}).spawnClaudeCodeProcess).toBeTypeOf("function");
       const built = build({ trackChildExit: true }, onChildProcessClosed);
       const child = built.spawnClaudeCodeProcess!({
         command: process.execPath,
