@@ -19,6 +19,7 @@ import { BuildArtifactReleaseMaterializer } from "../runner/runner_release_mater
 import { RunnerReleasePool } from "../runner/runner_release_pool.js";
 import { RunnerStateHostLock } from "../runner/runner_state_host_lock.js";
 import { RunnerSessionGarbageCollector } from "../runner/runner_session_gc.js";
+import { RunnerRecoveryStorage } from "../runner/runner_recovery_storage.js";
 import { ClosedRunnerTailDrainer } from "../runner/closed_runner_tail_drainer.js";
 import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import type { NodeStallMonitor } from "./node_stall_monitor.js";
@@ -30,6 +31,7 @@ export interface RunnerProcessComposition {
   hostOwnership: RunnerStateHostLock;
   sessionGarbageCollector: RunnerSessionGarbageCollector;
   closedTailDrainer: ClosedRunnerTailDrainer;
+  recoveryStorage: RunnerRecoveryStorage;
 }
 
 export function composeRunnerOrphanReaper(options: {
@@ -61,6 +63,7 @@ export async function composeRunnerProcessRuntime(
   );
   const stateDirectory = required(options.env.SOUL_RUNNER_STATE_DIR, "SOUL_RUNNER_STATE_DIR");
   const hostOwnership = await RunnerStateHostLock.acquire(stateDirectory);
+  const recoveryStorage = new RunnerRecoveryStorage();
   try {
     const materializer = new BuildArtifactReleaseMaterializer(artifactDirectory);
     const releasePool = new RunnerReleasePool(releasesDirectory, materializer);
@@ -69,26 +72,44 @@ export async function composeRunnerProcessRuntime(
       : await releasePool.resolveCurrentRelease();
     await releasePool.ensureRelease(release);
     return {
-      runtimeFactory: createRunnerProcessRuntimeFactory({ ...options, releasePool }),
+      runtimeFactory: createRunnerProcessRuntimeFactory({
+        ...options,
+        releasePool,
+        recoveryStorage,
+      }),
       releaseGarbageCollector: new RunnerReleaseGarbageCollector(
         releasePool,
         stateDirectory,
         options.logger,
+        undefined,
+        recoveryStorage,
       ),
       hostOwnership,
       sessionGarbageCollector: new RunnerSessionGarbageCollector(
         stateDirectory,
         options.env.SOUL_RUNNER_TERMINAL_RETENTION_MS,
         options.logger,
+        undefined,
+        recoveryStorage,
       ),
       closedTailDrainer: new ClosedRunnerTailDrainer({
         pumpMux: options.pumpMux,
         logger: options.logger,
       }),
+      recoveryStorage,
     };
   } catch (error) {
+    await closeRecoveryStorage(recoveryStorage);
     await hostOwnership.release();
     throw error;
+  }
+}
+
+async function closeRecoveryStorage(storage: RunnerRecoveryStorage): Promise<void> {
+  try {
+    await storage.close();
+  } catch {
+    // Composition already failed; the original error remains authoritative.
   }
 }
 
@@ -117,6 +138,7 @@ export async function composeRunnerRecoveryCoordinator(options: {
   ) => Promise<number>;
   logger: Logger;
   nodeStallMonitor?: Pick<NodeStallMonitor, "beginRunnerOperation">;
+  recoveryStorage?: RunnerRecoveryStorage;
 }): Promise<RunnerRecoveryCoordinator | undefined> {
   if (!options.runnerProcessFactory) return undefined;
   if (!options.closedTailDrainer) {
@@ -148,6 +170,7 @@ export async function composeRunnerRecoveryCoordinator(options: {
     ...(options.sessionGarbageCollector
       ? { sessionGarbageCollector: options.sessionGarbageCollector }
       : {}),
+    ...(options.recoveryStorage ? { recoveryStorage: options.recoveryStorage } : {}),
   });
   return coordinator;
 }
@@ -158,6 +181,7 @@ export function composeRunnerReconciliationReporter(
   coordinator: RunnerRecoveryCoordinator | undefined,
   logger: Pick<Logger, "info" | "warn">,
   nodeStallMonitor?: Pick<NodeStallMonitor, "beginRunnerOperation">,
+  recoveryStorage?: RunnerRecoveryStorage,
 ): Partial<RunnerReconciliationReporter> {
   if (!runnerProcessFactory) return {};
   const stateDirectory = env.SOUL_RUNNER_STATE_DIR;
@@ -186,6 +210,7 @@ export function composeRunnerReconciliationReporter(
             leaseTimeoutMs: env.SOUL_RUNNER_LEASE_TIMEOUT_MS,
             logger,
             phaseObservation: observation,
+            ...(recoveryStorage ? { recoveryStorage } : {}),
           }));
         try {
           logger.info({

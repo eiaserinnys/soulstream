@@ -112,6 +112,7 @@ export function composeWorkerUpstreamAdapter({
         runnerRecoveryCoordinator,
         logger,
         worker.nodeStallMonitor,
+        runnerProcess?.recoveryStorage,
       ),
       ...(agentProfileSource ? { agentProfileSource } : {}),
       ...(decisionRunner ? { decisionRunner } : {}),

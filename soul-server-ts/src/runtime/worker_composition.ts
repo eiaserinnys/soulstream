@@ -342,6 +342,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
           ),
       }
       : {}),
+    ...(runnerProcess ? { recoveryStorage: runnerProcess.recoveryStorage } : {}),
   });
   const folderService = new FolderService(orchHostClientDeps);
   db.configureFolderReader(folderService);
@@ -493,6 +494,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     ...(runnerRecoveryCoordinator ? { runnerRecoveryCoordinator } : {}),
     ...composeRunnerOrphanReaper({ runnerProcess, logger, intervalMs: env.SOUL_RUNNER_REAPER_INTERVAL_MS }),
     ...(runnerProcess ? { runnerStateHostOwnership: runnerProcess.hostOwnership } : {}),
+    ...(runnerProcess ? { runnerRecoveryStorage: runnerProcess.recoveryStorage } : {}),
     upstreamRegistrationReady: params.releaseActivationState.waitUntilReady(),
     createUpstreamAdapter,
   };

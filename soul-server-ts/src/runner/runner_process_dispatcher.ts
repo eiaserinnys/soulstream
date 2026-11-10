@@ -68,10 +68,7 @@ import { runnerProcessPaths } from "./runner_process_paths.js";
 import { ProcessFrameStream } from "./runner_process_frame_stream.js";
 import { connectRunnerSocket } from "./runner_socket_endpoint.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
-import {
-  readRunnerSqliteLifecycle,
-  type RunnerLifecycleRecord,
-} from "./sqlite_runner_lifecycle.js";
+import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 import { readRunnerRegistrationIdentity } from "./runner_registration_identity.js";
 import {
   inspectRunnerWriterLock,
@@ -856,7 +853,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
           { cause: transportError },
         );
       }
-      const lifecycle = readRunnerSqliteLifecycle(this.runnerDatabasePath);
+      const lifecycle = await this.outbox.readLifecycle();
       if (lifecycle?.execution_command_id === commandId) return "lifecycle";
       this.options.logger.warn(
         {
@@ -1424,7 +1421,8 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
   ): Promise<boolean> {
     const active = this.activeExecution;
     if (!active) return false;
-    const lifecycle = readRunnerSqliteLifecycle(this.runnerDatabasePath);
+    const lifecycle = await this.outbox.readLifecycle();
+    if (this.activeExecution !== active) return false;
     if (!lifecycle) return false;
     const commandId = active.commandId ?? lifecycle.execution_command_id;
     if (requiredCommandId !== undefined && lifecycle.execution_command_id !== requiredCommandId) {

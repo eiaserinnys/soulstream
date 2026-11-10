@@ -8,6 +8,7 @@ import {
 } from "./runner_process_registry.js";
 import { RunnerReleasePool } from "./runner_release_pool.js";
 import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
+import type { RunnerRecoveryStorage } from "./runner_recovery_storage.js";
 
 export interface RunnerReleaseGarbageCollectorDependencies {
   scan(
@@ -30,13 +31,17 @@ export interface RunnerReleaseGcResult {
  * stopped, terminal, and fully ACKed. Missing/unreadable evidence retains data.
  */
 export class RunnerReleaseGarbageCollector {
+  private readonly deps: RunnerReleaseGarbageCollectorDependencies;
+
   constructor(
     private readonly pool: RunnerReleasePool,
     private readonly stateDirectory: string,
     private readonly logger: Pick<Logger, "info" | "warn">,
-    private readonly deps: RunnerReleaseGarbageCollectorDependencies = defaultDependencies(),
+    deps?: RunnerReleaseGarbageCollectorDependencies,
+    recoveryStorage?: RunnerRecoveryStorage,
   ) {
     if (!stateDirectory) throw new Error("runner state directory required for release GC");
+    this.deps = deps ?? defaultDependencies(recoveryStorage);
   }
 
   async collect(
@@ -227,16 +232,23 @@ function lightweightReferenceReason(registration: RunnerRegistration): string | 
   return null;
 }
 
-function defaultDependencies(): RunnerReleaseGarbageCollectorDependencies {
+function defaultDependencies(
+  recoveryStorage?: RunnerRecoveryStorage,
+): RunnerReleaseGarbageCollectorDependencies {
   return {
     scan: async (stateDirectory, phaseObservation) => await scanRunnerRegistrations(
       stateDirectory,
       {
         verifyProcessIdentity: true,
         ...(phaseObservation ? { phaseObservation } : {}),
+        ...(recoveryStorage ? { recoveryStorage } : {}),
       },
     ),
-    inspect: inspectRunnerDurableState,
+    inspect: async (registration, phaseObservation) => await inspectRunnerDurableState(
+      registration,
+      phaseObservation,
+      recoveryStorage,
+    ),
   };
 }
 

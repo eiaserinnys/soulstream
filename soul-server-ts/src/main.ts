@@ -311,6 +311,11 @@ async function main(): Promise<void> {
       await runtime.server.internalMcpServer.close();
     }
     await runtime.server.close();
+    try {
+      await runtime.runnerRecoveryStorage?.close();
+    } catch (err) {
+      logger.warn({ err }, "Runner recovery storage close failed");
+    }
     await runtime.runnerStateHostOwnership?.release();
     await nodeStallMonitor.stop();
     process.exit(0);
