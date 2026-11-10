@@ -112,6 +112,11 @@ import {
 } from "./claude_runtime_task_followup.js";
 import type { TaskDeliveryLedgerGate } from "./task_delivery_ledger_gate.js";
 import type { PersistentSessionControl } from "./persistent_session_control.js";
+import {
+  SESSION_MODEL_FALLBACK_RESUME_PROMPT,
+  type SessionModelFallbackTarget,
+} from "./session_model_fallback.js";
+import { SESSION_MODEL_FALLBACK_REASON } from "@soulstream/wire-schema/model-preset-fallbacks";
 import type { SoulstreamScheduleService } from "../schedule/schedule_service.js";
 import { TaskDeliveryConsumption } from "./task_delivery_consumption.js";
 import { TaskDeliveryTurnReceipt } from "./task_delivery_turn_receipt.js";
@@ -254,6 +259,19 @@ export interface ProfileWorkspaceResolver {
   resolveProfileWorkspace(profileId: string): string | undefined;
 }
 
+/**
+ * 일반 세션의 실행 중 한도 전환 포트. 미주입이면 이 기능은 동작하지 않는다
+ * (legacy 호출자와 테스트 환경 호환).
+ */
+export interface SessionModelFallbackRuntime {
+  chooseTarget(task: Task): Promise<SessionModelFallbackTarget | null>;
+  persistentSessions: Pick<
+    PersistentSessionControl,
+    "requestSessionModelFallbackRollover" | "cancelPendingGenerationRollover"
+  >;
+  scheduleService: Pick<SoulstreamScheduleService, "scheduleResumeAfterLimit">;
+}
+
 interface PersistentDecisionRuntime {
   persistentSessions: Pick<PersistentSessionControl, "requestGenerationRollover">;
   providerUsage: ProviderUsageCommandHandler;
@@ -320,6 +338,8 @@ export class TaskExecutor {
      */
     private readonly sessionIsolation?: SessionIsolationTurnGate,
     private readonly profileWorkspaceResolver?: ProfileWorkspaceResolver,
+    /** 일반 세션 실행 중 한도 전환. 미주입이면 동작하지 않는다. */
+    private readonly sessionModelFallbackRuntime?: SessionModelFallbackRuntime,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -2366,8 +2386,94 @@ export class TaskExecutor {
     task: Task,
     consumeTerminalDeliveries?: () => Promise<void>,
   ): Promise<void> {
-    await this.executorFinalizer.finalize(task, consumeTerminalDeliveries);
+    // 일반 세션의 다음 모델 pending은 terminal 저장보다 먼저 내구 기록되어야
+    // 재개 뒤 첫 실행이 새 세대로 시작한다. 저장에 실패하면 기존 종료로 둔다.
+    const fallbackPrepared = await this.prepareSessionModelFallback(task);
+    await this.executorFinalizer.finalize(
+      task,
+      consumeTerminalDeliveries,
+      fallbackPrepared
+        ? async (terminalTransitionApplied: boolean) =>
+            await this.finishSessionModelFallback(task, terminalTransitionApplied)
+        : undefined,
+    );
     await this.decidePersistentLimitHit(task);
+  }
+
+  /**
+   * 한도로 끝나는 일반 세션이면 다음 모델 pending을 terminal 저장 전에 남긴다.
+   * `true`면 finalize의 notify 단계에서 이어가기 예약을 판정한다.
+   */
+  private async prepareSessionModelFallback(task: Task): Promise<boolean> {
+    const runtime = this.sessionModelFallbackRuntime;
+    if (!runtime || task.persistent === true) return false;
+    if (task.persistentGeneration?.pending?.reason === SESSION_MODEL_FALLBACK_REASON) {
+      return true;
+    }
+    try {
+      const target = await runtime.chooseTarget(task);
+      if (target === null) return false;
+      await runtime.persistentSessions.requestSessionModelFallbackRollover(
+        task.agentSessionId,
+        target,
+      );
+      return true;
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "session model fallback pending save failed",
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Terminal 저장과 runner 해제 뒤에 이어가기 재개를 예약한다. 예약에 성공하면
+   * 이번 실행의 완료 통지만 건너뛰고, 실패하거나 terminal event id가 없으면
+   * pending을 취소하고 기존 완료 통지를 유지한다.
+   */
+  private async finishSessionModelFallback(
+    task: Task,
+    terminalTransitionApplied: boolean,
+  ): Promise<boolean> {
+    const runtime = this.sessionModelFallbackRuntime;
+    const pending = task.persistentGeneration?.pending;
+    if (!runtime || pending?.reason !== SESSION_MODEL_FALLBACK_REASON) return false;
+    const terminalEventId = task.terminalEventId;
+    if (!terminalTransitionApplied || terminalEventId === undefined) {
+      await this.cancelSessionModelFallback(task);
+      return false;
+    }
+    try {
+      const now = new Date();
+      await runtime.scheduleService.scheduleResumeAfterLimit(
+        task.agentSessionId,
+        terminalEventId,
+        now,
+        now,
+        SESSION_MODEL_FALLBACK_RESUME_PROMPT,
+      );
+      return true;
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "session model fallback resume schedule failed",
+      );
+      await this.cancelSessionModelFallback(task);
+      return false;
+    }
+  }
+
+  private async cancelSessionModelFallback(task: Task): Promise<void> {
+    try {
+      await this.sessionModelFallbackRuntime?.persistentSessions
+        .cancelPendingGenerationRollover(task.agentSessionId);
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "session model fallback pending cancel failed",
+      );
+    }
   }
 
   private async consumeTerminalTurnReceipts(

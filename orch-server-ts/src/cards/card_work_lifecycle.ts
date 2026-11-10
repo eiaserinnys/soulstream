@@ -55,9 +55,10 @@ export async function acceptQueuedWork(sql: RepositorySql, card: CardRow, sessio
 
 /** Receipt ranges retain execution identity after sessions clears its live registration at terminal. */
 export async function endedCardWork(sql: RepositorySql, sessionId: string) {
-  return sql<{card_id:string;registration_id:string;terminal_event_id:number;terminal_session:Record<string,unknown>}[]>`
+  return sql<{card_id:string;registration_id:string;terminal_event_id:number;terminal_session:Record<string,unknown>;metadata:unknown}[]>`
     SELECT work.target_id AS card_id,work.payload_json->'execution'->>'registrationId' AS registration_id,
-      terminal.event_id AS terminal_event_id,terminal.projection AS terminal_session
+      terminal.event_id AS terminal_event_id,terminal.projection AS terminal_session,
+      (SELECT metadata FROM sessions WHERE session_id=${sessionId}) AS metadata
     FROM folder_operations work JOIN cards card ON card.id=work.target_id
     JOIN LATERAL (SELECT event_id FROM event_ingress_receipts WHERE session_id=${sessionId} AND effect_application->>'applied'='true'
       AND effect_application->'canonical_execution_registration'->>'registration_id'=work.payload_json->'execution'->>'registrationId'

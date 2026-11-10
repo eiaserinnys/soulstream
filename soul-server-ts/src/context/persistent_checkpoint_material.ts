@@ -1,8 +1,9 @@
-import type { GenerationCheckpointMaterial } from "@soulstream/mcp-contract";
+import type { GenerationCheckpointMaterial, SupervisedCardSnapshot } from "@soulstream/mcp-contract";
 import type { Logger } from "pino";
 import { readPersistentInstructions } from "@soulstream/wire-schema/persistent-session-instructions";
 
 import { isSessionDataHostError } from "../control_plane/session_data_host_client.js";
+import type { AssignedCardContext } from "./assigned_card_context.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { Task } from "../task/task_models.js";
 import {
@@ -49,18 +50,24 @@ export async function readGenerationCheckpointMaterial(
 }
 
 export async function loadPersistentCheckpointContext(
-  db: Pick<SessionDB, "getGenerationCheckpointMaterial" | "getSupervisedCardContext">,
+  db: Pick<
+    SessionDB,
+    "getGenerationCheckpointMaterial" | "getSupervisedCardContext" | "getAssignedCardContext"
+  >,
   logger: Pick<Logger, "warn">,
   task: Task,
 ) {
   const sessionId = task.agentSessionId;
   const materialPromise = readGenerationCheckpointMaterial(db, logger, sessionId);
-  const cardsPromise = db.getSupervisedCardContext({
-    sessionId,
-    ...PERSISTENT_SUPERVISION_SCOPE,
-    cardLimit: PERSISTENT_CHECKPOINT_BUDGET.cardLimit,
-    questionLimit: PERSISTENT_CHECKPOINT_BUDGET.questionLimit,
-  });
+  // PAS는 감독 범위(전체 폴더)를 보지만, 일반 세션은 그 세션 자신의 담당 카드만 본다.
+  const cardsPromise = task.persistent === true
+    ? db.getSupervisedCardContext({
+        sessionId,
+        ...PERSISTENT_SUPERVISION_SCOPE,
+        cardLimit: PERSISTENT_CHECKPOINT_BUDGET.cardLimit,
+        questionLimit: PERSISTENT_CHECKPOINT_BUDGET.questionLimit,
+      })
+    : db.getAssignedCardContext(sessionId).then(assignedCardSnapshot);
   const [{ material, unavailable }, cards] = await Promise.all([materialPromise, cardsPromise]);
   return buildPersistentCheckpoint({
     material,
@@ -76,4 +83,39 @@ export async function loadPersistentCheckpointContext(
     keepInstructions: task.activeGenerationRollover?.keepInstructions !== false,
     materialUnavailable: unavailable,
   }, PERSISTENT_CHECKPOINT_BUDGET);
+}
+
+/** 일반 세션 자신의 담당 카드 스냅샷을 감독 스냅샷 모양으로 옮긴다. */
+export function assignedCardSnapshot(source: AssignedCardContext): SupervisedCardSnapshot {
+  const counts = { running: 0, blocked: 0, review: 0, queued: 0, todo: 0 };
+  const cards: SupervisedCardSnapshot["cards"][number][] = [];
+  for (const card of source.cards) {
+    if (card.status === "todo") {
+      counts.todo += 1;
+      continue;
+    }
+    if (
+      card.status !== "running"
+      && card.status !== "blocked"
+      && card.status !== "review"
+      && card.status !== "queued"
+    ) {
+      continue;
+    }
+    counts[card.status] += 1;
+    cards.push({
+      id: card.id,
+      title: card.title,
+      status: card.status,
+      blockedKind: null,
+      assignee: { kind: null, agentId: null, sessionId: null },
+    });
+  }
+  return {
+    capturedAt: source.capturedAt,
+    counts,
+    cards,
+    openQuestions: [],
+    openQuestionTotal: 0,
+  };
 }

@@ -17,6 +17,8 @@ export type CardSession = {
     model_preset: string | null;
     termination_reason: string | null;
     termination_event_id: number | null;
+    /** 일반 세션 모델 대체 pending 판정에 쓴다. */
+    metadata?: unknown;
 };
 export class CardDispatchRepository {
     constructor(private readonly resolveSql: () => Promise<SqlClient>) { }
@@ -82,7 +84,7 @@ export class CardDispatchRepository {
     }
     async session(sessionId: string): Promise<CardSession | null> {
         const sql = await this.resolveSql();
-        return (await sql<CardSession[]> `SELECT session_id,card_id,node_id,status,model_preset,termination_reason,termination_event_id
+        return (await sql<CardSession[]> `SELECT session_id,card_id,node_id,status,model_preset,termination_reason,termination_event_id,metadata
       FROM sessions WHERE session_id=${sessionId} AND card_id IS NOT NULL`)[0] ?? null;
     }
     async latestSession(cardId: string): Promise<CardSession | null> {

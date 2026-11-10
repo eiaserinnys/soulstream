@@ -402,7 +402,7 @@ function sortJsonKeys(value: unknown): unknown {
   );
 }
 
-function prepareTaskForAutoResume(
+export function prepareTaskForAutoResume(
   task: Task,
   message: InterventionMessage,
   status: "initializing" | "running",

@@ -61,6 +61,8 @@ export interface PreparedContextAssemblyInput {
   assignedCardItem: ContextItem | null;
   predecessorSummaryItem: ContextItem | null;
   generationCheckpointItem: ContextItem | null;
+  /** 일반 세션 대체 세대에서 다시 넣는 원래 요청(없으면 null). */
+  originalRequestItem?: ContextItem | null;
   persistentReportItem?: ContextItem | null;
   nodeResourcesItem?: ContextItem | null;
   nativeSessionId: string | null;
@@ -134,6 +136,10 @@ export function assemblePreparedContext(args: PreparedContextAssemblyInput): Pre
   const checkpointContextItem = args.generationCheckpointItem ?? args.predecessorSummaryItem;
   if (checkpointContextItem) {
     combinedContextItems.push(checkpointContextItem);
+    contextParts.push(null);
+  }
+  if (args.originalRequestItem) {
+    combinedContextItems.push(args.originalRequestItem);
     contextParts.push(null);
   }
   if (args.runningSessions?.item) {

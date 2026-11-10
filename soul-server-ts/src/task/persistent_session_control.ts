@@ -9,6 +9,7 @@ import {
   type StoredPersistentSettings,
 } from "@soulstream/wire-schema/persistent-session-settings";
 import { DEFAULT_MODEL_CATALOG, resolveModelPreset } from "@soulstream/model-catalog";
+import { SESSION_MODEL_FALLBACK_REASON } from "@soulstream/wire-schema/model-preset-fallbacks";
 
 import type { EventPersistence } from "../db/event_persistence.js";
 import { UnknownModelPresetError, type ModelCatalog } from "../model_catalog.js";
@@ -324,6 +325,68 @@ export class PersistentSessionControl {
     if (!task.persistent) {
       throw new Error(`Session is not persistent: ${sessionId}`);
     }
+    return await this.saveGenerationRolloverPending(task, sessionId, input);
+  }
+
+  /**
+   * 일반 세션의 실행 중 한도 전환 pending을 저장한다. PAS의
+   * `requestGenerationRollover`와 같은 metadata 모양을 쓰되 persistent
+   * 검사 없이 현재 세대 위에 다음 모델 pending만 남긴다.
+   */
+  async requestSessionModelFallbackRollover(
+    sessionId: string,
+    input: { modelPreset: string; reasoningEffort?: ReasoningEffort },
+  ): Promise<RequestGenerationRolloverResult> {
+    let task = this.deps.getTask(sessionId);
+    if (!task) {
+      task = await this.deps.loadEvictedTask(sessionId) ?? undefined;
+      if (!task) throw new Error(`Session not found: ${sessionId}`);
+      this.deps.rememberTask(task);
+    }
+    if (!this.deps.persistence) {
+      throw new Error("Persistent session metadata persistence unavailable");
+    }
+    return await this.saveGenerationRolloverPending(task, sessionId, {
+      modelPreset: input.modelPreset,
+      ...(input.reasoningEffort === undefined
+        ? {}
+        : { reasoningEffort: input.reasoningEffort }),
+      reason: SESSION_MODEL_FALLBACK_REASON,
+    });
+  }
+
+  /** 재개 예약에 실패한 일반 세션 대체 pending을 지운다. 다른 pending은 건드리지 않는다. */
+  async cancelPendingGenerationRollover(sessionId: string): Promise<void> {
+    const task = this.deps.getTask(sessionId);
+    const generation = task?.persistentGeneration;
+    if (!task || !generation?.pending) return;
+    if (!this.deps.persistence) {
+      throw new Error("Persistent session metadata persistence unavailable");
+    }
+    const nextGeneration: typeof generation = { ...generation };
+    delete nextGeneration.pending;
+    const entry = buildPersistentGenerationMetadataEntry(nextGeneration);
+    await savePersistentMetadata(this.deps.persistence, sessionId, entry, "persistent_generation", () => {
+      task.metadata = [
+        ...(task.metadata ?? []).filter((item) => item.type !== "persistent_generation"),
+        entry,
+      ];
+      task.persistentGeneration = nextGeneration;
+    });
+  }
+
+  private async saveGenerationRolloverPending(
+    task: Task,
+    sessionId: string,
+    input: {
+      modelPreset?: string;
+      reasoningEffort?: ReasoningEffort;
+      reason: string;
+      resetContext?: boolean;
+      keepInstructions?: boolean;
+      targetNodeId?: string;
+    },
+  ): Promise<RequestGenerationRolloverResult> {
     if (!this.deps.persistence) {
       throw new Error("Persistent session metadata persistence unavailable");
     }

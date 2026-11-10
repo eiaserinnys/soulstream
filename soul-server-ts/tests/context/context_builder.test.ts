@@ -2438,7 +2438,7 @@ describe("generation checkpoint context", () => {
       getSupervisedCardContext,
       getAssignedCardContext,
     } as unknown as Partial<SessionDB>);
-    const task = makeTask({ agentSessionId: ownSessionIdForContextTest, codexThreadId: "native-old-session" });
+    const task = makeTask({ agentSessionId: ownSessionIdForContextTest, persistent: true, codexThreadId: "native-old-session" });
 
     const context = await builder.buildGenerationContext(task, codexAgent, "generation-input");
     const keys = context.combinedContextItems.map((item) => item.key);
@@ -2486,6 +2486,7 @@ describe("generation checkpoint context", () => {
     } as unknown as Partial<SessionDB>);
     const task = makeTask({
       agentSessionId: ownSessionIdForContextTest,
+      persistent: true,
       metadata: [{
         type: "persistent_instructions",
         value: [{
@@ -2561,6 +2562,7 @@ describe("generation checkpoint context", () => {
     const builder = makeBuilder({ getGenerationCheckpointMaterial, getSupervisedCardContext } as unknown as Partial<SessionDB>);
     const task = makeTask({
       agentSessionId: ownSessionIdForContextTest,
+      persistent: true,
       metadata: [{
         type: "persistent_instructions",
         value: [
@@ -2680,6 +2682,7 @@ describe("generation checkpoint context", () => {
     };
     const task = makeTask({
       agentSessionId: ownSessionIdForContextTest,
+      persistent: true,
       metadata: [instructionMetadata],
       activeGenerationRollover: {
         number: 2,
@@ -2749,7 +2752,7 @@ describe("generation checkpoint context", () => {
       getSupervisedCardContext,
       getAssignedCardContext,
     } as unknown as Partial<SessionDB>);
-    const task = makeTask({ agentSessionId: ownSessionIdForContextTest, codexThreadId: "native-old-session" });
+    const task = makeTask({ agentSessionId: ownSessionIdForContextTest, persistent: true, codexThreadId: "native-old-session" });
 
     const context = await builder.buildGenerationContext(task, codexAgent, "generation-input");
     const checkpoint = String(context.combinedContextItems.find((item) => item.key === "persistent_checkpoint")?.content);
@@ -2856,6 +2859,11 @@ describe("ExecutionContextBuilder — context_scope minimal", () => {
         x: 0,
         y: 0,
         metadata: {},
+      }),
+      // 일반 세션의 대체 세대 체크포인트는 그 세션의 담당 카드만 읽는다.
+      getAssignedCardContext: vi.fn().mockResolvedValue({
+        capturedAt: "2026-07-13T00:00:00.000Z", total: 1, omitted: 0,
+        cards: [{ id: "item-1", title: "카드", status: "running", latestCommentAt: null, latestReportAt: null }],
       }),
       getGenerationCheckpointMaterial: vi.fn().mockResolvedValue({
         story: {
@@ -2967,5 +2975,57 @@ describe("ExecutionContextBuilder — context_scope minimal", () => {
     const keys = fullContext.contextItems.map((item) => item.key);
     for (const key of FIVE_BLOCKS) expect(keys).not.toContain(key);
     expect(keys).toContain("assigned_cards");
+  });
+});
+
+describe("session model fallback generation context", () => {
+  it("reads only the session's own card and re-delivers the original request", async () => {
+    const getGenerationCheckpointMaterial = vi.fn().mockResolvedValue({
+      story: {
+        highlight: null,
+        narrative: "줄거리",
+        unfoldedTurnSummaries: [],
+        narrativeThroughEventId: null,
+        foldCount: 0,
+        updatedAt: null,
+      },
+      lastSummarizedFinalResponseEventId: null,
+      recent: { records: [], omittedUnsummarized: 0 },
+      childSessions: [],
+      childSessionTotal: 0,
+      totals: { turnSummaries: 0 },
+    });
+    const getSupervisedCardContext = vi.fn();
+    const getAssignedCardContext = vi.fn().mockResolvedValue({
+      capturedAt: "2026-11-10T00:00:00.000Z", total: 1, omitted: 0,
+      cards: [{ id: "clip-card", title: "클립 다이제스트", status: "running", latestCommentAt: null, latestReportAt: null }],
+    });
+    const readEvents = vi.fn().mockResolvedValue([{
+      event_type: "user_message",
+      payload: { text: "이 클립의 다이제스트를 만들어 주세요" },
+    }]);
+    const builder = makeBuilder({
+      getGenerationCheckpointMaterial,
+      getSupervisedCardContext,
+      getAssignedCardContext,
+      readEvents,
+    } as unknown as Partial<SessionDB>);
+    // 재개 직후 task.prompt는 깨우기 문구로 덮여 있다.
+    const task = makeTask({
+      agentSessionId: ownSessionIdForContextTest,
+      persistent: false,
+      prompt: "[Scheduled wakeup]\n\n이어서 진행",
+      codexThreadId: "native-argon",
+    });
+
+    const context = await builder.buildGenerationContext(task, codexAgent, "generation-input");
+    const original = context.combinedContextItems.find((item) => item.key === "original_request");
+    const checkpoint = context.combinedContextItems.find((item) => item.key === "persistent_checkpoint");
+
+    expect(getSupervisedCardContext).not.toHaveBeenCalled();
+    expect(getAssignedCardContext).toHaveBeenCalled();
+    expect(String(checkpoint?.content)).toContain("클립 다이제스트");
+    expect(String(original?.content)).toContain("이 클립의 다이제스트를 만들어 주세요");
+    expect(String(original?.content)).not.toContain("이어서 진행");
   });
 });

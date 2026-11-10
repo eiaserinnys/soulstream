@@ -1,4 +1,5 @@
 import type { Logger } from "pino";
+import { readModelPresetFallbackPolicy } from "@soulstream/wire-schema/model-preset-fallbacks";
 import type { AgentProfile } from "../agent_registry.js";
 import type { ModelCatalog } from "../model_catalog.js";
 import type { EventPersistence } from "../db/event_persistence.js";
@@ -59,7 +60,7 @@ export function beginGenerationRolloverIfPending(
   if (pending.applyingFrom === undefined) {
     const firstIntervention = sortInterventionsByPriority(task.interventionQueue)[0];
     if (
-      task.persistent !== true
+      !(task.persistent === true || readModelPresetFallbackPolicy(task.metadata) !== null)
       || task.runnerRetainedForDetachedWork === true
       || task.interventionQueue.length === 0
       || (firstIntervention !== undefined && isRuntimeFollowup(firstIntervention))

@@ -39,6 +39,11 @@ export class TaskExecutorFinalizer {
   async finalize(
     task: Task,
     consumeSuccessfulDeliveries?: () => Promise<void>,
+    /**
+     * Terminal 저장과 runner 해제 뒤, 완료 통지 앞에서 실행되는 선택적 단계.
+     * true를 돌려주면 이번 실행의 완료 통지만 건너뛴다(다음 세대가 이어감).
+     */
+    beforeNotify?: (terminalTransitionApplied: boolean) => Promise<boolean>,
   ): Promise<void> {
     const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task, true);
     // The sessions-row release ACK is the durable terminal/owner boundary. Keep
@@ -51,6 +56,7 @@ export class TaskExecutorFinalizer {
     ) {
       await consumeSuccessfulDeliveries();
     }
+    if (beforeNotify && await beforeNotify(persistence.terminalTransitionApplied)) return;
     await this.deps.lifecycleTransition.notifyCompletionIfApplied(task, persistence);
   }
 

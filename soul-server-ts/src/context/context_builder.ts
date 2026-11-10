@@ -54,6 +54,7 @@ import {
 } from "./page_context_resolver.js";
 import { extractAtomContextSourceSpecs } from "./session_context_sources.js";
 import { buildPredecessorSummaryContextItem } from "./predecessor_summary_context.js";
+import { buildOriginalRequestContextItem } from "./original_request_context.js";
 import { fetchCardAssigneeReplacementContextItem } from "./session_folder_context.js";
 import { loadInitialResumeContext } from "./initial_resume_context.js";
 import { assemblePreparedContext, type PreparedContext } from "./prepared_context_assembly.js";
@@ -360,6 +361,9 @@ export class ExecutionContextBuilder {
       assignedCardItem: await this.buildAssignedCardContext(task, inputId),
       predecessorSummaryItem,
       generationCheckpointItem: checkpoint?.item ?? null,
+      // 일반 세션의 대체 모델 세대는 원 요청을 다시 받는다(재개 때 task.prompt는 깨우기 입력이다).
+      originalRequestItem: generation && task.persistent !== true
+        ? await buildOriginalRequestContextItem(this.db, this.logger, task.agentSessionId, resumeContext.session?.prompt) : null,
       persistentReportItem: task.persistent || readPersistentEnabled(resumeContext.session?.metadata)
         ? buildPersistentReportContext(resumeContext.session?.metadata ?? task.metadata) : null,
       nodeResourcesItem,

@@ -8,6 +8,9 @@
 
 export const MODEL_PRESET_FALLBACKS_METADATA_TYPE = "model_preset_fallbacks";
 
+/** 실행 중 한도 전환으로 일반 세션이 다음 모델 세대를 기다리는 pending의 reason. */
+export const SESSION_MODEL_FALLBACK_REASON = "session_model_fallback";
+
 export interface ModelPresetFallbackPolicy {
   /** 요청한 1차 model preset(가용성 선택 전 값). */
   initialModelPreset: string;
@@ -37,6 +40,23 @@ export function readModelPresetFallbackPolicy(
     return { initialModelPreset, modelPresetFallbacks };
   }
   return null;
+}
+
+/**
+ * 마지막 `persistent_generation` 항목의 pending 이유가 일반 세션 모델 대체인지.
+ * 일반 세션 대체 pending은 다음 세대가 이어 받으므로 한도 막힘으로 다루지 않는다.
+ */
+export function hasPendingSessionModelFallback(metadata: unknown): boolean {
+  if (!Array.isArray(metadata)) return false;
+  for (let index = metadata.length - 1; index >= 0; index--) {
+    const entry = metadata[index];
+    if (!isRecord(entry) || entry.type !== "persistent_generation") continue;
+    const value = entry.value;
+    if (!isRecord(value)) return false;
+    const pending = value.pending;
+    return isRecord(pending) && pending.reason === SESSION_MODEL_FALLBACK_REASON;
+  }
+  return false;
 }
 
 /** 1차 preset과 대체 목록을 순서 보존으로 중복 제거한 후보 순서. */
