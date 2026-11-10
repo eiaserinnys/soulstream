@@ -272,6 +272,21 @@ describe("ChildSessionCheckService", () => {
     ].join("\n"));
   });
 
+  it("judges the shown last event as a valid response when it is the long command's tool_start", async () => {
+    const startedAt = Date.parse("2026-11-10T20:00:00+09:00");
+    const h = harness({
+      targets: [target({ lastValidEventId: 12, lastValidEventType: "tool_start", lastValidEventAtMs: startedAt })],
+      latestEvents: { "child-1": event({ id: 12, eventType: "tool_start", createdAtMs: startedAt }) },
+      toolStarts: { "child-1": [toolStart({ command: "sleep 420", startedAtMs: startedAt })] },
+    });
+    await h.service.checkOnce();
+    const text = h.delivered[0]!.text;
+    expect(text).toContain("마지막 수신 이벤트: 2026-11-10 20:00:00 +09:00 (tool_start)");
+    expect(text).toContain("응답 판정: 유효 응답");
+    expect(text).not.toContain("시간을 갱신하지 않는 이벤트");
+    expect(text).toContain("도구 상태: 명령 실행 중으로 보임");
+  });
+
   it("describes a pending command tool with a collapsed and truncated command", async () => {
     const command = `  pnpm   --dir   orch-server-ts   test   --minWorkers=1   --maxWorkers=2   ${"x".repeat(200)}`;
     const h = harness({

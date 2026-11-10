@@ -194,12 +194,7 @@ function renderMessage(input: RenderInput): string {
   const validLine = candidate.lastValidEventId === null && candidate.live === undefined
     ? "마지막 유효 응답: 없음"
     : `마지막 유효 응답: ${formatKst(candidate.lastValidAtMs)} (${candidate.lastValidEventType ?? "미확인"})`;
-  const lastReceived = lastReceivedLine(input.latestEvent, candidate.live);
-  const verdict = candidate.live !== undefined
-    ? "실시간 text 이벤트 수신"
-    : candidate.lastValidEventId === null
-      ? "유효 응답 없음"
-      : "시간을 갱신하지 않는 이벤트(일반 progress, hook 등)";
+  const { line: lastReceived, verdict } = lastReceivedLines(input.latestEvent, candidate);
   const tool = toolStateLines(input.toolStarts);
   return [
     "[하위 세션 확인]",
@@ -226,17 +221,27 @@ function renderMessage(input: RenderInput): string {
   ].join("\n");
 }
 
-function lastReceivedLine(
+/** 응답 판정은 실제로 표시한 마지막 수신 이벤트를 기준으로 한다. */
+function lastReceivedLines(
   latestEvent: ChildSessionCheckEvent | null,
-  live: LiveRecord | undefined,
-): string {
+  candidate: Candidate,
+): { line: string; verdict: string } {
+  const live = candidate.live;
   if (live !== undefined && (latestEvent === null || live.atMs > latestEvent.createdAtMs)) {
-    return `마지막 수신 이벤트: ${formatKst(live.atMs)} (${live.kind})`;
+    return {
+      line: `마지막 수신 이벤트: ${formatKst(live.atMs)} (${live.kind})`,
+      verdict: "유효 응답(실시간 text 출력)",
+    };
   }
   if (latestEvent !== null) {
-    return `마지막 수신 이벤트: ${formatKst(latestEvent.createdAtMs)} (${latestEvent.eventType})`;
+    return {
+      line: `마지막 수신 이벤트: ${formatKst(latestEvent.createdAtMs)} (${latestEvent.eventType})`,
+      verdict: latestEvent.id === candidate.lastValidEventId
+        ? "유효 응답"
+        : "시간을 갱신하지 않는 이벤트(일반 progress, hook 등)",
+    };
   }
-  return "마지막 수신 이벤트: 없음";
+  return { line: "마지막 수신 이벤트: 없음", verdict: "수신 이벤트 없음" };
 }
 
 function toolStateLines(toolStarts: readonly ChildSessionCheckToolStart[]): string[] {
