@@ -258,6 +258,59 @@ describe("TaskCreation", () => {
     );
   });
 
+  it("persists the declared model preset fallback order before execution starts", async () => {
+    const h = makeHarness();
+    const order: string[] = [];
+    h.appendMetadata.mockImplementation(async () => {
+      order.push("metadata");
+      return 1;
+    });
+    h.emitSessionCreated.mockImplementation(async () => {
+      order.push("created");
+    });
+
+    const task = await h.creation.createTask({
+      agentSessionId: "sess-fallbacks",
+      prompt: "hello",
+      profileId: "codex-default",
+      folderId: "folder-1",
+      initialModelPreset: "gemini-4-argon",
+      modelPresetFallbacks: ["claude-opus", "codex-6.1-sol", "claude-opus"],
+    });
+    await h.creation.waitForDeferredEffects(task.agentSessionId);
+
+    const entry = {
+      type: "model_preset_fallbacks",
+      value: {
+        initial_model_preset: "gemini-4-argon",
+        model_preset_fallbacks: ["claude-opus", "codex-6.1-sol"],
+      },
+    };
+    expect(task.metadata).toContainEqual(entry);
+    expect(h.appendMetadata).toHaveBeenCalledWith("sess-fallbacks", entry, { waitForAck: true });
+    expect(order).toEqual(["metadata", "created"]);
+  });
+
+  it("omits the fallback metadata when no declared order is given", async () => {
+    const h = makeHarness();
+
+    const task = await h.creation.createTask({
+      agentSessionId: "sess-no-fallbacks",
+      prompt: "hello",
+      profileId: "codex-default",
+      folderId: "folder-1",
+    });
+    await h.creation.waitForDeferredEffects(task.agentSessionId);
+
+    expect(h.appendMetadata).not.toHaveBeenCalledWith(
+      "sess-no-fallbacks",
+      expect.objectContaining({ type: "model_preset_fallbacks" }),
+      expect.anything(),
+    );
+    expect((task.metadata ?? []).some((entry) => entry.type === "model_preset_fallbacks"))
+      .toBe(false);
+  });
+
   it("keeps fire-and-forget caller provenance, metadata, and task placement", async () => {
     const h = makeHarness();
 

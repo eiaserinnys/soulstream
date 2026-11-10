@@ -70,6 +70,9 @@ export const clusterTools = {
         node_id: z.string().min(1),
         agent_id: z.string().optional(),
         model_preset: z.string().min(1).optional(),
+        model_preset_fallbacks: z.array(z.string().min(1).refine((item) => item.trim().length > 0)).optional().describe(
+          "만들 때와 실행 중 한도에서 차례로 쓸 대체 모델 preset id. 같은 노드 안에서만 쓴다",
+        ),
         /** Omit to use the selected model preset's advertised default effort. */
         reasoning_effort: ReasoningEffortToolSchema.optional(),
         prompt: z.string(),

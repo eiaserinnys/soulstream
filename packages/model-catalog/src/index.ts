@@ -1,6 +1,12 @@
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
 
+export {
+  MODEL_PRESET_WEEKLY_HEADROOM_FLOOR_PERCENT,
+  chooseUsablePresetId,
+  type UsablePresetCandidate,
+} from "./preset_selection.js";
+
 export const MODEL_BACKENDS = [
   "claude",
   "codex",

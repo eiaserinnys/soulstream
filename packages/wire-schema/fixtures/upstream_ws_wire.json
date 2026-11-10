@@ -17,6 +17,19 @@
       "subscribeId": "<uuid>",
       "requestId": "<absent>",
       "fireAndForget": true
+    },
+    "createSession": {
+      "type": "create_session",
+      "agentSessionId": "<uuid>",
+      "prompt": "hello",
+      "profile": "claude-roselin",
+      "model_preset": "claude-opus",
+      "initial_model_preset": "claude-fable",
+      "model_preset_fallbacks": [
+        "claude-opus",
+        "codex-6.1-sol"
+      ],
+      "requestId": "<orch-command-request-id>"
     }
   },
   "inbound": {

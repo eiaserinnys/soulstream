@@ -507,6 +507,129 @@ describe("session command HTTP route harness", () => {
     expect(registry.getStats().pendingCommands).toBe(0);
   });
 
+  describe("model preset fallbacks on create", () => {
+    function createFallbackHarness(chooseUsablePreset: ReturnType<typeof vi.fn>) {
+      const { registry, transports, router, bridge } = createHarness();
+      const connectionId = registry.registerNode({
+        type: "node_register",
+        node_id: "preset-node",
+        agents: [{ id: "roselin", backend: "claude", default_preset: "gemini-4-argon" }],
+        supported_backends: ["claude"],
+        model_presets: [
+          { id: "gemini-4-argon", label: "Argon", backend: "claude", available: true },
+          { id: "claude-opus", label: "Opus", backend: "claude", available: true },
+          { id: "codex-6.1-sol", label: "Sol", backend: "claude", available: true },
+        ],
+      }).node.connectionId;
+      const sent: Array<Record<string, unknown>> = [];
+      transports.attach({ nodeId: "preset-node", connectionId, transport: { send: (data) => {
+        const message = JSON.parse(data) as Record<string, unknown>;
+        sent.push(message);
+        registry.receiveNodeMessage({ nodeId: "preset-node", connectionId }, {
+          type: "session_created", requestId: message.requestId, agentSessionId: message.agentSessionId,
+        });
+      } } });
+      const requireAvailable = vi.fn();
+      const app = createApp({ config, sessionCommandRoutes: {
+        router,
+        bridge,
+        nodeCredentials: null,
+        modelPresetAvailability: { requireAvailable, chooseUsablePreset },
+      } });
+      return { app, sent, requireAvailable, chooseUsablePreset };
+    }
+
+    it("selects the first usable fallback and forwards the declared order", async () => {
+      const chooseUsablePreset = vi.fn(() => "claude-opus");
+      const { app, sent, requireAvailable } = createFallbackHarness(chooseUsablePreset);
+      try {
+        const response = await app.inject({ method: "POST", url: "/api/sessions", payload: {
+          prompt: "hello",
+          nodeId: "preset-node",
+          profile: "roselin",
+          model_preset: "gemini-4-argon",
+          model_preset_fallbacks: ["claude-opus", "codex-6.1-sol"],
+          reasoningEffort: "high",
+        } });
+
+        expect(response.statusCode).toBe(201);
+        expect(chooseUsablePreset).toHaveBeenCalledWith(
+          "preset-node",
+          ["gemini-4-argon", "claude-opus", "codex-6.1-sol"],
+        );
+        expect(requireAvailable).toHaveBeenCalledWith("preset-node", "claude-opus");
+        expect(sent[0]).toMatchObject({
+          type: "create_session",
+          model_preset: "claude-opus",
+          initial_model_preset: "gemini-4-argon",
+          model_preset_fallbacks: ["claude-opus", "codex-6.1-sol"],
+        });
+        expect(sent[0]).not.toHaveProperty("reasoningEffort");
+      } finally { await app.close(); }
+    });
+
+    it("keeps the requested preset and reasoning effort when the primary is usable", async () => {
+      const chooseUsablePreset = vi.fn(() => "gemini-4-argon");
+      const { app, sent, requireAvailable } = createFallbackHarness(chooseUsablePreset);
+      try {
+        const response = await app.inject({ method: "POST", url: "/api/sessions", payload: {
+          prompt: "hello",
+          nodeId: "preset-node",
+          profile: "roselin",
+          model_preset: "gemini-4-argon",
+          model_preset_fallbacks: ["claude-opus"],
+          reasoningEffort: "high",
+        } });
+
+        expect(response.statusCode).toBe(201);
+        expect(requireAvailable).toHaveBeenCalledWith("preset-node", "gemini-4-argon");
+        expect(sent[0]).toMatchObject({
+          model_preset: "gemini-4-argon",
+          initial_model_preset: "gemini-4-argon",
+          model_preset_fallbacks: ["claude-opus"],
+          reasoningEffort: "high",
+        });
+      } finally { await app.close(); }
+    });
+
+    it("leaves the create unchanged when the fallback list is empty", async () => {
+      const chooseUsablePreset = vi.fn(() => "claude-opus");
+      const { app, sent } = createFallbackHarness(chooseUsablePreset);
+      try {
+        const response = await app.inject({ method: "POST", url: "/api/sessions", payload: {
+          prompt: "hello",
+          nodeId: "preset-node",
+          profile: "roselin",
+          model_preset: "gemini-4-argon",
+          model_preset_fallbacks: [],
+        } });
+
+        expect(response.statusCode).toBe(201);
+        expect(chooseUsablePreset).not.toHaveBeenCalled();
+        expect(sent[0]).toMatchObject({ model_preset: "gemini-4-argon" });
+        expect(sent[0]).not.toHaveProperty("initial_model_preset");
+        expect(sent[0]).not.toHaveProperty("model_preset_fallbacks");
+      } finally { await app.close(); }
+    });
+
+    it("rejects fallback entries that are not non-blank strings", async () => {
+      for (const modelPresetFallbacks of [["claude-opus", " "], "claude-opus", ["claude-opus", 7]]) {
+        const { registry, router, bridge } = createHarness();
+        registerNode(registry);
+        const send = vi.fn();
+        const app = createApp({ config, sessionCommandRoutes: { router, bridge, nodeCredentials: null } });
+        try {
+          const response = await app.inject({ method: "POST", url: "/api/sessions", payload: {
+            prompt: "hello", profile: "claude-roselin", model_preset_fallbacks: modelPresetFallbacks,
+          } });
+          expect(response.statusCode).toBe(400);
+          expect(response.json()).toMatchObject({ error: { code: "INVALID_REQUEST" } });
+        } finally { await app.close(); }
+        expect(send).not.toHaveBeenCalled();
+      }
+    });
+  });
+
   it("converts POST /api/sessions body into a create_session node command and returns the Python response shape", async () => {
     const { registry, transports, router, bridge } = createHarness();
     const connectionId = registerNode(registry);

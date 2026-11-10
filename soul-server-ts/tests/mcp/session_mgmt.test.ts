@@ -518,6 +518,122 @@ describe("agent profile backend boundary", () => {
     }
   });
 
+  it("create_agent_session은 fallback 순서에서 고른 preset과 원래 순서를 전달한다", async () => {
+    const capture = await createOrchCapture(200, () => ({
+      body: {
+        model_presets: [
+          {
+            id: "gemini-4-argon",
+            available: false,
+            reason: "limit_rejected",
+            reason_label: "한도 거부 중",
+            resets_at: "2026-10-12T04:00:00.000Z",
+          },
+          {
+            id: "claude-opus",
+            available: true,
+            reason: null,
+            reason_label: null,
+            resets_at: null,
+            weekly_headroom: { remaining_percent: 70 },
+          },
+          {
+            id: "codex-6.1-sol",
+            available: true,
+            reason: null,
+            reason_label: null,
+            resets_at: null,
+            weekly_headroom: { remaining_percent: 80 },
+          },
+        ],
+      },
+    }));
+    try {
+      const runtime = makeRuntime(
+        { queued: true, queuePosition: 1 },
+        capture.orch,
+        [{ ...claudeAgent, default_preset: "gemini-4-argon" }],
+      );
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "create_agent_session",
+        arguments: {
+          agent_id: "claude-roselin",
+          prompt: "hi",
+          model_preset_fallbacks: ["claude-opus", "codex-6.1-sol"],
+          reasoning_effort: "high",
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(runtime.createTask).toHaveBeenCalledTimes(1);
+      const createParams = runtime.createTask.mock.calls[0]![0] as Record<string, unknown>;
+      expect(createParams).toMatchObject({
+        modelPreset: "claude-opus",
+        initialModelPreset: "gemini-4-argon",
+        modelPresetFallbacks: ["claude-opus", "codex-6.1-sol"],
+      });
+      expect(createParams).not.toHaveProperty("reasoningEffort");
+      expect(runtime.startNewExecution).toHaveBeenCalledTimes(1);
+    } finally {
+      await capture.close();
+    }
+  });
+
+  it("create_agent_session은 primary preset을 쓸 수 있으면 reasoning_effort를 유지한다", async () => {
+    const capture = await createOrchCapture(200, () => ({
+      body: {
+        model_presets: [
+          {
+            id: "gemini-4-argon",
+            available: true,
+            reason: null,
+            reason_label: null,
+            resets_at: null,
+            weekly_headroom: { remaining_percent: 60 },
+          },
+          {
+            id: "claude-opus",
+            available: true,
+            reason: null,
+            reason_label: null,
+            resets_at: null,
+            weekly_headroom: { remaining_percent: 70 },
+          },
+        ],
+      },
+    }));
+    try {
+      const runtime = makeRuntime(
+        { queued: true, queuePosition: 1 },
+        capture.orch,
+        [{ ...claudeAgent, default_preset: "gemini-4-argon" }],
+      );
+      const client = await createClient(runtime);
+
+      const result = await client.callTool({
+        name: "create_agent_session",
+        arguments: {
+          agent_id: "claude-roselin",
+          prompt: "hi",
+          model_preset_fallbacks: ["claude-opus"],
+          reasoning_effort: "high",
+        },
+      });
+
+      expect(result.isError).not.toBe(true);
+      expect(runtime.createTask.mock.calls[0]![0]).toMatchObject({
+        modelPreset: "gemini-4-argon",
+        initialModelPreset: "gemini-4-argon",
+        modelPresetFallbacks: ["claude-opus"],
+        reasoningEffort: "high",
+      });
+    } finally {
+      await capture.close();
+    }
+  });
+
   it("create_agent_session은 quota_exhausted라도 available이면 기존 생성 경로를 탄다", async () => {
     const capture = await createOrchCapture(200, () => ({
       body: {
