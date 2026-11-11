@@ -196,6 +196,43 @@ export class TaskDeliveryTurnReceipt {
       receipt.consumed = true;
     }
   }
+
+  /**
+   * Closes the deliveries that entered this turn once the turn has ended,
+   * whether it completed or failed. A recorded receipt is written as consumed; a
+   * delivery without evidence is closed as an admission failure so transcript
+   * recovery cannot replay it after a node reconnect. A delivery that is back in
+   * the intervention queue belongs to the next turn and is left alone.
+   */
+  async settleEndedTurn(task: Task): Promise<void> {
+    for (const receipt of this.receipts) {
+      if (receipt.consumed) continue;
+      if (receipt.recorded) {
+        await this.consumption.recordConsumed(
+          task,
+          receipt.intervention,
+          receipt.consumedTurnId,
+        );
+        receipt.consumed = true;
+        continue;
+      }
+      if (queuedForNextTurn(task, receipt.intervention)) continue;
+      await this.consumption.recordAdmissionFailure(
+        task,
+        receipt.intervention,
+        "delivery turn ended without a consumption receipt",
+      );
+    }
+  }
+}
+
+function queuedForNextTurn(
+  task: Task,
+  intervention: InterventionMessage,
+): boolean {
+  return task.interventionQueue.some((queued) =>
+    matchesIntervention(queued, intervention)
+  );
 }
 
 function isRuntimeFollowup(intervention: InterventionMessage): boolean {

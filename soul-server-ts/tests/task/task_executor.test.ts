@@ -563,6 +563,7 @@ describe("TaskExecutor.startNewExecution", () => {
     const deliveryRecorder = {
       recordTurnStarted: vi.fn().mockResolvedValue(undefined),
       recordConsumed: vi.fn().mockResolvedValue(undefined),
+      recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
     };
     const executor = new TaskExecutor(
       () => makeFakeEngine([], { throwAt: 0 }),
@@ -1054,6 +1055,102 @@ describe("TaskExecutor.startNewExecution", () => {
 
     expect(deliveryRecorder.recordTurnStarted).not.toHaveBeenCalled();
     expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
+  });
+
+  it("resume 턴이 fatal error로 끝나면 그 전달을 admission failure로 한 번 닫는다", async () => {
+    const mocks = makeMocks();
+    const message: InterventionMessage = {
+      text: "idle session message",
+      user: "user",
+      deliveryId: "e1e1e1e1-e1e1-4e1e-8e1e-e1e1e1e1e1e1",
+      deliveryIntent: "human_live_steer",
+    };
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn().mockResolvedValue(true),
+      recordConsumed: vi.fn().mockResolvedValue(undefined),
+      recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
+    };
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([
+        { type: "error", message: "resume timed out", fatal: true, timestamp: 1 },
+      ] as SSEEventPayload[]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
+    );
+    const task = makeTask();
+    task.interventionQueue.push(message);
+
+    executor.startNewExecution(task, agent);
+    await task.executionPromise;
+
+    expect(task.status).toBe("error");
+    expect(deliveryRecorder.recordTurnStarted).not.toHaveBeenCalled();
+    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
+    expect(deliveryRecorder.recordAdmissionFailure).toHaveBeenCalledOnce();
+    expect(deliveryRecorder.recordAdmissionFailure).toHaveBeenCalledWith(
+      message,
+      expect.any(String),
+    );
+  });
+
+  it("턴이 끝날 때 개입이 큐에 남아 있으면 admission failure로 닫지 않는다", async () => {
+    const mocks = makeMocks();
+    const message: InterventionMessage = {
+      text: "idle session message",
+      user: "user",
+      deliveryId: "f2f2f2f2-f2f2-4f2f-8f2f-f2f2f2f2f2f2",
+      deliveryIntent: "human_live_steer",
+    };
+    const deliveryRecorder = {
+      recordTurnStarted: vi.fn().mockResolvedValue(true),
+      recordConsumed: vi.fn().mockResolvedValue(undefined),
+      recordAdmissionFailure: vi.fn().mockResolvedValue(undefined),
+    };
+    const task = makeTask();
+    task.interventionQueue.push(message);
+    const engine: EnginePort = {
+      backendId: "codex",
+      workspaceDir: "/tmp/codex-default",
+      async *execute(): AsyncIterable<SSEEventPayload> {
+        // Re-admitted while the turn runs; the turn still ends without a receipt.
+        task.interventionQueue.push(message);
+        yield {
+          type: "error",
+          message: "resume timed out",
+          fatal: true,
+          timestamp: 1,
+        } as SSEEventPayload;
+      },
+      async interrupt() { return true; },
+      async close() {},
+    };
+    const executor = new TaskExecutor(
+      () => engine,
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      deliveryRecorder,
+    );
+
+    executor.startNewExecution(task, agent);
+    await task.executionPromise;
+
+    expect(task.status).toBe("error");
+    expect(deliveryRecorder.recordConsumed).not.toHaveBeenCalled();
+    expect(deliveryRecorder.recordAdmissionFailure).not.toHaveBeenCalled();
+    expect(task.interventionQueue).toContain(message);
   });
 
   it("정상 흐름: persistent 이벤트는 ingress, transient 이벤트만 wire + 완료 후 session_updated", async () => {

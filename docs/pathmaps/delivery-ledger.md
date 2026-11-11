@@ -43,6 +43,15 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 
 이 장을 갱신해야 하는 변경 부류: `session_deliveries` 스키마·등록/claim/dispatch/queue/retry/receipt/consume/supersede/dead-letter writer·notification outbox·terminal resume DB 함수 변경.
 
+## 끝난 턴의 전달 정산
+
+`task_executor.ts`의 턴 루프는 각 턴이 끝날 때 그 턴의 `TaskDeliveryTurnReceipt`를 모아 `TaskExecutorFinalizer.finalize`에 넘기고, finalize는 terminal 전이가 적용된 뒤 턴의 끝난 상태(completed, error, interrupted, 예외)와 상관없이 이를 정산한다(`task_delivery_turn_receipt.ts:settleEndedTurn`).
+
+- 소비 기록이 있는 항목은 `recordConsumed`로 `consumed/consumed`가 된다(18단계).
+- 소비 기록이 없는 항목은 `recordAdmissionFailure`로 `uncertain/dead_letter`에 닫힌다(23단계). 그래야 노드 재연결 뒤 queued transcript 복구(13~15단계)가 끝난 턴의 전달을 다시 보내지 않는다.
+- 정산 시점에 `task.interventionQueue`에 다시 들어가 있는 항목은 닫지 않는다. `driveQueuedAfterTerminal`이 그 항목으로 다음 턴을 곧바로 재개한다(9단계).
+- 러너 복구 경로(`task_executor.ts:consumeRecoveredRunnerFrames`)의 receipt는 비어 있으므로 이 정산의 대상이 아니다. 프로세스가 죽어 턴이 끝나지 못한 전달은 지금처럼 복구 경로가 다시 보낸다.
+
 ## Antigravity 일반 메시지 개입 (PR A)
 
 `task_running_intervention_transition.ts:tryIntervene` → 러너 generic invoke → `engine/antigravity/adapter.ts:intervene`은 agy 그룹을 SIGINT로 중단하고 `not_delivered / interrupt_then_next_turn / next_turn_required`를 반환한다. 기존 acceptance 게시와 enqueue, interruptRequest 장벽 이후 턴 루프가 즉시 다음 execute를 시작한다. acceptance는 엔진 소비 증거와 별개이며 일반 메시지·위임 완료 보고의 소비는 기존 `task_delivery_turn_receipt.ts:observe`가 다음 턴의 일반 이벤트에서 확인한다.
