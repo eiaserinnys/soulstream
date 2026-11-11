@@ -20,10 +20,10 @@ const plans:CardChartPlan[]=[
     events:[freeMove,"HUMAN_MOVE_hold","HUMAN_MOVE_done","ASK_OWNER","ASK_OTHER","ANSWER_DETAIL","ANSWER_BOARD","WITHDRAW","WITHDRAW_AUTHOR","HUMAN_MESSAGE"],
     holes:["holeQuestionMissing","holeQuestionOff"],
     spec:{include:["status","card.question","card.questionEntry","card.assignee","card.pasBoard"],hide:["uncreated"],collapse:["on","off","card.assignee","card.pasBoard"]}},
-  {id:"04-limit-owner",title:"한도: 지금 담당의 예약과 한도 당시 담당은 다르다",explanation:"예약은 지금 담당의 종료 이력에서 계산한다. 담당을 바꾸면 예약은 없어지지만, 한도 당시 담당 이력은 다르다고 남는다. 빨간 두 서버 전이가 그 구멍에서 실행 중으로 나간다.",
-    events:["SERVER_SHORT_LIMIT","REPLACE_LIVE","REPLACE_LIMITED","SERVER_LIVE_RESUME","SERVER_LIMIT_RELAUNCH"],
+  {id:"04-limit-owner",title:"한도: 카드에 기록된 담당과 예약으로 재개한다",explanation:"한도 진입 때 담당과 선택적인 재개 시각을 카드에 기록한다. 담당 교체와 한도 탈출은 두 칸을 함께 지운다. 짧은 한도는 시각이 지난 뒤, 긴 한도는 모델이 풀린 뒤 기록된 같은 담당만 잇는다.",
+    events:["SERVER_SHORT_LIMIT","SERVER_LONG_LIMIT","REPLACE_LIVE","REPLACE_LIMITED","SERVER_LIVE_RESUME","SERVER_LIMIT_TIME","SERVER_LIMIT_RELAUNCH"],
     holes:["holeChangedLimitOwner"],
-    spec:{include:["status","card.reservation","card.assignee","card.limitedOwner"],hide:["uncreated","rVerify","aNone","aAgent","aHuman","originalEnded","replacedEnded","lSameLong","lDifferentLong"],collapse:["ready","talk","off","review"]}},
+    spec:{include:["status","card.reservation","card.assignee","card.limitedOwner"],hide:["uncreated","rVerify","aNone","aAgent","aHuman","originalEnded","replacedEnded","lDifferent","lDifferentLong"],collapse:["ready","talk","off","review"]}},
   {id:"05-board",title:"판: 다른 장 수와 이 카드의 장을 따로 센다",explanation:"환경은 다른 장이 10장 이하·11장·12장인 세 단계다. 이 카드의 카드 장을 먼저 내린 뒤 질문 장을 올리므로, 다른 장이 11장이면 교체할 한 자리가 남는다. 다른 장이 12장이면 새 장을 버리며, 이후 빈자리가 나도 질문 장을 복구하지 않는다.",
     events:["HUMAN_MOVE_review","ASK_OWNER","ANSWER_DETAIL","BOARD_ONE","BOARD_FULL","BOARD_ROOM","BOARD_OTHER_REMOVED"],
     holes:[],
@@ -99,9 +99,9 @@ export function renderCardCharts(report:CardPromiseReport) {
 export function generateCardStateDocument(report:CardPromiseReport=checkCardPromises()) {
   const charts=renderCardCharts(report);
   const stateCount=(node:typeof cardMachine.root):number=>1+Object.values(node.states).reduce((sum,n)=>sum+stateCount(n),0);
-  const lines=["# 현행 카드 규칙", "", "이 문서는 XState 정의와 약속 검사에서 생성한다. 걸음 2의 질문 답과 철회 규칙을 반영한 현행 모형이다.", "",
+  const lines=["# 현행 카드 규칙", "", "이 문서는 XState 정의와 약속 검사에서 생성한다. 걸음 2의 질문 규칙과 저장된 한도 예약을 반영한 현행 모형이다.", "",
     "한 카드에 열린 질문은 하나까지만 대조했다. 한 카드의 동시 질문 여러 개, 보관, 권한 표 전체, 자동 배정 조정자 내부와 임의의 담당 변경 조합은 대조하지 않았다.", "",
-    "판의 전체 장 수와 이 카드의 장 수는 DB 사실에서 읽는다. 기계에는 숫자를 저장하지 않고, 다른 장이 10장 이하·11장·12장인 단계만 둔다. 한도 당시 담당은 시험 관측자가 서비스 호출 당시의 담당을 기록한 이력이며, 지금 DB에 전용 칸이 없다.", "",
+    "판의 전체 장 수와 이 카드의 장 수는 DB 사실에서 읽는다. 기계에는 숫자를 저장하지 않고, 다른 장이 10장 이하·11장·12장인 단계만 둔다. 한도 담당과 재개 시각은 cards.limit_resume_session_id와 limit_resume_at에서 읽는다. 시각 없는 예약도 담당을 기록하며, 담당 교체가 기록을 지운다.", "",
     `영역 8개, 상태 노드 ${stateCount(cardMachine.root)}개, 사건 ${CARD_EVENTS.length}개, 도달 구성 ${report.configurationCount}개, 정의별 전이 갈래 ${report.definitionCount}개.`, "",
     "빨강은 약속을 어기는 도달 구성이 있다는 뜻이다. 별표는 이름 없는 상태나 구멍이다. 그림은 사건을 골라 나누며, 같은 사건의 화살표는 해당 그림에서 전부 남기거나 전부 숨긴다. 자유 이동과 같은 결과의 기억 쓰기는 각각 한 화살표로 묶는다. 기억 쓰기 화살표는 값이 실제로 바뀌는 대표 시작과 끝을 나타내며, 이미 같은 값인 쓰기는 따로 그리지 않는다.", ""];
   for(const chart of charts) lines.push(`## ${chart.title}`,"",chart.explanation,"","```mermaid",chart.mermaid,"```","",

@@ -348,13 +348,8 @@ describe("durable card orchestration admissions", () => {
     await repo.finish(r, "completed", "applied");
     for (const terminal of [1, 2]) {
       const detail = (await cards.getCard(id))!;
-      await cards.setCardStatus({
-        ...actor,
-        cardId: id,
-        expectedVersion: detail.card.version,
-        status: "blocked",
-        blockedKind: "limit",
-      });
+      const limitEvent=await recordWorkReceipt(h,sid,"error",null,"limit_hit");
+      await cards.blockCardForLimit({cardId:id,sessionId:sid,expectedVersion:detail.card.version,terminationEventId:limitEvent});
       const version = (await cards.getCard(id))!.card.version;
       await expect(cards.resumeDispatchedCard({
         cardId: id, expectedVersion: version, sessionId: sid, nodeId: target.nodeId,

@@ -7,15 +7,15 @@ export interface CardFacts {
   assignee:"none"|"agentAdmitted"|"agent"|"human"|"originalLive"|"originalEnded"|"originalLimited"|"originalLongLimited"|"replacedLive"|"replacedEnded"|"replacedLimited";
   openQuestion?:"owner"|"orphan"|"other"|null;
   wakeAt?:string|Date|null;
-  /** readLimitAutoResumeAt(current owner), NOT the former owner's deadline. */
+  /** Persisted reservation columns, never recomputed from termination events. */
   limitResumeAt?:string|Date|null;
+  limitResumeSessionId?:string|null;
+  assigneeSessionId?:string|null;
   supervised:boolean;
   /** Raw metadata counts. Numbers are facts only, never machine context. */
   boardEntryCount:number;
   cardEntryCount:number;
   questionEntryCount:number;
-  /** Historical observation: caller supplies operation/event history or a test observer. */
-  limitedOwner?:"none"|"same"|"different"|"sameLong"|"differentLong";
 }
 export function cardFactsToStateValue(f:CardFacts):StateValue {
   let status:StateValue;
@@ -27,6 +27,6 @@ export function cardFactsToStateValue(f:CardFacts):StateValue {
   else status={on:{talk:f.status==="awaiting_verification"?"verification":f.blockedKind==="question"?"question":f.blockedKind==="no_report"?"noReport":"other"}};
   const otherEntries=f.boardEntryCount-f.cardEntryCount-f.questionEntryCount;
   const stage=otherEntries>=12?"full":otherEntries===11?"one":"room";
-  return {status,cardEntry:f.cardEntryCount>0?"present":"none",question:f.openQuestion??"none",reservation:f.wakeAt?"verify":f.status==="blocked"&&f.blockedKind==="limit"&&f.limitResumeAt?"limit":"none",assignee:f.assignee==="agentAdmitted"?{agent:"admitted"}:f.assignee,
-    questionEntry:f.questionEntryCount>0?"present":"none",pasBoard:f.supervised?{available:stage}:"none",limitedOwner:f.limitedOwner??"none"};
+  return {status,cardEntry:f.cardEntryCount>0?"present":"none",question:f.openQuestion??"none",reservation:f.wakeAt?"verify":f.limitResumeSessionId?(f.limitResumeAt?"limit":"longLimit"):"none",assignee:f.assignee==="agentAdmitted"?{agent:"admitted"}:f.assignee,
+    questionEntry:f.questionEntryCount>0?"present":"none",pasBoard:f.supervised?{available:stage}:"none",limitedOwner:!f.limitResumeSessionId?"none":f.limitResumeSessionId===f.assigneeSessionId?(f.limitResumeAt?"same":"sameLong"):(f.limitResumeAt?"different":"differentLong")};
 }

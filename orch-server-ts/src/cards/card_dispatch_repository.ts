@@ -1,5 +1,4 @@
 import { cardCapacitySessions } from "./card_capacity.js";
-import { readLimitAutoResumeAt, type LimitResumeOwner } from "./card_limit_auto_resume.js";
 import { endedCardWork } from "./card_work_lifecycle.js";
 import type { CardOwnerSession } from "./card_session_target.js";
 import type { CardRow, SqlClient } from "./control_plane/card_types.js";
@@ -76,7 +75,6 @@ export class CardDispatchRepository {
     async ownerSession(id:string):Promise<(CardOwnerSession & Pick<CardSession,"termination_reason" | "termination_event_id">) | null> {
         return (await (await this.resolveSql())<(CardOwnerSession & Pick<CardSession,"termination_reason" | "termination_event_id">)[]>`SELECT session_id,node_id,agent_id,model_preset,status,metadata,termination_reason,termination_event_id FROM sessions WHERE session_id=${id}`)[0]??null;
     }
-    async limitAutoResumeAt(owner: LimitResumeOwner) { return readLimitAutoResumeAt(await this.resolveSql(), owner); }
     async hasPendingExecution(cardId: string) {
         return (await (await this.resolveSql())`SELECT id FROM card_execution_requests WHERE card_id=${cardId} AND state='pending' LIMIT 1`).length > 0;
     }

@@ -1,12 +1,12 @@
 # 현행 카드 규칙
 
-이 문서는 XState 정의와 약속 검사에서 생성한다. 걸음 2의 질문 답과 철회 규칙을 반영한 현행 모형이다.
+이 문서는 XState 정의와 약속 검사에서 생성한다. 걸음 2의 질문 규칙과 저장된 한도 예약을 반영한 현행 모형이다.
 
 한 카드에 열린 질문은 하나까지만 대조했다. 한 카드의 동시 질문 여러 개, 보관, 권한 표 전체, 자동 배정 조정자 내부와 임의의 담당 변경 조합은 대조하지 않았다.
 
-판의 전체 장 수와 이 카드의 장 수는 DB 사실에서 읽는다. 기계에는 숫자를 저장하지 않고, 다른 장이 10장 이하·11장·12장인 단계만 둔다. 한도 당시 담당은 시험 관측자가 서비스 호출 당시의 담당을 기록한 이력이며, 지금 DB에 전용 칸이 없다.
+판의 전체 장 수와 이 카드의 장 수는 DB 사실에서 읽는다. 기계에는 숫자를 저장하지 않고, 다른 장이 10장 이하·11장·12장인 단계만 둔다. 한도 담당과 재개 시각은 cards.limit_resume_session_id와 limit_resume_at에서 읽는다. 시각 없는 예약도 담당을 기록하며, 담당 교체가 기록을 지운다.
 
-영역 8개, 상태 노드 62개, 사건 70개, 도달 구성 2051개, 정의별 전이 갈래 319개.
+영역 8개, 상태 노드 63개, 사건 70개, 도달 구성 1955개, 정의별 전이 갈래 307개.
 
 빨강은 약속을 어기는 도달 구성이 있다는 뜻이다. 별표는 이름 없는 상태나 구멍이다. 그림은 사건을 골라 나누며, 같은 사건의 화살표는 해당 그림에서 전부 남기거나 전부 숨긴다. 자유 이동과 같은 결과의 기억 쓰기는 각각 한 화살표로 묶는다. 기억 쓰기 화살표는 값이 실제로 바뀌는 대표 시작과 끝을 나타내며, 이미 같은 값인 쓰기는 따로 그리지 않는다.
 
@@ -34,8 +34,7 @@ state "현행 카드 규칙 (운영 코드와 대조할 모형)" as card {
             running --> silent: 담당이 짧은 한도로 끝난다 (어긋남 1)
             talk --> running: 디렉터가 담당에게 말한다 [말로 풀리는 기다림]
             talk --> running: 서버가 깨운다 [검증 시각이 됨]
-            silent --> running: 서버가 이어간다 [담당 세션이 끝나지 않음] (어긋남 2)
-            silent --> running: 서버가 다시 띄운다 [예약 없이 한도가 풀림] (어긋남 2)
+            silent --> running: 서버가 잇는다 [시각 없는 예약의 모델이 풀림]
         }
         state "내려감" as off
     }
@@ -43,12 +42,12 @@ state "현행 카드 규칙 (운영 코드와 대조할 모형)" as card {
     state "카드 상태와 동시에 움직이는 기억" as overviewMemory {
         direction LR
         state "열린 질문" as card_question
-        state "지금 담당을 깨울 예약" as card_reservation
+        state "카드에 기록된 담당 재개 예약" as card_reservation
         state "담당" as card_assignee
         state "감독 판의 질문 장 (현행 코드의 기억)" as card_questionEntry
         state "감독 판의 카드 장 (현행 코드의 기억, 걸음 2에서 계산 출력으로 바꿈)" as card_cardEntry
         state "감독 PAS와 이 카드의 것이 아닌 장의 수 (환경)" as card_pasBoard
-        state "한도에 걸린 담당. 지금 DB에 칸이 없는 이력 값. 약속 검사용이고 걸음 2에서 카드 칸이 된다" as card_limitedOwner
+        state "카드에 기록된 한도 담당과 현재 담당의 관계" as card_limitedOwner
     }
     status --> status: 디렉터와 담당은 상태를 직접 옮긴다 [담당 권한 안에서] (어긋남 7)
 }
@@ -60,10 +59,10 @@ status --> hole_holeQuestionMissing: 다른 에이전트가 질문을 올린다 
 class hole_holeCardMissing breaks
 class hole_holeQuestionMissing breaks
 class off breaks
-class silent breaks
+class silent hole
 ```
 
-화살표 11개. 남긴 사건: 디렉터가 실행 중으로 옮긴다 / 담당이 질문을 올린다 / 다른 에이전트가 질문을 올린다 [담당 세션 없음] / 디렉터가 담당에게 말한다 [말로 풀리는 기다림] / 담당이 짧은 한도로 끝난다 / 서버가 이어간다 [담당 세션이 끝나지 않음] / 서버가 다시 띄운다 [예약 없이 한도가 풀림] / 서버가 깨운다 [검증 시각이 됨] / 담당이 검수를 요청한다. 나머지 사건은 아래 전체 표에서 확인한다.
+화살표 10개. 남긴 사건: 디렉터가 실행 중으로 옮긴다 / 담당이 질문을 올린다 / 다른 에이전트가 질문을 올린다 [담당 세션 없음] / 디렉터가 담당에게 말한다 [말로 풀리는 기다림] / 담당이 짧은 한도로 끝난다 / 서버가 점검한다 [예약 시각 전에는 재개하지 않음] / 서버가 잇는다 [시각 없는 예약의 모델이 풀림] / 서버가 깨운다 [검증 시각이 됨] / 담당이 검수를 요청한다. 나머지 사건은 아래 전체 표에서 확인한다.
 
 ## 카드 상태: 같은 기다림에서 물려받는 규칙
 
@@ -122,17 +121,16 @@ status --> review: 담당이 검수를 요청한다 (어긋남 1, 7)
 running --> limit: 담당이 짧은 한도로 끝난다 (어긋남 1)
 question --> running: 디렉터가 마지막 질문에 답한다 [카드 상세]
 verification --> running: 서버가 깨운다 [검증 시각이 됨]
-limit --> running: 서버가 이어간다 [담당 세션이 끝나지 않음] (어긋남 2)
-limit --> running: 서버가 다시 띄운다 [예약 없이 한도가 풀림] (어긋남 2)
+limit --> running: 서버가 잇는다 [시각 없는 예약의 모델이 풀림]
 status --> hole_holeCardMissing: 담당이 검수를 요청한다
 status --> hole_holeQuestionMissing: 디렉터가 실행 중으로 옮긴다
 class hole_holeCardMissing breaks
 class hole_holeQuestionMissing breaks
 class hole_holeQuestionOff breaks
-class hole_holeChangedLimitOwner breaks
+class hole_holeChangedLimitOwner hole
 ```
 
-화살표 12개. 남긴 사건: 디렉터가 실행 중으로 옮긴다 / 담당이 질문을 올린다 / 디렉터가 담당에게 말한다 [말로 풀리는 기다림] / 담당이 짧은 한도로 끝난다 / 서버가 이어간다 [담당 세션이 끝나지 않음] / 서버가 다시 띄운다 [예약 없이 한도가 풀림] / 서버가 깨운다 [검증 시각이 됨] / 서버가 보고 없이 막는다 [검증 깨우기 실패] / 담당이 검수를 요청한다 / 디렉터가 마지막 질문에 답한다 [카드 상세]. 나머지 사건은 아래 전체 표에서 확인한다.
+화살표 11개. 남긴 사건: 디렉터가 실행 중으로 옮긴다 / 담당이 질문을 올린다 / 디렉터가 담당에게 말한다 [말로 풀리는 기다림] / 담당이 짧은 한도로 끝난다 / 서버가 점검한다 [예약 시각 전에는 재개하지 않음] / 서버가 잇는다 [시각 없는 예약의 모델이 풀림] / 서버가 깨운다 [검증 시각이 됨] / 서버가 보고 없이 막는다 [검증 깨우기 실패] / 담당이 검수를 요청한다 / 디렉터가 마지막 질문에 답한다 [카드 상세]. 나머지 사건은 아래 전체 표에서 확인한다.
 
 ## 질문: 기록은 열려 있어도 판의 장은 사라진다
 
@@ -185,9 +183,9 @@ class off breaks
 
 화살표 10개. 남긴 사건: 디렉터가 실행 중으로 옮긴다 / 디렉터가 보류으로 옮긴다 / 디렉터가 완료으로 옮긴다 / 담당이 질문을 올린다 / 다른 에이전트가 질문을 올린다 [담당 세션 없음] / 디렉터가 마지막 질문에 답한다 [카드 상세] / 디렉터가 마지막 질문에 답한다 [감독 판] / 담당이 마지막 질문을 철회한다 / 올린 세션이 마지막 질문을 철회한다 / 디렉터가 담당에게 말한다 [말로 풀리는 기다림]. 나머지 사건은 아래 전체 표에서 확인한다.
 
-## 한도: 지금 담당의 예약과 한도 당시 담당은 다르다
+## 한도: 카드에 기록된 담당과 예약으로 재개한다
 
-예약은 지금 담당의 종료 이력에서 계산한다. 담당을 바꾸면 예약은 없어지지만, 한도 당시 담당 이력은 다르다고 남는다. 빨간 두 서버 전이가 그 구멍에서 실행 중으로 나간다.
+한도 진입 때 담당과 선택적인 재개 시각을 카드에 기록한다. 담당 교체와 한도 탈출은 두 칸을 함께 지운다. 짧은 한도는 시각이 지난 뒤, 긴 한도는 모델이 풀린 뒤 기록된 같은 담당만 잇는다.
 
 ```mermaid
 stateDiagram-v2
@@ -212,12 +210,14 @@ state "카드 상태" as status {
     }
     state "내려감" as off
 }
-state "지금 담당을 깨울 예약" as card_reservation {
+state "카드에 기록된 담당 재개 예약" as card_reservation {
     direction TB
     state "없음" as rNone
-    state "지금 담당의 짧은 한도 재개 시각" as rLimit
+    state "카드에 적힌 짧은 한도 시각" as rLimit
+    state "시각 없이 담당만 기록한 한도 재개" as rLongLimit
     rNone --> rLimit: 담당이 짧은 한도로 끝난다 (어긋남 1)
-    rLimit --> rNone: 담당 교체 또는 한도 막힘을 나가 예약이 없어진다 (어긋남 2)
+    rNone --> rLongLimit: 담당이 긴 한도로 끝나 시각 없이 기록한다 (어긋남 1)
+    rLimit --> rNone: 담당 교체 또는 한도 막힘을 나가 예약이 없어진다
 }
 state "담당" as card_assignee {
     direction TB
@@ -230,23 +230,24 @@ state "담당" as card_assignee {
     originalLimited --> replacedLive: 살아 있는 새 담당으로 바꾼다
     originalLimited --> replacedLimited: 긴 한도로 끝난 새 담당으로 바꾼다
 }
-state "한도에 걸린 담당. 지금 DB에 칸이 없는 이력 값. 약속 검사용이고 걸음 2에서 카드 칸이 된다" as card_limitedOwner {
+state "카드에 기록된 한도 담당과 현재 담당의 관계" as card_limitedOwner {
     direction TB
-    state "한도 이력 없음" as lNone
-    state "짧은 한도에 걸린 담당이 지금 담당" as lSame
-    state "한도에 걸린 담당이 지금 담당과 다름 *" as lDifferent
-    lNone --> lSame: 짧은 한도로 막힐 때 담당을 기록한다 (어긋남 1)
-    lDifferent --> lNone: 한도 막힘을 나가 이력을 지운다 (어긋남 2)
-    lSame --> lDifferent: 담당이 바뀌어 원래 담당과 달라진다
+    state "기록된 한도 담당 없음" as lNone
+    state "시각 있는 예약의 담당이 지금 담당" as lSame
+    state "시각 없는 예약의 담당이 지금 담당" as lSameLong
+    lNone --> lSame: 짧은 한도 진입 때 카드에 담당을 기록한다 (어긋남 1)
+    lNone --> lSameLong: 긴 한도 진입 때 카드에 담당을 기록한다 (어긋남 1)
 }
 running --> limit: 담당이 짧은 한도로 끝난다 (어긋남 1)
-limit --> running: 서버가 이어간다 [담당 세션이 끝나지 않음] (어긋남 2)
-limit --> running: 서버가 다시 띄운다 [예약 없이 한도가 풀림] (어긋남 2)
-card_reservation --> hole_holeChangedLimitOwner: 실행 중인 세션으로 담당을 바꾼다
-class hole_holeChangedLimitOwner breaks
+running --> limit: 담당이 긴 한도로 끝난다 (어긋남 1)
+limit --> running: 서버가 깨운다 [짧은 한도가 풀림]
+limit --> running: 서버가 잇는다 [시각 없는 예약의 모델이 풀림]
+card_assignee --> originalLongLimited: 담당이 긴 한도로 끝난다 (어긋남 1)
+card_limitedOwner --> lNone: 한도 막힘을 나가 카드의 담당 기록을 지운다
+class hole_holeChangedLimitOwner hole
 ```
 
-화살표 12개. 남긴 사건: 담당이 짧은 한도로 끝난다 / 실행 중인 세션으로 담당을 바꾼다 / 긴 한도로 끝난 세션으로 담당을 바꾼다 / 서버가 이어간다 [담당 세션이 끝나지 않음] / 서버가 다시 띄운다 [예약 없이 한도가 풀림]. 나머지 사건은 아래 전체 표에서 확인한다.
+화살표 14개. 남긴 사건: 담당이 짧은 한도로 끝난다 / 담당이 긴 한도로 끝난다 / 실행 중인 세션으로 담당을 바꾼다 / 긴 한도로 끝난 세션으로 담당을 바꾼다 / 서버가 점검한다 [예약 시각 전에는 재개하지 않음] / 서버가 깨운다 [짧은 한도가 풀림] / 서버가 잇는다 [시각 없는 예약의 모델이 풀림]. 나머지 사건은 아래 전체 표에서 확인한다.
 
 ## 판: 다른 장 수와 이 카드의 장을 따로 센다
 
@@ -297,17 +298,17 @@ class eNone breaks
 
 | 약속 | 결과 | 어긋남 | 어긴 구성 수 | 예시 사건 경로 |
 | :-- | :-- | :-- | --: | :-- |
-| 판에 올라야 할 장은 판에 있다 (1-가 질문 장) | 어김 | 1, 7 | 549 | 디렉터가 할 일 카드를 만든다 → 다른 에이전트가 질문을 올린다 [담당 세션 없음] → 감독 PAS가 생긴다 |
-| 판에 올라야 할 장은 판에 있다 (1-나 카드 장) | 어김 | 1 | 210 | 디렉터가 할 일 카드를 만든다 → 디렉터가 질문으로 막힘으로 옮긴다 → 감독 PAS가 생긴다 |
-| 서버는 한도에 걸린 담당이 같을 때만 실행 중으로 옮긴다 | 어김 | 2 | 48 | 디렉터가 할 일 카드를 만든다 → 서버가 실행을 확인한다 → 디렉터가 한도로 막힘으로 옮긴다 → 실행 중인 세션으로 담당을 바꾼다 |
+| 판에 올라야 할 장은 판에 있다 (1-가 질문 장) | 어김 | 1, 7 | 528 | 디렉터가 할 일 카드를 만든다 → 다른 에이전트가 질문을 올린다 [담당 세션 없음] → 감독 PAS가 생긴다 |
+| 판에 올라야 할 장은 판에 있다 (1-나 카드 장) | 어김 | 1 | 183 | 디렉터가 할 일 카드를 만든다 → 디렉터가 질문으로 막힘으로 옮긴다 → 감독 PAS가 생긴다 |
+| 서버의 한도 재개는 기록된 담당이 현재 담당일 때만 한다 | 지킴 | 2 | 0 | 없음 |
 | 같은 질문의 답은 카드 상세와 감독 판에서 결과가 같다 | 지킴 | 4 | 0 | 없음 |
 | 질문을 올릴 수 있는 세션은 철회할 수 있다 | 지킴 | 8 | 0 | 없음 |
-| 짧은 한도로 막히면 깨울 예약이 있다 | 어김 | 별도 약속 | 72 | 디렉터가 할 일 카드를 만든다 → 서버가 실행을 확인한다 → 담당이 짧은 한도로 끝난다 → 실행 중인 세션으로 담당을 바꾼다 |
-| 기다리는 카드는 판의 장이나 시각으로 나가는 길이 있다 | 어김 | 별도 약속 | 510 | 디렉터가 할 일 카드를 만든다 → 디렉터가 질문으로 막힘으로 옮긴다 → 감독 PAS가 생긴다 |
+| 짧은 한도로 막히면 취소 전까지 시각 있는 예약이 있다 | 지킴 | 별도 약속 | 0 | 없음 |
+| 기다리는 카드는 판의 장이나 시각으로 나가는 길이 있다 | 어김 | 별도 약속 | 462 | 디렉터가 할 일 카드를 만든다 → 디렉터가 질문으로 막힘으로 옮긴다 → 감독 PAS가 생긴다 |
 
 ## 사건과 원문 위치
 
-상태를 정하는 16곳을 사건에 연결했다. 서버의 복합 루프 전체가 아니라 카드 서비스 변경 경계를 대조한다. 한도 자동 재개와 검증 깨우기는 실제 디스패처도 실행한다.
+상태를 정하는 17곳을 사건에 연결했다. 서버의 복합 루프 전체가 아니라 카드 서비스 변경 경계를 대조한다. 한도 자동 재개와 검증 깨우기는 실제 디스패처도 실행한다.
 
 | 사건 | 뜻 | 원문 파일과 함수 |
 | :-- | :-- | :-- |
@@ -353,12 +354,12 @@ class eNone breaks
 | `RECORD_EXECUTION_LATE` | 서버가 실행을 확인한다 [사람이 이미 상태를 바꿈] | `cards/card_control_plane_service.ts#recordExecution` |
 | `DISPATCH` | 서버가 대기열 카드를 실행한다 | `cards/card_control_plane_service.ts#recordDispatch`<br>`cards/card_dispatcher.ts#dispatchOnce`<br>`cards/card_execution_service.ts#execute` |
 | `ADMIT_DISPATCH` | 서버가 배정을 허가하고 대기열에 둔다 | `cards/card_control_plane_service.ts#recordDispatch`<br>`cards/card_orchestration_coordinator.ts#dispatch`<br>`cards/card_orchestration_workers.ts#reconcile/reject` |
-| `SERVER_SHORT_LIMIT` | 담당이 짧은 한도로 끝난다 | `cards/card_dispatcher.ts#sessionEnded/reconcileTerminal/blockForLimit` |
-| `SERVER_LONG_LIMIT` | 담당이 긴 한도로 끝난다 | `cards/card_dispatcher.ts#blockForLimit` |
-| `SERVER_LIVE_RESUME` | 서버가 이어간다 [담당 세션이 끝나지 않음] | `cards/card_dispatcher.ts#resumeAutoLimitedCard`<br>`cards/card_control_plane_service.ts#resumeLimitedCard` |
+| `SERVER_SHORT_LIMIT` | 담당이 짧은 한도로 끝난다 | `cards/card_dispatcher.ts#sessionEnded/reconcileTerminal/blockForLimit`<br>`cards/card_control_plane_service.ts#blockCardForLimit` |
+| `SERVER_LONG_LIMIT` | 담당이 긴 한도로 끝난다 | `cards/card_dispatcher.ts#blockForLimit`<br>`cards/card_control_plane_service.ts#blockCardForLimit` |
+| `SERVER_LIVE_RESUME` | 서버가 점검한다 [예약 시각 전에는 재개하지 않음] | `cards/card_dispatcher.ts#resumeAutoLimitedCard`<br>`cards/card_control_plane_service.ts#resumeLimitedCard` |
 | `SERVER_LIMIT_TIME` | 서버가 깨운다 [짧은 한도가 풀림] | `cards/card_dispatcher.ts#resumeAutoLimitedCard`<br>`cards/card_control_plane_service.ts#resumeLimitedCard` |
-| `SERVER_LIMIT_RELAUNCH` | 서버가 다시 띄운다 [예약 없이 한도가 풀림] | `cards/card_dispatcher.ts#resumeLimits`<br>`cards/card_control_plane_service.ts#resumeDispatchedCard` |
-| `SERVER_LIMIT_REQUEUE` | 서버가 대기열로 돌린다 [담당이 한도 종료가 아님] | `cards/card_dispatcher.ts#resumeLimits` |
+| `SERVER_LIMIT_RELAUNCH` | 서버가 잇는다 [시각 없는 예약의 모델이 풀림] | `cards/card_dispatcher.ts#resumeLimits`<br>`cards/card_control_plane_service.ts#resumeDispatchedCard` |
+| `SERVER_LIMIT_REQUEUE` | 서버가 점검한다 [기록된 담당이 없으면 그대로] | `cards/card_dispatcher.ts#resumeLimits` |
 | `ADMIT_LIMIT` | 서버가 한도 재배정을 허가한다 | `cards/card_control_plane_service.ts#resumeDispatchedCard`<br>`cards/card_orchestration_coordinator.ts#dispatch` |
 | `WAKE_TIME` | 서버가 깨운다 [검증 시각이 됨] | `cards/card_dispatcher.ts#wakeAwaitingVerification`<br>`cards/card_control_plane_service.ts#resumeVerificationCard` |
 | `WAKE_FAIL` | 서버가 보고 없이 막는다 [검증 깨우기 실패] | `cards/card_dispatcher.ts#blockVerificationWake` |

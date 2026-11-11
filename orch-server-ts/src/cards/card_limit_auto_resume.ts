@@ -1,6 +1,6 @@
 import { latestValidResetAt } from "../schedule/resume_after_limit_continuity.js";
 import { isUsageLimitTermination } from "../session/session_limit_termination.js";
-import type { SqlClient } from "./control_plane/card_types.js";
+import type { RepositorySql } from "./control_plane/card_types.js";
 
 /** A card assignee is only woken automatically when its quota resets inside this window. */
 export const SHORT_LIMIT_WINDOW_MS = 5 * 60 * 60 * 1000;
@@ -21,11 +21,11 @@ type LimitEventRow = {
 
 /**
  * The instant the limited card assignee can be woken again, or null when the
- * termination is not a short quota stop. Nothing is stored: the deadline is
- * recomputed from the owner session and its events on every tick.
+ * termination is not a short quota stop. Read only when entering limit-blocked;
+ * subsequent resume decisions use the persisted card reservation.
  */
 export async function readLimitAutoResumeAt(
-    sql: SqlClient,
+    sql: RepositorySql,
     owner: LimitResumeOwner,
 ): Promise<Date | null> {
     if (!isUsageLimitTermination(owner)) return null;

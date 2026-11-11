@@ -147,6 +147,8 @@ describe("card work dispatch transaction contracts", () => {
     await h.sql`INSERT INTO card_comments(id,card_id,author_kind,kind,body) VALUES
       (${`note-${cardId}`},${cardId},'agent','note','보존할 노트'),
       (${`comment-${cardId}`},${cardId},'user','spoken','보존할 커멘트')`;
+    await h.sql`UPDATE cards SET status='blocked',blocked_kind='limit',limit_resume_session_id=${oldId},limit_resume_at=NOW()+INTERVAL '1 hour',
+      now=${h.sql.json({text:"한도 뒤 저절로 이어집니다",turn:"outside"})} WHERE id=${cardId}`;
     const contentBefore=(await h.sql`SELECT number,items FROM cards WHERE id=${cardId}`)[0];
     const service = new CardWorkDispatchService({...stack.optionsForService,isNodeConnected:()=>true,
       validateTarget:async (target:any)=>target} as any);
@@ -170,6 +172,8 @@ describe("card work dispatch transaction contracts", () => {
       createdAt:now,updatedAt:now,callerSessionId:null,predecessorSessionId:null,modelPreset:"model-b",cardId});
     expect((await h.sql`SELECT assignee_session_id,node_id,model_preset,request FROM cards WHERE id=${cardId}`)[0])
       .toEqual({assignee_session_id:request.session_id,node_id:"node-b",model_preset:"model-b",request:"보존할 요청"});
+    expect((await h.sql`SELECT status,limit_resume_session_id,limit_resume_at,now FROM cards WHERE id=${cardId}`)[0])
+      .toMatchObject({status:"blocked",limit_resume_session_id:null,limit_resume_at:null,now:{text:"담당이 바뀌어 자동 재개 예약을 해제했습니다"}});
     expect((await h.sql`SELECT caller_session_id FROM sessions WHERE session_id=${childId}`)[0]!.caller_session_id).toBe(request.session_id);
     expect((await h.sql`SELECT caller_session_id FROM sessions WHERE session_id=${otherId}`)[0]!.caller_session_id).toBe(oldId);
     const op=(await h.sql`SELECT actor_session_id,payload_json FROM folder_operations WHERE target_id=${cardId} AND operation_type='update_card'`)[0]!;
