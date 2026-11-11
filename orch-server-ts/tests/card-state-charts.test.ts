@@ -10,6 +10,7 @@ it("커밋된 카드 그림 문서는 정의에서 다시 뽑은 글과 같다",
   }
   expect(result.charts[0]!.mermaid).not.toContain("card --> card:");
   expect(result.charts[2]!.mermaid).not.toContain("hole_holeOrphan");
-  expect(result.charts[2]!.mermaid).toContain("class qOrphan breaks");
+  expect(result.charts[2]!.mermaid).not.toContain("class qOrphan breaks");
+  expect(result.charts[2]!.events).toContain("WITHDRAW_AUTHOR");
   expect(result.charts[4]!.mermaid).not.toContain('as status {');
 },180000);

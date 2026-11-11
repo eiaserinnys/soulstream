@@ -1,3 +1,4 @@
+import { cardQuestionState } from "../cards/card_question_rules.js";
 import { readPersistentEnabled } from "@soulstream/wire-schema/persistent-session-settings";
 import {
   parsePersistentReportEntry, parsePersistentReportReply, readPersistentReport,
@@ -200,14 +201,15 @@ export class PersistentReportService {
   private async cardQuestionDecision(sql: RepositorySql, questionId: string, option: string): Promise<{ errors: PersistentReportIssue[] | null; decision: PersistentReportReplyDecision }> {
     const question = (await sql<CardQuestionRow[]>`SELECT card_id,options,answer,withdrawn_at FROM card_questions WHERE id=${questionId}`)[0];
     if (!question) return { errors: null, decision: { action: "none" } };
-    if (question.withdrawn_at !== null) return rejectDecision(question.card_id, "CARD_QUESTION_CLOSED", 409, "이미 닫힌 질문입니다");
-    if (question.answer !== null) return question.answer === option
+    const state = cardQuestionState(question);
+    if (state === "withdrawn") return rejectDecision(question.card_id, "CARD_QUESTION_CLOSED", 409, "이미 닫힌 질문입니다");
+    if (state === "answered") return question.answer === option
       ? { errors: null, decision: { action: "card-acked", cardId: question.card_id } }
       : rejectDecision(question.card_id, "CARD_QUESTION_CLOSED", 409, "이미 닫힌 질문입니다");
     const options = question.options ?? [];
     if (options.length > 0 && !options.includes(option)) return rejectDecision(question.card_id, "CARD_QUESTION_OPTION_INVALID", 422, "선택지에 없는 답입니다");
     const card = (await sql<{ status: string }[]>`SELECT status FROM cards WHERE id=${question.card_id}`)[0];
-    if (!card || card.status === "done" || card.status === "cancelled") return rejectDecision(question.card_id, "CARD_QUESTION_CLOSED", 409, "이미 닫힌 질문입니다");
+    if (!card) return rejectDecision(question.card_id, "CARD_QUESTION_CLOSED", 409, "이미 닫힌 질문입니다");
     return { errors: null, decision: { action: "card", cardId: question.card_id, questionId, option } };
   }
   /** 예약 key(`cq_` + 질문ID)를 다시 받았을 때. 장이 이미 내려가 있어도 질문 상태로 판정한다. */

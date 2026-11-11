@@ -204,11 +204,11 @@ describe("card question withdrawal", () => {
 
     await expect(withdraw({ ...input, actorSessionId: "other" })).rejects.toMatchObject({
       statusCode: 403,
-      message: "Only the current assignee session may withdraw a card question.",
+      message: "Only the question author or current assignee session may withdraw a card question.",
     });
     await expect(withdraw({ ...input, actorKind: "user", actorSessionId: null, actorUserId: "director" })).rejects.toMatchObject({
       statusCode: 403,
-      message: "Only the current assignee session may withdraw a card question.",
+      message: "Only the question author or current assignee session may withdraw a card question.",
     });
     await expect(withdraw({ ...input, reason: "  " })).rejects.toMatchObject({ statusCode: expect.any(Number) });
     await expect(withdraw({ ...input, reason: "가".repeat(201) })).rejects.toMatchObject({

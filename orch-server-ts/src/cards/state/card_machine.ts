@@ -11,7 +11,6 @@ const limited = any("originalLimited","originalLongLimited","replacedLimited");
 const open = not(at("qNone"));
 
 const off = at("off");
-const ended = any("done","cancelled");
 type Predicate=ReturnType<typeof stateIn>;
 const guards:Record<string,Predicate> = {
   always: and([]), unborn: at("uncreated"), session, live, open,
@@ -25,7 +24,8 @@ const guards:Record<string,Predicate> = {
   otherRemovedOne: at("pasFull"),
   canAskOther: any("aNone","aAgent","aHuman"),
   canWithdraw: and([session,open]),
-  boardAnswer: and([open,not(ended)]),
+  boardAnswer: open,
+  authorWithdraw: open,
   answerBlocked: and([open,at("question")]),
   humanResume: and([session,at("talk")]),
   shortLimit: and([at("running"),live]),
@@ -101,8 +101,8 @@ for (const event of ["ASK_OWNER","ASK_OTHER"]) {
     {guard:and([guards[guard]!,any("pasRoom","pasOne")]),target:"#ePresent",description:EVENT_LABELS[event],actions:["질문 장 올리기"]},
   ];
 }
-for (const event of ["ANSWER_DETAIL","ANSWER_BOARD","WITHDRAW"]) {
-  const guard=event==="WITHDRAW"?"canWithdraw":event==="ANSWER_BOARD"?"boardAnswer":"open";
+for (const event of ["ANSWER_DETAIL","ANSWER_BOARD","WITHDRAW","WITHDRAW_AUTHOR"]) {
+  const guard=event==="WITHDRAW"?"canWithdraw":event==="WITHDRAW_AUTHOR"?"authorWithdraw":event==="ANSWER_BOARD"?"boardAnswer":"open";
   put("question",event,"qNone",guard);put("questionEntry",event,"eNone",guard);
   on.status[event]=[{target:"#running",guard:and([guards[guard]!,at("question")]),description:EVENT_LABELS[event]}];
   on.cardEntry[event]=[
@@ -206,7 +206,7 @@ const local={
   queued:statusEvents("DISPATCH","ADMIT_DISPATCH","NOTE_MISSING"),
   running:statusEvents("SERVER_SHORT_LIMIT","SERVER_LONG_LIMIT","CREATE_FAIL"),
   talk:statusEvents("HUMAN_MESSAGE","HUMAN_COMMENT"),
-  question:statusEvents("ANSWER_DETAIL","ANSWER_BOARD","WITHDRAW"),
+  question:statusEvents("ANSWER_DETAIL","ANSWER_BOARD","WITHDRAW","WITHDRAW_AUTHOR"),
   limit:statusEvents("SERVER_LIVE_RESUME","SERVER_LIMIT_TIME","SERVER_LIMIT_RELAUNCH","SERVER_LIMIT_REQUEUE","ADMIT_LIMIT","ATTACHMENT_FAIL"),
   verification:statusEvents("WAKE_TIME","WAKE_FAIL"),
 };
@@ -238,7 +238,7 @@ export const cardMachine=setup({
       }},
       off:{id:"off",description:"내려감",initial:"hold",states:{hold:stateLeaf("hold",["unstarted","without-assignee","timeline"]),done:stateLeaf("done",["ended","timeline"]),cancelled:stateLeaf("cancelled",["ended","without-assignee","timeline"]) }},
     }},
-    question:{description:"열린 질문",initial:"none",on:on.question,states:{none:leaf("qNone","없음"),owner:leaf("qOwner","지금 담당이 올린 질문"),orphan:leaf("qOrphan","철회할 담당 세션이 없는 질문",["unnamed"]),other:leaf("qOther","옛 담당이 올린 질문")}},
+    question:{description:"열린 질문",initial:"none",on:on.question,states:{none:leaf("qNone","없음"),owner:leaf("qOwner","지금 담당이 올린 질문"),orphan:leaf("qOrphan","담당 없이 올린 질문"),other:leaf("qOther","옛 담당이 올린 질문")}},
     reservation:{description:"지금 담당을 깨울 예약",initial:"none",on:on.reservation,states:{none:leaf("rNone","없음"),verify:leaf("rVerify","카드에 적힌 검증 시각"),limit:leaf("rLimit","지금 담당의 짧은 한도 재개 시각")}},
     assignee:{description:"담당",initial:"none",on:on.assignee,states:{none:leaf("aNone","담당 없음"),agent:{...leaf("aAgent","에이전트만 정해짐"),initial:"idle",states:{idle:leaf("aAgentIdle","배정 전"),admitted:leaf("aAgentAdmitted","배정을 허가받고 첫 착수를 기다림",["unnamed"]) }},human:leaf("aHuman","사람"),originalLive:leaf("originalLive","원래 담당이 살아 있음"),originalEnded:leaf("originalEnded","원래 담당이 정상 종료"),originalLimited:leaf("originalLimited","원래 담당이 짧은 한도 종료"),originalLongLimited:leaf("originalLongLimited","원래 담당이 긴 한도 종료"),replacedLive:leaf("replacedLive","새 담당이 살아 있음"),replacedEnded:leaf("replacedEnded","새 담당이 정상 종료"),replacedLimited:leaf("replacedLimited","새 담당이 긴 한도 종료")}},
     // 걸음 2에서 판의 장을 구성에서 계산하는 출력으로 바꾸며 이 영역을 지운다.
