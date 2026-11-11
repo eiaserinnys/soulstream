@@ -14,6 +14,9 @@
   280 안팎(616x900)일 때도 제목 한 줄 말줄임과 단추 셋 한 줄을 확인한다.
 - iPad 가로(1210x834, ThreePaneLayout)의 전환 줄과 단독 보드 단추, 듀오 안쪽 세로 화면,
   제목을 넘기지 않는 검수 창 보드(boardConnected)는 변경 전후가 같다.
+- boardConnected 보드를 iPad 가로(1210x834)와 휴대폰 폭(390x844)에서도 캡처한다.
+  `--phase after`는 「검증 대기」 레인으로 스크롤해 그 레인의 카드와 머리 줄을 남기고,
+  `--phase before`는 그 단계를 건너뛴다.
 - 목록 칸 머리와 피드 머리의 높이, 전환 줄과 머리의 좌우 끝 좌표, 머리 안 버튼 목록,
   검색창 폭, 보드 머리 제목·단추 좌표, 메뉴 단추 모서리, 페이지 오류를 JSON으로 남긴다.
 
@@ -50,6 +53,7 @@ PREFIX = "/assets/ios-components/"
 PORTRAIT = ("ipad-portrait", 834, 1210)
 NARROW = ("ipad-narrow-pane", 616, 900)
 LANDSCAPE = ("ipad-landscape", 1210, 834)
+REVIEW_BOARD_FRAMES = (("review-board-wide", 1210, 834), ("review-board-phone", 390, 844))
 THEMES = ("light", "dark")
 DUO_QUERY = ("section=iphoneDuo&sample=main-layout&frame=inner-portrait"
              "&board=ops&overlay=card-with-chat&theme=light")
@@ -130,6 +134,16 @@ MEASURE_JS = r"""
     toggleExisting: box(byTestId('settings-segment-tablet-card-view-existing')),
     toggleBoard: box(byTestId('settings-segment-tablet-card-view-board')),
     boardFrame: box(byTestId('card-board-frame')),
+    boardScroll: (() => {
+      const board = byTestId('card-board');
+      return board ? {
+        left: Math.round(board.scrollLeft),
+        max: Math.round(board.scrollWidth - board.clientWidth),
+      } : null;
+    })(),
+    columns: [...document.querySelectorAll('[data-testid^="card-board-column-"]')].map((column) => ({
+      testId: column.dataset.testid, ...box(column),
+    })),
     boardOverflowButton: box(byTestId('board-header-overflow-button')),
     boardOverflowMenu: box(byTestId('board-header-overflow-menu')),
     cardTitleInput: box(titleInput),
@@ -665,27 +679,63 @@ def capture_duo(context: BrowserContext, base: str, out: Path, checks: Checks) -
     return {"url": url, "screenshot": screenshot, "metrics": metrics}
 
 
-def capture_review_board(context: BrowserContext, base: str, out: Path, checks: Checks) -> dict:
+def scroll_board_to_lane(page: Page, status: str) -> bool:
+    """보드를 가로로 스크롤해 해당 상태 레인을 화면 왼쪽에 맞춘다."""
+    return bool(page.evaluate("""(status) => {
+      const board = document.querySelector('[data-testid="card-board"]');
+      const column = document.querySelector(`[data-testid="card-board-column-${status}"]`);
+      if (!board || !column) return false;
+      const left = column.getBoundingClientRect().left - board.getBoundingClientRect().left + board.scrollLeft;
+      board.scrollLeft = Math.max(0, left);
+      return true;
+    }""", status))
+
+
+def capture_review_board(context: BrowserContext, base: str, out: Path, checks: Checks,
+                         frame_id: str = "review-board-connected", width: int = 834,
+                         height: int = 1210, phase: str = "after") -> dict:
     page, errors = open_page(context, base)
     url = review_board_url(base)
     page.goto(url, wait_until="load")
     settle(page, "card-board-frame")
     metrics = measure(page)
-    screenshot = shot(page, out, "review-board-connected-light", 834, 1210)
-    checks.check("검수 창 보드 본문 표시",
+    states = {"url": url,
+              "default": {"screenshot": shot(page, out, f"{frame_id}-light", width, height),
+                          "metrics": metrics}}
+    checks.check(f"{frame_id} 보드 본문 표시",
                  metrics["boardFrame"] is not None and metrics["boardFrame"]["visible"],
                  metrics["boardFrame"])
-    checks.check("검수 창 보드는 제목을 넘기지 않는다",
+    checks.check(f"{frame_id} 보드는 제목을 넘기지 않는다",
                  metrics["boardHeadingTitle"] is None, metrics["boardHeadingTitle"])
-    checks.check("검수 창 보드 페이지 오류 없음", not errors, errors)
+    if phase == "after":
+        found = scroll_board_to_lane(page, "awaiting_verification")
+        page.wait_for_timeout(700)
+        scrolled = measure(page)
+        states["awaiting"] = {"screenshot": shot(page, out, f"{frame_id}-awaiting-light", width, height),
+                              "metrics": scrolled}
+        lane = next((column for column in scrolled["columns"]
+                     if column["testId"] == "card-board-column-awaiting_verification"), None)
+        checks.check(f"{frame_id} 검증 대기 레인 표시",
+                     found and lane is not None and lane["visible"], lane)
+        checks.check(f"{frame_id} 검증 대기 레인으로 스크롤",
+                     lane is not None and scrolled["boardFrame"] is not None
+                     and lane["left"] >= scrolled["boardFrame"]["left"] - 2
+                     and lane["right"] <= scrolled["boardFrame"]["right"] + 2,
+                     {"lane": lane and {"left": lane["left"], "right": lane["right"]},
+                      "board": scrolled["boardFrame"] and {
+                          "left": scrolled["boardFrame"]["left"],
+                          "right": scrolled["boardFrame"]["right"]}})
+    checks.check(f"{frame_id} 페이지 오류 없음", not errors, errors)
     page.close()
-    return {"url": url, "screenshot": screenshot, "metrics": metrics}
+    return states
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bundle", required=True, help="ios-components 번들 디렉토리")
     parser.add_argument("--out", required=True, help="캡처와 JSON을 저장할 디렉토리")
+    parser.add_argument("--phase", choices=("before", "after"), default="after",
+                        help="before는 검증 대기 레인 캡처를 건너뛴다")
     args = parser.parse_args()
 
     bundle_root = Path(args.bundle).resolve()
@@ -733,8 +783,17 @@ def main() -> int:
                     )
                     context.add_cookies([{"name": "review", "value": "fixture", "url": base}])
                     result["frames"]["review-board-connected"] = capture_review_board(
-                        context, base, out, checks)
+                        context, base, out, checks, phase=args.phase)
                     context.close()
+                    for frame_id, width, height in REVIEW_BOARD_FRAMES:
+                        context = browser.new_context(
+                            viewport={"width": width, "height": height},
+                            device_scale_factor=2,
+                        )
+                        context.add_cookies([{"name": "review", "value": "fixture", "url": base}])
+                        result["frames"][frame_id] = capture_review_board(
+                            context, base, out, checks, frame_id, width, height, args.phase)
+                        context.close()
                     context = browser.new_context(
                         viewport={"width": PORTRAIT[1], "height": PORTRAIT[2]},
                         device_scale_factor=2,

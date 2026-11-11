@@ -163,6 +163,13 @@ test('질문 알림이 없는 항목 카드는 확인 항목을 기본으로 연
   expect(screen.queryByTestId('card-timeline')).toBeNull();
   screen.unmount();
 });
+test('검증 대기 카드의 상세 제목 상태 글은 「검증 대기」다', async () => {
+  const awaiting = { ...detail, card: { ...card, status: 'awaiting_verification' as const, blockedKind: null, blockedDetail: null } };
+  const screen = render(<CardDetailContent api={{ getCard: jest.fn().mockResolvedValue(awaiting) } as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByTestId('card-detail-title')).toBeTruthy());
+  expect(screen.getByText('검증 대기')).toBeTruthy();
+});
+
 test('제목과 양 끝 단추가 내용 끝선에 맞는 스타일을 쓴다', async () => {
   const api = { getCard: jest.fn().mockResolvedValue(detail) };
   const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);

@@ -1,13 +1,14 @@
 import { cardFixture } from '../../test-support/cards';
 import { groupPersistentSessionTasks } from '../persistent-session-tasks';
 
-test('작업 목록은 다섯 활성 상태만 보드 순서와 보드 라벨로 묶는다', () => {
+test('작업 목록은 여섯 활성 상태만 보드 순서와 보드 라벨로 묶는다', () => {
   const cards = [
     cardFixture({ id: 'todo', status: 'todo' }),
     cardFixture({ id: 'queued', status: 'queued' }),
     cardFixture({ id: 'review', status: 'review' }),
     cardFixture({ id: 'running', status: 'running' }),
     cardFixture({ id: 'blocked', status: 'blocked' }),
+    cardFixture({ id: 'awaiting', status: 'awaiting_verification' }),
     cardFixture({ id: 'done', status: 'done' }),
     cardFixture({ id: 'cancelled', status: 'cancelled' }),
   ];
@@ -15,12 +16,13 @@ test('작업 목록은 다섯 활성 상태만 보드 순서와 보드 라벨로
   expect(groupPersistentSessionTasks(cards).map(({ status, label }) => [status, label])).toEqual([
     ['running', '실행 중'],
     ['blocked', '막힘'],
+    ['awaiting_verification', '검증 대기'],
     ['review', '검수 대기'],
     ['queued', '대기'],
     ['todo', '드래프트'],
   ]);
   expect(groupPersistentSessionTasks(cards).flatMap((group) => group.cards.map((card) => card.id))).toEqual([
-    'running', 'blocked', 'review', 'queued', 'todo',
+    'running', 'blocked', 'awaiting', 'review', 'queued', 'todo',
   ]);
 });
 

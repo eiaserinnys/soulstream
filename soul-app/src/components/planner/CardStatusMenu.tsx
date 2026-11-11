@@ -4,7 +4,7 @@ import { ActivityIndicator, ScrollView, Text, View } from 'react-native';
 import type { ApiClient } from '../../api/client';
 import type { CardDetail, CardDto, CardStatus } from '../../api/cardTypes';
 import { captureAuthScope } from '../../lib/auth-scope';
-import { BOARD_COLUMNS } from '../../lib/card-board-layout';
+import { MANUAL_STATUS_COLUMNS } from '../../lib/card-board-layout';
 import { cardTransitionProblem } from '../../lib/card-transition';
 import { cardOperationId, useCardActions } from '../../hooks/useCardActions';
 import { useCardTransition } from '../../hooks/useCardTransition';
@@ -118,7 +118,7 @@ export function CardStatusMenu({ api, card, onClose, entry = 'status', visible =
       </> : <>
         {detail ? <GlassButton accessibilityLabel={`카드 색상: ${CARD_COLORS[currentColor].name}`} disabled={mutationPending}
           onPress={() => setColorSelection(true)}><Text style={styles.body}>카드 색상: {CARD_COLORS[currentColor].name}</Text></GlassButton> : null}
-        {detail ? BOARD_COLUMNS.map(([next, label]) => {
+        {detail ? MANUAL_STATUS_COLUMNS.map(([next, label]) => {
           const problem = cardTransitionProblem(detail, next);
           return <View key={next} style={{ gap: t.uiSpacing.xs }}>
             <GlassButton accessibilityLabel={`${label}로 이동`} disabled={mutationPending || !!problem} onPress={() => { void move(next); }}>

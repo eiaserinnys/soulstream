@@ -117,6 +117,7 @@ test.each(['카드 상세', '담당 상세'])('직접 완료 카드의 실제 %s
   expect(actions.map((action: { label: string }) => action.label)).toEqual([
     '카드 ID 복사', '카드 색상 변경', '드래프트', '대기', '실행 중', '막힘', '검수 대기', '보류', '완료', '취소',
   ]);
+  expect(actions.map((action: { label: string }) => action.label)).not.toContain('검증 대기');
   expect(api.getCard).not.toHaveBeenCalled();
   expect(api.updateCard).not.toHaveBeenCalled();
   expect(api.setCardStatus).not.toHaveBeenCalled();

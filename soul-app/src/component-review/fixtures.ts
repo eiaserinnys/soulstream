@@ -68,7 +68,7 @@ export function makeCard(status: CardStatus): CardDto {
     assigneeUserId: null, nodeId: null, modelPreset: '예시 모델',
     archived: false, version: 1, createdAt: time, updatedAt: time,completedAt:status==='done'?new Date().toISOString():null };
 }
-export const initialCards = (['todo', 'queued', 'running', 'blocked', 'review', 'on_hold', 'done', 'cancelled'] as const).map(makeCard);
+export const initialCards = (['todo', 'queued', 'running', 'blocked', 'awaiting_verification', 'review', 'on_hold', 'done', 'cancelled'] as const).map(makeCard);
 /** 데일리 보드 캡처용 운영 형태 카드. 여러 열에 카드가 세 장 이상이고 제목이 길며 진행 표시가 있다. */
 export type BoardFixture = 'ops' | 'review-last';
 function boardFixtureItem(id: number, title: string, display: CardCheckItem['display']): CardCheckItem {
@@ -106,6 +106,11 @@ const boardFixtureTitles: Record<string, [string, CardCheckItem['display']][]> =
     ['실행 중 카드 둘: 보고 본문이 두 줄로 표시되고 카드 높이가 유지되는지 확인하는 긴 제목', 'reported'],
     ['실행 중 카드 셋: 확인 항목 진행 표시가 카드 폭 안에서 줄바꿈되는지 확인합니다', 'doing'],
   ],
+  awaiting_verification: [
+    ['검증 대기 카드 하나: 담당이 스스로 다시 확인하는 카드가 실행 중과 막힘 사이에 표시되는지 확인합니다', 'doing'],
+    ['검증 대기 카드 둘: 기다리는 대상과 다시 확인할 시각이 카드 본문 한 줄에 들어가는지 보는 긴 제목', 'reported'],
+    ['검증 대기 카드 셋: 확인 항목 진행 표시와 카드 높이가 그대로인지 확인합니다', 'doing'],
+  ],
   review: [
     ['검수 대기 카드 하나: 사이드바 왼쪽 경계에서 열이 멈추는지 확인하는 운영 형태의 긴 제목', 'reported'],
     ['검수 대기 카드 둘: 확인 항목이 여러 개일 때 진행 표시와 카드 높이를 확인합니다', 'reported'],
@@ -118,7 +123,7 @@ const boardFixtureTitles: Record<string, [string, CardCheckItem['display']][]> =
   ],
 };
 export function boardFixtureCards(fixture: BoardFixture): CardDto[] {
-  const statuses: CardStatus[] = fixture === 'review-last' ? ['todo', 'queued', 'running', 'review'] : ['todo', 'queued', 'running', 'review', 'on_hold'];
+  const statuses: CardStatus[] = fixture === 'review-last' ? ['todo', 'queued', 'running', 'review'] : ['todo', 'queued', 'running', 'awaiting_verification', 'review', 'on_hold'];
   return statuses.flatMap((status) => (boardFixtureTitles[status] ?? [])
     .map(([title, display], index) => boardFixtureCard(status, index + 1, title,
       [boardFixtureItem(1, '확인 항목 하나: 결과와 진행 표시를 함께 봅니다', display),

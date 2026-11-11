@@ -57,6 +57,16 @@ test('menu failure stays visible, successful explicit move closes only after sav
   expect(api.setCardStatus).toHaveBeenCalled();
  });
 
+test('검증 대기는 손으로 옮기는 상태 목록에 넣지 않는다', async () => {
+  const card = cardFixture({ status: 'review' });
+  const api = { getCard: jest.fn().mockResolvedValue({ card, reports: [], questions: [], sessions: [] }), setCardStatus: jest.fn() };
+  const screen = render(<CardStatusMenu api={api as any} card={card} onClose={() => {}} />);
+  await waitFor(() => expect(screen.getByLabelText('검수 대기로 이동')).toBeTruthy());
+  expect(screen.queryByLabelText('검증 대기로 이동')).toBeNull();
+  expect(screen.getByLabelText('막힘로 이동')).toBeTruthy();
+  expect(screen.getByLabelText('보류로 이동')).toBeTruthy();
+});
+
 test('상태 목록에서 보류를 선택해 카드 상태를 저장한다', async () => {
   const card = cardFixture({ status: 'review', version: 5 });
   const api = { getCard: jest.fn().mockResolvedValue({ card, reports: [], questions: [], sessions: [] }),

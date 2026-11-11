@@ -2,7 +2,7 @@ import type { CardDto, CardStatus } from '../api/cardTypes';
 import { CARD_STATUS_LABEL } from './card-presentation';
 import { BOARD_COLUMNS } from './card-board-layout';
 
-export const PERSISTENT_SESSION_TASK_STATUSES = ['running', 'blocked', 'review', 'queued', 'todo'] as const;
+export const PERSISTENT_SESSION_TASK_STATUSES = ['running', 'blocked', 'awaiting_verification', 'review', 'queued', 'todo'] as const;
 export type PersistentSessionTaskStatus = typeof PERSISTENT_SESSION_TASK_STATUSES[number];
 
 export interface PersistentSessionTaskGroup {
