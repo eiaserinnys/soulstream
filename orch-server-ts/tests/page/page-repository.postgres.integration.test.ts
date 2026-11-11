@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createLiveDbSqlResolver } from "../../src/runtime/live_db_sql.js";
@@ -150,6 +152,56 @@ describe("PageRepository PostgreSQL replica integration", () => {
       SELECT COUNT(*)::int AS count FROM pages WHERE id = 'page-2'
     `;
     expect(rolledBackPage).toBe(0);
+  });
+  it("stores and updates a long real source block with matching snapshot", async () => {
+    const initialText = await readFile(
+      new URL("../../src/page/page_repository.ts", import.meta.url),
+      "utf8",
+    );
+    const updatedText = await readFile(
+      new URL("../../src/page/page_repository_projection.ts", import.meta.url),
+      "utf8",
+    );
+    expect(initialText.length).toBeGreaterThan(2704);
+    expect(updatedText.length).toBeGreaterThan(2704);
+    const documentName = "page:page-long-source";
+    const initialSnapshot = new TextEncoder().encode("long-source-initial");
+    const updatedSnapshot = new TextEncoder().encode("long-source-updated");
+    const longReplica = (text: string) => ({
+      page: { ...replica.page, id: "page-long-source", title: "Long source" },
+      blocks: [{
+        id: "long-source-block",
+        parentId: null,
+        positionKey: "a",
+        type: "paragraph",
+        text,
+        textDelta: [{ insert: text }],
+        properties: {},
+        collapsed: false,
+      }],
+    });
+
+    await expect(repository.storePageYjsState({
+      documentName,
+      snapshot: initialSnapshot,
+      replica: longReplica(initialText),
+    })).resolves.toBeUndefined();
+    const [initialRow] = await sql<readonly { text_plain: string }[]>`
+      SELECT text_plain FROM blocks WHERE id = 'long-source-block'
+    `;
+    expect(initialRow?.text_plain).toBe(initialText);
+    await expect(repository.getPageYjsSnapshot(documentName)).resolves.toEqual(initialSnapshot);
+
+    await expect(repository.storePageYjsState({
+      documentName,
+      snapshot: updatedSnapshot,
+      replica: longReplica(updatedText),
+    })).resolves.toBeUndefined();
+    const [updatedRow] = await sql<readonly { text_plain: string }[]>`
+      SELECT text_plain FROM blocks WHERE id = 'long-source-block'
+    `;
+    expect(updatedRow?.text_plain).toBe(updatedText);
+    await expect(repository.getPageYjsSnapshot(documentName)).resolves.toEqual(updatedSnapshot);
   });
   it("prunes only omitted blocks in the selected page, including an empty replica", async () => {
     const selected = {
