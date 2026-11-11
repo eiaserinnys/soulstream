@@ -42,3 +42,12 @@ it('writes the replacement notice when registered replacement clears a limit res
  expect(writes).toHaveLength(1);
  expect(writes[0]!.fields).toMatchObject({assignee_session_id:'new-owner',limit_resume_session_id:null,limit_resume_at:null,now:notice});
 });
+it('preserves the eligible caller claim during bulk status changes',()=>{
+ const r={...row,status:'todo',assignee_kind:'agent',assignee_agent_id:'worker',assignee_session_id:null};
+ const actor={kind:'agent',sessionId:'candidate'},command={type:'BULK_SET_STATUS' as const,status:'queued'};
+ const result=decideCardTransition(r,[],{claim:true,ownerState:'missing'},command,actor,0);
+ expect(result.kind).toBe('apply');expect(result.next.assignee).toBe('session');
+ const writes=decodeCardDecision(result,{card:r,command,actor,now:new Date(0),eventId:1,queuePosition:'Q'});
+ expect(writes).toHaveLength(1);
+ expect(writes[0]!.fields).toMatchObject({status:'queued',assignee_kind:'session',assignee_session_id:'candidate',assignee_agent_id:null});
+});

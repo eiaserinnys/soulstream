@@ -12,11 +12,14 @@ it('pins every command to an existing operational function',async()=>{
 const decisionImport=/(?:from\s*|import\s*(?:\(\s*)?)["'][^"']*(?:cards\/)?state\/card_(?:decision|state_value|write_intent|machine)/;
 it('keeps the decision module disconnected from runtime in PR 1b',async()=>{
  const files=execFileSync('rg',['--files','src','-g','*.ts'],{cwd:new URL('../',import.meta.url),encoding:'utf8'}).trim().split('\n');
+ const writers:string[]=[];
  for(const file of files){
  if(file.startsWith('src/cards/state/'))continue;
  const source=await readFile(new URL(`../${file}`,import.meta.url),'utf8');
  expect(source,file).not.toMatch(decisionImport);
+ for(const match of source.matchAll(/\b(INSERT\s+INTO|UPDATE)\s+cards\b/g))writers.push(`${file.slice(4)}:${match[1]!.startsWith('INSERT')?'INSERT':'UPDATE'}`);
  }
+ expect(writers.sort()).toEqual([...CARD_RUNTIME_SQL_WRITERS].sort());
 });
 
 it('keeps world transition memoization valid for static symbolic actions',()=>{

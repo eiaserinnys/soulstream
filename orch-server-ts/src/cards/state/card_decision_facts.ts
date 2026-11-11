@@ -19,7 +19,7 @@ export const CARD_FACT_VALUES={
  RESUME_SHORT_LIMIT:{sessionMatch:flag,due:flag,resumeTimeMatch:flag,pending:flag},
  RESUME_LONG_LIMIT:{sessionMatch:flag,pending:flag,policyEnabled:flag,hasAdmission:flag,admission},
  RESUME_VERIFICATION:{sessionMatch:flag,verificationTimeMatch:flag},NOTE_MISSING:{},
- BULK_SET_STATUS:{target:['todo','queued','hold','cancelled'] as const,ownerState:['missing','running','initializing','idle'] as const},
+ BULK_SET_STATUS:{target:['todo','queued','hold','cancelled'] as const,ownerState:['missing','running','initializing','idle'] as const,claim:flag},
  MERGE_SOURCE:{pending:flag},UPDATE_UNSTARTED:{pending:flag,hasAgentInput:flag},
  SAVE_EXECUTION_SETTINGS:{assigneeInput:['none','agent'] as const,pending:flag,assignmentChanged:flag,hasNow:flag,move:flag},
  PATCH_CARD_CONTROL:{hasArchiveInput:flag,assignmentChanged:flag,nextArchived:flag,hasNow:flag,hasAssignment:flag,assigneeInput:['none','agent','human','session'] as const},

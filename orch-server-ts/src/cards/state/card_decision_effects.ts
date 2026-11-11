@@ -70,7 +70,7 @@ for(const c of ['ANSWER_QUESTION','WITHDRAW_QUESTION'] as const){
  write({withdrawn_at:bind('clock'),withdrawn_by_session_id:bind('actor.session'),withdrawal_reason:bind('command.reason.trimmed')},'question','questionWithdraw'));
 }
 for(const c of ['HUMAN_INPUT','ADD_COMMENT'] as const)put('question',c,'q_none',[c==='HUMAN_INPUT'?'humanResumable':'commentResumable'],[write({withdrawn_at:bind('clock'),withdrawn_by_session_id:literal(null),withdrawal_reason:literal(c==='HUMAN_INPUT'?'사용자 메시지로 작업이 재개되어 서버가 닫았습니다':'사용자가 커멘트로 답해 서버가 닫았습니다')},'questions','closeQuestions')]);
-for(const c of ['SET_STATUS','REQUEST_REVIEW','START_WORK','CLAIM'] as const)put('assignee',c,'a_session',['claiming'],claim());
+for(const c of ['SET_STATUS','BULK_SET_STATUS','REQUEST_REVIEW','START_WORK','CLAIM'] as const)put('assignee',c,'a_session',['claiming'],claim());
 put('assignee','ADD_COMMENT','a_session',['claiming',fact('reply')],claim('claim'));
 put('assignee','START_WORK','a_session',[fact('admitted')],claim());
 put('assignee','CONFIRM_EXECUTION','a_session',[],[mark('writeAssignee'),write({assignee_session_id:bind('command.sessionId'),assignee_agent_id:literal(null)})]);
