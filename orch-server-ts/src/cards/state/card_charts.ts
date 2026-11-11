@@ -10,7 +10,7 @@ const groups={...MEMORY_CHART_GROUPS,"free-move":{from:"status",to:"status",labe
 const plans:CardChartPlan[]=[
   {id:"01-overview",title:"전체: 상태와 함께 움직이는 기억",explanation:"카드 상태는 계층으로, 질문·예약·담당·판의 장은 나란한 영역으로 읽는다. 접힌 상자의 빨강은 그 아래에 약속을 어기는 구성이 도달한다는 뜻이다.",
     events:[freeMove,"ASK_OWNER","ASK_OTHER","HUMAN_MESSAGE","SERVER_SHORT_LIMIT","SERVER_LIVE_RESUME","SERVER_LIMIT_RELAUNCH","WAKE_TIME","REQUEST_REVIEW"],
-    holes:["holeCardMissing","holeQuestionMissing","holeQuestionOff","holeOrphan","holeChangedLimitOwner"],
+    holes:["holeCardMissing","holeQuestionMissing","holeQuestionOff","holeChangedLimitOwner"],
     spec:{include:["card"],hide:["uncreated"],collapse:["ready","talk","silent","off","card.question","card.reservation","card.assignee","card.questionEntry","card.cardEntry","card.pasBoard","card.limitedOwner"]}},
   {id:"02-status",title:"카드 상태: 같은 기다림에서 물려받는 규칙",explanation:"말로 풀리는 기다림의 세 자식은 디렉터가 말하면 재개하는 규칙을 함께 물려받는다. 자유 이동 하나가 모든 잎 상태의 직접 이동을 대표한다.",
     events:[freeMove,"ASK_OWNER","HUMAN_MESSAGE","SERVER_SHORT_LIMIT","SERVER_LIVE_RESUME","SERVER_LIMIT_RELAUNCH","WAKE_TIME","WAKE_FAIL","REQUEST_REVIEW","ANSWER_DETAIL"],
@@ -18,17 +18,40 @@ const plans:CardChartPlan[]=[
     spec:{include:["status"],hide:["uncreated"]}},
   {id:"03-question",title:"질문: 기록은 열려 있어도 판의 장은 사라진다",explanation:"질문 한 개의 열림과 판에 저장된 질문 장은 별개의 기억이다. 완료·취소에서 늦게 답할 때 카드 상세와 감독 판의 결과가 다르고, 담당 없는 질문은 올린 세션도 철회하지 못한다.",
     events:[freeMove,"HUMAN_MOVE_hold","HUMAN_MOVE_done","ASK_OWNER","ASK_OTHER","ANSWER_DETAIL","ANSWER_BOARD","WITHDRAW","HUMAN_MESSAGE"],
-    holes:["holeQuestionMissing","holeQuestionOff","holeOrphan"],
+    holes:["holeQuestionMissing","holeQuestionOff"],
     spec:{include:["status","card.question","card.questionEntry","card.assignee","card.pasBoard"],hide:["uncreated"],collapse:["on","off","card.assignee","card.pasBoard"]}},
   {id:"04-limit-owner",title:"한도: 지금 담당의 예약과 한도 당시 담당은 다르다",explanation:"예약은 지금 담당의 종료 이력에서 계산한다. 담당을 바꾸면 예약은 없어지지만, 한도 당시 담당 이력은 다르다고 남는다. 빨간 두 서버 전이가 그 구멍에서 실행 중으로 나간다.",
     events:["SERVER_SHORT_LIMIT","REPLACE_LIVE","REPLACE_LIMITED","SERVER_LIVE_RESUME","SERVER_LIMIT_RELAUNCH"],
     holes:["holeChangedLimitOwner"],
     spec:{include:["status","card.reservation","card.assignee","card.limitedOwner"],hide:["uncreated","rVerify","aNone","aAgent","aHuman","originalEnded","replacedEnded","lSameLong","lDifferentLong"],collapse:["ready","talk","off","review"]}},
   {id:"05-board",title:"판: 다른 장 수와 이 카드의 장을 따로 센다",explanation:"환경은 다른 장이 10장 이하·11장·12장인 세 단계다. 이 카드의 카드 장을 먼저 내린 뒤 질문 장을 올리므로, 다른 장이 11장이면 교체할 한 자리가 남는다. 다른 장이 12장이면 새 장을 버리며, 이후 빈자리가 나도 질문 장을 복구하지 않는다.",
-    events:[freeMove,"HUMAN_MOVE_review","ASK_OWNER","ANSWER_DETAIL","BOARD_ONE","BOARD_FULL","BOARD_ROOM","BOARD_OTHER_REMOVED"],
-    holes:["holeCardMissing","holeQuestionMissing"],
-    spec:{include:["status","card.cardEntry","card.questionEntry","card.pasBoard"],hide:["uncreated"],collapse:["on","off"]}},
+    events:["HUMAN_MOVE_review","ASK_OWNER","ANSWER_DETAIL","BOARD_ONE","BOARD_FULL","BOARD_ROOM","BOARD_OTHER_REMOVED"],
+    holes:[],
+    spec:{include:["card.cardEntry","card.questionEntry","card.pasBoard"]}},
 ];
+
+// View-only containers: the generated states retain their identities and nesting.
+// Parallel columns match the hand-drawn overview; LR stacks disconnected memory
+// regions vertically in the statechart renderer. No semantic edge is added.
+function overviewColumns(mermaid:string) {
+  const lines=mermaid.split("\n");
+  const start=lines.findIndex(line=>line.startsWith('    state "열린 질문"'));
+  const end=lines.indexOf("}");
+  return [...lines.slice(0,start),"    --",'    state "카드 상태와 동시에 움직이는 기억" as overviewMemory {',"        direction LR",
+    ...lines.slice(start,end).filter(line=>!line.trimStart().startsWith("status -->")).map(line=>`    ${line}`),"    }",
+    ...lines.slice(start,end).filter(line=>line.trimStart().startsWith("status -->")),...lines.slice(end)].join("\n");
+}
+
+function questionColumns(mermaid:string) {
+  const lines=mermaid.split("\n");
+  const start=lines.findIndex(line=>line.startsWith('state "'));
+  let end=start,depth=0;
+  do {if(lines[end]!.endsWith("{"))depth++;if(lines[end]!.trim()==="}")depth--;end++;}while(depth>0);
+  const tail=lines.findIndex((line,index)=>index>=end&&/^(\w+ -->|class )/.test(line));
+  return [...lines.slice(0,start),'state "질문의 상태와 기억" as questionView {',"    direction TB",
+    ...lines.slice(start,end).map(line=>`    ${line}`),"    --",'    state "동시에 움직이는 질문과 판의 기억" as questionMemory {',"        direction LR",
+    ...lines.slice(end,tail).map(line=>`        ${line}`),"    }","}",...lines.slice(tail)].join("\n");
+}
 
 export function renderCardCharts(report:CardPromiseReport) {
   return plans.map(plan=>{
@@ -51,16 +74,25 @@ export function renderCardCharts(report:CardPromiseReport) {
       }
     for(const [key,numbers] of groupMarks) projectedGroups[key]!.label+=` (어긋남 ${[...numbers].sort((a,b)=>a-b).join(", ")})`;
     if(plan.id==="01-overview") {
-      const numbers=new Set<number>();
-      for(const [key,marks] of groupMarks)if(key.startsWith("memory-")) marks.forEach(n=>numbers.add(n));
-      const note=numbers.size?` (어긋남 ${[...numbers].sort((a,b)=>a-b).join(", ")})`:"";
+      // The overview lists the parallel memories; their writes are shown in
+      // detail charts, rather than an uninformative loop around the whole card.
       for(const key of Object.keys(projectedGroups))if(key.startsWith("memory-"))
-        projectedGroups[key]={from:"card",to:"card",label:`사건에 따라 딸린 기억도 바뀐다${note}`};
+        projectedGroups[key]={from:"uncreated",to:"uncreated",label:projectedGroups[key]!.label};
+    }
+    const states=[...report.marks.states];
+    if(report.holes.some(h=>h.id==="holeOrphan"&&h.reachable))states.push("qOrphan");
+    if(plan.id==="05-board") {
+      if(report.holes.some(h=>h.id==="holeCardMissing"&&h.reachable))states.push("cNone");
+      if(report.holes.some(h=>h.id==="holeQuestionMissing"&&h.reachable))states.push("eNone");
     }
     const spec:ChartSpec={...plan.spec,groups:projectedGroups,parallel:"stack",
       hideEvents:CARD_EVENTS.filter(e=>!events.has(e.type)).map(e=>e.type),
-      marks:report.marks,holes};
-    return {...plan,...toMermaid(cardMachine.root,spec)};
+      marks:{...report.marks,states},holes};
+    const rendered=toMermaid(cardMachine.root,spec);
+    if(plan.id==="01-overview")rendered.mermaid=overviewColumns(rendered.mermaid);
+    if(plan.id==="03-question")rendered.mermaid=questionColumns(rendered.mermaid);
+    if(plan.id==="05-board")rendered.mermaid=rendered.mermaid.replace("direction TB","direction LR");
+    return {...plan,...rendered};
   });
 }
 

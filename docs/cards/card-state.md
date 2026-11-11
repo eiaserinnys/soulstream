@@ -39,30 +39,32 @@ state "현행 카드 규칙 (운영 코드와 대조할 모형)" as card {
         }
         state "내려감" as off
     }
-    state "열린 질문" as card_question
-    state "지금 담당을 깨울 예약" as card_reservation
-    state "담당" as card_assignee
-    state "감독 판의 질문 장 (현행 코드의 기억)" as card_questionEntry
-    state "감독 판의 카드 장 (현행 코드의 기억, 걸음 2에서 계산 출력으로 바꿈)" as card_cardEntry
-    state "감독 PAS와 이 카드의 것이 아닌 장의 수 (환경)" as card_pasBoard
-    state "한도에 걸린 담당. 지금 DB에 칸이 없는 이력 값. 약속 검사용이고 걸음 2에서 카드 칸이 된다" as card_limitedOwner
+    --
+    state "카드 상태와 동시에 움직이는 기억" as overviewMemory {
+        direction LR
+        state "열린 질문" as card_question
+        state "지금 담당을 깨울 예약" as card_reservation
+        state "담당" as card_assignee
+        state "감독 판의 질문 장 (현행 코드의 기억)" as card_questionEntry
+        state "감독 판의 카드 장 (현행 코드의 기억, 걸음 2에서 계산 출력으로 바꿈)" as card_cardEntry
+        state "감독 PAS와 이 카드의 것이 아닌 장의 수 (환경)" as card_pasBoard
+        state "한도에 걸린 담당. 지금 DB에 칸이 없는 이력 값. 약속 검사용이고 걸음 2에서 카드 칸이 된다" as card_limitedOwner
+    }
     status --> status: 디렉터와 담당은 상태를 직접 옮긴다 [담당 권한 안에서] (어긋남 7)
-    status --> card_question: 다른 에이전트가 질문을 올린다 [담당 세션 없음]
 }
 status --> talk: 담당이 질문을 올린다 (어긋남 1, 7)
 status --> talk: 다른 에이전트가 질문을 올린다 [담당 세션 없음] (어긋남 8, 1, 7)
 status --> silent: 담당이 검수를 요청한다 (어긋남 1, 7)
-card --> card: 사건에 따라 딸린 기억도 바뀐다 (어긋남 1, 2, 7, 8)
 status --> hole_holeCardMissing: 담당이 검수를 요청한다
 status --> hole_holeQuestionMissing: 다른 에이전트가 질문을 올린다 [담당 세션 없음]
+class card_question breaks
 class hole_holeCardMissing breaks
 class hole_holeQuestionMissing breaks
 class off breaks
-class card_question breaks
 class silent breaks
 ```
 
-화살표 13개. 남긴 사건: 디렉터가 실행 중으로 옮긴다 / 담당이 질문을 올린다 / 다른 에이전트가 질문을 올린다 [담당 세션 없음] / 디렉터가 담당에게 말한다 [말로 풀리는 기다림] / 담당이 짧은 한도로 끝난다 / 서버가 이어간다 [담당 세션이 끝나지 않음] / 서버가 다시 띄운다 [예약 없이 한도가 풀림] / 서버가 깨운다 [검증 시각이 됨] / 담당이 검수를 요청한다. 나머지 사건은 아래 전체 표에서 확인한다.
+화살표 11개. 남긴 사건: 디렉터가 실행 중으로 옮긴다 / 담당이 질문을 올린다 / 다른 에이전트가 질문을 올린다 [담당 세션 없음] / 디렉터가 담당에게 말한다 [말로 풀리는 기다림] / 담당이 짧은 한도로 끝난다 / 서버가 이어간다 [담당 세션이 끝나지 않음] / 서버가 다시 띄운다 [예약 없이 한도가 풀림] / 서버가 깨운다 [검증 시각이 됨] / 담당이 검수를 요청한다. 나머지 사건은 아래 전체 표에서 확인한다.
 
 ## 카드 상태: 같은 기다림에서 물려받는 규칙
 
@@ -142,43 +144,48 @@ stateDiagram-v2
 direction TB
 classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
 classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
-state "카드 상태" as status {
+state "질문의 상태와 기억" as questionView {
     direction TB
-    state "판 위" as on
-    state "내려감" as off
+    state "카드 상태" as status {
+        direction TB
+        state "판 위" as on
+        state "내려감" as off
+    }
+    --
+    state "동시에 움직이는 질문과 판의 기억" as questionMemory {
+        direction LR
+        state "열린 질문" as card_question {
+            direction TB
+            state "없음" as qNone
+            state "지금 담당이 올린 질문" as qOwner
+            state "철회할 담당 세션이 없는 질문 *" as qOrphan
+            state "옛 담당이 올린 질문" as qOther
+            qNone --> qOwner: 담당이 질문을 올린다 (어긋남 1, 7)
+            qNone --> qOrphan: 다른 세션이 질문한다 [담당 세션 없음] (어긋남 1, 7, 8)
+        }
+        state "감독 판의 질문 장 (현행 코드의 기억)" as card_questionEntry {
+            direction TB
+            state "질문 장 없음" as eNone
+            state "질문 장 있음" as ePresent
+            eNone --> ePresent: 질문을 올리거나 보류에서 돌아옴 [빈자리 있음] (어긋남 8)
+            ePresent --> eNone: 답·철회·카드 내림으로 장을 지운다 (어긋남 1, 4)
+        }
+        state "담당" as card_assignee
+        state "감독 PAS와 이 카드의 것이 아닌 장의 수 (환경)" as card_pasBoard
+    }
 }
-state "열린 질문" as card_question {
-    direction TB
-    state "없음" as qNone
-    state "지금 담당이 올린 질문" as qOwner
-    state "철회할 담당 세션이 없는 질문 *" as qOrphan
-    state "옛 담당이 올린 질문" as qOther
-    state "철회할 세션이 없는 질문 *" as hole_holeOrphan
-    qNone --> qOwner: 담당이 질문을 올린다 (어긋남 1, 7)
-    qNone --> qOrphan: 다른 세션이 질문한다 [담당 세션 없음] (어긋남 1, 7, 8)
-}
-state "감독 판의 질문 장 (현행 코드의 기억)" as card_questionEntry {
-    direction TB
-    state "질문 장 없음" as eNone
-    state "질문 장 있음" as ePresent
-    eNone --> ePresent: 질문을 올리거나 보류에서 돌아옴 [빈자리 있음] (어긋남 8)
-    ePresent --> eNone: 답·철회·카드 내림으로 장을 지운다 (어긋남 1, 4)
-}
-state "담당" as card_assignee
-state "감독 PAS와 이 카드의 것이 아닌 장의 수 (환경)" as card_pasBoard
 status --> status: 디렉터와 담당은 상태를 직접 옮긴다 [담당 권한 안에서] (어긋남 7)
 status --> on: 담당이 질문을 올린다 (어긋남 1, 7)
 status --> on: 다른 에이전트가 질문을 올린다 [담당 세션 없음] (어긋남 8, 1, 7)
 card_question --> qNone: 답·철회·사람의 말로 닫는다 [상세와 판의 답 조건은 다름] (어긋남 1, 4)
 status --> on: 다른 에이전트가 질문을 올린다 [담당 세션 없음]
 status --> off: 디렉터가 보류으로 옮긴다
-status --> hole_holeOrphan: 다른 에이전트가 질문을 올린다 [담당 세션 없음]
+class qOrphan breaks
 class on breaks
 class off breaks
-class hole_holeOrphan breaks
 ```
 
-화살표 11개. 남긴 사건: 디렉터가 실행 중으로 옮긴다 / 디렉터가 보류으로 옮긴다 / 디렉터가 완료으로 옮긴다 / 담당이 질문을 올린다 / 다른 에이전트가 질문을 올린다 [담당 세션 없음] / 디렉터가 마지막 질문에 답한다 [카드 상세] / 디렉터가 마지막 질문에 답한다 [감독 판] / 담당이 마지막 질문을 철회한다 / 디렉터가 담당에게 말한다 [말로 풀리는 기다림]. 나머지 사건은 아래 전체 표에서 확인한다.
+화살표 10개. 남긴 사건: 디렉터가 실행 중으로 옮긴다 / 디렉터가 보류으로 옮긴다 / 디렉터가 완료으로 옮긴다 / 담당이 질문을 올린다 / 다른 에이전트가 질문을 올린다 [담당 세션 없음] / 디렉터가 마지막 질문에 답한다 [카드 상세] / 디렉터가 마지막 질문에 답한다 [감독 판] / 담당이 마지막 질문을 철회한다 / 디렉터가 담당에게 말한다 [말로 풀리는 기다림]. 나머지 사건은 아래 전체 표에서 확인한다.
 
 ## 한도: 지금 담당의 예약과 한도 당시 담당은 다르다
 
@@ -249,20 +256,15 @@ class hole_holeChangedLimitOwner breaks
 
 ```mermaid
 stateDiagram-v2
-direction TB
+direction LR
 classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
 classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
-state "카드 상태" as status {
-    direction TB
-    state "판 위" as on
-    state "내려감" as off
-}
 state "감독 판의 카드 장 (현행 코드의 기억, 걸음 2에서 계산 출력으로 바꿈)" as card_cardEntry {
     direction TB
     state "카드 장 없음" as cNone
     state "카드 장 있음" as cPresent
-    cPresent --> cNone: 질문·실행·내려감으로 장을 내린다 (어긋남 1, 4, 7)
     cNone --> cPresent: 검수·막힘 장을 올린다 [질문 없음, 빈자리 있음] (어긋남 4, 7)
+    cPresent --> cNone: 질문·실행·내려감으로 장을 내린다 (어긋남 1, 4, 7)
 }
 state "감독 판의 질문 장 (현행 코드의 기억)" as card_questionEntry {
     direction TB
@@ -281,18 +283,15 @@ state "감독 PAS와 이 카드의 것이 아닌 장의 수 (환경)" as card_pa
         state "다른 장 가득 (12장)" as pasFull
     }
 }
-status --> status: 디렉터와 담당은 상태를 직접 옮긴다 [담당 권한 안에서] (어긋남 1, 7)
-status --> on: 담당이 질문을 올린다 (어긋남 1, 7)
 card_pasBoard --> pasOne: 다른 장이 올라 열한 장이 된다
 card_pasBoard --> pasFull: 다른 장이 올라 열두 장이 된다
 card_pasBoard --> pasRoom: 다른 장이 내려 열 장 이하가 된다 (어긋남 1)
 card_pasBoard --> pasOne: 다른 장이 내려 열한 장이 된다
-status --> on: 디렉터가 검수 대기으로 옮긴다
-status --> on: 디렉터가 실행 중으로 옮긴다
-class on breaks
+class cNone breaks
+class eNone breaks
 ```
 
-화살표 12개. 남긴 사건: 디렉터가 실행 중으로 옮긴다 / 디렉터가 검수 대기으로 옮긴다 / 담당이 질문을 올린다 / 디렉터가 마지막 질문에 답한다 [카드 상세] / 다른 장이 올라 열한 장이 된다 / 다른 장이 올라 열두 장이 된다 / 다른 장이 내려 열 장 이하가 된다 / 다른 장이 내려 열한 장이 된다. 나머지 사건은 아래 전체 표에서 확인한다.
+화살표 8개. 남긴 사건: 디렉터가 검수 대기으로 옮긴다 / 담당이 질문을 올린다 / 디렉터가 마지막 질문에 답한다 [카드 상세] / 다른 장이 올라 열한 장이 된다 / 다른 장이 올라 열두 장이 된다 / 다른 장이 내려 열 장 이하가 된다 / 다른 장이 내려 열한 장이 된다. 나머지 사건은 아래 전체 표에서 확인한다.
 
 ## 약속 검사
 
