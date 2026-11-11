@@ -23,6 +23,21 @@ it("loads only on explicit opens and allows reportless review",async()=>{
  expect(button("검수 대기").disabled).toBe(false);expect(document.body.textContent).not.toContain("보고가 필요합니다");expect(document.body.textContent).not.toContain("대기: 담당 에이전트");
  await click("드래프트");expect(c.change).toHaveBeenCalledWith(d.card,"todo",undefined);expect(c.onOpen).not.toHaveBeenCalled();
 });
+it("shows an awaiting verification card without offering it as a manual destination",async()=>{
+ const d=detail();d.card.status="awaiting_verification";
+ const load=vi.fn().mockResolvedValue(d),change=vi.fn().mockResolvedValue(undefined),onOpen=vi.fn();
+ const awaiting={...reviewCard,status:"awaiting_verification" as const,blockedKind:null};
+ await act(()=>root.render(<CardStatusPicker card={awaiting} control={{load,change,pending:false}} onOpen={onOpen}/>));
+ const trigger=document.querySelector<HTMLButtonElement>('[data-slot="popover-trigger"]')!;
+ expect(trigger.textContent).toContain("검증 대기");
+ await click("카드 상태 변경");
+ const options=[...document.querySelectorAll<HTMLButtonElement>('[data-card-status-picker] button')];
+ expect(options).toHaveLength(8);
+ expect(options.some(option=>option.textContent==="검증 대기")).toBe(false);
+ expect(options.some(option=>option.getAttribute("aria-pressed")==="true")).toBe(false);
+ await click("보류");
+ expect(change).toHaveBeenCalledWith(d.card,"on_hold",undefined);
+});
 it("aligns the status popup to the chip start edge",async()=>{
  await render();
  const trigger=document.querySelector<HTMLButtonElement>('[data-slot="popover-trigger"]')!;

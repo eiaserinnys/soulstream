@@ -59,9 +59,10 @@ export function CardBoardSamples() {
       latestActivity:{kind:index===0?"instruction" as const:"report" as const,format:"markdown" as const,
         body:"긴 본문이 있어도 카드와 열의 폭을 줄이지 않습니다. 최신 원문은 네 줄까지 읽고 상세에서 이어 봅니다. ".repeat(5),createdAt:reviewCard.createdAt},
       ...(index===0&&copy===0?{items:sampleItems,now:sampleNow}:{}),
+      ...(status==="awaiting_verification"?{now:{...reviewNow,text:"배포 뒤 실제 사용 확인, 14:30에 다시 확인",turn:"agent" as const,ask:null}}:{}),
     }))).map(seed=>({...seed,...sampleDetails[seed.id]?.card,completedAt:seed.completedAt}));
     return seeds.filter(card=>(scenario!=="none"||card.status!=="done")
-      &&(scenario!=="mixed"||card.status==="todo"||card.status==="running"||card.status==="review"||card.status==="on_hold"||card.status==="done"))
+      &&(scenario!=="mixed"||card.status==="todo"||card.status==="running"||card.status==="awaiting_verification"||card.status==="review"||card.status==="on_hold"||card.status==="done"))
       .map(card=>({...card,status:statuses[card.id]??card.status}));
   },[scenario,statuses,assignmentScenario,settings,sampleDetails,checkScenario]);
   const loader=useCallback<CompletedPageLoader>(async params=>{
