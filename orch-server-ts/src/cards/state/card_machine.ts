@@ -29,6 +29,7 @@ const guards:Record<string,Predicate> = {
   limitBlocked: at("limit"),
   verification: and([at("verification"),session]),
   running: at("running"), queued: at("queued"),
+  admittedStart: and([at("queued"),at("aAgentAdmitted")]),
   queuedAssignable: and([at("queued"),or([session,at("aAgent")])]),
   limitAssignable: and([at("limit"),or([session,at("aAgent")])]),
   queuedMissing: and([at("queued"),any("aNone","aHuman")]),
@@ -109,6 +110,9 @@ for (const event of ["HUMAN_MESSAGE","HUMAN_COMMENT"]) {
   put("questionEntry",event,"eNone","humanResume");
 }
 put("question","AGENT_COMMENT",undefined,"session");
+status("START_ADMITTED_WORK","running","admittedStart");
+put("assignee","START_ADMITTED_WORK","originalLive","admittedStart");
+on.question.START_ADMITTED_WORK=[{target:"#qOther",guard:and([guards.admittedStart!,at("qOrphan")]),description:EVENT_LABELS.START_ADMITTED_WORK}];
 status("START_WORK","running","session");status("REQUEST_REVIEW","review","session");
 status("RECORD_EXECUTION","running");on.assignee.RECORD_EXECUTION=[
   {target:"#replacedLive",guard:any("replacedLive","replacedLimited","replacedEnded"),description:EVENT_LABELS.RECORD_EXECUTION},
@@ -123,6 +127,7 @@ on.assignee.START_WORK=[
 ];
 status("DISPATCH","running","queued");
 put("status","ADMIT_DISPATCH",undefined,"queuedAssignable");
+on.assignee.ADMIT_DISPATCH=[{target:"#aAgentAdmitted",guard:and([at("queued"),at("aAgent")]),description:EVENT_LABELS.ADMIT_DISPATCH}];
 for (const event of ["SERVER_SHORT_LIMIT","SERVER_LONG_LIMIT"]) {
   status(event,"limit","shortLimit");
   put("reservation",event,event==="SERVER_SHORT_LIMIT"?"rLimit":"rNone","shortLimit");
@@ -202,7 +207,7 @@ export const cardMachine=setup({
     }},
     question:{description:"열린 질문",initial:"none",on:on.question,states:{none:leaf("qNone","없음"),owner:leaf("qOwner","지금 담당이 올린 질문"),orphan:leaf("qOrphan","철회할 담당 세션이 없는 질문",["unnamed"]),other:leaf("qOther","옛 담당이 올린 질문")}},
     reservation:{description:"지금 담당을 깨울 예약",initial:"none",on:on.reservation,states:{none:leaf("rNone","없음"),verify:leaf("rVerify","카드에 적힌 검증 시각"),limit:leaf("rLimit","지금 담당의 짧은 한도 재개 시각")}},
-    assignee:{description:"담당",initial:"none",on:on.assignee,states:{none:leaf("aNone","담당 없음"),agent:leaf("aAgent","에이전트만 정해짐"),human:leaf("aHuman","사람"),originalLive:leaf("originalLive","원래 담당이 살아 있음"),originalEnded:leaf("originalEnded","원래 담당이 정상 종료"),originalLimited:leaf("originalLimited","원래 담당이 짧은 한도 종료"),originalLongLimited:leaf("originalLongLimited","원래 담당이 긴 한도 종료"),replacedLive:leaf("replacedLive","새 담당이 살아 있음"),replacedEnded:leaf("replacedEnded","새 담당이 정상 종료"),replacedLimited:leaf("replacedLimited","새 담당이 긴 한도 종료")}},
+    assignee:{description:"담당",initial:"none",on:on.assignee,states:{none:leaf("aNone","담당 없음"),agent:{...leaf("aAgent","에이전트만 정해짐"),initial:"idle",states:{idle:leaf("aAgentIdle","배정 전"),admitted:leaf("aAgentAdmitted","배정을 허가받고 첫 착수를 기다림",["unnamed"]) }},human:leaf("aHuman","사람"),originalLive:leaf("originalLive","원래 담당이 살아 있음"),originalEnded:leaf("originalEnded","원래 담당이 정상 종료"),originalLimited:leaf("originalLimited","원래 담당이 짧은 한도 종료"),originalLongLimited:leaf("originalLongLimited","원래 담당이 긴 한도 종료"),replacedLive:leaf("replacedLive","새 담당이 살아 있음"),replacedEnded:leaf("replacedEnded","새 담당이 정상 종료"),replacedLimited:leaf("replacedLimited","새 담당이 긴 한도 종료")}},
     // 걸음 2에서 판의 장을 구성에서 계산하는 출력으로 바꾸며 이 영역을 지운다.
     questionEntry:{description:"감독 판의 질문 장 (현행 코드의 기억)",initial:"none",on:on.questionEntry,states:{none:leaf("eNone","질문 장 없음"),present:leaf("ePresent","질문 장 있음")}},
     cardEntry:{description:"감독 판의 카드 장 (현행 코드의 기억, 걸음 2에서 계산 출력으로 바꿈)",initial:"none",on:on.cardEntry,states:{none:leaf("cNone","카드 장 없음"),present:leaf("cPresent","카드 장 있음")}},

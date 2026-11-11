@@ -31,6 +31,7 @@ const events: [string,string,string[]][] = [
   ["HUMAN_MESSAGE","디렉터가 담당에게 말한다 [말로 풀리는 기다림]",[`${control}#resumeBlockedCardOnHumanInput`,"production.ts#resumeBlockedCardOnHumanInput caller"]],
   ["HUMAN_COMMENT","디렉터가 커멘트를 남긴다 [말로 풀리는 기다림]",[`${control}#applyAddCommentTx`]],
   ["AGENT_COMMENT","담당이 커멘트를 남긴다",[`${control}#applyAddCommentTx`]],
+  ["START_ADMITTED_WORK","자동 배정된 첫 작업 세션이 착수한다",[`${control}#startCardWork`,"cards/card_work_lifecycle.ts#acceptQueuedWork"]],
   ["START_WORK","담당이 착수를 확인한다",[`${control}#startCardWork`]],
   ["REQUEST_REVIEW","담당이 검수를 요청한다",[`${control}#requestCardReview`]],
   ["RECORD_EXECUTION","서버가 실행을 확인한다",[`${control}#recordExecution`,"cards/card_execution_service.ts#observeOnce"]],
@@ -71,7 +72,7 @@ export const CARD_EVENTS:CardEvent[] = Object.keys(EVENT_SOURCES).map(type=>({ty
 export const STATUS_DECISIONS:Record<string,string[]> = {
   createCardMutation:["CREATE_TODO","CREATE_QUEUED"],recordExecution:["RECORD_EXECUTION","RECORD_EXECUTION_LATE"],
   setCardStatus:["HUMAN_MOVE_running","ASSIGNEE_MOVE_running"],resumeBlockedCardOnHumanInput:["HUMAN_MESSAGE"],
-  requestCardReview:["REQUEST_REVIEW"],startCardWork:["START_WORK"],askQuestion:["ASK_OWNER","ASK_OTHER"],
+  requestCardReview:["REQUEST_REVIEW"],startCardWork:["START_WORK","START_ADMITTED_WORK"],askQuestion:["ASK_OWNER","ASK_OTHER"],
   answerQuestion:["ANSWER_DETAIL","ANSWER_BOARD","ANSWER_MORE"],withdrawQuestion:["WITHDRAW","WITHDRAW_MORE"],
   recordDispatch:["DISPATCH","ADMIT_DISPATCH"],resumeDispatchedCard:["SERVER_LIMIT_RELAUNCH","ADMIT_LIMIT"],
   resumeLimitedCard:["SERVER_LIVE_RESUME","SERVER_LIMIT_TIME"],resumeVerificationCard:["WAKE_TIME"],

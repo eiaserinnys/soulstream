@@ -74,3 +74,14 @@ it("기계에서 뽑은 정의별 전이 경로를 서비스에 넣는다",async
   expect(failures).toEqual([]);
   expect(missing).toEqual([]);
 },180000);
+
+it("자동 배정 첫 착수가 대기열의 에이전트 담당을 실행 중 세션 담당으로 바꾼다",async()=>{
+  const state=await run(["CREATE_QUEUED","ASSIGN_AGENT","ADMIT_DISPATCH","START_ADMITTED_WORK"]);
+  expect(state.matches({status:{on:"running"},assignee:"originalLive"})).toBe(true);
+},60000);
+it("가득 찬 판에서 카드 장을 내리면 자리가 생긴다",async()=>{
+  await run(["CREATE_TODO","PAS_APPEARS","HUMAN_MOVE_noReport","BOARD_FULL","HUMAN_MOVE_running"]);
+},60000);
+it("가득 찬 판에서 카드 장을 질문 장으로 바꾼다",async()=>{
+  await run(["CREATE_TODO","ASSIGN_SESSION","PAS_APPEARS","HUMAN_MOVE_review","BOARD_FULL","ASK_OWNER"]);
+},60000);

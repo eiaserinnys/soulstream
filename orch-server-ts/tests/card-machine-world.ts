@@ -6,6 +6,7 @@ import { appendCardEventTx, recordWorkReceipt } from "./card-work-postgres-fixtu
 import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { CardExecutionService } from "../src/cards/card_execution_service.js";
+import { CardOrchestrationRepository } from "../src/cards/card_orchestration_repository.js";
 import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
 import { CardDispatcher } from "../src/cards/card_dispatcher.js";
 import { PersistentReportService } from "../src/session/persistent_report_service.js";
@@ -56,6 +57,7 @@ export async function createCardMachineWorld() {
     const entries=await reports.get("pas");
     const enabled=((await h.sql`SELECT metadata FROM sessions WHERE session_id='pas'`)[0]!.metadata as {type:string;value:{enabled?:boolean}}[]).find(m=>m.type==="persistent_session")?.value.enabled===true;
     let assignee:CardFacts["assignee"]=r.assignee_kind??"none";
+    if(r.assignee_kind==="agent"&&(await h.sql`SELECT card_id FROM card_orchestration_dispatches WHERE card_id=${cardId} AND state IN ('admitted','launching')`).length) assignee="agentAdmitted";
     if(owner) {
       const replaced=owner.session_id!==baseOwner;
       assignee=replaced?(owner.status==="error"?"replacedLimited":owner.status==="completed"?"replacedEnded":"replacedLive"):
@@ -123,6 +125,18 @@ export async function createCardMachineWorld() {
       case "HUMAN_COMMENT":await cards.addComment({...human,cardId,body:"이어갑니다"});return;
       case "AGENT_COMMENT":await cards.addComment({...await agent(),cardId,body:"확인했습니다"});return;
       case "REQUEST_REVIEW":await cards.requestCardReview({...await agent(),cardId,ask:"결과를 확인해 주세요"});return;
+      case "START_ADMITTED_WORK":{
+        const d=(await h.sql`SELECT * FROM card_orchestration_dispatches WHERE card_id=${cardId} AND state='admitted'`)[0]!;
+        await h.sql`UPDATE system_settings SET value='{"enabled":true}' WHERE setting_key='card_orchestration'`;
+        await h.sql`UPDATE card_orchestration_dispatches SET state='launching' WHERE card_id=${cardId}`;
+        const orchestration=new CardOrchestrationRepository(async()=>sql);
+        expect(await orchestration.authorizeWorker({runId:d.run_id,sessionId:d.session_id,executionToken:d.launch_token,nodeId:d.node_id,cardId})).toBe(true);
+        await h.sql`UPDATE sessions SET card_id=${cardId} WHERE session_id=${d.session_id}`;
+        await recordWorkReceipt(h,d.session_id,"running",execution);
+        await cards.startCardWork({actorKind:"agent",actorSessionId:d.session_id,cardId,execution});
+        await h.sql`UPDATE system_settings SET value='{"enabled":false}' WHERE setting_key='card_orchestration'`;
+        return;
+      }
       case "START_WORK":await recordWorkReceipt(h,await ownerId(),"running",execution);await cards.startCardWork({...await agent(),cardId,execution});return;
       case "SERVER_SHORT_LIMIT":case "SERVER_LONG_LIMIT":{
         limitedOwner=await ownerId();baseOwner=limitedOwner;short=type==="SERVER_SHORT_LIMIT";
