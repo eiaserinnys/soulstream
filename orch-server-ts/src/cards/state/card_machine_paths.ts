@@ -14,7 +14,7 @@ export function cardContrastPaths() {
   const sourcePaths=new Map(result.paths.map(p=>[JSON.stringify(p.state.value),p.steps.map(s=>s.event.type).filter(e=>e!=="xstate.init")]));
   const selected=new Map<string,{events:string[];definitions:string[]}>();
   const covered=new Set<string>();
-  for(const a of Object.values(result.adjacency))for(const edge of Object.values(a.transitions)) {
+  for(const a of Object.values(result.adjacency))for(const edge of Object.values<{event:CardEvent;state:CardSnapshot}>(a.transitions)) {
     const ids=transitionIds(a.state,edge.event);
     if(!ids.some(id=>!covered.has(id)))continue;
     const events=[...sourcePaths.get(JSON.stringify(a.state.value))!,edge.event.type];

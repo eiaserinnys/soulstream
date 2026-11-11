@@ -49,7 +49,7 @@ function computeCardPromises() {
   ];
   const holes:CardHole[]=holeTests.map(h=>({id:h.id,parent:h.parent,label:h.label,reachable:states.some(h.test),incoming:[]}));
   const definitions=new Set<string>();
-  for(const a of Object.values(adjacency)) for(const edge of Object.values(a.transitions)) {
+  for(const a of Object.values(adjacency)) for(const edge of Object.values<{event:CardEvent;state:CardSnapshot}>(a.transitions)) {
     const event=edge.event;
     for(const t of cardMachine.getTransitionData(a.state,event)) definitions.add(`${t.source.id}:${event.type}:${(typeof t.guard==="string"?t.guard:typeof t.guard==="object"?t.guard.type:"composed")}:${t.target?.map(n=>n.id).join(",")??""}`);
     const b=edge.state;
