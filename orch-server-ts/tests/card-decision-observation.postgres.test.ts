@@ -24,13 +24,13 @@ it('collects and replays baseline SQL observations through the same normalized c
   };
   try {
   if (process.env.COLLECT_CARD_OBSERVATIONS === '1') {
-    // Pin ALL runtime service code, not only three entry files. Statechart description changes are allowed.
+    // Pin runtime services. Disconnected decision modules and the known OAuth scope change are outside this baseline.
     const changed = execFileSync('git', ['diff', '--name-only', baseline, '--', 'orch-server-ts/src', 'soul-server-ts/src', 'packages'], { cwd: new URL('../../', import.meta.url), encoding: 'utf8' }).trim().split('\n').filter(Boolean);
     expect(changed.filter(p => !p.startsWith('orch-server-ts/src/cards/state/') && p !== 'orch-server-ts/src/oauth/oauth_access.ts')).toEqual([]);
     const previous = JSON.parse(await readFile(fixture, 'utf8'));
     const observations = await collect();
-    // Compare before replacing the oracle: new evidence is the only permitted
-    // difference in the original prefix. Never rewrite a mismatching baseline.
+    // Preserve the entire normalized 327-observation prefix, including evidence,
+    // before replacing the oracle. Never rewrite a mismatching baseline.
     expect(previous.observations.length).toBe(327);
     for (const [index, old] of previous.observations.entries()) {
       const enriched = structuredClone(observations[index]!);

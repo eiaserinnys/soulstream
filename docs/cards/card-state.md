@@ -737,14 +737,22 @@ PAS는 agent 세션이다. 현재 담당, 작성자, 담당이면서 작성자�
 | WITHDRAW_QUESTION | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.WITHDRAW_QUESTION.ownerOrAuthor (403, withdrawOwner) | 해당 없음 | 해당 없음 |
 | WITHDRAW_QUESTION | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
 | WITHDRAW_QUESTION | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| ADD_COMMENT | human | 조건부: reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| ADD_COMMENT | owner | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 |
-| ADD_COMMENT | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
-| ADD_COMMENT | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
-| ADD_COMMENT | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.otherAssignee (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.otherAssignee (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 |
-| ADD_COMMENT | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.otherAssignee (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 |
-| ADD_COMMENT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
-| ADD_COMMENT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| ADD_COMMENT (direct) | human | 조건부: reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.trustedMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.trustedSpoken (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| ADD_COMMENT (direct) | owner | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| ADD_COMMENT (direct) | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
+| ADD_COMMENT (direct) | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
+| ADD_COMMENT (direct) | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.otherAssignee (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.otherAssignee (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| ADD_COMMENT (direct) | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.otherAssignee (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.trustedMode (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 |
+| ADD_COMMENT (direct) | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
+| ADD_COMMENT (direct) | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| ADD_COMMENT (followup) | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| ADD_COMMENT (followup) | owner | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| ADD_COMMENT (followup) | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
+| ADD_COMMENT (followup) | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
+| ADD_COMMENT (followup) | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| ADD_COMMENT (followup) | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.trustedMode (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 |
+| ADD_COMMENT (followup) | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
+| ADD_COMMENT (followup) | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
 | START_WORK | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
 | START_WORK | owner | 해당 없음 | 조건부: reject.START_WORK.admission (422, INVALID_CARD_WORK)<br>reject.START_WORK.execution (422, INVALID_CARD_WORK) | 해당 없음 | 조건부: reject.START_WORK.admission (422, INVALID_CARD_WORK)<br>reject.START_WORK.execution (422, INVALID_CARD_WORK) | 해당 없음 |
 | START_WORK | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
@@ -870,14 +878,14 @@ PAS는 agent 세션이다. 현재 담당, 작성자, 담당이면서 작성자�
 
 | 명령 | 전이 설명 | 운영 출처 |
 | :-- | :-- | :-- |
-| CREATE | 카드를 만든다 | cards/card_control_plane_service.ts#createCardMutation |
+| CREATE | 카드를 만든다 | cards/card_control_plane_service.ts#createCard<br>cards/card_control_plane_service.ts#createCardTx<br>cards/card_control_plane_service.ts#createCardMutation |
 | SET_STATUS | 현재 담당 권한과 검증 대기 입력을 확인한다. 같은 done 재지정도 완료 정보를 다시 쓰고 같은 queued 재지정도 새 대기열 순서 키를 요청한다. | cards/card_control_plane_service.ts#setCardStatus |
 | REQUEST_REVIEW | 검수를 요청한다 | cards/card_control_plane_service.ts#requestCardReview |
 | HUMAN_INPUT | 보관되지 않은 세션 담당의 검증 대기 또는 한도 아닌 막힘을 재개하고 열린 질문을 모두 닫는다. | cards/card_control_plane_service.ts#resumeBlockedCardOnHumanInput |
 | ASK_QUESTION | 다른 세션 담당 여부를 확인하고 질문 행을 추가한다. 질문 막힘으로 옮기며 완료 정보와 대기열 순서를 지운다. | cards/card_control_plane_service.ts#askQuestion |
 | ANSWER_QUESTION | 사람만 열린 질문에 답한다. 마지막 열린 질문이고 질문 막힘일 때만 실행 중으로 옮긴다. 완료 뒤 늦은 답은 상태를 보존한다. | cards/card_control_plane_service.ts#answerQuestion |
 | WITHDRAW_QUESTION | 질문 작성자 또는 현재 담당 세션이 철회한다. 마지막 질문 막힘일 때만 실행 중으로 옮긴다. | cards/card_control_plane_service.ts#withdrawQuestion |
-| ADD_COMMENT | reply의 담당, 길이와 사용자 입력을 확인한다. non-reply이면 사람뿐 아니라 담당의 spoken도 말로 풀리는 기다림을 재개한다. claim과 항목과 상태 UPDATE는 나눈다. | cards/card_control_plane_service.ts#applyAddCommentTx |
+| ADD_COMMENT | 직접 입구는 prepare 검사 뒤 다른 담당 검사를 먼저 한다. dispatch_work의 Tx 후속 입구는 이 검사를 하지 않는다. reply의 담당, 길이와 사용자 입력을 확인한다. non-reply이면 사람뿐 아니라 담당의 spoken도 말로 풀리는 기다림을 재개한다. claim과 항목과 상태 UPDATE는 나눈다. | cards/card_control_plane_service.ts#addComment<br>cards/card_control_plane_service.ts#addCommentTx<br>cards/card_control_plane_service.ts#applyAddCommentTx<br>cards/card_work_dispatch_service.ts#accept |
 | START_WORK | 작업 착수를 확인한다 | cards/card_control_plane_service.ts#startCardWork |
 | CONFIRM_EXECUTION | 요청 세션을 담당으로 연결한다. 요청 이후 상태가 바뀐 뒤늦은 확인은 상태와 완료 정보를 보존한다. | cards/card_execution_service.ts#observe<br>cards/card_execution_service.ts#observeOnce<br>cards/card_execution_service.ts#observePendingForNode<br>cards/card_execution_service.ts#sendAndObserve |
 | DISPATCH | queued와 미확인 실행 요청을 확인한다. 정책 설정과 admission 증거에 따라 허가를 확인하고, admission이면 queued 유지, 기존 실행이면 running으로 옮긴다. | cards/card_control_plane_service.ts#recordDispatch |
