@@ -43,6 +43,9 @@
     "browse_folder": {
       "category": "allow"
     },
+    "bulk_set_card_status": {
+      "category": "deny"
+    },
     "create_agent_session": {
       "category": "inherit",
       "guard": "create-local-session"
@@ -245,6 +248,9 @@
     "match_skill_catalogs": {
       "category": "allow"
     },
+    "merge_cards": {
+      "category": "deny"
+    },
     "move_card": {
       "category": "allow"
     },
@@ -420,6 +426,9 @@
       "category": "deny"
     },
     "update_recurring_job": {
+      "category": "deny"
+    },
+    "update_unstarted_card": {
       "category": "deny"
     },
     "upsert_page_markdown": {

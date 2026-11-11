@@ -30,11 +30,14 @@ export function formatCardReference(cardNumber: number, child?: CardReferenceChi
 /**
  * Argument names that accept a reference, and what each accepts. `session_ids` is an array of
  * sessions and `assignee.session_id` is one level down. `caller_session_id` is the caller's
- * identity and is deliberately absent.
+ * identity and is deliberately absent. `card_ids` (bulk_set_card_status) is absent too: the orch
+ * handler resolves each element on its own so one unknown number cannot abort the whole batch.
  */
 export const REFERENCE_ARGUMENT_SLOTS: Readonly<Record<string, "card" | "session">> = {
   card_id: "card",
   after_card_id: "card",
+  target_card_id: "card",
+  source_card_ids: "card",
   session_id: "session",
   target_session_id: "session",
   predecessor_session_id: "session",

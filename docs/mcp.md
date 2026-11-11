@@ -145,6 +145,10 @@ Recurring-job tools require a trusted Soulstream caller session with a verified 
 | `delete_folder(folder_id)` | Delete a folder |
 | `move_sessions_to_folder(session_ids, folder_id)` | Move sessions into a folder (pass `null` to unassign) |
 
+### Card maintenance
+
+`update_unstarted_card`, `merge_cards`, and `bulk_set_card_status` are internal-only tools for tidying cards before their first start. `update_unstarted_card(card_id, idempotency_key, ...)` edits the title, request, brief, assignee agent, model preset, or node of a card that is not archived, has no human or session assignee, is `todo`/`queued`/`on_hold`, and has no pending execution result, keeping its status and queue position. `merge_cards(target_card_id, source_card_ids, idempotency_key)` folds 1 to 9 unstarted source cards into an unstarted target in one transaction, appending request sections, user comments, handoff text, attachments, notes, and items, then cancels the sources; one ineligible card leaves everything unchanged. `bulk_set_card_status(card_ids, status, reason, idempotency_key)` moves 1 to 20 cards to `todo`/`queued`/`on_hold`/`cancelled` in separate transactions and returns `{card_id, ok, status, version}` or `{card_id, ok: false, error}` for each; a connected assignee may only be held or cancelled while idle, and its session and worktree stay connected. Card references with `#N` are accepted in `target_card_id`, `source_card_ids`, and `card_ids`. None of the three tools is exposed through external ingress.
+
 ### Agent and MCP config
 
 | Tool | Description |

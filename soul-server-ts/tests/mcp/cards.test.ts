@@ -13,7 +13,8 @@ import { makeTaskCreationHarness } from "../task/task_creation_harness.js";
 // direct callbacks isolate the new card wire contract without opening an MCP server.
 const names = ["create_card", "list_cards", "search_cards", "get_card", "update_card_brief", "add_card_report", "add_card_comment",
   "request_card_review", "ask_card_question", "move_card", "start_card_work", "set_card_status", "set_card_items",
-  "add_card_item", "report_card_item", "update_card_now", "add_card_note", "list_card_notes"];
+  "add_card_item", "report_card_item", "update_card_now", "add_card_note", "list_card_notes",
+  "update_unstarted_card", "merge_cards", "bulk_set_card_status"];
 const logger = pino({ level: "silent" });
 const attachments=[{nodeId:"node",path:"/incoming/upload/image.png",name:"image.png",mimeType:"image/png"}];
 const card = { id: "card-1", folderId: "folder-1", title: "카드", status: "running", version: 3, attachments };
