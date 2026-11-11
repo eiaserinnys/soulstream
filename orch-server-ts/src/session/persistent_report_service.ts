@@ -41,6 +41,7 @@ export class PersistentReportService {
     return readPersistentReport(row?.metadata);
   }
   async put(sessionId: string, input: unknown): Promise<PersistentReportResult> {
+    let directChanged=false;
     const result = await this.mutate(sessionId, async (sql, entries) => {
       const rawKey = input !== null && typeof input === "object" && "key" in input && typeof (input as { key: unknown }).key === "string"
         ? (input as { key: string }).key : null;
@@ -54,13 +55,16 @@ export class PersistentReportService {
         if (await this.isBoardCard(sql, sessionId, card.id))
           return [{ path: "card_numbers", reason: "이 카드는 서버가 판에 올립니다. 담당이 상황판과 카드 질문을 쓰게 하세요" }];
       }
-      return this.upsertEntry(sql, entries, parsed.value);
+      const previous=entries.find(entry=>entry.key===parsed.value.key);
+      const errors=await this.upsertEntry(sql, entries, parsed.value);
+      directChanged=errors===null&&(!previous||!sameReportEntry(previous,parsed.value));
+      return errors;
     });
     const key = input !== null && typeof input === "object" && "key" in input
       && typeof (input as { key: unknown }).key === "string"
       ? (input as { key: string }).key
       : undefined;
-    if (result.ok && result.changed && key !== undefined) {
+    if (result.ok && directChanged && key !== undefined) {
       const entry = result.persistent_report.find(candidate => candidate.key === key && candidate.state === "open");
       if (entry) {
         if (this.appendTimeline) {
@@ -197,7 +201,7 @@ export class PersistentReportService {
    * After a card commit, rebuild connected boards and boards holding its old output.
    * The target relation is read after commit; no separate pre-commit connection state is stored.
    */
-  async syncCard(cardId: string, options: { scanBoards: boolean } = { scanBoards: true }): Promise<void> {
+  async syncCard(cardId: string): Promise<void> {
     const targets = await this.connectedSessions(this.sql, cardId);
     const related = await this.sql<{session_id:string}[]>`WITH candidates AS MATERIALIZED (
       SELECT session_id,metadata FROM sessions WHERE metadata @> '[{"type":"persistent_report"}]'::jsonb

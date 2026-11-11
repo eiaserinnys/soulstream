@@ -103,6 +103,25 @@ describe("PAS reports on production PostgreSQL schema", () => {
     await posting.remove('pas','posted');
     expect(onPosted).toHaveBeenCalledTimes(2);
   });
+  it("repairs stale calculated entries on an identical direct PUT without reposting notifications or timeline",async()=>{
+    await sql`UPDATE sessions SET agent_id='report-agent' WHERE session_id='pas'`;
+    const cardId=(await cards.createCard({actorKind:'agent',actorSessionId:'pas',folderId:'report-folder',title:'계산 장',request:'',
+      assignee:{kind:'session',sessionId:'pas'}})).operation.target_id;
+    await cards.setCardStatus({...human,cardId,status:'blocked',blockedKind:'no_report'});
+    const onPosted=vi.fn(),timeline=vi.fn();
+    const posting=new PersistentReportService(adapted,publish,onPosted,timeline);
+    const payload=entry('same-direct');
+    await posting.put('pas',payload);
+    const direct=(await posting.get('pas')).find(e=>e.key===payload.key)!;
+    await sql`SELECT session_apply_metadata_entry('pas',${JSON.stringify({type:'persistent_report',value:{entries:[direct]}})},'persistent_report',NOW())`;
+    onPosted.mockClear();timeline.mockClear();publish.mockClear();
+    expect(await posting.put('pas',payload)).toMatchObject({ok:true,changed:true});
+    expect((await posting.get('pas')).map(e=>e.key)).toEqual([payload.key,`card_${cardId}`]);
+    expect((await posting.get('pas'))[0]).toEqual(direct);
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(onPosted).not.toHaveBeenCalled();
+    expect(timeline).not.toHaveBeenCalled();
+  });
   it("answers one open entry once, passes reply/visible contexts and ignores nonhuman or missing entries", async () => {
     await reports.put('pas',entry('left'));await reports.put('pas',entry('right'));
     const context = [{key:'persistent_report_reply',content:{key:'left',option:'진행'}}, {key:'persistent_report_visible',content:{key:'left',title:'left'}}];
