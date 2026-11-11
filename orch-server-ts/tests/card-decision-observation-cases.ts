@@ -1,0 +1,87 @@
+import { expect } from 'vitest';
+import type { CardMachineWorld } from './card-machine-world.js';
+
+/** Only gaps in the existing service tests; the rest are listed in the PR coverage table. */
+export async function collectAdditionalObservations(world: CardMachineWorld) {
+  const { cards, h } = world;
+  const human = { actorKind: 'user' as const, actorSessionId: null, actorUserId: 'director' };
+  const pas = { actorKind: 'agent' as const, actorSessionId: 'pas' };
+  const owner = { actorKind: 'agent' as const, actorSessionId: 'owner' };
+  let step = '';
+  try {
+  step = 'extra-01: await world.reset';
+  await world.reset();
+  step = 'extra-02: await world.apply';
+  await world.apply('CREATE_TODO');
+  const cardId = world.cardId();
+  step = 'extra-03: await cards.setCardStatus';
+  await cards.setCardStatus({ ...human, cardId, status: 'done' });
+  step = 'extra-04: await cards.setCardStatus';
+  await cards.setCardStatus({ ...human, cardId, status: 'done' });
+  step = 'extra-05: await cards.setCardStatus';
+  await cards.setCardStatus({ ...human, cardId, status: 'queued' });
+  step = 'extra-06: await cards.setCardStatus';
+  await cards.setCardStatus({ ...human, cardId, status: 'queued' });
+  step = 'extra-07: await cards.patchCard';
+  await cards.patchCard({ ...human, cardId, assignee: { kind: 'agent', agentId: 'worker' } });
+  step = 'extra-08: await cards.patchCard';
+  await cards.patchCard({ ...human, cardId, assignee: null });
+  step = 'extra-09: await cards.setCardStatus';
+  await cards.setCardStatus({ ...pas, cardId, status: 'on_hold' });
+  // A PAS is an ordinary agent session: no exception for another session's card.
+  step = 'extra-10: await world.apply';
+  await world.apply('ASSIGN_SESSION');
+  step = 'extra-11: await expect';
+  await expect(cards.setCardStatus({ ...pas, cardId, status: 'done' })).rejects.toThrow();
+  step = 'extra-12: await cards.setCardStatus';
+  await cards.setCardStatus({ ...human, cardId, status: 'todo' });
+  step = 'extra-13: set owner session initializing';
+  await h.sql`UPDATE sessions SET status='initializing' WHERE session_id='owner'`;
+  step = 'extra-14: const bulk = await cards.bulkSetCardStatus';
+  const bulk = await cards.bulkSetCardStatus({ ...pas, cardIds: [cardId], status: 'on_hold', idempotencyKey: 'initializing' }, async () => {});
+  expect(bulk.results[0]?.ok).toBe(false);
+  step = 'extra-15: set owner session running';
+  await h.sql`UPDATE sessions SET status='running' WHERE session_id='owner'`;
+  step = 'extra-16: await cards.setCardStatus';
+  await cards.setCardStatus({ ...owner, cardId, status: 'awaiting_verification', wakeAt: new Date(Date.now() + 3600000).toISOString(), waitingFor: '배포 확인' });
+  step = 'extra-17: await expect';
+  await expect(cards.resumeVerificationCard({ cardId, sessionId: 'owner', wakeAt: new Date(Date.now() + 7200000).toISOString() })).rejects.toThrow();
+  step = 'extra-18: await cards.resumeBlockedCardOnHumanInput';
+  await cards.resumeBlockedCardOnHumanInput({ cardId, expectedVersion: (await cards.getCard(cardId))!.card.version });
+  // Explicit noop return is an independent part of the contract.
+  step = 'extra-19: await cards.resumeBlockedCardOnHumanInput';
+  await cards.resumeBlockedCardOnHumanInput({ cardId, expectedVersion: (await cards.getCard(cardId))!.card.version });
+  step = 'extra-20: answer actor before missing question';
+  await expect(cards.answerQuestion({ ...owner, cardId, questionId: 'missing-question', answer: '확인' })).rejects.toThrow('Only a human may answer card questions');
+  step = 'extra-21: withdraw permission before missing question';
+  await expect(cards.withdrawQuestion({ ...pas, cardId, questionId: 'missing-question', reason: '확인' })).rejects.toThrow('Only the question author or current assignee session may withdraw a card question.');
+  step = 'extra-22: answer missing question';
+  await expect(cards.answerQuestion({ ...human, cardId, questionId: 'missing-question', answer: '확인' })).rejects.toThrow('Open question not found in card');
+  step = 'extra-23: ask question for closed-answer cases';
+  await cards.askQuestion({ ...owner, cardId, text: '오류 순서', options: ['확인'] });
+  const questionId = String((await cards.getCard(cardId))!.questions[0]!.id);
+  step = 'extra-24: answer open question';
+  await cards.answerQuestion({ ...human, cardId, questionId, answer: '확인' });
+  step = 'extra-25: answer answered question';
+  await expect(cards.answerQuestion({ ...human, cardId, questionId, answer: '확인' })).rejects.toThrow('Open question not found in card');
+  step = 'extra-26: withdraw permission before answered question';
+  await expect(cards.withdrawQuestion({ ...pas, cardId, questionId, reason: '확인' })).rejects.toThrow('Only the question author or current assignee session may withdraw a card question.');
+  step = 'extra-27: ask question to withdraw';
+  await cards.askQuestion({ ...owner, cardId, text: '철회 뒤 답', options: ['확인'] });
+  const withdrawnId = String((await cards.getCard(cardId))!.questions.find(q => q.text === '철회 뒤 답')!.id);
+  step = 'extra-28: withdraw open question';
+  await cards.withdrawQuestion({ ...owner, cardId, questionId: withdrawnId, reason: '확인' });
+  step = 'extra-29: answer withdrawn question';
+  await expect(cards.answerQuestion({ ...human, cardId, questionId: withdrawnId, answer: '확인' })).rejects.toThrow('철회된 질문에는 답할 수 없습니다');
+  step = 'extra-30: withdraw permission before withdrawn question';
+  await expect(cards.withdrawQuestion({ ...pas, cardId, questionId: withdrawnId, reason: '확인' })).rejects.toThrow('Only the question author or current assignee session may withdraw a card question.');
+  step = 'extra-31: maintenance session 403';
+  await expect(cards.updateUnstartedCard({ ...human, cardId, title: '거절', idempotencyKey: 'maintenance-human' }, async () => {})).rejects.toMatchObject({ statusCode: 403, message: 'card mutation requires an agent session' });
+  step = 'extra-32: maintenance connected owner 409';
+  await expect(cards.updateUnstartedCard({ ...pas, cardId, title: '거절', idempotencyKey: 'maintenance-connected' }, async () => {})).rejects.toMatchObject({ statusCode: 409, code: 'CARD_NOT_UNSTARTED' });
+  step = 'extra-33: start human INVALID_CARD_WORK';
+  await expect(cards.startCardWork({ ...human, cardId, execution: { registrationId: 'old', executionCommandId: 'old' } })).rejects.toMatchObject({ statusCode: 422, code: 'INVALID_CARD_WORK' });
+  step = 'extra-34: start stale execution INVALID_CARD_WORK';
+  await expect(cards.startCardWork({ ...owner, cardId, execution: { registrationId: 'old', executionCommandId: 'old' } })).rejects.toMatchObject({ statusCode: 422, code: 'INVALID_CARD_WORK', message: 'Current execution is missing, stale or orchestration purpose' });
+  } catch (error) { throw new Error(`${step}: ${String(error)}`, { cause: error }); }
+}

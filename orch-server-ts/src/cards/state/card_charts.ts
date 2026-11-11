@@ -8,7 +8,7 @@ interface CardChartPlan {id:string;title:string;explanation:string;spec:ChartSpe
 const freeMove="HUMAN_MOVE_running";
 const groups={...MEMORY_CHART_GROUPS,"free-move":{from:"status",to:"status",label:"디렉터와 담당은 상태를 직접 옮긴다 [담당 권한 안에서]"}};
 const plans:CardChartPlan[]=[
-  {id:"01-overview",title:"전체: 상태와 함께 움직이는 기억",explanation:"카드 상태는 계층으로, 질문·예약·담당·내린 기록은 나란한 영역으로 읽는다. 접힌 상자의 빨강은 그 아래에 약속을 어기는 구성이 도달한다는 뜻이다.",
+  {id:"01-overview",title:"전체: 상태와 함께 움직이는 기억",explanation:"카드 상태는 계층으로, 질문과 예약, 담당과 내린 기록은 나란한 영역으로 읽는다. 접힌 상자의 빨강은 그 아래에 약속을 어기는 구성이 도달한다는 뜻이다.",
     events:[freeMove,"ASK_OWNER","ASK_OTHER","HUMAN_MESSAGE","SERVER_SHORT_LIMIT","SERVER_LIVE_RESUME","SERVER_LIMIT_RELAUNCH","WAKE_TIME","REQUEST_REVIEW"],
     holes:["holeCardMissing","holeQuestionMissing","holeChangedLimitOwner"],
     spec:{include:["card"],hide:["uncreated"],collapse:["ready","talk","silent","off","card.question","card.reservation","card.assignee","card.pasBoard","card.limitedOwner"]}},
@@ -97,7 +97,7 @@ export function generateCardStateDocument(report:CardPromiseReport=checkCardProm
   const stateCount=(node:typeof cardMachine.root):number=>1+Object.values(node.states).reduce((sum,n)=>sum+stateCount(n),0);
   const lines=["# 현행 카드 규칙", "", "이 문서는 XState 정의와 약속 검사에서 생성한다. 걸음 2의 질문 규칙과 한도 예약, 계산한 판 장과 내린 기록을 반영한 현행 모형이다.", "",
     "한 카드에 열린 질문은 하나까지만 대조했다. 한 카드의 동시 질문 여러 개, 보관, 권한 표 전체, 자동 배정 조정자 내부와 임의의 담당 변경 조합은 대조하지 않았다.", "",
-    "판의 전체 장 수와 이 카드의 장 수는 DB 사실에서 읽는다. 기계에는 숫자를 저장하지 않고, 다른 장이 10장 이하·11장·12장인 단계만 둔다. 한도 담당과 재개 시각은 cards.limit_resume_session_id와 limit_resume_at에서 읽는다. 시각 없는 예약도 담당을 기록하며, 담당 교체가 기록을 지운다.", "",
+    "판의 전체 장 수와 이 카드의 장 수는 DB 사실에서 읽는다. 기계에는 숫자를 저장하지 않고, 다른 장이 10장 이하인 경우와 11장인 경우, 12장인 단계만 둔다. 한도 담당과 재개 시각은 cards.limit_resume_session_id와 limit_resume_at에서 읽는다. 시각 없는 예약도 담당을 기록하며, 담당 교체가 기록을 지운다.", "",
     `영역 7개, 상태 노드 ${stateCount(cardMachine.root)}개, 사건 ${CARD_EVENTS.length}개, 도달 구성 ${report.configurationCount}개, 정의별 전이 갈래 ${report.definitionCount}개.`, "",
     "빨강은 약속을 어기는 도달 구성이 있다는 뜻이다. 별표는 이름 없는 상태나 구멍이다. 그림은 사건을 골라 나누며, 같은 사건의 화살표는 해당 그림에서 전부 남기거나 전부 숨긴다. 자유 이동과 같은 결과의 기억 쓰기는 각각 한 화살표로 묶는다. 기억 쓰기 화살표는 값이 실제로 바뀌는 대표 시작과 끝을 나타내며, 이미 같은 값인 쓰기는 따로 그리지 않는다.", ""];
   for(const chart of charts) lines.push(`## ${chart.title}`,"",chart.explanation,"","```mermaid",chart.mermaid,"```","",

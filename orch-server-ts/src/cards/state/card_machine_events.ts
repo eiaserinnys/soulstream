@@ -87,7 +87,7 @@ export const STATUS_DECISIONS:Record<string,string[]> = {
 export const MEMORY_CHART_GROUPS:Record<string,{from:string;to:string;label:string}>={
   "memory-question-qOwner":{from:"qNone",to:"qOwner",label:"담당이 질문을 올린다"},
   "memory-question-qOrphan":{from:"qNone",to:"qOrphan",label:"다른 세션이 질문한다 [담당 세션 없음]"},
-  "memory-question-qNone":{from:"card.question",to:"qNone",label:"답·철회·사람의 말로 닫는다 [카드가 끝나도 답은 받음]"},
+  "memory-question-qNone":{from:"card.question",to:"qNone",label:"답하거나 철회하거나 사람이 말하면 닫는다 [카드가 끝나도 답은 받음]"},
   "memory-dismissed-dCurrent":{from:"dNone",to:"dCurrent",label:"디렉터가 막힌 카드 장을 확인한다"},
   "memory-dismissed-dNone":{from:"card.dismissed",to:"dNone",label:"카드 상태나 막힘 종류가 바뀌어 내린 기록을 지운다"},
   "memory-reservation-rLimit":{from:"rNone",to:"rLimit",label:"담당이 짧은 한도로 끝난다"},
