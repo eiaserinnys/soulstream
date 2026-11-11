@@ -215,6 +215,8 @@ describe("createRunnerProcessRuntimeFactory", () => {
       codeSha: "sha-adopt",
       snapshotPath: "/release/sha-adopt/soul-server-ts",
       codexAdapterMode: "sdk",
+      codexAppServerRequestTimeoutMs: 45_000,
+      codexAppServerStartupTimeoutMs: 600_000,
       claudeRuntimeV2Enabled: true,
       claudeRuntimeIdleTtlMs: 300_000,
       claudeRuntimeMaxEntries: 16,
@@ -283,6 +285,8 @@ describe("createRunnerProcessRuntimeFactory", () => {
       };
     }).options.spawn).toMatchObject({
       codexDetachedResultRetentionMs: 1_800_000,
+      codexAppServerRequestTimeoutMs: 45_000,
+      codexAppServerStartupTimeoutMs: 600_000,
     });
 
     await expect(runtime.dispatcher.prepareSession("session-adopt"))

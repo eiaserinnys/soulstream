@@ -340,6 +340,12 @@ function spawnInputFromConfig(
     ...(config.antigravityCliPath ? { antigravityCliPath: config.antigravityCliPath } : {}),
     ...(config.opencodeCliPath ? { opencodeCliPath: config.opencodeCliPath } : {}),
     codexDetachedResultRetentionMs: config.codexDetachedResultRetentionMs,
+    ...(config.codexAppServerRequestTimeoutMs === undefined
+      ? {}
+      : { codexAppServerRequestTimeoutMs: config.codexAppServerRequestTimeoutMs }),
+    ...(config.codexAppServerStartupTimeoutMs === undefined
+      ? {}
+      : { codexAppServerStartupTimeoutMs: config.codexAppServerStartupTimeoutMs }),
     claudeRuntimeV2Enabled: config.claudeRuntimeV2Enabled,
     ...(config.claudeAccountPool
       ? { claudeAccountPool: config.claudeAccountPool }

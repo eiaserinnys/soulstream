@@ -151,6 +151,12 @@ export class RunnerProcessSpawner {
       ...(input.antigravityCliPath ? { antigravityCliPath: input.antigravityCliPath } : {}),
       ...(input.opencodeCliPath ? { opencodeCliPath: input.opencodeCliPath } : {}),
       codexDetachedResultRetentionMs: input.codexDetachedResultRetentionMs,
+      ...(input.codexAppServerRequestTimeoutMs === undefined
+        ? {}
+        : { codexAppServerRequestTimeoutMs: input.codexAppServerRequestTimeoutMs }),
+      ...(input.codexAppServerStartupTimeoutMs === undefined
+        ? {}
+        : { codexAppServerStartupTimeoutMs: input.codexAppServerStartupTimeoutMs }),
       claudeRuntimeV2Enabled: input.claudeRuntimeV2Enabled,
       ...(input.claudeAccountPool ? { claudeAccountPool: input.claudeAccountPool } : {}),
       claudeRuntimeIdleTtlMs: input.claudeRuntimeIdleTtlMs,
