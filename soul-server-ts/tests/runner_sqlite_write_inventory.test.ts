@@ -62,10 +62,13 @@ describe("runner SQLite write inventory", () => {
     ])).toEqual({
       "runner/runner_child_runtime.ts": ["start"],
       "runner/runner_intervention_resolution.ts": ["resolveAmbiguousRunnerIntervention"],
+      "runner/runner_parent_storage_worker_entry.ts": ["execute"],
       "runner/runner_process_dispatcher.ts": ["initialize"],
-      "runner/runner_process_spawn.ts": ["defaultDependencies"],
       "runner/runner_release_prewarm.ts": ["module"],
     });
+    // Spawn creates its database on a worker of its own, never on the main thread.
+    const spawn = readFileSync(resolve(SRC_ROOT, "runner/runner_process_spawn.ts"), "utf8");
+    expect(spawn).toContain("prepareDatabase: async (path) => await prepareRunnerDatabaseInWorker(path)");
     expect(classMethodCallers(SRC_ROOT, "RunnerSqliteLifecycle", ["open"])).toEqual({
       "runner/runner_child_runtime.ts": ["start"],
       "runner/runner_recovery_task.ts": ["markRegistrationReaped"],
