@@ -107,9 +107,10 @@ describe("server owns card orchestration admission", () => {
     const policy = vi.fn(async () => true),
       kick = vi.fn(async () => {}),
       queued = vi.fn(),
-      limited = vi.fn(async () => []);
+      limited = vi.fn(async () => []),
+      awaitingVerification = vi.fn(async () => []);
     const d = new CardDispatcher({ deliveryExists: async () => false, abandonDelivery: async () => {},
-      repository: { queued, limited } as never,
+      repository: { queued, limited, awaitingVerification } as never,
       cards: vi.fn() as never,
       resolveTarget: vi.fn() as never,
       launch: vi.fn(),
@@ -124,6 +125,7 @@ describe("server owns card orchestration admission", () => {
     expect(queued).not.toHaveBeenCalled();
     // The dispatcher tick owns short limit windows even when orchestration decides dispatch.
     expect(limited).toHaveBeenCalledTimes(1);
+    expect(awaitingVerification).toHaveBeenCalledTimes(1);
   });
   it("decision terminal reconciles without triggering a new decision run", async () => {
     const kick = vi.fn(async () => {}),
