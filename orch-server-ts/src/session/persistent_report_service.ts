@@ -9,8 +9,9 @@ import {
   parsePersistentReportEntry, parsePersistentReportReply, readPersistentReport,
   CARD_ENTRY_KEY_PREFIX, CARD_QUESTION_KEY_PREFIX,
   PERSISTENT_REPORT_KEY, PERSISTENT_REPORT_LIMIT, PERSISTENT_REPORT_METADATA_TYPE,
+  REPORT_TIMELINE_EVENT_TYPE, REPORT_TIMELINE_QUESTION_CLOSED_EVENT_TYPE,
   type PersistentReportEntry, type PersistentReportIssue, type PersistentReportResult,
-  type ReportTimelineLine, type ReportTimelineStatus,
+  type ReportTimelineLine, type ReportTimelineQuestionClosed, type ReportTimelineStatus,
 } from "@soulstream/wire-schema/persistent-report";
 import { isCardOffBoard, type CardStatus, type SqlClient, type RepositorySql } from "../cards/control_plane/card_types.js";
 import type { AppendReportTimeline } from "./report_timeline_publisher.js";
@@ -88,7 +89,7 @@ export class PersistentReportService {
             card_id: cardId,
             card_number: cardNumber,
           };
-          await this.appendTimeline(sessionId, line);
+          await this.appendTimeline(sessionId, { type: REPORT_TIMELINE_EVENT_TYPE, ...line });
         }
         await this.onPosted?.({ sessionId, entry });
       }
@@ -109,7 +110,7 @@ export class PersistentReportService {
         const q=(await this.sql<BoardQuestion[]>`SELECT * FROM card_questions WHERE id=${questionId}`)[0];
         const card=(await this.sql<BoardCard[]>`SELECT * FROM cards WHERE id=${cardId}`)[0];
         if(q&&card&&q.answer===null&&q.withdrawn_at===null)
-          await this.appendTimeline?.(sessionId,{line_key:`card:${cardId}`,status:"question",title:clip(card.title,60),detail:clip(q.text,120),card_id:cardId,card_number:card.number});
+          await this.appendTimeline?.(sessionId,{type:REPORT_TIMELINE_EVENT_TYPE,line_key:`card:${cardId}`,status:"question",title:clip(card.title,60),detail:clip(q.text,120),card_id:cardId,card_number:card.number,question_id:questionId});
       }
       if (result.ok) {
         placed.push(sessionId);
@@ -235,7 +236,7 @@ export class PersistentReportService {
       card_number: card.number,
     };
     for (const sessionId of await this.connectedSessions(this.sql, card.id)) {
-      await this.appendTimeline?.(sessionId, line);
+      await this.appendTimeline?.(sessionId, { type: REPORT_TIMELINE_EVENT_TYPE, ...line });
     }
   }
   /** Activation and boot use the same full-board write as ordinary mutations. */
@@ -302,13 +303,40 @@ export class PersistentReportService {
         return d.card_id===old.card_id&&d.status===old.status&&d.blocked_kind===old.blocked_kind&&d.status_changed_at===old.status_changed_at;
       });
       const changed = !sameEntries||!sameDismissed;
+      const closures = changed ? await collectQuestionClosures(sql, entries, next) : [];
       const update = changed ? await writePersistentReportTx(sql,row,next,dismissed) : undefined;
-      return {result:{ok:true,changed,entries:next.map(({key,title})=>({key,title})),persistent_report:next} as PersistentReportResult,update};
+      return {result:{ok:true,changed,entries:next.map(({key,title})=>({key,title})),persistent_report:next} as PersistentReportResult,update,closures};
     });
     // Publish the transaction's own result immediately after commit, before any other await.
     if (outcome.update) await this.publish([outcome.update]);
+    if (outcome.closures?.length && this.appendTimeline) {
+      await this.appendTimeline(sessionId, { type: REPORT_TIMELINE_QUESTION_CLOSED_EVENT_TYPE, closures: outcome.closures });
+    }
     return outcome.result;
   }
+}
+
+/** 판에서 내려간 카드 질문 장 가운데 실제로 답이나 철회로 닫힌 것만 닫힘 목록으로 만든다. */
+async function collectQuestionClosures(
+  sql: RepositorySql,
+  before: readonly PersistentReportEntry[],
+  after: readonly PersistentReportEntry[],
+): Promise<ReportTimelineQuestionClosed[]> {
+  const remaining = new Set(after.map(entry => entry.key));
+  const dropped = before.filter(entry => entry.key.startsWith(CARD_QUESTION_KEY_PREFIX)
+    && entry.question_id !== undefined && entry.card_id !== undefined && !remaining.has(entry.key));
+  if (dropped.length === 0) return [];
+  const rows = await sql<{ id: string; answer: string | null; withdrawn_at: Date | null }[]>`
+    SELECT id,answer,withdrawn_at FROM card_questions WHERE id=ANY(${sql.array(dropped.map(entry => entry.question_id!))}::text[])
+  `;
+  const states = new Map(rows.map(row => [row.id, cardQuestionState(row)]));
+  const closures: ReportTimelineQuestionClosed[] = [];
+  for (const entry of dropped) {
+    const state = states.get(entry.question_id!);
+    if (state !== "answered" && state !== "withdrawn") continue;
+    closures.push({ question_id: entry.question_id!, line_key: `card:${entry.card_id}`, detail: entry.context, status: state });
+  }
+  return closures;
 }
 
 function sameReportEntry(

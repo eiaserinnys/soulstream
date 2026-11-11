@@ -21,6 +21,7 @@ describe("buildHistoryPageUrl", () => {
       "debug",
       "generation_started",
       "report_timeline",
+      "report_timeline_question_closed",
       "tool_start",
       "tool_result",
       "error",

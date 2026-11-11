@@ -1,27 +1,71 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { collapseReportTimeline, parsePersistentReportEntry, readPersistentReport, parsePersistentReportReply, REPORT_TIMELINE_STATUS_LABEL } from "../../packages/wire-schema/src/persistent_report.js";
+import type { ReportTimelineQuestionClosed, ReportTimelineQuestionClosedStatus, ReportTimelineRowLine } from "../../packages/wire-schema/src/persistent_report.js";
 
 const entry = { key: "deploy-270", kind: "ask", title: "배포 결정", card_numbers: [], context: "검증을 마쳤습니다", action: "[결과](https://example.com/result)", options: ["진행", "보류"] };
 
+type Row = { line?: ReportTimelineRowLine; closures?: ReportTimelineQuestionClosed[]; conversation?: boolean };
+const access = {
+  lineOf: (item: Row) => item.line ?? null,
+  closuresOf: (item: Row) => item.closures ?? null,
+  isConversation: (item: Row) => item.conversation === true,
+  withStatus: (item: Row, status: ReportTimelineQuestionClosedStatus): Row => ({ ...item, line: { ...item.line!, status } }),
+};
+const line = (overrides: Partial<ReportTimelineRowLine> = {}): ReportTimelineRowLine => ({
+  line_key: "card:c1", status: "question", title: "#1 검수", detail: "질문 글", card_id: "c1", card_number: 1, ...overrides,
+});
+const question = (overrides: Partial<ReportTimelineRowLine> = {}): Row => ({ line: line(overrides) });
+const closed = (overrides: Partial<ReportTimelineQuestionClosed> = {}): ReportTimelineQuestionClosed => ({
+  question_id: "q1", line_key: "card:c1", detail: "질문 글", status: "answered", ...overrides,
+});
+const conversation = (): Row => ({ conversation: true });
+
 describe("persistent report shared contract", () => {
   it("collapses repeated timeline lines only within conversation boundaries", () => {
-    const a1 = { key: "A", value: 1 };
-    const a2 = { key: "A", value: 2 };
-    const b1 = { key: "B", value: 1 };
-    const other = { key: null, conversation: false };
-    const conversation = { key: null, conversation: true };
-    const lineKeyOf = (item: typeof a1 | typeof other | typeof conversation) => item.key;
-    const isConversation = (item: typeof a1 | typeof other | typeof conversation) => "conversation" in item && item.conversation;
+    const a1 = { line: line({ line_key: "A", status: "review" as const }) };
+    const a2 = { line: line({ line_key: "A", status: "done" as const }) };
+    const b1 = { line: line({ line_key: "B", status: "review" as const }) };
+    const other: Row = {};
 
-    expect(collapseReportTimeline([a1, other, a2], lineKeyOf, isConversation)).toEqual([a2, other]);
-    expect(collapseReportTimeline([a1, conversation, a2], lineKeyOf, isConversation)).toEqual([a1, conversation, a2]);
-    expect(collapseReportTimeline([a1, b1, a2], lineKeyOf, isConversation)).toEqual([a2, b1]);
+    expect(collapseReportTimeline([a1, other, a2], access)).toEqual([a2, other]);
+    expect(collapseReportTimeline([a1, conversation(), a2], access)).toEqual([a1, conversation(), a2]);
+    expect(collapseReportTimeline([a1, b1, a2], access)).toEqual([a2, b1]);
     expect(REPORT_TIMELINE_STATUS_LABEL).toEqual({
       review: "검수 대기", blocked: "막힘", question: "질문", done: "완료",
-      cancelled: "취소", on_hold: "보류", report: "보고",
+      cancelled: "취소", on_hold: "보류", report: "보고", answered: "답함", withdrawn: "철회",
     });
     expect([a1, other, a2]).toEqual([a1, other, a2]);
+  });
+  it("changes the preceding question line in place and drops the closure row", () => {
+    const asked = question({ question_id: "q1" });
+    const answered = question({ question_id: "q1", status: "answered" });
+    expect(collapseReportTimeline([asked, { closures: [closed()] }], access)).toEqual([answered]);
+    expect(collapseReportTimeline([asked, conversation(), { closures: [closed({ status: "withdrawn" })] }], access))
+      .toEqual([question({ question_id: "q1", status: "withdrawn" }), conversation()]);
+  });
+  it("finds old question lines without question_id by line_key and detail only", () => {
+    expect(collapseReportTimeline([question(), { closures: [closed({ question_id: "q9" })] }], access))
+      .toEqual([question({ status: "answered" })]);
+    expect(collapseReportTimeline([question(), { closures: [closed({ question_id: "q9", detail: "다른 글" })] }], access))
+      .toEqual([question()]);
+  });
+  it("leaves a line alone once another status replaced it in the same segment", () => {
+    const asked = question({ question_id: "q1" });
+    const review = question({ question_id: "q1", status: "review" });
+    expect(collapseReportTimeline([asked, review, { closures: [closed()] }], access)).toEqual([review]);
+  });
+  it("applies every closure in one event and matches the right question of the same card", () => {
+    const first = question({ question_id: "q1" });
+    const second = question({ question_id: "q2" });
+    const rows = collapseReportTimeline([first, conversation(), second, { closures: [
+      closed({ question_id: "q1", status: "withdrawn" }), closed({ question_id: "q2", status: "answered" }),
+    ] }], access);
+    expect(rows).toEqual([
+      question({ question_id: "q1", status: "withdrawn" }), conversation(), question({ question_id: "q2", status: "answered" }),
+    ]);
+    expect(collapseReportTimeline([first, conversation(), second, { closures: [closed({ question_id: "q1" })] }], access))
+      .toEqual([question({ question_id: "q1", status: "answered" }), conversation(), second]);
   });
   it("keeps the link recognition regex aligned with the display contract", () => {
     const source = readFileSync(new URL("../../packages/wire-schema/src/persistent_report.ts", import.meta.url), "utf8");

@@ -47,6 +47,7 @@ const CHAT_MESSAGE_EVENT_ID_INVENTORY = {
   assigned_card_context: "render",
   generation_started: "render",
   report_timeline: "render",
+  report_timeline_question_closed: "render",
   persistent_jev_candidates: "render",
   persistent_instruction_recorded: "conditional",
   context_usage: "hidden",
@@ -324,6 +325,13 @@ describe("flattenTree", () => {
         }),
         type: "report_timeline",
         eventId: 200,
+      },
+      {
+        node: makeRawEventNode("report_timeline_question_closed", 210, {
+          closures: [{ question_id: "question-812", line_key: "card-812", detail: "완료", status: "answered" }],
+        }),
+        type: "report_timeline_question_closed",
+        eventId: 210,
       },
       {
         node: makeRawEventNode("persistent_jev_candidates", 190, { preparedInputId: "prepared-input", candidates: [] }),

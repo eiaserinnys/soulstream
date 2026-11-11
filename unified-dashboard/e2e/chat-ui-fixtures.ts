@@ -17,7 +17,7 @@ function sse(type: string, payload: object, id?: number) {
 }
 export async function installChatUiRoutes(page: Page, options: {
   example?: ChatUiExample; count?: number; live?: boolean; questions?: boolean;
-  fallback?: "unsupported" | "invalid"; ui?: boolean;
+  fallback?: "unsupported" | "invalid"; ui?: boolean; questionClosed?: boolean;
 } = {}) {
   const count = options.count ?? 8;
   const example = options.example ?? "normal";
@@ -63,6 +63,46 @@ export async function installChatUiRoutes(page: Page, options: {
       if (id === count && options.ui !== false) {
         payload = publication;
         identities.push({ sessionId, eventId: id, uiId: envelope.ui_id, hash: envelope.hash });
+      }
+      if (options.questionClosed) {
+        const questionRows: Record<number, { event_type: string; payload: Record<string, unknown> }> = {
+          [count - 9]: { event_type: "report_timeline", payload: {
+            line_key: "card:fixture-card-1208", status: "question", question_id: "fixture-question-1208",
+            title: "#1208 카드 상태 규칙을 XState로 리뉴얼하고 생성 그림으로 구멍 검증",
+            detail: "카드 상태 규칙 리뉴얼을 이번 주에 머지할까요, 생성 그림 검증을 먼저 마칠까요?",
+            card_id: "fixture-card-1208", card_number: 1208 } },
+          [count - 8]: { event_type: "report_timeline_question_closed", payload: { closures: [{
+            question_id: "fixture-question-1208", line_key: "card:fixture-card-1208",
+            detail: "카드 상태 규칙 리뉴얼을 이번 주에 머지할까요, 생성 그림 검증을 먼저 마칠까요?", status: "answered" }] } },
+          [count - 7]: { event_type: "user_message", payload: { text: "생성 그림 검증부터 보세요.", timestamp: id } },
+          [count - 6]: { event_type: "report_timeline", payload: {
+            line_key: "card:fixture-card-1217", status: "question", question_id: "fixture-question-1217",
+            title: "#1217 크랙 17호 세자르 만들기: 소개 문구, 상황 그림, 대화 시험",
+            detail: "소개 문구를 먼저 확정할까요, 상황 그림을 먼저 뽑을까요?",
+            card_id: "fixture-card-1217", card_number: 1217 } },
+          [count - 5]: { event_type: "assistant_message", payload: {
+            content: "상황 그림의 방향을 먼저 정리했습니다.", timestamp: id, tool_use_id: `fixture-${id}` } },
+          [count - 4]: { event_type: "report_timeline_question_closed", payload: { closures: [{
+            question_id: "fixture-question-1217", line_key: "card:fixture-card-1217",
+            detail: "소개 문구를 먼저 확정할까요, 상황 그림을 먼저 뽑을까요?", status: "answered" }] } },
+          [count - 3]: { event_type: "report_timeline", payload: {
+            line_key: "card:fixture-card-1220", status: "question", question_id: "fixture-question-1220",
+            title: "#1220 PAS 채팅창의 질문 줄: 답이나 철회 뒤 표시 바꾸기",
+            detail: "백필을 배포 직후에 돌릴까요, 다음 정기 점검에 함께 돌릴까요?",
+            card_id: "fixture-card-1220", card_number: 1220 } },
+          [count - 2]: { event_type: "report_timeline", payload: {
+            line_key: "card:fixture-card-1197", status: "question", question_id: "fixture-question-1197",
+            title: "#1197 PAS 판 카드 질문 장 표시 정리",
+            detail: "질문 장 색을 지금 바꿀까요, 다음 배포에 함께 넣을까요?",
+            card_id: "fixture-card-1197", card_number: 1197 } },
+          [count - 1]: { event_type: "report_timeline_question_closed", payload: { closures: [{
+            question_id: "fixture-question-1197", line_key: "card:fixture-card-1197",
+            detail: "질문 장 색을 지금 바꿀까요, 다음 배포에 함께 넣을까요?", status: "withdrawn" }] } },
+          [count]: { event_type: "assistant_message", payload: {
+            content: "질문 줄 표시를 검수했습니다.", timestamp: id, tool_use_id: `fixture-${id}` } },
+        };
+        const row = questionRows[id];
+        if (row) { event_type = row.event_type; payload = row.payload; }
       }
       if (options.questions && id === count - 1) {
         event_type = "input_request";

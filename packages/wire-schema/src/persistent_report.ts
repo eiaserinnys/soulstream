@@ -1,7 +1,16 @@
 /** PAS report storage, message-context, and timeline event contracts. */
 export const PERSISTENT_REPORT_METADATA_TYPE = "persistent_report";
 export const REPORT_TIMELINE_EVENT_TYPE = "report_timeline";
+/** 카드 질문 줄이 답이나 철회로 닫혔을 때 남기는 이벤트 타입. 줄로 그리지 않는다. */
+export const REPORT_TIMELINE_QUESTION_CLOSED_EVENT_TYPE = "report_timeline_question_closed";
 export type ReportTimelineStatus = "review" | "blocked" | "question" | "done" | "cancelled" | "on_hold" | "report";
+export type ReportTimelineQuestionClosedStatus = "answered" | "withdrawn";
+export type ReportTimelineQuestionClosed = {
+  question_id: string;
+  line_key: string;
+  detail: string;
+  status: ReportTimelineQuestionClosedStatus;
+};
 export type ReportTimelineLine = {
   line_key: string;
   status: ReportTimelineStatus;
@@ -9,8 +18,13 @@ export type ReportTimelineLine = {
   detail: string;
   card_id: string | null;
   card_number: number | null;
+  /** 카드 질문 줄에만 서버가 채운다. 이 PR 전에 남은 줄에는 없다. */
+  question_id?: string;
 };
-export const REPORT_TIMELINE_STATUS_LABEL: Record<ReportTimelineStatus, string> = {
+/** 화면이 그리는 줄 상태. 접기가 닫힘을 반영한 뒤의 값이다. */
+export type ReportTimelineRowStatus = ReportTimelineStatus | ReportTimelineQuestionClosedStatus;
+export type ReportTimelineRowLine = Omit<ReportTimelineLine, "status"> & { status: ReportTimelineRowStatus };
+export const REPORT_TIMELINE_STATUS_LABEL: Record<ReportTimelineRowStatus, string> = {
   review: "검수 대기",
   blocked: "막힘",
   question: "질문",
@@ -18,34 +32,77 @@ export const REPORT_TIMELINE_STATUS_LABEL: Record<ReportTimelineStatus, string> 
   cancelled: "취소",
   on_hold: "보류",
   report: "보고",
+  answered: "답함",
+  withdrawn: "철회",
 };
-export function collapseReportTimeline<T>(
-  items: readonly T[],
-  lineKeyOf: (item: T) => string | null,
-  isConversation: (item: T) => boolean,
-): T[] {
+export function collapseReportTimeline<T>(items: readonly T[], access: {
+  lineOf: (item: T) => ReportTimelineLine | ReportTimelineRowLine | null;
+  closuresOf: (item: T) => readonly ReportTimelineQuestionClosed[] | null;
+  isConversation: (item: T) => boolean;
+  withStatus: (item: T, status: ReportTimelineQuestionClosedStatus) => T;
+}): T[] {
   const collapsed: T[] = [];
   const positions = new Map<string, number>();
+  // 질문 줄이 놓인 자리. 대화 구간이 바뀌어도 비우지 않는다(닫힘이 대화 너머의 줄을 찾는다).
+  const questionPositions = new Map<string, number[]>();
   for (const item of items) {
-    if (isConversation(item)) {
+    const closures = access.closuresOf(item);
+    if (closures !== null) {
+      for (const closure of closures) applyClosure(collapsed, questionPositions, closure, access);
+      continue;
+    }
+    if (access.isConversation(item)) {
       collapsed.push(item);
       positions.clear();
       continue;
     }
-    const key = lineKeyOf(item);
-    if (key === null) {
+    const line = access.lineOf(item);
+    if (line === null) {
       collapsed.push(item);
       continue;
     }
-    const position = positions.get(key);
+    const position = positions.get(line.line_key);
+    const index = position === undefined ? collapsed.length : position;
     if (position === undefined) {
-      positions.set(key, collapsed.length);
+      positions.set(line.line_key, index);
       collapsed.push(item);
     } else {
       collapsed[position] = item;
     }
+    if (line.status === "question") {
+      const key = questionKey(line);
+      const indices = questionPositions.get(key);
+      if (indices === undefined) questionPositions.set(key, [index]);
+      else if (!indices.includes(index)) indices.push(index);
+    }
   }
   return collapsed;
+}
+function questionKey(line: ReportTimelineLine | ReportTimelineRowLine): string {
+  return line.question_id ? `id:${line.question_id}` : `legacy:${line.line_key}\n${line.detail}`;
+}
+function applyClosure<T>(
+  collapsed: T[],
+  questionPositions: Map<string, number[]>,
+  closure: ReportTimelineQuestionClosed,
+  access: {
+    lineOf: (item: T) => ReportTimelineLine | ReportTimelineRowLine | null;
+    withStatus: (item: T, status: ReportTimelineQuestionClosedStatus) => T;
+  },
+): void {
+  for (const key of [`id:${closure.question_id}`, `legacy:${closure.line_key}\n${closure.detail}`]) {
+    for (const position of questionPositions.get(key) ?? []) {
+      const current = collapsed[position];
+      if (current === undefined) continue;
+      const line = access.lineOf(current);
+      if (line === null || line.status !== "question") continue;
+      const sameQuestion = key.startsWith("id:")
+        ? line.question_id === closure.question_id
+        : line.question_id === undefined && line.line_key === closure.line_key && line.detail === closure.detail;
+      if (!sameQuestion) continue;
+      collapsed[position] = access.withStatus(current, closure.status);
+    }
+  }
 }
 export const PERSISTENT_REPORT_LIMIT = 12;
 export const PERSISTENT_REPORT_KEY = /^[a-z0-9][a-z0-9_-]{0,47}$/;

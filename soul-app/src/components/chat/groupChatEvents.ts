@@ -525,7 +525,7 @@ export function groupChatEvents(
   events.forEach((e, i) => {
     if (consumed.has(i)) return;
     if (e.type === 'turn_summary' || e.type === 'debug' || e.type === 'result') return;
-    if (e.type === 'report_timeline') {
+    if (e.type === 'report_timeline' || e.type === 'report_timeline_question_closed') {
       out.push({ kind: 'event', event: e, key: `evt-${e.id}` });
       return;
     }

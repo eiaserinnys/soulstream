@@ -1,12 +1,12 @@
 import { REPORT_TIMELINE_STATUS_LABEL, useInternalLinkClick } from "@seosoyoung/soul-ui";
-import type { ReportTimelineAlignmentInset, ReportTimelineLine } from "@seosoyoung/soul-ui";
+import type { ReportTimelineAlignmentInset, ReportTimelineRowLine } from "@seosoyoung/soul-ui";
 import { StatusChip } from "./StatusChip";
 
 export function ReportTimelineRow({
   line,
   alignmentInset,
 }: {
-  line: ReportTimelineLine;
+  line: ReportTimelineRowLine;
   alignmentInset: ReportTimelineAlignmentInset;
 }) {
   const internalLinkClick = useInternalLinkClick();

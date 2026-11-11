@@ -19,6 +19,7 @@ import type {
   UserMessageEvent,
   SystemMessageEvent,
   ReportTimelineEvent,
+  ReportTimelineQuestionClosedEvent,
   SessionNotificationEvent,
   InterventionSentEvent,
   CompactEvent,
@@ -168,7 +169,16 @@ export function createNodeFromEvent(
           detail: e.detail,
           card_id: e.card_id,
           card_number: e.card_number,
+          ...(e.question_id === undefined ? {} : { question_id: e.question_id }),
         },
+      });
+    }
+
+    case "report_timeline_question_closed": {
+      const e = event as ReportTimelineQuestionClosedEvent;
+      return makeNode(`report-timeline-question-closed-${eventId}`, "report_timeline_question_closed", "", {
+        completed: true,
+        closures: e.closures,
       });
     }
 

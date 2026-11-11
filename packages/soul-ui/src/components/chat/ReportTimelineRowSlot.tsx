@@ -1,9 +1,9 @@
 import { createContext, useContext, type ReactNode } from "react";
-import type { ReportTimelineLine } from "@soulstream/wire-schema/persistent-report";
+import type { ReportTimelineRowLine } from "@soulstream/wire-schema/persistent-report";
 
 export type ReportTimelineAlignmentInset = "avatar" | "content";
 type ReportTimelineRowRenderer = (
-  line: ReportTimelineLine,
+  line: ReportTimelineRowLine,
   alignmentInset: ReportTimelineAlignmentInset,
 ) => ReactNode;
 

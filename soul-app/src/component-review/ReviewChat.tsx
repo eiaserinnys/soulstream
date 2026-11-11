@@ -238,6 +238,55 @@ export const persistentChatEvents: SessionEvent[] = [
   { id: '963', type: 'report_timeline', data: {
     line_key: 'card-932', status: 'done', title: '#932 최신 완료', detail: '', card_id: 'card-932', card_number: 932,
   } },
+  { id: '964', type: 'report_timeline', data: {
+    line_key: 'card:review-card-1208', status: 'question', question_id: 'review-question-1208',
+    title: '#1208 카드 상태 규칙을 XState로 리뉴얼하고 생성 그림으로 구멍 검증',
+    detail: '카드 상태 규칙 리뉴얼을 이번 주에 머지할까요, 생성 그림 검증을 먼저 마칠까요?',
+    card_id: 'review-card-1208', card_number: 1208,
+  } },
+  { id: '965', type: 'report_timeline_question_closed', data: {
+    closures: [{
+      question_id: 'review-question-1208', line_key: 'card:review-card-1208',
+      detail: '카드 상태 규칙 리뉴얼을 이번 주에 머지할까요, 생성 그림 검증을 먼저 마칠까요?',
+      status: 'answered',
+    }],
+  } },
+  { id: '966', type: 'user_message', data: {
+    input_id: 'timeline-question-closed-boundary', text: '이전 질문의 답을 확인했습니다.',
+  } },
+  { id: '967', type: 'report_timeline', data: {
+    line_key: 'card:review-card-1217', status: 'question', question_id: 'review-question-1217',
+    title: '#1217 크랙 17호 세자르 만들기: 소개 문구, 상황 그림, 대화 시험',
+    detail: '소개 문구를 먼저 확정할까요, 상황 그림을 먼저 뽑을까요?',
+    card_id: 'review-card-1217', card_number: 1217,
+  } },
+  { id: '968', type: 'assistant_message', data: { text: '상황 그림의 방향을 먼저 정리했습니다.' } },
+  { id: '969', type: 'report_timeline_question_closed', data: {
+    closures: [{
+      question_id: 'review-question-1217', line_key: 'card:review-card-1217',
+      detail: '소개 문구를 먼저 확정할까요, 상황 그림을 먼저 뽑을까요?',
+      status: 'answered',
+    }],
+  } },
+  { id: '970', type: 'report_timeline', data: {
+    line_key: 'card:review-card-1220', status: 'question', question_id: 'review-question-1220',
+    title: '#1220 PAS 채팅창의 질문 줄: 답이나 철회 뒤 표시 바꾸기',
+    detail: '백필을 배포 직후에 돌릴까요, 다음 정기 점검에 함께 돌릴까요?',
+    card_id: 'review-card-1220', card_number: 1220,
+  } },
+  { id: '971', type: 'report_timeline', data: {
+    line_key: 'card:review-card-1197', status: 'question', question_id: 'review-question-1197',
+    title: '#1197 PAS 판 카드 질문 장 표시 정리',
+    detail: '질문 장 색을 지금 바꿀까요, 다음 배포에 함께 넣을까요?',
+    card_id: 'review-card-1197', card_number: 1197,
+  } },
+  { id: '972', type: 'report_timeline_question_closed', data: {
+    closures: [{
+      question_id: 'review-question-1197', line_key: 'card:review-card-1197',
+      detail: '질문 장 색을 지금 바꿀까요, 다음 배포에 함께 넣을까요?',
+      status: 'withdrawn',
+    }],
+  } },
 ];
 const persistentWorkDetailsSample: SessionEvent = {
   id: '935',

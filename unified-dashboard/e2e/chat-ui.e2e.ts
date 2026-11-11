@@ -7,6 +7,8 @@ import { installChatUiRoutes, openChatUi, chatUiSession, type ChatUiExample } fr
 
 const output = path.resolve("../../../.local/artifacts/pas-web-w4");
 mkdirSync(output, { recursive: true });
+const questionOutput = path.resolve("../../../.local/artifacts/card-1220-question-closed-web");
+mkdirSync(questionOutput, { recursive: true });
 async function capture(page: Page, name: string) {
   await page.evaluate(() => document.fonts.ready);
   await page.screenshot({ path: path.join(output, `${name}.png`), animations: "disabled" });
@@ -279,3 +281,30 @@ test("review sample uses the actual composer and isolates its render-error fallb
   await editor.scrollIntoViewIfNeeded(); await capture(page, "fallback-render-error-review");
   expect(h.errors).toEqual([]); expect(h.sends).toEqual([]);
 });
+
+for (const width of [1280, 390]) {
+  test(`PAS question rows change to answered and withdrawn chips ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1000 });
+    const h = await installChatUiRoutes(page, { count: 12, ui: false, questionClosed: true });
+    await page.goto(`/persistent/${chatUiSession}`);
+    const root = page.locator('[data-slot="chat-root"]').filter({ visible: true }).first();
+    await expect(root).toBeVisible();
+    const rows = root.locator('[data-slot="report-timeline-row"]');
+    await expect(rows).toHaveCount(4);
+    await expect(rows.nth(0)).toContainText("답함");
+    await expect(rows.nth(0)).toContainText("#1208 카드 상태 규칙을 XState로 리뉴얼하고 생성 그림으로 구멍 검증");
+    await expect(rows.nth(0)).toContainText("카드 상태 규칙 리뉴얼을 이번 주에 머지할까요, 생성 그림 검증을 먼저 마칠까요?");
+    await expect(rows.nth(1)).toContainText("답함");
+    await expect(rows.nth(1)).toContainText("#1217 크랙 17호 세자르 만들기: 소개 문구, 상황 그림, 대화 시험");
+    await expect(rows.nth(2)).toContainText("질문");
+    await expect(rows.nth(2)).toContainText("#1220 PAS 채팅창의 질문 줄: 답이나 철회 뒤 표시 바꾸기");
+    await expect(rows.nth(3)).toContainText("철회");
+    await expect(rows.nth(3)).toContainText("#1197 PAS 판 카드 질문 장 표시 정리");
+    await page.evaluate(() => document.fonts.ready);
+    await page.screenshot({
+      path: path.join(questionOutput, `pas-question-closed-${width}.png`),
+      animations: "disabled",
+    });
+    expect(h.errors).toEqual([]);
+  });
+}
