@@ -3,8 +3,8 @@ import { expect, it } from "vitest";
 import { CARD_EVENTS, EVENT_SOURCES, STATUS_DECISIONS } from "../src/cards/state/card_machine_events.js";
 import { cardMachine } from "../src/cards/state/card_machine.js";
 
-it("상태를 정하는 16곳과 사건의 원문 파일이 존재한다",async()=>{
-  expect(Object.keys(STATUS_DECISIONS)).toHaveLength(16);
+it("상태를 정하는 17곳과 사건의 원문 파일이 존재한다",async()=>{
+  expect(Object.keys(STATUS_DECISIONS)).toHaveLength(17);
   for(const events of Object.values(STATUS_DECISIONS)) for(const type of events) expect(EVENT_SOURCES[type]?.length).toBeGreaterThan(0);
   for(const sources of Object.values(EVENT_SOURCES))for(const locator of sources) {
     const file=locator.split("#")[0]!;

@@ -36,6 +36,7 @@ function makeDispatcher(metadata: unknown) {
     assignee_session_id: SESSION_ID,
     version: 3,
   };
+  const blockCardForLimit = vi.fn(async () => {});
   const setCardStatus = vi.fn(async () => {});
   const updateCardNow = vi.fn(async () => {});
   const getCard = vi.fn(async () => ({
@@ -70,7 +71,7 @@ function makeDispatcher(metadata: unknown) {
   };
   const dispatcher = new CardDispatcher({
     repository: repository as never,
-    cards: async () => ({ getCard, setCardStatus, updateCardNow }) as never,
+    cards: async () => ({ getCard, setCardStatus, updateCardNow, blockCardForLimit }) as never,
     resolveTarget: () => ({
       nodeId: "node",
       agentId: "agent",
@@ -85,7 +86,7 @@ function makeDispatcher(metadata: unknown) {
     notify: vi.fn(async () => {}),
     warn: vi.fn(),
   });
-  return { dispatcher, setCardStatus, updateCardNow, getCard };
+  return { dispatcher, setCardStatus, updateCardNow, getCard, blockCardForLimit };
 }
 
 describe("card dispatcher ignores a limit stop that a model fallback generation continues", () => {
@@ -101,14 +102,14 @@ describe("card dispatcher ignores a limit stop that a model fallback generation 
   });
 
   it("still blocks the card for a limit stop without a fallback pending", async () => {
-    const { dispatcher, setCardStatus } = makeDispatcher([]);
+    const { dispatcher, blockCardForLimit } = makeDispatcher([]);
 
     await dispatcher.sessionEnded(SESSION_ID);
 
-    expect(setCardStatus).toHaveBeenCalledWith(expect.objectContaining({
+    expect(blockCardForLimit).toHaveBeenCalledWith(expect.objectContaining({
       cardId: CARD_ID,
-      status: "blocked",
-      blockedKind: "limit",
+      sessionId: SESSION_ID,
+      terminationEventId: 17,
     }));
   });
 });

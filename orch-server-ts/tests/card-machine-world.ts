@@ -10,7 +10,6 @@ import { CardOrchestrationRepository } from "../src/cards/card_orchestration_rep
 import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
 import { CardDispatcher } from "../src/cards/card_dispatcher.js";
 import { PersistentReportService } from "../src/session/persistent_report_service.js";
-import { readLimitAutoResumeAt } from "../src/cards/card_limit_auto_resume.js";
 import { cardFactsToStateValue, type CardFacts } from "../src/cards/state/card_machine_facts.js";
 
 const human={actorKind:"user" as const,actorSessionId:null,actorUserId:"director"};
@@ -52,7 +51,7 @@ export async function createCardMachineWorld() {
   async function facts():Promise<CardFacts> {
     if(!cardId)return {status:"uncreated",assignee:"none",supervised:false,boardEntryCount:0,cardEntryCount:0,questionEntryCount:0};
     const r=await row();const owner=r.assignee_session_id?await repo.ownerSession(r.assignee_session_id):null;
-    const resumeAt=owner?await readLimitAutoResumeAt(sql,owner):null;
+
     const qs=await h.sql`SELECT session_id FROM card_questions WHERE card_id=${cardId} AND answer IS NULL AND withdrawn_at IS NULL`;
     const entries=await reports.get("pas");
     const enabled=((await h.sql`SELECT metadata FROM sessions WHERE session_id='pas'`)[0]!.metadata as {type:string;value:{enabled?:boolean}}[]).find(m=>m.type==="persistent_session")?.value.enabled===true;
@@ -61,15 +60,12 @@ export async function createCardMachineWorld() {
     if(owner) {
       const replaced=owner.session_id!==baseOwner;
       assignee=replaced?(owner.status==="error"?"replacedLimited":owner.status==="completed"?"replacedEnded":"replacedLive"):
-        owner.status==="error"?(resumeAt?"originalLimited":"originalLongLimited"):owner.status==="completed"?"originalEnded":"originalLive";
+        owner.status==="error"?(short?"originalLimited":"originalLongLimited"):owner.status==="completed"?"originalEnded":"originalLive";
     }
-    const activeLimit=r.status==="blocked"&&r.blocked_kind==="limit";
     return {status:r.status,blockedKind:r.blocked_kind,blockedDetail:r.blocked_detail,assignee,
       openQuestion:qs.length?(!owner?"orphan":qs.every(q=>q.session_id===owner.session_id)?"owner":"other"):null,
-      wakeAt:r.wake_at,limitResumeAt:resumeAt,supervised:enabled,boardEntryCount:entries.length,
-      questionEntryCount:entries.filter(e=>e.question_id!==undefined&&e.card_id===cardId).length,cardEntryCount:entries.filter(e=>e.key===`card_${cardId}`).length,
-      // Test observer: the old assignee at the limit mutation, not machine output.
-      limitedOwner:activeLimit&&limitedOwner?(owner?.session_id===limitedOwner?(short?"same":"sameLong"):(short?"different":"differentLong")):"none"};
+      wakeAt:r.wake_at,limitResumeAt:r.limit_resume_at,limitResumeSessionId:r.limit_resume_session_id,assigneeSessionId:r.assignee_session_id,supervised:enabled,boardEntryCount:entries.length,
+      questionEntryCount:entries.filter(e=>e.question_id!==undefined&&e.card_id===cardId).length,cardEntryCount:entries.filter(e=>e.key===`card_${cardId}`).length};
   }
   async function apply(type:string) {
     const agent=async()=>({actorKind:"agent" as const,actorSessionId:(await row()).assignee_session_id??"other"});
@@ -81,11 +77,6 @@ export async function createCardMachineWorld() {
       const target=type.replace(/^(HUMAN|ASSIGNEE)_MOVE_/,"");
       const actor=type.startsWith("HUMAN_")?human:await agent();
       const before=await row();
-      if(target==="limit"&&!(before.status==="blocked"&&before.blocked_kind==="limit")) {
-        limitedOwner=before.assignee_session_id;
-        const owner=limitedOwner?await repo.ownerSession(limitedOwner):null;
-        short=Boolean(owner&&await repo.limitAutoResumeAt(owner));
-      }
       await cards.setCardStatus({...actor,cardId,status:(statusOf[target]??target) as Exclude<CardFacts["status"],"uncreated">,
         blockedKind:target==="question"?"question":target==="limit"?"limit":target==="noReport"?"no_report":null,
         blockedDetail:target==="noReport"?"보고 없음":null,wakeAt:target==="verification"?new Date(Date.now()+3600000).toISOString():undefined,waitingFor:target==="verification"?"배포 확인":undefined});return;
@@ -184,7 +175,7 @@ export async function createCardMachineWorld() {
         await h.sql`UPDATE system_settings SET value='{"enabled":false}' WHERE setting_key='card_orchestration'`;
         return;
       }
-      case "SERVER_LIMIT_REQUEUE":await cards.setCardStatus({actorKind:"system",actorSessionId:null,cardId,status:"queued"});return;
+      case "SERVER_LIMIT_REQUEUE":await dispatcher.checkLimits();return;
       case "DISPATCH":await cards.recordDispatch({cardId,expectedVersion:(await row()).version,sessionId:"owner",nodeId:"node"});return;
       case "NOTE_MISSING":await cards.noteMissingAssignee({cardId,expectedVersion:(await row()).version});return;
       case "CREATE_FAIL":case "ATTACHMENT_FAIL":await cards.setCardStatus({actorKind:"system",actorSessionId:null,cardId,status:"blocked",blockedKind:"no_report",blockedDetail:"시험 실패"});return;

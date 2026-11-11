@@ -70,6 +70,8 @@ export interface CardRow extends CardAssigneeFields {
   blocked_detail: string | null;
   wake_at: Date | null;
   waiting_for: string | null;
+  limit_resume_session_id: string | null;
+  limit_resume_at: Date | null;
   node_id: string | null;
   model_preset: string | null;
   status: CardStatus;

@@ -437,6 +437,8 @@ CREATE TABLE cards (
     blocked_detail       TEXT,
     wake_at              TIMESTAMPTZ,
     waiting_for          TEXT,
+    limit_resume_session_id TEXT,
+    limit_resume_at       TIMESTAMPTZ,
     node_id              TEXT,
     model_preset         TEXT,
     assignee_kind        TEXT CHECK (assignee_kind IN ('agent','human','session')),
@@ -472,7 +474,17 @@ CREATE TABLE cards (
         OR
         (status <> 'awaiting_verification'
             AND wake_at IS NULL AND waiting_for IS NULL)
-    )
+    ),
+    CONSTRAINT cards_limit_resume_check CHECK (
+  (limit_resume_session_id IS NULL AND limit_resume_at IS NULL)
+  OR
+  (limit_resume_session_id IS NOT NULL
+    AND status = 'blocked' AND blocked_kind IS NOT NULL AND blocked_kind = 'limit'
+    AND assignee_kind IS NOT NULL AND assignee_kind = 'session'
+    AND assignee_session_id IS NOT NULL
+    AND limit_resume_session_id = assignee_session_id
+    AND NOT archived)
+)
 );
 
 CREATE UNIQUE INDEX uq_cards_number ON cards(number);

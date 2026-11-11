@@ -13,12 +13,18 @@ const next=(s:CardSnapshot,event:string)=>transition(cardMachine,s,{type:event})
 /** The transition reader is replaceable only for checker mutation tests. */
 export const questionAnswersDiffer=(s:CardSnapshot,advance:typeof next=next)=>open(s)&&JSON.stringify(advance(s,"ANSWER_DETAIL").value)!==JSON.stringify(advance(s,"ANSWER_BOARD").value);
 export const questionAuthorCannotWithdraw=(s:CardSnapshot,advance:typeof next=next)=>open(s)&&open(advance(s,"WITHDRAW_AUTHOR"));
+export const unrecordedLimitResume=(s:CardSnapshot,advance:typeof next=next)=>has(s,"limit")&&!has(s,"lSame")&&!has(s,"lSameLong")&&["SERVER_LIVE_RESUME","SERVER_LIMIT_TIME","SERVER_LIMIT_RELAUNCH","SERVER_LIMIT_REQUEUE","ADMIT_LIMIT"].some(e=>has(advance(s,e),"running")||has(advance(s,e),"queued"));
+export const shortLimitReservationMissing=(s:CardSnapshot,advance:typeof next=next)=>{
+  if(has(s,"limit")&&has(s,"lSame")&&!has(s,"rLimit"))return true;
+  if(!has(s,"running")||(!has(s,"originalLive")&&!has(s,"replacedLive")))return false;
+  const stopped=advance(s,"SERVER_SHORT_LIMIT");return !has(stopped,"rLimit")||!has(stopped,"lSame");
+};
 export const CARD_PROMISES = [
   {name:"판에 올라야 할 장은 판에 있다 (1-가 질문 장)",discrepancies:[1,7],breaks:(s:CardSnapshot)=>pas(s)&&has(s,"on")&&open(s)&&!has(s,"ePresent")},
-  {name:"서버는 한도에 걸린 담당이 같을 때만 실행 중으로 옮긴다",discrepancies:[2],breaks:(s:CardSnapshot)=>has(s,"limit")&&(has(s,"lDifferent")||has(s,"lDifferentLong"))&&["SERVER_LIVE_RESUME","SERVER_LIMIT_RELAUNCH"].some(e=>has(next(s,e),"running"))},
+  {name:"서버의 한도 재개는 기록된 담당이 현재 담당일 때만 한다",discrepancies:[2],breaks:(s:CardSnapshot)=>unrecordedLimitResume(s)},
   {name:"같은 질문의 답은 카드 상세와 감독 판에서 결과가 같다",discrepancies:[4],breaks:(s:CardSnapshot)=>questionAnswersDiffer(s)},
   {name:"질문을 올릴 수 있는 세션은 철회할 수 있다",discrepancies:[8],breaks:(s:CardSnapshot)=>questionAuthorCannotWithdraw(s)},
-  {name:"짧은 한도로 막히면 깨울 예약이 있다",discrepancies:[],breaks:(s:CardSnapshot)=>has(s,"limit")&&(has(s,"lSame")||has(s,"lDifferent"))&&!has(s,"rLimit")},
+  {name:"짧은 한도로 막히면 취소 전까지 시각 있는 예약이 있다",discrepancies:[],breaks:(s:CardSnapshot)=>shortLimitReservationMissing(s)},
   {name:"기다리는 카드는 판의 장이나 시각으로 나가는 길이 있다",discrepancies:[],breaks:(s:CardSnapshot)=>pas(s)&&["question","noReport","other","limit","review"].some(id=>has(s,id))&&boardEntriesOf(s).length===0&&!has(s,"rLimit")&&!has(s,"rVerify")},
 ];
 /** The predicates are exported so repaired/violating configurations can test the checker itself. */
@@ -47,7 +53,7 @@ function computeCardPromises() {
     {id:"holeCardMissing",parent:"on",label:"판에 올라야 하는데 카드 장이 없음",test:cardEntryMissing},
     {id:"holeQuestionMissing",parent:"on",label:"질문은 열렸는데 판에 장이 없음",test:CARD_PROMISES[0]!.breaks},
     {id:"holeQuestionOff",parent:"off",label:"질문을 연 채 내려간 카드",test:(s:CardSnapshot)=>open(s)&&has(s,"off")},
-    {id:"holeOrphan",parent:"card.question",label:"철회할 세션이 없는 질문",test:CARD_PROMISES[3]!.breaks},
+    {id:"holeOrphan",parent:"card.question",label:"철회할 세션이 없는 질문",test:(s:CardSnapshot)=>!promises[3]!.kept&&CARD_PROMISES[3]!.breaks(s)},
     {id:"holeChangedLimitOwner",parent:"limit",label:"담당이 바뀐 한도 막힘",test:(s:CardSnapshot)=>has(s,"limit")&&(has(s,"lDifferent")||has(s,"lDifferentLong"))},
   ];
   const holes:CardHole[]=holeTests.map(h=>({id:h.id,parent:h.parent,label:h.label,reachable:states.some(h.test),incoming:[]}));
@@ -61,9 +67,9 @@ function computeCardPromises() {
       if(event.type==="ASK_OWNER"||event.type==="ASK_OTHER"||event.type==="BOARD_ROOM") mark(a.state,event,1);
       if(has(a.state,"done")||has(a.state,"cancelled")) mark(a.state,event,7);
     }
-    if(CARD_PROMISES[1]!.breaks(a.state)&&["SERVER_LIVE_RESUME","SERVER_LIMIT_RELAUNCH"].includes(event.type)&&has(b,"running")) mark(a.state,event,2);
-    if(CARD_PROMISES[2]!.breaks(a.state)&&event.type==="ANSWER_DETAIL") mark(a.state,event,4);
-    if(CARD_PROMISES[3]!.breaks(b)) mark(a.state,event,8);
+    if(!promises[1]!.kept&&["SERVER_LIVE_RESUME","SERVER_LIMIT_RELAUNCH"].includes(event.type)&&CARD_PROMISES[1]!.breaks(a.state)&&has(b,"running")) mark(a.state,event,2);
+    if(!promises[2]!.kept&&event.type==="ANSWER_DETAIL"&&CARD_PROMISES[2]!.breaks(a.state)) mark(a.state,event,4);
+    if(!promises[3]!.kept&&CARD_PROMISES[3]!.breaks(b)) mark(a.state,event,8);
     holeTests.forEach((h,i)=>{
       if(!h.test(a.state)&&h.test(b)) {
         const incoming=holes[i]!.incoming;

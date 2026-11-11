@@ -612,6 +612,10 @@
     {
       "id": "151_card_awaiting_verification.sql",
       "sha256": "c08f40a4dd8d2a2b041cc981e9e688194db3149c20d656416540e40a90f1023f"
+    },
+    {
+      "id": "152_card_limit_resume.sql",
+      "sha256": "1c6ce0abae21fa26c4c04e799026ed151439c3d4a28cc23c4095de5650c6e69b"
     }
   ]
 }

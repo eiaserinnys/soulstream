@@ -85,14 +85,19 @@ describe("server owns card orchestration admission", () => {
     expect(selectEligibleCards(cards as never,{n:1},{default:1},()=>({nodeId:"n",available:true,capacityClaimed:true}))).toEqual([cards[0]]);
     expect(selectEligibleCards(cards as never,{n:1},{default:1},()=>({nodeId:"n",available:true,capacityClaimed:false}))).toEqual([]);
   });
-  it("classifies execution using the current card and owner termination", () => {
+  it("classifies quota resumes from the recorded owner and optional deadline", () => {
     const limitOwner = { session_id: "owner", node_id: "n", agent_id: "worker", model_preset: "worker-model", metadata: [], status: "error", termination_reason: "limit_hit", termination_event_id: 12 };
-    expect(classifyExecution({ status: "queued", blocked_kind: null, assignee_session_id: null }, null)).toEqual({ mode: "dispatch" });
-    expect(classifyExecution({ status: "blocked", blocked_kind: "limit", assignee_session_id: "owner" }, limitOwner)).toEqual({ mode: "resume", owner: limitOwner });
-    expect(classifyExecution({ status: "blocked", blocked_kind: "limit", assignee_session_id: "owner" }, { ...limitOwner, termination_reason: "error_aborted" })).toEqual({ mode: "skip", reason: "limit_owner_not_resumable" });
-    expect(classifyExecution({ status: "blocked", blocked_kind: "limit", assignee_session_id: null }, null)).toEqual({ mode: "skip", reason: "limit_owner_missing" });
-    expect(classifyExecution({ status: "blocked", blocked_kind: "limit", assignee_session_id: "owner" }, null)).toEqual({ mode: "skip", reason: "limit_owner_missing" });
-    expect(classifyExecution({ status: "blocked", blocked_kind: "question", assignee_session_id: "owner" }, limitOwner)).toEqual({ mode: "skip", reason: "card_not_dispatchable" });
+    const empty={limit_resume_session_id:null,limit_resume_at:null};
+    const recorded={status:"blocked" as const,blocked_kind:"limit" as const,assignee_session_id:"owner",limit_resume_session_id:"owner",limit_resume_at:null};
+    expect(classifyExecution({ status: "queued", blocked_kind: null, assignee_session_id: null,...empty }, null)).toEqual({ mode: "dispatch" });
+    expect(classifyExecution(recorded,limitOwner)).toEqual({mode:"resume",owner:limitOwner});
+    const changedHistory={...limitOwner,status:"completed",termination_reason:null};
+    expect(classifyExecution(recorded,changedHistory)).toEqual({mode:"resume",owner:changedHistory});
+    for(const card of [{...recorded,...empty},{...recorded,limit_resume_session_id:"old-owner"},{...recorded,limit_resume_at:new Date()}])
+      expect(classifyExecution(card,limitOwner)).toEqual({mode:"skip",reason:"limit_owner_not_resumable"});
+    expect(classifyExecution({ ...recorded,assignee_session_id:null },null)).toEqual({mode:"skip",reason:"limit_owner_missing"});
+    expect(classifyExecution(recorded,null)).toEqual({mode:"skip",reason:"limit_owner_missing"});
+    expect(classifyExecution({...recorded,blocked_kind:"question"},limitOwner)).toEqual({mode:"skip",reason:"card_not_dispatchable"});
   });
   it("clamps text by Unicode code point while preserving both ends", () => {
     expect(clampText("짧은 본문", 20)).toBe("짧은 본문");

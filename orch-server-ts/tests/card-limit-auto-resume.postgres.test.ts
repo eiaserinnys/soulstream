@@ -127,11 +127,13 @@ describe("short quota windows resume the card assignee automatically", () => {
 
   it("A: records the reset clock, the board now and no PAS block notice", async () => {
     const id = await makeCard();
+    const before = (await cards.getCard(id))!.card;
     await limitHit(BASE, BASE + 3 * HOUR);
     const card = (await cards.getCard(id))!.card;
     expect(card).toMatchObject({ status: "blocked", blocked_kind: "limit",
       blocked_detail: "사용량 한도, 17:00 자동 재개" });
     expect(card.now).toMatchObject({ text: "사용량 한도로 멈춤, 17:00에 저절로 이어집니다", turn: "outside" });
+    expect(card).toMatchObject({limit_resume_session_id:"owner",limit_resume_at:new Date(BASE + 3 * HOUR),version:before.version + 1});
     expect(messages).not.toHaveBeenCalled();
   });
 
@@ -278,14 +280,14 @@ describe("short quota windows resume the card assignee automatically", () => {
       version: before.version });
   });
 
-  it("J: resumes an owner that is already awake without a delivery", async () => {
+  it("J: leaves an already awake owner blocked until the recorded reset", async () => {
     const id = await makeCard();
     await limitHit(BASE, BASE + 3 * HOUR);
     await h.sql`UPDATE sessions SET status='running' WHERE session_id='owner'`;
     messages.mockClear();
     await dispatcher.checkLimits(); await dispatcher.drain();
     expect(resumeDeliveries()).toHaveLength(0);
-    expect((await cards.getCard(id))!.card).toMatchObject({ status: "running", blocked_kind: null });
+    expect((await cards.getCard(id))!.card).toMatchObject({ status: "blocked", blocked_kind: "limit" });
   });
 
   it("K: ignores a reset that precedes the termination", async () => {
@@ -311,5 +313,43 @@ describe("short quota windows resume the card assignee automatically", () => {
     await deliveries.expireStaleDeliveryAttempts();
     const claimed = await deliveries.recovery.claimPendingImmediateIntentsForNode("node", "recovery-token");
     expect(claimed.map(row => row.delivery_id)).not.toContain(deliveryId);
+  });
+  it("keeps the stored deadline when the owner becomes live before reset",async()=>{
+    const id=await makeCard();
+    await limitHit(BASE,BASE+3*HOUR);
+    await recordWorkReceipt(h,"owner","running",execution);
+    messages.mockClear();
+    clock=BASE+HOUR;
+    await dispatcher.checkLimits();await dispatcher.drain();
+    expect((await cards.getCard(id))!.card).toMatchObject({status:"blocked",limit_resume_session_id:"owner",limit_resume_at:new Date(BASE+3*HOUR)});
+    expect(messages).not.toHaveBeenCalled();
+    clock=BASE+3*HOUR+1000;
+    await dispatcher.checkLimits();await dispatcher.drain();
+    expect((await cards.getCard(id))!.card).toMatchObject({status:"running",limit_resume_session_id:null,limit_resume_at:null});
+    expect(resumeDeliveries()).toHaveLength(1);
+  });
+  it("rechecks deadline and current assignee at the final write",async()=>{
+    const id=await makeCard();
+    await limitHit(BASE,BASE+3*HOUR);
+    const input={cardId:id,sessionId:"owner",resumeAt:new Date(BASE+3*HOUR).toISOString(),now:BASE+HOUR};
+    await expect(cards.resumeLimitedCard(input)).rejects.toThrow();
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id) VALUES('replacement','node','worker','error',${id})`;
+    await cards.patchCard({...human,cardId:id,assignee:{kind:"session",sessionId:"replacement"}});
+    await expect(cards.resumeLimitedCard({...input,now:BASE+4*HOUR})).rejects.toThrow();
+    expect((await cards.getCard(id))!.card).toMatchObject({status:"blocked",limit_resume_session_id:null,limit_resume_at:null});
+  });
+  it("cancels the deadline when transferring even to another quota-ended session",async()=>{
+    const id=await makeCard();
+    await limitHit(BASE,BASE+3*HOUR);
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,model_preset,status,termination_reason,card_id) VALUES('replacement','node','worker','model','error','limit_hit',${id})`;
+    await recordWorkReceipt(h,"replacement","error",null,"limit_hit");
+    await cards.patchCard({...human,cardId:id,assignee:{kind:"session",sessionId:"replacement"}});
+    await dispatcher.drain();messages.mockClear();
+    clock=BASE+4*HOUR;
+    await dispatcher.checkLimits();await dispatcher.drain();await makeCoordinator().kick();
+    expect((await cards.getCard(id))!.card).toMatchObject({status:"blocked",limit_resume_session_id:null,limit_resume_at:null});
+    expect((await cards.getCard(id))!.card.now?.text).not.toContain("저절로 이어집니다");
+    expect(resumeDeliveries()).toHaveLength(0);
+    expect(await h.sql`SELECT session_id FROM card_orchestration_dispatches WHERE card_id=${id}`).toHaveLength(0);
   });
 });

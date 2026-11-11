@@ -179,7 +179,7 @@ describe("card attachment dispatch input", () => {
     await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,folder_id,model_preset,termination_reason,termination_event_id)
       VALUES(${sessionId},${TARGET_NODE},'profile','error',${cardId},'attachment-dispatch','model','limit_hit',1)`;
     await h.sql`UPDATE cards SET status='blocked',blocked_kind='limit',blocked_detail='사용량 한도',assignee_kind='session',
-      assignee_agent_id=NULL,assignee_session_id=${sessionId} WHERE id=${cardId}`;
+      assignee_agent_id=NULL,assignee_session_id=${sessionId},limit_resume_session_id=${sessionId} WHERE id=${cardId}`;
 
     await runtime.dispatcher.checkLimits();
     await runtime.dispatcher.drain();

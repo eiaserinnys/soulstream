@@ -1,3 +1,6 @@
+import { isUsageLimitTermination } from "../session/session_limit_termination.js";
+import { patchCardTx } from "./control_plane/card_patch.js";
+import { readLimitAutoResumeAt, formatLimitResumeClock, type LimitResumeOwner } from "./card_limit_auto_resume.js";
 import { cardQuestionState, canWithdrawCardQuestion } from "./card_question_rules.js";
 import { assertNoPendingCardExecution } from "./card_execution_reservation.js";
 // 500줄 예외: 카드 aggregate의 기존 트랜잭션 facade. 보고 저장 로직은 별도 service에 둔다.
@@ -506,22 +509,46 @@ export class CardControlPlaneService {
   resumeDispatchedCard(params:{cardId:string;expectedVersion:number;sessionId:string;nodeId?:string;admission?:PolicyAdmission}) {
     const actor={actorKind:"system" as const,actorSessionId:null,...params};
     return this.mutateCard(actor,"resume_card",{session_id:params.sessionId},async(sql,card,eventId)=>{
-      if (card.status !== "blocked" || card.blocked_kind !== "limit") throw invalid("Only limit-blocked cards may resume");
+      if (card.status!=="blocked" || card.blocked_kind!=="limit" || card.archived
+        || card.assignee_session_id!==params.sessionId || card.limit_resume_session_id!==params.sessionId || card.limit_resume_at!==null)
+        throw invalid("Only the recorded current long-limit assignee may resume");
       await assertNoPendingCardExecution(sql,card.id);
       await this.checkAdmission(sql,{...params,nodeId:params.nodeId??card.node_id??"eiaserinnys"});
       await this.patch(sql,card,{status:params.admission ? "queued" : "running",blocked_kind:null,blocked_detail:null,
         ...(!params.admission ? {queue_position_key:null} : {})},actor,eventId);
     });
   }
-  /** 이미 돌던 담당을 잇는 일이라 배정 판단의 대상이 아니다. */
-  resumeLimitedCard(params:{cardId:string;sessionId:string}) {
-    const actor={actorKind:"system" as const,actorSessionId:null,...params};
-    return this.mutateCard(actor,"resume_card",{session_id:params.sessionId},async(sql,card,eventId)=>{
-      if (card.status !== "blocked" || card.blocked_kind !== "limit"
-        || card.assignee_kind !== "session" || card.assignee_session_id !== params.sessionId)
-        throw invalid("Only the currently assigned limit-blocked card may resume");
+  /** Capture both the quota owner and optional short reset under the card lock. */
+  blockCardForLimit(params:{cardId:string;expectedVersion:number;sessionId:string;terminationEventId:number | null}) {
+    const actor={actorKind:"system" as const,actorSessionId:null};
+    return this.mutateCard({...actor,cardId:params.cardId,expectedVersion:params.expectedVersion},"set_card_status",
+      {status:"blocked",blocked_kind:"limit",session_id:params.sessionId},async(sql,card,eventId)=>{
+      if (card.status!=="running" || card.archived || card.assignee_kind!=="session" || card.assignee_session_id!==params.sessionId)
+        throw invalid("Only the current running assignee may enter limit-blocked");
+      const owner=(await sql<LimitResumeOwner[]>`SELECT session_id,status,termination_reason,termination_event_id FROM sessions WHERE session_id=${params.sessionId} FOR SHARE`)[0];
+      if (!owner || !isUsageLimitTermination(owner) || owner.termination_event_id!==params.terminationEventId)
+        throw invalid("Quota termination changed before the card was blocked");
+      const resumeAt=await readLimitAutoResumeAt(sql,owner);
+      const clock=resumeAt ? formatLimitResumeClock(resumeAt) : null;
+      await this.patch(sql,card,{status:"blocked",blocked_kind:"limit",queue_position_key:card.queue_position_key,
+        blocked_detail:clock ? `사용량 한도, ${clock} 자동 재개` : "세션 사용량 한도",
+        limit_resume_session_id:params.sessionId,limit_resume_at:resumeAt,
+        ...(clock ? {now:sql.json(makeCardNow({text:`사용량 한도로 멈춤, ${clock}에 저절로 이어집니다`,turn:"outside"},new Date().toISOString(),null))} : {}),
+      },actor,eventId);
+    });
+  }
+  /** Resume only the unchanged, due short reservation, independent of session liveness. */
+  resumeLimitedCard(params:{cardId:string;sessionId:string;resumeAt:string;now:number}) {
+    const actor={actorKind:"system" as const,actorSessionId:null};
+    return this.mutateCard({...actor,cardId:params.cardId},"resume_card",{session_id:params.sessionId,limit_resume_at:params.resumeAt},async(sql,card,eventId)=>{
+      if (card.status!=="blocked" || card.blocked_kind!=="limit" || card.archived
+        || card.assignee_kind!=="session" || card.assignee_session_id!==params.sessionId
+        || card.limit_resume_session_id!==params.sessionId || !card.limit_resume_at
+        || new Date(card.limit_resume_at).toISOString()!==params.resumeAt || new Date(card.limit_resume_at).getTime()>params.now)
+        throw invalid("Only the current assignee's unchanged due limit reservation may resume");
       await assertNoPendingCardExecution(sql,card.id);
-      await this.patch(sql,card,{status:"running",blocked_kind:null,blocked_detail:null,queue_position_key:null},actor,eventId);
+      await this.patch(sql,card,{status:"running",blocked_kind:null,blocked_detail:null,queue_position_key:null,
+        now:sql.json(makeCardNow({text:"담당이 이어서 진행합니다",turn:"agent"},new Date().toISOString(),null))},actor,eventId);
     });
   }
   /** 검증 대기 시각이 되어 담당을 깨운 뒤 실행 중으로 되돌린다. 새 실행이나 배정 판단이 아니다. */
@@ -717,17 +744,7 @@ export class CardControlPlaneService {
     return closed.length>0;
   }
   private async patch(sql:RepositorySql,card:CardRow,fields:Record<string,unknown>,actor:FolderActorParams,eventId:number | null) {
-    const sessionId=Object.hasOwn(fields,"assignee_session_id") ? fields.assignee_session_id : card.assignee_session_id;
-    if (typeof sessionId === "string" && (Object.hasOwn(fields,"assignee_session_id") || fields.archived === false)
-      && !(fields.archived ?? card.archived))
-      await assertSingleCardAssignee(sql,sessionId,card.id);
-    // 상태를 쓰는 모든 경로의 공통 지우기 지점. 검증 대기를 떠나면 두 값을 함께 지운다.
-    const writes=fields.status !== undefined && fields.status !== "awaiting_verification"
-      ? { ...fields,wake_at:null,waiting_for:null } : fields;
-    await sql`UPDATE cards SET ${sql(writes)},
-      number=CASE WHEN ${writes.archived === false} THEN COALESCE(number,nextval('cards_number_seq')) ELSE number END,
-      status_changed_at=CASE WHEN ${writes.status !== undefined && writes.status !== card.status} THEN NOW() ELSE status_changed_at END,
-      version=version+1,updated_at=NOW(),updated_session_id=${actor.actorSessionId},updated_event_id=${eventId} WHERE id=${card.id}`;
+    await patchCardTx(sql,card,fields,actor,eventId);
   }
   private async claim(sql:RepositorySql,card:CardRow,sessionId:string | null,payload:Record<string,unknown>) {
     if (!sessionId || !(await claimableCardSessions(sql,card.id,sessionId)).length) return {};

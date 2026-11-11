@@ -30,7 +30,7 @@ it("질문 장 구멍과 늦은 답의 두 문을 대조한다",async()=>{
   await run(["CREATE_TODO","ASSIGN_SESSION","PAS_APPEARS","ASK_OWNER","HUMAN_MOVE_done","HUMAN_MOVE_running"]);
   await run(["CREATE_TODO","ASSIGN_SESSION","PAS_APPEARS","ASK_OWNER","HUMAN_MOVE_done","ANSWER_DETAIL"]);
 },60000);
-it("담당이 바뀐 한도 막힘에서 살아 있는 새 담당으로 바로 재개되는 길을 대조한다",async()=>{
+it("담당을 바꾸면 살아 있거나 한도로 끝난 새 담당을 자동 재개하지 않는다",async()=>{
   await run(["CREATE_TODO","ASSIGN_SESSION","HUMAN_MOVE_running","SERVER_SHORT_LIMIT","REPLACE_LIVE","SERVER_LIVE_RESUME"]);
   await run(["CREATE_TODO","ASSIGN_SESSION","HUMAN_MOVE_running","SERVER_SHORT_LIMIT","REPLACE_LIMITED","SERVER_LIMIT_RELAUNCH"]);
 },60000);

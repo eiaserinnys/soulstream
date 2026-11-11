@@ -239,7 +239,7 @@ describe("card dispatch and session lifecycle", () => {
             const sessionId=createSession.mock.calls[0]![0].agentSessionId;
             await service.patchCard({ ...human, cardId: created.operation.target_id, assignee: { kind: 'session', sessionId } });
             await h.sql`UPDATE sessions SET status='error',termination_reason='limit_hit',termination_event_id=1 WHERE session_id=${sessionId}`;
-            await h.sql`UPDATE cards SET status='blocked',blocked_kind='limit' WHERE id=${created.operation.target_id}`;
+            await h.sql`UPDATE cards SET status='blocked',blocked_kind='limit',limit_resume_session_id=${sessionId} WHERE id=${created.operation.target_id}`;
             await runtime.dispatcher.checkLimits();await runtime.dispatcher.drain();
             expect(routeExisting).toHaveBeenCalledWith(expect.objectContaining({type:'intervene',attachment_paths:[attachments[0]!.path]}));
             expect(send).toHaveBeenLastCalledWith(expect.objectContaining({command:expect.objectContaining({payload:expect.objectContaining({attachment_paths:[attachments[0]!.path]})})}));

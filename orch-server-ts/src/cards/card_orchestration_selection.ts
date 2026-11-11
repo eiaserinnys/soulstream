@@ -5,9 +5,8 @@ import {
   type OrchestrationDecision,
 } from "@soulstream/wire-schema/card-orchestration";
 import type { CardDispatchRepository, DispatchCard } from "./card_dispatch_repository.js";
-import { isUsageLimitTermination } from "../session/session_limit_termination.js";
 type OwnerSession = Awaited<ReturnType<CardDispatchRepository["ownerSession"]>>;
-type ExecutionCard = Pick<DispatchCard, "status" | "blocked_kind" | "assignee_session_id">;
+type ExecutionCard = Pick<DispatchCard, "status" | "blocked_kind" | "assignee_session_id" | "limit_resume_session_id" | "limit_resume_at">;
 export type ExecutionClassification =
   | { mode: "dispatch" }
   | { mode: "resume"; owner: NonNullable<OwnerSession> }
@@ -17,7 +16,7 @@ export function classifyExecution(card: ExecutionCard, owner: OwnerSession): Exe
   if (card.status === "queued") return { mode: "dispatch" };
   if (card.status === "blocked" && card.blocked_kind === "limit") {
     if (!card.assignee_session_id || !owner) return { mode: "skip", reason: "limit_owner_missing" };
-    if (isUsageLimitTermination(owner)) return { mode: "resume", owner };
+    if (card.limit_resume_session_id===owner.session_id && card.assignee_session_id===owner.session_id && card.limit_resume_at===null) return { mode: "resume", owner };
     return { mode: "skip", reason: "limit_owner_not_resumable" };
   }
   return { mode: "skip", reason: "card_not_dispatchable" };

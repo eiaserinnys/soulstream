@@ -7,7 +7,6 @@ const at = (id:string) => stateIn(`#${id}`);
 const any = (...ids:string[]) => or(ids.map(at));
 const session = any("originalLive","originalEnded","originalLimited","originalLongLimited","replacedLive","replacedEnded","replacedLimited");
 const live = any("originalLive","replacedLive");
-const limited = any("originalLimited","originalLongLimited","replacedLimited");
 const open = not(at("qNone"));
 
 const off = at("off");
@@ -29,16 +28,14 @@ const guards:Record<string,Predicate> = {
   answerBlocked: and([open,at("question")]),
   humanResume: and([session,at("talk")]),
   shortLimit: and([at("running"),live]),
-  liveResume: and([at("limit"),live]),
-  limitTime: and([at("limit"),limited,at("rLimit")]),
-  relaunch: and([at("limit"),limited,at("rNone")]),
-  requeue: and([at("limit"),not(limited),not(live),at("rNone")]),
+  limitTime: and([at("limit"),session,at("rLimit"),at("lSame")]),
+  relaunch: and([at("limit"),session,at("rLongLimit"),at("lSameLong")]),
   limitBlocked: at("limit"),
   verification: and([at("verification"),session]),
   running: at("running"), queued: at("queued"),
   admittedStart: and([at("queued"),at("aAgentAdmitted")]),
   queuedAssignable: and([at("queued"),or([session,at("aAgent")])]),
-  limitAssignable: and([at("limit"),or([session,at("aAgent")])]),
+  limitAssignable: and([at("limit"),session,at("rLongLimit"),at("lSameLong")]),
   queuedMissing: and([at("queued"),any("aNone","aHuman")]),
   unstarted: any("todo","queued","queuedMissing","hold"),
   idle: and([not(live),not(at("aHuman")),not(at("running"))]),
@@ -60,16 +57,13 @@ function status(event:string,target:StatusLeaf,guard:GuardName="always",free=fal
     ...(free?{meta:{chartGroup:"free-move"}}:{}),
     actions:["판 알림",...(["SERVER_LIMIT_TIME","SERVER_LIMIT_RELAUNCH","WAKE_TIME"].includes(event)?["담당 깨우기"]:[])],
   });
-  if (target==="limit") on.reservation[event]=[
-    {target:"#rLimit",guard:and([guards[guard]!,at("originalLimited")]),description:EVENT_LABELS[event]},
-    {target:"#rNone",guard:guards[guard]!,description:EVENT_LABELS[event]},
-  ];
-  else put("reservation",event,target==="verification"?"rVerify":"rNone",guard);
-  if (target!=="limit") put("limitedOwner",event,"lNone",guard);
-  else on.limitedOwner[event]=[
-    {target:"#lSame",guard:and([guards[guard]!,not(at("limit")),at("originalLimited")]),description:EVENT_LABELS[event]},
-    {target:"#lSameLong",guard:and([guards[guard]!,not(at("limit")),session,not(at("originalLimited"))]),description:EVENT_LABELS[event]},
-  ];
+  if (target==="limit") {
+    on.reservation[event]=[{target:"#rNone",guard:and([guards[guard]!,not(at("limit"))]),description:EVENT_LABELS[event]}];
+    on.limitedOwner[event]=[{target:"#lNone",guard:and([guards[guard]!,not(at("limit"))]),description:EVENT_LABELS[event]}];
+  } else {
+    put("reservation",event,target==="verification"?"rVerify":"rNone",guard);
+    put("limitedOwner",event,"lNone",guard);
+  }
   // syncReportsAfterCommit compares the stored status column, not blocked_kind.
   // A blocked -> blocked write alone does not sync the board.
   const blockedTarget=["question","noReport","other","limit"].includes(target);
@@ -136,13 +130,15 @@ put("status","ADMIT_DISPATCH",undefined,"queuedAssignable");
 on.assignee.ADMIT_DISPATCH=[{target:"#aAgentAdmitted",guard:and([at("queued"),at("aAgent")]),description:EVENT_LABELS.ADMIT_DISPATCH}];
 for (const event of ["SERVER_SHORT_LIMIT","SERVER_LONG_LIMIT"]) {
   status(event,"limit","shortLimit");
-  put("reservation",event,event==="SERVER_SHORT_LIMIT"?"rLimit":"rNone","shortLimit");
+  put("reservation",event,event==="SERVER_SHORT_LIMIT"?"rLimit":"rLongLimit","shortLimit");
   put("assignee",event,event==="SERVER_SHORT_LIMIT"?"originalLimited":"originalLongLimited","shortLimit");
   put("limitedOwner",event,event==="SERVER_SHORT_LIMIT"?"lSame":"lSameLong","shortLimit");
 }
-for (const [event,guard] of [["SERVER_LIVE_RESUME","liveResume"],["SERVER_LIMIT_TIME","limitTime"],["SERVER_LIMIT_RELAUNCH","relaunch"]] as const)
+for (const [event,guard] of [["SERVER_LIMIT_TIME","limitTime"],["SERVER_LIMIT_RELAUNCH","relaunch"]] as const)
   status(event,"running",guard);
-status("SERVER_LIMIT_REQUEUE","queued","requeue");status("ADMIT_LIMIT","queued","limitAssignable");
+put("status","SERVER_LIVE_RESUME",undefined,"limitBlocked");
+put("status","SERVER_LIMIT_REQUEUE",undefined,"limitBlocked");
+status("ADMIT_LIMIT","queued","limitAssignable");
 status("WAKE_TIME","running","verification");status("WAKE_FAIL","noReport","verification");
 status("CREATE_FAIL","noReport","running");status("ATTACHMENT_FAIL","noReport","limitBlocked");
 put("status","NOTE_MISSING","queuedMissing","queuedMissing");
@@ -153,10 +149,7 @@ put("assignee","ASSIGN_HUMAN","aHuman","unassigned");
 for (const event of ["REPLACE_LIVE","REPLACE_LIMITED"]) {
   put("assignee",event,event==="REPLACE_LIVE"?"replacedLive":"replacedLimited","replaceable");
   put("reservation",event,"rNone","replaceLimit");
-  on.limitedOwner[event]=[
-    {target:"#lDifferent",guard:and([session,at("limit"),any("lSame","lDifferent")]),description:EVENT_LABELS[event]},
-    {target:"#lDifferentLong",guard:and([session,at("limit"),any("lSameLong","lDifferentLong")]),description:EVENT_LABELS[event]},
-  ];
+  put("limitedOwner",event,"lNone","replaceLimit");
   on.question[event]=[{target:"#qOther",guard:and([guards.replaceable!,at("qOwner")]),description:EVENT_LABELS[event]}];
 }
 on.assignee.OWNER_END=[
@@ -239,13 +232,13 @@ export const cardMachine=setup({
       off:{id:"off",description:"내려감",initial:"hold",states:{hold:stateLeaf("hold",["unstarted","without-assignee","timeline"]),done:stateLeaf("done",["ended","timeline"]),cancelled:stateLeaf("cancelled",["ended","without-assignee","timeline"]) }},
     }},
     question:{description:"열린 질문",initial:"none",on:on.question,states:{none:leaf("qNone","없음"),owner:leaf("qOwner","지금 담당이 올린 질문"),orphan:leaf("qOrphan","담당 없이 올린 질문"),other:leaf("qOther","옛 담당이 올린 질문")}},
-    reservation:{description:"지금 담당을 깨울 예약",initial:"none",on:on.reservation,states:{none:leaf("rNone","없음"),verify:leaf("rVerify","카드에 적힌 검증 시각"),limit:leaf("rLimit","지금 담당의 짧은 한도 재개 시각")}},
+    reservation:{description:"카드에 기록된 담당 재개 예약",initial:"none",on:on.reservation,states:{none:leaf("rNone","없음"),verify:leaf("rVerify","카드에 적힌 검증 시각"),limit:leaf("rLimit","카드에 적힌 짧은 한도 시각"),longLimit:leaf("rLongLimit","시각 없이 담당만 기록한 한도 재개")}},
     assignee:{description:"담당",initial:"none",on:on.assignee,states:{none:leaf("aNone","담당 없음"),agent:{...leaf("aAgent","에이전트만 정해짐"),initial:"idle",states:{idle:leaf("aAgentIdle","배정 전"),admitted:leaf("aAgentAdmitted","배정을 허가받고 첫 착수를 기다림",["unnamed"]) }},human:leaf("aHuman","사람"),originalLive:leaf("originalLive","원래 담당이 살아 있음"),originalEnded:leaf("originalEnded","원래 담당이 정상 종료"),originalLimited:leaf("originalLimited","원래 담당이 짧은 한도 종료"),originalLongLimited:leaf("originalLongLimited","원래 담당이 긴 한도 종료"),replacedLive:leaf("replacedLive","새 담당이 살아 있음"),replacedEnded:leaf("replacedEnded","새 담당이 정상 종료"),replacedLimited:leaf("replacedLimited","새 담당이 긴 한도 종료")}},
     // 걸음 2에서 판의 장을 구성에서 계산하는 출력으로 바꾸며 이 영역을 지운다.
     questionEntry:{description:"감독 판의 질문 장 (현행 코드의 기억)",initial:"none",on:on.questionEntry,states:{none:leaf("eNone","질문 장 없음"),present:leaf("ePresent","질문 장 있음")}},
     cardEntry:{description:"감독 판의 카드 장 (현행 코드의 기억, 걸음 2에서 계산 출력으로 바꿈)",initial:"none",on:on.cardEntry,states:{none:leaf("cNone","카드 장 없음"),present:leaf("cPresent","카드 장 있음")}},
     pasBoard:{description:"감독 PAS와 이 카드의 것이 아닌 장의 수 (환경)",initial:"none",on:on.pasBoard,states:{none:leaf("pasNone","감독 PAS 없음"),available:{description:"감독 PAS 있음",initial:"room",states:{room:leaf("pasRoom","다른 장 여유 (10장 이하)"),one:leaf("pasOne","다른 장 한 자리 남음 (11장)"),full:leaf("pasFull","다른 장 가득 (12장)")}}}},
-    limitedOwner:{description:"한도에 걸린 담당. 지금 DB에 칸이 없는 이력 값. 약속 검사용이고 걸음 2에서 카드 칸이 된다",initial:"none",on:on.limitedOwner,states:{none:leaf("lNone","한도 이력 없음"),same:leaf("lSame","짧은 한도에 걸린 담당이 지금 담당"),sameLong:leaf("lSameLong","예약 없이 한도로 막힐 때의 담당이 지금 담당"),differentLong:leaf("lDifferentLong","예약 없이 한도로 막힐 때의 담당이 지금 담당과 다름",["unnamed"]),different:leaf("lDifferent","한도에 걸린 담당이 지금 담당과 다름",["unnamed"]) }},
+    limitedOwner:{description:"카드에 기록된 한도 담당과 현재 담당의 관계",initial:"none",on:on.limitedOwner,states:{none:leaf("lNone","기록된 한도 담당 없음"),same:leaf("lSame","시각 있는 예약의 담당이 지금 담당"),sameLong:leaf("lSameLong","시각 없는 예약의 담당이 지금 담당"),differentLong:leaf("lDifferentLong","시각 없는 예약의 담당 불일치 (DB가 금지)",["unnamed"]),different:leaf("lDifferent","시각 있는 예약의 담당 불일치 (DB가 금지)",["unnamed"]) }},
   },
 });
 export type CardSnapshot=ReturnType<typeof cardMachine.resolveState>;
