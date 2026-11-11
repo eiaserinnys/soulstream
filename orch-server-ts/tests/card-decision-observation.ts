@@ -1,4 +1,5 @@
 import { expect } from 'vitest';
+import { collectDecisionReads } from './card-decision-evidence.js';
 import { readLimitAutoResumeAt } from '../src/cards/card_limit_auto_resume.js';
 import { claimableCardSessions } from '../src/cards/card_assignee.js';
 import { createFolderContentSqlAdapter } from '../src/board/folder_content_sql.js';
@@ -44,6 +45,7 @@ export function observeCardDecisions(world: CardMachineWorld) {
       const checkedAt = Date.now();
       const evidence: Record<string, unknown> = {
         owner,
+        decisionReads: await collectDecisionReads(world, p, id),
         claimableSessions: actor.sessionId && before ? await claimableCardSessions(adapter, before.id, actor.sessionId) : [],
         dispatches: before ? await sql`SELECT * FROM card_orchestration_dispatches WHERE card_id=${before.id} ORDER BY run_id,card_id` : [],
         executionRequests: before ? await sql`SELECT * FROM card_execution_requests WHERE card_id=${before.id} ORDER BY id` : [],

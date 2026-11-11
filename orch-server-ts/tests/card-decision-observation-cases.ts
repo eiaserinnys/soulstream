@@ -83,5 +83,18 @@ export async function collectAdditionalObservations(world: CardMachineWorld) {
   await expect(cards.startCardWork({ ...human, cardId, execution: { registrationId: 'old', executionCommandId: 'old' } })).rejects.toMatchObject({ statusCode: 422, code: 'INVALID_CARD_WORK' });
   step = 'extra-34: start stale execution INVALID_CARD_WORK';
   await expect(cards.startCardWork({ ...owner, cardId, execution: { registrationId: 'old', executionCommandId: 'old' } })).rejects.toMatchObject({ statusCode: 422, code: 'INVALID_CARD_WORK', message: 'Current execution is missing, stale or orchestration purpose' });
+  step = 'extra-35: enabled admission required';
+  await world.reset();
+  await world.apply('CREATE_QUEUED');
+  const queuedId = world.cardId();
+  const dispatch = { cardId: queuedId, expectedVersion: (await cards.getCard(queuedId))!.card.version, sessionId: 'owner', nodeId: 'node' };
+  await h.sql`UPDATE system_settings SET value='{"enabled":true}' WHERE setting_key='card_orchestration'`;
+  await expect(cards.recordDispatch(dispatch)).rejects.toThrow('Enabled orchestration requires a fenced decision admission');
+  step = 'extra-36: disabled admission rejected';
+  await h.sql`UPDATE system_settings SET value='{"enabled":false}' WHERE setting_key='card_orchestration'`;
+  await expect(cards.recordDispatch({ ...dispatch, admission: { runId: 'absent', leaseToken: 'test-lease', workerInput: { agentId: 'worker', modelPreset: 'model', configuredModelPreset: null } } })).rejects.toThrow('Orchestration policy is disabled');
+  step = 'extra-37: stale admission rejected';
+  await h.sql`UPDATE system_settings SET value='{"enabled":true}' WHERE setting_key='card_orchestration'`;
+  await expect(cards.recordDispatch({ ...dispatch, admission: { runId: 'absent', leaseToken: 'test-lease', workerInput: { agentId: 'worker', modelPreset: 'model', configuredModelPreset: null } } })).rejects.toThrow('Stale orchestration admission');
   } catch (error) { throw new Error(`${step}: ${String(error)}`, { cause: error }); }
 }
