@@ -3,7 +3,7 @@ import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-import dotenv from "dotenv";
+import dotenv, { type DotenvPopulateInput } from "dotenv";
 import postgres from "postgres";
 
 import { omitInlineImageData } from "../src/db/omit_inline_image_data.js";
@@ -97,7 +97,7 @@ export async function run(
   dotenv.config({
     path: releaseServiceEnvironmentPath(env, cwd),
     override: true,
-    processEnv: env,
+    processEnv: env as DotenvPopulateInput,
   });
   const checkpoint = await readCheckpoint(options.checkpoint, options.dryRun);
   const startedAt = Date.now();
@@ -239,7 +239,7 @@ async function processBatch(
       if (!dryRun) {
         await tx.unsafe(
           "UPDATE events SET payload = $1::jsonb WHERE session_id = $2 AND id = $3",
-          [tx.json(nextPayload), row.session_id, row.id],
+          [tx.json(nextPayload as postgres.JSONValue), row.session_id, row.id],
         );
       }
     }

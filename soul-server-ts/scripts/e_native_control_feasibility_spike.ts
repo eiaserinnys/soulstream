@@ -453,7 +453,7 @@ async function runTrial(
       naturalReleaseWriterCount: 0,
       naturalReleaseMarkerObserved: toolResultText.includes(naturalReleaseMarker),
       newInputProofMs: newResultTrace.elapsedMs,
-      newInputAssistantText: assistantText ?? stringValue(newResult.result),
+      newInputAssistantText: assistantText ?? stringValue(newResult.result) ?? null,
       interruptReceipt: receipt,
     };
     query.close();
