@@ -57,7 +57,7 @@ async function runQuestionClosedCaptures({ browser, base, prefix, output, result
     await page.waitForTimeout(400);
     await page.screenshot({ path: path.join(output, `${scenario.name}-viewport.png`) });
     await column.screenshot({ path: path.join(output, `${scenario.name}-column.png`) });
-    result.viewports.push({ ...scenario, chips: { answered: 2, withdrawn: 1, question: 2 } });
+    result.viewports.push({ ...scenario, chips: { answered: 2, withdrawn: 1, question: 1 } });
     result.interactions.push(`${scenario.name}: PAS 대화 목록에서 열린 질문·답함 두 줄·철회 한 줄 확인`);
     await context.close();
   }

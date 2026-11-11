@@ -3,12 +3,12 @@
 -- 대상:
 --   event_type='report_timeline', payload status='question' 인 옛 줄 가운데
 --   payload에 card_id가 있고 question_id 키가 없는 줄. 같은 card_id의 card_questions 중
---   asked_at이 줄 이벤트 created_at + 5초 이하인 가장 늦은 질문과 짝짓고,
+--   asked_at이 줄 이벤트 created_at + 5초 이하인 가장 늦은 질문과 먼저 짝짓고,
 --   그 질문이 답(answer)이나 철회(withdrawn_at)로 닫힌 경우만 남긴다.
 --
 -- 제외:
---   1. 질문이 아직 열려 있거나 짝짓는 질문이 없는 줄
---   2. PAS가 직접 올린 ask 장 줄(line_key report:...)처럼 card_id가 없는 줄
+--   1. 짝짓는 질문이 없거나 그 질문이 아직 열려 있는 줄
+--   2. card_id가 없는 줄(여러 카드에 걸친 ask 장 등)
 --   3. 카드가 완료나 취소로 끝나며 열린 채 남은 질문의 줄(질문 자체가 닫히지 않았다)
 --   4. 같은 세션에 그 question_id를 담은 report_timeline_question_closed 이벤트가 이미 있는 줄
 --
@@ -25,20 +25,30 @@ WITH old_lines AS (
       AND events.payload ->> 'status' = 'question'
       AND NULLIF(events.payload ->> 'card_id', '') IS NOT NULL
       AND NOT (events.payload ? 'question_id')
-), pairs AS (
+), nearest AS (
     SELECT DISTINCT ON (old_lines.id)
         old_lines.id AS line_event_id,
         old_lines.session_id,
         COALESCE(old_lines.payload ->> 'line_key', '') AS line_key,
         COALESCE(old_lines.payload ->> 'detail', '') AS detail,
         card_questions.id AS question_id,
-        CASE WHEN card_questions.withdrawn_at IS NOT NULL THEN 'withdrawn' ELSE 'answered' END AS status
+        card_questions.answer,
+        card_questions.withdrawn_at
     FROM old_lines
     JOIN card_questions
       ON card_questions.card_id = old_lines.payload ->> 'card_id'
      AND card_questions.asked_at <= old_lines.created_at + INTERVAL '5 seconds'
-    WHERE card_questions.answer IS NOT NULL OR card_questions.withdrawn_at IS NOT NULL
     ORDER BY old_lines.id, card_questions.asked_at DESC
+), pairs AS (
+    SELECT
+        nearest.line_event_id,
+        nearest.session_id,
+        nearest.line_key,
+        nearest.detail,
+        nearest.question_id,
+        CASE WHEN nearest.withdrawn_at IS NOT NULL THEN 'withdrawn' ELSE 'answered' END AS status
+    FROM nearest
+    WHERE nearest.answer IS NOT NULL OR nearest.withdrawn_at IS NOT NULL
 ), pending AS (
     SELECT pairs.*
     FROM pairs

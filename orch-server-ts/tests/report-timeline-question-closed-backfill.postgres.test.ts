@@ -31,13 +31,16 @@ describe("report timeline question closed backfill", () => {
     await sql`INSERT INTO cards(id,folder_id,position_key,title) VALUES
       ('card-answered','backfill-folder','a','답한 카드'),
       ('card-withdrawn','backfill-folder','b','철회한 카드'),
-      ('card-open','backfill-folder','c','열린 카드')`;
+      ('card-open','backfill-folder','c','열린 카드'),
+      ('card-mixed','backfill-folder','d','섞인 카드')`;
     await sql`INSERT INTO card_questions(id,card_id,text,answer,asked_at,answered_at) VALUES
-      ('q-answered','card-answered','어느 쪽으로 갈까요?','진행','2026-11-01T00:00:00Z','2026-11-01T00:30:00Z')`;
+      ('q-answered','card-answered','어느 쪽으로 갈까요?','진행','2026-11-01T00:00:00Z','2026-11-01T00:30:00Z'),
+      ('q-mixed-answered','card-mixed','먼저 답한 질문','좋아요','2026-11-01T05:00:00Z','2026-11-01T05:30:00Z')`;
     await sql`INSERT INTO card_questions(id,card_id,text,asked_at,withdrawn_at,withdrawal_reason) VALUES
       ('q-withdrawn','card-withdrawn','다른 질문 글','2026-11-01T02:00:00Z','2026-11-01T02:30:00Z','정리')`;
     await sql`INSERT INTO card_questions(id,card_id,text,asked_at) VALUES
-      ('q-open','card-open','아직 열린 질문','2026-11-01T04:00:00Z')`;
+      ('q-open','card-open','아직 열린 질문','2026-11-01T04:00:00Z'),
+      ('q-mixed-open','card-mixed','아직 열린 질문','2026-11-01T06:00:00Z')`;
     const line = async (cardId: string, detail: string, createdAt: string, extra: Record<string, unknown> = {}) => {
       const payload = { type: "report_timeline", line_key: `card:${cardId}`, status: "question",
         title: "옛 질문", detail, card_id: cardId, card_number: 1, ...extra };
@@ -46,6 +49,8 @@ describe("report timeline question closed backfill", () => {
     await line("card-answered", "어느 쪽으로 갈까요?", "2026-11-01T00:00:01Z");
     await line("card-withdrawn", "다른 질문 글", "2026-11-01T02:00:01Z");
     await line("card-open", "아직 열린 질문", "2026-11-01T04:00:01Z");
+    await line("card-mixed", "먼저 답한 질문", "2026-11-01T05:00:01Z");
+    await line("card-mixed", "아직 열린 질문", "2026-11-01T06:00:01Z");
     await line("card-answered", "이미 question_id가 있는 줄", "2026-11-01T01:00:00Z", { question_id: "q-answered" });
   }, 90_000);
 
@@ -65,6 +70,7 @@ describe("report timeline question closed backfill", () => {
       closures: [
         { question_id: "q-answered", line_key: "card:card-answered", detail: "어느 쪽으로 갈까요?", status: "answered" },
         { question_id: "q-withdrawn", line_key: "card:card-withdrawn", detail: "다른 질문 글", status: "withdrawn" },
+        { question_id: "q-mixed-answered", line_key: "card:card-mixed", detail: "먼저 답한 질문", status: "answered" },
       ],
     });
     await sql.unsafe(backfillSql);
