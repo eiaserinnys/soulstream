@@ -180,6 +180,30 @@ describe("RunnerProcessSpawner", () => {
     });
   });
 
+  it("writes explicit Codex app-server timeouts to the runner config", async () => {
+    const spawner = new RunnerProcessSpawner({
+      prepareDatabase,
+      validateEntry: async () => {},
+      spawnProcess: () => ({ pid: 4124, unref: vi.fn() }),
+      registerPid: async (path, pid) => await writeFile(path, `${pid}\n`, { mode: 0o600 }),
+      inspectProcess: async (pid) => ({ alive: true, startIdentity: `test-${pid}` }),
+      isPidAlive: () => false,
+      signalPid: vi.fn(),
+      now: () => 0,
+      delay: async () => {},
+    });
+    const spawned = await spawner.spawn({
+      ...await input(),
+      codexAppServerRequestTimeoutMs: 45_000,
+      codexAppServerStartupTimeoutMs: 600_000,
+    });
+
+    expect(JSON.parse(await readFile(spawned.paths.configPath, "utf8"))).toMatchObject({
+      codexAppServerRequestTimeoutMs: 45_000,
+      codexAppServerStartupTimeoutMs: 600_000,
+    });
+  });
+
   it("accepts the identity published by the child without inspecting it from the host", async () => {
     const inspectProcess = vi.fn(async () => ({ alive: true, startIdentity: "host-query" }));
     const spawner = new RunnerProcessSpawner({
