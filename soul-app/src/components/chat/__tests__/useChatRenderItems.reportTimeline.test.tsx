@@ -114,6 +114,28 @@ describe('useChatRenderItems report timeline', () => {
     expect(rowsOfQuestion('question-4')).toMatchObject({ event: { data: { status: 'withdrawn' } } });
   });
 
+  it('카드 알림으로 숨긴 턴 안에 온 닫힘도 앞선 질문 줄을 바꾼다', () => {
+    const rows = renderTimeline([
+      ev('q', 'report_timeline', {
+        line_key: 'card:card-9', status: 'question', question_id: 'question-9', title: '질문 카드',
+        detail: '어떻게 할까요?', card_id: 'card-9', card_number: 9,
+      }),
+      ev('notice', 'user_message', {
+        text: '[카드 질문] 맡긴 카드 #9 질문 카드', caller_info: { source: 'system' }, input_id: 'notice-input',
+      }),
+      ev('closed', 'report_timeline_question_closed', {
+        closures: [{ question_id: 'question-9', line_key: 'card:card-9', detail: '어떻게 할까요?', status: 'answered' }],
+      }),
+      ev('silent', 'assistant_message', { text: '[SILENT]', input_id: 'notice-input' }),
+      ev('end', 'complete', { result: '[SILENT]' }),
+    ]);
+
+    expect(rows.find((item) => item.kind === 'event' && item.event.type === 'report_timeline'))
+      .toMatchObject({ event: { data: { status: 'answered' } } });
+    expect(rows.filter((item) => item.kind === 'event' && item.event.type === 'report_timeline_question_closed'))
+      .toHaveLength(0);
+  });
+
   it('기본 채팅에서는 session_ended 행만 빼고 complete 표시는 유지한다', () => {
     const rows = renderTimeline([
       ev('ended', 'session_ended', { status: 'completed' }),

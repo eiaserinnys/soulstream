@@ -11,6 +11,7 @@ const backfillSql = readFileSync(
 
 describe("report timeline question closed backfill", () => {
   let sql: ReturnType<typeof postgres>;
+  let url: string;
   let stop: () => void;
 
   beforeAll(async () => {
@@ -18,7 +19,7 @@ describe("report timeline question closed backfill", () => {
       user: "question_closed_backfill", password: "question_closed_backfill", database: "question_closed_backfill_db",
     });
     stop = container.stop;
-    const url = `postgres://question_closed_backfill:question_closed_backfill@127.0.0.1:${container.port}/question_closed_backfill_db`;
+    url = `postgres://question_closed_backfill:question_closed_backfill@127.0.0.1:${container.port}/question_closed_backfill_db`;
     const bootstrap = postgres(url, { max: 1, onnotice: () => undefined });
     try {
       await waitForPostgres(bootstrap);
@@ -61,8 +62,14 @@ describe("report timeline question closed backfill", () => {
     WHERE session_id='backfill-pas' AND event_type='report_timeline_question_closed'
     ORDER BY id`;
 
+  // 백필 파일은 BEGIN/COMMIT을 직접 들고 있어 풀 연결이 아닌 연결 하나짜리 클라이언트로 psql처럼 실행한다.
+  const runBackfill = async () => {
+    const single = postgres(url, { max: 1, onnotice: () => undefined });
+    try { await single.unsafe(backfillSql); } finally { await single.end({ timeout: 2 }); }
+  };
+
   it("adds one event carrying only the closed question lines and stays stable on re-run", async () => {
-    await sql.unsafe(backfillSql);
+    await runBackfill();
     const rows = await closures();
     expect(rows).toHaveLength(1);
     expect(rows[0]!.payload).toEqual({
@@ -73,7 +80,7 @@ describe("report timeline question closed backfill", () => {
         { question_id: "q-mixed-answered", line_key: "card:card-mixed", detail: "먼저 답한 질문", status: "answered" },
       ],
     });
-    await sql.unsafe(backfillSql);
+    await runBackfill();
     expect(await closures()).toHaveLength(1);
   });
 });
