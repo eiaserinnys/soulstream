@@ -5,14 +5,15 @@ import type {
 import { SessionIsolationUnavailableError } from "./session_filesystem_errors.js";
 
 /**
- * heavy_verify.py의 host-wide gate와 slot 파일. sandbox에서도 같은 절대 경로로
- * 보이도록 host 원본을 RW file bind 한다.
+ * heavy_verify.py의 host-wide gate, slot, 배포 빌드 잠금 파일. sandbox에서도 같은
+ * 절대 경로로 보이도록 host 원본을 RW file bind 한다.
  */
 export const HEAVY_WORK_LOCK_PATHS = [
   "/tmp/soulstream-heavy-verify.lock",
   "/tmp/soulstream-heavy-verify.slot-1.lock",
   "/tmp/soulstream-heavy-verify.slot-2.lock",
   "/tmp/soulstream-heavy-verify.slot-3.lock",
+  "/tmp/soulstream-heavy-verify.deploy.lock",
 ] as const;
 
 export const HOST_PROC_LOCKS_PATH = "/proc/locks";

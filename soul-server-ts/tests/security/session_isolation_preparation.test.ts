@@ -28,6 +28,7 @@ const HEAVY_LOCK_PATHS = [
   "/tmp/soulstream-heavy-verify.slot-1.lock",
   "/tmp/soulstream-heavy-verify.slot-2.lock",
   "/tmp/soulstream-heavy-verify.slot-3.lock",
+  "/tmp/soulstream-heavy-verify.deploy.lock",
 ];
 
 function makePolicy(
@@ -382,7 +383,7 @@ describe("prepareIsolationPlan", () => {
       ).toBe(true);
     }
 
-    expect(prepared.spec.heavyWorkLockBindings).toHaveLength(4);
+    expect(prepared.spec.heavyWorkLockBindings).toHaveLength(5);
     prepared.spec.heavyWorkLockBindings.forEach((binding, index) => {
       expect(binding.destination).toBe(HEAVY_LOCK_PATHS[index]);
       expect(binding.writable).toBe(true);

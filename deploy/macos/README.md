@@ -111,7 +111,7 @@ Python 실행기는 Linux 훅과 같은 일을 한다.
 
 - 기존 여섯 빌드 명령을 같은 순서와 인자로 실행한다. 두 번째 명령에는 `SOULSTREAM_RELEASE_ENV_FILE=<app>/.env.soul-server-ts`를 넘긴다
 - 단계마다 `vm_stat`의 free, inactive, purgeable 합이 2000 MiB 이상인지 확인하고, 부족하면 60초 한 번 대기한 뒤 재확인하고 그래도 부족하면 종료 코드 1로 끝낸다
-- `/tmp/soulstream-heavy-verify.lock`을 전체 파이프라인 동안 잡는다
+- `/tmp/soulstream-heavy-verify.deploy.lock` 배포 빌드 잠금을 전체 파이프라인 동안 잡는다. 에이전트 검증의 host heavy-verify gate는 잡지 않는다
 - 단계 타임아웃은 900초이고, 타임아웃과 신호에는 프로세스 그룹에 SIGTERM을 보내고 최대 2초 뒤 SIGKILL한다
 - 마지막에 다섯 산출물 파일의 존재를 확인한다
 
@@ -119,10 +119,11 @@ Python 실행기는 Linux 훅과 같은 일을 한다.
 
 ## 5. 락 파일 운영 주의사항
 
-다음 두 파일은 지워서는 안 된다. 수동 삭제도, cron이나 `periodic` 스크립트로 거두는 청소도 하지 않는다.
+다음 세 파일은 지워서는 안 된다. 수동 삭제도, cron이나 `periodic` 스크립트로 거두는 청소도 하지 않는다.
 
 - `/tmp/soulstream-runner-lock-<uid>-<sha256>.sqlite`: Darwin 러너 커널 락이다. SQLite EXCLUSIVE 잠금을 파일에 걸어 state 디렉토리 소유를 판정하며, 파일은 해제 시점에도 unlink하지 않는 것이 설계다. 잠금을 쥔 채 파일을 지우면 기존 inode의 잠금과 새 inode가 갈라져 두 호스트가 같은 state 디렉토리를 소유한다고 믿을 수 있다
-- `/tmp/soulstream-heavy-verify.lock`: 호스트 heavy 작업 게이트다. Darwin 빌드 훅이 파이프라인 전체 동안 잡고 있고, 공통 heavy-work runner도 같은 파일을 쓴다
+- `/tmp/soulstream-heavy-verify.lock`: 호스트 heavy 작업 게이트다. 공통 heavy-work runner가 쓴다
+- `/tmp/soulstream-heavy-verify.deploy.lock`: 배포 빌드 잠금이다. Linux 빌드 훅은 300초까지만 기다리고 못 잡으면 종료 코드 1로 끝나며, Darwin 실행기는 이 파일을 잡은 채 파이프라인을 돌아 프로세스가 끝날 때 함께 풀린다
 
 남아 있는 빈 파일은 잠금이 아니므로 그 자체로 문제가 되지 않는다. 잠금 이상이 의심되면 파일을 지우지 말고, 그 락을 쥔 프로세스가 살아 있는지 확인한다.
 
