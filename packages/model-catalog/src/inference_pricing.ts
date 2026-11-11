@@ -38,7 +38,7 @@ export const PRICE_SNAPSHOT_METADATA = {
   refreshed_model_rows: {
     claude: ["claude-opus-5-5", "claude-fable-5-2", "claude-fable-5-1", "claude-sonnet-5-5"],
     codex: ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna"],
-    antigravity: ["gemini-4-argon", "gemini-3.8-flash"],
+    antigravity: ["gemini-4-carbon", "gemini-4-argon", "gemini-3.8-flash"],
     deepseek: [
       "deepseek-v4.1-flash-1017",
       "deepseek-v4.1-flash",
@@ -115,6 +115,10 @@ const MODEL_PRICES: Record<string, ModelPrice> = {
   "codex:gpt-6-sol": { rates: LIST_PRICES["gpt-6-sol"], source: OPENAI_PRICING_SOURCE },
   "codex:gpt-6.1-sol": { rates: LIST_PRICES["gpt-6.1-sol"], source: OPENAI_PRICING_SOURCE },
   "codex:gpt-6-astra": { rates: LIST_PRICES["gpt-6-astra"], source: OPENAI_PRICING_SOURCE },
+  "antigravity:gemini-4-carbon": {
+    rates: { input: 2, cacheRead: 0.1, cacheWrite5m: null, cacheWrite1h: null, output: 10 },
+    source: GOOGLE_PRICING_SOURCE,
+  },
   "antigravity:gemini-4-argon": {
     rates: { input: 2, cacheRead: 0.1, cacheWrite5m: null, cacheWrite1h: null, output: 10 },
     source: GOOGLE_PRICING_SOURCE,
@@ -142,6 +146,7 @@ const EXACT_MODEL_ALIASES: Record<string, string> = {
   "codex:gpt-6-sol": "codex:gpt-6-sol",
   "codex:gpt-6.1-sol": "codex:gpt-6.1-sol",
   "codex:gpt-6-astra": "codex:gpt-6-astra",
+  "antigravity:gemini-4-carbon": "antigravity:gemini-4-carbon",
   "antigravity:gemini-4-argon": "antigravity:gemini-4-argon",
   "antigravity:gemini-3.8-flash": "antigravity:gemini-3.8-flash",
   "deepseek:deepseek-flash": "deepseek:deepseek-flash",

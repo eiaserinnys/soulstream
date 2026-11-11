@@ -183,6 +183,14 @@ presets:
     default_effort: high
     trusted_execution: true
 
+  - id: gemini-4-carbon
+    label: "Gemini - 4 Carbon"
+    backend: antigravity
+    model: gemini-4-carbon
+    supported_efforts: [low, medium, high]
+    default_effort: high
+    trusted_execution: true
+
   - id: opencode-deepseek-v4.1-flash-free
     label: "OpenCode - DeepSeek V4.1 Flash Free"
     backend: opencode

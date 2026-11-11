@@ -347,6 +347,7 @@ export function formatUsageStatsModelLabel(model: string | null | undefined): st
   if (model === "gpt-6-luna") return "GPT-6 Luna";
   if (model === "gemini-3.8-flash") return "Gemini 3.8 Flash";
   if (model === "gemini-4-argon") return "Gemini 4 Argon";
+  if (model === "gemini-4-carbon") return "Gemini 4 Carbon";
   if (model === "kimi-for-coding/k3") return "Kimi for Coding K3";
   return model;
 }

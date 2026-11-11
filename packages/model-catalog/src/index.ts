@@ -112,6 +112,7 @@ export const DEFAULT_MODEL_CATALOG: ModelCatalogConfig = {
     { id: "kimi-3", label: "Kimi - 3", backend: "claude", model: "k3" },
     { id: "gemini-3.8-flash", label: "Gemini - 3.8 Flash", backend: "antigravity", model: "gemini-3.8-flash", supported_efforts: ["low", "medium", "high"], default_effort: "low" },
     { id: "gemini-4-argon", label: "Gemini - 4 Argon", backend: "antigravity", model: "gemini-4-argon", supported_efforts: ["low", "medium", "high"], default_effort: "high", trusted_execution: true },
+    { id: "gemini-4-carbon", label: "Gemini - 4 Carbon", backend: "antigravity", model: "gemini-4-carbon", supported_efforts: ["low", "medium", "high"], default_effort: "high", trusted_execution: true },
     { id: "opencode-deepseek-v4.1-flash-free", label: "OpenCode - DeepSeek V4.1 Flash Free", backend: "opencode", model: "opencode/deepseek-v4.1-flash-free" },
   ],
 };
