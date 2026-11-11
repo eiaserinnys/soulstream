@@ -107,6 +107,7 @@ export function oauthScopeForRoute(method: string, pathname: string): OAuthScope
       && /^\/api\/attachments\/(?!files$|sessions$|worker$|agent-register$|agent-output$)[^/]+\/content$/.test(path))) return "cards:read";
   if (upper !== "GET") return null;
   if (path === "/api/usage/summary") return "usage:read";
+  if (path === "/api/session-statistics" || /^\/api\/session-statistics\/days\/[^/]+$/.test(path)) return "usage:read";
   if (path === "/api/folders" || path.startsWith("/api/folders/")) return "folders:read";
   return null;
 }

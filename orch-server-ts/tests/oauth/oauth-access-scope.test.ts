@@ -5,6 +5,7 @@ import { createLiveAuthenticatedUserResolvers } from "../../src/runtime/live_aut
 import { createLiveDashboardAccessProvider } from "../../src/runtime/live_dashboard_access_provider.js";
 import { registerProductionAuthGuard } from "../../src/runtime/production_auth_guard.js";
 import { registerUsageSummaryRoutes } from "../../src/usage/usage_summary_routes.js";
+import { registerSessionStatisticsRoutes } from "../../src/usage/session_statistics_routes.js";
 import {
   createOAuthAccessTokenResolver,
   oauthScopeForRoute,
@@ -74,14 +75,20 @@ describe("OAuth resource scopes", () => {
     expect(oauthScopeForRoute("GET", "/api/folders/folder-1")).toBe("folders:read");
   });
 
-  it("maps only the usage summary GET to the usage read scope", () => {
+  it("maps only the usage summary and session statistics GETs to the usage read scope", () => {
     expect(oauthScopeForRoute("GET", "/api/usage/summary")).toBe("usage:read");
     expect(oauthScopeForRoute("GET", "/api/usage/summary?window=1")).toBe("usage:read");
+    expect(oauthScopeForRoute("GET", "/api/session-statistics?period=week&timezone=Asia/Seoul")).toBe("usage:read");
+    expect(oauthScopeForRoute("GET", "/api/session-statistics/days/2026-11-10?period=week")).toBe("usage:read");
     for (const [method, path] of [
       ["POST", "/api/usage/refresh"],
       ["GET", "/api/usage/stream"],
       ["GET", "/api/usage/summary/x"],
       ["POST", "/api/usage/summary"],
+      ["POST", "/api/session-statistics"],
+      ["GET", "/api/session-statistics/days"],
+      ["GET", "/api/session-statistics/days/2026-11-10/x"],
+      ["GET", "/api/session-statistics/other"],
     ]) expect(oauthScopeForRoute(method!, path!)).toBeNull();
   });
 
@@ -106,6 +113,36 @@ describe("OAuth resource scopes", () => {
     expect((await app.inject({ method: "GET", url: "/api/usage/summary", headers: { authorization: "Bearer cards-token" } })).statusCode).toBe(403);
     expect((await app.inject({ method: "POST", url: "/api/usage/refresh", headers })).statusCode).toBe(403);
     expect((await app.inject({ method: "GET", url: "/api/usage/stream", headers })).statusCode).toBe(403);
+    await app.close();
+  });
+
+  it("admits a usage read token to the session statistics overview and day routes", async () => {
+    const usage: OAuthResourceAccess = { ...access, scopes: ["usage:read"] };
+    const cards: OAuthResourceAccess = { ...access, scopes: ["cards:read"] };
+    const app = Fastify();
+    registerProductionAuthGuard(app, {
+      resolveTokenAccess: async () => ({ ok: false, statusCode: 401, detail: "Authentication required" }),
+      resolveOAuthAccess: async request => request.headers.authorization === "Bearer usage-token"
+        ? usage
+        : request.headers.authorization === "Bearer cards-token" ? cards : null,
+    });
+    registerSessionStatisticsRoutes(app, {
+      service: {
+        getOverview: async () => ({ kind: "overview" }) as never,
+        getDay: async () => ({ kind: "day" }) as never,
+      },
+      accessProvider: { resolveAccess: async () => ({ restricted: false, allowedFolderIds: [] }) },
+      folderProvider: { listFolders: async () => [] },
+      now: () => new Date("2026-11-11T00:00:00.000Z"),
+    });
+    const headers = { authorization: "Bearer usage-token" };
+    const overview = await app.inject({ method: "GET", url: "/api/session-statistics?period=week&timezone=Asia/Seoul", headers });
+    expect(overview.statusCode).toBe(200);
+    expect(overview.json()).toEqual({ kind: "overview" });
+    const day = await app.inject({ method: "GET", url: "/api/session-statistics/days/2026-11-10?period=week&anchor=2026-11-10", headers });
+    expect(day.statusCode).toBe(200);
+    expect(day.json()).toEqual({ kind: "day" });
+    expect((await app.inject({ method: "GET", url: "/api/session-statistics", headers: { authorization: "Bearer cards-token" } })).statusCode).toBe(403);
     await app.close();
   });
 
