@@ -50,6 +50,22 @@ export type FolderAccessProvider = {
   resolveAccess: (request: FastifyRequest) => Promise<FolderAccess> | FolderAccess;
 };
 
+export type CardCommentAttachmentUploadInput = {
+  cardId: string;
+  folderId: string;
+  nodeId: string | null;
+  sessionId: string | null;
+  file: { name: string; mime: string; data_base64: string };
+  uploadId: string;
+};
+
+export type CardCommentAttachmentUploadResult = { url: string; name: string; mime: string };
+
+export type CardCommentAttachmentUploader = (
+  request: FastifyRequest,
+  input: CardCommentAttachmentUploadInput,
+) => Promise<CardCommentAttachmentUploadResult>;
+
 export type FolderRouteOptions = {
   provider: FolderRouteProvider;
   accessProvider: FolderAccessProvider;
@@ -74,6 +90,7 @@ export type FolderRouteOptions = {
       attachments?: Array<{ name: string; mime: string; data_base64: string }>;
     },
   ) => Promise<{ status: number; body: unknown }>;
+  uploadCardCommentAttachment?: CardCommentAttachmentUploader;
   controlPlaneServiceProvider?: () => Promise<FolderControlPlaneService>;
 };
 
