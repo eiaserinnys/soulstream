@@ -164,11 +164,18 @@ export function toMermaid(
     markDrawn(box);
   }
 
+  const mergedHoles = new Map<string, ChartHole[]>();
   for (const hole of spec.holes ?? []) {
     const parentId = resolve(hole.parent);
     const parentBox = parentId === null ? undefined : boxes.get(parentId);
-    if (parentBox === undefined || parentBox.collapsed) {
-      warnings.push(`hole ${hole.id}: parent ${hole.parent} is not drawn as a block`);
+    if (parentBox === undefined) {
+      warnings.push(`hole ${hole.id}: parent ${hole.parent} is not visible`);
+      continue;
+    }
+    if (parentBox.collapsed) {
+      const merged = mergedHoles.get(parentBox.id);
+      if (merged === undefined) mergedHoles.set(parentBox.id, [hole]);
+      else merged.push(hole);
       continue;
     }
     parentBox.holes.push(hole);
@@ -219,25 +226,22 @@ export function toMermaid(
     else bucket.push(line);
   };
 
-  const isAncestorOrSelf = (ancestorId: string, id: string): boolean => {
-    let current: Box | null = boxes.get(id)!;
-    while (current !== null) {
-      if (current.id === ancestorId) return true;
-      current = current.parent;
-    }
-    return false;
-  };
+  // 블록 안에 적은 화살표는 렌더러가 두 끝을 그 블록의 직속 자식으로 끌어들인다.
+  // 그래서 두 끝이 같은 블록의 직속 자식일 때만 그 블록 안에 적고 나머지는 맨 바깥에 적는다.
+  const divider = (spec.parallel ?? "stack") === "divider";
+  const isDividerParallel = (box: Box): boolean => divider && box.node.type === "parallel";
 
-  const lowestBlock = (srcId: string, targetId: string): Box | null => {
-    let candidate: Box | null = boxes.get(srcId)!;
-    while (candidate !== null) {
-      if (candidate.block && isAncestorOrSelf(candidate.id, targetId)) return candidate;
-      candidate = candidate.parent;
-    }
+  const edgeBlock = (srcId: string, tgtId: string): Box | null => {
+    const parent = boxes.get(srcId)!.parent;
+    if (parent !== null && parent === boxes.get(tgtId)!.parent && !isDividerParallel(parent)) return parent;
     return null;
   };
-  const edgeBlock = (srcId: string, tgtId: string): Box | null =>
-    srcId === tgtId ? boxes.get(srcId)!.parent : lowestBlock(srcId, tgtId);
+
+  const holeEdgeBlock = (srcId: string, parentBox: Box): Box | null => {
+    const srcBox = boxes.get(srcId)!;
+    if (srcBox.parent !== null && srcBox.parent === parentBox && !isDividerParallel(parentBox)) return parentBox;
+    return null;
+  };
 
   let edgeCount = 0;
   const seenEdges = new Set<string>();
@@ -246,20 +250,24 @@ export function toMermaid(
     const key = `state\u0000${srcId}\u0000${tgtId}\u0000${label}`;
     if (seenEdges.has(key)) return;
     seenEdges.add(key);
-    if (srcId !== tgtId && isAncestorOrSelf(srcId, tgtId)) {
-      warnings.push(`ancestor edge: ${srcId} -> ${tgtId}`);
-    }
     appendEdge(edgeBlock(srcId, tgtId), `${nameOf(srcId)} --> ${nameOf(tgtId)}: ${label}`);
     edgeCount += 1;
   };
 
-  const addHoleEdge = (srcId: string, hole: ChartHole, label: string): void => {
-    const key = `hole\u0000${srcId}\u0000${hole.id}\u0000${label}`;
-    if (seenEdges.has(key)) return;
-    seenEdges.add(key);
-    const parentBox = boxes.get(resolve(hole.parent)!)!;
-    appendEdge(lowestBlock(srcId, parentBox.id), `${nameOf(srcId)} --> ${holeNames.get(hole.id)!}: ${label}`);
-    edgeCount += 1;
+  const addHoleArrow = (srcId: string, hole: ChartHole, label: string): void => {
+    const targetId = resolve(hole.parent)!;
+    const drawnName = holeNames.get(hole.id);
+    if (drawnName !== undefined) {
+      const key = `hole\u0000${srcId}\u0000${hole.id}\u0000${label}`;
+      if (seenEdges.has(key)) return;
+      seenEdges.add(key);
+      const parentBox = boxes.get(targetId)!;
+      appendEdge(holeEdgeBlock(srcId, parentBox), `${nameOf(srcId)} --> ${drawnName}: ${label}`);
+      edgeCount += 1;
+      return;
+    }
+    if (targetId === srcId) return;
+    addStateEdge(srcId, targetId, label);
   };
 
   const markNotes = new Map<string, string>();
@@ -303,11 +311,11 @@ export function toMermaid(
 
   // 9. 구멍으로 들어오는 화살표
   for (const hole of spec.holes ?? []) {
-    if (!holeNames.has(hole.id)) continue;
+    if (resolve(hole.parent) === null) continue;
     for (const incoming of hole.incoming ?? []) {
       const fromId = resolve(incoming.from);
       if (fromId === null) continue;
-      addHoleEdge(fromId, hole, cleanEdgeLabel(incoming.label));
+      addHoleArrow(fromId, hole, cleanEdgeLabel(incoming.label));
     }
   }
 
@@ -318,7 +326,6 @@ export function toMermaid(
     BREAKS_CLASS_DEF,
     HOLE_CLASS_DEF,
   ];
-  const divider = (spec.parallel ?? "stack") === "divider";
 
   const renderBox = (box: Box, depth: number): void => {
     const pad = INDENT.repeat(depth);
@@ -340,15 +347,27 @@ export function toMermaid(
   for (const box of top) renderBox(box, 0);
   for (const edge of edgeLines.get("") ?? []) lines.push(edge);
 
-  const breaksNames = new Set<string>();
+  const paintedNames = new Set<string>();
+  const paint = (name: string, kind: "breaks" | "hole"): void => {
+    if (paintedNames.has(name)) return;
+    paintedNames.add(name);
+    lines.push(`class ${name} ${kind}`);
+  };
   for (const id of spec.marks?.states ?? []) {
     const resolved = resolve(id);
-    if (resolved !== null) breaksNames.add(nameOf(resolved));
+    if (resolved !== null) paint(nameOf(resolved), "breaks");
   }
-  for (const name of breaksNames) lines.push(`class ${name} breaks`);
   for (const hole of spec.holes ?? []) {
-    const name = holeNames.get(hole.id);
-    if (name !== undefined) lines.push(`class ${name} ${hole.reachable ? "breaks" : "hole"}`);
+    const drawnName = holeNames.get(hole.id);
+    if (drawnName !== undefined) {
+      paint(drawnName, hole.reachable ? "breaks" : "hole");
+      continue;
+    }
+    const targetId = resolve(hole.parent);
+    if (targetId === null) continue;
+    const merged = mergedHoles.get(targetId);
+    if (merged === undefined) continue;
+    paint(nameOf(targetId), merged.some((entry) => entry.reachable) ? "breaks" : "hole");
   }
 
   if (edgeCount > EDGE_LIMIT) warnings.push(`too many edges: ${edgeCount}`);

@@ -98,6 +98,21 @@ function cardLikeFixture(): { root: ChartNode; spec: ChartSpec } {
         note: "검증",
         incoming: [{ from: "beta.r2", label: "WAKE" }],
       },
+      {
+        id: "g2",
+        parent: "gamma.inner",
+        label: "닫힌 자리",
+        reachable: true,
+        note: "확인",
+        incoming: [{ from: "alpha.two", label: "FOLD" }],
+      },
+      {
+        id: "g3",
+        parent: "gamma.inner2",
+        label: "잊힌 자리",
+        reachable: false,
+        incoming: [{ from: "gamma.inner", label: "LOST" }],
+      },
     ],
   };
 
@@ -124,7 +139,6 @@ describe("toMermaid", () => {
       "        alpha_one_x --> alpha_one_y: 다음 (재진입)",
       "    }",
       '    state "two" as alpha_two',
-      "    alpha --> alpha_one_y: GO_DOWN",
       "}",
       'state "beta" as beta {',
       "    direction TB",
@@ -143,26 +157,32 @@ describe("toMermaid", () => {
       'state "epsilon *" as epsilon',
       'state "a.b" as a_b',
       'state "a-b" as a_b_2',
+      "alpha --> alpha_one_y: GO_DOWN",
       "beta_r1_a1 --> alpha_two: 다시 시작",
       "beta_r1_a1 --> alpha_two: JUMP",
       "a_b --> a_b_2: PAIR",
+      "alpha_two --> gamma: FOLD",
       "class beta_r1_a1 breaks",
       "class hole_h1 hole",
       "class hole_g1 breaks",
+      "class gamma breaks",
     ].join("\n");
 
     expect(result).toEqual({
       mermaid: expected,
-      edgeCount: 7,
-      warnings: ["ancestor edge: alpha -> alpha.one.y"],
+      edgeCount: 8,
+      warnings: [],
     });
   });
 
-  it("parallel이 divider면 영역 사이에 --를 넣는다", () => {
+  it("parallel이 divider면 영역 사이에 --를 넣고 영역 사이 화살표는 맨 바깥에 적는다", () => {
+    const r1 = node("p.r1", "r1", "atomic");
+    const r2 = node("p.r2", "r2", "atomic");
     const parallel = node("p", "p", "parallel");
-    attach(parallel, node("p.r1", "r1", "atomic"), node("p.r2", "r2", "atomic"));
+    attach(parallel, r1, r2);
     const root = node("root", "root", "compound");
     attach(root, parallel);
+    on(r1, "NEXT", [{ target: [r2] }]);
 
     const result = toMermaid(root, { include: ["p"], parallel: "divider" });
 
@@ -176,9 +196,10 @@ describe("toMermaid", () => {
       "    --",
       '    state "r2" as p_r2',
       "}",
+      "p_r1 --> p_r2: NEXT",
     ].join("\n");
 
-    expect(result).toEqual({ mermaid: expected, edgeCount: 0, warnings: [] });
+    expect(result).toEqual({ mermaid: expected, edgeCount: 1, warnings: [] });
   });
 
   it("spec의 상태 id가 기계에 없으면 예외를 던진다", () => {
