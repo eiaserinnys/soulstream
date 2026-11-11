@@ -1,3 +1,6 @@
+import { randomUUID } from 'node:crypto';
+import { CardWorkDispatchService } from '../src/cards/card_work_dispatch_service.js';
+import { createFolderContentSqlAdapter } from '../src/board/folder_content_sql.js';
 import { expect } from 'vitest';
 import type { CardMachineWorld } from './card-machine-world.js';
 
@@ -83,5 +86,34 @@ export async function collectAdditionalObservations(world: CardMachineWorld) {
   await expect(cards.startCardWork({ ...human, cardId, execution: { registrationId: 'old', executionCommandId: 'old' } })).rejects.toMatchObject({ statusCode: 422, code: 'INVALID_CARD_WORK' });
   step = 'extra-34: start stale execution INVALID_CARD_WORK';
   await expect(cards.startCardWork({ ...owner, cardId, execution: { registrationId: 'old', executionCommandId: 'old' } })).rejects.toMatchObject({ statusCode: 422, code: 'INVALID_CARD_WORK', message: 'Current execution is missing, stale or orchestration purpose' });
+  step = 'extra-35: enabled admission required';
+  await world.reset();
+  await world.apply('CREATE_QUEUED');
+  const queuedId = world.cardId();
+  const dispatch = { cardId: queuedId, expectedVersion: (await cards.getCard(queuedId))!.card.version, sessionId: 'owner', nodeId: 'node' };
+  await h.sql`UPDATE system_settings SET value='{"enabled":true}' WHERE setting_key='card_orchestration'`;
+  await expect(cards.recordDispatch(dispatch)).rejects.toThrow('Enabled orchestration requires a fenced decision admission');
+  step = 'extra-36: disabled admission rejected';
+  await h.sql`UPDATE system_settings SET value='{"enabled":false}' WHERE setting_key='card_orchestration'`;
+  await expect(cards.recordDispatch({ ...dispatch, admission: { runId: 'absent', leaseToken: 'test-lease', workerInput: { agentId: 'worker', modelPreset: 'model', configuredModelPreset: null } } })).rejects.toThrow('Orchestration policy is disabled');
+  step = 'extra-37: stale admission rejected';
+  await h.sql`UPDATE system_settings SET value='{"enabled":true}' WHERE setting_key='card_orchestration'`;
+  await expect(cards.recordDispatch({ ...dispatch, admission: { runId: 'absent', leaseToken: 'test-lease', workerInput: { agentId: 'worker', modelPreset: 'model', configuredModelPreset: null } } })).rejects.toThrow('Stale orchestration admission');
+  await h.sql`UPDATE system_settings SET value='{"enabled":false}' WHERE setting_key='card_orchestration'`;
+  step = 'extra-38: prepare followup owner';
+  await world.apply('ASSIGN_SESSION');
+  await world.apply('HUMAN_MOVE_noReport');
+  const adapter = createFolderContentSqlAdapter(h.liveSql);
+  const work = new CardWorkDispatchService({sql:adapter,cards,execution:world.executions,
+    authorizeFolder:async()=>{},sendDelivery:async()=>{},emitCardUpdated:()=>{},warn:()=>{}});
+  step = 'extra-39: dispatch_work spoken followup from another session';
+  const accepted = await work.accept({kind:'followup',cardId:queuedId,request:'담당에게 후속 지시',idempotencyKey:'observation-followup'}, {actorKind:'agent',actorSessionId:'other'});
+  expect(accepted.accepted).toBe(true);
+  expect((await cards.getCard(queuedId))!.card.status).toBe('running');
+  step = 'extra-40: direct spoken permission precedes missing mode';
+  await h.sql`UPDATE cards SET items=${h.sql.json([{id:1}])} WHERE id=${queuedId}`;
+  await expect(cards.addComment({actorKind:'agent',actorSessionId:'other',cardId:queuedId,body:'상황 전달'})).rejects.toThrow('다른 세션이 담당인 카드입니다');
+  step = 'extra-41: transactional creation';
+  await adapter.begin(sql=>cards.createCardTx(sql,{actorKind:'agent',actorSessionId:'other',cardId:randomUUID(),assignee:null,folderId:'machine',title:'Tx 생성',request:'동일 생성 규칙'}));
   } catch (error) { throw new Error(`${step}: ${String(error)}`, { cause: error }); }
 }

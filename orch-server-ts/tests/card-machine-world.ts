@@ -13,7 +13,7 @@ import { CardOrchestrationRepository } from "../src/cards/card_orchestration_rep
 import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
 import { CardDispatcher } from "../src/cards/card_dispatcher.js";
 import { PersistentReportService } from "../src/session/persistent_report_service.js";
-import { cardFactsToStateValue, type CardFacts } from "../src/cards/state/card_machine_facts.js";
+import type { CardStatus } from "../src/cards/control_plane/card_types.js";
 
 const human={actorKind:"user" as const,actorSessionId:null,actorUserId:"director"};
 const execution={registrationId:"machine-registration",executionCommandId:"machine-command"};
@@ -51,35 +51,9 @@ export async function createCardMachineWorld() {
   async function row() {return (await h.sql`SELECT * FROM cards WHERE id=${cardId}`)[0]!;}
   async function ownerId() {return String((await row()).assignee_session_id);}
   async function openId(){return String((await h.sql`SELECT id FROM card_questions WHERE card_id=${cardId} AND answer IS NULL AND withdrawn_at IS NULL ORDER BY asked_at,id LIMIT 1`)[0]?.id);}
-  async function facts():Promise<CardFacts> {
-    if(!cardId)return {status:"uncreated",assignee:"none",supervised:false,boardEntryCount:0,cardEntryCount:0,questionEntryCount:0};
-    const r=await row();const owner=r.assignee_session_id?await repo.ownerSession(r.assignee_session_id):null;
-
-    const qs=await h.sql`SELECT session_id FROM card_questions WHERE card_id=${cardId} AND answer IS NULL AND withdrawn_at IS NULL`;
-    const entries=await reports.get("pas");
-    const boardMetadata=(await h.sql`SELECT metadata FROM sessions WHERE session_id='pas'`)[0]!.metadata;
-    const dismissed=readDismissedCards(boardMetadata);
-    const connected=(await readCardBoardSessions(sql,cardId)).has("pas");
-    const questionRows=await h.sql`SELECT * FROM card_questions WHERE card_id=${cardId}`;
-    const expected=cardBoardEntries(r as never,questionRows as never,connected,dismissed).sort((a,b)=>a.key.localeCompare(b.key));
-    expect(entries.filter(e=>e.card_id===cardId).sort((a,b)=>a.key.localeCompare(b.key))).toEqual(expected);
-
-    const enabled=((await h.sql`SELECT metadata FROM sessions WHERE session_id='pas'`)[0]!.metadata as {type:string;value:{enabled?:boolean}}[]).find(m=>m.type==="persistent_session")?.value.enabled===true;
-    let assignee:CardFacts["assignee"]=r.assignee_kind??"none";
-    if(r.assignee_kind==="agent"&&(await h.sql`SELECT card_id FROM card_orchestration_dispatches WHERE card_id=${cardId} AND state IN ('admitted','launching')`).length) assignee="agentAdmitted";
-    if(owner) {
-      const replaced=owner.session_id!==baseOwner;
-      assignee=replaced?(owner.status==="error"?"replacedLimited":owner.status==="completed"?"replacedEnded":"replacedLive"):
-        owner.status==="error"?(short?"originalLimited":"originalLongLimited"):owner.status==="completed"?"originalEnded":"originalLive";
-    }
-    return {dismissed:dismissed.some(d=>dismissalMatches(r as never,d)),status:r.status,blockedKind:r.blocked_kind,blockedDetail:r.blocked_detail,assignee,
-      openQuestion:qs.length?(!owner?"orphan":qs.every(q=>q.session_id===owner.session_id)?"owner":"other"):null,
-      wakeAt:r.wake_at,limitResumeAt:r.limit_resume_at,limitResumeSessionId:r.limit_resume_session_id,assigneeSessionId:r.assignee_session_id,supervised:enabled,boardEntryCount:entries.length,
-      questionEntryCount:entries.filter(e=>e.question_id!==undefined&&e.card_id===cardId).length,cardEntryCount:entries.filter(e=>e.key===`card_${cardId}`).length};
-  }
   async function apply(type:string) {
     const agent=async()=>({actorKind:"agent" as const,actorSessionId:(await row()).assignee_session_id??"other"});
-    const statusOf:Record<string,CardFacts["status"]>={question:"blocked",limit:"blocked",noReport:"blocked",other:"blocked",verification:"awaiting_verification",hold:"on_hold"};
+    const statusOf:Record<string,CardStatus>={question:"blocked",limit:"blocked",noReport:"blocked",other:"blocked",verification:"awaiting_verification",hold:"on_hold"};
     if(type==="CREATE_TODO"||type==="CREATE_QUEUED") {
       cardId=(await cards.createCard({actorKind:"agent",actorSessionId:"pas",assignee:null,folderId:"machine",title:"기계 대조",request:"확인",queue:type==="CREATE_QUEUED"})).operation.target_id;return;
     }
@@ -87,7 +61,7 @@ export async function createCardMachineWorld() {
       const target=type.replace(/^(HUMAN|ASSIGNEE)_MOVE_/,"");
       const actor=type.startsWith("HUMAN_")?human:await agent();
       const before=await row();
-      await cards.setCardStatus({...actor,cardId,status:(statusOf[target]??target) as Exclude<CardFacts["status"],"uncreated">,
+      await cards.setCardStatus({...actor,cardId,status:(statusOf[target]??target) as Exclude<CardStatus,"uncreated">,
         blockedKind:target==="question"?"question":target==="limit"?"limit":target==="noReport"?"no_report":null,
         blockedDetail:target==="noReport"?"보고 없음":null,wakeAt:target==="verification"?new Date(Date.now()+3600000).toISOString():undefined,waitingFor:target==="verification"?"배포 확인":undefined});return;
     }
@@ -119,7 +93,7 @@ export async function createCardMachineWorld() {
       case "ASK_OWNER":case "ASK_OTHER":await cards.askQuestion({actorKind:"agent",actorSessionId:type==="ASK_OTHER"?"other":await ownerId(),cardId,text:"결정",options:["진행"]});return;
       case "ANSWER_DETAIL":await cards.answerQuestion({...human,cardId,questionId:await openId(),answer:"진행"});return;
       case "ANSWER_BOARD":{
-        const wasEnabled=(await facts()).supervised;
+        const wasEnabled=((await h.sql`SELECT metadata FROM sessions WHERE session_id='pas'`)[0]!.metadata as {type:string;value:{enabled?:boolean}}[]).some(m=>m.type==='persistent_session'&&m.value.enabled===true);
         if(!wasEnabled)await h.sql`UPDATE sessions SET metadata=${h.sql.json(metadata(true))} WHERE session_id='pas'`;
         const decision=await reports.acceptReply("pas",[{key:"persistent_report_reply",content:{key:`cq_${await openId()}`,option:"진행"}}],{source:"browser"});
         if(!wasEnabled){await h.sql`UPDATE sessions SET metadata=${h.sql.json(metadata(false))} WHERE session_id='pas'`;await reports.syncBoard("pas");}
@@ -202,6 +176,6 @@ export async function createCardMachineWorld() {
       default:throw new Error(`Unsupported contrast event: ${type}`);
     }
   }
-  return {h,cards,reports,dispatcher,reset,apply,facts,cardId:()=>cardId,cleanup:async()=>{await dispatcher.drain();await h.cleanup();}};
+  return {h,cards,reports,dispatcher,executions,reset,apply,cardId:()=>cardId,cleanup:async()=>{await dispatcher.drain();await h.cleanup();}};
 }
 export type CardMachineWorld=Awaited<ReturnType<typeof createCardMachineWorld>>;

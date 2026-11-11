@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="pele pele-state" viewBox="0 0 1602 267" width="1602" height="267" style="max-width:100%;height:auto;--_bg:var(--pele-bg,#fff);--_fg:var(--pele-fg,#1f1f1f);--_m:var(--pele-muted,#6e6e6e);--_l:var(--pele-line,#1f1f1f);--_s:var(--pele-surface,#f3f3f3);--_a:var(--pele-surface-alt,#e6e6e6);--_b:var(--pele-border,#8a8a8a);--_c:var(--pele-accent,#5b7bd5);color:var(--_fg);--_fm:var(--pele-font-mono,monospace);font:16px sans-serif;letter-spacing:normal;word-spacing:normal;text-transform:none;direction:ltr;font-family:var(--pele-font,Pretendard Variable, Noto Sans CJK KR, Noto Sans KR, sans-serif)" fill="var(--_fg)" role="graphics-document document" aria-roledescription="state"><style>/*
+ * Statechart colors for Pele SVG output.
+ * Adapted from pstack skills/statechart/references/render.md
+ * (https://github.com/poteto/pstack), MIT License, Copyright (c) 2026 Lauren Tan.
+ * The mark rules use !important because Pele writes classDef colors as style attributes.
+ */
+.pele {
+  background-color: var(--pele-bg);
+  --pele-bg: #ffffff;
+  --pele-fg: #1c1c1c;
+  --pele-muted: #656565;
+  --pele-line: #808080;
+  --pele-surface: #fcfcfc;
+  --pele-surface-alt: #f1f1f1;
+  --pele-border: #c9c9c9;
+}
+.pele .blue rect { fill: #c3e0ff; }
+.pele .orange rect { fill: #f0d3bf; }
+.pele .purple rect { fill: #e3d5ff; }
+.pele .yellow rect { fill: #f0dcbf; }
+.pele .teal rect { fill: #bfe3df; }
+.pele .tan rect { fill: #e5d9ce; }
+.pele .pink rect { fill: #ffcbe6; }
+.pele .breaks rect { fill: #ffecee !important; stroke: #e72e3b !important; stroke-width: 2.5px !important; }
+.pele .breaks text { fill: #cd2834 !important; }
+.pele .mayBreak rect { fill: #fff3e6 !important; stroke: #e8730c !important; stroke-width: 2.5px !important; }
+.pele .mayBreak text { fill: #b85a06 !important; }
+.pele .bugPath rect { stroke: #1680f3 !important; stroke-width: 2.5px !important; }
+.pele .repeats rect { stroke: #9b35d6 !important; stroke-width: 2.5px !important; stroke-dasharray: 6 3; }
+@media (prefers-color-scheme: dark) {
+  .pele {
+    --pele-bg: #1f1f1f;
+    --pele-fg: #f5f5f5;
+    --pele-muted: #acacac;
+    --pele-line: #939393;
+    --pele-surface: #121212;
+    --pele-surface-alt: #2c2c2c;
+    --pele-border: #4e4e4e;
+  }
+  .pele .blue rect { fill: #1b3857; }
+  .pele .orange rect { fill: #573117; }
+  .pele .purple rect { fill: #3c2e57; }
+  .pele .yellow rect { fill: #573d17; }
+  .pele .teal rect { fill: #174641; }
+  .pele .tan rect { fill: #3d3127; }
+  .pele .pink rect { fill: #57233e; }
+  .pele .breaks rect { fill: #2e2021 !important; stroke: #cf2b35 !important; }
+  .pele .breaks text { fill: #ff6463 !important; }
+  .pele .mayBreak rect { fill: #2e2619 !important; stroke: #d0700f !important; }
+  .pele .mayBreak text { fill: #ffa257 !important; }
+  .pele .bugPath rect { stroke: #116dd2 !important; }
+  .pele .repeats rect { stroke: #9a3fcf !important; }
+}
+</style><g class="pele-clusters"><g class="pele-cluster pele-state-composite" data-id="cardDecision_reservation"><rect x="8" y="8" width="1585.63" height="250.5" rx="10" fill="var(--_a)" fill-opacity="0.5" stroke="var(--_b)"/><path d="M8,44H1593.63" fill="none" stroke="var(--_b)"/><text class="pele-cluster-label" x="800.82" y="31.6" text-anchor="middle">카드에 기록한 예약</text></g></g><g class="pele-edges" fill="none" stroke="var(--_l)" stroke-linecap="round"><g class="pele-edge pele-transition" data-id="edge0"><path d="M398.9,44L398.9,118.5C398.9,150.74 478.5,170.5 608.37,170.5C738.24,170.5 817.84,176.49 817.84,186.25L817.84,191.5"/><path class="pele-marker" d="M817.84,198.5L814.48,190.5L821.2,190.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge1"><path d="M74.22,44L74.22,191.5"/><path class="pele-marker" d="M74.22,198.5L70.86,190.5L77.58,190.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge2"><path d="M562.63,44L562.63,118.5C562.63,143.3 614.03,158.5 697.88,158.5C781.74,158.5 833.13,168.76 833.13,185.5L833.13,191.5"/><path class="pele-marker" d="M833.13,198.5L829.77,190.5L836.49,190.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge3"><path d="M758.26,44L758.26,118.5C758.26,135.86 775.39,146.5 803.34,146.5C831.29,146.5 848.42,161.32 848.42,185.5L848.42,191.5"/><path class="pele-marker" d="M848.42,198.5L845.06,190.5L851.78,190.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge4"><path d="M251.12,44L251.12,191.5"/><path class="pele-marker" d="M251.12,198.5L247.76,190.5L254.48,190.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge5"><path d="M1490.96,44L1490.96,191.5"/><path class="pele-marker" d="M1490.96,198.5L1487.6,190.5L1494.32,190.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge6"><path d="M953.88,44L953.88,118.5C953.88,135.86 936.75,146.5 908.79,146.5C880.84,146.5 863.71,161.32 863.71,185.5L863.71,191.5"/><path class="pele-marker" d="M863.71,198.5L860.35,190.5L867.07,190.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge7"><path d="M1149.5,44L1149.5,118.5C1149.5,143.3 1098.11,158.5 1014.25,158.5C930.4,158.5 879,168.76 879,185.5L879,191.5"/><path class="pele-marker" d="M879,198.5L875.64,190.5L882.36,190.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge8"><path d="M1320.23,44L1320.23,118.5C1320.23,150.74 1239.3,170.5 1107.26,170.5C975.22,170.5 894.29,176.49 894.29,186.25L894.29,191.5"/><path class="pele-marker" d="M894.29,198.5L890.93,190.5L897.65,190.5Z" fill="var(--_l)" stroke="none"/></g></g><g class="pele-edge-labels" font-size="14"><g class="pele-edge-label" data-id="edge0"><rect x="350.96" y="88" width="95.89" height="21" rx="3" fill="var(--_bg)"/><text x="398.9" y="103.4" text-anchor="middle">상태를 옮긴다</text></g><g class="pele-edge-label" data-id="edge1"><rect x="26.28" y="88" width="95.89" height="21" rx="3" fill="var(--_bg)"/><text x="74.22" y="103.4" text-anchor="middle">상태를 옮긴다</text></g><g class="pele-edge-label" data-id="edge2"><rect x="466.85" y="88" width="191.57" height="21" rx="3" fill="var(--_bg)"/><text x="562.63" y="103.4" text-anchor="middle">시각 없는 한도 예약을 잇는다</text></g><g class="pele-edge-label" data-id="edge3"><rect x="678.42" y="80.5" width="159.68" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="758.26" y="94.4">현재 담당의 한도 종료를</tspan><tspan x="758.26" y="112.4">기록한다</tspan></text></g><g class="pele-edge-label" data-id="edge4"><rect x="171.28" y="80.5" width="159.68" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="251.12" y="94.4">현재 담당의 한도 종료를</tspan><tspan x="251.12" y="112.4">기록한다</tspan></text></g><g class="pele-edge-label" data-id="edge5"><rect x="1411.12" y="80.5" width="159.68" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="1490.96" y="94.4">현재 담당의 한도 종료를</tspan><tspan x="1490.96" y="112.4">기록한다</tspan></text></g><g class="pele-edge-label" data-id="edge6"><rect x="858.09" y="88" width="191.57" height="21" rx="3" fill="var(--_bg)"/><text x="953.88" y="103.4" text-anchor="middle">짧은 한도 시각이 되어 잇는다</text></g><g class="pele-edge-label" data-id="edge7"><rect x="1069.66" y="88" width="159.68" height="21" rx="3" fill="var(--_bg)"/><text x="1149.5" y="103.4" text-anchor="middle">검증 시각이 되어 잇는다</text></g><g class="pele-edge-label" data-id="edge8"><rect x="1249.34" y="88" width="141.78" height="21" rx="3" fill="var(--_bg)"/><text x="1320.23" y="103.4" text-anchor="middle">담당과 보관을 고친다</text></g></g><g class="pele-nodes"><g class="pele-node pele-state" data-id="r_none" transform="translate(856.07,220.5)"><rect x="-50.22" y="-22" width="100.45" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">예약 없음</text></g><g class="pele-node pele-state" data-id="r_verify" transform="translate(74.22,220.5)"><rect x="-50.22" y="-22" width="100.45" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">검증 예약</text></g><g class="pele-node pele-state" data-id="r_limit" transform="translate(251.12,220.5)"><rect x="-86.67" y="-22" width="173.34" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">시각 있는 한도 예약</text></g><g class="pele-node pele-state" data-id="r_longLimit" transform="translate(1490.96,220.5)"><rect x="-86.67" y="-22" width="173.34" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">시각 없는 한도 예약</text></g></g></svg>

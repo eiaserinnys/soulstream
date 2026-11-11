@@ -1,0 +1,118 @@
+{
+  "configurationCount": 3834,
+  "definitionCount": 248,
+  "promises": [
+    {
+      "id": 1,
+      "name": "판에 올라야 할 장은 판에 있다 (1-가 질문 장)",
+      "kept": true,
+      "violations": 0,
+      "example": [],
+      "discrepancies": [
+        1,
+        7
+      ]
+    },
+    {
+      "id": 1,
+      "name": "판에 올라야 할 장은 판에 있다 (1-나 카드 장)",
+      "kept": true,
+      "violations": 0,
+      "example": [],
+      "discrepancies": [
+        1
+      ]
+    },
+    {
+      "id": 2,
+      "name": "서버의 한도 재개는 기록된 담당이 현재 담당일 때만 한다",
+      "kept": true,
+      "violations": 0,
+      "example": [],
+      "discrepancies": [
+        2
+      ]
+    },
+    {
+      "id": 3,
+      "name": "같은 질문의 답은 카드 상세와 감독 판에서 결과가 같다",
+      "kept": true,
+      "violations": 0,
+      "example": [],
+      "discrepancies": [
+        4
+      ]
+    },
+    {
+      "id": 4,
+      "name": "질문을 올릴 수 있는 세션은 철회할 수 있다",
+      "kept": true,
+      "violations": 0,
+      "example": [],
+      "discrepancies": [
+        8
+      ]
+    },
+    {
+      "id": 5,
+      "name": "짧은 한도로 막히면 취소 전까지 시각 있는 예약이 있다",
+      "kept": true,
+      "violations": 0,
+      "example": [],
+      "discrepancies": []
+    },
+    {
+      "id": 6,
+      "name": "기다리는 카드는 판의 장이나 시각으로 나가는 길이 있다",
+      "kept": false,
+      "violations": 195,
+      "example": [
+        "PAS_APPEARS",
+        "{\"type\":\"CREATE\",\"actor\":\"human\",\"facts\":{\"queued\":false,\"assigneeInput\":\"none\"}}",
+        "{\"type\":\"SET_STATUS\",\"actor\":\"human\",\"facts\":{\"target\":\"question\",\"claim\":false,\"wait\":\"missing\"}}",
+        "ACK_CARD"
+      ],
+      "discrepancies": []
+    }
+  ],
+  "holes": [
+    {
+      "id": "holeCardMissing",
+      "parent": "s_on",
+      "label": "판에 올라야 하는데 카드 장이 없음",
+      "reachable": false,
+      "incoming": []
+    },
+    {
+      "id": "holeQuestionMissing",
+      "parent": "s_on",
+      "label": "질문은 열렸는데 판에 장이 없음",
+      "reachable": false,
+      "incoming": []
+    },
+    {
+      "id": "holeOrphan",
+      "parent": "cardDecision.question",
+      "label": "철회할 세션이 없는 질문",
+      "reachable": false,
+      "incoming": []
+    },
+    {
+      "id": "holeChangedLimitOwner",
+      "parent": "s_limit",
+      "label": "담당이 바뀐 한도 막힘",
+      "reachable": false,
+      "incoming": [],
+      "note": "예약 담당 불일치는 DB CHECK가 금지하며 결정 상태의 별도 영역으로 만들지 않는다"
+    }
+  ],
+  "marks": {
+    "states": [
+      "s_question",
+      "s_noReport",
+      "s_other",
+      "s_limit"
+    ],
+    "transitions": []
+  }
+}

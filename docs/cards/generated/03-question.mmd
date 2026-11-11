@@ -1,0 +1,16 @@
+stateDiagram-v2
+direction TB
+classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
+classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
+state "열린 질문" as cardDecision_question {
+    direction TB
+    state "없음" as q_none
+    state "열린 질문이 있음" as q_open
+    state "철회할 세션이 없는 질문 *" as hole_holeOrphan
+}
+cardDecision_question --> q_open: 질문을 올린다
+cardDecision_question --> q_none: 질문에 답한다
+cardDecision_question --> q_none: 질문을 철회한다
+cardDecision_question --> q_none: 사용자가 담당에게 말한다
+cardDecision_question --> q_none: 커멘트를 남긴다
+class hole_holeOrphan hole

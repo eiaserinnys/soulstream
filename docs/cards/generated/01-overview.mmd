@@ -1,0 +1,24 @@
+stateDiagram-v2
+direction TB
+classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
+classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
+state "카드에 저장한 사실에서 명령 판정과 쓰기를 정한다" as cardDecision {
+    direction TB
+    state "카드 상태" as cardDecision_status {
+        direction TB
+        state "아직 만들지 않음" as s_uncreated
+        state "판 위" as s_on
+        state "내려감" as s_off
+    }
+    state "열린 질문" as cardDecision_question
+    state "카드에 기록한 예약" as cardDecision_reservation
+    state "담당 종류" as cardDecision_assignee
+    state "보관" as cardDecision_archive
+}
+cardDecision_status --> s_on: 상태를 옮긴다
+cardDecision_status --> s_off: 상태를 옮긴다
+cardDecision_status --> s_on: 카드를 만든다
+cardDecision_status --> s_on: 질문을 올린다
+cardDecision_status --> s_on: 사용자가 담당에게 말한다
+cardDecision_status --> s_on: 현재 담당의 한도 종료를 기록한다
+class s_on breaks

@@ -1,25 +1,66 @@
-import { readFile } from "node:fs/promises";
-import { expect, it } from "vitest";
-import { CARD_EVENTS, EVENT_SOURCES, STATUS_DECISIONS } from "../src/cards/state/card_machine_events.js";
-import { cardMachine } from "../src/cards/state/card_machine.js";
-
-it("상태를 정하는 17곳과 사건의 원문 파일이 존재한다",async()=>{
-  expect(Object.keys(STATUS_DECISIONS)).toHaveLength(17);
-  for(const events of Object.values(STATUS_DECISIONS)) for(const type of events) expect(EVENT_SOURCES[type]?.length).toBeGreaterThan(0);
-  for(const sources of Object.values(EVENT_SOURCES))for(const locator of sources) {
-    const file=locator.split("#")[0]!;
-    expect((await readFile(new URL(`../src/${file}`,import.meta.url),"utf8")).length).toBeGreaterThan(0);
-  }
-  const visit=(node:typeof cardMachine.root):string[]=>[...Object.keys(node.on),...Object.values(node.states).flatMap(visit)];
-  expect(new Set(visit(cardMachine.root))).toEqual(new Set(CARD_EVENTS.map(e=>e.type)));
+import { readFile, readdir } from 'node:fs/promises';
+import { expect,it } from 'vitest';
+import { cardDecisionMachine } from '../src/cards/state/card_decision_machine.js';
+import { CARD_FACT_VALUES } from '../src/cards/state/card_decision_facts.js';
+import { CARD_DECISION_SOURCES, CARD_RUNTIME_SQL_WRITERS, CARD_COMMAND_ENTRANCES, CARD_COMMAND_CALLERS } from '../src/cards/state/card_decision_inventory.js';
+it('pins every command to an existing operational function',async()=>{
+ expect(Object.keys(CARD_DECISION_SOURCES).sort()).toEqual(Object.keys(CARD_FACT_VALUES).sort());
+ for(const [file,name] of Object.values(CARD_DECISION_SOURCES))expect(await readFile(new URL(`../src/${file}`,import.meta.url),'utf8')).toMatch(new RegExp(`\\b${name}\\b`));
+ expect(CARD_RUNTIME_SQL_WRITERS).toHaveLength(3);
+ expect(CARD_COMMAND_CALLERS.CREATE).toContain('cards/card_control_plane_service.ts#createCardTx');
+ expect(CARD_COMMAND_CALLERS.ADD_COMMENT).toContain('cards/card_control_plane_service.ts#addCommentTx');
+ expect(CARD_COMMAND_CALLERS.ADD_COMMENT).toContain('cards/card_work_dispatch_service.ts#accept');
+});
+const decisionImport=/(?:from\s*|import\s*(?:\(\s*)?)["'][^"']*(?:cards\/)?state\/card_(?:decision|state_value|write_intent|machine)/;
+it('keeps the decision module disconnected from runtime in PR 1b',async()=>{
+ const files:string[]=[];
+ async function walk(directory:string){
+ for(const entry of await readdir(new URL(`../${directory}`,import.meta.url),{withFileTypes:true})){
+ const path=`${directory}/${entry.name}`;
+ if(entry.isDirectory())await walk(path);else if(entry.isFile()&&entry.name.endsWith('.ts'))files.push(path);
+ }
+ }
+ await walk('src');
+ const writers:string[]=[];
+ for(const file of files){
+ if(file.startsWith('src/cards/state/'))continue;
+ const source=await readFile(new URL(`../${file}`,import.meta.url),'utf8');
+ expect(source,file).not.toMatch(decisionImport);
+ for(const match of source.matchAll(/\b(INSERT\s+INTO|UPDATE)\s+cards\b/g))writers.push(`${file.slice(4)}:${match[1]!.startsWith('INSERT')?'INSERT':'UPDATE'}`);
+ }
+ expect(writers.sort()).toEqual([...CARD_RUNTIME_SQL_WRITERS].sort());
 });
 
-it("판 사실의 숫자는 이 카드의 장을 뺀 세 단계로만 옮긴다",async()=>{
-  const {cardFactsToStateValue}=await import("../src/cards/state/card_machine_facts.js");
-  const value=(boardEntryCount:number,cardEntryCount:number,questionEntryCount:number)=>cardMachine.resolveState({value:cardFactsToStateValue({status:"running",assignee:"none",supervised:true,boardEntryCount,cardEntryCount,questionEntryCount})}).value;
-  expect(value(12,1,0)).toMatchObject({pasBoard:{available:"one"}});
-  expect(value(12,0,1)).toMatchObject({pasBoard:{available:"one"}});
-  expect(value(12,0,0)).toMatchObject({pasBoard:{available:"full"}});
-  expect(value(10,0,0)).toMatchObject({pasBoard:{available:"room"}});
-  expect(value(0,0,0)).toMatchObject({pasBoard:{available:"room"}});
+it('keeps world transition memoization valid for static symbolic actions',()=>{
+ const visit=(node:typeof cardDecisionMachine.root)=>{
+ expect(node.entry).toEqual([]);expect(node.exit).toEqual([]);
+ expect(node.always??[]).toEqual([]);
+ for(const transitions of Object.values(node.on))for(const t of transitions){
+ expect(t.meta?.sources).toEqual(CARD_DECISION_SOURCES[t.eventType as keyof typeof CARD_DECISION_SOURCES]);
+ for(const action of t.actions as any[])expect(typeof action.params).not.toBe('function');
+ }
+ Object.values(node.states).forEach(visit);
+ };
+ visit(cardDecisionMachine.root);
+});
+
+it('pins the actual forwarded actors for execution confirmation and replacement',async()=>{
+ expect(CARD_COMMAND_ENTRANCES.CONFIRM_EXECUTION).toEqual(['human','agent','server']);
+ expect(CARD_COMMAND_ENTRANCES.REGISTER_REPLACEMENT).toEqual(['agent']);
+ for(const command of ['CONFIRM_EXECUTION','REGISTER_REPLACEMENT'] as const){
+ const meta=cardDecisionMachine.getStateNodeById('cardDecision.verdict.ready').on[command]![0]!.meta!;
+ expect(meta.entrances).toEqual(CARD_COMMAND_ENTRANCES[command]);
+ expect(meta.callers).toEqual(CARD_COMMAND_CALLERS[command]);
+ for(const locator of CARD_COMMAND_CALLERS[command]){const [file,name]=locator.split('#');expect(await readFile(new URL(`../src/${file}`,import.meta.url),'utf8')).toContain(name);}
+ }
+ const execution=await readFile(new URL('../src/cards/card_execution_service.ts',import.meta.url),'utf8');
+ expect(execution).toContain('recordExecution({...actor,');
+ expect(execution).toContain('actorKind:actor.actorKind,actorSessionId:actor.actorSessionId,actorUserId:actor.actorUserId');
+ const replacement=await readFile(new URL('../src/control_plane/repositories/session_card_replacement.ts',import.meta.url),'utf8');
+ expect(replacement).toContain('actorKind:"agent",actorSessionId:row.actor_session_id');
+});
+
+it('detects static, side-effect and dynamic forbidden runtime imports',()=>{
+ for(const source of ["import { decide } from './state/card_decision.js'", "import './state/card_decision.js'", "import('../cards/state/card_decision.js')"])
+ expect(source).toMatch(decisionImport);
 });

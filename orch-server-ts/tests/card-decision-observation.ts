@@ -1,4 +1,5 @@
 import { expect } from 'vitest';
+import { collectDecisionReads } from './card-decision-evidence.js';
 import { readLimitAutoResumeAt } from '../src/cards/card_limit_auto_resume.js';
 import { claimableCardSessions } from '../src/cards/card_assignee.js';
 import { createFolderContentSqlAdapter } from '../src/board/folder_content_sql.js';
@@ -8,7 +9,7 @@ const methods = ['createCard', 'setCardStatus', 'requestCardReview', 'resumeBloc
   'askQuestion', 'answerQuestion', 'withdrawQuestion', 'addComment', 'startCardWork',
   'recordExecution', 'recordDispatch', 'blockCardForLimit', 'resumeLimitedCard',
   'resumeDispatchedCard', 'resumeVerificationCard', 'noteMissingAssignee', 'bulkSetCardStatus',
-  'mergeCards', 'patchCard', 'updateUnstartedCard', 'saveExecutionSettings'] as const;
+  'mergeCards', 'patchCard', 'updateUnstartedCard', 'saveExecutionSettings', 'addCommentTx', 'createCardTx'] as const;
 export interface DecisionObservation {
   method: string;
   command: Record<string, unknown>;
@@ -28,29 +29,33 @@ export interface DecisionObservation {
 const json = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 export function observeCardDecisions(world: CardMachineWorld) {
   const records: DecisionObservation[] = [];
-  const sql = world.h.sql, adapter = createFolderContentSqlAdapter(world.h.liveSql);
-  const row = async (id: string | undefined) => id ? (await sql`SELECT *,status_changed_at::text AS status_time FROM cards WHERE id=${id}`)[0] ?? null : null;
-  const questions = async (id: string | undefined) => id ? await sql`SELECT * FROM card_questions WHERE card_id=${id} ORDER BY asked_at,id` : [];
   for (const method of methods) {
     const service = world.cards as unknown as Record<string, (...args: any[]) => Promise<any>>;
     const original = service[method]!.bind(world.cards);
-    service[method] = async (p: any, ...rest: any[]) => {
+    service[method] = async (...args: any[]) => {
+      const transaction = method === 'addCommentTx' || method === 'createCardTx';
+      const p = args[transaction ? 1 : 0];
+      const sql = transaction ? args[0] : world.h.sql;
+      const adapter = transaction ? args[0] : createFolderContentSqlAdapter(world.h.liveSql);
+      const row = async (id: string | undefined) => id ? (await sql`SELECT *,status_changed_at::text AS status_time FROM cards WHERE id=${id}`)[0] ?? null : null;
+      const questions = async (id: string | undefined) => id ? await sql`SELECT * FROM card_questions WHERE card_id=${id} ORDER BY asked_at,id` : [];
       const id = p.cardId ?? p.cardIds?.[0] ?? p.sourceCardIds?.[0];
       const before = await row(id), bq = await questions(id);
       const owner = before?.assignee_session_id ? (await sql`SELECT * FROM sessions WHERE session_id=${before.assignee_session_id}`)[0] ?? null : null;
       const actor = { kind: p.actorKind ?? 'system', sessionId: p.actorSessionId ?? null, userId: p.actorUserId ?? null,
         isAssignee: !!p.actorSessionId && p.actorSessionId === before?.assignee_session_id,
-        isAuthor: !!p.actorSessionId && bq.some(q => q.id === p.questionId && q.session_id === p.actorSessionId) };
+        isAuthor: !!p.actorSessionId && bq.some((q: any) => q.id === p.questionId && q.session_id === p.actorSessionId) };
       const checkedAt = Date.now();
       const evidence: Record<string, unknown> = {
         owner,
+        decisionReads: await collectDecisionReads(world, p, id, transaction ? sql : undefined),
         claimableSessions: actor.sessionId && before ? await claimableCardSessions(adapter, before.id, actor.sessionId) : [],
         dispatches: before ? await sql`SELECT * FROM card_orchestration_dispatches WHERE card_id=${before.id} ORDER BY run_id,card_id` : [],
         executionRequests: before ? await sql`SELECT * FROM card_execution_requests WHERE card_id=${before.id} ORDER BY id` : [],
       };
       if (method === 'blockCardForLimit' && owner) evidence.limitAutoResumeAt = await readLimitAutoResumeAt(adapter, owner as any);
       let value: any, thrown: any;
-      try { value = await original(p, ...rest); } catch (error) { thrown = error; }
+      try { value = await original(...args); } catch (error) { thrown = error; }
       const actualId = id ?? value?.operation?.target_id;
       const after = await row(actualId), aq = await questions(actualId);
       records.push(json({ method, command: p, checkedAt, actor, evidence, before, after,
