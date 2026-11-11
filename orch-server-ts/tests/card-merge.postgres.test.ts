@@ -34,9 +34,10 @@ describe("merge_cards", () => {
     await h.sql`UPDATE cards SET items=${h.sql.json(titles.map((title, index) => item(index + 1, title)))}::jsonb WHERE id=${cardId}`;
   }
   async function seedComment(cardId: string, input: { authorKind: "user" | "agent"; kind: "comment" | "spoken" | "note";
-    body: string; itemId?: number }) {
-    await h.sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body,item_id)
-      VALUES(${randomUUID()},${cardId},${input.authorKind},NULL,${input.authorKind === "user" ? null : "pas"},${input.kind},${input.body},${input.itemId ?? null})`;
+    body: string; itemId?: number; attachmentIds?: string[] }) {
+    await h.sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body,item_id,attachment_refs)
+      VALUES(${randomUUID()},${cardId},${input.authorKind},NULL,${input.authorKind === "user" ? null : "pas"},${input.kind},${input.body},${input.itemId ?? null},
+        ${h.sql.json((input.attachmentIds ?? []).map(attachment_id => ({ attachment_id })))})`;
   }
   const notes = async (cardId: string) =>
     await h.sql`SELECT body,item_id FROM card_comments WHERE card_id=${cardId} AND kind='note' ORDER BY created_at,id`;
@@ -63,7 +64,7 @@ describe("merge_cards", () => {
       attachments: [{ nodeId: "n2", path: "/w/b.png", name: "b.png", mimeType: "image/png" }], idempotencyKey: key("source2") });
     const source2Id = source2.operation.target_id;
     await seedItems(source2Id, ["원천 둘 항목 1", "원천 둘 항목 2"]);
-    await seedComment(source2Id, { authorKind: "user", kind: "comment", body: "두 번째 의견" });
+    await seedComment(source2Id, { authorKind: "user", kind: "comment", body: "두 번째 의견", attachmentIds: ["att-user-comment"] });
     await seedComment(source2Id, { authorKind: "agent", kind: "note", body: "원천 둘 노트" });
 
     const before = (await cards.getCard(targetId))!.card;
@@ -99,6 +100,9 @@ describe("merge_cards", () => {
       "원천 하나 항목 1", "원천 하나 항목 2", "원천 하나 항목 3", "원천 둘 항목 1", "원천 둘 항목 2"]);
     expect(merged.attachments.map(attachment => [attachment.nodeId, attachment.path]))
       .toEqual([["n1", "/w/a.png"], ["n2", "/w/b.png"]]);
+
+    const [targetRefs] = await h.sql<{ attachment_refs: { attachment_id: string }[] }[]>`SELECT attachment_refs FROM cards WHERE id=${targetId}`;
+    expect(targetRefs!.attachment_refs.map(ref => ref.attachment_id)).toContain("att-user-comment");
 
     const targetNotes = await notes(targetId);
     expect(targetNotes).toHaveLength(3);

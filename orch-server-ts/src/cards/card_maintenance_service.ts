@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
+import type { AttachmentRef } from "@soulstream/wire-schema/attachments";
 import { attachmentRefsOf } from "./card_attachment_refs.js";
 import { mergeCardSourceAttachmentRefs, type CardLegacyAttachmentRef } from "./card_attachment_legacy_refs.js";
 import {
@@ -242,11 +243,13 @@ export class CardMaintenanceService {
       let brief = target.brief;
       let commentCount = 0;
       const noteCopies: { source: CardRow; row: CardCommentRow }[] = [];
+      const userCommentRefs: AttachmentRef[] = [];
       for (const source of sources) {
         const rows = commentsByCard.get(source.id) ?? [];
         const userRows = rows.filter(row => row.author_kind === "user" && (row.kind === "comment" || row.kind === "spoken"));
         request = appendRequestSection(request, source, userRows);
         commentCount += userRows.length;
+        for (const row of userRows) userCommentRefs.push(...attachmentRefsOf(row.attachment_refs));
         brief = appendBriefSection(brief, source);
         for (const row of rows) if (row.kind === "note") noteCopies.push({ source, row });
       }
@@ -255,6 +258,7 @@ export class CardMaintenanceService {
       const refs = mergeCardSourceAttachmentRefs([], [
         ...attachmentRefsOf(target.attachment_refs),
         ...sources.flatMap(source => attachmentRefsOf(source.attachment_refs)),
+        ...userCommentRefs,
         ...noteCopies.flatMap(copy => attachmentRefsOf(copy.row.attachment_refs)),
       ] as unknown as CardLegacyAttachmentRef[]);
       const targetNote = `합친 카드: ${sources.map(describeCard).join(", ")}`;

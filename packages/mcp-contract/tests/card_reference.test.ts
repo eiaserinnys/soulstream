@@ -59,13 +59,13 @@ test("format and parse round-trip", () => {
 
 test("argument slots name only card and session identifier arguments", () => {
   assert.deepEqual({ ...REFERENCE_ARGUMENT_SLOTS }, {
-    card_id: "card", after_card_id: "card", target_card_id: "card", source_card_ids: "card", card_ids: "card",
+    card_id: "card", after_card_id: "card", target_card_id: "card", source_card_ids: "card",
     session_id: "session", target_session_id: "session", predecessor_session_id: "session",
     session_ids: "session", "assignee.session_id": "session",
   });
 });
 
-test("card maintenance slots translate single ids and every element of an id array", async () => {
+test("card maintenance slots translate single ids and every element of an id array, but leave bulk card_ids to the orch handler", async () => {
   const { lookup, calls } = resolved({ "#412": CARD, "#9": { ref: "#9", kind: "card", id: "card-uuid-9", title: "작은 카드" } });
   const { call, received } = recorder();
   await callWithReferenceTranslation({
@@ -75,7 +75,7 @@ test("card maintenance slots translate single ids and every element of an id arr
   assert.deepEqual(calls, [["#412", "#9"]]);
   assert.deepEqual(received[0], {
     target_card_id: "card-uuid-412", source_card_ids: ["card-uuid-9", "plain-source", "card-uuid-412"],
-    card_ids: ["card-uuid-9"], caller_session_id: "#7",
+    card_ids: ["#9"], caller_session_id: "#7",
   });
 });
 
