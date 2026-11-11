@@ -1,3 +1,6 @@
+import {readCardBoardSessions} from "../src/session/card_board_connections.js";
+import {cardBoardEntries,dismissalMatches} from "../src/session/card_board_entries.js";
+import {readDismissedCards} from "../src/session/persistent_report_service.js";
 import { readFile } from "node:fs/promises";
 import { expect } from "vitest";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
@@ -54,6 +57,13 @@ export async function createCardMachineWorld() {
 
     const qs=await h.sql`SELECT session_id FROM card_questions WHERE card_id=${cardId} AND answer IS NULL AND withdrawn_at IS NULL`;
     const entries=await reports.get("pas");
+    const boardMetadata=(await h.sql`SELECT metadata FROM sessions WHERE session_id='pas'`)[0]!.metadata;
+    const dismissed=readDismissedCards(boardMetadata);
+    const connected=(await readCardBoardSessions(sql,cardId)).has("pas");
+    const questionRows=await h.sql`SELECT * FROM card_questions WHERE card_id=${cardId}`;
+    const expected=cardBoardEntries(r as never,questionRows as never,connected,dismissed).sort((a,b)=>a.key.localeCompare(b.key));
+    expect(entries.filter(e=>e.card_id===cardId).sort((a,b)=>a.key.localeCompare(b.key))).toEqual(expected);
+
     const enabled=((await h.sql`SELECT metadata FROM sessions WHERE session_id='pas'`)[0]!.metadata as {type:string;value:{enabled?:boolean}}[]).find(m=>m.type==="persistent_session")?.value.enabled===true;
     let assignee:CardFacts["assignee"]=r.assignee_kind??"none";
     if(r.assignee_kind==="agent"&&(await h.sql`SELECT card_id FROM card_orchestration_dispatches WHERE card_id=${cardId} AND state IN ('admitted','launching')`).length) assignee="agentAdmitted";
@@ -62,7 +72,7 @@ export async function createCardMachineWorld() {
       assignee=replaced?(owner.status==="error"?"replacedLimited":owner.status==="completed"?"replacedEnded":"replacedLive"):
         owner.status==="error"?(short?"originalLimited":"originalLongLimited"):owner.status==="completed"?"originalEnded":"originalLive";
     }
-    return {status:r.status,blockedKind:r.blocked_kind,blockedDetail:r.blocked_detail,assignee,
+    return {dismissed:dismissed.some(d=>dismissalMatches(r as never,d)),status:r.status,blockedKind:r.blocked_kind,blockedDetail:r.blocked_detail,assignee,
       openQuestion:qs.length?(!owner?"orphan":qs.every(q=>q.session_id===owner.session_id)?"owner":"other"):null,
       wakeAt:r.wake_at,limitResumeAt:r.limit_resume_at,limitResumeSessionId:r.limit_resume_session_id,assigneeSessionId:r.assignee_session_id,supervised:enabled,boardEntryCount:entries.length,
       questionEntryCount:entries.filter(e=>e.question_id!==undefined&&e.card_id===cardId).length,cardEntryCount:entries.filter(e=>e.key===`card_${cardId}`).length};
@@ -82,7 +92,8 @@ export async function createCardMachineWorld() {
         blockedDetail:target==="noReport"?"보고 없음":null,wakeAt:target==="verification"?new Date(Date.now()+3600000).toISOString():undefined,waitingFor:target==="verification"?"배포 확인":undefined});return;
     }
     switch(type) {
-      case "PAS_APPEARS":await h.sql`UPDATE sessions SET metadata=${h.sql.json(metadata(true))} WHERE session_id='pas'`;return;
+      case "PAS_APPEARS":await h.sql`UPDATE sessions SET metadata=${h.sql.json(metadata(true))} WHERE session_id='pas'`;await reports.syncBoard("pas");return;
+      case "ACK_CARD":expect((await reports.remove("pas",`card_${cardId}`)).ok).toBe(true);return;
       case "BOARD_ONE":case "BOARD_FULL":case "BOARD_ROOM":case "BOARD_OTHER_REMOVED":{
         const target=type==="BOARD_FULL"?12:type==="BOARD_ROOM"?0:11;
         const isOwn=(e:{card_id?:string})=>e.card_id===cardId;
@@ -111,7 +122,7 @@ export async function createCardMachineWorld() {
         const wasEnabled=(await facts()).supervised;
         if(!wasEnabled)await h.sql`UPDATE sessions SET metadata=${h.sql.json(metadata(true))} WHERE session_id='pas'`;
         const decision=await reports.acceptReply("pas",[{key:"persistent_report_reply",content:{key:`cq_${await openId()}`,option:"진행"}}],{source:"browser"});
-        if(!wasEnabled)await h.sql`UPDATE sessions SET metadata=${h.sql.json(metadata(false))} WHERE session_id='pas'`;
+        if(!wasEnabled){await h.sql`UPDATE sessions SET metadata=${h.sql.json(metadata(false))} WHERE session_id='pas'`;await reports.syncBoard("pas");}
         if(decision.action==="reject")throw Object.assign(new Error(decision.message),{statusCode:decision.status});
         if(decision.action!=="card")throw new Error(`Unexpected board reply: ${decision.action}`);
         await cards.answerQuestion({...human,cardId,questionId:decision.questionId,answer:decision.option});return;

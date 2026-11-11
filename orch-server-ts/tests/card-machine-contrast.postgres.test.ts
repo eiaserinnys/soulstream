@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
 import { transition } from "xstate";
 import { cardContrastPaths, transitionIds } from "../src/cards/state/card_machine_paths.js";
-import { cardMachine, type CardSnapshot } from "../src/cards/state/card_machine.js";
+import { cardMachine, boardEntriesOf, type CardSnapshot } from "../src/cards/state/card_machine.js";
 import { cardFactsToStateValue } from "../src/cards/state/card_machine_facts.js";
 import { createCardMachineWorld, type CardMachineWorld } from "./card-machine-world.js";
 
@@ -14,16 +14,19 @@ async function run(events:string[]) {
   for(const type of events) {
     state=transition(cardMachine,state,{type})[0];
     await world.apply(type);
-    const actual=cardMachine.resolveState({value:cardFactsToStateValue(await world.facts())});
+    const facts=await world.facts();
+    const actual=cardMachine.resolveState({value:cardFactsToStateValue(facts)});
+    expect(boardEntriesOf(state).includes("question")).toBe(facts.questionEntryCount>0);
+    expect(boardEntriesOf(state).includes("card")).toBe(facts.cardEntryCount>0);
     expect(actual.value,`after ${events.slice(0,events.indexOf(type)+1).join(" → ")}`).toEqual(state.value);
   }
   return state;
 }
 it("판을 채운 순서에 따른 카드 장 기억을 두 경로 모두 대조한다",async()=>{
   const first=await run(["CREATE_TODO","PAS_APPEARS","HUMAN_MOVE_noReport","BOARD_ONE"]);
-  expect(first.matches({cardEntry:"present"})).toBe(true);
+  expect(boardEntriesOf(first).includes("card")).toBe(true);
   const second=await run(["CREATE_TODO","PAS_APPEARS","BOARD_FULL","HUMAN_MOVE_noReport"]);
-  expect(second.matches({cardEntry:"none"})).toBe(true);
+  expect(boardEntriesOf(second).includes("card")).toBe(true);
 },60000);
 it("질문 장 구멍과 늦은 답의 두 문을 대조한다",async()=>{
   await run(["CREATE_TODO","ASSIGN_SESSION","PAS_APPEARS","BOARD_FULL","ASK_OWNER","BOARD_ROOM"]);
@@ -56,7 +59,10 @@ it("기계에서 뽑은 정의별 전이 경로를 서비스에 넣는다",async
         const ids=transitionIds(state,{type});
         const expected=transition(cardMachine,state,{type})[0];
         await world.apply(type);
-        const actual=cardMachine.resolveState({value:cardFactsToStateValue(await world.facts())});
+        const facts=await world.facts();
+        const actual=cardMachine.resolveState({value:cardFactsToStateValue(facts)});
+        expect(boardEntriesOf(expected).includes("question")).toBe(facts.questionEntryCount>0);
+        expect(boardEntriesOf(expected).includes("card")).toBe(facts.cardEntryCount>0);
         expect(actual.value,`${events.join(" → ")} at ${type}`).toEqual(expected.value);
         ids.forEach(id=>covered.add(id));state=expected;
       }

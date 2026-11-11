@@ -12,6 +12,7 @@ export interface CardFacts {
   limitResumeSessionId?:string|null;
   assigneeSessionId?:string|null;
   supervised:boolean;
+  dismissed?:boolean;
   /** Raw metadata counts. Numbers are facts only, never machine context. */
   boardEntryCount:number;
   cardEntryCount:number;
@@ -27,6 +28,6 @@ export function cardFactsToStateValue(f:CardFacts):StateValue {
   else status={on:{talk:f.status==="awaiting_verification"?"verification":f.blockedKind==="question"?"question":f.blockedKind==="no_report"?"noReport":"other"}};
   const otherEntries=f.boardEntryCount-f.cardEntryCount-f.questionEntryCount;
   const stage=otherEntries>=12?"full":otherEntries===11?"one":"room";
-  return {status,cardEntry:f.cardEntryCount>0?"present":"none",question:f.openQuestion??"none",reservation:f.wakeAt?"verify":f.limitResumeSessionId?(f.limitResumeAt?"limit":"longLimit"):"none",assignee:f.assignee==="agentAdmitted"?{agent:"admitted"}:f.assignee,
-    questionEntry:f.questionEntryCount>0?"present":"none",pasBoard:f.supervised?{available:stage}:"none",limitedOwner:!f.limitResumeSessionId?"none":f.limitResumeSessionId===f.assigneeSessionId?(f.limitResumeAt?"same":"sameLong"):(f.limitResumeAt?"different":"differentLong")};
+  return {status,dismissed:f.dismissed?"current":"none",question:f.openQuestion??"none",reservation:f.wakeAt?"verify":f.limitResumeSessionId?(f.limitResumeAt?"limit":"longLimit"):"none",assignee:f.assignee==="agentAdmitted"?{agent:"admitted"}:f.assignee,
+    pasBoard:f.supervised?{available:stage}:"none",limitedOwner:!f.limitResumeSessionId?"none":f.limitResumeSessionId===f.assigneeSessionId?(f.limitResumeAt?"same":"sameLong"):(f.limitResumeAt?"different":"differentLong")};
 }

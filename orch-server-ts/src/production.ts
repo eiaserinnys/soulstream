@@ -458,6 +458,7 @@ export async function createLiveProductionApplication(
       (events) => turnSummaryPipeline?.accept(events),
       (events) => recurringJobScheduler?.accept(events),
       (events) => cardDispatcher?.accept(events),
+      async (events) => (await persistenceRepositoryProvider()).persistentReports!.acceptNodeEvents(events),
       (events) => childSessionCheckService?.acceptNodeEvents(events),
     ],
     flatFolderContentRoutes: { host: flatFolderContentHost, authBearerToken: config.auth_bearer_token, environment: config.environment, nodeCredentials: nodeCredentialStore },
@@ -986,6 +987,8 @@ export async function createLiveProductionApplication(
       await sessionReconciliation.start();
       await recurringJobScheduler?.start();
       await dbCatalogRepository.agentProfileRepository.list();
+      try { await (await persistenceRepositoryProvider()).persistentReports!.syncActiveBoards(context.warn); }
+      catch(error){context.warn(`PAS board boot refresh failed: ${String(error)}`);}
       await cardDispatchRuntime.dispatcher.dispatch();
       startStableSessionOrderIndexMaintenance(
         stableSessionOrderIndexMaintenance,
