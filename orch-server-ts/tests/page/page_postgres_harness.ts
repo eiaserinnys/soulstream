@@ -435,6 +435,8 @@ CREATE TABLE cards (
     brief                TEXT NOT NULL DEFAULT '',
     blocked_kind         TEXT CHECK (blocked_kind IN ('limit','question','no_report')),
     blocked_detail       TEXT,
+    wake_at              TIMESTAMPTZ,
+    waiting_for          TEXT,
     node_id              TEXT,
     model_preset         TEXT,
     assignee_kind        TEXT CHECK (assignee_kind IN ('agent','human','session')),
@@ -442,7 +444,7 @@ CREATE TABLE cards (
     assignee_session_id  TEXT REFERENCES sessions(session_id) ON DELETE SET NULL,
     assignee_user_id     TEXT,
     status               TEXT NOT NULL DEFAULT 'todo'
-                           CHECK (status IN ('todo','queued','blocked','running','review','on_hold','done','cancelled')),
+                           CHECK (status IN ('todo','queued','blocked','running','awaiting_verification','review','on_hold','done','cancelled')),
     status_changed_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     archived             BOOLEAN NOT NULL DEFAULT FALSE,
     version              INTEGER NOT NULL DEFAULT 1,
@@ -462,7 +464,15 @@ CREATE TABLE cards (
     FOREIGN KEY (updated_session_id, updated_event_id)
         REFERENCES events(session_id, id) ON DELETE SET NULL,
     FOREIGN KEY (completed_session_id, completed_event_id)
-        REFERENCES events(session_id, id) ON DELETE SET NULL
+        REFERENCES events(session_id, id) ON DELETE SET NULL,
+    CONSTRAINT cards_verification_wait_check CHECK (
+        (status = 'awaiting_verification'
+            AND wake_at IS NOT NULL AND waiting_for IS NOT NULL
+            AND char_length(btrim(waiting_for)) BETWEEN 1 AND 36)
+        OR
+        (status <> 'awaiting_verification'
+            AND wake_at IS NULL AND waiting_for IS NULL)
+    )
 );
 
 CREATE UNIQUE INDEX uq_cards_number ON cards(number);

@@ -272,6 +272,11 @@ describe("PAS reports on production PostgreSQL schema", () => {
     expect((await reports.get('pas')).some(e=>e.key===`card_${cardId}`)).toBe(true);
     await cards.setCardStatus({...human,cardId,status:'done'});
     expect((await reports.get('pas')).some(e=>e.key===`card_${cardId}`)).toBe(false);
+    await cards.setCardStatus({...human,cardId,status:'review'});
+    expect((await reports.get('pas')).some(e=>e.key===`card_${cardId}`)).toBe(true);
+    await cards.setCardStatus({...human,cardId,status:'awaiting_verification',
+      wakeAt:new Date(Date.now()+60*60*1000).toISOString(),waitingFor:'배포 확인'});
+    expect((await reports.get('pas')).some(e=>e.key===`card_${cardId}`)).toBe(false);
   });
   it("removes card and question entries from connected and other boards on hold, keeps the question answerable, and restores only the card entry", async () => {
     for (const e of await reports.get('pas')) await reports.remove('pas',e.key);

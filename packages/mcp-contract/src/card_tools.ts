@@ -8,6 +8,13 @@ const scope = { card_id: id, caller_session_id: callerSessionIdSchema };
 export const cardQuestionOptionsSchema = z.array(
   z.string().min(1).refine((value) => [...value].length <= 12, "선택지는 12자 이하"),
 ).min(1, "선택지는 1개 이상").max(3, "선택지는 3개 이하");
+/** 검증 대기 시각의 형식 규칙. 오프셋이 없으면 서버 시간대에 따라 시각이 달라진다. */
+export const CARD_VERIFICATION_WAKE_AT_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
+export const cardVerificationWakeAtSchema = z.string().regex(CARD_VERIFICATION_WAKE_AT_PATTERN, "wake_at은 오프셋이 있는 ISO 8601 시각이어야 합니다")
+  .describe("다시 깨울 시각. 오프셋(Z 또는 ±hh:mm)이 있는 ISO 8601. 지금보다 뒤, 7일 이내.");
+export const cardVerificationWaitingForSchema = z.string()
+  .refine((value) => { const length = [...value.trim()].length; return length >= 1 && length <= 36; }, "waiting_for는 공백을 뺀 한 줄 1~36자입니다")
+  .describe("무엇을 기다리는지 한 줄. 공백을 뺀 36자까지.");
 const itemId = z.number().int().positive();
 const itemEvidence = z.union([
   z.object({ type:z.enum(["image","link"]),label:z.string(),attachment_id:id }).strict(),
@@ -60,8 +67,9 @@ export const cardTools = {
     inputSchema: { ...scope, text: id, mode: z.enum(["spoken", "reply"]).optional(), item_id:itemId.optional() },
   }, audience: "all" },
   set_card_status: { name: "set_card_status", config: {
-    description: "담당 카드의 상태를 직접 변경한다. 보고·질문·사유·보관·이전 상태와 관계없이 완료·취소·재열기를 포함한 모든 상태를 선택할 수 있다. running 기록은 프로세스 실행 승인이 아니다. 보류(on_hold)는 완료도 취소도 아닌 채 검수 대기와 PAS 판에서 내려 두는 상태다. 담당 세션이 없는 카드(드래프트, 대기)는 담당이 아닌 에이전트 세션도 할 일, 대기, 보류, 취소로 옮길 수 있다.",
-    inputSchema: {...scope,status:z.enum(CARD_STATUSES),expected_version:z.number().int().positive(),idempotency_key:id,reason:z.string().optional()},
+    description: "담당 카드의 상태를 직접 변경한다. 보고·질문·사유·보관·이전 상태와 관계없이 완료·취소·재열기를 포함한 모든 상태를 선택할 수 있다. running 기록은 프로세스 실행 승인이 아니다. 보류(on_hold)는 완료도 취소도 아닌 채 검수 대기와 PAS 판에서 내려 두는 상태다. 담당 세션이 없는 카드(드래프트, 대기)는 담당이 아닌 에이전트 세션도 할 일, 대기, 보류, 취소로 옮길 수 있다. 검증 대기(awaiting_verification)는 담당이 작업을 끝내기 전에 스스로 기다리는 상태다. 배포 뒤 실제 사용 확인이나 정한 시각의 재측정처럼 담당이 그 시각에 다시 확인할 때 쓴다. 이 상태에는 wake_at과 waiting_for가 모두 필수이고 다른 상태에는 둘 다 주지 않는다. 서버는 wake_at이 지나면 담당을 깨워 실행 중으로 되돌리고, 담당이 없거나 깨우지 못하면 막힘으로 옮긴다. 검증 대기는 PAS 판에 장을 만들지 않고 실행 중으로 세지 않는다. 남이 풀어 줄 일은 막힘, 사용자 판단은 ask_card_question이다.",
+    inputSchema: {...scope,status:z.enum(CARD_STATUSES),expected_version:z.number().int().positive(),idempotency_key:id,reason:z.string().optional(),
+      wake_at:cardVerificationWakeAtSchema.optional(),waiting_for:cardVerificationWaitingForSchema.optional()},
   }, audience: "all" },
   transfer_card_assignee: { name: "transfer_card_assignee", config: {
     description: "공식 카드 PATCH와 같은 카드 변경 권한을 가진 인증된 내부 작업 세션이 호출하며, 현재 담당 여부와 무관하게 카드 담당을 지정 세션으로 명시적으로 변경한다. 호출자와 지정 담당 세션을 이력에 구분해 기록한다. 카드 상태나 실행 프로세스는 바꾸지 않으며, 지정 세션은 별도로 start_card_work를 호출해야 한다.",

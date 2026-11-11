@@ -1358,11 +1358,12 @@ export function buildProductionRouteOptions(
         const cards=await cardServiceProvider();
         const assigned=await cards.getAssignedCardContext(targetSessionId);
         for (const summary of assigned.cards) {
-          if (summary.status!=="blocked") continue;
+          if (summary.status!=="blocked" && summary.status!=="awaiting_verification") continue;
           const detail=await cards.getCard(summary.id);
           if (!detail) continue;
           const card=detail.card;
-          if (card.status!=="blocked" || card.blocked_kind==="limit" || card.archived!==false
+          const resumable=card.status==="awaiting_verification" || (card.status==="blocked" && card.blocked_kind!=="limit");
+          if (!resumable || card.archived!==false
             || card.assignee_kind!=="session" || card.assignee_session_id!==targetSessionId) continue;
           await cards.resumeBlockedCardOnHumanInput({cardId:card.id,expectedVersion:card.version});
           return;

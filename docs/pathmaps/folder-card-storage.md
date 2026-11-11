@@ -121,6 +121,22 @@ card_control_plane_service.ts는 카드 commit 뒤, 스냅샷 조회 전에 pers
 
 뿌리 종료 계기에서는 세션 기본 키 조회로 종료 상태를 먼저 확인하고 실행 중 갱신은 카드 후보·트리 사실 조회를 생략한다. 리마인더 점검 전체의 예외는 warn으로 격리해 기존 한도·종료·자동배정 처리를 이어 간다. 판정과 전송은 기존 디스패처 enqueue 체인에서 카드 mutation과 순서를 맞춘다. 실패는 warn으로 남기고 다음 tick과 기존 전달 처리에 맡긴다. 리마인더는 카드 상태를 바꾸지 않으며 새 타이머·표·재시도 계층을 만들지 않는다. brief 갱신·같은 상태 재기록·디스패처 재시작에도 같은 상태 시점의 리마인더가 반복되지 않는다.
 
+## 검증 대기 (151)
+
+`151_card_awaiting_verification.sql`이 `cards.wake_at`(timestamptz)과 `cards.waiting_for`(text)를 더하고 `cards_status_check`에 `awaiting_verification`을 넣는다. `cards_verification_wait_check`가 이 상태에서만 두 값이 있고 `btrim(waiting_for)`가 1~36자인 것을, 다른 상태에서는 둘 다 NULL인 것을 보장한다. 지금보다 뒤이며 7일 이내라는 조건과 담당 세션 존재는 설정 시점의 서비스 검증이며, 시간이 흐르면 위반하게 되는 DB CHECK로 만들지 않는다. 기존 상태는 todo, queued, blocked, running, review, on_hold, done, cancelled 그대로다.
+
+| 경로 | 구현 | 계약 |
+| --- | --- | --- |
+| MCP 입력 | `packages/mcp-contract/src/card_tools.ts`의 `set_card_status`, `orch-server-ts/src/mcp/card_handlers.ts` | snake_case `wake_at`/`waiting_for`를 내부 `wakeAt`/`waitingFor`로 넘긴다. 오프셋 있는 ISO 8601 형식은 `CARD_VERIFICATION_WAKE_AT_PATTERN`이 정본이고 서비스의 달력 검증과 같은 상수를 쓴다. `waiting_for`는 공백을 뺀 Unicode code point 기준 36자까지다. |
+| REST 입력 | `orch-server-ts/src/cards/card_operations.ts`의 `set_card_status` | 상태 변경은 기존 `POST /api/cards/:id/status`이고 camelCase `wakeAt`/`waitingFor`를 받는다. 검증 대기면 둘 다 필수, 다른 상태면 둘 다 금지다. 경계 schema 위반은 **400**이고 서비스의 시간·담당 검증은 기존 422다. |
+| 저장·지우기 | `card_control_plane_service.ts`의 `setCardStatus`, `applyStatusTx`, `patch` | 같은 트랜잭션에서 status, wake_at, waiting_for, now를 저장한다. now는 `{waiting_for}, {시각}에 다시 확인`, turn outside, ask null이고 시각은 Asia/Seoul 기준 오늘 `HH:MM`, 다른 날 `M월 D일 HH:MM`이다. 상태를 쓰는 모든 경로가 지나는 private `patch`가 상태가 검증 대기가 아니면 두 열을 함께 NULL로 덮는다. 제목·요약만 바꾸면 두 값을 보존한다. |
+| 기한 처리 | `card_dispatch_repository.ts`의 `awaitingVerification`, `card_dispatcher.ts`의 `wakeAwaitingVerifications` | 15초 scheduler가 부르는 60초 tick의 `checkLimits`에서 orchestration 조회와 무관하게 지난 기한을 찾는다. delivery ID는 `card-verify-wake:{cardId}:{wakeAt ISO}`이고 본문은 `[검증 대기 시각] 기다리던 것: {waiting_for}. 확인해 결과를 항목에 남기고, 아직이면 다시 검증 대기로 둔다.`다. 새 타이머·재시도 층은 없다. |
+| 복귀·실패 | `CardControlPlaneService.resumeVerificationCard`, `card_dispatcher.ts` | 전달 뒤 `resume_card`로 running과 now(agent, `담당이 기다리던 것을 확인합니다`)를 함께 저장한다(시스템 행위자). 담당이 없거나 전달이 실패하면 `abandonDelivery` 뒤 blocked(no_report), blocked_detail `검증 대기 시각에 담당을 깨우지 못함: {error}`로 옮겨 기존 시스템 막힘 알림을 탄다. |
+| PAS 판 | `persistent_report_service.ts`의 `wantsState`, `syncReportsAfterCommit` | review/blocked만 판에 올리므로 검증 대기는 `card_` 장을 만들지 않고 실행 중으로 세지 않는다. 들어갈 때 `scanBoards`로 연결되지 않은 옛 판의 기존 장도 내린다. `isCardOffBoard` 목록은 늘리지 않는다. |
+| 사용자 입력 | `applyAddCommentTx`, `resumeBlockedCardOnHumanInput`, `production.ts`의 `onHumanSessionInput` | 사용자 커멘트(reply 제외), `dispatch_work` 후속 지시, 담당에게 온 사람 직접 메시지가 검증 대기를 running으로 되돌리고 두 값을 지운다. summary/detail/service 세 가드가 같은 조건을 본다. 한도 막힘 예외와 질문 닫기 동작은 그대로다. |
+| 표시 | `card_change_notification.ts`, `assigned_card_context.ts`, `packages/soul-ui/src/lib/assigned-card-context-content.ts`, `CardActions.tsx`, ChatGPT renderer | 표시명은 「검증 대기」다. renderer는 독립 상태 목록에 값을 넣어 unknown으로 정규화하지 않고, attention과 섞지 않은 자기 그룹에 표시한다. 웹 보드 칸·앱 목적지·상태 메뉴는 별도 PR이다. |
+| 목록 | `card_repository_read.ts`의 `listCards` | status 등가 조건이므로 `list_cards(status='running')`에서 빠진다. 실행 중 점유 계산과 상태 리마인더·안내문은 바꾸지 않는다. |
+
 ## 앱 PAS 카드 상세와 복귀 (N5)
 
 `PersistentSessionScreen`의 cards scene은 기존 `PersistentSessionTaskList`와 `CardDetailContent variant="readSummary"`를 조합한다. 읽기 요약의 「카드 열기」는 phone PersistentStack.CardDetail 또는 tablet Main/PersistentSession/CardDetail native stack에 같은 카드 id를 전달한다. tablet CardDetail은 transparentModal로 기존 folder-workspace-layout의 카드 칸 폭과 glassSoft 표면을 재사용한다. 일반 FolderWorkspaceReadOverlay 호스트는 담당 세션을 자동 선택하므로 PAS에서 호출하지 않고 CardDetailContent inline을 직접 사용한다. 실제 상세는 기존 `PhoneCardDetail`/`CardDetailContent`이며 닫으면 goBack으로 동일 PAS·scene·선택 카드에 복귀한다. 일반 Daily/Folder의 CardDetail 계약은 유지한다.
