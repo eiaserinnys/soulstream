@@ -64,8 +64,10 @@ days.
 
 OAuth bearer access is limited to read routes: `cards:read` allows `GET
 /api/cards` and its read subroutes; `folders:read` allows `GET /api/folders` and
-its read subroutes; `usage:read` allows only `GET /api/usage/summary`. The card
-and folder routes apply the signed-in account's existing folder ACL.
+its read subroutes; `usage:read` allows only `GET /api/usage/summary`,
+`GET /api/session-statistics`, and `GET /api/session-statistics/days/:date`.
+The card, folder, and session statistics routes apply the signed-in account's
+existing folder ACL.
 `conversations` authorizes the conversation provider routes documented below.
 OAuth tokens do not authorize the legacy session intervention or MCP routes.
 See the [OAuth authentication path map](pathmaps/oauth-authentication.md) for
