@@ -32,6 +32,7 @@ import {
 import { RunnerRegistrationScanCache } from
   "../../src/runner/runner_registration_scan_cache.js";
 import {
+  prepareRunnerDatabaseInWorker,
   RunnerRecoveryStorage,
   withRunnerRecoveryStorage,
 } from "../../src/runner/runner_recovery_storage.js";
@@ -404,6 +405,30 @@ describe("runner recovery storage worker boundary", () => {
     }
   });
 
+  it("creates the spawn database on its own real-entry worker, not on the main thread", async () => {
+    const directory = await temporaryDirectory("prepare");
+    const databasePath = join(directory, "session-new", "runner.sqlite");
+    const mainThreadCreate = vi.spyOn(RunnerSqliteEventOutbox, "create");
+    const workers: Worker[] = [];
+    try {
+      await prepareRunnerDatabaseInWorker(databasePath, {
+        workerFactory: realEntryFactory(workers),
+      });
+
+      expect(mainThreadCreate).not.toHaveBeenCalled();
+      expect(workers).toHaveLength(1);
+      await vi.waitFor(() => expect(workers[0]!.threadId).toBe(-1));
+      const outbox = await RunnerSqliteEventOutbox.openReadOnly(databasePath);
+      try {
+        expect(await outbox.readBootstrap()).toBeNull();
+      } finally {
+        outbox.close();
+      }
+    } finally {
+      mainThreadCreate.mockRestore();
+    }
+  });
+
   it("fails a crashed worker request once and shares one new client across the next calls", async () => {
     const fixture = await createDatabase({ events: ["one"] });
     const lifecycle = RunnerSqliteLifecycle.open(fixture.databasePath);
@@ -750,6 +775,26 @@ function countingFactory(
     },
   };
   return result;
+}
+
+function realEntryFactory(
+  workers: Worker[],
+): (workerData: Record<string, unknown>) => Worker {
+  const entryUrl = new URL("../../src/runner/runner_parent_storage_worker_entry.ts", import.meta.url)
+    .href;
+  return (workerData) => {
+    const worker = new Worker(`
+      const { pathToFileURL } = require("node:url");
+      import("tsx/esm/api").then(({ tsImport }) =>
+        tsImport(${JSON.stringify(entryUrl)}, pathToFileURL(process.cwd() + "/").href)
+      ).catch((error) => {
+        console.error(error);
+        process.exit(1);
+      });
+    `, { eval: true, workerData });
+    workers.push(worker);
+    return worker;
+  };
 }
 
 function openStorage(

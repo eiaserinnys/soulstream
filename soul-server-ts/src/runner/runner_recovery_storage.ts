@@ -100,6 +100,14 @@ export class RunnerRecoveryStorage {
       await client.readClaudeAccountTurnState(input, observation));
   }
 
+  async prepareRunnerDatabase(
+    databasePath: string,
+    phaseObservation?: RunnerPhaseObservation,
+  ): Promise<void> {
+    await this.run({ databasePath }, phaseObservation, async (client, observation) =>
+      await client.prepareRunnerDatabase({ databasePath }, observation));
+  }
+
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise;
     this.closed = true;
@@ -181,6 +189,23 @@ export async function withRunnerRecoveryStorage<T>(
     return await action(temporary);
   } finally {
     await temporary.close();
+  }
+}
+
+/**
+ * Creates a runner database before spawn on a worker of its own. The create's
+ * journal and directory fsyncs must not run on the main thread, and a spawn
+ * must not queue behind a long recovery scan on the shared worker.
+ */
+export async function prepareRunnerDatabaseInWorker(
+  databasePath: string,
+  options: RunnerRecoveryStorageOptions = {},
+): Promise<void> {
+  const storage = new RunnerRecoveryStorage(options);
+  try {
+    await storage.prepareRunnerDatabase(databasePath);
+  } finally {
+    await storage.close();
   }
 }
 

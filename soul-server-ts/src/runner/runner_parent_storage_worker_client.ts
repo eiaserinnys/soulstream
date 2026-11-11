@@ -256,6 +256,13 @@ export class RunnerParentStorageWorkerClient {
     return (await this.request("readClaudeAccountTurnState", input, observation)).value;
   }
 
+  async prepareRunnerDatabase(
+    input: { databasePath: string },
+    observation?: RunnerParentStorageRequestObservation,
+  ): Promise<void> {
+    await this.request("prepareRunnerDatabase", input, observation);
+  }
+
   close(): Promise<void> {
     if (this.closePromise) return this.closePromise;
     if (this.state === "failed") {

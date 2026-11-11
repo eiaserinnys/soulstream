@@ -20,6 +20,7 @@ import type {
   RunnerPhaseExecutor,
 } from "./runner_phase_observation.js";
 import type { RunnerSqliteTransactionEvent } from "./runner_sqlite_connection.js";
+import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
 import { readRunnerSqliteLifecycle } from "./sqlite_runner_lifecycle.js";
 
 const port = parentPort;
@@ -315,6 +316,12 @@ async function execute(
           request.input.sessionId,
         ),
       };
+    }
+    case "prepareRunnerDatabase": {
+      requireRecoveryMode();
+      const outbox = await RunnerSqliteEventOutbox.create(request.input.databasePath);
+      outbox.close();
+      return { value: undefined };
     }
     case "close":
       // close is handled before execute() so the port can be closed afterwards.
