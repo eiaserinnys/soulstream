@@ -14,6 +14,12 @@ state "보관" as cardDecision_archive {
     state "활성" as arch_active
     state "보관됨" as arch_archived
 }
+cardDecision_assignee --> a_session: 상태를 옮긴다: 연결된 카드 세션이 담당을 맡는다
+cardDecision_assignee --> a_session: 여러 카드의 상태를 옮긴다: 연결된 카드 세션이 담당을 맡는다
+cardDecision_assignee --> a_session: 검수를 요청한다: 연결된 카드 세션이 담당을 맡는다
+cardDecision_assignee --> a_session: 작업 착수를 확인한다: 연결된 카드 세션이 담당을 맡는다
+cardDecision_assignee --> a_session: 작업 착수를 확인한다
+cardDecision_assignee --> a_session: 커멘트를 남긴다: reply일 때 연결된 카드 세션이 담당을 맡는다
 cardDecision_assignee --> a_session: 서버가 실행을 확인한다
 cardDecision_assignee --> a_none: 담당과 보관을 고친다
 cardDecision_assignee --> a_agent: 담당과 보관을 고친다
