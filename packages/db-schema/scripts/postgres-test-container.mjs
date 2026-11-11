@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 const LABEL_KEY = "soulstream-test-harness";
 const POSTGRES_IMAGE = "postgres:16-alpine";
 const POSTGRES_PORT = "5432/tcp";
+const POSTGRES_READY_TIMEOUT_MS = 60_000;
 
 export const SOULSTREAM_TEST_HARNESS_LABEL = `${LABEL_KEY}=1`;
 export const DEFAULT_STALE_CONTAINER_AGE_MS = 2 * 60 * 60 * 1_000;
@@ -38,6 +39,7 @@ export function startPostgresTestContainer({
   installProcessHooks();
   try {
     const port = dockerMappedPort(containerId);
+    waitUntilAcceptingTcp(containerId, { user, database });
     let stopped = false;
     return {
       containerId,
@@ -118,6 +120,44 @@ function dockerMappedPort(containerId) {
     if (match) return match[1];
   }
   throw new Error("docker did not publish a PostgreSQL port");
+}
+
+// Callers connect only after this returns. When a postgres.js pool retries
+// against a starting container, every refused attempt raises the pool's
+// backoff, and each connection that failed keeps a reconnect delay of up to
+// 20 seconds. The first test that needs several connections at once then
+// waits out those delays (card #1233: OAuth grant revocation stalled 10-17s).
+// The image's init server listens only on the Unix socket, so a TCP probe
+// succeeds only once the final server is up.
+function waitUntilAcceptingTcp(containerId, { user, database }) {
+  const deadline = Date.now() + POSTGRES_READY_TIMEOUT_MS;
+  for (;;) {
+    try {
+      execFileSync("docker", [
+        "exec",
+        containerId,
+        "pg_isready",
+        "-q",
+        "-h",
+        "127.0.0.1",
+        "-p",
+        "5432",
+        "-U",
+        user,
+        "-d",
+        database,
+      ], { stdio: "ignore" });
+      return;
+    } catch (error) {
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `PostgreSQL test container ${containerId} did not accept TCP connections within ${POSTGRES_READY_TIMEOUT_MS}ms`,
+          { cause: error },
+        );
+      }
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+    }
+  }
 }
 
 function removeContainer(containerId) {

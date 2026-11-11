@@ -41,6 +41,7 @@ describe("PostgreSQL test container lifecycle", () => {
       }
       if (dockerArgs[0] === "run") return "fresh-id\n";
       if (dockerArgs[0] === "port") return "127.0.0.1:55432\n";
+      if (dockerArgs[0] === "exec") return "";
       if (dockerArgs[0] === "rm") return "";
       throw new Error(`unexpected docker call: ${dockerArgs.join(" ")}`);
     });
@@ -72,6 +73,37 @@ describe("PostgreSQL test container lifecycle", () => {
     );
   });
 
+  it("returns only after the server in the container accepts TCP connections", () => {
+    let probes = 0;
+    docker.mockImplementation((_command, args) => {
+      const dockerArgs = args as string[];
+      if (dockerArgs[0] === "ps") return "";
+      if (dockerArgs[0] === "run") return "starting-id\n";
+      if (dockerArgs[0] === "port") return "127.0.0.1:55432\n";
+      if (dockerArgs[0] === "exec") {
+        probes += 1;
+        if (probes < 3) throw new Error("no response");
+        return "";
+      }
+      if (dockerArgs[0] === "rm") return "";
+      throw new Error(`unexpected docker call: ${dockerArgs.join(" ")}`);
+    });
+
+    const lease = startPostgresTestContainer({
+      user: "test_user",
+      password: "test_password",
+      database: "test_database",
+    });
+
+    expect(probes).toBe(3);
+    expect(docker).toHaveBeenLastCalledWith(
+      "docker",
+      ["exec", "starting-id", "pg_isready", "-q", "-h", "127.0.0.1", "-p", "5432", "-U", "test_user", "-d", "test_database"],
+      expect.any(Object),
+    );
+    lease.stop();
+  });
+
   it("shares one exit and signal hook set across active containers", () => {
     docker.mockImplementation((_command, args) => {
       const dockerArgs = args as string[];
@@ -83,6 +115,7 @@ describe("PostgreSQL test container lifecycle", () => {
           : "second-id\n";
       }
       if (dockerArgs[0] === "port") return "127.0.0.1:55432\n";
+      if (dockerArgs[0] === "exec") return "";
       if (dockerArgs[0] === "rm") return "";
       throw new Error(`unexpected docker call: ${dockerArgs.join(" ")}`);
     });
