@@ -140,7 +140,7 @@ export class CardWorkDispatchService {
         commentId,
         body,
         mode: "spoken",
-      });
+      },"followup");
       const notification = buildCardChangeNotification({
         result: { operation: mutation.operation, idempotent: false },
         previousStatus: card.status,

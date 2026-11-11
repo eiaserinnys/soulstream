@@ -37,12 +37,15 @@ function patchExtras(c:CardDecisionCommand,target:string,extra:any[]=[]){
  if(['ASK_QUESTION','START_WORK','CONFIRM_EXECUTION','MERGE_SOURCE'].includes(c))actions.push(clearCompletion());
  if(general)actions.push(write({queue_position_key:target==='queued'?bind('queue.new'):target==='limit'?bind('card.queue_position_key'):literal(null)}));
  if(['ASK_QUESTION','START_WORK','CONFIRM_EXECUTION','RESUME_SHORT_LIMIT','RESUME_VERIFICATION','MERGE_SOURCE'].includes(c))actions.push(write({queue_position_key:literal(null)}));
- if(target!=='verification')actions.push(write({wake_at:literal(null),waiting_for:literal(null)}));
+ if(target!=='verification'){
+  const cleanup=write({wake_at:literal(null),waiting_for:literal(null)});
+  actions.push({...cleanup,params:{...cleanup.params,normalization:true}});
+ }
  return actions;
 }
 function status(c:CardDecisionCommand,target:string,conditions:any[]=[],extra:any[]=[]){
  put('status',c,`s_${target}`,conditions,patchExtras(c,target,extra));
- if(target==='verification')put('reservation',c,'r_verify',conditions,[write({wake_at:bind('command.wakeAt.iso'),waiting_for:bind('command.waitingFor.trimmed'),limit_resume_session_id:literal(null),limit_resume_at:literal(null)})]);
+ if(target==='verification')put('reservation',c,'r_verify',conditions,[write({wake_at:bind('command.wakeAt.iso'),waiting_for:bind('command.waitingFor.trimmed')}),mark('clearLimit')]);
  else if(target!=='limit')put('reservation',c,'r_none',conditions,[mark('clearLimit')]);
  else put('reservation',c,'r_none',[...conditions,or([inside('arch_archived'),inside('r_verify')])],[mark('clearLimit')]);
 }

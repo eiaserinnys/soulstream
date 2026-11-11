@@ -1,3 +1,7 @@
+import { humanCardEvidence } from '../src/cards/state/card_human_evidence.js';
+import { cardCommandEntryFailure } from '../src/cards/state/card_command_entrance.js';
+import { rowToStateValue } from '../src/cards/state/card_state_value.js';
+import type { CardDecision } from '../src/cards/state/card_decision.js';
 import { generateKeyBetween } from '@soulstream/fractional-position';
 import { isUsageLimitTermination } from '../src/session/session_limit_termination.js';
 import { assigneeToFields } from '../src/cards/control_plane/card_models.js';
@@ -14,7 +18,7 @@ const METHODS:Record<string,CardCommand['type']>={createCardTx:'CREATE',addComme
 /** Reconstruct SQL boundary results from their recorded rows. This adapter never
  * reads observed after or result to select an outcome or any write. */
 export function predictObservation(r:DecisionObservation) {
- const row=r.before as any, c={...r.command,type:METHODS[r.method]!} as CardCommand,actor=r.actor;
+ const row=r.before as any, c:{type:CardCommand['type'];[key:string]:any}={...r.command,type:METHODS[r.method]!},actor=r.actor;
  if(c.type==='ADD_COMMENT')c.entrance=r.method==='addCommentTx'?'followup':'direct';
  const reads=r.evidence.decisionReads as any;
  const session=(id:unknown)=>reads.sessions.find((s:any)=>s.session_id===id);
@@ -46,16 +50,18 @@ export function predictObservation(r:DecisionObservation) {
  const activeRun=active&&reads.dispatchRuns.find((run:any)=>run.id===active.run_id);
  const admissionValid=!!active&&active.state==='launching'&&active.launch_accepted&&enabled&&Number(reads.orchestrationPolicy.version)===activeRun?.policy_version&&worker?.node_id===active.node_id&&worker?.agent_id===active.input.agentId&&worker?.model_preset===(active.input.modelPreset??null)&&Number(active.input.admittedCardVersion)===row.version&&(row.assignee_kind==='session'?row.assignee_session_id===actor.sessionId:row.assignee_kind==='agent'&&row.assignee_agent_id===active.input.agentId);
  const evidence={
- claim:(r.evidence.claimableSessions as any[]).some(s=>s.session_id===actor.sessionId),
+ ...humanCardEvidence(r.evidence.claimableSessions as {session_id:string}[],actor.sessionId,reads.userInputAfterLastReply),
  execution:!!worker&&worker.execution_registration_id===c.execution?.registrationId&&worker.execution_command_id===c.execution?.executionCommandId&&!['completed','error','interrupted'].includes(worker.status)&&!(worker.metadata??[]).some((m:any)=>m.type==='card_orchestration_decision'),
  admitted:admissionReceipt&&admissionValid,admissionReceipt,admissionValid,
  sessionCardId:session(c.sessionId)?.card_id,statusChanged:reads.executionStatusChanged,
  pending:requests.some(q=>q.state==='pending'),policyEnabled:enabled,admission,
  termination:!!owner&&isUsageLimitTermination(owner)&&owner.termination_event_id===c.terminationEventId,
- resumeAt:r.evidence.limitAutoResumeAt,userInput:reads.userInputAfterLastReply,
+ resumeAt:r.evidence.limitAutoResumeAt,
  ownerState:!owner?'missing':['running','initializing'].includes(owner.status)?owner.status:'idle',
  };
- const result=decideCardTransition(row,r.beforeQuestions,evidence,c,actor,r.checkedAt);
+ const entryFailure=cardCommandEntryFailure(c.type,{hasMode:Boolean(c.mode),requestedSpoken:c.kind==='spoken'},actor);
+ const result:CardDecision=entryFailure?{kind:'reject',next:rowToStateValue(row,r.beforeQuestions),actions:[],failure:entryFailure}:
+  decideCardTransition(row,r.beforeQuestions,evidence,c as CardCommand,actor,r.checkedAt);
  const at=new Date(r.checkedAt+1), stamp=at.toISOString();
  const control:Record<string,unknown>={};
  if(c.type==='PATCH_CARD_CONTROL'){

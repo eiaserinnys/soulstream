@@ -1,4 +1,5 @@
 import type { DecisionAction } from './card_decision.js';
+import { cardCommandEntryFailure } from './card_command_entrance.js';
 import { transition } from 'xstate';
 import { cardDecisionMachine } from './card_decision_machine.js';
 import { CARD_ACTORS, CARD_FACT_VALUES, enumerateCardFacts, type DecisionEvent, type CardDecisionCommand } from './card_decision_facts.js';
@@ -54,7 +55,9 @@ export function factsConsistent(w:CardWorld,event:DecisionEvent):boolean {
  return true;
 }
 const commands=Object.keys(CARD_FACT_VALUES) as CardDecisionCommand[];
-const variants:DecisionEvent[]=commands.flatMap(type=>[...enumerateCardFacts(type)].flatMap(facts=>CARD_ACTORS.map(actor=>({type,actor,facts}))));
+const variants:DecisionEvent[]=commands.flatMap(type=>[...enumerateCardFacts(type)].flatMap(facts=>CARD_ACTORS.map(actor=>({type,actor,facts}))))
+ .filter(event=>!cardCommandEntryFailure(event.type,{hasMode:event.facts.hasMode,requestedSpoken:event.facts.requestedSpoken},
+  {kind:event.actor==='human'?'user':event.actor==='server'?'system':event.actor==='external'?'llm':'agent',sessionId:event.actor==='anonymousAgent'?null:'session'}));
 export function* worldCommandEdges(w:CardWorld){
  for(const event of variants){
  if(!factsConsistent(w,event))continue;

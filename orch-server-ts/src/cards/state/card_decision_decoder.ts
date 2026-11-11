@@ -1,19 +1,20 @@
 import { stateValueToColumns } from './card_state_value.js';
-import { decodeCardWriteIntent, literal, type CardBindingValues, type CardWriteStep } from './card_write_intent.js';
+import { decodeCardWriteIntent, type CardBindingValues, type CardWriteStep } from './card_write_intent.js';
 import type { CardDecision } from './card_decision.js';
 export interface DecodedCardWrite {stage:string;kind:CardWriteStep['kind'];fields:Record<string,unknown>}
 const STAGES=['claim','question','move','item','state','questions'] as const;
 /** Field serialization and binding only. Region/command policy is selected by the machine. */
-export function decodeCardDecision(decision:CardDecision,values:CardBindingValues):DecodedCardWrite[] {
+export function decodeCardDecision(decision:CardDecision,values:CardBindingValues,requestedOnly=false):DecodedCardWrite[] {
  if(decision.kind!=='apply')return [];
  const columns=stateValueToColumns(decision.next);
  const groups=new Map<string,DecodedCardWrite>();
  for(const action of decision.actions){
  const p=action.params;
  if(!p)continue;
+ if(requestedOnly&&(action.type==='clearLimit'||p.normalization))continue;
  let fields:Record<string,unknown>|undefined;
  switch(action.type){
- case 'write':fields=decodeCardWriteIntent([{kind:p.kind,fields:p.fields}],values)[0];break;
+ case 'write':fields=decodeCardWriteIntent([{kind:p.kind!,fields:p.fields!}],values)[0];break;
  case 'writeStatus':fields={status:columns.status,blocked_kind:columns.blocked_kind};break;
  case 'writeAssignee':fields={assignee_kind:columns.assignee_kind};break;
  case 'writeArchive':fields={archived:columns.archived};break;
@@ -22,7 +23,7 @@ export function decodeCardDecision(decision:CardDecision,values:CardBindingValue
  case 'spreadCreateAssignment':fields=values.values?.['command.assignment'] as Record<string,unknown>;break;
  }
  if(!fields)continue;
- const stage=p.stage,kind=p.kind??'card',key=`${stage}:${kind}`;
+ const stage=p.stage!,kind=p.kind??'card',key=`${stage}:${kind}`;
  const group=groups.get(key)??{stage,kind,fields:{}};
  Object.assign(group.fields,fields);groups.set(key,group);
  }
