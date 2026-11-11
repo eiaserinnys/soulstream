@@ -11,7 +11,7 @@ import "./persistent-report.css";
 const taskAssignee = { ...reviewSession, agentSessionId: "persistent-task-review-session", agentPortraitUrl: undefined };
 
 const taskFixture: CardRow[] = ([
-  ["running", 7], ["blocked", 98], ["review", 412], ["queued", 1024], ["todo", 55],
+  ["running", 7], ["blocked", 98], ["awaiting_verification", 1191], ["review", 412], ["queued", 1024], ["todo", 55],
   ["done", 76], ["cancelled", 77],
 ] as const).map(([status, number], index) => ({
   ...reviewCard,

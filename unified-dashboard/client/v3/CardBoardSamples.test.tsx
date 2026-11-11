@@ -15,9 +15,9 @@ beforeEach(()=>{
 });
 afterEach(async()=>{await act(()=>root.unmount());queryClient.clear();element.remove();vi.unstubAllGlobals();});
 
-it("shows the awaiting verification sample beside running with the server-style now text",async()=>{
+it("shows the awaiting verification sample between blocked and review with the server-style now text",async()=>{
  await act(()=>root.render(<QueryClientProvider client={queryClient}><CardBoardSamples/></QueryClientProvider>));
- const awaiting=element.querySelector<HTMLElement>('[data-board-column="awaiting_verification"] [data-card-id="board-3-0"]');
+ const awaiting=element.querySelector<HTMLElement>('[data-board-column="awaiting_verification"] [data-card-id="board-4-0"]');
  expect(awaiting).not.toBeNull();
  expect(awaiting?.getAttribute("data-card-status")).toBe("awaiting_verification");
  expect(awaiting?.querySelector('[data-slot="status-chip"]')?.getAttribute("aria-label")).toBe("검증 대기");

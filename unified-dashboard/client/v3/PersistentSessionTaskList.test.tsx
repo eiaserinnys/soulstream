@@ -217,12 +217,14 @@ describe("persistent session task list", () => {
     const cards = [
       baseCard("done", "done"), baseCard("todo", "todo"), baseCard("queued", "queued"),
       baseCard("review", "review"), baseCard("cancelled", "cancelled"), baseCard("blocked", "blocked"),
-      baseCard("running", "running"),
+      baseCard("running", "running"), baseCard("awaiting", "awaiting_verification"),
     ];
 
     expect(groupPersistentSessionTasks(cards).map(group => group.status)).toEqual([
-      "running", "blocked", "review", "queued", "todo",
+      "running", "blocked", "awaiting_verification", "review", "queued", "todo",
     ]);
+    expect(groupPersistentSessionTasks(cards).find(group => group.status === "awaiting_verification")?.label)
+      .toBe("검증 대기");
     expect(groupPersistentSessionTasks(cards).flatMap(group => group.cards.map(card => card.id)))
       .not.toContain("done");
     expect(groupPersistentSessionTasks(cards).flatMap(group => group.cards.map(card => card.id)))

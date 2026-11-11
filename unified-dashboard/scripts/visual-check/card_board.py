@@ -2,7 +2,16 @@
 """카드 보드 시각 검수.
 
 컴포넌트 검수 창(`/components`)의 카드 보드 표본에서 칸 순서, 「검증 대기」 칸과
-칩, 상태 고르기 선택지를 넓은 폭과 좁은 폭, 라이트와 다크로 확인한다.
+칩, 상태 고르기 선택지를 넓은 폭과 좁은 폭, 라이트와 다크로 확인한다. PAS 작업 목록
+표본의 「검증 대기」 묶음도 같은 실행에서 찍는다.
+
+조작 항목(UI 기준 14~18번)
+
+    14 누른 뒤 초점    상태 고르기를 Esc로 닫으면 초점이 연 단추로 돌아온다
+    15 Tab과 Esc      칸의 DOM 순서(Tab 순서)가 화면 왼쪽부터의 순서와 같고, Esc로 고르기가 닫힌다
+    16 좁은 폭 넘침    좁은 폭에서 페이지 가로 스크롤이 없고, 「검증 대기」 카드와 작업 목록 묶음 머리가 넘치지 않는다
+    18 창 크기 바꾸기  넓은 폭으로 연 채 좁은 폭으로 줄여도 「검증 대기」 칸이 남고 페이지가 넘치지 않으며 고르기 창이 남지 않는다
+    17 오류 상태는 해당 없음: 새 칸은 따로 받는 자료가 없고 보드의 불러오기 실패 처리를 그대로 쓴다.
 
 준비
 
@@ -23,6 +32,7 @@
 
     {출력}/card-board-{폭}-{테마}.png           카드 보드 표본(「검증 대기」 칸이 보이게 가로 스크롤)
     {출력}/card-board-expanded-{폭}-{테마}.png  보드 확대(빈 칸 포함 전체 칸)
+    {출력}/pas-task-list-{폭}-{테마}.png        PAS 작업 목록 표본(240, 264 폭 목록)
     {출력}/measurements.json                    칸 순서·좌표·칩 글자와 색·상태 고르기 선택지
     {출력}/report.json                          판정과 실패 목록
 
@@ -43,7 +53,7 @@ from playwright.sync_api import Page, sync_playwright
 THEMES = ("light", "dark")
 WIDTHS = (1440, 390)
 AWAITING = "awaiting_verification"
-EXPECTED_ORDER = ["todo", "queued", "running", AWAITING, "blocked", "review", "on_hold", "done", "cancelled"]
+EXPECTED_ORDER = ["todo", "queued", "running", "blocked", AWAITING, "review", "on_hold", "done", "cancelled"]
 # 표본은 `완료 카드 포함`을 끈 채로 뜬다. 완료·취소 칸은 그때 빠지므로 앞의 일곱 칸만 확인한다.
 EXPECTED_SAMPLE_ORDER = EXPECTED_ORDER[:-2]
 EXPECTED_LABEL = "검증 대기"
@@ -93,6 +103,32 @@ LANES_SCRIPT = """
     nowText: column.querySelector('[data-card-now]')?.textContent?.trim() ?? null,
   };
 })
+"""
+
+TASKS_SCRIPT = """
+() => Array.from(document.querySelectorAll('[data-testid="persistent-task-review-sample"] [data-list-width]')).map((list) => ({
+  width: Number(list.getAttribute('data-list-width')),
+  groups: Array.from(list.querySelectorAll('[data-task-status-group]')).map((group) => {
+    const head = group.querySelector('.v3-persistent-task-group-toggle');
+    return {
+      status: group.getAttribute('data-task-status-group'),
+      label: group.querySelector('.v3-persistent-task-group-name')?.textContent?.trim() ?? null,
+      headOverflow: head ? Math.max(0, head.scrollWidth - head.clientWidth) : null,
+    };
+  }),
+}))
+"""
+
+LAYOUT_SCRIPT = """
+() => {
+  const root = document.documentElement;
+  const card = document.querySelector('[data-testid="card-board-sample"] [data-board-column="awaiting_verification"] [data-card-id]');
+  return {
+    pageOverflowX: Math.max(0, root.scrollWidth - root.clientWidth),
+    awaitingCardOverflowX: card ? Math.max(0, card.scrollWidth - card.clientWidth) : null,
+    pickerOpen: Boolean(document.querySelector('[data-card-status-picker]')),
+  };
+}
 """
 
 PICKER_SCRIPT = """
@@ -184,7 +220,27 @@ def read_picker(page: Page, root) -> dict:
     options = page.evaluate(PICKER_SCRIPT) or []
     page.keyboard.press("Escape")
     page.wait_for_selector("[data-card-status-picker]", state="detached")
-    return {"available": True, "options": options}
+    focus_returned = trigger.first.evaluate("(el) => document.activeElement === el")
+    return {"available": True, "options": options, "closedByEscape": True, "focusReturned": focus_returned}
+
+
+def capture_tasks(page: Page, out: Path, key: str) -> list[dict]:
+    sample = page.locator('[data-testid="persistent-task-review-sample"]').first
+    sample.scroll_into_view_if_needed()
+    page.wait_for_timeout(150)
+    lists = page.evaluate(TASKS_SCRIPT)
+    path = out / f"pas-task-list-{key}.png"
+    sample.locator(".v3-persistent-task-review-lists").first.screenshot(path=str(path), animations="disabled")
+    print(f"pas-task-list-{key}: {path.as_posix()}", flush=True)
+    return lists
+
+
+def resize_check(page: Page) -> dict:
+    """넓은 폭으로 연 보드를 좁은 폭으로 줄인 뒤 다시 잰다(UI 기준 18번)."""
+    page.set_viewport_size({"width": 390, "height": 1400})
+    page.wait_for_timeout(400)
+    reveal_awaiting(page, workspace(page))
+    return {"lanes": page.evaluate(LANES_SCRIPT), "layout": page.evaluate(LAYOUT_SCRIPT)}
 
 
 def capture(page: Page, path: Path, key: str, lanes: list[dict], picker: dict, frames: list[dict]) -> None:
@@ -200,6 +256,7 @@ def capture_width(page: Page, base: str, out: Path, width: int, theme: str, base
     sample = workspace(page)
     reveal_awaiting(page, sample)
     lanes = page.evaluate(LANES_SCRIPT)
+    layout = page.evaluate(LAYOUT_SCRIPT)
     picker = read_picker(page, sample) if not baseline else {"available": False, "options": []}
     frames: list[dict] = []
     capture(page, out / f"card-board-{key}.png", f"card-board-{key}", lanes, picker, frames)
@@ -213,14 +270,24 @@ def capture_width(page: Page, base: str, out: Path, width: int, theme: str, base
     capture(page, out / f"card-board-expanded-{key}.png", f"card-board-expanded-{key}", expanded_lanes, picker, frames)
     page.get_by_role("button", name="확대 닫기").click()
     page.wait_for_selector(".v3-card-board-workspace.is-expanded", state="detached")
+    tasks = capture_tasks(page, out, key)
+    frames.append({"capture": f"pas-task-list-{key}", "taskLists": tasks})
+    resized = None
+    if width > 390 and not baseline:
+        page.locator("#components-board").scroll_into_view_if_needed()
+        resized = resize_check(page)
+        frames.append({"capture": f"resize-{key}-to-390", **resized})
     print(f"done {key}", flush=True)
 
     return {
         "width": width,
         "theme": theme,
         "lanes": lanes,
+        "layout": layout,
         "expandedLanes": expanded_lanes,
         "picker": picker,
+        "tasks": tasks,
+        "resized": resized,
         "frames": frames,
     }
 
@@ -234,10 +301,52 @@ def judge(frame: dict, baseline: bool) -> list[dict]:
     awaiting = next((lane for lane in expanded if lane["status"] == AWAITING), None)
     on_hold = next((lane for lane in expanded if lane["status"] == "on_hold"), None)
 
+    task_statuses = [[group["status"] for group in task_list["groups"]] for task_list in frame["tasks"]]
+
     if baseline:
         if AWAITING in expanded_statuses:
             failures.append({"check": "baselineHasNoAwaitingLane", "detail": expanded_statuses})
+        if any(AWAITING in statuses_ for statuses_ in task_statuses):
+            failures.append({"check": "baselineHasNoAwaitingTaskGroup", "detail": task_statuses})
         return failures
+
+    for task_list in frame["tasks"]:
+        statuses_ = [group["status"] for group in task_list["groups"]]
+        group = next((group for group in task_list["groups"] if group["status"] == AWAITING), None)
+        if group is None:
+            failures.append({"check": "awaitingTaskGroupPresent", "width": task_list["width"], "detail": statuses_})
+            continue
+        index = statuses_.index(AWAITING)
+        if index == 0 or statuses_[index - 1] != "blocked" or statuses_[index + 1:index + 2] != ["review"]:
+            failures.append({"check": "awaitingTaskGroupBetweenBlockedAndReview", "width": task_list["width"], "detail": statuses_})
+        if group["label"] != EXPECTED_LABEL:
+            failures.append({"check": "awaitingTaskGroupLabel", "width": task_list["width"], "detail": group["label"]})
+        if group["headOverflow"]:
+            failures.append({"check": "awaitingTaskGroupHeadOverflow", "width": task_list["width"], "detail": group["headOverflow"]})
+
+    # 15: Tab은 DOM 순서를 따른다. 칸의 DOM 순서가 화면 왼쪽부터의 순서와 같아야 한다.
+    for name, lane_list in (("lanes", lanes), ("expandedLanes", expanded)):
+        lefts = [lane["left"] for lane in lane_list]
+        if lefts != sorted(lefts):
+            failures.append({"check": "laneDomOrderMatchesVisualOrder", "frame": name, "detail": lefts})
+
+    # 16: 좁은 폭에서 페이지가 가로로 넘치지 않고 「검증 대기」 카드 안 글이 넘치지 않는다.
+    layout = frame["layout"]
+    if layout["pageOverflowX"] > 1:
+        failures.append({"check": "noPageHorizontalOverflow", "detail": layout["pageOverflowX"]})
+    if layout["awaitingCardOverflowX"] is None or layout["awaitingCardOverflowX"] > 1:
+        failures.append({"check": "awaitingCardNoOverflow", "detail": layout["awaitingCardOverflowX"]})
+
+    # 18: 연 채 좁은 폭으로 줄여도 칸이 남고 넘치지 않으며 고르기 창이 남지 않는다.
+    resized = frame["resized"]
+    if resized is not None:
+        resized_statuses = [lane["status"] for lane in resized["lanes"]]
+        if AWAITING not in resized_statuses:
+            failures.append({"check": "resizeKeepsAwaitingLane", "detail": resized_statuses})
+        if resized["layout"]["pageOverflowX"] > 1:
+            failures.append({"check": "resizeNoPageHorizontalOverflow", "detail": resized["layout"]["pageOverflowX"]})
+        if resized["layout"]["pickerOpen"]:
+            failures.append({"check": "resizeLeavesNoPicker"})
 
     if AWAITING not in expanded_statuses:
         failures.append({"check": "awaitingLanePresent", "detail": expanded_statuses})
@@ -278,6 +387,9 @@ def judge(frame: dict, baseline: bool) -> list[dict]:
             failures.append({"check": "awaitingIsNotAManualChoice", "detail": labels})
         if any(option["pressed"] == "true" for option in picker["options"]):
             failures.append({"check": "noChoicePretendsToBeCurrent", "detail": picker["options"]})
+        # 14: Esc로 닫으면 초점이 연 단추로 돌아온다.
+        if not picker.get("focusReturned"):
+            failures.append({"check": "pickerFocusReturnsToTrigger"})
     return failures
 
 

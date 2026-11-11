@@ -10,7 +10,7 @@ import type { CompletedBrowser } from "./use-completed-cards";
 
 export const boardColumns = [
   {status:"todo",label:"드래프트"}, {status:"queued",label:"대기"},
-  {status:"running",label:"실행 중"}, {status:"awaiting_verification",label:"검증 대기"}, {status:"blocked",label:"막힘"},
+  {status:"running",label:"실행 중"}, {status:"blocked",label:"막힘"}, {status:"awaiting_verification",label:"검증 대기"},
   {status:"review",label:"검수 대기"}, {status:"on_hold",label:"보류"}, {status:"done",label:"완료"}, {status:"cancelled",label:"취소"},
 ] as const;
 

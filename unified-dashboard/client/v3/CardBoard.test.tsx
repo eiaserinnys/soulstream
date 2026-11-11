@@ -12,7 +12,7 @@ it("keeps nine columns in order and hides done and cancelled together", () => {
     completion: includeCompleted === undefined ? undefined : {includeCompleted,onChange:()=>undefined},
   }));
   const full = render();
-  expect([...full.matchAll(/data-board-column="([^"]+)"/g)].map(match => match[1])).toEqual(["todo","queued","running","awaiting_verification","blocked","review","on_hold","done","cancelled"]);
+  expect([...full.matchAll(/data-board-column="([^"]+)"/g)].map(match => match[1])).toEqual(["todo","queued","running","blocked","awaiting_verification","review","on_hold","done","cancelled"]);
   expect(full).toContain("드래프트"); expect(full).toContain("검증 대기"); expect(full).toContain("검수 대기");
   expect(full).toContain('data-sample="awaiting_verification"');
   expect(full).toContain('data-sample="cancelled"'); expect(full).not.toContain('data-sample="archived"');

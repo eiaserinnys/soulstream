@@ -10,7 +10,7 @@ import { useCardMembership } from "./use-card-membership";
 import { V3_CARD_GAP_PX } from "./v3-layout-metrics";
 import "./v3-persistent-task-list.css";
 
-const TASK_STATUSES = ["running", "blocked", "review", "queued", "todo"] as const;
+const TASK_STATUSES = ["running", "blocked", "awaiting_verification", "review", "queued", "todo"] as const;
 type TaskStatus = typeof TASK_STATUSES[number];
 const TASK_GROUPS_STORAGE_KEY = "soulstream:pas-task-groups:v1";
 export interface PersistentSessionTaskGroup { status: TaskStatus; label: string; cards: CardRow[] }
