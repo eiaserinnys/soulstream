@@ -135,6 +135,10 @@ export type RunnerParentStorageOperationMap = {
     input: { databasePath: string; sessionId: string };
     output: ClaudeAccountTurnState | null;
   };
+  prepareRunnerDatabase: {
+    input: { databasePath: string };
+    output: void;
+  };
   close: { input: undefined; output: void };
 };
 

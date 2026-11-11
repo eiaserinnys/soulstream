@@ -10,7 +10,7 @@ import {
   type RunnerChildConfig,
 } from "./runner_child_config.js";
 import { runnerProcessPaths, type RunnerProcessPaths } from "./runner_process_paths.js";
-import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
+import { prepareRunnerDatabaseInWorker } from "./runner_recovery_storage.js";
 import {
   defaultProcessOwnershipLockDependencies,
   inspectProcessIdentity,
@@ -447,10 +447,7 @@ function defaultDependencies(): SpawnDependencies {
     (resolveDelay) => setTimeout(resolveDelay, ms),
   );
   return {
-    prepareDatabase: async (path) => {
-      const outbox = await RunnerSqliteEventOutbox.create(path);
-      outbox.close();
-    },
+    prepareDatabase: async (path) => await prepareRunnerDatabaseInWorker(path),
     validateEntry: async (path) => await access(path),
     spawnProcess: (entry, args, options) => spawn(process.execPath, [entry, ...args], options),
     registerPid: async (path, pid) => await writeFileAtomically(path, `${pid}\n`),
