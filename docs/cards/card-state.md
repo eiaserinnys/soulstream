@@ -182,6 +182,12 @@ state "보관" as cardDecision_archive {
     state "활성" as arch_active
     state "보관됨" as arch_archived
 }
+cardDecision_assignee --> a_session: 상태를 옮긴다: 연결된 카드 세션이 담당을 맡는다
+cardDecision_assignee --> a_session: 여러 카드의 상태를 옮긴다: 연결된 카드 세션이 담당을 맡는다
+cardDecision_assignee --> a_session: 검수를 요청한다: 연결된 카드 세션이 담당을 맡는다
+cardDecision_assignee --> a_session: 작업 착수를 확인한다: 연결된 카드 세션이 담당을 맡는다
+cardDecision_assignee --> a_session: 작업 착수를 확인한다
+cardDecision_assignee --> a_session: 커멘트를 남긴다: reply일 때 연결된 카드 세션이 담당을 맡는다
 cardDecision_assignee --> a_session: 서버가 실행을 확인한다
 cardDecision_assignee --> a_none: 담당과 보관을 고친다
 cardDecision_assignee --> a_agent: 담당과 보관을 고친다
@@ -196,7 +202,7 @@ cardDecision_archive --> arch_archived: 담당과 보관을 고친다
 cardDecision_archive --> arch_active: 담당과 보관을 고친다
 ```
 
-전이 화살표 12개. 이 보기의 명령은 CREATE, CONFIRM_EXECUTION, REGISTER_REPLACEMENT, PATCH_CARD_CONTROL다. 다른 명령은 이 그림에서 모두 숨기고 아래 출처 표에 적었다. 빨강은 약속 6을 어기는 세계가 있는 상태이며, 점선 구멍은 도달하지 않는 구성을 뜻한다.
+전이 화살표 18개. 이 보기의 명령은 CREATE, CONFIRM_EXECUTION, REGISTER_REPLACEMENT, PATCH_CARD_CONTROL, SET_STATUS, BULK_SET_STATUS, REQUEST_REVIEW, START_WORK, ADD_COMMENT다. 다른 명령은 이 그림에서 모두 숨기고 아래 출처 표에 적었다. 빨강은 약속 6을 어기는 세계가 있는 상태이며, 점선 구멍은 도달하지 않는 구성을 뜻한다.
 
 ## 서버 증거 단계 지목
 
@@ -932,28 +938,28 @@ PAS는 agent 세션이다. 현재 담당, 작성자, 담당이면서 작성자�
 
 | 명령 | 전이 설명 | 운영 출처 |
 | :-- | :-- | :-- |
-| CREATE | 카드를 만든다 | cards/card_control_plane_service.ts#createCard<br>cards/card_control_plane_service.ts#createCardTx<br>cards/card_control_plane_service.ts#createCardMutation |
-| SET_STATUS | 현재 담당 권한과 검증 대기 입력을 확인한다. 같은 done 재지정도 완료 정보를 다시 쓰고 같은 queued 재지정도 새 대기열 순서 키를 요청한다. | cards/card_control_plane_service.ts#setCardStatus |
-| REQUEST_REVIEW | 검수를 요청한다 | cards/card_control_plane_service.ts#requestCardReview |
+| CREATE | queue 입력에 따라 todo 또는 queued로 만들고 전달한 담당을 기록한다. 새 카드는 활성 상태이며 queued이면 새 대기열 순서 키를 쓴다. | cards/card_control_plane_service.ts#createCard<br>cards/card_control_plane_service.ts#createCardTx<br>cards/card_control_plane_service.ts#createCardMutation |
+| SET_STATUS | agent는 현재 담당이거나 담당 확보 후보이면 상태를 바꿀 수 있고, 담당 종류가 사람이나 세션이 아닌 카드는 다른 agent 세션도 todo, queued, on_hold, cancelled로 옮길 수 있다. 담당 확보 후보는 담당 세션 없이 에이전트로만 배정된 카드에 연결된 같은 에이전트의 세션이며, 같은 카드에 연결된 호출자 세션이 없어야 한다. 검증 대기는 담당 세션과 유효한 wake_at과 waiting_for가 필요하다. 같은 done 재지정도 완료 정보를 다시 쓰고 같은 queued 재지정도 새 대기열 순서 키를 요청한다. | cards/card_control_plane_service.ts#setCardStatus |
+| REQUEST_REVIEW | 항목이 있으면 ask가 필요하며, agent는 현재 담당이거나 담당 확보 후보여야 한다. review로 옮기고 완료 정보, 대기열 순서와 예약을 지우며 ask가 있으면 검수 요청 상황판을 쓴다. | cards/card_control_plane_service.ts#requestCardReview |
 | HUMAN_INPUT | 보관되지 않은 세션 담당의 검증 대기 또는 한도 아닌 막힘을 재개하고 열린 질문을 모두 닫는다. | cards/card_control_plane_service.ts#resumeBlockedCardOnHumanInput |
 | ASK_QUESTION | 다른 세션 담당 여부를 확인하고 질문 행을 추가한다. 질문 막힘으로 옮기며 완료 정보와 대기열 순서를 지운다. | cards/card_control_plane_service.ts#askQuestion |
 | ANSWER_QUESTION | 사람만 열린 질문에 답한다. 마지막 열린 질문이고 질문 막힘일 때만 실행 중으로 옮긴다. 완료 뒤 늦은 답은 상태를 보존한다. | cards/card_control_plane_service.ts#answerQuestion |
 | WITHDRAW_QUESTION | 질문 작성자 또는 현재 담당 세션이 철회한다. 마지막 질문 막힘일 때만 실행 중으로 옮긴다. | cards/card_control_plane_service.ts#withdrawQuestion |
 | ADD_COMMENT | 직접 입구는 prepare 검사 뒤 다른 담당 검사를 먼저 한다. dispatch_work의 Tx 후속 입구는 이 검사를 하지 않는다. reply의 담당, 길이와 사용자 입력을 확인한다. non-reply이면 사람뿐 아니라 담당의 spoken도 말로 풀리는 기다림을 재개한다. claim과 항목과 상태 UPDATE는 나눈다. | cards/card_control_plane_service.ts#addComment<br>cards/card_control_plane_service.ts#addCommentTx<br>cards/card_control_plane_service.ts#applyAddCommentTx<br>cards/card_work_dispatch_service.ts#accept |
-| START_WORK | 작업 착수를 확인한다 | cards/card_control_plane_service.ts#startCardWork |
+| START_WORK | agent 세션의 오케스트레이션 목적이 아닌 유효한 현재 실행이 필요하며, 자동 실행의 영수증이 있으면 일치하는 fenced admission도 확인한다. 현재 담당이나 담당 확보 후보 또는 검증된 자동 실행만 running으로 옮기고 완료 정보, 대기열 순서와 예약을 지운다. | cards/card_control_plane_service.ts#startCardWork |
 | CONFIRM_EXECUTION | 요청 세션을 담당으로 연결한다. 요청 이후 상태가 바뀐 뒤늦은 확인은 상태와 완료 정보를 보존한다. | cards/card_execution_service.ts#observe<br>cards/card_execution_service.ts#observeOnce<br>cards/card_execution_service.ts#observePendingForNode<br>cards/card_execution_service.ts#sendAndObserve |
 | DISPATCH | queued와 미확인 실행 요청을 확인한다. 정책 설정과 admission 증거에 따라 허가를 확인하고, admission이면 queued 유지, 기존 실행이면 running으로 옮긴다. | cards/card_control_plane_service.ts#recordDispatch |
 | BLOCK_FOR_LIMIT | 현재 실행 중 담당의 최신 한도 종료가 일치할 때 담당 예약을 기록한다. 짧은 한도는 시각을, 긴 한도는 담당만 기록한다. | cards/card_control_plane_service.ts#blockCardForLimit |
 | RESUME_SHORT_LIMIT | 현재 담당과 기록된 예약이 일치하고 같은 시각이 도래했을 때만 재개한다. | cards/card_control_plane_service.ts#resumeLimitedCard |
 | RESUME_LONG_LIMIT | 시각 없는 예약의 현재 담당만 재개한다. 정책 설정과 admission 확인을 함께 적용한다. | cards/card_control_plane_service.ts#resumeDispatchedCard |
 | RESUME_VERIFICATION | 기록한 검증 시각과 담당이 일치하면 예약을 지우고 재개한다. 도래 선별과 실제 깨우기는 호출부가 한다. | cards/card_control_plane_service.ts#resumeVerificationCard |
-| NOTE_MISSING | 담당 에이전트 없음을 적는다 | cards/card_control_plane_service.ts#noteMissingAssignee |
-| BULK_SET_STATUS | 여러 카드의 상태를 옮긴다 | cards/card_maintenance_service.ts#bulkSetCardStatus<br>cards/card_control_plane_service.ts#applyStatusTx |
-| MERGE_SOURCE | 시작 전 카드를 합쳐 닫는다 | cards/card_maintenance_service.ts#mergeCards |
-| UPDATE_UNSTARTED | 시작 전 카드를 고친다 | cards/card_maintenance_service.ts#updateUnstartedCard<br>cards/card_maintenance_service.ts#mergeCards |
-| SAVE_EXECUTION_SETTINGS | 실행 설정을 저장한다 | cards/card_control_plane_service.ts#saveExecutionSettings |
+| NOTE_MISSING | 현재 상태를 제한하지 않고 blocked_detail에 「담당 에이전트 없음」을 쓴다. queued일 때는 담당 없음 하위 상태로 표시하고 담당, 완료 정보와 대기열 순서는 보존한다. | cards/card_control_plane_service.ts#noteMissingAssignee |
+| BULK_SET_STATUS | agent 세션만 todo, queued, on_hold, cancelled를 요청할 수 있고 사람 담당 카드는 거절하며, 담당 세션이 없으면 담당 확보 후보를 확인한다. 담당 세션이 있는 카드는 조회 실패, 카드의 running, 담당의 running 또는 initializing을 거절하고 나머지 유휴 담당은 on_hold와 cancelled만 허용한다. | cards/card_maintenance_service.ts#bulkSetCardStatus<br>cards/card_control_plane_service.ts#applyStatusTx |
+| MERGE_SOURCE | 보관되지 않고 사람 담당이나 연결된 담당 세션이 없으며 todo, queued, on_hold인 카드만 합치고 미확인 실행 요청이 있으면 거절한다. 원본을 cancelled로 옮기고 완료 정보, 대기열 순서와 예약을 지우며 합친 대상 안내를 상황판에 남긴다. | cards/card_maintenance_service.ts#mergeCards |
+| UPDATE_UNSTARTED | 보관되지 않고 사람 담당이나 연결된 담당 세션이 없으며 todo, queued, on_hold인 카드만 고칠 수 있고 미확인 실행 요청이 있으면 거절한다. 요청한 필드를 저장하며 agent 입력이 있으면 에이전트 담당으로 바꾸고 카드 상태는 보존한다. | cards/card_maintenance_service.ts#updateUnstartedCard<br>cards/card_maintenance_service.ts#mergeCards |
+| SAVE_EXECUTION_SETTINGS | 미확인 실행 요청이나 연결된 담당 세션이 있으면 거절한다. 요청한 실행 설정과 선택한 에이전트 담당을 저장하고 에이전트 입력이 없으면 담당을 비우며, 폴더가 달라지면 먼저 이동하고 카드 상태는 보존한다. | cards/card_control_plane_service.ts#saveExecutionSettings |
 | PATCH_CARD_CONTROL | 명시한 담당과 보관만 바꾼다. 담당 교체와 보관 또는 한도 탈출은 한도 예약을 함께 지운다. 명시적 status 쓰기가 없으면 검증 예약은 보존한다. | cards/card_control_plane_service.ts#patchCard |
-| REGISTER_REPLACEMENT | 등록된 새 담당으로 바꾼다 | control_plane/repositories/session_card_replacement.ts#applySessionCardReplacement |
+| REGISTER_REPLACEMENT | 등록 예약에 기록된 이전 담당과 현재 담당이 일치하지 않으면 거절한다. 새 세션을 담당으로 연결하고 한도 예약을 지우며, 한도 예약이 있었고 별도 now 쓰기가 없으면 담당 교체 안내를 남기되 상태와 검증 예약은 보존한다. | control_plane/repositories/session_card_replacement.ts#applySessionCardReplacement |
 
 ### 연결된 운영 입구
 

@@ -16,7 +16,7 @@ const plans:{id:string;title:string;spec:ChartSpec;events:CardDecisionCommand[]}
  {id:'02-status',title:'카드 상태 계층',events:['CREATE','SET_STATUS','ASK_QUESTION','REQUEST_REVIEW','BLOCK_FOR_LIMIT','RESUME_VERIFICATION'],spec:{include:['cardDecision.status']}},
  {id:'03-question',title:'열린 질문의 기억',events:['ASK_QUESTION','ANSWER_QUESTION','WITHDRAW_QUESTION','HUMAN_INPUT','ADD_COMMENT'],spec:{include:['cardDecision.question']}},
  {id:'04-reservation',title:'예약의 기억',events:['SET_STATUS','BLOCK_FOR_LIMIT','RESUME_SHORT_LIMIT','RESUME_LONG_LIMIT','RESUME_VERIFICATION','PATCH_CARD_CONTROL'],spec:{include:['cardDecision.reservation']}},
- {id:'05-assignee-archive',title:'담당 종류와 보관',events:['CREATE','CONFIRM_EXECUTION','REGISTER_REPLACEMENT','PATCH_CARD_CONTROL'],spec:{include:['cardDecision.assignee','cardDecision.archive']}},
+ {id:'05-assignee-archive',title:'담당 종류와 보관',events:['CREATE','CONFIRM_EXECUTION','REGISTER_REPLACEMENT','PATCH_CARD_CONTROL','SET_STATUS','BULK_SET_STATUS','REQUEST_REVIEW','START_WORK','ADD_COMMENT'],spec:{include:['cardDecision.assignee','cardDecision.archive']}},
  {id:'06-evidence',title:'서버 증거 단계 지목',events:Object.keys(CARD_SERVER_EVIDENCE_STAGES) as CardDecisionCommand[],spec:{include:['cardDecision.verdict'],targetless:true}},
  {id:'07-maintenance-evidence',title:'유지보수 증거 단계 지목',events:Object.keys(CARD_REMAINING_EVIDENCE_STAGES) as CardDecisionCommand[],spec:{include:['cardDecision.verdict'],targetless:true}},
 ];
