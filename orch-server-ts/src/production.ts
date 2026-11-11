@@ -106,6 +106,7 @@ import { createCardDispatchRuntime } from "./cards/card_dispatch_runtime.js";
 import { CardDispatchRepository } from "./cards/card_dispatch_repository.js";
 import { resolveCardOwnerEmail } from "./cards/card_question_board.js";
 import { cardRouteErrorResponse } from "./cards/card_route_body.js";
+import { createCardCommentAttachmentUploader } from "./cards/card_comment_attachment_upload.js";
 import { applyCardQuestionReply } from "./session/card_question_reply.js";
 import { dashboardFolderActor } from "./folders/folder_workspace_routes.js";
 import { FolderContentSqlResolver } from "./board/folder_content_sql.js";
@@ -1299,6 +1300,7 @@ export function buildProductionRouteOptions(
       ...(cardExecutionServiceProvider ? {cardExecutionServiceProvider} : {}),
       ...(cardServiceProvider ? { cardServiceProvider } : {}),
       ...(cardServiceProvider ? {
+        uploadCardCommentAttachment: createCardCommentAttachmentUploader(providers.attachmentRoutes),
         sendCardSessionMessage: (request, sessionId, body) =>
           executeSessionIntervention({
             ...providers.runtime.sessionActionCommandRoutes,

@@ -1,5 +1,5 @@
 import type { ServiceCaller } from "../auth/service_caller.js";
-import { createHash, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import { buildCanonicalDeliveryPayload } from "@soulstream/wire-schema/delivery";
@@ -8,6 +8,7 @@ import { MESSAGE_BODY_LIMIT } from "../conversation/conversation_messages.js";
 
 import type { SessionDeliveryRepository } from
   "../control_plane/repositories/session_delivery_repository.js";
+import { inlineUploadId } from "../attachments/upload_identity.js";
 
 import {
   badRequest,
@@ -328,12 +329,6 @@ function unavailableAttachmentInput(): { response: SessionActionResponse } {
   return { response: { status: 503, body: { error: {
     code: "ATTACHMENT_INPUT_UNAVAILABLE", message: "Attachment input is unavailable",
   } } } };
-}
-
-/** Stable upload identity so a retried delivery reuses the same stored object. */
-function inlineUploadId(seed: string): string {
-  const digest = createHash("sha256").update(seed).digest("hex");
-  return `${digest.slice(0, 8)}-${digest.slice(8, 12)}-4${digest.slice(13, 16)}-a${digest.slice(17, 20)}-${digest.slice(20, 32)}`;
 }
 
 async function admitDurableHumanIntervention(

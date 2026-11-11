@@ -4,7 +4,11 @@ import { MESSAGE_BODY_LIMIT } from "../conversation/conversation_messages.js";
 import { allowed } from "./card_route_body.js";
 import { serializeCardRow } from "../folders/folder_contracts.js";
 import type { FastifyInstance, FastifyRequest } from "fastify";
-import type { FolderRouteOptions } from "../folders/folder_routes.js";
+import type {
+  CardCommentAttachmentUploadInput,
+  CardCommentAttachmentUploadResult,
+  FolderRouteOptions,
+} from "../folders/folder_routes.js";
 import { dashboardFolderActor } from "../folders/folder_workspace_routes.js";
 import { CardOperationError, type CardOperation } from "./card_operations.js";
 import { verifyServiceBearerAuthorization } from "../auth/service_bearer.js";
@@ -112,14 +116,19 @@ export function registerCardRoutes(app: FastifyInstance, options: FolderRouteOpt
     } catch (error) { const failure = cardRouteErrorResponse(error); return reply.code(failure.status).send(failure.body); }
   });
   for (const [method, url, operation] of mutations) {
-    app.route<{ Params: { id?: string; qid?: string; itemId?: string } }>({ method, url, handler: async (request, reply) => {
+    app.route<{ Params: { id?: string; qid?: string; itemId?: string } }>({ method, url,
+      ...(operation === "add_card_comment" ? { bodyLimit: MESSAGE_BODY_LIMIT } : {}), handler: async (request, reply) => {
       try {
         const confirm=operation === "confirm_card_item";
         const parsedConfirm=confirm ? confirmBody.parse(request.body) : undefined;
         const body=confirm ? { ...parsedConfirm!,idempotencyKey:parsedConfirm!.idempotencyKey ?? randomUUID() } : request.body;
         const itemId=confirm ? confirmItemId.parse(request.params.itemId) : undefined;
+        const uploadCommentAttachment: ((input: CardCommentAttachmentUploadInput) => Promise<CardCommentAttachmentUploadResult>) | undefined =
+          options.uploadCardCommentAttachment === undefined
+            ? undefined : input => options.uploadCardCommentAttachment!(request, input);
         const result = await mutateCardRouteBody(options, operation, request.params.id,
-          body, () => options.accessProvider.resolveAccess(request), () => cardActor(request, options), request.params.qid, itemId);
+          body, () => options.accessProvider.resolveAccess(request), () => cardActor(request, options), request.params.qid, itemId,
+          uploadCommentAttachment);
         return reply.code(result.status).send(result.body);
       } catch (error) { const failure = cardRouteErrorResponse(error); return reply.code(failure.status).send(failure.body); }
     } });
