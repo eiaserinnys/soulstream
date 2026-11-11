@@ -175,7 +175,7 @@ export class CardDispatcher {
                 const answer=`질문에 답이 왔습니다: ${String(q!.text)} → ${String(q!.answer)}. 카드 상태: ${cardStatusLabels[card.status]}.`;
                 try {
                     if (mergeAnswer) await this.deliver(card,String(q!.session_id),`${notification!.text}\n${answer}`,notification!);
-                    else await this.deliver(card,String(q!.session_id),answer);
+                    else await this.deliver(card,String(q!.session_id),answer,{deliveryId:`card:${card.id}:answer:${op.id}:${String(q!.session_id)}`,actorKind:op.actor_kind,actorSessionId:op.actor_session_id});
                 } catch (error) { this.options.warn(`card ${card.id} answer delivery failed: ${String(error)}`); }
             }
             if (autoResumed && !questionSession) {
