@@ -1,60 +1,30 @@
-import { describe, expect, it } from "vitest";
-import { transition } from "xstate";
-import { cardMachine } from "../src/cards/state/card_machine.js";
-import { cardFactsToStateValue } from "../src/cards/state/card_machine_facts.js";
-import { CARD_PROMISES, checkCardPromises, questionAnswersDiffer, questionAuthorCannotWithdraw, unrecordedLimitResume, shortLimitReservationMissing, questionEntryMissing, cardEntryMissing } from "../src/cards/state/card_machine_promises.js";
-
-describe("현행 카드 규칙의 약속", () => {
-  it("질문 약속은 지키고 남은 어긋남을 정의의 전이와 구멍으로 찾는다", () => {
-    const result = checkCardPromises();
-    expect(result.promises.slice(0,4).map(p=>p.kept)).toEqual([true,true,true,true]);
-    expect(new Set(result.marks.transitions.flatMap(t=>t.discrepancies))).toEqual(new Set([]));
-    expect(result.holes.filter(h=>["holeCardMissing","holeQuestionMissing"].includes(h.id)).every(h=>!h.reachable)).toBe(true);
-    expect(result.holes.find(h=>h.id==="holeOrphan")?.reachable).toBe(false);
-    expect(result.cardEntryPromise.kept).toBe(true);
-    expect(result.promises[4]!.kept).toBe(true);
-    expect(result.promises[5]!.kept).toBe(false);
-  });
-  it("담당을 바꾸면 카드의 예약과 담당 기록을 함께 지운다", () => {
-    let s = cardMachine.resolveState({ value: cardFactsToStateValue({status:"running",assignee:"originalLive",supervised:false,boardEntryCount:0,cardEntryCount:0,questionEntryCount:0}) });
-    s = transition(cardMachine,s,{type:"SERVER_SHORT_LIMIT"})[0];
-    expect(s.matches({reservation:"limit"})).toBe(true);
-    s = transition(cardMachine,s,{type:"REPLACE_LIVE"})[0];
-    expect(s.matches({reservation:"none"})).toBe(true);
-    expect(s.matches({limitedOwner:"none"})).toBe(true);
-    expect(transition(cardMachine,s,{type:"SERVER_LIVE_RESUME"})[0].matches({status:{on:{silent:"limit"}}})).toBe(true);
-  });
-  it("위반을 심은 구성과 지킨 구성을 판정기가 구분한다",()=>{
-    const state=(extra:Partial<Parameters<typeof cardFactsToStateValue>[0]>)=>cardMachine.resolveState({value:cardFactsToStateValue({status:"blocked",blockedKind:"question",assignee:"originalLive",supervised:true,boardEntryCount:0,cardEntryCount:0,questionEntryCount:0,openQuestion:"owner",...extra})});
-    const question=state({}),card=state({openQuestion:null,blockedKind:"no_report"});
-    expect(questionEntryMissing(question)).toBe(false);
-    expect(questionEntryMissing(question,()=>[])).toBe(true);
-    expect(cardEntryMissing(card)).toBe(false);
-    expect(cardEntryMissing(card,()=>[])).toBe(true);
-  });
-  it("약속 판정기는 위반을 실제로 구분한다", () => {
-    const result = checkCardPromises();
-    for (const promise of result.promises.filter((_,i)=>i===5)) {
-      expect(promise.violations).toBeGreaterThan(0);
-      expect(promise.example.length).toBeGreaterThan(0);
-    }
-  });
-  it("질문 판정기에 답 거절과 작성자 철회 금지 결함을 심으면 빨강이 된다",()=>{
-    const make=(status:"done"|"blocked",assignee:"none"|"originalLive",openQuestion:"owner"|"orphan")=>cardMachine.resolveState({value:cardFactsToStateValue({status,blockedKind:"question",assignee,openQuestion,supervised:false,boardEntryCount:0,cardEntryCount:0,questionEntryCount:0})});
-    const done=make("done","originalLive","owner");
-    const orphan=make("blocked","none","orphan");
-    expect(questionAnswersDiffer(done)).toBe(false);
-    expect(questionAnswersDiffer(done,(s,event)=>event==="ANSWER_BOARD"?s:transition(cardMachine,s,{type:event})[0])).toBe(true);
-    expect(questionAuthorCannotWithdraw(orphan)).toBe(false);
-    expect(questionAuthorCannotWithdraw(orphan,s=>s)).toBe(true);
-    expect(transition(cardMachine,orphan,{type:"WITHDRAW_AUTHOR"})[0].matches({question:"none"})).toBe(true);
-  });
-  it("예약 판정기는 기록 없는 재개와 시각 누락을 심으면 빨강이다",()=>{
-    const state=(status:"running"|"blocked")=>cardMachine.resolveState({value:cardFactsToStateValue({status,blockedKind:"limit",assignee:"originalLive",supervised:false,boardEntryCount:0,cardEntryCount:0,questionEntryCount:0})});
-    const blocked=state("blocked"),running=state("running");
-    expect(unrecordedLimitResume(blocked)).toBe(false);
-    expect(unrecordedLimitResume(blocked,()=>running)).toBe(true);
-    expect(shortLimitReservationMissing(running)).toBe(false);
-    expect(shortLimitReservationMissing(running,()=>blocked)).toBe(true);
-  });
+import { expect,it } from 'vitest';
+import { cardDecisionMachine } from '../src/cards/state/card_decision_machine.js';
+import { rowToStateValue } from '../src/cards/state/card_state_value.js';
+import { checkCardPromises, questionEntryMissing, cardEntryMissing, questionAnswersDiffer, questionAuthorCannotWithdraw, unrecordedLimitResume, shortLimitReservationMissing } from '../src/cards/state/card_machine_promises.js';
+import type { CardWorld } from '../src/cards/state/card_machine_world.js';
+const world=(status='blocked',question=true):CardWorld=>({snapshot:cardDecisionMachine.resolveState({value:rowToStateValue({status,blocked_kind:'question',assignee_kind:'session',archived:false},question?[{answer:null,withdrawn_at:null}]:[]),context:{}}),owner:'live',pas:'room',dismissed:false});
+it('keeps promises 1-가 through 5 and the known failure of promise 6',()=>{
+ const r=checkCardPromises();
+ expect(r.promises.slice(0,5).map(p=>p.violations)).toEqual([0,0,0,0,0]);
+ expect(r.cardEntryPromise.violations).toBe(0);
+ expect(r.promises[5]!.violations).toBeGreaterThan(0);
+ expect(r.holes.every(h=>!h.reachable)).toBe(true);
+ console.log(JSON.stringify({worlds:r.configurationCount,promises:[r.promises[0]!,r.cardEntryPromise,...r.promises.slice(1)].map(p=>({name:p.name,violations:p.violations})),holes:r.holes}));
+},300000);
+it('detects injected board, answer and author withdrawal defects',()=>{
+ const w=world();
+ expect(questionEntryMissing(w)).toBe(false);expect(questionEntryMissing(w,()=>[])).toBe(true);
+ const noQuestion=world('blocked',false);
+ expect(cardEntryMissing(noQuestion)).toBe(false);expect(cardEntryMissing(noQuestion,()=>[])).toBe(true);
+ expect(questionAnswersDiffer(w)).toBe(false);
+ expect(questionAnswersDiffer(w,(state,boundary)=>boundary==='detail'?world('running',false):state)).toBe(true);
+ expect(questionAuthorCannotWithdraw(w)).toBe(false);expect(questionAuthorCannotWithdraw(w,state=>state)).toBe(true);
+});
+it('detects injected unrecorded limit resume and missing short reservation',()=>{
+ const w=world();
+ w.snapshot=cardDecisionMachine.resolveState({value:rowToStateValue({status:'blocked',blocked_kind:'limit',assignee_kind:'session',archived:false},[]),context:{}});
+ expect(unrecordedLimitResume(w)).toBe(false);expect(unrecordedLimitResume(w,()=>world('running',false))).toBe(true);
+ const running={...world('running',false),owner:'shortLimit' as const};
+ expect(shortLimitReservationMissing(running)).toBe(false);expect(shortLimitReservationMissing(running,state=>state)).toBe(true);
 });

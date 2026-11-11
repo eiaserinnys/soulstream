@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="pele pele-state" viewBox="0 0 939 284" width="939" height="284" style="max-width:100%;height:auto;--_bg:var(--pele-bg,#fff);--_fg:var(--pele-fg,#1f1f1f);--_m:var(--pele-muted,#6e6e6e);--_l:var(--pele-line,#1f1f1f);--_s:var(--pele-surface,#f3f3f3);--_a:var(--pele-surface-alt,#e6e6e6);--_b:var(--pele-border,#8a8a8a);--_c:var(--pele-accent,#5b7bd5);color:var(--_fg);--_fm:var(--pele-font-mono,monospace);font:16px sans-serif;letter-spacing:normal;word-spacing:normal;text-transform:none;direction:ltr;font-family:var(--pele-font,Pretendard Variable, Noto Sans CJK KR, Noto Sans KR, sans-serif)" fill="var(--_fg)" role="graphics-document document" aria-roledescription="state"><style>/*
+ * Statechart colors for Pele SVG output.
+ * Adapted from pstack skills/statechart/references/render.md
+ * (https://github.com/poteto/pstack), MIT License, Copyright (c) 2026 Lauren Tan.
+ * The mark rules use !important because Pele writes classDef colors as style attributes.
+ */
+.pele {
+  background-color: var(--pele-bg);
+  --pele-bg: #ffffff;
+  --pele-fg: #1c1c1c;
+  --pele-muted: #656565;
+  --pele-line: #808080;
+  --pele-surface: #fcfcfc;
+  --pele-surface-alt: #f1f1f1;
+  --pele-border: #c9c9c9;
+}
+.pele .blue rect { fill: #c3e0ff; }
+.pele .orange rect { fill: #f0d3bf; }
+.pele .purple rect { fill: #e3d5ff; }
+.pele .yellow rect { fill: #f0dcbf; }
+.pele .teal rect { fill: #bfe3df; }
+.pele .tan rect { fill: #e5d9ce; }
+.pele .pink rect { fill: #ffcbe6; }
+.pele .breaks rect { fill: #ffecee !important; stroke: #e72e3b !important; stroke-width: 2.5px !important; }
+.pele .breaks text { fill: #cd2834 !important; }
+.pele .mayBreak rect { fill: #fff3e6 !important; stroke: #e8730c !important; stroke-width: 2.5px !important; }
+.pele .mayBreak text { fill: #b85a06 !important; }
+.pele .bugPath rect { stroke: #1680f3 !important; stroke-width: 2.5px !important; }
+.pele .repeats rect { stroke: #9b35d6 !important; stroke-width: 2.5px !important; stroke-dasharray: 6 3; }
+@media (prefers-color-scheme: dark) {
+  .pele {
+    --pele-bg: #1f1f1f;
+    --pele-fg: #f5f5f5;
+    --pele-muted: #acacac;
+    --pele-line: #939393;
+    --pele-surface: #121212;
+    --pele-surface-alt: #2c2c2c;
+    --pele-border: #4e4e4e;
+  }
+  .pele .blue rect { fill: #1b3857; }
+  .pele .orange rect { fill: #573117; }
+  .pele .purple rect { fill: #3c2e57; }
+  .pele .yellow rect { fill: #573d17; }
+  .pele .teal rect { fill: #174641; }
+  .pele .tan rect { fill: #3d3127; }
+  .pele .pink rect { fill: #57233e; }
+  .pele .breaks rect { fill: #2e2021 !important; stroke: #cf2b35 !important; }
+  .pele .breaks text { fill: #ff6463 !important; }
+  .pele .mayBreak rect { fill: #2e2619 !important; stroke: #d0700f !important; }
+  .pele .mayBreak text { fill: #ffa257 !important; }
+  .pele .bugPath rect { stroke: #116dd2 !important; }
+  .pele .repeats rect { stroke: #9a3fcf !important; }
+}
+</style><g class="pele-clusters"><g class="pele-cluster pele-state-composite" data-id="cardDecision_question"><rect x="8" y="8" width="922.92" height="267.5" rx="10" fill="var(--_a)" fill-opacity="0.5" stroke="var(--_b)"/><path d="M8,44H930.92" fill="none" stroke="var(--_b)"/><text class="pele-cluster-label" x="469.46" y="31.6" text-anchor="middle">열린 질문</text></g></g><g class="pele-edges" fill="none" stroke="var(--_l)" stroke-linecap="round"><g class="pele-edge pele-transition" data-id="edge0"><path d="M100.45,44L100.45,208.5"/><path class="pele-marker" d="M100.45,215.5L97.09,207.5L103.81,207.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge1"><path d="M216.34,44L216.34,147.5C216.34,172.3 251.07,187.5 307.75,187.5C364.42,187.5 399.15,193.49 399.15,203.25L399.15,208.5"/><path class="pele-marker" d="M399.15,215.5L395.79,207.5L402.51,207.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge2"><path d="M339.23,44L339.23,147.5C339.23,164.86 353.15,175.5 375.86,175.5C398.57,175.5 412.48,185.76 412.48,202.5L412.48,208.5"/><path class="pele-marker" d="M412.48,215.5L409.12,207.5L415.84,207.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge3"><path d="M499.07,44L499.07,147.5C499.07,164.86 485.15,175.5 462.44,175.5C439.74,175.5 425.82,185.76 425.82,202.5L425.82,208.5"/><path class="pele-marker" d="M425.82,215.5L422.46,207.5L429.18,207.5Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge4"><path d="M658.91,44L658.91,147.5C658.91,172.3 617.15,187.5 549.03,187.5C480.9,187.5 439.15,193.49 439.15,203.25L439.15,208.5"/><path class="pele-marker" d="M439.15,215.5L435.79,207.5L442.51,207.5Z" fill="var(--_l)" stroke="none"/></g></g><g class="pele-edge-labels" font-size="14"><g class="pele-edge-label" data-id="edge0"><rect x="52.5" y="124.5" width="95.89" height="21" rx="3" fill="var(--_bg)"/><text x="100.45" y="139.9" text-anchor="middle">질문을 올린다</text></g><g class="pele-edge-label" data-id="edge1"><rect x="168.39" y="124.5" width="95.89" height="21" rx="3" fill="var(--_bg)"/><text x="216.34" y="139.9" text-anchor="middle">질문에 답한다</text></g><g class="pele-edge-label" data-id="edge2"><rect x="284.29" y="124.5" width="109.89" height="21" rx="3" fill="var(--_bg)"/><text x="339.23" y="139.9" text-anchor="middle">질문을 철회한다</text></g><g class="pele-edge-label" data-id="edge3"><rect x="414.18" y="124.5" width="169.78" height="21" rx="3" fill="var(--_bg)"/><text x="499.07" y="139.9" text-anchor="middle">사용자가 담당에게 말한다</text></g><g class="pele-edge-label" data-id="edge4"><rect x="603.96" y="124.5" width="109.89" height="21" rx="3" fill="var(--_bg)"/><text x="658.91" y="139.9" text-anchor="middle">커멘트를 남긴다</text></g></g><g class="pele-nodes"><g class="pele-node pele-state" data-id="q_none" transform="translate(419.15,237.5)"><rect x="-32" y="-22" width="64" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">없음</text></g><g class="pele-node pele-state" data-id="q_open" transform="translate(100.45,237.5)"><rect x="-76.45" y="-22" width="152.9" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">열린 질문이 있음</text></g><g class="pele-node pele-state hole" data-id="hole_holeOrphan" transform="translate(806.92,82)"><rect x="-108.01" y="-22" width="216.02" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)" style="fill:#ffffff;stroke:#9a9a9a;stroke-dasharray:4 3;"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">철회할 세션이 없는 질문 *</text></g></g></svg>

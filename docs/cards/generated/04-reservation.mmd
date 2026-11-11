@@ -1,0 +1,20 @@
+stateDiagram-v2
+direction TB
+classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
+classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
+state "카드에 기록한 예약" as cardDecision_reservation {
+    direction TB
+    state "예약 없음" as r_none
+    state "검증 예약" as r_verify
+    state "시각 있는 한도 예약" as r_limit
+    state "시각 없는 한도 예약" as r_longLimit
+}
+cardDecision_reservation --> r_none: 상태를 옮긴다
+cardDecision_reservation --> r_verify: 상태를 옮긴다
+cardDecision_reservation --> r_none: 시각 없는 한도 예약을 잇는다
+cardDecision_reservation --> r_none: 현재 담당의 한도 종료를 기록한다
+cardDecision_reservation --> r_limit: 현재 담당의 한도 종료를 기록한다
+cardDecision_reservation --> r_longLimit: 현재 담당의 한도 종료를 기록한다
+cardDecision_reservation --> r_none: 짧은 한도 시각이 되어 잇는다
+cardDecision_reservation --> r_none: 검증 시각이 되어 잇는다
+cardDecision_reservation --> r_none: 담당과 보관을 고친다

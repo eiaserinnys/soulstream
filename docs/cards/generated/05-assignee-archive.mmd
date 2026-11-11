@@ -1,0 +1,29 @@
+stateDiagram-v2
+direction TB
+classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
+classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
+state "담당 종류" as cardDecision_assignee {
+    direction TB
+    state "담당 없음" as a_none
+    state "에이전트" as a_agent
+    state "사람" as a_human
+    state "세션" as a_session
+}
+state "보관" as cardDecision_archive {
+    direction TB
+    state "활성" as arch_active
+    state "보관됨" as arch_archived
+}
+cardDecision_assignee --> a_session: 연결된 작업 세션이 담당을 맡는다
+cardDecision_assignee --> a_session: 서버가 실행을 확인한다
+cardDecision_assignee --> a_none: 담당과 보관을 고친다
+cardDecision_assignee --> a_agent: 담당과 보관을 고친다
+cardDecision_assignee --> a_human: 담당과 보관을 고친다
+cardDecision_assignee --> a_session: 담당과 보관을 고친다
+cardDecision_assignee --> a_none: 카드를 만든다
+cardDecision_assignee --> a_agent: 카드를 만든다
+cardDecision_assignee --> a_human: 카드를 만든다
+cardDecision_assignee --> a_session: 카드를 만든다
+cardDecision_assignee --> a_session: 등록된 새 담당으로 바꾼다
+cardDecision_archive --> arch_archived: 담당과 보관을 고친다
+cardDecision_archive --> arch_active: 담당과 보관을 고친다

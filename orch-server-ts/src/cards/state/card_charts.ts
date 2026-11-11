@@ -1,114 +1,65 @@
-import { toMermaid, type ChartSpec } from "../../statechart/mermaid.js";
-import { cardMachine } from "./card_machine.js";
-import { CARD_EVENTS, EVENT_LABELS, EVENT_SOURCES, STATUS_DECISIONS, MEMORY_CHART_GROUPS } from "./card_machine_events.js";
-import { checkCardPromises } from "./card_machine_promises.js";
-
+import { toMermaid, type ChartSpec } from '../../statechart/mermaid.js';
+import { cardDecisionMachine } from './card_decision_machine.js';
+import { CARD_FACT_VALUES, CARD_ACTORS, type CardDecisionCommand } from './card_decision_facts.js';
+import { CARD_DECISION_SOURCES, CARD_COMMAND_ENTRANCES } from './card_decision_inventory.js';
+import { checkCardPromises } from './card_machine_promises.js';
+import { rowToStateValue, STATUS_PATHS, stateValueToColumns, type CardStateValue } from './card_state_value.js';
+import { boardEntriesOf } from './card_machine_world.js';
+import { CARD_FAILURES } from './card_decision_errors.js';
 export type CardPromiseReport=ReturnType<typeof checkCardPromises>;
-interface CardChartPlan {id:string;title:string;explanation:string;spec:ChartSpec;events:string[];holes:string[]}
-const freeMove="HUMAN_MOVE_running";
-const groups={...MEMORY_CHART_GROUPS,"free-move":{from:"status",to:"status",label:"디렉터와 담당은 상태를 직접 옮긴다 [담당 권한 안에서]"}};
-const plans:CardChartPlan[]=[
-  {id:"01-overview",title:"전체: 상태와 함께 움직이는 기억",explanation:"카드 상태는 계층으로, 질문과 예약, 담당과 내린 기록은 나란한 영역으로 읽는다. 접힌 상자의 빨강은 그 아래에 약속을 어기는 구성이 도달한다는 뜻이다.",
-    events:[freeMove,"ASK_OWNER","ASK_OTHER","HUMAN_MESSAGE","SERVER_SHORT_LIMIT","SERVER_LIVE_RESUME","SERVER_LIMIT_RELAUNCH","WAKE_TIME","REQUEST_REVIEW"],
-    holes:["holeCardMissing","holeQuestionMissing","holeChangedLimitOwner"],
-    spec:{include:["card"],hide:["uncreated"],collapse:["ready","talk","silent","off","card.question","card.reservation","card.assignee","card.pasBoard","card.limitedOwner"]}},
-  {id:"02-status",title:"카드 상태: 같은 기다림에서 물려받는 규칙",explanation:"말로 풀리는 기다림의 세 자식은 디렉터가 말하면 재개하는 규칙을 함께 물려받는다. 자유 이동 하나가 모든 잎 상태의 직접 이동을 대표한다.",
-    events:[freeMove,"ASK_OWNER","HUMAN_MESSAGE","SERVER_SHORT_LIMIT","SERVER_LIVE_RESUME","SERVER_LIMIT_RELAUNCH","WAKE_TIME","WAKE_FAIL","REQUEST_REVIEW","ANSWER_DETAIL"],
-    holes:["holeCardMissing","holeQuestionMissing","holeQuestionOff","holeChangedLimitOwner"],
-    spec:{include:["status"],hide:["uncreated"]}},
-  {id:"03-question",title:"질문: 내려간 카드가 돌아오면 질문 장도 돌아온다",explanation:"질문 장은 카드 구성에서 계산하며 판이 가득 차도 빠지지 않는다. 완료와 취소 뒤 늦은 답도 카드 상세와 감독 판에서 받고 상태는 그대로 둔다. 질문을 올린 세션과 현재 담당이 철회할 수 있다.",
-    events:[freeMove,"HUMAN_MOVE_hold","HUMAN_MOVE_done","ASK_OWNER","ASK_OTHER","ANSWER_DETAIL","ANSWER_BOARD","WITHDRAW","WITHDRAW_AUTHOR","HUMAN_MESSAGE"],
-    holes:["holeQuestionMissing"],
-    spec:{include:["status","card.question","card.assignee","card.pasBoard"],hide:["uncreated"],collapse:["on","off","card.assignee","card.pasBoard"]}},
-  {id:"04-limit-owner",title:"한도: 카드에 기록된 담당과 예약으로 재개한다",explanation:"한도 진입 때 담당과 선택적인 재개 시각을 카드에 기록한다. 담당 교체와 한도 탈출은 두 칸을 함께 지운다. 짧은 한도는 시각이 지난 뒤, 긴 한도는 모델이 풀린 뒤 기록된 같은 담당만 잇는다.",
-    events:["SERVER_SHORT_LIMIT","SERVER_LONG_LIMIT","REPLACE_LIVE","REPLACE_LIMITED","SERVER_LIVE_RESUME","SERVER_LIMIT_TIME","SERVER_LIMIT_RELAUNCH"],
-    holes:["holeChangedLimitOwner"],
-    spec:{include:["status","card.reservation","card.assignee","card.limitedOwner"],hide:["uncreated","rVerify","aNone","aAgent","aHuman","originalEnded","replacedEnded","lDifferent","lDifferentLong"],collapse:["ready","talk","off","review"]}},
-  {id:"05-board",title:"판: 계산 장과 상태별 내린 기록",explanation:"직접 장만 12장으로 제한한다. 카드와 질문 장은 구성에서 계산한다. 확인한 막힌 카드 장은 상태, 막힘 종류 또는 상태 변경 시각이 바뀔 때 다시 나온다.",
-    events:["HUMAN_MOVE_noReport","ACK_CARD","HUMAN_MOVE_review","ASK_OWNER","ANSWER_DETAIL","BOARD_ONE","BOARD_FULL","BOARD_ROOM","BOARD_OTHER_REMOVED"],
-    holes:[],
-    spec:{include:["status","card.question","card.dismissed","card.pasBoard"]}},
+const root=cardDecisionMachine.root;
+const commands=Object.keys(CARD_FACT_VALUES) as CardDecisionCommand[];
+const plans:{id:string;title:string;spec:ChartSpec;events:CardDecisionCommand[]}[]=[
+ {id:'01-overview',title:'저장한 상태와 나란한 영역',events:['CREATE','SET_STATUS','ASK_QUESTION','HUMAN_INPUT','BLOCK_FOR_LIMIT','PATCH_CARD_CONTROL'],spec:{include:['cardDecision'],hide:['cardDecision.verdict'],collapse:['s_on','s_off','cardDecision.question','cardDecision.reservation','cardDecision.assignee','cardDecision.archive']}},
+ {id:'02-status',title:'카드 상태 계층',events:['CREATE','SET_STATUS','ASK_QUESTION','REQUEST_REVIEW','BLOCK_FOR_LIMIT','RESUME_VERIFICATION'],spec:{include:['cardDecision.status']}},
+ {id:'03-question',title:'열린 질문의 기억',events:['ASK_QUESTION','ANSWER_QUESTION','WITHDRAW_QUESTION','HUMAN_INPUT','ADD_COMMENT'],spec:{include:['cardDecision.question']}},
+ {id:'04-reservation',title:'예약의 기억',events:['SET_STATUS','BLOCK_FOR_LIMIT','RESUME_SHORT_LIMIT','RESUME_LONG_LIMIT','RESUME_VERIFICATION','PATCH_CARD_CONTROL'],spec:{include:['cardDecision.reservation']}},
+ {id:'05-assignee-archive',title:'담당 종류와 보관',events:['CREATE','CLAIM','CONFIRM_EXECUTION','REGISTER_REPLACEMENT','PATCH_CARD_CONTROL'],spec:{include:['cardDecision.assignee','cardDecision.archive']}},
 ];
-
-// View-only containers: the generated states retain their identities and nesting.
-// Parallel columns match the hand-drawn overview; LR stacks disconnected memory
-// regions vertically in the statechart renderer. No semantic edge is added.
-function overviewColumns(mermaid:string) {
-  const lines=mermaid.split("\n");
-  const start=lines.findIndex(line=>line.startsWith('    state "열린 질문"'));
-  const end=lines.indexOf("}");
-  return [...lines.slice(0,start),"    --",'    state "카드 상태와 동시에 움직이는 기억" as overviewMemory {',"        direction LR",
-    ...lines.slice(start,end).filter(line=>!line.trimStart().startsWith("status -->")).map(line=>`    ${line}`),"    }",
-    ...lines.slice(start,end).filter(line=>line.trimStart().startsWith("status -->")),...lines.slice(end)].join("\n");
+function validateDescriptions(node:typeof root){
+ for(const transitions of Object.values(node.on))for(const t of transitions)if(!t.description||!t.meta?.label)throw new Error(`Missing transition description: ${node.id} ${t.eventType}`);
+ Object.values(node.states).forEach(validateDescriptions);
 }
-
-function questionColumns(mermaid:string) {
-  const lines=mermaid.split("\n");
-  const start=lines.findIndex(line=>line.startsWith('state "'));
-  let end=start,depth=0;
-  do {if(lines[end]!.endsWith("{"))depth++;if(lines[end]!.trim()==="}")depth--;end++;}while(depth>0);
-  const tail=lines.findIndex((line,index)=>index>=end&&/^(\w+ -->|class )/.test(line));
-  return [...lines.slice(0,start),'state "질문의 상태와 기억" as questionView {',"    direction TB",
-    ...lines.slice(start,end).map(line=>`    ${line}`),"    --",'    state "동시에 움직이는 질문과 판의 기억" as questionMemory {',"        direction LR",
-    ...lines.slice(end,tail).map(line=>`        ${line}`),"    }","}",...lines.slice(tail)].join("\n");
+export function renderCardCharts(report:CardPromiseReport){
+ validateDescriptions(root);
+ return plans.map(plan=>({...plan,...toMermaid(root,{...plan.spec,parallel:'stack',hideEvents:commands.filter(c=>!plan.events.includes(c)),marks:report.marks,
+ holes:plan.id==='02-status'?report.holes.filter(h=>h.id!=='holeOrphan'):plan.id==='03-question'?report.holes.filter(h=>h.id==='holeOrphan'):[]})}));
 }
-
-export function renderCardCharts(report:CardPromiseReport) {
-  return plans.map(plan=>{
-    const events=new Set(plan.events);
-    const visible=(id:string)=>{
-      let node:typeof cardMachine.root|undefined=cardMachine.getStateNodeById(id),included=false;
-      while(node){if(plan.spec.hide?.includes(node.id))return false;if(plan.spec.include.includes(node.id))included=true;node=node.parent;}
-      return included;
-    };
-    const labels=new Set(plan.events.map(e=>EVENT_LABELS[e]));
-    const holes=report.holes.filter(h=>plan.holes.includes(h.id)).map(h=>({...h,incoming:h.incoming.filter(e=>visible(e.from)&&labels.has(e.label)).slice(0,1)}));
-    const projectedGroups=Object.fromEntries(Object.entries(groups).map(([key,group])=>[key,{...group}]));
-    const groupMarks=new Map<string,Set<number>>();
-    for(const mark of report.marks.transitions) if(events.has(mark.event))
-      for(const transition of cardMachine.getStateNodeById(mark.source).on[mark.event]??[]) {
-        const key=transition.meta?.chartGroup;
-        if(typeof key!=="string"||!projectedGroups[key])continue;
-        const numbers=groupMarks.get(key)??new Set<number>();
-        mark.discrepancies.forEach(n=>numbers.add(n));groupMarks.set(key,numbers);
-      }
-    for(const [key,numbers] of groupMarks) projectedGroups[key]!.label+=` (어긋남 ${[...numbers].sort((a,b)=>a-b).join(", ")})`;
-    if(plan.id==="01-overview") {
-      // The overview lists the parallel memories; their writes are shown in
-      // detail charts, rather than an uninformative loop around the whole card.
-      for(const key of Object.keys(projectedGroups))if(key.startsWith("memory-"))
-        projectedGroups[key]={from:"uncreated",to:"uncreated",label:projectedGroups[key]!.label};
-    }
-    const states=[...report.marks.states];
-    if(report.holes.some(h=>h.id==="holeOrphan"&&h.reachable))states.push("qOrphan");
-    const spec:ChartSpec={...plan.spec,groups:projectedGroups,parallel:"stack",
-      hideEvents:CARD_EVENTS.filter(e=>!events.has(e.type)).map(e=>e.type),
-      marks:{...report.marks,states},holes};
-    const rendered=toMermaid(cardMachine.root,spec);
-    if(plan.id==="01-overview")rendered.mermaid=overviewColumns(rendered.mermaid);
-    if(plan.id==="03-question")rendered.mermaid=questionColumns(rendered.mermaid);
-    if(plan.id==="05-board")rendered.mermaid=rendered.mermaid.replace("direction TB","direction LR");
-    return {...plan,...rendered};
-  });
+function permission(report:CardPromiseReport,c:CardDecisionCommand,actor:string){
+ const family=actor==='human'?'human':actor==='server'?'server':'agent';
+ const metadata=cardDecisionMachine.getStateNodeById('cardDecision.verdict.ready').on[c]![0]!.meta!;
+ if(!(metadata.entrances as readonly string[]).includes(family))return '입구 없음';
+ const p=report.permissions[`${c}:${actor}`];
+ if(!p)return '도달 상태 없음';
+ const errors=[...p.guards].sort().map(g=>{const [guard,id]=g.split(': ');const e=CARD_FAILURES[id!]!;return `${guard} (${e?.statusCode??'일반 오류'}, ${e?.code??id})`;}).join('<br>');
+ return !p.reject?'모두 허용':!p.apply?`모두 거절: ${errors}`:`조건부: ${errors}`;
 }
-
-export function generateCardStateDocument(report:CardPromiseReport=checkCardPromises()) {
-  const charts=renderCardCharts(report);
-  const stateCount=(node:typeof cardMachine.root):number=>1+Object.values(node.states).reduce((sum,n)=>sum+stateCount(n),0);
-  const lines=["# 현행 카드 규칙", "", "이 문서는 XState 정의와 약속 검사에서 생성한다. 걸음 2의 질문 규칙과 한도 예약, 계산한 판 장과 내린 기록을 반영한 현행 모형이다.", "",
-    "한 카드에 열린 질문은 하나까지만 대조했다. 한 카드의 동시 질문 여러 개, 보관, 권한 표 전체, 자동 배정 조정자 내부와 임의의 담당 변경 조합은 대조하지 않았다.", "",
-    "판의 전체 장 수와 이 카드의 장 수는 DB 사실에서 읽는다. 기계에는 숫자를 저장하지 않고, 다른 장이 10장 이하인 경우와 11장인 경우, 12장인 단계만 둔다. 한도 담당과 재개 시각은 cards.limit_resume_session_id와 limit_resume_at에서 읽는다. 시각 없는 예약도 담당을 기록하며, 담당 교체가 기록을 지운다.", "",
-    `영역 7개, 상태 노드 ${stateCount(cardMachine.root)}개, 사건 ${CARD_EVENTS.length}개, 도달 구성 ${report.configurationCount}개, 정의별 전이 갈래 ${report.definitionCount}개.`, "",
-    "빨강은 약속을 어기는 도달 구성이 있다는 뜻이다. 별표는 이름 없는 상태나 구멍이다. 그림은 사건을 골라 나누며, 같은 사건의 화살표는 해당 그림에서 전부 남기거나 전부 숨긴다. 자유 이동과 같은 결과의 기억 쓰기는 각각 한 화살표로 묶는다. 기억 쓰기 화살표는 값이 실제로 바뀌는 대표 시작과 끝을 나타내며, 이미 같은 값인 쓰기는 따로 그리지 않는다.", ""];
-  for(const chart of charts) lines.push(`## ${chart.title}`,"",chart.explanation,"","```mermaid",chart.mermaid,"```","",
-    `화살표 ${chart.edgeCount}개. 남긴 사건: ${chart.events.map(e=>EVENT_LABELS[e]).join(" / ")}. 나머지 사건은 아래 전체 표에서 확인한다.`,"");
-  lines.push("## 약속 검사", "", "약속 1-나는 이번 실제 DB 대조에서 새로 찾았다. 가득 찬 판에서 신규 카드 장이 사라지는 것으로, 질문 장을 버리는 어긋남 1과 같은 뿌리다.", "",
-    "| 약속 | 결과 | 어긋남 | 어긴 구성 수 | 예시 사건 경로 |", "| :-- | :-- | :-- | --: | :-- |");
-  for(const p of [report.promises[0]!,report.cardEntryPromise,...report.promises.slice(1)]) lines.push(`| ${p.name} | ${p.kept?"지킴":"어김"} | ${p.discrepancies.join(", ")||"별도 약속"} | ${p.violations} | ${p.example.map(e=>EVENT_LABELS[e]).join(" → ")||"없음"} |`);
-  lines.push("", "## 사건과 원문 위치", "", `상태를 정하는 ${Object.keys(STATUS_DECISIONS).length}곳을 사건에 연결했다. 서버의 복합 루프 전체가 아니라 카드 서비스 변경 경계를 대조한다. 한도 자동 재개와 검증 깨우기는 실제 디스패처도 실행한다.`, "",
-    "| 사건 | 뜻 | 원문 파일과 함수 |", "| :-- | :-- | :-- |");
-  for(const event of CARD_EVENTS)lines.push(`| \`${event.type}\` | ${EVENT_LABELS[event.type]} | ${EVENT_SOURCES[event.type]!.map(s=>`\`${s}\``).join("<br>")} |`);
-  lines.push("", "## 다시 만들기", "", "저장소 루트에서 실행한다. 첫 명령은 Markdown을 만들고, 선택한 폴더에는 같은 정의의 Mermaid 원문과 검사 결과도 저장한다.", "",
-    "```bash", "corepack pnpm@10.32.1 --dir orch-server-ts exec tsx scripts/card-state-charts.ts <그림 원문 폴더>", "```", "");
-  return {markdown:lines.join("\n"),charts,report};
+export function generateCardStateDocument(report:CardPromiseReport=checkCardPromises()){
+ const charts=renderCardCharts(report);
+ const lines=['# 카드 상태 결정 규칙','',
+ '이 문서는 결정 기계와 검증 세계에서 만든 생성물이다. 동작 기준 커밋은 c8b9c745a, 구조 전환 시작 기준은 52fb382d5다. 기준 위의 결정 정의로 그림, 권한, 규칙과 검사를 함께 생성한다. 런타임 서비스 연결은 다음 PR에서 한다.','',
+ '저장 영역은 status, question, reservation, assignee, archive다. verdict는 목표 없는 전이로 허용, 무변경, 거절을 고른다. 담당 세션 생존과 감독 PAS, 다른 장 수와 내린 기록은 검증 세계의 환경이다. 원래 담당과 교체 담당의 생존 상태, 질문 작성자 관계, limitedOwner는 저장 상태 그림에서 제거했다. 작성자와 담당 관계는 사건 사실로, 생존은 환경으로 옮겼으며 예약 담당 불일치는 DB CHECK가 금지한다.','',
+ `도달 세계 ${report.configurationCount}개. 유한 사실은 명령별 값 목록을 전부 열거하고 사실 일관성만 걸러 BFS로 탐색한다. 권한 표는 도달 세계에서 실제 선택한 verdict와 거절 가드 결과다. 같은 결정 값과 환경 담당 상태의 판정은 재사용한다.`,
+ ''];
+ for(const chart of charts)lines.push(`## ${chart.title}`,'','```mermaid',chart.mermaid,'```','',`전이 화살표 ${chart.edgeCount}개. 이 보기의 명령은 ${chart.events.join(', ')}다. 다른 명령은 이 그림에서 모두 숨기고 아래 출처 표에 적었다. 빨강은 약속 6을 어기는 세계가 있는 상태이며, 점선 구멍은 도달하지 않는 구성을 뜻한다.`,'');
+ lines.push('## 상태와 저장 칸','', '| 상태 | status | blocked_kind |','| :-- | :-- | :-- |');
+ for(const leaf of Object.keys(STATUS_PATHS) as (keyof typeof STATUS_PATHS)[]){const value={...rowToStateValue(null,[]),status:STATUS_PATHS[leaf]},c=stateValueToColumns(value);lines.push(`| ${leaf} | ${c.status} | ${c.blocked_kind??'null'} |`);}
+ lines.push('', 'writeStatus 액션이 있을 때만 status와 blocked_kind를 쓴다. 같은 상태를 다시 지정해도 완료 정보와 대기열 키 쓰기는 실행한다. 예약 제거, 담당 연결, 질문 행과 now 서식은 선택된 기호 액션을 decoder가 번역한다. 댓글의 claim, 항목, 상태 단계는 별개 UPDATE로 남긴다. status 칸을 쓰지 않는 담당 연결은 검증 예약을 보존한다.','',
+ '## 판에 오르는 장','', '판은 상태 영역이 아니다. cardBoardEntries가 카드, 질문, 감독, 다른 장 단계와 내린 기록에서 장을 계산한다. 다른 장 수는 계산 장을 밀어내지 않으며 아래 모든 조합을 생성했다.','',
+ '| 카드 상태 | 보관 | 질문 | 감독과 다른 장 | 내린 기록 | 계산 장 |','| :-- | :-- | :-- | :-- | :-- | :-- |');
+ for(const status of Object.keys(STATUS_PATHS) as (keyof typeof STATUS_PATHS)[])for(const archive of ['active','archived'] as const)for(const question of ['none','open'] as const)for(const pas of ['none','room','one','full'] as const)for(const dismissed of [false,true]){
+ const snapshot=cardDecisionMachine.resolveState({value:{...rowToStateValue(null,[]),status:STATUS_PATHS[status],archive,question},context:{}});
+ lines.push(`| ${status} | ${archive} | ${question} | ${pas} | ${dismissed?'있음':'없음'} | ${boardEntriesOf({snapshot,pas,dismissed,owner:'live'}).join(', ')||'없음'} |`);
+ }
+ lines.push('', '## 주체 관계별 권한','', 'PAS는 agent 세션이다. 현재 담당, 작성자, 담당이면서 작성자인 관계를 별도 행으로 그대로 보여 준다. 입구 없음은 명령 출처 metadata에서 읽으며 거절 가드와 기존 오류는 실제 열거 결과다.','',
+ '| 명령 | 주체 관계 | 사람 | 현재 담당 세션 | 다른 agent 세션 | PAS | 서버 |', '| :-- | :-- | :-- | :-- | :-- | :-- | :-- |');
+ for(const c of commands)for(const actor of CARD_ACTORS){const p=permission(report,c,actor),isAgent=!['human','server','external'].includes(actor),owner=['owner','ownerAuthor'].includes(actor);lines.push(`| ${c} | ${actor} | ${actor==='human'?p:'해당 없음'} | ${isAgent&&owner?p:'해당 없음'} | ${isAgent&&!owner?p:'해당 없음'} | ${isAgent&&actor!=='anonymousAgent'?p:'해당 없음'} | ${actor==='server'?p:'해당 없음'} |`);}
+ lines.push('', '## 규칙 요약과 운영 호출지','', '| 명령 | 전이 설명 | 운영 출처 |', '| :-- | :-- | :-- |');
+ for(const c of commands){const t=cardDecisionMachine.getStateNodeById('cardDecision.verdict.ready').on[c]![0]!;lines.push(`| ${c} | ${t.meta!.rule} | ${(t.meta!.callers as readonly string[]).join('<br>')} |`);}
+ lines.push('', '## 약속과 구멍','', '| 약속 | 위반 수 | 예시 최단 경로 |','| :-- | --: | :-- |');
+ for(const p of [report.promises[0]!,report.cardEntryPromise,...report.promises.slice(1)])lines.push(`| ${p.name} | ${p.violations} | ${p.example.join(' → ')||'없음'} |`);
+ lines.push('', '| 구멍 | 도달 | 설명 |','| :-- | :-- | :-- |');
+ for(const h of report.holes)lines.push(`| ${h.label} | ${h.reachable?'닿음':'닿지 않음'} | ${h.note??''} |`);
+ lines.push('', '기존 모형의 담당 생존, 작성자, admitted, 감독과 내린 기록을 저장 영역에서 뺐으므로 세계 구성 수와 약속 6의 위반 수는 이전의 구성 수와 단위가 다르다. 약속 1-가부터 5는 위반 0을 유지하고, 약속 6은 알려진 실패를 유지한다.','', '## 다시 만들기','', '```bash','corepack pnpm@10.32.1 --dir orch-server-ts exec tsx scripts/card-state-charts.ts docs/cards/generated','```','');
+ return {markdown:lines.join('\n'),charts,report};
 }

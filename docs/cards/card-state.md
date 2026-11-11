@@ -1,417 +1,922 @@
-# 현행 카드 규칙
+# 카드 상태 결정 규칙
 
-이 문서는 XState 정의와 약속 검사에서 생성한다. 걸음 2의 질문 규칙과 한도 예약, 계산한 판 장과 내린 기록을 반영한 현행 모형이다.
+이 문서는 결정 기계와 검증 세계에서 만든 생성물이다. 동작 기준 커밋은 c8b9c745a, 구조 전환 시작 기준은 52fb382d5다. 기준 위의 결정 정의로 그림, 권한, 규칙과 검사를 함께 생성한다. 런타임 서비스 연결은 다음 PR에서 한다.
 
-한 카드에 열린 질문은 하나까지만 대조했다. 한 카드의 동시 질문 여러 개, 보관, 권한 표 전체, 자동 배정 조정자 내부와 임의의 담당 변경 조합은 대조하지 않았다.
+저장 영역은 status, question, reservation, assignee, archive다. verdict는 목표 없는 전이로 허용, 무변경, 거절을 고른다. 담당 세션 생존과 감독 PAS, 다른 장 수와 내린 기록은 검증 세계의 환경이다. 원래 담당과 교체 담당의 생존 상태, 질문 작성자 관계, limitedOwner는 저장 상태 그림에서 제거했다. 작성자와 담당 관계는 사건 사실로, 생존은 환경으로 옮겼으며 예약 담당 불일치는 DB CHECK가 금지한다.
 
-판의 전체 장 수와 이 카드의 장 수는 DB 사실에서 읽는다. 기계에는 숫자를 저장하지 않고, 다른 장이 10장 이하인 경우와 11장인 경우, 12장인 단계만 둔다. 한도 담당과 재개 시각은 cards.limit_resume_session_id와 limit_resume_at에서 읽는다. 시각 없는 예약도 담당을 기록하며, 담당 교체가 기록을 지운다.
+도달 세계 3834개. 유한 사실은 명령별 값 목록을 전부 열거하고 사실 일관성만 걸러 BFS로 탐색한다. 권한 표는 도달 세계에서 실제 선택한 verdict와 거절 가드 결과다. 같은 결정 값과 환경 담당 상태의 판정은 재사용한다.
 
-영역 7개, 상태 노드 60개, 사건 71개, 도달 구성 1679개, 정의별 전이 갈래 250개.
-
-빨강은 약속을 어기는 도달 구성이 있다는 뜻이다. 별표는 이름 없는 상태나 구멍이다. 그림은 사건을 골라 나누며, 같은 사건의 화살표는 해당 그림에서 전부 남기거나 전부 숨긴다. 자유 이동과 같은 결과의 기억 쓰기는 각각 한 화살표로 묶는다. 기억 쓰기 화살표는 값이 실제로 바뀌는 대표 시작과 끝을 나타내며, 이미 같은 값인 쓰기는 따로 그리지 않는다.
-
-## 전체: 상태와 함께 움직이는 기억
-
-카드 상태는 계층으로, 질문과 예약, 담당과 내린 기록은 나란한 영역으로 읽는다. 접힌 상자의 빨강은 그 아래에 약속을 어기는 구성이 도달한다는 뜻이다.
+## 저장한 상태와 나란한 영역
 
 ```mermaid
 stateDiagram-v2
 direction TB
 classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
 classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
-state "현행 카드 규칙 (운영 코드와 대조할 모형)" as card {
+state "카드에 저장한 사실에서 명령 판정과 쓰기를 정한다" as cardDecision {
     direction TB
-    state "카드 상태" as status {
+    state "카드 상태" as cardDecision_status {
         direction TB
-        state "판 위" as on {
-            direction TB
-            state "준비" as ready
-            state "실행 중" as running
-            state "말로 풀리는 기다림" as talk
-            state "말로 안 풀리는 기다림" as silent
-            state "판에 올라야 하는데 카드 장이 없음 *" as hole_holeCardMissing
-            state "질문은 열렸는데 판에 장이 없음 *" as hole_holeQuestionMissing
-            running --> silent: 담당이 짧은 한도로 끝난다
-            talk --> running: 디렉터가 담당에게 말한다 [말로 풀리는 기다림]
-            talk --> running: 서버가 깨운다 [검증 시각이 됨]
-            silent --> running: 서버가 잇는다 [시각 없는 예약의 모델이 풀림]
-        }
-        state "내려감" as off
+        state "아직 만들지 않음" as s_uncreated
+        state "판 위" as s_on
+        state "내려감" as s_off
     }
-    --
-    state "카드 상태와 동시에 움직이는 기억" as overviewMemory {
-        direction LR
-        state "열린 질문" as card_question
-        state "카드에 기록된 담당 재개 예약" as card_reservation
-        state "담당" as card_assignee
-        state "이 상태에서 내린 카드 장" as card_dismissed {
-            direction TB
-            state "내린 기록 없음" as dNone
-            state "지금 상태에서 내림" as dCurrent
-        }
-        state "감독 PAS와 이 카드의 것이 아닌 장의 수 (환경)" as card_pasBoard
-        state "카드에 기록된 한도 담당과 현재 담당의 관계" as card_limitedOwner
-    }
-    status --> status: 디렉터와 담당은 상태를 직접 옮긴다 [담당 권한 안에서]
+    state "열린 질문" as cardDecision_question
+    state "카드에 기록한 예약" as cardDecision_reservation
+    state "담당 종류" as cardDecision_assignee
+    state "보관" as cardDecision_archive
 }
-status --> talk: 담당이 질문을 올린다
-status --> talk: 다른 에이전트가 질문을 올린다 [담당 세션 없음]
-status --> silent: 담당이 검수를 요청한다
-class hole_holeCardMissing hole
-class hole_holeQuestionMissing hole
-class silent hole
+cardDecision_status --> s_on: 상태를 옮긴다
+cardDecision_status --> s_off: 상태를 옮긴다
+cardDecision_status --> s_on: 카드를 만든다
+cardDecision_status --> s_on: 질문을 올린다
+cardDecision_status --> s_on: 사용자가 담당에게 말한다
+cardDecision_status --> s_on: 현재 담당의 한도 종료를 기록한다
+class s_on breaks
 ```
 
-화살표 8개. 남긴 사건: 디렉터가 실행 중으로 옮긴다 / 담당이 질문을 올린다 / 다른 에이전트가 질문을 올린다 [담당 세션 없음] / 디렉터가 담당에게 말한다 [말로 풀리는 기다림] / 담당이 짧은 한도로 끝난다 / 서버가 점검한다 [예약 시각 전에는 재개하지 않음] / 서버가 잇는다 [시각 없는 예약의 모델이 풀림] / 서버가 깨운다 [검증 시각이 됨] / 담당이 검수를 요청한다. 나머지 사건은 아래 전체 표에서 확인한다.
+전이 화살표 6개. 이 보기의 명령은 CREATE, SET_STATUS, ASK_QUESTION, HUMAN_INPUT, BLOCK_FOR_LIMIT, PATCH_CARD_CONTROL다. 다른 명령은 이 그림에서 모두 숨기고 아래 출처 표에 적었다. 빨강은 약속 6을 어기는 세계가 있는 상태이며, 점선 구멍은 도달하지 않는 구성을 뜻한다.
 
-## 카드 상태: 같은 기다림에서 물려받는 규칙
-
-말로 풀리는 기다림의 세 자식은 디렉터가 말하면 재개하는 규칙을 함께 물려받는다. 자유 이동 하나가 모든 잎 상태의 직접 이동을 대표한다.
+## 카드 상태 계층
 
 ```mermaid
 stateDiagram-v2
 direction TB
 classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
 classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
-state "카드 상태" as status {
+state "카드 상태" as cardDecision_status {
     direction TB
-    state "판 위" as on {
+    state "아직 만들지 않음" as s_uncreated
+    state "판 위" as s_on {
         direction TB
-        state "준비" as ready {
+        state "준비" as cardDecision_status_on_ready {
             direction TB
-            state "할 일" as todo
-            state "대기열" as queued {
+            state "할 일" as s_todo
+            state "대기열" as cardDecision_status_on_ready_queued {
                 direction TB
-                state "대기열" as queuedNormal
-                state "담당 에이전트 없음 표시 *" as queuedMissing
+                state "대기열" as s_queued
+                state "담당 에이전트 없음 표시" as s_missing
             }
         }
-        state "실행 중" as running
-        state "말로 풀리는 기다림" as talk {
+        state "실행 중" as s_running
+        state "말로 풀리는 기다림" as cardDecision_status_on_talk {
             direction TB
-            state "질문으로 막힘" as question
-            state "보고 없이 막힘" as noReport
-            state "사유 없이 막힘" as other
-            state "검증 대기" as verification
-            verification --> noReport: 서버가 보고 없이 막는다 [검증 깨우기 실패]
+            state "질문으로 막힘" as s_question
+            state "보고 없이 막힘" as s_noReport
+            state "사유 없이 막힘" as s_other
+            state "검증 대기" as s_verification
         }
-        state "말로 안 풀리는 기다림" as silent {
+        state "말로 안 풀리는 기다림" as cardDecision_status_on_silent {
             direction TB
-            state "한도로 막힘" as limit {
+            state "한도로 막힘" as s_limit {
                 direction TB
                 state "담당이 바뀐 한도 막힘 *" as hole_holeChangedLimitOwner
             }
-            state "검수 대기" as review
+            state "검수 대기" as s_review
         }
         state "판에 올라야 하는데 카드 장이 없음 *" as hole_holeCardMissing
         state "질문은 열렸는데 판에 장이 없음 *" as hole_holeQuestionMissing
-        talk --> running: 디렉터가 담당에게 말한다 [말로 풀리는 기다림]
     }
-    state "내려감" as off {
+    state "내려감" as s_off {
         direction TB
-        state "보류" as hold
-        state "완료" as done
-        state "취소" as cancelled
+        state "보류" as s_hold
+        state "완료" as s_done
+        state "취소" as s_cancelled
     }
 }
-status --> status: 디렉터와 담당은 상태를 직접 옮긴다 [담당 권한 안에서]
-status --> question: 담당이 질문을 올린다
-status --> review: 담당이 검수를 요청한다
-running --> limit: 담당이 짧은 한도로 끝난다
-question --> running: 디렉터가 마지막 질문에 답한다 [카드 상세]
-verification --> running: 서버가 깨운다 [검증 시각이 됨]
-limit --> running: 서버가 잇는다 [시각 없는 예약의 모델이 풀림]
+cardDecision_status --> s_todo: 상태를 옮긴다
+cardDecision_status --> s_queued: 상태를 옮긴다
+cardDecision_status --> s_running: 상태를 옮긴다
+cardDecision_status --> s_question: 상태를 옮긴다
+cardDecision_status --> s_noReport: 상태를 옮긴다
+cardDecision_status --> s_other: 상태를 옮긴다
+cardDecision_status --> s_limit: 상태를 옮긴다
+cardDecision_status --> s_verification: 상태를 옮긴다
+cardDecision_status --> s_review: 상태를 옮긴다
+cardDecision_status --> s_hold: 상태를 옮긴다
+cardDecision_status --> s_done: 상태를 옮긴다
+cardDecision_status --> s_cancelled: 상태를 옮긴다
+cardDecision_status --> s_todo: 카드를 만든다
+cardDecision_status --> s_queued: 카드를 만든다
+cardDecision_status --> s_review: 검수를 요청한다
+cardDecision_status --> s_question: 질문을 올린다
+cardDecision_status --> s_limit: 현재 담당의 한도 종료를 기록한다
+cardDecision_status --> s_running: 검증 시각이 되어 잇는다
+class s_question breaks
+class s_noReport breaks
+class s_other breaks
+class s_limit breaks
 class hole_holeCardMissing hole
 class hole_holeQuestionMissing hole
 class hole_holeChangedLimitOwner hole
 ```
 
-화살표 9개. 남긴 사건: 디렉터가 실행 중으로 옮긴다 / 담당이 질문을 올린다 / 디렉터가 담당에게 말한다 [말로 풀리는 기다림] / 담당이 짧은 한도로 끝난다 / 서버가 점검한다 [예약 시각 전에는 재개하지 않음] / 서버가 잇는다 [시각 없는 예약의 모델이 풀림] / 서버가 깨운다 [검증 시각이 됨] / 서버가 보고 없이 막는다 [검증 깨우기 실패] / 담당이 검수를 요청한다 / 디렉터가 마지막 질문에 답한다 [카드 상세]. 나머지 사건은 아래 전체 표에서 확인한다.
+전이 화살표 18개. 이 보기의 명령은 CREATE, SET_STATUS, ASK_QUESTION, REQUEST_REVIEW, BLOCK_FOR_LIMIT, RESUME_VERIFICATION다. 다른 명령은 이 그림에서 모두 숨기고 아래 출처 표에 적었다. 빨강은 약속 6을 어기는 세계가 있는 상태이며, 점선 구멍은 도달하지 않는 구성을 뜻한다.
 
-## 질문: 내려간 카드가 돌아오면 질문 장도 돌아온다
-
-질문 장은 카드 구성에서 계산하며 판이 가득 차도 빠지지 않는다. 완료와 취소 뒤 늦은 답도 카드 상세와 감독 판에서 받고 상태는 그대로 둔다. 질문을 올린 세션과 현재 담당이 철회할 수 있다.
+## 열린 질문의 기억
 
 ```mermaid
 stateDiagram-v2
 direction TB
 classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
 classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
-state "질문의 상태와 기억" as questionView {
+state "열린 질문" as cardDecision_question {
     direction TB
-    state "카드 상태" as status {
-        direction TB
-        state "판 위" as on
-        state "내려감" as off
-    }
-    --
-    state "동시에 움직이는 질문과 판의 기억" as questionMemory {
-        direction LR
-        state "열린 질문" as card_question {
-            direction TB
-            state "없음" as qNone
-            state "지금 담당이 올린 질문" as qOwner
-            state "담당 없이 올린 질문" as qOrphan
-            state "옛 담당이 올린 질문" as qOther
-            qNone --> qOwner: 담당이 질문을 올린다
-            qNone --> qOrphan: 다른 세션이 질문한다 [담당 세션 없음]
-        }
-        state "담당" as card_assignee
-        state "감독 PAS와 이 카드의 것이 아닌 장의 수 (환경)" as card_pasBoard
-    }
+    state "없음" as q_none
+    state "열린 질문이 있음" as q_open
+    state "철회할 세션이 없는 질문 *" as hole_holeOrphan
 }
-status --> status: 디렉터와 담당은 상태를 직접 옮긴다 [담당 권한 안에서]
-status --> on: 담당이 질문을 올린다
-status --> on: 다른 에이전트가 질문을 올린다 [담당 세션 없음]
-card_question --> qNone: 답하거나 철회하거나 사람이 말하면 닫는다 [카드가 끝나도 답은 받음]
-class on hole
+cardDecision_question --> q_open: 질문을 올린다
+cardDecision_question --> q_none: 질문에 답한다
+cardDecision_question --> q_none: 질문을 철회한다
+cardDecision_question --> q_none: 사용자가 담당에게 말한다
+cardDecision_question --> q_none: 커멘트를 남긴다
+class hole_holeOrphan hole
 ```
 
-화살표 6개. 남긴 사건: 디렉터가 실행 중으로 옮긴다 / 디렉터가 보류으로 옮긴다 / 디렉터가 완료으로 옮긴다 / 담당이 질문을 올린다 / 다른 에이전트가 질문을 올린다 [담당 세션 없음] / 디렉터가 마지막 질문에 답한다 [카드 상세] / 디렉터가 마지막 질문에 답한다 [감독 판] / 담당이 마지막 질문을 철회한다 / 올린 세션이 마지막 질문을 철회한다 / 디렉터가 담당에게 말한다 [말로 풀리는 기다림]. 나머지 사건은 아래 전체 표에서 확인한다.
+전이 화살표 5개. 이 보기의 명령은 ASK_QUESTION, ANSWER_QUESTION, WITHDRAW_QUESTION, HUMAN_INPUT, ADD_COMMENT다. 다른 명령은 이 그림에서 모두 숨기고 아래 출처 표에 적었다. 빨강은 약속 6을 어기는 세계가 있는 상태이며, 점선 구멍은 도달하지 않는 구성을 뜻한다.
 
-## 한도: 카드에 기록된 담당과 예약으로 재개한다
-
-한도 진입 때 담당과 선택적인 재개 시각을 카드에 기록한다. 담당 교체와 한도 탈출은 두 칸을 함께 지운다. 짧은 한도는 시각이 지난 뒤, 긴 한도는 모델이 풀린 뒤 기록된 같은 담당만 잇는다.
+## 예약의 기억
 
 ```mermaid
 stateDiagram-v2
 direction TB
 classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
 classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
-state "카드 상태" as status {
+state "카드에 기록한 예약" as cardDecision_reservation {
     direction TB
-    state "판 위" as on {
-        direction TB
-        state "준비" as ready
-        state "실행 중" as running
-        state "말로 풀리는 기다림" as talk
-        state "말로 안 풀리는 기다림" as silent {
-            direction TB
-            state "한도로 막힘" as limit {
-                direction TB
-                state "담당이 바뀐 한도 막힘 *" as hole_holeChangedLimitOwner
-            }
-            state "검수 대기" as review
-        }
-    }
-    state "내려감" as off
+    state "예약 없음" as r_none
+    state "검증 예약" as r_verify
+    state "시각 있는 한도 예약" as r_limit
+    state "시각 없는 한도 예약" as r_longLimit
 }
-state "카드에 기록된 담당 재개 예약" as card_reservation {
-    direction TB
-    state "없음" as rNone
-    state "카드에 적힌 짧은 한도 시각" as rLimit
-    state "시각 없이 담당만 기록한 한도 재개" as rLongLimit
-    rNone --> rLimit: 담당이 짧은 한도로 끝난다
-    rNone --> rLongLimit: 담당이 긴 한도로 끝나 시각 없이 기록한다
-    rLimit --> rNone: 담당 교체 또는 한도 막힘을 나가 예약이 없어진다
-}
-state "담당" as card_assignee {
-    direction TB
-    state "원래 담당이 살아 있음" as originalLive
-    state "원래 담당이 짧은 한도 종료" as originalLimited
-    state "원래 담당이 긴 한도 종료" as originalLongLimited
-    state "새 담당이 살아 있음" as replacedLive
-    state "새 담당이 긴 한도 종료" as replacedLimited
-    originalLive --> originalLimited: 원래 담당이 짧은 한도로 끝난다
-    originalLimited --> replacedLive: 살아 있는 새 담당으로 바꾼다
-    originalLimited --> replacedLimited: 긴 한도로 끝난 새 담당으로 바꾼다
-}
-state "카드에 기록된 한도 담당과 현재 담당의 관계" as card_limitedOwner {
-    direction TB
-    state "기록된 한도 담당 없음" as lNone
-    state "시각 있는 예약의 담당이 지금 담당" as lSame
-    state "시각 없는 예약의 담당이 지금 담당" as lSameLong
-    lNone --> lSame: 짧은 한도 진입 때 카드에 담당을 기록한다
-    lNone --> lSameLong: 긴 한도 진입 때 카드에 담당을 기록한다
-}
-running --> limit: 담당이 짧은 한도로 끝난다
-running --> limit: 담당이 긴 한도로 끝난다
-limit --> running: 서버가 깨운다 [짧은 한도가 풀림]
-limit --> running: 서버가 잇는다 [시각 없는 예약의 모델이 풀림]
-card_assignee --> originalLongLimited: 담당이 긴 한도로 끝난다
-card_limitedOwner --> lNone: 한도 막힘을 나가 카드의 담당 기록을 지운다
-class hole_holeChangedLimitOwner hole
+cardDecision_reservation --> r_none: 상태를 옮긴다
+cardDecision_reservation --> r_verify: 상태를 옮긴다
+cardDecision_reservation --> r_none: 시각 없는 한도 예약을 잇는다
+cardDecision_reservation --> r_none: 현재 담당의 한도 종료를 기록한다
+cardDecision_reservation --> r_limit: 현재 담당의 한도 종료를 기록한다
+cardDecision_reservation --> r_longLimit: 현재 담당의 한도 종료를 기록한다
+cardDecision_reservation --> r_none: 짧은 한도 시각이 되어 잇는다
+cardDecision_reservation --> r_none: 검증 시각이 되어 잇는다
+cardDecision_reservation --> r_none: 담당과 보관을 고친다
 ```
 
-화살표 14개. 남긴 사건: 담당이 짧은 한도로 끝난다 / 담당이 긴 한도로 끝난다 / 실행 중인 세션으로 담당을 바꾼다 / 긴 한도로 끝난 세션으로 담당을 바꾼다 / 서버가 점검한다 [예약 시각 전에는 재개하지 않음] / 서버가 깨운다 [짧은 한도가 풀림] / 서버가 잇는다 [시각 없는 예약의 모델이 풀림]. 나머지 사건은 아래 전체 표에서 확인한다.
+전이 화살표 9개. 이 보기의 명령은 SET_STATUS, BLOCK_FOR_LIMIT, RESUME_SHORT_LIMIT, RESUME_LONG_LIMIT, RESUME_VERIFICATION, PATCH_CARD_CONTROL다. 다른 명령은 이 그림에서 모두 숨기고 아래 출처 표에 적었다. 빨강은 약속 6을 어기는 세계가 있는 상태이며, 점선 구멍은 도달하지 않는 구성을 뜻한다.
 
-## 판: 계산 장과 상태별 내린 기록
-
-직접 장만 12장으로 제한한다. 카드와 질문 장은 구성에서 계산한다. 확인한 막힌 카드 장은 상태, 막힘 종류 또는 상태 변경 시각이 바뀔 때 다시 나온다.
+## 담당 종류와 보관
 
 ```mermaid
 stateDiagram-v2
-direction LR
+direction TB
 classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
 classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
-state "카드 상태" as status {
+state "담당 종류" as cardDecision_assignee {
     direction TB
-    state "아직 만들지 않음" as uncreated
-    state "판 위" as on {
-        direction TB
-        state "준비" as ready {
-            direction TB
-            state "할 일" as todo
-            state "대기열" as queued {
-                direction TB
-                state "대기열" as queuedNormal
-                state "담당 에이전트 없음 표시 *" as queuedMissing
-            }
-        }
-        state "실행 중" as running
-        state "말로 풀리는 기다림" as talk {
-            direction TB
-            state "질문으로 막힘" as question
-            state "보고 없이 막힘" as noReport
-            state "사유 없이 막힘" as other
-            state "검증 대기" as verification
-        }
-        state "말로 안 풀리는 기다림" as silent {
-            direction TB
-            state "한도로 막힘" as limit
-            state "검수 대기" as review
-        }
-    }
-    state "내려감" as off {
-        direction TB
-        state "보류" as hold
-        state "완료" as done
-        state "취소" as cancelled
-    }
+    state "담당 없음" as a_none
+    state "에이전트" as a_agent
+    state "사람" as a_human
+    state "세션" as a_session
 }
-state "열린 질문" as card_question {
+state "보관" as cardDecision_archive {
     direction TB
-    state "없음" as qNone
-    state "지금 담당이 올린 질문" as qOwner
-    state "담당 없이 올린 질문" as qOrphan
-    state "옛 담당이 올린 질문" as qOther
-    qNone --> qOwner: 담당이 질문을 올린다
+    state "활성" as arch_active
+    state "보관됨" as arch_archived
 }
-state "이 상태에서 내린 카드 장" as card_dismissed {
-    direction TB
-    state "내린 기록 없음" as dNone
-    state "지금 상태에서 내림" as dCurrent
-    dNone --> dCurrent: 디렉터가 막힌 카드 장을 확인한다
-}
-state "감독 PAS와 이 카드의 것이 아닌 장의 수 (환경)" as card_pasBoard {
-    direction TB
-    state "감독 PAS 없음" as pasNone
-    state "감독 PAS 있음" as card_pasBoard_available {
-        direction TB
-        state "다른 장 여유 (10장 이하)" as pasRoom
-        state "다른 장 한 자리 남음 (11장)" as pasOne
-        state "다른 장 가득 (12장)" as pasFull
-    }
-}
-status --> status: 디렉터와 담당은 상태를 직접 옮긴다 [담당 권한 안에서]
-status --> question: 담당이 질문을 올린다
-question --> running: 디렉터가 마지막 질문에 답한다 [카드 상세]
-card_question --> qNone: 답하거나 철회하거나 사람이 말하면 닫는다 [카드가 끝나도 답은 받음]
-card_dismissed --> dNone: 카드 상태나 막힘 종류가 바뀌어 내린 기록을 지운다
-card_pasBoard --> pasOne: 다른 장이 올라 열한 장이 된다
-card_pasBoard --> pasFull: 다른 장이 올라 열두 장이 된다
-card_pasBoard --> pasRoom: 다른 장이 내려 열 장 이하가 된다
-card_pasBoard --> pasOne: 다른 장이 내려 열한 장이 된다
+cardDecision_assignee --> a_session: 연결된 작업 세션이 담당을 맡는다
+cardDecision_assignee --> a_session: 서버가 실행을 확인한다
+cardDecision_assignee --> a_none: 담당과 보관을 고친다
+cardDecision_assignee --> a_agent: 담당과 보관을 고친다
+cardDecision_assignee --> a_human: 담당과 보관을 고친다
+cardDecision_assignee --> a_session: 담당과 보관을 고친다
+cardDecision_assignee --> a_none: 카드를 만든다
+cardDecision_assignee --> a_agent: 카드를 만든다
+cardDecision_assignee --> a_human: 카드를 만든다
+cardDecision_assignee --> a_session: 카드를 만든다
+cardDecision_assignee --> a_session: 등록된 새 담당으로 바꾼다
+cardDecision_archive --> arch_archived: 담당과 보관을 고친다
+cardDecision_archive --> arch_active: 담당과 보관을 고친다
 ```
 
-화살표 11개. 남긴 사건: 디렉터가 보고 없이 막힘으로 옮긴다 / 디렉터가 막힌 카드 장을 확인한다 / 디렉터가 검수 대기으로 옮긴다 / 담당이 질문을 올린다 / 디렉터가 마지막 질문에 답한다 [카드 상세] / 다른 장이 올라 열한 장이 된다 / 다른 장이 올라 열두 장이 된다 / 다른 장이 내려 열 장 이하가 된다 / 다른 장이 내려 열한 장이 된다. 나머지 사건은 아래 전체 표에서 확인한다.
+전이 화살표 13개. 이 보기의 명령은 CREATE, CLAIM, CONFIRM_EXECUTION, REGISTER_REPLACEMENT, PATCH_CARD_CONTROL다. 다른 명령은 이 그림에서 모두 숨기고 아래 출처 표에 적었다. 빨강은 약속 6을 어기는 세계가 있는 상태이며, 점선 구멍은 도달하지 않는 구성을 뜻한다.
 
-## 약속 검사
+## 상태와 저장 칸
 
-약속 1-나는 이번 실제 DB 대조에서 새로 찾았다. 가득 찬 판에서 신규 카드 장이 사라지는 것으로, 질문 장을 버리는 어긋남 1과 같은 뿌리다.
-
-| 약속 | 결과 | 어긋남 | 어긴 구성 수 | 예시 사건 경로 |
-| :-- | :-- | :-- | --: | :-- |
-| 판에 올라야 할 장은 판에 있다 (1-가 질문 장) | 지킴 | 1, 7 | 0 | 없음 |
-| 판에 올라야 할 장은 판에 있다 (1-나 카드 장) | 지킴 | 1 | 0 | 없음 |
-| 서버의 한도 재개는 기록된 담당이 현재 담당일 때만 한다 | 지킴 | 2 | 0 | 없음 |
-| 같은 질문의 답은 카드 상세와 감독 판에서 결과가 같다 | 지킴 | 4 | 0 | 없음 |
-| 질문을 올릴 수 있는 세션은 철회할 수 있다 | 지킴 | 8 | 0 | 없음 |
-| 짧은 한도로 막히면 취소 전까지 시각 있는 예약이 있다 | 지킴 | 별도 약속 | 0 | 없음 |
-| 기다리는 카드는 판의 장이나 시각으로 나가는 길이 있다 | 어김 | 별도 약속 | 141 | 디렉터가 할 일 카드를 만든다 → 디렉터가 질문으로 막힘으로 옮긴다 → 감독 PAS가 생긴다 → 디렉터가 막힌 카드 장을 확인한다 |
-
-## 사건과 원문 위치
-
-상태를 정하는 17곳을 사건에 연결했다. 서버의 복합 루프 전체가 아니라 카드 서비스 변경 경계를 대조한다. 한도 자동 재개와 검증 깨우기는 실제 디스패처도 실행한다.
-
-| 사건 | 뜻 | 원문 파일과 함수 |
+| 상태 | status | blocked_kind |
 | :-- | :-- | :-- |
-| `HUMAN_MOVE_todo` | 디렉터가 할 일으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `ASSIGNEE_MOVE_todo` | 담당이 할 일으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `HUMAN_MOVE_queued` | 디렉터가 대기열으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `ASSIGNEE_MOVE_queued` | 담당이 대기열으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `HUMAN_MOVE_running` | 디렉터가 실행 중으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `ASSIGNEE_MOVE_running` | 담당이 실행 중으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `HUMAN_MOVE_question` | 디렉터가 질문으로 막힘으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `ASSIGNEE_MOVE_question` | 담당이 질문으로 막힘으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `HUMAN_MOVE_noReport` | 디렉터가 보고 없이 막힘으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `ASSIGNEE_MOVE_noReport` | 담당이 보고 없이 막힘으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `HUMAN_MOVE_other` | 디렉터가 사유 없이 막힘으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `ASSIGNEE_MOVE_other` | 담당이 사유 없이 막힘으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `HUMAN_MOVE_limit` | 디렉터가 한도로 막힘으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `ASSIGNEE_MOVE_limit` | 담당이 한도로 막힘으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `HUMAN_MOVE_verification` | 디렉터가 검증 대기으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `ASSIGNEE_MOVE_verification` | 담당이 검증 대기으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `HUMAN_MOVE_review` | 디렉터가 검수 대기으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `ASSIGNEE_MOVE_review` | 담당이 검수 대기으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `HUMAN_MOVE_hold` | 디렉터가 보류으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `ASSIGNEE_MOVE_hold` | 담당이 보류으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `HUMAN_MOVE_done` | 디렉터가 완료으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `ASSIGNEE_MOVE_done` | 담당이 완료으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `HUMAN_MOVE_cancelled` | 디렉터가 취소으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `ASSIGNEE_MOVE_cancelled` | 담당이 취소으로 옮긴다 | `cards/card_control_plane_service.ts#setCardStatus/applyStatusTx`<br>`cards/card_operations.ts#executeCardOperation` |
-| `CREATE_TODO` | 디렉터가 할 일 카드를 만든다 | `cards/card_control_plane_service.ts#createCardMutation` |
-| `CREATE_QUEUED` | 디렉터가 대기열 카드를 만든다 | `cards/card_control_plane_service.ts#createCardMutation` |
-| `ASK_OWNER` | 담당이 질문을 올린다 | `cards/card_control_plane_service.ts#askQuestion` |
-| `ASK_OTHER` | 다른 에이전트가 질문을 올린다 [담당 세션 없음] | `cards/card_control_plane_service.ts#askQuestion/assertNotOtherSessionAssignee` |
-| `ANSWER_DETAIL` | 디렉터가 마지막 질문에 답한다 [카드 상세] | `cards/card_control_plane_service.ts#answerQuestion` |
-| `ANSWER_BOARD` | 디렉터가 마지막 질문에 답한다 [감독 판] | `session/persistent_report_service.ts#acceptReply/cardQuestionDecision` |
-| `WITHDRAW` | 담당이 마지막 질문을 철회한다 | `cards/card_control_plane_service.ts#withdrawQuestion` |
-| `WITHDRAW_AUTHOR` | 올린 세션이 마지막 질문을 철회한다 | `cards/card_control_plane_service.ts#withdrawQuestion`<br>`cards/card_question_rules.ts#canWithdrawCardQuestion` |
-| `HUMAN_MESSAGE` | 디렉터가 담당에게 말한다 [말로 풀리는 기다림] | `cards/card_control_plane_service.ts#resumeBlockedCardOnHumanInput`<br>`production.ts#resumeBlockedCardOnHumanInput caller` |
-| `HUMAN_COMMENT` | 디렉터가 커멘트를 남긴다 [말로 풀리는 기다림] | `cards/card_control_plane_service.ts#applyAddCommentTx` |
-| `AGENT_COMMENT` | 담당이 커멘트를 남긴다 | `cards/card_control_plane_service.ts#applyAddCommentTx` |
-| `START_ADMITTED_WORK` | 자동 배정된 첫 작업 세션이 착수한다 | `cards/card_control_plane_service.ts#startCardWork`<br>`cards/card_work_lifecycle.ts#acceptQueuedWork` |
-| `START_WORK` | 담당이 착수를 확인한다 | `cards/card_control_plane_service.ts#startCardWork` |
-| `REQUEST_REVIEW` | 담당이 검수를 요청한다 | `cards/card_control_plane_service.ts#requestCardReview` |
-| `RECORD_EXECUTION` | 서버가 실행을 확인한다 | `cards/card_control_plane_service.ts#recordExecution`<br>`cards/card_execution_service.ts#observeOnce` |
-| `RECORD_EXECUTION_LATE` | 서버가 실행을 확인한다 [사람이 이미 상태를 바꿈] | `cards/card_control_plane_service.ts#recordExecution` |
-| `DISPATCH` | 서버가 대기열 카드를 실행한다 | `cards/card_control_plane_service.ts#recordDispatch`<br>`cards/card_dispatcher.ts#dispatchOnce`<br>`cards/card_execution_service.ts#execute` |
-| `ADMIT_DISPATCH` | 서버가 배정을 허가하고 대기열에 둔다 | `cards/card_control_plane_service.ts#recordDispatch`<br>`cards/card_orchestration_coordinator.ts#dispatch`<br>`cards/card_orchestration_workers.ts#reconcile/reject` |
-| `SERVER_SHORT_LIMIT` | 담당이 짧은 한도로 끝난다 | `cards/card_dispatcher.ts#sessionEnded/reconcileTerminal/blockForLimit`<br>`cards/card_control_plane_service.ts#blockCardForLimit` |
-| `SERVER_LONG_LIMIT` | 담당이 긴 한도로 끝난다 | `cards/card_dispatcher.ts#blockForLimit`<br>`cards/card_control_plane_service.ts#blockCardForLimit` |
-| `SERVER_LIVE_RESUME` | 서버가 점검한다 [예약 시각 전에는 재개하지 않음] | `cards/card_dispatcher.ts#resumeAutoLimitedCard`<br>`cards/card_control_plane_service.ts#resumeLimitedCard` |
-| `SERVER_LIMIT_TIME` | 서버가 깨운다 [짧은 한도가 풀림] | `cards/card_dispatcher.ts#resumeAutoLimitedCard`<br>`cards/card_control_plane_service.ts#resumeLimitedCard` |
-| `SERVER_LIMIT_RELAUNCH` | 서버가 잇는다 [시각 없는 예약의 모델이 풀림] | `cards/card_dispatcher.ts#resumeLimits`<br>`cards/card_control_plane_service.ts#resumeDispatchedCard` |
-| `SERVER_LIMIT_REQUEUE` | 서버가 점검한다 [기록된 담당이 없으면 그대로] | `cards/card_dispatcher.ts#resumeLimits` |
-| `ADMIT_LIMIT` | 서버가 한도 재배정을 허가한다 | `cards/card_control_plane_service.ts#resumeDispatchedCard`<br>`cards/card_orchestration_coordinator.ts#dispatch` |
-| `WAKE_TIME` | 서버가 깨운다 [검증 시각이 됨] | `cards/card_dispatcher.ts#wakeAwaitingVerification`<br>`cards/card_control_plane_service.ts#resumeVerificationCard` |
-| `WAKE_FAIL` | 서버가 보고 없이 막는다 [검증 깨우기 실패] | `cards/card_dispatcher.ts#blockVerificationWake` |
-| `CREATE_FAIL` | 서버가 보고 없이 막는다 [세션 생성 실패] | `cards/card_dispatcher.ts#dispatchOnce`<br>`cards/card_execution_service.ts#sendAndObserve`<br>`cards/card_orchestration_workers.ts#reconcile/reject` |
-| `ATTACHMENT_FAIL` | 서버가 보고 없이 막는다 [첨부 준비 실패] | `cards/card_dispatcher.ts#resumeLimits/resumeAutoLimitedCard` |
-| `NOTE_MISSING` | 서버가 담당 에이전트 없음을 적는다 | `cards/card_dispatcher.ts#dispatchOnce`<br>`cards/card_control_plane_service.ts#noteMissingAssignee` |
-| `ASSIGN_SESSION` | 담당을 세션으로 정한다 | `cards/card_control_plane_service.ts#patchCard/claim`<br>`cards/card_operations.ts#transfer_card_assignee` |
-| `ASSIGN_AGENT` | 시작 전 카드의 담당 에이전트를 정한다 | `cards/card_control_plane_service.ts#patchCard/saveExecutionSettings`<br>`cards/card_maintenance_service.ts#updateUnstartedCard` |
-| `ASSIGN_HUMAN` | 담당을 사람으로 정한다 | `cards/card_control_plane_service.ts#patchCard` |
-| `REPLACE_LIVE` | 실행 중인 세션으로 담당을 바꾼다 | `control_plane/repositories/session_card_replacement.ts#applySessionCardReplacement`<br>`cards/card_control_plane_service.ts#patchCard` |
-| `REPLACE_LIMITED` | 긴 한도로 끝난 세션으로 담당을 바꾼다 | `cards/card_control_plane_service.ts#patchCard` |
-| `OWNER_END` | 담당 세션이 끝난다 [정상 종료] | `cards/card_dispatcher.ts#sessionEnded/reconcileTerminal` |
-| `ACK_CARD` | 디렉터가 막힌 카드 장을 확인한다 | `session/persistent_report_service.ts#remove` |
-| `PAS_APPEARS` | 감독 PAS가 생긴다 | `session/persistent_report_service.ts#readCardBoardSessions` |
-| `BOARD_ONE` | 다른 장이 올라 열한 장이 된다 | `session/persistent_report_service.ts#upsertEntry` |
-| `BOARD_OTHER_REMOVED` | 다른 장이 내려 열한 장이 된다 | `session/persistent_report_service.ts#remove` |
-| `BOARD_FULL` | 다른 장이 올라 열두 장이 된다 | `session/persistent_report_service.ts#upsertEntry` |
-| `BOARD_ROOM` | 다른 장이 내려 열 장 이하가 된다 | `session/persistent_report_service.ts#remove` |
-| `BULK_TODO` | 디렉터가 여러 장을 할 일로 옮긴다 [담당이 쉬고 있음] | `cards/card_maintenance_service.ts#bulkSetCardStatus`<br>`cards/card_maintenance_tx.ts#assertBulkStatusGuardTx` |
-| `BULK_QUEUED` | 디렉터가 여러 장을 대기열로 옮긴다 [담당이 쉬고 있음] | `cards/card_maintenance_service.ts#bulkSetCardStatus` |
-| `BULK_HOLD` | 디렉터가 여러 장을 보류로 옮긴다 [담당이 쉬고 있음] | `cards/card_maintenance_service.ts#bulkSetCardStatus` |
-| `BULK_CANCELLED` | 디렉터가 여러 장을 취소로 옮긴다 [담당이 쉬고 있음] | `cards/card_maintenance_service.ts#bulkSetCardStatus` |
-| `MERGE_SOURCE` | 디렉터가 시작 전 카드를 합쳐 취소한다 | `cards/card_maintenance_service.ts#mergeCards` |
+| uncreated | uncreated | null |
+| todo | todo | null |
+| queued | queued | null |
+| missing | queued | null |
+| running | running | null |
+| question | blocked | question |
+| noReport | blocked | no_report |
+| other | blocked | null |
+| verification | awaiting_verification | null |
+| limit | blocked | limit |
+| review | review | null |
+| hold | on_hold | null |
+| done | done | null |
+| cancelled | cancelled | null |
+
+writeStatus 액션이 있을 때만 status와 blocked_kind를 쓴다. 같은 상태를 다시 지정해도 완료 정보와 대기열 키 쓰기는 실행한다. 예약 제거, 담당 연결, 질문 행과 now 서식은 선택된 기호 액션을 decoder가 번역한다. 댓글의 claim, 항목, 상태 단계는 별개 UPDATE로 남긴다. status 칸을 쓰지 않는 담당 연결은 검증 예약을 보존한다.
+
+## 판에 오르는 장
+
+판은 상태 영역이 아니다. cardBoardEntries가 카드, 질문, 감독, 다른 장 단계와 내린 기록에서 장을 계산한다. 다른 장 수는 계산 장을 밀어내지 않으며 아래 모든 조합을 생성했다.
+
+| 카드 상태 | 보관 | 질문 | 감독과 다른 장 | 내린 기록 | 계산 장 |
+| :-- | :-- | :-- | :-- | :-- | :-- |
+| uncreated | active | none | none | 없음 | 없음 |
+| uncreated | active | none | none | 있음 | 없음 |
+| uncreated | active | none | room | 없음 | 없음 |
+| uncreated | active | none | room | 있음 | 없음 |
+| uncreated | active | none | one | 없음 | 없음 |
+| uncreated | active | none | one | 있음 | 없음 |
+| uncreated | active | none | full | 없음 | 없음 |
+| uncreated | active | none | full | 있음 | 없음 |
+| uncreated | active | open | none | 없음 | 없음 |
+| uncreated | active | open | none | 있음 | 없음 |
+| uncreated | active | open | room | 없음 | 없음 |
+| uncreated | active | open | room | 있음 | 없음 |
+| uncreated | active | open | one | 없음 | 없음 |
+| uncreated | active | open | one | 있음 | 없음 |
+| uncreated | active | open | full | 없음 | 없음 |
+| uncreated | active | open | full | 있음 | 없음 |
+| uncreated | archived | none | none | 없음 | 없음 |
+| uncreated | archived | none | none | 있음 | 없음 |
+| uncreated | archived | none | room | 없음 | 없음 |
+| uncreated | archived | none | room | 있음 | 없음 |
+| uncreated | archived | none | one | 없음 | 없음 |
+| uncreated | archived | none | one | 있음 | 없음 |
+| uncreated | archived | none | full | 없음 | 없음 |
+| uncreated | archived | none | full | 있음 | 없음 |
+| uncreated | archived | open | none | 없음 | 없음 |
+| uncreated | archived | open | none | 있음 | 없음 |
+| uncreated | archived | open | room | 없음 | 없음 |
+| uncreated | archived | open | room | 있음 | 없음 |
+| uncreated | archived | open | one | 없음 | 없음 |
+| uncreated | archived | open | one | 있음 | 없음 |
+| uncreated | archived | open | full | 없음 | 없음 |
+| uncreated | archived | open | full | 있음 | 없음 |
+| todo | active | none | none | 없음 | 없음 |
+| todo | active | none | none | 있음 | 없음 |
+| todo | active | none | room | 없음 | 없음 |
+| todo | active | none | room | 있음 | 없음 |
+| todo | active | none | one | 없음 | 없음 |
+| todo | active | none | one | 있음 | 없음 |
+| todo | active | none | full | 없음 | 없음 |
+| todo | active | none | full | 있음 | 없음 |
+| todo | active | open | none | 없음 | 없음 |
+| todo | active | open | none | 있음 | 없음 |
+| todo | active | open | room | 없음 | question |
+| todo | active | open | room | 있음 | question |
+| todo | active | open | one | 없음 | question |
+| todo | active | open | one | 있음 | question |
+| todo | active | open | full | 없음 | question |
+| todo | active | open | full | 있음 | question |
+| todo | archived | none | none | 없음 | 없음 |
+| todo | archived | none | none | 있음 | 없음 |
+| todo | archived | none | room | 없음 | 없음 |
+| todo | archived | none | room | 있음 | 없음 |
+| todo | archived | none | one | 없음 | 없음 |
+| todo | archived | none | one | 있음 | 없음 |
+| todo | archived | none | full | 없음 | 없음 |
+| todo | archived | none | full | 있음 | 없음 |
+| todo | archived | open | none | 없음 | 없음 |
+| todo | archived | open | none | 있음 | 없음 |
+| todo | archived | open | room | 없음 | 없음 |
+| todo | archived | open | room | 있음 | 없음 |
+| todo | archived | open | one | 없음 | 없음 |
+| todo | archived | open | one | 있음 | 없음 |
+| todo | archived | open | full | 없음 | 없음 |
+| todo | archived | open | full | 있음 | 없음 |
+| queued | active | none | none | 없음 | 없음 |
+| queued | active | none | none | 있음 | 없음 |
+| queued | active | none | room | 없음 | 없음 |
+| queued | active | none | room | 있음 | 없음 |
+| queued | active | none | one | 없음 | 없음 |
+| queued | active | none | one | 있음 | 없음 |
+| queued | active | none | full | 없음 | 없음 |
+| queued | active | none | full | 있음 | 없음 |
+| queued | active | open | none | 없음 | 없음 |
+| queued | active | open | none | 있음 | 없음 |
+| queued | active | open | room | 없음 | question |
+| queued | active | open | room | 있음 | question |
+| queued | active | open | one | 없음 | question |
+| queued | active | open | one | 있음 | question |
+| queued | active | open | full | 없음 | question |
+| queued | active | open | full | 있음 | question |
+| queued | archived | none | none | 없음 | 없음 |
+| queued | archived | none | none | 있음 | 없음 |
+| queued | archived | none | room | 없음 | 없음 |
+| queued | archived | none | room | 있음 | 없음 |
+| queued | archived | none | one | 없음 | 없음 |
+| queued | archived | none | one | 있음 | 없음 |
+| queued | archived | none | full | 없음 | 없음 |
+| queued | archived | none | full | 있음 | 없음 |
+| queued | archived | open | none | 없음 | 없음 |
+| queued | archived | open | none | 있음 | 없음 |
+| queued | archived | open | room | 없음 | 없음 |
+| queued | archived | open | room | 있음 | 없음 |
+| queued | archived | open | one | 없음 | 없음 |
+| queued | archived | open | one | 있음 | 없음 |
+| queued | archived | open | full | 없음 | 없음 |
+| queued | archived | open | full | 있음 | 없음 |
+| missing | active | none | none | 없음 | 없음 |
+| missing | active | none | none | 있음 | 없음 |
+| missing | active | none | room | 없음 | 없음 |
+| missing | active | none | room | 있음 | 없음 |
+| missing | active | none | one | 없음 | 없음 |
+| missing | active | none | one | 있음 | 없음 |
+| missing | active | none | full | 없음 | 없음 |
+| missing | active | none | full | 있음 | 없음 |
+| missing | active | open | none | 없음 | 없음 |
+| missing | active | open | none | 있음 | 없음 |
+| missing | active | open | room | 없음 | question |
+| missing | active | open | room | 있음 | question |
+| missing | active | open | one | 없음 | question |
+| missing | active | open | one | 있음 | question |
+| missing | active | open | full | 없음 | question |
+| missing | active | open | full | 있음 | question |
+| missing | archived | none | none | 없음 | 없음 |
+| missing | archived | none | none | 있음 | 없음 |
+| missing | archived | none | room | 없음 | 없음 |
+| missing | archived | none | room | 있음 | 없음 |
+| missing | archived | none | one | 없음 | 없음 |
+| missing | archived | none | one | 있음 | 없음 |
+| missing | archived | none | full | 없음 | 없음 |
+| missing | archived | none | full | 있음 | 없음 |
+| missing | archived | open | none | 없음 | 없음 |
+| missing | archived | open | none | 있음 | 없음 |
+| missing | archived | open | room | 없음 | 없음 |
+| missing | archived | open | room | 있음 | 없음 |
+| missing | archived | open | one | 없음 | 없음 |
+| missing | archived | open | one | 있음 | 없음 |
+| missing | archived | open | full | 없음 | 없음 |
+| missing | archived | open | full | 있음 | 없음 |
+| running | active | none | none | 없음 | 없음 |
+| running | active | none | none | 있음 | 없음 |
+| running | active | none | room | 없음 | 없음 |
+| running | active | none | room | 있음 | 없음 |
+| running | active | none | one | 없음 | 없음 |
+| running | active | none | one | 있음 | 없음 |
+| running | active | none | full | 없음 | 없음 |
+| running | active | none | full | 있음 | 없음 |
+| running | active | open | none | 없음 | 없음 |
+| running | active | open | none | 있음 | 없음 |
+| running | active | open | room | 없음 | question |
+| running | active | open | room | 있음 | question |
+| running | active | open | one | 없음 | question |
+| running | active | open | one | 있음 | question |
+| running | active | open | full | 없음 | question |
+| running | active | open | full | 있음 | question |
+| running | archived | none | none | 없음 | 없음 |
+| running | archived | none | none | 있음 | 없음 |
+| running | archived | none | room | 없음 | 없음 |
+| running | archived | none | room | 있음 | 없음 |
+| running | archived | none | one | 없음 | 없음 |
+| running | archived | none | one | 있음 | 없음 |
+| running | archived | none | full | 없음 | 없음 |
+| running | archived | none | full | 있음 | 없음 |
+| running | archived | open | none | 없음 | 없음 |
+| running | archived | open | none | 있음 | 없음 |
+| running | archived | open | room | 없음 | 없음 |
+| running | archived | open | room | 있음 | 없음 |
+| running | archived | open | one | 없음 | 없음 |
+| running | archived | open | one | 있음 | 없음 |
+| running | archived | open | full | 없음 | 없음 |
+| running | archived | open | full | 있음 | 없음 |
+| question | active | none | none | 없음 | 없음 |
+| question | active | none | none | 있음 | 없음 |
+| question | active | none | room | 없음 | card |
+| question | active | none | room | 있음 | 없음 |
+| question | active | none | one | 없음 | card |
+| question | active | none | one | 있음 | 없음 |
+| question | active | none | full | 없음 | card |
+| question | active | none | full | 있음 | 없음 |
+| question | active | open | none | 없음 | 없음 |
+| question | active | open | none | 있음 | 없음 |
+| question | active | open | room | 없음 | question |
+| question | active | open | room | 있음 | question |
+| question | active | open | one | 없음 | question |
+| question | active | open | one | 있음 | question |
+| question | active | open | full | 없음 | question |
+| question | active | open | full | 있음 | question |
+| question | archived | none | none | 없음 | 없음 |
+| question | archived | none | none | 있음 | 없음 |
+| question | archived | none | room | 없음 | 없음 |
+| question | archived | none | room | 있음 | 없음 |
+| question | archived | none | one | 없음 | 없음 |
+| question | archived | none | one | 있음 | 없음 |
+| question | archived | none | full | 없음 | 없음 |
+| question | archived | none | full | 있음 | 없음 |
+| question | archived | open | none | 없음 | 없음 |
+| question | archived | open | none | 있음 | 없음 |
+| question | archived | open | room | 없음 | 없음 |
+| question | archived | open | room | 있음 | 없음 |
+| question | archived | open | one | 없음 | 없음 |
+| question | archived | open | one | 있음 | 없음 |
+| question | archived | open | full | 없음 | 없음 |
+| question | archived | open | full | 있음 | 없음 |
+| noReport | active | none | none | 없음 | 없음 |
+| noReport | active | none | none | 있음 | 없음 |
+| noReport | active | none | room | 없음 | card |
+| noReport | active | none | room | 있음 | 없음 |
+| noReport | active | none | one | 없음 | card |
+| noReport | active | none | one | 있음 | 없음 |
+| noReport | active | none | full | 없음 | card |
+| noReport | active | none | full | 있음 | 없음 |
+| noReport | active | open | none | 없음 | 없음 |
+| noReport | active | open | none | 있음 | 없음 |
+| noReport | active | open | room | 없음 | question |
+| noReport | active | open | room | 있음 | question |
+| noReport | active | open | one | 없음 | question |
+| noReport | active | open | one | 있음 | question |
+| noReport | active | open | full | 없음 | question |
+| noReport | active | open | full | 있음 | question |
+| noReport | archived | none | none | 없음 | 없음 |
+| noReport | archived | none | none | 있음 | 없음 |
+| noReport | archived | none | room | 없음 | 없음 |
+| noReport | archived | none | room | 있음 | 없음 |
+| noReport | archived | none | one | 없음 | 없음 |
+| noReport | archived | none | one | 있음 | 없음 |
+| noReport | archived | none | full | 없음 | 없음 |
+| noReport | archived | none | full | 있음 | 없음 |
+| noReport | archived | open | none | 없음 | 없음 |
+| noReport | archived | open | none | 있음 | 없음 |
+| noReport | archived | open | room | 없음 | 없음 |
+| noReport | archived | open | room | 있음 | 없음 |
+| noReport | archived | open | one | 없음 | 없음 |
+| noReport | archived | open | one | 있음 | 없음 |
+| noReport | archived | open | full | 없음 | 없음 |
+| noReport | archived | open | full | 있음 | 없음 |
+| other | active | none | none | 없음 | 없음 |
+| other | active | none | none | 있음 | 없음 |
+| other | active | none | room | 없음 | card |
+| other | active | none | room | 있음 | 없음 |
+| other | active | none | one | 없음 | card |
+| other | active | none | one | 있음 | 없음 |
+| other | active | none | full | 없음 | card |
+| other | active | none | full | 있음 | 없음 |
+| other | active | open | none | 없음 | 없음 |
+| other | active | open | none | 있음 | 없음 |
+| other | active | open | room | 없음 | question |
+| other | active | open | room | 있음 | question |
+| other | active | open | one | 없음 | question |
+| other | active | open | one | 있음 | question |
+| other | active | open | full | 없음 | question |
+| other | active | open | full | 있음 | question |
+| other | archived | none | none | 없음 | 없음 |
+| other | archived | none | none | 있음 | 없음 |
+| other | archived | none | room | 없음 | 없음 |
+| other | archived | none | room | 있음 | 없음 |
+| other | archived | none | one | 없음 | 없음 |
+| other | archived | none | one | 있음 | 없음 |
+| other | archived | none | full | 없음 | 없음 |
+| other | archived | none | full | 있음 | 없음 |
+| other | archived | open | none | 없음 | 없음 |
+| other | archived | open | none | 있음 | 없음 |
+| other | archived | open | room | 없음 | 없음 |
+| other | archived | open | room | 있음 | 없음 |
+| other | archived | open | one | 없음 | 없음 |
+| other | archived | open | one | 있음 | 없음 |
+| other | archived | open | full | 없음 | 없음 |
+| other | archived | open | full | 있음 | 없음 |
+| verification | active | none | none | 없음 | 없음 |
+| verification | active | none | none | 있음 | 없음 |
+| verification | active | none | room | 없음 | 없음 |
+| verification | active | none | room | 있음 | 없음 |
+| verification | active | none | one | 없음 | 없음 |
+| verification | active | none | one | 있음 | 없음 |
+| verification | active | none | full | 없음 | 없음 |
+| verification | active | none | full | 있음 | 없음 |
+| verification | active | open | none | 없음 | 없음 |
+| verification | active | open | none | 있음 | 없음 |
+| verification | active | open | room | 없음 | question |
+| verification | active | open | room | 있음 | question |
+| verification | active | open | one | 없음 | question |
+| verification | active | open | one | 있음 | question |
+| verification | active | open | full | 없음 | question |
+| verification | active | open | full | 있음 | question |
+| verification | archived | none | none | 없음 | 없음 |
+| verification | archived | none | none | 있음 | 없음 |
+| verification | archived | none | room | 없음 | 없음 |
+| verification | archived | none | room | 있음 | 없음 |
+| verification | archived | none | one | 없음 | 없음 |
+| verification | archived | none | one | 있음 | 없음 |
+| verification | archived | none | full | 없음 | 없음 |
+| verification | archived | none | full | 있음 | 없음 |
+| verification | archived | open | none | 없음 | 없음 |
+| verification | archived | open | none | 있음 | 없음 |
+| verification | archived | open | room | 없음 | 없음 |
+| verification | archived | open | room | 있음 | 없음 |
+| verification | archived | open | one | 없음 | 없음 |
+| verification | archived | open | one | 있음 | 없음 |
+| verification | archived | open | full | 없음 | 없음 |
+| verification | archived | open | full | 있음 | 없음 |
+| limit | active | none | none | 없음 | 없음 |
+| limit | active | none | none | 있음 | 없음 |
+| limit | active | none | room | 없음 | card |
+| limit | active | none | room | 있음 | 없음 |
+| limit | active | none | one | 없음 | card |
+| limit | active | none | one | 있음 | 없음 |
+| limit | active | none | full | 없음 | card |
+| limit | active | none | full | 있음 | 없음 |
+| limit | active | open | none | 없음 | 없음 |
+| limit | active | open | none | 있음 | 없음 |
+| limit | active | open | room | 없음 | question |
+| limit | active | open | room | 있음 | question |
+| limit | active | open | one | 없음 | question |
+| limit | active | open | one | 있음 | question |
+| limit | active | open | full | 없음 | question |
+| limit | active | open | full | 있음 | question |
+| limit | archived | none | none | 없음 | 없음 |
+| limit | archived | none | none | 있음 | 없음 |
+| limit | archived | none | room | 없음 | 없음 |
+| limit | archived | none | room | 있음 | 없음 |
+| limit | archived | none | one | 없음 | 없음 |
+| limit | archived | none | one | 있음 | 없음 |
+| limit | archived | none | full | 없음 | 없음 |
+| limit | archived | none | full | 있음 | 없음 |
+| limit | archived | open | none | 없음 | 없음 |
+| limit | archived | open | none | 있음 | 없음 |
+| limit | archived | open | room | 없음 | 없음 |
+| limit | archived | open | room | 있음 | 없음 |
+| limit | archived | open | one | 없음 | 없음 |
+| limit | archived | open | one | 있음 | 없음 |
+| limit | archived | open | full | 없음 | 없음 |
+| limit | archived | open | full | 있음 | 없음 |
+| review | active | none | none | 없음 | 없음 |
+| review | active | none | none | 있음 | 없음 |
+| review | active | none | room | 없음 | card |
+| review | active | none | room | 있음 | 없음 |
+| review | active | none | one | 없음 | card |
+| review | active | none | one | 있음 | 없음 |
+| review | active | none | full | 없음 | card |
+| review | active | none | full | 있음 | 없음 |
+| review | active | open | none | 없음 | 없음 |
+| review | active | open | none | 있음 | 없음 |
+| review | active | open | room | 없음 | question |
+| review | active | open | room | 있음 | question |
+| review | active | open | one | 없음 | question |
+| review | active | open | one | 있음 | question |
+| review | active | open | full | 없음 | question |
+| review | active | open | full | 있음 | question |
+| review | archived | none | none | 없음 | 없음 |
+| review | archived | none | none | 있음 | 없음 |
+| review | archived | none | room | 없음 | 없음 |
+| review | archived | none | room | 있음 | 없음 |
+| review | archived | none | one | 없음 | 없음 |
+| review | archived | none | one | 있음 | 없음 |
+| review | archived | none | full | 없음 | 없음 |
+| review | archived | none | full | 있음 | 없음 |
+| review | archived | open | none | 없음 | 없음 |
+| review | archived | open | none | 있음 | 없음 |
+| review | archived | open | room | 없음 | 없음 |
+| review | archived | open | room | 있음 | 없음 |
+| review | archived | open | one | 없음 | 없음 |
+| review | archived | open | one | 있음 | 없음 |
+| review | archived | open | full | 없음 | 없음 |
+| review | archived | open | full | 있음 | 없음 |
+| hold | active | none | none | 없음 | 없음 |
+| hold | active | none | none | 있음 | 없음 |
+| hold | active | none | room | 없음 | 없음 |
+| hold | active | none | room | 있음 | 없음 |
+| hold | active | none | one | 없음 | 없음 |
+| hold | active | none | one | 있음 | 없음 |
+| hold | active | none | full | 없음 | 없음 |
+| hold | active | none | full | 있음 | 없음 |
+| hold | active | open | none | 없음 | 없음 |
+| hold | active | open | none | 있음 | 없음 |
+| hold | active | open | room | 없음 | 없음 |
+| hold | active | open | room | 있음 | 없음 |
+| hold | active | open | one | 없음 | 없음 |
+| hold | active | open | one | 있음 | 없음 |
+| hold | active | open | full | 없음 | 없음 |
+| hold | active | open | full | 있음 | 없음 |
+| hold | archived | none | none | 없음 | 없음 |
+| hold | archived | none | none | 있음 | 없음 |
+| hold | archived | none | room | 없음 | 없음 |
+| hold | archived | none | room | 있음 | 없음 |
+| hold | archived | none | one | 없음 | 없음 |
+| hold | archived | none | one | 있음 | 없음 |
+| hold | archived | none | full | 없음 | 없음 |
+| hold | archived | none | full | 있음 | 없음 |
+| hold | archived | open | none | 없음 | 없음 |
+| hold | archived | open | none | 있음 | 없음 |
+| hold | archived | open | room | 없음 | 없음 |
+| hold | archived | open | room | 있음 | 없음 |
+| hold | archived | open | one | 없음 | 없음 |
+| hold | archived | open | one | 있음 | 없음 |
+| hold | archived | open | full | 없음 | 없음 |
+| hold | archived | open | full | 있음 | 없음 |
+| done | active | none | none | 없음 | 없음 |
+| done | active | none | none | 있음 | 없음 |
+| done | active | none | room | 없음 | 없음 |
+| done | active | none | room | 있음 | 없음 |
+| done | active | none | one | 없음 | 없음 |
+| done | active | none | one | 있음 | 없음 |
+| done | active | none | full | 없음 | 없음 |
+| done | active | none | full | 있음 | 없음 |
+| done | active | open | none | 없음 | 없음 |
+| done | active | open | none | 있음 | 없음 |
+| done | active | open | room | 없음 | 없음 |
+| done | active | open | room | 있음 | 없음 |
+| done | active | open | one | 없음 | 없음 |
+| done | active | open | one | 있음 | 없음 |
+| done | active | open | full | 없음 | 없음 |
+| done | active | open | full | 있음 | 없음 |
+| done | archived | none | none | 없음 | 없음 |
+| done | archived | none | none | 있음 | 없음 |
+| done | archived | none | room | 없음 | 없음 |
+| done | archived | none | room | 있음 | 없음 |
+| done | archived | none | one | 없음 | 없음 |
+| done | archived | none | one | 있음 | 없음 |
+| done | archived | none | full | 없음 | 없음 |
+| done | archived | none | full | 있음 | 없음 |
+| done | archived | open | none | 없음 | 없음 |
+| done | archived | open | none | 있음 | 없음 |
+| done | archived | open | room | 없음 | 없음 |
+| done | archived | open | room | 있음 | 없음 |
+| done | archived | open | one | 없음 | 없음 |
+| done | archived | open | one | 있음 | 없음 |
+| done | archived | open | full | 없음 | 없음 |
+| done | archived | open | full | 있음 | 없음 |
+| cancelled | active | none | none | 없음 | 없음 |
+| cancelled | active | none | none | 있음 | 없음 |
+| cancelled | active | none | room | 없음 | 없음 |
+| cancelled | active | none | room | 있음 | 없음 |
+| cancelled | active | none | one | 없음 | 없음 |
+| cancelled | active | none | one | 있음 | 없음 |
+| cancelled | active | none | full | 없음 | 없음 |
+| cancelled | active | none | full | 있음 | 없음 |
+| cancelled | active | open | none | 없음 | 없음 |
+| cancelled | active | open | none | 있음 | 없음 |
+| cancelled | active | open | room | 없음 | 없음 |
+| cancelled | active | open | room | 있음 | 없음 |
+| cancelled | active | open | one | 없음 | 없음 |
+| cancelled | active | open | one | 있음 | 없음 |
+| cancelled | active | open | full | 없음 | 없음 |
+| cancelled | active | open | full | 있음 | 없음 |
+| cancelled | archived | none | none | 없음 | 없음 |
+| cancelled | archived | none | none | 있음 | 없음 |
+| cancelled | archived | none | room | 없음 | 없음 |
+| cancelled | archived | none | room | 있음 | 없음 |
+| cancelled | archived | none | one | 없음 | 없음 |
+| cancelled | archived | none | one | 있음 | 없음 |
+| cancelled | archived | none | full | 없음 | 없음 |
+| cancelled | archived | none | full | 있음 | 없음 |
+| cancelled | archived | open | none | 없음 | 없음 |
+| cancelled | archived | open | none | 있음 | 없음 |
+| cancelled | archived | open | room | 없음 | 없음 |
+| cancelled | archived | open | room | 있음 | 없음 |
+| cancelled | archived | open | one | 없음 | 없음 |
+| cancelled | archived | open | one | 있음 | 없음 |
+| cancelled | archived | open | full | 없음 | 없음 |
+| cancelled | archived | open | full | 있음 | 없음 |
+
+## 주체 관계별 권한
+
+PAS는 agent 세션이다. 현재 담당, 작성자, 담당이면서 작성자인 관계를 별도 행으로 그대로 보여 준다. 입구 없음은 명령 출처 metadata에서 읽으며 거절 가드와 기존 오류는 실제 열거 결과다.
+
+| 명령 | 주체 관계 | 사람 | 현재 담당 세션 | 다른 agent 세션 | PAS | 서버 |
+| :-- | :-- | :-- | :-- | :-- | :-- | :-- |
+| CREATE | human | 모두 허용 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| CREATE | owner | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
+| CREATE | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
+| CREATE | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
+| CREATE | otherAgent | 해당 없음 | 해당 없음 | 모두 허용 | 모두 허용 | 해당 없음 |
+| CREATE | anonymousAgent | 해당 없음 | 해당 없음 | 모두 허용 | 해당 없음 | 해당 없음 |
+| CREATE | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
+| CREATE | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| SET_STATUS | human | 조건부: reject.SET_STATUS.verificationOwner (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_empty (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_invalid (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_missing (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_past (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLate (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLong (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| SET_STATUS | owner | 해당 없음 | 조건부: reject.SET_STATUS.verification_empty (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_invalid (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_missing (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_past (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLate (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLong (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.SET_STATUS.verification_empty (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_invalid (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_missing (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_past (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLate (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLong (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| SET_STATUS | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
+| SET_STATUS | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
+| SET_STATUS | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.SET_STATUS.statusOwner (403, statusOwner)<br>reject.SET_STATUS.verification_empty (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_invalid (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_missing (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_past (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLate (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLong (422, INVALID_CARD_REQUEST) | 조건부: reject.SET_STATUS.statusOwner (403, statusOwner)<br>reject.SET_STATUS.verification_empty (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_invalid (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_missing (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_past (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLate (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLong (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| SET_STATUS | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.SET_STATUS.statusOwner (403, statusOwner) | 해당 없음 | 해당 없음 |
+| SET_STATUS | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.SET_STATUS.verificationOwner (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_empty (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_invalid (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_missing (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_past (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLate (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLong (422, INVALID_CARD_REQUEST) |
+| SET_STATUS | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| REQUEST_REVIEW | human | 조건부: reject.REQUEST_REVIEW.reviewAsk (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| REQUEST_REVIEW | owner | 해당 없음 | 조건부: reject.REQUEST_REVIEW.reviewAsk (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.REQUEST_REVIEW.reviewAsk (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| REQUEST_REVIEW | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
+| REQUEST_REVIEW | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
+| REQUEST_REVIEW | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.REQUEST_REVIEW.reviewAsk (422, INVALID_CARD_REQUEST)<br>reject.REQUEST_REVIEW.statusOwner (403, statusOwner) | 조건부: reject.REQUEST_REVIEW.reviewAsk (422, INVALID_CARD_REQUEST)<br>reject.REQUEST_REVIEW.statusOwner (403, statusOwner) | 해당 없음 |
+| REQUEST_REVIEW | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.REQUEST_REVIEW.reviewAsk (422, INVALID_CARD_REQUEST)<br>reject.REQUEST_REVIEW.statusOwner (403, statusOwner) | 해당 없음 | 해당 없음 |
+| REQUEST_REVIEW | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
+| REQUEST_REVIEW | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| HUMAN_INPUT | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| HUMAN_INPUT | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
+| HUMAN_INPUT | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
+| HUMAN_INPUT | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
+| HUMAN_INPUT | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
+| HUMAN_INPUT | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 |
+| HUMAN_INPUT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 모두 허용 |
+| HUMAN_INPUT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| ASK_QUESTION | human | 모두 허용 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| ASK_QUESTION | owner | 해당 없음 | 모두 허용 | 해당 없음 | 모두 허용 | 해당 없음 |
+| ASK_QUESTION | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
+| ASK_QUESTION | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
+| ASK_QUESTION | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.ASK_QUESTION.otherAssignee (422, INVALID_CARD_REQUEST) | 조건부: reject.ASK_QUESTION.otherAssignee (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| ASK_QUESTION | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.ASK_QUESTION.otherAssignee (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 |
+| ASK_QUESTION | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
+| ASK_QUESTION | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| ANSWER_QUESTION | human | 조건부: reject.ANSWER_QUESTION.openQuestion (422, INVALID_CARD_REQUEST)<br>reject.ANSWER_QUESTION.withdrawnAnswer (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| ANSWER_QUESTION | owner | 해당 없음 | 모두 거절: reject.ANSWER_QUESTION.humanAnswer (422, INVALID_CARD_REQUEST) | 해당 없음 | 모두 거절: reject.ANSWER_QUESTION.humanAnswer (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| ANSWER_QUESTION | author | 해당 없음 | 해당 없음 | 모두 거절: reject.ANSWER_QUESTION.humanAnswer (422, INVALID_CARD_REQUEST) | 모두 거절: reject.ANSWER_QUESTION.humanAnswer (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| ANSWER_QUESTION | ownerAuthor | 해당 없음 | 모두 거절: reject.ANSWER_QUESTION.humanAnswer (422, INVALID_CARD_REQUEST) | 해당 없음 | 모두 거절: reject.ANSWER_QUESTION.humanAnswer (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| ANSWER_QUESTION | otherAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.ANSWER_QUESTION.humanAnswer (422, INVALID_CARD_REQUEST) | 모두 거절: reject.ANSWER_QUESTION.humanAnswer (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| ANSWER_QUESTION | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.ANSWER_QUESTION.humanAnswer (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 |
+| ANSWER_QUESTION | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
+| ANSWER_QUESTION | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| WITHDRAW_QUESTION | human | 모두 거절: reject.WITHDRAW_QUESTION.ownerOrAuthor (403, withdrawOwner) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| WITHDRAW_QUESTION | owner | 해당 없음 | 조건부: reject.WITHDRAW_QUESTION.answered (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.missing (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.withdrawn (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.WITHDRAW_QUESTION.answered (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.missing (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.withdrawn (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| WITHDRAW_QUESTION | author | 해당 없음 | 해당 없음 | 조건부: reject.WITHDRAW_QUESTION.answered (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.withdrawn (422, INVALID_CARD_REQUEST) | 조건부: reject.WITHDRAW_QUESTION.answered (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.withdrawn (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| WITHDRAW_QUESTION | ownerAuthor | 해당 없음 | 조건부: reject.WITHDRAW_QUESTION.answered (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.withdrawn (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.WITHDRAW_QUESTION.answered (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.withdrawn (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| WITHDRAW_QUESTION | otherAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.WITHDRAW_QUESTION.ownerOrAuthor (403, withdrawOwner) | 모두 거절: reject.WITHDRAW_QUESTION.ownerOrAuthor (403, withdrawOwner) | 해당 없음 |
+| WITHDRAW_QUESTION | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.WITHDRAW_QUESTION.ownerOrAuthor (403, withdrawOwner) | 해당 없음 | 해당 없음 |
+| WITHDRAW_QUESTION | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
+| WITHDRAW_QUESTION | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| ADD_COMMENT | human | 조건부: reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| ADD_COMMENT | owner | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| ADD_COMMENT | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
+| ADD_COMMENT | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
+| ADD_COMMENT | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.otherAssignee (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.otherAssignee (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| ADD_COMMENT | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.otherAssignee (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 |
+| ADD_COMMENT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
+| ADD_COMMENT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| START_WORK | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| START_WORK | owner | 해당 없음 | 조건부: reject.START_WORK.admission (422, INVALID_CARD_WORK)<br>reject.START_WORK.execution (422, INVALID_CARD_WORK) | 해당 없음 | 조건부: reject.START_WORK.admission (422, INVALID_CARD_WORK)<br>reject.START_WORK.execution (422, INVALID_CARD_WORK) | 해당 없음 |
+| START_WORK | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
+| START_WORK | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
+| START_WORK | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.START_WORK.admission (422, INVALID_CARD_WORK)<br>reject.START_WORK.execution (422, INVALID_CARD_WORK)<br>reject.START_WORK.owner (422, INVALID_CARD_WORK) | 조건부: reject.START_WORK.admission (422, INVALID_CARD_WORK)<br>reject.START_WORK.execution (422, INVALID_CARD_WORK)<br>reject.START_WORK.owner (422, INVALID_CARD_WORK) | 해당 없음 |
+| START_WORK | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.START_WORK.actor (422, INVALID_CARD_WORK) | 해당 없음 | 해당 없음 |
+| START_WORK | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
+| START_WORK | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| CONFIRM_EXECUTION | human | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| CONFIRM_EXECUTION | owner | 해당 없음 | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| CONFIRM_EXECUTION | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
+| CONFIRM_EXECUTION | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
+| CONFIRM_EXECUTION | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | 해당 없음 |
+| CONFIRM_EXECUTION | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 |
+| CONFIRM_EXECUTION | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) |
+| CONFIRM_EXECUTION | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| DISPATCH | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| DISPATCH | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
+| DISPATCH | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
+| DISPATCH | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
+| DISPATCH | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
+| DISPATCH | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 |
+| DISPATCH | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.DISPATCH.admissionRequired (422, INVALID_CARD_REQUEST)<br>reject.DISPATCH.capacity (일반 오류, admission_capacity)<br>reject.DISPATCH.ineligible (일반 오류, admission_ineligible)<br>reject.DISPATCH.missingCapacity (일반 오류, admission_missingCapacity)<br>reject.DISPATCH.pending (409, CARD_EXECUTION_PENDING)<br>reject.DISPATCH.policyDisabled (422, INVALID_CARD_REQUEST)<br>reject.DISPATCH.queued (422, INVALID_CARD_REQUEST)<br>reject.DISPATCH.stale (일반 오류, admission_stale) |
+| DISPATCH | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| BLOCK_FOR_LIMIT | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| BLOCK_FOR_LIMIT | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
+| BLOCK_FOR_LIMIT | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
+| BLOCK_FOR_LIMIT | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
+| BLOCK_FOR_LIMIT | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
+| BLOCK_FOR_LIMIT | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 |
+| BLOCK_FOR_LIMIT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.BLOCK_FOR_LIMIT.currentRunningOwner (422, INVALID_CARD_REQUEST)<br>reject.BLOCK_FOR_LIMIT.currentTermination (422, INVALID_CARD_REQUEST) |
+| BLOCK_FOR_LIMIT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| RESUME_SHORT_LIMIT | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| RESUME_SHORT_LIMIT | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
+| RESUME_SHORT_LIMIT | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
+| RESUME_SHORT_LIMIT | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
+| RESUME_SHORT_LIMIT | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
+| RESUME_SHORT_LIMIT | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 |
+| RESUME_SHORT_LIMIT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.RESUME_SHORT_LIMIT.pending (409, CARD_EXECUTION_PENDING)<br>reject.RESUME_SHORT_LIMIT.sameDueReservation (422, INVALID_CARD_REQUEST) |
+| RESUME_SHORT_LIMIT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| RESUME_LONG_LIMIT | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| RESUME_LONG_LIMIT | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
+| RESUME_LONG_LIMIT | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
+| RESUME_LONG_LIMIT | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
+| RESUME_LONG_LIMIT | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
+| RESUME_LONG_LIMIT | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 |
+| RESUME_LONG_LIMIT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.RESUME_LONG_LIMIT.admissionRequired (422, INVALID_CARD_REQUEST)<br>reject.RESUME_LONG_LIMIT.capacity (일반 오류, admission_capacity)<br>reject.RESUME_LONG_LIMIT.ineligible (일반 오류, admission_ineligible)<br>reject.RESUME_LONG_LIMIT.missingCapacity (일반 오류, admission_missingCapacity)<br>reject.RESUME_LONG_LIMIT.pending (409, CARD_EXECUTION_PENDING)<br>reject.RESUME_LONG_LIMIT.policyDisabled (422, INVALID_CARD_REQUEST)<br>reject.RESUME_LONG_LIMIT.sameLongReservation (422, INVALID_CARD_REQUEST)<br>reject.RESUME_LONG_LIMIT.stale (일반 오류, admission_stale) |
+| RESUME_LONG_LIMIT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| RESUME_VERIFICATION | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| RESUME_VERIFICATION | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
+| RESUME_VERIFICATION | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
+| RESUME_VERIFICATION | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
+| RESUME_VERIFICATION | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
+| RESUME_VERIFICATION | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 |
+| RESUME_VERIFICATION | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.RESUME_VERIFICATION.sameReservation (422, INVALID_CARD_REQUEST) |
+| RESUME_VERIFICATION | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| NOTE_MISSING | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| NOTE_MISSING | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
+| NOTE_MISSING | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
+| NOTE_MISSING | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
+| NOTE_MISSING | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
+| NOTE_MISSING | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 |
+| NOTE_MISSING | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 모두 허용 |
+| NOTE_MISSING | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| BULK_SET_STATUS | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| BULK_SET_STATUS | owner | 해당 없음 | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 해당 없음 | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 해당 없음 |
+| BULK_SET_STATUS | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
+| BULK_SET_STATUS | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
+| BULK_SET_STATUS | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.human (403, bulkHuman)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.human (403, bulkHuman)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 해당 없음 |
+| BULK_SET_STATUS | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.BULK_SET_STATUS.session (403, maintenanceSession) | 해당 없음 | 해당 없음 |
+| BULK_SET_STATUS | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
+| BULK_SET_STATUS | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| MERGE_SOURCE | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| MERGE_SOURCE | owner | 해당 없음 | 모두 거절: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 | 모두 거절: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 |
+| MERGE_SOURCE | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
+| MERGE_SOURCE | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
+| MERGE_SOURCE | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.human (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.pending (409, CARD_EXECUTION_PENDING)<br>reject.MERGE_SOURCE.status (409, CARD_NOT_UNSTARTED) | 조건부: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.human (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.pending (409, CARD_EXECUTION_PENDING)<br>reject.MERGE_SOURCE.status (409, CARD_NOT_UNSTARTED) | 해당 없음 |
+| MERGE_SOURCE | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.MERGE_SOURCE.session (403, maintenanceSession) | 해당 없음 | 해당 없음 |
+| MERGE_SOURCE | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
+| MERGE_SOURCE | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| UPDATE_UNSTARTED | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| UPDATE_UNSTARTED | owner | 해당 없음 | 모두 거절: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 | 모두 거절: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 |
+| UPDATE_UNSTARTED | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
+| UPDATE_UNSTARTED | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
+| UPDATE_UNSTARTED | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.human (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.pending (409, CARD_EXECUTION_PENDING)<br>reject.UPDATE_UNSTARTED.status (409, CARD_NOT_UNSTARTED) | 조건부: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.human (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.pending (409, CARD_EXECUTION_PENDING)<br>reject.UPDATE_UNSTARTED.status (409, CARD_NOT_UNSTARTED) | 해당 없음 |
+| UPDATE_UNSTARTED | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.UPDATE_UNSTARTED.session (403, maintenanceSession) | 해당 없음 | 해당 없음 |
+| UPDATE_UNSTARTED | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
+| UPDATE_UNSTARTED | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| SAVE_EXECUTION_SETTINGS | human | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| SAVE_EXECUTION_SETTINGS | owner | 해당 없음 | 모두 거절: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 모두 거절: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 |
+| SAVE_EXECUTION_SETTINGS | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
+| SAVE_EXECUTION_SETTINGS | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
+| SAVE_EXECUTION_SETTINGS | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 |
+| SAVE_EXECUTION_SETTINGS | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 해당 없음 |
+| SAVE_EXECUTION_SETTINGS | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
+| SAVE_EXECUTION_SETTINGS | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| PATCH_CARD_CONTROL | human | 모두 허용 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| PATCH_CARD_CONTROL | owner | 해당 없음 | 모두 허용 | 해당 없음 | 모두 허용 | 해당 없음 |
+| PATCH_CARD_CONTROL | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
+| PATCH_CARD_CONTROL | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
+| PATCH_CARD_CONTROL | otherAgent | 해당 없음 | 해당 없음 | 모두 허용 | 모두 허용 | 해당 없음 |
+| PATCH_CARD_CONTROL | anonymousAgent | 해당 없음 | 해당 없음 | 모두 허용 | 해당 없음 | 해당 없음 |
+| PATCH_CARD_CONTROL | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
+| PATCH_CARD_CONTROL | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| REGISTER_REPLACEMENT | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| REGISTER_REPLACEMENT | owner | 해당 없음 | 조건부: reject.REGISTER_REPLACEMENT.owner (409, replacementOwner) | 해당 없음 | 조건부: reject.REGISTER_REPLACEMENT.owner (409, replacementOwner) | 해당 없음 |
+| REGISTER_REPLACEMENT | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
+| REGISTER_REPLACEMENT | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
+| REGISTER_REPLACEMENT | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.REGISTER_REPLACEMENT.owner (409, replacementOwner) | 조건부: reject.REGISTER_REPLACEMENT.owner (409, replacementOwner) | 해당 없음 |
+| REGISTER_REPLACEMENT | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.REGISTER_REPLACEMENT.owner (409, replacementOwner) | 해당 없음 | 해당 없음 |
+| REGISTER_REPLACEMENT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
+| REGISTER_REPLACEMENT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| CLAIM | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| CLAIM | owner | 해당 없음 | 모두 허용 | 해당 없음 | 모두 허용 | 해당 없음 |
+| CLAIM | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
+| CLAIM | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
+| CLAIM | otherAgent | 해당 없음 | 해당 없음 | 모두 허용 | 모두 허용 | 해당 없음 |
+| CLAIM | anonymousAgent | 해당 없음 | 해당 없음 | 모두 허용 | 해당 없음 | 해당 없음 |
+| CLAIM | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
+| CLAIM | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+
+## 규칙 요약과 운영 호출지
+
+| 명령 | 전이 설명 | 운영 출처 |
+| :-- | :-- | :-- |
+| CREATE | 카드를 만든다 | cards/card_control_plane_service.ts#createCardMutation |
+| SET_STATUS | 현재 담당 권한과 검증 대기 입력을 확인한다. 같은 done 재지정도 완료 정보를 다시 쓰고 같은 queued 재지정도 새 대기열 순서 키를 요청한다. | cards/card_control_plane_service.ts#setCardStatus |
+| REQUEST_REVIEW | 검수를 요청한다 | cards/card_control_plane_service.ts#requestCardReview |
+| HUMAN_INPUT | 보관되지 않은 세션 담당의 검증 대기 또는 한도 아닌 막힘을 재개하고 열린 질문을 모두 닫는다. | cards/card_control_plane_service.ts#resumeBlockedCardOnHumanInput |
+| ASK_QUESTION | 다른 세션 담당 여부를 확인하고 질문 행을 추가한다. 질문 막힘으로 옮기며 완료 정보와 대기열 순서를 지운다. | cards/card_control_plane_service.ts#askQuestion |
+| ANSWER_QUESTION | 사람만 열린 질문에 답한다. 마지막 열린 질문이고 질문 막힘일 때만 실행 중으로 옮긴다. 완료 뒤 늦은 답은 상태를 보존한다. | cards/card_control_plane_service.ts#answerQuestion |
+| WITHDRAW_QUESTION | 질문 작성자 또는 현재 담당 세션이 철회한다. 마지막 질문 막힘일 때만 실행 중으로 옮긴다. | cards/card_control_plane_service.ts#withdrawQuestion |
+| ADD_COMMENT | reply의 담당, 길이와 사용자 입력을 확인한다. non-reply이면 사람뿐 아니라 담당의 spoken도 말로 풀리는 기다림을 재개한다. claim과 항목과 상태 UPDATE는 나눈다. | cards/card_control_plane_service.ts#applyAddCommentTx |
+| START_WORK | 작업 착수를 확인한다 | cards/card_control_plane_service.ts#startCardWork |
+| CONFIRM_EXECUTION | 요청 세션을 담당으로 연결한다. 요청 이후 상태가 바뀐 뒤늦은 확인은 상태와 완료 정보를 보존한다. | cards/card_execution_service.ts#observe<br>cards/card_execution_service.ts#observeOnce<br>cards/card_execution_service.ts#observePendingForNode<br>cards/card_execution_service.ts#sendAndObserve |
+| DISPATCH | queued와 미확인 실행 요청을 확인한다. 정책 설정과 admission 증거에 따라 허가를 확인하고, admission이면 queued 유지, 기존 실행이면 running으로 옮긴다. | cards/card_control_plane_service.ts#recordDispatch |
+| BLOCK_FOR_LIMIT | 현재 실행 중 담당의 최신 한도 종료가 일치할 때 담당 예약을 기록한다. 짧은 한도는 시각을, 긴 한도는 담당만 기록한다. | cards/card_control_plane_service.ts#blockCardForLimit |
+| RESUME_SHORT_LIMIT | 현재 담당과 기록된 예약이 일치하고 같은 시각이 도래했을 때만 재개한다. | cards/card_control_plane_service.ts#resumeLimitedCard |
+| RESUME_LONG_LIMIT | 시각 없는 예약의 현재 담당만 재개한다. 정책 설정과 admission 확인을 함께 적용한다. | cards/card_control_plane_service.ts#resumeDispatchedCard |
+| RESUME_VERIFICATION | 기록한 검증 시각과 담당이 일치하면 예약을 지우고 재개한다. 도래 선별과 실제 깨우기는 호출부가 한다. | cards/card_control_plane_service.ts#resumeVerificationCard |
+| NOTE_MISSING | 담당 에이전트 없음을 적는다 | cards/card_control_plane_service.ts#noteMissingAssignee |
+| BULK_SET_STATUS | 여러 카드의 상태를 옮긴다 | cards/card_maintenance_service.ts#bulkSetCardStatus |
+| MERGE_SOURCE | 시작 전 카드를 합쳐 닫는다 | cards/card_maintenance_service.ts#mergeCards |
+| UPDATE_UNSTARTED | 시작 전 카드를 고친다 | cards/card_maintenance_service.ts#updateUnstartedCard |
+| SAVE_EXECUTION_SETTINGS | 실행 설정을 저장한다 | cards/card_control_plane_service.ts#saveExecutionSettings |
+| PATCH_CARD_CONTROL | 명시한 담당과 보관만 바꾼다. 담당 교체와 보관 또는 한도 탈출은 한도 예약을 함께 지운다. 명시적 status 쓰기가 없으면 검증 예약은 보존한다. | cards/card_control_plane_service.ts#patchCard |
+| REGISTER_REPLACEMENT | 등록된 새 담당으로 바꾼다 | control_plane/repositories/session_card_replacement.ts#applySessionCardReplacement |
+| CLAIM | 연결된 작업 세션이 담당을 맡는다 | cards/card_control_plane_service.ts#claim |
+
+## 약속과 구멍
+
+| 약속 | 위반 수 | 예시 최단 경로 |
+| :-- | --: | :-- |
+| 판에 올라야 할 장은 판에 있다 (1-가 질문 장) | 0 | 없음 |
+| 판에 올라야 할 장은 판에 있다 (1-나 카드 장) | 0 | 없음 |
+| 서버의 한도 재개는 기록된 담당이 현재 담당일 때만 한다 | 0 | 없음 |
+| 같은 질문의 답은 카드 상세와 감독 판에서 결과가 같다 | 0 | 없음 |
+| 질문을 올릴 수 있는 세션은 철회할 수 있다 | 0 | 없음 |
+| 짧은 한도로 막히면 취소 전까지 시각 있는 예약이 있다 | 0 | 없음 |
+| 기다리는 카드는 판의 장이나 시각으로 나가는 길이 있다 | 195 | PAS_APPEARS → {"type":"CREATE","actor":"human","facts":{"queued":false,"assigneeInput":"none"}} → {"type":"SET_STATUS","actor":"human","facts":{"target":"question","claim":false,"wait":"missing"}} → ACK_CARD |
+
+| 구멍 | 도달 | 설명 |
+| :-- | :-- | :-- |
+| 판에 올라야 하는데 카드 장이 없음 | 닿지 않음 |  |
+| 질문은 열렸는데 판에 장이 없음 | 닿지 않음 |  |
+| 철회할 세션이 없는 질문 | 닿지 않음 |  |
+| 담당이 바뀐 한도 막힘 | 닿지 않음 | 예약 담당 불일치는 DB CHECK가 금지하며 결정 상태의 별도 영역으로 만들지 않는다 |
+
+기존 모형의 담당 생존, 작성자, admitted, 감독과 내린 기록을 저장 영역에서 뺐으므로 세계 구성 수와 약속 6의 위반 수는 이전의 구성 수와 단위가 다르다. 약속 1-가부터 5는 위반 0을 유지하고, 약속 6은 알려진 실패를 유지한다.
 
 ## 다시 만들기
 
-저장소 루트에서 실행한다. 첫 명령은 Markdown을 만들고, 선택한 폴더에는 같은 정의의 Mermaid 원문과 검사 결과도 저장한다.
-
 ```bash
-corepack pnpm@10.32.1 --dir orch-server-ts exec tsx scripts/card-state-charts.ts <그림 원문 폴더>
+corepack pnpm@10.32.1 --dir orch-server-ts exec tsx scripts/card-state-charts.ts docs/cards/generated
 ```
