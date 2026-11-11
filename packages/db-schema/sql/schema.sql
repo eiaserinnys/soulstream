@@ -3846,8 +3846,6 @@ CREATE INDEX IF NOT EXISTS idx_blocks_tree
     ON blocks(page_id, parent_id, position_key, id);
 CREATE INDEX IF NOT EXISTS idx_blocks_type
     ON blocks(page_id, block_type);
-CREATE INDEX IF NOT EXISTS idx_blocks_text_prefix
-    ON blocks ((lower(text_plain)) text_pattern_ops, id);
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_blocks_primary_session_ref
     ON blocks ((properties ->> 'sessionId'))

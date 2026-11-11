@@ -483,32 +483,35 @@ async def test_session_predecessor_registration_and_delete_semantics(test_db):
     ) is None
 
 
-async def test_page_prefix_search_indexes_are_additive_and_mirrored():
+async def test_page_prefix_search_index_history_and_final_schema():
     migration_sql = _migration_sql("038_page_prefix_search_indexes.sql")
+    drop_sql = _migration_sql("153_drop_blocks_text_prefix_index.sql")
     schema_sql = _schema_sql()
 
-    for required in [
+    for historical in [
         "CREATE INDEX IF NOT EXISTS idx_pages_title_prefix",
         "ON pages (title_key text_pattern_ops, id)",
         "CREATE INDEX IF NOT EXISTS idx_blocks_text_prefix",
         "ON blocks ((lower(text_plain)) text_pattern_ops, id)",
     ]:
-        assert required in migration_sql
-        assert required in schema_sql
+        assert historical in migration_sql
+
+    assert "CREATE INDEX IF NOT EXISTS idx_pages_title_prefix" in schema_sql
+    assert "ON pages (title_key text_pattern_ops, id)" in schema_sql
+    assert "idx_blocks_text_prefix" not in schema_sql
+    assert "DROP INDEX IF EXISTS idx_blocks_text_prefix" in drop_sql
 
 
-async def test_page_prefix_search_indexes_apply_to_fresh_schema_and_are_idempotent(test_db):
-    expected_fragments = {
-        "idx_pages_title_prefix": [
-            "title_key text_pattern_ops",
-            "id",
-            "WHERE (archived = false)",
-        ],
-        "idx_blocks_text_prefix": [
-            "lower(text_plain) text_pattern_ops",
-            "id",
-        ],
-    }
+async def test_page_prefix_search_indexes_apply_to_fresh_and_upgraded_schema(test_db):
+    title_fragments = [
+        "title_key text_pattern_ops",
+        "id",
+        "WHERE (archived = false)",
+    ]
+    blocks_fragments = [
+        "lower(text_plain) text_pattern_ops",
+        "id",
+    ]
 
     async def read_indexes():
         return {
@@ -520,24 +523,29 @@ async def test_page_prefix_search_indexes_apply_to_fresh_schema_and_are_idempote
                 WHERE schemaname = current_schema()
                   AND indexname = ANY($1::text[])
                 """,
-                list(expected_fragments),
+                ["idx_pages_title_prefix", "idx_blocks_text_prefix"],
             )
         }
 
     fresh_indexes = await read_indexes()
-    assert set(fresh_indexes) == set(expected_fragments)
+    assert set(fresh_indexes) == {"idx_pages_title_prefix"}
+    for fragment in title_fragments:
+        assert fragment in fresh_indexes["idx_pages_title_prefix"]
 
-    await test_db.execute("DROP INDEX idx_pages_title_prefix")
-    await test_db.execute("DROP INDEX idx_blocks_text_prefix")
-    migration_sql = _migration_sql("038_page_prefix_search_indexes.sql")
-    await test_db.execute(migration_sql)
-    await test_db.execute(migration_sql)
+    await test_db.execute(_migration_sql("038_page_prefix_search_indexes.sql"))
+    before_drop = await read_indexes()
+    assert set(before_drop) == {"idx_pages_title_prefix", "idx_blocks_text_prefix"}
+    for fragment in blocks_fragments:
+        assert fragment in before_drop["idx_blocks_text_prefix"]
+
+    drop_sql = _migration_sql("153_drop_blocks_text_prefix_index.sql")
+    await test_db.execute(drop_sql)
+    await test_db.execute(drop_sql)
 
     migrated_indexes = await read_indexes()
-    assert set(migrated_indexes) == set(expected_fragments)
-    for index_name, fragments in expected_fragments.items():
-        for fragment in fragments:
-            assert fragment in migrated_indexes[index_name]
+    assert set(migrated_indexes) == {"idx_pages_title_prefix"}
+    for fragment in title_fragments:
+        assert fragment in migrated_indexes["idx_pages_title_prefix"]
 
 
 async def test_checklist_projection_outbox_contract_is_mirrored_in_canonical_schema_sql():
