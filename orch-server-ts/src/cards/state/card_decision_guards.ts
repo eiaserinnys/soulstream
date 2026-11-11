@@ -40,7 +40,7 @@ reject('BLOCK_FOR_LIMIT','currentRunningOwner','limitRunning',not(and([inside('s
 reject('BLOCK_FOR_LIMIT','currentTermination','limitTermination',not(fact('termination')));
 reject('RESUME_SHORT_LIMIT','sameDueReservation','shortReservation',not(and([inside('s_limit'),inside('arch_active'),inside('a_session'),fact('sessionMatch'),inside('r_limit'),fact('due'),fact('resumeTimeMatch')])));
 reject('RESUME_LONG_LIMIT','sameLongReservation','longReservation',not(and([inside('s_limit'),inside('arch_active'),fact('sessionMatch'),inside('r_longLimit')])));
-reject('RESUME_VERIFICATION','sameReservation','verificationReservation',not(and([inside('s_verification'),inside('a_session'),fact('sessionMatch'),fact('hasWake'),fact('verificationTimeMatch')])));
+reject('RESUME_VERIFICATION','sameReservation','verificationReservation',not(and([inside('s_verification'),inside('a_session'),fact('sessionMatch'),inside('r_verify'),fact('verificationTimeMatch')])));
 for(const c of ['DISPATCH','RESUME_LONG_LIMIT','RESUME_SHORT_LIMIT'] as const)reject(c,'pending','pending',fact('pending'));
 for(const c of ['DISPATCH','RESUME_LONG_LIMIT'] as const){
  reject(c,'policyDisabled','policyDisabled',and([not(fact('policyEnabled')),fact('hasAdmission')]));

@@ -13,17 +13,17 @@ export const CARD_FACT_VALUES={
  ASK_QUESTION:{hasCurrentNow:flag},ANSWER_QUESTION:{question,otherOpen:flag},WITHDRAW_QUESTION:{question,otherOpen:flag},
  ADD_COMMENT:{claim:flag,reply:flag,hasItems:flag,hasMode:flag,userInput:flag,replyLength:['within','tooLong'] as const,hasItem:flag,itemExists:flag},
  START_WORK:{claim:flag,execution:flag,admitted:flag,admissionReceipt:flag,admissionValid:flag},
- CONFIRM_EXECUTION:{sessionMatch:flag,hasExecution:flag,statusChanged:flag,assignmentChanged:flag,hasLimitOwner:flag,hasNow:flag},
+ CONFIRM_EXECUTION:{sessionMatch:flag,hasExecution:flag,statusChanged:flag,assignmentChanged:flag,hasNow:flag},
  DISPATCH:{pending:flag,policyEnabled:flag,hasAdmission:flag,admission},
  BLOCK_FOR_LIMIT:{sessionMatch:flag,termination:flag,short:flag},
  RESUME_SHORT_LIMIT:{sessionMatch:flag,due:flag,resumeTimeMatch:flag,pending:flag},
  RESUME_LONG_LIMIT:{sessionMatch:flag,pending:flag,policyEnabled:flag,hasAdmission:flag,admission},
- RESUME_VERIFICATION:{sessionMatch:flag,verificationTimeMatch:flag,hasWake:flag},NOTE_MISSING:{},
+ RESUME_VERIFICATION:{sessionMatch:flag,verificationTimeMatch:flag},NOTE_MISSING:{},
  BULK_SET_STATUS:{target:['todo','queued','hold','cancelled'] as const,ownerState:['missing','running','initializing','idle'] as const},
  MERGE_SOURCE:{pending:flag},UPDATE_UNSTARTED:{pending:flag,hasAgentInput:flag},
- SAVE_EXECUTION_SETTINGS:{assigneeInput:['none','agent'] as const,pending:flag,assignmentChanged:flag,hasLimitOwner:flag,hasNow:flag,move:flag},
- PATCH_CARD_CONTROL:{hasArchiveInput:flag,assignmentChanged:flag,nextArchived:flag,hasLimitOwner:flag,hasNow:flag,hasAssignment:flag,assigneeInput:['none','agent','human','session'] as const},
- REGISTER_REPLACEMENT:{previousOwnerMatch:flag,hasLimitOwner:flag,hasNow:flag,assignmentChanged:flag},CLAIM:{claim:flag},
+ SAVE_EXECUTION_SETTINGS:{assigneeInput:['none','agent'] as const,pending:flag,assignmentChanged:flag,hasNow:flag,move:flag},
+ PATCH_CARD_CONTROL:{hasArchiveInput:flag,assignmentChanged:flag,nextArchived:flag,hasNow:flag,hasAssignment:flag,assigneeInput:['none','agent','human','session'] as const},
+ REGISTER_REPLACEMENT:{previousOwnerMatch:flag,hasNow:flag,assignmentChanged:flag},CLAIM:{claim:flag},
 } as const;
 export type CardDecisionCommand=keyof typeof CARD_FACT_VALUES;
 export type CommandFacts<C extends CardDecisionCommand> = { [K in keyof typeof CARD_FACT_VALUES[C]]:
@@ -66,8 +66,8 @@ export function deriveCardDecisionFacts(row:Record<string,any>|null,questions:re
  pending:evidence.pending===true,policyEnabled:evidence.policyEnabled===true,hasAdmission:command.admission!==undefined,admission:evidence.admission??'ok',
  termination:evidence.termination===true,short:evidence.resumeAt!=null,due:c.limit_resume_at!=null&&new Date(c.limit_resume_at).getTime()<=Number(command.now),
  resumeTimeMatch:c.limit_resume_at!=null&&new Date(c.limit_resume_at).toISOString()===command.resumeAt,
- verificationTimeMatch:c.wake_at!=null&&new Date(c.wake_at).toISOString()===command.wakeAt,hasWake:c.wake_at!=null,
- ownerState:evidence.ownerState??'missing',hasLimitOwner:c.limit_resume_session_id!=null,hasNow:command.now!==undefined,nextArchived:command.archived===undefined?c.archived===true:command.archived===true,
+ verificationTimeMatch:c.wake_at!=null&&new Date(c.wake_at).toISOString()===command.wakeAt,
+ ownerState:evidence.ownerState??'missing',hasNow:command.now!==undefined,nextArchived:command.archived===undefined?c.archived===true:command.archived===true,
  hasArchiveInput:command.archived!==undefined,hasAgentInput:command.agentId!==undefined,hasAssignment:Object.hasOwn(command,'assignee'),move:command.folderId!==undefined&&command.folderId!==c.folder_id,previousOwnerMatch:evidence.previousOwnerMatch===true};
  return Object.fromEntries(Object.keys(CARD_FACT_VALUES[command.type]).map(key=>[key,all[key]!]));
 }

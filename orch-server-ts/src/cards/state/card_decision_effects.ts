@@ -106,7 +106,7 @@ function augment(region:string,c:CardDecisionCommand,condition:any,actions:any[]
 put('question','REQUEST_REVIEW',undefined,[fact('hasAsk')],[write({now:bind('formatted.review')})]);
 for(const c of ['PATCH_CARD_CONTROL','SAVE_EXECUTION_SETTINGS','UPDATE_UNSTARTED'] as const)verdictExtras[c]!.push({type:'spreadControl',params:{stage:'state'}});
 for(const c of ['PATCH_CARD_CONTROL','SAVE_EXECUTION_SETTINGS','REGISTER_REPLACEMENT','CONFIRM_EXECUTION'] as const)
- augment('archive',c,and([fact('assignmentChanged'),fact('hasLimitOwner'),not(fact('hasNow'))]),[write({now:bind('formatted.replacement')})]);
+ augment('archive',c,and([fact('assignmentChanged'),any('r_limit','r_longLimit'),not(fact('hasNow'))]),[write({now:bind('formatted.replacement')})]);
 put('archive','ASK_QUESTION',undefined,[fact('hasCurrentNow')],[write({now:bind('formatted.question')})]);
 put('archive','BLOCK_FOR_LIMIT',undefined,[fact('short')],[write({now:bind('formatted.limit')})]);
 put('archive','ADD_COMMENT',undefined,[fact('hasItem'),not(fact('reply'))],[write({items:bind('formatted.items')},'item')]);
