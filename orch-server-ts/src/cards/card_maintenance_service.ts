@@ -1,10 +1,15 @@
+import { readRemainingCardDecision } from './card_remaining_evidence_reader.js';
+import { decodeCardDecision } from './state/card_decision_decoder.js';
+import { formatCardDecisionFailure } from './state/card_decision_errors.js';
+import type { CardDecision } from './state/card_decision.js';
+import type { CardCommand } from './state/card_decision_facts.js';
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { AttachmentRef } from "@soulstream/wire-schema/attachments";
 import { attachmentRefsOf } from "./card_attachment_refs.js";
 import { mergeCardSourceAttachmentRefs, type CardLegacyAttachmentRef } from "./card_attachment_legacy_refs.js";
 import {
-  appendBriefSection, appendRequestSection, assertUnstartedCardTx, cardLabel, cardNotFound, describeCard,
+  appendBriefSection, appendRequestSection, cardLabel, cardNotFound, describeCard,
   invalidMaintenance, lockCardTx, lockCardsTx, mergeCardItems, mergedCloseNow, readCardTx, readMergeCommentsTx,
   readOperationTx, requireMaintenanceSession, unionAttachments, updateAttachmentRefsTx,
   type BulkStatus, type CardCommentRow,
@@ -133,7 +138,7 @@ export class CardMaintenanceService {
   }
 
   async updateUnstartedCard(params: UpdateUnstartedInput, authorizeFolder: AuthorizeFolder): Promise<UpdateUnstartedResult> {
-    const actorSessionId = requireMaintenanceSession(params);
+    const actorSessionId = requireMaintenanceSession(params,'UPDATE_UNSTARTED');
     const idempotencyKey = requireIdempotencyKey(params.idempotencyKey);
     const changedFields = updateChangedFields(params);
     const storageKey = maintenanceStorageKey("update_unstarted_card", actorSessionId, idempotencyKey);
@@ -157,7 +162,8 @@ export class CardMaintenanceService {
       }
       const locked = await lockCardTx(sql, params.cardId);
       await authorizeFolder(locked.folder_id);
-      await assertUnstartedCardTx(sql, locked);
+      const command={...params,type:'UPDATE_UNSTARTED'} as const;
+      const decision=await this.decide(sql,locked,command,params);
       if (params.expectedVersion !== undefined && locked.version !== params.expectedVersion)
         throw new CardVersionConflict("card", locked.id, params.expectedVersion, locked.version);
 
@@ -171,7 +177,7 @@ export class CardMaintenanceService {
         operationType: "update_unstarted_card", actor: params, idempotencyKey: storageKey, payload,
         apply: async (tx, eventId) => {
           const fields = await this.updateFieldsTx(tx, locked, params);
-          await this.patchTx(tx, locked, fields, params, eventId);
+          await this.patchTx(tx, locked, this.fields(decision,locked,command,params,eventId,fields), params, eventId);
           committed = await readCardOrFail(tx, locked.id);
           result = { card: compactCard(committed), changed_fields: changedFields, idempotent: false };
           payload.result = { card: result.card, changed_fields: result.changed_fields };
@@ -202,7 +208,7 @@ export class CardMaintenanceService {
   }
 
   async mergeCards(params: MergeCardsInput, authorizeFolder: AuthorizeFolder): Promise<MergeCardsResult> {
-    const actorSessionId = requireMaintenanceSession(params);
+    const actorSessionId = requireMaintenanceSession(params,'MERGE_SOURCE');
     const idempotencyKey = requireIdempotencyKey(params.idempotencyKey);
     const sourceCardIds = [...params.sourceCardIds];
     const unique = new Set(sourceCardIds);
@@ -229,8 +235,10 @@ export class CardMaintenanceService {
       for (const card of locked.values()) await authorizeFolder(card.folder_id);
       const target = locked.get(params.targetCardId)!;
       const sources = sourceCardIds.map(cardId => locked.get(cardId)!);
-      await assertUnstartedCardTx(sql, target);
-      for (const source of sources) await assertUnstartedCardTx(sql, source);
+      const targetCommand={type:'UPDATE_UNSTARTED'} as const;
+      const targetDecision=await this.decide(sql,target,targetCommand,params);
+      const sourceDecisions=new Map<string,CardDecision>();
+      for (const source of sources) sourceDecisions.set(source.id,await this.decide(sql,source,{type:'MERGE_SOURCE'},params));
 
       const comments = await readMergeCommentsTx(sql, sourceCardIds);
       const commentsByCard = new Map<string, CardCommentRow[]>();
@@ -277,12 +285,8 @@ export class CardMaintenanceService {
           apply: async (tx, eventId) => {
             await tx`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body,attachment_refs)
               VALUES(${randomUUID()},${source.id},'agent',NULL,${actorSessionId},'note',${sourceNote},${tx.json([])})`;
-            await this.patchTx(tx, source, {
-              status: "cancelled", queue_position_key: null, blocked_kind: null, blocked_detail: null,
-              completed_kind: null, completed_session_id: null, completed_event_id: null,
-              completed_user_id: null, completed_at: null,
-              now: tx.json(mergedCloseNow(target, new Date().toISOString(), actorSessionId)),
-            }, params, eventId);
+            await this.patchTx(tx, source, this.fields(sourceDecisions.get(source.id)!,source,{type:'MERGE_SOURCE'},params,eventId,{},
+              {'formatted.merge':()=>tx.json(mergedCloseNow(target,new Date().toISOString(),actorSessionId))}), params, eventId);
             sourceCommitted = await readCardOrFail(tx, source.id);
             sourcePayload.result = { card_id: source.id, number: source.number, status: sourceCommitted.status, version: sourceCommitted.version };
           },
@@ -315,7 +319,7 @@ export class CardMaintenanceService {
             items: tx.json(itemMerge.items),
           };
           if (params.title !== undefined) fields.title = params.title;
-          await this.patchTx(tx, target, fields, params, eventId);
+          await this.patchTx(tx, target, this.fields(targetDecision,target,targetCommand,params,eventId,fields), params, eventId);
           targetCommitted = await readCardOrFail(tx, target.id);
           merged = {
             card: compactCard(targetCommitted),
@@ -342,8 +346,24 @@ export class CardMaintenanceService {
     return outcome.result;
   }
 
+  private async decide(sql:RepositorySql,card:CardRow,command:CardCommand,params:FolderActorParams) {
+    const decision=await readRemainingCardDecision(sql,card,command,params);
+    if(decision.kind==='reject'){
+      const failure=formatCardDecisionFailure(decision.failure,{label:cardLabel(card),status:card.status});
+      throw Object.assign(new Error(failure.message),{statusCode:failure.statusCode,code:failure.code});
+    }
+    return decision;
+  }
+  private fields(decision:CardDecision,card:CardRow,command:CardCommand,params:FolderActorParams,eventId:number|null,
+    control:Record<string,unknown>,lazy:Record<string,()=>unknown>={}) {
+    const writes=decodeCardDecision(decision,{card,command,actor:{kind:params.actorKind??'agent',sessionId:params.actorSessionId,userId:params.actorUserId},
+      now:new Date(),eventId,values:{'command.control':control},lazy});
+    const fields=Object.assign({},...writes.filter(write=>write.kind==='card').map(write=>write.fields));
+    return fields;
+  }
+
   async bulkSetCardStatus(params: BulkSetCardStatusInput, authorizeFolder: AuthorizeFolder): Promise<{ results: BulkStatusItem[] }> {
-    const actorSessionId = requireMaintenanceSession(params);
+    const actorSessionId = requireMaintenanceSession(params,'BULK_SET_STATUS');
     const idempotencyKey = requireIdempotencyKey(params.idempotencyKey);
     const results: BulkStatusItem[] = [];
     for (const cardId of params.cardIds) {

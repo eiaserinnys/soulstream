@@ -45,7 +45,7 @@ it('writes the replacement notice when registered replacement clears a limit res
 it('preserves the eligible caller claim during bulk status changes',()=>{
  const r={...row,status:'todo',assignee_kind:'agent',assignee_agent_id:'worker',assignee_session_id:null};
  const actor={kind:'agent',sessionId:'candidate'},command={type:'BULK_SET_STATUS' as const,status:'queued'};
- const result=decideCardTransition(r,[],{claim:true,ownerState:'missing'},command,actor,0);
+ const result=decideCardTransition(r,[],{loaded:['ownerState','claim'],claim:true,ownerState:'missing'},command,actor,0);
  expect(result.kind).toBe('apply');expect(result.next.assignee).toBe('session');
  const writes=decodeCardDecision(result,{card:r,command,actor,now:new Date(0),eventId:1,queuePosition:'Q'});
  expect(writes).toHaveLength(1);
@@ -60,16 +60,15 @@ it('preserves direct comment precedence while accepting the followup entrance',(
  expect(followup.kind).toBe('noop');
 });
 
-it('leaves final reservation cleanup to patchCardTx while retaining requested writes',()=>{
+it('decodes final status, completion and reservation writes together',()=>{
  const r={...row,status:'awaiting_verification',wake_at:'2026-11-12T00:00:00.000Z',waiting_for:'확인'};
  const actor={kind:'user',sessionId:null},command={type:'SET_STATUS' as const,status:'done' as const};
  const decision=decideCardTransition(r,[],{},command,actor,0);
  const values={card:r,command,actor,now:new Date(0),eventId:null};
- const [full]=decodeCardDecision(decision,values),[requested]=decodeCardDecision(decision,values,true);
+ const [full]=decodeCardDecision(decision,values);
  expect(full!.fields).toMatchObject({wake_at:null,waiting_for:null,limit_resume_session_id:null,limit_resume_at:null});
- expect(requested!.fields).toMatchObject({status:'done',completed_kind:'user',completed_at:new Date(0)});
- for(const key of ['wake_at','waiting_for','limit_resume_session_id','limit_resume_at'])expect(requested!.fields).not.toHaveProperty(key);
+ expect(full!.fields).toMatchObject({status:'done',completed_kind:'user',completed_at:new Date(0)});
  const verify={type:'SET_STATUS' as const,status:'awaiting_verification' as const,wakeAt:'2026-11-12T00:00:00.000Z',waitingFor:'확인'};
  const next=decideCardTransition(row,[],{},verify,actor,Date.parse('2026-11-11T00:00:00.000Z'));
- expect(decodeCardDecision(next,{...values,card:row,command:verify},true)[0]!.fields).toMatchObject({wake_at:verify.wakeAt,waiting_for:'확인'});
+ expect(decodeCardDecision(next,{...values,card:row,command:verify})[0]!.fields).toMatchObject({wake_at:verify.wakeAt,waiting_for:'확인'});
 });

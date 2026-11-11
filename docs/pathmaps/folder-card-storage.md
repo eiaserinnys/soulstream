@@ -1,18 +1,24 @@
 # 폴더와 카드 저장 경로
 
-## 사람과 질문의 카드 결정 경로 (#1208 PR 2)
+## 카드 결정 경로 (#1208 최종 연결)
 
-`card_control_plane_service.ts`의 createCard/createCardTx, setCardStatus, requestCardReview, resumeBlockedCardOnHumanInput, askQuestion, answerQuestion, withdrawQuestion, addComment/addCommentTx가 `humanDecision`을 통해 `state/card_decision.ts`의 decideCardTransition을 한 번 부른다. 연결된 여덟 명령과 열 개 입구는 `state/card_decision_inventory.ts`의 CARD_RUNTIME_DECISION_CALLS가 고정한다. 서버 실행과 예약 재개, bulk와 공통 patch 경로는 후속 PR에서 연결한다.
+`card_control_plane_service.ts`의 createCard/createCardTx, setCardStatus, requestCardReview, resumeBlockedCardOnHumanInput, askQuestion, answerQuestion, withdrawQuestion, addComment/addCommentTx가 `humanDecision`을 통해 `state/card_decision.ts`의 decideCardTransition을 한 번 부른다. 연결된 여덟 명령과 열 개 입구는 `state/card_decision_inventory.ts`의 CARD_RUNTIME_DECISION_CALLS가 고정한다. 서버 실행과 예약 재개, bulk, 시작 전 편집과 합치기, 실행 설정, generic 담당과 보관, 등록 시 담당 교체도 같은 기계에 연결한다.
 
 주체와 입력만 보는 사전 거절은 CARD_COMMAND_ENTRY_RULES가 정한다. `state/card_command_entrance.ts`는 answerQuestion의 사람 전용 검사와 prepareAddComment의 mode/spoken 검사를 기존 입구 위치에서 수행한다. 이 검사는 카드 조회, 잠금과 version fence보다 먼저 실행한다. 카드 상태, 질문과 증거를 보는 판정은 잠금 뒤 XState 기계가 맡는다. 오류 문구는 `state/card_decision_errors.ts`가 만든다.
 
 기존 claim 후보 SQL과 reply 뒤 사용자 입력 SQL의 결과는 `state/card_human_evidence.ts`의 humanCardEvidence에서 증거로 바꾼다. 고정 fixture 예측도 같은 함수를 쓴다. `card_work_dispatch_service.ts#accept`는 addCommentTx의 별도 입구 인자로 followup을 전달하며 actor와 기록된 명령 매개변수는 유지한다.
 
-decoder의 requestedOnly 모드는 최종 예약 정리를 제외한 요청 쓰기만 반환한다. 서비스는 기존 순서로 질문 INSERT/조건부 UPDATE, 댓글의 claim UPDATE와 INSERT, 항목 UPDATE, 상태 UPDATE, 열린 질문 닫기를 수행한다. 모든 카드 UPDATE는 기존 patchCardTx를 거치며 PR 4까지 최종 예약 정리는 그 함수가 맡는다. 폴더와 카드 잠금, expectedVersion, 멱등 키, 첨부 검사, 판 동기화와 알림 경계는 기존 서비스에 남는다.
+decoder는 선택된 액션에서 최종 칸 쓰기를 반환한다. 요청 쓰기 전용 모드는 없다. 서비스는 기존 순서로 질문 INSERT/조건부 UPDATE, 댓글의 claim UPDATE와 INSERT, 항목 UPDATE, 상태 UPDATE, 열린 질문 닫기를 수행한다. 모든 카드 UPDATE는 기존 patchCardTx를 거치며 예약 제거와 담당 교체 안내문 선택은 기계가 맡고 patchCardTx는 받은 칸과 번호, 감사 칸을 저장한다. 폴더와 카드 잠금, expectedVersion, 멱등 키, 첨부 검사, 판 동기화와 알림 경계는 기존 서비스에 남는다.
 
 서식은 `CardBindingValues.lazy`의 이름별 계산 함수로 전달한다. `card_write_intent.ts#createCardBindingResolver`를 decoder 한 번에 하나 만들고, 선택된 bind 또는 spread가 요청한 이름만 계산한다. `formatted.verification`, `formatted.review`, `formatted.question`, `formatted.items`와 시각·문구 직렬화도 이 경로를 쓴다. REQUEST_REVIEW의 ask 검사는 기존처럼 잠금·version 확인 뒤이면서 판정 전에 `checkCardReviewAsk`가 한 번 수행한다. 확인한 문자열은 검사를 반복하지 않는 `reviewCardNowFromCheckedAsk`가 받아 서식을 만든다. 반면 검증 대기의 now 문구 검사는 기존처럼 상태·권한·대기 입력 판정 뒤 서식을 bind할 때 실행한다.
 
-PR 3은 서버의 CONFIRM_EXECUTION, START_WORK, DISPATCH, RESUME_LONG_LIMIT, BLOCK_FOR_LIMIT, RESUME_SHORT_LIMIT, RESUME_VERIFICATION, NOTE_MISSING를 같은 결정 기계에 연결한다. `card_control_plane_service.ts#serverDecision`은 상태 분기 없이 기계가 needsEvidence로 지목한 `card_server_evidence_reader.ts`의 단계만 읽는다. 단계 순서는 `state/card_server_command.ts#CARD_SERVER_EVIDENCE_STAGES`, 가드와 읽기 지목 순서는 기계의 ordered reject 전이, 순수 증거 구성은 `state/card_server_evidence.ts#serverCardEvidence`가 정본이다. 앞선 상태·증거 거절은 뒤의 SQL과 잠금을 생략한다. 최종 apply 뒤에만 허가 INSERT 또는 실행 수락 UPDATE, decoder 요청 쓰기, 기존 patchCardTx 순으로 저장한다. 호출 횟수는 단계 수 + 1 이하다. 명령별 단계와 SQL 잠금, 검사 위치는 `docs/cards/card-decision-evidence.md`에 있다. 실행 확인 호출자(`card_execution_service.ts`의 observe, observeOnce, observePendingForNode, sendAndObserve)는 기존 recordExecution을 통하며 별도 상태 판정을 더하지 않는다.
+PR 3은 서버의 CONFIRM_EXECUTION, START_WORK, DISPATCH, RESUME_LONG_LIMIT, BLOCK_FOR_LIMIT, RESUME_SHORT_LIMIT, RESUME_VERIFICATION, NOTE_MISSING를 같은 결정 기계에 연결한다. `card_control_plane_service.ts#serverDecision`은 상태 분기 없이 기계가 needsEvidence로 지목한 `card_server_evidence_reader.ts`의 단계만 읽는다. 단계 순서는 `state/card_server_command.ts#CARD_SERVER_EVIDENCE_STAGES`, 가드와 읽기 지목 순서는 기계의 ordered reject 전이, 순수 증거 구성은 `state/card_server_evidence.ts#serverCardEvidence`가 정본이다. 앞선 상태·증거 거절은 뒤의 SQL과 잠금을 생략한다. 최종 apply 뒤에만 허가 INSERT 또는 실행 수락 UPDATE, decoder 최종 쓰기, 기존 patchCardTx 순으로 저장한다. 호출 횟수는 단계 수 + 1 이하다. 명령별 단계와 SQL 잠금, 검사 위치는 `docs/cards/card-decision-evidence.md`에 있다. 실행 확인 호출자(`card_execution_service.ts`의 observe, observeOnce, observePendingForNode, sendAndObserve)는 기존 recordExecution을 통하며 별도 상태 판정을 더하지 않는다.
+
+PR 4의 `card_remaining_evidence_reader.ts#readRemainingCardDecision`은 `state/card_remaining_evidence.ts#remainingCardEvidence`로 증거를 만들며 고정 fixture 예측도 이 순수 함수를 쓴다. `BULK_SET_STATUS`는 기존 카드별 트랜잭션과 잠금 안에서 ownerState, claim 순서를 지킨다. 연결 담당이 없을 때 ownerState 단계는 SQL 없이 지나가며, 연결 담당의 거절은 claim 조회를 생략한다. `MERGE_SOURCE`와 `UPDATE_UNSTARTED`는 기계의 시작 전 상태 거절 뒤 pending을 읽고, `SAVE_EXECUTION_SETTINGS`는 pending을 읽은 다음 담당 연결을 검사한다. merge는 기존 UUID 정렬 카드 잠금과 대상, 원본 순서의 검사를 유지한다. 대상의 데이터 편집은 UPDATE_UNSTARTED, 원본의 닫기는 MERGE_SOURCE로 각각 한 번 판정한다.
+
+`card_maintenance_tx.ts#requireMaintenanceSession`은 유지보수 세 명령의 CARD_COMMAND_ENTRY_RULES를 기존 입구 위치에서 읽는다. 문자열 세션 ID의 공백 검사는 같은 위치에 유지한다. generic 담당 변경, 보관과 보관 해제는 `patchCard`의 PATCH_CARD_CONTROL이다. `control_plane/repositories/session_card_replacement.ts#applySessionCardReplacement`는 기존 세션 등록 트랜잭션과 카드 FOR UPDATE 뒤 이전 담당 일치 증거로 REGISTER_REPLACEMENT를 판정한다. 담당 후보 확보는 독립 사건이 아니라 SET_STATUS, BULK_SET_STATUS, REQUEST_REVIEW, START_WORK, ADD_COMMENT 각각의 claiming 효과다.
+
+patchCardTx에는 단일 담당 SQL fence, 보관 해제 시 번호 발급, status_changed_at, version과 updated_*만 남는다. 런타임 INSERT/UPDATE 소스 세 곳은 CARD_RUNTIME_SQL_WRITERS와 파일 스캔 시험이 고정하며, 목록 밖에서 cards를 쓰면 시험이 실패한다.
 
 ## PAS 보고 자동 내림 (#270 R1)
 

@@ -1,0 +1,19 @@
+stateDiagram-v2
+direction TB
+classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
+classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
+state "명령 판정" as cardDecision_verdict {
+    direction TB
+    state "판정 준비" as cardDecision_verdict_ready
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 여러 카드의 상태를 옮긴다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 여러 카드의 상태를 옮긴다: 담당 세션 상태 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 여러 카드의 상태를 옮긴다: 담당 후보 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 시작 전 카드를 합쳐 닫는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 시작 전 카드를 합쳐 닫는다: 미확인 실행 요청 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 시작 전 카드를 고친다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 시작 전 카드를 고친다: 미확인 실행 요청 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 실행 설정을 저장한다: 미확인 실행 요청 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 실행 설정을 저장한다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 담당과 보관을 고친다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 등록된 새 담당으로 바꾼다
+}

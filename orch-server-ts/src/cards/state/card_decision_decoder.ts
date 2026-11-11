@@ -4,7 +4,7 @@ import type { CardDecision } from './card_decision.js';
 export interface DecodedCardWrite {stage:string;kind:CardWriteStep['kind'];fields:Record<string,unknown>}
 const STAGES=['claim','question','move','item','state','questions'] as const;
 /** Field serialization and binding only. Region/command policy is selected by the machine. */
-export function decodeCardDecision(decision:CardDecision,values:CardBindingValues,requestedOnly=false):DecodedCardWrite[] {
+export function decodeCardDecision(decision:CardDecision,values:CardBindingValues):DecodedCardWrite[] {
  if(decision.kind!=='apply')return [];
  const columns=stateValueToColumns(decision.next);
  const resolve=createCardBindingResolver(values);
@@ -12,7 +12,6 @@ export function decodeCardDecision(decision:CardDecision,values:CardBindingValue
  for(const action of decision.actions){
  const p=action.params;
  if(!p)continue;
- if(requestedOnly&&(action.type==='clearLimit'||p.normalization))continue;
  let fields:Record<string,unknown>|undefined;
  switch(action.type){
  case 'write':fields=decodeCardWriteIntent([{kind:p.kind!,fields:p.fields!}],values,resolve)[0];break;

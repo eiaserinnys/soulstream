@@ -1,6 +1,6 @@
 # 카드 상태 결정 규칙
 
-이 문서는 결정 기계와 검증 세계에서 만든 생성물이다. 동작 기준 커밋은 c8b9c745a, 구조 전환 시작 기준은 52fb382d5다. 기준 위의 결정 정의로 그림, 권한, 규칙과 검사를 함께 생성한다. PR 2의 사람과 질문 명령, PR 3의 서버 명령 여덟 개를 운영 서비스에 연결했다. 유지보수와 공통 patch는 PR 4에서 연결한다.
+이 문서는 결정 기계와 검증 세계에서 만든 생성물이다. 동작 기준 커밋은 c8b9c745a, 구조 전환 시작 기준은 52fb382d5다. 기준 위의 결정 정의로 그림, 권한, 규칙과 검사를 함께 생성한다. 사람과 질문, 서버, 유지보수와 담당 교체의 모든 명령을 운영 서비스에 연결했다. 독립 CLAIM 사건은 없으며 담당 확보는 각 명령의 claiming 효과다.
 
 저장 영역은 status, question, reservation, assignee, archive다. verdict는 목표 없는 전이로 허용, 무변경, 거절을 고른다. 담당 세션 생존과 감독 PAS, 다른 장 수와 내린 기록은 검증 세계의 환경이다. 원래 담당과 교체 담당의 생존 상태, 질문 작성자 관계, limitedOwner는 저장 상태 그림에서 제거했다. 작성자와 담당 관계는 사건 사실로, 생존은 환경으로 옮겼으며 예약 담당 불일치는 DB CHECK가 금지한다.
 
@@ -182,7 +182,6 @@ state "보관" as cardDecision_archive {
     state "활성" as arch_active
     state "보관됨" as arch_archived
 }
-cardDecision_assignee --> a_session: 연결된 작업 세션이 담당을 맡는다
 cardDecision_assignee --> a_session: 서버가 실행을 확인한다
 cardDecision_assignee --> a_none: 담당과 보관을 고친다
 cardDecision_assignee --> a_agent: 담당과 보관을 고친다
@@ -197,7 +196,7 @@ cardDecision_archive --> arch_archived: 담당과 보관을 고친다
 cardDecision_archive --> arch_active: 담당과 보관을 고친다
 ```
 
-전이 화살표 13개. 이 보기의 명령은 CREATE, CLAIM, CONFIRM_EXECUTION, REGISTER_REPLACEMENT, PATCH_CARD_CONTROL다. 다른 명령은 이 그림에서 모두 숨기고 아래 출처 표에 적었다. 빨강은 약속 6을 어기는 세계가 있는 상태이며, 점선 구멍은 도달하지 않는 구성을 뜻한다.
+전이 화살표 12개. 이 보기의 명령은 CREATE, CONFIRM_EXECUTION, REGISTER_REPLACEMENT, PATCH_CARD_CONTROL다. 다른 명령은 이 그림에서 모두 숨기고 아래 출처 표에 적었다. 빨강은 약속 6을 어기는 세계가 있는 상태이며, 점선 구멍은 도달하지 않는 구성을 뜻한다.
 
 ## 서버 증거 단계 지목
 
@@ -235,6 +234,32 @@ state "명령 판정" as cardDecision_verdict {
 ```
 
 전이 화살표 22개. 이 보기의 명령은 START_WORK, CONFIRM_EXECUTION, DISPATCH, RESUME_LONG_LIMIT, BLOCK_FOR_LIMIT, RESUME_SHORT_LIMIT, RESUME_VERIFICATION, NOTE_MISSING다. 다른 명령은 이 그림에서 모두 숨기고 아래 출처 표에 적었다. 빨강은 약속 6을 어기는 세계가 있는 상태이며, 점선 구멍은 도달하지 않는 구성을 뜻한다.
+
+## 유지보수 증거 단계 지목
+
+```mermaid
+stateDiagram-v2
+direction TB
+classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
+classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
+state "명령 판정" as cardDecision_verdict {
+    direction TB
+    state "판정 준비" as cardDecision_verdict_ready
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 여러 카드의 상태를 옮긴다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 여러 카드의 상태를 옮긴다: 담당 세션 상태 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 여러 카드의 상태를 옮긴다: 담당 후보 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 시작 전 카드를 합쳐 닫는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 시작 전 카드를 합쳐 닫는다: 미확인 실행 요청 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 시작 전 카드를 고친다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 시작 전 카드를 고친다: 미확인 실행 요청 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 실행 설정을 저장한다: 미확인 실행 요청 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 실행 설정을 저장한다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 담당과 보관을 고친다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 등록된 새 담당으로 바꾼다
+}
+```
+
+전이 화살표 11개. 이 보기의 명령은 BULK_SET_STATUS, MERGE_SOURCE, UPDATE_UNSTARTED, SAVE_EXECUTION_SETTINGS, PATCH_CARD_CONTROL, REGISTER_REPLACEMENT다. 다른 명령은 이 그림에서 모두 숨기고 아래 출처 표에 적었다. 빨강은 약속 6을 어기는 세계가 있는 상태이며, 점선 구멍은 도달하지 않는 구성을 뜻한다.
 
 ## 상태와 저장 칸
 
@@ -854,38 +879,38 @@ PAS는 agent 세션이다. 현재 담당, 작성자, 담당이면서 작성자�
 | NOTE_MISSING | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 | 없음 |
 | NOTE_MISSING | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 모두 허용 | 없음 |
 | NOTE_MISSING | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
-| BULK_SET_STATUS | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
-| BULK_SET_STATUS | owner | 해당 없음 | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 해당 없음 | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 해당 없음 | 없음 |
-| BULK_SET_STATUS | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
-| BULK_SET_STATUS | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
-| BULK_SET_STATUS | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.human (403, bulkHuman)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.human (403, bulkHuman)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 해당 없음 | 없음 |
-| BULK_SET_STATUS | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.BULK_SET_STATUS.session (403, maintenanceSession) | 해당 없음 | 해당 없음 | 없음 |
-| BULK_SET_STATUS | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
-| BULK_SET_STATUS | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
-| MERGE_SOURCE | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
-| MERGE_SOURCE | owner | 해당 없음 | 모두 거절: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 | 모두 거절: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 | 없음 |
-| MERGE_SOURCE | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
-| MERGE_SOURCE | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
-| MERGE_SOURCE | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.human (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.pending (409, CARD_EXECUTION_PENDING)<br>reject.MERGE_SOURCE.status (409, CARD_NOT_UNSTARTED) | 조건부: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.human (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.pending (409, CARD_EXECUTION_PENDING)<br>reject.MERGE_SOURCE.status (409, CARD_NOT_UNSTARTED) | 해당 없음 | 없음 |
-| MERGE_SOURCE | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.MERGE_SOURCE.session (403, maintenanceSession) | 해당 없음 | 해당 없음 | 없음 |
-| MERGE_SOURCE | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
-| MERGE_SOURCE | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
-| UPDATE_UNSTARTED | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
-| UPDATE_UNSTARTED | owner | 해당 없음 | 모두 거절: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 | 모두 거절: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 | 없음 |
-| UPDATE_UNSTARTED | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
-| UPDATE_UNSTARTED | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
-| UPDATE_UNSTARTED | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.human (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.pending (409, CARD_EXECUTION_PENDING)<br>reject.UPDATE_UNSTARTED.status (409, CARD_NOT_UNSTARTED) | 조건부: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.human (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.pending (409, CARD_EXECUTION_PENDING)<br>reject.UPDATE_UNSTARTED.status (409, CARD_NOT_UNSTARTED) | 해당 없음 | 없음 |
-| UPDATE_UNSTARTED | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.UPDATE_UNSTARTED.session (403, maintenanceSession) | 해당 없음 | 해당 없음 | 없음 |
-| UPDATE_UNSTARTED | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
-| UPDATE_UNSTARTED | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
-| SAVE_EXECUTION_SETTINGS | human | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
-| SAVE_EXECUTION_SETTINGS | owner | 해당 없음 | 모두 거절: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 모두 거절: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 없음 |
-| SAVE_EXECUTION_SETTINGS | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
-| SAVE_EXECUTION_SETTINGS | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
-| SAVE_EXECUTION_SETTINGS | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 없음 |
-| SAVE_EXECUTION_SETTINGS | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 해당 없음 | 없음 |
-| SAVE_EXECUTION_SETTINGS | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
-| SAVE_EXECUTION_SETTINGS | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| BULK_SET_STATUS | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | ownerState → claim |
+| BULK_SET_STATUS | owner | 해당 없음 | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 해당 없음 | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 해당 없음 | ownerState → claim |
+| BULK_SET_STATUS | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | ownerState → claim |
+| BULK_SET_STATUS | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | ownerState → claim |
+| BULK_SET_STATUS | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.human (403, bulkHuman)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.human (403, bulkHuman)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 해당 없음 | ownerState → claim |
+| BULK_SET_STATUS | anonymousAgent | 해당 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 해당 없음 | ownerState → claim |
+| BULK_SET_STATUS | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | ownerState → claim |
+| BULK_SET_STATUS | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | ownerState → claim |
+| MERGE_SOURCE | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | pending |
+| MERGE_SOURCE | owner | 해당 없음 | 모두 거절: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 | 모두 거절: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 | pending |
+| MERGE_SOURCE | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | pending |
+| MERGE_SOURCE | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | pending |
+| MERGE_SOURCE | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.human (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.pending (409, CARD_EXECUTION_PENDING)<br>reject.MERGE_SOURCE.status (409, CARD_NOT_UNSTARTED) | 조건부: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.human (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.pending (409, CARD_EXECUTION_PENDING)<br>reject.MERGE_SOURCE.status (409, CARD_NOT_UNSTARTED) | 해당 없음 | pending |
+| MERGE_SOURCE | anonymousAgent | 해당 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 해당 없음 | pending |
+| MERGE_SOURCE | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | pending |
+| MERGE_SOURCE | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | pending |
+| UPDATE_UNSTARTED | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | pending |
+| UPDATE_UNSTARTED | owner | 해당 없음 | 모두 거절: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 | 모두 거절: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 | pending |
+| UPDATE_UNSTARTED | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | pending |
+| UPDATE_UNSTARTED | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | pending |
+| UPDATE_UNSTARTED | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.human (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.pending (409, CARD_EXECUTION_PENDING)<br>reject.UPDATE_UNSTARTED.status (409, CARD_NOT_UNSTARTED) | 조건부: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.human (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.pending (409, CARD_EXECUTION_PENDING)<br>reject.UPDATE_UNSTARTED.status (409, CARD_NOT_UNSTARTED) | 해당 없음 | pending |
+| UPDATE_UNSTARTED | anonymousAgent | 해당 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 해당 없음 | pending |
+| UPDATE_UNSTARTED | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | pending |
+| UPDATE_UNSTARTED | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | pending |
+| SAVE_EXECUTION_SETTINGS | human | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | pending |
+| SAVE_EXECUTION_SETTINGS | owner | 해당 없음 | 모두 거절: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 모두 거절: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | pending |
+| SAVE_EXECUTION_SETTINGS | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | pending |
+| SAVE_EXECUTION_SETTINGS | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | pending |
+| SAVE_EXECUTION_SETTINGS | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | pending |
+| SAVE_EXECUTION_SETTINGS | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 해당 없음 | pending |
+| SAVE_EXECUTION_SETTINGS | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | pending |
+| SAVE_EXECUTION_SETTINGS | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | pending |
 | PATCH_CARD_CONTROL | human | 모두 허용 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
 | PATCH_CARD_CONTROL | owner | 해당 없음 | 모두 허용 | 해당 없음 | 모두 허용 | 해당 없음 | 없음 |
 | PATCH_CARD_CONTROL | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
@@ -902,14 +927,6 @@ PAS는 agent 세션이다. 현재 담당, 작성자, 담당이면서 작성자�
 | REGISTER_REPLACEMENT | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.REGISTER_REPLACEMENT.owner (409, replacementOwner) | 해당 없음 | 해당 없음 | 없음 |
 | REGISTER_REPLACEMENT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
 | REGISTER_REPLACEMENT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
-| CLAIM | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
-| CLAIM | owner | 해당 없음 | 모두 허용 | 해당 없음 | 모두 허용 | 해당 없음 | 없음 |
-| CLAIM | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
-| CLAIM | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
-| CLAIM | otherAgent | 해당 없음 | 해당 없음 | 모두 허용 | 모두 허용 | 해당 없음 | 없음 |
-| CLAIM | anonymousAgent | 해당 없음 | 해당 없음 | 모두 허용 | 해당 없음 | 해당 없음 | 없음 |
-| CLAIM | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
-| CLAIM | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
 
 ## 규칙 요약과 운영 호출지
 
@@ -931,13 +948,12 @@ PAS는 agent 세션이다. 현재 담당, 작성자, 담당이면서 작성자�
 | RESUME_LONG_LIMIT | 시각 없는 예약의 현재 담당만 재개한다. 정책 설정과 admission 확인을 함께 적용한다. | cards/card_control_plane_service.ts#resumeDispatchedCard |
 | RESUME_VERIFICATION | 기록한 검증 시각과 담당이 일치하면 예약을 지우고 재개한다. 도래 선별과 실제 깨우기는 호출부가 한다. | cards/card_control_plane_service.ts#resumeVerificationCard |
 | NOTE_MISSING | 담당 에이전트 없음을 적는다 | cards/card_control_plane_service.ts#noteMissingAssignee |
-| BULK_SET_STATUS | 여러 카드의 상태를 옮긴다 | cards/card_maintenance_service.ts#bulkSetCardStatus |
+| BULK_SET_STATUS | 여러 카드의 상태를 옮긴다 | cards/card_maintenance_service.ts#bulkSetCardStatus<br>cards/card_control_plane_service.ts#applyStatusTx |
 | MERGE_SOURCE | 시작 전 카드를 합쳐 닫는다 | cards/card_maintenance_service.ts#mergeCards |
-| UPDATE_UNSTARTED | 시작 전 카드를 고친다 | cards/card_maintenance_service.ts#updateUnstartedCard |
+| UPDATE_UNSTARTED | 시작 전 카드를 고친다 | cards/card_maintenance_service.ts#updateUnstartedCard<br>cards/card_maintenance_service.ts#mergeCards |
 | SAVE_EXECUTION_SETTINGS | 실행 설정을 저장한다 | cards/card_control_plane_service.ts#saveExecutionSettings |
 | PATCH_CARD_CONTROL | 명시한 담당과 보관만 바꾼다. 담당 교체와 보관 또는 한도 탈출은 한도 예약을 함께 지운다. 명시적 status 쓰기가 없으면 검증 예약은 보존한다. | cards/card_control_plane_service.ts#patchCard |
 | REGISTER_REPLACEMENT | 등록된 새 담당으로 바꾼다 | control_plane/repositories/session_card_replacement.ts#applySessionCardReplacement |
-| CLAIM | 연결된 작업 세션이 담당을 맡는다 | cards/card_control_plane_service.ts#claim |
 
 ### 연결된 운영 입구
 
@@ -959,8 +975,14 @@ PAS는 agent 세션이다. 현재 담당, 작성자, 담당이면서 작성자�
 | RESUME_SHORT_LIMIT | cards/card_control_plane_service.ts#resumeLimitedCard |
 | RESUME_VERIFICATION | cards/card_control_plane_service.ts#resumeVerificationCard |
 | NOTE_MISSING | cards/card_control_plane_service.ts#noteMissingAssignee |
+| BULK_SET_STATUS | cards/card_control_plane_service.ts#applyStatusTx |
+| MERGE_SOURCE | cards/card_maintenance_service.ts#mergeCards |
+| UPDATE_UNSTARTED | cards/card_maintenance_service.ts#updateUnstartedCard<br>cards/card_maintenance_service.ts#mergeCards |
+| SAVE_EXECUTION_SETTINGS | cards/card_control_plane_service.ts#saveExecutionSettings |
+| PATCH_CARD_CONTROL | cards/card_control_plane_service.ts#patchCard |
+| REGISTER_REPLACEMENT | control_plane/repositories/session_card_replacement.ts#applySessionCardReplacement |
 
-주체 종류와 입력만 보는 입구 검사는 단일 입구 표를 읽어 카드 잠금과 version 확인보다 먼저 서비스 입구에서 확인한다. ANSWER_QUESTION은 사람만 들어오며, 커멘트 mode와 spoken의 신뢰 주체 검사도 이 표에 둔다. 상태와 증거를 보는 권한은 잠금 뒤 결정 기계가 정한다. 서버 입구는 기계가 needsEvidence로 지목한 단계만 읽고 다시 묻는다. 이 중간 결과에는 쓰기가 없고, 마지막 apply, noop, reject만 판정이다. 마지막 판정 뒤 decoder의 요청 쓰기만 기존 patchCardTx에 넘긴다. 예약의 최종 정리는 PR 4까지 patchCardTx가 맡는다. SQL 잠금, version fence, 멱등 키, 질문 조건부 UPDATE와 커밋 뒤 판과 알림 처리는 기존 서비스 경계에 남는다.
+주체 종류와 입력만 보는 입구 검사는 단일 입구 표를 읽어 카드 잠금과 version 확인보다 먼저 서비스 입구에서 확인한다. ANSWER_QUESTION은 사람만 들어오며, 커멘트 mode와 spoken의 신뢰 주체 검사도 이 표에 둔다. 상태와 증거를 보는 권한은 잠금 뒤 결정 기계가 정한다. 서버 입구는 기계가 needsEvidence로 지목한 단계만 읽고 다시 묻는다. 이 중간 결과에는 쓰기가 없고, 마지막 apply, noop, reject만 판정이다. 마지막 판정 뒤 decoder의 최종 쓰기를 patchCardTx에 넘긴다. 예약 제거와 담당 교체 문구는 기계가 고른 액션이며 저장기는 단일 담당 SQL fence, 번호 발급과 감사 칸 갱신을 유지한다. SQL 잠금, version fence, 멱등 키, 질문 조건부 UPDATE와 커밋 뒤 판과 알림 처리는 기존 서비스 경계에 남는다.
 
 입력 모양 검사는 기존 위치를 지킨다. 검수 ask는 잠금과 version 확인 뒤, 상태 판정 전에 한 번 검사하고 확인한 값을 서식에 넘긴다. 검증 대기 문구처럼 기존에 판정 뒤 검사하던 서식은 이름별 지연 바인딩으로 둔다. decoder는 선택된 쓰기가 bind한 이름만 계산하며, 같은 이름의 결과는 한 번의 decode 안에서 재사용한다. 선택하지 않은 서식과 시각 변환은 실행하지 않는다.
 
@@ -976,6 +998,12 @@ PAS는 agent 세션이다. 현재 담당, 작성자, 담당이면서 작성자�
 | RESUME_SHORT_LIMIT | pending |
 | RESUME_VERIFICATION | 없음 |
 | NOTE_MISSING | 없음 |
+| BULK_SET_STATUS | ownerState → claim |
+| MERGE_SOURCE | pending |
+| UPDATE_UNSTARTED | pending |
+| SAVE_EXECUTION_SETTINGS | pending |
+| PATCH_CARD_CONTROL | 없음 |
+| REGISTER_REPLACEMENT | 없음 |
 
 needsEvidence는 허용이나 거절이 아니다. 단계 증거가 없으면 먼저 필요한 읽기를 지목한다. 앞선 거절은 뒤의 읽기와 잠금을 생략한다. admission은 정책이 켜지고 허가 입력이 있을 때만, claim은 수락된 자동 실행이 아닐 때만 요구한다. 권한 표는 필요한 증거가 갖춰진 최종 판정을 열거하며 단계 지목 전이는 위 그림에 보인다.
 

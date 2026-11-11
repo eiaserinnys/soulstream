@@ -1,3 +1,4 @@
+import { CARD_REMAINING_EVIDENCE_STAGES } from './card_remaining_evidence.js';
 import { CARD_SERVER_EVIDENCE_STAGES, admissionResults, type ServerCardCommand, type ServerEvidenceStage, type AdmissionResult } from './card_server_command.js';
 import { parseVerificationWakeAt, WAITING_FOR_MAX_CODE_POINTS, VERIFICATION_WAIT_MAX_DAYS } from '../card_verification_wait.js';
 import type { HumanCardCommand } from './card_human_command.js';
@@ -21,11 +22,11 @@ export const CARD_FACT_VALUES={
  RESUME_SHORT_LIMIT:{evidenceMissing:['none',...CARD_SERVER_EVIDENCE_STAGES.RESUME_SHORT_LIMIT] as const,sessionMatch:flag,due:flag,resumeTimeMatch:flag,pending:flag},
  RESUME_LONG_LIMIT:{evidenceMissing:['none',...CARD_SERVER_EVIDENCE_STAGES.RESUME_LONG_LIMIT] as const,sessionMatch:flag,pending:flag,policyEnabled:flag,hasAdmission:flag,admission},
  RESUME_VERIFICATION:{evidenceMissing:['none',...CARD_SERVER_EVIDENCE_STAGES.RESUME_VERIFICATION] as const,sessionMatch:flag,verificationTimeMatch:flag},NOTE_MISSING:{evidenceMissing:['none',...CARD_SERVER_EVIDENCE_STAGES.NOTE_MISSING] as const,},
- BULK_SET_STATUS:{target:['todo','queued','hold','cancelled'] as const,ownerState:['missing','running','initializing','idle'] as const,claim:flag},
- MERGE_SOURCE:{pending:flag},UPDATE_UNSTARTED:{pending:flag,hasAgentInput:flag},
- SAVE_EXECUTION_SETTINGS:{assigneeInput:['none','agent'] as const,pending:flag,assignmentChanged:flag,hasNow:flag,move:flag},
+ BULK_SET_STATUS:{hasOwnerSession:flag,evidenceMissing:['none',...CARD_REMAINING_EVIDENCE_STAGES.BULK_SET_STATUS] as const,target:['todo','queued','hold','cancelled'] as const,ownerState:['missing','running','initializing','idle'] as const,claim:flag},
+ MERGE_SOURCE:{hasOwnerSession:flag,evidenceMissing:['none',...CARD_REMAINING_EVIDENCE_STAGES.MERGE_SOURCE] as const,pending:flag},UPDATE_UNSTARTED:{hasOwnerSession:flag,evidenceMissing:['none',...CARD_REMAINING_EVIDENCE_STAGES.UPDATE_UNSTARTED] as const,pending:flag,hasAgentInput:flag},
+ SAVE_EXECUTION_SETTINGS:{hasOwnerSession:flag,evidenceMissing:['none',...CARD_REMAINING_EVIDENCE_STAGES.SAVE_EXECUTION_SETTINGS] as const,assigneeInput:['none','agent'] as const,pending:flag,assignmentChanged:flag,hasNow:flag,move:flag},
  PATCH_CARD_CONTROL:{hasArchiveInput:flag,assignmentChanged:flag,nextArchived:flag,hasNow:flag,hasAssignment:flag,assigneeInput:['none','agent','human','session'] as const},
- REGISTER_REPLACEMENT:{previousOwnerMatch:flag,hasNow:flag,assignmentChanged:flag},CLAIM:{claim:flag},
+ REGISTER_REPLACEMENT:{previousOwnerMatch:flag,hasNow:flag,assignmentChanged:flag},
 } as const;
 export type CardDecisionCommand=keyof typeof CARD_FACT_VALUES;
 export type CommandFacts<C extends CardDecisionCommand> = { [K in keyof typeof CARD_FACT_VALUES[C]]:
@@ -64,9 +65,10 @@ export function deriveCardDecisionFacts(row:Record<string,any>|null,questions:re
  waiting=!length?'empty':length>WAITING_FOR_MAX_CODE_POINTS?'tooLong':!at?'invalid':at.getTime()<=checkedAt?'past':at.getTime()-checkedAt>VERIFICATION_WAIT_MAX_DAYS*86400000?'tooLate':'withinWeek';}
  const assignee=command.assignee;
  const assignment=Object.hasOwn(command,'assignee')&&(assignee?.kind??null)!==c.assignee_kind||Object.hasOwn(command,'assignee')&&assignee?.kind==='session'&&assignee.sessionId!==c.assignee_session_id;
- const stages=CARD_SERVER_EVIDENCE_STAGES[command.type as keyof typeof CARD_SERVER_EVIDENCE_STAGES];
+ const stageMap:Partial<Record<CardDecisionCommand,readonly ServerEvidenceStage[]>>={...CARD_SERVER_EVIDENCE_STAGES,...CARD_REMAINING_EVIDENCE_STAGES};
+ const stages=stageMap[command.type];
  const evidenceMissing=stages?.find(stage=>!evidence.loaded?.includes(stage))??'none';
- const all:Record<string,any>={evidenceMissing,target,queued:command.queue===true,assigneeInput:command.type==='SAVE_EXECUTION_SETTINGS'?(command.agentId?'agent':'none'):assignee?.kind??'none',claim:evidence.claim===true,wait:waiting,
+ const all:Record<string,any>={hasOwnerSession:c.assignee_session_id!=null,evidenceMissing,target,queued:command.queue===true,assigneeInput:command.type==='SAVE_EXECUTION_SETTINGS'?(command.agentId?'agent':'none'):assignee?.kind??'none',claim:evidence.claim===true,wait:waiting,
  hasCurrentNow:c.now!=null,hasItems:(c.items??[]).length>0,hasAsk:command.ask!==undefined,question:!q?'missing':q.answer!==null?'answered':q.withdrawn_at!==null?'withdrawn':'open',
  otherOpen:questions.some(other=>other.id!==command.questionId&&other.answer===null&&other.withdrawn_at===null),
  entrance:command.entrance??'direct',requestedSpoken:command.kind==='spoken',reply:command.mode==='reply',hasMode:command.mode!==undefined,userInput:evidence.userInput===true,replyLength:[...String(command.body??'')].length>300?'tooLong':'within',
@@ -82,7 +84,7 @@ export function deriveCardDecisionFacts(row:Record<string,any>|null,questions:re
  hasArchiveInput:command.archived!==undefined,hasAgentInput:command.agentId!==undefined,hasAssignment:Object.hasOwn(command,'assignee'),move:command.folderId!==undefined&&command.folderId!==c.folder_id,previousOwnerMatch:evidence.previousOwnerMatch===true};
  if(stages){
   const stageFields:Partial<Record<ServerEvidenceStage,string[]>>={execution:['execution'],workAdmission:['admitted','admissionReceipt','admissionValid'],claim:['claim'],
-   executionStatus:['statusChanged'],pending:['pending'],policy:['policyEnabled'],admission:['admission'],termination:['termination'],limitReset:['short']};
+   ownerState:['ownerState'],executionStatus:['statusChanged'],pending:['pending'],policy:['policyEnabled'],admission:['admission'],termination:['termination'],limitReset:['short']};
   for(const stage of stages)if(!evidence.loaded?.includes(stage))for(const key of stageFields[stage]??[])delete all[key];
   if(command.type==='CONFIRM_EXECUTION'&&!evidence.loaded?.includes('executionSession'))delete all.sessionMatch;
  }

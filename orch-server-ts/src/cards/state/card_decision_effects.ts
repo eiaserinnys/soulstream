@@ -6,7 +6,7 @@ import { CARD_DECISION_SOURCES, CARD_COMMAND_ENTRANCES, CARD_COMMAND_CALLERS } f
 import { CARD_FACT_VALUES, TARGETS, type CardDecisionCommand } from './card_decision_facts.js';
 import { decisionGuards, permitted, inside, any, fact } from './card_decision_guards.js';
 import { bind, literal, type CardBinding } from './card_write_intent.js';
-export const COMMAND_LABELS:Record<CardDecisionCommand,string>={CREATE:'카드를 만든다',SET_STATUS:'상태를 옮긴다',REQUEST_REVIEW:'검수를 요청한다',HUMAN_INPUT:'사용자가 담당에게 말한다',ASK_QUESTION:'질문을 올린다',ANSWER_QUESTION:'질문에 답한다',WITHDRAW_QUESTION:'질문을 철회한다',ADD_COMMENT:'커멘트를 남긴다',START_WORK:'작업 착수를 확인한다',CONFIRM_EXECUTION:'서버가 실행을 확인한다',DISPATCH:'서버가 실행을 배정한다',BLOCK_FOR_LIMIT:'현재 담당의 한도 종료를 기록한다',RESUME_SHORT_LIMIT:'짧은 한도 시각이 되어 잇는다',RESUME_LONG_LIMIT:'시각 없는 한도 예약을 잇는다',RESUME_VERIFICATION:'검증 시각이 되어 잇는다',NOTE_MISSING:'담당 에이전트 없음을 적는다',BULK_SET_STATUS:'여러 카드의 상태를 옮긴다',MERGE_SOURCE:'시작 전 카드를 합쳐 닫는다',UPDATE_UNSTARTED:'시작 전 카드를 고친다',SAVE_EXECUTION_SETTINGS:'실행 설정을 저장한다',PATCH_CARD_CONTROL:'담당과 보관을 고친다',REGISTER_REPLACEMENT:'등록된 새 담당으로 바꾼다',CLAIM:'연결된 작업 세션이 담당을 맡는다'};
+export const COMMAND_LABELS:Record<CardDecisionCommand,string>={CREATE:'카드를 만든다',SET_STATUS:'상태를 옮긴다',REQUEST_REVIEW:'검수를 요청한다',HUMAN_INPUT:'사용자가 담당에게 말한다',ASK_QUESTION:'질문을 올린다',ANSWER_QUESTION:'질문에 답한다',WITHDRAW_QUESTION:'질문을 철회한다',ADD_COMMENT:'커멘트를 남긴다',START_WORK:'작업 착수를 확인한다',CONFIRM_EXECUTION:'서버가 실행을 확인한다',DISPATCH:'서버가 실행을 배정한다',BLOCK_FOR_LIMIT:'현재 담당의 한도 종료를 기록한다',RESUME_SHORT_LIMIT:'짧은 한도 시각이 되어 잇는다',RESUME_LONG_LIMIT:'시각 없는 한도 예약을 잇는다',RESUME_VERIFICATION:'검증 시각이 되어 잇는다',NOTE_MISSING:'담당 에이전트 없음을 적는다',BULK_SET_STATUS:'여러 카드의 상태를 옮긴다',MERGE_SOURCE:'시작 전 카드를 합쳐 닫는다',UPDATE_UNSTARTED:'시작 전 카드를 고친다',SAVE_EXECUTION_SETTINGS:'실행 설정을 저장한다',PATCH_CARD_CONTROL:'담당과 보관을 고친다',REGISTER_REPLACEMENT:'등록된 새 담당으로 바꾼다'};
 export const COMMAND_RULES:Partial<Record<CardDecisionCommand,string>>={
  SET_STATUS:'현재 담당 권한과 검증 대기 입력을 확인한다. 같은 done 재지정도 완료 정보를 다시 쓰고 같은 queued 재지정도 새 대기열 순서 키를 요청한다.',
  HUMAN_INPUT:'보관되지 않은 세션 담당의 검증 대기 또는 한도 아닌 막힘을 재개하고 열린 질문을 모두 닫는다.',
@@ -42,7 +42,7 @@ function patchExtras(c:CardDecisionCommand,target:string,extra:DecisionAction[]=
  if(['ASK_QUESTION','START_WORK','CONFIRM_EXECUTION','RESUME_SHORT_LIMIT','RESUME_VERIFICATION','MERGE_SOURCE'].includes(c))actions.push(write({queue_position_key:literal(null)}));
  if(target!=='verification'){
   const cleanup=write({wake_at:literal(null),waiting_for:literal(null)});
-  actions.push({...cleanup,params:{...cleanup.params,normalization:true}});
+  actions.push(cleanup);
  }
  return actions;
 }
@@ -76,7 +76,7 @@ for(const c of ['ANSWER_QUESTION','WITHDRAW_QUESTION'] as const){
  write({withdrawn_at:bind('clock'),withdrawn_by_session_id:bind('actor.session'),withdrawal_reason:bind('command.reason.trimmed')},'question','questionWithdraw'));
 }
 for(const c of ['HUMAN_INPUT','ADD_COMMENT'] as const)put('question',c,'q_none',[c==='HUMAN_INPUT'?'humanResumable':'commentResumable'],[write({withdrawn_at:bind('clock'),withdrawn_by_session_id:literal(null),withdrawal_reason:literal(c==='HUMAN_INPUT'?'사용자 메시지로 작업이 재개되어 서버가 닫았습니다':'사용자가 커멘트로 답해 서버가 닫았습니다')},'questions','closeQuestions')]);
-for(const c of ['SET_STATUS','BULK_SET_STATUS','REQUEST_REVIEW','START_WORK','CLAIM'] as const)put('assignee',c,'a_session',['claiming'],claim());
+for(const c of ['SET_STATUS','BULK_SET_STATUS','REQUEST_REVIEW','START_WORK'] as const)put('assignee',c,'a_session',['claiming'],claim());
 put('assignee','ADD_COMMENT','a_session',['claiming',fact('reply')],claim('claim'));
 put('assignee','START_WORK','a_session',[fact('admitted')],claim());
 put('assignee','CONFIRM_EXECUTION','a_session',[],[mark('writeAssignee'),write({assignee_session_id:bind('command.sessionId'),assignee_agent_id:literal(null)})]);
@@ -88,14 +88,16 @@ put('assignee','UPDATE_UNSTARTED','a_agent',[fact('hasAgentInput')],[mark('write
 put('assignee','REGISTER_REPLACEMENT','a_session',[],[mark('writeAssignee'),write({assignee_session_id:bind('command.sessionId'),assignee_agent_id:literal(null)})]);
 for(const kind of ['none','agent'])put('assignee','SAVE_EXECUTION_SETTINGS',`a_${kind}`,[fact('assigneeInput',kind)],[mark('writeAssignee')]);
 for(const archived of [true,false])put('archive','PATCH_CARD_CONTROL',archived?'arch_archived':'arch_active',[fact('hasArchiveInput'),fact('nextArchived',archived)],[mark('writeArchive')]);
+// Assignment-only control writes still select the replacement notice below.
+put('archive','PATCH_CARD_CONTROL',undefined,[not(fact('hasArchiveInput'))]);
 for(const short of [true,false])put('reservation','BLOCK_FOR_LIMIT',short?'r_limit':'r_longLimit',[fact('short',short)],[write({limit_resume_session_id:bind('command.sessionId'),limit_resume_at:short?bind('evidence.resumeAt'):literal(null)})]);
-for(const c of ['PATCH_CARD_CONTROL','SAVE_EXECUTION_SETTINGS','REGISTER_REPLACEMENT','CLAIM','NOTE_MISSING','UPDATE_UNSTARTED'] as const){
- const changed=c==='REGISTER_REPLACEMENT'?()=>true:c==='CLAIM'?fact('claim'):fact('assignmentChanged');
- const clean=[...(c==='CLAIM'?[fact('claim')]:[]),or([not(inside('s_limit')),inside('arch_archived'),...(c==='PATCH_CARD_CONTROL'?[fact('nextArchived')]:[]),changed])];
+for(const c of ['PATCH_CARD_CONTROL','SAVE_EXECUTION_SETTINGS','REGISTER_REPLACEMENT','NOTE_MISSING','UPDATE_UNSTARTED'] as const){
+ const changed=c==='REGISTER_REPLACEMENT'?()=>true:fact('assignmentChanged');
+ const clean=[or([not(inside('s_limit')),inside('arch_archived'),...(c==='PATCH_CARD_CONTROL'?[fact('nextArchived')]:[]),changed])];
  put('reservation',c,'r_none',[...clean,not(inside('r_verify'))],[mark('clearLimit')]);
  put('reservation',c,undefined,[...clean,inside('r_verify')],[mark('clearLimit')]);
 }
-for(const c of ['SET_STATUS','REQUEST_REVIEW','START_WORK','ADD_COMMENT','CONFIRM_EXECUTION'] as const){
+for(const c of ['SET_STATUS','BULK_SET_STATUS','REQUEST_REVIEW','START_WORK','ADD_COMMENT','CONFIRM_EXECUTION'] as const){
  const changed=c==='CONFIRM_EXECUTION'?fact('assignmentChanged'):and(['claiming',...(c==='ADD_COMMENT'?[fact('reply')]:[])]);
  put('reservation',c,'r_none',[changed,not(inside('r_verify'))],[mark('clearLimit',c==='ADD_COMMENT'?'claim':'state')]);
  put('reservation',c,undefined,[changed,inside('r_verify')],[mark('clearLimit',c==='ADD_COMMENT'?'claim':'state')]);
@@ -110,7 +112,7 @@ function augment(region:string,c:CardDecisionCommand,condition:any,actions:Decis
 // Symbolic writes which do not follow directly from a region target.
 // Conditional targetless transitions live in their effect region, separate from verdict priority.
 put('question','REQUEST_REVIEW',undefined,[fact('hasAsk')],[write({now:bind('formatted.review')})]);
-for(const c of ['PATCH_CARD_CONTROL','SAVE_EXECUTION_SETTINGS','UPDATE_UNSTARTED'] as const)verdictExtras[c]!.push({type:'spreadControl',params:{stage:'state'}});
+for(const c of ['PATCH_CARD_CONTROL','SAVE_EXECUTION_SETTINGS','UPDATE_UNSTARTED','REGISTER_REPLACEMENT'] as const)verdictExtras[c]!.push({type:'spreadControl',params:{stage:'state'}});
 for(const c of ['PATCH_CARD_CONTROL','SAVE_EXECUTION_SETTINGS','REGISTER_REPLACEMENT','CONFIRM_EXECUTION'] as const)
  augment('archive',c,and([fact('assignmentChanged'),any('r_limit','r_longLimit'),not(fact('hasNow'))]),[write({now:bind('formatted.replacement')})]);
 put('archive','ASK_QUESTION',undefined,[fact('hasCurrentNow')],[write({now:bind('formatted.question')})]);

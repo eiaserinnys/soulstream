@@ -79,7 +79,7 @@ describe('selected symbolic binding evaluation',()=>{
     const command={type:'SET_STATUS' as const,status:'done' as const,wakeAt:'invalid'};
     const lazy=Object.fromEntries(['formatted.verification','formatted.review','formatted.question','formatted.items'].map(name=>[name,vi.fn(()=>{throw Error(name);})]));
     const result=decideCardTransition(row,[],{},command,actor,Date.now());
-    expect(decodeCardDecision(result,{card:row,command,actor,now:new Date(),eventId:1,lazy},true)[0]!.fields.status).toBe('done');
+    expect(decodeCardDecision(result,{card:row,command,actor,now:new Date(),eventId:1,lazy})[0]!.fields.status).toBe('done');
     Object.values(lazy).forEach(compute=>expect(compute).not.toHaveBeenCalled());
   });
   it('binds a selected lazy value once and reuses its checked result',()=>{
