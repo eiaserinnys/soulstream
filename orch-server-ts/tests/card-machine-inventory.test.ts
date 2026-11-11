@@ -1,5 +1,4 @@
-import { readFile } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
+import { readFile, readdir } from 'node:fs/promises';
 import { expect,it } from 'vitest';
 import { cardDecisionMachine } from '../src/cards/state/card_decision_machine.js';
 import { CARD_FACT_VALUES } from '../src/cards/state/card_decision_facts.js';
@@ -11,7 +10,14 @@ it('pins every command to an existing operational function',async()=>{
 });
 const decisionImport=/(?:from\s*|import\s*(?:\(\s*)?)["'][^"']*(?:cards\/)?state\/card_(?:decision|state_value|write_intent|machine)/;
 it('keeps the decision module disconnected from runtime in PR 1b',async()=>{
- const files=execFileSync('rg',['--files','src','-g','*.ts'],{cwd:new URL('../',import.meta.url),encoding:'utf8'}).trim().split('\n');
+ const files:string[]=[];
+ async function walk(directory:string){
+ for(const entry of await readdir(new URL(`../${directory}`,import.meta.url),{withFileTypes:true})){
+ const path=`${directory}/${entry.name}`;
+ if(entry.isDirectory())await walk(path);else if(entry.isFile()&&entry.name.endsWith('.ts'))files.push(path);
+ }
+ }
+ await walk('src');
  const writers:string[]=[];
  for(const file of files){
  if(file.startsWith('src/cards/state/'))continue;

@@ -1,19 +1,21 @@
 # 카드 결정 관찰의 SQL 증거 대조
 
-기준: c8b9c745a 서비스, 보강 착수 3656f4e98. 수집기는 서비스 호출 직전 전용 시험 DB를 읽는다. 결정 모듈은 import하지 않는다. 아래는 감싸는 21개 메서드 전체다. before와 beforeQuestions는 원시 행이고, 기존 evidence는 owner, claimableSessions, dispatches, executionRequests, limitAutoResumeAt이다.
+기준: c8b9c745a 서비스, 보강 착수 3656f4e98. 수집기는 서비스 호출 직전 전용 시험 DB를 읽는다. 결정 모듈은 import하지 않는다. 아래는 감싸는 23개 메서드 전체다. before와 beforeQuestions는 원시 행이고, 기존 evidence는 owner, claimableSessions, dispatches, executionRequests, limitAutoResumeAt이다. Tx 입구에서는 첫 인자로 받은 SQL 연결로 before, evidence와 after를 모두 읽는다.
 
 새 evidence.decisionReads는 정책 행(없으면 null), admission run(없으면 null), 활성 dispatch의 dispatchRuns, capacitySessions 조회 결과, sessions, cards, folders, comments, participantRequests, operations, assets, deliveries, registrations, userInputAfterLastReply, executionStatusChanged다. 마지막 두 값은 기존 SQL의 관찰 결과다. 설정, 권한 또는 성공 여부를 수집기가 추정하지 않는다.
 
 | 메서드 | 결과를 가르는 읽기와 도우미 | 기존 기록 | 보강 |
 | :-- | :-- | :-- | :-- |
 | createCard | prepareCreateCardParams의 생성 세션, lockFolder, position의 카드 순서, assertSingleCardAssignee | command만 있음 | sessions, folders, cards |
+| createCardTx | createCard와 같은 prepareCreateCardParams와 createCardMutation | 이전 수집에서 누락 | 전달된 Tx SQL 연결에서 같은 읽기와 생성 결과를 기록 |
 | setCardStatus | applyStatusTx, claimableCardSessions, 검증 입력과 담당, position, 공통 patch | before, claimableSessions | cards로 단일 담당 및 순서 경계도 기록 |
 | requestCardReview | 항목과 ask, applyStatusTx와 claim, patch | before, command, claimableSessions | cards |
 | resumeBlockedCardOnHumanInput | 상태, 보관, 담당, 열린 질문의 조건부 닫기 | before, beforeQuestions | 추가 없음 |
 | askQuestion | options, assertNotOtherSessionAssignee, questionCardNow, patch | command, before | cards로 단일 담당 경계 기록 |
 | answerQuestion | 대상 질문, UPDATE 결과, 대상 처리 뒤 남은 열린 질문 | beforeQuestions | 처리 뒤 남은 질문은 대상 한 행의 답 저장을 제외해 도출 가능 |
 | withdrawQuestion | canWithdrawCardQuestion, 대상 질문, 조건부 UPDATE와 재조회, 남은 열린 질문 | beforeQuestions, actor | 대상 한 행의 철회를 제외해 남은 질문 도출 가능 |
-| addComment | prepareAddComment, claim, 항목, hasUserInputAfterLastReplyTx의 댓글 및 질문, patch | before, command, claimableSessions, 질문 | comments, userInputAfterLastReply, cards |
+| addComment | prepareAddComment 뒤 spoken이면 assertNotOtherSessionAssignee, 그 뒤 공통 applyAddCommentTx | before, command, claimableSessions, 질문 | comments, userInputAfterLastReply, cards; 다른 담당 오류가 항목의 mode 오류보다 먼저 |
+| addCommentTx | prepareAddComment 뒤 applyAddCommentTx; 직접 입구의 다른 담당 검사는 없음 | 이전 수집에서 누락 | dispatch_work accept의 후속 입구를 기록; actor를 유지하고 entrance=followup으로 도출 |
 | startCardWork | validateWorkExecution의 요청 세션, acceptQueuedWork의 dispatch, receipt, delivery, run, 설정, worker, claim | owner와 dispatches만 있어 다른 worker 및 receipt 누락 | sessions, registrations, deliveries, admissionRun, 정책 행 |
 | recordExecution | 요청 세션 card_id, 카드 status_changed_at과 요청 updated_at 비교, patch | before, executionRequests; 요청 세션 누락 가능 | sessions, executionStatusChanged(서브밀리초 SQL 비교 보존), cards |
 | recordDispatch | queued, pending 요청, checkAdmission 및 assertPolicyAdmission | before, executionRequests, dispatches | 정책, run, capacitySessions, cards, folders, sessions |

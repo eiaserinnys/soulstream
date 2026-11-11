@@ -26,22 +26,21 @@ it('collects and replays baseline SQL observations through the same normalized c
   if (process.env.COLLECT_CARD_OBSERVATIONS === '1') {
     // Pin ALL runtime service code, not only three entry files. Statechart description changes are allowed.
     const changed = execFileSync('git', ['diff', '--name-only', baseline, '--', 'orch-server-ts/src', 'soul-server-ts/src', 'packages'], { cwd: new URL('../../', import.meta.url), encoding: 'utf8' }).trim().split('\n').filter(Boolean);
-    expect(changed.filter(p => !['orch-server-ts/src/cards/state/card_charts.ts', 'orch-server-ts/src/cards/state/card_machine_events.ts', 'orch-server-ts/src/oauth/oauth_access.ts'].includes(p))).toEqual([]);
+    expect(changed.filter(p => !p.startsWith('orch-server-ts/src/cards/state/') && p !== 'orch-server-ts/src/oauth/oauth_access.ts')).toEqual([]);
     const previous = JSON.parse(await readFile(fixture, 'utf8'));
     const observations = await collect();
     // Compare before replacing the oracle: new evidence is the only permitted
     // difference in the original prefix. Never rewrite a mismatching baseline.
-    expect(previous.observations.length).toBe(323);
+    expect(previous.observations.length).toBe(327);
     for (const [index, old] of previous.observations.entries()) {
       const enriched = structuredClone(observations[index]!);
-      delete enriched.evidence.decisionReads;
       try { compareDecisionObservation(old, enriched); }
       catch (error) { throw new Error(`old baseline mismatch at ${index} (${old.method})`, { cause: error }); }
     }
-    console.log('original observations preserved: 323 / 323');
+    console.log('original observations preserved: 327 / 327');
     const enrichmentCommit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
       await writeFile(fixture, JSON.stringify({ baseline,
-        enrichment: { commit: enrichmentCommit, serviceDifference: 'Compared with c8b9c745a: only card_charts.ts and card_machine_events.ts descriptions, and oauth_access.ts session-statistics read scope; card service code unchanged', preservedObservations: 323 },
+        enrichment: { commit: enrichmentCommit, serviceDifference: 'Compared with c8b9c745a: disconnected cards/state verification/decision modules and oauth_access.ts scope; runtime card services unchanged', preservedObservations: 327, previousEnrichment: previous.enrichment },
         command: 'COLLECT_CARD_OBSERVATIONS=1 NODE_ENV=development pnpm --dir orch-server-ts exec vitest run tests/card-decision-observation.postgres.test.ts --minWorkers=1 --maxWorkers=2 --testTimeout=600000',
         observations }, null, 2) + '\n');
   }

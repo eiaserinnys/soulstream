@@ -7,14 +7,15 @@ import { formatLimitResumeClock } from '../src/cards/card_limit_auto_resume.js';
 import { mergedCloseNow } from '../src/cards/card_maintenance_tx.js';
 import { decideCardTransition } from '../src/cards/state/card_decision.js';
 import { decodeCardDecision } from '../src/cards/state/card_decision_decoder.js';
-import { formatCardDecisionFailure } from '../src/cards/state/card_decision_errors.js';
+import { formatCardDecisionRejection } from '../src/cards/state/card_decision_errors.js';
 import type { CardCommand } from '../src/cards/state/card_decision_facts.js';
 import type { DecisionObservation } from './card-decision-observation.js';
-const METHODS:Record<string,CardCommand['type']>={createCard:'CREATE',setCardStatus:'SET_STATUS',requestCardReview:'REQUEST_REVIEW',resumeBlockedCardOnHumanInput:'HUMAN_INPUT',askQuestion:'ASK_QUESTION',answerQuestion:'ANSWER_QUESTION',withdrawQuestion:'WITHDRAW_QUESTION',addComment:'ADD_COMMENT',startCardWork:'START_WORK',recordExecution:'CONFIRM_EXECUTION',recordDispatch:'DISPATCH',blockCardForLimit:'BLOCK_FOR_LIMIT',resumeLimitedCard:'RESUME_SHORT_LIMIT',resumeDispatchedCard:'RESUME_LONG_LIMIT',resumeVerificationCard:'RESUME_VERIFICATION',noteMissingAssignee:'NOTE_MISSING',bulkSetCardStatus:'BULK_SET_STATUS',mergeCards:'MERGE_SOURCE',patchCard:'PATCH_CARD_CONTROL',updateUnstartedCard:'UPDATE_UNSTARTED',saveExecutionSettings:'SAVE_EXECUTION_SETTINGS'};
+const METHODS:Record<string,CardCommand['type']>={createCardTx:'CREATE',addCommentTx:'ADD_COMMENT',createCard:'CREATE',setCardStatus:'SET_STATUS',requestCardReview:'REQUEST_REVIEW',resumeBlockedCardOnHumanInput:'HUMAN_INPUT',askQuestion:'ASK_QUESTION',answerQuestion:'ANSWER_QUESTION',withdrawQuestion:'WITHDRAW_QUESTION',addComment:'ADD_COMMENT',startCardWork:'START_WORK',recordExecution:'CONFIRM_EXECUTION',recordDispatch:'DISPATCH',blockCardForLimit:'BLOCK_FOR_LIMIT',resumeLimitedCard:'RESUME_SHORT_LIMIT',resumeDispatchedCard:'RESUME_LONG_LIMIT',resumeVerificationCard:'RESUME_VERIFICATION',noteMissingAssignee:'NOTE_MISSING',bulkSetCardStatus:'BULK_SET_STATUS',mergeCards:'MERGE_SOURCE',patchCard:'PATCH_CARD_CONTROL',updateUnstartedCard:'UPDATE_UNSTARTED',saveExecutionSettings:'SAVE_EXECUTION_SETTINGS'};
 /** Reconstruct SQL boundary results from their recorded rows. This adapter never
  * reads observed after or result to select an outcome or any write. */
 export function predictObservation(r:DecisionObservation) {
  const row=r.before as any, c={...r.command,type:METHODS[r.method]!} as CardCommand,actor=r.actor;
+ if(c.type==='ADD_COMMENT')c.entrance=r.method==='addCommentTx'?'followup':'direct';
  const reads=r.evidence.decisionReads as any;
  const session=(id:unknown)=>reads.sessions.find((s:any)=>s.session_id===id);
  const worker=session(actor.sessionId);
@@ -95,8 +96,8 @@ export function predictObservation(r:DecisionObservation) {
  else questions=questions.map(q=>q.id===c.questionId?{...q,...write.fields}:q);
  }
  }
- const failure=result.kind==='reject'?formatCardDecisionFailure(result.failure,{label:`#${row.number}`,status:row.status,length:[...String(c.body??c.waitingFor??'')].length}):null;
- const kind=result.kind==='reject'?(c.type==='BULK_SET_STATUS'?'noop':'error'):updates>0||JSON.stringify(questions)!==JSON.stringify(r.beforeQuestions)?'success':'noop';
+ const failure=result.kind==='reject'?formatCardDecisionRejection(c.type,row.id,result.failure,{label:`#${row.number}`,status:row.status,length:[...String(c.body??c.waitingFor??'')].length}):null;
+ const kind=updates>0||JSON.stringify(questions)!==JSON.stringify(r.beforeQuestions)?'success':'noop';
  return {decision:result,writes,observation:{...r,after,afterQuestions:JSON.parse(JSON.stringify(questions)),versionDelta:updates,statusTimeChanged:!!row&&statusTimeChanged,
- result:{kind,value:null,statusCode:failure?.statusCode??null,code:failure?.code??null,message:failure?.message??null}} as DecisionObservation};
+ result:failure??{kind,value:null,statusCode:null,code:null,message:null}} as DecisionObservation};
 }

@@ -176,6 +176,6 @@ export async function createCardMachineWorld() {
       default:throw new Error(`Unsupported contrast event: ${type}`);
     }
   }
-  return {h,cards,reports,dispatcher,reset,apply,cardId:()=>cardId,cleanup:async()=>{await dispatcher.drain();await h.cleanup();}};
+  return {h,cards,reports,dispatcher,executions,reset,apply,cardId:()=>cardId,cleanup:async()=>{await dispatcher.drain();await h.cleanup();}};
 }
 export type CardMachineWorld=Awaited<ReturnType<typeof createCardMachineWorld>>;

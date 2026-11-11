@@ -25,11 +25,11 @@ export function renderCardCharts(report:CardPromiseReport){
  return plans.map(plan=>({...plan,...toMermaid(root,{...plan.spec,parallel:'stack',hideEvents:commands.filter(c=>!plan.events.includes(c)),marks:report.marks,
  holes:plan.id==='02-status'?report.holes.filter(h=>h.id!=='holeOrphan'):plan.id==='03-question'?report.holes.filter(h=>h.id==='holeOrphan'):[]})}));
 }
-function permission(report:CardPromiseReport,c:CardDecisionCommand,actor:string){
+function permission(report:CardPromiseReport,c:CardDecisionCommand,actor:string,entrance:string|null=null){
  const family=actor==='human'?'human':actor==='server'?'server':'agent';
  const metadata=cardDecisionMachine.getStateNodeById('cardDecision.verdict.ready').on[c]![0]!.meta!;
- if(!(metadata.entrances as readonly string[]).includes(family))return '입구 없음';
- const p=report.permissions[`${c}:${actor}`];
+ if(!((entrance?(metadata.entryActors as Record<string,readonly string[]>)[entrance]:metadata.entrances) as readonly string[]).includes(family))return '입구 없음';
+ const p=report.permissions[`${c}:${actor}${entrance?':'+entrance:''}`];
  if(!p)return '도달 상태 없음';
  const errors=[...p.guards].sort().map(g=>{const [guard,id]=g.split(': ');const e=CARD_FAILURES[id!]!;return `${guard} (${e?.statusCode??'일반 오류'}, ${e?.code??id})`;}).join('<br>');
  return !p.reject?'모두 허용':!p.apply?`모두 거절: ${errors}`:`조건부: ${errors}`;
@@ -53,7 +53,7 @@ export function generateCardStateDocument(report:CardPromiseReport=checkCardProm
  }
  lines.push('', '## 주체 관계별 권한','', 'PAS는 agent 세션이다. 현재 담당, 작성자, 담당이면서 작성자인 관계를 별도 행으로 그대로 보여 준다. 입구 없음은 명령 출처 metadata에서 읽으며 거절 가드와 기존 오류는 실제 열거 결과다.','',
  '| 명령 | 주체 관계 | 사람 | 현재 담당 세션 | 다른 agent 세션 | PAS | 서버 |', '| :-- | :-- | :-- | :-- | :-- | :-- | :-- |');
- for(const c of commands)for(const actor of CARD_ACTORS){const p=permission(report,c,actor),isAgent=!['human','server','external'].includes(actor),owner=['owner','ownerAuthor'].includes(actor);lines.push(`| ${c} | ${actor} | ${actor==='human'?p:'해당 없음'} | ${isAgent&&owner?p:'해당 없음'} | ${isAgent&&!owner?p:'해당 없음'} | ${isAgent&&actor!=='anonymousAgent'?p:'해당 없음'} | ${actor==='server'?p:'해당 없음'} |`);}
+ for(const c of commands)for(const entrance of c==='ADD_COMMENT'?CARD_FACT_VALUES.ADD_COMMENT.entrance:[null])for(const actor of CARD_ACTORS){const p=permission(report,c,actor,entrance),isAgent=!['human','server','external'].includes(actor),owner=['owner','ownerAuthor'].includes(actor);lines.push(`| ${c}${entrance?' ('+entrance+')':''} | ${actor} | ${actor==='human'?p:'해당 없음'} | ${isAgent&&owner?p:'해당 없음'} | ${isAgent&&!owner?p:'해당 없음'} | ${isAgent&&actor!=='anonymousAgent'?p:'해당 없음'} | ${actor==='server'?p:'해당 없음'} |`);}
  lines.push('', '## 규칙 요약과 운영 호출지','', '| 명령 | 전이 설명 | 운영 출처 |', '| :-- | :-- | :-- |');
  for(const c of commands){const t=cardDecisionMachine.getStateNodeById('cardDecision.verdict.ready').on[c]![0]!;lines.push(`| ${c} | ${t.meta!.rule} | ${(t.meta!.callers as readonly string[]).join('<br>')} |`);}
  lines.push('', '## 약속과 구멍','', '| 약속 | 위반 수 | 예시 최단 경로 |','| :-- | --: | :-- |');

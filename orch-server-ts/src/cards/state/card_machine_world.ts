@@ -106,7 +106,7 @@ function explore(){
  const value=snapshot.value as CardStateValue,before=w.snapshot.value as CardStateValue;
  const a=stateValueToColumns(before),b=stateValueToColumns(value),resetDismissal=a.status!==b.status||a.blocked_kind!==b.blocked_kind;
  for(const owner of applicable){
- const result=results.get(owner)!,key=`${event.type}:${event.actor}`,p=result.permissions[key]??={apply:0,reject:0,guards:new Set<string>()};
+ const result=results.get(owner)!,key=`${event.type}:${event.actor}${event.type==='ADD_COMMENT'?':'+event.facts.entrance:''}`,p=result.permissions[key]??={apply:0,reject:0,guards:new Set<string>()};
  if(verdict.type==='reject'){p.reject++;p.guards.add(`${(verdict.params as any)?.guard}: ${(verdict.params as any)?.failure}`);continue;}p.apply++;
  const nextOwner=value.assignee==='session'&&(before.assignee!=='session'||event.facts.assignmentChanged===true||event.type==='REGISTER_REPLACEMENT')?'live':owner;
  const k=JSON.stringify([value,nextOwner,resetDismissal]);

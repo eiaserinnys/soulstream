@@ -19,6 +19,8 @@ export const CARD_FAILURES:Record<string,{statusCode:number|null;code:string|nul
  withdraw_missing:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Question not found in card'},
  withdraw_answered:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Answered questions cannot be withdrawn'},
  withdraw_withdrawn:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Question already withdrawn'},
+ commentTrustedMode:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Only trusted session actors may select a comment mode'},
+ commentTrustedSpoken:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Only trusted session actors may add spoken comments'},
  commentMode:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'mode를 spoken 또는 reply로 지정하세요'},
  replyOwner:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Only the current assignee session may reply to a card comment. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work.'},
  replyLength:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'reply은 300자까지입니다. 지금 {length}자입니다'},
@@ -57,4 +59,11 @@ export const CARD_FAILURES:Record<string,{statusCode:number|null;code:string|nul
 export function formatCardDecisionFailure(failure:{id:string},bindings:Record<string,string|number>={}) {
  const template=CARD_FAILURES[failure.id]!;
  return {...template,message:template.message.replace(/\{(\w+)\}/g,(_,key:string)=>String(bindings[key]))};
+}
+
+/** Preserve the bulk boundary: a per-card rejection is returned, not thrown. */
+export function formatCardDecisionRejection(command:string,cardId:string,failure:{id:string},bindings:Record<string,string|number>={}) {
+ const error=formatCardDecisionFailure(failure,bindings);
+ if(command==='BULK_SET_STATUS')return {kind:'noop' as const,value:{results:[{card_id:cardId,ok:false,error:error.message}]},statusCode:null,code:null,message:null};
+ return {kind:'error' as const,value:null,...error};
 }

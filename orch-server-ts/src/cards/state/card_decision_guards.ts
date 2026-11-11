@@ -25,8 +25,10 @@ reject('ANSWER_QUESTION','withdrawnAnswer','withdrawnAnswer',fact('question','wi
 reject('ANSWER_QUESTION','openQuestion','openQuestion',not(fact('question','open')));
 reject('WITHDRAW_QUESTION','ownerOrAuthor','withdrawOwner',not(actor('owner','ownerAuthor','author')));
 for(const value of ['missing','answered','withdrawn'])reject('WITHDRAW_QUESTION',value,`withdraw_${value}`,fact('question',value));
+reject('ADD_COMMENT','trustedMode','commentTrustedMode',and([fact('hasMode'),not(session)]));
+reject('ADD_COMMENT','trustedSpoken','commentTrustedSpoken',and([fact('requestedSpoken'),actor('human','server')]));
+reject('ADD_COMMENT','otherAssignee','otherAssignee',and([fact('entrance','direct'),not(fact('reply')),agent,inside('a_session'),not(owner)]));
 reject('ADD_COMMENT','commentMode','commentMode',and([agent,fact('hasItems'),not(fact('hasMode'))]));
-reject('ADD_COMMENT','otherAssignee','otherAssignee',and([not(fact('reply')),agent,inside('a_session'),not(owner)]));
 reject('ADD_COMMENT','replyOwner','replyOwner',and([fact('reply'),not(effectiveOwner)]));
 reject('ADD_COMMENT','replyLength','replyLength',and([fact('reply'),fact('hasItems'),fact('replyLength','tooLong')]));
 reject('ADD_COMMENT','userInput','replyUserInput',and([fact('reply'),fact('hasItems'),not(fact('userInput'))]));

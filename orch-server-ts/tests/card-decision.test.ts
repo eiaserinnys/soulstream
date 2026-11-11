@@ -51,3 +51,11 @@ it('preserves the eligible caller claim during bulk status changes',()=>{
  expect(writes).toHaveLength(1);
  expect(writes[0]!.fields).toMatchObject({status:'queued',assignee_kind:'session',assignee_session_id:'candidate',assignee_agent_id:null});
 });
+it('preserves direct comment precedence while accepting the followup entrance',()=>{
+ const r={...row,items:[{id:1}]},actor={kind:'agent',sessionId:'other'};
+ const direct=decideCardTransition(r,[],{}, {type:'ADD_COMMENT',body:'상황 전달',entrance:'direct'},actor,0);
+ expect(direct.kind).toBe('reject');
+ if(direct.kind==='reject')expect(direct.failure.guard).toBe('reject.ADD_COMMENT.otherAssignee');
+ const followup=decideCardTransition({...r,items:[]},[],{}, {type:'ADD_COMMENT',body:'후속',mode:'spoken',entrance:'followup'},actor,0);
+ expect(followup.kind).toBe('noop');
+});
