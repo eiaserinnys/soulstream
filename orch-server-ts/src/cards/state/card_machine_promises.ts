@@ -9,6 +9,7 @@ export interface PromiseResult {id:number;name:string;kept:boolean;violations:nu
 const has=(s:CardSnapshot,id:string)=>s._nodes.some(n=>n.id===id);
 const open=(s:CardSnapshot)=>!has(s,"qNone");
 const pas=(s:CardSnapshot)=>!has(s,"pasNone");
+const boardHas=(s:CardSnapshot,kind:"card"|"question")=>boardEntriesOf(s).includes(kind);
 const next=(s:CardSnapshot,event:string)=>transition(cardMachine,s,{type:event})[0];
 /** The transition reader is replaceable only for checker mutation tests. */
 export const questionAnswersDiffer=(s:CardSnapshot,advance:typeof next=next)=>open(s)&&JSON.stringify(advance(s,"ANSWER_DETAIL").value)!==JSON.stringify(advance(s,"ANSWER_BOARD").value);
@@ -19,8 +20,10 @@ export const shortLimitReservationMissing=(s:CardSnapshot,advance:typeof next=ne
   if(!has(s,"running")||(!has(s,"originalLive")&&!has(s,"replacedLive")))return false;
   const stopped=advance(s,"SERVER_SHORT_LIMIT");return !has(stopped,"rLimit")||!has(stopped,"lSame");
 };
+export const questionEntryMissing=(s:CardSnapshot,read=boardEntriesOf)=>pas(s)&&has(s,"on")&&open(s)&&!read(s).includes("question");
+export const cardEntryMissing=(s:CardSnapshot,read=boardEntriesOf)=>pas(s)&&has(s,"qNone")&&s.hasTag("card-entry")&&!has(s,"dCurrent")&&!read(s).includes("card");
 export const CARD_PROMISES = [
-  {name:"판에 올라야 할 장은 판에 있다 (1-가 질문 장)",discrepancies:[1,7],breaks:(s:CardSnapshot)=>pas(s)&&has(s,"on")&&open(s)&&!has(s,"ePresent")},
+  {name:"판에 올라야 할 장은 판에 있다 (1-가 질문 장)",discrepancies:[1,7],breaks:(s:CardSnapshot)=>questionEntryMissing(s)},
   {name:"서버의 한도 재개는 기록된 담당이 현재 담당일 때만 한다",discrepancies:[2],breaks:(s:CardSnapshot)=>unrecordedLimitResume(s)},
   {name:"같은 질문의 답은 카드 상세와 감독 판에서 결과가 같다",discrepancies:[4],breaks:(s:CardSnapshot)=>questionAnswersDiffer(s)},
   {name:"질문을 올릴 수 있는 세션은 철회할 수 있다",discrepancies:[8],breaks:(s:CardSnapshot)=>questionAuthorCannotWithdraw(s)},
@@ -48,11 +51,9 @@ function computeCardPromises() {
       value.note=`어긋남 ${value.discrepancies.join(", ")}`;marks.set(key,value);
     }
   }
-  const cardEntryMissing=(s:CardSnapshot)=>pas(s)&&has(s,"qNone")&&s.hasTag("card-entry")&&!has(s,"cPresent");
   const holeTests = [
-    {id:"holeCardMissing",parent:"on",label:"판에 올라야 하는데 카드 장이 없음",test:cardEntryMissing},
+    {id:"holeCardMissing",parent:"on",label:"판에 올라야 하는데 카드 장이 없음",test:(s:CardSnapshot)=>cardEntryMissing(s)},
     {id:"holeQuestionMissing",parent:"on",label:"질문은 열렸는데 판에 장이 없음",test:CARD_PROMISES[0]!.breaks},
-    {id:"holeQuestionOff",parent:"off",label:"질문을 연 채 내려간 카드",test:(s:CardSnapshot)=>open(s)&&has(s,"off")},
     {id:"holeOrphan",parent:"card.question",label:"철회할 세션이 없는 질문",test:(s:CardSnapshot)=>!promises[3]!.kept&&CARD_PROMISES[3]!.breaks(s)},
     {id:"holeChangedLimitOwner",parent:"limit",label:"담당이 바뀐 한도 막힘",test:(s:CardSnapshot)=>has(s,"limit")&&(has(s,"lDifferent")||has(s,"lDifferentLong"))},
   ];
@@ -78,7 +79,7 @@ function computeCardPromises() {
       }
     });
   }
-  const missingCards=states.filter(cardEntryMissing);
+  const missingCards=states.filter(s=>cardEntryMissing(s));
   const cardEntryPromise:PromiseResult={id:1,name:"판에 올라야 할 장은 판에 있다 (1-나 카드 장)",kept:missingCards.length===0,violations:missingCards.length,example:missingCards.length?pathByValue.get(JSON.stringify(missingCards[0]!.value))??[]:[],discrepancies:[1]};
   holes[0]!.note="이번 대조에서 새로 발견. 가득 찬 판에서 질문 장을 버리는 어긋남 1과 같은 뿌리";
   return {promises,cardEntryPromise,marks:{states:[] as string[],transitions:[...marks.values()]},holes,configurationCount:states.length,definitionCount:definitions.size,adjacency,paths};

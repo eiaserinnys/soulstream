@@ -1,3 +1,4 @@
+import { cardBoardEntries } from "../../session/card_board_entries.js";
 import { setup, stateIn, and, or, not } from "xstate";
 import { EVENT_LABELS, STATUS_LEAVES, MEMORY_CHART_GROUPS, type StatusLeaf } from "./card_machine_events.js";
 
@@ -19,7 +20,7 @@ const guards:Record<string,Predicate> = {
   supervised: not(at("pasNone")),
   noPas: at("pasNone"),
   otherAddedOne: any("pasRoom","pasOne"),
-  otherAddedFull: and([any("pasRoom","pasOne"),at("cNone"),at("eNone")]),
+  otherAddedFull: any("pasRoom","pasOne"),
   otherRemovedOne: at("pasFull"),
   canAskOther: any("aNone","aAgent","aHuman"),
   canWithdraw: and([session,open]),
@@ -46,9 +47,9 @@ const guards:Record<string,Predicate> = {
   replaceable: and([session,any("limit","question")]),
 };
 type GuardName=keyof typeof guards;
-type Region="status"|"question"|"reservation"|"assignee"|"questionEntry"|"pasBoard"|"limitedOwner"|"cardEntry";
+type Region="status"|"question"|"reservation"|"assignee"|"pasBoard"|"limitedOwner"|"dismissed";
 type Rule={target?:string; guard?:GuardName | Predicate; actions?:string[]; description?:string; meta?:Record<string,unknown>};
-const on:Record<Region,Record<string,Rule|Rule[]>>={status:{},question:{},reservation:{},assignee:{},questionEntry:{},pasBoard:{},limitedOwner:{},cardEntry:{}};
+const on:Record<Region,Record<string,Rule|Rule[]>>={status:{},question:{},reservation:{},assignee:{},pasBoard:{},limitedOwner:{},dismissed:{}};
 function put(region:Region,event:string,target:string|undefined,guard:GuardName="always",extra:Partial<Rule>={}) {
   on[region][event]={target:target?`#${target}`:undefined,guard,description:EVENT_LABELS[event],...extra};
 }
@@ -64,21 +65,7 @@ function status(event:string,target:StatusLeaf,guard:GuardName="always",free=fal
     put("reservation",event,target==="verification"?"rVerify":"rNone",guard);
     put("limitedOwner",event,"lNone",guard);
   }
-  // syncReportsAfterCommit compares the stored status column, not blocked_kind.
-  // A blocked -> blocked write alone does not sync the board.
-  const blockedTarget=["question","noReport","other","limit"].includes(target);
-  const sync=and([guards[guard]!,...(blockedTarget&&!event.startsWith("ASK_")?[not(any("question","noReport","other","limit"))]:[])]);
-  if (event.startsWith("ASK_")||["verification","todo","queued","running","hold","done","cancelled"].includes(target)) put("cardEntry",event,"cNone",guard);
-  else on.cardEntry[event]=[
-    {target:"#cPresent",guard:and([sync,at("qNone"),any("pasRoom","pasOne")]),description:EVENT_LABELS[event]},
-    {target:"#cNone",guard:and([sync,open]),description:EVENT_LABELS[event]},
-  ];
-  // syncCard removes existing question entries when the card leaves the board.
-  // Reposting occurs only when leaving hold, not done/cancelled (어긋남 7).
-  if (["hold","done","cancelled"].includes(target)) put("questionEntry",event,"eNone",guard);
-  else on.questionEntry[event]=[
-    {target:"#ePresent",guard:and([guards[guard]!,at("hold"),open,any("pasRoom","pasOne")]),description:EVENT_LABELS[event]},
-  ];
+  on.dismissed[event]=[{target:"#dNone",guard:and([guards[guard]!,not(at(target))]),description:EVENT_LABELS[event]}];
 }
 for (const key of Object.keys(STATUS_LEAVES) as StatusLeaf[]) {
   status(`HUMAN_MOVE_${key}`,key,key==="verification"?"session":"always",true);
@@ -91,23 +78,18 @@ for (const event of ["ASK_OWNER","ASK_OTHER"]) {
   const guard=event==="ASK_OWNER"?"newQuestionOwner":"newQuestionOther";
   status(event,"question",guard);
   put("question",event,event==="ASK_OWNER"?"qOwner":"qOrphan",guard);
-  on.questionEntry[event]=[
-    {guard:and([guards[guard]!,any("pasRoom","pasOne")]),target:"#ePresent",description:EVENT_LABELS[event],actions:["질문 장 올리기"]},
-  ];
+
 }
 for (const event of ["ANSWER_DETAIL","ANSWER_BOARD","WITHDRAW","WITHDRAW_AUTHOR"]) {
   const guard=event==="WITHDRAW"?"canWithdraw":event==="WITHDRAW_AUTHOR"?"authorWithdraw":event==="ANSWER_BOARD"?"boardAnswer":"open";
-  put("question",event,"qNone",guard);put("questionEntry",event,"eNone",guard);
+  put("question",event,"qNone",guard);
   on.status[event]=[{target:"#running",guard:and([guards[guard]!,at("question")]),description:EVENT_LABELS[event]}];
-  on.cardEntry[event]=[
-    {target:"#cPresent",guard:and([guards[guard]!,any("review","noReport","other","limit"),any("pasRoom","pasOne")]),description:EVENT_LABELS[event]},
-    {target:"#cNone",guard:and([guards[guard]!,not(any("review","noReport","other","limit"))]),description:EVENT_LABELS[event]},
-  ];
+  on.dismissed[event]=[{target:"#dNone",guard:and([guards[guard]!,at("question")]),description:EVENT_LABELS[event]}];
   // answerQuestion writes status only for the last question on question-blocked cards.
 }
 for (const event of ["HUMAN_MESSAGE","HUMAN_COMMENT"]) {
   status(event,"running","humanResume");put("question",event,"qNone","humanResume",{actions:["열린 질문 닫기"]});
-  put("questionEntry",event,"eNone","humanResume");
+
 }
 put("question","AGENT_COMMENT",undefined,"session");
 status("START_ADMITTED_WORK","running","admittedStart");
@@ -164,6 +146,7 @@ put("pasBoard","BOARD_OTHER_REMOVED","pasOne","otherRemovedOne");
 for (const [event,target] of [["BULK_TODO","todo"],["BULK_QUEUED","queued"],["BULK_HOLD","hold"],["BULK_CANCELLED","cancelled"]] as const) status(event,target,target==="todo"||target==="queued"?"unassigned":"idle");
 status("MERGE_SOURCE","cancelled","mergeable");
 
+on.dismissed.ACK_CARD={target:"#dCurrent",guard:and([guards.supervised!,at("qNone"),any("question","noReport","other","limit")]),description:EVENT_LABELS.ACK_CARD};
 // A card is created once. Other commands require an existing card.
 for(const handlers of Object.values(on)) for(const [event,value] of Object.entries(handlers)) {
   if(event.startsWith("CREATE_QUEUED")||event==="CREATE_TODO") continue;
@@ -234,18 +217,18 @@ export const cardMachine=setup({
     question:{description:"열린 질문",initial:"none",on:on.question,states:{none:leaf("qNone","없음"),owner:leaf("qOwner","지금 담당이 올린 질문"),orphan:leaf("qOrphan","담당 없이 올린 질문"),other:leaf("qOther","옛 담당이 올린 질문")}},
     reservation:{description:"카드에 기록된 담당 재개 예약",initial:"none",on:on.reservation,states:{none:leaf("rNone","없음"),verify:leaf("rVerify","카드에 적힌 검증 시각"),limit:leaf("rLimit","카드에 적힌 짧은 한도 시각"),longLimit:leaf("rLongLimit","시각 없이 담당만 기록한 한도 재개")}},
     assignee:{description:"담당",initial:"none",on:on.assignee,states:{none:leaf("aNone","담당 없음"),agent:{...leaf("aAgent","에이전트만 정해짐"),initial:"idle",states:{idle:leaf("aAgentIdle","배정 전"),admitted:leaf("aAgentAdmitted","배정을 허가받고 첫 착수를 기다림",["unnamed"]) }},human:leaf("aHuman","사람"),originalLive:leaf("originalLive","원래 담당이 살아 있음"),originalEnded:leaf("originalEnded","원래 담당이 정상 종료"),originalLimited:leaf("originalLimited","원래 담당이 짧은 한도 종료"),originalLongLimited:leaf("originalLongLimited","원래 담당이 긴 한도 종료"),replacedLive:leaf("replacedLive","새 담당이 살아 있음"),replacedEnded:leaf("replacedEnded","새 담당이 정상 종료"),replacedLimited:leaf("replacedLimited","새 담당이 긴 한도 종료")}},
-    // 걸음 2에서 판의 장을 구성에서 계산하는 출력으로 바꾸며 이 영역을 지운다.
-    questionEntry:{description:"감독 판의 질문 장 (현행 코드의 기억)",initial:"none",on:on.questionEntry,states:{none:leaf("eNone","질문 장 없음"),present:leaf("ePresent","질문 장 있음")}},
-    cardEntry:{description:"감독 판의 카드 장 (현행 코드의 기억, 걸음 2에서 계산 출력으로 바꿈)",initial:"none",on:on.cardEntry,states:{none:leaf("cNone","카드 장 없음"),present:leaf("cPresent","카드 장 있음")}},
+    dismissed:{description:"이 상태에서 내린 카드 장",initial:"none",on:on.dismissed,states:{none:leaf("dNone","내린 기록 없음"),current:leaf("dCurrent","지금 상태에서 내림")}},
     pasBoard:{description:"감독 PAS와 이 카드의 것이 아닌 장의 수 (환경)",initial:"none",on:on.pasBoard,states:{none:leaf("pasNone","감독 PAS 없음"),available:{description:"감독 PAS 있음",initial:"room",states:{room:leaf("pasRoom","다른 장 여유 (10장 이하)"),one:leaf("pasOne","다른 장 한 자리 남음 (11장)"),full:leaf("pasFull","다른 장 가득 (12장)")}}}},
     limitedOwner:{description:"카드에 기록된 한도 담당과 현재 담당의 관계",initial:"none",on:on.limitedOwner,states:{none:leaf("lNone","기록된 한도 담당 없음"),same:leaf("lSame","시각 있는 예약의 담당이 지금 담당"),sameLong:leaf("lSameLong","시각 없는 예약의 담당이 지금 담당"),differentLong:leaf("lDifferentLong","시각 없는 예약의 담당 불일치 (DB가 금지)",["unnamed"]),different:leaf("lDifferent","시각 있는 예약의 담당 불일치 (DB가 금지)",["unnamed"]) }},
   },
 });
 export type CardSnapshot=ReturnType<typeof cardMachine.resolveState>;
-/** Read the existing memories; this is not the proposed step-2 calculation. */
+/** Board entries are an output of the configuration, never independently stored regions. */
 export function boardEntriesOf(snapshot:CardSnapshot):("question"|"card")[] {
-  const entries:("question"|"card")[]=[];
-  if (snapshot.matches({questionEntry:"present"})) entries.push("question");
-  if (snapshot.matches({cardEntry:"present"})) entries.push("card");
-  return entries;
+  const has=(id:string)=>snapshot._nodes.some(n=>n.id===id);
+  const status=has("off")?(has("hold")?"on_hold":has("done")?"done":"cancelled"):has("review")?"review":
+    ["question","noReport","other","limit"].some(has)?"blocked":has("verification")?"awaiting_verification":has("running")?"running":"todo";
+  const card={id:"machine",number:1,title:"카드",status,archived:false,blocked_kind:has("limit")?"limit":has("question")?"question":has("noReport")?"no_report":null,blocked_detail:null,now:null,status_changed_at:"2000-01-01T00:00:00.000Z",updated_at:"2000-01-01T00:00:00.000Z"};
+  const questions=has("qNone")?[]:[{id:"question",card_id:card.id,text:"질문",options:["진행"],answer:null,withdrawn_at:null,asked_at:card.updated_at}];
+  return cardBoardEntries(card,questions,!has("pasNone")&&!has("uncreated"),has("dCurrent")?[{card_id:card.id,status,blocked_kind:card.blocked_kind,status_changed_at:card.status_changed_at}]:[]).map(e=>e.question_id?"question":"card");
 }

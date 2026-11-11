@@ -720,22 +720,10 @@ export class CardControlPlaneService {
   async syncReportsAfterCommit(cardId:string,change:CardReportSyncParams):Promise<void> {
     const {previousStatus,committedCard,questionChanged}=change;
     const cardChanged=change.cardChanged ?? previousStatus !== committedCard?.status;
-    if (!this.reports || (!questionChanged && !cardChanged) || !committedCard) return;
-    const leftBoard=previousStatus !== committedCard.status && isCardOffBoard(committedCard.status);
-    // 검증 대기는 PAS 판에 장을 만들지 않는다. 들어갈 때는 지금 연결되지 않은 옛 판의 장도 내린다.
-    const enteredVerification=previousStatus !== committedCard.status && committedCard.status === "awaiting_verification";
+    if (!this.reports || !committedCard) return;
     try {
-      await this.reports.syncCard(cardId,{scanBoards:questionChanged || leftBoard || enteredVerification});
+      await this.reports.syncCard(cardId);
       if (previousStatus !== committedCard.status) await this.reports.recordCardTimeline(cardId);
-      // 보류에서 돌아온 카드의 열린 질문은 감독 PAS 판에만 다시 올린다. 휴대폰 알림은 질문을 남길 때(askQuestion) 한 번뿐이다.
-      if (previousStatus === "on_hold" && !isCardOffBoard(committedCard.status)) {
-        const openQuestions=await this.repoSql<{id:string}[]>`SELECT id FROM card_questions
-          WHERE card_id=${cardId} AND answer IS NULL AND withdrawn_at IS NULL ORDER BY asked_at,id`;
-        for (const question of openQuestions) {
-          const outcome=await this.reports.placeQuestion(cardId,question.id);
-          if (outcome.failed.length>0) this.warn(`카드 질문 ${question.id} 판 재게시 실패: ${outcome.failed.length}`);
-        }
-      }
     } catch (error) { this.warn(`PAS report sync failed after card ${cardId} committed: ${String(error)}`); }
   }
   private async closeOpenQuestionsTx(sql:RepositorySql,cardId:string,reason:string):Promise<boolean> {

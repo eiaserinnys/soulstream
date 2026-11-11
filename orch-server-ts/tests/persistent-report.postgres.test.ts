@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import postgres from "postgres";
 import Fastify from "fastify";
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReportTimelineLine } from "@soulstream/wire-schema/persistent-report";
 import { startPostgresTestContainer } from "../../packages/db-schema/scripts/postgres-test-container.mjs";
 import { waitForPostgres } from "./persistent-session-settings-world.js";
@@ -47,6 +47,11 @@ describe("PAS reports on production PostgreSQL schema", () => {
       return rows[0]!.id;
     } };    cards = new CardControlPlaneService(adapted, dbPort, undefined, undefined, publish);
   }, 90_000);
+  beforeEach(async()=>{
+    await sql`DELETE FROM folder_operations`;await sql`DELETE FROM cards`;
+    await sql`UPDATE sessions SET metadata=${sql.json([{type:"persistent_session",value:{enabled:true}},{type:"other",value:"유지"}])} WHERE session_id='pas'`;
+    await sql`UPDATE sessions SET metadata='[]' WHERE session_id='normal'`;
+  });
   afterAll(async () => { await sql?.end({ timeout: 2 }); stop?.(); });
 
   it("preserves order, replaces completely, rejects the thirteenth and writes no events", async () => {
@@ -98,7 +103,27 @@ describe("PAS reports on production PostgreSQL schema", () => {
     await posting.remove('pas','posted');
     expect(onPosted).toHaveBeenCalledTimes(2);
   });
+  it("repairs stale calculated entries on an identical direct PUT without reposting notifications or timeline",async()=>{
+    await sql`UPDATE sessions SET agent_id='report-agent' WHERE session_id='pas'`;
+    const cardId=(await cards.createCard({actorKind:'agent',actorSessionId:'pas',folderId:'report-folder',title:'계산 장',request:'',
+      assignee:{kind:'session',sessionId:'pas'}})).operation.target_id;
+    await cards.setCardStatus({...human,cardId,status:'blocked',blockedKind:'no_report'});
+    const onPosted=vi.fn(),timeline=vi.fn();
+    const posting=new PersistentReportService(adapted,publish,onPosted,timeline);
+    const payload=entry('same-direct');
+    await posting.put('pas',payload);
+    const direct=(await posting.get('pas')).find(e=>e.key===payload.key)!;
+    await sql`SELECT session_apply_metadata_entry('pas',${JSON.stringify({type:'persistent_report',value:{entries:[direct]}})},'persistent_report',NOW())`;
+    onPosted.mockClear();timeline.mockClear();publish.mockClear();
+    expect(await posting.put('pas',payload)).toMatchObject({ok:true,changed:true});
+    expect((await posting.get('pas')).map(e=>e.key)).toEqual([payload.key,`card_${cardId}`]);
+    expect((await posting.get('pas'))[0]).toEqual(direct);
+    expect(publish).toHaveBeenCalledTimes(1);
+    expect(onPosted).not.toHaveBeenCalled();
+    expect(timeline).not.toHaveBeenCalled();
+  });
   it("answers one open entry once, passes reply/visible contexts and ignores nonhuman or missing entries", async () => {
+    await reports.put('pas',entry('left'));await reports.put('pas',entry('right'));
     const context = [{key:'persistent_report_reply',content:{key:'left',option:'진행'}}, {key:'persistent_report_visible',content:{key:'left',title:'left'}}];
     const parsed = intervenePayload('pas',{text:'left: 진행',context_items:context});
     expect(parsed).toMatchObject({ok:true,value:{extra_context_items:context}});
@@ -152,38 +177,24 @@ describe("PAS reports on production PostgreSQL schema", () => {
     expect(publish.mock.lastCall?.[0][0]).toMatchObject({persistent_report:[]});
     await app.close();
   });
-  it("syncs after card state, title, archive, now and question changes, but not comments", async () => {
-    const cardId = (await cards.createCard({...human,folderId:'report-folder',title:'내림 호출',request:''})).operation.target_id;
-    const sync = vi.spyOn(PersistentReportService.prototype, 'syncCard');
+  it("syncs the calculated board after every committed card write",async()=>{
+    const cardId=(await cards.createCard({...human,folderId:'report-folder',title:'판 재계산',request:''})).operation.target_id;
+    const sync=vi.spyOn(PersistentReportService.prototype,'syncCard');
     try {
       await cards.setCardStatus({...human,cardId,status:'done'});
-      expect(sync).toHaveBeenCalledTimes(1);
-      expect(sync).toHaveBeenLastCalledWith(cardId,{scanBoards:true});
       await cards.setCardStatus({...human,cardId,status:'done'});
-      expect(sync).toHaveBeenCalledTimes(1);
       await cards.patchCard({...human,cardId,title:'제목 수정'});
-      expect(sync).toHaveBeenCalledTimes(2);
-      expect(sync).toHaveBeenLastCalledWith(cardId,{scanBoards:false});
-      await cards.patchCard({...human,cardId,archived:true});
-      expect(sync).toHaveBeenCalledTimes(3);
-      await cards.setCardStatus({...human,cardId,status:'cancelled'});
+      await cards.addComment({...human,cardId,body:'기록'});
       expect(sync).toHaveBeenCalledTimes(4);
-      await cards.addComment({...human,cardId,body:'기록만 남깁니다'});
-      expect(sync).toHaveBeenCalledTimes(4);
-      await cards.askQuestion({...human,cardId,text:'판단?',options:['진행']});
-      expect(sync).toHaveBeenCalledTimes(5);
-      expect(sync).toHaveBeenLastCalledWith(cardId,{scanBoards:true});
-      const question = (await cards.getCard(cardId))!.questions[0]!.id;
-      await cards.answerQuestion({...human,cardId,questionId:String(question),answer:'진행'});
-      expect(sync).toHaveBeenCalledTimes(6);
-    } finally { sync.mockRestore(); }
+      expect(sync.mock.calls.every(call=>call.length===1&&call[0]===cardId)).toBe(true);
+    }finally{sync.mockRestore();}
   });
 
   it("closes a question and removes its PAS cq_ entry when a user comment resumes the card", async () => {
     const cardId = (await cards.createCard({
       ...human,folderId:'report-folder',title:'커멘트로 질문 종료',request:'요청',
     })).operation.target_id;
-    await sql`UPDATE cards SET assignee_kind='session',assignee_session_id='pas' WHERE id=${cardId}`;
+    await sql`UPDATE cards SET assignee_kind='session',assignee_session_id='pas',created_session_id='pas' WHERE id=${cardId}`;
     await cards.askQuestion({actorKind:'agent',actorSessionId:'pas',cardId,text:'결정이 필요합니다',options:['진행']});
     const questionId = String((await cards.getCard(cardId))!.questions[0]!.id);
     expect(await reports.putQuestion('pas',questionId)).toMatchObject({ok:true});
@@ -201,7 +212,7 @@ describe("PAS reports on production PostgreSQL schema", () => {
 
   it("closes a question and removes its PAS cq_ entry when human session input resumes the card", async () => {
     const cardId = (await cards.createCard({...human,folderId:'report-folder',title:'메시지로 질문 종료',request:'요청'})).operation.target_id;
-    await sql`UPDATE cards SET assignee_kind='session',assignee_session_id='pas' WHERE id=${cardId}`;
+    await sql`UPDATE cards SET assignee_kind='session',assignee_session_id='pas',created_session_id='pas' WHERE id=${cardId}`;
     await cards.askQuestion({actorKind:'agent',actorSessionId:'pas',cardId,text:'결정이 필요합니다',options:['진행']});
     const detail = (await cards.getCard(cardId))!;
     const questionId = String(detail.questions[0]!.id);
@@ -434,6 +445,8 @@ describe("PAS reports on production PostgreSQL schema", () => {
     await cards.addComment({...human,cardId,body:'기록만 남깁니다'});
     expect((await reports.get('pas')).some(e=>e.key===`card_${cardId}`)).toBe(false);
     await cards.updateCardNow({actorKind:'agent',actorSessionId:'pas',cardId,now:'상황판 변경',turn:'agent'});
+    expect(await reports.get('pas')).toEqual([]);
+    await cards.setCardStatus({...human,cardId,status:'blocked',blockedKind:'no_report'});
     expect((await reports.get('pas')).map(e=>e.key)).toEqual([`card_${cardId}`]);
   });
   it("keeps a see entry unchanged when a reply context is received", async () => {
@@ -444,9 +457,10 @@ describe("PAS reports on production PostgreSQL schema", () => {
     expect(await reports.get('pas')).toEqual(before);
     expect(publish).not.toHaveBeenCalled();
   });
-  it("places a card question as a cq_ board entry, replaces on resend and only warns when the board is full", async () => {
-    for (const e of await reports.get('pas')) await reports.remove('pas',e.key);
+  it("places a card question as a cq_ board entry, replaces on resend and keeps it when twelve direct entries fill the board", async () => {
+    for (const e of await reports.get('pas')) if(!e.key.startsWith('cq_')) await reports.remove('pas',e.key);
     const cardId=(await cards.createCard({...human,folderId:'report-folder',title:'판 게시',request:''})).operation.target_id;
+    await sql`UPDATE cards SET created_session_id='pas' WHERE id=${cardId}`;
     await cards.askQuestion({...human,cardId,text:'게시할 질문',options:['진행','중단']});
     const questionId=String((await cards.getCard(cardId))!.questions.at(-1)!.id);
     expect((await reports.putQuestion('pas',questionId)).ok).toBe(true);
@@ -455,18 +469,19 @@ describe("PAS reports on production PostgreSQL schema", () => {
     expect(placed.card_numbers).toEqual([(await cards.getCard(cardId))!.card.number]);
     await reports.putQuestion('pas',questionId);
     expect((await reports.get('pas')).filter(e=>e.key===`cq_${questionId}`)).toHaveLength(1);
-    for (const e of await reports.get('pas')) await reports.remove('pas',e.key);
+    for (const e of await reports.get('pas')) if(!e.key.startsWith('cq_')) await reports.remove('pas',e.key);
     for (let n=0;n<12;n++) expect((await reports.put('pas',entry(`fill${n}`))).ok).toBe(true);
-    expect(await reports.putQuestion('pas',questionId)).toMatchObject({ok:false});
-    expect((await reports.get('pas')).some(e=>e.key===`cq_${questionId}`)).toBe(false);
-    expect(await reports.get('pas')).toHaveLength(12);
+    expect(await reports.putQuestion('pas',questionId)).toMatchObject({ok:true});
+    expect((await reports.get('pas')).some(e=>e.key===`cq_${questionId}`)).toBe(true);
+    expect(await reports.get('pas')).toHaveLength(13);
     expect((await cards.getCard(cardId))!.questions).toHaveLength(1);
   });
   it("clips a long card title and question text with an ellipsis and leaves exact lengths untouched", async () => {
-    for (const e of await reports.get('pas')) await reports.remove('pas',e.key);
+    for (const e of await reports.get('pas')) if(!e.key.startsWith('cq_')) await reports.remove('pas',e.key);
     const placed = async (title: string, text: string) => {
       const cardId=(await cards.createCard({...human,folderId:'report-folder',title,request:''})).operation.target_id;
-      await cards.askQuestion({...human,cardId,text,options:['진행']});
+      await sql`UPDATE cards SET created_session_id='pas' WHERE id=${cardId}`;
+    await cards.askQuestion({...human,cardId,text,options:['진행']});
       const questionId=String((await cards.getCard(cardId))!.questions.at(-1)!.id);
       await reports.putQuestion('pas',questionId);
       return (await reports.get('pas')).find(e=>e.key===`cq_${questionId}`)!;
@@ -508,7 +523,7 @@ describe("PAS reports on production PostgreSQL schema", () => {
       .toMatchObject({action:'reject',code:'CARD_QUESTION_OPTION_INVALID',status:422});
     expect((await cards.getCard(otherId))!.questions.at(-1)!.answer).toBeNull();
   });
-  it("places a new question only on the supervising PAS and leaves questions asked before the feature untouched", async () => {
+  it("places a new question only on the supervising PAS and projects every open question from the current card facts", async () => {
     const enabled = (email: string) => [{ type: "persistent_session", value: { enabled: true } }, { type: "caller_info", value: { source: "browser", email } }];
     await sql`INSERT INTO sessions(session_id,folder_id,node_id,session_type,metadata) VALUES
       ('owner-a','report-folder','test-node',NULL,${sql.json(enabled('director@example.com'))}),
@@ -524,13 +539,13 @@ describe("PAS reports on production PostgreSQL schema", () => {
       assignee: { kind: 'session', sessionId: 'owner-a' } })).operation.target_id;
     await cards.askQuestion({ ...human, cardId, text: '이전 질문', options: ['진행'] });
     const oldId = String((await withBoard.getCard(cardId))!.questions.at(-1)!.id);
-    expect((await reports.get('owner-a')).some(e => e.question_id === oldId)).toBe(false);
+    expect((await reports.get('owner-a')).some(e => e.question_id === oldId)).toBe(true);
     await withBoard.askQuestion({ ...agent, cardId, text: '새 질문', options: ['진행', '중단'] });
     const newId = String((await withBoard.getCard(cardId))!.questions.at(-1)!.id);
     expect(newId).not.toBe(oldId);
     expect(placement?.placed).toEqual(['owner-a']);
     expect(placement?.failed).toEqual([]);
-    expect(placement?.changed).toEqual(['owner-a']);
+    expect(placement?.changed).toEqual([]);
     const repeated = await reports.placeQuestion(cardId, newId);
     expect(repeated.placed).toEqual(['owner-a']);
     expect(repeated.failed).toEqual([]);
@@ -540,7 +555,7 @@ describe("PAS reports on production PostgreSQL schema", () => {
     expect(placed[0]).toMatchObject({ key: `cq_${newId}`, kind: 'ask', options: ['진행', '중단'] });
     for (const s of ['owner-b', 'owner-other', 'owner-llm'])
       expect((await reports.get(s)).filter(e => e.question_id === newId)).toHaveLength(0);
-    expect((await reports.get('owner-a')).some(e => e.question_id === oldId)).toBe(false);
+    expect((await reports.get('owner-a')).some(e => e.question_id === oldId)).toBe(true);
     expect((await withBoard.answerQuestion({ ...human, cardId, questionId: oldId, answer: '진행' })).operation).toBeTruthy();
   });
   it("keeps a question off an unrelated PAS of the same owner and places nothing without a supervising PAS", async () => {

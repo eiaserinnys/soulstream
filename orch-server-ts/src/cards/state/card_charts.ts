@@ -8,26 +8,26 @@ interface CardChartPlan {id:string;title:string;explanation:string;spec:ChartSpe
 const freeMove="HUMAN_MOVE_running";
 const groups={...MEMORY_CHART_GROUPS,"free-move":{from:"status",to:"status",label:"디렉터와 담당은 상태를 직접 옮긴다 [담당 권한 안에서]"}};
 const plans:CardChartPlan[]=[
-  {id:"01-overview",title:"전체: 상태와 함께 움직이는 기억",explanation:"카드 상태는 계층으로, 질문·예약·담당·판의 장은 나란한 영역으로 읽는다. 접힌 상자의 빨강은 그 아래에 약속을 어기는 구성이 도달한다는 뜻이다.",
+  {id:"01-overview",title:"전체: 상태와 함께 움직이는 기억",explanation:"카드 상태는 계층으로, 질문·예약·담당·내린 기록은 나란한 영역으로 읽는다. 접힌 상자의 빨강은 그 아래에 약속을 어기는 구성이 도달한다는 뜻이다.",
     events:[freeMove,"ASK_OWNER","ASK_OTHER","HUMAN_MESSAGE","SERVER_SHORT_LIMIT","SERVER_LIVE_RESUME","SERVER_LIMIT_RELAUNCH","WAKE_TIME","REQUEST_REVIEW"],
-    holes:["holeCardMissing","holeQuestionMissing","holeQuestionOff","holeChangedLimitOwner"],
-    spec:{include:["card"],hide:["uncreated"],collapse:["ready","talk","silent","off","card.question","card.reservation","card.assignee","card.questionEntry","card.cardEntry","card.pasBoard","card.limitedOwner"]}},
+    holes:["holeCardMissing","holeQuestionMissing","holeChangedLimitOwner"],
+    spec:{include:["card"],hide:["uncreated"],collapse:["ready","talk","silent","off","card.question","card.reservation","card.assignee","card.pasBoard","card.limitedOwner"]}},
   {id:"02-status",title:"카드 상태: 같은 기다림에서 물려받는 규칙",explanation:"말로 풀리는 기다림의 세 자식은 디렉터가 말하면 재개하는 규칙을 함께 물려받는다. 자유 이동 하나가 모든 잎 상태의 직접 이동을 대표한다.",
     events:[freeMove,"ASK_OWNER","HUMAN_MESSAGE","SERVER_SHORT_LIMIT","SERVER_LIVE_RESUME","SERVER_LIMIT_RELAUNCH","WAKE_TIME","WAKE_FAIL","REQUEST_REVIEW","ANSWER_DETAIL"],
     holes:["holeCardMissing","holeQuestionMissing","holeQuestionOff","holeChangedLimitOwner"],
     spec:{include:["status"],hide:["uncreated"]}},
-  {id:"03-question",title:"질문: 기록은 열려 있어도 판의 장은 사라진다",explanation:"질문 한 개의 열림과 판에 저장된 질문 장은 별개의 기억이다. 완료와 취소 뒤 늦은 답도 카드 상세와 감독 판에서 받고 상태는 그대로 둔다. 질문을 올린 세션과 현재 담당이 철회할 수 있다.",
+  {id:"03-question",title:"질문: 내려간 카드가 돌아오면 질문 장도 돌아온다",explanation:"질문 장은 카드 구성에서 계산하며 판이 가득 차도 빠지지 않는다. 완료와 취소 뒤 늦은 답도 카드 상세와 감독 판에서 받고 상태는 그대로 둔다. 질문을 올린 세션과 현재 담당이 철회할 수 있다.",
     events:[freeMove,"HUMAN_MOVE_hold","HUMAN_MOVE_done","ASK_OWNER","ASK_OTHER","ANSWER_DETAIL","ANSWER_BOARD","WITHDRAW","WITHDRAW_AUTHOR","HUMAN_MESSAGE"],
-    holes:["holeQuestionMissing","holeQuestionOff"],
-    spec:{include:["status","card.question","card.questionEntry","card.assignee","card.pasBoard"],hide:["uncreated"],collapse:["on","off","card.assignee","card.pasBoard"]}},
+    holes:["holeQuestionMissing"],
+    spec:{include:["status","card.question","card.assignee","card.pasBoard"],hide:["uncreated"],collapse:["on","off","card.assignee","card.pasBoard"]}},
   {id:"04-limit-owner",title:"한도: 카드에 기록된 담당과 예약으로 재개한다",explanation:"한도 진입 때 담당과 선택적인 재개 시각을 카드에 기록한다. 담당 교체와 한도 탈출은 두 칸을 함께 지운다. 짧은 한도는 시각이 지난 뒤, 긴 한도는 모델이 풀린 뒤 기록된 같은 담당만 잇는다.",
     events:["SERVER_SHORT_LIMIT","SERVER_LONG_LIMIT","REPLACE_LIVE","REPLACE_LIMITED","SERVER_LIVE_RESUME","SERVER_LIMIT_TIME","SERVER_LIMIT_RELAUNCH"],
     holes:["holeChangedLimitOwner"],
     spec:{include:["status","card.reservation","card.assignee","card.limitedOwner"],hide:["uncreated","rVerify","aNone","aAgent","aHuman","originalEnded","replacedEnded","lDifferent","lDifferentLong"],collapse:["ready","talk","off","review"]}},
-  {id:"05-board",title:"판: 다른 장 수와 이 카드의 장을 따로 센다",explanation:"환경은 다른 장이 10장 이하·11장·12장인 세 단계다. 이 카드의 카드 장을 먼저 내린 뒤 질문 장을 올리므로, 다른 장이 11장이면 교체할 한 자리가 남는다. 다른 장이 12장이면 새 장을 버리며, 이후 빈자리가 나도 질문 장을 복구하지 않는다.",
-    events:["HUMAN_MOVE_review","ASK_OWNER","ANSWER_DETAIL","BOARD_ONE","BOARD_FULL","BOARD_ROOM","BOARD_OTHER_REMOVED"],
+  {id:"05-board",title:"판: 계산 장과 상태별 내린 기록",explanation:"직접 장만 12장으로 제한한다. 카드와 질문 장은 구성에서 계산한다. 확인한 막힌 카드 장은 상태, 막힘 종류 또는 상태 변경 시각이 바뀔 때 다시 나온다.",
+    events:["HUMAN_MOVE_noReport","ACK_CARD","HUMAN_MOVE_review","ASK_OWNER","ANSWER_DETAIL","BOARD_ONE","BOARD_FULL","BOARD_ROOM","BOARD_OTHER_REMOVED"],
     holes:[],
-    spec:{include:["card.cardEntry","card.questionEntry","card.pasBoard"]}},
+    spec:{include:["status","card.question","card.dismissed","card.pasBoard"]}},
 ];
 
 // View-only containers: the generated states retain their identities and nesting.
@@ -81,10 +81,6 @@ export function renderCardCharts(report:CardPromiseReport) {
     }
     const states=[...report.marks.states];
     if(report.holes.some(h=>h.id==="holeOrphan"&&h.reachable))states.push("qOrphan");
-    if(plan.id==="05-board") {
-      if(report.holes.some(h=>h.id==="holeCardMissing"&&h.reachable))states.push("cNone");
-      if(report.holes.some(h=>h.id==="holeQuestionMissing"&&h.reachable))states.push("eNone");
-    }
     const spec:ChartSpec={...plan.spec,groups:projectedGroups,parallel:"stack",
       hideEvents:CARD_EVENTS.filter(e=>!events.has(e.type)).map(e=>e.type),
       marks:{...report.marks,states},holes};
@@ -99,10 +95,10 @@ export function renderCardCharts(report:CardPromiseReport) {
 export function generateCardStateDocument(report:CardPromiseReport=checkCardPromises()) {
   const charts=renderCardCharts(report);
   const stateCount=(node:typeof cardMachine.root):number=>1+Object.values(node.states).reduce((sum,n)=>sum+stateCount(n),0);
-  const lines=["# 현행 카드 규칙", "", "이 문서는 XState 정의와 약속 검사에서 생성한다. 걸음 2의 질문 규칙과 저장된 한도 예약을 반영한 현행 모형이다.", "",
+  const lines=["# 현행 카드 규칙", "", "이 문서는 XState 정의와 약속 검사에서 생성한다. 걸음 2의 질문 규칙과 한도 예약, 계산한 판 장과 내린 기록을 반영한 현행 모형이다.", "",
     "한 카드에 열린 질문은 하나까지만 대조했다. 한 카드의 동시 질문 여러 개, 보관, 권한 표 전체, 자동 배정 조정자 내부와 임의의 담당 변경 조합은 대조하지 않았다.", "",
     "판의 전체 장 수와 이 카드의 장 수는 DB 사실에서 읽는다. 기계에는 숫자를 저장하지 않고, 다른 장이 10장 이하·11장·12장인 단계만 둔다. 한도 담당과 재개 시각은 cards.limit_resume_session_id와 limit_resume_at에서 읽는다. 시각 없는 예약도 담당을 기록하며, 담당 교체가 기록을 지운다.", "",
-    `영역 8개, 상태 노드 ${stateCount(cardMachine.root)}개, 사건 ${CARD_EVENTS.length}개, 도달 구성 ${report.configurationCount}개, 정의별 전이 갈래 ${report.definitionCount}개.`, "",
+    `영역 7개, 상태 노드 ${stateCount(cardMachine.root)}개, 사건 ${CARD_EVENTS.length}개, 도달 구성 ${report.configurationCount}개, 정의별 전이 갈래 ${report.definitionCount}개.`, "",
     "빨강은 약속을 어기는 도달 구성이 있다는 뜻이다. 별표는 이름 없는 상태나 구멍이다. 그림은 사건을 골라 나누며, 같은 사건의 화살표는 해당 그림에서 전부 남기거나 전부 숨긴다. 자유 이동과 같은 결과의 기억 쓰기는 각각 한 화살표로 묶는다. 기억 쓰기 화살표는 값이 실제로 바뀌는 대표 시작과 끝을 나타내며, 이미 같은 값인 쓰기는 따로 그리지 않는다.", ""];
   for(const chart of charts) lines.push(`## ${chart.title}`,"",chart.explanation,"","```mermaid",chart.mermaid,"```","",
     `화살표 ${chart.edgeCount}개. 남긴 사건: ${chart.events.map(e=>EVENT_LABELS[e]).join(" / ")}. 나머지 사건은 아래 전체 표에서 확인한다.`,"");

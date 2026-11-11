@@ -101,7 +101,7 @@ describe("PAS report timeline on production PostgreSQL schema", () => {
     await cards.askQuestion({ actorKind: "user", actorSessionId: null, actorUserId: "director@example.com", cardId, text: "어떻게 할까요?", options: ["진행"] });
     expect(await timelineForCard(cardId)).toEqual([]);
     const questionId = String((await cards.getCard(cardId))!.questions.at(-1)!.id);
-    expect(await reports.putQuestion(sessionId, questionId)).toMatchObject({ ok: true, changed: true });
+    expect(await reports.placeQuestion(cardId, questionId)).toMatchObject({ placed: [sessionId], failed: [] });
     expect(await timelineForCard(cardId)).toMatchObject([{ payload: {
       line_key: `card:${cardId}`, status: "question", title: "질문 카드", detail: "어떻게 할까요?", card_id: cardId,
     } }]);
