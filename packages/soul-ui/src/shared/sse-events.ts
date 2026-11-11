@@ -12,6 +12,7 @@ import type {
   SSEEventInputMaterialManifest,
   SSEEventSessionEnded,
   SSEEventReportTimeline,
+  SSEEventReportTimelineQuestionClosed,
   SSEEventTextSnapshot,
   SSEEventType as GeneratedSSEEventType,
   SSEEventUsageObservation,
@@ -189,6 +190,7 @@ export interface DebugEvent {
 export type GenerationStartedEvent = SSEEventGenerationStarted;
 export type SessionEndedEvent = SSEEventSessionEnded;
 export type ReportTimelineEvent = SSEEventReportTimeline;
+export type ReportTimelineQuestionClosedEvent = SSEEventReportTimelineQuestionClosed;
 
 /** Claude API 에러 이벤트 (인증 실패, 과금 에러 등) */
 export interface AssistantErrorEvent {
@@ -875,6 +877,7 @@ export type SoulSSEEvent =
   | DebugEvent
   | GenerationStartedEvent
   | ReportTimelineEvent
+  | ReportTimelineQuestionClosedEvent
   | SSEEventInputMaterialManifest
   | SSEEventUsageObservation
   | SessionEndedEvent

@@ -18,7 +18,7 @@ import { bottomFollowTargetKey } from './bottomFollow';
 import { projectPersistentTurnUsage } from './persistentTurnUsageProjection';
 import { isHiddenConversationInput, projectHiddenConversationTurns } from './hiddenConversationProjection';
 import { projectOutputAttachments } from '../../lib/output-attachment-projection';
-import { collapseReportTimeline } from '../../../../packages/wire-schema/src/persistent_report';
+import { collapseReportTimeline, type ReportTimelineQuestionClosed, type ReportTimelineRowLine } from '../../../../packages/wire-schema/src/persistent_report';
 
 const TYPING_RENDER_ITEM: ChatRenderItem = {
   kind: 'typing',
@@ -72,17 +72,24 @@ export function useChatRenderItems({
     [placedRenderItems, presentation],
   );
   const collapsedBaseRenderItems = useMemo(
-    () => collapseReportTimeline(baseRenderItems, (item) => {
-      if (item.kind !== 'event' || item.event.type !== 'report_timeline') return null;
-      const key = item.event.data.line_key;
-      return typeof key === 'string' ? key : null;
-    }, (item) => item.kind === 'event' && (
-      item.event.type === 'user_message'
-      || item.event.type === 'intervention_sent'
-      || item.event.type === 'assistant_message'
-      || item.event.type === 'text_delta'
-      || item.event.type === 'realtime_transcript'
-    )),
+    () => collapseReportTimeline(baseRenderItems, {
+      lineOf: (item) => item.kind === 'event' && item.event.type === 'report_timeline'
+        ? item.event.data as unknown as ReportTimelineRowLine
+        : null,
+      closuresOf: (item) => item.kind === 'event' && item.event.type === 'report_timeline_question_closed'
+        ? (item.event.data.closures as ReportTimelineQuestionClosed[] | undefined) ?? []
+        : null,
+      isConversation: (item) => item.kind === 'event' && (
+        item.event.type === 'user_message'
+        || item.event.type === 'intervention_sent'
+        || item.event.type === 'assistant_message'
+        || item.event.type === 'text_delta'
+        || item.event.type === 'realtime_transcript'
+      ),
+      withStatus: (item, status) => item.kind === 'event'
+        ? { ...item, event: { ...item.event, data: { ...item.event.data, status } } }
+        : item,
+    }),
     [baseRenderItems],
   );
   const streamingRenderItems = useMemo(

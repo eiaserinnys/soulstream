@@ -1,14 +1,21 @@
 import {
   REPORT_TIMELINE_EVENT_TYPE,
+  REPORT_TIMELINE_QUESTION_CLOSED_EVENT_TYPE,
   type ReportTimelineLine,
+  type ReportTimelineQuestionClosed,
 } from "@soulstream/wire-schema/persistent-report";
 import type { LivePostgresSql } from "../runtime/live_db_sql.js";
 import type { RuntimeSessionEventHub } from "../runtime/session_event_hub.js";
 import { sessionEventEnvelopeFromRow } from "../turn-summary/turn_summary_repository.js";
 
+/** report_timeline 이벤트는 줄 하나, report_timeline_question_closed 이벤트는 닫힘 목록을 싣는다. */
+export type ReportTimelineAppendEvent =
+  | ({ type: typeof REPORT_TIMELINE_EVENT_TYPE } & ReportTimelineLine)
+  | { type: typeof REPORT_TIMELINE_QUESTION_CLOSED_EVENT_TYPE; closures: ReportTimelineQuestionClosed[] };
+
 export type AppendReportTimeline = (
   sessionId: string,
-  line: ReportTimelineLine,
+  event: ReportTimelineAppendEvent,
 ) => Promise<void>;
 
 export function createReportTimelineAppender(deps: {
@@ -16,7 +23,7 @@ export function createReportTimelineAppender(deps: {
   readonly eventHub: Pick<RuntimeSessionEventHub, "publish">;
   readonly warn: (message: string) => void;
 }): AppendReportTimeline {
-  return async (sessionId, line) => {
+  return async (sessionId, event) => {
     try {
       const sql = await deps.resolveSql();
       const sessions = await sql<{ node_id: string | null }[]>`
@@ -27,11 +34,11 @@ export function createReportTimelineAppender(deps: {
         throw new Error("session node_id is missing");
       }
 
-      const payload = { type: REPORT_TIMELINE_EVENT_TYPE, ...line };
+      const payload = event;
       const appended = await sql<{ event_id: number }[]>`
         SELECT event_append(
           ${sessionId},
-          ${REPORT_TIMELINE_EVENT_TYPE},
+          ${event.type},
           ${JSON.stringify(payload)},
           '',
           NOW(),

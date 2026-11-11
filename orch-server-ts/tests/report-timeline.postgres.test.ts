@@ -7,7 +7,7 @@ import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.j
 import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
 import { PersistentReportService } from "../src/session/persistent_report_service.js";
 import { createReportTimelineAppender } from "../src/session/report_timeline_publisher.js";
-import type { ReportTimelineLine } from "../../packages/wire-schema/src/persistent_report.js";
+import { REPORT_TIMELINE_EVENT_TYPE, type ReportTimelineLine } from "../../packages/wire-schema/src/persistent_report.js";
 
 describe("PAS report timeline on production PostgreSQL schema", () => {
   let sql: ReturnType<typeof postgres>;
@@ -70,6 +70,16 @@ describe("PAS report timeline on production PostgreSQL schema", () => {
   const timelineForCard = async (cardId: string) => await sql<{id:number;payload:Record<string,unknown>;searchable_text:string}[]>`
     SELECT id,payload,searchable_text FROM events WHERE event_type='report_timeline'
       AND payload->>'card_id'=${cardId} ORDER BY id`;
+  const closuresFor = async (sessionId: string) => await sql<{id:number;payload:Record<string,unknown>}[]>`
+    SELECT id,payload FROM events WHERE event_type='report_timeline_question_closed'
+      AND session_id=${sessionId} ORDER BY id`;
+  const posedQuestion = async (cards: ReturnType<typeof cardService>, reports: ReturnType<typeof service>, title: string) => {
+    const { cardId, sessionId } = await createConnectedCard(title);
+    await cards.askQuestion({ actorKind: "agent", actorSessionId: sessionId, actorUserId: null, cardId, text: "어느 쪽으로 갈까요?", options: ["진행", "보류"] });
+    const questionId = String((await cards.getCard(cardId))!.questions.at(-1)!.id);
+    await reports.placeQuestion(cardId, questionId);
+    return { cardId, sessionId, questionId };
+  };
 
   it("records major card transitions and leaves situation-only updates out", async () => {
     const cards = cardService();
@@ -103,7 +113,7 @@ describe("PAS report timeline on production PostgreSQL schema", () => {
     const questionId = String((await cards.getCard(cardId))!.questions.at(-1)!.id);
     expect(await reports.placeQuestion(cardId, questionId)).toMatchObject({ placed: [sessionId], failed: [] });
     expect(await timelineForCard(cardId)).toMatchObject([{ payload: {
-      line_key: `card:${cardId}`, status: "question", title: "질문 카드", detail: "어떻게 할까요?", card_id: cardId,
+      line_key: `card:${cardId}`, status: "question", title: "질문 카드", detail: "어떻게 할까요?", card_id: cardId, question_id: questionId,
     } }]);
     const before = await timelineForCard(cardId);
     await cards.answerQuestion({ actorKind: "user", actorSessionId: null, actorUserId: "director@example.com", cardId, questionId, answer: "진행" });
@@ -121,6 +131,57 @@ describe("PAS report timeline on production PostgreSQL schema", () => {
     expect(rows[0]!.payload).toMatchObject({ status: "question", title: "확인", detail: "질문 내용", card_id: null, card_number: null });
   });
 
+  it("records one answered closure with the question row slot when the director answers", async () => {
+    const cards = cardService();
+    const reports = service();
+    const { cardId, sessionId, questionId } = await posedQuestion(cards, reports, "답으로 닫히는 카드");
+    const questionLine = (await timelineForCard(cardId)).find(row => row.payload.status === "question")!;
+    expect(questionLine.payload).toMatchObject({ question_id: questionId, detail: "어느 쪽으로 갈까요?" });
+    await cards.answerQuestion({ actorKind: "user", actorSessionId: null, actorUserId: "director@example.com", cardId, questionId, answer: "진행" });
+    const closures = await closuresFor(sessionId);
+    expect(closures).toHaveLength(1);
+    expect(closures[0]!.payload).toMatchObject({
+      type: "report_timeline_question_closed",
+      closures: [{ question_id: questionId, line_key: `card:${cardId}`, detail: "어느 쪽으로 갈까요?", status: "answered" }],
+    });
+  });
+
+  it("records a withdrawn closure when the assignee withdraws the question", async () => {
+    const cards = cardService();
+    const reports = service();
+    const { cardId, sessionId, questionId } = await posedQuestion(cards, reports, "철회로 닫히는 카드");
+    await cards.withdrawQuestion({ actorKind: "agent", actorSessionId: sessionId, actorUserId: null, cardId, questionId, reason: "다시 정리할게요" });
+    const closures = await closuresFor(sessionId);
+    expect(closures).toHaveLength(1);
+    expect(closures[0]!.payload).toMatchObject({
+      closures: [{ question_id: questionId, line_key: `card:${cardId}`, detail: "어느 쪽으로 갈까요?", status: "withdrawn" }],
+    });
+  });
+
+  it("records a withdrawn closure when a user message unfreezes the block", async () => {
+    const cards = cardService();
+    const reports = service();
+    const { cardId, sessionId, questionId } = await posedQuestion(cards, reports, "메시지로 풀리는 카드");
+    const version = (await cards.getCard(cardId))!.card.version;
+    await cards.resumeBlockedCardOnHumanInput({ cardId, expectedVersion: version });
+    const closures = await closuresFor(sessionId);
+    expect(closures).toHaveLength(1);
+    expect(closures[0]!.payload).toMatchObject({
+      closures: [{ question_id: questionId, line_key: `card:${cardId}`, detail: "어느 쪽으로 갈까요?", status: "withdrawn" }],
+    });
+  });
+
+  it("does not record the closure again when an already closed question is resynced", async () => {
+    const cards = cardService();
+    const reports = service();
+    const { cardId, sessionId, questionId } = await posedQuestion(cards, reports, "재동기화 카드");
+    await cards.answerQuestion({ actorKind: "user", actorSessionId: null, actorUserId: "director@example.com", cardId, questionId, answer: "진행" });
+    expect(await closuresFor(sessionId)).toHaveLength(1);
+    await reports.syncBoard(sessionId);
+    await reports.syncBoard(sessionId);
+    expect(await closuresFor(sessionId)).toHaveLength(1);
+  });
+
   it("does not create card timeline rows without a connected PAS", async () => {
     const cards = cardService();
     const result = await cards.createCard({ actorKind: "user", actorSessionId: null, actorUserId: "director@example.com", folderId: "timeline-folder", title: "연결 없음", request: "요청" });
@@ -133,7 +194,7 @@ describe("PAS report timeline on production PostgreSQL schema", () => {
     const seed = async (type: string) => await sql<{id:number}[]>`SELECT event_append('pas-order',${type},${JSON.stringify({type})},'',NOW(),NULL) AS id`;
     const first = await seed("assistant_message");
     const second = await seed("complete");
-    await appender("pas-order", line);
+    await appender("pas-order", { type: REPORT_TIMELINE_EVENT_TYPE, ...line });
     const published = hub.publish.mock.calls.map(call => call[0].data.event._event_id);
     expect(published).toEqual([first[0]!.id, second[0]!.id, second[0]!.id + 1]);
     expect(hub.publish.mock.calls.at(-1)![0]).toMatchObject({ nodeId: "test-node", data: {
@@ -144,7 +205,7 @@ describe("PAS report timeline on production PostgreSQL schema", () => {
   it("leaves older events out of the replay so a past complete cannot fence live text", async () => {
     await sql`UPDATE events SET created_at = NOW() - INTERVAL '1 minute' WHERE session_id='pas-order'`;
     hub.publish.mockClear();
-    await appender("pas-order", line);
+    await appender("pas-order", { type: REPORT_TIMELINE_EVENT_TYPE, ...line });
     expect(hub.publish).toHaveBeenCalledTimes(1);
     expect(hub.publish.mock.calls[0]![0].data.event.type).toBe("report_timeline");
   });

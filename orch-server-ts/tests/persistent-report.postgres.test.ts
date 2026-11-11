@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import postgres from "postgres";
 import Fastify from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ReportTimelineLine } from "@soulstream/wire-schema/persistent-report";
+import type { ReportTimelineAppendEvent } from "../src/session/report_timeline_publisher.js";
 import { startPostgresTestContainer } from "../../packages/db-schema/scripts/postgres-test-container.mjs";
 import { waitForPostgres } from "./persistent-session-settings-world.js";
 import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
@@ -563,7 +563,7 @@ describe("PAS reports on production PostgreSQL schema", () => {
     await sql`INSERT INTO sessions(session_id,folder_id,node_id,session_type,metadata) VALUES
       ('sup-a','report-folder','test-node',NULL,${sql.json(enabled)}),
       ('sup-b','report-folder','test-node',NULL,${sql.json(enabled)})`;
-    const timeline: { sessionId: string; line: ReportTimelineLine }[] = [];
+    const timeline: { sessionId: string; line: ReportTimelineAppendEvent }[] = [];
     const questionReports = new PersistentReportService(adapted, publish, undefined, async (sessionId, line) => {
       timeline.push({ sessionId, line });
     });

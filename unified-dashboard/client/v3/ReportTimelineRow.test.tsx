@@ -4,12 +4,12 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { InternalLinkProvider } from "@seosoyoung/soul-ui/components/InternalLinkProvider";
-import { REPORT_TIMELINE_STATUS_LABEL, type ReportTimelineLine } from "@seosoyoung/soul-ui";
+import { REPORT_TIMELINE_STATUS_LABEL, type ReportTimelineRowLine } from "@seosoyoung/soul-ui";
 import { ReportTimelineRow } from "./ReportTimelineRow";
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-const line = (overrides: Partial<ReportTimelineLine> = {}): ReportTimelineLine => ({
+const line = (overrides: Partial<ReportTimelineRowLine> = {}): ReportTimelineRowLine => ({
   line_key: "card-812",
   status: "review",
   title: "검수 요청",
@@ -37,7 +37,7 @@ describe("ReportTimelineRow", () => {
   });
 
   it.each(Object.entries(REPORT_TIMELINE_STATUS_LABEL))("shows the %s status label", (status, label) => {
-    act(() => root?.render(<ReportTimelineRow line={line({ status: status as ReportTimelineLine["status"] })} alignmentInset="content" />));
+    act(() => root?.render(<ReportTimelineRow line={line({ status: status as ReportTimelineRowLine["status"] })} alignmentInset="content" />));
     expect(host?.querySelector('[data-slot="status-chip"]')?.getAttribute("aria-label")).toBe(label);
   });
 

@@ -41,6 +41,11 @@ describe("card notice turn projection", () => {
     expect(result.suppressStreaming).toBe(false);
   });
 
+  it("passes a question closure inside a hidden turn through to the timeline fold", () => {
+    const result = project([input("notice", true), row("text", "hidden"), row("report_timeline_question_closed", "closure"), row("complete", "end")]);
+    expect(result.messages.map(item => item.content)).toEqual(["closure"]);
+  });
+
   it("retains the existing keepalive behavior when a visible input came first", () => {
     const result = project([input("human"), { ...input("keepalive"), cacheKeepalive: true }, row("text", "hidden"), row("complete", "end")]);
     expect(result.messages.map(item => item.content)).toEqual(["human"]);

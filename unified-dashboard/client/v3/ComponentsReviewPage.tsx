@@ -46,7 +46,7 @@ import { ChatUiReviewSample } from './ChatUiReviewSample';
 import { PersistentReportReviewSample } from './PersistentReportReviewSample';
 import { PersistentSessionWeeklyUsageReviewSample } from './PersistentSessionWeeklyUsageReviewSample';
 import { ReportTimelineRow } from './ReportTimelineRow';
-import type { ReportTimelineLine } from '@seosoyoung/soul-ui';
+import type { ReportTimelineRowLine } from '@seosoyoung/soul-ui';
 import { ClaudeAccountPoolReviewSample, ClaudePoolPasReviewSample } from './ClaudeAccountPoolReviewSample';
 import { UsageShareRow } from "../components/usage-stats/UsageShareRow";
 import "../components/usage-stats/usage-stats.css";
@@ -309,10 +309,10 @@ export function ComponentsReviewPage() {
                 <LabeledDivider label="매우 긴 구분선 라벨이 좁은 화면에서 어떻게 보이는지 확인합니다" />
               </div>
             </Sample>
-            <Sample name="ReportTimelineRow" state="7개 상태 · 카드 연결/없음 · content/avatar inset · 긴 글">
+            <Sample name="ReportTimelineRow" state="9개 상태 · 카드 연결/없음 · content/avatar inset · 긴 글">
               <div>
-                {(["review", "blocked", "question", "done", "cancelled", "on_hold", "report"] as const).map((status) => {
-                  const line: ReportTimelineLine = {
+                {(["review", "blocked", "question", "done", "cancelled", "on_hold", "report", "answered", "withdrawn"] as const).map((status) => {
+                  const line: ReportTimelineRowLine = {
                     line_key: `review-${status}`, status, title: "카드 상태가 갱신되었습니다.", detail: "상황판 또는 질문이 한 줄로 표시됩니다.",
                     card_id: "review-card-812", card_number: 812,
                   };

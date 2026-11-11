@@ -33,8 +33,9 @@ import type {
   AttachmentEventSignalFields,
   EventTruncation,
   ReportTimelineNode,
+  ReportTimelineQuestionClosedNode,
 } from "@shared/types";
-import type { ReportTimelineLine } from "@soulstream/wire-schema/persistent-report";
+import type { ReportTimelineQuestionClosed, ReportTimelineRowLine } from "@soulstream/wire-schema/persistent-report";
 import { mapAttachmentMessageSignals, sameAttachmentMessageSignals } from "./attachment-event-signals";
 import { extractNodeEventId } from "./event-tree-id";
 import { placeTurnSummariesAtResponseAnchors } from "./turn-summary-projection";
@@ -56,7 +57,9 @@ export interface ChatMessage extends AttachmentEventSignalFields {
   captionStats?: string;
   /** manuscript-only source data for the PAS turn usage projection. */
   contextUsageData?: ContextUsageNode["contextUsageData"];
-  reportTimeline?: ReportTimelineLine;
+  reportTimeline?: ReportTimelineRowLine;
+  /** 닫힘 이벤트가 실은 질문 닫힘 목록. 접기가 앞선 질문 줄 상태를 바꾸고 이 항목은 뺀다. */
+  reportTimelineClosures?: readonly ReportTimelineQuestionClosed[];
   turnCostUsd?: number;
   sessionCostUsd?: number;
   sessionCostPartial?: boolean;
@@ -666,6 +669,19 @@ function nodeToMessage(node: EventTreeNode, options: FlattenTreeOptions): ChatMe
         treeNodeId: n.id,
         treeNodeType: n.type,
         reportTimeline: n.line,
+      };
+    }
+
+    case "report_timeline_question_closed": {
+      const n = node as ReportTimelineQuestionClosedNode;
+      return {
+        id: n.id,
+        role: "system",
+        content: "",
+        timestamp: n.timestamp,
+        treeNodeId: n.id,
+        treeNodeType: n.type,
+        reportTimelineClosures: n.closures,
       };
     }
 

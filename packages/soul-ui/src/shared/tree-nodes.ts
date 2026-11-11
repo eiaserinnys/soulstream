@@ -8,7 +8,7 @@
 import type { CallerInfo, ContextItem, EventTruncation, InputRequestQuestion } from "./sse-events";
 import type { AssignedCardContextSnapshotEvent } from "@soulstream/wire-schema/assigned-card-context-snapshot";
 import type { PersistentJevCandidate } from "../lib/persistent-jev-candidates";
-import type { ReportTimelineLine } from "@soulstream/wire-schema/persistent-report";
+import type { ReportTimelineLine, ReportTimelineQuestionClosed } from "@soulstream/wire-schema/persistent-report";
 
 /** 트리 노드 타입 (SSE 이벤트 lifecycle → 단일 노드) */
 export type EventTreeNodeType = EventTreeNode["type"];
@@ -93,6 +93,12 @@ export interface SystemMessageNode extends BaseNode {
 export interface ReportTimelineNode extends BaseNode {
   type: "report_timeline";
   line: ReportTimelineLine;
+}
+
+/** 카드 질문 줄이 닫혔음을 알리는 이벤트. 줄로 그리지 않고 접기가 앞선 질문 줄 상태만 바꾼다. */
+export interface ReportTimelineQuestionClosedNode extends BaseNode {
+  type: "report_timeline_question_closed";
+  closures: readonly ReportTimelineQuestionClosed[];
 }
 
 /** ledger가 dedupe한 완료/후속 전달 알림 노드. */
@@ -339,6 +345,7 @@ export type EventTreeNode =
   | UserMessageNode
   | SystemMessageNode
   | ReportTimelineNode
+  | ReportTimelineQuestionClosedNode
   | SessionNotificationNode
   | InterventionNode
   | ThinkingNode

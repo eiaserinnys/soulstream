@@ -237,13 +237,14 @@ function ChatViewContent({
           : null,
       );
       const projected = isManuscript ? projectManuscriptMessages(visible) : visible;
-      return collapseReportTimeline(
-        projected,
-        (message) => message.reportTimeline?.line_key ?? null,
-        (message) => message.role === "user"
+      return collapseReportTimeline(projected, {
+        lineOf: (message) => message.reportTimeline ?? null,
+        closuresOf: (message) => message.reportTimelineClosures ?? null,
+        isConversation: (message) => message.role === "user"
           || message.role === "intervention"
           || (message.role === "assistant" && message.treeNodeType !== "thinking"),
-      );
+        withStatus: (message, status) => ({ ...message, reportTimeline: { ...message.reportTimeline!, status } }),
+      });
     },
     [isManuscript, transcriptMessages, persistentSessionDisplaySettings, activeSessionKey],
   );

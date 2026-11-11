@@ -21,9 +21,10 @@ const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://local.test');
   if (url.pathname.startsWith('/api/')) {
     apiRequests.push({ method: req.method, path: url.pathname, authorization: !!req.headers.authorization });
-    if (url.pathname === '/api/attachments/files' && req.method === 'GET' && !req.headers.authorization) {
+    if (url.pathname === '/api/attachments/files' && (req.method === 'GET' || req.method === 'HEAD') && !req.headers.authorization) {
       res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
-      res.end(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/S7sAAAAASUVORK5CYII=', 'base64'));
+      res.end(req.method === 'HEAD' ? undefined
+        : Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/S7sAAAAASUVORK5CYII=', 'base64'));
       return;
     }
     // 세션 메시지의 첨부 투영은 운영 앱이 실제로 부르는 경로다(useMessageAttachments).
@@ -1055,6 +1056,8 @@ async function runPersistentTaskCaptures(browser, base) {
       await runCardChecksCaptures(browser, base);
     } else if (captureMode === 'manuscript-chat') {
       await runManuscriptChatCaptures(browser, base);
+    } else if (captureMode === 'question-closed') {
+      await require('./question-closed-capture.cjs').runQuestionClosedCaptures({ browser, base, prefix, output, result });
     } else if (captureMode === 'card-detail-default') {
       await runDefaultCardDetailCapture(browser, base);
     } else if (captureMode === 'persistent-tasks' || captureMode === 'persistent-standard-row') {
@@ -1071,7 +1074,8 @@ async function runPersistentTaskCaptures(browser, base) {
     }
     assert.deepEqual(result.errors, []);
     assert.ok(apiRequests.some((r) => r.method === 'GET' && r.path === '/api/auth/status' && !r.authorization));
-    assert.ok(apiRequests.every((r) => r.method === 'GET' && !r.authorization
+    assert.ok(apiRequests.every((r) => (r.method === 'GET' || (r.method === 'HEAD' && r.path === '/api/attachments/files'))
+      && !r.authorization
       && (r.path === '/api/auth/status' || r.path === '/api/attachments/files'
         || /^\/api\/sessions\/[^/]+\/events\/\d+\/attachments$/.test(r.path))));
     result.passed = true;

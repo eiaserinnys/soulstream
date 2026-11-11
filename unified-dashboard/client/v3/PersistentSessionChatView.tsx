@@ -9,7 +9,7 @@ import { usePersistentCardCompletion } from './usePersistentCardCompletion';
 import { createPersistentSessionsApi } from "../lib/persistent-sessions";
 import { PasCardExpansion, PasCardExpansionStatus } from './PasCardExpansion';
 import { ReportTimelineRow } from './ReportTimelineRow';
-import type { ReportTimelineAlignmentInset, ReportTimelineLine } from "@seosoyoung/soul-ui";
+import type { ReportTimelineAlignmentInset, ReportTimelineRowLine } from "@seosoyoung/soul-ui";
 
 type PersistentSessionChatViewProps = {
   sessionId: string;
@@ -35,7 +35,7 @@ export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySe
   const focusInput = useCallback(() => generated.current?.focusInput?.(), []);
   const getFeedback = useCallback(() => operations.current ?? undefined, []);
   const renderReportTimelineRow = useCallback(
-    (line: ReportTimelineLine, alignmentInset: ReportTimelineAlignmentInset) => (
+    (line: ReportTimelineRowLine, alignmentInset: ReportTimelineAlignmentInset) => (
       <ReportTimelineRow line={line} alignmentInset={alignmentInset} />
     ),
     [],

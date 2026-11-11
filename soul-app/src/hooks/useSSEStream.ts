@@ -418,6 +418,7 @@ export const SESSION_EVENT_TYPES = [
   'assistant_message',
   'generation_started',
   'report_timeline',
+  'report_timeline_question_closed',
   'turn_summary',
   // 서버는 intervention 발화 시 'intervention_sent' 타입으로 SSE를 보낸다.
   // 빌드 18까지는 'intervention'으로 잘못 구독하여 클라이언트에 도달하지 않았다.

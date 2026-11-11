@@ -43,6 +43,8 @@ export function projectHiddenInputTurns<T extends Pick<ChatMessage, "treeNodeTyp
     }
 
     if (message.treeNodeType === "generation_started") return true;
+    // 질문 닫힘은 그려지지 않고 접기가 앞선 질문 줄의 칩만 바꾼다. 숨긴 턴 안에 도착해도 접기까지 보낸다.
+    if (message.treeNodeType === "report_timeline_question_closed") return true;
     if (message.treeNodeType === "complete" || message.treeNodeType === "error") {
       const wasHiding = hiding;
       hiding = false;

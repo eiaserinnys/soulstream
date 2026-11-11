@@ -93,7 +93,8 @@ export function projectHiddenConversationTurns(
       continue;
     }
 
-    if (event.type === 'generation_started') {
+    // 질문 닫힘은 그려지지 않고 접기가 앞선 질문 줄의 칩만 바꾼다. 숨긴 턴 안에 도착해도 접기까지 보낸다.
+    if (event.type === 'generation_started' || event.type === 'report_timeline_question_closed') {
       visible.push(event);
       continue;
     }

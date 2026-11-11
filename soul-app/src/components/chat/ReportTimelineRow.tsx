@@ -2,20 +2,20 @@ import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { CardDto } from '../../api/cardTypes';
 import { useOpenContentLink } from '../../hooks/useOpenContentLink';
-import { REPORT_TIMELINE_STATUS_LABEL, type ReportTimelineLine } from '../../../../packages/wire-schema/src/persistent_report';
+import { REPORT_TIMELINE_STATUS_LABEL, type ReportTimelineRowLine } from '../../../../packages/wire-schema/src/persistent_report';
 import { useTokens, type DesignTokens } from '../../theme';
 import { CardStatusChip } from '../planner/CardRow';
 import { getChatRowHorizontalInset } from './ChatBody.styles';
 
 interface Props {
-  line: ReportTimelineLine;
+  line: ReportTimelineRowLine;
   presentation?: 'default' | 'manuscript';
   onOpenCard?: (cardId: string) => void;
 }
 
-function statusCard(line: ReportTimelineLine): CardDto {
+function statusCard(line: ReportTimelineRowLine): CardDto {
   const status = line.status === 'question' ? 'blocked'
-    : line.status === 'on_hold' || line.status === 'report' ? 'todo'
+    : line.status === 'on_hold' || line.status === 'report' || line.status === 'answered' || line.status === 'withdrawn' ? 'todo'
       : line.status;
   return {
     id: line.card_id ?? line.line_key,

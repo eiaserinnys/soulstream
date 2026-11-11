@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 192개 $defs (top-level wire 90 + supporting/SSE 102). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 193개 $defs (top-level wire 90 + supporting/SSE 103). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -460,6 +460,7 @@ export interface SessionEventEnvelope {
     | SSEEventContextManifest
     | SSEEventGenerationStarted
     | SSEEventReportTimeline
+    | SSEEventReportTimelineQuestionClosed
     | SSEEventInputMaterialManifest
     | SSEEventUsageObservation
     | SSEEventCompact
@@ -1372,6 +1373,21 @@ export interface SSEEventReportTimeline {
   detail: string;
   card_id: string | null;
   card_number: number | null;
+  question_id?: string;
+  [k: string]: unknown;
+}
+/**
+ * SSE: PAS 채팅의 카드 질문 줄이 답이나 철회로 닫혔음을 알린다. 줄로 그리지 않고 앞선 질문 줄의 상태만 바꾼다.
+ */
+export interface SSEEventReportTimelineQuestionClosed {
+  type: "report_timeline_question_closed";
+  closures: {
+    question_id: string;
+    line_key: string;
+    detail: string;
+    status: "answered" | "withdrawn";
+    [k: string]: unknown;
+  }[];
   [k: string]: unknown;
 }
 /**
@@ -3316,6 +3332,7 @@ export const EVENT_DURABILITY = {
   "context_manifest": "durable",
   "generation_started": "durable",
   "report_timeline": "durable",
+  "report_timeline_question_closed": "durable",
   "input_material_manifest": "durable",
   "usage_observation": "durable",
   "compact": "durable",
@@ -3393,6 +3410,7 @@ export const SSE_EVENT_TYPES = [
   "context_manifest",
   "generation_started",
   "report_timeline",
+  "report_timeline_question_closed",
   "compact",
   "reconnect",
   "history_sync",
@@ -3437,6 +3455,7 @@ export const SESSION_TIMELINE_EVENT_TYPES = [
   "realtime_transcript",
   "generation_started",
   "report_timeline",
+  "report_timeline_question_closed",
 ] as const;
 export type SessionTimelineEventType = (typeof SESSION_TIMELINE_EVENT_TYPES)[number];
 

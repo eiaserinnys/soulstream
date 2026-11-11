@@ -273,7 +273,7 @@ export async function createLiveProductionApplication(
     reportSearchCancelError,
     updates => publishPersistentReports(updates),
     input => notifyPersistentReportPosted(input),
-    (sessionId, line) => appendReportTimeline(sessionId, line),
+    (sessionId, event) => appendReportTimeline(sessionId, event),
   );
   const recurringJobRepository = new SqlRecurringJobRepository(sqlResolver);
   const registry = new InMemoryNodeRegistry();
@@ -685,7 +685,7 @@ export async function createLiveProductionApplication(
     broadcaster:runtimeServices.sessionBroadcaster,warn:context.warn,
     corsAllowedOrigins: config.cors_allowed_origins,
     onReportsChanged: updates => publishPersistentReports(updates),
-    appendTimeline: (sessionId, line) => appendReportTimeline(sessionId, line),
+    appendTimeline: (sessionId, event) => appendReportTimeline(sessionId, event),
     onQuestionAsked: async ({cardId,questionId}) => {
       const ownerEmail = await resolveCardOwnerEmail(cardId, {
         cardCreatorActor: id => cardExecutionOwnerRepository.cardCreatorActor(id),

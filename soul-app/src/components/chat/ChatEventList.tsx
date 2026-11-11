@@ -10,7 +10,7 @@ import {
 import type { ToolTraceResponse } from '../../api/client';
 import type { PersistentTurnUsageMode } from '../../api/persistentSessionEndpoints';
 import type { ChatBodyStyles } from './ChatBody.styles';
-import type { ReportTimelineLine } from '../../../../packages/wire-schema/src/persistent_report';
+import type { ReportTimelineRowLine } from '../../../../packages/wire-schema/src/persistent_report';
 import type { ChatRenderItem } from './groupChatEvents';
 import { ReportTimelineRow } from './ReportTimelineRow';
 import { EventContextMenu } from '../events/EventContextMenu';
@@ -332,7 +332,7 @@ const ChatEventRow = memo(function ChatEventRow({
   }
   if (item.kind === 'event' && item.event.type === 'report_timeline') {
     return <SearchFocusHighlight active={highlighted}><ReportTimelineRow
-      line={item.event.data as unknown as ReportTimelineLine}
+      line={item.event.data as unknown as ReportTimelineRowLine}
       presentation={presentation}
       onOpenCard={onOpenReportCard}
     /></SearchFocusHighlight>;

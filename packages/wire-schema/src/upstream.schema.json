@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://soulstream.eiaserinnys.me/schemas/upstream.json",
   "title": "Soulstream Upstream Protocol",
-  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 192개 $defs (top-level wire 90 + supporting/SSE 102). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
+  "description": "노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 193개 $defs (top-level wire 90 + supporting/SSE 103). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.",
   "x-soulstream-control-command-types": [
     "health_check",
     "create_session",
@@ -93,7 +93,8 @@
     "realtime_status",
     "realtime_transcript",
     "generation_started",
-    "report_timeline"
+    "report_timeline",
+    "report_timeline_question_closed"
   ],
   "x-soulstream-session-statuses": [
     "running",
@@ -179,6 +180,7 @@
     "context_manifest": "durable",
     "generation_started": "durable",
     "report_timeline": "durable",
+    "report_timeline_question_closed": "durable",
     "input_material_manifest": "durable",
     "usage_observation": "durable",
     "compact": "durable",
@@ -695,6 +697,7 @@
             { "$ref": "#/$defs/SSEEventContextManifest" },
             { "$ref": "#/$defs/SSEEventGenerationStarted" },
             { "$ref": "#/$defs/SSEEventReportTimeline" },
+            { "$ref": "#/$defs/SSEEventReportTimelineQuestionClosed" },
             { "$ref": "#/$defs/SSEEventInputMaterialManifest" },
             { "$ref": "#/$defs/SSEEventUsageObservation" },
             { "$ref": "#/$defs/SSEEventCompact" },
@@ -4112,7 +4115,31 @@
         "title": { "type": "string" },
         "detail": { "type": "string" },
         "card_id": { "type": ["string", "null"] },
-        "card_number": { "type": ["integer", "null"] }
+        "card_number": { "type": ["integer", "null"] },
+        "question_id": { "type": "string" }
+      }
+    },
+    "SSEEventReportTimelineQuestionClosed": {
+      "type": "object",
+      "description": "SSE: PAS 채팅의 카드 질문 줄이 답이나 철회로 닫혔음을 알린다. 줄로 그리지 않고 앞선 질문 줄의 상태만 바꾼다.",
+      "required": ["type", "closures"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "report_timeline_question_closed" },
+        "closures": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["question_id", "line_key", "detail", "status"],
+            "additionalProperties": true,
+            "properties": {
+              "question_id": { "type": "string" },
+              "line_key": { "type": "string" },
+              "detail": { "type": "string" },
+              "status": { "enum": ["answered", "withdrawn"] }
+            }
+          }
+        }
       }
     },
     "SSEEventCompact": {
