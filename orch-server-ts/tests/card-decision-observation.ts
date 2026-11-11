@@ -82,25 +82,28 @@ export function normalizeDecisionObservation(r: DecisionObservation) {
   for (const row of [r.before, r.after]) add(row?.id, `card${[...ids.values()].filter(v => v.startsWith('card')).length + 1}`);
   for (const [i, q] of [...r.beforeQuestions, ...r.afterQuestions].entries()) add(q.id, `question${i + 1}`);
   const command = r.command;
-  const previous = r.before ?? {};
   const stamp = (value: unknown) => value == null ? null : String(value);
-  const time = (value: unknown, key: string) => value == null ? null
-    : stamp(value) === stamp(previous[key]) ? 'unchanged'
-    : Object.values(command).some(v => stamp(v) === stamp(value)) ? 'command.time' : 'new.time';
+  // Relations are taken only against the same row before the call (card row, or the same question row).
+  // Timestamps of other rows are generated independently, so equality with them is timing, not behavior.
+  type Base = Record<string, unknown> | null;
+  const time = (value: unknown, key: string, base: Base) => value == null ? null
+    : base && stamp(value) === stamp(base[key]) ? 'unchanged'
+    : Object.values(command).some(v => stamp(v) === stamp(value)) ? 'command.time' : base ? 'new.time' : 'time';
   const session = (v: unknown) => v == null ? null : ids.get(String(v)) ?? 'other.session';
-  const walk = (v: any, key = ''): any => {
+  const walk = (v: any, key = '', base: Base = null): any => {
+    const previous = base ?? {};
     if (v == null) return v;
     if (key === 'now' && typeof v === 'number') return 'command.clock';
-    if (Array.isArray(v)) return v.map(x => walk(x, key));
-    if (typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, value]) => [k, walk(value, k)]));
+    if (Array.isArray(v)) return v.map(x => walk(x, key, base));
+    if (typeof v === 'object') return Object.fromEntries(Object.entries(v).map(([k, value]) => [k, walk(value, k, base)]));
     if (/session_?id$/i.test(key) || key === 'sessionId') return session(v);
     if (/event_?id$/i.test(key) || key === 'eventId' || key === 'baseline_event_id') return v === previous[key] ? 'previous.event' : 'event';
     if (key === 'number' || key === 'card_numbers') return 'card.number';
     if (key.endsWith('position_key')) return v === previous[key] ? 'present.unchanged' : 'present.changed';
-    if (/_at$/.test(key) || /At$/.test(key) || key === 'status_time' || key === 'at') return time(v, key);
+    if (/_at$/.test(key) || /At$/.test(key) || key === 'status_time' || key === 'at') return time(v, key, base);
     if (key === 'idempotencyKey' || key === 'idempotency_key') return 'command.key';
     // Any other timestamp (for example a dispatch launch deadline) is compared as a clock relation.
-    if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v)) return time(v, key);
+    if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(v)) return time(v, key, base);
     if (typeof v !== 'string') return v;
     if (ids.has(v)) return ids.get(v);
     if (/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(v)) { add(v, `id${ids.size + 1}`); return ids.get(v); }
@@ -113,9 +116,11 @@ export function normalizeDecisionObservation(r: DecisionObservation) {
     'assignee_agent_id', 'assignee_user_id', 'limit_resume_session_id', 'limit_resume_at', 'wake_at', 'waiting_for',
     'completed_kind', 'completed_session_id', 'completed_user_id', 'completed_event_id', 'completed_at',
     'queue_position_key', 'status_changed_at', 'version', 'now'];
-  const row = (value: Record<string, unknown> | null) => value === null ? null : walk(Object.fromEntries(columns.map(k => [k, value[k]])));
-  const qs = (value: Record<string, unknown>[]) => walk(value.map(q => Object.fromEntries(
-    ['id', 'session_id', 'text', 'options', 'answer', 'answered_at', 'answered_by', 'withdrawn_at', 'withdrawn_by_session_id', 'withdrawal_reason'].map(k => [k, q[k]]))));
+  const pick = (row: Record<string, unknown>) => Object.fromEntries(columns.map(k => [k, row[k]]));
+  const row = (value: Record<string, unknown> | null) => value === null ? null : walk(pick(value), '', r.before ? pick(r.before) : null);
+  const questionKeys = ['id', 'session_id', 'text', 'options', 'answer', 'answered_at', 'answered_by', 'withdrawn_at', 'withdrawn_by_session_id', 'withdrawal_reason'];
+  const qs = (value: Record<string, unknown>[]) => value.map(q => walk(Object.fromEntries(questionKeys.map(k => [k, q[k]])), '',
+    r.beforeQuestions.find(b => b.id === q.id) ?? null));
   // Full raw responses remain in the oracle; compare their public mutation contract, not duplicate snapshots.
   const value: any = r.result.value;
   const returned = value && typeof value === 'object' ? walk({
