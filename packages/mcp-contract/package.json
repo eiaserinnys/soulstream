@@ -8,10 +8,16 @@
   "exports": {
     ".": "./src/index.ts"
   },
+  "scripts": {
+    "test": "tsx --test tests/*.test.ts"
+  },
   "dependencies": {
     "zod": "^4.3.6",
     "@soulstream/wire-schema": "workspace:*",
     "@soulstream/agent-profile-contract": "workspace:*",
     "@soulstream/model-catalog": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0"
   }
 }
