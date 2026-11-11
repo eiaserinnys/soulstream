@@ -108,6 +108,16 @@ card_control_plane_service.ts는 카드 commit 뒤, 스냅샷 조회 전에 pers
 | C3 | `soul-server-ts/src/mcp/tool_access.ts`의 `createInventoryMcpServer`, `soul-server-ts/src/folder/folder_host_client.ts`와 `soul-server-ts/src/db/session_db.ts`의 `resolveCardReferences` | worker 내부 MCP의 모든 도구 등록이 지나는 `createInventoryMcpServer`의 `registerTool` 가로채기에서 처리기를 `callWithReferenceTranslation`으로 감싼다. 도구 처리기는 항상 전체 ID만 받으므로 `tools/*.ts`, `orchestrator_tools.ts`, `session_message_sender.ts`, 개입 코드는 번호를 모르고 도구 설명과 인자 스키마도 그대로다. SDK는 `inputSchema`가 있는 도구만 `(args, extra)`로 부르므로 `inputSchema`가 없는 등록은 감싸지 않는다. 조회는 `SessionDB.resolveCardReferences` → `FolderHostClient` → `POST /api/folders/host/resolve_card_references`이고 worker에서 오는 조회는 폴더 접근 제한이 없다. 중앙이 아직 이 경로를 배포하지 않아 404를 주거나 통신이 실패하면 `번호 참조를 해석하지 못했습니다` 오류 결과가 되고 처리기는 불리지 않는다. 인자에 `#`로 시작하는 값이 없는 전체 ID 호출은 조회를 거치지 않는다. `isDestructiveMcpTool`이 참인 도구(지금은 `delete_session`)는 번호 참조를 받지 않고 조회도 처리기 호출도 없이 `지우는 도구는 번호 참조를 받지 않습니다` 오류를 돌려주며, 지우는 도구의 목록을 따로 두지 않는다. 번역 결과는 캐시하지 않는다. host 경로 `/api/mcp/host/:tool`과 `executeMcpTool`은 번역하지 않는다. |
 | C5 | `soul-server-ts/src/context/persistent_checkpoint.ts`, `orch-server-ts/src/cards/supervised_card_context.ts`, `orch-server-ts/src/control_plane/repositories/session_read_repository.ts`의 `listActiveChildSessionsSummary`, `session_read_composite.ts`, `packages/mcp-contract/src/session_story.ts` | 퍼시스턴트 체크포인트의 카드 줄과 질문 줄은 카드에 번호가 있을 때만 `#412`로, 내가 부른 세션 줄은 번호 있는 카드에 붙었을 때만 `#412.s2`로 적히고(그때 `· 카드 …` 꼬리는 뺀다) 그 밖에는 전체 ID로 적는다. 스냅샷의 `number`, `cardNumber`, `reference`는 선택이자 null 허용 필드라 옛 중앙과 맞물려도 던지지 않으며, 세션 순번은 `readSessionReferences`만 매긴다. |
 
+## PAS 카드 정비 도구 (1193)
+
+| 경로 | 구현 | 계약 |
+| --- | --- | --- |
+| MCP 도구 | `packages/mcp-contract/src/card_maintenance_tools.ts`, `orch-server-ts/src/mcp/card_maintenance_handlers.ts` | `update_unstarted_card`, `merge_cards`, `bulk_set_card_status`는 audience internal이라 내부 `tools/list`에만 나오고 외부 ingress 목록은 그대로다. 처리기는 인증된 호출 세션을 actor로 쓰고 `callWithReferenceTranslation`으로 `target_card_id`·`source_card_ids`·`card_ids`의 `#N`을 푼다. bulk는 카드마다 번역해 하나가 실패해도 나머지를 계속한다. |
+| 서비스·트랜잭션 | `card_maintenance_service.ts`, `card_maintenance_tx.ts`, `card_control_plane_service.ts`의 facade 세 메서드 | update와 merge는 `sql.begin` → `pg_advisory_xact_lock` → `folder_operations` 멱등 영수증(`card-maintenance:<tool>:<session>:<key>`) 확인 → `CardMutationCore.mutateTx` 순서다. 영수증이 있으면 시작 전 가드를 다시 보지 않고 폴더 접근만 다시 확인한다. 커밋된 결과를 `payload_json.result`에 남겨 같은 키 재호출이 같은 결과를 돌려준다. |
+| 시작 전 가드 | `assertUnstartedCardTx` | `update_unstarted_card`와 `merge_cards`는 보관·사람 담당·담당 세션 연결·todo/queued/on_hold 밖 상태·실행 결과 확인 중 카드를 거절한다. merge는 대상과 모든 원 카드를 UUID 정렬 `FOR UPDATE`로 잠그고 하나라도 거절되면 아무것도 쓰지 않는다. 원 카드는 취소되고 대상의 상태와 대기열 순서는 유지된다. |
+| 일괄 상태 | `bulk_set_card_status` → `applyStatusTx(mode: "bulk_idle")` | 카드마다 별도 트랜잭션과 `{idempotency_key}:{card_id}` 키를 쓴다. 사람 담당은 403, 담당 세션이 있으면 실행 중 카드나 실행 중 세션은 409, todo/queued는 403이며 보류·취소만 허용한다. 담당 연결과 워크트리는 유지하고 `reason`은 카드마다 노트로 남기며 결과는 카드별 `ok`/`error`로 돌려준다. |
+| 후처리 | `afterCommitMaintenance` → `syncReportsAfterCommit`, broadcaster `emitCardUpdated`, `onMutation` | 커밋된 변경마다 카드 갱신과 폴더 스냅샷 콜백을 기존 경로로 보낸다. 후처리 실패는 warn으로 격리한다. |
+
 ## 담당 세션 상태 리마인더
 
 | 경로 | 구현 | 계약 |

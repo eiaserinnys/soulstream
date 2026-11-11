@@ -62,6 +62,10 @@ test("turn usage reads are strict internal-only read-only tools", () => {
 test("card check item tools are internal-only while existing review and comment tools remain public", () => {
   for (const name of ["set_card_items","add_card_item","report_card_item","update_card_now","add_card_note","list_card_notes"] as const)
     assert.equal(cardTools[name].audience,"internal",name);
+  for (const name of ["update_unstarted_card","merge_cards","bulk_set_card_status"] as const) {
+    assert.equal(cardTools[name].audience,"internal",name);
+    assert.equal(mcpToolDefinitions.some(tool => tool.name === name && tool.audience === "all"), false);
+  }
   assert.equal(cardTools.request_card_review.audience,"all");
   assert.equal(cardTools.add_card_comment.audience,"all");
 });

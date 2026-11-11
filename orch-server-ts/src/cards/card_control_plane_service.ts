@@ -21,6 +21,8 @@ import { readCardSessionMessages, type CardSessionMessagesQuery } from "./card_s
 import { randomUUID } from "node:crypto";
 import { generateKeyBetween } from "@soulstream/fractional-position";
 import { CardRepository } from "./control_plane/card_repository.js";
+import { CardMaintenanceService, type BulkSetCardStatusInput, type CardMaintenanceChange, type MergeCardsInput, type MergeCardsResult, type UpdateUnstartedFields, type UpdateUnstartedResult, type AuthorizeFolder } from "./card_maintenance_service.js";
+import { assertBulkStatusGuardTx } from "./card_maintenance_tx.js";
 import { isCardOffBoard } from "./control_plane/card_types.js";
 import { CardMutationCore, type FolderMutateParams } from "./control_plane/card_mutation_core.js";
 import { CardVersionConflict, assigneeToFields, type CardAssigneeInput } from "./control_plane/card_models.js";
@@ -66,6 +68,7 @@ export class CardControlPlaneService {
   private readonly repo: CardRepository;
   private readonly core: CardMutationCore;
   private readonly reports?: PersistentReportService;
+  private readonly maintenance: CardMaintenanceService;
   readonly mcpRead: CardMcpReadService;
   constructor(private readonly repoSql: SqlClient, db: FolderDbPort, private readonly broadcaster?: FolderBroadcasterPort,
     private readonly onMutation?: (change:CardMutationChange)=>void,
@@ -78,6 +81,12 @@ export class CardControlPlaneService {
     this.core=new CardMutationCore(db,this.repo,broadcaster);
     this.reports=onReportsChanged ? new PersistentReportService(repoSql,onReportsChanged,undefined,appendTimeline) : undefined;
     this.mcpRead=new CardMcpReadService(repoSql, corsAllowedOrigins);
+    this.maintenance=new CardMaintenanceService({
+      sql:repoSql,repo:this.repo,core:this.core,
+      patchTx:(sql,card,fields,actor,eventId)=>this.patch(sql,card,fields,actor,eventId),
+      statusTx:(sql,card,eventId,params,payload)=>this.applyStatusTx(sql,card,eventId,params,payload,"bulk_idle"),
+      afterCommit:changes=>this.afterCommitMaintenance(changes),
+    });
   }
   getAssignedCardContext(sessionId: string) { return readAssignedCardContext(this.repoSql,sessionId); }
   getSupervisedCardContext(params: { sessionId: string; folderIds: string[] | null; cardLimit: number; questionLimit: number }): Promise<SupervisedCardSnapshot> {
@@ -182,6 +191,15 @@ export class CardControlPlaneService {
           ${assignee.assignee_kind},${assignee.assignee_agent_id},${assignee.assignee_session_id},${assignee.assignee_user_id},${params.nodeId ?? null},${params.modelPreset ?? null},
           ${params.actorSessionId},${eventId},${params.actorSessionId},${eventId})`;
       } };
+  }
+  updateUnstartedCard(params:CardMutationParams & UpdateUnstartedFields & {idempotencyKey:string}, authorizeFolder:AuthorizeFolder):Promise<UpdateUnstartedResult> {
+    return this.maintenance.updateUnstartedCard(params, authorizeFolder);
+  }
+  mergeCards(params:FolderActorParams & MergeCardsInput, authorizeFolder:AuthorizeFolder):Promise<MergeCardsResult> {
+    return this.maintenance.mergeCards(params, authorizeFolder);
+  }
+  bulkSetCardStatus(params:FolderActorParams & BulkSetCardStatusInput, authorizeFolder:AuthorizeFolder) {
+    return this.maintenance.bulkSetCardStatus(params, authorizeFolder);
   }
   async patchCard(params: CardMutationParams & { title?: string; brief?: string; archived?: boolean; assignee?: CardAssigneeInput | null; nodeId?: string | null; modelPreset?: string | null; color?: CardColor }) {
     return this.mutateCard(params,"update_card",{ title:params.title,brief:params.brief,archived:params.archived,
@@ -591,12 +609,15 @@ export class CardControlPlaneService {
     eventId:number | null,
     params:CardMutationParams & {status:CardStatus;blockedKind?:CardRow["blocked_kind"];blockedDetail?:string | null;wakeAt?:string;waitingFor?:string},
     payload:Record<string,unknown>,
+    mode:"normal" | "bulk_idle" = "normal",
   ):Promise<Record<string,unknown>> {
-    const claim=params.actorKind === "agent" ? await this.claim(sql,card,params.actorSessionId,payload) : {};
+    if (mode === "bulk_idle") await assertBulkStatusGuardTx(sql,card,params.status);
+    const bulkApproved=mode === "bulk_idle" && card.assignee_session_id !== null;
+    const claim=params.actorKind === "agent" && !bulkApproved ? await this.claim(sql,card,params.actorSessionId,payload) : {};
     const unassignedRest=params.actorKind === "agent" && Boolean(params.actorSessionId)
       && card.assignee_session_id === null && card.assignee_kind !== "human"
       && ["todo","queued","on_hold","cancelled"].includes(params.status);
-    if (params.actorKind === "agent" && (!params.actorSessionId || card.assignee_session_id !== params.actorSessionId) && !unassignedRest)
+    if (params.actorKind === "agent" && (!params.actorSessionId || card.assignee_session_id !== params.actorSessionId) && !unassignedRest && !bulkApproved)
       throw Object.assign(new Error("Only the current assignee session may change card status. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work. A card without an assignee session can be moved to todo, queued, on_hold or cancelled by any internal agent session."), {statusCode:403});
     const fields:Record<string,unknown> = { ...claim,status:params.status,
       blocked_kind:params.status === "blocked" ? params.blockedKind ?? null : null,
@@ -650,6 +671,22 @@ export class CardControlPlaneService {
         typeof clean.assignee_session_id === "string" ? clean.assignee_session_id : params.actorSessionId ?? card.assignee_session_id));
     if (!result.idempotent && notifyMutation) this.onMutation?.({result,previousStatus,previousAssigneeSessionId,committedCard});
     return result;
+  }
+  private async afterCommitMaintenance(changes:CardMaintenanceChange[]):Promise<void> {
+    for (const change of changes) {
+      const cardId=change.result.operation.target_id;
+      const folderId=change.result.operation.folder_id;
+      try {
+        await this.syncReportsAfterCommit(cardId,{previousStatus:change.previousStatus,committedCard:change.committedCard,
+          questionChanged:false,cardChanged:change.cardChanged});
+        if (folderId) await this.broadcaster?.emitCardUpdated?.(cardId,folderId);
+        if (folderId) {
+          const snapshot=await this.repo.getSnapshot(folderId);
+          if (snapshot) this.onMutation?.({result:{...change.result,eventId:change.result.eventId ?? 0,snapshot},previousStatus:change.previousStatus,
+            previousAssigneeSessionId:change.previousAssigneeSessionId,committedCard:change.committedCard});
+        }
+      } catch (error) { this.warn(`카드 ${cardId} 정비 후처리 실패: ${String(error)}`); }
+    }
   }
   async syncReportsAfterCommit(cardId:string,change:CardReportSyncParams):Promise<void> {
     const {previousStatus,committedCard,questionChanged}=change;

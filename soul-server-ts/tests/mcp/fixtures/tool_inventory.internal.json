@@ -1610,6 +1610,53 @@
     "name": "browse_folder"
   },
   {
+    "description": "카드 1~20장의 상태를 todo·queued·on_hold·cancelled 가운데 하나로 바꿉니다. 담당 세션이 없는 카드는 기존 set_card_status와 같은 규칙입니다. 사람 담당을 제외한 담당 세션이 있는 카드는 실행 중이 아니고 담당이 지금 턴을 돌고 있지 않을 때 보류·취소만 됩니다. 담당 연결과 워크트리는 유지합니다. reason은 변경한 카드마다 노트로 남깁니다. 카드별로 처리하므로 실패한 카드가 있어도 나머지는 계속하고 결과를 각각 반환합니다. 실행 중 담당에게는 dispatch_work로 지시하세요.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_ids": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "type": "array"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "todo",
+            "queued",
+            "on_hold",
+            "cancelled"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_ids",
+        "status",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "name": "bulk_set_card_status"
+  },
+  {
     "description": "현재 노드에 새 에이전트 세션을 생성한다. 비동기 — 세션 ID만 반환. caller_session_id가 있으면 caller_info(v1)를 자동 조립. 결과를 기다리는 위임은 notify_completion=true로 설정한다. 완료 알림을 받을 필요가 없을 때만 false를 사용한다.",
     "execution": {
       "taskSupport": "forbidden"
@@ -1677,7 +1724,7 @@
     "name": "create_agent_session"
   },
   {
-    "description": "요청 원문이 고정된 카드를 드래프트로 만든다. queue=true면 대기열에 올려 순서가 오면 시스템이 실행한다. assignee를 생략하면 만든 세션의 에이전트가 담당이 되고, 담당이 에이전트일 때 node_id와 model_preset을 생략하면 만든 세션의 값이 들어가며, brief에 인계 내용을 적는다.",
+    "description": "요청 원문을 담은 카드를 드래프트로 만든다. 시작 전 수정은 update_unstarted_card를 쓴다. queue=true면 대기열에 올려 순서가 오면 시스템이 실행한다. assignee를 생략하면 만든 세션의 에이전트가 담당이 되고, 담당이 에이전트일 때 node_id와 model_preset을 생략하면 만든 세션의 값이 들어가며, brief에 인계 내용을 적는다.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -4028,6 +4075,49 @@
       "type": "object"
     },
     "name": "match_skill_catalogs"
+  },
+  {
+    "description": "아직 시작하지 않은 원 카드 1~9장을 대상 카드에 순서대로 합칩니다. 대상과 원 카드 모두 보관되지 않았고 사람 담당이나 담당 세션이 없으며 todo·queued·on_hold 상태이고 실행 결과 확인 중이 아니어야 합니다. 요청과 사용자 커멘트, 인계, 첨부, 노트와 확인 항목을 대상에 남기고 원 카드는 취소합니다. 접근 가능한 다른 폴더의 카드도 합칠 수 있습니다. 하나라도 안 되면 전부 그대로 둡니다. 대상의 상태와 대기열 순서는 유지합니다. 실행 중 카드의 후속 지시는 dispatch_work를 쓰세요. 같은 idempotency_key로 다시 부르면 같은 결과를 반환합니다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "caller_session_id": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "source_card_ids": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 9,
+          "minItems": 1,
+          "type": "array"
+        },
+        "target_card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "target_card_id",
+        "source_card_ids",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "name": "merge_cards"
   },
   {
     "description": "카드를 다른 폴더로 옮기고 after_card_id 뒤에 놓는다.",
@@ -8959,6 +9049,62 @@
       "type": "object"
     },
     "name": "update_recurring_job"
+  },
+  {
+    "description": "아직 시작하지 않은 카드의 제목, 요청, 인계와 담당 에이전트·모델·노드를 고칩니다. 보관되지 않았고 사람 담당이나 담당 세션이 없으며 todo·queued·on_hold 상태이고 실행 결과 확인 중이 아닌 카드만 됩니다. 변경할 필드를 하나 이상 지정하세요. agent_id를 주면 그 에이전트가 담당이 됩니다. 상태와 대기열 순서는 유지합니다. 담당 세션이 있는 카드의 후속 지시와 담당 교체는 dispatch_work를 쓰세요. idempotency_key를 재사용하면 중복 변경을 막습니다.",
+    "execution": {
+      "taskSupport": "forbidden"
+    },
+    "inputSchema": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "brief": {
+          "type": "string"
+        },
+        "caller_session_id": {
+          "type": "string"
+        },
+        "card_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "expected_version": {
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991,
+          "type": "integer"
+        },
+        "idempotency_key": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "model_preset": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "node_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "request": {
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "card_id",
+        "idempotency_key"
+      ],
+      "type": "object"
+    },
+    "name": "update_unstarted_card"
   },
   {
     "description": "마크다운으로 페이지 블록 전체를 명시적으로 교체한다. 세션 헤더를 전달할 수 없는 신뢰된 내부 클라이언트만 자기 agent_session_id를 caller_session_id로 전달한다.",

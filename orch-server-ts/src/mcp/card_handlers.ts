@@ -8,6 +8,7 @@ import { filterFolders, isFolderAllowed, normalizeAccess } from "../folders/fold
 import { serializeCardRow } from "../folders/folder_contracts.js";
 import type { CardOperation } from "../cards/card_operations.js";
 import type { FolderActorParams } from "../cards/control_plane/card_types.js";
+import { cardMaintenanceHandlers } from "./card_maintenance_handlers.js";
 import type { McpCallContext, McpHostOptions } from "./types.js";
 
 type Args = Record<string, unknown>;
@@ -15,6 +16,7 @@ type Options = McpHostOptions["cards"];
 type Handler = (options: Pick<McpHostOptions, "cards">, args: Args, context: McpCallContext) => Promise<CallToolResult>;
 
 export const cardHandlers = {
+  ...cardMaintenanceHandlers,
   create_card: (o, a, c) => run(async () => {
     if (a.run === true && a.queue === true) throw new Error("run과 queue는 함께 쓸 수 없습니다");
     matchingHeader(a, c);

@@ -1,5 +1,6 @@
 import { CARD_STATUSES } from "@soulstream/wire-schema";
 import { z } from "zod";
+import { cardMaintenanceTools } from "./card_maintenance_tools.js";
 import { assigneeSchema, callerSessionIdSchema } from "./folder_shared.js";
 
 const id = z.string().min(1);
@@ -21,8 +22,9 @@ const itemEvidence = z.union([
   z.object({ type:z.enum(["image","link"]),label:z.string(),url:id }).strict(),
 ]);
 export const cardTools = {
+  ...cardMaintenanceTools,
   create_card: { name: "create_card", timeoutMs: 60000, config: {
-    description: "요청 원문이 고정된 카드를 드래프트로 만든다. queue=true면 대기열에 올려 순서가 오면 시스템이 실행한다. assignee를 생략하면 만든 세션의 에이전트가 담당이 되고, 담당이 에이전트일 때 node_id와 model_preset을 생략하면 만든 세션의 값이 들어가며, brief에 인계 내용을 적는다.",
+    description: "요청 원문을 담은 카드를 드래프트로 만든다. 시작 전 수정은 update_unstarted_card를 쓴다. queue=true면 대기열에 올려 순서가 오면 시스템이 실행한다. assignee를 생략하면 만든 세션의 에이전트가 담당이 되고, 담당이 에이전트일 때 node_id와 model_preset을 생략하면 만든 세션의 값이 들어가며, brief에 인계 내용을 적는다.",
     inputSchema: { folder_id: id, title: id, request: z.string(), attachments: z.array(z.object({nodeId:id,path:id,name:id,mimeType:id}).strict()).optional(), assignee: assigneeSchema,
       brief: z.string().optional(), idempotency_key: id.optional(), node_id: id.optional(), model_preset: id.optional(), queue: z.boolean().optional(), caller_session_id: callerSessionIdSchema,
       run: z.boolean().optional().describe("true면 만든 직후 run_card와 같은 방식으로 바로 실행한다. queue와 함께 쓰지 않는다.") },

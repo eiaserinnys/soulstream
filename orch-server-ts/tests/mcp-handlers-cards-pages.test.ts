@@ -110,6 +110,14 @@ function cardHarness(
     listCardNotes:vi.fn().mockResolvedValue({notes:[{id:"note-1",kind:"note"}],nextCursor:null}),
     askQuestion: vi.fn().mockResolvedValue(mutation), withdrawQuestion: vi.fn().mockResolvedValue(mutation),
     moveCard: vi.fn().mockResolvedValue(mutation),
+    updateUnstartedCard: vi.fn().mockResolvedValue({ card: { id: "card-1", number: 1, version: 4, status: "queued" },
+      changed_fields: ["title"], idempotent: false }),
+    mergeCards: vi.fn().mockResolvedValue({ card: { id: "card-1", number: 1, version: 4, status: "queued" },
+      merged_cards: [], moved: { request_sections: 0, comments: 0, notes: 0, items: 0, attachments: 0 }, idempotent: false }),
+    bulkSetCardStatus: vi.fn().mockResolvedValue({ results: [] }),
+    resolveReferences: vi.fn(async (refs: string[]) => refs.map(ref => ref === "#412"
+      ? { ref, kind: "card" as const, id: "card-412", title: "사십이" }
+      : { ref, error: `#${ref.replace("#", "")} 번호의 카드가 없습니다.` })),
   };
   const provider = vi.fn(async () => service);
   const executor = { execute: vi.fn(async () => ({ card: { ...card, status: "running" }, execution: { requestId: "execution-1", sessionId: "spawned-session", state: "pending" } })),
@@ -582,6 +590,38 @@ describe("live card MCP execution", () => {
     const result = await call(h.options, "show_live_card_view", {});
     expect(result.isError).not.toBe(true);
     expect(liveCardOutputSchema.safeParse(result.structuredContent).success).toBe(true);
+  });
+  it("rejects maintenance tools without an authenticated internal session", async () => {
+    const h = cardHarness();
+    const anonymous: McpCallContext = { principal: "internal", callerSessionId: null, nodeId: "node" };
+    const requests = [
+      ["update_unstarted_card", { card_id: "card-1", title: "새 제목", idempotency_key: "k1" }],
+      ["merge_cards", { target_card_id: "card-1", source_card_ids: ["card-2"], idempotency_key: "k2" }],
+      ["bulk_set_card_status", { card_ids: ["card-1"], status: "on_hold", idempotency_key: "k3" }],
+    ] as const;
+    for (const [name, args] of requests) {
+      const result = await call(h.options, name, args, anonymous);
+      expect(result.isError, name).toBe(true);
+      expect(result.structuredContent?.error, name).toContain("인증된 내부 에이전트 세션이 필요합니다.");
+    }
+    expect(h.service.updateUnstartedCard).not.toHaveBeenCalled();
+    expect(h.service.mergeCards).not.toHaveBeenCalled();
+    expect(h.service.bulkSetCardStatus).not.toHaveBeenCalled();
+  });
+  it("keeps going in bulk when one card reference cannot be resolved", async () => {
+    const h = cardHarness();
+    h.service.bulkSetCardStatus.mockResolvedValue({ results: [{ card_id: "card-412", number: 412, ok: true,
+      status: "on_hold", version: 2 }] });
+    const result = await call(h.options, "bulk_set_card_status",
+      { card_ids: ["#412", "#999"], status: "on_hold", idempotency_key: "bulk-1" });
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual({ results: [
+      { card_id: "card-412", number: 412, ok: true, status: "on_hold", version: 2 },
+      { card_id: "#999", ok: false, error: "#999 번호의 카드가 없습니다." },
+    ] });
+    expect(h.service.bulkSetCardStatus).toHaveBeenCalledTimes(1);
+    expect(h.service.bulkSetCardStatus).toHaveBeenCalledWith(expect.objectContaining({ cardIds: ["card-412"],
+      status: "on_hold", actorKind: "agent", actorSessionId: "session-1" }), expect.any(Function));
   });
 });
 

@@ -35,6 +35,9 @@ export function formatCardReference(cardNumber: number, child?: CardReferenceChi
 export const REFERENCE_ARGUMENT_SLOTS: Readonly<Record<string, "card" | "session">> = {
   card_id: "card",
   after_card_id: "card",
+  target_card_id: "card",
+  source_card_ids: "card",
+  card_ids: "card",
   session_id: "session",
   target_session_id: "session",
   predecessor_session_id: "session",

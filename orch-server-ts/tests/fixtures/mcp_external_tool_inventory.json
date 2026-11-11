@@ -531,7 +531,7 @@
     "name": "browse_folder"
   },
   {
-    "description": "요청 원문이 고정된 카드를 드래프트로 만든다. queue=true면 대기열에 올려 순서가 오면 시스템이 실행한다. assignee를 생략하면 만든 세션의 에이전트가 담당이 되고, 담당이 에이전트일 때 node_id와 model_preset을 생략하면 만든 세션의 값이 들어가며, brief에 인계 내용을 적는다.",
+    "description": "요청 원문을 담은 카드를 드래프트로 만든다. 시작 전 수정은 update_unstarted_card를 쓴다. queue=true면 대기열에 올려 순서가 오면 시스템이 실행한다. assignee를 생략하면 만든 세션의 에이전트가 담당이 되고, 담당이 에이전트일 때 node_id와 model_preset을 생략하면 만든 세션의 값이 들어가며, brief에 인계 내용을 적는다.",
     "execution": {
       "taskSupport": "forbidden"
     },
