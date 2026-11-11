@@ -20,7 +20,7 @@ test.each([390, 430])('phone %s: ordinary lanes align left and final lane ends a
   expect(g.laneWidth).toBeLessThan(width);
   expect(g.inset).toBe(8);
   expect(g.stride).toBe(g.laneWidth + g.gap);
-  expect(columns.map(([status]) => status)).toEqual(['todo', 'queued', 'running', 'awaiting_verification', 'blocked', 'review', 'on_hold']);
+  expect(columns.map(([status]) => status)).toEqual(['todo', 'queued', 'running', 'blocked', 'awaiting_verification', 'review', 'on_hold']);
   const offsets = boardSnapOffsets(width, g, columns.length);
   expect(offsets[0]).toBe(0);
   expect(g.inset + g.stride * 2 - offsets[2]).toBe(g.inset);
@@ -41,9 +41,9 @@ test('검증 대기로는 끌어 옮길 수 없고 그 레인에서 다른 레�
   const frame = { x: 0, y: 0, width: 1100, height: 600 };
   const awaiting = g.lanes.find((lane) => lane.status === 'awaiting_verification')!;
   const review = g.lanes.find((lane) => lane.status === 'review')!;
-  expect(g.lanes.find((lane) => lane.status === 'running')!.start)
+  expect(g.lanes.find((lane) => lane.status === 'blocked')!.start)
     .toBeLessThan(awaiting.start);
-  expect(awaiting.start).toBeLessThan(g.lanes.find((lane) => lane.status === 'blocked')!.start);
+  expect(awaiting.start).toBeLessThan(review.start);
   expect(boardDropStatus(100, 100, frame, g, awaiting.start, 'review', columns)).toBeNull();
   expect(boardDropStatus(100, 100, frame, g, awaiting.start, 'awaiting_verification', columns)).toBeNull();
   expect(boardDropStatus(100, 100, frame, g, review.start, 'awaiting_verification', columns)).toBe('review');

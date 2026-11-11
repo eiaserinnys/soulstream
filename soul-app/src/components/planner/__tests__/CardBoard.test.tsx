@@ -10,13 +10,13 @@ import { CompletedCardsToggle } from '../CompletedCardsToggle';
 import { ReviewBoardActions } from '../../../component-review/ReviewBoardActions';
 import { useCardStore } from '../../../store/cardStore';
 
-const cards = (['todo', 'queued', 'running', 'awaiting_verification', 'blocked', 'review', 'on_hold', 'done', 'cancelled'] as const)
+const cards = (['todo', 'queued', 'running', 'blocked', 'awaiting_verification', 'review', 'on_hold', 'done', 'cancelled'] as const)
   .map((status) => cardFixture({ id: status, title: status, status }));
 
 test('9열 순서와 개수를 유지하고 보관은 보드에서 제외한다', () => {
   const screen = render(<CardBoard api={null} cards={[...cards, cardFixture({ id: 'archived', archived: true })]} onOpen={() => {}} />);
   expect(screen.getAllByTestId(/^card-board-column-/).map((column) => column.props.testID))
-    .toEqual(['todo', 'queued', 'running', 'awaiting_verification', 'blocked', 'review', 'on_hold', 'done', 'cancelled'].map((status) => `card-board-column-${status}`));
+    .toEqual(['todo', 'queued', 'running', 'blocked', 'awaiting_verification', 'review', 'on_hold', 'done', 'cancelled'].map((status) => `card-board-column-${status}`));
   const awaiting = within(screen.getByTestId('card-board-column-awaiting_verification'));
   expect(awaiting.getAllByText(/검증 대기/)).toHaveLength(2);
   expect(awaiting.getByTestId('postit-card-awaiting_verification')).toBeTruthy();

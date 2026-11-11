@@ -15,14 +15,14 @@ test('작업 목록은 여섯 활성 상태만 보드 순서와 보드 라벨로
 
   expect(groupPersistentSessionTasks(cards).map(({ status, label }) => [status, label])).toEqual([
     ['running', '실행 중'],
-    ['awaiting_verification', '검증 대기'],
     ['blocked', '막힘'],
+    ['awaiting_verification', '검증 대기'],
     ['review', '검수 대기'],
     ['queued', '대기'],
     ['todo', '드래프트'],
   ]);
   expect(groupPersistentSessionTasks(cards).flatMap((group) => group.cards.map((card) => card.id))).toEqual([
-    'running', 'awaiting', 'blocked', 'review', 'queued', 'todo',
+    'running', 'blocked', 'awaiting', 'review', 'queued', 'todo',
   ]);
 });
 

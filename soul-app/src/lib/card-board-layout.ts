@@ -2,9 +2,9 @@ import type { CardStatus } from '../api/cardTypes';
 import { completedGridLayout } from '../../../packages/soul-ui/src/cards/completed-cards';
 
 export const BOARD_COLUMNS = [
-  ['todo', '드래프트'], ['queued', '대기'], ['running', '실행 중'],
+  ['todo', '드래프트'], ['queued', '대기'], ['running', '실행 중'], ['blocked', '막힘'],
   ['awaiting_verification', '검증 대기'],
-  ['blocked', '막힘'], ['review', '검수 대기'], ['on_hold', '보류'], ['done', '완료'], ['cancelled', '취소'],
+  ['review', '검수 대기'], ['on_hold', '보류'], ['done', '완료'], ['cancelled', '취소'],
 ] as const;
 /** 검증 대기는 담당이 스스로 기다리는 상태라 손으로 옮길 수 있는 목적지가 아니다. */
 export const MANUAL_STATUS_COLUMNS = BOARD_COLUMNS.filter(([status]) => status !== 'awaiting_verification');
