@@ -12,6 +12,7 @@ import {
   type Stats,
   writeFileSync,
 } from "node:fs";
+import { access, lstat, readdir, readFile } from "node:fs/promises";
 
 // This module intentionally exceeds 500 lines: it is the single Git mutation
 // boundary whose identity, ref-CAS, and guarded removal invariants must stay
@@ -419,24 +420,24 @@ export class WorktreeGit {
     const repo = this.resolveRepository(input.repoId);
     const path = this.canonicalInputPath(input.path);
     this.assertPathInsideProjectsRoot(path);
-    if (existsSync(path)) {
+    if (await pathExists(path)) {
       throw new WorktreeGitError("WORKTREE_PATH_REAPPEARED", path);
     }
     const commonDirectory = await this.commonDirectory(input.repoId);
     const adminRoot = join(commonDirectory, "worktrees");
     let matched = false;
-    if (existsSync(adminRoot)) {
-      for (const admin of readdirSync(adminRoot, { withFileTypes: true })) {
+    if (await pathExists(adminRoot)) {
+      for (const admin of await readdir(adminRoot, { withFileTypes: true })) {
         if (!admin.isDirectory()) continue;
         const adminPath = join(adminRoot, admin.name);
         const gitdirFile = join(adminPath, "gitdir");
-        if (!existsSync(gitdirFile)) continue;
-        const worktreeGitFile = readFileSync(gitdirFile, "utf8").trim();
+        if (!await pathExists(gitdirFile)) continue;
+        const worktreeGitFile = (await readFile(gitdirFile, "utf8")).trim();
         const registeredPath = resolve(worktreeGitFile, "..");
         if (!samePath(registeredPath, path)) continue;
         matched = true;
         const marker = join(adminPath, IDENTITY_FILE);
-        const identity = existsSync(marker) ? readFileSync(marker, "utf8").trim() : "";
+        const identity = await pathExists(marker) ? (await readFile(marker, "utf8")).trim() : "";
         if (identity !== input.worktreeId) {
           throw new WorktreeGitError(
             "WORKTREE_IDENTITY_CHANGED",
@@ -459,8 +460,9 @@ export class WorktreeGit {
   async lastWorktreeActivityMs(repoId: string, path: string): Promise<number> {
     const admin = await this.registrationAdmin(repoId, path);
     if (!admin) return 0;
-    return Math.max(0, ...["HEAD", "index", "logs/HEAD"].map(file =>
-      lstatIfPresent(join(admin.path, file))?.mtimeMs ?? 0));
+    const stats = await Promise.all(["HEAD", "index", "logs/HEAD"].map(async (file) =>
+      await lstatIfPresentAsync(join(admin.path, file))));
+    return Math.max(0, ...stats.map((stat) => stat?.mtimeMs ?? 0));
   }
 
   async fetchOrigin(repoId: string): Promise<void> {
@@ -799,20 +801,22 @@ export class WorktreeGit {
   } | undefined> {
     const commonDirectory = await this.commonDirectory(repoId);
     const adminRoot = join(commonDirectory, "worktrees");
-    if (!existsSync(adminRoot)) return undefined;
+    if (!await pathExists(adminRoot)) return undefined;
     const matches: Array<{ path: string; identity?: string }> = [];
-    for (const admin of readdirSync(adminRoot, { withFileTypes: true })) {
+    // Async reads keep this per-admin scan off the main thread; on a slow disk
+    // the sweep reads every admin entry of the repository for each candidate.
+    for (const admin of await readdir(adminRoot, { withFileTypes: true })) {
       if (!admin.isDirectory()) continue;
       const adminPath = join(adminRoot, admin.name);
       const gitdirFile = join(adminPath, "gitdir");
-      if (!existsSync(gitdirFile)) continue;
-      const registeredPath = resolve(readFileSync(gitdirFile, "utf8").trim(), "..");
+      if (!await pathExists(gitdirFile)) continue;
+      const registeredPath = resolve((await readFile(gitdirFile, "utf8")).trim(), "..");
       if (!samePath(registeredPath, path)) continue;
       const marker = join(adminPath, IDENTITY_FILE);
       matches.push({
         path: adminPath,
-        ...(existsSync(marker)
-          ? { identity: readFileSync(marker, "utf8").trim() || undefined }
+        ...(await pathExists(marker)
+          ? { identity: (await readFile(marker, "utf8")).trim() || undefined }
           : {}),
       });
     }
@@ -928,6 +932,24 @@ export class WorktreeGit {
 
 function rethrowProcessTimeout(error: unknown): void {
   if (error instanceof GitProcessError && error.code === "PROCESS_TIMEOUT") throw error;
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function lstatIfPresentAsync(path: string): Promise<Stats | undefined> {
+  try {
+    return await lstat(path);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw error;
+  }
 }
 
 function lstatIfPresent(path: string): Stats | undefined {

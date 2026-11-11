@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { access } from "node:fs/promises";
 import { join } from "node:path";
 
 import { collectBaseDependencyLinks, dependencyLinksIntoWorktree, type CollectedBaseDependencyLink } from "./worktree_dependency_links.js";
@@ -69,7 +69,7 @@ async function inspectSweepCandidate(
   const idleMs = (now ?? Date.now()) - Math.max(new Date(record.lastSessionActivityAt).getTime(), gitActivity);
   if (idleMs < SWEEP_RECENT_MS) return "recent";
   const actor = { sweeperNodeId: options.nodeId };
-  if (!existsSync(record.canonicalPath)) {
+  if (!await pathExists(record.canonicalPath)) {
     await removeWorktreeLocked(options, record, actor);
     return "removed";
   }
@@ -112,6 +112,15 @@ async function sweepCandidate(
     linkedCardsClosed: record.linkedCardsClosed });
   if (outcome === "removed") await removeWorktreeLocked({ ...options, baseDependencyLinks }, record, { sweeperNodeId: options.nodeId });
   return outcome;
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function errorCode(error: unknown): string | undefined {
