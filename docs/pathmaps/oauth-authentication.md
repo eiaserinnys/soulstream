@@ -42,11 +42,12 @@ production auth guard checks the matching scope before route execution:
 | `GET /api/cards` and read subroutes | `cards:read` |
 | `GET /api/folders` and read subroutes | `folders:read` |
 | `GET /api/usage/summary` | `usage:read` |
+| `GET /api/session-statistics` and `GET /api/session-statistics/days/:date` | `usage:read` |
 | every other protected route | rejected for OAuth credentials |
 
 The existing `live_dashboard_access_provider.ts` resolves the same verified
-email through the dashboard users repository. Card and folder handlers then
-apply that account's stored folder ACL. `conversations` has a shared checker,
+email through the dashboard users repository. Card, folder, and session
+statistics handlers then apply that account's stored folder ACL. `conversations` has a shared checker,
 `requireOAuthScope`, for a later conversation API; S2 attaches it to no route.
 
 ## Caller identity
