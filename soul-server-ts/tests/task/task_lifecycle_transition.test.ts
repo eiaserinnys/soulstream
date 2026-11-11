@@ -302,7 +302,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     expect(task.runner).toBeUndefined();
     expect(task.executionPromise).toBeUndefined();
     expect(task.interventionQueue).toEqual([pendingDelivery]);
-    expect(consumeSuccessfulDeliveries).not.toHaveBeenCalled();
+    expect(consumeSuccessfulDeliveries).toHaveBeenCalledOnce();
   });
 
   it("cleans stale local execution after a CAS miss proves canonical terminal", async () => {

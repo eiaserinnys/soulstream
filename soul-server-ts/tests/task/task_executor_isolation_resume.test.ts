@@ -978,7 +978,11 @@ describe("turn input preparation failure ownership", () => {
     ]);
     expect(turns.some((turn) => turn.prompt.includes("실패한 입력"))).toBe(false);
     expect(task.interventionQueue).toEqual([]);
-    expect(ledger.repository.markUncertain).toHaveBeenCalledOnce();
+    // 실패한 배치는 재시도 전에 한 번 닫히고, 대기하던 런타임 후속은
+    // 재시도 턴에 들어갔다가 소비 증거 없이 끝나 그 턴에서 닫힌다.
+    expect(ledger.repository.markUncertain).toHaveBeenCalledTimes(2);
+    expect(ledger.repository.markUncertain.mock.calls[0]?.[0]).toBe("delivery-failed");
+    expect(ledger.repository.markUncertain.mock.calls[1]?.[0]).toBe("delivery-waiting");
   });
 
   it("ends a recovered execution as an error instead of yielding to a waiting input", async () => {

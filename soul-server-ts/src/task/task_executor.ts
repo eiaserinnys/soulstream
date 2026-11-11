@@ -1583,14 +1583,14 @@ export class TaskExecutor {
         this.persistence,
       );
     }
-    const terminalTurnReceipts: TaskDeliveryTurnReceipt[] = [];
+    const endedTurnReceipts: TaskDeliveryTurnReceipt[] = [];
     try {
       await this.consumeTurnLoop(
         task,
         agent,
         runner,
         initialTurnInput,
-        terminalTurnReceipts,
+        endedTurnReceipts,
       );
     } finally {
       if (!isOpenAiAgentsApprovalPending(task)) {
@@ -1598,7 +1598,7 @@ export class TaskExecutor {
       }
       await this._finalize(
         task,
-        () => this.consumeTerminalTurnReceipts(task, terminalTurnReceipts),
+        () => this.settleEndedTurnReceipts(task, endedTurnReceipts),
       );
     }
   }
@@ -1608,7 +1608,7 @@ export class TaskExecutor {
     agent: AgentProfile,
     runner: TaskRunnerRuntime,
     initialTurnInput: TaskTurnInput,
-    terminalTurnReceipts: TaskDeliveryTurnReceipt[],
+    endedTurnReceipts: TaskDeliveryTurnReceipt[],
   ): Promise<void> {
     let turnInput = initialTurnInput;
     const replayedUnconsumedRuntimeFollowups = new Set<string | InterventionMessage>();
@@ -1865,7 +1865,7 @@ export class TaskExecutor {
         task,
         turnReceipt,
         transition,
-        terminalTurnReceipts,
+        endedTurnReceipts,
       );
       if (transition.kind !== "continue") break;
         turnInput = await this.turnInputBuilder.prepareFollowupTurnInput(
@@ -1874,6 +1874,7 @@ export class TaskExecutor {
           transition.interventions,
         );
       } finally {
+        if (turnReceipt) endedTurnReceipts.push(turnReceipt);
         this.releaseDeliveryTurn(task, turnReceipt);
       }
     }
@@ -2197,7 +2198,7 @@ export class TaskExecutor {
       task.completedAt = new Date();
       await this._finalize(
         task,
-        () => this.consumeTerminalTurnReceipts(task, terminalTurnReceipts),
+        () => this.settleEndedTurnReceipts(task, terminalTurnReceipts),
       );
       if (recoveryPreparationFailure !== undefined) {
         await this.settlePreparationFailure(task, undefined, recoveryPreparationFailure);
@@ -2384,14 +2385,14 @@ export class TaskExecutor {
 
   private async _finalize(
     task: Task,
-    consumeTerminalDeliveries?: () => Promise<void>,
+    settleEndedTurnDeliveries?: () => Promise<void>,
   ): Promise<void> {
     // 일반 세션의 다음 모델 pending은 terminal 저장보다 먼저 내구 기록되어야
     // 재개 뒤 첫 실행이 새 세대로 시작한다. 저장에 실패하면 기존 종료로 둔다.
     const fallbackPrepared = await this.prepareSessionModelFallback(task);
     await this.executorFinalizer.finalize(
       task,
-      consumeTerminalDeliveries,
+      settleEndedTurnDeliveries,
       fallbackPrepared
         ? async (terminalTransitionApplied: boolean) =>
             await this.finishSessionModelFallback(task, terminalTransitionApplied)
@@ -2476,11 +2477,13 @@ export class TaskExecutor {
     }
   }
 
-  private async consumeTerminalTurnReceipts(
+  private async settleEndedTurnReceipts(
     task: Task,
     receipts: readonly TaskDeliveryTurnReceipt[],
   ): Promise<void> {
-    for (const receipt of receipts) await receipt.consume(task);
+    // A completed turn can be collected both by settleDeliveryTurn and by the
+    // turn loop's finally; settle each receipt once.
+    for (const receipt of new Set(receipts)) await receipt.settleEndedTurn(task);
   }
 }
 

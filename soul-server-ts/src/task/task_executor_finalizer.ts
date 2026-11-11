@@ -38,7 +38,11 @@ export class TaskExecutorFinalizer {
 
   async finalize(
     task: Task,
-    consumeSuccessfulDeliveries?: () => Promise<void>,
+    /**
+     * 실행이 끝난 턴들의 전달을 정산한다. 완료든 오류든 관계없이 terminal
+     * 전이가 적용된 뒤에 호출한다.
+     */
+    settleEndedTurnDeliveries?: () => Promise<void>,
     /**
      * Terminal 저장과 runner 해제 뒤, 완료 통지 앞에서 실행되는 선택적 단계.
      * true를 돌려주면 이번 실행의 완료 통지만 건너뛴다(다음 세대가 이어감).
@@ -49,12 +53,8 @@ export class TaskExecutorFinalizer {
     // The sessions-row release ACK is the durable terminal/owner boundary. Keep
     // the runner handle until it commits so the same owner can retry on failure.
     await this.closeEngine(task);
-    if (
-      persistence.terminalTransitionApplied
-      && task.status === "completed"
-      && consumeSuccessfulDeliveries
-    ) {
-      await consumeSuccessfulDeliveries();
+    if (persistence.terminalTransitionApplied && settleEndedTurnDeliveries) {
+      await settleEndedTurnDeliveries();
     }
     if (beforeNotify && await beforeNotify(persistence.terminalTransitionApplied)) return;
     await this.deps.lifecycleTransition.notifyCompletionIfApplied(task, persistence);
