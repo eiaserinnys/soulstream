@@ -4,7 +4,7 @@ set -euo pipefail
 # Pack the portable node release for the deployed commit into the folder the
 # orchestrator serves. deploy/haniel/build-core.sh calls this after its own
 # build and artifact checks with the app checkout and the release folder. The
-# caller already holds the host heavy-work lock (fd 9), so this script must not
+# caller already holds the deploy build lock (fd 9), so this script must not
 # take it again; a failure here warns but never fails the deploy.
 
 usage() {

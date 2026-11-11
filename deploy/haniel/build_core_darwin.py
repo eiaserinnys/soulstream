@@ -4,7 +4,7 @@
 `build-core.sh` execs this script on macOS because the Linux hook depends on GNU
 `realpath`, `flock`, `free`, GNU `timeout` and a fixed `/home/eias` account.
 This runner keeps the same six build commands, the same 2000 MiB memory gate,
-the same host heavy-work lock and the same artifact checks using only the
+the same deploy build lock and the same artifact checks using only the
 Python standard library.
 """
 
@@ -25,7 +25,7 @@ MEMORY_WAIT_SECONDS = 60
 STEP_TIMEOUT_SECONDS = 900
 TERMINATION_GRACE_SECONDS = 2.0
 GROUP_POLL_SECONDS = 0.05
-LOCK_PATH = Path("/tmp/soulstream-heavy-verify.lock")
+LOCK_PATH = Path("/tmp/soulstream-heavy-verify.deploy.lock")
 VM_STAT_PATH = "/usr/bin/vm_stat"
 
 APP_DIR = Path(__file__).resolve().parents[2]
@@ -186,7 +186,7 @@ def verify_build_artifacts(app_dir: Path = APP_DIR) -> None:
 
 
 def acquire_build_lock(lock_path: Path = LOCK_PATH) -> int:
-    """Takes the host heavy-work lock and keeps it until the descriptor closes."""
+    """Takes the deploy build lock and keeps it until the descriptor closes."""
     descriptor = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o600)
     try:
         fcntl.flock(descriptor, fcntl.LOCK_EX)

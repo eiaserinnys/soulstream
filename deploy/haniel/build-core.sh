@@ -12,7 +12,8 @@ script_dir="$(dirname -- "$(realpath -- "${BASH_SOURCE[0]}")")"
 # Haniel may call this from a node-specific checkout; the account paths below
 # intentionally match the host that owns this build hook.
 app_dir="$(realpath -- "$script_dir/../..")"
-lock_file=/tmp/soulstream-heavy-verify.lock
+deploy_lock_file=/tmp/soulstream-heavy-verify.deploy.lock
+deploy_lock_wait_seconds=300
 minimum_available_mb=2000
 
 available_memory_mb() {
@@ -60,7 +61,7 @@ run_heavy_pnpm() {
 # Portable node release pack (P7a): only the host that serves portable releases
 # sets PORTABLE_NODE_RELEASES_DIR. The pack builds a clean shared clone of the
 # deployed commit, so it must never fail the deploy: warn in one line and keep
-# going. The host heavy-work lock (fd 9) is already held here.
+# going. The deploy build lock (fd 9) is already held here.
 run_portable_release_pack() {
   if [[ -z "${PORTABLE_NODE_RELEASES_DIR:-}" ]]; then
     return 0
@@ -79,12 +80,20 @@ run_portable_release_pack() {
   return 0
 }
 
-# Hold the host heavy-work lock once for the whole build: taking it per step
-# lets other verifications slip in between steps and makes the next step wait
-# again. Children inherit fd 9, so the lock holds until the last step finishes.
-printf 'Waiting for the host heavy-work lock %s\n' "$lock_file" >&2
-exec 9>"$lock_file"
-flock 9
+# The deploy build outranks agent verification (card #1238): it no longer waits
+# on the host heavy-verify gate that a 40-minute e2e can hold. While this build
+# holds the deploy build lock, heavy_verify.py starts no new command and waits;
+# commands already running keep running. The wait is capped far below Haniel's
+# 900-second hook limit, so a timed-out hook cannot leave a blocked flock behind.
+# Hold the lock once for the whole build: taking it per step lets other builds
+# slip in between steps and makes the next step wait again. Children inherit
+# fd 9, so the lock holds until the last step finishes.
+printf 'Waiting for the deploy build lock %s\n' "$deploy_lock_file" >&2
+exec 9>"$deploy_lock_file"
+if ! flock -w "$deploy_lock_wait_seconds" 9; then
+  printf 'Refusing build: the deploy build lock %s stayed busy for %s seconds.\n' "$deploy_lock_file" "$deploy_lock_wait_seconds" >&2
+  exit 1
+fi
 
 run_heavy_pnpm install --frozen-lockfile --prod=false
 run_heavy_pnpm --filter @soulstream/soul-server-ts exec env SOULSTREAM_RELEASE_ENV_FILE="$app_dir/.env.soul-server-ts" pnpm run build
