@@ -54,6 +54,7 @@ describe("ModelCatalog", () => {
       "deepseek-flash-4.1",
       "gemini-3.8-flash",
       "gemini-4-argon",
+      "gemini-4-carbon",
       "opencode-deepseek-v4.1-flash-free",
     ]);
   });
@@ -380,11 +381,12 @@ presets:
   });
 });
 
-it("advertises the Antigravity usage provider for both account presets", () => {
+it("advertises the Antigravity usage provider for all three account presets", () => {
   const catalog = new ModelCatalog(path.resolve(process.cwd(), "config/model-catalog.yaml.example"));
   expect(catalog.advertise({}).filter(p => p.backend === "antigravity")).toMatchObject([
     { id: "gemini-3.8-flash", usage_provider: "antigravity" },
     { id: "gemini-4-argon", usage_provider: "antigravity" },
+    { id: "gemini-4-carbon", usage_provider: "antigravity" },
   ]);
 });
 
@@ -397,9 +399,10 @@ describe("model preset trusted execution", () => {
     "codex-6.1-sol",
     "codex-6-sol",
     "gemini-4-argon",
+    "gemini-4-carbon",
   ];
 
-  it("marks exactly the seven trusted presets in the example catalog", () => {
+  it("marks exactly the eight trusted presets in the example catalog", () => {
     const catalog = new ModelCatalog(
       path.resolve(process.cwd(), "config/model-catalog.yaml.example"),
     );
@@ -411,7 +414,7 @@ describe("model preset trusted execution", () => {
     ).toEqual([...trustedPresetIds].sort());
   });
 
-  it("marks exactly the seven trusted presets in the shared default catalog", () => {
+  it("marks exactly the eight trusted presets in the shared default catalog", () => {
     expect(
       DEFAULT_MODEL_CATALOG.presets
         .filter((preset) => preset.trusted_execution === true)

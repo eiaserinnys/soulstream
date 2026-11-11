@@ -153,6 +153,7 @@ describe("fixed inference price reference", () => {
     ["claude", "claude-fable-5-2", 0.04722],
     ["claude", "claude-fable-5-1", 0.059025],
     ["codex", "gpt-6-astra", 0.0591],
+    ["antigravity", "gemini-4-carbon", 0.01181],
     ["antigravity", "gemini-4-argon", 0.01181],
     ["deepseek", "deepseek-flash", 0.0014706],
     ["deepseek", "deepseek-v4.1-flash", 0.0014706],
