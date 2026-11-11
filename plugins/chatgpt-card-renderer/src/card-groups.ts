@@ -2,6 +2,7 @@ export interface WidgetCard {id:string;title:string;status:string;assignee:strin
 export const cardGroups=[
  {id:'attention',label:'검수 대기',statuses:['review','blocked']},
  {id:'running',label:'실행 중',statuses:['running']},
+ {id:'verification',label:'검증 대기',statuses:['awaiting_verification']},
  {id:'queued',label:'대기',statuses:['queued','unknown']},
  {id:'draft',label:'드래프트',statuses:['todo']},
  {id:'on_hold',label:'보류',statuses:['on_hold']},

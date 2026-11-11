@@ -3467,6 +3467,7 @@ export const CARD_STATUSES = [
   "queued",
   "blocked",
   "running",
+  "awaiting_verification",
   "review",
   "on_hold",
   "done",

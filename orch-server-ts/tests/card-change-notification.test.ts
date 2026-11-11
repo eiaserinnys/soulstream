@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { buildCardChangeNotification } from "../src/cards/card_change_notification.js";
+import { selectCardBoardNotice } from "../src/cards/card_board_notice.js";
 import { sendCardChangeOnce } from "../src/cards/card_change_delivery.js";
 import type { CardMutationChange } from "../src/cards/card_control_plane_service.js";
 import type { SessionDeliveryRow } from "../src/control_plane/control_plane_types.js";
@@ -26,6 +27,17 @@ describe("committed card reference notifications",()=>{
     const c=change({previousStatus:"running",committedCard:{id:"card",title:"작업",status:"blocked",blocked_kind:"no_report",assignee_session_id:"owner"}});
     c.result.operation.actor_kind="system";
     expect(buildCardChangeNotification(c)).toMatchObject({sessionId:"owner",text:"시스템가 카드 「작업」(card)를 실행 중→막힘으로 변경했습니다"});
+  });
+  it("labels the verification wait and keeps the wake resume and board notice silent",()=>{
+    const enter=change({previousStatus:"running",committedCard:{id:"card",title:"작업",status:"awaiting_verification",assignee_session_id:"owner"}});
+    enter.result.operation.actor_kind="user";
+    expect(buildCardChangeNotification(enter)).toMatchObject({text:"사용자가 카드 「작업」(card)를 실행 중→검증 대기으로 변경했습니다"});
+    const wake=change({previousStatus:"awaiting_verification",committedCard:{id:"card",title:"작업",status:"running",assignee_session_id:"owner"},
+      result:{operation:{id:"op",target_id:"card",operation_type:"resume_card",actor_kind:"system",actor_session_id:null,payload_json:{session_id:"owner"}},snapshot:{cards:[]}}});
+    expect(buildCardChangeNotification(wake)).toBeNull();
+    const committed={id:"card",title:"작업",status:"awaiting_verification",blocked_kind:null,blocked_detail:null,
+      assignee_session_id:"owner",node_id:"node",assignee_agent_id:null,model_preset:null,archived:false} as never;
+    expect(selectCardBoardNotice({operationType:"set_card_status",actorKind:"user",previousStatus:"running",committed})).toBeNull();
   });
   it("still notifies the owner when a user blocks the card",()=>{
     const c=change({previousStatus:"running",committedCard:{id:"card",title:"작업",status:"blocked",blocked_kind:"limit",assignee_session_id:"owner"}});

@@ -41,6 +41,7 @@ import {
   type ReportCardItemInput,
 } from "./card_item_rules.js";
 import { hasUserInputAfterLastReplyTx, readCardItemSourceTx } from "./control_plane/card_item_store.js";
+import { parseVerificationWakeAt, validateVerificationWait, verificationWaitNow } from "./card_verification_wait.js";
 import {assertPolicyAdmission} from "./card_orchestration_repository.js";
 import { claimableCardSessions, assertSingleCardAssignee, translateAssigneeConflict, invalidCard } from "./card_assignee.js";
 
@@ -217,16 +218,27 @@ export class CardControlPlaneService {
           completed_kind:null,completed_session_id:null,completed_event_id:null,completed_user_id:null,completed_at:null}: {})},params,eventId);
     });
   }
-  async setCardStatus(params: CardMutationParams & { status: CardStatus; blockedKind?: CardRow["blocked_kind"]; blockedDetail?: string | null }) {
-    return this.mutateCard(params,"set_card_status",{ status:params.status,blocked_kind:params.blockedKind ?? null,blocked_detail:params.blockedDetail ?? null },async (sql,card,eventId,payload) => {
-      const fields=await this.applyStatusTx(sql,card,eventId,params,payload);
+  async setCardStatus(params: CardMutationParams & { status: CardStatus; blockedKind?: CardRow["blocked_kind"]; blockedDetail?: string | null; wakeAt?: string; waitingFor?: string }) {
+    // 재시도 비교가 시간대 표기 차이로 깨지지 않도록 페이로드에 넣기 전에 정규화한다.
+    // 지금보다 뒤인지와 7일 이내인지는 상태를 확정하는 트랜잭션 안에서 따진다.
+    const wakeAt = params.wakeAt === undefined ? null : parseVerificationWakeAt(params.wakeAt);
+    if (params.wakeAt !== undefined && !wakeAt) throw invalid("wake_at은 오프셋이 있는 ISO 8601 시각이어야 합니다");
+    const waitingFor = params.waitingFor === undefined ? null : params.waitingFor.trim();
+    return this.mutateCard(params,"set_card_status",{
+      status:params.status,blocked_kind:params.blockedKind ?? null,blocked_detail:params.blockedDetail ?? null,
+      wake_at:wakeAt?.toISOString() ?? null,waiting_for:waitingFor,
+    },async (sql,card,eventId,payload) => {
+      const fields=await this.applyStatusTx(sql,card,eventId,{
+        ...params,wakeAt:wakeAt?.toISOString(),waitingFor:waitingFor ?? undefined,
+      },payload);
       await this.patch(sql,card,fields,params,eventId);
     });
   }
   async resumeBlockedCardOnHumanInput(params:{cardId:string;expectedVersion:number}) {
     const actor={actorKind:"system" as const,actorSessionId:null,...params,reason:"사용자 메시지로 작업 재개"};
     return this.mutateCard(actor,"set_card_status",{status:"running",blocked_kind:null,blocked_detail:null},async(sql,card,eventId,payload)=>{
-      if (card.status!=="blocked" || card.blocked_kind==="limit" || card.archived!==false || card.assignee_kind!=="session") return false;
+      const resumable=card.status==="awaiting_verification" || (card.status==="blocked" && card.blocked_kind!=="limit");
+      if (!resumable || card.archived!==false || card.assignee_kind!=="session") return false;
       const fields=await this.applyStatusTx(sql,card,eventId,{...actor,status:"running"},payload);
       await this.patch(sql,card,fields,actor,eventId);
       return this.closeOpenQuestionsTx(sql,card.id,"사용자 메시지로 작업이 재개되어 서버가 닫았습니다");
@@ -492,6 +504,19 @@ export class CardControlPlaneService {
       await this.patch(sql,card,{status:"running",blocked_kind:null,blocked_detail:null,queue_position_key:null},actor,eventId);
     });
   }
+  /** 검증 대기 시각이 되어 담당을 깨운 뒤 실행 중으로 되돌린다. 새 실행이나 배정 판단이 아니다. */
+  resumeVerificationCard(params:{cardId:string;sessionId:string;wakeAt:string}) {
+    const actor={actorKind:"system" as const,actorSessionId:null};
+    return this.mutateCard({...actor,cardId:params.cardId,reason:"검증 대기 시각이 되어 담당을 깨웠습니다"},"resume_card",
+      {session_id:params.sessionId,wake_at:params.wakeAt},async(sql,card,eventId)=>{
+      if (card.status !== "awaiting_verification" || !card.wake_at
+        || new Date(card.wake_at).toISOString() !== params.wakeAt
+        || card.assignee_kind !== "session" || card.assignee_session_id !== params.sessionId)
+        throw invalid("Only the currently assigned verification-wait card at this wake time may resume");
+      const now=makeCardNow({text:"담당이 기다리던 것을 확인합니다",turn:"agent"},new Date().toISOString(),params.sessionId);
+      await this.patch(sql,card,{status:"running",blocked_kind:null,blocked_detail:null,queue_position_key:null,now:sql.json(now)},actor,eventId);
+    });
+  }
   private prepareAddComment(params:AddCommentParams,commentId:string) {
     const external=params.actorKind === "llm";
     const reply=params.mode === "reply";
@@ -541,8 +566,8 @@ export class CardControlPlaneService {
       const items=openCardItemFix(card.items ?? [],params.itemId);
       await this.patch(sql,card,{items:sql.json(items)},params,eventId);
     }
-    if (!reply && card.status === "blocked" && card.blocked_kind !== "limit" && card.archived === false
-      && card.assignee_kind === "session") {
+    const resumable=card.status==="awaiting_verification" || (card.status==="blocked" && card.blocked_kind!=="limit");
+    if (!reply && resumable && card.archived === false && card.assignee_kind === "session") {
       await this.patch(sql,card,{status:"running",blocked_kind:null,blocked_detail:null},params,eventId);
       return this.closeOpenQuestionsTx(sql,card.id,"사용자가 커멘트로 답해 서버가 닫았습니다");
     }
@@ -564,7 +589,7 @@ export class CardControlPlaneService {
     sql:RepositorySql,
     card:CardRow,
     eventId:number | null,
-    params:CardMutationParams & {status:CardStatus;blockedKind?:CardRow["blocked_kind"];blockedDetail?:string | null},
+    params:CardMutationParams & {status:CardStatus;blockedKind?:CardRow["blocked_kind"];blockedDetail?:string | null;wakeAt?:string;waitingFor?:string},
     payload:Record<string,unknown>,
   ):Promise<Record<string,unknown>> {
     const claim=params.actorKind === "agent" ? await this.claim(sql,card,params.actorSessionId,payload) : {};
@@ -573,7 +598,7 @@ export class CardControlPlaneService {
       && ["todo","queued","on_hold","cancelled"].includes(params.status);
     if (params.actorKind === "agent" && (!params.actorSessionId || card.assignee_session_id !== params.actorSessionId) && !unassignedRest)
       throw Object.assign(new Error("Only the current assignee session may change card status. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work. A card without an assignee session can be moved to todo, queued, on_hold or cancelled by any internal agent session."), {statusCode:403});
-    return { ...claim,status:params.status,
+    const fields:Record<string,unknown> = { ...claim,status:params.status,
       blocked_kind:params.status === "blocked" ? params.blockedKind ?? null : null,
       blocked_detail:params.status === "blocked" ? params.blockedDetail ?? null : null,
       queue_position_key:params.status === "queued" ? await this.position(sql,null,null,card.id)
@@ -583,6 +608,18 @@ export class CardControlPlaneService {
       completed_event_id:params.status === "done" ? eventId : null,
       completed_user_id:params.status === "done" ? params.actorUserId ?? null : null,
       completed_at:params.status === "done" ? new Date() : null };
+    if (params.status === "awaiting_verification") {
+      // claim이 방금 담당을 세운 경우를 포함해, 이 트랜잭션에서 확정된 담당만 인정한다.
+      if (card.assignee_kind !== "session" || !card.assignee_session_id)
+        throw invalid("검증 대기는 담당 세션이 있는 카드만 설정할 수 있습니다");
+      const at=new Date();
+      const check=validateVerificationWait({wakeAt:params.wakeAt,waitingFor:params.waitingFor},at);
+      if (!check.ok) throw invalid(check.message);
+      fields.wake_at=check.wakeAt;
+      fields.waiting_for=check.waitingFor;
+      fields.now=sql.json(verificationWaitNow(check.waitingFor,check.wakeAt,at,params.actorSessionId));
+    }
+    return fields;
   }
   private async mutateCard(params:CardMutationParams,operationType:string,payload:Record<string,unknown>,apply:(sql:RepositorySql,card:CardRow,eventId:number | null,payload:Record<string,unknown>)=>Promise<void | boolean>,notifyMutation=true) {
     const card=await this.repo.getCard(params.cardId);
@@ -619,8 +656,10 @@ export class CardControlPlaneService {
     const cardChanged=change.cardChanged ?? previousStatus !== committedCard?.status;
     if (!this.reports || (!questionChanged && !cardChanged) || !committedCard) return;
     const leftBoard=previousStatus !== committedCard.status && isCardOffBoard(committedCard.status);
+    // 검증 대기는 PAS 판에 장을 만들지 않는다. 들어갈 때는 지금 연결되지 않은 옛 판의 장도 내린다.
+    const enteredVerification=previousStatus !== committedCard.status && committedCard.status === "awaiting_verification";
     try {
-      await this.reports.syncCard(cardId,{scanBoards:questionChanged || leftBoard});
+      await this.reports.syncCard(cardId,{scanBoards:questionChanged || leftBoard || enteredVerification});
       if (previousStatus !== committedCard.status) await this.reports.recordCardTimeline(cardId);
       // 보류에서 돌아온 카드의 열린 질문은 감독 PAS 판에만 다시 올린다. 휴대폰 알림은 질문을 남길 때(askQuestion) 한 번뿐이다.
       if (previousStatus === "on_hold" && !isCardOffBoard(committedCard.status)) {
@@ -643,9 +682,12 @@ export class CardControlPlaneService {
     if (typeof sessionId === "string" && (Object.hasOwn(fields,"assignee_session_id") || fields.archived === false)
       && !(fields.archived ?? card.archived))
       await assertSingleCardAssignee(sql,sessionId,card.id);
-    await sql`UPDATE cards SET ${sql(fields)},
-      number=CASE WHEN ${fields.archived === false} THEN COALESCE(number,nextval('cards_number_seq')) ELSE number END,
-      status_changed_at=CASE WHEN ${fields.status !== undefined && fields.status !== card.status} THEN NOW() ELSE status_changed_at END,
+    // 상태를 쓰는 모든 경로의 공통 지우기 지점. 검증 대기를 떠나면 두 값을 함께 지운다.
+    const writes=fields.status !== undefined && fields.status !== "awaiting_verification"
+      ? { ...fields,wake_at:null,waiting_for:null } : fields;
+    await sql`UPDATE cards SET ${sql(writes)},
+      number=CASE WHEN ${writes.archived === false} THEN COALESCE(number,nextval('cards_number_seq')) ELSE number END,
+      status_changed_at=CASE WHEN ${writes.status !== undefined && writes.status !== card.status} THEN NOW() ELSE status_changed_at END,
       version=version+1,updated_at=NOW(),updated_session_id=${actor.actorSessionId},updated_event_id=${eventId} WHERE id=${card.id}`;
   }
   private async claim(sql:RepositorySql,card:CardRow,sessionId:string | null,payload:Record<string,unknown>) {

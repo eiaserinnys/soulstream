@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { CARD_STATUSES } from "@soulstream/wire-schema";
 import { CARD_COLOR_KEYS } from "@soulstream/wire-schema/card-colors";
-import { cardQuestionOptionsSchema } from "@soulstream/mcp-contract";
+import { cardQuestionOptionsSchema, cardVerificationWakeAtSchema, cardVerificationWaitingForSchema } from "@soulstream/mcp-contract";
 import type { CardControlPlaneService } from "./card_control_plane_service.js";
 import type { FolderActorParams } from "./control_plane/card_types.js";
 import { serializeCardMutation, serializeCardRow } from "../folders/folder_contracts.js";
@@ -19,7 +19,17 @@ export const cardOperationSchemas={
   create_card:z.object({ folderId:id,title:id,request:z.string(),brief:z.string().optional(),attachments,queue:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),idempotencyKey:id }),
   update_card:mutation.extend({ title:id.optional(),brief:z.string().optional(),archived:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),color:z.enum(CARD_COLOR_KEYS).optional() }).refine(v=>Object.keys(v).some(k=>!["expectedVersion","idempotencyKey","reason"].includes(k)),"Patch requires a field"),
   start_card_work:mutation.extend({execution:z.object({registrationId:id,executionCommandId:id}).strict()}),
-  set_card_status:mutation.extend({ status:z.enum(CARD_STATUSES),blockedKind:z.enum(["limit","question","no_report"]).nullable().optional(),blockedDetail:z.string().nullable().optional() }),
+  set_card_status:mutation.extend({ status:z.enum(CARD_STATUSES),blockedKind:z.enum(["limit","question","no_report"]).nullable().optional(),blockedDetail:z.string().nullable().optional(),
+    wakeAt:cardVerificationWakeAtSchema.optional(),waitingFor:cardVerificationWaitingForSchema.optional() })
+    .superRefine((value,ctx)=>{
+      if (value.status === "awaiting_verification") {
+        if (value.wakeAt === undefined) ctx.addIssue({ code:"custom",path:["wakeAt"],message:"검증 대기에는 wakeAt이 필요합니다" });
+        if (value.waitingFor === undefined) ctx.addIssue({ code:"custom",path:["waitingFor"],message:"검증 대기에는 waitingFor가 필요합니다" });
+        return;
+      }
+      if (value.wakeAt !== undefined) ctx.addIssue({ code:"custom",path:["wakeAt"],message:"검증 대기가 아니면 wakeAt을 주지 않습니다" });
+      if (value.waitingFor !== undefined) ctx.addIssue({ code:"custom",path:["waitingFor"],message:"검증 대기가 아니면 waitingFor를 주지 않습니다" });
+  }),
   move_card:mutation.extend({ folderId:id,afterCardId:id.nullable().optional() }),
   reorder_card_queue:mutation.extend({ afterCardId:id.nullable().optional() }),
   add_card_report:append.extend({ title:id,format:z.enum(["markdown","html"]),body:z.string() }),
@@ -37,7 +47,23 @@ export const cardOperationSchemas={
   request_card_review:append.extend({ ask:z.string().optional() }),
 } as const;
 export type CardOperation=keyof typeof cardOperationSchemas;
+/** 상태 변경·검증 대기를 잘못된 진입점으로 보낸 요청은 계약상 400이다. 기존 엄격 schema 위반의 422는 그대로 둔다. */
+function assertVerificationWaitBoundary(operation:CardOperation,input:unknown) {
+  if (typeof input !== "object" || input === null || Array.isArray(input)) return;
+  const body=input as Record<string,unknown>;
+  const has=(key:string)=>Object.prototype.hasOwnProperty.call(body,key);
+  if (operation === "update_card" && ["status","wakeAt","waitingFor","wake_at","waiting_for"].some(has))
+    throw boundaryError("상태 변경과 검증 대기는 POST /api/cards/:id/status로 보냅니다");
+  if (operation !== "set_card_status") return;
+  const hasWake=has("wakeAt"),hasWaiting=has("waitingFor");
+  if (body.status === "awaiting_verification" && (!hasWake || !hasWaiting))
+    throw boundaryError("검증 대기에는 wakeAt과 waitingFor가 필요합니다");
+  if (body.status !== "awaiting_verification" && (hasWake || hasWaiting))
+    throw boundaryError("검증 대기가 아니면 wakeAt과 waitingFor를 주지 않습니다");
+}
+function boundaryError(message:string) { return Object.assign(new Error(message),{ statusCode:400,code:"INVALID_CARD_REQUEST" }); }
 export async function executeCardOperation(service:CardControlPlaneService,operation:CardOperation,body:unknown,cardId:string | undefined,actor:FolderActorParams) {
+  assertVerificationWaitBoundary(operation,body);
   const parsed=cardOperationSchemas[operation].strict().parse(body);
   if (operation === "add_card_comment") {
     const common={ ...actor,cardId:id.parse(cardId) };

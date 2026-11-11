@@ -121,6 +121,7 @@ export const cardHandlers = {
     matchingHeader(a, c);
     return compactMutation(await mutation(o.cards, "set_card_status", String(a.card_id), {
       status: a.status, expectedVersion: a.expected_version, idempotencyKey: a.idempotency_key, reason: a.reason,
+      wakeAt: a.wake_at, waitingFor: a.waiting_for,
     }, agent(a, c, true)));
   }),
   transfer_card_assignee: (o, a, c) => run(async () => {

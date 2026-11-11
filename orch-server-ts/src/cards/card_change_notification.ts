@@ -4,7 +4,7 @@ import type { CardItemState } from "./card_item_rules.js";
 
 export type CardChangeDelivery = { deliveryId:string; actorKind:string; actorSessionId:string | null };
 export type CardCommentNotificationDetails = { itemTarget?:{id:number;title:string;state:CardItemState;confirmed:boolean}; confirmedItemIds?:number[] };
-export const cardStatusLabels:Record<string,string>={todo:"할 일",queued:"대기",running:"실행 중",blocked:"막힘",review:"검수",on_hold:"보류",done:"완료",cancelled:"취소"};
+export const cardStatusLabels:Record<string,string>={todo:"할 일",queued:"대기",running:"실행 중",awaiting_verification:"검증 대기",blocked:"막힘",review:"검수",on_hold:"보류",done:"완료",cancelled:"취소"};
 const cardItemStateLabels:Record<CardItemState,string>={todo:"아직",doing:"하는 중",done:"끝남",dropped:"뺌"};
 const cardCommentInstruction="수정 지시면 항목을 하는 중으로 알리고 카드를 진행 중으로 옮긴 뒤 진행한다. 질문이면 답 커멘트만 남긴다.";
 

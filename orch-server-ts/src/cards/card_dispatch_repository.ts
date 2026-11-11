@@ -36,6 +36,13 @@ export class CardDispatchRepository {
       WHERE c.status='blocked' AND c.blocked_kind='limit' AND NOT c.archived AND NOT f.archived
       ORDER BY c.queue_position_key COLLATE "C" NULLS LAST,c.id`;
     }
+    /** 검증 대기 시각이 지난 카드. 보관 폴더 제외는 계약에 없으므로 상태와 카드 보관만 본다. */
+    async awaitingVerification(now: Date): Promise<DispatchCard[]> {
+        const sql = await this.resolveSql();
+        return sql<DispatchCard[]> `SELECT c.*,f.name AS folder_name FROM cards c JOIN folders f ON f.id=c.folder_id
+      WHERE c.status='awaiting_verification' AND NOT c.archived AND c.wake_at<=${now}
+      ORDER BY c.wake_at,c.id`;
+    }
     async running(): Promise<DispatchCard[]> {
         const sql = await this.resolveSql();
         return sql<DispatchCard[]> `SELECT DISTINCT c.*,f.name AS folder_name FROM cards c JOIN folders f ON f.id=c.folder_id

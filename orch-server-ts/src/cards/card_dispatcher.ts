@@ -73,7 +73,7 @@ export class CardDispatcher {
         await previous;
     } while (previous !== this.pending); }
     dispatch(): Promise<void> { return this.enqueue(() => this.dispatchOnce()); }
-    checkLimits(): Promise<void> { return this.enqueue(async () => { await this.resumeAutoLimits(); if (await this.options.orchestration?.enabled()) { await this.options.orchestration!.kick(); return; } await this.resumeLimits(); await this.dispatchOnce(); }); }
+    checkLimits(): Promise<void> { return this.enqueue(async () => { await this.resumeAutoLimits(); await this.wakeAwaitingVerifications(this.options.now?.() ?? Date.now()); if (await this.options.orchestration?.enabled()) { await this.options.orchestration!.kick(); return; } await this.resumeLimits(); await this.dispatchOnce(); }); }
     async tick(): Promise<void> {
         const now = this.options.now?.() ?? Date.now();
         if (now - this.lastLimitCheck < 60000)
@@ -246,6 +246,38 @@ export class CardDispatcher {
             status: "blocked", blockedKind: "limit", blockedDetail: clock ? `사용량 한도, ${clock} 자동 재개` : "세션 사용량 한도" });
         if (clock) await cards.updateCardNow({ actorKind: "system", actorSessionId: null, cardId: card.id,
             now: `사용량 한도로 멈춤, ${clock}에 저절로 이어집니다`, turn: "outside" });
+    }
+    private async wakeAwaitingVerifications(now: number): Promise<void> {
+        const cards = await this.options.cards();
+        for (const card of await this.options.repository.awaitingVerification(new Date(now))) {
+            try {
+                await this.wakeAwaitingVerification(card, cards);
+            } catch (error) { this.options.warn(`card ${card.id} verification wake failed: ${String(error)}`); }
+        }
+    }
+    private async wakeAwaitingVerification(card: DispatchCard, cards: CardControlPlaneService): Promise<void> {
+        const owner = card.assignee_session_id ? await this.options.repository.ownerSession(card.assignee_session_id) : null;
+        if (!owner) {
+            await this.blockVerificationWake(card, cards, "담당 세션이 없습니다");
+            return;
+        }
+        const wakeAt = new Date(card.wake_at!).toISOString();
+        const deliveryId = `card-verify-wake:${card.id}:${wakeAt}`;
+        try {
+            if (!(await this.options.deliveryExists(deliveryId)))
+                await this.deliver(card, owner.session_id,
+                    `[검증 대기 시각] 기다리던 것: ${card.waiting_for}. 확인해 결과를 항목에 남기고, 아직이면 다시 검증 대기로 둔다.`,
+                    { deliveryId, actorKind: "system", actorSessionId: null });
+        } catch (error) {
+            await this.options.abandonDelivery(deliveryId, String(error));
+            await this.blockVerificationWake(card, cards, String(error));
+            return;
+        }
+        await cards.resumeVerificationCard({ cardId: card.id, sessionId: owner.session_id, wakeAt });
+    }
+    private async blockVerificationWake(card: DispatchCard, cards: CardControlPlaneService, reason: string): Promise<void> {
+        await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, status: "blocked",
+            blockedKind: "no_report", blockedDetail: `검증 대기 시각에 담당을 깨우지 못함: ${reason}`, expectedVersion: card.version });
     }
     private async resumeAutoLimits(): Promise<void> {
         for (const card of await this.options.repository.limited()) {

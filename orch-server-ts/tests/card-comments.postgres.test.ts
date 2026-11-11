@@ -110,6 +110,25 @@ describe("card comments HTTP, storage, and delivery", () => {
         withdrawal_reason:'사용자가 커멘트로 답해 서버가 닫았습니다' });
   });
 
+  it("resumes a verification-wait card on a user comment but not on an assignee reply", async () => {
+    const cardId = await makeCard("검증 대기 커멘트");
+    await h.sql`INSERT INTO sessions(session_id,status) VALUES ('verify-comment-owner','running')`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_session_id='verify-comment-owner' WHERE id=${cardId}`;
+    const enter = async () => cards.setCardStatus({ ...human, cardId, status: 'awaiting_verification',
+      expectedVersion: (await cards.getCard(cardId))!.card.version, idempotencyKey: key(),
+      wakeAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(), waitingFor: '배포 확인' });
+    await enter();
+    await cards.addComment({ ...human, cardId, body: '배포 확인했어요', idempotencyKey: key() });
+    expect((await h.sql`SELECT status,wake_at,waiting_for FROM cards WHERE id=${cardId}`)[0])
+      .toMatchObject({ status: 'running', wake_at: null, waiting_for: null });
+
+    await enter();
+    await cards.addComment({ actorKind: 'agent', actorSessionId: 'verify-comment-owner', cardId,
+      body: '확인 중입니다', mode: 'reply', idempotencyKey: key() });
+    expect((await h.sql`SELECT status,wake_at,waiting_for FROM cards WHERE id=${cardId}`)[0])
+      .toMatchObject({ status: 'awaiting_verification', wake_at: expect.any(Date), waiting_for: '배포 확인' });
+  });
+
   it("resumes a blocked card on human session input and leaves limit-blocked cards unchanged", async () => {
     const cardId = await makeCard("메시지로 재개");
     await h.sql`INSERT INTO sessions(session_id,status) VALUES ('message-resume-owner','running'),('message-limit-owner','running')`;
@@ -135,6 +154,15 @@ describe("card comments HTTP, storage, and delivery", () => {
     await cards.resumeBlockedCardOnHumanInput({cardId:reviewId,expectedVersion:reviewVersion});
     expect((await cards.getCard(limitId))!.card).toMatchObject({status:'blocked',blocked_kind:'limit',blocked_detail:'한도'});
     expect((await cards.getCard(reviewId))!.card.status).toBe('review');
+
+    const verifyId = await makeCard("메시지 검증 대기 재개");
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_session_id='message-resume-owner' WHERE id=${verifyId}`;
+    await cards.setCardStatus({...human,cardId:verifyId,status:'awaiting_verification',expectedVersion:1,idempotencyKey:key(),
+      wakeAt:new Date(Date.now()+60*60*1000).toISOString(),waitingFor:'배포 확인'});
+    const verifyVersion = (await cards.getCard(verifyId))!.card.version;
+    await cards.resumeBlockedCardOnHumanInput({cardId:verifyId,expectedVersion:verifyVersion});
+    expect((await h.sql`SELECT status,wake_at,waiting_for FROM cards WHERE id=${verifyId}`)[0])
+      .toMatchObject({status:'running',wake_at:null,waiting_for:null});
   });
 
   it("keeps review and limit-blocked cards unchanged when a user comments", async () => {

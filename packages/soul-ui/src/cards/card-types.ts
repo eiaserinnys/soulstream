@@ -31,7 +31,8 @@ export interface CardRow {
   id: string; number?: number | null; folderId: string; title: string; request: string; brief: string;
   attachments: CardAttachment[];
   status: CardStatus; color?: CardColor; blockedKind: "limit" | "question" | "no_report" | null;
-  blockedDetail: string | null; positionKey: string; queuePositionKey: string | null;
+  blockedDetail: string | null; wakeAt?: string | null; waitingFor?: string | null;
+  positionKey: string; queuePositionKey: string | null;
   assigneeKind: "agent" | "human" | "session" | null;
   assigneeAgentId: string | null; assigneeUserId: string | null; assigneeSessionId: string | null;
   nodeId: string | null; modelPreset: string | null; version: number; archived: boolean;

@@ -452,6 +452,30 @@ describe("card work dispatch transaction contracts", () => {
     expect(sync).toHaveBeenCalledWith(cardId,expect.objectContaining({previousStatus:"blocked",questionChanged:true}));
   },60000);
 
+  it("reopens a verification-wait followup card and clears its wait fields", async () => {
+    const stack = createStack();
+    const made = await stack.cards.createCard({
+      actorKind:"user",actorSessionId:null,actorUserId:"user",folderId:"work",title:"검증 대기 후속",request:"요청",
+      assignee:{kind:"agent",agentId:"owner-agent"},nodeId:"node-a",modelPreset:"model-a",
+    });
+    const cardId = made.operation.target_id;
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,folder_id,model_preset)
+      VALUES ('verify-followup-owner','node-a','owner-agent','completed',${cardId},'work','owner-model')`;
+    await h.sql`UPDATE cards SET assignee_kind='session',assignee_agent_id=NULL,assignee_session_id='verify-followup-owner' WHERE id=${cardId}`;
+    await stack.cards.setCardStatus({actorKind:"user",actorSessionId:null,actorUserId:"user",cardId,
+      status:"awaiting_verification",expectedVersion:1,idempotencyKey:"verify-followup-wait",
+      wakeAt:new Date(Date.now()+60*60*1000).toISOString(),waitingFor:"배포 확인"});
+    const sync = vi.fn(async () => {});
+    (stack.cards as any).syncReportsAfterCommit = sync;
+
+    const receipt = await stack.service.accept({kind:"followup",cardId,request:"이어 진행",idempotencyKey:"followup-verify"},actor);
+
+    expect(receipt.work).toMatchObject({kind:"delivery",sessionId:"verify-followup-owner"});
+    expect((await h.sql`SELECT status,wake_at,waiting_for FROM cards WHERE id=${cardId}`)[0])
+      .toMatchObject({status:"running",wake_at:null,waiting_for:null});
+    expect(sync).toHaveBeenCalledWith(cardId,expect.objectContaining({previousStatus:"awaiting_verification"}));
+  },60000);
+
   it("records only confirmed errors for the operation actor and relays an exact canonical execution failure", async () => {
     const stack = createStack();
     const receipt = await stack.service.accept(createInput("error-relay"), actor);
