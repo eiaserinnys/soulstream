@@ -4,7 +4,7 @@ import { cardDecisionMachine } from './card_decision_machine.js';
 import { deriveCardActor, deriveCardDecisionFacts, type CardCommand, type CardDecisionEvidence } from './card_decision_facts.js';
 import type { CardBinding, CardWriteStep } from './card_write_intent.js';
 import { rowToStateValue, type CardStateValue } from './card_state_value.js';
-export interface DecisionAction {type:string;params?:{evidenceStage?:ServerEvidenceStage;stage?:'claim'|'question'|'move'|'item'|'state'|'questions';kind?:CardWriteStep['kind'];fields?:Record<string,CardBinding>;failure?:string;guard?:string;normalization?:boolean}}
+export interface DecisionAction {type:string;params?:{evidenceStage?:ServerEvidenceStage;stage?:'claim'|'question'|'move'|'item'|'state'|'questions';kind?:CardWriteStep['kind'];fields?:Record<string,CardBinding>;failure?:string;guard?:string}}
 export type CardDecision={kind:'needsEvidence';stage:ServerEvidenceStage;next:CardStateValue;actions:DecisionAction[]}| {kind:'apply'|'noop';next:CardStateValue;actions:DecisionAction[]}|{kind:'reject';next:CardStateValue;actions:DecisionAction[];failure:{id:string;guard:string}};
 /** After the actor-only entrance check, a locked row and SQL evidence enter one transition. */
 export function decideCardTransition(row:Record<string,any>|null,questions:readonly Record<string,any>[],evidence:CardDecisionEvidence,command:CardCommand,actor:Record<string,any>,checkedAt:number):CardDecision {

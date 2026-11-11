@@ -39,7 +39,10 @@ export function factsConsistent(w:CardWorld,event:DecisionEvent):boolean {
  if(v.question==='open'&&f.question!=='open'&&!f.otherOpen)return false;
  if(f.question==='missing'&&['author','ownerAuthor'].includes(event.actor))return false;
  }
- if(f.ownerState!==undefined&&v.assignee==='session'){
+ if(f.hasOwnerSession===true&&v.assignee!=='session')return false;
+ if(f.hasOwnerSession===false&&['owner','ownerAuthor'].includes(event.actor))return false;
+ if(f.hasOwnerSession===false&&f.ownerState!==undefined&&f.ownerState!=='missing')return false;
+ if(f.ownerState!==undefined&&f.hasOwnerSession!==false&&v.assignee==='session'){
  if(w.owner==='live'&&!['running','initializing'].includes(String(f.ownerState)))return false;
  if(w.owner!=='live'&&f.ownerState!=='idle')return false;
  }

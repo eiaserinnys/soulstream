@@ -1,15 +1,15 @@
+import { readRemainingCardDecision } from './card_remaining_evidence_reader.js';
+import type { CardCommand } from './state/card_decision_facts.js';
 import { cardServerEvidenceReader } from './card_server_evidence_reader.js';
 import type { ServerCardCommand } from './state/card_server_command.js';
 import { decideCardTransition } from './state/card_decision.js';
 import { decodeCardDecision } from './state/card_decision_decoder.js';
-import { formatCardDecisionRejection } from './state/card_decision_errors.js';
+import { formatCardDecisionFailure } from './state/card_decision_errors.js';
 import { humanCardEvidence } from './state/card_human_evidence.js';
 import { assertCardCommandEntrance } from './state/card_command_entrance.js';
-import type { HumanCardCommand } from './state/card_human_command.js';
 import type { DecodedCardWrite } from './state/card_decision_decoder.js';
 import type { CardBindingValues } from './state/card_write_intent.js';
 import { patchCardTx } from "./control_plane/card_patch.js";
-import { assertNoPendingCardExecution } from "./card_execution_reservation.js";
 // 500줄 예외: 카드 aggregate의 기존 트랜잭션 facade. 보고 저장 로직은 별도 service에 둔다.
 import { PersistentReportService, type PublishPersistentReports } from "../session/persistent_report_service.js";
 import type { AppendReportTimeline } from "../session/report_timeline_publisher.js";
@@ -33,7 +33,6 @@ import { randomUUID } from "node:crypto";
 import { generateKeyBetween } from "@soulstream/fractional-position";
 import { CardRepository } from "./control_plane/card_repository.js";
 import { CardMaintenanceService, type BulkSetCardStatusInput, type CardMaintenanceChange, type MergeCardsInput, type MergeCardsResult, type UpdateUnstartedFields, type UpdateUnstartedResult, type AuthorizeFolder } from "./card_maintenance_service.js";
-import { assertBulkStatusGuardTx } from "./card_maintenance_tx.js";
 import { isCardOffBoard } from "./control_plane/card_types.js";
 import { CardMutationCore, type FolderMutateParams } from "./control_plane/card_mutation_core.js";
 import { CardVersionConflict, assigneeToFields, type CardAssigneeInput } from "./control_plane/card_models.js";
@@ -55,7 +54,7 @@ import {
   type ReportCardItemInput,
 } from "./card_item_rules.js";
 import { hasUserInputAfterLastReplyTx, readCardItemSourceTx } from "./control_plane/card_item_store.js";
-import { parseVerificationWakeAt, validateVerificationWait, verificationWaitNow } from "./card_verification_wait.js";
+import { parseVerificationWakeAt, verificationWaitNow } from "./card_verification_wait.js";
 import { claimableCardSessions, assertSingleCardAssignee, translateAssigneeConflict, invalidCard } from "./card_assignee.js";
 
 export type PolicyAdmission = {runId:string;leaseToken:string;workerInput:Record<string,unknown>};
@@ -95,7 +94,7 @@ export class CardControlPlaneService {
     this.maintenance=new CardMaintenanceService({
       sql:repoSql,repo:this.repo,core:this.core,
       patchTx:(sql,card,fields,actor,eventId)=>this.patch(sql,card,fields,actor,eventId),
-      statusTx:(sql,card,eventId,params,payload)=>this.applyStatusTx(sql,card,eventId,params,payload,"bulk_idle"),
+      statusTx:(sql,card,eventId,params,payload)=>this.applyStatusTx(sql,card,eventId,params,payload),
       afterCommit:changes=>this.afterCommitMaintenance(changes),
     });
   }
@@ -218,7 +217,10 @@ export class CardControlPlaneService {
   async patchCard(params: CardMutationParams & { title?: string; brief?: string; archived?: boolean; assignee?: CardAssigneeInput | null; nodeId?: string | null; modelPreset?: string | null; color?: CardColor }) {
     return this.mutateCard(params,"update_card",{ title:params.title,brief:params.brief,archived:params.archived,
       ...(Object.hasOwn(params,"assignee") ? assigneeToFields(params.assignee) : {}),node_id:params.nodeId,model_preset:params.modelPreset,color:params.color },
-    async (sql,card,eventId,payload) => { await this.patch(sql,card,payload,params,eventId); });
+    async (sql,card,eventId,payload) => {
+      const {writes}=await this.humanDecision(sql,card,{...params,type:'PATCH_CARD_CONTROL'},params,eventId,[],{}, {values:{'command.control':payload}});
+      await this.patchDecisionWrites(sql,card,writes,params,eventId);
+    });
   }
   async updateCardBrief(params: CardMutationParams & { brief:string }) {
     return this.mutateCard(params,"update_card",{ brief:params.brief },async (sql,card,eventId) => {
@@ -228,10 +230,14 @@ export class CardControlPlaneService {
   }
   async saveExecutionSettings(params:CardMutationParams & {folderId:string;nodeId:string|null;agentId:string|null;modelPreset:string|null}) {
     const result=await this.mutateCard(params,"card_execution_settings",{folder_id:params.folderId,node_id:params.nodeId,agent_id:params.agentId,model_preset:params.modelPreset},async(sql,card,eventId)=>{
-      await assertNoPendingCardExecution(sql,card.id);
-      if(card.assignee_session_id) throw Object.assign(new Error("담당 세션이 연결된 카드의 설정은 변경할 수 없습니다."),{statusCode:409});
-      if(card.folder_id!==params.folderId) await applyCardMoveTx(sql,card,params.folderId,null,params,eventId);
-      await this.patch(sql,card,{node_id:params.nodeId,model_preset:params.modelPreset,...assigneeToFields(params.agentId?{kind:"agent",agentId:params.agentId}:null)},params,eventId);
+      const command={...params,type:'SAVE_EXECUTION_SETTINGS'} as const;
+      const decision=await readRemainingCardDecision(sql,card,command,params);
+      const {writes}=await this.humanDecision(sql,card,command,params,eventId,[],{},
+        {values:{'command.control':{node_id:params.nodeId,model_preset:params.modelPreset,...assigneeToFields(params.agentId?{kind:'agent',agentId:params.agentId}:null)}}},decision);
+      for(const write of writes){
+        if(write.stage==='move')await applyCardMoveTx(sql,card,String(write.fields.folder_id),null,params,eventId);
+        else await this.patchDecisionWrites(sql,card,[write],params,eventId);
+      }
     });
     if(result.snapshot.folder.id!==params.folderId) await this.broadcaster?.emitCardUpdated?.(params.cardId,params.folderId);
     return {...result,snapshot:(await this.repo.getSnapshot(params.folderId))!};
@@ -563,42 +569,15 @@ export class CardControlPlaneService {
       await this.serverDecision(sql,card,{type:'NOTE_MISSING'},actor,eventId);
     });
   }
-  private async applyStatusTx(
-    sql:RepositorySql,
-    card:CardRow,
-    eventId:number | null,
-    params:CardMutationParams & {status:CardStatus;blockedKind?:CardRow["blocked_kind"];blockedDetail?:string | null;wakeAt?:string;waitingFor?:string},
-    payload:Record<string,unknown>,
-    mode:"normal" | "bulk_idle" = "normal",
-  ):Promise<Record<string,unknown>> {
-    if (mode === "bulk_idle") await assertBulkStatusGuardTx(sql,card,params.status);
-    const bulkApproved=mode === "bulk_idle" && card.assignee_session_id !== null;
-    const claim=params.actorKind === "agent" && !bulkApproved ? await this.claim(sql,card,params.actorSessionId,payload) : {};
-    const unassignedRest=params.actorKind === "agent" && Boolean(params.actorSessionId)
-      && card.assignee_session_id === null && card.assignee_kind !== "human"
-      && ["todo","queued","on_hold","cancelled"].includes(params.status);
-    if (params.actorKind === "agent" && (!params.actorSessionId || card.assignee_session_id !== params.actorSessionId) && !unassignedRest && !bulkApproved)
-      throw Object.assign(new Error("Only the current assignee session may change card status. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work. A card without an assignee session can be moved to todo, queued, on_hold or cancelled by any internal agent session."), {statusCode:403});
-    const fields:Record<string,unknown> = { ...claim,status:params.status,
-      blocked_kind:params.status === "blocked" ? params.blockedKind ?? null : null,
-      blocked_detail:params.status === "blocked" ? params.blockedDetail ?? null : null,
-      queue_position_key:params.status === "queued" ? await this.position(sql,null,null,card.id)
-        : params.status === "blocked" && params.blockedKind === "limit" ? card.queue_position_key : null,
-      completed_kind:params.status === "done" ? params.actorKind === "system" ? null : params.actorKind ?? "agent" : null,
-      completed_session_id:params.status === "done" ? params.actorSessionId : null,
-      completed_event_id:params.status === "done" ? eventId : null,
-      completed_user_id:params.status === "done" ? params.actorUserId ?? null : null,
-      completed_at:params.status === "done" ? new Date() : null };
-    if (params.status === "awaiting_verification") {
-      // claim이 방금 담당을 세운 경우를 포함해, 이 트랜잭션에서 확정된 담당만 인정한다.
-      if (card.assignee_kind !== "session" || !card.assignee_session_id)
-        throw invalid("검증 대기는 담당 세션이 있는 카드만 설정할 수 있습니다");
-      const at=new Date();
-      const check=validateVerificationWait({wakeAt:params.wakeAt,waitingFor:params.waitingFor},at);
-      if (!check.ok) throw invalid(check.message);
-      fields.wake_at=check.wakeAt;
-      fields.waiting_for=check.waitingFor;
-      fields.now=sql.json(verificationWaitNow(check.waitingFor,check.wakeAt,at,params.actorSessionId));
+  private async applyStatusTx(sql:RepositorySql,card:CardRow,eventId:number|null,
+    params:CardMutationParams & {status:CardStatus},payload:Record<string,unknown>):Promise<Record<string,unknown>> {
+    const command={...params,type:'BULK_SET_STATUS'} as const;
+    const decision=await readRemainingCardDecision(sql,card,command,params);
+    const {writes}=await this.humanDecision(sql,card,command,params,eventId,[],{}, {},decision);
+    const fields=Object.assign({},...writes.filter(write=>write.kind==='card').map(write=>write.fields));
+    if(fields.assignee_session_id===params.actorSessionId){
+      Object.assign(card,{assignee_kind:fields.assignee_kind,assignee_session_id:fields.assignee_session_id,assignee_agent_id:null});
+      payload.claimed_assignee=true;
     }
     return fields;
   }
@@ -682,18 +661,19 @@ export class CardControlPlaneService {
     }
     throw new Error('Card evidence stage bound exceeded');
   }
-  private async humanDecision(sql:RepositorySql,card:CardRow|null,command:HumanCardCommand|ServerCardCommand,params:FolderActorParams,eventId:number|null,
+  private async humanDecision(sql:RepositorySql,card:CardRow|null,command:CardCommand,params:FolderActorParams,eventId:number|null,
     questions:Record<string,unknown>[]=[],evidence:import('./state/card_decision_facts.js').CardDecisionEvidence={},bindings:Pick<CardBindingValues,'values'|'lazy'>={},chosen?:import('./state/card_decision.js').CardDecision) {
     const actor={kind:params.actorKind,sessionId:params.actorSessionId,userId:params.actorUserId};
     const at=new Date();
     const decision=chosen??decideCardTransition(card,questions,evidence,command,actor,at.getTime());
     if(decision.kind==='reject') {
-      const failure=formatCardDecisionRejection(command.type,card?.id??'',decision.failure,{length:codePointLength('body' in command?command.body:'waitingFor' in command?command.waitingFor??'':'')});
+      const failure=formatCardDecisionFailure(decision.failure,{label:card?.number===null?card.id:`#${card?.number}`,status:card?.status??'',length:codePointLength('body' in command?command.body:'waitingFor' in command?command.waitingFor??'':'')});
       throw Object.assign(new Error(failure.message!),{...(failure.statusCode===null?{}:{statusCode:failure.statusCode}),...(failure.code===null?{}:{code:failure.code})});
     }
     const needsQueue=decision.actions.some(action=>Object.values(action.params?.fields??{}).some(value=>(value as {bind?:string}).bind==='queue.new'));
     const writes=decodeCardDecision(decision,{card:card??{},command,actor:{...actor,kind:params.actorKind??'agent'},now:at,eventId,
-      queuePosition:needsQueue?await this.position(sql,null,null,card?.id??null):undefined,...bindings},true);
+      queuePosition:needsQueue?await this.position(sql,null,null,card?.id??null):undefined,
+      lazy:{'formatted.replacement':()=>makeCardNow({text:'담당이 바뀌어 자동 재개 예약을 해제했습니다',turn:'agent'},at.toISOString(),params.actorSessionId),...bindings.lazy},values:bindings.values});
     return {decision,writes};
   }
   private async patchDecisionWrites(sql:RepositorySql,card:CardRow,writes:DecodedCardWrite[],params:FolderActorParams,eventId:number|null) {
@@ -702,13 +682,6 @@ export class CardControlPlaneService {
       for(const key of ['now','items'])if(fields[key]!==undefined&&fields[key]!==null)fields[key]=sql.json(fields[key] as never);
       await this.patch(sql,card,fields,params,eventId);
     }
-  }
-  private async claim(sql:RepositorySql,card:CardRow,sessionId:string | null,payload:Record<string,unknown>) {
-    if (!sessionId || !(await claimableCardSessions(sql,card.id,sessionId)).length) return {};
-    const fields={assignee_kind:"session",assignee_session_id:sessionId,assignee_agent_id:null};
-    Object.assign(card,fields);
-    payload.claimed_assignee=true;
-    return fields;
   }
   private async lockFolder(sql:RepositorySql,folderId:string) {
     const rows=await sql`SELECT id FROM folders WHERE id=${folderId} FOR UPDATE`;

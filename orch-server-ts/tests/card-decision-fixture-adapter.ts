@@ -1,3 +1,4 @@
+import { CARD_REMAINING_EVIDENCE_STAGES, remainingCardEvidence } from '../src/cards/state/card_remaining_evidence.js';
 import { serverCardEvidence, type ServerEvidenceRows } from '../src/cards/state/card_server_evidence.js';
 import { humanCardEvidence } from '../src/cards/state/card_human_evidence.js';
 import { cardCommandEntryFailure } from '../src/cards/state/card_command_entrance.js';
@@ -30,6 +31,10 @@ export function predictObservation(r:DecisionObservation) {
    requests:r.evidence.executionRequests as {state:string}[],dispatches:r.evidence.dispatches as any[],
    claimCandidates:r.evidence.claimableSessions as {session_id:string}[],resumeAt:r.evidence.limitAutoResumeAt?new Date(String(r.evidence.limitAutoResumeAt)):null}),
  };
+ if(c.type in CARD_REMAINING_EVIDENCE_STAGES)Object.assign(evidence,remainingCardEvidence({
+  loaded:CARD_REMAINING_EVIDENCE_STAGES[c.type as keyof typeof CARD_REMAINING_EVIDENCE_STAGES],
+  pendingRows:(r.evidence.executionRequests as {state:string}[]).filter(q=>q.state==='pending'),owner:session(row?.assignee_session_id),
+  claimCandidates:r.evidence.claimableSessions as {session_id:string}[],actorSessionId:actor.sessionId}));
  const entryFailure=cardCommandEntryFailure(c.type,{hasMode:Boolean(c.mode),requestedSpoken:c.kind==='spoken'},actor);
  const checkedAsk=c.type==='REQUEST_REVIEW'?checkCardReviewAsk(c.ask):undefined;
  const result:CardDecision=entryFailure?{kind:'reject',next:rowToStateValue(row,r.beforeQuestions),actions:[],failure:entryFailure}:

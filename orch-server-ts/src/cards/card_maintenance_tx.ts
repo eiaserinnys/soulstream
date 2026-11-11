@@ -1,15 +1,14 @@
+import { assertCardCommandEntrance } from './state/card_command_entrance.js';
+import type { CardDecisionCommand } from './state/card_decision_facts.js';
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type { AttachmentRef } from "@soulstream/wire-schema/attachments";
 import { attachmentRefsOf, collectCardAttachmentRefs, validateCardSourceRefsTx } from "./card_attachment_refs.js";
 import { mergeCardSourceAttachmentRefs, resolveCardLegacySourceRefsTx } from "./card_attachment_legacy_refs.js";
-import { assertNoPendingCardExecution } from "./card_execution_reservation.js";
 import { makeCardNow, type CardItem } from "./card_item_rules.js";
-import type { CardRow, CardStatus, FolderActorParams, FolderOperationRow, RepositorySql } from "./control_plane/card_types.js";
+import type { CardRow, FolderActorParams, FolderOperationRow, RepositorySql } from "./control_plane/card_types.js";
 
 export type BulkStatus = "todo" | "queued" | "on_hold" | "cancelled";
 
-/** The only statuses a card may hold before its first start. */
-const UNSTARTED_STATUSES: readonly CardStatus[] = ["todo", "queued", "on_hold"];
 
 export type CardCommentRow = {
   id: string;
@@ -37,10 +36,9 @@ export function invalidMaintenance(message: string): Error {
   return Object.assign(new Error(message), { statusCode: 422, code: "INVALID_CARD_REQUEST" });
 }
 
-export function requireMaintenanceSession(params: FolderActorParams): string {
-  if (params.actorKind !== "agent" || !params.actorSessionId?.trim())
-    throw Object.assign(new Error("card mutation requires an agent session"), { statusCode: 403 });
-  return params.actorSessionId;
+export function requireMaintenanceSession(params: FolderActorParams, command:CardDecisionCommand): string {
+  assertCardCommandEntrance(command,{}, {kind:params.actorKind,sessionId:params.actorSessionId?.trim()});
+  return params.actorSessionId!;
 }
 
 export async function readCardTx(sql: RepositorySql, cardId: string): Promise<CardRow | null> {
@@ -71,42 +69,6 @@ export async function readMergeCommentsTx(sql: RepositorySql, cardIds: readonly 
     WHERE card_id = ANY(${sql.array([...cardIds])}::text[])
       AND (kind='note' OR (author_kind='user' AND kind IN ('comment','spoken')))
     ORDER BY created_at,id`;
-}
-
-export async function assertUnstartedCardTx(sql: RepositorySql, card: CardRow): Promise<void> {
-  const condition = card.archived ? "보관됨"
-    : card.assignee_kind === "human" ? "사람 담당"
-    : card.assignee_session_id !== null ? "담당 세션 연결됨"
-    : UNSTARTED_STATUSES.includes(card.status) ? null : `현재 상태 ${card.status}`;
-  if (condition !== null)
-    throw Object.assign(new Error(`카드 ${cardLabel(card)}은 ${condition}으로 시작 전 카드가 아닙니다. 후속 지시와 담당 교체는 dispatch_work를 쓰세요.`),
-      { statusCode: 409, code: "CARD_NOT_UNSTARTED" });
-  try {
-    await assertNoPendingCardExecution(sql, card.id);
-  } catch (error) {
-    if ((error as { code?: unknown }).code !== "CARD_EXECUTION_PENDING") throw error;
-    throw Object.assign(new Error(`카드 ${cardLabel(card)}은 실행 결과 확인 중입니다. 같은 요청의 결과를 확인하세요. 후속 지시와 담당 교체는 dispatch_work를 쓰세요.`),
-      { statusCode: 409, code: "CARD_EXECUTION_PENDING" });
-  }
-}
-
-function assigneeRunning(card: CardRow): Error {
-  return Object.assign(new Error(`카드 ${cardLabel(card)}의 담당이 실행 중입니다. 담당 세션이 지금 턴을 돌고 있습니다. 후속 지시는 dispatch_work로 전하거나 턴이 끝난 뒤 다시 시도하세요.`),
-    { statusCode: 409, code: "CARD_ASSIGNEE_RUNNING" });
-}
-
-/** The bulk-only gate: a connected assignee may be held/cancelled only while idle. */
-export async function assertBulkStatusGuardTx(sql: RepositorySql, card: CardRow, status: CardStatus): Promise<void> {
-  if (card.assignee_kind === "human")
-    throw Object.assign(new Error("사람이 담당인 카드는 bulk_set_card_status로 바꿀 수 없습니다."), { statusCode: 403 });
-  if (card.assignee_session_id === null) return;
-  if (card.status === "running") throw assigneeRunning(card);
-  const session = (await sql<{ status: string | null }[]>`SELECT status FROM sessions WHERE session_id=${card.assignee_session_id}`)[0];
-  if (!session)
-    throw Object.assign(new Error("담당 세션을 찾을 수 없습니다. 현재 담당을 확인하세요."), { statusCode: 409 });
-  if (session.status === "running" || session.status === "initializing") throw assigneeRunning(card);
-  if (status === "todo" || status === "queued")
-    throw Object.assign(new Error("담당 세션이 있는 카드는 보류·취소만 가능합니다. 후속 지시와 담당 교체는 dispatch_work를 쓰세요."), { statusCode: 403 });
 }
 
 export async function updateAttachmentRefsTx(

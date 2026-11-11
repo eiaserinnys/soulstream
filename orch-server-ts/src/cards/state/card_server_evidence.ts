@@ -82,8 +82,7 @@ export function serverCardEvidence(input:ServerFenceEvidence|{rows:ServerEvidenc
   return {...serverCardEvidence({loaded:[...new Set(Object.values(CARD_SERVER_EVIDENCE_STAGES).flat())],execution:workExecutionMatches(worker,q.execution),
    workAdmission:{receipt,valid:workAdmissionMatches(c,s!,active?.input.agentId,valid)},claimCandidates:input.claimCandidates,actorSessionId:s,
    sessionCardId:r.sessions.find(w=>w.session_id===q.sessionId)?.card_id,statusChanged:r.executionStatusChanged,pendingRows:input.requests.filter(q=>q.state==='pending'),
-   policyEnabled:enabled,admission:outcome,owner,terminationEventId:q.terminationEventId,resumeAt:input.resumeAt}),
-   ownerState:!owner?'missing':['running','initializing'].includes(owner.status??'')?owner.status!:'idle'};
+   policyEnabled:enabled,admission:outcome,owner,terminationEventId:q.terminationEventId,resumeAt:input.resumeAt})};
  }
  const e:CardDecisionEvidence={loaded:input.loaded};
  // Missing steps stay absent, rather than becoming negative evidence.

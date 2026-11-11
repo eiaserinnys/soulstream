@@ -1,3 +1,4 @@
+import { CARD_REMAINING_EVIDENCE_STAGES } from './card_remaining_evidence.js';
 import { CARD_SERVER_EVIDENCE_STAGES } from './card_server_command.js';
 import { toMermaid, type ChartSpec } from '../../statechart/mermaid.js';
 import { cardDecisionMachine } from './card_decision_machine.js';
@@ -15,8 +16,9 @@ const plans:{id:string;title:string;spec:ChartSpec;events:CardDecisionCommand[]}
  {id:'02-status',title:'카드 상태 계층',events:['CREATE','SET_STATUS','ASK_QUESTION','REQUEST_REVIEW','BLOCK_FOR_LIMIT','RESUME_VERIFICATION'],spec:{include:['cardDecision.status']}},
  {id:'03-question',title:'열린 질문의 기억',events:['ASK_QUESTION','ANSWER_QUESTION','WITHDRAW_QUESTION','HUMAN_INPUT','ADD_COMMENT'],spec:{include:['cardDecision.question']}},
  {id:'04-reservation',title:'예약의 기억',events:['SET_STATUS','BLOCK_FOR_LIMIT','RESUME_SHORT_LIMIT','RESUME_LONG_LIMIT','RESUME_VERIFICATION','PATCH_CARD_CONTROL'],spec:{include:['cardDecision.reservation']}},
- {id:'05-assignee-archive',title:'담당 종류와 보관',events:['CREATE','CLAIM','CONFIRM_EXECUTION','REGISTER_REPLACEMENT','PATCH_CARD_CONTROL'],spec:{include:['cardDecision.assignee','cardDecision.archive']}},
+ {id:'05-assignee-archive',title:'담당 종류와 보관',events:['CREATE','CONFIRM_EXECUTION','REGISTER_REPLACEMENT','PATCH_CARD_CONTROL'],spec:{include:['cardDecision.assignee','cardDecision.archive']}},
  {id:'06-evidence',title:'서버 증거 단계 지목',events:Object.keys(CARD_SERVER_EVIDENCE_STAGES) as CardDecisionCommand[],spec:{include:['cardDecision.verdict'],targetless:true}},
+ {id:'07-maintenance-evidence',title:'유지보수 증거 단계 지목',events:Object.keys(CARD_REMAINING_EVIDENCE_STAGES) as CardDecisionCommand[],spec:{include:['cardDecision.verdict'],targetless:true}},
 ];
 function validateDescriptions(node:typeof root){
  for(const transitions of Object.values(node.on))for(const t of transitions)if(!t.description||!t.meta?.label)throw new Error(`Missing transition description: ${node.id} ${t.eventType}`);
@@ -39,7 +41,7 @@ function permission(report:CardPromiseReport,c:CardDecisionCommand,actor:string,
 export function generateCardStateDocument(report:CardPromiseReport=checkCardPromises()){
  const charts=renderCardCharts(report);
  const lines=['# 카드 상태 결정 규칙','',
- '이 문서는 결정 기계와 검증 세계에서 만든 생성물이다. 동작 기준 커밋은 c8b9c745a, 구조 전환 시작 기준은 52fb382d5다. 기준 위의 결정 정의로 그림, 권한, 규칙과 검사를 함께 생성한다. PR 2의 사람과 질문 명령, PR 3의 서버 명령 여덟 개를 운영 서비스에 연결했다. 유지보수와 공통 patch는 PR 4에서 연결한다.','',
+ '이 문서는 결정 기계와 검증 세계에서 만든 생성물이다. 동작 기준 커밋은 c8b9c745a, 구조 전환 시작 기준은 52fb382d5다. 기준 위의 결정 정의로 그림, 권한, 규칙과 검사를 함께 생성한다. 사람과 질문, 서버, 유지보수와 담당 교체의 모든 명령을 운영 서비스에 연결했다. 독립 CLAIM 사건은 없으며 담당 확보는 각 명령의 claiming 효과다.','',
  '저장 영역은 status, question, reservation, assignee, archive다. verdict는 목표 없는 전이로 허용, 무변경, 거절을 고른다. 담당 세션 생존과 감독 PAS, 다른 장 수와 내린 기록은 검증 세계의 환경이다. 원래 담당과 교체 담당의 생존 상태, 질문 작성자 관계, limitedOwner는 저장 상태 그림에서 제거했다. 작성자와 담당 관계는 사건 사실로, 생존은 환경으로 옮겼으며 예약 담당 불일치는 DB CHECK가 금지한다.','',
  `도달 세계 ${report.configurationCount}개. 유한 사실은 명령별 값 목록을 전부 열거하고 사실 일관성만 걸러 BFS로 탐색한다. 권한 표는 도달 세계에서 실제 선택한 verdict와 거절 가드 결과다. 같은 결정 값과 환경 담당 상태의 판정은 재사용한다.`,
  ''];
@@ -55,15 +57,15 @@ export function generateCardStateDocument(report:CardPromiseReport=checkCardProm
  }
  lines.push('', '## 주체 관계별 권한','', 'PAS는 agent 세션이다. 현재 담당, 작성자, 담당이면서 작성자인 관계를 별도 행으로 그대로 보여 준다. 입구 없음은 명령 출처 metadata에서 읽으며 거절 가드와 기존 오류는 실제 열거 결과다.','',
  '| 명령 | 주체 관계 | 사람 | 현재 담당 세션 | 다른 agent 세션 | PAS | 서버 | 필요한 증거 단계 |', '| :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- |');
- for(const c of commands)for(const entrance of c==='ADD_COMMENT'?CARD_FACT_VALUES.ADD_COMMENT.entrance:[null])for(const actor of CARD_ACTORS){const p=permission(report,c,actor,entrance),isAgent=!['human','server','external'].includes(actor),owner=['owner','ownerAuthor'].includes(actor);lines.push(`| ${c}${entrance?' ('+entrance+')':''} | ${actor} | ${actor==='human'?p:'해당 없음'} | ${isAgent&&owner?p:'해당 없음'} | ${isAgent&&!owner?p:'해당 없음'} | ${isAgent&&actor!=='anonymousAgent'?p:'해당 없음'} | ${actor==='server'?p:'해당 없음'} | ${CARD_SERVER_EVIDENCE_STAGES[c as keyof typeof CARD_SERVER_EVIDENCE_STAGES]?.join(' → ')||'없음'} |`);}
+ for(const c of commands)for(const entrance of c==='ADD_COMMENT'?CARD_FACT_VALUES.ADD_COMMENT.entrance:[null])for(const actor of CARD_ACTORS){const p=permission(report,c,actor,entrance),isAgent=!['human','server','external'].includes(actor),owner=['owner','ownerAuthor'].includes(actor);lines.push(`| ${c}${entrance?' ('+entrance+')':''} | ${actor} | ${actor==='human'?p:'해당 없음'} | ${isAgent&&owner?p:'해당 없음'} | ${isAgent&&!owner?p:'해당 없음'} | ${isAgent&&actor!=='anonymousAgent'?p:'해당 없음'} | ${actor==='server'?p:'해당 없음'} | ${({...CARD_SERVER_EVIDENCE_STAGES,...CARD_REMAINING_EVIDENCE_STAGES} as Partial<Record<CardDecisionCommand,readonly string[]>>)[c]?.join(' → ')||'없음'} |`);}
  lines.push('', '## 규칙 요약과 운영 호출지','', '| 명령 | 전이 설명 | 운영 출처 |', '| :-- | :-- | :-- |');
  for(const c of commands){const t=cardDecisionMachine.getStateNodeById('cardDecision.verdict.ready').on[c]![0]!;lines.push(`| ${c} | ${t.meta!.rule} | ${(t.meta!.callers as readonly string[]).join('<br>')} |`);}
  lines.push('', '### 연결된 운영 입구', '', '| 명령 | 결정 기계를 부르는 입구 |', '| :-- | :-- |');
  for(const [command,callers] of Object.entries(CARD_RUNTIME_DECISION_CALLS))lines.push(`| ${command} | ${callers.join('<br>')} |`);
- lines.push('', '주체 종류와 입력만 보는 입구 검사는 단일 입구 표를 읽어 카드 잠금과 version 확인보다 먼저 서비스 입구에서 확인한다. ANSWER_QUESTION은 사람만 들어오며, 커멘트 mode와 spoken의 신뢰 주체 검사도 이 표에 둔다. 상태와 증거를 보는 권한은 잠금 뒤 결정 기계가 정한다. 서버 입구는 기계가 needsEvidence로 지목한 단계만 읽고 다시 묻는다. 이 중간 결과에는 쓰기가 없고, 마지막 apply, noop, reject만 판정이다. 마지막 판정 뒤 decoder의 요청 쓰기만 기존 patchCardTx에 넘긴다. 예약의 최종 정리는 PR 4까지 patchCardTx가 맡는다. SQL 잠금, version fence, 멱등 키, 질문 조건부 UPDATE와 커밋 뒤 판과 알림 처리는 기존 서비스 경계에 남는다.','');
+ lines.push('', '주체 종류와 입력만 보는 입구 검사는 단일 입구 표를 읽어 카드 잠금과 version 확인보다 먼저 서비스 입구에서 확인한다. ANSWER_QUESTION은 사람만 들어오며, 커멘트 mode와 spoken의 신뢰 주체 검사도 이 표에 둔다. 상태와 증거를 보는 권한은 잠금 뒤 결정 기계가 정한다. 서버 입구는 기계가 needsEvidence로 지목한 단계만 읽고 다시 묻는다. 이 중간 결과에는 쓰기가 없고, 마지막 apply, noop, reject만 판정이다. 마지막 판정 뒤 decoder의 최종 쓰기를 patchCardTx에 넘긴다. 예약 제거와 담당 교체 문구는 기계가 고른 액션이며 저장기는 단일 담당 SQL fence, 번호 발급과 감사 칸 갱신을 유지한다. SQL 잠금, version fence, 멱등 키, 질문 조건부 UPDATE와 커밋 뒤 판과 알림 처리는 기존 서비스 경계에 남는다.','');
  lines.push('입력 모양 검사는 기존 위치를 지킨다. 검수 ask는 잠금과 version 확인 뒤, 상태 판정 전에 한 번 검사하고 확인한 값을 서식에 넘긴다. 검증 대기 문구처럼 기존에 판정 뒤 검사하던 서식은 이름별 지연 바인딩으로 둔다. decoder는 선택된 쓰기가 bind한 이름만 계산하며, 같은 이름의 결과는 한 번의 decode 안에서 재사용한다. 선택하지 않은 서식과 시각 변환은 실행하지 않는다.','');
  lines.push('## 서버 증거 단계', '', '| 명령 | 단계 지목 순서 |', '| :-- | :-- |');
- for(const [command,stages] of Object.entries(CARD_SERVER_EVIDENCE_STAGES))lines.push(`| ${command} | ${stages.join(' → ')||'없음'} |`);
+ for(const [command,stages] of Object.entries({...CARD_SERVER_EVIDENCE_STAGES,...CARD_REMAINING_EVIDENCE_STAGES}))lines.push(`| ${command} | ${stages.join(' → ')||'없음'} |`);
  lines.push('', 'needsEvidence는 허용이나 거절이 아니다. 단계 증거가 없으면 먼저 필요한 읽기를 지목한다. 앞선 거절은 뒤의 읽기와 잠금을 생략한다. admission은 정책이 켜지고 허가 입력이 있을 때만, claim은 수락된 자동 실행이 아닐 때만 요구한다. 권한 표는 필요한 증거가 갖춰진 최종 판정을 열거하며 단계 지목 전이는 위 그림에 보인다.', '');
  lines.push('', '## 약속과 구멍','', '| 약속 | 위반 수 | 예시 최단 경로 |','| :-- | --: | :-- |');
  for(const p of [report.promises[0]!,report.cardEntryPromise,...report.promises.slice(1)])lines.push(`| ${p.name} | ${p.violations} | ${p.example.join(' → ')||'없음'} |`);

@@ -59,20 +59,23 @@ for(const c of ['DISPATCH','RESUME_LONG_LIMIT'] as const){
  need(c,'admission',fact('policyEnabled'),fact('hasAdmission'));
  for(const a of ['lockedPolicyDisabled','stale','capacity','missingCapacity','ineligible'])reject(c,a,`admission_${a}`,and([fact('policyEnabled'),fact('hasAdmission'),fact('admission',a)]));
 }
-for(const c of ['BULK_SET_STATUS','MERGE_SOURCE','UPDATE_UNSTARTED'] as const)reject(c,'session','maintenanceSession',not(session));
 reject('BULK_SET_STATUS','human','bulkHuman',inside('a_human'));
-reject('BULK_SET_STATUS','cardRunning','bulkRunning',and([inside('a_session'),inside('s_running')]));
-reject('BULK_SET_STATUS','missing','bulkMissing',and([inside('a_session'),fact('ownerState','missing')]));
-reject('BULK_SET_STATUS','ownerRunning','bulkRunning',and([inside('a_session'),or([fact('ownerState','running'),fact('ownerState','initializing')])]));
-reject('BULK_SET_STATUS','rest','bulkRest',and([inside('a_session'),or([fact('target','todo'),fact('target','queued')])]));
+reject('BULK_SET_STATUS','cardRunning','bulkRunning',and([fact('hasOwnerSession'),inside('s_running')]));
+need('BULK_SET_STATUS','ownerState');
+reject('BULK_SET_STATUS','missing','bulkMissing',and([fact('hasOwnerSession'),fact('ownerState','missing')]));
+reject('BULK_SET_STATUS','ownerRunning','bulkRunning',and([fact('hasOwnerSession'),or([fact('ownerState','running'),fact('ownerState','initializing')])]));
+reject('BULK_SET_STATUS','rest','bulkRest',and([fact('hasOwnerSession'),or([fact('target','todo'),fact('target','queued')])]));
+need('BULK_SET_STATUS','claim',not(fact('hasOwnerSession')));
 for(const c of ['MERGE_SOURCE','UPDATE_UNSTARTED'] as const){
  reject(c,'archived','unstarted_archived',inside('arch_archived'));
  reject(c,'human','unstarted_human',inside('a_human'));
- reject(c,'connected','unstarted_session',inside('a_session'));
+ reject(c,'connected','unstarted_session',fact('hasOwnerSession'));
  reject(c,'status','unstarted_status',not(any('s_todo','s_queued','s_missing','s_hold')));
+ need(c,'pending');
  reject(c,'pending','maintenancePending',fact('pending'));
 }
-reject('SAVE_EXECUTION_SETTINGS','pending','pending',fact('pending'));reject('SAVE_EXECUTION_SETTINGS','owner','settingsOwner',inside('a_session'));
+need('SAVE_EXECUTION_SETTINGS','pending');
+reject('SAVE_EXECUTION_SETTINGS','pending','pending',fact('pending'));reject('SAVE_EXECUTION_SETTINGS','owner','settingsOwner',fact('hasOwnerSession'));
 reject('REGISTER_REPLACEMENT','owner','replacementOwner',not(fact('previousOwnerMatch')));
 for(const c of Object.keys(CARD_FACT_VALUES))decisionGuards[`permitted.${c}`]=not(or(rejections[c]!.map(r=>r.guard)));
 decisionGuards.humanResumable=resumable;

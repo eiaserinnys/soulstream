@@ -1,3 +1,8 @@
+import { decideCardTransition } from '../../cards/state/card_decision.js';
+import { decodeCardDecision } from '../../cards/state/card_decision_decoder.js';
+import { remainingCardEvidence } from '../../cards/state/card_remaining_evidence.js';
+import { formatCardDecisionFailure } from '../../cards/state/card_decision_errors.js';
+import { makeCardNow } from '../../cards/card_item_rules.js';
 import { randomUUID } from "node:crypto";
 import type { SqlClient } from "../control_plane_types.js";
 import type { RepositorySql } from "../../cards/control_plane/card_types.js";
@@ -16,15 +21,25 @@ export async function applySessionCardReplacement(sql:SqlClient,sessionId:string
       AND op.actor_kind='agent' AND op.actor_session_id IS NOT NULL AND op.payload_json->>'dispatch_kind'='replace_assignee'
       AND op.payload_json->>'new_session_id'=r.session_id LIMIT 1`)[0];
   if(!row)return;
-  const card=(await sql<CardRow[]>`
+  const found=(await sql<CardRow[]>`
     SELECT * FROM cards WHERE id=${row.card_id} FOR UPDATE`)[0];
+  const card=found!;
   const oldId=row.payload_json.previous_assignee.session_id;
-  if(!card || card.assignee_kind!=="session" || card.assignee_session_id!==oldId)
-    throw Object.assign(new Error("예약 이후 카드 담당이 바뀌었습니다. 현재 담당을 확인하세요."),{statusCode:409});
+  const command={type:'REGISTER_REPLACEMENT',sessionId} as const;
+  const actor={actorKind:'agent' as const,actorSessionId:row.actor_session_id,actorUserId:row.actor_user_id};
+  const decision=decideCardTransition(card??null,[],remainingCardEvidence({loaded:[],
+    previousOwnerMatch:!!card&&card.assignee_kind==='session'&&card.assignee_session_id===oldId}),command,
+    {kind:actor.actorKind,sessionId:actor.actorSessionId,userId:actor.actorUserId},Date.now());
+  if(decision.kind==='reject'){
+    const error=formatCardDecisionFailure(decision.failure);
+    throw Object.assign(new Error(error.message),{statusCode:error.statusCode});
+  }
   const repositorySql=sql as unknown as RepositorySql;
-  await patchCardTx(repositorySql,card,{assignee_kind:"session",assignee_session_id:sessionId,assignee_agent_id:null,
-    node_id:row.payload_json.target.nodeId,model_preset:row.payload_json.target.modelPreset},
-    {actorKind:"agent",actorSessionId:row.actor_session_id,actorUserId:row.actor_user_id},null);
+  const at=new Date();
+  const writes=decodeCardDecision(decision,{card,command,actor:{kind:'agent',sessionId:row.actor_session_id,userId:row.actor_user_id},now:at,eventId:null,
+    values:{'command.control':{node_id:row.payload_json.target.nodeId,model_preset:row.payload_json.target.modelPreset}},
+    lazy:{'formatted.replacement':()=>repositorySql.json(makeCardNow({text:'담당이 바뀌어 자동 재개 예약을 해제했습니다',turn:'agent'},at.toISOString(),row.actor_session_id))}});
+  for(const write of writes)await patchCardTx(repositorySql,card,write.fields,actor,null);
   const reassignedChildren=await sql<Array<{session_id:string}>>`
     UPDATE sessions SET caller_session_id=${sessionId} WHERE card_id=${row.card_id}
       AND caller_session_id=${oldId} AND session_id<>${sessionId}

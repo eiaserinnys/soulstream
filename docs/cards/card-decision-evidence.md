@@ -43,9 +43,9 @@
 | BLOCK_FOR_LIMIT, blockCardForLimit | termination → limitReset | 현재 실행 중 담당 판정 뒤 sessions FOR SHARE. 최신 한도 종료와 event ID가 일치할 때만 기존 events 구간 SELECT와 readLimitAutoResumeAt 계산을 수행한다. |
 | RESUME_SHORT_LIMIT, resumeLimitedCard | pending | 상태, 담당, 예약 시각 일치와 도래 판정 뒤에만 pending SELECT. 시각 바로 전에는 거절하고 같은 시각부터 허용한다. |
 | RESUME_VERIFICATION, resumeVerificationCard | 없음 | 잠긴 카드의 담당과 wake_at 일치만 판정한다. 도래 선별과 실제 깨우기는 기존 호출부에 남는다. |
-| NOTE_MISSING, noteMissingAssignee | 없음 | 상태 자격 제한을 추가하지 않고 blocked_detail만 요청 쓰기로 넘긴다. |
+| NOTE_MISSING, noteMissingAssignee | 없음 | 상태 자격 제한을 추가하지 않고 blocked_detail과 선택된 최종 예약 정리를 넘긴다. |
 
-모든 행의 앞에는 기존 mutateCard의 cards FOR UPDATE와 expectedVersion 검사가 있다. 잠금 대상, 모드, 읽는 순서와 트랜잭션 경계는 바꾸지 않는다. 실행 영수증에 따른 dispatch running UPDATE와 허가 dispatch INSERT는 최종 apply 뒤 실행하고, 기존처럼 카드 UPDATE보다 앞선다. 카드 UPDATE는 모두 patchCardTx를 통하며 decoder의 normalization 쓰기는 넘기지 않는다.
+모든 행의 앞에는 기존 mutateCard의 cards FOR UPDATE와 expectedVersion 검사가 있다. 잠금 대상, 모드, 읽는 순서와 트랜잭션 경계는 바꾸지 않는다. 실행 영수증에 따른 dispatch running UPDATE와 허가 dispatch INSERT는 최종 apply 뒤 실행하고, 기존처럼 카드 UPDATE보다 앞선다. 카드 UPDATE는 모두 patchCardTx를 통하며 decoder의 최종 예약 정리 쓰기까지 넘긴다.
 
 serverCardEvidence는 운영 fence 결과와 고정 관찰의 원시 행에서 같은 증거를 만드는 순수 정본이다. 실행 등록, 영수증, admission run/용량/대상, 현재 한도 종료의 계산을 fixture adapter에서 옮겼다. SQL이 보장하는 실행 등록·receipt 상관관계·정책 version·lease·admittedCardVersion fence는 기존 SQL에 남는다. 원시 행에서의 fence 결과 재구성과 운영 결과를 같은 증거 형식으로 묶는다. 한도 해제 시각은 기존 readLimitAutoResumeAt의 결과이며 관찰 fixture의 기록 값을 그대로 사용한다.
 
@@ -71,3 +71,36 @@ assertPolicyAdmission은 orchestration 설정, decided run의 lease와 결정, d
 첨부 URL 검증은 카드 상태 결정 밖의 기존 경계다. 위 메서드가 본문/요청을 쓰면 validateCardSourceRefsTx와 resolveCardLegacySourceRefsTx가 조건부로 file_assets, attachment_legacy_aliases, sessions와 cards를 읽는다. 고정 world/cases에는 내부 첨부 및 legacy URL이 없어서 해당 SQL 분기는 실행되지 않는다. assets는 현재 행을 기록한다. legacy alias를 만드는 world 어휘는 없으며 관찰을 새로 발명하지 않는다. 폴더 ACL 콜백은 기존 하니스가 허용하는 입력이고 부수 효과 및 판 metadata는 결정 함수의 합격 비교 범위 밖이다.
 
 질문 답/철회의 남은 질문 조회는 같은 트랜잭션의 선행 질문 UPDATE를 본다. 원시 beforeQuestions와 명령으로 그 한 행의 변화를 정확히 정할 수 있으므로 트랜잭션 전용 외부 증거가 필요하지 않다. 나머지 판정 읽기는 수집 전후에 다른 writer가 없는 이 격리 시험에서 호출 전 조회할 수 있다. 서비스의 locking/검증 SQL을 수집기로 옮기거나 실행하지 않는다.
+
+## PR 4 최종 연결 (기준 54476b489)
+
+CARD_RUNTIME_DECISION_CALLS의 22개 명령은 모두 런타임 호출지를 가진다. CLAIM은 독립 사건에서 제거했고 담당 확보는 각 명령의 claiming 효과로 남겼다. 명령 키와 런타임 호출 키의 일치는 inventory 시험이 확인한다. CARD_RUNTIME_SQL_WRITERS는 기존 INSERT 1곳과 UPDATE 2곳을 유지한다.
+
+| 명령 | 서비스에서 제거한 판정 | 남긴 경계와 검사 위치 |
+| :-- | :-- | :-- |
+| BULK_SET_STATUS | 사람 담당, running 카드, 담당 세션 missing/running/initializing, 연결 담당의 todo/queued 거절과 목표 상태별 완료·대기열 선택 | 카드별 트랜잭션과 부분 실패 envelope, 멱등 조회, 카드 FOR UPDATE, 기존 위치의 담당 상태 SELECT와 claim 후보 SELECT, 이유 노트 INSERT |
+| MERGE_SOURCE | 대상·원본의 시작 전 상태, 사람·세션 담당, 보관, pending 거절과 원본 닫기 | UUID 정렬 다중 FOR UPDATE, 대상 후 원본 순서, 원본별 노트 후 UPDATE와 대상 노트·내용 합치기 |
+| UPDATE_UNSTARTED | 시작 전 상태와 담당·보관·pending 거절 | pending 뒤 expectedVersion, 그 뒤 요청 첨부 검사와 필드 쓰기 |
+| SAVE_EXECUTION_SETTINGS | pending과 세션 담당 거절, 담당 종류 선택 | 카드 lock/version, pending SELECT, 판정 뒤 기존 폴더 잠금·이동 UPDATE, 설정 UPDATE |
+| PATCH_CARD_CONTROL | 예약 취소와 담당 교체 문구, 보관 값 선택 | generic update payload 정리, 단일 담당 SQL fence, 기존 UPDATE 순서 |
+| REGISTER_REPLACEMENT | 이전 담당 불일치 거절과 새 담당·예약 정리 | 등록 트랜잭션, 실행 요청/operation 조회 후 카드 FOR UPDATE, 자식 세션 관계 이전과 operation 기록 |
+
+순수 remainingCardEvidence가 원시 pending 행, 담당 상태 행, claim 후보 행과 이전 담당 일치를 증거로 만든다. 서비스와 fixture adapter가 같은 함수를 쓴다. needsEvidence는 기존 SQL을 읽을 다음 단계만 지목하며 앞선 거절은 뒤의 읽기를 생략한다. pending은 기존 무잠금 SELECT, 담당 상태도 기존 무잠금 SELECT, claimableCardSessions의 SQL과 정렬은 그대로다. 기존 검사에 FOR SHARE나 새 잠금을 더하지 않았다.
+
+| 제거한 patch 분기 | 최종 기계 액션과 decoder 쓰기 |
+| :-- | :-- |
+| 명시한 비검증 status의 wake_at/waiting_for 정리 | status 전이의 write 액션이 두 null을 같은 state 단계에 넣는다 |
+| 한도 탈출·담당 교체·보관의 한도 예약 정리 | reservation 전이의 clearLimit 액션이 limit_resume_session_id와 limit_resume_at의 null을 쓴다 |
+| 예약 담당 교체 시 now가 없을 때 안내문 | archive의 이름 있는 조건이 formatted.replacement를 선택하고 decoder가 해당 이름만 계산한다 |
+
+단일 담당 확인은 SQL fence로, 번호 발급과 status_changed_at, version, updated_*는 저장 칸 처리로 patchCardTx에 남겼다. 별도 APPLY_PATCH 사건이나 요청 쓰기 전용 adapter는 없다.
+
+card-final-writes.postgres.test.ts는 기준 54476b489의 실제 facade와 patchCardTx를 임시 모듈로 불러 비검증 상태 전환의 예약 null, 완료 정보, 담당 교체 안내문, 보관의 문구 보존, 보관 해제 번호 발급·보존 기대값을 확인한다. 같은 시험을 최종 코드에도 적용한다. card-maintenance-order.test.ts는 같은 기준의 facade·maintenance 메서드로 입구 거절, 시작 전 상태→pending→version, bulk 담당 조회→claim과 한 번의 쓰기, 설정 pending→담당→폴더 이동의 오류와 SQL 순서·개수를 고정한다. 기존 fixture는 재수집하지 않는다.
+
+과도기 시험 변경은 card-machine-inventory.test.ts의 명령 목록·개수·파일 검사와 card-decision.test.ts의 requestedOnly 계약에 한정한다. 최종 쓰기 시험은 옛 full 기대값과 status/completed_* 기대값을 그대로 유지하고, 검증 대기의 명령 시각과 문구도 그대로 검사한다. card-formatter-order.test.ts는 세 번째 인자만 제거하고 선택되지 않은 lazy 계산이 실행되지 않는 기대값을 유지한다. 순수 bulk 시험에는 이미 읽힌 ownerState/claim 단계를 준비 데이터로 표시했다.
+
+담당 확보의 경우 claimableCardSessions는 assignee_kind=agent, assignee_session_id IS NULL인 행만 후보로 읽는다. cards_limit_resume_check는 예약 담당이 현재 session 담당과 같아야 한다고 강제하므로 이 입력에는 한도 예약이 있을 수 없다. 기준 실제 bulk 메서드의 담당 확보 회귀는 now 보존, 두 예약 칸 null, version 한 번 증가를 확인한다. 세션 담당을 바꾸는 generic patch와 REGISTER_REPLACEMENT의 예약 취소·안내문은 별도 효과로 유지한다. 기존에 불가능한 예약·담당 조합을 새 동작으로 만들지 않았다.
+
+독립 코드 검수에서 sessions 삭제의 ON DELETE SET NULL 경로를 대조했다. 이때 assignee_kind=session은 남지만 assignee_session_id는 null이다. 유지보수 네 명령의 연결 여부는 hasOwnerSession이라는 ID 존재 사실로 도출하며 종류 영역을 대신 쓰지 않는다. 기준 실제 bulk, 시작 전 편집, merge, 실행 설정 메서드로 동일한 삭제 후 행을 처리하는 회귀 시험을 둔다. 검증 세계는 이 존재 사실과 주체·담당 종류·담당 조회 결과의 모순만 거른다.
+
+담당만 교체하고 archived 입력이 없는 PATCH_CARD_CONTROL에도 archive 영역의 명시적 무목표 전이를 두었다. 이전 증강 함수는 archived 입력이 있는 두 전이에만 안내문을 붙여 이 경로의 안내문을 빠뜨렸으며, 기존 patch가 가리고 있었다. 실제 한도 재개 시험과 기준 patch 회귀의 기대값을 유지해 이 누락을 확인했다.

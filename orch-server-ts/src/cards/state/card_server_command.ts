@@ -21,9 +21,9 @@ export const CARD_SERVER_EVIDENCE_STAGES = {
  RESUME_SHORT_LIMIT:['pending'],
  RESUME_VERIFICATION:[],NOTE_MISSING:[],
 } as const;
-export type ServerEvidenceStage = typeof CARD_SERVER_EVIDENCE_STAGES[keyof typeof CARD_SERVER_EVIDENCE_STAGES][number];
+export type ServerEvidenceStage = 'ownerState' | typeof CARD_SERVER_EVIDENCE_STAGES[keyof typeof CARD_SERVER_EVIDENCE_STAGES][number];
 export const SERVER_EVIDENCE_LABELS:Record<ServerEvidenceStage,string>={
- execution:'실행 등록',workAdmission:'자동 실행 영수증과 허가',claim:'담당 후보',executionSession:'실행 세션',executionStatus:'실행 뒤 상태 변경',
+ ownerState:'담당 세션 상태',execution:'실행 등록',workAdmission:'자동 실행 영수증과 허가',claim:'담당 후보',executionSession:'실행 세션',executionStatus:'실행 뒤 상태 변경',
  pending:'미확인 실행 요청',policy:'정책 설정',admission:'허가 fence',termination:'현재 한도 종료',limitReset:'한도 해제 시각',
 };
 export const admissionResults=['ok','lockedPolicyDisabled','stale','capacity','missingCapacity','ineligible'] as const;

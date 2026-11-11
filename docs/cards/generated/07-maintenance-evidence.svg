@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="pele pele-state" viewBox="0 0 780 390" width="780" height="390" style="max-width:100%;height:auto;--_bg:var(--pele-bg,#fff);--_fg:var(--pele-fg,#1f1f1f);--_m:var(--pele-muted,#6e6e6e);--_l:var(--pele-line,#1f1f1f);--_s:var(--pele-surface,#f3f3f3);--_a:var(--pele-surface-alt,#e6e6e6);--_b:var(--pele-border,#8a8a8a);--_c:var(--pele-accent,#5b7bd5);color:var(--_fg);--_fm:var(--pele-font-mono,monospace);font:16px sans-serif;letter-spacing:normal;word-spacing:normal;text-transform:none;direction:ltr;font-family:var(--pele-font,Pretendard Variable, Noto Sans CJK KR, Noto Sans KR, sans-serif)" fill="var(--_fg)" role="graphics-document document" aria-roledescription="state"><style>/*
+ * Statechart colors for Pele SVG output.
+ * Adapted from pstack skills/statechart/references/render.md
+ * (https://github.com/poteto/pstack), MIT License, Copyright (c) 2026 Lauren Tan.
+ * The mark rules use !important because Pele writes classDef colors as style attributes.
+ */
+.pele {
+  background-color: var(--pele-bg);
+  --pele-bg: #ffffff;
+  --pele-fg: #1c1c1c;
+  --pele-muted: #656565;
+  --pele-line: #808080;
+  --pele-surface: #fcfcfc;
+  --pele-surface-alt: #f1f1f1;
+  --pele-border: #c9c9c9;
+}
+.pele .blue rect { fill: #c3e0ff; }
+.pele .orange rect { fill: #f0d3bf; }
+.pele .purple rect { fill: #e3d5ff; }
+.pele .yellow rect { fill: #f0dcbf; }
+.pele .teal rect { fill: #bfe3df; }
+.pele .tan rect { fill: #e5d9ce; }
+.pele .pink rect { fill: #ffcbe6; }
+.pele .breaks rect { fill: #ffecee !important; stroke: #e72e3b !important; stroke-width: 2.5px !important; }
+.pele .breaks text { fill: #cd2834 !important; }
+.pele .mayBreak rect { fill: #fff3e6 !important; stroke: #e8730c !important; stroke-width: 2.5px !important; }
+.pele .mayBreak text { fill: #b85a06 !important; }
+.pele .bugPath rect { stroke: #1680f3 !important; stroke-width: 2.5px !important; }
+.pele .repeats rect { stroke: #9b35d6 !important; stroke-width: 2.5px !important; stroke-dasharray: 6 3; }
+@media (prefers-color-scheme: dark) {
+  .pele {
+    --pele-bg: #1f1f1f;
+    --pele-fg: #f5f5f5;
+    --pele-muted: #acacac;
+    --pele-line: #939393;
+    --pele-surface: #121212;
+    --pele-surface-alt: #2c2c2c;
+    --pele-border: #4e4e4e;
+  }
+  .pele .blue rect { fill: #1b3857; }
+  .pele .orange rect { fill: #573117; }
+  .pele .purple rect { fill: #3c2e57; }
+  .pele .yellow rect { fill: #573d17; }
+  .pele .teal rect { fill: #174641; }
+  .pele .tan rect { fill: #3d3127; }
+  .pele .pink rect { fill: #57233e; }
+  .pele .breaks rect { fill: #2e2021 !important; stroke: #cf2b35 !important; }
+  .pele .breaks text { fill: #ff6463 !important; }
+  .pele .mayBreak rect { fill: #2e2619 !important; stroke: #d0700f !important; }
+  .pele .mayBreak text { fill: #ffa257 !important; }
+  .pele .bugPath rect { stroke: #116dd2 !important; }
+  .pele .repeats rect { stroke: #9a3fcf !important; }
+}
+</style><g class="pele-clusters"><g class="pele-cluster pele-state-composite" data-id="cardDecision_verdict"><rect x="8" y="8" width="763.58" height="374" rx="10" fill="var(--_a)" fill-opacity="0.5" stroke="var(--_b)"/><path d="M8,44H771.58" fill="none" stroke="var(--_b)"/><text class="pele-cluster-label" x="389.79" y="31.6" text-anchor="middle">명령 판정</text></g></g><g class="pele-edges" fill="none" stroke="var(--_l)" stroke-linecap="round"><g class="pele-edge pele-transition" data-id="edge0"><path d="M440.02,205C466.02,197 466.02,229 446.71,223.06"/><path class="pele-marker" d="M440.02,221L448.65,220.14L446.67,226.56Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge1"><path d="M440.02,199C474.02,185 474.02,241 446.49,229.67"/><path class="pele-marker" d="M440.02,227L448.69,226.94L446.13,233.15Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge2"><path d="M440.02,195C482.02,177 482.02,249 446.45,233.76"/><path class="pele-marker" d="M440.02,231L448.69,231.06L446.05,237.24Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge3"><path d="M440.02,195C490.02,177 490.02,249 446.6,233.37"/><path class="pele-marker" d="M440.02,231L448.68,230.55L446.41,236.87Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge4"><path d="M440.02,195C498.02,177 498.02,249 446.7,233.07"/><path class="pele-marker" d="M440.02,231L448.65,230.16L446.66,236.58Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge5"><path d="M440.02,195C506.02,177 506.02,249 446.77,232.84"/><path class="pele-marker" d="M440.02,231L448.62,229.86L446.85,236.35Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge6"><path d="M440.02,195C514.02,177 514.02,249 446.82,232.65"/><path class="pele-marker" d="M440.02,231L448.58,229.63L447,236.16Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge7"><path d="M440.02,195C522.02,177 522.02,249 446.85,232.5"/><path class="pele-marker" d="M440.02,231L448.55,229.43L447.11,236Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge8"><path d="M440.02,195C530.02,177 530.02,249 446.88,232.37"/><path class="pele-marker" d="M440.02,231L448.52,229.27L447.2,235.86Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge9"><path d="M440.02,195C538.02,177 538.02,249 446.9,232.26"/><path class="pele-marker" d="M440.02,231L448.49,229.14L447.28,235.75Z" fill="var(--_l)" stroke="none"/></g><g class="pele-edge pele-transition" data-id="edge10"><path d="M440.02,195C546.02,177 546.02,249 446.92,232.17"/><path class="pele-marker" d="M440.02,231L448.47,229.03L447.34,235.65Z" fill="var(--_l)" stroke="none"/></g></g><g class="pele-edge-labels" font-size="14"><g class="pele-edge-label" data-id="edge0"><rect x="552.02" y="60" width="173.68" height="21" rx="3" fill="var(--_bg)"/><text x="638.85" y="75.4" text-anchor="middle">여러 카드의 상태를 옮긴다</text></g><g class="pele-edge-label" data-id="edge1"><rect x="552.02" y="81" width="191.57" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="647.8" y="94.9">여러 카드의 상태를 옮긴다:</tspan><tspan x="647.8" y="112.9">담당 세션 상태 증거를 읽는다</tspan></text></g><g class="pele-edge-label" data-id="edge2"><rect x="552.02" y="117" width="177.57" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="640.8" y="130.9">여러 카드의 상태를 옮긴다:</tspan><tspan x="640.8" y="148.9">담당 후보 증거를 읽는다</tspan></text></g><g class="pele-edge-label" data-id="edge3"><rect x="552.02" y="153" width="177.57" height="21" rx="3" fill="var(--_bg)"/><text x="640.8" y="168.4" text-anchor="middle">시작 전 카드를 합쳐 닫는다</text></g><g class="pele-edge-label" data-id="edge4"><rect x="552.02" y="174" width="205.57" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="654.8" y="187.9">시작 전 카드를 합쳐 닫는다:</tspan><tspan x="654.8" y="205.9">미확인 실행 요청 증거를 읽는다</tspan></text></g><g class="pele-edge-label" data-id="edge5"><rect x="552.02" y="210" width="145.68" height="21" rx="3" fill="var(--_bg)"/><text x="624.85" y="225.4" text-anchor="middle">시작 전 카드를 고친다</text></g><g class="pele-edge-label" data-id="edge6"><rect x="552.02" y="231" width="195.46" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="649.75" y="244.9">시작 전 카드를 고친다: 미확인</tspan><tspan x="649.75" y="262.9">실행 요청 증거를 읽는다</tspan></text></g><g class="pele-edge-label" data-id="edge7"><rect x="552.02" y="267" width="191.57" height="36" rx="3" fill="var(--_bg)"/><text text-anchor="middle" xml:space="preserve"><tspan x="647.8" y="280.9">실행 설정을 저장한다: 미확인</tspan><tspan x="647.8" y="298.9">실행 요청 증거를 읽는다</tspan></text></g><g class="pele-edge-label" data-id="edge8"><rect x="552.02" y="303" width="141.78" height="21" rx="3" fill="var(--_bg)"/><text x="622.91" y="318.4" text-anchor="middle">실행 설정을 저장한다</text></g><g class="pele-edge-label" data-id="edge9"><rect x="552.02" y="324" width="141.78" height="21" rx="3" fill="var(--_bg)"/><text x="622.91" y="339.4" text-anchor="middle">담당과 보관을 고친다</text></g><g class="pele-edge-label" data-id="edge10"><rect x="552.02" y="345" width="173.68" height="21" rx="3" fill="var(--_bg)"/><text x="638.85" y="360.4" text-anchor="middle">등록된 새 담당으로 바꾼다</text></g></g><g class="pele-nodes"><g class="pele-node pele-state" data-id="cardDecision_verdict_ready" transform="translate(389.79,213)"><rect x="-50.22" y="-22" width="100.45" height="44" rx="10" fill="var(--_s)" stroke="var(--_b)"/><text class="pele-label" x="0" y="5.6" text-anchor="middle">판정 준비</text></g></g></svg>

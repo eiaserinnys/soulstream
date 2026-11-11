@@ -17,5 +17,5 @@ export function assertCardCommandEntrance(command:CardDecisionCommand,input:Card
  const failure=cardCommandEntryFailure(command,input,actor);
  if(!failure)return;
  const error=formatCardDecisionFailure(failure);
- throw Object.assign(new Error(error.message),{statusCode:error.statusCode,code:error.code});
+ throw Object.assign(new Error(error.message),{...(error.statusCode===null?{}:{statusCode:error.statusCode}),...(error.code===null?{}:{code:error.code})});
 }

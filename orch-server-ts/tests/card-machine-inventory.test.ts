@@ -12,8 +12,8 @@ it('pins every command to an existing operational function',async()=>{
  expect(CARD_COMMAND_CALLERS.ADD_COMMENT).toContain('cards/card_control_plane_service.ts#addCommentTx');
  expect(CARD_COMMAND_CALLERS.ADD_COMMENT).toContain('cards/card_work_dispatch_service.ts#accept');
 });
-const decisionImport=/(?:from\s*|import\s*(?:\(\s*)?)["'][^"']*(?:cards\/)?state\/card_(?:decision|state_value|write_intent|machine|command_entrance|(?:human|server)_(?:command|evidence))/;
-it('pins runtime decision imports to the PR 3 human and server command callers',async()=>{
+const decisionImport=/(?:from\s*|import\s*(?:\(\s*)?)["'][^"']*(?:cards\/)?state\/card_(?:decision|state_value|write_intent|machine|command_entrance|(?:human|server|remaining)_(?:command|evidence))/;
+it('pins every runtime decision call to its final operational file',async()=>{
  const files:string[]=[];
  async function walk(directory:string){
  for(const entry of await readdir(new URL(`../${directory}`,import.meta.url),{withFileTypes:true})){
@@ -32,10 +32,15 @@ it('pins runtime decision imports to the PR 3 human and server command callers',
  }
  expect(writers.sort()).toEqual([...CARD_RUNTIME_SQL_WRITERS].sort());
  expect(importers.sort()).toEqual([...CARD_RUNTIME_DECISION_IMPORTERS].sort());
- expect(Object.keys(CARD_RUNTIME_DECISION_CALLS)).toEqual(['CREATE','SET_STATUS','REQUEST_REVIEW','HUMAN_INPUT','ASK_QUESTION','ANSWER_QUESTION','WITHDRAW_QUESTION','ADD_COMMENT','START_WORK','CONFIRM_EXECUTION','DISPATCH','RESUME_LONG_LIMIT','BLOCK_FOR_LIMIT','RESUME_SHORT_LIMIT','RESUME_VERIFICATION','NOTE_MISSING']);
- expect(Object.values(CARD_RUNTIME_DECISION_CALLS).flat()).toHaveLength(18);
- const control=await readFile(new URL('../src/cards/card_control_plane_service.ts',import.meta.url),'utf8');
- for(const command of Object.keys(CARD_RUNTIME_DECISION_CALLS))expect(control.includes(`type:'${command}'`),command).toBe(true);
+ expect(Object.keys(CARD_RUNTIME_DECISION_CALLS).sort()).toEqual(Object.keys(CARD_FACT_VALUES).sort());
+ expect(Object.values(CARD_RUNTIME_DECISION_CALLS).flat()).toHaveLength(25);
+ for(const [command,locators] of Object.entries(CARD_RUNTIME_DECISION_CALLS))for(const locator of locators){
+ const [file,name]=locator.split('#');
+ const source=await readFile(new URL(`../src/${file}`,import.meta.url),'utf8');
+ expect(source,locator).toContain(name);
+ expect(source.includes(`type:'${command}'`),locator).toBe(true);
+ }
+
 });
 
 it('keeps world transition memoization valid for static symbolic actions',()=>{
