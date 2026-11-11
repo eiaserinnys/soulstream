@@ -15,7 +15,9 @@ function assertDeterministic(records: DecisionObservation[]) {
   const outcomes = new Map<string, unknown>();
   for (const r of records) {
     const key = inputKey(r);
-    const outcome = normalizeDecisionObservation(r).result;
+    const normalized = normalizeDecisionObservation(r);
+    const outcome = { result: normalized.result, after: normalized.after, afterQuestions: normalized.afterQuestions,
+      versionDelta: normalized.versionDelta, statusTimeChanged: normalized.statusTimeChanged };
     if (outcomes.has(key)) expect(outcome, r.method).toEqual(outcomes.get(key));
     outcomes.set(key, outcome);
   }

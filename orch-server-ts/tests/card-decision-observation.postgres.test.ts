@@ -25,7 +25,7 @@ it('collects and replays baseline SQL observations through the same normalized c
   try {
   if (process.env.COLLECT_CARD_OBSERVATIONS === '1') {
     // Pin ALL runtime service code, not only three entry files. Statechart description changes are allowed.
-    const changed = execFileSync('git', ['diff', '--name-only', baseline, '--', 'src'], { cwd: new URL('../', import.meta.url), encoding: 'utf8' }).trim().split('\n').filter(Boolean);
+    const changed = execFileSync('git', ['diff', '--name-only', baseline, '--', 'orch-server-ts/src', 'soul-server-ts/src', 'packages'], { cwd: new URL('../../', import.meta.url), encoding: 'utf8' }).trim().split('\n').filter(Boolean);
     expect(changed.filter(p => !['orch-server-ts/src/cards/state/card_charts.ts', 'orch-server-ts/src/cards/state/card_machine_events.ts', 'orch-server-ts/src/oauth/oauth_access.ts'].includes(p))).toEqual([]);
     const previous = JSON.parse(await readFile(fixture, 'utf8'));
     const observations = await collect();

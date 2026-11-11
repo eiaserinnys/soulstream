@@ -96,5 +96,6 @@ export async function collectAdditionalObservations(world: CardMachineWorld) {
   step = 'extra-37: stale admission rejected';
   await h.sql`UPDATE system_settings SET value='{"enabled":true}' WHERE setting_key='card_orchestration'`;
   await expect(cards.recordDispatch({ ...dispatch, admission: { runId: 'absent', leaseToken: 'test-lease', workerInput: { agentId: 'worker', modelPreset: 'model', configuredModelPreset: null } } })).rejects.toThrow('Stale orchestration admission');
+  await h.sql`UPDATE system_settings SET value='{"enabled":false}' WHERE setting_key='card_orchestration'`;
   } catch (error) { throw new Error(`${step}: ${String(error)}`, { cause: error }); }
 }

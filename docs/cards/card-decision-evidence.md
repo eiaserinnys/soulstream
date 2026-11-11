@@ -2,7 +2,7 @@
 
 기준: c8b9c745a 서비스, 보강 착수 3656f4e98. 수집기는 서비스 호출 직전 전용 시험 DB를 읽는다. 결정 모듈은 import하지 않는다. 아래는 감싸는 21개 메서드 전체다. before와 beforeQuestions는 원시 행이고, 기존 evidence는 owner, claimableSessions, dispatches, executionRequests, limitAutoResumeAt이다.
 
-새 evidence.decisionReads는 정책 행(없으면 null), admission run(없으면 null), capacitySessions 조회 결과, sessions, cards, folders, comments, participantRequests, operations, assets, deliveries, registrations, userInputAfterLastReply, executionStatusChanged다. 마지막 두 값은 기존 SQL의 관찰 결과다. 설정, 권한 또는 성공 여부를 수집기가 추정하지 않는다.
+새 evidence.decisionReads는 정책 행(없으면 null), admission run(없으면 null), 활성 dispatch의 dispatchRuns, capacitySessions 조회 결과, sessions, cards, folders, comments, participantRequests, operations, assets, deliveries, registrations, userInputAfterLastReply, executionStatusChanged다. 마지막 두 값은 기존 SQL의 관찰 결과다. 설정, 권한 또는 성공 여부를 수집기가 추정하지 않는다.
 
 | 메서드 | 결과를 가르는 읽기와 도우미 | 기존 기록 | 보강 |
 | :-- | :-- | :-- | :-- |
