@@ -220,8 +220,17 @@ export function makeCardNow(input: MakeCardNowInput, at: string, sessionId: stri
 }
 
 export function reviewCardNow(current: CardNow | null, ask: string | undefined, at: string, sessionId: string | null): CardNow | null {
-  if (ask === undefined) return current;
-  const checkedAsk = assertShortCardText("ask", ask, 60);
+  return reviewCardNowFromCheckedAsk(current,checkCardReviewAsk(ask),at,sessionId);
+}
+
+/** Input-only validation; the review service runs this after its version fence, before the decision. */
+export function checkCardReviewAsk(ask:string|undefined):string|undefined {
+  return ask===undefined?undefined:assertShortCardText("ask",ask,60);
+}
+
+/** Formatting accepts the checked value and never repeats the input validation. */
+export function reviewCardNowFromCheckedAsk(current:CardNow|null,checkedAsk:string|undefined,at:string,sessionId:string|null):CardNow|null {
+  if (checkedAsk === undefined) return current;
   return {
     text: current?.text ?? checkedAsk,
     turn: "user",

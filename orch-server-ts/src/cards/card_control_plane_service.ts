@@ -6,6 +6,7 @@ import { humanCardEvidence } from './state/card_human_evidence.js';
 import { assertCardCommandEntrance } from './state/card_command_entrance.js';
 import type { HumanCardCommand } from './state/card_human_command.js';
 import type { DecodedCardWrite } from './state/card_decision_decoder.js';
+import type { CardBindingValues } from './state/card_write_intent.js';
 import { patchCardTx } from "./control_plane/card_patch.js";
 import { readLimitAutoResumeAt, formatLimitResumeClock, type LimitResumeOwner } from "./card_limit_auto_resume.js";
 import { assertNoPendingCardExecution } from "./card_execution_reservation.js";
@@ -45,7 +46,8 @@ import {
   openCardItemFix,
   questionCardNow,
   reportCardItem as reportItemRule,
-  reviewCardNow,
+  checkCardReviewAsk,
+  reviewCardNowFromCheckedAsk,
   setCardItems as setItemsRule,
   type CardItemEvidence,
   type CardItemState,
@@ -190,7 +192,7 @@ export class CardControlPlaneService {
         await this.lockFolder(sql,params.folderId);
         const position=await this.position(sql,params.folderId,null);
         const {writes}=await this.humanDecision(sql,null,{...params,type:'CREATE'},params,eventId,[],{},
-          {'command.assignment':assignee});
+          {values:{'command.assignment':assignee}});
         const initial=Object.fromEntries(writes.flatMap(write=>Object.entries(write.fields)));
         const queuePosition=initial.queue_position_key;
         if (assignee.assignee_session_id) await assertSingleCardAssignee(sql,assignee.assignee_session_id,id);
@@ -261,7 +263,7 @@ export class CardControlPlaneService {
     },async (sql,card,eventId,payload) => {
       const candidates=params.actorKind==='agent'&&params.actorSessionId?await claimableCardSessions(sql,card.id,params.actorSessionId):[];
       const {writes}=await this.humanDecision(sql,card,{...params,type:'SET_STATUS',wakeAt:wakeAt?.toISOString(),waitingFor:waitingFor??undefined},params,eventId,[],
-        humanCardEvidence(candidates,params.actorSessionId,false),{'formatted.verification':wakeAt&&waitingFor?verificationWaitNow(waitingFor,wakeAt,new Date(),params.actorSessionId):undefined});
+        humanCardEvidence(candidates,params.actorSessionId,false),{lazy:{'formatted.verification':()=>verificationWaitNow(waitingFor!,wakeAt!,new Date(),params.actorSessionId)}});
       if(writes.some(write=>write.fields.assignee_session_id===params.actorSessionId))payload.claimed_assignee=true;
       await this.patchDecisionWrites(sql,card,writes,params,eventId);
     });
@@ -277,9 +279,10 @@ export class CardControlPlaneService {
   }
   async requestCardReview(params: CardMutationParams & { ask?: string }) {
     return this.mutateCard(params,"set_card_status",{status:"review",blocked_kind:null,blocked_detail:null,ask:params.ask},async(sql,card,eventId,payload)=>{
+      const checkedAsk=checkCardReviewAsk(params.ask);
       const candidates=params.actorKind==='agent'&&params.actorSessionId?await claimableCardSessions(sql,card.id,params.actorSessionId):[];
       const {writes}=await this.humanDecision(sql,card,{...params,type:'REQUEST_REVIEW'},params,eventId,[],humanCardEvidence(candidates,params.actorSessionId,false),
-        {'formatted.review':reviewCardNow(card.now??null,params.ask,new Date().toISOString(),params.actorSessionId)});
+        {lazy:{'formatted.review':()=>reviewCardNowFromCheckedAsk(card.now??null,checkedAsk,new Date().toISOString(),params.actorSessionId)}});
       if(writes.some(write=>write.fields.assignee_session_id===params.actorSessionId))payload.claimed_assignee=true;
       await this.patchDecisionWrites(sql,card,writes,params,eventId);
     });
@@ -452,7 +455,7 @@ export class CardControlPlaneService {
     const questionId=randomUUID();
     const result=await this.mutateCard(params,"ask_card_question",{ text:params.text,options:params.options ?? null },async (sql,card,eventId) => {
       const {writes}=await this.humanDecision(sql,card,{...params,type:'ASK_QUESTION'},params,eventId,[],{},
-        {'formatted.question':questionCardNow(card.now??null,params.text,new Date().toISOString(),params.actorSessionId)});
+        {lazy:{'formatted.question':()=>questionCardNow(card.now??null,params.text,new Date().toISOString(),params.actorSessionId)}});
       const fields=writes.find(write=>write.kind==='questionInsert')!.fields;
       await sql`INSERT INTO card_questions(id,card_id,session_id,text,options)
         VALUES(${questionId},${card.id},${fields.session_id},${fields.text},${sql.json(fields.options as never)})`;
@@ -588,7 +591,7 @@ export class CardControlPlaneService {
     const userInput=reply&&(card.items??[]).length>0?await hasUserInputAfterLastReplyTx(sql,card.id):false;
     const {writes}=await this.humanDecision(sql,card,{...params,type:'ADD_COMMENT',entrance},params,eventId,[],
       humanCardEvidence(candidates,params.actorSessionId,userInput),
-      ()=>({'formatted.items':params.itemId!==undefined&&!reply?openCardItemFix(card.items??[],params.itemId):undefined}));
+      {lazy:{'formatted.items':()=>openCardItemFix(card.items??[],params.itemId!)}});
     const claim=writes.filter(write=>write.stage==='claim');
     if(claim.length){Object.assign(card,...claim.map(write=>write.fields));payload.claimed_assignee=true;}
     const existingRefs=attachmentRefsOf(card.attachment_refs);
@@ -718,7 +721,7 @@ export class CardControlPlaneService {
     await patchCardTx(sql,card,fields,actor,eventId);
   }
   private async humanDecision(sql:RepositorySql,card:CardRow|null,command:HumanCardCommand,params:FolderActorParams,eventId:number|null,
-    questions:Record<string,unknown>[]=[],evidence:{claim?:boolean;userInput?:boolean}={},values:Record<string,unknown>|(()=>Record<string,unknown>)={}) {
+    questions:Record<string,unknown>[]=[],evidence:{claim?:boolean;userInput?:boolean}={},bindings:Pick<CardBindingValues,'values'|'lazy'>={}) {
     const actor={kind:params.actorKind,sessionId:params.actorSessionId,userId:params.actorUserId};
     const at=new Date();
     const decision=decideCardTransition(card,questions,evidence,command,actor,at.getTime());
@@ -728,7 +731,7 @@ export class CardControlPlaneService {
     }
     const needsQueue=decision.actions.some(action=>Object.values(action.params?.fields??{}).some(value=>(value as {bind?:string}).bind==='queue.new'));
     const writes=decodeCardDecision(decision,{card:card??{},command,actor:{...actor,kind:params.actorKind??'agent'},now:at,eventId,
-      queuePosition:needsQueue?await this.position(sql,null,null,card?.id??null):undefined,values:typeof values==='function'?values():values},true);
+      queuePosition:needsQueue?await this.position(sql,null,null,card?.id??null):undefined,...bindings},true);
     return {decision,writes};
   }
   private async patchDecisionWrites(sql:RepositorySql,card:CardRow,writes:DecodedCardWrite[],params:FolderActorParams,eventId:number|null) {

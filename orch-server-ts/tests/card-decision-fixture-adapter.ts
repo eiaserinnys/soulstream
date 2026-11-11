@@ -5,7 +5,7 @@ import type { CardDecision } from '../src/cards/state/card_decision.js';
 import { generateKeyBetween } from '@soulstream/fractional-position';
 import { isUsageLimitTermination } from '../src/session/session_limit_termination.js';
 import { assigneeToFields } from '../src/cards/control_plane/card_models.js';
-import { questionCardNow, reviewCardNow, makeCardNow, openCardItemFix } from '../src/cards/card_item_rules.js';
+import { questionCardNow, checkCardReviewAsk, reviewCardNowFromCheckedAsk, makeCardNow, openCardItemFix } from '../src/cards/card_item_rules.js';
 import { verificationWaitNow } from '../src/cards/card_verification_wait.js';
 import { formatLimitResumeClock } from '../src/cards/card_limit_auto_resume.js';
 import { mergedCloseNow } from '../src/cards/card_maintenance_tx.js';
@@ -60,6 +60,7 @@ export function predictObservation(r:DecisionObservation) {
  ownerState:!owner?'missing':['running','initializing'].includes(owner.status)?owner.status:'idle',
  };
  const entryFailure=cardCommandEntryFailure(c.type,{hasMode:Boolean(c.mode),requestedSpoken:c.kind==='spoken'},actor);
+ const checkedAsk=c.type==='REQUEST_REVIEW'?checkCardReviewAsk(c.ask):undefined;
  const result:CardDecision=entryFailure?{kind:'reject',next:rowToStateValue(row,r.beforeQuestions),actions:[],failure:entryFailure}:
   decideCardTransition(row,r.beforeQuestions,evidence,c as CardCommand,actor,r.checkedAt);
  const at=new Date(r.checkedAt+1), stamp=at.toISOString();
@@ -73,19 +74,21 @@ export function predictObservation(r:DecisionObservation) {
  if(c.agentId!==undefined)Object.assign(control,assigneeToFields({kind:'agent',agentId:c.agentId}));
  }
  if(c.type==='SAVE_EXECUTION_SETTINGS')Object.assign(control,{node_id:c.nodeId,model_preset:c.modelPreset},assigneeToFields(c.agentId?{kind:'agent',agentId:c.agentId}:null));
- const values:any={card:row??{},command:c,actor,now:at,eventId:actor.sessionId?1:null,queuePosition:generateKeyBetween(reads.cards.filter((card:any)=>card.status==='queued'&&!card.archived&&card.id!==row?.id).sort((a:any,b:any)=>a.queue_position_key<b.queue_position_key?-1:a.queue_position_key>b.queue_position_key?1:a.id.localeCompare(b.id)).at(-1)?.queue_position_key??null,null),values:{
+ const values:any={card:row??{},command:c,actor,now:at,eventId:actor.sessionId?1:null,values:{
  'command.control':control,'command.assignment':assigneeToFields(c.assignee??null),
  'evidence.resumeAt':evidence.resumeAt,
- 'formatted.question':row?questionCardNow(row.now??null,c.text??'',stamp,actor.sessionId):null,
- 'formatted.review':row?reviewCardNow(row.now??null,c.ask,stamp,actor.sessionId):null,
- 'formatted.verification':c.waitingFor!==undefined&&c.wakeAt?verificationWaitNow(c.waitingFor.trim(),new Date(c.wakeAt),at,actor.sessionId):null,
- 'formatted.limitDetail':evidence.resumeAt?`사용량 한도, ${formatLimitResumeClock(new Date(String(evidence.resumeAt)))} 자동 재개`:'세션 사용량 한도',
- 'formatted.limit':evidence.resumeAt?makeCardNow({text:`사용량 한도로 멈춤, ${formatLimitResumeClock(new Date(String(evidence.resumeAt)))}에 저절로 이어집니다`,turn:'outside'},stamp,null):null,
- 'formatted.limitResume':makeCardNow({text:'담당이 이어서 진행합니다',turn:'agent'},stamp,null),
- 'formatted.verificationResume':makeCardNow({text:'담당이 기다리던 것을 확인합니다',turn:'agent'},stamp,c.sessionId??null),
- 'formatted.replacement':makeCardNow({text:'담당이 바뀌어 자동 재개 예약을 해제했습니다',turn:'agent'},stamp,actor.sessionId),
- 'formatted.merge':c.targetCardId?mergedCloseNow(reads.cards.find((card:any)=>card.id===c.targetCardId),stamp,actor.sessionId):null,
- 'formatted.items':c.itemId!==undefined?openCardItemFix(row.items??[],c.itemId):undefined,
+ },lazy:{
+ 'queue.new':()=>generateKeyBetween(reads.cards.filter((card:any)=>card.status==='queued'&&!card.archived&&card.id!==row?.id).sort((a:any,b:any)=>a.queue_position_key<b.queue_position_key?-1:a.queue_position_key>b.queue_position_key?1:a.id.localeCompare(b.id)).at(-1)?.queue_position_key??null,null),
+ 'formatted.question':()=>questionCardNow(row.now??null,c.text??'',stamp,actor.sessionId),
+ 'formatted.review':()=>reviewCardNowFromCheckedAsk(row.now??null,checkedAsk,stamp,actor.sessionId),
+ 'formatted.verification':()=>verificationWaitNow(c.waitingFor.trim(),new Date(c.wakeAt),at,actor.sessionId),
+ 'formatted.limitDetail':()=>evidence.resumeAt?`사용량 한도, ${formatLimitResumeClock(new Date(String(evidence.resumeAt)))} 자동 재개`:'세션 사용량 한도',
+ 'formatted.limit':()=>evidence.resumeAt?makeCardNow({text:`사용량 한도로 멈춤, ${formatLimitResumeClock(new Date(String(evidence.resumeAt)))}에 저절로 이어집니다`,turn:'outside'},stamp,null):null,
+ 'formatted.limitResume':()=>makeCardNow({text:'담당이 이어서 진행합니다',turn:'agent'},stamp,null),
+ 'formatted.verificationResume':()=>makeCardNow({text:'담당이 기다리던 것을 확인합니다',turn:'agent'},stamp,c.sessionId??null),
+ 'formatted.replacement':()=>makeCardNow({text:'담당이 바뀌어 자동 재개 예약을 해제했습니다',turn:'agent'},stamp,actor.sessionId),
+ 'formatted.merge':()=>mergedCloseNow(reads.cards.find((card:any)=>card.id===c.targetCardId),stamp,actor.sessionId),
+ 'formatted.items':()=>openCardItemFix(row.items??[],c.itemId),
  }};
  const writes=decodeCardDecision(result,values);
  const defaults=Object.fromEntries(['blocked_kind','blocked_detail','assignee_kind','assignee_session_id','assignee_agent_id','assignee_user_id','limit_resume_session_id','limit_resume_at','wake_at','waiting_for','completed_kind','completed_session_id','completed_user_id','completed_event_id','completed_at','queue_position_key','now'].map(k=>[k,null]));

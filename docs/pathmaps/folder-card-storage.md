@@ -10,6 +10,8 @@
 
 decoder의 requestedOnly 모드는 최종 예약 정리를 제외한 요청 쓰기만 반환한다. 서비스는 기존 순서로 질문 INSERT/조건부 UPDATE, 댓글의 claim UPDATE와 INSERT, 항목 UPDATE, 상태 UPDATE, 열린 질문 닫기를 수행한다. 모든 카드 UPDATE는 기존 patchCardTx를 거치며 PR 4까지 최종 예약 정리는 그 함수가 맡는다. 폴더와 카드 잠금, expectedVersion, 멱등 키, 첨부 검사, 판 동기화와 알림 경계는 기존 서비스에 남는다.
 
+서식은 `CardBindingValues.lazy`의 이름별 계산 함수로 전달한다. `card_write_intent.ts#createCardBindingResolver`를 decoder 한 번에 하나 만들고, 선택된 bind 또는 spread가 요청한 이름만 계산한다. `formatted.verification`, `formatted.review`, `formatted.question`, `formatted.items`와 시각·문구 직렬화도 이 경로를 쓴다. REQUEST_REVIEW의 ask 검사는 기존처럼 잠금·version 확인 뒤이면서 판정 전에 `checkCardReviewAsk`가 한 번 수행한다. 확인한 문자열은 검사를 반복하지 않는 `reviewCardNowFromCheckedAsk`가 받아 서식을 만든다. 반면 검증 대기의 now 문구 검사는 기존처럼 상태·권한·대기 입력 판정 뒤 서식을 bind할 때 실행한다.
+
 ## PAS 보고 자동 내림 (#270 R1)
 
 card_control_plane_service.ts는 카드 commit 뒤, 스냅샷 조회 전에 persistent_report_service.ts의 syncCard를 기다린다. 대상 PAS를 잠금 없이 찾고 세션마다 별도 트랜잭션에서 세션 행만 잠근 뒤 현재 판과 질문·카드 상태를 다시 확인한다. 질문 정식 답 저장·철회 또는 연결 카드 전부 done/cancelled/on_hold일 때만 내린다. 보류는 종료 상태가 아니지만 사용자가 판에서 내린 카드다. 보류 전환은 연결 판과 카드 연결 밖 판의 card_, cq_ 및 그 카드만 가리키는 일반 장을 내리고, 질문은 카드 상세에서 계속 답할 수 있다. 보고 쪽은 카드 행을 잠그지 않으며 판 방송은 각 보고 commit 직후 그 트랜잭션의 결과로 낸다. 질문 답변의 기존 메시지 전달은 그대로다.
