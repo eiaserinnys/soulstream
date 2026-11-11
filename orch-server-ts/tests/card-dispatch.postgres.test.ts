@@ -315,7 +315,8 @@ describe("card dispatch and session lifecycle", () => {
         const q = (await cards.getCard(id))!.questions[0]!;
         await cards.answerQuestion({ ...human, cardId: id, questionId: String(q.id), answer: '진행', idempotencyKey: key() });
         await dispatcher.drain();
-        expect(messages).toHaveBeenCalledWith(sessionId, '질문에 답이 왔습니다: 진행? → 진행. 카드 상태: 실행 중.');
+        expect(messages).toHaveBeenCalledWith(sessionId, '질문에 답이 왔습니다: 진행? → 진행. 카드 상태: 실행 중.', undefined,
+            expect.objectContaining({ deliveryId: expect.stringMatching(new RegExp(`^card:${id}:answer:[^:]+:${sessionId}$`)) }));
         expect((await cards.getCard(id))!.card.status).toBe('running');
         expect(notify).not.toHaveBeenCalled();
     });
@@ -359,7 +360,8 @@ describe("card dispatch and session lifecycle", () => {
         await dispatcher.drain();
         expect(launch).toHaveBeenCalledTimes(1);
         expect((await cards.getCard(id))!.card.status).toBe('running');
-        expect(messages).toHaveBeenCalledWith(sessionId,expect.stringContaining('방향? → A'));
+        expect(messages).toHaveBeenCalledWith(sessionId,expect.stringContaining('방향? → A'),undefined,
+            expect.objectContaining({ deliveryId: expect.stringMatching(new RegExp(`^card:${id}:answer:[^:]+:${sessionId}$`)) }));
     });
     it("delivers a late answer with attachments to a live session after completion without changing status", async () => {
         const {id,sessionId}=await start();
@@ -370,7 +372,8 @@ describe("card dispatch and session lifecycle", () => {
         await h.sql`UPDATE cards SET attachments=${h.sql.json(attachments)} WHERE id=${id}`;
         const detail=(await cards.getCard(id))!;messages.mockClear();
         await cards.answerQuestion({...human,cardId:id,questionId:String(detail.questions[0]!.id),answer:'저장할 답',idempotencyKey:key()});await dispatcher.drain();
-        expect(messages).toHaveBeenCalledWith(sessionId,expect.stringContaining('뒤늦은 질문 → 저장할 답'),undefined,undefined,attachments);
+        expect(messages).toHaveBeenCalledWith(sessionId,expect.stringContaining('뒤늦은 질문 → 저장할 답'),undefined,
+            expect.objectContaining({ deliveryId: expect.stringMatching(new RegExp(`^card:${id}:answer:[^:]+:${sessionId}$`)) }),attachments);
         expect(messages.mock.calls[0]![1]).toBe('질문에 답이 왔습니다: 뒤늦은 질문 → 저장할 답. 카드 상태: 완료.');
         expect((await cards.getCard(id))!.card).toMatchObject({status:'done',version:detail.card.version});
         expect((await cards.getCard(id))!.questions[0]!.answer).toBe('저장할 답');expect(launch).toHaveBeenCalledOnce();
@@ -383,7 +386,8 @@ describe("card dispatch and session lifecycle", () => {
         await cards.setCardStatus({...human,cardId:id,status,idempotencyKey:key()});await dispatcher.drain();
         const detail=(await cards.getCard(id))!;messages.mockClear();
         await cards.answerQuestion({...human,cardId:id,questionId:String(detail.questions[0]!.id),answer:'늦은 답',idempotencyKey:key()});await dispatcher.drain();
-        expect(messages).toHaveBeenCalledWith(sessionId,expect.stringContaining('늦은 질문 → 늦은 답'));
+        expect(messages).toHaveBeenCalledWith(sessionId,expect.stringContaining('늦은 질문 → 늦은 답'),undefined,
+            expect.objectContaining({ deliveryId: expect.stringMatching(new RegExp(`^card:${id}:answer:[^:]+:${sessionId}$`)) }));
         expect(messages.mock.calls[0]![1]).toBe(`질문에 답이 왔습니다: 늦은 질문 → 늦은 답. 카드 상태: ${status==='review'?'검수':'실행 중'}.`);
         expect((await cards.getCard(id))!.card).toMatchObject({status,version:detail.card.version});
         expect(launch).toHaveBeenCalledOnce();

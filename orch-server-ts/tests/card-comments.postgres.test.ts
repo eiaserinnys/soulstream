@@ -190,7 +190,8 @@ describe("card comments HTTP, storage, and delivery", () => {
     messages.mockClear();
     await cards.answerQuestion({...human,cardId,questionId:String(question.id),answer:'첫 답'});await dispatcher.drain();
     expect((await cards.getCard(cardId))?.card).toMatchObject({status:'blocked',blocked_kind:'question'});
-    expect(messages).toHaveBeenCalledWith('old-owner',expect.stringContaining('첫 답'));
+    expect(messages).toHaveBeenCalledWith('old-owner',expect.stringContaining('첫 답'),undefined,
+      expect.objectContaining({deliveryId:expect.stringMatching(new RegExp(`^card:${cardId}:answer:[^:]+:old-owner$`))}));
     expect(messages.mock.calls[0]![1]).toBe('질문에 답이 왔습니다: 이전 담당 질문 → 첫 답. 카드 상태: 막힘.');
     messages.mockClear();
     const answer={...human,cardId,questionId:'remaining',answer:'마지막 답',idempotencyKey:key()};
