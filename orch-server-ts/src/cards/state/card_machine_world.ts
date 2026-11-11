@@ -17,6 +17,7 @@ export function boardEntriesOf(w:CardWorld):('question'|'card')[]{
 /** Only contradictions between independently recorded facts are filtered here. */
 export function factsConsistent(w:CardWorld,event:DecisionEvent):boolean {
  const v=w.snapshot.value as CardStateValue,f=event.facts,c=event.type;
+ if(f.evidenceMissing!==undefined&&f.evidenceMissing!=='none')return false;
  if((statusLeaf(v)==='uncreated')!==(c==='CREATE'))return false;
  if(['author','ownerAuthor'].includes(event.actor)&&!['ANSWER_QUESTION','WITHDRAW_QUESTION'].includes(c))return false;
  if(c==='PATCH_CARD_CONTROL'&&f.hasArchiveInput===false&&f.nextArchived!==(v.archive==='archived'))return false;

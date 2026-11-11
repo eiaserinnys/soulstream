@@ -34,6 +34,7 @@ export const CARD_FAILURES:Record<string,{statusCode:number|null;code:string|nul
  pending:{statusCode:409,code:'CARD_EXECUTION_PENDING',message:'실행 결과 확인 중입니다. 같은 요청의 결과를 확인하세요.'},
  policyDisabled:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Orchestration policy is disabled'},
  admissionRequired:{statusCode:422,code:'INVALID_CARD_REQUEST',message:'Enabled orchestration requires a fenced decision admission'},
+ admission_lockedPolicyDisabled:{statusCode:null,code:null,message:'Orchestration policy is disabled'},
  admission_stale:{statusCode:null,code:null,message:'Stale orchestration admission'},
  admission_capacity:{statusCode:null,code:null,message:'Node capacity is full'},
  admission_missingCapacity:{statusCode:null,code:null,message:'Missing node capacity'},

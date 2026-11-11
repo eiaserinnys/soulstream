@@ -219,6 +219,16 @@ describe("toMermaid", () => {
     expect(() => toMermaid(root, { include: ["a", "b"] })).toThrow(/resume/);
   });
 
+  it("진단 보기에서 요청한 목표 없는 전이만 자기 화살표로 보인다", () => {
+    const root=node('root','root','compound'),ready=node('ready','ready','atomic');
+    attach(root,ready);
+    on(ready,'READ',[{description:'증거를 읽는다'}]);
+    expect(toMermaid(root,{include:['ready']}).edgeCount).toBe(0);
+    const result=toMermaid(root,{include:['ready'],targetless:true});
+    expect(result.edgeCount).toBe(1);
+    expect(result.mermaid).toContain('증거를 읽는다');
+  });
+
   it("화살표가 25개를 넘으면 경고를 남긴다", () => {
     const wrapper = node("m", "m", "compound");
     const states: ChartNode[] = [];

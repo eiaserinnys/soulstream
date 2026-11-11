@@ -1,22 +1,23 @@
+import { workAdmissionMatches } from './state/card_server_evidence.js';
 import type { CardRow, RepositorySql } from "./control_plane/card_types.js";
 export type CardWorkExecution = { registrationId: string; executionCommandId: string };
 export function invalidWork(message: string) { return Object.assign(new Error(message), { statusCode: 422, code: "INVALID_CARD_WORK" }); }
 
 /** Worker-supplied identity comes from Task.executionRegistration, never tool input. */
-export async function validateWorkExecution(sql: RepositorySql, sessionId: string, execution: CardWorkExecution) {
+export async function readWorkExecution(sql: RepositorySql, sessionId: string, execution: CardWorkExecution) {
   const rows = await sql`SELECT session_id FROM sessions WHERE session_id=${sessionId}
     AND execution_registration_id=${execution.registrationId} AND execution_command_id=${execution.executionCommandId}
     AND status NOT IN ('completed','error','interrupted')
     AND NOT EXISTS(SELECT 1 FROM jsonb_array_elements(COALESCE(metadata,'[]'::jsonb)) m WHERE m->>'type'='card_orchestration_decision') FOR SHARE`;
-  if (!rows.length) throw invalidWork("Current execution is missing, stale or orchestration purpose");
+  return rows.length>0;
 }
 
 /** Only a correlated automatic execution consumes admission; manual work leaves dispatch alone. */
-export async function acceptQueuedWork(sql: RepositorySql, card: CardRow, sessionId: string, execution: CardWorkExecution) {
+export async function readQueuedWork(sql: RepositorySql, card: CardRow, sessionId: string, execution: CardWorkExecution) {
   const active = await sql`SELECT * FROM card_orchestration_dispatches
     WHERE card_id=${card.id} AND session_id=${sessionId} AND state IN ('admitted','launching') FOR UPDATE`;
   const d = active[0];
-  if (!d) return null;
+  if (!d) return {receipt:false,valid:false};
   const input = d.input as Record<string, unknown>;
   if (input.deliveryId) {
     const receipts = await sql`SELECT delivery.target_receipt_id FROM session_deliveries delivery
@@ -27,7 +28,7 @@ export async function acceptQueuedWork(sql: RepositorySql, card: CardRow, sessio
       WHERE delivery.delivery_id=${String(input.deliveryId)} AND delivery.target_session_id=${sessionId}
         AND delivery.state='consumed' AND receipt.identity->>'registration_id'=${execution.registrationId}
         AND receipt.identity->>'execution_command_id'=${execution.executionCommandId}`;
-    if (!receipts.length) return null;
+    if (!receipts.length) return {receipt:false,valid:false};
     input.consumedTurnId = receipts[0]!.target_receipt_id;
   } else {
     // A new UUID cannot refer to an earlier run. Its first committed registration must follow admission.
@@ -35,7 +36,7 @@ export async function acceptQueuedWork(sql: RepositorySql, card: CardRow, sessio
       AND effect_application->>'applied'='true' AND effect_application->'canonical_execution_registration'->>'registration_id'=${execution.registrationId}
       AND effect_application->'canonical_execution_registration'->>'execution_command_id'=${execution.executionCommandId}
       AND created_at>=${d.created_at as Date} LIMIT 1`;
-    if (!registrations.length) return null;
+    if (!registrations.length) return {receipt:false,valid:false};
   }
   // Receipt identity proves this is the automatic execution; only now apply its fences.
   const admitted = await sql`SELECT d.run_id
@@ -46,11 +47,11 @@ export async function acceptQueuedWork(sql: RepositorySql, card: CardRow, sessio
     WHERE d.run_id=${String(d.run_id)} AND d.card_id=${card.id} AND d.session_id=${sessionId} AND d.state='launching' AND d.launch_accepted
       AND (p.value->>'enabled')::boolean AND p.version=r.policy_version
       AND (d.input->>'admittedCardVersion')::int=${card.version}`;
-  if (!admitted.length || (card.assignee_kind === "session" ? card.assignee_session_id !== sessionId : card.assignee_kind !== "agent" || card.assignee_agent_id !== input.agentId))
-    throw invalidWork("Automatic work requires a valid fenced admission for its assignee");
-  await sql`UPDATE card_orchestration_dispatches SET state='running',input=${sql.json({...input,execution})},updated_at=NOW()
-    WHERE run_id=${String(d.run_id)} AND card_id=${card.id}`;
-  return String(d.run_id);
+  const valid=workAdmissionMatches(card,sessionId,input.agentId,admitted.length>0);
+  return {receipt:true,valid,commit:async()=>{
+    await sql`UPDATE card_orchestration_dispatches SET state='running',input=${sql.json({...input,execution})},updated_at=NOW()
+      WHERE run_id=${String(d.run_id)} AND card_id=${card.id}`;
+  }};
 }
 
 /** Receipt ranges retain execution identity after sessions clears its live registration at terminal.

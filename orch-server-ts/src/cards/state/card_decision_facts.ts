@@ -1,3 +1,4 @@
+import { CARD_SERVER_EVIDENCE_STAGES, admissionResults, type ServerCardCommand, type ServerEvidenceStage, type AdmissionResult } from './card_server_command.js';
 import { parseVerificationWakeAt, WAITING_FOR_MAX_CODE_POINTS, VERIFICATION_WAIT_MAX_DAYS } from '../card_verification_wait.js';
 import type { HumanCardCommand } from './card_human_command.js';
 export const CARD_ACTORS=['human','owner','author','ownerAuthor','otherAgent','anonymousAgent','server','external'] as const;
@@ -6,20 +7,20 @@ export const TARGETS=['todo','queued','running','question','noReport','other','l
 const flag=[false,true] as const;
 const wait=['missing','empty','tooLong','invalid','past','withinWeek','tooLate'] as const;
 const question=['missing','open','answered','withdrawn'] as const;
-const admission=['ok','stale','capacity','missingCapacity','ineligible'] as const;
+const admission=admissionResults;
 /** One finite value inventory drives types and world enumeration. Stored regions are excluded. */
 export const CARD_FACT_VALUES={
  CREATE:{queued:flag,assigneeInput:['none','agent','human','session'] as const},
  SET_STATUS:{target:TARGETS,claim:flag,wait},REQUEST_REVIEW:{claim:flag,hasItems:flag,hasAsk:flag},HUMAN_INPUT:{},
  ASK_QUESTION:{hasCurrentNow:flag},ANSWER_QUESTION:{question,otherOpen:flag},WITHDRAW_QUESTION:{question,otherOpen:flag},
  ADD_COMMENT:{entrance:['direct','followup'] as const,requestedSpoken:flag,claim:flag,reply:flag,hasItems:flag,hasMode:flag,userInput:flag,replyLength:['within','tooLong'] as const,hasItem:flag,itemExists:flag},
- START_WORK:{claim:flag,execution:flag,admitted:flag,admissionReceipt:flag,admissionValid:flag},
- CONFIRM_EXECUTION:{sessionMatch:flag,hasExecution:flag,statusChanged:flag,assignmentChanged:flag,hasNow:flag},
- DISPATCH:{pending:flag,policyEnabled:flag,hasAdmission:flag,admission},
- BLOCK_FOR_LIMIT:{sessionMatch:flag,termination:flag,short:flag},
- RESUME_SHORT_LIMIT:{sessionMatch:flag,due:flag,resumeTimeMatch:flag,pending:flag},
- RESUME_LONG_LIMIT:{sessionMatch:flag,pending:flag,policyEnabled:flag,hasAdmission:flag,admission},
- RESUME_VERIFICATION:{sessionMatch:flag,verificationTimeMatch:flag},NOTE_MISSING:{},
+ START_WORK:{evidenceMissing:['none',...CARD_SERVER_EVIDENCE_STAGES.START_WORK] as const,claim:flag,execution:flag,admitted:flag,admissionReceipt:flag,admissionValid:flag},
+ CONFIRM_EXECUTION:{evidenceMissing:['none',...CARD_SERVER_EVIDENCE_STAGES.CONFIRM_EXECUTION] as const,sessionMatch:flag,hasExecution:flag,statusChanged:flag,assignmentChanged:flag,hasNow:flag},
+ DISPATCH:{evidenceMissing:['none',...CARD_SERVER_EVIDENCE_STAGES.DISPATCH] as const,pending:flag,policyEnabled:flag,hasAdmission:flag,admission},
+ BLOCK_FOR_LIMIT:{evidenceMissing:['none',...CARD_SERVER_EVIDENCE_STAGES.BLOCK_FOR_LIMIT] as const,sessionMatch:flag,termination:flag,short:flag},
+ RESUME_SHORT_LIMIT:{evidenceMissing:['none',...CARD_SERVER_EVIDENCE_STAGES.RESUME_SHORT_LIMIT] as const,sessionMatch:flag,due:flag,resumeTimeMatch:flag,pending:flag},
+ RESUME_LONG_LIMIT:{evidenceMissing:['none',...CARD_SERVER_EVIDENCE_STAGES.RESUME_LONG_LIMIT] as const,sessionMatch:flag,pending:flag,policyEnabled:flag,hasAdmission:flag,admission},
+ RESUME_VERIFICATION:{evidenceMissing:['none',...CARD_SERVER_EVIDENCE_STAGES.RESUME_VERIFICATION] as const,sessionMatch:flag,verificationTimeMatch:flag},NOTE_MISSING:{evidenceMissing:['none',...CARD_SERVER_EVIDENCE_STAGES.NOTE_MISSING] as const,},
  BULK_SET_STATUS:{target:['todo','queued','hold','cancelled'] as const,ownerState:['missing','running','initializing','idle'] as const,claim:flag},
  MERGE_SOURCE:{pending:flag},UPDATE_UNSTARTED:{pending:flag,hasAgentInput:flag},
  SAVE_EXECUTION_SETTINGS:{assigneeInput:['none','agent'] as const,pending:flag,assignmentChanged:flag,hasNow:flag,move:flag},
@@ -33,12 +34,13 @@ type FactKey={ [C in CardDecisionCommand]:keyof typeof CARD_FACT_VALUES[C] }[Car
 type FactValue<K extends FactKey>={ [C in CardDecisionCommand]:K extends keyof typeof CARD_FACT_VALUES[C] ?
  (typeof CARD_FACT_VALUES[C])[K] extends readonly (infer V)[] ? V : never : never }[CardDecisionCommand];
 export type FiniteFacts=Partial<{[K in FactKey]:FactValue<K>}>;
-export type RemainingCardCommand={type:Exclude<CardDecisionCommand,HumanCardCommand['type']>;[key:string]:any};
-export type CardCommand=HumanCardCommand|RemainingCardCommand;
+export type RemainingCardCommand={type:Exclude<CardDecisionCommand,HumanCardCommand['type']|ServerCardCommand['type']>;[key:string]:any};
+export type CardCommand=HumanCardCommand|ServerCardCommand|RemainingCardCommand;
 export interface CardDecisionEvidence {
+ loaded?:readonly ServerEvidenceStage[];
  claim?:boolean;userInput?:boolean;execution?:boolean;admitted?:boolean;admissionReceipt?:boolean;admissionValid?:boolean;
- sessionCardId?:string;statusChanged?:boolean;pending?:boolean;policyEnabled?:boolean;admission?:string;
- termination?:boolean;resumeAt?:unknown;ownerState?:string;previousOwnerMatch?:boolean;
+ sessionCardId?:string;statusChanged?:boolean;pending?:boolean;policyEnabled?:boolean;admission?:AdmissionResult;
+ termination?:boolean;resumeAt?:Date|string|null;ownerState?:string;previousOwnerMatch?:boolean;
 }
 export type DecisionEvent={type:CardDecisionCommand;actor:CardActor;facts:FiniteFacts};
 export function* enumerateCardFacts(command:CardDecisionCommand):Generator<FiniteFacts> {
@@ -62,7 +64,9 @@ export function deriveCardDecisionFacts(row:Record<string,any>|null,questions:re
  waiting=!length?'empty':length>WAITING_FOR_MAX_CODE_POINTS?'tooLong':!at?'invalid':at.getTime()<=checkedAt?'past':at.getTime()-checkedAt>VERIFICATION_WAIT_MAX_DAYS*86400000?'tooLate':'withinWeek';}
  const assignee=command.assignee;
  const assignment=Object.hasOwn(command,'assignee')&&(assignee?.kind??null)!==c.assignee_kind||Object.hasOwn(command,'assignee')&&assignee?.kind==='session'&&assignee.sessionId!==c.assignee_session_id;
- const all:Record<string,any>={target,queued:command.queue===true,assigneeInput:command.type==='SAVE_EXECUTION_SETTINGS'?(command.agentId?'agent':'none'):assignee?.kind??'none',claim:evidence.claim===true,wait:waiting,
+ const stages=CARD_SERVER_EVIDENCE_STAGES[command.type as keyof typeof CARD_SERVER_EVIDENCE_STAGES];
+ const evidenceMissing=stages?.find(stage=>!evidence.loaded?.includes(stage))??'none';
+ const all:Record<string,any>={evidenceMissing,target,queued:command.queue===true,assigneeInput:command.type==='SAVE_EXECUTION_SETTINGS'?(command.agentId?'agent':'none'):assignee?.kind??'none',claim:evidence.claim===true,wait:waiting,
  hasCurrentNow:c.now!=null,hasItems:(c.items??[]).length>0,hasAsk:command.ask!==undefined,question:!q?'missing':q.answer!==null?'answered':q.withdrawn_at!==null?'withdrawn':'open',
  otherOpen:questions.some(other=>other.id!==command.questionId&&other.answer===null&&other.withdrawn_at===null),
  entrance:command.entrance??'direct',requestedSpoken:command.kind==='spoken',reply:command.mode==='reply',hasMode:command.mode!==undefined,userInput:evidence.userInput===true,replyLength:[...String(command.body??'')].length>300?'tooLong':'within',
@@ -76,5 +80,11 @@ export function deriveCardDecisionFacts(row:Record<string,any>|null,questions:re
  verificationTimeMatch:c.wake_at!=null&&new Date(c.wake_at).toISOString()===command.wakeAt,
  ownerState:evidence.ownerState??'missing',hasNow:command.now!==undefined,nextArchived:command.archived===undefined?c.archived===true:command.archived===true,
  hasArchiveInput:command.archived!==undefined,hasAgentInput:command.agentId!==undefined,hasAssignment:Object.hasOwn(command,'assignee'),move:command.folderId!==undefined&&command.folderId!==c.folder_id,previousOwnerMatch:evidence.previousOwnerMatch===true};
- return Object.fromEntries(Object.keys(CARD_FACT_VALUES[command.type]).map(key=>[key,all[key]!]));
+ if(stages){
+  const stageFields:Partial<Record<ServerEvidenceStage,string[]>>={execution:['execution'],workAdmission:['admitted','admissionReceipt','admissionValid'],claim:['claim'],
+   executionStatus:['statusChanged'],pending:['pending'],policy:['policyEnabled'],admission:['admission'],termination:['termination'],limitReset:['short']};
+  for(const stage of stages)if(!evidence.loaded?.includes(stage))for(const key of stageFields[stage]??[])delete all[key];
+  if(command.type==='CONFIRM_EXECUTION'&&!evidence.loaded?.includes('executionSession'))delete all.sessionMatch;
+ }
+ return Object.fromEntries(Object.keys(CARD_FACT_VALUES[command.type]).filter(key=>all[key]!==undefined).map(key=>[key,all[key]]));
 }

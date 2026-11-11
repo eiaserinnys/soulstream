@@ -1,7 +1,8 @@
 import { and, or, not, stateIn } from 'xstate';
+import type { ServerEvidenceStage } from './card_server_command.js';
 import { CARD_FACT_VALUES, type DecisionEvent, type CardDecisionCommand } from './card_decision_facts.js';
 export const decisionGuards:Record<string,any>={};
-export const rejections:Record<string,{guard:string;failure:string}[]>=Object.fromEntries(Object.keys(CARD_FACT_VALUES).map(c=>[c,[]]));
+export const rejections:Record<string,{guard:string;failure?:string;stage?:ServerEvidenceStage}[]>=Object.fromEntries(Object.keys(CARD_FACT_VALUES).map(c=>[c,[]]));
 export const inside=(id:string)=>stateIn(`#${id}`);
 export const any=(...ids:string[])=>or(ids.map(inside));
 export const fact=(key:string,value:string|boolean=true):any=>({event}:{event:DecisionEvent})=>(event.facts as Record<string,unknown>)[key]===value;
@@ -12,6 +13,10 @@ const rest=or(['todo','queued','hold','cancelled'].map(t=>fact('target',t)));
 const resumable=and([any('s_question','s_noReport','s_other','s_verification'),inside('a_session'),inside('arch_active')]);
 function reject(command:CardDecisionCommand,name:string,failure:string,guard:any){
  const key=`reject.${command}.${name}`;decisionGuards[key]=guard;rejections[command]!.push({guard:key,failure});
+}
+function need(command:CardDecisionCommand,stage:ServerEvidenceStage,...conditions:any[]){
+ const key=`needs.${command}.${stage}`;decisionGuards[key]=and([fact('evidenceMissing',stage),...conditions]);
+ rejections[command]!.push({guard:key,stage});
 }
 function statusRights(command:CardDecisionCommand){reject(command,'statusOwner','statusOwner',and([agent,not(effectiveOwner),not(and([session,not(any('a_human','a_session')),rest]))]));}
 statusRights('SET_STATUS');
@@ -30,21 +35,29 @@ reject('ADD_COMMENT','replyOwner','replyOwner',and([fact('reply'),not(effectiveO
 reject('ADD_COMMENT','replyLength','replyLength',and([fact('reply'),fact('hasItems'),fact('replyLength','tooLong')]));
 reject('ADD_COMMENT','userInput','replyUserInput',and([fact('reply'),fact('hasItems'),not(fact('userInput'))]));
 reject('ADD_COMMENT','itemMissing','itemMissing',and([fact('hasItem'),not(fact('itemExists'))]));
-reject('START_WORK','actor','workOwner',not(session));reject('START_WORK','execution','workExecution',not(fact('execution')));
+need('START_WORK','execution');reject('START_WORK','execution','workExecution',not(fact('execution')));
+need('START_WORK','workAdmission');
 reject('START_WORK','admission','workAdmission',and([fact('admissionReceipt'),not(fact('admissionValid'))]));
+need('START_WORK','claim',not(fact('admitted')));
 reject('START_WORK','owner','workOwner',not(or([effectiveOwner,fact('admitted')])));
+need('CONFIRM_EXECUTION','executionSession');
 reject('CONFIRM_EXECUTION','executionMatches','executionMatches',not(fact('sessionMatch')));
+need('CONFIRM_EXECUTION','executionStatus');
 reject('DISPATCH','queued','queued',not(any('s_queued','s_missing')));
 reject('BLOCK_FOR_LIMIT','currentRunningOwner','limitRunning',not(and([inside('s_running'),inside('arch_active'),inside('a_session'),fact('sessionMatch')])));
+need('BLOCK_FOR_LIMIT','termination');
 reject('BLOCK_FOR_LIMIT','currentTermination','limitTermination',not(fact('termination')));
+need('BLOCK_FOR_LIMIT','limitReset');
 reject('RESUME_SHORT_LIMIT','sameDueReservation','shortReservation',not(and([inside('s_limit'),inside('arch_active'),inside('a_session'),fact('sessionMatch'),inside('r_limit'),fact('due'),fact('resumeTimeMatch')])));
 reject('RESUME_LONG_LIMIT','sameLongReservation','longReservation',not(and([inside('s_limit'),inside('arch_active'),fact('sessionMatch'),inside('r_longLimit')])));
 reject('RESUME_VERIFICATION','sameReservation','verificationReservation',not(and([inside('s_verification'),inside('a_session'),fact('sessionMatch'),inside('r_verify'),fact('verificationTimeMatch')])));
-for(const c of ['DISPATCH','RESUME_LONG_LIMIT','RESUME_SHORT_LIMIT'] as const)reject(c,'pending','pending',fact('pending'));
+for(const c of ['DISPATCH','RESUME_LONG_LIMIT','RESUME_SHORT_LIMIT'] as const){need(c,'pending');reject(c,'pending','pending',fact('pending'));}
 for(const c of ['DISPATCH','RESUME_LONG_LIMIT'] as const){
+ need(c,'policy');
  reject(c,'policyDisabled','policyDisabled',and([not(fact('policyEnabled')),fact('hasAdmission')]));
  reject(c,'admissionRequired','admissionRequired',and([fact('policyEnabled'),not(fact('hasAdmission'))]));
- for(const a of ['stale','capacity','missingCapacity','ineligible'])reject(c,a,`admission_${a}`,and([fact('policyEnabled'),fact('hasAdmission'),fact('admission',a)]));
+ need(c,'admission',fact('policyEnabled'),fact('hasAdmission'));
+ for(const a of ['lockedPolicyDisabled','stale','capacity','missingCapacity','ineligible'])reject(c,a,`admission_${a}`,and([fact('policyEnabled'),fact('hasAdmission'),fact('admission',a)]));
 }
 for(const c of ['BULK_SET_STATUS','MERGE_SOURCE','UPDATE_UNSTARTED'] as const)reject(c,'session','maintenanceSession',not(session));
 reject('BULK_SET_STATUS','human','bulkHuman',inside('a_human'));

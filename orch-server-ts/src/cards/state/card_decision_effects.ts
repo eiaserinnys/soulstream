@@ -1,3 +1,6 @@
+import type { DecisionAction } from './card_decision.js';
+import type { CardWriteStep } from './card_write_intent.js';
+type WriteStage=NonNullable<NonNullable<DecisionAction['params']>['stage']>;
 import { and, or, not } from 'xstate';
 import { CARD_DECISION_SOURCES, CARD_COMMAND_ENTRANCES, CARD_COMMAND_CALLERS } from './card_decision_inventory.js';
 import { CARD_FACT_VALUES, TARGETS, type CardDecisionCommand } from './card_decision_facts.js';
@@ -20,19 +23,19 @@ export const COMMAND_RULES:Partial<Record<CardDecisionCommand,string>>={
  CONFIRM_EXECUTION:'요청 세션을 담당으로 연결한다. 요청 이후 상태가 바뀐 뒤늦은 확인은 상태와 완료 정보를 보존한다.',
 };
 export const effects:Record<string,Record<string,any[]>>=Object.fromEntries(['status','question','reservation','assignee','archive'].map(r=>[r,{}]));
-export const verdictExtras:Record<string,any[]>=Object.fromEntries(Object.keys(CARD_FACT_VALUES).map(c=>[c,[]]));
-export const write=(fields:Record<string,CardBinding>,stage='state',kind='card')=>({type:'write',params:{stage,kind,fields}});
-export const mark=(type:string,stage='state')=>({type,params:{stage}});
+export const verdictExtras:Record<string,DecisionAction[]>=Object.fromEntries(Object.keys(CARD_FACT_VALUES).map(c=>[c,[]]));
+export const write=(fields:Record<string,CardBinding>,stage:WriteStage='state',kind:CardWriteStep['kind']='card'):DecisionAction=>({type:'write',params:{stage,kind,fields}});
+export const mark=(type:string,stage:WriteStage='state'):DecisionAction=>({type,params:{stage}});
 const clearCompletion=()=>write(Object.fromEntries(['completed_kind','completed_session_id','completed_user_id','completed_event_id','completed_at'].map(k=>[k,literal(null)])));
 const complete=()=>write({completed_kind:bind('completion.kind'),completed_session_id:bind('actor.session'),completed_user_id:bind('actor.user'),completed_event_id:bind('event.id'),completed_at:bind('clock')});
-const claim=(stage='state')=>[mark('writeAssignee',stage),write({assignee_session_id:bind('actor.session'),assignee_agent_id:literal(null)},stage)];
-function put(region:string,c:CardDecisionCommand,target:string|undefined,conditions:any[]=[],actions:any[]=[],description=COMMAND_LABELS[c]) {
+const claim=(stage:WriteStage='state')=>[mark('writeAssignee',stage),write({assignee_session_id:bind('actor.session'),assignee_agent_id:literal(null)},stage)];
+function put(region:string,c:CardDecisionCommand,target:string|undefined,conditions:any[]=[],actions:DecisionAction[]=[],description=COMMAND_LABELS[c]) {
  const list=effects[region]![c]??=[];
  list.push({...(target?{target:`#${target}`} : {}),guard:permitted(c,...conditions),actions,description,meta:{command:c,label:description,callers:CARD_COMMAND_CALLERS[c],sources:CARD_DECISION_SOURCES[c],entrances:CARD_COMMAND_ENTRANCES[c],rule:COMMAND_RULES[c]??COMMAND_LABELS[c]}});
 }
-function patchExtras(c:CardDecisionCommand,target:string,extra:any[]=[]){
+function patchExtras(c:CardDecisionCommand,target:string,extra:DecisionAction[]=[]){
  const general=['SET_STATUS','BULK_SET_STATUS','REQUEST_REVIEW','HUMAN_INPUT'].includes(c);
- const actions:any[]=[mark('writeStatus'),write({blocked_detail:['question','limit','noReport','other'].includes(target)?bind('command.blockedDetail.nullable'):literal(null)}),...extra];
+ const actions:DecisionAction[]=[mark('writeStatus'),write({blocked_detail:['question','limit','noReport','other'].includes(target)?bind('command.blockedDetail.nullable'):literal(null)}),...extra];
  if(general)actions.push(target==='done'?complete():clearCompletion());
  if(['ASK_QUESTION','START_WORK','CONFIRM_EXECUTION','MERGE_SOURCE'].includes(c))actions.push(clearCompletion());
  if(general)actions.push(write({queue_position_key:target==='queued'?bind('queue.new'):target==='limit'?bind('card.queue_position_key'):literal(null)}));
@@ -43,7 +46,7 @@ function patchExtras(c:CardDecisionCommand,target:string,extra:any[]=[]){
  }
  return actions;
 }
-function status(c:CardDecisionCommand,target:string,conditions:any[]=[],extra:any[]=[]){
+function status(c:CardDecisionCommand,target:string,conditions:any[]=[],extra:DecisionAction[]=[]){
  put('status',c,`s_${target}`,conditions,patchExtras(c,target,extra));
  if(target==='verification')put('reservation',c,'r_verify',conditions,[write({wake_at:bind('command.wakeAt.iso'),waiting_for:bind('command.waitingFor.trimmed')}),mark('clearLimit')]);
  else if(target!=='limit')put('reservation',c,'r_none',conditions,[mark('clearLimit')]);
@@ -97,7 +100,7 @@ for(const c of ['SET_STATUS','REQUEST_REVIEW','START_WORK','ADD_COMMENT','CONFIR
  put('reservation',c,'r_none',[changed,not(inside('r_verify'))],[mark('clearLimit',c==='ADD_COMMENT'?'claim':'state')]);
  put('reservation',c,undefined,[changed,inside('r_verify')],[mark('clearLimit',c==='ADD_COMMENT'?'claim':'state')]);
 }
-function augment(region:string,c:CardDecisionCommand,condition:any,actions:any[]) {
+function augment(region:string,c:CardDecisionCommand,condition:any,actions:DecisionAction[]) {
  const list=effects[region]![c]??[{guard:permitted(c),actions:[],description:COMMAND_LABELS[c],meta:{command:c,label:COMMAND_LABELS[c],callers:CARD_COMMAND_CALLERS[c],sources:CARD_DECISION_SOURCES[c],entrances:CARD_COMMAND_ENTRANCES[c],rule:COMMAND_RULES[c]??COMMAND_LABELS[c]}}];
  effects[region]![c]=list.flatMap(rule=>[
  {...rule,guard:and([rule.guard,condition]),actions:[...rule.actions,...actions]},

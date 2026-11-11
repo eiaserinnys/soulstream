@@ -30,6 +30,38 @@
 | updateUnstartedCard | prior operation, 카드, assertUnstartedCardTx, pending, request 첨부 | before와 executionRequests | operations, participantRequests, cards, assets |
 | saveExecutionSettings | pending, 연결 담당, applyCardMoveTx의 폴더와 순서, 공통 patch | before와 executionRequests | folders, cards, participantRequests |
 
+## PR 3 서버 명령의 증거 단계
+
+각 명령은 잠긴 카드와 지금까지 모은 증거로 결정 기계에 묻는다. ordered reject 전이에서 앞선 거절이 없고 다음 증거가 없으면 needsEvidence가 읽을 단계를 지목한다. 서비스는 지목된 reader만 실행한다. needsEvidence에는 쓰기와 formatter가 없으며, 마지막 apply, noop, reject 뒤에만 decoder와 저장기를 실행한다. 호출 상한은 아래 단계 수 + 1이다. 없는 단계의 증거는 facts에서 생략한다.
+
+| 명령과 서비스 | 증거 단계 순서 | 유지한 SQL 잠금과 생략 조건 |
+| :-- | :-- | :-- |
+| START_WORK, startCardWork | execution → workAdmission → claim | 실행 등록 sessions FOR SHARE → 활성 dispatch FOR UPDATE → 해당 delivery/등록 receipt → admitted fence JOIN. 수락된 자동 실행이면 claim 조회를 생략한다. 그 밖에는 기존 claimableCardSessions SELECT를 한 번 읽는다. |
+| CONFIRM_EXECUTION, recordExecution | executionSession → executionStatus | 요청 세션의 card_id를 sessions FOR SHARE로 읽은 뒤 담당 일치를 판정한다. 일치할 때만 카드 상태 변경 시각과 요청 updated_at을 기존 SQL로 비교한다. |
+| DISPATCH, recordDispatch | pending → policy → admission | queued 거절 뒤에는 읽지 않는다. pending SELECT → 정책의 잠금 없는 SELECT → 정책 FOR SHARE → decided run FOR UPDATE → 용량 advisory lock → card_dispatch FOR SHARE → 점유 세션 → 대상 자격 SELECT 순이다. |
+| RESUME_LONG_LIMIT, resumeDispatchedCard | pending → policy → admission | 현재 긴 한도 예약 거절 뒤에는 읽지 않는다. 이후 순서와 잠금은 DISPATCH와 같다. |
+| BLOCK_FOR_LIMIT, blockCardForLimit | termination → limitReset | 현재 실행 중 담당 판정 뒤 sessions FOR SHARE. 최신 한도 종료와 event ID가 일치할 때만 기존 events 구간 SELECT와 readLimitAutoResumeAt 계산을 수행한다. |
+| RESUME_SHORT_LIMIT, resumeLimitedCard | pending | 상태, 담당, 예약 시각 일치와 도래 판정 뒤에만 pending SELECT. 시각 바로 전에는 거절하고 같은 시각부터 허용한다. |
+| RESUME_VERIFICATION, resumeVerificationCard | 없음 | 잠긴 카드의 담당과 wake_at 일치만 판정한다. 도래 선별과 실제 깨우기는 기존 호출부에 남는다. |
+| NOTE_MISSING, noteMissingAssignee | 없음 | 상태 자격 제한을 추가하지 않고 blocked_detail만 요청 쓰기로 넘긴다. |
+
+모든 행의 앞에는 기존 mutateCard의 cards FOR UPDATE와 expectedVersion 검사가 있다. 잠금 대상, 모드, 읽는 순서와 트랜잭션 경계는 바꾸지 않는다. 실행 영수증에 따른 dispatch running UPDATE와 허가 dispatch INSERT는 최종 apply 뒤 실행하고, 기존처럼 카드 UPDATE보다 앞선다. 카드 UPDATE는 모두 patchCardTx를 통하며 decoder의 normalization 쓰기는 넘기지 않는다.
+
+serverCardEvidence는 운영 fence 결과와 고정 관찰의 원시 행에서 같은 증거를 만드는 순수 정본이다. 실행 등록, 영수증, admission run/용량/대상, 현재 한도 종료의 계산을 fixture adapter에서 옮겼다. SQL이 보장하는 실행 등록·receipt 상관관계·정책 version·lease·admittedCardVersion fence는 기존 SQL에 남는다. 원시 행에서의 fence 결과 재구성과 운영 결과를 같은 증거 형식으로 묶는다. 한도 해제 시각은 기존 readLimitAutoResumeAt의 결과이며 관찰 fixture의 기록 값을 그대로 사용한다.
+
+| 검사 | 기준 50f25bbfc 위치 | 새 위치 |
+| :-- | :-- | :-- |
+| START_WORK 주체 종류와 세션 ID | 카드 조회·잠금·version 앞 | 단일 CARD_COMMAND_ENTRY_RULES 표를 같은 입구 위치에서 확인 |
+| expectedVersion | 카드 FOR UPDATE 직후 | 기존 mutateCard 그대로 |
+| 현재 카드 상태·담당·예약·도래 | 해당 메서드의 첫 증거 SQL 앞 | 기계 ordered reject의 해당 needsEvidence 앞 |
+| 실행 등록·자동 실행 admission | 등록 SQL → 영수증 SQL → fence, claim 앞 | execution과 workAdmission 단계 결과를 같은 순서의 가드로 판정 |
+| pending·정책·허가 첫 실패 | 각각의 다음 읽기 앞 | 단계 결과를 받은 ordered reject, 다음 needsEvidence 앞 |
+| 한도 상세·now, 재개 now 서식 | 상태와 증거 검사 뒤, patch 앞 | 선택된 decoder bind의 이름별 lazy 함수 |
+
+정책은 두 번 읽는다. 처음 잠금 없는 조회가 꺼짐이면 admission 입력을 422 INVALID_CARD_REQUEST로 거절한다. 처음 켜짐, 다음 FOR SHARE 조회가 꺼짐이면 lockedPolicyDisabled fence 결과를 골라 statusCode와 code 없는 기존 Error를 만든다. 두 읽기를 합치거나 잠금 시점을 앞당기지 않는다. 이 경합의 오류 형식 차이는 기존 결함 후보로 남겼다. stale, missingCapacity, capacity, ineligible도 첫 fence 실패만 돌려주며 기존 일반 Error 형식을 유지한다.
+
+card-server-order.test.ts의 SQL prefix와 오류 기대값은 50f25bbfc의 실제 서비스 및 두 SQL fence 모듈을 별도 임시 모듈로 불러 확인한다. 새 서비스에도 같은 기대값을 적용한다. 기존 서비스 시험의 기대값과 관찰 fixture는 바꾸지 않는다.
+
 ## 공유 경계와 관찰 범위
 
 모든 mutation의 카드 존재, expectedVersion, idempotency는 before, command와 operations로 확인한다. folders는 폴더 존재와 보관을 기록한다. 단일 담당 제약은 cards, 순서 키 입력도 cards에 있다. 순서 키와 감사 ID 및 시각 자체는 기존 정규화 비교를 따른다. claim은 SQL 조회 결과를 그대로 기록한다.

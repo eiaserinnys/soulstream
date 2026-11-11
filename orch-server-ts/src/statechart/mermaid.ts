@@ -38,6 +38,8 @@ export interface ChartHole {
 
 export interface ChartSpec {
   include: string[];
+  /** Show targetless transitions as self edges in a diagnostic view. */
+  targetless?: boolean;
   hide?: string[];
   collapse?: string[];
   parallel?: "stack" | "divider";
@@ -281,7 +283,7 @@ export function toMermaid(
     for (const eventType of Object.keys(node.on)) {
       if (hideEvents.has(eventType)) continue;
       for (const transition of node.on[eventType] ?? []) {
-        if (transition.target === undefined || transition.target.length === 0) continue;
+        if ((transition.target === undefined || transition.target.length === 0) && !spec.targetless) continue;
         const groupName = typeof transition.meta?.chartGroup === "string" ? transition.meta.chartGroup : null;
         if (groupName !== null) {
           const group = groups[groupName];
@@ -299,7 +301,7 @@ export function toMermaid(
         const note = markNotes.get(`${transition.source.id}\u0000${eventType}`);
         const base = transition.description ?? eventType;
         const label = cleanEdgeLabel(note === undefined ? base : `${base} (${note})`);
-        for (const targetNode of transition.target) {
+        for (const targetNode of transition.target?.length ? transition.target : [transition.source]) {
           const tgtId = resolve(targetNode.id);
           if (tgtId === null) continue;
           if (srcId === tgtId && transition.source.id !== targetNode.id) continue;
