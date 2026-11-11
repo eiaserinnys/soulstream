@@ -1,0 +1,628 @@
+{
+  "baseline": "52fb382d50d64c54a614fa6ef2f412b3fae83121",
+  "paths": [
+    {
+      "events": [
+        "CREATE_TODO"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_QUEUED"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_todo"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "ASSIGNEE_MOVE_todo"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_queued"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "ASSIGNEE_MOVE_queued"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_running"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_question"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_noReport"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_other"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_limit"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_review"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_hold"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "ASSIGNEE_MOVE_hold"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_done"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_cancelled"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "ASSIGNEE_MOVE_cancelled"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "ASK_OTHER"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION_LATE"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "ASSIGN_SESSION"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "ASSIGN_AGENT"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "ASSIGN_HUMAN"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "PAS_APPEARS"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "BULK_TODO"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "BULK_QUEUED"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "BULK_HOLD"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "BULK_CANCELLED"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "MERGE_SOURCE"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_QUEUED",
+        "HUMAN_MOVE_todo"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_QUEUED",
+        "ASSIGNEE_MOVE_todo"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_QUEUED",
+        "DISPATCH"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_QUEUED",
+        "NOTE_MISSING"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_QUEUED",
+        "BULK_TODO"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_running",
+        "CREATE_FAIL"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_limit",
+        "SERVER_LIVE_RESUME"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_limit",
+        "SERVER_LIMIT_REQUEUE"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_limit",
+        "ATTACHMENT_FAIL"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "ASK_OTHER",
+        "ANSWER_DETAIL"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "ASK_OTHER",
+        "ANSWER_BOARD"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "ASK_OTHER",
+        "WITHDRAW_AUTHOR"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "ASK_OTHER",
+        "RECORD_EXECUTION"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "ASK_OTHER",
+        "RECORD_EXECUTION_LATE"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "ASK_OTHER",
+        "ASSIGN_SESSION"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "ASSIGNEE_MOVE_running"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "ASSIGNEE_MOVE_question"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "ASSIGNEE_MOVE_noReport"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "ASSIGNEE_MOVE_other"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "ASSIGNEE_MOVE_limit"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "HUMAN_MOVE_verification"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "ASSIGNEE_MOVE_verification"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "ASSIGNEE_MOVE_review"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "ASSIGNEE_MOVE_done"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "ASK_OWNER"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "AGENT_COMMENT"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "START_WORK"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "REQUEST_REVIEW"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "SERVER_SHORT_LIMIT"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "SERVER_LONG_LIMIT"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "OWNER_END"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION_LATE",
+        "ASSIGNEE_MOVE_running"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION_LATE",
+        "START_WORK"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "PAS_APPEARS",
+        "BOARD_ONE"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "PAS_APPEARS",
+        "BOARD_FULL"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "PAS_APPEARS",
+        "BOARD_ROOM"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_QUEUED",
+        "RECORD_EXECUTION_LATE",
+        "ADMIT_DISPATCH"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_QUEUED",
+        "ASSIGN_AGENT",
+        "ADMIT_DISPATCH"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_question",
+        "RECORD_EXECUTION_LATE",
+        "HUMAN_MESSAGE"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_question",
+        "RECORD_EXECUTION_LATE",
+        "HUMAN_COMMENT"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_question",
+        "RECORD_EXECUTION_LATE",
+        "REPLACE_LIVE"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_question",
+        "RECORD_EXECUTION_LATE",
+        "REPLACE_LIMITED"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_question",
+        "PAS_APPEARS",
+        "ACK_CARD"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_limit",
+        "RECORD_EXECUTION_LATE",
+        "REPLACE_LIVE"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_limit",
+        "RECORD_EXECUTION_LATE",
+        "REPLACE_LIMITED"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "ASK_OTHER",
+        "RECORD_EXECUTION",
+        "WITHDRAW"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "ASK_OTHER",
+        "RECORD_EXECUTION_LATE",
+        "WITHDRAW"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "HUMAN_MOVE_verification",
+        "WAKE_TIME"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "HUMAN_MOVE_verification",
+        "WAKE_FAIL"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "ASK_OWNER",
+        "REPLACE_LIVE"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "ASK_OWNER",
+        "REPLACE_LIMITED"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "SERVER_SHORT_LIMIT",
+        "SERVER_LIMIT_TIME"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "SERVER_LONG_LIMIT",
+        "SERVER_LIMIT_RELAUNCH"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "RECORD_EXECUTION",
+        "SERVER_LONG_LIMIT",
+        "ADMIT_LIMIT"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "PAS_APPEARS",
+        "BOARD_FULL",
+        "BOARD_OTHER_REMOVED"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_QUEUED",
+        "ASSIGN_AGENT",
+        "ADMIT_DISPATCH",
+        "START_ADMITTED_WORK"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_question",
+        "RECORD_EXECUTION_LATE",
+        "REPLACE_LIVE",
+        "START_WORK"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_question",
+        "RECORD_EXECUTION_LATE",
+        "REPLACE_LIVE",
+        "RECORD_EXECUTION"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_question",
+        "RECORD_EXECUTION_LATE",
+        "REPLACE_LIVE",
+        "RECORD_EXECUTION_LATE"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "HUMAN_MOVE_question",
+        "RECORD_EXECUTION_LATE",
+        "REPLACE_LIVE",
+        "OWNER_END"
+      ]
+    },
+    {
+      "events": [
+        "CREATE_TODO",
+        "ASK_OTHER",
+        "HUMAN_MOVE_queued",
+        "ASSIGN_AGENT",
+        "ADMIT_DISPATCH",
+        "START_ADMITTED_WORK"
+      ]
+    }
+  ]
+}

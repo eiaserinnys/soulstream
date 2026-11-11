@@ -3,14 +3,13 @@ import { execFileSync } from 'node:child_process';
 import { it, expect } from 'vitest';
 import { createCardMachineWorld } from './card-machine-world.js';
 import { observeCardDecisions, compareDecisionObservation, type DecisionObservation } from './card-decision-observation.js';
-import { cardContrastPaths } from '../src/cards/state/card_machine_paths.js';
 import { collectAdditionalObservations } from './card-decision-observation-cases.js';
 const baseline = 'c8b9c745a8c8728b65ac2741b75ddb16eec5b7bf';
 const fixture = new URL('./fixtures/card-state-observations.json', import.meta.url);
 it('collects and replays baseline SQL observations through the same normalized comparator', async () => {
   const world = await createCardMachineWorld();
   const traces = observeCardDecisions(world);
-  const paths = cardContrastPaths().paths;
+  const { paths } = JSON.parse(await readFile(new URL('./fixtures/card-state-replay-paths.json', import.meta.url), 'utf8')) as { paths: { events: string[] }[] };
   const collect = async () => {
     const observations: DecisionObservation[] = [];
     for (const path of paths) {
