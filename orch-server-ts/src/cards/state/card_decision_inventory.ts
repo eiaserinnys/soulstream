@@ -3,6 +3,7 @@ import type {CardDecisionCommand} from './card_decision_facts.js';
 export const CARD_COMMAND_ENTRY_RULES:Partial<Record<CardDecisionCommand,readonly {
  when:'always'|'hasMode'|'requestedSpoken';kinds:readonly string[];session?:true;failure:string;
 }[]>>={
+ START_WORK:[{when:'always',kinds:['agent'],session:true,failure:'workOwner'}],
  ANSWER_QUESTION:[{when:'always',kinds:['user'],failure:'humanAnswer'}],
  ADD_COMMENT:[
   {when:'hasMode',kinds:['agent'],session:true,failure:'commentTrustedMode'},
@@ -10,15 +11,19 @@ export const CARD_COMMAND_ENTRY_RULES:Partial<Record<CardDecisionCommand,readonl
  ],
 };
 const control='cards/card_control_plane_service.ts';
-/** PR 2: explicit operational connections; remaining families still use legacy services. */
+/** Explicit operational connections; maintenance and common patch remain for PR 4. */
 export const CARD_RUNTIME_DECISION_CALLS={
  CREATE:[`${control}#createCard`,`${control}#createCardTx`],
  SET_STATUS:[`${control}#setCardStatus`],REQUEST_REVIEW:[`${control}#requestCardReview`],
  HUMAN_INPUT:[`${control}#resumeBlockedCardOnHumanInput`],ASK_QUESTION:[`${control}#askQuestion`],
  ANSWER_QUESTION:[`${control}#answerQuestion`],WITHDRAW_QUESTION:[`${control}#withdrawQuestion`],
  ADD_COMMENT:[`${control}#addComment`,`${control}#addCommentTx`],
+ START_WORK:[`${control}#startCardWork`],CONFIRM_EXECUTION:[`${control}#recordExecution`],
+ DISPATCH:[`${control}#recordDispatch`],RESUME_LONG_LIMIT:[`${control}#resumeDispatchedCard`],
+ BLOCK_FOR_LIMIT:[`${control}#blockCardForLimit`],RESUME_SHORT_LIMIT:[`${control}#resumeLimitedCard`],
+ RESUME_VERIFICATION:[`${control}#resumeVerificationCard`],NOTE_MISSING:[`${control}#noteMissingAssignee`],
 } as const;
-export const CARD_RUNTIME_DECISION_IMPORTERS=[control] as const;
+export const CARD_RUNTIME_DECISION_IMPORTERS=[control,'cards/card_orchestration_repository.ts','cards/card_server_evidence_reader.ts','cards/card_work_lifecycle.ts'] as const;
 export const CARD_DECISION_SOURCES={
  CLAIM:[control,'claim'],CREATE:[control,'createCardMutation'],SET_STATUS:[control,'setCardStatus'],REQUEST_REVIEW:[control,'requestCardReview'],HUMAN_INPUT:[control,'resumeBlockedCardOnHumanInput'],ASK_QUESTION:[control,'askQuestion'],ANSWER_QUESTION:[control,'answerQuestion'],WITHDRAW_QUESTION:[control,'withdrawQuestion'],ADD_COMMENT:[control,'applyAddCommentTx'],START_WORK:[control,'startCardWork'],CONFIRM_EXECUTION:[control,'recordExecution'],DISPATCH:[control,'recordDispatch'],BLOCK_FOR_LIMIT:[control,'blockCardForLimit'],RESUME_SHORT_LIMIT:[control,'resumeLimitedCard'],RESUME_LONG_LIMIT:[control,'resumeDispatchedCard'],RESUME_VERIFICATION:[control,'resumeVerificationCard'],NOTE_MISSING:[control,'noteMissingAssignee'],BULK_SET_STATUS:['cards/card_maintenance_service.ts','bulkSetCardStatus'],MERGE_SOURCE:['cards/card_maintenance_service.ts','mergeCards'],UPDATE_UNSTARTED:['cards/card_maintenance_service.ts','updateUnstartedCard'],SAVE_EXECUTION_SETTINGS:[control,'saveExecutionSettings'],PATCH_CARD_CONTROL:[control,'patchCard'],REGISTER_REPLACEMENT:['control_plane/repositories/session_card_replacement.ts','applySessionCardReplacement'],
 } as const satisfies Record<CardDecisionCommand,readonly [string,string]>;

@@ -1,4 +1,5 @@
-import { isUsageLimitTermination } from "../session/session_limit_termination.js";
+import { cardServerEvidenceReader } from './card_server_evidence_reader.js';
+import type { ServerCardCommand } from './state/card_server_command.js';
 import { decideCardTransition } from './state/card_decision.js';
 import { decodeCardDecision } from './state/card_decision_decoder.js';
 import { formatCardDecisionRejection } from './state/card_decision_errors.js';
@@ -8,7 +9,6 @@ import type { HumanCardCommand } from './state/card_human_command.js';
 import type { DecodedCardWrite } from './state/card_decision_decoder.js';
 import type { CardBindingValues } from './state/card_write_intent.js';
 import { patchCardTx } from "./control_plane/card_patch.js";
-import { readLimitAutoResumeAt, formatLimitResumeClock, type LimitResumeOwner } from "./card_limit_auto_resume.js";
 import { assertNoPendingCardExecution } from "./card_execution_reservation.js";
 // 500줄 예외: 카드 aggregate의 기존 트랜잭션 facade. 보고 저장 로직은 별도 service에 둔다.
 import { PersistentReportService, type PublishPersistentReports } from "../session/persistent_report_service.js";
@@ -26,7 +26,7 @@ import { readSupervisedCardContext } from "./supervised_card_context.js";
 import { parseCardReference, cardQuestionOptionsSchema, type CardReferenceLookupResult } from "@soulstream/mcp-contract";
 import { findCardSessionByOrdinal, findCardsByNumber, readCardChildOrdinals, readSessionReferences } from "./card_reference_repository.js";
 import type { SupervisedCardSnapshot } from "./supervised_card_context.js";
-import { acceptQueuedWork, validateWorkExecution, invalidWork, type CardWorkExecution } from "./card_work_lifecycle.js";
+import type { CardWorkExecution } from "./card_work_lifecycle.js";
 import { CardMcpReadService } from "./card_mcp_read.js";
 import { readCardSessionMessages, type CardSessionMessagesQuery } from "./card_session_messages.js";
 import { randomUUID } from "node:crypto";
@@ -56,7 +56,6 @@ import {
 } from "./card_item_rules.js";
 import { hasUserInputAfterLastReplyTx, readCardItemSourceTx } from "./control_plane/card_item_store.js";
 import { parseVerificationWakeAt, validateVerificationWait, verificationWaitNow } from "./card_verification_wait.js";
-import {assertPolicyAdmission} from "./card_orchestration_repository.js";
 import { claimableCardSessions, assertSingleCardAssignee, translateAssigneeConflict, invalidCard } from "./card_assignee.js";
 
 export type PolicyAdmission = {runId:string;leaseToken:string;workerInput:Record<string,unknown>};
@@ -240,15 +239,7 @@ export class CardControlPlaneService {
   /** Records the requesting side's execution evidence; it is not an assignee session's declaration. */
   async recordExecution(params:CardMutationParams & {requestId:string;sessionId:string;execution?:CardWorkExecution}) {
     return this.mutateCard(params,"execute_card",{request_id:params.requestId,session_id:params.sessionId,execution:params.execution},async(sql,card,eventId)=>{
-      const session=(await sql`SELECT card_id FROM sessions WHERE session_id=${params.sessionId} FOR SHARE`)[0];
-      if(card.assignee_session_id ? card.assignee_session_id!==params.sessionId : session?.card_id!==card.id)
-        throw invalid("실행 세션과 카드 담당이 일치하지 않습니다.");
-      const stateChanged=(await sql`SELECT c.status_changed_at>r.updated_at AS changed FROM cards c
-        JOIN card_execution_requests r ON r.card_id=c.id WHERE c.id=${card.id} AND r.id=${params.requestId} AND r.session_id=${params.sessionId}`)[0]?.changed===true;
-      // Confirming startup is independent of a later formal review/completion.
-      await this.patch(sql,card,{assignee_kind:"session",assignee_session_id:params.sessionId,assignee_agent_id:null,
-        ...(params.execution&&!stateChanged?{status:"running",queue_position_key:null,blocked_kind:null,blocked_detail:null,
-          completed_kind:null,completed_session_id:null,completed_event_id:null,completed_user_id:null,completed_at:null}: {})},params,eventId);
+      await this.serverDecision(sql,card,{...params,type:'CONFIRM_EXECUTION'},params,eventId);
     });
   }
   async setCardStatus(params: CardMutationParams & { status: CardStatus; blockedKind?: CardRow["blocked_kind"]; blockedDetail?: string | null; wakeAt?: string; waitingFor?: string }) {
@@ -363,16 +354,9 @@ export class CardControlPlaneService {
     return note;
   }
   async startCardWork(params: CardMutationParams & { execution: CardWorkExecution }) {
-    if (params.actorKind !== "agent" || !params.actorSessionId) throw invalidWork("Only the current assignee session may start work. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work.");
+    assertCardCommandEntrance('START_WORK',{}, {kind:params.actorKind,sessionId:params.actorSessionId});
     return this.mutateCard(params,"start_card_work",{execution:params.execution},async(sql,card,eventId,payload)=>{
-      await validateWorkExecution(sql,params.actorSessionId!,params.execution);
-      const dispatch = await acceptQueuedWork(sql,card,params.actorSessionId!,params.execution);
-      const claim=dispatch ? {} : await this.claim(sql,card,params.actorSessionId,payload);
-      if (card.assignee_session_id !== params.actorSessionId && !dispatch)
-        throw invalidWork("Only the current assignee session may start work. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work.");
-      await this.patch(sql,card,{...claim,status:"running",queue_position_key:null,blocked_kind:null,blocked_detail:null,
-        completed_kind:null,completed_session_id:null,completed_event_id:null,completed_user_id:null,completed_at:null,
-        ...(dispatch ? {assignee_kind:"session",assignee_session_id:params.actorSessionId,assignee_agent_id:null} : {})},params,eventId);
+      await this.serverDecision(sql,card,{type:'START_WORK',execution:params.execution},params,eventId,payload);
     });
   }
   async moveCard(params: CardMutationParams & { folderId:string; afterCardId?:string | null }) {
@@ -497,23 +481,13 @@ export class CardControlPlaneService {
   recordDispatch(params:{cardId:string;expectedVersion:number;sessionId:string;nodeId:string;admission?:PolicyAdmission}) {
     const actor={actorKind:"system" as const,actorSessionId:null,...params};
     return this.mutateCard(actor,"dispatch_card",{session_id:params.sessionId,node_id:params.nodeId},async(sql,card,eventId)=>{
-      if (card.status !== "queued") throw invalid("Only queued cards may dispatch");
-      await assertNoPendingCardExecution(sql,card.id);
-      await this.checkAdmission(sql,params);
-      await this.patch(sql,card,{status:params.admission ? "queued" : "running",blocked_kind:null,blocked_detail:null,
-        ...(!params.admission ? {queue_position_key:null} : {})},actor,eventId);
+      await this.serverDecision(sql,card,{...params,type:'DISPATCH'},actor,eventId);
     });
   }
   resumeDispatchedCard(params:{cardId:string;expectedVersion:number;sessionId:string;nodeId?:string;admission?:PolicyAdmission}) {
     const actor={actorKind:"system" as const,actorSessionId:null,...params};
     return this.mutateCard(actor,"resume_card",{session_id:params.sessionId},async(sql,card,eventId)=>{
-      if (card.status!=="blocked" || card.blocked_kind!=="limit" || card.archived
-        || card.assignee_session_id!==params.sessionId || card.limit_resume_session_id!==params.sessionId || card.limit_resume_at!==null)
-        throw invalid("Only the recorded current long-limit assignee may resume");
-      await assertNoPendingCardExecution(sql,card.id);
-      await this.checkAdmission(sql,{...params,nodeId:params.nodeId??card.node_id??"eiaserinnys"});
-      await this.patch(sql,card,{status:params.admission ? "queued" : "running",blocked_kind:null,blocked_detail:null,
-        ...(!params.admission ? {queue_position_key:null} : {})},actor,eventId);
+      await this.serverDecision(sql,card,{...params,type:'RESUME_LONG_LIMIT'},actor,eventId);
     });
   }
   /** Capture both the quota owner and optional short reset under the card lock. */
@@ -521,32 +495,14 @@ export class CardControlPlaneService {
     const actor={actorKind:"system" as const,actorSessionId:null};
     return this.mutateCard({...actor,cardId:params.cardId,expectedVersion:params.expectedVersion},"set_card_status",
       {status:"blocked",blocked_kind:"limit",session_id:params.sessionId},async(sql,card,eventId)=>{
-      if (card.status!=="running" || card.archived || card.assignee_kind!=="session" || card.assignee_session_id!==params.sessionId)
-        throw invalid("Only the current running assignee may enter limit-blocked");
-      const owner=(await sql<LimitResumeOwner[]>`SELECT session_id,status,termination_reason,termination_event_id FROM sessions WHERE session_id=${params.sessionId} FOR SHARE`)[0];
-      if (!owner || !isUsageLimitTermination(owner) || owner.termination_event_id!==params.terminationEventId)
-        throw invalid("Quota termination changed before the card was blocked");
-      const resumeAt=await readLimitAutoResumeAt(sql,owner);
-      const clock=resumeAt ? formatLimitResumeClock(resumeAt) : null;
-      await this.patch(sql,card,{status:"blocked",blocked_kind:"limit",queue_position_key:card.queue_position_key,
-        blocked_detail:clock ? `사용량 한도, ${clock} 자동 재개` : "세션 사용량 한도",
-        limit_resume_session_id:params.sessionId,limit_resume_at:resumeAt,
-        ...(clock ? {now:sql.json(makeCardNow({text:`사용량 한도로 멈춤, ${clock}에 저절로 이어집니다`,turn:"outside"},new Date().toISOString(),null))} : {}),
-      },actor,eventId);
+      await this.serverDecision(sql,card,{...params,type:'BLOCK_FOR_LIMIT'},actor,eventId);
     });
   }
   /** Resume only the unchanged, due short reservation, independent of session liveness. */
   resumeLimitedCard(params:{cardId:string;sessionId:string;resumeAt:string;now:number}) {
     const actor={actorKind:"system" as const,actorSessionId:null};
     return this.mutateCard({...actor,cardId:params.cardId},"resume_card",{session_id:params.sessionId,limit_resume_at:params.resumeAt},async(sql,card,eventId)=>{
-      if (card.status!=="blocked" || card.blocked_kind!=="limit" || card.archived
-        || card.assignee_kind!=="session" || card.assignee_session_id!==params.sessionId
-        || card.limit_resume_session_id!==params.sessionId || !card.limit_resume_at
-        || new Date(card.limit_resume_at).toISOString()!==params.resumeAt || new Date(card.limit_resume_at).getTime()>params.now)
-        throw invalid("Only the current assignee's unchanged due limit reservation may resume");
-      await assertNoPendingCardExecution(sql,card.id);
-      await this.patch(sql,card,{status:"running",blocked_kind:null,blocked_detail:null,queue_position_key:null,
-        now:sql.json(makeCardNow({text:"담당이 이어서 진행합니다",turn:"agent"},new Date().toISOString(),null))},actor,eventId);
+      await this.serverDecision(sql,card,{...params,type:'RESUME_SHORT_LIMIT'},actor,eventId);
     });
   }
   /** 검증 대기 시각이 되어 담당을 깨운 뒤 실행 중으로 되돌린다. 새 실행이나 배정 판단이 아니다. */
@@ -554,12 +510,7 @@ export class CardControlPlaneService {
     const actor={actorKind:"system" as const,actorSessionId:null};
     return this.mutateCard({...actor,cardId:params.cardId,reason:"검증 대기 시각이 되어 담당을 깨웠습니다"},"resume_card",
       {session_id:params.sessionId,wake_at:params.wakeAt},async(sql,card,eventId)=>{
-      if (card.status !== "awaiting_verification" || !card.wake_at
-        || new Date(card.wake_at).toISOString() !== params.wakeAt
-        || card.assignee_kind !== "session" || card.assignee_session_id !== params.sessionId)
-        throw invalid("Only the currently assigned verification-wait card at this wake time may resume");
-      const now=makeCardNow({text:"담당이 기다리던 것을 확인합니다",turn:"agent"},new Date().toISOString(),params.sessionId);
-      await this.patch(sql,card,{status:"running",blocked_kind:null,blocked_detail:null,queue_position_key:null,now:sql.json(now)},actor,eventId);
+      await this.serverDecision(sql,card,{...params,type:'RESUME_VERIFICATION'},actor,eventId);
     });
   }
   private prepareAddComment(params:AddCommentParams,commentId:string) {
@@ -606,16 +557,10 @@ export class CardControlPlaneService {
     if(close)return this.closeOpenQuestionsTx(sql,card.id,String(close.fields.withdrawal_reason));
     return false;
   }
-  private async checkAdmission(sql:RepositorySql,params:{cardId:string;expectedVersion:number;sessionId:string;nodeId:string;admission?:PolicyAdmission}) {
-    const enabled=(await sql<{enabled:boolean}[]>`SELECT (value->>'enabled')::boolean AS enabled FROM system_settings WHERE setting_key='card_orchestration'`)[0]?.enabled===true;
-    if(!enabled){if(params.admission)throw invalid("Orchestration policy is disabled");return;}
-    if(!params.admission)throw invalid("Enabled orchestration requires a fenced decision admission");
-    await assertPolicyAdmission(sql,{...params,cardVersion:params.expectedVersion,...params.admission});
-  }
   noteMissingAssignee(params:{cardId:string;expectedVersion:number}) {
     const actor={actorKind:"system" as const,actorSessionId:null,...params};
     return this.mutateCard(actor,"note_card_assignee",{blocked_detail:"담당 에이전트 없음"},async(sql,card,eventId,payload)=>{
-      await this.patch(sql,card,payload,actor,eventId);
+      await this.serverDecision(sql,card,{type:'NOTE_MISSING'},actor,eventId);
     });
   }
   private async applyStatusTx(
@@ -720,11 +665,28 @@ export class CardControlPlaneService {
   private async patch(sql:RepositorySql,card:CardRow,fields:Record<string,unknown>,actor:FolderActorParams,eventId:number | null) {
     await patchCardTx(sql,card,fields,actor,eventId);
   }
-  private async humanDecision(sql:RepositorySql,card:CardRow|null,command:HumanCardCommand,params:FolderActorParams,eventId:number|null,
-    questions:Record<string,unknown>[]=[],evidence:{claim?:boolean;userInput?:boolean}={},bindings:Pick<CardBindingValues,'values'|'lazy'>={}) {
+  private async serverDecision(sql:RepositorySql,card:CardRow,command:ServerCardCommand,params:FolderActorParams,eventId:number|null,payload?:Record<string,unknown>) {
+    const reader=cardServerEvidenceReader(sql,card,command,params);
+    const actor={kind:params.actorKind,sessionId:params.actorSessionId,userId:params.actorUserId};
+    for(let count=0;count<reader.maxDecisions;count++) {
+      const decision=decideCardTransition(card,[],reader.evidence(),command,actor,Date.now());
+      if(decision.kind==='needsEvidence'){await reader.read(decision.stage);continue;}
+      const {writes}=await this.humanDecision(sql,card,command,params,eventId,[],reader.evidence(),reader.bindings,decision);
+      await reader.commit();
+      if(reader.evidence().claim){
+        Object.assign(card,{assignee_kind:'session',assignee_session_id:params.actorSessionId,assignee_agent_id:null});
+        if(payload)payload.claimed_assignee=true;
+      }
+      await this.patchDecisionWrites(sql,card,writes,params,eventId);
+      return;
+    }
+    throw new Error('Card evidence stage bound exceeded');
+  }
+  private async humanDecision(sql:RepositorySql,card:CardRow|null,command:HumanCardCommand|ServerCardCommand,params:FolderActorParams,eventId:number|null,
+    questions:Record<string,unknown>[]=[],evidence:import('./state/card_decision_facts.js').CardDecisionEvidence={},bindings:Pick<CardBindingValues,'values'|'lazy'>={},chosen?:import('./state/card_decision.js').CardDecision) {
     const actor={kind:params.actorKind,sessionId:params.actorSessionId,userId:params.actorUserId};
     const at=new Date();
-    const decision=decideCardTransition(card,questions,evidence,command,actor,at.getTime());
+    const decision=chosen??decideCardTransition(card,questions,evidence,command,actor,at.getTime());
     if(decision.kind==='reject') {
       const failure=formatCardDecisionRejection(command.type,card?.id??'',decision.failure,{length:codePointLength('body' in command?command.body:'waitingFor' in command?command.waitingFor??'':'')});
       throw Object.assign(new Error(failure.message!),{...(failure.statusCode===null?{}:{statusCode:failure.statusCode}),...(failure.code===null?{}:{code:failure.code})});

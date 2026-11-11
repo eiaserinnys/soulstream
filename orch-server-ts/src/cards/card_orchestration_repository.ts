@@ -1,3 +1,4 @@
+import { admissionRunMatches, admissionCapacityResult } from './state/card_server_evidence.js';
 import { cardCapacitySessions } from "./card_capacity.js";
 import { randomUUID } from "node:crypto";
 import type {
@@ -310,7 +311,7 @@ export class CardOrchestrationRepository {
   }
 }
 /** Card lock, run fencing and node capacity admission are in the same mutation transaction. */
-export async function assertPolicyAdmission(
+export async function readPolicyAdmission(
   sql: RepositorySql,
   input: {
     runId: string;
@@ -327,33 +328,24 @@ export async function assertPolicyAdmission(
       { version: unknown; enabled: boolean }[]
     >`SELECT version,(value->>'enabled')::boolean AS enabled FROM system_settings WHERE setting_key='card_orchestration' FOR SHARE`
   )[0];
-  if (!policy?.enabled) throw new Error("Orchestration policy is disabled");
+  if (!policy?.enabled) return {result:'lockedPolicyDisabled' as const};
   const policyVersion = parseCardOrchestrationVersion(policy.version);
   const run = (
     await sql<
       OrchestrationRun[]
     >`SELECT * FROM card_orchestration_runs WHERE id=${input.runId} AND state='decided' AND lease_token=${input.leaseToken} AND lease_expires_at>NOW() FOR UPDATE`
   )[0];
-  if (
-    !run ||
-    run.policy_version !== policyVersion ||
-    !run.decision?.decisions.some(
-      (d) =>
-        d.cardId === input.cardId &&
-        d.cardVersion === input.cardVersion &&
-        d.action === "run",
-    )
-  )
-    throw new Error("Stale orchestration admission");
+  if (!admissionRunMatches(run,policyVersion,input.cardId,input.cardVersion))return {result:'stale' as const};
   await sql`SELECT pg_advisory_xact_lock(hashtextextended(${"card_capacity:" + input.nodeId},0))`;
   const capacity = (
     await sql<
       { limit: number }[]
     >`SELECT COALESCE((value->'nodeConcurrency'->>${input.nodeId})::int,(value->'nodeConcurrency'->>'default')::int) AS limit FROM system_settings WHERE setting_key='card_dispatch' FOR SHARE`
   )[0]?.limit;
-  if (capacity === undefined) throw new Error("Missing node capacity");
+  if (capacity === undefined) return {result:'missingCapacity' as const};
   const occupied=await cardCapacitySessions(sql);
-  if (occupied.filter(r=>r.node_id===input.nodeId).length >= capacity && !occupied.some(r=>r.session_id===input.sessionId && r.node_id===input.nodeId)) throw new Error("Node capacity is full");
+  const capacityResult=admissionCapacityResult(capacity,occupied,input.sessionId,input.nodeId);
+  if(capacityResult!=='ok')return {result:capacityResult};
   const valid =
     await sql`SELECT c.id FROM cards c JOIN folders f ON f.id=c.folder_id
       LEFT JOIN sessions owner ON owner.session_id=c.assignee_session_id
@@ -362,6 +354,8 @@ export async function assertPolicyAdmission(
         AND c.model_preset IS NOT DISTINCT FROM ${input.workerInput.configuredModelPreset ?? null})
       OR (c.assignee_kind='session' AND owner.session_id=${input.sessionId} AND owner.node_id=${input.nodeId}
         AND owner.agent_id=${String(input.workerInput.agentId)} AND owner.model_preset IS NOT DISTINCT FROM ${input.workerInput.modelPreset ?? null}))`;
-  if (!valid.length) throw new Error("Card is no longer eligible");
+  if (!valid.length) return {result:'ineligible' as const};
+  return {result:'ok' as const,commit:async()=>{
   await sql`INSERT INTO card_orchestration_dispatches(run_id,card_id,session_id,node_id,input,launch_token,state) VALUES(${input.runId},${input.cardId},${input.sessionId},${input.nodeId},${sql.json({...input.workerInput,admittedCardVersion:input.cardVersion+1})},${randomUUID()},'admitted')`;
+  }};
 }

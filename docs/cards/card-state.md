@@ -1,6 +1,6 @@
 # 카드 상태 결정 규칙
 
-이 문서는 결정 기계와 검증 세계에서 만든 생성물이다. 동작 기준 커밋은 c8b9c745a, 구조 전환 시작 기준은 52fb382d5다. 기준 위의 결정 정의로 그림, 권한, 규칙과 검사를 함께 생성한다. PR 2에서 사람과 질문 명령을 운영 서비스에 연결했다. 나머지 명령은 다음 PR에서 연결한다.
+이 문서는 결정 기계와 검증 세계에서 만든 생성물이다. 동작 기준 커밋은 c8b9c745a, 구조 전환 시작 기준은 52fb382d5다. 기준 위의 결정 정의로 그림, 권한, 규칙과 검사를 함께 생성한다. PR 2의 사람과 질문 명령, PR 3의 서버 명령 여덟 개를 운영 서비스에 연결했다. 유지보수와 공통 patch는 PR 4에서 연결한다.
 
 저장 영역은 status, question, reservation, assignee, archive다. verdict는 목표 없는 전이로 허용, 무변경, 거절을 고른다. 담당 세션 생존과 감독 PAS, 다른 장 수와 내린 기록은 검증 세계의 환경이다. 원래 담당과 교체 담당의 생존 상태, 질문 작성자 관계, limitedOwner는 저장 상태 그림에서 제거했다. 작성자와 담당 관계는 사건 사실로, 생존은 환경으로 옮겼으며 예약 담당 불일치는 DB CHECK가 금지한다.
 
@@ -198,6 +198,43 @@ cardDecision_archive --> arch_active: 담당과 보관을 고친다
 ```
 
 전이 화살표 13개. 이 보기의 명령은 CREATE, CLAIM, CONFIRM_EXECUTION, REGISTER_REPLACEMENT, PATCH_CARD_CONTROL다. 다른 명령은 이 그림에서 모두 숨기고 아래 출처 표에 적었다. 빨강은 약속 6을 어기는 세계가 있는 상태이며, 점선 구멍은 도달하지 않는 구성을 뜻한다.
+
+## 서버 증거 단계 지목
+
+```mermaid
+stateDiagram-v2
+direction TB
+classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
+classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
+state "명령 판정" as cardDecision_verdict {
+    direction TB
+    state "판정 준비" as cardDecision_verdict_ready
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 작업 착수를 확인한다: 실행 등록 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 작업 착수를 확인한다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 작업 착수를 확인한다: 자동 실행 영수증과 허가 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 작업 착수를 확인한다: 담당 후보 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 서버가 실행을 확인한다: 실행 세션 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 서버가 실행을 확인한다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 서버가 실행을 확인한다: 실행 뒤 상태 변경 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 서버가 실행을 배정한다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 서버가 실행을 배정한다: 미확인 실행 요청 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 서버가 실행을 배정한다: 정책 설정 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 서버가 실행을 배정한다: 허가 fence 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 현재 담당의 한도 종료를 기록한다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 현재 담당의 한도 종료를 기록한다: 현재 한도 종료 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 현재 담당의 한도 종료를 기록한다: 한도 해제 시각 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 짧은 한도 시각이 되어 잇는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 짧은 한도 시각이 되어 잇는다: 미확인 실행 요청 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 시각 없는 한도 예약을 잇는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 시각 없는 한도 예약을 잇는다: 미확인 실행 요청 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 시각 없는 한도 예약을 잇는다: 정책 설정 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 시각 없는 한도 예약을 잇는다: 허가 fence 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 검증 시각이 되어 잇는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 담당 에이전트 없음을 적는다
+}
+```
+
+전이 화살표 22개. 이 보기의 명령은 START_WORK, CONFIRM_EXECUTION, DISPATCH, RESUME_LONG_LIMIT, BLOCK_FOR_LIMIT, RESUME_SHORT_LIMIT, RESUME_VERIFICATION, NOTE_MISSING다. 다른 명령은 이 그림에서 모두 숨기고 아래 출처 표에 적었다. 빨강은 약속 6을 어기는 세계가 있는 상태이며, 점선 구멍은 도달하지 않는 구성을 뜻한다.
 
 ## 상태와 저장 칸
 
@@ -679,200 +716,200 @@ writeStatus 액션이 있을 때만 status와 blocked_kind를 쓴다. 같은 상
 
 PAS는 agent 세션이다. 현재 담당, 작성자, 담당이면서 작성자인 관계를 별도 행으로 그대로 보여 준다. 입구 없음은 명령 출처 metadata에서 읽으며 거절 가드와 기존 오류는 실제 열거 결과다.
 
-| 명령 | 주체 관계 | 사람 | 현재 담당 세션 | 다른 agent 세션 | PAS | 서버 |
-| :-- | :-- | :-- | :-- | :-- | :-- | :-- |
-| CREATE | human | 모두 허용 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| CREATE | owner | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
-| CREATE | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
-| CREATE | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
-| CREATE | otherAgent | 해당 없음 | 해당 없음 | 모두 허용 | 모두 허용 | 해당 없음 |
-| CREATE | anonymousAgent | 해당 없음 | 해당 없음 | 모두 허용 | 해당 없음 | 해당 없음 |
-| CREATE | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
-| CREATE | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| SET_STATUS | human | 조건부: reject.SET_STATUS.verificationOwner (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_empty (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_invalid (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_missing (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_past (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLate (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLong (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| SET_STATUS | owner | 해당 없음 | 조건부: reject.SET_STATUS.verification_empty (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_invalid (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_missing (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_past (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLate (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLong (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.SET_STATUS.verification_empty (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_invalid (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_missing (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_past (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLate (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLong (422, INVALID_CARD_REQUEST) | 해당 없음 |
-| SET_STATUS | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
-| SET_STATUS | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
-| SET_STATUS | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.SET_STATUS.statusOwner (403, statusOwner)<br>reject.SET_STATUS.verification_empty (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_invalid (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_missing (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_past (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLate (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLong (422, INVALID_CARD_REQUEST) | 조건부: reject.SET_STATUS.statusOwner (403, statusOwner)<br>reject.SET_STATUS.verification_empty (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_invalid (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_missing (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_past (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLate (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLong (422, INVALID_CARD_REQUEST) | 해당 없음 |
-| SET_STATUS | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.SET_STATUS.statusOwner (403, statusOwner) | 해당 없음 | 해당 없음 |
-| SET_STATUS | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.SET_STATUS.verificationOwner (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_empty (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_invalid (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_missing (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_past (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLate (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLong (422, INVALID_CARD_REQUEST) |
-| SET_STATUS | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| REQUEST_REVIEW | human | 조건부: reject.REQUEST_REVIEW.reviewAsk (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| REQUEST_REVIEW | owner | 해당 없음 | 조건부: reject.REQUEST_REVIEW.reviewAsk (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.REQUEST_REVIEW.reviewAsk (422, INVALID_CARD_REQUEST) | 해당 없음 |
-| REQUEST_REVIEW | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
-| REQUEST_REVIEW | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
-| REQUEST_REVIEW | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.REQUEST_REVIEW.reviewAsk (422, INVALID_CARD_REQUEST)<br>reject.REQUEST_REVIEW.statusOwner (403, statusOwner) | 조건부: reject.REQUEST_REVIEW.reviewAsk (422, INVALID_CARD_REQUEST)<br>reject.REQUEST_REVIEW.statusOwner (403, statusOwner) | 해당 없음 |
-| REQUEST_REVIEW | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.REQUEST_REVIEW.reviewAsk (422, INVALID_CARD_REQUEST)<br>reject.REQUEST_REVIEW.statusOwner (403, statusOwner) | 해당 없음 | 해당 없음 |
-| REQUEST_REVIEW | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
-| REQUEST_REVIEW | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| HUMAN_INPUT | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| HUMAN_INPUT | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
-| HUMAN_INPUT | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
-| HUMAN_INPUT | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
-| HUMAN_INPUT | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
-| HUMAN_INPUT | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 |
-| HUMAN_INPUT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 모두 허용 |
-| HUMAN_INPUT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| ASK_QUESTION | human | 모두 허용 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| ASK_QUESTION | owner | 해당 없음 | 모두 허용 | 해당 없음 | 모두 허용 | 해당 없음 |
-| ASK_QUESTION | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
-| ASK_QUESTION | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
-| ASK_QUESTION | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.ASK_QUESTION.otherAssignee (422, INVALID_CARD_REQUEST) | 조건부: reject.ASK_QUESTION.otherAssignee (422, INVALID_CARD_REQUEST) | 해당 없음 |
-| ASK_QUESTION | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.ASK_QUESTION.otherAssignee (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 |
-| ASK_QUESTION | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
-| ASK_QUESTION | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| ANSWER_QUESTION | human | 조건부: reject.ANSWER_QUESTION.openQuestion (422, INVALID_CARD_REQUEST)<br>reject.ANSWER_QUESTION.withdrawnAnswer (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| ANSWER_QUESTION | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
-| ANSWER_QUESTION | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
-| ANSWER_QUESTION | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
-| ANSWER_QUESTION | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
-| ANSWER_QUESTION | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 |
-| ANSWER_QUESTION | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
-| ANSWER_QUESTION | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| WITHDRAW_QUESTION | human | 모두 거절: reject.WITHDRAW_QUESTION.ownerOrAuthor (403, withdrawOwner) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| WITHDRAW_QUESTION | owner | 해당 없음 | 조건부: reject.WITHDRAW_QUESTION.answered (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.missing (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.withdrawn (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.WITHDRAW_QUESTION.answered (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.missing (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.withdrawn (422, INVALID_CARD_REQUEST) | 해당 없음 |
-| WITHDRAW_QUESTION | author | 해당 없음 | 해당 없음 | 조건부: reject.WITHDRAW_QUESTION.answered (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.withdrawn (422, INVALID_CARD_REQUEST) | 조건부: reject.WITHDRAW_QUESTION.answered (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.withdrawn (422, INVALID_CARD_REQUEST) | 해당 없음 |
-| WITHDRAW_QUESTION | ownerAuthor | 해당 없음 | 조건부: reject.WITHDRAW_QUESTION.answered (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.withdrawn (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.WITHDRAW_QUESTION.answered (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.withdrawn (422, INVALID_CARD_REQUEST) | 해당 없음 |
-| WITHDRAW_QUESTION | otherAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.WITHDRAW_QUESTION.ownerOrAuthor (403, withdrawOwner) | 모두 거절: reject.WITHDRAW_QUESTION.ownerOrAuthor (403, withdrawOwner) | 해당 없음 |
-| WITHDRAW_QUESTION | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.WITHDRAW_QUESTION.ownerOrAuthor (403, withdrawOwner) | 해당 없음 | 해당 없음 |
-| WITHDRAW_QUESTION | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
-| WITHDRAW_QUESTION | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| ADD_COMMENT (direct) | human | 조건부: reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| ADD_COMMENT (direct) | owner | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 |
-| ADD_COMMENT (direct) | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
-| ADD_COMMENT (direct) | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
-| ADD_COMMENT (direct) | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.otherAssignee (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.otherAssignee (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 |
-| ADD_COMMENT (direct) | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.otherAssignee (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 |
-| ADD_COMMENT (direct) | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
-| ADD_COMMENT (direct) | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| ADD_COMMENT (followup) | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| ADD_COMMENT (followup) | owner | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 |
-| ADD_COMMENT (followup) | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
-| ADD_COMMENT (followup) | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
-| ADD_COMMENT (followup) | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 |
-| ADD_COMMENT (followup) | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 |
-| ADD_COMMENT (followup) | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
-| ADD_COMMENT (followup) | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| START_WORK | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| START_WORK | owner | 해당 없음 | 조건부: reject.START_WORK.admission (422, INVALID_CARD_WORK)<br>reject.START_WORK.execution (422, INVALID_CARD_WORK) | 해당 없음 | 조건부: reject.START_WORK.admission (422, INVALID_CARD_WORK)<br>reject.START_WORK.execution (422, INVALID_CARD_WORK) | 해당 없음 |
-| START_WORK | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
-| START_WORK | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
-| START_WORK | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.START_WORK.admission (422, INVALID_CARD_WORK)<br>reject.START_WORK.execution (422, INVALID_CARD_WORK)<br>reject.START_WORK.owner (422, INVALID_CARD_WORK) | 조건부: reject.START_WORK.admission (422, INVALID_CARD_WORK)<br>reject.START_WORK.execution (422, INVALID_CARD_WORK)<br>reject.START_WORK.owner (422, INVALID_CARD_WORK) | 해당 없음 |
-| START_WORK | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.START_WORK.actor (422, INVALID_CARD_WORK) | 해당 없음 | 해당 없음 |
-| START_WORK | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
-| START_WORK | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| CONFIRM_EXECUTION | human | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| CONFIRM_EXECUTION | owner | 해당 없음 | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | 해당 없음 |
-| CONFIRM_EXECUTION | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
-| CONFIRM_EXECUTION | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
-| CONFIRM_EXECUTION | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | 해당 없음 |
-| CONFIRM_EXECUTION | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 |
-| CONFIRM_EXECUTION | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) |
-| CONFIRM_EXECUTION | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| DISPATCH | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| DISPATCH | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
-| DISPATCH | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
-| DISPATCH | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
-| DISPATCH | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
-| DISPATCH | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 |
-| DISPATCH | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.DISPATCH.admissionRequired (422, INVALID_CARD_REQUEST)<br>reject.DISPATCH.capacity (일반 오류, admission_capacity)<br>reject.DISPATCH.ineligible (일반 오류, admission_ineligible)<br>reject.DISPATCH.missingCapacity (일반 오류, admission_missingCapacity)<br>reject.DISPATCH.pending (409, CARD_EXECUTION_PENDING)<br>reject.DISPATCH.policyDisabled (422, INVALID_CARD_REQUEST)<br>reject.DISPATCH.queued (422, INVALID_CARD_REQUEST)<br>reject.DISPATCH.stale (일반 오류, admission_stale) |
-| DISPATCH | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| BLOCK_FOR_LIMIT | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| BLOCK_FOR_LIMIT | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
-| BLOCK_FOR_LIMIT | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
-| BLOCK_FOR_LIMIT | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
-| BLOCK_FOR_LIMIT | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
-| BLOCK_FOR_LIMIT | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 |
-| BLOCK_FOR_LIMIT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.BLOCK_FOR_LIMIT.currentRunningOwner (422, INVALID_CARD_REQUEST)<br>reject.BLOCK_FOR_LIMIT.currentTermination (422, INVALID_CARD_REQUEST) |
-| BLOCK_FOR_LIMIT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| RESUME_SHORT_LIMIT | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| RESUME_SHORT_LIMIT | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
-| RESUME_SHORT_LIMIT | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
-| RESUME_SHORT_LIMIT | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
-| RESUME_SHORT_LIMIT | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
-| RESUME_SHORT_LIMIT | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 |
-| RESUME_SHORT_LIMIT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.RESUME_SHORT_LIMIT.pending (409, CARD_EXECUTION_PENDING)<br>reject.RESUME_SHORT_LIMIT.sameDueReservation (422, INVALID_CARD_REQUEST) |
-| RESUME_SHORT_LIMIT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| RESUME_LONG_LIMIT | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| RESUME_LONG_LIMIT | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
-| RESUME_LONG_LIMIT | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
-| RESUME_LONG_LIMIT | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
-| RESUME_LONG_LIMIT | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
-| RESUME_LONG_LIMIT | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 |
-| RESUME_LONG_LIMIT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.RESUME_LONG_LIMIT.admissionRequired (422, INVALID_CARD_REQUEST)<br>reject.RESUME_LONG_LIMIT.capacity (일반 오류, admission_capacity)<br>reject.RESUME_LONG_LIMIT.ineligible (일반 오류, admission_ineligible)<br>reject.RESUME_LONG_LIMIT.missingCapacity (일반 오류, admission_missingCapacity)<br>reject.RESUME_LONG_LIMIT.pending (409, CARD_EXECUTION_PENDING)<br>reject.RESUME_LONG_LIMIT.policyDisabled (422, INVALID_CARD_REQUEST)<br>reject.RESUME_LONG_LIMIT.sameLongReservation (422, INVALID_CARD_REQUEST)<br>reject.RESUME_LONG_LIMIT.stale (일반 오류, admission_stale) |
-| RESUME_LONG_LIMIT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| RESUME_VERIFICATION | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| RESUME_VERIFICATION | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
-| RESUME_VERIFICATION | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
-| RESUME_VERIFICATION | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
-| RESUME_VERIFICATION | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
-| RESUME_VERIFICATION | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 |
-| RESUME_VERIFICATION | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.RESUME_VERIFICATION.sameReservation (422, INVALID_CARD_REQUEST) |
-| RESUME_VERIFICATION | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| NOTE_MISSING | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| NOTE_MISSING | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
-| NOTE_MISSING | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
-| NOTE_MISSING | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 |
-| NOTE_MISSING | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 |
-| NOTE_MISSING | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 |
-| NOTE_MISSING | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 모두 허용 |
-| NOTE_MISSING | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| BULK_SET_STATUS | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| BULK_SET_STATUS | owner | 해당 없음 | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 해당 없음 | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 해당 없음 |
-| BULK_SET_STATUS | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
-| BULK_SET_STATUS | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
-| BULK_SET_STATUS | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.human (403, bulkHuman)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.human (403, bulkHuman)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 해당 없음 |
-| BULK_SET_STATUS | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.BULK_SET_STATUS.session (403, maintenanceSession) | 해당 없음 | 해당 없음 |
-| BULK_SET_STATUS | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
-| BULK_SET_STATUS | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| MERGE_SOURCE | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| MERGE_SOURCE | owner | 해당 없음 | 모두 거절: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 | 모두 거절: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 |
-| MERGE_SOURCE | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
-| MERGE_SOURCE | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
-| MERGE_SOURCE | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.human (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.pending (409, CARD_EXECUTION_PENDING)<br>reject.MERGE_SOURCE.status (409, CARD_NOT_UNSTARTED) | 조건부: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.human (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.pending (409, CARD_EXECUTION_PENDING)<br>reject.MERGE_SOURCE.status (409, CARD_NOT_UNSTARTED) | 해당 없음 |
-| MERGE_SOURCE | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.MERGE_SOURCE.session (403, maintenanceSession) | 해당 없음 | 해당 없음 |
-| MERGE_SOURCE | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
-| MERGE_SOURCE | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| UPDATE_UNSTARTED | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| UPDATE_UNSTARTED | owner | 해당 없음 | 모두 거절: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 | 모두 거절: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 |
-| UPDATE_UNSTARTED | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
-| UPDATE_UNSTARTED | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
-| UPDATE_UNSTARTED | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.human (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.pending (409, CARD_EXECUTION_PENDING)<br>reject.UPDATE_UNSTARTED.status (409, CARD_NOT_UNSTARTED) | 조건부: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.human (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.pending (409, CARD_EXECUTION_PENDING)<br>reject.UPDATE_UNSTARTED.status (409, CARD_NOT_UNSTARTED) | 해당 없음 |
-| UPDATE_UNSTARTED | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.UPDATE_UNSTARTED.session (403, maintenanceSession) | 해당 없음 | 해당 없음 |
-| UPDATE_UNSTARTED | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
-| UPDATE_UNSTARTED | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| SAVE_EXECUTION_SETTINGS | human | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| SAVE_EXECUTION_SETTINGS | owner | 해당 없음 | 모두 거절: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 모두 거절: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 |
-| SAVE_EXECUTION_SETTINGS | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
-| SAVE_EXECUTION_SETTINGS | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
-| SAVE_EXECUTION_SETTINGS | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 |
-| SAVE_EXECUTION_SETTINGS | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 해당 없음 |
-| SAVE_EXECUTION_SETTINGS | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
-| SAVE_EXECUTION_SETTINGS | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| PATCH_CARD_CONTROL | human | 모두 허용 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| PATCH_CARD_CONTROL | owner | 해당 없음 | 모두 허용 | 해당 없음 | 모두 허용 | 해당 없음 |
-| PATCH_CARD_CONTROL | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
-| PATCH_CARD_CONTROL | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
-| PATCH_CARD_CONTROL | otherAgent | 해당 없음 | 해당 없음 | 모두 허용 | 모두 허용 | 해당 없음 |
-| PATCH_CARD_CONTROL | anonymousAgent | 해당 없음 | 해당 없음 | 모두 허용 | 해당 없음 | 해당 없음 |
-| PATCH_CARD_CONTROL | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
-| PATCH_CARD_CONTROL | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| REGISTER_REPLACEMENT | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| REGISTER_REPLACEMENT | owner | 해당 없음 | 조건부: reject.REGISTER_REPLACEMENT.owner (409, replacementOwner) | 해당 없음 | 조건부: reject.REGISTER_REPLACEMENT.owner (409, replacementOwner) | 해당 없음 |
-| REGISTER_REPLACEMENT | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
-| REGISTER_REPLACEMENT | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
-| REGISTER_REPLACEMENT | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.REGISTER_REPLACEMENT.owner (409, replacementOwner) | 조건부: reject.REGISTER_REPLACEMENT.owner (409, replacementOwner) | 해당 없음 |
-| REGISTER_REPLACEMENT | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.REGISTER_REPLACEMENT.owner (409, replacementOwner) | 해당 없음 | 해당 없음 |
-| REGISTER_REPLACEMENT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
-| REGISTER_REPLACEMENT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| CLAIM | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
-| CLAIM | owner | 해당 없음 | 모두 허용 | 해당 없음 | 모두 허용 | 해당 없음 |
-| CLAIM | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 |
-| CLAIM | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 |
-| CLAIM | otherAgent | 해당 없음 | 해당 없음 | 모두 허용 | 모두 허용 | 해당 없음 |
-| CLAIM | anonymousAgent | 해당 없음 | 해당 없음 | 모두 허용 | 해당 없음 | 해당 없음 |
-| CLAIM | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 |
-| CLAIM | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 |
+| 명령 | 주체 관계 | 사람 | 현재 담당 세션 | 다른 agent 세션 | PAS | 서버 | 필요한 증거 단계 |
+| :-- | :-- | :-- | :-- | :-- | :-- | :-- | :-- |
+| CREATE | human | 모두 허용 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| CREATE | owner | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| CREATE | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| CREATE | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| CREATE | otherAgent | 해당 없음 | 해당 없음 | 모두 허용 | 모두 허용 | 해당 없음 | 없음 |
+| CREATE | anonymousAgent | 해당 없음 | 해당 없음 | 모두 허용 | 해당 없음 | 해당 없음 | 없음 |
+| CREATE | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
+| CREATE | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| SET_STATUS | human | 조건부: reject.SET_STATUS.verificationOwner (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_empty (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_invalid (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_missing (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_past (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLate (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLong (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| SET_STATUS | owner | 해당 없음 | 조건부: reject.SET_STATUS.verification_empty (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_invalid (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_missing (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_past (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLate (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLong (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.SET_STATUS.verification_empty (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_invalid (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_missing (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_past (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLate (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLong (422, INVALID_CARD_REQUEST) | 해당 없음 | 없음 |
+| SET_STATUS | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| SET_STATUS | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| SET_STATUS | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.SET_STATUS.statusOwner (403, statusOwner)<br>reject.SET_STATUS.verification_empty (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_invalid (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_missing (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_past (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLate (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLong (422, INVALID_CARD_REQUEST) | 조건부: reject.SET_STATUS.statusOwner (403, statusOwner)<br>reject.SET_STATUS.verification_empty (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_invalid (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_missing (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_past (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLate (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLong (422, INVALID_CARD_REQUEST) | 해당 없음 | 없음 |
+| SET_STATUS | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.SET_STATUS.statusOwner (403, statusOwner) | 해당 없음 | 해당 없음 | 없음 |
+| SET_STATUS | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.SET_STATUS.verificationOwner (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_empty (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_invalid (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_missing (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_past (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLate (422, INVALID_CARD_REQUEST)<br>reject.SET_STATUS.verification_tooLong (422, INVALID_CARD_REQUEST) | 없음 |
+| SET_STATUS | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| REQUEST_REVIEW | human | 조건부: reject.REQUEST_REVIEW.reviewAsk (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| REQUEST_REVIEW | owner | 해당 없음 | 조건부: reject.REQUEST_REVIEW.reviewAsk (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.REQUEST_REVIEW.reviewAsk (422, INVALID_CARD_REQUEST) | 해당 없음 | 없음 |
+| REQUEST_REVIEW | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| REQUEST_REVIEW | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| REQUEST_REVIEW | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.REQUEST_REVIEW.reviewAsk (422, INVALID_CARD_REQUEST)<br>reject.REQUEST_REVIEW.statusOwner (403, statusOwner) | 조건부: reject.REQUEST_REVIEW.reviewAsk (422, INVALID_CARD_REQUEST)<br>reject.REQUEST_REVIEW.statusOwner (403, statusOwner) | 해당 없음 | 없음 |
+| REQUEST_REVIEW | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.REQUEST_REVIEW.reviewAsk (422, INVALID_CARD_REQUEST)<br>reject.REQUEST_REVIEW.statusOwner (403, statusOwner) | 해당 없음 | 해당 없음 | 없음 |
+| REQUEST_REVIEW | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
+| REQUEST_REVIEW | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| HUMAN_INPUT | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| HUMAN_INPUT | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 없음 |
+| HUMAN_INPUT | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 | 없음 |
+| HUMAN_INPUT | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 없음 |
+| HUMAN_INPUT | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 | 없음 |
+| HUMAN_INPUT | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 | 없음 |
+| HUMAN_INPUT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 모두 허용 | 없음 |
+| HUMAN_INPUT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| ASK_QUESTION | human | 모두 허용 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| ASK_QUESTION | owner | 해당 없음 | 모두 허용 | 해당 없음 | 모두 허용 | 해당 없음 | 없음 |
+| ASK_QUESTION | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| ASK_QUESTION | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| ASK_QUESTION | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.ASK_QUESTION.otherAssignee (422, INVALID_CARD_REQUEST) | 조건부: reject.ASK_QUESTION.otherAssignee (422, INVALID_CARD_REQUEST) | 해당 없음 | 없음 |
+| ASK_QUESTION | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.ASK_QUESTION.otherAssignee (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 없음 |
+| ASK_QUESTION | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
+| ASK_QUESTION | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| ANSWER_QUESTION | human | 조건부: reject.ANSWER_QUESTION.openQuestion (422, INVALID_CARD_REQUEST)<br>reject.ANSWER_QUESTION.withdrawnAnswer (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| ANSWER_QUESTION | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 없음 |
+| ANSWER_QUESTION | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 | 없음 |
+| ANSWER_QUESTION | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 없음 |
+| ANSWER_QUESTION | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 | 없음 |
+| ANSWER_QUESTION | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 | 없음 |
+| ANSWER_QUESTION | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
+| ANSWER_QUESTION | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| WITHDRAW_QUESTION | human | 모두 거절: reject.WITHDRAW_QUESTION.ownerOrAuthor (403, withdrawOwner) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| WITHDRAW_QUESTION | owner | 해당 없음 | 조건부: reject.WITHDRAW_QUESTION.answered (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.missing (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.withdrawn (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.WITHDRAW_QUESTION.answered (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.missing (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.withdrawn (422, INVALID_CARD_REQUEST) | 해당 없음 | 없음 |
+| WITHDRAW_QUESTION | author | 해당 없음 | 해당 없음 | 조건부: reject.WITHDRAW_QUESTION.answered (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.withdrawn (422, INVALID_CARD_REQUEST) | 조건부: reject.WITHDRAW_QUESTION.answered (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.withdrawn (422, INVALID_CARD_REQUEST) | 해당 없음 | 없음 |
+| WITHDRAW_QUESTION | ownerAuthor | 해당 없음 | 조건부: reject.WITHDRAW_QUESTION.answered (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.withdrawn (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.WITHDRAW_QUESTION.answered (422, INVALID_CARD_REQUEST)<br>reject.WITHDRAW_QUESTION.withdrawn (422, INVALID_CARD_REQUEST) | 해당 없음 | 없음 |
+| WITHDRAW_QUESTION | otherAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.WITHDRAW_QUESTION.ownerOrAuthor (403, withdrawOwner) | 모두 거절: reject.WITHDRAW_QUESTION.ownerOrAuthor (403, withdrawOwner) | 해당 없음 | 없음 |
+| WITHDRAW_QUESTION | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.WITHDRAW_QUESTION.ownerOrAuthor (403, withdrawOwner) | 해당 없음 | 해당 없음 | 없음 |
+| WITHDRAW_QUESTION | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
+| WITHDRAW_QUESTION | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| ADD_COMMENT (direct) | human | 조건부: reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| ADD_COMMENT (direct) | owner | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 | 없음 |
+| ADD_COMMENT (direct) | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| ADD_COMMENT (direct) | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| ADD_COMMENT (direct) | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.otherAssignee (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.otherAssignee (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 | 없음 |
+| ADD_COMMENT (direct) | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.otherAssignee (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 없음 |
+| ADD_COMMENT (direct) | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
+| ADD_COMMENT (direct) | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| ADD_COMMENT (followup) | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| ADD_COMMENT (followup) | owner | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 | 없음 |
+| ADD_COMMENT (followup) | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| ADD_COMMENT (followup) | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| ADD_COMMENT (followup) | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyLength (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.replyOwner (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.userInput (422, INVALID_CARD_REQUEST) | 해당 없음 | 없음 |
+| ADD_COMMENT (followup) | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.ADD_COMMENT.commentMode (422, INVALID_CARD_REQUEST)<br>reject.ADD_COMMENT.itemMissing (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 없음 |
+| ADD_COMMENT (followup) | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
+| ADD_COMMENT (followup) | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| START_WORK | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | execution → workAdmission → claim |
+| START_WORK | owner | 해당 없음 | 조건부: reject.START_WORK.admission (422, INVALID_CARD_WORK)<br>reject.START_WORK.execution (422, INVALID_CARD_WORK) | 해당 없음 | 조건부: reject.START_WORK.admission (422, INVALID_CARD_WORK)<br>reject.START_WORK.execution (422, INVALID_CARD_WORK) | 해당 없음 | execution → workAdmission → claim |
+| START_WORK | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | execution → workAdmission → claim |
+| START_WORK | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | execution → workAdmission → claim |
+| START_WORK | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.START_WORK.admission (422, INVALID_CARD_WORK)<br>reject.START_WORK.execution (422, INVALID_CARD_WORK)<br>reject.START_WORK.owner (422, INVALID_CARD_WORK) | 조건부: reject.START_WORK.admission (422, INVALID_CARD_WORK)<br>reject.START_WORK.execution (422, INVALID_CARD_WORK)<br>reject.START_WORK.owner (422, INVALID_CARD_WORK) | 해당 없음 | execution → workAdmission → claim |
+| START_WORK | anonymousAgent | 해당 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 해당 없음 | execution → workAdmission → claim |
+| START_WORK | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | execution → workAdmission → claim |
+| START_WORK | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | execution → workAdmission → claim |
+| CONFIRM_EXECUTION | human | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | executionSession → executionStatus |
+| CONFIRM_EXECUTION | owner | 해당 없음 | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | 해당 없음 | executionSession → executionStatus |
+| CONFIRM_EXECUTION | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | executionSession → executionStatus |
+| CONFIRM_EXECUTION | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | executionSession → executionStatus |
+| CONFIRM_EXECUTION | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | 해당 없음 | executionSession → executionStatus |
+| CONFIRM_EXECUTION | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | executionSession → executionStatus |
+| CONFIRM_EXECUTION | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.CONFIRM_EXECUTION.executionMatches (422, INVALID_CARD_REQUEST) | executionSession → executionStatus |
+| CONFIRM_EXECUTION | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | executionSession → executionStatus |
+| DISPATCH | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | pending → policy → admission |
+| DISPATCH | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 | pending → policy → admission |
+| DISPATCH | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 | pending → policy → admission |
+| DISPATCH | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 | pending → policy → admission |
+| DISPATCH | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 | pending → policy → admission |
+| DISPATCH | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 | pending → policy → admission |
+| DISPATCH | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.DISPATCH.admissionRequired (422, INVALID_CARD_REQUEST)<br>reject.DISPATCH.capacity (일반 오류, admission_capacity)<br>reject.DISPATCH.ineligible (일반 오류, admission_ineligible)<br>reject.DISPATCH.lockedPolicyDisabled (일반 오류, admission_lockedPolicyDisabled)<br>reject.DISPATCH.missingCapacity (일반 오류, admission_missingCapacity)<br>reject.DISPATCH.pending (409, CARD_EXECUTION_PENDING)<br>reject.DISPATCH.policyDisabled (422, INVALID_CARD_REQUEST)<br>reject.DISPATCH.queued (422, INVALID_CARD_REQUEST)<br>reject.DISPATCH.stale (일반 오류, admission_stale) | pending → policy → admission |
+| DISPATCH | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | pending → policy → admission |
+| BLOCK_FOR_LIMIT | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | termination → limitReset |
+| BLOCK_FOR_LIMIT | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 | termination → limitReset |
+| BLOCK_FOR_LIMIT | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 | termination → limitReset |
+| BLOCK_FOR_LIMIT | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 | termination → limitReset |
+| BLOCK_FOR_LIMIT | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 | termination → limitReset |
+| BLOCK_FOR_LIMIT | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 | termination → limitReset |
+| BLOCK_FOR_LIMIT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.BLOCK_FOR_LIMIT.currentRunningOwner (422, INVALID_CARD_REQUEST)<br>reject.BLOCK_FOR_LIMIT.currentTermination (422, INVALID_CARD_REQUEST) | termination → limitReset |
+| BLOCK_FOR_LIMIT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | termination → limitReset |
+| RESUME_SHORT_LIMIT | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | pending |
+| RESUME_SHORT_LIMIT | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 | pending |
+| RESUME_SHORT_LIMIT | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 | pending |
+| RESUME_SHORT_LIMIT | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 | pending |
+| RESUME_SHORT_LIMIT | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 | pending |
+| RESUME_SHORT_LIMIT | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 | pending |
+| RESUME_SHORT_LIMIT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.RESUME_SHORT_LIMIT.pending (409, CARD_EXECUTION_PENDING)<br>reject.RESUME_SHORT_LIMIT.sameDueReservation (422, INVALID_CARD_REQUEST) | pending |
+| RESUME_SHORT_LIMIT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | pending |
+| RESUME_LONG_LIMIT | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | pending → policy → admission |
+| RESUME_LONG_LIMIT | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 | pending → policy → admission |
+| RESUME_LONG_LIMIT | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 | pending → policy → admission |
+| RESUME_LONG_LIMIT | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 | pending → policy → admission |
+| RESUME_LONG_LIMIT | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 | pending → policy → admission |
+| RESUME_LONG_LIMIT | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 | pending → policy → admission |
+| RESUME_LONG_LIMIT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.RESUME_LONG_LIMIT.admissionRequired (422, INVALID_CARD_REQUEST)<br>reject.RESUME_LONG_LIMIT.capacity (일반 오류, admission_capacity)<br>reject.RESUME_LONG_LIMIT.ineligible (일반 오류, admission_ineligible)<br>reject.RESUME_LONG_LIMIT.lockedPolicyDisabled (일반 오류, admission_lockedPolicyDisabled)<br>reject.RESUME_LONG_LIMIT.missingCapacity (일반 오류, admission_missingCapacity)<br>reject.RESUME_LONG_LIMIT.pending (409, CARD_EXECUTION_PENDING)<br>reject.RESUME_LONG_LIMIT.policyDisabled (422, INVALID_CARD_REQUEST)<br>reject.RESUME_LONG_LIMIT.sameLongReservation (422, INVALID_CARD_REQUEST)<br>reject.RESUME_LONG_LIMIT.stale (일반 오류, admission_stale) | pending → policy → admission |
+| RESUME_LONG_LIMIT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | pending → policy → admission |
+| RESUME_VERIFICATION | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| RESUME_VERIFICATION | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 없음 |
+| RESUME_VERIFICATION | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 | 없음 |
+| RESUME_VERIFICATION | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 없음 |
+| RESUME_VERIFICATION | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 | 없음 |
+| RESUME_VERIFICATION | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 | 없음 |
+| RESUME_VERIFICATION | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 조건부: reject.RESUME_VERIFICATION.sameReservation (422, INVALID_CARD_REQUEST) | 없음 |
+| RESUME_VERIFICATION | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| NOTE_MISSING | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| NOTE_MISSING | owner | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 없음 |
+| NOTE_MISSING | author | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 | 없음 |
+| NOTE_MISSING | ownerAuthor | 해당 없음 | 입구 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 없음 |
+| NOTE_MISSING | otherAgent | 해당 없음 | 해당 없음 | 입구 없음 | 입구 없음 | 해당 없음 | 없음 |
+| NOTE_MISSING | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 | 없음 |
+| NOTE_MISSING | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 모두 허용 | 없음 |
+| NOTE_MISSING | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| BULK_SET_STATUS | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| BULK_SET_STATUS | owner | 해당 없음 | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 해당 없음 | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 해당 없음 | 없음 |
+| BULK_SET_STATUS | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| BULK_SET_STATUS | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| BULK_SET_STATUS | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.human (403, bulkHuman)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 조건부: reject.BULK_SET_STATUS.cardRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.human (403, bulkHuman)<br>reject.BULK_SET_STATUS.ownerRunning (409, CARD_ASSIGNEE_RUNNING)<br>reject.BULK_SET_STATUS.rest (403, bulkRest) | 해당 없음 | 없음 |
+| BULK_SET_STATUS | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.BULK_SET_STATUS.session (403, maintenanceSession) | 해당 없음 | 해당 없음 | 없음 |
+| BULK_SET_STATUS | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
+| BULK_SET_STATUS | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| MERGE_SOURCE | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| MERGE_SOURCE | owner | 해당 없음 | 모두 거절: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 | 모두 거절: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 | 없음 |
+| MERGE_SOURCE | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| MERGE_SOURCE | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| MERGE_SOURCE | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.human (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.pending (409, CARD_EXECUTION_PENDING)<br>reject.MERGE_SOURCE.status (409, CARD_NOT_UNSTARTED) | 조건부: reject.MERGE_SOURCE.archived (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.connected (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.human (409, CARD_NOT_UNSTARTED)<br>reject.MERGE_SOURCE.pending (409, CARD_EXECUTION_PENDING)<br>reject.MERGE_SOURCE.status (409, CARD_NOT_UNSTARTED) | 해당 없음 | 없음 |
+| MERGE_SOURCE | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.MERGE_SOURCE.session (403, maintenanceSession) | 해당 없음 | 해당 없음 | 없음 |
+| MERGE_SOURCE | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
+| MERGE_SOURCE | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| UPDATE_UNSTARTED | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| UPDATE_UNSTARTED | owner | 해당 없음 | 모두 거절: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 | 모두 거절: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED) | 해당 없음 | 없음 |
+| UPDATE_UNSTARTED | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| UPDATE_UNSTARTED | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| UPDATE_UNSTARTED | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.human (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.pending (409, CARD_EXECUTION_PENDING)<br>reject.UPDATE_UNSTARTED.status (409, CARD_NOT_UNSTARTED) | 조건부: reject.UPDATE_UNSTARTED.archived (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.connected (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.human (409, CARD_NOT_UNSTARTED)<br>reject.UPDATE_UNSTARTED.pending (409, CARD_EXECUTION_PENDING)<br>reject.UPDATE_UNSTARTED.status (409, CARD_NOT_UNSTARTED) | 해당 없음 | 없음 |
+| UPDATE_UNSTARTED | anonymousAgent | 해당 없음 | 해당 없음 | 모두 거절: reject.UPDATE_UNSTARTED.session (403, maintenanceSession) | 해당 없음 | 해당 없음 | 없음 |
+| UPDATE_UNSTARTED | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
+| UPDATE_UNSTARTED | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| SAVE_EXECUTION_SETTINGS | human | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| SAVE_EXECUTION_SETTINGS | owner | 해당 없음 | 모두 거절: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 모두 거절: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 없음 |
+| SAVE_EXECUTION_SETTINGS | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| SAVE_EXECUTION_SETTINGS | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| SAVE_EXECUTION_SETTINGS | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 없음 |
+| SAVE_EXECUTION_SETTINGS | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.SAVE_EXECUTION_SETTINGS.owner (409, settingsOwner)<br>reject.SAVE_EXECUTION_SETTINGS.pending (409, CARD_EXECUTION_PENDING) | 해당 없음 | 해당 없음 | 없음 |
+| SAVE_EXECUTION_SETTINGS | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
+| SAVE_EXECUTION_SETTINGS | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| PATCH_CARD_CONTROL | human | 모두 허용 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| PATCH_CARD_CONTROL | owner | 해당 없음 | 모두 허용 | 해당 없음 | 모두 허용 | 해당 없음 | 없음 |
+| PATCH_CARD_CONTROL | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| PATCH_CARD_CONTROL | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| PATCH_CARD_CONTROL | otherAgent | 해당 없음 | 해당 없음 | 모두 허용 | 모두 허용 | 해당 없음 | 없음 |
+| PATCH_CARD_CONTROL | anonymousAgent | 해당 없음 | 해당 없음 | 모두 허용 | 해당 없음 | 해당 없음 | 없음 |
+| PATCH_CARD_CONTROL | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
+| PATCH_CARD_CONTROL | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| REGISTER_REPLACEMENT | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| REGISTER_REPLACEMENT | owner | 해당 없음 | 조건부: reject.REGISTER_REPLACEMENT.owner (409, replacementOwner) | 해당 없음 | 조건부: reject.REGISTER_REPLACEMENT.owner (409, replacementOwner) | 해당 없음 | 없음 |
+| REGISTER_REPLACEMENT | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| REGISTER_REPLACEMENT | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| REGISTER_REPLACEMENT | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.REGISTER_REPLACEMENT.owner (409, replacementOwner) | 조건부: reject.REGISTER_REPLACEMENT.owner (409, replacementOwner) | 해당 없음 | 없음 |
+| REGISTER_REPLACEMENT | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.REGISTER_REPLACEMENT.owner (409, replacementOwner) | 해당 없음 | 해당 없음 | 없음 |
+| REGISTER_REPLACEMENT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
+| REGISTER_REPLACEMENT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| CLAIM | human | 입구 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| CLAIM | owner | 해당 없음 | 모두 허용 | 해당 없음 | 모두 허용 | 해당 없음 | 없음 |
+| CLAIM | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| CLAIM | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
+| CLAIM | otherAgent | 해당 없음 | 해당 없음 | 모두 허용 | 모두 허용 | 해당 없음 | 없음 |
+| CLAIM | anonymousAgent | 해당 없음 | 해당 없음 | 모두 허용 | 해당 없음 | 해당 없음 | 없음 |
+| CLAIM | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
+| CLAIM | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
 
 ## 규칙 요약과 운영 호출지
 
@@ -914,10 +951,33 @@ PAS는 agent 세션이다. 현재 담당, 작성자, 담당이면서 작성자�
 | ANSWER_QUESTION | cards/card_control_plane_service.ts#answerQuestion |
 | WITHDRAW_QUESTION | cards/card_control_plane_service.ts#withdrawQuestion |
 | ADD_COMMENT | cards/card_control_plane_service.ts#addComment<br>cards/card_control_plane_service.ts#addCommentTx |
+| START_WORK | cards/card_control_plane_service.ts#startCardWork |
+| CONFIRM_EXECUTION | cards/card_control_plane_service.ts#recordExecution |
+| DISPATCH | cards/card_control_plane_service.ts#recordDispatch |
+| RESUME_LONG_LIMIT | cards/card_control_plane_service.ts#resumeDispatchedCard |
+| BLOCK_FOR_LIMIT | cards/card_control_plane_service.ts#blockCardForLimit |
+| RESUME_SHORT_LIMIT | cards/card_control_plane_service.ts#resumeLimitedCard |
+| RESUME_VERIFICATION | cards/card_control_plane_service.ts#resumeVerificationCard |
+| NOTE_MISSING | cards/card_control_plane_service.ts#noteMissingAssignee |
 
-주체 종류와 입력만 보는 입구 검사는 단일 입구 표를 읽어 카드 잠금과 version 확인보다 먼저 서비스 입구에서 확인한다. ANSWER_QUESTION은 사람만 들어오며, 커멘트 mode와 spoken의 신뢰 주체 검사도 이 표에 둔다. 상태와 증거를 보는 권한은 잠금 뒤 결정 기계가 정한다. 이 입구는 한 번 결정한 뒤 decoder의 요청 쓰기만 기존 patchCardTx에 넘긴다. 예약의 최종 정리는 PR 4까지 patchCardTx가 맡는다. SQL 잠금, version fence, 멱등 키, 질문 조건부 UPDATE와 커밋 뒤 판과 알림 처리는 기존 서비스 경계에 남는다.
+주체 종류와 입력만 보는 입구 검사는 단일 입구 표를 읽어 카드 잠금과 version 확인보다 먼저 서비스 입구에서 확인한다. ANSWER_QUESTION은 사람만 들어오며, 커멘트 mode와 spoken의 신뢰 주체 검사도 이 표에 둔다. 상태와 증거를 보는 권한은 잠금 뒤 결정 기계가 정한다. 서버 입구는 기계가 needsEvidence로 지목한 단계만 읽고 다시 묻는다. 이 중간 결과에는 쓰기가 없고, 마지막 apply, noop, reject만 판정이다. 마지막 판정 뒤 decoder의 요청 쓰기만 기존 patchCardTx에 넘긴다. 예약의 최종 정리는 PR 4까지 patchCardTx가 맡는다. SQL 잠금, version fence, 멱등 키, 질문 조건부 UPDATE와 커밋 뒤 판과 알림 처리는 기존 서비스 경계에 남는다.
 
 입력 모양 검사는 기존 위치를 지킨다. 검수 ask는 잠금과 version 확인 뒤, 상태 판정 전에 한 번 검사하고 확인한 값을 서식에 넘긴다. 검증 대기 문구처럼 기존에 판정 뒤 검사하던 서식은 이름별 지연 바인딩으로 둔다. decoder는 선택된 쓰기가 bind한 이름만 계산하며, 같은 이름의 결과는 한 번의 decode 안에서 재사용한다. 선택하지 않은 서식과 시각 변환은 실행하지 않는다.
+
+## 서버 증거 단계
+
+| 명령 | 단계 지목 순서 |
+| :-- | :-- |
+| START_WORK | execution → workAdmission → claim |
+| CONFIRM_EXECUTION | executionSession → executionStatus |
+| DISPATCH | pending → policy → admission |
+| RESUME_LONG_LIMIT | pending → policy → admission |
+| BLOCK_FOR_LIMIT | termination → limitReset |
+| RESUME_SHORT_LIMIT | pending |
+| RESUME_VERIFICATION | 없음 |
+| NOTE_MISSING | 없음 |
+
+needsEvidence는 허용이나 거절이 아니다. 단계 증거가 없으면 먼저 필요한 읽기를 지목한다. 앞선 거절은 뒤의 읽기와 잠금을 생략한다. admission은 정책이 켜지고 허가 입력이 있을 때만, claim은 수락된 자동 실행이 아닐 때만 요구한다. 권한 표는 필요한 증거가 갖춰진 최종 판정을 열거하며 단계 지목 전이는 위 그림에 보인다.
 
 
 ## 약속과 구멍

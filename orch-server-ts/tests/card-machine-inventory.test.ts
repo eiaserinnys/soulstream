@@ -12,8 +12,8 @@ it('pins every command to an existing operational function',async()=>{
  expect(CARD_COMMAND_CALLERS.ADD_COMMENT).toContain('cards/card_control_plane_service.ts#addCommentTx');
  expect(CARD_COMMAND_CALLERS.ADD_COMMENT).toContain('cards/card_work_dispatch_service.ts#accept');
 });
-const decisionImport=/(?:from\s*|import\s*(?:\(\s*)?)["'][^"']*(?:cards\/)?state\/card_(?:decision|state_value|write_intent|machine|command_entrance|human_(?:command|evidence))/;
-it('pins runtime decision imports to the PR 2 human command callers',async()=>{
+const decisionImport=/(?:from\s*|import\s*(?:\(\s*)?)["'][^"']*(?:cards\/)?state\/card_(?:decision|state_value|write_intent|machine|command_entrance|(?:human|server)_(?:command|evidence))/;
+it('pins runtime decision imports to the PR 3 human and server command callers',async()=>{
  const files:string[]=[];
  async function walk(directory:string){
  for(const entry of await readdir(new URL(`../${directory}`,import.meta.url),{withFileTypes:true})){
@@ -32,8 +32,8 @@ it('pins runtime decision imports to the PR 2 human command callers',async()=>{
  }
  expect(writers.sort()).toEqual([...CARD_RUNTIME_SQL_WRITERS].sort());
  expect(importers.sort()).toEqual([...CARD_RUNTIME_DECISION_IMPORTERS].sort());
- expect(Object.keys(CARD_RUNTIME_DECISION_CALLS)).toEqual(['CREATE','SET_STATUS','REQUEST_REVIEW','HUMAN_INPUT','ASK_QUESTION','ANSWER_QUESTION','WITHDRAW_QUESTION','ADD_COMMENT']);
- expect(Object.values(CARD_RUNTIME_DECISION_CALLS).flat()).toHaveLength(10);
+ expect(Object.keys(CARD_RUNTIME_DECISION_CALLS)).toEqual(['CREATE','SET_STATUS','REQUEST_REVIEW','HUMAN_INPUT','ASK_QUESTION','ANSWER_QUESTION','WITHDRAW_QUESTION','ADD_COMMENT','START_WORK','CONFIRM_EXECUTION','DISPATCH','RESUME_LONG_LIMIT','BLOCK_FOR_LIMIT','RESUME_SHORT_LIMIT','RESUME_VERIFICATION','NOTE_MISSING']);
+ expect(Object.values(CARD_RUNTIME_DECISION_CALLS).flat()).toHaveLength(18);
  const control=await readFile(new URL('../src/cards/card_control_plane_service.ts',import.meta.url),'utf8');
  for(const command of Object.keys(CARD_RUNTIME_DECISION_CALLS))expect(control.includes(`type:'${command}'`),command).toBe(true);
 });
@@ -68,6 +68,6 @@ it('pins the actual forwarded actors for execution confirmation and replacement'
 });
 
 it('detects static, side-effect and dynamic forbidden runtime imports',()=>{
- for(const source of ["import { decide } from './state/card_decision.js'", "import './state/card_decision.js'", "import('../cards/state/card_decision.js')", "import './state/card_command_entrance.js'", "import('./state/card_human_evidence.js')"])
+ for(const source of ["import { decide } from './state/card_decision.js'", "import './state/card_decision.js'", "import('../cards/state/card_decision.js')", "import './state/card_command_entrance.js'", "import('./state/card_human_evidence.js')", "import './state/card_server_evidence.js'"])
  expect(source).toMatch(decisionImport);
 });

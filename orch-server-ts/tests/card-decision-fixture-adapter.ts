@@ -1,9 +1,9 @@
+import { serverCardEvidence, type ServerEvidenceRows } from '../src/cards/state/card_server_evidence.js';
 import { humanCardEvidence } from '../src/cards/state/card_human_evidence.js';
 import { cardCommandEntryFailure } from '../src/cards/state/card_command_entrance.js';
 import { rowToStateValue } from '../src/cards/state/card_state_value.js';
 import type { CardDecision } from '../src/cards/state/card_decision.js';
 import { generateKeyBetween } from '@soulstream/fractional-position';
-import { isUsageLimitTermination } from '../src/session/session_limit_termination.js';
 import { assigneeToFields } from '../src/cards/control_plane/card_models.js';
 import { questionCardNow, checkCardReviewAsk, reviewCardNowFromCheckedAsk, makeCardNow, openCardItemFix } from '../src/cards/card_item_rules.js';
 import { verificationWaitNow } from '../src/cards/card_verification_wait.js';
@@ -24,40 +24,11 @@ export function predictObservation(r:DecisionObservation) {
  const session=(id:unknown)=>reads.sessions.find((s:any)=>s.session_id===id);
  const worker=session(actor.sessionId);
  if(c.type==='CREATE'&&actor.kind==='agent'&&actor.sessionId&&c.assignee===undefined)c.assignee={kind:'agent',agentId:worker.agent_id};
- const requests=r.evidence.executionRequests as any[];
- const dispatches=r.evidence.dispatches as any[];
- const active=dispatches.find(d=>d.session_id===actor.sessionId&&['admitted','launching'].includes(d.state));
- const registrations=reads.registrations as any[];
- const registered=(p:any)=>p.effect_application?.applied===true&&p.effect_application?.canonical_execution_registration?.registration_id===c.execution?.registrationId&&p.effect_application?.canonical_execution_registration?.execution_command_id===c.execution?.executionCommandId;
- let admissionReceipt=false;
- if(active){
- if(active.input.deliveryId){const d=reads.deliveries.find((d:any)=>d.delivery_id===active.input.deliveryId&&d.target_session_id===actor.sessionId&&d.state==='consumed');
- const eventId=d&&/^event:\d+$/.test(d.target_receipt_id)?Number(d.target_receipt_id.slice(6)):-1;
- const receipt=registrations.filter(p=>p.session_id===actor.sessionId&&p.event_id<=eventId&&p.effect_application?.applied===true&&p.effect_application.canonical_execution_registration).at(-1);
- admissionReceipt=!!receipt&&registered(receipt);
- }else admissionReceipt=registrations.some(p=>p.session_id===actor.sessionId&&registered(p)&&new Date(p.created_at)>=new Date(active.created_at));
- }
- const run=reads.admissionRun;
- const enabled=reads.orchestrationPolicy?.value.enabled===true;
- const limit=reads.dispatchPolicy?.value.nodeConcurrency?.[c.nodeId]??reads.dispatchPolicy?.value.nodeConcurrency?.default;
- const folder=reads.folders.find((f:any)=>f.id===row?.folder_id);
- const owner=session(row?.assignee_session_id);
- const eligible=row&&!row.archived&&!folder?.archived&&(
- row.assignee_kind==='agent'&&row.assignee_agent_id===c.admission?.workerInput.agentId&&(row.node_id??'eiaserinnys')===c.nodeId&&row.model_preset===(c.admission?.workerInput.configuredModelPreset??null)||
- row.assignee_kind==='session'&&owner?.session_id===c.sessionId&&owner.node_id===c.nodeId&&owner.agent_id===c.admission?.workerInput.agentId&&owner.model_preset===(c.admission?.workerInput.modelPreset??null));
- const occupied=reads.capacitySessions;
- const admission=!c.admission?'ok':!run||run.state!=='decided'||run.lease_token!==c.admission.leaseToken||new Date(run.lease_expires_at).getTime()<=r.checkedAt||run.policy_version!==Number(reads.orchestrationPolicy?.version)||!run.decision.decisions.some((d:any)=>d.cardId===row.id&&d.cardVersion===row.version&&d.action==='run')?'stale':limit===undefined?'missingCapacity':occupied.filter((s:any)=>s.node_id===c.nodeId).length>=limit&&!occupied.some((s:any)=>s.session_id===c.sessionId&&s.node_id===c.nodeId)?'capacity':!eligible?'ineligible':'ok';
- const activeRun=active&&reads.dispatchRuns.find((run:any)=>run.id===active.run_id);
- const admissionValid=!!active&&active.state==='launching'&&active.launch_accepted&&enabled&&Number(reads.orchestrationPolicy.version)===activeRun?.policy_version&&worker?.node_id===active.node_id&&worker?.agent_id===active.input.agentId&&worker?.model_preset===(active.input.modelPreset??null)&&Number(active.input.admittedCardVersion)===row.version&&(row.assignee_kind==='session'?row.assignee_session_id===actor.sessionId:row.assignee_kind==='agent'&&row.assignee_agent_id===active.input.agentId);
  const evidence={
- ...humanCardEvidence(r.evidence.claimableSessions as {session_id:string}[],actor.sessionId,reads.userInputAfterLastReply),
- execution:!!worker&&worker.execution_registration_id===c.execution?.registrationId&&worker.execution_command_id===c.execution?.executionCommandId&&!['completed','error','interrupted'].includes(worker.status)&&!(worker.metadata??[]).some((m:any)=>m.type==='card_orchestration_decision'),
- admitted:admissionReceipt&&admissionValid,admissionReceipt,admissionValid,
- sessionCardId:session(c.sessionId)?.card_id,statusChanged:reads.executionStatusChanged,
- pending:requests.some(q=>q.state==='pending'),policyEnabled:enabled,admission,
- termination:!!owner&&isUsageLimitTermination(owner)&&owner.termination_event_id===c.terminationEventId,
- resumeAt:r.evidence.limitAutoResumeAt,
- ownerState:!owner?'missing':['running','initializing'].includes(owner.status)?owner.status:'idle',
+  ...humanCardEvidence(r.evidence.claimableSessions as {session_id:string}[],actor.sessionId,reads.userInputAfterLastReply),
+  ...serverCardEvidence({rows:reads as ServerEvidenceRows,card:row??{},command:c,actorSessionId:actor.sessionId,checkedAt:r.checkedAt,
+   requests:r.evidence.executionRequests as {state:string}[],dispatches:r.evidence.dispatches as any[],
+   claimCandidates:r.evidence.claimableSessions as {session_id:string}[],resumeAt:r.evidence.limitAutoResumeAt?new Date(String(r.evidence.limitAutoResumeAt)):null}),
  };
  const entryFailure=cardCommandEntryFailure(c.type,{hasMode:Boolean(c.mode),requestedSpoken:c.kind==='spoken'},actor);
  const checkedAsk=c.type==='REQUEST_REVIEW'?checkCardReviewAsk(c.ask):undefined;

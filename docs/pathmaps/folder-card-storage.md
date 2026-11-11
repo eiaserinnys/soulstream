@@ -12,6 +12,8 @@ decoder의 requestedOnly 모드는 최종 예약 정리를 제외한 요청 쓰�
 
 서식은 `CardBindingValues.lazy`의 이름별 계산 함수로 전달한다. `card_write_intent.ts#createCardBindingResolver`를 decoder 한 번에 하나 만들고, 선택된 bind 또는 spread가 요청한 이름만 계산한다. `formatted.verification`, `formatted.review`, `formatted.question`, `formatted.items`와 시각·문구 직렬화도 이 경로를 쓴다. REQUEST_REVIEW의 ask 검사는 기존처럼 잠금·version 확인 뒤이면서 판정 전에 `checkCardReviewAsk`가 한 번 수행한다. 확인한 문자열은 검사를 반복하지 않는 `reviewCardNowFromCheckedAsk`가 받아 서식을 만든다. 반면 검증 대기의 now 문구 검사는 기존처럼 상태·권한·대기 입력 판정 뒤 서식을 bind할 때 실행한다.
 
+PR 3은 서버의 CONFIRM_EXECUTION, START_WORK, DISPATCH, RESUME_LONG_LIMIT, BLOCK_FOR_LIMIT, RESUME_SHORT_LIMIT, RESUME_VERIFICATION, NOTE_MISSING를 같은 결정 기계에 연결한다. `card_control_plane_service.ts#serverDecision`은 상태 분기 없이 기계가 needsEvidence로 지목한 `card_server_evidence_reader.ts`의 단계만 읽는다. 단계 순서는 `state/card_server_command.ts#CARD_SERVER_EVIDENCE_STAGES`, 가드와 읽기 지목 순서는 기계의 ordered reject 전이, 순수 증거 구성은 `state/card_server_evidence.ts#serverCardEvidence`가 정본이다. 앞선 상태·증거 거절은 뒤의 SQL과 잠금을 생략한다. 최종 apply 뒤에만 허가 INSERT 또는 실행 수락 UPDATE, decoder 요청 쓰기, 기존 patchCardTx 순으로 저장한다. 호출 횟수는 단계 수 + 1 이하다. 명령별 단계와 SQL 잠금, 검사 위치는 `docs/cards/card-decision-evidence.md`에 있다. 실행 확인 호출자(`card_execution_service.ts`의 observe, observeOnce, observePendingForNode, sendAndObserve)는 기존 recordExecution을 통하며 별도 상태 판정을 더하지 않는다.
+
 ## PAS 보고 자동 내림 (#270 R1)
 
 card_control_plane_service.ts는 카드 commit 뒤, 스냅샷 조회 전에 persistent_report_service.ts의 syncCard를 기다린다. 대상 PAS를 잠금 없이 찾고 세션마다 별도 트랜잭션에서 세션 행만 잠근 뒤 현재 판과 질문·카드 상태를 다시 확인한다. 질문 정식 답 저장·철회 또는 연결 카드 전부 done/cancelled/on_hold일 때만 내린다. 보류는 종료 상태가 아니지만 사용자가 판에서 내린 카드다. 보류 전환은 연결 판과 카드 연결 밖 판의 card_, cq_ 및 그 카드만 가리키는 일반 장을 내리고, 질문은 카드 상세에서 계속 답할 수 있다. 보고 쪽은 카드 행을 잠그지 않으며 판 방송은 각 보고 commit 직후 그 트랜잭션의 결과로 낸다. 질문 답변의 기존 메시지 전달은 그대로다.

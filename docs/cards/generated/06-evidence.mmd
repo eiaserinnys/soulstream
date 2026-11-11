@@ -1,0 +1,30 @@
+stateDiagram-v2
+direction TB
+classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
+classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
+state "명령 판정" as cardDecision_verdict {
+    direction TB
+    state "판정 준비" as cardDecision_verdict_ready
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 작업 착수를 확인한다: 실행 등록 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 작업 착수를 확인한다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 작업 착수를 확인한다: 자동 실행 영수증과 허가 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 작업 착수를 확인한다: 담당 후보 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 서버가 실행을 확인한다: 실행 세션 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 서버가 실행을 확인한다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 서버가 실행을 확인한다: 실행 뒤 상태 변경 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 서버가 실행을 배정한다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 서버가 실행을 배정한다: 미확인 실행 요청 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 서버가 실행을 배정한다: 정책 설정 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 서버가 실행을 배정한다: 허가 fence 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 현재 담당의 한도 종료를 기록한다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 현재 담당의 한도 종료를 기록한다: 현재 한도 종료 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 현재 담당의 한도 종료를 기록한다: 한도 해제 시각 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 짧은 한도 시각이 되어 잇는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 짧은 한도 시각이 되어 잇는다: 미확인 실행 요청 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 시각 없는 한도 예약을 잇는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 시각 없는 한도 예약을 잇는다: 미확인 실행 요청 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 시각 없는 한도 예약을 잇는다: 정책 설정 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 시각 없는 한도 예약을 잇는다: 허가 fence 증거를 읽는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 검증 시각이 되어 잇는다
+    cardDecision_verdict_ready --> cardDecision_verdict_ready: 담당 에이전트 없음을 적는다
+}
