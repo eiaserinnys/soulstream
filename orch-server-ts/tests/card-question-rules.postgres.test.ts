@@ -60,6 +60,15 @@ describe("card question answers and author withdrawal", () => {
     return { cardId, questionId };
   }
 
+  it('rejects an agent answer before the stale-version fence', async () => {
+    const {cardId,questionId}=await ask(true);
+    const version=(await cards.getCard(cardId))!.card.version;
+    await expect(cards.answerQuestion({actorKind:'agent',actorSessionId:'author',cardId,questionId,
+      expectedVersion:version-1,answer:'진행'})).rejects.toMatchObject({statusCode:422,code:'INVALID_CARD_REQUEST',message:'Only a human may answer card questions'});
+    expect((await cards.getCard(cardId))!.card.version).toBe(version);
+    expect((await cards.getCard(cardId))!.questions[0]!.answer).toBeNull();
+  });
+
   it.each(["done", "cancelled", "on_hold"] as const)("accepts a late %s answer from either door and delivers once to the author", async status => {
     for (const door of ["detail", "board"] as const) {
       const { cardId, questionId } = await ask(true);

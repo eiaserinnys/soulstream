@@ -20,13 +20,10 @@ for(const value of ['missing','empty','tooLong','invalid','past','tooLate'])reje
 reject('REQUEST_REVIEW','reviewAsk','reviewAsk',and([fact('hasItems'),not(fact('hasAsk'))]));
 reject('REQUEST_REVIEW','statusOwner','statusOwner',and([agent,not(effectiveOwner)]));
 reject('ASK_QUESTION','otherAssignee','otherAssignee',and([agent,inside('a_session'),not(owner)]));
-reject('ANSWER_QUESTION','humanAnswer','humanAnswer',not(actor('human')));
 reject('ANSWER_QUESTION','withdrawnAnswer','withdrawnAnswer',fact('question','withdrawn'));
 reject('ANSWER_QUESTION','openQuestion','openQuestion',not(fact('question','open')));
 reject('WITHDRAW_QUESTION','ownerOrAuthor','withdrawOwner',not(actor('owner','ownerAuthor','author')));
 for(const value of ['missing','answered','withdrawn'])reject('WITHDRAW_QUESTION',value,`withdraw_${value}`,fact('question',value));
-reject('ADD_COMMENT','trustedMode','commentTrustedMode',and([fact('hasMode'),not(session)]));
-reject('ADD_COMMENT','trustedSpoken','commentTrustedSpoken',and([fact('requestedSpoken'),actor('human','server')]));
 reject('ADD_COMMENT','otherAssignee','otherAssignee',and([fact('entrance','direct'),not(fact('reply')),agent,inside('a_session'),not(owner)]));
 reject('ADD_COMMENT','commentMode','commentMode',and([agent,fact('hasItems'),not(fact('hasMode'))]));
 reject('ADD_COMMENT','replyOwner','replyOwner',and([fact('reply'),not(effectiveOwner)]));

@@ -1,7 +1,14 @@
 import { isUsageLimitTermination } from "../session/session_limit_termination.js";
+import { decideCardTransition } from './state/card_decision.js';
+import { decodeCardDecision } from './state/card_decision_decoder.js';
+import { formatCardDecisionRejection } from './state/card_decision_errors.js';
+import { humanCardEvidence } from './state/card_human_evidence.js';
+import { assertCardCommandEntrance } from './state/card_command_entrance.js';
+import type { HumanCardCommand } from './state/card_human_command.js';
+import type { DecodedCardWrite } from './state/card_decision_decoder.js';
+import type { CardBindingValues } from './state/card_write_intent.js';
 import { patchCardTx } from "./control_plane/card_patch.js";
 import { readLimitAutoResumeAt, formatLimitResumeClock, type LimitResumeOwner } from "./card_limit_auto_resume.js";
-import { cardQuestionState, canWithdrawCardQuestion } from "./card_question_rules.js";
 import { assertNoPendingCardExecution } from "./card_execution_reservation.js";
 // 500줄 예외: 카드 aggregate의 기존 트랜잭션 facade. 보고 저장 로직은 별도 service에 둔다.
 import { PersistentReportService, type PublishPersistentReports } from "../session/persistent_report_service.js";
@@ -39,7 +46,8 @@ import {
   openCardItemFix,
   questionCardNow,
   reportCardItem as reportItemRule,
-  reviewCardNow,
+  checkCardReviewAsk,
+  reviewCardNowFromCheckedAsk,
   setCardItems as setItemsRule,
   type CardItemEvidence,
   type CardItemState,
@@ -183,7 +191,10 @@ export class CardControlPlaneService {
       apply:async (sql,eventId) => {
         await this.lockFolder(sql,params.folderId);
         const position=await this.position(sql,params.folderId,null);
-        const queuePosition=params.queue ? await this.position(sql,null,null) : null;
+        const {writes}=await this.humanDecision(sql,null,{...params,type:'CREATE'},params,eventId,[],{},
+          {values:{'command.assignment':assignee}});
+        const initial=Object.fromEntries(writes.flatMap(write=>Object.entries(write.fields)));
+        const queuePosition=initial.queue_position_key;
         if (assignee.assignee_session_id) await assertSingleCardAssignee(sql,assignee.assignee_session_id,id);
         await validateCardSourceRefsTx(sql,{cardId:id,actorKind:params.actorKind ?? "agent",actorSessionId:params.actorSessionId,body:params.request,existingRefs:[]});
         const legacyRefs=await resolveCardLegacySourceRefsTx(sql,{cardId:id,assigneeSessionId:assignee.assignee_session_id,actor:params,body:params.request,format:"markdown",attachments:params.attachments ?? []});
@@ -191,8 +202,8 @@ export class CardControlPlaneService {
         await sql`INSERT INTO cards(id,folder_id,position_key,queue_position_key,title,request,brief,attachments,attachment_refs,status,
           assignee_kind,assignee_agent_id,assignee_session_id,assignee_user_id,node_id,model_preset,
           created_session_id,created_event_id,updated_session_id,updated_event_id)
-          VALUES(${id},${params.folderId},${position},${queuePosition},${params.title},${params.request},${params.brief ?? ""},${sql.json(params.attachments ?? [])},${sql.json(refs)},${params.queue ? "queued" : "todo"},
-          ${assignee.assignee_kind},${assignee.assignee_agent_id},${assignee.assignee_session_id},${assignee.assignee_user_id},${params.nodeId ?? null},${params.modelPreset ?? null},
+          VALUES(${id},${params.folderId},${position},${queuePosition},${params.title},${params.request},${params.brief ?? ""},${sql.json(params.attachments ?? [])},${sql.json(refs)},${initial.status},
+          ${initial.assignee_kind},${initial.assignee_agent_id},${initial.assignee_session_id},${initial.assignee_user_id},${params.nodeId ?? null},${params.modelPreset ?? null},
           ${params.actorSessionId},${eventId},${params.actorSessionId},${eventId})`;
       } };
   }
@@ -250,31 +261,30 @@ export class CardControlPlaneService {
       status:params.status,blocked_kind:params.blockedKind ?? null,blocked_detail:params.blockedDetail ?? null,
       wake_at:wakeAt?.toISOString() ?? null,waiting_for:waitingFor,
     },async (sql,card,eventId,payload) => {
-      const fields=await this.applyStatusTx(sql,card,eventId,{
-        ...params,wakeAt:wakeAt?.toISOString(),waitingFor:waitingFor ?? undefined,
-      },payload);
-      await this.patch(sql,card,fields,params,eventId);
+      const candidates=params.actorKind==='agent'&&params.actorSessionId?await claimableCardSessions(sql,card.id,params.actorSessionId):[];
+      const {writes}=await this.humanDecision(sql,card,{...params,type:'SET_STATUS',wakeAt:wakeAt?.toISOString(),waitingFor:waitingFor??undefined},params,eventId,[],
+        humanCardEvidence(candidates,params.actorSessionId,false),{lazy:{'formatted.verification':()=>verificationWaitNow(waitingFor!,wakeAt!,new Date(),params.actorSessionId)}});
+      if(writes.some(write=>write.fields.assignee_session_id===params.actorSessionId))payload.claimed_assignee=true;
+      await this.patchDecisionWrites(sql,card,writes,params,eventId);
     });
   }
   async resumeBlockedCardOnHumanInput(params:{cardId:string;expectedVersion:number}) {
     const actor={actorKind:"system" as const,actorSessionId:null,...params,reason:"사용자 메시지로 작업 재개"};
     return this.mutateCard(actor,"set_card_status",{status:"running",blocked_kind:null,blocked_detail:null},async(sql,card,eventId,payload)=>{
-      const resumable=card.status==="awaiting_verification" || (card.status==="blocked" && card.blocked_kind!=="limit");
-      if (!resumable || card.archived!==false || card.assignee_kind!=="session") return false;
-      const fields=await this.applyStatusTx(sql,card,eventId,{...actor,status:"running"},payload);
-      await this.patch(sql,card,fields,actor,eventId);
-      return this.closeOpenQuestionsTx(sql,card.id,"사용자 메시지로 작업이 재개되어 서버가 닫았습니다");
+      const {decision,writes}=await this.humanDecision(sql,card,{type:'HUMAN_INPUT'},actor,eventId);
+      if(decision.kind==='noop')return false;
+      await this.patchDecisionWrites(sql,card,writes,actor,eventId);
+      return this.closeOpenQuestionsTx(sql,card.id,String(writes.find(write=>write.kind==='closeQuestions')!.fields.withdrawal_reason));
     },false);
   }
   async requestCardReview(params: CardMutationParams & { ask?: string }) {
     return this.mutateCard(params,"set_card_status",{status:"review",blocked_kind:null,blocked_detail:null,ask:params.ask},async(sql,card,eventId,payload)=>{
-      if ((card.items ?? []).length > 0 && params.ask === undefined)
-        throw invalid("사용자가 볼 것을 ask에 한 줄로 적으세요");
-      const at=new Date().toISOString();
-      const now=reviewCardNow(card.now ?? null,params.ask,at,params.actorSessionId);
-      const fields=await this.applyStatusTx(sql,card,eventId,{...params,status:"review"},payload);
-      if (params.ask !== undefined && now !== null) fields.now=sql.json(now);
-      await this.patch(sql,card,fields,params,eventId);
+      const checkedAsk=checkCardReviewAsk(params.ask);
+      const candidates=params.actorKind==='agent'&&params.actorSessionId?await claimableCardSessions(sql,card.id,params.actorSessionId):[];
+      const {writes}=await this.humanDecision(sql,card,{...params,type:'REQUEST_REVIEW'},params,eventId,[],humanCardEvidence(candidates,params.actorSessionId,false),
+        {lazy:{'formatted.review':()=>reviewCardNowFromCheckedAsk(card.now??null,checkedAsk,new Date().toISOString(),params.actorSessionId)}});
+      if(writes.some(write=>write.fields.assignee_session_id===params.actorSessionId))payload.claimed_assignee=true;
+      await this.patchDecisionWrites(sql,card,writes,params,eventId);
     });
   }
   async setCardItems(params: CardMutationParams & { items: string[] }) {
@@ -401,7 +411,6 @@ export class CardControlPlaneService {
     const commentId=existingCommentId ?? randomUUID();
     const prepared=this.prepareAddComment(params,commentId);
     const result=await this.mutateCard(params,"add_card_comment",prepared.payload,async (sql,card,eventId,payload) => {
-      if (prepared.kind === "spoken") assertNotOtherSessionAssignee(card,params);
       return this.applyAddCommentTx(sql,card,eventId,payload,params,commentId,prepared.kind,prepared.external,prepared.reply);
     });
     const storedId=String(result.operation.payload_json.comment_id ?? commentId);
@@ -412,6 +421,7 @@ export class CardControlPlaneService {
   async addCommentTx(
     sql:RepositorySql,
     params:AddCommentParams & {commentId:string},
+    entrance:"followup"="followup",
   ):Promise<{operation:FolderOperationRow;eventId:number | null;card:CardRow;comment:CardCommentRow;previousStatus:CardStatus;questionChanged:boolean}> {
     const prepared=this.prepareAddComment(params,params.commentId);
     const payload=Object.fromEntries(Object.entries(prepared.payload).filter(([,value])=>value!==undefined));
@@ -428,7 +438,7 @@ export class CardControlPlaneService {
         if (params.expectedVersion!==undefined && locked.version!==params.expectedVersion)
           throw new CardVersionConflict("card",card.id,params.expectedVersion,locked.version);
         previousStatus=locked.status;
-        questionChanged=await this.applyAddCommentTx(tx,locked,eventId,payload,params,params.commentId,prepared.kind,prepared.external,prepared.reply);
+        questionChanged=await this.applyAddCommentTx(tx,locked,eventId,payload,params,params.commentId,prepared.kind,prepared.external,prepared.reply,entrance);
       },
     });
     const savedCard=(await sql<CardRow[]>`SELECT * FROM cards WHERE id=${params.cardId}`)[0];
@@ -444,13 +454,12 @@ export class CardControlPlaneService {
       throw invalid("options: 선택지는 1~3개, 각 12자 이하로 줄이고 설명은 질문 글에 쓰세요");
     const questionId=randomUUID();
     const result=await this.mutateCard(params,"ask_card_question",{ text:params.text,options:params.options ?? null },async (sql,card,eventId) => {
-      assertNotOtherSessionAssignee(card,params);
+      const {writes}=await this.humanDecision(sql,card,{...params,type:'ASK_QUESTION'},params,eventId,[],{},
+        {lazy:{'formatted.question':()=>questionCardNow(card.now??null,params.text,new Date().toISOString(),params.actorSessionId)}});
+      const fields=writes.find(write=>write.kind==='questionInsert')!.fields;
       await sql`INSERT INTO card_questions(id,card_id,session_id,text,options)
-        VALUES(${questionId},${card.id},${params.actorSessionId},${params.text},${sql.json(params.options ?? null)})`;
-      const now=questionCardNow(card.now ?? null,params.text,new Date().toISOString(),params.actorSessionId);
-      await this.patch(sql,card,{ status:"blocked",blocked_kind:"question",blocked_detail:params.text,queue_position_key:null,
-        completed_kind:null,completed_session_id:null,completed_event_id:null,completed_user_id:null,completed_at:null,
-        ...(now === null ? {} : {now:sql.json(now)}) },params,eventId);
+        VALUES(${questionId},${card.id},${fields.session_id},${fields.text},${sql.json(fields.options as never)})`;
+      await this.patchDecisionWrites(sql,card,writes,params,eventId);
     });
     if (!result.idempotent && this.onQuestionAsked) {
       try { await this.onQuestionAsked({ cardId:params.cardId,questionId }); }
@@ -459,18 +468,15 @@ export class CardControlPlaneService {
     return result;
   }
   async answerQuestion(params: CardMutationParams & { questionId:string; answer:string }) {
-    if (params.actorKind !== "user") throw invalid("Only a human may answer card questions");
+    assertCardCommandEntrance('ANSWER_QUESTION',{}, {kind:params.actorKind,sessionId:params.actorSessionId});
     return this.mutateCard(params,"answer_card_question",{ question_id:params.questionId,answer:params.answer },async (sql,card,eventId) => {
-      const question=(await sql<{answer:string | null;withdrawn_at:Date | null}[]>`SELECT answer,withdrawn_at FROM card_questions WHERE id=${params.questionId} AND card_id=${card.id}`)[0];
-      const state=cardQuestionState(question);
-      if (state === "withdrawn") throw invalid("철회된 질문에는 답할 수 없습니다");
-      if (state !== "open") throw invalid("Open question not found in card");
-      const rows=await sql`UPDATE card_questions SET answer=${params.answer},answered_at=NOW(),answered_by=${params.actorUserId ?? null}
+      const questions=await sql<Record<string,unknown>[]>`SELECT id,session_id,answer,withdrawn_at FROM card_questions WHERE card_id=${card.id}`;
+      const {writes}=await this.humanDecision(sql,card,{...params,type:'ANSWER_QUESTION'},params,eventId,questions);
+      const fields=writes.find(write=>write.kind==='questionAnswer')!.fields;
+      const rows=await sql`UPDATE card_questions SET answer=${fields.answer},answered_at=NOW(),answered_by=${fields.answered_by}
         WHERE id=${params.questionId} AND card_id=${card.id} AND answer IS NULL AND withdrawn_at IS NULL RETURNING id`;
       if (!rows.length) throw invalid("Open question not found in card");
-      const open=await sql`SELECT id FROM card_questions WHERE card_id=${card.id} AND answer IS NULL AND withdrawn_at IS NULL LIMIT 1`;
-      if (!open.length && card.status === "blocked" && card.blocked_kind === "question")
-        await this.patch(sql,card,{ status:"running",blocked_kind:null,blocked_detail:null },params,eventId);
+      await this.patchDecisionWrites(sql,card,writes,params,eventId);
     });
   }
   async withdrawQuestion(params: CardMutationParams & { questionId:string; reason:string }) {
@@ -479,21 +485,13 @@ export class CardControlPlaneService {
     if (!length) throw invalid("철회 사유를 입력하세요");
     if (length > 200) throw invalid(`철회 사유는 200자까지입니다. 지금 ${length}자입니다`);
     return this.mutateCard(params,"withdraw_card_question",{ question_id:params.questionId,reason },async (sql,card,eventId) => {
-      const question=(await sql<{session_id:string | null}[]>`SELECT session_id FROM card_questions WHERE id=${params.questionId} AND card_id=${card.id}`)[0];
-      if (!canWithdrawCardQuestion(card,question,params))
-        throw Object.assign(new Error("Only the question author or current assignee session may withdraw a card question."),{ statusCode:403 });
-      const rows=await sql`UPDATE card_questions SET withdrawn_at=NOW(),withdrawn_by_session_id=${params.actorSessionId},withdrawal_reason=${reason}
+      const questions=await sql<Record<string,unknown>[]>`SELECT id,session_id,answer,withdrawn_at FROM card_questions WHERE card_id=${card.id}`;
+      const {writes}=await this.humanDecision(sql,card,{...params,type:'WITHDRAW_QUESTION',reason},params,eventId,questions);
+      const fields=writes.find(write=>write.kind==='questionWithdraw')!.fields;
+      const rows=await sql`UPDATE card_questions SET withdrawn_at=NOW(),withdrawn_by_session_id=${fields.withdrawn_by_session_id},withdrawal_reason=${fields.withdrawal_reason}
         WHERE id=${params.questionId} AND card_id=${card.id} AND answer IS NULL AND withdrawn_at IS NULL RETURNING id`;
-      if (!rows.length) {
-        const question=(await sql<{answer:string | null;withdrawn_at:Date | null}[]>`SELECT answer,withdrawn_at FROM card_questions WHERE id=${params.questionId} AND card_id=${card.id}`)[0];
-        if (!question) throw invalid("Question not found in card");
-        if (question.answer !== null) throw invalid("Answered questions cannot be withdrawn");
-        if (question.withdrawn_at !== null) throw invalid("Question already withdrawn");
-        throw invalid("Question not found in card");
-      }
-      const open=await sql`SELECT id FROM card_questions WHERE card_id=${card.id} AND answer IS NULL AND withdrawn_at IS NULL LIMIT 1`;
-      if (!open.length && card.status === "blocked" && card.blocked_kind === "question")
-        await this.patch(sql,card,{ status:"running",blocked_kind:null,blocked_detail:null },params,eventId);
+      if (!rows.length) throw invalid("Question not found in card");
+      await this.patchDecisionWrites(sql,card,writes,params,eventId);
     });
   }
   recordDispatch(params:{cardId:string;expectedVersion:number;sessionId:string;nodeId:string;admission?:PolicyAdmission}) {
@@ -565,11 +563,10 @@ export class CardControlPlaneService {
     });
   }
   private prepareAddComment(params:AddCommentParams,commentId:string) {
+    assertCardCommandEntrance('ADD_COMMENT',{hasMode:Boolean(params.mode),requestedSpoken:params.kind==='spoken'}, {kind:params.actorKind,sessionId:params.actorSessionId});
     const external=params.actorKind === "llm";
     const reply=params.mode === "reply";
-    if (params.mode && (params.actorKind !== "agent" || !params.actorSessionId)) throw invalid("Only trusted session actors may select a comment mode");
     const kind=external ? "comment" : params.actorKind === "agent" ? reply ? "comment" : "spoken" : params.kind ?? "comment";
-    if (params.actorKind !== "agent" && kind !== "comment") throw invalid("Only trusted session actors may add spoken comments");
     return {
       external,
       reply,
@@ -588,36 +585,25 @@ export class CardControlPlaneService {
     kind:"comment" | "spoken",
     external:boolean,
     reply:boolean,
+    entrance:"direct"|"followup"="direct",
   ):Promise<boolean> {
-    if (params.actorKind === "agent" && (card.items ?? []).length > 0 && params.mode === undefined)
-      throw invalid("mode를 spoken 또는 reply로 지정하세요");
-    const claim=reply ? await this.claim(sql,card,params.actorSessionId,payload) : {};
-    if (reply && (card.assignee_kind !== "session" || card.assignee_session_id !== params.actorSessionId))
-      throw invalid("Only the current assignee session may reply to a card comment. An authenticated internal agent session with card mutation access may use transfer_card_assignee to assign the card; handoff changes assignment only and does not start or stop work.");
-    if (reply && (card.items ?? []).length > 0) {
-      const length=codePointLength(params.body);
-      if (length > 300) throw invalid(`reply은 300자까지입니다. 지금 ${length}자입니다`);
-      if (!(await hasUserInputAfterLastReplyTx(sql,card.id)))
-        throw invalid("이미 답했습니다. 진행은 노트에 적으세요(add_card_note)");
-    }
-    if (params.itemId !== undefined && !(card.items ?? []).some(item=>item.id===params.itemId))
-      throw invalid("항목을 찾을 수 없습니다");
+    const candidates=reply&&params.actorSessionId?await claimableCardSessions(sql,card.id,params.actorSessionId):[];
+    const userInput=reply&&(card.items??[]).length>0?await hasUserInputAfterLastReplyTx(sql,card.id):false;
+    const {writes}=await this.humanDecision(sql,card,{...params,type:'ADD_COMMENT',entrance},params,eventId,[],
+      humanCardEvidence(candidates,params.actorSessionId,userInput),
+      {lazy:{'formatted.items':()=>openCardItemFix(card.items??[],params.itemId!)}});
+    const claim=writes.filter(write=>write.stage==='claim');
+    if(claim.length){Object.assign(card,...claim.map(write=>write.fields));payload.claimed_assignee=true;}
     const existingRefs=attachmentRefsOf(card.attachment_refs);
     await validateCardSourceRefsTx(sql,{cardId:card.id,actorKind:params.actorKind ?? "agent",actorSessionId:params.actorSessionId,body:params.body,existingRefs});
     const legacyRefs=await resolveCardLegacySourceRefsTx(sql,{cardId:card.id,assigneeSessionId:card.assignee_session_id,actor:params,body:params.body,format:"markdown"});
     const refs=mergeCardSourceAttachmentRefs(collectCardAttachmentRefs({request:params.body,attachments:[],items:card.items ?? [],previousRefs:existingRefs,previousItems:card.items ?? []}),legacyRefs);
-    if (Object.keys(claim).length) await this.patch(sql,card,claim,params,eventId);
+    await this.patchDecisionWrites(sql,card,claim,params,eventId);
     await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body,item_id,attachment_refs)
       VALUES(${commentId},${card.id},${reply ? "agent" : "user"},${external || reply ? null : params.actorUserId ?? null},${external ? null : params.actorSessionId},${kind},${params.body},${params.itemId ?? null},${sql.json(refs)})`;
-    if (params.itemId !== undefined && !reply) {
-      const items=openCardItemFix(card.items ?? [],params.itemId);
-      await this.patch(sql,card,{items:sql.json(items)},params,eventId);
-    }
-    const resumable=card.status==="awaiting_verification" || (card.status==="blocked" && card.blocked_kind!=="limit");
-    if (!reply && resumable && card.archived === false && card.assignee_kind === "session") {
-      await this.patch(sql,card,{status:"running",blocked_kind:null,blocked_detail:null},params,eventId);
-      return this.closeOpenQuestionsTx(sql,card.id,"사용자가 커멘트로 답해 서버가 닫았습니다");
-    }
+    await this.patchDecisionWrites(sql,card,writes.filter(write=>write.stage!=='claim'),params,eventId);
+    const close=writes.find(write=>write.kind==='closeQuestions');
+    if(close)return this.closeOpenQuestionsTx(sql,card.id,String(close.fields.withdrawal_reason));
     return false;
   }
   private async checkAdmission(sql:RepositorySql,params:{cardId:string;expectedVersion:number;sessionId:string;nodeId:string;admission?:PolicyAdmission}) {
@@ -733,6 +719,27 @@ export class CardControlPlaneService {
   }
   private async patch(sql:RepositorySql,card:CardRow,fields:Record<string,unknown>,actor:FolderActorParams,eventId:number | null) {
     await patchCardTx(sql,card,fields,actor,eventId);
+  }
+  private async humanDecision(sql:RepositorySql,card:CardRow|null,command:HumanCardCommand,params:FolderActorParams,eventId:number|null,
+    questions:Record<string,unknown>[]=[],evidence:{claim?:boolean;userInput?:boolean}={},bindings:Pick<CardBindingValues,'values'|'lazy'>={}) {
+    const actor={kind:params.actorKind,sessionId:params.actorSessionId,userId:params.actorUserId};
+    const at=new Date();
+    const decision=decideCardTransition(card,questions,evidence,command,actor,at.getTime());
+    if(decision.kind==='reject') {
+      const failure=formatCardDecisionRejection(command.type,card?.id??'',decision.failure,{length:codePointLength('body' in command?command.body:'waitingFor' in command?command.waitingFor??'':'')});
+      throw Object.assign(new Error(failure.message!),{...(failure.statusCode===null?{}:{statusCode:failure.statusCode}),...(failure.code===null?{}:{code:failure.code})});
+    }
+    const needsQueue=decision.actions.some(action=>Object.values(action.params?.fields??{}).some(value=>(value as {bind?:string}).bind==='queue.new'));
+    const writes=decodeCardDecision(decision,{card:card??{},command,actor:{...actor,kind:params.actorKind??'agent'},now:at,eventId,
+      queuePosition:needsQueue?await this.position(sql,null,null,card?.id??null):undefined,...bindings},true);
+    return {decision,writes};
+  }
+  private async patchDecisionWrites(sql:RepositorySql,card:CardRow,writes:DecodedCardWrite[],params:FolderActorParams,eventId:number|null) {
+    for(const write of writes.filter(write=>write.kind==='card')) {
+      const fields={...write.fields};
+      for(const key of ['now','items'])if(fields[key]!==undefined&&fields[key]!==null)fields[key]=sql.json(fields[key] as never);
+      await this.patch(sql,card,fields,params,eventId);
+    }
   }
   private async claim(sql:RepositorySql,card:CardRow,sessionId:string | null,payload:Record<string,unknown>) {
     if (!sessionId || !(await claimableCardSessions(sql,card.id,sessionId)).length) return {};

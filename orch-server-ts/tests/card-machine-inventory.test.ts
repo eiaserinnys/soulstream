@@ -3,6 +3,7 @@ import { expect,it } from 'vitest';
 import { cardDecisionMachine } from '../src/cards/state/card_decision_machine.js';
 import { CARD_FACT_VALUES } from '../src/cards/state/card_decision_facts.js';
 import { CARD_DECISION_SOURCES, CARD_RUNTIME_SQL_WRITERS, CARD_COMMAND_ENTRANCES, CARD_COMMAND_CALLERS } from '../src/cards/state/card_decision_inventory.js';
+import { CARD_RUNTIME_DECISION_CALLS, CARD_RUNTIME_DECISION_IMPORTERS } from '../src/cards/state/card_decision_inventory.js';
 it('pins every command to an existing operational function',async()=>{
  expect(Object.keys(CARD_DECISION_SOURCES).sort()).toEqual(Object.keys(CARD_FACT_VALUES).sort());
  for(const [file,name] of Object.values(CARD_DECISION_SOURCES))expect(await readFile(new URL(`../src/${file}`,import.meta.url),'utf8')).toMatch(new RegExp(`\\b${name}\\b`));
@@ -11,8 +12,8 @@ it('pins every command to an existing operational function',async()=>{
  expect(CARD_COMMAND_CALLERS.ADD_COMMENT).toContain('cards/card_control_plane_service.ts#addCommentTx');
  expect(CARD_COMMAND_CALLERS.ADD_COMMENT).toContain('cards/card_work_dispatch_service.ts#accept');
 });
-const decisionImport=/(?:from\s*|import\s*(?:\(\s*)?)["'][^"']*(?:cards\/)?state\/card_(?:decision|state_value|write_intent|machine)/;
-it('keeps the decision module disconnected from runtime in PR 1b',async()=>{
+const decisionImport=/(?:from\s*|import\s*(?:\(\s*)?)["'][^"']*(?:cards\/)?state\/card_(?:decision|state_value|write_intent|machine|command_entrance|human_(?:command|evidence))/;
+it('pins runtime decision imports to the PR 2 human command callers',async()=>{
  const files:string[]=[];
  async function walk(directory:string){
  for(const entry of await readdir(new URL(`../${directory}`,import.meta.url),{withFileTypes:true})){
@@ -22,13 +23,19 @@ it('keeps the decision module disconnected from runtime in PR 1b',async()=>{
  }
  await walk('src');
  const writers:string[]=[];
+ const importers:string[]=[];
  for(const file of files){
  if(file.startsWith('src/cards/state/'))continue;
  const source=await readFile(new URL(`../${file}`,import.meta.url),'utf8');
- expect(source,file).not.toMatch(decisionImport);
+ if(decisionImport.test(source))importers.push(file.slice(4));
  for(const match of source.matchAll(/\b(INSERT\s+INTO|UPDATE)\s+cards\b/g))writers.push(`${file.slice(4)}:${match[1]!.startsWith('INSERT')?'INSERT':'UPDATE'}`);
  }
  expect(writers.sort()).toEqual([...CARD_RUNTIME_SQL_WRITERS].sort());
+ expect(importers.sort()).toEqual([...CARD_RUNTIME_DECISION_IMPORTERS].sort());
+ expect(Object.keys(CARD_RUNTIME_DECISION_CALLS)).toEqual(['CREATE','SET_STATUS','REQUEST_REVIEW','HUMAN_INPUT','ASK_QUESTION','ANSWER_QUESTION','WITHDRAW_QUESTION','ADD_COMMENT']);
+ expect(Object.values(CARD_RUNTIME_DECISION_CALLS).flat()).toHaveLength(10);
+ const control=await readFile(new URL('../src/cards/card_control_plane_service.ts',import.meta.url),'utf8');
+ for(const command of Object.keys(CARD_RUNTIME_DECISION_CALLS))expect(control.includes(`type:'${command}'`),command).toBe(true);
 });
 
 it('keeps world transition memoization valid for static symbolic actions',()=>{
@@ -61,6 +68,6 @@ it('pins the actual forwarded actors for execution confirmation and replacement'
 });
 
 it('detects static, side-effect and dynamic forbidden runtime imports',()=>{
- for(const source of ["import { decide } from './state/card_decision.js'", "import './state/card_decision.js'", "import('../cards/state/card_decision.js')"])
+ for(const source of ["import { decide } from './state/card_decision.js'", "import './state/card_decision.js'", "import('../cards/state/card_decision.js')", "import './state/card_command_entrance.js'", "import('./state/card_human_evidence.js')"])
  expect(source).toMatch(decisionImport);
 });

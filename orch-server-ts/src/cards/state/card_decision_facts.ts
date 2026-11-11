@@ -1,4 +1,5 @@
 import { parseVerificationWakeAt, WAITING_FOR_MAX_CODE_POINTS, VERIFICATION_WAIT_MAX_DAYS } from '../card_verification_wait.js';
+import type { HumanCardCommand } from './card_human_command.js';
 export const CARD_ACTORS=['human','owner','author','ownerAuthor','otherAgent','anonymousAgent','server','external'] as const;
 export type CardActor=typeof CARD_ACTORS[number];
 export const TARGETS=['todo','queued','running','question','noReport','other','limit','verification','review','hold','done','cancelled'] as const;
@@ -32,7 +33,13 @@ type FactKey={ [C in CardDecisionCommand]:keyof typeof CARD_FACT_VALUES[C] }[Car
 type FactValue<K extends FactKey>={ [C in CardDecisionCommand]:K extends keyof typeof CARD_FACT_VALUES[C] ?
  (typeof CARD_FACT_VALUES[C])[K] extends readonly (infer V)[] ? V : never : never }[CardDecisionCommand];
 export type FiniteFacts=Partial<{[K in FactKey]:FactValue<K>}>;
-export type CardCommand={type:CardDecisionCommand;[key:string]:any};
+export type RemainingCardCommand={type:Exclude<CardDecisionCommand,HumanCardCommand['type']>;[key:string]:any};
+export type CardCommand=HumanCardCommand|RemainingCardCommand;
+export interface CardDecisionEvidence {
+ claim?:boolean;userInput?:boolean;execution?:boolean;admitted?:boolean;admissionReceipt?:boolean;admissionValid?:boolean;
+ sessionCardId?:string;statusChanged?:boolean;pending?:boolean;policyEnabled?:boolean;admission?:string;
+ termination?:boolean;resumeAt?:unknown;ownerState?:string;previousOwnerMatch?:boolean;
+}
 export type DecisionEvent={type:CardDecisionCommand;actor:CardActor;facts:FiniteFacts};
 export function* enumerateCardFacts(command:CardDecisionCommand):Generator<FiniteFacts> {
  const entries=Object.entries(CARD_FACT_VALUES[command]);
@@ -40,14 +47,14 @@ export function* enumerateCardFacts(command:CardDecisionCommand):Generator<Finit
  const [key,values]=entries[i]!;for(const value of values)yield*walk(i+1,{...row,[key]:value});}
  yield*walk(0,{});
 }
-export function deriveCardActor(row:Record<string,any>|null,questions:readonly Record<string,any>[],command:CardCommand,actor:Record<string,any>):CardActor {
+export function deriveCardActor(row:Record<string,any>|null,questions:readonly Record<string,any>[],command:{type:CardDecisionCommand;[key:string]:any},actor:Record<string,any>):CardActor {
  if(actor.kind==='user')return 'human';if(actor.kind==='system')return 'server';if(actor.kind!=='agent')return 'external';if(!actor.sessionId)return 'anonymousAgent';
  const owner=row?.assignee_kind==='session'&&row.assignee_session_id===actor.sessionId;
  const author=questions.some(q=>q.id===command.questionId&&q.session_id===actor.sessionId);
  return owner?(author?'ownerAuthor':'owner'):author?'author':'otherAgent';
 }
 /** Equality, presence, temporal and input-shape partitions only. SQL checks are supplied as evidence. */
-export function deriveCardDecisionFacts(row:Record<string,any>|null,questions:readonly Record<string,any>[],evidence:Record<string,any>,command:CardCommand,actor:Record<string,any>,checkedAt:number):FiniteFacts {
+export function deriveCardDecisionFacts(row:Record<string,any>|null,questions:readonly Record<string,any>[],evidence:CardDecisionEvidence,command:{type:CardDecisionCommand;[key:string]:any},actor:Record<string,any>,checkedAt:number):FiniteFacts {
  const c=row??{},q=questions.find(q=>q.id===command.questionId);
  const target=command.status==='blocked'?command.blockedKind==='question'?'question':command.blockedKind==='limit'?'limit':command.blockedKind==='no_report'?'noReport':'other':command.status==='awaiting_verification'?'verification':command.status==='on_hold'?'hold':command.status;
  let waiting:typeof wait[number]='missing';
