@@ -50,7 +50,7 @@ export async function createCardMachineWorld() {
   async function ownerId() {return String((await row()).assignee_session_id);}
   async function openId(){return String((await h.sql`SELECT id FROM card_questions WHERE card_id=${cardId} AND answer IS NULL AND withdrawn_at IS NULL ORDER BY asked_at,id LIMIT 1`)[0]?.id);}
   async function facts():Promise<CardFacts> {
-    if(!cardId)return {status:"uncreated",assignee:"none"};
+    if(!cardId)return {status:"uncreated",assignee:"none",supervised:false,boardEntryCount:0,cardEntryCount:0,questionEntryCount:0};
     const r=await row();const owner=r.assignee_session_id?await repo.ownerSession(r.assignee_session_id):null;
     const resumeAt=owner?await readLimitAutoResumeAt(sql,owner):null;
     const qs=await h.sql`SELECT session_id FROM card_questions WHERE card_id=${cardId} AND answer IS NULL AND withdrawn_at IS NULL`;
@@ -66,8 +66,8 @@ export async function createCardMachineWorld() {
     const activeLimit=r.status==="blocked"&&r.blocked_kind==="limit";
     return {status:r.status,blockedKind:r.blocked_kind,blockedDetail:r.blocked_detail,assignee,
       openQuestion:qs.length?(!owner?"orphan":qs.every(q=>q.session_id===owner.session_id)?"owner":"other"):null,
-      wakeAt:r.wake_at,limitResumeAt:resumeAt,pas:enabled?(entries.length===12?"full":"room"):"none",
-      questionEntry:entries.some(e=>e.question_id!==undefined&&e.card_id===cardId),cardEntry:entries.some(e=>e.key===`card_${cardId}`),
+      wakeAt:r.wake_at,limitResumeAt:resumeAt,supervised:enabled,boardEntryCount:entries.length,
+      questionEntryCount:entries.filter(e=>e.question_id!==undefined&&e.card_id===cardId).length,cardEntryCount:entries.filter(e=>e.key===`card_${cardId}`).length,
       // Test observer: the old assignee at the limit mutation, not machine output.
       limitedOwner:activeLimit&&limitedOwner?(owner?.session_id===limitedOwner?(short?"same":"sameLong"):(short?"different":"differentLong")):"none"};
   }
@@ -92,13 +92,18 @@ export async function createCardMachineWorld() {
     }
     switch(type) {
       case "PAS_APPEARS":await h.sql`UPDATE sessions SET metadata=${h.sql.json(metadata(true))} WHERE session_id='pas'`;return;
-      case "BOARD_FULL":{
-        if((await facts()).pas==="none")await h.sql`UPDATE sessions SET metadata=${h.sql.json(metadata(true))} WHERE session_id='pas'`;
-        let i=0;while((await reports.get("pas")).length<12)expect((await reports.put("pas",{key:`fill${i++}`,kind:"ask",title:"별도 질문",context:"맥락",action:"결정",options:["진행"],card_numbers:[]})).ok).toBe(true);return;
-      }
-      case "BOARD_ROOM":{
-        if((await facts()).pas==="none")await h.sql`UPDATE sessions SET metadata=${h.sql.json(metadata(true))} WHERE session_id='pas'`;
-        const fillers=(await reports.get("pas")).filter(e=>e.key.startsWith("fill"));for(const e of fillers)await reports.remove("pas",e.key);return;
+      case "BOARD_ONE":case "BOARD_FULL":case "BOARD_ROOM":case "BOARD_OTHER_REMOVED":{
+        const target=type==="BOARD_FULL"?12:type==="BOARD_ROOM"?0:11;
+        const isOwn=(e:{card_id?:string})=>e.card_id===cardId;
+        let entries=await reports.get("pas");
+        const others=entries.filter(e=>!isOwn(e));
+        for(const e of others.slice(target))await reports.remove("pas",e.key);
+        entries=await reports.get("pas");
+        let count=entries.filter(e=>!isOwn(e)).length;
+        while(count<target) {
+          expect((await reports.put("pas",{key:`fill${count++}`,kind:"ask",title:"별도 질문",context:"맥락",action:"결정",options:["진행"],card_numbers:[]})).ok).toBe(true);
+        }
+        return;
       }
       case "ASSIGN_SESSION":await h.sql`UPDATE sessions SET card_id=${cardId} WHERE session_id='owner'`;await cards.patchCard({...human,cardId,assignee:{kind:"session",sessionId:"owner"}});return;
       case "ASSIGN_AGENT":await cards.updateUnstartedCard({actorKind:"agent",actorSessionId:"other",cardId,agentId:"worker",nodeId:"node",idempotencyKey:`settings-${Date.now()}`},async()=>{});return;
@@ -110,9 +115,9 @@ export async function createCardMachineWorld() {
         await cards.patchCard({...human,cardId,assignee:{kind:"session",sessionId:replacement}});return;
       }
       case "ASK_OWNER":case "ASK_OTHER":await cards.askQuestion({actorKind:"agent",actorSessionId:type==="ASK_OTHER"?"other":await ownerId(),cardId,text:"결정",options:["진행"]});return;
-      case "ANSWER_MORE":case "ANSWER_DETAIL":await cards.answerQuestion({...human,cardId,questionId:await openId(),answer:"진행"});return;
+      case "ANSWER_DETAIL":await cards.answerQuestion({...human,cardId,questionId:await openId(),answer:"진행"});return;
       case "ANSWER_BOARD":{
-        const wasEnabled=(await facts()).pas!=="none";
+        const wasEnabled=(await facts()).supervised;
         if(!wasEnabled)await h.sql`UPDATE sessions SET metadata=${h.sql.json(metadata(true))} WHERE session_id='pas'`;
         const decision=await reports.acceptReply("pas",[{key:"persistent_report_reply",content:{key:`cq_${await openId()}`,option:"진행"}}],{source:"browser"});
         if(!wasEnabled)await h.sql`UPDATE sessions SET metadata=${h.sql.json(metadata(false))} WHERE session_id='pas'`;
@@ -120,7 +125,7 @@ export async function createCardMachineWorld() {
         if(decision.action!=="card")throw new Error(`Unexpected board reply: ${decision.action}`);
         await cards.answerQuestion({...human,cardId,questionId:decision.questionId,answer:decision.option});return;
       }
-      case "WITHDRAW_MORE":case "WITHDRAW":await cards.withdrawQuestion({...await agent(),cardId,questionId:await openId(),reason:"결정됨"});return;
+      case "WITHDRAW":await cards.withdrawQuestion({...await agent(),cardId,questionId:await openId(),reason:"결정됨"});return;
       case "HUMAN_MESSAGE":await cards.resumeBlockedCardOnHumanInput({cardId,expectedVersion:(await row()).version});return;
       case "HUMAN_COMMENT":await cards.addComment({...human,cardId,body:"이어갑니다"});return;
       case "AGENT_COMMENT":await cards.addComment({...await agent(),cardId,body:"확인했습니다"});return;

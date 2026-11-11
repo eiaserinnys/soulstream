@@ -9,9 +9,11 @@ export interface CardFacts {
   wakeAt?:string|Date|null;
   /** readLimitAutoResumeAt(current owner), NOT the former owner's deadline. */
   limitResumeAt?:string|Date|null;
-  pas?:"none"|"room"|"full";
-  questionEntry?:boolean;
-  cardEntry?:boolean;
+  supervised:boolean;
+  /** Raw metadata counts. Numbers are facts only, never machine context. */
+  boardEntryCount:number;
+  cardEntryCount:number;
+  questionEntryCount:number;
   /** Historical observation: caller supplies operation/event history or a test observer. */
   limitedOwner?:"none"|"same"|"different"|"sameLong"|"differentLong";
 }
@@ -23,6 +25,8 @@ export function cardFactsToStateValue(f:CardFacts):StateValue {
   else if (f.status==="running") status={on:"running"};
   else if (f.status==="review"||(f.status==="blocked"&&f.blockedKind==="limit")) status={on:{silent:f.status==="review"?"review":"limit"}};
   else status={on:{talk:f.status==="awaiting_verification"?"verification":f.blockedKind==="question"?"question":f.blockedKind==="no_report"?"noReport":"other"}};
-  return {status,cardEntry:f.cardEntry?"present":"none",question:f.openQuestion??"none",reservation:f.wakeAt?"verify":f.status==="blocked"&&f.blockedKind==="limit"&&f.limitResumeAt?"limit":"none",assignee:f.assignee==="agentAdmitted"?{agent:"admitted"}:f.assignee,
-    questionEntry:f.questionEntry?"present":"none",pasBoard:!f.pas||f.pas==="none"?"none":{available:f.pas},limitedOwner:f.limitedOwner??"none"};
+  const otherEntries=f.boardEntryCount-f.cardEntryCount-f.questionEntryCount;
+  const stage=otherEntries>=12?"full":otherEntries===11?"one":"room";
+  return {status,cardEntry:f.cardEntryCount>0?"present":"none",question:f.openQuestion??"none",reservation:f.wakeAt?"verify":f.status==="blocked"&&f.blockedKind==="limit"&&f.limitResumeAt?"limit":"none",assignee:f.assignee==="agentAdmitted"?{agent:"admitted"}:f.assignee,
+    questionEntry:f.questionEntryCount>0?"present":"none",pasBoard:f.supervised?{available:stage}:"none",limitedOwner:f.limitedOwner??"none"};
 }

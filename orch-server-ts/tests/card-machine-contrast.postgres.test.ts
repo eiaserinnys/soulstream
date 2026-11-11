@@ -8,7 +8,7 @@ import { createCardMachineWorld, type CardMachineWorld } from "./card-machine-wo
 let world:CardMachineWorld;
 beforeAll(async()=>{world=await createCardMachineWorld();},60000);
 afterAll(async()=>{await world?.cleanup();});
-const initial=()=>cardMachine.resolveState({value:cardFactsToStateValue({status:"uncreated",assignee:"none"})});
+const initial=()=>cardMachine.resolveState({value:cardFactsToStateValue({status:"uncreated",assignee:"none",supervised:false,boardEntryCount:0,cardEntryCount:0,questionEntryCount:0})});
 async function run(events:string[]) {
   await world.reset();let state=initial();
   for(const type of events) {
@@ -20,7 +20,7 @@ async function run(events:string[]) {
   return state;
 }
 it("판을 채운 순서에 따른 카드 장 기억을 두 경로 모두 대조한다",async()=>{
-  const first=await run(["CREATE_TODO","PAS_APPEARS","HUMAN_MOVE_noReport","BOARD_FULL"]);
+  const first=await run(["CREATE_TODO","PAS_APPEARS","HUMAN_MOVE_noReport","BOARD_ONE"]);
   expect(first.matches({cardEntry:"present"})).toBe(true);
   const second=await run(["CREATE_TODO","PAS_APPEARS","BOARD_FULL","HUMAN_MOVE_noReport"]);
   expect(second.matches({cardEntry:"none"})).toBe(true);
@@ -51,12 +51,6 @@ it("기계에서 뽑은 정의별 전이 경로를 서비스에 넣는다",async
   const failures:string[]=[];
   for(const path of inventory.paths) {
     let events=[...path.events];
-    // MORE is an input fact about the chosen question, not a question lifecycle
-    // in the machine. Supply two real questions through two modeled ASK events.
-    if(events.some(e=>e==="ANSWER_MORE"||e==="WITHDRAW_MORE")) {
-      const ask=events.findIndex(e=>e==="ASK_OWNER"||e==="ASK_OTHER");
-      if(ask>=0)events.splice(ask,0,events[ask]!);
-    }
     try {
       await world.reset();let state=initial();
       for(const type of events) {
@@ -80,8 +74,8 @@ it("자동 배정 첫 착수가 대기열의 에이전트 담당을 실행 중 �
   expect(state.matches({status:{on:"running"},assignee:"originalLive"})).toBe(true);
 },60000);
 it("가득 찬 판에서 카드 장을 내리면 자리가 생긴다",async()=>{
-  await run(["CREATE_TODO","PAS_APPEARS","HUMAN_MOVE_noReport","BOARD_FULL","HUMAN_MOVE_running"]);
+  await run(["CREATE_TODO","PAS_APPEARS","HUMAN_MOVE_noReport","BOARD_ONE","HUMAN_MOVE_running"]);
 },60000);
 it("가득 찬 판에서 카드 장을 질문 장으로 바꾼다",async()=>{
-  await run(["CREATE_TODO","ASSIGN_SESSION","PAS_APPEARS","HUMAN_MOVE_review","BOARD_FULL","ASK_OWNER"]);
+  await run(["CREATE_TODO","ASSIGN_SESSION","PAS_APPEARS","HUMAN_MOVE_review","BOARD_ONE","ASK_OWNER"]);
 },60000);

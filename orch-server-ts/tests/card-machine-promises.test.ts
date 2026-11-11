@@ -15,7 +15,7 @@ describe("현행 카드 규칙의 약속", () => {
     expect(result.promises[5]!.kept).toBe(false);
   });
   it("담당을 바꾸면 실제 예약은 사라지고 약속 검사용 이력만 남는다", () => {
-    let s = cardMachine.resolveState({ value: cardFactsToStateValue({status:"running",assignee:"originalLive"}) });
+    let s = cardMachine.resolveState({ value: cardFactsToStateValue({status:"running",assignee:"originalLive",supervised:false,boardEntryCount:0,cardEntryCount:0,questionEntryCount:0}) });
     s = transition(cardMachine,s,{type:"SERVER_SHORT_LIMIT"})[0];
     expect(s.matches({reservation:"limit"})).toBe(true);
     s = transition(cardMachine,s,{type:"REPLACE_LIVE"})[0];
@@ -24,14 +24,14 @@ describe("현행 카드 규칙의 약속", () => {
     expect(transition(cardMachine,s,{type:"SERVER_LIVE_RESUME"})[0].matches({status:{on:"running"}})).toBe(true);
   });
   it("위반을 심은 구성과 지킨 구성을 판정기가 구분한다",()=>{
-    const state=(extra:Partial<Parameters<typeof cardFactsToStateValue>[0]>)=>cardMachine.resolveState({value:cardFactsToStateValue({status:"blocked",blockedKind:"question",assignee:"originalLive",pas:"room",openQuestion:"owner",...extra})});
+    const state=(extra:Partial<Parameters<typeof cardFactsToStateValue>[0]>)=>cardMachine.resolveState({value:cardFactsToStateValue({status:"blocked",blockedKind:"question",assignee:"originalLive",supervised:true,boardEntryCount:0,cardEntryCount:0,questionEntryCount:0,openQuestion:"owner",...extra})});
     const cases:[Parameters<typeof state>[0],Parameters<typeof state>[0]][]=[
-      [{questionEntry:false},{questionEntry:true}],
+      [{questionEntryCount:0},{questionEntryCount:1,boardEntryCount:1}],
       [{blockedKind:"limit",limitedOwner:"different",assignee:"replacedLive"},{blockedKind:"limit",limitedOwner:"same",assignee:"originalLive",limitResumeAt:new Date()}],
       [{status:"done"},{status:"running"}],
       [{assignee:"none",openQuestion:"orphan"},{openQuestion:"owner"}],
       [{blockedKind:"limit",limitedOwner:"different"},{blockedKind:"limit",limitedOwner:"same",limitResumeAt:new Date()}],
-      [{questionEntry:false},{questionEntry:true}],
+      [{questionEntryCount:0},{questionEntryCount:1,boardEntryCount:1}],
     ];
     cases.forEach(([bad,good],i)=>{
       expect(CARD_PROMISES[i]!.breaks(state(bad))).toBe(true);
