@@ -11,6 +11,7 @@ import { CardOrchestrationRepository } from "../src/cards/card_orchestration_rep
 import { CardOrchestrationCoordinator } from "../src/cards/card_orchestration_coordinator.js";
 import { readCardOrchestrationSettings } from "../src/cards/card_orchestration_settings.js";
 import { resolveCardSessionTarget } from "../src/cards/card_session_target.js";
+import { selectNodeForSessionCreate } from "../src/session/session_create_node_selector.js";
 
 // Disposable DB, real card mutations, session relations and canonical ingress receipts.
 // Only worker transport, model availability and notifications are mocked.
@@ -106,6 +107,30 @@ describe("only the current assignee's quota termination blocks a card", () => {
     expect(sendMessage).toHaveBeenCalledWith("owner", expect.stringContaining("한도가 풀려"));
     expect((await cards.getCard(id))!.card.status).toBe("running");
     expect(launch).not.toHaveBeenCalled();
+  });
+  it("legacy recovery selects the recorded owner's node profile and model with the real selector",async()=>{
+    const id=await make();await ended("owner","limit_hit");
+    await cards.patchCard({...human,cardId:id,nodeId:"stale-card-node",modelPreset:"stale-card-model"});
+    const node={nodeId:"node",agents:[{id:"worker",backend:"codex"}],supportedBackends:["codex"],modelPresets:[{id:"model",backend:"codex"}]};
+    const registry={listConnectedNodesInRegistrationOrder:()=>[node],getConnectedNode:(id:string)=>id===node.nodeId?node:undefined} as unknown as Parameters<typeof selectNodeForSessionCreate>[0];
+    const select=vi.fn((card:Parameters<NonNullable<ConstructorParameters<typeof CardDispatcher>[0]["resolveTarget"]>>[0],preset?:string|null)=>{
+      try {
+        const chosen=selectNodeForSessionCreate(registry,{nodeId:card.node_id!,profileId:card.assignee_agent_id!,modelPresetId:preset??card.model_preset??undefined});
+        return {nodeId:chosen.node.nodeId,agentId:chosen.profileId,modelPreset:chosen.modelPresetId??null,available,reason:null};
+      }catch(error){return {nodeId:card.node_id!,agentId:card.assignee_agent_id!,modelPreset:preset??null,available:false,reason:String(error)};}
+    });
+    const realSelectorDispatcher=new CardDispatcher({repository:repo,cards:async()=>cards,resolveTarget:select,
+      launch,sendMessage,notify:async()=>{},deliveryExists:async()=>false,abandonDelivery:async()=>{},warn});
+    available=false;
+    await realSelectorDispatcher.checkLimits();await realSelectorDispatcher.drain();
+    expect((await cards.getCard(id))!.card.status).toBe("blocked");
+    available=true;
+    await realSelectorDispatcher.checkLimits();await realSelectorDispatcher.drain();
+    expect((await cards.getCard(id))!.card).toMatchObject({status:"running",limit_resume_session_id:null,limit_resume_at:null});
+    expect(select).toHaveBeenLastCalledWith(expect.objectContaining({node_id:"node",assignee_agent_id:"worker"}),"model");
+    expect(sendMessage).toHaveBeenCalledWith("owner",expect.stringContaining("한도가 풀려"));
+    expect(launch).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
   });
   it("coordinator recovery admits the limited owner rather than the newest child", async () => {
     const id = await make(); await ended("owner", "limit_hit"); await child(id); await ended("child", "limit_hit");

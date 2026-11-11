@@ -322,7 +322,7 @@ export class CardDispatcher {
         for (const card of await this.options.repository.limited()) {
             const session = card.assignee_session_id ? await this.options.repository.ownerSession(card.assignee_session_id) : null;
             if (!session || card.limit_resume_session_id!==session.session_id || card.limit_resume_at!==null) continue;
-            const target = this.options.resolveTarget(card, session?.model_preset);
+            const target = this.options.resolveTarget({...card,node_id:session.node_id,assignee_agent_id:session.agent_id}, session.model_preset);
             if (!target.available)
                 continue;
             const settings = await this.options.repository.settings();

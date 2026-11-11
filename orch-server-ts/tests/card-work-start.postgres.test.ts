@@ -28,7 +28,7 @@ describe("explicit manual card work", () => {
     repo=new CardOrchestrationRepository(async()=>createFolderContentSqlAdapter(h.liveSql));
     cards = new CardControlPlaneService(createFolderContentSqlAdapter(h.liveSql), { appendEventTx: appendCardEventTx });
   }, 60000);
-  beforeEach(async () => { await h.sql`UPDATE cards SET archived=TRUE`; });
+  beforeEach(async () => { await h.sql`UPDATE cards SET archived=TRUE,limit_resume_session_id=NULL,limit_resume_at=NULL`; });
   afterAll(async () => h?.cleanup());
   async function make(status = "todo", kind = "session", owner = "owner") {
     const r = await cards.createCard({ actorKind: "user", actorSessionId: null, folderId: "work", title: "요청", request: "요청", assignee: {kind: kind as "session", sessionId: owner} });
