@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync } from "node:fs";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { GitProcessError } from "./worktree_process.js";
@@ -16,6 +17,10 @@ export class RepositoryLock {
     mkdirSync(options.lockRoot, { recursive: true });
   }
 
+  /**
+   * Every acquire, owner write, and release is async: on a slow disk a single
+   * mkdir in the lock root has taken seconds, and sync calls held the event loop.
+   */
   async withLock<T>(key: string, action: () => Promise<T>): Promise<T> {
     const lockPath = join(
       this.options.lockRoot,
@@ -24,18 +29,18 @@ export class RepositoryLock {
     const deadline = Date.now() + this.options.defaultTimeoutMs;
     while (true) {
       try {
-        mkdirSync(lockPath);
+        await mkdir(lockPath);
         break;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-        if (reclaimDeadLock(lockPath, key)) continue;
+        if (await reclaimDeadLock(lockPath, key)) continue;
         if (Date.now() >= deadline) {
           throw new RepositoryLockError(`Repository lock timed out for ${key}`);
         }
         await new Promise((resolve) => setTimeout(resolve, 25));
       }
     }
-    writeFileSync(join(lockPath, "owner.json"), JSON.stringify({
+    await writeFile(join(lockPath, "owner.json"), JSON.stringify({
       pid: process.pid,
       acquiredAt: new Date().toISOString(),
       key,
@@ -47,7 +52,7 @@ export class RepositoryLock {
     } catch (error) {
       if (hasUnconfirmedProcess(error)) {
         release = false;
-        writeFileSync(join(lockPath, "owner.json"), JSON.stringify({
+        await writeFile(join(lockPath, "owner.json"), JSON.stringify({
           pid: process.pid,
           acquiredAt: new Date().toISOString(),
           key,
@@ -56,7 +61,7 @@ export class RepositoryLock {
       }
       throw error;
     } finally {
-      if (release) rmSync(lockPath, { recursive: true, force: true });
+      if (release) await rm(lockPath, { recursive: true, force: true });
     }
   }
 }
@@ -74,9 +79,9 @@ function hasUnconfirmedProcess(error: unknown): boolean {
   return false;
 }
 
-function reclaimDeadLock(lockPath: string, key: string): boolean {
+async function reclaimDeadLock(lockPath: string, key: string): Promise<boolean> {
   try {
-    const owner = JSON.parse(readFileSync(join(lockPath, "owner.json"), "utf8")) as {
+    const owner = JSON.parse(await readFile(join(lockPath, "owner.json"), "utf8")) as {
       pid?: unknown;
       key?: unknown;
       unconfirmedChild?: unknown;
@@ -89,7 +94,7 @@ function reclaimDeadLock(lockPath: string, key: string): boolean {
       || owner.unconfirmedChild === true
       || processIsAlive(owner.pid)
     ) return false;
-    rmSync(lockPath, { recursive: true, force: true });
+    await rm(lockPath, { recursive: true, force: true });
     return true;
   } catch {
     return false;
