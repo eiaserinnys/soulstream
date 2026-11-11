@@ -125,6 +125,11 @@ export async function createCardMachineWorld() {
         if(decision.action!=="card")throw new Error(`Unexpected board reply: ${decision.action}`);
         await cards.answerQuestion({...human,cardId,questionId:decision.questionId,answer:decision.option});return;
       }
+      case "WITHDRAW_AUTHOR":{
+        const questionId=await openId();
+        const question=(await h.sql`SELECT session_id FROM card_questions WHERE id=${questionId}`)[0]!;
+        await cards.withdrawQuestion({actorKind:"agent",actorSessionId:question.session_id,cardId,questionId,reason:"결정됨"});return;
+      }
       case "WITHDRAW":await cards.withdrawQuestion({...await agent(),cardId,questionId:await openId(),reason:"결정됨"});return;
       case "HUMAN_MESSAGE":await cards.resumeBlockedCardOnHumanInput({cardId,expectedVersion:(await row()).version});return;
       case "HUMAN_COMMENT":await cards.addComment({...human,cardId,body:"이어갑니다"});return;

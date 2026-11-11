@@ -1,12 +1,12 @@
 # 현행 카드 규칙
 
-이 문서는 XState 정의와 약속 검사에서 생성한다. 제품 규칙을 고치지 않은 걸음 1의 현행 모형이다.
+이 문서는 XState 정의와 약속 검사에서 생성한다. 걸음 2의 질문 답과 철회 규칙을 반영한 현행 모형이다.
 
 한 카드에 열린 질문은 하나까지만 대조했다. 한 카드의 동시 질문 여러 개, 보관, 권한 표 전체, 자동 배정 조정자 내부와 임의의 담당 변경 조합은 대조하지 않았다.
 
 판의 전체 장 수와 이 카드의 장 수는 DB 사실에서 읽는다. 기계에는 숫자를 저장하지 않고, 다른 장이 10장 이하·11장·12장인 단계만 둔다. 한도 당시 담당은 시험 관측자가 서비스 호출 당시의 담당을 기록한 이력이며, 지금 DB에 전용 칸이 없다.
 
-영역 8개, 상태 노드 62개, 사건 69개, 도달 구성 2051개, 정의별 전이 갈래 314개.
+영역 8개, 상태 노드 62개, 사건 70개, 도달 구성 2051개, 정의별 전이 갈래 319개.
 
 빨강은 약속을 어기는 도달 구성이 있다는 뜻이다. 별표는 이름 없는 상태나 구멍이다. 그림은 사건을 골라 나누며, 같은 사건의 화살표는 해당 그림에서 전부 남기거나 전부 숨긴다. 자유 이동과 같은 결과의 기억 쓰기는 각각 한 화살표로 묶는다. 기억 쓰기 화살표는 값이 실제로 바뀌는 대표 시작과 끝을 나타내며, 이미 같은 값인 쓰기는 따로 그리지 않는다.
 
@@ -53,11 +53,10 @@ state "현행 카드 규칙 (운영 코드와 대조할 모형)" as card {
     status --> status: 디렉터와 담당은 상태를 직접 옮긴다 [담당 권한 안에서] (어긋남 7)
 }
 status --> talk: 담당이 질문을 올린다 (어긋남 1, 7)
-status --> talk: 다른 에이전트가 질문을 올린다 [담당 세션 없음] (어긋남 8, 1, 7)
+status --> talk: 다른 에이전트가 질문을 올린다 [담당 세션 없음] (어긋남 1, 7)
 status --> silent: 담당이 검수를 요청한다 (어긋남 1, 7)
 status --> hole_holeCardMissing: 담당이 검수를 요청한다
 status --> hole_holeQuestionMissing: 다른 에이전트가 질문을 올린다 [담당 세션 없음]
-class card_question breaks
 class hole_holeCardMissing breaks
 class hole_holeQuestionMissing breaks
 class off breaks
@@ -137,7 +136,7 @@ class hole_holeChangedLimitOwner breaks
 
 ## 질문: 기록은 열려 있어도 판의 장은 사라진다
 
-질문 한 개의 열림과 판에 저장된 질문 장은 별개의 기억이다. 완료·취소에서 늦게 답할 때 카드 상세와 감독 판의 결과가 다르고, 담당 없는 질문은 올린 세션도 철회하지 못한다.
+질문 한 개의 열림과 판에 저장된 질문 장은 별개의 기억이다. 완료와 취소 뒤 늦은 답도 카드 상세와 감독 판에서 받고 상태는 그대로 둔다. 질문을 올린 세션과 현재 담당이 철회할 수 있다.
 
 ```mermaid
 stateDiagram-v2
@@ -158,17 +157,17 @@ state "질문의 상태와 기억" as questionView {
             direction TB
             state "없음" as qNone
             state "지금 담당이 올린 질문" as qOwner
-            state "철회할 담당 세션이 없는 질문 *" as qOrphan
+            state "담당 없이 올린 질문" as qOrphan
             state "옛 담당이 올린 질문" as qOther
             qNone --> qOwner: 담당이 질문을 올린다 (어긋남 1, 7)
-            qNone --> qOrphan: 다른 세션이 질문한다 [담당 세션 없음] (어긋남 1, 7, 8)
+            qNone --> qOrphan: 다른 세션이 질문한다 [담당 세션 없음] (어긋남 1, 7)
         }
         state "감독 판의 질문 장 (현행 코드의 기억)" as card_questionEntry {
             direction TB
             state "질문 장 없음" as eNone
             state "질문 장 있음" as ePresent
-            eNone --> ePresent: 질문을 올리거나 보류에서 돌아옴 [빈자리 있음] (어긋남 8)
-            ePresent --> eNone: 답·철회·카드 내림으로 장을 지운다 (어긋남 1, 4)
+            eNone --> ePresent: 질문을 올리거나 보류에서 돌아옴 [빈자리 있음]
+            ePresent --> eNone: 답·철회·카드 내림으로 장을 지운다 (어긋남 1)
         }
         state "담당" as card_assignee
         state "감독 PAS와 이 카드의 것이 아닌 장의 수 (환경)" as card_pasBoard
@@ -176,16 +175,15 @@ state "질문의 상태와 기억" as questionView {
 }
 status --> status: 디렉터와 담당은 상태를 직접 옮긴다 [담당 권한 안에서] (어긋남 7)
 status --> on: 담당이 질문을 올린다 (어긋남 1, 7)
-status --> on: 다른 에이전트가 질문을 올린다 [담당 세션 없음] (어긋남 8, 1, 7)
-card_question --> qNone: 답·철회·사람의 말로 닫는다 [상세와 판의 답 조건은 다름] (어긋남 1, 4)
+status --> on: 다른 에이전트가 질문을 올린다 [담당 세션 없음] (어긋남 1, 7)
+card_question --> qNone: 답·철회·사람의 말로 닫는다 [카드가 끝나도 답은 받음] (어긋남 1)
 status --> on: 다른 에이전트가 질문을 올린다 [담당 세션 없음]
 status --> off: 디렉터가 보류으로 옮긴다
-class qOrphan breaks
 class on breaks
 class off breaks
 ```
 
-화살표 10개. 남긴 사건: 디렉터가 실행 중으로 옮긴다 / 디렉터가 보류으로 옮긴다 / 디렉터가 완료으로 옮긴다 / 담당이 질문을 올린다 / 다른 에이전트가 질문을 올린다 [담당 세션 없음] / 디렉터가 마지막 질문에 답한다 [카드 상세] / 디렉터가 마지막 질문에 답한다 [감독 판] / 담당이 마지막 질문을 철회한다 / 디렉터가 담당에게 말한다 [말로 풀리는 기다림]. 나머지 사건은 아래 전체 표에서 확인한다.
+화살표 10개. 남긴 사건: 디렉터가 실행 중으로 옮긴다 / 디렉터가 보류으로 옮긴다 / 디렉터가 완료으로 옮긴다 / 담당이 질문을 올린다 / 다른 에이전트가 질문을 올린다 [담당 세션 없음] / 디렉터가 마지막 질문에 답한다 [카드 상세] / 디렉터가 마지막 질문에 답한다 [감독 판] / 담당이 마지막 질문을 철회한다 / 올린 세션이 마지막 질문을 철회한다 / 디렉터가 담당에게 말한다 [말로 풀리는 기다림]. 나머지 사건은 아래 전체 표에서 확인한다.
 
 ## 한도: 지금 담당의 예약과 한도 당시 담당은 다르다
 
@@ -263,15 +261,15 @@ state "감독 판의 카드 장 (현행 코드의 기억, 걸음 2에서 계산 
     direction TB
     state "카드 장 없음" as cNone
     state "카드 장 있음" as cPresent
-    cNone --> cPresent: 검수·막힘 장을 올린다 [질문 없음, 빈자리 있음] (어긋남 4, 7)
-    cPresent --> cNone: 질문·실행·내려감으로 장을 내린다 (어긋남 1, 4, 7)
+    cNone --> cPresent: 검수·막힘 장을 올린다 [질문 없음, 빈자리 있음] (어긋남 7)
+    cPresent --> cNone: 질문·실행·내려감으로 장을 내린다 (어긋남 1, 7)
 }
 state "감독 판의 질문 장 (현행 코드의 기억)" as card_questionEntry {
     direction TB
     state "질문 장 없음" as eNone
     state "질문 장 있음" as ePresent
     eNone --> ePresent: 질문을 올리거나 보류에서 돌아옴 [빈자리 있음]
-    ePresent --> eNone: 답·철회·카드 내림으로 장을 지운다 (어긋남 1, 4)
+    ePresent --> eNone: 답·철회·카드 내림으로 장을 지운다 (어긋남 1)
 }
 state "감독 PAS와 이 카드의 것이 아닌 장의 수 (환경)" as card_pasBoard {
     direction TB
@@ -302,8 +300,8 @@ class eNone breaks
 | 판에 올라야 할 장은 판에 있다 (1-가 질문 장) | 어김 | 1, 7 | 549 | 디렉터가 할 일 카드를 만든다 → 다른 에이전트가 질문을 올린다 [담당 세션 없음] → 감독 PAS가 생긴다 |
 | 판에 올라야 할 장은 판에 있다 (1-나 카드 장) | 어김 | 1 | 210 | 디렉터가 할 일 카드를 만든다 → 디렉터가 질문으로 막힘으로 옮긴다 → 감독 PAS가 생긴다 |
 | 서버는 한도에 걸린 담당이 같을 때만 실행 중으로 옮긴다 | 어김 | 2 | 48 | 디렉터가 할 일 카드를 만든다 → 서버가 실행을 확인한다 → 디렉터가 한도로 막힘으로 옮긴다 → 실행 중인 세션으로 담당을 바꾼다 |
-| 같은 질문의 답은 카드 상세와 감독 판에서 결과가 같다 | 어김 | 4 | 144 | 디렉터가 할 일 카드를 만든다 → 다른 에이전트가 질문을 올린다 [담당 세션 없음] → 디렉터가 완료으로 옮긴다 |
-| 질문을 올릴 수 있는 세션은 철회할 수 있다 | 어김 | 8 | 264 | 디렉터가 할 일 카드를 만든다 → 다른 에이전트가 질문을 올린다 [담당 세션 없음] |
+| 같은 질문의 답은 카드 상세와 감독 판에서 결과가 같다 | 지킴 | 4 | 0 | 없음 |
+| 질문을 올릴 수 있는 세션은 철회할 수 있다 | 지킴 | 8 | 0 | 없음 |
 | 짧은 한도로 막히면 깨울 예약이 있다 | 어김 | 별도 약속 | 72 | 디렉터가 할 일 카드를 만든다 → 서버가 실행을 확인한다 → 담당이 짧은 한도로 끝난다 → 실행 중인 세션으로 담당을 바꾼다 |
 | 기다리는 카드는 판의 장이나 시각으로 나가는 길이 있다 | 어김 | 별도 약속 | 510 | 디렉터가 할 일 카드를 만든다 → 디렉터가 질문으로 막힘으로 옮긴다 → 감독 PAS가 생긴다 |
 
@@ -344,6 +342,7 @@ class eNone breaks
 | `ANSWER_DETAIL` | 디렉터가 마지막 질문에 답한다 [카드 상세] | `cards/card_control_plane_service.ts#answerQuestion` |
 | `ANSWER_BOARD` | 디렉터가 마지막 질문에 답한다 [감독 판] | `session/persistent_report_service.ts#acceptReply/cardQuestionDecision` |
 | `WITHDRAW` | 담당이 마지막 질문을 철회한다 | `cards/card_control_plane_service.ts#withdrawQuestion` |
+| `WITHDRAW_AUTHOR` | 올린 세션이 마지막 질문을 철회한다 | `cards/card_control_plane_service.ts#withdrawQuestion`<br>`cards/card_question_rules.ts#canWithdrawCardQuestion` |
 | `HUMAN_MESSAGE` | 디렉터가 담당에게 말한다 [말로 풀리는 기다림] | `cards/card_control_plane_service.ts#resumeBlockedCardOnHumanInput`<br>`production.ts#resumeBlockedCardOnHumanInput caller` |
 | `HUMAN_COMMENT` | 디렉터가 커멘트를 남긴다 [말로 풀리는 기다림] | `cards/card_control_plane_service.ts#applyAddCommentTx` |
 | `AGENT_COMMENT` | 담당이 커멘트를 남긴다 | `cards/card_control_plane_service.ts#applyAddCommentTx` |

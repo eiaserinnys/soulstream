@@ -34,15 +34,14 @@ it("담당이 바뀐 한도 막힘에서 살아 있는 새 담당으로 바로 �
   await run(["CREATE_TODO","ASSIGN_SESSION","HUMAN_MOVE_running","SERVER_SHORT_LIMIT","REPLACE_LIVE","SERVER_LIVE_RESUME"]);
   await run(["CREATE_TODO","ASSIGN_SESSION","HUMAN_MOVE_running","SERVER_SHORT_LIMIT","REPLACE_LIMITED","SERVER_LIMIT_RELAUNCH"]);
 },60000);
-it("철회할 담당 없는 질문을 실제 서비스와 대조한다",async()=>{
-  const state=await run(["CREATE_TODO","ASK_OTHER"]);
-  expect(cardMachine.getTransitionData(state,{type:"WITHDRAW"})).toHaveLength(0);
-  await expect(world.apply("WITHDRAW")).rejects.toMatchObject({statusCode:403});
+it("담당 없는 질문도 올린 세션이 철회하는 것을 실제 서비스와 대조한다",async()=>{
+  const state=await run(["CREATE_TODO","ASK_OTHER","WITHDRAW_AUTHOR"]);
+  expect(state.matches({question:"none"})).toBe(true);
 },60000);
-it("끝난 카드의 감독 판 답을 거절하는 것도 기계와 같다",async()=>{
-  const state=await run(["CREATE_TODO","ASSIGN_SESSION","PAS_APPEARS","ASK_OWNER","HUMAN_MOVE_done"]);
-  expect(cardMachine.getTransitionData(state,{type:"ANSWER_BOARD"})).toHaveLength(0);
-  await expect(world.apply("ANSWER_BOARD")).rejects.toMatchObject({statusCode:409});
+it("끝난 카드의 감독 판 답도 받으며 상태를 유지한다",async()=>{
+  const state=await run(["CREATE_TODO","ASSIGN_SESSION","PAS_APPEARS","ASK_OWNER","HUMAN_MOVE_done","ANSWER_BOARD"]);
+  expect(state.matches({question:"none"})).toBe(true);
+  expect(state.matches({status:{off:"done"}})).toBe(true);
 },60000);
 
 it("기계에서 뽑은 정의별 전이 경로를 서비스에 넣는다",async()=>{
