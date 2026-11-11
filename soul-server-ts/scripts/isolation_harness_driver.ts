@@ -236,7 +236,9 @@ function prepareFacts(prepared: Awaited<ReturnType<typeof applyRestrictedRunnerI
         testDatabaseUrl: childEnv.TEST_DATABASE_URL !== undefined,
         sshAuthSock: childEnv.SSH_AUTH_SOCK !== undefined,
         pm2Home: childEnv.PM2_HOME !== undefined,
-        sccacheKeys: Object.keys(childEnv).filter((key) => key.startsWith("SCCACHE_")),
+        sccacheKeys: Object.keys(childEnv).filter(
+          (key) => key.startsWith("SCCACHE_") && key !== "SCCACHE_DIR",
+        ),
         gitConfigCount: childEnv.GIT_CONFIG_COUNT ?? null,
         ghTokenPresent: childEnv.GH_TOKEN !== undefined,
         ghConfigDir: childEnv.GH_CONFIG_DIR ?? null,

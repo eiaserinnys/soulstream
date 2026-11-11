@@ -64,7 +64,8 @@ def case_probe(args: dict) -> None:
             "test_database_url_absent": "TEST_DATABASE_URL" not in os.environ,
             "ssh_auth_sock_absent": "SSH_AUTH_SOCK" not in os.environ,
             "pm2_home_absent": "PM2_HOME" not in os.environ,
-            "sccache_absent": not [k for k in os.environ if k.startswith("SCCACHE_")],
+            "sccache_absent": not [k for k in os.environ
+                                   if k.startswith("SCCACHE_") and k != "SCCACHE_DIR"],
             "git_config_count": os.environ.get("GIT_CONFIG_COUNT"),
             "gh_token_present": "GH_TOKEN" in os.environ,
             "gh_config_dir_present": "GH_CONFIG_DIR" in os.environ,

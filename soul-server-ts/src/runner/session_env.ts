@@ -89,14 +89,21 @@ export function buildRestrictedSessionEnv(
 
   // base와 additions를 합친 결과 전체에 §11 제거 정책을 다시 적용한다.
   // additions로 관리 자격이 되살아나지 않게 하는 경계다. 예외는 승인된
-  // 시험 DB 하나뿐이고, 그 키도 additions가 제공한 경우에만 남긴다.
+  // 시험 DB와 격리 캐시의 SCCACHE_DIR 둘이고, 둘 다 additions가 제공한 경우에만 남긴다.
   const keepsTestDatabase = Object.prototype.hasOwnProperty.call(
     input.additions,
     "TEST_DATABASE_URL",
   );
+  // 노드 cargo 설정이 sccache를 걸 때 상자 안 cargo가 읽기 전용 노드 캐시 대신
+  // 쓰기 가능한 격리 캐시를 쓰도록, additions가 준 SCCACHE_DIR 하나만 남긴다(카드 #1232).
+  const keepsSccacheDirectory = Object.prototype.hasOwnProperty.call(
+    input.additions,
+    "SCCACHE_DIR",
+  );
   for (const key of Object.keys(env)) {
     if (!isRemovedKey(key)) continue;
     if (key === "TEST_DATABASE_URL" && keepsTestDatabase) continue;
+    if (key === "SCCACHE_DIR" && keepsSccacheDirectory) continue;
     delete env[key];
   }
 
