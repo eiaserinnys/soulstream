@@ -5,7 +5,7 @@ import { join } from "node:path";
 import type { ResolvedSoakConfig } from "./config.js";
 
 const require = createRequire(new URL("../../../orch-server-ts/package.json", import.meta.url));
-const postgres = require("postgres") as typeof import("postgres").default;
+const postgres = require("postgres") as typeof import("postgres");
 
 export function stagingDatabaseUrl(adminUrl: string, databaseName: string): string {
   const url = new URL(adminUrl);

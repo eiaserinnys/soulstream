@@ -14,6 +14,8 @@ on:
       - 'soul-server-ts/vitest.config.ts'
       # soul-server-ts/tests/mcp/cluster-roundtrip-fixture.ts imports orch-server-ts/src.
       - 'orch-server-ts/src/**'
+      - 'packages/mcp-contract/**'
+      - 'soul-server-ts/scripts/**'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - '.github/workflows/soul-server-ts.yml'
@@ -25,6 +27,8 @@ on:
       - 'soul-server-ts/tsconfig*.json'
       - 'soul-server-ts/vitest.config.ts'
       - 'orch-server-ts/src/**'
+      - 'packages/mcp-contract/**'
+      - 'soul-server-ts/scripts/**'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
       - '.github/workflows/soul-server-ts.yml'
@@ -55,6 +59,12 @@ jobs:
 
       - name: Typecheck soul-server-ts
         run: corepack pnpm --dir soul-server-ts typecheck
+
+      - name: Test mcp-contract
+        run: corepack pnpm --dir packages/mcp-contract test
+
+      - name: Typecheck soul-server-ts scripts
+        run: corepack pnpm --dir soul-server-ts typecheck:contracts
 
       - name: Test soul-server-ts
         run: >-
