@@ -1,5 +1,5 @@
 import { setup, stateIn, and, or, not } from "xstate";
-import { EVENT_LABELS, STATUS_LEAVES, type StatusLeaf } from "./card_machine_events.js";
+import { EVENT_LABELS, STATUS_LEAVES, MEMORY_CHART_GROUPS, type StatusLeaf } from "./card_machine_events.js";
 
 // All guards inspect the pre-event configuration. Parallel regions consume an
 // event together; actions are labels only, never production side effects.
@@ -187,6 +187,13 @@ for(const [region,handlers] of Object.entries(on)) for(const [event,value] of Ob
       guards[name]=rule.guard;rule.guard=name;
     }
   });
+// Repeated memory writes are grouped only in the diagrams. Guards, actions,
+// targets and the definition identities used by contrast tests are unchanged.
+for(const [region,handlers] of Object.entries(on))for(const value of Object.values(handlers))
+  for(const rule of Array.isArray(value)?value:[value]) {
+    const group=`memory-${region}-${rule.target?.slice(1)}`;
+    if(MEMORY_CHART_GROUPS[group])rule.meta={...rule.meta,chartGroup:group};
+  }
 // Shared transitions live on their actual hierarchical source. In particular,
 // all children of talk inherit the human-input resume rule once.
 function statusEvents(...events:string[]) {

@@ -79,3 +79,24 @@ export const STATUS_DECISIONS:Record<string,string[]> = {
   applyAddCommentTx:["HUMAN_COMMENT","AGENT_COMMENT"],mergeCards:["MERGE_SOURCE"],
   bulkSetCardStatus:["BULK_TODO","BULK_QUEUED","BULK_HOLD","BULK_CANCELLED"],
 };
+
+/** Diagram projections of repeated memory writes; state transitions stay unchanged. */
+export const MEMORY_CHART_GROUPS:Record<string,{from:string;to:string;label:string}>={
+  "memory-question-qOwner":{from:"qNone",to:"qOwner",label:"담당이 질문을 올린다"},
+  "memory-question-qOrphan":{from:"qNone",to:"qOrphan",label:"다른 세션이 질문한다 [담당 세션 없음]"},
+  "memory-question-qNone":{from:"card.question",to:"qNone",label:"답·철회·사람의 말로 닫는다 [상세와 판의 답 조건은 다름]"},
+  "memory-questionEntry-ePresent":{from:"eNone",to:"ePresent",label:"질문을 올리거나 보류에서 돌아옴 [빈자리 있음]"},
+  "memory-questionEntry-eNone":{from:"ePresent",to:"eNone",label:"답·철회·카드 내림으로 장을 지운다"},
+  "memory-cardEntry-cPresent":{from:"cNone",to:"cPresent",label:"검수·막힘 장을 올린다 [질문 없음, 빈자리 있음]"},
+  "memory-cardEntry-cNone":{from:"cPresent",to:"cNone",label:"질문·실행·내려감으로 장을 내린다"},
+  "memory-reservation-rLimit":{from:"rNone",to:"rLimit",label:"담당이 짧은 한도로 끝난다"},
+  "memory-reservation-rVerify":{from:"rNone",to:"rVerify",label:"검증 시각을 정한다"},
+  "memory-reservation-rNone":{from:"rLimit",to:"rNone",label:"담당 교체 또는 한도 막힘을 나가 예약이 없어진다"},
+  "memory-assignee-originalLimited":{from:"originalLive",to:"originalLimited",label:"원래 담당이 짧은 한도로 끝난다"},
+  "memory-assignee-replacedLive":{from:"originalLimited",to:"replacedLive",label:"살아 있는 새 담당으로 바꾼다"},
+  "memory-assignee-replacedLimited":{from:"originalLimited",to:"replacedLimited",label:"긴 한도로 끝난 새 담당으로 바꾼다"},
+  "memory-limitedOwner-lSame":{from:"lNone",to:"lSame",label:"짧은 한도로 막힐 때 담당을 기록한다"},
+  "memory-limitedOwner-lDifferent":{from:"lSame",to:"lDifferent",label:"담당이 바뀌어 원래 담당과 달라진다"},
+  "memory-limitedOwner-lDifferentLong":{from:"lSameLong",to:"lDifferentLong",label:"담당이 바뀌어 원래 담당과 달라진다"},
+  "memory-limitedOwner-lNone":{from:"lDifferent",to:"lNone",label:"한도 막힘을 나가 이력을 지운다"},
+};
