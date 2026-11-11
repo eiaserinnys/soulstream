@@ -1,0 +1,47 @@
+import { readFile, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { it, expect } from 'vitest';
+import { createCardMachineWorld } from './card-machine-world.js';
+import { observeCardDecisions, compareDecisionObservation, type DecisionObservation } from './card-decision-observation.js';
+import { cardContrastPaths } from '../src/cards/state/card_machine_paths.js';
+import { collectAdditionalObservations } from './card-decision-observation-cases.js';
+const baseline = 'c8b9c745a8c8728b65ac2741b75ddb16eec5b7bf';
+const fixture = new URL('./fixtures/card-state-observations.json', import.meta.url);
+it('collects and replays baseline SQL observations through the same normalized comparator', async () => {
+  const world = await createCardMachineWorld();
+  const traces = observeCardDecisions(world);
+  const paths = cardContrastPaths().paths;
+  const collect = async () => {
+    const observations: DecisionObservation[] = [];
+    for (const path of paths) {
+      await world.reset(); traces.length = 0;
+      for (const event of path.events) await world.apply(event);
+      observations.push(...traces);
+    }
+    traces.length = 0;
+    await collectAdditionalObservations(world);
+    observations.push(...traces);
+    return observations;
+  };
+  try {
+  if (process.env.COLLECT_CARD_OBSERVATIONS === '1') {
+    // Pin ALL runtime service code, not only three entry files. Statechart description changes are allowed.
+    const changed = execFileSync('git', ['diff', '--name-only', baseline, '--', 'src'], { cwd: new URL('../', import.meta.url), encoding: 'utf8' }).trim().split('\n').filter(Boolean);
+    expect(changed.filter(p => !['orch-server-ts/src/cards/state/card_charts.ts', 'orch-server-ts/src/cards/state/card_machine_events.ts'].includes(p))).toEqual([]);
+    const observations = await collect();
+      await writeFile(fixture, JSON.stringify({ baseline,
+        command: 'COLLECT_CARD_OBSERVATIONS=1 NODE_ENV=development pnpm --dir orch-server-ts exec vitest run tests/card-decision-observation.postgres.test.ts --minWorkers=1 --maxWorkers=2 --testTimeout=600000',
+        observations }, null, 2) + '\n');
+  }
+  const expected = JSON.parse(await readFile(fixture, 'utf8'));
+  expect(expected.baseline).toBe(baseline);
+  expect(expected.observations.length).toBeGreaterThan(0);
+  const actual = await collect();
+  expect(actual.length).toBe(expected.observations.length);
+  for (const [i, r] of expected.observations.entries()) {
+    try { compareDecisionObservation(r, actual[i]!); }
+    catch (error) { throw new Error(`observation ${i} (${r.method}): ${String(error)}`, { cause: error }); }
+  }
+  console.log(`observations: ${expected.observations.length}`);
+  } finally { await world.cleanup(); }
+}, 600000);
