@@ -50,7 +50,7 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 - 소비 기록이 있는 항목은 `recordConsumed`로 `consumed/consumed`가 된다(18단계).
 - 소비 기록이 없는 항목은 `recordAdmissionFailure`로 `uncertain/dead_letter`에 닫힌다(23단계). 그래야 노드 재연결 뒤 queued transcript 복구(13~15단계)가 끝난 턴의 전달을 다시 보내지 않는다.
 - 정산 시점에 `task.interventionQueue`에 다시 들어가 있는 항목은 닫지 않는다. `driveQueuedAfterTerminal`이 그 항목으로 다음 턴을 곧바로 재개한다(9단계).
-- 러너 복구 경로(`task_executor.ts:consumeRecoveredRunnerFrames`)의 receipt는 비어 있으므로 이 정산의 대상이 아니다. 프로세스가 죽어 턴이 끝나지 못한 전달은 지금처럼 복구 경로가 다시 보낸다.
+- 러너 복구 경로(`task_executor.ts:consumeRecoveredRunnerFrames`)의 receipt는 `beginDeliveryTurn(task, [])`로 시작해 복구 중 register로 들어온 active delivery만 담으므로, 프로세스가 죽어 턴이 끝나지 못한 전달을 다시 보내는 복구 판단은 이 정산으로 바뀌지 않는다.
 
 ## Antigravity 일반 메시지 개입 (PR A)
 

@@ -203,9 +203,9 @@ describe("worker composition boundary", () => {
     );
     expect(taskExecutor).not.toContain("successfulTurnReceipts");
     expect(taskExecutor).not.toContain("consumeSuccessfulTurnReceipts");
-    expect(taskExecutor.match(/await receipt\.consume\(task\)/g)).toHaveLength(2);
+    expect(taskExecutor.match(/await receipt\.consume\(task\)/g)).toHaveLength(1);
     expect(taskExecutorFinalizer).toMatch(
-      /persistence\.terminalTransitionApplied\s+&&\s+task\.status === "completed"\s+&&\s+consumeSuccessfulDeliveries/,
+      /persistence\.terminalTransitionApplied\s+&&\s+settleEndedTurnDeliveries/,
     );
   });
 
