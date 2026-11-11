@@ -94,9 +94,16 @@ export function buildRestrictedSessionEnv(
     input.additions,
     "TEST_DATABASE_URL",
   );
+  // 노드 cargo 설정이 sccache를 걸 때 상자 안 cargo가 읽기 전용 노드 캐시 대신
+  // 쓰기 가능한 격리 캐시를 쓰도록, additions가 준 SCCACHE_DIR 하나만 남긴다.
+  const keepsSccacheDirectory = Object.prototype.hasOwnProperty.call(
+    input.additions,
+    "SCCACHE_DIR",
+  );
   for (const key of Object.keys(env)) {
     if (!isRemovedKey(key)) continue;
     if (key === "TEST_DATABASE_URL" && keepsTestDatabase) continue;
+    if (key === "SCCACHE_DIR" && keepsSccacheDirectory) continue;
     delete env[key];
   }
 

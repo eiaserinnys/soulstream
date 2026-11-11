@@ -122,6 +122,7 @@ describe("isolatedCacheEnvironment", () => {
       PIP_CACHE_DIR: join(cacheRoot, "pip"),
       UV_CACHE_DIR: join(cacheRoot, "uv"),
       CARGO_HOME: join(cacheRoot, "cargo"),
+      SCCACHE_DIR: join(cacheRoot, "sccache"),
       PLAYWRIGHT_BROWSERS_PATH: "/home/eias/.cache/ms-playwright",
     });
   });

@@ -19,6 +19,7 @@ export const ISOLATED_CACHE_DIRECTORY_NAMES = [
   "pip",
   "uv",
   "cargo",
+  "sccache",
 ] as const;
 
 const MAX_SAMPLED_ENTRIES = 4096;
@@ -86,6 +87,7 @@ export function isolatedCacheEnvironment(
     PIP_CACHE_DIR: join(cacheRoot, "pip"),
     UV_CACHE_DIR: join(cacheRoot, "uv"),
     CARGO_HOME: join(cacheRoot, "cargo"),
+    SCCACHE_DIR: join(cacheRoot, "sccache"),
     PLAYWRIGHT_BROWSERS_PATH: join(homeDirectory, ".cache/ms-playwright"),
   };
 }

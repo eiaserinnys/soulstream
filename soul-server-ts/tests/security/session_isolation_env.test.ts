@@ -69,13 +69,14 @@ describe("buildRestrictedSessionEnv", () => {
     expect(env.WSL_INTEROP).toBe("/run/WSL/8_interop");
   });
 
-  it("removes forbidden keys introduced by additions and keeps the approved test DB", () => {
+  it("removes forbidden keys introduced by additions and keeps the approved test DB and isolated sccache directory", () => {
     const env = build({
       additions: {
         SSH_AUTH_SOCK: "/run/user/1000/ssh.sock",
         DATABASE_URL: "postgres://prod@127.0.0.1/soulstream",
         DOCKER_HOST: "unix:///run/docker.sock",
-        SCCACHE_DIR: "/home/eias/.cache/sccache",
+        SCCACHE_DIR: "/home/eias/.local/share/soulstream/isolated-cache/sccache",
+        SCCACHE_CACHE_SIZE: "10G",
         TEST_DATABASE_URL: "postgres://tester@127.0.0.1:15432/soulstream_test",
       },
     });
@@ -84,10 +85,14 @@ describe("buildRestrictedSessionEnv", () => {
       "SSH_AUTH_SOCK",
       "DATABASE_URL",
       "DOCKER_HOST",
-      "SCCACHE_DIR",
+      "SCCACHE_CACHE_SIZE",
     ]) {
       expect(env).not.toHaveProperty(key);
     }
+    // additions가 준 격리 캐시 SCCACHE_DIR 하나만 남는다(base의 값이 아니다).
+    expect(env.SCCACHE_DIR).toBe(
+      "/home/eias/.local/share/soulstream/isolated-cache/sccache",
+    );
     expect(env.TEST_DATABASE_URL).toBe(
       "postgres://tester@127.0.0.1:15432/soulstream_test",
     );
@@ -95,6 +100,7 @@ describe("buildRestrictedSessionEnv", () => {
     // additions가 승인 시험 DB를 주지 않으면 base의 값도 남지 않는다.
     const withoutApproval = build({ additions: { SSH_AUTH_SOCK: "/tmp/ssh.sock" } });
     expect(withoutApproval).not.toHaveProperty("TEST_DATABASE_URL");
+    expect(withoutApproval).not.toHaveProperty("SCCACHE_DIR");
   });
 
   it("removes WSL_INTEROP only inside WSL", () => {

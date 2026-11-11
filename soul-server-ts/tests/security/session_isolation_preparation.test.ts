@@ -306,6 +306,7 @@ describe("prepareIsolationPlan", () => {
       "pip",
       "uv",
       "cargo",
+      "sccache",
     ]) {
       expect(bindingOf(prepared.spec.bindings, join(cacheRoot, name))).toMatchObject({
         writable: true,
@@ -420,6 +421,7 @@ describe("prepareIsolationPlan", () => {
     expect(prepared.env.PIP_CACHE_DIR).toBe(join(cacheRoot, "pip"));
     expect(prepared.env.UV_CACHE_DIR).toBe(join(cacheRoot, "uv"));
     expect(prepared.env.CARGO_HOME).toBe(join(cacheRoot, "cargo"));
+    expect(prepared.env.SCCACHE_DIR).toBe(join(cacheRoot, "sccache"));
     expect(prepared.env.PLAYWRIGHT_BROWSERS_PATH).toBe(
       join(fixture.home, ".cache/ms-playwright"),
     );
