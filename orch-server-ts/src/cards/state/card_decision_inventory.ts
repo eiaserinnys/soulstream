@@ -18,7 +18,7 @@ export const CARD_COMMAND_ENTRANCES:Record<CardDecisionCommand,readonly ('human'
 };
 
 export const CARD_COMMAND_CALLERS:Record<CardDecisionCommand,readonly string[]>={
- ...Object.fromEntries(Object.entries(CARD_DECISION_SOURCES).map(([command,source])=>[command,[source.join('#')]])) as Record<CardDecisionCommand,readonly string[]>,
+ ...Object.fromEntries(Object.entries(CARD_DECISION_SOURCES).map(([command,source])=>[command,[source.join('#')]])) as unknown as Record<CardDecisionCommand,readonly string[]>,
  CONFIRM_EXECUTION:['cards/card_execution_service.ts#observe','cards/card_execution_service.ts#observeOnce','cards/card_execution_service.ts#observePendingForNode','cards/card_execution_service.ts#sendAndObserve'],
  REGISTER_REPLACEMENT:['control_plane/repositories/session_card_replacement.ts#applySessionCardReplacement'],
 };
