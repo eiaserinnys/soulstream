@@ -1,4 +1,9 @@
 import type { AttachmentDescriptor } from "@soulstream/wire-schema/attachments";
+import {
+  cardQuestionOptionLabels,
+  normalizeCardQuestionOptions,
+  type CardQuestionAttachment,
+} from "@soulstream/wire-schema/card-questions";
 import { projectAttachmentDescriptor, type AttachmentAssetRow } from "../attachments/attachment_read_service.js";
 import {
   collectCardLegacyLocations,
@@ -89,34 +94,7 @@ export async function projectCardAttachmentRows<T extends Record<string, unknown
     }
   });
 
-  const assets = new Map<string, AttachmentAssetRow>();
-  if (ids.size > 0) {
-    const found = await sql<AssetProjectionRow[]>`
-      SELECT id,original_name,mime_type,byte_size,width,height,checksum_sha256,upload_status
-      FROM file_assets
-      WHERE id=ANY(${[...ids]}::text[])
-    `;
-    for (const row of found) {
-      assets.set(row.id, {
-        id: row.id,
-        storageKey: "",
-        storagePurpose: "attachment",
-        storageEndpoint: null,
-        storageBucket: null,
-        ownerKind: null,
-        ownerKey: null,
-        registrationScope: null,
-        sourceSessionId: null,
-        originalName: row.original_name,
-        mimeType: row.mime_type,
-        byteSize: Number(row.byte_size),
-        width: row.width,
-        height: row.height,
-        checksumSha256: row.checksum_sha256,
-        uploadStatus: row.upload_status === "committed" ? "committed" : "pending",
-      });
-    }
-  }
+  const assets = await loadAttachmentAssets(sql, ids);
 
   const projectedRows: Array<Record<string, unknown>> = rows.map((row) => ({ ...row }));
   const legacySources: LegacySourceBody[] = [];
@@ -165,6 +143,94 @@ export async function projectCardAttachmentRows<T extends Record<string, unknown
     }, allowedOrigins);
   }
   return projectedRows as T[];
+}
+
+export async function loadAttachmentAssets(
+  sql: RepositorySql,
+  ids: Iterable<string>,
+): Promise<Map<string, AttachmentAssetRow>> {
+  const assets = new Map<string, AttachmentAssetRow>();
+  const unique = [...new Set(ids)];
+  if (unique.length === 0) return assets;
+  const found = await sql<AssetProjectionRow[]>`
+    SELECT id,original_name,mime_type,byte_size,width,height,checksum_sha256,upload_status
+    FROM file_assets
+    WHERE id=ANY(${unique}::text[])
+  `;
+  for (const row of found) {
+    assets.set(row.id, {
+      id: row.id,
+      storageKey: "",
+      storagePurpose: "attachment",
+      storageEndpoint: null,
+      storageBucket: null,
+      ownerKind: null,
+      ownerKey: null,
+      registrationScope: null,
+      sourceSessionId: null,
+      originalName: row.original_name,
+      mimeType: row.mime_type,
+      byteSize: Number(row.byte_size),
+      width: row.width,
+      height: row.height,
+      checksumSha256: row.checksum_sha256,
+      uploadStatus: row.upload_status === "committed" ? "committed" : "pending",
+    });
+  }
+  return assets;
+}
+
+/**
+ * 카드 질문 행을 호환 DTO 꼴로 투영한다. options는 label 배열(옛 NULL은 NULL 유지),
+ * optionDetails는 정규화 배열(NULL은 []), kind NULL은 choice, revision NULL은 1,
+ * attachments NULL은 []이다. 첨부는 확인 항목 증거와 같은 투영을 쓴다.
+ */
+export async function projectCardQuestionRows<T extends Record<string, unknown>>(
+  sql: RepositorySql,
+  rows: readonly T[],
+  cardId?: string,
+): Promise<T[]> {
+  const ids = new Set<string>();
+  for (const row of rows) {
+    if (!Array.isArray(row.attachments)) continue;
+    for (const attachment of row.attachments) {
+      const id = questionAttachmentId(attachment);
+      if (id !== undefined) ids.add(id);
+    }
+  }
+  const assets = await loadAttachmentAssets(sql, ids);
+  return rows.map((row) => {
+    const rowCardId = cardId ?? stringValue(row.card_id);
+    return {
+      ...row,
+      options: cardQuestionOptionLabels(row.options),
+      option_details: normalizeCardQuestionOptions(row.options),
+      kind: row.kind === "request" ? "request" : "choice",
+      attachments: projectQuestionAttachments(row.attachments, rowCardId, assets),
+      revision: typeof row.revision === "number" ? row.revision : 1,
+    };
+  }) as T[];
+}
+
+function projectQuestionAttachments(
+  value: unknown,
+  cardId: string | undefined,
+  assets: ReadonlyMap<string, AttachmentAssetRow>,
+): CardQuestionAttachment[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((entry) => {
+    if (!isRecord(entry) || (entry.type !== "image" && entry.type !== "link") || typeof entry.label !== "string")
+      return entry as CardQuestionAttachment;
+    const attachmentId = stringValue(entry.attachment_id);
+    if (attachmentId !== undefined && cardId !== undefined)
+      return projectEvidence(entry.type, entry.label, attachmentId, cardId, assets.get(attachmentId)) as CardQuestionAttachment;
+    if (typeof entry.url === "string") return { type: entry.type, label: entry.label, url: entry.url };
+    return entry as CardQuestionAttachment;
+  });
+}
+
+function questionAttachmentId(value: unknown): string | undefined {
+  return isRecord(value) ? stringValue(value.attachment_id) : undefined;
 }
 
 function cardLegacyLocationKey(location: CardLegacyLocation): string {
@@ -221,7 +287,7 @@ function projectItem(
   };
 }
 
-function projectEvidence(
+export function projectEvidence(
   type: "image" | "link",
   label: string,
   attachmentId: string,

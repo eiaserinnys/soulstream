@@ -1,4 +1,10 @@
 /** PAS report storage, message-context, and timeline event contracts. */
+import type {
+  CardQuestionAttachment,
+  CardQuestionKind,
+  CardQuestionOption,
+  CardQuestionThreadEntry,
+} from "./card_questions.js";
 export const PERSISTENT_REPORT_METADATA_TYPE = "persistent_report";
 export const REPORT_TIMELINE_EVENT_TYPE = "report_timeline";
 /** 카드 질문 줄이 답이나 철회로 닫혔을 때 남기는 이벤트 타입. 줄로 그리지 않는다. */
@@ -116,8 +122,21 @@ export interface PersistentReportEntry {
   state: "open" | "answered"; answer: string; updated_at: string;
   /** 서버만 쓰는 카드 연결 칸. PAS 입력으로는 받지 않는다. */
   card_id?: string; card_status?: string;
+  /** 카드 질문 장의 상세. 서버가 정본에서 계산해 채운다. */
+  question_title?: string;
+  question_text?: string;
+  question_kind?: CardQuestionKind;
+  question_option_details?: CardQuestionOption[];
+  question_attachments?: CardQuestionAttachment[];
+  question_thread?: CardQuestionThreadEntry[];
+  question_revision?: number;
+  question_revised_at?: string | null;
 }
-export type PersistentReportEntryInput = Omit<PersistentReportEntry, "updated_at" | "state" | "answer" | "options"> & {
+/** PAS가 직접 입력하는 장. 질문 상세는 서버가 계산하므로 입력에서 뺀다. */
+export type PersistentReportEntryInput = Omit<PersistentReportEntry,
+  | "updated_at" | "state" | "answer" | "options"
+  | "question_title" | "question_text" | "question_kind" | "question_option_details"
+  | "question_attachments" | "question_thread" | "question_revision" | "question_revised_at"> & {
   state?: PersistentReportEntry["state"]; answer?: string; options?: string[];
 };
 export type PersistentReportIssue = { path: string; reason: string };
@@ -125,7 +144,10 @@ export type PersistentReportSummary = Pick<PersistentReportEntry, "key" | "title
 export type PersistentReportResult =
   | { ok: true; changed: boolean; entries: PersistentReportSummary[]; persistent_report: PersistentReportEntry[] }
   | { ok: false; code: string; errors: PersistentReportIssue[]; entries: PersistentReportSummary[] };
-export type PersistentReportReply = { key: string; option: string };
+export type PersistentReportReply =
+  | { key: string; option: string; mode?: "choice"; text?: string }
+  | { key: string; mode: "text"; text: string; option?: never }
+  | { key: string; mode: "followup"; text: string; option?: never; idempotency_key: string };
 export type PersistentReportVisible = { key: string; title: string };
 
 const INPUT_KEYS = new Set(["key", "kind", "title", "card_numbers", "context", "action", "options", "question_id", "state", "answer"]);
@@ -187,7 +209,8 @@ export function readPersistentReport(metadata: unknown): PersistentReportEntry[]
   return [];
 }
 
-export function parsePersistentReportReply(context: unknown): PersistentReportReply | null {
+/** S1은 옛 `{key,option}` 꼴만 읽는다. text/followup 해석은 S3가 더한다. */
+export function parsePersistentReportReply(context: unknown): { key: string; option: string } | null {
   if (!Array.isArray(context)) return null;
   for (const item of context) {
     if (!record(item) || item.key !== "persistent_report_reply" || !record(item.content)) continue;

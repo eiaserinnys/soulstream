@@ -3658,7 +3658,14 @@ CREATE TABLE IF NOT EXISTS card_questions (
     answered_by TEXT,
     withdrawn_at TIMESTAMPTZ,
     withdrawn_by_session_id TEXT,
-    withdrawal_reason TEXT
+    withdrawal_reason TEXT,
+    title TEXT,
+    kind TEXT CHECK (kind IN ('choice','request')),
+    attachments JSONB CHECK (
+        attachments IS NULL OR jsonb_typeof(attachments) = 'array'),
+    selected_option TEXT,
+    revision INTEGER CHECK (revision >= 1),
+    revised_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_card_questions_card ON card_questions(card_id, asked_at);
 CREATE TABLE IF NOT EXISTS card_comments (
@@ -3671,10 +3678,12 @@ CREATE TABLE IF NOT EXISTS card_comments (
     body TEXT NOT NULL,
     attachment_refs JSONB NOT NULL DEFAULT '[]'::jsonb CHECK (jsonb_typeof(attachment_refs) = 'array'),
     item_id INTEGER,
+    question_id TEXT REFERENCES card_questions(id) ON DELETE SET NULL,
     delivered_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_card_comments_card ON card_comments(card_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_card_comments_question ON card_comments(question_id, created_at, id) WHERE question_id IS NOT NULL;
 INSERT INTO system_settings(setting_key,value,version,updated_by)
 VALUES ('card_dispatch','{"nodeConcurrency":{"default":2}}'::jsonb,1,'migration:109_cards') ON CONFLICT (setting_key) DO NOTHING;
 
@@ -4569,6 +4578,18 @@ ALTER TABLE card_comments
 ALTER TABLE card_comments
     ADD CONSTRAINT card_comments_kind_check
     CHECK (kind IN ('comment', 'spoken', 'note'));
+
+ALTER TABLE card_questions
+    ADD COLUMN IF NOT EXISTS title TEXT,
+    ADD COLUMN IF NOT EXISTS kind TEXT CHECK (kind IN ('choice','request')),
+    ADD COLUMN IF NOT EXISTS attachments JSONB CHECK (
+        attachments IS NULL OR jsonb_typeof(attachments) = 'array'),
+    ADD COLUMN IF NOT EXISTS selected_option TEXT,
+    ADD COLUMN IF NOT EXISTS revision INTEGER CHECK (revision >= 1),
+    ADD COLUMN IF NOT EXISTS revised_at TIMESTAMPTZ;
+
+ALTER TABLE card_comments
+    ADD COLUMN IF NOT EXISTS question_id TEXT REFERENCES card_questions(id) ON DELETE SET NULL;
 
 ALTER TABLE session_statistics_daily_sessions
     ADD COLUMN IF NOT EXISTS folder_id TEXT,

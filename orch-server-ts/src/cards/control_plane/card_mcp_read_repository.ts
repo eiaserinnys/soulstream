@@ -234,6 +234,7 @@ export class CardMcpReadRepository {
   async readQuestionPage(sql: RepositorySql, cardId: string, limit: number, cursor: { timestamp: string; id: string } | null) {
     return this.readRecordPage(limit, () => sql<RecordCursorRow[]>`
       SELECT id,card_id,session_id,text,options,asked_at,answer,answered_at,answered_by,
+        title,kind,attachments,selected_option,revision,revised_at,
         asked_at::text AS cursor_time,id AS cursor_id
       FROM card_questions
       WHERE card_id=${cardId} AND answer IS NULL AND withdrawn_at IS NULL
@@ -287,7 +288,7 @@ export class CardMcpReadRepository {
     if (kind === "comments" || kind === "notes") {
       const notesOnly = kind === "notes";
       return this.readRecordPage(limit, () => sql<RecordCursorRow[]>`
-        SELECT id,card_id,author_kind,author_id,session_id,kind,body,item_id,delivered_at,created_at,attachment_refs,
+        SELECT id,card_id,author_kind,author_id,session_id,kind,body,item_id,question_id,delivered_at,created_at,attachment_refs,
           created_at::text AS cursor_time,id AS cursor_id
         FROM card_comments
         WHERE card_id=${cardId} AND (${notesOnly}::boolean AND kind='note' OR NOT ${notesOnly}::boolean AND kind<>'note')
@@ -310,6 +311,7 @@ export class CardMcpReadRepository {
       return this.readRecordPage(limit, () => sql<RecordCursorRow[]>`
         SELECT id,card_id,session_id,text,options,answer,asked_at,answered_at,answered_by,
           withdrawn_at,withdrawn_by_session_id,withdrawal_reason,
+          title,kind,attachments,selected_option,revision,revised_at,
           asked_at::text AS cursor_time,id AS cursor_id
         FROM card_questions
         WHERE card_id=${cardId}
@@ -371,15 +373,20 @@ export class CardMcpReadRepository {
         md5(c.brief) AS fp_brief,md5(c.attachments::text) AS fp_attachments,
         md5(COALESCE((SELECT jsonb_agg(jsonb_build_object('id',q.id,'card_id',q.card_id,'session_id',q.session_id,
           'text',q.text,'options',q.options,'answer',q.answer,'asked_at',q.asked_at,
-          'answered_at',q.answered_at,'answered_by',q.answered_by) ORDER BY q.id COLLATE "C")::text
+          'answered_at',q.answered_at,'answered_by',q.answered_by,
+          'title',q.title,'kind',q.kind,'attachments',q.attachments,'selected_option',q.selected_option,
+          'revision',q.revision,'revised_at',q.revised_at) ORDER BY q.id COLLATE "C")::text
           FROM card_questions q WHERE q.card_id=c.id AND q.answer IS NULL AND q.withdrawn_at IS NULL),'[]')) AS fp_questions,
         md5(COALESCE((SELECT jsonb_agg(jsonb_build_object('id',q.id,'card_id',q.card_id,'session_id',q.session_id,
           'text',q.text,'options',q.options,'answer',q.answer,'asked_at',q.asked_at,'answered_at',q.answered_at,
           'answered_by',q.answered_by,'withdrawn_at',q.withdrawn_at,'withdrawn_by_session_id',q.withdrawn_by_session_id,
-          'withdrawal_reason',q.withdrawal_reason) ORDER BY q.id COLLATE "C")::text
+          'withdrawal_reason',q.withdrawal_reason,
+          'title',q.title,'kind',q.kind,'attachments',q.attachments,'selected_option',q.selected_option,
+          'revision',q.revision,'revised_at',q.revised_at) ORDER BY q.id COLLATE "C")::text
           FROM card_questions q WHERE q.card_id=c.id),'[]')) AS fp_questions_history,
         md5(COALESCE((SELECT jsonb_agg(jsonb_build_object('id',cc.id,'card_id',cc.card_id,'author_kind',cc.author_kind,
           'author_id',cc.author_id,'session_id',cc.session_id,'kind',cc.kind,'body',cc.body,'item_id',cc.item_id,
+          'question_id',cc.question_id,
           'delivered_at',cc.delivered_at,'created_at',cc.created_at,'attachment_refs',cc.attachment_refs) ORDER BY cc.id COLLATE "C")::text
           FROM card_comments cc WHERE cc.card_id=c.id AND cc.kind<>'note'),'[]')) AS fp_comments,
         md5(COALESCE((SELECT jsonb_agg(jsonb_build_object('id',cc.id,'card_id',cc.card_id,'author_kind',cc.author_kind,
