@@ -524,10 +524,16 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
    * `initialize()` is what takes the lock, so it has to settle first; releasing
    * earlier would hand back resources that do not exist yet.
    *
-   * A live child is never touched. A child mid-tool is waiting on a host
-   * request over this dispatcher's IPC connection, so the connection stays open
-   * exactly as `releaseEventStreamRegistration` keeps it; only the offline-only
-   * durable writer resources are released here.
+   * Offline recovery is the only path that takes the writer lock, so it is the
+   * only path that goes through `releaseHostResources`; that closes this
+   * dispatcher's IPC connection along with the parent outbox, the stopped
+   * writer and the writer lock. There is no live child to protect: an offline
+   * dispatcher adopted no spawned process.
+   *
+   * The non-offline path gives back only the event stream registration and
+   * leaves the IPC connection open exactly as `releaseEventStreamRegistration`
+   * does. A live child mid-tool is waiting on a host request over that
+   * connection, and closing it would leave the tool without a result.
    */
   async releaseUnadoptedRecovery(): Promise<void> {
     this.eventStreamReleased = true;
