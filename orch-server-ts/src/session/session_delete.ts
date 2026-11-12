@@ -83,6 +83,16 @@ export async function deleteSessionWithNode(
           409,
         );
       }
+      if (response.deleted === false) {
+        // 노드가 줄을 지우지 못했다(지연 로더가 null을 내는 불량 행 등). 활성이면
+        // 화면만 지워지는 일을 막고, 아니면 예전처럼 orch가 직접 지운다.
+        return await deleteFromOrch(
+          sessionId,
+          target,
+          params.deleteDirectly,
+          "node_declined",
+        );
+      }
       return "deleted";
     } catch (error) {
       if (error instanceof PendingNodeCommandTimeoutError) {
@@ -130,10 +140,10 @@ async function deleteFromOrch(
   sessionId: string,
   target: SessionDeleteTarget,
   deleteDirectly: DeleteSessionWithNodeParams["deleteDirectly"],
-  activeReason: "legacy_node" | "node_unavailable",
+  activeReason: "legacy_node" | "node_declined" | "node_unavailable",
 ): Promise<SessionDeleteOutcome> {
   if (isActiveSessionStatus(target.status)) {
-    if (activeReason === "legacy_node") {
+    if (activeReason !== "node_unavailable") {
       throw new SessionDeleteError(
         "SESSION_DELETE_REQUIRES_STOP",
         `실행 중인 세션은 멈춘 뒤 지워 주십시오: ${sessionId}`,
@@ -156,6 +166,10 @@ function isActiveSessionStatus(status: string | null): boolean {
 
 function isLegacyNodeRejection(error: unknown): boolean {
   if (!(error instanceof PendingNodeCommandRejectedError)) return false;
+  // 운영 노드는 명령을 제어 채널로 먼저 받는다. 옛 노드의 제어 채널은 모르는 명령을
+  // 이 code로 거절하므로(control_inbox_runtime), 「Not implemented」 응답과 같이
+  // 옛 노드로 판정한다.
+  if (error.response?.code === "CONTROL_COMMAND_NOT_IN_INVENTORY") return true;
   const responseMessage = stringValue(error.response?.message);
   return error.message.includes("Not implemented")
     || responseMessage?.includes("Not implemented") === true;

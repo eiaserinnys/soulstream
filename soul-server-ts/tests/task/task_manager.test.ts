@@ -1366,8 +1366,9 @@ describe("TaskManager.deleteTask", () => {
   });
 
   it("진행 중 task → interrupt + drain + cleanup", async () => {
-    const { db, broadcaster, deleteSession, emitSessionDeleted } = makeMocks();
-    const tm = new TaskManager("n", db, broadcaster, silentLogger);
+    const { db, broadcaster, deleteSession, emitSessionDeleted, persistence } =
+      makeMocks();
+    const tm = new TaskManager("n", db, broadcaster, silentLogger, persistence);
     const task = await tm.createTask({ agentSessionId: "s1", prompt: "x", profileId: "p" });
     const interrupt = vi.fn().mockResolvedValue(true);
     task.runner = createInProcessTaskRunnerRuntime(

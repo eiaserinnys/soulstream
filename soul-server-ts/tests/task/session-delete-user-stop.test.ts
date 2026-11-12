@@ -10,6 +10,8 @@ import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
 import { TaskLifecycleRoute } from "../../src/task/task_lifecycle_route.js";
+import { TaskLifecycleTransition } from
+  "../../src/task/task_lifecycle_transition.js";
 import type { Task } from "../../src/task/task_models.js";
 
 const silentLogger = pino({ level: "silent" });
@@ -33,6 +35,10 @@ function makeRunner(events: string[]) {
     events.push("retire-registration");
   });
   const dispatcher = {
+    interrupt: vi.fn(async () => {
+      events.push("interrupt");
+      return true;
+    }),
     close: vi.fn(async () => {
       events.push("close-runner");
     }),
@@ -90,6 +96,75 @@ function makeRoute(params: {
     deleteSession,
     emitSessionDeleted,
     forgetTask,
+  };
+}
+
+/**
+ * 진짜 TaskLifecycleTransition을 세운다. 삭제 경로가 멈춤의 영속과 통지 등록을
+ * 실제로 확인하는지 보려면 fake 전이로는 부족하다.
+ */
+function makeStrictRoute(params: {
+  task: Task;
+  persistence: {
+    enqueueTerminalTransitionAndWaitForApplication: (
+      ...args: never[]
+    ) => Promise<unknown>;
+  };
+  completionNotifier: { notify(task: Task): Promise<void> };
+}) {
+  const events: string[] = [];
+  const deleteSession = vi.fn(async () => {
+    events.push("delete-row");
+  });
+  const emitSessionDeleted = vi.fn(async () => {
+    events.push("broadcast");
+  });
+  const forgetTask = vi.fn();
+  const transition = new TaskLifecycleTransition({
+    logger: silentLogger,
+    persistence: params.persistence as never,
+    completionNotifier: params.completionNotifier,
+  });
+  const route = new TaskLifecycleRoute({
+    getTask: () => params.task,
+    listTasks: () => [params.task],
+    forgetTask,
+    lifecycleTransition: transition,
+    sessionMutations: { deleteSession } as never,
+    broadcaster: { emitSessionDeleted } as never,
+    logger: silentLogger,
+  });
+  return { route, deleteSession, emitSessionDeleted, forgetTask };
+}
+
+/** 종료 전이가 실제로 적용된 것처럼 canonical 투영을 돌려준다. */
+function appliedPersistence() {
+  return {
+    enqueueTerminalTransitionAndWaitForApplication: vi.fn(async (
+      _sessionId: string,
+      _event: unknown,
+      effect: {
+        status: string;
+        termination_reason: string;
+        termination_detail: string | null;
+        review_state: string;
+        last_assistant_text?: string | null;
+        updated_at: string;
+      },
+    ) => ({
+      eventId: 8,
+      applied: true,
+      canonicalSession: {
+        status: effect.status,
+        termination_reason: effect.termination_reason,
+        termination_detail: effect.termination_detail,
+        review_state: effect.review_state,
+        last_assistant_text: effect.last_assistant_text ?? null,
+        termination_event_id: 8,
+        updated_at: effect.updated_at,
+        last_event_id: 8,
+      },
+    })),
   };
 }
 
@@ -165,6 +240,59 @@ describe("TaskLifecycleRoute.deleteTask — 멈춘 뒤 삭제 (card #1261)", () 
       /did not converge/,
     );
 
+    expect(deleteSession).not.toHaveBeenCalled();
+    expect(forgetTask).not.toHaveBeenCalled();
+    expect(emitSessionDeleted).not.toHaveBeenCalled();
+  });
+
+  it("삭제 중 멈춤의 영속이 실패하면 줄을 지우지 않고 삭제가 실패한다", async () => {
+    const events: string[] = [];
+    const task = makeTask();
+    const { runner } = makeRunner(events);
+    task.runner = runner as never;
+    const persistence = {
+      enqueueTerminalTransitionAndWaitForApplication: vi.fn(async () => {
+        throw new Error("durable event store unavailable");
+      }),
+    };
+    const { route, deleteSession, emitSessionDeleted, forgetTask } =
+      makeStrictRoute({
+        task,
+        persistence,
+        completionNotifier: { notify: vi.fn(async () => {}) },
+      });
+
+    await expect(route.deleteTask("sess-delete-1")).rejects.toThrow(
+      /terminal persistence failed before delete/,
+    );
+
+    expect(persistence.enqueueTerminalTransitionAndWaitForApplication)
+      .toHaveBeenCalledOnce();
+    expect(deleteSession).not.toHaveBeenCalled();
+    expect(forgetTask).not.toHaveBeenCalled();
+    expect(emitSessionDeleted).not.toHaveBeenCalled();
+  });
+
+  it("삭제 중 멈춤의 부른 세션 통지 등록이 실패하면 줄을 지우지 않는다", async () => {
+    const events: string[] = [];
+    const task = makeTask();
+    const { runner } = makeRunner(events);
+    task.runner = runner as never;
+    const notify = vi.fn(async () => {
+      throw new Error("delivery registration failed");
+    });
+    const { route, deleteSession, emitSessionDeleted, forgetTask } =
+      makeStrictRoute({
+        task,
+        persistence: appliedPersistence(),
+        completionNotifier: { notify },
+      });
+
+    await expect(route.deleteTask("sess-delete-1")).rejects.toThrow(
+      /notification registration failed before delete/,
+    );
+
+    expect(notify).toHaveBeenCalledOnce();
     expect(deleteSession).not.toHaveBeenCalled();
     expect(forgetTask).not.toHaveBeenCalled();
     expect(emitSessionDeleted).not.toHaveBeenCalled();

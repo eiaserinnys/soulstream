@@ -81,21 +81,27 @@ export class TaskLifecycleTransition {
   async notifyCompletionIfApplied(
     task: Task,
     persistence: TaskFinalStatePersistenceResult,
-  ): Promise<void> {
-    if (!persistence.terminalTransitionApplied) return;
-    if (!task.callerSessionId || !this.completionNotifier) return;
+  ): Promise<boolean> {
+    if (!persistence.terminalTransitionApplied) return true;
+    if (!task.callerSessionId || !this.completionNotifier) return true;
 
     try {
       await this.completionNotifier.notify(task);
+      return true;
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
         "completion notification failed after terminal transition was applied",
       );
+      return false;
     }
   }
 
-  async cancelRunningTask(task: Task | undefined): Promise<boolean> {
+  async cancelRunningTask(
+    task: Task | undefined,
+    options: { forDelete?: boolean } = {},
+  ): Promise<boolean> {
+    const forDelete = options.forDelete === true;
     if (!task) return false;
     if (isUserStopConverged(task)) {
       task.interruptRequest = undefined;
@@ -111,7 +117,7 @@ export class TaskLifecycleTransition {
       if (task.interruptRequest !== previousRequest) {
         return await task.interruptRequest;
       }
-      const retry = this.retryUserStopFinalization(task);
+      const retry = this.retryUserStopFinalization(task, forDelete);
       task.interruptRequest = retry;
       return await retry;
     }
@@ -135,18 +141,23 @@ export class TaskLifecycleTransition {
         runner,
         executionPromise,
         interrupted,
+        forDelete,
       );
     })();
     task.interruptRequest = request;
     return await request;
   }
 
-  private retryUserStopFinalization(task: Task): Promise<boolean> {
+  private retryUserStopFinalization(
+    task: Task,
+    forDelete: boolean,
+  ): Promise<boolean> {
     return this.finalizeUserStop(
       task,
       task.runner,
       task.executionPromise,
       task.pendingTerminationHint === "killed",
+      forDelete,
     );
   }
 
@@ -155,6 +166,7 @@ export class TaskLifecycleTransition {
     runner: Task["runner"],
     executionPromise: Promise<void> | undefined,
     interrupted: boolean,
+    forDelete: boolean,
   ): Promise<boolean> {
     if (isActiveTaskStatus(task.status)) {
       const projection = USER_STOP_PROJECTION[String(interrupted) as "true" | "false"];
@@ -178,16 +190,39 @@ export class TaskLifecycleTransition {
         { err, sessionId: task.agentSessionId },
         "Explicit stop terminal persistence failed; awaiting explicit retry",
       );
+      if (forDelete) {
+        throw new Error(
+          `user stop terminal persistence failed before delete: ${task.agentSessionId}`,
+          { cause: err },
+        );
+      }
       return false;
     }
     if (!isTerminalTaskStatus(task.status)) {
       task.completedAt = stopCompletedAt;
+      if (forDelete) {
+        throw new Error(
+          `user stop did not reach a terminal status before delete: ${task.agentSessionId}`,
+        );
+      }
       return false;
+    }
+    // 삭제가 일으킨 멈춤은 종료 사건이 실제로 기록됐을 때만 줄을 지운다. status만
+    // 보고 넘어가면 영속이 유실된 세션 행을 지워 버린다.
+    if (forDelete && task.terminationEventRecorded !== true) {
+      throw new Error(
+        `user stop terminal event was not recorded before delete: ${task.agentSessionId}`,
+      );
     }
 
     // 디렉터 결정(261112): 멈춤 버튼도 부른 세션에 알린다. 통지 등록이 끝난 뒤에
     // 러너를 닫아야 삭제 경로가 등록을 잃지 않는다.
-    await this.notifyCompletionIfApplied(task, persistence);
+    const notified = await this.notifyCompletionIfApplied(task, persistence);
+    if (forDelete && !notified) {
+      throw new Error(
+        `completion notification registration failed before delete: ${task.agentSessionId}`,
+      );
+    }
 
     if (runner) {
       try {

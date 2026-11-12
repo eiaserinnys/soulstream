@@ -24,9 +24,18 @@ import {
 import {
   SessionDeleteError,
   deleteSessionWithNode,
+  sessionDeleteTransportFromRouteOptions,
   type SessionDeleteTarget,
   type SessionDeleteTransport,
 } from "../src/session/session_delete.js";
+import {
+  InMemoryNodeRegistry,
+  NodeCommandTransportHub,
+  SessionCommandRouter,
+  SessionCommandTransportBridge,
+  loadContractFixtures,
+  type NodeRegistrationPayload,
+} from "../src/index.js";
 
 type SendArgs = {
   payload: { type: string; agentSessionId: string };
@@ -57,6 +66,64 @@ function makeTransport(params: {
 
 function makeDirectDelete() {
   return vi.fn(async (_sessionId: string) => {});
+}
+
+/**
+ * 노드 전송기 전체 경로(registry → router → bridge → receiveNodeMessage)를 세운다.
+ * 시험이 노드 응답을 실제 제어 채널 프레임 그대로 돌려주므로, 오류 꼴은 손으로
+ * 만든 문자열이 아니라 전송기의 settleFromResponse가 만드는 것이다.
+ */
+function makeRealDeleteTransport(params: {
+  reply: (frame: Record<string, unknown>) => Record<string, unknown>;
+}): { transport: SessionDeleteTransport; frames: Record<string, unknown>[] } {
+  const nodeId = "node-a";
+  const fixtures = loadContractFixtures();
+  const registry = new InMemoryNodeRegistry({
+    nowMs: () => 1_700_000_000_000,
+    requestIdGenerator: ({ sequence, commandType }) => `${commandType}-${sequence}`,
+  });
+  const connectionId = registry.registerNode({
+    ...(fixtures.fakeNodeReconnect.registration as NodeRegistrationPayload),
+    node_id: nodeId,
+  }).node.connectionId;
+  registry.receiveNodeMessage(nodeId, {
+    type: "runner_inventory",
+    running_session_ids: [],
+  });
+  const transports = new NodeCommandTransportHub();
+  const frames: Record<string, unknown>[] = [];
+  transports.attach({
+    nodeId,
+    connectionId,
+    transport: {
+      send: (data) => {
+        const frame = JSON.parse(data) as Record<string, unknown>;
+        frames.push(frame);
+        registry.receiveNodeMessage({ nodeId, connectionId }, params.reply(frame));
+      },
+    },
+  });
+  const router = new SessionCommandRouter({
+    registry,
+    findSessionOwnerNodeId: async () => nodeId,
+  });
+  const bridge = new SessionCommandTransportBridge({ registry, transports });
+  return {
+    transport: sessionDeleteTransportFromRouteOptions({ router, bridge }),
+    frames,
+  };
+}
+
+/** 옛 노드의 제어 채널 거절 프레임(control_inbox_runtime.sendError와 같은 꼴). */
+function controlInventoryRejection(frame: Record<string, unknown>) {
+  return {
+    type: "error",
+    requestId: frame.requestId,
+    status: "rejected",
+    code: "CONTROL_COMMAND_NOT_IN_INVENTORY",
+    message:
+      `Command type is not present in the control command inventory: ${String(frame.type)}`,
+  };
 }
 
 const running: SessionDeleteTarget = { nodeId: "node-a", status: "running" };
@@ -343,5 +410,87 @@ describe("deleteSessionWithNode (card #1261)", () => {
     });
     expect(outcome).toBe("deleted");
     expect(direct).toHaveBeenCalledWith("sess-1");
+  });
+
+  it("(c) 제어 채널 옛 노드가 CONTROL_COMMAND_NOT_IN_INVENTORY로 거절해도 끝난 세션은 직접 지운다", async () => {
+    const direct = makeDirectDelete();
+    const { transport, frames } = makeRealDeleteTransport({
+      reply: controlInventoryRejection,
+    });
+
+    const outcome = await deleteSessionWithNode({
+      sessionId: "sess-finished",
+      target: completed,
+      transport,
+      deleteDirectly: direct,
+    });
+
+    expect(outcome).toBe("deleted");
+    expect(frames[0]).toMatchObject({
+      type: "delete_session",
+      agentSessionId: "sess-finished",
+    });
+    expect(direct).toHaveBeenCalledWith("sess-finished");
+  });
+
+  it("(c) 제어 채널 옛 노드가 CONTROL_COMMAND_NOT_IN_INVENTORY로 거절하면 활성 세션은 409", async () => {
+    const direct = makeDirectDelete();
+    const { transport } = makeRealDeleteTransport({
+      reply: controlInventoryRejection,
+    });
+
+    const error = await deleteSessionWithNode({
+      sessionId: "sess-active",
+      target: running,
+      transport,
+      deleteDirectly: direct,
+    }).catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(SessionDeleteError);
+    expect((error as SessionDeleteError).statusCode).toBe(409);
+    expect((error as SessionDeleteError).code).toBe("SESSION_DELETE_REQUIRES_STOP");
+    expect((error as SessionDeleteError).message).toContain("멈춘 뒤 지워 주십시오");
+    expect(direct).not.toHaveBeenCalled();
+  });
+
+  it("(e) 노드가 deleted:false로 답하면 끝난 세션은 orch가 지우고 활성 세션은 409", async () => {
+    const direct = makeDirectDelete();
+    const finished = makeRealDeleteTransport({
+      reply: (frame) => ({
+        type: "delete_session_ack",
+        requestId: frame.requestId,
+        status: "ok",
+        agentSessionId: frame.agentSessionId,
+        deleted: false,
+      }),
+    });
+
+    const outcome = await deleteSessionWithNode({
+      sessionId: "sess-finished",
+      target: completed,
+      transport: finished.transport,
+      deleteDirectly: direct,
+    });
+    expect(outcome).toBe("deleted");
+    expect(direct).toHaveBeenCalledWith("sess-finished");
+
+    const active = makeRealDeleteTransport({
+      reply: (frame) => ({
+        type: "delete_session_ack",
+        requestId: frame.requestId,
+        status: "ok",
+        agentSessionId: frame.agentSessionId,
+        deleted: false,
+      }),
+    });
+    const error = await deleteSessionWithNode({
+      sessionId: "sess-active",
+      target: running,
+      transport: active.transport,
+      deleteDirectly: direct,
+    }).catch((err: unknown) => err);
+    expect(error).toBeInstanceOf(SessionDeleteError);
+    expect((error as SessionDeleteError).statusCode).toBe(409);
+    expect((error as SessionDeleteError).code).toBe("SESSION_DELETE_REQUIRES_STOP");
   });
 });

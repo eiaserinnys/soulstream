@@ -17,7 +17,10 @@ export interface FinalizeTaskParams extends ExternalFinalizeParams {
 }
 
 export interface TaskLifecycleTransitionPort {
-  cancelRunningTask(task: Task | undefined): Promise<boolean>;
+  cancelRunningTask(
+    task: Task | undefined,
+    options?: { forDelete?: boolean },
+  ): Promise<boolean>;
   interruptAndDrain(task: Task): Promise<void>;
   markRunningTaskInterruptedForShutdown(
     task: Task,
@@ -90,7 +93,11 @@ export class TaskLifecycleRoute {
     // 끝난 뒤 러너를 닫고(retire 포함) 그 다음 행을 지운다. 러너가 아직 붙지 않은
     // creation 단계 task는 멈출 실행이 없으므로 예전처럼 바로 지운다.
     if (isActiveTaskStatus(task.status) && runner) {
-      await this.deps.lifecycleTransition.cancelRunningTask(task);
+      // 삭제가 일으킨 멈춤은 종료 영속과 부른 세션 통지 등록이 확인돼야 한다.
+      // 확인되지 않으면 cancelRunningTask가 throw하고, 세션 행은 남는다.
+      await this.deps.lifecycleTransition.cancelRunningTask(task, {
+        forDelete: true,
+      });
       if (isActiveTaskStatus(task.status)) {
         throw new Error(
           `running session stop did not converge before delete: ${sessionId}`,

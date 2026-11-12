@@ -375,7 +375,10 @@ describe("TaskLifecycleRoute.deleteTask", () => {
     await expect(route.deleteTask("s1")).resolves.toBe(true);
 
     expect(tasks.has("s1")).toBe(false);
-    expect(lifecycleTransition.cancelRunningTask).toHaveBeenCalledWith(task);
+    expect(lifecycleTransition.cancelRunningTask).toHaveBeenCalledWith(
+      task,
+      { forDelete: true },
+    );
     expect(lifecycleTransition.interruptAndDrain).not.toHaveBeenCalled();
     expect(task.terminationDetail).toBe("user_stop");
     expect(deleteSession).toHaveBeenCalledWith("s1", "delete_session:s1");
