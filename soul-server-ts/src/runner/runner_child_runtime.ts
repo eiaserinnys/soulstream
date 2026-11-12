@@ -50,6 +50,7 @@ import { completeRunnerRegistrationIdentityFromChild } from
   "./runner_registration_identity.js";
 import { RunnerSocketEndpoint } from "./runner_socket_endpoint.js";
 import { RunnerSqliteEventOutbox } from "./sqlite_event_outbox.js";
+import { RunnerSqliteInterventionReceipt } from "./sqlite_intervention_receipt.js";
 import {
   readRunnerHostAcknowledgedThrough,
   runnerHostStatePath,
@@ -78,6 +79,7 @@ export class RunnerChildRuntime {
   private endpoint!: RunnerSocketEndpoint;
   private outbox!: RunnerSqliteEventOutbox;
   private lifecycle!: RunnerSqliteLifecycle;
+  private interventionReceipts: RunnerSqliteInterventionReceipt | undefined;
   private lock!: RunnerWriterLock;
   private dispatcher!: InProcessRunnerCommandDispatcher;
   private host!: RunnerHostRequestClient;
@@ -112,7 +114,7 @@ export class RunnerChildRuntime {
 
   async start(): Promise<void> {
     this.lock = await RunnerWriterLock.acquire(this.config.paths.lockPath);
-    await completeRunnerRegistrationIdentityFromChild(
+    const registrationIdentity = await completeRunnerRegistrationIdentityFromChild(
       this.config.paths.sessionDirectory,
       {
         sessionId: this.config.sessionId,
@@ -125,6 +127,11 @@ export class RunnerChildRuntime {
       },
     );
     this.outbox = await RunnerSqliteEventOutbox.open(this.config.paths.databasePath);
+    this.interventionReceipts = RunnerSqliteInterventionReceipt.open(
+      this.config.paths.databasePath,
+      registrationIdentity.registrationId,
+      { sessionId: this.config.sessionId },
+    );
     this.lifecycle = RunnerSqliteLifecycle.open(
       this.config.paths.databasePath,
       this.config.sessionId,
@@ -160,6 +167,7 @@ export class RunnerChildRuntime {
     this.dispatcher = new InProcessRunnerCommandDispatcher(
       this.deps.createEngine(this.config, host, this.logger),
       { onFrameDropped: (drop) => this.logDroppedFrame(drop) },
+      this.interventionReceipts,
     );
     await setRunnerOomScore();
     await this.endpoint.listen();
@@ -188,6 +196,7 @@ export class RunnerChildRuntime {
       this.stopLiveness();
       this.lifecycle?.close();
       this.outbox?.close();
+      this.interventionReceipts?.close();
       await this.lock?.release();
     } finally {
       this.resolveClosed();

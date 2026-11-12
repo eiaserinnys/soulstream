@@ -34,6 +34,12 @@ import {
   type InProcessRunnerFrameChannelOptions,
 } from "./in_process_frame_channel.js";
 import { isLogicalTurnCompleteFrame } from "./engine_event_stream.js";
+import { normalizeRunnerInterventionResult } from "./runner_intervention_result.js";
+import {
+  RUNNER_INTERVENTION_RECEIPT_CAPABILITY,
+  runnerInputInterventionId,
+  type RunnerInterventionReceiptPort,
+} from "./runner_intervention_receipt.js";
 
 const OUTPUT_COMMAND_EVENT_TYPES = new Set([
   "assistant_message",
@@ -42,6 +48,9 @@ const OUTPUT_COMMAND_EVENT_TYPES = new Set([
   "text_end",
   "complete",
 ]);
+
+/** Capabilities whose first argument is an engine input that may carry a receipt id. */
+const INTERVENTION_INPUT_CAPABILITIES = new Set(["intervene", "injectAtToolBoundary"]);
 
 /**
  * The host-side command boundary for one runner instance.
@@ -126,6 +135,7 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
   constructor(
     private readonly target: EnginePort,
     private readonly channelOptions: InProcessRunnerFrameChannelOptions = {},
+    private readonly interventionReceipts?: RunnerInterventionReceiptPort,
   ) {}
 
   async dispatch(frame: unknown): Promise<RunnerCommandResultFrame> {
@@ -166,11 +176,27 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
           await this.target.close();
           break;
         case "invoke": {
+          if (command.capability === RUNNER_INTERVENTION_RECEIPT_CAPABILITY) {
+            return runnerCommandResultFrame(command.commandId, {
+              status: "ok",
+              data: this.readInterventionReceipt(command.args),
+            });
+          }
+          const interventionId = INTERVENTION_INPUT_CAPABILITIES.has(command.capability)
+            ? runnerInputInterventionId(command.args[0])
+            : undefined;
+          if (interventionId) {
+            this.interventionReceipts?.recordHanding(
+              [interventionId],
+              this.activeExecuteCommandId ?? null,
+            );
+          }
           const data = await invokeEngineCapability(
             this.target,
             command.capability,
             command.args,
           );
+          if (interventionId) this.settleInterventionReceipt(interventionId, data);
           return runnerCommandResultFrame(command.commandId, {
             status: "ok",
             ...(data !== undefined ? { data } : {}),
@@ -272,6 +298,25 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
     return null;
   }
 
+  private readInterventionReceipt(args: readonly unknown[]): unknown {
+    if (!this.interventionReceipts) return { status: "not_supported" };
+    const [interventionId] = args;
+    if (typeof interventionId !== "string" || interventionId.length === 0) {
+      throw new Error(`${RUNNER_INTERVENTION_RECEIPT_CAPABILITY} requires an intervention id`);
+    }
+    return this.interventionReceipts.lookup(interventionId);
+  }
+
+  private settleInterventionReceipt(interventionId: string, data: unknown): void {
+    if (!this.interventionReceipts) return;
+    const result = normalizeRunnerInterventionResult(data);
+    if (result.status === "delivered") {
+      this.interventionReceipts.markApplied([interventionId]);
+    } else if (result.status === "not_delivered") {
+      this.interventionReceipts.markNotApplied([interventionId]);
+    }
+  }
+
   private startExecution(command: Extract<RunnerCommandFrame, { kind: "execute" }>): void {
     if (this.activeExecuteCommandId !== undefined) {
       throw new Error(
@@ -279,6 +324,10 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
       );
     }
     const params = bindExecutionCommand(command.commandId, command.params);
+    this.interventionReceipts?.recordHanding(
+      executionInterventionIds(params),
+      command.commandId,
+    );
     this.sessionCost = params.sessionCost;
     let channel: InProcessRunnerFrameChannel;
     if (this.target.executeToFrameChannel) {
@@ -315,6 +364,8 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
     channel: InProcessRunnerFrameChannel,
     params?: EngineExecuteParams,
   ): AsyncIterable<RunnerEventFrame> {
+    const interventionIds = params ? executionInterventionIds(params) : [];
+    let executionApplied = false;
     try {
       if (params?.usage_snapshot !== undefined && params.execution_input !== undefined) {
         const manifest: SSEEventInputMaterialManifest = {
@@ -329,6 +380,13 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
         yield engineEventFrame(manifest);
       }
       for await (const frame of channel) {
+        // The first frame from the engine is the point where it accepted the
+        // execution input. A start failure never reaches here, so the recorded
+        // state stays `handing` and the node treats it as unknown.
+        if (!executionApplied && interventionIds.length > 0) {
+          executionApplied = true;
+          this.interventionReceipts?.markApplied(interventionIds);
+        }
         let eventFrame = frame;
         if (frame.kind === "engine_event") {
           const payload = frame.payload;
@@ -371,6 +429,15 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
       this.sessionCost = undefined;
     }
   }
+}
+
+function executionInterventionIds(params: EngineExecuteParams): string[] {
+  const ids: string[] = [];
+  if (params.runnerInterventionId) ids.push(params.runnerInterventionId);
+  for (const interventionId of params.runnerInterventionIds ?? []) {
+    if (!ids.includes(interventionId)) ids.push(interventionId);
+  }
+  return ids;
 }
 
 function bindExecutionCommand(

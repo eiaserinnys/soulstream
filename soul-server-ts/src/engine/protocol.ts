@@ -83,6 +83,13 @@ export interface EngineUserInput {
   inputUuid?: string;
   /** Producer identity retained when a live intervention becomes the next engine turn. */
   turnOrigin?: TurnOrigin;
+  /**
+   * Runner boundary only: the intervention number this handoff is recorded
+   * under. The node attaches it before invoking a runner; the runner records a
+   * receipt before it calls the engine. Engines that do not know the field
+   * ignore it, which keeps older runners working across a rolling deploy.
+   */
+  runnerInterventionId?: string;
 }
 
 export type TurnOriginKind =

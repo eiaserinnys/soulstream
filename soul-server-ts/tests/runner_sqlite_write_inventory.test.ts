@@ -51,6 +51,7 @@ describe("runner SQLite write inventory", () => {
     expect(syncTransactionCallers(SRC_ROOT)).toEqual({
       "runner/runner_host_state_store.ts": ["transaction"],
       "runner/sqlite_intervention_inbox.ts": ["migrateRunnerInterventionInboxV9"],
+      "runner/sqlite_intervention_receipt.ts": ["transaction"],
       "runner/sqlite_ipc_journal.ts": ["ensureRunnerIpcJournalV4"],
       "runner/sqlite_runner_lifecycle.ts": ["transaction"],
     });
@@ -72,6 +73,9 @@ describe("runner SQLite write inventory", () => {
     expect(classMethodCallers(SRC_ROOT, "RunnerSqliteLifecycle", ["open"])).toEqual({
       "runner/runner_child_runtime.ts": ["start"],
       "runner/runner_recovery_task.ts": ["markRegistrationReaped"],
+    });
+    expect(classMethodCallers(SRC_ROOT, "RunnerSqliteInterventionReceipt", ["open"])).toEqual({
+      "runner/runner_child_runtime.ts": ["start"],
     });
 
     const dispatcher = readFileSync(resolve(SRC_ROOT, "runner/runner_process_dispatcher.ts"), "utf8");

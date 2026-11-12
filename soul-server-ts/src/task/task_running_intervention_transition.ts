@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { formatContextItems, type ContextItem } from "../context/prompt_assembler.js";
 import type { Logger } from "pino";
 
@@ -228,11 +230,19 @@ export class RunningInterventionTransition {
       const current = await this.deps.assignedCardContext(task, inputUuid ?? null);
       if (current) composed.prompt += `\n\n${formatContextItems([current])}`;
     }
+    // The runner records a receipt under this number before it calls the
+    // engine, so a later lookup can tell "the engine received it" apart from
+    // "this handoff never reached a runner". Precedence follows the durable
+    // intervention identity used elsewhere; the queued message is not mutated.
+    const runnerInterventionId = message.runnerInterventionId
+      ?? message.deliveryId
+      ?? randomUUID();
     const input = {
       prompt: composed.prompt,
       imageAttachmentPaths: composed.imageAttachmentPaths,
       ...(inputUuid ? { inputUuid } : {}),
       turnOrigin: interventionTurnOrigin(message, inputUuid),
+      runnerInterventionId,
     };
     try {
       if (engine.backendId !== "claude") {

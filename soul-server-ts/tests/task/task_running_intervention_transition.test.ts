@@ -702,6 +702,8 @@ describe("RunningInterventionTransition", () => {
       prompt: "reach the active turn\n\n[첨부 파일 로컬 경로: /tmp/a.png]",
       imageAttachmentPaths: ["/tmp/a.png"],
       turnOrigin: { kind: "user_message" },
+      // The node mints a handoff id when the message has no durable identity.
+      runnerInterventionId: expect.any(String),
     });
     expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       "s1",
