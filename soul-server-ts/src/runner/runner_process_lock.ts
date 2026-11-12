@@ -1,10 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import { promisify } from "node:util";
 
 const LOCK_RETRY_MS = 50;
+/**
+ * A lock directory with no owner record is either an abandoned acquisition or
+ * a live writer that has not renamed its staging directory into place yet.
+ * Only age proves abandonment.
+ */
+export const OWNERLESS_LOCK_GRACE_MS = 30_000;
 const WINDOWS_EPOCH_OFFSET_TICKS = 621_355_968_000_000_000n;
 const PROCESS_START_IDENTITY_TOLERANCE_MS = 2_000;
 const DARWIN_PROCESS_PROBE_TIMEOUT_MS = 2_000;
@@ -53,6 +59,13 @@ export interface ProcessOwnershipLockDependencies {
   inspectProcess(pid: number): Promise<ProcessIdentity>;
 }
 
+export class ProcessLockTimeoutError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ProcessLockTimeoutError";
+  }
+}
+
 export class ProcessOwnershipDirectoryLock {
   private released = false;
 
@@ -68,29 +81,40 @@ export class ProcessOwnershipDirectoryLock {
     deps?: ProcessOwnershipLockDependencies;
   }): Promise<ProcessOwnershipDirectoryLock> {
     const deps = options.deps ?? defaultProcessOwnershipLockDependencies();
-    await mkdir(dirname(options.path), { recursive: true });
+    const parent = dirname(options.path);
+    await mkdir(parent, { recursive: true });
     const deadline = deps.now() + options.timeoutMs;
     while (true) {
+      const owner = await deps.currentOwner();
+      // The owner record is complete before the final name exists. A rename
+      // publishes the whole directory at once, or replaces an empty directory
+      // that an interrupted old-style acquisition left behind.
+      const stagingPath = join(
+        parent,
+        `.${basename(options.path)}.acquire-${process.pid}-${randomUUID()}`,
+      );
+      await mkdir(stagingPath);
+      let occupied = false;
       try {
-        await mkdir(options.path);
-        const owner = await deps.currentOwner();
+        await writeFile(
+          join(stagingPath, "owner.json"),
+          `${JSON.stringify(owner)}\n`,
+          { encoding: "utf8", flag: "wx", mode: 0o600 },
+        );
         try {
-          await writeFile(
-            join(options.path, "owner.json"),
-            `${JSON.stringify(owner)}\n`,
-            { encoding: "utf8", flag: "wx", mode: 0o600 },
-          );
+          await rename(stagingPath, options.path);
         } catch (error) {
-          await rm(options.path, { recursive: true, force: true });
-          throw error;
+          const code = (error as NodeJS.ErrnoException).code;
+          if (code !== "EEXIST" && code !== "ENOTEMPTY") throw error;
+          occupied = true;
         }
-        return new ProcessOwnershipDirectoryLock(options.path, owner);
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-        if (await reclaimStaleOwnershipDirectory(options.path, deps)) continue;
-        if (deps.now() >= deadline) throw new Error(options.heldMessage);
-        await deps.delay(LOCK_RETRY_MS);
+      } finally {
+        await rm(stagingPath, { recursive: true, force: true });
       }
+      if (!occupied) return new ProcessOwnershipDirectoryLock(options.path, owner);
+      if (await reclaimStaleOwnershipDirectory(options.path, deps)) continue;
+      if (deps.now() >= deadline) throw new ProcessLockTimeoutError(options.heldMessage);
+      await deps.delay(LOCK_RETRY_MS);
     }
   }
 
@@ -100,7 +124,16 @@ export class ProcessOwnershipDirectoryLock {
     if (!sameOwner(current, this.owner)) {
       throw new Error(`process ownership changed before release: ${this.path}`);
     }
-    await rm(this.path, { recursive: true, force: true });
+    const releasedPath = join(
+      dirname(this.path),
+      `.${basename(this.path)}.release-${process.pid}-${randomUUID()}`,
+    );
+    try {
+      await rename(this.path, releasedPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+    await rm(releasedPath, { recursive: true, force: true });
     this.released = true;
   }
 }
@@ -110,16 +143,32 @@ export async function reclaimStaleOwnershipDirectory(
   deps: ProcessOwnershipLockDependencies,
 ): Promise<boolean> {
   const owner = await readProcessLockOwner(join(path, "owner.json"));
-  if (!owner || !await isProvenStale(owner, deps)) return false;
+  if (!owner) {
+    let modifiedAt: number;
+    try {
+      modifiedAt = (await stat(path)).mtimeMs;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
+      throw error;
+    }
+    if (deps.now() - modifiedAt <= OWNERLESS_LOCK_GRACE_MS) return false;
+    await quarantineAndRemove(path);
+    return true;
+  }
+  if (!await isProvenStale(owner, deps)) return false;
+  await quarantineAndRemove(path);
+  return true;
+}
+
+async function quarantineAndRemove(path: string): Promise<void> {
   const quarantinePath = `${path}.stale-${process.pid}-${randomUUID()}`;
   try {
     await rename(path, quarantinePath);
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return true;
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
     throw error;
   }
   await rm(quarantinePath, { recursive: true, force: true });
-  return true;
 }
 
 export async function isProvenStale(

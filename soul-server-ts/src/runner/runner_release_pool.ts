@@ -8,6 +8,7 @@ import type {
 } from "./runner_release_materializer.js";
 import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 import {
+  ProcessLockTimeoutError,
   ProcessOwnershipDirectoryLock,
   defaultProcessOwnershipLockDependencies,
   type ProcessOwnershipLockDependencies,
@@ -97,21 +98,29 @@ export class RunnerReleasePool {
     }
   }
 
-  async withReleaseLocks<T>(
-    releaseIds: string[],
-    operation: () => Promise<T>,
+  /**
+   * Takes one release lock without waiting. A held lock is reported as `null`
+   * so a sweep can skip that candidate instead of blocking on it.
+   */
+  async tryReleaseLock(
+    releaseId: string,
     phaseObservation?: RunnerPhaseObservation,
-  ): Promise<T> {
-    const ordered = [...new Set(releaseIds)].sort();
-    const acquire = async (index: number): Promise<T> => {
-      if (index >= ordered.length) return await operation();
-      return await this.withReleaseLock(
-        ordered[index]!,
-        async () => await acquire(index + 1),
-        phaseObservation,
-      );
-    };
-    return await acquire(0);
+  ): Promise<ProcessOwnershipDirectoryLock | null> {
+    assertOpaqueReleaseId(releaseId);
+    const attempt = () => ProcessOwnershipDirectoryLock.acquire({
+      path: join(this.releasesDirectory, ".locks", releaseId),
+      timeoutMs: 0,
+      heldMessage: `runner release lock held: ${releaseId}`,
+      deps: this.deps,
+    });
+    try {
+      return phaseObservation
+        ? await phaseObservation.runAsync("releaseLock", { label: releaseId }, attempt)
+        : await attempt();
+    } catch (error) {
+      if (error instanceof ProcessLockTimeoutError) return null;
+      throw error;
+    }
   }
 
   private async listReleases(

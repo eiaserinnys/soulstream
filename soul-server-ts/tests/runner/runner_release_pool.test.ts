@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -155,6 +155,58 @@ describe("RunnerReleasePool", () => {
     expect(materializer.materialize).toHaveBeenCalledOnce();
   });
 
+  it("acquires a lock left behind as an empty directory without an owner record", async () => {
+    const root = await temporaryDirectory();
+    const materializer = new FakeMaterializer("release-empty-lock");
+    const releaseId = "release-empty-lock";
+    await mkdir(join(root, ".locks", releaseId), { recursive: true });
+    const pool = new RunnerReleasePool(
+      root,
+      materializer,
+      100,
+      lockDependencies({ alive: true, startIdentity: "same-process" }),
+    );
+
+    await expect(pool.ensureRelease(pool.describe(releaseId))).resolves.toBeUndefined();
+    expect(materializer.materialize).toHaveBeenCalledOnce();
+  });
+
+  it("leaves an ownerless lock directory alone inside the grace window", async () => {
+    const root = await temporaryDirectory();
+    const materializer = new FakeMaterializer("release-ownerless-fresh");
+    const releaseId = "release-ownerless-fresh";
+    const lockPath = await writeOwnerlessLock(root, releaseId);
+    const modifiedAt = (await stat(lockPath)).mtimeMs;
+    const pool = new RunnerReleasePool(
+      root,
+      materializer,
+      100,
+      lockDependencies({ alive: true, startIdentity: "same-process" }, modifiedAt + 29_000),
+    );
+
+    await expect(pool.ensureRelease(pool.describe(releaseId))).rejects.toThrow(
+      "runner release lock timed out",
+    );
+    expect(materializer.materialize).not.toHaveBeenCalled();
+  });
+
+  it("reclaims an ownerless lock directory once the grace window has passed", async () => {
+    const root = await temporaryDirectory();
+    const materializer = new FakeMaterializer("release-ownerless-stale");
+    const releaseId = "release-ownerless-stale";
+    const lockPath = await writeOwnerlessLock(root, releaseId);
+    const modifiedAt = (await stat(lockPath)).mtimeMs;
+    const pool = new RunnerReleasePool(
+      root,
+      materializer,
+      100,
+      lockDependencies({ alive: true, startIdentity: "same-process" }, modifiedAt + 30_001),
+    );
+
+    await expect(pool.ensureRelease(pool.describe(releaseId))).resolves.toBeUndefined();
+    expect(materializer.materialize).toHaveBeenCalledOnce();
+  });
+
   it("never reclaims a lock while the exact owner process is alive", async () => {
     const root = await temporaryDirectory();
     const materializer = new FakeMaterializer("release-live-lock");
@@ -224,10 +276,18 @@ async function writeLock(
   await writeFile(join(lockPath, "owner.json"), JSON.stringify(owner));
 }
 
+async function writeOwnerlessLock(root: string, releaseId: string): Promise<string> {
+  const lockPath = join(root, ".locks", releaseId);
+  await mkdir(lockPath, { recursive: true });
+  await writeFile(join(lockPath, "partial-owner.json"), "{\"pid\":");
+  return lockPath;
+}
+
 function lockDependencies(
   inspected: { alive: boolean; startIdentity: string | null },
+  initialNow = 0,
 ): RunnerReleasePoolDependencies {
-  let now = 0;
+  let now = initialNow;
   return {
     now: () => now,
     delay: async (ms) => { now += ms; },

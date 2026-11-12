@@ -120,7 +120,9 @@ describe("RunnerReleaseGarbageCollector", () => {
       removed: [],
       retained: [{ releaseId: "release-a", reason: "no_final_ack_evidence" }],
     });
-    expect(subject.materializer.checkReadyMarker).toHaveBeenCalledOnce();
+    expect(subject.materializer.checkReadyMarker).toHaveBeenCalledWith(
+      expect.objectContaining({ releaseId: "release-a" }),
+    );
     expect(subject.materializer.verify).not.toHaveBeenCalled();
   });
 
@@ -343,6 +345,67 @@ describe("RunnerReleaseGarbageCollector", () => {
     expect(subject.materializer.remove).not.toHaveBeenCalled();
   });
 
+  it("finishes the sweep and a current-release spawn without waiting on an unowned candidate lock", async () => {
+    const root = await temporaryDirectory();
+    const materializer = new FakeMaterializer("release-a");
+    const pool = new RunnerReleasePool(join(root, "runner-releases"), materializer);
+    const current = await pool.resolveCurrentRelease();
+    await pool.ensureRelease(current);
+    await pool.ensureRelease(pool.describe("release-b"));
+    await mkdir(join(root, "runner-releases", ".locks", "release-b"), { recursive: true });
+    const scan = vi.fn(async () => ({ registrations: [], errors: [] }));
+    const collector = new RunnerReleaseGarbageCollector(
+      pool,
+      join(root, "runner-state"),
+      { info: vi.fn(), warn: vi.fn() } as never,
+      { scan, inspect: vi.fn() },
+      undefined,
+      current.releaseId,
+    );
+
+    const [collected] = await within(
+      Promise.all([collector.collect(), pool.ensureRelease(current)]),
+      3_000,
+    );
+
+    expect(collected.removed).toEqual([]);
+    expect(collected.retained).toEqual([
+      { releaseId: "release-b", reason: "no_final_ack_evidence" },
+    ]);
+  });
+
+  it("reports a candidate lock held by a live owner as lock_held without failing the sweep", async () => {
+    const root = await temporaryDirectory();
+    const materializer = new FakeMaterializer("release-a");
+    const pool = new RunnerReleasePool(join(root, "runner-releases"), materializer, 300_000, {
+      now: Date.now,
+      delay: async (ms) => await new Promise((resolve) => setTimeout(resolve, ms)),
+      currentOwner: async () => ({ pid: process.pid, startIdentity: "gc-test-owner" }),
+      inspectProcess: async () => ({ alive: true, startIdentity: "live-owner" }),
+    });
+    const current = await pool.resolveCurrentRelease();
+    await pool.ensureRelease(current);
+    await pool.ensureRelease(pool.describe("release-b"));
+    await writeReleaseLock(root, "release-b", { pid: 4401, startIdentity: "live-owner" });
+    const scan = vi.fn(async () => ({ registrations: [], errors: [] }));
+    const collector = new RunnerReleaseGarbageCollector(
+      pool,
+      join(root, "runner-state"),
+      { info: vi.fn(), warn: vi.fn() } as never,
+      { scan, inspect: vi.fn() },
+      undefined,
+      current.releaseId,
+    );
+
+    const collected = await within(collector.collect(), 3_000);
+
+    expect(collected.removed).toEqual([]);
+    expect(collected.retained).toEqual([
+      { releaseId: "release-b", reason: "lock_held" },
+    ]);
+    expect(scan).not.toHaveBeenCalled();
+  });
+
   it("reports release GC phases in lock, fresh inventory, then durable inspection order", async () => {
     const subject = await makeSubject([registration()], false);
     const phases: string[] = [];
@@ -390,8 +453,10 @@ async function makeSubject(
 ) {
   const root = await temporaryDirectory();
   const stateDirectory = join(root, "runner-state");
-  const materializer = new FakeMaterializer();
+  const materializer = new FakeMaterializer("release-current");
   const pool = new RunnerReleasePool(join(root, "runner-releases"), materializer);
+  const currentRelease = await pool.resolveCurrentRelease();
+  await pool.ensureRelease(currentRelease);
   const release = pool.describe("release-a");
   await pool.ensureRelease(release);
   materializer.verify.mockClear();
@@ -417,6 +482,8 @@ async function makeSubject(
       stateDirectory,
       logger as never,
       deps,
+      undefined,
+      currentRelease.releaseId,
     ),
     materializer,
     logger,
@@ -428,6 +495,8 @@ async function makeSubject(
 }
 
 class FakeMaterializer implements RunnerReleaseMaterializer {
+  constructor(private readonly currentReleaseId = "release-a") {}
+
   readonly remove = vi.fn(async (release: RunnerReleaseDescriptor) => {
     this.ready.delete(release.releaseId);
     this.intact.delete(release.releaseId);
@@ -450,7 +519,7 @@ class FakeMaterializer implements RunnerReleaseMaterializer {
   private readonly intact = new Set<string>();
 
   async resolveCurrentReleaseId(): Promise<string> {
-    return "release-a";
+    return this.currentReleaseId;
   }
 
   async materialize(release: RunnerReleaseDescriptor): Promise<void> {
@@ -510,6 +579,31 @@ function registration(options: {
       terminal_error: null,
     },
   };
+}
+
+async function writeReleaseLock(
+  root: string,
+  releaseId: string,
+  owner: { pid: number; startIdentity: string },
+): Promise<void> {
+  const lockPath = join(root, "runner-releases", ".locks", releaseId);
+  await mkdir(lockPath, { recursive: true });
+  await writeFile(join(lockPath, "owner.json"), JSON.stringify(owner));
+}
+
+async function within<T>(promise: Promise<T>, budgetMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const budget = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`exceeded ${budgetMs}ms budget`)),
+      budgetMs,
+    );
+  });
+  try {
+    return await Promise.race([promise, budget]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function temporaryDirectory(): Promise<string> {

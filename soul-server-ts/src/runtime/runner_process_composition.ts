@@ -83,6 +83,7 @@ export async function composeRunnerProcessRuntime(
         options.logger,
         undefined,
         recoveryStorage,
+        release.releaseId,
       ),
       hostOwnership,
       sessionGarbageCollector: new RunnerSessionGarbageCollector(

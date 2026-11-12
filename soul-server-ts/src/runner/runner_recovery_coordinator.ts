@@ -53,6 +53,7 @@ export class RunnerRecoveryCoordinator {
   private readonly active = new Map<string, Promise<void>>();
   private scanInFlight: Promise<void> | undefined;
   private releaseGarbageCollectionFingerprint: string | undefined;
+  private releaseGarbageCollectionInFlight = false;
   private readonly recoveryLogger: RunnerRecoveryLogger;
   private readonly hydrationPhase: RunnerRecoveryHydrationPhase;
   private readonly adoptionFailureRecovery: RunnerAdoptionFailureRecovery;
@@ -302,18 +303,27 @@ export class RunnerRecoveryCoordinator {
         await Promise.all(recoveryReadiness);
       });
       const releaseFingerprint = runnerReleaseGcCandidateFingerprint(scan);
+      const releaseGarbageCollector = this.options.releaseGarbageCollector;
       if (
-        this.options.releaseGarbageCollector
+        releaseGarbageCollector
+        && !this.releaseGarbageCollectionInFlight
         && releaseFingerprint !== this.releaseGarbageCollectionFingerprint
       ) {
+        // The sweep runs behind the scan and one at a time. The fingerprint is
+        // claimed when it starts, so a failed sweep does not repeat for the
+        // same candidates on every following scan.
+        this.releaseGarbageCollectionFingerprint = releaseFingerprint;
+        this.releaseGarbageCollectionInFlight = true;
         const releaseObservation = this.createObservation("runner.recovery.releaseGc");
-        try {
-          await observation.runAsync("releaseGc", {}, async () =>
-            await this.options.releaseGarbageCollector!.collect(scan, releaseObservation));
-          this.releaseGarbageCollectionFingerprint = releaseFingerprint;
-        } catch (error) {
-          this.options.logger.error({ err: error }, "runner release GC failed");
-        }
+        void (async () => {
+          try {
+            await releaseGarbageCollector.collect(scan, releaseObservation);
+          } catch (error) {
+            this.options.logger.error({ err: error }, "runner release GC failed");
+          } finally {
+            this.releaseGarbageCollectionInFlight = false;
+          }
+        })();
       }
       this.sessionGarbageCollectionScheduler.schedule({
         ...scan,

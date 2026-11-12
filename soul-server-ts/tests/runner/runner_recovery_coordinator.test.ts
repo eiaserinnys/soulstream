@@ -2517,6 +2517,39 @@ describe("RunnerRecoveryCoordinator GC cadence", () => {
 
     expect(releaseGarbageCollector.collect).toHaveBeenCalledOnce();
   });
+
+  it("does not hold the recovery scan open for the release GC sweep", async () => {
+    const current = registration({ pidAlive: false, lifecycleState: "completed" });
+    current.databaseMtimeMs = 1;
+    const releaseGarbageCollector = {
+      collect: vi.fn(() => new Promise<never>(() => {})),
+    };
+    const subject = makeSubject([current], Date.now(), [], { releaseGarbageCollector });
+
+    await withinBudget(subject.coordinator.scanOnce(), 2_000);
+
+    expect(releaseGarbageCollector.collect).toHaveBeenCalledOnce();
+  });
+
+  it("does not repeat a failed release GC for the same candidates", async () => {
+    const current = registration({ pidAlive: false, lifecycleState: "completed" });
+    current.databaseMtimeMs = 1;
+    const releaseGarbageCollector = {
+      collect: vi.fn(async () => {
+        throw new Error("release GC failed");
+      }),
+    };
+    const subject = makeSubject([current], Date.now(), [], { releaseGarbageCollector });
+
+    await subject.coordinator.scanOnce();
+    await vi.waitFor(() => expect(subject.logger.error).toHaveBeenCalledWith(
+      { err: expect.any(Error) },
+      "runner release GC failed",
+    ));
+    await subject.coordinator.scanOnce();
+
+    expect(releaseGarbageCollector.collect).toHaveBeenCalledOnce();
+  });
 });
 
 describe("RunnerRecoveryCoordinator phase observation", () => {
@@ -2929,6 +2962,21 @@ function recordTerminalCompletion(task: Task): void {
   task.runner = undefined;
   task.executionPromise = undefined;
   task.executionRegistration = undefined;
+}
+
+async function withinBudget<T>(promise: Promise<T>, budgetMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const budget = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`exceeded ${budgetMs}ms budget`)),
+      budgetMs,
+    );
+  });
+  try {
+    return await Promise.race([promise, budget]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function pathExists(path: string): Promise<boolean> {
