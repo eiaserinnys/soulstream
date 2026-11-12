@@ -12,6 +12,11 @@ import {
 } from "../src/node/event_ingress_repository.js";
 import { FileEventIngressDeadLetterStore } from "../src/node/event_ingress_dead_letter_store.js";
 import type { EventAppendBatch } from "../src/node/event_ingress_types.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 const STREAM_ID = "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10";
 
@@ -73,7 +78,7 @@ describe("EventIngressRepository", () => {
       { resolveSql: async () => sql },
       effect,
       undefined,
-      {},
+      { modelCatalog: catalog },
       feedProjection,
     );
 
@@ -137,7 +142,12 @@ describe("EventIngressRepository", () => {
       }
       throw new Error(`unexpected SQL: ${text}`);
     });
-    const repository = new EventIngressRepository({ resolveSql: async () => sql });
+    const repository = new EventIngressRepository(
+      { resolveSql: async () => sql },
+      undefined,
+      undefined,
+      { modelCatalog: catalog },
+    );
 
     await repository.commitBatch("node-a", batch({
       event_type: "complete",
@@ -198,7 +208,12 @@ describe("EventIngressRepository", () => {
       }
       throw new Error("unexpected SQL in statistics duplicate test");
     });
-    const repository = new EventIngressRepository({ resolveSql: async () => sql });
+    const repository = new EventIngressRepository(
+      { resolveSql: async () => sql },
+      undefined,
+      undefined,
+      { modelCatalog: catalog },
+    );
     const input = {
       event_type: "complete",
       semantic_dedupe_key: "same-statistics-command",
@@ -259,7 +274,7 @@ describe("EventIngressRepository", () => {
         },
       }),
       undefined,
-      {},
+      { modelCatalog: catalog },
       async () => null,
     );
     const input = batch({
@@ -298,7 +313,7 @@ describe("EventIngressRepository", () => {
       { resolveSql: async () => sql },
       undefined,
       undefined,
-      {},
+      { modelCatalog: catalog },
       async () => null,
     );
 
@@ -354,6 +369,8 @@ describe("EventIngressRepository", () => {
     const repository = new EventIngressRepository(
       { resolveSql: async () => sql },
       effect,
+      undefined,
+      { modelCatalog: catalog },
     );
 
     await repository.commitBatch("node-a", batch({
@@ -379,7 +396,12 @@ describe("EventIngressRepository", () => {
       }
       throw new Error("duplicate receipt must not execute another statement");
     });
-    const repository = new EventIngressRepository({ resolveSql: async () => sql });
+    const repository = new EventIngressRepository(
+      { resolveSql: async () => sql },
+      undefined,
+      undefined,
+      { modelCatalog: catalog },
+    );
 
     await expect(repository.commitBatch("node-a", batch())).resolves.toMatchObject([
       { eventId: 17, duplicateReceipt: true },
@@ -399,7 +421,12 @@ describe("EventIngressRepository", () => {
       if (text.includes("INSERT INTO event_ingress_receipts")) return [];
       throw new Error(`unexpected SQL: ${text}`);
     });
-    const repository = new EventIngressRepository({ resolveSql: async () => sql });
+    const repository = new EventIngressRepository(
+      { resolveSql: async () => sql },
+      undefined,
+      undefined,
+      { modelCatalog: catalog },
+    );
     const input = batch({
       semantic_dedupe_key: null,
       ...(envelopeRegistrationId === undefined
@@ -427,7 +454,12 @@ describe("EventIngressRepository", () => {
       }
       throw new Error(`stale registration must not reach another statement: ${text}`);
     });
-    const repository = new EventIngressRepository({ resolveSql: async () => sql });
+    const repository = new EventIngressRepository(
+      { resolveSql: async () => sql },
+      undefined,
+      undefined,
+      { modelCatalog: catalog },
+    );
 
     await expect(repository.commitBatch("node-a", batch({
       registration_id: envelopeRegistrationId,
@@ -470,6 +502,8 @@ describe("EventIngressRepository", () => {
     const repository = new EventIngressRepository(
       { resolveSql: async () => sql },
       effect,
+      undefined,
+      { modelCatalog: catalog },
     );
 
     await expect(repository.commitBatch("node-a", batch({
@@ -498,7 +532,12 @@ describe("EventIngressRepository", () => {
       }
       return [];
     });
-    const repository = new EventIngressRepository({ resolveSql: async () => sql });
+    const repository = new EventIngressRepository(
+      { resolveSql: async () => sql },
+      undefined,
+      undefined,
+      { modelCatalog: catalog },
+    );
 
     await expect(repository.commitBatch("node-a", batch())).rejects.toMatchObject({
       constructor: EventIngressProtocolConflict,
@@ -528,6 +567,8 @@ describe("EventIngressRepository", () => {
     const repository = new EventIngressRepository(
       { resolveSql: async () => sql },
       effect,
+      undefined,
+      { modelCatalog: catalog },
     );
     const sessionEffect = {
       kind: "append_metadata" as const,
@@ -583,6 +624,8 @@ describe("EventIngressRepository", () => {
     const repository = new EventIngressRepository(
       { resolveSql: async () => sql },
       async () => ({ applied: true, canonicalSession }),
+      undefined,
+      { modelCatalog: catalog },
     );
 
     await repository.commitBatch("node-a", batch({
@@ -628,6 +671,8 @@ describe("EventIngressRepository", () => {
     const repository = new EventIngressRepository(
       { resolveSql: async () => sql },
       async () => ({ applied: true, canonicalSession: null }),
+      undefined,
+      { modelCatalog: catalog },
     );
 
     await repository.commitBatch("node-a", batch({
@@ -662,7 +707,12 @@ describe("EventIngressRepository", () => {
       if (text.includes("FROM event_ingress_receipts")) return [];
       throw new Error(`unexpected SQL: ${text}`);
     });
-    const repository = new EventIngressRepository({ resolveSql: async () => sql });
+    const repository = new EventIngressRepository(
+      { resolveSql: async () => sql },
+      undefined,
+      undefined,
+      { modelCatalog: catalog },
+    );
 
     // Without a dead-letter store, the repository still exposes the invariant
     // violation to its caller instead of hiding a malformed durable row.
@@ -700,7 +750,12 @@ describe("EventIngressRepository", () => {
       }
       throw new Error(`unexpected SQL: ${text}`);
     });
-    const repository = new EventIngressRepository({ resolveSql: async () => sql });
+    const repository = new EventIngressRepository(
+      { resolveSql: async () => sql },
+      undefined,
+      undefined,
+      { modelCatalog: catalog },
+    );
 
     await expect(repository.commitBatch("node-a", batch({
       session_effect: {
@@ -729,6 +784,7 @@ describe("EventIngressRepository", () => {
         undefined,
         store,
         {
+          modelCatalog: catalog,
           failureThreshold: 3,
           retryDelaysMs: [0, 0],
           sleep: async () => undefined,
@@ -823,6 +879,7 @@ describe("EventIngressRepository", () => {
       undefined,
       { find: vi.fn(async () => null), recordFailure },
       {
+        modelCatalog: catalog,
         failureThreshold: 3,
         retryDelaysMs: [0, 0],
         sleep: async () => undefined,

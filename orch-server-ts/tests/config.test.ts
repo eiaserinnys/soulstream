@@ -101,7 +101,6 @@ describe("orch-server-ts config scaffold", () => {
       claude_oauth_callback_url: "https://example.com/claude/callback",
       codex_cli_path: null,
       antigravity_cli_path: null,
-      model_catalog_path: null,
       portable_node_releases_dir: null,
       typesafe_api_key: "",
       turn_summary_openai_key: "turn-summary-key",
@@ -242,14 +241,12 @@ describe("orch-server-ts config scaffold", () => {
     const config = loadOrchServerEnvironment({
       ...minimalEnvironment(),
       CODEX_CLI_PATH: "/configured/codex",
-      MODEL_CATALOG_PATH: "config/model-catalog.yaml",
       TYPESAFE_API_KEY: "typesafe-key",
       SKILL_CATALOG_NODE_ID: "skill-catalog-node",
       DOMAIN_CATALOG_NODE_ID: "domain-catalog-node",
     });
 
     expect(config.codex_cli_path).toBe("/configured/codex");
-    expect(config.model_catalog_path).toBe("config/model-catalog.yaml");
     expect(config.typesafe_api_key).toBe("typesafe-key");
     expect(config.skill_catalog_node_id).toBe("skill-catalog-node");
     expect(config.domain_catalog_node_id).toBe("domain-catalog-node");

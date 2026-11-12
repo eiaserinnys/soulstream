@@ -6,6 +6,11 @@ import type { FolderContentSql } from "../src/board/folder_content_sql.js";
 import type { SessionStatisticsReadRequest } from "../src/usage/session_statistics_types.js";
 import { createSessionStatisticsDailyState } from "../src/usage/session_statistics_daily_state.js";
 import { read, usageRow } from "./fixtures/session_statistics_aggregation.fixtures.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 describe("daily statistics PostgreSQL storage", () => {
   let harness: FullSchemaPostgresHarness;
@@ -17,7 +22,7 @@ describe("daily statistics PostgreSQL storage", () => {
     const counts = await sql<{ count: number }[]>`SELECT count(*)::int AS count FROM sessions`;
     expect(counts[0]?.count).toBe(0);
     const repository = new SessionStatisticsDailyRepository(sql as unknown as FolderContentSql);
-    const state = createSessionStatisticsDailyState(read([usageRow()]), "2026-10-19");
+    const state = createSessionStatisticsDailyState(read([usageRow()]), "2026-10-19", CATALOG);
     await repository.save(state, "20");
     const loaded = await repository.load("2026-10-19", "2026-10-20", 1, ["session-1"]);
     expect(loaded).toEqual([{ ...state, sourceMaxEventId: "20" }]);

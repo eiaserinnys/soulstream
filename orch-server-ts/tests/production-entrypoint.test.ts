@@ -18,6 +18,11 @@ import type {
   LiveDbSqlResolver,
   LivePostgresSql,
 } from "../src/runtime/live_db_sql.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 const temporaryDirectories: string[] = [];
 
@@ -95,7 +100,8 @@ describe("production orchestrator entrypoint", () => {
     const application = await createLiveProductionApplication(
       config,
       { warn: vi.fn() },
-      { sqlResolver },
+      { modelCatalog: catalog,
+      sqlResolver },
     );
     const jwt = createLiveAuthJwtHelper({
       configProvider: createEnvironmentConfigProvider(config),
@@ -230,6 +236,7 @@ describe("production orchestrator entrypoint", () => {
     const dashboardDir = await createDashboardDirectory();
     const events: string[] = [];
     const server = await createProductionOrchestrator({
+      modelCatalog: catalog,
       config: loadOrchServerEnvironment({
         ...minimalEnvironment(),
         PORT: "0",
@@ -287,6 +294,7 @@ describe("production orchestrator entrypoint", () => {
       close: vi.fn(async () => undefined),
     };
     const server = await createProductionOrchestrator({
+      modelCatalog: catalog,
       config: loadOrchServerEnvironment({
         ...minimalEnvironment(),
         PORT: "0",
@@ -296,7 +304,8 @@ describe("production orchestrator entrypoint", () => {
         const application = await createLiveProductionApplication(
           config,
           context,
-          { sqlResolver },
+          { modelCatalog: catalog,
+          sqlResolver },
         );
         return { ...application, startBackground: async () => undefined };
       },
@@ -323,6 +332,7 @@ describe("production orchestrator entrypoint", () => {
   it("cleans resources without listening when background startup fails", async () => {
     const closeResources = vi.fn(async () => undefined);
     const server = await createProductionOrchestrator({
+      modelCatalog: catalog,
       config: loadOrchServerEnvironment({ ...minimalEnvironment(), PORT: "0" }),
       warn: vi.fn(),
       applicationFactory: async () => ({
@@ -341,6 +351,7 @@ describe("production orchestrator entrypoint", () => {
   it("warns when the ignored dashboard folder access setting is configured", async () => {
     const logWarn = vi.fn();
     const server = await createProductionOrchestrator({
+      modelCatalog: catalog,
       config: loadOrchServerEnvironment({
         ...minimalEnvironment(),
         DASHBOARD_USER_FOLDER_ACCESS: JSON.stringify({

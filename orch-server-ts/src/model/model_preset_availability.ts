@@ -1,6 +1,5 @@
 import type { NodeConnectionSnapshot } from "../node/registry_types.js";
 import {
-  DEFAULT_MODEL_CATALOG,
   resolveModelPreset,
   UnknownModelPresetError,
   MODEL_BACKENDS,
@@ -10,6 +9,7 @@ import {
   type ReasoningEffort,
   type AgentBackend,
 } from "@soulstream/model-catalog";
+import type { ModelCatalogSource } from "./model_catalog_source.js";
 import type {
   UsageSummaryQuota,
   UsageSummarySnapshot,
@@ -112,6 +112,7 @@ export class ModelPresetAvailabilityService {
   constructor(
     private readonly registry: ModelPresetAvailabilityRegistry,
     private readonly usageSummary: ModelPresetUsageSummary,
+    private readonly modelCatalog: ModelCatalogSource,
     private readonly now: () => Date = () => new Date(),
   ) {}
 
@@ -152,6 +153,7 @@ export class ModelPresetAvailabilityService {
     if (preset && !connectedNode && options?.requireAvailable === false) {
       const known = staticPresets(node!);
       const staticCatalog: ModelCatalogConfig = {
+        ...this.modelCatalog.snapshot(),
         presets: known.map((entry) => ({
           id: entry.id,
           label: entry.label,
@@ -168,7 +170,9 @@ export class ModelPresetAvailabilityService {
     }
     if (!preset && !node && options?.requireAvailable === false) {
       try {
-        const resolved = resolveModelPreset(DEFAULT_MODEL_CATALOG, presetId);
+        // A node that never connected has no advertised list; the full repository
+        // catalogue still validates the preset id for defaults and previews.
+        const resolved = resolveModelPreset(this.modelCatalog.snapshot(), presetId);
         preset = {
           id: resolved.id,
           label: resolved.label,

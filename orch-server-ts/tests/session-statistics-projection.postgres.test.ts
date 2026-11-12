@@ -33,6 +33,11 @@ import {
   createFullSchemaPostgresHarness,
   type FullSchemaPostgresHarness,
 } from "./board_yjs_postgres_harness.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 const hasDocker = spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0;
 const hasTestDatabase = Boolean(process.env.TEST_DATABASE_URL?.trim());
@@ -84,9 +89,10 @@ describePostgres("session statistics facts projection", () => {
       },
     ];
     await seedSourceEvents(sql, sourceEvents);
-    const expectedBackfillFacts = sourceEvents.flatMap((event) => normalizeSessionStatisticsEvent(event).facts);
+    const expectedBackfillFacts = sourceEvents.flatMap((event) => normalizeSessionStatisticsEvent(event, CATALOG).facts);
 
-    const first = await backfillSessionStatisticsProjection(sql as unknown as EventIngressSql, { batchSize: 1 });
+    const first = await backfillSessionStatisticsProjection(sql as unknown as EventIngressSql, { modelCatalog: catalog,
+    batchSize: 1 });
     expect(first).toMatchObject({
       state: "backfilling",
       backfill_cutoff_event_id: 1_000_003,
@@ -97,6 +103,7 @@ describePostgres("session statistics facts projection", () => {
     const eventTwo = sourceEvents[1]!;
     await sql.begin(async (transaction) => {
       await applySessionStatisticsProjection(transaction as unknown as EventIngressQuerySql, {
+        modelCatalog: catalog,
         eventId: Number(eventTwo.eventId),
         envelope: asEnvelope(eventTwo),
       });
@@ -114,16 +121,20 @@ describePostgres("session statistics facts projection", () => {
     await seedSourceEvents(sql, [lateLiveEvent]);
     await sql.begin(async (transaction) => {
       await applySessionStatisticsProjection(transaction as unknown as EventIngressQuerySql, {
+        modelCatalog: catalog,
         eventId: Number(lateLiveEvent.eventId),
         envelope: asEnvelope(lateLiveEvent),
       });
     });
 
-    const second = await backfillSessionStatisticsProjection(sql as unknown as EventIngressSql, { batchSize: 1 });
+    const second = await backfillSessionStatisticsProjection(sql as unknown as EventIngressSql, { modelCatalog: catalog,
+    batchSize: 1 });
     expect(second).toMatchObject({ state: "backfilling", last_event_id: 1_000_002 });
-    const third = await backfillSessionStatisticsProjection(sql as unknown as EventIngressSql, { batchSize: 1 });
+    const third = await backfillSessionStatisticsProjection(sql as unknown as EventIngressSql, { modelCatalog: catalog,
+    batchSize: 1 });
     expect(third).toMatchObject({ state: "backfilling", last_event_id: 1_000_003 });
-    const finished = await backfillSessionStatisticsProjection(sql as unknown as EventIngressSql, { batchSize: 1 });
+    const finished = await backfillSessionStatisticsProjection(sql as unknown as EventIngressSql, { modelCatalog: catalog,
+    batchSize: 1 });
     expect(finished).toMatchObject({
       state: "ready",
       backfill_cutoff_event_id: 1_000_003,
@@ -175,6 +186,7 @@ describePostgres("session statistics facts projection", () => {
     await seedSourceEvents(sql, [malformed]);
     await sql.begin(async (transaction) => {
       await applySessionStatisticsProjection(transaction as unknown as EventIngressQuerySql, {
+        modelCatalog: catalog,
         eventId: Number(malformed.eventId),
         envelope: asEnvelope(malformed),
       });
@@ -210,6 +222,7 @@ describePostgres("session statistics facts projection", () => {
         payload: { type: "complete", output_command_id: "rollback-command", usage: { input_tokens: 1, output_tokens: 1 } },
       };
       await applySessionStatisticsProjection(transaction as unknown as EventIngressQuerySql, {
+        modelCatalog: catalog,
         eventId: 1_000_006,
         envelope: asEnvelope(rolledBackEvent),
       });
@@ -256,7 +269,7 @@ describePostgres("session statistics facts projection", () => {
       },
     ];
     await seedSourceEvents(sql, fixtureEvents);
-    const fixtureFacts = fixtureEvents.flatMap((event) => normalizeSessionStatisticsEvent(event).facts);
+    const fixtureFacts = fixtureEvents.flatMap((event) => normalizeSessionStatisticsEvent(event, CATALOG).facts);
     await insertSessionStatisticsFacts(sql as unknown as EventIngressQuerySql, fixtureFacts);
     const authorizedSessions = [...new Set([
       backfillSession,
@@ -266,8 +279,8 @@ describePostgres("session statistics facts projection", () => {
       transaction as unknown as EventIngressQuerySql,
       authorizedSessions,
     ));
-    const allFacts = [...expectedBackfillFacts, ...normalizeSessionStatisticsEvent(lateLiveEvent).facts,
-      ...normalizeSessionStatisticsEvent(malformed).facts, ...fixtureFacts];
+    const allFacts = [...expectedBackfillFacts, ...normalizeSessionStatisticsEvent(lateLiveEvent, CATALOG).facts,
+      ...normalizeSessionStatisticsEvent(malformed, CATALOG).facts, ...fixtureFacts];
     expect(describeSqlUsage(canonicalRows)).toEqual(describePureUsage(allFacts));
     expect(canonicalRows.some((row) => row.row_kind === "usage"
       && row.accounting_key === "missing-complete-wins"
@@ -334,7 +347,7 @@ describePostgres("session statistics facts projection", () => {
     await seedSourceEvents(sql, events);
     await insertSessionStatisticsFacts(
       sql as unknown as EventIngressQuerySql,
-      events.flatMap((event) => normalizeSessionStatisticsEvent(event).facts),
+      events.flatMap((event) => normalizeSessionStatisticsEvent(event, CATALOG).facts),
     );
 
     const rows = await sql.begin(async (transaction) => createCanonicalSessionStatisticsFacts(
@@ -390,7 +403,7 @@ describePostgres("session statistics facts projection", () => {
       await seedSourceEvents(sql, events);
       await insertSessionStatisticsFacts(
         sql as unknown as EventIngressQuerySql,
-        events.flatMap((event) => normalizeSessionStatisticsEvent(event).facts),
+        events.flatMap((event) => normalizeSessionStatisticsEvent(event, CATALOG).facts),
       );
       return await sql.begin(async (transaction) => createCanonicalSessionStatisticsFacts(
         transaction as unknown as EventIngressQuerySql, [sessionId],
@@ -438,7 +451,7 @@ describePostgres("session statistics facts projection", () => {
       payload: { type: "user_message", input_id: "reconcile-input", text: "source text" },
     };
     await seedSourceEvents(sql, [event]);
-    const expectedFacts = normalizeSessionStatisticsEvent(event).facts;
+    const expectedFacts = normalizeSessionStatisticsEvent(event, CATALOG).facts;
     await insertSessionStatisticsFacts(
       sql as unknown as EventIngressQuerySql,
       expectedFacts.map((fact) => fact.fact_kind === "input_material"
@@ -459,7 +472,8 @@ describePostgres("session statistics facts projection", () => {
       WHERE setting_key = ${SESSION_STATISTICS_PROJECTION_SETTING_KEY}
     `;
 
-    await expect(backfillSessionStatisticsProjection(sql as unknown as EventIngressSql, { batchSize: 1 }))
+    await expect(backfillSessionStatisticsProjection(sql as unknown as EventIngressSql, { modelCatalog: catalog,
+    batchSize: 1 }))
       .rejects.toThrow("session statistics projection facts do not match normalized source events");
     const [checkpoint] = await sql<readonly { value: Record<string, unknown> }[]>`
       SELECT value FROM system_settings
@@ -545,7 +559,7 @@ function asEnvelope(event: SessionStatisticsEventInput): EventIngressEnvelope {
 }
 
 function describePureUsage(facts: readonly FactDraft[]) {
-  return selectCanonicalUsageCandidates(facts).map((selection) => ({
+  return selectCanonicalUsageCandidates(facts, CATALOG).map((selection) => ({
     session_id: selection.sessionId,
     accounting_key: selection.accountingKey,
     owner_event_id: nullableId(selection.ownerEventId),

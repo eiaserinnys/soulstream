@@ -53,7 +53,6 @@ export type OrchServerEnvironmentConfig = Partial<ExternalIngressEnvironmentConf
   readonly claude_oauth_callback_url: string;
   readonly codex_cli_path: string | null;
   readonly antigravity_cli_path: string | null;
-  readonly model_catalog_path: string | null;
   readonly typesafe_api_key: string;
   readonly turn_summary_openai_key: string;
   readonly usage_summary_poll_interval_seconds: number;
@@ -90,7 +89,6 @@ export const ORCH_SERVER_ENVIRONMENT_VARIABLES = [
   "CLAUDE_OAUTH_CALLBACK_URL",
   "CODEX_CLI_PATH",
   "AGY_CLI_PATH",
-  "MODEL_CATALOG_PATH",
   "TYPESAFE_API_KEY",
   "TURN_SUMMARY_OPENAI_KEY",
   "USAGE_SUMMARY_POLL_INTERVAL_SECONDS",
@@ -166,7 +164,6 @@ export function loadOrchServerEnvironment(
     claude_oauth_callback_url: requiredString(env, "CLAUDE_OAUTH_CALLBACK_URL"),
     codex_cli_path: optionalString(env.CODEX_CLI_PATH),
     antigravity_cli_path: optionalString(env.AGY_CLI_PATH),
-    model_catalog_path: optionalString(env.MODEL_CATALOG_PATH),
     typesafe_api_key: env.TYPESAFE_API_KEY ?? "",
     turn_summary_openai_key: env.TURN_SUMMARY_OPENAI_KEY ?? "",
     usage_summary_poll_interval_seconds: parsePositiveInteger(

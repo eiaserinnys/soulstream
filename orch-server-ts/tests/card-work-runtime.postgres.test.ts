@@ -14,6 +14,7 @@ import {
 } from "../src/production.js";
 import { prepareCardWorkSchema, recordWorkReceipt } from "./card-work-postgres-fixture.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 const CALLER_ID = "dispatch-runtime-caller";
 const ACTOR: DispatchWorkActor = { actorKind: "agent", actorSessionId: CALLER_ID };
@@ -306,6 +307,8 @@ describe("card work runtime and internal MCP integration", () => {
     const eventRepository = new EventIngressRepository(
       new LiveEventIngressSqlProvider({ resolveSql: async () => h.liveSql, close: async () => undefined }),
       createCardWorkErrorSessionEffectApplier(),
+      undefined,
+      { modelCatalog: repositoryModelCatalog() },
     );
     const relationlessId = "runtime-unrelated-fatal";
     await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,folder_id)

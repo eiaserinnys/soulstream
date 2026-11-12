@@ -5,6 +5,7 @@ import type {
   UsageSnapshot,
 } from "./session_statistics_fact_types.js";
 import type { UsageStatsProvider } from "@soulstream/wire-schema/session-statistics";
+import { findModelProvider, type ModelCatalogConfig } from "@soulstream/model-catalog";
 
 const PROVIDERS = new Set<UsageStatsProvider>([
   "claude", "codex", "antigravity", "deepseek", "kimi", "unknown",
@@ -67,9 +68,17 @@ export function compareText(left: string, right: string): number {
   return left < right ? -1 : left > right ? 1 : 0;
 }
 
-export function inferProvider(model: string | null, usage: unknown): UsageStatsProvider {
+export function inferProvider(
+  catalog: ModelCatalogConfig,
+  model: string | null,
+  usage: unknown,
+): UsageStatsProvider {
+  if (model !== null) {
+    const catalogProvider = findModelProvider(catalog, model);
+    if (catalogProvider !== undefined && catalogProvider !== "unknown") return catalogProvider;
+  }
   const value = model?.toLowerCase() ?? "";
-  if (value === "kimi-for-coding" || value === "k3" || value.startsWith("kimi-")) return "kimi";
+  if (value.startsWith("kimi-")) return "kimi";
   if (value.startsWith("claude-")) return "claude";
   if (value.startsWith("gpt-")) return "codex";
   if (value.startsWith("gemini-")) return "antigravity";
@@ -82,6 +91,7 @@ export function parseIdentity(
   payload: Record<string, unknown> | null,
   eventType: string,
   issues: Set<string>,
+  catalog: ModelCatalogConfig,
 ): EventIdentity {
   const quality = new Set<string>();
   const outputCommandId = payload ? payload.output_command_id : undefined;
@@ -153,7 +163,7 @@ export function parseIdentity(
   // the observed model in the event is still evidence for the provider.
   const provider = snapshot !== null && snapshot.provider !== "unknown"
     ? snapshot.provider
-    : inferProvider(rawModel, payload?.usage);
+    : inferProvider(catalog, rawModel, payload?.usage);
   const backend = snapshot?.backend ?? stringOrNull(payload?.backend);
   const model = rawModel;
   return {

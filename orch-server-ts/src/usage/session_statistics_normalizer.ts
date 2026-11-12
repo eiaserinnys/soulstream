@@ -1,3 +1,4 @@
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 import { estimateInputTokens } from "@soulstream/model-catalog/input-token-estimate";
 import type {
   EventIdentity,
@@ -244,10 +245,11 @@ function normalizeToolEvent(
 
 export function normalizeSessionStatisticsEvent(
   event: SessionStatisticsEventInput,
+  catalog: ModelCatalogConfig,
 ): { facts: FactDraft[]; issues: string[] } {
   const issues = new Set<string>();
   const payload = isRecord(event.payload) ? event.payload : null;
-  const identity = parseIdentity(payload, event.eventType, issues);
+  const identity = parseIdentity(payload, event.eventType, issues, catalog);
   if (!payload && [
     "complete", "result", "error", "usage_observation", "input_material_manifest",
     "context_manifest", "user_message", "system_message", "tool_start", "tool_result",
@@ -258,7 +260,7 @@ export function normalizeSessionStatisticsEvent(
   let facts: FactDraft[];
 
   if (["complete", "result", "error", "usage_observation"].includes(event.eventType)) {
-    facts = normalizeUsageEvent(event, payload, identity, issues);
+    facts = normalizeUsageEvent(event, payload, identity, issues, catalog);
   } else if (event.eventType === "input_material_manifest") {
     facts = normalizeInputManifest(event, payload, identity, issues);
   } else if (event.eventType === "context_manifest") {

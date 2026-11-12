@@ -7,6 +7,11 @@ import {
   type LiveDbSqlResolver,
   type LivePostgresSql,
 } from "../src/index.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 type TestWebSocket = {
   send: (data: string) => void;
@@ -33,7 +38,8 @@ describe("production live event fanout", () => {
     const application = await createLiveProductionApplication(
       loadOrchServerEnvironment(minimalEnvironment()),
       { warn: vi.fn() },
-      { sqlResolver, turnSummaryPipeline: { start, accept, drain } },
+      { modelCatalog: catalog,
+      sqlResolver, turnSummaryPipeline: { start, accept, drain } },
     );
     await application.app.listen({ host: "127.0.0.1", port: 0 });
     await application.startBackground();
@@ -83,7 +89,8 @@ describe("production live event fanout", () => {
     const application = await createLiveProductionApplication(
       loadOrchServerEnvironment(minimalEnvironment()),
       { warn: vi.fn() },
-      { sqlResolver },
+      { modelCatalog: catalog,
+      sqlResolver },
     );
     await application.app.listen({ host: "127.0.0.1", port: 0 });
     const catalogController = new AbortController();
@@ -158,7 +165,8 @@ describe("production live event fanout", () => {
     const application = await createLiveProductionApplication(
       loadOrchServerEnvironment(minimalEnvironment()),
       { warn: vi.fn() },
-      { sqlResolver },
+      { modelCatalog: catalog,
+      sqlResolver },
     );
     await application.app.listen({ host: "127.0.0.1", port: 0 });
     await application.startBackground();
@@ -315,7 +323,8 @@ describe("production live event fanout", () => {
     const application = await createLiveProductionApplication(
       loadOrchServerEnvironment(minimalEnvironment()),
       { warn: vi.fn() },
-      { sqlResolver },
+      { modelCatalog: catalog,
+      sqlResolver },
     );
     await application.app.listen({ host: "127.0.0.1", port: 0 });
     const streamController = new AbortController();
@@ -386,7 +395,8 @@ describe("production live event fanout", () => {
         SOUL_RUNNER_LEASE_TIMEOUT_MS: "10",
       }),
       { warn: vi.fn() },
-      { sqlResolver },
+      { modelCatalog: catalog,
+      sqlResolver },
     );
     await application.app.listen({ host: "127.0.0.1", port: 0 });
     const catalogController = new AbortController();

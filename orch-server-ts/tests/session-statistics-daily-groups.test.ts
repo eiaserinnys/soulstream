@@ -4,6 +4,11 @@ import { createSessionStatisticsDailyState } from "../src/usage/session_statisti
 import { buildDailyOverview } from "../src/usage/session_statistics_daily_merge.js";
 import { read, usageRow, fact, missingRow } from "./fixtures/session_statistics_aggregation.fixtures.js";
 import type { SessionStatisticsReadResult } from "../src/usage/session_statistics_types.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 describe("daily folder groups", () => {
   const source: SessionStatisticsReadResult = read([usageRow(), usageRow({ session_id: "s2", fact: fact({ session_id: "s2", model: "other" }) }),
@@ -15,22 +20,22 @@ describe("daily folder groups", () => {
     { sessionId: "s2", folderId: "f", cardFolderId: null, projectId: "p", projectLabel: "P" },
     { sessionId: "s3", folderId: null, cardFolderId: "f", projectId: "p", projectLabel: "P" },
   ]);
-  const state = createSessionStatisticsDailyState(source, "2026-10-19");
+  const state = createSessionStatisticsDailyState(source, "2026-10-19", CATALOG);
 
   it.each([{}, { model: "other" }, { project_ids: ["p"] }])("preserves selectors and missing evidence with filter %j", query => {
     const metadata = { ...source, query: { ...source.query, ...query } };
     const groups = createSessionStatisticsDailyGroups(state.sessions);
     expect(groups).toHaveLength(2);
     expect(JSON.stringify(groups)).not.toContain('"material"');
-    expect(buildDailyOverview(metadata, [{ ...state, sessions: [], groups }]))
-      .toEqual(buildDailyOverview(metadata, [state]));
+    expect(buildDailyOverview(metadata, [{ ...state, sessions: [], groups }], CATALOG))
+      .toEqual(buildDailyOverview(metadata, [state], CATALOG));
   });
 
   it("filters restricted users through current authorized folder pairs", () => {
     const metadata = { ...source, sessions: source.sessions.filter(session => session.folderId === "f") };
     const groups = createSessionStatisticsDailyGroups(state.sessions);
-    expect(buildDailyOverview(metadata, [{ ...state, sessions: [], groups }]))
-      .toEqual(buildDailyOverview(metadata, [state]));
+    expect(buildDailyOverview(metadata, [{ ...state, sessions: [], groups }], CATALOG))
+      .toEqual(buildDailyOverview(metadata, [state], CATALOG));
   });
 
   it("preserves the existing provider/model/backend option identity", () => {

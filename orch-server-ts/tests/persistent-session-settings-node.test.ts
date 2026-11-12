@@ -9,6 +9,11 @@ import { persistentSessionSettingsTools } from "@soulstream/mcp-contract";
 import { InMemoryNodeRegistry } from "../src/node/registry.js";
 import { RuntimeSessionEventHub } from "../src/runtime/session_event_hub.js";
 import { createLiveExecuteProxyRouteProvider } from "../src/runtime/live_execute_proxy_route_provider.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 describe("persistent session model node selection", () => {
   it("trims node ids and distinguishes the same preset on different nodes", () => {
@@ -49,7 +54,7 @@ describe("persistent session model node selection", () => {
           { model_preset: "codex-6.1-sol", node_id: "eias-linegames" },
         ],
       } },
-    ])).toMatchObject({
+    ], CATALOG.persistent_defaults.fallback_models)).toMatchObject({
       default_model: { model_preset: "gemini-4-argon", node_id: "eias-linegames-wsl" },
       fallback_models: [
         { model_preset: "claude-opus", node_id: "eias-linegames-wsl" },
@@ -131,6 +136,7 @@ describe("persistent session model node selection", () => {
       nowMs: Date.now(),
     });
     const provider = createLiveExecuteProxyRouteProvider({
+      modelCatalog: catalog,
       registry,
       sessionEventHub,
       router: {

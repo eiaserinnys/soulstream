@@ -95,6 +95,18 @@ export const PROJECT_LABELS: Record<string, string> = {
   "project-evaluation": "평가 자료",
 };
 
+/** Fixture-only model ids; the real server sends `model_label` from the model catalogue. */
+export const FIXTURE_MODEL_LABELS: Readonly<Record<string, string>> = {
+  "claude-opus-5.5": "Claude Opus 5.5",
+  "claude-sonnet-5.5": "Claude Sonnet 5.5",
+  "gpt-6.1-sol": "GPT-6.1 Sol",
+  "gpt-6-luna": "GPT-6 Luna",
+  "gemini-3.8-flash": "Gemini 3.8 Flash",
+  "gemini-4-argon": "Gemini 4 Argon",
+  "gemini-4-carbon": "Gemini 4 Carbon",
+  "kimi-for-coding/k3": "Kimi for Coding K3",
+};
+
 export const RAW_USAGE_RECORDS: RawUsageRecord[] = [
   { date: "2026-09-10", provider: "claude", backend: "claude-code", model: "claude-opus-5.5", project_id: "project-docs", input_total: 1_000_000, cache_read: 400_000, cache_write: 0, output_total: 300_000, reasoning_output: 0, reference_cost_usd: 9.2, cache_read_cost_usd: 0.08, non_cache_cost_usd: 9.12 },
   { date: "2026-09-24", provider: "codex", backend: "codex", model: "gpt-6.1-sol", project_id: "project-tooling", input_total: 500_000, cache_read: 100_000, cache_write: 0, output_total: 150_000, reasoning_output: 30_000, reference_cost_usd: 2.8, cache_read_cost_usd: 0.01, non_cache_cost_usd: 2.79 },

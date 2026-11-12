@@ -11,6 +11,11 @@ import {
   readStoredPersistentSettings,
   type PersistentSessionSettings,
 } from "@soulstream/wire-schema/persistent-session-settings";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 const currentSettings: PersistentSessionSettings = {
   default_model: { model_preset: "claude-opus", reasoning_effort: "high" },
@@ -74,7 +79,7 @@ function setup() {
         sendPendingCommand: async (payload: Record<string, unknown>) => {
           commandPayloads.push(payload);
           const row = rows.get(String(payload.agentSessionId))!;
-          const previous = readStoredPersistentSettings(row.metadata)!;
+          const previous = readStoredPersistentSettings(row.metadata, CATALOG.persistent_defaults.fallback_models)!;
           const patch = (payload.settings ?? {}) as Record<string, unknown>;
           const turnUsageMode = typeof patch.turn_usage_mode === "string"
             ? patch.turn_usage_mode
@@ -101,6 +106,7 @@ function setup() {
       timeoutMs: 1_000,
     } as never,
     createSession: async () => ({ status: 201, body: {} }),
+    modelCatalog: catalog,
     presets: {
       resolveStaticForNode: (_nodeId: string, id: string) => ({
         id,
@@ -188,11 +194,11 @@ describe("update_persistent_session_settings MCP tool", () => {
     const legacy = readStoredPersistentSettings([{
       type: "persistent_settings",
       value: { default_model: legacySelection, fallback_model: legacySelection },
-    }]);
+    }], CATALOG.persistent_defaults.fallback_models);
     const legacyNull = readStoredPersistentSettings([{
       type: "persistent_settings",
       value: { default_model: legacySelection, fallback_model: null },
-    }]);
+    }], CATALOG.persistent_defaults.fallback_models);
 
     expect(legacy?.fallback_models).toEqual([legacySelection]);
     expect(legacyNull?.fallback_models).toEqual([]);

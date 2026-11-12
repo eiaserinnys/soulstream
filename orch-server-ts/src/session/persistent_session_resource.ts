@@ -3,6 +3,7 @@ import {
   readPersistentEnabled,
   readPersistentPendingTarget,
   readStoredPersistentSettings,
+  type PersistentModelSelection,
   type PersistentTurnUsageMode,
   type PersistentPendingTarget,
 } from "@soulstream/wire-schema/persistent-session-settings";
@@ -60,9 +61,10 @@ export function currentModelOfRow(row: PersistentSessionRowSource): PersistentMo
 export function buildPersistentSessionResource(
   row: PersistentSessionRowSource,
   agentName: string | null,
+  fallbackModelsDefault: readonly PersistentModelSelection[],
 ): PersistentSessionResource {
   const current = currentModelOfRow(row);
-  const stored = readStoredPersistentSettings(row.metadata);
+  const stored = readStoredPersistentSettings(row.metadata, fallbackModelsDefault);
   // A PAS that predates persistent_settings reads as its current model with server display defaults;
   // nothing is written until the first save.
   const settings: PersistentSettingsView = stored === undefined

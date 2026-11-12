@@ -128,7 +128,7 @@ const overview: UsageStatsOverview = {
   policies: {
     date_attribution: "recorded_terminal",
     project_attribution: "current_folder",
-    price_version: "api-list-usd-2026-10-19-v1",
+    price_version: "test-price-version",
   },
   projection_status: { state: "ready", covered_since: "2026-09-01" },
   totals: aggregate,
