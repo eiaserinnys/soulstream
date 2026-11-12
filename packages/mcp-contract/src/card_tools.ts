@@ -51,7 +51,7 @@ export function cardQuestionInputIssues(input: CardQuestionInputShape): { path: 
   const issues: { path: (string | number)[]; message: string }[] = [];
   const entries = Array.isArray(input.options) ? input.options : [];
   const hasText = entries.some((entry) => typeof entry === "string");
-  const hasObject = entries.some((entry) => typeof entry !== "string");
+  const hasObject = entries.some((entry) => typeof entry === "object" && entry !== null);
   if (hasText && hasObject) {
     issues.push({ path: ["options"], message: "문자열 선택지와 객체 선택지를 섞지 않습니다" });
     return issues;
@@ -59,8 +59,7 @@ export function cardQuestionInputIssues(input: CardQuestionInputShape): { path: 
   const newShape = input.title !== undefined || input.kind !== undefined || input.questionId !== undefined
     || input.attachments !== undefined || hasObject;
   if (!newShape) {
-    if (input.options === undefined) issues.push({ path: ["options"], message: "옛 꼴 질문에는 options가 필요합니다" });
-    else if (!cardQuestionOptionsSchema.safeParse(input.options).success)
+    if (input.options === undefined || !cardQuestionOptionsSchema.safeParse(input.options).success)
       issues.push({ path: ["options"], message: "선택지는 1~3개, 각 12자 이하로 줄이고 설명은 질문 글에 쓰세요" });
     return issues;
   }

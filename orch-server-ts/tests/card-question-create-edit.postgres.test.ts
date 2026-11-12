@@ -49,16 +49,17 @@ describe("card question creation and in-place edit", () => {
     await sql`DELETE FROM sessions`;
     await sql`INSERT INTO sessions(session_id,folder_id,node_id,agent_id,status,metadata) VALUES
       ('pas','edit-folder','node','supervisor','running',${sql.json([{ type: "persistent_session", value: { enabled: true } }])}),
-      ('worker','edit-folder','node','worker','running','[]')`;
+      ('worker','edit-folder','node','worker','running','[]'),
+      ('worker-2','edit-folder','node','worker','running','[]')`;
     asked.mockClear();
     timeline.mockClear();
   });
   afterAll(async () => { await sql?.end({ timeout: 2 }); stop?.(); });
 
-  async function createCard(title: string): Promise<string> {
+  async function createCard(title: string, sessionId = "worker"): Promise<string> {
     const result = await cards.createCard({
       actorKind: "agent", actorSessionId: "pas", folderId: "edit-folder", title, request: "",
-      assignee: { kind: "session", sessionId: "worker" },
+      assignee: { kind: "session", sessionId },
     });
     return String(result.operation.target_id);
   }
@@ -73,9 +74,9 @@ describe("card question creation and in-place edit", () => {
     )`;
   }
 
-  function ask(body: Record<string, unknown>) {
+  function ask(body: Record<string, unknown>, sessionId = "worker") {
     return cards.askQuestion({
-      actorKind: "agent", actorSessionId: "worker", cardId: String(body.cardId), ...body,
+      actorKind: "agent", actorSessionId: sessionId, cardId: String(body.cardId), ...body,
     } as never);
   }
 
@@ -243,11 +244,11 @@ describe("card question creation and in-place edit", () => {
     const edit = { cardId, questionId, title: "고칠 것", text: "고친 배경", kind: "choice", options: [{ label: "진행", description: "갑니다" }] };
     await expect(ask(edit)).rejects.toMatchObject({ statusCode: 422, code: "INVALID_CARD_REQUEST", message: "이미 답한 질문은 고칠 수 없습니다" });
 
-    const withdrawnCardId = await createCard("철회한 카드");
-    await ask({ cardId: withdrawnCardId, title: "철회할 것", text: "배경", kind: "choice", options: ["진행"] });
+    const withdrawnCardId = await createCard("철회한 카드", "worker-2");
+    await ask({ cardId: withdrawnCardId, title: "철회할 것", text: "배경", kind: "choice", options: ["진행"] }, "worker-2");
     const withdrawnId = String((await sql<{ id: string }[]>`SELECT id FROM card_questions WHERE card_id=${withdrawnCardId}`)[0]!.id);
-    await cards.withdrawQuestion({ actorKind: "agent", actorSessionId: "worker", cardId: withdrawnCardId, questionId: withdrawnId, reason: "대화로 정리" });
-    await expect(ask({ ...edit, cardId: withdrawnCardId, questionId: withdrawnId }))
+    await cards.withdrawQuestion({ actorKind: "agent", actorSessionId: "worker-2", cardId: withdrawnCardId, questionId: withdrawnId, reason: "대화로 정리" });
+    await expect(ask({ ...edit, cardId: withdrawnCardId, questionId: withdrawnId }, "worker-2"))
       .rejects.toMatchObject({ statusCode: 422, code: "INVALID_CARD_REQUEST", message: "철회된 질문은 고칠 수 없습니다" });
 
     await expect(ask({ ...edit, questionId: "no-such-question" }))
@@ -269,13 +270,18 @@ describe("card question creation and in-place edit", () => {
     expect(attachment).toMatchObject({ attachment_id: "asset-1", read_context: { type: "card", id: cardId } });
     expect(String(attachment.url)).toContain(`/api/attachments/asset-1/content?context_type=card&context_id=${cardId}`);
 
-    const otherCardId = await createCard("다른 카드");
+    const otherCardId = await createCard("다른 카드", "worker-2");
     await insertImageAsset("asset-other", otherCardId, "worker");
     await expect(ask({
       cardId, title: "남의 첨부", text: "다른 카드 첨부", kind: "choice",
       options: [{ label: "진행", description: "갑니다" }],
       attachments: [{ type: "image", label: "남의 시안", attachment_id: "asset-other" }],
     })).rejects.toMatchObject({ statusCode: 403, code: "ATTACHMENT_CARD_SCOPE_DENIED" });
+    await expect(ask({
+      cardId, title: "긴 이름", text: "첨부 이름은 증거와 같은 검사를 지난다", kind: "choice",
+      options: [{ label: "진행", description: "갑니다" }],
+      attachments: [{ type: "image", label: "가".repeat(41), attachment_id: "asset-1" }],
+    })).rejects.toMatchObject({ statusCode: 422 });
     expect(Number((await sql<{ n: number }[]>`SELECT COUNT(*) AS n FROM card_questions WHERE card_id=${cardId}`)[0]!.n)).toBe(1);
   });
 });

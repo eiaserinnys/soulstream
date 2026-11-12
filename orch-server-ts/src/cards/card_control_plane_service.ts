@@ -46,6 +46,7 @@ import {
   openCardItemFix,
   questionCardNow,
   reportCardItem as reportItemRule,
+  assertShortCardText,
   checkCardReviewAsk,
   reviewCardNowFromCheckedAsk,
   setCardItems as setItemsRule,
@@ -450,7 +451,8 @@ export class CardControlPlaneService {
     const kind:CardQuestionKind=params.kind ?? "choice";
     const title=params.title ?? null;
     const options:(string | CardQuestionOption)[]=kind === "request" ? [{label:"했어"}] : params.options ?? [];
-    const attachments=params.attachments ?? [];
+    const attachments=(params.attachments ?? []).map(attachment =>
+      ({...attachment,label:assertShortCardText("attachments.label",attachment.label,40)}));
     const questionId=params.questionId ?? randomUUID();
     const payload:Record<string,unknown>={ text:params.text,options:cardQuestionOptionLabels(options) ?? [],
       kind,is_update:editing };
