@@ -45,6 +45,11 @@ import type {
 } from "./runner_command_dispatcher.js";
 import { normalizeRunnerInterventionResult } from "./runner_intervention_result.js";
 import {
+  RUNNER_INTERVENTION_RECEIPT_CAPABILITY,
+  judgeRunnerInterventionReceipt,
+  type RunnerInterventionReceiptVerdict,
+} from "./runner_intervention_receipt.js";
+import {
   runnerInterventionApplyCommandId,
   runnerInterventionDiscardCommandId,
 } from "./runner_intervention_identity.js";
@@ -628,6 +633,30 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     ), timeoutScope);
     assertCommandAccepted(result);
     return result.result.status === "ok" ? result.result.data : undefined;
+  }
+
+  /**
+   * Asks the runner that should have received this intervention number whether
+   * it did. The expected registration is the one the node handed the
+   * intervention to; an answer from any other runner registration proves
+   * nothing about that handoff.
+   *
+   * 모름은 자동으로 다시 보내지 않는다. 적용됨은 엔진이 입력을 받았다는 뜻이지
+   * 맡긴 일이 끝났다는 뜻이 아니다.
+   */
+  async lookupInterventionReceipt(
+    interventionId: string,
+    expectedRegistrationId: string,
+  ): Promise<RunnerInterventionReceiptVerdict> {
+    let answer: unknown;
+    try {
+      answer = await this.invoke(RUNNER_INTERVENTION_RECEIPT_CAPABILITY, [interventionId]);
+    } catch {
+      // not_supported (a runner that predates the capability), timeout,
+      // disconnect, missing storage, or a failed lookup all mean unknown.
+      return "unknown";
+    }
+    return judgeRunnerInterventionReceipt(answer, expectedRegistrationId);
   }
 
   private async initialize(): Promise<void> {

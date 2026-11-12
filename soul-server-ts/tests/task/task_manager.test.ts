@@ -1577,6 +1577,8 @@ describe("TaskManager.addIntervention (B-4)", () => {
       prompt: "focus on the failing test\n\n[첨부 파일 로컬 경로: /tmp/a.png]",
       imageAttachmentPaths: ["/tmp/a.png"],
       turnOrigin: { kind: "user_message" },
+      // The node mints a handoff id when the message has no durable identity.
+      runnerInterventionId: expect.any(String),
     });
     expect(mocks.enqueueEvent).toHaveBeenCalledWith(
       "s-live",
