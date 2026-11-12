@@ -225,17 +225,17 @@ export class WorktreeService implements WorktreeExecutionResolver {
   }
 
   /**
-   * restricted 세션의 worktree 소유 판정. 생성자(createdBySessionId)가
-   * authenticated sessionId와 같아야 한다. 조회 실패는 소유 아님으로 본다.
+   * 지우기·브랜치 삭제 허용 여부. 판정은 호스트의 단일 소유 규칙이 내려주는
+   * removableByCaller(소유 또는 소유 해제)를 그대로 쓴다. 조회 실패는 거부로 본다.
    */
-  async ownsWorktree(actorSessionId: string, worktreeId: string): Promise<boolean> {
+  async canRemoveWorktree(actorSessionId: string, worktreeId: string): Promise<boolean> {
     return await this.options.git.withOperationDeadline(async () => {
       const [record] = await this.options.host.list({
         actorSessionId,
         nodeId: this.options.nodeId,
         worktreeId,
       });
-      return Boolean(record && record.createdBySessionId === actorSessionId);
+      return Boolean(record && record.removableByCaller === true);
     });
   }
 
@@ -421,7 +421,7 @@ export class WorktreeService implements WorktreeExecutionResolver {
       nodeId: this.options.nodeId,
       worktreeId: input.worktreeId,
     });
-    if (!initialRecord || !initialRecord.mutableByCaller) {
+    if (!initialRecord || !initialRecord.removableByCaller) {
       throw new WorktreeServiceError("WORKTREE_NOT_OWNED", input.worktreeId);
     }
     if (initialRecord.state === "removed") {
@@ -449,7 +449,7 @@ export class WorktreeService implements WorktreeExecutionResolver {
       nodeId: this.options.nodeId,
       worktreeId: input.worktreeId,
     });
-    if (!initialRecord || !initialRecord.mutableByCaller) {
+    if (!initialRecord || !initialRecord.removableByCaller) {
       throw new WorktreeServiceError("WORKTREE_NOT_OWNED", input.worktreeId);
     }
     if (initialRecord.state !== "removed") {
@@ -463,7 +463,7 @@ export class WorktreeService implements WorktreeExecutionResolver {
         nodeId: this.options.nodeId,
         worktreeId: input.worktreeId,
       });
-      if (!record || !record.mutableByCaller) {
+      if (!record || !record.removableByCaller) {
         throw new WorktreeServiceError("WORKTREE_NOT_OWNED", input.worktreeId);
       }
       if (record.state !== "removed") {
