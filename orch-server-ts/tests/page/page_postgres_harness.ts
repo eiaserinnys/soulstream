@@ -513,7 +513,13 @@ CREATE TABLE card_questions (
     answered_by TEXT,
     withdrawn_at TIMESTAMPTZ,
     withdrawn_by_session_id TEXT,
-    withdrawal_reason TEXT
+    withdrawal_reason TEXT,
+    title TEXT,
+    kind TEXT CHECK (kind IN ('choice','request')),
+    attachments JSONB CHECK (attachments IS NULL OR jsonb_typeof(attachments) = 'array'),
+    selected_option TEXT,
+    revision INTEGER CHECK (revision >= 1),
+    revised_at TIMESTAMPTZ
 );
 CREATE INDEX idx_card_questions_card ON card_questions(card_id, asked_at);
 CREATE TABLE card_comments (
@@ -525,10 +531,12 @@ CREATE TABLE card_comments (
     kind TEXT NOT NULL DEFAULT 'comment' CHECK (kind IN ('comment','spoken','note')),
     body TEXT NOT NULL,
     item_id INTEGER,
+    question_id TEXT REFERENCES card_questions(id) ON DELETE SET NULL,
     delivered_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_card_comments_card ON card_comments(card_id, created_at);
+CREATE INDEX idx_card_comments_question ON card_comments(question_id, created_at, id) WHERE question_id IS NOT NULL;
 CREATE TABLE folder_operations (
     id               TEXT PRIMARY KEY,
     folder_id       TEXT NOT NULL REFERENCES folders(id) ON DELETE RESTRICT,

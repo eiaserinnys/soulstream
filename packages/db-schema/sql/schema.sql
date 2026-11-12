@@ -3683,7 +3683,6 @@ CREATE TABLE IF NOT EXISTS card_comments (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_card_comments_card ON card_comments(card_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_card_comments_question ON card_comments(question_id, created_at, id) WHERE question_id IS NOT NULL;
 INSERT INTO system_settings(setting_key,value,version,updated_by)
 VALUES ('card_dispatch','{"nodeConcurrency":{"default":2}}'::jsonb,1,'migration:109_cards') ON CONFLICT (setting_key) DO NOTHING;
 
@@ -4590,6 +4589,7 @@ ALTER TABLE card_questions
 
 ALTER TABLE card_comments
     ADD COLUMN IF NOT EXISTS question_id TEXT REFERENCES card_questions(id) ON DELETE SET NULL;
+CREATE INDEX IF NOT EXISTS idx_card_comments_question ON card_comments(question_id, created_at, id) WHERE question_id IS NOT NULL;
 
 ALTER TABLE session_statistics_daily_sessions
     ADD COLUMN IF NOT EXISTS folder_id TEXT,

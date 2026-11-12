@@ -13668,7 +13668,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -32400,7 +32406,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -32894,7 +32906,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -32912,7 +32930,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -33741,7 +33765,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -34235,7 +34265,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -34253,7 +34289,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -35082,7 +35124,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -35575,7 +35623,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -35593,7 +35647,13 @@
           "answered_by": null,
           "withdrawn_at": "2026-11-11T14:16:54.308Z",
           "withdrawn_by_session_id": "other",
-          "withdrawal_reason": "결정됨"
+          "withdrawal_reason": "결정됨",
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -36422,7 +36482,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -36957,7 +37023,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -36975,7 +37047,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -37559,7 +37637,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -37577,7 +37661,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -38410,7 +38500,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -38945,7 +39041,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -38963,7 +39065,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -39547,7 +39655,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -39565,7 +39679,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -40398,7 +40518,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -40894,7 +41020,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -40912,7 +41044,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -60738,7 +60876,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -62731,7 +62875,8 @@
           "item_id": null,
           "delivered_at": null,
           "created_at": "2026-11-11T14:16:58.806Z",
-          "attachment_refs": []
+          "attachment_refs": [],
+          "question_id": null
         },
         "statusCode": null,
         "code": null,
@@ -85264,7 +85409,8 @@
           "item_id": null,
           "delivered_at": null,
           "created_at": "2026-11-11T14:17:04.586Z",
-          "attachment_refs": []
+          "attachment_refs": [],
+          "question_id": null
         },
         "statusCode": null,
         "code": null,
@@ -96911,7 +97057,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -97446,7 +97598,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -97464,7 +97622,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -98048,7 +98212,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -98066,7 +98236,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -98676,7 +98852,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -98694,7 +98876,13 @@
           "answered_by": null,
           "withdrawn_at": "2026-11-11T14:17:06.807Z",
           "withdrawn_by_session_id": "owner",
-          "withdrawal_reason": "결정됨"
+          "withdrawal_reason": "결정됨",
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 0,
@@ -99523,7 +99711,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -100058,7 +100252,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -100076,7 +100276,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -100660,7 +100866,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -100678,7 +100890,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -101288,7 +101506,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -101306,7 +101530,13 @@
           "answered_by": null,
           "withdrawn_at": "2026-11-11T14:17:07.142Z",
           "withdrawn_by_session_id": "owner",
-          "withdrawal_reason": "결정됨"
+          "withdrawal_reason": "결정됨",
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -108518,7 +108748,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -109152,7 +109388,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -109170,7 +109412,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -111165,7 +111413,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -111799,7 +112053,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -111817,7 +112077,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -136068,7 +136334,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -136563,7 +136835,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -136581,7 +136859,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -137097,7 +137381,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -137115,7 +137405,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -137618,7 +137914,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -137636,7 +137938,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -138288,7 +138596,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -138306,7 +138620,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -150192,7 +150512,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -150984,7 +151310,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -151002,7 +151334,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -151810,7 +152148,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -151828,7 +152172,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 0,
@@ -152538,7 +152888,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -152556,7 +152912,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 0,
@@ -153268,7 +153630,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -153286,7 +153654,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         },
         {
           "id": "22002c9e-1a29-42d5-94e2-4e9fc23efef0",
@@ -153302,7 +153676,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -154131,7 +154511,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         },
         {
           "id": "22002c9e-1a29-42d5-94e2-4e9fc23efef0",
@@ -154147,7 +154533,13 @@
           "answered_by": null,
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -154165,7 +154557,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         },
         {
           "id": "22002c9e-1a29-42d5-94e2-4e9fc23efef0",
@@ -154181,7 +154579,13 @@
           "answered_by": null,
           "withdrawn_at": "2026-11-11T14:17:13.989Z",
           "withdrawn_by_session_id": "owner",
-          "withdrawal_reason": "확인"
+          "withdrawal_reason": "확인",
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 1,
@@ -155027,7 +155431,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         },
         {
           "id": "22002c9e-1a29-42d5-94e2-4e9fc23efef0",
@@ -155043,7 +155453,13 @@
           "answered_by": null,
           "withdrawn_at": "2026-11-11T14:17:13.989Z",
           "withdrawn_by_session_id": "owner",
-          "withdrawal_reason": "확인"
+          "withdrawal_reason": "확인",
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -155061,7 +155477,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         },
         {
           "id": "22002c9e-1a29-42d5-94e2-4e9fc23efef0",
@@ -155077,7 +155499,13 @@
           "answered_by": null,
           "withdrawn_at": "2026-11-11T14:17:13.989Z",
           "withdrawn_by_session_id": "owner",
-          "withdrawal_reason": "확인"
+          "withdrawal_reason": "확인",
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 0,
@@ -155825,7 +156253,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         },
         {
           "id": "22002c9e-1a29-42d5-94e2-4e9fc23efef0",
@@ -155841,7 +156275,13 @@
           "answered_by": null,
           "withdrawn_at": "2026-11-11T14:17:13.989Z",
           "withdrawn_by_session_id": "owner",
-          "withdrawal_reason": "확인"
+          "withdrawal_reason": "확인",
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -155859,7 +156299,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         },
         {
           "id": "22002c9e-1a29-42d5-94e2-4e9fc23efef0",
@@ -155875,7 +156321,13 @@
           "answered_by": null,
           "withdrawn_at": "2026-11-11T14:17:13.989Z",
           "withdrawn_by_session_id": "owner",
-          "withdrawal_reason": "확인"
+          "withdrawal_reason": "확인",
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 0,
@@ -156624,7 +157076,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         },
         {
           "id": "22002c9e-1a29-42d5-94e2-4e9fc23efef0",
@@ -156640,7 +157098,13 @@
           "answered_by": null,
           "withdrawn_at": "2026-11-11T14:17:13.989Z",
           "withdrawn_by_session_id": "owner",
-          "withdrawal_reason": "확인"
+          "withdrawal_reason": "확인",
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -156658,7 +157122,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         },
         {
           "id": "22002c9e-1a29-42d5-94e2-4e9fc23efef0",
@@ -156674,7 +157144,13 @@
           "answered_by": null,
           "withdrawn_at": "2026-11-11T14:17:13.989Z",
           "withdrawn_by_session_id": "owner",
-          "withdrawal_reason": "확인"
+          "withdrawal_reason": "확인",
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 0,
@@ -157422,7 +157898,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         },
         {
           "id": "22002c9e-1a29-42d5-94e2-4e9fc23efef0",
@@ -157438,7 +157920,13 @@
           "answered_by": null,
           "withdrawn_at": "2026-11-11T14:17:13.989Z",
           "withdrawn_by_session_id": "owner",
-          "withdrawal_reason": "확인"
+          "withdrawal_reason": "확인",
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -157456,7 +157944,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         },
         {
           "id": "22002c9e-1a29-42d5-94e2-4e9fc23efef0",
@@ -157472,7 +157966,13 @@
           "answered_by": null,
           "withdrawn_at": "2026-11-11T14:17:13.989Z",
           "withdrawn_by_session_id": "owner",
-          "withdrawal_reason": "확인"
+          "withdrawal_reason": "확인",
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 0,
@@ -158223,7 +158723,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         },
         {
           "id": "22002c9e-1a29-42d5-94e2-4e9fc23efef0",
@@ -158239,7 +158745,13 @@
           "answered_by": null,
           "withdrawn_at": "2026-11-11T14:17:13.989Z",
           "withdrawn_by_session_id": "owner",
-          "withdrawal_reason": "확인"
+          "withdrawal_reason": "확인",
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -158257,7 +158769,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         },
         {
           "id": "22002c9e-1a29-42d5-94e2-4e9fc23efef0",
@@ -158273,7 +158791,13 @@
           "answered_by": null,
           "withdrawn_at": "2026-11-11T14:17:13.989Z",
           "withdrawn_by_session_id": "owner",
-          "withdrawal_reason": "확인"
+          "withdrawal_reason": "확인",
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 0,
@@ -159023,7 +159547,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         },
         {
           "id": "22002c9e-1a29-42d5-94e2-4e9fc23efef0",
@@ -159039,7 +159569,13 @@
           "answered_by": null,
           "withdrawn_at": "2026-11-11T14:17:13.989Z",
           "withdrawn_by_session_id": "owner",
-          "withdrawal_reason": "확인"
+          "withdrawal_reason": "확인",
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "afterQuestions": [
@@ -159057,7 +159593,13 @@
           "answered_by": "director",
           "withdrawn_at": null,
           "withdrawn_by_session_id": null,
-          "withdrawal_reason": null
+          "withdrawal_reason": null,
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         },
         {
           "id": "22002c9e-1a29-42d5-94e2-4e9fc23efef0",
@@ -159073,7 +159615,13 @@
           "answered_by": null,
           "withdrawn_at": "2026-11-11T14:17:13.989Z",
           "withdrawn_by_session_id": "owner",
-          "withdrawal_reason": "확인"
+          "withdrawal_reason": "확인",
+          "title": null,
+          "kind": null,
+          "attachments": null,
+          "selected_option": null,
+          "revision": null,
+          "revised_at": null
         }
       ],
       "versionDelta": 0,
@@ -162022,7 +162570,8 @@
             "item_id": null,
             "delivered_at": null,
             "created_at": "2026-11-11T14:17:14.466Z",
-            "attachment_refs": []
+            "attachment_refs": [],
+            "question_id": null
           },
           "previousStatus": "blocked",
           "questionChanged": false
@@ -162308,7 +162857,8 @@
               "item_id": null,
               "delivered_at": null,
               "created_at": "2026-11-11T14:17:14.466Z",
-              "attachment_refs": []
+              "attachment_refs": [],
+              "question_id": null
             }
           ],
           "operations": [

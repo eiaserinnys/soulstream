@@ -53,6 +53,7 @@ describe("card question storage and read contract", () => {
   async function createCard(title: string): Promise<string> {
     const result = await cards.createCard({
       actorKind: "agent", actorSessionId: "pas", folderId: "contract-folder", title, request: "",
+      assignee: { kind: "session", sessionId: "pas" },
     });
     return String(result.operation.target_id);
   }
