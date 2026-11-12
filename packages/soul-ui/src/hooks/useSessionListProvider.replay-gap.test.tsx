@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  PersistentReportEntry,
   SessionNotice,
   SessionSummary,
   SoulSSEEvent,
@@ -113,6 +114,21 @@ function deferred<T>(): Deferred<T> {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((done) => { resolve = done; });
   return { promise, resolve };
+}
+
+function questionEntry(key: string): PersistentReportEntry {
+  return {
+    key,
+    kind: "ask",
+    title: "질문",
+    card_numbers: [1268],
+    context: "카드 #1268 질문",
+    action: "답해 주세요",
+    options: [],
+    state: "open",
+    answer: "",
+    updated_at: "2026-11-12T00:00:00.000Z",
+  };
 }
 
 async function waitFor(assertion: () => void): Promise<void> {
@@ -759,5 +775,123 @@ describe("useSessionListProvider replay-gap hydration", () => {
       attentionRevision: 12,
     });
     expect(onStreamReset).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies the replay-gap REST report against the value captured before the request", async () => {
+    const initial: SessionSummary = {
+      agentSessionId: "session-a",
+      status: "running",
+      sessionType: "claude",
+      eventCount: 10,
+      createdAt: "2026-09-07T00:00:00.000Z",
+      updatedAt: "2026-09-07T00:00:00.000Z",
+    };
+    const recovered: SessionSummary = {
+      ...initial,
+      updatedAt: "2026-09-07T00:00:01.000Z",
+      persistentReport: [],
+    };
+    const provider: SessionStorageProvider = {
+      fetchSessions: vi.fn<(_options?: FetchSessionsOptions) => Promise<SessionListResult>>()
+        .mockResolvedValueOnce({ sessions: [initial], total: 1, hasMore: false })
+        .mockResolvedValueOnce({ sessions: [recovered], total: 1, hasMore: false }),
+      subscribe: vi.fn(() => () => undefined),
+    };
+    const onStreamReset = vi.fn();
+
+    flushSync(() => {
+      root.render(createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(Probe, { provider, onStreamReset }),
+      ));
+    });
+    await waitFor(() => expect(provider.fetchSessions).toHaveBeenCalledTimes(1));
+
+    useDashboardStore.getState().setPersistentReport("session-a", [questionEntry("cq_X")]);
+
+    const stream = vi.mocked(useSessionStreamSSE).mock.calls.at(-1)?.[0];
+    stream?.onReplayGap?.({
+      type: "replay_gap",
+      latest_id: 99,
+      instance_id: "orch-a",
+    });
+
+    await waitFor(() => {
+      expect(provider.fetchSessions).toHaveBeenCalledTimes(2);
+      expect(useDashboardStore.getState().persistentReports["session-a"]).toEqual([]);
+    });
+    expect(onStreamReset).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a newer SSE report when the delayed replay-gap REST response lands", async () => {
+    const initial: SessionSummary = {
+      agentSessionId: "session-a",
+      status: "running",
+      sessionType: "claude",
+      eventCount: 10,
+      createdAt: "2026-09-07T00:00:00.000Z",
+      updatedAt: "2026-09-07T00:00:00.000Z",
+    };
+    const recovered: SessionSummary = {
+      ...initial,
+      updatedAt: "2026-09-07T00:00:01.000Z",
+      persistentReport: [],
+    };
+    const recovery = deferred<SessionListResult>();
+    let recovering = false;
+    const provider: SessionStorageProvider = {
+      fetchSessions: vi.fn(async () => (
+        recovering ? recovery.promise : { sessions: [initial], total: 1, hasMore: false }
+      )),
+      subscribe: vi.fn(() => () => undefined),
+    };
+    const onStreamReset = vi.fn();
+
+    flushSync(() => {
+      root.render(createElement(
+        QueryClientProvider,
+        { client: queryClient },
+        createElement(Probe, { provider, onStreamReset }),
+      ));
+    });
+    await waitFor(() => expect(provider.fetchSessions).toHaveBeenCalledTimes(1));
+
+    useDashboardStore.getState().setPersistentReport("session-a", [questionEntry("cq_X")]);
+    const stream = vi.mocked(useSessionStreamSSE).mock.calls.at(-1)?.[0];
+    recovering = true;
+    stream?.onReplayGap?.({
+      type: "replay_gap",
+      latest_id: 99,
+      instance_id: "orch-a",
+    });
+    await waitFor(() => expect(provider.fetchSessions).toHaveBeenCalledTimes(2));
+
+    reactTestEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => {
+      stream?.onSessionUpdated?.({
+        type: "session_updated",
+        agent_session_id: "session-a",
+        persistent_report: [questionEntry("cq_Y")],
+      });
+    });
+    reactTestEnvironment.IS_REACT_ACT_ENVIRONMENT = false;
+    expect(useDashboardStore.getState().persistentReports["session-a"])
+      .toMatchObject([{ key: "cq_Y" }]);
+
+    reactTestEnvironment.IS_REACT_ACT_ENVIRONMENT = true;
+    await act(async () => {
+      recovery.resolve({ sessions: [recovered], total: 1, hasMore: false });
+      await waitFor(() => {
+        expect(
+          queryClient.getQueryData<{ pages: Array<{ sessions: SessionSummary[] }> }>(["sessions", "feed", null])
+            ?.pages[0].sessions[0]?.updatedAt,
+        ).toBe(recovered.updatedAt);
+      });
+    });
+    reactTestEnvironment.IS_REACT_ACT_ENVIRONMENT = false;
+
+    expect(useDashboardStore.getState().persistentReports["session-a"])
+      .toMatchObject([{ key: "cq_Y" }]);
   });
 });

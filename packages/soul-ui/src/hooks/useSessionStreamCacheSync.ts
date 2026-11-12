@@ -18,6 +18,7 @@ import { useDashboardStore } from "../stores/dashboard-store";
 import { toSessionSummary } from "../shared/mappers";
 import type {
   CatalogState,
+  PersistentReportEntry,
   SessionSummary,
 } from "../shared/types";
 import type {
@@ -120,6 +121,11 @@ export interface UseSessionStreamCacheSyncOptions {
 
 export type HydrateSessionSnapshots = (
   sessions: readonly SessionSummary[],
+  /**
+   * REST 요청을 시작하기 전의 판 값. 응답이 오는 사이 SSE가 새 판을 썼으면
+   * 응답의 판으로 덮지 않도록 비교 쓰기의 기준으로 쓴다.
+   */
+  reportBaselines: Readonly<Record<string, PersistentReportEntry[] | undefined>>,
 ) => void;
 
 export function useSessionStreamCacheSync(
@@ -161,7 +167,10 @@ export function useSessionStreamCacheSync(
     };
   }, [enabled]);
 
-  const hydrateSessionSnapshots = useCallback((sessions: readonly SessionSummary[]) => {
+  const hydrateSessionSnapshots = useCallback((
+    sessions: readonly SessionSummary[],
+    reportBaselines: Readonly<Record<string, PersistentReportEntry[] | undefined>>,
+  ) => {
     const snapshots = new Map(
       sessions.map((session) => [session.agentSessionId, session] as const),
     );
@@ -169,7 +178,9 @@ export function useSessionStreamCacheSync(
       hydrateNoticeBaseline(noticeBaselinesRef.current, session);
       const state = useDashboardStore.getState();
       if (session.persistentReport !== undefined) {
-        state.setPersistentReport(session.agentSessionId, session.persistentReport, { current: undefined });
+        state.setPersistentReport(session.agentSessionId, session.persistentReport, {
+          current: reportBaselines[session.agentSessionId],
+        });
       }
     }
 
