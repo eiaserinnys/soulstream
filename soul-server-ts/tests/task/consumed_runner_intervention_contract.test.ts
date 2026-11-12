@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 
 import {
   discardConsumedRunnerIntervention,
@@ -7,7 +7,6 @@ import {
 import type { InterventionMessage, Task } from "../../src/task/task_models.js";
 
 const DELIVERY_ID = "51515151-5151-4151-8151-515151515151";
-const RUNNER_INTERVENTION_ID = "61616161-6161-4161-8161-616161616161";
 const RELATION_KEY = "claude_runtime:caller:child:task@1";
 const COMPLETION_ID = "completion:consumed-runner-contract";
 
@@ -20,14 +19,10 @@ function message(): InterventionMessage {
     deliveryIntent: "runtime_followup",
     completionId: COMPLETION_ID,
     relationKey: RELATION_KEY,
-    runnerInterventionId: RUNNER_INTERVENTION_ID,
   };
 }
 
-function runnerTask(
-  interventionQueue: InterventionMessage[],
-  discardIntervention: (interventionId: string) => Promise<void>,
-): Task {
+function runnerTask(interventionQueue: InterventionMessage[]): Task {
   return {
     agentSessionId: "caller",
     prompt: "foreground turn",
@@ -37,44 +32,28 @@ function runnerTask(
     interventionQueue,
     runner: {
       engine: {} as never,
-      dispatcher: { discardIntervention } as never,
+      dispatcher: {} as never,
       eventPersistence: "runner",
     },
   };
 }
 
 describe("consumed runner intervention discard contract", () => {
-  it("does not guess a runner command identity when no local queue item exists", async () => {
-    const discardIntervention = vi.fn(async () => undefined);
-    const task = runnerTask([], discardIntervention);
+  it("does nothing when no local queue item matches the consumed delivery", async () => {
+    const task = runnerTask([]);
 
     await expect(
       discardConsumedRunnerIntervention(task, DELIVERY_ID),
     ).resolves.toBeUndefined();
-    expect(discardIntervention).not.toHaveBeenCalled();
-  });
-
-  it("discards one exact queued item by its stored runner intervention id", async () => {
-    const discardIntervention = vi.fn(async () => undefined);
-    const task = runnerTask([message()], discardIntervention);
-
-    await discardConsumedRunnerIntervention(task, DELIVERY_ID);
-
-    expect(discardIntervention).toHaveBeenCalledTimes(1);
-    expect(discardIntervention).toHaveBeenCalledWith(RUNNER_INTERVENTION_ID);
     expect(task.interventionQueue).toEqual([]);
   });
 
-  it("exposes a real runner discard failure", async () => {
-    const discardIntervention = vi.fn(async () => {
-      throw new Error("durable discard failed");
-    });
-    const task = runnerTask([message()], discardIntervention);
+  it("removes exactly one queued item by its delivery id", async () => {
+    const task = runnerTask([message()]);
 
-    await expect(
-      discardConsumedRunnerIntervention(task, DELIVERY_ID),
-    ).rejects.toThrow("durable discard failed");
-    expect(discardIntervention).toHaveBeenCalledTimes(1);
+    await discardConsumedRunnerIntervention(task, DELIVERY_ID);
+
+    expect(task.interventionQueue).toEqual([]);
   });
 
   it("fails closed on consumed delivery identity mismatch", () => {

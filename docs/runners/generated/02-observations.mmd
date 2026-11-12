@@ -1,0 +1,17 @@
+stateDiagram-v2
+direction TB
+classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
+classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
+state "러너 등록 하나의 실행 명령 수명 기록" as runnerLifecycle {
+    direction TB
+    state "수명 기록 없음" as runnerLifecycle_none
+    state "실행 중" as runnerLifecycle_running
+    state "완료됨" as runnerLifecycle_completed
+    state "실패함" as runnerLifecycle_failed
+    state "닫힘" as runnerLifecycle_closed
+    state "치워짐" as runnerLifecycle_reaped
+    runnerLifecycle_running --> runnerLifecycle_running: 실행 중이고 번호가 같으면 진행을 적는다
+    runnerLifecycle_running --> runnerLifecycle_running: 실행 중이고 번호가 같으면 생존을 적는다
+    runnerLifecycle_running --> runnerLifecycle_running: 실행 중이고 번호가 같으면 도구 시작을 적는다
+    runnerLifecycle_running --> runnerLifecycle_running: 실행 중이고 번호가 같으면 도구 끝을 적는다
+}

@@ -13,18 +13,6 @@ export async function discardConsumedRunnerIntervention(
     throw new Error(`Consumed delivery ${deliveryId} queue identity disappeared`);
   }
   task.interventionQueue.splice(queuedIndex, 1);
-  if (task.runner?.eventPersistence !== "runner") return;
-  const discard = task.runner.dispatcher.discardIntervention;
-  if (!discard) {
-    throw new Error("runner intervention discard operation is unavailable");
-  }
-  if (!queued.runnerInterventionId) {
-    throw new Error(`Consumed delivery ${deliveryId} has no runner intervention identity`);
-  }
-  await discard.call(
-    task.runner.dispatcher,
-    queued.runnerInterventionId,
-  );
 }
 
 export function matchesConsumedDelivery(

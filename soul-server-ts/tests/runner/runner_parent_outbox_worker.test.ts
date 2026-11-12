@@ -268,70 +268,6 @@ describe("RunnerParentOutbox worker boundary", () => {
     await outbox.close();
   });
 
-  it("merges child and fallback interventions with child priority and removes fallbacks durably", async () => {
-    const { databasePath } = await createRunnerDatabase({
-      childInterventions: [
-        {
-          interventionId: "child-low",
-          message: { deliveryIntent: "completion_notification", text: "child low" },
-        },
-        {
-          interventionId: "shared",
-          message: { deliveryIntent: "user_message", text: "child shared" },
-        },
-      ],
-    });
-    stageHostFallbacks(databasePath, [
-      {
-        interventionId: "fallback-high",
-        message: { deliveryIntent: "user_message", text: "fallback high" },
-      },
-      {
-        interventionId: "shared",
-        message: { deliveryIntent: "user_message", text: "fallback shared" },
-      },
-    ]);
-
-    const outbox = await openOutbox(databasePath);
-    const inspection = await outbox.inspectPendingInterventions();
-
-    expect(inspection.childInterventionIds).toHaveLength(2);
-    expect(inspection.childInterventionIds).toEqual(
-      expect.arrayContaining(["child-low", "shared"]),
-    );
-    expect(inspection.shadowedFallbackIds).toEqual(["shared"]);
-    expect(inspection.interventions.map((entry) => entry.interventionId)).toEqual([
-      "shared",
-      "fallback-high",
-      "child-low",
-    ]);
-    expect(inspection.interventions[0]!.message).toMatchObject({
-      text: "child shared",
-    });
-    await expect(outbox.readPendingInterventions()).resolves.toEqual(
-      inspection.interventions,
-    );
-
-    await expect(outbox.readInterventionFallback("fallback-high")).resolves
-      .toMatchObject({ interventionId: "fallback-high" });
-    await outbox.removeInterventionFallback("fallback-high");
-    await expect(outbox.readInterventionFallback("fallback-high")).resolves
-      .toBeNull();
-
-    const verifier = RunnerHostStateStore.open(
-      runnerHostStatePath(databasePath),
-      undefined,
-      { sessionId: "session-a" },
-    );
-    try {
-      expect(verifier.readInterventionFallback("session-a", "fallback-high"))
-        .toBeNull();
-    } finally {
-      verifier.close();
-    }
-    await outbox.close();
-  });
-
   it("records, reads, and acknowledges host call receipts through the worker", async () => {
     const { databasePath } = await createRunnerDatabase({});
     const outbox = await openOutbox(databasePath);
@@ -681,10 +617,6 @@ async function createRunnerDatabase(options: {
   events?: string[];
   bootstrap?: boolean;
   ipcFrame?: string;
-  childInterventions?: Array<{
-    interventionId: string;
-    message: Record<string, unknown>;
-  }>;
 } = {}): Promise<RunnerDatabaseFixture> {
   const directory = await mkdtemp(join(tmpdir(), "parent-outbox-worker-"));
   tempDirectories.push(directory);
@@ -714,44 +646,9 @@ async function createRunnerDatabase(options: {
         payload: { type: "assistant_message", content: options.ipcFrame },
       });
     }
-    for (const intervention of options.childInterventions ?? []) {
-      await writer.stageIntervention({
-        interventionId: intervention.interventionId,
-        message: intervention.message,
-        queued: true,
-        queuedAt: "2026-11-11T00:00:02.000Z",
-      });
-    }
     return { directory, databasePath, bootstrap, events, ipcRecord };
   } finally {
     writer.close();
-  }
-}
-
-function stageHostFallbacks(
-  databasePath: string,
-  fallbacks: Array<{
-    interventionId: string;
-    message: Record<string, unknown>;
-  }>,
-): void {
-  const store = RunnerHostStateStore.open(
-    runnerHostStatePath(databasePath),
-    undefined,
-    { sessionId: "session-a" },
-  );
-  try {
-    for (const fallback of fallbacks) {
-      store.stageInterventionFallback({
-        sessionId: "session-a",
-        interventionId: fallback.interventionId,
-        message: fallback.message,
-        queued: true,
-        stagedAt: "2026-11-11T00:00:03.000Z",
-      });
-    }
-  } finally {
-    store.close();
   }
 }
 

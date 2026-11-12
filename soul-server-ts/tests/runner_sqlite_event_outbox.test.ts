@@ -26,12 +26,6 @@ import {
 } from "../src/runner/sqlite_event_outbox.js";
 import { buildDurableRunnerEvent } from
   "../src/runner/runner_child_runtime_helpers.js";
-import { resolveAmbiguousRunnerIntervention } from
-  "../src/runner/runner_intervention_resolution.js";
-import { applyInterventionCommandFrame, invokeCommandFrame } from
-  "../src/runner/frame_protocol.js";
-import { handleRunnerInterventionCommand } from
-  "../src/runner/runner_intervention_command.js";
 import { inspectRunnerOutboxCopy } from "../src/runner/runner_outbox_inspector.js";
 import { computeRunnerAckCheckpointHash } from "../src/runner/sqlite_event_outbox_database.js";
 import { RunnerParentOutbox } from "../src/runner/runner_parent_outbox.js";
@@ -431,716 +425,6 @@ describe("RunnerSqliteEventOutbox", () => {
     }
   });
 
-  it("atomically persists an intervention receipt and restart-safe next-turn inbox entry", async () => {
-    const path = await temporaryDatabasePath();
-    const writer = await RunnerSqliteEventOutbox.create(path);
-    await writer.initializeBootstrap(bootstrapInput());
-
-    const stage = {
-      interventionId: "intervention-1",
-      message: { text: "after restart", user: "soak" },
-      event: {
-        session_id: "session-a",
-        event_type: "intervention_sent",
-        payload: { type: "intervention_sent", text: "after restart", user: "soak" },
-        searchable_text: "after restart",
-        created_at: "2026-08-11T00:00:02.000Z",
-        semantic_dedupe_key: null,
-        session_effect: null,
-      },
-      queued: true,
-      queuedAt: "2026-08-11T00:00:02.000Z",
-    };
-    await expect(writer.stageIntervention(stage)).resolves.toEqual({
-      eventSourceSeq: 2,
-      queuePosition: 1,
-    });
-    await expect(writer.stageIntervention(stage)).resolves.toEqual({
-      eventSourceSeq: 2,
-      queuePosition: 1,
-    });
-    writer.close();
-
-    const recovered = await RunnerSqliteEventOutbox.open(path);
-    await expect(recovered.readRecord(2)).resolves.toMatchObject({
-      event_type: "intervention_sent",
-    });
-    await expect(recovered.readPendingInterventions()).resolves.toEqual([{
-      interventionId: "intervention-1",
-      message: { text: "after restart", user: "soak" },
-    }]);
-
-    const lifecycle = RunnerSqliteLifecycle.open(path, "session-a");
-    lifecycle.begin({
-      pid: process.pid,
-      commandId: "execute-followup",
-      progressedAt: "2026-08-11T00:00:03.000Z",
-    });
-    await expect(
-      recovered.claimIntervention("intervention-1", "execute-followup"),
-    ).resolves.toBe(true);
-    await expect(recovered.readPendingInterventions()).resolves.toEqual([]);
-    await recovered.finishExecution({
-      commandId: "execute-followup",
-      interventionId: "intervention-1",
-      state: "completed",
-      progressedAt: "2026-08-11T00:00:04.000Z",
-      terminalError: null,
-    });
-    await expect(recovered.readPendingInterventions()).resolves.toEqual([]);
-    lifecycle.close();
-    recovered.close();
-  });
-
-  it("persists priority queue positions and stable FIFO inside each lane", async () => {
-    const outbox = await createOutbox();
-
-    await outbox.stageIntervention({
-      interventionId: "low-1",
-      message: {
-        text: "completion",
-        user: "agent",
-        deliveryIntent: "completion_notification",
-      },
-      queued: true,
-      queuedAt: "2026-08-18T00:00:00.000Z",
-    });
-    await expect(outbox.stageIntervention({
-      interventionId: "high-1",
-      message: { text: "human", user: "human" },
-      queued: true,
-      queuedAt: "2026-08-18T00:00:01.000Z",
-    })).resolves.toMatchObject({ queuePosition: 1 });
-    await expect(outbox.stageIntervention({
-      interventionId: "low-2",
-      message: {
-        text: "legacy runtime",
-        user: "system",
-        source: "claude_runtime_task_followup",
-      },
-      queued: true,
-      queuedAt: "2026-08-18T00:00:02.000Z",
-    })).resolves.toMatchObject({ queuePosition: 3 });
-
-    await expect(outbox.readPendingInterventions()).resolves.toEqual([
-      { interventionId: "high-1", message: { text: "human", user: "human" } },
-      {
-        interventionId: "low-1",
-        message: {
-          text: "completion",
-          user: "agent",
-          deliveryIntent: "completion_notification",
-        },
-      },
-      {
-        interventionId: "low-2",
-        message: {
-          text: "legacy runtime",
-          user: "system",
-          source: "claude_runtime_task_followup",
-        },
-      },
-    ]);
-    outbox.close();
-  });
-
-  it("keeps a legacy ambiguous receipt fenced across writer open", async () => {
-    const outbox = await createOutbox();
-    await outbox.stageIntervention({
-      interventionId: "legacy-ambiguous",
-      message: { text: "recover after upgrade", user: "soak" },
-      event: eventInput("recover after upgrade"),
-      queued: false,
-      queuedAt: "2026-08-11T00:00:02.000Z",
-    });
-    const path = outbox.databasePath;
-    outbox.close();
-
-    const recovered = await RunnerSqliteEventOutbox.open(path);
-    await expect(recovered.readPendingInterventions()).resolves.toEqual([]);
-    const database = new DatabaseSync(path);
-    expect(database.prepare(`
-      SELECT application_state, claimed_execution_command_id, claimed_at
-      FROM runner_intervention_inbox
-      WHERE intervention_id = 'legacy-ambiguous'
-    `).get()).toEqual({
-      application_state: "ambiguous",
-      claimed_execution_command_id: "apply-intervention:legacy-ambiguous",
-      claimed_at: expect.any(String),
-    });
-    database.close();
-    recovered.close();
-  });
-
-  it("reads past a failed claimed intervention without replaying it", async () => {
-    const outbox = await createOutbox();
-    await outbox.stageIntervention({
-      interventionId: "retry-after-failure",
-      message: { text: "do not lose me", user: "soak" },
-      queued: true,
-      queuedAt: "2026-08-11T00:00:02.000Z",
-    });
-    const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
-    lifecycle.begin({
-      pid: process.pid,
-      commandId: "execute-failed",
-      progressedAt: "2026-08-11T00:00:03.000Z",
-    });
-    await expect(
-      outbox.claimIntervention("retry-after-failure", "execute-failed"),
-    ).resolves.toBe(true);
-    await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
-
-    await outbox.finishExecution({
-      commandId: "execute-failed",
-      interventionId: "retry-after-failure",
-      state: "failed",
-      progressedAt: "2026-08-11T00:00:04.000Z",
-      terminalError: { code: "execution_failed", message: "boom" },
-    });
-    await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
-    const database = new DatabaseSync(outbox.databasePath);
-    expect(database.prepare(`
-      SELECT application_state, claimed_execution_command_id, claimed_at
-      FROM runner_intervention_inbox
-      WHERE intervention_id = 'retry-after-failure'
-    `).get()).toEqual({
-      application_state: "ambiguous",
-      claimed_execution_command_id: "execute-failed",
-      claimed_at: expect.any(String),
-    });
-    database.close();
-    expect(lifecycle.read()).toMatchObject({
-      execution_command_id: "execute-failed",
-      execution_state: "failed",
-    });
-    lifecycle.close();
-    outbox.close();
-  });
-
-  it("reads past a provisional live receipt without treating it as pending", async () => {
-    const outbox = await createOutbox();
-    await outbox.stageIntervention({
-      interventionId: "live-timeout",
-      message: { text: "apply at most once", user: "operator" },
-      event: eventInput("apply at most once"),
-      queued: false,
-      queuedAt: "2026-08-11T00:00:02.000Z",
-    });
-    await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
-
-    const apply = vi.fn(async () => await new Promise<never>(() => {}));
-    const application = handleRunnerInterventionCommand(
-      applyInterventionCommandFrame({
-        commandId: "apply-intervention:live-timeout",
-        interventionId: "live-timeout",
-        interventionInput: { prompt: "apply at most once" },
-      }),
-      outbox,
-      "session-a",
-      apply,
-    );
-    void application;
-
-    await vi.waitFor(() => expect(apply).toHaveBeenCalledTimes(1));
-    await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
-    const database = new DatabaseSync(outbox.databasePath);
-    expect(database.prepare(`
-      SELECT application_state FROM runner_intervention_inbox
-      WHERE intervention_id = 'live-timeout'
-    `).get()).toEqual({ application_state: "ambiguous" });
-    database.close();
-    outbox.close();
-  });
-
-  it.each([
-    {
-      label: "delivered",
-      verdict: { status: "delivered", mechanism: "active_turn" },
-    },
-    {
-      label: "explicitly not delivered",
-      verdict: {
-        status: "not_delivered",
-        mechanism: "interrupt_then_next_turn",
-        reason: "next_turn_required",
-      },
-    },
-    {
-      label: "unknown",
-      verdict: {
-        status: "unknown",
-        reason: "verdict_unknown",
-        message: "engine verdict timed out",
-      },
-    },
-  ])("carries a $label live intervention through its durable outcome", async ({
-    label,
-    verdict,
-  }) => {
-    const outbox = await createOutbox();
-    await outbox.stageIntervention({
-      interventionId: "live-definitive",
-      message: { text: "definitive outcome", user: "operator" },
-      event: eventInput("definitive outcome"),
-      queued: false,
-      queuedAt: "2026-08-11T00:00:02.000Z",
-    });
-
-    const result = await handleRunnerInterventionCommand(
-      applyInterventionCommandFrame({
-        commandId: "apply-intervention:live-definitive",
-        interventionId: "live-definitive",
-        interventionInput: { prompt: "definitive outcome" },
-      }),
-      outbox,
-      "session-a",
-      vi.fn().mockResolvedValue(verdict),
-    );
-
-    expect(result?.result).toMatchObject({
-      result: { status: "ok", data: verdict },
-    });
-    await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
-    if (label !== "delivered") {
-      await expect(outbox.stageIntervention({
-        interventionId: "live-definitive",
-        message: { text: "definitive outcome", user: "operator" },
-        queued: true,
-        queuedAt: "2026-08-11T00:00:03.000Z",
-      })).resolves.toEqual({ eventSourceSeq: null, queuePosition: 1 });
-      await expect(outbox.readPendingInterventions()).resolves.toEqual([{
-        interventionId: "live-definitive",
-        message: { text: "definitive outcome", user: "operator" },
-      }]);
-    }
-    if (label === "unknown") {
-      const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
-      lifecycle.begin({
-        pid: process.pid,
-        commandId: "execute-replayed-unknown",
-        progressedAt: "2026-08-11T00:00:04.000Z",
-      });
-      await expect(outbox.claimIntervention(
-        "live-definitive",
-        "execute-replayed-unknown",
-      )).resolves.toBe(true);
-      const claimed = new DatabaseSync(outbox.databasePath);
-      expect(claimed.prepare(`
-        SELECT application_state, claimed_execution_command_id
-        FROM runner_intervention_inbox
-        WHERE intervention_id = 'live-definitive'
-      `).get()).toEqual({
-        application_state: "claimed",
-        claimed_execution_command_id: "execute-replayed-unknown",
-      });
-      claimed.close();
-      await outbox.finishExecution({
-        commandId: "execute-replayed-unknown",
-        interventionId: "live-definitive",
-        state: "completed",
-        progressedAt: "2026-08-11T00:00:05.000Z",
-        terminalError: null,
-      });
-      await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
-      const completed = new DatabaseSync(outbox.databasePath);
-      expect(completed.prepare(`
-        SELECT COUNT(*) AS count FROM runner_intervention_inbox
-        WHERE intervention_id = 'live-definitive'
-      `).get()).toEqual({ count: 0 });
-      completed.close();
-      lifecycle.close();
-    }
-    outbox.close();
-  });
-
-  it("reports the actual queue position when a confirmed miss releases an ambiguous receipt", async () => {
-    const outbox = await createOutbox();
-    for (const [index, interventionId] of ["ahead-1", "ahead-2"].entries()) {
-      await outbox.stageIntervention({
-        interventionId,
-        message: { text: `ahead ${index + 1}`, user: "operator" },
-        queued: true,
-        queuedAt: `2026-08-11T00:00:0${index + 2}.000Z`,
-      });
-    }
-    await outbox.stageIntervention({
-      interventionId: "live-third",
-      message: { text: "third", user: "operator" },
-      event: eventInput("third"),
-      queued: false,
-      queuedAt: "2026-08-11T00:00:04.000Z",
-    });
-
-    await expect(outbox.stageIntervention({
-      interventionId: "live-third",
-      message: { text: "third", user: "operator" },
-      queued: true,
-      queuedAt: "2026-08-11T00:00:05.000Z",
-    })).resolves.toEqual({ eventSourceSeq: null, queuePosition: 3 });
-    await expect(outbox.readPendingInterventions()).resolves.toHaveLength(3);
-    outbox.close();
-  });
-
-  it("discards a confirmed miss without making it pending for a durable caller", async () => {
-    const outbox = await createOutbox();
-    await outbox.stageIntervention({
-      interventionId: "durable-no-queue",
-      message: { text: "scheduler owns retry", user: "scheduler" },
-      event: eventInput("scheduler owns retry"),
-      queued: false,
-      queuedAt: "2026-08-11T00:00:02.000Z",
-    });
-    await handleRunnerInterventionCommand(
-      applyInterventionCommandFrame({
-        commandId: "apply-intervention:durable-no-queue",
-        interventionId: "durable-no-queue",
-        interventionInput: { prompt: "scheduler owns retry" },
-      }),
-      outbox,
-      "session-a",
-      vi.fn().mockResolvedValue({
-        status: "not_delivered",
-        mechanism: "unsupported",
-        reason: "not_supported",
-      }),
-    );
-
-    const discarded = await handleRunnerInterventionCommand(
-      invokeCommandFrame(
-        "discard-intervention:durable-no-queue",
-        "runner.discard_intervention",
-        ["durable-no-queue"],
-      ),
-      outbox,
-      "session-a",
-      vi.fn(),
-    );
-
-    expect(discarded?.result).toMatchObject({
-      result: { status: "ok", data: { status: "discarded" } },
-    });
-    await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
-    const database = new DatabaseSync(outbox.databasePath);
-    expect(database.prepare(`
-      SELECT COUNT(*) AS count FROM runner_intervention_inbox
-      WHERE intervention_id = 'durable-no-queue'
-    `).get()).toEqual({ count: 0 });
-    database.close();
-    outbox.close();
-  });
-
-  it("resolves an ambiguous intervention as already applied without replay", async () => {
-    const outbox = await createAmbiguousIntervention("resolve-applied");
-    const path = outbox.databasePath;
-    outbox.close();
-
-    await resolveAmbiguousRunnerIntervention(
-      path,
-      "resolve-applied",
-      "applied",
-      stoppedRunnerResolutionDependencies(),
-    );
-
-    const recovered = await RunnerSqliteEventOutbox.open(path);
-    await expect(recovered.readPendingInterventions()).resolves.toEqual([]);
-    const database = new DatabaseSync(path);
-    expect(database.prepare(`
-      SELECT COUNT(*) AS count FROM runner_intervention_inbox
-      WHERE intervention_id = 'resolve-applied'
-    `).get()).toEqual({ count: 0 });
-    database.close();
-    recovered.close();
-  });
-
-  it("resolves an ambiguous intervention as not applied and requeues it once", async () => {
-    const outbox = await createAmbiguousIntervention("resolve-not-applied");
-    const path = outbox.databasePath;
-    outbox.close();
-
-    await resolveAmbiguousRunnerIntervention(
-      path,
-      "resolve-not-applied",
-      "not_applied",
-      stoppedRunnerResolutionDependencies(),
-    );
-
-    const recovered = await RunnerSqliteEventOutbox.open(path);
-    await expect(recovered.readPendingInterventions()).resolves.toEqual([{
-      interventionId: "resolve-not-applied",
-      message: { text: "ambiguous input", user: "operator" },
-    }]);
-    await expect(recovered.readPendingInterventions()).resolves.toHaveLength(1);
-    recovered.close();
-  });
-
-  it("refuses ambiguity resolution while the runner writer lock is held", async () => {
-    const outbox = await createAmbiguousIntervention("resolve-live-runner");
-    const path = outbox.databasePath;
-    outbox.close();
-    const acquireWriterLock = vi.fn(async () => {
-      throw new Error("runner writer lock already held");
-    });
-
-    await expect(resolveAmbiguousRunnerIntervention(
-      path,
-      "resolve-live-runner",
-      "applied",
-      { acquireWriterLock },
-    )).rejects.toThrow("runner writer lock already held");
-    expect(acquireWriterLock).toHaveBeenCalledOnce();
-
-    const recovered = await RunnerSqliteEventOutbox.open(path);
-    const database = new DatabaseSync(path);
-    expect(database.prepare(`
-      SELECT application_state FROM runner_intervention_inbox
-      WHERE intervention_id = 'resolve-live-runner'
-    `).get()).toEqual({ application_state: "ambiguous" });
-    database.close();
-    recovered.close();
-  });
-
-  it("never replays a completed claim without a parent-side cleanup write", async () => {
-    const outbox = await createOutbox();
-    await outbox.stageIntervention({
-      interventionId: "completed-but-retained",
-      message: { text: "apply once", user: "soak" },
-      queued: true,
-      queuedAt: "2026-08-11T00:00:02.000Z",
-    });
-    const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
-    lifecycle.begin({
-      pid: process.pid,
-      commandId: "execute-completed",
-      progressedAt: "2026-08-11T00:00:03.000Z",
-    });
-    await outbox.claimIntervention("completed-but-retained", "execute-completed");
-
-    // Models the old split commit: lifecycle reached completed but inbox delete
-    // did not. Recovery must treat completed as the durable apply receipt.
-    lifecycle.finish(
-      "execute-completed",
-      "completed",
-      "2026-08-11T00:00:04.000Z",
-    );
-
-    await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
-    expect(await outbox.hasPendingDurableWork()).toBe(false);
-    const database = new DatabaseSync(outbox.databasePath);
-    expect(database.prepare(`
-      SELECT application_state, claimed_execution_command_id
-      FROM runner_intervention_inbox
-    `).get()).toEqual({
-      application_state: "claimed",
-      claimed_execution_command_id: "execute-completed",
-    });
-    database.close();
-    lifecycle.close();
-    outbox.close();
-  });
-
-  it("reads past a claimed intervention that has no matching running lifecycle", async () => {
-    const outbox = await createOutbox();
-    await outbox.stageIntervention({
-      interventionId: "claimed-before-lifecycle",
-      message: { text: "uncertain dispatch", user: "soak" },
-      queued: true,
-      queuedAt: "2026-08-11T00:00:02.000Z",
-    });
-    const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
-    lifecycle.begin({
-      pid: process.pid,
-      commandId: "previous-execution",
-      progressedAt: "2026-08-11T00:00:03.000Z",
-    });
-    lifecycle.finish(
-      "previous-execution",
-      "completed",
-      "2026-08-11T00:00:04.000Z",
-    );
-    await outbox.claimIntervention("claimed-before-lifecycle", "uncertain-execution");
-
-    await expect(outbox.readPendingInterventions()).resolves.toEqual([]);
-    const database = new DatabaseSync(outbox.databasePath);
-    expect(database.prepare(`
-      SELECT application_state FROM runner_intervention_inbox
-      WHERE intervention_id = 'claimed-before-lifecycle'
-    `).get()).toEqual({ application_state: "claimed" });
-    database.close();
-    lifecycle.close();
-    outbox.close();
-  });
-
-  it("rolls back terminal lifecycle when intervention commit fails", async () => {
-    const outbox = await createOutbox();
-    await outbox.stageIntervention({
-      interventionId: "atomic-terminal",
-      message: { text: "one commit", user: "soak" },
-      queued: true,
-      queuedAt: "2026-08-11T00:00:02.000Z",
-    });
-    const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
-    lifecycle.begin({
-      pid: process.pid,
-      commandId: "execute-atomic",
-      progressedAt: "2026-08-11T00:00:03.000Z",
-    });
-    await outbox.claimIntervention("atomic-terminal", "execute-atomic");
-    const fault = new DatabaseSync(outbox.databasePath);
-    fault.exec(`
-      CREATE TRIGGER fail_intervention_completion
-      BEFORE DELETE ON runner_intervention_inbox
-      BEGIN
-        SELECT RAISE(ABORT, 'forced intervention completion failure');
-      END;
-    `);
-    fault.close();
-
-    await expect(outbox.finishExecution({
-      commandId: "execute-atomic",
-      interventionId: "atomic-terminal",
-      state: "completed",
-      progressedAt: "2026-08-11T00:00:04.000Z",
-      terminalError: null,
-    })).rejects.toThrow("forced intervention completion failure");
-    expect(lifecycle.read()).toMatchObject({
-      execution_command_id: "execute-atomic",
-      execution_state: "running",
-    });
-    const verified = new DatabaseSync(outbox.databasePath);
-    expect(verified.prepare(`
-      SELECT application_state, claimed_execution_command_id
-      FROM runner_intervention_inbox WHERE intervention_id = 'atomic-terminal'
-    `).get()).toEqual({
-      application_state: "claimed",
-      claimed_execution_command_id: "execute-atomic",
-    });
-    verified.close();
-    lifecycle.close();
-    outbox.close();
-  });
-
-  it("claims and completes three intervention identities atomically for one turn", async () => {
-    const outbox = await createOutbox();
-    const interventionIds = ["batch-first", "batch-second", "batch-third"];
-    for (const [index, interventionId] of interventionIds.entries()) {
-      await outbox.stageIntervention({
-        interventionId,
-        message: { text: `correction ${index + 1}`, user: "operator" },
-        queued: true,
-        queuedAt: `2026-08-11T00:00:0${index + 2}.000Z`,
-      });
-    }
-    const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
-    lifecycle.begin({
-      pid: process.pid,
-      commandId: "execute-batch",
-      progressedAt: "2026-08-11T00:00:05.000Z",
-    });
-
-    await expect(outbox.claimInterventions(interventionIds, "execute-batch")).resolves.toBe(true);
-    await outbox.finishExecution({
-      commandId: "execute-batch",
-      interventionIds,
-      state: "completed",
-      progressedAt: "2026-08-11T00:00:06.000Z",
-      terminalError: null,
-    });
-
-    const database = new DatabaseSync(outbox.databasePath);
-    expect(database.prepare(`
-      SELECT COUNT(*) AS count FROM runner_intervention_inbox
-      WHERE intervention_id IN ('batch-first', 'batch-second', 'batch-third')
-    `).get()).toEqual({ count: 0 });
-    database.close();
-    lifecycle.close();
-    outbox.close();
-  });
-
-  it("leaves every available identity pending when one batch member is unavailable", async () => {
-    const outbox = await createOutbox();
-    const interventionIds = ["atomic-first", "atomic-second", "atomic-third"];
-    for (const [index, interventionId] of interventionIds.entries()) {
-      await outbox.stageIntervention({
-        interventionId,
-        message: { text: `correction ${index + 1}`, user: "operator" },
-        queued: true,
-        queuedAt: `2026-08-11T00:00:0${index + 2}.000Z`,
-      });
-    }
-    await expect(outbox.claimIntervention("atomic-second", "other-execution")).resolves.toBe(true);
-
-    await expect(outbox.claimInterventions(interventionIds, "execute-batch")).resolves.toBe(false);
-
-    const database = new DatabaseSync(outbox.databasePath);
-    expect(database.prepare(`
-      SELECT intervention_id, application_state, claimed_execution_command_id
-      FROM runner_intervention_inbox
-      WHERE intervention_id IN ('atomic-first', 'atomic-second', 'atomic-third')
-      ORDER BY intervention_id
-    `).all()).toEqual([
-      {
-        intervention_id: "atomic-first",
-        application_state: "pending",
-        claimed_execution_command_id: null,
-      },
-      {
-        intervention_id: "atomic-second",
-        application_state: "claimed",
-        claimed_execution_command_id: "other-execution",
-      },
-      {
-        intervention_id: "atomic-third",
-        application_state: "pending",
-        claimed_execution_command_id: null,
-      },
-    ]);
-    database.close();
-    outbox.close();
-  });
-
-  it("marks every claimed identity ambiguous when the shared turn fails", async () => {
-    const outbox = await createOutbox();
-    const interventionIds = ["failed-first", "failed-second", "failed-third"];
-    for (const [index, interventionId] of interventionIds.entries()) {
-      await outbox.stageIntervention({
-        interventionId,
-        message: { text: `correction ${index + 1}`, user: "operator" },
-        queued: true,
-        queuedAt: `2026-08-11T00:00:0${index + 2}.000Z`,
-      });
-    }
-    const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
-    lifecycle.begin({
-      pid: process.pid,
-      commandId: "execute-failed-batch",
-      progressedAt: "2026-08-11T00:00:05.000Z",
-    });
-    await outbox.claimInterventions(interventionIds, "execute-failed-batch");
-
-    await outbox.finishExecution({
-      commandId: "execute-failed-batch",
-      interventionIds,
-      state: "failed",
-      progressedAt: "2026-08-11T00:00:06.000Z",
-      terminalError: { code: "real_crash", message: "engine crashed" },
-    });
-
-    const database = new DatabaseSync(outbox.databasePath);
-    expect(database.prepare(`
-      SELECT intervention_id, application_state
-      FROM runner_intervention_inbox
-      WHERE intervention_id IN ('failed-first', 'failed-second', 'failed-third')
-      ORDER BY intervention_id
-    `).all()).toEqual(interventionIds.map((interventionId) => ({
-      intervention_id: interventionId,
-      application_state: "ambiguous",
-    })));
-    database.close();
-    lifecycle.close();
-    outbox.close();
-  });
-
   it("rejects a zero-byte database created by a concurrent opener", async () => {
     const path = await temporaryDatabasePath();
     const worker = new Worker(`
@@ -1224,14 +508,12 @@ describe("RunnerSqliteEventOutbox", () => {
     expect(outbox.inspectPendingDurableEvidence()).toEqual({
       durableRecordCount: 0,
       unacknowledgedIpcFrameCount: 0,
-      pendingInterventionCount: 0,
     });
 
     await outbox.initializeBootstrap(bootstrapInput());
     expect(outbox.inspectPendingDurableEvidence()).toEqual({
       durableRecordCount: 1,
       unacknowledgedIpcFrameCount: 0,
-      pendingInterventionCount: 0,
     });
 
     await outbox.appendEngineFrame(eventInput("pending IPC"), {
@@ -1240,22 +522,9 @@ describe("RunnerSqliteEventOutbox", () => {
       kind: "engine_event",
       payload: { type: "assistant_message", content: "pending IPC" },
     });
-    expect(outbox.inspectPendingDurableEvidence()).toMatchObject({
-      durableRecordCount: 2,
-      unacknowledgedIpcFrameCount: 1,
-      pendingInterventionCount: 0,
-    });
-
-    await outbox.stageIntervention({
-      interventionId: "pending-intervention",
-      message: { text: "preserve me" },
-      queued: true,
-      queuedAt: "2026-08-11T00:00:02.000Z",
-    });
     expect(outbox.inspectPendingDurableEvidence()).toEqual({
       durableRecordCount: 2,
       unacknowledgedIpcFrameCount: 1,
-      pendingInterventionCount: 1,
     });
     outbox.close();
   });
@@ -1540,20 +809,6 @@ describe("RunnerSqliteEventOutbox", () => {
     const path = await temporaryDatabasePath();
     const outbox = await RunnerSqliteEventOutbox.create(path);
     await outbox.initializeBootstrap(bootstrapInput());
-    await outbox.stageIntervention({
-      interventionId: "legacy-v8-claim",
-      message: { text: "legacy claim", user: "soak" },
-      queued: true,
-      queuedAt: "2026-08-11T00:00:02.000Z",
-    });
-    const lifecycle = RunnerSqliteLifecycle.open(path, "session-a");
-    lifecycle.begin({
-      pid: process.pid,
-      commandId: "execute-v8",
-      progressedAt: "2026-08-11T00:00:03.000Z",
-    });
-    await outbox.claimIntervention("legacy-v8-claim", "execute-v8");
-    lifecycle.close();
     outbox.close();
 
     const legacy = new DatabaseSync(path);
@@ -1561,10 +816,21 @@ describe("RunnerSqliteEventOutbox", () => {
       ALTER TABLE runner_intervention_inbox DROP COLUMN application_state;
       PRAGMA user_version = 8;
     `);
+    legacy.prepare(`
+      INSERT INTO runner_intervention_inbox (
+        intervention_id, payload_json, queued_at,
+        claimed_execution_command_id, claimed_at
+      ) VALUES (?, ?, ?, ?, ?)
+    `).run(
+      "legacy-v8-claim",
+      JSON.stringify({ text: "legacy claim", user: "soak" }),
+      "2026-08-11T00:00:02.000Z",
+      "execute-v8",
+      "2026-08-11T00:00:03.000Z",
+    );
     legacy.close();
 
     const migrated = await RunnerSqliteEventOutbox.open(path);
-    await expect(migrated.readPendingInterventions()).resolves.toEqual([]);
     const verified = new DatabaseSync(path);
     expect(verified.prepare(`
       SELECT application_state, claimed_execution_command_id
@@ -1582,34 +848,27 @@ describe("RunnerSqliteEventOutbox", () => {
     const path = await temporaryDatabasePath();
     const outbox = await RunnerSqliteEventOutbox.create(path);
     await outbox.initializeBootstrap(bootstrapInput());
-    await outbox.stageIntervention({
-      interventionId: "interrupted-v9-claim",
-      message: { text: "interrupted migration", user: "soak" },
-      queued: true,
-      queuedAt: "2026-08-11T00:00:02.000Z",
-    });
-    const lifecycle = RunnerSqliteLifecycle.open(path, "session-a");
-    lifecycle.begin({
-      pid: process.pid,
-      commandId: "execute-interrupted-v9",
-      progressedAt: "2026-08-11T00:00:03.000Z",
-    });
-    await outbox.claimIntervention("interrupted-v9-claim", "execute-interrupted-v9");
-    lifecycle.close();
     outbox.close();
 
     // Exact intermediate state left by the old non-atomic migration: ALTER
     // committed, but claim backfill and user_version did not.
     const interrupted = new DatabaseSync(path);
-    interrupted.exec(`
-      UPDATE runner_intervention_inbox SET application_state = 'pending'
-      WHERE intervention_id = 'interrupted-v9-claim';
-      PRAGMA user_version = 8;
-    `);
+    interrupted.prepare(`
+      INSERT INTO runner_intervention_inbox (
+        intervention_id, payload_json, queued_at,
+        claimed_execution_command_id, claimed_at, application_state
+      ) VALUES (?, ?, ?, ?, ?, 'pending')
+    `).run(
+      "interrupted-v9-claim",
+      JSON.stringify({ text: "interrupted migration", user: "soak" }),
+      "2026-08-11T00:00:02.000Z",
+      "execute-interrupted-v9",
+      "2026-08-11T00:00:03.000Z",
+    );
+    interrupted.exec("PRAGMA user_version = 8");
     interrupted.close();
 
     const recovered = await RunnerSqliteEventOutbox.open(path);
-    await expect(recovered.readPendingInterventions()).resolves.toEqual([]);
     const verified = new DatabaseSync(path);
     expect(verified.prepare(`
       SELECT application_state, claimed_execution_command_id
@@ -1627,20 +886,6 @@ describe("RunnerSqliteEventOutbox", () => {
     const path = await temporaryDatabasePath();
     const outbox = await RunnerSqliteEventOutbox.create(path);
     await outbox.initializeBootstrap(bootstrapInput());
-    await outbox.stageIntervention({
-      interventionId: "atomic-v9-claim",
-      message: { text: "atomic migration", user: "soak" },
-      queued: true,
-      queuedAt: "2026-08-11T00:00:02.000Z",
-    });
-    const lifecycle = RunnerSqliteLifecycle.open(path, "session-a");
-    lifecycle.begin({
-      pid: process.pid,
-      commandId: "execute-atomic-v9",
-      progressedAt: "2026-08-11T00:00:03.000Z",
-    });
-    await outbox.claimIntervention("atomic-v9-claim", "execute-atomic-v9");
-    lifecycle.close();
     outbox.close();
 
     const legacy = new DatabaseSync(path);
@@ -1653,6 +898,18 @@ describe("RunnerSqliteEventOutbox", () => {
       END;
       PRAGMA user_version = 8;
     `);
+    legacy.prepare(`
+      INSERT INTO runner_intervention_inbox (
+        intervention_id, payload_json, queued_at,
+        claimed_execution_command_id, claimed_at
+      ) VALUES (?, ?, ?, ?, ?)
+    `).run(
+      "atomic-v9-claim",
+      JSON.stringify({ text: "atomic migration", user: "soak" }),
+      "2026-08-11T00:00:02.000Z",
+      "execute-atomic-v9",
+      "2026-08-11T00:00:03.000Z",
+    );
     legacy.close();
 
     await expect(RunnerSqliteEventOutbox.open(path)).rejects.toThrow(
@@ -2624,41 +1881,6 @@ async function createOutbox(): Promise<RunnerSqliteEventOutbox> {
   const outbox = await RunnerSqliteEventOutbox.create(path);
   await outbox.initializeBootstrap(bootstrapInput());
   return outbox;
-}
-
-async function createAmbiguousIntervention(
-  interventionId: string,
-): Promise<RunnerSqliteEventOutbox> {
-  const outbox = await createOutbox();
-  await outbox.stageIntervention({
-    interventionId,
-    message: { text: "ambiguous input", user: "operator" },
-    queued: true,
-    queuedAt: "2026-08-11T00:00:02.000Z",
-  });
-  const lifecycle = RunnerSqliteLifecycle.open(outbox.databasePath, "session-a");
-  const commandId = `execute-${interventionId}`;
-  lifecycle.begin({
-    pid: process.pid,
-    commandId,
-    progressedAt: "2026-08-11T00:00:03.000Z",
-  });
-  await outbox.claimIntervention(interventionId, commandId);
-  await outbox.finishExecution({
-    commandId,
-    interventionId,
-    state: "failed",
-    progressedAt: "2026-08-11T00:00:04.000Z",
-    terminalError: { code: "execution_failed", message: "outcome unknown" },
-  });
-  lifecycle.close();
-  return outbox;
-}
-
-function stoppedRunnerResolutionDependencies() {
-  return {
-    acquireWriterLock: vi.fn(async () => ({ release: vi.fn(async () => undefined) })),
-  };
 }
 
 async function temporaryDatabasePath(): Promise<string> {

@@ -15,12 +15,11 @@ export function hasCentralDeletionOverride(
 export function hasProvenEmptyPrebootstrapEvidence(
   inspection: Pick<
     RunnerDurableInspection,
-    "durableRecordCount" | "unacknowledgedIpcFrameCount" | "pendingInterventionCount"
+    "durableRecordCount" | "unacknowledgedIpcFrameCount"
   >,
 ): boolean {
   return inspection.durableRecordCount === 0
-    && inspection.unacknowledgedIpcFrameCount === 0
-    && inspection.pendingInterventionCount === 0;
+    && inspection.unacknowledgedIpcFrameCount === 0;
 }
 
 export function terminalCandidateReason(

@@ -974,72 +974,6 @@ describe("RunnerProcessDispatcher", () => {
     expect(responses.filter((value) => value === "host:observe")).toHaveLength(1);
   });
 
-  it("prefers the first-durable child intervention and consumes a conflicting host fallback", async () => {
-    const stateDirectory = await temporaryDirectory();
-    const paths = runnerProcessPaths(stateDirectory, "session-a");
-    await mkdir(paths.sessionDirectory, { recursive: true });
-    const writer = await RunnerSqliteEventOutbox.create(paths.databasePath);
-    await writer.initializeBootstrap({
-      session_id: "session-a",
-      created_at: "2026-08-17T00:00:00.000Z",
-      resume: {
-        schema_version: 1,
-        backend_session_id: "backend-a",
-        cwd: "/workspace/a",
-        codex_home: "/home/test/.codex",
-        rollout_root: "/home/test/.codex/sessions",
-        code_sha: "sha-a",
-        snapshot_path: "/release/sha-a/soul-server-ts",
-      },
-    });
-    await writer.stageIntervention({
-      interventionId: "delivery-a",
-      message: { text: "first durable prompt", user: "system" },
-      queued: true,
-      queuedAt: "2026-08-17T00:00:01.000Z",
-    });
-    writer.close();
-    const host = RunnerHostStateStore.open(runnerHostStatePath(paths.databasePath));
-    host.stageInterventionFallback({
-      sessionId: "session-a",
-      interventionId: "delivery-a",
-      message: { text: "regenerated retry prompt", user: "system" },
-      queued: true,
-      stagedAt: "2026-08-17T00:00:02.000Z",
-    });
-    host.close();
-    const logger = {
-      debug: vi.fn(), error: vi.fn(), info: vi.fn(), warn: vi.fn(),
-    };
-    const dispatcher = new RunnerProcessDispatcher({
-      spawn: spawnInput(stateDirectory),
-      runnerProcess: null,
-      offlineExisting: true,
-      pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
-      logger,
-      handleHostCall: async () => null,
-    } as never);
-
-    await expect(dispatcher.recoverPendingInterventions()).resolves.toEqual([{
-      interventionId: "delivery-a",
-      message: { text: "first durable prompt", user: "system" },
-    }]);
-
-    const inspectedHost = RunnerHostStateStore.open(runnerHostStatePath(paths.databasePath));
-    expect(inspectedHost.readInterventionFallback("session-a", "delivery-a")).toBeNull();
-    inspectedHost.close();
-    expect(logger.info).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sessionId: "session-a",
-        interventionId: "delivery-a",
-        fallbackRemoved: true,
-        durableOwner: "runner_sqlite",
-      }),
-      "Duplicate host intervention fallback suppressed in favor of runner inbox",
-    );
-    await dispatcher.close();
-  });
-
   it("releases an offline writer lock even when an earlier cleanup step throws", async () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");
@@ -1067,7 +1001,7 @@ describe("RunnerProcessDispatcher", () => {
       logger: pino({ level: "silent" }),
       handleHostCall: async () => null,
     });
-    await dispatcher.recoverPendingInterventions();
+    await (dispatcher as unknown as { ready: Promise<void> }).ready;
     (dispatcher as unknown as { finishActiveRunnerObservation: () => void })
       .finishActiveRunnerObservation = () => { throw new Error("observer close boom"); };
 
@@ -1103,7 +1037,7 @@ describe("RunnerProcessDispatcher", () => {
       logger: pino({ level: "silent" }),
       handleHostCall: async () => null,
     });
-    await dispatcher.recoverPendingInterventions();
+    await (dispatcher as unknown as { ready: Promise<void> }).ready;
 
     await expect(inspectRunnerWriterLock(paths.lockPath)).resolves.toMatchObject({
       kind: "held",
@@ -1149,7 +1083,7 @@ describe("RunnerProcessDispatcher", () => {
       logger: pino({ level: "silent" }),
       handleHostCall: async () => null,
     });
-    await dispatcher.recoverPendingInterventions();
+    await (dispatcher as unknown as { ready: Promise<void> }).ready;
     let releaseFrame!: () => void;
     const inFlightFrame = new Promise<void>((resolve) => { releaseFrame = resolve; });
     (dispatcher as unknown as { inFlightFrameHandlers: Set<Promise<void>> })
@@ -1224,110 +1158,6 @@ describe("RunnerProcessDispatcher", () => {
         executionCommandId: expect.stringMatching(/^command:/),
       },
     });
-  });
-
-  it("leaves a legacy host fallback inert through apply and the next execute", async () => {
-    const stateDirectory = await temporaryDirectory();
-    const paths = runnerProcessPaths(stateDirectory, "session-a");
-    await mkdir(paths.sessionDirectory, { recursive: true });
-    const writer = await RunnerSqliteEventOutbox.create(paths.databasePath);
-    await writer.initializeBootstrap({
-      session_id: "session-a",
-      created_at: "2026-08-17T00:00:00.000Z",
-      resume: {
-        schema_version: 1,
-        backend_session_id: "backend-a",
-        cwd: "/workspace/a",
-        codex_home: "/home/test/.codex",
-        rollout_root: "/home/test/.codex/sessions",
-        code_sha: "sha-a",
-        snapshot_path: "/release/sha-a/soul-server-ts",
-      },
-    });
-    const commandKinds: string[] = [];
-    let endpoint!: RunnerSocketEndpoint;
-    endpoint = new RunnerSocketEndpoint(paths.socketPath, async (frame) => {
-      if (frame.channel !== "command") return;
-      commandKinds.push(frame.kind === "invoke" ? String(frame.capability) : frame.kind);
-      if (frame.kind === "stage_intervention") {
-        const staged = await writer.stageIntervention({
-          interventionId: frame.interventionId,
-          message: frame.message,
-          ...(frame.event
-            ? { event: (await buildDurableRunnerEvent("session-a", frame.event as never)).appendInput }
-            : {}),
-          queued: frame.queued,
-          queuedAt: "2026-08-17T00:00:01.000Z",
-        });
-        await endpoint.currentConnection!.send(runnerCommandResultFrame(frame.commandId, {
-          status: "ok",
-          data: staged,
-        }));
-        return;
-      }
-      if (frame.kind === "invoke" && frame.capability === "runner.apply_intervention") {
-        await endpoint.currentConnection!.send(runnerCommandResultFrame(frame.commandId, {
-          status: "ok",
-          data: { status: "delivered", mechanism: "active_turn" },
-        }));
-        return;
-      }
-      await endpoint.currentConnection!.send(
-        runnerCommandResultFrame(frame.commandId, { status: "ok" }),
-      );
-      if (frame.kind === "execute") {
-        await endpoint.currentConnection!.send(executionEndedControlFrame(frame.commandId));
-      }
-    }, vi.fn());
-    await endpoint.listen();
-    const primary = new EventOutboxPump(emptyStore("node-stream"), vi.fn());
-    const mux = new EventOutboxPumpMux(primary);
-    const dispatcher = new RunnerProcessDispatcher({
-      spawn: spawnInput(stateDirectory),
-      runnerProcess: spawnedProcessForTest(paths),
-      pumpMux: mux,
-      logger: pino({ level: "silent" }),
-      handleHostCall: async () => null,
-    });
-
-    const fallback = RunnerHostStateStore.open(runnerHostStatePath(paths.databasePath));
-    expect(fallback.stageInterventionFallback({
-      sessionId: "session-a",
-      interventionId: "intervention-a",
-      message: { text: "stop now", user: "alice" },
-      queued: false,
-      stagedAt: "2026-08-17T00:00:00.500Z",
-    })).toEqual({ queuePosition: 0 });
-    fallback.close();
-    expect(await dispatcher.recoverPendingInterventions()).toEqual([{
-      interventionId: "intervention-a",
-      message: { text: "stop now", user: "alice" },
-    }]);
-
-    await expect(dispatcher.applyIntervention({
-      interventionId: "intervention-a",
-      input: { prompt: "stop now" },
-    })).resolves.toMatchObject({ status: "delivered" });
-    await expect(collect(dispatcher.executeFrames({
-      agentSessionId: "session-a",
-      prompt: "next turn",
-      runnerInterventionIds: ["intervention-a"],
-    }))).resolves.toEqual([]);
-
-    expect(commandKinds).toEqual([
-      "runner.apply_intervention",
-      "execute",
-    ]);
-    const host = RunnerHostStateStore.open(runnerHostStatePath(paths.databasePath));
-    expect(host.readInterventionFallback("session-a", "intervention-a")).toMatchObject({
-      interventionId: "intervention-a",
-      message: { text: "stop now", user: "alice" },
-      queued: false,
-    });
-    host.close();
-    await dispatcher.close();
-    writer.close();
-    await endpoint.close();
   });
 
   it("does not accept execute when another pump owns the bootstrap stream", async () => {
@@ -2025,7 +1855,7 @@ describe("RunnerProcessDispatcher", () => {
     await endpoint.close();
   });
 
-  it("cleans an exact closed Claude turn and accepts the next input on a fresh runner despite an ambiguous old claim", async () => {
+  it("cleans an exact closed Claude turn and accepts the next input on a fresh runner", async () => {
     const stateDirectory = await temporaryDirectory();
     const paths = runnerProcessPaths(stateDirectory, "session-a");
     await mkdir(paths.sessionDirectory, { recursive: true });
@@ -2043,20 +1873,6 @@ describe("RunnerProcessDispatcher", () => {
         snapshot_path: "/release/sha-a/soul-server-ts",
       },
     });
-    await writer.stageIntervention({
-      interventionId: "ambiguous-old-claim",
-      message: { text: "old input", user: "alice" },
-      queued: true,
-      queuedAt: "2026-10-30T00:00:00.000Z",
-    });
-    expect(await writer.claimIntervention(
-      "ambiguous-old-claim",
-      "execute:old-command",
-    )).toBe(true);
-    await writer.markInterventionAmbiguous(
-      "ambiguous-old-claim",
-      "execute:old-command",
-    );
     writer.close();
     const lifecycle = RunnerSqliteLifecycle.open(paths.databasePath);
     const spawned = await spawnedProcessForTest(paths);
@@ -2142,17 +1958,6 @@ describe("RunnerProcessDispatcher", () => {
       });
       await endpoint.close();
       endpointClosed = true;
-
-      const persistedInbox = await RunnerSqliteEventOutbox.open(paths.databasePath);
-      try {
-        expect(await persistedInbox.readPendingInterventions()).toEqual([]);
-        expect(await persistedInbox.claimIntervention(
-          "ambiguous-old-claim",
-          "execute:new-command",
-        )).toBe(false);
-      } finally {
-        persistedInbox.close();
-      }
 
       const nextIdentity = {
         ...pendingRunnerRegistrationIdentity("session-a", "sha-a"),

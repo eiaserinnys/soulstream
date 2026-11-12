@@ -1196,7 +1196,6 @@ export class TaskExecutor {
       task.pendingExecutionExpectedTerminalEventId = undefined;
       resolveActivation();
       await runner.dispatcher.prepareSession(task.agentSessionId);
-      await this.restoreDurableRunnerInterventions(task, runner);
       await this._consumeEventStream(task, runner, agent);
     } catch (error) {
       if (runner && task.executionRegistration === undefined) {
@@ -1316,7 +1315,6 @@ export class TaskExecutor {
 
     const promise = (async () => {
       await runner.dispatcher.prepareSession(task.agentSessionId);
-      await this.restoreDurableRunnerInterventions(task, runner);
       if (activation) {
         task.status = "running";
         if (task.executionActivation === activation) {
@@ -2159,7 +2157,6 @@ export class TaskExecutor {
         );
       }
       await this.flushClaudeRuntimeTaskFollowups(task);
-      await this.restoreDurableRunnerInterventions(task, runner);
       await task.interruptRequest;
       if (terminalObservation) {
         this.lifecycleTransition.applyRunnerTerminalFact(
@@ -2241,43 +2238,6 @@ export class TaskExecutor {
     // terminal replay intentionally keeps the historical swallow-and-finalize
     // contract because the durable terminal error is the replay result.
     if (recoveryFailed && propagateFailure) throw recoveryFailure;
-  }
-
-  private async restoreDurableRunnerInterventions(
-    task: Task,
-    runner: TaskRunnerRuntime,
-  ): Promise<void> {
-    const recover = runner.dispatcher.recoverPendingInterventions;
-    if (!recover) return;
-    for (const pending of await recover.call(runner.dispatcher)) {
-      const text = pending.message.text;
-      const user = pending.message.user;
-      if (typeof text !== "string" || typeof user !== "string") {
-        throw new Error(`runner intervention payload is invalid: ${pending.interventionId}`);
-      }
-      const message = {
-        ...(pending.message as unknown as InterventionMessage),
-        text,
-        user,
-        runnerInterventionId: pending.interventionId,
-      };
-      if (message.deliveryId) {
-        const admitted = task.interventionQueue.find(
-          (queued) => queued.deliveryId === message.deliveryId,
-        );
-        if (admitted) {
-          admitted.runnerInterventionId = pending.interventionId;
-        } else {
-          enqueueInterventionOnce(task, message);
-        }
-        await this.deliveryConsumption?.discardIfConsumed(
-          task,
-          admitted ?? message,
-        );
-        continue;
-      }
-      enqueueInterventionOnce(task, message);
-    }
   }
 
   private async publishPendingClaudeRuntimeAfterTurnError(task: Task): Promise<void> {

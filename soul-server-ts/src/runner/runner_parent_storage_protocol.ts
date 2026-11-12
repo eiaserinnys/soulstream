@@ -12,10 +12,7 @@ import type {
   RunnerDurableRetentionProbe,
   RunnerRegistration,
 } from "./runner_process_registry.js";
-import type {
-  RunnerHostCallAppliedReceipt,
-  RunnerHostInterventionFallback,
-} from "./runner_host_state_store.js";
+import type { RunnerHostCallAppliedReceipt } from "./runner_host_state_store.js";
 import type { RecoveredRunnerIdentity } from "./runner_registration_identity.js";
 import type { RunnerSqliteTransactionEvent } from "./runner_sqlite_connection.js";
 import type { RunnerBootstrapRecord } from "./sqlite_event_outbox.js";
@@ -24,7 +21,6 @@ import type { RunnerLifecycleRecord } from "./sqlite_runner_lifecycle.js";
 export type RunnerParentStorageBootstrap = RunnerBootstrapRecord;
 export type RunnerParentStorageBatch = EventOutboxBatch;
 export type RunnerParentStorageRecord = EventOutboxRecord;
-export type RunnerParentStorageFallback = RunnerHostInterventionFallback;
 export type RunnerParentStorageReceipt = RunnerHostCallAppliedReceipt;
 export type RunnerParentStorageQuarantineInput = EventOutboxQuarantineInput;
 export type RunnerParentStorageQuarantineResult = EventOutboxQuarantineResult;
@@ -33,17 +29,6 @@ export type RunnerParentStoragePendingFrame = {
   frame_seq: number;
   outbox_source_seq: number;
   frame: Extract<RunnerEventFrame, { kind: "engine_event" }>;
-};
-
-export type RunnerParentStoragePendingIntervention = {
-  interventionId: string;
-  message: Record<string, unknown>;
-};
-
-export type RunnerParentStorageInterventionInspection = {
-  interventions: RunnerParentStoragePendingIntervention[];
-  childInterventionIds: string[];
-  shadowedFallbackIds: string[];
 };
 
 export type RunnerParentStorageAppliedReceiptInput = {
@@ -82,18 +67,6 @@ export type RunnerParentStorageOperationMap = {
   readRecord: { input: { sourceSeq: number }; output: RunnerParentStorageRecord | null };
   readLatestPendingRecord: { input: undefined; output: RunnerParentStorageRecord | null };
   readPendingIpcFrames: { input: undefined; output: RunnerParentStoragePendingFrame[] };
-  inspectPendingInterventions: {
-    input: undefined;
-    output: RunnerParentStorageInterventionInspection;
-  };
-  readInterventionFallback: {
-    input: { interventionId: string };
-    output: RunnerParentStorageFallback | null;
-  };
-  removeInterventionFallback: {
-    input: { interventionId: string };
-    output: void;
-  };
   hasPendingDurableWork: { input: undefined; output: boolean };
   readHostCallApplied: {
     input: { correlationId: string };

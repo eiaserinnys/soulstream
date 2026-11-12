@@ -486,7 +486,6 @@ const SCENARIOS = {
       "assistant_message",
       marker,
     );
-    const inboxRemainingCount = runtime.runnerInterventionInboxCount(sessionId);
     const ownerships = await runtime.ownerships(sessionId);
     const inFlightOwnerships = ownerships.filter((row) => (
       row.phase === "reserved" || row.phase === "identity_proven" || row.phase === "active"
@@ -498,7 +497,6 @@ const SCENARIOS = {
       deliveryCount,
       interventionCount,
       assistantCount,
-      inboxRemainingCount,
       inFlightCount: inFlightOwnerships.length,
       sessionStatus,
       oldPid: oldRunner.pid,
@@ -1178,7 +1176,6 @@ const SCENARIOS = {
       "intervention_sent",
       restartWindowText,
     );
-    const inboxRemainingCount = runtime.runnerInterventionInboxCount(sessionId);
     const ownerships = await runtime.ownerships(sessionId);
     const inFlightOwnerships = ownerships.filter((row) => (
       row.phase === "reserved" || row.phase === "identity_proven" || row.phase === "active"
@@ -1188,7 +1185,6 @@ const SCENARIOS = {
       interventionCount,
       oldAssistantCount: oldCount,
       assistantCount: nextCount,
-      inboxRemainingCount,
       inFlightCount: inFlightOwnerships.length,
       oldPid: oldRunner.pid,
       newPid: newRunner?.pid,
@@ -1217,7 +1213,6 @@ const SCENARIOS = {
       markerCounts: { old: oldCount, next: nextCount },
       restartWindowDeliveryId,
       interventionCount,
-      inboxRemainingCount,
       inFlightOwnerships,
       continuityObservation,
     };

@@ -72,21 +72,6 @@ describe("RunnerHostStateStore observation", () => {
       correlationId: "host:1",
     });
     store.acknowledgeHostCall("session-a", "host:1");
-    expect(store.stageInterventionFallback({
-      sessionId: "session-a",
-      interventionId: "intervention-a",
-      message: { text: "stop now" },
-      queued: true,
-      stagedAt: "2026-11-10T00:00:01.000Z",
-    })).toEqual({ queuePosition: 1 });
-    expect(store.readPendingInterventionFallbacks("session-a")).toEqual([
-      {
-        interventionId: "intervention-a",
-        message: { text: "stop now" },
-        queued: true,
-      },
-    ]);
-    store.removeInterventionFallback("session-a", "intervention-a");
     store.close();
 
     const labels = [...new Set(events.map((event) => event.transactionLabel))].sort();
@@ -95,8 +80,6 @@ describe("RunnerHostStateStore observation", () => {
       "runner_host.acknowledge_host_call",
       "runner_host.initialize_checkpoint",
       "runner_host.record_host_call_applied",
-      "runner_host.remove_intervention_fallback",
-      "runner_host.stage_intervention_fallback",
     ]);
     for (const label of labels) {
       expect(stagesFor(events, label), label).toEqual([
@@ -131,11 +114,6 @@ describe("RunnerHostStateStore observation", () => {
         phase: "dbRead",
         sessionId: "session-a",
         label: "runner_host.read_host_call_applied",
-      }),
-      expect.objectContaining({
-        phase: "dbRead",
-        sessionId: "session-a",
-        label: "runner_host.read_pending_intervention_fallbacks",
       }),
       expect.objectContaining({
         phase: "dbClose",

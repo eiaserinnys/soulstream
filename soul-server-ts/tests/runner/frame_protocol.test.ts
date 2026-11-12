@@ -4,8 +4,6 @@ import {
   RUNNER_FRAME_PROTOCOL_VERSION,
   RunnerExecuteParamsSchema,
   RunnerFrameSchema,
-  applyInterventionCommandFrame,
-  discardInterventionCommandFrame,
   engineEventFrame,
   parseRunnerCommandJsonRoundTrip,
   type RunnerFrame,
@@ -51,23 +49,6 @@ const frames: RunnerFrame[] = [
     channel: "command",
     kind: "execution_status",
     commandId: "status-1",
-  },
-  {
-    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
-    channel: "command",
-    kind: "stage_intervention",
-    commandId: "stage-intervention-1",
-    interventionId: "intervention-1",
-    message: { text: "change course" },
-    queued: false,
-  },
-  {
-    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
-    channel: "command",
-    kind: "invoke",
-    commandId: "apply-intervention-1",
-    capability: "runner.apply_intervention",
-    args: ["intervention-1", { prompt: "change course" }],
   },
   {
     protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
@@ -211,43 +192,6 @@ const forbiddenJsonValues = [
 ] as const;
 
 describe("runner frame protocol", () => {
-  it("encodes live intervention application in the rolling-restart-safe invoke envelope", () => {
-    expect(applyInterventionCommandFrame({
-      commandId: "apply-intervention-1",
-      interventionId: "intervention-1",
-      interventionInput: {
-        prompt: "change course",
-        inputUuid: "delivery-input-1",
-        turnOrigin: { kind: "completion_notification", id: "delivery-1" },
-      },
-    })).toEqual({
-      protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
-      channel: "command",
-      kind: "invoke",
-      commandId: "apply-intervention-1",
-      capability: "runner.apply_intervention",
-      args: ["intervention-1", {
-        prompt: "change course",
-        inputUuid: "delivery-input-1",
-        turnOrigin: { kind: "completion_notification", id: "delivery-1" },
-      }],
-    });
-  });
-
-  it("encodes confirmed-miss cleanup in the rolling-restart-safe invoke envelope", () => {
-    expect(discardInterventionCommandFrame({
-      commandId: "discard-intervention-1",
-      interventionId: "intervention-1",
-    })).toEqual({
-      protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
-      channel: "command",
-      kind: "invoke",
-      commandId: "discard-intervention-1",
-      capability: "runner.discard_intervention",
-      args: ["intervention-1"],
-    });
-  });
-
   it("normalizes deep undefined while constructing observational engine frames", () => {
     expect(engineEventFrame({
       type: "debug",

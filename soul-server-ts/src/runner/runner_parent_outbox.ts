@@ -7,10 +7,7 @@ import type {
   EventOutboxQuarantineResult,
 } from "../upstream/event_outbox_quarantine.js";
 import type { RunnerEventFrame } from "./frame_protocol.js";
-import type {
-  RunnerHostCallAppliedReceipt,
-  RunnerHostInterventionFallback,
-} from "./runner_host_state_store.js";
+import type { RunnerHostCallAppliedReceipt } from "./runner_host_state_store.js";
 import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 import type {
   RunnerParentStorageSnapshot,
@@ -171,34 +168,6 @@ export class RunnerParentOutbox implements EventOutboxPumpStore {
     frame: Extract<RunnerEventFrame, { kind: "engine_event" }>;
   }>> {
     return await this.client.readPendingIpcFrames();
-  }
-
-  async readPendingInterventions(): Promise<Array<{
-    interventionId: string;
-    message: Record<string, unknown>;
-  }>> {
-    return (await this.inspectPendingInterventions()).interventions;
-  }
-
-  async inspectPendingInterventions(): Promise<{
-    interventions: Array<{
-      interventionId: string;
-      message: Record<string, unknown>;
-    }>;
-    childInterventionIds: string[];
-    shadowedFallbackIds: string[];
-  }> {
-    return await this.client.inspectPendingInterventions();
-  }
-
-  async readInterventionFallback(
-    interventionId: string,
-  ): Promise<RunnerHostInterventionFallback | null> {
-    return await this.client.readInterventionFallback(interventionId);
-  }
-
-  async removeInterventionFallback(interventionId: string): Promise<void> {
-    await this.client.removeInterventionFallback(interventionId);
   }
 
   async hasPendingDurableWork(): Promise<boolean> {

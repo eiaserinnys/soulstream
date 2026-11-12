@@ -176,16 +176,6 @@ export const RunnerCommandFrameSchema = withJsonContract(z.discriminatedUnion("k
   z.object({
     protocolVersion,
     channel: z.literal("command"),
-    kind: z.literal("stage_intervention"),
-    commandId: correlationId,
-    interventionId: z.string().min(1),
-    message: jsonRecord,
-    event: jsonRecord.optional(),
-    queued: z.boolean(),
-  }).passthrough(),
-  z.object({
-    protocolVersion,
-    channel: z.literal("command"),
     kind: z.literal("interrupt"),
     commandId: correlationId,
   }).passthrough(),
@@ -551,57 +541,6 @@ export function executionStatusCommandFrame(
     kind: "execution_status",
     commandId,
   }) as Extract<RunnerCommandFrame, { kind: "execution_status" }>;
-}
-
-export function stageInterventionCommandFrame(input: {
-  commandId: string;
-  interventionId: string;
-  message: Record<string, unknown>;
-  event?: Record<string, unknown>;
-  queued: boolean;
-}): Extract<RunnerCommandFrame, { kind: "stage_intervention" }> {
-  return RunnerCommandFrameSchema.parse({
-    protocolVersion: RUNNER_FRAME_PROTOCOL_VERSION,
-    channel: "command",
-    kind: "stage_intervention",
-    ...input,
-  }) as Extract<RunnerCommandFrame, { kind: "stage_intervention" }>;
-}
-
-export function applyInterventionCommandFrame(input: {
-  commandId: string;
-  interventionId: string;
-  interventionInput: {
-    prompt: string;
-    imageAttachmentPaths?: string[];
-    inputUuid?: string;
-    turnOrigin?: {
-      kind:
-        | "initial_prompt"
-        | "user_message"
-        | "durable_next_turn"
-        | "completion_notification"
-        | "runtime_followup";
-      id?: string;
-    };
-  };
-}): Extract<RunnerCommandFrame, { kind: "invoke" }> {
-  return invokeCommandFrame(
-    input.commandId,
-    "runner.apply_intervention",
-    [input.interventionId, input.interventionInput],
-  );
-}
-
-export function discardInterventionCommandFrame(input: {
-  commandId: string;
-  interventionId: string;
-}): Extract<RunnerCommandFrame, { kind: "invoke" }> {
-  return invokeCommandFrame(
-    input.commandId,
-    "runner.discard_intervention",
-    [input.interventionId],
-  );
 }
 
 export function closeCommandFrame(

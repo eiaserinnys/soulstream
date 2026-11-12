@@ -9,8 +9,6 @@ import {
   deserializeRunnerParentStorageError,
   type RunnerParentStorageBatch,
   type RunnerParentStorageBootstrap,
-  type RunnerParentStorageFallback,
-  type RunnerParentStorageInterventionInspection,
   type RunnerParentStorageLifecycleSummaryNotice,
   type RunnerParentStorageObservation,
   type RunnerParentStorageOperation,
@@ -168,20 +166,6 @@ export class RunnerParentStorageWorkerClient {
 
   async readPendingIpcFrames(): Promise<RunnerParentStoragePendingFrame[]> {
     return (await this.request("readPendingIpcFrames", undefined)).value;
-  }
-
-  async inspectPendingInterventions(): Promise<RunnerParentStorageInterventionInspection> {
-    return (await this.request("inspectPendingInterventions", undefined)).value;
-  }
-
-  async readInterventionFallback(
-    interventionId: string,
-  ): Promise<RunnerParentStorageFallback | null> {
-    return (await this.request("readInterventionFallback", { interventionId })).value;
-  }
-
-  async removeInterventionFallback(interventionId: string): Promise<void> {
-    await this.request("removeInterventionFallback", { interventionId });
   }
 
   async hasPendingDurableWork(): Promise<RunnerParentStorageSnapshotResult<boolean>> {

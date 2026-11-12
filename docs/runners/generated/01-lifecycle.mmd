@@ -1,0 +1,23 @@
+stateDiagram-v2
+direction TB
+classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
+classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
+state "러너 등록 하나의 실행 명령 수명 기록" as runnerLifecycle {
+    direction TB
+    state "수명 기록 없음" as runnerLifecycle_none
+    state "실행 중" as runnerLifecycle_running
+    state "완료됨" as runnerLifecycle_completed
+    state "실패함" as runnerLifecycle_failed
+    state "닫힘" as runnerLifecycle_closed
+    state "치워짐" as runnerLifecycle_reaped
+    runnerLifecycle_none --> runnerLifecycle_running: 기록이 없어도 실행을 연다
+    runnerLifecycle_running --> runnerLifecycle_running: 새 실행 명령으로 다시 연다
+    runnerLifecycle_running --> runnerLifecycle_completed: 실행 중이고 번호가 같으면 완료로 닫는다
+    runnerLifecycle_running --> runnerLifecycle_failed: 실행 중이고 번호가 같으면 실패로 닫는다
+    runnerLifecycle_running --> runnerLifecycle_closed: 실행 중이고 번호가 같으면 닫는다
+    runnerLifecycle_running --> runnerLifecycle_reaped: 실행 중이고 번호가 같으면 치운다
+    runnerLifecycle_completed --> runnerLifecycle_running: 끝난 기록도 새 실행 명령으로 다시 연다
+    runnerLifecycle_failed --> runnerLifecycle_running: 끝난 기록도 새 실행 명령으로 다시 연다
+    runnerLifecycle_closed --> runnerLifecycle_running: 닫힌 기록도 새 실행 명령으로 다시 연다
+    runnerLifecycle_reaped --> runnerLifecycle_running: 치운 기록도 새 실행 명령으로 다시 연다
+}

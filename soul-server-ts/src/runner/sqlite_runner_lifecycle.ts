@@ -19,6 +19,8 @@ import {
   type RunnerLifecycleRecord,
 } from "./runner_lifecycle_record.js";
 import { stringifyRunnerJson } from "./sqlite_event_outbox_records.js";
+import { decideRunnerLifecycleStep } from "./state/runner_lifecycle_decision.js";
+import type { RunnerLifecycleStep } from "./state/runner_lifecycle_machine.js";
 
 export type { RunnerSqliteLifecycleOptions } from "./runner_lifecycle_summary_writer.js";
 export type { RunnerInFlightTool, RunnerLifecycleRecord } from "./runner_lifecycle_record.js";
@@ -137,7 +139,7 @@ export class RunnerSqliteLifecycle {
   progress(commandId: string, progressedAt: string): RunnerLifecycleRecord {
     validateTimestamp(progressedAt, "runner progress timestamp");
     this.transaction("lifecycle.progress", () => {
-      this.updateActiveWithinTransaction(commandId, `
+      this.updateActiveWithinTransaction("progress", commandId, `
         progress_seq = progress_seq + 1, progress_at = ?, liveness_at = ?
       `, [progressedAt, progressedAt]);
     });
@@ -147,7 +149,7 @@ export class RunnerSqliteLifecycle {
   liveness(commandId: string, observedAt: string): RunnerLifecycleRecord {
     validateTimestamp(observedAt, "runner liveness timestamp");
     this.transaction("lifecycle.liveness", () => {
-      this.updateActiveWithinTransaction(commandId, "liveness_at = ?", [observedAt]);
+      this.updateActiveWithinTransaction("liveness", commandId, "liveness_at = ?", [observedAt]);
     });
     return this.persistSummary(this.requireLifecycle());
   }
@@ -178,15 +180,13 @@ export class RunnerSqliteLifecycle {
     if (state === "failed" && error === null) {
       throw new Error("failed runner execution requires terminal error");
     }
-    const terminalError = error === null
-      ? null
-      : stringifyRunnerJson(error, "terminal runner error");
     this.transaction("lifecycle.finish", () => {
-      this.updateActiveWithinTransaction(commandId, `
-        execution_state = ?, progress_seq = progress_seq + 1,
-        progress_at = ?, liveness_at = ?, in_flight_tools_json = '[]',
-        terminal_error_json = ?
-      `, [state, progressedAt, progressedAt, terminalError]);
+      finishRunnerExecutionWithinTransaction(this.database, {
+        commandId,
+        state,
+        progressedAt,
+        terminalError: error,
+      });
     });
     return this.persistSummary(this.requireLifecycle());
   }
@@ -202,7 +202,7 @@ export class RunnerSqliteLifecycle {
   }): RunnerLifecycleRecord {
     validateTimestamp(progressedAt, "runner progress timestamp");
     this.transaction("lifecycle.reap", () => {
-      this.updateActiveWithinTransaction(commandId, `
+      this.updateActiveWithinTransaction("reap", commandId, `
         execution_state = 'reaped', progress_seq = progress_seq + 1,
         progress_at = ?, liveness_at = ?, in_flight_tools_json = '[]',
         terminal_error_json = ?
@@ -292,11 +292,31 @@ export class RunnerSqliteLifecycle {
   }
 
   private updateActiveWithinTransaction(
+    step: RunnerLifecycleStep,
+    commandId: string,
+    assignments: string,
+    args: SqlParameter[],
+  ): "applied" | "ignored" {
+    if (!commandId) throw new Error("runner execution command id required");
+    const lifecycle = this.read();
+    const decision = decideRunnerLifecycleStep(
+      lifecycle?.execution_state ?? "none",
+      step,
+      lifecycle?.execution_command_id === commandId,
+    );
+    if (decision === "reject") {
+      throw new RunnerLifecycleCommandMismatchError(commandId);
+    }
+    if (decision === "ignore") return "ignored";
+    this.applyActiveWithinTransaction(commandId, assignments, args);
+    return "applied";
+  }
+
+  private applyActiveWithinTransaction(
     commandId: string,
     assignments: string,
     args: SqlParameter[],
   ): void {
-    if (!commandId) throw new Error("runner execution command id required");
     let result = this.database.prepare(`
       UPDATE runner_event_outbox SET ${assignments}
       WHERE record_kind = 'bootstrap' AND execution_command_id = ?
@@ -324,9 +344,15 @@ export class RunnerSqliteLifecycle {
     validateTimestamp(progressedAt, "runner progress timestamp");
     this.transaction(started ? "lifecycle.tool_started" : "lifecycle.tool_finished", () => {
       const current = this.requireLifecycle();
-      if (current.execution_command_id !== commandId) {
+      const decision = decideRunnerLifecycleStep(
+        current.execution_state,
+        started ? "tool_started" : "tool_finished",
+        current.execution_command_id === commandId,
+      );
+      if (decision === "reject") {
         throw new RunnerLifecycleCommandMismatchError(commandId);
       }
+      if (decision === "ignore") return;
       const tools = new Map(current.in_flight_tools.map((tool) => [tool.tool_use_id, tool]));
       if (started) {
         // Duplicate delivery must not extend the tool's absolute recovery lease.
@@ -335,7 +361,7 @@ export class RunnerSqliteLifecycle {
       } else {
         tools.delete(toolUseId);
       }
-      this.updateActiveWithinTransaction(commandId, `
+      this.applyActiveWithinTransaction(commandId, `
         progress_seq = progress_seq + 1, progress_at = ?, liveness_at = ?,
         in_flight_tools_json = ?
       `, [
@@ -382,6 +408,80 @@ export class RunnerSqliteLifecycle {
   private requireOpen(): void {
     if (this.closed) throw new Error("runner lifecycle store is closed");
   }
+}
+
+export type RunnerFinishOutcome = "applied" | "ignored";
+
+/**
+ * 끝남의 한 길이다. running이고 실행 명령 번호가 같을 때만 적용한다.
+ * closed나 reaped에 온 늦은 끝남은 무시하고 true를 돌려준다.
+ */
+export function finishRunnerExecutionWithinTransaction(
+  database: DatabaseSync,
+  input: {
+    commandId: string;
+    state: "completed" | "failed" | "closed";
+    progressedAt: string;
+    terminalError: { code: string; message: string } | null;
+  },
+): RunnerFinishOutcome {
+  if (!input.commandId) throw new Error("runner execution command id required");
+  validateTimestamp(input.progressedAt, "runner progress timestamp");
+  if (input.state === "failed" && input.terminalError === null) {
+    throw new Error("failed runner execution requires terminal error");
+  }
+  const lifecycle = readRunnerLifecycleRecord(database);
+  const step: RunnerLifecycleStep = input.state === "completed"
+    ? "finish_completed"
+    : input.state === "failed"
+      ? "finish_failed"
+      : "finish_closed";
+  const decision = decideRunnerLifecycleStep(
+    lifecycle?.execution_state ?? "none",
+    step,
+    lifecycle?.execution_command_id === input.commandId,
+  );
+  if (decision === "ignore") return "ignored";
+  if (decision === "reject") {
+    throw new Error(`runner lifecycle command mismatch: ${input.commandId}`);
+  }
+  const terminalError = input.terminalError === null
+    ? null
+    : stringifyRunnerJson(input.terminalError, "terminal runner error");
+  let result = database.prepare(`
+    UPDATE runner_event_outbox SET
+      execution_state = ?, progress_seq = progress_seq + 1,
+      progress_at = ?, liveness_at = ?, in_flight_tools_json = '[]',
+      terminal_error_json = ?
+    WHERE record_kind = 'bootstrap' AND execution_command_id = ?
+      AND execution_state = 'running'
+  `).run(
+    input.state,
+    input.progressedAt,
+    input.progressedAt,
+    terminalError,
+    input.commandId,
+  );
+  if (result.changes === 0) {
+    result = database.prepare(`
+      UPDATE runner_prebootstrap_lifecycle SET
+        execution_state = ?, progress_seq = progress_seq + 1,
+        progress_at = ?, liveness_at = ?, in_flight_tools_json = '[]',
+        terminal_error_json = ?
+      WHERE singleton = 1 AND execution_command_id = ?
+        AND execution_state = 'running'
+    `).run(
+      input.state,
+      input.progressedAt,
+      input.progressedAt,
+      terminalError,
+      input.commandId,
+    );
+  }
+  if (result.changes !== 1) {
+    throw new Error(`runner lifecycle command mismatch: ${input.commandId}`);
+  }
+  return "applied";
 }
 
 type PendingLifecycleRow = {
