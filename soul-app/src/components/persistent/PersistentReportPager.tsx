@@ -15,6 +15,9 @@ import type { usePersistentReportSend } from './usePersistentReportSend';
 import type { CardCompletion } from './usePersistentCardCompletion';
 import { ReportComposerFocusContext, useReportComposerScroll } from './useReportComposerScroll';
 
+/** 계약 판 8, 3절 2번: 답한 장은 펼치지 않은 채 이만큼 지나면 놓는다. */
+export const CARD_QUESTION_ANSWERED_HOLD_MS = 10_000;
+
 function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps<typeof LiquidGlassButton> & { interaction(pressed: boolean): void }) {
   const held = useRef(false);
   const release = () => { if (held.current) { held.current = false; interaction(false); } };
@@ -26,8 +29,10 @@ function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps
   </View>;
 }
 
-export function PersistentReportPager({ entries: rawEntries, index: rawIndex, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, renderQuestion, onOpenCardDetails, expandedKey: controlledExpandedKey, onExpandedKeyChange, completion, verticalList = false, revealKey, onRevealed }: {
+export function PersistentReportPager({ entries: rawEntries, index: rawIndex, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, renderQuestion, onOpenCardDetails, expandedKey: controlledExpandedKey, onExpandedKeyChange, completion, verticalList = false, revealKey, onRevealed, answeredHoldKey, onAnsweredHoldExpire }: {
   expandedKey?: string | null; onExpandedKeyChange?(key: string | null): void;
+  /** 답한 장을 확정한 붙들기 key. 있으면 펼치지 않은 동안 기한을 센다. */
+  answeredHoldKey?: string | null; onAnsweredHoldExpire?(key: string): void;
   renderCardDetails?(entry: PersistentReportEntry, publishQuestionView: (view: CardQuestionView | null) => void): React.ReactNode;
   renderCardStatus?(entry: PersistentReportEntry): React.ReactNode;
   /** 카드 #1197: 질문 장은 본문과 동작 줄을 이 함수가 그린다. */
@@ -45,6 +50,13 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
   const [localExpandedKey, setLocalExpandedKey] = useState<string | null>(null);
   const expandedKey = controlledExpandedKey === undefined ? localExpandedKey : controlledExpandedKey;
   const setExpandedKey = onExpandedKeyChange ?? setLocalExpandedKey;
+  // 펼쳐 둔 동안에는 시간을 세지 않고, 접으면 그때부터 다시 센다. 카드 시트를 여는 것은
+  // 판의 펼침이 아니므로(계약 판 3) expandedKey가 바뀌지 않는 한 시간을 센다.
+  useEffect(() => {
+    if (!answeredHoldKey || expandedKey === answeredHoldKey) return;
+    const timer = setTimeout(() => onAnsweredHoldExpire?.(answeredHoldKey), CARD_QUESTION_ANSWERED_HOLD_MS);
+    return () => clearTimeout(timer);
+  }, [answeredHoldKey, expandedKey, onAnsweredHoldExpire]);
   // 펼친 장이 읽은 카드 상세의 질문 보기. 펼친 장이 접히면 지운다(계약 1.4절 마지막 줄).
   const [detailQuestionView, setDetailQuestionView] = useState<{ key: string; view: CardQuestionView | null } | null>(null);
   const publishDetailQuestionView = useCallback((key: string, view: CardQuestionView | null) => {

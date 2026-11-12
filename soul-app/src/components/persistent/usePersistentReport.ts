@@ -1,5 +1,5 @@
 import { useOptionalLayoutContinuity } from '../../navigation/LayoutContinuityContext';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import type { ApiClient } from '../../api/client';
 import type { PersistentReportEntry } from '../../api/types';
 import { CARD_ENTRY_KEY_PREFIX, CARD_QUESTION_KEY_PREFIX } from '../../../../packages/wire-schema/src/persistent_report';
@@ -47,6 +47,10 @@ export function usePersistentReport(sessionId: string | undefined, enabled: bool
     && !currentHold.seen.has(edition(entry)));
   if (holdReleased) setAnsweredHold(null);
   const hold = holdReleased ? null : currentHold;
+  /** 펼치지 않은 채 기한이 지난 확정 붙들기를 놓는다(계약 판 8, 3절 2번). 잠정 붙들기는 건드리지 않는다. */
+  const expireAnsweredHold = useCallback((key: string) => {
+    setAnsweredHold(current => current && current.confirmed && current.key === key ? null : current);
+  }, []);
   const heldEntries = hold && !projectedEntries.some(entry => entry.key === hold.key)
     ? [...projectedEntries.slice(0, Math.min(hold.index, projectedEntries.length)), hold.entry,
       ...projectedEntries.slice(Math.min(hold.index, projectedEntries.length))]
@@ -62,6 +66,9 @@ export function usePersistentReport(sessionId: string | undefined, enabled: bool
 
   return {
     entries, index, server,
+    /** 지금 붙든 장이 「답 받음」으로 확정되었으면 그 key. 잠정 붙들기이거나 없으면 null. */
+    answeredHoldKey: hold?.confirmed ? hold.key : null,
+    expireAnsweredHold,
     /** 답 보내기를 시작할 때 그 질문 장을 같은 key, 같은 자리에 잠정으로 붙든다. */
     beginAnsweredHold(entry: PersistentReportEntry, option: string) {
       if (!entry.key.startsWith(CARD_QUESTION_KEY_PREFIX)) return;

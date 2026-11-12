@@ -181,6 +181,7 @@ export function ReviewPasCardExpand() {
     rowBottomGap: t.spacing.xs, pointerFine: false, showCharacter: true, phoneConfigured: phone,
     reportBubble: { widthScale: 1, minimumHeight: minimumReportBubbleHeight(t) } });
   const pager = <PersistentReportPager entries={reportSend.entries} index={report.index} api={api} sessionId="preview-pas" completion={completion}
+    answeredHoldKey={report.answeredHoldKey} onAnsweredHoldExpire={report.expireAnsweredHold}
     onSelect={report.select} onDismiss={async key => { setServerEntries(saved => saved.filter(item => item.key !== key)); }} onFocusComposer={noop}
     bubble={Boolean(layout.reportBubble)} maxHeight={layout.reportBubble?.maxHeight ?? layout.reportViewMaxHeight}
     renderCardStatus={entry => { const statusCard = persistentReportStatusCard(entry); return statusCard ? <CardStatusChip card={statusCard} detail /> : null; }}

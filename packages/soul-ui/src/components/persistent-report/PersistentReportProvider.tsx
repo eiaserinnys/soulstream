@@ -20,6 +20,10 @@ type Controller = {
   confirm: (key: string) => void;
   /** 보내지 못한 잠정 붙들기를 놓고 판 재계산대로 둔다. */
   release: (key: string) => void;
+  /** 확정한 붙들기의 장 key. 잠정 붙들기이거나 붙든 장이 없으면 null. */
+  answeredHoldKey: string | null;
+  /** 펼치지 않은 채 기한이 지난 확정 붙들기를 놓는다. 잠정 붙들기는 건드리지 않는다. */
+  expire: (key: string) => void;
 };
 type OperationReceipt = { operation: ReportSendOperation; id: string; status: 'sending' | 'failed' | 'acknowledged' };
 type HeldPanel = { entry: PersistentReportEntry; answer: string; index: number; siblings: string[]; provisional: boolean };
@@ -93,6 +97,8 @@ export function PersistentReportProvider({ sessionId, entries, children }: Props
   }
   const mergedEntries = useMemo(() => mergeHeld(scope.entries, scope.held), [scope.entries, scope.held]);
   const clearReply = useCallback(() => setScope(current => current.receipt ? { ...current, receipt: null } : current), []);
+  const expire = useCallback((key: string) => setScope(current => current.held && !current.held.provisional && current.held.entry.key === key
+    ? { ...current, held: null } : current), []);
   const controller: Controller = {
     entries: mergedEntries,
     visibleKey: scope.key,
@@ -123,6 +129,8 @@ export function PersistentReportProvider({ sessionId, entries, children }: Props
     }),
     confirm: key => setScope(current => current.held?.provisional && current.held.entry.key === key ? { ...current, held: { ...current.held, provisional: false } } : current),
     release: key => setScope(current => current.held?.provisional && current.held.entry.key === key ? { ...current, held: null } : current),
+    answeredHoldKey: scope.held && !scope.held.provisional ? scope.held.entry.key : null,
+    expire,
   };
   return <Context.Provider value={controller}>{children}</Context.Provider>;
 }

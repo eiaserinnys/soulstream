@@ -289,6 +289,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   const pager = geometry ? <PersistentReportPager entries={reportSend.entries} index={report.index} api={api}
     key={`report-${session?.session_id}`} expandedKey={expandedReportKey}
     onExpandedKeyChange={key => setReportExpansion({ sessionId: session?.session_id, key })}
+    answeredHoldKey={report.answeredHoldKey} onAnsweredHoldExpire={report.expireAnsweredHold}
     sessionId={session?.session_id} onReady={setReportReady}
     send={reportSend} completion={completion} bubble={!reportsScene && !!geometry.reportBubble} verticalList={reportsScene}
     revealKey={reportsScene ? revealReportKey : null} onRevealed={() => setRevealReportKey(null)}
