@@ -364,7 +364,7 @@ export class SessionMutationRepository {
             ELSE 'acknowledged'
           END,
           updated_at = ${updatedAt}
-        WHERE node_id = ${nodeId} AND status = 'running'
+        WHERE node_id = ${nodeId} AND status IN ('running', 'initializing')
       RETURNING session_id, status, termination_reason, termination_detail,
                 review_state, updated_at
     `;
@@ -378,7 +378,7 @@ export class SessionMutationRepository {
     const rows = await this.sql<Array<{ node_id: string }>>`
       SELECT DISTINCT node_id
       FROM sessions
-      WHERE status = 'running' AND node_id IS NOT NULL
+      WHERE status IN ('running', 'initializing') AND node_id IS NOT NULL
       ORDER BY node_id
     `;
     return rows

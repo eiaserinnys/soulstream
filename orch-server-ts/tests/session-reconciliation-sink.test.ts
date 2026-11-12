@@ -184,7 +184,7 @@ describe("createSessionReconciliationSink", () => {
     );
   });
 
-  it("cancels the deferred kill only after a valid reconnect inventory arrives", async () => {
+  it("keeps the disconnect watchdog when the node reports its own inventory", async () => {
     vi.useFakeTimers();
     const repository = {
       reconcileNodeDisconnected: vi.fn(async () => 1),
@@ -194,7 +194,7 @@ describe("createSessionReconciliationSink", () => {
       repositoryProvider: async () => repository,
       logError: vi.fn(),
       isLeaseAwareNode: () => true,
-      disconnectGraceMs: 120_000,
+      disconnectGraceMs: 10,
     });
 
     sink([disconnectEvent("connection-a")]);
@@ -203,14 +203,55 @@ describe("createSessionReconciliationSink", () => {
       nodeId: "node-a",
       data: { running_session_ids: ["session-memory", "session-runner"] },
     }]);
-    await vi.advanceTimersByTimeAsync(120_000);
+    await vi.advanceTimersByTimeAsync(10);
 
-    expect(repository.reconcileNodeDisconnected).not.toHaveBeenCalled();
     expect(repository.reconcileNodeStartup).toHaveBeenCalledWith(
       "node-a",
       ["session-memory", "session-runner"],
       expect.any(Date),
     );
+    expect(repository.reconcileNodeDisconnected).toHaveBeenCalledWith(
+      "node-a",
+      expect.any(Date),
+      "node_disconnect_timeout",
+    );
+  });
+
+  it("cancels the deferred kill only when the server-requested inventory is matched", async () => {
+    vi.useFakeTimers();
+    const requestSessionInventory = vi.fn(async () => ({
+      requestId: "inventory-1",
+      runningSessionIds: ["session-memory", "session-runner"],
+    }));
+    const repository = {
+      captureNodeStartupTargets: vi.fn(async () => []),
+      reconcileNodeDisconnected: vi.fn(async () => 1),
+      reconcileNodeStartup: vi.fn(async () => ({ interrupted: 0, restored: 2 })),
+    };
+    const sink = createSessionReconciliationSink({
+      repositoryProvider: async () => repository,
+      logError: vi.fn(),
+      isLeaseAwareNode: () => true,
+      disconnectGraceMs: 120_000,
+      getConnectedNode: () => ({ connectionId: "connection-a" }),
+      requestSessionInventory,
+    });
+
+    sink([disconnectEvent("connection-a")]);
+    sink([{ type: "node_registered", nodeId: "node-a", connectionId: "connection-a" }]);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(requestSessionInventory).toHaveBeenCalledWith("node-a", "connection-a");
+    expect(repository.reconcileNodeStartup).toHaveBeenCalledWith(
+      "node-a",
+      ["session-memory", "session-runner"],
+      expect.any(Date),
+      [],
+    );
+    await vi.advanceTimersByTimeAsync(120_000);
+
+    expect(repository.reconcileNodeDisconnected).not.toHaveBeenCalled();
+    expect(requestSessionInventory).toHaveBeenCalledTimes(1);
   });
 
   it("preserves a live runner across disconnect, reconnect, and a complete inventory report", async () => {
@@ -219,14 +260,15 @@ describe("createSessionReconciliationSink", () => {
       reconcileNodeDisconnected: vi.fn(async () => 1),
       reconcileNodeStartup: vi.fn(async () => ({ interrupted: 0, restored: 1 })),
     };
+    const registry = new InMemoryNodeRegistry();
+    const registration = nodeRegistration();
     const sink = createSessionReconciliationSink({
       repositoryProvider: async () => repository,
       logError: vi.fn(),
       isLeaseAwareNode: () => true,
       disconnectGraceMs: 10,
+      getConnectedNode: (nodeId) => registry.getConnectedNode(nodeId),
     });
-    const registry = new InMemoryNodeRegistry();
-    const registration = nodeRegistration();
     const first = registry.registerNode(registration);
 
     sink([registry.disconnectNode("node-a", {
@@ -414,7 +456,7 @@ describe("createSessionReconciliationSink", () => {
     expect(repository.reconcileNodeDisconnected).toHaveBeenCalledOnce();
   });
 
-  it("invalidates an expired queued timeout when reconnect wins before the mutation begins", async () => {
+  it("keeps an expired queued timeout when only the node's own inventory arrives", async () => {
     vi.useFakeTimers();
     let releaseFirst!: () => void;
     const first = new Promise<void>((resolve) => { releaseFirst = resolve; });
@@ -447,7 +489,11 @@ describe("createSessionReconciliationSink", () => {
     releaseFirst();
     await vi.advanceTimersByTimeAsync(0);
 
-    expect(repository.reconcileNodeDisconnected).not.toHaveBeenCalled();
+    expect(repository.reconcileNodeDisconnected).toHaveBeenCalledWith(
+      "node-a",
+      expect.any(Date),
+      "node_disconnect_timeout",
+    );
     expect(repository.reconcileNodeStartup).toHaveBeenCalledTimes(2);
   });
 
@@ -563,7 +609,7 @@ describe("createSessionReconciliationSink", () => {
     expect(requestSessionInventory).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps a connected node alive after the finite inventory retry budget", async () => {
+  it("keeps asking a connected node without killing it when the watchdog expires", async () => {
     vi.useFakeTimers();
     const requestSessionInventory = vi.fn(() => new Promise<{ requestId: string; runningSessionIds: string[] }>(() => {}));
     const logError = vi.fn();
@@ -590,22 +636,83 @@ describe("createSessionReconciliationSink", () => {
     expect(requestSessionInventory).toHaveBeenCalledTimes(2);
     expect(repository.reconcileNodeDisconnected).not.toHaveBeenCalled();
 
-    await vi.advanceTimersByTimeAsync(4);
-    expect(requestSessionInventory).toHaveBeenCalledTimes(3);
-    expect(repository.reconcileNodeDisconnected).not.toHaveBeenCalled();
-
-    await vi.advanceTimersByTimeAsync(4);
-    expect(requestSessionInventory).toHaveBeenCalledTimes(3);
-    expect(repository.reconcileNodeDisconnected).not.toHaveBeenCalled();
-
-    await vi.advanceTimersByTimeAsync(4);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(requestSessionInventory).toHaveBeenCalledTimes(2);
     expect(repository.reconcileNodeDisconnected).not.toHaveBeenCalled();
     expect(logError).toHaveBeenCalledWith(
-      expect.objectContaining({
-        message: expect.stringContaining("exhausted after 3 requests"),
-      }),
-      "runner inventory watchdog exhausted for node-a",
+      expect.objectContaining({ message: expect.stringContaining("missed") }),
+      "runner inventory re-report required for node-a",
     );
+  });
+
+  it("re-requests a failed server inventory with growing waits and stops once matched", async () => {
+    vi.useFakeTimers();
+    const requestSessionInventory = vi.fn()
+      .mockRejectedValueOnce(new Error("transport missing"))
+      .mockRejectedValueOnce(new Error("transport missing"))
+      .mockResolvedValueOnce({
+        requestId: "inventory-3",
+        runningSessionIds: ["session-live"],
+      });
+    const repository = {
+      captureNodeStartupTargets: vi.fn(async () => []),
+      reconcileNodeDisconnected: vi.fn(async () => 0),
+      reconcileNodeStartup: vi.fn(async () => ({ interrupted: 0, restored: 1 })),
+    };
+    const sink = createSessionReconciliationSink({
+      repositoryProvider: async () => repository,
+      logError: vi.fn(),
+      getConnectedNode: () => ({ connectionId: "connection-a" }),
+      requestSessionInventory,
+    });
+
+    sink([{ type: "node_registered", nodeId: "node-a", connectionId: "connection-a" }]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(requestSessionInventory).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(requestSessionInventory).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(requestSessionInventory).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(1_999);
+    expect(requestSessionInventory).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(requestSessionInventory).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(repository.reconcileNodeStartup).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(requestSessionInventory).toHaveBeenCalledTimes(3);
+  });
+
+  it("stops asking a disconnected node for its inventory", async () => {
+    vi.useFakeTimers();
+    let connected: { connectionId: string } | undefined = { connectionId: "connection-a" };
+    const requestSessionInventory = vi.fn(async () => {
+      throw new Error("transport missing");
+    });
+    const repository = {
+      captureNodeStartupTargets: vi.fn(async () => []),
+      reconcileNodeDisconnected: vi.fn(async () => 0),
+      reconcileNodeStartup: vi.fn(async () => ({ interrupted: 0, restored: 0 })),
+    };
+    const sink = createSessionReconciliationSink({
+      repositoryProvider: async () => repository,
+      logError: vi.fn(),
+      getConnectedNode: () => connected,
+      requestSessionInventory,
+    });
+
+    sink([{ type: "node_registered", nodeId: "node-a", connectionId: "connection-a" }]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(requestSessionInventory).toHaveBeenCalledTimes(1);
+
+    connected = undefined;
+    sink([disconnectEvent("connection-a")]);
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    expect(requestSessionInventory).toHaveBeenCalledTimes(1);
   });
 
   it("publishes every timeout interruption after the grace window expires", async () => {

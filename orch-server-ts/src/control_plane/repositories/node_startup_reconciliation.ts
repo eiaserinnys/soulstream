@@ -72,7 +72,7 @@ export async function reconcileNodeStartup(
           updated_at = ${updatedAt}
       WHERE node_id = ${nodeId}
         AND session_id = ANY(${sql.array(runningSessionIds)}::text[])
-        AND status IN ('completed', 'error', 'interrupted')
+        AND status = 'interrupted'
         AND termination_event_id IS NULL
         AND updated_at <= ${updatedAt}
         AND (
