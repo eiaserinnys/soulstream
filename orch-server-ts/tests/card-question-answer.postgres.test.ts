@@ -98,8 +98,9 @@ describe("card question answer kinds and delivery to the current assignee", () =
 
   const stateLine = (title: string, cardId: string) =>
     `사용자가 카드 「${title}」(${cardId})를 막힘→실행 중으로 변경했습니다`;
-  const answerNotice = (title: string, cardId: string, questionId: string, body: string[], status = "실행 중") =>
-    [`[카드 질문 답변] 카드 「${title}」(${cardId})`, "질문: 어떻게 할까요?", `질문 ID: ${questionId}`,
+  const answerNotice = (title: string, cardId: string, questionId: string, body: string[], status = "실행 중",
+    question = "어떻게 할까요?") =>
+    [`[카드 질문 답변] 카드 「${title}」(${cardId})`, `질문: ${question}`, `질문 ID: ${questionId}`,
       ...body, `카드 상태: ${status}`].join("\n");
   const stored = async (questionId: string) =>
     (await sql<{ answer: string | null; selected_option: string | null; answered_by: string | null }[]>`
@@ -190,7 +191,7 @@ describe("card question answer kinds and delivery to the current assignee", () =
       const choiceDetail = (await server.inject({ method: "GET", url: `/api/cards/${choiceCard}` })).json();
       expect(choiceDetail.questions[0]).toMatchObject({ id: choiceQuestion, selectedOption: "진행" });
       const choiceMcp = await reader.getCard(choiceCard, { include: ["questions_history"] } as CardMcpGetInput, null);
-      expect(choiceMcp.questions.items[0]).toMatchObject({ id: choiceQuestion, selectedOption: "진행" });
+      expect(choiceMcp.sections.questions_history.items[0]).toMatchObject({ id: choiceQuestion, selectedOption: "진행" });
 
       const free = await server.inject({ method: "POST", url: `/api/cards/${textCard}/questions/${textQuestion}/answer`,
         payload: { answer: "다른 의견입니다", idempotencyKey: key() } });
@@ -237,7 +238,7 @@ describe("card question answer kinds and delivery to the current assignee", () =
     expect(messages).toHaveBeenCalledTimes(1);
     expect(messages.mock.calls[0]![0]).toBe("new-board");
     expect(messages.mock.calls[0]![1]).toBe(`${stateLine("담당 교체 판", boardCard)}\n${answerNotice(
-      "담당 교체 판", boardCard, boardQuestion, ["고른 안: 진행", "덧붙임: 없음"])}`);
+      "담당 교체 판", boardCard, boardQuestion, ["고른 안: 진행", "덧붙임: 없음"], "실행 중", "어느 쪽?")}`);
     expect(messages.mock.calls.some(([id]) => id === "old-board")).toBe(false);
     expect(String((await sql<{ session_id: string }[]>`SELECT session_id FROM card_questions WHERE id=${boardQuestion}`)[0]!.session_id))
       .toBe("old-board");
@@ -256,7 +257,7 @@ describe("card question answer kinds and delivery to the current assignee", () =
       expect(messages).toHaveBeenCalledTimes(1);
       expect(messages.mock.calls[0]![0]).toBe("new-rest");
       expect(messages.mock.calls[0]![1]).toBe(`${stateLine("담당 교체 REST", restCard)}\n${answerNotice(
-        "담당 교체 REST", restCard, restQuestion, ["글 답: 새 담당에게"])}`);
+        "담당 교체 REST", restCard, restQuestion, ["글 답: 새 담당에게"], "실행 중", "어느 쪽?")}`);
       expect(messages.mock.calls.some(([id]) => id === "old-rest")).toBe(false);
       expect(String((await sql<{ session_id: string }[]>`SELECT session_id FROM card_questions WHERE id=${restQuestion}`)[0]!.session_id))
         .toBe("old-rest");
@@ -273,7 +274,7 @@ describe("card question answer kinds and delivery to the current assignee", () =
       expect(messages).toHaveBeenCalledTimes(1);
       expect(messages.mock.calls[0]![0]).toBe("old-fallback");
       expect(messages.mock.calls[0]![1]).toBe(answerNotice(
-        "담당 없음", fallbackCard, fallbackQuestion, ["고른 안: 진행", "덧붙임: 없음"]));
+        "담당 없음", fallbackCard, fallbackQuestion, ["고른 안: 진행", "덧붙임: 없음"], "실행 중", "어느 쪽?"));
       expect(messages.mock.calls[0]![3]).toMatchObject({
         deliveryId: expect.stringMatching(new RegExp(`^card:${fallbackCard}:answer:[^:]+:old-fallback$`)),
       });

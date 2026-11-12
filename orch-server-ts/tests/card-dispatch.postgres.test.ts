@@ -333,9 +333,8 @@ describe("card dispatch and session lifecycle", () => {
         const q = (await cards.getCard(id))!.questions[0]!;
         await cards.answerQuestion({ ...human, cardId: id, questionId: String(q.id), answer: '진행', idempotencyKey: key() });
         await dispatcher.drain();
-        expect(messages).toHaveBeenCalledWith(sessionId, `사용자가 카드 「작업」(${id})를 막힘→실행 중으로 변경했습니다`
-            + `\n[카드 질문 답변] 카드 「작업」(${id})\n질문: 진행?\n질문 ID: ${String(q.id)}\n고른 안: 진행\n덧붙임: 없음\n카드 상태: 실행 중`, undefined,
-            expect.objectContaining({ deliveryId: expect.stringMatching(new RegExp(`^card:${id}:state:[^:]+:${sessionId}$`)) }));
+        expect(messages).toHaveBeenCalledWith(sessionId, `[카드 질문 답변] 카드 「작업」(${id})\n질문: 진행?\n질문 ID: ${String(q.id)}\n고른 안: 진행\n덧붙임: 없음\n카드 상태: 실행 중`, undefined,
+            expect.objectContaining({ deliveryId: expect.stringMatching(new RegExp(`^card:${id}:answer:[^:]+:${sessionId}$`)) }));
         expect((await cards.getCard(id))!.card.status).toBe('running');
         expect(notify).not.toHaveBeenCalled();
     });
@@ -379,9 +378,8 @@ describe("card dispatch and session lifecycle", () => {
         await dispatcher.drain();
         expect(launch).toHaveBeenCalledTimes(1);
         expect((await cards.getCard(id))!.card.status).toBe('running');
-        expect(messages).toHaveBeenCalledWith(sessionId, `사용자가 카드 「작업」(${id})를 막힘→실행 중으로 변경했습니다`
-            + `\n[카드 질문 답변] 카드 「작업」(${id})\n질문: 방향?\n질문 ID: ${String(q.id)}\n글 답: A\n카드 상태: 실행 중`, undefined,
-            expect.objectContaining({ deliveryId: expect.stringMatching(new RegExp(`^card:${id}:state:[^:]+:${sessionId}$`)) }));
+        expect(messages).toHaveBeenCalledWith(sessionId, `[카드 질문 답변] 카드 「작업」(${id})\n질문: 방향?\n질문 ID: ${String(q.id)}\n글 답: A\n카드 상태: 실행 중`, undefined,
+            expect.objectContaining({ deliveryId: expect.stringMatching(new RegExp(`^card:${id}:answer:[^:]+:${sessionId}$`)) }));
     });
     it("delivers a late answer with attachments to a live session after completion without changing status", async () => {
         const {id,sessionId}=await start();

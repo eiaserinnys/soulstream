@@ -201,9 +201,9 @@ describe("card comments HTTP, storage, and delivery", () => {
     messages.mockClear();
     const answer={...human,cardId,questionId:'remaining',answer:'마지막 답',idempotencyKey:key()};
     await cards.answerQuestion(answer);await dispatcher.drain();await cards.answerQuestion(answer);await dispatcher.drain();
-    expect(messages).toHaveBeenCalledTimes(2);
-    expect(messages.mock.calls.map(c=>c[0])).toEqual(['new-owner','new-owner']);
-    expect(messages.mock.calls[1]![1]).toBe(`사용자가 카드 「커멘트 대상」(${cardId})를 막힘→실행 중으로 변경했습니다`
+    expect(messages).toHaveBeenCalledTimes(1);
+    expect(messages.mock.calls.map(c=>c[0])).toEqual(['new-owner']);
+    expect(messages.mock.calls[0]![1]).toBe(`사용자가 카드 「커멘트 대상」(${cardId})를 막힘→실행 중으로 변경했습니다`
       + `\n[카드 질문 답변] 카드 「커멘트 대상」(${cardId})`
       + `\n질문: 남은 질문\n질문 ID: remaining\n글 답: 마지막 답\n카드 상태: 실행 중`);
     expect((await cards.getCard(cardId))?.card.status).toBe('running');

@@ -493,7 +493,9 @@ export class CardControlPlaneService {
   }
   async answerQuestion(params: CardMutationParams & CardQuestionAnswerInput) {
     assertCardCommandEntrance('ANSWER_QUESTION',{}, {kind:params.actorKind,sessionId:params.actorSessionId});
-    const payload:Record<string,unknown>={ question_id:params.questionId,answer:params.answer };
+    // 작업 기록의 answer는 저장될 답 글이다. 덧붙임 없는 선택 답은 고른 안이 곧 답이다.
+    const payload:Record<string,unknown>={ question_id:params.questionId,
+      answer:"option" in params && params.answer === undefined ? params.option : params.answer };
     if ("mode" in params) payload.mode=params.mode;
     if ("option" in params && params.option !== undefined) payload.option=params.option;
     return this.mutateCard(params,"answer_card_question",payload,async (sql,card,eventId) => {

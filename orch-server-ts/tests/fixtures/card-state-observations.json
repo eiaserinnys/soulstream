@@ -33893,7 +33893,8 @@
         "actorUserId": "director",
         "cardId": "4093e754-9b8a-4cc2-8e57-4d8b91401e4f",
         "questionId": "3c91634d-50f1-4f9d-ab1e-af6ab15c30cd",
-        "answer": "진행"
+        "mode": "choice",
+        "option": "진행"
       },
       "checkedAt": 1794406613909,
       "actor": {
@@ -34397,7 +34398,9 @@
             "idempotency_key": null,
             "payload_json": {
               "answer": "진행",
-              "question_id": "3c91634d-50f1-4f9d-ab1e-af6ab15c30cd"
+              "question_id": "3c91634d-50f1-4f9d-ab1e-af6ab15c30cd",
+              "mode": "choice",
+              "option": "진행"
             },
             "reason": null,
             "created_at": "2026-11-11T14:16:53.956Z"
