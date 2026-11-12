@@ -1,6 +1,11 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
+
+import { parseModelCatalogYaml } from "@soulstream/model-catalog";
 
 import {
   ClaudeEngineAdapter,
@@ -20,6 +25,10 @@ import {
 } from "./claude_sdk_persistent_test_harness.js";
 
 const silentLogger = pino({ level: "silent" });
+const MODEL_CATALOG = parseModelCatalogYaml(readFileSync(
+  fileURLToPath(new URL("../../../packages/model-catalog/data/model-catalog.yaml", import.meta.url)),
+  "utf-8",
+));
 
 describe("R17 Claude intervention interrupt contract", () => {
   it.each([
@@ -40,6 +49,7 @@ describe("R17 Claude intervention interrupt contract", () => {
           {
             query: harness.queryFn,
             detachedEventSink: harness.detached,
+            getModelCatalog: () => MODEL_CATALOG,
             runtimeEventSink: async (event) => {
               runtimeEvents.push(event);
               if (

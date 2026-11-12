@@ -317,7 +317,10 @@ describe("recovered isolated execution workspace", () => {
         } as never,
         taskManager,
         engineFactory: (() => engine) as never,
-        modelCatalog: { resolve: vi.fn(() => undefined) } as never,
+        modelCatalog: {
+          resolve: vi.fn(() => undefined),
+          snapshot: vi.fn(() => ({ presets: [], models: [], persistent_defaults: { fallback_models: [] } })),
+        } as never,
         contextBuilder: undefined as never,
         persistence: mocks.persistence,
         broadcaster: mocks.broadcaster,

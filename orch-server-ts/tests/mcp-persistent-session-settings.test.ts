@@ -57,6 +57,7 @@ function setup() {
     ],
   });
   const service = new PersistentSessionSettingsService({
+    modelCatalog: catalog,
     reads: async () => ({
       getSession: async (id: string) => rows.get(id) ?? null,
       listPersistentSessions: async () => [],

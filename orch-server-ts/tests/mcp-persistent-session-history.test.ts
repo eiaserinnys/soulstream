@@ -6,6 +6,7 @@ import { PersistentSessionSettingsService } from "../src/session/persistent_sess
 import type { PersistentSessionHistoryRow } from "../src/control_plane/repositories/persistent_session_history_query.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CallToolResult } from "@soulstream/mcp-contract";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 function setup() {
   const rows = new Map<string, Record<string, unknown>>();
@@ -14,6 +15,7 @@ function setup() {
   let ownerEmail: string | null = "owner@example.com";
   let denyFolder = false;
   const settings = new PersistentSessionSettingsService({
+    modelCatalog: repositoryModelCatalog(),
     reads: async () => ({ getSession: async (id: string) => rows.get(id) ?? null, listPersistentSessions: async () => [] }),
     access: {
       resolveAccess: async () => ({ restricted: false, allowedFolderIds: [] }) as never,

@@ -81,6 +81,8 @@ export async function buildPersistentSettingsApp(
         if (!preset) throw new Error(`Unknown model preset: ${id}`);
         return { ...preset, model: `${id}-model`, env: {} };
       },
+      // The worker reads PAS defaults (fallback models) from the full catalogue snapshot.
+      snapshot: () => catalog.snapshot(),
     };
     const control = new worker.PersistentSessionControl({
       getTask: (id: string) => tasks.get(id),
