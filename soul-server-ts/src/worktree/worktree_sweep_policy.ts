@@ -19,7 +19,8 @@ export function decideWorktreeSweep(input: {
   if (input.inUse) return "in_use";
   if (input.baseLinks) return "base_links";
   if (input.changes) return "changes";
+  if (input.linkedCardsClosed) return "removed";
   if (!input.pushed) return "unpushed";
-  if (input.merged || input.linkedCardsClosed || input.idleMs >= SWEEP_IDLE_MS) return "removed";
+  if (input.merged || input.idleMs >= SWEEP_IDLE_MS) return "removed";
   return "not_finished";
 }
