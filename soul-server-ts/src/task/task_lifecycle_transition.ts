@@ -28,10 +28,20 @@ export interface ExternalFinalizeParams {
   llmUsage?: Record<string, number> | null;
 }
 
+/**
+ * 완료 통지 포트. `notifyForDelete`는 삭제 길 전용으로, 이번 종료 revision의
+ * 등록 결과를 실제로 돌려준다. 구현이 없으면 삭제 경로는 등록을 확인할 수
+ * 없으므로 삭제를 멈춘다(등록 없이 세션 행을 지우지 않는다).
+ */
+interface CompletionNotificationPort {
+  notify(task: Task): Promise<void>;
+  notifyForDelete?(task: Task): Promise<boolean>;
+}
+
 interface TaskLifecycleTransitionDeps {
   logger: Logger;
   persistence?: EventPersistence;
-  completionNotifier?: { notify(task: Task): Promise<void> };
+  completionNotifier?: CompletionNotificationPort;
 }
 
 export interface TaskFinalStatePersistenceResult {
@@ -66,26 +76,44 @@ export function isUserStopConverged(task: Task | undefined): boolean {
 }
 
 export class TaskLifecycleTransition {
-  private completionNotifier?: { notify(task: Task): Promise<void> };
+  private completionNotifier?: CompletionNotificationPort;
 
   constructor(private readonly deps: TaskLifecycleTransitionDeps) {
     this.completionNotifier = deps.completionNotifier;
   }
 
-  setCompletionNotifier(
-    completionNotifier: { notify(task: Task): Promise<void> },
-  ): void {
+  setCompletionNotifier(completionNotifier: CompletionNotificationPort): void {
     this.completionNotifier = completionNotifier;
   }
 
+  /**
+   * `persistence.terminalTransitionApplied`는 이번 호출이 종료 전이를 적용했는지만
+   * 말한다. 삭제 길은 재시도로 들어올 수 있으므로 그 값과 무관하게 이번 종료
+   * revision의 통지 등록을 다시 확인한다(`requireRegistration`).
+   */
   async notifyCompletionIfApplied(
     task: Task,
     persistence: TaskFinalStatePersistenceResult,
+    options: { requireRegistration?: boolean } = {},
   ): Promise<boolean> {
-    if (!persistence.terminalTransitionApplied) return true;
+    const requireRegistration = options.requireRegistration === true;
+    if (!requireRegistration && !persistence.terminalTransitionApplied) {
+      return true;
+    }
     if (!task.callerSessionId || !this.completionNotifier) return true;
 
     try {
+      if (requireRegistration) {
+        const notifyForDelete = this.completionNotifier.notifyForDelete;
+        if (!notifyForDelete) {
+          this.deps.logger.warn(
+            { sessionId: task.agentSessionId },
+            "completion notifier cannot confirm registration before delete",
+          );
+          return false;
+        }
+        return await notifyForDelete.call(this.completionNotifier, task);
+      }
       await this.completionNotifier.notify(task);
       return true;
     } catch (err) {
@@ -217,7 +245,9 @@ export class TaskLifecycleTransition {
 
     // 디렉터 결정(261112): 멈춤 버튼도 부른 세션에 알린다. 통지 등록이 끝난 뒤에
     // 러너를 닫아야 삭제 경로가 등록을 잃지 않는다.
-    const notified = await this.notifyCompletionIfApplied(task, persistence);
+    const notified = await this.notifyCompletionIfApplied(task, persistence, {
+      requireRegistration: forDelete,
+    });
     if (forDelete && !notified) {
       throw new Error(
         `completion notification registration failed before delete: ${task.agentSessionId}`,

@@ -47,6 +47,8 @@ function makeRoute(
         task.status = "interrupted";
         task.completedAt ??= new Date();
         task.terminationDetail = "user_stop";
+        // 실제 전이처럼 성공한 멈춤 마무리는 러너를 놓아준다.
+        task.runner = undefined;
       }
       return true;
     }),
@@ -362,6 +364,7 @@ describe("TaskLifecycleRoute.deleteTask", () => {
         running.status = "interrupted";
         running.completedAt ??= new Date();
         running.terminationDetail = "user_stop";
+        running.runner = undefined;
       }
       return true;
     });

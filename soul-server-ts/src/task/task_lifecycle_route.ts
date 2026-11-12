@@ -92,13 +92,20 @@ export class TaskLifecycleRoute {
     // 실행 중인 세션은 사람이 멈춘 것과 같은 경로로 멈춘다. 부른 세션 통지 등록이
     // 끝난 뒤 러너를 닫고(retire 포함) 그 다음 행을 지운다. 러너가 아직 붙지 않은
     // creation 단계 task는 멈출 실행이 없으므로 예전처럼 바로 지운다.
-    if (isActiveTaskStatus(task.status) && runner) {
+    //
+    // 앞선 삭제가 멈춤 영속이나 통지 등록에서 실패하면 status는 이미 종료값으로
+    // 남는다(transition.ts의 종료 투영). 그래서 status만 보면 마무리를 건너뛰고
+    // 줄을 지워 버린다. 끝나지 않은 멈춤 마무리는 `interruptRequest`가 남아 있는
+    // 것으로 표시하고(성공 경로에서만 지운다), 다시 지울 때도 같은 멈춤 경로로
+    // 종료 영속과 이번 revision 통지 등록을 다시 시도해 확인한 뒤에만 지운다.
+    const stopFinalizationPending = task.interruptRequest !== undefined;
+    if ((isActiveTaskStatus(task.status) && runner) || stopFinalizationPending) {
       // 삭제가 일으킨 멈춤은 종료 영속과 부른 세션 통지 등록이 확인돼야 한다.
       // 확인되지 않으면 cancelRunningTask가 throw하고, 세션 행은 남는다.
       await this.deps.lifecycleTransition.cancelRunningTask(task, {
         forDelete: true,
       });
-      if (isActiveTaskStatus(task.status)) {
+      if (!isUserStopConverged(task)) {
         throw new Error(
           `running session stop did not converge before delete: ${sessionId}`,
         );
