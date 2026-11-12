@@ -437,6 +437,7 @@ function makeSchedule(overrides: Partial<SoulstreamSchedule> = {}): SoulstreamSc
     nextRunAt: "2026-01-01T00:01:00.000Z",
     lastFiredAt: null,
     firedCount: 0,
+    dispatchFailureCount: 0,
     lastError: null,
     claimToken: null,
     claimedUntil: null,

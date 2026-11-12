@@ -131,6 +131,7 @@ async function createMinimalScheduleSchema(sql: SqlClient): Promise<void> {
       id INTEGER NOT NULL,
       event_type TEXT NOT NULL,
       payload JSONB,
+      dedupe_key TEXT,
       PRIMARY KEY (session_id, id)
     )
   `;
@@ -160,6 +161,7 @@ async function createMinimalScheduleSchema(sql: SqlClient): Promise<void> {
       next_run_at TIMESTAMPTZ,
       last_fired_at TIMESTAMPTZ,
       fired_count INTEGER NOT NULL DEFAULT 0,
+      dispatch_failure_count INTEGER NOT NULL DEFAULT 0,
       last_error TEXT,
       claim_token TEXT,
       claimed_until TIMESTAMPTZ,

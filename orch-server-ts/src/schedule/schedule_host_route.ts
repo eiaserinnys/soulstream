@@ -24,6 +24,7 @@ const operations = {
   consume_claimed_schedule: "consumeClaimedSchedule",
   confirm_schedule_still_firing: "confirmScheduleStillFiring",
   has_continuous_limit_window: "hasContinuousLimitWindow",
+  decide_resume_dispatch: "decideResumeDispatch",
   defer_schedule_dispatch: "deferScheduleDispatch",
   finish_schedule_dispatch: "finishScheduleDispatch",
   fail_schedule_dispatch: "failScheduleDispatch",
@@ -104,6 +105,10 @@ async function dispatch(
       requiredScheduleIdentity(input.schedule),
       requiredEventId(input, "expectedCurrentTerminalId"),
     );
+    case "decideResumeDispatch": return await repository.decideResumeDispatch(
+      requiredScheduleIdentity(input.schedule),
+      requiredBoolean(input, "localTaskBusy"),
+    );
     case "deferScheduleDispatch": return await repository.deferScheduleDispatch(input as never);
     case "finishScheduleDispatch": return await repository.finishScheduleDispatch(input as never);
     case "failScheduleDispatch": return await repository.failScheduleDispatch(
@@ -160,6 +165,12 @@ function withoutLegacyStaleBefore(
 function requiredString(input: Record<string, unknown>, key: string): string {
   const value = input[key];
   if (typeof value !== "string" || value.length === 0) throw new Error(`${key} is required`);
+  return value;
+}
+
+function requiredBoolean(input: Record<string, unknown>, key: string): boolean {
+  const value = input[key];
+  if (typeof value !== "boolean") throw new Error(`${key} must be a boolean`);
   return value;
 }
 

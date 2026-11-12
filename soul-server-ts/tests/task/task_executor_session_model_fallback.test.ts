@@ -179,6 +179,7 @@ function makeResumeScheduleRuntime(
         nextRunAt: input.nextRunAt.toISOString(),
         lastFiredAt: null,
         firedCount: 0,
+        dispatchFailureCount: 0,
         lastError: null,
         claimToken: null,
         claimedUntil: null,
@@ -205,6 +206,10 @@ function makeResumeScheduleRuntime(
       candidate: SoulstreamSchedule,
       currentTerminalEventId: number,
     ) => candidate.toolUseId === `ResumeAfterLimit:${currentTerminalEventId}`),
+    decideResumeDispatch: vi.fn(async (_candidate: SoulstreamSchedule, localTaskBusy: boolean) =>
+      localTaskBusy
+        ? { decision: "defer" as const, reason: "local_task_busy" }
+        : { decision: "fire" as const, reason: null }),
     finishScheduleDispatch: vi.fn(async ({ firedAt }: { firedAt: Date }) => {
       if (!schedule) return null;
       schedule = { ...schedule, status: "completed", nextRunAt: null, lastFiredAt: firedAt.toISOString() };
@@ -352,11 +357,7 @@ describe("TaskExecutor session model fallback flow", () => {
       { nodeId: "eiaserinnys", startedAt: new Date(0) },
       harness.resumeSchedule.service,
       {
-        getScheduleResumeState: vi.fn(async () => ({
-          status: "error" as const,
-          terminationReason: "limit_hit" as const,
-          terminalEventId: task.terminalEventId!,
-        })),
+        getTask: vi.fn(() => undefined),
         addIntervention,
       } as never,
       vi.fn(),

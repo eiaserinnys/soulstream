@@ -4,6 +4,7 @@ import type { OrchProxyConfig } from "../mcp/runtime.js";
 import type {
   CancelScheduleResult,
   ClaimedSchedule,
+  ResumeDispatchDecision,
   ScheduleCreateInput,
   SoulstreamSchedule,
 } from "./schedule_models.js";
@@ -64,8 +65,23 @@ export class ScheduleHostClient {
       expectedCurrentTerminalId,
     });
   }
+  decideResumeDispatch(
+    schedule: SoulstreamSchedule,
+    localTaskBusy: boolean,
+  ): Promise<ResumeDispatchDecision> {
+    return this.request("decide_resume_dispatch", {
+      schedule: {
+        scheduleId: schedule.scheduleId,
+        sessionId: schedule.sessionId,
+        sourceTool: schedule.sourceTool,
+        toolUseId: schedule.toolUseId,
+      },
+      localTaskBusy,
+    });
+  }
   deferScheduleDispatch(input: {
     scheduleId: string; claimToken: string; nextRunAt: Date; error: string;
+    countFailure?: boolean;
   }): Promise<SoulstreamSchedule | null> {
     return this.request("defer_schedule_dispatch", input);
   }

@@ -24,6 +24,7 @@ import {
   type ScheduleCreateInput,
   type ScheduleDeleteResponse,
   type ScheduleListResponse,
+  type ResumeDispatchDecision,
   type SoulstreamSchedule,
 } from "./schedule_models.js";
 import type { ScheduleHostClient } from "./schedule_host_client.js";
@@ -52,6 +53,7 @@ export class SoulstreamScheduleService {
       | "consumeClaimedSchedule"
       | "confirmScheduleStillFiring"
       | "hasContinuousLimitWindow"
+      | "decideResumeDispatch"
       | "deferScheduleDispatch"
       | "finishScheduleDispatch"
       | "failScheduleDispatch"
@@ -391,17 +393,26 @@ export class SoulstreamScheduleService {
     return await this.db.hasContinuousLimitWindow(schedule, expectedCurrentTerminalId);
   }
 
+  async decideResumeDispatch(
+    schedule: SoulstreamSchedule,
+    localTaskBusy: boolean,
+  ): Promise<ResumeDispatchDecision> {
+    return await this.db.decideResumeDispatch(schedule, localTaskBusy);
+  }
+
   async deferDispatch(
     schedule: SoulstreamSchedule,
     claimToken: string,
     nextRunAt: Date,
     error: string,
+    countFailure = false,
   ): Promise<SoulstreamSchedule | null> {
     const updated = await this.db.deferScheduleDispatch({
       scheduleId: schedule.scheduleId,
       claimToken,
       nextRunAt,
       error,
+      countFailure,
     });
     if (updated) await this.emitScheduleEvent(updated, "updated");
     return updated;

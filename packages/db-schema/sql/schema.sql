@@ -1013,6 +1013,7 @@ CREATE TABLE IF NOT EXISTS soulstream_schedules (
     next_run_at     TIMESTAMPTZ,
     last_fired_at   TIMESTAMPTZ,
     fired_count     INTEGER NOT NULL DEFAULT 0,
+    dispatch_failure_count INTEGER NOT NULL DEFAULT 0,
     last_error      TEXT,
     claim_token     TEXT,
     claimed_until   TIMESTAMPTZ,
