@@ -51,6 +51,8 @@ export async function runProductionMain(): Promise<void> {
   // serving stale built-in data.
   const modelCatalog = openModelCatalogFile({
     path: modelCatalogPathForRepository(repositoryRootFromEntryUrl(import.meta.url)),
+    // A bad runtime edit keeps the last good catalogue; the log is how an operator learns of it.
+    logger: { error: (bindings, message) => console.error(message, bindings) },
   });
   modelCatalog.start();
   let server: Awaited<ReturnType<typeof createProductionOrchestrator>>;
