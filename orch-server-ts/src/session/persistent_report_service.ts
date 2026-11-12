@@ -4,6 +4,7 @@ import { readBoardCards,readCardBoardSessions } from "./card_board_connections.j
 export { readCardBoardSessions } from "./card_board_connections.js";
 export { clip } from "./card_board_entries.js";
 import { cardQuestionState } from "../cards/card_question_rules.js";
+import { projectCardQuestionRows } from "../cards/card_attachment_projection.js";
 import { readPersistentEnabled } from "@soulstream/wire-schema/persistent-session-settings";
 import {
   parsePersistentReportEntry, parsePersistentReportReply, readPersistentReport,
@@ -258,7 +259,8 @@ export class PersistentReportService {
   }
   private async project(sql:RepositorySql,sessionId:string,entries:PersistentReportEntry[],dismissed:DismissedCard[],enabled:boolean){
     const cards=await readBoardCards(sql,sessionId);
-    const questions=cards.length?await sql<BoardQuestion[]>`SELECT * FROM card_questions WHERE card_id=ANY(${sql.array(cards.map(c=>c.id))}::text[])`:[];
+    const questionRows=cards.length?await sql<BoardQuestion[]>`SELECT * FROM card_questions WHERE card_id=ANY(${sql.array(cards.map(c=>c.id))}::text[])`:[];
+    const questions=await projectCardQuestionRows(sql,questionRows);
     // Acknowledgement records are per board and survive unrelated title/now edits.
     const records=dismissed.filter(d=>cards.some(c=>dismissalMatches(c,d)));
     dismissed.splice(0,dismissed.length,...records);
@@ -354,11 +356,34 @@ function sameReportEntry(
     && existing.state === next.state
     && existing.answer === next.answer
     && existing.card_id === next.card_id
-    && existing.card_status === next.card_status;
+    && existing.card_status === next.card_status
+    && existing.question_title === next.question_title
+    && existing.question_text === next.question_text
+    && existing.question_kind === next.question_kind
+    && sameJson(existing.question_option_details, next.question_option_details)
+    && sameJson(existing.question_attachments, next.question_attachments)
+    && sameJson(existing.question_thread, next.question_thread)
+    && existing.question_revision === next.question_revision
+    && existing.question_revised_at === next.question_revised_at;
 }
 
 function sameArray<T>(left: readonly T[], right: readonly T[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+/** metadata JSONB를 다시 읽은 값과 방금 만든 값을 키 순서와 무관하게 비교한다. */
+function sameJson(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left) && Array.isArray(right))
+    return left.length === right.length && left.every((value, index) => sameJson(value, right[index]));
+  if (left !== null && typeof left === "object" && !Array.isArray(left)
+    && right !== null && typeof right === "object" && !Array.isArray(right)) {
+    const record = right as Record<string, unknown>;
+    const keys = Object.keys(left);
+    return keys.length === Object.keys(record).length
+      && keys.every((key) => Object.hasOwn(record, key) && sameJson((left as Record<string, unknown>)[key], record[key]));
+  }
+  return false;
 }
 
 export async function writePersistentReportTx(sql: RepositorySql, row: Pick<ReportRow,"session_id"|"node_id">, entries: PersistentReportEntry[], dismissed:DismissedCard[]=[]): Promise<PersistentReportUpdate> {

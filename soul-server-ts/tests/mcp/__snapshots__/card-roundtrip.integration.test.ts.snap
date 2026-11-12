@@ -128,7 +128,7 @@ exports[`card orchestrator MCP roundtrip > preserves get success 1`] = `
   "content": [
     {
       "type": "text",
-      "text": "{\\n  \\"card\\": {\\n    \\"id\\": \\"card-1\\",\\n    \\"number\\": 1,\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"title\\": \\"기존 카드\\",\\n    \\"status\\": \\"todo\\",\\n    \\"archived\\": false,\\n    \\"version\\": 1,\\n    \\"assigneeKind\\": \\"session\\",\\n    \\"assigneeAgentId\\": null,\\n    \\"assigneeSessionId\\": \\"header-session\\",\\n    \\"assigneeUserId\\": null,\\n    \\"now\\": null,\\n    \\"items\\": [],\\n    \\"blockedKind\\": null,\\n    \\"blockedDetail\\": null\\n  },\\n  \\"available\\": {\\n    \\"request\\": true,\\n    \\"brief\\": false,\\n    \\"attachments\\": false,\\n    \\"comments\\": 1,\\n    \\"notes\\": 0,\\n    \\"reports\\": 1,\\n    \\"sessions\\": 1,\\n    \\"now_history\\": 0\\n  },\\n  \\"changeToken\\": \\"<random-id>\\",\\n  \\"questions\\": {\\n    \\"items\\": [\\n      {\\n        \\"id\\": \\"seed-question\\",\\n        \\"cardId\\": \\"card-1\\",\\n        \\"sessionId\\": \\"header-session\\",\\n        \\"text\\": \\"기존 질문\\",\\n        \\"options\\": null,\\n        \\"askedAt\\": \\"<time>\\",\\n        \\"answer\\": null,\\n        \\"answeredAt\\": null,\\n        \\"answeredBy\\": null\\n      }\\n    ],\\n    \\"nextCursor\\": null,\\n    \\"truncated\\": false\\n  }\\n}"
+      "text": "{\\n  \\"card\\": {\\n    \\"id\\": \\"card-1\\",\\n    \\"number\\": 1,\\n    \\"folderId\\": \\"cards-a\\",\\n    \\"title\\": \\"기존 카드\\",\\n    \\"status\\": \\"todo\\",\\n    \\"archived\\": false,\\n    \\"version\\": 1,\\n    \\"assigneeKind\\": \\"session\\",\\n    \\"assigneeAgentId\\": null,\\n    \\"assigneeSessionId\\": \\"header-session\\",\\n    \\"assigneeUserId\\": null,\\n    \\"now\\": null,\\n    \\"items\\": [],\\n    \\"blockedKind\\": null,\\n    \\"blockedDetail\\": null\\n  },\\n  \\"available\\": {\\n    \\"request\\": true,\\n    \\"brief\\": false,\\n    \\"attachments\\": false,\\n    \\"comments\\": 1,\\n    \\"notes\\": 0,\\n    \\"reports\\": 1,\\n    \\"sessions\\": 1,\\n    \\"now_history\\": 0\\n  },\\n  \\"changeToken\\": \\"<random-id>\\",\\n  \\"questions\\": {\\n    \\"items\\": [\\n      {\\n        \\"id\\": \\"seed-question\\",\\n        \\"cardId\\": \\"card-1\\",\\n        \\"sessionId\\": \\"header-session\\",\\n        \\"text\\": \\"기존 질문\\",\\n        \\"options\\": null,\\n        \\"askedAt\\": \\"<time>\\",\\n        \\"answer\\": null,\\n        \\"answeredAt\\": null,\\n        \\"answeredBy\\": null,\\n        \\"title\\": null,\\n        \\"kind\\": \\"choice\\",\\n        \\"attachments\\": [],\\n        \\"selectedOption\\": null,\\n        \\"revision\\": 1,\\n        \\"revisedAt\\": null,\\n        \\"optionDetails\\": []\\n      }\\n    ],\\n    \\"nextCursor\\": null,\\n    \\"truncated\\": false\\n  }\\n}"
     }
   ],
   "structuredContent": {
@@ -171,7 +171,14 @@ exports[`card orchestrator MCP roundtrip > preserves get success 1`] = `
           "askedAt": "<time>",
           "answer": null,
           "answeredAt": null,
-          "answeredBy": null
+          "answeredBy": null,
+          "title": null,
+          "kind": "choice",
+          "attachments": [],
+          "selectedOption": null,
+          "revision": 1,
+          "revisedAt": null,
+          "optionDetails": []
         }
       ],
       "nextCursor": null,

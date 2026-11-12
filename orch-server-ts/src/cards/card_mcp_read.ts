@@ -11,7 +11,7 @@ import {
   type CardMcpSectionPage,
 } from "./control_plane/card_mcp_read_repository.js";
 import type { SqlClient } from "./control_plane/card_types.js";
-import { projectCardAttachmentRows } from "./card_attachment_projection.js";
+import { projectCardAttachmentRows, projectCardQuestionRows } from "./card_attachment_projection.js";
 
 const TOKEN_FINGERPRINT_KINDS = [
   "card", "request", "brief", "attachments", "questions", "questions_history",
@@ -358,7 +358,10 @@ export class CardMcpReadService {
       for (const kind of include) {
         if (previous && !changed?.includes(kind)) continue;
         const cursor = sectionCursors.get(kind) ?? null;
-        sectionPages.set(kind, await this.repository.readSectionPage(sql, cardId, kind, limit, textLimit, cursor));
+        const page = await this.repository.readSectionPage(sql, cardId, kind, limit, textLimit, cursor);
+        sectionPages.set(kind, kind === "questions_history" && page.kind === "items"
+          ? { ...page, items: await projectCardQuestionRows(sql, page.items, cardId) }
+          : page);
       }
 
       const returnCard = previous === null || changed?.includes("card") === true;
@@ -402,8 +405,9 @@ export class CardMcpReadService {
       if (questionPage !== null) {
         const page = questionPage;
         if (page.kind !== "items") throw new Error("Question query returned a text page");
+        const items = await projectCardQuestionRows(sql, page.items, cardId);
         result.questions = {
-          items: page.items.map((row) => serializeCardRow(row)),
+          items: items.map((row) => serializeCardRow(row)),
           nextCursor: page.next === null ? null : encodeSectionCursor(cardId, "questions", page.next),
           truncated: page.truncated,
           ...(previous ? { replace: true } : {}),

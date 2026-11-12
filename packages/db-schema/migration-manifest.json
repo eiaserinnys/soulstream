@@ -620,6 +620,10 @@
     {
       "id": "153_drop_blocks_text_prefix_index.sql",
       "sha256": "280f034bfb5bf354e11893b64174d42a691728b545390b546c667bc029125a6e"
+    },
+    {
+      "id": "154_card_question_details.sql",
+      "sha256": "7e2ad62cba32fb17f877c107bd2a2dfb8bc97688b3995c314b581c12dc252122"
     }
   ]
 }

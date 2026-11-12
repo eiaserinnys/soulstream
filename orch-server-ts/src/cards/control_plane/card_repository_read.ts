@@ -2,7 +2,7 @@ import type { CardRow, FolderRow, FolderSnapshot, FolderOperationRow, SqlClient,
 import { normalizeOperation } from "./card_models.js";
 import { projectCardActivity } from "../card_latest_activity.js";
 import { completedCardCursor, pagedCardCursor, type CompletedCardQuery, type PagedCardQuery } from "../completed_card_query.js";
-import { projectCardAttachmentRows } from "../card_attachment_projection.js";
+import { projectCardAttachmentRows, projectCardQuestionRows } from "../card_attachment_projection.js";
 
 export class CardRepositoryRead {
   constructor(
@@ -91,7 +91,8 @@ export class CardRepositoryRead {
     return this.projectSourceRows(cardId, rows);
   }
   async listQuestions(cardId: string) {
-    return await this.sql<Record<string, unknown>[]>`SELECT * FROM card_questions WHERE card_id=${cardId} ORDER BY asked_at,id`;
+    const rows = await this.sql<Record<string, unknown>[]>`SELECT * FROM card_questions WHERE card_id=${cardId} ORDER BY asked_at,id`;
+    return projectCardQuestionRows(this.sql, rows, cardId);
   }
   async listComments(cardId: string) {
     const rows = await this.sql<Record<string, unknown>[]>`SELECT * FROM card_comments WHERE card_id=${cardId} AND kind<>'note' ORDER BY created_at,id`;
