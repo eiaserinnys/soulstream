@@ -274,3 +274,22 @@ it('holds the stream error through automatic retries until sync or manual reconn
  mocks.streamStatus='error';await mount('one');expect(retry()).not.toBeNull();
  mocks.streamStatus='connecting';await mount('two');expect(retry()).toBeNull();
 });
+
+const reportEntry=(key:string)=>({key,kind:'ask' as const,title:'질문',card_numbers:[1268],context:'맥락',action:'답해 주세요',options:[] as string[],state:'open' as const,answer:'',updated_at:'2026-11-12T00:00:00.000Z'});
+it('re-reads the current report when the tab becomes visible again',async()=>{
+ const one=session('one');mocks.list.mockResolvedValue({sessions:[one]});await mount('one');
+ act(()=>useDashboardStore.getState().setPersistentReport('one',[reportEntry('cq_X')]));
+ mocks.list.mockResolvedValue({sessions:[{...one,persistent_report:[]}]});
+ await act(async()=>{document.dispatchEvent(new Event('visibilitychange'));await new Promise(resolve=>setTimeout(resolve,0));});
+ expect(useDashboardStore.getState().persistentReports.one).toEqual([]);
+});
+it('keeps a report that changed while the visible refetch was pending',async()=>{
+ const one=session('one');mocks.list.mockResolvedValue({sessions:[one]});await mount('one');
+ act(()=>useDashboardStore.getState().setPersistentReport('one',[reportEntry('cq_X')]));
+ let release!:(value:any)=>void;
+ mocks.list.mockReturnValue(new Promise(resolve=>{release=resolve;}));
+ await act(async()=>{document.dispatchEvent(new Event('visibilitychange'));await new Promise(resolve=>setTimeout(resolve,0));});
+ act(()=>useDashboardStore.getState().setPersistentReport('one',[reportEntry('cq_Y')]));
+ await act(async()=>{release({sessions:[{...one,persistent_report:[]}]});await new Promise(resolve=>setTimeout(resolve,0));});
+ expect(useDashboardStore.getState().persistentReports.one).toMatchObject([{key:'cq_Y'}]);
+});

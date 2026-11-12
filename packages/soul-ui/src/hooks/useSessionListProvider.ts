@@ -166,10 +166,13 @@ export function useSessionListProvider(
       const provider = externalProvider ?? getSessionProvider();
       // The query key is the request snapshot. Reading the live store here can
       // put feed data into a folder cache, or folder data into a feed cache.
+      // 판도 같은 규칙을 따른다. 요청 전 값을 기준으로 잡아 두고, 응답 사이
+      // SSE가 새 판을 썼으면 그 판을 응답으로 덮지 않는다.
+      const reportBaselines = useDashboardStore.getState().persistentReports;
       const result = await provider.fetchSessions(
         fetchOptions,
       );
-      hydrateSessionSnapshotsRef.current(result.sessions);
+      hydrateSessionSnapshotsRef.current(result.sessions, reportBaselines);
 
       const store = useDashboardStore.getState();
       if (store.catalog) {

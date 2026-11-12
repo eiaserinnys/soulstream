@@ -268,17 +268,23 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
       scopedState.setActiveSessionSummary({ ...scopedState.activeSessionSummary, reviewState: result.reviewState });
     }
   }, [activeSessionSummary, catalogSession, overlayStoreScope, resolvedOverlaySession, sessionId]);
+  // 판을 REST로 다시 읽어 요청 전 값을 기준으로 비교 쓰기한다. 응답이 오는 사이
+  // SSE가 새 판을 썼으면 덮지 않는다. 처음 열 때와 탭이 다시 보일 때 같이 쓴다.
+  const refreshPersistentReports = useCallback(async () => {
+    const reportBaseline = useDashboardStore.getState().persistentReports;
+    const result = await api.list();
+    for (const resource of result.sessions) {
+      if (resource.persistent_report !== undefined) useDashboardStore.getState().setPersistentReport(resource.session_id, resource.persistent_report, { current: reportBaseline[resource.session_id] });
+    }
+    return result;
+  }, [api]);
   useEffect(() => {
     let current = true;
     setLoading(true); setError(null); setActivatedId(null);
     setTasksOpen(false); setSelectedCardId(null);
-    const reportBaseline = useDashboardStore.getState().persistentReports;
-    void api.list().then(async result => {
+    void refreshPersistentReports().then(async result => {
       if (!current) return;
       setListing(result);
-      for (const resource of result.sessions) {
-        if (resource.persistent_report !== undefined) useDashboardStore.getState().setPersistentReport(resource.session_id, resource.persistent_report, { current: reportBaseline[resource.session_id] });
-      }
       if (!sessionId) {
         if (!result.sessions.length) setConfigOpen(true);
         else if (result.sessions.length === 1) navigateDashboard(`/persistent/${encodeURIComponent(result.sessions[0]!.session_id)}`, true);
@@ -302,7 +308,18 @@ function PersistentSessionContent({ sessionId }: { sessionId?: string }) {
     }).catch(caught => { if (current) setError(caught instanceof Error ? caught.message : String(caught)); })
       .finally(() => { if (current) setLoading(false); });
     return () => { current = false; };
-  }, [api, prepareFrame, retry, sessionId, user?.email]);
+  }, [prepareFrame, refreshPersistentReports, retry, sessionId, user?.email]);
+  // 탭이 잠들었다 깨어나면 SSE 연결이 오류 없이 죽은 채 남을 수 있다. 다시 보일 때
+  // 지금 세션의 판을 한 번 다시 읽어, 끊긴 사이 내려간 장을 맞춘다.
+  useEffect(() => {
+    if (!sessionId) return;
+    const refresh = () => {
+      if (document.visibilityState !== 'visible') return;
+      void refreshPersistentReports().catch(() => undefined);
+    };
+    document.addEventListener('visibilitychange', refresh);
+    return () => document.removeEventListener('visibilitychange', refresh);
+  }, [refreshPersistentReports, sessionId]);
   useEffect(() => () => {
     const state = useDashboardStore.getState();
     if (sessionId && state.activeSessionKey === sessionId) {
