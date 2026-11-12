@@ -12,6 +12,10 @@ describe("session feed projection", () => {
     expect(projectSessionFeedSummary({persistentReport:[]})).toHaveProperty('persistentReport',[]);
     expect(projectSessionFeedUpdate({agentSessionId:'pas',persistent_report:[]})).toEqual({type:'session_updated',agent_session_id:'pas',persistent_report:[]});
     expect(projectSessionFeedUpdate({agentSessionId:'pas',status:'running'})).not.toHaveProperty('persistent_report');
+    const thread=[{id:'c1',question_id:'q1',author_kind:'user',body:'되묻기',created_at:'2026-11-12T00:00:00.000Z',session_id:'s'}];
+    const entry={key:'cq_q1',question_thread:thread};
+    expect(projectSessionFeedSummary({persistentReport:[entry]})).toHaveProperty('persistentReport',[entry]);
+    expect(projectSessionFeedUpdate({agentSessionId:'pas',persistent_report:[entry]})).toHaveProperty('persistent_report',[entry]);
   });
   it("retains cardId in the snapshot and one canonical patch field", () => {
     expect(projectSessionFeedSummary({ agentSessionId: "s",cardId: "c" })).toHaveProperty("cardId", "c");

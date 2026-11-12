@@ -4,7 +4,7 @@ import { readBoardCards,readCardBoardSessions } from "./card_board_connections.j
 export { readCardBoardSessions } from "./card_board_connections.js";
 export { clip } from "./card_board_entries.js";
 import { cardQuestionState } from "../cards/card_question_rules.js";
-import { cardQuestionOptionLabels } from "@soulstream/wire-schema/card-questions";
+import { cardQuestionOptionLabels, type CardQuestionThreadEntry } from "@soulstream/wire-schema/card-questions";
 import { projectCardQuestionRows } from "../cards/card_attachment_projection.js";
 import { readPersistentEnabled } from "@soulstream/wire-schema/persistent-session-settings";
 import {
@@ -282,6 +282,19 @@ export class PersistentReportService {
     const cards=await readBoardCards(sql,sessionId);
     const questionRows=cards.length?await sql<BoardQuestion[]>`SELECT * FROM card_questions WHERE card_id=ANY(${sql.array(cards.map(c=>c.id))}::text[])`:[];
     const questions=await projectCardQuestionRows(sql,questionRows);
+    // 판 카드의 질문 글타래를 한 번의 질의로 읽어 질문별로 만든 순서대로 묶는다.
+    const questionIds=questions.map(question=>question.id);
+    const threadRows=questionIds.length?await sql<{id:string;question_id:string;author_kind:"user"|"agent";body:string;created_at:Date;session_id:string|null}[]>`
+      SELECT id,question_id,author_kind,body,created_at,session_id FROM card_comments
+      WHERE question_id=ANY(${sql.array(questionIds)}::text[])
+      ORDER BY question_id,created_at,id`:[];
+    const threads=new Map<string,CardQuestionThreadEntry[]>();
+    for(const row of threadRows){
+      const thread=threads.get(row.question_id)??[];
+      thread.push({id:row.id,question_id:row.question_id,author_kind:row.author_kind,body:row.body,
+        created_at:new Date(row.created_at).toISOString(),session_id:row.session_id});
+      threads.set(row.question_id,thread);
+    }
     // Acknowledgement records are per board and survive unrelated title/now edits.
     const records=dismissed.filter(d=>cards.some(c=>dismissalMatches(c,d)));
     dismissed.splice(0,dismissed.length,...records);
@@ -294,7 +307,7 @@ export class PersistentReportService {
       if(enabled&&cards.some(c=>c.number!==null&&e.card_numbers.includes(c.number)))continue;
       direct.push(e);
     }
-    const calculated=cards.flatMap(c=>cardBoardEntries(c,questions,enabled,dismissed))
+    const calculated=cards.flatMap(c=>cardBoardEntries(c,questions,enabled,dismissed,threads))
       .sort((a,b)=>a.updated_at.localeCompare(b.updated_at)||a.key.localeCompare(b.key));
     entries.splice(0,entries.length,...direct,...calculated);
   }

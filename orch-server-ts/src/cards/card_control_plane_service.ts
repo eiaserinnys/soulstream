@@ -56,7 +56,7 @@ import {
   type CardNowTurn,
   type ReportCardItemInput,
 } from "./card_item_rules.js";
-import { hasUserInputAfterLastReplyTx, readCardItemSourceTx } from "./control_plane/card_item_store.js";
+import { hasQuestionThreadUserInputAfterLastReplyTx, hasUserInputAfterLastReplyTx, readCardItemSourceTx } from "./control_plane/card_item_store.js";
 import { parseVerificationWakeAt, verificationWaitNow } from "./card_verification_wait.js";
 import { claimableCardSessions, assertSingleCardAssignee, translateAssigneeConflict, invalidCard } from "./card_assignee.js";
 
@@ -67,7 +67,7 @@ type CreateCardParams = FolderActorParams & {
   folderId: string; title: string; request: string; attachments?: CardAttachment[]; queue?: boolean; assignee?: CardAssigneeInput | null;
   nodeId?: string | null; modelPreset?: string | null; idempotencyKey?: string | null; brief?: string;
 };
-type AddCommentParams = CardMutationParams & { body:string; kind?:"comment" | "spoken"; mode?:"spoken" | "reply"; itemId?:number };
+type AddCommentParams = CardMutationParams & { body:string; kind?:"comment" | "spoken"; mode?:"spoken" | "reply"; itemId?:number; questionId?:string };
 type CardCommentRow = NonNullable<Awaited<ReturnType<CardRepository["getComment"]>>>;
 export type CardReportSyncParams = {
   previousStatus: CardStatus | undefined;
@@ -571,7 +571,7 @@ export class CardControlPlaneService {
       reply,
       kind,
       payload:{ comment_id:commentId,body:params.body,kind,
-        ...(params.itemId===undefined?{}:{item_id:params.itemId}),...(reply ? {author_kind:"agent",session_id:params.actorSessionId} : {}) },
+        ...(params.itemId===undefined?{}:{item_id:params.itemId}),...(params.questionId===undefined?{}:{question_id:params.questionId}),...(reply ? {author_kind:"agent",session_id:params.actorSessionId} : {}) },
     };
   }
   private async applyAddCommentTx(
@@ -586,9 +586,12 @@ export class CardControlPlaneService {
     reply:boolean,
     entrance:"direct"|"followup"="direct",
   ):Promise<boolean> {
-    const candidates=reply&&params.actorSessionId?await claimableCardSessions(sql,card.id,params.actorSessionId):[];
-    const userInput=reply&&(card.items??[]).length>0?await hasUserInputAfterLastReplyTx(sql,card.id):false;
-    const {writes}=await this.humanDecision(sql,card,{...params,type:'ADD_COMMENT',entrance},params,eventId,[],
+    const questions=params.questionId===undefined?[]:await sql<Record<string,unknown>[]>`SELECT id,session_id,answer,withdrawn_at FROM card_questions WHERE card_id=${card.id}`;
+    const candidates=params.questionId===undefined&&reply&&params.actorSessionId?await claimableCardSessions(sql,card.id,params.actorSessionId):[];
+    const userInput=params.questionId!==undefined
+      ? reply ? await hasQuestionThreadUserInputAfterLastReplyTx(sql,card.id,params.questionId) : false
+      : reply&&(card.items??[]).length>0?await hasUserInputAfterLastReplyTx(sql,card.id):false;
+    const {writes}=await this.humanDecision(sql,card,{...params,type:'ADD_COMMENT',entrance},params,eventId,questions,
       humanCardEvidence(candidates,params.actorSessionId,userInput),
       {lazy:{'formatted.items':()=>openCardItemFix(card.items??[],params.itemId!)}});
     const claim=writes.filter(write=>write.stage==='claim');
@@ -598,8 +601,8 @@ export class CardControlPlaneService {
     const legacyRefs=await resolveCardLegacySourceRefsTx(sql,{cardId:card.id,assigneeSessionId:card.assignee_session_id,actor:params,body:params.body,format:"markdown"});
     const refs=mergeCardSourceAttachmentRefs(collectCardAttachmentRefs({request:params.body,attachments:[],items:card.items ?? [],previousRefs:existingRefs,previousItems:card.items ?? []}),legacyRefs);
     await this.patchDecisionWrites(sql,card,claim,params,eventId);
-    await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body,item_id,attachment_refs)
-      VALUES(${commentId},${card.id},${reply ? "agent" : "user"},${external || reply ? null : params.actorUserId ?? null},${external ? null : params.actorSessionId},${kind},${params.body},${params.itemId ?? null},${sql.json(refs)})`;
+    await sql`INSERT INTO card_comments(id,card_id,author_kind,author_id,session_id,kind,body,item_id,question_id,attachment_refs)
+      VALUES(${commentId},${card.id},${reply ? "agent" : "user"},${external || reply ? null : params.actorUserId ?? null},${external ? null : params.actorSessionId},${kind},${params.body},${params.itemId ?? null},${params.questionId ?? null},${sql.json(refs)})`;
     await this.patchDecisionWrites(sql,card,writes.filter(write=>write.stage!=='claim'),params,eventId);
     const close=writes.find(write=>write.kind==='closeQuestions');
     if(close)return this.closeOpenQuestionsTx(sql,card.id,String(close.fields.withdrawal_reason));

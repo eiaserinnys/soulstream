@@ -129,8 +129,8 @@ export const cardTools = {
     inputSchema: { ...scope, title: id, format: z.enum(["markdown", "html"]), body: z.string() },
   }, audience: "all" },
   add_card_comment: { name: "add_card_comment", config: {
-    description: 'spoken은 사용자 발언 요약을 사용자 글로 기록하며 첫 줄은 "아래는 사용자의 발언을 요약하여 옮긴 것입니다"입니다. reply는 담당 세션이 사용자 글에 답하는 글입니다. 확인 항목이 있으면 mode가 필수이고 답은 300자까지 한 번만 받습니다. 진행은 add_card_note에 씁니다. item_id로 대상 항목을 표시할 수 있습니다. 다른 세션이 담당인 카드에는 담당 세션만 씁니다.',
-    inputSchema: { ...scope, text: id, mode: z.enum(["spoken", "reply"]).optional(), item_id:itemId.optional() },
+    description: 'spoken은 사용자 발언 요약을 사용자 글로 기록하며 첫 줄은 "아래는 사용자의 발언을 요약하여 옮긴 것입니다"입니다. reply는 담당 세션이 사용자 글에 답하는 글입니다. 확인 항목이 있으면 mode가 필수이고 답은 300자까지 한 번만 받습니다. 진행은 add_card_note에 씁니다. item_id로 대상 항목을 표시할 수 있습니다. 다른 세션이 담당인 카드에는 담당 세션만 씁니다. 질문에 되물은 글에 답할 때는 mode=reply와 question_id를 붙인다. 질문을 닫거나 카드 상태를 바꾸지 않는다.',
+    inputSchema: { ...scope, text: id, mode: z.enum(["spoken", "reply"]).optional(), item_id:itemId.optional(), question_id:id.optional() },
   }, audience: "all" },
   set_card_status: { name: "set_card_status", config: {
     description: "담당 카드의 상태를 직접 변경한다. 보고·질문·사유·보관·이전 상태와 관계없이 완료·취소·재열기를 포함한 모든 상태를 선택할 수 있다. running 기록은 프로세스 실행 승인이 아니다. 보류(on_hold)는 완료도 취소도 아닌 채 검수 대기와 PAS 판에서 내려 두는 상태다. 담당 세션이 없는 카드(드래프트, 대기)는 담당이 아닌 에이전트 세션도 할 일, 대기, 보류, 취소로 옮길 수 있다. 검증 대기(awaiting_verification)는 담당이 작업을 끝내기 전에 스스로 기다리는 상태다. 배포 뒤 실제 사용 확인이나 정한 시각의 재측정처럼 담당이 그 시각에 다시 확인할 때 쓴다. 이 상태에는 wake_at과 waiting_for가 모두 필수이고 다른 상태에는 둘 다 주지 않는다. 서버는 wake_at이 지나면 담당을 깨워 실행 중으로 되돌리고, 담당이 없거나 깨우지 못하면 막힘으로 옮긴다. 검증 대기는 PAS 판에 장을 만들지 않고 실행 중으로 세지 않는다. 남이 풀어 줄 일은 막힘, 사용자 판단은 ask_card_question이다.",

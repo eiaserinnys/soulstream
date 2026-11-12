@@ -23,6 +23,14 @@ describe("PerNodeSessionCache retention", () => {
     cache.patchPersistentReport('pas',[]);
     expect(cache.findSession('pas')?.payload.persistent_report).toEqual([]);
   });
+  it("keeps a nested question thread through the cache payload whitelist and report patches", () => {
+    const cache=new PerNodeSessionCache();
+    const entry={key:'cq_q1',title:'질문',question_thread:[{id:'c1',question_id:'q1',author_kind:'user',body:'되묻기',created_at:'2026-11-12T00:00:00.000Z',session_id:'s'}]};
+    cache.upsertFromSessionUpdated({nodeId:'n',connectionId:'c',message:{agent_session_id:'pas',status:'running',persistent_report:[entry]},nowMs:1});
+    expect(cache.findSession('pas')?.payload.persistent_report).toEqual([entry]);
+    cache.patchPersistentReport('pas',[entry],2);
+    expect(cache.findSession('pas')?.payload.persistent_report).toEqual([entry]);
+  });
   it("seeds durable DB sessions without overwriting newer WebSocket state", () => {
     const cache = new PerNodeSessionCache();
     cache.upsertFromSessionUpdated({

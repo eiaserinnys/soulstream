@@ -22,7 +22,7 @@ export const COMMAND_RULES:Partial<Record<CardDecisionCommand,string>>={
  ASK_QUESTION:'다른 세션 담당 여부를 확인한다. 새 질문이면 질문 행을 추가하고 질문 막힘으로 옮기며 완료 정보와 대기열 순서를 지운다. question_id가 있으면 같은 카드의 열린 질문만 제자리에서 고치고 카드 상태와 예약은 바꾸지 않는다.',
  ANSWER_QUESTION:'사람만 열린 질문에 답한다. 마지막 열린 질문이고 질문 막힘일 때만 실행 중으로 옮긴다. 완료 뒤 늦은 답은 상태를 보존한다.',
  WITHDRAW_QUESTION:'질문 작성자 또는 현재 담당 세션이 철회한다. 마지막 질문 막힘일 때만 실행 중으로 옮긴다.',
- ADD_COMMENT:'직접 입구는 prepare 검사 뒤 다른 담당 검사를 먼저 한다. dispatch_work의 Tx 후속 입구는 이 검사를 하지 않는다. reply의 담당, 길이와 사용자 입력을 확인한다. non-reply이면 사람뿐 아니라 담당의 spoken도 말로 풀리는 기다림을 재개한다. claim과 항목과 상태 UPDATE는 나눈다.',
+ ADD_COMMENT:'직접 입구는 prepare 검사 뒤 다른 담당 검사를 먼저 한다. dispatch_work의 Tx 후속 입구는 이 검사를 하지 않는다. reply의 담당, 길이와 사용자 입력을 확인한다. question_id가 있으면 같은 카드의 철회되지 않은 질문 글타래에만 쓰고 카드 상태, 열린 질문, 담당과 예약을 바꾸지 않는다. non-reply이면 사람뿐 아니라 담당의 spoken도 말로 풀리는 기다림을 재개한다. claim과 항목과 상태 UPDATE는 나눈다.',
  DISPATCH:'queued와 미확인 실행 요청을 확인한다. 정책 설정과 admission 증거에 따라 허가를 확인하고, admission이면 queued 유지, 기존 실행이면 running으로 옮긴다.',
  BLOCK_FOR_LIMIT:'현재 실행 중 담당의 최신 한도 종료가 일치할 때 담당 예약을 기록한다. 짧은 한도는 시각을, 긴 한도는 담당만 기록한다.',
  RESUME_SHORT_LIMIT:'현재 담당과 기록된 예약이 일치하고 같은 시각이 도래했을 때만 재개한다.',
@@ -87,7 +87,7 @@ for(const c of ['ANSWER_QUESTION','WITHDRAW_QUESTION'] as const){
 }
 for(const c of ['HUMAN_INPUT','ADD_COMMENT'] as const)put('question',c,'q_none',[c==='HUMAN_INPUT'?'humanResumable':'commentResumable'],[write({withdrawn_at:bind('clock'),withdrawn_by_session_id:literal(null),withdrawal_reason:literal(c==='HUMAN_INPUT'?'사용자 메시지로 작업이 재개되어 서버가 닫았습니다':'사용자가 커멘트로 답해 서버가 닫았습니다')},'questions','closeQuestions')]);
 for(const c of ['SET_STATUS','BULK_SET_STATUS','REQUEST_REVIEW','START_WORK'] as const)put('assignee',c,'a_session',['claiming'],claim(),`${COMMAND_LABELS[c]}: 연결된 카드 세션이 담당을 맡는다`);
-put('assignee','ADD_COMMENT','a_session',['claiming',fact('reply')],claim('claim'),`${COMMAND_LABELS.ADD_COMMENT}: reply일 때 연결된 카드 세션이 담당을 맡는다`);
+put('assignee','ADD_COMMENT','a_session',['claiming',fact('reply'),not(fact('hasQuestion'))],claim('claim'),`${COMMAND_LABELS.ADD_COMMENT}: reply일 때 연결된 카드 세션이 담당을 맡는다`);
 put('assignee','START_WORK','a_session',[fact('admitted')],claim());
 put('assignee','CONFIRM_EXECUTION','a_session',[],[mark('writeAssignee'),write({assignee_session_id:bind('command.sessionId'),assignee_agent_id:literal(null)})]);
 for(const kind of ['none','agent','human','session']){
@@ -108,7 +108,7 @@ for(const c of ['PATCH_CARD_CONTROL','SAVE_EXECUTION_SETTINGS','REGISTER_REPLACE
  put('reservation',c,undefined,[...clean,inside('r_verify')],[mark('clearLimit')]);
 }
 for(const c of ['SET_STATUS','BULK_SET_STATUS','REQUEST_REVIEW','START_WORK','ADD_COMMENT','CONFIRM_EXECUTION'] as const){
- const changed=c==='CONFIRM_EXECUTION'?fact('assignmentChanged'):and(['claiming',...(c==='ADD_COMMENT'?[fact('reply')]:[])]);
+ const changed=c==='CONFIRM_EXECUTION'?fact('assignmentChanged'):and(['claiming',...(c==='ADD_COMMENT'?[fact('reply'),not(fact('hasQuestion'))]:[])]);
  put('reservation',c,'r_none',[changed,not(inside('r_verify'))],[mark('clearLimit',c==='ADD_COMMENT'?'claim':'state')]);
  put('reservation',c,undefined,[changed,inside('r_verify')],[mark('clearLimit',c==='ADD_COMMENT'?'claim':'state')]);
 }

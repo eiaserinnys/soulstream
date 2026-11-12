@@ -8,7 +8,10 @@ const leaf=(id:string,description:string)=>({id,description});
 const statusLeaf=(id:string,description:string)=>leaf(`s_${id}`,description);
 const verdict:Record<string,any>={};
 decisionGuards['noop.HUMAN_INPUT']=not('humanResumable');
-decisionGuards['noop.ADD_COMMENT']=and([not('commentResumable'),({event}:{event:any})=>!(event.facts.hasItem&&!event.facts.reply)&&!(event.facts.reply&&event.facts.claim)]);
+decisionGuards['noop.ADD_COMMENT']=and([not('commentResumable'),({event}:{event:any})=>{
+ const facts=event.facts;
+ return !(facts.hasItem&&!facts.reply)&&!(facts.reply&&facts.claim&&!facts.hasQuestion);
+}]);
 for(const c of Object.keys(CARD_FACT_VALUES))verdict[c]=[
  ...rejections[c]!.map(r=>({guard:r.guard,actions:r.stage?{type:'needsEvidence',params:{evidenceStage:r.stage}}:{type:'reject',params:{failure:r.failure,guard:r.guard}},description:r.stage?`${COMMAND_LABELS[c as keyof typeof COMMAND_LABELS]}: ${SERVER_EVIDENCE_LABELS[r.stage]} 증거를 읽는다`:COMMAND_LABELS[c as keyof typeof COMMAND_LABELS],meta:{command:c,evidenceStage:r.stage,label:r.stage?`${SERVER_EVIDENCE_LABELS[r.stage]} 증거를 읽는다`:COMMAND_LABELS[c as keyof typeof COMMAND_LABELS],rule:COMMAND_RULES[c as keyof typeof COMMAND_RULES]??COMMAND_LABELS[c as keyof typeof COMMAND_LABELS],entryActors:c==='ADD_COMMENT'?CARD_COMMENT_ENTRY_ACTORS:undefined,callers:CARD_COMMAND_CALLERS[c as keyof typeof CARD_COMMAND_CALLERS],sources:CARD_DECISION_SOURCES[c as keyof typeof CARD_DECISION_SOURCES],entrances:CARD_COMMAND_ENTRANCES[c as keyof typeof CARD_COMMAND_ENTRANCES]}})),
  ...(decisionGuards[`noop.${c}`]?[{guard:`noop.${c}`,actions:{type:'noop'},description:COMMAND_LABELS[c as keyof typeof COMMAND_LABELS],meta:{command:c,label:COMMAND_LABELS[c as keyof typeof COMMAND_LABELS],rule:COMMAND_RULES[c as keyof typeof COMMAND_RULES]??COMMAND_LABELS[c as keyof typeof COMMAND_LABELS],entryActors:c==='ADD_COMMENT'?CARD_COMMENT_ENTRY_ACTORS:undefined,callers:CARD_COMMAND_CALLERS[c as keyof typeof CARD_COMMAND_CALLERS],sources:CARD_DECISION_SOURCES[c as keyof typeof CARD_DECISION_SOURCES],entrances:CARD_COMMAND_ENTRANCES[c as keyof typeof CARD_COMMAND_ENTRANCES]}}]:[]),

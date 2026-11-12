@@ -38,7 +38,13 @@ export const cardOperationSchemas={
   reorder_card_queue:mutation.extend({ afterCardId:id.nullable().optional() }),
   add_card_report:append.extend({ title:id,format:z.enum(["markdown","html"]),body:z.string() }),
   update_card_brief:mutation.extend({ brief:z.string() }),
-  add_card_comment:append.extend({ body:z.string(),kind:z.enum(["comment","spoken"]).optional(),mode:z.enum(["spoken","reply"]).optional(),itemId:itemId.optional() }),
+  add_card_comment:append.extend({ body:z.string(),kind:z.enum(["comment","spoken"]).optional(),mode:z.enum(["spoken","reply"]).optional(),itemId:itemId.optional(),questionId:id.optional() })
+    .strict().superRefine((value,ctx)=>{
+      if (value.questionId === undefined) return;
+      if (value.itemId !== undefined) ctx.addIssue({code:"custom",path:["itemId"],message:"질문 글타래에는 항목을 함께 줄 수 없습니다"});
+      if (value.kind === "spoken") ctx.addIssue({code:"custom",path:["kind"],message:"질문 글타래에는 spoken을 쓸 수 없습니다"});
+      if (value.mode === "spoken") ctx.addIssue({code:"custom",path:["mode"],message:"질문 글타래에는 spoken을 쓸 수 없습니다"});
+    }),
   ask_card_question:append.extend({ text:id,title:cardQuestionTitleSchema.optional(),kind:cardQuestionKindSchema.optional(),
     options:cardQuestionOptionsInputSchema.optional(),attachments:cardQuestionAttachmentsSchema.optional(),questionId:id.optional() })
     .strict().superRefine((value,ctx)=>{ for (const issue of cardQuestionInputIssues(value)) ctx.addIssue({code:"custom",path:issue.path,message:issue.message}); }),

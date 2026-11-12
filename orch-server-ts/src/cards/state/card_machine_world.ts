@@ -19,7 +19,7 @@ export function factsConsistent(w:CardWorld,event:DecisionEvent):boolean {
  const v=w.snapshot.value as CardStateValue,f=event.facts,c=event.type;
  if(f.evidenceMissing!==undefined&&f.evidenceMissing!=='none')return false;
  if((statusLeaf(v)==='uncreated')!==(c==='CREATE'))return false;
- if(['author','ownerAuthor'].includes(event.actor)&&!['ANSWER_QUESTION','WITHDRAW_QUESTION'].includes(c))return false;
+ if(['author','ownerAuthor'].includes(event.actor)&&!['ANSWER_QUESTION','WITHDRAW_QUESTION'].includes(c)&&!(c==='ADD_COMMENT'&&f.hasQuestion===true))return false;
  if(c==='PATCH_CARD_CONTROL'&&f.hasArchiveInput===false&&f.nextArchived!==(v.archive==='archived'))return false;
  if(f.reply===true&&f.hasMode===false)return false;
  if(['owner','ownerAuthor'].includes(event.actor)&&v.assignee!=='session')return false;
@@ -41,6 +41,10 @@ export function factsConsistent(w:CardWorld,event:DecisionEvent):boolean {
  }
  if(c==='ASK_QUESTION'&&f.targetQuestion!==undefined){
  if(f.editing===false&&f.targetQuestion!=='missing')return false;
+ if(f.targetQuestion==='open'&&v.question!=='open')return false;
+ }
+ if(c==='ADD_COMMENT'&&f.hasQuestion!==undefined){
+ if(f.hasQuestion===false&&f.targetQuestion!=='missing')return false;
  if(f.targetQuestion==='open'&&v.question!=='open')return false;
  }
  if(f.hasOwnerSession===true&&v.assignee!=='session')return false;

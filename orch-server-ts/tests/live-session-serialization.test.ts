@@ -25,6 +25,9 @@ describe("serializeSessionRow predecessor contract", () => {
   it("projects report metadata and the explicit central cache value", () => {
     expect(serializeSessionRow({session_id:'pas',metadata:[{type:'persistent_report',value:{entries:[{key:'r',title:'보고'}]}}]})).toHaveProperty('persistentReport',[{key:'r',title:'보고'}]);
     expect(serializeSessionRow({session_id:'pas',persistent_report:[],metadata:[{type:'persistent_report',value:{entries:[{key:'stale'}]}}]})).toHaveProperty('persistentReport',[]);
+    const thread=[{id:'c1',question_id:'q1',author_kind:'user',body:'되묻기',created_at:'2026-11-12T00:00:00.000Z',session_id:'s'}];
+    expect(serializeSessionRow({session_id:'pas',metadata:[{type:'persistent_report',value:{entries:[{key:'cq_q1',question_thread:thread}]}}]}))
+      .toHaveProperty('persistentReport',[{key:'cq_q1',question_thread:thread}]);
   });
   it("exposes the authoritative cardId and handles unlinked sessions", () => {
     expect(serializeSessionRow({ session_id: "linked", card_id: "card-one" })).toMatchObject({ cardId: "card-one" });

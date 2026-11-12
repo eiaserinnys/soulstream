@@ -32,9 +32,13 @@ reject('WITHDRAW_QUESTION','ownerOrAuthor','withdrawOwner',not(actor('owner','ow
 for(const value of ['missing','answered','withdrawn'])reject('WITHDRAW_QUESTION',value,`withdraw_${value}`,fact('question',value));
 reject('ADD_COMMENT','otherAssignee','otherAssignee',and([fact('entrance','direct'),not(fact('reply')),agent,inside('a_session'),not(owner)]));
 reject('ADD_COMMENT','commentMode','commentMode',and([agent,fact('hasItems'),not(fact('hasMode'))]));
-reject('ADD_COMMENT','replyOwner','replyOwner',and([fact('reply'),not(effectiveOwner)]));
-reject('ADD_COMMENT','replyLength','replyLength',and([fact('reply'),fact('hasItems'),fact('replyLength','tooLong')]));
-reject('ADD_COMMENT','userInput','replyUserInput',and([fact('reply'),fact('hasItems'),not(fact('userInput'))]));
+reject('ADD_COMMENT','questionMissing','questionMissing',and([fact('hasQuestion'),fact('targetQuestion','missing')]));
+reject('ADD_COMMENT','questionWithdrawn','questionWithdrawn',and([fact('hasQuestion'),fact('targetQuestion','withdrawn')]));
+reject('ADD_COMMENT','questionItem','questionItem',and([fact('hasQuestion'),fact('hasItem')]));
+reject('ADD_COMMENT','questionSpoken','questionSpoken',and([fact('hasQuestion'),fact('requestedSpoken')]));
+reject('ADD_COMMENT','replyOwner','replyOwner',and([fact('reply'),not(or([effectiveOwner,and([fact('hasQuestion'),inside('a_none'),actor('author')])]))]));
+reject('ADD_COMMENT','replyLength','replyLength',and([fact('reply'),or([fact('hasItems'),fact('hasQuestion')]),fact('replyLength','tooLong')]));
+reject('ADD_COMMENT','userInput','replyUserInput',and([fact('reply'),or([fact('hasItems'),fact('hasQuestion')]),not(fact('userInput'))]));
 reject('ADD_COMMENT','itemMissing','itemMissing',and([fact('hasItem'),not(fact('itemExists'))]));
 need('START_WORK','execution');reject('START_WORK','execution','workExecution',not(fact('execution')));
 need('START_WORK','workAdmission');
@@ -80,7 +84,7 @@ reject('SAVE_EXECUTION_SETTINGS','pending','pending',fact('pending'));reject('SA
 reject('REGISTER_REPLACEMENT','owner','replacementOwner',not(fact('previousOwnerMatch')));
 for(const c of Object.keys(CARD_FACT_VALUES))decisionGuards[`permitted.${c}`]=not(or(rejections[c]!.map(r=>r.guard)));
 decisionGuards.humanResumable=resumable;
-decisionGuards.commentResumable=and([resumable,not(fact('reply'))]);
+decisionGuards.commentResumable=and([resumable,not(fact('reply')),not(fact('hasQuestion'))]);
 decisionGuards.lastQuestion=and([inside('s_question'),not(fact('otherOpen'))]);
 decisionGuards.claiming=and([agent,fact('claim')]);
 export const permitted=(c:CardDecisionCommand,...conditions:any[])=>and([`permitted.${c}`,...conditions]);
