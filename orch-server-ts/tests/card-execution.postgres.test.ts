@@ -423,11 +423,24 @@ describe("user card execution transport",()=>{
     const started=await timed.execute(input(f.cardId,"start-timeout"));
     expect(started.execution.state).toBe("pending");
     expect((await h.sql`SELECT state FROM card_execution_requests WHERE id=${started.execution.requestId}`)[0]!.state).toBe("pending");
-    await h.sql`UPDATE card_execution_requests SET created_at=NOW()-INTERVAL '2 minutes' WHERE id=${started.execution.requestId}`;
+    await h.sql`UPDATE card_execution_requests SET updated_at=NOW()-INTERVAL '2 minutes' WHERE id=${started.execution.requestId}`;
     await expect(timed.observe(f.cardId,started.execution.requestId,actor))
       .rejects.toMatchObject({statusCode:422,message:"실행 시작에 실패했습니다. 같은 담당 세션에서 다시 실행하세요."});
     expect(await h.sql`SELECT state,error FROM card_execution_requests WHERE id=${started.execution.requestId}`)
       .toEqual([{state:"failed",error:"세션은 생성됐지만 실행 시작에 실패했습니다."}]);
+  });
+  it("keeps a retried pending request whose created_at predates the start timeout",async()=>{
+    const f=await fixture("pending");
+    const timed=new CardExecutionService({sql:createFolderContentSqlAdapter(h.liveSql),cards,
+      validate:async card=>({nodeId:card.node_id!,agentId:card.assignee_agent_id!,modelPreset:card.model_preset!}),
+      launch:f.launch,ensure:f.ensure,startTimeoutMs:60_000});
+    const started=await timed.execute(input(f.cardId,"start-timeout-retried"));
+    expect(started.execution.state).toBe("pending");
+    // reserveTx keeps created_at from the first attempt and only moves updated_at
+    // when it flips a failed request back to pending.
+    await h.sql`UPDATE card_execution_requests SET created_at=NOW()-INTERVAL '2 minutes' WHERE id=${started.execution.requestId}`;
+    await timed.observe(f.cardId,started.execution.requestId,actor);
+    expect((await h.sql`SELECT state FROM card_execution_requests WHERE id=${started.execution.requestId}`)[0]!.state).toBe("pending");
   });
   it("keeps a pending request inside the start timeout and confirms one whose owner registered execution",async()=>{
     const f=await fixture("pending");
@@ -443,7 +456,7 @@ describe("user card execution transport",()=>{
       validate:async card=>({nodeId:card.node_id!,agentId:card.assignee_agent_id!,modelPreset:card.model_preset!}),
       launch:registered.launch,ensure:registered.ensure,startTimeoutMs:60_000});
     const started=await timedRegistered.execute(input(registered.cardId,"start-timeout-registered"));
-    await h.sql`UPDATE card_execution_requests SET created_at=NOW()-INTERVAL '2 minutes' WHERE id=${started.execution.requestId}`;
+    await h.sql`UPDATE card_execution_requests SET updated_at=NOW()-INTERVAL '2 minutes' WHERE id=${started.execution.requestId}`;
     await recordWorkReceipt(h,started.execution.sessionId,"running",registered.proof);
     const confirmed=await timedRegistered.observe(registered.cardId,started.execution.requestId,actor);
     expect(confirmed.execution.state).toBe("started");
