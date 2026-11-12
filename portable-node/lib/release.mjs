@@ -24,6 +24,7 @@ export const PORTABLE_RUNNER_DIRECTORY = "runner";
 /** P3 release_artifacts.ts의 HOST_RELEASE_ARTIFACTS와 같다. */
 export const HOST_RELEASE_ARTIFACTS = [
   "main.js",
+  "runner/runner_parent_storage_worker_entry.js",
   "runner/runner_release_prewarm.js",
   "upstream/control_inbox_worker_entry.js",
 ];
