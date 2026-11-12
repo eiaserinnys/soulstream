@@ -583,13 +583,17 @@ export async function installRelease({ stateRoot, upstream, token, release, log 
   return { dir: target, key: releaseKey(release), downloaded: true, release };
 }
 
-export async function runBind({ releaseDir: dir, nodePath, envFile, env, timeoutMs = 300000 }) {
+export async function runBind({ releaseDir: dir, nodePath, envFile, env, catalogPath, timeoutMs = 300000 }) {
   const bindPath = join(dir, "bind-release.mjs");
-  const result = await run(nodePath, [bindPath, "--release-dir", dir, "--env-file", envFile], {
-    cwd: dir,
-    env,
-    timeoutMs,
-  });
+  const result = await run(
+    nodePath,
+    [bindPath, "--release-dir", dir, "--env-file", envFile, "--catalog-path", catalogPath],
+    {
+      cwd: dir,
+      env,
+      timeoutMs,
+    },
+  );
   if (result.code !== 0) {
     throw new ReleaseError(
       `릴리스 바인딩이 실패했습니다 (${result.code}): ${result.stderr.trim().slice(0, 2000)}`,

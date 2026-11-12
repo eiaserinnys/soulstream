@@ -2,20 +2,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { existsSync } from "node:fs";
-import { readFile, rm } from "node:fs/promises";
-import { join } from "node:path";
+import { appendFile, cp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve, sep } from "node:path";
 import {
   SOUL_HOST_PORT_PLACEHOLDER,
   STATE_ROOT_PLACEHOLDER,
   writeConfigGeneration,
 } from "../lib/config.mjs";
-import { buildChildEnv } from "../lib/environment.mjs";
+import { buildChildEnv, modelCatalogPathForRepoRoot } from "../lib/environment.mjs";
 import { PORTABLE_SOURCE, makeTempRoot, sha256 } from "./helpers.mjs";
 
 const TEMPLATES_DIR = join(PORTABLE_SOURCE, "config");
 const TEMPLATE_FILES = [
   { key: "agents", file: "agents.yaml" },
-  { key: "model_catalog", file: "model-catalog.yaml" },
   { key: "mcp_registry", file: "mcp-registry.yaml" },
   { key: "mcp_profiles", file: "mcp-profiles.yaml" },
 ];
@@ -99,4 +99,32 @@ test("child 환경에는 bootstrap이 주던 값과 ATOM_ENABLED가 없고 노�
   assert.equal(env.PORTABLE_LOCAL_MCP_AUTHORIZATION, "Bearer test-node-token-7f3a");
   assert.equal(env.AGENTS_CONFIG_PATH, join(configDir, "agents.yaml"));
   assert.equal(env.MCP_INTERNAL_PORT, "41117");
+  assert.equal("MODEL_CATALOG_PATH" in env, false, "카탈로그 경로는 bind가 정본 경로로 넘깁니다.");
+  assert.equal("MODEL_CATALOG_GROUPS" in env, false, "추가 묶음은 기본값이 빈 값입니다.");
+});
+
+test("템플릿 내용이 바뀌면 새 세대 폴더를 쓰고 이전 세대 폴더는 그대로 둔다", async (t) => {
+  const root = await makeTempRoot("config-generation-change");
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const templatesDir = join(root, "templates");
+  await cp(TEMPLATES_DIR, templatesDir, { recursive: true });
+  const stateRoot = join(root, "state");
+  const configRoot = join(stateRoot, "config");
+
+  const first = await writeConfigGeneration({ templatesDir, stateRoot, configRoot, hostPort: 41117 });
+  await appendFile(join(templatesDir, "agents.yaml"), "\n# 시험용 변경\n");
+  const second = await writeConfigGeneration({ templatesDir, stateRoot, configRoot, hostPort: 41117 });
+
+  assert.notEqual(second.generation, first.generation, "템플릿이 바뀌면 새 세대 폴더를 씁니다.");
+  assert.equal(existsSync(first.dir), true, "지난 세대 폴더는 rollback을 위해 그대로 둡니다.");
+  assert.equal(existsSync(second.dir), true);
+  assert.ok((await readFile(join(second.dir, "agents.yaml"), "utf8")).includes("# 시험용 변경"));
+});
+
+test("clone 정본 카탈로그 경로는 리포 루트 기준 packages/model-catalog/data/model-catalog.yaml이다", () => {
+  const repoRoot = join(tmpdir(), "soulstream-clone");
+  const catalogPath = modelCatalogPathForRepoRoot(repoRoot);
+  assert.equal(catalogPath, resolve(repoRoot, "packages", "model-catalog", "data", "model-catalog.yaml"));
+  assert.equal(catalogPath.includes(`packages${sep}model-catalog${sep}data${sep}model-catalog.yaml`), true);
+  if (process.platform !== "win32") assert.equal(catalogPath.includes("\\"), false);
 });

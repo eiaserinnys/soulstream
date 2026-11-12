@@ -4,7 +4,7 @@ Soulstream equips running agent sessions with structured profiles, on-demand ski
 
 ## Agent profiles and model presets
 
-Each worker node loads its agent profiles from `agents.yaml` (`AGENTS_CONFIG_PATH`) and model presets from `model-catalog.yaml` (`MODEL_CATALOG_PATH`).
+Each worker node loads its agent profiles from `agents.yaml` (`AGENTS_CONFIG_PATH`) and model presets from the repository file `packages/model-catalog/data/model-catalog.yaml`. Presets in the `china` group are advertised only on nodes that set `MODEL_CATALOG_GROUPS=china`.
 
 - **Profile management**: operators and agents can inspect and update profiles from the web dashboard (`AgentProfileEditorTab`), mobile app (`SettingsScreen`), or MCP tools (`get_agents_config`, `plan_agent_profile_update`, `update_agent_profile`, `rollback_agents_config`). Remote node profile updates can also be planned and applied through the orchestrator (`plan_remote_agent_profile_update`, `apply_remote_agent_profile_update`, `rollback_remote_agents_config`).
 - **Preset availability**: `list_node_model_presets` combines node configuration, provider usage snapshots, and rate-limit events to report preset status. Presets surface explicit availability reasons such as `env_unresolved` (missing environment variables), `not_authenticated` (missing provider credentials), `limit_rejected` (active provider rate-limit or usage rejection until `resets_at`), `quota_exhausted`, or `usage_warning`.

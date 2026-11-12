@@ -6,7 +6,6 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { parseModelCatalogYaml, resolveModelPreset } from "@soulstream/model-catalog";
 import { describe, expect, it } from "vitest";
 
 import { readAgentsConfig } from "../src/agent_registry.js";
@@ -15,7 +14,7 @@ import { McpConfigService } from "../src/mcp_config_service.js";
 import { makeTempDirSync } from "./helpers/temp_dir.js";
 
 const TEMPLATES_DIR = fileURLToPath(new URL("../../portable-node/config/", import.meta.url));
-const FILES = ["agents.yaml", "model-catalog.yaml", "mcp-registry.yaml", "mcp-profiles.yaml"];
+const FILES = ["agents.yaml", "mcp-registry.yaml", "mcp-profiles.yaml"];
 
 function renderTemplates(stateRoot: string, hostPort: number): string {
   const directory = makeTempDirSync("portable-node-config-");
@@ -49,27 +48,10 @@ describe("portable node default config", () => {
       expect(agent.mcp_profile).toBe("portable-default");
     }
 
-    const catalog = parseModelCatalogYaml(
-      fs.readFileSync(path.join(configDir, "model-catalog.yaml"), "utf8"),
-    );
-    expect(catalog.presets.map((preset) => preset.id)).toEqual([
-      "claude-sonnet",
-      "claude-opus",
-      "codex-6.1-sol",
-      "codex-6.1-terra",
-    ]);
-    expect(resolveModelPreset(catalog, "claude-opus")).toMatchObject({
-      backend: "claude",
-      model: "opus",
-      default_effort: "xhigh",
-      trusted_execution: true,
-    });
-    expect(resolveModelPreset(catalog, "codex-6.1-sol")).toMatchObject({
-      backend: "codex",
-      model: "gpt-6.1-sol",
-      default_effort: "high",
-      trusted_execution: true,
-    });
+    expect(
+      fs.existsSync(path.join(configDir, "model-catalog.yaml")),
+      "모델 카탈로그는 portable 템플릿이 아니라 리포 정본 파일입니다.",
+    ).toBe(false);
 
     const service = new McpConfigService({
       agentsConfigPath,

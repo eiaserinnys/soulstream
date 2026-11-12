@@ -215,6 +215,7 @@ async function stageSwitch({ context, release }) {
     releaseDir: installed.dir,
     runtimes,
     ports: context.ports,
+    repoRoot: context.repoRoot,
   });
   return { ok: true, nodeChange };
 }
@@ -343,6 +344,7 @@ async function main() {
       ports,
       release,
       templatesDir: join(portableDir, "config"),
+      repoRoot,
       log,
     });
     supervisor = await startCandidate({ stateRoot, defaults, release, candidate, log });
@@ -357,6 +359,7 @@ async function main() {
       previous,
       from: release,
       templatesDir: join(portableDir, "config"),
+      repoRoot,
       log,
     });
     if (!restored) throw error;

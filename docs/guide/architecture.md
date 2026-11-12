@@ -69,7 +69,7 @@ flowchart TB
 - `antigravity`: Antigravity CLI (`agy`) runner (for example, Gemini presets).
 - `opencode`: OpenCode CLI (`opencode`) runner.
 
-Each node advertises which backends and model presets are available based on its local CLI binaries, `model-catalog.yaml`, authentication state, and resolved environment variables.
+Each node advertises which backends and model presets are available based on its local CLI binaries, the repository file `packages/model-catalog/data/model-catalog.yaml`, authentication state, and resolved environment variables.
 
 ## Repository layout and packages
 
@@ -89,7 +89,7 @@ soulstream/
 │   ├── db-schema/                  Canonical PostgreSQL DDL, migrations, and release executor
 │   ├── fractional-position/        Shared fractional-indexing ordering primitive
 │   ├── mcp-contract/               Shared MCP tool contracts and schemas
-│   ├── model-catalog/              Shared backend enum and model preset contracts
+│   ├── model-catalog/              Shared backend enum, model preset contracts, and the canonical catalog data file
 │   ├── page-model/                 Shared page, block, and Y.Doc projection contracts
 │   ├── search-contract/            Shared session search request and result contracts
 │   ├── soul-ui/                    Shared dashboard UI components, stores, and hooks
