@@ -16,6 +16,7 @@ import {
   loadOrchServerEnvironment,
   type ProductionOrchestrator,
 } from "../../../orch-server-ts/src/index.js";
+import { repositoryModelCatalog } from "../../../orch-server-ts/tests/helpers/model_catalog.js";
 import { loadAgentRegistry } from "../../src/agent_registry.js";
 import { parseEnv } from "../../src/config.js";
 import { McpConfigService } from "../../src/mcp_config_service.js";
@@ -174,6 +175,7 @@ export class ProductionFullSliceHarness {
         CLAUDE_OAUTH_CLIENT_ID: "full-slice-claude-client",
         CLAUDE_OAUTH_CALLBACK_URL: "http://127.0.0.1/claude/callback",
       }),
+      modelCatalog: repositoryModelCatalog(),
       warn: () => undefined,
     });
     this.orchAddress = await this.orch.listen();
