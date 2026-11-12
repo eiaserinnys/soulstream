@@ -91,7 +91,7 @@ export function CardQuestionBody({ view, cardId, portraitUri, userInitial = '나
           <Pressable testID={`card-question-choice-${index}`} accessibilityRole="button" disabled={!view.open || busy}
             accessibilityLabel={[option.label, option.recommended ? '권함' : null, option.description].filter(Boolean).join('. ')}
             accessibilityState={{ selected: chosen, disabled: !view.open || busy }} onPress={() => onChoose(option.label)}
-            style={({ pressed }) => [requestStyles.optionRow, (chosen || pressed) && requestStyles.optionRowActive, !view.open && !chosen && styles.dimmed]}>
+            style={({ pressed }) => [requestStyles.optionRow, styles.choiceRow, (chosen || pressed) && requestStyles.optionRowActive, !view.open && !chosen && styles.dimmed]}>
             <View style={requestStyles.optionCopy}>
               <View style={styles.labelRow}><Text style={styles.choiceLabel}>{option.label}</Text>
                 {option.recommended ? <Text style={styles.recommended}>권함</Text> : null}</View>
@@ -155,6 +155,7 @@ function makeStyles(t: DesignTokens) {
     waiting: { flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm, minHeight: t.avatarSize.message },
     choices: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.colors.border },
     dimmed: { opacity: DIMMED_OPACITY },
+    choiceRow: { minHeight: t.foundation.minHeight.row, alignSelf: 'stretch' },
     labelRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: t.uiSpacing.sm },
     choiceLabel: { ...type.body, fontWeight: '600', color: t.colors.textPrimary },
     recommended: { ...type.label, color: t.colors.accent },
