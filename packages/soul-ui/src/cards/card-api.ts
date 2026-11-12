@@ -23,6 +23,12 @@ export function groupCards<T extends { status: string; archived?: boolean; queue
 export function queueAfterId(ids: readonly string[], movedId: string) { return ids[ids.indexOf(movedId) - 1] ?? null; }
 export const cardPath = (id: string) => `/api/cards/${encodeURIComponent(id)}`;
 export const cardMutationKey = () => `card-web:${crypto.randomUUID()}`;
+/** 카드 #1197 화면 계약 2절: 질문 답은 선택과 글 두 꼴이고 idempotencyKey는 보내는 쪽이 더한다. */
+export type CardQuestionAnswerRequest = { mode: "choice"; option: string } | { mode: "text"; answer: string };
+/** 카드 #1197 화면 계약 2절: 되묻기와 덧붙이기는 질문에 묶인 커멘트다. */
+export type CardQuestionCommentRequest = { questionId: string; body: string };
+export const cardQuestionChoiceAnswer = (option: string): CardQuestionAnswerRequest => ({ mode: "choice", option });
+export const cardQuestionTextAnswer = (answer: string): CardQuestionAnswerRequest => ({ mode: "text", answer });
 export function confirmCardItem(cardId: string, itemId: number, confirmed: boolean): Promise<{card:CardRow}> {
   return cardRequest<{card:CardRow}>(`${cardPath(cardId)}/items/${encodeURIComponent(String(itemId))}/confirm`, "POST", {confirmed});
 }

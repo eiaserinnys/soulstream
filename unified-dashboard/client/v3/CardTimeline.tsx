@@ -7,16 +7,20 @@ import { MarkdownImage } from "@seosoyoung/soul-ui/components/MarkdownImage";
 import { CustomViewIframe } from "@seosoyoung/soul-ui/custom-view/CustomViewRenderer";
 import type { ChatMessage } from "@seosoyoung/soul-ui/lib/flatten-tree";
 import { attachmentContentUrl, contextualLegacyUrl, type ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
-import type { CardDetail, CardReport, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
+import type { CardDetail, CardQuestion, CardReport, CardRow } from "@seosoyoung/soul-ui/cards/card-types";
 import { cardRequestMarkdown } from "./card-request-markdown";
+import { CardQuestionActions, CardQuestionBody, cardQuestionDetailView } from "./CardQuestionBlock";
 import { CardImageViewer, type CardAttachmentStatus } from "./CardImageViewer";
 import { type AttachmentReadContext, attachmentUrlHasContext, cardAttachmentSelectionFromUrl, cardLegacyAttachmentSelectionFromUrl } from "./card-attachment-selection";
 import { failedReference, loadAttachmentAsset, unavailableItem, type AttachmentLoadResult, type AttachmentPlaceholderReference } from "./attachment-asset-loader";
 
 type MarkdownSourceLink = NonNullable<ComponentProps<typeof MarkdownContent>["sourceLinkComponent"]>;
 
-export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,pending,initialImage,commentsOnly=false}: {
+export type CardQuestionHandlers={onAskBack(question:CardQuestion):void;onAnswerFreely(question:CardQuestion):void};
+export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,pending,initialImage,commentsOnly=false,questionHandlers}: {
  commentsOnly?:boolean;
+ /** 카드 #1197: 새 질문 장을 쓴다. 열린 질문은 커멘트 탭 맨 아래, 입력창 바로 위에 선다. */
+ questionHandlers?:CardQuestionHandlers;
  initialImage?:{src:string;alt:string};
  card:CardRow;detail?:CardDetail;portraitUrl:string|null;userPortraitUrl?:string|null;
  onAnswer(questionId:string,answer:string):void;pending:boolean;
@@ -119,7 +123,7 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
  const requestAttachmentReferences=(card.attachments??[]).map((attachment,index)=>occurrenceReference(legacyAttachmentReference(card.id,attachment),`request:${index}`));
  const requestReferences=[...markdownAttachmentReferences(renderedRequestMarkdown,card.id,origin),...requestAttachmentReferences];
  const requestLink=sourceLinkComponent(card.id,origin,requestReferences,openReference,internalLinkClick,true);
- const entries:{id:string;at:string;kind:string;role:"user"|"assistant";spoken?:boolean;withdrawn?:boolean;collapsible?:boolean;body:ReactNode}[]=[
+ const entries:{id:string;at:string;shownAt?:string;revised?:boolean;kind:string;role:"user"|"assistant";spoken?:boolean;withdrawn?:boolean;collapsible?:boolean;body:ReactNode}[]=[
   {id:"request",at:card.createdAt,kind:"지시",role:"user",collapsible:true,body:<RequestPreview markdown={renderedRequestMarkdown} attachments={requestAttachmentReferences} expanded={expanded.has("request")} linkComponent={requestLink} onImageClick={(src:string,alt:string,trigger?:HTMLElement)=>openMarkdownImage(src,alt,requestReferences,trigger)} onOpenAttachment={(reference,trigger)=>void openReference(reference,requestReferences,trigger)}/>},
   ...(detail?.questions??[]).flatMap(q=>{
    const questionMarkdown=contextualizeMarkdownAttachmentUrls(q.text,card.id,origin);
@@ -129,6 +133,18 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
    const answerMarkdown=q.answer?contextualizeMarkdownAttachmentUrls(q.answer,card.id,origin):"";
    const answerReferences=markdownAttachmentReferences(answerMarkdown,card.id,origin);
    const answerLink=sourceLinkComponent(card.id,origin,answerReferences,openReference,internalLinkClick,true);
+   if(questionHandlers){
+    const view=cardQuestionDetailView(q,detail?.comments??[],card.title);
+    return [
+     {id:`q-${q.id}`,at:view.open?"9999-12-31T00:00:00Z":(view.revisedAt??q.askedAt),shownAt:view.revisedAt??q.askedAt,revised:Boolean(view.revisedAt),kind:q.kind==="request"?"부탁":"질문",role:"assistant" as const,withdrawn,body:<div className="v3-card-question-body">
+      {view.title?<h3 className="v3-card-question-title">{view.title}</h3>:null}
+      <CardQuestionBody view={view} portraitUrl={portraitUrl} userPortraitUrl={userPortraitUrl} pending={pending} layout="columns" onChoose={label=>onAnswer(q.id,label)}/>
+      {withdrawn&&q.withdrawalReason?<p className="v3-card-question-withdrawal">{q.withdrawalReason}</p>:null}
+      <CardQuestionActions view={view} pending={pending} onAnswerFreely={()=>questionHandlers.onAnswerFreely(q)} onAskBack={()=>questionHandlers.onAskBack(q)} onDone={()=>onAnswer(q.id,"했어")} composerVisible/>
+     </div>},
+     ...(q.answer?[{id:`a-${q.id}`,at:q.answeredAt??q.askedAt,kind:"답",role:"user" as const,body:<MarkdownContent content={answerMarkdown} onImageClick={(src:string,alt:string,trigger?:HTMLElement)=>openMarkdownImage(src,alt,answerReferences,trigger)} sourceLinkComponent={answerLink}/>}]:[]),
+    ];
+   }
    return [
     {id:`q-${q.id}`,at:q.askedAt,kind:"질문",role:"assistant" as const,withdrawn,body:<><MarkdownContent content={questionMarkdown} onImageClick={(src:string,alt:string,trigger?:HTMLElement)=>openMarkdownImage(src,alt,questionReferences,trigger)} sourceLinkComponent={questionLink}/>{withdrawn&&q.withdrawalReason?<p className="v3-card-question-withdrawal">{q.withdrawalReason}</p>:null}{!withdrawn&&!q.answer&&q.options?.length?<div className="v3-card-answer-options">{q.options.map(option=><Button key={option} variant="outline" disabled={pending} onClick={()=>onAnswer(q.id,option)}>{option}</Button>)}</div>:null}</>},
     ...(q.answer?[{id:`a-${q.id}`,at:q.answeredAt??q.askedAt,kind:"답",role:"user" as const,body:<MarkdownContent content={answerMarkdown} onImageClick={(src:string,alt:string,trigger?:HTMLElement)=>openMarkdownImage(src,alt,answerReferences,trigger)} sourceLinkComponent={answerLink}/>}]:[]),
@@ -140,7 +156,7 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
    const linkComponent=sourceLinkComponent(card.id,origin,references,openReference,internalLinkClick);
    return {id:report.id,at:report.createdAt,kind:"보고",role:"assistant" as const,collapsible:true,body:<ReportPreview report={report} markdownBody={markdownBody} expanded={expanded.has(report.id)} references={references} linkComponent={linkComponent} onImageClick={(src:string,alt:string,trigger?:HTMLElement)=>openMarkdownImage(src,alt,references,trigger)}/>};
   }),
-  ...(detail?.comments??[]).filter(comment=>comment.kind!=="note").map(comment=>{
+  ...(detail?.comments??[]).filter(comment=>comment.kind!=="note"&&comment.questionId==null).map(comment=>{
    const target=comment.itemId===undefined||comment.itemId===null?undefined:(detail?.card.items??card.items)?.find(item=>item.id===comment.itemId);
    const commentMarkdown=contextualizeMarkdownAttachmentUrls(comment.body,card.id,origin);
    const references=markdownAttachmentReferences(commentMarkdown,card.id,origin);
@@ -150,7 +166,7 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
   }),
  ];
  return entries.filter(entry=>!commentsOnly||entry.kind==="커멘트").sort((a,b)=>Date.parse(a.at)-Date.parse(b.at));
- },[card,detail,commentsOnly,expanded,overflowingComments,pending,onAnswer,openImage,openReference,origin,internalLinkClick]);
+ },[card,detail,commentsOnly,expanded,overflowingComments,pending,onAnswer,openImage,openReference,origin,internalLinkClick,questionHandlers]);
  const toggle=(id:string)=>setExpanded(current=>{const next=new Set(current);if(next.has(id))next.delete(id);else next.add(id);return next;});
  const viewerStatuses:Record<string,CardAttachmentStatus>={};
  for(const [key,status] of Object.entries(attachmentStates)){
@@ -158,7 +174,7 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
  }
  return <><div ref={timeline} className="v3-card-timeline v3-chat-surface" style={chatTypographyStyle}>{entries.map(entry=>{
   const msg:ChatMessage={id:entry.id,treeNodeId:entry.id,treeNodeType:"card",role:entry.role,content:""};
-  const header=<div className="v3-card-bubble-kind"><strong>{entry.kind}</strong>{entry.spoken?<span>대화에서</span>:null}{entry.withdrawn?<span>철회됨</span>:null}<time dateTime={entry.at}>{entry.at?new Date(entry.at).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",hourCycle:"h23"}):""}</time></div>;
+  const header=<div className="v3-card-bubble-kind"><strong>{entry.kind}</strong>{entry.spoken?<span>대화에서</span>:null}{entry.withdrawn?<span>철회됨</span>:null}{entry.revised?<span>고침</span>:null}<time dateTime={entry.shownAt??entry.at}>{(entry.shownAt??entry.at)?new Date(entry.shownAt??entry.at).toLocaleTimeString("ko-KR",{hour:"2-digit",minute:"2-digit",hourCycle:"h23"}):""}</time></div>;
   const bubbleProps:HTMLAttributes<HTMLDivElement>|undefined=entry.collapsible?{
    role:"button",tabIndex:0,className:"outline-none focus-visible:ring-2 focus-visible:ring-ring","aria-expanded":expanded.has(entry.id),
    onClick:event=>{if(!(event.target as Element).closest("a,button,input,iframe"))toggle(entry.id);},

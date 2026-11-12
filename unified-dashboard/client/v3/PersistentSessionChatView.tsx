@@ -7,7 +7,7 @@ import { PersistentReportDeck, type ReportBubbleSeat } from './PersistentReportD
 import { usePersistentReportDismiss } from './usePersistentReportDismiss';
 import { usePersistentCardCompletion } from './usePersistentCardCompletion';
 import { createPersistentSessionsApi } from "../lib/persistent-sessions";
-import { PasCardExpansion, PasCardExpansionStatus } from './PasCardExpansion';
+import { PasCardExpansion, PasCardExpansionStatus, pasCardQuestion } from './PasCardExpansion';
 import { ReportTimelineRow } from './ReportTimelineRow';
 import type { ReportTimelineAlignmentInset, ReportTimelineRowLine } from "@seosoyoung/soul-ui";
 
@@ -73,6 +73,7 @@ export function PersistentSessionChatView({ sessionId, storeScope, loadDisplaySe
   </ReportTimelineRowProvider>;
   return <PersistentReportProvider sessionId={sessionId} entries={visibleEntries}>
     {(!loadDisplaySettings || listedSettings || settledSettingsSession === sessionId) && <PersistentReportDeck sessionId={sessionId} notify={notify} completion={completion} disabled={props.chatInputDisabled} seat={reportSeat} focusInput={focusInput} dismissReport={dismiss}
+      renderQuestion={pasCardQuestion}
       renderCardDetails={(entry, lookupCards) => <PasCardExpansion key={entry.key} entry={entry} lookupCards={lookupCards} />}
       renderCardStatus={entry => <PasCardExpansionStatus entry={entry} />} />}
     <ReportTimelineRowProvider render={renderReportTimelineRow}>

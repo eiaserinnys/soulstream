@@ -5,13 +5,15 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncEx
 import { DashboardIconCap, useAuth, useDashboardStore, useGlassSurface, type CatalogFolder, type SessionSummary } from "@seosoyoung/soul-ui";
 import { ArrowLeft, Check, Play, LoaderCircle, RotateCw } from "lucide-react";
 import { useCardStore } from "@seosoyoung/soul-ui/cards/card-store";
-import { cardMutationKey } from "@seosoyoung/soul-ui/cards/card-api";
+import { cardMutationKey, cardQuestionChoiceAnswer, cardQuestionTextAnswer } from "@seosoyoung/soul-ui/cards/card-api";
 import {cardExecutionState,subscribeCardExecution,type CardExecutionState} from "@seosoyoung/soul-ui/cards/card-execution";
 import { CardStatusPicker, type CardStatusControl, type CardStatusHandle } from "./CardStatusPicker";
 import { FolderTitleEditor } from "./FolderTitleEditor";
 import { CardSessionHistory, type CardSessionSelection } from "./CardSessionHistory";
 import { DetailTabs } from "./DetailTabs";
 import { CardTimeline } from "./CardTimeline";
+import { CardQuestionNotice, isOpenCardQuestion } from "./CardQuestionBlock";
+import { setCardQuestionTarget, useCardQuestionTarget } from "./card-question-target";
 import { CardCommentInput } from "./CardCommentInput";
 import "./v3-cards.css";
 import type { CardColor, CardComment, CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
@@ -52,6 +54,7 @@ export function CardDetailPane(props:CardDetailPaneProps) {
  const [dockHeight,setDockHeight]=useState(0);
  const [pending,setPending]=useState(false);
  const statusPicker=useRef<CardStatusHandle>(null);
+ const questionTarget=useCardQuestionTarget(cardId);
  const observedExecution=useSyncExternalStore(subscribeCardExecution,()=>cardExecutionState(cardId),()=>undefined);
  const execution=sampleExecution??observedExecution;
  const itemSummary=summarizeCardItems(card?.items,pendingConfirmations);
@@ -86,14 +89,32 @@ export function CardDetailPane(props:CardDetailPaneProps) {
   return ()=>observer.disconnect();
  },[cardId,targetItemId,sentNotice]);
  const answer=async(questionId:string,text:string)=>{
-  if(sampleDetail){updateSample(current=>({...current,questions:current.questions.map(q=>q.id===questionId?{...q,answer:text,answeredAt:new Date().toISOString()}:q)}));return;}
+  // 선택지는 한 번 누르면 바로 간다. 덧붙일 말은 보낸 뒤 입력창의 「덧붙이기」 대상으로 받는다.
+  if(sampleDetail){updateSample(current=>({...current,questions:current.questions.map(q=>q.id===questionId?{...q,answer:text,answeredAt:new Date().toISOString(),selectedOption:text}:q)}));if(text!=="했어")setCardQuestionTarget(cardId,{kind:"append",questionId,label:text});return;}
   setPending(true);
-  try {await useCardStore.getState().mutate(cardId,`/questions/${encodeURIComponent(questionId)}/answer`,{answer:text});}
+  try {await useCardStore.getState().mutate(cardId,`/questions/${encodeURIComponent(questionId)}/answer`,cardQuestionChoiceAnswer(text));if(text!=="했어")setCardQuestionTarget(cardId,{kind:"append",questionId,label:text});}
   catch {} finally {setPending(false);}
+ };
+ const openQuestion=detail?.questions.find(isOpenCardQuestion);
+ const questionHandlers={
+  onAskBack:(question:{id:string})=>{setTargetItemId(null);setCardQuestionTarget(cardId,{kind:"ask",questionId:question.id},true);},
+  onAnswerFreely:()=>{setTargetItemId(null);setCardQuestionTarget(cardId,null,true);},
  };
  const submit=async(comment:string)=>{
   if(!comment.trim()||pending)return false;
   const itemId=targetItemId;
+  const qTarget=questionTarget.target;
+  if(sampleDetail&&itemId===null&&qTarget){
+   const saved:CardComment={id:crypto.randomUUID(),cardId,authorKind:"user",authorId:"sample",sessionId:null,kind:"comment",questionId:qTarget.questionId,body:comment.trim(),createdAt:new Date().toISOString()};
+   updateSample(current=>({...current,comments:[...(current.comments??[]),saved]}));
+   setCardQuestionTarget(cardId,null);
+   return true;
+  }
+  if(sampleDetail&&itemId===null&&openQuestion){
+   updateSample(current=>({...current,questions:current.questions.map(q=>q.id===openQuestion.id?{...q,answer:comment.trim(),answeredAt:new Date().toISOString()}:q)}));
+   setCardQuestionTarget(cardId,null);
+   return true;
+  }
   if(sampleDetail){
    const saved:CardComment={id:crypto.randomUUID(),cardId,authorKind:"user",authorId:"sample",sessionId:null,kind:"comment",...(itemId===null?{}:{itemId}),body:comment.trim(),createdAt:new Date().toISOString()};
    updateSample(current=>({...current,card:{...current.card,items:itemId===null?current.card.items:current.card.items?.map(item=>item.id===itemId?{...item,state:"doing",confirmed:null,fixOpen:item.fixOpen+1,display:"fix"}:item)},
@@ -102,8 +123,10 @@ export function CardDetailPane(props:CardDetailPaneProps) {
   }
   setPending(true);
   try {
-   await useCardStore.getState().addComment(cardId,comment.trim(),cardMutationKey(),itemId??undefined);
-   setTargetItemId(null);setSentNotice(true);setNoticeVersion(value=>value+1);if(tab!=="comments")setUnreadComments(true);
+   if(itemId===null&&qTarget)await useCardStore.getState().addComment(cardId,comment.trim(),cardMutationKey(),undefined,qTarget.questionId);
+   else if(itemId===null&&openQuestion)await useCardStore.getState().mutate(cardId,`/questions/${encodeURIComponent(openQuestion.id)}/answer`,cardQuestionTextAnswer(comment.trim()));
+   else await useCardStore.getState().addComment(cardId,comment.trim(),cardMutationKey(),itemId??undefined);
+   setTargetItemId(null);setCardQuestionTarget(cardId,null);setSentNotice(true);setNoticeVersion(value=>value+1);if(tab!=="comments")setUnreadComments(true);
    return true;
   } catch {return false;} finally {setPending(false);}
  };
@@ -167,7 +190,7 @@ export function CardDetailPane(props:CardDetailPaneProps) {
      <CardCheckItems key={cardId} items={card.items} pendingConfirmations={pendingConfirmations} onConfirmChange={confirmItem} onTargetItem={chooseTargetItem}/>
     </section>
     <section className="v3-detail-section" data-card-tab-panel="comments" hidden={tab!=="comments"}>
-     <CardTimeline key={cardId} card={card} detail={detail} portraitUrl={portrait} userPortraitUrl={user?.picture??""} pending={pending} onAnswer={(id,text)=>void answer(id,text)}/>
+     <CardTimeline key={cardId} card={card} detail={detail} portraitUrl={portrait} userPortraitUrl={user?.picture??""} pending={pending} onAnswer={(id,text)=>void answer(id,text)} questionHandlers={questionHandlers}/>
     </section>
     <section className="v3-detail-section v3-card-session-history" data-card-section="sessions" data-card-tab-panel="sessions" hidden={tab!=="sessions"}>
      <CardSessionHistory key={`${cardId}:${initialSessionId??""}`} sessionIds={sessionIds} linkedSessions={detail?.sessions} assigneeSessionId={card.assigneeKind==="session"?card.assigneeSessionId:null} initialSessionId={initialSessionId} onOpenSession={onOpenSession}/>
@@ -179,8 +202,10 @@ export function CardDetailPane(props:CardDetailPaneProps) {
   </div>
   <div className="v3-card-composer-slot" ref={dock}>
    {targetItemId!==null?<div className="v3-card-target-notice" role="status"><span>대상: {targetItemId}번 {targetItem?.title??"항목"}</span><button type="button" aria-label="커멘트 대상 해제" onClick={()=>setTargetItemId(null)}>해제</button></div>:null}
+   {targetItemId===null&&questionTarget.target?<CardQuestionNotice label={questionTarget.target.kind==="ask"?"되묻기":`덧붙이기: ${questionTarget.target.label}`} onClear={()=>setCardQuestionTarget(cardId,null)}/>:null}
    {sentNotice?<div className="v3-card-sent-notice" role="status">보냈습니다. <button type="button" onClick={()=>changeTab("comments")}>커멘트에서 보기</button></div>:null}
-   <CardCommentInput uploadController={sampleDetail?sampleUpload:undefined} key={cardId} cardId={cardId} nodeId={nodeId} sessionId={card.assigneeSessionId} pending={pending} focusRequest={focusRequest} onSend={submit}/>
+   <CardCommentInput uploadController={sampleDetail?sampleUpload:undefined} key={cardId} cardId={cardId} nodeId={nodeId} sessionId={card.assigneeSessionId} pending={pending} focusRequest={focusRequest+questionTarget.focus} onSend={submit}
+    placeholder={targetItemId!==null?"커멘트":questionTarget.target?.kind==="ask"?"물어볼 것":questionTarget.target?.kind==="append"?"덧붙일 말":openQuestion?"다르게 답하기":"커멘트"}/>
   </div>
  </article>;
 }
