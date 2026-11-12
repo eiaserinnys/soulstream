@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import {
+  findModelProvider,
   findModelRow,
   modelDisplayName,
   parseModelCatalogGroups,
@@ -237,6 +238,19 @@ describe("repository model catalogue data", () => {
     expect(modelDisplayName(catalog, "claude-sonnet-5")).toBeNull();
     expect(modelDisplayName(catalog, "not-a-model")).toBeNull();
     expect(findModelRow(catalog, "deepseek-v4.1-flash")?.provider).toBe("deepseek");
+  });
+
+  it("finds the usage provider of a model string from presets and model rows", () => {
+    expect(findModelProvider(catalog, "kimi-for-coding")).toBe("kimi");
+    expect(findModelProvider(catalog, "k3")).toBe("kimi");
+    expect(findModelProvider(catalog, "k3.1-pro")).toBe("kimi");
+    expect(findModelProvider(catalog, "deepseek-v4.1-flash")).toBe("deepseek");
+    expect(findModelProvider(catalog, "opencode/deepseek-v4.1-flash-free")).toBe("deepseek");
+    expect(findModelProvider(catalog, "deepseek-v4-flash")).toBe("deepseek");
+    expect(findModelProvider(catalog, "opus")).toBe("claude");
+    expect(findModelProvider(catalog, "gpt-6.1-sol")).toBe("codex");
+    expect(findModelProvider(catalog, "claude-haiku-4-5-20251001")).toBe("claude");
+    expect(findModelProvider(catalog, "not-a-model")).toBeUndefined();
   });
 
   it("keeps every legacy price row and alias at its previous rates", () => {

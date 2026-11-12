@@ -110,7 +110,7 @@ export const ModelCatalogRatesSchema = z.object({
 export type ModelCatalogRates = z.infer<typeof ModelCatalogRatesSchema>;
 
 export const ModelCatalogModelSchema = z.object({
-  provider: z.string().trim().min(1),
+  provider: z.enum(MODEL_PRESET_PROVIDERS),
   model: z.string().trim().min(1),
   aliases: z.array(z.string().trim().min(1)).default([]),
   display_name: z.string().trim().min(1).optional(),
@@ -311,6 +311,20 @@ export function modelDisplayName(
   model: string,
 ): string | null {
   return findModelRow(catalog, model)?.display_name ?? null;
+}
+
+/**
+ * Usage-statistics provider for a runtime model string from catalogue data alone:
+ * a preset running exactly that model, then a model row. `undefined` when the
+ * catalogue does not know the string; callers keep their own backend fallback.
+ */
+export function findModelProvider(
+  catalog: ModelCatalogConfig,
+  model: string,
+): ResolvedModelPresetProvider | undefined {
+  const preset = catalog.presets.find((candidate) => candidate.model === model);
+  if (preset !== undefined) return resolvePresetProvider(preset);
+  return findModelRow(catalog, model)?.provider;
 }
 
 /** Validate an explicit effort against the static preset definition and apply its default. */
