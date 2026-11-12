@@ -51,7 +51,7 @@ describe("buildRestrictedSessionEnv", () => {
       },
     });
 
-    expect(env.PATH).toBe("/usr/bin:/bin");
+    expect(env.PATH).toBe("/home/eias/.cargo/bin:/usr/bin:/bin");
     expect(env.SCRATCH_WORKSPACE_DIR).toBe("/home/eias/workspace/.local");
     expect(env.MCP_INTERNAL_PORT).toBe("3115");
     expect(env.MCP_PATH).toBe("/mcp/internal");
@@ -146,6 +146,43 @@ describe("buildRestrictedSessionEnv", () => {
     expect(env.GIT_CONFIG_VALUE_2).toBe("false");
     expect(env.GIT_CONFIG_KEY_3).toBe("fetch.writeCommitGraph");
     expect(env.GIT_CONFIG_VALUE_3).toBe("false");
+  });
+
+  it("prepends HOME/.cargo/bin to PATH", () => {
+    const env = build();
+
+    expect(env.PATH).toBe("/home/eias/.cargo/bin:/usr/bin:/bin");
+  });
+
+  it("does not duplicate HOME/.cargo/bin when a second pass sees it already on PATH", () => {
+    const first = build({
+      baseEnv: { ...baseEnv(), PATH: "/home/eias/.cargo/bin:/usr/bin:/bin" },
+    });
+    expect(first.PATH).toBe("/home/eias/.cargo/bin:/usr/bin:/bin");
+
+    // 같은 함수는 서버, 상자 안 runner, Codex 전송에서 여러 번 거친다.
+    const second = buildRestrictedSessionEnv({
+      baseEnv: first,
+      additions: {},
+      restrictedCredential: "ssr1.s1.signature",
+      fullSecrets: [],
+      wsl: false,
+    });
+    expect(second.PATH).toBe("/home/eias/.cargo/bin:/usr/bin:/bin");
+  });
+
+  it("leaves PATH unchanged when HOME is missing", () => {
+    const base = baseEnv();
+    delete base.HOME;
+
+    expect(build({ baseEnv: base }).PATH).toBe("/usr/bin:/bin");
+  });
+
+  it("does not create PATH when PATH is missing", () => {
+    const base = baseEnv();
+    delete base.PATH;
+
+    expect(build({ baseEnv: base })).not.toHaveProperty("PATH");
   });
 
   it("does not mutate the caller environment", () => {

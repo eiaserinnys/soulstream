@@ -1,3 +1,5 @@
+import { join } from "node:path";
+
 import { IsolationPreparationPolicyError } from "./session_filesystem_errors.js";
 
 /**
@@ -71,6 +73,20 @@ function mergeRestrictedGitConfiguration(env: Record<string, string>): void {
 }
 
 /**
+ * 서비스 PATH에는 ~/.cargo/bin이 없고 상자 안 CLI는 로그인 셸을 거치지 않아
+ * rustup이 넣은 cargo/rustc를 찾지 못한다. HOME 기준으로 보강한다(카드 #1244).
+ * 이 함수는 서버, 상자 안 runner, Codex 전송에서 여러 번 거치므로 이미 있으면 그대로 둔다.
+ */
+function prependCargoBinToPath(env: Record<string, string>): void {
+  const home = env.HOME;
+  const path = env.PATH;
+  if (!home || !path) return;
+  const cargoBin = join(home, ".cargo", "bin");
+  if (path.split(":").includes(cargoBin)) return;
+  env.PATH = `${cargoBin}:${path}`;
+}
+
+/**
  * §11 restricted env의 최종 경계. 원본 세션 환경에서 관리 자격을 지우고
  * 목적별 예외만 더한 뒤, full 비밀값이 다른 키로 복제되었는지 값으로 확인한다.
  * 비밀값은 오류 메시지에 넣지 않는다.
@@ -111,6 +127,9 @@ export function buildRestrictedSessionEnv(
   if (input.wsl) delete env.WSL_INTEROP;
 
   mergeRestrictedGitConfiguration(env);
+
+  // 보강된 PATH도 아래 full 비밀값 검사를 거치도록 검사 앞에 둔다.
+  prependCargoBinToPath(env);
 
   const forbidden = new Set(input.fullSecrets.filter((value) => value.length > 0));
   if (forbidden.has(input.restrictedCredential)) {
