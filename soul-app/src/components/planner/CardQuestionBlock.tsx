@@ -22,10 +22,38 @@ type TargetEntry = { target: CardQuestionTarget | null; focus: number };
 const targets = new Map<string, TargetEntry>();
 const listeners = new Set<() => void>();
 const EMPTY: TargetEntry = { target: null, focus: 0 };
+function notify() { listeners.forEach(listener => listener()); }
 export function setCardQuestionTarget(cardId: string, target: CardQuestionTarget | null, focus = false) {
   const current = targets.get(cardId) ?? EMPTY;
   targets.set(cardId, { target, focus: focus ? current.focus + 1 : current.focus });
-  listeners.forEach(listener => listener());
+  notify();
+}
+/** 대상과 아직 따르지 않은 초점 요청을 함께 지운다. 화면 수명이 끝날 때 쓴다(계약 3절 15번). */
+export function clearCardQuestionTarget(cardId: string) {
+  if (!targets.delete(cardId)) return;
+  notify();
+}
+/** 초점 요청을 한 번 소비한다. 남은 요청이 없으면 false. */
+export function consumeCardQuestionFocus(cardId: string): boolean {
+  const current = targets.get(cardId);
+  if (!current || current.focus === 0) return false;
+  targets.set(cardId, { ...current, focus: 0 });
+  notify();
+  return true;
+}
+/** 대상을 세운 화면(카드 상세 시트, 펼친 장)이 살아 있는 동안만 대상과 초점 요청을 남긴다. */
+export function useCardQuestionTargetLifetime(cardId: string) {
+  React.useEffect(() => () => clearCardQuestionTarget(cardId), [cardId]);
+}
+/**
+ * 선택 답을 저장하고, 저장이 성공한 뒤에만 덧붙이기 대상을 세운다.
+ * 실패하면 대상을 세우지 않고 호출자의 기존 실패 처리(알림)를 그대로 쓴다.
+ */
+export async function answerCardQuestionChoice(targetKey: string, questionId: string, label: string,
+  save: () => Promise<boolean>): Promise<boolean> {
+  const saved = await save();
+  if (saved) setCardQuestionTarget(targetKey, { kind: 'append', questionId, label });
+  return saved;
 }
 export function useCardQuestionTarget(cardId: string) {
   return useSyncExternalStore(listener => { listeners.add(listener); return () => { listeners.delete(listener); }; },
@@ -41,8 +69,10 @@ export function cardQuestionPlaceholder(target: CardQuestionTarget | null, open:
 /** 받은 답은 답한 뒤 남은 선택지 행을 흐리게 하는 데 쓴다(기존 흐림 값). */
 const DIMMED_OPACITY = 0.45;
 
-export function CardQuestionBody({ view, cardId, portraitUri, userInitial = '나', onChoose, busy = false }: {
+export function CardQuestionBody({ view, cardId, portraitUri, userInitial = '나', onChoose, busy = false, surface = 'card' }: {
   view: CardQuestionView; cardId: string; portraitUri: string | null; userInitial?: string; onChoose(label: string): void; busy?: boolean;
+  /** 그리는 표면. PAS 장 위에서는 장의 선 색을 쓴다(화면 계약 3절 5번). */
+  surface?: 'card' | 'pas';
 }) {
   const t = useTokens();
   const styles = useMemo(() => makeStyles(t), [t]);
@@ -83,7 +113,8 @@ export function CardQuestionBody({ view, cardId, portraitUri, userInitial = '나
         <View style={styles.waiting}><ActivityIndicator size="small" color={t.colors.textMuted} /><Text style={styles.meta}>답을 기다리는 중</Text></View>
       </View> : null}
     </View> : null}
-    {view.kind === 'choice' && view.options.length ? <View accessibilityRole="radiogroup" style={[requestStyles.optionsGroup, styles.choices]}>
+    {view.kind === 'choice' && view.options.length ? <View accessibilityRole="radiogroup"
+      style={[requestStyles.optionsGroup, styles.choices, surface === 'pas' && styles.choicesOnPas]}>
       {view.options.map((option, index) => {
         const chosen = !view.open && view.selectedOption === option.label;
         return <React.Fragment key={option.label}>
@@ -91,7 +122,8 @@ export function CardQuestionBody({ view, cardId, portraitUri, userInitial = '나
           <Pressable testID={`card-question-choice-${index}`} accessibilityRole="button" disabled={!view.open || busy}
             accessibilityLabel={[option.label, option.recommended ? '권함' : null, option.description].filter(Boolean).join('. ')}
             accessibilityState={{ selected: chosen, disabled: !view.open || busy }} onPress={() => onChoose(option.label)}
-            style={({ pressed }) => [requestStyles.optionRow, styles.choiceRow, (chosen || pressed) && requestStyles.optionRowActive, !view.open && !chosen && styles.dimmed]}>
+            style={({ pressed }) => [requestStyles.optionRow, styles.choiceRow, !option.description && styles.choiceRowCentered,
+              (chosen || pressed) && requestStyles.optionRowActive, !view.open && !chosen && styles.dimmed]}>
             <View style={requestStyles.optionCopy}>
               <View style={styles.labelRow}><Text style={styles.choiceLabel}>{option.label}</Text>
                 {option.recommended ? <Text style={styles.recommended}>권함</Text> : null}</View>
@@ -154,8 +186,11 @@ function makeStyles(t: DesignTokens) {
     turnText: { ...type.body, flex: 1, minWidth: 0, color: t.colors.textPrimary, paddingTop: (t.avatarSize.message - type.body.lineHeight) / 2 },
     waiting: { flexDirection: 'row', alignItems: 'center', gap: t.uiSpacing.sm, minHeight: t.avatarSize.message },
     choices: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: t.colors.border },
+    choicesOnPas: { borderTopColor: t.persistentSession.line, borderBottomColor: t.persistentSession.line },
     dimmed: { opacity: DIMMED_OPACITY },
     choiceRow: { minHeight: t.foundation.minHeight.row, alignSelf: 'stretch' },
+    /** 설명 없는 변형 행은 내용을 세로 가운데로 둔다(화면 검수 반려 2). */
+    choiceRowCentered: { alignItems: 'center' },
     labelRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', columnGap: t.uiSpacing.sm },
     choiceLabel: { ...type.body, fontWeight: '600', color: t.colors.textPrimary },
     recommended: { ...type.label, color: t.colors.accent },

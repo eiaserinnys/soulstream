@@ -6,19 +6,22 @@
 //   ga 새 선택 질문(그림, 권함) · na 되묻기 뒤 기다림 · da 선택 답 뒤 덧붙이기 대상
 //   ra 부탁 장 · ma 옛 질문 · ba 고친 질문
 import React, { useMemo, useState } from 'react';
-import { Text, View, useWindowDimensions } from 'react-native';
+import { View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Asset } from 'expo-asset';
 import type { ApiClient } from '../api/client';
 import type { CardCheckItem, CardComment, CardDetail, CardQuestion, CardStatus } from '../api/cardTypes';
 import type { CardQuestionOption } from '../../../packages/wire-schema/src/card_questions';
-import type { PersistentReportEntry, Session } from '../api/types';
+import type { MessageContextItem, PersistentReportEntry, Session } from '../api/types';
 import { cardFixture } from '../test-support/cards';
 import { useDeviceType, useTokens } from '../theme';
 import { ContentLinkProvider } from '../navigation/ContentLinkProvider';
 import { ChatUiControllerProvider } from '../components/chat-ui/ChatUiControllerProvider';
 import { PersistentReportPager } from '../components/persistent/PersistentReportPager';
 import { PersistentReportCardExpansion } from '../components/persistent/PersistentReportCardExpansion';
+import { usePersistentReport } from '../components/persistent/usePersistentReport';
+import { usePersistentReportSend } from '../components/persistent/usePersistentReportSend';
+import { cardQuestionChipLabel, renderCardQuestionSurface } from '../components/persistent/cardQuestionSurface';
 import { usePersistentCardCompletion } from '../components/persistent/usePersistentCardCompletion';
 import { minimumReportBubbleHeight } from '../components/persistent/persistentReportStyles';
 import { calculatePersistentSessionLayout } from '../../../packages/soul-ui/src/lib/persistent-session-layout';
@@ -26,12 +29,13 @@ import { PERSISTENT_SESSION_FRAME as FRAME } from '../components/persistent/pers
 import { SwayCharacter } from '../components/persistent/SwayCharacter';
 import { CardStatusChip } from '../components/planner/CardRow';
 import { CardDetailContent } from '../components/planner/CardDetailSheet';
-import { CardQuestionActions, CardQuestionAnswered, CardQuestionBody, setCardQuestionTarget, type CardQuestionTarget } from '../components/planner/CardQuestionBlock';
-import { cardQuestionViewFromEntry } from '../components/planner/card-question-viewmodel';
-import { useCardActions, cardOperationId } from '../hooks/useCardActions';
+import { setCardQuestionTarget } from '../components/planner/CardQuestionBlock';
+import { useCardActions } from '../hooks/useCardActions';
 import { useSessionStore } from '../store/sessionStore';
 import { ChatComposer } from '../components/chat/ChatComposer';
-import { formatCardTime } from '../lib/card-check-item-summary';
+import { pendingReportReply } from '../lib/persistent-report';
+import { persistentReportStatusCard } from '../lib/persistent-report-card';
+import { CARD_QUESTION_ANSWERED_REASON } from '../components/chat/useChatSendFlow';
 import { CARD_QUESTION_KEY_PREFIX } from '../../../packages/wire-schema/src/persistent_report';
 import { dialogueImageUrl } from './dialogue-fixtures';
 
@@ -72,7 +76,10 @@ function buildSample(scene: SceneId): Sample {
         question: { ...base, id: 'q-secret', kind: 'choice', title: secretTitle, text: secretText,
           optionDetails: secretOptions, options: secretOptions.map(option => option.label),
           attachments: [{ type: 'image', label: '지금 실행 명령에 보이는 모습', url: evidenceUrl }],
-          answer: null, askedAt: at(10) }, comments: [] };
+          answer: null, askedAt: at(10) },
+        // 질문 뒤에 일반 커멘트를 두어 열린 질문이 기록 맨 아래에 붙는 모습(계약 10번)을 화면에 드러낸다.
+        comments: [{ id: 'c-after-question', cardId, authorKind: 'user', authorId: null, sessionId: null, kind: 'comment',
+          body: '다른 카드들도 같은 방식으로 정리해 주세요.', createdAt: at(16) }] };
     case 'na':
       return { cardTitle: '에이전트 세션 실행 명령의 접속 비밀값 정리', cardNumber: 1132, entryTitle: secretTitle,
         question: { ...base, id: 'q-secret', kind: 'choice', title: secretTitle, text: secretText,
@@ -143,7 +150,7 @@ function fail(): never {
   throw new Error('공개 예시: 저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요.');
 }
 
-function createSampleApi(): ApiClient {
+function createSampleApi(onReportAnswered?: (key: string) => void): ApiClient {
   let detail: CardDetail = { card: { ...card }, reports: [], questions: [{ ...sample.question }], sessions: [reviewSession],
     comments: sample.comments.map(comment => ({ ...comment })), nowHistory: [] };
   const snapshot = (): CardDetail => ({ ...detail, card: { ...detail.card, items: [...(detail.card.items ?? [])] },
@@ -192,6 +199,13 @@ function createSampleApi(): ApiClient {
         : question) });
       return { folderId: detail.card.folderId, card: detail.card };
     },
+    // 표본은 운영의 판 답 보내기 경로를 그대로 타고, API 경계에서만 응답을 대신한다.
+    // 판 재계산에서 답한 cq_ 장이 빠지는 서버 동작을 서버 목록을 줄여 흉내 낸다.
+    intervene: async (_sessionId: string, _text: string, _paths?: string[], contextItems?: MessageContextItem[]) => {
+      const reply = pendingReportReply(contextItems);
+      if (reply) onReportAnswered?.(reply.key);
+      return { delivered: true, outcome: 'delivered' as const, ...(reply ? { reason: CARD_QUESTION_ANSWERED_REASON } : {}) };
+    },
   } as unknown as ApiClient;
 }
 
@@ -200,16 +214,17 @@ function PasScene() {
   const phone = useDeviceType() === 'phone';
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const [entries, setEntries] = useState<PersistentReportEntry[]>(() => [sampleEntry()]);
-  const [index, setIndex] = useState(0);
+  // 서버 판 목록. 표본의 답 보내기는 운영 경로를 그대로 타고, API 경계의 intervene가 이 목록을 줄인다.
+  const [serverEntries, setServerEntries] = useState<PersistentReportEntry[]>(() => [sampleEntry()]);
   const [cardSheetOpen, setCardSheetOpen] = useState<boolean>(initialExpanded && phone);
-  const [expandedKey, setExpandedKey] = useState<string | null>(initialExpanded ? entries[0].key : null);
+  const [expandedKey, setExpandedKey] = useState<string | null>(initialExpanded ? serverEntries[0].key : null);
   const [text, setText] = useState('');
-  const api = useMemo(() => createSampleApi(), []);
+  const api = useMemo(() => createSampleApi(key => setServerEntries(saved => saved.filter(entry => entry.key !== key))), []);
+  const report = usePersistentReport('review-question-pas', true, api, serverEntries, undefined);
+  const reportSend = usePersistentReportSend('review-question-pas', api, report.entries, report.server, 'completed', () => {},
+    (entry, option) => report.holdAnswered(entry, option));
   const questionActions = useCardActions(api);
   const completion = usePersistentCardCompletion(api);
-  const answerViaReport = (key: string, body: string) => setEntries(saved =>
-    saved.map(entry => entry.key === key ? { ...entry, state: 'answered', answer: body } : entry));
   const column = phone ? width - t.foundation.pageInset * 2 : FRAME.landscape.conversation;
   const left = (width - column) / 2;
   const layout = calculatePersistentSessionLayout({ app: { left: 0, top: 0, width, height },
@@ -218,47 +233,23 @@ function PasScene() {
     baselineBottom: height - insets.bottom - t.uiSpacing.lg, inputRowHeight: t.hitTarget.min,
     rowBottomGap: t.spacing.xs, pointerFine: false, showCharacter: true, phoneConfigured: phone,
     reportBubble: { widthScale: 1, minimumHeight: minimumReportBubbleHeight(t) } });
-  const pager = <PersistentReportPager entries={entries} index={Math.min(index, Math.max(0, entries.length - 1))} api={api} sessionId="review-question-pas"
+  const pager = <PersistentReportPager entries={reportSend.entries} index={report.index} api={api} sessionId="review-question-pas"
     completion={completion} expandedKey={phone ? null : expandedKey} onExpandedKeyChange={setExpandedKey}
-    onSelect={setIndex} onDismiss={async key => { setEntries(saved => saved.filter(entry => entry.key !== key)); }} onFocusComposer={() => {}}
+    onSelect={report.select} onDismiss={async key => { setServerEntries(saved => saved.filter(entry => entry.key !== key)); }} onFocusComposer={() => {}}
     bubble={Boolean(layout.reportBubble)} maxHeight={layout.reportBubble?.maxHeight ?? layout.reportViewMaxHeight}
-    renderCardStatus={entry => { const statusCard = entry.card_id ? { ...card, status: 'blocked' as const, blockedKind: 'question' as const } : null;
+    renderCardStatus={entry => {
+      const statusCard = persistentReportStatusCard(entry);
       if (!statusCard) return null;
-      const label = entry.question_kind ? entry.question_kind === 'request' ? '카드 부탁' : '카드 질문' : undefined;
-      return <CardStatusChip card={statusCard} detail label={label} />; }}
-    renderCardDetails={phone ? undefined : entry => <PersistentReportCardExpansion key={entry.key} api={api} entry={entry} />}
-    onOpenCardDetails={phone ? () => setCardSheetOpen(true) : undefined}
-    renderQuestion={(entry, controls) => {
-      if (!entry.key.startsWith(CARD_QUESTION_KEY_PREFIX) && !entry.question_id) return null;
-      const view = cardQuestionViewFromEntry(entry);
-      const targetKey = entry.card_id ?? entry.key;
-      const cardId = entry.card_id ?? null;
-      const questionId = entry.question_id;
-      const busy = controls.expanded ? questionActions.pending : false;
-      const choose = (label: string) => {
-        // 접힌 장은 지금의 판 답 경로({key, option})를 그대로 쓴다. 펼친 장은 카드 REST로 보낸다.
-        if (!controls.expanded || !api || !cardId || !questionId) { answerViaReport(entry.key, label); return; }
-        setCardQuestionTarget(targetKey, { kind: 'append', questionId, label });
-        void questionActions.run(() => api.answerCardQuestion(cardId, questionId,
-          { mode: 'choice', option: label, idempotencyKey: cardOperationId() }))
-          .then(ok => { if (ok) answerViaReport(entry.key, label); });
-      };
-      const expandWith = (target: CardQuestionTarget | null) => { controls.expand(); setCardQuestionTarget(targetKey, target, true); };
-      return {
-        meta: view.revisedAt ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{`${formatCardTime(view.revisedAt)}에 고침`}</Text> : undefined,
-        body: <CardQuestionBody view={view} cardId={targetKey} portraitUri={portraitUrl} onChoose={choose} busy={busy} />,
-        actions: view.open
-          ? <CardQuestionActions view={view} composerVisible={controls.expanded} busy={busy}
-              onAnswerFreely={() => expandWith(null)}
-              onAskBack={() => { if (questionId) expandWith({ kind: 'ask', questionId }); }}
-              onDone={() => choose('했어')} />
-          : <CardQuestionAnswered view={view} onAppend={() => {
-              if (questionId) expandWith({ kind: 'append', questionId, label: view.selectedOption ?? view.answer ?? '' });
-            }} />,
-      };
+      return <CardStatusChip card={statusCard} detail label={cardQuestionChipLabel(entry, statusCard.blockedKind)} />;
     }}
-    send={{ busy: false, close: () => true, canCancel: () => false, cancelSent: () => false,
-      sendOption: async (entry: PersistentReportEntry, option: string) => { answerViaReport(entry.key, option); } } as any} />;
+    renderCardDetails={phone ? undefined
+      : (entry, publish) => <PersistentReportCardExpansion key={entry.key} api={api} entry={entry} onQuestionView={publish} />}
+    onOpenCardDetails={phone ? () => setCardSheetOpen(true) : undefined}
+    renderQuestion={(entry, controls) => renderCardQuestionSurface(entry, controls, {
+      t, api, portraitUri: portraitUrl, questionActions, reportSend,
+      onAnswered: (answered, option) => report.holdAnswered(answered, option),
+    })}
+    send={reportSend} />;
   return <ContentLinkProvider><ChatUiControllerProvider sessionId="review-question-pas" appendGeneratedText={() => ({ ok: true })}>
     {phone && cardSheetOpen ? <CardDetailContent visible api={api} cardId={card.id} onClose={() => setCardSheetOpen(false)} /> :
       <View testID="card-question-pas-sample" style={{ flex: 1, backgroundColor: t.persistentSession.paper, paddingTop: insets.top, paddingBottom: insets.bottom }}>
@@ -277,9 +268,10 @@ function PasScene() {
 }
 
 function CardScene() {
+  const t = useTokens();
   const phone = useDeviceType() === 'phone';
   const api = useMemo(() => createSampleApi(), []);
-  return <ContentLinkProvider><View testID="card-question-card-sample" style={{ flex: 1 }}>
+  return <ContentLinkProvider><View testID="card-question-card-sample" style={{ flex: 1, backgroundColor: t.colors.background }}>
     <CardDetailContent visible inline={!phone} api={api} cardId={card.id} onClose={() => {}} />
   </View></ContentLinkProvider>;
 }

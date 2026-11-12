@@ -2,6 +2,7 @@ import { useOptionalLayoutContinuity } from '../../navigation/LayoutContinuityCo
 import { useState } from 'react';
 import type { ApiClient } from '../../api/client';
 import type { PersistentReportEntry } from '../../api/types';
+import { CARD_ENTRY_KEY_PREFIX, CARD_QUESTION_KEY_PREFIX } from '../../../../packages/wire-schema/src/persistent_report';
 import { EMPTY_REPORT, pendingReportReply, reportSendContext, type ReportReplyDraft } from '../../lib/persistent-report';
 import { useSessionStore } from '../../store/sessionStore';
 import type { PendingOptimisticEvent } from '../../store/chatStore';
@@ -9,6 +10,11 @@ import type { PendingOptimisticEvent } from '../../store/chatStore';
 function dismissalId(sessionId: string | undefined, entry: PersistentReportEntry): string {
   return JSON.stringify([sessionId, entry.key, entry.updated_at]);
 }
+const edition = (entry: Pick<PersistentReportEntry, 'key' | 'updated_at'>) => JSON.stringify([entry.key, entry.updated_at]);
+type AnsweredHold = { sessionId: string | undefined; key: string; index: number; cardId: string | null;
+  seen: Set<string>; entry: PersistentReportEntry };
+const isCardBoardEntry = (entry: PersistentReportEntry) =>
+  entry.key.startsWith(CARD_QUESTION_KEY_PREFIX) || entry.key.startsWith(CARD_ENTRY_KEY_PREFIX);
 
 export function usePersistentReport(sessionId: string | undefined, enabled: boolean, api: ApiClient | null,
   snapshot: PersistentReportEntry[] | undefined, pending: PendingOptimisticEvent | undefined,
@@ -25,19 +31,45 @@ export function usePersistentReport(sessionId: string | undefined, enabled: bool
   const visibleEntries = view.sessionId === sessionId && dismissals.size
     ? server.filter(entry => !dismissals.has(dismissalId(sessionId, entry))) : server;
   const projectedEntries = projectEntries ? projectEntries(visibleEntries) : visibleEntries;
-  const found = view.sessionId === sessionId ? projectedEntries.findIndex(entry => entry.key === view.key) : -1;
-  const index = found >= 0 ? found : Math.max(0, Math.min(view.sessionId === sessionId ? view.index : 0, projectedEntries.length - 1));
-  const key = projectedEntries[index]?.key;
+  // 이 화면에서 답을 보낸 카드 질문 장은 서버 판에서 빠진 뒤에도 같은 자리에 「답 받음」으로 남긴다.
+  const [answeredHold, setAnsweredHold] = useState<AnsweredHold | null>(null);
+  const currentHold = answeredHold && answeredHold.sessionId === sessionId ? answeredHold : null;
+  if (answeredHold && answeredHold.sessionId !== sessionId) setAnsweredHold(null);
+  const holdReleased = currentHold !== null && server.some(entry => isCardBoardEntry(entry)
+    && (currentHold.cardId !== null ? entry.card_id === currentHold.cardId : entry.key === currentHold.key)
+    && !currentHold.seen.has(edition(entry)));
+  if (holdReleased) setAnsweredHold(null);
+  const hold = holdReleased ? null : currentHold;
+  const heldEntries = hold && !projectedEntries.some(entry => entry.key === hold.key)
+    ? [...projectedEntries.slice(0, Math.min(hold.index, projectedEntries.length)), hold.entry,
+      ...projectedEntries.slice(Math.min(hold.index, projectedEntries.length))]
+    : projectedEntries;
+  const found = view.sessionId === sessionId ? heldEntries.findIndex(entry => entry.key === view.key) : -1;
+  const index = found >= 0 ? found : Math.max(0, Math.min(view.sessionId === sessionId ? view.index : 0, heldEntries.length - 1));
+  const key = heldEntries[index]?.key;
   if ((live !== undefined || snapshot !== undefined) && view.sessionId === sessionId && (view.key !== key || view.index !== index)) setView({ ...view, key, index });
   const reply = pending?.pendingStatus === 'sending' && pending.reportBase === server
     ? pendingReportReply(pending.contextItems) : undefined;
-  const entries = reply ? projectedEntries.map(entry => entry.key === reply.key && entry.kind === 'ask' && entry.state === 'open'
-    ? { ...entry, state: 'answered' as const, answer: reply.option } : entry) : projectedEntries;
+  const entries = reply ? heldEntries.map(entry => entry.key === reply.key && entry.kind === 'ask' && entry.state === 'open'
+    ? { ...entry, state: 'answered' as const, answer: reply.option } : entry) : heldEntries;
 
   return {
     entries, index, server,
+    /** 접힌 장의 판 답 ACK나 펼친 장의 선택 저장이 성공한 장을 붙든다. */
+    holdAnswered(entry: PersistentReportEntry, option: string) {
+      if (!entry.key.startsWith(CARD_QUESTION_KEY_PREFIX) && !entry.question_id) return;
+      const cardId = entry.card_id ?? null;
+      const position = entries.findIndex(item => item.key === entry.key);
+      const targetIndex = position >= 0 ? position : Math.max(0, Math.min(index, entries.length - 1));
+      const seen = new Set(server.filter(item => isCardBoardEntry(item)
+        && (cardId !== null ? item.card_id === cardId : item.key === entry.key)).map(edition));
+      seen.add(edition(entry));
+      setAnsweredHold({ sessionId, key: entry.key, index: targetIndex, cardId, seen,
+        entry: { ...entry, state: 'answered' as const, answer: option } });
+    },
     select(index: number) {
       const next = Math.max(0, Math.min(entries.length - 1, index));
+      if (answeredHold && answeredHold.sessionId === sessionId && entries[next]?.key !== answeredHold.key) setAnsweredHold(null);
       continuity?.setViewState(memoryKey, { ...continuity.getViewState<object>(memoryKey), reportKey: entries[next]?.key, reportIndex: next });
       setView(current => ({ ...current, index: next, key: entries[next]?.key }));
     },

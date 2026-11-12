@@ -13,7 +13,7 @@ import { ChatComposer } from '../chat/ChatComposer';
 import { makeStyles as makeChatStyles } from '../chat/ChatBody.styles';
 import { buildAttachmentUri } from '../events/UserMessage';
 import { CompactTouchTarget } from '../CompactTouchTarget';
-import { cardQuestionTargetText, type CardQuestionTarget } from './CardQuestionBlock';
+import { cardQuestionTargetText, consumeCardQuestionFocus, type CardQuestionTarget } from './CardQuestionBlock';
 
 export interface CardCommentComposerHandle { chooseAnswer(answer: string): void; focus(): void }
 interface Props {
@@ -39,12 +39,14 @@ interface Props {
   questionTarget?: CardQuestionTarget | null;
   onReleaseQuestionTarget?(): void;
   focusRequest?: number;
+  /** 질문 대상과 초점 요청을 보관한 key. 초점 요청은 여기서 한 번 소비한다(계약 3절 15번). */
+  questionTargetKey?: string;
 }
 
 export const CardCommentComposer = memo(forwardRef<CardCommentComposerHandle, Props>(function CardCommentComposer({
   api, cardId, sessionId, nodeId, question, cardLoaded, locked, sending, onBusyChange, sendComment, runMutation,
   embedded = false, placeholder = '커멘트', targetItem, onReleaseTarget, onTargetSent, onSent, onInputFocusChange,
-  questionTarget, onReleaseQuestionTarget, focusRequest = 0,
+  questionTarget, onReleaseQuestionTarget, focusRequest = 0, questionTargetKey,
 }, ref) {
   const t = useTokens();
   const chatStyles = useMemo(() => makeChatStyles(t), [t]);
@@ -60,7 +62,11 @@ export const CardCommentComposer = memo(forwardRef<CardCommentComposerHandle, Pr
   const disabled = locked || busy;
   useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
   useImperativeHandle(ref, () => ({ chooseAnswer: setText, focus: () => inputRef.current?.focus() }), [setText]);
-  useEffect(() => { if (focusRequest > 0) inputRef.current?.focus(); }, [focusRequest]);
+  // 한 번 따른 초점 요청은 사라진다. 다시 마운트한 입력창은 아직 따르지 않은 요청만 따른다.
+  useEffect(() => {
+    if (focusRequest <= 0 || !questionTargetKey) return;
+    if (consumeCardQuestionFocus(questionTargetKey)) inputRef.current?.focus();
+  }, [focusRequest, questionTargetKey]);
 
   const pickAttachment = () => {
     if (!cardLoaded) return;

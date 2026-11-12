@@ -29,7 +29,8 @@ import { CardAssignmentSheet } from './CardAssignmentSheet';
 import { CardStatusChip } from './CardRow';
 import { CardStatusMenu } from './CardStatusMenu';
 import { CardTimeline, type CardQuestionHandlers } from './CardTimeline';
-import { cardQuestionPlaceholder, setCardQuestionTarget, useCardQuestionTarget } from './CardQuestionBlock';
+import { answerCardQuestionChoice, cardQuestionPlaceholder, setCardQuestionTarget, useCardQuestionTarget,
+  useCardQuestionTargetLifetime } from './CardQuestionBlock';
 import { cardDetailStyles } from './CardDetail.styles';
 import { CardCheckItems } from './CardCheckItems';
 import { CardNowPanel } from './CardNowPanel';
@@ -96,6 +97,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
   const [composerBusy, setComposerBusy] = useState(false);
   const chooseAnswer = React.useCallback((answer: string) => composer.current?.chooseAnswer(answer), []);
   const questionTarget = useCardQuestionTarget(cardId);
+  useCardQuestionTargetLifetime(cardId);
   const scroll = useRef<ScrollView>(null);
   const scrollOffsetRef = useRef(0);
   const prevKeyboardOverlapRef = useRef(0);
@@ -167,8 +169,8 @@ export function CardDetailContent(props: CardDetailContentProps) {
   const questionHandlers = React.useMemo<CardQuestionHandlers>(() => ({ portraitUri: avatar.uri ?? null,
     onChoose: (questionId, label) => {
       if (!api) return;
-      setCardQuestionTarget(cardId, { kind: 'append', questionId, label });
-      void run(() => api.answerCardQuestion(cardId, questionId, { mode: 'choice', option: label, idempotencyKey: cardOperationId() }));
+      void answerCardQuestionChoice(cardId, questionId, label,
+        () => run(() => api.answerCardQuestion(cardId, questionId, { mode: 'choice', option: label, idempotencyKey: cardOperationId() })));
     },
     onAskBack: questionId => setCardQuestionTarget(cardId, { kind: 'ask', questionId }, true),
     onDone: questionId => {
@@ -377,7 +379,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
             question={question} cardLoaded={!!card} locked={locked} sending={comments.pending || pending} onBusyChange={setComposerBusy}
             sendComment={comments.send} runMutation={run} embedded targetItem={selectedItem}
             questionTarget={selectedItem ? null : questionTarget.target} onReleaseQuestionTarget={() => setCardQuestionTarget(cardId, null)}
-            focusRequest={questionTarget.focus}
+            focusRequest={questionTarget.focus} questionTargetKey={cardId}
             placeholder={selectedItem ? '커멘트' : cardQuestionPlaceholder(questionTarget.target, Boolean(question))}
             onInputFocusChange={focused => { if (focused && tab === 'comments') requestAnimationFrame(() => scroll.current?.scrollToEnd({ animated: true })); }}
             onReleaseTarget={() => setTargetChoice(null)} onTargetSent={() => setTargetChoice(null)}

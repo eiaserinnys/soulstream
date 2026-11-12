@@ -52,9 +52,11 @@ STATES = [
     ("pas-legacy", "pas", "ma", False, {}, True),
     ("pas-revised", "pas", "ba", False, {}, True),
     ("card-choice", "card", "ga", False, {}, True),
+    ("card-awaiting", "card", "na", False, {}, True),
     ("card-append-target", "card", "da", False, {}, True),
     ("card-request", "card", "ra", False, {}, True),
     ("card-legacy", "card", "ma", False, {}, True),
+    ("card-revised", "card", "ba", False, {}, True),
 ]
 EXTRA_STATES = [
     ("pas-read-error", "pas", "ga", True, {"fail": "read"}, False),
@@ -250,6 +252,15 @@ def active_element(page: Page) -> dict | None:
 
 def composer_input(page: Page) -> Locator:
     return page.locator(COMPOSER_SELECTOR).locator('[data-testid="chat-composer-text-input"]').first
+
+
+def composer_focused(page: Page) -> bool:
+    return page.evaluate("""
+    () => {
+      const input = document.querySelector('[data-testid="card-comment-composer"] [data-testid="chat-composer-text-input"]');
+      return !!input && document.activeElement === input;
+    }
+    """)
 
 
 def input_value(page: Page) -> str:
@@ -527,6 +538,72 @@ def measure_interactions(page: Page, base: str, width: int, output: Path, result
             page.screenshot(path=str(output / "ops-820-pas-expanded-choice.png"))
         else:
             record(result, 2, "펼친 장 선택 답", "ops-expanded", False, {"reason": "선택지 없음"})
+
+    # 초점 수명(계약 3절 15번): 되묻기, 해제, 닫기, 다시 열기 -> document.activeElement.
+    focus_lifetime_checks(page, base, width, output, result)
+
+
+def focus_lifetime_checks(page: Page, base: str, width: int, output: Path, result: dict) -> None:
+    """초점 수명(계약 3절 15번): 대상과 초점 요청은 만든 표면이 살아 있는 동안만 산다.
+
+    selaphiel 정찰병이 잰 A(폰: 되묻기, 해제, 닫기, 다시 열기), B(아이패드: 되묻기, 해제,
+    접기, 펴기), B0(새 펼침) 조작을 그대로 PASS 판정으로 옮긴다.
+    """
+    theme = "light"
+    label = f"ops-{width}-focus"
+    goto(page, base, "pas", "ga", False, theme, width)
+    ask_back = page.locator('[data-testid="card-question-actions"] [aria-label="되묻기"]')
+    if count(ask_back) == 0:
+        record(result, 14, "판 되묻기 뒤 초점", label, False, {"reason": "되묻기 단추 없음"})
+        return
+    ask_back.first.click()
+    page.wait_for_timeout(900)
+    record(result, 14, "판 되묻기 뒤 초점", label, composer_focused(page), {"active": active_element(page)})
+    page.screenshot(path=str(output / f"ops-{width}-focus-ask-back.png"))
+    release = page.locator('[data-testid="card-question-target"] [aria-label="대상 해제"]')
+    if count(release) > 0:
+        release.first.click()
+        page.wait_for_timeout(300)
+    if width < 768:
+        back = page.locator('[aria-label="뒤로"]')
+        if count(back) > 0:
+            back.first.click()
+            page.wait_for_timeout(600)
+    else:
+        toggle = page.get_by_test_id("report-window-toggle")
+        if count(toggle) > 0:
+            toggle.first.click()
+            page.wait_for_timeout(700)
+    page.evaluate("() => document.activeElement && document.activeElement.blur()")
+    toggle = page.get_by_test_id("report-window-toggle")
+    if count(toggle) > 0:
+        toggle.first.click()
+        page.wait_for_timeout(900)
+    reopened_focused = composer_focused(page)
+    record(result, 14, "다시 연 표면 초점 없음", label, not reopened_focused, {"active": active_element(page)})
+    page.screenshot(path=str(output / f"ops-{width}-focus-reopen.png"))
+
+    # B0 통제: 아무 조작 없이 토글만 눌러 펼친 새 표면은 남은 초점 요청을 따르지 않는다.
+    goto(page, base, "pas", "ga", False, theme, width)
+    fresh = page.get_by_test_id("report-window-toggle")
+    if count(fresh) > 0:
+        fresh.first.click()
+        page.wait_for_timeout(900)
+    fresh_focused = composer_focused(page)
+    record(result, 14, "새 펼침 초점 없음", f"{label}-fresh", not fresh_focused, {"active": active_element(page)})
+    page.screenshot(path=str(output / f"ops-{width}-focus-fresh.png"))
+
+    if width < 768:
+        # 유지해야 하는 동작: 폰 접힌 장의 다르게 답하기도 카드 시트를 펴고 입력창에 초점을 준다.
+        goto(page, base, "pas", "ga", False, theme, width)
+        free = page.locator('[data-testid="card-question-actions"] [aria-label="다르게 답하기"]')
+        if count(free) > 0:
+            free.first.click()
+            page.wait_for_timeout(900)
+            record(result, 14, "판 다르게 답하기 뒤 초점", label, composer_focused(page),
+                   {"active": active_element(page)})
+        else:
+            record(result, 14, "판 다르게 답하기 뒤 초점", label, False, {"reason": "다르게 답하기 단추 없음"})
 
 
 def main() -> int:

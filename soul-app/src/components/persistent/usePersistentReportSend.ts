@@ -10,7 +10,8 @@ export const FAILED_REPORT_SEND_REMAINS = '보내지 못한 글이 대화에 남
 const edition = (entry: Pick<PersistentReportEntry, 'key' | 'updated_at'>) => JSON.stringify([entry.key, entry.updated_at]);
 /** Report sends own no draft or attachment state. They share the ordinary per-session pending slot. */
 export function usePersistentReportSend(sessionId: string, api: ApiClient | null, entries: PersistentReportEntry[],
-  base: PersistentReportEntry[], status: Session['status'] | undefined, setNotice: (text: string) => void) {
+  base: PersistentReportEntry[], status: Session['status'] | undefined, setNotice: (text: string) => void,
+  onAnswered?: (entry: PersistentReportEntry, option: string) => void) {
   const pending = useChatStore(state => state.pendingOptimisticBySession[sessionId]);
   const [state, setState] = useState(() => ({ sessionId, acceptedId: '',
     replies: new Map<string, { base: PersistentReportEntry[]; option: string }>(), cancelled: new Set<string>() }));
@@ -74,6 +75,8 @@ export function usePersistentReportSend(sessionId: string, api: ApiClient | null
       // 합성 user 이벤트를 만들지 않는다.
       if (verdict.reason === CARD_QUESTION_ANSWERED_REASON) {
         useChatStore.getState().clearPendingOptimistic(sessionId, message.id);
+        // 판 답 ACK를 받은 카드 질문 장은 판에서 답 받음으로 붙든다(계약 3절 2번).
+        if (kind === 'reply' && option !== undefined) onAnswered?.(entry, option);
       }
       setState(saved => {
         if (saved.sessionId !== sessionId) return saved;

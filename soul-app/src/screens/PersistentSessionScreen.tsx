@@ -46,12 +46,9 @@ import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
 import type { PersistentReportEntry } from '../api/types';
 import { persistentReportStatusCard } from '../lib/persistent-report-card';
 import { resolvePersistentConversationLeft } from '../lib/persistent-session-column';
-import { cardQuestionViewFromEntry } from '../components/planner/card-question-viewmodel';
-import { CardQuestionActions, CardQuestionAnswered, CardQuestionBody, setCardQuestionTarget, type CardQuestionTarget } from '../components/planner/CardQuestionBlock';
-import { useCardActions, cardOperationId } from '../hooks/useCardActions';
+import { cardQuestionChipLabel, renderCardQuestionSurface } from '../components/persistent/cardQuestionSurface';
+import { useCardActions } from '../hooks/useCardActions';
 import { resolveSessionCardAvatar } from '../components/sessionCardDisplay';
-import { formatCardTime } from '../lib/card-check-item-summary';
-import { CARD_QUESTION_KEY_PREFIX } from '../../../packages/wire-schema/src/persistent_report';
 
 export interface PersistentSessionScreenProps {
   active?: boolean;
@@ -119,7 +116,8 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     host.store.getState().clearReportFocus();
   }, [pendingReportKey, report.entries, reportsListMode, host.store]);
   const status = useSessionStore(state => session ? state.sessions[session.session_id]?.status : undefined);
-  const reportSend = usePersistentReportSend(session?.session_id ?? '', api, report.entries, report.server, status, setNotice);
+  const reportSend = usePersistentReportSend(session?.session_id ?? '', api, report.entries, report.server, status, setNotice,
+    (entry, option) => report.holdAnswered(entry, option));
   const questionActions = useCardActions(api);
   const storedQuestionPortrait = useSessionStore(state => {
     if (!session) return null;
@@ -301,38 +299,15 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       const card = persistentReportStatusCard(entry);
       if (!card) return null;
       // 계약 3절 7번: 부탁 장의 칩 글은 「카드 부탁」이다. 선택 질문은 웹과 같이 「카드 질문」.
-      const label = card.blockedKind === 'question' && entry.question_kind
-        ? entry.question_kind === 'request' ? '카드 부탁' : '카드 질문' : undefined;
-      return <CardStatusChip card={card} detail label={label} />;
+      return <CardStatusChip card={card} detail label={cardQuestionChipLabel(entry, card.blockedKind)} />;
     }}
-    renderCardDetails={!phone && !reportsScene ? entry => <PersistentReportCardExpansion key={entry.key} api={api} entry={entry} /> : undefined}
-    renderQuestion={(entry, controls) => {
-      if (!entry.key.startsWith(CARD_QUESTION_KEY_PREFIX) && !entry.question_id) return null;
-      const view = cardQuestionViewFromEntry(entry);
-      const targetKey = entry.card_id ?? entry.key;
-      const cardId = entry.card_id ?? null;
-      const questionId = entry.question_id;
-      const busy = controls.expanded ? questionActions.pending : reportSend.busy;
-      const choose = (label: string) => {
-        // 접힌 장은 지금의 판 답 경로({key, option})를 그대로 쓴다. 펼친 장은 카드 REST로 보낸다.
-        if (!controls.expanded || !api || !cardId || !questionId) { reportSend.sendOption(entry, label); return; }
-        setCardQuestionTarget(targetKey, { kind: 'append', questionId, label });
-        void questionActions.run(() => api.answerCardQuestion(cardId, questionId, { mode: 'choice', option: label, idempotencyKey: cardOperationId() }));
-      };
-      const expandWith = (target: CardQuestionTarget | null) => { controls.expand(); setCardQuestionTarget(targetKey, target, true); };
-      return {
-        meta: view.revisedAt ? <Text style={{ ...t.foundation.typography.meta, color: t.colors.textSecondary }}>{`${formatCardTime(view.revisedAt)}에 고침`}</Text> : undefined,
-        body: <CardQuestionBody view={view} cardId={targetKey} portraitUri={questionPortrait.uri} onChoose={choose} busy={busy} />,
-        actions: view.open
-          ? <CardQuestionActions view={view} composerVisible={controls.expanded} busy={busy}
-              onAnswerFreely={() => expandWith(null)}
-              onAskBack={() => { if (questionId) expandWith({ kind: 'ask', questionId }); }}
-              onDone={() => choose('했어')} />
-          : <CardQuestionAnswered view={view} onAppend={() => {
-              if (questionId) expandWith({ kind: 'append', questionId, label: view.selectedOption ?? view.answer ?? '' });
-            }} />,
-      };
-    }}
+    renderCardDetails={!phone && !reportsScene
+      ? (entry, publish) => <PersistentReportCardExpansion key={entry.key} api={api} entry={entry} onQuestionView={publish} />
+      : undefined}
+    renderQuestion={(entry, controls) => renderCardQuestionSurface(entry, controls, {
+      t, api, portraitUri: questionPortrait.uri, questionActions, reportSend,
+      onAnswered: (answered, option) => report.holdAnswered(answered, option),
+    })}
     onOpenCardDetails={phone || reportsScene ? openReportCardDirectly : undefined}
     onFocusComposer={() => inputComposerRef.current?.focusAccessibility()} /> : null;
   const back = React.useCallback(() => {

@@ -602,7 +602,7 @@ test('커멘트 접수 때 비우고 추가·저장 교체는 해당 항목만 �
   expect(screen.getByPlaceholderText('커멘트').props.value).toBe('');
 });
 
-test('선택지 답변은 누르면 바로 저장하고 저장·상세 재조회 뒤 바뀐 항목만 렌더한다', async () => {
+test('선택지 답변은 누르면 바로 저장하고 저장이 끝난 뒤에만 덧붙이기 대상을 세운다', async () => {
   const save = deferred<any>(), refresh = deferred<CardDetail>();
   const api = { getCard: jest.fn().mockResolvedValueOnce(detail).mockImplementation(() => refresh.promise), answerCardQuestion: jest.fn(() => save.promise) };
   const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
@@ -610,7 +610,8 @@ test('선택지 답변은 누르면 바로 저장하고 저장·상세 재조회
   await act(async () => fireEvent.press(screen.getByText('파랑')));
   expect(api.answerCardQuestion).toHaveBeenCalledWith(card.id, 'question-1',
     { mode: 'choice', option: '파랑', idempotencyKey: expect.any(String) });
-  expect(screen.getByTestId('card-question-target')).toBeTruthy();
+  // 저장 결과를 받기 전에는 대상이 서지 않는다.
+  expect(screen.queryByTestId('card-question-target')).toBeNull();
   expect(useDraftStore.getState().drafts).toEqual({});
   await act(async () => save.resolve({ card: { ...card, version: 5 }, folderId: card.folderId }));
   resetRenders();
@@ -618,7 +619,21 @@ test('선택지 답변은 누르면 바로 저장하고 저장·상세 재조회
   updated.card.version = 5;
   updated.questions[0].answer = '파랑'; updated.questions[0].answeredAt = '2026-10-05';
   await act(async () => refresh.resolve(updated));
+  expect(screen.getByTestId('card-question-target')).toBeTruthy();
+  expect(screen.getByText('덧붙이기: 파랑')).toBeTruthy();
   expect([...new Set(mockRenders.rows)].sort()).toEqual(['answer-question-1', 'question-question-1']);
+});
+
+test('선택 저장이 실패하면 덧붙이기 대상이 서지 않고 알림만 남는다', async () => {
+  const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
+  const api = { getCard: jest.fn().mockResolvedValue(detail),
+    answerCardQuestion: jest.fn().mockRejectedValue(new Error('연결 실패')) };
+  const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
+  await waitFor(() => expect(screen.getByText('파랑')).toBeTruthy());
+  await act(async () => fireEvent.press(screen.getByText('파랑')));
+  expect(api.answerCardQuestion).toHaveBeenCalledTimes(1);
+  expect(alert).toHaveBeenCalledWith('카드 변경 실패', '연결 실패');
+  expect(screen.queryByTestId('card-question-target')).toBeNull();
 });
 
 test.each([false, true])('전송 실패는 원문을 복원하고 새 글이 있으면 합친다: %s', async hasNewText => {
