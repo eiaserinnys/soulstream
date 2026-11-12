@@ -1,5 +1,13 @@
 import type { SqlClient } from "./schedule_types.js";
-import { hasContinuousLimitWindow, type ResumeScheduleIdentity } from "./resume_after_limit_continuity.js";
+import {
+  hasContinuousLimitWindow,
+  originalTerminalEventId,
+  type ResumeScheduleIdentity,
+} from "./resume_after_limit_continuity.js";
+import {
+  decideResumeDispatch as decideResumeDispatchFromFacts,
+  type ResumeDispatchDecision,
+} from "./resume_dispatch_decision.js";
 
 import type {
   CancelScheduleResult,
@@ -25,11 +33,18 @@ interface ScheduleRow extends Record<string, unknown> {
   next_run_at: Date | string | null;
   last_fired_at: Date | string | null;
   fired_count: number | string;
+  dispatch_failure_count: number | string;
   last_error: string | null;
   claim_token: string | null;
   claimed_until: Date | string | null;
   created_at: Date | string;
   updated_at: Date | string;
+}
+
+interface SessionRow extends Record<string, unknown> {
+  status: string;
+  termination_reason: string | null;
+  termination_event_id: number | string | null;
 }
 
 interface CancelScheduleRow extends ScheduleRow {
@@ -155,6 +170,56 @@ export class SoulstreamScheduleRepository {
     expectedCurrentTerminalId: number,
   ): Promise<boolean> {
     return await hasContinuousLimitWindow(this.sql, schedule, expectedCurrentTerminalId);
+  }
+
+  /**
+   * The wake judgment lives with the data it reads. The node only contributes
+   * whether its local task is launching or running right now.
+   */
+  async decideResumeDispatch(
+    schedule: ResumeScheduleIdentity,
+    localTaskBusy: boolean,
+  ): Promise<ResumeDispatchDecision> {
+    const originalTerminalId = originalTerminalEventId(schedule);
+    if (originalTerminalId === null) {
+      return decideResumeDispatchFromFacts({
+        originalTerminalEventId: null,
+        session: null,
+        continuousLimitWindow: false,
+        localTaskBusy,
+      });
+    }
+    const rows = await this.sql<SessionRow[]>`
+      SELECT status, termination_reason, termination_event_id
+      FROM sessions
+      WHERE session_id = ${schedule.sessionId}
+      LIMIT 1
+    `;
+    const row = rows[0] ?? null;
+    const terminalEventId = typeof row?.termination_event_id === "number"
+      ? row.termination_event_id
+      : row?.termination_event_id === null || row?.termination_event_id === undefined
+        ? null
+        : Number(row.termination_event_id);
+    const continuousLimitWindow = row !== null
+      && row.status === "error"
+      && row.termination_reason === "limit_hit"
+      && terminalEventId !== null
+      && Number.isSafeInteger(terminalEventId)
+      ? await hasContinuousLimitWindow(this.sql, schedule, terminalEventId)
+      : false;
+    return decideResumeDispatchFromFacts({
+      originalTerminalEventId: originalTerminalId,
+      session: row === null
+        ? null
+        : {
+          status: row.status,
+          terminationReason: row.termination_reason,
+          terminalEventId,
+        },
+      continuousLimitWindow,
+      localTaskBusy,
+    });
   }
 
   async listSchedules(sessionId: string): Promise<SoulstreamSchedule[]> {
@@ -389,12 +454,15 @@ export class SoulstreamScheduleRepository {
     claimToken: string;
     nextRunAt: Date;
     error: string;
+    countFailure?: boolean;
   }): Promise<SoulstreamSchedule | null> {
     const rows = await this.sql<ScheduleRow[]>`
       UPDATE soulstream_schedules
       SET status = 'active',
           next_run_at = ${params.nextRunAt},
           last_error = ${params.error},
+          dispatch_failure_count = dispatch_failure_count
+            + ${params.countFailure === true ? 1 : 0},
           claim_token = NULL,
           claimed_until = NULL,
           updated_at = NOW()
@@ -419,6 +487,7 @@ export class SoulstreamScheduleRepository {
           next_run_at = ${params.nextRunAt},
           last_fired_at = ${params.firedAt},
           fired_count = fired_count + 1,
+          dispatch_failure_count = 0,
           last_error = NULL,
           claim_token = NULL,
           claimed_until = NULL,
@@ -474,6 +543,7 @@ function scheduleFromRow(row: ScheduleRow): SoulstreamSchedule {
     nextRunAt: isoOrNull(row.next_run_at),
     lastFiredAt: isoOrNull(row.last_fired_at),
     firedCount: Number(row.fired_count),
+    dispatchFailureCount: Number(row.dispatch_failure_count ?? 0),
     lastError: row.last_error,
     claimToken: row.claim_token,
     claimedUntil: isoOrNull(row.claimed_until),

@@ -220,11 +220,7 @@ describe("ScheduleDispatcher", () => {
       confirmScheduleStillFiring: schedule,
     });
     const taskManager = {
-      getScheduleResumeState: vi.fn(async () => ({
-        status: "error" as const,
-        terminationReason: "limit_hit" as const,
-        terminalEventId: 32,
-      })),
+      getTask: vi.fn(() => undefined),
       addIntervention: vi.fn(async () => ({ autoResumed: true })),
     };
     const onResume = vi.fn();
@@ -238,7 +234,7 @@ describe("ScheduleDispatcher", () => {
 
     await dispatcher.runOnce(new Date("2026-01-01T00:00:00Z"));
 
-    expect(taskManager.getScheduleResumeState).toHaveBeenCalledWith("sess-1");
+    expect(service.decideResumeDispatch).toHaveBeenCalledWith(schedule, false);
     expect(taskManager.addIntervention).toHaveBeenCalledOnce();
     expect(service.finishDispatch).toHaveBeenCalledWith(
       schedule,
@@ -257,13 +253,13 @@ describe("ScheduleDispatcher", () => {
       claimDueSchedules: [{ schedule, claimToken: "claim-1" }],
       consumeClaimedSchedule: schedule,
       confirmScheduleStillFiring: schedule,
+      decideResumeDispatch: async () => ({
+        decision: "close",
+        reason: "limit_window_or_terminal_chain_changed",
+      }),
     });
     const taskManager = {
-      getScheduleResumeState: vi.fn(async () => ({
-        status: "error" as const,
-        terminationReason: "limit_hit" as const,
-        terminalEventId: 33,
-      })),
+      getTask: vi.fn(() => undefined),
       addIntervention: vi.fn(async () => ({ autoResumed: true })),
     };
     const dispatcher = new ScheduleDispatcher(
@@ -276,7 +272,7 @@ describe("ScheduleDispatcher", () => {
 
     await dispatcher.runOnce(new Date("2026-01-01T00:00:00Z"));
 
-    expect(taskManager.getScheduleResumeState).toHaveBeenCalledWith("sess-1");
+    expect(service.decideResumeDispatch).toHaveBeenCalledWith(schedule, false);
     expect(taskManager.addIntervention).not.toHaveBeenCalled();
     expect(service.finishDispatch).toHaveBeenCalledWith(
       schedule,
@@ -313,14 +309,21 @@ describe("ScheduleDispatcher", () => {
     expect(service.finishDispatch).not.toHaveBeenCalled();
   });
 
-  it("records a dispatch failure instead of leaving a schedule stuck in firing", async () => {
-    const schedule = makeSchedule({ kind: "cron", cronExpression: "*/15 * * * *" });
+  it("backs off a failed wake instead of closing the reservation", async () => {
+    const schedule = makeSchedule({
+      scheduleId: "resume-after-limit:sess-1:32:0",
+      sourceTool: "ResumeAfterLimit",
+      toolUseId: "ResumeAfterLimit:32",
+    });
     const service = makeService({
       claimDueSchedules: [{ schedule, claimToken: "claim-1" }],
       consumeClaimedSchedule: schedule,
       confirmScheduleStillFiring: schedule,
     });
-    const taskManager = { addIntervention: vi.fn(async () => { throw new Error("session busy"); }) };
+    const taskManager = {
+      getTask: vi.fn(() => undefined),
+      addIntervention: vi.fn(async () => { throw new Error("session busy"); }),
+    };
     const dispatcher = new ScheduleDispatcher(
       { nodeId: "owner-node" },
       service as never,
@@ -331,8 +334,50 @@ describe("ScheduleDispatcher", () => {
 
     await dispatcher.runOnce(new Date("2026-01-01T00:00:00Z"));
 
-    expect(service.failDispatch).toHaveBeenCalledWith(schedule, "claim-1", "session busy");
+    expect(service.deferDispatch).toHaveBeenCalledWith(
+      schedule,
+      "claim-1",
+      new Date("2026-01-01T00:00:30Z"),
+      "session busy",
+      true,
+    );
+    expect(service.failDispatch).not.toHaveBeenCalled();
     expect(service.finishDispatch).not.toHaveBeenCalled();
+  });
+
+  it("registers the skipped parent completion once and closes on the fifth failure", async () => {
+    const schedule = makeSchedule({
+      scheduleId: "resume-after-limit:sess-1:32:0",
+      sourceTool: "ResumeAfterLimit",
+      toolUseId: "ResumeAfterLimit:32",
+      dispatchFailureCount: 4,
+    });
+    const service = makeService({
+      claimDueSchedules: [{ schedule, claimToken: "claim-1" }],
+      consumeClaimedSchedule: schedule,
+      confirmScheduleStillFiring: schedule,
+    });
+    const task = { agentSessionId: "sess-1", status: "error" as const };
+    const taskManager = {
+      getTask: vi.fn(() => task),
+      addIntervention: vi.fn(async () => { throw new Error("session busy"); }),
+    };
+    const notifier = { notify: vi.fn(async () => undefined) };
+    const dispatcher = new ScheduleDispatcher(
+      { nodeId: "owner-node" },
+      service as never,
+      taskManager as never,
+      vi.fn(),
+      logger,
+      notifier,
+    );
+
+    await dispatcher.runOnce(new Date("2026-01-01T00:00:00Z"));
+
+    expect(notifier.notify).toHaveBeenCalledOnce();
+    expect(notifier.notify).toHaveBeenCalledWith(task);
+    expect(service.failDispatch).toHaveBeenCalledWith(schedule, "claim-1", "session busy");
+    expect(service.deferDispatch).not.toHaveBeenCalled();
   });
 
   it("skips orphan marking during dispatcher startup grace but still restores live orphans", async () => {
@@ -363,6 +408,11 @@ function makeService(overrides: {
   claimDueSchedules?: Array<{ schedule: SoulstreamSchedule; claimToken: string }>;
   consumeClaimedSchedule?: SoulstreamSchedule | null;
   confirmScheduleStillFiring?: SoulstreamSchedule | null;
+  decideResumeDispatch?: () => Promise<
+    { decision: "fire"; reason: null }
+    | { decision: "defer"; reason: string }
+    | { decision: "close"; reason: string }
+  >;
 } = {}) {
   return {
     touchNodeHeartbeat: vi.fn(async () => undefined),
@@ -372,8 +422,8 @@ function makeService(overrides: {
     claimDueSchedules: vi.fn(async () => overrides.claimDueSchedules ?? []),
     consumeClaimedSchedule: vi.fn(async () => overrides.consumeClaimedSchedule ?? null),
     confirmScheduleStillFiring: vi.fn(async () => overrides.confirmScheduleStillFiring ?? null),
-    hasContinuousLimitWindow: vi.fn(async (schedule: SoulstreamSchedule, currentTerminalId: number) =>
-      schedule.toolUseId === `ResumeAfterLimit:${currentTerminalId}`),
+    decideResumeDispatch: vi.fn(overrides.decideResumeDispatch
+      ?? (async () => ({ decision: "fire" as const, reason: null }))),
     deferDispatch: vi.fn(async () => makeSchedule({ status: "active" })),
     finishDispatch: vi.fn(async () => makeSchedule({ status: "completed" })),
     failDispatch: vi.fn(async () => makeSchedule({ status: "failed" })),
@@ -396,6 +446,7 @@ function makeSchedule(overrides: Partial<SoulstreamSchedule> = {}): SoulstreamSc
     nextRunAt: "2026-01-01T00:00:00.000Z",
     lastFiredAt: null,
     firedCount: 0,
+    dispatchFailureCount: 0,
     lastError: null,
     claimToken: null,
     claimedUntil: null,

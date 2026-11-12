@@ -53,16 +53,7 @@ describePostgres("ResumeAfterLimit stored continuity and dispatch", () => {
     const service = makeService(repo);
     const onResume = vi.fn();
     const taskManager = {
-      getScheduleResumeState: vi.fn(async () => {
-        const rows = await sql<Array<{
-          status: string; termination_reason: string; termination_event_id: number;
-        }>>`SELECT status, termination_reason, termination_event_id FROM sessions WHERE session_id = ${sessionId}`;
-        return {
-          status: rows[0].status,
-          terminationReason: rows[0].termination_reason,
-          terminalEventId: rows[0].termination_event_id,
-        };
-      }),
+      getTask: vi.fn(() => undefined),
       addIntervention: vi.fn(async (_params: unknown, callback: typeof onResume) => {
         await callback({} as never);
         return { autoResumed: true };
@@ -74,7 +65,7 @@ describePostgres("ResumeAfterLimit stored continuity and dispatch", () => {
 
     await dispatcher.runOnce(now);
 
-    expect(taskManager.getScheduleResumeState).toHaveBeenCalledWith(sessionId);
+    expect(taskManager.getTask).toHaveBeenCalledWith(sessionId);
     expect(taskManager.addIntervention).toHaveBeenCalledOnce();
     expect(taskManager.addIntervention).toHaveBeenCalledWith(
       expect.objectContaining({ agentSessionId: sessionId, queueIfRunning: false }),
@@ -100,7 +91,7 @@ describePostgres("ResumeAfterLimit stored continuity and dispatch", () => {
     expect(await repo.hasContinuousLimitWindow(schedule, 3232)).toBe(true);
   });
 
-  it("never dispatches an old reservation after a different window, completed turn, running state, or central revision mismatch", async () => {
+  it("never dispatches an old reservation after a different window, completed turn, or running state", async () => {
     const cases = [
       {
         name: "different window",
@@ -130,11 +121,6 @@ describePostgres("ResumeAfterLimit stored continuity and dispatch", () => {
           `;
         },
       },
-      {
-        name: "central revision differs from worker",
-        prepare: async () => undefined,
-        workerRevision: 3246,
-      },
     ];
     for (const blocked of cases) {
       await sql`TRUNCATE soulstream_schedules, events, sessions, soulstream_node_heartbeats`;
@@ -149,17 +135,7 @@ describePostgres("ResumeAfterLimit stored continuity and dispatch", () => {
         runOnceAt: new Date("2026-09-28T14:50:00Z"), nextRunAt: new Date("2026-09-28T14:50:00Z"),
       });
       const taskManager = {
-        getScheduleResumeState: vi.fn(async () => {
-          const rows = await sql<Array<{
-            status: string; termination_reason: string | null; termination_event_id: number | null;
-          }>>`SELECT status, termination_reason, termination_event_id FROM sessions WHERE session_id = ${sessionId}`;
-          return {
-            status: rows[0].status,
-            terminationReason: rows[0].termination_reason,
-            terminalEventId: ("workerRevision" in blocked ? blocked.workerRevision : undefined)
-              ?? rows[0].termination_event_id,
-          };
-        }),
+        getTask: vi.fn(() => undefined),
         addIntervention: vi.fn(async () => ({ autoResumed: true })),
       };
       const dispatcher = new ScheduleDispatcher(

@@ -26,6 +26,7 @@ export interface SoulstreamSchedule {
   nextRunAt: string | null;
   lastFiredAt: string | null;
   firedCount: number;
+  dispatchFailureCount: number;
   lastError: string | null;
   claimToken: string | null;
   claimedUntil: string | null;
@@ -52,6 +53,12 @@ export interface ClaimedSchedule {
   schedule: SoulstreamSchedule;
   claimToken: string;
 }
+
+/** Mirror of the orchestrator's `resume_dispatch_decision.ts` wire shape. */
+export type ResumeDispatchDecision =
+  | { decision: "fire"; reason: null }
+  | { decision: "defer"; reason: string }
+  | { decision: "close"; reason: string };
 
 export type CancelScheduleOutcome =
   | "cancelled"

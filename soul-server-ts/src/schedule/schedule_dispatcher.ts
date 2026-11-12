@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import { PeriodicMaintenanceLoop } from "../runtime/periodic_maintenance_loop.js";
+import type { CompletionNotifier } from "../task/completion_notifier.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { StartExecutionCallback } from "../task/task_intervention_route.js";
 import { isActiveTaskStatus } from "../task/task_models.js";
@@ -26,6 +27,22 @@ export interface ScheduleDispatcherConfig {
 /** One tick drains at most `batchSize` schedules, each bounded by its own awaits. */
 const SCHEDULE_STEP_TIMEOUT_MS = 60_000;
 
+/**
+ * A failed wake is retried with a doubling delay before the reservation is
+ * given up. One transient failure used to close the reservation as `failed`,
+ * so a session that hit a limit never woke after it lifted.
+ */
+const MAX_DISPATCH_FAILURES = 5;
+const DISPATCH_FAILURE_BASE_DELAY_MS = 30_000;
+const DISPATCH_FAILURE_MAX_DELAY_MS = 300_000;
+
+function dispatchFailureDelayMs(failureCount: number): number {
+  return Math.min(
+    DISPATCH_FAILURE_BASE_DELAY_MS * 2 ** (failureCount - 1),
+    DISPATCH_FAILURE_MAX_DELAY_MS,
+  );
+}
+
 export class ScheduleDispatcher {
   private loop: PeriodicMaintenanceLoop | null = null;
   private readonly startedAt: Date;
@@ -41,17 +58,22 @@ export class ScheduleDispatcher {
       | "restoreOrphanSchedulesForLiveNodes"
       | "consumeClaimedSchedule"
       | "confirmScheduleStillFiring"
-      | "hasContinuousLimitWindow"
+      | "decideResumeDispatch"
       | "deferDispatch"
       | "finishDispatch"
       | "failDispatch"
     >,
     private readonly taskManager: Pick<
       TaskManager,
-      "addIntervention" | "getScheduleResumeState" | "getTask"
+      "addIntervention" | "getTask"
     >,
     private readonly onResume: StartExecutionCallback,
     private readonly logger: Logger,
+    /**
+     * The parent completion skipped by a model fallback is registered here
+     * when the last wake attempt fails, so the caller is not left waiting.
+     */
+    private readonly completionNotifier?: Pick<CompletionNotifier, "notify">,
   ) {
     this.startedAt = config.startedAt ?? new Date();
   }
@@ -165,27 +187,26 @@ export class ScheduleDispatcher {
       }
       const cacheKeepalive = isCacheKeepaliveSchedule(ready);
       if (ready.sourceTool === "ResumeAfterLimit") {
-        const terminalEventId = resumeAfterLimitTerminalEventId(ready);
-        const current = terminalEventId === null
-          ? null
-          : await this.taskManager.getScheduleResumeState(ready.sessionId);
-        const reason = terminalEventId === null
-          ? "invalid_original_revision"
-          : current?.status !== "error" || current.terminationReason !== "limit_hit"
-            ? "current_session_not_limit_hit"
-            : typeof current.terminalEventId !== "number"
-              ? "missing_current_revision"
-              : await this.service.hasContinuousLimitWindow(ready, current.terminalEventId)
-                ? null
-                : "limit_window_or_terminal_chain_changed";
-        if (reason !== null) {
+        const localTask = this.taskManager.getTask(ready.sessionId);
+        const decision = await this.service.decideResumeDispatch(
+          ready,
+          localTask !== undefined && isActiveTaskStatus(localTask.status),
+        );
+        if (decision.decision === "close") {
           this.logger.info({
             scheduleId: ready.scheduleId,
-            originalRevision: terminalEventId,
-            currentRevision: current?.terminalEventId ?? null,
-            reason,
+            reason: decision.reason,
           }, "resume-after-limit schedule skipped");
           await this.service.finishDispatch(ready, claimToken, now);
+          return;
+        }
+        if (decision.decision === "defer") {
+          await this.service.deferDispatch(
+            ready,
+            claimToken,
+            new Date(now.getTime() + (this.config.retryDelayMs ?? 30_000)),
+            decision.reason,
+          );
           return;
         }
       }
@@ -228,28 +249,60 @@ export class ScheduleDispatcher {
       }
       await this.service.finishDispatch(ready, claimToken, now);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      await this.handleDispatchFailure(schedule, claimToken, now, err);
+    }
+  }
+
+  /**
+   * Back off while the wake keeps failing; only the last attempt closes the
+   * reservation, and only then is the completion a fallback skipped delivered
+   * through the node's normal completion registration path.
+   */
+  private async handleDispatchFailure(
+    schedule: SoulstreamSchedule,
+    claimToken: string,
+    now: Date,
+    err: unknown,
+  ): Promise<void> {
+    const message = err instanceof Error ? err.message : String(err);
+    const failures = schedule.dispatchFailureCount + 1;
+    this.logger.warn(
+      { err, sessionId: schedule.sessionId, scheduleId: schedule.scheduleId, failures },
+      "scheduled intervention failed",
+    );
+    if (failures >= MAX_DISPATCH_FAILURES) {
+      await this.notifySkippedCompletion(schedule);
       await this.service.failDispatch(schedule, claimToken, message);
+      return;
+    }
+    await this.service.deferDispatch(
+      schedule,
+      claimToken,
+      new Date(now.getTime() + dispatchFailureDelayMs(failures)),
+      message,
+      true,
+    );
+  }
+
+  private async notifySkippedCompletion(schedule: SoulstreamSchedule): Promise<void> {
+    if (schedule.sourceTool !== "ResumeAfterLimit") return;
+    const task = this.taskManager.getTask(schedule.sessionId);
+    if (!task) {
+      this.logger.warn(
+        { sessionId: schedule.sessionId, scheduleId: schedule.scheduleId },
+        "skipped parent completion not registered: local task is unavailable",
+      );
+      return;
+    }
+    try {
+      await this.completionNotifier?.notify(task);
+    } catch (err) {
       this.logger.warn(
         { err, sessionId: schedule.sessionId, scheduleId: schedule.scheduleId },
-        "scheduled intervention failed",
+        "skipped parent completion registration failed",
       );
     }
   }
-}
-
-function resumeAfterLimitTerminalEventId(schedule: SoulstreamSchedule): number | null {
-  const match = /^ResumeAfterLimit:(\d+)$/.exec(schedule.toolUseId ?? "");
-  if (!match) return null;
-  const terminalEventId = Number(match[1]);
-  if (!Number.isSafeInteger(terminalEventId) || terminalEventId <= 0) return null;
-
-  const prefix = `resume-after-limit:${schedule.sessionId}:`;
-  if (!schedule.scheduleId.startsWith(prefix)) return null;
-  const suffix = schedule.scheduleId.slice(prefix.length).split(":");
-  if (suffix.length !== 2 || suffix[0] !== String(terminalEventId)) return null;
-  const generation = Number(suffix[1]);
-  return Number.isSafeInteger(generation) && generation >= 0 ? terminalEventId : null;
 }
 
 function buildScheduledPrompt(schedule: SoulstreamSchedule): string {

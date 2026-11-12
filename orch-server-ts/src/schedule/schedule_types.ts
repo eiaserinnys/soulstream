@@ -26,6 +26,7 @@ export interface SoulstreamSchedule {
   nextRunAt: string | null;
   lastFiredAt: string | null;
   firedCount: number;
+  dispatchFailureCount: number;
   lastError: string | null;
   claimToken: string | null;
   claimedUntil: string | null;

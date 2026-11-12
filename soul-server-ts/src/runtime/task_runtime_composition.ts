@@ -253,6 +253,7 @@ export function composeTaskRuntime(
     taskManager,
     onResume,
     logger,
+    completionNotifier,
   );
   scheduleDispatcher.start();
 

@@ -179,6 +179,7 @@ function makeResumeScheduleRuntime(
         nextRunAt: input.nextRunAt.toISOString(),
         lastFiredAt: null,
         firedCount: 0,
+        dispatchFailureCount: 0,
         lastError: null,
         claimToken: null,
         claimedUntil: null,

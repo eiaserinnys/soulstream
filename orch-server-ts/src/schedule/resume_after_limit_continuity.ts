@@ -9,9 +9,9 @@ type LimitEvent = { event_type: string; payload: Record<string, unknown> };
 
 interface HistoryRow extends Record<string, unknown> {
   original_previous: number;
-  current_previous: number;
   id: number | null;
   event_type: string | null;
+  dedupe_key: string | null;
   payload: Record<string, unknown> | null;
 }
 
@@ -62,16 +62,11 @@ export async function hasContinuousLimitWindow(
           SELECT MAX(id) FROM events
           WHERE session_id = candidate.session_id
             AND event_type = 'session_ended' AND id < ${originalTerminalId}
-        ), 0) AS original_previous,
-        COALESCE((
-          SELECT MAX(id) FROM events
-          WHERE session_id = candidate.session_id
-            AND event_type = 'session_ended' AND id < ${expectedCurrentTerminalId}
-        ), 0) AS current_previous
+        ), 0) AS original_previous
       FROM candidate
     )
-    SELECT bounds.original_previous, bounds.current_previous,
-      event.id, event.event_type, event.payload
+    SELECT bounds.original_previous,
+      event.id, event.event_type, event.dedupe_key, event.payload
     FROM bounds
     LEFT JOIN events event ON event.session_id = bounds.session_id
       AND event.id > bounds.original_previous
@@ -86,18 +81,41 @@ export async function hasContinuousLimitWindow(
   if (terminals[0]?.id !== originalTerminalId
     || terminals.at(-1)?.id !== expectedCurrentTerminalId
     || terminals.some((row) => row.payload?.termination_reason !== "limit_hit")) return false;
-  if (originalTerminalId === expectedCurrentTerminalId) return true;
+
+  // A compensation end only copies the terminal it restores; it does not open
+  // a new limit window. Walking back over copies recovers the terminal whose
+  // reset window this reservation actually has to match.
+  let effectiveIndex = terminals.length - 1;
+  while (effectiveIndex > 0) {
+    const trailing = terminals[effectiveIndex];
+    if (!trailing || !isCompensationTerminal(trailing)) break;
+    effectiveIndex -= 1;
+  }
+  const effectiveTerminal = terminals[effectiveIndex];
+  if (!effectiveTerminal || typeof effectiveTerminal.id !== "number") return false;
+  if (effectiveTerminal.id === originalTerminalId) return true;
+
+  const previousTerminalId = terminals
+    .slice(0, effectiveIndex)
+    .map((row) => row.id)
+    .filter((id): id is number => typeof id === "number")
+    .at(-1) ?? first.original_previous;
 
   const resetEvents = (start: number, end: number): LimitEvent[] => rows
     .filter((row) => row.id !== null && row.id > start && row.id < end
       && (row.event_type === "credential_alert" || row.event_type === "error"))
     .map((row) => ({ event_type: row.event_type!, payload: row.payload ?? {} }));
   const originalReset = latestValidResetAt(resetEvents(first.original_previous, originalTerminalId));
-  const currentReset = latestValidResetAt(resetEvents(first.current_previous, expectedCurrentTerminalId));
+  const currentReset = latestValidResetAt(resetEvents(previousTerminalId, effectiveTerminal.id));
   return originalReset !== null && originalReset === currentReset;
 }
 
-function originalTerminalEventId(schedule: ResumeScheduleIdentity): number | null {
+function isCompensationTerminal(row: HistoryRow): boolean {
+  return typeof row.dedupe_key === "string"
+    && row.dedupe_key.startsWith("resume_compensation:");
+}
+
+export function originalTerminalEventId(schedule: ResumeScheduleIdentity): number | null {
   if (schedule.sourceTool !== "ResumeAfterLimit") return null;
   const match = /^ResumeAfterLimit:(\d+)$/.exec(schedule.toolUseId ?? "");
   if (!match) return null;
