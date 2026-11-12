@@ -319,6 +319,7 @@ def test_schema_has_all_message_types() -> None:
         "InterveneAck",
         "EnsureSessionRunningAck",
         "InterruptSessionAck",
+        "DeleteSessionAck",
         "RespondAck",
         "ToolApprovalAck",
         "RealtimeCallCreated",
@@ -337,6 +338,7 @@ def test_schema_has_all_message_types() -> None:
         "Intervene",
         "EnsureSessionRunning",
         "InterruptSession",
+        "DeleteSession",
         "Respond",
         "ApproveTool",
         "RejectTool",
@@ -395,7 +397,7 @@ def test_schema_has_all_message_types() -> None:
         "ControlResultAck",
         "ControlAckMetric",
     }
-    assert len(wire_types) == 92
+    assert len(wire_types) == 94
 
     sse_types = {
         "SSEEventInit",
@@ -756,6 +758,7 @@ def test_oneof_covers_all_wire_messages() -> None:
         "InterveneAck",
         "EnsureSessionRunningAck",
         "InterruptSessionAck",
+        "DeleteSessionAck",
         "RespondAck",
         "ToolApprovalAck",
         "RealtimeCallCreated",
@@ -774,6 +777,7 @@ def test_oneof_covers_all_wire_messages() -> None:
         "Intervene",
         "EnsureSessionRunning",
         "InterruptSession",
+        "DeleteSession",
         "Respond",
         "ApproveTool",
         "RejectTool",

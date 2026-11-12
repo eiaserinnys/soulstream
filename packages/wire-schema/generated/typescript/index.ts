@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 195개 $defs (top-level wire 92 + supporting/SSE 103). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 197개 $defs (top-level wire 94 + supporting/SSE 103). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
