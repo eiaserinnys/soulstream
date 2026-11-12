@@ -97,8 +97,9 @@ export function PersistentReportProvider({ sessionId, entries, children }: Props
   }
   const mergedEntries = useMemo(() => mergeHeld(scope.entries, scope.held), [scope.entries, scope.held]);
   const clearReply = useCallback(() => setScope(current => current.receipt ? { ...current, receipt: null } : current), []);
+  // 놓은 뒤에는 앱처럼 같은 자리의 옆 장을 본다(판 첫 장으로 튀지 않게).
   const expire = useCallback((key: string) => setScope(current => current.held && !current.held.provisional && current.held.entry.key === key
-    ? { ...current, held: null } : current), []);
+    ? { ...current, held: null, key: selectReportKey(mergeHeld(current.entries, current.held), current.entries, current.key) } : current), []);
   const controller: Controller = {
     entries: mergedEntries,
     visibleKey: scope.key,

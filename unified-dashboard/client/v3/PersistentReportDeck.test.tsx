@@ -591,3 +591,19 @@ it('does not expire a provisional hold before the answer is acknowledged', async
     await act(async () => { send.resolve(ACK); await Promise.resolve(); });
   } finally { vi.useRealTimers(); }
 });
+
+it('shows the neighbour sheet in the same place, not the first sheet, when the answered hold expires', async () => {
+  vi.useFakeTimers();
+  try {
+    questionRenderer = questionSample;
+    entries = [one, serverQuestionEntry, two]; await render();
+    await act(async () => button('다음 장').click());
+    expect(host.querySelector('[data-current="true"]')?.getAttribute('data-testid')).toBe(`report-sheet-${serverQuestionEntry.key}`);
+    await respond();
+    entries = [one, two]; await render();
+    expect(heldAnswer()).toBe('응');
+    await act(async () => { vi.advanceTimersByTime(10_000); });
+    expect(host.querySelector(`[data-testid="report-sheet-${serverQuestionEntry.key}"]`)).toBeNull();
+    expect(host.querySelector('[data-current="true"]')?.getAttribute('data-testid')).toBe('report-sheet-two');
+  } finally { vi.useRealTimers(); }
+});
