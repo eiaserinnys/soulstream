@@ -13,7 +13,6 @@ const STAT_ERROR_SIGNATURE = "stat-error";
 
 export interface ModelCatalogFileLogger {
   error(bindings: Record<string, unknown>, message: string): void;
-  warn?(bindings: Record<string, unknown>, message: string): void;
 }
 
 export interface OpenModelCatalogFileOptions {
@@ -46,9 +45,9 @@ function isMissingFileError(error: unknown): boolean {
 }
 
 class ModelCatalogFileStoreImpl implements ModelCatalogFileStore {
-  private lastGood: ModelCatalogConfig | undefined;
+  /** Set by {@link open}; a store never escapes without one successful load. */
+  private lastGood!: ModelCatalogConfig;
   private lastSignature: string | null = null;
-  private lastFailure: unknown = null;
   private lastFailureSignature: string | null = null;
   private timer: ReturnType<typeof setInterval> | undefined;
   private readonly listeners = new Set<(catalog: ModelCatalogConfig) => void>();
@@ -78,12 +77,12 @@ class ModelCatalogFileStoreImpl implements ModelCatalogFileStore {
       } else {
         this.noteFailure(STAT_ERROR_SIGNATURE, error);
       }
-      return this.requireLastGood(error);
+      return this.lastGood;
     }
 
     const signature = signatureOf(stat);
     if (signature === this.lastSignature) {
-      return this.requireLastGood(this.lastFailure);
+      return this.lastGood;
     }
 
     let raw: string;
@@ -91,7 +90,7 @@ class ModelCatalogFileStoreImpl implements ModelCatalogFileStore {
       raw = fs.readFileSync(this.options.path, "utf-8");
     } catch (error) {
       this.noteFailure(signature, error);
-      return this.requireLastGood(error);
+      return this.lastGood;
     }
 
     let config: ModelCatalogConfig;
@@ -100,17 +99,13 @@ class ModelCatalogFileStoreImpl implements ModelCatalogFileStore {
       this.options.validate?.(config);
     } catch (error) {
       this.noteFailure(signature, error);
-      return this.requireLastGood(error);
+      return this.lastGood;
     }
 
-    const replaced = this.lastGood !== undefined;
     this.lastGood = config;
     this.lastSignature = signature;
-    this.lastFailure = null;
     this.lastFailureSignature = null;
-    if (replaced) {
-      for (const listener of [...this.listeners]) listener(config);
-    }
+    for (const listener of [...this.listeners]) listener(config);
     return config;
   }
 
@@ -139,17 +134,11 @@ class ModelCatalogFileStoreImpl implements ModelCatalogFileStore {
     const reported = signature === this.lastFailureSignature;
     this.lastSignature = signature;
     this.lastFailureSignature = signature;
-    this.lastFailure = error;
     if (reported) return;
     this.options.logger?.error(
       { err: error, catalogPath: this.options.path },
       "Model catalog reload failed; keeping the last successful catalog",
     );
-  }
-
-  private requireLastGood(failure: unknown): ModelCatalogConfig {
-    if (this.lastGood === undefined) throw failure;
-    return this.lastGood;
   }
 }
 

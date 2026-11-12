@@ -102,6 +102,209 @@ const USAGE = {
   output_total: 1_000_000,
 };
 
+type PresetExpectation = {
+  label: string;
+  backend: string;
+  model: string;
+  group?: string;
+  provider?: string;
+  usage_model_id?: string;
+  usage_provider?: string;
+  supported_efforts?: string[];
+  default_effort?: string;
+  trusted_execution?: boolean;
+  env?: Record<string, string>;
+};
+
+const CLAUDE_EFFORTS = ["low", "medium", "high", "xhigh", "max"];
+const CODEX_EFFORTS = ["low", "medium", "high", "xhigh", "max", "ultra"];
+const KIMI_ENV = {
+  ANTHROPIC_BASE_URL: "https://api.kimi.com/coding/",
+  ANTHROPIC_API_KEY: "${KIMI_API_KEY}",
+  CLAUDE_CODE_AUTO_COMPACT_WINDOW: "262144",
+};
+
+/** Values of the 17 former DEFAULT_MODEL_CATALOG presets plus the 5 operating additions. */
+const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
+  "claude-haiku": { label: "Claude - Haiku", backend: "claude", model: "haiku" },
+  "claude-sonnet": {
+    label: "Claude - Sonnet",
+    backend: "claude",
+    model: "sonnet",
+    supported_efforts: CLAUDE_EFFORTS,
+    default_effort: "xhigh",
+  },
+  "claude-opus": {
+    label: "Claude - Opus",
+    backend: "claude",
+    model: "opus",
+    supported_efforts: CLAUDE_EFFORTS,
+    default_effort: "xhigh",
+    trusted_execution: true,
+  },
+  "claude-opus-lean": {
+    label: "Claude - Opus (담당 시범, 압축 25만)",
+    backend: "claude",
+    model: "claude-opus-5-5[1m]",
+    usage_model_id: "opus",
+    supported_efforts: CLAUDE_EFFORTS,
+    default_effort: "xhigh",
+    trusted_execution: true,
+    env: { CLAUDE_CODE_AUTO_COMPACT_WINDOW: "250000", ENABLE_TOOL_SEARCH: "false" },
+  },
+  "claude-fable": {
+    label: "Claude - Fable 5.1",
+    backend: "claude",
+    model: "claude-fable-5-1[1m]",
+    usage_model_id: "fable",
+    supported_efforts: CLAUDE_EFFORTS,
+    default_effort: "high",
+    trusted_execution: true,
+  },
+  "claude-fable-5.2": {
+    label: "Claude - Fable 5.2",
+    backend: "claude",
+    model: "claude-fable-5-2[1m]",
+    usage_model_id: "fable",
+    supported_efforts: CLAUDE_EFFORTS,
+    default_effort: "medium",
+    trusted_execution: true,
+  },
+  "codex-6-astra": {
+    label: "Codex - 6 Astra",
+    backend: "codex",
+    model: "gpt-6-astra",
+    supported_efforts: CODEX_EFFORTS,
+    default_effort: "medium",
+    trusted_execution: true,
+  },
+  "codex-6.1-sol": {
+    label: "Codex - 6.1 Sol",
+    backend: "codex",
+    model: "gpt-6.1-sol",
+    supported_efforts: CODEX_EFFORTS,
+    default_effort: "high",
+    trusted_execution: true,
+  },
+  "codex-6.1-terra": {
+    label: "Codex - 6.1 Terra",
+    backend: "codex",
+    model: "gpt-6.1-terra",
+    supported_efforts: CODEX_EFFORTS,
+    default_effort: "max",
+  },
+  "codex-6-sol": {
+    label: "Codex - 6 Sol",
+    backend: "codex",
+    model: "gpt-6-sol",
+    supported_efforts: CODEX_EFFORTS,
+    default_effort: "xhigh",
+    trusted_execution: true,
+  },
+  "codex-6-luna": {
+    label: "Codex - 6 Luna",
+    backend: "codex",
+    model: "gpt-6-luna",
+    supported_efforts: CLAUDE_EFFORTS,
+    default_effort: "xhigh",
+  },
+  "codex-5.6-sol": {
+    label: "Codex - 5.6 Sol",
+    backend: "codex",
+    model: "gpt-5.6-sol",
+    supported_efforts: CODEX_EFFORTS,
+    default_effort: "xhigh",
+  },
+  "codex-5.6-luna": {
+    label: "Codex - 5.6 Luna",
+    backend: "codex",
+    model: "gpt-5.6-luna",
+    supported_efforts: CLAUDE_EFFORTS,
+    default_effort: "xhigh",
+  },
+  "codex-5.6-terra": {
+    label: "Codex - 5.6 Terra",
+    backend: "codex",
+    model: "gpt-5.6-terra",
+    supported_efforts: CODEX_EFFORTS,
+    default_effort: "xhigh",
+  },
+  "kimi-2": {
+    label: "Kimi - 2",
+    backend: "claude",
+    model: "kimi-for-coding",
+    group: "china",
+    provider: "kimi",
+    env: KIMI_ENV,
+  },
+  "kimi-3": {
+    label: "Kimi - 3",
+    backend: "claude",
+    model: "k3",
+    group: "china",
+    provider: "kimi",
+    env: KIMI_ENV,
+  },
+  "kimi-3.1-pro": {
+    label: "Kimi - 3.1 Pro",
+    backend: "claude",
+    model: "k3.1-pro",
+    group: "china",
+    provider: "kimi",
+    env: KIMI_ENV,
+  },
+  "deepseek-flash-4.1": {
+    label: "DeepSeek - Flash 4.1",
+    backend: "claude",
+    model: "deepseek-v4.1-flash",
+    group: "china",
+    provider: "deepseek",
+    usage_provider: "opencode_go",
+    supported_efforts: ["xhigh", "max"],
+    default_effort: "max",
+    env: {
+      ANTHROPIC_BASE_URL: "https://opencode.ai/inference/go/anthropic",
+      ANTHROPIC_API_KEY: "${OPENCODE_GO_API_KEY}",
+      ENABLE_TOOL_SEARCH: "true",
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: "deepseek-v4.1-flash",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "deepseek-v4.1-flash",
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "deepseek-v4.1-flash",
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW: "262144",
+    },
+  },
+  "gemini-3.8-flash": {
+    label: "Gemini - 3.8 Flash",
+    backend: "antigravity",
+    model: "gemini-3.8-flash",
+    supported_efforts: ["low", "medium", "high"],
+    default_effort: "low",
+  },
+  "gemini-4-argon": {
+    label: "Gemini - 4 Argon",
+    backend: "antigravity",
+    model: "gemini-4-argon",
+    supported_efforts: ["low", "medium", "high"],
+    default_effort: "high",
+    trusted_execution: true,
+  },
+  "gemini-4-carbon": {
+    label: "Gemini - 4 Carbon",
+    backend: "antigravity",
+    model: "gemini-4-carbon",
+    supported_efforts: ["low", "medium", "high"],
+    default_effort: "high",
+    trusted_execution: true,
+  },
+  "opencode-deepseek-v4.1-flash-free": {
+    label: "OpenCode - DeepSeek V4.1 Flash Free",
+    backend: "opencode",
+    model: "opencode/deepseek-v4.1-flash-free",
+    group: "china",
+    provider: "deepseek",
+  },
+};
+
 const BASE_CATALOG_YAML = `schema_version: 1
 groups: [china]
 presets:
@@ -172,25 +375,35 @@ describe("repository model catalogue data", () => {
     expect(selectModelPresets(catalog, ["china"]).map((preset) => preset.id)).toEqual(PRESET_IDS);
   });
 
-  it("keeps the operating preset values", () => {
-    const opusLean = catalog.presets.find((preset) => preset.id === "claude-opus-lean")!;
-    expect(opusLean.model).toBe("claude-opus-5-5[1m]");
-    expect(opusLean.env).toEqual({
-      CLAUDE_CODE_AUTO_COMPACT_WINDOW: "250000",
-      ENABLE_TOOL_SEARCH: "false",
-    });
-
-    const deepseek = catalog.presets.find((preset) => preset.id === "deepseek-flash-4.1")!;
-    expect(deepseek.usage_provider).toBe("opencode_go");
-    expect(deepseek.supported_efforts).toEqual(["xhigh", "max"]);
-    expect(deepseek.default_effort).toBe("max");
-
-    const kimi = catalog.presets.find((preset) => preset.id === "kimi-3.1-pro")!;
-    expect(kimi.model).toBe("k3.1-pro");
-    expect(kimi.env?.ANTHROPIC_API_KEY).toBe("${KIMI_API_KEY}");
+  it("keeps every operating preset value", () => {
+    expect(Object.keys(EXPECTED_PRESETS)).toEqual(PRESET_IDS);
+    for (const [id, expected] of Object.entries(EXPECTED_PRESETS)) {
+      const preset = catalog.presets.find((entry) => entry.id === id)!;
+      const actual: Record<string, unknown> = {
+        label: preset.label,
+        backend: preset.backend,
+        model: preset.model,
+      };
+      for (const key of [
+        "group",
+        "provider",
+        "usage_model_id",
+        "usage_provider",
+        "supported_efforts",
+        "default_effort",
+        "trusted_execution",
+        "env",
+      ] as const) {
+        if (preset[key] !== undefined) actual[key] = preset[key];
+      }
+      expect({ id, ...actual }).toEqual({ id, ...expected });
+    }
 
     const opencode = catalog.presets.find((preset) => preset.id === "opencode-deepseek-v4.1-flash-free")!;
-    expect(Object.keys(opencode.mcp_tool_allowlist ?? {})).toEqual(["roselin"]);
+    expect(opencode.mcp_tool_allowlist).toEqual({
+      roselin: { soulstream: expect.any(Array), serendipity: [] },
+    });
+    expect(opencode.mcp_tool_allowlist?.roselin?.soulstream).toHaveLength(55);
   });
 
   it("resolves the usage provider from the preset field with the backend fallback", () => {
@@ -292,6 +505,44 @@ describe("repository model catalogue data", () => {
       expect(result.pricing_complete).toBe(true);
       expect(result.known_cost_usd).toBeCloseTo(rates[0] + rates[4], 10);
     }
+  });
+
+  it("keeps the price snapshot metadata", () => {
+    expect(catalog.price_snapshot).toEqual({
+      price_version: "api-list-usd-2026-10-19-v1",
+      as_of: "2026-10-19",
+      checked_at: "2026-10-19",
+      currency: "USD",
+      unit: "per_1m_tokens",
+      model_mapping_version: "exact-provider-model-v1",
+      legacy_rows_last_checked_at: "2026-10-05",
+      refreshed_model_rows: {
+        claude: ["claude-opus-5-5", "claude-fable-5-2", "claude-fable-5-1", "claude-sonnet-5-5"],
+        codex: ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna"],
+        antigravity: ["gemini-4-carbon", "gemini-4-argon", "gemini-3.8-flash"],
+        deepseek: [
+          "deepseek-v4.1-flash-1017",
+          "deepseek-v4.1-flash",
+          "deepseek-flash",
+          "deepseek-v4-flash",
+          "deepseek-v4-flash-vision-exp",
+          "opencode/deepseek-v4.1-flash-free",
+        ],
+      },
+      sources: {
+        claude: "https://platform.claude.com/docs/en/about-claude/pricing",
+        codex: "https://developers.openai.com/api/docs/pricing?tab=suite",
+        antigravity: "https://ai.google.dev/gemini-api/docs/pricing",
+        deepseek: "https://api-docs.deepseek.com/quick_start/pricing/",
+      },
+      assumptions: [
+        "Standard API prices and default context tiers are used for the fixed snapshot.",
+        "DeepSeek V4.1 Flash uses the 1017 peak schedule; the OpenCode free-harness alias is priced at API list price, not at $0.",
+        "OpenCode Go subscription usage is also valued at API list price.",
+        "Gemini promotional rates remain frozen in this snapshot after their published end dates.",
+        "Other legacy rows retain their previous 2026-10-05 values and are not claimed as reverified for this snapshot.",
+      ],
+    });
   });
 
   it("splits a priced usage into cache-read and non-cache decimals", () => {
@@ -429,11 +680,14 @@ describe("model catalogue file loader", () => {
       pollIntervalMs: 10,
       logger: { error: (_bindings, message) => errors.push(message) },
     });
+    const notified: number[] = [];
+    store.subscribe((next) => notified.push(next.presets.length));
     try {
       fs.writeFileSync(catalogPath, "schema_version: 2\n", "utf-8");
       expect(store.snapshot().presets).toHaveLength(2);
       expect(store.snapshot().presets).toHaveLength(2);
       expect(errors).toHaveLength(1);
+      expect(notified).toEqual([]);
     } finally {
       store.close();
     }
@@ -448,11 +702,14 @@ describe("model catalogue file loader", () => {
       pollIntervalMs: 10,
       logger: { error: (_bindings, message) => errors.push(message) },
     });
+    const notified: number[] = [];
+    store.subscribe((next) => notified.push(next.presets.length));
     try {
       fs.rmSync(catalogPath);
       expect(store.snapshot().presets).toHaveLength(2);
       expect(store.snapshot().presets).toHaveLength(2);
       expect(errors).toHaveLength(1);
+      expect(notified).toEqual([]);
     } finally {
       store.close();
     }
