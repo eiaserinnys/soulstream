@@ -58,6 +58,17 @@ test('판 교체로 cq_ 장이 빠져도 보낸 답은 같은 자리에 답 받�
   expect(entries[0]).toMatchObject({ state: 'answered', answer: '파일로 옮기기' });
 });
 
+test('펼친 장의 선택 저장이 성공하면 판 교체로 cq_ 장이 빠져도 같은 자리에 답 받음으로 남는다', () => {
+  act(() => useSessionStore.getState().applyPersistentReport('pas', [question(), sibling()]));
+  const hook = renderHook(() => useStack(acknowledgementApi()));
+  const entry = hook.result.current.report.entries.find(item => item.key === 'cq_q1')!;
+  act(() => hook.result.current.report.holdAnswered(entry, '파일로 옮기기'));
+  act(() => useSessionStore.getState().applyPersistentReport('pas', [sibling()]));
+  const entries = hook.result.current.report.entries;
+  expect(entries.map(item => item.key)).toEqual(['cq_q1', 'result']);
+  expect(entries[0]).toMatchObject({ state: 'answered', answer: '파일로 옮기기' });
+});
+
 test('다른 장으로 넘기면 붙든 장을 놓는다', async () => {
   act(() => useSessionStore.getState().applyPersistentReport('pas', [question(), sibling()]));
   const hook = renderHook(() => useStack(acknowledgementApi()));

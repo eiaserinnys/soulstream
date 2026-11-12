@@ -48,6 +48,18 @@ test('선택 저장이 성공한 뒤에만 덧붙이기 대상이 선다', async
   expect(target.result.current.target).toEqual({ kind: 'append', questionId: 'q1', label: '파일로 옮기기' });
 });
 
+test('저장을 기다리는 동안 화면이 내려가면 늦은 성공이 대상을 되살리지 않는다', async () => {
+  const target = renderHook(() => useCardQuestionTarget('card-late'));
+  const lifetime = renderHook(() => useCardQuestionTargetLifetime('card-late'));
+  let finish!: (saved: boolean) => void;
+  const gate = new Promise<boolean>(resolve => { finish = resolve; });
+  let request!: Promise<boolean>;
+  act(() => { request = answerCardQuestionChoice('card-late', 'q1', '파일로 옮기기', () => gate); });
+  act(() => lifetime.unmount());
+  await act(async () => { finish(true); expect(await request).toBe(true); });
+  expect(target.result.current).toEqual({ target: null, focus: 0 });
+});
+
 test('카드를 바꾸거나 화면이 내려가면 대상과 초점 요청이 지워진다', () => {
   const a = renderHook(() => useCardQuestionTarget('card-a'));
   const lifetime = renderHook(({ id }: { id: string }) => useCardQuestionTargetLifetime(id),

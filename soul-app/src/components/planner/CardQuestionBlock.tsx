@@ -20,6 +20,8 @@ import type { CardQuestionView } from './card-question-viewmodel';
 export type CardQuestionTarget = { kind: 'ask'; questionId: string } | { kind: 'append'; questionId: string; label: string };
 type TargetEntry = { target: CardQuestionTarget | null; focus: number };
 const targets = new Map<string, TargetEntry>();
+// 늦게 온 저장 응답이 이미 닫힌 화면의 덧붙이기 대상을 되살리지 않게 key별 세대 수를 센다. clear가 올린다.
+const generations = new Map<string, number>();
 const listeners = new Set<() => void>();
 const EMPTY: TargetEntry = { target: null, focus: 0 };
 function notify() { listeners.forEach(listener => listener()); }
@@ -30,6 +32,7 @@ export function setCardQuestionTarget(cardId: string, target: CardQuestionTarget
 }
 /** 대상과 아직 따르지 않은 초점 요청을 함께 지운다. 화면 수명이 끝날 때 쓴다(계약 3절 15번). */
 export function clearCardQuestionTarget(cardId: string) {
+  generations.set(cardId, (generations.get(cardId) ?? 0) + 1);
   if (!targets.delete(cardId)) return;
   notify();
 }
@@ -51,8 +54,11 @@ export function useCardQuestionTargetLifetime(cardId: string) {
  */
 export async function answerCardQuestionChoice(targetKey: string, questionId: string, label: string,
   save: () => Promise<boolean>): Promise<boolean> {
+  // 요청을 시작한 화면 수명에 결과 반영을 묶는다. 기다리는 동안 화면이 닫히면 대상을 세우지 않는다.
+  const generation = generations.get(targetKey) ?? 0;
   const saved = await save();
-  if (saved) setCardQuestionTarget(targetKey, { kind: 'append', questionId, label });
+  if (saved && (generations.get(targetKey) ?? 0) === generation)
+    setCardQuestionTarget(targetKey, { kind: 'append', questionId, label });
   return saved;
 }
 export function useCardQuestionTarget(cardId: string) {

@@ -26,6 +26,12 @@ Operation checks (ui-design gate items 14-18) run in the same page:
   17 read failure (다시 읽기) and write failure (draft preserved)
   18 window resize 820 <-> 390 with the draft and the folded layout preserved
 
+Answer scenarios (contract 3절 2번) also run as PASS judgments:
+  iPad  folded choice -> 덧붙이기 -> expanded field keeps the chosen row, dims the rest, keeps the target
+  iPad  expanded choice -> fold -> folded field stays at 받은 답 with 덧붙이기
+  phone folded choice -> 덧붙이기 sheet keeps the chosen row and the target
+  phone PAS-opened card sheet choice -> back -> that field leaves the report (card detail, not held)
+
 Alignment evidence: choice row left/right lines must agree within 1px, action
 button tops must agree within 1px, and the question target row must share the
 comment composer's left and right lines within 1px.
@@ -539,8 +545,129 @@ def measure_interactions(page: Page, base: str, width: int, output: Path, result
         else:
             record(result, 2, "펼친 장 선택 답", "ops-expanded", False, {"reason": "선택지 없음"})
 
+    # 계약 3절 2번 답 흐름: 접힌 장 덧붙이기, 펼친 장 접기, 폰 카드 시트.
+    measure_answer_scenarios(page, base, width, output, result)
+
     # 초점 수명(계약 3절 15번): 되묻기, 해제, 닫기, 다시 열기 -> document.activeElement.
     focus_lifetime_checks(page, base, width, output, result)
+
+
+QUESTION_STATE_SCRIPT = r"""
+() => {
+  const text = (element) => element ? element.innerText : null;
+  const rows = [...document.querySelectorAll('[data-testid^="card-question-choice-"]')].map((element) => ({
+    selected: element.getAttribute('aria-selected'),
+    opacity: parseFloat(getComputedStyle(element).opacity),
+  }));
+  const target = document.querySelector('[data-testid="card-question-target"]');
+  const answered = document.querySelector('[data-testid="card-question-answered"]');
+  const actions = document.querySelector('[data-testid="card-question-actions"]');
+  return {
+    rows,
+    target: text(target),
+    answered: text(answered),
+    actions: text(actions),
+    askBack: !!(actions && actions.querySelector('[aria-label="되묻기"]')),
+    blocks: document.querySelectorAll('[data-testid^="card-question-q-"]').length,
+  };
+}
+"""
+
+
+def question_state(page: Page) -> dict:
+    return page.evaluate(QUESTION_STATE_SCRIPT)
+
+
+def selection_kept(state: dict) -> bool:
+    rows = state["rows"]
+    return bool(rows) and rows[0]["opacity"] >= 0.9 and all(row["opacity"] < 0.9 for row in rows[1:])
+
+
+def measure_answer_scenarios(page: Page, base: str, width: int, output: Path, result: dict) -> None:
+    """계약 3절 2번의 답 흐름을 selaphiel 재검수 T2, T3, T4, P2 측정대로 PASS 판정한다."""
+    theme = "light"
+    if width >= 768:
+        # T4: 접힌 장에서 고른 뒤 덧붙이기로 펼치면 고른 행과 대상 줄이 남고 되묻기가 없다.
+        goto(page, base, "pas", "ga", False, theme, width)
+        choice = page.get_by_test_id("card-question-choice-0")
+        if count(choice) == 0:
+            record(result, 2, "접힌 장 답 뒤 덧붙이기", f"ops-{width}-append-expanded", False, {"reason": "선택지 없음"})
+        else:
+            choice.first.click()
+            page.wait_for_timeout(450)
+            append = page.locator('[aria-label="덧붙이기"]')
+            if count(append) > 0:
+                append.first.click()
+                page.wait_for_timeout(1000)
+            state = question_state(page)
+            target = state["target"] or ""
+            passed = selection_kept(state) and "덧붙이기: 파일로 옮기기" in target and not state["askBack"]
+            record(result, 2, "접힌 장 답 뒤 덧붙이기", f"ops-{width}-append-expanded", passed, state)
+            page.screenshot(path=str(output / f"ops-{width}-append-expanded.png"))
+
+        # T2: 펼친 장에서 고른 뒤 접으면 접힌 장이 받은 답과 덧붙이기로 남는다.
+        goto(page, base, "pas", "ga", True, theme, width)
+        choice = page.get_by_test_id("card-question-choice-0")
+        if count(choice) == 0:
+            record(result, 2, "펼친 장 답 뒤 접기", f"ops-{width}-folded-answered", False, {"reason": "선택지 없음"})
+        else:
+            choice.first.click()
+            page.wait_for_timeout(1000)
+            toggle = page.get_by_test_id("report-window-toggle")
+            if count(toggle) > 0:
+                toggle.first.click()
+                page.wait_for_timeout(800)
+            state = question_state(page)
+            answered = state["answered"] or ""
+            passed = "받은 답" in answered and "파일로 옮기기" in answered \
+                and count(page.locator('[aria-label="덧붙이기"]')) > 0
+            record(result, 2, "펼친 장 답 뒤 접기", f"ops-{width}-folded-answered", passed, state)
+            page.screenshot(path=str(output / f"ops-{width}-folded-answered.png"))
+    else:
+        # P2: 접힌 장에서 고른 뒤 덧붙이기로 연 시트에 고른 행과 대상 줄이 함께 보인다.
+        goto(page, base, "pas", "ga", False, theme, width)
+        choice = page.get_by_test_id("card-question-choice-0")
+        if count(choice) == 0:
+            record(result, 2, "폰 시트 고른 행과 대상", f"ops-{width}-append-sheet", False, {"reason": "선택지 없음"})
+        else:
+            choice.first.click()
+            page.wait_for_timeout(1000)
+            append = page.locator('[aria-label="덧붙이기"]')
+            if count(append) > 0:
+                append.first.click()
+                page.wait_for_timeout(1000)
+            open_comments_tab(page)
+            state = question_state(page)
+            target = state["target"] or ""
+            passed = selection_kept(state) and "덧붙이기: 파일로 옮기기" in target
+            record(result, 2, "폰 시트 고른 행과 대상", f"ops-{width}-append-sheet", passed, state)
+            page.screenshot(path=str(output / f"ops-{width}-append-sheet.png"))
+
+        # 위임자 결정: PAS로 연 카드 시트의 선택은 판에 붙들지 않고, 뒤로 오면 그 장이 판에서 빠진다.
+        goto(page, base, "pas", "ga", False, theme, width)
+        toggle = page.get_by_test_id("report-window-toggle")
+        if count(toggle) == 0:
+            record(result, 2, "카드 시트 답 뒤 장 빠짐", f"ops-{width}-sheet-answer-back", False,
+                   {"reason": "펼침 단추 없음"})
+        else:
+            toggle.first.click()
+            page.wait_for_timeout(900)
+            open_comments_tab(page)
+            choice = page.get_by_test_id("card-question-choice-0")
+            if count(choice) == 0:
+                record(result, 2, "카드 시트 답 뒤 장 빠짐", f"ops-{width}-sheet-answer-back", False,
+                       {"reason": "선택지 없음"})
+            else:
+                choice.first.click()
+                page.wait_for_timeout(1000)
+                back = page.locator('[aria-label="뒤로"]')
+                if count(back) > 0:
+                    back.first.click()
+                page.wait_for_timeout(700)
+                state = question_state(page)
+                passed = state["blocks"] == 0 and state["answered"] is None
+                record(result, 2, "카드 시트 답 뒤 장 빠짐", f"ops-{width}-sheet-answer-back", passed, state)
+                page.screenshot(path=str(output / f"ops-{width}-sheet-answer-back.png"))
 
 
 def focus_lifetime_checks(page: Page, base: str, width: int, output: Path, result: dict) -> None:

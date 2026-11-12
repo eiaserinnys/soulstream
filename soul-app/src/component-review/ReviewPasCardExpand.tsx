@@ -78,6 +78,16 @@ export function createReviewCardApi(onStatusChange: (id: string, status: CardSta
   };
   const snapshot = (detail: CardDetail): CardDetail => ({ ...detail, card: { ...detail.card, items: [...(detail.card.items ?? [])] },
     questions: [...detail.questions], comments: [...(detail.comments ?? [])] });
+  // 서버가 판 답 ACK를 줄 때 하는 일: 그 질문에 답을 남긴다.
+  const answerSampleQuestion = (key: string, option: string) => {
+    const entry = initialEntries.find(item => item.key === key);
+    const cardId = entry?.card_id ?? card.id;
+    const questionId = entry?.question_id;
+    const detail = details[cardId];
+    if (!detail || !questionId) return;
+    details = { ...details, [cardId]: { ...detail, questions: detail.questions.map(item => item.id === questionId
+      ? { ...item, answer: option, selectedOption: option, answeredAt: new Date().toISOString() } : item) } };
+  };
   const api: Pick<ApiClient, 'listCards' | 'getCard' | 'setCardStatus' | 'confirmCardItem' | 'addCardComment' | 'answerCardQuestion' | 'intervene'> = {
     listCards: async () => ({ cards: Object.values(details).map(detail => detail.card) }),
     getCard: async id => {
@@ -118,12 +128,20 @@ export function createReviewCardApi(onStatusChange: (id: string, status: CardSta
         ? { ...item, answer, answeredAt: new Date().toISOString(),
           ...(input.mode === 'choice' ? { selectedOption: input.option } : { selectedOption: null }) } : item) };
       details = { ...details, [card.id]: next };
+      // 서버의 판 재계산처럼 답한 cq_ 장을 판 목록에서도 뺀다.
+      const entry = initialEntries.find(item => item.question_id === questionId);
+      if (entry) onReportAnswered?.(entry.key);
       return { folderId: next.card.folderId, card: next.card };
     },
     // 표본은 운영의 판 답 보내기 경로를 그대로 타고 API 경계에서만 응답을 대신한다.
+    // 판 재계산에서 답한 cq_ 장이 빠지는 서버 동작을 서버 목록을 줄여 흉내 내고,
+    // 판 답 ACK가 카드 상세의 질문에도 답을 남기는 서버 효과를 함께 재현한다.
     intervene: async (_sessionId: string, _text: string, _paths?: string[], contextItems?: MessageContextItem[]) => {
       const reply = pendingReportReply(contextItems);
-      if (reply) onReportAnswered?.(reply.key);
+      if (reply) {
+        onReportAnswered?.(reply.key);
+        answerSampleQuestion(reply.key, reply.option);
+      }
       return { delivered: true, outcome: 'delivered' as const, ...(reply ? { reason: CARD_QUESTION_ANSWERED_REASON } : {}) };
     },
   };
@@ -171,7 +189,9 @@ export function ReviewPasCardExpand() {
     onOpenCardDetails={phone ? setSheet : undefined}
     send={reportSend} />;
   return <ContentLinkProvider><ChatUiControllerProvider sessionId="preview-pas" appendGeneratedText={() => ({ ok: true })}>
-    {phone && sheet ? <CardDetailContent visible api={api} cardId={sheet.card_id ?? card.id} onClose={() => setSheet(null)} /> : <View testID="pas-card-expand-review" style={{ flex: 1, backgroundColor: t.persistentSession.paper, paddingTop: insets.top, paddingBottom: insets.bottom }}>
+    {phone && sheet ? <View style={{ flex: 1, backgroundColor: t.colors.background }}>
+      <CardDetailContent visible api={api} cardId={sheet.card_id ?? card.id} onClose={() => setSheet(null)} />
+    </View> : <View testID="pas-card-expand-review" style={{ flex: 1, backgroundColor: t.persistentSession.paper, paddingTop: insets.top, paddingBottom: insets.bottom }}>
       <View style={styles.header}><Text style={styles.heading}>PAS · 카드 펼침 시안</Text></View>
       <View style={{ flex: 1, minHeight: 0, width: column, alignSelf: 'center', gap: t.uiSpacing.lg }}>
         <UserMessage event={{ id: 'preview-user', type: 'user_message', data: { text: 'PAS 안에서 결과를 보고 의견도 남기고 싶어요.' } }} />
