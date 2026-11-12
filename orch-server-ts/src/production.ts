@@ -715,6 +715,11 @@ export async function createLiveProductionApplication(
     validateFolder: orchestrationAccess.validateFolder,
     resolveSessionOwner,
     findUserByEmail: dbCatalogRepository.adminUsersRepository.findUserByEmail,
+    attachmentImport: providers.attachmentRoutes.assetUpload === undefined ? undefined : {
+      readSource: providers.attachmentSourceRead,
+      commits: providers.attachmentRoutes.assetUpload.commits,
+      repository: providers.attachmentRoutes.assetUpload.repository,
+    },
     ensureSystemFolder: async input => {
       if (!folderProjectIdentityService) throw new Error("Folder identity service is unavailable");
       await folderProjectIdentityService.create({

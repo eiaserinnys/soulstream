@@ -98,9 +98,13 @@ import {
 } from "./live_authenticated_user_resolver.js";
 import { createLiveAdminUsersRouteProvider } from "./live_admin_users_route_provider.js";
 import { createLiveAtomHttpClient } from "./live_atom_route_provider.js";
-import { createLiveAttachmentRouteProviders } from "./live_attachment_route_provider.js";
+import {
+  createLiveAttachmentRouteProviders,
+  createLiveAttachmentSourceReader,
+} from "./live_attachment_route_provider.js";
 import { createLiveAttachmentUploadOptions } from "./live_attachment_upload_provider.js";
 import { createLiveAttachmentInputAdmission } from "../attachments/live_attachment_input_admission.js";
+import type { AttachmentSourceReader } from "../attachments/card_attachment_source_import.js";
 import { broadcastCatalogSnapshot } from "./live_folder_mutation_broadcaster.js";
 import {
   resolveSessionSnapshotIds,
@@ -146,6 +150,7 @@ export type LiveOrchestratorProviderBundle = {
     AttachmentRouteOptions,
     "provider" | "accessProvider" | "transport" | "multipart" | "assetRead" | "assetUpload"
   >;
+  readonly attachmentSourceRead: AttachmentSourceReader;
   readonly agentAttachmentRoutes?: AgentAttachmentRouteOptions;
   readonly workerAttachmentRoutes?: WorkerAttachmentRouteOptions;
   readonly authRoutes: Pick<
@@ -464,6 +469,10 @@ export function createLiveOrchestratorProviderBundle(
       ...(attachmentUploadOptions === undefined ? {} : { assetUpload: attachmentUploadOptions }),
       ...(attachmentMultipartOptions === undefined ? {} : { multipart: attachmentMultipartOptions }),
     },
+    attachmentSourceRead: createLiveAttachmentSourceReader({
+      registry: options.runtimeServices.registry,
+      bridge: options.runtimeServices.sessionBridge,
+    }),
     ...(agentAttachmentRoutes === undefined ? {} : { agentAttachmentRoutes }),
     ...(workerAttachmentRoutes === undefined ? {} : { workerAttachmentRoutes }),
     authRoutes: {

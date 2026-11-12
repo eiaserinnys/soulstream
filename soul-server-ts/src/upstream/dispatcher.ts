@@ -11,6 +11,7 @@ import {
   FileAttachmentStore,
   type AttachmentStore,
 } from "../attachments/file_manager.js";
+import { createAttachmentSourceReader } from "../attachments/source_file_reader.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { SessionDB } from "../db/session_db.js";
@@ -148,7 +149,12 @@ export class CommandDispatcher {
       decisionRunner,
       authorizeOrchestrationWorker,
     });
-    const attachmentCommands = new AttachmentCommands(attachmentStore);
+    const attachmentCommands = new AttachmentCommands(
+      attachmentStore,
+      createAttachmentSourceReader({
+        allowedRoots: () => agentRegistry.list().map((profile) => profile.workspace_dir),
+      }),
+    );
     const sessionListCommands = new SessionListCommands(sessionDb, nodeId);
     const claudeAuthCommands = new ClaudeAuthCommands({
       agentRegistry,

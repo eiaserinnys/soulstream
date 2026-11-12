@@ -10,6 +10,10 @@ import {
   type AttachmentTransport,
   type AttachmentUploadInput,
 } from "../attachments/attachment_routes.js";
+import type {
+  AttachmentSourceReadFile,
+  AttachmentSourceReader,
+} from "../attachments/card_attachment_source_import.js";
 import {
   PendingNodeCommandRejectedError,
   PendingNodeCommandTimeoutError,
@@ -112,6 +116,71 @@ export function createLiveAttachmentTransport(
         path,
       }),
   };
+}
+
+/**
+ * Reads a file from a connected worker's workspace so a card executed on
+ * another node can import it. Unlike download_attachment, its base is not the
+ * node incoming directory — the node command validates the path against the
+ * union of its agents' workspace_dir.
+ */
+export function createLiveAttachmentSourceReader(
+  options: Pick<CreateLiveAttachmentRouteProvidersOptions, "registry" | "bridge">,
+): AttachmentSourceReader {
+  return async (nodeId, path) => {
+    const current = options.registry.getConnectedNode(nodeId);
+    if (current === undefined) throw connectionError(`Node is not connected: ${nodeId}`);
+    const response = await sendAttachmentCommand(
+      options,
+      { nodeId, connectionId: current.connectionId },
+      { type: "read_attachment_source", path },
+    );
+    return projectSourceReadResponse(response);
+  };
+}
+
+function projectSourceReadResponse(result: unknown): AttachmentSourceReadFile {
+  const object = isPlainObject(result) ? result : {};
+  const contentB64 = object.content_b64;
+  const filename = object.filename;
+  const size = object.size;
+  if (
+    typeof contentB64 !== "string"
+    || typeof filename !== "string"
+    || typeof size !== "number"
+    || !Number.isSafeInteger(size)
+    || size < 0
+    || size > MAX_ATTACHMENT_SIZE_BYTES
+  ) {
+    throw malformedSourceResponse();
+  }
+  const content = Buffer.from(contentB64, "base64");
+  if (
+    content.byteLength !== size
+    || content.toString("base64").replace(/=+$/, "") !== contentB64.replace(/=+$/, "")
+  ) {
+    throw malformedSourceResponse();
+  }
+  return {
+    content,
+    filename,
+    contentType: typeof object.content_type === "string" && object.content_type.length > 0
+      ? object.content_type
+      : "application/octet-stream",
+    size,
+  };
+}
+
+function malformedSourceResponse(): AttachmentRouteError {
+  return new AttachmentRouteError(
+    "MALFORMED_ATTACHMENT_SOURCE_RESPONSE",
+    "Node returned malformed attachment source response",
+    502,
+  );
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function uploadAttachment(
@@ -255,6 +324,31 @@ function mapAttachmentCommandError(error: unknown): unknown {
           "ATTACHMENT_NOT_FOUND",
           notFound[1] ?? error.message,
           404,
+        );
+      }
+    }
+    if (error.commandType === "read_attachment_source") {
+      const notFound = /^NOT_FOUND:\s*(.*)$/s.exec(error.message);
+      if (notFound) {
+        return new AttachmentRouteError(
+          "ATTACHMENT_NOT_FOUND",
+          notFound[1] ?? error.message,
+          404,
+        );
+      }
+      const tooLarge = /^TOO_LARGE:\s*(.*)$/s.exec(error.message);
+      if (tooLarge) {
+        return new AttachmentRouteError(
+          "ATTACHMENT_TOO_LARGE",
+          tooLarge[1] ?? error.message,
+          413,
+        );
+      }
+      if (error.message.startsWith("Not implemented in soul-server-ts:")) {
+        return new AttachmentRouteError(
+          "ATTACHMENT_SOURCE_UNSUPPORTED",
+          "실행 노드가 다른 노드의 첨부를 읽는 기능을 지원하지 않습니다.",
+          501,
         );
       }
     }

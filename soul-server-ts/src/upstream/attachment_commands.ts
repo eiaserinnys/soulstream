@@ -5,6 +5,10 @@ import {
   type AttachmentStore,
   type SavedAttachment,
 } from "../attachments/file_manager.js";
+import {
+  AttachmentSourceTooLargeError,
+  type AttachmentSourceReader,
+} from "../attachments/source_file_reader.js";
 
 export interface UploadAttachmentParams {
   requestId: string;
@@ -46,6 +50,11 @@ export interface DeleteSessionAttachmentsParams {
 }
 
 export interface DownloadAttachmentParams {
+  requestId: string;
+  path?: string;
+}
+
+export interface ReadAttachmentSourceParams {
   requestId: string;
   path?: string;
 }
@@ -98,6 +107,15 @@ export interface DownloadAttachmentAck {
   size: number;
 }
 
+export interface ReadAttachmentSourceAck {
+  type: "read_attachment_source_result";
+  requestId: string;
+  content_b64: string;
+  content_type: string;
+  filename: string;
+  size: number;
+}
+
 export class AttachmentCommandError extends Error {
   constructor(message: string) {
     super(message);
@@ -115,9 +133,12 @@ export class AttachmentCommandError extends Error {
  * the generic sendError envelope.
  */
 export class AttachmentCommands {
-  constructor(private readonly store: AttachmentStore & {
-    importFileFromUrl?: (input: ImportSessionFileParams) => Promise<SavedAttachment>;
-  }) {}
+  constructor(
+    private readonly store: AttachmentStore & {
+      importFileFromUrl?: (input: ImportSessionFileParams) => Promise<SavedAttachment>;
+    },
+    private readonly sourceReader?: AttachmentSourceReader,
+  ) {}
 
   async importFromUrl(params: ImportSessionFileParams & { requestId: string }): Promise<UploadAttachmentAck> {
     if (!this.store.importFileFromUrl) throw new AttachmentCommandError("INVALID_REQUEST: 대용량 첨부를 지원하지 않습니다");
@@ -324,6 +345,38 @@ export class AttachmentCommands {
     } catch (err) {
       if (err instanceof FileNotFoundError) {
         throw new AttachmentCommandError(`NOT_FOUND: ${err.message}`);
+      }
+      if (err instanceof AttachmentError) {
+        throw new AttachmentCommandError(`INVALID_REQUEST: ${err.message}`);
+      }
+      throw err;
+    }
+  }
+
+  async readSource(params: ReadAttachmentSourceParams): Promise<ReadAttachmentSourceAck> {
+    if (!params.path) {
+      throw new AttachmentCommandError("INVALID_REQUEST: path 누락 또는 빈 문자열");
+    }
+    if (!this.sourceReader) {
+      throw new AttachmentCommandError("INVALID_REQUEST: 소스 파일 읽기를 지원하지 않습니다");
+    }
+
+    try {
+      const result = await this.sourceReader.readSource({ path: params.path });
+      return {
+        type: "read_attachment_source_result",
+        requestId: params.requestId,
+        content_b64: result.content.toString("base64"),
+        content_type: result.content_type,
+        filename: result.filename,
+        size: result.size,
+      };
+    } catch (err) {
+      if (err instanceof FileNotFoundError) {
+        throw new AttachmentCommandError(`NOT_FOUND: ${err.message}`);
+      }
+      if (err instanceof AttachmentSourceTooLargeError) {
+        throw new AttachmentCommandError(`TOO_LARGE: ${err.message}`);
       }
       if (err instanceof AttachmentError) {
         throw new AttachmentCommandError(`INVALID_REQUEST: ${err.message}`);
