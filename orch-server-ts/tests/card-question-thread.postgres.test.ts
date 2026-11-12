@@ -64,6 +64,7 @@ describe("card question threads keep the question open while user and assignee e
       ('thread-worker','thread-folder','node','worker','running','[]'),
       ('add-choice','thread-folder','node','worker','running','[]'),
       ('add-text','thread-folder','node','worker','running','[]'),
+      ('add-choice-more','thread-folder','node','worker','running','[]'),
       ('reject-worker','thread-folder','node','worker','running','[]'),
       ('j3-worker','thread-folder','node','worker','running','[]'),
       ('j5-asker','thread-folder','node','worker','running','[]'),
@@ -225,8 +226,8 @@ describe("card question threads keep the question open while user and assignee e
       expect(await cardRow(choiceCard)).toMatchObject({ status: "running", blocked_kind: null });
 
       messages.mockClear();
-      const withAdditionCard = await createCard("덧붙임 선택 덧글", "add-choice");
-      const withAdditionQuestion = await ask(withAdditionCard, "add-choice");
+      const withAdditionCard = await createCard("덧붙임 선택 덧글", "add-choice-more");
+      const withAdditionQuestion = await ask(withAdditionCard, "add-choice-more");
       await cards.answerQuestion({ ...human, cardId: withAdditionCard, questionId: withAdditionQuestion,
         mode: "choice", option: "중단", answer: "추가로 확인합니다", idempotencyKey: key() });
       await dispatcher.drain();
@@ -296,6 +297,7 @@ describe("card question threads keep the question open while user and assignee e
           payload: { questionId, body, idempotencyKey: key() } });
         expect(posted.statusCode).toBe(201);
       }
+      await dispatcher.drain();
       messages.mockClear();
 
       await reply(cardId, "j3-worker", firstQuestion, "첫째 답");
@@ -326,8 +328,11 @@ describe("card question threads keep the question open while user and assignee e
   it("lets the question creator reply only while the card has no assignee", async () => {
     const unassignedCard = await createCard("담당 없는 글타래");
     const unassignedQuestion = await ask(unassignedCard, "j5-asker");
+    await cards.addComment({ ...human, cardId: unassignedCard, questionId: unassignedQuestion, body: "무엇을 고를까요", idempotencyKey: key() });
+    await dispatcher.drain();
     await reply(unassignedCard, "j5-asker", unassignedQuestion, "질문 세션의 답");
-    expect(await cardRow(unassignedCard)).toMatchObject({ assignee_kind: null, assignee_session_id: null,
+    // 담당 세션이 없는 카드(에이전트 배정만 있음)에서 질문 세션의 답은 담당을 잡지 않는다.
+    expect(await cardRow(unassignedCard)).toMatchObject({ assignee_kind: "agent", assignee_session_id: null,
       status: "blocked", blocked_kind: "question" });
     expect(await questionRow(unassignedQuestion)).toMatchObject({ answer: null, withdrawn_at: null });
 
@@ -335,6 +340,7 @@ describe("card question threads keep the question open while user and assignee e
     const assignedQuestion = await ask(assignedCard, "j5-old");
     await cards.patchCard({ ...human, cardId: assignedCard, assignee: { kind: "session", sessionId: "j5-new" },
       idempotencyKey: key() });
+    await cards.addComment({ ...human, cardId: assignedCard, questionId: assignedQuestion, body: "누가 답하나요", idempotencyKey: key() });
     await dispatcher.drain();
     messages.mockClear();
     await expect(reply(assignedCard, "j5-old", assignedQuestion, "옛 담당의 답"))

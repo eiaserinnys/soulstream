@@ -36,7 +36,7 @@ reject('ADD_COMMENT','questionMissing','questionMissing',and([fact('hasQuestion'
 reject('ADD_COMMENT','questionWithdrawn','questionWithdrawn',and([fact('hasQuestion'),fact('targetQuestion','withdrawn')]));
 reject('ADD_COMMENT','questionItem','questionItem',and([fact('hasQuestion'),fact('hasItem')]));
 reject('ADD_COMMENT','questionSpoken','questionSpoken',and([fact('hasQuestion'),fact('requestedSpoken')]));
-reject('ADD_COMMENT','replyOwner','replyOwner',and([fact('reply'),not(or([effectiveOwner,and([fact('hasQuestion'),inside('a_none'),actor('author')])]))]));
+reject('ADD_COMMENT','replyOwner','replyOwner',and([fact('reply'),not(or([effectiveOwner,and([fact('hasQuestion'),not(inside('a_session')),actor('author')])]))]));
 reject('ADD_COMMENT','replyLength','replyLength',and([fact('reply'),or([fact('hasItems'),fact('hasQuestion')]),fact('replyLength','tooLong')]));
 reject('ADD_COMMENT','userInput','replyUserInput',and([fact('reply'),or([fact('hasItems'),fact('hasQuestion')]),not(fact('userInput'))]));
 reject('ADD_COMMENT','itemMissing','itemMissing',and([fact('hasItem'),not(fact('itemExists'))]));
