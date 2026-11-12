@@ -1754,7 +1754,13 @@ BEGIN
            execution_command_id = NULL,
            updated_at = p_updated_at
      WHERE session.session_id = p_session_id
-       AND session.status NOT IN ('completed', 'error', 'interrupted')
+       AND (
+           session.status NOT IN ('completed', 'error', 'interrupted')
+           OR (
+               session.status = 'interrupted'
+               AND session.termination_event_id IS NULL
+           )
+       )
        AND (
            session.termination_event_id IS NULL
            OR session.termination_event_id < p_terminal_event_id

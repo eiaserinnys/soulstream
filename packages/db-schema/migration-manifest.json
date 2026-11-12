@@ -628,6 +628,10 @@
     {
       "id": "155_claude_background_tasks_startup_reconciled.sql",
       "sha256": "3ac55c3b236375190bee3c99f557868f47b3b17ca857568ef6fb3f644ee2406f"
+    },
+    {
+      "id": "156_session_terminal_applies_to_disconnect_interrupted.sql",
+      "sha256": "8828639db20ee7cfdb574bb9b31a2e347881bbef1b6f4e2c0b0f61f0b75947fe"
     }
   ]
 }

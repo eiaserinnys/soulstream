@@ -696,7 +696,8 @@ describe("SessionMutationRepository", () => {
     expect(statements).toContain("execution_registration_id IS NULL");
     expect(statements).toContain('session.updated_at = target."updatedAt"');
     expect(statements).toContain('session.execution_registration_id IS NOT DISTINCT FROM target."executionRegistrationId"');
-    expect(statements).toContain("status IN ('completed', 'error', 'interrupted')");
+    expect(statements).toContain("status IN ('running', 'initializing')");
+    expect(statements).not.toContain("status IN ('completed', 'error', 'interrupted')");
     expect(statements).toContain("termination_event_id IS NULL");
     expect(statements.match(/updated_at <=/g)).toHaveLength(1);
     expect(calls.some((call) => call.values.some(
@@ -713,7 +714,7 @@ describe("SessionMutationRepository", () => {
     const repository = new SessionMutationRepository(sql);
 
     await expect(repository.listRunningNodeIds()).resolves.toEqual(["node-b", "node-a"]);
-    expect(calls[0]?.text).toContain("status = 'running'");
+    expect(calls[0]?.text).toContain("status IN ('running', 'initializing')");
     expect(calls[0]?.text).toContain("node_id IS NOT NULL");
   });
 });
