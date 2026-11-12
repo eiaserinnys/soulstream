@@ -25,10 +25,12 @@ function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps
   </View>;
 }
 
-export function PersistentReportPager({ entries: rawEntries, index: rawIndex, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, onOpenCardDetails, expandedKey: controlledExpandedKey, onExpandedKeyChange, completion, verticalList = false, revealKey, onRevealed }: {
+export function PersistentReportPager({ entries: rawEntries, index: rawIndex, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, renderQuestion, onOpenCardDetails, expandedKey: controlledExpandedKey, onExpandedKeyChange, completion, verticalList = false, revealKey, onRevealed }: {
   expandedKey?: string | null; onExpandedKeyChange?(key: string | null): void;
   renderCardDetails?(entry: PersistentReportEntry): React.ReactNode;
   renderCardStatus?(entry: PersistentReportEntry): React.ReactNode;
+  /** 카드 #1197: 질문 장은 본문과 동작 줄을 이 함수가 그린다. */
+  renderQuestion?(entry: PersistentReportEntry, controls: { expanded: boolean; expand(): void }): { body: React.ReactNode; actions: React.ReactNode; meta?: React.ReactNode } | null;
   onOpenCardDetails?(entry: PersistentReportEntry): void;
   entries: PersistentReportEntry[]; index: number; api: ApiClient | null;
   onSelect(index: number): void; onDismiss(key: string): Promise<boolean | void>;
@@ -202,6 +204,7 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
             focusedVerticalKey.current = focused ? entry.key : null;
             verticalScroll.onFocusChange(focused);
           }}><PersistentReportSheet entry={entry}
+            question={renderQuestion?.(entry, { expanded: expandedKey === entry.key, expand: () => { if (onOpenCardDetails) onOpenCardDetails(entry); else setExpandedKey(entry.key); } })}
             expandedContent={expandable && expandedKey === entry.key ? renderCardDetails?.(entry) : undefined}
             cardStatus={expandable ? renderCardStatus?.(entry) : undefined}
             onToggleCard={expandable && (renderCardDetails || onOpenCardDetails) ? () => {
@@ -271,6 +274,7 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
           void completion.undo().then(ok => { if (!ok) setNotice('되돌리지 못했어.'); });
         } } : undefined;
         return <PersistentReportSheet key={JSON.stringify([sessionId, entry.key])} entry={entry}
+        question={renderQuestion?.(entry, { expanded: expandedKey === entry.key, expand: () => { if (onOpenCardDetails) onOpenCardDetails(entry); else setExpandedKey(entry.key); } })}
         expandedContent={expandable && expandedKey === entry.key ? renderCardDetails?.(entry) : undefined}
         cardStatus={expandable ? renderCardStatus?.(entry) : undefined}
         onToggleCard={expandable && (renderCardDetails || onOpenCardDetails) ? () => {

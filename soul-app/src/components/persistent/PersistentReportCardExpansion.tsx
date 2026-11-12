@@ -14,6 +14,7 @@ import { CardCommentComposer, type CardCommentComposerHandle } from '../planner/
 import { CardNowPanel } from '../planner/CardNowPanel';
 import { cardDetailStyles } from '../planner/CardDetail.styles';
 import { CardTimeline } from '../planner/CardTimeline';
+import { cardQuestionPlaceholder, setCardQuestionTarget, useCardQuestionTarget } from '../planner/CardQuestionBlock';
 import { SheetErrorNotice, sheetErrorDetail } from '../planner/SheetErrorNotice';
 import { GlassButton } from '../GlassSurface';
 import { ReportComposerFocusContext } from './useReportComposerScroll';
@@ -36,6 +37,7 @@ export function PersistentReportCardExpansion({ api, entry }: {
   const [detailRefreshing, setDetailRefreshing] = useState(false);
   const composer = useRef<CardCommentComposerHandle>(null);
   const openLink = useOpenContentLink();
+  const questionTarget = useCardQuestionTarget(entry.card_id ?? entry.key);
 
   useEffect(() => {
     if (entry.card_id || number === null || !api) {
@@ -109,7 +111,9 @@ export function PersistentReportCardExpansion({ api, entry }: {
       question={question} cardLoaded locked={actions.pending || comments.pending || composerBusy} sending={actions.pending || comments.pending}
       onBusyChange={onBusyChange} sendComment={comments.send} runMutation={actions.run} embedded
       onInputFocusChange={onInputFocusChange}
-      placeholder={question ? '질문에 답하기' : '커멘트'} targetItem={targetItem}
+      placeholder={targetItem ? '커멘트' : cardQuestionPlaceholder(questionTarget.target, Boolean(question))} targetItem={targetItem}
+      questionTarget={targetItem ? null : questionTarget.target} onReleaseQuestionTarget={() => setCardQuestionTarget(entry.card_id ?? entry.key, null)}
+      focusRequest={questionTarget.focus}
       onReleaseTarget={() => setTargetItem(null)} onTargetSent={() => setTargetItem(null)} />
   </View>;
 }

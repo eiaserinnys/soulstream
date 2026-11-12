@@ -35,6 +35,7 @@ import { AppKeyboardAvoidingView } from '../../AppKeyboardAvoidingView';
 import { usePhoneRailActions } from '../../../navigation/phoneRailActions';
 import { useUIStore } from '../../../store/uiStore';
 import { LayoutContinuityProvider, useLayoutContinuity } from '../../../navigation/LayoutContinuityContext';
+import { setCardQuestionTarget } from '../CardQuestionBlock';
 
 // Count the real component boundaries without memoizing the test wrappers.
 const mockRenders = { detail: 0, timeline: 0, sessions: 0, images: 0, rows: [] as string[] };
@@ -109,6 +110,7 @@ beforeEach(async () => {
   useUIStore.setState({ pendingCardQuestionFocus: null });
   useSessionStore.setState({ sessions: { s1: detail.sessions[0] } });
   useNodeConnectivityStore.getState().reset();
+  setCardQuestionTarget(card.id, null);
   mockControlLocks.input = []; mockControlLocks.header = [];
 });
 afterEach(() => jest.restoreAllMocks());
@@ -293,7 +295,7 @@ test('카드 상세 커멘트 입력은 대화 입력과 같은 하단 여백 �
   ));
 });
 
-test('질문 옵션을 고정 입력에 채우고 답을 전송하며 보고는 접혀 있다', async () => {
+test('질문 선택지는 누르면 바로 답을 보내고 덧붙이기 대상을 세우며 보고는 접혀 있다', async () => {
   const api = { getCard: jest.fn().mockResolvedValue(detail), answerCardQuestion: jest.fn().mockResolvedValue({ card, folderId: card.folderId }) };
   const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('원문')).toBeTruthy());
@@ -301,9 +303,11 @@ test('질문 옵션을 고정 입력에 채우고 답을 전송하며 보고는 
   expect(screen.queryByTestId('card-report-html-latest')).toBeNull();
   fireEvent.press(screen.getByLabelText('report-latest 자세히'));
   expect(screen.getByTestId('card-report-html-latest')).toBeTruthy();
-  fireEvent.press(screen.getByText('파랑'));
-  await act(async () => fireEvent.press(screen.getByLabelText('커멘트 보내기')));
-  expect(api.answerCardQuestion).toHaveBeenCalledWith(card.id, 'question-1', '파랑', expect.any(String));
+  await act(async () => fireEvent.press(screen.getByText('파랑')));
+  expect(api.answerCardQuestion).toHaveBeenCalledWith(card.id, 'question-1',
+    { mode: 'choice', option: '파랑', idempotencyKey: expect.any(String) });
+  expect(screen.getByTestId('card-question-target')).toBeTruthy();
+  expect(screen.getByText('덧붙이기: 파랑')).toBeTruthy();
   expect(screen.getByTestId('settings-segment-card-detail-comments').props.accessibilityState.selected).toBe(true);
   fireEvent.press(screen.getByTestId('settings-segment-card-detail-sessions'));
   expect(screen.getByText('실행 세션')).toBeTruthy();
@@ -319,13 +323,14 @@ test('철회 질문을 표시하고 답 선택에서 건너뛴다', async () => 
 
   expect(screen.getByText('철회됨')).toBeTruthy();
   expect(screen.getByTestId('card-question-withdrawal-question-question-withdrawn').props.children).toBe(withdrawn.withdrawalReason);
-  expect(screen.queryByLabelText('A안')).toBeNull();
-  expect(screen.queryByLabelText('B안')).toBeNull();
+  expect(screen.getByLabelText('A안').props.accessibilityState).toMatchObject({ disabled: true });
+  expect(screen.getByLabelText('B안').props.accessibilityState).toMatchObject({ disabled: true });
   expect(screen.getByLabelText('파랑')).toBeTruthy();
 
-  fireEvent.changeText(screen.getByPlaceholderText('커멘트'), '선택한 답');
-  await act(async () => fireEvent.press(screen.getByLabelText('커멘트 보내기')));
-  expect(api.answerCardQuestion).toHaveBeenCalledWith(card.id, 'question-1', '선택한 답', expect.any(String));
+  fireEvent.changeText(screen.getByPlaceholderText('다르게 답하기'), '선택한 답');
+  await act(async () => fireEvent.press(screen.getByLabelText('답 보내기')));
+  expect(api.answerCardQuestion).toHaveBeenCalledWith(card.id, 'question-1',
+    { mode: 'text', answer: '선택한 답', idempotencyKey: expect.any(String) });
 });
 
 test('탭 밖에서 보낸 뒤 안내는 불투명한 알약 표면으로 목록과 구분한다', async () => {
@@ -597,25 +602,23 @@ test('커멘트 접수 때 비우고 추가·저장 교체는 해당 항목만 �
   expect(screen.getByPlaceholderText('커멘트').props.value).toBe('');
 });
 
-test('선택지 답변은 저장·상세 재조회 대기 동안 비고 재조회에서 바뀐 항목만 렌더한다', async () => {
+test('선택지 답변은 누르면 바로 저장하고 저장·상세 재조회 뒤 바뀐 항목만 렌더한다', async () => {
   const save = deferred<any>(), refresh = deferred<CardDetail>();
   const api = { getCard: jest.fn().mockResolvedValueOnce(detail).mockImplementation(() => refresh.promise), answerCardQuestion: jest.fn(() => save.promise) };
   const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('파랑')).toBeTruthy());
-  fireEvent.press(screen.getByText('파랑'));
-  expect(screen.getByPlaceholderText('커멘트').props.value).toBe('파랑');
-  await act(async () => fireEvent.press(screen.getByLabelText('커멘트 보내기')));
-  expect(screen.getByPlaceholderText('커멘트').props.value).toBe('');
+  await act(async () => fireEvent.press(screen.getByText('파랑')));
+  expect(api.answerCardQuestion).toHaveBeenCalledWith(card.id, 'question-1',
+    { mode: 'choice', option: '파랑', idempotencyKey: expect.any(String) });
+  expect(screen.getByTestId('card-question-target')).toBeTruthy();
   expect(useDraftStore.getState().drafts).toEqual({});
   await act(async () => save.resolve({ card: { ...card, version: 5 }, folderId: card.folderId }));
-  expect(screen.getByPlaceholderText('커멘트').props.value).toBe('');
   resetRenders();
   const updated = JSON.parse(JSON.stringify(detail));
   updated.card.version = 5;
   updated.questions[0].answer = '파랑'; updated.questions[0].answeredAt = '2026-10-05';
   await act(async () => refresh.resolve(updated));
   expect([...new Set(mockRenders.rows)].sort()).toEqual(['answer-question-1', 'question-question-1']);
-  expect(screen.getByPlaceholderText('커멘트').props.value).toBe('');
 });
 
 test.each([false, true])('전송 실패는 원문을 복원하고 새 글이 있으면 합친다: %s', async hasNewText => {
@@ -662,8 +665,10 @@ test.each([false, true])('첨부 업로드·삭제·실패 복원은 입력창 �
   picker.getDocumentAsync.mockReturnValueOnce(selection.promise).mockResolvedValue(picked);
   const screen = render(<CardDetailContent api={api as any} cardId={card.id} onClose={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('원문')).toBeTruthy());
+  const placeholder = question ? '다르게 답하기' : '커멘트';
+  const sendLabel = question ? '답 보내기' : '커멘트 보내기';
   await act(async () => fireEvent.press(screen.getByTestId('chat-composer-attach-button')));
-  expect(screen.getByPlaceholderText('커멘트').props.editable).toBe(false);
+  expect(screen.getByPlaceholderText(placeholder).props.editable).toBe(false);
   await act(async () => selection.resolve(picked));
   await waitFor(() => expect(screen.getByLabelText('capture.png 첨부 제거')).toBeTruthy());
   expect(api.uploadAttachment).toHaveBeenCalledWith('s1', 'node-1', expect.objectContaining({ name: 'capture.png' }),
@@ -672,12 +677,12 @@ test.each([false, true])('첨부 업로드·삭제·실패 복원은 입력창 �
   expect(screen.queryByLabelText('capture.png 첨부 제거')).toBeNull();
   await act(async () => fireEvent.press(screen.getByTestId('chat-composer-attach-button')));
   await waitFor(() => expect(screen.getByLabelText('capture.png 첨부 제거')).toBeTruthy());
-  fireEvent.changeText(screen.getByPlaceholderText('커멘트'), '첨부 원문');
-  await act(async () => fireEvent.press(screen.getByLabelText('커멘트 보내기')));
-  expect(screen.getByPlaceholderText('커멘트').props.value).toBe('');
+  fireEvent.changeText(screen.getByPlaceholderText(placeholder), '첨부 원문');
+  await act(async () => fireEvent.press(screen.getByLabelText(sendLabel)));
+  expect(screen.getByPlaceholderText(placeholder).props.value).toBe('');
   expect(screen.queryByLabelText('capture.png 첨부 제거')).toBeNull();
   await act(async () => saved.reject(new Error('첨부 저장 실패')));
-  expect(screen.getByPlaceholderText('커멘트').props.value).toBe('첨부 원문');
+  expect(screen.getByPlaceholderText(placeholder).props.value).toBe('첨부 원문');
   expect(screen.getByLabelText('capture.png 첨부 제거')).toBeTruthy();
   expect(Alert.alert).toHaveBeenCalledWith(question ? '카드 변경 실패' : '커멘트 저장 실패', '첨부 저장 실패');
 });

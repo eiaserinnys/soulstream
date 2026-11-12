@@ -13,6 +13,7 @@ import { ChatComposer } from '../chat/ChatComposer';
 import { makeStyles as makeChatStyles } from '../chat/ChatBody.styles';
 import { buildAttachmentUri } from '../events/UserMessage';
 import { CompactTouchTarget } from '../CompactTouchTarget';
+import { cardQuestionTargetText, type CardQuestionTarget } from './CardQuestionBlock';
 
 export interface CardCommentComposerHandle { chooseAnswer(answer: string): void; focus(): void }
 interface Props {
@@ -25,7 +26,7 @@ interface Props {
   locked: boolean;
   sending: boolean;
   onBusyChange(busy: boolean): void;
-  sendComment(body: string, onAccepted?: () => void, itemId?: number): Promise<boolean>;
+  sendComment(body: string, onAccepted?: () => void, target?: { itemId?: number; questionId?: string }): Promise<boolean>;
   runMutation(mutation: () => Promise<CardMutationResult>, onAccepted?: () => void): Promise<boolean>;
   embedded?: boolean;
   placeholder?: string;
@@ -34,11 +35,16 @@ interface Props {
   onTargetSent?(): void;
   onSent?(): void;
   onInputFocusChange?(focused: boolean): void;
+  /** 질문 장의 되묻기와 덧붙이기 대상. 고칠 점 대상과 같은 줄에 선다. */
+  questionTarget?: CardQuestionTarget | null;
+  onReleaseQuestionTarget?(): void;
+  focusRequest?: number;
 }
 
 export const CardCommentComposer = memo(forwardRef<CardCommentComposerHandle, Props>(function CardCommentComposer({
   api, cardId, sessionId, nodeId, question, cardLoaded, locked, sending, onBusyChange, sendComment, runMutation,
   embedded = false, placeholder = '커멘트', targetItem, onReleaseTarget, onTargetSent, onSent, onInputFocusChange,
+  questionTarget, onReleaseQuestionTarget, focusRequest = 0,
 }, ref) {
   const t = useTokens();
   const chatStyles = useMemo(() => makeChatStyles(t), [t]);
@@ -54,6 +60,7 @@ export const CardCommentComposer = memo(forwardRef<CardCommentComposerHandle, Pr
   const disabled = locked || busy;
   useEffect(() => { onBusyChange(busy); }, [busy, onBusyChange]);
   useImperativeHandle(ref, () => ({ chooseAnswer: setText, focus: () => inputRef.current?.focus() }), [setText]);
+  useEffect(() => { if (focusRequest > 0) inputRef.current?.focus(); }, [focusRequest]);
 
   const pickAttachment = () => {
     if (!cardLoaded) return;
@@ -72,12 +79,16 @@ export const CardCommentComposer = memo(forwardRef<CardCommentComposerHandle, Pr
       attachments.clearAttachments();
     };
     const ok = targetItem
-      ? await sendComment(body, onAccepted, targetItem.id)
-      : question
-        ? await runMutation(() => api.answerCardQuestion(cardId, question.id, body, cardOperationId()), onAccepted)
-        : await sendComment(body, onAccepted);
+      ? await sendComment(body, onAccepted, { itemId: targetItem.id })
+      : questionTarget
+        ? await sendComment(body, onAccepted, { questionId: questionTarget.questionId })
+        : question
+          ? await runMutation(() => api.answerCardQuestion(cardId, question.id,
+            { mode: 'text', answer: body, idempotencyKey: cardOperationId() }), onAccepted)
+          : await sendComment(body, onAccepted);
     if (ok) {
       if (targetItem) onTargetSent?.();
+      else if (questionTarget) onReleaseQuestionTarget?.();
       onSent?.();
     }
     if (!ok && accepted) {
@@ -90,6 +101,11 @@ export const CardCommentComposer = memo(forwardRef<CardCommentComposerHandle, Pr
     {targetItem ? <View testID="card-comment-target" style={[composerStyles.target, { backgroundColor: t.colors.warningBg, borderColor: t.colors.warning }]}>
       <Text style={composerStyles.targetText} numberOfLines={1}>{cardItemTargetText(targetItem.id, targetItem.title)}</Text>
       <CompactTouchTarget accessibilityRole="button" accessibilityLabel="대상 해제" onPress={onReleaseTarget}>
+        <Text style={composerStyles.releaseText}>해제</Text>
+      </CompactTouchTarget>
+    </View> : questionTarget ? <View testID="card-question-target" style={[composerStyles.target, { backgroundColor: t.colors.warningBg, borderColor: t.colors.warning }]}>
+      <Text style={composerStyles.targetText} numberOfLines={1}>{cardQuestionTargetText(questionTarget)}</Text>
+      <CompactTouchTarget accessibilityRole="button" accessibilityLabel="대상 해제" onPress={onReleaseQuestionTarget}>
         <Text style={composerStyles.releaseText}>해제</Text>
       </CompactTouchTarget>
     </View> : null}

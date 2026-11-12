@@ -100,14 +100,18 @@ export function createReviewCardApi(onStatusChange: (id: string, status: CardSta
     addCardComment: async (cardId, input) => {
       const detail = details[cardId] ?? details[card.id];
       const comment: CardComment = { id: input.idempotencyKey, cardId: detail.card.id, authorKind: 'user', authorId: null, sessionId: null,
-        kind: 'comment', ...(input.itemId === undefined ? {} : { itemId: input.itemId }), body: input.body, createdAt: new Date().toISOString() };
+        kind: 'comment', ...(input.itemId === undefined ? {} : { itemId: input.itemId }),
+        ...(input.questionId === undefined ? {} : { questionId: input.questionId }), body: input.body, createdAt: new Date().toISOString() };
       const next = { ...detail, comments: [...(detail.comments ?? []), comment] };
       details = { ...details, [detail.card.id]: next };
       return comment;
     },
-    answerCardQuestion: async (_cardId, questionId, answer) => {
+    answerCardQuestion: async (_cardId, questionId, input) => {
+      const answer = input.mode === 'choice' ? input.option : input.answer;
       const detail = details[card.id];
-      const next = { ...detail, questions: detail.questions.map(item => item.id === questionId ? { ...item, answer, answeredAt: new Date().toISOString() } : item) };
+      const next = { ...detail, questions: detail.questions.map(item => item.id === questionId
+        ? { ...item, answer, answeredAt: new Date().toISOString(),
+          ...(input.mode === 'choice' ? { selectedOption: input.option } : { selectedOption: null }) } : item) };
       details = { ...details, [card.id]: next };
       return { folderId: next.card.folderId, card: next.card };
     },

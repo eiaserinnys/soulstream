@@ -60,7 +60,8 @@ test('resolves a single card number, shows only its latest comments, and keeps i
         kind: 'comment', ...(input.itemId === undefined ? {} : { itemId: input.itemId }), body: input.body, createdAt: new Date().toISOString() };
       saved.push(comment); detail = { ...detail, comments: [...(detail.comments ?? []), comment] }; return comment;
     }),
-    answerCardQuestion: jest.fn().mockImplementation(async (_cardId, questionId, answer) => {
+    answerCardQuestion: jest.fn().mockImplementation(async (_cardId, questionId, input) => {
+      const answer = input.mode === 'choice' ? input.option : input.answer;
       detail = { ...detail, questions: detail.questions.map(question => question.id === questionId
         ? { ...question, answer, answeredAt: new Date().toISOString() } : question) };
       return { folderId: detail.card.folderId, card: detail.card };
@@ -77,14 +78,15 @@ test('resolves a single card number, shows only its latest comments, and keeps i
 
   fireEvent.press(screen.getByTestId('card-check-item-1-fix'));
   expect(screen.getByTestId('card-comment-target')).toBeTruthy();
-  fireEvent.changeText(screen.getByPlaceholderText('질문에 답하기'), '항목을 고쳐 주세요.');
-  await act(async () => fireEvent.press(screen.getByLabelText('답 보내기')));
+  fireEvent.changeText(screen.getByPlaceholderText('커멘트'), '항목을 고쳐 주세요.');
+  await act(async () => fireEvent.press(screen.getByLabelText('커멘트 보내기')));
   expect(apiMock.addCardComment).toHaveBeenCalledWith(card.id, expect.objectContaining({ body: '항목을 고쳐 주세요.', itemId: 1 }));
   expect(apiMock.answerCardQuestion).not.toHaveBeenCalled();
 
-  fireEvent.changeText(screen.getByPlaceholderText('질문에 답하기'), '네, 진행해 주세요.');
+  fireEvent.changeText(screen.getByPlaceholderText('다르게 답하기'), '네, 진행해 주세요.');
   await act(async () => fireEvent.press(screen.getByLabelText('답 보내기')));
-  await waitFor(() => expect(apiMock.answerCardQuestion).toHaveBeenCalledWith(card.id, 'question-1', '네, 진행해 주세요.', expect.any(String)));
+  await waitFor(() => expect(apiMock.answerCardQuestion).toHaveBeenCalledWith(card.id, 'question-1',
+    { mode: 'text', answer: '네, 진행해 주세요.', idempotencyKey: expect.any(String) }));
   expect(screen.getByPlaceholderText('커멘트')).toBeTruthy();
 
   fireEvent.changeText(screen.getByPlaceholderText('커멘트'), '일반 카드 커멘트');
@@ -139,20 +141,20 @@ test.each([false, true])('focused card composer follows reading growth and viewp
   </ChatUiControllerProvider>);
   measurePersistentReports(screen);
   fireEvent.press(screen.getByTestId('report-title'));
-  await waitFor(() => expect(screen.getByPlaceholderText('질문에 답하기')).toBeTruthy());
+  await waitFor(() => expect(screen.getByPlaceholderText('다르게 답하기')).toBeTruthy());
   const reading = screen.getByTestId('report-scroll');
   fireEvent(reading, 'contentSizeChange', 318, 1000);
   expect(scrollToEnd).not.toHaveBeenCalled();
-  fireEvent(screen.getByPlaceholderText('질문에 답하기'), 'focus');
+  fireEvent(screen.getByPlaceholderText('다르게 답하기'), 'focus');
   await waitFor(() => expect(scrollToEnd).toHaveBeenCalled());
   scrollToEnd.mockClear();
-  fireEvent.changeText(screen.getByPlaceholderText('질문에 답하기'), '여러 줄\n커멘트를\n길게\n입력합니다.');
+  fireEvent.changeText(screen.getByPlaceholderText('다르게 답하기'), '여러 줄\n커멘트를\n길게\n입력합니다.');
   fireEvent(reading, 'contentSizeChange', 318, 1184);
   await waitFor(() => expect(scrollToEnd).toHaveBeenCalled());
   scrollToEnd.mockClear();
   fireEvent(reading, 'layout', { nativeEvent: { layout: { height: 240 } } });
   await waitFor(() => expect(scrollToEnd).toHaveBeenCalled());
-  fireEvent(screen.getByPlaceholderText('질문에 답하기'), 'blur');
+  fireEvent(screen.getByPlaceholderText('다르게 답하기'), 'blur');
   scrollToEnd.mockClear();
   fireEvent(reading, 'contentSizeChange', 318, 1200);
   expect(scrollToEnd).not.toHaveBeenCalled();
@@ -169,10 +171,10 @@ test('vertical report list keeps a focused earlier card visible instead of jumpi
       onSelect={jest.fn()} onDismiss={jest.fn()} onFocusComposer={jest.fn()}
       renderCardDetails={item => <PersistentReportCardExpansion api={api} entry={item} />} />
   </ChatUiControllerProvider>);
-  await waitFor(() => expect(screen.getByPlaceholderText('질문에 답하기')).toBeTruthy());
+  await waitFor(() => expect(screen.getByPlaceholderText('다르게 답하기')).toBeTruthy());
   fireEvent(screen.getByTestId('report-track'), 'layout', { nativeEvent: { layout: { width: 318, height: 300 } } });
   fireEvent(screen.getByTestId('report-list-entry-card_531'), 'layout', { nativeEvent: { layout: { y: 40, height: 400 } } });
-  fireEvent(screen.getByPlaceholderText('질문에 답하기'), 'focus');
+  fireEvent(screen.getByPlaceholderText('다르게 답하기'), 'focus');
   await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ y: 140, animated: false }));
   screen.unmount();
   scrollTo.mockRestore();
