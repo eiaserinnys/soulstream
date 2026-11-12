@@ -4,6 +4,25 @@ import type { EventIngressResult } from "./event_ingress_types.js";
 const DEFAULT_FAILURE_THRESHOLD = 5;
 const DEFAULT_RETRY_DELAYS_MS = [250, 500, 1_000, 2_000] as const;
 
+const TRANSIENT_SQLSTATE_CODES = new Set([
+  "40P01", // deadlock_detected
+  "40001", // serialization_failure
+  "55P03", // lock_not_available
+  "57014", // query_canceled
+  "57P01", // admin_shutdown
+  "57P02", // crash_shutdown
+  "57P03", // cannot_connect_now
+]);
+// SQLSTATE class 08: connection_exception, e.g. 08000, 08003, 08006, 08P01.
+const TRANSIENT_SQLSTATE_CLASS_PATTERN = /^08[0-9A-Z]{3}$/;
+const TRANSIENT_CONNECTION_CODES = new Set([
+  "ECONNRESET",
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "EPIPE",
+]);
+const TRANSIENT_CONNECTION_MESSAGE_PATTERN = /Connection terminated/i;
+
 type HealthProbeSql = {
   (
     strings: TemplateStringsArray,
@@ -16,6 +35,41 @@ export type EventIngressRetryPolicyOptions = {
   retryDelaysMs?: readonly number[];
   sleep?: (delayMs: number) => Promise<void>;
 };
+
+export type EventIngressFailureClass = "transient" | "event";
+
+/**
+ * Transient failures belong to the database connection or its concurrency
+ * control, not to the envelope, so they never advance an event's poison count.
+ * Everything else is an event failure and keeps the five-attempt budget.
+ */
+export function classifyEventIngressFailure(
+  error: unknown,
+): EventIngressFailureClass {
+  const candidate =
+    error && typeof error === "object"
+      ? (error as { code?: unknown; message?: unknown })
+      : undefined;
+  const rawCode = candidate?.code;
+  const code =
+    typeof rawCode === "string" || typeof rawCode === "number"
+      ? String(rawCode)
+      : undefined;
+  if (
+    code !== undefined
+    && (
+      TRANSIENT_SQLSTATE_CODES.has(code)
+      || TRANSIENT_SQLSTATE_CLASS_PATTERN.test(code)
+      || TRANSIENT_CONNECTION_CODES.has(code)
+    )
+  ) {
+    return "transient";
+  }
+  return candidate && typeof candidate.message === "string"
+    && TRANSIENT_CONNECTION_MESSAGE_PATTERN.test(candidate.message)
+    ? "transient"
+    : "event";
+}
 
 export class EventIngressRetryPolicy {
   readonly failureThreshold: number;
@@ -82,9 +136,10 @@ export class EventIngressRetryPolicy {
     };
   }
 
-  async waitForRetry(failureCounts: readonly number[]): Promise<void> {
+  /** `attemptCounts` are one-based retry stages; the last delay repeats. */
+  async waitForRetry(attemptCounts: readonly number[]): Promise<void> {
     const delayMs = Math.max(
-      ...failureCounts.map(
+      ...attemptCounts.map(
         (count) =>
           this.retryDelaysMs[
             Math.min(count - 1, this.retryDelaysMs.length - 1)
