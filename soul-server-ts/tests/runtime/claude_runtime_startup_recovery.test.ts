@@ -27,6 +27,30 @@ describe("ClaudeRuntimeStartupRecovery", () => {
     expect(logger.error).toHaveBeenCalledOnce();
   });
 
+  it("starts queued delivery recovery without waiting for an unfinished background cleanup", async () => {
+    const queued = vi.fn(async () => ({ claimed: 0, settled: 0 }));
+    const recovery = new ClaudeRuntimeStartupRecovery({
+      recoverBackgroundGenerations: () => new Promise(() => {}),
+      recoverQueuedDeliveries: queued,
+      logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      nodeId: "node-a",
+    });
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    await expect(Promise.race([
+      recovery.afterRunnerRecovery(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error("queued recovery waited for background cleanup")),
+          250,
+        );
+      }),
+    ])).resolves.toBeUndefined();
+    clearTimeout(timer);
+
+    expect(queued).toHaveBeenCalledOnce();
+  });
+
   it("waits for runner convergence before taking its one queued snapshot", async () => {
     const recoverQueuedDeliveries = vi.fn().mockResolvedValue({
       claimed: 0,

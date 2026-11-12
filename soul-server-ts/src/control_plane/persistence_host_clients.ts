@@ -36,6 +36,12 @@ export {
 export type { ClaudeBackgroundTaskGenerationRow, ObserveClaudeBackgroundTaskGenerationParams, ResolveClaudeBackgroundTaskGenerationResult, TerminalizeClaudeBackgroundTaskGenerationParams, TerminalizeClaudeBackgroundTaskGenerationResult } from "./claude_background_generation_host_client.js";
 export type { ClaudeBackgroundTaskRow, ClaudeBackgroundTaskStatus, ClaudeBackgroundTerminalStatus, ObserveClaudeBackgroundTaskParams, TerminalizeClaudeBackgroundTaskParams, TerminalizeClaudeBackgroundTaskResult } from "./claude_background_legacy_host_types.js";
 
+/** Primary-key pair of one node-owned background task row. */
+export interface ClaudeBackgroundTaskKey {
+  sessionId: string;
+  taskId: string;
+}
+
 export type SessionTransitionFields = Pick<
   SessionUpdateFields,
   | "status"
@@ -454,6 +460,14 @@ export class ClaudeRuntimeHostClient {
   terminalForNode(sourceNode: string, limit = 1_000): Promise<ClaudeBackgroundTaskRow[]> {
     return this.transport.request(
       "claude-runtime", "terminal_background_tasks_for_node", [sourceNode, limit],
+    );
+  }
+  markStartupReconciled(
+    sourceNode: string,
+    keys: readonly ClaudeBackgroundTaskKey[],
+  ): Promise<number> {
+    return this.transport.request(
+      "claude-runtime", "mark_background_tasks_startup_reconciled", [sourceNode, keys],
     );
   }
   observeGeneration(

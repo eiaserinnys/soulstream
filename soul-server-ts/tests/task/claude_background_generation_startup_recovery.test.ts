@@ -18,6 +18,7 @@ describe("Claude background generation upgrade recovery", () => {
       repository: {
         terminalForNode: vi.fn(async () => [legacyTerminal("toolu-A")]),
         getGeneration: vi.fn(async () => null),
+        markStartupReconciled: vi.fn(async () => 1),
       } as never,
       lifecycle: { observe } as never,
       recordRelationConsumed: vi.fn(async () => undefined),
@@ -50,6 +51,7 @@ describe("Claude background generation upgrade recovery", () => {
 
     await startup.afterRunnerRecovery();
     await startup.afterRunnerRecovery();
+    await startup.stop();
 
     expect(observe).toHaveBeenCalledOnce();
     expect(loadMessages).toHaveBeenCalledWith("sdk-session", expect.objectContaining({
@@ -81,6 +83,7 @@ describe("Claude background generation upgrade recovery", () => {
         repository: {
           terminalForNode: vi.fn(async () => [legacyTerminal("toolu-A")]),
           getGeneration: vi.fn(async () => null),
+          markStartupReconciled: vi.fn(async () => 1),
         } as never,
         lifecycle: { observe } as never,
         recordRelationConsumed: vi.fn(async () => undefined),
@@ -109,13 +112,15 @@ describe("Claude background generation upgrade recovery", () => {
     }
   });
 
-  it("does not read the profile cwd when a bound recovery worktree is unavailable", async () => {
+  it("closes an unavailable worktree row as skipped, marks it, and logs no error", async () => {
     const loadMessages = vi.fn();
     const logger = { error: vi.fn() };
+    const markStartupReconciled = vi.fn(async () => 1);
     const recovery = new ClaudeBackgroundGenerationStartupRecovery({
       repository: {
         terminalForNode: vi.fn(async () => [legacyTerminal("toolu-A")]),
         getGeneration: vi.fn(async () => null),
+        markStartupReconciled,
       } as never,
       lifecycle: { observe: vi.fn() } as never,
       recordRelationConsumed: vi.fn(async () => undefined),
@@ -135,17 +140,70 @@ describe("Claude background generation upgrade recovery", () => {
         backend: "claude",
         workspace_dir: "/workspace/profile",
       })) as never,
-      resolveWorktreeWorkspace: async () => { throw new Error("missing"); },
+      resolveWorktreeWorkspace: async () => {
+        throw Object.assign(new Error("worktrees host resolve_execution failed: WORKTREE_UNAVAILABLE"), {
+          status: 409,
+        });
+      },
       loadMessages,
     });
 
     await expect(recovery.recoverAfterNodeRestart()).resolves.toEqual({
       examined: 1,
       recovered: 0,
+      skipped: 1,
+      failed: 0,
       ambiguous: 0,
     });
     expect(loadMessages).not.toHaveBeenCalled();
+    expect(logger.error).not.toHaveBeenCalled();
+    expect(markStartupReconciled).toHaveBeenCalledOnce();
+    expect(markStartupReconciled).toHaveBeenCalledWith("node-a", [{
+      sessionId: "caller-session",
+      taskId: "shared-task",
+    }]);
+  });
+
+  it("leaves a row that failed for a transient reason unmarked for the next boot", async () => {
+    const logger = { error: vi.fn() };
+    const markStartupReconciled = vi.fn(async () => 1);
+    const recovery = new ClaudeBackgroundGenerationStartupRecovery({
+      repository: {
+        terminalForNode: vi.fn(async () => [legacyTerminal("toolu-A")]),
+        getGeneration: vi.fn(async () => null),
+        markStartupReconciled,
+      } as never,
+      lifecycle: { observe: vi.fn() } as never,
+      recordRelationConsumed: vi.fn(async () => undefined),
+      sourceNode: "node-a",
+      logger,
+      sessionStore: {} as never,
+      getSession: vi.fn(async () => ({
+        session_id: "caller-session",
+        claude_session_id: "sdk-session",
+        agent_id: "claude-agent",
+        model_preset: null,
+        node_id: "node-a",
+      })) as never,
+      getAgent: vi.fn(() => ({
+        id: "claude-agent",
+        backend: "claude",
+        workspace_dir: "/workspace/claude",
+      })) as never,
+      loadMessages: vi.fn(async () => {
+        throw new Error("transcript store unavailable");
+      }),
+    });
+
+    await expect(recovery.recoverAfterNodeRestart()).resolves.toEqual({
+      examined: 1,
+      recovered: 0,
+      skipped: 0,
+      failed: 1,
+      ambiguous: 0,
+    });
     expect(logger.error).toHaveBeenCalledOnce();
+    expect(markStartupReconciled).not.toHaveBeenCalled();
   });
 
   it("uses the first terminal envelope per exact task/tool identity and ignores nested output status", async () => {
@@ -154,6 +212,7 @@ describe("Claude background generation upgrade recovery", () => {
       repository: {
         terminalForNode: vi.fn(async () => [legacyTerminal("toolu-A")]),
         getGeneration: vi.fn(async () => null),
+        markStartupReconciled: vi.fn(async () => 1),
       } as never,
       lifecycle: { observe } as never,
       recordRelationConsumed: vi.fn(async () => undefined),
@@ -205,6 +264,7 @@ describe("Claude background generation upgrade recovery", () => {
       repository: {
         terminalForNode: vi.fn(async () => [legacyTerminal("toolu-A")]),
         getGeneration: vi.fn(async () => null),
+        markStartupReconciled: vi.fn(async () => 1),
       } as never,
       lifecycle: { observe } as never,
       recordRelationConsumed,
@@ -238,6 +298,7 @@ describe("Claude background generation upgrade recovery", () => {
     });
 
     await expect(startup.afterRunnerRecovery()).resolves.toBeUndefined();
+    await startup.stop();
     expect(recordRelationConsumed).toHaveBeenCalledOnce();
     expect(observe).not.toHaveBeenCalled();
     expect(generationLogger.error).toHaveBeenCalledWith(
@@ -258,6 +319,7 @@ describe("Claude background generation upgrade recovery", () => {
     const recovery = new ClaudeBackgroundGenerationStartupRecovery({
       repository: {
         terminalForNode: vi.fn(async () => [legacyTerminal("toolu-B")]),
+        markStartupReconciled: vi.fn(async () => 1),
         getGeneration: vi.fn(async () => ({
           relation_key: "relation-B",
           completion_id: "completion-B",
@@ -304,6 +366,7 @@ describe("Claude background generation upgrade recovery", () => {
     const recovery = new ClaudeBackgroundGenerationStartupRecovery({
       repository: {
         terminalForNode: vi.fn(async () => [legacyTerminal("toolu-B")]),
+        markStartupReconciled: vi.fn(async () => 1),
         getGeneration: vi.fn(async () => ({
           relation_key: "relation-B",
           completion_id: "completion-B",
@@ -367,6 +430,7 @@ describe("Claude background generation upgrade recovery", () => {
       repository: {
         terminalForNode: vi.fn(async () => [failed, recoverable]),
         getGeneration: vi.fn(async () => null),
+        markStartupReconciled: vi.fn(async () => 1),
       } as never,
       lifecycle: { observe } as never,
       recordRelationConsumed,
@@ -409,6 +473,7 @@ describe("Claude background generation upgrade recovery", () => {
 
     await startup.afterRunnerRecovery();
     await startup.afterRunnerRecovery();
+    await startup.stop();
 
     expect(recordRelationConsumed).toHaveBeenCalledTimes(2);
     expect(observe).toHaveBeenCalledOnce();

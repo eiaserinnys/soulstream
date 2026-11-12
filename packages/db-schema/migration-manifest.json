@@ -624,6 +624,10 @@
     {
       "id": "154_card_question_details.sql",
       "sha256": "7e2ad62cba32fb17f877c107bd2a2dfb8bc97688b3995c314b581c12dc252122"
+    },
+    {
+      "id": "155_claude_background_tasks_startup_reconciled.sql",
+      "sha256": "3ac55c3b236375190bee3c99f557868f47b3b17ca857568ef6fb3f644ee2406f"
     }
   ]
 }

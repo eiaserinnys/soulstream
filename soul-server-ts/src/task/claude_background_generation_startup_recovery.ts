@@ -8,6 +8,7 @@ import type { Logger } from "pino";
 import type { AgentProfile } from "../agent_registry.js";
 import type {
   ClaudeRuntimeHostClient,
+  ClaudeBackgroundTaskKey,
   ClaudeBackgroundTaskRow,
 } from "../control_plane/persistence_host_clients.js";
 import type { SessionRow } from "../db/session_db_types.js";
@@ -27,13 +28,15 @@ import type { ClaudeBackgroundTaskLifecycle } from
 export interface ClaudeBackgroundGenerationRecoveryPass {
   examined: number;
   recovered: number;
+  skipped: number;
+  failed: number;
   ambiguous: number;
 }
 
 interface ClaudeBackgroundGenerationStartupRecoveryDeps {
   repository: Pick<
     ClaudeRuntimeHostClient,
-    "terminalForNode" | "getGeneration"
+    "terminalForNode" | "getGeneration" | "markStartupReconciled"
   >;
   lifecycle: Pick<ClaudeBackgroundTaskLifecycle, "observe">;
   recordRelationConsumed(input: {
@@ -75,12 +78,30 @@ export class ClaudeBackgroundGenerationStartupRecovery {
     );
     let recovered = 0;
     let ambiguous = 0;
+    let skipped = 0;
+    let failed = 0;
+    const reconciled: ClaudeBackgroundTaskKey[] = [];
     for (const legacy of legacyRows) {
+      const key = { sessionId: legacy.session_id, taskId: legacy.task_id };
       try {
         const outcome = await this.recoverLegacyRow(legacy);
-        if (outcome === "recovered") recovered += 1;
-        if (outcome === "ambiguous") ambiguous += 1;
+        if (outcome === "recovered") {
+          recovered += 1;
+        } else if (outcome === "ambiguous") {
+          ambiguous += 1;
+        } else {
+          skipped += 1;
+        }
+        if (outcome !== "ambiguous") reconciled.push(key);
       } catch (err) {
+        if (isWorktreeUnavailable(err)) {
+          // A removed worktree never becomes resolvable again; close the row as
+          // skipped instead of logging one failure per restart from now on.
+          skipped += 1;
+          reconciled.push(key);
+          continue;
+        }
+        failed += 1;
         this.deps.logger.error(
           {
             err,
@@ -94,7 +115,26 @@ export class ClaudeBackgroundGenerationStartupRecovery {
         );
       }
     }
-    return { examined: legacyRows.length, recovered, ambiguous };
+    await this.markReconciledRows(reconciled);
+    return { examined: legacyRows.length, recovered, skipped, failed, ambiguous };
+  }
+
+  /**
+   * One round trip for the whole pass. A failed mark leaves the rows unmarked,
+   * so the next boot examines them again instead of losing them.
+   */
+  private async markReconciledRows(
+    keys: ClaudeBackgroundTaskKey[],
+  ): Promise<void> {
+    if (keys.length === 0) return;
+    try {
+      await this.deps.repository.markStartupReconciled(this.deps.sourceNode, keys);
+    } catch (err) {
+      this.deps.logger.error(
+        { err, sourceNode: this.deps.sourceNode, count: keys.length },
+        "Claude background generation startup reconciliation marking failed; rows stay for the next boot",
+      );
+    }
   }
 
   private async recoverLegacyRow(
@@ -193,6 +233,13 @@ export class ClaudeBackgroundGenerationStartupRecovery {
     }
     return await this.deps.resolveWorktreeWorkspace(worktreeId);
   }
+}
+
+function isWorktreeUnavailable(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = (error as { code?: unknown }).code;
+  if (code === "WORKTREE_UNAVAILABLE") return true;
+  return error.message.includes("WORKTREE_UNAVAILABLE");
 }
 
 interface NativeTaskNotification extends ClaudeNativeTaskNotification {

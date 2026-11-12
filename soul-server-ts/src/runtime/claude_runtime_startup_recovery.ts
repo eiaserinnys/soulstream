@@ -8,7 +8,8 @@ import { withDeadline } from "./deadline.js";
 
 /**
  * Queued delivery reconciliation runs after runner convergence without
- * delaying listener or upstream-adapter readiness.
+ * delaying listener or upstream-adapter readiness. Background generation
+ * reconciliation runs beside it, so this deadline covers only the queued step.
  */
 const STARTUP_RECOVERY_STEP_TIMEOUT_MS = 15_000;
 
@@ -22,6 +23,7 @@ export interface ClaudeRuntimeStartupRecoveryDeps {
 /** Runs each startup-only Claude recovery step at most once per worker boot. */
 export class ClaudeRuntimeStartupRecovery {
   private startupRecovery?: Promise<void>;
+  private backgroundRecovery?: Promise<void>;
   private stopped = false;
 
   constructor(
@@ -42,7 +44,7 @@ export class ClaudeRuntimeStartupRecovery {
 
   async stop(timeoutMs = 5_000): Promise<"drained" | "timed_out"> {
     this.stopped = true;
-    const active = [this.startupRecovery]
+    const active = [this.startupRecovery, this.backgroundRecovery]
       .filter((pending): pending is Promise<void> => pending !== undefined);
     if (active.length === 0) return "drained";
     return await Promise.race([
@@ -55,26 +57,29 @@ export class ClaudeRuntimeStartupRecovery {
   }
 
   private async recoverAll(): Promise<void> {
-    await this.recoverBackgroundGenerations();
+    // Background generation reconciliation reads a shrinking set of rows and
+    // must not hold back the queued-delivery step, so it runs beside it.
+    this.backgroundRecovery = this.recoverBackgroundGenerations();
     await this.recoverQueuedDeliveries();
   }
 
   private async recoverBackgroundGenerations(): Promise<void> {
     if (!this.deps.recoverBackgroundGenerations) return;
+    const startedAt = Date.now();
     try {
-      const pass = await withDeadline(
-        this.deps.recoverBackgroundGenerations(),
-        this.stepTimeoutMs,
-        () => new Error(
-          `Background generation startup recovery exceeded ${this.stepTimeoutMs}ms`,
-        ),
+      const pass = await this.deps.recoverBackgroundGenerations();
+      this.deps.logger.info(
+        {
+          examined: pass.examined,
+          recovered: pass.recovered,
+          skipped: pass.skipped,
+          failed: pass.failed,
+          ambiguous: pass.ambiguous,
+          elapsedMs: Date.now() - startedAt,
+          nodeId: this.deps.nodeId,
+        },
+        "Reconciled Claude background generations after worker restart",
       );
-      if (pass.recovered > 0) {
-        this.deps.logger.warn(
-          { count: pass.recovered, nodeId: this.deps.nodeId },
-          "Reconciled legacy-lost Claude background generations after worker restart",
-        );
-      }
     } catch (err) {
       this.deps.logger.error(
         { err, nodeId: this.deps.nodeId },

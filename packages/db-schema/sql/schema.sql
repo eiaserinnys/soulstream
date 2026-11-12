@@ -443,6 +443,7 @@ CREATE TABLE IF NOT EXISTS claude_background_tasks (
     created_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     terminal_at              TIMESTAMPTZ,
+    startup_reconciled_at    TIMESTAMPTZ,
     PRIMARY KEY (source_node, session_id, task_id),
     CONSTRAINT claude_background_tasks_status_check
         CHECK (status IN (
