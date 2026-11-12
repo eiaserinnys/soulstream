@@ -44,19 +44,21 @@ export function usePersistentReportSend(sessionId: string, notify: (text: string
       if (current?.id === next.id) {
         if (result.reason === 'card_question_answered') {
           state.setPendingChatSend(sessionId, null);
-          return;
+          return true;
         }
         if (current.persistentReportOperation) state.setPendingChatSend(sessionId, { ...current, persistentReportOperation: { ...current.persistentReportOperation, acknowledged: true } });
       }
       // The ordinary chat event reconciles this pending slot, as for composer sends.
+      return true;
     } catch (error) {
       const current = useDashboardStore.getState().pendingChatSends[sessionId];
       if (current?.id === next.id) state.setPendingChatSend(sessionId, { ...current, status: 'failed', reason: error instanceof SubmitInterventionHttpError ? `전송하지 못했습니다: ${error.message}` : UNKNOWN_DELIVERY });
+      return false;
     }
   };
   const send = async (entry: PersistentReportEntry, kind: 'reply' | 'cancel', option?: string) => {
     const next = start(entry, kind, option);
-    if (next) await deliver(next);
+    return next ? await deliver(next) : false;
   };
   return {
     sending: pending?.status === 'sending',

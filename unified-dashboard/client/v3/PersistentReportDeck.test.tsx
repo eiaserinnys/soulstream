@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act } from 'react';
+import { act, type ComponentProps } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
@@ -39,6 +39,7 @@ let root: Root; let host: HTMLDivElement;
 const transport = vi.fn().mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null }); const notify = vi.fn(); const focusInput = vi.fn(); const openTarget = vi.fn();
 let entries: PersistentReportEntry[];
 let cardTransition: ((cardId: string, status: 'done' | 'on_hold' | 'review') => Promise<void>) | undefined;
+let questionRenderer: ComponentProps<typeof PersistentReportDeck>['renderQuestion'];
 let portalTarget: HTMLDivElement | null = null;
 let inlineMaxHeight: number | null = null;
 const dismiss = vi.fn(async (key: string) => { entries = entries.filter(entry => entry.key !== key); await render(); });
@@ -47,12 +48,13 @@ const render = () => act(async () => root.render(<InternalLinkProvider internalO
     cardTransition={cardTransition}
     renderCardDetails={entry => <div data-testid={`card-details-${entry.key}`}>운영 카드 칸</div>}
     renderCardStatus={entry => <span data-testid={`card-status-${entry.key}`}>{entry.key.startsWith('cq_') ? '질문' : '카드 상태'}</span>}
+    renderQuestion={questionRenderer}
     seat={portalTarget ? { target: portalTarget, body: { left: 0, top: 300, width: 152, height: 228 }, layout: { left: 0, bottom: 284, width: 342, maxHeight: 250, tailLeft: 228, tailDirection: 'left' } } : inlineMaxHeight === null ? undefined : { target: null, body: null, layout: null, inlineMaxHeight }} />
 </PersistentReportProvider></InternalLinkProvider>));
 const button = (name: string) => Array.from(host.querySelectorAll('button')).find(node => (node.getAttribute('aria-label') ?? node.textContent) === name)!;
 let contentHeight = 0;
 beforeEach(async () => {
-  vi.clearAllMocks(); cardTransition = undefined; contentHeight = 100; portalTarget = null; inlineMaxHeight = null; useDashboardStore.getState().setPendingChatSend('a', null); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow, secondCardRow]); entries = [one, two];
+  vi.clearAllMocks(); transport.mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null }); cardTransition = undefined; questionRenderer = undefined; contentHeight = 100; portalTarget = null; inlineMaxHeight = null; useDashboardStore.getState().setPendingChatSend('a', null); request.mockReset(); useCardStore.getState().reset(); useCardStore.getState().putCards([cardRow, secondCardRow]); entries = [one, two];
   Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) {
@@ -445,4 +447,93 @@ it('omits the todo line for an unanswered sheet whose action is empty and keeps 
   expect(host.querySelector('.pas-report-content .pas-report-todo')).toBeNull();
   entries = [one]; await render();
   expect(host.querySelector('.pas-report-content .pas-report-todo')).not.toBeNull();
+});
+
+const heldAnswer = () => host.querySelector(`[data-testid="question-${serverQuestionEntry.key}"] [data-testid="question-answer"]`)?.textContent;
+const questionSample: NonNullable<ComponentProps<typeof PersistentReportDeck>['renderQuestion']> = (entry, controls) => entry.key.startsWith('cq_') ? {
+  body: <div data-testid={`question-${entry.key}`}><span data-testid="question-answer">{controls.answer ?? 'none'}</span></div>,
+  actions: <button type="button" onClick={() => void controls.reply('응')}>respond</button>,
+} : null;
+const respond = async () => { await act(async () => button('respond').click()); };
+
+it('holds the sent answer on the same key and place after the board drops the answered question', async () => {
+  questionRenderer = questionSample;
+  entries = [one, serverQuestionEntry]; await render();
+  await respond();
+  expect(transport).toHaveBeenCalledWith(expect.objectContaining({ text: '볼 장: 응' }));
+  entries = [one]; await render();
+  expect(heldAnswer()).toBe('응');
+  expect(host.querySelector<HTMLElement>(`[data-testid="report-sheet-${serverQuestionEntry.key}"]`)?.getAttribute('data-answered')).toBe('true');
+  expect([...host.querySelectorAll<HTMLElement>('.pas-report-sheet')].map(sheet => sheet.getAttribute('data-testid')))
+    .toEqual(['report-sheet-one', `report-sheet-${serverQuestionEntry.key}`]);
+});
+
+it('releases the held answer when the reader moves to another sheet', async () => {
+  questionRenderer = questionSample;
+  entries = [one, serverQuestionEntry]; await render();
+  await respond();
+  entries = [one]; await render();
+  expect(heldAnswer()).toBe('응');
+  const deck = host.querySelector('[data-testid="report-deck"]')!;
+  await act(async () => deck.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true })));
+  expect(heldAnswer()).toBe('응');
+  await act(async () => deck.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })));
+  expect(host.querySelector(`[data-testid="report-sheet-${serverQuestionEntry.key}"]`)).toBeNull();
+  expect(heldAnswer()).toBeUndefined();
+});
+
+it('releases the held answer when a new sheet for the same card arrives', async () => {
+  questionRenderer = questionSample;
+  entries = [one, serverQuestionEntry]; await render();
+  await respond();
+  entries = [one]; await render();
+  expect(heldAnswer()).toBe('응');
+  entries = [one, { ...serverCardEntry, card_status: 'blocked' }]; await render();
+  expect(host.querySelector(`[data-testid="report-sheet-${serverQuestionEntry.key}"]`)).toBeNull();
+  expect(host.querySelector(`[data-testid="report-sheet-${serverCardEntry.key}"]`)).not.toBeNull();
+});
+
+it('does not hold the answer when the send fails', async () => {
+  questionRenderer = questionSample;
+  transport.mockRejectedValueOnce(new Error('전송 실패'));
+  entries = [one, serverQuestionEntry]; await render();
+  await respond();
+  expect(heldAnswer()).toBe('none');
+  expect(host.querySelector<HTMLElement>(`[data-testid="report-sheet-${serverQuestionEntry.key}"]`)?.getAttribute('data-answered')).toBe('false');
+});
+
+// 운영에서는 답 저장의 afterCommit이 판 재계산을 기다려, cq_ 장을 빼는 판 갱신이 답 ACK보다 먼저 온다.
+// 장은 보내기 시작할 때 잠정으로 붙들려 판 갱신 뒤에도 같은 자리에 남아야 한다.
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void; let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolveOnce, rejectOnce) => { resolve = resolveOnce; reject = rejectOnce; });
+  return { promise, resolve, reject };
+};
+const ACK = { ok: true, delivered: true, reason: null, consumeWhen: null };
+
+it('keeps the answered sheet in place when the board drops it before the panel ACK', async () => {
+  questionRenderer = questionSample;
+  const send = deferred<typeof ACK>();
+  transport.mockImplementationOnce(() => send.promise);
+  entries = [one, serverQuestionEntry]; await render();
+  await respond();
+  entries = [one]; await render();
+  expect(heldAnswer()).toBe('응');
+  expect(host.querySelector<HTMLElement>(`[data-testid="report-sheet-${serverQuestionEntry.key}"]`)?.getAttribute('data-answered')).toBe('true');
+  await act(async () => { send.resolve(ACK); await Promise.resolve(); });
+  expect(heldAnswer()).toBe('응');
+  expect(host.querySelector<HTMLElement>(`[data-testid="report-sheet-${serverQuestionEntry.key}"]`)?.getAttribute('data-answered')).toBe('true');
+});
+
+it('releases the provisional hold when the send fails after the board update', async () => {
+  questionRenderer = questionSample;
+  const send = deferred<typeof ACK>();
+  transport.mockImplementationOnce(() => send.promise);
+  entries = [one, serverQuestionEntry]; await render();
+  await respond();
+  entries = [one]; await render();
+  expect(heldAnswer()).toBe('응');
+  await act(async () => { send.reject(new Error('전송 실패')); await Promise.resolve(); await Promise.resolve(); });
+  expect(host.querySelector(`[data-testid="report-sheet-${serverQuestionEntry.key}"]`)).toBeNull();
+  expect(heldAnswer()).toBeUndefined();
 });

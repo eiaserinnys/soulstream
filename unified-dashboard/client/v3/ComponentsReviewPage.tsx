@@ -44,6 +44,7 @@ import { DashboardIconCapBareReviewSample } from "./DashboardIconCapBareReviewSa
 import { ChatInputAccessoriesReviewSample, ChatUiMessageReviewSample } from "./ChatUiPartsReviewSample";
 import { ChatUiReviewSample } from './ChatUiReviewSample';
 import { PersistentReportReviewSample } from './PersistentReportReviewSample';
+import { CardQuestionPartsSample, CardQuestionReviewSample, type CardQuestionScene } from './CardQuestionReviewSample';
 import { PersistentSessionWeeklyUsageReviewSample } from './PersistentSessionWeeklyUsageReviewSample';
 import { ReportTimelineRow } from './ReportTimelineRow';
 import type { ReportTimelineRowLine } from '@seosoyoung/soul-ui';
@@ -56,6 +57,7 @@ const sections = [
   { id: "rows", title: "목록 행", icon: Folder },
   { id: "heads", title: "머리·캡", icon: Layers },
   { id: "bubbles", title: "말풍선", icon: MessageSquare },
+  { id: "question", title: "카드 질문 장", icon: MessageSquare },
   { id: "input", title: "입력창", icon: SendHorizontal },
   { id: "controls", title: "선택·설정", icon: SquarePen },
   { id: "surfaces", title: "패널 표면", icon: SquarePen },
@@ -131,6 +133,16 @@ export function ComponentsReviewPage() {
     <ClaudePoolPasReviewSample availableCount={Number(sampleParams.get('count') ?? 2)} />
   </div>;
   if (sampleParams.get('sample') === 'pas-card') return <div className="v3-detail-pane v3-detail-pane--inline"><p className="v3-components-label">PAS 카드 펼친 장</p><PersistentReportReviewSample cardPreview bubble before={sampleParams.get('before') === '1'} /></div>;
+  if (sampleParams.get('sample') === 'card-question') {
+    const scenes: CardQuestionScene[] = ['ga', 'na', 'da', 'ra', 'legacy'];
+    const requested = sampleParams.get('scene') as CardQuestionScene | null;
+    return <div className="v3-detail-pane v3-detail-pane--inline" data-testid="card-question-review">
+      <p className="v3-components-label">카드 질문 장 · {requested ?? 'ga'} · {sampleParams.get('surface') === 'card' ? '카드 상세' : 'PAS 판'}</p>
+      <CardQuestionReviewSample scene={requested && scenes.includes(requested) ? requested : 'ga'}
+        surface={sampleParams.get('surface') === 'card' ? 'card' : 'pas'}
+        bubble={sampleParams.get('bubble') !== '0'} narrow={sampleParams.get('narrow') === '1'} />
+    </div>;
+  }
   const completionState = sampleParams.get('state');
   if (sampleParams.get('sample') === 'pas-completion' && ['review', 'blocked', 'undo', 'undo-only'].includes(completionState ?? '')) {
     return <div className="v3-detail-pane v3-detail-pane--inline"><p className="v3-components-label">PAS 완료·되돌리기 · {completionState}</p>
@@ -359,6 +371,22 @@ export function ComponentsReviewPage() {
                 </CollapsibleCaption>
               </div>
             </Sample>
+          </section>
+          <section id="components-question" className="v3-detail-section">
+            <div className="v3-detail-section-head"><h3>카드 질문 장</h3></div>
+            <div className="v3-components-samples">
+            <Sample name="CardQuestionBlock / choice 단추 · InputRequestOptionContent" state="새 질문 · 권함 · 볼 것 · 글타래 · 기다림 · 받은 답 · 카드 부탁 했어"><CardQuestionPartsSample/></Sample>
+            <Sample name="PAS 질문 장" state="접힘 → 펼침 · 선택 답 · 다르게 답하기 · 되묻기"><CardQuestionReviewSample scene="ga" surface="pas" bubble/></Sample>
+            <Sample name="PAS 질문 장" state="받은 답 · 덧붙이기 · 대상 줄"><CardQuestionReviewSample scene="na" surface="pas" bubble/></Sample>
+            <Sample name="PAS 질문 장" state="고친 질문 · 답을 기다리는 중"><CardQuestionReviewSample scene="da" surface="pas" bubble/></Sample>
+            <Sample name="PAS 질문 장" state="카드 부탁 · 했어"><CardQuestionReviewSample scene="ra" surface="pas" bubble/></Sample>
+            <Sample name="PAS 질문 장" state="옛 질문 원문 전체"><CardQuestionReviewSample scene="legacy" surface="pas" bubble/></Sample>
+            <Sample name="카드 상세 질문 장" state="가 새 선택 질문 · 볼 것 · 권함"><CardQuestionReviewSample scene="ga" surface="card"/></Sample>
+            <Sample name="카드 상세 질문 장" state="나 받은 답 · 덧붙이기 대상 줄"><CardQuestionReviewSample scene="na" surface="card"/></Sample>
+            <Sample name="카드 상세 질문 장" state="바 고친 질문 · 글타래 · 기다림"><CardQuestionReviewSample scene="da" surface="card"/></Sample>
+            <Sample name="카드 상세 질문 장" state="라 카드 부탁 · 했어 · 되묻기"><CardQuestionReviewSample scene="ra" surface="card"/></Sample>
+            <Sample name="카드 상세 질문 장" state="마 옛 질문 원문 전체"><CardQuestionReviewSample scene="legacy" surface="card"/></Sample>
+            </div>
           </section>
           <section id="components-input" className="v3-detail-section">
             <div className="v3-detail-section-head"><h3>입력창</h3></div>

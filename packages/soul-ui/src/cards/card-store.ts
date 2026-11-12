@@ -12,7 +12,7 @@ interface CardState {
   mutate(id: string, suffix: string, body: object, method?: string): Promise<CardDetail>;
   execute(id:string,version:number):Promise<CardExecutionResult>;
   confirmItem(id:string,itemId:number,confirmed:boolean):Promise<CardRow>;
-  addComment(id: string, body: string, idempotencyKey: string, itemId?:number): Promise<CardComment>;
+  addComment(id: string, body: string, idempotencyKey: string, itemId?:number, questionId?: string): Promise<CardComment>;
   create(body: object): Promise<CardRow>;
   handleCardUpdated(event: {cardId: string; folderId: string}): Promise<CardDetail>;
   reset(): void;
@@ -76,8 +76,8 @@ export const useCardStore = create<CardState>((set,get) => ({
       throw error;
     }
   },
-  async addComment(id, body, idempotencyKey, itemId) {
-    const optimistic: CardComment = {id:idempotencyKey,cardId:id,authorKind:"user",authorId:"",sessionId:null,kind:"comment",...(itemId===undefined?{}:{itemId}),body,createdAt:new Date().toISOString()};
+  async addComment(id, body, idempotencyKey, itemId, questionId) {
+    const optimistic: CardComment = {id:idempotencyKey,cardId:id,authorKind:"user",authorId:"",sessionId:null,kind:"comment",...(itemId===undefined?{}:{itemId}),...(questionId===undefined?{}:{questionId}),body,createdAt:new Date().toISOString()};
     const patch = (comment: CardComment | null) => set(state => {
       const detail = state.details[id];
       if (!detail) return {};
@@ -86,7 +86,7 @@ export const useCardStore = create<CardState>((set,get) => ({
     });
     patch(optimistic);
     try {
-      const comment = await cardRequest<CardComment>(cardPath(id)+"/comments","POST",{body,idempotencyKey,...(itemId===undefined?{}:{itemId})});
+      const comment = await cardRequest<CardComment>(cardPath(id)+"/comments","POST",{body,idempotencyKey,...(itemId===undefined?{}:{itemId}),...(questionId===undefined?{}:{questionId})});
       patch(comment);
       set(state => ({errors:{...state.errors,[id]:""}}));
       if(itemId!==undefined)try{await get().loadCard(id);}catch{/* loadCard keeps the saved comment and exposes its refresh error */}

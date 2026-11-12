@@ -99,7 +99,7 @@ it('confirms a check item through the existing card store action', async () => {
 
 it('answers the linked open question before using a card comment', async () => {
   await render({ ...entry, question_id: 'question-target' });
-  expect(host.querySelector('[data-testid="placeholder"]')?.textContent).toBe('질문에 답하기');
+  expect(host.querySelector('[data-testid="placeholder"]')?.textContent).toBe('다르게 답하기');
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="send"]')!.click());
   expect(request).toHaveBeenCalledWith(`/api/cards/${card.id}/questions/question-target/answer`, 'POST', expect.objectContaining({ answer: '작성한 글' }));
   expect(request).not.toHaveBeenCalledWith(`/api/cards/${card.id}/comments`, 'POST', expect.anything());
@@ -114,7 +114,7 @@ it('routes a targeted correction to an item comment before answering an open que
   expect(host.querySelector('[data-testid="placeholder"]')?.textContent).toBe('커멘트');
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="커멘트 대상 해제"]')!.click());
   expect(host.querySelector('.v3-card-target-notice')).toBeNull();
-  expect(host.querySelector('[data-testid="placeholder"]')?.textContent).toBe('질문에 답하기');
+  expect(host.querySelector('[data-testid="placeholder"]')?.textContent).toBe('다르게 답하기');
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="target-item"]')!.click());
   await act(async () => host.querySelector<HTMLButtonElement>('[data-testid="send"]')!.click());
   expect(request).toHaveBeenCalledWith(`/api/cards/${card.id}/comments`, 'POST', expect.objectContaining({ body: '작성한 글', itemId: 4 }));

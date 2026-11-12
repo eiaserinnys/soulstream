@@ -207,3 +207,29 @@ it.each(['todo','queued','on_hold'] as const)('starts a %s detail through the ex
  const close=await render();await act(async()=>{container.querySelector<HTMLButtonElement>('[aria-label="시작하기"]')!.click();});
  expect(execute).toHaveBeenCalledWith('inherit',1);expect(close).not.toHaveBeenCalled();expect(document.querySelector('[data-card-status-picker]')).toBeNull();
 });
+
+it("does not revive the append target when the answer response lands after the card closed",async()=>{
+ const openQuestion={id:"q",text:"질문 본문",options:["답변"],answer:null,askedAt:card.createdAt,answeredAt:null} as CardDetail["questions"][number];
+ const withQuestion={...detail,questions:[openQuestion]};const other={...card,id:"other"};
+ let settle!:(value:CardDetail)=>void;
+ const mutate=vi.fn(()=>new Promise<CardDetail>(resolve=>{settle=resolve;}));
+ useCardStore.setState({byId:{inherit:card,other},details:{inherit:withQuestion,other:{...detail,card:other}},mutate});
+ await render();
+ await act(async()=>{container.querySelector<HTMLButtonElement>('.v3-card-question-choices button')!.click();await Promise.resolve();});
+ // 선택 저장 중에 상세를 닫는다. 화면이 내려가면 대상도 함께 지워져야 한다.
+ await act(()=>root.render(<CardDetailPane cardId="other" folders={[]} onClose={()=>{}} onOpenSession={()=>{}}/>));
+ await act(async()=>{settle(detail);await Promise.resolve();await Promise.resolve();});
+ await act(()=>root.render(<CardDetailPane cardId="inherit" folders={[]} onClose={()=>{}} onOpenSession={()=>{}}/>));
+ expect(container.querySelector('.v3-card-target-notice')).toBeNull();
+});
+
+it("does not focus the next card's composer after clearing the item target",async()=>{
+ const withItems={...card,items:[item(4,"doing")]};const other={...card,id:"other"};
+ useCardStore.setState({byId:{inherit:withItems,other},details:{inherit:{...detail,card:withItems},other:{...detail,card:other}}});
+ await render();
+ await act(()=>container.querySelector<HTMLButtonElement>('[data-item-id="4"] .v3-card-check-item-target')!.click());
+ expect(document.activeElement).toBe(container.querySelector('textarea'));
+ await act(()=>container.querySelector<HTMLButtonElement>('[aria-label="커멘트 대상 해제"]')!.click());
+ await act(()=>root.render(<CardDetailPane cardId="other" folders={[]} onClose={()=>{}} onOpenSession={()=>{}}/>));
+ expect(document.activeElement).not.toBe(container.querySelector('textarea'));
+});

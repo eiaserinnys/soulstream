@@ -42,6 +42,8 @@
 .pas-report[data-inline-max-height="true"] { max-height: calc(var(--pas-report-inline-max-height) - var(--v3-space-2) - var(--v3-space-2)); }
 .pas-report[data-inline-max-height="true"] .pas-report-reading { overflow-y: auto; }
 .pas-report[data-inline-max-height="true"] .pas-report-reading[data-more="true"] { box-shadow: inset 0 -1px var(--persistent-session-line); }
+/* 카드 #1197: 펼친 장은 입력창 아래 그림자와 초점 링이 잘리지 않게 스크롤 영역에 바닥 여백을 둔다. */
+.pas-report-reading.v3-session-panel-scroll:has(.pas-report-card-preview) { padding-bottom: var(--v3-space-3); }
 .pas-report-content { display: flex; flex-direction: column; gap: var(--v3-space-2); min-width: 0; }
 .pas-report-heading { display: flex; align-items: flex-start; gap: var(--v3-space-2); min-width: 0; position: sticky; top: 0; z-index: 1; background: var(--persistent-session-panel); }
 .pas-report-heading-main { flex: 1 1 auto; display: flex; align-items: center; flex-wrap: wrap; gap: var(--v3-space-1) var(--v3-space-2); min-width: 0; }
