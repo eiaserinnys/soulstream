@@ -199,6 +199,44 @@ describe("SessionDataHostClient", () => {
     ]);
   });
 
+  it("sends metadata type filters after the period slot", async () => {
+    const requests: Array<{ url: string; args: unknown[] }> = [];
+    const fetchMock = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      const body = JSON.parse(String(init?.body)) as { args: unknown[] };
+      requests.push({ url, args: body.args });
+      return new Response(JSON.stringify([]), { status: 200 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const client = new SessionDataHostClient({
+      orch: { baseUrl: "http://orchestrator.test", headers: {} },
+      logger,
+    });
+    const period = {
+      since: "2026-10-06T00:00:00.000Z",
+      until: "2026-10-07T00:00:00.000Z",
+    };
+
+    await client.readEvents("s1", 0, 10, ["metadata"], undefined, ["persistent_generation"]);
+    await client.readEvents("s1", 0, 10, ["metadata"], period, ["persistent_generation"]);
+    await client.readEvents("s1", 0, 10, ["metadata"], period);
+
+    expect(requests).toEqual([
+      {
+        url: "http://orchestrator.test/api/session-data/host/event_read_page",
+        args: ["s1", 0, 10, ["metadata"], null, ["persistent_generation"]],
+      },
+      {
+        url: "http://orchestrator.test/api/session-data/host/event_read_page",
+        args: ["s1", 0, 10, ["metadata"], period, ["persistent_generation"]],
+      },
+      {
+        url: "http://orchestrator.test/api/session-data/host/event_read_page",
+        args: ["s1", 0, 10, ["metadata"], period],
+      },
+    ]);
+  });
+
   it("gives generation checkpoint material a 5000ms budget for two attempts", async () => {
     const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
     const fetchMock = vi.fn()

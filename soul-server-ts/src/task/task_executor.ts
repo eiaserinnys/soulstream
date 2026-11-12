@@ -753,7 +753,6 @@ export class TaskExecutor {
   ): Promise<void> {
     const runtime = this.persistentDecisionRuntime;
     if (!runtime || !this.modelCatalog || task.persistent !== true) return;
-    await runtime.scheduleService.deleteCacheKeepaliveSchedules(task.agentSessionId);
 
     const now = new Date();
     let decision;
@@ -784,6 +783,7 @@ export class TaskExecutor {
     }
     const keepaliveResult = keepaliveResultFor(completeEvent, interventions);
     await this.recordPersistentDecision(task, "turn_end", decision, keepaliveResult);
+    await runtime.scheduleService.deleteCacheKeepaliveSchedules(task.agentSessionId);
     if (decision.action === "schedule_keepalive" && decision.wake_at) {
       await runtime.scheduleService.scheduleCacheKeepalive(
         task.agentSessionId,

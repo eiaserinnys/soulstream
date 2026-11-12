@@ -53,7 +53,14 @@ export async function buildPersistentDecisionInput(
   );
   const orderedEvents = [...events].sort((left, right) => left.id - right.id);
   const generationMetadataEvents = task.lastEventId > 0
-    ? await deps.db.readEvents(task.agentSessionId, 0, task.lastEventId, ["metadata"])
+    ? await deps.db.readEvents(
+        task.agentSessionId,
+        0,
+        task.lastEventId,
+        ["metadata"],
+        undefined,
+        ["persistent_generation"],
+      )
     : [];
   const contextUsage = latestContextUsage(orderedEvents);
   const catalogDefaults = deps.modelCatalog.snapshot().persistent_defaults;

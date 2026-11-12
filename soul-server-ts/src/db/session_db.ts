@@ -297,11 +297,16 @@ export class SessionDB {
     limit: number,
     eventTypes?: string[],
     period?: SessionReadPeriod,
+    metadataTypes?: string[],
   ): Promise<SessionEventRow[]> {
-    const host = this.requireSessionDataHost();
-    return period === undefined
-      ? await host.readEvents(sessionId, afterId, limit, eventTypes)
-      : await host.readEvents(sessionId, afterId, limit, eventTypes, period);
+    return await this.requireSessionDataHost().readEvents(
+      sessionId,
+      afterId,
+      limit,
+      eventTypes,
+      period,
+      metadataTypes,
+    );
   }
 
   async readOneEvent(

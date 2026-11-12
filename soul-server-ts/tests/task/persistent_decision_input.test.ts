@@ -503,7 +503,14 @@ describe("buildPersistentDecisionInput", () => {
     );
 
     expect(input.checkpoint_tokens_by_preset).toEqual({ "codex-6.1-sol": 28_000 });
-    expect(readEvents).toHaveBeenCalledWith(task.agentSessionId, 0, task.lastEventId, ["metadata"]);
+    expect(readEvents).toHaveBeenCalledWith(
+      task.agentSessionId,
+      0,
+      task.lastEventId,
+      ["metadata"],
+      undefined,
+      ["persistent_generation"],
+    );
   });
 
   it("uses the latest non-reset measurement when a newer reset measurement exists", async () => {
