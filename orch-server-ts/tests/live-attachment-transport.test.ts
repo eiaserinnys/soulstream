@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { createCardAttachmentSourceImport } from "../src/attachments/card_attachment_source_import.js";
+import { createLiveAttachmentSourceReader } from "../src/runtime/live_attachment_route_provider.js";
 
 import {
   ATTACHMENT_COMMAND_TIMEOUT_MS,
@@ -27,6 +29,40 @@ type AnyRoutedPendingCommand = RoutedPendingSessionCommand<
 >;
 
 describe("live attachment WS transport", () => {
+  it("tells the user to update an old source node that rejects the read command", async () => {
+    const fixture = createWireFixture((message) => ({
+      type: "error",
+      requestId: String(message.requestId),
+      code: "CONTROL_COMMAND_NOT_IN_INVENTORY",
+      message: "Command type is not present in the control command inventory: read_attachment_source",
+    }));
+    const putSmall = vi.fn();
+    const importer = createCardAttachmentSourceImport({
+      readSource: createLiveAttachmentSourceReader(fixture),
+      commits: { putSmall } as any,
+      repository: {
+        findLegacyAliasForAsset: async () => null,
+        insertLegacyAlias: async () => null,
+      },
+      addCardRef: async () => undefined,
+    });
+
+    await expect(importer({
+      cardId: "card-1",
+      sourceNodeId: nodeId,
+      sourceSessionId: "session-1",
+      path: "/workspace/photo.png",
+      name: "photo.png",
+      mimeType: "image/png",
+    })).rejects.toMatchObject({
+      code: "NODE_REJECTED",
+      statusCode: 501,
+      message: `첨부 "photo.png"을 노드 ${nodeId}에서 가져오지 못했습니다: 원본 노드가 다른 노드의 첨부를 읽는 기능을 지원하지 않습니다. 노드를 최신 버전으로 올린 뒤 다시 실행하세요.`,
+    });
+    expect(fixture.sent.map((message) => message.type)).toEqual(["read_attachment_source"]);
+    expect(putSmall).not.toHaveBeenCalled();
+  });
+
   it("sends start, 1MiB chunks, and finish sequentially through the node command bridge", async () => {
     const fixture = createWireFixture();
     const createCommand = vi.spyOn(fixture.registry, "createCommand");
@@ -272,7 +308,7 @@ describe("live attachment WS transport", () => {
   });
 });
 
-function createWireFixture() {
+function createWireFixture(respond = responseFor) {
   const registry = createRegistry();
   const connectionId = registerNode(registry);
   const sent: Record<string, unknown>[] = [];
@@ -286,7 +322,7 @@ function createWireFixture() {
         sent.push(message);
         registry.receiveNodeMessage(
           { nodeId, connectionId },
-          responseFor(message),
+          respond(message),
         );
       },
     },
@@ -294,6 +330,7 @@ function createWireFixture() {
   const bridge = new SessionCommandTransportBridge({ registry, transports });
   return {
     registry,
+    bridge,
     sent,
     providers: createProviders(registry, bridge),
   };

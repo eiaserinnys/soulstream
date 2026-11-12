@@ -344,7 +344,10 @@ function mapAttachmentCommandError(error: unknown): unknown {
           413,
         );
       }
-      if (error.message.startsWith("Not implemented in soul-server-ts:")) {
+      if (
+        error.response?.code === "CONTROL_COMMAND_NOT_IN_INVENTORY" ||
+        error.message.startsWith("Not implemented in soul-server-ts:")
+      ) {
         return new AttachmentRouteError(
           "ATTACHMENT_SOURCE_UNSUPPORTED",
           "실행 노드가 다른 노드의 첨부를 읽는 기능을 지원하지 않습니다.",
