@@ -14,6 +14,7 @@ import {
   setCardQuestionTarget, type CardQuestionTarget,
 } from '../planner/CardQuestionBlock';
 import { cardQuestionViewFromEntry, type CardQuestionView } from '../planner/card-question-viewmodel';
+import type { CardQuestionAnswerHold } from './usePersistentReport';
 
 /** 카드 상태 칩 옆에 붙는 질문 장 글. 선택 질문은 「카드 질문」, 부탁 장은 「카드 부탁」이다. */
 export function cardQuestionChipLabel(entry: PersistentReportEntry, blockedKind: string | null | undefined) {
@@ -28,7 +29,7 @@ export type CardQuestionSurfaceDeps = {
   portraitUri: string | null;
   questionActions: { run(mutation: () => Promise<CardMutationResult>): Promise<boolean>; pending: boolean };
   reportSend: { busy: boolean; sendOption(entry: PersistentReportEntry, option: string): void };
-  onAnswered(entry: PersistentReportEntry, option: string): void;
+  answerHold: CardQuestionAnswerHold;
 };
 
 /** 펼친 장이 카드 상세를 읽었으면 계약 1.4절 「상세에서」 보기를 controls.detailView로 넘긴다. */
@@ -48,10 +49,15 @@ export function renderCardQuestionSurface(entry: PersistentReportEntry, controls
   const choose = (label: string) => {
     // 접힌 장은 지금의 판 답 경로({key, option})를 그대로 쓴다. 펼친 장은 카드 REST로 보낸다.
     if (!controls.expanded || !deps.api || !cardId || !questionId) { deps.reportSend.sendOption(entry, label); return; }
-    // 저장이 성공한 뒤에만 덧붙이기 대상을 세운다(화면 계약 3절 15번, 코드 감수 P1-1).
+    // 보내기 시작과 함께 장을 잠정으로 붙들어, 판 갱신이 응답보다 먼저 와도 펼친 영역이 내려가지 않게 한다.
+    deps.answerHold.begin(entry, label);
+    // 저장이 성공한 뒤에만 확정하고 덧붙이기 대상을 세운다(화면 계약 판 5, 3절 15번, 코드 감수 P1-1).
     void answerCardQuestionChoice(targetKey, questionId, label, () => deps.questionActions.run(
       () => deps.api!.answerCardQuestion(cardId, questionId, { mode: 'choice', option: label, idempotencyKey: cardOperationId() }),
-    )).then(saved => { if (saved) deps.onAnswered(entry, label); });
+    )).then(saved => {
+      if (saved) deps.answerHold.confirm(entry, label);
+      else deps.answerHold.release(entry);
+    });
   };
   const expandWith = (target: CardQuestionTarget | null) => { controls.expand(); setCardQuestionTarget(targetKey, target, true); };
   return {

@@ -5,7 +5,7 @@
 //   ?section=cardQuestion&surface=pas|card&scene=ga|na|da|ra|ma|ba&expanded=1&fail=1&theme=light|dark
 //   ga 새 선택 질문(그림, 권함) · na 되묻기 뒤 기다림 · da 선택 답 뒤 덧붙이기 대상
 //   ra 부탁 장 · ma 옛 질문 · ba 고친 질문
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Asset } from 'expo-asset';
@@ -146,6 +146,12 @@ function sampleEntry(): PersistentReportEntry {
   };
 }
 
+/** 표본 판의 이웃 장. 답한 질문 장이 판에서 빠질 때 옆 장이 드러나는지 보이게 한다. */
+function sampleSiblingEntry(): PersistentReportEntry {
+  return { key: 'result', kind: 'see', title: '검수 결과', card_numbers: [], context: '질문 장에 답하면 이 장이 이어서 뜹니다.',
+    action: '', options: [], state: 'open', answer: '', updated_at: at(20) };
+}
+
 function fail(): never {
   throw new Error('공개 예시: 저장하지 못했습니다. 잠시 뒤 다시 시도해 주세요.');
 }
@@ -197,12 +203,12 @@ function createSampleApi(onReportAnswered?: (key: string) => void): ApiClient {
         ? { ...question, answer, answeredAt: new Date().toISOString(),
           ...(input.mode === 'choice' ? { selectedOption: input.option } : { selectedOption: null }) }
         : question) });
-      // 서버의 판 재계산처럼 답한 cq_ 장을 판 목록에서도 뺀다.
+      // 서버의 판 재계산처럼 답한 cq_ 장을 판 목록에서 먼저 빼고 그다음 REST 응답을 돌려준다.
       onReportAnswered?.(`${CARD_QUESTION_KEY_PREFIX}${questionId}`);
       return { folderId: detail.card.folderId, card: detail.card };
     },
     // 표본은 운영의 판 답 보내기 경로를 그대로 타고, API 경계에서만 응답을 대신한다.
-    // 판 재계산에서 답한 cq_ 장이 빠지는 서버 동작을 서버 목록을 줄여 흉내 내고,
+    // 운영 순서대로 판 재계산(서버 목록에서 답한 cq_ 장 빼기)이 먼저 반영되고 ACK가 그 뒤에 돌아온다.
     // 판 답 ACK가 카드 상세의 질문에도 답을 남기는 서버 효과를 함께 재현한다.
     intervene: async (_sessionId: string, _text: string, _paths?: string[], contextItems?: MessageContextItem[]) => {
       const reply = pendingReportReply(contextItems);
@@ -225,24 +231,16 @@ function PasScene() {
   const phone = useDeviceType() === 'phone';
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  // 서버 판 목록. 표본의 답 보내기는 운영 경로를 그대로 타고, API 경계의 intervene가 답한 cq_ 장을 걷어 둔다.
-  const [serverEntries, setServerEntries] = useState<PersistentReportEntry[]>(() => [sampleEntry()]);
+  // 서버 판 목록. 표본의 가짜 API는 운영 순서대로 판 갱신(장 빼기)을 먼저 반영하고 응답을 돌려준다.
+  // 잠정 붙들기가 보내기 시작과 함께 서므로, 갱신이 먼저 와도 그 장이 같은 자리에 남는다.
+  const [serverEntries, setServerEntries] = useState<PersistentReportEntry[]>(() => [sampleEntry(), sampleSiblingEntry()]);
   const [cardSheetOpen, setCardSheetOpen] = useState<boolean>(initialExpanded && phone);
   const [expandedKey, setExpandedKey] = useState<string | null>(initialExpanded ? serverEntries[0]?.key ?? null : null);
   const [text, setText] = useState('');
-  // 판 재계산 갱신은 선택 ACK를 받은 뒤에 온다. 갱신이 먼저 닿으면 붙들기 전에 장이 목록에서 빠져
-  // 펼친 장이 닫힌 것으로 보이므로, 표본은 운영 순서대로 붙들기를 먼저 세우고 목록을 줄인다.
-  const answeredKeys = useRef<string[]>([]);
-  const removeAnswered = useCallback(() => {
-    if (!answeredKeys.current.length) return;
-    const keys = answeredKeys.current;
-    answeredKeys.current = [];
-    setServerEntries(saved => saved.filter(entry => !keys.includes(entry.key)));
-  }, []);
-  const api = useMemo(() => createSampleApi(key => { answeredKeys.current.push(key); }), []);
+  const api = useMemo(() => createSampleApi(key => setServerEntries(saved => saved.filter(entry => entry.key !== key))), []);
   const report = usePersistentReport('review-question-pas', true, api, serverEntries, undefined);
-  const reportSend = usePersistentReportSend('review-question-pas', api, report.entries, report.server, 'completed', () => {},
-    (entry, option) => { report.holdAnswered(entry, option); removeAnswered(); });
+  const answerHold = { begin: report.beginAnsweredHold, confirm: report.holdAnswered, release: report.releaseAnsweredHold };
+  const reportSend = usePersistentReportSend('review-question-pas', api, report.entries, report.server, 'completed', () => {}, answerHold);
   const questionActions = useCardActions(api);
   const completion = usePersistentCardCompletion(api);
   const column = phone ? width - t.foundation.pageInset * 2 : FRAME.landscape.conversation;
@@ -266,14 +264,13 @@ function PasScene() {
       : (entry, publish) => <PersistentReportCardExpansion key={entry.key} api={api} entry={entry} onQuestionView={publish} />}
     onOpenCardDetails={phone ? () => setCardSheetOpen(true) : undefined}
     renderQuestion={(entry, controls) => renderCardQuestionSurface(entry, controls, {
-      t, api, portraitUri: portraitUrl, questionActions, reportSend,
-      onAnswered: (answered, option) => { report.holdAnswered(answered, option); removeAnswered(); },
+      t, api, portraitUri: portraitUrl, questionActions, reportSend, answerHold,
     })}
     send={reportSend} />;
   return <ContentLinkProvider><ChatUiControllerProvider sessionId="review-question-pas" appendGeneratedText={() => ({ ok: true })}>
     {phone && cardSheetOpen ? <View style={{ flex: 1, backgroundColor: t.colors.background }}>
-      {/* 카드 시트의 REST 선택은 붙들지 않는다(위임자 결정). 판으로 돌아갈 때 재계산 갱신을 적용한다. */}
-      <CardDetailContent visible api={api} cardId={card.id} onClose={() => { setCardSheetOpen(false); removeAnswered(); }} />
+      {/* 카드 시트의 REST 선택은 붙들지 않는다(위임자 결정). 가짜 API가 판 갱신을 먼저 반영한다. */}
+      <CardDetailContent visible api={api} cardId={card.id} onClose={() => setCardSheetOpen(false)} />
     </View> :
       <View testID="card-question-pas-sample" style={{ flex: 1, backgroundColor: t.persistentSession.paper, paddingTop: insets.top, paddingBottom: insets.bottom }}>
         <View style={{ flex: 1, minHeight: 0, width: column, alignSelf: 'center', gap: t.uiSpacing.lg, justifyContent: 'flex-end' }}>

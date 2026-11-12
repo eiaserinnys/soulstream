@@ -31,6 +31,8 @@ Answer scenarios (contract 3절 2번) also run as PASS judgments:
   iPad  expanded choice -> fold -> folded field stays at 받은 답 with 덧붙이기
   phone folded choice -> 덧붙이기 sheet keeps the chosen row and the target
   phone PAS-opened card sheet choice -> back -> that field leaves the report (card detail, not held)
+  two-entry report -> after the folded answer and the iPad expanded answer, the visible sheet is
+    the answered one (its title and 받은 답 line); the expanded sheet also keeps 덧붙이기: 이름
 
 Alignment evidence: choice row left/right lines must agree within 1px, action
 button tops must agree within 1px, and the question target row must share the
@@ -548,6 +550,9 @@ def measure_interactions(page: Page, base: str, width: int, output: Path, result
     # 계약 3절 2번 답 흐름: 접힌 장 덧붙이기, 펼친 장 접기, 폰 카드 시트.
     measure_answer_scenarios(page, base, width, output, result)
 
+    # 계약 판 5의 3절 2번: 장 둘인 판에서 답한 뒤 보이는 장이 답한 그 장인지.
+    measure_answered_identity(page, base, width, output, result)
+
     # 초점 수명(계약 3절 15번): 되묻기, 해제, 닫기, 다시 열기 -> document.activeElement.
     focus_lifetime_checks(page, base, width, output, result)
 
@@ -576,6 +581,33 @@ QUESTION_STATE_SCRIPT = r"""
 
 def question_state(page: Page) -> dict:
     return page.evaluate(QUESTION_STATE_SCRIPT)
+
+
+# 판에 장이 둘 이상일 때 지금 보이는 장이 어느 것인지 잰다. 답한 질문 장이 판에서 빠지는
+# 갱신이 응답보다 먼저 와도 그 장이 보여야 한다(화면 계약 판 5, 3절 2번).
+ANSWER_IDENTITY_SCRIPT = r"""
+() => {
+  const text = (scope, selector) => (scope.querySelector(selector)?.innerText || '').trim();
+  const sheets = [...document.querySelectorAll('[data-testid^="report-sheet-"]')];
+  const shown = (element) => ({
+    id: element.getAttribute('data-testid'),
+    title: text(element, '[data-testid="report-title"]'),
+    answered: text(element, '[data-testid="card-question-answered"]'),
+    target: text(element, '[data-testid="card-question-target"]'),
+    expanded: Boolean(element.querySelector('[data-testid^="persistent-report-card-expansion-"]')),
+  });
+  const visible = sheets.filter((element) => element.getAttribute('aria-hidden') !== 'true');
+  return {
+    sheets: sheets.map((element) => ({ id: element.getAttribute('data-testid'),
+      hidden: element.getAttribute('aria-hidden') })),
+    visible: visible.map(shown),
+  };
+}
+"""
+
+
+def answer_identity(page: Page) -> dict:
+    return page.evaluate(ANSWER_IDENTITY_SCRIPT)
 
 
 def selection_kept(state: dict) -> bool:
@@ -668,6 +700,52 @@ def measure_answer_scenarios(page: Page, base: str, width: int, output: Path, re
                 passed = state["blocks"] == 0 and state["answered"] is None
                 record(result, 2, "카드 시트 답 뒤 장 빠짐", f"ops-{width}-sheet-answer-back", passed, state)
                 page.screenshot(path=str(output / f"ops-{width}-sheet-answer-back.png"))
+
+
+def measure_answered_identity(page: Page, base: str, width: int, output: Path, result: dict) -> None:
+    """판에 장이 둘인 표본에서 답한 뒤 보이는 장이 답한 그 장인지 잰다.
+
+    접힌 장 판 답과 아이패드 펼친 장 REST 선택 뒤에, 지금 보이는 장의 제목과
+    「받은 답」 줄을 읽는다. 펼친 장은 「덧붙이기: 이름」 대상 줄과 펼친 영역도 본다.
+    """
+    theme = "light"
+    title = "에이전트 접속 비밀값을 숨길까요?"
+    label = f"ops-{width}-answered-identity-folded"
+    goto(page, base, "pas", "ga", False, theme, width)
+    choice = page.get_by_test_id("card-question-choice-0")
+    if count(choice) == 0:
+        record(result, 2, "답한 뒤 보이는 장(접힌 장)", label, False, {"reason": "선택지 없음"})
+    else:
+        choice.first.click()
+        page.wait_for_timeout(1000)
+        state = answer_identity(page)
+        visible = state["visible"]
+        shown = visible[0] if len(visible) == 1 else {}
+        answered = shown.get("answered") or ""
+        passed = (len(visible) == 1 and shown.get("id") == "report-sheet-cq_q-secret"
+                  and shown.get("title") == title and "받은 답" in answered and "파일로 옮기기" in answered)
+        record(result, 2, "답한 뒤 보이는 장(접힌 장)", label, passed, state)
+        page.screenshot(path=str(output / f"{label}.png"))
+
+    if width < 768:
+        return
+    label = f"ops-{width}-answered-identity-expanded"
+    goto(page, base, "pas", "ga", True, theme, width)
+    choice = page.get_by_test_id("card-question-choice-0")
+    if count(choice) == 0:
+        record(result, 2, "답한 뒤 보이는 장(펼친 장)", label, False, {"reason": "선택지 없음"})
+        return
+    choice.first.click()
+    page.wait_for_timeout(1500)
+    state = answer_identity(page)
+    visible = state["visible"]
+    shown = visible[0] if len(visible) == 1 else {}
+    answered = shown.get("answered") or ""
+    passed = (len(visible) == 1 and shown.get("id") == "report-sheet-cq_q-secret"
+              and shown.get("title") == title and "받은 답" in answered and "파일로 옮기기" in answered
+              and "덧붙이기: 파일로 옮기기" in (shown.get("target") or "") and bool(shown.get("expanded")))
+    record(result, 2, "답한 뒤 보이는 장(펼친 장)", label, passed, state)
+    page.screenshot(path=str(output / f"{label}.png"))
 
 
 def focus_lifetime_checks(page: Page, base: str, width: int, output: Path, result: dict) -> None:

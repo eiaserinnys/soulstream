@@ -5,13 +5,15 @@ import { CARD_ENTRY_KEY_PREFIX, CARD_QUESTION_KEY_PREFIX } from '../../../../pac
 import { pendingReportClosed, pendingReportReply, reportSendContext } from '../../lib/persistent-report';
 import { createOptimisticUserEvent, pickOptimisticVariant, useChatStore, type PendingOptimisticEvent } from '../../store/chatStore';
 import { getSendFailureReason, CARD_QUESTION_ANSWERED_REASON } from '../chat/useChatSendFlow';
+import type { CardQuestionAnswerHold } from './usePersistentReport';
 
 export const FAILED_REPORT_SEND_REMAINS = '보내지 못한 글이 대화에 남아 있어. 다시 보내거나 입력창으로 옮겨 줘.';
 const edition = (entry: Pick<PersistentReportEntry, 'key' | 'updated_at'>) => JSON.stringify([entry.key, entry.updated_at]);
 /** Report sends own no draft or attachment state. They share the ordinary per-session pending slot. */
 export function usePersistentReportSend(sessionId: string, api: ApiClient | null, entries: PersistentReportEntry[],
   base: PersistentReportEntry[], status: Session['status'] | undefined, setNotice: (text: string) => void,
-  onAnswered?: (entry: PersistentReportEntry, option: string) => void) {
+  /** 판 답은 보내기 시작과 함께 잠정으로 붙들고, 성공하면 확정하고, 실패하면 놓는다. */
+  hold?: CardQuestionAnswerHold) {
   const pending = useChatStore(state => state.pendingOptimisticBySession[sessionId]);
   const [state, setState] = useState(() => ({ sessionId, acceptedId: '',
     replies: new Map<string, { base: PersistentReportEntry[]; option: string }>(), cancelled: new Set<string>() }));
@@ -60,6 +62,8 @@ export function usePersistentReportSend(sessionId: string, api: ApiClient | null
         ...(kind === 'cancel' ? { reportCancellation: { key: entry.key, updated_at: entry.updated_at } } : {}) };
     if (ownFailed) store.updatePendingOptimisticStatus(sessionId, message.id, 'sending');
     else store.setPendingOptimistic(sessionId, message, true);
+    // 보내기 시작과 동시에 장을 잠정으로 붙든다. 판 갱신이 응답보다 먼저 와도 자리를 지킨다.
+    if (kind === 'reply' && option !== undefined) hold?.begin(entry, option);
     return message;
   }
   async function deliver(entry: PersistentReportEntry, message: PendingOptimisticEvent, kind: 'reply' | 'cancel' | 'close', text: string, option?: string) {
@@ -68,6 +72,7 @@ export function usePersistentReportSend(sessionId: string, api: ApiClient | null
     try {
       const verdict = await api.intervene(sessionId, text, undefined, message.contextItems);
       if (verdict.delivered === null || verdict.outcome === 'unknown') {
+        if (kind === 'reply' && option !== undefined) hold?.release(entry);
         useChatStore.getState().updatePendingOptimisticStatus(sessionId, message.id, 'failed', '전달을 확인하지 못했습니다');
         return;
       }
@@ -75,9 +80,9 @@ export function usePersistentReportSend(sessionId: string, api: ApiClient | null
       // 합성 user 이벤트를 만들지 않는다.
       if (verdict.reason === CARD_QUESTION_ANSWERED_REASON) {
         useChatStore.getState().clearPendingOptimistic(sessionId, message.id);
-        // 판 답 ACK를 받은 카드 질문 장은 판에서 답 받음으로 붙든다(계약 3절 2번).
-        if (kind === 'reply' && option !== undefined) onAnswered?.(entry, option);
-      }
+        // 판 답 ACK를 받은 카드 질문 장은 잠정 붙들기를 답 받음으로 확정한다(계약 3절 2번).
+        if (kind === 'reply' && option !== undefined) hold?.confirm(entry, option);
+      } else if (kind === 'reply' && option !== undefined) hold?.release(entry);
       setState(saved => {
         if (saved.sessionId !== sessionId) return saved;
         const replies = new Map(saved.replies);
@@ -85,6 +90,7 @@ export function usePersistentReportSend(sessionId: string, api: ApiClient | null
         return { ...saved, acceptedId: message.id, replies };
       });
     } catch (error) {
+      if (kind === 'reply' && option !== undefined) hold?.release(entry);
       useChatStore.getState().updatePendingOptimisticStatus(sessionId, message.id, 'failed', getSendFailureReason(error));
     }
   }

@@ -117,7 +117,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   }, [pendingReportKey, report.entries, reportsListMode, host.store]);
   const status = useSessionStore(state => session ? state.sessions[session.session_id]?.status : undefined);
   const reportSend = usePersistentReportSend(session?.session_id ?? '', api, report.entries, report.server, status, setNotice,
-    (entry, option) => report.holdAnswered(entry, option));
+    { begin: report.beginAnsweredHold, confirm: report.holdAnswered, release: report.releaseAnsweredHold });
   const questionActions = useCardActions(api);
   const storedQuestionPortrait = useSessionStore(state => {
     if (!session) return null;
@@ -306,7 +306,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
       : undefined}
     renderQuestion={(entry, controls) => renderCardQuestionSurface(entry, controls, {
       t, api, portraitUri: questionPortrait.uri, questionActions, reportSend,
-      onAnswered: (answered, option) => report.holdAnswered(answered, option),
+      answerHold: { begin: report.beginAnsweredHold, confirm: report.holdAnswered, release: report.releaseAnsweredHold },
     })}
     onOpenCardDetails={phone || reportsScene ? openReportCardDirectly : undefined}
     onFocusComposer={() => inputComposerRef.current?.focusAccessibility()} /> : null;

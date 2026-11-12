@@ -169,7 +169,7 @@ export function ReviewPasCardExpand() {
   }, key => setServerEntries(saved => saved.filter(entry => entry.key !== key))), []);
   const report = usePersistentReport('preview-pas', true, api, serverEntries, undefined);
   const reportSend = usePersistentReportSend('preview-pas', api, report.entries, report.server, 'completed', noop,
-    (entry, option) => report.holdAnswered(entry, option));
+    { begin: report.beginAnsweredHold, confirm: report.holdAnswered, release: report.releaseAnsweredHold });
   const completion = usePersistentCardCompletion(api);
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const column = phone ? width - t.foundation.pageInset * 2 : FRAME.landscape.conversation;
