@@ -705,14 +705,16 @@ export async function createLiveProductionApplication(
         const cardService = await cardDispatchRuntime?.serviceProvider();
         const cardDetail = await cardService?.getCard(cardId);
         if (cardDetail) {
-          const questionText = cardDetail.questions.find(item => String(item.id) === questionId)?.text;
+          const question = cardDetail.questions.find(item => String(item.id) === questionId);
           await pushNotifier.notifyCardQuestion({
             ownerEmail,
             cardId,
             questionId,
             folderId: cardDetail.card.folder_id,
             cardTitle: cardDetail.card.title,
-            question: typeof questionText === "string" ? questionText : "",
+            question: typeof question?.text === "string" ? question.text : "",
+            questionTitle: typeof question?.title === "string" ? question.title : null,
+            questionKind: question?.kind === "request" ? "request" : question?.kind === "choice" ? "choice" : null,
           });
         }
       }

@@ -85,6 +85,21 @@ export type PushNotificationLogEvent = {
 export const PUSH_TOOL_INPUT_TTL_MS = 60 * 60_000;
 export const PUSH_EVENT_MAX_AGE_MS = 10 * 60_000;
 const PUSH_BODY_MAX = 100;
+export type CardQuestionPushInput = {
+  ownerEmail: string;
+  cardId: string;
+  questionId: string;
+  folderId: string;
+  cardTitle: string;
+  question: string;
+  questionTitle?: string | null;
+  questionKind?: "choice" | "request" | null;
+};
+function cardQuestionPushTitle(input: CardQuestionPushInput): string {
+  const title = typeof input.questionTitle === "string" && input.questionTitle.trim() !== "" ? input.questionTitle : null;
+  if (title === null) return `확인 요청: ${clip(input.cardTitle, 24)}`;
+  return input.questionKind === "request" ? `부탁: ${title}` : `확인 요청: ${title}`;
+}
 
 export class PushNotifier {
   private readonly pending = new Set<Promise<void>>();
@@ -172,26 +187,12 @@ export class PushNotifier {
     void events;
   }
 
-  async notifyCardQuestion(input: {
-    ownerEmail: string;
-    cardId: string;
-    questionId: string;
-    folderId: string;
-    cardTitle: string;
-    question: string;
-  }): Promise<boolean> {
+  async notifyCardQuestion(input: CardQuestionPushInput): Promise<boolean> {
     if (this.closed || !input.ownerEmail.trim()) return false;
     return this.trackSend(this.notifyCardQuestionOwner(input));
   }
 
-  private async notifyCardQuestionOwner(input: {
-    ownerEmail: string;
-    cardId: string;
-    questionId: string;
-    folderId: string;
-    cardTitle: string;
-    question: string;
-  }): Promise<boolean> {
+  private async notifyCardQuestionOwner(input: CardQuestionPushInput): Promise<boolean> {
     try {
       if (await this.folderExcludes(input.folderId)) return false;
     } catch (error) {
@@ -199,7 +200,7 @@ export class PushNotifier {
     }
     return this.sendToEmail(
       input.ownerEmail.trim(),
-      `확인 요청: ${clip(input.cardTitle, 24)}`,
+      cardQuestionPushTitle(input),
       truncate(input.question, PUSH_BODY_MAX),
       {
         kind: "card_question",

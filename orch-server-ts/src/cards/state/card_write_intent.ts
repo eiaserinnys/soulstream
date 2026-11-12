@@ -1,6 +1,6 @@
 /** Symbols contain no user text, timestamps or identities. */
 export type CardBinding = {literal:string|boolean|number|null}|{bind:string};
-export interface CardWriteStep {kind:'card'|'questionInsert'|'questionAnswer'|'questionWithdraw'|'closeQuestions';fields:Record<string,CardBinding>;spread?:CardBinding}
+export interface CardWriteStep {kind:'card'|'questionInsert'|'questionUpdate'|'questionAnswer'|'questionWithdraw'|'closeQuestions';fields:Record<string,CardBinding>;spread?:CardBinding}
 export type CardWriteIntent=CardWriteStep[];
 export const literal=(value:string|boolean|number|null):CardBinding=>({literal:value});
 export const bind=(name:string):CardBinding=>({bind:name});

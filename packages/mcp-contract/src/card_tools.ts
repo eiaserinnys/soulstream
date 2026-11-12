@@ -5,10 +5,77 @@ import { assigneeSchema, callerSessionIdSchema } from "./folder_shared.js";
 
 const id = z.string().min(1);
 const scope = { card_id: id, caller_session_id: callerSessionIdSchema };
-/** 카드 질문의 선택지. 1~3개, 각 비어 있지 않은 문자열(코드포인트 12자 이하). 설명은 질문 글에 쓴다. */
+/** 카드 질문의 옛 꼴 선택지. 1~3개, 각 비어 있지 않은 문자열(코드포인트 12자 이하). */
 export const cardQuestionOptionsSchema = z.array(
   z.string().min(1).refine((value) => [...value].length <= 12, "선택지는 12자 이하"),
 ).min(1, "선택지는 1개 이상").max(3, "선택지는 3개 이하");
+/** 새 꼴 질문의 선택지. label 1~12자, description은 고르면 벌어지는 일 한 줄 1~80자. */
+export const cardQuestionOptionSchema = z.object({
+  label: z.string().min(1).refine((value) => [...value].length <= 12, "선택지 label은 12자 이하"),
+  description: z.string().min(1, "선택지 description이 필요합니다")
+    .refine((value) => value.trim().length > 0, "선택지 description은 비워 둘 수 없습니다")
+    .refine((value) => !/[\r\n]/.test(value), "선택지 description은 한 줄입니다")
+    .refine((value) => [...value].length <= 80, "선택지 description은 80자 이하"),
+  recommended: z.boolean().optional(),
+}).strict();
+export const cardQuestionOptionDetailsSchema = z.array(cardQuestionOptionSchema)
+  .min(1, "선택지는 1개 이상").max(3, "선택지는 3개 이하")
+  .refine((options) => options.filter((option) => option.recommended === true).length <= 1, "recommended는 선택지 하나에만 true로 둡니다");
+export const cardQuestionOptionsInputSchema = z.union([cardQuestionOptionsSchema, cardQuestionOptionDetailsSchema]);
+export const cardQuestionKindSchema = z.enum(["choice", "request"]);
+export const cardQuestionTitleSchema = z.string()
+  .refine((value) => value.trim().length > 0, "title은 비워 둘 수 없습니다")
+  .refine((value) => [...value].length <= 40, "title은 40자 이하")
+  .refine((value) => !/[\r\n]/.test(value), "title은 한 줄입니다")
+  .describe("정할 것 한 줄. 40자까지, 줄바꿈 없이.");
+/** 확인 항목 증거와 질문 첨부가 함께 쓰는 입력 꼴. */
+export const cardEvidenceSchema = z.union([
+  z.object({ type:z.enum(["image","link"]),label:z.string(),attachment_id:id }).strict(),
+  z.object({ type:z.enum(["image","link"]),label:z.string(),url:id }).strict(),
+]);
+export const cardQuestionAttachmentsSchema = z.array(cardEvidenceSchema).max(4, "첨부는 4개까지입니다");
+export const CARD_QUESTION_TEXT_MAX = 1200;
+export type CardQuestionInputShape = {
+  text: string;
+  title?: string;
+  kind?: "choice" | "request";
+  options?: readonly unknown[];
+  attachments?: readonly unknown[];
+  questionId?: string;
+};
+/**
+ * 질문 입력의 옛 꼴/새 꼴 판정과 choice/request 조합을 한 곳에서 검사한다.
+ * 새 꼴은 title, kind, 객체 options, attachments, questionId 가운데 하나라도 있을 때다.
+ */
+export function cardQuestionInputIssues(input: CardQuestionInputShape): { path: (string | number)[]; message: string }[] {
+  const issues: { path: (string | number)[]; message: string }[] = [];
+  const entries = Array.isArray(input.options) ? input.options : [];
+  const hasText = entries.some((entry) => typeof entry === "string");
+  const hasObject = entries.some((entry) => typeof entry === "object" && entry !== null);
+  if (hasText && hasObject) {
+    issues.push({ path: ["options"], message: "문자열 선택지와 객체 선택지를 섞지 않습니다" });
+    return issues;
+  }
+  const newShape = input.title !== undefined || input.kind !== undefined || input.questionId !== undefined
+    || input.attachments !== undefined || hasObject;
+  if (!newShape) {
+    if (input.options === undefined || !cardQuestionOptionsSchema.safeParse(input.options).success)
+      issues.push({ path: ["options"], message: "선택지는 1~3개, 각 12자 이하로 줄이고 설명은 질문 글에 쓰세요" });
+    return issues;
+  }
+  if (input.title === undefined) issues.push({ path: ["title"], message: "새 꼴 질문에는 title이 필요합니다" });
+  if ([...input.text].length > CARD_QUESTION_TEXT_MAX)
+    issues.push({ path: ["text"], message: `text는 ${CARD_QUESTION_TEXT_MAX}자까지입니다` });
+  const kind = input.kind ?? "choice";
+  if (kind === "request") {
+    if (input.options !== undefined) issues.push({ path: ["options"], message: "request 질문에는 선택지를 보내지 않습니다" });
+  } else if (input.options === undefined) {
+    issues.push({ path: ["options"], message: "choice 질문에는 선택지가 필요합니다" });
+  } else if (!cardQuestionOptionsInputSchema.safeParse(input.options).success) {
+    issues.push({ path: ["options"], message: "선택지는 1~3개이고, 객체 선택지는 label 12자와 description 80자 한 줄이 필요합니다" });
+  }
+  return issues;
+}
 /** 검증 대기 시각의 형식 규칙. 오프셋이 없으면 서버 시간대에 따라 시각이 달라진다. */
 export const CARD_VERIFICATION_WAKE_AT_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/;
 export const cardVerificationWakeAtSchema = z.string().regex(CARD_VERIFICATION_WAKE_AT_PATTERN, "wake_at은 오프셋이 있는 ISO 8601 시각이어야 합니다")
@@ -17,10 +84,7 @@ export const cardVerificationWaitingForSchema = z.string()
   .refine((value) => { const length = [...value.trim()].length; return length >= 1 && length <= 36; }, "waiting_for는 공백을 뺀 한 줄 1~36자입니다")
   .describe("무엇을 기다리는지 한 줄. 공백을 뺀 36자까지.");
 const itemId = z.number().int().positive();
-const itemEvidence = z.union([
-  z.object({ type:z.enum(["image","link"]),label:z.string(),attachment_id:id }).strict(),
-  z.object({ type:z.enum(["image","link"]),label:z.string(),url:id }).strict(),
-]);
+const itemEvidence = cardEvidenceSchema;
 export const cardTools = {
   ...cardMaintenanceTools,
   create_card: { name: "create_card", timeoutMs: 60000, config: {
@@ -85,8 +149,16 @@ export const cardTools = {
     description: "담당 카드의 검수를 요청합니다. 확인 항목이 있으면 ask에 사용자가 볼 것을 한 줄로 적으세요. ask는 60자까지이며 식별자를 넣지 않습니다. 보고나 미답 질문은 상태 변경을 막지 않습니다.", inputSchema: { ...scope,ask:z.string().describe("사용자가 볼 것 한 줄. 60자까지, 식별자 없이").optional() },
   }, audience: "all" },
   ask_card_question: { name: "ask_card_question", config: {
-    description: "AskUserQuestion 대신 카드에 질문을 남기고 이 턴을 끝내 답을 기다린다. options에 사용자가 고를 선택지를 1~3개(각 12자 이하) 둔다. 다른 세션이 담당인 카드에는 담당 세션만 씁니다.",
-    inputSchema: { ...scope, text: id, options: cardQuestionOptionsSchema.describe("사용자가 고를 선택지 1~3개. 각 12자 이하로 짧게 쓰고 설명은 질문 글에 쓴다.") },
+    description: "AskUserQuestion 대신 카드에 결정 하나를 묻고 이 턴을 끝내 답을 기다린다. title에 정할 것 한 줄(40자까지), text에 배경(무슨 일인지, 왜 지금 정하는지, 급한 정도를 일상어로 400자 안팎, 1200자까지)을 쓴다. options에는 선택지 1~3개를 {label(12자까지), description(고르면 벌어지는 일 한 줄, 80자까지), recommended(권하는 안 하나에 true)}로 둔다. 시안 그림이나 링크는 attachments(4개까지, 확인 항목 증거와 같은 꼴)로 붙인다. 사용자가 손수 할 일은 kind=request로 묻고 options는 보내지 않는다. 사용자는 선택지 밖의 글로도 답할 수 있으니 「다른 안」 같은 선택지를 넣지 않는다. 열린 질문을 고치려면 question_id와 함께 전체 내용을 다시 보낸다. 고쳐도 알림은 다시 가지 않는다. 다른 세션이 담당인 카드에는 담당 세션만 쓴다.",
+    inputSchema: {
+      ...scope,
+      text: id.describe("질문 배경. 무슨 일인지, 왜 지금 정하는지, 급한 정도를 일상어로 400자 안팎(1200자까지) 쓴다."),
+      title: cardQuestionTitleSchema.optional(),
+      kind: cardQuestionKindSchema.optional().describe("choice는 선택지를 고르는 질문, request는 사용자가 손수 할 일. 생략하면 choice."),
+      options: cardQuestionOptionsInputSchema.optional().describe("선택지 1~3개. 문자열 배열(옛 꼴)이나 {label, description, recommended} 객체 배열(새 꼴) 하나만 보내고 섞지 않는다. request에는 보내지 않는다."),
+      attachments: cardQuestionAttachmentsSchema.optional().describe("시안 그림이나 링크. 4개까지, 확인 항목 증거와 같은 꼴({type,label,attachment_id} 또는 {type,label,url})."),
+      question_id: id.optional().describe("고칠 열린 질문의 id. 있으면 새 질문을 만들지 않고 그 질문을 제자리에서 고친다."),
+    },
   }, audience: "all" },
   withdraw_card_question: { name: "withdraw_card_question", config: {
     description: "담당 카드에 내가 남긴 질문이 대화나 커멘트로 결정되어 더 필요 없을 때 철회합니다. reason에 결정 근거를 한 줄(200자까지)로 적습니다. 답이 있거나 이미 철회된 질문은 거부됩니다. 철회한 질문은 답을 기다리는 질문 목록에서 빠집니다.",

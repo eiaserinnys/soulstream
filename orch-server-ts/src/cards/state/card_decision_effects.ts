@@ -19,7 +19,7 @@ export const COMMAND_RULES:Partial<Record<CardDecisionCommand,string>>={
  NOTE_MISSING:'현재 상태를 제한하지 않고 blocked_detail에 「담당 에이전트 없음」을 쓴다. queued일 때는 담당 없음 하위 상태로 표시하고 담당, 완료 정보와 대기열 순서는 보존한다.',
  SET_STATUS:'agent는 현재 담당이거나 담당 확보 후보이면 상태를 바꿀 수 있고, 담당 종류가 사람이나 세션이 아닌 카드는 다른 agent 세션도 todo, queued, on_hold, cancelled로 옮길 수 있다. 담당 확보 후보는 담당 세션 없이 에이전트로만 배정된 카드에 연결된 같은 에이전트의 세션이며, 같은 카드에 연결된 호출자 세션이 없어야 한다. 검증 대기는 담당 세션과 유효한 wake_at과 waiting_for가 필요하다. 같은 done 재지정도 완료 정보를 다시 쓰고 같은 queued 재지정도 새 대기열 순서 키를 요청한다.',
  HUMAN_INPUT:'보관되지 않은 세션 담당의 검증 대기 또는 한도 아닌 막힘을 재개하고 열린 질문을 모두 닫는다.',
- ASK_QUESTION:'다른 세션 담당 여부를 확인하고 질문 행을 추가한다. 질문 막힘으로 옮기며 완료 정보와 대기열 순서를 지운다.',
+ ASK_QUESTION:'다른 세션 담당 여부를 확인한다. 새 질문이면 질문 행을 추가하고 질문 막힘으로 옮기며 완료 정보와 대기열 순서를 지운다. question_id가 있으면 같은 카드의 열린 질문만 제자리에서 고치고 카드 상태와 예약은 바꾸지 않는다.',
  ANSWER_QUESTION:'사람만 열린 질문에 답한다. 마지막 열린 질문이고 질문 막힘일 때만 실행 중으로 옮긴다. 완료 뒤 늦은 답은 상태를 보존한다.',
  WITHDRAW_QUESTION:'질문 작성자 또는 현재 담당 세션이 철회한다. 마지막 질문 막힘일 때만 실행 중으로 옮긴다.',
  ADD_COMMENT:'직접 입구는 prepare 검사 뒤 다른 담당 검사를 먼저 한다. dispatch_work의 Tx 후속 입구는 이 검사를 하지 않는다. reply의 담당, 길이와 사용자 입력을 확인한다. non-reply이면 사람뿐 아니라 담당의 spoken도 말로 풀리는 기다림을 재개한다. claim과 항목과 상태 UPDATE는 나눈다.',
@@ -64,7 +64,7 @@ function status(c:CardDecisionCommand,target:string,conditions:any[]=[],extra:De
 for(const c of ['SET_STATUS','BULK_SET_STATUS'] as const)for(const target of TARGETS)status(c,target,[fact('target',target)],target==='verification'?[write({now:bind('formatted.verification')})]:[]);
 for(const target of ['todo','queued'])status('CREATE',target,[fact('queued',target==='queued')],[write({archived:literal(false),queue_position_key:target==='queued'?bind('queue.new'):literal(null)})]);
 status('REQUEST_REVIEW','review');
-status('ASK_QUESTION','question',[],[write({blocked_detail:bind('command.text')})]);
+status('ASK_QUESTION','question',[not(fact('editing'))],[write({blocked_detail:bind('command.text')})]);
 status('HUMAN_INPUT','running',['humanResumable']);status('ADD_COMMENT','running',['commentResumable']);
 for(const c of ['ANSWER_QUESTION','WITHDRAW_QUESTION'] as const)status(c,'running',['lastQuestion']);
 status('START_WORK','running');
@@ -78,7 +78,8 @@ status('MERGE_SOURCE','cancelled',[],[write({now:bind('formatted.merge')})]);
 // the detail on every status, without inventing an eligibility restriction.
 put('status','NOTE_MISSING','s_missing',[any('s_queued','s_missing')]);
 verdictExtras.NOTE_MISSING!.push(write({blocked_detail:literal('담당 에이전트 없음')}));
-put('question','ASK_QUESTION','q_open',[],[write({session_id:bind('actor.session'),text:bind('command.text'),options:bind('command.options')},'question','questionInsert')]);
+put('question','ASK_QUESTION','q_open',[not(fact('editing'))],[write({session_id:bind('actor.session'),text:bind('command.text'),options:bind('command.options'),title:bind('command.title'),kind:bind('command.kind'),attachments:bind('command.attachments')},'question','questionInsert')]);
+put('question','ASK_QUESTION',undefined,[fact('editing')],[write({title:bind('command.title'),text:bind('command.text'),options:bind('command.options'),kind:bind('command.kind'),attachments:bind('command.attachments')},'question','questionUpdate')]);
 for(const c of ['ANSWER_QUESTION','WITHDRAW_QUESTION'] as const){
  put('question',c,'q_none',[not(fact('otherOpen'))]);
  verdictExtras[c]!.push(c==='ANSWER_QUESTION'?write({answer:bind('command.answer'),answered_at:bind('clock'),answered_by:bind('actor.user')},'question','questionAnswer'):
@@ -124,7 +125,7 @@ put('question','REQUEST_REVIEW',undefined,[fact('hasAsk')],[write({now:bind('for
 for(const c of ['PATCH_CARD_CONTROL','SAVE_EXECUTION_SETTINGS','UPDATE_UNSTARTED','REGISTER_REPLACEMENT'] as const)verdictExtras[c]!.push({type:'spreadControl',params:{stage:'state'}});
 for(const c of ['PATCH_CARD_CONTROL','SAVE_EXECUTION_SETTINGS','REGISTER_REPLACEMENT','CONFIRM_EXECUTION'] as const)
  augment('archive',c,and([fact('assignmentChanged'),any('r_limit','r_longLimit'),not(fact('hasNow'))]),[write({now:bind('formatted.replacement')})]);
-put('archive','ASK_QUESTION',undefined,[fact('hasCurrentNow')],[write({now:bind('formatted.question')})]);
+put('archive','ASK_QUESTION',undefined,[fact('hasCurrentNow'),not(fact('editing'))],[write({now:bind('formatted.question')})]);
 put('archive','BLOCK_FOR_LIMIT',undefined,[fact('short')],[write({now:bind('formatted.limit')})]);
 put('archive','ADD_COMMENT',undefined,[fact('hasItem'),not(fact('reply'))],[write({items:bind('formatted.items')},'item')]);
 

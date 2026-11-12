@@ -187,7 +187,7 @@ export class CardDispatcher {
         if (card.status === "queued" || op.operation_type === "reorder_card_queue" || op.operation_type === "answer_card_question" || (previousStatus !== "review" && card.status === "review"))
             await this.dispatchOnce();
         const committed = change.committedCard;
-        const kind = committed ? selectCardBoardNotice({operationType:op.operation_type, actorKind:op.actor_kind, previousStatus, committed}) : null;
+        const kind = committed ? selectCardBoardNotice({operationType:op.operation_type, actorKind:op.actor_kind, previousStatus, committed, payload}) : null;
         if (kind && committed) {
             let text: string | null;
             if (kind === "blocked") {

@@ -19,6 +19,9 @@ export const unrecordedLimitResume=(w:CardWorld,read=advance)=>statusLeaf(value(
 export const shortLimitReservationMissing=(w:CardWorld,read=advance)=>active(w)&&statusLeaf(value(w))==='running'&&value(w).assignee==='session'&&w.owner==='shortLimit'&&value(read(w,{type:'BLOCK_FOR_LIMIT',actor:'server',facts:{sessionMatch:true,termination:true,short:true}})).reservation!=='limit';
 export const questionEntryMissing=(w:CardWorld,read=boardEntriesOf)=>active(w)&&w.pas!=='none'&&value(w).question==='open'&&!read(w).includes('question');
 export const cardEntryMissing=(w:CardWorld,read=boardEntriesOf)=>active(w)&&w.pas!=='none'&&value(w).question==='none'&&['question','noReport','other','limit','review'].includes(statusLeaf(value(w)))&&!w.dismissed&&!read(w).includes('card');
+const editQuestion={type:'ASK_QUESTION',actor:'owner',facts:{hasCurrentNow:true,editing:true,targetQuestion:'open'}} as const;
+export const questionEditChangesState=(w:CardWorld,read=advance)=>value(w).question==='open'
+ &&JSON.stringify(value(read(w,editQuestion as unknown as DecisionEvent)))!==JSON.stringify(value(w));
 export const CARD_PROMISES=[
  {name:'판에 올라야 할 장은 판에 있다 (1-가 질문 장)',discrepancies:[1,7],breaks:questionEntryMissing},
  {name:'서버의 한도 재개는 기록된 담당이 현재 담당일 때만 한다',discrepancies:[2],breaks:unrecordedLimitResume},
@@ -26,6 +29,7 @@ export const CARD_PROMISES=[
  {name:'질문을 올릴 수 있는 세션은 철회할 수 있다',discrepancies:[8],breaks:questionAuthorCannotWithdraw},
  {name:'짧은 한도로 막히면 취소 전까지 시각 있는 예약이 있다',discrepancies:[],breaks:shortLimitReservationMissing},
  {name:'기다리는 카드는 판의 장이나 시각으로 나가는 길이 있다',discrepancies:[],breaks:(w:CardWorld)=>active(w)&&w.pas!=='none'&&['question','noReport','other','limit','review'].includes(statusLeaf(value(w)))&&!boardEntriesOf(w).length&&!['limit','verify'].includes(value(w).reservation)},
+ {name:'질문 제자리 고침은 열린 질문 수와 카드 상태를 바꾸지 않는다',discrepancies:[],breaks:questionEditChangesState},
 ];
 let cached:ReturnType<typeof compute>|undefined;
 export function checkCardPromises(){return cached??=compute();}

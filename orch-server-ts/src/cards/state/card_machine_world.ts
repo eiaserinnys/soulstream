@@ -39,6 +39,10 @@ export function factsConsistent(w:CardWorld,event:DecisionEvent):boolean {
  if(v.question==='open'&&f.question!=='open'&&!f.otherOpen)return false;
  if(f.question==='missing'&&['author','ownerAuthor'].includes(event.actor))return false;
  }
+ if(c==='ASK_QUESTION'&&f.targetQuestion!==undefined){
+ if(f.editing===false&&f.targetQuestion!=='missing')return false;
+ if(f.targetQuestion==='open'&&v.question!=='open')return false;
+ }
  if(f.hasOwnerSession===true&&v.assignee!=='session')return false;
  if(f.hasOwnerSession===false&&['owner','ownerAuthor'].includes(event.actor))return false;
  if(f.hasOwnerSession===false&&f.ownerState!==undefined&&f.ownerState!=='missing')return false;

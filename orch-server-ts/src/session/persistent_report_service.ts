@@ -4,6 +4,7 @@ import { readBoardCards,readCardBoardSessions } from "./card_board_connections.j
 export { readCardBoardSessions } from "./card_board_connections.js";
 export { clip } from "./card_board_entries.js";
 import { cardQuestionState } from "../cards/card_question_rules.js";
+import { cardQuestionOptionLabels } from "@soulstream/wire-schema/card-questions";
 import { projectCardQuestionRows } from "../cards/card_attachment_projection.js";
 import { readPersistentEnabled } from "@soulstream/wire-schema/persistent-session-settings";
 import {
@@ -188,7 +189,7 @@ export class PersistentReportService {
     if (state === "answered") return question.answer === option
       ? { errors: null, decision: { action: "card-acked", cardId: question.card_id } }
       : rejectDecision(question.card_id, "CARD_QUESTION_CLOSED", 409, "이미 닫힌 질문입니다");
-    const options = question.options ?? [];
+    const options = cardQuestionOptionLabels(question.options) ?? [];
     if (options.length > 0 && !options.includes(option)) return rejectDecision(question.card_id, "CARD_QUESTION_OPTION_INVALID", 422, "선택지에 없는 답입니다");
     const card = (await sql<{ status: string }[]>`SELECT status FROM cards WHERE id=${question.card_id}`)[0];
     if (!card) return rejectDecision(question.card_id, "CARD_QUESTION_CLOSED", 409, "이미 닫힌 질문입니다");

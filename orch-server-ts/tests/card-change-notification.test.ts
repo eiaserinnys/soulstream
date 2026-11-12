@@ -39,6 +39,12 @@ describe("committed card reference notifications",()=>{
       assignee_session_id:"owner",node_id:"node",assignee_agent_id:null,model_preset:null,archived:false} as never;
     expect(selectCardBoardNotice({operationType:"set_card_status",actorKind:"user",previousStatus:"running",committed})).toBeNull();
   });
+  it("keeps the new-question board notice for creation and silences it for an in-place edit",()=>{
+    const committed={id:"card",number:1,title:"작업",archived:false} as never;
+    expect(selectCardBoardNotice({operationType:"ask_card_question",actorKind:"agent",committed})).toBe("question");
+    expect(selectCardBoardNotice({operationType:"ask_card_question",actorKind:"agent",committed,payload:{is_update:false}})).toBe("question");
+    expect(selectCardBoardNotice({operationType:"ask_card_question",actorKind:"agent",committed,payload:{is_update:true}})).toBeNull();
+  });
   it("still notifies the owner when a user blocks the card",()=>{
     const c=change({previousStatus:"running",committedCard:{id:"card",title:"작업",status:"blocked",blocked_kind:"limit",assignee_session_id:"owner"}});
     expect(buildCardChangeNotification(c)).toMatchObject({sessionId:"owner",text:"사용자가 카드 「작업」(card)를 실행 중→막힘으로 변경했습니다"});

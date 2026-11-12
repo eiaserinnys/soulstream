@@ -13670,10 +13670,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -13768,7 +13768,9 @@
               "text": "결정",
               "options": [
                 "진행"
-              ]
+              ],
+              "kind": "choice",
+              "is_update": false
             },
             "reason": null,
             "created_at": "2026-11-11T14:16:49.731Z"
@@ -32408,10 +32410,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -32506,7 +32508,9 @@
               "text": "결정",
               "options": [
                 "진행"
-              ]
+              ],
+              "kind": "choice",
+              "is_update": false
             },
             "reason": null,
             "created_at": "2026-11-11T14:16:53.521Z"
@@ -32792,7 +32796,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:16:53.521Z"
@@ -32908,10 +32914,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -32932,10 +32938,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -33767,10 +33773,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -33865,7 +33871,9 @@
               "text": "결정",
               "options": [
                 "진행"
-              ]
+              ],
+              "kind": "choice",
+              "is_update": false
             },
             "reason": null,
             "created_at": "2026-11-11T14:16:53.817Z"
@@ -34151,7 +34159,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:16:53.817Z"
@@ -34267,10 +34277,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -34291,10 +34301,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -35126,10 +35136,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -35224,7 +35234,9 @@
               "text": "결정",
               "options": [
                 "진행"
-              ]
+              ],
+              "kind": "choice",
+              "is_update": false
             },
             "reason": null,
             "created_at": "2026-11-11T14:16:54.211Z"
@@ -35509,7 +35521,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:16:54.211Z"
@@ -35625,10 +35639,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -35649,10 +35663,10 @@
           "withdrawn_by_session_id": "other",
           "withdrawal_reason": "결정됨",
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -36484,10 +36498,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -36582,7 +36596,9 @@
               "text": "결정",
               "options": [
                 "진행"
-              ]
+              ],
+              "kind": "choice",
+              "is_update": false
             },
             "reason": null,
             "created_at": "2026-11-11T14:16:54.469Z"
@@ -36869,7 +36885,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:16:54.469Z"
@@ -37025,10 +37043,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -37049,10 +37067,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -37465,7 +37483,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:16:54.469Z"
@@ -37639,10 +37659,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -37663,10 +37683,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -38502,10 +38522,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -38600,7 +38620,9 @@
               "text": "결정",
               "options": [
                 "진행"
-              ]
+              ],
+              "kind": "choice",
+              "is_update": false
             },
             "reason": null,
             "created_at": "2026-11-11T14:16:54.721Z"
@@ -38887,7 +38909,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:16:54.721Z"
@@ -39043,10 +39067,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -39067,10 +39091,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -39483,7 +39507,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:16:54.721Z"
@@ -39657,10 +39683,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -39681,10 +39707,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -40520,10 +40546,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -40618,7 +40644,9 @@
               "text": "결정",
               "options": [
                 "진행"
-              ]
+              ],
+              "kind": "choice",
+              "is_update": false
             },
             "reason": null,
             "created_at": "2026-11-11T14:16:54.942Z"
@@ -40906,7 +40934,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:16:54.942Z"
@@ -41022,10 +41052,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -41046,10 +41076,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -60878,10 +60908,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -60976,7 +61006,9 @@
               "text": "결정",
               "options": [
                 "진행"
-              ]
+              ],
+              "kind": "choice",
+              "is_update": false
             },
             "reason": null,
             "created_at": "2026-11-11T14:16:58.476Z"
@@ -97059,10 +97091,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -97157,7 +97189,9 @@
               "text": "결정",
               "options": [
                 "진행"
-              ]
+              ],
+              "kind": "choice",
+              "is_update": false
             },
             "reason": null,
             "created_at": "2026-11-11T14:17:06.482Z"
@@ -97444,7 +97478,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:06.482Z"
@@ -97600,10 +97636,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -97624,10 +97660,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -98040,7 +98076,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:06.482Z"
@@ -98214,10 +98252,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -98238,10 +98276,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -98652,7 +98690,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:06.482Z"
@@ -98854,10 +98894,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -98878,10 +98918,10 @@
           "withdrawn_by_session_id": "owner",
           "withdrawal_reason": "결정됨",
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -99713,10 +99753,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -99811,7 +99851,9 @@
               "text": "결정",
               "options": [
                 "진행"
-              ]
+              ],
+              "kind": "choice",
+              "is_update": false
             },
             "reason": null,
             "created_at": "2026-11-11T14:17:06.959Z"
@@ -100098,7 +100140,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:06.959Z"
@@ -100254,10 +100298,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -100278,10 +100322,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -100694,7 +100738,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:06.959Z"
@@ -100868,10 +100914,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -100892,10 +100938,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -101306,7 +101352,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:06.959Z"
@@ -101508,10 +101556,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -101532,10 +101580,10 @@
           "withdrawn_by_session_id": "owner",
           "withdrawal_reason": "결정됨",
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -108750,10 +108798,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -108848,7 +108896,9 @@
               "text": "결정",
               "options": [
                 "진행"
-              ]
+              ],
+              "kind": "choice",
+              "is_update": false
             },
             "reason": null,
             "created_at": "2026-11-11T14:17:08.823Z"
@@ -109228,7 +109278,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:08.823Z"
@@ -109390,10 +109442,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -109414,10 +109466,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -111415,10 +111467,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -111513,7 +111565,9 @@
               "text": "결정",
               "options": [
                 "진행"
-              ]
+              ],
+              "kind": "choice",
+              "is_update": false
             },
             "reason": null,
             "created_at": "2026-11-11T14:17:09.281Z"
@@ -111893,7 +111947,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:09.281Z"
@@ -112055,10 +112111,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -112079,10 +112135,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -136336,10 +136392,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -136434,7 +136490,9 @@
               "text": "결정",
               "options": [
                 "진행"
-              ]
+              ],
+              "kind": "choice",
+              "is_update": false
             },
             "reason": null,
             "created_at": "2026-11-11T14:17:12.826Z"
@@ -136721,7 +136779,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:12.826Z"
@@ -136837,10 +136897,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -136861,10 +136921,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -137246,7 +137306,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:12.826Z"
@@ -137383,10 +137445,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -137407,10 +137469,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -137746,7 +137808,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:12.826Z"
@@ -137916,10 +137980,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -137940,10 +138004,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -138359,7 +138423,9 @@
                 "text": "결정",
                 "options": [
                   "진행"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:12.826Z"
@@ -138598,10 +138664,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -138622,10 +138688,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -150514,10 +150580,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -150618,7 +150684,9 @@
               "text": "오류 순서",
               "options": [
                 "확인"
-              ]
+              ],
+              "kind": "choice",
+              "is_update": false
             },
             "reason": null,
             "created_at": "2026-11-11T14:17:13.807Z"
@@ -151184,7 +151252,9 @@
                 "text": "오류 순서",
                 "options": [
                   "확인"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:13.807Z"
@@ -151312,10 +151382,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -151336,10 +151406,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -152004,7 +152074,9 @@
                 "text": "오류 순서",
                 "options": [
                   "확인"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:13.807Z"
@@ -152150,10 +152222,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -152174,10 +152246,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -152744,7 +152816,9 @@
                 "text": "오류 순서",
                 "options": [
                   "확인"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:13.807Z"
@@ -152890,10 +152964,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -152914,10 +152988,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -153486,7 +153560,9 @@
                 "text": "오류 순서",
                 "options": [
                   "확인"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:13.807Z"
@@ -153632,10 +153708,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -153656,10 +153732,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         },
         {
@@ -153678,10 +153754,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -153782,7 +153858,9 @@
               "text": "철회 뒤 답",
               "options": [
                 "확인"
-              ]
+              ],
+              "kind": "choice",
+              "is_update": false
             },
             "reason": null,
             "created_at": "2026-11-11T14:17:13.945Z"
@@ -154347,7 +154425,9 @@
                 "text": "오류 순서",
                 "options": [
                   "확인"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:13.807Z"
@@ -154385,7 +154465,9 @@
                 "text": "철회 뒤 답",
                 "options": [
                   "확인"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:13.945Z"
@@ -154513,10 +154595,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         },
         {
@@ -154535,10 +154617,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -154559,10 +154641,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         },
         {
@@ -154581,10 +154663,10 @@
           "withdrawn_by_session_id": "owner",
           "withdrawal_reason": "확인",
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -155249,7 +155331,9 @@
                 "text": "오류 순서",
                 "options": [
                   "확인"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:13.807Z"
@@ -155287,7 +155371,9 @@
                 "text": "철회 뒤 답",
                 "options": [
                   "확인"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:13.945Z"
@@ -155433,10 +155519,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         },
         {
@@ -155455,10 +155541,10 @@
           "withdrawn_by_session_id": "owner",
           "withdrawal_reason": "확인",
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -155479,10 +155565,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         },
         {
@@ -155501,10 +155587,10 @@
           "withdrawn_by_session_id": "owner",
           "withdrawal_reason": "확인",
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -156071,7 +156157,9 @@
                 "text": "오류 순서",
                 "options": [
                   "확인"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:13.807Z"
@@ -156109,7 +156197,9 @@
                 "text": "철회 뒤 답",
                 "options": [
                   "확인"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:13.945Z"
@@ -156255,10 +156345,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         },
         {
@@ -156277,10 +156367,10 @@
           "withdrawn_by_session_id": "owner",
           "withdrawal_reason": "확인",
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -156301,10 +156391,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         },
         {
@@ -156323,10 +156413,10 @@
           "withdrawn_by_session_id": "owner",
           "withdrawal_reason": "확인",
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -156894,7 +156984,9 @@
                 "text": "오류 순서",
                 "options": [
                   "확인"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:13.807Z"
@@ -156932,7 +157024,9 @@
                 "text": "철회 뒤 답",
                 "options": [
                   "확인"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:13.945Z"
@@ -157078,10 +157172,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         },
         {
@@ -157100,10 +157194,10 @@
           "withdrawn_by_session_id": "owner",
           "withdrawal_reason": "확인",
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -157124,10 +157218,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         },
         {
@@ -157146,10 +157240,10 @@
           "withdrawn_by_session_id": "owner",
           "withdrawal_reason": "확인",
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -157716,7 +157810,9 @@
                 "text": "오류 순서",
                 "options": [
                   "확인"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:13.807Z"
@@ -157754,7 +157850,9 @@
                 "text": "철회 뒤 답",
                 "options": [
                   "확인"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:13.945Z"
@@ -157900,10 +157998,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         },
         {
@@ -157922,10 +158020,10 @@
           "withdrawn_by_session_id": "owner",
           "withdrawal_reason": "확인",
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -157946,10 +158044,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         },
         {
@@ -157968,10 +158066,10 @@
           "withdrawn_by_session_id": "owner",
           "withdrawal_reason": "확인",
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -158541,7 +158639,9 @@
                 "text": "오류 순서",
                 "options": [
                   "확인"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:13.807Z"
@@ -158579,7 +158679,9 @@
                 "text": "철회 뒤 답",
                 "options": [
                   "확인"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:13.945Z"
@@ -158725,10 +158827,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         },
         {
@@ -158747,10 +158849,10 @@
           "withdrawn_by_session_id": "owner",
           "withdrawal_reason": "확인",
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -158771,10 +158873,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         },
         {
@@ -158793,10 +158895,10 @@
           "withdrawn_by_session_id": "owner",
           "withdrawal_reason": "확인",
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -159365,7 +159467,9 @@
                 "text": "오류 순서",
                 "options": [
                   "확인"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:13.807Z"
@@ -159403,7 +159507,9 @@
                 "text": "철회 뒤 답",
                 "options": [
                   "확인"
-                ]
+                ],
+                "kind": "choice",
+                "is_update": false
               },
               "reason": null,
               "created_at": "2026-11-11T14:17:13.945Z"
@@ -159549,10 +159655,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         },
         {
@@ -159571,10 +159677,10 @@
           "withdrawn_by_session_id": "owner",
           "withdrawal_reason": "확인",
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],
@@ -159595,10 +159701,10 @@
           "withdrawn_by_session_id": null,
           "withdrawal_reason": null,
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         },
         {
@@ -159617,10 +159723,10 @@
           "withdrawn_by_session_id": "owner",
           "withdrawal_reason": "확인",
           "title": null,
-          "kind": null,
-          "attachments": null,
+          "kind": "choice",
+          "attachments": [],
           "selected_option": null,
-          "revision": null,
+          "revision": 1,
           "revised_at": null
         }
       ],

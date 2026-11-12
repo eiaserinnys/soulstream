@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { CARD_STATUSES } from "@soulstream/wire-schema";
 import { CARD_COLOR_KEYS } from "@soulstream/wire-schema/card-colors";
-import { cardQuestionOptionsSchema, cardVerificationWakeAtSchema, cardVerificationWaitingForSchema } from "@soulstream/mcp-contract";
+import { cardEvidenceSchema, cardQuestionAttachmentsSchema, cardQuestionInputIssues, cardQuestionKindSchema, cardQuestionOptionsInputSchema, cardQuestionTitleSchema, cardVerificationWakeAtSchema, cardVerificationWaitingForSchema } from "@soulstream/mcp-contract";
 import type { CardControlPlaneService } from "./card_control_plane_service.js";
 import type { FolderActorParams } from "./control_plane/card_types.js";
 import { serializeCardMutation, serializeCardRow } from "../folders/folder_contracts.js";
@@ -11,10 +11,7 @@ const assignee=z.object({ kind:z.enum(["agent","human","session"]).nullable(),ag
 const mutation=z.object({ expectedVersion:z.number().int().positive(),idempotencyKey:id,reason:z.string().nullable().optional() });
 const append=z.object({ idempotencyKey:id });
 const itemId=z.number().int().positive();
-const evidence=z.array(z.union([
-  z.object({type:z.enum(["image","link"]),label:z.string(),attachment_id:id}).strict(),
-  z.object({type:z.enum(["image","link"]),label:z.string(),url:id}).strict(),
-]));
+const evidence=z.array(cardEvidenceSchema);
 export const cardOperationSchemas={
   create_card:z.object({ folderId:id,title:id,request:z.string(),brief:z.string().optional(),attachments,queue:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),idempotencyKey:id }),
   update_card:mutation.extend({ title:id.optional(),brief:z.string().optional(),archived:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),color:z.enum(CARD_COLOR_KEYS).optional() }).refine(v=>Object.keys(v).some(k=>!["expectedVersion","idempotencyKey","reason"].includes(k)),"Patch requires a field"),
@@ -35,7 +32,9 @@ export const cardOperationSchemas={
   add_card_report:append.extend({ title:id,format:z.enum(["markdown","html"]),body:z.string() }),
   update_card_brief:mutation.extend({ brief:z.string() }),
   add_card_comment:append.extend({ body:z.string(),kind:z.enum(["comment","spoken"]).optional(),mode:z.enum(["spoken","reply"]).optional(),itemId:itemId.optional() }),
-  ask_card_question:append.extend({ text:id,options:cardQuestionOptionsSchema }),
+  ask_card_question:append.extend({ text:id,title:cardQuestionTitleSchema.optional(),kind:cardQuestionKindSchema.optional(),
+    options:cardQuestionOptionsInputSchema.optional(),attachments:cardQuestionAttachmentsSchema.optional(),questionId:id.optional() })
+    .strict().superRefine((value,ctx)=>{ for (const issue of cardQuestionInputIssues(value)) ctx.addIssue({code:"custom",path:issue.path,message:issue.message}); }),
   withdraw_card_question:append.extend({ questionId:id,reason:id }),
   answer_card_question:append.extend({ questionId:id,answer:id }),
   set_card_items:append.extend({ items:z.array(z.object({title:id}).strict()) }),

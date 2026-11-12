@@ -1134,13 +1134,72 @@
     "name": "archive_recurring_job"
   },
   {
-    "description": "AskUserQuestion 대신 카드에 질문을 남기고 이 턴을 끝내 답을 기다린다. options에 사용자가 고를 선택지를 1~3개(각 12자 이하) 둔다. 다른 세션이 담당인 카드에는 담당 세션만 씁니다.",
+    "description": "AskUserQuestion 대신 카드에 결정 하나를 묻고 이 턴을 끝내 답을 기다린다. title에 정할 것 한 줄(40자까지), text에 배경(무슨 일인지, 왜 지금 정하는지, 급한 정도를 일상어로 400자 안팎, 1200자까지)을 쓴다. options에는 선택지 1~3개를 {label(12자까지), description(고르면 벌어지는 일 한 줄, 80자까지), recommended(권하는 안 하나에 true)}로 둔다. 시안 그림이나 링크는 attachments(4개까지, 확인 항목 증거와 같은 꼴)로 붙인다. 사용자가 손수 할 일은 kind=request로 묻고 options는 보내지 않는다. 사용자는 선택지 밖의 글로도 답할 수 있으니 「다른 안」 같은 선택지를 넣지 않는다. 열린 질문을 고치려면 question_id와 함께 전체 내용을 다시 보낸다. 고쳐도 알림은 다시 가지 않는다. 다른 세션이 담당인 카드에는 담당 세션만 쓴다.",
     "execution": {
       "taskSupport": "forbidden"
     },
     "inputSchema": {
       "$schema": "http://json-schema.org/draft-07/schema#",
       "properties": {
+        "attachments": {
+          "description": "시안 그림이나 링크. 4개까지, 확인 항목 증거와 같은 꼴({type,label,attachment_id} 또는 {type,label,url}).",
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "attachment_id": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "image",
+                      "link"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "label",
+                  "attachment_id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "enum": [
+                      "image",
+                      "link"
+                    ],
+                    "type": "string"
+                  },
+                  "url": {
+                    "minLength": 1,
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "label",
+                  "url"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "maxItems": 4,
+          "type": "array"
+        },
         "caller_session_id": {
           "type": "string"
         },
@@ -1148,25 +1207,72 @@
           "minLength": 1,
           "type": "string"
         },
+        "kind": {
+          "description": "choice는 선택지를 고르는 질문, request는 사용자가 손수 할 일. 생략하면 choice.",
+          "enum": [
+            "choice",
+            "request"
+          ],
+          "type": "string"
+        },
         "options": {
-          "description": "사용자가 고를 선택지 1~3개. 각 12자 이하로 짧게 쓰고 설명은 질문 글에 쓴다.",
-          "items": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "maxItems": 3,
-          "minItems": 1,
-          "type": "array"
+          "anyOf": [
+            {
+              "items": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 3,
+              "minItems": 1,
+              "type": "array"
+            },
+            {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "description": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "label": {
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  "recommended": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "label",
+                  "description"
+                ],
+                "type": "object"
+              },
+              "maxItems": 3,
+              "minItems": 1,
+              "type": "array"
+            }
+          ],
+          "description": "선택지 1~3개. 문자열 배열(옛 꼴)이나 {label, description, recommended} 객체 배열(새 꼴) 하나만 보내고 섞지 않는다. request에는 보내지 않는다."
+        },
+        "question_id": {
+          "description": "고칠 열린 질문의 id. 있으면 새 질문을 만들지 않고 그 질문을 제자리에서 고친다.",
+          "minLength": 1,
+          "type": "string"
         },
         "text": {
+          "description": "질문 배경. 무슨 일인지, 왜 지금 정하는지, 급한 정도를 일상어로 400자 안팎(1200자까지) 쓴다.",
           "minLength": 1,
+          "type": "string"
+        },
+        "title": {
+          "description": "정할 것 한 줄. 40자까지, 줄바꿈 없이.",
           "type": "string"
         }
       },
       "required": [
         "card_id",
-        "text",
-        "options"
+        "text"
       ],
       "type": "object"
     },
