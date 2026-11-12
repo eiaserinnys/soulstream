@@ -67,6 +67,7 @@ const claudeRuntimeOperations = {
   active_background_tasks_for_node: ["claudeBackgroundTasks", null, "activeForNode"],
   active_background_tasks_for_session: ["claudeBackgroundTasks", null, "activeForSession"],
   terminal_background_tasks_for_node: ["claudeBackgroundTasks", null, "terminalForNode"],
+  mark_background_tasks_startup_reconciled: ["claudeBackgroundTasks", null, "markStartupReconciled"],
   observe_background_generation: ["claudeBackgroundTasks", null, "observeGeneration"],
   terminalize_background_generation: ["claudeBackgroundTasks", null, "terminalizeGeneration"],
   get_background_generation: ["claudeBackgroundTasks", null, "getGeneration"],

@@ -463,6 +463,35 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
     `).resolves.toEqual([{ count: 0 }]);
   });
 
+  it("reads only terminal rows no boot has reconciled and hides rows the pass marks", async () => {
+    await harness.sql`
+      INSERT INTO claude_background_tasks (
+        source_node, session_id, task_id, sdk_session_id, status,
+        tool_use_id, close_reason, terminal_revision, terminal_at,
+        startup_reconciled_at
+      ) VALUES
+        (
+          'node-test', 'caller-session', 'task-open', 'sdk-session', 'completed',
+          'toolu-open', 'sdk_completed', 'rev-open',
+          '2026-09-05T00:02:00.000Z', NULL
+        ),
+        (
+          'node-test', 'caller-session', 'task-closed', 'sdk-session', 'completed',
+          'toolu-closed', 'sdk_completed', 'rev-closed',
+          '2026-09-05T00:01:00.000Z', '2026-09-05T00:30:00.000Z'
+        )
+    `;
+
+    await expect(repository.terminalForNode("node-test")).resolves.toMatchObject([
+      { task_id: "task-open" },
+    ]);
+    await expect(repository.markStartupReconciled("node-test", [
+      { sessionId: "caller-session", taskId: "task-open" },
+      { sessionId: "caller-session", taskId: "task-closed" },
+    ])).resolves.toBe(1);
+    await expect(repository.terminalForNode("node-test")).resolves.toEqual([]);
+  });
+
   it("recovers a legacy-collided B exactly once through the real startup owner", async () => {
     const oldA = {
       sourceNode: "node-test",
@@ -544,6 +573,7 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
     });
     await startup.afterRunnerRecovery();
     await startup.afterRunnerRecovery();
+    await startup.stop();
 
     await expect(repository.get("node-test", "caller-session", "shared-task"))
       .resolves.toMatchObject({
@@ -663,6 +693,7 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
 
     await startup.afterRunnerRecovery();
     await startup.afterRunnerRecovery();
+    await startup.stop();
 
     expect(rowErrors).toHaveLength(1);
     await expect(repository.getGeneration(

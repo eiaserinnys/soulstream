@@ -21,6 +21,12 @@ export type ClaudeBackgroundTerminalStatus = Exclude<
   "pending" | "running"
 >;
 
+/** Primary-key pair of one node-owned background task row. */
+export interface ClaudeBackgroundTaskKey {
+  sessionId: string;
+  taskId: string;
+}
+
 export interface ClaudeBackgroundTaskRow {
   source_node: string;
   session_id: string;
@@ -37,6 +43,7 @@ export interface ClaudeBackgroundTaskRow {
   created_at: Date;
   updated_at: Date;
   terminal_at: Date | null;
+  startup_reconciled_at: Date | null;
 }
 
 export interface ClaudeBackgroundTaskGenerationRow {
@@ -398,9 +405,34 @@ export class ClaudeBackgroundTaskRepository {
         AND status IN ('completed', 'failed', 'stopped', 'killed')
         AND sdk_session_id IS NOT NULL
         AND tool_use_id IS NOT NULL
+        AND startup_reconciled_at IS NULL
       ORDER BY terminal_at DESC NULLS LAST, session_id, task_id
       LIMIT ${limit}
     `;
+  }
+
+  /**
+   * Marks the rows a startup reconciliation pass concluded in one round trip.
+   * Rows already marked keep their first timestamp, so a retried pass is free.
+   */
+  async markStartupReconciled(
+    sourceNode: string,
+    keys: readonly ClaudeBackgroundTaskKey[],
+  ): Promise<number> {
+    if (keys.length === 0) return 0;
+    const sessionIds = keys.map((key) => key.sessionId);
+    const taskIds = keys.map((key) => key.taskId);
+    const result = await this.sql`
+      UPDATE claude_background_tasks AS task
+      SET startup_reconciled_at = NOW()
+      FROM unnest(${sessionIds}::text[], ${taskIds}::text[])
+        AS key(session_id, task_id)
+      WHERE task.source_node = ${sourceNode}
+        AND task.session_id = key.session_id
+        AND task.task_id = key.task_id
+        AND task.startup_reconciled_at IS NULL
+    `;
+    return result.count;
   }
 
 }
