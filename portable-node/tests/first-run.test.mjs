@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { delimiter, join, resolve } from "node:path";
+import { delimiter, join, sep } from "node:path";
 import {
   TOKEN,
   configGenerations,
@@ -82,9 +82,13 @@ test("첫 실행: 참여→판 맞춤→구성→묶음→빈 작업 폴더→�
 
     const bindArgs = await readJsonFile(join(releaseDir, "bind-args.json"));
     const bindValue = (name) => bindArgs[bindArgs.indexOf(name) + 1];
+    // macOS의 /tmp 링크와 Windows의 짧은 이름이 섞이지 않게 양쪽을 실제 경로로 풀어 비교한다.
+    const catalogSuffix = join("packages", "model-catalog", "data", "model-catalog.yaml");
+    const catalogPath = bindValue("--catalog-path");
+    assert.ok(catalogPath.endsWith(sep + catalogSuffix), `bind 카탈로그 경로: ${catalogPath}`);
     assert.equal(
-      bindValue("--catalog-path"),
-      resolve(source.repo, "packages", "model-catalog", "data", "model-catalog.yaml"),
+      realpathSync(catalogPath.slice(0, -(catalogSuffix.length + 1))),
+      realpathSync(source.repo),
       "bind는 clone 정본 카탈로그 경로를 받습니다.",
     );
 
