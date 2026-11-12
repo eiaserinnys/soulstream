@@ -129,7 +129,7 @@ export const cardTools = {
     inputSchema: { ...scope, title: id, format: z.enum(["markdown", "html"]), body: z.string() },
   }, audience: "all" },
   add_card_comment: { name: "add_card_comment", config: {
-    description: 'spoken은 사용자 발언 요약을 사용자 글로 기록하며 첫 줄은 "아래는 사용자의 발언을 요약하여 옮긴 것입니다"입니다. reply는 담당 세션이 사용자 글에 답하는 글입니다. 확인 항목이 있으면 mode가 필수이고 답은 300자까지 한 번만 받습니다. 진행은 add_card_note에 씁니다. item_id로 대상 항목을 표시할 수 있습니다. 다른 세션이 담당인 카드에는 담당 세션만 씁니다. 질문에 되물은 글에 답할 때는 mode=reply와 question_id를 붙인다. 질문을 닫거나 카드 상태를 바꾸지 않는다.',
+    description: 'spoken은 사용자 발언 요약을 사용자 글로 기록하며 첫 줄은 "아래는 사용자의 발언을 요약하여 옮긴 것입니다"입니다. reply는 담당 세션이 사용자 글에 답하는 글입니다. 확인 항목이 있으면 mode가 필수이고 답은 300자까지 한 번만 받습니다. 진행은 add_card_note에 씁니다. item_id로 대상 항목을 표시할 수 있습니다. 다른 세션이 담당인 카드에는 담당 세션만 씁니다. 사용자가 질문에 되묻거나 덧붙인 글에 답할 때는 mode=reply와 question_id를 붙입니다. 이 답은 질문을 닫거나 카드 상태를 바꾸지 않습니다.',
     inputSchema: { ...scope, text: id, mode: z.enum(["spoken", "reply"]).optional(), item_id:itemId.optional(), question_id:id.optional() },
   }, audience: "all" },
   set_card_status: { name: "set_card_status", config: {
