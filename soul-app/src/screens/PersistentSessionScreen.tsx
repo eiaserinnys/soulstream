@@ -46,6 +46,9 @@ import { createSessionVisualRoles, useDeviceType, useTokens } from '../theme';
 import type { PersistentReportEntry } from '../api/types';
 import { persistentReportStatusCard } from '../lib/persistent-report-card';
 import { resolvePersistentConversationLeft } from '../lib/persistent-session-column';
+import { cardQuestionChipLabel, renderCardQuestionSurface } from '../components/persistent/cardQuestionSurface';
+import { useCardActions } from '../hooks/useCardActions';
+import { resolveSessionCardAvatar } from '../components/sessionCardDisplay';
 
 export interface PersistentSessionScreenProps {
   active?: boolean;
@@ -113,7 +116,19 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     host.store.getState().clearReportFocus();
   }, [pendingReportKey, report.entries, reportsListMode, host.store]);
   const status = useSessionStore(state => session ? state.sessions[session.session_id]?.status : undefined);
-  const reportSend = usePersistentReportSend(session?.session_id ?? '', api, report.entries, report.server, status, setNotice);
+  const reportSend = usePersistentReportSend(session?.session_id ?? '', api, report.entries, report.server, status, setNotice,
+    { begin: report.beginAnsweredHold, confirm: report.holdAnswered, release: report.releaseAnsweredHold });
+  const questionActions = useCardActions(api);
+  const storedQuestionPortrait = useSessionStore(state => {
+    if (!session) return null;
+    return state.sessions[session.session_id]?.agentPortraitUrl
+      ?? Object.values(state.sessions).find(item => item.nodeId === session.node_id && item.agentId === session.agent_id)?.agentPortraitUrl;
+  });
+  const questionPortrait = React.useMemo(() => resolveSessionCardAvatar({
+    agentSessionId: session?.session_id ?? '', agentId: session?.agent_id,
+    agentName: session?.agent_name, agentPortraitUrl: storedQuestionPortrait ?? (session?.agent_id && session.node_id
+      ? `/api/nodes/${encodeURIComponent(session.node_id)}/agents/${encodeURIComponent(session.agent_id)}/portrait` : null),
+  }, serverUrl), [session, storedQuestionPortrait, serverUrl]);
   const reportCount = reportSend.entries.length;
   const hasReports = reportCount > 0 || !!completion.recent;
   React.useEffect(() => {
@@ -282,9 +297,17 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     onSelect={report.select} onDismiss={report.dismiss} onInteraction={setReportPressed} onDeckTouch={onReportDeckTouch}
     renderCardStatus={entry => {
       const card = persistentReportStatusCard(entry);
-      return card ? <CardStatusChip card={card} detail /> : null;
+      if (!card) return null;
+      // 계약 3절 7번: 부탁 장의 칩 글은 「카드 부탁」이다. 선택 질문은 웹과 같이 「카드 질문」.
+      return <CardStatusChip card={card} detail label={cardQuestionChipLabel(entry, card.blockedKind)} />;
     }}
-    renderCardDetails={!phone && !reportsScene ? entry => <PersistentReportCardExpansion key={entry.key} api={api} entry={entry} /> : undefined}
+    renderCardDetails={!phone && !reportsScene
+      ? (entry, publish) => <PersistentReportCardExpansion key={entry.key} api={api} entry={entry} onQuestionView={publish} />
+      : undefined}
+    renderQuestion={(entry, controls) => renderCardQuestionSurface(entry, controls, {
+      t, api, portraitUri: questionPortrait.uri, questionActions, reportSend,
+      answerHold: { begin: report.beginAnsweredHold, confirm: report.holdAnswered, release: report.releaseAnsweredHold },
+    })}
     onOpenCardDetails={phone || reportsScene ? openReportCardDirectly : undefined}
     onFocusComposer={() => inputComposerRef.current?.focusAccessibility()} /> : null;
   const back = React.useCallback(() => {

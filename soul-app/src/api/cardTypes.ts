@@ -1,6 +1,7 @@
 import type { CatalogFolder, Session } from './types';
 import type { CardColor } from '../../../packages/wire-schema/src/card_colors';
 import type { AttachmentDescriptor } from '../../../packages/wire-schema/src/attachments';
+import type { CardQuestionAttachment, CardQuestionKind, CardQuestionOption } from '../../../packages/wire-schema/src/card_questions';
 
 export type CardAttachmentAssetEvidence =
   | {
@@ -115,13 +116,26 @@ export interface CardQuestion {
   id: string;
   cardId: string;
   sessionId: string;
+  /** 정할 것 한 줄(40자까지). 옛 질문에는 없다. */
+  title?: string | null;
   text: string;
+  /** 없으면 choice. */
+  kind?: CardQuestionKind;
+  /** 없으면 options의 이름만 있는 선택지로 읽는다. */
+  optionDetails?: CardQuestionOption[];
+  /** 옛 호환 label 배열. */
   options: string[] | null;
+  attachments?: CardQuestionAttachment[];
   answer: string | null;
+  /** 선택 답이면 고른 이름, 글 답이면 null. 옛 답에는 없다. */
+  selectedOption?: string | null;
   askedAt: string;
   answeredAt?: string | null;
   withdrawnAt?: string | null;
   withdrawalReason?: string | null;
+  /** 고친 횟수(1부터). */
+  revision?: number;
+  revisedAt?: string | null;
 }
 export interface CardComment {
   id: string;
@@ -131,6 +145,8 @@ export interface CardComment {
   sessionId: string | null;
   kind: 'comment' | 'spoken' | 'note';
   itemId?: number | null;
+  /** 이 질문에 묶인 되묻기, 덧붙임, 담당 답. */
+  questionId?: string | null;
   body: string;
   createdAt: string;
 }

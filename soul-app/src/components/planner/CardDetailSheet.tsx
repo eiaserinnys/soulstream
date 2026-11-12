@@ -28,7 +28,9 @@ import { FolderSessionHistory } from './FolderSessionHistory';
 import { CardAssignmentSheet } from './CardAssignmentSheet';
 import { CardStatusChip } from './CardRow';
 import { CardStatusMenu } from './CardStatusMenu';
-import { CardTimeline } from './CardTimeline';
+import { CardTimeline, type CardQuestionHandlers } from './CardTimeline';
+import { answerCardQuestionChoice, cardQuestionPlaceholder, setCardQuestionTarget, useCardQuestionTarget,
+  useCardQuestionTargetLifetime } from './CardQuestionBlock';
 import { cardDetailStyles } from './CardDetail.styles';
 import { CardCheckItems } from './CardCheckItems';
 import { CardNowPanel } from './CardNowPanel';
@@ -94,6 +96,8 @@ export function CardDetailContent(props: CardDetailContentProps) {
   const composer = useRef<CardCommentComposerHandle>(null);
   const [composerBusy, setComposerBusy] = useState(false);
   const chooseAnswer = React.useCallback((answer: string) => composer.current?.chooseAnswer(answer), []);
+  const questionTarget = useCardQuestionTarget(cardId);
+  useCardQuestionTargetLifetime(cardId);
   const scroll = useRef<ScrollView>(null);
   const scrollOffsetRef = useRef(0);
   const prevKeyboardOverlapRef = useRef(0);
@@ -161,6 +165,18 @@ export function CardDetailContent(props: CardDetailContentProps) {
   const nodeId = assigned?.nodeId ?? card?.nodeId;
   const identity = { ...agent, agentPortraitUrl: agent.agentPortraitUrl ?? (agent.agentId && nodeId ? `/api/nodes/${nodeId}/agents/${agent.agentId}/portrait` : null) };
   const avatar = resolveSessionCardAvatar(identity, serverUrl);
+  // 질문 장 조작 함수는 렌더마다 새로 만들지 않는다. 타임라인 행의 memo 경계가 무너진다.
+  const questionHandlers = React.useMemo<CardQuestionHandlers>(() => ({ portraitUri: avatar.uri ?? null,
+    onChoose: (questionId, label) => {
+      if (!api) return;
+      void answerCardQuestionChoice(cardId, questionId, label,
+        () => run(() => api.answerCardQuestion(cardId, questionId, { mode: 'choice', option: label, idempotencyKey: cardOperationId() })));
+    },
+    onAskBack: questionId => setCardQuestionTarget(cardId, { kind: 'ask', questionId }, true),
+    onDone: questionId => {
+      if (!api) return;
+      void run(() => api.answerCardQuestion(cardId, questionId, { mode: 'choice', option: '했어', idempotencyKey: cardOperationId() }));
+    } }), [api, avatar.uri, cardId, run]);
   const locked = pending || statusAction.pending || comments.pending || composerBusy;
   const question = [...(detail?.questions ?? [])].reverse().find(item => item.answer === null && !item.withdrawnAt);
   // 옆 대화 입력 상자와 같은 식으로 바닥 간격을 정한다(커멘트 상자와 대화 입력의 위아래 끝을 맞춘다).
@@ -344,7 +360,7 @@ export function CardDetailContent(props: CardDetailContentProps) {
             newlyConfirmedIds={currentVisit?.newlyConfirmedIds ?? []}
             onRecentConfirmation={setRecentConfirmation}
             onSetTarget={setItemTarget} paneWidth={frameWidth} /> : null}
-          {detail && tab === 'comments' ? <CardTimeline detail={detail} onChooseAnswer={chooseAnswer} /> : null}
+          {detail && tab === 'comments' ? <CardTimeline detail={detail} onChooseAnswer={chooseAnswer} questionHandlers={questionHandlers} /> : null}
           {detail && tab === 'notes' ? <CardNotes brief={detail.card.brief} notes={detail.notes ?? []} sessions={detail.sessions} assigneeSessionId={detail.card.assigneeSessionId} /> : null}
           {detail && tab === 'items' && cardItems.length === 0 ? <Text style={styles.empty}>확인 항목이 없습니다.</Text> : null}
         </ScrollView>}
@@ -362,6 +378,9 @@ export function CardDetailContent(props: CardDetailContentProps) {
           <CardCommentComposer key={cardId} ref={composer} api={api} cardId={cardId} sessionId={card?.assigneeSessionId} nodeId={nodeId}
             question={question} cardLoaded={!!card} locked={locked} sending={comments.pending || pending} onBusyChange={setComposerBusy}
             sendComment={comments.send} runMutation={run} embedded targetItem={selectedItem}
+            questionTarget={selectedItem ? null : questionTarget.target} onReleaseQuestionTarget={() => setCardQuestionTarget(cardId, null)}
+            focusRequest={questionTarget.focus} questionTargetKey={cardId}
+            placeholder={selectedItem ? '커멘트' : cardQuestionPlaceholder(questionTarget.target, Boolean(question))}
             onInputFocusChange={focused => { if (focused && tab === 'comments') requestAnimationFrame(() => scroll.current?.scrollToEnd({ animated: true })); }}
             onReleaseTarget={() => setTargetChoice(null)} onTargetSent={() => setTargetChoice(null)}
             onSent={() => {

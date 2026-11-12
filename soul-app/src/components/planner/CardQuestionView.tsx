@@ -22,7 +22,8 @@ export function CardQuestionView({ api, question }: { api: ApiClient | null; que
       <TextInput accessibilityLabel="질문 답변" placeholder="답변 입력" placeholderTextColor={t.colors.textPlaceholder} style={styles.input}
         value={answer} onChangeText={setAnswer} editable={!pending} multiline />
       <GlassButton accessibilityLabel="답변 확인" disabled={!api || !answer.trim() || pending}
-        onPress={() => { if (api) void run(() => api.answerCardQuestion(question.cardId, question.id, answer.trim(), cardOperationId())); }}>
+        onPress={() => { if (api) void run(() => api.answerCardQuestion(question.cardId, question.id,
+          { mode: 'text', answer: answer.trim(), idempotencyKey: cardOperationId() })); }}>
         <Text style={styles.actionText}>확인</Text>
       </GlassButton>
     </>}

@@ -31,7 +31,9 @@ export function PersistentReportUndoRow({ undo, styles }: {
 export function PersistentReportSheet({ entry, index, count, current, compact, showNav, width, styles,
   titleRef, onStep, onExpand, onOption, onDismiss, onCard, onLink, bubble = false, surfaceHeight, busy = false,
   canCancel = false, cancelSent = false, onCancel, onHeight, onInteraction, onReady, expandedContent, cardStatus, onToggleCard,
-  acknowledgeLabel = '확인했어', holdAction, undo, cardSurface = false, hidePageIndicator = false }: {
+  acknowledgeLabel = '확인했어', holdAction, undo, cardSurface = false, hidePageIndicator = false, question }: {
+  /** 카드 #1197: 새 질문 장은 본문과 동작 줄을 질문 부품이 그린다. */
+  question?: { body: React.ReactNode; actions: React.ReactNode; meta?: React.ReactNode } | null;
   expandedContent?: React.ReactNode; cardStatus?: React.ReactNode; onToggleCard?(): void;
   holdAction?: { label: string; onPress(): void };
   acknowledgeLabel?: string; undo?: Pick<CardCompletionRecent, 'label' | 'expiresAt'> & { busy: boolean; onUndo(): void };
@@ -50,7 +52,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
   if (asked.signature !== signature) setAsked({ signature, reading: 0, foot: 0 });
   const acknowledgeable = entry.kind === 'see' || (entry.kind === 'ask' && entry.options.length === 0 && entry.state === 'open');
   const showPage = !hidePageIndicator && count > 1;
-  const hasFooter = !compact && (showPage || entry.state === 'answered' || acknowledgeable || entry.options.length > 0 || Boolean(holdAction) || Boolean(undo));
+  const hasFooter = !compact && (Boolean(question) || showPage || entry.state === 'answered' || acknowledgeable || entry.options.length > 0 || Boolean(holdAction) || Boolean(undo));
   const measured = useRef<{ reading: number | null; foot: number | null }>({ reading: null, foot: null });
   if (!hasFooter && measured.current.foot !== null) measured.current.foot = null;
   const measure = (part: 'reading' | 'foot', height: number) => {
@@ -88,6 +90,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
       </CompactTouchTarget>
     </View>)}
     {cardStatus}
+    {question?.meta}
     </View>
     {onToggleCard ? <View style={styles.toggleSeat}>
       <GlassButton testID="report-window-toggle" iconOnly size="compact" borderRadius={t.foundation.radius.round}
@@ -108,8 +111,8 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
       + (compact ? t.uiSpacing.lg + (count > 1 ? t.uiSpacing.sm + t.foundation.typography.meta.lineHeight : 0) : 0)) : undefined}
     style={[styles.reading, !readingPath && answer && !bubble && !compact && asked.reading
       ? { minHeight: Math.max(0, asked.reading - t.uiSpacing.md) } : null]}>
-    {!readingPath ? heading : null}{!compact && (!expandedContent || entry.kind === 'ask') ? context : null}
-    {answer ? compact ? received : null : hasAction ? todo : compact ? context : null}
+    {!readingPath ? heading : null}{question ? question.body : <>{!compact && (!expandedContent || entry.kind === 'ask') ? context : null}
+    {answer ? compact ? received : null : hasAction ? todo : compact ? context : null}</>}
     {expandedContent}
   </View>;
   const foot = hasFooter
@@ -124,7 +127,7 @@ export function PersistentReportSheet({ entry, index, count, current, compact, s
           accessibilityActions={[{ name: 'increment', label: '다음 장' }, { name: 'decrement', label: '앞 장' }]}
           onAccessibilityAction={event => onStep(event.nativeEvent.actionName === 'increment' ? 1 : -1)}>{page}</Text> : null}
       </View> : null}
-      {answer ? <View testID="report-received-row" style={[styles.received, { minHeight: t.hitTarget.min }]}>
+      {question ? question.actions : answer ? <View testID="report-received-row" style={[styles.received, { minHeight: t.hitTarget.min }]}>
         {received}{cancelSent ? <View style={styles.cancelStatus}><Text testID="report-cancel-sent" style={styles.cancelLabel}>취소 요청 보냄</Text></View>
           : canCancel ? <View style={styles.cancelEdge}><GlassButton testID="report-cancel" variant="plain" size="compact"
             disabled={busy} accessibilityLabel="취소 요청" onPress={() => onCancel?.()}><Text style={styles.cancelLabel}>취소 요청</Text></GlassButton></View> : null}

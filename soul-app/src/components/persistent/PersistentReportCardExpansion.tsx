@@ -14,15 +14,20 @@ import { CardCommentComposer, type CardCommentComposerHandle } from '../planner/
 import { CardNowPanel } from '../planner/CardNowPanel';
 import { cardDetailStyles } from '../planner/CardDetail.styles';
 import { CardTimeline } from '../planner/CardTimeline';
+import { cardQuestionPlaceholder, setCardQuestionTarget, useCardQuestionTarget,
+  useCardQuestionTargetLifetime } from '../planner/CardQuestionBlock';
+import { cardQuestionViewFromDetail, type CardQuestionView } from '../planner/card-question-viewmodel';
 import { SheetErrorNotice, sheetErrorDetail } from '../planner/SheetErrorNotice';
 import { GlassButton } from '../GlassSurface';
 import { ReportComposerFocusContext } from './useReportComposerScroll';
 
 type Lookup = { key: string; number: number; cardId: string | null; loading: boolean; error?: string };
 
-export function PersistentReportCardExpansion({ api, entry }: {
+export function PersistentReportCardExpansion({ api, entry, onQuestionView }: {
   api: ApiClient | null;
   entry: PersistentReportEntry;
+  /** 카드 상세가 불러와지면 계약 1.4절 「상세에서」 보기를 펼친 장에 알린다. */
+  onQuestionView?(view: CardQuestionView | null): void;
 }) {
   const t = useTokens();
   const onInputFocusChange = useContext(ReportComposerFocusContext);
@@ -36,6 +41,9 @@ export function PersistentReportCardExpansion({ api, entry }: {
   const [detailRefreshing, setDetailRefreshing] = useState(false);
   const composer = useRef<CardCommentComposerHandle>(null);
   const openLink = useOpenContentLink();
+  const questionTargetKey = entry.card_id ?? entry.key;
+  const questionTarget = useCardQuestionTarget(questionTargetKey);
+  useCardQuestionTargetLifetime(questionTargetKey);
 
   useEffect(() => {
     if (entry.card_id || number === null || !api) {
@@ -62,6 +70,18 @@ export function PersistentReportCardExpansion({ api, entry }: {
   const comments = useCardComments(api, cardId ?? '');
   const actions = useCardActions(api);
   const question = [...(detail?.questions ?? [])].reverse().find(item => item.answer === null && !item.withdrawnAt);
+  // 펼친 장의 질문 보기는 카드 상세가 있으면 「상세에서」 함수로 만든다(계약 1.4절 마지막 줄).
+  const detailQuestionView = useMemo(() => {
+    if (!detail || !entry.question_id) return null;
+    const item = detail.questions.find(candidate => candidate.id === entry.question_id);
+    return item ? cardQuestionViewFromDetail(item, detail.comments ?? [], detail.card.title) : null;
+  }, [detail, entry.question_id]);
+  const onQuestionViewRef = useRef(onQuestionView);
+  onQuestionViewRef.current = onQuestionView;
+  useEffect(() => {
+    onQuestionViewRef.current?.(detailQuestionView);
+    return () => onQuestionViewRef.current?.(null);
+  }, [detailQuestionView]);
   const latestComments = useMemo(() => (detail?.comments ?? []).filter(comment => comment.kind !== 'note')
     .slice().sort((left, right) => left.createdAt.localeCompare(right.createdAt)).slice(-2), [detail?.comments]);
   const timelineDetail = useMemo(() => detail ? { ...detail, comments: latestComments } : null, [detail, latestComments]);
@@ -109,7 +129,9 @@ export function PersistentReportCardExpansion({ api, entry }: {
       question={question} cardLoaded locked={actions.pending || comments.pending || composerBusy} sending={actions.pending || comments.pending}
       onBusyChange={onBusyChange} sendComment={comments.send} runMutation={actions.run} embedded
       onInputFocusChange={onInputFocusChange}
-      placeholder={question ? '질문에 답하기' : '커멘트'} targetItem={targetItem}
+      placeholder={targetItem ? '커멘트' : cardQuestionPlaceholder(questionTarget.target, Boolean(question))} targetItem={targetItem}
+      questionTarget={targetItem ? null : questionTarget.target} onReleaseQuestionTarget={() => setCardQuestionTarget(questionTargetKey, null)}
+      focusRequest={questionTarget.focus} questionTargetKey={questionTargetKey}
       onReleaseTarget={() => setTargetItem(null)} onTargetSent={() => setTargetItem(null)} />
   </View>;
 }

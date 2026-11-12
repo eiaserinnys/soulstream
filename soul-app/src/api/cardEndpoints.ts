@@ -2,6 +2,13 @@ import type { ApiRequestContext } from './clientCore';
 import type { CompletedCardParams } from '../../../packages/soul-ui/src/cards/completed-cards';
 import type { CardDetail, CardDetailWire, CardMutationResult, CardDto, CardPatch, CardStatus, CardComment, CardAttachment, CardAssignment, CardExecutionResult } from './cardTypes';
 
+/** 화면 계약 2절의 답 요청 본문. wire 패키지에 아직 없으므로 카드 API 모듈에 둔다. */
+export type CardQuestionAnswerInput =
+  | { mode: 'choice'; option: string; idempotencyKey: string }
+  | { mode: 'text'; answer: string; idempotencyKey: string };
+
+export type CardCommentInput = { body: string; itemId?: number; questionId?: string; idempotencyKey: string };
+
 export function createCardEndpoints({ base, authFetch, readJson }: ApiRequestContext) {
   const path = (id: string) => `${base}/api/cards/${encodeURIComponent(id)}`;
   const write = (url: string, body: unknown, method = 'POST') => authFetch(url, {
@@ -20,7 +27,7 @@ export function createCardEndpoints({ base, authFetch, readJson }: ApiRequestCon
       })) })),
     confirmCardItem: (id: string, itemId: number, confirmed: boolean) =>
       write(`${path(id)}/items/${itemId}/confirm`, { confirmed }),
-    addCardComment: (id: string, body: { body: string; itemId?: number; idempotencyKey: string }) =>
+    addCardComment: (id: string, body: CardCommentInput) =>
       authFetch(`${path(id)}/comments`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
         .then((response) => readJson<CardComment>(response, 'addCardComment')),
     createCard: (body: { folderId: string; title: string; request: string; queue?: boolean;
@@ -38,7 +45,7 @@ export function createCardEndpoints({ base, authFetch, readJson }: ApiRequestCon
       write(`${path(id)}/move`, { folderId, expectedVersion, idempotencyKey }),
     reorderCardQueue: (id: string, afterCardId: string | null, expectedVersion: number, idempotencyKey: string) =>
       write(`${path(id)}/queue-position`, { afterCardId, expectedVersion, idempotencyKey }),
-    answerCardQuestion: (id: string, questionId: string, answer: string, idempotencyKey: string) =>
-      write(`${path(id)}/questions/${encodeURIComponent(questionId)}/answer`, { answer, idempotencyKey }),
+    answerCardQuestion: (id: string, questionId: string, input: CardQuestionAnswerInput) =>
+      write(`${path(id)}/questions/${encodeURIComponent(questionId)}/answer`, input),
   };
 }

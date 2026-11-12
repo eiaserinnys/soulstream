@@ -4,13 +4,15 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Asset } from 'expo-asset';
 import type { ApiClient } from '../api/client';
 import type { CardAttachmentAssetEvidence, CardCheckItem, CardComment, CardDetail, CardStatus } from '../api/cardTypes';
-import type { PersistentReportEntry } from '../api/types';
+import type { MessageContextItem, PersistentReportEntry } from '../api/types';
 import { cardFixture } from '../test-support/cards';
 import { useDeviceType, useTokens } from '../theme';
 import { ContentLinkProvider } from '../navigation/ContentLinkProvider';
 import { ChatUiControllerProvider } from '../components/chat-ui/ChatUiControllerProvider';
 import { PersistentReportPager } from '../components/persistent/PersistentReportPager';
 import { PersistentReportCardExpansion } from '../components/persistent/PersistentReportCardExpansion';
+import { usePersistentReport } from '../components/persistent/usePersistentReport';
+import { usePersistentReportSend } from '../components/persistent/usePersistentReportSend';
 import { usePersistentCardCompletion } from '../components/persistent/usePersistentCardCompletion';
 import { minimumReportBubbleHeight } from '../components/persistent/persistentReportStyles';
 import { calculatePersistentSessionLayout } from '../../../packages/soul-ui/src/lib/persistent-session-layout';
@@ -22,7 +24,9 @@ import { CardDetailContent } from '../components/planner/CardDetailSheet';
 import { UserMessage } from '../components/events/UserMessage';
 import { AssistantMessage } from '../components/events/AssistantMessage';
 import { ChatComposer } from '../components/chat/ChatComposer';
+import { pendingReportReply } from '../lib/persistent-report';
 import { persistentReportStatusCard } from '../lib/persistent-report-card';
+import { CARD_QUESTION_ANSWERED_REASON } from '../components/chat/useChatSendFlow';
 
 const at = '2026-10-05T08:00:00Z';
 const card = cardFixture({ id: 'preview-pas-card', number: 531, status: 'review',
@@ -62,7 +66,8 @@ function reviewEntries() {
 }
 const question = { id: 'preview-question', cardId: card.id, sessionId: 'preview-agent', text: '추가 커멘트를 장 안에서 바로 쓸까요?',
   options: ['장 안에서', '카드에서'], answer: null, askedAt: at };
-export function createReviewCardApi(onStatusChange: (id: string, status: CardStatus) => void = () => {}): ApiClient {
+export function createReviewCardApi(onStatusChange: (id: string, status: CardStatus) => void = () => {},
+  onReportAnswered?: (key: string) => void): ApiClient {
   const items = createPreviewItems();
   let details: Record<string, CardDetail> = {
     [card.id]: { card: { ...card, items }, reports: [], questions: [question], sessions: [], nowHistory: [], comments: [
@@ -73,7 +78,17 @@ export function createReviewCardApi(onStatusChange: (id: string, status: CardSta
   };
   const snapshot = (detail: CardDetail): CardDetail => ({ ...detail, card: { ...detail.card, items: [...(detail.card.items ?? [])] },
     questions: [...detail.questions], comments: [...(detail.comments ?? [])] });
-  const api: Pick<ApiClient, 'listCards' | 'getCard' | 'setCardStatus' | 'confirmCardItem' | 'addCardComment' | 'answerCardQuestion'> = {
+  // 서버가 판 답 ACK를 줄 때 하는 일: 그 질문에 답을 남긴다.
+  const answerSampleQuestion = (key: string, option: string) => {
+    const entry = initialEntries.find(item => item.key === key);
+    const cardId = entry?.card_id ?? card.id;
+    const questionId = entry?.question_id;
+    const detail = details[cardId];
+    if (!detail || !questionId) return;
+    details = { ...details, [cardId]: { ...detail, questions: detail.questions.map(item => item.id === questionId
+      ? { ...item, answer: option, selectedOption: option, answeredAt: new Date().toISOString() } : item) } };
+  };
+  const api: Pick<ApiClient, 'listCards' | 'getCard' | 'setCardStatus' | 'confirmCardItem' | 'addCardComment' | 'answerCardQuestion' | 'intervene'> = {
     listCards: async () => ({ cards: Object.values(details).map(detail => detail.card) }),
     getCard: async id => {
       const detail = details[id];
@@ -100,16 +115,34 @@ export function createReviewCardApi(onStatusChange: (id: string, status: CardSta
     addCardComment: async (cardId, input) => {
       const detail = details[cardId] ?? details[card.id];
       const comment: CardComment = { id: input.idempotencyKey, cardId: detail.card.id, authorKind: 'user', authorId: null, sessionId: null,
-        kind: 'comment', ...(input.itemId === undefined ? {} : { itemId: input.itemId }), body: input.body, createdAt: new Date().toISOString() };
+        kind: 'comment', ...(input.itemId === undefined ? {} : { itemId: input.itemId }),
+        ...(input.questionId === undefined ? {} : { questionId: input.questionId }), body: input.body, createdAt: new Date().toISOString() };
       const next = { ...detail, comments: [...(detail.comments ?? []), comment] };
       details = { ...details, [detail.card.id]: next };
       return comment;
     },
-    answerCardQuestion: async (_cardId, questionId, answer) => {
+    answerCardQuestion: async (_cardId, questionId, input) => {
+      const answer = input.mode === 'choice' ? input.option : input.answer;
       const detail = details[card.id];
-      const next = { ...detail, questions: detail.questions.map(item => item.id === questionId ? { ...item, answer, answeredAt: new Date().toISOString() } : item) };
+      const next = { ...detail, questions: detail.questions.map(item => item.id === questionId
+        ? { ...item, answer, answeredAt: new Date().toISOString(),
+          ...(input.mode === 'choice' ? { selectedOption: input.option } : { selectedOption: null }) } : item) };
       details = { ...details, [card.id]: next };
+      // 서버의 판 재계산처럼 답한 cq_ 장을 판 목록에서도 뺀다.
+      const entry = initialEntries.find(item => item.question_id === questionId);
+      if (entry) onReportAnswered?.(entry.key);
       return { folderId: next.card.folderId, card: next.card };
+    },
+    // 표본은 운영의 판 답 보내기 경로를 그대로 타고 API 경계에서만 응답을 대신한다.
+    // 판 재계산에서 답한 cq_ 장이 빠지는 서버 동작을 서버 목록을 줄여 흉내 내고,
+    // 판 답 ACK가 카드 상세의 질문에도 답을 남기는 서버 효과를 함께 재현한다.
+    intervene: async (_sessionId: string, _text: string, _paths?: string[], contextItems?: MessageContextItem[]) => {
+      const reply = pendingReportReply(contextItems);
+      if (reply) {
+        onReportAnswered?.(reply.key);
+        answerSampleQuestion(reply.key, reply.option);
+      }
+      return { delivered: true, outcome: 'delivered' as const, ...(reply ? { reason: CARD_QUESTION_ANSWERED_REASON } : {}) };
     },
   };
   return api as unknown as ApiClient;
@@ -122,18 +155,21 @@ export function ReviewPasCardExpand() {
   const phone = useDeviceType() === 'phone';
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
-  const [entries, setEntries] = useState<PersistentReportEntry[]>(reviewEntries);
-  const [index, setIndex] = useState(0);
+  // 서버 판 목록. 표본의 답 보내기도 운영 경로를 타고, intervene가 이 목록에서 답한 장을 뺀다.
+  const [serverEntries, setServerEntries] = useState<PersistentReportEntry[]>(reviewEntries);
   const [sheet, setSheet] = useState<PersistentReportEntry | null>(null);
   const [text, setText] = useState('');
   const api = useMemo(() => createReviewCardApi((id, status) => {
     const reviewEntry = initialEntries.find(entry => entry.card_id === id);
     if (!reviewEntry) return;
-    setEntries(saved => {
+    setServerEntries(saved => {
       if (status === 'done' || status === 'on_hold') return saved.filter(entry => entry.key !== reviewEntry.key);
       return saved.some(entry => entry.key === reviewEntry.key) ? saved : [reviewEntry, ...saved];
     });
-  }), []);
+  }, key => setServerEntries(saved => saved.filter(entry => entry.key !== key))), []);
+  const report = usePersistentReport('preview-pas', true, api, serverEntries, undefined);
+  const reportSend = usePersistentReportSend('preview-pas', api, report.entries, report.server, 'completed', noop,
+    { begin: report.beginAnsweredHold, confirm: report.holdAnswered, release: report.releaseAnsweredHold });
   const completion = usePersistentCardCompletion(api);
   const styles = useMemo(() => cardDetailStyles(t), [t]);
   const column = phone ? width - t.foundation.pageInset * 2 : FRAME.landscape.conversation;
@@ -144,19 +180,18 @@ export function ReviewPasCardExpand() {
     baselineBottom: height - insets.bottom - t.uiSpacing.lg, inputRowHeight: t.hitTarget.min,
     rowBottomGap: t.spacing.xs, pointerFine: false, showCharacter: true, phoneConfigured: phone,
     reportBubble: { widthScale: 1, minimumHeight: minimumReportBubbleHeight(t) } });
-  const answer = (entry: PersistentReportEntry, body: string) => {
-    setEntries(saved => saved.map(item => item.key === entry.key ? { ...item, state: 'answered', answer: body, updated_at: 'preview-answer' } : item));
-    setSheet(null);
-  };
-  const details = (entry: PersistentReportEntry) => <PersistentReportCardExpansion key={entry.key} api={api} entry={entry} />;
-  const pager = <PersistentReportPager entries={entries} index={Math.min(index, Math.max(0, entries.length - 1))} api={api} sessionId="preview-pas" completion={completion}
-    onSelect={setIndex} onDismiss={async key => { setEntries(saved => saved.filter(item => item.key !== key)); }} onFocusComposer={noop}
+  const pager = <PersistentReportPager entries={reportSend.entries} index={report.index} api={api} sessionId="preview-pas" completion={completion}
+    onSelect={report.select} onDismiss={async key => { setServerEntries(saved => saved.filter(item => item.key !== key)); }} onFocusComposer={noop}
     bubble={Boolean(layout.reportBubble)} maxHeight={layout.reportBubble?.maxHeight ?? layout.reportViewMaxHeight}
     renderCardStatus={entry => { const statusCard = persistentReportStatusCard(entry); return statusCard ? <CardStatusChip card={statusCard} detail /> : null; }}
-    renderCardDetails={phone ? undefined : details} onOpenCardDetails={phone ? setSheet : undefined}
-    send={{ busy: false, close: () => true, canCancel: () => false, cancelSent: () => false, sendOption: async (entry: PersistentReportEntry, option: string) => answer(entry, option) } as any} />;
+    renderCardDetails={phone ? undefined
+      : (entry, publish) => <PersistentReportCardExpansion key={entry.key} api={api} entry={entry} onQuestionView={publish} />}
+    onOpenCardDetails={phone ? setSheet : undefined}
+    send={reportSend} />;
   return <ContentLinkProvider><ChatUiControllerProvider sessionId="preview-pas" appendGeneratedText={() => ({ ok: true })}>
-    {phone && sheet ? <CardDetailContent visible api={api} cardId={sheet.card_id ?? card.id} onClose={() => setSheet(null)} /> : <View testID="pas-card-expand-review" style={{ flex: 1, backgroundColor: t.persistentSession.paper, paddingTop: insets.top, paddingBottom: insets.bottom }}>
+    {phone && sheet ? <View style={{ flex: 1, backgroundColor: t.colors.background }}>
+      <CardDetailContent visible api={api} cardId={sheet.card_id ?? card.id} onClose={() => setSheet(null)} />
+    </View> : <View testID="pas-card-expand-review" style={{ flex: 1, backgroundColor: t.persistentSession.paper, paddingTop: insets.top, paddingBottom: insets.bottom }}>
       <View style={styles.header}><Text style={styles.heading}>PAS · 카드 펼침 시안</Text></View>
       <View style={{ flex: 1, minHeight: 0, width: column, alignSelf: 'center', gap: t.uiSpacing.lg }}>
         <UserMessage event={{ id: 'preview-user', type: 'user_message', data: { text: 'PAS 안에서 결과를 보고 의견도 남기고 싶어요.' } }} />

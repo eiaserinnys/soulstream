@@ -99,6 +99,12 @@ export function makeChatInputRequestStyles(t: DesignTokens) {
         t.uiSpacing.md + t.iconSize.prominent + t.uiSpacing.md,
       backgroundColor: t.colors.borderSubtle,
     },
+    /** 동그라미 표시를 뺀 변형(카드 질문 장)의 선택지 사이 선. 표시 폭만큼 들여쓰지 않는다. */
+    optionDividerBare: {
+      height: StyleSheet.hairlineWidth,
+      marginLeft: t.uiSpacing.md,
+      backgroundColor: t.colors.borderSubtle,
+    },
     optionRow: {
       minHeight: t.foundation.minHeight.row,
       flexDirection: 'row',
