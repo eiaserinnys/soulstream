@@ -113,6 +113,12 @@ export interface TaskInterventionRouteDeps {
       | "recordNotificationPublished" | "recordNotificationFailure"
   >;
   sessionNotificationPublisher?: Pick<SessionNotificationPublisher, "publish">;
+  /**
+   * Existing interrupted transition used to retire a task whose startup can no
+   * longer finish. Optional so route-only compositions and tests keep their
+   * current dependency surface.
+   */
+  projectClosedRunner?: (task: Task, detail: string) => Promise<boolean>;
 }
 
 /**
@@ -374,6 +380,21 @@ export class TaskInterventionRoute {
       return;
     }
     if (task.status === "initializing") {
+      // A task restored from the DB as initializing lost its in-memory barrier
+      // with the restart and has no durable registration either; nothing can
+      // finish that startup. Retire it through the existing interrupted
+      // transition so the delivery can auto-resume like any finished session.
+      if (
+        this.deps.projectClosedRunner
+        && task.hydratedFromDb === true
+        && task.executionRegistration === undefined
+      ) {
+        await this.deps.projectClosedRunner(
+          task,
+          "soul-server 재시작으로 시작 장벽을 잃은 세션을 거두었습니다",
+        );
+        return;
+      }
       throw new Error(
         `initializing task has no activation barrier: ${task.agentSessionId}`,
       );

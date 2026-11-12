@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import pino from "pino";
 
 import { buildCanonicalDeliveryPayload } from "../../src/task/delivery_payload.js";
-import { TaskInterventionRoute } from "../../src/task/task_intervention_route.js";
+import {
+  TaskInterventionRoute,
+  type TaskInterventionRouteDeps,
+} from "../../src/task/task_intervention_route.js";
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
 import type { Task } from "../../src/task/task_models.js";
 import type { RunningInterventionTransition } from "../../src/task/task_running_intervention_transition.js";
@@ -59,6 +62,7 @@ function makeSubject(
       | "recordNotificationPublished" | "recordNotificationFailure"
       | "recordReservationRetry"
   >,
+  overrides: Partial<TaskInterventionRouteDeps> = {},
 ) {
   const tasks = new Map(initialTasks.map((task) => [task.agentSessionId, task]));
   const loadEvictedTask = vi.fn(async (_sessionId: string): Promise<Task | null> => null);
@@ -92,6 +96,7 @@ function makeSubject(
     autoResumeTransition,
     deliveryLedgerGate,
     sessionNotificationPublisher,
+    ...overrides,
   });
 
   return {
@@ -988,6 +993,39 @@ describe("TaskInterventionRoute.addIntervention", () => {
       expect.objectContaining({
         text: "resume stale running",
       }),
+      expect.any(Function),
+    );
+    expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();
+  });
+
+  it("closes a hydrated initializing task that lost its barrier and auto-resumes the delivery", async () => {
+    const hydrated = makeTask({
+      agentSessionId: "sess-stale-initializing",
+      status: "initializing",
+      hydratedFromDb: true,
+      runner: undefined,
+    });
+    const projectClosedRunner = vi.fn(async (task: Task) => {
+      task.status = "interrupted";
+      return true;
+    });
+    const { route, tasks, loadEvictedTask, runningInterventionTransition, autoResumeTransition } =
+      makeSubject([], undefined, { projectClosedRunner });
+    loadEvictedTask.mockResolvedValueOnce(hydrated);
+
+    await expect(route.addIntervention({
+      agentSessionId: "sess-stale-initializing",
+      text: "resume after restart",
+      user: "alice",
+    }, vi.fn())).resolves.toEqual({ autoResumed: true });
+
+    expect(projectClosedRunner).toHaveBeenCalledOnce();
+    expect(projectClosedRunner.mock.calls[0]?.[0]).toBe(hydrated);
+    expect(tasks.get("sess-stale-initializing")).toBe(hydrated);
+    expect(hydrated.status).toBe("interrupted");
+    expect(autoResumeTransition.resume).toHaveBeenCalledWith(
+      hydrated,
+      expect.objectContaining({ text: "resume after restart" }),
       expect.any(Function),
     );
     expect(runningInterventionTransition.deliver).not.toHaveBeenCalled();

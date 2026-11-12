@@ -4,6 +4,7 @@ import type { SessionDeliveryRow } from "../control_plane/control_plane_types.js
 import { registerSessionDelivery } from "../control_plane/repositories/session_delivery_relation_repository.js";
 import type { CardControlPlaneService } from "./card_control_plane_service.js";
 import { buildCardChangeNotification } from "./card_change_notification.js";
+import { CARD_EXECUTION_START_TIMEOUT_MS } from "./card_execution_service.js";
 import type { CardExecutionService, CardExecutionRequest } from "./card_execution_service.js";
 import type { CardRow, FolderOperationRow, RepositorySql, SqlClient } from "./control_plane/card_types.js";
 import { appendFolderOperation } from "../folders/folder_operation_store.js";
@@ -59,7 +60,8 @@ type StoredOperation = FolderOperationRow & {
 
 type DeliveryQueryRow = SessionDeliveryRow & Record<string, unknown>;
 type NewlyAcceptedWork = { receipt: AcceptedWork; folderId: string; postCommitSync?: Parameters<CardControlPlaneService["syncReportsAfterCommit"]>[1] };
-type PreviousAssignee = { session_id:string; agent_id:string; node_id:string; model_preset:string|null; status:string };
+type PreviousAssignee = { session_id:string; agent_id:string; node_id:string; model_preset:string|null; status:string;
+  execution_registration_id:string|null; updated_at:Date };
 
 const systemFolders = new Set(["claude", "llm"]);
 
@@ -84,9 +86,15 @@ export class CardWorkDispatchService {
         const current = (await this.options.sql<CardRow[]>`SELECT * FROM cards WHERE id=${input.cardId}`)[0];
         if (!current || current.assignee_kind !== "session" || !current.assignee_session_id)
           throw failure("담당 세션이 없는 카드는 run_card로 실행하세요.",409);
-        previous = (await this.options.sql<PreviousAssignee[]>`SELECT session_id,agent_id,node_id,model_preset,status FROM sessions WHERE session_id=${current.assignee_session_id}`)[0] ?? null;
+        previous = (await this.options.sql<PreviousAssignee[]>`SELECT session_id,agent_id,node_id,model_preset,status,execution_registration_id,updated_at FROM sessions WHERE session_id=${current.assignee_session_id}`)[0] ?? null;
         if (!previous) throw failure("담당 세션이 없는 카드는 run_card로 실행하세요.",409);
-        if (["running","initializing"].includes(previous.status) && this.options.isNodeConnected?.(previous.node_id))
+        // An initializing owner that never registered execution and stayed that
+        // way past the start timeout cannot be running a turn; blocking the
+        // replacement would strand the card. Fresh starts stay protected.
+        const strandedStart = previous.status === "initializing"
+          && !previous.execution_registration_id
+          && Date.now() - new Date(previous.updated_at).getTime() >= CARD_EXECUTION_START_TIMEOUT_MS;
+        if (["running","initializing"].includes(previous.status) && !strandedStart && this.options.isNodeConnected?.(previous.node_id))
           throw failure("담당 세션이 지금 턴을 돌고 있습니다. 후속 지시로 전하거나 턴이 끝난 뒤 교체하세요.",409);
       }
     }
