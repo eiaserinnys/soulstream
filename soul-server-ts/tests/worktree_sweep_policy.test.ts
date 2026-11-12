@@ -12,7 +12,10 @@ describe("worktree sweep policy", () => {
     ["in_use", { inUse: true, merged: true }],
     ["base_links", { baseLinks: true, merged: true }],
     ["changes", { changes: true, merged: true }],
-    ["unpushed", { pushed: false, linkedCardsClosed: true }],
+    // Closed linked cards sweep even when local commits were left unpushed; the worktree goes, its branch ref stays.
+    ["removed", { pushed: false, linkedCardsClosed: true }],
+    // An open linked card still protects its unpushed worktree.
+    ["unpushed", { pushed: false, linkedCardsClosed: false }],
     ["not_finished", {}],
     ["removed", { merged: true }],
     ["removed", { linkedCardsClosed: true }],
@@ -20,6 +23,10 @@ describe("worktree sweep policy", () => {
     // HEAD == createdFromSha: the sweep supplies merged=false despite origin ancestry.
     ["not_finished", { idleMs: SWEEP_RECENT_MS + 1, merged: false, linkedCardsClosed: false }],
     ["removed", { idleMs: SWEEP_RECENT_MS + 1, merged: false, linkedCardsClosed: true }],
+    // Closed linked cards do not override the earlier safety gates.
+    ["recent", { idleMs: SWEEP_RECENT_MS - 1, pushed: false, linkedCardsClosed: true }],
+    ["in_use", { inUse: true, pushed: false, linkedCardsClosed: true }],
+    ["changes", { changes: true, pushed: false, linkedCardsClosed: true }],
   ])("returns %s for %j", (expected, patch) => {
     expect(decideWorktreeSweep({ ...safe, ...patch })).toBe(expected);
   });
