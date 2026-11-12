@@ -400,18 +400,14 @@ export class TaskManager {
     });
   }
 
-  async getScheduleResumeState(sessionId: string): Promise<{
-    status: Task["status"];
-    terminationReason: Task["terminationReason"];
-    terminalEventId: Task["terminalEventId"];
-  } | null> {
-    const task = this.tasks.get(sessionId) ?? await this.loadEvictedTask(sessionId);
-    if (!task || isOrchestrationDecisionTask(task)) return null;
-    return {
-      status: task.status,
-      terminationReason: task.terminationReason,
-      terminalEventId: task.terminalEventId,
-    };
+  /**
+   * 예약 발화가 실패로 닫히기 전에 생략했던 부모 완료 전달을 등록할 때 쓴다.
+   * getTask는 메모리 Map만 보므로, 재시작으로 밀려난 task는 addIntervention과
+   * 같은 지연 로드 길로 불러온다.
+   */
+  async resolveScheduleResumeTask(sessionId: string): Promise<Task | null> {
+    const task = await this.resolveNotificationTask(sessionId);
+    return task && isOrchestrationDecisionTask(task) ? null : task;
   }
 
   async hydrateRunnerRecoveryTask(sessionId: string): Promise<Task | null> {

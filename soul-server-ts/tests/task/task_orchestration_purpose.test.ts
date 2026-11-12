@@ -54,7 +54,6 @@ describe("canonical card orchestration purpose", () => {
       await expect(result.addIntervention({ agentSessionId: "decision", text: "run arbitrary tools", user: "test" }, onResume)).rejects.toThrow("card orchestration");
       expect(await result.resumeQueuedAfterTerminal(value, onResume)).toBe(false);
       expect(await result.hydrateRunnerRecoveryTask("decision")).toBeNull();
-      expect(await result.getScheduleResumeState("decision")).toBeNull();
       expect(onResume).not.toHaveBeenCalled();
     }
   });

@@ -1,10 +1,11 @@
 import type { Logger } from "pino";
+import { SESSION_MODEL_FALLBACK_REASON } from "@soulstream/wire-schema/model-preset-fallbacks";
 
 import { PeriodicMaintenanceLoop } from "../runtime/periodic_maintenance_loop.js";
 import type { CompletionNotifier } from "../task/completion_notifier.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { StartExecutionCallback } from "../task/task_intervention_route.js";
-import { isActiveTaskStatus } from "../task/task_models.js";
+import { isActiveTaskStatus, type Task } from "../task/task_models.js";
 import {
   CACHE_KEEPALIVE_PURPOSE,
   isCacheKeepaliveSchedule,
@@ -36,9 +37,19 @@ const MAX_DISPATCH_FAILURES = 5;
 const DISPATCH_FAILURE_BASE_DELAY_MS = 30_000;
 const DISPATCH_FAILURE_MAX_DELAY_MS = 300_000;
 
+/**
+ * 옛 orch가 돌려준 예약 줄에는 이 칸이 없다. 없거나 유한한 정수가 아니면 0으로
+ * 본다. 그대로 더하면 NaN이 되어 미룸 시각이 Invalid Date가 되고, orch는
+ * next_run_at을 NULL로 저장해 예약이 다시 잡히지 않는다.
+ */
+function consecutiveDispatchFailures(value: unknown): number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : 0;
+}
+
 function dispatchFailureDelayMs(failureCount: number): number {
+  const exponent = Math.max(consecutiveDispatchFailures(failureCount) - 1, 0);
   return Math.min(
-    DISPATCH_FAILURE_BASE_DELAY_MS * 2 ** (failureCount - 1),
+    DISPATCH_FAILURE_BASE_DELAY_MS * 2 ** exponent,
     DISPATCH_FAILURE_MAX_DELAY_MS,
   );
 }
@@ -65,7 +76,7 @@ export class ScheduleDispatcher {
     >,
     private readonly taskManager: Pick<
       TaskManager,
-      "addIntervention" | "getTask"
+      "addIntervention" | "getTask" | "resolveScheduleResumeTask"
     >,
     private readonly onResume: StartExecutionCallback,
     private readonly logger: Logger,
@@ -265,7 +276,7 @@ export class ScheduleDispatcher {
     err: unknown,
   ): Promise<void> {
     const message = err instanceof Error ? err.message : String(err);
-    const failures = schedule.dispatchFailureCount + 1;
+    const failures = consecutiveDispatchFailures(schedule.dispatchFailureCount) + 1;
     this.logger.warn(
       { err, sessionId: schedule.sessionId, scheduleId: schedule.scheduleId, failures },
       "scheduled intervention failed",
@@ -284,16 +295,18 @@ export class ScheduleDispatcher {
     );
   }
 
+  /**
+   * Only the model fallback path skips the parent completion before reserving
+   * the wake; the persistent-session limit path registers it first. The
+   * distinguishing fact is the fallback pending marker, which is persisted in
+   * the session metadata, so it still holds after a node restart. A memory
+   * flag would not: a resumed node would either double-notify or drop it.
+   */
   private async notifySkippedCompletion(schedule: SoulstreamSchedule): Promise<void> {
     if (schedule.sourceTool !== "ResumeAfterLimit") return;
-    const task = this.taskManager.getTask(schedule.sessionId);
-    if (!task) {
-      this.logger.warn(
-        { sessionId: schedule.sessionId, scheduleId: schedule.scheduleId },
-        "skipped parent completion not registered: local task is unavailable",
-      );
-      return;
-    }
+    const task = await this.resolveSkippedCompletionTask(schedule);
+    if (!task) return;
+    if (task.persistentGeneration?.pending?.reason !== SESSION_MODEL_FALLBACK_REASON) return;
     try {
       await this.completionNotifier?.notify(task);
     } catch (err) {
@@ -301,6 +314,29 @@ export class ScheduleDispatcher {
         { err, sessionId: schedule.sessionId, scheduleId: schedule.scheduleId },
         "skipped parent completion registration failed",
       );
+    }
+  }
+
+  private async resolveSkippedCompletionTask(
+    schedule: SoulstreamSchedule,
+  ): Promise<Task | null> {
+    const cached = this.taskManager.getTask(schedule.sessionId);
+    if (cached) return cached;
+    try {
+      const loaded = await this.taskManager.resolveScheduleResumeTask(schedule.sessionId);
+      if (!loaded) {
+        this.logger.warn(
+          { sessionId: schedule.sessionId, scheduleId: schedule.scheduleId },
+          "skipped parent completion not registered: local task is unavailable",
+        );
+      }
+      return loaded;
+    } catch (err) {
+      this.logger.warn(
+        { err, sessionId: schedule.sessionId, scheduleId: schedule.scheduleId },
+        "skipped parent completion not registered: local task load failed",
+      );
+      return null;
     }
   }
 }

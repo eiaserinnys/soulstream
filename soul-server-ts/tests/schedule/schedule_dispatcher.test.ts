@@ -1,4 +1,5 @@
 import pino from "pino";
+import { SESSION_MODEL_FALLBACK_REASON } from "@soulstream/wire-schema/model-preset-fallbacks";
 import { describe, expect, it, vi } from "vitest";
 
 import { ScheduleDispatcher } from "../../src/schedule/schedule_dispatcher.js";
@@ -357,7 +358,20 @@ describe("ScheduleDispatcher", () => {
       consumeClaimedSchedule: schedule,
       confirmScheduleStillFiring: schedule,
     });
-    const task = { agentSessionId: "sess-1", status: "error" as const };
+    const task = {
+      agentSessionId: "sess-1",
+      status: "error" as const,
+      // 모델 대체 경로가 남긴 영속 표지. 이 표지가 있는 예약만 완료 전달을 생략했다.
+      persistentGeneration: {
+        number: 2,
+        pending: {
+          number: 2,
+          reason: SESSION_MODEL_FALLBACK_REASON,
+          requestedAt: "2026-01-01T00:00:00.000Z",
+          targetModelPreset: "claude-opus",
+        },
+      },
+    };
     const taskManager = {
       getTask: vi.fn(() => task),
       addIntervention: vi.fn(async () => { throw new Error("session busy"); }),

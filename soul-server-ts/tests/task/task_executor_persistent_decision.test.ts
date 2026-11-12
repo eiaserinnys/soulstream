@@ -1014,11 +1014,6 @@ describe("TaskExecutor persistent decision wiring", () => {
       resumeScheduleRuntime.service,
       {
         getTask: vi.fn(() => undefined),
-        getScheduleResumeState: vi.fn(async () => ({
-          status: "error" as const,
-          terminationReason: "limit_hit" as const,
-          terminalEventId: task.terminalEventId!,
-        })),
         addIntervention,
       } as never,
       vi.fn(),
