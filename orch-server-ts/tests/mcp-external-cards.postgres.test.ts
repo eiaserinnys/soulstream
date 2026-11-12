@@ -356,13 +356,14 @@ describe("external MCP card writes", () => {
     await cards.answerQuestion({ actorKind: "user", actorUserId: "director", actorSessionId: null, cardId: "card", questionId: String(question.id), answer: "진행" });
     await dispatcher.drain(); await dispatcher.drain();
     expect((await cards.getCard("card"))!.questions[0]).toMatchObject({ answer: "진행", session_id: null });
-    // Existing null-question-session handling requeues the card after unblocking.
-    // Both state notices go to the assignee; neither sends the question answer to an external caller.
+    // The answer goes to the current assignee even when the question has no session, merged with the unblock notice.
+    // Nothing goes to the external caller, and the card is not requeued because the assignee received the answer.
     expect(messages.mock.calls).toEqual([
-      ["owner", expect.stringContaining("막힘→실행 중"), undefined, expect.any(Object)],
-      ["owner", expect.stringContaining("실행 중→대기"), undefined, expect.any(Object)],
+      ["owner", `사용자가 카드 「${(await cards.getCard("card"))!.card.title}」(card)를 막힘→실행 중으로 변경했습니다`
+        + `\n[카드 질문 답변] 카드 「${(await cards.getCard("card"))!.card.title}」(card)\n질문: 닷 질문\n질문 ID: ${String(question.id)}`
+        + "\n고른 안: 진행\n덧붙임: 없음\n카드 상태: 실행 중", undefined, expect.any(Object)],
     ]);
-    expect((await cards.getCard("card"))!.card.status).toBe("queued");
+    expect((await cards.getCard("card"))!.card.status).toBe("running");
     expect(warnings).not.toHaveBeenCalled();
   });
   it("keeps start_card_work restricted to an agent", async () => {
