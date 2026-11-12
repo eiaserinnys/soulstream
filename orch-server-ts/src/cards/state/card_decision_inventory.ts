@@ -35,6 +35,7 @@ export const CARD_DECISION_SOURCES={
 } as const satisfies Record<CardDecisionCommand,readonly [string,string]>;
 export const CARD_RUNTIME_SQL_WRITERS=[
  'cards/card_control_plane_service.ts:INSERT',
+ 'cards/card_dispatch_runtime.ts:UPDATE',
  'cards/control_plane/card_patch.ts:UPDATE',
  'cards/control_plane/card_move.ts:UPDATE',
 ] as const;

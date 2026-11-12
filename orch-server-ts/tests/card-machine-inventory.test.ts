@@ -7,7 +7,7 @@ import { CARD_RUNTIME_DECISION_CALLS, CARD_RUNTIME_DECISION_IMPORTERS } from '..
 it('pins every command to an existing operational function',async()=>{
  expect(Object.keys(CARD_DECISION_SOURCES).sort()).toEqual(Object.keys(CARD_FACT_VALUES).sort());
  for(const [file,name] of Object.values(CARD_DECISION_SOURCES))expect(await readFile(new URL(`../src/${file}`,import.meta.url),'utf8')).toMatch(new RegExp(`\\b${name}\\b`));
- expect(CARD_RUNTIME_SQL_WRITERS).toHaveLength(3);
+ expect(CARD_RUNTIME_SQL_WRITERS).toHaveLength(4);
  expect(CARD_COMMAND_CALLERS.CREATE).toContain('cards/card_control_plane_service.ts#createCardTx');
  expect(CARD_COMMAND_CALLERS.ADD_COMMENT).toContain('cards/card_control_plane_service.ts#addCommentTx');
  expect(CARD_COMMAND_CALLERS.ADD_COMMENT).toContain('cards/card_work_dispatch_service.ts#accept');
