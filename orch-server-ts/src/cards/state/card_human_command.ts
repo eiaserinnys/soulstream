@@ -10,4 +10,4 @@ export type HumanCardCommand =
   | {type:'ASK_QUESTION';text:string;title?:string|null;kind?:CardQuestionKind;options:(string | CardQuestionOption)[];attachments?:readonly unknown[];questionId?:string}
   | {type:'ANSWER_QUESTION';questionId:string;answer:string;selectedOption:string|null}
   | {type:'WITHDRAW_QUESTION';questionId:string;reason:string}
-  | {type:'ADD_COMMENT';body:string;kind?:'comment'|'spoken';mode?:'spoken'|'reply';itemId?:number;entrance:'direct'|'followup'};
+  | {type:'ADD_COMMENT';body:string;kind?:'comment'|'spoken';mode?:'spoken'|'reply';itemId?:number;questionId?:string;entrance:'direct'|'followup'};

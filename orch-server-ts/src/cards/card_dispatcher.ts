@@ -1,7 +1,7 @@
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import { hasPendingSessionModelFallback } from "@soulstream/wire-schema/model-preset-fallbacks";
 import { cardAttachmentPaths } from "./card_attachment_paths.js";
-import { buildCardChangeNotification, buildCardQuestionAnswerNotice, cardQuestionDeliveryTarget, type CardChangeDelivery } from "./card_change_notification.js";
+import { buildCardChangeNotification, buildCardQuestionAnswerNotice, buildCardQuestionThreadNotice, cardQuestionDeliveryTarget, type CardChangeDelivery } from "./card_change_notification.js";
 import { buildCardStatusReminder, MAX_REMINDERS_PER_TICK } from "./card_status_reminder.js";
 import { buildCardBlockedNotice, buildCardDoneNotice, buildCardQuestionNotice, buildCardReviewNotice, selectCardBoardNotice } from "./card_board_notice.js";
 import { type LimitResumeOwner } from "./card_limit_auto_resume.js";
@@ -145,8 +145,11 @@ export class CardDispatcher {
         const payload = op.payload_json;
         const commentId=String(payload.comment_id ?? "");
         const comment=op.operation_type === "add_card_comment" ? detail.comments.find(item=>item.id === commentId) : undefined;
+        // 질문 글타래에 사용자가 남긴 글은 일반 커멘트 알림 대신 질문별 알림으로 전달한다.
+        const threadQuestion=op.operation_type === "add_card_comment" && comment?.author_kind === "user" && comment.question_id != null
+            ? detail.questions.find(question=>String(question.id) === String(comment.question_id)) : undefined;
         const fallback=comment && !change.previousAssigneeSessionId ? await this.options.repository.latestDispatchedSessionId(card.id) : null;
-        let notification=buildCardChangeNotification(change,comment,fallback);
+        let notification=threadQuestion ? null : buildCardChangeNotification(change,comment,fallback);
         if (notification && op.operation_type === "add_card_comment" && comment?.author_kind === "user") {
           const rawItemId=comment.item_id;
           const itemId=rawItemId == null ? undefined : Number(rawItemId);
@@ -167,6 +170,20 @@ export class CardDispatcher {
             await this.deliver(card,notification.sessionId,notification.text,notification);
             if (comment) await cards.markCommentDelivered(card.id,commentId);
           } catch (error) { this.options.warn(`card ${card.id} change delivery failed: ${String(error)}`); }
+        }
+        if (threadQuestion && comment) {
+          const threadTarget=cardQuestionDeliveryTarget(card,{session_id:typeof threadQuestion.session_id === "string" ? threadQuestion.session_id : null});
+          if (threadTarget) {
+            const text=buildCardQuestionThreadNotice(card,{
+              id:String(threadQuestion.id),text:String(threadQuestion.text),title:threadQuestion.title == null ? null : String(threadQuestion.title),
+              answer:threadQuestion.answer == null ? null : String(threadQuestion.answer),
+              selected_option:threadQuestion.selected_option == null ? null : String(threadQuestion.selected_option),
+            },String(comment.body));
+            try {
+              await this.deliver(card,threadTarget,text,{deliveryId:`card:${card.id}:question-comment:${op.id}:${threadTarget}`,actorKind:op.actor_kind,actorSessionId:op.actor_session_id});
+              await cards.markCommentDelivered(card.id,commentId);
+            } catch (error) { this.options.warn(`card ${card.id} question thread delivery failed: ${String(error)}`); }
+          }
         }
         if (op.operation_type === "set_card_status" && previousStatus !== "review" && payload.status === "review")
             await this.notify(card, "review");

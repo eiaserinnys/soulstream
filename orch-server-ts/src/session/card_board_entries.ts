@@ -4,6 +4,7 @@ import {
   type CardQuestionAttachment,
   type CardQuestionKind,
   type CardQuestionOption,
+  type CardQuestionThreadEntry,
 } from "@soulstream/wire-schema/card-questions";
 export interface BoardCard extends Record<string,unknown> {
   id:string;number:number|null;title:string;status:string;archived:boolean;
@@ -27,13 +28,16 @@ export function dismissalMatches(card:BoardCard,record:DismissedCard){
     &&new Date(card.status_changed_at).getTime()===new Date(record.status_changed_at).getTime();
 }
 /** The sole projection rule, shared by the persisted board and machine output. */
-export function cardBoardEntries(card:BoardCard,questions:readonly BoardQuestion[],connected:boolean,dismissed:readonly DismissedCard[]=[]):PersistentReportEntry[]{
+export function cardBoardEntries(card:BoardCard,questions:readonly BoardQuestion[],connected:boolean,
+  dismissed:readonly DismissedCard[]=[],threads?:ReadonlyMap<string,readonly CardQuestionThreadEntry[]>):PersistentReportEntry[]{
   if(!connected||card.archived||["done","cancelled","on_hold"].includes(card.status))return [];
   const common={title:clip(card.title,24),card_numbers:card.number===null?[]:[card.number],action:"",state:"open" as const,answer:"",card_id:card.id,card_status:card.status};
   const open=questions.filter(q=>q.card_id===card.id&&q.answer===null&&q.withdrawn_at===null);
   if(open.length)return open.map(q=>{
     const title=typeof q.title==="string"&&q.title.trim()!==""?q.title:null;
     const revisedAt=q.revised_at===null||q.revised_at===undefined?null:new Date(q.revised_at).getTime();
+    const thread=threads?.get(q.id)??[];
+    const lastThreadAt=thread.length?new Date(thread[thread.length-1]!.created_at).getTime():0;
     return {...common,
       title:title===null?common.title:clip(title,40),
       key:`cq_${q.id}`,kind:"ask" as const,context:clip(q.text,120),options:q.options??[],question_id:q.id,
@@ -44,7 +48,8 @@ export function cardBoardEntries(card:BoardCard,questions:readonly BoardQuestion
       question_attachments:q.attachments??[],
       question_revision:typeof q.revision==="number"&&q.revision>=1?q.revision:1,
       question_revised_at:revisedAt===null?null:new Date(revisedAt).toISOString(),
-      updated_at:new Date(Math.max(new Date(q.asked_at).getTime(),new Date(card.updated_at).getTime(),revisedAt??0)).toISOString()};
+      ...(thread.length?{question_thread:[...thread]}:{}),
+      updated_at:new Date(Math.max(new Date(q.asked_at).getTime(),new Date(card.updated_at).getTime(),revisedAt??0,lastThreadAt)).toISOString()};
   });
   if(!["review","blocked"].includes(card.status)||dismissed.some(d=>dismissalMatches(card,d)))return [];
   return [{...common,key:`card_${card.id}`,kind:"see",context:clip(cardSituationText(card),120),options:[],updated_at:new Date(card.updated_at).toISOString()}];

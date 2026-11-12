@@ -14,7 +14,7 @@ export const CARD_FACT_VALUES={
  CREATE:{queued:flag,assigneeInput:['none','agent','human','session'] as const},
  SET_STATUS:{target:TARGETS,claim:flag,wait},REQUEST_REVIEW:{claim:flag,hasItems:flag,hasAsk:flag},HUMAN_INPUT:{},
  ASK_QUESTION:{hasCurrentNow:flag,editing:flag,targetQuestion:question},ANSWER_QUESTION:{question,otherOpen:flag},WITHDRAW_QUESTION:{question,otherOpen:flag},
- ADD_COMMENT:{entrance:['direct','followup'] as const,requestedSpoken:flag,claim:flag,reply:flag,hasItems:flag,hasMode:flag,userInput:flag,replyLength:['within','tooLong'] as const,hasItem:flag,itemExists:flag},
+ ADD_COMMENT:{entrance:['direct','followup'] as const,requestedSpoken:flag,claim:flag,reply:flag,hasItems:flag,hasMode:flag,userInput:flag,replyLength:['within','tooLong'] as const,hasItem:flag,itemExists:flag,hasQuestion:flag,targetQuestion:question},
  START_WORK:{evidenceMissing:['none',...CARD_SERVER_EVIDENCE_STAGES.START_WORK] as const,claim:flag,execution:flag,admitted:flag,admissionReceipt:flag,admissionValid:flag},
  CONFIRM_EXECUTION:{evidenceMissing:['none',...CARD_SERVER_EVIDENCE_STAGES.CONFIRM_EXECUTION] as const,sessionMatch:flag,hasExecution:flag,statusChanged:flag,assignmentChanged:flag,hasNow:flag},
  DISPATCH:{evidenceMissing:['none',...CARD_SERVER_EVIDENCE_STAGES.DISPATCH] as const,pending:flag,policyEnabled:flag,hasAdmission:flag,admission},
@@ -53,8 +53,9 @@ export function* enumerateCardFacts(command:CardDecisionCommand):Generator<Finit
 export function deriveCardActor(row:Record<string,any>|null,questions:readonly Record<string,any>[],command:{type:CardDecisionCommand;[key:string]:any},actor:Record<string,any>):CardActor {
  if(actor.kind==='user')return 'human';if(actor.kind==='system')return 'server';if(actor.kind!=='agent')return 'external';if(!actor.sessionId)return 'anonymousAgent';
  const owner=row?.assignee_kind==='session'&&row.assignee_session_id===actor.sessionId;
- // 질문 작성자 신원은 답·철회에만 쓴다. 질문 만들기/고치기는 담당 신원으로 판정한다.
- const author=(command.type==='ANSWER_QUESTION'||command.type==='WITHDRAW_QUESTION')
+ // 질문 작성자 신원은 답·철회와 질문 글타래 커멘트에만 쓴다. 질문 만들기/고치기는 담당 신원으로 판정한다.
+ const author=(command.type==='ANSWER_QUESTION'||command.type==='WITHDRAW_QUESTION'
+  ||(command.type==='ADD_COMMENT'&&command.questionId!==undefined))
   &&questions.some(q=>q.id===command.questionId&&q.session_id===actor.sessionId);
  return owner?(author?'ownerAuthor':'owner'):author?'author':'otherAgent';
 }
@@ -72,7 +73,7 @@ export function deriveCardDecisionFacts(row:Record<string,any>|null,questions:re
  const evidenceMissing=stages?.find(stage=>!evidence.loaded?.includes(stage))??'none';
  const all:Record<string,any>={hasOwnerSession:c.assignee_session_id!=null,evidenceMissing,target,queued:command.queue===true,assigneeInput:command.type==='SAVE_EXECUTION_SETTINGS'?(command.agentId?'agent':'none'):assignee?.kind??'none',claim:evidence.claim===true,wait:waiting,
  hasCurrentNow:c.now!=null,hasItems:(c.items??[]).length>0,hasAsk:command.ask!==undefined,question:!q?'missing':q.answer!==null?'answered':q.withdrawn_at!==null?'withdrawn':'open',
- editing:command.questionId!==undefined,targetQuestion:!command.questionId?'missing':!q?'missing':q.answer!==null?'answered':q.withdrawn_at!==null?'withdrawn':'open',
+ editing:command.questionId!==undefined,hasQuestion:command.questionId!==undefined,targetQuestion:!command.questionId?'missing':!q?'missing':q.answer!==null?'answered':q.withdrawn_at!==null?'withdrawn':'open',
  otherOpen:questions.some(other=>other.id!==command.questionId&&other.answer===null&&other.withdrawn_at===null),
  entrance:command.entrance??'direct',requestedSpoken:command.kind==='spoken',reply:command.mode==='reply',hasMode:command.mode!==undefined,userInput:evidence.userInput===true,replyLength:[...String(command.body??'')].length>300?'tooLong':'within',
  hasItem:command.itemId!==undefined,itemExists:(c.items??[]).some((item:any)=>item.id===command.itemId),

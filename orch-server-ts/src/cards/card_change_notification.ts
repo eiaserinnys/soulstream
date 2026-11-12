@@ -27,6 +27,26 @@ export function buildCardQuestionAnswerNotice(card:{id:string;title:string;statu
   return lines.join("\n");
 }
 
+/** 되묻기는 열린 질문, 덧붙이기는 닫힌 질문의 글타래에 사용자가 남긴 글을 담당 세션에 전달한다. */
+export function buildCardQuestionThreadNotice(card:{id:string;title:string;status:string},
+  question:{id:string;text:string;title?:string|null;answer?:string|null;selected_option?:string|null},body:string):string {
+  const open=question.answer==null;
+  const lines=[`${open?"[카드 질문 되묻기]":"[카드 질문 덧붙임]"} 카드 「${card.title}」(${card.id})`,
+    `질문: ${question.title ?? question.text}`,
+    `질문 ID: ${question.id}`];
+  if (!open) {
+    lines.push(`받은 답: ${question.selected_option != null ? `고른 안: ${question.selected_option}` : `글 답: ${question.answer}`}`);
+    if (question.selected_option != null && question.answer !== question.selected_option) lines.push(`덧붙임: ${question.answer}`);
+  }
+  lines.push(open ? `되물은 글: ${body}` : `덧붙인 글: ${body}`);
+  lines.push(`질문은 ${open ? "아직 열려" : "닫혀"} 있습니다. 카드 상태는 ${cardStatusLabels[card.status]}입니다.`);
+  lines.push(open
+    ? `add_card_comment에 mode="reply", question_id="${question.id}"를 붙여 답하세요.`
+    : `답이 필요하면 add_card_comment에 mode="reply", question_id="${question.id}"를 붙여 답하세요.`);
+  if (open) lines.push(`필요하면 ask_card_question에 question_id="${question.id}"를 붙여 질문을 제자리에서 고치세요.`);
+  return lines.join("\n");
+}
+
 type CardChangeNotificationChange = Omit<CardMutationChange,"result"> & {
   result: Pick<CardMutationResult,"operation" | "idempotent">;
 };

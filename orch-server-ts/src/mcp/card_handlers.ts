@@ -72,7 +72,7 @@ export const cardHandlers = {
   add_card_report: (o, a, c) => append(o.cards, "add_card_report", a, c, { title: a.title, format: a.format, body: a.body }),
   add_card_comment: (o, a, c) => run(async () => {
     if (a.mode === "reply") matchingHeader(a, c);
-    return compactComment(await appendMutation(o.cards, "add_card_comment", a, agent(a, c), { body: a.text, mode:a.mode,itemId:a.item_id }));
+    return compactComment(await appendMutation(o.cards, "add_card_comment", a, agent(a, c), { body: a.text, mode:a.mode,itemId:a.item_id,questionId:a.question_id }));
   }),
   dispatch_work: (o, a, c) => {
     requireInternal(c);

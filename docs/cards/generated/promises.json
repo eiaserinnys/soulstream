@@ -1,6 +1,6 @@
 {
   "configurationCount": 3834,
-  "definitionCount": 265,
+  "definitionCount": 269,
   "promises": [
     {
       "id": 1,
@@ -76,7 +76,7 @@
     },
     {
       "id": 7,
-      "name": "질문 제자리 고침은 열린 질문 수와 카드 상태를 바꾸지 않는다",
+      "name": "질문 제자리 고침, 되묻기, 덧붙이기와 질문 답은 열린 질문 수와 카드 상태를 바꾸지 않는다",
       "kept": true,
       "violations": 0,
       "example": [],

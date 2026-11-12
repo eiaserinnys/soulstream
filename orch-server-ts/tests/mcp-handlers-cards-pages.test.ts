@@ -486,8 +486,14 @@ describe("card MCP execution", () => {
       expect((await call(h.options, "add_card_comment", { card_id: "card-1", text: "그대로 보존", mode })).isError).not.toBe(true);
       expect(h.service.addComment).toHaveBeenLastCalledWith(expect.objectContaining({ body: "그대로 보존", mode }));
     }
+    expect((await call(h.options, "add_card_comment", {
+      card_id: "card-1", text: "글타래 답", mode: "reply", question_id: "question-1",
+    })).isError).not.toBe(true);
+    expect(h.service.addComment).toHaveBeenLastCalledWith(expect.objectContaining({
+      body: "글타래 답", mode: "reply", questionId: "question-1",
+    }));
     expect((await call(h.options, "add_card_comment", { card_id: "card-1", text: "답변", mode: "invalid" })).isError).toBe(true);
-    expect(h.service.addComment).toHaveBeenCalledTimes(2);
+    expect(h.service.addComment).toHaveBeenCalledTimes(3);
   });
   it("reads notes through the assigned-session service and returns the cursor envelope",async()=>{
     const h=cardHarness();
