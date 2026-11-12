@@ -12,6 +12,7 @@ import {
   type PersistedEventIngressDeadLetter,
 } from "./event_ingress_dead_letter_store.js";
 import {
+  classifyEventIngressFailure,
   completedIngressResults,
   EventIngressRetryPolicy,
   type EventIngressRetryPolicyOptions,
@@ -75,6 +76,15 @@ export type EventIngressRepositoryOptions = EventIngressRetryPolicyOptions & {
   readonly modelCatalog: ModelCatalogSource;
 };
 
+type PendingIngressEntry = {
+  index: number;
+  envelope: EventIngressEnvelope;
+  /** Event-caused failures recorded against this envelope (persisted). */
+  failureCount: number;
+  /** Consecutive transient failures in this process; never persisted. */
+  transientAttempts: number;
+};
+
 export class EventIngressProtocolConflict extends Error {
   readonly statusCode = 409;
 
@@ -114,29 +124,43 @@ export class EventIngressRepository {
     batch: EventAppendBatch,
   ): Promise<EventIngressResult[]> {
     const results = new Array<EventIngressResult | undefined>(batch.events.length);
-    let pending: Array<{ index: number; envelope: EventIngressEnvelope }> = [];
+    let pending: PendingIngressEntry[] = [];
     for (let index = 0; index < batch.events.length; index += 1) {
       const envelope = batch.events[index]!;
       const existing = await this.deadLetterStore?.find({ nodeId, envelope }) ?? null;
       if (existing) results[index] = deadLetterResult(envelope, existing);
-      else pending.push({ index, envelope });
+      else pending.push({ index, envelope, failureCount: 0, transientAttempts: 0 });
     }
     if (pending.length === 0) return completedIngressResults(results);
 
     const sql = await this.sqlProvider.resolveSql();
     while (pending.length > 0) {
-      const retry: Array<{
-        index: number;
-        envelope: EventIngressEnvelope;
-        failureCount: number;
-      }> = [];
+      const retry: PendingIngressEntry[] = [];
+      // A later event of a session must never overtake an earlier event of the
+      // same session that failed in this round. Events of other sessions keep
+      // going in this round.
+      const blockedSessions = new Set<string>();
       for (const item of pending) {
+        if (blockedSessions.has(item.envelope.session_id)) {
+          retry.push(item);
+          continue;
+        }
         try {
           results[item.index] = await sql.begin(async (transaction) =>
             await this.commitEnvelope(transaction, nodeId, batch.stream_id, item.envelope));
         } catch (error) {
           if (!this.deadLetterStore) throw error;
+          blockedSessions.add(item.envelope.session_id);
           await this.retryPolicy.assertDatabaseReachable(sql, error);
+          if (classifyEventIngressFailure(error) === "transient") {
+            // Transient failures never advance the poison count; they keep the
+            // envelope in the retry loop on the existing delay stages.
+            retry.push({
+              ...item,
+              transientAttempts: item.transientAttempts + 1,
+            });
+            continue;
+          }
           const decision = await this.deadLetterStore.recordFailure({
             nodeId,
             envelope: item.envelope,
@@ -146,12 +170,18 @@ export class EventIngressRepository {
           if (decision.deadLetter) {
             results[item.index] = deadLetterResult(item.envelope, decision.deadLetter);
           } else {
-            retry.push({ ...item, failureCount: decision.failureCount });
+            retry.push({
+              ...item,
+              failureCount: decision.failureCount,
+              transientAttempts: 0,
+            });
           }
         }
       }
       if (retry.length === 0) break;
-      await this.retryPolicy.waitForRetry(retry.map((item) => item.failureCount));
+      await this.retryPolicy.waitForRetry(
+        retry.map((item) => Math.max(1, item.failureCount + item.transientAttempts)),
+      );
       pending = retry;
     }
     return completedIngressResults(results);
