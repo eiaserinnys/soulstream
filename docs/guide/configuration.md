@@ -1,6 +1,6 @@
 # Configuration
 
-Soulstream splits configuration between the central orchestrator (`orch-server-ts`) and node-local workers (`soul-server-ts`). Reference templates live in [`orch-server-ts/.env.example`](../../orch-server-ts/.env.example), [`.env.soul-server-ts.example`](../../.env.soul-server-ts.example), [`soul-server-ts/config/agents.yaml.example`](../../soul-server-ts/config/agents.yaml.example), and [`soul-server-ts/config/model-catalog.yaml.example`](../../soul-server-ts/config/model-catalog.yaml.example).
+Soulstream splits configuration between the central orchestrator (`orch-server-ts`) and node-local workers (`soul-server-ts`). Reference templates live in [`orch-server-ts/.env.example`](../../orch-server-ts/.env.example), [`.env.soul-server-ts.example`](../../.env.soul-server-ts.example), and [`soul-server-ts/config/agents.yaml.example`](../../soul-server-ts/config/agents.yaml.example).
 
 ## Orchestrator environment variables
 
@@ -46,7 +46,6 @@ endpoint remains unavailable until login and consent are integrated.
 - `TYPESAFE_API_KEY`: optional API key for Jev reranking in expanded session search (when absent, expanded search returns partial RRF results; see [`orch-server-ts/docs/session-search-deployment.md`](../../orch-server-ts/docs/session-search-deployment.md)).
 - `CODEX_CLI_PATH`: optional path override for the Codex CLI binary on ephemeral routes.
 - `AGY_CLI_PATH`: optional path override for the Antigravity (`agy`) CLI binary.
-- `MODEL_CATALOG_PATH`: optional path to a model catalog YAML file.
 - `TURN_SUMMARY_OPENAI_KEY`: optional OpenAI API key for generating turn summaries.
 - `USAGE_SUMMARY_POLL_INTERVAL_SECONDS`: polling interval in seconds for provider usage summaries (defaults to `300`).
 - `USAGE_SUMMARY_SHARED_ACCOUNTS`: optional shared account grouping configuration for provider usage aggregation.
@@ -95,7 +94,7 @@ Defined in [`.env.soul-server-ts.example`](../../.env.soul-server-ts.example):
 
 - `AGENTS_CONFIG_PATH`: path to the node's `agents.yaml` file.
 - `AGENT_PROFILE_CACHE_PATH`: local cache file path for agent profiles.
-- `MODEL_CATALOG_PATH`: path to the node's `model-catalog.yaml` file.
+- `MODEL_CATALOG_GROUPS`: comma-separated opt-in groups for node-local model presets (empty by default; set `china` only on nodes that should offer China-group models).
 - `CLAUDE_AUTH_TOKEN_PATH`: optional path to the node's Claude OAuth credentials JSON file (managed via the dashboard or mobile app Claude OAuth flow).
 - `AGY_CLI_PATH`: optional path to the Antigravity (`agy`) CLI executable.
 - `OPENCODE_CLI_PATH`: optional path to the OpenCode (`opencode`) CLI executable.
@@ -129,44 +128,25 @@ agents:
 - Required fields: `id`, `name`, `backend`, `workspace_dir`.
 - Optional fields: `model`, `default_preset`, `max_turns`, `allowed_tools`, `disallowed_tools`, `portrait_path`, `context_scope` (`full` by default; `minimal` omits folder-inherited `page_context`, folder `atom_context`, `board_workspace`, `running_sessions`, and `cogito_context`), `claude_auto_memory_enabled` (Claude-only; `false` disables reading and writing `MEMORY.md`), `mcp_profile`, `atom_contexts`, and `env`.
 
-## Model catalog (`model-catalog.yaml`)
+## Model catalog (`packages/model-catalog/data/model-catalog.yaml`)
 
-Selected by `MODEL_CATALOG_PATH` (see [`soul-server-ts/config/model-catalog.yaml.example`](../../soul-server-ts/config/model-catalog.yaml.example)). Keeping model definitions in `model-catalog.yaml` decouples agent identity from specific vendor model strings.
+Model presets, priced model rows with usage rates and display names, and persistent session defaults live in one repository data file: [`packages/model-catalog/data/model-catalog.yaml`](../../packages/model-catalog/data/model-catalog.yaml). Edit only that file for changes to the preset list, usage rates, display names, and persistent session defaults; do not keep copies in code or in node-local configuration directories.
 
-```yaml
-presets:
-  - id: claude-sonnet
-    label: Claude - Sonnet
-    backend: claude
-    model: sonnet
-    supported_efforts: [low, medium, high, xhigh, max]
-    default_effort: xhigh
+- **Node groups**: a preset without `group` is advertised on every node. A preset with `group: china` is advertised only when the node sets `MODEL_CATALOG_GROUPS=china` (comma-separated; empty by default).
+- **No restart**: `soul-server-ts` re-reads the file when it changes and re-advertises its catalog, so data-only edits apply without restarting the process.
+- **Usage rates**: `orch-server-ts` reads the same file and prices new usage ingests with its rates. When rates change, update `price_snapshot.price_version` in the same edit so stored usage stays attributable to the rate table that priced it.
+- **Invalid edits**: an invalid edit leaves the last valid catalog in effect and is reported in the log.
+- **Startup**: a missing or invalid file at process startup fails startup.
 
-  - id: codex-6.1-sol
-    label: Codex - 6.1 Sol
-    backend: codex
-    model: gpt-6.1-sol
-    supported_efforts: [low, medium, high, xhigh, max, ultra]
-    default_effort: high
-
-  - id: gemini-4-argon
-    label: "Gemini - 4 Argon"
-    backend: antigravity
-    model: gemini-4-argon
-    supported_efforts: [low, medium, high]
-    default_effort: high
-```
-
-Catalog rules:
+Preset rules:
 
 - Preset `id` values form a shared vocabulary across nodes even if the underlying `model` string differs by node.
 - `supported_efforts` lists the reasoning effort levels advertised by the backend CLI or SDK; `default_effort` must be a member of `supported_efforts`. Omit both fields when a backend or endpoint does not support effort selection.
 - Presets can define an `env` map (for example, `ANTHROPIC_BASE_URL`, `ANTHROPIC_API_KEY: "${KIMI_API_KEY}"`, and `CLAUDE_CODE_AUTO_COMPACT_WINDOW`). If a referenced environment variable is unset on the node, the preset remains visible in the UI with `available: false` and `reason: env_unresolved`.
 - Presets can also define `mcp_tool_allowlist` per agent profile to restrict exposed MCP tools.
-- `soul-server-ts` advertises its catalog when connecting to `/ws/node`. Restart `soul-server-ts` after adding or modifying presets in `model-catalog.yaml`.
 
 ## Secrets guidance
 
 - Store service tokens (`AUTH_BEARER_TOKEN`, `MCP_EXTERNAL_INGRESS_BEARER_TOKEN`), OAuth credentials, `DATABASE_URL`, and provider API keys in untracked `.env` files or your process manager's secret store. Never commit secrets to git.
-- Place `agents.yaml`, `model-catalog.yaml`, `mcp-profiles.yaml`, and `CLAUDE_AUTH_TOKEN_PATH` in a persistent shared directory outside the release checkout so code deployments do not overwrite node configuration or OAuth tokens.
+- Place `agents.yaml`, `mcp-profiles.yaml`, and `CLAUDE_AUTH_TOKEN_PATH` in a persistent shared directory outside the release checkout so code deployments do not overwrite node configuration or OAuth tokens.
 - Never forward `MCP_INTERNAL_PORT` through nginx or any public reverse proxy; it must remain bound to `127.0.0.1` for node-local agent runners.

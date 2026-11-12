@@ -68,14 +68,6 @@ agents:
     default_preset: claude-sonnet
 EOF
 
-cat >"$LAB_ROOT/state/config/model-catalog.yaml" <<'EOF'
-presets:
-  - id: claude-sonnet
-    label: Claude - Sonnet
-    backend: claude
-    model: sonnet
-EOF
-
 cat >"$LAB_REPO/.env.soul-server-ts" <<EOF
 SOULSTREAM_NODE_ID=eias-lab
 SOULSTREAM_UPSTREAM_URL=ws://127.0.0.1:$LAB_ORCH_PORT/ws/node
@@ -95,7 +87,6 @@ SOUL_RUNNER_REAPER_INTERVAL_MS=15000
 SOUL_RUNNER_TERMINAL_RETENTION_MS=86400000
 AGENTS_CONFIG_PATH=$LAB_ROOT/state/config/agents.yaml
 AGENT_PROFILE_CACHE_PATH=$LAB_ROOT/state/cache/agent-profiles.json
-MODEL_CATALOG_PATH=$LAB_ROOT/state/config/model-catalog.yaml
 INCOMING_FILE_DIR=$LAB_ROOT/state/incoming
 CLAUDE_AUTH_TOKEN_PATH=$LAB_CLAUDE_AUTH_FILE
 CLAUDE_SESSION_RUNTIME_V2_ENABLED=true

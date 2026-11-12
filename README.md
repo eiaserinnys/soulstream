@@ -51,7 +51,6 @@ pnpm --dir orch-server-ts build
 pnpm --dir soul-server-ts build
 
 cp soul-server-ts/config/agents.yaml.example soul-server-ts/config/agents.yaml
-cp soul-server-ts/config/model-catalog.yaml.example soul-server-ts/config/model-catalog.yaml
 
 export DATABASE_URL=postgresql://user:password@127.0.0.1:5432/soulstream
 node packages/db-schema/scripts/migrate.mjs fresh-install
@@ -64,7 +63,7 @@ See [Installation](docs/guide/installation.md) and [Configuration](docs/guide/co
 - [Concepts](docs/guide/concepts.md): folders, cards, sessions, persistent assistant sessions, agents, model presets, and nodes.
 - [Architecture](docs/guide/architecture.md): system diagram, control plane and worker roles, multi-node routing, backends, and repository layout.
 - [Installation](docs/guide/installation.md): prerequisites, Windows worker installer, source build, database initialization, and local dev servers.
-- [Configuration](docs/guide/configuration.md): orchestrator and worker environment variables, `agents.yaml`, `model-catalog.yaml`, and secret handling.
+- [Configuration](docs/guide/configuration.md): orchestrator and worker environment variables, `agents.yaml`, the model catalog data file, and secret handling.
 - [Agents and tools](docs/guide/agents-and-tools.md): skill catalog (`load_skill`), MCP tool groups, worktrees, pages, recurring jobs, custom views, attachments, and usage stats.
 - [Development](docs/guide/development.md): package typecheck and test scripts, Playwright suites, screenshot regeneration, and internal architecture references.
 - [Deployment](docs/guide/deployment.md): Haniel release manifests, central database migration authority, and worker rollout.

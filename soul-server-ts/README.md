@@ -61,7 +61,7 @@ cp .env.soul-server-ts.example .env.soul-server-ts
 | `LOG_LEVEL` | `info` | Pino log level. |
 | `AGENTS_CONFIG_PATH` | `config/agents.yaml` | Agent registry YAML path, resolved from the working directory. |
 | `AGENT_PROFILE_CACHE_PATH` | `.local/cache/agent-profiles.json` | Last-known-good orchestrator profile overlay. |
-| `MODEL_CATALOG_PATH` | `config/model-catalog.yaml` | Node-local model preset catalog. A missing file means an empty catalog. |
+| `MODEL_CATALOG_GROUPS` | empty | Comma-separated opt-in groups for node-local model presets (`china` advertises the China-group presets). Presets come from the repository file `packages/model-catalog/data/model-catalog.yaml`. |
 | `INCOMING_FILE_DIR` | `.local/incoming` | Files delivered by the orchestrator for agent turns. |
 | `MCP_ENABLED` | `false` | Enables the worker MCP endpoint. |
 | `MCP_PATH` | `/mcp` | Base used to derive the internal route as `${MCP_PATH}/internal`. No public MCP route is mounted. |
@@ -95,7 +95,6 @@ corepack enable
 pnpm install --frozen-lockfile
 
 cp soul-server-ts/config/agents.yaml.example soul-server-ts/config/agents.yaml
-cp soul-server-ts/config/model-catalog.yaml.example soul-server-ts/config/model-catalog.yaml
 cp .env.soul-server-ts.example .env.soul-server-ts
 ```
 
@@ -106,7 +105,6 @@ SOULSTREAM_NODE_ID=local-worker
 SOULSTREAM_UPSTREAM_URL=ws://127.0.0.1:5200/ws/node
 EVENT_OUTBOX_DIR=.local/event-outbox
 AGENTS_CONFIG_PATH=soul-server-ts/config/agents.yaml
-MODEL_CATALOG_PATH=soul-server-ts/config/model-catalog.yaml
 ENVIRONMENT=development
 ```
 

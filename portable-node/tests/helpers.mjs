@@ -308,6 +308,7 @@ if (failAfter > 0) {
     process.exit(1);
   }
 }
+writeFileSync(join(releaseDir, "bind-args.json"), JSON.stringify(args));
 writeFileSync(join(releaseDir, "release-manifest.json"), JSON.stringify({ schema_version: 1 }));
 `;
 

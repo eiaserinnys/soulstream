@@ -49,7 +49,7 @@ Key surfaces inside the persistent assistant view include:
 Soulstream separates **who the agent is** from **which model runs the turn**:
 
 - **Agent profiles (`agents.yaml`)**: define the agent's `id`, display `name`, execution `backend`, `workspace_dir`, portrait, tool restrictions (`allowed_tools`, `disallowed_tools`), `context_scope`, and optional default preset.
-- **Model presets (`model-catalog.yaml`)**: define selectable presets such as `claude-sonnet`, `claude-opus`, `codex-6.1-sol`, `codex-6-luna`, or `gemini-4-argon`. Each preset specifies its `backend`, underlying `model` string, `supported_efforts`, `default_effort`, and optional preset-specific environment variables.
+- **Model presets (`packages/model-catalog/data/model-catalog.yaml`)**: the repository data file defines selectable presets such as `claude-sonnet`, `claude-opus`, `codex-6.1-sol`, `codex-6-luna`, or `gemini-4-argon`. Each preset specifies its `backend`, underlying `model` string, `supported_efforts`, `default_effort`, and optional preset-specific environment variables.
 
 When starting a session or dispatching a card, the caller chooses an agent profile and can keep the profile's default preset or override the model preset and reasoning effort for that session. See [Configuration](configuration.md) and [Agents and tools](agents-and-tools.md) for schema details.
 

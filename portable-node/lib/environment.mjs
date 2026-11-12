@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
-import { delimiter, dirname, join } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { formatEnvFile } from "./config.mjs";
 import { run } from "./git.mjs";
 import { PORTABLE_RUNNER_DIRECTORY, runBind } from "./release.mjs";
@@ -113,6 +113,11 @@ export async function ensureCodexLogin({ stateRoot, codexExecutable }) {
   if (recheck.code !== 0) throw new Error("Codex 로그인이 완료되지 않았습니다.");
 }
 
+/** clone의 리포 정본 모델 카탈로그 경로. bind가 release manifest에 기록한다. */
+export function modelCatalogPathForRepoRoot(repoRoot) {
+  return resolve(repoRoot, "packages", "model-catalog", "data", "model-catalog.yaml");
+}
+
 /**
  * 부모 환경을 통째로 물려주지 않는다. OS 실행에 필요한 최소 키만 가져오고,
  * 나머지는 launcher가 소유한 명시 값만 쓴다.
@@ -156,7 +161,6 @@ export function buildChildEnv({
     MCP_REQUIRE_AUTH: "true",
     MCP_ALLOWED_HOSTS: "localhost,127.0.0.1",
     AGENTS_CONFIG_PATH: join(configDir, "agents.yaml"),
-    MODEL_CATALOG_PATH: join(configDir, "model-catalog.yaml"),
     AGENT_PROFILE_CACHE_PATH: join(stateRoot, "cache", "agent-profile-cache.json"),
     EVENT_OUTBOX_DIR: join(stateRoot, "outbox"),
     INCOMING_FILE_DIR: join(stateRoot, "incoming"),
@@ -198,6 +202,7 @@ export async function prepareRelease({
   releaseDir,
   runtimes,
   ports,
+  repoRoot,
 }) {
   const env = buildChildEnv({
     stateRoot,
@@ -213,6 +218,12 @@ export async function prepareRelease({
   // 첫 실행·판 전환 staging·rollback이 모두 여기를 거치므로 여기서 한 번 만든다.
   await mkdir(join(stateRoot, "workspace", ".projects"), { recursive: true, mode: 0o700 });
   await writeFile(envFile, formatEnvFile(env), { mode: 0o600 });
-  await runBind({ releaseDir, nodePath: process.execPath, envFile, env });
+  await runBind({
+    releaseDir,
+    nodePath: process.execPath,
+    envFile,
+    env,
+    catalogPath: modelCatalogPathForRepoRoot(repoRoot),
+  });
   return { env, envFile };
 }

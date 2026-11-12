@@ -52,11 +52,10 @@ pnpm --dir orch-server-ts build
 pnpm --dir soul-server-ts build
 ```
 
-2. Copy the example agent registry and model catalog for the local worker:
+2. Copy the example agent registry for the local worker:
 
 ```bash
 cp soul-server-ts/config/agents.yaml.example soul-server-ts/config/agents.yaml
-cp soul-server-ts/config/model-catalog.yaml.example soul-server-ts/config/model-catalog.yaml
 ```
 
 3. Create `.env.soul-server-ts` in the repository root for the worker:
@@ -66,7 +65,6 @@ SOULSTREAM_NODE_ID=local-worker
 SOULSTREAM_UPSTREAM_URL=ws://127.0.0.1:5200/ws/node
 EVENT_OUTBOX_DIR=.local/event-outbox
 AGENTS_CONFIG_PATH=soul-server-ts/config/agents.yaml
-MODEL_CATALOG_PATH=soul-server-ts/config/model-catalog.yaml
 MCP_ENABLED=true
 MCP_PATH=/mcp
 MCP_INTERNAL_PORT=4206
