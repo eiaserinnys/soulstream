@@ -44,7 +44,7 @@ export function PersistentReportReviewSample({ bubble = false, cardPreview = fal
   const previewEnabled = cardPreview || Boolean(completionScenario);
   const [deckVersion, setDeckVersion] = useState(0);
   useEffect(() => { if (previewEnabled) useCardStore.getState().putCards([pasPreviewCard, pasSecondPreviewCard]); }, [previewEnabled]);
-  const preview = previewEnabled && !before ? { renderCardStatus: (entry: typeof source[number]) => <PasCardPreviewStatus entry={entry} />, renderCardDetails: (entry: typeof source[number], lookupCards: () => Promise<void>) => !completionScenario || entry.key === reviewCompletionEntry.key || entry.key === secondReviewCompletionEntry.key ? <PasCardPreview key={entry.key} entry={entry} lookupCards={lookupCards} onAnswer={answer => setEntries(current => current.map(item => item.key === entry.key ? { ...item, answer, state: 'answered', updated_at: 'preview-answer' } : item))} /> : null } : {};
+  const preview = previewEnabled && !before ? { renderCardStatus: (entry: typeof source[number]) => <PasCardPreviewStatus entry={entry} />, renderCardDetails: (entry: typeof source[number], lookupCards: () => Promise<void>) => !completionScenario || entry.key === reviewCompletionEntry.key || entry.key === secondReviewCompletionEntry.key ? <PasCardPreview key={entry.key} entry={entry} lookupCards={lookupCards} /> : null } : {};
   const dismiss = useCallback(async (key: string) => setEntries(current => current.filter(entry => entry.key !== key)), []);
   const cardTransition = useCallback(async (cardId: string, status: 'done' | 'on_hold' | 'review') => {
     const key = `card_${cardId}`;

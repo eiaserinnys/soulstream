@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useRef } from 'react';
 import type { PersistentReportEntry } from '@seosoyoung/soul-ui';
 import type { CardDetail } from '@seosoyoung/soul-ui/cards/card-types';
 import { reviewCard, reviewCardItems, reviewNow, reviewDetail } from './components-review-fixtures';
 import { PasCardExpansion, PasCardExpansionStatus } from './PasCardExpansion';
+import { useCardApiSample } from './card-sample-api';
 
 export const pasPreviewCard = { ...reviewCard, id: 'preview-pas-card', number: 531, status: 'review' as const,
   title: 'PAS 판에서 결과와 증거를 확인하고 담당에게 커멘트까지 남기는 화면',
@@ -25,13 +26,12 @@ export function PasCardPreviewStatus({ entry }: { entry: PersistentReportEntry }
   return <PasCardExpansionStatus entry={entry} />;
 }
 
-export function PasCardPreview({ entry, lookupCards, onAnswer }: {
+export function PasCardPreview({ entry, lookupCards }: {
   entry: PersistentReportEntry;
   lookupCards: () => Promise<void>;
-  onAnswer(answer: string): void;
 }) {
   const card = entry.card_id === pasSecondPreviewCard.id ? pasSecondPreviewCard : pasPreviewCard;
-  const [detail, setDetail] = useState<CardDetail>(() => ({
+  const detailRef = useRef<CardDetail>({
     ...reviewDetail,
     card,
     comments: [
@@ -39,6 +39,7 @@ export function PasCardPreview({ entry, lookupCards, onAnswer }: {
       { cardId: card.id, authorId: 'roselin', sessionId: null, kind: 'comment', id: 'preview-agent', authorKind: 'agent', body: '결과와 증거를 장 안에 모았습니다.', createdAt: '2026-10-05T08:01:00Z' },
     ],
     questions: entry.question_id ? [{ id: entry.question_id, text: entry.title, options: null, answer: null, askedAt: '2026-10-05T08:00:00Z', answeredAt: null }] : [],
-  }));
-  return <PasCardExpansion entry={entry} lookupCards={lookupCards} sampleDetail={detail} samplePortraitUrl="/system-portrait.png" onSampleChange={setDetail} onAnswer={onAnswer} />;
+  });
+  useCardApiSample(detailRef);
+  return <PasCardExpansion entry={entry} lookupCards={lookupCards} samplePortraitUrl="/system-portrait.png" />;
 }

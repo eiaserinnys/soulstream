@@ -23,7 +23,7 @@ export function CardTimeline({card,detail,portraitUrl,userPortraitUrl,onAnswer,p
  questionHandlers?:CardQuestionHandlers;
  initialImage?:{src:string;alt:string};
  card:CardRow;detail?:CardDetail;portraitUrl:string|null;userPortraitUrl?:string|null;
- onAnswer(questionId:string,answer:string):void;pending:boolean;
+ onAnswer(questionId:string,answer:string):boolean|void|Promise<boolean|void>;pending:boolean;
 }) {
  const {chatTypographyStyle}=useChatTypography();
  const internalLinkClick=useInternalLinkClick();

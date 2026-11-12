@@ -1,7 +1,7 @@
 // 카드 #1197: 카드 질문 장의 실제 구현 표본. 검수 창(/components)과 시각 검증 스크립트가
 // 운영과 같은 부품(CardDetailPane, PersistentReportDeck + pasCardQuestion, PasCardExpansion)을
 // 같은 폭과 상태로 연다. 장면 이름은 시안(df63ae1b1)의 ga, na, da, ra, legacy를 그대로 쓴다.
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useDashboardStore, type PersistentReportEntry } from '@seosoyoung/soul-ui';
 import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
 import { calculatePersistentSessionLayout } from '@seosoyoung/soul-ui/lib/persistent-session-layout';
@@ -11,7 +11,8 @@ import { CardDetailPane } from './CardDetailPane';
 import { CardQuestionActions, CardQuestionBody, CardQuestionAnswered, cardQuestionDetailView } from './CardQuestionBlock';
 import { PersistentReportDeck, type ReportBubbleSeat } from './PersistentReportDeck';
 import { PasCardExpansion, PasCardExpansionStatus, pasCardQuestion } from './PasCardExpansion';
-import { setCardQuestionTarget } from './card-question-target';
+import { cardDetailTargetScope, pasSheetTargetScope, setCardQuestionTarget } from './card-question-target';
+import { useCardApiSample } from './card-sample-api';
 import { REPORT_BUBBLE_MINIMUM_HEIGHT } from './use-persistent-session-geometry';
 import { reviewCard, reviewDetail, reviewNow } from './components-review-fixtures';
 import './persistent-session-screen.css';
@@ -36,7 +37,7 @@ const answeredQuestion: CardQuestion = { ...secretQuestion, answer: '파일로 �
 const threadQuestion: CardQuestion = { ...secretQuestion, revision: 2, revisedAt: at(18) };
 const requestQuestion: CardQuestion = {
   id: 'q-request', kind: 'request', title: '아이폰 앱을 업데이트해 주십시오',
-  text: '질문 장이 바뀐 판이 TestFlight에 올라왔습니다.',
+  text: '질문 장이 바뀐 판이 TestFlight에 올라왔습니다.\n\n1. 아이폰에서 TestFlight를 엽니다.\n2. 소울스트림 옆의 「업데이트」를 누릅니다.\n3. 앱을 다시 열어 PAS 판의 질문 장을 봅니다.',
   options: ['했어'], answer: null, askedAt: at(30), answeredAt: null,
 };
 const legacyQuestion: CardQuestion = {
@@ -94,38 +95,45 @@ function entryFor(scene: CardQuestionScene, detail: CardDetail): PersistentRepor
   };
 }
 
-function useScenePreset(scene: CardQuestionScene, cardId: string, questionId: string) {
+function useScenePreset(scene: CardQuestionScene, surface: 'pas' | 'card', cardId: string, questionId: string, revision: number) {
   useEffect(() => {
     const draftKey = `composer:card-comment:${cardId}`;
-    if (scene === 'na') {
-      setCardQuestionTarget(cardId, { kind: 'append', questionId, label: '파일로 옮기기' });
-      useDashboardStore.getState().setDraft(draftKey, '이대로, 열만 맞춰서');
-    }
+    if (scene !== 'na') return;
+    const scope = surface === 'card' ? cardDetailTargetScope(cardId) : pasSheetTargetScope(`cq_${questionId}`);
+    setCardQuestionTarget(scope, { kind: 'append', questionId, label: '파일로 옮기기' });
+    useDashboardStore.getState().setDraft(draftKey, '이대로, 열만 맞춰서');
     return () => {
-      setCardQuestionTarget(cardId, null);
-      if (scene === 'na') useDashboardStore.getState().clearDraft(draftKey);
+      useDashboardStore.getState().clearDraft(draftKey);
     };
-  }, [scene, cardId, questionId]);
+  }, [scene, surface, cardId, questionId, revision]);
 }
 
 export function CardQuestionReviewSample({ scene, surface, bubble = true, narrow = false }: {
   scene: CardQuestionScene; surface: 'pas' | 'card'; bubble?: boolean; narrow?: boolean;
 }) {
-  const [detail, setDetail] = useState(() => detailFor(scene));
+  const [revision, setRevision] = useState(0);
+  const detail = useMemo(() => detailFor(scene), [scene, revision]);
+  const detailRef = useRef(detail);
   const cardId = detail.card.id;
   const question = detail.questions[0]!;
-  useScenePreset(scene, cardId, question.id);
-  useEffect(() => { useCardStore.getState().putCards([detail.card]); }, [detail.card]);
+  useLayoutEffect(() => { detailRef.current = detail; }, [detail]);
+  useCardApiSample(detailRef);
+  useEffect(() => {
+    const store = useCardStore.getState();
+    store.putCards([detail.card]);
+    void store.loadCard(cardId).catch(() => undefined);
+  }, [detail, cardId]);
+  useScenePreset(scene, surface, cardId, question.id, revision);
   return surface === 'card'
-    ? <div style={{ width: '100%', maxWidth: 760, height: narrow ? 1800 : 1500, display: 'grid' }} data-testid="card-question-card-sample">
-        <CardDetailPane cardId={cardId} folders={[]} onClose={() => {}} onOpenSession={() => {}}
-          sampleDetail={detail} onSampleChange={update => setDetail(current => update(current))} />
+    ? <div key={revision} style={{ width: '100%', maxWidth: 760, height: narrow ? 1800 : 1500, display: 'grid' }} data-testid="card-question-card-sample">
+        <CardDetailPane cardId={cardId} folders={[]} onClose={() => {}} onOpenSession={() => {}} />
       </div>
-    : <PasQuestionSample scene={scene} detail={detail} setDetail={setDetail} bubble={bubble} />;
+    : <PasQuestionSample key={revision} scene={scene} detail={detail} bubble={bubble}
+        onReset={() => { useDashboardStore.getState().setPendingChatSend(`card-question-review-${scene}`, null); setRevision(current => current + 1); }} />;
 }
 
-function PasQuestionSample({ scene, detail, setDetail, bubble }: {
-  scene: CardQuestionScene; detail: CardDetail; setDetail(update: (current: CardDetail) => CardDetail): void; bubble: boolean;
+function PasQuestionSample({ scene, detail, bubble, onReset }: {
+  scene: CardQuestionScene; detail: CardDetail; bubble: boolean; onReset(): void;
 }) {
   const sessionId = `card-question-review-${scene}`;
   const entry = entryFor(scene, detail);
@@ -136,8 +144,7 @@ function PasQuestionSample({ scene, detail, setDetail, bubble }: {
     transport={async () => ({ ok: true, delivered: true, reason: null, consumeWhen: null })}
     renderCardStatus={item => <PasCardExpansionStatus entry={item} />}
     renderQuestion={pasCardQuestion}
-    renderCardDetails={(item, lookupCards) => <PasCardExpansion key={item.key} entry={item} lookupCards={lookupCards}
-      sampleDetail={detail} samplePortraitUrl="/system-portrait.png" onSampleChange={setDetail} />} />;
+    renderCardDetails={(item, lookupCards) => <PasCardExpansion key={item.key} entry={item} lookupCards={lookupCards} samplePortraitUrl="/system-portrait.png" />} />;
   return <>
     <PersistentReportProvider sessionId={sessionId} entries={[entry]}>
       <div className="persistent-session-screen" data-scene={scene}>
@@ -147,7 +154,7 @@ function PasQuestionSample({ scene, detail, setDetail, bubble }: {
         </div> : <main className="persistent-session-main" style={{ height: 'auto' }}>{deck}</main>}
       </div>
     </PersistentReportProvider>
-    <button type="button" onClick={() => { useDashboardStore.getState().setPendingChatSend(sessionId, null); setDetail(() => detailFor(scene)); }}>초기화</button>
+    <button type="button" onClick={onReset}>초기화</button>
   </>;
 }
 

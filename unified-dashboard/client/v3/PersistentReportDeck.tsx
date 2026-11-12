@@ -19,7 +19,7 @@ import './persistent-report.css';
 export type ReportBubbleSeat = { target: HTMLElement | null; layout: PersistentSessionReportBubbleLayout | null; body: PersistentSessionRect | null; ready?: boolean; inlineWidth?: number; inlineMaxHeight?: number };
 /** 카드 #1197: 질문 장은 본문과 동작 줄을 질문 부품이 그린다. */
 export type ReportQuestionView = { body: React.ReactNode; actions: React.ReactNode; meta?: React.ReactNode };
-export type ReportQuestionControls = { expanded: boolean; expand(): void; reply(option: string): void; answer?: string; pending: boolean };
+export type ReportQuestionControls = { expanded: boolean; expand(): void; reply(option: string): Promise<boolean>; hold(option: string): void; answer?: string; pending: boolean };
 type Props = { renderQuestion?(entry: PersistentReportEntry, controls: ReportQuestionControls): ReportQuestionView | null; renderCardDetails?(entry: PersistentReportEntry, lookupCards: () => Promise<void>): React.ReactNode; renderCardStatus?(entry: PersistentReportEntry): React.ReactNode; sessionId: string; focusInput: () => void; dismissReport: (key: string) => Promise<void>; notify: (text: string) => void; disabled?: boolean; seat?: ReportBubbleSeat; transport?: typeof submitIntervention; cardTransition?: CardTransition; completion?: ReturnType<typeof usePersistentCardCompletion> };
 type ReportCardEntry = PersistentReportEntry & { card_id?: string; card_status?: string };
 const LINK_FOCUS = 'rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background';
@@ -165,7 +165,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
         const expandable = Boolean(renderCardDetails && (cardEntry.card_id || entry.card_numbers.length === 1));
         const expanded = expandable && activeExpandedKey === entry.key;
         const toggle = () => setExpandedKey(expanded ? null : entry.key);
-        const question = renderQuestion?.(entry, { expanded, expand: () => setExpandedKey(entry.key), reply: option => void sending.reply(entry, option), answer: report.answer(entry), pending: disabled || sending.sending }) ?? null;
+        const question = renderQuestion?.(entry, { expanded, expand: () => setExpandedKey(entry.key), reply: option => sending.reply(entry, option), hold: option => report.hold(entry, option), answer: report.answer(entry), pending: disabled || sending.sending }) ?? null;
         const answer = report.answer(entry);
         const answered = answer !== undefined;
         const suppressActions = answered && !completionEligible;

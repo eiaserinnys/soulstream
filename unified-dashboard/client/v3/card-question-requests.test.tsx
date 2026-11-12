@@ -9,8 +9,8 @@ import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import type { CardComment, CardDetail, CardQuestion } from '@seosoyoung/soul-ui/cards/card-types';
 import { CardDetailPane } from './CardDetailPane';
 import { PersistentReportDeck } from './PersistentReportDeck';
-import { pasCardQuestion } from './PasCardExpansion';
-import { setCardQuestionTarget } from './card-question-target';
+import { PasCardExpansion, pasCardQuestion } from './PasCardExpansion';
+import { cardDetailTargetScope, clearCardQuestionTarget, pasSheetTargetScope } from './card-question-target';
 
 vi.mock('./useCardSessionPages', async original => ({ ...await original<typeof import('./useCardSessionPages')>(), useCardSessionPages: () => ({ sessions: [], loading: false }) }));
 vi.mock('@seosoyoung/soul-ui/cards/CardSessionVirtualList', () => ({ CardSessionVirtualList: ({ data, itemContent }: any) => <div>{data.map((row: any, index: number) => <div key={index}>{itemContent(index, row)}</div>)}</div> }));
@@ -120,12 +120,12 @@ describe('card detail question actions', () => {
     vi.stubGlobal('PointerEvent', MouseEvent);
     useDashboardStore.setState({ drafts: {} });
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-    setCardQuestionTarget('inherit', null);
+    clearCardQuestionTarget(cardDetailTargetScope('inherit'));
     mutate = vi.fn().mockResolvedValue(undefined);
     addComment = vi.fn().mockResolvedValue(undefined);
     container = document.createElement('div'); document.body.append(container); root = createRoot(container);
   });
-  afterEach(async () => { await act(() => root.unmount()); container.remove(); setCardQuestionTarget('inherit', null); useCardStore.getState().reset(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+  afterEach(async () => { await act(() => root.unmount()); container.remove(); clearCardQuestionTarget(cardDetailTargetScope('inherit')); useCardStore.getState().reset(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
   it('sends a one-press choice and puts the append target row above the composer', async () => {
     await render([question]);
@@ -187,26 +187,53 @@ describe('card detail question actions', () => {
 
 describe('PAS deck question actions', () => {
   let host: HTMLDivElement; let root: Root;
-  let transport: ReturnType<typeof vi.fn>; let mutate: ReturnType<typeof vi.fn>;
+  let transport: ReturnType<typeof vi.fn>; let mutate: ReturnType<typeof vi.fn>; let addComment: ReturnType<typeof vi.fn>;
+  const cardRow = { ...card, id: 'card-1' };
+  const threadComment: CardComment = { id: 't1', cardId: 'card-1', authorKind: 'user', authorId: 'sample', sessionId: null, kind: 'comment', questionId: 'q-1', body: '어떻게 해결 돼?', createdAt: askedAt };
+  const openDetail = () => detailOf([{ ...question, id: 'q-1', revision: 2, revisedAt: '2026-11-12T05:18:00.000Z' }], [threadComment]);
   const button = (name: string) => [...host.querySelectorAll<HTMLButtonElement>('button')]
     .find(node => (node.getAttribute('aria-label') ?? node.textContent) === name)!;
   const choice = (label: string) => [...host.querySelectorAll<HTMLButtonElement>('button')]
     .find(node => node.textContent?.startsWith(label))!;
+  const textarea = () => host.querySelector('textarea')!;
   const render = async (entry: PersistentReportEntry = sheetEntry) => act(async () => root.render(
     <InternalLinkProvider internalOrigins={['https://example.test']} openTarget={() => {}}>
       <PersistentReportProvider sessionId="a" entries={[entry]}>
         <PersistentReportDeck sessionId="a" notify={() => {}} transport={transport} focusInput={() => {}}
-          dismissReport={async () => {}} renderCardDetails={() => <div />} renderCardStatus={() => null}
+          dismissReport={async () => {}} renderCardStatus={() => null}
+          renderCardDetails={(item, lookupCards) => <PasCardExpansion entry={item} lookupCards={lookupCards} />}
           renderQuestion={pasCardQuestion} />
       </PersistentReportProvider>
     </InternalLinkProvider>,
   ));
+  const expand = async () => { await act(async () => { button('확대').click(); await Promise.resolve(); }); };
+  const type = async (value: string) => {
+    const input = textarea();
+    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, value);
+    await act(() => input.dispatchEvent(new Event('input', { bubbles: true })));
+  };
+  const send = async () => act(async () => {
+    textarea().dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }));
+    await Promise.resolve(); await Promise.resolve();
+  });
   beforeEach(async () => {
     vi.clearAllMocks();
     useDashboardStore.getState().setPendingChatSend('a', null);
+    useDashboardStore.setState({ drafts: {} });
     useCardStore.getState().reset();
-    mutate = vi.fn().mockResolvedValue(undefined);
-    useCardStore.setState({ mutate });
+    // 펼친 장은 카드 상세를 실제 부품으로 읽는다: 성공한 변경은 저장된 상세에 반영된다.
+    mutate = vi.fn(async (_id: string, _suffix: string, body: { mode: 'choice' | 'text'; option?: string; answer?: string }) => {
+      const answer = body.mode === 'choice' ? body.option ?? '' : body.answer ?? '';
+      const next = detailOf([{ ...question, id: 'q-1', answer, selectedOption: body.mode === 'choice' ? answer : null, answeredAt: askedAt }]);
+      useCardStore.setState(state => ({ details: { ...state.details, 'card-1': next } }));
+      return next;
+    });
+    addComment = vi.fn(async (_id: string, body: string, _key: string, _itemId?: number, questionId?: string) => {
+      const saved: CardComment = { id: `saved-${body}`, cardId: 'card-1', authorKind: 'user', authorId: '', sessionId: null, kind: 'comment', questionId: questionId ?? null, body, createdAt: askedAt };
+      useCardStore.setState(state => ({ details: { ...state.details, 'card-1': { ...state.details['card-1']!, comments: [...(state.details['card-1']?.comments ?? []), saved] } } }));
+      return saved;
+    });
+    useCardStore.setState({ byId: { 'card-1': cardRow }, details: { 'card-1': openDetail() }, loadCard: vi.fn().mockResolvedValue(openDetail()), mutate, addComment });
     transport = vi.fn().mockResolvedValue({ ok: true, delivered: true, reason: null, consumeWhen: null });
     Object.defineProperty(window, 'matchMedia', { configurable: true, value: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) });
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} unobserve() {} });
@@ -217,7 +244,12 @@ describe('PAS deck question actions', () => {
     (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
     host = document.createElement('div'); document.body.append(host); root = createRoot(host);
   });
-  afterEach(async () => { await act(() => root.unmount()); host.remove(); setCardQuestionTarget('card-1', null); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  afterEach(async () => {
+    await act(() => root.unmount()); host.remove();
+    clearCardQuestionTarget(pasSheetTargetScope('cq_q-1'));
+    clearCardQuestionTarget(pasSheetTargetScope('cq_q-2'));
+    vi.restoreAllMocks(); vi.unstubAllGlobals();
+  });
 
   it('keeps a collapsed choice on the existing panel answer path', async () => {
     await render();
@@ -231,12 +263,29 @@ describe('PAS deck question actions', () => {
     expect(host.textContent).toContain('덧붙이기');
   });
 
-  it('sends the expanded choice through the card answer route', async () => {
+  it('sends the expanded choice through the card answer route and keeps the answer and append target', async () => {
     await render();
-    await act(async () => { button('확대').click(); await Promise.resolve(); });
-    await act(async () => { choice('파일로 옮기기').click(); await Promise.resolve(); });
+    await expand();
+    await act(async () => { choice('파일로 옮기기').click(); await Promise.resolve(); await Promise.resolve(); });
     expect(mutate).toHaveBeenCalledWith('card-1', '/questions/q-1/answer', { mode: 'choice', option: '파일로 옮기기' });
     expect(transport).not.toHaveBeenCalled();
+    expect(host.textContent).toContain('받은 답');
+    expect(host.querySelector('.v3-card-target-notice')?.textContent).toContain('덧붙이기: 파일로 옮기기');
+    expect(textarea().getAttribute('placeholder')).toBe('덧붙일 말');
+  });
+
+  it('releases the picked row when the expanded choice fails', async () => {
+    await render();
+    await expand();
+    mutate.mockRejectedValueOnce(new Error('전송 실패'));
+    await act(async () => { choice('파일로 옮기기').click(); await Promise.resolve(); await Promise.resolve(); });
+    expect(host.querySelector('.v3-card-target-notice')).toBeNull();
+    expect(host.textContent).not.toContain('받은 답');
+    const picked = choice('파일로 옮기기');
+    expect(picked.getAttribute('data-selected')).toBeNull();
+    expect(picked.getAttribute('aria-disabled')).toBeNull();
+    await act(async () => { choice('파일로 옮기기').click(); await Promise.resolve(); await Promise.resolve(); });
+    expect(mutate).toHaveBeenCalledTimes(2);
   });
 
   it('shows the waiting row from the thread and the revised time', async () => {
@@ -253,5 +302,31 @@ describe('PAS deck question actions', () => {
       contextItems: [{ key: 'persistent_report_reply', content: { key: 'cq_q-2', option: '했어' } }],
     }));
     expect(mutate).not.toHaveBeenCalled();
+  });
+
+  it('uses the real expanded composer for an ask-back and shows the saved thread turn', async () => {
+    await render();
+    await expand();
+    await act(() => button('되묻기').click());
+    expect(host.querySelector('.v3-card-target-notice')?.textContent).toContain('되묻기');
+    expect(textarea().getAttribute('placeholder')).toBe('물어볼 것');
+    await type('이건 무슨 뜻인가요?');
+    await send();
+    expect(addComment).toHaveBeenCalledWith('card-1', '이건 무슨 뜻인가요?', expect.any(String), undefined, 'q-1');
+    expect(host.textContent).toContain('이건 무슨 뜻인가요?');
+    expect(host.querySelector('.v3-card-target-notice')).toBeNull();
+  });
+
+  it('keeps the append target and the typed input when the expanded composer send fails', async () => {
+    await render();
+    await expand();
+    await act(() => button('되묻기').click());
+    await type('이건 무슨 뜻인가요?');
+    addComment.mockRejectedValueOnce(new Error('전송 실패'));
+    await send();
+    expect(host.querySelector('.v3-card-target-notice')?.textContent).toContain('되묻기');
+    expect(textarea().value).toBe('이건 무슨 뜻인가요?');
+    expect(textarea().getAttribute('placeholder')).toBe('물어볼 것');
+    expect(host.querySelector('.v3-card-error')?.textContent).toBe('전송 실패');
   });
 });

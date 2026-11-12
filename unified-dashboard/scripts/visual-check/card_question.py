@@ -10,13 +10,16 @@
     ga      새 선택 질문(그림, 권함, 선택지 설명)
     na      선택 뒤 덧붙이기 대상 줄과 입력창
     da      글타래와 「답을 기다리는 중」, 「고침」
-    ra      부탁 장(선택지 없음, 「했어」가 맨 오른쪽)
-    legacy  옛 질문(제목 없음, 선택지 설명 없음)
+    ra      부탁 장(번호 목록 본문, 선택지 없음, 「했어」가 맨 오른쪽)
+    legacy  옛 질문(제목 없음, 선택지 설명 없음). PAS 판에서도 접힌 장을 찍는다.
 
-조작 항목(UI 기준 14~18번)
+조작 항목(UI 기준 11, 14~18번)
 
+    11 글자 선택      본문과 글타래 글은 끌어서 골라지고, 선택지·동작 줄 단추 글자는 골라지지 않는다.
     14 누른 뒤 초점    되묻기를 누르면 커멘트 입력창에 초점이 가고, 확대를 누르면 초점이 확대/축소 단추에 남는다.
                        선택지를 한 번 누르면 초점을 입력창으로 옮기지 않고 덧붙이기 대상 줄만 선다(계약 3).
+                       펼친 장에서도 선택지를 실제로 눌러 누른 행·덧붙이기 대상이 남고 초점이 BODY로 떨어지지 않는지 잰다.
+                       대상 줄의 「해제」를 누르면 입력창으로 초점이 간다.
     15 Tab과 Esc      질문 장 안의 DOM 순서(Tab 순서)가 읽는 순서(머리 → 본문 → 동작 줄)와 같고, 보이지 않는 요소는 빠진다.
                        카드 상세는 한 열이라 좌표 오름차순으로도 함께 잰다. PAS 판은 발치 줄이 붙박이라 구역 순서로 잰다.
                        펼친 장은 대화상자가 아니라 제자리 확장이라 Esc로 닫지 않는다(계약에 없음). Esc를 눌러도 상태가 바뀌지 않는지만 잰다.
@@ -24,6 +27,7 @@
     17 오류 상태는 해당 없음: 질문 장은 따로 받는 자료가 없고, 보내기 실패는 기존 카드 오류 줄이 맡는다.
     18 창 크기 바꾸기  카드 상세를 1440에서 연 채 390으로 줄여도 제목과 입력 중인 글이 남고 넘치지 않는다.
                        PAS 표본은 1440x900 좌표를 고정한 하네스라 리사이즈는 카드 상세에서만 잰다.
+                       시험이 남긴 초안은 지운 뒤 좁은 폭 장면을 찍는다.
 
 준비
 
@@ -40,6 +44,9 @@
 
     {출력}/card-question-{표면}-{장면}-{폭}-{테마}.png             표면별 장면 캡처
     {출력}/card-question-pas-{장면}-expanded-1440-{테마}.png        펼친 장 캡처
+    {출력}/card-question-pas-ga-expanded-answered-1440-{테마}.png   펼친 장에서 선택지를 누른 뒤
+    {출력}/card-question-pas-ga-expanded-bottom-1440-{테마}.png     펼친 장을 바닥까지 스크롤한 캡처
+    {출력}/card-question-pas-card-existing-bottom-1440-{테마}.png   기존 PAS 카드 펼친 장 바닥
     {출력}/measurements.json                                        장면별 잰 값과 조작 결과
     {출력}/report.json                                              판정과 실패 목록
 
@@ -62,7 +69,7 @@ THEMES = ("light", "dark")
 WIDE = 1440
 NARROW = 390
 CARD_SCENES = ("ga", "na", "da", "ra", "legacy")
-PAS_COLLAPSED = ("ga", "da", "ra")
+PAS_COLLAPSED = ("ga", "da", "ra", "legacy")
 PAS_EXPANDED = ("ga", "na")
 GA_TITLE = "에이전트 접속 비밀값을 숨길까요?"
 REQUEST_TITLE = "아이폰 앱을 업데이트해 주십시오"
@@ -100,19 +107,30 @@ CARD_SCRIPT = """
 () => {
   const root = document.querySelector('[data-testid="card-question-review"]');
   const body = root.querySelector('.v3-card-question-body');
+  const background = body?.querySelector('.v3-card-question-background');
   const choices = root.querySelector('.v3-card-question-choices');
+  const actions = root.querySelector('.v3-card-question-actions');
   const overflow = (element) => element ? Math.max(0, element.scrollWidth - element.clientWidth) : null;
+  const userSelect = (element) => element ? getComputedStyle(element).userSelect : null;
   const text = root.textContent ?? '';
   return {
     pageOverflowX: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
     bodyOverflowX: overflow(body),
     choicesOverflowX: overflow(choices),
     title: root.querySelector('.v3-card-question-title')?.textContent?.trim() ?? null,
-    background: body?.querySelector('.v3-card-question-background')?.textContent?.trim() ?? null,
+    background: background?.textContent?.trim() ?? null,
+    backgroundItems: background?.querySelectorAll('ol > li').length ?? 0,
+    selection: {
+      background: userSelect(background),
+      thread: userSelect(root.querySelector('.v3-card-question-turn')),
+      choice: userSelect(choices?.querySelector('button')),
+      action: userSelect(actions?.querySelector('button')),
+    },
     choices: [...root.querySelectorAll('.v3-card-question-choices button')].map((button) => ({
       label: button.textContent.trim(),
       selected: button.getAttribute('data-selected') === 'true',
       disabled: button.disabled,
+      ariaDisabled: button.getAttribute('aria-disabled') === 'true',
     })),
     actions: [...root.querySelectorAll('.v3-card-question-actions button')].map((button) => button.textContent.trim()),
     recommendations: root.querySelectorAll('.v3-card-question-recommended').length,
@@ -141,7 +159,21 @@ SHEET_SCRIPT = """
   const sheet = root.querySelector('.pas-report-sheet[data-current="true"]');
   const content = sheet?.querySelector('.pas-report-content');
   const body = content?.querySelector(':scope > .v3-card-question-body');
+  const background = body?.querySelector('.v3-card-question-background');
+  const footer = sheet?.querySelector('.pas-report-footer');
   const overflow = (element) => element ? Math.max(0, element.scrollWidth - element.clientWidth) : null;
+  const userSelect = (element) => element ? getComputedStyle(element).userSelect : null;
+  const answered = (() => {
+    const row = footer?.querySelector('.v3-card-question-answered');
+    const button = row?.querySelector('[data-slot="button"]');
+    if (!footer || !row || !button) return null;
+    const style = getComputedStyle(button);
+    return {
+      paddingLeft: Math.round(parseFloat(style.paddingLeft) * 10) / 10,
+      paddingRight: Math.round(parseFloat(style.paddingRight) * 10) / 10,
+      rightGap: Math.round((footer.getBoundingClientRect().right - button.getBoundingClientRect().right) * 10) / 10,
+    };
+  })();
   return {
     pageOverflowX: Math.max(0, document.documentElement.scrollWidth - document.documentElement.clientWidth),
     sheetOverflowX: overflow(sheet),
@@ -149,10 +181,19 @@ SHEET_SCRIPT = """
     title: sheet?.querySelector('.pas-report-title')?.textContent?.trim() ?? null,
     chip: sheet?.querySelector('[data-slot="status-chip"]')?.textContent?.trim() ?? null,
     meta: sheet?.querySelector('.v3-card-question-meta')?.textContent?.trim() ?? null,
+    backgroundItems: background?.querySelectorAll('ol > li').length ?? 0,
+    recommendations: body?.querySelectorAll('.v3-card-question-recommended').length ?? 0,
+    selection: {
+      background: userSelect(background),
+      thread: userSelect(body?.querySelector('.v3-card-question-turn')),
+      choice: userSelect(body?.querySelector('.v3-card-question-choices button')),
+      action: userSelect(footer?.querySelector('button')),
+    },
     choices: [...(body?.querySelectorAll('.v3-card-question-choices button') ?? [])].map((button) => ({
       label: button.textContent.trim(),
       selected: button.getAttribute('data-selected') === 'true',
       disabled: button.disabled,
+      ariaDisabled: button.getAttribute('aria-disabled') === 'true',
     })),
     actions: [...(sheet?.querySelectorAll('.pas-report-footer button') ?? [])].map((button) => button.textContent.trim()),
     thread: [...(body?.querySelectorAll('.v3-card-question-thread > li') ?? [])].map((item) => ({
@@ -160,6 +201,7 @@ SHEET_SCRIPT = """
       waiting: item.getAttribute('data-waiting') === 'true',
       text: item.textContent.trim(),
     })),
+    answered,
     notice: sheet?.querySelector('.v3-card-target-notice')?.textContent?.trim() ?? null,
     placeholder: sheet?.querySelector('textarea')?.getAttribute('placeholder') ?? null,
     draft: sheet?.querySelector('textarea')?.value ?? null,
@@ -231,8 +273,41 @@ SHEET_ORDER_SCRIPT = """
 }
 """
 
+# 펼친 장은 스크롤 영역 바닥 여백이 없으면 입력창 초점 링과 그림자가 잘린다.
+# 스크롤 영역을 바닥까지 내린 뒤 입력창 아래 간격과 바닥 여백을 함께 잰다.
+BOTTOM_SCRIPT = """
+(sheetSelector) => {
+  const sheet = document.querySelector(sheetSelector);
+  if (!sheet) return null;
+  const scroller = sheet.querySelector('.pas-report-reading') ?? [...sheet.querySelectorAll('*')]
+    .find((element) => /(auto|scroll)/.test(getComputedStyle(element).overflowY) && element.scrollHeight > element.clientHeight + 2);
+  if (!scroller) return { scroller: null };
+  scroller.scrollTop = scroller.scrollHeight;
+  const rect = scroller.getBoundingClientRect();
+  const dock = sheet.querySelector('.v3-card-comment-dock');
+  const dockRect = dock?.getBoundingClientRect();
+  const style = getComputedStyle(scroller);
+  return {
+    scroller: true,
+    scrollerClass: scroller.className.toString().slice(0, 80),
+    scrollerPadBottom: Math.round(parseFloat(style.paddingBottom) * 10) / 10,
+    composerGap: dockRect ? Math.round((rect.bottom - dockRect.bottom) * 10) / 10 : null,
+  };
+}
+"""
+
+DRAG_BOX_SCRIPT = """
+({ selector, index }) => {
+  const element = document.querySelectorAll(selector)[index];
+  if (!element) return null;
+  const rect = element.getBoundingClientRect();
+  return { x0: rect.left + 2, x1: rect.right - 2, y: rect.top + rect.height / 2 };
+}
+"""
+
 CARD_SCOPE = '[data-testid="card-question-card-sample"]'
 SHEET_SCOPE = '[data-testid="card-question-review"] .pas-report-sheet[data-current="true"]'
+EXISTING_SHEET_SCOPE = '.pas-report-sheet[data-current="true"]'
 
 # 대시보드 배경의 WebGL 캔버스가 캡처마다 15~30초를 쓰고, 도는 애니메이션은 요소 상자를
 # 계속 움직여 요소 스크린샷의 안정화 대기가 끝나지 않는다. 표본 판정에는 둘 다 필요 없어
@@ -329,6 +404,20 @@ def shot(page: Page, out: Path, name: str, selector: str) -> str:
     return path.as_posix()
 
 
+def drag_select(page: Page, selector: str, index: int = 0) -> str:
+    """요소 위를 왼쪽에서 오른쪽으로 끌어 고른 글자를 돌려준다."""
+    box = page.evaluate(DRAG_BOX_SCRIPT, {"selector": selector, "index": index})
+    if box is None:
+        return ""
+    page.mouse.move(box["x0"], box["y"])
+    page.mouse.down()
+    page.mouse.move((box["x0"] + box["x1"]) / 2, box["y"], steps=4)
+    page.mouse.move(box["x1"], box["y"], steps=4)
+    page.mouse.up()
+    page.wait_for_timeout(150)
+    return page.evaluate("() => String(getSelection() ?? '')")
+
+
 def order_ok(items: list[dict]) -> bool:
     for current, following in zip(items, items[1:]):
         if following["top"] < current["top"] - 4:
@@ -355,6 +444,14 @@ def judge_card(scene: str, data: dict, width: int) -> list[dict]:
         fail("questionBodyNoOverflow", data["bodyOverflowX"])
     if data["choicesOverflowX"] is not None and data["choicesOverflowX"] > 1:
         fail("choicesNoOverflow", data["choicesOverflowX"])
+
+    selection = data["selection"]
+    if selection["background"] != "text":
+        fail("backgroundTextSelectable", selection["background"])
+    if data["choices"] and selection["choice"] != "none":
+        fail("choiceTextNotSelectable", selection["choice"])
+    if data["actions"] and selection["action"] != "none":
+        fail("actionTextNotSelectable", selection["action"])
 
     choices = data["choices"]
     labels = [choice["label"].split("권함")[0].strip() for choice in choices]
@@ -383,7 +480,9 @@ def judge_card(scene: str, data: dict, width: int) -> list[dict]:
         selected = [choice for choice in choices if choice["selected"]]
         if len(selected) != 1 or not selected[0]["label"].startswith(NA_LABEL):
             fail("onePressLeavesSelectedRow", labels)
-        if not any(choice["disabled"] for choice in choices):
+        elif selected[0]["disabled"] or not selected[0]["ariaDisabled"]:
+            fail("chosenRowUsesAriaDisabled", selected[0])
+        if sum(1 for choice in choices if choice["disabled"]) != len(choices) - 1:
             fail("otherChoicesDimmed", labels)
         if data["actions"]:
             fail("answeredQuestionHasNoOpenActions", data["actions"])
@@ -397,6 +496,8 @@ def judge_card(scene: str, data: dict, width: int) -> list[dict]:
             fail("revisedHeader")
         if data["actions"] != ["되묻기"]:
             fail("composerVisibleHidesFreeAnswer", data["actions"])
+        if selection["thread"] != "text":
+            fail("threadTextSelectable", selection["thread"])
     if scene == "ra":
         if data["title"] != REQUEST_TITLE:
             fail("requestTitle", data["title"])
@@ -404,6 +505,8 @@ def judge_card(scene: str, data: dict, width: int) -> list[dict]:
             fail("requestHasNoChoices", labels)
         if data["actions"] != ["되묻기", "했어"]:
             fail("requestActions", data["actions"])
+        if data["backgroundItems"] != 3:
+            fail("requestNumberedList", data["backgroundItems"])
     if scene == "legacy":
         if data["title"] is not None:
             fail("legacyHasNoTitle", data["title"])
@@ -431,6 +534,14 @@ def judge_sheet(scene: str, data: dict, expanded: bool) -> list[dict]:
     if data["bodyOverflowX"] is not None and data["bodyOverflowX"] > 1:
         fail("questionBodyNoOverflow", data["bodyOverflowX"])
 
+    selection = data["selection"]
+    if selection["background"] != "text":
+        fail("backgroundTextSelectable", selection["background"])
+    if data["choices"] and selection["choice"] != "none":
+        fail("choiceTextNotSelectable", selection["choice"])
+    if data["actions"] and selection["action"] != "none":
+        fail("actionTextNotSelectable", selection["action"])
+
     choices = data["choices"]
     if scene == "ga" and not expanded:
         if data["title"] != GA_TITLE:
@@ -450,6 +561,8 @@ def judge_sheet(scene: str, data: dict, expanded: bool) -> list[dict]:
             fail("waitingRow", data["thread"])
         if data["actions"] != ["다르게 답하기", "되묻기"]:
             fail("collapsedActions", data["actions"])
+        if selection["thread"] != "text":
+            fail("threadTextSelectable", selection["thread"])
     if scene == "ra" and not expanded:
         if data["chip"] != "카드 부탁":
             fail("requestChip", data["chip"])
@@ -457,6 +570,26 @@ def judge_sheet(scene: str, data: dict, expanded: bool) -> list[dict]:
             fail("requestHasNoChoices", [choice["label"] for choice in choices])
         if data["actions"] != ["다르게 답하기", "되묻기", "했어"]:
             fail("requestActions", data["actions"])
+        if data["backgroundItems"] != 3:
+            fail("requestNumberedList", data["backgroundItems"])
+    if scene == "legacy" and not expanded:
+        if data["chip"] != "카드 질문":
+            fail("legacyQuestionChip", data["chip"])
+        if len(choices) != 3:
+            fail("legacyChoices", [choice["label"] for choice in choices])
+        if data["recommendations"]:
+            fail("legacyHasNoRecommendation", data["recommendations"])
+        if data["actions"] != ["다르게 답하기", "되묻기"]:
+            fail("legacyActions", data["actions"])
+    if scene == "na":
+        answered = data["answered"]
+        if not answered:
+            fail("answeredRowVisible")
+        else:
+            if answered["paddingLeft"] <= 0 or answered["paddingRight"] <= 0:
+                fail("answeredButtonKeepsInlinePadding", answered)
+            if abs(answered["rightGap"]) > 1:
+                fail("answeredButtonAlignsRightEdge", answered)
     if expanded and scene == "ga":
         if not data["expanded"]:
             fail("sheetExpanded")
@@ -505,7 +638,7 @@ def capture_narrow_sheet(page: Page, base: str, out: Path, scene: str, theme: st
             "failures": judge_sheet(scene, data, False)}
 
 
-def interaction_checks(page: Page, base: str, theme: str) -> dict:
+def interaction_checks(page: Page, base: str, out: Path, theme: str) -> dict:
     results: dict = {}
 
     # 14: 선택지를 한 번 누르면 입력창으로 초점을 옮기지 않고 덧붙이기 대상 줄이 선다.
@@ -516,6 +649,29 @@ def interaction_checks(page: Page, base: str, theme: str) -> dict:
         "focus": page.evaluate(FOCUS_SCRIPT),
         "notice": page.evaluate("() => document.querySelector('[data-testid=\"card-question-card-sample\"] .v3-card-target-notice')?.textContent?.trim() ?? null"),
         "placeholder": page.evaluate("() => document.querySelector('[data-testid=\"card-question-card-sample\"] textarea')?.getAttribute('placeholder') ?? null"),
+    }
+
+    # 14: 펼친 장에서 선택지를 실제로 누른다. 누른 행과 덧붙이기 대상이 남고 초점은 BODY로 떨어지지 않는다.
+    open_sheet(page, base, "ga", bubble=True, label=f"expanded-choice-{theme}")
+    page.get_by_role("button", name="확대").click()
+    page.wait_for_selector(f'{SHEET_SCOPE} .pas-report-card-preview', state="visible")
+    page.wait_for_timeout(200)
+    page.locator(f'{SHEET_SCOPE} .v3-card-question-choices button').first.click()
+    page.wait_for_timeout(400)
+    answered_sheet = page.evaluate(SHEET_SCRIPT)
+    results["expandedChoice"] = {
+        "focus": page.evaluate(FOCUS_SCRIPT),
+        "choices": answered_sheet["choices"],
+        "notice": answered_sheet["notice"],
+        "placeholder": answered_sheet["placeholder"],
+        "answered": answered_sheet["answered"],
+    }
+    shot(page, out, f"card-question-pas-ga-expanded-answered-1440-{theme}", '[data-testid="card-question-review"] .persistent-session-screen')
+    page.locator(f'{SHEET_SCOPE} .v3-card-target-notice button').first.click()
+    page.wait_for_timeout(300)
+    results["expandedChoiceClear"] = {
+        "focus": page.evaluate(FOCUS_SCRIPT),
+        "notice": page.evaluate("() => document.querySelector('[data-testid=\"card-question-review\"] .pas-report-sheet[data-current=\"true\"] .v3-card-target-notice')?.textContent?.trim() ?? null"),
     }
 
     # 14: 되묻기는 커멘트 입력창으로 초점을 옮긴다.
@@ -550,6 +706,74 @@ def interaction_checks(page: Page, base: str, theme: str) -> dict:
     return results
 
 
+def selection_checks(page: Page, base: str) -> dict:
+    """11: 읽는 글은 끌어서 골라지고, 누르는 단추 글자는 골라지지 않는다."""
+    results: dict = {}
+
+    open_sheet(page, base, "ga", bubble=True, label="select-background")
+    results["sheetBackgroundDrag"] = drag_select(page, f'{SHEET_SCOPE} .v3-card-question-background p')
+    page.mouse.click(5, 5)
+
+    open_card(page, base, "na", label="select-answered-choice")
+    box = page.locator(f'{CARD_SCOPE} .v3-card-question-choices button').nth(1).bounding_box()
+    page.mouse.dblclick(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    page.wait_for_timeout(150)
+    results["answeredChoiceDoubleClick"] = page.evaluate("() => String(getSelection() ?? '')")
+    page.mouse.click(5, 5)
+    results["answeredChoiceDrag"] = drag_select(page, f'{CARD_SCOPE} .v3-card-question-choices button', 1)
+    page.mouse.click(5, 5)
+
+    open_card(page, base, "ga", label="select-open-choice")
+    results["openChoiceDrag"] = drag_select(page, f'{CARD_SCOPE} .v3-card-question-choices button', 2)
+    page.mouse.click(5, 5)
+
+    open_card(page, base, "ra", label="select-action")
+    box = page.locator(f'{CARD_SCOPE} .v3-card-question-actions button').first.bounding_box()
+    page.mouse.dblclick(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+    page.wait_for_timeout(150)
+    results["actionDoubleClick"] = page.evaluate("() => String(getSelection() ?? '')")
+    page.mouse.click(5, 5)
+
+    open_card(page, base, "da", label="select-thread")
+    results["threadDrag"] = drag_select(page, f'{CARD_SCOPE} .v3-card-question-turn p', 1)
+    page.mouse.click(5, 5)
+    return results
+
+
+def bottom_checks(page: Page, base: str, out: Path, theme: str) -> dict:
+    """6-4: 펼친 장 스크롤 영역 바닥 여백. 기존 PAS 카드 펼친 장도 같은 부품이라 함께 잰다."""
+    results: dict = {}
+
+    page.goto(f"{base}/components?sample=pas-card")
+    settle(page)
+    page.wait_for_selector(f'{EXISTING_SHEET_SCOPE} .pas-report-content', state="visible")
+    expand = page.locator(f'{EXISTING_SHEET_SCOPE} [aria-label="확대"]')
+    if expand.count():
+        expand.first.click()
+        page.wait_for_selector(f'{EXISTING_SHEET_SCOPE} .pas-report-card-preview', state="visible")
+        page.wait_for_timeout(300)
+    results["existingSheetBottom"] = page.evaluate(BOTTOM_SCRIPT, EXISTING_SHEET_SCOPE)
+    shot(page, out, f"card-question-pas-card-existing-bottom-1440-{theme}", EXISTING_SHEET_SCOPE)
+    # 14: 항목 대상 줄의 「해제」도 입력창으로 초점을 돌려준다.
+    page.get_by_role("button", name="고칠 점 남기기").first.click()
+    page.wait_for_timeout(200)
+    results["itemNotice"] = page.evaluate("() => document.querySelector('.pas-report-sheet[data-current=\"true\"] .v3-card-target-notice')?.textContent?.trim() ?? null")
+    page.locator(f'{EXISTING_SHEET_SCOPE} [aria-label="커멘트 대상 해제"]').first.click()
+    page.wait_for_timeout(300)
+    results["itemNoticeClear"] = {
+        "focus": page.evaluate(FOCUS_SCRIPT),
+        "notice": page.evaluate("() => document.querySelector('.pas-report-sheet[data-current=\"true\"] .v3-card-target-notice')?.textContent?.trim() ?? null"),
+    }
+
+    open_sheet(page, base, "ga", bubble=True, label=f"bottom-{theme}")
+    page.get_by_role("button", name="확대").click()
+    page.wait_for_selector(f'{SHEET_SCOPE} .pas-report-card-preview', state="visible")
+    page.wait_for_timeout(300)
+    results["questionSheetBottom"] = page.evaluate(BOTTOM_SCRIPT, SHEET_SCOPE)
+    shot(page, out, f"card-question-pas-ga-expanded-bottom-1440-{theme}", '[data-testid="card-question-review"] .persistent-session-screen')
+    return results
+
+
 def resize_check(page: Page, base: str) -> dict:
     """18: 카드 상세를 1440에서 연 채 390으로 줄인다. 입력 중인 글이 남아야 한다."""
     open_card(page, base, "ga", "resize")
@@ -558,13 +782,17 @@ def resize_check(page: Page, base: str) -> dict:
     page.set_viewport_size({"width": NARROW, "height": 1600})
     page.wait_for_timeout(400)
     data = page.evaluate(CARD_SCRIPT)
-    return {
+    result = {
         "pageOverflowX": data["pageOverflowX"],
         "bodyOverflowX": data["bodyOverflowX"],
         "title": data["title"],
         "draft": data["draft"],
         "imageViewer": page.evaluate("() => Boolean(document.querySelector('[data-testid=\"card-question-card-sample\"] .v3-card-image-viewer'))"),
     }
+    # 초안은 localStorage에 영속하므로 이 시험이 남긴 글을 지우지 않으면 뒤의 390 장면에 다시 나타난다.
+    page.evaluate("() => window.__SOULSTREAM_STORE__?.getState().clearDraft('composer:card-comment:card-ga')")
+    page.wait_for_timeout(100)
+    return result
 
 
 def judge_interactions(results: dict) -> list[dict]:
@@ -580,6 +808,35 @@ def judge_interactions(results: dict) -> list[dict]:
         fail("choiceKeepsAppendPlaceholder", choice["placeholder"])
     if choice["focus"]["tag"] == "TEXTAREA":
         fail("choiceDoesNotStealFocus", choice["focus"])
+    if choice["focus"]["tag"] in (None, "BODY"):
+        fail("choiceKeepsFocusOffBody", choice["focus"])
+
+    expanded_choice = results["expandedChoice"]
+    expanded_selected = [item for item in expanded_choice["choices"] if item["selected"]]
+    if len(expanded_selected) != 1 or not expanded_selected[0]["label"].startswith(NA_LABEL):
+        fail("expandedChoiceKeepsSelectedRow", expanded_choice["choices"])
+    else:
+        if expanded_selected[0]["disabled"] or not expanded_selected[0]["ariaDisabled"]:
+            fail("expandedChoiceUsesAriaDisabled", expanded_selected[0])
+        if sum(1 for item in expanded_choice["choices"] if item["disabled"]) != len(expanded_choice["choices"]) - 1:
+            fail("expandedChoiceLocksOtherRows", expanded_choice["choices"])
+    if expanded_choice["notice"] is None or "덧붙이기: " + NA_LABEL not in expanded_choice["notice"]:
+        fail("expandedChoiceRaisesAppendTarget", expanded_choice["notice"])
+    if expanded_choice["placeholder"] != "덧붙일 말":
+        fail("expandedChoiceKeepsAppendPlaceholder", expanded_choice["placeholder"])
+    if expanded_choice["focus"]["tag"] in (None, "BODY"):
+        fail("expandedChoiceFocusStaysOffBody", expanded_choice["focus"])
+    answered_row = expanded_choice["answered"]
+    if not answered_row or answered_row["paddingLeft"] <= 0 or answered_row["paddingRight"] <= 0:
+        fail("expandedAnsweredKeepsInlinePadding", answered_row)
+    elif abs(answered_row["rightGap"]) > 1:
+        fail("expandedAnsweredAlignsRightEdge", answered_row)
+
+    cleared = results["expandedChoiceClear"]
+    if cleared["notice"] is not None:
+        fail("clearRemovesQuestionTarget", cleared["notice"])
+    if cleared["focus"]["tag"] != "TEXTAREA" or cleared["focus"]["placeholder"] != "커멘트":
+        fail("clearFocusesComposer", cleared["focus"])
 
     ask = results["askFocus"]
     if ask["focus"]["tag"] != "TEXTAREA" or ask["focus"]["placeholder"] != "물어볼 것":
@@ -620,6 +877,54 @@ def judge_resize(data: dict) -> list[dict]:
         fail("resizeKeepsDraft", data["draft"])
     if data["imageViewer"]:
         fail("resizeLeavesNoViewer")
+    return failures
+
+
+def judge_selection(results: dict) -> list[dict]:
+    failures: list[dict] = []
+
+    def fail(check: str, detail=None) -> None:
+        failures.append({"check": check, "detail": detail})
+
+    if not results["sheetBackgroundDrag"]:
+        fail("backgroundDragSelectsText", results["sheetBackgroundDrag"])
+    if results["answeredChoiceDoubleClick"]:
+        fail("answeredChoiceDoubleClickSelectsNothing", results["answeredChoiceDoubleClick"])
+    if results["answeredChoiceDrag"]:
+        fail("answeredChoiceDragSelectsNothing", results["answeredChoiceDrag"])
+    if results["openChoiceDrag"]:
+        fail("openChoiceDragSelectsNothing", results["openChoiceDrag"])
+    if results["actionDoubleClick"]:
+        fail("actionDoubleClickSelectsNothing", results["actionDoubleClick"])
+    if not results["threadDrag"]:
+        fail("threadDragSelectsText", results["threadDrag"])
+    return failures
+
+
+def judge_bottom(results: dict) -> list[dict]:
+    failures: list[dict] = []
+
+    def fail(check: str, detail=None) -> None:
+        failures.append({"check": check, "detail": detail})
+
+    for name in ("existingSheetBottom", "questionSheetBottom"):
+        data = results[name]
+        if not data or not data.get("scroller"):
+            fail(f"{name}Scroller", data)
+            continue
+        if data["scrollerPadBottom"] <= 0:
+            fail(f"{name}BottomPadding", data)
+        gap = data["composerGap"]
+        if gap is None or gap <= 0 or gap < data["scrollerPadBottom"] - 1:
+            fail(f"{name}ComposerGap", data)
+
+    if not results["itemNotice"] or "대상: " not in results["itemNotice"]:
+        fail("itemTargetNotice", results["itemNotice"])
+    item_clear = results["itemNoticeClear"]
+    if item_clear["notice"] is not None:
+        fail("itemTargetClearRemovesNotice", item_clear["notice"])
+    if item_clear["focus"]["tag"] != "TEXTAREA":
+        fail("itemTargetClearFocusesComposer", item_clear["focus"])
     return failures
 
 
@@ -667,9 +972,19 @@ def main() -> int:
                     frames.append(frame)
                     failures.extend({"capture": frame["capture"], **failure} for failure in frame["failures"])
 
-                theme_interactions = interaction_checks(page, base, theme)
+                theme_interactions = interaction_checks(page, base, out, theme)
                 interactions[theme] = theme_interactions
                 failures.extend({"capture": f"interaction-{theme}", **failure} for failure in judge_interactions(theme_interactions))
+
+                # 11: 읽는 글은 골라지고 단추 글자는 골라지지 않는다.
+                page.set_viewport_size({"width": WIDE, "height": 1600})
+                theme_interactions["selection"] = selection_checks(page, base)
+                failures.extend({"capture": f"selection-{theme}", **failure} for failure in judge_selection(theme_interactions["selection"]))
+
+                # 펼친 장 바닥 여백과 스크롤 하단 캡처, 항목 대상 줄 「해제」 초점.
+                page.set_viewport_size({"width": WIDE, "height": 900})
+                theme_interactions["bottom"] = bottom_checks(page, base, out, theme)
+                failures.extend({"capture": f"bottom-{theme}", **failure} for failure in judge_bottom(theme_interactions["bottom"]))
 
                 # 18: 카드 상세를 넓은 폭으로 연 채 좁은 폭으로 줄인다.
                 page.set_viewport_size({"width": WIDE, "height": 1600})

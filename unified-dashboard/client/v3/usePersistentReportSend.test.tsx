@@ -15,7 +15,7 @@ afterEach(() => { act(() => root.unmount()); host.remove(); });
 it('preserves drafts and allows cancellation only after the server publishes its answered revision', async () => {
   let resolve!: (value: unknown) => void; transport.mockReturnValue(new Promise(yes => { resolve = yes; }));
   useDashboardStore.getState().setDraft('a', '쓰던 글');
-  let request!: Promise<void>;
+  let request!: Promise<boolean>;
   await act(async () => { request = send.reply(entry, '응'); });
   expect(useDashboardStore.getState().pendingChatSends.a).toMatchObject({ status: 'sending', text: '확인: 응', attachmentPaths: [], contextItems: [{ key: 'persistent_report_reply', content: { key: 'one', option: '응' } }], persistentReportSource: entry });
   expect(send.canCancel(entry)).toBe(false);

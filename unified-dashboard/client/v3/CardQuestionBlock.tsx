@@ -95,16 +95,29 @@ type BodyProps = {
   pending?: boolean;
   /** 좁은 장(PAS 판, 휴대폰 폭)에서는 선택지 설명을 이름 아래에 쌓는다. */
   layout?: "columns" | "stack";
-  onChoose?(label: string): void;
+  /** 보내는 동안 누른 행을 잠근 채로 두려면 결과를 돌려준다. false면 그 행을 놓는다. */
+  onChoose?(label: string): boolean | void | Promise<boolean | void>;
 };
 
 export function CardQuestionBody({ view, portraitUrl, userPortraitUrl, pending = false, layout = "stack", onChoose }: BodyProps) {
   const [image, setImage] = useState<{ src: string; alt: string } | null>(null);
+  const [picked, setPicked] = useState<{ id: string; label: string } | null>(null);
+  const [sending, setSending] = useState<string | null>(null);
+  const pickedLabel = picked?.id === view.id ? picked.label : null;
+  const locked = !view.open || pending || sending !== null || pickedLabel !== null;
+  const choose = async (label: string) => {
+    if (!onChoose || locked) return;
+    setSending(label);
+    setPicked({ id: view.id, label });
+    try {
+      if (await onChoose(label) === false) setPicked(current => current?.id === view.id && current.label === label ? null : current);
+    } finally { setSending(null); }
+  };
   const images = view.attachments.filter(item => item.type === "image");
   const links = view.attachments.filter(item => item.type === "link");
   const choices = view.kind === "request" ? [] : view.options;
   return <div className="v3-card-question-body" data-question-kind={view.kind} data-open={view.open || undefined}>
-    <div className="v3-card-question-background"><MarkdownContent content={view.background} /></div>
+    <div className="v3-card-question-background" data-v3-selectable-content="true"><MarkdownContent content={view.background} /></div>
     {images.length ? <div className="v3-card-check-item-evidence" data-evidence-type="image">{images.map((item, index) =>
       <figure key={`${item.url}:${index}`} title={item.label}>
         <MarkdownImage variant="card-evidence" src={item.previewUrl ?? item.url} alt={item.label} onOpen={(src, alt) => setImage({ src, alt })} />
@@ -114,7 +127,7 @@ export function CardQuestionBody({ view, portraitUrl, userPortraitUrl, pending =
     {view.thread.length ? <ol className="v3-card-question-thread" aria-label="되묻기">
       {view.thread.map(turn => <li key={turn.id} data-author={turn.author}>
         <ProfileAvatar role={turn.author === "user" ? "user" : "assistant"} hasPortrait fallbackEmoji={turn.author === "user" ? "👤" : "🤖"} portraitUrl={turn.author === "user" ? userPortraitUrl : portraitUrl} />
-        <div className="v3-card-question-turn"><MarkdownContent content={turn.body} /></div>
+        <div className="v3-card-question-turn" data-v3-selectable-content="true"><MarkdownContent content={turn.body} /></div>
       </li>)}
       {view.awaitingAgent ? <li data-author="agent" data-waiting="true" aria-label="담당의 답을 기다리는 중">
         <ProfileAvatar role="assistant" hasPortrait fallbackEmoji="🤖" portraitUrl={portraitUrl} />
@@ -123,9 +136,11 @@ export function CardQuestionBody({ view, portraitUrl, userPortraitUrl, pending =
     </ol> : null}
     {choices.length ? <div className="v3-card-question-choices" role="group" aria-label="선택지">
       {choices.map(choice => {
-        const chosen = !view.open && view.selectedOption === choice.label;
-        return <Button key={choice.label} variant="choice" className="w-full px-3 py-2.5" disabled={!view.open || pending}
-          data-selected={chosen ? "true" : undefined} aria-pressed={chosen || undefined} onClick={() => onChoose?.(choice.label)}>
+        const chosen = pickedLabel !== null ? pickedLabel === choice.label : !view.open && view.selectedOption === choice.label;
+        return <Button key={choice.label} variant="choice" className="w-full px-3 py-2.5" disabled={locked && !chosen}
+          aria-disabled={chosen && locked ? true : undefined}
+          data-selected={chosen ? "true" : undefined} aria-pressed={chosen || undefined}
+          onClick={() => { if (!locked) void choose(choice.label); }}>
           <InputRequestOptionContent layout={layout} option={{ label: choice.label, description: choice.description ?? undefined }}
             descriptionClassName="v3-card-question-effect"
             labelAccessory={choice.recommended ? <Badge variant="info" size="sm" className="v3-card-question-recommended">권함</Badge> : null} />

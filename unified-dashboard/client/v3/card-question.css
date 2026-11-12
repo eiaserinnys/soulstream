@@ -5,7 +5,17 @@
 .v3-card-question-choices { display: flex; min-width: 0; flex-direction: column; gap: var(--v3-space-2); }
 .v3-card-question-choices [data-slot="button"] { font: var(--v3-type-body) var(--v3-font-family); }
 .v3-card-question-choices .v3-card-question-effect { color: var(--v3-text-secondary); font: var(--v3-type-body) var(--v3-font-family); overflow-wrap: anywhere; word-break: keep-all; }
-.v3-card-question-choices [data-slot="button"][data-selected="true"]:disabled { opacity: 1; }
+.v3-card-question-choices [data-slot="button"][data-selected="true"][aria-disabled="true"] { opacity: 1; }
+/* 선택지·동작 줄은 누르는 크롬이라 안쪽 글자까지 골라지지 않는다(카드 #1197 6-3).
+   잠긴 선택지는 disabled라 브라우저 기본 pointer-events: none이면 포인터가 목록 상자로
+   새어 들어와 두 번 누르기에 글자가 잡힌다. 이 상자 안에서는 단추가 포인터를 계속 받는다. */
+.v3-card-question-choices [data-slot="button"],
+.v3-card-question-choices [data-slot="button"] *,
+.v3-card-question-actions [data-slot="button"],
+.v3-card-question-actions [data-slot="button"] *,
+.v3-card-question-answered [data-slot="button"],
+.v3-card-question-answered [data-slot="button"] * { user-select: none; -webkit-user-select: none; }
+.v3-card-question-choices [data-slot="button"][disabled] { pointer-events: auto; }
 .v3-card-question-recommended { flex: none; }
 .v3-card-question-thread { display: flex; min-width: 0; flex-direction: column; gap: var(--v3-space-2); margin: 0; padding: 0; list-style: none; }
 .v3-card-question-thread > li { display: flex; min-width: 0; align-items: flex-start; gap: var(--v3-space-2); }
@@ -15,5 +25,4 @@
 .v3-card-question-actions [data-slot="button"] { font: inherit; white-space: nowrap; }
 .v3-card-question-answered { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--v3-space-1) var(--v3-space-2); }
 .v3-card-question-answer { min-width: 0; color: var(--foreground); font: var(--v3-type-body) var(--v3-font-family); }
-.v3-card-question-answered [data-slot="button"] { padding-inline: 0; font: var(--v3-type-meta) var(--v3-font-family); }
 .v3-card-question-meta { color: var(--v3-text-secondary); font: var(--v3-type-meta) var(--v3-font-family); white-space: nowrap; }
