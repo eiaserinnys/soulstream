@@ -229,7 +229,10 @@ export class ClaudeBackgroundGenerationStartupRecovery {
 
   private async resolveWorktreeWorkspace(worktreeId: string): Promise<string> {
     if (!this.deps.resolveWorktreeWorkspace) {
-      throw new Error(`WORKTREE_UNAVAILABLE: resolver missing for ${worktreeId}`);
+      // A missing resolver is a configuration gap, not a removed worktree. The
+      // message must not carry WORKTREE_UNAVAILABLE, or the pass would close the
+      // row as permanently skipped instead of leaving it for the next boot.
+      throw new Error(`worktree resolver is not configured for ${worktreeId}`);
     }
     return await this.deps.resolveWorktreeWorkspace(worktreeId);
   }

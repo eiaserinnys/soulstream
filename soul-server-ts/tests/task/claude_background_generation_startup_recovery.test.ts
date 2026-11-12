@@ -206,6 +206,47 @@ describe("Claude background generation upgrade recovery", () => {
     expect(markStartupReconciled).not.toHaveBeenCalled();
   });
 
+  it("counts a missing worktree resolver as failed and leaves the row unmarked", async () => {
+    const logger = { error: vi.fn() };
+    const markStartupReconciled = vi.fn(async () => 1);
+    const recovery = new ClaudeBackgroundGenerationStartupRecovery({
+      repository: {
+        terminalForNode: vi.fn(async () => [legacyTerminal("toolu-A")]),
+        getGeneration: vi.fn(async () => null),
+        markStartupReconciled,
+      } as never,
+      lifecycle: { observe: vi.fn() } as never,
+      recordRelationConsumed: vi.fn(async () => undefined),
+      sourceNode: "node-a",
+      logger,
+      sessionStore: {} as never,
+      getSession: vi.fn(async () => ({
+        session_id: "caller-session",
+        claude_session_id: "sdk-session",
+        agent_id: "claude-agent",
+        model_preset: null,
+        node_id: "node-a",
+        worktree_id: "worktree-1",
+      })) as never,
+      getAgent: vi.fn(() => ({
+        id: "claude-agent",
+        backend: "claude",
+        workspace_dir: "/workspace/profile",
+      })) as never,
+      loadMessages: vi.fn(async () => [nativeNotification("toolu-B")]),
+    });
+
+    await expect(recovery.recoverAfterNodeRestart()).resolves.toEqual({
+      examined: 1,
+      recovered: 0,
+      skipped: 0,
+      failed: 1,
+      ambiguous: 0,
+    });
+    expect(logger.error).toHaveBeenCalledOnce();
+    expect(markStartupReconciled).not.toHaveBeenCalled();
+  });
+
   it("uses the first terminal envelope per exact task/tool identity and ignores nested output status", async () => {
     const observe = vi.fn(async () => true);
     const recovery = new ClaudeBackgroundGenerationStartupRecovery({

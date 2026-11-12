@@ -421,6 +421,13 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
       ),
       "utf8",
     );
+    const startupReconciliationMigration = readFileSync(
+      new URL(
+        "../../../packages/db-schema/sql/migrations/155_claude_background_tasks_startup_reconciled.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
 
     try {
       await fresh.unsafe(`CREATE SCHEMA ${freshSchema}`);
@@ -434,9 +441,11 @@ describePostgres("Claude background delivery PostgreSQL integration", () => {
       await upgrade.unsafe(backgroundMigration);
       await upgrade.unsafe(relationConsumptionMigration);
       await upgrade.unsafe(generationMigration);
+      await upgrade.unsafe(startupReconciliationMigration);
       await upgrade.unsafe(backgroundMigration);
       await upgrade.unsafe(relationConsumptionMigration);
       await upgrade.unsafe(generationMigration);
+      await upgrade.unsafe(startupReconciliationMigration);
 
       await expect(runtimeV2Catalog(fresh, freshSchema)).resolves.toEqual(
         await runtimeV2Catalog(upgrade, upgradeSchema),
