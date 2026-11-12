@@ -4,7 +4,7 @@ import { normalizedMimeType, previewInfo } from "../attachments/attachment_read_
 import type { RepositorySql } from "./control_plane/card_types.js";
 
 export type TrustedAttachmentProducer = { sessionId: string; nodeId: string; outputCommandId: string };
-export type AttachmentLinkActor = { sessionId: string };
+export type AttachmentLinkActor = { sessionId: string | null };
 
 export async function assertAttachmentProducerTx(
   sql: RepositorySql,

@@ -137,6 +137,8 @@ describe("card question creation and in-place edit", () => {
       type: "image", label: "시안", attachment_id: "asset-1", read_context: { type: "card", id: cardId },
     });
     expect(entry.question_attachments?.[1]).toEqual({ type: "link", label: "참고", url: "https://example.test/ref" });
+    expect(await reports.acceptReply("pas", [{ key: "persistent_report_reply", content: { key: `cq_${questionId}`, option: "진행" } }], { source: "browser" }))
+      .toEqual({ action: "card", cardId, questionId, option: "진행" });
   });
 
   it("stores a request with the single 했어 option and stores the legacy shape as before", async () => {
@@ -144,7 +146,7 @@ describe("card question creation and in-place edit", () => {
     await ask({ cardId, title: "배포 확인", text: "스테이징에서 직접 확인해 주세요", kind: "request" });
     await expect(ask({ cardId, title: "옵션 있는 부탁", text: "안 됨", kind: "request", options: [] }))
       .rejects.toMatchObject({ statusCode: 422, code: "INVALID_CARD_REQUEST" });
-    await ask({ cardId, text: "옛 꼴 질문", options: ["진행", "중단"] });
+    await cards.askQuestion({ ...human, cardId, text: "옛 꼴 질문", options: ["진행", "중단"] });
 
     const rows = await sql<Record<string, unknown>[]>`SELECT * FROM card_questions WHERE card_id=${cardId} ORDER BY asked_at, id`;
     expect(rows).toHaveLength(2);
@@ -152,7 +154,7 @@ describe("card question creation and in-place edit", () => {
     expect(request).toMatchObject({ title: "배포 확인", kind: "request", revision: 1, revised_at: null });
     expect(request.options).toEqual([{ label: "했어" }]);
     const legacy = rows.find(row => row.kind === "choice")!;
-    expect(legacy).toMatchObject({ title: null, kind: "choice", revision: 1, revised_at: null });
+    expect(legacy).toMatchObject({ title: null, kind: "choice", revision: 1, revised_at: null, session_id: null });
     expect(legacy.options).toEqual(["진행", "중단"]);
     expect(legacy.attachments).toEqual([]);
   });

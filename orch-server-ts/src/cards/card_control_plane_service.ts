@@ -24,7 +24,7 @@ import { applyCardMoveTx } from "./control_plane/card_move.js";
 import { readAssignedCardContext } from "./assigned_card_context.js";
 import { readSupervisedCardContext } from "./supervised_card_context.js";
 import { parseCardReference, cardQuestionInputIssues, type CardReferenceLookupResult } from "@soulstream/mcp-contract";
-import type { CardQuestionAttachmentInput, CardQuestionKind, CardQuestionOption } from "@soulstream/wire-schema/card-questions";
+import { cardQuestionOptionLabels, type CardQuestionAttachmentInput, type CardQuestionKind, type CardQuestionOption } from "@soulstream/wire-schema/card-questions";
 import { findCardSessionByOrdinal, findCardsByNumber, readCardChildOrdinals, readSessionReferences } from "./card_reference_repository.js";
 import type { SupervisedCardSnapshot } from "./supervised_card_context.js";
 import type { CardWorkExecution } from "./card_work_lifecycle.js";
@@ -452,7 +452,7 @@ export class CardControlPlaneService {
     const options:(string | CardQuestionOption)[]=kind === "request" ? [{label:"했어"}] : params.options ?? [];
     const attachments=params.attachments ?? [];
     const questionId=params.questionId ?? randomUUID();
-    const payload:Record<string,unknown>={ text:params.text,options:options.map(option=>typeof option === "string" ? option : option.label),
+    const payload:Record<string,unknown>={ text:params.text,options:cardQuestionOptionLabels(options) ?? [],
       kind,is_update:editing };
     if (title !== null) payload.title=title;
     if (attachments.length) payload.attachments=attachments;
@@ -467,7 +467,7 @@ export class CardControlPlaneService {
       if (insert) {
         const fields=insert.fields;
         await sql`INSERT INTO card_questions(id,card_id,session_id,text,options,title,kind,attachments,revision,revised_at)
-          VALUES(${questionId},${card.id},${String(fields.session_id)},${String(fields.text)},${sql.json((fields.options ?? []) as never)},
+          VALUES(${questionId},${card.id},${fields.session_id == null ? null : String(fields.session_id)},${String(fields.text)},${sql.json((fields.options ?? []) as never)},
             ${fields.title == null ? null : String(fields.title)},${fields.kind == null ? null : String(fields.kind)},
             ${sql.json((fields.attachments ?? []) as never)},1,NULL)`;
       } else if (update) {
@@ -478,7 +478,7 @@ export class CardControlPlaneService {
           WHERE id=${params.questionId} AND card_id=${card.id}`;
       } else throw new Error("Card question write intent missing");
       const storedAttachments=Array.isArray(stored?.attachments) ? stored.attachments as Record<string,unknown>[] : [];
-      const refs=await linkQuestionAttachmentsTx(sql,card,params.actorSessionId!,attachments,storedAttachments);
+      const refs=await linkQuestionAttachmentsTx(sql,card,params.actorSessionId ?? null,attachments,storedAttachments);
       if (refs.changed) await this.patch(sql,card,{attachment_refs:sql.json(refs.refs)},params,eventId);
       await this.patchDecisionWrites(sql,card,writes,params,eventId);
     });
@@ -761,7 +761,7 @@ async function linkItemEvidenceTx(sql:RepositorySql,card:CardRow,itemId:number,s
  * 질문 첨부도 항목 증거와 같은 정책을 쓴다. 새 ID는 생산자·scope를 검사하고, 같은 질문에 이미
  * 저장되어 카드 ref에 남은 ID는 committed와 이미지 정책만 다시 본다. 고침에서 뺀 ID의 ref는 지우지 않는다.
  */
-async function linkQuestionAttachmentsTx(sql:RepositorySql,card:CardRow,sessionId:string,
+async function linkQuestionAttachmentsTx(sql:RepositorySql,card:CardRow,sessionId:string | null,
   attachments:readonly CardQuestionAttachmentInput[],stored:readonly Record<string,unknown>[]):Promise<{refs:AttachmentRef[];changed:boolean}> {
   const previous=attachmentRefsOf(card.attachment_refs);
   if (attachments.length === 0) return {refs:previous,changed:false};
@@ -777,7 +777,7 @@ async function linkQuestionAttachmentsTx(sql:RepositorySql,card:CardRow,sessionI
   }
   return {refs:[...previous,...added],changed:added.length > 0};
 }
-async function assertAttachmentUseTx(sql:RepositorySql,card:CardRow,sessionId:string,id:string,
+async function assertAttachmentUseTx(sql:RepositorySql,card:CardRow,sessionId:string | null,id:string,
   type:"image" | "link",kept:boolean):Promise<void> {
   if (kept) await assertKeptEvidenceUsableTx(sql,id,type);
   else await requireCardAttachmentTx(sql,card,{sessionId},id,type);
