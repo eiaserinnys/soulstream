@@ -36,9 +36,16 @@ export type WorktreeBinding = {
 };
 
 type WorktreeListRow = WorktreeRow & {
-  mutable_by_caller: boolean;
   active_session_id: string | null;
 };
+
+export type WorktreeOwnership = {
+  owns: boolean;
+  released: boolean;
+};
+
+const NO_OWNERSHIP: WorktreeOwnership = { owns: false, released: false };
+const RELEASED_IDLE_MS = 24 * 60 * 60 * 1000;
 
 type RemovalActor = { actorSessionId: string; sweeperNodeId?: never }
   | { sweeperNodeId: string; actorSessionId?: never };
@@ -53,26 +60,7 @@ export class WorktreeRepository {
     worktreeId?: string;
   }): Promise<Array<Record<string, unknown>>> {
     const rows = await this.sql<WorktreeListRow[]>`
-      WITH RECURSIVE lineage(session_id) AS (
-        SELECT ${input.actorSessionId}::TEXT
-        UNION
-        SELECT sessions.caller_session_id
-        FROM sessions JOIN lineage ON sessions.session_id = lineage.session_id
-        WHERE sessions.caller_session_id IS NOT NULL
-      )
       SELECT w.*,
-        CASE
-          WHEN w.owner_folder_id IS NOT NULL THEN COALESCE(
-            w.owner_folder_id = (
-              SELECT folder_id FROM sessions WHERE session_id = ${input.actorSessionId}
-            ),
-            false
-          )
-          ELSE w.created_by_session_id = ${input.actorSessionId}
-            OR EXISTS (
-              SELECT 1 FROM lineage WHERE session_id = w.created_by_session_id
-            )
-        END AS mutable_by_caller,
         (
           SELECT session_id FROM sessions
           WHERE worktree_id = w.id AND status IN ('initializing', 'running')
@@ -84,11 +72,16 @@ export class WorktreeRepository {
         AND (${input.worktreeId ?? null}::TEXT IS NULL OR w.id = ${input.worktreeId ?? null})
       ORDER BY w.created_at, w.id
     `;
-    return rows.map((row) => ({
-      ...project(row),
-      mutableByCaller: row.mutable_by_caller,
-      activeSessionId: row.active_session_id,
-    }));
+    const ownership = await ownershipForWorktrees(this.sql, input.actorSessionId, rows);
+    return rows.map((row) => {
+      const entry = ownership.get(row.id) ?? NO_OWNERSHIP;
+      return {
+        ...project(row),
+        mutableByCaller: entry.owns,
+        removableByCaller: entry.owns || entry.released,
+        activeSessionId: row.active_session_id,
+      };
+    });
   }
 
   async sweepCandidates(input: { nodeId: string }): Promise<Array<Record<string, unknown>>> {
@@ -203,7 +196,7 @@ export class WorktreeRepository {
         WHERE id = ${row.id} RETURNING *
       `;
       return rows[0]!;
-    }, true);
+    }, true, true);
   }
 
   async restoreReady(input: RemovalActor & {
@@ -219,7 +212,7 @@ export class WorktreeRepository {
         WHERE id = ${row.id} RETURNING *
       `;
       return rows[0]!;
-    }, true);
+    }, true, true);
   }
 
   async finishRemove(input: RemovalActor & { worktreeId: string }) {
@@ -232,7 +225,7 @@ export class WorktreeRepository {
         WHERE id = ${row.id} RETURNING *
       `;
       return rows[0]!;
-    }, true);
+    }, true, true);
   }
 
   async beginBranchDelete(input: {
@@ -250,7 +243,7 @@ export class WorktreeRepository {
         WHERE id = ${row.id} RETURNING *
       `;
       return rows[0]!;
-    });
+    }, false, true);
   }
 
   async finishBranchDelete(input: { actorSessionId: string; worktreeId: string }) {
@@ -264,7 +257,7 @@ export class WorktreeRepository {
         WHERE id = ${row.id} RETURNING *
       `;
       return rows[0]!;
-    });
+    }, false, true);
   }
 
   async resolveExecution(input: { worktreeId: string; nodeId: string }) {
@@ -285,6 +278,7 @@ export class WorktreeRepository {
     input: RemovalActor & { worktreeId: string },
     mutate: (tx: SqlClient, row: WorktreeRow) => Promise<WorktreeRow>,
     allowSweeper = false,
+    removal = false,
   ) {
     const sweeper = "sweeperNodeId" in input;
     if (sweeper ? !allowSweeper || !input.sweeperNodeId || Boolean(input.actorSessionId) : !input.actorSessionId) {
@@ -299,8 +293,11 @@ export class WorktreeRepository {
       if (!row) throw hostError(404, "WORKTREE_NOT_FOUND");
       if (sweeper) {
         if (row.node_id !== input.sweeperNodeId) throw hostError(403, "WORKTREE_NODE_MISMATCH");
-      } else if (!await actorOwns(tx, row, input.actorSessionId!)) {
-        throw hostError(403, "WORKTREE_NOT_OWNED");
+      } else {
+        const ownership = (await ownershipForWorktrees(tx, input.actorSessionId!, [row]))
+          .get(row.id) ?? NO_OWNERSHIP;
+        const allowed = removal ? ownership.owns || ownership.released : ownership.owns;
+        if (!allowed) throw hostError(403, "WORKTREE_NOT_OWNED");
       }
       return project(await mutate(tx, row));
     });
@@ -329,9 +326,9 @@ export async function lockWorktreeForSessionBinding(
   if (row.owner_folder_id !== null && row.owner_folder_id !== input.ownerFolderId) {
     throw hostError(403, "WORKTREE_FOLDER_MISMATCH");
   }
-  if (!await actorOwns(sql, row, input.actorSessionId)) {
-    throw hostError(403, "WORKTREE_NOT_OWNED");
-  }
+  const ownership = (await ownershipForWorktrees(sql, input.actorSessionId, [row]))
+    .get(row.id) ?? NO_OWNERSHIP;
+  if (!ownership.owns) throw hostError(403, "WORKTREE_NOT_OWNED");
   const active = await activeSessionId(sql, row.id);
   if (active) throw hostError(409, `WORKTREE_IN_USE: ${active}`);
   return {
@@ -361,12 +358,87 @@ async function activeSessionId(sql: SqlClient, worktreeId: string): Promise<stri
   return rows[0]?.session_id ?? null;
 }
 
-async function actorOwns(sql: SqlClient, row: WorktreeRow, actorSessionId: string): Promise<boolean> {
-  if (row.owner_folder_id !== null) {
-    return await primaryFolderId(sql, actorSessionId) === row.owner_folder_id;
+type CreatorState = {
+  cardId: string | null;
+  status: string;
+  updatedAt: Date;
+};
+
+type CallerContext = {
+  lineage: Set<string>;
+  lineageCardIds: Set<string>;
+};
+
+type CallerContextRow = { kind: "session" | "card"; id: string };
+
+/**
+ * 워크트리 소유 판정의 유일한 자리(카드 #1276).
+ *
+ * - 카드 C = 만든 세션의 sessions.card_id(카드 행이 없으면 카드 없는 것으로 본다).
+ * - 소유: C가 있으면 C가 호출 세션 계보의 카드 집합에 들 때만, 없으면 호출 세션이
+ *   생성자이거나 생성자가 계보의 조상일 때만. 폴더는 보지 않는다.
+ * - 소유 해제: C의 status가 done/cancelled이거나, 카드가 없고 생성자 세션이 없거나
+ *   initializing/running이 아니면서 24시간 넘게 조용할 때. 해제는 지우기와 브랜치
+ *   삭제에만 쓰고 붙이기와 mutableByCaller에는 쓰지 않는다.
+ */
+export function decideWorktreeOwnership(input: {
+  actorSessionId: string;
+  lineage: ReadonlySet<string>;
+  lineageCardIds: ReadonlySet<string>;
+  createdBySessionId: string;
+  creator: CreatorState | null;
+  cardStatus: string | null;
+  nowMs: number;
+}): WorktreeOwnership {
+  const cardId = input.creator?.cardId ?? null;
+  if (cardId !== null && input.cardStatus !== null) {
+    return {
+      owns: input.lineageCardIds.has(cardId),
+      released: input.cardStatus === "done" || input.cardStatus === "cancelled",
+    };
   }
-  if (row.created_by_session_id === actorSessionId) return true;
-  const rows = await sql<Array<{ owned: boolean }>>`
+  return {
+    owns: input.createdBySessionId === input.actorSessionId
+      || input.lineage.has(input.createdBySessionId),
+    released: input.creator === null
+      || (input.creator.status !== "initializing"
+        && input.creator.status !== "running"
+        && input.nowMs - input.creator.updatedAt.getTime() > RELEASED_IDLE_MS),
+  };
+}
+
+async function ownershipForWorktrees(
+  sql: SqlClient,
+  actorSessionId: string,
+  worktrees: ReadonlyArray<Pick<WorktreeRow, "id" | "created_by_session_id">>,
+  nowMs = Date.now(),
+): Promise<Map<string, WorktreeOwnership>> {
+  const result = new Map<string, WorktreeOwnership>();
+  if (worktrees.length === 0) return result;
+  const caller = await loadCallerContext(sql, actorSessionId);
+  const creators = await loadCreatorStates(sql, worktrees.map((worktree) => worktree.created_by_session_id));
+  const cardIds = [...creators.values()]
+    .map((creator) => creator.cardId)
+    .filter((cardId): cardId is string => cardId !== null);
+  const cardStatuses = await loadCardStatuses(sql, cardIds);
+  for (const worktree of worktrees) {
+    const creator = creators.get(worktree.created_by_session_id) ?? null;
+    const cardId = creator?.cardId ?? null;
+    result.set(worktree.id, decideWorktreeOwnership({
+      actorSessionId,
+      lineage: caller.lineage,
+      lineageCardIds: caller.lineageCardIds,
+      createdBySessionId: worktree.created_by_session_id,
+      creator,
+      cardStatus: cardId === null ? null : (cardStatuses.get(cardId) ?? null),
+      nowMs,
+    }));
+  }
+  return result;
+}
+
+async function loadCallerContext(sql: SqlClient, actorSessionId: string): Promise<CallerContext> {
+  const rows = await sql<CallerContextRow[]>`
     WITH RECURSIVE lineage(session_id) AS (
       SELECT ${actorSessionId}::TEXT
       UNION
@@ -374,11 +446,58 @@ async function actorOwns(sql: SqlClient, row: WorktreeRow, actorSessionId: strin
       FROM sessions JOIN lineage ON sessions.session_id = lineage.session_id
       WHERE sessions.caller_session_id IS NOT NULL
     )
-    SELECT EXISTS(
-      SELECT 1 FROM lineage WHERE session_id = ${row.created_by_session_id}
-    ) AS owned
+    SELECT 'session' AS kind, l.session_id AS id
+    FROM lineage l
+    UNION ALL
+    SELECT 'card' AS kind, s.card_id AS id
+    FROM sessions s JOIN lineage l ON l.session_id = s.session_id
+    WHERE s.card_id IS NOT NULL
+    UNION ALL
+    SELECT 'card' AS kind, c.id AS id
+    FROM cards c JOIN lineage l ON l.session_id = c.assignee_session_id
   `;
-  return rows[0]?.owned === true;
+  const lineage = new Set<string>();
+  const lineageCardIds = new Set<string>();
+  for (const row of rows) {
+    if (row.kind === "session") lineage.add(row.id);
+    else lineageCardIds.add(row.id);
+  }
+  return { lineage, lineageCardIds };
+}
+
+async function loadCreatorStates(
+  sql: SqlClient,
+  sessionIds: readonly string[],
+): Promise<Map<string, CreatorState>> {
+  const ids = [...new Set(sessionIds)];
+  if (ids.length === 0) return new Map();
+  const rows = await sql<Array<{
+    session_id: string;
+    card_id: string | null;
+    status: string;
+    updated_at: Date;
+  }>>`
+    SELECT session_id, card_id, status, updated_at
+    FROM sessions
+    WHERE session_id = ANY(${ids}::TEXT[])
+  `;
+  return new Map(rows.map((row) => [row.session_id, {
+    cardId: row.card_id,
+    status: row.status,
+    updatedAt: row.updated_at,
+  }]));
+}
+
+async function loadCardStatuses(
+  sql: SqlClient,
+  cardIds: readonly string[],
+): Promise<Map<string, string>> {
+  const ids = [...new Set(cardIds)];
+  if (ids.length === 0) return new Map();
+  const rows = await sql<Array<{ id: string; status: string }>>`
+    SELECT id, status FROM cards WHERE id = ANY(${ids}::TEXT[])
+  `;
+  return new Map(rows.map((row) => [row.id, row.status]));
 }
 
 function project(row: WorktreeRow): Record<string, unknown> {

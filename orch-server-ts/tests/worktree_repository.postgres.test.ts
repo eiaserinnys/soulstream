@@ -22,7 +22,7 @@ describePostgres("WorktreeRepository.list in PostgreSQL", () => {
     await harness?.cleanup();
   });
 
-  it("derives caller ownership and the active session in the list row", async () => {
+  it("derives caller ownership from the creating session lineage and the active session in the list row", async () => {
     await harness.sql`
       INSERT INTO folders (id, name) VALUES
         ('actor-folder', 'actor folder'),
@@ -78,11 +78,11 @@ describePostgres("WorktreeRepository.list in PostgreSQL", () => {
     const rows = await repository.list({ actorSessionId: "actor", nodeId: "node-a" });
 
     expect(rows.map((row) => [row.id, row.mutableByCaller, row.activeSessionId])).toEqual([
-      ["wt-folder-own", true, null],
+      ["wt-folder-own", false, null],
       ["wt-unrelated", false, null],
       ["wt-created", true, "session-running"],
       ["wt-lineage", true, null],
-      ["wt-folder-foreign", false, null],
+      ["wt-folder-foreign", true, null],
     ]);
     expect(rows[0]).toMatchObject({
       nodeId: "node-a",

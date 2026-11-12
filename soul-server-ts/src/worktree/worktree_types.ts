@@ -31,6 +31,7 @@ export interface WorktreeRecord {
   removedAt?: string | null;
   branchDeletedAt?: string | null;
   mutableByCaller?: boolean;
+  removableByCaller?: boolean;
   activeSessionId?: string | null;
 }
 

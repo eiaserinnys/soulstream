@@ -89,8 +89,8 @@ async function guardOwnedWorktree(
   const service = context.runtime.worktreeService;
   if (!service) return { ok: false, message: "MCP_POLICY_DENIED: owned-worktree" };
   try {
-    const owned = await service.ownsWorktree(context.principal.sessionId, worktreeId);
-    if (!owned) return { ok: false, message: "MCP_POLICY_DENIED: owned-worktree" };
+    const removable = await service.canRemoveWorktree(context.principal.sessionId, worktreeId);
+    if (!removable) return { ok: false, message: "MCP_POLICY_DENIED: owned-worktree" };
   } catch {
     return { ok: false, message: "MCP_POLICY_DENIED: owned-worktree" };
   }

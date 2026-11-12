@@ -982,6 +982,61 @@ describe("WorktreeService", () => {
     });
   });
 
+  it("removes with the host removal right even when the caller is not mutable", async () => {
+    const { service, host } = fixture();
+    const created = await service.create({
+      actorSessionId: "session-a",
+      repoId: "demo",
+      branch: "feature/released-remove",
+      mode: "new",
+      setup: "none",
+      requireSetup: false,
+    });
+    const worktreeId = String(created.worktreeId);
+    host.forceRemovableWorktreeIds.push(worktreeId);
+
+    await expect(service.remove({ actorSessionId: "session-b", worktreeId }))
+      .resolves.toMatchObject({ worktreeId, removed: true });
+    expect(host.records.get(worktreeId)?.state).toBe("removed");
+  });
+
+  it("denies removal when the host withholds the removal right even for a mutable caller", async () => {
+    const { service, host } = fixture();
+    const created = await service.create({
+      actorSessionId: "session-a",
+      repoId: "demo",
+      branch: "feature/mutable-only",
+      mode: "new",
+      setup: "none",
+      requireSetup: false,
+    });
+    const worktreeId = String(created.worktreeId);
+    host.forceMutableSessionIds.push("session-b");
+
+    await expect(service.remove({ actorSessionId: "session-b", worktreeId }))
+      .rejects.toMatchObject({ code: "WORKTREE_NOT_OWNED" });
+    await expect(service.deleteBranch({ actorSessionId: "session-b", worktreeId }))
+      .rejects.toMatchObject({ code: "WORKTREE_NOT_OWNED" });
+    expect(host.records.get(worktreeId)?.state).toBe("ready");
+  });
+
+  it("lets the removal right through to the branch-delete preconditions", async () => {
+    const { service, host } = fixture();
+    const created = await service.create({
+      actorSessionId: "session-a",
+      repoId: "demo",
+      branch: "feature/released-branch-delete",
+      mode: "new",
+      setup: "none",
+      requireSetup: false,
+    });
+    const worktreeId = String(created.worktreeId);
+    host.forceRemovableWorktreeIds.push(worktreeId);
+
+    await expect(service.deleteBranch({ actorSessionId: "session-b", worktreeId }))
+      .rejects.toMatchObject({ code: "WORKTREE_NOT_REMOVED" });
+  });
+
   it("refuses removal while an attached or retained runner still owns the cwd", async () => {
     const active: string[] = [];
     const { service, host } = fixture(active);
@@ -1382,8 +1437,8 @@ describe("WorktreeService restricted sessions", () => {
     expect(host.records.get(String(created.worktreeId))?.createdBySessionId).toBe("session-a");
   });
 
-  it("reports ownership only to the creating restricted session", async () => {
-    const { service } = fixture();
+  it("reports removal rights exactly as the host computes them", async () => {
+    const { service, host } = fixture();
     const created = await service.create({
       actorSessionId: "session-a",
       repoId: "demo",
@@ -1392,9 +1447,11 @@ describe("WorktreeService restricted sessions", () => {
       restricted: true,
     });
     const worktreeId = String(created.worktreeId);
-    await expect(service.ownsWorktree("session-a", worktreeId)).resolves.toBe(true);
-    await expect(service.ownsWorktree("session-b", worktreeId)).resolves.toBe(false);
-    await expect(service.ownsWorktree("session-a", "missing-worktree")).resolves.toBe(false);
+    await expect(service.canRemoveWorktree("session-a", worktreeId)).resolves.toBe(true);
+    await expect(service.canRemoveWorktree("session-b", worktreeId)).resolves.toBe(false);
+    host.forceRemovableWorktreeIds.push(worktreeId);
+    await expect(service.canRemoveWorktree("session-b", worktreeId)).resolves.toBe(true);
+    await expect(service.canRemoveWorktree("session-a", "missing-worktree")).resolves.toBe(false);
   });
 });
 
@@ -1569,6 +1626,7 @@ describe("WorktreeService.listSessionAttachments", () => {
 class MemoryWorktreeHost implements WorktreeHost {
   readonly records = new Map<string, WorktreeRecord & { lastSessionActivityAt?: string; linkedCardsClosed?: boolean }>();
   readonly forceMutableSessionIds: string[] = [];
+  readonly forceRemovableWorktreeIds: string[] = [];
   registerFailuresRemaining = 0;
   finishRemoveFailuresRemaining = 0;
 
@@ -1586,6 +1644,8 @@ class MemoryWorktreeHost implements WorktreeHost {
         ...record,
         mutableByCaller: record.createdBySessionId === input.actorSessionId
           || this.forceMutableSessionIds.includes(input.actorSessionId),
+        removableByCaller: record.createdBySessionId === input.actorSessionId
+          || this.forceRemovableWorktreeIds.includes(record.id),
         activeSessionId: null,
       }));
   }

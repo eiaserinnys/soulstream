@@ -44,7 +44,7 @@ const chains: Record<string, SessionExecutionChain> = {
 
 function context(overrides: {
   chains?: Record<string, SessionExecutionChain | Error>;
-  ownsWorktree?: (sessionId: string, worktreeId: string) => Promise<boolean>;
+  canRemoveWorktree?: (sessionId: string, worktreeId: string) => Promise<boolean>;
 } = {}): IsolationGuardContext {
   const lookup = overrides.chains ?? chains;
   const runtime = {
@@ -57,7 +57,7 @@ function context(overrides: {
       }),
     },
     worktreeService: {
-      ownsWorktree: overrides.ownsWorktree ?? (async () => false),
+      canRemoveWorktree: overrides.canRemoveWorktree ?? (async () => false),
     },
   } as unknown as McpRuntime;
   return { runtime, principal: { tier: "restricted", sessionId: ME } };
@@ -172,12 +172,12 @@ describe("argument-shaping guards", () => {
 });
 
 describe("owned-worktree guard", () => {
-  it("allows only when createdBySessionId matches the authenticated session", async () => {
-    const owned = context({ ownsWorktree: async () => true });
-    await expect(runIsolationToolGuard("owned-worktree", { worktree_id: "wt-1" }, owned))
+  it("allows exactly when the host reports the worktree removable by the authenticated session", async () => {
+    const removable = context({ canRemoveWorktree: async () => true });
+    await expect(runIsolationToolGuard("owned-worktree", { worktree_id: "wt-1" }, removable))
       .resolves.toEqual({ ok: true, args: { worktree_id: "wt-1" } });
 
-    const foreign = context({ ownsWorktree: async () => false });
+    const foreign = context({ canRemoveWorktree: async () => false });
     await expect(runIsolationToolGuard("owned-worktree", { worktree_id: "wt-1" }, foreign))
       .resolves.toEqual({ ok: false, message: "MCP_POLICY_DENIED: owned-worktree" });
   });
@@ -186,7 +186,7 @@ describe("owned-worktree guard", () => {
     await expect(runIsolationToolGuard("owned-worktree", {}, context()))
       .resolves.toEqual({ ok: false, message: "MCP_POLICY_DENIED: owned-worktree" });
 
-    const throwing = context({ ownsWorktree: async () => { throw new Error("db down"); } });
+    const throwing = context({ canRemoveWorktree: async () => { throw new Error("db down"); } });
     await expect(runIsolationToolGuard("owned-worktree", { worktree_id: "wt-1" }, throwing))
       .resolves.toEqual({ ok: false, message: "MCP_POLICY_DENIED: owned-worktree" });
 
