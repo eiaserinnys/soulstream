@@ -41,9 +41,11 @@ export type StoredPersistentSettings = Omit<PersistentSessionSettings, "default_
   default_model: PersistentModelSelection | null;
 };
 
-/** 최초 등록 때 서버가 채우는 기본값. 기본 모델은 세션의 현재 모델에서 온다. */
+/**
+ * 최초 등록 때 서버가 채우는 기본값. 기본 모델은 세션의 현재 모델에서 온다.
+ * fallback_models의 기본 목록은 모델 카탈로그 데이터에서 오며 이 모듈은 파일을 읽지 않는다.
+ */
 export const PERSISTENT_SETTINGS_DEFAULTS = {
-  fallback_models: [{ model_preset: "codex-6.1-sol", reasoning_effort: "high" }],
   show_generation_separator: true,
   show_character: true,
   show_jev_candidates: false,
@@ -51,9 +53,7 @@ export const PERSISTENT_SETTINGS_DEFAULTS = {
   show_turn_usage: false,
   animate_character: true,
   show_work_details: false,
-} as const satisfies Omit<PersistentSessionSettings, "default_model" | "fallback_models"> & {
-  fallback_models: readonly PersistentModelSelection[];
-};
+} as const satisfies Omit<PersistentSessionSettings, "default_model" | "fallback_models">;
 
 export type PersistentPendingTarget = {
   target_model_preset: string;
@@ -136,8 +136,14 @@ export function parsePersistentSettingsPatch(input: unknown): ParseResult<Persis
   return { ok: true, value: patch };
 }
 
-/** metadata 배열에서 마지막 `persistent_settings` 항목을 읽는다. 항목이 없으면 undefined. */
-export function readStoredPersistentSettings(metadata: unknown): StoredPersistentSettings | undefined {
+/**
+ * metadata 배열에서 마지막 `persistent_settings` 항목을 읽는다. 항목이 없으면 undefined.
+ * 저장된 fallback 목록이 없는 구형 metadata는 `fallbackModelsDefault`로 채운다.
+ */
+export function readStoredPersistentSettings(
+  metadata: unknown,
+  fallbackModelsDefault: readonly PersistentModelSelection[],
+): StoredPersistentSettings | undefined {
   const value = lastEntryValue(metadata, PERSISTENT_SETTINGS_METADATA_TYPE);
   if (value === undefined) return undefined;
   const record = isRecord(value) ? value : {};
@@ -159,7 +165,7 @@ export function readStoredPersistentSettings(metadata: unknown): StoredPersisten
     const legacyFallback = parseModelSelection(record.fallback_model, "fallback_model");
     fallbackModels = legacyFallback.ok ? [legacyFallback.value] : [];
   } else {
-    fallbackModels = PERSISTENT_SETTINGS_DEFAULTS.fallback_models.map((model) => ({ ...model }));
+    fallbackModels = fallbackModelsDefault.map((model) => ({ ...model }));
   }
   const turnUsageMode = isPersistentTurnUsageMode(record.turn_usage_mode)
     ? record.turn_usage_mode

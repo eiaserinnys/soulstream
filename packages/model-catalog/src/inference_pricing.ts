@@ -1,67 +1,4 @@
-const CLAUDE_PRICING_SOURCE = "https://platform.claude.com/docs/en/about-claude/pricing";
-const OPENAI_PRICING_SOURCE = "https://developers.openai.com/api/docs/pricing?tab=suite";
-const GOOGLE_PRICING_SOURCE = "https://ai.google.dev/gemini-api/docs/pricing";
-const DEEPSEEK_PRICING_SOURCE = "https://api-docs.deepseek.com/quick_start/pricing/";
-
-type ModelRates = {
-  input: number;
-  cacheRead: number;
-  cacheWrite5m: number | null;
-  cacheWrite1h: number | null;
-  output: number;
-};
-
-// Existing rows retain their earlier values unless the snapshot metadata names them as refreshed.
-export const LIST_PRICES = {
-  "claude-opus-5-5": { input: 4, cacheRead: 0.2, cacheWrite5m: 5, cacheWrite1h: 8, output: 20 },
-  "claude-fable-5-2": { input: 8, cacheRead: 0.2, cacheWrite5m: 10, cacheWrite1h: 16, output: 40 },
-  "claude-fable-5-1": { input: 10, cacheRead: 0.25, cacheWrite5m: 12.5, cacheWrite1h: 20, output: 50 },
-  "claude-opus-5": { input: 5, cacheRead: 0.5, cacheWrite5m: 6.25, cacheWrite1h: 10, output: 25 },
-  "claude-sonnet-5-5": { input: 2, cacheRead: 0.1, cacheWrite5m: 2.5, cacheWrite1h: 4, output: 10 },
-  "claude-sonnet-5": { input: 2, cacheRead: 0.2, cacheWrite5m: 2.5, cacheWrite1h: 4, output: 10 },
-  "claude-opus-4-8": { input: 5, cacheRead: 0.5, cacheWrite5m: 6.25, cacheWrite1h: 10, output: 25 },
-  "claude-haiku-4-5": { input: 1, cacheRead: 0.1, cacheWrite5m: 1.25, cacheWrite1h: 2, output: 5 },
-  "gpt-6-luna": { input: 0.1, cacheRead: 0.01, cacheWrite5m: 0.125, cacheWrite1h: 0.125, output: 0.5 },
-  "gpt-6-sol": { input: 2, cacheRead: 0.2, cacheWrite5m: 2.5, cacheWrite1h: 2.5, output: 10 },
-  "gpt-6.1-sol": { input: 2, cacheRead: 0.1, cacheWrite5m: 2.5, cacheWrite1h: 2.5, output: 10 },
-  "gpt-6-astra": { input: 10, cacheRead: 1, cacheWrite5m: 12.5, cacheWrite1h: 12.5, output: 50 },
-} as const;
-
-export const PRICE_SNAPSHOT_METADATA = {
-  price_version: "api-list-usd-2026-10-19-v1",
-  as_of: "2026-10-19",
-  checked_at: "2026-10-19",
-  currency: "USD",
-  unit: "per_1m_tokens",
-  model_mapping_version: "exact-provider-model-v1",
-  legacy_rows_last_checked_at: "2026-10-05",
-  refreshed_model_rows: {
-    claude: ["claude-opus-5-5", "claude-fable-5-2", "claude-fable-5-1", "claude-sonnet-5-5"],
-    codex: ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna"],
-    antigravity: ["gemini-4-carbon", "gemini-4-argon", "gemini-3.8-flash"],
-    deepseek: [
-      "deepseek-v4.1-flash-1017",
-      "deepseek-v4.1-flash",
-      "deepseek-flash",
-      "deepseek-v4-flash",
-      "deepseek-v4-flash-vision-exp",
-      "opencode/deepseek-v4.1-flash-free",
-    ],
-  },
-  sources: {
-    claude: CLAUDE_PRICING_SOURCE,
-    codex: OPENAI_PRICING_SOURCE,
-    antigravity: GOOGLE_PRICING_SOURCE,
-    deepseek: DEEPSEEK_PRICING_SOURCE,
-  },
-  assumptions: [
-    "Standard API prices and default context tiers are used for the fixed snapshot.",
-    "DeepSeek V4.1 Flash uses the 1017 peak schedule; the OpenCode free-harness alias is priced at API list price, not at $0.",
-    "OpenCode Go subscription usage is also valued at API list price.",
-    "Gemini promotional rates remain frozen in this snapshot after their published end dates.",
-    "Other legacy rows retain their previous 2026-10-05 values and are not claimed as reverified for this snapshot.",
-  ],
-} as const;
+import type { ModelCatalogConfig, ModelCatalogModel, ModelCatalogRates } from "./index.js";
 
 export type PriceInferenceUsageInput = {
   provider: string;
@@ -75,9 +12,9 @@ export type PriceInferenceUsageInput = {
 };
 
 export type PriceInferenceUsageResult = {
-  price_version: typeof PRICE_SNAPSHOT_METADATA.price_version;
+  price_version: string;
   source: string | null;
-  as_of: typeof PRICE_SNAPSHOT_METADATA.as_of;
+  as_of: string;
   known_cost_usd: number | null;
   priced_tokens: number;
   unpriced_tokens: number | null;
@@ -86,7 +23,7 @@ export type PriceInferenceUsageResult = {
 };
 
 export type PriceInferenceUsageComponentsResult = {
-  price_version: typeof PRICE_SNAPSHOT_METADATA.price_version;
+  price_version: string;
   cache_read: {
     known_cost_usd_decimal: string | null;
     is_partial: boolean;
@@ -98,63 +35,8 @@ export type PriceInferenceUsageComponentsResult = {
 };
 
 type ModelPrice = {
-  rates: ModelRates;
-  source: string;
-};
-
-const MODEL_PRICES: Record<string, ModelPrice> = {
-  "claude:claude-opus-5-5": { rates: LIST_PRICES["claude-opus-5-5"], source: CLAUDE_PRICING_SOURCE },
-  "claude:claude-fable-5-2": { rates: LIST_PRICES["claude-fable-5-2"], source: CLAUDE_PRICING_SOURCE },
-  "claude:claude-fable-5-1": { rates: LIST_PRICES["claude-fable-5-1"], source: CLAUDE_PRICING_SOURCE },
-  "claude:claude-opus-5": { rates: LIST_PRICES["claude-opus-5"], source: CLAUDE_PRICING_SOURCE },
-  "claude:claude-sonnet-5-5": { rates: LIST_PRICES["claude-sonnet-5-5"], source: CLAUDE_PRICING_SOURCE },
-  "claude:claude-sonnet-5": { rates: LIST_PRICES["claude-sonnet-5"], source: CLAUDE_PRICING_SOURCE },
-  "claude:claude-opus-4-8": { rates: LIST_PRICES["claude-opus-4-8"], source: CLAUDE_PRICING_SOURCE },
-  "claude:claude-haiku-4-5": { rates: LIST_PRICES["claude-haiku-4-5"], source: CLAUDE_PRICING_SOURCE },
-  "codex:gpt-6-luna": { rates: LIST_PRICES["gpt-6-luna"], source: OPENAI_PRICING_SOURCE },
-  "codex:gpt-6-sol": { rates: LIST_PRICES["gpt-6-sol"], source: OPENAI_PRICING_SOURCE },
-  "codex:gpt-6.1-sol": { rates: LIST_PRICES["gpt-6.1-sol"], source: OPENAI_PRICING_SOURCE },
-  "codex:gpt-6-astra": { rates: LIST_PRICES["gpt-6-astra"], source: OPENAI_PRICING_SOURCE },
-  "antigravity:gemini-4-carbon": {
-    rates: { input: 2, cacheRead: 0.1, cacheWrite5m: null, cacheWrite1h: null, output: 10 },
-    source: GOOGLE_PRICING_SOURCE,
-  },
-  "antigravity:gemini-4-argon": {
-    rates: { input: 2, cacheRead: 0.1, cacheWrite5m: null, cacheWrite1h: null, output: 10 },
-    source: GOOGLE_PRICING_SOURCE,
-  },
-  "antigravity:gemini-3.8-flash": {
-    rates: { input: 0.75, cacheRead: 0.075, cacheWrite5m: null, cacheWrite1h: null, output: 3.75 },
-    source: GOOGLE_PRICING_SOURCE,
-  },
-  "deepseek:deepseek-flash": {
-    rates: { input: 0.3, cacheRead: 0.006, cacheWrite5m: null, cacheWrite1h: null, output: 1.2 },
-    source: DEEPSEEK_PRICING_SOURCE,
-  },
-};
-
-const EXACT_MODEL_ALIASES: Record<string, string> = {
-  "claude:claude-opus-5-5": "claude:claude-opus-5-5",
-  "claude:claude-fable-5-2": "claude:claude-fable-5-2",
-  "claude:claude-fable-5-1": "claude:claude-fable-5-1",
-  "claude:claude-opus-5": "claude:claude-opus-5",
-  "claude:claude-sonnet-5-5": "claude:claude-sonnet-5-5",
-  "claude:claude-sonnet-5": "claude:claude-sonnet-5",
-  "claude:claude-opus-4-8": "claude:claude-opus-4-8",
-  "claude:claude-haiku-4-5": "claude:claude-haiku-4-5",
-  "codex:gpt-6-luna": "codex:gpt-6-luna",
-  "codex:gpt-6-sol": "codex:gpt-6-sol",
-  "codex:gpt-6.1-sol": "codex:gpt-6.1-sol",
-  "codex:gpt-6-astra": "codex:gpt-6-astra",
-  "antigravity:gemini-4-carbon": "antigravity:gemini-4-carbon",
-  "antigravity:gemini-4-argon": "antigravity:gemini-4-argon",
-  "antigravity:gemini-3.8-flash": "antigravity:gemini-3.8-flash",
-  "deepseek:deepseek-flash": "deepseek:deepseek-flash",
-  "deepseek:deepseek-v4.1-flash-1017": "deepseek:deepseek-flash",
-  "deepseek:deepseek-v4.1-flash": "deepseek:deepseek-flash",
-  "deepseek:deepseek-v4-flash": "deepseek:deepseek-flash",
-  "deepseek:deepseek-v4-flash-vision-exp": "deepseek:deepseek-flash",
-  "deepseek:opencode/deepseek-v4.1-flash-free": "deepseek:deepseek-flash",
+  rates: ModelCatalogRates;
+  source: string | null;
 };
 
 const RATE_SCALE = 1_000_000n;
@@ -186,13 +68,14 @@ function unpricedTokenCount(input: PriceInferenceUsageInput, pricedTokens: numbe
 }
 
 function unpricedResult(
+  catalog: ModelCatalogConfig,
   input: PriceInferenceUsageInput,
   reason: string,
 ): PriceInferenceUsageResult {
   return {
-    price_version: PRICE_SNAPSHOT_METADATA.price_version,
+    price_version: catalog.price_snapshot.price_version,
     source: null,
-    as_of: PRICE_SNAPSHOT_METADATA.as_of,
+    as_of: catalog.price_snapshot.as_of,
     known_cost_usd: null,
     priced_tokens: 0,
     unpriced_tokens: input.input_total === null || input.output_total === null
@@ -205,14 +88,34 @@ function unpricedResult(
 
 /**
  * Published signature:
- * priceInferenceUsage(input: PriceInferenceUsageInput): PriceInferenceUsageResult
- * Amounts are normalized, input_total includes its cache subsets, and rates use the fixed USD/1M snapshot.
+ * priceInferenceUsage(catalog, input: PriceInferenceUsageInput): PriceInferenceUsageResult
+ * Amounts are normalized, input_total includes its cache subsets, and rates come
+ * from the catalogue's fixed USD/1M snapshot. The row is looked up only under the
+ * input's own provider.
  */
-function resolveModelPrice(input: PriceInferenceUsageInput): ModelPrice | undefined {
+function findModelRowForProvider(
+  catalog: ModelCatalogConfig,
+  provider: string,
+  model: string,
+): ModelCatalogModel | undefined {
+  const match = (candidate: string): ModelCatalogModel | undefined => catalog.models.find(
+    (row) => row.provider === provider
+      && (row.model === candidate || row.aliases.includes(candidate)),
+  );
+  const exact = match(model);
+  if (exact !== undefined) return exact;
+  const normalized = normalizePricedModelId(model);
+  return normalized === model ? undefined : match(normalized);
+}
+
+function resolveModelPrice(
+  catalog: ModelCatalogConfig,
+  input: PriceInferenceUsageInput,
+): ModelPrice | undefined {
   if (input.model === null) return undefined;
-  const modelKey = `${input.provider}:${normalizePricedModelId(input.model)}`;
-  const canonicalKey = EXACT_MODEL_ALIASES[modelKey];
-  return canonicalKey === undefined ? undefined : MODEL_PRICES[canonicalKey];
+  const row = findModelRowForProvider(catalog, input.provider, input.model);
+  if (row === undefined || row.rates === null) return undefined;
+  return { rates: row.rates, source: row.source ?? null };
 }
 
 type PriceBucket = "read" | "non_cache";
@@ -291,21 +194,21 @@ function computePricedComponentParts(
     reasons.add("cache_read_unknown");
     readPartial = true;
   } else {
-    priceComponent("read", cacheRead, modelPrice.rates.cacheRead, "cache_read_price_unknown");
+    priceComponent("read", cacheRead, modelPrice.rates.cache_read, "cache_read_price_unknown");
   }
 
   if (cacheWrite5m === null) {
     reasons.add("cache_write_5m_unknown");
     nonCachePartial = true;
   } else {
-    priceComponent("non_cache", cacheWrite5m, modelPrice.rates.cacheWrite5m, "cache_write_price_unknown");
+    priceComponent("non_cache", cacheWrite5m, modelPrice.rates.cache_write_5m, "cache_write_price_unknown");
   }
 
   if (cacheWrite1h === null) {
     reasons.add("cache_write_1h_unknown");
     nonCachePartial = true;
   } else {
-    priceComponent("non_cache", cacheWrite1h, modelPrice.rates.cacheWrite1h, "cache_write_price_unknown");
+    priceComponent("non_cache", cacheWrite1h, modelPrice.rates.cache_write_1h, "cache_write_price_unknown");
   }
 
   if (cacheWriteUnknown === null) {
@@ -337,18 +240,19 @@ function computePricedComponentParts(
 }
 
 export function priceInferenceUsage(
+  catalog: ModelCatalogConfig,
   input: PriceInferenceUsageInput,
 ): PriceInferenceUsageResult {
-  const modelPrice = resolveModelPrice(input);
-  if (modelPrice === undefined) return unpricedResult(input, "model_price_unknown");
+  const modelPrice = resolveModelPrice(catalog, input);
+  if (modelPrice === undefined) return unpricedResult(catalog, input, "model_price_unknown");
 
   const parts = computePricedComponentParts(input, modelPrice);
   const costNumerator = parts.readNumerator + parts.nonCacheNumerator;
 
   return {
-    price_version: PRICE_SNAPSHOT_METADATA.price_version,
+    price_version: catalog.price_snapshot.price_version,
     source: modelPrice.source,
-    as_of: PRICE_SNAPSHOT_METADATA.as_of,
+    as_of: catalog.price_snapshot.as_of,
     known_cost_usd: parts.pricedComponents === 0
       ? null
       : Number(costNumerator) / Number(USD_DENOMINATOR),
@@ -361,17 +265,18 @@ export function priceInferenceUsage(
 
 /**
  * Published signature:
- * priceInferenceUsageComponents(input: PriceInferenceUsageInput): PriceInferenceUsageComponentsResult
+ * priceInferenceUsageComponents(catalog, input: PriceInferenceUsageInput): PriceInferenceUsageComponentsResult
  * Splits the fixed-snapshot cost into cache-read and non-cache parts as exact decimal USD strings.
  * Cache-read covers cache_read; non-cache covers ordinary input, timed cache writes, and output.
  */
 export function priceInferenceUsageComponents(
+  catalog: ModelCatalogConfig,
   input: PriceInferenceUsageInput,
 ): PriceInferenceUsageComponentsResult {
-  const modelPrice = resolveModelPrice(input);
+  const modelPrice = resolveModelPrice(catalog, input);
   if (modelPrice === undefined) {
     return {
-      price_version: PRICE_SNAPSHOT_METADATA.price_version,
+      price_version: catalog.price_snapshot.price_version,
       cache_read: { known_cost_usd_decimal: null, is_partial: true },
       non_cache: { known_cost_usd_decimal: null, is_partial: true },
     };
@@ -379,7 +284,7 @@ export function priceInferenceUsageComponents(
 
   const parts = computePricedComponentParts(input, modelPrice);
   return {
-    price_version: PRICE_SNAPSHOT_METADATA.price_version,
+    price_version: catalog.price_snapshot.price_version,
     cache_read: {
       known_cost_usd_decimal: parts.readPriced
         ? numeratorToDecimalString(parts.readNumerator)
