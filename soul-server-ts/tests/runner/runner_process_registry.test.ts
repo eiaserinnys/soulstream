@@ -816,7 +816,6 @@ describe("runner process registry", () => {
       incompleteDurableWork: true,
       durableRecordCount: 1,
       unacknowledgedIpcFrameCount: 0,
-      pendingInterventionCount: 0,
       registration: { lifecycle: { execution_state: "completed" } },
     });
     const recovered = await RunnerSqliteEventOutbox.open(paths.databasePath);
@@ -854,7 +853,6 @@ describe("runner process registry", () => {
       incompleteDurableWork: true,
       durableRecordCount: 0,
       unacknowledgedIpcFrameCount: 0,
-      pendingInterventionCount: 0,
       registration: { bootstrap: null, lifecycle: { execution_state: "closed" } },
     });
   });
@@ -887,56 +885,44 @@ describe("runner process registry", () => {
     expect(await readFile(runnerHostStatePath(paths.databasePath))).toEqual(hostBefore);
   });
 
-  it.each(["ipc", "inbox"] as const)(
-    "retains an ACK-at-head runner with pending %s evidence",
-    async (pendingKind) => {
-      const label = `retention-probe-${pendingKind}`;
-      const { stateDirectory, paths, outbox, host } = await closedRunnerState(label);
-      if (pendingKind === "ipc") {
-        const payload = { type: "assistant_message", content: "applied event" };
-        const durable = await outbox.appendEngineFrame({
-          session_id: `session-${label}`,
-          event_type: "assistant_message",
-          payload,
-          searchable_text: "applied event",
-          created_at: "2026-08-11T00:00:04.000Z",
-          semantic_dedupe_key: null,
-          session_effect: null,
-        }, {
-          protocolVersion: 1,
-          channel: "event",
-          kind: "engine_event",
-          payload,
-        });
-        await outbox.acknowledge(outbox.streamId, durable.source_seq);
-        host.acknowledgeEvent({
-          streamId: outbox.streamId,
-          sessionId: `session-${label}`,
-          acknowledgedThrough: durable.source_seq,
-          latestDurableSourceSeq: durable.source_seq,
-        });
-      } else {
-        await outbox.stageIntervention({
-          interventionId: "pending-intervention",
-          message: { content: "pending" },
-          queued: true,
-          queuedAt: "2026-08-11T00:00:04.000Z",
-        });
-      }
-      outbox.close();
-      host.close();
-      const fresh = (await scanRunnerRegistrations(stateDirectory)).registrations[0]!;
-      expect(fresh.closedTailState).toMatchObject({ status: "fully_acknowledged" });
-      const runnerBefore = await readFile(paths.databasePath);
-      const hostBefore = await readFile(runnerHostStatePath(paths.databasePath));
+  it("retains an ACK-at-head runner with pending ipc evidence", async () => {
+    const label = "retention-probe-ipc";
+    const { stateDirectory, paths, outbox, host } = await closedRunnerState(label);
+    const payload = { type: "assistant_message", content: "applied event" };
+    const durable = await outbox.appendEngineFrame({
+      session_id: `session-${label}`,
+      event_type: "assistant_message",
+      payload,
+      searchable_text: "applied event",
+      created_at: "2026-08-11T00:00:04.000Z",
+      semantic_dedupe_key: null,
+      session_effect: null,
+    }, {
+      protocolVersion: 1,
+      channel: "event",
+      kind: "engine_event",
+      payload,
+    });
+    await outbox.acknowledge(outbox.streamId, durable.source_seq);
+    host.acknowledgeEvent({
+      streamId: outbox.streamId,
+      sessionId: `session-${label}`,
+      acknowledgedThrough: durable.source_seq,
+      latestDurableSourceSeq: durable.source_seq,
+    });
+    outbox.close();
+    host.close();
+    const fresh = (await scanRunnerRegistrations(stateDirectory)).registrations[0]!;
+    expect(fresh.closedTailState).toMatchObject({ status: "fully_acknowledged" });
+    const runnerBefore = await readFile(paths.databasePath);
+    const hostBefore = await readFile(runnerHostStatePath(paths.databasePath));
 
-      await expect(probeRunnerDurableRetention(fresh)).resolves.toMatchObject({
-        localRetentionReason: "durable_replay_pending",
-      });
-      expect(await readFile(paths.databasePath)).toEqual(runnerBefore);
-      expect(await readFile(runnerHostStatePath(paths.databasePath))).toEqual(hostBefore);
-    },
-  );
+    await expect(probeRunnerDurableRetention(fresh)).resolves.toMatchObject({
+      localRetentionReason: "durable_replay_pending",
+    });
+    expect(await readFile(paths.databasePath)).toEqual(runnerBefore);
+    expect(await readFile(runnerHostStatePath(paths.databasePath))).toEqual(hostBefore);
+  });
 
   it("reports a terminal durable tail as pending when the orch ACK is behind", async () => {
     const stateDirectory = await temporaryDirectory("terminal-partial-ack");

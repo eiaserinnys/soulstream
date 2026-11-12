@@ -163,7 +163,6 @@ describe("R36 delete_session lifecycle lab", () => {
           incompleteDurableWork: true,
           durableRecordCount: 3,
           unacknowledgedIpcFrameCount: 1,
-          pendingInterventionCount: 0,
         }),
         probeRetention: async (candidate) => ({
           registration: candidate,

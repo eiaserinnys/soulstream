@@ -179,8 +179,7 @@ describe("RunnerReleaseGarbageCollector", () => {
       incompleteDurableWork: false,
       durableRecordCount: 2,
       unacknowledgedIpcFrameCount: 0,
-      pendingInterventionCount: 0,
-    }));
+      }));
     const logger = { info: vi.fn(), warn: vi.fn() };
     const collector = new RunnerReleaseGarbageCollector(
       pool,
@@ -241,8 +240,7 @@ describe("RunnerReleaseGarbageCollector", () => {
       incompleteDurableWork: false,
       durableRecordCount: 2,
       unacknowledgedIpcFrameCount: 0,
-      pendingInterventionCount: 0,
-    }));
+      }));
     const logger = { info: vi.fn(), warn: vi.fn() };
     const collector = new RunnerReleaseGarbageCollector(
       pool,
@@ -469,7 +467,6 @@ async function makeSubject(
     incompleteDurableWork: incomplete,
     durableRecordCount: 2,
     unacknowledgedIpcFrameCount: 0,
-    pendingInterventionCount: 0,
   }));
   const deps: RunnerReleaseGarbageCollectorDependencies = {
     scan,

@@ -14,10 +14,6 @@ const OUTBOX_PATH = fileURLToPath(new URL(
   "../src/runner/sqlite_event_outbox.ts",
   import.meta.url,
 ));
-const INTERVENTION_PATH = fileURLToPath(new URL(
-  "../src/runner/sqlite_intervention_inbox.ts",
-  import.meta.url,
-));
 const LIFECYCLE_MUTATIONS = [
   "begin",
   "progress",
@@ -41,8 +37,9 @@ describe("runner SQLite write inventory", () => {
 
   it("freezes every raw lifecycle write owner", () => {
     expect(sqliteWriteOwners(LIFECYCLE_PATH)).toEqual({
+      applyActiveWithinTransaction: 2,
       beginWithinTransaction: 3,
-      updateActiveWithinTransaction: 2,
+      finishRunnerExecutionWithinTransaction: 2,
       updateBootstrapWithinTransaction: 1,
     });
   });
@@ -50,7 +47,7 @@ describe("runner SQLite write inventory", () => {
   it("freezes every synchronous transaction owner", () => {
     expect(syncTransactionCallers(SRC_ROOT)).toEqual({
       "runner/runner_host_state_store.ts": ["transaction"],
-      "runner/sqlite_intervention_inbox.ts": ["migrateRunnerInterventionInboxV9"],
+      "runner/sqlite_intervention_inbox_migration.ts": ["migrateRunnerInterventionInboxV9"],
       "runner/sqlite_intervention_receipt.ts": ["transaction"],
       "runner/sqlite_ipc_journal.ts": ["ensureRunnerIpcJournalV4"],
       "runner/sqlite_runner_lifecycle.ts": ["transaction"],
@@ -62,7 +59,6 @@ describe("runner SQLite write inventory", () => {
       OUTBOX_PATH,
     ])).toEqual({
       "runner/runner_child_runtime.ts": ["start"],
-      "runner/runner_intervention_resolution.ts": ["resolveAmbiguousRunnerIntervention"],
       "runner/runner_parent_storage_worker_entry.ts": ["execute"],
       "runner/runner_process_dispatcher.ts": ["initialize"],
       "runner/runner_release_prewarm.ts": ["module"],
@@ -96,10 +92,6 @@ describe("runner SQLite write inventory", () => {
   });
 
   it("keeps active parent reads free of hidden runner.sqlite writes", () => {
-    expect(sqliteWriteOwnersForFunction(
-      INTERVENTION_PATH,
-      "readPendingRunnerInterventions",
-    )).toEqual({});
     for (const relativePath of [
       "runner/runner_parent_outbox.ts",
       "runner/runner_parent_outbox_storage.ts",
@@ -153,25 +145,6 @@ function classMethodCallers(
   }
   return Object.fromEntries(Object.entries(callers).sort(([left], [right]) =>
     left.localeCompare(right)));
-}
-
-function sqliteWriteOwnersForFunction(path: string, functionName: string): Record<string, number> {
-  const source = parseSource(path);
-  const declaration = source.statements.find((statement) =>
-    ts.isFunctionDeclaration(statement) && statement.name?.text === functionName);
-  if (!declaration) throw new Error(`function unavailable: ${functionName}`);
-  const owners: Record<string, number> = {};
-  const visit = (node: ts.Node, owner = functionName): void => {
-    const nextOwner = declarationName(node) ?? owner;
-    if (
-      ts.isCallExpression(node)
-      && ts.isPropertyAccessExpression(node.expression)
-      && ["run", "exec"].includes(node.expression.name.text)
-    ) owners[nextOwner] = (owners[nextOwner] ?? 0) + 1;
-    ts.forEachChild(node, (child) => visit(child, nextOwner));
-  };
-  visit(declaration);
-  return owners;
 }
 
 function syncTransactionCallers(root: string): Record<string, string[]> {

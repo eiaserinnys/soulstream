@@ -256,24 +256,6 @@ describe("runner recovery storage worker boundary", () => {
       expected: "durable_replay_pending",
     });
 
-    const pendingIntervention = await createDatabase({
-      events: ["one"],
-      interventions: ["intervention-a"],
-    });
-    beginLifecycle(pendingIntervention.databasePath, "execute-pending-intervention");
-    acknowledgeThroughHead(
-      pendingIntervention.databasePath,
-      pendingIntervention.streamId!,
-      "session-a",
-      2,
-    );
-    cases.push({
-      label: "pending intervention",
-      databasePath: pendingIntervention.databasePath,
-      sessionId: "session-a",
-      expected: "durable_replay_pending",
-    });
-
     cases.push({
       label: "closed tail fast path",
       databasePath: join(await temporaryDirectory("no-db"), "runner.sqlite"),
@@ -548,7 +530,6 @@ async function createDatabase(options: {
   events?: string[];
   bootstrap?: boolean;
   engineFrames?: number;
-  interventions?: string[];
 } = {}): Promise<DatabaseFixture> {
   const directory = options.directory ?? await temporaryDirectory("recovery");
   const sessionId = options.sessionId ?? "session-a";
@@ -581,14 +562,6 @@ async function createDatabase(options: {
         channel: "event",
         kind: "engine_event",
         payload: { type: "assistant_message", content: `frame-${index}` },
-      });
-    }
-    for (const interventionId of options.interventions ?? []) {
-      await writer.stageIntervention({
-        interventionId,
-        message: { type: "intervention", content: interventionId },
-        queued: true,
-        queuedAt: "2026-11-11T00:00:02.000Z",
       });
     }
     return {

@@ -31,6 +31,10 @@ import {
   withRunnerRecoveryStorage,
   type RunnerRecoveryStorage,
 } from "./runner_recovery_storage.js";
+import { decideRunnerRecovery } from "./state/runner_recovery_decision.js";
+import type { RunnerRecoveryDisposition } from "./state/runner_recovery_machine.js";
+
+export type { RunnerRecoveryDisposition } from "./state/runner_recovery_machine.js";
 
 export { readRunnerRegistrationSummary } from "./runner_registration_reader.js";
 
@@ -65,7 +69,6 @@ export interface RunnerDurableInspection {
   incompleteDurableWork: boolean;
   durableRecordCount: number;
   unacknowledgedIpcFrameCount: number;
-  pendingInterventionCount: number;
 }
 
 export type RunnerSessionGcRetentionReason =
@@ -79,17 +82,6 @@ export interface RunnerDurableRetentionProbe {
 }
 
 export { probeRunnerDurableRetention } from "./runner_durable_retention_probe.js";
-
-export type RunnerRecoveryDisposition =
-  | "wait_for_bootstrap"
-  | "adopt_prebootstrap"
-  | "adopt_running"
-  | "replay_terminal"
-  | "replay_terminal_dead"
-  | "retired_terminal"
-  | "reap_dead"
-  | "already_reaped"
-  | "closed";
 
 export function isTerminalRunnerExecutionState(
   state: RunnerLifecycleRecord["execution_state"],
@@ -178,32 +170,21 @@ export function classifyRunnerRegistration(
     || leaseTimeoutMs <= 0) {
     throw new Error("runner recovery clock and lease timeout must be positive");
   }
-  if (registration.retiredAt) return "retired_terminal";
-  const lifecycle = registration.lifecycle;
-  if (lifecycle?.execution_state === "reaped") return "already_reaped";
-  if (lifecycle?.execution_state === "closed") return "closed";
-  if (!lifecycle) {
-    if (registration.pidAlive) return "adopt_prebootstrap";
-    return nowMs - registration.registeredAtMs < leaseTimeoutMs
-      ? "wait_for_bootstrap"
-      : "reap_dead";
+  const disposition = decideRunnerRecovery({
+    retired: Boolean(registration.retiredAt),
+    lifecycle: registration.lifecycle?.execution_state ?? "none",
+    pidAlive: registration.pidAlive,
+    bootstrapLeaseElapsed: nowMs - registration.registeredAtMs >= leaseTimeoutMs,
+  });
+  if (disposition === "adopt_running") {
+    const progressedAt = Date.parse(registration.lifecycle!.progress_at);
+    if (!Number.isFinite(progressedAt)) {
+      throw new Error(
+        `runner lifecycle progress timestamp invalid: ${registration.lifecycle!.progress_at}`,
+      );
+    }
   }
-  if (isTerminalRunnerExecutionState(lifecycle.execution_state)) {
-    // A terminal lifecycle says the runner finished, not that its process is
-    // still there. Classifying both cases as `replay_terminal` attached an
-    // in-memory runner handle to a process that had already exited, which
-    // `startExecution` then refused to displace (260820 incident).
-    if (registration.pidAlive) return "replay_terminal";
-    return "replay_terminal_dead";
-  }
-  if (!registration.pidAlive) return "reap_dead";
-  const progressedAt = Date.parse(lifecycle.progress_at);
-  if (!Number.isFinite(progressedAt)) {
-    throw new Error(`runner lifecycle progress timestamp invalid: ${lifecycle.progress_at}`);
-  }
-  // progress_at remains durable observation data. Elapsed wall-clock time is
-  // not process-death evidence; adopt() verifies the full runner identity.
-  return "adopt_running";
+  return disposition;
 }
 
 /**

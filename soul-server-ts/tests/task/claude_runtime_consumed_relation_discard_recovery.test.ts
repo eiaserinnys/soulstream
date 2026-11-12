@@ -77,10 +77,7 @@ describe("queued Claude runtime delivery consumption", () => {
     const repository = new DeliveryRepositoryDouble();
     const ledgerGate = new TaskDeliveryLedgerGate(true, repository as never);
     const persistence = makeEventPersistenceTestDouble();
-    const discardIntervention = vi.fn(async () => undefined);
     const dispatcher = {
-      recoverPendingInterventions: vi.fn(async () => []),
-      discardIntervention,
       executeFrames: vi.fn((_params: EngineExecuteParams) => (async function* () {
         yield engineEventFrame({ type: "assistant_message", content: "follow-up seen" });
         yield engineEventFrame(
@@ -144,7 +141,6 @@ describe("queued Claude runtime delivery consumption", () => {
     expect(runner.eventPersistence).toBe("runner");
     expect(task.interventionQueue).toHaveLength(1);
     expect(task.interventionQueue[0]?.runnerInterventionId).toBeUndefined();
-    expect(discardIntervention).not.toHaveBeenCalled();
 
     executor.startExecutionWithRunner(task, agent, runner);
     await task.executionPromise;
@@ -152,7 +148,6 @@ describe("queued Claude runtime delivery consumption", () => {
     expect(repository.row.state).toBe("consumed");
     expect(repository.markConsumed).toHaveBeenCalledOnce();
     expect(task.interventionQueue).toEqual([]);
-    expect(discardIntervention).not.toHaveBeenCalled();
     expect(persistence.enqueueEvent.mock.calls.some(
       (call) => (call[1] as { error_code?: string }).error_code ===
         "claude_runtime_followup_enqueue_failed",

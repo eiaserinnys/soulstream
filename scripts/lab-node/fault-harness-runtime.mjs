@@ -1184,19 +1184,6 @@ export class LabRuntime {
     return typeof event?.created_at === "string" ? event.created_at : null;
   }
 
-  runnerInterventionInboxCount(sessionId) {
-    const databasePath = join(this.runnerDirectory(sessionId), "runner.sqlite");
-    const database = new DatabaseSync(databasePath, { readOnly: true });
-    try {
-      const row = database.prepare(
-        "SELECT COUNT(*) AS count FROM runner_intervention_inbox",
-      ).get();
-      return Number(row?.count ?? 0);
-    } finally {
-      database.close();
-    }
-  }
-
   /**
    * Waits until the lab node can actually take work, not merely until a row
    * exists for it.

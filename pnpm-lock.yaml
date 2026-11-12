@@ -346,6 +346,8 @@ importers:
         specifier: ^3.2.4
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.15)(jiti@2.6.1)(jsdom@25.0.1)(lightningcss@1.32.0)(terser@5.46.1)(tsx@4.21.0)(yaml@2.9.0)
 
+  packages/statechart: {}
+
   packages/wire-schema:
     devDependencies:
       json-schema-to-typescript:
@@ -475,6 +477,9 @@ importers:
       ws:
         specifier: ^8.18.0
         version: 8.20.0
+      xstate:
+        specifier: 5.33.4
+        version: 5.33.4
       y-protocols:
         specifier: 1.0.6
         version: 1.0.6(yjs@13.6.27)
@@ -488,6 +493,9 @@ importers:
         specifier: ^4.3.6
         version: 4.3.6
     devDependencies:
+      '@soulstream/statechart':
+        specifier: workspace:*
+        version: link:../packages/statechart
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.15

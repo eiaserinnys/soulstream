@@ -480,19 +480,10 @@ describe("RunningInterventionTransition", () => {
     expect(injectAtToolBoundary).not.toHaveBeenCalled();
   });
 
-  it("queues an idle runner notification in the normal next-turn queue without runner inbox staging", async () => {
+  it("queues an idle runner notification in the normal next-turn queue", async () => {
     let task!: Task;
-    const stageIntervention = vi.fn(async () => {
-      expect(task.interventionQueue).toEqual([]);
-      return {
-        durability: "runner" as const,
-        eventSourceSeq: null,
-        queuePosition: 1,
-      };
-    });
     const waitForSessionAck = vi.fn();
     const dispatcher = {
-      stageIntervention,
       waitForSessionAck,
       dispatch: vi.fn(),
       executeFrames: vi.fn(),
@@ -534,7 +525,6 @@ describe("RunningInterventionTransition", () => {
       reason: "queue_only_policy",
     });
 
-    expect(stageIntervention).not.toHaveBeenCalled();
     expect(waitForSessionAck).not.toHaveBeenCalled();
     expect(persistenceDouble.enqueueEvent).not.toHaveBeenCalled();
     expect(task.interventionQueue).toHaveLength(1);
@@ -543,13 +533,7 @@ describe("RunningInterventionTransition", () => {
   });
 
   it("routes runner-backed no_active_turn through the public engine and next-turn queue", async () => {
-    const stageIntervention = vi.fn();
-    const applyIntervention = vi.fn();
-    const discardIntervention = vi.fn();
     const dispatcher = {
-      stageIntervention,
-      applyIntervention,
-      discardIntervention,
       waitForSessionAck: vi.fn(),
       dispatch: vi.fn(),
       executeFrames: vi.fn(),
@@ -591,9 +575,6 @@ describe("RunningInterventionTransition", () => {
     });
 
     expect(intervene).toHaveBeenCalledOnce();
-    expect(stageIntervention).not.toHaveBeenCalled();
-    expect(applyIntervention).not.toHaveBeenCalled();
-    expect(discardIntervention).not.toHaveBeenCalled();
     expect(persistenceDouble.enqueueEvent).toHaveBeenCalledOnce();
     expect(persistenceDouble.enqueueEvent).toHaveBeenCalledWith(
       "s1",

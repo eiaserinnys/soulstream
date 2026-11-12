@@ -56,25 +56,18 @@ import {
   runnerRowCount as rowCount,
   runnerTableHasColumn as hasColumn,
 } from "./sqlite_event_outbox_database.js";
-import { ensureRunnerLifecycleColumns } from "./sqlite_runner_lifecycle.js";
+import {
+  ensureRunnerLifecycleColumns,
+  finishRunnerExecutionWithinTransaction,
+  type RunnerFinishOutcome,
+} from "./sqlite_runner_lifecycle.js";
 import {
   acknowledgeRunnerHostCall,
   ensureRunnerIpcJournalV4,
   readRunnerHostCallApplied,
   recordRunnerHostCallApplied,
 } from "./sqlite_ipc_journal.js";
-import {
-  claimRunnerIntervention,
-  claimRunnerInterventions,
-  finishRunnerExecutionAndIntervention,
-  markRunnerInterventionAmbiguous,
-  markRunnerInterventionsAmbiguous,
-  migrateRunnerInterventionInboxV9,
-  readPendingRunnerInterventions,
-  resolveRunnerInterventionAmbiguity,
-  stageRunnerIntervention,
-  type RunnerInterventionResolution,
-} from "./sqlite_intervention_inbox.js";
+import { migrateRunnerInterventionInboxV9 } from "./sqlite_intervention_inbox_migration.js";
 import {
   ensureRunnerSqliteWal,
   openRunnerSqliteDatabase,
@@ -102,7 +95,6 @@ export interface RunnerSqliteEventOutboxOptions {
 export interface RunnerPendingDurableEvidence {
   durableRecordCount: number;
   unacknowledgedIpcFrameCount: number;
-  pendingInterventionCount: number;
 }
 
 export class RunnerSqliteEventOutbox {
@@ -478,104 +470,16 @@ export class RunnerSqliteEventOutbox {
     return record;
   }
 
-  async stageIntervention(input: {
-    interventionId: string;
-    message: Record<string, unknown>;
-    event?: EventOutboxAppendInput;
-    queued: boolean;
-    queuedAt: string;
-  }): Promise<{ eventSourceSeq: number | null; queuePosition: number }> {
-    const bootstrap = this.requireBootstrap();
-    const stagedInput = input.event
-      ? { ...input, event: this.withRegistrationIdentity(input.event) }
-      : input;
-    const staged = await stageRunnerIntervention(
-      this.database,
-      (operation) => this.transaction("stage_intervention", operation),
-      bootstrap,
-      stagedInput,
-    );
-    for (const listener of this.appendListeners) listener();
-    return staged;
-  }
-
-  async readPendingInterventions(): Promise<Array<{
-    interventionId: string;
-    message: Record<string, unknown>;
-  }>> {
-    this.requireOpen();
-    return await readPendingRunnerInterventions(this.database);
-  }
-
-  async claimIntervention(interventionId: string, commandId: string): Promise<boolean> {
-    this.requireOpen();
-    return await claimRunnerIntervention(
-      this.database,
-      (operation) => this.transaction("claim_intervention", operation),
-      interventionId,
-      commandId,
-    );
-  }
-
-  async claimInterventions(interventionIds: readonly string[], commandId: string): Promise<boolean> {
-    this.requireOpen();
-    return await claimRunnerInterventions(
-      this.database,
-      (operation) => this.transaction("claim_interventions", operation),
-      interventionIds,
-      commandId,
-    );
-  }
-
-  async markInterventionAmbiguous(interventionId: string, commandId: string): Promise<void> {
-    this.requireOpen();
-    await markRunnerInterventionAmbiguous(
-      this.database,
-      (operation) => this.transaction("mark_intervention_ambiguous", operation),
-      interventionId,
-      commandId,
-    );
-  }
-
-  async markInterventionsAmbiguous(
-    interventionIds: readonly string[],
-    commandId: string,
-  ): Promise<void> {
-    this.requireOpen();
-    await markRunnerInterventionsAmbiguous(
-      this.database,
-      (operation) => this.transaction("mark_interventions_ambiguous", operation),
-      interventionIds,
-      commandId,
-    );
-  }
-
-  async resolveAmbiguousIntervention(
-    interventionId: string,
-    resolution: RunnerInterventionResolution,
-  ): Promise<void> {
-    this.requireOpen();
-    await resolveRunnerInterventionAmbiguity(
-      this.database,
-      (operation) => this.transaction("resolve_intervention_ambiguity", operation),
-      interventionId,
-      resolution,
-    );
-  }
-
   async finishExecution(input: {
     commandId: string;
-    interventionId?: string;
-    interventionIds?: string[];
-    state: "completed" | "failed";
+    state: "completed" | "failed" | "closed";
     progressedAt: string;
     terminalError: { code: string; message: string } | null;
-  }): Promise<void> {
+  }): Promise<RunnerFinishOutcome> {
     this.requireOpen();
-    await finishRunnerExecutionAndIntervention(
-      this.database,
-      (operation) => this.transaction("finish_execution", operation),
-      input,
+    return await this.transaction(
+      "finish_execution",
+      () => finishRunnerExecutionWithinTransaction(this.database, input),
     );
   }
 
@@ -892,21 +796,6 @@ export class RunnerSqliteEventOutbox {
       unacknowledgedIpcFrameCount: Number((this.database.prepare(`
         SELECT COUNT(*) AS count FROM runner_ipc_journal WHERE host_acked = 0
       `).get() as { count: number }).count),
-      pendingInterventionCount: Number((this.database.prepare(`
-        SELECT COUNT(*) AS count FROM runner_intervention_inbox AS inbox
-        WHERE inbox.application_state <> 'claimed'
-           OR NOT EXISTS (
-             SELECT 1 FROM runner_event_outbox AS lifecycle
-             WHERE lifecycle.record_kind = 'bootstrap'
-               AND lifecycle.execution_state = 'completed'
-               AND lifecycle.execution_command_id = inbox.claimed_execution_command_id
-             UNION ALL
-             SELECT 1 FROM runner_prebootstrap_lifecycle AS lifecycle
-             WHERE lifecycle.singleton = 1
-               AND lifecycle.execution_state = 'completed'
-               AND lifecycle.execution_command_id = inbox.claimed_execution_command_id
-           )
-      `).get() as { count: number }).count),
     };
   }
 
@@ -1002,8 +891,7 @@ export class RunnerSqliteEventOutbox {
     `).get(acknowledgedThrough);
     if (pendingEvent) return true;
     const evidence = this.inspectPendingDurableEvidence();
-    return evidence.unacknowledgedIpcFrameCount > 0
-      || evidence.pendingInterventionCount > 0;
+    return evidence.unacknowledgedIpcFrameCount > 0;
   }
 
   async compactAppliedHostCallsForTerminalRecovery(): Promise<void> {

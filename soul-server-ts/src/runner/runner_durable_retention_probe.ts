@@ -82,11 +82,11 @@ export async function probeRunnerDurableRetentionLocal(
         }, readEvidence)
         : readEvidence();
       if (evidence.durableRecordCount > 0) return fallback();
-      const hasBlocker = evidence.unacknowledgedIpcFrameCount > 0
-        || evidence.pendingInterventionCount > 0;
       return {
         registration: hydrated,
-        localRetentionReason: hasBlocker ? "incomplete_bootstrap" : null,
+        localRetentionReason: evidence.unacknowledgedIpcFrameCount > 0
+          ? "incomplete_bootstrap"
+          : null,
       };
     }
 

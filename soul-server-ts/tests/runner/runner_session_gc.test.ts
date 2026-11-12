@@ -34,7 +34,6 @@ describe("RunnerSessionGarbageCollector", () => {
           executionState: lifecycleState,
           durableRecordCount: 0,
           unacknowledgedIpcFrameCount: 0,
-          pendingInterventionCount: 0,
         },
         "removed expired terminal runner session state",
       );
@@ -44,7 +43,6 @@ describe("RunnerSessionGarbageCollector", () => {
   it.each([
     ["durable outbox records", "durable-records"],
     ["unacknowledged IPC frames", "unacknowledged-ipc"],
-    ["pending interventions", "pending-interventions"],
   ] as const)(
     "retains an expired terminal pre-bootstrap session with %s",
     async (_evidence, evidenceKind) => {
@@ -52,9 +50,6 @@ describe("RunnerSessionGarbageCollector", () => {
       const subject = makeSubject({
         durableRecordSessions: evidenceKind === "durable-records" ? new Set([sessionId]) : undefined,
         unacknowledgedIpcSessions: evidenceKind === "unacknowledged-ipc"
-          ? new Set([sessionId])
-          : undefined,
-        pendingInterventionSessions: evidenceKind === "pending-interventions"
           ? new Set([sessionId])
           : undefined,
       });
@@ -473,7 +468,6 @@ function makeSubject(options: {
   pendingSessions?: Set<string>;
   durableRecordSessions?: Set<string>;
   unacknowledgedIpcSessions?: Set<string>;
-  pendingInterventionSessions?: Set<string>;
   hydrate?: (registration: RunnerRegistration) => Promise<RunnerRegistration>;
   refresh?: (registration: RunnerRegistration) => Promise<RunnerRegistration>;
   probeRetention?: (
@@ -509,8 +503,6 @@ function makeSubject(options: {
         ? 1
         : hydrated.bootstrap === null ? 0 : 3,
       unacknowledgedIpcFrameCount: options.unacknowledgedIpcSessions
-        ?.has(item.config.sessionId) ? 1 : 0,
-      pendingInterventionCount: options.pendingInterventionSessions
         ?.has(item.config.sessionId) ? 1 : 0,
     };
   });

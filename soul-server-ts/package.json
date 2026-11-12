@@ -24,7 +24,6 @@
     "verify:startup": "node --test scripts/verify_main_bundle_runner_startup.test.mjs",
     "contract:claude-sdk": "tsx scripts/claude_sdk_contract_harness.ts",
     "runner-outbox:inspect": "tsx scripts/inspect_runner_outbox.ts",
-    "runner-intervention:resolve": "tsx scripts/resolve_runner_intervention.ts",
     "notification-outbox:list-dlq": "tsx scripts/list_notification_dlq.ts",
     "notification-outbox:requeue": "tsx scripts/requeue_notification_dlq.ts",
     "soak:runner": "tsx scripts/staging-soak/cli.ts",
@@ -55,9 +54,11 @@
     "yaml": "^2.9.0",
     "yjs": "13.6.27",
     "zod": "^4.3.6",
-    "@soulstream/mcp-contract": "workspace:*"
+    "@soulstream/mcp-contract": "workspace:*",
+    "xstate": "5.33.4"
   },
   "devDependencies": {
+    "@soulstream/statechart": "workspace:*",
     "@types/node": "^22.0.0",
     "@types/ws": "^8.5.13",
     "postgres": "^3.4.9",

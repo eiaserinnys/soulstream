@@ -11,7 +11,6 @@ import type { EventOutboxSessionEffect } from "../upstream/event_outbox.js";
 import {
   executionEndedControlFrame,
   hostFrameAppliedControlFrame,
-  invokeCommandFrame,
   outboxAvailableControlFrame,
   runnerCommandResultFrame,
   type RunnerCommandFrame,
@@ -35,10 +34,6 @@ import {
   RunnerHostRequestClient,
   RunnerHostUnavailableError,
 } from "./runner_host_request_client.js";
-import {
-  claimRunnerInterventionExecution,
-  handleRunnerInterventionCommand,
-} from "./runner_intervention_command.js";
 import {
   runnerDroppedFrameLogContext,
   type RunnerDroppedFrame,
@@ -245,37 +240,6 @@ export class RunnerChildRuntime {
   private async handleCommand(command: RunnerCommandFrame): Promise<void> {
     const connection = this.endpoint.currentConnection;
     if (!connection) throw new Error("Runner command arrived without a host connection");
-    const intervention = await handleRunnerInterventionCommand(
-      command,
-      this.outbox,
-      this.config.sessionId,
-      async (input) => {
-        const invoked = await this.dispatcher.dispatch(invokeCommandFrame(
-          command.commandId,
-          "intervene",
-          [input],
-        ));
-        if (invoked.result.status !== "ok") {
-          throw new Error(invoked.result.error.message);
-        }
-        return invoked.result.data;
-      },
-      this.archiveEvent,
-    );
-    if (intervention) {
-      await connection.send(intervention.result);
-      if (intervention.eventSourceSeq !== null) {
-        await this.sendBestEffort(outboxAvailableControlFrame(intervention.eventSourceSeq));
-      }
-      return;
-    }
-    const interventionClaimFailure = command.kind === "execute"
-      ? await claimRunnerInterventionExecution(command, this.outbox)
-      : null;
-    if (interventionClaimFailure) {
-      await connection.send(interventionClaimFailure);
-      return;
-    }
     if (command.kind === "close") {
       try {
         const result = await this.dispatcher.dispatch(command);
@@ -297,16 +261,6 @@ export class RunnerChildRuntime {
       return;
     }
     const result = await this.dispatcher.dispatch(command);
-    if (
-      result.result.status !== "ok"
-      && command.kind === "execute"
-    ) {
-      const interventionIds = command.params.runnerInterventionIds
-        ?? (command.params.runnerInterventionId ? [command.params.runnerInterventionId] : []);
-      if (interventionIds.length > 0) {
-        await this.outbox.markInterventionsAmbiguous(interventionIds, command.commandId);
-      }
-    }
     await connection.send(result);
     if (result.result.status !== "ok") return;
     if (command.kind === "execute") {
@@ -718,18 +672,18 @@ export class RunnerChildRuntime {
     command: Extract<RunnerCommandFrame, { kind: "execute" }>,
     terminalError: { code: string; message: string } | undefined,
   ): Promise<void> {
-    await this.outbox.finishExecution({
+    const outcome = await this.outbox.finishExecution({
       commandId: command.commandId,
-      ...(command.params.runnerInterventionIds
-        ? { interventionIds: command.params.runnerInterventionIds }
-        : {}),
-      ...(command.params.runnerInterventionId
-        ? { interventionId: command.params.runnerInterventionId }
-        : {}),
       state: terminalError ? "failed" : "completed",
       progressedAt: new Date().toISOString(),
       terminalError: terminalError ?? null,
     });
+    if (outcome === "ignored") {
+      this.logger.info(
+        { commandId: command.commandId },
+        "late runner finish ignored after terminal lifecycle",
+      );
+    }
     this.lifecycle.syncSummary();
   }
 

@@ -223,7 +223,6 @@ function makeRecoveredProcessRunner(engine: EnginePort) {
     sendControlFrame: vi.fn(async () => true),
     requestContext: vi.fn(),
     waitForSessionAck: vi.fn(async () => null),
-    recoverPendingInterventions: vi.fn(async () => []),
   };
   const runner: TaskRunnerRuntime = {
     engine,

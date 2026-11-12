@@ -209,9 +209,6 @@ export function restartWindowContinuityViolations(observation) {
     violations.push(`old assistant marker count ${observation.oldAssistantCount}`);
   }
   if (observation.assistantCount !== 1) violations.push(`assistant marker count ${observation.assistantCount}`);
-  if (observation.inboxRemainingCount !== 0) {
-    violations.push(`${observation.inboxRemainingCount} intervention inbox row(s) remain`);
-  }
   if (observation.inFlightCount !== 0) violations.push(`${observation.inFlightCount} in-flight ownership(s)`);
   if (observation.oldPid !== observation.newPid) {
     violations.push(`runner pid changed ${observation.oldPid} -> ${observation.newPid}`);
@@ -253,9 +250,6 @@ export function restartWindowDurableViolations(observation) {
   }
   if (observation.assistantCount !== 1) {
     violations.push(`assistant marker count ${observation.assistantCount}`);
-  }
-  if (observation.inboxRemainingCount !== 0) {
-    violations.push(`${observation.inboxRemainingCount} intervention inbox row(s) remain`);
   }
   if (observation.inFlightCount !== 0) {
     violations.push(`${observation.inFlightCount} in-flight ownership(s)`);

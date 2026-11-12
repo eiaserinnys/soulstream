@@ -220,15 +220,6 @@ async function execute(
     }
     case "readPendingIpcFrames":
       return { value: await requireStorage().readPendingIpcFrames() };
-    case "inspectPendingInterventions":
-      return { value: await requireStorage().inspectPendingInterventions() };
-    case "readInterventionFallback":
-      return {
-        value: await requireStorage().readInterventionFallback(request.input.interventionId),
-      };
-    case "removeInterventionFallback":
-      requireStorage().removeInterventionFallback(request.input.interventionId);
-      return { value: undefined };
     case "hasPendingDurableWork": {
       const current = requireStorage();
       return {

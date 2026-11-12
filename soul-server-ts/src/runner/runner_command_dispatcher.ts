@@ -2,9 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import type {
   EngineExecuteParams,
-  EngineInterventionResult,
   EnginePort,
-  EngineUserInput,
 } from "../engine/protocol.js";
 import type { SSEEventInputMaterialManifest } from "@soulstream/wire-schema";
 import { stampSessionCost, type SessionCostBase } from "../engine/session_cost.js";
@@ -97,37 +95,8 @@ export interface RunnerCommandDispatcher {
     timeoutMs: number;
   } | undefined;
   waitForSessionAck(): Promise<number | null>;
-  applyIntervention?(
-    input: RunnerInterventionApplyInput,
-  ): Promise<EngineInterventionResult>;
-  discardIntervention?(interventionId: string): Promise<void>;
-  recoverPendingInterventions?(): Promise<RunnerPendingIntervention[]>;
   prepareExecutionIdentity?(ownerToken?: string): Promise<RunnerExecutionIdentity>;
   rollbackExecutionIdentity?(proof: RunnerExecutionIdentity): Promise<void>;
-}
-
-export interface RunnerInterventionStageInput {
-  interventionId: string;
-  message: Record<string, unknown>;
-  event?: Record<string, unknown>;
-  queued: boolean;
-}
-
-export interface RunnerInterventionStageResult {
-  eventSourceSeq: number | null;
-  queuePosition: number;
-  /** Undefined is legacy/in-process and is treated as child-runner durability. */
-  durability?: "runner" | "host_fallback";
-}
-
-export interface RunnerInterventionApplyInput {
-  interventionId: string;
-  input: EngineUserInput;
-}
-
-export interface RunnerPendingIntervention {
-  interventionId: string;
-  message: Record<string, unknown>;
 }
 
 export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher {
@@ -170,8 +139,6 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
             status: "ok",
             data: { executionCommandId: this.activeExecuteCommandId ?? null },
           });
-        case "stage_intervention":
-          throw new Error("durable intervention inbox requires a process runner");
         case "interrupt": {
           const interrupted = await this.target.interrupt();
           return runnerCommandResultFrame(command.commandId, {

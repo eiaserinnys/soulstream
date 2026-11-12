@@ -7,10 +7,7 @@ import { randomUUID } from "node:crypto";
 
 import type { Logger } from "pino";
 
-import type {
-  EngineExecuteParams,
-  EngineInterventionResult,
-} from "../engine/protocol.js";
+import type { EngineExecuteParams } from "../engine/protocol.js";
 import { isLogicalTurnCompleteFrame } from "./engine_event_stream.js";
 import type { EventOutboxRecord } from "../upstream/event_outbox.js";
 import {
@@ -22,9 +19,7 @@ import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import type { NodeStallMonitor } from "../runtime/node_stall_monitor.js";
 import type { RunnerPhaseObservation } from "./runner_phase_observation.js";
 import {
-  applyInterventionCommandFrame,
   closeCommandFrame,
-  discardInterventionCommandFrame,
   executeCommandFrame,
   executionStatusCommandFrame,
   hostFrameAppliedControlFrame,
@@ -39,20 +34,11 @@ import {
   type RunnerFrame,
 } from "./frame_protocol.js";
 import type { RunnerCommandDispatcher } from "./runner_command_dispatcher.js";
-import type {
-  RunnerInterventionApplyInput,
-  RunnerPendingIntervention,
-} from "./runner_command_dispatcher.js";
-import { normalizeRunnerInterventionResult } from "./runner_intervention_result.js";
 import {
   RUNNER_INTERVENTION_RECEIPT_CAPABILITY,
   judgeRunnerInterventionReceipt,
   type RunnerInterventionReceiptVerdict,
 } from "./runner_intervention_receipt.js";
-import {
-  runnerInterventionApplyCommandId,
-  runnerInterventionDiscardCommandId,
-} from "./runner_intervention_identity.js";
 import { RunnerHostCallIdempotency } from "./runner_host_call_idempotency.js";
 import { releaseRunnerHostResources } from "./runner_host_resource_cleanup.js";
 import { RunnerParentOutbox } from "./runner_parent_outbox.js";
@@ -584,43 +570,6 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     return eventId;
   }
 
-  async applyIntervention(
-    input: RunnerInterventionApplyInput,
-  ): Promise<EngineInterventionResult> {
-    const response = await this.dispatch(applyInterventionCommandFrame({
-      commandId: runnerInterventionApplyCommandId(input.interventionId),
-      interventionId: input.interventionId,
-      interventionInput: input.input,
-    }));
-    assertCommandAccepted(response);
-    const normalized = normalizeRunnerInterventionResult(
-      response.result.status === "ok" ? response.result.data : undefined,
-    );
-    return normalized;
-  }
-
-  async discardIntervention(interventionId: string): Promise<void> {
-    const response = await this.dispatch(discardInterventionCommandFrame({
-      commandId: runnerInterventionDiscardCommandId(interventionId),
-      interventionId,
-    }));
-    assertCommandAccepted(response);
-    const data = response.result.status === "ok" ? response.result.data : undefined;
-    if (isRecord(data) && data.status === "not_supported") {
-      await this.outbox.removeInterventionFallback(interventionId);
-      return;
-    }
-    if (!isRecord(data) || data.status !== "discarded") {
-      throw new Error("Runner child returned an invalid intervention discard result");
-    }
-    await this.outbox.removeInterventionFallback(interventionId);
-  }
-
-  async recoverPendingInterventions(): Promise<RunnerPendingIntervention[]> {
-    await this.ready;
-    return (await this.reconcilePendingInterventions()).interventions;
-  }
-
   async invoke(
     capability: string,
     args: unknown[],
@@ -927,36 +876,6 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       );
       return "missing";
     }
-  }
-
-  private async reconcilePendingInterventions(): Promise<{
-    interventions: RunnerPendingIntervention[];
-    childInterventionIds: string[];
-    shadowedFallbackIds: string[];
-  }> {
-    const inspection = await this.outbox.inspectPendingInterventions();
-    for (const interventionId of inspection.shadowedFallbackIds) {
-      let fallbackRemoved = false;
-      try {
-        await this.outbox.removeInterventionFallback(interventionId);
-        fallbackRemoved = true;
-      } catch (error) {
-        this.options.logger.warn(
-          { err: error, sessionId: this.spawnInput.sessionId, interventionId },
-          "Duplicate host intervention fallback cleanup deferred",
-        );
-      }
-      this.options.logger.info(
-        {
-          sessionId: this.spawnInput.sessionId,
-          interventionId,
-          fallbackRemoved,
-          durableOwner: "runner_sqlite",
-        },
-        "Duplicate host intervention fallback suppressed in favor of runner inbox",
-      );
-    }
-    return inspection;
   }
 
   private async connect(

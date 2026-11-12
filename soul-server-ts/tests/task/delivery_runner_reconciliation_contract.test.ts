@@ -44,11 +44,6 @@ const agent: AgentProfile = {
 
 type TerminalDeliveryState = "consumed" | "delivered" | "dead_letter";
 
-interface LocalInboxRow {
-  interventionId: string;
-  message: InterventionMessage;
-}
-
 function makeTerminalTask(overrides: Partial<Task> = {}): Task {
   return {
     agentSessionId: "session-d-reconciliation",
@@ -124,12 +119,6 @@ function makeLedgerGate(terminalStates: Map<string, TerminalDeliveryState>) {
   ) => {
     const deliveryId = message.deliveryId;
     if (!deliveryId || !terminalStates.has(deliveryId)) return false;
-    const runnerInterventionId = message.runnerInterventionId;
-    const discardIntervention = task.runner?.dispatcher.discardIntervention;
-    if (!runnerInterventionId || !discardIntervention) {
-      throw new Error(`runner intervention discard unavailable:${deliveryId}`);
-    }
-    await discardIntervention.call(task.runner?.dispatcher, runnerInterventionId);
     const queuedIndex = task.interventionQueue.findIndex(
       (queued) => queued.deliveryId === deliveryId,
     );
@@ -153,8 +142,7 @@ function makeLedgerGate(terminalStates: Map<string, TerminalDeliveryState>) {
   >;
 }
 
-function makeRunner(localRows: readonly LocalInboxRow[]) {
-  const openRows = new Map(localRows.map((row) => [row.interventionId, row]));
+function makeRunner() {
   const executed: EngineExecuteParams[] = [];
   const dispatcher = {
     prepareExecutionIdentity: vi.fn(async () => ({
@@ -165,26 +153,17 @@ function makeRunner(localRows: readonly LocalInboxRow[]) {
     })),
     executeFrames: vi.fn((params: EngineExecuteParams) => (async function* () {
       executed.push(params);
-      const interventionId = params.runnerInterventionId;
-      if (interventionId && !openRows.has(interventionId)) {
-        throw new Error(`execute_intervention_claim_failed:${interventionId}`);
-      }
       yield engineEventFrame({
         type: "assistant_message",
         content: `handled:${params.prompt}`,
       });
       yield engineEventFrame({ type: "complete", result: "done", timestamp: 1 });
-      if (interventionId) openRows.delete(interventionId);
     })()),
     prepareSession: vi.fn(async () => undefined),
     interrupt: vi.fn(async () => true),
     close: vi.fn(async () => undefined),
     detachHost: vi.fn(async () => undefined),
     waitForSessionAck: vi.fn(async () => null),
-    recoverPendingInterventions: vi.fn(async () => [...openRows.values()]),
-    discardIntervention: vi.fn(async (interventionId: string) => {
-      openRows.delete(interventionId);
-    }),
     invoke: vi.fn(async () => undefined),
   };
   const runner: TaskRunnerRuntime = {
@@ -196,7 +175,7 @@ function makeRunner(localRows: readonly LocalInboxRow[]) {
     dispatcher: dispatcher as never,
     eventPersistence: "runner",
   };
-  return { runner, openRows, executed, dispatcher };
+  return { runner, executed, dispatcher };
 }
 
 function makeUnansweredInterventionRunner() {
@@ -253,7 +232,6 @@ function deliveryMessage(deliveryId: string, text: string): InterventionMessage 
 
 function makeHarness(input: {
   terminalStates?: Map<string, TerminalDeliveryState>;
-  localRows?: readonly LocalInboxRow[];
   task?: Task;
   enforceRunningTransitionFence?: boolean;
   useActualRunningInterventionTransition?: boolean;
@@ -278,7 +256,7 @@ function makeHarness(input: {
       }));
   }
   const ledgerGate = makeLedgerGate(input.terminalStates ?? new Map());
-  const { runner, openRows, executed, dispatcher } = makeRunner(input.localRows ?? []);
+  const { runner, executed, dispatcher } = makeRunner();
   const runnerProcessFactory = vi.fn(() => runner) as unknown as RunnerProcessRuntimeFactory;
   runnerProcessFactory.describe = vi.fn(async () => ({
     ownerKind: "runner_process",
@@ -344,7 +322,7 @@ function makeHarness(input: {
     await task.executionPromise;
     return result;
   };
-  return { task, route, resume, openRows, executed, dispatcher, ledgerGate };
+  return { task, route, resume, executed, dispatcher, ledgerGate };
 }
 
 describe("central delivery ↔ runner inbox reconciliation contract", () => {
@@ -359,10 +337,6 @@ describe("central delivery ↔ runner inbox reconciliation contract", () => {
       const fresh = deliveryMessage("delivery-fresh", "fresh resume");
       const harness = makeHarness({
         terminalStates: new Map([[staleId, terminalState]]),
-        localRows: [{
-          interventionId: staleId,
-          message: deliveryMessage(staleId, `stale ${terminalState}`),
-        }],
       });
 
       await expect(harness.route.addIntervention({
@@ -386,7 +360,6 @@ describe("central delivery ↔ runner inbox reconciliation contract", () => {
     )).resolves.toEqual({ autoResumed: true });
 
     expect(harness.executed.map((input) => input.prompt)).toEqual(["central only"]);
-    expect([...harness.openRows.keys()]).toEqual([]);
     expect(harness.task.status).toBe("completed");
   });
 
@@ -418,19 +391,6 @@ describe("central delivery ↔ runner inbox reconciliation contract", () => {
       expect.any(String),
     );
     expect(task.status).toBe("completed");
-  });
-
-  it("settles a matching local inbox row when central auto-resume completes", async () => {
-    const deliveryId = "delivery-shared";
-    const message = deliveryMessage(deliveryId, "shared delivery");
-    const harness = makeHarness({
-      localRows: [{ interventionId: deliveryId, message }],
-    });
-
-    await expect(harness.resume(message)).resolves.toEqual({ autoResumed: true });
-
-    expect(harness.executed.map((input) => input.prompt)).toEqual(["shared delivery"]);
-    expect([...harness.openRows.keys()]).toEqual([]);
   });
 
   it("queues an ambiguous IPC timeout once, then consumes that delivery once on retry", async () => {

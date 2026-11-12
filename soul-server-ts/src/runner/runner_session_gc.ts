@@ -363,7 +363,6 @@ export class RunnerSessionGarbageCollector {
                 ...(prebootstrap ? {
                   durableRecordCount: inspection.durableRecordCount,
                   unacknowledgedIpcFrameCount: inspection.unacknowledgedIpcFrameCount,
-                  pendingInterventionCount: inspection.pendingInterventionCount,
                 } : {}),
               },
               "removed expired terminal runner session state",
