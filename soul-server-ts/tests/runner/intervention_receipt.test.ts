@@ -279,6 +279,94 @@ describe("runner intervention receipt recording", () => {
     }));
   });
 
+  it("keeps the delivered verdict when the applied receipt write throws", async () => {
+    const { store } = await makeReceiptStore();
+    vi.spyOn(store, "markApplied").mockImplementation(() => {
+      throw new Error("receipt write failed");
+    });
+    const warn = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
+    const engine = makeEngine({
+      intervene: vi.fn(async () => ({
+        status: "delivered",
+        mechanism: "active_turn",
+      }) as const),
+    });
+    const dispatcher = new InProcessRunnerCommandDispatcher(engine, {}, store);
+
+    await expect(dispatcher.dispatch(invokeCommandFrame(
+      "invoke-intervene-write-failure",
+      "intervene",
+      [{ prompt: "steer", runnerInterventionId: "intervention-write-failure" }],
+    ))).resolves.toMatchObject({
+      result: { status: "ok", data: { status: "delivered" } },
+    });
+
+    expect(store.lookup("intervention-write-failure").row).toEqual({
+      state: "handing",
+      registrationId: REGISTRATION_ID,
+    });
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+    store.close();
+  });
+
+  it("keeps the execute event stream flowing when the applied receipt write throws", async () => {
+    const { store } = await makeReceiptStore();
+    vi.spyOn(store, "markApplied").mockImplementation(() => {
+      throw new Error("receipt write failed");
+    });
+    const warn = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
+    const engine = makeEngine({
+      async executeToFrameChannel(_params, channel): Promise<void> {
+        await channel.emit(engineEventFrame({ type: "complete", timestamp: 1 }));
+      },
+    });
+    const dispatcher = new InProcessRunnerCommandDispatcher(engine, {}, store);
+
+    await expect(dispatcher.dispatch(executeCommandFrame("execute-write-failure", {
+      agentSessionId: "session-receipt",
+      prompt: "next turn",
+      runnerInterventionId: "intervention-execute-write-failure",
+    }))).resolves.toMatchObject({ result: { status: "ok" } });
+    const frames = await drain(dispatcher.events("execute-write-failure"));
+
+    expect(frames).toHaveLength(1);
+    expect(store.lookup("intervention-execute-write-failure").row).toEqual({
+      state: "handing",
+      registrationId: REGISTRATION_ID,
+    });
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+    store.close();
+  });
+
+  it("leaves handing when the first execute frame is an engine error event", async () => {
+    const { store } = await makeReceiptStore();
+    const engine = makeEngine({
+      async executeToFrameChannel(_params, channel): Promise<void> {
+        await channel.emit(engineEventFrame({ type: "error", timestamp: 1 }));
+        await channel.emit(engineEventFrame({ type: "complete", timestamp: 2 }));
+      },
+    });
+    const dispatcher = new InProcessRunnerCommandDispatcher(engine, {}, store);
+
+    await expect(dispatcher.dispatch(executeCommandFrame("execute-error-first", {
+      agentSessionId: "session-receipt",
+      prompt: "next turn",
+      runnerInterventionId: "intervention-execute-error-first",
+    }))).resolves.toMatchObject({ result: { status: "ok" } });
+    const frames = await drain(dispatcher.events("execute-error-first"));
+
+    // An error event is a rejection, so the receipt must stay `handing`
+    // even though later frames arrive.
+    expect(frames).toHaveLength(2);
+    expect(store.lookup("intervention-execute-error-first").row).toEqual({
+      state: "handing",
+      registrationId: REGISTRATION_ID,
+    });
+    store.close();
+  });
+
   it("answers not_supported for the lookup capability when no receipt store is attached", async () => {
     const dispatcher = new InProcessRunnerCommandDispatcher(makeEngine());
 

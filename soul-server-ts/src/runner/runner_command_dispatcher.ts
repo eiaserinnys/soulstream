@@ -310,10 +310,16 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
   private settleInterventionReceipt(interventionId: string, data: unknown): void {
     if (!this.interventionReceipts) return;
     const result = normalizeRunnerInterventionResult(data);
-    if (result.status === "delivered") {
-      this.interventionReceipts.markApplied([interventionId]);
-    } else if (result.status === "not_delivered") {
-      this.interventionReceipts.markNotApplied([interventionId]);
+    try {
+      if (result.status === "delivered") {
+        this.interventionReceipts.markApplied([interventionId]);
+      } else if (result.status === "not_delivered") {
+        this.interventionReceipts.markNotApplied([interventionId]);
+      }
+    } catch (error) {
+      // The engine already answered. A failed receipt update must not change
+      // that verdict; the row stays `handing`, which the node reads as unknown.
+      warnReceiptWriteFailure([interventionId], error);
     }
   }
 
@@ -381,11 +387,19 @@ export class InProcessRunnerCommandDispatcher implements RunnerCommandDispatcher
       }
       for await (const frame of channel) {
         // The first frame from the engine is the point where it accepted the
-        // execution input. A start failure never reaches here, so the recorded
-        // state stays `handing` and the node treats it as unknown.
+        // execution input, unless that frame is an error event: a rejection
+        // must leave the row `handing` so the node never assumes delivery. A
+        // start failure never reaches here either.
         if (!executionApplied && interventionIds.length > 0) {
           executionApplied = true;
-          this.interventionReceipts?.markApplied(interventionIds);
+          if (!isEngineErrorFrame(frame)) {
+            try {
+              this.interventionReceipts?.markApplied(interventionIds);
+            } catch (error) {
+              // A failed receipt update must not cut the event stream.
+              warnReceiptWriteFailure(interventionIds, error);
+            }
+          }
         }
         let eventFrame = frame;
         if (frame.kind === "engine_event") {
@@ -493,6 +507,22 @@ function assertCommandAccepted(frame: RunnerCommandResultFrame): void {
   if (frame.result.status === "ok") return;
   throw new Error(
     `Runner command ${frame.commandId} failed (${frame.result.error.code}): ${frame.result.error.message}`,
+  );
+}
+
+function isEngineErrorFrame(frame: RunnerEventFrame): boolean {
+  return frame.kind === "engine_event"
+    && isRecord(frame.payload)
+    && frame.payload.type === "error";
+}
+
+function warnReceiptWriteFailure(
+  interventionIds: readonly string[],
+  error: unknown,
+): void {
+  process.emitWarning(
+    `runner intervention receipt update failed (${interventionIds.join(", ")}): `
+      + errorMessage(error),
   );
 }
 
