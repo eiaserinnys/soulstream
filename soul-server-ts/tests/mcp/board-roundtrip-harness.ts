@@ -82,6 +82,8 @@ export async function createBoardRoundtripHarness() {
   });
   registerSessionCatalogRoutes(app, { provider: withSessionCatalogMutationBroadcasts(
     catalogRepository.sessionCatalogProvider, folderProvider, broadcaster,
+    // 이 하니스에는 노드 레지스트리가 없다. 직접 삭제 판정만 쓴다.
+    { isNodeConnected: () => false, sendDeleteCommand: async () => ({ status: "ok" }) },
   ) });
   let distinguishRemote = false;
   const listAgentProfiles = vi.fn(async (nodeId: string) => ({ roselin: { name: distinguishRemote && nodeId === "other-node" ? "다른 노드 이름" : "로젤린" } }));

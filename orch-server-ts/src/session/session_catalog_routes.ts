@@ -4,6 +4,11 @@ import {
   SessionResourceAccessError,
   type SessionResourceAccessProvider,
 } from "./session_resource_access.js";
+import {
+  SessionDeleteError,
+  type SessionDeleteOutcome,
+  type SessionDeleteTarget,
+} from "./session_delete.js";
 
 export type SessionCatalogCallerInfo = Record<string, unknown> | null | undefined;
 
@@ -51,10 +56,13 @@ export type SessionCatalogProvider = {
     update: SessionCatalogUpdateInput,
     callerInfo?: SessionCatalogCallerInfo,
   ) => Promise<void | MoveSessionsResult>;
+  getSessionDeleteTarget: (
+    sessionId: string,
+  ) => Promise<SessionDeleteTarget | null>;
   deleteSession: (
     sessionId: string,
     callerInfo?: SessionCatalogCallerInfo,
-  ) => Promise<void>;
+  ) => Promise<SessionDeleteOutcome>;
   getSessionCards: (
     sessionId: string,
   ) => Promise<Array<RawSessionCardEvent | SessionEventCard>>;
@@ -189,6 +197,7 @@ export function registerSessionCatalogRoutes(
       const callerInfo = optionalCallerInfo(body.value);
       if (!callerInfo.ok) return badRequest(reply, callerInfo.message);
 
+      let outcome: SessionDeleteOutcome;
       try {
         await requireSessionAccess(
           options,
@@ -196,7 +205,7 @@ export function registerSessionCatalogRoutes(
           sessionParams(request).session_id,
           callerInfo.value,
         );
-        await options.provider.deleteSession(
+        outcome = await options.provider.deleteSession(
           sessionParams(request).session_id,
           callerInfo.value,
         );
@@ -204,7 +213,12 @@ export function registerSessionCatalogRoutes(
         return sendProviderError(reply, error);
       }
 
-      return reply.code(204).send();
+      // 접수(202)는 노드가 시한 안에 지우지 못했다는 뜻이다. 노드가 마저 지우고
+      // 화면에 알리므로 화면은 성공(2xx)으로 다룬다.
+      if (outcome === "accepted") {
+        return reply.code(202).send({ ok: true, accepted: true });
+      }
+      return reply.code(200).send({ ok: true });
     },
   );
 
@@ -446,6 +460,14 @@ function badRequest(reply: FastifyReply, message: string): FastifyReply {
 
 function sendProviderError(reply: FastifyReply, error: unknown): FastifyReply {
   if (error instanceof SessionResourceAccessError) {
+    return reply.code(error.statusCode).send({
+      error: {
+        code: error.code,
+        message: error.message,
+      },
+    });
+  }
+  if (error instanceof SessionDeleteError) {
     return reply.code(error.statusCode).send({
       error: {
         code: error.code,

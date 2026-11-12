@@ -91,7 +91,7 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
     expect(task.status).toBe("interrupted");
   });
 
-  it("does not register a completion notification for a user requested stop", async () => {
+  it("registers a completion notification for a user requested stop", async () => {
     const completionNotifier = { notify: vi.fn().mockResolvedValue(undefined) };
     const { transition } = makeMocks(completionNotifier);
     const task = makeTask({ callerSessionId: "parent-session" });
@@ -103,7 +103,9 @@ describe("TaskLifecycleTransition.cancelRunningTask", () => {
 
     await expect(transition.cancelRunningTask(task)).resolves.toBe(true);
 
-    expect(completionNotifier.notify).not.toHaveBeenCalled();
+    expect(completionNotifier.notify).toHaveBeenCalledOnce();
+    expect(completionNotifier.notify).toHaveBeenCalledWith(task);
+    expect(task.terminationDetail).toBe("user_stop");
   });
 
   it.each([

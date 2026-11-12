@@ -190,12 +190,19 @@ describe("durable card status reminders", () => {
     else await h.sql`UPDATE session_deliveries SET aggregate_state=${kind},state=${kind === "consumed" ? "consumed" : "uncertain"}`;
     await tick(); expect(messages).toHaveBeenCalledTimes(1); await unchanged(id, "running");
   });
-  it.each(["inline", "quiet", "user_stop"])("does not await already consumed or excluded child completion: %s", async kind => {
+  it.each(["inline", "quiet"])("does not await already consumed or excluded child completion: %s", async kind => {
     const id = await seed("running", "completed"), eventId = await receipt("child");
     if (kind === "inline") await h.sql`INSERT INTO session_delivery_relation_consumptions(relation_key,completion_id,caller_session_id,consumed_turn_id) VALUES (${`child_session:child:${eventId}`},'completion','root','turn')`;
     if (kind === "quiet") await h.sql`UPDATE sessions SET notify_completion=FALSE WHERE session_id='child'`;
-    if (kind === "user_stop") await h.sql`UPDATE sessions SET termination_detail='user_stop' WHERE session_id='child'`;
     await tick(); expect(messages).toHaveBeenCalledTimes(1); await unchanged(id, "running");
+  });
+  it("awaits a human-stopped child completion like any registered completion", async () => {
+    // card #1261: user_stop도 이제 완료 통지를 등록하므로 미등록 5분 보류 규칙을 똑같이 받는다.
+    const id = await seed("running", "completed");
+    await h.sql`UPDATE sessions SET termination_detail='user_stop' WHERE session_id='child'`;
+    await receipt("child");
+    await tick(); expect(messages).not.toHaveBeenCalled();
+    now += 5 * 60000; await tick(); expect(messages).toHaveBeenCalledTimes(1); await unchanged(id, "running");
   });
   it("consumption, brief, same status, a resumed root and dispatcher restart never repeat the same reminder", async () => {
     const id = await seed(); await tick(); expect(messages).toHaveBeenCalledTimes(1);

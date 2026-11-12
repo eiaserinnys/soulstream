@@ -74,6 +74,12 @@ interface InterruptSessionCmd extends CommandLike {
   session_id?: string;
 }
 
+interface DeleteSessionCmd extends CommandLike {
+  type: "delete_session";
+  agentSessionId?: string;
+  session_id?: string;
+}
+
 interface CreateCardOrchestrationDecisionCmd extends CommandLike {
   type: "create_card_orchestration_decision";
   agentSessionId: string;
@@ -129,7 +135,10 @@ type ListRunnerInventoryCmd = CommandLike & { type: "list_runner_inventory" };
 interface SessionCommandFamilyDeps {
   send: SendFn;
   logger: Logger;
-  taskManager: Pick<TaskManager, "cancelTask" | "acknowledgeReview" | "persistentSessions">;
+  taskManager: Pick<
+    TaskManager,
+    "cancelTask" | "deleteTask" | "acknowledgeReview" | "persistentSessions"
+  >;
   taskRuntimeCommands: TaskRuntimeCommands;
   sessionListCommands: SessionListCommands;
   listRunningSessionIds?(): Promise<string[]>;
@@ -144,6 +153,7 @@ export function createSessionCommandFamily(
     prepare_card_orchestration_decision: (cmd) => handlePrepareDecision(deps, cmd as PrepareCardOrchestrationDecisionCmd),
     interrupt_session: (cmd) =>
       handleInterruptSession(deps, cmd as InterruptSessionCmd),
+    delete_session: (cmd) => handleDeleteSession(deps, cmd as DeleteSessionCmd),
     acknowledge_session_review: (cmd) =>
       handleAcknowledgeSessionReview(deps, cmd as AcknowledgeSessionReviewCmd),
     set_persistent_session_settings: (cmd) =>
@@ -435,6 +445,35 @@ async function handleInterruptSession(
     status: "ok",
     interrupted,
     agentSessionId: sessionId,
+  });
+}
+
+/**
+ * `delete_session` — orch가 소유 노드에 세션 삭제를 맡긴다.
+ *
+ * 노드의 기존 삭제 경로(TaskManager.deleteTask)를 그대로 쓴다. 실행 중 세션은
+ * 그 경로가 사람이 멈춘 것과 같이 멈춘 뒤 지운다. 없는 세션은 idempotent ok다.
+ */
+async function handleDeleteSession(
+  deps: SessionCommandFamilyDeps,
+  cmd: DeleteSessionCmd,
+): Promise<void> {
+  const sessionId = cmd.agentSessionId ?? cmd.session_id ?? "";
+  if (!sessionId) {
+    throw new CommandDispatchError(
+      "delete_session requires agentSessionId",
+      "INVALID_REQUEST",
+    );
+  }
+  const deleted = await deps.taskManager.deleteTask(sessionId);
+  const requestId = cmd.requestId ?? cmd.request_id ?? "";
+  if (!requestId) return;
+  await deps.send({
+    type: "delete_session_ack",
+    requestId,
+    agentSessionId: sessionId,
+    status: "ok",
+    deleted,
   });
 }
 

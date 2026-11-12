@@ -648,9 +648,24 @@ function createSessionCatalogProvider(
       }
       return moved;
     },
+    async getSessionDeleteTarget(sessionId) {
+      const sql = await sqlResolver.resolveSql();
+      const rows = await sql`
+        SELECT node_id, status
+        FROM sessions
+        WHERE session_id = ${sessionId}
+        LIMIT 1
+      `;
+      if (!rows[0]) return null;
+      return {
+        nodeId: stringOrNull(rows[0].node_id),
+        status: stringOrNull(rows[0].status),
+      };
+    },
     async deleteSession(sessionId) {
       if (!sessionDeletion) throw new Error("session deletion service is required");
       await sessionDeletion.deleteSession(sessionId);
+      return "deleted";
     },
     async getSessionCards(sessionId) {
       const sql = await sqlResolver.resolveSql();

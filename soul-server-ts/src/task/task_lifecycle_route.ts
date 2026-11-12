@@ -86,7 +86,16 @@ export class TaskLifecycleRoute {
     if (!task) return false;
 
     const runner = task.runner;
-    await this.deps.lifecycleTransition.interruptAndDrain(task);
+    // 실행 중인 세션은 사람이 멈춘 것과 같은 경로로 멈춘다. 부른 세션 통지 등록이
+    // 끝난 뒤 러너를 닫고(retire 포함) 그 다음 행을 지운다.
+    if (isActiveTaskStatus(task.status)) {
+      await this.deps.lifecycleTransition.cancelRunningTask(task);
+      if (isActiveTaskStatus(task.status)) {
+        throw new Error(
+          `running session stop did not converge before delete: ${sessionId}`,
+        );
+      }
+    }
     const runtimeClosed = await this.closeSessionRuntimeIfPresent(
       sessionId,
       "session_delete",
@@ -95,6 +104,8 @@ export class TaskLifecycleRoute {
       throw new Error(`session runtime close did not converge: ${sessionId}`);
     }
     if (runner) {
+      // cancelRunningTask가 이미 닫았으면 close는 idempotent다. 등록 retire는
+      // 삭제 전에 반드시 수행한다.
       await runner.dispatcher.close();
       if (runner.eventPersistence === "runner") {
         const retire = runner.dispatcher.retireTerminalRegistration;

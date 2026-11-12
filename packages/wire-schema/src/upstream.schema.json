@@ -9,6 +9,7 @@
     "create_card_orchestration_decision",
     "prepare_card_orchestration_decision",
     "interrupt_session",
+    "delete_session",
     "acknowledge_session_review",
     "set_persistent_session_settings",
     "apply_persistent_session_instructions",
@@ -1172,6 +1173,21 @@
         "message": { "type": "string" }
       }
     },
+    "DeleteSessionAck": {
+      "type": "object",
+      "description": "노드→orch: delete_session 명령 ACK. 노드가 세션 행을 지운 뒤 보낸다.",
+      "required": ["type", "requestId", "status"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "delete_session_ack" },
+        "requestId": { "type": "string" },
+        "status": { "type": "string", "enum": ["ok", "error"] },
+        "agentSessionId": { "type": "string" },
+        "deleted": { "type": "boolean" },
+        "code": { "type": "string" },
+        "message": { "type": "string" }
+      }
+    },
     "AcknowledgeSessionReviewAck": {
       "type": "object",
       "description": "노드→orch: acknowledge_session_review 원자 전이 ACK.",
@@ -1611,6 +1627,22 @@
       "additionalProperties": true,
       "properties": {
         "type": { "const": "interrupt_session" },
+        "agentSessionId": { "type": "string" },
+        "session_id": {
+          "type": "string",
+          "description": "구버전 호환 — 신규 코드는 agentSessionId 사용."
+        },
+        "requestId": { "type": "string" },
+        "request_id": { "type": "string" }
+      }
+    },
+    "DeleteSession": {
+      "type": "object",
+      "description": "orch→노드: 세션을 지운다. 실행 중이면 먼저 사람이 멈춘 것과 같이 멈춘 뒤 지운다(부른 세션에 멈춤 알림).",
+      "required": ["type", "agentSessionId"],
+      "additionalProperties": true,
+      "properties": {
+        "type": { "const": "delete_session" },
         "agentSessionId": { "type": "string" },
         "session_id": {
           "type": "string",
@@ -4314,6 +4346,7 @@
     { "$ref": "#/$defs/ErrorMessage" },
     { "$ref": "#/$defs/InterveneAck" },
     { "$ref": "#/$defs/InterruptSessionAck" },
+    { "$ref": "#/$defs/DeleteSessionAck" },
     { "$ref": "#/$defs/AcknowledgeSessionReviewAck" },
     { "$ref": "#/$defs/PersistentSessionSettingsUpdated" },
     { "$ref": "#/$defs/PersistentSessionInstructionsApplied" },
@@ -4336,6 +4369,7 @@
     { "$ref": "#/$defs/EnsureSessionRunning" },
     { "$ref": "#/$defs/EnsureSessionRunningAck" },
     { "$ref": "#/$defs/InterruptSession" },
+    { "$ref": "#/$defs/DeleteSession" },
     { "$ref": "#/$defs/AcknowledgeSessionReview" },
     { "$ref": "#/$defs/SetPersistentSessionSettings" },
     { "$ref": "#/$defs/ApplyPersistentSessionInstructions" },

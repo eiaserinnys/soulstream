@@ -83,8 +83,6 @@ export class TaskLifecycleTransition {
     persistence: TaskFinalStatePersistenceResult,
   ): Promise<void> {
     if (!persistence.terminalTransitionApplied) return;
-    // Explicit user stops are cancellations, not delegated completion reports.
-    if (task.terminationDetail === "user_stop") return;
     if (!task.callerSessionId || !this.completionNotifier) return;
 
     try {
@@ -172,9 +170,9 @@ export class TaskLifecycleTransition {
 
     const stopCompletedAt = task.completedAt ?? new Date();
     task.completedAt = stopCompletedAt;
+    let persistence: TaskFinalStatePersistenceResult;
     try {
-      // Policy: explicit user stops never register a parent completion notification.
-      await this.persistFinalState(task, true);
+      persistence = await this.persistFinalState(task, true);
     } catch (err) {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
@@ -186,6 +184,10 @@ export class TaskLifecycleTransition {
       task.completedAt = stopCompletedAt;
       return false;
     }
+
+    // 디렉터 결정(261112): 멈춤 버튼도 부른 세션에 알린다. 통지 등록이 끝난 뒤에
+    // 러너를 닫아야 삭제 경로가 등록을 잃지 않는다.
+    await this.notifyCompletionIfApplied(task, persistence);
 
     if (runner) {
       try {

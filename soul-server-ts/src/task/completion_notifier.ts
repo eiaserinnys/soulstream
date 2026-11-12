@@ -290,6 +290,10 @@ export class TaskCompletionNotifier implements CompletionNotifier {
    */
   private _buildNotifyText(task: Task): string {
     const sid = task.agentSessionId;
+    if (task.terminationDetail === "user_stop") {
+      const resultText = task.lastAssistantText?.trim() || "(빈 응답)";
+      return `⏹️ 에이전트 세션을 사람이 멈춤 (ID: \`${sid}\`)\n\n${resultText}`;
+    }
     if (task.status === "interrupted") {
       return `⚠️ 에이전트 세션 중단 (ID: \`${sid}\`)`;
     }

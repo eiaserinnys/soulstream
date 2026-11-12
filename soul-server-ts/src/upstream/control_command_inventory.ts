@@ -32,6 +32,7 @@ export const CONTROL_COMMAND_INVENTORY = [
   entry("create_card_orchestration_decision", "session", "durable_mutation"),
   entry("prepare_card_orchestration_decision", "session", "bounded_result"),
   entry("interrupt_session", "session", "durable_mutation"),
+  entry("delete_session", "session", "durable_mutation"),
   entry("acknowledge_session_review", "session", "durable_mutation"),
   entry("set_persistent_session_settings", "session", "durable_mutation"),
   entry("apply_persistent_session_instructions", "session", "durable_mutation"),
