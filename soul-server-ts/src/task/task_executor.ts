@@ -1470,6 +1470,12 @@ export class TaskExecutor {
     phaseObservation?: RunnerPhaseObservation,
   ): Promise<void> {
     const config = registration.config;
+    // 복구용 러너를 만들기 전에 거절한다. 오프라인 복구 dispatcher는 초기화하면서
+    // 세션 writer lock을 이 프로세스 소유로 잡는다. 채택되지 않을 러너를 위해
+    // 잠금을 잡지 않도록, 러너가 이미 붙어 있으면 여기서 끝낸다 (카드 #1265).
+    if (task.runner) {
+      throw new Error(`Task ${task.agentSessionId} already has a runner`);
+    }
     // 격리는 실행이 시작될 때 정해지고, 진행 중인 실행은 시작할 때의 격리로 끝난다.
     // 판정이 바뀌었으면 다음 실행에서 takeOrCreateRunner가 이 러너를 닫고 새로 만든다.
     const runner = this.runnerProcessFactory?.recover?.(
@@ -1484,20 +1490,27 @@ export class TaskExecutor {
     const terminalObservation = mode === "offline"
       ? recoveredRunnerTerminalObservation(registration)
       : undefined;
-    return this.recoverRunnerExecutionLocked(
-      task,
-      config.agent,
-      runner,
-      commandId,
-      mode,
-      config.releaseManifestId ?? config.codeSha,
-      config.runtimeEnvIdentity ?? `legacy:${config.codeSha}`,
-      onPendingFramesReplayed,
-      terminalObservation,
-    ).catch(async (error: unknown) => {
+    // `recoverRunnerExecutionLocked` rejects synchronously when the task
+    // already has a runner, so its refusal has to be caught around the call.
+    // Attaching `.catch` alone left the recovery dispatcher -- and, for offline
+    // recovery, the session writer lock it took -- owned by this process, and
+    // the next spawn terminated the lock owner: soul-server itself (#1265).
+    try {
+      return await this.recoverRunnerExecutionLocked(
+        task,
+        config.agent,
+        runner,
+        commandId,
+        mode,
+        config.releaseManifestId ?? config.codeSha,
+        config.runtimeEnvIdentity ?? `legacy:${config.codeSha}`,
+        onPendingFramesReplayed,
+        terminalObservation,
+      );
+    } catch (error) {
       await this.releaseUnadoptedRunner(task, runner, config.sessionId);
       throw error;
-    });
+    }
   }
 
   /**
@@ -1513,11 +1526,15 @@ export class TaskExecutor {
    * user turn that it can never answer -- one user message, no assistant reply
    * (260822 outage; lab scenario F9).
    *
-   * Only the registration is given back. The child process keeps running and,
-   * critically, keeps its host request channel: a runner mid-tool is waiting
-   * on a host request, and aborting that leaves the tool without a result --
-   * the turn then never finishes and its output never reaches the user (lab
-   * F9 regression, old turn stuck at tool_start with no tool_result).
+   * Only what the attempt itself took is given back. The child process keeps
+   * running and, critically, keeps its host request channel: a runner mid-tool
+   * is waiting on a host request, and aborting that leaves the tool without a
+   * result -- the turn then never finishes and its output never reaches the
+   * user (lab F9 regression, old turn stuck at tool_start with no tool_result).
+   *
+   * That includes the offline recovery writer lock. It is owned by this
+   * process, and a rejected recovery that kept it made the next spawn for the
+   * session terminate the lock owner -- soul-server itself (card #1265).
    */
   private async releaseUnadoptedRunner(
     task: Task,
@@ -1526,11 +1543,15 @@ export class TaskExecutor {
   ): Promise<void> {
     if (task.runner === runner) return;
     try {
-      await runner.dispatcher.releaseEventStreamRegistration?.();
+      if (runner.dispatcher.releaseUnadoptedRecovery) {
+        await runner.dispatcher.releaseUnadoptedRecovery();
+      } else {
+        await runner.dispatcher.releaseEventStreamRegistration?.();
+      }
     } catch (err) {
       this.logger.warn(
         { err, sessionId },
-        "unadopted runner event stream release failed; the stream may stay registered",
+        "unadopted runner host resource release failed; the stream or writer lock may stay held",
       );
     }
   }

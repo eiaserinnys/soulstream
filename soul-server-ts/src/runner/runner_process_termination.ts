@@ -166,6 +166,7 @@ async function terminateExactRunnerWithPolicy(
       acceptRegisteredReleaseGap,
     )) return;
     const terminateProcessTree = deps.terminateProcessTree ?? terminateWindowsProcessTree;
+    refuseSelfTarget(expected.pid, "terminate the process tree of");
     await terminateProcessTree(expected.pid);
     if (await waitForExactProcessExit(
       expected,
@@ -302,6 +303,7 @@ function signalRunnerProcess(
   signal: NodeJS.Signals,
   deps: RunnerProcessTerminationDependencies,
 ): void {
+  refuseSelfTarget(pid, `send ${signal} to`);
   try {
     deps.signalPid(pid, signal);
   } catch (error) {
@@ -311,6 +313,27 @@ function signalRunnerProcess(
       { cause: error },
     );
   }
+}
+
+/**
+ * Never aim termination at this process.
+ *
+ * The session writer lock is held by whoever is allowed to spawn that
+ * session's next runner. When a recovery handle this process created is never
+ * given back, the lock owner is this pid, and "stop the previous runner" would
+ * terminate soul-server itself (card #1265). Fail the mutation loudly so the
+ * cause stays visible instead of taking the node down without a log line.
+ */
+function refuseSelfTarget(pid: number, action: string): void {
+  if (pid !== process.pid) return;
+  process.emitWarning(
+    `refusing to ${action} the host process itself (pid ${pid}): ` +
+      "the session runner writer lock is owned by this soul-server (card #1265)",
+  );
+  throw new RunnerMutationFailure(
+    "runner_termination_self_signal_refused",
+    `refusing to ${action} the host process itself: ${pid}`,
+  );
 }
 
 function identityProofFailure(message: string, cause?: unknown): RunnerMutationFailure {

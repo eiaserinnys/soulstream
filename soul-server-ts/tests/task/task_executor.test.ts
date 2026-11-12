@@ -3199,6 +3199,55 @@ describe("TaskExecutor runner process boundary", () => {
     },
   );
 
+  it("refuses a recovery whose task gained a runner and gives the recovery host resources back", async () => {
+    const mocks = makeMocks();
+    const task = makeTask();
+    task.status = "initializing";
+    const existing = makeRunnerProcessRuntime([]);
+    const recovery = makeRunnerProcessRuntime([]);
+    const processFactory = (() => existing.runner) as RunnerProcessRuntimeFactory;
+    processFactory.recover = vi.fn(() => {
+      // The coordinator checked `task.runner` before its hydrate await; a turn
+      // that started in between attached its own runner first.
+      task.runner = existing.runner;
+      return recovery.runner;
+    });
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      processFactory,
+    );
+    const registration = {
+      config: { agent, sessionId: task.agentSessionId },
+      lifecycle: {
+        execution_command_id: "execute-old",
+        execution_state: "running",
+        terminal_error: null,
+      },
+    } as unknown as RunnerRegistration;
+
+    await expect(executor.recoverRegisteredRunner(
+      task,
+      registration,
+      "execute-old",
+      "offline",
+    )).rejects.toThrow("already has a runner");
+
+    expect(recovery.dispatcher.releaseUnadoptedRecovery).toHaveBeenCalledOnce();
+    expect(existing.dispatcher.detachHost).not.toHaveBeenCalled();
+    expect(existing.dispatcher.releaseEventStreamRegistration).not.toHaveBeenCalled();
+    expect(task.runner).toBe(existing.runner);
+  });
+
   it.each(["identity", "acquire"] as const)(
     "%s failure closes the dormant runner before engine input",
     async (failurePoint) => {
@@ -3712,6 +3761,7 @@ function makeRunnerProcessRuntime(events: SSEEventPayload[]): {
     close: vi.fn(async () => {}),
     detachHost: vi.fn(async () => {}),
     releaseEventStreamRegistration: vi.fn(async () => {}),
+    releaseUnadoptedRecovery: vi.fn(async () => {}),
     sendControlFrame: vi.fn(async () => true),
     requestContext: vi.fn(),
     waitForSessionAck: vi.fn(async () => 12),
