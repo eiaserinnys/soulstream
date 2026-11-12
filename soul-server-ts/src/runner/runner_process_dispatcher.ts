@@ -512,6 +512,39 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
     unregisterPump?.();
   }
 
+  /**
+   * Hands a recovery handle back to this process when no task adopted it.
+   *
+   * An offline recovery dispatcher takes the session's writer lock while it
+   * initializes, before anything has decided the adoption is allowed. Giving
+   * back only the event stream left that lock owned by this server pid, and
+   * the next spawn for the same session treated the lock owner as the previous
+   * runner and sent it SIGTERM -- terminating soul-server itself (card #1265).
+   *
+   * `initialize()` is what takes the lock, so it has to settle first; releasing
+   * earlier would hand back resources that do not exist yet.
+   *
+   * Offline recovery is the only path that takes the writer lock, so it is the
+   * only path that goes through `releaseHostResources`; that closes this
+   * dispatcher's IPC connection along with the parent outbox, the stopped
+   * writer and the writer lock. There is no live child to protect: an offline
+   * dispatcher adopted no spawned process.
+   *
+   * The non-offline path gives back only the event stream registration and
+   * leaves the IPC connection open exactly as `releaseEventStreamRegistration`
+   * does. A live child mid-tool is waiting on a host request over that
+   * connection, and closing it would leave the tool without a result.
+   */
+  async releaseUnadoptedRecovery(): Promise<void> {
+    this.eventStreamReleased = true;
+    if (!this.options.offlineExisting) {
+      await this.releaseEventStreamRegistration();
+      return;
+    }
+    await Promise.allSettled([this.ready]);
+    await this.releaseHostResources("unadopted_recovery");
+  }
+
   async detachHost(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
@@ -1513,6 +1546,7 @@ export class RunnerProcessDispatcher implements RunnerCommandDispatcher {
       | "retire"
       | "rollback_execution"
       | "rollback_spawn"
+      | "unadopted_recovery"
       | "offline_init_failed",
   ): Promise<void> {
     this.options.logger.info({

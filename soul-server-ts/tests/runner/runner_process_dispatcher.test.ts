@@ -47,6 +47,10 @@ import {
   RunnerSocketEndpoint,
 } from "../../src/runner/runner_socket_endpoint.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
+import {
+  inspectRunnerWriterLock,
+  RunnerWriterLock,
+} from "../../src/runner/runner_writer_lock.js";
 import { RunnerSqliteLifecycle } from "../../src/runner/sqlite_runner_lifecycle.js";
 import { createTaskRunnerRuntime } from "../../src/runner/task_runner_runtime.js";
 import { TaskExecutorFinalizer } from "../../src/task/task_executor_finalizer.js";
@@ -1070,6 +1074,52 @@ describe("RunnerProcessDispatcher", () => {
     await expect(dispatcher.close()).rejects.toThrow("runner host resource cleanup failed");
 
     await expect(access(paths.lockPath)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
+  it("gives an offline writer lock back when an unadopted recovery is released", async () => {
+    const stateDirectory = await temporaryDirectory();
+    const paths = runnerProcessPaths(stateDirectory, "session-a");
+    await mkdir(paths.sessionDirectory, { recursive: true });
+    const writer = await RunnerSqliteEventOutbox.create(paths.databasePath);
+    await writer.initializeBootstrap({
+      session_id: "session-a",
+      created_at: "2026-08-17T00:00:00.000Z",
+      resume: {
+        schema_version: 1,
+        backend_session_id: "backend-a",
+        cwd: "/workspace/a",
+        codex_home: "/home/test/.codex",
+        rollout_root: "/home/test/.codex/sessions",
+        code_sha: "sha-a",
+        snapshot_path: "/release/sha-a/soul-server-ts",
+      },
+    });
+    writer.close();
+    const dispatcher = new RunnerProcessDispatcher({
+      spawn: spawnInput(stateDirectory),
+      runnerProcess: null,
+      offlineExisting: true,
+      pumpMux: new EventOutboxPumpMux(new EventOutboxPump(emptyStore("node-stream"), vi.fn())),
+      logger: pino({ level: "silent" }),
+      handleHostCall: async () => null,
+    });
+    await dispatcher.recoverPendingInterventions();
+
+    await expect(inspectRunnerWriterLock(paths.lockPath)).resolves.toMatchObject({
+      kind: "held",
+      owner: { pid: process.pid },
+    });
+
+    await dispatcher.releaseUnadoptedRecovery();
+
+    // The session must be able to take its writer lock again right away; while
+    // it stayed owned by this process, the next spawn treated soul-server as
+    // the previous runner and sent it SIGTERM (card #1265).
+    const reacquired = await RunnerWriterLock.acquire(paths.lockPath);
+    await reacquired.release();
+    await expect(inspectRunnerWriterLock(paths.lockPath)).resolves.toMatchObject({
+      kind: "free",
+    });
   });
 
   it("waits for in-flight frame handlers before closing runner-host.sqlite", async () => {

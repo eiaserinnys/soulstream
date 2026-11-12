@@ -1,10 +1,16 @@
-import { describe, expect, it, vi } from "vitest";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 
 import {
   exactRunnerStartIdentitiesMatch,
+  stopExistingRunnerLocked,
   terminateExactRunner,
   type RunnerProcessTerminationDependencies,
 } from "../../src/runner/runner_process_termination.js";
+import type { RunnerProcessPaths } from "../../src/runner/runner_process_paths.js";
 import type { RunnerWriterLockState } from "../../src/runner/runner_writer_lock.js";
 
 const expectedRunner = {
@@ -191,6 +197,74 @@ describe("terminateExactRunner", () => {
     expect(signalPid).not.toHaveBeenCalled();
   });
 });
+
+describe("stopExistingRunnerLocked against this host process", () => {
+  it("refuses to signal the lock owner when it is the host process itself", async () => {
+    const paths = await sessionPaths();
+    let now = 0;
+    const signalPid = vi.fn();
+    const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
+    onTestFinished(() => emitWarning.mockRestore());
+
+    await expect(stopExistingRunnerLocked(paths, dependencies({
+      signalPid,
+      inspectWriterLock: sequence({
+        kind: "held",
+        owner: { pid: process.pid, startIdentity: "host-process-lock-owner" },
+      }),
+      now: () => now,
+      delay: async (ms: number) => {
+        now += ms;
+      },
+    }), undefined, "replacement")).rejects.toMatchObject({
+      code: "runner_termination_self_signal_refused",
+    });
+
+    expect(signalPid).not.toHaveBeenCalled();
+    expect(emitWarning).toHaveBeenCalledOnce();
+    expect(String(emitWarning.mock.calls[0]?.[0])).toContain("host process itself");
+  });
+
+  it("refuses Windows process-tree termination of the host process itself", async () => {
+    const paths = await sessionPaths();
+    let now = 0;
+    const terminateProcessTree = vi.fn(async () => undefined);
+    const emitWarning = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
+    onTestFinished(() => emitWarning.mockRestore());
+
+    await expect(stopExistingRunnerLocked(paths, dependencies({
+      platform: "win32",
+      requestShutdown: vi.fn(async () => undefined),
+      terminateProcessTree,
+      inspectWriterLock: sequence({
+        kind: "held",
+        owner: { pid: process.pid, startIdentity: "host-process-lock-owner" },
+      }),
+      now: () => now,
+      delay: async (ms: number) => {
+        now += ms;
+      },
+    }), undefined, "replacement")).rejects.toMatchObject({
+      code: "runner_termination_self_signal_refused",
+    });
+
+    expect(terminateProcessTree).not.toHaveBeenCalled();
+  });
+});
+
+async function sessionPaths(): Promise<RunnerProcessPaths> {
+  const sessionDirectory = await mkdtemp(join(tmpdir(), "card1265-runner-"));
+  return {
+    sessionDirectory,
+    databasePath: join(sessionDirectory, "runner.sqlite"),
+    socketPath: join(sessionDirectory, "runner.sock"),
+    socketKind: "unix_socket",
+    pidPath: join(sessionDirectory, "runner.pid"),
+    lockPath: join(sessionDirectory, "runner.lock"),
+    configPath: join(sessionDirectory, "runner-config.json"),
+    logPath: join(sessionDirectory, "runner.log"),
+  };
+}
 
 function dependencies(
   overrides: Partial<RunnerProcessTerminationDependencies>,

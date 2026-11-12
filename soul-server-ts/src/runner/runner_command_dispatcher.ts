@@ -67,6 +67,13 @@ export interface RunnerCommandDispatcher {
   ): Promise<void>;
   detachHost(): Promise<void>;
   releaseEventStreamRegistration?(): Promise<void>;
+  /**
+   * Gives back every host resource a recovery attempt took on behalf of a task
+   * that never adopted it. Unlike `releaseEventStreamRegistration` this also
+   * hands back the offline recovery writer lock; leaving it owned by this
+   * process made the next spawn terminate the server itself (card #1265).
+   */
+  releaseUnadoptedRecovery?(): Promise<void>;
   isClosed?(): boolean;
   hasLostRunner?(): boolean;
   /** True only after this process registration reported the exact closed-engine failure. */
