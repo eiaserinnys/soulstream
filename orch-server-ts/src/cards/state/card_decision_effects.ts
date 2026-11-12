@@ -82,7 +82,7 @@ put('question','ASK_QUESTION','q_open',[not(fact('editing'))],[write({session_id
 put('question','ASK_QUESTION',undefined,[fact('editing')],[write({title:bind('command.title'),text:bind('command.text'),options:bind('command.options'),kind:bind('command.kind'),attachments:bind('command.attachments')},'question','questionUpdate')]);
 for(const c of ['ANSWER_QUESTION','WITHDRAW_QUESTION'] as const){
  put('question',c,'q_none',[not(fact('otherOpen'))]);
- verdictExtras[c]!.push(c==='ANSWER_QUESTION'?write({answer:bind('command.answer'),answered_at:bind('clock'),answered_by:bind('actor.user')},'question','questionAnswer'):
+ verdictExtras[c]!.push(c==='ANSWER_QUESTION'?write({answer:bind('command.answer'),selected_option:bind('command.selectedOption'),answered_at:bind('clock'),answered_by:bind('actor.user')},'question','questionAnswer'):
  write({withdrawn_at:bind('clock'),withdrawn_by_session_id:bind('actor.session'),withdrawal_reason:bind('command.reason.trimmed')},'question','questionWithdraw'));
 }
 for(const c of ['HUMAN_INPUT','ADD_COMMENT'] as const)put('question',c,'q_none',[c==='HUMAN_INPUT'?'humanResumable':'commentResumable'],[write({withdrawn_at:bind('clock'),withdrawn_by_session_id:literal(null),withdrawal_reason:literal(c==='HUMAN_INPUT'?'사용자 메시지로 작업이 재개되어 서버가 닫았습니다':'사용자가 커멘트로 답해 서버가 닫았습니다')},'questions','closeQuestions')]);

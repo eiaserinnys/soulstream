@@ -8,6 +8,25 @@ export const cardStatusLabels:Record<string,string>={todo:"할 일",queued:"대�
 const cardItemStateLabels:Record<CardItemState,string>={todo:"아직",doing:"하는 중",done:"끝남",dropped:"뺌"};
 const cardCommentInstruction="수정 지시면 항목을 하는 중으로 알리고 카드를 진행 중으로 옮긴 뒤 진행한다. 질문이면 답 커멘트만 남긴다.";
 
+/** 답과 되묻기의 전달 대상. 배달 시점 카드의 현재 담당이 있으면 그 세션, 없으면 질문을 만든 세션이다. */
+export function cardQuestionDeliveryTarget(card:{assignee_session_id:string|null},question:{session_id:string|null}):string|null {
+  return card.assignee_session_id ?? question.session_id;
+}
+
+/** 선택 답은 고른 안과 덧붙임을, 글 답은 글 자체를 전달한다. 덧붙임이 없으면 answer와 selected_option이 같다. */
+export function buildCardQuestionAnswerNotice(card:{id:string;title:string;status:string},
+  question:{id:string;text:string;title?:string|null;answer:string;selected_option?:string|null}):string {
+  const lines=[`[카드 질문 답변] 카드 「${card.title}」(${card.id})`,
+    `질문: ${question.title ?? question.text}`,
+    `질문 ID: ${question.id}`];
+  if (question.selected_option != null) {
+    lines.push(`고른 안: ${question.selected_option}`);
+    lines.push(`덧붙임: ${question.answer === question.selected_option ? "없음" : question.answer}`);
+  } else lines.push(`글 답: ${question.answer}`);
+  lines.push(`카드 상태: ${cardStatusLabels[card.status]}`);
+  return lines.join("\n");
+}
+
 type CardChangeNotificationChange = Omit<CardMutationChange,"result"> & {
   result: Pick<CardMutationResult,"operation" | "idempotent">;
 };

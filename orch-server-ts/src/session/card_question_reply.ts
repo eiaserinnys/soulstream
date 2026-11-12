@@ -27,12 +27,15 @@ export type CardQuestionReplyDeps = {
 export async function applyCardQuestionReply(decision: CardQuestionReply, deps: CardQuestionReplyDeps): Promise<CardQuestionReplyFailure | undefined> {
   await deps.requireSessionAccess({ request: deps.request, sessionId: deps.sessionId });
   if (decision.action === "card") {
+    const body = decision.mode === "text"
+      ? { mode: "text", answer: decision.text, idempotencyKey: `report-answer:${decision.questionId}` }
+      : { mode: "choice", option: decision.option, ...(decision.text === undefined ? {} : { answer: decision.text }),
+          idempotencyKey: `report-answer:${decision.questionId}` };
     await mutateCardRouteBody(deps.cardOptions, "answer_card_question", decision.cardId,
-      { answer: decision.option, idempotencyKey: `report-answer:${decision.questionId}` },
-      deps.resolveAccess, deps.resolveActor, decision.questionId);
+      body, deps.resolveAccess, deps.resolveActor, decision.questionId);
     return undefined;
   }
-  await readCardRouteBody(deps.cardOptions, decision.cardId, deps.resolveAccess);
+  if (decision.cardId !== null) await readCardRouteBody(deps.cardOptions, decision.cardId, deps.resolveAccess);
   return decision.action === "reject"
     ? { status: decision.status, body: { detail: { error: { code: decision.code, message: decision.message } } } }
     : undefined;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { collapseReportTimeline, parsePersistentReportEntry, readPersistentReport, parsePersistentReportReply, REPORT_TIMELINE_STATUS_LABEL } from "../../packages/wire-schema/src/persistent_report.js";
+import { collapseReportTimeline, isCardQuestionReplyContext, parsePersistentReportEntry, readPersistentReport, parsePersistentReportReply, REPORT_TIMELINE_STATUS_LABEL } from "../../packages/wire-schema/src/persistent_report.js";
 import type { ReportTimelineQuestionClosed, ReportTimelineQuestionClosedStatus, ReportTimelineRowLine } from "../../packages/wire-schema/src/persistent_report.js";
 
 const entry = { key: "deploy-270", kind: "ask", title: "배포 결정", card_numbers: [], context: "검증을 마쳤습니다", action: "[결과](https://example.com/result)", options: ["진행", "보류"] };
@@ -136,5 +136,43 @@ describe("persistent report shared contract", () => {
     expect(parsePersistentReportEntry({ ...entry, action: Array(5).fill(link).join(" ") }).ok).toBe(true);
     expect(parsePersistentReportEntry({ ...entry, action: Array(6).fill(link).join(" ") }))
       .toMatchObject({ok:false,errors:[{path:"action",reason:"링크는 5개까지입니다"}]});
+  });
+});
+
+describe("persistent report reply parsing", () => {
+  const reply = (content: Record<string, unknown>) => [{ key: "persistent_report_reply", content }];
+  it("keeps the legacy choice shape and reads appended text", () => {
+    expect(parsePersistentReportReply(reply({ key: "deploy-270", option: "진행" }))).toEqual({ key: "deploy-270", option: "진행" });
+    expect(parsePersistentReportReply(reply({ key: "cq_q-1", option: "진행" }))).toEqual({ key: "cq_q-1", option: "진행" });
+    expect(parsePersistentReportReply(reply({ key: "cq_q-1", option: "진행", text: "덧붙임" }))).toEqual({ key: "cq_q-1", option: "진행", text: "덧붙임" });
+  });
+  it("reads a text answer only on a card question entry", () => {
+    expect(parsePersistentReportReply(reply({ key: "cq_q-1", mode: "text", text: "직접 쓴 답" })))
+      .toEqual({ key: "cq_q-1", mode: "text", text: "직접 쓴 답" });
+    expect(parsePersistentReportReply(reply({ key: "deploy-270", mode: "text", text: "직접 쓴 답" }))).toBeNull();
+  });
+  it.each([
+    ["a missing option", { key: "cq_q-1" }],
+    ["a blank option", { key: "cq_q-1", option: "   " }],
+    ["a non-string appended text", { key: "cq_q-1", option: "진행", text: 3 }],
+    ["a blank appended text", { key: "cq_q-1", option: "진행", text: "  " }],
+    ["a text answer without text", { key: "cq_q-1", mode: "text" }],
+    ["a blank text answer", { key: "cq_q-1", mode: "text", text: "   " }],
+    ["an unknown mode", { key: "cq_q-1", mode: "other", option: "진행" }],
+  ])("marks %s on a card question instead of falling through", (_name, content) => {
+    expect(parsePersistentReportReply(reply(content))).toMatchObject({ key: "cq_q-1", invalid: expect.any(String) });
+  });
+  it("leaves generic board replies and S4 followups to the existing path", () => {
+    expect(parsePersistentReportReply(reply({ key: "deploy-270" }))).toBeNull();
+    expect(parsePersistentReportReply(reply({ key: "deploy-270", option: "가".repeat(13) }))).toBeNull();
+    expect(parsePersistentReportReply(reply({ key: "deploy-270", mode: "followup", text: "더", idempotency_key: "k" }))).toBeNull();
+    expect(parsePersistentReportReply(reply({ key: "cq_q-1", mode: "followup", text: "더", idempotency_key: "k" }))).toBeNull();
+  });
+  it("recognizes a card question reply attempt for the ingress guard", () => {
+    expect(isCardQuestionReplyContext(reply({ key: "cq_q-1", option: "진행" }))).toBe(true);
+    expect(isCardQuestionReplyContext(reply({ key: "cq_q-1" }))).toBe(true);
+    expect(isCardQuestionReplyContext(reply({ key: "deploy-270", option: "진행" }))).toBe(false);
+    expect(isCardQuestionReplyContext([{ key: "persistent_report_visible", content: { key: "cq_q-1" } }])).toBe(false);
+    expect(isCardQuestionReplyContext(undefined)).toBe(false);
   });
 });

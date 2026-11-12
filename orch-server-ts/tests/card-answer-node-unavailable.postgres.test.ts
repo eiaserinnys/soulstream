@@ -105,7 +105,7 @@ describe("an answer that leaves the card status unchanged survives an unavailabl
     const claimed = await deliveries.recovery.claimPendingImmediateIntentsForNode("node", "returning-node-token");
     expect(claimed.map(row => row.delivery_id)).toEqual([deliveryId]);
     const text = String(claimed[0]!.payload.text);
-    expect(text).toContain("질문에 답이 왔습니다");
-    expect(text).toContain("첫 답");
+    expect(text).toContain("[카드 질문 답변]");
+    expect(text).toContain("글 답: 첫 답");
   });
 });

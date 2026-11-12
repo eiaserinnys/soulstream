@@ -12,7 +12,7 @@ import {
   CARD_ENTRY_KEY_PREFIX, CARD_QUESTION_KEY_PREFIX,
   PERSISTENT_REPORT_KEY, PERSISTENT_REPORT_LIMIT, PERSISTENT_REPORT_METADATA_TYPE,
   REPORT_TIMELINE_EVENT_TYPE, REPORT_TIMELINE_QUESTION_CLOSED_EVENT_TYPE,
-  type PersistentReportEntry, type PersistentReportIssue, type PersistentReportResult,
+  type PersistentReportEntry, type PersistentReportIssue, type PersistentReportReplyInput, type PersistentReportResult,
   type ReportTimelineLine, type ReportTimelineQuestionClosed, type ReportTimelineStatus,
 } from "@soulstream/wire-schema/persistent-report";
 import { isCardOffBoard, type CardStatus, type SqlClient, type RepositorySql } from "../cards/control_plane/card_types.js";
@@ -24,11 +24,15 @@ export type OnPersistentReportPosted = (input: { sessionId: string; entry: Persi
 /** 판에서 온 답을 어떻게 처리할지 라우트에 알리는 결정. reject는 사용자에게 그대로 돌려줄 오류다. */
 export type PersistentReportReplyDecision =
   | { action: "none" }
-  | { action: "card"; cardId: string; questionId: string; option: string }
+  | { action: "card"; cardId: string; questionId: string; mode?: "choice"; option: string; text?: string }
+  | { action: "card"; cardId: string; questionId: string; mode: "text"; text: string }
   | { action: "card-acked"; cardId: string }
-  | { action: "reject"; cardId: string; code: string; status: number; message: string };
+  | { action: "reject"; cardId: string | null; code: string; status: number; message: string };
+type CardQuestionAnswerChoice = { mode: "choice"; option: string; text?: string };
+type CardQuestionAnswerText = { mode: "text"; text: string };
+type CardQuestionAnswer = CardQuestionAnswerChoice | CardQuestionAnswerText;
 type ReportRow = Record<string, unknown> & { session_id: string; node_id: string | null; metadata: unknown; session_type: string | null };
-type CardQuestionRow = { card_id: string; options: string[] | null; answer: string | null; withdrawn_at: Date | null };
+type CardQuestionRow = { card_id: string; options: string[] | null; answer: string | null; selected_option: string | null; withdrawn_at: Date | null };
 type CardStateRow = BoardCard;
 const CARD_TIMELINE_STATUSES = new Set(["review", "blocked", "done", "cancelled", "on_hold"]);
 
@@ -162,43 +166,59 @@ export class PersistentReportService {
    * 일반 장이면 지금까지처럼 장 상태만 answered로 바꾼다. 카드 질문 장 자체는 카드 답이 커밋될 때 syncCard가 내린다.
    */
   async acceptReply(sessionId: string, context: unknown, caller: Record<string, unknown> | undefined): Promise<PersistentReportReplyDecision> {
-    if (!caller || !["browser", "soul-app", "slack"].includes(String(caller.source))) return { action: "none" };
     const reply = parsePersistentReportReply(context);
+    // 인식한 카드 질문 답이 모양을 어기면 일반 메시지로 흘리지 않고 명시적으로 거절한다.
+    if (reply && "invalid" in reply) return this.invalidCardQuestionReply(reply.key, reply.invalid);
+    if (!caller || !["browser", "soul-app", "slack"].includes(String(caller.source))) return { action: "none" };
     if (!reply) return { action: "none" };
     let plan: { errors: PersistentReportIssue[] | null; decision: PersistentReportReplyDecision } = { errors: null, decision: { action: "none" } };
     const result = await this.mutate(sessionId, async (sql, entries) => {
       const index = entries.findIndex(e => e.key === reply.key && e.kind === "ask" && e.state === "open");
       if (index >= 0) {
         const entry = entries[index]!;
-        if (entry.question_id) { plan = await this.cardQuestionDecision(sql, entry.question_id, reply.option); return plan.errors; }
+        if (entry.question_id) { plan = await this.cardQuestionDecision(sql, entry.question_id, replyAnswer(reply)); return plan.errors; }
+        if ("mode" in reply) {
+          plan = { errors: null, decision: { action: "reject", cardId: null, code: "CARD_QUESTION_ANSWER_INVALID", status: 422, message: "카드 질문 장이 아닙니다" } };
+          return null;
+        }
         entries[index] = { ...entry, state: "answered", answer: reply.option, updated_at: new Date().toISOString() };
         plan = { errors: null, decision: { action: "none" } };
         return null;
       }
-      plan = await this.cardQuestionResendDecision(sql, reply.key, reply.option);
+      plan = await this.cardQuestionResendDecision(sql, reply.key, replyAnswer(reply));
       return plan.errors;
     });
     if (plan.decision.action === "reject") return plan.decision;
     return result.ok ? plan.decision : { action: "none" };
   }
-  private async cardQuestionDecision(sql: RepositorySql, questionId: string, option: string): Promise<{ errors: PersistentReportIssue[] | null; decision: PersistentReportReplyDecision }> {
-    const question = (await sql<CardQuestionRow[]>`SELECT card_id,options,answer,withdrawn_at FROM card_questions WHERE id=${questionId}`)[0];
+  /** 예약 key로 온 잘못된 답. 카드를 알 수 있으면 카드 권한 검사를 지나도록 cardId를 채운다. */
+  private async invalidCardQuestionReply(key: string, message: string): Promise<PersistentReportReplyDecision> {
+    const cardId = key.startsWith(CARD_QUESTION_KEY_PREFIX)
+      ? (await this.sql<{ card_id: string }[]>`SELECT card_id FROM card_questions WHERE id=${key.slice(CARD_QUESTION_KEY_PREFIX.length)}`)[0]?.card_id ?? null
+      : null;
+    return { action: "reject", cardId, code: "CARD_QUESTION_ANSWER_INVALID", status: 422, message };
+  }
+  private async cardQuestionDecision(sql: RepositorySql, questionId: string, answer: CardQuestionAnswer): Promise<{ errors: PersistentReportIssue[] | null; decision: PersistentReportReplyDecision }> {
+    const question = (await sql<CardQuestionRow[]>`SELECT card_id,options,answer,selected_option,withdrawn_at FROM card_questions WHERE id=${questionId}`)[0];
     if (!question) return { errors: null, decision: { action: "none" } };
     const state = cardQuestionState(question);
     if (state === "withdrawn") return rejectDecision(question.card_id, "CARD_QUESTION_CLOSED", 409, "이미 닫힌 질문입니다");
-    if (state === "answered") return question.answer === option
+    if (state === "answered") return sameStoredCardQuestionAnswer(question, answer)
       ? { errors: null, decision: { action: "card-acked", cardId: question.card_id } }
       : rejectDecision(question.card_id, "CARD_QUESTION_CLOSED", 409, "이미 닫힌 질문입니다");
     const options = cardQuestionOptionLabels(question.options) ?? [];
-    if (options.length > 0 && !options.includes(option)) return rejectDecision(question.card_id, "CARD_QUESTION_OPTION_INVALID", 422, "선택지에 없는 답입니다");
+    if (answer.mode === "choice" && options.length > 0 && !options.includes(answer.option))
+      return rejectDecision(question.card_id, "CARD_QUESTION_OPTION_INVALID", 422, "선택지에 없는 답입니다");
     const card = (await sql<{ status: string }[]>`SELECT status FROM cards WHERE id=${question.card_id}`)[0];
     if (!card) return rejectDecision(question.card_id, "CARD_QUESTION_CLOSED", 409, "이미 닫힌 질문입니다");
-    return { errors: null, decision: { action: "card", cardId: question.card_id, questionId, option } };
+    return { errors: null, decision: answer.mode === "text"
+      ? { action: "card", cardId: question.card_id, questionId, mode: "text", text: answer.text }
+      : { action: "card", cardId: question.card_id, questionId, option: answer.option, ...(answer.text === undefined ? {} : { text: answer.text }) } };
   }
   /** 예약 key(`cq_` + 질문ID)를 다시 받았을 때. 장이 이미 내려가 있어도 질문 상태로 판정한다. */
-  private async cardQuestionResendDecision(sql: RepositorySql, key: string, option: string): Promise<{ errors: PersistentReportIssue[] | null; decision: PersistentReportReplyDecision }> {
+  private async cardQuestionResendDecision(sql: RepositorySql, key: string, answer: CardQuestionAnswer): Promise<{ errors: PersistentReportIssue[] | null; decision: PersistentReportReplyDecision }> {
     if (!key.startsWith(CARD_QUESTION_KEY_PREFIX)) return { errors: null, decision: { action: "none" } };
-    return this.cardQuestionDecision(sql, key.slice(CARD_QUESTION_KEY_PREFIX.length), option);
+    return this.cardQuestionDecision(sql, key.slice(CARD_QUESTION_KEY_PREFIX.length), answer);
   }
   /**
    * After a card commit, rebuild connected boards and boards holding its old output.
@@ -398,7 +418,21 @@ export function readDismissedCards(metadata:unknown):DismissedCard[]{
   return Array.isArray(value?.dismissed_cards)?value.dismissed_cards:[];
 }
 
-function rejectDecision(cardId: string, code: string, status: number, message: string): { errors: PersistentReportIssue[] | null; decision: PersistentReportReplyDecision } {
+function rejectDecision(cardId: string | null, code: string, status: number, message: string): { errors: PersistentReportIssue[] | null; decision: PersistentReportReplyDecision } {
   return { errors: null, decision: { action: "reject", cardId, code, status, message } };
+}
+
+function replyAnswer(reply: PersistentReportReplyInput): CardQuestionAnswer {
+  return "mode" in reply
+    ? { mode: "text", text: reply.text }
+    : { mode: "choice", option: reply.option, ...(reply.text === undefined ? {} : { text: reply.text }) };
+}
+
+/** 이미 닫힌 질문의 재전송 ACK. selected_option과 answer를 함께 비교하고, 옛 행은 answer 비교를 보존한다. */
+function sameStoredCardQuestionAnswer(question: CardQuestionRow, answer: CardQuestionAnswer): boolean {
+  if (answer.mode === "text") return question.selected_option === null && question.answer === answer.text;
+  if (question.selected_option !== null)
+    return question.selected_option === answer.option && question.answer === (answer.text ?? answer.option);
+  return answer.text === undefined && question.answer === answer.option;
 }
 

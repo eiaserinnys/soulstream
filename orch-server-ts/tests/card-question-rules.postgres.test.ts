@@ -69,7 +69,8 @@ describe("card question answers and author withdrawal", () => {
     expect((await cards.getCard(cardId))!.questions[0]!.answer).toBeNull();
   });
 
-  it.each(["done", "cancelled", "on_hold"] as const)("accepts a late %s answer from either door and delivers once to the author", async status => {
+  it.each(["done", "cancelled", "on_hold"] as const)("accepts a late %s answer from either door and delivers once to the current assignee", async status => {
+    const statusLabel = { done: "완료", cancelled: "취소", on_hold: "보류" }[status];
     for (const door of ["detail", "board"] as const) {
       const { cardId, questionId } = await ask(true);
       await cards.patchCard({ ...human, cardId, assignee: { kind: "session", sessionId: "replacement" } });
@@ -94,11 +95,13 @@ describe("card question answers and author withdrawal", () => {
       await dispatcher.drain();
       const after = (await cards.getCard(cardId))!;
       expect(after.card).toMatchObject({ status, completed_at: before.completed_at, completed_kind: before.completed_kind, completed_user_id: before.completed_user_id });
-      expect(after.questions[0]).toMatchObject({ answer: "진행", session_id: "author" });
-      const answers = messages.mock.calls.filter(([, text]) => text.includes("질문에 답이 왔습니다"));
+      expect(after.questions[0]).toMatchObject({ answer: "진행", selected_option: "진행", session_id: "author" });
+      const answers = messages.mock.calls.filter(([, text]) => text.includes("[카드 질문 답변]"));
       expect(answers).toHaveLength(1);
-      expect(answers[0]![0]).toBe("author");
-      expect(messages.mock.calls.some(([id]) => id === "replacement")).toBe(false);
+      expect(answers[0]![0]).toBe("replacement");
+      expect(answers[0]![1]).toBe(`[카드 질문 답변] 카드 「질문」(${cardId})`
+        + `\n질문: 진행할까요?\n질문 ID: ${questionId}\n고른 안: 진행\n덧붙임: 없음\n카드 상태: ${statusLabel}`);
+      expect(messages.mock.calls.some(([id]) => id === "author")).toBe(false);
       expect((await reports.get("pas")).some(e => e.card_id === cardId)).toBe(false);
       expect(warn).not.toHaveBeenCalled();
       // The next door uses a fresh card and the same author, preserving single-card assignment.

@@ -58,3 +58,38 @@ describe('report ingress uses existing message and persistence boundaries',()=>{
     await app.close();
   });
 });
+
+describe('card question answers never fall through to generic intervention',()=>{
+  const textReply=[{key:'persistent_report_reply',content:{key:'cq_q-1',mode:'text',text:'직접 쓴 답'}}];
+  it('acknowledges a text answer without sending a message or resuming the session',async()=>{
+    const h=createActionHarness();
+    const accept=vi.fn(async()=>({handled:true}));
+    const onHumanSessionInput=vi.fn(async()=>undefined);
+    const result=await executeSessionIntervention({router:h.router,bridge:h.bridge,resolveCallerInfo:()=>({source:'browser'}),acceptPersistentReportReply:accept,onHumanSessionInput},SERVICE_CALLER,'sess-contract',{text:'직접 쓴 답',context_items:textReply});
+    expect(result.status).toBe(200);
+    expect(result.body).toMatchObject({reason:'card_question_answered'});
+    expect(h.sent).toHaveLength(0);
+    expect(onHumanSessionInput).not.toHaveBeenCalled();
+    await h.app.close();
+  });
+  it('returns a rejected malformed card question answer instead of delivering it',async()=>{
+    const h=createActionHarness();
+    const onHumanSessionInput=vi.fn(async()=>undefined);
+    const result=await executeSessionIntervention({router:h.router,bridge:h.bridge,resolveCallerInfo:()=>({source:'browser'}),acceptPersistentReportReply:async()=>({handled:false,failure:{status:422,body:{detail:{error:{code:'CARD_QUESTION_ANSWER_INVALID'}}}}}),onHumanSessionInput},SERVICE_CALLER,'sess-contract',{text:'잘못된 답',context_items:[{key:'persistent_report_reply',content:{key:'cq_q-1'}}]});
+    expect(result.status).toBe(422);
+    expect(result.body).toMatchObject({detail:{error:{code:'CARD_QUESTION_ANSWER_INVALID'}}});
+    expect(h.sent).toHaveLength(0);
+    expect(onHumanSessionInput).not.toHaveBeenCalled();
+    await h.app.close();
+  });
+  it('turns a processing exception on a card question answer into an explicit failure',async()=>{
+    const h=createActionHarness();
+    const onHumanSessionInput=vi.fn(async()=>undefined);
+    const result=await executeSessionIntervention({router:h.router,bridge:h.bridge,resolveCallerInfo:()=>({source:'browser'}),acceptPersistentReportReply:async()=>{throw Object.assign(new Error('card unavailable'),{statusCode:503,code:'CARD_UNAVAILABLE'});},onHumanSessionInput},SERVICE_CALLER,'sess-contract',{text:'답',context_items:textReply});
+    expect(result.status).toBe(503);
+    expect(result.body).toMatchObject({detail:{error:{code:'CARD_UNAVAILABLE'}}});
+    expect(h.sent).toHaveLength(0);
+    expect(onHumanSessionInput).not.toHaveBeenCalled();
+    await h.app.close();
+  });
+});
