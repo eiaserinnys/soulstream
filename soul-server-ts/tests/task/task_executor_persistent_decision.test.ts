@@ -1013,6 +1013,7 @@ describe("TaskExecutor persistent decision wiring", () => {
       { nodeId: "owner-node", startedAt: new Date(0) },
       resumeScheduleRuntime.service,
       {
+        getTask: vi.fn(() => undefined),
         getScheduleResumeState: vi.fn(async () => ({
           status: "error" as const,
           terminationReason: "limit_hit" as const,
@@ -1026,12 +1027,12 @@ describe("TaskExecutor persistent decision wiring", () => {
     const dispatchedAt = new Date(decisionNow.getTime() + 1_000);
     await scheduleDispatcher.runOnce(dispatchedAt);
 
-    expect(resumeScheduleRuntime.db.hasContinuousLimitWindow).toHaveBeenCalledWith(
+    expect(resumeScheduleRuntime.db.decideResumeDispatch).toHaveBeenCalledWith(
       expect.objectContaining({
         scheduleId: `resume-after-limit:${task.agentSessionId}:${task.terminalEventId}:0`,
         toolUseId: `ResumeAfterLimit:${task.terminalEventId}`,
       }),
-      task.terminalEventId,
+      false,
     );
     expect(addIntervention).toHaveBeenCalledWith(expect.objectContaining({
       agentSessionId: task.agentSessionId,
@@ -1197,6 +1198,10 @@ function makeResumeScheduleRuntime(persistence: ReturnType<typeof makeEventPersi
       candidate: SoulstreamSchedule,
       currentTerminalEventId: number,
     ) => candidate.toolUseId === `ResumeAfterLimit:${currentTerminalEventId}`),
+    decideResumeDispatch: vi.fn(async (_candidate: SoulstreamSchedule, localTaskBusy: boolean) =>
+      localTaskBusy
+        ? { decision: "defer" as const, reason: "local_task_busy" }
+        : { decision: "fire" as const, reason: null }),
     finishScheduleDispatch: vi.fn(async ({ firedAt }: { firedAt: Date }) => {
       if (!schedule) return null;
       schedule = { ...schedule, status: "completed", nextRunAt: null, lastFiredAt: firedAt.toISOString() };
