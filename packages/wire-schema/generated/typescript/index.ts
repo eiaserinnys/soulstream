@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 193개 $defs (top-level wire 90 + supporting/SSE 103). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 195개 $defs (top-level wire 92 + supporting/SSE 103). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -42,6 +42,7 @@ export type SoulstreamUpstreamProtocol =
   | UploadAttachmentAbortAck
   | DeleteSessionAttachmentsResult
   | DownloadAttachmentResult
+  | ReadAttachmentSourceResult
   | CreateSession
   | CreateCardOrchestrationDecision
   | PrepareCardOrchestrationDecision
@@ -68,6 +69,7 @@ export type SoulstreamUpstreamProtocol =
   | UploadAttachmentAbort
   | DeleteSessionAttachments
   | DownloadAttachment
+  | ReadAttachmentSource
   | PlanAgentProfileUpdate
   | ApplyAgentProfileUpdate
   | ListAgentsConfigSnapshots
@@ -2076,6 +2078,18 @@ export interface DownloadAttachmentResult {
   [k: string]: unknown;
 }
 /**
+ * 노드→orch: read_attachment_source 결과 ACK. 다른 노드가 카드 첨부로 가져갈 워크스페이스 파일 내용.
+ */
+export interface ReadAttachmentSourceResult {
+  type: "read_attachment_source_result";
+  requestId: string;
+  content_b64: string;
+  content_type: string;
+  filename: string;
+  size: number;
+  [k: string]: unknown;
+}
+/**
  * orch→노드: 세션 생성 명령. soul-server-ts dispatcher create_session wire + 실측 caller_info 키.
  */
 export interface CreateSession {
@@ -2596,6 +2610,15 @@ export interface DeleteSessionAttachments {
  */
 export interface DownloadAttachment {
   type: "download_attachment";
+  requestId?: string;
+  path: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: 카드 첨부로 가져갈 노드 워크스페이스 파일 읽기.
+ */
+export interface ReadAttachmentSource {
+  type: "read_attachment_source";
   requestId?: string;
   path: string;
   [k: string]: unknown;
@@ -3538,6 +3561,7 @@ export const CONTROL_COMMAND_TYPES = [
   "upload_attachment_abort",
   "delete_session_attachments",
   "download_attachment",
+  "read_attachment_source",
   "claude_auth_status",
   "claude_auth_set_token",
   "claude_auth_delete_token",

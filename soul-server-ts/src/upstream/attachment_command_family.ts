@@ -55,6 +55,11 @@ interface DownloadAttachmentCmd extends CommandLike {
   path?: string;
 }
 
+interface ReadAttachmentSourceCmd extends CommandLike {
+  type: "read_attachment_source";
+  path?: string;
+}
+
 interface AttachmentCommandFamilyDeps {
   send: SendFn;
   attachmentCommands: AttachmentCommands;
@@ -91,6 +96,8 @@ export function createAttachmentCommandFamily(
       handleDeleteSessionAttachments(deps, cmd as DeleteSessionAttachmentsCmd),
     download_attachment: (cmd) =>
       handleDownloadAttachment(deps, cmd as DownloadAttachmentCmd),
+    read_attachment_source: (cmd) =>
+      handleReadAttachmentSource(deps, cmd as ReadAttachmentSourceCmd),
   };
 }
 
@@ -236,6 +243,27 @@ async function handleDownloadAttachment(
   const requestId = commandRequestId(cmd);
   try {
     const ack = await deps.attachmentCommands.download({
+      requestId,
+      path: cmd.path,
+    });
+    if (requestId) {
+      await deps.send(ack);
+    }
+  } catch (err) {
+    if (err instanceof AttachmentCommandError) {
+      throw new CommandDispatchError(err.message);
+    }
+    throw err;
+  }
+}
+
+async function handleReadAttachmentSource(
+  deps: AttachmentCommandFamilyDeps,
+  cmd: ReadAttachmentSourceCmd,
+): Promise<void> {
+  const requestId = commandRequestId(cmd);
+  try {
+    const ack = await deps.attachmentCommands.readSource({
       requestId,
       path: cmd.path,
     });

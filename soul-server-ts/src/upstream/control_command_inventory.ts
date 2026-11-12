@@ -60,6 +60,7 @@ export const CONTROL_COMMAND_INVENTORY = [
   entry("upload_attachment_abort", "attachment", "durable_mutation"),
   entry("delete_session_attachments", "attachment", "durable_mutation"),
   entry("download_attachment", "attachment", "bounded_result"),
+  entry("read_attachment_source", "attachment", "bounded_result"),
   entry("claude_auth_status", "auth/provider-usage", "bounded_result"),
   entry("claude_auth_set_token", "auth/provider-usage", "bounded_result"),
   entry("claude_auth_delete_token", "auth/provider-usage", "bounded_result"),

@@ -5,6 +5,14 @@ import { prepareCardAttachmentInput } from "./card_attachment_paths.js";
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import type { AdmittedAttachmentInput } from "../attachments/attachment_input_admission.js";
+import type {
+  AttachmentCommitRepository,
+  OwnedAttachmentCommitService,
+} from "../attachments/attachment_commit_contract.js";
+import {
+  createCardAttachmentSourceImport,
+  type AttachmentSourceReader,
+} from "../attachments/card_attachment_source_import.js";
 import { AttachmentReadError, normalizeAttachmentLegacyPath } from "../attachments/attachment_read_service.js";
 import { createLiveAttachmentReadRepository } from "../runtime/live_attachment_read_repository.js";
 import { resolveCardSessionTarget } from "./card_session_target.js";
@@ -78,6 +86,11 @@ export async function createCardDispatchRuntime(options: {
   validateFolder: (id: string, ownerEmail: string) => Promise<boolean>;
   resolveSessionOwner: SessionOwnerResolver;
   findUserByEmail: DashboardUserRepository["findUserByEmail"];
+  attachmentImport?: {
+    readSource: AttachmentSourceReader;
+    commits: Pick<OwnedAttachmentCommitService, "putSmall">;
+    repository: Pick<AttachmentCommitRepository, "findLegacyAliasForAsset" | "insertLegacyAlias">;
+  };
 }) {
   const resolver = new FolderContentSqlResolver(options.sqlResolver);
   const resolveSql = () => resolver.resolveSql();
@@ -139,10 +152,37 @@ export async function createCardDispatchRuntime(options: {
       attachment_bindings: attachmentBindings,
     };
   };
-  const prepareCardInput = (cardId: string, attachments: readonly CardAttachment[], targetNodeId: string) =>
+  const cardAttachmentSourceImport = options.attachmentImport === undefined
+    ? undefined
+    : createCardAttachmentSourceImport({
+        ...options.attachmentImport,
+        addCardRef: async (cardId, attachmentId) => {
+          const sql = await resolveSql();
+          const reference = sql.json([{ attachment_id: attachmentId }]);
+          const updated = await sql<Array<{ id: string }>>`
+            UPDATE cards
+            SET attachment_refs = attachment_refs || ${reference}::jsonb
+            WHERE id = ${cardId} AND NOT (attachment_refs @> ${reference}::jsonb)
+            RETURNING id
+          `;
+          if (updated.length > 0) return;
+          const existing = await sql<Array<{ id: string }>>`
+            SELECT id FROM cards WHERE id = ${cardId} LIMIT 1
+          `;
+          if (existing.length === 0) throw new Error("카드를 찾을 수 없습니다.");
+        },
+      });
+  const prepareCardInput = (
+    cardId: string,
+    attachments: readonly CardAttachment[],
+    targetNodeId: string,
+    sourceSessionId?: string,
+  ) =>
     prepareCardAttachmentInput(attachments, targetNodeId, {
       cardId,
       admitSource: admitCardAttachmentSource,
+      ...(sourceSessionId ? { sourceSessionId } : {}),
+      ...(cardAttachmentSourceImport ? { importSource: cardAttachmentSourceImport } : {}),
     });
   let dispatcher: CardDispatcher;
   const serviceProvider = createCardControlPlaneServiceProvider({
@@ -194,10 +234,10 @@ export async function createCardDispatchRuntime(options: {
       }
     },
     prepareAttachments: async (card, targetNodeId) => {
-      await prepareCardInput(card.id, card.attachments ?? [], targetNodeId);
+      await prepareCardInput(card.id, card.attachments ?? [], targetNodeId, card.assignee_session_id ?? undefined);
     },
     launch: async (input) => {
-      const attachments = await prepareCardInput(input.cardId, input.attachments ?? [], input.nodeId);
+      const attachments = await prepareCardInput(input.cardId, input.attachments ?? [], input.nodeId, input.sessionId);
       return createRecurringSession(
         {
           router: options.router,
@@ -230,7 +270,7 @@ export async function createCardDispatchRuntime(options: {
       if (attachments?.length) {
         const session = await cardDispatchRepository.session(sessionId);
         if (!session) throw new Error("Card attachment session is missing");
-        admittedAttachments = await prepareCardInput(session.card_id, attachments, session.node_id);
+        admittedAttachments = await prepareCardInput(session.card_id, attachments, session.node_id, sessionId);
       }
       const payload: typeof parsed.value = {
         ...parsed.value,
@@ -493,7 +533,7 @@ export async function createCardDispatchRuntime(options: {
         const members=sessions.map(s=>`- ${s.session_id} / ${s.agent_id} / ${s.node_id} / ${s.status} / 부른 세션: ${s.caller_session_id ?? "없음"}`).join("\n");
         prompt=`[카드 담당 교체] 이 세션은 카드 #${detail.card.number} 「${detail.card.title}」의 새 담당이다. 이전 담당 세션 ${old.session_id}(${old.agent_id}, ${old.node_id}, 상태 ${old.status})가 이어 가지 못해 교체되었다.\n\n요청 원문:\n${payload.request}\n\n인계 요약:\n${payload.brief}\n\n착수 전에 get_card로 확인 항목, 상황판, 노트, 커멘트, 질문, 연결 세션을 읽고, 이전 담당의 진행은 get_session_summary와 list_session_events로 확인한 뒤 이어 간다. 이전 담당이 띄운 이 카드의 하위 세션은 이제 이 세션의 하위 세션이며 완료 보고도 이 세션으로 온다.\n\n카드에 소속된 다른 세션:\n${members}\n\n${prompt}`;
       }
-      const attachments=await prepareCardInput(input.cardId,detail.card.attachments??[],input.target.nodeId);
+      const attachments=await prepareCardInput(input.cardId,detail.card.attachments??[],input.target.nodeId,input.sessionId);
       return createRecurringSession({router:options.router,bridge:options.bridge,modelPresetAvailability:options.availability},
         {sessionId:input.sessionId,prompt,cardId:input.cardId,folderId:input.target.folderId!,...input.target,
           attachmentPaths:attachments.attachment_paths,attachmentIds:attachments.attachment_ids,
@@ -504,7 +544,7 @@ export async function createCardDispatchRuntime(options: {
     },
     ensure:async input=>{
       const detail=(await (await serviceProvider()).getCard(input.cardId))!;
-      const attachments=await prepareCardInput(input.cardId,detail.card.attachments??[],input.target.nodeId);
+      const attachments=await prepareCardInput(input.cardId,detail.card.attachments??[],input.target.nodeId,input.sessionId);
       const routed=await options.router.routeExistingSessionPendingCommand({type:"ensure_session_running",agentSessionId:input.sessionId,
         text:`카드 「${detail.card.title}」를 이어서 수행하세요.`,delivery_id:`card-execution:${input.requestId}`,
         attachment_paths:attachments.attachment_paths,
