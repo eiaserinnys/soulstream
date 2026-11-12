@@ -25,6 +25,7 @@ import { readAssignedCardContext } from "./assigned_card_context.js";
 import { readSupervisedCardContext } from "./supervised_card_context.js";
 import { parseCardReference, cardQuestionInputIssues, type CardReferenceLookupResult } from "@soulstream/mcp-contract";
 import { cardQuestionOptionLabels, type CardQuestionAttachmentInput, type CardQuestionKind, type CardQuestionOption } from "@soulstream/wire-schema/card-questions";
+import { resolveCardQuestionAnswer, type CardQuestionAnswerInput } from "./card_question_rules.js";
 import { findCardSessionByOrdinal, findCardsByNumber, readCardChildOrdinals, readSessionReferences } from "./card_reference_repository.js";
 import type { SupervisedCardSnapshot } from "./supervised_card_context.js";
 import type { CardWorkExecution } from "./card_work_lifecycle.js";
@@ -490,13 +491,21 @@ export class CardControlPlaneService {
     }
     return result;
   }
-  async answerQuestion(params: CardMutationParams & { questionId:string; answer:string }) {
+  async answerQuestion(params: CardMutationParams & CardQuestionAnswerInput) {
     assertCardCommandEntrance('ANSWER_QUESTION',{}, {kind:params.actorKind,sessionId:params.actorSessionId});
-    return this.mutateCard(params,"answer_card_question",{ question_id:params.questionId,answer:params.answer },async (sql,card,eventId) => {
-      const questions=await sql<Record<string,unknown>[]>`SELECT id,session_id,answer,withdrawn_at FROM card_questions WHERE card_id=${card.id}`;
-      const {writes}=await this.humanDecision(sql,card,{...params,type:'ANSWER_QUESTION'},params,eventId,questions);
+    // 작업 기록의 answer는 저장될 답 글이다. 덧붙임 없는 선택 답은 고른 안이 곧 답이다.
+    const payload:Record<string,unknown>={ question_id:params.questionId,
+      answer:"option" in params && params.answer === undefined ? params.option : params.answer };
+    if ("mode" in params) payload.mode=params.mode;
+    if ("option" in params && params.option !== undefined) payload.option=params.option;
+    return this.mutateCard(params,"answer_card_question",payload,async (sql,card,eventId) => {
+      const questions=await sql<Record<string,unknown>[]>`SELECT id,session_id,answer,withdrawn_at,options FROM card_questions WHERE card_id=${card.id}`;
+      const target=questions.find(question=>question.id===params.questionId);
+      const open=target !== undefined && target.answer === null && target.withdrawn_at === null;
+      const {answer,selectedOption}=resolveCardQuestionAnswer(target?.options,params,open);
+      const {writes}=await this.humanDecision(sql,card,{...params,type:'ANSWER_QUESTION',answer,selectedOption},params,eventId,questions);
       const fields=writes.find(write=>write.kind==='questionAnswer')!.fields;
-      const rows=await sql`UPDATE card_questions SET answer=${fields.answer},answered_at=NOW(),answered_by=${fields.answered_by}
+      const rows=await sql`UPDATE card_questions SET answer=${fields.answer},selected_option=${fields.selected_option == null ? null : String(fields.selected_option)},answered_at=NOW(),answered_by=${fields.answered_by}
         WHERE id=${params.questionId} AND card_id=${card.id} AND answer IS NULL AND withdrawn_at IS NULL RETURNING id`;
       if (!rows.length) throw invalid("Open question not found in card");
       await this.patchDecisionWrites(sql,card,writes,params,eventId);

@@ -99,7 +99,8 @@ export async function createCardMachineWorld() {
         if(!wasEnabled){await h.sql`UPDATE sessions SET metadata=${h.sql.json(metadata(false))} WHERE session_id='pas'`;await reports.syncBoard("pas");}
         if(decision.action==="reject")throw Object.assign(new Error(decision.message),{statusCode:decision.status});
         if(decision.action!=="card")throw new Error(`Unexpected board reply: ${decision.action}`);
-        await cards.answerQuestion({...human,cardId,questionId:decision.questionId,answer:decision.option});return;
+        await cards.answerQuestion({...human,cardId,questionId:decision.questionId,
+          ...(decision.mode==="text"?{mode:"text" as const,answer:decision.text}:{mode:"choice" as const,option:decision.option,...(decision.text===undefined?{}:{answer:decision.text})})});return;
       }
       case "WITHDRAW_AUTHOR":{
         const questionId=await openId();

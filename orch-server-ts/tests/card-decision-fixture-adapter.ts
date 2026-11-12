@@ -15,11 +15,14 @@ import { decodeCardDecision } from '../src/cards/state/card_decision_decoder.js'
 import { formatCardDecisionRejection } from '../src/cards/state/card_decision_errors.js';
 import type { CardCommand } from '../src/cards/state/card_decision_facts.js';
 import type { DecisionObservation } from './card-decision-observation.js';
+import { resolveCardQuestionAnswer } from '../src/cards/card_question_rules.js';
 const METHODS:Record<string,CardCommand['type']>={createCardTx:'CREATE',addCommentTx:'ADD_COMMENT',createCard:'CREATE',setCardStatus:'SET_STATUS',requestCardReview:'REQUEST_REVIEW',resumeBlockedCardOnHumanInput:'HUMAN_INPUT',askQuestion:'ASK_QUESTION',answerQuestion:'ANSWER_QUESTION',withdrawQuestion:'WITHDRAW_QUESTION',addComment:'ADD_COMMENT',startCardWork:'START_WORK',recordExecution:'CONFIRM_EXECUTION',recordDispatch:'DISPATCH',blockCardForLimit:'BLOCK_FOR_LIMIT',resumeLimitedCard:'RESUME_SHORT_LIMIT',resumeDispatchedCard:'RESUME_LONG_LIMIT',resumeVerificationCard:'RESUME_VERIFICATION',noteMissingAssignee:'NOTE_MISSING',bulkSetCardStatus:'BULK_SET_STATUS',mergeCards:'MERGE_SOURCE',patchCard:'PATCH_CARD_CONTROL',updateUnstartedCard:'UPDATE_UNSTARTED',saveExecutionSettings:'SAVE_EXECUTION_SETTINGS'};
 /** Reconstruct SQL boundary results from their recorded rows. This adapter never
  * reads observed after or result to select an outcome or any write. */
 export function predictObservation(r:DecisionObservation) {
  const row=r.before as any, c:{type:CardCommand['type'];[key:string]:any}={...r.command,type:METHODS[r.method]!},actor=r.actor;
+ // 운영 answerQuestion처럼 답 꼴(mode)을 저장될 답 글과 고른 안으로 풀어 기계에 넘긴다.
+ if(c.type==='ANSWER_QUESTION'&&'mode' in c)Object.assign(c,resolveCardQuestionAnswer(undefined,c as never,false));
  if(c.type==='ADD_COMMENT')c.entrance=r.method==='addCommentTx'?'followup':'direct';
  const reads=r.evidence.decisionReads as any;
  const session=(id:unknown)=>reads.sessions.find((s:any)=>s.session_id===id);

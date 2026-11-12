@@ -4,6 +4,7 @@ import { CARD_COLOR_KEYS } from "@soulstream/wire-schema/card-colors";
 import { cardEvidenceSchema, cardQuestionAttachmentsSchema, cardQuestionInputIssues, cardQuestionKindSchema, cardQuestionOptionsInputSchema, cardQuestionTitleSchema, cardVerificationWakeAtSchema, cardVerificationWaitingForSchema } from "@soulstream/mcp-contract";
 import type { CardControlPlaneService } from "./card_control_plane_service.js";
 import type { FolderActorParams } from "./control_plane/card_types.js";
+import type { CardQuestionAnswerInput } from "./card_question_rules.js";
 import { serializeCardMutation, serializeCardRow } from "../folders/folder_contracts.js";
 const id=z.string().min(1);
 const attachments=z.array(z.object({nodeId:id,path:id,name:id,mimeType:id}).strict()).default([]);
@@ -12,6 +13,12 @@ const mutation=z.object({ expectedVersion:z.number().int().positive(),idempotenc
 const append=z.object({ idempotencyKey:id });
 const itemId=z.number().int().positive();
 const evidence=z.array(cardEvidenceSchema);
+/** 공백뿐인 값은 거절하되 옛 꼴의 빈 값 거절 문구는 그대로 둔다. */
+const nonBlank=(message:string)=>z.string().min(1).superRefine((value,ctx)=>{
+  if(value.length>0&&value.trim().length===0)ctx.addIssue({code:"custom",message});
+});
+const choiceAnswer=append.extend({ questionId:id,mode:z.literal("choice"),option:nonBlank("선택지를 입력하세요"),answer:nonBlank("답 내용이 필요합니다").optional() });
+const textAnswer=append.extend({ questionId:id,mode:z.literal("text"),answer:nonBlank("답 내용이 필요합니다") });
 export const cardOperationSchemas={
   create_card:z.object({ folderId:id,title:id,request:z.string(),brief:z.string().optional(),attachments,queue:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),idempotencyKey:id }),
   update_card:mutation.extend({ title:id.optional(),brief:z.string().optional(),archived:z.boolean().optional(),assignee:assignee.nullable().optional(),nodeId:id.nullable().optional(),modelPreset:id.nullable().optional(),color:z.enum(CARD_COLOR_KEYS).optional() }).refine(v=>Object.keys(v).some(k=>!["expectedVersion","idempotencyKey","reason"].includes(k)),"Patch requires a field"),
@@ -36,7 +43,7 @@ export const cardOperationSchemas={
     options:cardQuestionOptionsInputSchema.optional(),attachments:cardQuestionAttachmentsSchema.optional(),questionId:id.optional() })
     .strict().superRefine((value,ctx)=>{ for (const issue of cardQuestionInputIssues(value)) ctx.addIssue({code:"custom",path:issue.path,message:issue.message}); }),
   withdraw_card_question:append.extend({ questionId:id,reason:id }),
-  answer_card_question:append.extend({ questionId:id,answer:id }),
+  answer_card_question:append.extend({ questionId:id,answer:nonBlank("답 내용이 필요합니다") }),
   set_card_items:append.extend({ items:z.array(z.object({title:id}).strict()) }),
   add_card_item:append.extend({ title:id,fromCommentId:id }),
   report_card_item:append.extend({ itemId,state:z.enum(["doing","done","dropped"]),result:z.string().optional(),evidence:evidence.optional(),caveat:z.string().optional(),reopenReason:z.string().optional() }),
@@ -46,6 +53,13 @@ export const cardOperationSchemas={
   request_card_review:append.extend({ ask:z.string().optional() }),
 } as const;
 export type CardOperation=keyof typeof cardOperationSchemas;
+/** 답 operation은 mode가 있으면 그 꼴의 엄격 schema로, 없으면 옛 꼴 그대로 읽는다. */
+export function parseCardQuestionAnswer(body:unknown): CardQuestionAnswerInput & { idempotencyKey:string } {
+  const mode=typeof body === "object" && body !== null && !Array.isArray(body) ? (body as Record<string,unknown>).mode : undefined;
+  if (mode === "choice") return choiceAnswer.strict().parse(body);
+  if (mode === "text") return textAnswer.strict().parse(body);
+  return cardOperationSchemas.answer_card_question.strict().parse(body);
+}
 /** 상태 변경·검증 대기를 잘못된 진입점으로 보낸 요청은 계약상 400이다. 기존 엄격 schema 위반의 422는 그대로 둔다. */
 function assertVerificationWaitBoundary(operation:CardOperation,input:unknown) {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return;
@@ -63,7 +77,7 @@ function assertVerificationWaitBoundary(operation:CardOperation,input:unknown) {
 function boundaryError(message:string) { return Object.assign(new Error(message),{ statusCode:400,code:"INVALID_CARD_REQUEST" }); }
 export async function executeCardOperation(service:CardControlPlaneService,operation:CardOperation,body:unknown,cardId:string | undefined,actor:FolderActorParams) {
   assertVerificationWaitBoundary(operation,body);
-  const parsed=cardOperationSchemas[operation].strict().parse(body);
+  const parsed=operation === "answer_card_question" ? parseCardQuestionAnswer(body) : cardOperationSchemas[operation].strict().parse(body);
   if (operation === "add_card_comment") {
     const common={ ...actor,cardId:id.parse(cardId) };
     const comment=await service.addComment({ ...common,...cardOperationSchemas.add_card_comment.parse(parsed) });
@@ -87,7 +101,7 @@ export async function executeCardOperation(service:CardControlPlaneService,opera
       case "update_card_brief":return service.updateCardBrief({ ...common,...cardOperationSchemas.update_card_brief.parse(parsed) });
       case "ask_card_question":return service.askQuestion({ ...common,...cardOperationSchemas.ask_card_question.parse(parsed) });
       case "withdraw_card_question":return service.withdrawQuestion({ ...common,...cardOperationSchemas.withdraw_card_question.parse(parsed) });
-      case "answer_card_question":return service.answerQuestion({ ...common,...cardOperationSchemas.answer_card_question.parse(parsed) });
+      case "answer_card_question":return service.answerQuestion({ ...common,...parseCardQuestionAnswer(parsed) });
       case "set_card_items": {
         const input=cardOperationSchemas.set_card_items.parse(parsed);
         return service.setCardItems({ ...common,...input,items:input.items.map(item=>item.title) });

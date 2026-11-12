@@ -1,7 +1,7 @@
 import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import { hasPendingSessionModelFallback } from "@soulstream/wire-schema/model-preset-fallbacks";
 import { cardAttachmentPaths } from "./card_attachment_paths.js";
-import { buildCardChangeNotification, cardStatusLabels, type CardChangeDelivery } from "./card_change_notification.js";
+import { buildCardChangeNotification, buildCardQuestionAnswerNotice, cardQuestionDeliveryTarget, type CardChangeDelivery } from "./card_change_notification.js";
 import { buildCardStatusReminder, MAX_REMINDERS_PER_TICK } from "./card_status_reminder.js";
 import { buildCardBlockedNotice, buildCardDoneNotice, buildCardQuestionNotice, buildCardReviewNotice, selectCardBoardNotice } from "./card_board_notice.js";
 import { type LimitResumeOwner } from "./card_limit_auto_resume.js";
@@ -157,9 +157,11 @@ export class CardDispatcher {
           });
         }
         const answeredQuestion=op.operation_type === "answer_card_question" ? detail.questions.find(q=>q.id === payload.question_id) : undefined;
-        const questionSession=answeredQuestion && typeof answeredQuestion.session_id === "string"
-            ? await this.options.repository.ownerSession(answeredQuestion.session_id) : null;
-        const mergeAnswer=notification && questionSession && answeredQuestion?.session_id === notification.sessionId;
+        // 전달 대상은 배달 시점 카드의 현재 담당이다. 담당이 있으면 질문을 만든 옛 세션으로 되돌아가지 않는다.
+        const answerTargetSessionId=answeredQuestion
+            ? cardQuestionDeliveryTarget(card,{session_id:typeof answeredQuestion.session_id === "string" ? answeredQuestion.session_id : null}) : null;
+        const answerTarget=answerTargetSessionId ? await this.options.repository.ownerSession(answerTargetSessionId) : null;
+        const mergeAnswer=notification && answerTargetSessionId !== null && answerTargetSessionId === notification.sessionId;
         if (notification && !mergeAnswer) {
           try {
             await this.deliver(card,notification.sessionId,notification.text,notification);
@@ -171,14 +173,17 @@ export class CardDispatcher {
         if (op.operation_type === "answer_card_question") {
             const q = answeredQuestion;
             const autoResumed=previousStatus === "blocked" && change.committedCard?.status === "running";
-            if (questionSession) {
-                const answer=`질문에 답이 왔습니다: ${String(q!.text)} → ${String(q!.answer)}. 카드 상태: ${cardStatusLabels[card.status]}.`;
+            if (answerTargetSessionId && answerTarget) {
+                const answer=buildCardQuestionAnswerNotice(card,{
+                    id:String(q!.id),text:String(q!.text),title:q!.title == null ? null : String(q!.title),
+                    answer:String(q!.answer),selected_option:q!.selected_option == null ? null : String(q!.selected_option),
+                });
                 try {
-                    if (mergeAnswer) await this.deliver(card,String(q!.session_id),`${notification!.text}\n${answer}`,notification!);
-                    else await this.deliver(card,String(q!.session_id),answer,{deliveryId:`card:${card.id}:answer:${op.id}:${String(q!.session_id)}`,actorKind:op.actor_kind,actorSessionId:op.actor_session_id});
+                    if (mergeAnswer) await this.deliver(card,answerTargetSessionId,`${notification!.text}\n${answer}`,notification!);
+                    else await this.deliver(card,answerTargetSessionId,answer,{deliveryId:`card:${card.id}:answer:${op.id}:${answerTargetSessionId}`,actorKind:op.actor_kind,actorSessionId:op.actor_session_id});
                 } catch (error) { this.options.warn(`card ${card.id} answer delivery failed: ${String(error)}`); }
             }
-            if (autoResumed && !questionSession) {
+            if (autoResumed && !answerTarget) {
                 const latest=await cards.getCard(card.id);
                 if (latest?.card.status === "running" && latest.card.version === change.committedCard!.version)
                     await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: card.id, status: "queued", expectedVersion: latest.card.version });

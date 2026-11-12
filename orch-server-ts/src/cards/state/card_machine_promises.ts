@@ -22,6 +22,11 @@ export const cardEntryMissing=(w:CardWorld,read=boardEntriesOf)=>active(w)&&w.pa
 const editQuestion={type:'ASK_QUESTION',actor:'owner',facts:{hasCurrentNow:true,editing:true,targetQuestion:'open'}} as const;
 export const questionEditChangesState=(w:CardWorld,read=advance)=>value(w).question==='open'
  &&JSON.stringify(value(read(w,editQuestion as unknown as DecisionEvent)))!==JSON.stringify(value(w));
+// 기계는 답 종류를 입력으로 받지 않는다. 선택 답과 글 답이 같은 상태로 이어지는지 세계마다 확인한다.
+const choiceAnswer={...answer,facts:{...answer.facts,answerKind:'choice'}} as unknown as DecisionEvent;
+const textAnswer={...answer,facts:{...answer.facts,answerKind:'text'}} as unknown as DecisionEvent;
+export const answerKindsShareResumeRule=(w:CardWorld,read=(w:CardWorld,event:DecisionEvent)=>advance(w,event))=>value(w).question==='open'
+ &&JSON.stringify(value(read(w,choiceAnswer)))!==JSON.stringify(value(read(w,textAnswer)));
 export const CARD_PROMISES=[
  {name:'판에 올라야 할 장은 판에 있다 (1-가 질문 장)',discrepancies:[1,7],breaks:questionEntryMissing},
  {name:'서버의 한도 재개는 기록된 담당이 현재 담당일 때만 한다',discrepancies:[2],breaks:unrecordedLimitResume},
@@ -30,6 +35,7 @@ export const CARD_PROMISES=[
  {name:'짧은 한도로 막히면 취소 전까지 시각 있는 예약이 있다',discrepancies:[],breaks:shortLimitReservationMissing},
  {name:'기다리는 카드는 판의 장이나 시각으로 나가는 길이 있다',discrepancies:[],breaks:(w:CardWorld)=>active(w)&&w.pas!=='none'&&['question','noReport','other','limit','review'].includes(statusLeaf(value(w)))&&!boardEntriesOf(w).length&&!['limit','verify'].includes(value(w).reservation)},
  {name:'질문 제자리 고침은 열린 질문 수와 카드 상태를 바꾸지 않는다',discrepancies:[],breaks:questionEditChangesState},
+ {name:'선택 답과 글 답은 같은 마지막 질문 재개 규칙을 쓴다',discrepancies:[],breaks:answerKindsShareResumeRule},
 ];
 let cached:ReturnType<typeof compute>|undefined;
 export function checkCardPromises(){return cached??=compute();}

@@ -62,3 +62,45 @@ describe("board answers reach the card only through the same access checks", () 
     expect(answer).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("board answers pass their chosen answer mode to the card route", () => {
+  it("sends a choice answer with its option and appended text", async () => {
+    const { options, answer } = cardOptions("report-folder");
+    await applyCardQuestionReply({ action: "card", cardId: "card-1", questionId: "q-1", option: "진행", text: "덧붙임" }, {
+      sessionId: "pas", request, requireSessionAccess: async () => undefined, cardOptions: options,
+      resolveAccess: async () => ({ restricted: false }),
+      resolveActor: async () => ({ actorKind: "user", actorUserId: "director@example.com", actorSessionId: null }),
+    });
+    expect(answer).toHaveBeenCalledWith(expect.objectContaining({
+      cardId: "card-1", questionId: "q-1", idempotencyKey: "report-answer:q-1", mode: "choice", option: "진행", answer: "덧붙임",
+    }));
+  });
+  it("sends a text answer without an option", async () => {
+    const { options, answer } = cardOptions("report-folder");
+    await applyCardQuestionReply({ action: "card", cardId: "card-1", questionId: "q-1", mode: "text", text: "직접 쓴 답" }, {
+      sessionId: "pas", request, requireSessionAccess: async () => undefined, cardOptions: options,
+      resolveAccess: async () => ({ restricted: false }),
+      resolveActor: async () => ({ actorKind: "user", actorUserId: "director@example.com", actorSessionId: null }),
+    });
+    expect(answer).toHaveBeenCalledWith(expect.objectContaining({
+      cardId: "card-1", questionId: "q-1", idempotencyKey: "report-answer:q-1", mode: "text", answer: "직접 쓴 답",
+    }));
+    expect((answer.mock.calls[0] as unknown[])[0]).not.toHaveProperty("option");
+  });
+  it("returns a cardless reject after the session check without reading a card", async () => {
+    const getCard = vi.fn(async () => { throw new Error("card lookup must not run"); });
+    const options = {
+      cardServiceProvider: async () => ({ getCard, answerQuestion: vi.fn() }),
+      provider: { listFolders: async () => [{ id: "report-folder" }] },
+    } as never;
+    const requireSessionAccess = vi.fn(async () => undefined);
+    const failure = await applyCardQuestionReply({ action: "reject", cardId: null, code: "CARD_QUESTION_ANSWER_INVALID", status: 422, message: "답 내용이 필요합니다" }, {
+      sessionId: "pas", request, requireSessionAccess, cardOptions: options,
+      resolveAccess: async () => ({ restricted: false }),
+      resolveActor: async () => ({ actorKind: "user", actorUserId: "director@example.com", actorSessionId: null }),
+    });
+    expect(requireSessionAccess).toHaveBeenCalledTimes(1);
+    expect(getCard).not.toHaveBeenCalled();
+    expect(failure).toEqual({ status: 422, body: { detail: { error: { code: "CARD_QUESTION_ANSWER_INVALID", message: "답 내용이 필요합니다" } } } });
+  });
+});

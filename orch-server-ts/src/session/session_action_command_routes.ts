@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
 import { buildCanonicalDeliveryPayload } from "@soulstream/wire-schema/delivery";
+import { isCardQuestionReplyContext } from "@soulstream/wire-schema/persistent-report";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { MESSAGE_BODY_LIMIT } from "../conversation/conversation_messages.js";
 
@@ -228,6 +229,13 @@ export async function executeSessionIntervention(
     try {
       reply = await options.acceptPersistentReportReply(targetSessionId, payload.value.extra_context_items, payload.value.caller_info, caller);
     } catch (error) {
+      // 카드 질문 답의 처리 예외는 일반 intervention으로 흘리지 않는다(질문을 닫으면 안 된다).
+      if (isCardQuestionReplyContext(payload.value.extra_context_items)) {
+        const status = typeof (error as { statusCode?: unknown }).statusCode === "number" ? (error as { statusCode: number }).statusCode : 500;
+        const code = typeof (error as { code?: unknown }).code === "string" ? (error as { code: string }).code : "CARD_QUESTION_REPLY_FAILED";
+        const message = status >= 400 && status < 500 && error instanceof Error ? error.message : "카드 질문 답을 저장하지 못했습니다";
+        return { status, body: { detail: { error: { code, message } } } };
+      }
       if ("log" in caller) caller.log.warn({ err: error }, "Report answer update failed; delivering the user message");
     }
     if (reply?.failure) return { status: reply.failure.status, body: reply.failure.body };

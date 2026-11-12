@@ -209,14 +209,41 @@ export function readPersistentReport(metadata: unknown): PersistentReportEntry[]
   return [];
 }
 
-/** S1은 옛 `{key,option}` 꼴만 읽는다. text/followup 해석은 S3가 더한다. */
-export function parsePersistentReportReply(context: unknown): { key: string; option: string } | null {
+/** 판 답으로 읽은 값. 선택 답은 옛 꼴 그대로 option을 쓰고 덧붙임이 있을 때만 text를 더한다. */
+export type PersistentReportReplyInput =
+  | { key: string; option: string; text?: string }
+  | { key: string; mode: "text"; text: string };
+/** 인식한 카드 질문 답이 모양을 어기면 invalid로 알려 일반 메시지 전달로 빠지지 않게 한다. */
+export type ParsedPersistentReportReply = PersistentReportReplyInput | { key: string; invalid: string };
+
+/** S3는 선택 답(덧붙임 포함)과 글 답을 읽는다. 되묻기(followup) 해석은 S4가 더한다. */
+export function parsePersistentReportReply(context: unknown): ParsedPersistentReportReply | null {
   if (!Array.isArray(context)) return null;
   for (const item of context) {
     if (!record(item) || item.key !== "persistent_report_reply" || !record(item.content)) continue;
-    const { key, option } = item.content;
-    if (typeof key === "string" && PERSISTENT_REPORT_KEY.test(key) && typeof option === "string" && Array.from(option).length <= 12) return { key, option };
+    const { key, mode, option, text } = item.content;
+    if (typeof key !== "string" || !PERSISTENT_REPORT_KEY.test(key)) continue;
+    const cardQuestion = key.startsWith(CARD_QUESTION_KEY_PREFIX);
+    if (mode === "followup") continue;
+    if (mode === "text") {
+      if (!cardQuestion) continue;
+      if (typeof text !== "string" || text.trim() === "") return { key, invalid: "글 답 내용이 필요합니다" };
+      return { key, mode: "text", text };
+    }
+    if (mode !== undefined && mode !== "choice") return cardQuestion ? { key, invalid: "답 종류가 올바르지 않습니다" } : null;
+    if (typeof option !== "string" || option.trim() === "" || Array.from(option).length > 12)
+      return cardQuestion ? { key, invalid: "선택지 답이 필요합니다" } : null;
+    if (cardQuestion && text !== undefined && (typeof text !== "string" || text.trim() === ""))
+      return { key, invalid: "덧붙임 내용이 올바르지 않습니다" };
+    return { key, option, ...(cardQuestion && typeof text === "string" ? { text } : {}) };
   }
   return null;
+}
+
+/** 예약된 카드 질문 key로 온 답인지. 처리 예외를 일반 intervention으로 흘리지 않는 입구 판정에 쓴다. */
+export function isCardQuestionReplyContext(context: unknown): boolean {
+  if (!Array.isArray(context)) return false;
+  return context.some(item => record(item) && item.key === "persistent_report_reply" && record(item.content)
+    && typeof item.content.key === "string" && item.content.key.startsWith(CARD_QUESTION_KEY_PREFIX));
 }
 function record(value: unknown): value is Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value); }

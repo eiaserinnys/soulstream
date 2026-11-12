@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cardOperationSchemas } from "../src/cards/card_operations.js";
+import { cardOperationSchemas, parseCardQuestionAnswer } from "../src/cards/card_operations.js";
 
 const ask = (body: Record<string, unknown>) =>
   cardOperationSchemas.ask_card_question.safeParse({ idempotencyKey: "idem-1", ...body });
@@ -91,4 +91,40 @@ describe("ask_card_question input boundaries", () => {
       expect(operation.safeParse(body).success).toBe(false);
     }
   });
+});
+
+describe("answer_card_question input shapes", () => {
+  const answer = (body: Record<string, unknown>) => parseCardQuestionAnswer({ idempotencyKey: "idem-1", questionId: "q-1", ...body });
+  const rejectedPaths = (body: Record<string, unknown>): string[] => {
+    try {
+      answer(body);
+      return [];
+    } catch (error) {
+      return (error as { issues: { path: (string | number)[] }[] }).issues.map(issue => issue.path.join("."));
+    }
+  };
+
+  it("keeps the legacy answer shape without a mode", () => {
+    expect(answer({ answer: "직접 쓴 답" })).toEqual({ questionId: "q-1", idempotencyKey: "idem-1", answer: "직접 쓴 답" });
+  });
+  it("accepts a choice with and without appended text", () => {
+    expect(answer({ mode: "choice", option: "진행" })).toEqual({ questionId: "q-1", idempotencyKey: "idem-1", mode: "choice", option: "진행" });
+    expect(answer({ mode: "choice", option: "진행", answer: "덧붙임" }))
+      .toEqual({ questionId: "q-1", idempotencyKey: "idem-1", mode: "choice", option: "진행", answer: "덧붙임" });
+  });
+  it("accepts a text answer that equals a stored label", () => {
+    expect(answer({ mode: "text", answer: "진행" })).toEqual({ questionId: "q-1", idempotencyKey: "idem-1", mode: "text", answer: "진행" });
+  });
+  it.each([
+    ["a choice without an option", { mode: "choice" }, "option"],
+    ["a blank choice option", { mode: "choice", option: "   " }, "option"],
+    ["a blank choice addition", { mode: "choice", option: "진행", answer: "   " }, "answer"],
+    ["a text answer without text", { mode: "text" }, "answer"],
+    ["a blank text answer", { mode: "text", answer: "   " }, "answer"],
+    ["a blank legacy answer", { answer: "   " }, "answer"],
+    ["a missing legacy answer", {}, "answer"],
+    ["a missing question id", { answer: "답", questionId: undefined }, "questionId"],
+    ["an unknown mode", { mode: "other", option: "진행" }, ""],
+    ["an unknown field", { mode: "choice", option: "진행", text: "덧붙임" }, ""],
+  ])("rejects %s", (_name, body, path) => expect(rejectedPaths(body)).toContain(path));
 });

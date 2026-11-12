@@ -92,7 +92,10 @@ describe("card comments HTTP, storage, and delivery", () => {
     await cards.answerQuestion(answer);await dispatcher.drain();
     await cards.answerQuestion(answer);await dispatcher.drain();
     expect(messages).toHaveBeenCalledOnce();
-    expect(messages.mock.calls[0]).toEqual(['owner',expect.stringContaining('원래 흐름으로 진행합니다'),undefined,expect.objectContaining({deliveryId:expect.stringContaining(':state:')})]);
+    expect(messages.mock.calls[0]).toEqual(['owner',
+      `사용자가 카드 「커멘트 대상」(${cardId})를 막힘→실행 중으로 변경했습니다\n[카드 질문 답변] 카드 「커멘트 대상」(${cardId})`
+      + `\n질문: 어떻게 진행합니까?\n질문 ID: ${String(question.id)}\n글 답: 원래 흐름으로 진행합니다\n카드 상태: 실행 중`,
+      undefined,expect.objectContaining({deliveryId:expect.stringContaining(':state:')})]);
   });
 
   it("resumes eligible question-blocked cards on a user comment and closes open questions", async () => {
@@ -190,15 +193,19 @@ describe("card comments HTTP, storage, and delivery", () => {
     messages.mockClear();
     await cards.answerQuestion({...human,cardId,questionId:String(question.id),answer:'첫 답'});await dispatcher.drain();
     expect((await cards.getCard(cardId))?.card).toMatchObject({status:'blocked',blocked_kind:'question'});
-    expect(messages).toHaveBeenCalledWith('old-owner',expect.stringContaining('첫 답'),undefined,
-      expect.objectContaining({deliveryId:expect.stringMatching(new RegExp(`^card:${cardId}:answer:[^:]+:old-owner$`))}));
-    expect(messages.mock.calls[0]![1]).toBe('질문에 답이 왔습니다: 이전 담당 질문 → 첫 답. 카드 상태: 막힘.');
+    expect(messages).toHaveBeenCalledWith('new-owner',expect.any(String),undefined,
+      expect.objectContaining({deliveryId:expect.stringMatching(new RegExp(`^card:${cardId}:answer:[^:]+:new-owner$`))}));
+    expect(messages.mock.calls[0]![1]).toBe(`[카드 질문 답변] 카드 「커멘트 대상」(${cardId})`
+      + `\n질문: 이전 담당 질문\n질문 ID: ${String(question.id)}\n글 답: 첫 답\n카드 상태: 막힘`);
+    expect(String((await h.sql`SELECT session_id FROM card_questions WHERE id=${String(question.id)}`)[0]!.session_id)).toBe('old-owner');
     messages.mockClear();
     const answer={...human,cardId,questionId:'remaining',answer:'마지막 답',idempotencyKey:key()};
     await cards.answerQuestion(answer);await dispatcher.drain();await cards.answerQuestion(answer);await dispatcher.drain();
-    expect(messages).toHaveBeenCalledTimes(2);
-    expect(messages.mock.calls.map(c=>c[0])).toEqual(['new-owner','old-owner']);
-    expect(messages.mock.calls[1]![1]).toContain('마지막 답');
+    expect(messages).toHaveBeenCalledTimes(1);
+    expect(messages.mock.calls.map(c=>c[0])).toEqual(['new-owner']);
+    expect(messages.mock.calls[0]![1]).toBe(`사용자가 카드 「커멘트 대상」(${cardId})를 막힘→실행 중으로 변경했습니다`
+      + `\n[카드 질문 답변] 카드 「커멘트 대상」(${cardId})`
+      + `\n질문: 남은 질문\n질문 ID: remaining\n글 답: 마지막 답\n카드 상태: 실행 중`);
     expect((await cards.getCard(cardId))?.card.status).toBe('running');
   });
 

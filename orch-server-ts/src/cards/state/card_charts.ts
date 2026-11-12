@@ -71,6 +71,6 @@ export function generateCardStateDocument(report:CardPromiseReport=checkCardProm
  for(const p of [report.promises[0]!,report.cardEntryPromise,...report.promises.slice(1)])lines.push(`| ${p.name} | ${p.violations} | ${p.example.join(' → ')||'없음'} |`);
  lines.push('', '| 구멍 | 도달 | 설명 |','| :-- | :-- | :-- |');
  for(const h of report.holes)lines.push(`| ${h.label} | ${h.reachable?'닿음':'닿지 않음'} | ${h.note??''} |`);
- lines.push('', '기존 모형의 담당 생존, 작성자, admitted, 감독과 내린 기록을 저장 영역에서 뺐으므로 세계 구성 수와 약속 6의 위반 수는 이전의 구성 수와 단위가 다르다. 약속 1-가부터 5와 질문 제자리 고침 약속은 위반 0을 유지하고, 약속 6은 알려진 실패를 유지한다.','', '## 다시 만들기','', '```bash','corepack pnpm@10.32.1 --dir orch-server-ts exec tsx scripts/card-state-charts.ts docs/cards/generated','```','');
+ lines.push('', '기존 모형의 담당 생존, 작성자, admitted, 감독과 내린 기록을 저장 영역에서 뺐으므로 세계 구성 수와 약속 6의 위반 수는 이전의 구성 수와 단위가 다르다. 약속 1-가부터 5와 질문 제자리 고침 약속은 위반 0을 유지하고, 약속 6은 알려진 실패를 유지한다. 선택 답과 글 답이 같은 마지막 질문 재개 규칙을 쓰는 약속도 위반 0이다.','', '## 다시 만들기','', '```bash','corepack pnpm@10.32.1 --dir orch-server-ts exec tsx scripts/card-state-charts.ts docs/cards/generated','```','');
  return {markdown:lines.join('\n'),charts,report};
 }

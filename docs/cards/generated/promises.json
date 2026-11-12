@@ -81,6 +81,14 @@
       "violations": 0,
       "example": [],
       "discrepancies": []
+    },
+    {
+      "id": 8,
+      "name": "선택 답과 글 답은 같은 마지막 질문 재개 규칙을 쓴다",
+      "kept": true,
+      "violations": 0,
+      "example": [],
+      "discrepancies": []
     }
   ],
   "holes": [

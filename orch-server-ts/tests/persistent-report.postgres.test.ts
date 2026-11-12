@@ -510,10 +510,25 @@ describe("PAS reports on production PostgreSQL schema", () => {
       'answer_card_question', cardId, { answer: '진행', idempotencyKey: `report-answer:${questionId}` },
       async () => ({ restricted: false }), async () => ({ actorKind: 'user', actorUserId: 'director@example.com', actorSessionId: null }), questionId);
     expect((await reports.get('pas')).some(e=>e.key===`cq_${questionId}`)).toBe(false);
-    expect((await cards.getCard(cardId))!.questions.at(-1)!.answer).toBe('진행');
+    expect((await cards.getCard(cardId))!.questions.at(-1)).toMatchObject({ answer: '진행', selected_option: '진행' });
     expect(Number((await sql`SELECT COUNT(*) AS n FROM card_questions WHERE id=${questionId} AND answered_by='director@example.com'`)[0]!.n)).toBe(1);
     expect(await reports.acceptReply('pas',context,{source:'browser'})).toEqual({action:'card-acked',cardId});
     expect(await reports.acceptReply('pas',[{key:'persistent_report_reply',content:{key:`cq_${questionId}`,option:'중단'}}],{source:'browser'}))
+      .toMatchObject({action:'reject',code:'CARD_QUESTION_CLOSED',status:409});
+    const textCardId=(await cards.createCard({...human,folderId:'report-folder',title:'판 글 답',request:''})).operation.target_id;
+    await cards.askQuestion({...human,cardId:textCardId,text:'글로 답할 질문',options:['진행']});
+    const textQuestionId=String((await cards.getCard(textCardId))!.questions.at(-1)!.id);
+    await reports.putQuestion('pas',textQuestionId);
+    const textContext=[{key:'persistent_report_reply',content:{key:`cq_${textQuestionId}`,mode:'text',text:'직접 쓴 답'}}];
+    expect(await reports.acceptReply('pas',textContext,{source:'browser'}))
+      .toEqual({action:'card',cardId:textCardId,questionId:textQuestionId,mode:'text',text:'직접 쓴 답'});
+    await mutateCardRouteBody({ cardServiceProvider: async () => cards, provider: { listFolders: async () => [{ id: 'report-folder' }], listSessionAssignments: async () => ({}) } },
+      'answer_card_question', textCardId, { mode: 'text', answer: '직접 쓴 답', idempotencyKey: `report-answer:${textQuestionId}` },
+      async () => ({ restricted: false }), async () => ({ actorKind: 'user', actorUserId: 'director@example.com', actorSessionId: null }), textQuestionId);
+    expect((await reports.get('pas')).some(e=>e.key===`cq_${textQuestionId}`)).toBe(false);
+    expect((await cards.getCard(textCardId))!.questions.at(-1)).toMatchObject({ answer: '직접 쓴 답', selected_option: null });
+    expect(await reports.acceptReply('pas',textContext,{source:'browser'})).toEqual({action:'card-acked',cardId:textCardId});
+    expect(await reports.acceptReply('pas',[{key:'persistent_report_reply',content:{key:`cq_${textQuestionId}`,mode:'text',text:'다른 글'}}],{source:'browser'}))
       .toMatchObject({action:'reject',code:'CARD_QUESTION_CLOSED',status:409});
     const otherId=(await cards.createCard({...human,folderId:'report-folder',title:'판 답2',request:''})).operation.target_id;
     await cards.askQuestion({...human,cardId:otherId,text:'선택지 질문',options:['가','나']});
