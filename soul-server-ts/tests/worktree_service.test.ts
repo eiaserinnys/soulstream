@@ -347,7 +347,7 @@ describe("WorktreeService", () => {
       }
       const record = host.records.get(id)!;
       host.records.set(id, { ...record, lastSessionActivityAt: kind === "recent" ? new Date(now).toISOString() : kind === "idle" ? new Date(now - 8 * 24 * 60 * 60_000).toISOString() : old,
-        linkedCardsClosed: ["closed", "active", "links", "tracked", "untracked", "unpushed", "raced", "failed", "git_recent"].includes(kind) });
+        linkedCardsClosed: ["closed", "active", "links", "tracked", "untracked", "raced", "failed", "git_recent"].includes(kind) });
       if (kind === "git_recent") {
         const dir = git(path, "rev-parse", "--absolute-git-dir");
         for (const file of ["HEAD", "index", "logs/HEAD"]) utimesSync(join(dir, file), now / 1000, now / 1000);
