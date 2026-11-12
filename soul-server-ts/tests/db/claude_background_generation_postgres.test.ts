@@ -11,6 +11,7 @@ import {
   EventIngressRepository,
   type EventIngressSql,
 } from "../../../orch-server-ts/src/node/event_ingress_repository.js";
+import { repositoryModelCatalog } from "../../../orch-server-ts/tests/helpers/model_catalog.js";
 import { applyEventSessionEffect } from
   "../../../orch-server-ts/src/node/event_session_effect_applier.js";
 import { SessionDeliveryRepository } from
@@ -132,6 +133,8 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
     const ingress = new EventIngressRepository(
       { resolveSql: async () => harness.sql as unknown as EventIngressSql },
       applyEventSessionEffect,
+      undefined,
+      { modelCatalog: repositoryModelCatalog() },
     );
     const input = registrationBatch("018f47b7-c6de-7d64-9c8d-0b62cbbb2e41");
 
@@ -210,6 +213,8 @@ describePostgres("Claude background generation PostgreSQL contract", () => {
       const ingress = new EventIngressRepository(
         { resolveSql: async () => harness.sql as unknown as EventIngressSql },
         applyEventSessionEffect,
+        undefined,
+        { modelCatalog: repositoryModelCatalog() },
       );
       const input = registrationBatch("018f47b7-c6de-7d64-9c8d-0b62cbbb2e42");
 

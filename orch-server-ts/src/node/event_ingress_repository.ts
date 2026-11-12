@@ -75,15 +75,6 @@ export type EventIngressRepositoryOptions = EventIngressRetryPolicyOptions & {
   readonly modelCatalog: ModelCatalogSource;
 };
 
-/** A composition error, not a data fallback: ingress without the catalogue cannot price usage. */
-function missingModelCatalog(): ModelCatalogSource {
-  return {
-    snapshot() {
-      throw new Error("event ingress requires a model catalogue to project session statistics");
-    },
-  };
-}
-
 export class EventIngressProtocolConflict extends Error {
   readonly statusCode = 409;
 
@@ -109,10 +100,9 @@ export class EventIngressRepository {
 
   constructor(
     private readonly sqlProvider: EventIngressSqlProvider,
-    private readonly applySessionEffect?: EventSessionEffectApplier,
-    private readonly deadLetterStore?: EventIngressDeadLetterStore,
-    options: EventIngressRepositoryOptions
-      = { modelCatalog: missingModelCatalog() },
+    private readonly applySessionEffect: EventSessionEffectApplier | undefined,
+    private readonly deadLetterStore: EventIngressDeadLetterStore | undefined,
+    options: EventIngressRepositoryOptions,
     private readonly applyFeedProjection?: EventFeedProjectionApplier,
   ) {
     this.retryPolicy = new EventIngressRetryPolicy(options);

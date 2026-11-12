@@ -45,7 +45,9 @@ function isExcluded(relativePath: string): boolean {
   const basename = segments[segments.length - 1] ?? "";
   if (/\.(test|spec)\./.test(basename)) return true;
   const stem = basename.replace(/\.[^.]+$/, "");
-  return stem.endsWith("ReviewSample") || stem.endsWith("fixtures");
+  // Synthetic sample data for tests and review screens (usage-stats-fixtures,
+  // usage-stats-fixture-data, ...) may carry display names on purpose.
+  return stem.endsWith("ReviewSample") || stem.includes("fixture");
 }
 
 function sourceFiles(directory: string): string[] {

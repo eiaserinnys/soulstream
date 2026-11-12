@@ -7,6 +7,7 @@ import {
   type EventIngressSql,
   type EventIngressSqlProvider,
 } from "../../../orch-server-ts/src/node/event_ingress_repository.js";
+import { repositoryModelCatalog } from "../../../orch-server-ts/tests/helpers/model_catalog.js";
 import type { EventAppendBatch } from "../../../orch-server-ts/src/node/event_ingress_types.js";
 import type { EventOutbox, EventOutboxBatch } from "../../src/upstream/event_outbox.js";
 import {
@@ -116,7 +117,12 @@ export class InMemoryEventIngressSqlProvider implements EventIngressSqlProvider 
 
 export class EventIngressTestHarness {
   readonly provider = new InMemoryEventIngressSqlProvider();
-  readonly repository = new EventIngressRepository(this.provider);
+  readonly repository = new EventIngressRepository(
+    this.provider,
+    undefined,
+    undefined,
+    { modelCatalog: repositoryModelCatalog() },
+  );
   readonly rawBroadcastEventIds: number[] = [];
   readonly displayedEventIds = new Set<number>();
   readonly closeReasons: string[] = [];
