@@ -9,6 +9,11 @@ import {
   type LiveDbSqlResolver,
   type LivePostgresSql,
 } from "../src/index.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 type TestWebSocket = {
   send: (data: string) => void;
@@ -62,7 +67,8 @@ describe("production session serialization parity", () => {
     const application = await createLiveProductionApplication(
       loadOrchServerEnvironment(minimalEnvironment()),
       { warn: vi.fn() },
-      { sqlResolver },
+      { modelCatalog: catalog,
+      sqlResolver },
     );
     await application.app.listen({ host: "127.0.0.1", port: 0 });
     const catalogController = new AbortController();

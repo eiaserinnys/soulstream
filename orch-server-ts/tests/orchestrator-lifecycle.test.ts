@@ -14,6 +14,11 @@ import {
   type SessionStreamEvent,
 } from "../src/sse/replay_broadcaster.js";
 import { registerSseReplayRoutes } from "../src/sse/sse_replay_routes.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 describe("orchestrator lifecycle", () => {
   it("reads the deployed manifest and keeps test identity explicit", async () => {
@@ -83,6 +88,7 @@ describe("orchestrator lifecycle", () => {
     const broadcaster = new InMemorySseReplayBroadcaster<SessionStreamEvent>();
     const lifecycle = new OrchestratorLifecycle("dev", broadcaster);
     const server = await createProductionOrchestrator({
+      modelCatalog: catalog,
       config: loadOrchServerEnvironment({
         HOST: "127.0.0.1",
     SOULSTREAM_PUBLIC_URL: "https://dashboard.example.test",

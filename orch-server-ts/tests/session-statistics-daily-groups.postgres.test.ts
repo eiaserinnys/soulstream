@@ -6,6 +6,11 @@ import { createSessionStatisticsDailyState } from "../src/usage/session_statisti
 import type { FolderContentSql } from "../src/board/folder_content_sql.js";
 import type { SessionStatisticsReadRequest, SessionStatisticsReadResult } from "../src/usage/session_statistics_types.js";
 import { read, usageRow, fact } from "./fixtures/session_statistics_aggregation.fixtures.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 describe("daily groups PostgreSQL membership and fallback", () => {
   let harness: FullSchemaPostgresHarness;
@@ -34,7 +39,7 @@ describe("daily groups PostgreSQL membership and fallback", () => {
       { sessionId: "session-1", folderId: "f1", cardFolderId: null, projectId: "f1", projectLabel: "One" },
       { sessionId: "s2", folderId: null, cardFolderId: "f2", projectId: "f2", projectLabel: "Two" },
     ]);
-    await repository.daily.save(createSessionStatisticsDailyState(source, "2026-10-19"), "0");
+    await repository.daily.save(createSessionStatisticsDailyState(source, "2026-10-19", CATALOG), "0");
   });
 
   async function compare(request = input) {
@@ -42,7 +47,7 @@ describe("daily groups PostgreSQL membership and fallback", () => {
     const ids = metadata.sessions.map(session => session.sessionId);
     const grouped = await repository.daily.loadOverview("2026-10-19", "2026-10-20", 1, request, ids);
     const sessions = await repository.daily.load("2026-10-19", "2026-10-20", 1, ids);
-    expect(buildDailyOverview(metadata, grouped)).toEqual(buildDailyOverview(metadata, sessions));
+    expect(buildDailyOverview(metadata, grouped, CATALOG)).toEqual(buildDailyOverview(metadata, sessions, CATALOG));
     return grouped[0]!;
   }
 

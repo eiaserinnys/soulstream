@@ -94,6 +94,7 @@ import {
   type LiveDbSqlResolver,
 } from "./runtime/live_db_sql.js";
 import type { LiveProviderDependencies } from "./runtime/live_provider_dependencies.js";
+import type { ModelCatalogSource } from "./model/model_catalog_source.js";
 import {
   createLiveOrchestratorProviderBundle,
   type LiveOrchestratorProviderBundle,
@@ -165,10 +166,13 @@ export type ProductionApplicationFactory = (
 
 export type LiveProductionApplicationOverrides = {
   readonly sqlResolver?: LiveDbSqlResolver;
+  /** Opened once by the entrypoint; every consumer reads the same file-backed store. */
+  readonly modelCatalog: ModelCatalogSource;
 } & LiveTurnSummaryProductionOverrides;
 
 export type CreateProductionOrchestratorOptions = {
   readonly config: OrchServerEnvironmentConfig;
+  readonly modelCatalog: ModelCatalogSource;
   readonly applicationFactory?: ProductionApplicationFactory;
   readonly warn?: (message: string) => void;
 };
@@ -192,7 +196,10 @@ export async function createProductionOrchestrator(
     );
   }
   const application = await (
-    options.applicationFactory ?? createLiveProductionApplication
+    options.applicationFactory === undefined
+      ? (config: OrchServerEnvironmentConfig, context: { readonly warn: (message: string) => void }) =>
+        createLiveProductionApplication(config, context, { modelCatalog: options.modelCatalog })
+      : options.applicationFactory
   )(options.config, { warn });
   if (options.warn === undefined) {
     warningSink = (message) => application.app.log.warn(message);
@@ -237,7 +244,7 @@ const SESSION_DOCUMENT_INDEX_WARMUP_DELAY_MS = 10_000;
 export async function createLiveProductionApplication(
   config: OrchServerEnvironmentConfig,
   context: { readonly warn: (message: string) => void },
-  overrides: LiveProductionApplicationOverrides = {},
+  overrides: LiveProductionApplicationOverrides,
 ): Promise<ProductionApplication> {
   const buildId=await readDashboardBuildId(config.dashboard_dir,config.environment);
   const appConfig = toOrchServerTsConfig(config);
@@ -288,7 +295,7 @@ export async function createLiveProductionApplication(
       ".local",
       "event-ingress-dead-letter",
     )),
-    {},
+    { modelCatalog: overrides.modelCatalog },
     applyEventFeedProjection,
   );
   const eventIngressCommitter = createCardWorkErrorIngressCommitter(
@@ -568,6 +575,7 @@ export async function createLiveProductionApplication(
     providers = createLiveOrchestratorProviderBundle({
       dependencies,
       runtimeServices,
+      modelCatalog: overrides.modelCatalog,
       nodeCredentials: nodeCredentialStore,
       uiEventRepository,
       usageSummaryRoutes: { service: usageSummaryService },
@@ -1185,6 +1193,7 @@ export function buildProductionRouteOptions(
       executeCreateSessionRoute(providers.runtime.sessionCommandRoutes, request, body, logger),
     presets: providers.modelPresetAvailability,
     profiles: providers.nodeAgentProfileRoutes.provider,
+    modelCatalog: providers.modelCatalog,
   });
   const conversationService = conversationSql ? new ConversationService({
     sql: conversationSql, access: sessionAccessProvider, persistent: persistentSessionSettingsService,

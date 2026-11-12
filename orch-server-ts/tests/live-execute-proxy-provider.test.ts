@@ -15,6 +15,11 @@ import {
   ModelPresetAvailabilityError,
   type ModelPresetAvailabilityService,
 } from "../src/model/model_preset_availability.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 describe("live execute proxy provider", () => {
   it("creates new execute sessions over the websocket command bridge and streams raw events", async () => {
@@ -1147,6 +1152,7 @@ function createHarness(options: {
   const bridge = new SessionCommandTransportBridge({ registry, transports });
   const sessionEventHub = new RuntimeSessionEventHub();
   const provider = createLiveExecuteProxyRouteProvider({
+    modelCatalog: catalog,
     registry,
     router,
     bridge,

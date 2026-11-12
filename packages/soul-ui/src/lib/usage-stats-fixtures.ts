@@ -1,6 +1,7 @@
 // Pure, deterministic public fixture builders for the usage statistics mockup.
 import { formatUsageStatsModelLabel, formatUsageStatsProviderLabel, usageStatsBucketStarts, usageStatsRange } from "./usage-stats-format";
 import {
+  FIXTURE_MODEL_LABELS,
   MISSING_TURNS,
   PENDING_TURNS,
   PROJECT_LABELS,
@@ -137,7 +138,7 @@ function buildOptions(range: UsageStatsRange): UsageStatsOptions {
       if (record.provider !== provider) continue;
       let exists = false;
       for (const model of providerModels) if (model.model === record.model && model.backend === record.backend) exists = true;
-      if (!exists) providerModels.push({ provider, model: record.model, backend: record.backend, label: formatUsageStatsModelLabel(record.model) });
+      if (!exists) providerModels.push({ provider, model: record.model, backend: record.backend, label: FIXTURE_MODEL_LABELS[record.model] ?? record.model });
     }
     providerModels.sort((left, right) => left.model === right.model
       ? (left.backend < right.backend ? -1 : left.backend > right.backend ? 1 : 0)
@@ -222,6 +223,7 @@ function buildProviderRows(
         provider,
         backend: backendFor(provider),
         model: null,
+        model_label: null,
         attribution: "provider",
         metrics: value.metrics, coverage: value.coverage, is_partial: value.is_partial,
       });
@@ -260,6 +262,7 @@ function buildProviderRows(
       provider,
       backend: backendFor(provider),
       model,
+      model_label: model === null ? null : FIXTURE_MODEL_LABELS[model] ?? model,
       attribution: "model",
       metrics: value.metrics, coverage: value.coverage, is_partial: value.is_partial,
     });

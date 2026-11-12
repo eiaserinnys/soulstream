@@ -47,6 +47,7 @@ import {
   readPersistentEnabled,
   readStoredPersistentSettings,
 } from "@soulstream/wire-schema/persistent-session-settings";
+import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 
 const EXECUTE_PROXY_KEEPALIVE_MS = 30_000;
 
@@ -74,6 +75,8 @@ export type LiveExecuteProxyRouteProviderOptions = {
     ModelPresetAvailabilityService,
     "requireAvailable"
   > & Partial<Pick<ModelPresetAvailabilityService, "resolveStaticForNode" | "chooseUsablePreset">>;
+  /** Supplies the fallback list a stored PAS settings entry may not carry. */
+  readonly modelCatalog: ModelCatalogSource;
   readonly persistentResume?: {
     getSession(sessionId: string): Promise<Record<string, unknown> | null>;
     updateSession(input: {
@@ -214,7 +217,8 @@ export function createLiveExecuteProxyRouteProvider(
         let persistentTarget: { nodeId: string } | undefined;
         const row = await options.persistentResume?.getSession(payload.agent_session_id);
         const stored = row && readPersistentEnabled(row.metadata) && isIdleSession(row.status)
-          ? readStoredPersistentSettings(row.metadata)
+          ? readStoredPersistentSettings(row.metadata,
+            options.modelCatalog.snapshot().persistent_defaults.fallback_models)
           : undefined;
         const attempted = new Set<string>();
         const fallbackCandidates = stored?.default_model

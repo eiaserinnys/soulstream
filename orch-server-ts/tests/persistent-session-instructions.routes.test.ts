@@ -4,6 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { HostSessionRow } from "../src/control_plane/repositories/session_read_repository.js";
 import { PersistentSessionSettingsService } from "../src/session/persistent_session_settings_service.js";
 import { registerPersistentSessionSettingsRoutes } from "../src/session/persistent_session_settings_routes.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 type Instruction = {
   id: string;
@@ -286,6 +291,7 @@ async function createHarness() {
     };
   });
   const service = new PersistentSessionSettingsService({
+    modelCatalog: catalog,
     reads: async () => ({
       getSession: async (sessionId) => rows.get(sessionId) ?? null,
       listPersistentSessions: async () => [],

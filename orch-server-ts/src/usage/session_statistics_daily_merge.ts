@@ -1,7 +1,8 @@
 // Known difference: missing-input counts can add across dates for the same cross-midnight input.
 // Known difference: the resulting ended-only evidence can also mark field partials true.
 import type { UsageStatsCoverage, UsageStatsMetrics, UsageStatsOptions } from "@soulstream/wire-schema/session-statistics";
-import { createSessionStatisticsMetricState, finalizeSessionStatisticsMetrics, sessionStatisticsProjectMatches,
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
+import { emptySessionStatisticsMetricState, finalizeSessionStatisticsMetrics, sessionStatisticsProjectMatches,
   type SessionStatisticsMetricState, type SessionStatisticsScope } from "./session_statistics_aggregate.js";
 import { addDecimal, decimalString, parseDecimal } from "./session_statistics_decimal.js";
 import { buildSessionStatisticsMaterial } from "./session_statistics_material.js";
@@ -23,9 +24,9 @@ function knownSum(left: number | null, right: number | null): number | null {
   return left + right;
 }
 
-export function mergeSessionStatisticsMetricStates(read: Pick<SessionStatisticsReadResult, "costDecimals">,
+export function mergeSessionStatisticsMetricStates(
   states: readonly SessionStatisticsMetricState[]): SessionStatisticsMetricState {
-  const result = createSessionStatisticsMetricState(read, []);
+  const result = emptySessionStatisticsMetricState();
   for (const state of states) {
     for (const key of Object.keys(result.tokens) as Array<keyof typeof result.tokens>) {
       result.tokens[key] = knownSum(result.tokens[key], state.tokens[key]);
@@ -131,7 +132,7 @@ function dailyView(read: SessionStatisticsReadResult, days: readonly SessionStat
         + (cell.selectors[dailySelectorKey({})]!.metrics.tokens.total_tokens ?? 0));
     }
   }
-  const emptyMetric = createSessionStatisticsMetricState(read, []);
+  const emptyMetric = emptySessionStatisticsMetricState();
   const emptyMaterial = buildSessionStatisticsMaterial({ ...read, rows: [] }, read.range.since);
   const fallback = (cell: DailySessionState | DailyGroupState): DailyAggregateState => {
     const coverage = emptyDailyCoverage();
@@ -174,7 +175,7 @@ function dailyView(read: SessionStatisticsReadResult, days: readonly SessionStat
       let result = aggregateCache.get(key);
       if (result === undefined) {
         const selected = select(scope);
-        const metrics: UsageStatsMetrics = finalizeSessionStatisticsMetrics(mergeSessionStatisticsMetricStates(read, selected.map(state => state.metrics)));
+        const metrics: UsageStatsMetrics = finalizeSessionStatisticsMetrics(mergeSessionStatisticsMetricStates(selected.map(state => state.metrics)));
         result = finalizeSessionStatisticsAggregate(read, metrics, mergeDailyCoverage(selected));
         aggregateCache.set(key, result);
       }
@@ -186,10 +187,12 @@ function dailyView(read: SessionStatisticsReadResult, days: readonly SessionStat
   };
 }
 
-export function buildDailyOverview(read: SessionStatisticsReadResult, days: readonly SessionStatisticsDailyState[]) {
-  return buildOverview(read, dailyView(read, days));
+export function buildDailyOverview(read: SessionStatisticsReadResult,
+  days: readonly SessionStatisticsDailyState[], catalog: ModelCatalogConfig) {
+  return buildOverview(read, catalog, dailyView(read, days));
 }
 
-export function buildDailyDay(read: SessionStatisticsReadResult, days: readonly SessionStatisticsDailyState[], date: string) {
-  return buildDay(read, date, dailyView(read, days));
+export function buildDailyDay(read: SessionStatisticsReadResult,
+  days: readonly SessionStatisticsDailyState[], date: string, catalog: ModelCatalogConfig) {
+  return buildDay(read, date, catalog, dailyView(read, days));
 }

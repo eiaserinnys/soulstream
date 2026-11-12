@@ -1,5 +1,11 @@
 import { pathToFileURL } from "node:url";
 
+import {
+  modelCatalogPathForRepository,
+  openModelCatalogFile,
+  repositoryRootFromEntryUrl,
+} from "@soulstream/model-catalog/file-loader";
+
 import { loadOrchServerEnvironment } from "./config.js";
 import { createProductionOrchestrator } from "./production.js";
 
@@ -40,7 +46,20 @@ export function installProductionProcessErrorHandlers(
 
 export async function runProductionMain(): Promise<void> {
   const config = loadOrchServerEnvironment();
-  const server = await createProductionOrchestrator({ config });
+  // The repository's canonical catalogue file is the only source of presets,
+  // rates and display names. A failed first load stops startup instead of
+  // serving stale built-in data.
+  const modelCatalog = openModelCatalogFile({
+    path: modelCatalogPathForRepository(repositoryRootFromEntryUrl(import.meta.url)),
+  });
+  modelCatalog.start();
+  let server: Awaited<ReturnType<typeof createProductionOrchestrator>>;
+  try {
+    server = await createProductionOrchestrator({ config, modelCatalog });
+  } catch (error) {
+    modelCatalog.close();
+    throw error;
+  }
   let shuttingDown = false;
   const shutdown = async (signal: NodeJS.Signals) => {
     if (shuttingDown) return;
@@ -51,6 +70,8 @@ export async function runProductionMain(): Promise<void> {
     } catch (error) {
       console.error("Orchestrator shutdown failed", error);
       process.exitCode = 1;
+    } finally {
+      modelCatalog.close();
     }
   };
   const onSigint = () => void shutdown("SIGINT");
@@ -64,6 +85,7 @@ export async function runProductionMain(): Promise<void> {
   } catch (error) {
     process.removeListener("SIGINT", onSigint);
     process.removeListener("SIGTERM", onSigterm);
+    modelCatalog.close();
     throw error;
   }
 }

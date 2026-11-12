@@ -21,6 +21,7 @@ import {
   hasFeedSemanticIngressChange,
 } from "./event_feed_semantic_watermark.js";
 import { applySessionStatisticsProjection } from "../usage/session_statistics_projection.js";
+import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 
 type QueryRows = readonly Record<string, unknown>[];
 
@@ -69,7 +70,19 @@ export type EventFeedProjectionApplier = (
   },
 ) => Promise<import("./event_feed_projection_applier.js").EventFeedProjectionApplication | null>;
 
-export type EventIngressRepositoryOptions = EventIngressRetryPolicyOptions;
+export type EventIngressRepositoryOptions = EventIngressRetryPolicyOptions & {
+  /** Prices usage facts at ingest time from the current catalogue file. */
+  readonly modelCatalog: ModelCatalogSource;
+};
+
+/** A composition error, not a data fallback: ingress without the catalogue cannot price usage. */
+function missingModelCatalog(): ModelCatalogSource {
+  return {
+    snapshot() {
+      throw new Error("event ingress requires a model catalogue to project session statistics");
+    },
+  };
+}
 
 export class EventIngressProtocolConflict extends Error {
   readonly statusCode = 409;
@@ -92,15 +105,18 @@ export class LiveEventIngressSqlProvider implements EventIngressSqlProvider {
 
 export class EventIngressRepository {
   private readonly retryPolicy: EventIngressRetryPolicy;
+  private readonly modelCatalog: ModelCatalogSource;
 
   constructor(
     private readonly sqlProvider: EventIngressSqlProvider,
     private readonly applySessionEffect?: EventSessionEffectApplier,
     private readonly deadLetterStore?: EventIngressDeadLetterStore,
-    options: EventIngressRepositoryOptions = {},
+    options: EventIngressRepositoryOptions
+      = { modelCatalog: missingModelCatalog() },
     private readonly applyFeedProjection?: EventFeedProjectionApplier,
   ) {
     this.retryPolicy = new EventIngressRetryPolicy(options);
+    this.modelCatalog = options.modelCatalog;
   }
 
   async commitBatch(
@@ -203,7 +219,11 @@ export class EventIngressRepository {
       throw new Error("event_append did not return a positive event id");
     }
     if (!semanticReceipt) {
-      await applySessionStatisticsProjection(transaction, { eventId, envelope });
+      await applySessionStatisticsProjection(transaction, {
+        eventId,
+        envelope,
+        modelCatalog: this.modelCatalog,
+      });
     }
 
     let sessionEffectApplication: EventSessionEffectApplication | undefined;

@@ -11,6 +11,11 @@ import {
   parseOrchServerConfig,
   type ExecuteProxyProvider,
 } from "../src/index.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 const config = parseOrchServerConfig({
   environment: "test",
@@ -165,6 +170,7 @@ describe("execute proxy attachment input", () => {
     } } });
     const seen: unknown[] = [];
     const provider = createLiveExecuteProxyRouteProvider({
+      modelCatalog: catalog,
       registry, router, bridge, sessionEventHub, generateSessionId: () => "generated-session",
       admitAttachmentInput: async (request, input) => {
         seen.push({ request, input });

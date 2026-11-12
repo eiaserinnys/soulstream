@@ -7,6 +7,11 @@ import type { McpHostOptions } from "../src/mcp/types.js";
 import { NodeEventIngressController } from "../src/node/event_ingress_controller.js";
 import type { EventAppendBatch, EventIngressEnvelope } from "../src/node/event_ingress_types.js";
 import { UsageSummaryService, type UsageSummarySnapshot } from "../src/usage/usage_summary_service.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 /** The real availability service, route, router and bridge deliver a command to a fake node. */
 function harness(reason: "quota" | "env" | "auth" = "quota") {
@@ -43,7 +48,7 @@ function harness(reason: "quota" | "env" | "auth" = "quota") {
     getSummary: () => summary,
     getLimitRejection: (nodeId, provider) => usageMemory.getLimitRejection(nodeId, provider),
     getClaudePoolAccountsForAvailability: (_nodeId, accounts) => accounts,
-  }, () => now);
+  }, catalog, () => now);
   transports.attach({ nodeId: "quota-node", connectionId: registration.node.connectionId,
     transport: { send: data => {
       const command = JSON.parse(data);

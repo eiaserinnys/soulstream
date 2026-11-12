@@ -12,6 +12,7 @@ import { createLiveDbSqlResolver } from "../src/runtime/live_db_sql.js";
 import { createLiveAttachmentReadRepository } from "../src/runtime/live_attachment_read_repository.js";
 import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page_postgres_harness.js";
 import { prepareCardWorkSchema } from "./card-work-postgres-fixture.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 const describePostgres = spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0
   ? describe
@@ -33,7 +34,12 @@ describePostgres("session output attachment history references PostgreSQL contra
     await harness.sql`INSERT INTO sessions(session_id,node_id)
       VALUES (${sessionId},${nodeId}),(${otherSessionId},${nodeId})`;
     const sqlResolver = createLiveDbSqlResolver({ sql: harness.liveSql });
-    ingress = new EventIngressRepository(new LiveEventIngressSqlProvider(sqlResolver));
+    ingress = new EventIngressRepository(
+      new LiveEventIngressSqlProvider(sqlResolver),
+      undefined,
+      undefined,
+      { modelCatalog: repositoryModelCatalog() },
+    );
     attachmentReadRepository = createLiveAttachmentReadRepository(sqlResolver);
     outboxDirectory = await mkdtemp(join(tmpdir(), "session-output-history-"));
     outbox = await EventOutbox.open(outboxDirectory);

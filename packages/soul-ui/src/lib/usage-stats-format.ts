@@ -339,16 +339,13 @@ export function formatUsageStatsProviderLabel(provider: string): string {
   return provider;
 }
 
-export function formatUsageStatsModelLabel(model: string | null | undefined): string {
+/** Catalogue label first, then the raw model id, then the unknown wording. */
+export function formatUsageStatsModelLabel(
+  model: string | null | undefined,
+  label?: string | null,
+): string {
+  if (label) return label;
   if (!model) return "모델 미상";
-  if (model === "claude-opus-5.5") return "Claude Opus 5.5";
-  if (model === "claude-sonnet-5.5") return "Claude Sonnet 5.5";
-  if (model === "gpt-6.1-sol") return "GPT-6.1 Sol";
-  if (model === "gpt-6-luna") return "GPT-6 Luna";
-  if (model === "gemini-3.8-flash") return "Gemini 3.8 Flash";
-  if (model === "gemini-4-argon") return "Gemini 4 Argon";
-  if (model === "gemini-4-carbon") return "Gemini 4 Carbon";
-  if (model === "kimi-for-coding/k3") return "Kimi for Coding K3";
   return model;
 }
 

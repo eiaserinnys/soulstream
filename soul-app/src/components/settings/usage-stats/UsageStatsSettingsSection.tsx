@@ -362,7 +362,7 @@ export function UsageStatsSettingsSection({ flattened = false }: { flattened?: b
                   const share = typeof value === 'number' && denominator > 0 ? value / denominator : value === 0 ? 0 : null;
                   const label = row.attribution === 'provider'
                     ? formatUsageStatsProviderLabel(row.provider)
-                    : formatUsageStatsModelLabel(row.model);
+                    : formatUsageStatsModelLabel(row.model, row.model_label);
                   const id = row.model !== null ? `usage-stats-model-row-${row.provider}-${row.model}` : `usage-stats-model-row-${row.provider}-provider`;
                   return <UsageShareRow
                     key={JSON.stringify([row.provider, row.model])}

@@ -1,5 +1,6 @@
 import type { UsageStatsCoverage, UsageStatsDayDetail, UsageStatsOptions, UsageStatsProvider } from "@soulstream/wire-schema/session-statistics";
 import { USAGE_STATS_PROVIDERS } from "@soulstream/wire-schema/session-statistics";
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 import { createSessionStatisticsMetricState, selectOwnedSessionStatisticsRows, sessionStatisticsDate,
   type SessionStatisticsMetricState, type SessionStatisticsScope } from "./session_statistics_aggregate.js";
 import { createSessionStatisticsCoverageIndex, sessionStatisticsCoverage } from "./session_statistics_coverage.js";
@@ -50,7 +51,7 @@ export function dailySelectorKey(selector: DailySelector): string {
 
 /** Existing canonical/coverage/metric policies prepare each disjoint session slice. */
 export function createSessionStatisticsDailyState(read: SessionStatisticsReadResult, day: string,
-  options?: { includeMaterial?: boolean }): SessionStatisticsDailyState {
+  catalog: ModelCatalogConfig, options?: { includeMaterial?: boolean }): SessionStatisticsDailyState {
   const grouped = new Map<string, SessionStatisticsReadResult["rows"][number][]>();
   for (const row of read.rows) {
     const group = grouped.get(row.session_id) ?? [];
@@ -87,7 +88,7 @@ export function createSessionStatisticsDailyState(read: SessionStatisticsReadRes
       const selected = selectOwnedSessionStatisticsRows(slice, scope);
       const coverage = sessionStatisticsCoverage(slice, index, scope, selected);
       prepared[key] = {
-        metrics: createSessionStatisticsMetricState(slice, selected), coverage, sourceCount: selected.length,
+        metrics: createSessionStatisticsMetricState(slice, selected, catalog), coverage, sourceCount: selected.length,
         tokenEvidence: selected.length > 0 || coverage.usage_partial_events > 0
           || coverage.missing_usage_turns > 0 || unattributedAllFields,
         material: emptyMaterial ?? buildSessionStatisticsMaterial(slice, day, scope),

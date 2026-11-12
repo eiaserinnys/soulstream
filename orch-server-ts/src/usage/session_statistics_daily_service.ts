@@ -1,3 +1,4 @@
+import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 import { buildDailyDay, buildDailyOverview } from "./session_statistics_daily_merge.js";
 import { createSessionStatisticsDailyState, SESSION_STATISTICS_DAILY_AGGREGATION_VERSION,
   type SessionStatisticsDailyState } from "./session_statistics_daily_state.js";
@@ -17,18 +18,21 @@ export class SessionStatisticsDailyService extends SessionStatisticsService {
   private closed = false;
 
   constructor(private readonly dailyRepositoryProvider: () => Promise<SessionStatisticsRepositoryPort>,
+    modelCatalog: ModelCatalogSource,
     private readonly now: () => Date = () => new Date()) {
-    super(dailyRepositoryProvider);
+    super(dailyRepositoryProvider, modelCatalog);
   }
 
   override async getOverview(input: SessionStatisticsReadRequest) {
     const prepared = await this.prepare(input, "overview");
-    return prepared === null ? super.getOverview(input) : buildDailyOverview(prepared.read, prepared.days);
+    return prepared === null ? super.getOverview(input)
+      : buildDailyOverview(prepared.read, prepared.days, this.modelCatalog.snapshot());
   }
 
   override async getDay(input: SessionStatisticsReadRequest & { day: string }) {
     const prepared = await this.prepare(input, "day");
-    return prepared === null ? super.getDay(input) : buildDailyDay(prepared.read, prepared.days, input.day);
+    return prepared === null ? super.getDay(input)
+      : buildDailyDay(prepared.read, prepared.days, input.day, this.modelCatalog.snapshot());
   }
 
   close(): void {
@@ -101,7 +105,7 @@ export class SessionStatisticsDailyService extends SessionStatisticsService {
       ? repository.readOverviewSlice(sliceInput, day)
       : repository.readSlice!(sliceInput, day);
     const createState = (read: SessionStatisticsReadResult) => createSessionStatisticsDailyState(read, day,
-      { includeMaterial: false });
+      this.modelCatalog.snapshot(), { includeMaterial: false });
     if (target.value && Date.parse(target.value.asOf) > Date.parse(input.asOf)) {
       return readSlice().then(createState);
     }
@@ -124,12 +128,13 @@ export class SessionStatisticsDailyService extends SessionStatisticsService {
     if (target.value && Date.parse(target.value.asOf) > Date.parse(input.asOf)) {
       // Historical verification must not consume a snapshot from its future.
       return repository.readSlice!({ ...input, query: { period: "all", anchor: day } }, day)
-        .then(read => createSessionStatisticsDailyState(read, day));
+        .then(read => createSessionStatisticsDailyState(read, day, this.modelCatalog.snapshot()));
     }
     if (!target.value || Date.parse(input.asOf) - Date.parse(target.value.asOf) >= 60_000) {
       target.refreshing ??= repository.readSlice!({ ...input, day: null,
         query: { period: "all", anchor: day }, access: { restricted: false, allowedFolderIds: [] } }, day)
-        .then(read => { const value = createSessionStatisticsDailyState(read, day); target.value = value; return value; })
+        .then(read => { const value = createSessionStatisticsDailyState(read, day, this.modelCatalog.snapshot());
+          target.value = value; return value; })
         .finally(() => { target.refreshing = undefined; });
       if (target.value) void target.refreshing.catch(() => this.reportFailure());
     }
@@ -145,7 +150,7 @@ export class SessionStatisticsDailyService extends SessionStatisticsService {
       try {
         computed = await calculateSessionStatisticsDay(await this.dailyRepositoryProvider(), {
           ...input, day: null, asOf: this.now().toISOString(),
-        });
+        }, this.modelCatalog.snapshot());
       } catch { this.reportFailure(); }
       if (!this.closed) {
         this.timer = setTimeout(() => { void tick(); }, computed ? 0 : 60_000);

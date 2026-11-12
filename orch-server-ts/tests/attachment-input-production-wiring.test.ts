@@ -12,6 +12,11 @@ import {
   type LiveProviderDependencies,
 } from "../src/index.js";
 import { UI_EVENT_COLLECTION_DISABLED } from "../src/ui-events/ui_event_settings.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 const asset = {
   id: "attachment-a",
@@ -178,6 +183,7 @@ describe("live attachment input admission wiring", () => {
     const dependencies = createFactoryDependencies(repository);
     const findSessionNode = vi.fn(async () => "node-a");
     const bundle = createLiveOrchestratorProviderBundle({
+      modelCatalog: catalog,
       nodeCredentials: null,
       dependencies,
       runtimeServices,
