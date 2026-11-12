@@ -537,3 +537,73 @@ it('releases the provisional hold when the send fails after the board update', a
   expect(host.querySelector(`[data-testid="report-sheet-${serverQuestionEntry.key}"]`)).toBeNull();
   expect(heldAnswer()).toBeUndefined();
 });
+
+it('drops a collapsed answered sheet when the answered hold expires', async () => {
+  vi.useFakeTimers();
+  try {
+    questionRenderer = questionSample;
+    entries = [one, serverQuestionEntry]; await render();
+    await respond();
+    entries = [one]; await render();
+    expect(heldAnswer()).toBe('응');
+    await act(async () => { vi.advanceTimersByTime(10_000 - 100); });
+    expect(heldAnswer()).toBe('응');
+    await act(async () => { vi.advanceTimersByTime(100); });
+    expect(host.querySelector(`[data-testid="report-sheet-${serverQuestionEntry.key}"]`)).toBeNull();
+    expect(heldAnswer()).toBeUndefined();
+  } finally { vi.useRealTimers(); }
+});
+
+it('keeps an expanded answered sheet and counts the hold again from its collapse', async () => {
+  vi.useFakeTimers();
+  try {
+    questionRenderer = questionSample;
+    entries = [serverQuestionEntry, two]; await render();
+    await act(async () => sheetButton(host, serverQuestionEntry.key, '볼 장').click());
+    expect(host.querySelector(`[data-testid="card-details-${serverQuestionEntry.key}"]`)).not.toBeNull();
+    await respond();
+    entries = [two]; await render();
+    expect(heldAnswer()).toBe('응');
+    await act(async () => { vi.advanceTimersByTime(10_000); });
+    expect(heldAnswer()).toBe('응');
+    await act(async () => sheetButton(host, serverQuestionEntry.key, '축소').click());
+    await act(async () => { vi.advanceTimersByTime(10_000 - 100); });
+    expect(heldAnswer()).toBe('응');
+    await act(async () => { vi.advanceTimersByTime(100); });
+    expect(host.querySelector(`[data-testid="report-sheet-${serverQuestionEntry.key}"]`)).toBeNull();
+    expect(heldAnswer()).toBeUndefined();
+  } finally { vi.useRealTimers(); }
+});
+
+it('does not expire a provisional hold before the answer is acknowledged', async () => {
+  vi.useFakeTimers();
+  try {
+    questionRenderer = questionSample;
+    const send = deferred<typeof ACK>();
+    transport.mockImplementationOnce(() => send.promise);
+    entries = [one, serverQuestionEntry]; await render();
+    await respond();
+    entries = [one]; await render();
+    expect(heldAnswer()).toBe('응');
+    await act(async () => { vi.advanceTimersByTime(10_000); });
+    expect(heldAnswer()).toBe('응');
+    expect(host.querySelector(`[data-testid="report-sheet-${serverQuestionEntry.key}"]`)).not.toBeNull();
+    await act(async () => { send.resolve(ACK); await Promise.resolve(); });
+  } finally { vi.useRealTimers(); }
+});
+
+it('shows the neighbour sheet in the same place, not the first sheet, when the answered hold expires', async () => {
+  vi.useFakeTimers();
+  try {
+    questionRenderer = questionSample;
+    entries = [one, serverQuestionEntry, two]; await render();
+    await act(async () => button('다음 장').click());
+    expect(host.querySelector('[data-current="true"]')?.getAttribute('data-testid')).toBe(`report-sheet-${serverQuestionEntry.key}`);
+    await respond();
+    entries = [one, two]; await render();
+    expect(heldAnswer()).toBe('응');
+    await act(async () => { vi.advanceTimersByTime(10_000); });
+    expect(host.querySelector(`[data-testid="report-sheet-${serverQuestionEntry.key}"]`)).toBeNull();
+    expect(host.querySelector('[data-current="true"]')?.getAttribute('data-testid')).toBe('report-sheet-two');
+  } finally { vi.useRealTimers(); }
+});

@@ -23,6 +23,8 @@ export type ReportQuestionControls = { expanded: boolean; expand(): void; reply(
 type Props = { renderQuestion?(entry: PersistentReportEntry, controls: ReportQuestionControls): ReportQuestionView | null; renderCardDetails?(entry: PersistentReportEntry, lookupCards: () => Promise<void>): React.ReactNode; renderCardStatus?(entry: PersistentReportEntry): React.ReactNode; sessionId: string; focusInput: () => void; dismissReport: (key: string) => Promise<void>; notify: (text: string) => void; disabled?: boolean; seat?: ReportBubbleSeat; transport?: typeof submitIntervention; cardTransition?: CardTransition; completion?: ReturnType<typeof usePersistentCardCompletion> };
 type ReportCardEntry = PersistentReportEntry & { card_id?: string; card_status?: string };
 const LINK_FOCUS = 'rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background';
+/** 계약 판 8, 3절 2번: 답한 장은 펼치지 않은 채 이만큼 지나면 놓는다. */
+export const CARD_QUESTION_ANSWERED_HOLD_MS = 10_000;
 
 export function PersistentReportDeck({ sessionId, focusInput, dismissReport, notify, disabled = false, seat, transport, renderQuestion, renderCardDetails, renderCardStatus, cardTransition, completion: providedCompletion }: Props) {
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -65,6 +67,13 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
   const index = Math.max(0, entries.findIndex(entry => entry.key === effectiveVisibleKey));
   const currentKey = entries[index]?.key ?? null;
   const activeExpandedKey = expandedKey === currentKey ? expandedKey : null;
+  // 펼쳐 둔 동안에는 시간을 세지 않고, 접으면 그때부터 다시 센다. 펼치면 cleanup이 타이머를 푼다.
+  useEffect(() => {
+    const key = report.answeredHoldKey;
+    if (!key || activeExpandedKey === key) return;
+    const timer = setTimeout(() => report.expire(key), CARD_QUESTION_ANSWERED_HOLD_MS);
+    return () => clearTimeout(timer);
+  }, [report.answeredHoldKey, activeExpandedKey, report.expire]);
   const track = useRef<HTMLDivElement>(null);
   const root = useRef<HTMLElement | null>(null);
   const bubble = seat?.target && seat.body ? seat.layout : null;

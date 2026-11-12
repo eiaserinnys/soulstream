@@ -253,6 +253,7 @@ function PasScene() {
     reportBubble: { widthScale: 1, minimumHeight: minimumReportBubbleHeight(t) } });
   const pager = <PersistentReportPager entries={reportSend.entries} index={report.index} api={api} sessionId="review-question-pas"
     completion={completion} expandedKey={phone ? null : expandedKey} onExpandedKeyChange={setExpandedKey}
+    answeredHoldKey={report.answeredHoldKey} onAnsweredHoldExpire={report.expireAnsweredHold}
     onSelect={report.select} onDismiss={async key => { setServerEntries(saved => saved.filter(entry => entry.key !== key)); }} onFocusComposer={() => {}}
     bubble={Boolean(layout.reportBubble)} maxHeight={layout.reportBubble?.maxHeight ?? layout.reportViewMaxHeight}
     renderCardStatus={entry => {
