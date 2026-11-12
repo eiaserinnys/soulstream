@@ -1,7 +1,8 @@
 // 카드 #1197: 카드 질문 장의 실제 구현 표본. 검수 창(/components)과 시각 검증 스크립트가
 // 운영과 같은 부품(CardDetailPane, PersistentReportDeck + pasCardQuestion, PasCardExpansion)을
 // 같은 폭과 상태로 연다. 장면 이름은 시안(df63ae1b1)의 ga, na, da, ra, legacy를 그대로 쓴다.
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type MutableRefObject } from 'react';
+import { flushSync } from 'react-dom';
 import { useDashboardStore, type PersistentReportEntry } from '@seosoyoung/soul-ui';
 import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persistent-report/PersistentReportProvider';
 import { calculatePersistentSessionLayout } from '@seosoyoung/soul-ui/lib/persistent-session-layout';
@@ -95,6 +96,15 @@ function entryFor(scene: CardQuestionScene, detail: CardDetail): PersistentRepor
   };
 }
 
+/** 질문 장과 함께 깔리는 판의 다른 장. 답이 저장되면 서버 판은 질문 장을 빼고 이 장을 남긴다. */
+function cardSheetFor(detail: CardDetail): PersistentReportEntry {
+  return {
+    key: `card_${detail.card.id}`, kind: 'see', title: '카드에 답을 반영했습니다',
+    card_numbers: [detail.card.number ?? 1132], context: '질문 장에서 정한 답을 카드에 적었습니다.', action: '', options: [],
+    state: 'open', answer: '', updated_at: at(22), card_id: detail.card.id, card_status: 'blocked',
+  };
+}
+
 function useScenePreset(scene: CardQuestionScene, surface: 'pas' | 'card', cardId: string, questionId: string, revision: number) {
   useEffect(() => {
     const draftKey = `composer:card-comment:${cardId}`;
@@ -116,8 +126,9 @@ export function CardQuestionReviewSample({ scene, surface, bubble = true, narrow
   const detailRef = useRef(detail);
   const cardId = detail.card.id;
   const question = detail.questions[0]!;
+  const boardUpdate = useRef<((questionId: string) => void) | null>(null);
   useLayoutEffect(() => { detailRef.current = detail; }, [detail]);
-  useCardApiSample(detailRef);
+  useCardApiSample(detailRef, questionId => boardUpdate.current?.(questionId));
   useEffect(() => {
     const store = useCardStore.getState();
     store.putCards([detail.card]);
@@ -128,26 +139,36 @@ export function CardQuestionReviewSample({ scene, surface, bubble = true, narrow
     ? <div key={revision} style={{ width: '100%', maxWidth: 760, height: narrow ? 1800 : 1500, display: 'grid' }} data-testid="card-question-card-sample">
         <CardDetailPane cardId={cardId} folders={[]} onClose={() => {}} onOpenSession={() => {}} />
       </div>
-    : <PasQuestionSample key={revision} scene={scene} detail={detail} bubble={bubble}
+    : <PasQuestionSample key={revision} scene={scene} detail={detail} bubble={bubble} boardUpdate={boardUpdate}
         onReset={() => { useDashboardStore.getState().setPendingChatSend(`card-question-review-${scene}`, null); setRevision(current => current + 1); }} />;
 }
 
-function PasQuestionSample({ scene, detail, bubble, onReset }: {
-  scene: CardQuestionScene; detail: CardDetail; bubble: boolean; onReset(): void;
+function PasQuestionSample({ scene, detail, bubble, boardUpdate, onReset }: {
+  scene: CardQuestionScene; detail: CardDetail; bubble: boolean; boardUpdate: MutableRefObject<((questionId: string) => void) | null>; onReset(): void;
 }) {
   const sessionId = `card-question-review-${scene}`;
   const entry = entryFor(scene, detail);
+  const [board, setBoard] = useState<PersistentReportEntry[]>(() => [entry, cardSheetFor(detail)]);
+  const removeQuestion = useCallback((questionId: string) => {
+    flushSync(() => setBoard(current => current.filter(item => item.key !== `cq_${questionId}`)));
+  }, []);
+  useLayoutEffect(() => { boardUpdate.current = removeQuestion; return () => { boardUpdate.current = null; }; }, [boardUpdate, removeQuestion]);
   const [target, setTarget] = useState<HTMLDivElement | null>(null);
   const layout = calculatePersistentSessionLayout({ app: { left: 0, top: 0, width: 1440, height: 900 }, header: { left: 0, top: 0, width: 1440, height: 76 }, main: { left: 460, top: 76, width: 520, height: 792 }, baselineBottom: 868, inputRowHeight: 32, rowBottomGap: 4, pointerFine: true, showCharacter: true, phoneConfigured: false, reportBubble: { widthScale: 0.8, minimumHeight: REPORT_BUBBLE_MINIMUM_HEIGHT } });
   const seat: ReportBubbleSeat = { target, layout: layout.reportBubble, body: layout.body };
   const deck = <PersistentReportDeck sessionId={sessionId} seat={bubble ? seat : undefined} notify={() => {}} focusInput={() => {}} dismissReport={async () => {}}
-    transport={async () => ({ ok: true, delivered: true, reason: null, consumeWhen: null })}
+    transport={async ({ contextItems }) => {
+      // 서버는 답을 저장한 커밋 뒤 판을 다시 계산해 보낸다. 표본도 판 교체를 먼저 그리고 답 확인을 돌려준다.
+      const key = contextItems?.find(item => item.key === 'persistent_report_reply')?.content.key;
+      if (typeof key === 'string' && key.startsWith('cq_')) removeQuestion(key.slice('cq_'.length));
+      return { ok: true, delivered: true, reason: null, consumeWhen: null };
+    }}
     renderCardStatus={item => <PasCardExpansionStatus entry={item} />}
     renderQuestion={pasCardQuestion}
     renderCardDetails={(item, lookupCards) => <PasCardExpansion key={item.key} entry={item} lookupCards={lookupCards} samplePortraitUrl="/system-portrait.png" />} />;
   return <>
-    <PersistentReportProvider sessionId={sessionId} entries={[entry]}>
-      <div className="persistent-session-screen" data-scene={scene}>
+    <PersistentReportProvider sessionId={sessionId} entries={board}>
+      <div className="persistent-session-screen" data-scene={scene} data-board={board.map(item => item.key).join(',')}>
         {bubble ? <div style={{ position: 'relative', height: layout.reportBubble!.maxHeight, width: layout.reportBubble!.width }}>
           <div ref={setTarget} className="persistent-session-character" style={{ left: layout.body!.left - layout.reportBubble!.left, top: layout.reportBubble!.maxHeight + layout.body!.top - layout.reportBubble!.bottom, width: layout.body!.width }} />
           {deck}

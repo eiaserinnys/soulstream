@@ -13,7 +13,7 @@ import { CardSessionHistory, type CardSessionSelection } from "./CardSessionHist
 import { DetailTabs } from "./DetailTabs";
 import { CardTimeline } from "./CardTimeline";
 import { CardQuestionNotice, isOpenCardQuestion } from "./CardQuestionBlock";
-import { cardDetailTargetScope, clearCardQuestionTarget, setCardQuestionTarget, useCardQuestionTarget } from "./card-question-target";
+import { cardDetailTargetScope, cardQuestionTargetGeneration, clearCardQuestionTarget, setCardQuestionTarget, useCardQuestionTarget } from "./card-question-target";
 import { CardCommentInput } from "./CardCommentInput";
 import "./v3-cards.css";
 import type { CardColor, CardComment, CardDetail } from "@seosoyoung/soul-ui/cards/card-types";
@@ -50,7 +50,7 @@ export function CardDetailPane(props:CardDetailPaneProps) {
  const [sentNotice,setSentNotice]=useState(false);
  const [noticeVersion,setNoticeVersion]=useState(0);
  const [unreadComments,setUnreadComments]=useState(false);
- const [focusRequest,setFocusRequest]=useState(0);
+ const [focusRequest,setFocusRequest]=useState(()=>({cardId,value:0}));
  const [dockHeight,setDockHeight]=useState(0);
  const [pending,setPending]=useState(false);
  const statusPicker=useRef<CardStatusHandle>(null);
@@ -74,7 +74,7 @@ export function CardDetailPane(props:CardDetailPaneProps) {
  // 되묻기·덧붙이기 대상은 이 카드 상세가 살아 있는 동안만 산다.
  useEffect(()=>()=>clearCardQuestionTarget(questionScope),[questionScope]);
  useEffect(()=>{if(questionTarget.target&&detail&&!detail.questions.some(question=>question.id===questionTarget.target!.questionId))clearCardQuestionTarget(questionScope);},[detail,questionScope,questionTarget.target]);
- useEffect(()=>{initializedTabForCard.current=null;setTargetItemId(null);setSentNotice(false);setUnreadComments(false);setFocusRequest(0);},[cardId]);
+ useEffect(()=>{initializedTabForCard.current=null;setTargetItemId(null);setSentNotice(false);setUnreadComments(false);setFocusRequest({cardId,value:0});},[cardId]);
  useEffect(()=>{
   if(!card||initializedTabForCard.current===cardId)return;
   initializedTabForCard.current=cardId;
@@ -95,8 +95,10 @@ export function CardDetailPane(props:CardDetailPaneProps) {
  },[cardId,targetItemId,sentNotice]);
  const answer=async(questionId:string,text:string):Promise<boolean>=>{
   // 선택지는 한 번 누르면 바로 간다. 덧붙일 말은 보낸 뒤 입력창의 「덧붙이기」 대상으로 받는다.
+  // 답 저장 중에 카드 상세가 닫히면 늦게 온 성공 응답이 새 화면의 대상을 되살리지 않는다.
+  const generation=cardQuestionTargetGeneration(questionScope);
   setPending(true);
-  try {await useCardStore.getState().mutate(cardId,`/questions/${encodeURIComponent(questionId)}/answer`,cardQuestionChoiceAnswer(text));if(text!=="했어")setCardQuestionTarget(questionScope,{kind:"append",questionId,label:text});return true;}
+  try {await useCardStore.getState().mutate(cardId,`/questions/${encodeURIComponent(questionId)}/answer`,cardQuestionChoiceAnswer(text));if(text!=="했어"&&cardQuestionTargetGeneration(questionScope)===generation)setCardQuestionTarget(questionScope,{kind:"append",questionId,label:text});return true;}
   catch {return false;} finally {setPending(false);}
  };
  const openQuestion=detail?.questions.find(isOpenCardQuestion);
@@ -123,11 +125,14 @@ export function CardDetailPane(props:CardDetailPaneProps) {
    return true;
   } catch {return false;} finally {setPending(false);}
  };
+ // 포커스 요청은 그 요청을 만든 카드에 묶는다. 카드가 바뀐 뒤 이전 카드의 요청이 새 입력창에 닿지 않는다.
+ const requestFocus=(amount=1)=>setFocusRequest(current=>current.cardId===cardId?{cardId,value:current.value+amount}:{cardId,value:amount});
+ const focusRequestForCard=focusRequest.cardId===cardId?focusRequest.value:0;
  const chooseTargetItem=(itemId:number)=>{
-  setTargetItemId(itemId);setSentNotice(false);setFocusRequest(request=>request+1);
+  setTargetItemId(itemId);setSentNotice(false);requestFocus();
  };
  const clearQuestionTarget=()=>{
-  setFocusRequest(request=>request+questionTarget.focus+1);clearCardQuestionTarget(questionScope);
+  requestFocus(questionTarget.focus+1);clearCardQuestionTarget(questionScope);
  };
  const changeTab=(next:"items"|"comments"|"sessions"|"notes")=>{
   setTab(next);
@@ -197,10 +202,10 @@ export function CardDetailPane(props:CardDetailPaneProps) {
    </div>
   </div>
   <div className="v3-card-composer-slot" ref={dock}>
-   {targetItemId!==null?<div className="v3-card-target-notice" role="status"><span>대상: {targetItemId}번 {targetItem?.title??"항목"}</span><button type="button" aria-label="커멘트 대상 해제" onClick={()=>{setTargetItemId(null);setFocusRequest(request=>request+1);}}>해제</button></div>:null}
+   {targetItemId!==null?<div className="v3-card-target-notice" role="status"><span>대상: {targetItemId}번 {targetItem?.title??"항목"}</span><button type="button" aria-label="커멘트 대상 해제" onClick={()=>{setTargetItemId(null);requestFocus();}}>해제</button></div>:null}
    {targetItemId===null&&validTarget?<CardQuestionNotice label={validTarget.kind==="ask"?"되묻기":`덧붙이기: ${validTarget.label}`} onClear={clearQuestionTarget}/>:null}
    {sentNotice?<div className="v3-card-sent-notice" role="status">보냈습니다. <button type="button" onClick={()=>changeTab("comments")}>커멘트에서 보기</button></div>:null}
-   <CardCommentInput uploadController={sampleDetail?sampleUpload:undefined} key={cardId} cardId={cardId} nodeId={nodeId} sessionId={card.assigneeSessionId} pending={pending} focusRequest={focusRequest+questionTarget.focus} onSend={submit}
+   <CardCommentInput uploadController={sampleDetail?sampleUpload:undefined} key={cardId} cardId={cardId} nodeId={nodeId} sessionId={card.assigneeSessionId} pending={pending} focusRequest={focusRequestForCard+questionTarget.focus} onSend={submit}
     placeholder={targetItemId!==null?"커멘트":validTarget?.kind==="ask"?"물어볼 것":validTarget?.kind==="append"?"덧붙일 말":openQuestion?"다르게 답하기":"커멘트"}/>
   </div>
  </article>;

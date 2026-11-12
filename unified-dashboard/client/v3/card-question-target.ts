@@ -8,10 +8,14 @@ export type CardQuestionTarget =
 
 type Entry = { target: CardQuestionTarget | null; focus: number };
 const entries = new Map<string, Entry>();
+const generations = new Map<string, number>();
 const listeners = new Set<() => void>();
 const EMPTY: Entry = { target: null, focus: 0 };
 
 function emit() { for (const listener of listeners) listener(); }
+
+/** 화면 닫힘 세대. 닫히기 전에 시작한 저장 응답은 이 값이 달라져 대상을 세우지 못한다. */
+export function cardQuestionTargetGeneration(scope: string) { return generations.get(scope) ?? 0; }
 
 /** 대상은 그 화면이 살아 있는 동안만 산다. 화면이 닫히거나 카드·장이 바뀌면 부르는 쪽이 지운다. */
 export function setCardQuestionTarget(scope: string, target: CardQuestionTarget | null, focus = false) {
@@ -21,6 +25,8 @@ export function setCardQuestionTarget(scope: string, target: CardQuestionTarget 
 }
 
 export function clearCardQuestionTarget(scope: string) {
+  // 대상이 없어도 세대는 올린다. 닫힌 화면의 늦은 저장 응답이 새 화면에 대상을 세우지 못하게 한다.
+  generations.set(scope, cardQuestionTargetGeneration(scope) + 1);
   if (!entries.delete(scope)) return;
   emit();
 }

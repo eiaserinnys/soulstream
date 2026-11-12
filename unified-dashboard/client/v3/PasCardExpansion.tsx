@@ -11,7 +11,7 @@ import { CardNowPanel } from './CardNowPanel';
 import { CardTimeline } from './CardTimeline';
 import { summarizeCardItems } from './card-item-summary';
 import { CardQuestionActions, CardQuestionAnswered, CardQuestionBody, CardQuestionNotice, cardQuestionDetailView, cardQuestionSheetView, isOpenCardQuestion, type CardQuestionView } from './CardQuestionBlock';
-import { clearCardQuestionTarget, pasSheetTargetScope, setCardQuestionTarget, useCardQuestionTarget, type CardQuestionTarget } from './card-question-target';
+import { cardQuestionTargetGeneration, clearCardQuestionTarget, pasSheetTargetScope, setCardQuestionTarget, useCardQuestionTarget, type CardQuestionTarget } from './card-question-target';
 import type { ReportQuestionControls, ReportQuestionView } from './PersistentReportDeck';
 
 type PasCardEntry = PersistentReportEntry & { card_id?: string; card_status?: string };
@@ -154,12 +154,16 @@ export function pasCardQuestion(entry: PersistentReportEntry, controls: ReportQu
   const choose = async (option: string) => {
     if (!controls.expanded) return controls.reply(option);
     if (!cardId) return false;
+    // 보내기 시작과 함께 잠정으로 붙들고, 답 저장이 끝나면 확정한다.
+    const generation = cardQuestionTargetGeneration(scope);
+    controls.hold(option);
     try {
       await useCardStore.getState().mutate(cardId, `/questions/${encodeURIComponent(view.id)}/answer`, cardQuestionChoiceAnswer(option));
-      if (option !== '했어') setCardQuestionTarget(scope, { kind: 'append', questionId: view.id, label: option });
-      controls.hold(option);
+      if (option !== '했어' && cardQuestionTargetGeneration(scope) === generation) setCardQuestionTarget(scope, { kind: 'append', questionId: view.id, label: option });
+      controls.confirm();
       return true;
     } catch {
+      controls.release();
       return false;
     }
   };

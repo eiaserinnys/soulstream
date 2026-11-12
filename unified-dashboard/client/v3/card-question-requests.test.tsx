@@ -196,9 +196,9 @@ describe('PAS deck question actions', () => {
   const choice = (label: string) => [...host.querySelectorAll<HTMLButtonElement>('button')]
     .find(node => node.textContent?.startsWith(label))!;
   const textarea = () => host.querySelector('textarea')!;
-  const render = async (entry: PersistentReportEntry = sheetEntry) => act(async () => root.render(
+  const render = async (board: PersistentReportEntry[] = [sheetEntry]) => act(async () => root.render(
     <InternalLinkProvider internalOrigins={['https://example.test']} openTarget={() => {}}>
-      <PersistentReportProvider sessionId="a" entries={[entry]}>
+      <PersistentReportProvider sessionId="a" entries={board}>
         <PersistentReportDeck sessionId="a" notify={() => {}} transport={transport} focusInput={() => {}}
           dismissReport={async () => {}} renderCardStatus={() => null}
           renderCardDetails={(item, lookupCards) => <PasCardExpansion entry={item} lookupCards={lookupCards} />}
@@ -288,6 +288,49 @@ describe('PAS deck question actions', () => {
     expect(mutate).toHaveBeenCalledTimes(2);
   });
 
+  // 서버는 답 저장의 afterCommit에서 판을 다시 계산해, cq_ 장을 빼는 판 갱신이 REST 답 응답보다 먼저 온다.
+  it('keeps the expanded sheet through the board update and sets the target after the answer saves', async () => {
+    await render();
+    await expand();
+    let settle!: (value: unknown) => void;
+    mutate.mockImplementationOnce(() => new Promise(resolve => { settle = resolve; }));
+    await act(async () => { choice('파일로 옮기기').click(); await Promise.resolve(); });
+    await render([]);
+    expect(host.textContent).toContain('받은 답');
+    expect(host.querySelector('.v3-card-target-notice')).toBeNull();
+    await act(async () => { settle(undefined); await Promise.resolve(); await Promise.resolve(); });
+    expect(host.textContent).toContain('받은 답');
+    expect(host.querySelector('.v3-card-target-notice')?.textContent).toContain('덧붙이기: 파일로 옮기기');
+    expect(textarea().getAttribute('placeholder')).toBe('덧붙일 말');
+  });
+
+  it('releases the expanded provisional hold when the answer fails after the board update', async () => {
+    await render();
+    await expand();
+    let fail!: (error: Error) => void;
+    mutate.mockImplementationOnce(() => new Promise((_resolve, reject) => { fail = reject; }));
+    await act(async () => { choice('파일로 옮기기').click(); await Promise.resolve(); });
+    await render([]);
+    expect(host.textContent).toContain('받은 답');
+    await act(async () => { fail(new Error('전송 실패')); await Promise.resolve(); await Promise.resolve(); });
+    expect(host.textContent).not.toContain('받은 답');
+    expect(host.querySelector('.v3-card-target-notice')).toBeNull();
+  });
+
+  it('does not set the append target when the expanded sheet closes before the answer response', async () => {
+    await render();
+    await expand();
+    let settle!: (value: unknown) => void;
+    mutate.mockImplementationOnce(() => new Promise(resolve => { settle = resolve; }));
+    await act(async () => { choice('파일로 옮기기').click(); await Promise.resolve(); });
+    await act(async () => { button('축소').click(); await Promise.resolve(); });
+    expect(host.querySelector('.pas-report-card-preview')).toBeNull();
+    await act(async () => { settle(undefined); await Promise.resolve(); await Promise.resolve(); });
+    await expand();
+    expect(host.querySelector('.v3-card-target-notice')).toBeNull();
+    expect(textarea().getAttribute('placeholder')).not.toBe('덧붙일 말');
+  });
+
   it('shows the waiting row from the thread and the revised time', async () => {
     await render();
     expect(host.textContent).toContain('답을 기다리는 중');
@@ -296,7 +339,7 @@ describe('PAS deck question actions', () => {
 
   it('sends a collapsed request 했어 as a choice', async () => {
     const asked: PersistentReportEntry = { ...sheetEntry, key: 'cq_q-2', question_id: 'q-2', title: '아이폰 앱을 업데이트해 주십시오', question_title: '아이폰 앱을 업데이트해 주십시오', question_kind: 'request', question_option_details: [], question_thread: [] };
-    await render(asked);
+    await render([asked]);
     await act(async () => { button('했어').click(); await Promise.resolve(); await Promise.resolve(); });
     expect(transport).toHaveBeenCalledWith(expect.objectContaining({
       contextItems: [{ key: 'persistent_report_reply', content: { key: 'cq_q-2', option: '했어' } }],

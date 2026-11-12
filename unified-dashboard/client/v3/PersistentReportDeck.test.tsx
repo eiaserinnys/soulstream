@@ -501,3 +501,39 @@ it('does not hold the answer when the send fails', async () => {
   expect(heldAnswer()).toBe('none');
   expect(host.querySelector<HTMLElement>(`[data-testid="report-sheet-${serverQuestionEntry.key}"]`)?.getAttribute('data-answered')).toBe('false');
 });
+
+// 운영에서는 답 저장의 afterCommit이 판 재계산을 기다려, cq_ 장을 빼는 판 갱신이 답 ACK보다 먼저 온다.
+// 장은 보내기 시작할 때 잠정으로 붙들려 판 갱신 뒤에도 같은 자리에 남아야 한다.
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void; let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((resolveOnce, rejectOnce) => { resolve = resolveOnce; reject = rejectOnce; });
+  return { promise, resolve, reject };
+};
+const ACK = { ok: true, delivered: true, reason: null, consumeWhen: null };
+
+it('keeps the answered sheet in place when the board drops it before the panel ACK', async () => {
+  questionRenderer = questionSample;
+  const send = deferred<typeof ACK>();
+  transport.mockImplementationOnce(() => send.promise);
+  entries = [one, serverQuestionEntry]; await render();
+  await respond();
+  entries = [one]; await render();
+  expect(heldAnswer()).toBe('응');
+  expect(host.querySelector<HTMLElement>(`[data-testid="report-sheet-${serverQuestionEntry.key}"]`)?.getAttribute('data-answered')).toBe('true');
+  await act(async () => { send.resolve(ACK); await Promise.resolve(); });
+  expect(heldAnswer()).toBe('응');
+  expect(host.querySelector<HTMLElement>(`[data-testid="report-sheet-${serverQuestionEntry.key}"]`)?.getAttribute('data-answered')).toBe('true');
+});
+
+it('releases the provisional hold when the send fails after the board update', async () => {
+  questionRenderer = questionSample;
+  const send = deferred<typeof ACK>();
+  transport.mockImplementationOnce(() => send.promise);
+  entries = [one, serverQuestionEntry]; await render();
+  await respond();
+  entries = [one]; await render();
+  expect(heldAnswer()).toBe('응');
+  await act(async () => { send.reject(new Error('전송 실패')); await Promise.resolve(); await Promise.resolve(); });
+  expect(host.querySelector(`[data-testid="report-sheet-${serverQuestionEntry.key}"]`)).toBeNull();
+  expect(heldAnswer()).toBeUndefined();
+});

@@ -168,10 +168,14 @@ SHEET_SCRIPT = """
     const button = row?.querySelector('[data-slot="button"]');
     if (!footer || !row || !button) return null;
     const style = getComputedStyle(button);
+    const answerText = footer.querySelector('.v3-card-question-answer');
+    const font = (element) => { const computed = getComputedStyle(element); return computed.fontSize + '/' + computed.lineHeight + ' ' + computed.fontWeight; };
     return {
       paddingLeft: Math.round(parseFloat(style.paddingLeft) * 10) / 10,
       paddingRight: Math.round(parseFloat(style.paddingRight) * 10) / 10,
       rightGap: Math.round((footer.getBoundingClientRect().right - button.getBoundingClientRect().right) * 10) / 10,
+      buttonFont: font(button),
+      answerFont: answerText ? font(answerText) : null,
     };
   })();
   return {
@@ -296,6 +300,49 @@ BOTTOM_SCRIPT = """
 }
 """
 
+# 고른 뒤 잠긴 선택지(흐린 행·고른 행)의 cursor와 hover 테두리. 단추를 실제로 눌러 잰다.
+CHOICE_STYLE_SCRIPT = """
+(selector) => {
+  const root = document.querySelector(selector);
+  return [...(root?.querySelectorAll('.v3-card-question-choices button') ?? [])].map((button) => {
+    const style = getComputedStyle(button);
+    return {
+      label: button.textContent.trim().slice(0, 20),
+      selected: button.getAttribute('data-selected') === 'true',
+      disabled: button.disabled,
+      ariaDisabled: button.getAttribute('aria-disabled') === 'true',
+      cursor: style.cursor,
+      border: style.borderTopColor,
+      opacity: style.opacity,
+    };
+  });
+}
+"""
+
+# 장 둘짜리 표본 판: 답을 저장하면 판이 질문 장을 먼저 빼는지, 보이는 장은 답한 그 장인지.
+BOARD_SCRIPT = """
+() => {
+  const root = document.querySelector('[data-testid="card-question-review"]');
+  const screen = root?.querySelector('.persistent-session-screen');
+  const sheets = [...(root?.querySelectorAll('.pas-report-sheet') ?? [])];
+  const current = root?.querySelector('.pas-report-sheet[data-current="true"]');
+  return {
+    board: screen?.getAttribute('data-board') ?? null,
+    sheets: sheets.length,
+    current: current?.getAttribute('data-testid') ?? null,
+    answered: current?.getAttribute('data-answered') ?? null,
+  };
+}
+"""
+
+# 검수 창 전체 목록에서 카드 상세 질문 표본 다섯이 함께 떠도 각자 제 질문을 그리는지.
+GALLERY_SCRIPT = """
+() => [...document.querySelectorAll('[data-testid="card-question-card-sample"]')].map((sample) => ({
+  body: Boolean(sample.querySelector('.v3-card-question-body')),
+  error: sample.querySelector('[role="alert"]')?.textContent?.trim() ?? null,
+}))
+"""
+
 DRAG_BOX_SCRIPT = """
 ({ selector, index }) => {
   const element = document.querySelectorAll(selector)[index];
@@ -416,6 +463,32 @@ def drag_select(page: Page, selector: str, index: int = 0) -> str:
     page.mouse.up()
     page.wait_for_timeout(150)
     return page.evaluate("() => String(getSelection() ?? '')")
+
+
+def board_state(page: Page) -> dict:
+    return page.evaluate(BOARD_SCRIPT)
+
+
+def choice_hover_state(page: Page, root_selector: str, button_selector: str) -> dict:
+    """고른 뒤 흐린 행과 고른 행 위에 마우스를 올려 cursor와 테두리를 잰다."""
+    page.mouse.move(5, 5)
+    page.wait_for_timeout(150)
+    rest = page.evaluate(CHOICE_STYLE_SCRIPT, root_selector) or []
+    selected_index = next((index for index, item in enumerate(rest) if item["selected"]), None)
+    dim_index = next((index for index, item in enumerate(rest) if not item["selected"]), None)
+    data = {"rest": rest, "selectedIndex": selected_index, "dimIndex": dim_index, "dimHover": None, "selectedHover": None}
+    buttons = page.locator(button_selector)
+    if dim_index is not None:
+        buttons.nth(dim_index).hover()
+        page.wait_for_timeout(150)
+        data["dimHover"] = next((item for item in (page.evaluate(CHOICE_STYLE_SCRIPT, root_selector) or []) if not item["selected"]), None)
+    if selected_index is not None:
+        buttons.nth(selected_index).hover()
+        page.wait_for_timeout(150)
+        data["selectedHover"] = next((item for item in (page.evaluate(CHOICE_STYLE_SCRIPT, root_selector) or []) if item["selected"]), None)
+    page.mouse.move(5, 5)
+    page.wait_for_timeout(100)
+    return data
 
 
 def order_ok(items: list[dict]) -> bool:
@@ -590,6 +663,8 @@ def judge_sheet(scene: str, data: dict, expanded: bool) -> list[dict]:
                 fail("answeredButtonKeepsInlinePadding", answered)
             if abs(answered["rightGap"]) > 1:
                 fail("answeredButtonAlignsRightEdge", answered)
+            if answered["answerFont"] and answered["buttonFont"] != answered["answerFont"]:
+                fail("answeredButtonFontMatchesAnswer", answered)
     if expanded and scene == "ga":
         if not data["expanded"]:
             fail("sheetExpanded")
@@ -638,6 +713,26 @@ def capture_narrow_sheet(page: Page, base: str, out: Path, scene: str, theme: st
             "failures": judge_sheet(scene, data, False)}
 
 
+def gallery_check(browser, base: str, theme: str) -> dict:
+    """검수 창 전체 목록: 카드 상세 질문 표본 다섯이 한 화면에 함께 떠도 각자 제 질문을 그린다."""
+    context = browser.new_context(viewport={"width": WIDE, "height": 1600}, color_scheme=theme, reduced_motion="reduce")
+    install_page(context, theme)
+    page = context.new_page()
+    errors: list[str] = []
+    page.set_default_timeout(60000)
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    try:
+        page.goto(f"{base}/components")
+        settle(page)
+        page.wait_for_selector("#components-question", state="visible")
+        page.wait_for_timeout(2500)
+        samples = page.evaluate(GALLERY_SCRIPT) or []
+        print(f"gallery {len(samples)} card samples {theme}", flush=True)
+        return {"samples": samples, "errors": errors}
+    finally:
+        context.close()
+
+
 def interaction_checks(page: Page, base: str, out: Path, theme: str) -> dict:
     results: dict = {}
 
@@ -650,6 +745,8 @@ def interaction_checks(page: Page, base: str, out: Path, theme: str) -> dict:
         "notice": page.evaluate("() => document.querySelector('[data-testid=\"card-question-card-sample\"] .v3-card-target-notice')?.textContent?.trim() ?? null"),
         "placeholder": page.evaluate("() => document.querySelector('[data-testid=\"card-question-card-sample\"] textarea')?.getAttribute('placeholder') ?? null"),
     }
+    # 잠긴 선택지(흐린 행·고른 행)의 cursor와 hover 테두리.
+    results["choiceStyleCard"] = choice_hover_state(page, CARD_SCOPE, f"{CARD_SCOPE} .v3-card-question-choices button")
 
     # 14: 펼친 장에서 선택지를 실제로 누른다. 누른 행과 덧붙이기 대상이 남고 초점은 BODY로 떨어지지 않는다.
     open_sheet(page, base, "ga", bubble=True, label=f"expanded-choice-{theme}")
@@ -666,6 +763,9 @@ def interaction_checks(page: Page, base: str, out: Path, theme: str) -> dict:
         "placeholder": answered_sheet["placeholder"],
         "answered": answered_sheet["answered"],
     }
+    # 서버 순서: 답 저장 커밋이 판에서 질문 장을 먼저 빼고, 보이는 장은 답한 그 장으로 남는다.
+    results["expandedChoice"]["board"] = board_state(page)
+    results["choiceStyleSheet"] = choice_hover_state(page, SHEET_SCOPE, f'{SHEET_SCOPE} .v3-card-question-choices button')
     shot(page, out, f"card-question-pas-ga-expanded-answered-1440-{theme}", '[data-testid="card-question-review"] .persistent-session-screen')
     page.locator(f'{SHEET_SCOPE} .v3-card-target-notice button').first.click()
     page.wait_for_timeout(300)
@@ -673,6 +773,13 @@ def interaction_checks(page: Page, base: str, out: Path, theme: str) -> dict:
         "focus": page.evaluate(FOCUS_SCRIPT),
         "notice": page.evaluate("() => document.querySelector('[data-testid=\"card-question-review\"] .pas-report-sheet[data-current=\"true\"] .v3-card-target-notice')?.textContent?.trim() ?? null"),
     }
+
+    # 판 둘: 접힌 장에서 답하면 판이 먼저 질문 장을 빼고, 잠정 붙들기가 답한 장을 같은 자리에 남긴다.
+    open_sheet(page, base, "ga", bubble=True, label=f"board-collapsed-{theme}")
+    before = board_state(page)
+    page.locator(f'{SHEET_SCOPE} .v3-card-question-choices button').first.click()
+    page.wait_for_timeout(600)
+    results["collapsedBoard"] = {"before": before, "after": board_state(page)}
 
     # 14: 되묻기는 커멘트 입력창으로 초점을 옮긴다.
     open_card(page, base, "ga", f"ask-focus-{theme}")
@@ -795,6 +902,59 @@ def resize_check(page: Page, base: str) -> dict:
     return result
 
 
+def judge_choice_style(surface: str, data: dict | None, fail) -> None:
+    """답한 뒤 잠긴 선택지는 누를 수 있는 단추처럼 보이지 않고, hover가 테두리를 바꾸지 않는다."""
+    if not data:
+        fail(f"{surface}ChoiceStyleMeasured", None)
+        return
+    rest = data["rest"]
+    if data["selectedIndex"] is None:
+        fail(f"{surface}ChoiceStyleSelectedRow", rest)
+        return
+    for item in rest:
+        if not (item["disabled"] or item["ariaDisabled"]):
+            fail(f"{surface}ChoiceStyleLockedRow", item)
+        elif item["cursor"] != "default":
+            fail(f"{surface}LockedChoiceCursorDefault", item)
+    dim_index, selected_index = data["dimIndex"], data["selectedIndex"]
+    if dim_index is not None and data["dimHover"] and data["dimHover"]["border"] != rest[dim_index]["border"]:
+        fail(f"{surface}DimChoiceHoverKeepsBorder", {"rest": rest[dim_index], "hover": data["dimHover"]})
+    if data["selectedHover"] and data["selectedHover"]["border"] != rest[selected_index]["border"]:
+        fail(f"{surface}ChosenChoiceHoverKeepsBorder", {"rest": rest[selected_index], "hover": data["selectedHover"]})
+
+
+def judge_board(fail, label: str, before: dict | None, after: dict) -> None:
+    """답 저장 커밋이 판에서 질문 장을 먼저 빼고, 보이는 장은 답한 그 장으로 남는다."""
+    if before is not None and (not before["board"] or "cq_" not in before["board"]):
+        fail(f"{label}BoardHasQuestionSheet", before)
+    if after["board"] is None or "cq_" in after["board"]:
+        fail(f"{label}BoardDropsQuestionSheetBeforeAck", after)
+    if after["sheets"] < 2:
+        fail(f"{label}BoardKeepsTwoSheets", after)
+    if after["current"] is None or not after["current"].startswith("report-sheet-cq_"):
+        fail(f"{label}AnsweredSheetStaysCurrent", after)
+    if after["answered"] != "true":
+        fail(f"{label}AnsweredSheetShowsAnswer", after)
+
+
+def judge_gallery(results: dict) -> list[dict]:
+    failures: list[dict] = []
+
+    def fail(check: str, detail=None) -> None:
+        failures.append({"check": check, "detail": detail})
+
+    samples = results["samples"]
+    if len(samples) != 5:
+        fail("galleryFiveCardSamples", len(samples))
+    for index, sample in enumerate(samples):
+        if not sample["body"]:
+            fail(f"galleryCardSample{index}Body", sample)
+    crashes = [error for error in results["errors"] if "reading 'version'" in error]
+    if crashes:
+        fail("galleryNoSampleFetchCrash", crashes)
+    return failures
+
+
 def judge_interactions(results: dict) -> list[dict]:
     failures: list[dict] = []
 
@@ -831,6 +991,8 @@ def judge_interactions(results: dict) -> list[dict]:
         fail("expandedAnsweredKeepsInlinePadding", answered_row)
     elif abs(answered_row["rightGap"]) > 1:
         fail("expandedAnsweredAlignsRightEdge", answered_row)
+    if answered_row and answered_row["answerFont"] and answered_row["buttonFont"] != answered_row["answerFont"]:
+        fail("expandedAnsweredFontMatchesAnswer", answered_row)
 
     cleared = results["expandedChoiceClear"]
     if cleared["notice"] is not None:
@@ -858,6 +1020,17 @@ def judge_interactions(results: dict) -> list[dict]:
     ask_expanded = results["askFocusExpanded"]
     if ask_expanded["focus"]["tag"] != "TEXTAREA" or ask_expanded["focus"]["placeholder"] != "물어볼 것":
         fail("expandedAskBackFocusesComposer", ask_expanded["focus"])
+
+    # 고른 뒤 흐린 행·고른 행의 cursor와 hover 테두리.
+    judge_choice_style("card", results.get("choiceStyleCard"), fail)
+    judge_choice_style("sheet", results.get("choiceStyleSheet"), fail)
+    # 장 둘 판: 펼친 장과 접힌 장 모두 판이 먼저 질문 장을 빼고 답한 장이 남는다.
+    judge_board(fail, "expanded", None, expanded_choice["board"])
+    collapsed = results.get("collapsedBoard")
+    if not collapsed:
+        fail("collapsedBoardMeasured", None)
+    else:
+        judge_board(fail, "collapsed", collapsed["before"], collapsed["after"])
     return failures
 
 
@@ -944,6 +1117,11 @@ def main() -> int:
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(args=["--disable-gpu", "--disable-software-rasterizer"])
         try:
+            # 검수 창 전체 목록에서 카드 상세 질문 표본 다섯이 함께 떠도 각자 제 질문을 그린다.
+            gallery = gallery_check(browser, base, "light")
+            interactions["gallery"] = gallery
+            failures.extend({"capture": "gallery", **failure} for failure in judge_gallery(gallery))
+
             for theme in THEMES:
                 # 넓은 폭: 카드 상세(1440)와 PAS 판(1440x900).
                 context = browser.new_context(

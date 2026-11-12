@@ -1,22 +1,22 @@
-import { useLayoutEffect, type MutableRefObject } from 'react';
+import { useLayoutEffect, useRef, type MutableRefObject } from 'react';
 import type { CardComment, CardDetail } from '@seosoyoung/soul-ui/cards/card-types';
 
-/**
- * 카드 #1197 검수 표본: 카드 API 응답만 바꾼다. 화면 부품은 운영과 같은 경로로 카드를 읽고 보낸다.
- * 답과 커멘트는 ref의 상세를 고친 뒤 돌려주므로, 이어지는 loadCard가 저장된 결과를 읽는다.
- */
-export function useCardApiSample(detailRef: MutableRefObject<CardDetail>) {
+/** 화면마다 서로 다른 카드 상세를 표본으로 쓰므로, 자기 카드 경로만 가로채고 나머지는 원래 fetch로 넘긴다. */
+export function useCardApiSample(detailRef: MutableRefObject<CardDetail>, onAnswerSaved?: (questionId: string) => void) {
+  const saved = useRef(onAnswerSaved);
+  saved.current = onAnswerSaved;
   useLayoutEffect(() => {
     const original = window.fetch;
     const respond = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
     window.fetch = async (input, init) => {
       const url = new URL(typeof input === 'string' ? input : input instanceof Request ? input.url : String(input), window.location.origin);
-      if (!url.pathname.startsWith('/api/cards')) return original(input, init);
-      const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
       const detail = detailRef.current;
       const cardId = detail.card.id;
+      const ownCard = `/api/cards/${encodeURIComponent(cardId)}`;
+      if (url.pathname !== '/api/cards' && url.pathname !== ownCard && !url.pathname.startsWith(`${ownCard}/`)) return original(input, init);
+      const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
       const answerMatch = url.pathname.match(/^\/api\/cards\/([^/]+)\/questions\/([^/]+)\/answer$/);
-      if (method === 'GET' && url.pathname === `/api/cards/${encodeURIComponent(cardId)}`) return respond(detail);
+      if (method === 'GET' && url.pathname === ownCard) return respond(detail);
       if (method === 'GET' && url.pathname === '/api/cards') return respond({ cards: [detail.card] });
       if (method === 'POST' && answerMatch) {
         const body = JSON.parse(String(init?.body ?? '{}')) as { mode?: string; option?: string; answer?: string };
@@ -29,6 +29,8 @@ export function useCardApiSample(detailRef: MutableRefObject<CardDetail>) {
             ? { ...question, answer, selectedOption: body.mode === 'choice' ? answer : question.selectedOption, answeredAt: new Date().toISOString() }
             : question),
         };
+        // 서버는 답 저장 커밋 뒤에 판을 다시 계산해 보낸다. 표본도 응답 전에 판 교체를 먼저 그린다.
+        saved.current?.(questionId);
         return respond({ ok: true });
       }
       if (method === 'POST' && url.pathname === `/api/cards/${encodeURIComponent(cardId)}/comments`) {
