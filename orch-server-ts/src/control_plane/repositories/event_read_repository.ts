@@ -126,8 +126,42 @@ export class EventReadRepository {
     limit: number,
     eventTypes?: string[],
     period?: SessionReadPeriod,
+    metadataTypes?: string[],
   ): Promise<HostEventRow[]> {
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
+    const metadata = metadataTypes && metadataTypes.length > 0 ? metadataTypes : null;
+    if (metadata !== null) {
+      const rows = period
+        ? await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+            SELECT id, session_id, event_type, payload, searchable_text, created_at
+            FROM events
+            WHERE session_id = ${sessionId}
+              AND id > ${afterId}
+              AND created_at >= ${period.since}::timestamptz
+              AND created_at < ${period.until}::timestamptz
+              AND (
+                ${types as unknown as string[] | null}::text[] IS NULL
+                OR event_type = ANY(${types as unknown as string[] | null}::text[])
+              )
+              AND payload->>'metadata_type' = ANY(${metadata}::text[])
+            ORDER BY id ASC
+            LIMIT ${limit}
+          `
+        : await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+            SELECT id, session_id, event_type, payload, searchable_text, created_at
+            FROM events
+            WHERE session_id = ${sessionId}
+              AND id > ${afterId}
+              AND (
+                ${types as unknown as string[] | null}::text[] IS NULL
+                OR event_type = ANY(${types as unknown as string[] | null}::text[])
+              )
+              AND payload->>'metadata_type' = ANY(${metadata}::text[])
+            ORDER BY id ASC
+            LIMIT ${limit}
+          `;
+      return rows.map(normalizeEvent);
+    }
     const rows = period
       ? await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
           SELECT id, session_id, event_type, payload, searchable_text, created_at

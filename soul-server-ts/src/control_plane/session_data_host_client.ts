@@ -119,7 +119,7 @@ export interface SessionDataHost {
     nodeId: string;
   }): Promise<{ sessions: UpstreamSessionDumpRow[]; total: number }>;
   countEvents(sessionId: string): Promise<number>;
-  readEvents(sessionId: string, afterId: number, limit: number, eventTypes?: string[], period?: SessionReadPeriod): Promise<SessionEventRow[]>;
+  readEvents(sessionId: string, afterId: number, limit: number, eventTypes?: string[], period?: SessionReadPeriod, metadataTypes?: string[]): Promise<SessionEventRow[]>;
   readOneEvent(sessionId: string, eventId: number): Promise<SessionEventDetailRow | null>;
   streamEventsRaw(sessionId: string, afterId?: number): Promise<Array<{ id: number; event_type: string; payload_text: string }>>;
   searchEvents(query: string, sessionIds: string[] | null, limit: number, eventTypes?: string[] | null, signal?: AbortSignal): Promise<SessionEventSearchRow[]>;
@@ -187,9 +187,13 @@ export class SessionDataHostClient implements SessionDataHost {
     return this.interactive("event_count", [sessionId]);
   }
 
-  readEvents(sessionId: string, afterId: number, limit: number, eventTypes?: string[], period?: SessionReadPeriod): Promise<SessionEventRow[]> {
+  readEvents(sessionId: string, afterId: number, limit: number, eventTypes?: string[], period?: SessionReadPeriod, metadataTypes?: string[]): Promise<SessionEventRow[]> {
     const args: unknown[] = [sessionId, afterId, limit, eventTypes];
-    if (period !== undefined) args.push(period);
+    if (metadataTypes !== undefined) {
+      args.push(period ?? null, metadataTypes);
+    } else if (period !== undefined) {
+      args.push(period);
+    }
     return this.interactive("event_read_page", args);
   }
 

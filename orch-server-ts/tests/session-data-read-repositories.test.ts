@@ -213,6 +213,58 @@ describe("session-data read repositories", () => {
     expect(rangeCall?.values).toEqual(["s1", 5, 9, ["credential_alert", "error"]]);
   });
 
+  it("filters metadata rows by metadata_type in a direct SQL query", async () => {
+    const now = new Date("2026-11-12T00:00:00.000Z");
+    const event = {
+      id: 12,
+      session_id: "s1",
+      event_type: "metadata",
+      payload: { metadata_type: "persistent_generation" },
+      searchable_text: "",
+      created_at: now,
+    };
+    const { sql, calls } = createSql((text) => {
+      if (text.includes("payload->>'metadata_type' = ANY")) return [event];
+      if (text.includes("event_read(")) return [event];
+      return [];
+    });
+    const repository = new EventReadRepository(sql);
+
+    await expect(repository.readEvents(
+      "s1",
+      4,
+      50,
+      ["metadata"],
+      undefined,
+      ["persistent_generation"],
+    )).resolves.toEqual([event]);
+    await expect(repository.readEvents(
+      "s1",
+      4,
+      50,
+      ["metadata"],
+      undefined,
+      [],
+    )).resolves.toEqual([event]);
+
+    const filteredCall = calls.find((call) =>
+      call.text.includes("payload->>'metadata_type' = ANY"));
+    expect(filteredCall).toBeDefined();
+    expect(filteredCall?.text).toContain("FROM events");
+    expect(filteredCall?.text).toContain("AND id > ?");
+    expect(filteredCall?.text).toContain("ORDER BY id ASC");
+    expect(filteredCall?.text).not.toContain("event_read(");
+    expect(filteredCall?.values).toEqual([
+      "s1",
+      4,
+      ["metadata"],
+      ["metadata"],
+      ["persistent_generation"],
+      50,
+    ]);
+    expect(calls.filter((call) => call.text.includes("event_read("))).toHaveLength(1);
+  });
+
   it("cancels and discards its owned event search connection on request abort", async () => {
     let rejectPending!: (error: Error) => void;
     let resolveDispatched!: () => void;

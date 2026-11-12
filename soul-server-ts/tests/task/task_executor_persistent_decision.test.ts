@@ -718,6 +718,9 @@ describe("TaskExecutor persistent decision wiring", () => {
 
     expect(runtime.scheduleService.deleteCacheKeepaliveSchedules).toHaveBeenCalledOnce();
     expect(runtime.scheduleService.scheduleCacheKeepalive).toHaveBeenCalledOnce();
+    const [deletedAt] = runtime.scheduleService.deleteCacheKeepaliveSchedules.mock.invocationCallOrder;
+    const [scheduledAt] = runtime.scheduleService.scheduleCacheKeepalive.mock.invocationCallOrder;
+    expect(deletedAt).toBeLessThan(scheduledAt!);
     expect(runtime.scheduleService.scheduleCacheKeepalive).toHaveBeenCalledWith(
       task.agentSessionId,
       new Date((completeTimestamp + 3_000) * 1_000).toISOString(),
@@ -736,6 +739,38 @@ describe("TaskExecutor persistent decision wiring", () => {
         cache_hit: true,
       },
     });
+  });
+
+  it("keeps the existing keepalive reservation when the turn-end decision input read fails", async () => {
+    const task = makeTask();
+    task.interventionQueue.push({
+      text: "cache keepalive",
+      user: "Soulstream Scheduler",
+      callerInfo: { source: "system", display_name: "Soulstream Scheduler" },
+      purpose: "cache_keepalive",
+    });
+    const runtime = makeRuntime(task, []);
+    vi.mocked(runtime.db.readEvents).mockRejectedValueOnce(new Error("decision events unavailable"));
+    const warn = vi.spyOn(logger, "warn");
+    const engine = makeEngine([{
+      type: "complete",
+      usage: {},
+      timestamp: Date.now() / 1_000,
+      first_call: { input_tokens: 1_000, cached_input_tokens: 900 },
+    } as unknown as SSEEventPayload]);
+    const executor = taskExecutor(task, runtime, () => engine);
+
+    const execution = executor.startNewExecution(task, agent);
+    await execution;
+    await task.executionPromise;
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: task.agentSessionId, trigger: "turn_end" }),
+      "persistent decision skipped",
+    );
+    expect(runtime.scheduleService.deleteCacheKeepaliveSchedules).not.toHaveBeenCalled();
+    expect(runtime.scheduleService.scheduleCacheKeepalive).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it("does not clear or record a keepalive reservation when the engine turn errors", async () => {

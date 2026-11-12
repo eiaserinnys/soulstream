@@ -49,8 +49,19 @@ export async function createSessionRoundtripFixture() {
       },
     },
     eventReads: {
-      readEvents: async (id: string, after: number, limit: number, types?: string[]) => {
-        fail("event_read_page"); return events.filter(e => e.id > after && (!types || types.includes(e.event_type)))
+      readEvents: async (
+        id: string,
+        after: number,
+        limit: number,
+        types?: string[],
+        _period?: unknown,
+        metadataTypes?: string[],
+      ) => {
+        fail("event_read_page");
+        return events.filter(e => e.id > after
+          && (!types || types.includes(e.event_type))
+          && (!metadataTypes?.length
+            || metadataTypes.includes((e.payload as Record<string, unknown> | undefined)?.metadata_type as string)))
           .slice(0, limit).map(e => ({ ...e, session_id: id }));
       },
       countEvents: async () => { fail("event_count"); return events.length; },
