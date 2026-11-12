@@ -44,7 +44,17 @@ export async function installRuntimes({ stateRoot, plan, log = () => {} }) {
 }
 
 /** 구성·payload·바인딩을 한 번에 준비한다. child는 아직 건드리지 않는다. */
-export async function prepareCandidate({ stateRoot, defaults, node, runtimes, ports, release, templatesDir, log = () => {} }) {
+export async function prepareCandidate({
+  stateRoot,
+  defaults,
+  node,
+  runtimes,
+  ports,
+  release,
+  templatesDir,
+  repoRoot,
+  log = () => {},
+}) {
   const configGeneration = await writeConfigGeneration({
     templatesDir,
     stateRoot,
@@ -66,6 +76,7 @@ export async function prepareCandidate({ stateRoot, defaults, node, runtimes, po
     releaseDir: installed.dir,
     runtimes,
     ports,
+    repoRoot,
   });
   return { configGeneration, installed, prepared };
 }
@@ -99,6 +110,7 @@ export async function rollbackToPrevious({
   previous,
   from,
   templatesDir,
+  repoRoot,
   log,
 }) {
   if (!previous || previous.source_commit === from.source_commit) return null;
@@ -122,6 +134,7 @@ export async function rollbackToPrevious({
       releaseDir: dir,
       runtimes,
       ports,
+      repoRoot,
     });
     const supervisor = makeSupervisor({ env: prepared.env, dir, defaults, log });
     const result = await supervisor.start();

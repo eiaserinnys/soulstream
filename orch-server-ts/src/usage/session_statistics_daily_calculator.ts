@@ -1,3 +1,4 @@
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 import { createSessionStatisticsDailyState, SESSION_STATISTICS_DAILY_AGGREGATION_VERSION } from "./session_statistics_daily_state.js";
 import { sessionStatisticsDate } from "./session_statistics_scope.js";
 import type { SessionStatisticsReadRequest, SessionStatisticsRepositoryPort } from "./session_statistics_types.js";
@@ -16,7 +17,7 @@ export function statisticsLiveDays(asOf: string): string[] {
 
 /** One invocation computes at most one date; no ingestion changes or dependency invalidation. */
 export async function calculateSessionStatisticsDay(repository: SessionStatisticsRepositoryPort,
-  input: SessionStatisticsReadRequest): Promise<boolean> {
+  input: SessionStatisticsReadRequest, catalog: ModelCatalogConfig): Promise<boolean> {
   if (!repository.daily || !repository.readMetadata || !repository.readSlice) return false;
   const daily = repository.daily;
   const readMetadata = repository.readMetadata.bind(repository);
@@ -48,7 +49,7 @@ export async function calculateSessionStatisticsDay(repository: SessionStatistic
     const maximum = selected >= recentSince ? maxima.get(selected) ?? "0"
       : (await daily.sourceMax(selected, statisticsShiftDay(selected, 1))).get(selected) ?? "0";
     const read = await readSlice(globalInput, selected);
-    await daily.save(createSessionStatisticsDailyState(read, selected), maximum);
+    await daily.save(createSessionStatisticsDailyState(read, selected, catalog), maximum);
     computed = true;
   });
   return computed;

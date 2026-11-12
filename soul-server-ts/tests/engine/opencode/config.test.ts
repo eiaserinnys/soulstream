@@ -1,5 +1,6 @@
 import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { parseModelCatalogYaml } from "@soulstream/model-catalog";
 import { prepareOpenCodeSession } from "../../../src/engine/opencode/config.js";
@@ -163,9 +164,12 @@ describe("OpenCode session configuration", () => {
     expect(config.mcp).toBeUndefined();
   });
 
-  it("applies the example allowlist in order and omits explicitly empty MCP servers", async () => {
-    const example = readFileSync(join(process.cwd(), "config/model-catalog.yaml.example"), "utf8");
-    const preset = parseModelCatalogYaml(example).presets.find(
+  it("applies the repository allowlist in order and omits explicitly empty MCP servers", async () => {
+    const repositoryCatalog = readFileSync(
+      fileURLToPath(new URL("../../../../packages/model-catalog/data/model-catalog.yaml", import.meta.url)),
+      "utf8",
+    );
+    const preset = parseModelCatalogYaml(repositoryCatalog).presets.find(
       (entry) => entry.id === "opencode-deepseek-v4.1-flash-free",
     );
     const allowlist = preset?.mcp_tool_allowlist?.roselin;

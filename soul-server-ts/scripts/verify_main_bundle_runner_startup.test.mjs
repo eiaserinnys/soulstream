@@ -11,6 +11,8 @@ import test from "node:test";
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceDist = join(packageRoot, "dist");
+/** Repo canonical catalogue the copied bundle is bound to. */
+const catalogPath = join(packageRoot, "..", "packages", "model-catalog", "data", "model-catalog.yaml");
 const execFileAsync = promisify(execFile);
 
 test("every Haniel build hook uses the cross-platform release env entrypoint", async () => {
@@ -82,7 +84,6 @@ test(
         "LOG_LEVEL=error",
         `AGENTS_CONFIG_PATH=${agentsConfigPath}`,
         `AGENT_PROFILE_CACHE_PATH=${join(temporaryRoot, "agent-profile-cache.json")}`,
-        `MODEL_CATALOG_PATH=${join(temporaryRoot, "missing-model-catalog.yaml")}`,
         "SOUL_RUNNER_PROCESS_ENABLED=true",
         `SOUL_RUNNER_STATE_DIR=${runnerStateDirectory}`,
         `SOUL_RUNNER_ARTIFACT_DIR=${join(distRoot, "runner")}`,
@@ -96,6 +97,8 @@ test(
         distRoot,
         "--env-file",
         serviceEnvPath,
+        "--catalog-path",
+        catalogPath,
       ], { cwd: packageRoot, env: buildEnv });
 
       child = spawn(process.execPath, [distMain], {

@@ -114,6 +114,8 @@ export interface RunnerProcessRuntimeFactoryOptions {
   antigravityCliPath?: AntigravityCliPathResolution;
   releasePool: Pick<RunnerReleasePool, "resolveCurrentRelease" | "ensureRelease" | "describe">;
   releaseManifest?: ReleaseManifestV1;
+  /** Absolute catalogue path from the host; runner children price from it. */
+  modelCatalogPath?: string;
   recoveryStorage?: RunnerRecoveryStorage;
   nodeStallMonitor?: Pick<
     NodeStallMonitor,
@@ -210,6 +212,7 @@ export function createRunnerProcessRuntimeFactory(
       codeSha: release.releaseId,
       releaseManifestId: options.releaseManifest?.manifest_id ?? release.releaseId,
       runtimeEnvIdentity: agentRuntimeEnvIdentity(agent),
+      ...(options.modelCatalogPath ? { modelCatalogPath: options.modelCatalogPath } : {}),
       snapshotPath: release.runnerModuleRoot,
       codexAdapterMode: options.env.CODEX_ADAPTER_MODE,
       codexCliPath: options.codexCliPath?.path,
@@ -334,6 +337,7 @@ function spawnInputFromConfig(
     codeSha: config.codeSha,
     ...(config.releaseManifestId ? { releaseManifestId: config.releaseManifestId } : {}),
     ...(config.runtimeEnvIdentity ? { runtimeEnvIdentity: config.runtimeEnvIdentity } : {}),
+    ...(config.modelCatalogPath ? { modelCatalogPath: config.modelCatalogPath } : {}),
     snapshotPath: config.snapshotPath,
     codexAdapterMode: config.codexAdapterMode,
     ...(config.codexCliPath ? { codexCliPath: config.codexCliPath } : {}),

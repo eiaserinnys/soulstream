@@ -17,9 +17,14 @@ import {
   representativeProviderEvents,
   unverifiedClaudeModelBreakdownEvent,
 } from "./fixtures/session_statistics_normalizer.fixtures.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 function normalize(event: Parameters<typeof normalizeSessionStatisticsEvent>[0]) {
-  return normalizeSessionStatisticsEvent(event);
+  return normalizeSessionStatisticsEvent(event, CATALOG);
 }
 
 function usageFact(event: Parameters<typeof normalizeSessionStatisticsEvent>[0]) {
@@ -311,13 +316,13 @@ describe("session statistics normalizer", () => {
       { part_key: "usage:model/claude%2Fsonnet%255Bcanonical%5D", model: "claude/sonnet%5Bcanonical]", input: 0, output: 0, total: 0 },
     ].sort((left, right) => left.part_key.localeCompare(right.part_key)));
 
-    const selected = selectCanonicalUsageCandidates(claudeModelBreakdownEvents.flatMap((event) => normalize(event).facts));
+    const selected = selectCanonicalUsageCandidates(claudeModelBreakdownEvents.flatMap((event) => normalize(event).facts), CATALOG);
     const owner = selected.find((selection) => selection.accountingKey === "model-map-command");
     expect(owner?.representation).toBe("model_breakdown");
     expect(owner?.facts.map((fact) => fact.part_key)).toHaveLength(2);
 
     const unverifiedCandidates = normalize(unverifiedClaudeModelBreakdownEvent).facts;
-    const unverified = selectCanonicalUsageCandidates(unverifiedCandidates)[0];
+    const unverified = selectCanonicalUsageCandidates(unverifiedCandidates, CATALOG)[0];
     expect(unverifiedCandidates.find((fact) => fact.representation === "aggregate")?.model).toBe("claude-opus-5-5");
     expect(unverified).toMatchObject({
       representation: "aggregate",
@@ -338,8 +343,8 @@ describe("session statistics normalizer", () => {
 
   it("selects one event per command independent of input order and keeps equal-token commands separate", () => {
     const facts = canonicalOwnershipEvents.flatMap((event) => normalize(event).facts);
-    const forward = selectCanonicalUsageCandidates(facts);
-    const reverse = selectCanonicalUsageCandidates([...facts].reverse());
+    const forward = selectCanonicalUsageCandidates(facts, CATALOG);
+    const reverse = selectCanonicalUsageCandidates([...facts].reverse(), CATALOG);
     const owners = (selections: typeof forward) => Object.fromEntries(selections.map((selection) => [selection.accountingKey, selection.ownerEventId]));
 
     expect(owners(forward)).toEqual(expectedCanonicalOwners);
@@ -423,7 +428,7 @@ describe("session statistics normalizer", () => {
       createdAt: "2026-10-19T00:05:00Z",
       payload: { type: "usage_observation", outcome: "interrupted", source: "opencode_step_finish", output_command_id: "outer-command", accounting_key: "other-command", usage_snapshot: { schema_version: 1, backend: "opencode", provider: "deepseek", preset_id: null, requested_model: "deepseek-flash", provider_attribution: "configured_alias" }, usage: { input_tokens: 12, cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 1, reasoning_output_tokens: 0 } },
     }).facts;
-    const selection = selectCanonicalUsageCandidates(facts);
+    const selection = selectCanonicalUsageCandidates(facts, CATALOG);
     expect(selection).toHaveLength(1);
     expect(selection[0]).toMatchObject({ state: "identity_conflict", facts: [] });
     expect(facts[0]?.quality).toContain("identity_conflict");
@@ -490,7 +495,7 @@ describe("session statistics normalizer", () => {
       { sessionId: "legacy", eventId: 22, eventType: "complete", createdAt: "2026-10-19T00:08:07Z", payload: { type: "complete", usage: { input_tokens: 40, output_tokens: 4 }, model: "gpt-6-luna" } },
       { sessionId: "legacy-unresolved", eventId: 30, eventType: "error", createdAt: "2026-10-19T00:08:08Z", payload: { type: "error", fatal: true, usage: { input_tokens: 50, output_tokens: 5 }, model: "gpt-6-luna" } },
     ];
-    const selections = selectCanonicalUsageCandidates(events.flatMap((event) => normalize(event).facts));
+    const selections = selectCanonicalUsageCandidates(events.flatMap((event) => normalize(event).facts), CATALOG);
 
     expect(selections).toContainEqual(expect.objectContaining({ state: "owned", ownerEventId: 2, candidateType: "failed_result" }));
     expect(selections).toContainEqual(expect.objectContaining({ state: "ambiguous_legacy", ownerEventId: null, quality: ["ambiguous_legacy_accounting"] }));

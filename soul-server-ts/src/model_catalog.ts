@@ -1,14 +1,12 @@
-import fs from "node:fs";
-
 import {
   ModelCatalogSchema,
   parseModelCatalogYaml,
-  resolveModelPreset,
+  selectModelPresets,
   UnknownModelPresetError,
   type ModelCatalogConfig,
   type ModelPreset,
 } from "@soulstream/model-catalog";
-import type { AgentBackend } from "@soulstream/model-catalog";
+import type { ModelCatalogFileStore } from "@soulstream/model-catalog/file-loader";
 import type { ReasoningEffort } from "@soulstream/model-catalog";
 
 import {
@@ -24,6 +22,7 @@ import {
 export {
   ModelCatalogSchema,
   ModelPresetSchema,
+  parseModelCatalogGroups,
   parseModelCatalogYaml,
   resolveModelPreset,
   UnknownModelPresetError,
@@ -93,30 +92,49 @@ export type EffortCapabilities = Partial<
   Record<ModelPreset["backend"], readonly ReasoningEffort[]>
 >;
 
+export interface ModelCatalogOptions {
+  logger?: ModelCatalogLogger;
+  effortCapabilities?: EffortCapabilities;
+  /** Node opt-in groups, already resolved against the first snapshot at startup. */
+  enabledGroups?: readonly string[];
+}
+
+/**
+ * Node view over the shared catalogue file store. `list`, `resolve`, and
+ * `advertise` only expose presets whose group this node enabled; the node
+ * selection is applied before env resolution so a disabled group never appears
+ * even as `env_unresolved`. {@link snapshot} exposes the unfiltered catalogue
+ * for remote preset validation and usage attribution.
+ */
 export class ModelCatalog {
-  private lastSuccessfulConfig: ModelCatalogConfig | undefined;
-  private lastReadSignature: string | null = null;
-  private lastReadFailure: unknown = null;
+  private readonly enabledGroups: readonly string[];
 
   constructor(
-    private readonly catalogPath: string,
-    private readonly logger?: ModelCatalogLogger,
-    private readonly effortCapabilities?: EffortCapabilities,
-  ) {}
+    private readonly store: ModelCatalogFileStore,
+    private readonly options: ModelCatalogOptions = {},
+  ) {
+    this.enabledGroups = options.enabledGroups ?? [];
+  }
 
   list(): ModelPreset[] {
-    return this.read().presets.map((preset) => this.narrowEfforts(preset));
+    return selectModelPresets(this.store.snapshot(), this.enabledGroups)
+      .map((preset) => this.narrowEfforts(preset));
+  }
+
+  /** Full catalogue snapshot, ignoring this node's group selection. */
+  snapshot(): ModelCatalogConfig {
+    return this.store.snapshot();
   }
 
   /**
    * Intersects declared efforts with what the active transport can carry, so the
    * advertisement and the create-time validation share one list by construction.
    *
-   * A `default_effort` outside that intersection is rejected in {@link read}, at
-   * parse time, so this only ever narrows the supported list.
+   * A `default_effort` outside that intersection is rejected by the load-time
+   * validation hook, so this only ever narrows the supported list.
    */
   private narrowEfforts(preset: ModelPreset): ModelPreset {
-    const capability = this.effortCapabilities?.[preset.backend];
+    const capability = this.options.effortCapabilities?.[preset.backend];
     if (!capability || !preset.supported_efforts) return preset;
     const supported = preset.supported_efforts.filter((effort) =>
       capability.includes(effort),
@@ -126,7 +144,7 @@ export class ModelCatalog {
     const dropped = preset.supported_efforts.filter(
       (effort) => !capability.includes(effort),
     );
-    this.logger?.warn?.(
+    this.options.logger?.warn?.(
       { presetId: preset.id, backend: preset.backend, dropped },
       "Model preset advertises efforts the active transport cannot carry",
     );
@@ -139,7 +157,10 @@ export class ModelCatalog {
   }
 
   resolve(presetId: string): ModelPreset {
-    return this.narrowEfforts(resolveModelPreset(this.read(), presetId));
+    const preset = selectModelPresets(this.store.snapshot(), this.enabledGroups)
+      .find((candidate) => candidate.id === presetId);
+    if (!preset) throw new UnknownModelPresetError(presetId);
+    return this.narrowEfforts(preset);
   }
 
   advertise(
@@ -175,109 +196,63 @@ export class ModelCatalog {
       };
     });
   }
-
-  private read(): ModelCatalogConfig {
-    let fileStat: fs.Stats;
-    try {
-      fileStat = fs.statSync(this.catalogPath);
-    } catch (error) {
-      if (isMissingFileError(error)) {
-        this.lastReadSignature = null;
-        this.lastReadFailure = null;
-        this.lastSuccessfulConfig ??= { presets: [] };
-        return this.lastSuccessfulConfig;
-      }
-      return this.lastSuccessfulOrThrow(error);
-    }
-    const signature = `${fileStat.dev}:${fileStat.ino}:${fileStat.size}:${fileStat.mtimeMs}`;
-    if (signature === this.lastReadSignature) {
-      if (this.lastReadFailure !== null) {
-        if (this.lastSuccessfulConfig) return this.lastSuccessfulConfig;
-        throw this.lastReadFailure;
-      }
-      return this.lastSuccessfulConfig!;
-    }
-
-    let raw: string;
-    try {
-      raw = fs.readFileSync(this.catalogPath, "utf-8");
-    } catch (error) {
-      this.lastReadSignature = signature;
-      this.lastReadFailure = error;
-      return this.lastSuccessfulOrThrow(error);
-    }
-    try {
-      const config = parseModelCatalogYaml(raw);
-      this.assertDefaultsAreDeliverable(config);
-      this.lastSuccessfulConfig = config;
-      this.lastReadSignature = signature;
-      this.lastReadFailure = null;
-      return config;
-    } catch (error) {
-      this.lastReadSignature = signature;
-      this.lastReadFailure = error;
-      return this.lastSuccessfulOrThrow(error);
-    }
-  }
-
-  /**
-   * A `default_effort` the active transport cannot deliver is a configuration
-   * error, not something to paper over: dropping it silently would move every new
-   * session on that preset to the backend default while the file still claims
-   * otherwise. It is raised here, with the rest of config validation, so a bad
-   * *reload* degrades to the last good catalogue instead of taking the node down
-   * mid-flight, and a bad catalogue at startup is a hard startup failure.
-   */
-  private assertDefaultsAreDeliverable(config: ModelCatalogConfig): void {
-    for (const preset of config.presets) {
-      const capability = this.effortCapabilities?.[preset.backend];
-      if (!capability || !preset.default_effort) continue;
-      if (capability.includes(preset.default_effort)) continue;
-      throw new Error(
-        `Model preset ${preset.id}: default_effort "${preset.default_effort}" `
-        + `cannot be delivered by the active ${preset.backend} transport `
-        + `(it carries [${capability.join(", ")}])`,
-      );
-    }
-  }
-
-  private lastSuccessfulOrThrow(error: unknown): ModelCatalogConfig {
-    if (!this.lastSuccessfulConfig) throw error;
-    this.logger?.error(
-      { err: error, catalogPath: this.catalogPath },
-      "Model catalog reload failed; using the last successful catalog",
-    );
-    return this.lastSuccessfulConfig;
-  }
 }
 
 /**
- * Startup preflight. A missing file is the additive empty-catalog state, while
- * malformed or unreadable configured files remain explicit startup failures.
+ * Catalogue validation hook: a `default_effort` the active transport cannot
+ * deliver is a configuration error, not something to paper over — dropping it
+ * silently would move every new session on that preset to the backend default
+ * while the file still claims otherwise. It runs on the first load (startup
+ * failure) and on every reload (the store keeps the last good catalogue and
+ * logs once per failing signature).
  */
-export function loadModelCatalog(
-  catalogPath: string,
-  logger?: ModelCatalogLogger,
+export function assertCatalogDefaultsDeliverable(
+  catalog: ModelCatalogConfig,
   effortCapabilities?: EffortCapabilities,
-): ModelCatalog {
-  const missingAtStartup = !fs.existsSync(catalogPath);
-  const catalog = new ModelCatalog(catalogPath, logger, effortCapabilities);
-  // Parses the file, so a malformed catalogue or an undeliverable default_effort
-  // fails here rather than on the first session.
-  catalog.list();
-  if (missingAtStartup) {
-    logger?.warn?.(
-      { path: catalogPath },
-      "model catalog not found; advertising no presets",
+): void {
+  for (const preset of catalog.presets) {
+    const capability = effortCapabilities?.[preset.backend];
+    if (!capability || !preset.default_effort) continue;
+    if (capability.includes(preset.default_effort)) continue;
+    throw new Error(
+      `Model preset ${preset.id}: default_effort "${preset.default_effort}" `
+      + `cannot be delivered by the active ${preset.backend} transport `
+      + `(it carries [${capability.join(", ")}])`,
     );
   }
-  return catalog;
 }
 
-function isMissingFileError(error: unknown): boolean {
-  return error instanceof Error
-    && "code" in error
-    && (error as NodeJS.ErrnoException).code === "ENOENT";
+export interface ModelCatalogReannounceTarget {
+  reannounceAgentCatalog(): Promise<void>;
+}
+
+/**
+ * Re-advertise the node catalogue whenever a valid replacement file loads.
+ * The upstream adapter itself skips silently (with a warning) while the
+ * WebSocket is closed; the next connection registration carries the latest
+ * snapshot, so no retry layer is needed here.
+ */
+export function subscribeModelCatalogReannounce(params: {
+  store: Pick<ModelCatalogFileStore, "subscribe">;
+  currentAdapter(): ModelCatalogReannounceTarget | null;
+  logger?: ModelCatalogLogger;
+}): () => void {
+  return params.store.subscribe(() => {
+    const adapter = params.currentAdapter();
+    if (!adapter) {
+      params.logger?.warn?.(
+        {},
+        "Model catalog reannounce skipped — UpstreamAdapter not ready",
+      );
+      return;
+    }
+    void adapter.reannounceAgentCatalog().catch((error: unknown) => {
+      params.logger?.error?.(
+        { err: error },
+        "Model catalog reannounce to upstream failed",
+      );
+    });
+  });
 }
 
 /**

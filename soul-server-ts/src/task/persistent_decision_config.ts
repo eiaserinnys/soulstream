@@ -33,10 +33,6 @@ const antigravity: PresetDecisionConfig = {
 };
 
 export const DEFAULT_CONFIG: PersistentDecisionConfig = {
-  presets: {
-    "claude-opus": claudeOpus,
-    "codex-6.1-sol": codexSol,
-  },
   provider_defaults: {
     claude: claudeOpus,
     codex: codexSol,

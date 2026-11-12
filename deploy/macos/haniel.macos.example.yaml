@@ -86,7 +86,5 @@ install:
           default: '86400000'
         - key: AGENTS_CONFIG_PATH
           default: /Users/your-user/haniel-root/state/config/agents.yaml
-        - key: MODEL_CATALOG_PATH
-          default: /Users/your-user/haniel-root/state/config/model-catalog.yaml
         - key: DASH_USER_NAME
           default: your-dashboard-user

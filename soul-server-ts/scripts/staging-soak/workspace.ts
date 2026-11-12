@@ -45,7 +45,6 @@ export async function prepareSoakWorkspace(
     "# Isolated runner staging soak; MCP is supplied by Soulstream.\n",
   );
   await writePrivate(config.paths.agentsConfig, agentsYaml(config));
-  await writePrivate(config.paths.modelCatalog, modelCatalogYaml(config));
   await writePrivate(config.paths.mcpRegistry, mcpRegistryYaml(config));
   await writePrivate(config.paths.mcpProfiles, mcpProfilesYaml());
 }
@@ -69,7 +68,6 @@ async function ensureRunnerStateAlias(config: ResolvedSoakConfig): Promise<void>
 export async function assertPreparedWorkspace(config: ResolvedSoakConfig): Promise<void> {
   for (const path of [
     config.paths.agentsConfig,
-    config.paths.modelCatalog,
     config.paths.mcpRegistry,
     config.paths.mcpProfiles,
     config.paths.claudeAuthToken,
@@ -96,21 +94,6 @@ function agentsYaml(config: ResolvedSoakConfig): string {
     `    workspace_dir: ${yaml(config.paths.workspace)}`,
     `    default_preset: ${yaml(config.codexModelPreset)}`,
     "    mcp_profile: staging-soak",
-    "",
-  ].join("\n");
-}
-
-function modelCatalogYaml(config: ResolvedSoakConfig): string {
-  return [
-    "presets:",
-    `  - id: ${yaml(config.modelPreset)}`,
-    "    label: Claude staging soak",
-    "    backend: claude",
-    "    model: sonnet",
-    `  - id: ${yaml(config.codexModelPreset)}`,
-    "    label: Codex staging soak",
-    "    backend: codex",
-    "    model: gpt-5.6-sol",
     "",
   ].join("\n");
 }

@@ -12,6 +12,7 @@ import { executeMcpTool } from "../src/mcp/tool_executor.js";
 import type { McpHostOptions } from "../src/mcp/types.js";
 import { PersistentSessionSettingsService } from "../src/session/persistent_session_settings_service.js";
 import { SessionResourceAccessError } from "../src/session/session_resource_access.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
 
 type Row = Record<string, unknown>;
 
@@ -63,6 +64,7 @@ const HIDDEN_FOLDER_PAS = makeRow({
 function setup() {
   const folderAccessCalls: Array<{ request: unknown; folderId: string | null; accessEmail?: string | null }> = [];
   const service = new PersistentSessionSettingsService({
+    modelCatalog: repositoryModelCatalog(),
     reads: async () => ({
       getSession: async () => null,
       listPersistentSessions: async () => [SEOSOYOUNG_PAS, WORK_PAS, HIDDEN_FOLDER_PAS],

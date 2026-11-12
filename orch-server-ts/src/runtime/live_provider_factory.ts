@@ -51,6 +51,7 @@ import { SessionStatisticsDailyService } from "../usage/session_statistics_daily
 import { statisticsLiveDays } from "../usage/session_statistics_daily_calculator.js";
 import type { SessionStatisticsRepositoryPort } from "../usage/session_statistics_types.js";
 import type { SessionStatisticsRouteOptions } from "../usage/session_statistics_routes.js";
+import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 import type { UiEventRepository, UiEventRouteOptions }
   from "../ui-events/ui_event_routes.js";
 import { createLiveUiEventIdentityResolver } from "./live_ui_event_identity.js";
@@ -144,6 +145,8 @@ export type { LiveRuntimeProviderBundle } from "./live_runtime_provider_bundle.j
 export type LiveOrchestratorProviderBundle = {
   readonly authenticatedUserResolvers: LiveAuthenticatedUserResolvers;
   readonly modelPresetAvailability: ModelPresetAvailabilityService;
+  /** The same open store the entrypoint passed in, for consumers outside this factory. */
+  readonly modelCatalog: ModelCatalogSource;
   readonly adminUsersRoutes: AdminUsersRouteOptions;
   readonly atomRoutes: AtomRouteOptions;
   readonly attachmentRoutes: Pick<
@@ -205,6 +208,8 @@ export type LiveSessionStatisticsProvider = SessionStatisticsRouteOptions & {
 export type CreateLiveOrchestratorProviderBundleOptions = {
   readonly dependencies: LiveProviderDependencies;
   readonly runtimeServices: OrchestratorRuntimeServices;
+  /** Opened once by the entrypoint and shared by presets, pricing and labels. */
+  readonly modelCatalog: ModelCatalogSource;
   readonly usageSummaryRoutes: LiveUsageSummaryRouteOptions;
   readonly sessionStatisticsRepositoryProvider: () => Promise<SessionStatisticsRepositoryPort>;
   readonly uiEventRepository: UiEventRepository;
@@ -266,6 +271,7 @@ export function createLiveOrchestratorProviderBundle(
   const modelPresetAvailability = new ModelPresetAvailabilityService(
     options.runtimeServices.registry,
     options.usageSummaryRoutes.service,
+    options.modelCatalog,
   );
   const authJwt = createLiveAuthJwtHelper({
     configProvider: options.dependencies.configProvider,
@@ -433,6 +439,7 @@ export function createLiveOrchestratorProviderBundle(
     accessProvider: dashboardAccessProvider,
     folderProvider: options.dependencies.dbCatalogRepository.folderRouteProvider,
     now: () => new Date(),
+    modelCatalog: options.modelCatalog,
   });
 
   return {
@@ -446,6 +453,7 @@ export function createLiveOrchestratorProviderBundle(
     },
     authenticatedUserResolvers,
     modelPresetAvailability,
+    modelCatalog: options.modelCatalog,
     adminUsersRoutes: {
       provider: createLiveAdminUsersRouteProvider({
         repository: options.dependencies.dbCatalogRepository.adminUsersRepository,
@@ -601,6 +609,7 @@ export function createLiveOrchestratorProviderBundle(
         bridge: options.runtimeServices.sessionBridge,
         sessionEventHub: options.runtimeServices.sessionEventHub,
         modelPresetAvailability,
+        modelCatalog: options.modelCatalog,
         ...(options.dbSqlResolver === undefined ? {} : {
           persistentResume: {
             getSession: async (sessionId: string) => {
@@ -655,13 +664,16 @@ function createLiveSessionStatisticsProvider(options: {
   accessProvider: SessionStatisticsRouteOptions["accessProvider"];
   folderProvider: SessionStatisticsRouteOptions["folderProvider"];
   now: () => Date;
+  modelCatalog: ModelCatalogSource;
 }): LiveSessionStatisticsProvider {
-  const service = new SessionStatisticsDailyService(options.repositoryProvider, options.now);
+  const service = new SessionStatisticsDailyService(
+    options.repositoryProvider, options.modelCatalog, options.now);
   return {
     service,
     accessProvider: options.accessProvider,
     folderProvider: options.folderProvider,
     now: options.now,
+    modelCatalog: options.modelCatalog,
     startBackground: () => {
       void service.startBackground(async () => {
         const asOf = options.now().toISOString();

@@ -123,7 +123,7 @@ export class TaskManager {
     taskCreationHook?: TaskCreationHook,
     private readonly deliveryRuntimeV2Enabled = false,
     sessionRuntimeControl?: ClaudeSessionRuntimeControl,
-    private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
+    private readonly modelCatalog?: Pick<ModelCatalog, "resolve" | "snapshot">,
     sessionMutations?: SessionMutationHost,
     observePersistentResume?: PersistentResumeObserver,
     prepareAttachmentInput?: PrepareAttachmentInput,

@@ -12,6 +12,8 @@ import test, { after, before } from "node:test";
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const repositoryRoot = join(packageRoot, "..");
+/** Repo canonical catalogue the bound portable release reads at startup. */
+const catalogPath = join(repositoryRoot, "packages", "model-catalog", "data", "model-catalog.yaml");
 const hostDist = join(packageRoot, "dist");
 const tsxCli = join(packageRoot, "node_modules", "tsx", "dist", "cli.mjs");
 const execFileAsync = promisify(execFile);
@@ -97,7 +99,6 @@ before(async () => {
     `AUTH_BEARER_TOKEN=${MCP_TOKEN}`,
     `AGENTS_CONFIG_PATH=${join(appRoot, "agents.yaml")}`,
     `AGENT_PROFILE_CACHE_PATH=${join(appRoot, "agent-profile-cache.json")}`,
-    `MODEL_CATALOG_PATH=${join(appRoot, "missing-model-catalog.yaml")}`,
     "SOUL_RUNNER_PROCESS_ENABLED=true",
     `SOUL_RUNNER_STATE_DIR=${join(appRoot, "runner-state")}`,
     // config.ts requires an explicit artifact directory whenever the runner
@@ -210,12 +211,14 @@ test("the bound release starts main.js without node_modules and reports starting
     join(releaseDirectory, "bind-release.mjs"),
     "--release-dir", releaseDirectory,
     "--env-file", envFile,
+    "--catalog-path", catalogPath,
   ], { cwd: releaseDirectory, env: CLEAN_AMBIENT, timeoutMs: 60_000 });
   assert.equal(bind.code, 0, bind.output);
   assert.match(bind.output, /^bind-release: bound [0-9a-f]{40} manifest=sha256-[0-9a-f]{64} /m);
 
   const manifest = JSON.parse(await readFile(join(releaseDirectory, "release-manifest.json"), "utf8"));
   assert.equal(manifest.source_commit, sourceCommit);
+  assert.equal(manifest.model_catalog_path, catalogPath);
   assert.equal(manifest.node.version, process.versions.node);
 
   const port = Number((await readFile(envFile, "utf8"))
@@ -276,6 +279,7 @@ test("the bound release answers a bearer-authenticated MCP initialize", async ()
       join(releaseDirectory, "bind-release.mjs"),
       "--release-dir", releaseDirectory,
       "--env-file", envFile,
+      "--catalog-path", catalogPath,
     ], { cwd: releaseDirectory, env: CLEAN_AMBIENT, timeoutMs: 60_000 });
     assert.equal(bind.code, 0, bind.output);
   }

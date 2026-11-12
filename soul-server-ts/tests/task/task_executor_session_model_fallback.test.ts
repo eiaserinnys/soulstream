@@ -68,7 +68,7 @@ function makeTask(modelPreset = "gemini-4-argon"): Task {
   } as unknown as Task;
 }
 
-function makeModelCatalog(): Pick<ModelCatalog, "resolve"> {
+function makeModelCatalog(): Pick<ModelCatalog, "resolve" | "snapshot"> {
   return {
     resolve: vi.fn((id: string) => ({
       id,
@@ -80,7 +80,12 @@ function makeModelCatalog(): Pick<ModelCatalog, "resolve"> {
       env: {},
       supported_efforts: ["low" as const, "medium" as const, "high" as const],
     })),
-  };
+    snapshot: () => ({
+      presets: [],
+      models: [],
+      persistent_defaults: { fallback_models: [] },
+    }),
+  } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">;
 }
 
 function stubAdvertisedPresets(): void {

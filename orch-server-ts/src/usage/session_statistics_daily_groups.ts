@@ -14,7 +14,7 @@ export function createSessionStatisticsDailyGroups(sessions: readonly DailySessi
     cells.push(session);
     pairs.set(key, cells);
   }
-  const emptyMetrics = () => mergeSessionStatisticsMetricStates({ costDecimals: new Map() }, []);
+  const emptyMetrics = () => mergeSessionStatisticsMetricStates([]);
   const fallback = (cell: DailySessionState): DailyOverviewAggregateState => {
     const coverage = emptyDailyCoverage();
     coverage.unattributed_missing_usage = cell.selectors[dailySelectorKey({})]!.coverage.unattributed_missing_usage;
@@ -29,7 +29,7 @@ export function createSessionStatisticsDailyGroups(sessions: readonly DailySessi
     for (const key of keys) {
       const selected = cells.map(cell => cell.selectors[key] ?? fallback(cell));
       selectors[key] = {
-        metrics: mergeSessionStatisticsMetricStates({ costDecimals: new Map() }, selected.map(state => state.metrics)),
+        metrics: mergeSessionStatisticsMetricStates(selected.map(state => state.metrics)),
         coverage: mergeDailyCoverage(selected),
         sourceCount: selected.reduce((sum, state) => sum + state.sourceCount, 0),
         tokenEvidence: selected.some(state => state.tokenEvidence),

@@ -79,7 +79,7 @@ function providerSeries(rows: readonly UsageStatsProviderRow[], modelMode: boole
     key: usageStatsSeriesKey(row.provider, row.model, modelMode),
     label: row.attribution === "provider"
       ? formatUsageStatsProviderLabel(row.provider)
-      : row.model === null ? "모델 미상" : formatUsageStatsModelLabel(row.model),
+      : formatUsageStatsModelLabel(row.model, row.model_label),
     color: row.provider === "unknown" || (modelMode && row.model === null)
       ? "var(--v3-text-tertiary)"
       : modelMode ? projectColor(usageStatsModelColorIndex(
@@ -371,7 +371,7 @@ export function UsageStatsTab({ request = fetch }: { request?: typeof fetch } = 
               const value = usageStatsMetricValue(row.metrics, metric, includeCacheRead);
               const name = row.attribution === "provider"
                 ? formatUsageStatsProviderLabel(row.provider)
-                : row.model === null ? "모델 미상" : formatUsageStatsModelLabel(row.model);
+                : formatUsageStatsModelLabel(row.model, row.model_label);
               const isProviderRow = row.attribution === "provider";
               const seriesKey = usageStatsSeriesKey(row.provider, row.model, modelMode);
               return <UsageShareRow

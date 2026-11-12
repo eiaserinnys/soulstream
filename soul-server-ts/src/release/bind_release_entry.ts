@@ -2,7 +2,7 @@ import { writeSync } from "node:fs";
 
 import { bindErrorLines, bindPortableRelease } from "./bind_release.js";
 
-const USAGE = "--release-dir <dir> --env-file <file>";
+const USAGE = "--release-dir <dir> --env-file <file> [--catalog-path <absolute>]";
 
 try {
   const options = parseArgs(process.argv.slice(2));
@@ -17,7 +17,11 @@ try {
   process.exit(1);
 }
 
-function parseArgs(argv: readonly string[]): { releaseDirectory: string; envFile: string } {
+function parseArgs(argv: readonly string[]): {
+  releaseDirectory: string;
+  envFile: string;
+  catalogPath?: string;
+} {
   const values = new Map<string, string>();
   for (let index = 0; index < argv.length; index += 2) {
     const key = argv[index];
@@ -30,10 +34,16 @@ function parseArgs(argv: readonly string[]): { releaseDirectory: string; envFile
   }
   const releaseDirectory = values.get("release-dir");
   const envFile = values.get("env-file");
+  const catalogPath = values.get("catalog-path");
   if (!releaseDirectory) throw new Error(`--release-dir is required: ${USAGE}`);
   if (!envFile) throw new Error(`--env-file is required: ${USAGE}`);
-  const unknown = [...values.keys()].filter((key) => key !== "release-dir" && key !== "env-file");
+  const allowed = new Set(["release-dir", "env-file", "catalog-path"]);
+  const unknown = [...values.keys()].filter((key) => !allowed.has(key));
   const firstUnknown = unknown[0];
   if (firstUnknown) throw new Error(`unknown option: --${firstUnknown}`);
-  return { releaseDirectory, envFile };
+  return {
+    releaseDirectory,
+    envFile,
+    ...(catalogPath ? { catalogPath } : {}),
+  };
 }

@@ -10,6 +10,11 @@ import { registerPersistentSessionSettingsRoutes } from "../src/session/persiste
 import { executeCreateSessionRoute } from "../src/session/session_command_routes.js";
 import { SessionResourceAccessError } from "../src/session/session_resource_access.js";
 import { createHarnessCore } from "./session-action-command-test-helpers.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 /**
  * PAS settings API against a real PostgreSQL schema.
@@ -70,12 +75,14 @@ export async function buildPersistentSettingsApp(
     } as never);
 
     const logger = { warn: () => undefined, info: () => undefined, error: () => undefined, debug: () => undefined };
-    const catalog = {
+    const presetCatalog = {
       resolve: (id: string) => {
         const preset = NODE_PRESETS.find((candidate) => candidate.id === id);
         if (!preset) throw new Error(`Unknown model preset: ${id}`);
         return { ...preset, model: `${id}-model`, env: {} };
       },
+      // The worker reads PAS defaults (fallback models) from the full catalogue snapshot.
+      snapshot: () => catalog.snapshot(),
     };
     const control = new worker.PersistentSessionControl({
       getTask: (id: string) => tasks.get(id),
@@ -102,9 +109,9 @@ export async function buildPersistentSettingsApp(
           return 1;
         },
       },
-      modelCatalog: catalog,
+      modelCatalog: presetCatalog,
       resolveCurrentBackend: (task: { modelPresetBackend?: string; modelPreset?: string }) =>
-        task.modelPresetBackend ?? (task.modelPreset ? catalog.resolve(task.modelPreset).backend : undefined),
+        task.modelPresetBackend ?? (task.modelPreset ? presetCatalog.resolve(task.modelPreset).backend : undefined),
     });
     const runtime = {
       async createSession(params: Json) {
@@ -160,7 +167,7 @@ export async function buildPersistentSettingsApp(
       getSummary: () => ({ nodes: [] }) as never,
       getLimitRejection: () => null,
       getClaudePoolAccountsForAvailability: (_nodeId, accounts) => accounts,
-    });
+    }, catalog);
     const folderOf = async (sessionId: string) =>
       (await sql<Array<{ folder_id: string | null }>>`SELECT folder_id FROM sessions WHERE session_id = ${sessionId}`)[0]?.folder_id ?? null;
     const denyHidden = (folderId: string | null) => {
@@ -168,6 +175,7 @@ export async function buildPersistentSettingsApp(
     };
     const commands = { router, bridge, timeoutMs: 5_000 };
     const service = new PersistentSessionSettingsService({
+      modelCatalog: catalog,
       reads: async () => new SessionReadRepository(sql as unknown as SqlClient),
       access: {
         resolveAccess: async () => ({ restricted: false, allowedFolderIds: [] }) as never,

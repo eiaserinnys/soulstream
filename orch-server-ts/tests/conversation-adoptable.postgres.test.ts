@@ -8,6 +8,11 @@ import { SessionReadRepository } from "../src/control_plane/repositories/session
 import { PersistentSessionSettingsService } from "../src/session/persistent_session_settings_service.js";
 import { SessionResourceAccessError } from "../src/session/session_resource_access.js";
 import { createFullSchemaPostgresHarness, type FullSchemaPostgresHarness } from "./board_yjs_postgres_harness.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 const fixture = JSON.parse(readFileSync(new URL("./fixtures/conversation-v1/adoptable.json", import.meta.url), "utf8"));
 const persistent = [{ type: "persistent_session", value: { enabled: true } }];
@@ -42,6 +47,7 @@ describe("conversation adoptable candidates", () => {
       requireSessionAccess: async () => {},
     };
     const settings = new PersistentSessionSettingsService({
+      modelCatalog: catalog,
       reads: async () => readRepo as never,
       access: access as never,
       catalog: { renameSession: async () => {} } as never,
@@ -56,7 +62,7 @@ describe("conversation adoptable candidates", () => {
           nodeId === "eiaserinnys" ? { "seosoyoung-pas": { name: "서소영" } } : undefined,
       },
     });
-    const catalog = new ConversationCatalog({
+    const conversationCatalog = new ConversationCatalog({
       defaultNodeId: "eiaserinnys",
       listNodes: () => [{ nodeId: "eiaserinnys", connected: true }, { nodeId: "node-b", connected: true }],
       listKnownForNode: (nodeId: string) => nodeId === "node-b"
@@ -71,7 +77,7 @@ describe("conversation adoptable candidates", () => {
       access: access as never,
       reads: async () => readRepo as never,
       persistent: settings as never,
-      catalog,
+      catalog: conversationCatalog,
       create: async () => ({ status: 400, body: {} }) as never,
       waitForCreatedSession: async () => false,
     });

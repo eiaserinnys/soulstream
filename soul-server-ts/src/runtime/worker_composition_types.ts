@@ -12,6 +12,7 @@ import type { AntigravityCliPathResolution } from "../engine/antigravity_cli_pat
 import type { McpRuntime } from "../mcp/runtime.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import type { ModelCatalog } from "../model_catalog.js";
+import type { ModelCatalogFileStore } from "@soulstream/model-catalog/file-loader";
 import type { SessionPageBindingService } from "../page/session_page_binding_service.js";
 import type { RealtimeBroker } from "../realtime/realtime_broker.js";
 import type { RunnerRecoveryCoordinator } from "../runner/runner_recovery_coordinator.js";
@@ -39,7 +40,11 @@ export interface WorkerCompositionParams {
   mcpConfigService: McpConfigService;
   codexCliPath?: CodexCliPathResolution;
   antigravityCliPath?: AntigravityCliPathResolution;
-  modelCatalog?: ModelCatalog;
+  modelCatalog: ModelCatalog;
+  /** Repo canonical catalogue store opened by main. Absent in test compositions only. */
+  modelCatalogStore?: ModelCatalogFileStore;
+  /** Absolute catalogue path this host advertises to runner children. */
+  modelCatalogPath: string;
   agentProfileSource?: NewSessionAgentProfileSource;
   nodeStallMonitor?: Pick<
     NodeStallMonitor,

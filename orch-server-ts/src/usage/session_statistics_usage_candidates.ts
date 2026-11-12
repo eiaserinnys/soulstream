@@ -1,3 +1,4 @@
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 import { priceInferenceUsage } from "@soulstream/model-catalog/inference-pricing";
 import type {
   EventIdentity,
@@ -57,6 +58,7 @@ function safeRawNumeric(
 }
 
 export function priceNormalizedUsage(
+  catalog: ModelCatalogConfig,
   usage: NormalizedUsage,
   provider: UsageStatsProvider,
   model: string | null,
@@ -68,7 +70,7 @@ export function priceNormalizedUsage(
     : null;
   const cacheWrite5m = knownInteger(cacheCreation?.ephemeral_5m_input_tokens) ?? 0;
   const cacheWrite1h = knownInteger(cacheCreation?.ephemeral_1h_input_tokens) ?? 0;
-  const priced = priceInferenceUsage({
+  const priced = priceInferenceUsage(catalog, {
     provider,
     model,
     input_total: usage.input_total,
@@ -99,6 +101,7 @@ function usageRow(
   rawUsage: Record<string, unknown> | null,
   model: string | null,
   issues: Set<string>,
+  catalog: ModelCatalogConfig,
 ): FactDraft {
   const rowQuality = new Set(identity.quality);
   const usageIsDiagnostic = representation === "diagnostic";
@@ -149,7 +152,7 @@ function usageRow(
     unpriced_tokens: null,
     pricing_complete: null,
     pricing_version: null,
-  } : priceNormalizedUsage(normalized, identity.provider, model, rawUsage);
+  } : priceNormalizedUsage(catalog, normalized, identity.provider, model, rawUsage);
   return {
     ...base,
     model,
@@ -199,6 +202,7 @@ export function normalizeUsageEvent(
   payload: Record<string, unknown> | null,
   identity: EventIdentity,
   issues: Set<string>,
+  catalog: ModelCatalogConfig,
 ): FactDraft[] {
   const candidateType = candidateTypeForEvent(event.eventType, payload, issues);
   const usageValue = payload?.usage;
@@ -216,6 +220,7 @@ export function normalizeUsageEvent(
     rawUsage,
     identity.model,
     issues,
+    catalog,
   )];
 
   if (payload && hasOwn(payload, "model_usage") && payload.model_usage !== null) {
@@ -248,6 +253,7 @@ export function normalizeUsageEvent(
         modelUsage,
         modelKey,
         modelIssues,
+        catalog,
       );
       if (!modelUsage) {
         row.quality = [...new Set([...row.quality, "normalization_error"])].sort(compareText);

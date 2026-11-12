@@ -1,6 +1,10 @@
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import pino from "pino";
 import { describe, expect, it } from "vitest";
-import { AgentBackendSchema } from "@soulstream/model-catalog";
+import { AgentBackendSchema, parseModelCatalogYaml } from "@soulstream/model-catalog";
+import { openModelCatalogFile } from "@soulstream/model-catalog/file-loader";
 import { ModelCatalog, nodeEffortCapabilities } from "../../../src/model_catalog.js";
 import { createEngineFactory } from "../../../src/runtime/engine_factory.js";
 import { createRunnerChildEngine } from "../../../src/runner/runner_child_engine_factory.js";
@@ -21,8 +25,15 @@ it("uses the shared backend schema at catalog, frame and child-config boundaries
     expect(RunnerEventFrameSchema.safeParse({ protocolVersion: 1, channel: "event", kind, snapshot: { backendId: "antigravity", serialized: null, items: [] } }).success).toBe(true);
   }
 });
+const REPOSITORY_CATALOG_PATH = fileURLToPath(
+  new URL("../../../../packages/model-catalog/data/model-catalog.yaml", import.meta.url),
+);
+const MODEL_CATALOG = parseModelCatalogYaml(
+  fs.readFileSync(REPOSITORY_CATALOG_PATH, "utf-8"),
+);
+
 it("advertises two base-model presets, bounded efforts and the Antigravity usage provider", () => {
-  const catalog=new ModelCatalog(join(process.cwd(),"config/model-catalog.yaml.example"));
+  const catalog = new ModelCatalog(openModelCatalogFile({ path: REPOSITORY_CATALOG_PATH }));
   for(const [id,effort] of [["gemini-3.8-flash","low"],["gemini-4-argon","high"]]) {
     expect(catalog.list().find(x=>x.id===id)).toMatchObject({backend:"antigravity",model:id,default_effort:effort,supported_efforts:["low","medium","high"]});
     expect(catalog.advertise().find(x=>x.id===id)?.usage_provider).toBe("antigravity");
@@ -34,7 +45,9 @@ it("creates Antigravity through both factories without checking or spawning an i
   const stateDirectory=join(workspaceDir,"state");
   const agent={ id:"test",name:"시험",backend:"claude" as const,workspace_dir:workspaceDir };
   const logger=pino({level:"silent"});
-  const factory=createEngineFactory({env:{CODEX_ADAPTER_MODE:"sdk",CODEX_APP_SERVER_REQUEST_TIMEOUT_MS:30000,CODEX_APP_SERVER_STARTUP_TIMEOUT_MS:120000,CODEX_DETACHED_RESULT_RETENTION_MS:1800000,CLAUDE_SESSION_RUNTIME_V2_ENABLED:false,MCP_INTERNAL_PORT:4206,MCP_PATH:"/mcp",SOUL_RUNNER_STATE_DIR:stateDirectory},logger,codexProcessEnv:{},antigravityProcessEnv:{},buildClaudeProcessEnv:()=>({}),claudeSessionStore:{async append(){},async load(){return null;}},mcpConfigService:new McpConfigService({agentsConfigPath:join(workspaceDir,"agents.yaml")})});
+  const factory=createEngineFactory({env:{CODEX_ADAPTER_MODE:"sdk",CODEX_APP_SERVER_REQUEST_TIMEOUT_MS:30000,CODEX_APP_SERVER_STARTUP_TIMEOUT_MS:120000,CODEX_DETACHED_RESULT_RETENTION_MS:1800000,CLAUDE_SESSION_RUNTIME_V2_ENABLED:false,MCP_INTERNAL_PORT:4206,MCP_PATH:"/mcp",SOUL_RUNNER_STATE_DIR:stateDirectory},logger,codexProcessEnv:{},antigravityProcessEnv:{},buildClaudeProcessEnv:()=>({}),claudeSessionStore:{async append(){},async load(){return null;}},mcpConfigService:new McpConfigService({agentsConfigPath:join(workspaceDir,"agents.yaml")}),
+    getModelCatalog:()=>MODEL_CATALOG,
+  });
   expect(factory(agent,"antigravity").backendId).toBe("antigravity");
   const config=parseRunnerChildConfig({schemaVersion:1,sessionId:"test",backend:"antigravity",agent,paths:runnerProcessPaths(stateDirectory,"test"),codeSha:"test",snapshotPath:workspaceDir,codexAdapterMode:"sdk",antigravityCliPath:"/test/agy",claudeRuntimeV2Enabled:false,claudeRuntimeIdleTtlMs:60000,claudeRuntimeMaxEntries:1,claudeRuntimeTurnTimeoutMs:60000,internalMcpUrl:"http://127.0.0.1:4206/mcp",codexHome:null,rolloutRoot:null});
   expect(config.antigravityCliPath).toBe("/test/agy");
@@ -65,6 +78,7 @@ it("creates OpenCode through host and child factories and preserves its CLI path
     buildClaudeProcessEnv: () => ({}),
     claudeSessionStore: { async append() {}, async load() { return null; } },
     mcpConfigService: new McpConfigService({ agentsConfigPath: join(workspaceDir, "agents.yaml") }),
+    getModelCatalog: () => MODEL_CATALOG,
   });
   expect(factory(agent, "opencode").backendId).toBe("opencode");
 

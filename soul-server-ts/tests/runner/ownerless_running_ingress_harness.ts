@@ -10,6 +10,7 @@ import {
   EventIngressRepository,
   type EventIngressSql,
 } from "../../../orch-server-ts/src/node/event_ingress_repository.js";
+import { repositoryModelCatalog } from "../../../orch-server-ts/tests/helpers/model_catalog.js";
 import { applyEventSessionEffect } from
   "../../../orch-server-ts/src/node/event_session_effect_applier.js";
 import type {
@@ -94,6 +95,8 @@ export class OwnerlessIngressHarness {
     const ingress = new EventIngressRepository(
       { resolveSql: async () => postgres.sql as unknown as EventIngressSql },
       applyEventSessionEffect,
+      undefined,
+      { modelCatalog: repositoryModelCatalog() },
     );
     const pump = new EventOutboxPump(outbox, () => undefined, {
       acknowledgementTimeoutMs: 5_000,

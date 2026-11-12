@@ -38,14 +38,16 @@ describe("worker composition boundary", () => {
     expect(taskComposition).toContain("new TaskExecutor");
   });
 
-  it("loads the model catalog at startup and warns only profiles missing default_preset", () => {
+  it("opens the model catalog store at startup and warns only profiles missing default_preset", () => {
     const main = source("main.ts");
 
-    // Capabilities are passed so the advertisement can never promise an effort
-    // the node's active transport cannot carry.
+    // One store opened at startup; capabilities are passed so the advertisement
+    // can never promise an effort the node's active transport cannot carry.
+    expect(main).toContain("openModelCatalogFile({");
     expect(main).toContain(
-      "loadModelCatalog(env.MODEL_CATALOG_PATH, logger, nodeEffortCapabilities(env.CODEX_ADAPTER_MODE))",
+      "validate: (catalog) => assertCatalogDefaultsDeliverable(catalog, effortCapabilities)",
     );
+    expect(main).toContain("parseModelCatalogGroups(");
     expect(main).toContain("Failed to load model catalog");
     expect(main).toContain("if (!profile.default_preset)");
     expect(main).not.toContain("if (profile.default_preset) {");

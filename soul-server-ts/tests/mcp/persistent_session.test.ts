@@ -373,7 +373,12 @@ describe("request_session_generation_rollover MCP tool", () => {
         if (!preset) throw new Error(`Unknown model preset: ${presetId}`);
         return preset;
       },
-    } as unknown as Pick<ModelCatalog, "resolve">;
+      snapshot: () => ({
+        presets: Object.values(presets),
+        models: [],
+        persistent_defaults: { fallback_models: [] },
+      }),
+    } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">;
     let rememberedTask: Task | undefined;
     const enqueueMetadataEffect = vi.fn(async (
       id: string,

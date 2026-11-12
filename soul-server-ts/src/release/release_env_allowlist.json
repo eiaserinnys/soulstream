@@ -43,7 +43,7 @@
     "SESSION_ISOLATION_TEST_DATABASE_URL": { "owner": "isolation", "kind": "credential", "identity_scope": "deployment", "normalization": "presence" },
     "AGENTS_CONFIG_PATH": { "owner": "agents", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "AGENT_PROFILE_CACHE_PATH": { "owner": "agents", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
-    "MODEL_CATALOG_PATH": { "owner": "models", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
+    "MODEL_CATALOG_GROUPS": { "owner": "models", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },
     "INCOMING_FILE_DIR": { "owner": "attachments", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "CLAUDE_ACCOUNTS_DIR": { "owner": "claude", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "CLAUDE_ACCOUNT_POOL_ENABLED": { "owner": "claude", "kind": "non_secret", "identity_scope": "deployment", "normalization": "boolean" },

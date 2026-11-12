@@ -29,6 +29,11 @@ import type {
 import type { UiEventRepository } from "../src/ui-events/ui_event_routes.js";
 import { UI_EVENT_COLLECTION_DISABLED } from "../src/ui-events/ui_event_settings.js";
 import type { UsageSummaryClaudeAccount } from "../src/usage/provider_usage_wire.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 const config = parseOrchServerConfig({
   environment: "test",
@@ -107,6 +112,7 @@ describe("live provider factory boundary", () => {
     );
 
     const bundle = createLiveOrchestratorProviderBundle({
+      modelCatalog: catalog,
       nodeCredentials: null,
       dependencies,
       runtimeServices,
@@ -140,6 +146,7 @@ describe("live provider factory boundary", () => {
       location: { endpoint: "https://r2.example.test", bucket: "attachments" },
     }));
     const bundle = createLiveOrchestratorProviderBundle({
+      modelCatalog: catalog,
       nodeCredentials: null,
       dependencies,
       runtimeServices,
@@ -173,6 +180,7 @@ describe("live provider factory boundary", () => {
       const runtimeServices = createRuntimeServices(dependencies);
       const resolveAttachmentStorage = vi.fn(async () => null);
       const bundle = createLiveOrchestratorProviderBundle({
+        modelCatalog: catalog,
         nodeCredentials: null,
         dependencies,
         runtimeServices,
@@ -205,6 +213,7 @@ describe("live provider factory boundary", () => {
     const runtimeServices = createRuntimeServices(dependencies);
 
     expect(() => createLiveOrchestratorProviderBundle({
+      modelCatalog: catalog,
       nodeCredentials: null,
       dependencies,
       runtimeServices,
@@ -356,6 +365,7 @@ describe("live provider factory boundary", () => {
     );
 
     const bundle = createLiveOrchestratorProviderBundle({
+      modelCatalog: catalog,
       nodeCredentials: null,
       dependencies,
       runtimeServices,
@@ -653,6 +663,7 @@ describe("live provider factory boundary", () => {
     const dependencies = createLiveDependencies();
     const runtimeServices = createRuntimeServices(dependencies);
     const bundle = createLiveOrchestratorProviderBundle({
+      modelCatalog: catalog,
       nodeCredentials: null,
       dependencies,
       runtimeServices,
@@ -879,6 +890,7 @@ function createOwnedUploadHarness(options: {
   const resolveReadStorage = vi.fn(async () => binding as never);
   const readPageAttachmentEvidence = options.readPageAttachmentEvidence ?? (async () => null);
   const bundle = createLiveOrchestratorProviderBundle({
+    modelCatalog: catalog,
     nodeCredentials: null,
     dependencies,
     runtimeServices,

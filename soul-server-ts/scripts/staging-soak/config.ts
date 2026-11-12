@@ -46,7 +46,6 @@ export interface SoakPaths {
   captures: string;
   databaseRelease: string;
   agentsConfig: string;
-  modelCatalog: string;
   mcpRegistry: string;
   mcpProfiles: string;
   agentProfileCache: string;
@@ -164,7 +163,6 @@ export function buildServiceEnvironments(
       SOUL_RUNNER_REAPER_INTERVAL_MS: String(config.reaperIntervalMs),
       AGENTS_CONFIG_PATH: config.paths.agentsConfig,
       AGENT_PROFILE_CACHE_PATH: config.paths.agentProfileCache,
-      MODEL_CATALOG_PATH: config.paths.modelCatalog,
       INCOMING_FILE_DIR: config.paths.incoming,
       CLAUDE_AUTH_TOKEN_PATH: secrets.claudeAuthTokenPath,
       CODEX_HOME: secrets.codexHomePath,
@@ -209,7 +207,6 @@ function derivePaths(root: string): SoakPaths {
     captures: join(root, "captures"),
     databaseRelease: join(root, "database-release"),
     agentsConfig: join(config, "agents.yaml"),
-    modelCatalog: join(config, "model-catalog.yaml"),
     mcpRegistry: join(config, "mcp-registry.yaml"),
     mcpProfiles: join(config, "mcp-profiles.yaml"),
     agentProfileCache: join(runtime, "agent-profiles.json"),

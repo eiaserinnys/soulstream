@@ -6186,6 +6186,11 @@ describe("TaskExecutor persistent generation rollover", () => {
           supported_efforts: ["high" as const],
         };
       }),
+      snapshot: vi.fn(() => ({
+        presets: [],
+        models: [],
+        persistent_defaults: { fallback_models: [] },
+      })),
     };
     const sessionMutations = { setModelSelection: vi.fn().mockResolvedValue(undefined) };
     let capturedParams: EngineExecuteParams | undefined;
@@ -6326,7 +6331,14 @@ describe("TaskExecutor persistent generation rollover", () => {
         async interrupt() { return true; },
         async close() {},
       };
-      const modelCatalog = { resolve: vi.fn() };
+      const modelCatalog = {
+        resolve: vi.fn(),
+        snapshot: vi.fn(() => ({
+          presets: [],
+          models: [],
+          persistent_defaults: { fallback_models: [] },
+        })),
+      };
       const executor = new TaskExecutor(
         () => engine,
         mocks.db,
@@ -6464,6 +6476,11 @@ describe("TaskExecutor persistent generation rollover", () => {
         model: "codex-model-target",
         env: { CODEX_PROFILE: "target" },
         supported_efforts: ["high" as const],
+      })),
+      snapshot: vi.fn(() => ({
+        presets: [],
+        models: [],
+        persistent_defaults: { fallback_models: [] },
       })),
     };
     let capturedParams: EngineExecuteParams | undefined;

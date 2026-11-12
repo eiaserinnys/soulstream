@@ -8,6 +8,8 @@ import type {
   UsageStatsProviderRow,
   UsageStatsSeriesPoint,
 } from "@soulstream/wire-schema/session-statistics";
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
+import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 import type {
   SessionStatisticsReadRequest,
   SessionStatisticsReadResult,
@@ -281,7 +283,11 @@ function series(
   return result;
 }
 
-export function buildOverview(read: SessionStatisticsReadResult, view = directView(read)): UsageStatsOverview {
+export function buildOverview(
+  read: SessionStatisticsReadResult,
+  catalog: ModelCatalogConfig,
+  view = directView(read, catalog),
+): UsageStatsOverview {
   const options = view.options;
   const models = modelTargets(read, options);
   const projects = projectTargets(read, options, view);
@@ -293,7 +299,8 @@ export function buildOverview(read: SessionStatisticsReadResult, view = directVi
     policies: {
       date_attribution: "recorded_terminal",
       project_attribution: "current_folder",
-      price_version: "api-list-usd-2026-10-19-v1",
+      // The current policy version, not a statement that past totals were re-priced with it.
+      price_version: catalog.price_snapshot.price_version,
     },
     projection_status: read.projectionStatus,
     totals: view.aggregate({}),
@@ -304,7 +311,12 @@ export function buildOverview(read: SessionStatisticsReadResult, view = directVi
   };
 }
 
-export function buildDay(read: SessionStatisticsReadResult, date: string, view = directView(read)): UsageStatsDayDetail {
+export function buildDay(
+  read: SessionStatisticsReadResult,
+  date: string,
+  catalog: ModelCatalogConfig,
+  view = directView(read, catalog),
+): UsageStatsDayDetail {
   const options = view.options;
   return {
     schema_version: 1,
@@ -327,7 +339,7 @@ export type SessionStatisticsView = {
   material(date: string): Pick<UsageStatsDayDetail, "input_material" | "tool_calls">;
 };
 
-function directView(read: Read): SessionStatisticsView {
+function directView(read: Read, catalog: ModelCatalogConfig): SessionStatisticsView {
   const index = createSessionStatisticsCoverageIndex(read);
   const rowsFor = (scope: SessionStatisticsScope) => {
     if (scope.date?.length !== 7) return selectOwnedSessionStatisticsRows(read, scope);
@@ -341,7 +353,7 @@ function directView(read: Read): SessionStatisticsView {
     hasUnclassifiedUsage: read.rows.some(row => row.row_kind === "usage" && projects.get(row.session_id) === null),
     aggregate(scope) {
       const selected = rowsFor(scope);
-      return finalizeSessionStatisticsAggregate(read, aggregateSessionStatisticsMetrics(read, selected),
+      return finalizeSessionStatisticsAggregate(read, aggregateSessionStatisticsMetrics(read, selected, catalog),
         sessionStatisticsCoverage(read, index, scope, selected));
     },
     rowCount: scope => rowsFor(scope).length,
@@ -352,17 +364,19 @@ function directView(read: Read): SessionStatisticsView {
 export class SessionStatisticsService {
   constructor(
     private readonly repositoryProvider: () => Promise<SessionStatisticsRepositoryPort>,
+    protected readonly modelCatalog: ModelCatalogSource,
   ) {}
 
   async getOverview(input: SessionStatisticsReadRequest): Promise<UsageStatsOverview> {
     const repository = await this.repositoryProvider();
     const read = await repository.read(input);
-    return buildOverview(read);
+    // One snapshot per response keeps labels and the policy version consistent within it.
+    return buildOverview(read, this.modelCatalog.snapshot());
   }
 
   async getDay(input: SessionStatisticsReadRequest & { day: string }): Promise<UsageStatsDayDetail> {
     const repository = await this.repositoryProvider();
     const read = await repository.read(input);
-    return buildDay(read, input.day);
+    return buildDay(read, input.day, this.modelCatalog.snapshot());
   }
 }

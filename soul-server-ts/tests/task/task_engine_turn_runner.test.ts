@@ -1,4 +1,8 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { parseModelCatalogYaml } from "@soulstream/model-catalog";
 
 import type { AgentProfile } from "../../src/agent_registry.js";
 import type {
@@ -22,8 +26,15 @@ import {
 import { createInProcessTaskRunnerRuntime } from
   "../../src/runner/task_runner_runtime.js";
 import { TaskEngineTurnRunner } from "../../src/task/task_engine_turn_runner.js";
-import type { ModelPresetResolver } from "../../src/task/task_model_preset.js";
+import type { ModelCatalog } from "../../src/model_catalog.js";
 import type { Task } from "../../src/task/task_models.js";
+
+type TurnRunnerCatalog = Pick<ModelCatalog, "resolve" | "snapshot">;
+
+const REPOSITORY_CATALOG = parseModelCatalogYaml(readFileSync(
+  fileURLToPath(new URL("../../../packages/model-catalog/data/model-catalog.yaml", import.meta.url)),
+  "utf8",
+));
 
 const agent: AgentProfile = {
   id: "agent-1",
@@ -72,7 +83,14 @@ function makeEngine(
   };
 }
 
-function makeSubject(modelCatalog?: ModelPresetResolver, claudeAccountPoolEnabled = false) {
+function catalogResolver(): TurnRunnerCatalog {
+  return {
+    resolve: vi.fn(),
+    snapshot: () => REPOSITORY_CATALOG,
+  };
+}
+
+function makeSubject(modelCatalog?: TurnRunnerCatalog, claudeAccountPoolEnabled = false) {
   const snapshotPersistence = {
     persistRunStateSnapshot: vi.fn().mockResolvedValue(undefined),
     persistSessionItemsSnapshot: vi.fn().mockResolvedValue(undefined),
@@ -111,7 +129,7 @@ describe("TaskEngineTurnRunner", () => {
       oauthToken: "legacy-task-oauth",
     });
     let officialParams: EngineExecuteParams | undefined;
-    const { runner } = makeSubject(undefined, true);
+    const { runner } = makeSubject(catalogResolver(), true);
     await drain(runner.executeTurn({
       task: officialTask,
       agent,
@@ -207,7 +225,7 @@ describe("TaskEngineTurnRunner", () => {
 
   it("passes an OpenCode preset allowlist for that profile on each turn only", async () => {
     const allowlist = { soulstream: ["get_session_name"], serendipity: [] };
-    const modelCatalog: ModelPresetResolver = {
+    const modelCatalog: TurnRunnerCatalog = {
       resolve: vi.fn().mockReturnValue({
         id: "opencode-test",
         label: "OpenCode Test",
@@ -215,6 +233,7 @@ describe("TaskEngineTurnRunner", () => {
         model: "opencode/test",
         mcp_tool_allowlist: { roselin: allowlist },
       }),
+      snapshot: () => REPOSITORY_CATALOG,
     };
 
     async function capturedAllowlist(backend: AgentProfile["backend"], agentId = "roselin") {
@@ -1173,7 +1192,7 @@ describe("TaskEngineTurnRunner", () => {
     });
     let captured: EngineExecuteParams | undefined;
     const engine = makeEngine((params) => { captured = params; });
-    const { runner } = makeSubject();
+    const { runner } = makeSubject(catalogResolver());
 
     await drain(runner.executeTurn({
       task,
@@ -1214,22 +1233,30 @@ describe("TaskEngineTurnRunner", () => {
   });
 
   it.each([
-    ["Codex", "codex", "gpt-6.1-sol", "codex"],
-    ["Antigravity", "antigravity", "gemini-3", "antigravity"],
-    ["Kimi K3", "claude", "k3", "kimi"],
-    ["Claude", "claude", "claude-sonnet-4-5", "claude"],
-    ["DeepSeek Go", "claude", "deepseek-v4.1-flash", "deepseek"],
-    ["DeepSeek OpenCode", "opencode", "opencode/deepseek-v4.1-flash-free", "deepseek"],
-    ["unmapped model", "claude", "custom-model", "unknown"],
-  ] as const)("maps %s to its configured usage provider", async (_label, backend, model, provider) => {
-    let captured: EngineExecuteParams | undefined;
-    const engine = makeEngine((params) => { captured = params; });
-    const task = makeTask({
-      modelPreset: backend === "opencode" ? null : "selected-preset",
-      modelPresetBackend: backend,
-      model,
-    });
-    const { runner } = makeSubject();
+    ["Codex", "codex", "codex-6.1-sol", "gpt-6.1-sol", "codex"],
+    ["Antigravity", "antigravity", "gemini-4-argon", "gemini-4-argon", "antigravity"],
+    ["Kimi K3", "claude", "kimi-3", "k3", "kimi"],
+    ["Claude", "claude", "claude-sonnet", "sonnet", "claude"],
+    ["DeepSeek Go", "claude", "deepseek-flash-4.1", "deepseek-v4.1-flash", "deepseek"],
+    [
+      "DeepSeek OpenCode",
+      "opencode",
+      "opencode-deepseek-v4.1-flash-free",
+      "opencode/deepseek-v4.1-flash-free",
+      "deepseek",
+    ],
+    ["unmapped model", "claude", "selected-preset", "custom-model", "unknown"],
+  ] as const)(
+    "maps %s to its catalogue usage provider",
+    async (_label, backend, presetId, model, provider) => {
+      let captured: EngineExecuteParams | undefined;
+      const engine = makeEngine((params) => { captured = params; });
+      const task = makeTask({
+        modelPreset: presetId,
+        modelPresetBackend: backend,
+        model,
+      });
+      const { runner } = makeSubject(catalogResolver());
 
     await drain(runner.executeTurn({
       task,

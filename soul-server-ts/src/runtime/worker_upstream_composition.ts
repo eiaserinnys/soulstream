@@ -1,3 +1,5 @@
+import type { Logger } from "pino";
+
 import type { AuthorizeOrchestrationWorker } from "../upstream/task_runtime_commands.js";
 import type { AgentConfigService } from "../agent_config_service.js";
 import type { FileAttachmentStore } from "../attachments/file_manager.js";
@@ -16,6 +18,7 @@ import type { SoulstreamScheduleService } from "../schedule/schedule_service.js"
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import { UpstreamAdapter } from "../upstream/adapter.js";
+import { summarizePayloadForLog } from "../upstream/log_payload_summary.js";
 import { NodeResourceCollector } from "../upstream/node_resource_collector.js";
 import type { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import {
@@ -24,6 +27,28 @@ import {
 } from "./runner_process_composition.js";
 import type { WorkerCompositionParams } from "./worker_composition_types.js";
 import type { PurposeDecisionRunner } from "../card-orchestration/purpose_runner.js";
+
+/**
+ * Broadcast gate shared by the session broadcaster and outbox pipeline: sends
+ * only after the upstream adapter exists, and reports the early drop instead of
+ * failing the caller.
+ */
+export function createBroadcasterSend(
+  currentAdapter: () => UpstreamAdapter | null,
+  logger: Logger,
+): (data: unknown) => Promise<void> {
+  return async (data: unknown): Promise<void> => {
+    const adapter = currentAdapter();
+    if (!adapter) {
+      logger.warn(
+        summarizePayloadForLog(data),
+        "broadcast send called before UpstreamAdapter ready",
+      );
+      return;
+    }
+    await adapter.sendBroadcast(data);
+  };
+}
 
 interface WorkerUpstreamCompositionParams {
   worker: WorkerCompositionParams;

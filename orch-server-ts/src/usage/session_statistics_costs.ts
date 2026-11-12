@@ -1,7 +1,5 @@
-import {
-  PRICE_SNAPSHOT_METADATA,
-  priceInferenceUsageComponents,
-} from "@soulstream/model-catalog/inference-pricing";
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
+import { priceInferenceUsageComponents } from "@soulstream/model-catalog/inference-pricing";
 import type { FactDraft } from "./session_statistics_fact_types.js";
 import {
   compareDecimal,
@@ -33,16 +31,22 @@ function unsplit(): SourceCostSplit {
  * explained by the known priced components the split stays null and partial
  * while the stored total is preserved by the caller.
  */
-export function splitSourceCost(fact: FactDraft, storedCostDecimal: string | null): SourceCostSplit | null {
+export function splitSourceCost(
+  fact: FactDraft,
+  storedCostDecimal: string | null,
+  catalog: ModelCatalogConfig,
+): SourceCostSplit | null {
   if (storedCostDecimal === null) return null;
   const tokens = sourceTokenMetrics(fact);
   const cacheReadPartial = fact.cache_read === null;
   const nonCachePartial = tokens.ordinary_input === null || tokens.total_tokens === null;
-  if (fact.pricing_version === null || fact.pricing_version !== PRICE_SNAPSHOT_METADATA.price_version) {
+  // A stored fact is split only by the policy that priced it. When the file moved
+  // on, the stored total stays and the split stays unknown; nothing is re-priced.
+  if (fact.pricing_version === null || fact.pricing_version !== catalog.price_snapshot.price_version) {
     return unsplit();
   }
 
-  const components = priceInferenceUsageComponents({
+  const components = priceInferenceUsageComponents(catalog, {
     provider: fact.provider,
     model: fact.model,
     input_total: fact.input_total,

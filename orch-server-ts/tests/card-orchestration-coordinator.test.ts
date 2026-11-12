@@ -7,6 +7,11 @@ import type { CardDispatchRepository, DispatchCard } from "../src/cards/card_dis
 import { ModelPresetAvailabilityService } from "../src/model/model_preset_availability.js";
 import { strictOrchestrationUsage } from "../src/cards/orchestration_usage.js";
 import type { NodeConnectionSnapshot } from "../src/node/registry_types.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 function queuedCard(): DispatchCard {
   const now = new Date("2026-10-01T12:00:00Z");
@@ -399,7 +404,7 @@ describe("validated advertised preset accessor", () => {
       getSummary: () => ({ generatedAt: "", collectedAt: null, nodes: [] }),
       getLimitRejection: () => null,
       getClaudePoolAccountsForAvailability: (_nodeId, accounts) => accounts,
-    });
+    }, catalog);
     expect(service.resolveStaticForNode("node", "claude-opus")).toEqual(preset);
     expect(() => service.resolveStaticForNode("node", "missing")).toThrow("not advertised");
     expect(() => service.resolveStaticForNode("offline", "claude-opus")).toThrow("not advertised");

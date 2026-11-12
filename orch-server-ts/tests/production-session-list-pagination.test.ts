@@ -7,6 +7,11 @@ import {
   type LiveDbSqlResolver,
   type LivePostgresSql,
 } from "../src/index.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 type SqlCall = {
   text: string;
@@ -322,7 +327,8 @@ async function createProductionHarness() {
   const application = await createLiveProductionApplication(
     loadOrchServerEnvironment(minimalEnvironment()),
     { warn: vi.fn() },
-    { sqlResolver },
+    { modelCatalog: catalog,
+    sqlResolver },
   );
   await application.app.ready();
   return {

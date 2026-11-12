@@ -8,6 +8,7 @@ import {
   EventIngressRepository,
   type EventIngressSql,
 } from "../../orch-server-ts/src/node/event_ingress_repository.js";
+import { repositoryModelCatalog } from "../../orch-server-ts/tests/helpers/model_catalog.js";
 import { applyEventSessionEffect } from
   "../../orch-server-ts/src/node/event_session_effect_applier.js";
 import { runnerProcessPaths } from "../src/runner/runner_process_paths.js";
@@ -94,6 +95,8 @@ describe("Wave 0 stale registration outbox contract", () => {
     const ingress = new EventIngressRepository(
       { resolveSql: async () => postgres.sql as unknown as EventIngressSql },
       applyEventSessionEffect,
+      undefined,
+      { modelCatalog: repositoryModelCatalog() },
     );
     await ingress.commitBatch(NODE_ID, {
       type: "event_append_batch",

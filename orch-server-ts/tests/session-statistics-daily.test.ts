@@ -6,6 +6,11 @@ import { resolveSessionStatisticsDateSlice } from "../src/usage/session_statisti
 import type { SessionStatisticsReadResult } from "../src/usage/session_statistics_types.js";
 import { boundaryRow, fact, materialRow, missingRow, read, usageRow } from "./fixtures/session_statistics_aggregation.fixtures.js";
 import { sessionStatisticsSourceKey } from "../src/usage/session_statistics_aggregate.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 function fixture(): SessionStatisticsReadResult {
   const rows = [usageRow(), usageRow({ session_id: "s2", owner_recorded_at: "2026-10-20T01:00:00Z",
@@ -21,7 +26,7 @@ function fixture(): SessionStatisticsReadResult {
 }
 
 function states(source: SessionStatisticsReadResult) {
-  return ["2026-10-19", "2026-10-20"].map(day => createSessionStatisticsDailyState(source, day));
+  return ["2026-10-19", "2026-10-20"].map(day => createSessionStatisticsDailyState(source, day, CATALOG));
 }
 
 describe("session statistics daily rollups", () => {
@@ -50,14 +55,14 @@ describe("session statistics daily rollups", () => {
     // the previous day's usage. The extra ended count and field partial flags
     // are the accepted cross-midnight differences; supporting identity is not stored.
     const dayStates = [
-      createSessionStatisticsDailyState({ ...source, rows: source.rows.filter(row => row.session_id === "session-1") }, firstDate.slice(0, 10)),
+      createSessionStatisticsDailyState({ ...source, rows: source.rows.filter(row => row.session_id === "session-1") }, firstDate.slice(0, 10), CATALOG),
       createSessionStatisticsDailyState({ ...source, rows: source.rows.filter(row =>
-        row.session_id !== "session-1" || row.owner_event_id !== 20) }, secondDate.slice(0, 10)),
+        row.session_id !== "session-1" || row.owner_event_id !== 20) }, secondDate.slice(0, 10), CATALOG),
     ];
     const point = (result: ReturnType<typeof buildOverview>) => result.series.find(item =>
       item.project_id === "p" && item.bucket_start === "2026-10-20")!;
-    const directOverview = buildOverview(source);
-    const mergedOverview = buildDailyOverview(source, dayStates);
+    const directOverview = buildOverview(source, CATALOG);
+    const mergedOverview = buildDailyOverview(source, dayStates, CATALOG);
     const direct = point(directOverview);
     const merged = point(mergedOverview);
     expect(mergedOverview.totals.coverage.ended_input_without_usage)
@@ -72,22 +77,22 @@ describe("session statistics daily rollups", () => {
     { project_ids: ["p1"] }, { project_ids: ["p1", "p2"] }])("matches the direct period with filter %j", query => {
     const source = fixture();
     const filtered = { ...source, query: { ...source.query, ...query } } as SessionStatisticsReadResult;
-    expect(buildDailyOverview(filtered, states(source))).toEqual(buildOverview(filtered));
-    expect(buildDailyDay(filtered, states(source), "2026-10-19")).toEqual(buildDay(filtered, "2026-10-19"));
+    expect(buildDailyOverview(filtered, states(source), CATALOG)).toEqual(buildOverview(filtered, CATALOG));
+    expect(buildDailyDay(filtered, states(source), "2026-10-19", CATALOG)).toEqual(buildDay(filtered, "2026-10-19", CATALOG));
   });
 
   it("keeps decimal sums exact, known zero, and empty-day flags neutral", () => {
     const source = fixture();
-    const actual = buildDailyOverview(source, states(source));
+    const actual = buildDailyOverview(source, states(source), CATALOG);
     expect(actual.totals.metrics.reference_cost_usd).toBe(0.3);
     expect(actual.totals.coverage.token_partials.total_tokens).toBe(false);
     const zero = read([usageRow({ fact: fact({ input_total: 0, output_total: 0, total_tokens: 0 }) })], {},
       new Map([[sessionStatisticsSourceKey("session-1", 20, "usage:aggregate"), "0"]]));
-    expect(buildDailyOverview(zero, states(zero)).totals.metrics.total_tokens).toBe(0);
+    expect(buildDailyOverview(zero, states(zero), CATALOG).totals.metrics.total_tokens).toBe(0);
     const unresolved = read([usageRow({ fact: fact({ input_total: 0, output_total: 0, total_tokens: 0 }) }),
       missingRow({ input_id: "other" })], {},
     new Map([[sessionStatisticsSourceKey("session-1", 20, "usage:aggregate"), "0"]]));
-    expect(buildDailyOverview(unresolved, states(unresolved)).totals.metrics.total_tokens).toBe(null);
+    expect(buildDailyOverview(unresolved, states(unresolved), CATALOG).totals.metrics.total_tokens).toBe(null);
   });
 
   it("counts multi-model parts once in ALL and provider selectors", () => {
@@ -96,8 +101,8 @@ describe("session statistics daily rollups", () => {
       [sessionStatisticsSourceKey("session-1", 20, "m:a"), "0.1"],
       [sessionStatisticsSourceKey("session-1", 20, "m:b"), "0.2"],
     ]));
-    const result = buildDailyOverview(source, states(source));
-    expect(result).toEqual(buildOverview(source));
+    const result = buildDailyOverview(source, states(source), CATALOG);
+    expect(result).toEqual(buildOverview(source, CATALOG));
     expect(result.totals.coverage.usage_complete_events).toBe(1);
     expect(result.by_model[0]?.coverage.priced_events).toBe(1);
   });
@@ -106,14 +111,14 @@ describe("session statistics daily rollups", () => {
     const source = fixture();
     const current = { ...source, sessions: [{ ...source.sessions[0]!, projectId: "moved", projectLabel: "Moved" }],
       rows: source.rows.filter(row => row.session_id === "session-1") };
-    expect(buildDailyOverview(current, states(source))).toEqual(buildOverview(current));
+    expect(buildDailyOverview(current, states(source), CATALOG)).toEqual(buildOverview(current, CATALOG));
   });
 
   it("keeps unclassified usage and absent filtered sources consistent", () => {
     const source = fixture();
     const current = { ...source, query: { ...source.query, provider: "unknown" as const },
       sessions: source.sessions.map(session => ({ ...session, projectId: null })) };
-    expect(buildDailyOverview(current, states(source))).toEqual(buildOverview(current));
+    expect(buildDailyOverview(current, states(source), CATALOG)).toEqual(buildOverview(current, CATALOG));
   });
 
   it("uses a KST day slice and clamps the current day to asOf", () => {

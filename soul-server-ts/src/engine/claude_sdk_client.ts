@@ -27,7 +27,7 @@ import {
   createEventQueue,
   type EventQueue,
 } from "./claude_sdk_event_queue.js";
-import { ClaudeSdkEventMapper } from "./claude_sdk_event_mapper.js";
+import { ClaudeSdkEventMapper, type ModelCatalogGetter } from "./claude_sdk_event_mapper.js";
 import { buildClaudeSdkOptions, claudeIsolationWiring } from "./claude_sdk_options.js";
 import {
   claudePersistentQueryIdentity,
@@ -83,6 +83,7 @@ export interface ClaudeSdkClientConfig {
   /** Maximum gap between user-visible foreground activity frames. */
   persistentTurnInactivityTimeoutMs?: number;
   runtimeFollowupNoOutputTimeoutMs?: number;
+  getModelCatalog?: ModelCatalogGetter; // Read once per terminal result message.
 }
 export class ClaudeSdkClient implements ClaudeClient {
   private readonly queryFn: ClaudeSdkQueryFn;
@@ -124,7 +125,7 @@ export class ClaudeSdkClient implements ClaudeClient {
     this.resolveClaudeExecutablePath = config.resolveClaudeExecutablePath
       ?? resolveClaudeExecutableFromPath;
     this.runtimeState = new ClaudeRuntimeState(config.runtimeEventSink !== undefined);
-    this.eventMapper = new ClaudeSdkEventMapper(this.runtimeState);
+    this.eventMapper = new ClaudeSdkEventMapper(this.runtimeState, config.getModelCatalog);
     this.toolPermissionController = new ClaudeSdkToolPermissionController({
       inputRequestTimeoutMs,
       eventMapper: this.eventMapper,

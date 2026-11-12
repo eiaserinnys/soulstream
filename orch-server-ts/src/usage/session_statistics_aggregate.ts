@@ -2,6 +2,7 @@ import type {
   UsageStatsMetrics,
   UsageStatsProvider,
 } from "@soulstream/wire-schema/session-statistics";
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 import type {
   SessionStatisticsReadResult,
   SessionStatisticsScopeSession,
@@ -125,6 +126,7 @@ function sumKnown(rows: readonly Row[], select: (row: Row) => number | null): nu
 export function createSessionStatisticsMetricState(
   read: Pick<SessionStatisticsReadResult, "costDecimals">,
   sourceRows: readonly Row[],
+  catalog: ModelCatalogConfig,
 ): SessionStatisticsMetricState {
   const seen = new Set<string>();
   const rows: Row[] = [];
@@ -153,7 +155,7 @@ export function createSessionStatisticsMetricState(
     if (fact.cache_read === null) cacheReadPartial = true;
     const tokens = sourceTokenMetrics(fact);
     if (tokens.ordinary_input === null || tokens.total_tokens === null) nonCachePartial = true;
-    const split = splitSourceCost(fact, cost);
+    const split = splitSourceCost(fact, cost, catalog);
     if (split === null) continue;
     if (split.cacheRead !== null) {
       cacheReadCost = hasCacheRead ? addDecimal(cacheReadCost, split.cacheRead) : split.cacheRead;
@@ -203,9 +205,27 @@ export function finalizeSessionStatisticsMetrics(state: SessionStatisticsMetricS
   };
 }
 
+export function emptySessionStatisticsMetricState(): SessionStatisticsMetricState {
+  return {
+    tokens: {
+      input_total: null,
+      cache_read: null,
+      cache_write: null,
+      output_total: null,
+      reasoning_output: null,
+      total_tokens: null,
+      provider_total_tokens: null,
+      ordinary_input: null,
+    },
+    costs: { total: null, cache_read: null, non_cache: null },
+    costPartials: { cache_read: false, non_cache: false },
+  };
+}
+
 export function aggregateSessionStatisticsMetrics(
   read: SessionStatisticsReadResult,
   sourceRows: readonly Row[],
+  catalog: ModelCatalogConfig,
 ): UsageStatsMetrics {
-  return finalizeSessionStatisticsMetrics(createSessionStatisticsMetricState(read, sourceRows));
+  return finalizeSessionStatisticsMetrics(createSessionStatisticsMetricState(read, sourceRows, catalog));
 }

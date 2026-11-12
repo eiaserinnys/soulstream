@@ -8,7 +8,6 @@ export const SOUL_HOST_PORT_PLACEHOLDER = "__SOUL_HOST_PORT__";
 
 const CONFIG_FILES = [
   { key: "agents", file: "agents.yaml" },
-  { key: "model_catalog", file: "model-catalog.yaml" },
   { key: "mcp_registry", file: "mcp-registry.yaml" },
   { key: "mcp_profiles", file: "mcp-profiles.yaml" },
 ];
@@ -60,7 +59,7 @@ function substituteSoulHostPort(value, hostPort) {
 
 /**
  * 실행기 폴더의 템플릿을 이번 실행 값으로 치환해 구성 세대 폴더에 쓴다.
- * 세대 이름은 치환 전 네 템플릿 내용을 이어 붙인 sha256의 앞 12자다.
+ * 세대 이름은 치환 전 세 템플릿 내용을 이어 붙인 sha256의 앞 12자다.
  * 같은 템플릿은 같은 폴더를 다시 쓰고, 그 폴더를 지난 판의 rollback도 다시 렌더한다.
  */
 export async function writeConfigGeneration({ templatesDir, stateRoot, configRoot, hostPort }) {

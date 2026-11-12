@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { readdir, readFile, stat } from "node:fs/promises";
-import { delimiter, join } from "node:path";
+import { delimiter, join, sep } from "node:path";
 import {
   TOKEN,
   configGenerations,
@@ -60,9 +60,10 @@ test("첫 실행: 참여→판 맞춤→구성→묶음→빈 작업 폴더→�
     const generations = await configGenerations(stateDir);
     assert.equal(generations.length, 1, "구성 세대 폴더는 하나입니다.");
     const configDir = generations[0];
-    for (const file of ["agents.yaml", "model-catalog.yaml", "mcp-registry.yaml", "mcp-profiles.yaml"]) {
+    for (const file of ["agents.yaml", "mcp-registry.yaml", "mcp-profiles.yaml"]) {
       assert.ok(existsSync(join(configDir, file)), file);
     }
+    assert.equal(existsSync(join(configDir, "model-catalog.yaml")), false, "카탈로그는 구성 템플릿이 아닙니다.");
     assert.equal(existsSync(join(configDir, "env.json")), false);
 
     const releaseDir = join(stateDir, "releases", source.firstCommit);
@@ -77,6 +78,19 @@ test("첫 실행: 참여→판 맞춤→구성→묶음→빈 작업 폴더→�
     assert.equal(existsSync(join(releaseDir, ".portable-verified.json")), false);
     const envFile = await readFile(join(releaseDir, ".env.soul-server-ts"), "utf8");
     assert.match(envFile, new RegExp(`AUTH_BEARER_TOKEN=${TOKEN}`));
+    assert.equal(envFile.includes("MODEL_CATALOG_PATH"), false, "카탈로그 경로는 env가 아니라 bind 인자입니다.");
+
+    const bindArgs = await readJsonFile(join(releaseDir, "bind-args.json"));
+    const bindValue = (name) => bindArgs[bindArgs.indexOf(name) + 1];
+    // macOS의 /tmp 링크와 Windows의 짧은 이름이 섞이지 않게 양쪽을 실제 경로로 풀어 비교한다.
+    const catalogSuffix = join("packages", "model-catalog", "data", "model-catalog.yaml");
+    const catalogPath = bindValue("--catalog-path");
+    assert.ok(catalogPath.endsWith(sep + catalogSuffix), `bind 카탈로그 경로: ${catalogPath}`);
+    assert.equal(
+      realpathSync(catalogPath.slice(0, -(catalogSuffix.length + 1))),
+      realpathSync(source.repo),
+      "bind는 clone 정본 카탈로그 경로를 받습니다.",
+    );
 
     const workspace = join(stateDir, "workspace");
     assert.ok(existsSync(workspace), "작업 폴더는 첫 실행에서 만듭니다.");
@@ -106,6 +120,8 @@ test("첫 실행: 참여→판 맞춤→구성→묶음→빈 작업 폴더→�
     assert.equal(childEnv.PATH.split(delimiter)[0], join(stateDir, "bin"));
     assert.equal("ATOM_ENABLED" in childEnv, false);
     assert.equal("ATOM_API_KEY" in childEnv, false);
+    assert.equal("MODEL_CATALOG_PATH" in childEnv, false, "카탈로그 경로를 child env로 주지 않습니다.");
+    assert.equal("MODEL_CATALOG_GROUPS" in childEnv, false, "추가 묶음은 기본값이 빈 값입니다.");
     assert.equal("EXTRA_FROM_BOOTSTRAP" in childEnv, false);
     assert.equal(childEnv.PORTABLE_LOCAL_MCP_AUTHORIZATION, `Bearer ${TOKEN}`);
     assert.equal(childEnv.SESSION_ISOLATION_MODE, "off");

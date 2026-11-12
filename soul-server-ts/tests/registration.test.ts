@@ -7,7 +7,6 @@ import type { NodeRegister } from "@soulstream/wire-schema";
 import type { NodeResourceSnapshot } from "@soulstream/wire-schema/node-resources";
 
 import { AgentRegistry } from "../src/agent_registry.js";
-import { ModelCatalog } from "../src/model_catalog.js";
 import {
   buildRegistrationMsg,
   encodePortrait,
@@ -170,17 +169,16 @@ describe("buildRegistrationMsg (Phase B-3 yaml-driven)", () => {
     expect(msg.supported_backends).toEqual([]);
   });
 
-  it("실파일 catalog가 없어도 빈 광고로 등록 메시지를 만든다", () => {
+  it("카탈로그가 구성되지 않으면 프리셋 필드를 실지 않는다", () => {
     const msg = buildRegistrationMsg({
       nodeId: "x",
       host: "h",
       port: 1,
       userName: "",
       agentRegistry: new AgentRegistry([codexAgent]),
-      modelCatalog: new ModelCatalog("/definitely/missing/model-catalog.yaml"),
     });
 
-    expect(msg.model_presets).toEqual([]);
+    expect(msg).not.toHaveProperty("model_presets");
     expect(msg.supported_backends).toEqual(["codex"]);
   });
 

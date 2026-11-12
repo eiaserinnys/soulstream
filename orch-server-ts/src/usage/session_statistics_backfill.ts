@@ -7,6 +7,7 @@ import {
   insertSessionStatisticsFacts,
 } from "./session_statistics_projection.js";
 import type { EventIngressSql, EventIngressQuerySql } from "../node/event_ingress_repository.js";
+import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 
 export const SESSION_STATISTICS_PROJECTION_SETTING_KEY = "session_statistics_projection_v1";
 export const SESSION_STATISTICS_BACKFILL_BATCH_SIZE = 100;
@@ -35,18 +36,19 @@ type SourceEventRow = {
 
 export async function backfillSessionStatisticsProjection(
   sql: EventIngressSql,
-  options: { batchSize?: number } = {},
+  options: { batchSize?: number; modelCatalog: ModelCatalogSource },
 ): Promise<SessionStatisticsProjectionState> {
   const batchSize = options.batchSize ?? SESSION_STATISTICS_BACKFILL_BATCH_SIZE;
   if (!Number.isSafeInteger(batchSize) || batchSize < 1) {
     throw new Error("session statistics backfill batchSize must be a positive integer");
   }
-  return await sql.begin((transaction) => backfillBatch(transaction, batchSize));
+  return await sql.begin((transaction) => backfillBatch(transaction, batchSize, options.modelCatalog));
 }
 
 async function backfillBatch(
   sql: EventIngressQuerySql,
   batchSize: number,
+  modelCatalog: ModelCatalogSource,
 ): Promise<SessionStatisticsProjectionState> {
   let checkpoint = await readCheckpoint(sql, true);
   if (checkpoint.state === "ready") return checkpoint;
@@ -94,7 +96,7 @@ async function backfillBatch(
       eventType: row.event_type,
       createdAt,
       payload: row.payload,
-    });
+    }, modelCatalog.snapshot());
     facts.push(...normalized.facts);
   }
   await insertSessionStatisticsFacts(sql, facts);

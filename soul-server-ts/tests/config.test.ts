@@ -243,12 +243,12 @@ describe("parseEnv", () => {
     expect(env.AGENTS_CONFIG_PATH).toBe("/etc/soulstream/agents.yaml");
   });
 
-  it("MODEL_CATALOG_PATH는 config 기본 경로와 명시 override를 사용한다", () => {
-    expect(parseEnv(minimal).MODEL_CATALOG_PATH).toBe("config/model-catalog.yaml");
+  it("MODEL_CATALOG_GROUPS는 기본 빈 문자열과 명시 목록을 그대로 담는다", () => {
+    expect(parseEnv(minimal).MODEL_CATALOG_GROUPS).toBe("");
     expect(parseEnv({
       ...minimal,
-      MODEL_CATALOG_PATH: "/etc/soulstream/model-catalog.yaml",
-    }).MODEL_CATALOG_PATH).toBe("/etc/soulstream/model-catalog.yaml");
+      MODEL_CATALOG_GROUPS: "china",
+    }).MODEL_CATALOG_GROUPS).toBe("china");
   });
 
   it("CLAUDE_AUTH_TOKEN_PATH는 default 없이 명시된 값만 정본으로 사용", () => {

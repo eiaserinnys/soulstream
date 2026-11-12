@@ -1,19 +1,69 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 
 import { describe, expect, it, vi } from "vitest";
 import { ZodError } from "zod";
 
-import { DEFAULT_MODEL_CATALOG } from "@soulstream/model-catalog";
 import {
-  loadModelCatalog,
+  modelCatalogPathForRepository,
+  openModelCatalogFile,
+  repositoryRootFromEntryUrl,
+} from "@soulstream/model-catalog/file-loader";
+
+import {
   ModelCatalog,
   ModelCatalogSchema,
   parseModelCatalogYaml,
+  type ModelCatalogOptions,
 } from "../src/model_catalog.js";
 
 import { makeTempDirSync } from "./helpers/temp_dir.js";
+
+const REPOSITORY_CATALOG_PATH = modelCatalogPathForRepository(
+  repositoryRootFromEntryUrl(import.meta.url),
+);
+
+const COMMON_PRESET_IDS = [
+  "claude-haiku",
+  "claude-sonnet",
+  "claude-opus",
+  "claude-opus-lean",
+  "claude-fable",
+  "claude-fable-5.2",
+  "codex-6-astra",
+  "codex-6.1-sol",
+  "codex-6.1-terra",
+  "codex-6-sol",
+  "codex-6-luna",
+  "codex-5.6-sol",
+  "codex-5.6-luna",
+  "codex-5.6-terra",
+  "gemini-3.8-flash",
+  "gemini-4-argon",
+  "gemini-4-carbon",
+];
+
+const CHINA_PRESET_IDS = [
+  "kimi-2",
+  "kimi-3",
+  "kimi-3.1-pro",
+  "deepseek-flash-4.1",
+  "opencode-deepseek-v4.1-flash-free",
+];
+
+function openRepositoryCatalog(options: ModelCatalogOptions = {}): ModelCatalog {
+  return new ModelCatalog(openModelCatalogFile({ path: REPOSITORY_CATALOG_PATH }), options);
+}
+
+function openTempCatalog(catalogPath: string, options: ModelCatalogOptions = {}): ModelCatalog {
+  return new ModelCatalog(
+    openModelCatalogFile({
+      path: catalogPath,
+      ...(options.logger ? { logger: options.logger } : {}),
+    }),
+    options,
+  );
+}
 
 function withTempCatalog<T>(content: string, fn: (catalogPath: string) => T): T {
   const directory = makeTempDirSync("model-catalog-");
@@ -26,46 +76,64 @@ function withTempCatalog<T>(content: string, fn: (catalogPath: string) => T): T 
   }
 }
 
-describe("ModelCatalog", () => {
-  it("ships the agreed preset ids in the example catalog", () => {
-    const catalog = new ModelCatalog(
-      path.resolve(process.cwd(), "config/model-catalog.yaml.example"),
-    );
+const MINIMAL_CATALOG_YAML = `schema_version: 1
+groups: [china]
+presets:
+  - id: p1
+    label: P1
+    backend: claude
+    model: m1
+  - id: p2
+    label: P2
+    backend: claude
+    model: m2
+    group: china
+models: []
+price_snapshot:
+  price_version: test-v1
+  as_of: "2026-10-19"
+  checked_at: "2026-10-19"
+  currency: USD
+  unit: per_1m_tokens
+  model_mapping_version: exact-provider-model-v1
+  refreshed_model_rows: {}
+  sources: {}
+  assumptions: []
+persistent_defaults:
+  model_preset: p1
+  fallback_models: []
+`;
 
-    // 260906: codex-6-astra added, and codex-5.6-lunar corrected to the id the
-    // live node catalogs actually use (codex-5.6-luna).
-    // 261001: the GPT-6 presets the live node catalogs already carry
-    // (codex-6.1-sol, codex-6-sol, codex-6-luna) added, and codex-5.3-spark
-    // dropped because the vendor no longer serves it to ChatGPT accounts.
-    expect(catalog.list().map((preset) => preset.id)).toEqual([
-      "claude-sonnet",
-      "claude-opus",
-      "claude-fable",
-      "claude-fable-5.2",
-      "codex-6-astra",
-      "codex-6.1-sol",
-      "codex-6-sol",
-      "codex-6-luna",
-      "codex-5.6-sol",
-      "codex-5.6-luna",
-      "codex-5.6-terra",
-      "kimi-2",
-      "kimi-3",
-      "deepseek-flash-4.1",
-      "gemini-3.8-flash",
-      "gemini-4-argon",
-      "gemini-4-carbon",
-      "opencode-deepseek-v4.1-flash-free",
-    ]);
+describe("ModelCatalog", () => {
+  it("lists only presets whose group this node enabled and keeps the full snapshot", () => {
+    const defaultView = openRepositoryCatalog();
+    expect(defaultView.list().map((preset) => preset.id)).toEqual(COMMON_PRESET_IDS);
+    expect(defaultView.snapshot().presets.map((preset) => preset.id)).toHaveLength(22);
+
+    const chinaView = openRepositoryCatalog({ enabledGroups: ["china"] });
+    expect(chinaView.list()).toHaveLength(22);
+    expect(chinaView.list().map((preset) => preset.id)).toEqual(expect.arrayContaining([
+      ...COMMON_PRESET_IDS,
+      ...CHINA_PRESET_IDS,
+    ]));
+    expect(defaultView.snapshot().presets.map((preset) => preset.id)).toEqual(
+      chinaView.snapshot().presets.map((preset) => preset.id),
+    );
   });
 
-  it("loads the DeepSeek Go example preset", () => {
-    const catalog = new ModelCatalog(path.resolve(process.cwd(), "config/model-catalog.yaml.example"));
+  it("resolves a group preset only when the node enabled that group", () => {
+    expect(() => openRepositoryCatalog().resolve("deepseek-flash-4.1")).toThrow(
+      "Unknown model preset: deepseek-flash-4.1",
+    );
+  });
+
+  it("loads the DeepSeek Go preset from the repository catalog", () => {
+    const catalog = openRepositoryCatalog({ enabledGroups: ["china"] });
     expect(catalog.resolve("deepseek-flash-4.1")).toMatchObject({
       label: "DeepSeek - Flash 4.1",
       backend: "claude",
       model: "deepseek-v4.1-flash",
-      supported_efforts: ["low", "high", "max"],
+      supported_efforts: ["xhigh", "max"],
       default_effort: "max",
       env: {
         ANTHROPIC_BASE_URL: "https://opencode.ai/inference/go/anthropic",
@@ -75,14 +143,13 @@ describe("ModelCatalog", () => {
         ANTHROPIC_DEFAULT_HAIKU_MODEL: "deepseek-v4.1-flash",
         ANTHROPIC_DEFAULT_SONNET_MODEL: "deepseek-v4.1-flash",
         ANTHROPIC_DEFAULT_OPUS_MODEL: "deepseek-v4.1-flash",
+        CLAUDE_CODE_AUTO_COMPACT_WINDOW: "262144",
       },
     });
   });
 
   it("advertises the OpenCode Go subscription usage provider only for the Go preset", () => {
-    const catalog = new ModelCatalog(
-      path.resolve(process.cwd(), "config/model-catalog.yaml.example"),
-    );
+    const catalog = openRepositoryCatalog({ enabledGroups: ["china"] });
     const byId = new Map(catalog.advertise().map((entry) => [entry.id, entry]));
 
     expect(byId.get("deepseek-flash-4.1")).toMatchObject({
@@ -93,9 +160,7 @@ describe("ModelCatalog", () => {
   });
 
   it("advertises the OpenCode DeepSeek preset without a usage provider or effort control", () => {
-    const catalog = new ModelCatalog(
-      path.resolve(process.cwd(), "config/model-catalog.yaml.example"),
-    );
+    const catalog = openRepositoryCatalog({ enabledGroups: ["china"] });
     const preset = catalog.advertise().find((entry) => entry.id === "opencode-deepseek-v4.1-flash-free");
     expect(preset).toMatchObject({
       backend: "opencode",
@@ -116,9 +181,7 @@ describe("ModelCatalog", () => {
   });
 
   it("encodes the effort policy, leaving Kimi on the backend default", () => {
-    const catalog = new ModelCatalog(
-      path.resolve(process.cwd(), "config/model-catalog.yaml.example"),
-    );
+    const catalog = openRepositoryCatalog({ enabledGroups: ["china"] });
     const byId = new Map(catalog.list().map((preset) => [preset.id, preset]));
 
     expect(byId.get("claude-fable")?.default_effort).toBe("high");
@@ -142,128 +205,59 @@ describe("ModelCatalog", () => {
   });
 
   it("loads preset definitions and resolves by stable id", () => {
-    withTempCatalog(
-      `
-presets:
-  - id: claude-opus
-    label: Claude - Opus
-    backend: claude
-    model: opus
-  - id: kimi-2
-    label: Kimi - 2
-    backend: claude
-    model: kimi-for-coding
-    env:
-      ANTHROPIC_BASE_URL: https://api.kimi.com/coding/
-      ANTHROPIC_API_KEY: \${KIMI_API_KEY}
-`,
-      (catalogPath) => {
-        const catalog = new ModelCatalog(catalogPath);
+    withTempCatalog(MINIMAL_CATALOG_YAML, (catalogPath) => {
+      const catalog = openTempCatalog(catalogPath);
 
-        expect(catalog.list()).toEqual([
-          {
-            id: "claude-opus",
-            label: "Claude - Opus",
-            backend: "claude",
-            model: "opus",
-          },
-          {
-            id: "kimi-2",
-            label: "Kimi - 2",
-            backend: "claude",
-            model: "kimi-for-coding",
-            env: {
-              ANTHROPIC_BASE_URL: "https://api.kimi.com/coding/",
-              ANTHROPIC_API_KEY: "${KIMI_API_KEY}",
-            },
-          },
-        ]);
-        expect(catalog.resolve("kimi-2")).toMatchObject({
-          id: "kimi-2",
-          backend: "claude",
-          model: "kimi-for-coding",
-        });
-      },
-    );
+      expect(catalog.list()).toMatchObject([
+        { id: "p1", label: "P1", backend: "claude", model: "m1" },
+      ]);
+      const chinaCatalog = openTempCatalog(catalogPath, { enabledGroups: ["china"] });
+      expect(chinaCatalog.resolve("p2")).toMatchObject({
+        id: "p2",
+        label: "P2",
+        backend: "claude",
+        model: "m2",
+        group: "china",
+      });
+    });
   });
 
-  it("caches an unchanged catalog and reloads it after its mtime changes", () => {
-    withTempCatalog(
-      `
-presets:
-  - id: claude-fable
-    label: Claude - Fable
-    backend: claude
-    model: fable
-    mcp_tool_allowlist:
-      roselin:
-        soulstream: [get_session_name]
-        serendipity: []
-`,
-      (catalogPath) => {
-        const catalog = new ModelCatalog(catalogPath);
-        const readFile = vi.spyOn(fs, "readFileSync");
-        expect(catalog.resolve("claude-fable").model).toBe("fable");
-        expect(catalog.resolve("claude-fable").mcp_tool_allowlist).toEqual({
-          roselin: { soulstream: ["get_session_name"], serendipity: [] },
-        });
-        expect(catalog.resolve("claude-fable").model).toBe("fable");
-        expect(readFile.mock.calls.filter(([path]) => path === catalogPath)).toHaveLength(1);
+  it("re-reads the catalog after its file signature changes", () => {
+    withTempCatalog(MINIMAL_CATALOG_YAML, (catalogPath) => {
+      const store = openModelCatalogFile({ path: catalogPath });
+      const catalog = new ModelCatalog(store);
+      const readFile = vi.spyOn(fs, "readFileSync");
+      expect(catalog.resolve("p1").model).toBe("m1");
+      expect(catalog.resolve("p1").model).toBe("m1");
+      expect(readFile.mock.calls.filter(([path]) => path === catalogPath)).toHaveLength(0);
 
-        fs.writeFileSync(
-          catalogPath,
-          `
-presets:
-  - id: claude-fable
-    label: Claude - Fable
-    backend: claude
-    model: claude-fable-5[1m]
-    mcp_tool_allowlist:
-      roselin:
-        soulstream: [get_session_name, list_sessions]
-`,
-          "utf-8",
-        );
-        const changedMtime = fs.statSync(catalogPath).mtimeMs + 2_000;
-        fs.utimesSync(catalogPath, changedMtime / 1_000, changedMtime / 1_000);
+      fs.writeFileSync(
+        catalogPath,
+        MINIMAL_CATALOG_YAML.replace("model: m1", "model: m1-edited"),
+        "utf-8",
+      );
+      const changedMtime = fs.statSync(catalogPath).mtimeMs + 2_000;
+      fs.utimesSync(catalogPath, changedMtime / 1_000, changedMtime / 1_000);
 
-        expect(catalog.resolve("claude-fable").model).toBe("claude-fable-5[1m]");
-        expect(catalog.resolve("claude-fable").mcp_tool_allowlist).toEqual({
-          roselin: { soulstream: ["get_session_name", "list_sessions"] },
-        });
-        expect(readFile.mock.calls.filter(([path]) => path === catalogPath)).toHaveLength(2);
-        readFile.mockRestore();
-      },
-    );
+      expect(catalog.resolve("p1").model).toBe("m1-edited");
+      expect(readFile.mock.calls.filter(([path]) => path === catalogPath)).toHaveLength(1);
+      readFile.mockRestore();
+    });
   });
 
   it("keeps the last successful catalog when the file is temporarily missing", () => {
-    withTempCatalog(
-      `\npresets:\n  - id: claude-opus\n    label: Claude - Opus\n    backend: claude\n    model: opus\n`,
-      (catalogPath) => {
-        const catalog = loadModelCatalog(catalogPath);
-        fs.unlinkSync(catalogPath);
-        expect(catalog.list()).toMatchObject([{ id: "claude-opus", model: "opus" }]);
-      },
-    );
+    withTempCatalog(MINIMAL_CATALOG_YAML, (catalogPath) => {
+      const catalog = openTempCatalog(catalogPath);
+      fs.unlinkSync(catalogPath);
+      expect(catalog.list()).toMatchObject([{ id: "p1", model: "m1" }]);
+    });
   });
 
-  it("degrades a missing catalog file to an empty additive catalog", () => {
+  it("fails the initial load when the catalog file is missing", () => {
     const directory = makeTempDirSync("model-catalog-missing-");
     try {
       const catalogPath = path.join(directory, "model-catalog.yaml");
-      const warn = vi.fn();
-      const catalog = loadModelCatalog(catalogPath, {
-        error: vi.fn(),
-        warn,
-      });
-
-      expect(catalog.list()).toEqual([]);
-      expect(catalog.advertise({})).toEqual([]);
-      expect(warn).toHaveBeenCalledWith(
-        { path: catalogPath },
-        "model catalog not found; advertising no presets",
-      );
+      expect(() => openModelCatalogFile({ path: catalogPath })).toThrow(/ENOENT/);
     } finally {
       fs.rmSync(directory, { recursive: true, force: true });
     }
@@ -271,67 +265,46 @@ presets:
 
   it("keeps malformed catalog content as an explicit startup failure", () => {
     withTempCatalog("presets: not-a-list\n", (catalogPath) => {
-      expect(() => loadModelCatalog(catalogPath)).toThrow(ZodError);
+      expect(() => openModelCatalogFile({ path: catalogPath })).toThrow(ZodError);
     });
   });
 
   it("keeps the last successful catalog and logs when a runtime reload is malformed", () => {
-    withTempCatalog(
-      `
-presets:
-  - id: claude-opus
-    label: Claude - Opus
-    backend: claude
-    model: opus
-`,
-      (catalogPath) => {
-        const error = vi.fn();
-        const catalog = loadModelCatalog(catalogPath, { error });
-        expect(catalog.resolve("claude-opus").model).toBe("opus");
+    withTempCatalog(MINIMAL_CATALOG_YAML, (catalogPath) => {
+      const error = vi.fn();
+      const catalog = openTempCatalog(catalogPath, { logger: { error } });
+      expect(catalog.resolve("p1").model).toBe("m1");
 
-        fs.writeFileSync(catalogPath, "presets: not-a-list\n", "utf-8");
+      fs.writeFileSync(catalogPath, "presets: not-a-list\n", "utf-8");
+      const changedMtime = fs.statSync(catalogPath).mtimeMs + 2_000;
+      fs.utimesSync(catalogPath, changedMtime / 1_000, changedMtime / 1_000);
 
-        expect(catalog.list()).toEqual([{
-          id: "claude-opus",
-          label: "Claude - Opus",
-          backend: "claude",
-          model: "opus",
-        }]);
-        expect(catalog.advertise({})).toMatchObject([{
-          id: "claude-opus",
-          available: true,
-        }]);
-        expect(error).toHaveBeenCalledWith(
-          expect.objectContaining({
-            catalogPath,
-            err: expect.any(ZodError),
-          }),
-          "Model catalog reload failed; using the last successful catalog",
-        );
-        expect(error).toHaveBeenCalledTimes(1);
-      },
-    );
+      expect(catalog.list()).toMatchObject([{ id: "p1", model: "m1" }]);
+      expect(catalog.advertise({})).toMatchObject([{ id: "p1", available: true }]);
+      expect(error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          catalogPath,
+          err: expect.any(ZodError),
+        }),
+        "Model catalog reload failed; keeping the last successful catalog",
+      );
+      expect(error).toHaveBeenCalledTimes(1);
+    });
   });
 
   it("advertises unresolved env without exposing values and excludes API-key presets from usage", () => {
     withTempCatalog(
-      `
-presets:
-  - id: claude-fable
-    label: Claude - Fable
-    backend: claude
-    model: claude-fable-5[1m]
-    usage_model_id: fable
-  - id: kimi-2
-    label: Kimi - 2
-    backend: claude
-    model: kimi-for-coding
-    env:
-      ANTHROPIC_BASE_URL: https://api.kimi.com/coding/
-      ANTHROPIC_API_KEY: \${KIMI_API_KEY}
-`,
+      `${MINIMAL_CATALOG_YAML.replace(
+        "  - id: p1\n    label: P1\n    backend: claude\n    model: m1\n",
+        "  - id: claude-fable\n    label: Claude - Fable\n    backend: claude\n"
+        + "    model: \"claude-fable-5[1m]\"\n    usage_model_id: fable\n"
+        + "  - id: kimi-2\n    label: Kimi - 2\n    backend: claude\n    model: kimi-for-coding\n"
+        + "    env:\n      ANTHROPIC_BASE_URL: https://api.kimi.com/coding/\n"
+        + "      ANTHROPIC_API_KEY: \${KIMI_API_KEY}\n",
+      ).replace("model_preset: p1", "model_preset: claude-fable")
+        .replace("  - id: p2\n    label: P2\n    backend: claude\n    model: m2\n    group: china\n", "")}`,
       (catalogPath) => {
-        const catalog = new ModelCatalog(catalogPath);
+        const catalog = openTempCatalog(catalogPath);
 
         expect(catalog.advertise({})).toEqual([
           {
@@ -363,17 +336,32 @@ presets:
   it("rejects duplicate preset ids", () => {
     expect(() =>
       ModelCatalogSchema.parse({
+        schema_version: 1,
+        groups: [],
         presets: [
           { id: "claude-opus", label: "One", backend: "claude", model: "opus" },
           { id: "claude-opus", label: "Two", backend: "claude", model: "opus-2" },
         ],
+        models: [],
+        price_snapshot: {
+          price_version: "test-v1",
+          as_of: "2026-10-19",
+          checked_at: "2026-10-19",
+          currency: "USD",
+          unit: "per_1m_tokens",
+          model_mapping_version: "exact-provider-model-v1",
+          refreshed_model_rows: {},
+          sources: {},
+          assumptions: [],
+        },
+        persistent_defaults: { model_preset: "claude-opus", fallback_models: [] },
       }),
     ).toThrow(ZodError);
   });
 
   it("fails explicitly for an unknown preset id", () => {
-    withTempCatalog("presets: []\n", (catalogPath) => {
-      const catalog = new ModelCatalog(catalogPath);
+    withTempCatalog(MINIMAL_CATALOG_YAML, (catalogPath) => {
+      const catalog = openTempCatalog(catalogPath);
       expect(() => catalog.resolve("missing")).toThrow(
         "Unknown model preset: missing",
       );
@@ -382,7 +370,7 @@ presets:
 });
 
 it("advertises the Antigravity usage provider for all three account presets", () => {
-  const catalog = new ModelCatalog(path.resolve(process.cwd(), "config/model-catalog.yaml.example"));
+  const catalog = openRepositoryCatalog();
   expect(catalog.advertise({}).filter(p => p.backend === "antigravity")).toMatchObject([
     { id: "gemini-3.8-flash", usage_provider: "antigravity" },
     { id: "gemini-4-argon", usage_provider: "antigravity" },
@@ -393,6 +381,7 @@ it("advertises the Antigravity usage provider for all three account presets", ()
 describe("model preset trusted execution", () => {
   const trustedPresetIds = [
     "claude-opus",
+    "claude-opus-lean",
     "claude-fable",
     "claude-fable-5.2",
     "codex-6-astra",
@@ -402,10 +391,8 @@ describe("model preset trusted execution", () => {
     "gemini-4-carbon",
   ];
 
-  it("marks exactly the eight trusted presets in the example catalog", () => {
-    const catalog = new ModelCatalog(
-      path.resolve(process.cwd(), "config/model-catalog.yaml.example"),
-    );
+  it("marks exactly the nine trusted presets in the repository catalog", () => {
+    const catalog = openRepositoryCatalog();
     expect(
       catalog.list()
         .filter((preset) => preset.trusted_execution === true)
@@ -414,17 +401,10 @@ describe("model preset trusted execution", () => {
     ).toEqual([...trustedPresetIds].sort());
   });
 
-  it("marks exactly the eight trusted presets in the shared default catalog", () => {
-    expect(
-      DEFAULT_MODEL_CATALOG.presets
-        .filter((preset) => preset.trusted_execution === true)
-        .map((preset) => preset.id)
-        .sort(),
-    ).toEqual([...trustedPresetIds].sort());
-  });
-
-  it("ships Fable 5.2 with a medium default effort in the shared default catalog", () => {
-    const preset = DEFAULT_MODEL_CATALOG.presets.find((entry) => entry.id === "claude-fable-5.2");
+  it("ships Fable 5.2 with a medium default effort in the repository catalog", () => {
+    const preset = openRepositoryCatalog()
+      .snapshot()
+      .presets.find((entry) => entry.id === "claude-fable-5.2");
     expect(preset).toMatchObject({
       default_effort: "medium",
       trusted_execution: true,
@@ -432,33 +412,24 @@ describe("model preset trusted execution", () => {
   });
 
   it("rejects a string trusted_execution at the schema boundary", () => {
-    expect(() => parseModelCatalogYaml(`
-presets:
-  - id: weak
-    label: Weak
-    backend: claude
-    model: weak
-    trusted_execution: "true"
-`)).toThrow(ZodError);
+    expect(() => parseModelCatalogYaml(MINIMAL_CATALOG_YAML.replace(
+      "  - id: p1\n    label: P1\n    backend: claude\n    model: m1\n",
+      "  - id: p1\n    label: P1\n    backend: claude\n    model: m1\n    trusted_execution: \"true\"\n",
+    ))).toThrow(ZodError);
   });
 
   it("accepts only boolean trusted_execution values", () => {
-    const catalog = parseModelCatalogYaml(`
-presets:
-  - id: trusted
-    label: Trusted
-    backend: claude
-    model: opus
-    trusted_execution: true
-  - id: isolated
-    label: Isolated
-    backend: claude
-    model: sonnet
-    trusted_execution: false
-`);
+    const catalog = parseModelCatalogYaml(MINIMAL_CATALOG_YAML.replace(
+      "  - id: p1\n    label: P1\n    backend: claude\n    model: m1\n",
+      "  - id: trusted\n    label: Trusted\n    backend: claude\n    model: opus\n"
+      + "    trusted_execution: true\n"
+      + "  - id: isolated\n    label: Isolated\n    backend: claude\n    model: sonnet\n"
+      + "    trusted_execution: false\n",
+    ).replace("model_preset: p1", "model_preset: trusted"));
     expect(catalog.presets).toMatchObject([
       { id: "trusted", trusted_execution: true },
       { id: "isolated", trusted_execution: false },
+      { id: "p2", group: "china" },
     ]);
   });
 });

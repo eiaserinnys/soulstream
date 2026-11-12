@@ -26,7 +26,7 @@ import { AnthropicAdapter, OpenAIAdapter } from "../llm/adapters.js";
 import { LlmExecutor } from "../llm/executor.js";
 import { buildOrchProxyConfig } from "../mcp/orch_proxy.js";
 import type { McpRuntime } from "../mcp/runtime.js";
-import { ModelCatalog, nodeEffortCapabilities } from "../model_catalog.js";
+import { subscribeModelCatalogReannounce } from "../model_catalog.js";
 import { RealtimeBroker } from "../realtime/realtime_broker.js";
 import { FolderService } from "../folder/folder_service.js";
 import { FolderHostClient } from "../folder/folder_host_client.js";
@@ -44,7 +44,6 @@ import { UpstreamAdapter } from "../upstream/adapter.js";
 import { EventOutbox } from "../upstream/event_outbox.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
-import { summarizePayloadForLog } from "../upstream/log_payload_summary.js";
 import { composeTaskRuntime, createWorkerAttachmentRuntime, type TaskRuntimeComposition } from "./task_runtime_composition.js";
 import { composeClaudeRuntime, composeClaudeAccountServices, createClaudeAccountPoolRegistry } from "./claude_runtime_composition.js";
 import { composeClaudeLoginService, seedLegacyClaudeAccount } from "./claude_login_runtime_composition.js";
@@ -54,7 +53,7 @@ import { backgroundLifecycleObserver, composeRunnerOrphanReaper, composeRunnerPr
 import { composeSessionIsolation } from "./session_isolation_composition.js";
 import { resolveNodeServicesObservation } from "../mcp/node_services_observation_config.js";
 import type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
-import { composeWorkerUpstreamAdapter } from "./worker_upstream_composition.js";
+import { composeWorkerUpstreamAdapter, createBroadcasterSend } from "./worker_upstream_composition.js";
 import { buildMcpServerOptions } from "./mcp_server_options.js";
 import { composeWorktreeService, composeWorktreeSweeper, resolveWorktreeWorkspace } from "./worktree_runtime_composition.js";
 import { listActiveTaskWorkspaceDirs } from "./task_active_workspace_dirs.js";
@@ -62,8 +61,11 @@ import { composePurposeDecisionRunner, composeWorkerAdmissionAuthorizer } from "
 export type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
 export async function composeWorkerRuntime(params: WorkerCompositionParams): Promise<WorkerComposition> {
   const { env, logger, agentRegistry, mcpConfigService, codexCliPath, antigravityCliPath, agentProfileSource } = params;
-  const modelCatalog = params.modelCatalog ?? new ModelCatalog(env.MODEL_CATALOG_PATH, logger, nodeEffortCapabilities(env.CODEX_ADAPTER_MODE));
+  const modelCatalog = params.modelCatalog;
   let upstreamAdapter: UpstreamAdapter | null = null;
+  if (params.modelCatalogStore) {
+    subscribeModelCatalogReannounce({ store: params.modelCatalogStore, logger, currentAdapter: () => upstreamAdapter });
+  }
   const agentConfigService = new AgentConfigService({
     configPath: env.AGENTS_CONFIG_PATH,
     agentRegistry,
@@ -107,16 +109,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
   const eventOutboxPumpMux = new EventOutboxPumpMux(eventOutboxPump);
   const db = new SessionDB();
   const claudeSessionStore = new DbClaudeSessionStore(db);
-  const send = async (data: unknown): Promise<void> => {
-    if (!upstreamAdapter) {
-      logger.warn(
-        summarizePayloadForLog(data),
-        "broadcast send called before UpstreamAdapter ready",
-      );
-      return;
-    }
-    await upstreamAdapter.sendBroadcast(data);
-  };
+  const send = createBroadcasterSend(() => upstreamAdapter, logger);
   const broadcaster = new SessionBroadcaster(send, agentRegistry, env.SOULSTREAM_NODE_ID);
   const persistence = new EventPersistence(
     db,
@@ -216,6 +209,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
         db,
         agentRegistry,
         modelCatalog,
+        getModelCatalog: () => modelCatalog.snapshot(),
         sessionStore: claudeSessionStore,
         sourceNode: env.SOULSTREAM_NODE_ID,
         idleTtlMs: env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
@@ -240,6 +234,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
           idleTtlMs: env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
           maxEntries: env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
           logger,
+          getModelCatalog: () => modelCatalog.snapshot(),
         })
       : undefined
   );
@@ -277,6 +272,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     claudeSessionStore,
     ...(claudeAccounts ? { claudeAccountTurnPort: claudeAccounts } : {}),
     mcpConfigService,
+    getModelCatalog: () => modelCatalog.snapshot(),
     ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
   });
   const runnerProcess = await composeRunnerProcessRuntime(env.SOUL_RUNNER_PROCESS_ENABLED, {
@@ -289,6 +285,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     reconcileClaudeTranscriptAppend: (task) => taskRuntime.claudeRuntimeTaskFollowup.reconcileTranscriptAppend(task),
     observeClaudeRuntime: backgroundLifecycleObserver(claudeRuntime.backgroundLifecycle),
     releaseManifest: params.releaseActivationState.manifest,
+    modelCatalogPath: params.modelCatalogPath,
     isolationHost: sessionIsolation?.host,
   });
   params.releaseActivationState.markPrewarmed({
@@ -465,6 +462,8 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
           timeoutMs: env.CARD_DECISION_TIMEOUT_MS },
       }),
     });
+    // First poll waits for the adapter so reloads reannounce against a live registration.
+    params.modelCatalogStore?.start();
     return upstreamAdapter;
   };
   return {

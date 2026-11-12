@@ -4,23 +4,26 @@ import {
 } from "./session_statistics_normalizer.js";
 import type { EventIngressQuerySql } from "../node/event_ingress_repository.js";
 import type { EventIngressEnvelope } from "../node/event_ingress_types.js";
+import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 
 export type ApplySessionStatisticsProjectionInput = {
   eventId: number;
   envelope: EventIngressEnvelope;
+  modelCatalog: ModelCatalogSource;
 };
 
 export async function applySessionStatisticsProjection(
   sql: EventIngressQuerySql,
   input: ApplySessionStatisticsProjectionInput,
 ): Promise<void> {
+  // One snapshot prices one event; a later file edit applies from the next event.
   const normalized = normalizeSessionStatisticsEvent({
     sessionId: input.envelope.session_id,
     eventId: input.eventId,
     eventType: input.envelope.event_type,
     createdAt: input.envelope.created_at,
     payload: input.envelope.payload,
-  });
+  }, input.modelCatalog.snapshot());
   await insertSessionStatisticsFacts(sql, normalized.facts);
 }
 

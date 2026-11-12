@@ -21,7 +21,7 @@ Windows에서는 `portable-node\start.cmd`를 실행합니다. Git과 OS 기본 
 
 ## 기본 설정
 
-실행기는 `portable-node/config/`의 템플릿 네 파일을 이번 실행의 상태 경로와 MCP 포트로 채워 `.state/config/<generation>/`에 씁니다. 기본 설정에는 Claude(`claude-opus`)와 Codex(`codex-6.1-sol`) 두 에이전트와, 이 노드 자신의 soulstream MCP 하나만 있습니다. 다른 MCP 서버와 API 키는 오케스트레이터에서 받지 않으며, 오케스트레이터가 주는 것은 노드 자격 증명과 앱 묶음뿐입니다.
+실행기는 `portable-node/config/`의 템플릿 세 파일을 이번 실행의 상태 경로와 MCP 포트로 채워 `.state/config/<generation>/`에 씁니다. 모델 카탈로그는 템플릿이 아니라 clone의 리포 정본 `packages/model-catalog/data/model-catalog.yaml`이며, 실행기는 bind에 그 경로를 `--catalog-path`로 넘깁니다. 기본 설정에는 Claude(`claude-opus`)와 Codex(`codex-6.1-sol`) 두 에이전트와, 이 노드 자신의 soulstream MCP 하나만 있습니다. 다른 MCP 서버와 API 키는 오케스트레이터에서 받지 않으며, 오케스트레이터가 주는 것은 노드 자격 증명과 앱 묶음뿐입니다.
 
 ## 상태와 판 맞춤
 

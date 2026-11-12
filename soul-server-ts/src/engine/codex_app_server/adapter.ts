@@ -1,6 +1,7 @@
 import type { Logger } from "pino";
 
 import type { ResolvedMcpServer } from "../../mcp_config_service.js";
+import type { ModelCatalogConfig } from "../../model_catalog.js";
 import type { RunnerIsolationChildConfig } from "../../runner/runner_isolation_config.js";
 import { sseEventsFromRunnerFrames } from "../../runner/engine_event_stream.js";
 import type { InProcessRunnerFrameChannel } from "../../runner/in_process_frame_channel.js";
@@ -102,6 +103,8 @@ export interface CodexAppServerAdapterConfig {
   requestTimeoutMs?: number;
   startupRequestTimeoutMs?: number;
   isolation?: RunnerIsolationChildConfig;
+  /** Latest catalogue snapshot; read once per terminal event. */
+  getModelCatalog?: () => ModelCatalogConfig;
 }
 
 export class CodexAppServerEngineAdapter implements EnginePort {
@@ -120,6 +123,7 @@ export class CodexAppServerEngineAdapter implements EnginePort {
     createNotificationLifecycleState();
   private activeQueue: AsyncPayloadQueue<SSEEventPayload> | null = null;
   private usageLimitStopEmitted = false;
+  private readonly getModelCatalog?: () => ModelCatalogConfig;
   private readonly detachedCommandActivity: CodexDetachedCommandActivityTracker;
   private readonly unsubscribeDetachedCommandNotifications: () => void;
   private readonly unsubscribeDetachedCommandClose: () => void;
@@ -128,6 +132,7 @@ export class CodexAppServerEngineAdapter implements EnginePort {
     this.workspaceDir = config.workspaceDir;
     this.internalMcpUrl = config.internalMcpUrl;
     this.logger = logger;
+    this.getModelCatalog = config.getModelCatalog;
     this.client = config.client ?? this.createClient(config, logger);
     this.detachedCommandActivity = new CodexDetachedCommandActivityTracker({
       terminalResultRetentionMs: config.codexDetachedResultRetentionMs ?? 1_800_000,
@@ -411,6 +416,7 @@ export class CodexAppServerEngineAdapter implements EnginePort {
     const result = applyNotificationLifecycle(this.notificationLifecycle, notification, {
       suppressThreadStartedSession,
       model,
+      ...(this.getModelCatalog ? { getModelCatalog: this.getModelCatalog } : {}),
       onUnknownNotification: (method) => this.logger.warn(
         { method },
         "Ignoring unknown Codex app-server notification",

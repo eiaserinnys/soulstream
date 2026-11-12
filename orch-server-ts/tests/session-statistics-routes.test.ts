@@ -21,6 +21,9 @@ import {
   read as createStatisticsRead,
   usageRow as statisticsUsageRow,
 } from "./fixtures/session_statistics_aggregation.fixtures.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
 
 const config = parseOrchServerConfig({
   environment: "production",
@@ -52,9 +55,9 @@ describe("session statistics routes", () => {
       });
 
       expect(cookie.statusCode).toBe(200);
-      expect(cookie.json()).toEqual({ route: "overview" });
+      expect(cookie.json()).toEqual({ route: "overview", by_model: [], options: { models: [] }, series: [] });
       expect(bearer.statusCode).toBe(200);
-      expect(bearer.json()).toEqual({ route: "overview" });
+      expect(bearer.json()).toEqual({ route: "overview", by_model: [], options: { models: [] }, series: [] });
       expect(harness.read).toHaveBeenCalledTimes(2);
       expect(harness.now).toHaveBeenCalledTimes(2);
       expect(harness.read.mock.calls[0]?.[0]).toMatchObject({
@@ -145,7 +148,7 @@ describe("session statistics routes", () => {
 
   it("keeps HTTP totals, options, all-period earliest date, cost, and day material inside the visible child scope", async () => {
     const repository = createScopedStatisticsRepository();
-    const service = new SessionStatisticsService(async () => repository);
+    const service = new SessionStatisticsService(async () => repository, catalog);
     const harness = createHarness(service);
     const headers = { cookie: `${AUTH_COOKIE_NAME}=restricted` };
     try {
@@ -252,7 +255,7 @@ describe("session statistics routes", () => {
         headers: { authorization: "Bearer statistics-service-token" },
       });
       expect(response.statusCode).toBe(200);
-      expect(response.json()).toEqual({ route: "day" });
+      expect(response.json()).toEqual({ route: "day", by_model: [] });
       expect(harness.getDay).toHaveBeenCalledWith(expect.objectContaining({
         day: "2026-10-19",
         access: { restricted: false, allowedFolderIds: [] },
@@ -309,11 +312,11 @@ function createHarness(serviceOverride?: SessionStatisticsRouteOptions["service"
   const read = vi.fn(async (_input: unknown) => undefined);
   const getOverview = vi.fn(async (input: unknown) => {
     await read(input);
-    return { route: "overview" };
+    return { route: "overview", by_model: [], options: { models: [] }, series: [] };
   });
   const getDay = vi.fn(async (input: unknown) => {
     await read(input);
-    return { route: "day" };
+    return { route: "day", by_model: [] };
   });
   const resolveAccess = vi.fn(async (request: FastifyRequest) => {
     const cookie = request.headers.cookie ?? "";
@@ -359,6 +362,7 @@ function createHarness(serviceOverride?: SessionStatisticsRouteOptions["service"
     accessProvider: { resolveAccess },
     folderProvider: { listFolders },
     now,
+    modelCatalog: catalog,
   } as unknown as SessionStatisticsRouteOptions;
   const app = createApp({
     config,

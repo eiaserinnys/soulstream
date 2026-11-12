@@ -19,6 +19,11 @@ import {
   createFullSchemaPostgresHarness,
   type FullSchemaPostgresHarness,
 } from "./board_yjs_postgres_harness.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 const hasDocker = spawnSync("docker", ["--version"], { stdio: "ignore" }).status === 0;
 const hasTestDatabase = Boolean(process.env.TEST_DATABASE_URL?.trim());
@@ -83,7 +88,7 @@ describePostgres("session statistics repository", () => {
 
     const events = createEvents();
     await insertSourceEvents(sql, events);
-    const facts = events.flatMap((event) => normalizeSessionStatisticsEvent(event).facts)
+    const facts = events.flatMap((event) => normalizeSessionStatisticsEvent(event, CATALOG).facts)
       .map((fact) => fact.session_id === "statistics-authorized"
         && String(fact.event_id) === "4"
         && fact.fact_kind === "usage"

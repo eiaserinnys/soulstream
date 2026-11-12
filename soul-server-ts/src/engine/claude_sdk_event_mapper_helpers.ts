@@ -13,6 +13,7 @@ import { isRecoverableExecutionDiagnostic, resultErrorCode } from "./claude_sdk_
 import { attachClaudeResultInputReceipt } from "./claude_sdk_event_metadata.js";
 import { claudeTurnCostUsd } from "./list_price.js";
 import { readTranscriptTurnIterationUsage } from "./claude_sdk_transcript_usage.js";
+import type { ModelCatalogConfig } from "../model_catalog.js";
 
 const STRIPPED_HOOK_OUTPUT = "[stripped: persisted in tool_result]";
 const GENERIC_HOOK_OUTPUT_FIELDS = new Set([
@@ -352,6 +353,8 @@ export interface ClaudeResultMessageMapperContext {
   transcriptPath: string | undefined;
   turnFirstAssistantUuid: string | undefined;
   turnLastAssistantUuid: string | undefined;
+  /** Catalogue snapshot captured once for this terminal message. */
+  catalog?: ModelCatalogConfig;
   withSdkMessageDedupe(
     events: ClaudeClientEvent[],
     message: Record<string, unknown>,
@@ -375,7 +378,9 @@ export function mapClaudeResultMessage(
   const terminalReason = asNullableString(message.terminal_reason);
   const modelUsage = asRecord(message.modelUsage);
   const model = context.latestIterationModel;
-  const turnCostUsd = claudeTurnCostUsd(usage, model);
+  const turnCostUsd = context.catalog
+    ? claudeTurnCostUsd(context.catalog, usage, model)
+    : undefined;
   const iterationUsage = resolveResultIterationUsage({
     transcriptPath: context.transcriptPath,
     turnFirstAssistantUuid: context.turnFirstAssistantUuid,

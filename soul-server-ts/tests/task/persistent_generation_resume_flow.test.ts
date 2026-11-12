@@ -151,6 +151,11 @@ function makeFixture(
       supported_efforts: ["low" as const, "medium" as const, "high" as const, "xhigh" as const],
       default_effort: "xhigh" as const,
     })),
+    snapshot: vi.fn(() => ({
+      presets: [],
+      models: [],
+      persistent_defaults: { fallback_models: [] },
+    })),
   };
   const agentRegistry = { get: vi.fn(() => AGENT) } as unknown as AgentRegistry;
   const contextBuilder = {

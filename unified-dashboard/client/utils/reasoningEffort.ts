@@ -3,7 +3,7 @@ import type { ModelPresetAvailability } from "@seosoyoung/soul-ui";
 /**
  * Everything about "which efforts exist" comes from the model preset the node
  * advertised. There is deliberately no client-side table of models or defaults:
- * the node's `model-catalog.yaml` is the single source of truth, and a preset
+ * the repository's `model-catalog.yaml` is the single source of truth, and a preset
  * that advertises nothing renders as "auto (backend default)".
  */
 export type EffortPreset = Pick<

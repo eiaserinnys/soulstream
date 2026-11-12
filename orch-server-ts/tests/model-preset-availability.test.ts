@@ -21,6 +21,11 @@ import {
 } from "../src/usage/provider_limit_rejection.js";
 import { ModelPresetAvailabilityService } from "../src/model/model_preset_availability.js";
 import type { NodeConnectionSnapshot } from "../src/node/registry_types.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 const preset: StaticModelPreset = {
   id: "claude-fable",
@@ -869,7 +874,7 @@ describe("ModelPresetAvailabilityService static offline resolution", () => {
       getSummary: () => summary(null),
       getLimitRejection: () => null,
       getClaudePoolAccountsForAvailability: () => [],
-    });
+    }, catalog);
 
     expect(service.resolveStaticForNode("node-offline", "codex-next", { requireAvailable: false }))
       .toMatchObject({ id: "codex-next", model: "gpt-codex-next", default_effort: "high" });
@@ -885,7 +890,7 @@ describe("ModelPresetAvailabilityService static offline resolution", () => {
       getSummary: () => summary(null),
       getLimitRejection: () => null,
       getClaudePoolAccountsForAvailability: () => [],
-    });
+    }, catalog);
 
     expect(service.resolveStaticForNode("node-never-seen", "gemini-4-argon", { requireAvailable: false }))
       .toMatchObject({
@@ -917,7 +922,7 @@ describe("ModelPresetAvailabilityService limit rejection", () => {
         getLimitRejection: () => activeRejection,
         getClaudePoolAccountsForAvailability: (_nodeId, accounts) => accounts,
       },
-      () => now,
+      catalog, () => now,
     );
 
     expect(service.listForNode("node-a")?.[0]).toMatchObject({
@@ -958,7 +963,7 @@ describe("ModelPresetAvailabilityService limit rejection", () => {
         getLimitRejection: () => null,
         getClaudePoolAccountsForAvailability,
       },
-      () => now,
+      catalog, () => now,
     );
 
     expect(service.listForNode("node-a")?.[0]).toMatchObject({
@@ -990,7 +995,7 @@ describe("ModelPresetAvailabilityService limit rejection", () => {
         getLimitRejection: () => null,
         getClaudePoolAccountsForAvailability,
       },
-      () => now,
+      catalog, () => now,
     );
 
     expect(service.listForNode("node-a")?.[0]).toEqual({
@@ -1146,7 +1151,7 @@ function createSelectionService(availability: ModelPresetAvailability[]) {
       getLimitRejection: () => null,
       getClaudePoolAccountsForAvailability: (_nodeId, accounts) => accounts,
     },
-    () => now,
+    catalog, () => now,
   );
   vi.spyOn(service, "listForNode").mockReturnValue(availability);
   return service;
@@ -1283,7 +1288,7 @@ it("accepts advertised Antigravity presets in the shared node-list API availabil
       getLimitRejection: () => null,
       getClaudePoolAccountsForAvailability: (_nodeId, accounts) => accounts,
     },
-    () => now,
+    catalog, () => now,
   );
   expect(service.listForNode("node-a")).toEqual(presets.map(p => expect.objectContaining({ id: p.id, backend: "antigravity", available: true, weekly_headroom: expect.objectContaining({ headroom: expect.any(Number), remaining_percent: 90 }) })));
   expect(service.requireAvailable("node-a", "gemini-4-argon").id).toBe("gemini-4-argon");
@@ -1342,7 +1347,7 @@ it("rejects an Antigravity preset after quota error and selects the usable fallb
       }),
       getClaudePoolAccountsForAvailability: (_nodeId, accounts) => accounts,
     },
-    () => now,
+    catalog, () => now,
   );
 
   expect(service.resolveForNode("node-a", "gemini-4-argon")).toMatchObject({

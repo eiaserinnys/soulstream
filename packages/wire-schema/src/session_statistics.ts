@@ -80,6 +80,8 @@ export interface UsageStatsProviderRow extends UsageStatsAggregate {
   provider: UsageStatsProvider;
   backend: string;
   model: string | null;
+  /** Human-readable model name from the model catalogue; null for provider rows. */
+  model_label?: string | null;
   attribution: "provider" | "model";
 }
 
@@ -131,7 +133,8 @@ export interface UsageStatsOverview {
   policies: {
     date_attribution: "recorded_terminal";
     project_attribution: "current_folder";
-    price_version: "api-list-usd-2026-10-19-v1";
+    /** Current pricing policy version; past totals were not necessarily computed with it. */
+    price_version: string;
   };
   projection_status: {
     state: "ready" | "backfilling";

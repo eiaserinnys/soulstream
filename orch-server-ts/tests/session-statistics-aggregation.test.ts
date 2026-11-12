@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { PRICE_SNAPSHOT_METADATA } from "@soulstream/model-catalog/inference-pricing";
 import {
   aggregateSessionStatisticsMetrics,
   selectOwnedSessionStatisticsRows,
@@ -28,12 +27,17 @@ import {
   toolCallRow,
   usageRow,
 } from "./fixtures/session_statistics_aggregation.fixtures.js";
+import { repositoryModelCatalog } from "./helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
+const CATALOG = catalog.snapshot();
+
 
 describe("session statistics coverage aggregation", () => {
   it("applies the final period after canonical owner and coverage date selection", () => {
     const source = periodBoundaryRead();
-    const result = buildOverview(source);
-    const day = buildDay(source, "2026-10-26");
+    const result = buildOverview(source, CATALOG);
+    const day = buildDay(source, "2026-10-26", CATALOG);
     expect(result.totals.metrics.total_tokens).toBe(120);
     expect(result.totals.coverage).toMatchObject({
       usage_complete_events: 1, missing_usage_turns: 0, terminal_missing_usage: 0,
@@ -57,10 +61,10 @@ describe("session statistics coverage aggregation", () => {
     expect(day.totals.coverage.missing_usage_turns).toBe(0);
     expect(day.by_model).toEqual([]);
     expect(day.by_project).toEqual([]);
-    const filtered = buildOverview({ ...source, query: { ...source.query, provider: "codex" } });
+    const filtered = buildOverview({ ...source, query: { ...source.query, provider: "codex" } }, CATALOG);
     expect(filtered.options).toEqual(result.options);
     expect(filtered.totals.metrics.total_tokens).toBe(null);
-    const outsideOnly = buildOverview({ ...source, rows: source.rows.filter((row) => row.session_id !== "inside") });
+    const outsideOnly = buildOverview({ ...source, rows: source.rows.filter((row) => row.session_id !== "inside") }, CATALOG);
     expect(outsideOnly.totals.metrics.total_tokens).toBe(null);
     expect(outsideOnly.series).toEqual([]);
     expect(outsideOnly.options.models).toEqual([]);
@@ -137,8 +141,8 @@ describe("session statistics coverage aggregation", () => {
       missingRow(),
       boundaryRow(22, "session_ended", { recorded_at: closureDate }),
     ]);
-    const terminalDay = buildDay(result, "2026-10-19").totals.coverage;
-    const closureDay = buildDay(result, "2026-10-20").totals.coverage;
+    const terminalDay = buildDay(result, "2026-10-19", CATALOG).totals.coverage;
+    const closureDay = buildDay(result, "2026-10-20", CATALOG).totals.coverage;
 
     expect(terminalDay).toMatchObject({
       terminal_missing_usage: 1,
@@ -181,8 +185,8 @@ describe("session statistics coverage aggregation", () => {
       ambiguous(22, "2026-10-20T12:00:00.000Z"),
     ]);
 
-    expect(buildDay(result, "2026-10-19").totals.coverage.missing_usage_turns).toBe(0);
-    expect(buildDay(result, "2026-10-20").totals.coverage.missing_usage_turns).toBe(1);
+    expect(buildDay(result, "2026-10-19", CATALOG).totals.coverage.missing_usage_turns).toBe(0);
+    expect(buildDay(result, "2026-10-20", CATALOG).totals.coverage.missing_usage_turns).toBe(1);
   });
 
   it("reports an unattributed missing identity in the unfiltered scope", () => {
@@ -253,7 +257,7 @@ describe("session statistics coverage aggregation", () => {
       [sessionStatisticsSourceKey("session-1", 21, "usage:aggregate"), "0.2"],
     ]);
     const result = read([complete, partial], {}, decimals);
-    const metrics = aggregateSessionStatisticsMetrics(result, selectOwnedSessionStatisticsRows(result));
+    const metrics = aggregateSessionStatisticsMetrics(result, selectOwnedSessionStatisticsRows(result), CATALOG);
 
     expect(metrics.input_total).toBe(130);
     expect(metrics.output_total).toBe(20);
@@ -291,14 +295,14 @@ describe("session statistics coverage aggregation", () => {
         cache_write: 0,
         output_total: 20,
         known_cost_usd: 0.000328,
-        pricing_version: PRICE_SNAPSHOT_METADATA.price_version,
+        pricing_version: CATALOG.price_snapshot.price_version,
       }),
     });
     const decimals = new Map([
       [sessionStatisticsSourceKey("session-1", 20, "usage:aggregate"), "0.000329"],
     ]);
     const result = read([row], {}, decimals);
-    const metrics = aggregateSessionStatisticsMetrics(result, selectOwnedSessionStatisticsRows(result));
+    const metrics = aggregateSessionStatisticsMetrics(result, selectOwnedSessionStatisticsRows(result), CATALOG);
 
     expect(metrics.total_tokens).toBe(80);
     expect(metrics.provider_total_tokens).toBe(120);
@@ -332,7 +336,7 @@ describe("session statistics coverage aggregation", () => {
         cache_write: 0,
         output_total: 20,
         known_cost_usd: 0.000328,
-        pricing_version: PRICE_SNAPSHOT_METADATA.price_version,
+        pricing_version: CATALOG.price_snapshot.price_version,
       }),
     });
     const unpriced = usageRow({
@@ -355,7 +359,7 @@ describe("session statistics coverage aggregation", () => {
       [sessionStatisticsSourceKey("session-1", 20, "usage:aggregate"), "0.000328"],
     ]);
     const result = read([priced, unpriced], {}, decimals);
-    const metrics = aggregateSessionStatisticsMetrics(result, selectOwnedSessionStatisticsRows(result));
+    const metrics = aggregateSessionStatisticsMetrics(result, selectOwnedSessionStatisticsRows(result), CATALOG);
 
     expect(metrics.reference_cost_usd).toBe(0.000328);
     expect(metrics.reference_cost_breakdown).toEqual({
@@ -375,7 +379,7 @@ describe("session statistics coverage aggregation", () => {
       }),
     });
     const result = read([row], {}, new Map());
-    const metrics = aggregateSessionStatisticsMetrics(result, selectOwnedSessionStatisticsRows(result));
+    const metrics = aggregateSessionStatisticsMetrics(result, selectOwnedSessionStatisticsRows(result), CATALOG);
 
     expect(metrics.total_tokens).toBe(null);
     expect(metrics.provider_total_tokens).toBe(120);
@@ -469,7 +473,7 @@ describe("session statistics coverage aggregation", () => {
       { project_ids: ["project-6"] },
       outsideDecimals,
       namedSessions,
-    ));
+    ), CATALOG);
     expect(outside.by_project.map((project) => project.project_id)).toEqual(["project-6"]);
 
     const unclassifiedRow = usageRow({
@@ -481,7 +485,7 @@ describe("session statistics coverage aggregation", () => {
       { project_ids: ["__unclassified__"] },
       new Map([[sessionStatisticsSourceKey("session-null", 20, "usage:aggregate"), "0.1"]]),
       [{ sessionId: "session-null", folderId: null, cardFolderId: null, projectId: null, projectLabel: "" }],
-    ));
+    ), CATALOG);
     expect(unclassified.by_project.map((project) => project.project_id)).toEqual([null]);
   });
 
@@ -514,7 +518,7 @@ describe("session statistics coverage aggregation", () => {
         pricing_complete: false,
       }),
     });
-    const result = buildOverview(read([row]));
+    const result = buildOverview(read([row]), CATALOG);
 
     expect(result.totals.metrics.total_tokens).toBe(60);
     expect(result.totals.metrics.reference_cost_usd).toBe(null);
@@ -661,8 +665,8 @@ describe("session statistics coverage aggregation", () => {
       materialRow(30, "input/actual-model", 5, { quality: ["replayed_history"] }),
       toolCallRow(40),
     ];
-    const actual = buildDay(read(rows, { provider: "claude", model: "opus" }), "2026-10-19");
-    const requested = buildDay(read(rows, { provider: "claude", model: "sonnet" }), "2026-10-19");
+    const actual = buildDay(read(rows, { provider: "claude", model: "opus" }), "2026-10-19", CATALOG);
+    const requested = buildDay(read(rows, { provider: "claude", model: "sonnet" }), "2026-10-19", CATALOG);
 
     expect(actual.totals.metrics.total_tokens).toBe(120);
     expect(actual.input_material.observed_approximate_tokens).toBe(5);
@@ -696,8 +700,8 @@ describe("session statistics coverage aggregation", () => {
       { ...legacyTool, accounting_key: null, input_id: "legacy-input", owner_recorded_at: ownDate,
         fact: { ...legacyTool.fact, accounting_key: null, input_id: "legacy-input", recorded_at: ownDate } },
     ]);
-    const ownerDay = buildDay(result, "2026-10-20");
-    const ownDay = buildDay(result, "2026-10-19");
+    const ownerDay = buildDay(result, "2026-10-20", CATALOG);
+    const ownDay = buildDay(result, "2026-10-19", CATALOG);
 
     expect(ownerDay.totals.metrics.total_tokens).toBe(120);
     expect(ownerDay.input_material.observed_approximate_tokens).toBe(5);
@@ -745,8 +749,8 @@ describe("session statistics coverage aggregation", () => {
 
   it("builds empty unknown periods as null metrics and no series", () => {
     const empty = read([], {}, new Map(), []);
-    const overview = buildOverview(empty);
-    const day = buildDay(empty, "2026-10-19");
+    const overview = buildOverview(empty, CATALOG);
+    const day = buildDay(empty, "2026-10-19", CATALOG);
 
     expect(overview.generated_at).toBe("2026-10-20T00:00:00.000Z");
     expect(overview.totals.metrics).toEqual({
@@ -775,7 +779,7 @@ describe("session statistics coverage aggregation", () => {
       boundaryRow(10, "input"),
       usageRow(),
       missingRow({ selection_event_id: 21, candidate_event_id: 21 }),
-    ]));
+    ]), CATALOG);
 
     expect(result.totals.metrics.total_tokens).toBe(120);
     expect(result.totals.metrics.reference_cost_usd).toBe(0.1);
@@ -785,7 +789,7 @@ describe("session statistics coverage aggregation", () => {
 
   it("keeps pending separate from missing while marking a known subtotal partial", () => {
     const pending = missingRow({ selection_event_id: 22, candidate_event_id: 22, state: "pending" });
-    const result = buildOverview(read([usageRow(), pending]));
+    const result = buildOverview(read([usageRow(), pending]), CATALOG);
 
     expect(result.totals.metrics.total_tokens).toBe(120);
     expect(result.totals.metrics.reference_cost_usd).toBe(0.1);
@@ -806,12 +810,12 @@ describe("session statistics coverage aggregation", () => {
       }),
     });
     const zeroCost = new Map([[sessionStatisticsSourceKey("session-1", 20, "usage:aggregate"), "0"]]);
-    const observedZero = buildOverview(read([zero], {}, zeroCost));
-    const missing = buildOverview(read([zero, missingRow()], {}, zeroCost));
+    const observedZero = buildOverview(read([zero], {}, zeroCost), CATALOG);
+    const missing = buildOverview(read([zero, missingRow()], {}, zeroCost), CATALOG);
     const pending = buildOverview(read([
       zero,
       missingRow({ selection_event_id: 22, candidate_event_id: 22, state: "pending", input_id: "input-2" }),
-    ], {}, zeroCost));
+    ], {}, zeroCost), CATALOG);
 
     expect(observedZero.totals.metrics.total_tokens).toBe(0);
     expect(observedZero.totals.metrics.reference_cost_usd).toBe(0);
@@ -836,7 +840,7 @@ describe("session statistics coverage aggregation", () => {
   });
 
   it("uses null metrics in an empty bucket within a period that has known facts", () => {
-    const result = buildOverview(read([usageRow()]));
+    const result = buildOverview(read([usageRow()]), CATALOG);
     const projectSeries = result.series.filter((point) => point.project_id === "project-1");
 
     expect(projectSeries.map((point) => point.bucket_start)).toEqual(["2026-10-19", "2026-10-20"]);
@@ -871,9 +875,9 @@ describe("session statistics coverage aggregation", () => {
       projectId: "bulk-project",
       projectLabel: "Bulk",
     }));
-    const expected = buildOverview(read(rows, {}, new Map(), sessions.slice(0, rowCount)));
+    const expected = buildOverview(read(rows, {}, new Map(), sessions.slice(0, rowCount)), CATALOG);
     const started = Date.now();
-    const result = buildOverview(read(rows, {}, new Map(), sessions));
+    const result = buildOverview(read(rows, {}, new Map(), sessions), CATALOG);
     const elapsedMs = Date.now() - started;
 
     expect(result).toEqual(expected);
@@ -884,7 +888,7 @@ describe("session statistics coverage aggregation", () => {
     const empty = read([], {}, new Map(), []);
     const repository = { read: vi.fn(async () => empty) };
     const provider = vi.fn(async () => repository);
-    const service = new SessionStatisticsService(provider);
+    const service = new SessionStatisticsService(provider, catalog);
 
     await service.getOverview({ query: { period: "week", anchor: "2026-10-19" } } as never);
     expect(provider).toHaveBeenCalledTimes(1);

@@ -13,6 +13,7 @@ import type {
   HostPersistentSessionRow,
   HostSessionRow,
 } from "../control_plane/repositories/session_read_repository.js";
+import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 import {
   ModelPresetAvailabilityError,
   type ModelPresetAvailabilityService,
@@ -37,10 +38,9 @@ import {
 import { PersistentSessionApiError } from "./persistent_session_api_error.js";
 import { PersistentSessionInstructionsService } from "./persistent_session_instructions_service.js";
 
-/** New PAS defaults live here and nowhere else; the screens only render what `create_defaults` returns. */
+/** Node and agent for a new PAS live here; the default preset and fallback list come from catalogue data. */
 export const PERSISTENT_CREATE_NODE_ID = "eiaserinnys";
 export const PERSISTENT_PREFERRED_AGENT_ID = "seosoyoung-pas";
-export const PERSISTENT_DEFAULT_MODEL_PRESET = "claude-opus";
 /** Used when the first message is left empty; ordinary session creation keeps its own empty-input prompt. */
 export const PERSISTENT_INITIAL_INSTRUCTION =
   "새 영구 에이전트 세션입니다. 도구를 쓰지 말고 짧게 인사한 뒤 다음 지시를 기다려 주십시오.";
@@ -68,6 +68,7 @@ export type PersistentSessionSettingsServiceDeps = {
   ) => Promise<SessionCreateRouteResponse>;
   presets: Pick<ModelPresetAvailabilityService, "resolveStaticForNode" | "requireAvailable">;
   profiles: { listAgentProfiles(nodeId: string): Promise<Record<string, { name?: unknown }> | undefined> };
+  modelCatalog: ModelCatalogSource;
 };
 
 type CallerRequest = FastifyRequest | ServiceCaller;
@@ -104,8 +105,10 @@ export class PersistentSessionSettingsService {
     const rows = await (await this.deps.reads()).listPersistentSessions();
     const visible = await this.accessibleRows(request, rows);
     const names = await this.agentNames(visible);
+    const fallbackModels = this.deps.modelCatalog.snapshot().persistent_defaults.fallback_models;
     return {
-      sessions: visible.map((row) => buildPersistentSessionResource(row, names.get(agentKey(row)) ?? null)),
+      sessions: visible.map((row) =>
+        buildPersistentSessionResource(row, names.get(agentKey(row)) ?? null, fallbackModels)),
       total: visible.length,
       create_defaults: await this.createDefaults(),
     };
@@ -205,7 +208,8 @@ export class PersistentSessionSettingsService {
     }
     if (settings?.fallback_models !== undefined) {
       const nodeId = typeof row.node_id === "string" ? row.node_id : "";
-      const storedFallbacks = readStoredPersistentSettings(row.metadata)?.fallback_models ?? [];
+      const storedFallbacks = readStoredPersistentSettings(row.metadata,
+        this.deps.modelCatalog.snapshot().persistent_defaults.fallback_models)?.fallback_models ?? [];
       settings = {
         ...settings,
         fallback_models: settings.fallback_models.map((selection) => {
@@ -309,7 +313,8 @@ export class PersistentSessionSettingsService {
 
   private async resource(row: Record<string, unknown>): Promise<PersistentSessionResource> {
     const names = await this.agentNames([row]);
-    return buildPersistentSessionResource(row, names.get(agentKey(row)) ?? null);
+    return buildPersistentSessionResource(row, names.get(agentKey(row)) ?? null,
+      this.deps.modelCatalog.snapshot().persistent_defaults.fallback_models);
   }
 
   private async sendSettings(
@@ -338,7 +343,8 @@ export class PersistentSessionSettingsService {
   ): Promise<PersistentModelSelection> {
     const nodeId = typeof row.node_id === "string" ? row.node_id : "";
     const current = currentModelOfRow(row);
-    const existing = readStoredPersistentSettings(row.metadata)?.default_model
+    const existing = readStoredPersistentSettings(row.metadata,
+      this.deps.modelCatalog.snapshot().persistent_defaults.fallback_models)?.default_model
       ?? (current.model_preset === null
         ? null
         : { model_preset: current.model_preset, reasoning_effort: current.reasoning_effort });
@@ -463,22 +469,24 @@ export class PersistentSessionSettingsService {
     } else {
       reasons.push(`프로필 ${PERSISTENT_PREFERRED_AGENT_ID}이(가) 노드 ${PERSISTENT_CREATE_NODE_ID}에 없습니다.`);
     }
+    const persistedDefaults = this.deps.modelCatalog.snapshot().persistent_defaults;
     let defaultModel: PersistentModelSelectionView = { model_preset: null, reasoning_effort: null };
     try {
-      const preset = this.deps.presets.resolveStaticForNode(PERSISTENT_CREATE_NODE_ID, PERSISTENT_DEFAULT_MODEL_PRESET);
+      const preset = this.deps.presets.resolveStaticForNode(
+        PERSISTENT_CREATE_NODE_ID, persistedDefaults.model_preset);
       defaultModel = { model_preset: preset.id, reasoning_effort: preset.default_effort ?? null };
     } catch (error) {
       if (!(error instanceof ModelPresetAvailabilityError)) throw error;
-      reasons.push(`기본 모델 ${PERSISTENT_DEFAULT_MODEL_PRESET}이(가) 노드 ${PERSISTENT_CREATE_NODE_ID}에 없습니다.`);
+      reasons.push(`기본 모델 ${persistedDefaults.model_preset}이(가) 노드 ${PERSISTENT_CREATE_NODE_ID}에 없습니다.`);
     }
     return {
       node_id: PERSISTENT_CREATE_NODE_ID,
       preferred_agent_id: preferredAgentId,
       settings: {
         default_model: defaultModel,
-        fallback_models: PERSISTENT_SETTINGS_DEFAULTS.fallback_models.map((model) => ({ ...model })),
-        fallback_model: PERSISTENT_SETTINGS_DEFAULTS.fallback_models[0]
-          ? { ...PERSISTENT_SETTINGS_DEFAULTS.fallback_models[0] }
+        fallback_models: persistedDefaults.fallback_models.map((model) => ({ ...model })),
+        fallback_model: persistedDefaults.fallback_models[0]
+          ? { ...persistedDefaults.fallback_models[0] }
           : null,
         show_generation_separator: PERSISTENT_SETTINGS_DEFAULTS.show_generation_separator,
         show_character: PERSISTENT_SETTINGS_DEFAULTS.show_character,

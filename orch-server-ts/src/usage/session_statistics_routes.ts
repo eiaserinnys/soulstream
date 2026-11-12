@@ -1,10 +1,16 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import {
   USAGE_STATS_PROVIDERS,
+  type UsageStatsDayDetail,
+  type UsageStatsOverview,
   type UsageStatsPeriod,
   type UsageStatsProvider,
+  type UsageStatsProviderRow,
   type UsageStatsQuery,
 } from "@soulstream/wire-schema/session-statistics";
+import { modelDisplayName, type ModelCatalogConfig } from "@soulstream/model-catalog";
+
+import type { ModelCatalogSource } from "../model/model_catalog_source.js";
 
 import {
   filterFolders,
@@ -40,6 +46,8 @@ export type SessionStatisticsRouteOptions = {
   accessProvider: Pick<LiveDashboardAccessProvider, "resolveAccess">;
   folderProvider: Pick<FolderRouteProvider, "listFolders">;
   now: () => Date;
+  /** Display names come from the same catalogue file the pricing reads. */
+  modelCatalog: ModelCatalogSource;
 };
 
 export const sessionStatisticsRouteAuthRequirements = {
@@ -65,7 +73,7 @@ export function registerSessionStatisticsRoutes(
       return reply.code(403).send(ACCESS_DENIED);
     }
     try {
-      return await options.service.getOverview({
+      const overview = await options.service.getOverview({
         query: parsed.query,
         timezone: TIMEZONE,
         asOf: scope.asOf,
@@ -73,6 +81,7 @@ export function registerSessionStatisticsRoutes(
         visibleFolders: scope.visibleFolders,
         day: null,
       });
+      return decorateOverview(overview, options.modelCatalog.snapshot());
     } catch (error) {
       return unavailable(request, reply, error);
     }
@@ -89,7 +98,7 @@ export function registerSessionStatisticsRoutes(
     const date = (request.params as { readonly date: string }).date;
     if (!isCalendarDate(date)) return reply.code(400).send(INVALID_DATE);
     try {
-      return await options.service.getDay({
+      const detail = await options.service.getDay({
         query: parsed.query,
         timezone: TIMEZONE,
         asOf: scope.asOf,
@@ -97,11 +106,46 @@ export function registerSessionStatisticsRoutes(
         visibleFolders: scope.visibleFolders,
         day: date,
       });
+      return decorateDay(detail, options.modelCatalog.snapshot());
     } catch (error) {
       if (isOutOfPeriodDay(error)) return reply.code(400).send(INVALID_DATE);
       return unavailable(request, reply, error);
     }
   });
+}
+
+/**
+ * The only place the two read APIs turn catalogue data into client-facing
+ * labels. Keys, filters and colour inputs stay on the raw model string.
+ */
+function decorateRow(row: UsageStatsProviderRow, catalog: ModelCatalogConfig): UsageStatsProviderRow {
+  const modelLabel = row.attribution === "model" && row.model !== null
+    ? modelDisplayName(catalog, row.model)
+    : null;
+  return { ...row, model_label: modelLabel };
+}
+
+function decorateOverview(overview: UsageStatsOverview, catalog: ModelCatalogConfig): UsageStatsOverview {
+  return {
+    ...overview,
+    by_model: overview.by_model.map(row => decorateRow(row, catalog)),
+    options: {
+      ...overview.options,
+      models: overview.options.models.map(option => ({
+        ...option,
+        label: option.model === null
+          ? option.label
+          : modelDisplayName(catalog, option.model) ?? option.model,
+      })),
+    },
+    series: overview.series.map(point => point.model === undefined || point.model === null
+      ? point
+      : { ...point, label: modelDisplayName(catalog, point.model) ?? point.model }),
+  };
+}
+
+function decorateDay(detail: UsageStatsDayDetail, catalog: ModelCatalogConfig): UsageStatsDayDetail {
+  return { ...detail, by_model: detail.by_model.map(row => decorateRow(row, catalog)) };
 }
 
 type ResolvedScope = {

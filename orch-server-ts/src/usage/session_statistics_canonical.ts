@@ -4,6 +4,8 @@ import type {
   NormalizedUsage,
   UsageCandidateType,
 } from "./session_statistics_fact_types.js";
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
+
 import { compareText, isRecord } from "./session_statistics_normalization_helpers.js";
 import { priceNormalizedUsage } from "./session_statistics_usage_candidates.js";
 
@@ -75,7 +77,7 @@ function validModelBreakdown(rows: readonly FactDraft[]): boolean {
     && sameKnownComponent(rows, "reasoning_output");
 }
 
-function selectedRepresentation(group: UsageEventGroup): {
+function selectedRepresentation(group: UsageEventGroup, catalog: ModelCatalogConfig): {
   facts: FactDraft[];
   representation: FactDraft["representation"];
   quality: string[];
@@ -93,7 +95,7 @@ function selectedRepresentation(group: UsageEventGroup): {
     const selectedFact = breakdownUnverified ? {
       ...aggregateFact,
       model: null,
-      ...priceNormalizedUsage({
+      ...priceNormalizedUsage(catalog, {
         input_total: aggregateFact.input_total,
         output_total: aggregateFact.output_total,
         total_tokens: aggregateFact.total_tokens,
@@ -170,6 +172,7 @@ function selectionSort(left: CanonicalUsageSelection, right: CanonicalUsageSelec
 
 export function selectCanonicalUsageCandidates(
   candidates: readonly FactDraft[],
+  catalog: ModelCatalogConfig,
 ): CanonicalUsageSelection[] {
   const groups = usageEventGroups(candidates);
   const boundaries = candidates.filter((fact) => fact.fact_kind === "boundary");
@@ -198,7 +201,7 @@ export function selectCanonicalUsageCandidates(
     });
     if (terminals.length > 0) {
       const owner = terminals[0]!;
-      const chosen = selectedRepresentation(owner);
+      const chosen = selectedRepresentation(owner, catalog);
       selections.push(makeSelection(owner, "owned", owner.eventId, owner.eventId, chosen.facts, chosen.representation, chosen.quality));
       continue;
     }
@@ -220,7 +223,7 @@ export function selectCanonicalUsageCandidates(
   const validLegacy = legacy.filter((group) => group.candidateType !== null);
   for (const group of validLegacy) {
     if (group.candidateType !== "complete") continue;
-    const chosen = selectedRepresentation(group);
+    const chosen = selectedRepresentation(group, catalog);
     selections.push(makeSelection(group, "owned", group.eventId, group.eventId, chosen.facts, chosen.representation, chosen.quality));
   }
 
@@ -259,7 +262,7 @@ export function selectCanonicalUsageCandidates(
         && (end === null || compareEventIds(group.eventId, end.event_id) < 0));
     if (failures.length === 1 && !hasOtherOwner) {
       const failure = failures[0]!;
-      const chosen = selectedRepresentation(failure);
+      const chosen = selectedRepresentation(failure, catalog);
       selections.push(makeSelection(failure, "owned", failure.eventId, failure.eventId, chosen.facts, chosen.representation, chosen.quality));
     } else {
       const candidateTypes = new Set(failures.map((group) => group.candidateType));

@@ -13,6 +13,9 @@ import {
   requireOAuthScope,
   type OAuthResourceAccess,
 } from "../../src/oauth/oauth_access.js";
+import { repositoryModelCatalog } from "../helpers/model_catalog.js";
+
+const catalog = repositoryModelCatalog();
 
 const access: OAuthResourceAccess = {
   email: "director@example.test",
@@ -127,9 +130,15 @@ describe("OAuth resource scopes", () => {
         : request.headers.authorization === "Bearer cards-token" ? cards : null,
     });
     registerSessionStatisticsRoutes(app, {
+      modelCatalog: catalog,
       service: {
-        getOverview: async () => ({ kind: "overview" }) as never,
-        getDay: async () => ({ kind: "day" }) as never,
+        getOverview: async () => ({
+          kind: "overview",
+          by_model: [],
+          options: { models: [] },
+          series: [],
+        }) as never,
+        getDay: async () => ({ kind: "day", by_model: [] }) as never,
       },
       accessProvider: { resolveAccess: async () => ({ restricted: false, allowedFolderIds: [] }) },
       folderProvider: { listFolders: async () => [] },
@@ -138,10 +147,10 @@ describe("OAuth resource scopes", () => {
     const headers = { authorization: "Bearer usage-token" };
     const overview = await app.inject({ method: "GET", url: "/api/session-statistics?period=week&timezone=Asia/Seoul", headers });
     expect(overview.statusCode).toBe(200);
-    expect(overview.json()).toEqual({ kind: "overview" });
+    expect(overview.json()).toEqual({ kind: "overview", by_model: [], options: { models: [] }, series: [] });
     const day = await app.inject({ method: "GET", url: "/api/session-statistics/days/2026-11-10?period=week&anchor=2026-11-10", headers });
     expect(day.statusCode).toBe(200);
-    expect(day.json()).toEqual({ kind: "day" });
+    expect(day.json()).toEqual({ kind: "day", by_model: [] });
     expect((await app.inject({ method: "GET", url: "/api/session-statistics", headers: { authorization: "Bearer cards-token" } })).statusCode).toBe(403);
     await app.close();
   });
