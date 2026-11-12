@@ -1,7 +1,10 @@
+import { fileURLToPath } from "node:url";
+
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { openModelCatalogFile } from "@soulstream/model-catalog/file-loader";
 import type { SessionDB } from "../../src/db/session_db.js";
-import type { ModelCatalog } from "../../src/model_catalog.js";
+import { ModelCatalog } from "../../src/model_catalog.js";
 import type { Task } from "../../src/task/task_models.js";
 import {
   codexLimitsFromUsageResponse,
@@ -154,7 +157,8 @@ describe("buildPersistentDecisionInput", () => {
         id,
         backend: id.startsWith("claude") ? "claude" : "codex",
       })),
-    } as unknown as Pick<ModelCatalog, "resolve">;
+      snapshot: () => ({ persistent_defaults: { fallback_models: [] } }),
+    } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">;
     const providerUsage = {
       fetchUsage: vi.fn(),
     } as unknown as ProviderUsageCommandHandler;
@@ -227,7 +231,8 @@ describe("buildPersistentDecisionInput", () => {
                 ? "opencode"
                 : id.startsWith("claude") ? "claude" : "codex",
           }),
-        } as unknown as Pick<ModelCatalog, "resolve">,
+          snapshot: () => ({ persistent_defaults: { fallback_models: [] } }),
+        } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
         providerUsage: { fetchUsage } as unknown as ProviderUsageCommandHandler,
         logger: { warn },
       },
@@ -289,7 +294,8 @@ describe("buildPersistentDecisionInput", () => {
               ? "antigravity"
               : id.startsWith("claude") ? "claude" : "codex",
           }),
-        } as unknown as Pick<ModelCatalog, "resolve">,
+          snapshot: () => ({ persistent_defaults: { fallback_models: [] } }),
+        } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
         providerUsage: { fetchUsage: vi.fn() } as unknown as ProviderUsageCommandHandler,
         logger: { warn: vi.fn() },
       },
@@ -334,7 +340,8 @@ describe("buildPersistentDecisionInput", () => {
         db: { readEvents: vi.fn(async () => []) } as unknown as Pick<SessionDB, "readEvents">,
         modelCatalog: {
           resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
-        } as unknown as Pick<ModelCatalog, "resolve">,
+          snapshot: () => ({ persistent_defaults: { fallback_models: [] } }),
+        } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
         providerUsage: { fetchUsage } as unknown as ProviderUsageCommandHandler,
         logger: { warn: vi.fn() },
       },
@@ -357,7 +364,8 @@ describe("buildPersistentDecisionInput", () => {
         db: { readEvents: vi.fn(async () => []) } as unknown as Pick<SessionDB, "readEvents">,
         modelCatalog: {
           resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
-        } as unknown as Pick<ModelCatalog, "resolve">,
+          snapshot: () => ({ persistent_defaults: { fallback_models: [] } }),
+        } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
         providerUsage: { fetchUsage } as unknown as ProviderUsageCommandHandler,
         logger: { warn: vi.fn() },
       },
@@ -398,7 +406,8 @@ describe("buildPersistentDecisionInput", () => {
         db: { readEvents: vi.fn(async () => []) } as unknown as Pick<SessionDB, "readEvents">,
         modelCatalog: {
           resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
-        } as unknown as Pick<ModelCatalog, "resolve">,
+          snapshot: () => ({ persistent_defaults: { fallback_models: [] } }),
+        } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
         providerUsage: { fetchUsage } as unknown as ProviderUsageCommandHandler,
         logger: { warn: vi.fn() },
       },
@@ -434,7 +443,8 @@ describe("buildPersistentDecisionInput", () => {
         db: { readEvents: vi.fn(async () => []) } as unknown as Pick<SessionDB, "readEvents">,
         modelCatalog: {
           resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
-        } as unknown as Pick<ModelCatalog, "resolve">,
+          snapshot: () => ({ persistent_defaults: { fallback_models: [] } }),
+        } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
         providerUsage: { fetchUsage } as unknown as ProviderUsageCommandHandler,
         logger: { warn: vi.fn() },
       },
@@ -485,7 +495,8 @@ describe("buildPersistentDecisionInput", () => {
         db: { readEvents } as unknown as Pick<SessionDB, "readEvents">,
         modelCatalog: {
           resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
-        } as unknown as Pick<ModelCatalog, "resolve">,
+          snapshot: () => ({ persistent_defaults: { fallback_models: [] } }),
+        } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
         providerUsage: { fetchUsage: vi.fn() } as unknown as ProviderUsageCommandHandler,
         logger: { warn: vi.fn() },
       },
@@ -556,7 +567,8 @@ describe("buildPersistentDecisionInput", () => {
         db: { readEvents } as unknown as Pick<SessionDB, "readEvents">,
         modelCatalog: {
           resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
-        } as unknown as Pick<ModelCatalog, "resolve">,
+          snapshot: () => ({ persistent_defaults: { fallback_models: [] } }),
+        } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
         providerUsage: { fetchUsage: vi.fn() } as unknown as ProviderUsageCommandHandler,
         logger: { warn: vi.fn() },
       },
@@ -606,16 +618,17 @@ describe("buildPersistentDecisionInput", () => {
         db: { readEvents } as unknown as Pick<SessionDB, "readEvents">,
         modelCatalog: {
           resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
-        } as unknown as Pick<ModelCatalog, "resolve">,
+          snapshot: () => ({ persistent_defaults: { fallback_models: [] } }),
+        } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
         providerUsage: { fetchUsage: vi.fn() } as unknown as ProviderUsageCommandHandler,
         logger: { warn: vi.fn() },
       },
     );
     const decision = decidePersistentGeneration(input, {
       ...DEFAULT_CONFIG,
-      presets: {
-        ...DEFAULT_CONFIG.presets,
-        "claude-opus": {
+      provider_defaults: {
+        ...DEFAULT_CONFIG.provider_defaults,
+        claude: {
           ...DEFAULT_CONFIG.provider_defaults.claude,
           checkpoint_default_tokens: 90_000,
         },
@@ -652,7 +665,8 @@ describe("buildPersistentDecisionInput", () => {
         db: { readEvents } as unknown as Pick<SessionDB, "readEvents">,
         modelCatalog: {
           resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
-        } as unknown as Pick<ModelCatalog, "resolve">,
+          snapshot: () => ({ persistent_defaults: { fallback_models: [] } }),
+        } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
         providerUsage,
         logger: { warn: vi.fn() },
       },
@@ -689,7 +703,8 @@ describe("buildPersistentDecisionInput", () => {
         db: { readEvents: vi.fn(async () => []) } as unknown as Pick<SessionDB, "readEvents">,
         modelCatalog: {
           resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
-        } as unknown as Pick<ModelCatalog, "resolve">,
+          snapshot: () => ({ persistent_defaults: { fallback_models: [] } }),
+        } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
         providerUsage: { fetchUsage } as unknown as ProviderUsageCommandHandler,
         logger: { warn: vi.fn() },
       },
@@ -720,7 +735,8 @@ describe("buildPersistentDecisionInput", () => {
         db: { readEvents: vi.fn(async () => []) } as unknown as Pick<SessionDB, "readEvents">,
         modelCatalog: {
           resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
-        } as unknown as Pick<ModelCatalog, "resolve">,
+          snapshot: () => ({ persistent_defaults: { fallback_models: [] } }),
+        } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
         providerUsage: { fetchUsage } as unknown as ProviderUsageCommandHandler,
         logger: { warn: vi.fn() },
       },
@@ -756,7 +772,8 @@ describe("buildPersistentDecisionInput", () => {
         db: { readEvents: vi.fn(async () => [event]) } as unknown as Pick<SessionDB, "readEvents">,
         modelCatalog: {
           resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
-        } as unknown as Pick<ModelCatalog, "resolve">,
+          snapshot: () => ({ persistent_defaults: { fallback_models: [] } }),
+        } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
         providerUsage: { fetchUsage: vi.fn() } as unknown as ProviderUsageCommandHandler,
         logger: { warn: vi.fn() },
       },
@@ -764,5 +781,32 @@ describe("buildPersistentDecisionInput", () => {
 
     expect(input.context_tokens).toBe(91_000);
     expect(input.context_estimated).toBe(true);
+  });
+
+  it("reads the catalogue fallback models when legacy metadata stores no settings", async () => {
+    const task = makeTask();
+    task.metadata = [{ type: "persistent_session", value: { enabled: true } }];
+    const catalog = new ModelCatalog(
+      openModelCatalogFile({
+        path: fileURLToPath(
+          new URL("../../../packages/model-catalog/data/model-catalog.yaml", import.meta.url),
+        ),
+      }),
+    );
+
+    const input = await buildPersistentDecisionInput(
+      { task, trigger: "arrival", now },
+      {
+        db: { readEvents: vi.fn(async () => []) } as unknown as Pick<SessionDB, "readEvents">,
+        modelCatalog: catalog,
+        providerUsage: {
+          fetchUsage: vi.fn(async () => ({ success: false })),
+        } as unknown as ProviderUsageCommandHandler,
+        logger: { warn: vi.fn() },
+      },
+    );
+
+    expect(input.fallback_models).toEqual(["codex-6.1-sol"]);
+    expect(input.preset_providers).toMatchObject({ "codex-6.1-sol": "codex" });
   });
 });

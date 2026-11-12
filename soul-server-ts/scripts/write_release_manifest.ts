@@ -27,6 +27,9 @@ const distRoot = resolve(
   optionValue(process.argv.slice(2), "--dist-root") ?? resolve(packageRoot, "dist"),
 );
 const runnerRoot = resolve(distRoot, "runner");
+// A portable bind records where the catalogue lives on the target; a repository
+// checkout leaves it absent so startup derives it from the entry module.
+const catalogPath = optionValue(process.argv.slice(2), "--catalog-path");
 const migrationManifestPath = resolve(repositoryRoot, "packages/db-schema/migration-manifest.json");
 const wireSchemaPath = resolve(repositoryRoot, "packages/wire-schema/src/upstream.schema.json");
 
@@ -73,6 +76,7 @@ const manifest = buildReleaseManifest({
     "codex",
     declaredExecutablePath(declaredEnv, "codex"),
   ),
+  ...(catalogPath ? { modelCatalogPath: resolve(catalogPath) } : {}),
 });
 
 await writeFile(resolve(distRoot, "release-manifest.json"), canonicalJson(

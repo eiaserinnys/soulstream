@@ -145,6 +145,7 @@ export class RunnerProcessSpawner {
       codeSha: input.codeSha,
       ...(input.releaseManifestId ? { releaseManifestId: input.releaseManifestId } : {}),
       ...(input.runtimeEnvIdentity ? { runtimeEnvIdentity: input.runtimeEnvIdentity } : {}),
+      ...(input.modelCatalogPath ? { modelCatalogPath: input.modelCatalogPath } : {}),
       snapshotPath: input.snapshotPath,
       codexAdapterMode: input.codexAdapterMode,
       ...(input.codexCliPath ? { codexCliPath: input.codexCliPath } : {}),

@@ -10,7 +10,7 @@ import { ClaudeCliCredentialRenewer } from "../claude_accounts/credential_renewa
 import type { AgentRegistry } from "../agent_registry.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionDeliveryRow } from "../db/session_db_types.js";
-import type { ModelCatalog } from "../model_catalog.js";
+import type { ModelCatalog, ModelCatalogConfig } from "../model_catalog.js";
 import { ClaudeSdkClient } from "../engine/claude_adapter.js";
 import { ClaudeDeliveryTranscriptReceiptReader } from
   "../engine/claude_delivery_transcript_receipt.js";
@@ -51,6 +51,8 @@ interface ComposeClaudeRuntimeParams {
   db: SessionDB;
   agentRegistry: AgentRegistry;
   modelCatalog: Pick<ModelCatalog, "resolve">;
+  /** Latest catalogue snapshot for turn pricing; resolved per terminal event. */
+  getModelCatalog?: () => ModelCatalogConfig;
   sessionStore: SessionStore;
   sourceNode: string;
   idleTtlMs: number;
@@ -152,6 +154,9 @@ export async function composeClaudeRuntime(
           detachedEventSink: (event) =>
             params.detachedEventSink(sessionId, event),
           persistentTurnInactivityTimeoutMs: params.turnInactivityTimeoutMs,
+          ...(params.getModelCatalog
+            ? { getModelCatalog: params.getModelCatalog }
+            : {}),
         },
         params.logger,
       ),
@@ -187,9 +192,16 @@ export function createClaudeAccountPoolRegistry(params: {
   idleTtlMs: number;
   maxEntries: number;
   logger: Logger;
+  getModelCatalog?: () => ModelCatalogConfig;
 }): ClaudeSessionClientRegistry {
   return new ClaudeSessionClientRegistry(
-    () => new ClaudeSdkClient({}, params.logger),
+    () =>
+      new ClaudeSdkClient(
+        params.getModelCatalog
+          ? { getModelCatalog: params.getModelCatalog }
+          : {},
+        params.logger,
+      ),
     {
       idleTtlMs: params.idleTtlMs,
       maxEntries: params.maxEntries,

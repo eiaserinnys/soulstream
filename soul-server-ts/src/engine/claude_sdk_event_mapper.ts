@@ -31,6 +31,10 @@ import {
   asString,
 } from "./claude_sdk_helpers.js";
 import { ClaudeRuntimeState } from "./claude_sdk_runtime_state.js";
+import type { ModelCatalogConfig } from "../model_catalog.js";
+
+/** Latest catalogue snapshot, read once per terminal result message. */
+export type ModelCatalogGetter = () => ModelCatalogConfig;
 
 export class ClaudeSdkEventMapper {
   private readonly runtimeState: ClaudeRuntimeState;
@@ -52,7 +56,10 @@ export class ClaudeSdkEventMapper {
   private turnFirstAssistantUuid: string | undefined;
   private turnLastAssistantUuid: string | undefined;
 
-  constructor(runtimeState: ClaudeRuntimeState) {
+  constructor(
+    runtimeState: ClaudeRuntimeState,
+    private readonly getModelCatalog?: ModelCatalogGetter,
+  ) {
     this.runtimeState = runtimeState;
   }
 
@@ -296,6 +303,7 @@ export class ClaudeSdkEventMapper {
       transcriptPath: this.transcriptPath,
       turnFirstAssistantUuid: this.turnFirstAssistantUuid,
       turnLastAssistantUuid: this.turnLastAssistantUuid,
+      ...(this.getModelCatalog ? { catalog: this.getModelCatalog() } : {}),
       withSdkMessageDedupe: (mappedEvents, mappedMessage) =>
         this.withSdkMessageDedupe(mappedEvents, mappedMessage),
     });

@@ -34,7 +34,10 @@ import type { EventPersistence } from "../db/event_persistence.js";
 import type { SessionDB } from "../db/session_db.js";
 import type { SessionMutationHost } from "../control_plane/persistence_host_clients.js";
 import type { SessionBroadcaster } from "../upstream/session_broadcaster.js";
-import { readStoredPersistentSettings } from "@soulstream/wire-schema/persistent-session-settings";
+import {
+  readStoredPersistentSettings,
+  type PersistentModelSelection,
+} from "@soulstream/wire-schema/persistent-session-settings";
 import type { ExecutionContextBuilder } from "../context/context_builder.js";
 import {
   createInProcessTaskRunnerRuntime,
@@ -321,7 +324,7 @@ export class TaskExecutor {
       | "recordAdmissionFailure"
       | "recordRuntimeFollowupRelationConsumed"
     >,
-    private readonly modelCatalog?: Pick<ModelCatalog, "resolve">,
+    private readonly modelCatalog?: Pick<ModelCatalog, "resolve" | "snapshot">,
     private readonly runnerProcessFactory?: RunnerProcessRuntimeFactory,
     transientEventLogAggregator?: TransientEventLogAggregator,
     private readonly queuedTerminalResume?: (task: Task) => void | Promise<void>,
@@ -724,7 +727,11 @@ export class TaskExecutor {
     await this.recordPersistentDecision(task, "arrival", decision);
     if (decision.action !== "new_generation" || !decision.target_preset) return;
 
-    const targetSelection = persistentSelectionForTarget(task, decision.target_preset);
+    const targetSelection = persistentSelectionForTarget(
+      task,
+      decision.target_preset,
+      this.modelCatalog?.snapshot().persistent_defaults.fallback_models ?? [],
+    );
     const reasoningEffort = targetSelection?.reasoning_effort;
     const existingPending = task.persistentGeneration?.pending;
     if (
@@ -824,7 +831,11 @@ export class TaskExecutor {
     await this.recordPersistentDecision(task, "limit_hit", decision);
 
     if (decision.action === "new_generation" && decision.target_preset) {
-      const targetSelection = persistentSelectionForTarget(task, decision.target_preset);
+      const targetSelection = persistentSelectionForTarget(
+        task,
+        decision.target_preset,
+        this.modelCatalog?.snapshot().persistent_defaults.fallback_models ?? [],
+      );
       const reasoningEffort = targetSelection?.reasoning_effort;
       await runtime.persistentSessions.requestGenerationRollover(task.agentSessionId, {
         modelPreset: decision.target_preset,
@@ -2494,8 +2505,12 @@ function hasUnappliedOrNonArrivalPendingGeneration(task: Task): boolean {
   return !pending.reason.startsWith("auto:arrival.");
 }
 
-function persistentSelectionForTarget(task: Task, targetPreset: string) {
-  const settings = readStoredPersistentSettings(task.metadata);
+function persistentSelectionForTarget(
+  task: Task,
+  targetPreset: string,
+  fallbackModelsDefault: readonly PersistentModelSelection[],
+) {
+  const settings = readStoredPersistentSettings(task.metadata, fallbackModelsDefault);
   if (settings?.default_model?.model_preset === targetPreset) return settings.default_model;
   return settings?.fallback_models.find((selection) => selection.model_preset === targetPreset);
 }

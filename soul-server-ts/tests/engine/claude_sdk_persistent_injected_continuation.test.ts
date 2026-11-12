@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import pino from "pino";
 import type { SDKMessage } from "@anthropic-ai/claude-agent-sdk";
 import { describe, expect, it, vi } from "vitest";
+import { parseModelCatalogYaml } from "@soulstream/model-catalog";
 
 import { ClaudeSdkClient } from "../../src/engine/claude_adapter.js";
 import type { ClaudeClientEvent } from "../../src/engine/claude_client_event.js";
@@ -17,6 +20,10 @@ import {
 } from "./claude_sdk_persistent_test_harness.js";
 
 const silentLogger = pino({ level: "silent" });
+const MODEL_CATALOG = parseModelCatalogYaml(readFileSync(
+  fileURLToPath(new URL("../../../packages/model-catalog/data/model-catalog.yaml", import.meta.url)),
+  "utf8",
+));
 
 /**
  * CLI 2.1.288 frame orders measured with the real CLI (SDK 0.3.218). A machine
@@ -28,7 +35,12 @@ const silentLogger = pino({ level: "silent" });
 function newClient() {
   const harness = makeHarness();
   const client = new ClaudeSdkClient(
-    { query: harness.queryFn, detachedEventSink: harness.detached, postResultDrainMs: 5 },
+    {
+      query: harness.queryFn,
+      detachedEventSink: harness.detached,
+      postResultDrainMs: 5,
+      getModelCatalog: () => MODEL_CATALOG,
+    },
     silentLogger,
   );
   return { harness, client };

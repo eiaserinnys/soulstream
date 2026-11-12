@@ -31,6 +31,8 @@ export interface ReleaseManifestBuildInput {
   deploymentEnvIdentity: string;
   claudeExecutable: ReleaseExecutableIdentity;
   codexExecutable: ReleaseExecutableIdentity;
+  /** Absolute catalogue path recorded at bind time, when bound portable. */
+  modelCatalogPath?: string;
 }
 
 export interface ReleaseManifestV1 {
@@ -53,6 +55,8 @@ export interface ReleaseManifestV1 {
     claude: ReleaseExecutableIdentity;
     codex: ReleaseExecutableIdentity;
   };
+  /** Absolute model catalogue path this release was bound with. */
+  model_catalog_path?: string;
 }
 
 export interface RuntimeCredentialDescriptor {
@@ -127,6 +131,9 @@ export function verifyReleaseManifest(
       throw new Error(`release manifest mismatch: ${axis}`);
     }
   }
+  if ((manifest.model_catalog_path ?? null) !== (expected.model_catalog_path ?? null)) {
+    throw new Error("release manifest mismatch: model_catalog_path");
+  }
 }
 
 function manifestBody(
@@ -152,6 +159,7 @@ function manifestBody(
       claude: input.claudeExecutable,
       codex: input.codexExecutable,
     },
+    ...(input.modelCatalogPath ? { model_catalog_path: input.modelCatalogPath } : {}),
   };
 }
 

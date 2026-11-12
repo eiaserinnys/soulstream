@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 import { ZodError } from "zod";
 
@@ -39,6 +39,8 @@ export const RELEASE_MANIFEST_FILE = "release-manifest.json";
 export interface BindPortableReleaseInput {
   readonly releaseDirectory: string;
   readonly envFile: string;
+  /** Absolute repo canonical catalogue path; recorded in the manifest when given. */
+  readonly catalogPath?: string;
 }
 
 export interface BindPortableReleaseResult {
@@ -69,6 +71,9 @@ export async function bindPortableRelease(
 
   const { declared, present } = await readDeclaredEnvDocument(resolve(input.envFile));
   const env = parseEnv({ ...process.env, ...declared });
+  if (input.catalogPath !== undefined && !isAbsolute(input.catalogPath)) {
+    throw new Error(`--catalog-path must be absolute: ${input.catalogPath}`);
+  }
   const runnerArtifactDirectory = join(releaseDirectory, PORTABLE_RUNNER_DIRECTORY);
   const runnerArtifactHash = await hashArtifactSet(runnerArtifactDirectory);
   const manifest = buildReleaseManifest({
@@ -90,6 +95,7 @@ export async function bindPortableRelease(
       "codex",
       declaredExecutablePath(declared, "codex"),
     ),
+    ...(input.catalogPath ? { modelCatalogPath: input.catalogPath } : {}),
   });
   const manifestPath = join(releaseDirectory, RELEASE_MANIFEST_FILE);
   await writeFileAtomically(

@@ -1,5 +1,10 @@
 import { readFile } from "node:fs/promises";
 
+import {
+  modelCatalogPathForRepository,
+  repositoryRootFromEntryUrl,
+} from "@soulstream/model-catalog/file-loader";
+
 import type { Env } from "../config.js";
 import { hashArtifactSet } from "../runner/runner_release_materializer.js";
 import {
@@ -54,20 +59,44 @@ export async function loadAndVerifyReleaseManifest(input: {
       "codex",
       declaredExecutablePath(input.declaredEnv, "codex"),
     ),
+    ...(manifest.model_catalog_path === undefined
+      ? {}
+      : { modelCatalogPath: manifest.model_catalog_path }),
   });
   return manifest;
+}
+
+/**
+ * Portable bind records the catalogue absolute path it was bound with; a
+ * repository checkout derives it from the entry module location.
+ */
+export function modelCatalogPathForStartup(
+  manifest: Pick<ReleaseManifestV1, "model_catalog_path">,
+  entryUrl: string,
+): string {
+  return manifest.model_catalog_path
+    ?? modelCatalogPathForRepository(repositoryRootFromEntryUrl(entryUrl));
 }
 
 export function parseReleaseManifest(value: unknown): ReleaseManifestV1 {
   if (!isRecord(value) || value.schema_version !== 1) {
     throw new Error("invalid ReleaseManifest v1");
   }
-  requireExactKeys(value, [
+  const allowedKeys = [
     "schema_version", "manifest_id", "release_cohort_id", "source_commit",
     "host_bundle_hash", "runner_release_id", "runner_artifact_hash",
     "schema_generation", "wire_generation", "node",
     "deployment_env_identity", "executables",
-  ], "ReleaseManifest v1");
+    ...(value.model_catalog_path === undefined ? [] : ["model_catalog_path"]),
+  ];
+  requireExactKeys(value, allowedKeys, "ReleaseManifest v1");
+  if (
+    value.model_catalog_path !== undefined
+    && (typeof value.model_catalog_path !== "string"
+      || value.model_catalog_path.length === 0)
+  ) {
+    throw new Error("invalid ReleaseManifest v1 field: model_catalog_path");
+  }
   for (const key of [
     "manifest_id",
     "release_cohort_id",

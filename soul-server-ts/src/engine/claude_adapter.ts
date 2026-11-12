@@ -7,6 +7,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 
 import type { ResolvedMcpServer } from "../mcp_config_service.js";
+import type { ModelCatalogConfig } from "../model_catalog.js";
 import { runnerProcessPaths } from "../runner/runner_process_paths.js";
 import type { RunnerIsolationChildConfig } from "../runner/runner_isolation_config.js";
 import { sseEventsFromRunnerFrames } from "../runner/engine_event_stream.js";
@@ -220,6 +221,8 @@ export interface ClaudeAdapterConfig {
   sessionDirectory?: string;
   /** 러너 상태 루트. sessionDirectory가 없을 때 세션 폴더를 역산한다. */
   stateDirectory?: string;
+  /** 최신 카탈로그 스냅샷. terminal 결과 하나당 한 번 읽는다. */
+  getModelCatalog?: () => ModelCatalogConfig;
 }
 
 export class ClaudeEngineAdapter
@@ -270,7 +273,10 @@ export class ClaudeEngineAdapter
     this.workspaceDir = config.workspaceDir;
     this.detachedClaudeRuntime = config.persistentSessionRegistry ? true : undefined;
     this.agentId = config.agentId;
-    this.client = config.client ?? new ClaudeSdkClient({}, logger);
+    this.client = config.client ?? new ClaudeSdkClient(
+      config.getModelCatalog ? { getModelCatalog: config.getModelCatalog } : {},
+      logger,
+    );
     this.processEnv = config.processEnv;
     this.sessionStore = config.sessionStore;
     this.sessionStoreFlush = config.sessionStoreFlush;

@@ -1,6 +1,7 @@
 import type { SSEEventPayload } from "../protocol.js";
 import { makeContextUsagePayload } from "../context_usage.js";
 import { antigravityTurnCostUsd } from "../list_price.js";
+import type { ModelCatalogConfig } from "../../model_catalog.js";
 import { ANTIGRAVITY_QUOTA_ERROR_CODE } from "../usage_limit_stop.js";
 import { splitAntigravityGatewayToolName } from "./mcp_gateway.js";
 
@@ -68,7 +69,12 @@ export class AntigravityEventMapper {
   firstCall: AntigravityFirstCall | null = null;
   private lastContextTokens = 0;
 
-  constructor(private readonly turnId: string, private readonly resuming = false, private readonly gatewayServerName?: string) {}
+  constructor(
+    private readonly turnId: string,
+    private readonly resuming = false,
+    private readonly gatewayServerName?: string,
+    private readonly getModelCatalog?: () => ModelCatalogConfig,
+  ) {}
 
   accept(raw: AntigravityEvent): SSEEventPayload[] {
     const timestamp = Date.now() / 1000;
@@ -150,10 +156,12 @@ export class AntigravityEventMapper {
       ...(this.model !== undefined ? { model: this.model } : {}),
     };
     const usage = this.usage !== undefined ? { usage: this.usage } : {};
+    const catalog = this.getModelCatalog?.();
+    const turnCostUsd = this.usage !== undefined && catalog
+      ? antigravityTurnCostUsd(catalog, this.usage, this.model)
+      : undefined;
     const billing = {
-      ...(this.usage !== undefined && antigravityTurnCostUsd(this.usage, this.model) !== undefined
-        ? { turn_cost_usd: antigravityTurnCostUsd(this.usage, this.model) }
-        : {}),
+      ...(turnCostUsd !== undefined ? { turn_cost_usd: turnCostUsd } : {}),
       ...(this.firstCall !== null ? { first_call: this.firstCall } : {}),
     };
     const contextUsage = this.lastContextTokens > 0

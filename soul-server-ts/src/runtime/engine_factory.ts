@@ -16,6 +16,7 @@ import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
 import type { McpConfigService } from "../mcp_config_service.js";
 import { localInternalMcpUrl } from "../mcp/endpoint_paths.js";
 import type { EngineFactory } from "../task/task_executor.js";
+import type { ModelCatalogConfig } from "../model_catalog.js";
 
 type EngineFactoryEnv = Pick<
   Env,
@@ -45,6 +46,8 @@ export interface CreateEngineFactoryParams {
   claudeSessionClientRegistry?: ClaudeSessionClientRegistry;
   claudeAccountTurnPort?: ClaudeAccountTurnPort;
   mcpConfigService: McpConfigService;
+  /** Latest catalogue snapshot; adapters resolve it once per terminal event. */
+  getModelCatalog: () => ModelCatalogConfig;
 }
 
 export function createEngineFactory(params: CreateEngineFactoryParams): EngineFactory {
@@ -60,6 +63,7 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
     claudeSessionClientRegistry,
     claudeAccountTurnPort,
     mcpConfigService,
+    getModelCatalog,
   } = params;
 
   return (agent, backendOverride) => {
@@ -73,6 +77,7 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
         processEnv: antigravityProcessEnv,
         resolvedMcpServers: mcpConfigService.resolveMcpProfile(agent)?.mcp_servers,
         internalMcpUrl: localInternalMcpUrl(env.MCP_INTERNAL_PORT, env.MCP_PATH),
+        getModelCatalog,
       }, logger);
     }
     if (backend === "opencode") {
@@ -104,6 +109,7 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
               env.MCP_INTERNAL_PORT,
               env.MCP_PATH,
             ),
+            getModelCatalog,
             ...(resolvedMcpServers !== undefined
               ? { resolvedMcpServers }
               : {}),
@@ -145,6 +151,7 @@ export function createEngineFactory(params: CreateEngineFactoryParams): EngineFa
           claudeAccountPoolEnabled: env.CLAUDE_ACCOUNT_POOL_ENABLED,
           ...(claudeAccountTurnPort ? { claudeAccountTurnPort } : {}),
           internalMcpUrl: localInternalMcpUrl(env.MCP_INTERNAL_PORT, env.MCP_PATH),
+          getModelCatalog,
           ...(resolvedMcpServers !== undefined
             ? { resolvedMcpServers }
             : {}),

@@ -8,7 +8,7 @@ import {
   type PersistentSettingsPatch,
   type StoredPersistentSettings,
 } from "@soulstream/wire-schema/persistent-session-settings";
-import { DEFAULT_MODEL_CATALOG, resolveModelPreset } from "@soulstream/model-catalog";
+import { resolveModelPreset } from "@soulstream/model-catalog";
 import { SESSION_MODEL_FALLBACK_REASON } from "@soulstream/wire-schema/model-preset-fallbacks";
 
 import type { EventPersistence } from "../db/event_persistence.js";
@@ -36,7 +36,7 @@ export interface PersistentSessionControlDeps {
   rememberTask(task: Task): void;
   persistence?: EventPersistence;
   logger?: Pick<Logger, "warn">;
-  modelCatalog?: Pick<ModelCatalog, "resolve">;
+  modelCatalog?: Pick<ModelCatalog, "resolve" | "snapshot">;
   resolveCurrentBackend?(task: Task): string | undefined;
 }
 
@@ -178,13 +178,19 @@ export class PersistentSessionControl {
     return { sessionId, persistent: true, modelChange: "next_execution_start" };
   }
 
+  /** Fallback defaults live in catalogue data; old metadata reads them too. */
+  private catalogFallbackDefaults(): readonly PersistentModelSelection[] {
+    return this.deps.modelCatalog?.snapshot().persistent_defaults.fallback_models ?? [];
+  }
+
   private mergeSettings(task: Task, input: ApplyPersistentSettingsInput): PersistentSessionSettings {
     const patch = input.settings ?? {};
-    const stored = readStoredPersistentSettings(task.metadata);
+    const fallbackDefaults = this.catalogFallbackDefaults();
+    const stored = readStoredPersistentSettings(task.metadata, fallbackDefaults);
     const base: StoredPersistentSettings = stored ?? {
       default_model: currentModelOf(task),
       fallback_models: input.enabled === true
-        ? PERSISTENT_SETTINGS_DEFAULTS.fallback_models.map((model) => ({ ...model }))
+        ? fallbackDefaults.map((model) => ({ ...model }))
         : [],
       show_generation_separator: PERSISTENT_SETTINGS_DEFAULTS.show_generation_separator,
       show_character: PERSISTENT_SETTINGS_DEFAULTS.show_character,
@@ -235,8 +241,16 @@ export class PersistentSessionControl {
       if (localPreset) {
         preset = localPreset;
       } else {
+        if (!this.deps.modelCatalog) {
+          throw new Error(`Model catalog is not configured; cannot resolve preset: ${selection.model_preset}`);
+        }
         try {
-          preset = resolveModelPreset(DEFAULT_MODEL_CATALOG, selection.model_preset);
+          // Remote targets may run a preset this node's group filter hides, so
+          // validation reads the unfiltered snapshot rather than the node view.
+          preset = resolveModelPreset(
+            this.deps.modelCatalog.snapshot(),
+            selection.model_preset,
+          );
         } catch (error) {
           if (error instanceof UnknownModelPresetError) {
             throw new PersistentSessionControlError("INVALID_MODEL_PRESET", error.message);

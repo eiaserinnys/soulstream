@@ -2,6 +2,7 @@
 import {randomUUID} from 'node:crypto';
 import {readFile} from 'node:fs/promises';
 import pino from 'pino';
+import {openModelCatalogFile} from '@soulstream/model-catalog/file-loader';
 import {ModelCatalog} from '../src/model_catalog.js';
 import {DecisionExecutor} from '../src/card-orchestration/decision_executor.js';
 import {readDecisionCredential} from '../src/card-orchestration/runtime_composition.js';
@@ -9,14 +10,14 @@ import {resolveClaudeExecutableFromPath} from '../src/engine/claude_executable_p
 import {OrchestrationDecisionSchema,parseOrchestrationDecision} from '@soulstream/wire-schema/card-orchestration';
 const args=process.argv.slice(2);
 if(args.includes('--help')){
- console.log('tsx scripts/card-decision-smoke.ts --live --catalog <worker model-catalog.yaml> --preset <claude-opus|codex-6-astra> [--instructions-file <trusted compiled atom text>]');
+ console.log('tsx scripts/card-decision-smoke.ts --live --catalog <absolute repo model-catalog.yaml> --preset <claude-opus|codex-6-astra> [--instructions-file <trusted compiled atom text>]');
  console.log('Use the worker service environment. This command sends one empty-snapshot inference through the dedicated executor; it never activates or dispatches the queue.');
 }else{
  if(!args.includes('--live'))throw new Error('Explicit --live is required for a real provider call');
  const option=(name:string)=>{const i=args.indexOf(name);return i>=0?args[i+1]:undefined;};
  const catalogPath=option('--catalog'),presetId=option('--preset');
  if(!catalogPath||!presetId)throw new Error('Explicit --catalog and --preset are required');
- const preset=new ModelCatalog(catalogPath,pino({level:'silent'})).resolve(presetId);
+ const preset=new ModelCatalog(openModelCatalogFile({path:catalogPath,logger:pino({level:'silent'})}),{}).resolve(presetId);
  if(preset.backend!=='claude'&&preset.backend!=='codex')throw new Error('Only dedicated Claude/Codex executors are supported');
  const timeoutMs=Number(process.env.CARD_DECISION_TIMEOUT_MS??300000);
  if(!Number.isSafeInteger(timeoutMs)||timeoutMs<=0)throw new Error('Invalid CARD_DECISION_TIMEOUT_MS');

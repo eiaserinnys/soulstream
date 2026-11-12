@@ -43,7 +43,6 @@ export interface PresetDecisionConfig {
 }
 
 export interface PersistentDecisionConfig {
-  presets: Record<string, PresetDecisionConfig>;
   provider_defaults: Record<Provider, PresetDecisionConfig>;
   budget_tokens: number;
   cold_ratio: number;
@@ -454,8 +453,7 @@ function presetConfigFor(
   config: PersistentDecisionConfig,
   preset: string,
 ): PresetDecisionConfig {
-  return config.presets[preset]
-    ?? config.provider_defaults[input.preset_providers[preset]!];
+  return config.provider_defaults[input.preset_providers[preset]!];
 }
 
 function accountForPreset(

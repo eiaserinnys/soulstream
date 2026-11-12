@@ -23,12 +23,17 @@ import {
   ANTHROPIC_API_KEY_ENV,
   resolveModelPresetEnv,
 } from "../model_preset_env.js";
+import {
+  findModelProvider,
+  resolvePresetProvider,
+  type ModelCatalogConfig,
+} from "@soulstream/model-catalog";
 
+import type { ModelCatalog } from "../model_catalog.js";
 import type { Task } from "./task_models.js";
 import {
   effectiveTaskBackend,
   resolveOpenCodeMcpToolAllowlist,
-  type ModelPresetResolver,
 } from "./task_model_preset.js";
 import { resolveTurnReasoningEffort } from "./session_effort_storage.js";
 
@@ -47,7 +52,7 @@ export interface TaskEngineTurnInput {
 export interface TaskEngineTurnRunnerDeps {
   snapshotPersistence: TaskAgentsSnapshotPersistencePort;
   scheduleToolHandler?: ScheduleToolUseHandler;
-  modelCatalog?: ModelPresetResolver;
+  modelCatalog?: Pick<ModelCatalog, "resolve" | "snapshot">;
   claudeAccountPoolEnabled?: boolean;
 }
 
@@ -63,20 +68,28 @@ export interface TaskEngineTurnRunnerParams {
   input: TaskEngineTurnInput;
 }
 
+/**
+ * Usage attribution comes from catalogue data first: the recorded preset, then
+ * the runtime model string (preset model or model-row alias). Backend family
+ * rules only cover strings the catalogue does not know.
+ */
 function usageProviderForExecution(
   backend: AgentProfile["backend"],
   model: string | null,
+  presetId: string | null | undefined,
+  catalog: ModelCatalogConfig | undefined,
 ): UsageStatsProvider {
+  if (catalog && presetId) {
+    const preset = catalog.presets.find((candidate) => candidate.id === presetId);
+    if (preset) return resolvePresetProvider(preset);
+  }
+  if (catalog && model) {
+    const provider = findModelProvider(catalog, model);
+    if (provider !== undefined) return provider;
+  }
   if (backend === "codex") return "codex";
   if (backend === "antigravity") return "antigravity";
-  if (backend === "claude") {
-    if (model === "kimi-for-coding" || model === "k3") return "kimi";
-    if (model === "deepseek-v4.1-flash") return "deepseek";
-    if (model?.startsWith("claude-")) return "claude";
-  }
-  if (backend === "opencode" && model === "opencode/deepseek-v4.1-flash-free") {
-    return "deepseek";
-  }
+  if (backend === "claude" && model?.startsWith("claude-")) return "claude";
   return "unknown";
 }
 
@@ -144,7 +157,12 @@ export class TaskEngineTurnRunner {
     );
     const effectiveModel = task.model ?? agent.model;
     const backend = effectiveTaskBackend(task, agent);
-    const provider = usageProviderForExecution(backend, effectiveModel ?? null);
+    const provider = usageProviderForExecution(
+      backend,
+      effectiveModel ?? null,
+      task.modelPreset,
+      this.deps.modelCatalog?.snapshot(),
+    );
     const opencodeMcpToolAllowlist = resolveOpenCodeMcpToolAllowlist(
       task,
       agent,

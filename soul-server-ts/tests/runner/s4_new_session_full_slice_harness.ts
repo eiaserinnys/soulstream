@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { openModelCatalogFile } from "@soulstream/model-catalog/file-loader";
 import pino from "pino";
 
 import {
@@ -18,6 +19,12 @@ import {
 import { loadAgentRegistry } from "../../src/agent_registry.js";
 import { parseEnv } from "../../src/config.js";
 import { McpConfigService } from "../../src/mcp_config_service.js";
+import {
+  ModelCatalog,
+  assertCatalogDefaultsDeliverable,
+  nodeEffortCapabilities,
+  parseModelCatalogGroups,
+} from "../../src/model_catalog.js";
 import { ReleaseActivationState } from "../../src/release/release_activation_state.js";
 import { buildReleaseManifest } from "../../src/release/release_manifest.js";
 import { hashArtifactSet } from "../../src/runner/runner_release_materializer.js";
@@ -88,7 +95,6 @@ export class ProductionFullSliceHarness {
     private readonly releasesDirectory: string,
     private readonly outboxDirectory: string,
     private readonly agentsConfigPath: string,
-    private readonly modelCatalogPath: string,
   ) {}
 
   static async create(
@@ -105,7 +111,6 @@ export class ProductionFullSliceHarness {
     const releasesDirectory = join(root, "runner-releases");
     const outboxDirectory = join(root, "event-outbox");
     const agentsConfigPath = join(root, "agents.yaml");
-    const modelCatalogPath = join(root, "model-catalog.yaml");
     await Promise.all([
       mkdir(controlDirectory, { recursive: true }),
       mkdir(artifactDirectory, { recursive: true }),
@@ -134,7 +139,6 @@ export class ProductionFullSliceHarness {
         "",
       ].join("\n"),
     );
-    await writeFile(modelCatalogPath, "presets: []\n");
     const harness = new ProductionFullSliceHarness(
       postgres,
       scenario,
@@ -146,7 +150,6 @@ export class ProductionFullSliceHarness {
       releasesDirectory,
       outboxDirectory,
       agentsConfigPath,
-      modelCatalogPath,
     );
     pendingTestCleanup.add(harness);
     return harness;
@@ -474,7 +477,6 @@ export class ProductionFullSliceHarness {
           SOUL_RUNNER_RELEASES_DIR: this.releasesDirectory,
           AGENTS_CONFIG_PATH: this.agentsConfigPath,
           AGENT_PROFILE_CACHE_PATH: join(this.root, "agent-profile-cache.json"),
-          MODEL_CATALOG_PATH: this.modelCatalogPath,
           INCOMING_FILE_DIR: join(this.root, "incoming"),
           MCP_ENABLED: "false",
           MCP_EXTERNAL_INGRESS_ENABLED: "false",
@@ -1084,6 +1086,23 @@ async function runWorkerChild(): Promise<void> {
     requireString(process.env.RUNNER_E2E_CONTROL_DIR, "RUNNER_E2E_CONTROL_DIR"),
     `worker-recovery-ready-${process.pid}`,
   );
+  const effortCapabilities = nodeEffortCapabilities(env.CODEX_ADAPTER_MODE);
+  const modelCatalogPath = fileURLToPath(
+    new URL("../../../packages/model-catalog/data/model-catalog.yaml", import.meta.url),
+  );
+  const modelCatalogStore = openModelCatalogFile({
+    path: modelCatalogPath,
+    logger: workerLogger,
+    validate: (catalog) => assertCatalogDefaultsDeliverable(catalog, effortCapabilities),
+  });
+  const modelCatalog = new ModelCatalog(modelCatalogStore, {
+    logger: workerLogger,
+    effortCapabilities,
+    enabledGroups: parseModelCatalogGroups(
+      env.MODEL_CATALOG_GROUPS,
+      modelCatalogStore.snapshot(),
+    ),
+  });
   await startWorkerRuntime({
     compose: async () => await composeWorkerRuntime({
       env,
@@ -1091,6 +1110,9 @@ async function runWorkerChild(): Promise<void> {
       agentRegistry,
       mcpConfigService,
       releaseActivationState,
+      modelCatalog,
+      modelCatalogStore,
+      modelCatalogPath,
     }),
     listen: async (runtime) => {
       await startServer(runtime.server, env.HOST, env.PORT);

@@ -1,8 +1,10 @@
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import type { SessionStore } from "@anthropic-ai/claude-agent-sdk";
+import { parseModelCatalogYaml } from "@soulstream/model-catalog";
 import pino from "pino";
 import { describe, expect, it } from "vitest";
 
@@ -13,6 +15,11 @@ import { createEngineFactory } from "../../src/runtime/engine_factory.js";
 import { makeTempDirSync } from "../helpers/temp_dir.js";
 
 const logger = pino({ level: "silent" });
+const MODEL_CATALOG = parseModelCatalogYaml(readFileSync(
+  fileURLToPath(new URL("../../../packages/model-catalog/data/model-catalog.yaml", import.meta.url)),
+  "utf-8",
+));
+const getModelCatalog = () => MODEL_CATALOG;
 const sessionStore: SessionStore = {
   async append() {},
   async load() {
@@ -36,6 +43,7 @@ describe("createEngineFactory", () => {
     const factory = createEngineFactory({
       env: factoryEnv,
       logger,
+      getModelCatalog,
       codexProcessEnv: {},
       antigravityProcessEnv: {},
       buildClaudeProcessEnv: () => ({}),
@@ -77,6 +85,7 @@ describe("createEngineFactory", () => {
     const factory = createEngineFactory({
       env: factoryEnv,
       logger,
+      getModelCatalog,
       codexProcessEnv: {},
       antigravityProcessEnv: {},
       buildClaudeProcessEnv: () => ({}),
@@ -116,6 +125,7 @@ describe("createEngineFactory", () => {
     const factory = createEngineFactory({
       env: { ...factoryEnv, CLAUDE_ACCOUNT_POOL_ENABLED: true },
       logger,
+      getModelCatalog,
       codexProcessEnv: {},
       antigravityProcessEnv: {},
       buildClaudeProcessEnv: () => ({}),
@@ -150,6 +160,7 @@ describe("createEngineFactory", () => {
     const factory = createEngineFactory({
       env: factoryEnv,
       logger,
+      getModelCatalog,
       codexProcessEnv: {},
       antigravityProcessEnv: {},
       buildClaudeProcessEnv: () => ({}),

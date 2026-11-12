@@ -1,10 +1,13 @@
 import {
-  LIST_PRICES,
+  findModelRow,
+  type ModelCatalogConfig,
+} from "@soulstream/model-catalog";
+import {
   normalizePricedModelId,
   priceInferenceUsage,
 } from "@soulstream/model-catalog/inference-pricing";
 
-export { LIST_PRICES, normalizePricedModelId, priceInferenceUsage };
+export { normalizePricedModelId, priceInferenceUsage };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -19,7 +22,11 @@ function legacyCostUsd(result: ReturnType<typeof priceInferenceUsage>): number |
   return Math.round(result.known_cost_usd * 1_000_000) / 1_000_000;
 }
 
-export function claudeTurnCostUsd(usage: unknown, model: string | null | undefined): number | undefined {
+export function claudeTurnCostUsd(
+  catalog: ModelCatalogConfig,
+  usage: unknown,
+  model: string | null | undefined,
+): number | undefined {
   if (!isRecord(usage)) return undefined;
 
   const input = finiteNumber(usage.input_tokens);
@@ -34,15 +41,13 @@ export function claudeTurnCostUsd(usage: unknown, model: string | null | undefin
   const cacheWriteTotal = cacheCreatedTotal ?? cacheWrite5m + cacheWrite1h;
   const cacheWriteUnknown = cacheWriteTotal - cacheWrite5m - cacheWrite1h;
 
-  const normalizedModel = typeof model === "string" ? model.trim().toLowerCase() : undefined;
-  if (
-    normalizedModel !== undefined
-    && (normalizedModel.startsWith("deepseek-")
-      || normalizedModel.startsWith("opencode/deepseek-"))
-  ) {
+  const catalogProvider = typeof model === "string"
+    ? findModelRow(catalog, model)?.provider
+    : undefined;
+  if (catalogProvider === "deepseek") {
     // Claude Code can drive a DeepSeek-compatible endpoint; its usage arrives in
     // Anthropic shape but must be priced with DeepSeek rates.
-    const deepseekResult = priceInferenceUsage({
+    const deepseekResult = priceInferenceUsage(catalog, {
       provider: "deepseek",
       model: model ?? null,
       input_total: input + cacheRead + cacheWriteTotal,
@@ -55,7 +60,7 @@ export function claudeTurnCostUsd(usage: unknown, model: string | null | undefin
     return legacyCostUsd(deepseekResult);
   }
 
-  const result = priceInferenceUsage({
+  const result = priceInferenceUsage(catalog, {
     provider: "claude",
     model: model ?? null,
     input_total: input + cacheRead + cacheWriteTotal,
@@ -73,13 +78,17 @@ export function claudeTurnCostUsd(usage: unknown, model: string | null | undefin
  * `input_tokens` already includes cache reads and `reasoning_output_tokens` holds
  * thinking tokens, which Gemini prices as output.
  */
-export function antigravityTurnCostUsd(usage: unknown, model: unknown): number | undefined {
+export function antigravityTurnCostUsd(
+  catalog: ModelCatalogConfig,
+  usage: unknown,
+  model: unknown,
+): number | undefined {
   if (!isRecord(usage)) return undefined;
   const inputTotal = nonNegativeNumber(usage.input_tokens) ?? 0;
   const cachedInput = nonNegativeNumber(usage.cached_input_tokens) ?? 0;
   const outputTotal = (nonNegativeNumber(usage.output_tokens) ?? 0)
     + (nonNegativeNumber(usage.reasoning_output_tokens) ?? 0);
-  const result = priceInferenceUsage({
+  const result = priceInferenceUsage(catalog, {
     provider: "antigravity",
     model: typeof model === "string" ? model : null,
     input_total: inputTotal,
@@ -98,6 +107,7 @@ function nonNegativeNumber(value: unknown): number | undefined {
 }
 
 export function codexTurnCostUsd(
+  catalog: ModelCatalogConfig,
   usage: { input_tokens: number; cached_input_tokens: number; output_tokens: number },
   model: string | null | undefined,
 ): number | undefined {
@@ -106,7 +116,7 @@ export function codexTurnCostUsd(
   const output = finiteNumber(usage.output_tokens);
   if (input === undefined || cached === undefined || output === undefined) return undefined;
 
-  const result = priceInferenceUsage({
+  const result = priceInferenceUsage(catalog, {
     provider: "codex",
     model: model ?? null,
     input_total: input,

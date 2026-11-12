@@ -32,6 +32,8 @@ import type { EngineExecuteParams, EnginePort, SSEEventPayload } from "../engine
 import type { RunnerChildConfig } from "./runner_process_spawn.js";
 import { SessionIsolationUnavailableError } from "./session_filesystem_errors.js";
 import type { RunnerHostRequestClient } from "./runner_host_request_client.js";
+import { openModelCatalogFile } from "@soulstream/model-catalog/file-loader";
+import type { ModelCatalogConfig } from "@soulstream/model-catalog";
 import {
   applyRunnerClaudeRuntimeObservationResult,
 } from "./runner_claude_runtime_observation.js";
@@ -52,11 +54,27 @@ export function createRunnerChildEngine(
     : engine;
 }
 
+/**
+ * The host supplies this absolute path; the runner never derives it from its
+ * own artifact location. No polling: terminal pricing reads `snapshot()`,
+ * which re-reads whenever the file signature changed.
+ */
+export function runnerChildModelCatalogGetter(
+  config: Pick<RunnerChildConfig, "modelCatalogPath">,
+  logger: Logger,
+): (() => ModelCatalogConfig) | undefined {
+  const catalogStore = config.modelCatalogPath
+    ? openModelCatalogFile({ path: config.modelCatalogPath, logger })
+    : undefined;
+  return catalogStore ? () => catalogStore.snapshot() : undefined;
+}
+
 function createRunnerChildEnginePort(
   config: RunnerChildConfig,
   host: RunnerHostRequestClient,
   logger: Logger,
 ): EnginePort {
+  const getModelCatalog = runnerChildModelCatalogGetter(config, logger);
   if (config.backend === "antigravity") {
     return new AntigravityEngineAdapter({
       workspaceDir: config.agent.workspace_dir,
@@ -66,6 +84,7 @@ function createRunnerChildEnginePort(
       processEnv: process.env,
       resolvedMcpServers: config.resolvedMcpServers,
       internalMcpUrl: config.internalMcpUrl,
+      ...(getModelCatalog ? { getModelCatalog } : {}),
     }, logger);
   }
   if (config.backend === "opencode") {
@@ -99,6 +118,7 @@ function createRunnerChildEnginePort(
         ...(config.resolvedMcpServers
           ? { resolvedMcpServers: config.resolvedMcpServers }
           : {}),
+        ...(getModelCatalog ? { getModelCatalog } : {}),
         ...(config.isolation ? { isolation: config.isolation } : {}),
       }, logger);
     }
@@ -168,6 +188,7 @@ function createRunnerChildEnginePort(
               }
             : {}),
           persistentTurnInactivityTimeoutMs: config.claudeRuntimeTurnTimeoutMs,
+          ...(getModelCatalog ? { getModelCatalog } : {}),
         }, logger),
         {
           idleTtlMs: config.claudeRuntimeIdleTtlMs,
@@ -210,6 +231,7 @@ function createRunnerChildEnginePort(
       ? { resolvedMcpServers: config.resolvedMcpServers }
       : {}),
     ...(registry ? { persistentSessionRegistry: registry } : {}),
+    ...(getModelCatalog ? { getModelCatalog } : {}),
     ...(config.isolation ? { isolation: config.isolation } : {}),
   }, logger);
 }

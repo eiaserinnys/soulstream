@@ -4,10 +4,14 @@ import { join } from "node:path";
 
 import { describe, expect, it } from "vitest";
 
+import { openModelCatalogFile } from "@soulstream/model-catalog/file-loader";
+
 import {
   ModelCatalog,
   UnknownModelPresetError,
+  assertCatalogDefaultsDeliverable,
   nodeEffortCapabilities,
+  type ModelCatalogOptions,
 } from "../../src/model_catalog.js";
 import {
   UnsupportedReasoningEffortError,
@@ -132,18 +136,49 @@ describe("adapter boundary narrowing", () => {
 });
 
 describe("model catalog effort advertisement", () => {
-  function catalogFrom(yaml: string): ModelCatalog {
+  function catalogYaml(presets: string): string {
+    const firstId = /- id: (\S+)/.exec(presets)?.[1] ?? "missing";
+    return `schema_version: 1
+groups: []
+presets:
+${presets}
+models: []
+price_snapshot:
+  price_version: test-v1
+  as_of: "2026-10-19"
+  checked_at: "2026-10-19"
+  currency: USD
+  unit: per_1m_tokens
+  model_mapping_version: exact-provider-model-v1
+  refreshed_model_rows: {}
+  sources: {}
+  assumptions: []
+persistent_defaults:
+  model_preset: ${firstId}
+  fallback_models: []
+`;
+  }
+
+  function openCatalog(path: string, options: ModelCatalogOptions = {}): ModelCatalog {
+    const store = openModelCatalogFile({
+      path,
+      ...(options.logger ? { logger: options.logger } : {}),
+      validate: (catalog) => assertCatalogDefaultsDeliverable(catalog, options.effortCapabilities),
+    });
+    return new ModelCatalog(store, options);
+  }
+
+  function catalogFrom(presets: string, options: ModelCatalogOptions = {}): ModelCatalog {
     const path = join(
       mkdtempSync(join(tmpdir(), "effort-catalog-")),
       "model-catalog.yaml",
     );
-    writeFileSync(path, yaml, "utf-8");
-    return new ModelCatalog(path);
+    writeFileSync(path, catalogYaml(presets), "utf-8");
+    return openCatalog(path, options);
   }
 
   it("advertises both effort fields", () => {
-    const catalog = catalogFrom(`presets:
-  - id: claude-opus
+    const catalog = catalogFrom(`  - id: claude-opus
     label: Claude - Opus
     backend: claude
     model: opus
@@ -162,8 +197,7 @@ describe("model catalog effort advertisement", () => {
   });
 
   it("loads a preset with neither field (auto / backend default)", () => {
-    const catalog = catalogFrom(`presets:
-  - id: kimi-3
+    const catalog = catalogFrom(`  - id: kimi-3
     label: Kimi - 3
     backend: claude
     model: k3
@@ -176,23 +210,23 @@ describe("model catalog effort advertisement", () => {
   it("narrows advertised efforts to what the active transport can carry", () => {
     // The SDK transport can express max but not ultra. Advertisement must stay
     // narrower than the app-server path when a preset advertises both.
-    const yaml = `presets:
-  - id: codex-5.6-sol
+    const presets = `  - id: codex-5.6-sol
     label: Codex - 5.6 Sol
     backend: codex
     model: gpt-5.6-sol
     supported_efforts: [low, medium, high, xhigh, max, ultra]
     default_effort: xhigh
 `;
-    const path = join(mkdtempSync(join(tmpdir(), "effort-transport-")), "c.yaml");
-    writeFileSync(path, yaml, "utf-8");
-
-    const appServer = new ModelCatalog(path, undefined, nodeEffortCapabilities("app-server"));
+    const appServer = catalogFrom(presets, {
+      effortCapabilities: nodeEffortCapabilities("app-server"),
+    });
     expect(appServer.advertise({})[0]?.supported_efforts).toEqual([
       "low", "medium", "high", "xhigh", "max", "ultra",
     ]);
 
-    const legacySdk = new ModelCatalog(path, undefined, nodeEffortCapabilities("sdk"));
+    const legacySdk = catalogFrom(presets, {
+      effortCapabilities: nodeEffortCapabilities("sdk"),
+    });
     expect(legacySdk.advertise({})[0]?.supported_efforts).toEqual([
       "low", "medium", "high", "xhigh", "max",
     ]);
@@ -214,17 +248,13 @@ describe("model catalog effort advertisement", () => {
   });
 
   it("rejects max when the selected model preset does not advertise it", () => {
-    const yaml = `presets:
-  - id: codex-basic
+    const catalog = catalogFrom(`  - id: codex-basic
     label: Codex Basic
     backend: codex
     model: gpt-5.6-sol
     supported_efforts: [low, medium, high, xhigh]
     default_effort: xhigh
-`;
-    const path = join(mkdtempSync(join(tmpdir(), "effort-no-max-")), "c.yaml");
-    writeFileSync(path, yaml, "utf-8");
-    const catalog = new ModelCatalog(path, undefined, nodeEffortCapabilities("sdk"));
+`, { effortCapabilities: nodeEffortCapabilities("sdk") });
 
     expect(() => resolveReasoningEffortForCreate(
       catalog.resolve("codex-basic"),
@@ -233,23 +263,24 @@ describe("model catalog effort advertisement", () => {
   });
 
   it("treats a default the transport cannot deliver as a configuration error", () => {
-    const yaml = `presets:
-  - id: p
+    const path = join(mkdtempSync(join(tmpdir(), "effort-transport2-")), "c.yaml");
+    writeFileSync(path, catalogYaml(`  - id: p
     label: P
     backend: codex
     model: gpt-5.6-sol
     supported_efforts: [xhigh, ultra]
     default_effort: ultra
-`;
-    const path = join(mkdtempSync(join(tmpdir(), "effort-transport2-")), "c.yaml");
-    writeFileSync(path, yaml, "utf-8");
-    const legacySdk = new ModelCatalog(path, undefined, nodeEffortCapabilities("sdk"));
+`), "utf-8");
     // Neither clamped to xhigh nor quietly dropped to "backend default": the
-    // file asks for something this node cannot do, and says so.
-    expect(() => legacySdk.advertise({})).toThrow(/default_effort/);
+    // file asks for something this node cannot do, and the startup load fails.
+    expect(() => openCatalog(path, {
+      effortCapabilities: nodeEffortCapabilities("sdk"),
+    })).toThrow(/default_effort/);
 
-    // The same file is fine on a transport that can carry `max`.
-    const appServer = new ModelCatalog(path, undefined, nodeEffortCapabilities("app-server"));
+    // The same file is fine on a transport that can carry `ultra`.
+    const appServer = openCatalog(path, {
+      effortCapabilities: nodeEffortCapabilities("app-server"),
+    });
     expect(appServer.advertise({})[0]?.default_effort).toBe("ultra");
   });
 
@@ -258,17 +289,19 @@ describe("model catalog effort advertisement", () => {
     // edit must not take a running node dark (registration and every session
     // creation read this list), it must fall back like any malformed file.
     const path = join(mkdtempSync(join(tmpdir(), "effort-transport3-")), "c.yaml");
-    const good = `presets:
-  - id: p
+    const good = catalogYaml(`  - id: p
     label: P
     backend: codex
     model: gpt-5.6-sol
     supported_efforts: [xhigh]
     default_effort: xhigh
-`;
+`);
     writeFileSync(path, good, "utf-8");
     const logger = { error: () => {}, warn: () => {} };
-    const catalog = new ModelCatalog(path, logger, nodeEffortCapabilities("sdk"));
+    const catalog = openCatalog(path, {
+      logger,
+      effortCapabilities: nodeEffortCapabilities("sdk"),
+    });
     expect(catalog.list()[0]?.default_effort).toBe("xhigh");
 
     writeFileSync(path, good.replace("default_effort: xhigh", "default_effort: ultra")
@@ -277,25 +310,21 @@ describe("model catalog effort advertisement", () => {
   });
 
   it("fails fast when default_effort is not in supported_efforts", () => {
-    const catalog = catalogFrom(`presets:
-  - id: bad
+    expect(() => catalogFrom(`  - id: bad
     label: Bad
     backend: codex
     model: gpt-5.6-sol
     supported_efforts: [low, medium]
     default_effort: xhigh
-`);
-    expect(() => catalog.list()).toThrow(/default_effort/);
+`)).toThrow(/default_effort/);
   });
 
   it("fails fast when default_effort has no supported_efforts", () => {
-    const catalog = catalogFrom(`presets:
-  - id: bad
+    expect(() => catalogFrom(`  - id: bad
     label: Bad
     backend: codex
     model: gpt-5.6-sol
     default_effort: xhigh
-`);
-    expect(() => catalog.list()).toThrow(/supported_efforts/);
+`)).toThrow(/supported_efforts/);
   });
 });

@@ -1,5 +1,15 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
+import { parseModelCatalogYaml } from "@soulstream/model-catalog";
+
 import { AntigravityEventMapper, parseAntigravityEvent } from "../../../src/engine/antigravity/events.js";
+
+const MODEL_CATALOG = parseModelCatalogYaml(readFileSync(
+  fileURLToPath(new URL("../../../../packages/model-catalog/data/model-catalog.yaml", import.meta.url)),
+  "utf8",
+));
 
 const init = { event: "init", conversation_id: "conversation", init: { model: "gemini-3.8-flash" } };
 const step = (index: number, extra: object) => ({ event: "step_update", step_update: {
@@ -39,7 +49,7 @@ describe("AntigravityEventMapper", () => {
     expect(new AntigravityEventMapper("turn-b").accept(step(0, { text_delta: "resume" }))[0]?.turn_id).toBe("turn-b");
   });
   it("counts each model DONE once, adds cache to input, keeps thinking inside output, ignores result cumulative usage, and reports first call, last context, and priced cost", () => {
-    const mapper = new AntigravityEventMapper("turn-a");
+    const mapper = new AntigravityEventMapper("turn-a", false, undefined, () => MODEL_CATALOG);
     mapper.accept(init);
     const done = step(1, { usage: { input_tokens: 10, cache_read_tokens: 100, output_tokens: 20, thinking_tokens: 15, total_tokens: 30 } });
     mapper.accept(done); mapper.accept(done);

@@ -15,9 +15,15 @@ import { resolveAntigravityCliPath } from "./engine/antigravity_cli_path.js";
 import { createLogger } from "./logger.js";
 import { McpConfigService } from "./mcp_config_service.js";
 import {
-  loadModelCatalog,
+  ModelCatalog,
+  assertCatalogDefaultsDeliverable,
   nodeEffortCapabilities,
+  parseModelCatalogGroups,
 } from "./model_catalog.js";
+import {
+  openModelCatalogFile,
+  type ModelCatalogFileStore,
+} from "@soulstream/model-catalog/file-loader";
 import { composeWorkerRuntime } from "./runtime/worker_composition.js";
 import { startWorkerRuntime } from "./runtime/worker_startup.js";
 import { startNodeStallMonitor } from "./runtime/node_stall_monitor.js";
@@ -26,7 +32,10 @@ import { assertRunnerNodeRuntime } from "./runner/runner_node_runtime_preflight.
 import { startInternalMcpServer, startServer } from "./server.js";
 import { buildOrchProxyConfig } from "./mcp/orch_proxy.js";
 import { ReleaseActivationState } from "./release/release_activation_state.js";
-import { loadAndVerifyReleaseManifest } from "./release/release_runtime.js";
+import {
+  loadAndVerifyReleaseManifest,
+  modelCatalogPathForStartup,
+} from "./release/release_runtime.js";
 
 // Haniel cwd는 ./services/soulstream — install.configs.soul-server-ts-env path와 정합.
 // legacy `.env`와 분리하여 SOULSTREAM_NODE_ID 충돌을 막는다.
@@ -66,16 +75,42 @@ async function main(): Promise<void> {
   const logger = createLogger(env.LOG_LEVEL);
   installProcessErrorHandlers({ component: "soul-server", logger });
   const nodeStallMonitor = startNodeStallMonitor({ logger });
-  let modelCatalog: ReturnType<typeof loadModelCatalog>;
+
+  const hostBundleDirectory = dirname(fileURLToPath(import.meta.url));
+  const releaseManifest = await loadAndVerifyReleaseManifest({
+    manifestPath: join(hostBundleDirectory, "release-manifest.json"),
+    hostBundleDirectory,
+    runnerArtifactDirectory:
+      env.SOUL_RUNNER_ARTIFACT_DIR ?? join(hostBundleDirectory, "runner"),
+    env,
+    declaredEnv: declaredDeploymentEnv,
+  });
+  const releaseActivationState = new ReleaseActivationState(releaseManifest);
+
+  // Portable bind records the catalogue absolute path it was bound with; a
+  // repository checkout derives it from the entry module location.
+  const modelCatalogPath = modelCatalogPathForStartup(releaseManifest, import.meta.url);
+  const effortCapabilities = nodeEffortCapabilities(env.CODEX_ADAPTER_MODE);
+  let modelCatalogStore: ModelCatalogFileStore;
+  let modelCatalog: ModelCatalog;
   try {
-    modelCatalog = loadModelCatalog(env.MODEL_CATALOG_PATH, logger, nodeEffortCapabilities(env.CODEX_ADAPTER_MODE));
+    modelCatalogStore = openModelCatalogFile({
+      path: modelCatalogPath,
+      logger,
+      validate: (catalog) => assertCatalogDefaultsDeliverable(catalog, effortCapabilities),
+    });
+    modelCatalog = new ModelCatalog(modelCatalogStore, {
+      logger,
+      effortCapabilities,
+      enabledGroups: parseModelCatalogGroups(
+        env.MODEL_CATALOG_GROUPS,
+        modelCatalogStore.snapshot(),
+      ),
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error(
-      `Failed to load model catalog from "${env.MODEL_CATALOG_PATH}": ${message}`,
-    );
-    console.error(
-      "Hint: MODEL_CATALOG_PATH must point to a valid model catalog YAML file.",
+      `Failed to load model catalog from "${modelCatalogPath}": ${message}`,
     );
     process.exit(1);
   }
@@ -201,17 +236,6 @@ async function main(): Promise<void> {
     }
   }
 
-  const hostBundleDirectory = dirname(fileURLToPath(import.meta.url));
-  const releaseManifest = await loadAndVerifyReleaseManifest({
-    manifestPath: join(hostBundleDirectory, "release-manifest.json"),
-    hostBundleDirectory,
-    runnerArtifactDirectory:
-      env.SOUL_RUNNER_ARTIFACT_DIR ?? join(hostBundleDirectory, "runner"),
-    env,
-    declaredEnv: declaredDeploymentEnv,
-  });
-  const releaseActivationState = new ReleaseActivationState(releaseManifest);
-
   const { runtime, upstreamAdapter } = await startWorkerRuntime({
     compose: async () => await composeWorkerRuntime({
       env,
@@ -221,6 +245,8 @@ async function main(): Promise<void> {
       codexCliPath,
       antigravityCliPath,
       modelCatalog,
+      modelCatalogStore,
+      modelCatalogPath,
       agentProfileSource,
       nodeStallMonitor,
       releaseActivationState,
@@ -318,6 +344,7 @@ async function main(): Promise<void> {
     }
     await runtime.runnerStateHostOwnership?.release();
     await nodeStallMonitor.stop();
+    modelCatalogStore.close();
     process.exit(0);
   };
   process.once("SIGTERM", () => void shutdown("SIGTERM"));

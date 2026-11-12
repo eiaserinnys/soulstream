@@ -1,4 +1,5 @@
 import type { SSEEventPayload } from "../protocol.js";
+import type { ModelCatalogConfig } from "../../model_catalog.js";
 import { mapAppServerNotification } from "./event_mapper.js";
 import type { CodexTurnTokenUsage } from "./event_mapper_helpers.js";
 import type {
@@ -123,6 +124,8 @@ export function applyNotificationLifecycle(
   options: {
     suppressThreadStartedSession: boolean;
     model?: string | null;
+    /** Latest catalogue snapshot; read once per terminal event. */
+    getModelCatalog?: () => ModelCatalogConfig;
     onUnknownNotification?: (method: string) => void;
   },
 ): NotificationLifecycleResult {
@@ -175,7 +178,11 @@ export function applyNotificationLifecycle(
   }
 
   const turnContext = notification.method === "turn/completed"
-    ? { tokenUsage: nextState.tokenUsage, model: options.model }
+    ? {
+        tokenUsage: nextState.tokenUsage,
+        model: options.model,
+        ...(options.getModelCatalog ? { catalog: options.getModelCatalog() } : {}),
+      }
     : undefined;
   const payloads = mapAppServerNotification(
     notification,

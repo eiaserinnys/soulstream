@@ -1,8 +1,11 @@
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it, vi } from "vitest";
 
 import { parsePersistentSettingsPatch, readStoredPersistentSettings } from "@soulstream/wire-schema/persistent-session-settings";
+import { openModelCatalogFile } from "@soulstream/model-catalog/file-loader";
 import type { EventPersistence } from "../../src/db/event_persistence.js";
-import { UnknownModelPresetError, type ModelCatalog } from "../../src/model_catalog.js";
+import { ModelCatalog, UnknownModelPresetError } from "../../src/model_catalog.js";
 import type { Task } from "../../src/task/task_models.js";
 import { PersistentSessionControl } from "../../src/task/persistent_session_control.js";
 import { EventAcknowledgementTimeoutError } from "../../src/upstream/event_outbox_pump_protocol.js";
@@ -18,7 +21,12 @@ const firstCall = {
 
 function makeRolloverControl(
   task: Task,
-  options: { persistent?: EventPersistence; presets?: Record<string, Record<string, unknown>>; nodeId?: string } = {},
+  options: {
+    persistent?: EventPersistence;
+    presets?: Record<string, Record<string, unknown>>;
+    nodeId?: string;
+    modelCatalog?: Pick<ModelCatalog, "resolve" | "snapshot">;
+  } = {},
 ) {
   const persistedEntries: Array<Record<string, unknown>> = [];
   const enqueueMetadataEffect = vi.fn(async (_sessionId: string, entry: Record<string, unknown>) => {
@@ -59,13 +67,28 @@ function makeRolloverControl(
       default_effort: "medium",
     },
   };
-  const modelCatalog = {
+  const snapshotPresets = [
+    ...Object.values(presets),
+    {
+      id: "gemini-4-argon",
+      model: "gemini-4-argon",
+      backend: "antigravity",
+      env: {},
+      supported_efforts: ["low", "medium", "high"],
+      default_effort: "high",
+    },
+  ];
+  const modelCatalog = options.modelCatalog ?? {
     resolve: vi.fn((presetId: string) => {
       const preset = presets[presetId];
       if (!preset) throw new UnknownModelPresetError(presetId);
       return preset;
     }),
-  } as unknown as Pick<ModelCatalog, "resolve">;
+    snapshot: vi.fn(() => ({
+      presets: snapshotPresets,
+      persistent_defaults: { fallback_models: [] },
+    })),
+  } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">;
   const persistence = options.persistent ?? { enqueueMetadataEffect } as unknown as EventPersistence;
   const control = new PersistentSessionControl({
     nodeId: options.nodeId ?? "worker-current",
@@ -426,7 +449,7 @@ describe("PersistentSessionControl.applySettings", () => {
     const { control } = makeRolloverControl(task, { persistent: { enqueueMetadataEffect } as unknown as EventPersistence });
 
     await expect(control.applySettings(task.agentSessionId, { settings: { show_character: false } })).rejects.toBe(timeout);
-    expect(readStoredPersistentSettings(task.metadata)?.show_character).toBe(false);
+    expect(readStoredPersistentSettings(task.metadata, [])?.show_character).toBe(false);
   });
 
   it("retains durable generation metadata after an acknowledgement timeout", async () => {
@@ -475,8 +498,36 @@ describe("PersistentSessionControl.applySettings", () => {
     expect(task.modelPreset).toBe("claude-preset");
     expect(task.persistentGeneration?.pending).toBeUndefined();
     expect(enqueueMetadataEffect.mock.calls.map(([, entry]) => entry.type)).toEqual(["persistent_settings"]);
-    expect(readStoredPersistentSettings(task.metadata)?.default_model).toEqual(remoteSelection);
+    expect(readStoredPersistentSettings(task.metadata, [])?.default_model).toEqual(remoteSelection);
     expect(modelCatalog.resolve).toHaveBeenCalledWith("gemini-4-argon");
+  });
+
+  it("validates a remote default from the unfiltered catalogue when a group filter hides it", async () => {
+    const task = makeRolloverTask();
+    const catalog = new ModelCatalog(
+      openModelCatalogFile({
+        path: fileURLToPath(
+          new URL("../../../packages/model-catalog/data/model-catalog.yaml", import.meta.url),
+        ),
+      }),
+      { enabledGroups: [] },
+    );
+    expect(() => catalog.resolve("kimi-3.1-pro")).toThrow("Unknown model preset: kimi-3.1-pro");
+
+    const { control, enqueueMetadataEffect } = makeRolloverControl(task, { modelCatalog: catalog });
+    const remoteSelection = {
+      model_preset: "kimi-3.1-pro",
+      reasoning_effort: null,
+      node_id: "worker-remote",
+    };
+
+    await expect(control.applySettings(task.agentSessionId, {
+      settings: { default_model: remoteSelection },
+    })).resolves.toMatchObject({ modelChange: "next_execution_start" });
+
+    expect(task.modelPreset).toBe("claude-preset");
+    expect(enqueueMetadataEffect.mock.calls.map(([, entry]) => entry.type)).toEqual(["persistent_settings"]);
+    expect(readStoredPersistentSettings(task.metadata, [])?.default_model).toEqual(remoteSelection);
   });
 
   const sonnet = { model_preset: "codex-preset", reasoning_effort: "high" };
@@ -493,7 +544,7 @@ describe("PersistentSessionControl.applySettings", () => {
       const metadata = [{ type: "persistent_settings", value }];
       const before = structuredClone(metadata);
 
-      expect(readStoredPersistentSettings(metadata)).toMatchObject({
+      expect(readStoredPersistentSettings(metadata, [])).toMatchObject({
         turn_usage_mode: turnUsageMode,
         show_turn_usage: showTurnUsage,
       });

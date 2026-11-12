@@ -46,6 +46,8 @@ const RunnerChildConfigFields = {
   codeSha: z.string().min(1),
   releaseManifestId: z.string().min(1).optional(),
   runtimeEnvIdentity: z.string().min(1).optional(),
+  /** Absolute repo catalogue path supplied by the host; never derived locally. */
+  modelCatalogPath: z.string().min(1).optional(),
   snapshotPath: z.string().min(1),
   codexAdapterMode: z.enum(["sdk", "app-server"]),
   codexCliPath: z.string().min(1).optional(),

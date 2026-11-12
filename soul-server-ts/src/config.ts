@@ -116,11 +116,11 @@ export const EnvSchema = z
     /** Last-known-good DB-owned agent profile overlay. */
     AGENT_PROFILE_CACHE_PATH: z.string().default(".local/cache/agent-profiles.json"),
     /**
-     * Node-local model preset catalog. The path follows the same service-cwd
-     * convention as AGENTS_CONFIG_PATH and is re-read for each resolution.
-     * A missing file is the intentional additive empty-catalog state.
+     * Comma-separated node opt-in groups from the repository model catalog.
+     * An empty value selects no additional group. The selection is resolved
+     * against the first catalogue snapshot at startup.
      */
-    MODEL_CATALOG_PATH: z.string().default("config/model-catalog.yaml"),
+    MODEL_CATALOG_GROUPS: z.string().default(""),
     /**
      * 세션 첨부 파일 저장 디렉토리. orch가 WS reverse-proxy로 파일을 전달하면
      * TS 노드는 이 경로 아래에 저장하고 Codex에게 절대경로를 넘긴다.

@@ -1,9 +1,6 @@
 import type { Logger } from "pino";
 
-import {
-  PERSISTENT_SETTINGS_DEFAULTS,
-  readStoredPersistentSettings,
-} from "@soulstream/wire-schema/persistent-session-settings";
+import { readStoredPersistentSettings } from "@soulstream/wire-schema/persistent-session-settings";
 
 import {
   readProviderUsageObservation,
@@ -31,7 +28,7 @@ const INPUT_EVENT_TYPES = new Set(["user_message", "intervention_sent"]);
 
 export interface PersistentDecisionInputDependencies {
   db: Pick<SessionDB, "readEvents">;
-  modelCatalog: Pick<ModelCatalog, "resolve">;
+  modelCatalog: Pick<ModelCatalog, "resolve" | "snapshot">;
   providerUsage: ProviderUsageCommandHandler;
   logger: Pick<Logger, "warn">;
 }
@@ -59,10 +56,14 @@ export async function buildPersistentDecisionInput(
     ? await deps.db.readEvents(task.agentSessionId, 0, task.lastEventId, ["metadata"])
     : [];
   const contextUsage = latestContextUsage(orderedEvents);
-  const settings = readStoredPersistentSettings(task.metadata);
+  const catalogDefaults = deps.modelCatalog.snapshot().persistent_defaults;
+  const settings = readStoredPersistentSettings(
+    task.metadata,
+    catalogDefaults.fallback_models,
+  );
   const currentPreset = task.modelPreset!;
   const defaultModel = settings?.default_model?.model_preset ?? currentPreset;
-  const fallbackModels = (settings?.fallback_models ?? PERSISTENT_SETTINGS_DEFAULTS.fallback_models)
+  const fallbackModels = (settings?.fallback_models ?? catalogDefaults.fallback_models)
     .map((selection) => selection.model_preset);
   const presetProviders: Record<string, DecisionProvider> = {};
   presetProviders[currentPreset] = providerForPreset(currentPreset, deps.modelCatalog);

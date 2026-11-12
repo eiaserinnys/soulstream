@@ -4,6 +4,7 @@ import nodeProcess from "node:process";
 import { join } from "node:path";
 import type { Logger } from "pino";
 import type { ResolvedMcpServer } from "../../mcp_config_service.js";
+import type { ModelCatalogConfig } from "../../model_catalog.js";
 import { runnerProcessPaths } from "../../runner/runner_process_paths.js";
 import { engineEventFrame, type RunnerEventFrame } from "../../runner/frame_protocol.js";
 import type { InProcessRunnerFrameChannel } from "../../runner/in_process_frame_channel.js";
@@ -33,6 +34,8 @@ export interface AntigravityAdapterOptions {
   processEnv: NodeJS.ProcessEnv;
   resolvedMcpServers?: ResolvedMcpServer[];
   internalMcpUrl?: string;
+  /** Latest catalogue snapshot; read once per terminal event. */
+  getModelCatalog?: () => ModelCatalogConfig;
 }
 
 export class AntigravityEngineAdapter implements EnginePort {
@@ -60,7 +63,12 @@ export class AntigravityEngineAdapter implements EnginePort {
     if (this.closed) throw new Error("Antigravity engine is closed");
     if (this.executing) throw new Error("Antigravity engine already has an active turn");
     this.executing = true;
-    const mapper = new AntigravityEventMapper(randomUUID(), Boolean(params.resumeSessionId), antigravityGatewayServerName(this.options.agentId));
+    const mapper = new AntigravityEventMapper(
+      randomUUID(),
+      Boolean(params.resumeSessionId),
+      antigravityGatewayServerName(this.options.agentId),
+      this.options.getModelCatalog,
+    );
     let definition: Awaited<ReturnType<typeof writeAntigravityAgentDefinition>> | undefined;
     let process: ReturnType<typeof launchAntigravityProcess> | undefined;
     try {
@@ -107,6 +115,10 @@ export class AntigravityEngineAdapter implements EnginePort {
         const firstCall = this.firstCallCarry ?? mapper.firstCall ?? undefined;
         this.usageCarry = undefined;
         this.firstCallCarry = undefined;
+        const catalog = this.options.getModelCatalog?.();
+        const turnCostUsd = usage && catalog
+          ? antigravityTurnCostUsd(catalog, usage, mapper.model)
+          : undefined;
         for (let i = 0; i < terminalEvents.length; i += 1) {
           const event = terminalEvents[i]!;
           const isLast = i === terminalEvents.length - 1;
@@ -116,9 +128,7 @@ export class AntigravityEngineAdapter implements EnginePort {
               ? {
                   usage,
                   ...(firstCall ? { first_call: firstCall } : {}),
-                  ...(antigravityTurnCostUsd(usage, mapper.model) !== undefined
-                    ? { turn_cost_usd: antigravityTurnCostUsd(usage, mapper.model) }
-                    : {}),
+                  ...(turnCostUsd !== undefined ? { turn_cost_usd: turnCostUsd } : {}),
                 }
               : {}),
           } as SSEEventPayload);
@@ -134,13 +144,15 @@ export class AntigravityEngineAdapter implements EnginePort {
       const firstCall = this.firstCallCarry ?? mapper.firstCall ?? undefined;
       this.usageCarry = undefined;
       this.firstCallCarry = undefined;
+      const catalog = this.options.getModelCatalog?.();
+      const turnCostUsd = usage && catalog
+        ? antigravityTurnCostUsd(catalog, usage, mapper.model)
+        : undefined;
       yield engineEventFrame({ type: "error", fatal: true,
         message: error instanceof Error ? error.message : String(error), timestamp: Date.now() / 1000,
         ...(mapper.model ? { model: mapper.model } : {}), ...(usage ? { usage } : {}),
         ...(firstCall ? { first_call: firstCall } : {}),
-        ...(usage && antigravityTurnCostUsd(usage, mapper.model) !== undefined
-          ? { turn_cost_usd: antigravityTurnCostUsd(usage, mapper.model) }
-          : {}),
+        ...(turnCostUsd !== undefined ? { turn_cost_usd: turnCostUsd } : {}),
       });
     } finally {
       // If a frame consumer stops early, keep ownership until the CLI closes.

@@ -5,11 +5,13 @@ import {
   type SDKMessage,
   type SDKUserMessage,
 } from "@anthropic-ai/claude-agent-sdk";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
+import { parseModelCatalogYaml } from "@soulstream/model-catalog";
 
 import { ClaudeSdkClient } from "../../src/engine/claude_adapter.js";
 import { readClaudeBackgroundProvenance } from
@@ -31,10 +33,21 @@ import {
 import { makeTempDirSync } from "../helpers/temp_dir.js";
 
 const silentLogger = pino({ level: "silent" });
+const MODEL_CATALOG = parseModelCatalogYaml(readFileSync(
+  fileURLToPath(new URL("../../../packages/model-catalog/data/model-catalog.yaml", import.meta.url)),
+  "utf8",
+));
+const getModelCatalog = () => MODEL_CATALOG;
 
-async function runSdkClientMessages(messages: SDKMessage[]): Promise<ClaudeClientEvent[]> {
+async function runSdkClientMessages(
+  messages: SDKMessage[],
+  catalog?: typeof MODEL_CATALOG,
+): Promise<ClaudeClientEvent[]> {
   const client = new ClaudeSdkClient(
-    { query: () => makeQuery(sdkMessages(messages)) },
+    {
+      query: () => makeQuery(sdkMessages(messages)),
+      ...(catalog ? { getModelCatalog: () => catalog } : {}),
+    },
     silentLogger,
   );
   return collect(client.run(
@@ -1048,7 +1061,7 @@ describe("ClaudeSdkClient", () => {
           cache_creation_input_tokens: 104_313,
         },
       }),
-    ]);
+    ], MODEL_CATALOG);
 
     expect(events.find((event) => event.type === "complete")).toMatchObject({
       type: "complete",
@@ -1321,7 +1334,7 @@ describe("ClaudeSdkClient", () => {
         },
       },
     ]);
-    const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState());
+    const mapper = new ClaudeSdkEventMapper(new ClaudeRuntimeState(), getModelCatalog);
     mapper.recordTranscriptPath(transcriptPath);
     mapZeroTokenAssistant(mapper, "turn-first", "deepseek-v4.1-flash");
     mapZeroTokenAssistant(mapper, "turn-last", "deepseek-v4.1-flash");

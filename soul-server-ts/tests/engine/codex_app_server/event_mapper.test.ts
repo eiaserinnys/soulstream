@@ -1,4 +1,8 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it, vi } from "vitest";
+import { parseModelCatalogYaml } from "@soulstream/model-catalog";
 
 import { mapAppServerNotification } from "../../../src/engine/codex_app_server/event_mapper.js";
 import type {
@@ -6,6 +10,11 @@ import type {
   AppServerThreadItem,
   AppServerTurn,
 } from "../../../src/engine/codex_app_server/protocol.js";
+
+const MODEL_CATALOG = parseModelCatalogYaml(readFileSync(
+  fileURLToPath(new URL("../../../../packages/model-catalog/data/model-catalog.yaml", import.meta.url)),
+  "utf8",
+));
 
 function turn(
   id: string,
@@ -136,6 +145,7 @@ describe("Codex app-server notification mapper", () => {
       undefined,
       {
         model: "gpt-6.1-sol",
+        catalog: MODEL_CATALOG,
         tokenUsage: {
           first: {
             totalTokens: 14_129,
@@ -367,6 +377,7 @@ describe("Codex app-server notification mapper", () => {
       undefined,
       {
         model: "gpt-6.1-sol",
+        catalog: MODEL_CATALOG,
         tokenUsage: {
           first: { totalTokens: 14_129, inputTokens: 14_124, cachedInputTokens: 12_288,
             cacheWriteInputTokens: 0, outputTokens: 5, reasoningOutputTokens: 0 },

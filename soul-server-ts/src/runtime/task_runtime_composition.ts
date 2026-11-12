@@ -50,7 +50,7 @@ export interface TaskRuntimeCompositionParams {
   agentRegistry: AgentRegistry;
   taskManager: TaskManager;
   engineFactory: EngineFactory;
-  modelCatalog: Pick<ModelCatalog, "resolve">;
+  modelCatalog: Pick<ModelCatalog, "resolve" | "snapshot">;
   contextBuilder: ExecutionContextBuilder;
   persistence: EventPersistence;
   broadcaster: SessionBroadcaster;

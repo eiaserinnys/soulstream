@@ -1,9 +1,12 @@
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { describe, expect, it, vi } from "vitest";
 import pino from "pino";
 import type { Logger } from "pino";
+import { parseModelCatalogYaml } from "@soulstream/model-catalog";
 
 import {
   AppServerRpcError,
@@ -202,12 +205,21 @@ function rateLimitsResponse(resetsAt: number) {
   };
 }
 
-function makeAdapter(client = new FakeClient()) {
+const MODEL_CATALOG = parseModelCatalogYaml(readFileSync(
+  fileURLToPath(new URL("../../../../packages/model-catalog/data/model-catalog.yaml", import.meta.url)),
+  "utf8",
+));
+
+function makeAdapter(
+  client = new FakeClient(),
+  getModelCatalog?: () => typeof MODEL_CATALOG,
+) {
   const adapter = new CodexAppServerEngineAdapter(
     {
       workspaceDir: "/work",
       internalMcpUrl: "http://127.0.0.1:3106/mcp/internal",
       client,
+      ...(getModelCatalog ? { getModelCatalog } : {}),
     },
     pino({ level: "silent" }),
   );
@@ -563,7 +575,7 @@ describe("CodexAppServerEngineAdapter", () => {
   });
 
   it("emits V6 context usage immediately before complete", async () => {
-    const { adapter, client } = makeAdapter();
+    const { adapter, client } = makeAdapter(new FakeClient(), () => MODEL_CATALOG);
     const framesPromise = (async () => {
       const frames = [];
       for await (const frame of adapter.executeFrames({ prompt: "hello", model: "gpt-6.1-sol" })) {
