@@ -298,6 +298,8 @@ export class TaskManager {
       sessionNotificationPublisher: deliveryRuntimeV2Enabled
         ? this.sessionNotificationPublisher
         : undefined,
+      projectClosedRunner: async (task, detail) =>
+        await this.runnerRecovery.projectClosed(task, detail),
     });
   }
 

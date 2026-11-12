@@ -271,6 +271,35 @@ describe("card work dispatch transaction contracts", () => {
       .toEqual({state:"failed",error:"담당 교체 요청으로 이전 실행 예약을 종료했습니다."});
   },60000);
 
+  it("allows replacing a connected initializing owner past the start timeout only when execution never registered", async () => {
+    const stack = createStack();
+    const service = new CardWorkDispatchService({ ...stack.optionsForService,
+      isNodeConnected: () => true, validateTarget: async (target: any) => target } as any);
+    const setup = async (title: string, ageSeconds: number, registrationId: string | null) => {
+      const made = await stack.cards.createCard({ actorKind: "user", actorSessionId: null, actorUserId: "user", folderId: "work",
+        title, request: "요청", assignee: { kind: "agent", agentId: "old-agent" }, nodeId: "node-a", modelPreset: "old-model" });
+      const cardId = made.operation.target_id, oldId = `init-owner-${cardId}`;
+      await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,model_preset,execution_registration_id,updated_at)
+        VALUES (${oldId},'node-a','old-agent','initializing',${cardId},'old-model',${registrationId},NOW() - make_interval(secs => ${ageSeconds}))`;
+      await h.sql`UPDATE cards SET assignee_kind='session',assignee_agent_id=NULL,assignee_session_id=${oldId} WHERE id=${cardId}`;
+      return { cardId };
+    };
+    const stale = await setup("멈춘 시작 담당", 660, null);
+    const accepted = await service.accept({ kind: "replace", cardId: stale.cardId, request: "계속",
+      idempotencyKey: `stale-init-${stale.cardId}` } as any, actor);
+    expect(accepted.work.kind).toBe("execution");
+
+    const fresh = await setup("시한 안쪽 시작 담당", 0, null);
+    await expect(service.accept({ kind: "replace", cardId: fresh.cardId, request: "계속",
+      idempotencyKey: `fresh-init-${fresh.cardId}` } as any, actor))
+      .rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining("지금 턴") });
+
+    const registered = await setup("등록된 시작 담당", 660, "registration-old");
+    await expect(service.accept({ kind: "replace", cardId: registered.cardId, request: "계속",
+      idempotencyKey: `registered-init-${registered.cardId}` } as any, actor))
+      .rejects.toMatchObject({ statusCode: 409, message: expect.stringContaining("지금 턴") });
+  }, 60000);
+
   it("rolls back session registration when its reserved card owner has changed", async () => {
     const stack=createStack();
     const made=await stack.cards.createCard({actorKind:"user",actorSessionId:null,actorUserId:"user",folderId:"work",

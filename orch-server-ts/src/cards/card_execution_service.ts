@@ -62,6 +62,8 @@ function beforeSendFailure(workId:string,message:string,code:string):ConfirmedCo
 }
 function isErrorAck(response:NodeCommandResponse):boolean{return response.type==="error"||response.status==="error";}
 export type ExecutionInput = {sessionId:string;requestId:string;cardId:string;target:ExecutionTarget;callerSource:"browser"|"system";actor:Pick<FolderActorParams,"actorKind"|"actorSessionId"|"actorUserId">};
+/** How long a pending request may wait for its session to register execution. */
+export const CARD_EXECUTION_START_TIMEOUT_MS=10*60*1000;
 export interface CardExecutionOptions {
   sql:SqlClient;cards:CardControlPlaneService;
   validate(card:CardRow):Promise<ExecutionTarget>;
@@ -69,6 +71,7 @@ export interface CardExecutionOptions {
   ensure(input:ExecutionInput):Promise<{state:"started"|"already_running";execution:CardWorkExecution}>;
   onConfirmedFailureTx?(sql:RepositorySql,request:CardExecutionRequest,failure:ConfirmedCommandFailure):Promise<SessionDeliveryRow|null>;
   onConfirmedFailureCommitted?(row:SessionDeliveryRow):void;
+  startTimeoutMs?:number;
 }
 
 /** The card lock owns reservation; no network operation runs inside its transaction. */
@@ -161,8 +164,13 @@ export class CardExecutionService {
     }
   }
   private async observeOnce(cardId:string,requestId:string,actor:FolderActorParams) {
-    let row=(await this.options.sql<CardExecutionRequest[]>`SELECT * FROM card_execution_requests WHERE id=${requestId} AND card_id=${cardId}`)[0];
-    if(!row) throw failure("실행 요청을 찾을 수 없습니다.",404);
+    const loaded=(await this.options.sql<Array<CardExecutionRequest&{updated_at:Date}>>`SELECT * FROM card_execution_requests WHERE id=${requestId} AND card_id=${cardId}`)[0];
+    if(!loaded) throw failure("실행 요청을 찾을 수 없습니다.",404);
+    let row:CardExecutionRequest|undefined=loaded;
+    // A retry through reserveTx flips a failed request back to pending and only
+    // moves updated_at; created_at keeps the original attempt's time. The start
+    // deadline therefore counts from the moment the request last became pending.
+    const requestPendingSince=new Date(loaded.updated_at).getTime();
     if(row.state==='pending'){
       const automatic=row.mode==='observe'?await this.automaticOutcome(row):null;
       const proof=automatic?.proof??await this.registration(row);
@@ -179,6 +187,12 @@ export class CardExecutionService {
       }else if(automatic?.error){
         await this.fail(row,automatic.error);throw failure(automatic.error,422);
       }else if(owner && ['error','interrupted'].includes(String(owner.status)) && !owner.execution_registration_id && row.mode!=='observe'){
+        await this.fail(row,"세션은 생성됐지만 실행 시작에 실패했습니다.");
+        throw failure("실행 시작에 실패했습니다. 같은 담당 세션에서 다시 실행하세요.",422);
+      }else if(owner && String(owner.status)==='initializing' && !owner.execution_registration_id && row.mode!=='observe'
+        && Date.now()-requestPendingSince>=(this.options.startTimeoutMs??CARD_EXECUTION_START_TIMEOUT_MS)){
+        // The session row exists but no execution registration ever arrived; the
+        // start cannot finish, so the pending request closes like a failed start.
         await this.fail(row,"세션은 생성됐지만 실행 시작에 실패했습니다.");
         throw failure("실행 시작에 실패했습니다. 같은 담당 세션에서 다시 실행하세요.",422);
       }

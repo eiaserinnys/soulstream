@@ -12,6 +12,7 @@ import { isConnectionError } from "./adapter_connection_error.js";
 import { summarizePayloadForLog } from "./log_payload_summary.js";
 import { createUpstreamCommandDispatcher } from "./upstream_command_dispatcher.js";
 import { createActiveHandlerDrain } from "./active_handler_drain.js";
+import type { Task } from "../task/task_models.js";
 import type {
   ReconnectPolicyBoundary,
   UpstreamConfig,
@@ -475,6 +476,7 @@ export class UpstreamAdapter {
     if (waitForReconciliation) await this.deps.waitForRunnerReconciliation?.();
     const inMemorySessionIds = this.deps.taskManager.listTasks()
       .filter((task) => task.status === "initializing" || task.status === "running")
+      .filter((task) => !isBarrierlessHydratedInitializing(task))
       .map((task) => task.agentSessionId);
     return this.deps.listLiveRunnerSessionIds
       ? [...new Set([
@@ -496,6 +498,22 @@ export class UpstreamAdapter {
   private async sendOnSocket(ws: WebSocket, data: unknown): Promise<void> {
     await this.commandTransportObserver.send(ws, data);
   }
+}
+
+/**
+ * A task restored from the DB as initializing that has neither a durable
+ * execution registration nor the in-memory startup barrier cannot have a live
+ * runner: the restart dropped the barrier. Reporting it as running keeps the
+ * orchestrator from closing it as interrupted, so it stays out of the live
+ * list until an intervention closes it. In-memory initializing tasks are left
+ * alone; their barrier is created moments after the task row while the
+ * worktree is resolved, and that startup is still alive.
+ */
+function isBarrierlessHydratedInitializing(task: Task): boolean {
+  return task.status === "initializing"
+    && task.hydratedFromDb === true
+    && task.executionRegistration === undefined
+    && task.executionActivation === undefined;
 }
 
 function isNodeRegisterAck(value: unknown, nodeId: string): value is NodeRegisterAck {
