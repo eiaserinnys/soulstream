@@ -149,8 +149,15 @@ export const cardHandlers = {
   }),
   request_card_review: (o, a, c) => append(o.cards, "request_card_review", a, c, { ask:a.ask }),
   ask_card_question: (o, a, c) => append(o.cards, "ask_card_question", a, c, {
-    text: a.text, ...(a.options !== undefined ? { options: a.options } : {}),
-  }, false, result => ({ ...compactMutation(result), guidance: "질문이 등록되었다. 이 턴을 끝내고 답을 기다린다." })),
+    text: a.text,
+    ...(a.title !== undefined ? { title: a.title } : {}),
+    ...(a.kind !== undefined ? { kind: a.kind } : {}),
+    ...(a.options !== undefined ? { options: a.options } : {}),
+    ...(a.attachments !== undefined ? { attachments: a.attachments } : {}),
+    ...(a.question_id !== undefined ? { questionId: a.question_id } : {}),
+  }, false, result => ({ ...compactMutation(result), guidance: a.question_id !== undefined
+    ? "질문을 고쳤다. 이 턴을 끝내고 답을 기다린다. 고친 질문은 새 알림을 보내지 않는다."
+    : "질문이 등록되었다. 이 턴을 끝내고 답을 기다린다." })),
   withdraw_card_question: (o,a,c) => internalAppend(o.cards,"withdraw_card_question",a,c,{questionId:a.question_id,reason:a.reason}),
   move_card: (o, a, c) => append(o.cards, "move_card", a, c, {
     folderId: a.folder_id, ...(a.after_card_id !== undefined ? { afterCardId: a.after_card_id } : {}),

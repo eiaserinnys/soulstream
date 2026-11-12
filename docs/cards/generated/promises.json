@@ -1,6 +1,6 @@
 {
   "configurationCount": 3834,
-  "definitionCount": 261,
+  "definitionCount": 265,
   "promises": [
     {
       "id": 1,
@@ -72,6 +72,14 @@
         "{\"type\":\"SET_STATUS\",\"actor\":\"human\",\"facts\":{\"target\":\"question\",\"claim\":false,\"wait\":\"missing\"}}",
         "ACK_CARD"
       ],
+      "discrepancies": []
+    },
+    {
+      "id": 7,
+      "name": "질문 제자리 고침은 열린 질문 수와 카드 상태를 바꾸지 않는다",
+      "kept": true,
+      "violations": 0,
+      "example": [],
       "discrepancies": []
     }
   ],

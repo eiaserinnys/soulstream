@@ -5,11 +5,12 @@ import { CARD_NOTICE_TAGS, CARD_NOTICE_LEAD } from "../../../packages/wire-schem
 
 type NoticeCard = Pick<CardRow, "id" | "number" | "title">;
 
-export function selectCardBoardNotice({operationType, actorKind, previousStatus, committed}: {
+export function selectCardBoardNotice({operationType, actorKind, previousStatus, committed, payload}: {
   operationType: string; actorKind: FolderOperationActorKind; previousStatus?: CardStatus; committed: CardRow;
+  payload?: Readonly<Record<string, unknown>>;
 }): "blocked" | "question" | "review" | "done" | null {
   if (committed.archived) return null;
-  if (operationType === "ask_card_question") return "question";
+  if (operationType === "ask_card_question") return payload?.is_update === true ? null : "question";
   if (operationType !== "set_card_status") return null;
   if (actorKind === "system" && previousStatus !== "blocked" && committed.status === "blocked"
       && (committed.blocked_kind === "limit" || committed.blocked_kind === "no_report")) return "blocked";

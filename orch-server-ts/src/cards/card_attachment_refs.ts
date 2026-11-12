@@ -67,6 +67,8 @@ type CollectInput = {
   items: readonly unknown[];
   previousRefs: readonly unknown[];
   previousItems: readonly unknown[];
+  /** 카드 질문 첨부(attachment_id variant). 항목 재수집이 질문이 쓴 ref를 지우지 않게 보호한다. */
+  questionAttachments?: readonly unknown[];
 };
 
 // 호출자가 이미 같은 트랜잭션에서 검증한 source의 파생 색인이다. 이 함수 자체는 권한을 만들지 않는다.
@@ -92,7 +94,12 @@ function mergeCardAttachmentRefs(input: CollectInput, deriveFromSources: boolean
   for (const item of input.items) {
     for (const id of itemAttachmentIds(item)) itemIds.add(id);
   }
-  const currentIds = new Set([...sourceIds, ...itemIds]);
+  const questionIds = new Set<string>();
+  for (const attachment of input.questionAttachments ?? []) {
+    if (isRecord(attachment) && typeof attachment.attachment_id === "string" && attachment.attachment_id.length > 0)
+      questionIds.add(attachment.attachment_id);
+  }
+  const currentIds = new Set([...sourceIds, ...itemIds, ...questionIds]);
 
   const previousItemIds = new Set<string>();
   for (const item of input.previousItems) {

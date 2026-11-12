@@ -241,6 +241,49 @@ describe("PushNotifier", () => {
     );
   });
 
+  it("uses the question title and kind for the title while keeping the exact card_question data", async () => {
+    const harness = createHarness();
+    const data = { kind: "card_question", cardId: "card-a", questionId: "question-a", folderId: "folder-a" };
+
+    expect(await harness.notifier.notifyCardQuestion({
+      ownerEmail: "owner@example.com",
+      cardId: "card-a",
+      questionId: "question-a",
+      folderId: "folder-a",
+      cardTitle: "카드 제목이 아주 길어서 스물네 글자를 넘기는 경우의 제목입니다",
+      question: "배포를 어느 시각에 할까요?",
+      questionTitle: "배포 시각",
+      questionKind: "choice",
+    })).toBe(true);
+    expect(await harness.notifier.notifyCardQuestion({
+      ownerEmail: "owner@example.com",
+      cardId: "card-a",
+      questionId: "question-b",
+      folderId: "folder-a",
+      cardTitle: "카드",
+      question: "스테이징에서 직접 확인해 주세요",
+      questionTitle: "스테이징 확인",
+      questionKind: "request",
+    })).toBe(true);
+    expect(await harness.notifier.notifyCardQuestion({
+      ownerEmail: "owner@example.com",
+      cardId: "card-a",
+      questionId: "question-c",
+      folderId: "folder-a",
+      cardTitle: "카드 제목이 아주 길어서 스물네 글자를 넘기는 경우의 제목입니다",
+      question: "옛 꼴 질문",
+    })).toBe(true);
+
+    expect(harness.provider.send.mock.calls[0]![1]).toBe("확인 요청: 배포 시각");
+    expect(harness.provider.send.mock.calls[0]![2]).toBe("배포를 어느 시각에 할까요?");
+    expect(harness.provider.send.mock.calls[1]![1]).toBe("부탁: 스테이징 확인");
+    expect(harness.provider.send.mock.calls[1]![2]).toBe("스테이징에서 직접 확인해 주세요");
+    expect(harness.provider.send.mock.calls[2]![1]).toBe("확인 요청: 카드 제목이 아주 길어서 스물네 글자를 넘…");
+    expect(harness.provider.send.mock.calls[0]![3]).toEqual(data);
+    expect(harness.provider.send.mock.calls[1]![3]).toEqual({ ...data, questionId: "question-b" });
+    expect(harness.provider.send.mock.calls[2]![3]).toEqual({ ...data, questionId: "question-c" });
+  });
+
   it("skips a card question in a folder excluded from notifications", async () => {
     const excluded = createHarness({
       catalog: createCatalog({

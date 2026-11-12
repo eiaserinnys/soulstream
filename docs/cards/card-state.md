@@ -781,12 +781,12 @@ PAS는 agent 세션이다. 현재 담당, 작성자, 담당이면서 작성자�
 | HUMAN_INPUT | anonymousAgent | 해당 없음 | 해당 없음 | 입구 없음 | 해당 없음 | 해당 없음 | 없음 |
 | HUMAN_INPUT | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 모두 허용 | 없음 |
 | HUMAN_INPUT | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
-| ASK_QUESTION | human | 모두 허용 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
-| ASK_QUESTION | owner | 해당 없음 | 모두 허용 | 해당 없음 | 모두 허용 | 해당 없음 | 없음 |
+| ASK_QUESTION | human | 조건부: reject.ASK_QUESTION.edit_answered (422, INVALID_CARD_REQUEST)<br>reject.ASK_QUESTION.edit_missing (422, INVALID_CARD_REQUEST)<br>reject.ASK_QUESTION.edit_withdrawn (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
+| ASK_QUESTION | owner | 해당 없음 | 조건부: reject.ASK_QUESTION.edit_answered (422, INVALID_CARD_REQUEST)<br>reject.ASK_QUESTION.edit_missing (422, INVALID_CARD_REQUEST)<br>reject.ASK_QUESTION.edit_withdrawn (422, INVALID_CARD_REQUEST) | 해당 없음 | 조건부: reject.ASK_QUESTION.edit_answered (422, INVALID_CARD_REQUEST)<br>reject.ASK_QUESTION.edit_missing (422, INVALID_CARD_REQUEST)<br>reject.ASK_QUESTION.edit_withdrawn (422, INVALID_CARD_REQUEST) | 해당 없음 | 없음 |
 | ASK_QUESTION | author | 해당 없음 | 해당 없음 | 도달 상태 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
 | ASK_QUESTION | ownerAuthor | 해당 없음 | 도달 상태 없음 | 해당 없음 | 도달 상태 없음 | 해당 없음 | 없음 |
-| ASK_QUESTION | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.ASK_QUESTION.otherAssignee (422, INVALID_CARD_REQUEST) | 조건부: reject.ASK_QUESTION.otherAssignee (422, INVALID_CARD_REQUEST) | 해당 없음 | 없음 |
-| ASK_QUESTION | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.ASK_QUESTION.otherAssignee (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 없음 |
+| ASK_QUESTION | otherAgent | 해당 없음 | 해당 없음 | 조건부: reject.ASK_QUESTION.edit_answered (422, INVALID_CARD_REQUEST)<br>reject.ASK_QUESTION.edit_missing (422, INVALID_CARD_REQUEST)<br>reject.ASK_QUESTION.edit_withdrawn (422, INVALID_CARD_REQUEST)<br>reject.ASK_QUESTION.otherAssignee (422, INVALID_CARD_REQUEST) | 조건부: reject.ASK_QUESTION.edit_answered (422, INVALID_CARD_REQUEST)<br>reject.ASK_QUESTION.edit_missing (422, INVALID_CARD_REQUEST)<br>reject.ASK_QUESTION.edit_withdrawn (422, INVALID_CARD_REQUEST)<br>reject.ASK_QUESTION.otherAssignee (422, INVALID_CARD_REQUEST) | 해당 없음 | 없음 |
+| ASK_QUESTION | anonymousAgent | 해당 없음 | 해당 없음 | 조건부: reject.ASK_QUESTION.edit_answered (422, INVALID_CARD_REQUEST)<br>reject.ASK_QUESTION.edit_missing (422, INVALID_CARD_REQUEST)<br>reject.ASK_QUESTION.edit_withdrawn (422, INVALID_CARD_REQUEST)<br>reject.ASK_QUESTION.otherAssignee (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 없음 |
 | ASK_QUESTION | server | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 입구 없음 | 없음 |
 | ASK_QUESTION | external | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
 | ANSWER_QUESTION | human | 조건부: reject.ANSWER_QUESTION.openQuestion (422, INVALID_CARD_REQUEST)<br>reject.ANSWER_QUESTION.withdrawnAnswer (422, INVALID_CARD_REQUEST) | 해당 없음 | 해당 없음 | 해당 없음 | 해당 없음 | 없음 |
@@ -942,7 +942,7 @@ PAS는 agent 세션이다. 현재 담당, 작성자, 담당이면서 작성자�
 | SET_STATUS | agent는 현재 담당이거나 담당 확보 후보이면 상태를 바꿀 수 있고, 담당 종류가 사람이나 세션이 아닌 카드는 다른 agent 세션도 todo, queued, on_hold, cancelled로 옮길 수 있다. 담당 확보 후보는 담당 세션 없이 에이전트로만 배정된 카드에 연결된 같은 에이전트의 세션이며, 같은 카드에 연결된 호출자 세션이 없어야 한다. 검증 대기는 담당 세션과 유효한 wake_at과 waiting_for가 필요하다. 같은 done 재지정도 완료 정보를 다시 쓰고 같은 queued 재지정도 새 대기열 순서 키를 요청한다. | cards/card_control_plane_service.ts#setCardStatus |
 | REQUEST_REVIEW | 항목이 있으면 ask가 필요하며, agent는 현재 담당이거나 담당 확보 후보여야 한다. review로 옮기고 완료 정보, 대기열 순서와 예약을 지우며 ask가 있으면 검수 요청 상황판을 쓴다. | cards/card_control_plane_service.ts#requestCardReview |
 | HUMAN_INPUT | 보관되지 않은 세션 담당의 검증 대기 또는 한도 아닌 막힘을 재개하고 열린 질문을 모두 닫는다. | cards/card_control_plane_service.ts#resumeBlockedCardOnHumanInput |
-| ASK_QUESTION | 다른 세션 담당 여부를 확인하고 질문 행을 추가한다. 질문 막힘으로 옮기며 완료 정보와 대기열 순서를 지운다. | cards/card_control_plane_service.ts#askQuestion |
+| ASK_QUESTION | 다른 세션 담당 여부를 확인한다. 새 질문이면 질문 행을 추가하고 질문 막힘으로 옮기며 완료 정보와 대기열 순서를 지운다. question_id가 있으면 같은 카드의 열린 질문만 제자리에서 고치고 카드 상태와 예약은 바꾸지 않는다. | cards/card_control_plane_service.ts#askQuestion |
 | ANSWER_QUESTION | 사람만 열린 질문에 답한다. 마지막 열린 질문이고 질문 막힘일 때만 실행 중으로 옮긴다. 완료 뒤 늦은 답은 상태를 보존한다. | cards/card_control_plane_service.ts#answerQuestion |
 | WITHDRAW_QUESTION | 질문 작성자 또는 현재 담당 세션이 철회한다. 마지막 질문 막힘일 때만 실행 중으로 옮긴다. | cards/card_control_plane_service.ts#withdrawQuestion |
 | ADD_COMMENT | 직접 입구는 prepare 검사 뒤 다른 담당 검사를 먼저 한다. dispatch_work의 Tx 후속 입구는 이 검사를 하지 않는다. reply의 담당, 길이와 사용자 입력을 확인한다. non-reply이면 사람뿐 아니라 담당의 spoken도 말로 풀리는 기다림을 재개한다. claim과 항목과 상태 UPDATE는 나눈다. | cards/card_control_plane_service.ts#addComment<br>cards/card_control_plane_service.ts#addCommentTx<br>cards/card_control_plane_service.ts#applyAddCommentTx<br>cards/card_work_dispatch_service.ts#accept |
@@ -1025,6 +1025,7 @@ needsEvidence는 허용이나 거절이 아니다. 단계 증거가 없으면 �
 | 질문을 올릴 수 있는 세션은 철회할 수 있다 | 0 | 없음 |
 | 짧은 한도로 막히면 취소 전까지 시각 있는 예약이 있다 | 0 | 없음 |
 | 기다리는 카드는 판의 장이나 시각으로 나가는 길이 있다 | 195 | PAS_APPEARS → {"type":"CREATE","actor":"human","facts":{"queued":false,"assigneeInput":"none"}} → {"type":"SET_STATUS","actor":"human","facts":{"target":"question","claim":false,"wait":"missing"}} → ACK_CARD |
+| 질문 제자리 고침은 열린 질문 수와 카드 상태를 바꾸지 않는다 | 0 | 없음 |
 
 | 구멍 | 도달 | 설명 |
 | :-- | :-- | :-- |
@@ -1033,7 +1034,7 @@ needsEvidence는 허용이나 거절이 아니다. 단계 증거가 없으면 �
 | 철회할 세션이 없는 질문 | 닿지 않음 |  |
 | 담당이 바뀐 한도 막힘 | 닿지 않음 | 예약 담당 불일치는 DB CHECK가 금지하며 결정 상태의 별도 영역으로 만들지 않는다 |
 
-기존 모형의 담당 생존, 작성자, admitted, 감독과 내린 기록을 저장 영역에서 뺐으므로 세계 구성 수와 약속 6의 위반 수는 이전의 구성 수와 단위가 다르다. 약속 1-가부터 5는 위반 0을 유지하고, 약속 6은 알려진 실패를 유지한다.
+기존 모형의 담당 생존, 작성자, admitted, 감독과 내린 기록을 저장 영역에서 뺐으므로 세계 구성 수와 약속 6의 위반 수는 이전의 구성 수와 단위가 다르다. 약속 1-가부터 5와 질문 제자리 고침 약속은 위반 0을 유지하고, 약속 6은 알려진 실패를 유지한다.
 
 ## 다시 만들기
 

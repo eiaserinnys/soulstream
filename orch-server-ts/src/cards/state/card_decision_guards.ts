@@ -25,6 +25,7 @@ for(const value of ['missing','empty','tooLong','invalid','past','tooLate'])reje
 reject('REQUEST_REVIEW','reviewAsk','reviewAsk',and([fact('hasItems'),not(fact('hasAsk'))]));
 reject('REQUEST_REVIEW','statusOwner','statusOwner',and([agent,not(effectiveOwner)]));
 reject('ASK_QUESTION','otherAssignee','otherAssignee',and([agent,inside('a_session'),not(owner)]));
+for(const value of ['missing','answered','withdrawn'])reject('ASK_QUESTION',`edit_${value}`,`edit_${value}`,and([fact('editing'),fact('targetQuestion',value)]));
 reject('ANSWER_QUESTION','withdrawnAnswer','withdrawnAnswer',fact('question','withdrawn'));
 reject('ANSWER_QUESTION','openQuestion','openQuestion',not(fact('question','open')));
 reject('WITHDRAW_QUESTION','ownerOrAuthor','withdrawOwner',not(actor('owner','ownerAuthor','author')));

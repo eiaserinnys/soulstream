@@ -138,6 +138,24 @@ describe("card dispatch and session lifecycle", () => {
         await dispatcher.drain();
         expect(messages.mock.calls.filter(call => call[1].startsWith('[카드 질문]'))).toHaveLength(1);
     });
+    it("keeps the new-question notice at one and sends none for an in-place edit", async () => {
+        const id = await makeNoticeCard();
+        await cards.askQuestion({actorKind:'agent',actorSessionId:'worker',cardId:id,text:'어느 방향?',options:['진행','중단']});
+        await dispatcher.drain();
+        const questionId = String((await cards.getCard(id))!.questions[0]!.id);
+        const questionNotices = () => messages.mock.calls.filter(call => call[1].startsWith('[카드 질문]'));
+        expect(questionNotices()).toHaveLength(1);
+        const result = await cards.askQuestion({actorKind:'agent',actorSessionId:'worker',cardId:id,questionId,
+            title:'방향',text:'고친 배경',kind:'choice',
+            options:[{label:'진행',description:'바로 갑니다',recommended:true}],
+            attachments:[{type:'link',label:'참고',url:'https://example.test/ref'}]});
+        await dispatcher.drain();
+        expect(questionNotices()).toHaveLength(1);
+        expect((await cards.getCard(id))!.questions).toHaveLength(1);
+        dispatcher.acceptMutation(changes.find(change => change.result.operation.id === result.operation.id)!);
+        await dispatcher.drain();
+        expect(questionNotices()).toHaveLength(1);
+    });
     it("sends review instructions and item status to the PAS", async () => {
         const id = await makeNoticeCard();
         const agent = {actorKind:'agent' as const,actorSessionId:'worker',cardId:id};
