@@ -87,8 +87,9 @@ export class TaskLifecycleRoute {
 
     const runner = task.runner;
     // 실행 중인 세션은 사람이 멈춘 것과 같은 경로로 멈춘다. 부른 세션 통지 등록이
-    // 끝난 뒤 러너를 닫고(retire 포함) 그 다음 행을 지운다.
-    if (isActiveTaskStatus(task.status)) {
+    // 끝난 뒤 러너를 닫고(retire 포함) 그 다음 행을 지운다. 러너가 아직 붙지 않은
+    // creation 단계 task는 멈출 실행이 없으므로 예전처럼 바로 지운다.
+    if (isActiveTaskStatus(task.status) && runner) {
       await this.deps.lifecycleTransition.cancelRunningTask(task);
       if (isActiveTaskStatus(task.status)) {
         throw new Error(

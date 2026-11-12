@@ -39,7 +39,7 @@ const LEGACY_RESIDUE = "1ed01abc-residue";
 const STARTED_AT = Date.parse("2026-09-01T00:00:00.000Z");
 
 describe("R36 delete_session lifecycle lab", () => {
-  it("drains an active runner and converges both new and legacy deleted-session evidence", async () => {
+  it("stops an active runner before deletion and converges both new and legacy deleted-session evidence", async () => {
     let now = STARTED_AT;
     let runnerAlive = true;
     const trace: string[] = [];
@@ -77,7 +77,13 @@ describe("R36 delete_session lifecycle lab", () => {
     };
 
     const lifecycleTransition = {
-      cancelRunningTask: vi.fn(async () => true),
+      cancelRunningTask: vi.fn(async () => {
+        trace.push("stop-user");
+        activeTask.status = "interrupted";
+        activeTask.completedAt = new Date(now);
+        activeTask.runner = undefined;
+        return true;
+      }),
       interruptAndDrain: vi.fn(async () => {
         trace.push("interrupt-and-drain");
       }),
@@ -235,7 +241,7 @@ describe("R36 delete_session lifecycle lab", () => {
     expect(retireReleasedRegistration).toHaveBeenCalledOnce();
     expect(logger.warn).not.toHaveBeenCalled();
     expect(trace).toEqual([
-      "interrupt-and-drain",
+      "stop-user",
       "runtime-close",
       "runner-close",
       "retire-registration",
