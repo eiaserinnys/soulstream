@@ -291,14 +291,36 @@ it('matches session_update for every table cell',async()=>{
  await h.sql`
  SELECT session_update('session-1',${h.sql.array(['status'])},${h.sql.array(['running'])},NOW())`;
  const label=rowLabel(row);
- expect(row.decision.kind,label).toBe(row.state.status==='none'?'noop':'apply');
+ const terminal=['completed','error','interrupted'].includes(row.state.status);
+ expect(row.decision.kind,label).toBe(row.state.status==='none'||terminal?'noop':'apply');
  expectSameState(await storedValue('session-1'),expectedValue(row),label);
+ }
+},120000);
+
+it('leaves a terminal row untouched when session_update asks for running',async()=>{
+ const before=new Date('2026-01-01T00:00:00Z');
+ for(const status of ['completed','error','interrupted'] as const){
+ await reset();
+ await seed('session-1',{
+ state:{status,termination:status==='interrupted'?'none':'recorded',review:'needs_review',reservation:'none',verdict:'ready'},
+ reviewRequired:true,
+ updatedAt:before,
+ });
+ await h.sql`
+ SELECT session_update('session-1',${h.sql.array(['status','prompt'])},${h.sql.array(['running','changed'])},NOW())`;
+ const [stored]=await h.sql<Array<{status:string;prompt:string|null;updated_at:Date}>>`
+ SELECT status,prompt,updated_at FROM sessions WHERE session_id='session-1'`;
+ expect(stored?.status,status).toBe(status);
+ expect(stored?.prompt,status).not.toBe('changed');
+ expect(stored?.updated_at.getTime(),status).toBe(before.getTime());
  }
 },120000);
 
 it('matches node disconnect cleanup for every table cell',async()=>{
  const repository=new SessionMutationRepository(h.sql);
- for(const row of rows.filter(candidate=>candidate.command.type==='node_disconnect_cleanup')){
+ const disconnectRows=rows.filter(candidate=>candidate.command.type==='node_disconnect_cleanup');
+ expect(disconnectRows).toHaveLength(18);
+ for(const row of disconnectRows){
  await reset();
  await seed('session-1',{
  state:row.state,
@@ -370,6 +392,15 @@ it('matches startup reconciliation for restored sessions',async()=>{
 
 const STREAM_ID='018f47b7-c6de-7d64-9c8d-0b62cbbb2e10';
 
+/** 결정표 행의 판정이 사건 입구 결과로 옮겨지는 길: apply는 반영, reject는 dead-letter. */
+function ingressOutcomeOf(row:SessionDecisionRow):'committed'|'dead_lettered'{
+ expect(['apply','reject'],rowLabel(row)).toContain(row.decision.kind);
+ return row.decision.kind==='apply'?'committed':'dead_lettered';
+}
+const INGRESS_DEAD_LETTER_CODE_BY_REASON:Record<string,string>={
+ registration_mismatch:'STALE_REGISTRATION',
+};
+
 it('matches the event ingress stale registration rejection and current acceptance',async()=>{
  await reset();
  await seed('session-1',{
@@ -406,20 +437,22 @@ it('matches the event ingress stale registration rejection and current acceptanc
  events,
  };
  }
- const stale=await repository.commitBatch('n1',batch(
- envelope('session-1','registration-stale',1,'a'.repeat(64)),
- ));
- expect(stale[0]?.outcome).toBe('dead_lettered');
- if(stale[0]?.outcome==='dead_lettered'){
- expect(stale[0].deadLetter.code).toBe('STALE_REGISTRATION');
- }
- const mismatchRow=rows.find(candidate=>
+ const staleRow=(registration:'stale'|'matches')=>rows.find(candidate=>
  candidate.command.type==='stale_registration'
  && candidate.state.status==='running'
  && candidate.state.termination==='none'
  && candidate.state.review==='acknowledged'
- && candidate.facts.registration==='stale'
+ && candidate.facts.registration===registration
  )!;
+ const mismatchRow=staleRow('stale');
+ const matchRow=staleRow('matches');
+ const stale=await repository.commitBatch('n1',batch(
+ envelope('session-1','registration-stale',1,'a'.repeat(64)),
+ ));
+ expect(stale[0]?.outcome,'stale_registration mismatch').toBe(ingressOutcomeOf(mismatchRow));
+ if(stale[0]?.outcome==='dead_lettered'){
+ expect(stale[0].deadLetter.code).toBe(INGRESS_DEAD_LETTER_CODE_BY_REASON[mismatchRow.decision.reason]);
+ }
  expectSameState(
  await storedValue('session-1'),
  expectedValue(mismatchRow),
@@ -428,14 +461,7 @@ it('matches the event ingress stale registration rejection and current acceptanc
  const current=await repository.commitBatch('n1',batch(
  envelope('session-1','registration-current',2,'b'.repeat(64)),
  ));
- expect(current[0]?.outcome).toBe('committed');
- const matchRow=rows.find(candidate=>
- candidate.command.type==='stale_registration'
- && candidate.state.status==='running'
- && candidate.state.termination==='none'
- && candidate.state.review==='acknowledged'
- && candidate.facts.registration==='matches'
- )!;
+ expect(current[0]?.outcome,'stale_registration matches').toBe(ingressOutcomeOf(matchRow));
  expectSameState(
  await storedValue('session-1'),
  expectedValue(matchRow),

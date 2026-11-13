@@ -187,6 +187,7 @@ reject(
 );
 
 noop("session_update_status", "missing", "session_missing", inside("s_none"));
+noop("session_update_status", "terminal", "not_active", TERMINAL);
 
 reject("acknowledge_review", "missing", "session_missing", inside("s_none"));
 reject(

@@ -6,7 +6,10 @@ import type { FolderControlPlaneService } from "../src/folders/folder_control_pl
 import { registerScheduleHostRoute } from "../src/schedule/schedule_host_route.js";
 import type { SoulstreamScheduleRepository } from "../src/schedule/schedule_repository.js";
 import type { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
-import { registerPersistenceHostRoutes } from "../src/control_plane/persistence_host_routes.js";
+import {
+  registerPersistenceHostRoutes,
+  sessionDataOperations,
+} from "../src/control_plane/persistence_host_routes.js";
 import type { PersistenceHostRepositories } from "../src/control_plane/persistence_host_runtime.js";
 import type { SqlClient } from "../src/control_plane/control_plane_types.js";
 import { SessionDeliveryNotificationRepository } from
@@ -821,77 +824,57 @@ describe("control-plane host routes", () => {
     });
   });
 
-  it("dispatches every session-data read operation through the explicit whitelist", async () => {
-    const targets = {
-      getSession: vi.fn(async () => null),
-      getSessionOwnerNode: vi.fn(async () => null),
-      listSessionsSummary: vi.fn(async () => ({ sessions: [], total: 0 })),
-      listRunningSessionsSummary: vi.fn(async () => ({ sessions: [], total: 0 })),
-      listSessionsForUpstreamDump: vi.fn(async () => ({ sessions: [], total: 0 })),
-      countEvents: vi.fn(async () => 0),
-      readEvents: vi.fn(async () => []),
-      readOneEvent: vi.fn(async () => null),
-      streamEventsRaw: vi.fn(async () => []),
-      searchEvents: vi.fn(async () => []),
-      searchEventsBySessionId: vi.fn(async () => []),
-      search: vi.fn(async () => ({ events: [], sessionIdEvents: [], digests: [] })),
-      getSessionSearchMetadata: vi.fn(async () => []),
-      countTurnSummaries: vi.fn(async () => ({ totalCount: 0, digestedCount: 0, undigestedCount: 0 })),
-      loadTurnSummaryRange: vi.fn(async () => []),
-      searchSessionDigests: vi.fn(async () => []),
-      getSessionStory: vi.fn(async () => ({
-        highlight: null,
-        narrative: null,
-        unfoldedTurnSummaries: [],
-        narrativeThroughEventId: null,
-        foldCount: 0,
-        updatedAt: null,
-      })),
-      getTurnExcerpt: vi.fn(async () => ({ totalEvents: 0, turns: [] })),
-      getResumeContext: vi.fn(async () => ({
-        session: null,
-        folderSessions: { sessions: [], total: 0 },
-        runningSessions: { sessions: [], total: 0 },
-        predecessor: null,
-      })),
-    };
-    const repositories = {
-      sessionReads: targets,
-      eventReads: targets,
-      storyReads: targets,
-      historySearch: targets,
-      sessionReadComposites: targets,
-    } as unknown as PersistenceHostRepositories;
+  it("dispatches every session-data operation in the exported whitelist", async () => {
+    // 쓰기 9개와 읽기 21개를 여기에 그대로 적는다. 화이트리스트에서 op를 빼거나 더하면
+    // 아래 정확 일치 단언이 실패한다.
+    const expectedOperations = {
+      put_report_entry: ["persistentReports", null, "put"],
+      remove_report_entry: ["persistentReports", null, "remove"],
+      register_session: ["sessionMutations", null, "registerSession"],
+      register_session_with_worktree: ["sessionMutations", null, "registerSessionWithWorktree"],
+      transition_session: ["sessionMutations", null, "transitionSession"],
+      rename_session: ["sessionMutations", null, "renameSession"],
+      delete_session: ["sessionMutations", null, "deleteSession"],
+      acknowledge_review: ["sessionMutations", null, "acknowledgeReview"],
+      set_model_selection: ["sessionMutations", null, "setModelSelection"],
+      get: ["sessionReads", null, "getSession"],
+      list_summary: ["sessionReads", null, "listSessionsSummary"],
+      list_running: ["sessionReads", null, "listRunningSessionsSummary"],
+      upstream_dump: ["sessionReads", null, "listSessionsForUpstreamDump"],
+      event_count: ["eventReads", null, "countEvents"],
+      event_read_page: ["eventReads", null, "readEvents"],
+      event_read_one: ["eventReads", null, "readOneEvent"],
+      event_raw_page: ["eventReads", null, "streamEventsRaw"],
+      event_search: ["eventReads", null, "searchEvents"],
+      event_session_id_search: ["eventReads", null, "searchEventsBySessionId"],
+      history_search: ["historySearch", null, "search"],
+      story_search_metadata: ["storyReads", null, "getSessionSearchMetadata"],
+      turn_summary_count: ["storyReads", null, "countTurnSummaries"],
+      turn_summary_range: ["storyReads", null, "loadTurnSummaryRange"],
+      digest_search: ["storyReads", null, "searchSessionDigests"],
+      story: ["storyReads", null, "getSessionStory"],
+      turn_excerpt: ["sessionReadComposites", null, "getTurnExcerpt"],
+      resume_context: ["sessionReadComposites", null, "getResumeContext"],
+      generation_checkpoint_material: ["sessionReadComposites", null, "getGenerationCheckpointMaterial"],
+      caller_chain: ["sessionReads", null, "getSessionCallerChain"],
+      owner_node: ["sessionReads", null, "getSessionOwnerNode"],
+    } as const;
+    expect(Object.keys(expectedOperations)).toHaveLength(30);
+    expect(sessionDataOperations).toEqual(expectedOperations);
+
+    const repositories: Record<string, Record<string, ReturnType<typeof vi.fn>>> = {};
+    for (const [repositoryKey, , method] of Object.values(expectedOperations)) {
+      (repositories[repositoryKey] ??= {})[method] = vi.fn(async () => null);
+    }
     const app = Fastify();
     apps.push(app);
     registerPersistenceHostRoutes(app, {
       nodeCredentials: null,
       authBearerToken: token,
-      repositoryProvider: async () => repositories,
+      repositoryProvider: async () => repositories as unknown as PersistenceHostRepositories,
     });
-    const operations = [
-      ["get", "getSession"],
-      ["owner_node", "getSessionOwnerNode"],
-      ["list_summary", "listSessionsSummary"],
-      ["list_running", "listRunningSessionsSummary"],
-      ["upstream_dump", "listSessionsForUpstreamDump"],
-      ["event_count", "countEvents"],
-      ["event_read_page", "readEvents"],
-      ["event_read_one", "readOneEvent"],
-      ["event_raw_page", "streamEventsRaw"],
-      ["event_search", "searchEvents"],
-      ["event_session_id_search", "searchEventsBySessionId"],
-      ["history_search", "search"],
-      ["story_search_metadata", "getSessionSearchMetadata"],
-      ["turn_summary_count", "countTurnSummaries"],
-      ["turn_summary_range", "loadTurnSummaryRange"],
-      ["digest_search", "searchSessionDigests"],
-      ["story", "getSessionStory"],
-      ["turn_excerpt", "getTurnExcerpt"],
-      ["resume_context", "getResumeContext"],
-    ] as const;
 
-    for (const [operation, method] of operations) {
+    for (const [operation, [repositoryKey, , method]] of Object.entries(expectedOperations)) {
       const response = await app.inject({
         method: "POST",
         url: `/api/session-data/host/${operation}`,
@@ -899,7 +882,7 @@ describe("control-plane host routes", () => {
         payload: { args: [] },
       });
       expect(response.statusCode, operation).toBe(200);
-      expect(targets[method]).toHaveBeenCalledTimes(1);
+      expect(repositories[repositoryKey]![method], operation).toHaveBeenCalledTimes(1);
     }
   });
 

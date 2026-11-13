@@ -45,7 +45,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
     callSites: [
       { file: "src/control_plane/repositories/session_mutation_repository.ts", line: 284 },
     ],
-    note: "허용 열에 status가 있어 범용 갱신으로 상태를 쓸 수 있다.",
+    note: "허용 열에 status가 있어 범용 갱신으로 상태를 쓴다. 종료 줄에 running을 쓰려 하면 줄을 바꾸지 않는다.",
   },
   {
     name: "session_acknowledge_review",
@@ -60,7 +60,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
   {
     name: "session_record_execution_registration",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:1579",
+    definition: "packages/db-schema/sql/schema.sql:1595",
     callSites: [
       { file: "src/node/event_session_effect_applier.ts", line: 163 },
     ],
@@ -69,7 +69,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
   {
     name: "session_apply_running_transition",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:4232",
+    definition: "packages/db-schema/sql/schema.sql:4170",
     callSites: [
       { file: "src/node/event_session_effect_applier.ts", line: 74 },
     ],
@@ -78,7 +78,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
   {
     name: "session_apply_terminal_transition",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:1720",
+    definition: "packages/db-schema/sql/schema.sql:1736",
     callSites: [
       { file: "src/node/event_session_effect_applier.ts", line: 221 },
     ],

@@ -92,7 +92,8 @@ const pageBindingOperations = {
   mark_failure: ["sessionPageBindings", null, "markFailure"],
 } as const satisfies Record<string, OperationTarget>;
 
-const sessionDataOperations = {
+/** session-data 호스트 화이트리스트. 시험이 전체 목록을 볼 수 있게 내보낸다. */
+export const sessionDataOperations = {
   put_report_entry: ["persistentReports", null, "put"],
   remove_report_entry: ["persistentReports", null, "remove"],
   register_session: ["sessionMutations", null, "registerSession"],

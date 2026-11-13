@@ -115,15 +115,14 @@ it('pins every promise and its known hole',()=>{
  ['interrupted_accepts_recorded_terminal',0],
  ['cleanup_only_active',0],
  ['running_requires_worktree',0],
- ['terminal_to_running_only_resume',4],
+ ['terminal_to_running_only_resume',0],
  ['owner_node_gate',0],
  ['disconnected_revived_only_by_adoption',5],
  ['active_delete_needs_stop',0],
  ['limit_resume_chain',0],
  ]);
- const hole=results.find(result=>result.id==='terminal_to_running_only_resume')!;
- expect(hole.examples).toHaveLength(3);
- expect(hole.knownHole).toContain('session_update');
+ const resumePromise=results.find(result=>result.id==='terminal_to_running_only_resume')!;
+ expect(resumePromise.knownHole).toBeUndefined();
  const adoptionHole=results.find(result=>result.id==='disconnected_revived_only_by_adoption')!;
  expect(adoptionHole.examples).toHaveLength(3);
  expect(adoptionHole.knownHole).toContain('시작 정리');
