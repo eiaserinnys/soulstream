@@ -1,0 +1,9 @@
+stateDiagram-v2
+direction TB
+classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
+classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
+state "한도 재개 예약" as sessionReservation {
+    direction TB
+    state "예약 없음" as res_none
+    state "예약 있음" as res_reserved
+}

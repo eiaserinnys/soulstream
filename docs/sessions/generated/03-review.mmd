@@ -1,0 +1,31 @@
+stateDiagram-v2
+direction TB
+classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
+classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
+state "검수 상태" as sessionReview {
+    direction TB
+    state "검수 불필요" as r_not_required
+    state "검수 대기" as r_needs_review
+    state "검수 확인" as r_acknowledged
+}
+sessionReview --> r_not_required: 세션 줄을 만든다: not_required로 썼다
+sessionReview --> r_needs_review: 세션 줄을 만든다: needs_review로 썼다
+sessionReview --> r_acknowledged: 세션 줄을 만든다: acknowledged로 썼다
+sessionReview --> r_not_required: 실행 등록을 기록한다: not_required로 썼다
+sessionReview --> r_needs_review: 실행 등록을 기록한다: needs_review로 썼다
+sessionReview --> r_acknowledged: 실행 등록을 기록한다: acknowledged로 썼다
+sessionReview --> r_not_required: 실행 중 전환을 기록한다: not_required로 썼다
+sessionReview --> r_needs_review: 실행 중 전환을 기록한다: needs_review로 썼다
+sessionReview --> r_acknowledged: 실행 중 전환을 기록한다: acknowledged로 썼다
+sessionReview --> r_not_required: 종료 전환을 기록한다: not_required로 썼다
+sessionReview --> r_needs_review: 종료 전환을 기록한다: needs_review로 썼다
+sessionReview --> r_acknowledged: 종료 전환을 기록한다: acknowledged로 썼다
+sessionReview --> r_not_required: 노드 끊김을 정리한다: not_required로 썼다
+sessionReview --> r_needs_review: 노드 끊김을 정리한다: needs_review로 썼다
+sessionReview --> r_acknowledged: 노드 끊김을 정리한다: acknowledged로 썼다
+sessionReview --> r_not_required: 시작 정리에서 사라진 세션을 멈춘다: not_required로 썼다
+sessionReview --> r_needs_review: 시작 정리에서 사라진 세션을 멈춘다: needs_review로 썼다
+sessionReview --> r_acknowledged: 시작 정리에서 사라진 세션을 멈춘다: acknowledged로 썼다
+sessionReview --> r_not_required: 시작 정리에서 살아 있는 세션을 되살린다: 검수 불필요로 되돌렸다
+sessionReview --> r_acknowledged: 검수를 확인한다: 검수를 확인했다
+sessionReview --> r_not_required: 세션을 지운다: 검수 칸을 지웠다
