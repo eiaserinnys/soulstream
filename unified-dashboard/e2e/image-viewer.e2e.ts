@@ -419,6 +419,11 @@ async function attachmentMetrics(popup: Locator) {
       panel:panel ? {scrollWidth:panel.scrollWidth,clientWidth:panel.clientWidth} : null,
       popupScroll:{scrollWidth:el.scrollWidth,clientWidth:el.clientWidth},
       table:table && tableBox ? {rect:rect(tableBox),scrollWidth:tableBox.scrollWidth,clientWidth:tableBox.clientWidth} : null,
+      tableHeaders:[...el.querySelectorAll("table th")].map(th=>{
+        const range=document.createRange();
+        range.selectNodeContents(th);
+        return {text:(th.textContent??"").trim(),lines:range.getClientRects().length};
+      }),
       active:el.contains(document.activeElement),
       pageScrollWidth:document.documentElement.scrollWidth,
     };
@@ -441,6 +446,7 @@ for(const [vw,vh] of attachmentViewports) {
     const data=await captureAttachment(page,popup,`attachment-doc-long-${vw}x${vh}`,vw,vh);
     if(phase!=="after") return;
     expect(data.kind).toBe("document");
+    if(vw>=1440) for(const header of data.tableHeaders) expect(header.lines,header.text).toBe(1);
     expect(Math.abs(data.popup.width-documentCap(vw))).toBeLessThanOrEqual(1);
     expect(data.popup.right).toBeLessThanOrEqual(vw-15);
     expect(data.popup.bottom).toBeLessThanOrEqual(vh-15);
@@ -528,6 +534,34 @@ for(const [vw,vh] of attachmentViewports) {
       expect(Math.abs(loaded.popup.width-loading.popup.width)).toBeLessThanOrEqual(1);
       expect(Math.abs(loaded.popup.width-documentCap(vw))).toBeLessThanOrEqual(1);
     }
+  });
+}
+
+for(const [vw,vh] of attachmentViewports) {
+  test(`attachment html loading keeps the full frame ${vw}x${vh}`,async({page})=>{
+    let release!:()=>void;
+    const gate=new Promise<void>(resolve=>{release=resolve;});
+    await page.route("**/api/attachments/slow-html/content*",async route=>{
+      await gate;
+      const html="<!doctype html><html><body><h1>Sample</h1></body></html>";
+      const body=html+"<!--"+" ".repeat(4096-html.length-7)+"-->";
+      return route.fulfill({status:206,headers:{
+        "Content-Type":"text/html; charset=utf-8","Content-Length":"4096","Content-Range":"bytes 0-4095/4096",
+      },body});
+    });
+    const popup=await openAttachment(page,"html-slow",vw,vh);
+    await expect(popup.locator(".chat-attachment-state")).toContainText("미리보기를 불러오는 중…");
+    const loading=await captureAttachment(page,popup,`attachment-html-loading-${vw}x${vh}`,vw,vh);
+    release();
+    await expect(popup.locator(".chat-attachment-html-frame")).toBeVisible();
+    const loaded=await captureAttachment(page,popup,`attachment-html-loaded-${vw}x${vh}`,vw,vh);
+    if(phase!=="after") return;
+    expect(loading.kind).toBe("html");
+    expect(Math.abs(loading.popup.width-(vw-32))).toBeLessThanOrEqual(1);
+    expect(Math.abs(loading.popup.height-(vh-2*viewportMargin(vw)))).toBeLessThanOrEqual(1);
+    expect(Math.abs(loaded.popup.width-loading.popup.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(loaded.popup.height-loading.popup.height)).toBeLessThanOrEqual(1);
+    expect(loaded.popupScroll.scrollWidth).toBeLessThanOrEqual(loaded.popupScroll.clientWidth+1);
   });
 }
 

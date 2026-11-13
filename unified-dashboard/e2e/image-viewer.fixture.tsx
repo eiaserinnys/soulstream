@@ -93,6 +93,13 @@ function attachmentItem(kind: string): ChatAttachmentItem {
     originalUrl: `/api/attachments/slow-doc/content?context_type=card&context_id=card-1&download=true`,
     legacySources: [], source: {kind: "asset", attachmentId: "slow-doc", context},
   };
+  if (kind === "html-slow") return {
+    key: "asset:html-slow", name: "느린 화면.html", mimeType: "text/html", byteSize: 4096,
+    previewKind: "text", availability: "ready",
+    previewUrl: `/api/attachments/slow-html/content?context_type=card&context_id=card-1`,
+    originalUrl: `/api/attachments/slow-html/content?context_type=card&context_id=card-1&download=true`,
+    legacySources: [], source: {kind: "asset", attachmentId: "slow-html", context},
+  };
   if (kind === "missing") return {
     key: "asset:missing", name: "사라진 문서.md", mimeType: "text/markdown", byteSize: 120,
     previewKind: "text", availability: "missing", previewUrl: null, originalUrl: null,
