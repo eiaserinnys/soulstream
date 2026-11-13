@@ -6,6 +6,7 @@ import { RunnerProcessEngineProxy } from "../../src/runner/runner_process_engine
 import { createInProcessTaskRunnerRuntime, createTaskRunnerRuntime } from
   "../../src/runner/task_runner_runtime.js";
 import { RunningInterventionTransition } from "../../src/task/task_running_intervention_transition.js";
+import { buildSystemAbortNoticeItem } from "../../src/task/system_abort_notice.js";
 import { resolveTurnLoopTransition } from "../../src/task/task_turn_loop_transition.js";
 import { buildDeliveryInputUuid } from "../../src/task/delivery_identity.js";
 import { TaskDeliveryConsumption } from "../../src/task/task_delivery_consumption.js";
@@ -1577,5 +1578,51 @@ describe("managed attachment intervention delivery", () => {
     ]);
     await priorTurn;
     expect(turnFinished).toBe(true);
+  });
+});
+
+describe("RunningInterventionTransition previous-turn system abort notice", () => {
+  it("puts the notice ahead of the user text in the runner prompt", async () => {
+    const intervene = vi.fn();
+    const injectAtToolBoundary = vi.fn().mockResolvedValue({
+      status: "delivered",
+      mechanism: "active_turn",
+    });
+    const register = vi.fn().mockResolvedValue(undefined);
+    const task = makeRunningTask({
+      activeDeliveryTurnReceipt: { register } as never,
+      runner: createInProcessTaskRunnerRuntime({
+        backendId: "claude",
+        workspaceDir: "/tmp/claude",
+        async *execute(): AsyncIterable<never> {},
+        async interrupt() { return true; },
+        async close() {},
+        intervene,
+        injectAtToolBoundary,
+      } as unknown as EnginePort),
+    });
+    const transition = new RunningInterventionTransition({
+      broadcaster: makeBroadcaster(),
+      logger: silentLogger,
+      persistence: makeEventPersistenceTestDouble().persistence,
+    });
+    const message: InterventionMessage = {
+      text: "하던 일을 이어 가세요",
+      user: "system",
+      callerInfo: { source: "system" },
+      context: [buildSystemAbortNoticeItem({
+        reason: "killed",
+        detail: "node_disconnect_timeout",
+        eventId: 744,
+      })],
+    };
+
+    await expect(transition.deliver(task, message)).resolves.toEqual({ delivered: true });
+
+    const prompt = injectAtToolBoundary.mock.calls[0]?.[0]?.prompt as string;
+    expect(prompt).toContain("<previous_turn_system_abort>");
+    const noticeIndex = prompt.indexOf("사용자 지시를 기다리며 멈추지 말고");
+    expect(noticeIndex).toBeGreaterThan(-1);
+    expect(noticeIndex).toBeLessThan(prompt.indexOf("하던 일을 이어 가세요"));
   });
 });

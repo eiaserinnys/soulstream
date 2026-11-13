@@ -50,7 +50,7 @@ export interface TaskFinalStatePersistenceResult {
   terminalTransitionApplied: boolean;
 }
 
-const USER_STOP_PROJECTION = {
+export const USER_STOP_PROJECTION = {
   true: {
     status: terminalTaskStatusForReason("killed"),
     error: undefined,

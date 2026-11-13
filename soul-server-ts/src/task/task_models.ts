@@ -593,6 +593,9 @@ export interface Task {
   /** 후속 턴에 claude_session_id delta를 한 번만 주입하기 위한 런타임 마커. */
   lastInjectedClaudeSessionId?: string;
 
+  /** 직전 턴의 시스템 종료 안내를 같은 종료 사건에 한 번만 붙이기 위한 런타임 마커. */
+  lastSystemAbortNoticeKey?: string;
+
   /** 후속 턴에 caller_info delta를 한 번만 주입하기 위한 런타임 마커. */
   lastInjectedCallerInfo?: CallerInfo;
 

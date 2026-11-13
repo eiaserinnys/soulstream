@@ -1549,3 +1549,114 @@ describe("explicit ensure running", () => {
     await expect(subject.route.ensureRunning(params,vi.fn())).rejects.toThrow("등록");
   });
 });
+
+describe("TaskInterventionRoute previous-turn system abort notice", () => {
+  function noticeItems(message: { context?: Array<{ key: string }> } | undefined) {
+    return (message?.context ?? []).filter(
+      (item) => item.key === "previous_turn_system_abort",
+    );
+  }
+
+  it("carries one notice into a terminal auto-resume message", async () => {
+    const task = makeTask({
+      status: "error",
+      runner: undefined,
+      terminationReason: "error_aborted",
+      terminationDetail: "runner process exited before execution completed",
+      terminalEventId: 3114,
+    });
+    const { route, autoResumeTransition } = makeSubject([task]);
+
+    await expect(route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "[카드 상태 확인] 이어서 진행하세요",
+      user: "system",
+    }, vi.fn())).resolves.toEqual({ autoResumed: true });
+
+    const message = vi.mocked(autoResumeTransition.resume).mock.calls[0]?.[1];
+    expect(noticeItems(message)).toHaveLength(1);
+    expect(JSON.stringify(message?.context)).toContain(
+      "사용자 지시를 기다리며 멈추지 말고",
+    );
+  });
+
+  it("does not carry a notice when the terminal reason is a human stop", async () => {
+    const task = makeTask({
+      status: "error",
+      runner: undefined,
+      terminationReason: "killed",
+      terminationDetail: "user_stop",
+      terminalEventId: 3115,
+    });
+    const { route, autoResumeTransition } = makeSubject([task]);
+
+    await route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "이어서 진행하세요",
+      user: "alice",
+    }, vi.fn());
+
+    const message = vi.mocked(autoResumeTransition.resume).mock.calls[0]?.[1];
+    expect(noticeItems(message)).toHaveLength(0);
+  });
+
+  it("reads the stored termination for a task that still looks running and adds the notice once", async () => {
+    const task = makeTask();
+    const readSessionTermination = vi.fn().mockResolvedValue({
+      termination_reason: "killed",
+      termination_detail: "node_disconnect_timeout",
+      termination_event_id: 744,
+    });
+    const { route, runningInterventionTransition } = makeSubject(
+      [task],
+      undefined,
+      { readSessionTermination },
+    );
+
+    await route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "첫 입력",
+      user: "system",
+    }, vi.fn());
+    const first = vi.mocked(runningInterventionTransition.deliver).mock.calls[0]?.[1];
+    expect(noticeItems(first)).toHaveLength(1);
+
+    await route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "두 번째 입력",
+      user: "system",
+    }, vi.fn());
+    const second = vi.mocked(runningInterventionTransition.deliver).mock.calls[1]?.[1];
+    expect(noticeItems(second)).toHaveLength(0);
+  });
+
+  it("delivers without a notice when the session termination read fails", async () => {
+    const task = makeTask();
+    const logger = pino({ level: "silent" });
+    const warn = vi.spyOn(logger, "warn");
+    const { route, runningInterventionTransition } = makeSubject(
+      [task],
+      undefined,
+      {
+        readSessionTermination: vi.fn().mockRejectedValue(new Error("sessions read failed")),
+        logger,
+      },
+    );
+
+    await expect(route.addIntervention({
+      agentSessionId: task.agentSessionId,
+      text: "첫 입력",
+      user: "system",
+    }, vi.fn())).resolves.toEqual({
+      delivered: false,
+      queued: true,
+      queuePosition: 1,
+      consumeWhen: "next_turn",
+      reason: "queue_only_policy",
+    });
+
+    const message = vi.mocked(runningInterventionTransition.deliver).mock.calls[0]?.[1];
+    expect(noticeItems(message)).toHaveLength(0);
+    expect(warn).toHaveBeenCalledOnce();
+  });
+});
