@@ -246,6 +246,24 @@ describe("AttachmentViewer", () => {
     expect(document.body.querySelector("[role=dialog]")?.textContent).toContain("3/3");
   });
 
+  it("marks the gallery frame per bundle kind", async () => {
+    const popup = () => document.body.querySelector(".chat-image-viewer-popup");
+    await act(async () => root.render(<ViewerHarness items={[attachment()]} />));
+    expect(popup()?.hasAttribute("data-attachment-bundle")).toBe(false);
+
+    await act(async () => root.render(<ViewerHarness items={[
+      attachment({ key: "a" }),
+      attachment({ key: "b", name: "b.txt" }),
+    ]} />));
+    expect(popup()?.getAttribute("data-attachment-bundle")).toBe("documents");
+
+    await act(async () => root.render(<ViewerHarness items={[
+      attachment({ key: "a" }),
+      attachment({ key: "b", name: "b.png", mimeType: "image/png", previewKind: "image", previewUrl: "/b.png" }),
+    ]} />));
+    expect(popup()?.getAttribute("data-attachment-bundle")).toBe("mixed");
+  });
+
   it("leaves arrow keys on native media controls for playback", async () => {
     const items = [
       remoteMedia("clip.mp3", "audio/mpeg"),

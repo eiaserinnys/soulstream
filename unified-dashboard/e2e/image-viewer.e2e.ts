@@ -414,6 +414,29 @@ async function attachmentMetrics(popup: Locator) {
       natural:image ? [image.naturalWidth,image.naturalHeight] : null,
       markdown:markdown ? rect(markdown) : null,
       pre:pre ? rect(pre) : null,
+      textBody:(()=>{const body=markdown ?? pre; return body?rect(body):null;})(),
+      navigation:!!el.querySelector(".chat-image-viewer-navigation"),
+      count:el.querySelector(".chat-image-viewer-count")?.textContent ?? null,
+      media:(()=>{
+        const video=el.querySelector("video") as HTMLVideoElement | null;
+        const frame=el.querySelector(".chat-attachment-media-frame");
+        const panel=el.querySelector('[data-slot="dialog-panel"]');
+        return {video:video?rect(video):null,frame:frame?rect(frame):null,panel:panel?rect(panel):null,natural:video?[video.videoWidth,video.videoHeight]:null};
+      })(),
+      // 이미지처럼 가운데에 서는 기준은 테두리 상자가 아니라 안쪽 여백을 뺀 내용 상자의 중심이다.
+      panelContentCenter:(()=>{
+        const panel=el.querySelector('[data-slot="dialog-panel"]');
+        if(!panel) return null;
+        const style=getComputedStyle(panel);
+        const box=panel.getBoundingClientRect();
+        const left=parseFloat(style.paddingLeft),right=parseFloat(style.paddingRight);
+        const top=parseFloat(style.paddingTop),bottom=parseFloat(style.paddingBottom);
+        return {x:box.x+left+(box.width-left-right)/2,y:box.y+top+(box.height-top-bottom)/2};
+      })(),
+      nextButton:(()=>{
+        const button=el.querySelector('.chat-image-viewer-navigation [aria-label="다음 첨부"], .chat-image-viewer-navigation [aria-label="다음 이미지"]');
+        return button?rect(button):null;
+      })(),
       footer:footer ? rect(footer) : null,
       scroll:scroll ? {scrollHeight:scroll.scrollHeight,clientHeight:scroll.clientHeight,scrollWidth:scroll.scrollWidth,clientWidth:scroll.clientWidth} : null,
       panel:panel ? {scrollWidth:panel.scrollWidth,clientWidth:panel.clientWidth} : null,
@@ -437,6 +460,30 @@ async function captureAttachment(page:Page, popup:Locator, name:string, vw:numbe
 }
 function documentCap(vw:number) { return Math.min(768, vw-32); }
 function viewportMargin(vw:number) { return vw<=640 ? 24 : 32; }
+async function nextButtonBox(popup:Locator) {
+  const box=await popup.locator('.chat-image-viewer-navigation [aria-label="다음 첨부"], .chat-image-viewer-navigation [aria-label="다음 이미지"]').first().boundingBox();
+  expect(box).not.toBeNull();
+  return box!;
+}
+async function waitVideoMetadata(popup:Locator) {
+  await popup.locator("video").evaluate((el:HTMLVideoElement)=>el.readyState>=1?null:new Promise<void>(resolve=>{
+    el.addEventListener("loadedmetadata",()=>resolve(),{once:true});
+  }));
+}
+async function openDialogueSample(page:Page,sample:string,vw:number,vh:number) {
+  await page.setViewportSize({width:vw,height:vh});
+  await page.emulateMedia({colorScheme:"light",reducedMotion:"reduce"});
+  await page.addInitScript(()=>{
+    localStorage.setItem("ls.webglGlass","0");
+    Object.defineProperty(navigator.serviceWorker,"register",{configurable:true,value:async()=>({update:async()=>undefined,active:null,addEventListener:()=>undefined})});
+    Object.defineProperty(navigator.serviceWorker,"controller",{configurable:true,get:()=>null});
+  });
+  await installV3VisualQaRoutes(page);
+  await page.route("**/api/auth/config",route=>route.fulfill({contentType:"application/json",body:JSON.stringify({authEnabled:true,devModeEnabled:false})}));
+  await page.route("**/api/auth/status",route=>route.fulfill({contentType:"application/json",body:JSON.stringify({authenticated:true,user:{email:"qa@example.test",name:"QA",isAdmin:true}})}));
+  await page.goto(`/dialogues?sample=${sample}`);
+  await page.evaluate(()=>document.fonts.ready);
+}
 
 for(const [vw,vh] of attachmentViewports) {
   test(`attachment long document ${vw}x${vh}`,async({page})=>{
@@ -588,6 +635,145 @@ test("attachment document resizes while open",async({page})=>{
     expect(data.popupScroll.scrollWidth).toBeLessThanOrEqual(data.popupScroll.clientWidth+1);
   }
 });
+
+// 카드 #1289 검수 반려: 넘기기 창은 묶음 단위로 틀을 정하고, 문서 본문과 동영상은
+// 틀 가운데에 선다. 문서만 든 묶음은 문서 창 크기로 고정한다.
+for(const [vw,vh] of attachmentViewports) {
+  test(`gallery document-only bundle ${vw}x${vh}`,async({page})=>{
+    const popup=await openAttachment(page,"gallery-docs",vw,vh);
+    await expect(popup.locator(".chat-attachment-markdown")).toBeVisible();
+    const first=await captureAttachment(page,popup,`gallery-docs-${vw}x${vh}`,vw,vh);
+    const nextFirst=await nextButtonBox(popup);
+    await popup.getByRole("button",{name:"다음 첨부"}).click();
+    await expect(popup.locator("pre")).toBeVisible();
+    const second=await captureAttachment(page,popup,`gallery-docs-second-${vw}x${vh}`,vw,vh);
+    const nextSecond=await nextButtonBox(popup);
+    if(phase!=="after") return;
+    for(const data of [first,second]) {
+      expect(data.navigation).toBe(true);
+      expect(data.kind).toBe("document");
+      expect(Math.abs(data.popup.width-documentCap(vw))).toBeLessThanOrEqual(1);
+      expect(Math.abs(data.popup.height-(vh-2*viewportMargin(vw)))).toBeLessThanOrEqual(1);
+      expect(data.textBody!.width).toBeLessThanOrEqual(documentCap(vw)+1);
+      expect(data.popupScroll.scrollWidth).toBeLessThanOrEqual(data.popupScroll.clientWidth+1);
+    }
+    expect(Math.abs(second.popup.width-first.popup.width)).toBeLessThanOrEqual(1);
+    expect(Math.abs(second.popup.height-first.popup.height)).toBeLessThanOrEqual(1);
+    expect(Math.abs(nextSecond.x-nextFirst.x)).toBeLessThanOrEqual(2);
+    expect(Math.abs(nextSecond.y-nextFirst.y)).toBeLessThanOrEqual(2);
+  });
+  test(`gallery mixed bundle steps ${vw}x${vh}`,async({page})=>{
+    const popup=await openAttachment(page,"gallery-mixed",vw,vh,64,64);
+    await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode());
+    const image=await captureAttachment(page,popup,`gallery-mixed-image-${vw}x${vh}`,vw,vh);
+    const nextImage=await nextButtonBox(popup);
+    await popup.getByRole("button",{name:"다음 첨부"}).click();
+    await expect(popup.locator(".chat-attachment-markdown")).toBeVisible();
+    const doc=await captureAttachment(page,popup,`gallery-mixed-document-${vw}x${vh}`,vw,vh);
+    const nextDoc=await nextButtonBox(popup);
+    await popup.getByRole("button",{name:"다음 첨부"}).click();
+    await expect(popup.locator("video")).toBeVisible();
+    await waitVideoMetadata(popup);
+    const video=await captureAttachment(page,popup,`gallery-mixed-video-${vw}x${vh}`,vw,vh);
+    const nextVideo=await nextButtonBox(popup);
+    if(phase!=="after") return;
+    for(const data of [image,doc,video]) {
+      expect(data.navigation).toBe(true);
+      expect(Math.abs(data.popup.width-(vw-32))).toBeLessThanOrEqual(1);
+      expect(Math.abs(data.popup.height-(vh-2*viewportMargin(vw)))).toBeLessThanOrEqual(1);
+      expect(data.popupScroll.scrollWidth).toBeLessThanOrEqual(data.popupScroll.clientWidth+1);
+    }
+    expect(doc.kind).toBe("document");
+    expect(doc.textBody!.width).toBeLessThanOrEqual(768+1);
+    expect(Math.abs(doc.textBody!.left+doc.textBody!.width/2-(doc.media.panel!.x+doc.media.panel!.width/2))).toBeLessThanOrEqual(1);
+    expect(video.media.natural).toEqual([16,16]);
+    expect(Math.abs(video.media.video!.x+video.media.video!.width/2-(video.media.frame!.x+video.media.frame!.width/2))).toBeLessThanOrEqual(1);
+    expect(Math.abs(video.media.video!.y+video.media.video!.height/2-(video.media.frame!.y+video.media.frame!.height/2))).toBeLessThanOrEqual(1);
+    expect(image.image).not.toBeNull();
+    expect(Math.abs(video.media.frame!.x+video.media.frame!.width/2-(image.image!.x+image.image!.width/2))).toBeLessThanOrEqual(1);
+    expect(Math.abs(video.media.frame!.y+video.media.frame!.height/2-(image.image!.y+image.image!.height/2))).toBeLessThanOrEqual(1);
+    for(const next of [nextDoc,nextVideo]) {
+      expect(Math.abs(next.x-nextImage.x)).toBeLessThanOrEqual(2);
+      expect(Math.abs(next.y-nextImage.y)).toBeLessThanOrEqual(2);
+    }
+  });
+}
+for(const [vw,vh] of [[2560,1392],[1440,900]] as const) {
+  test(`single narrow video stays centered ${vw}x${vh}`,async({page})=>{
+    const popup=await openAttachment(page,"video-narrow",vw,vh);
+    await expect(popup.locator("video")).toBeVisible();
+    await waitVideoMetadata(popup);
+    const data=await captureAttachment(page,popup,`attachment-video-narrow-${vw}x${vh}`,vw,vh);
+    if(phase!=="after") return;
+    expect(data.kind).toBe("video");
+    expect(data.media.natural).toEqual([16,16]);
+    expect(Math.abs(data.media.video!.x+data.media.video!.width/2-(data.media.frame!.x+data.media.frame!.width/2))).toBeLessThanOrEqual(1);
+    expect(Math.abs(data.media.video!.y+data.media.video!.height/2-(data.media.frame!.y+data.media.frame!.height/2))).toBeLessThanOrEqual(1);
+    expect(Math.abs(data.media.frame!.x+data.media.frame!.width/2-(data.panelContentCenter!.x))).toBeLessThanOrEqual(1);
+    expect(data.popupScroll.scrollWidth).toBeLessThanOrEqual(data.popupScroll.clientWidth+1);
+  });
+}
+
+// 세라피엘 보충 검수(review.py)의 두 시나리오를 그대로 옮긴다.
+for(const [vw,vh] of attachmentViewports) {
+  test(`review supplement: card attachment document gallery ${vw}x${vh}`,async({page})=>{
+    await openDialogueSample(page,"card-attachments",vw,vh);
+    const link=page.getByRole("link",{name:"보고.txt"}).first();
+    await expect(link).toBeVisible({timeout:30000});
+    await link.click();
+    const popup=page.locator('[data-slot="dialog-popup"]');
+    await expect(popup).toBeVisible();
+    await expect(popup.locator("pre, .chat-attachment-markdown").first()).toBeVisible();
+    const doc=await captureAttachment(page,popup,`review-card-attachment-document-${vw}x${vh}`,vw,vh);
+    const nextDoc=await nextButtonBox(popup);
+    await popup.getByRole("button",{name:"이전 첨부"}).click();
+    await expect(popup.locator("img")).toBeVisible();
+    const image=await captureAttachment(page,popup,`review-card-attachment-image-${vw}x${vh}`,vw,vh);
+    const nextImage=await nextButtonBox(popup);
+    if(phase!=="after") return;
+    expect(doc.count).toBe("3/7");
+    expect(doc.textBody!.width).toBeLessThanOrEqual(768+1);
+    expect(doc.popupScroll.scrollWidth).toBeLessThanOrEqual(doc.popupScroll.clientWidth+1);
+    expect(image.kind).toBe("image");
+    expect(Math.abs(nextImage.x-nextDoc.x)).toBeLessThanOrEqual(2);
+    expect(Math.abs(nextImage.y-nextDoc.y)).toBeLessThanOrEqual(2);
+    await popup.getByRole("button",{name:"다음 첨부"}).click();
+    await expect(popup.locator("pre, .chat-attachment-markdown").first()).toBeVisible();
+    const back=await nextButtonBox(popup);
+    expect(Math.abs(back.x-nextDoc.x)).toBeLessThanOrEqual(2);
+    expect(Math.abs(back.y-nextDoc.y)).toBeLessThanOrEqual(2);
+  });
+  test(`review supplement: chat attachment document and video steps ${vw}x${vh}`,async({page})=>{
+    await openDialogueSample(page,"chat-attachments",vw,vh);
+    const docTarget=page.getByText("톤 제안 원문.md",{exact:true}).first();
+    await expect(docTarget).toBeVisible({timeout:30000});
+    await docTarget.click();
+    let popup=page.locator('[data-slot="dialog-popup"]');
+    await expect(popup.locator(".chat-attachment-markdown")).toBeVisible();
+    const doc=await captureAttachment(page,popup,`review-chat-attachment-document-${vw}x${vh}`,vw,vh);
+    await page.keyboard.press("Escape");
+    await expect(popup).toHaveCount(0);
+    const videoTarget=page.getByText("sample-video.mp4",{exact:true}).first();
+    await expect(videoTarget).toBeVisible({timeout:20000});
+    await videoTarget.click();
+    popup=page.locator('[data-slot="dialog-popup"]');
+    await expect(popup.locator("video")).toBeVisible();
+    await waitVideoMetadata(popup);
+    const video=await captureAttachment(page,popup,`review-chat-attachment-video-${vw}x${vh}`,vw,vh);
+    if(phase!=="after") return;
+    expect(doc.count).toBe("9/17");
+    expect(doc.textBody!.width).toBeLessThanOrEqual(768+1);
+    expect(Math.abs(doc.textBody!.left+doc.textBody!.width/2-(doc.media.panel!.x+doc.media.panel!.width/2))).toBeLessThanOrEqual(1);
+    expect(doc.popupScroll.scrollWidth).toBeLessThanOrEqual(doc.popupScroll.clientWidth+1);
+    expect(video.count).toBe("3/17");
+    expect(video.media.natural).toEqual([16,16]);
+    expect(Math.abs(video.media.video!.x+video.media.video!.width/2-(video.media.frame!.x+video.media.frame!.width/2))).toBeLessThanOrEqual(1);
+    expect(Math.abs(video.media.video!.y+video.media.video!.height/2-(video.media.frame!.y+video.media.frame!.height/2))).toBeLessThanOrEqual(1);
+    expect(Math.abs(video.media.frame!.x+video.media.frame!.width/2-(video.panelContentCenter!.x))).toBeLessThanOrEqual(1);
+    expect(Math.abs(video.media.frame!.y+video.media.frame!.height/2-(video.panelContentCenter!.y))).toBeLessThanOrEqual(1);
+    expect(video.popupScroll.scrollWidth).toBeLessThanOrEqual(video.popupScroll.clientWidth+1);
+  });
+}
 
 for(const surface of ["card","pas"] as const) {
   test(`question document link opens the viewer ${surface}`,async({page,context})=>{

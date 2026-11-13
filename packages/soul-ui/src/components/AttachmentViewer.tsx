@@ -225,6 +225,13 @@ export function AttachmentViewer({
       : mediaFormat === "video" ? "video"
         : mediaFormat === "audio" ? "audio"
           : "file";
+  // Galleries pick one frame for the whole bundle. A bundle of markdown/plain
+  // documents reads at the document width; any other mix keeps the full frame.
+  const bundleKind = !multiItem ? null
+    : items.every(attachment => {
+        const format = attachment.previewKind === "text" ? attachmentTextFormat(attachment) : null;
+        return format === "markdown" || format === "plain";
+      }) ? "documents" : "mixed";
 
   const changeIndex = (next: number) => {
     if (!multiItem || next < 0 || next >= items.length || next === index) return;
@@ -261,6 +268,7 @@ export function AttachmentViewer({
         initialFocus={popupRef}
         className="v3-surface image-viewer-popup chat-image-viewer-popup"
         data-attachment-kind={contentKind}
+        {...(bundleKind ? { "data-attachment-bundle": bundleKind } : {})}
         {...(returnFocus ? { finalFocus: () => returnFocus } : {})}
         onKeyDown={handleKeyDown}
       >

@@ -21,6 +21,9 @@ const sampleSrc = params.get("sample") === "dark" ? "/image-viewer-screen.png"
 const src = sampleSrc ?? "data:image/svg+xml," + encodeURIComponent(image);
 const file = new File([sampleSrc ? await fetch(sampleSrc).then(response => response.blob()) : image],
   sampleSrc ? "screen.png" : "fixture.svg", {type:sampleSrc ? "image/png" : "image/svg+xml"});
+// 검수 반려 2: 320보다 좁은 동영상도 단독 창에서 가운데에 서는지 재는 표본.
+const narrowVideo = new File([await fetch("/e2e/fixtures/sample-video.mp4").then(response => response.blob())],
+  "sample-video.mp4", {type:"video/mp4"});
 const caption = params.get("caption") === "none" ? "" : params.get("caption") === "long"
   ? "원본 화면에서 글자를 읽고 상태와 배치를 확인할 수 있는 증거 이미지입니다. ".repeat(5)
   : params.get("caption") === "one" ? "화면 캡처"
@@ -100,6 +103,11 @@ function attachmentItem(kind: string): ChatAttachmentItem {
     originalUrl: `/api/attachments/slow-html/content?context_type=card&context_id=card-1&download=true`,
     legacySources: [], source: {kind: "asset", attachmentId: "slow-html", context},
   };
+  if (kind === "video-narrow") return {
+    key: "local:video-narrow", name: "sample-video.mp4", mimeType: "video/mp4", byteSize: narrowVideo.size,
+    previewKind: "info", availability: "ready", previewUrl: null, originalUrl: null,
+    legacySources: [], source: {kind: "local", file: narrowVideo},
+  };
   if (kind === "missing") return {
     key: "asset:missing", name: "사라진 문서.md", mimeType: "text/markdown", byteSize: 120,
     previewKind: "text", availability: "missing", previewUrl: null, originalUrl: null,
@@ -115,10 +123,16 @@ function attachmentItem(kind: string): ChatAttachmentItem {
   };
 }
 
+function attachmentItems(kind: string): ChatAttachmentItem[] {
+  if (kind === "gallery-docs") return [attachmentItem("doc-short"), attachmentItem("text")];
+  if (kind === "gallery-mixed") return [attachmentItem("image-small"), attachmentItem("doc-short"), attachmentItem("video-narrow")];
+  return [attachmentItem(kind)];
+}
+
 function AttachmentFixture({kind}:{kind:string}) {
   const [index, setIndex] = useState<number|null>(0);
-  const item = attachmentItem(kind);
-  return <AttachmentViewer items={[item]} index={index} onIndexChange={setIndex} onClose={() => setIndex(null)}/>;
+  const items = attachmentItems(kind);
+  return <AttachmentViewer items={items} index={index} onIndexChange={setIndex} onClose={() => setIndex(null)}/>;
 }
 
 function Fixture() {

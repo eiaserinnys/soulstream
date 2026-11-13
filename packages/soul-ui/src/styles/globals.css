@@ -1570,15 +1570,30 @@ pre[data-markdown-code-layout="document"] {
 }
 /* Galleries, HTML previews and audio players keep the stable viewport frame so
    the frame does not move between steps or while a preview loads. */
-.chat-image-viewer-popup[data-slot="dialog-popup"]:is(:has(.chat-image-viewer-navigation), :has(.chat-attachment-html-frame), [data-attachment-kind="html"], :has(.chat-attachment-media-frame):not([data-attachment-kind="video"])) {
+.chat-image-viewer-popup[data-slot="dialog-popup"]:is([data-attachment-bundle="mixed"], :has(.chat-attachment-html-frame), [data-attachment-kind="html"], :has(.chat-attachment-media-frame):not([data-attachment-kind="video"])) {
   width: calc(100dvw - 2rem);
   height: calc(100dvh - 2 * var(--image-viewer-block-margin));
   --image-viewer-block-reserve: calc(var(--spacing) * 37 + var(--font-size-xl--line-height) + var(--font-size-sm--line-height) + var(--chat-attachment-filename-gap) + var(--image-viewer-rim));
 }
-.chat-image-viewer-popup:is(:has(.chat-image-viewer-navigation), :has(.chat-attachment-html-frame), [data-attachment-kind="html"], :has(.chat-attachment-media-frame):not([data-attachment-kind="video"])) > [data-slot="dialog-panel-scroll"],
-.chat-image-viewer-popup:is(:has(.chat-image-viewer-navigation), :has(.chat-attachment-html-frame), [data-attachment-kind="html"], :has(.chat-attachment-media-frame):not([data-attachment-kind="video"])) > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel,
-.chat-image-viewer-popup:is(:has(.chat-image-viewer-navigation), :has(.chat-attachment-html-frame), [data-attachment-kind="html"], :has(.chat-attachment-media-frame):not([data-attachment-kind="video"])) > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel > .chat-image-frame {
+.chat-image-viewer-popup:is([data-attachment-bundle="mixed"], :has(.chat-attachment-html-frame), [data-attachment-kind="html"], :has(.chat-attachment-media-frame):not([data-attachment-kind="video"])) > [data-slot="dialog-panel-scroll"],
+.chat-image-viewer-popup:is([data-attachment-bundle="mixed"], :has(.chat-attachment-html-frame), [data-attachment-kind="html"], :has(.chat-attachment-media-frame):not([data-attachment-kind="video"])) > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel,
+.chat-image-viewer-popup:is([data-attachment-bundle="mixed"], :has(.chat-attachment-html-frame), [data-attachment-kind="html"], :has(.chat-attachment-media-frame):not([data-attachment-kind="video"])) > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel > .chat-image-frame {
   flex: 1 1 auto;
+}
+/* 문서만 든 넘기기 창은 문서 창 크기로 고정해 단계 사이에 틀이 움직이지 않게 한다. */
+.chat-image-viewer-popup[data-slot="dialog-popup"][data-attachment-bundle="documents"] {
+  width: min(var(--container-3xl), calc(100dvw - 2rem));
+  height: calc(100dvh - 2 * var(--image-viewer-block-margin));
+}
+.chat-image-viewer-popup[data-attachment-bundle="documents"] > [data-slot="dialog-panel-scroll"],
+.chat-image-viewer-popup[data-attachment-bundle="documents"] > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel {
+  flex: 1 1 auto;
+}
+/* 섞인 묶음은 전체 틀을 두고 문서 단계 본문만 읽기 폭으로 가운데에 세운다. */
+.chat-image-viewer-popup[data-attachment-bundle="mixed"] > [data-slot="dialog-panel-scroll"] > .chat-image-viewer-panel > :is(.chat-attachment-markdown, pre) {
+  width: 100%;
+  max-width: var(--container-3xl);
+  margin-inline: auto;
 }
 .chat-attachment-media-frame {
   display: flex;
@@ -1606,6 +1621,7 @@ pre[data-markdown-code-layout="document"] {
   width: fit-content;
   height: fit-content;
   flex: 0 1 auto;
+  margin: auto;
 }
 .chat-image-viewer-popup[data-attachment-kind="video"] .chat-attachment-video-player {
   width: auto;
