@@ -380,6 +380,8 @@ function makeDeferredHarness(
     delivery_id: "delivery-deferred",
     intent: options.intent ?? "human_live_steer",
     state: "claimed",
+    // A node began handing it to a runner before the restart.
+    dispatching_at: new Date("2026-11-14T00:00:00Z"),
     attempt_token: "rolling-worker",
   } as SessionDeliveryRow;
   const retryDeliveryAttempt = vi.fn(async () => ({

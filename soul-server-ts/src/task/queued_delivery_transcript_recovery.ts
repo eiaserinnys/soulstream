@@ -169,7 +169,6 @@ export class QueuedDeliveryTranscriptRecovery {
           settled += await this.settleByInstructionReceipt(
             row,
             this.deps.instructionReceipt,
-            receipt.kind === "absent",
           );
           continue;
         }
@@ -199,8 +198,12 @@ export class QueuedDeliveryTranscriptRecovery {
   private async settleByInstructionReceipt(
     row: SessionDeliveryRow,
     instructionReceipt: NonNullable<QueuedDeliveryTranscriptRecoveryDeps["instructionReceipt"]>,
-    transcriptProvesUnseen: boolean,
   ): Promise<number> {
+    // Only `beginDispatch` stamps `dispatching_at`, right before the handoff to
+    // a runner, and a row only reaches `queued` through it. A queued row without
+    // the stamp (a message that arrived while the node was down) was never
+    // handed to any runner, so there is nothing to ask: it is simply not sent yet.
+    if (!row.dispatching_at) return await this.redeliverUnseen(row);
     let verdict: NodeInstructionVerdict;
     try {
       verdict = await withDeadline(
@@ -217,11 +220,8 @@ export class QueuedDeliveryTranscriptRecovery {
       );
       verdict = "unknown";
     }
-    // A Claude transcript that lacks the input proves it was never seen, which a
-    // runner that cannot answer does not overturn. Only the runner saying it
-    // applied the instruction stops the redelivery. A backend with no transcript
-    // has no such proof, so its unknown stays unknown.
-    if (transcriptProvesUnseen && verdict === "unknown") verdict = "not_applied";
+    // A transcript without the input line only says it is not written yet, so it
+    // does not overturn the runner's answer: unknown stays unknown.
     const decision = decideNodeInstruction({ verdict, ledger: "line" });
     if (decision.ledger === "close_consumed") {
       const receiptId = `runner_receipt:${row.delivery_id}`;

@@ -201,9 +201,16 @@ describe("card1266 instruction path: one number for every handoff", () => {
   });
 });
 
-function row(id: string, state = "claimed", target = "session-codex"): SessionDeliveryRow {
+/** A row a node has begun handing to a runner carries `dispatching_at`; `handed = false` is one it never did. */
+function row(
+  id: string,
+  state = "claimed",
+  target = "session-codex",
+  handed = true,
+): SessionDeliveryRow {
   return {
     delivery_id: id,
+    dispatching_at: handed ? new Date("2026-11-14T00:00:00Z") : null,
     target_session_id: target,
     intent: "human_live_steer",
     source: "user_message",
@@ -217,11 +224,14 @@ function row(id: string, state = "claimed", target = "session-codex"): SessionDe
 describe("card1266 instruction path: restart recovery of a Codex queue (I6)", () => {
   it("re-enters what was never sent, closes what was applied, and leaves the unknown uncertain", async () => {
     const verdicts: Record<string, NodeInstructionVerdict> = {
-      unsent: "not_applied",
       applied: "applied",
       handed: "unknown",
     };
-    const rows = new Map(["unsent", "applied", "handed"].map((id) => [id, row(id)]));
+    const asked: string[] = [];
+    const rows = new Map(["unsent", "applied", "handed"].map((id) => [
+      id,
+      row(id, "claimed", "session-codex", id !== "unsent"),
+    ]));
     const markConsumed = vi.fn(async (id: string) => ({
       ...rows.get(id)!,
       state: "consumed",
@@ -260,7 +270,12 @@ describe("card1266 instruction path: restart recovery of a Codex queue (I6)", ()
           reason: "unsupported_backend",
         })),
       },
-      instructionReceipt: { lookup: async (r) => verdicts[r.delivery_id]! },
+      instructionReceipt: {
+        lookup: async (r) => {
+          asked.push(r.delivery_id);
+          return verdicts[r.delivery_id]!;
+        },
+      },
       redeliverContent,
       logger: { warn: vi.fn() },
     } as never, "worker-card1266");
@@ -270,6 +285,8 @@ describe("card1266 instruction path: restart recovery of a Codex queue (I6)", ()
       settled: 3,
     });
 
+    // A row no node ever began handing to a runner is not asked about.
+    expect(asked).toEqual(["applied", "handed"]);
     expect(redeliverContent).toHaveBeenCalledOnce();
     expect(redeliverContent).toHaveBeenCalledWith(expect.objectContaining({ delivery_id: "unsent" }));
     expect(markConsumed).toHaveBeenCalledWith("applied", "runner_receipt:applied");
@@ -401,48 +418,101 @@ describe("card1266 instruction path: a finished session's queued delivery is not
   });
 });
 
-describe("card1266 instruction path: a Claude transcript that proves the input unseen", () => {
-  function makeClaudeRecovery(verdict: NodeInstructionVerdict) {
-    const claimed = row("claude-row", "claimed", "session-claude");
-    const markConsumed = vi.fn(async () => ({
-      ...claimed,
-      state: "consumed",
-      aggregate_state: "consumed",
-    }) as SessionDeliveryRow);
-    const markUncertain = vi.fn();
-    const redeliverContent = vi.fn(async () => undefined);
-    const recovery = new QueuedDeliveryTranscriptRecovery({
-      deliveryRepository: {
-        get: vi.fn(async () => claimed),
-        markConsumed,
-        markUncertain,
-        retryDeliveryAttempt: vi.fn(async () => ({ ...claimed, state: "pending" })),
-      },
-      recoveryRepository: {
-        claimQueuedAfterNodeRestart: vi.fn(async () => [claimed]),
-        markDeliveredFromTranscript: vi.fn(),
-      },
-      transcriptReceipt: {
-        inspect: vi.fn(async () => ({ kind: "absent" as const, inputUuid: "delivery:claude-row" })),
-      },
-      instructionReceipt: { lookup: async () => verdict },
-      redeliverContent,
-      logger: { warn: vi.fn() },
-    } as never, "worker-card1266");
-    return { recovery, markConsumed, markUncertain, redeliverContent };
+describe("card1266 instruction path: a Claude transcript without the input line", () => {
+  function makeClaudeLedger(verdict: NodeInstructionVerdict, handed: boolean) {
+    const ledger = new Map<string, SessionDeliveryRow>([
+      ["claude-row", row("claude-row", "queued", "session-claude", handed)],
+    ]);
+    const lookup = vi.fn(async () => verdict);
+    const markConsumed = vi.fn(async (id: string) => {
+      const next = {
+        ...ledger.get(id)!,
+        state: "consumed",
+        aggregate_state: "consumed",
+      } as SessionDeliveryRow;
+      ledger.set(id, next);
+      return next;
+    });
+    const markUncertain = vi.fn(async (id: string) => {
+      const next = {
+        ...ledger.get(id)!,
+        state: "uncertain",
+        aggregate_state: "dead_letter",
+      } as SessionDeliveryRow;
+      ledger.set(id, next);
+      return next;
+    });
+    // The route accepts a redelivery durably, but the finished session never consumes it.
+    const redeliverContent = vi.fn(async (r: SessionDeliveryRow) => {
+      ledger.set(r.delivery_id, { ...r, state: "queued" } as SessionDeliveryRow);
+    });
+    const start = async () => {
+      const recovery = new QueuedDeliveryTranscriptRecovery({
+        deliveryRepository: {
+          get: vi.fn(async (id: string) => ledger.get(id) ?? null),
+          markConsumed,
+          markUncertain,
+          retryDeliveryAttempt: vi.fn(async (id: string) => {
+            const next = { ...ledger.get(id)!, state: "pending" } as SessionDeliveryRow;
+            ledger.set(id, next);
+            return next;
+          }),
+        },
+        recoveryRepository: {
+          claimQueuedAfterNodeRestart: vi.fn(async () =>
+            [...ledger.values()].filter((r) => r.state === "queued")),
+          markDeliveredFromTranscript: vi.fn(),
+        },
+        transcriptReceipt: {
+          // The transcript only lacks the line; that is not proof the runner never took it.
+          inspect: vi.fn(async (r: SessionDeliveryRow) => ({
+            kind: "absent" as const,
+            inputUuid: `delivery:${r.delivery_id}`,
+          })),
+        },
+        instructionReceipt: { lookup },
+        redeliverContent,
+        logger: { warn: vi.fn() },
+      } as never, "worker-card1266");
+      return await recovery.recoverAfterNodeRestart("node-a");
+    };
+    return { ledger, lookup, markConsumed, markUncertain, redeliverContent, start };
   }
 
-  it("still redelivers when the runner cannot answer, since the transcript is the proof", async () => {
-    const h = makeClaudeRecovery("unknown");
-    await h.recovery.recoverAfterNodeRestart("node-a");
+  it("leaves a handed-over delivery uncertain when no runner can answer, and does not pick it up on the second start (case 17)", async () => {
+    const h = makeClaudeLedger("unknown", true);
+
+    await expect(h.start()).resolves.toEqual({ claimed: 1, settled: 1 });
+    await expect(h.start()).resolves.toEqual({ claimed: 0, settled: 0 });
+
+    expect(h.redeliverContent).not.toHaveBeenCalled();
+    expect(h.ledger.get("claude-row")?.state).toBe("uncertain");
+    expect(h.markUncertain).toHaveBeenCalledWith(
+      "claude-row",
+      "worker-card1266",
+      "runner_receipt_unknown",
+    );
+  });
+
+  it("redelivers a handed-over delivery only when the runner says it never received it", async () => {
+    const h = makeClaudeLedger("not_applied", true);
+    await h.start();
     expect(h.redeliverContent).toHaveBeenCalledOnce();
     expect(h.markUncertain).not.toHaveBeenCalled();
   });
 
-  it("does not redeliver when the runner says it applied the instruction", async () => {
-    const h = makeClaudeRecovery("applied");
-    await h.recovery.recoverAfterNodeRestart("node-a");
+  it("closes a handed-over delivery as consumed when the runner says it applied it", async () => {
+    const h = makeClaudeLedger("applied", true);
+    await h.start();
     expect(h.redeliverContent).not.toHaveBeenCalled();
     expect(h.markConsumed).toHaveBeenCalledWith("claude-row", "runner_receipt:claude-row");
+  });
+
+  it("re-enters a delivery no node ever began handing over without asking the runner (R25C)", async () => {
+    const h = makeClaudeLedger("unknown", false);
+    await h.start();
+    expect(h.lookup).not.toHaveBeenCalled();
+    expect(h.redeliverContent).toHaveBeenCalledOnce();
+    expect(h.markUncertain).not.toHaveBeenCalled();
   });
 });
