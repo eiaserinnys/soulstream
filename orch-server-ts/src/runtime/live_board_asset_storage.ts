@@ -101,6 +101,12 @@ export type R2BoardAssetStorageConfig = {
 const AWS_REGION = "auto";
 const AWS_SERVICE = "s3";
 const UNSIGNED_PAYLOAD = "UNSIGNED-PAYLOAD";
+const DEFAULT_REQUEST_TIMEOUT_MS = 120_000;
+
+export type R2BoardAssetStorageOptions = {
+  /** Own time limit for each signed R2 request. Defaults to 120 seconds. */
+  readonly requestTimeoutMs?: number;
+};
 
 export async function checkR2Bucket(config: R2BoardAssetStorageConfig): Promise<void> {
   const response = await signedFetch(config, { method: "HEAD", storageKey: "", signal: AbortSignal.timeout(15_000) });
@@ -109,13 +115,16 @@ export async function checkR2Bucket(config: R2BoardAssetStorageConfig): Promise<
 
 export function createR2BoardAssetStorage(
   config: R2BoardAssetStorageConfig,
+  options: R2BoardAssetStorageOptions = {},
 ): R2ObjectStorage {
+  const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  const signed = (input: SignInput) => signedFetch(config, input, requestTimeoutMs);
   return {
     async deleteObject(input) {
-      await assertR2Ok(await signedFetch(config, { method: "DELETE", storageKey: input.storageKey }), "delete object");
+      await assertR2Ok(await signed({ method: "DELETE", storageKey: input.storageKey }), "delete object");
     },
     async abortMultipartUpload(input) {
-      await assertR2Ok(await signedFetch(config, { method: "DELETE", storageKey: input.storageKey,
+      await assertR2Ok(await signed({ method: "DELETE", storageKey: input.storageKey,
         query: { uploadId: input.uploadId } }), "abort multipart upload");
     },
     createPresignedPutUrl(input) {
@@ -127,7 +136,7 @@ export function createR2BoardAssetStorage(
       });
     },
     async createMultipartUpload(input) {
-      const response = await signedFetch(config, {
+      const response = await signed({
         method: "POST",
         storageKey: input.storageKey,
         query: { uploads: "" },
@@ -156,7 +165,7 @@ export function createR2BoardAssetStorage(
         body = Readable.from(validateUploadBody(input.body, input.byteSize, checksumSha256));
         duplex = "half";
       }
-      await assertR2Ok(await signedFetch(config, {
+      await assertR2Ok(await signed({
         method: "PUT",
         storageKey: input.storageKey,
         headers: {
@@ -172,7 +181,7 @@ export function createR2BoardAssetStorage(
     },
     async completeMultipartUpload(input) {
       const body = completeMultipartXml(input.parts);
-      const response = await signedFetch(config, {
+      const response = await signed({
         method: "POST",
         storageKey: input.storageKey,
         query: { uploadId: input.uploadId },
@@ -182,7 +191,7 @@ export function createR2BoardAssetStorage(
       await assertR2Ok(response, "complete multipart upload");
     },
     async headObject(input) {
-      const response = await signedFetch(config, {
+      const response = await signed({
         method: "HEAD",
         storageKey: input.storageKey,
       });
@@ -198,12 +207,14 @@ export function createR2BoardAssetStorage(
       };
     },
     openObject(input) {
+      // Reads stream large bodies; aborting a slow download at the request
+      // timeout would truncate it. Keep the caller signal as the only bound.
       return signedFetch(config, {
         method: input.method ?? "GET",
         storageKey: input.storageKey,
         headers: input.range === undefined ? undefined : { range: input.range },
         signal: input.signal,
-      });
+      }, null);
     },
     createPresignedGetUrl(input) {
       return presign(config, {
@@ -265,6 +276,7 @@ function presign(config: R2BoardAssetStorageConfig, input: PresignInput): string
 async function signedFetch(
   config: R2BoardAssetStorageConfig,
   input: SignInput,
+  requestTimeoutMs: number | null = DEFAULT_REQUEST_TIMEOUT_MS,
 ): Promise<Response> {
   const now = new Date();
   const amzDate = formatAmzDate(now);
@@ -303,6 +315,7 @@ async function signedFetch(
     `SignedHeaders=${signedHeaders}`,
     `Signature=${signature}`,
   ].join(", ");
+  const timeoutSignal = requestTimeoutMs === null ? undefined : AbortSignal.timeout(requestTimeoutMs);
   const request: RequestInit & { duplex?: "half" } = {
     method: input.method,
     // Ask for the stored bytes as-is. fetch otherwise advertises gzip, R2 then
@@ -310,7 +323,9 @@ async function signedFetch(
     // and byte-exact reads. Left unsigned so an edge rewrite cannot break SigV4.
     headers: { ...headers, authorization, "accept-encoding": "identity" },
     redirect: "error",
-    signal: input.signal,
+    signal: timeoutSignal === undefined
+      ? input.signal
+      : input.signal === undefined ? timeoutSignal : AbortSignal.any([input.signal, timeoutSignal]),
   };
   if (input.method !== "HEAD" && input.body !== undefined) {
     request.body = input.body as unknown as NonNullable<RequestInit["body"]>;

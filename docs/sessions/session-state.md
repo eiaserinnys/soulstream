@@ -789,7 +789,7 @@ state "한도 재개 예약" as sessionReservation {
 | src/control_plane/repositories/session_mutation_repository.ts:144 | 아니오 | card_id만 쓴다. |
 | src/control_plane/repositories/session_mutation_repository.ts:250 | 아니오 | worktree_id와 card_id만 쓴다. |
 | src/control_plane/repositories/session_mutation_repository.ts:341 | 아니오 | 모델 선택 칸만 쓴다. |
-| src/runtime/live_provider_factory.ts:628 | 아니오 | node_id, display_name, folder_id만 쓴다. |
+| src/runtime/live_provider_factory.ts:632 | 아니오 | node_id, display_name, folder_id만 쓴다. |
 | src/node/event_feed_projection_applier.ts:49 | 아니오 | last_event_id, last_read_event_id, updated_at만 쓴다. |
 | src/control_plane/repositories/session_card_replacement.ts:44 | 아니오 | caller_session_id만 쓴다. |
 

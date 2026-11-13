@@ -601,6 +601,9 @@ export async function createLiveProductionApplication(
         resolveAttachmentBinding,
       },
       resolveAttachmentStorage: resolveAttachmentBinding,
+      onAttachmentStorageFailure: (failure) => context.warn(
+        `첨부 저장을 쓸 수 없습니다: 코드=${failure.code}, 상태=${failure.statusCode}, 작업=${failure.operation}`,
+      ),
       resolveReadStorage: resolveAttachmentBinding,
       readPageAttachmentEvidence: async (pageId, attachmentId) => {
         if (!pageYjsService) throw new Error("Page Yjs service is not initialized");

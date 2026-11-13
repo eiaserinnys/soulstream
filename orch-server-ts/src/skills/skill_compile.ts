@@ -12,6 +12,8 @@ import {
 import { planPickSelections, type ResolvedIncludeTarget } from "./skill_pick_planner.js";
 
 const COMPILE_DEADLINE_MS = 170_000;
+/** Kept under the compile deadline so a stalled Jev call can still fall back to candidates. */
+export const JEV_TIMEOUT_MARGIN_MS = 15_000;
 const LARGE_CATALOG_CHARS = 8_000;
 
 export interface LinkSource {

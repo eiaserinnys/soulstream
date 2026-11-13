@@ -5,7 +5,11 @@ import {
   type SkillCatalogEntry,
 } from "./skill_catalog.js";
 import type { LinkBlock, LinkFields } from "./link_blocks.js";
-import type { CompileSkillInput, SkillCompileWarning } from "./skill_compile.js";
+import {
+  JEV_TIMEOUT_MARGIN_MS,
+  type CompileSkillInput,
+  type SkillCompileWarning,
+} from "./skill_compile.js";
 
 export interface ResolvedIncludeTarget {
   skill?: SkillCatalogEntry;
@@ -211,7 +215,7 @@ export async function planPickSelections({
           return { key: name, text: catalogEvaluationText(catalog) };
         }),
         context: { skill_name: input.skill.name, skill_description: input.skill.description },
-        timeoutMs: Math.max(1, remainingMs()),
+        timeoutMs: Math.max(1, remainingMs() - JEV_TIMEOUT_MARGIN_MS),
       });
       if (scores.length !== jevCandidateNames.length || scores.some(({ key, score }) =>
         !jevCandidateNames.includes(key) || typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 1,

@@ -3,10 +3,12 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   createOwnedAttachmentCommitService,
+  type AttachmentStorageFailure,
   type OwnedAttachmentUpload,
   verifyStoredObject,
 } from "../src/attachments/attachment_commit_service.js";
 import { R2ObjectIntegrityError, R2StorageRequestError } from "../src/runtime/live_board_asset_storage.js";
+import { R2SettingsError } from "../src/system/r2_settings.js";
 
 const now = new Date("2026-10-11T03:00:00.000Z");
 const endpoint = "https://r2.example.test";
@@ -55,7 +57,10 @@ function row(uploadSpec: ReturnType<typeof spec>, overrides: Record<string, unkn
   };
 }
 
-function createHarness(initialRow: OwnedAttachmentUpload | null = null) {
+function createHarness(
+  initialRow: OwnedAttachmentUpload | null = null,
+  extra: { onStorageFailure?: (failure: AttachmentStorageFailure) => void } = {},
+) {
   let currentRow = initialRow;
   const events: string[] = [];
   const body = new Uint8Array([1, 2, 3]);
@@ -111,6 +116,7 @@ function createHarness(initialRow: OwnedAttachmentUpload | null = null) {
     repository,
     resolveAttachmentBinding,
     now: () => new Date(now),
+    ...(extra.onStorageFailure === undefined ? {} : { onStorageFailure: extra.onStorageFailure }),
   });
   return { service, repository, storage, binding, resolveAttachmentBinding, events, body, get row() { return currentRow; }, set row(value) { currentRow = value; } };
 }
@@ -419,6 +425,50 @@ describe("owned attachment commit service", () => {
     await expect(h.service.putSmall({ spec: spec(), body: new Uint8Array([1, 2, 3]) }))
       .rejects.toMatchObject({ statusCode: 409 });
     expect(h.repository.commitVerified).not.toHaveBeenCalled();
+  });
+
+  it("reports one storage failure when attachment storage is not configured", async () => {
+    const failures: AttachmentStorageFailure[] = [];
+    const h = createHarness(null, { onStorageFailure: (failure) => failures.push(failure) });
+    h.resolveAttachmentBinding.mockResolvedValueOnce(null);
+
+    await expect(h.service.putSmall({ spec: spec(), body: new Uint8Array([1, 2, 3]) }))
+      .rejects.toMatchObject({ code: "storage_unavailable", statusCode: 503 });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toEqual({
+      code: "storage_unavailable",
+      statusCode: 503,
+      operation: "resolve attachment binding",
+    });
+  });
+
+  it("reports one storage failure when attachment settings cannot be read", async () => {
+    const failures: AttachmentStorageFailure[] = [];
+    const h = createHarness(null, { onStorageFailure: (failure) => failures.push(failure) });
+    h.resolveAttachmentBinding.mockRejectedValueOnce(
+      new R2SettingsError(503, "R2_SETTINGS_UNAVAILABLE", "Storage settings are unavailable."),
+    );
+
+    await expect(h.service.putSmall({ spec: spec(), body: new Uint8Array([1, 2, 3]) }))
+      .rejects.toMatchObject({ code: "R2_SETTINGS_UNAVAILABLE", statusCode: 503 });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toEqual({
+      code: "R2_SETTINGS_UNAVAILABLE",
+      statusCode: 503,
+      operation: "resolve attachment binding",
+    });
+  });
+
+  it("reports one storage failure when the R2 request fails, without secrets", async () => {
+    const failures: AttachmentStorageFailure[] = [];
+    const h = createHarness(null, { onStorageFailure: (failure) => failures.push(failure) });
+    h.storage.putObject.mockRejectedValueOnce(new R2StorageRequestError("put object", 503));
+
+    await expect(h.service.putSmall({ spec: spec(), body: new Uint8Array([1, 2, 3]) }))
+      .rejects.toMatchObject({ code: "storage_failed", statusCode: 502 });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]).toEqual({ code: "storage_failed", statusCode: 502, operation: "put small attachment" });
+    expect(Object.keys(failures[0]!).sort()).toEqual(["code", "operation", "statusCode"]);
   });
 });
 
