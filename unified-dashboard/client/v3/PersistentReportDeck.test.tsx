@@ -383,6 +383,28 @@ it('settles at a page boundary without scrollend and resets a lost scroll on pla
   await act(async () => button('앞 장').click());
   entries = []; await render(); entries = [one, two]; contentHeight = 300; await render(); expect(height()).toBe('334px');
 });
+it('sizes the deck to the visible sheet instead of the tallest sheet', async () => {
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function(this: HTMLElement) { return this.classList.contains('pas-report-track') ? 340 : 0; });
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) {
+    const key = this.closest<HTMLElement>('.pas-report-sheet')?.dataset.testid?.replace('report-sheet-', '') ?? '';
+    return { height: this.classList.contains('pas-report-content') ? ({ one: 300, two: 40 } as Record<string, number>)[key] ?? 0 : this.classList.contains('pas-report-footer') ? 32 : 0 } as DOMRect;
+  });
+  entries = [one, { ...two, context: '한 줄 검수' }]; await render();
+  const height = () => host.querySelector<HTMLElement>('.pas-report')!.style.height;
+  const track = () => host.querySelector<HTMLElement>('.pas-report-track')!;
+  expect(height()).toBe('334px');
+  // 넘기는 동안에는 앞 장 높이를 지킨다.
+  await act(async () => button('다음 장').click());
+  expect(height()).toBe('334px');
+  await act(async () => track().dispatchEvent(new Event('scroll')));
+  expect(height()).toBe('74px');
+  // 키보드로 넘길 때도 같은 길을 탄다.
+  track().focus();
+  await act(async () => track().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })));
+  expect(height()).toBe('74px');
+  await act(async () => track().dispatchEvent(new Event('scroll')));
+  expect(height()).toBe('334px');
+});
 it('retains height across the server answered revision but discards it when content is rewritten',async()=>{
  entries=[one]; await render();
  const height=()=>host.querySelector<HTMLElement>('.pas-report')!.style.height;

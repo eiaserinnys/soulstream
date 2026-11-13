@@ -813,7 +813,7 @@ test('navigation touch defers a live height update and releases on end, cancella
   expect(height()).toBeGreaterThan(before);
 });
 
-test('unequal compact sheets stretch to the shared height with their page after the flexible space', () => {
+test('unequal compact sheets keep the visible page height and follow the page after paging', () => {
   const listeners: Record<string, () => void> = {};
   jest.spyOn(Keyboard, 'addListener').mockImplementation((name, listener) => {
     const previous = listeners[name]; listeners[name] = () => { previous?.(); (listener as () => void)(); }; return { remove: jest.fn() } as any;
@@ -826,11 +826,47 @@ test('unequal compact sheets stretch to the shared height with their page after 
   const long = screen.getByTestId('report-sheet-cleanup', { includeHiddenElements: true });
   fireEvent(short.findByProps({ testID: 'report-reading' }), 'layout', { nativeEvent: { layout: { height: 44 } } });
   const smallHeight = StyleSheet.flatten(screen.getByTestId('report-track').props.style).height;
+  // 가장 긴 장이 아니라 지금 보이는 장이 판 높이를 정한다.
   fireEvent(long.findByProps({ testID: 'report-reading' }), 'layout', { nativeEvent: { layout: { height: 88 } } });
+  expect(StyleSheet.flatten(screen.getByTestId('report-track').props.style).height).toBe(smallHeight);
+  fireEvent.scroll(screen.getByTestId('report-track'), { nativeEvent: { contentOffset: { x: 390 } } });
   expect(StyleSheet.flatten(screen.getByTestId('report-track').props.style).height).toBe(smallHeight + 44);
   const page = short.findByProps({ testID: 'report-page' });
   expect(StyleSheet.flatten(page.props.style).marginTop).toBe('auto');
   expect(StyleSheet.flatten(page.parent!.props.style).flexGrow).toBe(1);
+});
+
+test('bubble follows the visible page and holds the previous height until a slide stops', () => {
+  mockDevice = 'tablet';
+  const long = { ...reportReviewEntries[1], key: 'long', title: '긴 질문' };
+  const short = { ...reportReviewEntries[2], key: 'short', title: '한 줄 검수' };
+  const screen = pager([long, short], undefined, undefined, { bubble: true, maxHeight: 440 });
+  const track = screen.getByTestId('report-track', { includeHiddenElements: true });
+  const height = () => StyleSheet.flatten(screen.getByTestId('report-deck', { includeHiddenElements: true }).props.style).height;
+  const sheet = (key: string) => screen.getByTestId(`report-sheet-${key}`, { includeHiddenElements: true });
+  fireEvent(track, 'layout', { nativeEvent: { layout: { width: 318 } } });
+  for (const [key, reading, foot] of [['long', 300, 80], ['short', 44, 80]] as const) {
+    fireEvent(sheet(key).findByProps({ testID: 'report-scroll' }), 'contentSizeChange', 318, reading);
+    fireEvent(sheet(key).findByProps({ testID: 'report-footer' }), 'layout', { nativeEvent: { layout: { height: foot } } });
+  }
+  expect(height()).toBe(380);
+  // A drag that starts on a sheet cancels its touch; the sliding page still holds the old height.
+  fireEvent(track, 'scrollBeginDrag');
+  fireEvent(sheet('long'), 'touchCancel');
+  fireEvent.scroll(track, { nativeEvent: { contentOffset: { x: 250 } } });
+  expect(height()).toBe(380);
+  fireEvent(track, 'scrollEndDrag', { nativeEvent: { contentOffset: { x: 250 } } });
+  expect(height()).toBe(380);
+  // The page lands on its alignment before the momentum ends.
+  fireEvent.scroll(track, { nativeEvent: { contentOffset: { x: 318 } } });
+  fireEvent(track, 'momentumScrollEnd', { nativeEvent: { contentOffset: { x: 318 } } });
+  expect(height()).toBe(124);
+  // A drag that already ends on a page boundary settles without momentum.
+  fireEvent(track, 'scrollBeginDrag');
+  fireEvent.scroll(track, { nativeEvent: { contentOffset: { x: 0 } } });
+  expect(height()).toBe(124);
+  fireEvent(track, 'scrollEndDrag', { nativeEvent: { contentOffset: { x: 0 } } });
+  expect(height()).toBe(380);
 });
 
 test('tablet card chips resolve their card number to the existing internal card ID', async () => {

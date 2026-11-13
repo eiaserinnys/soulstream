@@ -47,6 +47,8 @@
     {출력}/card-question-pas-ga-expanded-answered-1440-{테마}.png   펼친 장에서 선택지를 누른 뒤
     {출력}/card-question-pas-ga-expanded-bottom-1440-{테마}.png     펼친 장을 바닥까지 스크롤한 캡처
     {출력}/card-question-pas-card-existing-bottom-1440-{테마}.png   기존 PAS 카드 펼친 장 바닥
+    {출력}/card-question-pas-paging-{long,short}-{1440,390}-{테마}.png
+                                                                   PAS 판에서 긴 질문 장과 한 줄 카드 장 (카드 #1197)
     {출력}/measurements.json                                        장면별 잰 값과 조작 결과
     {출력}/report.json                                              판정과 실패 목록
 
@@ -335,6 +337,42 @@ BOARD_SCRIPT = """
 }
 """
 
+# 카드 #1197: 판 높이는 가장 긴 장이 아니라 지금 보이는 장을 따른다. 장을 넘기기 전과 뒤에
+# 판 높이, 지금 장의 내용 높이, 아래 단추 줄과 넘기기 줄의 화면 좌표(문서 기준)를 잰다.
+PAGING_SCRIPT = """
+() => {
+  const root = document.querySelector('[data-testid="card-question-review"]');
+  const deck = root?.querySelector('.pas-report');
+  const sheet = root?.querySelector('.pas-report-sheet[data-current="true"]');
+  const content = sheet?.querySelector('.pas-report-content');
+  const reading = sheet?.querySelector('.pas-report-reading');
+  const footer = sheet?.querySelector('.pas-report-footer');
+  const nav = root?.querySelector('.pas-report-nav');
+  const track = root?.querySelector('.pas-report-track');
+  const buttons = [...(footer?.querySelectorAll('button') ?? [])];
+  const round = (value) => Math.round(value * 10) / 10;
+  const box = (element) => element ? element.getBoundingClientRect() : null;
+  const pageTop = (element, edge) => element ? round(box(element)[edge] + window.scrollY) : null;
+  return {
+    page: sheet?.getAttribute('aria-label') ?? null,
+    sheet: sheet?.getAttribute('data-testid') ?? null,
+    deckHeight: deck ? round(box(deck).height) : null,
+    deckTop: pageTop(deck, 'top'),
+    deckBottom: pageTop(deck, 'bottom'),
+    contentHeight: content ? round(box(content).height) : null,
+    contentScrollHeight: reading ? Math.round(reading.scrollHeight) : null,
+    footerTop: pageTop(footer, 'top'),
+    footerBottom: pageTop(footer, 'bottom'),
+    buttonRowTop: buttons.length ? round(Math.min(...buttons.map(button => box(button).top + window.scrollY))) : null,
+    buttonRowBottom: buttons.length ? round(Math.max(...buttons.map(button => box(button).bottom + window.scrollY))) : null,
+    navTop: pageTop(nav, 'top'),
+    scrollLeft: track ? Math.round(track.scrollLeft) : null,
+    trackWidth: track ? Math.round(track.clientWidth) : null,
+    scrollY: Math.round(window.scrollY),
+  };
+}
+"""
+
 # 검수 창 전체 목록에서 카드 상세 질문 표본 다섯이 함께 떠도 각자 제 질문을 그리는지.
 GALLERY_SCRIPT = """
 () => [...document.querySelectorAll('[data-testid="card-question-card-sample"]')].map((sample) => ({
@@ -354,6 +392,7 @@ DRAG_BOX_SCRIPT = """
 
 CARD_SCOPE = '[data-testid="card-question-card-sample"]'
 SHEET_SCOPE = '[data-testid="card-question-review"] .pas-report-sheet[data-current="true"]'
+SCREEN_SCOPE = '[data-testid="card-question-review"] .persistent-session-screen'
 EXISTING_SHEET_SCOPE = '.pas-report-sheet[data-current="true"]'
 
 # 대시보드 배경의 WebGL 캔버스가 캡처마다 15~30초를 쓰고, 도는 애니메이션은 요소 상자를
@@ -700,7 +739,7 @@ def capture_sheet(page: Page, base: str, out: Path, scene: str, expanded: bool, 
         page.wait_for_timeout(200)
     data = page.evaluate(SHEET_SCRIPT)
     suffix = "-expanded" if expanded else ""
-    path = shot(page, out, f"card-question-pas-{scene}{suffix}-1440-{theme}", '[data-testid="card-question-review"] .persistent-session-screen')
+    path = shot(page, out, f"card-question-pas-{scene}{suffix}-1440-{theme}", SCREEN_SCOPE)
     return {"capture": f"pas-{scene}{suffix}-1440-{theme}", "path": path, "data": data,
             "failures": judge_sheet(scene, data, expanded)}
 
@@ -708,9 +747,90 @@ def capture_sheet(page: Page, base: str, out: Path, scene: str, expanded: bool, 
 def capture_narrow_sheet(page: Page, base: str, out: Path, scene: str, theme: str) -> dict:
     open_sheet(page, base, scene, bubble=False, label=f"390-{theme}")
     data = page.evaluate(SHEET_SCRIPT)
-    path = shot(page, out, f"card-question-pas-{scene}-390-{theme}", '[data-testid="card-question-review"] .persistent-session-screen')
+    path = shot(page, out, f"card-question-pas-{scene}-390-{theme}", SCREEN_SCOPE)
     return {"capture": f"pas-{scene}-390-{theme}", "path": path, "data": data,
             "failures": judge_sheet(scene, data, False)}
+
+
+def paging_state(page: Page) -> dict:
+    return page.evaluate(PAGING_SCRIPT)
+
+
+def wait_paging_settled(page: Page) -> dict:
+    """판 높이와 스크롤이 두 번 연속 같은 값으로 읽힐 때까지 기다린다."""
+    page.wait_for_timeout(400)
+    settled = paging_state(page)
+    for _ in range(20):
+        page.wait_for_timeout(150)
+        again = paging_state(page)
+        if again == settled:
+            return again
+        settled = again
+    return settled
+
+
+def capture_paging(page: Page, base: str, out: Path, bubble: bool, theme: str) -> dict:
+    """긴 질문 장에서 한 줄 카드 장으로 넘기며 판 높이와 아래 줄 좌표를 잰다."""
+    width = WIDE if bubble else NARROW
+    open_sheet(page, base, "ga", bubble=bubble, label=f"paging-{width}-{theme}")
+    before = wait_paging_settled(page)
+    long_path = shot(page, out, f"card-question-pas-paging-long-{width}-{theme}", SCREEN_SCOPE)
+    if bubble:
+        # 이동 단추가 있는 넓은 말풍선은 제 단추로 넘긴다.
+        page.get_by_role("button", name="다음 장").click()
+    else:
+        # 767px 이하에서는 이동 단추를 숨기므로 트랙을 실제로 스크롤한다.
+        page.evaluate("() => { const track = document.querySelector('[data-testid=\"card-question-review\"] .pas-report-track');"
+                      " track.scrollTo({ left: track.clientWidth, behavior: 'smooth' }); }")
+    after = wait_paging_settled(page)
+    short_path = shot(page, out, f"card-question-pas-paging-short-{width}-{theme}", SCREEN_SCOPE)
+    return {
+        "capture": f"pas-paging-{width}-{theme}",
+        "surface": "bubble" if bubble else "band",
+        "paths": {"long": long_path, "short": short_path},
+        "before": before,
+        "after": after,
+        "failures": judge_paging(bubble, before, after),
+    }
+
+
+def judge_paging(bubble: bool, before: dict, after: dict) -> list[dict]:
+    failures: list[dict] = []
+    surface = "bubble" if bubble else "band"
+
+    def fail(check: str, detail=None) -> None:
+        failures.append({"check": check, "surface": surface, "detail": detail})
+
+    if before["sheet"] is None or after["sheet"] is None:
+        fail("sheetVisible", {"before": before["sheet"], "after": after["sheet"]})
+        return failures
+    numeric = ("deckHeight", "contentHeight", "deckBottom", "navTop", "buttonRowTop")
+    missing = [key for key in numeric if before[key] is None or after[key] is None]
+    if missing:
+        fail("pagingMeasured", {"missing": missing})
+        return failures
+    if before["sheet"] == after["sheet"]:
+        fail("pageChanged", {"before": before["sheet"], "after": after["sheet"]})
+    # 짧은 장이 보이면 판 높이와 내용 높이가 그 장을 따라 줄어야 한다.
+    if after["deckHeight"] > before["deckHeight"] - 20:
+        fail("shortSheetShrinksDeck", {"before": before["deckHeight"], "after": after["deckHeight"]})
+    if after["contentHeight"] > before["contentHeight"] - 20:
+        fail("shortSheetShorterContent", {"before": before["contentHeight"], "after": after["contentHeight"]})
+    if bubble:
+        # 말풍선은 아래가 붙박이라 판 바닥과 그 위의 아래 줄 좌표가 그대로여야 한다.
+        if abs(after["deckBottom"] - before["deckBottom"]) > 1:
+            fail("bubbleDeckBottomHeld", {"before": before["deckBottom"], "after": after["deckBottom"]})
+        if abs(after["navTop"] - before["navTop"]) > 1:
+            fail("bubbleNavTopHeld", {"before": before["navTop"], "after": after["navTop"]})
+        if abs(after["buttonRowTop"] - before["buttonRowTop"]) > 2:
+            fail("bubbleButtonRowTopHeld", {"before": before["buttonRowTop"], "after": after["buttonRowTop"]})
+    else:
+        # 띠에서는 판이 짧아진 만큼 아래 줄이 위로 올라온다.
+        if after["navTop"] >= before["navTop"]:
+            fail("bandNavTopRises", {"before": before["navTop"], "after": after["navTop"]})
+        if after["buttonRowTop"] >= before["buttonRowTop"]:
+            fail("bandButtonRowTopRises", {"before": before["buttonRowTop"], "after": after["buttonRowTop"]})
+    return failures
 
 
 def gallery_check(browser, base: str, theme: str) -> dict:
@@ -766,7 +886,7 @@ def interaction_checks(page: Page, base: str, out: Path, theme: str) -> dict:
     # 서버 순서: 답 저장 커밋이 판에서 질문 장을 먼저 빼고, 보이는 장은 답한 그 장으로 남는다.
     results["expandedChoice"]["board"] = board_state(page)
     results["choiceStyleSheet"] = choice_hover_state(page, SHEET_SCOPE, f'{SHEET_SCOPE} .v3-card-question-choices button')
-    shot(page, out, f"card-question-pas-ga-expanded-answered-1440-{theme}", '[data-testid="card-question-review"] .persistent-session-screen')
+    shot(page, out, f"card-question-pas-ga-expanded-answered-1440-{theme}", SCREEN_SCOPE)
     page.locator(f'{SHEET_SCOPE} .v3-card-target-notice button').first.click()
     page.wait_for_timeout(300)
     results["expandedChoiceClear"] = {
@@ -877,7 +997,7 @@ def bottom_checks(page: Page, base: str, out: Path, theme: str) -> dict:
     page.wait_for_selector(f'{SHEET_SCOPE} .pas-report-card-preview', state="visible")
     page.wait_for_timeout(300)
     results["questionSheetBottom"] = page.evaluate(BOTTOM_SCRIPT, SHEET_SCOPE)
-    shot(page, out, f"card-question-pas-ga-expanded-bottom-1440-{theme}", '[data-testid="card-question-review"] .persistent-session-screen')
+    shot(page, out, f"card-question-pas-ga-expanded-bottom-1440-{theme}", SCREEN_SCOPE)
     return results
 
 
@@ -1150,6 +1270,11 @@ def main() -> int:
                     frames.append(frame)
                     failures.extend({"capture": frame["capture"], **failure} for failure in frame["failures"])
 
+                # 카드 #1197: 긴 질문 장에서 한 줄 카드 장으로 넘길 때 판 높이가 지금 장을 따른다.
+                frame = capture_paging(page, base, out, True, theme)
+                frames.append(frame)
+                failures.extend({"capture": frame["capture"], **failure} for failure in frame["failures"])
+
                 theme_interactions = interaction_checks(page, base, out, theme)
                 interactions[theme] = theme_interactions
                 failures.extend({"capture": f"interaction-{theme}", **failure} for failure in judge_interactions(theme_interactions))
@@ -1181,6 +1306,10 @@ def main() -> int:
                     frame = capture_narrow_sheet(page, base, out, scene, theme)
                     frames.append(frame)
                     failures.extend({"capture": frame["capture"], **failure} for failure in frame["failures"])
+                # 좁은 띠에서도 같은 두 장을 트랙 스크롤로 넘긴다.
+                frame = capture_paging(page, base, out, False, theme)
+                frames.append(frame)
+                failures.extend({"capture": frame["capture"], **failure} for failure in frame["failures"])
 
                 context.close()
         finally:

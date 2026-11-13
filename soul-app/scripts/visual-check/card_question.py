@@ -37,6 +37,11 @@ Answer scenarios (contract 3절 2번) also run as PASS judgments:
 Alignment evidence: choice row left/right lines must agree within 1px, action
 button tops must agree within 1px, and the question target row must share the
 comment composer's left and right lines within 1px.
+
+Paging evidence (card #1197): the deck height follows the visible sheet, so
+paging from the long question sheet to the one-line card sheet shortens the
+deck. The iPad bubble keeps its bottom, footer and nav row in place; the phone
+band rises with the shorter deck. Captures are card-question-paging-{long,short}.
 """
 from __future__ import annotations
 
@@ -168,6 +173,57 @@ METRICS_SCRIPT = r"""
     errorNotice: errorNotice ? { testId: testId(errorNotice), text: (errorNotice.innerText || '').trim().slice(0, 120) } : null,
     overflow: over,
     text: container ? (container.innerText || '').slice(0, 4000) : (sheet ? (sheet.innerText || '').slice(0, 4000) : ''),
+  };
+}
+"""
+
+
+# 카드 #1197: 판 높이는 가장 긴 장이 아니라 지금 보이는 장을 따른다. 장을 넘기기 전과 뒤에
+# 판 높이, 지금 장의 내용 높이, 아래 단추 줄과 넘기기 줄의 화면 좌표(top)를 잰다.
+PAGING_SCRIPT = r"""
+() => {
+  const round = (value) => Math.round(value * 10) / 10;
+  const rect = (element) => {
+    const bounds = element.getBoundingClientRect();
+    return { top: round(bounds.top + window.scrollY), bottom: round(bounds.bottom + window.scrollY), height: round(bounds.height) };
+  };
+  const testId = (element) => element ? element.getAttribute('data-testid') : null;
+  const deck = document.querySelector('[data-testid="report-deck"]');
+  const track = document.querySelector('[data-testid="report-track"]');
+  const sheets = [...document.querySelectorAll('[data-testid^="report-sheet-"]')];
+  const sheet = sheets.find((element) => element.getAttribute('aria-hidden') !== 'true') || null;
+  const scroller = sheet ? sheet.querySelector('[data-testid="report-scroll"]') : null;
+  const reading = sheet ? sheet.querySelector('[data-testid="report-reading"]') : null;
+  const footer = sheet ? sheet.querySelector('[data-testid="report-footer"]') : null;
+  const nav = deck ? deck.querySelector('[data-testid="report-nav"]') : null;
+  // 지금 장의 쪽 표시는 폰에서 장 안에, iPad에서는 판 아래 줄에 있다.
+  const page = (sheet && sheet.querySelector('[data-testid="report-page"]'))
+    || (deck && deck.querySelector('[data-testid="report-count"]'));
+  const buttons = footer ? [...footer.querySelectorAll('[role="button"], button')] : [];
+  // 내용 높이는 스크롤 내용이 있으면 그 scrollHeight, 아니면 읽기 틀 자식들의 합이다.
+  const contentHeight = () => {
+    if (scroller) return Math.round(scroller.scrollHeight);
+    if (!reading) return null;
+    const kids = [...reading.children].filter((child) => child.getBoundingClientRect().height > 0);
+    if (!kids.length) return 0;
+    const top = Math.min(...kids.map((child) => child.getBoundingClientRect().top));
+    const bottom = Math.max(...kids.map((child) => child.getBoundingClientRect().bottom));
+    return Math.round(bottom - top);
+  };
+  return {
+    page: page ? (page.textContent || '').trim() : null,
+    sheet: testId(sheet),
+    deckHeight: deck ? round(deck.getBoundingClientRect().height) : null,
+    deckTop: deck ? rect(deck).top : null,
+    deckBottom: deck ? rect(deck).bottom : null,
+    contentHeight: contentHeight(),
+    footerTop: footer ? rect(footer).top : null,
+    footerBottom: footer ? rect(footer).bottom : null,
+    buttonRowTop: buttons.length ? round(Math.min(...buttons.map((button) => button.getBoundingClientRect().top + window.scrollY))) : null,
+    navTop: nav ? rect(nav).top : null,
+    scrollLeft: track ? Math.round(track.scrollLeft) : null,
+    trackWidth: track ? Math.round(track.clientWidth) : null,
+    scrollY: Math.round(window.scrollY),
   };
 }
 """
@@ -368,6 +424,99 @@ def capture_state(
         "blockCapture": block_name,
         **metrics,
         "alignmentFailures": state_failures,
+    }
+
+
+def paging_state(page: Page) -> dict:
+    return page.evaluate(PAGING_SCRIPT)
+
+
+def wait_paging_settled(page: Page) -> dict:
+    """판 높이와 스크롤이 두 번 연속 같은 값으로 읽힐 때까지 기다린다."""
+    page.wait_for_timeout(400)
+    settled = paging_state(page)
+    for _ in range(20):
+        page.wait_for_timeout(150)
+        again = paging_state(page)
+        if again == settled:
+            return again
+        settled = again
+    return settled
+
+
+def judge_paging(bubble: bool, label: str, before: dict, after: dict) -> list[dict]:
+    failures: list[dict] = []
+
+    def fail(check: str, detail) -> None:
+        failures.append({"check": check, "label": label, "surface": "bubble" if bubble else "band", "detail": detail})
+
+    if before["sheet"] is None or after["sheet"] is None:
+        fail("sheet visible", {"before": before["sheet"], "after": after["sheet"]})
+        return failures
+    numeric = ("deckHeight", "deckTop", "deckBottom", "contentHeight", "footerTop")
+    if bubble:
+        numeric = numeric + ("navTop",)
+    missing = [key for key in numeric if before[key] is None or after[key] is None]
+    if missing:
+        fail("paging measured", {"missing": missing})
+        return failures
+    if before["sheet"] == after["sheet"]:
+        fail("page changed", {"before": before["sheet"], "after": after["sheet"]})
+    if before["page"] == after["page"]:
+        fail("page label changed", {"before": before["page"], "after": after["page"]})
+    # 짧은 장이 보이면 판 높이와 내용 높이가 그 장을 따라 줄어야 한다.
+    if after["deckHeight"] > before["deckHeight"] - 20:
+        fail("short sheet shrinks deck", {"before": before["deckHeight"], "after": after["deckHeight"]})
+    if after["contentHeight"] > before["contentHeight"] - 20:
+        fail("short sheet shorter content", {"before": before["contentHeight"], "after": after["contentHeight"]})
+    # 아래가 붙박인 자리(말풍선과 발치 띠)라 판 바닥과 그 위의 아래 줄 좌표가 그대로다.
+    if abs(after["deckBottom"] - before["deckBottom"]) > 1:
+        fail("deck bottom held", {"before": before["deckBottom"], "after": after["deckBottom"]})
+    if abs(after["footerTop"] - before["footerTop"]) > 2:
+        fail("button row top held", {"before": before["footerTop"], "after": after["footerTop"]})
+    if bubble and abs(after["navTop"] - before["navTop"]) > 1:
+        fail("nav top held", {"before": before["navTop"], "after": after["navTop"]})
+    # 판이 짧아진 만큼 위쪽 끝이 내려온다.
+    if after["deckTop"] < before["deckTop"] + 20:
+        fail("deck top lowers", {"before": before["deckTop"], "after": after["deckTop"]})
+    return failures
+
+
+def measure_paging(page: Page, base: str, width: int, theme: str, output: Path, result: dict) -> dict:
+    """긴 질문 장에서 한 줄 카드 장으로 넘기며 판 높이와 아래 줄 좌표를 잰다."""
+    label = f"paging-{width}-{theme}"
+    goto(page, base, "pas", "ga", False, theme, width)
+    settle(page)
+    before = wait_paging_settled(page)
+    long_name = f"card-question-paging-long-{width}-{theme}.png"
+    page.locator('[data-testid="card-question-pas-sample"]').first.screenshot(path=str(output / long_name))
+    if width >= 768:
+        # 아래 줄의 이동 단추로 넘긴다.
+        page.get_by_test_id("report-next-touch").click()
+    else:
+        # 폰에서는 이동 단추를 숨기므로 트랙을 실제로 스크롤한다.
+        page.evaluate("() => { const track = document.querySelector('[data-testid=\"report-track\"]');"
+                      " track.scrollLeft = track.clientWidth; track.dispatchEvent(new Event('scroll', { bubbles: true })); }")
+    after = wait_paging_settled(page)
+    short_name = f"card-question-paging-short-{width}-{theme}.png"
+    page.locator('[data-testid="card-question-pas-sample"]').first.screenshot(path=str(output / short_name))
+    failures = judge_paging(width >= 768, label, before, after)
+    result["failures"].extend(failures)
+    return {
+        "state": "pas-paging",
+        "surface": "pas",
+        "scene": "ga",
+        "width": width,
+        "theme": theme,
+        "expanded": False,
+        "capture": short_name,
+        "blockCapture": None,
+        "paths": {"long": long_name, "short": short_name},
+        "bubble": width >= 768,
+        "before": before,
+        "after": after,
+        "failures": failures,
+        "alignmentFailures": failures,
     }
 
 
@@ -863,6 +1012,8 @@ def main() -> int:
                             result["states"].append(capture_state(
                                 page, args.base_url, *state, width, theme, output, result,
                             ))
+                        # 카드 #1197: 긴 질문 장에서 한 줄 카드 장으로 넘길 때 판 높이가 지금 장을 따른다.
+                        result["states"].append(measure_paging(page, args.base_url, width, theme, output, result))
                         if theme == "light":
                             measure_interactions(page, args.base_url, width, output, result)
                     finally:
