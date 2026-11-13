@@ -85,16 +85,19 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
   const openHeights = useRef(new Map<string, number>());
   const measureKey = (entry: PersistentReportEntry) => JSON.stringify([sessionId, bubble, compact, width, entry.key, expandedKey === entry.key, entry.title, entry.context, entry.action, entry.options, entry.card_numbers, entry.card_id, entry.card_status]);
   const pressing = useRef(false);
+  // pagingEnabled snaps a drag that stops between pages; the height settles when it lands.
+  const sliding = useRef(false);
   const [height, setHeight] = useState(0);
   const layoutKey = JSON.stringify([sessionId, bubble, compact, width]);
   const [presentedLayout, setPresentedLayout] = useState<string | null>(null);
   const presentedSession = useRef(sessionId);
   const commitHeight = () => {
     const allMeasured = width > 0 && entries.every(entry => readyHeights.current.has(measureKey(entry)));
-    if (pressing.current || (bubble && !entries.every(entry => measuredHeights.current.has(measureKey(entry))))
+    if (pressing.current || sliding.current || (bubble && !entries.every(entry => measuredHeights.current.has(measureKey(entry))))
       || (presentedLayout === layoutKey && !allMeasured)) return;
-    const next = Math.max(0, ...entries.map(entry => Math.max(measuredHeights.current.get(measureKey(entry)) ?? 0,
-      entry.state === 'answered' ? openHeights.current.get(measureKey(entry)) ?? 0 : 0)));
+    const visible = entries[index];
+    const next = visible ? Math.max(0, measuredHeights.current.get(measureKey(visible)) ?? 0,
+      visible.state === 'answered' ? openHeights.current.get(measureKey(visible)) ?? 0 : 0) : 0;
     setHeight(saved => saved === next ? saved : next);
     if (allMeasured && next > 0) { presentedSession.current = sessionId; setPresentedLayout(layoutKey); }
   };
@@ -274,7 +277,13 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
         // let the viewport span them without adding two more pixels.
         marginVertical: -StyleSheet.hairlineWidth } : inlineCapped ? { height: inlineHeight, flexShrink: 0 }
           : deckHeight ? { height: deckHeight } : undefined}
-      onScrollBeginDrag={() => interaction(true)} onScrollEndDrag={() => interaction(false)} onMomentumScrollEnd={() => interaction(false)}
+      onScrollBeginDrag={() => { sliding.current = true; interaction(true); }}
+      onScrollEndDrag={event => {
+        const { contentOffset } = event.nativeEvent;
+        if (width <= 0 || Math.abs(contentOffset.x - Math.round(contentOffset.x / width) * width) <= 1) sliding.current = false;
+        interaction(false);
+      }}
+      onMomentumScrollEnd={() => { sliding.current = false; interaction(false); }}
       onLayout={event => setWidth(event.nativeEvent.layout.width)} onContentSizeChange={align}
       onScroll={event => {
         if (!width) return;

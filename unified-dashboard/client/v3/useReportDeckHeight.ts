@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react';
-/** Measures unconstrained content; only a publication's pre-answer height survives a reply. */
+/** Measures unconstrained content; the visible sheet sizes the deck and only a publication's pre-answer height survives a reply. */
 export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revision: unknown, sessionId: string, layoutKey = sessionId, maximumHeight?: number) {
   const [measurement, setMeasurement] = useState<{ revision: unknown; layoutKey: string; height: number }>();
   const [waitingForFont, setWaitingForFont] = useState(false);
@@ -41,7 +41,8 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
       });
       node.style.height = 'auto'; node.style.maxHeight = 'none';
       const keys = new Set<string>();
-      const sizes = [...node.querySelectorAll<HTMLElement>('.pas-report-sheet')].map(sheet => {
+      let visible: number | undefined;
+      for (const sheet of node.querySelectorAll<HTMLElement>('.pas-report-sheet')) {
         const content = sheet.querySelector<HTMLElement>('.pas-report-content')!;
         const footer = sheet.querySelector<HTMLElement>('.pas-report-footer');
         const undo = sheet.querySelector<HTMLElement>('.pas-report-undo');
@@ -52,8 +53,9 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
           + (parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0) + (footer ? rowGap : 0);
         const undoExtra = undo ? undo.getBoundingClientRect().height + rowGap : 0;
         if (sheet.dataset.answered !== 'true') beforeAnswer.current.set(key, base);
-        return (sheet.dataset.answered === 'true' ? beforeAnswer.current.get(key) ?? base : base) + undoExtra;
-      });
+        // Every sheet keeps its pre-answer height cached for a later visit; only the visible one sizes the deck.
+        if (sheet.dataset.current === 'true') visible = (sheet.dataset.answered === 'true' ? beforeAnswer.current.get(key) ?? base : base) + undoExtra;
+      }
       for (const key of beforeAnswer.current.keys()) if (!keys.has(key)) beforeAnswer.current.delete(key);
       node.style.height = oldHeight; node.style.maxHeight = oldMaximum;
       readings.forEach((reading, index) => {
@@ -65,7 +67,7 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
         }
         readingPositions.current.set(reading, position(reading));
       });
-      pending.current = { revision, layoutKey, height: Math.ceil(Math.max(0, ...sizes)) + 2 };
+      pending.current = { revision, layoutKey, height: Math.ceil(Math.max(0, visible ?? 0)) + 2 };
       if (!holding.current) setMeasurement(pending.current);
       node.querySelectorAll<HTMLElement>('.pas-report-reading').forEach(reading => {
         reading.dataset.more = String(reading.scrollHeight - reading.scrollTop - reading.clientHeight > 1);

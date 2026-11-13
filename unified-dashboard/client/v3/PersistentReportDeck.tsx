@@ -79,7 +79,7 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
   const bubble = seat?.target && seat.body ? seat.layout : null;
   const inBubble = Boolean(bubble);
   const ready = seat?.ready !== false;
-  const measurementRevision = JSON.stringify([activeExpandedKey, completion.recent, entries.map(entry => {
+  const measurementRevision = JSON.stringify([activeExpandedKey, currentKey, completion.recent, entries.map(entry => {
     const cardEntry = entry as ReportCardEntry;
     return [entry.key, entry.updated_at, entry.title, entry.context, entry.action, entry.options, entry.card_numbers, cardEntry.card_id, cardEntry.card_status];
   })]);
