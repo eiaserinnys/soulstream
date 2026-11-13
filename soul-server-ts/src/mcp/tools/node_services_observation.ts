@@ -8,14 +8,17 @@
  *   dashboard: /api/status, /api/services, /api/services/{name}/logs
  *   orch:      /api/orch/pending, /api/orch/nodes
  * - redirect를 따라 다른 endpoint로 가지 않는다(redirect: "error").
- * - bearer는 각 endpoint의 tokenFile에서 읽어 Authorization 헤더로만 쓰고,
- *   반환값·로그·CLI env에 넣지 않는다.
+ * - bearer는 각 endpoint의 tokenFile에서 읽거나, 볼트 출처면 vaultEnvFile의
+ *   VAULT_TOKEN으로 Vault KV v2(secret/shared/haniel)의 bearer를 읽어
+ *   Authorization 헤더로만 쓰고, 반환값·로그·CLI env에 넣지 않는다.
+ *   볼트 토큰·bearer·볼트 응답 본문도 오류 문구에 넣지 않는다.
  * - 한쪽 설정이 없으면 그쪽 결과만 NODE_SERVICES_OBSERVATION_NOT_CONFIGURED로
  *   표시하고 다른 쪽은 그대로 돌려준다. 둘 다 없으면 도구 전체가 NOT_CONFIGURED다.
  */
 import { readFile as defaultReadFile } from "node:fs/promises";
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import dotenv from "dotenv";
 import { z } from "zod";
 
 import type { ObservationOptions } from "../../security/session_isolation_contract.js";
@@ -33,6 +36,11 @@ const MAX_LOG_LINES = 200;
 const DEFAULT_LOG_LINES = 200;
 const REQUEST_TIMEOUT_MS = 10_000;
 const ERROR_BODY_LIMIT = 500;
+/** 볼트 출처 상수. 공통 파일 haniel_endpoint.py와 같은 KV v2 위치를 쓴다. */
+const VAULT_DEFAULT_ADDR = "https://vault.eiaserinnys.me";
+const VAULT_KV_MOUNT = "secret";
+const VAULT_SECRET_PATH = "shared/haniel";
+const VAULT_BEARER_KEY = "bearer";
 
 /** 고정 GET 목록. 이 union 밖의 요청은 만들 수 없다. */
 type HanielReadRequest =
@@ -163,7 +171,7 @@ function createHanielReadClient(
 ): HanielReadClient {
   return {
     async get(request: HanielReadRequest): Promise<unknown> {
-      const token = await readToken(endpoint.tokenFile, readFileImpl);
+      const token = await resolveBearer(endpoint, readFileImpl, fetchImpl);
       const path = fixedPath(request);
       const response = await fetchImpl(`${baseUrl}${path}`, {
         method: "GET",
@@ -201,12 +209,28 @@ function fixedPath(request: HanielReadRequest): string {
 function usableEndpoint(
   endpoint: NodeServicesObservationEndpointConfig | undefined,
 ): NodeServicesObservationEndpointConfig | undefined {
-  if (!endpoint || !endpoint.baseUrl || !endpoint.tokenFile) return undefined;
+  if (!endpoint || !endpoint.baseUrl) return undefined;
+  const sources = [endpoint.tokenFile, endpoint.vaultEnvFile].filter((value) => !!value);
+  if (sources.length !== 1) return undefined;
   return endpoint;
 }
 
 function notConfigured(): { code: string } {
   return { code: NODE_SERVICES_OBSERVATION_NOT_CONFIGURED };
+}
+
+async function resolveBearer(
+  endpoint: NodeServicesObservationEndpointConfig,
+  readFileImpl: (path: string) => Promise<string>,
+  fetchImpl: typeof fetch,
+): Promise<string> {
+  if (endpoint.vaultEnvFile) {
+    return readVaultBearer(endpoint.vaultEnvFile, readFileImpl, fetchImpl);
+  }
+  if (!endpoint.tokenFile) {
+    throw new Error("Haniel endpoint has no token source.");
+  }
+  return readToken(endpoint.tokenFile, readFileImpl);
 }
 
 async function readToken(
@@ -218,6 +242,55 @@ async function readToken(
     throw new Error("Haniel API token file is empty.");
   }
   return token;
+}
+
+/**
+ * 볼트 출처: 요청마다 자격 파일을 다시 읽고 KV v2에서 허브 bearer를 가져온다.
+ * 값은 캐시하지 않는다. 오류 문구에는 상태 코드와 까닭만 남긴다.
+ */
+async function readVaultBearer(
+  vaultEnvFile: string,
+  readFileImpl: (path: string) => Promise<string>,
+  fetchImpl: typeof fetch,
+): Promise<string> {
+  const credentials = dotenv.parse(await readFileImpl(vaultEnvFile));
+  const vaultToken = credentials.VAULT_TOKEN?.trim();
+  if (!vaultToken) {
+    throw new Error("Haniel vault env file has no VAULT_TOKEN.");
+  }
+  const vaultAddr = (credentials.VAULT_ADDR?.trim() || VAULT_DEFAULT_ADDR).replace(/\/+$/, "");
+  const secretPath = `/v1/${VAULT_KV_MOUNT}/data/${VAULT_SECRET_PATH}`;
+  const response = await fetchImpl(`${vaultAddr}${secretPath}`, {
+    method: "GET",
+    headers: { "X-Vault-Token": vaultToken },
+    redirect: "error",
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!response.ok) {
+    throw new Error(`Vault GET ${secretPath} failed with ${response.status}`);
+  }
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    // JSON.parse 오류 문구는 입력 조각을 담을 수 있으므로 본문을 그대로 싣지 않는다.
+    throw new Error(`Vault GET ${secretPath} returned a non-JSON body.`);
+  }
+  const bearer = vaultBearerValue(body);
+  if (!bearer) {
+    throw new Error(`Vault secret ${VAULT_SECRET_PATH} has no ${VAULT_BEARER_KEY}.`);
+  }
+  return bearer;
+}
+
+function vaultBearerValue(body: unknown): string | undefined {
+  if (body === null || typeof body !== "object") return undefined;
+  const data = (body as { data?: unknown }).data;
+  if (data === null || typeof data !== "object") return undefined;
+  const values = (data as { data?: unknown }).data;
+  if (values === null || typeof values !== "object") return undefined;
+  const bearer = (values as Record<string, unknown>)[VAULT_BEARER_KEY];
+  return typeof bearer === "string" && bearer.trim() ? bearer.trim() : undefined;
 }
 
 function normalizeBaseUrl(side: string, value: string): string {

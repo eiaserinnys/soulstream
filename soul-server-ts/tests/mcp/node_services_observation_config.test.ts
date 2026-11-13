@@ -26,6 +26,29 @@ describe("resolveNodeServicesObservation", () => {
     });
   });
 
+  it("builds the orch endpoint from the vault env file source", () => {
+    expect(resolveNodeServicesObservation({
+      HANIEL_ORCH_URL: "http://127.0.0.1:9400",
+      HANIEL_ORCH_VAULT_ENV_FILE: "/home/eias/.local/share/haniel/vault.env",
+    })).toEqual({
+      orch: {
+        baseUrl: "http://127.0.0.1:9400",
+        vaultEnvFile: "/home/eias/.local/share/haniel/vault.env",
+      },
+    });
+  });
+
+  it("does not build the orch endpoint without exactly one token source", () => {
+    expect(resolveNodeServicesObservation({
+      HANIEL_ORCH_VAULT_ENV_FILE: "/home/eias/.local/share/haniel/vault.env",
+    })).toBeUndefined();
+    expect(resolveNodeServicesObservation({
+      HANIEL_ORCH_URL: "http://127.0.0.1:9400",
+      HANIEL_ORCH_TOKEN_FILE: "/run/secrets/orch",
+      HANIEL_ORCH_VAULT_ENV_FILE: "/home/eias/.local/share/haniel/vault.env",
+    })).toBeUndefined();
+  });
+
   it("keeps both endpoints when both pairs are complete", () => {
     expect(resolveNodeServicesObservation({
       HANIEL_DASHBOARD_URL: "http://127.0.0.1:9300",

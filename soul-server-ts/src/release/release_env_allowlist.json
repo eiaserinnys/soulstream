@@ -61,6 +61,7 @@
     "HANIEL_DASHBOARD_TOKEN_FILE": { "owner": "haniel", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "HANIEL_ORCH_URL": { "owner": "haniel", "kind": "non_secret", "identity_scope": "deployment", "normalization": "url" },
     "HANIEL_ORCH_TOKEN_FILE": { "owner": "haniel", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
+    "HANIEL_ORCH_VAULT_ENV_FILE": { "owner": "haniel", "kind": "non_secret", "identity_scope": "deployment", "normalization": "path" },
     "MCP_ENABLED": { "owner": "mcp", "kind": "non_secret", "identity_scope": "deployment", "normalization": "boolean" },
     "MCP_PATH": { "owner": "mcp", "kind": "non_secret", "identity_scope": "deployment", "normalization": "string" },
     "MCP_INTERNAL_PORT": { "owner": "mcp", "kind": "non_secret", "identity_scope": "deployment", "normalization": "number" },
