@@ -3,13 +3,15 @@
 // cardQuestionDetailView와 cardQuestionSheetView가 만든다.
 import { useState, type ReactNode } from "react";
 import { ThinkingOrb } from "@seosoyoung/soul-ui/components/chat/WorkingOrb";
-import { Badge, Button, MarkdownContent, type PersistentReportEntry } from "@seosoyoung/soul-ui";
+import { Badge, Button, MarkdownContent, useInternalLinkClick, type PersistentReportEntry } from "@seosoyoung/soul-ui";
 import { InputRequestOptionContent } from "@seosoyoung/soul-ui/components/InputRequestOptionContent";
 import { MarkdownImage } from "@seosoyoung/soul-ui/components/MarkdownImage";
 import { ProfileAvatar } from "@seosoyoung/soul-ui/components/ProfileAvatar";
 import type { CardComment, CardQuestion } from "@seosoyoung/soul-ui/cards/card-types";
+import type { ChatAttachmentItem } from "@seosoyoung/soul-ui/lib/chat-attachment-model";
 type CardQuestionAttachment = NonNullable<CardQuestion["attachments"]>[number];
 import { Link } from "lucide-react";
+import { cardAttachmentSelectionFromEvidence } from "./card-attachment-selection";
 import { CardImageViewer } from "./CardImageViewer";
 import "./v3-card-check-items.css";
 import "./card-question.css";
@@ -100,7 +102,8 @@ type BodyProps = {
 };
 
 export function CardQuestionBody({ view, portraitUrl, userPortraitUrl, pending = false, layout = "stack", onChoose }: BodyProps) {
-  const [image, setImage] = useState<{ src: string; alt: string } | null>(null);
+  const [image, setImage] = useState<{ src: string; alt: string; attachment?: ChatAttachmentItem } | null>(null);
+  const internalLinkClick = useInternalLinkClick();
   const [picked, setPicked] = useState<{ id: string; label: string } | null>(null);
   const [sending, setSending] = useState<string | null>(null);
   const pickedLabel = picked?.id === view.id ? picked.label : null;
@@ -120,10 +123,19 @@ export function CardQuestionBody({ view, portraitUrl, userPortraitUrl, pending =
     <div className="v3-card-question-background" data-v3-selectable-content="true"><MarkdownContent content={view.background} /></div>
     {images.length ? <div className="v3-card-check-item-evidence" data-evidence-type="image">{images.map((item, index) =>
       <figure key={`${item.url}:${index}`} title={item.label}>
-        <MarkdownImage variant="card-evidence" src={item.previewUrl ?? item.url} alt={item.label} onOpen={(src, alt) => setImage({ src, alt })} />
+        <MarkdownImage variant="card-evidence" src={item.previewUrl ?? item.url} alt={item.label}
+          onOpen={(src, alt) => setImage({ src, alt, attachment: cardAttachmentSelectionFromEvidence(item) ?? undefined })} />
       </figure>)}</div> : null}
-    {links.length ? <div className="v3-card-check-item-links" data-evidence-type="link">{links.map((item, index) =>
-      <a key={`${item.url}:${index}`} href={item.url} target="_blank" rel="noreferrer" title={item.label}><Link className="h-3 w-3" aria-hidden="true" />{item.label}</a>)}</div> : null}
+    {links.length ? <div className="v3-card-check-item-links" data-evidence-type="link">{links.map((item, index) => {
+      const attachment = cardAttachmentSelectionFromEvidence(item);
+      return <a key={`${item.url}:${index}`} href={item.originalUrl ?? item.url} target="_blank" rel="noreferrer" title={item.label}
+        onClick={event => {
+          if (attachment) {
+            event.preventDefault();
+            setImage({ src: attachment.previewUrl ?? attachment.originalUrl ?? item.url, alt: item.label, attachment });
+          } else internalLinkClick(event);
+        }}><Link className="h-3 w-3" aria-hidden="true" />{item.label}</a>;
+    })}</div> : null}
     {view.thread.length ? <ol className="v3-card-question-thread" aria-label="되묻기">
       {view.thread.map(turn => <li key={turn.id} data-author={turn.author}>
         <ProfileAvatar role={turn.author === "user" ? "user" : "assistant"} hasPortrait fallbackEmoji={turn.author === "user" ? "👤" : "🤖"} portraitUrl={turn.author === "user" ? userPortraitUrl : portraitUrl} />

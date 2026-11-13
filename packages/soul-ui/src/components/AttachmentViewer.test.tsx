@@ -246,6 +246,24 @@ describe("AttachmentViewer", () => {
     expect(document.body.querySelector("[role=dialog]")?.textContent).toContain("3/3");
   });
 
+  it("marks the gallery frame per bundle kind", async () => {
+    const popup = () => document.body.querySelector(".chat-image-viewer-popup");
+    await act(async () => root.render(<ViewerHarness items={[attachment()]} />));
+    expect(popup()?.hasAttribute("data-attachment-bundle")).toBe(false);
+
+    await act(async () => root.render(<ViewerHarness items={[
+      attachment({ key: "a" }),
+      attachment({ key: "b", name: "b.txt" }),
+    ]} />));
+    expect(popup()?.getAttribute("data-attachment-bundle")).toBe("documents");
+
+    await act(async () => root.render(<ViewerHarness items={[
+      attachment({ key: "a" }),
+      attachment({ key: "b", name: "b.png", mimeType: "image/png", previewKind: "image", previewUrl: "/b.png" }),
+    ]} />));
+    expect(popup()?.getAttribute("data-attachment-bundle")).toBe("mixed");
+  });
+
   it("leaves arrow keys on native media controls for playback", async () => {
     const items = [
       remoteMedia("clip.mp3", "audio/mpeg"),
@@ -462,5 +480,27 @@ describe("AttachmentViewer", () => {
     expect(next.getAttribute('aria-disabled')).toBe('true');
     await act(async () => next.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })));
     expect(dialog.textContent).toContain('1/2');
+  });
+
+  it.each([
+    ["image", { name: "one.png", mimeType: "image/png", previewKind: "image" as const, previewUrl: "/one.png" }],
+    ["document", { name: "notes.md", mimeType: "text/markdown" }],
+    ["html", { name: "report.html", mimeType: "text/html" }],
+    ["video", { name: "clip.mp4", mimeType: "video/mp4", previewKind: "info" as const, previewUrl: null }],
+    ["audio", { name: "clip.mp3", mimeType: "audio/mpeg", previewKind: "info" as const, previewUrl: null }],
+    ["file", { name: "data.bin", mimeType: "application/octet-stream", previewKind: "info" as const, previewUrl: null }],
+  ])("marks the popup as %s so the frame follows the content kind", async (kind, overrides) => {
+    vi.stubGlobal("fetch", vi.fn(async () => rangeResponse("본문")));
+    await act(() => root.render(<ViewerHarness items={[attachment(overrides)]} />));
+    const popup = document.body.querySelector('[data-slot="dialog-popup"]');
+    expect(popup?.getAttribute("data-attachment-kind")).toBe(kind);
+  });
+
+  it("keeps the document kind while a text preview is loading", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>(() => {})));
+    await act(() => root.render(<ViewerHarness items={[attachment({ name: "긴 문서.md", mimeType: "text/markdown", byteSize: 32 })]} />));
+    const popup = document.body.querySelector('[data-slot="dialog-popup"]');
+    expect(popup?.getAttribute("data-attachment-kind")).toBe("document");
+    expect(popup?.textContent).toContain("미리보기를 불러오는 중…");
   });
 });
