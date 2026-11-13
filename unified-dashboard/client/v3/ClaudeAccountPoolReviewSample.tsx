@@ -332,6 +332,10 @@ export function createProviderPanelReviewRequest(
     }
     const accountMatch = path.match(/\/accounts\/([^/]+)$/);
     if (accountMatch && method === "PATCH") {
+      // 계정 행 오류 줄(actionError)을 실제 경로로 띄우는 검수 상태. 주소의 claudeActionState=failure로 연다.
+      if (new URLSearchParams(window.location.search).get("claudeActionState") === "failure") {
+        return Response.json({ code: "sample_failure", message: "sample claude action failed" }, { status: 503 });
+      }
       const accountId = decodeURIComponent(accountMatch[1]!);
       const body = JSON.parse(String(init?.body ?? "{}")) as { enabled?: boolean; priority?: number | null };
       list = {
@@ -381,7 +385,8 @@ export function ProviderPanelReviewSample({ state, loading = false }: { state: P
   const client = useMemo(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }), []);
 
   return <QueryClientProvider client={client}>
-    <NodePanel request={request} sampleNodes={nodes} />
+    {/* 검수 창에는 설정 구역 틀이 없으므로 안쪽 여백은 이 샘플 틀이 가진다. */}
+    <div className="p-2"><NodePanel request={request} sampleNodes={nodes} /></div>
   </QueryClientProvider>;
 }
 

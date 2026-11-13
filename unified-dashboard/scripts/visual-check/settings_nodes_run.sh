@@ -4,14 +4,15 @@
 #   unified-dashboard/scripts/visual-check/settings_nodes_run.sh <출력 폴더> [운영 briefs JSON]
 #
 # 두 번째 인자를 주면 운영 /cogito/briefs 응답(노드 4개)까지 settings_nodes_real.py로 잰다.
-# 포트는 PORT로 바꾼다. 기본 5183은 운영 서비스가 쓰지 않는 값이다.
+# 포트는 VISUAL_CHECK_PORT로 바꾼다. 기본 5183은 운영 서비스가 쓰지 않는 값이다.
+# 세션 환경의 PORT(운영 서버 포트)는 읽지 않는다.
 set -u
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REPO="$(cd "$HERE/../../.." && pwd)"
 OUT="${1:?출력 폴더를 주세요}"
 REAL="${2:-}"
-PORT="${PORT:-5183}"
+PORT="${VISUAL_CHECK_PORT:-5183}"
 LOG="$OUT/vite.log"
 
 cd "$REPO" || exit 1
@@ -117,6 +118,11 @@ fi
 
 status=0
 python3 -P "$HERE/settings_nodes.py" "http://127.0.0.1:$PORT" "$OUT" || status=1
+python3 -P "$HERE/settings_nodes_layout.py" "http://127.0.0.1:$PORT" "$OUT/layout" || status=1
+# 고치기 전 오류 줄·배지 색을 덮어 전후 캡처를 함께 남기려면 VISUAL_CHECK_BEFORE=1로 부른다.
+if [ "${VISUAL_CHECK_BEFORE:-}" = "1" ]; then
+  python3 -P "$HERE/settings_nodes_layout.py" "http://127.0.0.1:$PORT" "$OUT/layout-before" --mode before || status=1
+fi
 if [ -n "$REAL" ]; then
   python3 -P "$HERE/settings_nodes_real.py" "http://127.0.0.1:$PORT" "$OUT/real" "$REAL" || status=1
 fi

@@ -62,7 +62,7 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
   }
 
   return (
-    <div data-testid="node-panel-body" className="space-y-2 p-2">
+    <div data-testid="node-panel-body" className="space-y-2">
       {nodeList.length === 0 ? (
         <div
           data-testid="node-card-list"

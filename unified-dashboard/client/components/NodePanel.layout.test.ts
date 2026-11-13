@@ -88,7 +88,8 @@ describe("NodePanel layout", () => {
     const body = container?.querySelector<HTMLElement>('[data-testid="node-panel-body"]');
     expect(body).not.toBeNull();
     expect(body?.className).toContain("space-y-2");
-    expect(body?.className).toContain("p-2");
+    // 안쪽 여백은 설정 구역 틀(.config-detail)이 가진다. 몸통이 다시 더하면 제목 시작선보다 안쪽에서 시작한다.
+    expect(body?.className).not.toMatch(/(^|\s)p[xylrtb]?-\d/);
 
     // cogito는 목록 위 별도 카드가 아니라 펼친 노드 안에 있다.
     expect(container?.querySelector('[data-testid="cogito-health-panel"]')).toBeNull();

@@ -105,7 +105,7 @@
 
 .c724-badge-warn {
   background: color-mix(in oklch, var(--color-amber-500) 20%, transparent);
-  color: color-mix(in oklch, var(--color-amber-500) 58%, var(--foreground));
+  color: color-mix(in oklch, var(--color-amber-500) 46%, var(--foreground));
 }
 
 .c724-badge-danger {
@@ -268,7 +268,7 @@
 .c724-login-error,
 .c724-pool-error {
   font: var(--v3-type-body) var(--v3-font-family);
-  color: var(--color-red-300);
+  color: color-mix(in oklch, var(--color-red-500) 58%, var(--foreground));
   /* 오류 문구는 읽고 옮겨 적는 글이라 선택된다. */
   user-select: text;
 }
