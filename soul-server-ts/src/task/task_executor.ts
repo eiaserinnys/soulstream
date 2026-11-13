@@ -308,7 +308,10 @@ interface PersistentDecisionRuntime {
 
 export class TaskExecutor {
   /** 턴 출력을 읽는 중인 task가 엔진 치명 오류로 그 읽기를 오류로 끝내는 길. */
-  private readonly fatalEngineErrorFailers = new WeakMap<Task, (error: Error) => void>();
+  private readonly fatalEngineErrorFailers = new WeakMap<
+    Task,
+    { fail(error: Error): void; readonly waiters: number }
+  >();
   private readonly engineEventPublisher: TaskEngineEventPublisher;
   private readonly engineFailureRecovery: TaskEngineFailureRecovery;
   private readonly lifecycleTransition: TaskLifecycleTransition;
@@ -2517,9 +2520,9 @@ export class TaskExecutor {
     // 턴 출력을 읽는 실행이 서 있으면 그 읽기를 오류로 끝낸다. 포어그라운드가 없는
     // 러너에서는 실행의 종료 길이 스스로 열리지 않는다(이어받은 실행 포함). 보통
     // 종료 길이 이 오류를 받아 오류 종료 사건을 한 번 올린다.
-    const failInFlight = this.fatalEngineErrorFailers.get(task);
-    if (failInFlight) {
-      failInFlight(new Error(message));
+    const inFlight = this.fatalEngineErrorFailers.get(task);
+    if (inFlight) {
+      inFlight.fail(new Error(message));
       return true;
     }
     if (
@@ -2536,6 +2539,9 @@ export class TaskExecutor {
    * 턴 출력 읽기를 치명 오류로 끝낼 수 있게 감싼다. 기다리는 `next()`가 오류로
    * 풀리면 읽기는 보통 실패와 똑같이 던진다. 원 스트림의 닫기는 기다리지 않는다
    * (스트림이 아직 다음 항목을 기다리는 중이라 닫기가 그 뒤에 서기 때문이다).
+   *
+   * 오류 신호는 지금 기다리는 `next()` 하나만 깨운다. 오래 사는 약속에 사건마다
+   * 반응을 걸지 않으므로 턴이 길어도 사건이 메모리에 쌓이지 않는다.
    */
   private failOnFatalEngineError<T>(
     task: Task,
@@ -2545,22 +2551,36 @@ export class TaskExecutor {
     return {
       [Symbol.asyncIterator](): AsyncIterator<T> {
         const iterator = source[Symbol.asyncIterator]();
-        let fail!: (error: Error) => void;
-        const failed = new Promise<never>((_, reject) => { fail = reject; });
-        failed.catch(() => undefined);
-        failers.set(task, fail);
+        let failure: Error | undefined;
+        let wake: ((error: Error) => void) | undefined;
+        const signal = {
+          fail(error: Error): void {
+            failure ??= error;
+            wake?.(failure);
+          },
+          get waiters(): number {
+            return wake ? 1 : 0;
+          },
+        };
+        failers.set(task, signal);
         const release = (): void => {
-          if (failers.get(task) === fail) failers.delete(task);
+          if (failers.get(task) === signal) failers.delete(task);
         };
         return {
           async next(): Promise<IteratorResult<T>> {
             try {
+              if (failure) throw failure;
               const pending = iterator.next();
               pending.catch(() => undefined);
-              const result = await Promise.race([pending, failed]);
+              const result = await new Promise<IteratorResult<T>>((resolve, reject) => {
+                wake = reject;
+                pending.then(resolve, reject);
+              });
+              wake = undefined;
               if (result.done) release();
               return result;
             } catch (err) {
+              wake = undefined;
               release();
               void Promise.resolve(iterator.return?.()).catch(() => undefined);
               throw err;

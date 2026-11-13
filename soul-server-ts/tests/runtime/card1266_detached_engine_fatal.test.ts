@@ -199,3 +199,52 @@ describe("card #1266 U4 (stuck session 16): an engine that dies with no turn in 
     expect(double.enqueueTerminalTransitionAndWaitForApplication).toHaveBeenCalledOnce();
   });
 });
+
+describe("card #1266 U4: the fatal-error wrapper around an ordinary turn", () => {
+  type FatalSignal = { fail(error: Error): void; readonly waiters: number };
+  const wrap = (executor: TaskExecutor, task: Task, source: AsyncIterable<number>) =>
+    (executor as unknown as {
+      failOnFatalEngineError(task: Task, source: AsyncIterable<number>): AsyncIterable<number>;
+    }).failOnFatalEngineError(task, source);
+  const signalOf = (executor: TaskExecutor, task: Task) =>
+    (executor as unknown as { fatalEngineErrorFailers: WeakMap<Task, FatalSignal> })
+      .fatalEngineErrorFailers.get(task);
+
+  it("keeps event order and parks at most one waiter on the error signal across thousands of events", async () => {
+    const { executor } = makeExecutor();
+    const task = makeTask();
+    async function* events() { for (let i = 0; i < 5000; i += 1) yield i; }
+
+    const seen: number[] = [];
+    const waitersBetweenEvents = new Set<number | undefined>();
+    for await (const event of wrap(executor, task, events())) {
+      seen.push(event);
+      waitersBetweenEvents.add(signalOf(executor, task)?.waiters);
+    }
+
+    expect(seen).toEqual(Array.from({ length: 5000 }, (_, i) => i));
+    expect([...waitersBetweenEvents]).toEqual([0]);
+    expect(signalOf(executor, task)).toBeUndefined();
+  });
+
+  it("counts only the next() that is waiting, and a fatal error ends that wait as a thrown error", async () => {
+    const { executor } = makeExecutor();
+    const task = makeTask();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    async function* events() { yield 1; yield 2; await gate; yield 3; }
+
+    const iterator = wrap(executor, task, events())[Symbol.asyncIterator]();
+    expect((await iterator.next()).value).toBe(1);
+    expect((await iterator.next()).value).toBe(2);
+    expect(signalOf(executor, task)?.waiters).toBe(0);
+
+    const waiting = iterator.next();
+    waiting.catch(() => undefined);
+    await vi.waitFor(() => expect(signalOf(executor, task)?.waiters).toBe(1));
+    signalOf(executor, task)!.fail(new Error("engine died"));
+    await expect(waiting).rejects.toThrow("engine died");
+    expect(signalOf(executor, task)).toBeUndefined();
+    release();
+  });
+});
