@@ -629,6 +629,59 @@ test('태블릿 인라인 보고 장은 입력창 레이아웃과 키보드 겹�
   view.unmount(); measure.mockRestore(); dimensions.mockRestore();
 });
 
+test('아이패드 띠는 판을 다루는 동안 줄지 않고 판 밖 터치가 시작되면 지금 장 높이가 된다', () => {
+  mockDevice = 'tabletLandscape';
+  useSettingsStore.setState({ serverUrl: 'https://screen.test' });
+  const dimensions = jest.spyOn(require('react-native'), 'useWindowDimensions').mockReturnValue({ width: 1180, height: 820, scale: 1, fontScale: 1 });
+  const measure = jest.spyOn((View as any).prototype, 'measureInWindow').mockImplementation(function(this: any, callback: any) {
+    if (this.props.testID === 'persistent-session-screen') callback(0, 24, 1180, 796);
+    else if (this.props.testID === 'persistent-session-conversation') callback(350, 100, 480, 720);
+  });
+  // fireEvent은 마지막으로 render한 트리에만 이벤트를 보내므로 토큰 훅을 화면보다 먼저 읽는다.
+  const md = renderHook(() => useTokens()).result.current.uiSpacing.md;
+  const view = render(<PersistentSessionProvider><Capture /><PersistentSessionScreen onHome={jest.fn()} /></PersistentSessionProvider>);
+  const sessionId = 'pas-band-hold';
+  const longReport: PersistentReportEntry = { key: 'cq_long', kind: 'ask', title: '긴 질문', card_numbers: [], context: '긴 질문 내용', action: '', options: ['응'], state: 'open', answer: '', updated_at: 'long' };
+  const shortReport: PersistentReportEntry = { key: 'card_short', kind: 'see', title: '한 줄 검수', card_numbers: [], context: '짧음', action: '', options: [], state: 'open', answer: '', updated_at: 'short' };
+  act(() => {
+    store.getState().open({ session_id: sessionId, display_name: '관제', persistent: true } as any);
+    useSessionStore.getState().applyPersistentReport(sessionId, [longReport, shortReport]);
+    const request = useChatStore.getState().beginPersistentDisplaySettingsLoad(sessionId);
+    useChatStore.getState().finishPersistentDisplaySettingsLoad(sessionId, request, {
+      show_character: false, animate_character: false, show_generation_separator: true, show_jev_candidates: true, turn_usage_mode: 'collapsed',
+    });
+    view.getByTestId('persistent-session-screen').props.onLayout();
+  });
+  const body = view.getByTestId('persistent-body-probe');
+  act(() => body.props.onComposerLayout({ x: 0, y: 600, width: 480, height: 76 }, { x: 0, y: 20, width: 480, height: 56 }));
+  const track = view.getByTestId('report-track', { includeHiddenElements: true });
+  fireEvent(track, 'layout', { nativeEvent: { layout: { width: 480 } } });
+  const readingHeights: Record<string, number> = { cq_long: 300, card_short: 40 };
+  for (const sheet of view.getAllByTestId(/^report-sheet-/, { includeHiddenElements: true })) {
+    const key = String(sheet.props.testID).replace('report-sheet-', '');
+    fireEvent(sheet.findByProps({ testID: 'report-reading' }), 'layout', { nativeEvent: { layout: { height: readingHeights[key] ?? 0 } } });
+    fireEvent(sheet.findAllByProps({ testID: 'report-footer' })[0], 'layout', { nativeEvent: { layout: { height: 80 } } });
+  }
+  const deck = () => view.getByTestId('report-deck', { includeHiddenElements: true });
+  const height = () => StyleSheet.flatten(view.getByTestId('report-track').props.style).height;
+  expect(height()).toBe(300 + md + 80);
+  // 판 안 터치로 다루기를 시작하고 트랙을 넘기면 짧은 장으로 넘어가도 판이 줄지 않는다.
+  fireEvent(deck(), 'touchStart');
+  fireEvent(track, 'scroll', { nativeEvent: { contentOffset: { x: 480 } } });
+  expect(height()).toBe(300 + md + 80);
+  // 손을 떼도 다루기는 판 밖 터치가 시작될 때까지 이어진다.
+  fireEvent(deck(), 'touchEnd');
+  expect(height()).toBe(300 + md + 80);
+  fireEvent(view.getByTestId('persistent-session-screen'), 'touchStart');
+  expect(height()).toBe(40 + md + 80);
+  // 짧은 장을 보는 채로 다시 판 안에서 다루면 긴 장으로 넘길 때 그만큼 자란다.
+  fireEvent(deck(), 'touchStart');
+  fireEvent(track, 'scroll', { nativeEvent: { contentOffset: { x: 0 } } });
+  expect(height()).toBe(300 + md + 80);
+  fireEvent(deck(), 'touchEnd');
+  view.unmount(); measure.mockRestore(); dimensions.mockRestore();
+});
+
 test.each([
   [true, 'account-off-outline', '캐릭터 숨기기'],
   [false, 'account-outline', '캐릭터 표시'],

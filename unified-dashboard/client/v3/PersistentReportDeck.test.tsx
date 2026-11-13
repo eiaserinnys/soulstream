@@ -405,6 +405,63 @@ it('sizes the deck to the visible sheet instead of the tallest sheet', async () 
   await act(async () => track().dispatchEvent(new Event('scroll')));
   expect(height()).toBe('334px');
 });
+const twoSheetHeights = () => {
+  vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function(this: HTMLElement) { return this.classList.contains('pas-report-track') ? 340 : 0; });
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function(this: HTMLElement) {
+    const key = this.closest<HTMLElement>('.pas-report-sheet')?.dataset.testid?.replace('report-sheet-', '') ?? '';
+    return { height: this.classList.contains('pas-report-content') ? ({ one: 300, two: 40 } as Record<string, number>)[key] ?? 0 : this.classList.contains('pas-report-footer') ? 32 : 0 } as DOMRect;
+  });
+};
+const pointer = (deck: HTMLElement, type: 'pointerover' | 'pointerout') => act(async () => deck.dispatchEvent(new MouseEvent(type, { bubbles: true })));
+it('holds the band height while the pointer stays inside it and settles on the visible sheet after it leaves', async () => {
+  twoSheetHeights();
+  entries = [one, { ...two, context: '한 줄 검수' }]; await render();
+  const deck = () => host.querySelector<HTMLElement>('[data-testid="report-deck"]')!;
+  const height = () => deck().style.height;
+  const track = () => host.querySelector<HTMLElement>('.pas-report-track')!;
+  expect(height()).toBe('334px');
+  // 포인터가 판에 들어온 채로 긴 장에서 짧은 장으로 넘긴다.
+  await pointer(deck(), 'pointerover');
+  await act(async () => button('다음 장').click());
+  await act(async () => track().dispatchEvent(new Event('scroll')));
+  expect(height()).toBe('334px');
+  // 포인터가 판을 떠나면 지금 장 높이로 한 번에 맞춘다.
+  await pointer(deck(), 'pointerout');
+  expect(height()).toBe('74px');
+  // 포인터가 판 밖에 있을 때(키보드로 넘김)는 지금처럼 지금 장 높이다.
+  track().focus();
+  await act(async () => track().dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })));
+  await act(async () => track().dispatchEvent(new Event('scroll')));
+  expect(height()).toBe('334px');
+});
+it('grows the band to a longer sheet while the pointer stays inside it', async () => {
+  twoSheetHeights();
+  entries = [one, { ...two, context: '한 줄 검수' }]; await render();
+  const deck = () => host.querySelector<HTMLElement>('[data-testid="report-deck"]')!;
+  const height = () => deck().style.height;
+  const track = () => host.querySelector<HTMLElement>('.pas-report-track')!;
+  await act(async () => button('다음 장').click());
+  await act(async () => track().dispatchEvent(new Event('scroll')));
+  expect(height()).toBe('74px');
+  await pointer(deck(), 'pointerover');
+  await act(async () => button('앞 장').click());
+  await act(async () => track().dispatchEvent(new Event('scroll')));
+  expect(height()).toBe('334px');
+});
+it('keeps sizing a bubble to the visible sheet while the pointer is inside it', async () => {
+  twoSheetHeights();
+  portalTarget = document.createElement('div'); document.body.append(portalTarget);
+  entries = [one, { ...two, context: '한 줄 검수' }]; await render();
+  const deck = () => portalTarget!.querySelector<HTMLElement>('[data-testid="report-deck"]')!;
+  const height = () => deck().style.height;
+  const track = () => portalTarget!.querySelector<HTMLElement>('.pas-report-track')!;
+  const deckButton = (name: string) => Array.from(portalTarget!.querySelectorAll('button')).find(node => (node.getAttribute('aria-label') ?? node.textContent) === name)!;
+  expect(height()).toBe('334px');
+  await pointer(deck(), 'pointerover');
+  await act(async () => deckButton('다음 장').click());
+  await act(async () => track().dispatchEvent(new Event('scroll')));
+  expect(height()).toBe('74px');
+});
 it('retains height across the server answered revision but discards it when content is rewritten',async()=>{
  entries=[one]; await render();
  const height=()=>host.querySelector<HTMLElement>('.pas-report')!.style.height;

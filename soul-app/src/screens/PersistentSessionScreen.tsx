@@ -140,8 +140,16 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
   }, [reportsListMode, host.store, storedScene]);
   const [reportPressed, setReportPressed] = useState(false);
   const [reportReady, setReportReady] = useState(false);
+  // 판을 다루는 동안: 판 안에서 터치가 시작되면 켜고, 판 밖에서 다음 터치가 시작되면 끈다.
+  const [reportHandling, setReportHandling] = useState(false);
   const reportTouch = React.useRef(false);
-  const onReportDeckTouch = React.useCallback((active: boolean) => { reportTouch.current = active; }, []);
+  const onReportDeckTouch = React.useCallback((active: boolean) => {
+    reportTouch.current = active;
+    if (active) setReportHandling(true);
+  }, []);
+  const onScreenTouchStart = React.useCallback(() => {
+    if (!reportTouch.current) setReportHandling(false);
+  }, []);
   const display = useChatStore(state => session?.session_id
     ? state.persistentDisplaySettingsBySession[session.session_id]?.settings ?? null
     : null);
@@ -295,7 +303,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     revealKey={reportsScene ? revealReportKey : null} onRevealed={() => setRevealReportKey(null)}
     maxHeight={reportsScene ? (phone ? Math.max(0, (app?.height ?? 0) - headerHeight - keyboardOverlap) : geometry.reportInlineMaxHeight)
       : geometry.reportBubble?.maxHeight ?? (phone ? Math.min(geometry.reportViewMaxHeight, geometry.reportInlineMaxHeight) : geometry.reportInlineMaxHeight)}
-    onSelect={report.select} onDismiss={report.dismiss} onInteraction={setReportPressed} onDeckTouch={onReportDeckTouch}
+    onSelect={report.select} onDismiss={report.dismiss} onInteraction={setReportPressed} onDeckTouch={onReportDeckTouch} handling={reportHandling}
     renderCardStatus={entry => {
       const card = persistentReportStatusCard(entry);
       if (!card) return null;
@@ -376,7 +384,7 @@ function PersistentSessionContents({ active = true, chatActive = active, onOpenP
     : duoTopBand ? ['left', 'right'] : ['top', 'left', 'right']}
     style={{ flex: 1, backgroundColor: t.persistentSession.paper }}>
     {/* Keep native z-index stacking inside PAS so overlays cannot cover the Duo rail. */}
-    <View ref={appRef} testID="persistent-session-screen" style={{ flex: 1, isolation: 'isolate' }} onLayout={measureApp} {...(phone ? gestures.panHandlers : {})}>
+    <View ref={appRef} testID="persistent-session-screen" style={{ flex: 1, isolation: 'isolate' }} onLayout={measureApp} onTouchStart={onScreenTouchStart} {...(phone ? gestures.panHandlers : {})}>
       <View testID="persistent-session-header" style={{ height: headerHeight, flexDirection: 'row', alignItems: 'center',
         paddingTop: topBandInset,
         paddingLeft: t.foundation.pageInset, paddingRight: duoTopBand ? DUO_TOP_BAND_STATUS_RESERVE : t.foundation.pageInset - (t.hitTarget.min - t.foundation.iconFrame.compact) / 2,

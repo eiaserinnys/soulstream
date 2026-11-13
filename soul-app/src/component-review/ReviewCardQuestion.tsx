@@ -48,6 +48,8 @@ const initialExpanded = params.get('expanded') === '1';
 const failWrites = params.get('fail') === '1';
 const failReads = params.get('fail') === 'read';
 const slowReads = params.get('slow') === '1';
+// 운영의 「캐릭터 표시」 설정. 캐릭터를 숨기면 말풍선 대신 위에 붙은 띠가 된다.
+const showCharacter = params.get('character') !== '0';
 
 const at = (minute: number) => new Date(Date.UTC(2026, 10, 12, 5, minute)).toISOString();
 const asset = (module: number) => new URL(Asset.fromModule(module).uri, window.location.origin).href;
@@ -237,6 +239,16 @@ function PasScene() {
   const [cardSheetOpen, setCardSheetOpen] = useState<boolean>(initialExpanded && phone);
   const [expandedKey, setExpandedKey] = useState<string | null>(initialExpanded ? serverEntries[0]?.key ?? null : null);
   const [text, setText] = useState('');
+  // 운영과 같이 판 안에서 터치가 시작되면 다루기를 켜고, 판 밖에서 다음 터치가 시작되면 끈다.
+  const [handling, setHandling] = useState(false);
+  const deckTouch = React.useRef(false);
+  const onDeckTouch = React.useCallback((active: boolean) => {
+    deckTouch.current = active;
+    if (active) setHandling(true);
+  }, []);
+  const onSampleTouchStart = React.useCallback(() => {
+    if (!deckTouch.current) setHandling(false);
+  }, []);
   const api = useMemo(() => createSampleApi(key => setServerEntries(saved => saved.filter(entry => entry.key !== key))), []);
   const report = usePersistentReport('review-question-pas', true, api, serverEntries, undefined);
   const answerHold = { begin: report.beginAnsweredHold, confirm: report.holdAnswered, release: report.releaseAnsweredHold };
@@ -249,7 +261,7 @@ function PasScene() {
     header: { left: 0, top: 0, width, height: FRAME.header + insets.top },
     main: { left, top: FRAME.header + insets.top, width: column, height: height - FRAME.header - insets.top },
     baselineBottom: height - insets.bottom - t.uiSpacing.lg, inputRowHeight: t.hitTarget.min,
-    rowBottomGap: t.spacing.xs, pointerFine: false, showCharacter: true, phoneConfigured: phone,
+    rowBottomGap: t.spacing.xs, pointerFine: false, showCharacter, phoneConfigured: phone,
     reportBubble: { widthScale: 1, minimumHeight: minimumReportBubbleHeight(t) } });
   const pager = <PersistentReportPager entries={reportSend.entries} index={report.index} api={api} sessionId="review-question-pas"
     completion={completion} expandedKey={phone ? null : expandedKey} onExpandedKeyChange={setExpandedKey}
@@ -267,16 +279,17 @@ function PasScene() {
     renderQuestion={(entry, controls) => renderCardQuestionSurface(entry, controls, {
       t, api, portraitUri: portraitUrl, questionActions, reportSend, answerHold,
     })}
-    send={reportSend} />;
+    send={reportSend} onDeckTouch={onDeckTouch} handling={handling} />;
   return <ContentLinkProvider><ChatUiControllerProvider sessionId="review-question-pas" appendGeneratedText={() => ({ ok: true })}>
     {phone && cardSheetOpen ? <View style={{ flex: 1, backgroundColor: t.colors.background }}>
       {/* 카드 시트의 REST 선택은 붙들지 않는다(위임자 결정). 가짜 API가 판 갱신을 먼저 반영한다. */}
       <CardDetailContent visible api={api} cardId={card.id} onClose={() => setCardSheetOpen(false)} />
     </View> :
-      <View testID="card-question-pas-sample" style={{ flex: 1, backgroundColor: t.persistentSession.paper, paddingTop: insets.top, paddingBottom: insets.bottom }}>
-        <View style={{ flex: 1, minHeight: 0, width: column, alignSelf: 'center', gap: t.uiSpacing.lg, justifyContent: 'flex-end' }}>
-          {phone || !layout.reportBubble ? pager : null}
-        </View>
+      <View testID="card-question-pas-sample" onTouchStart={onSampleTouchStart} style={{ flex: 1, backgroundColor: t.persistentSession.paper, paddingTop: insets.top, paddingBottom: insets.bottom }}>
+        {/* 운영 순서(ChatBody): 헤더 바로 아래, 채팅 목록 위에 판을 놓는다. */}
+        <View style={{ height: FRAME.header }} />
+        {phone || !layout.reportBubble ? <View style={{ width: column, alignSelf: 'center' }}>{pager}</View> : null}
+        <View testID="card-question-pas-list" style={{ flex: 1, minHeight: 0 }} />
         <View style={{ width: column, alignSelf: 'center' }}><ChatComposer input={text} onChangeInput={setText} onSend={() => setText('')} onPickAttachment={() => {}}
           uploading={false} sending={false} voiceControls={null} presentation="manuscript" /></View>
         {layout.body ? <View pointerEvents="none" style={{ position: 'absolute', left: layout.body.left, top: layout.body.top, width: layout.body.width, height: layout.body.height }}>
