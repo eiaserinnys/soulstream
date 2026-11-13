@@ -393,6 +393,7 @@ describe("model preset trusted execution", () => {
     "codex-6-sol",
     "gemini-4-argon",
     "gemini-4-carbon",
+    "gemini-4-hydrogen",
   ];
 
   it("marks exactly the ten trusted presets in the repository catalog", () => {
