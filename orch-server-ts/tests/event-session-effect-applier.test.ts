@@ -45,8 +45,9 @@ describe("applyEventSessionEffect", () => {
       effect: sessionEffect,
     });
 
-    expect(statements).toHaveLength(1);
-    expect(statements[0]).toContain(procedure);
+    // set_backend_session_id는 저장된 값을 먼저 읽고(잠금 없는 SELECT) 함수를 부른다.
+    expect(statements).toHaveLength(kind === "set_backend_session_id" ? 2 : 1);
+    expect(statements.at(-1)).toContain(procedure);
   });
 
   it("returns the two-field canonical registration", async () => {

@@ -52,6 +52,24 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
     };
   }
   if (effect.kind === "set_backend_session_id") {
+    // 세션 행은 호출 앞에서 lockSession이 이미 잡았으므로 잠금 없이 읽는다.
+    // 저장된 값이 있고 들어온 값과 다르면 SQL 함수의 불변 예외로 사건 전체가
+    // 버려지지 않게, 효과만 건너뛰고 사건은 그대로 커밋한다.
+    const stored = await sql<Array<{ claude_session_id: string | null }>>`
+      SELECT claude_session_id FROM sessions
+      WHERE session_id = ${envelope.session_id}
+    `;
+    const storedId = stored[0]?.claude_session_id ?? null;
+    if (storedId !== null && storedId !== "" && storedId !== effect.backend_session_id) {
+      console.warn({
+        cause_code: "BACKEND_SESSION_ID_MISMATCH_SKIPPED",
+        session_id: envelope.session_id,
+        stored_claude_session_id: storedId,
+        incoming_claude_session_id: effect.backend_session_id,
+        event_id: eventId,
+      });
+      return { applied: false, canonicalSession: null };
+    }
     await sql`SELECT session_set_claude_id(${envelope.session_id}, ${effect.backend_session_id})`;
     return appliedWithoutCanonicalProjection();
   }

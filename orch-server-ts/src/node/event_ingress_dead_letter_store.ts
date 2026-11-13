@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename } from "node:fs/promises";
+import { mkdir, open, readFile, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { EventIngressEnvelope } from "./event_ingress_types.js";
@@ -49,6 +49,22 @@ export type PersistedEventIngressDeadLetter = {
   path: string;
 };
 
+/** 재시도 중인 실패 기록이 있다는 표시. 성공 뒤 지울 때 쓴다. */
+export type RetryingEventIngressFailure = {
+  state: "retrying";
+  path: string;
+};
+
+export type EventIngressFailureLookup =
+  | PersistedEventIngressDeadLetter
+  | RetryingEventIngressFailure;
+
+export function isRetryingFailure(
+  lookup: EventIngressFailureLookup,
+): lookup is RetryingEventIngressFailure {
+  return "state" in lookup && lookup.state === "retrying";
+}
+
 export type EventIngressFailureDecision = {
   failureCount: number;
   deadLetter: PersistedEventIngressDeadLetter | null;
@@ -58,13 +74,18 @@ export type EventIngressDeadLetterStore = {
   find(input: {
     nodeId: string;
     envelope: EventIngressEnvelope;
-  }): Promise<PersistedEventIngressDeadLetter | null>;
+  }): Promise<EventIngressFailureLookup | null>;
   recordFailure(input: {
     nodeId: string;
     envelope: EventIngressEnvelope;
     failure: EventIngressFailureDetail;
     threshold: number;
   }): Promise<EventIngressFailureDecision>;
+  /** 재시도 중(retrying) 기록만 지운다. dead_lettered 기록과 없는 기록은 건드리지 않는다. */
+  removeRetrying?(input: {
+    nodeId: string;
+    envelope: EventIngressEnvelope;
+  }): Promise<void>;
 };
 
 export class FileEventIngressDeadLetterStore implements EventIngressDeadLetterStore {
@@ -81,7 +102,7 @@ export class FileEventIngressDeadLetterStore implements EventIngressDeadLetterSt
   async find(input: {
     nodeId: string;
     envelope: EventIngressEnvelope;
-  }): Promise<PersistedEventIngressDeadLetter | null> {
+  }): Promise<EventIngressFailureLookup | null> {
     return await this.exclusive(async () => {
       const currentPath = this.recordPath(input.envelope);
       const current = await this.readRecord(currentPath);
@@ -89,9 +110,26 @@ export class FileEventIngressDeadLetterStore implements EventIngressDeadLetterSt
         assertFailureCoordinate(current, input.envelope, currentPath);
         return current.state === "dead_lettered"
           ? persistedDeadLetter(current, currentPath)
-          : null;
+          : { state: "retrying", path: currentPath };
       }
       return await this.readLegacyDeadLetter(input);
+    });
+  }
+
+  async removeRetrying(input: {
+    nodeId: string;
+    envelope: EventIngressEnvelope;
+  }): Promise<void> {
+    await this.exclusive(async () => {
+      const path = this.recordPath(input.envelope);
+      const current = await this.readRecord(path);
+      if (!current || current.state !== "retrying") return;
+      assertFailureCoordinate(current, input.envelope, path);
+      try {
+        await unlink(path);
+      } catch (error) {
+        if (!isMissingFile(error)) throw error;
+      }
     });
   }
 

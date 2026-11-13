@@ -80,7 +80,10 @@ describe("live Postgres SQL resolver", () => {
       "postgres://orch@localhost/orch",
       {
         max: 10,
-        connection: { statement_timeout: 30_000 },
+        connection: {
+          statement_timeout: 30_000,
+          idle_in_transaction_session_timeout: 60_000,
+        },
       },
     );
 
