@@ -249,6 +249,7 @@ function composeBindings(args: {
   worktrees: readonly string[];
   sandbox: string;
   sessionWorktreeRoot: string;
+  incomingSession: MountBinding;
   localTmp: string;
   artifacts: string;
   cacheBindings: readonly MountBinding[];
@@ -291,6 +292,7 @@ function composeBindings(args: {
   });
   for (const binding of args.cacheBindings) push(binding);
   push({ source: args.sandbox, destination: args.sandbox, writable: true });
+  push(args.incomingSession);
   for (const binding of args.authBindings) push(binding);
   for (const binding of args.maskRebindings) push(binding);
   for (const binding of args.gitBindings) push(binding);
@@ -332,6 +334,16 @@ export const prepareIsolationPlan: PrepareIsolationPlan = async (input, ports) =
   );
   await ports.ensureDirectory(sessionWorktreeRootInput, 0o700);
   const sessionWorktreeRoot = await ports.resolveRealPath(sessionWorktreeRootInput);
+
+  // 이 세션의 첨부 폴더. 상자 계획이 첨부 다운로드보다 먼저 정해지므로 아직 없을
+  // 수 있고, 없으면 bwrap이 bind 원본을 못 찾아 시작에 실패한다. 목적지는
+  // materializer가 프롬프트에 적는 경로 그대로다.
+  const incomingSessionPath = join(input.incomingRoot, input.decision.sessionId);
+  const incomingSessionReal = await ensureRealDirectory(
+    ports,
+    incomingSessionPath,
+    "incoming 세션",
+  );
 
   const auth = await prepareRestrictedAuth(input, ports, sandbox);
   const wsl = await ports.detectWsl();
@@ -398,6 +410,11 @@ export const prepareIsolationPlan: PrepareIsolationPlan = async (input, ports) =
     worktrees: worktrees.canonical,
     sandbox,
     sessionWorktreeRoot,
+    incomingSession: {
+      source: incomingSessionReal,
+      destination: incomingSessionPath,
+      writable: false,
+    },
     localTmp,
     artifacts,
     cacheBindings: cache.bindings,

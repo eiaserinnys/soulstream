@@ -180,6 +180,7 @@ async function makeFixture(overrides: FixtureOverrides = {}): Promise<Fixture> {
     workspaceDir: workspace,
     sessionDirectory: sessionDir,
     hostWorkspaceRoot: workspace,
+    incomingRoot: join(root, "incoming"),
     homeDirectory: home,
     uid: 1000,
     policy,
@@ -218,6 +219,14 @@ async function makeFixture(overrides: FixtureOverrides = {}): Promise<Fixture> {
     ports,
     input,
   };
+}
+
+function lstatSyncOrNull(path: string): ReturnType<typeof lstatSync> | null {
+  try {
+    return lstatSync(path);
+  } catch {
+    return null;
+  }
 }
 
 function bindingOf(
@@ -495,6 +504,36 @@ describe("prepareIsolationPlan", () => {
     expect(destinations.indexOf(fixture.workspace)).toBeLessThan(
       destinations.indexOf(join(fixture.workspace, ".local/tmp")),
     );
+  });
+
+  it("reopens only this session's incoming folder read-only under a masked root", async () => {
+    const fixture = await makeFixture();
+    const incomingRoot = fixture.input.incomingRoot;
+    mkdirSync(join(incomingRoot, "other-session/assets"), { recursive: true });
+    const own = join(incomingRoot, "s1");
+    expect(lstatSyncOrNull(own)).toBeNull();
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+
+    // 상자 계획이 첨부 다운로드보다 먼저라 폴더가 아직 없으면 만든다.
+    expect(lstatSync(own).isDirectory()).toBe(true);
+    const incomingBindings = prepared.spec.bindings.filter(
+      (binding) => binding.destination.startsWith(incomingRoot),
+    );
+    expect(incomingBindings).toEqual([
+      { source: own, destination: own, writable: false },
+    ]);
+    expect(prepared.spec.masks).toContainEqual({ path: incomingRoot, kind: "directory" });
+    expect(bindingOf(prepared.spec.bindings, incomingRoot)).toBeUndefined();
+    expect(bindingOf(prepared.spec.bindings, join(incomingRoot, "other-session")))
+      .toBeUndefined();
+  });
+
+  it("rejects a relative incoming root", async () => {
+    const fixture = await makeFixture();
+    await expect(
+      prepareIsolationPlan({ ...fixture.input, incomingRoot: ".local/incoming" }, fixture.ports),
+    ).rejects.toMatchObject({ code: ISOLATION_POLICY_UNAVAILABLE });
   });
 
   it("masks WSL mounts and refuses when the WSL marker is missing", async () => {

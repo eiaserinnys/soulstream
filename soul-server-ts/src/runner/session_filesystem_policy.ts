@@ -75,6 +75,7 @@ export function validateIsolationPreparationInput(
     [input.workspaceDir, "workspace"],
     [input.sessionDirectory, "session"],
     [input.hostWorkspaceRoot, "host workspace"],
+    [input.incomingRoot, "incoming"],
     [input.homeDirectory, "home"],
     [input.scratchWorkspaceDir, "scratch"],
   ] as const) {

@@ -457,6 +457,7 @@ describe("session isolation host preparation", () => {
       SOULSTREAM_NODE_ID: "node-test",
       SOUL_RUNNER_STATE_DIR: "/runner",
       WORKTREE_PROJECTS_ROOT: "/projects",
+      INCOMING_FILE_DIR: "/incoming",
       MCP_INTERNAL_PORT: 4308,
       MCP_PATH: "/mcp",
       AUTH_BEARER_TOKEN: HOST_BEARER,
