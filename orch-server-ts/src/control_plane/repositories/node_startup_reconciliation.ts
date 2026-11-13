@@ -54,6 +54,15 @@ export async function reconcileNodeStartup(
       RETURNING session.session_id, session.status, session.termination_reason,
                 session.termination_detail, session.review_state, session.updated_at
     `;
+    // Lock order is session, then worktree, the same as the ingress gate
+    // (event_session_gate.ts) and the SQL functions; each table in key order.
+    await sql`
+      SELECT session_id FROM sessions
+      WHERE node_id = ${nodeId}
+        AND session_id = ANY(${sql.array(runningSessionIds)}::text[])
+      ORDER BY session_id
+      FOR UPDATE
+    `;
     await sql`
       SELECT id FROM worktrees
       WHERE id IN (
@@ -62,6 +71,7 @@ export async function reconcileNodeStartup(
           AND session_id = ANY(${sql.array(runningSessionIds)}::text[])
           AND worktree_id IS NOT NULL
       )
+      ORDER BY id
       FOR UPDATE
     `;
     const restoredRows = await sql<Array<ReconciledSessionRow>>`

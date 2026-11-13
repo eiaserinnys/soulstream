@@ -4,6 +4,11 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+patchedDependencies:
+  postgres@3.4.9:
+    hash: 8395dd53a13388812574ec7afa5b4ca6351f8cbdcbeb49bead834790bfd57b39
+    path: patches/postgres@3.4.9.patch
+
 importers:
 
   .: {}
@@ -78,7 +83,7 @@ importers:
         version: 6.37.0(ws@8.20.0)(zod@4.3.6)
       postgres:
         specifier: 3.4.9
-        version: 3.4.9
+        version: 3.4.9(patch_hash=8395dd53a13388812574ec7afa5b4ca6351f8cbdcbeb49bead834790bfd57b39)
       standardwebhooks:
         specifier: 1.1.1
         version: 1.1.1
@@ -160,7 +165,7 @@ importers:
         version: 16.6.1
       postgres:
         specifier: ^3.4.9
-        version: 3.4.9
+        version: 3.4.9(patch_hash=8395dd53a13388812574ec7afa5b4ca6351f8cbdcbeb49bead834790bfd57b39)
 
   packages/fractional-position: {}
 
@@ -507,7 +512,7 @@ importers:
         version: 8.18.1
       postgres:
         specifier: ^3.4.9
-        version: 3.4.9
+        version: 3.4.9(patch_hash=8395dd53a13388812574ec7afa5b4ca6351f8cbdcbeb49bead834790bfd57b39)
       tsup:
         specifier: ^8.3.0
         version: 8.5.1(jiti@2.6.1)(postcss@8.5.8)(tsx@4.21.0)(typescript@5.9.3)(yaml@2.9.0)
@@ -10514,7 +10519,7 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  postgres@3.4.9: {}
+  postgres@3.4.9(patch_hash=8395dd53a13388812574ec7afa5b4ca6351f8cbdcbeb49bead834790bfd57b39): {}
 
   prettier@3.8.3: {}
 
