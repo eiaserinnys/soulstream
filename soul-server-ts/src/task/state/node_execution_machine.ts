@@ -85,8 +85,14 @@ export const nodeExecutionMachine = setup({
     retainedCodex: ({ event }) =>
       recordedWithRunner(event) && event.retention === "codex_command",
     stopping: ({ event }) => event.active && event.stopRequested,
+    // 실행 등록이 남은 task는 시동 복구가 이을 러너가 있을 수 있어 러너 없는 task가
+    // 아니다. 재연결 실행 중 목록도 같은 기준으로 복구 대기로 본다.
     hydratedActive: ({ event }) =>
-      event.active && !event.hasRunner && event.hydratedFromDb && !event.hasStartBarrier,
+      event.active
+      && !event.hasRunner
+      && event.hydratedFromDb
+      && !event.hasStartBarrier
+      && !event.hasRegistration,
     starting: ({ event }) => event.active && !event.hasRunner,
     replaying: ({ event }) => event.hasRunner && event.offlineReplay,
     terminating: ({ event }) =>
@@ -127,7 +133,7 @@ export const nodeExecutionMachine = setup({
           {
             guard: "hydratedActive",
             target: "hydrated_active",
-            description: "러너 없이 DB에서 올린 활성 task다",
+            description: "러너도 실행 등록도 없이 DB에서 올린 활성 task다",
           },
           {
             guard: "starting",

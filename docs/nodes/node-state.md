@@ -14,7 +14,7 @@ Task의 `status`, `runner`, `executionRegistration`, `runnerTerminalFact`, `runn
 | 2 | `retained_claude_background` | 종료 뒤 클로드 백그라운드 작업 보유 | 종료가 기록됐고 클로드의 남은 백그라운드 작업이 러너를 쥐고 있다 |
 | 3 | `retained_codex_command` | 종료 뒤 코덱스 남은 명령 보유 | 종료가 기록됐고 코덱스의 남은 명령이 러너를 쥐고 있다 |
 | 4 | `stopping` | 멈추는 중 | 활성이고 멈춤 장벽이 올라 있다 |
-| 5 | `hydrated_active` | 러너 없이 올린 활성 task | 러너 없이 DB에서 올린 활성 task다 |
+| 5 | `hydrated_active` | 러너 없이 올린 활성 task | 러너도 실행 등록도 없이 DB에서 올린 활성 task다 |
 | 6 | `starting` | 러너를 띄우는 중 | 활성이고 러너가 아직 없다 |
 | 7 | `replaying` | 러너의 남은 기록을 올리는 중 | 붙은 러너가 기록을 다시 읽는 손잡이다 |
 | 8 | `terminating` | 종료를 올리는 중 | 러너가 붙은 채 종료를 올렸거나 올리는 중이다 |
@@ -227,7 +227,7 @@ state "Task 필드의 사실을 노드 실행 상태 하나로 투영한다" as 
     nodeExecution_project --> nodeExecution_retained_claude_background: 종료가 기록됐고 클로드의 남은 백그라운드 작업이 러너를 쥐고 있다
     nodeExecution_project --> nodeExecution_retained_codex_command: 종료가 기록됐고 코덱스의 남은 명령이 러너를 쥐고 있다
     nodeExecution_project --> nodeExecution_stopping: 활성이고 멈춤 장벽이 올라 있다
-    nodeExecution_project --> nodeExecution_hydrated_active: 러너 없이 DB에서 올린 활성 task다
+    nodeExecution_project --> nodeExecution_hydrated_active: 러너도 실행 등록도 없이 DB에서 올린 활성 task다
     nodeExecution_project --> nodeExecution_starting: 활성이고 러너가 아직 없다
     nodeExecution_project --> nodeExecution_replaying: 붙은 러너가 기록을 다시 읽는 손잡이다
     nodeExecution_project --> nodeExecution_terminating: 러너가 붙은 채 종료를 올렸거나 올리는 중이다

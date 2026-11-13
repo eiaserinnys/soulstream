@@ -532,7 +532,6 @@ function isBarrierlessHydratedInitializing(task: Task): boolean {
  */
 function isRunnerlessHydratedRunning(task: Task): boolean {
   return task.status === "running"
-    && task.executionRegistration === undefined
     && nodeExecutionPhaseOfTask(task) === "hydrated_active";
 }
 

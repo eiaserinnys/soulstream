@@ -126,4 +126,30 @@ describe("card #1266 U4: a running task restored from the DB without a runner", 
     expect(enqueue).not.toHaveBeenCalled();
     expect(deleteSession).toHaveBeenCalledOnce();
   });
+
+  it("keeps the earlier behavior for a restored task whose execution registration startup recovery may still adopt", async () => {
+    const registered = makeHydratedRunningTask({
+      executionRegistration: {
+        ownerKind: "adopted_runner",
+        manifestId: "manifest-restored",
+        runtimeEnvIdentity: "runtime-restored",
+        registrationId: "registration-restored",
+        pid: 42_002,
+        startIdentity: "start-restored",
+        executionCommandId: "command-restored",
+        ownershipGeneration: 3,
+      },
+    });
+    const stopHarness = makeHarness(registered);
+
+    await expect(stopHarness.route.cancelTask(registered.agentSessionId)).resolves.toBe(false);
+    expect(stopHarness.enqueue).not.toHaveBeenCalled();
+    expect(registered.status).toBe("running");
+
+    const deleted = makeHydratedRunningTask({ executionRegistration: registered.executionRegistration });
+    const deleteHarness = makeHarness(deleted);
+    await expect(deleteHarness.route.deleteTask(deleted.agentSessionId)).resolves.toBe(true);
+    expect(deleteHarness.enqueue).not.toHaveBeenCalled();
+    expect(deleteHarness.deleteSession).toHaveBeenCalledOnce();
+  });
 });

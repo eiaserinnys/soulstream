@@ -307,6 +307,8 @@ interface PersistentDecisionRuntime {
 }
 
 export class TaskExecutor {
+  /** 턴 출력을 읽는 중인 task가 엔진 치명 오류로 그 읽기를 오류로 끝내는 길. */
+  private readonly fatalEngineErrorFailers = new WeakMap<Task, (error: Error) => void>();
   private readonly engineEventPublisher: TaskEngineEventPublisher;
   private readonly engineFailureRecovery: TaskEngineFailureRecovery;
   private readonly lifecycleTransition: TaskLifecycleTransition;
@@ -1808,7 +1810,7 @@ export class TaskExecutor {
       let turnCompletedEvent: SSEEventPayload | undefined;
       try {
         try {
-          for await (const event of this.engineTurnRunner.executeTurn({
+          for await (const event of this.failOnFatalEngineError(task, this.engineTurnRunner.executeTurn({
           task,
           agent,
           runner,
@@ -1837,7 +1839,7 @@ export class TaskExecutor {
               ? { backendSessionRolloverFrom: turnInput.backendSessionRolloverFrom }
               : {}),
           },
-          })) {
+          }))) {
             if (event.type === "complete") turnCompletedEvent = event;
             observeClaudeContextRecoveryEvent(contextRecovery, event);
             await this.observeDeliveryTurn(task, turnReceipt, event);
@@ -2231,7 +2233,10 @@ export class TaskExecutor {
     let recoveryFailure: unknown;
     let recoveryPreparationFailure: ExecutionPreparationFailure | undefined;
     try {
-      for await (const event of this.engineTurnRunner.recoverTurn(task, runner, frames)) {
+      for await (const event of this.failOnFatalEngineError(
+        task,
+        this.engineTurnRunner.recoverTurn(task, runner, frames),
+      )) {
         observeClaudeContextRecoveryEvent(contextRecovery, event);
         await this.observeDeliveryTurn(task, turnReceipt, event);
         await this.engineEventPublisher.publishEngineEvent(task, event, {
@@ -2503,12 +2508,20 @@ export class TaskExecutor {
   }
 
   /**
-   * 엔진이 치명 오류로 죽었는데 그 오류를 받을 턴이 없을 때(분리 이벤트) 오류
-   * 종료 사건을 올린다. 진행 중인 실행이 있으면 그 실행의 종료 길이 같은 오류를
-   * 받아 끝내므로 여기서는 손대지 않는다.
+   * 엔진이 치명 오류로 죽었는데 그 오류를 받을 포어그라운드가 없을 때(분리 이벤트)
+   * 오류 종료 사건을 올린다. 턴 출력을 읽는 실행이 서 있으면 그 읽기를 오류로 끝내
+   * 보통 종료 길에 맡기고, 없으면 여기서 곧바로 종료한다.
    */
   async terminateAfterFatalEngineError(task: Task, message: string): Promise<boolean> {
     if (!isActiveTaskStatus(task.status)) return false;
+    // 턴 출력을 읽는 실행이 서 있으면 그 읽기를 오류로 끝낸다. 포어그라운드가 없는
+    // 러너에서는 실행의 종료 길이 스스로 열리지 않는다(이어받은 실행 포함). 보통
+    // 종료 길이 이 오류를 받아 오류 종료 사건을 한 번 올린다.
+    const failInFlight = this.fatalEngineErrorFailers.get(task);
+    if (failInFlight) {
+      failInFlight(new Error(message));
+      return true;
+    }
     if (
       task.executionPromise !== undefined
       || task.runner?.dispatcher.hasActiveExecution?.() === true
@@ -2517,6 +2530,50 @@ export class TaskExecutor {
     task.completedAt = new Date();
     await this._finalize(task);
     return true;
+  }
+
+  /**
+   * 턴 출력 읽기를 치명 오류로 끝낼 수 있게 감싼다. 기다리는 `next()`가 오류로
+   * 풀리면 읽기는 보통 실패와 똑같이 던진다. 원 스트림의 닫기는 기다리지 않는다
+   * (스트림이 아직 다음 항목을 기다리는 중이라 닫기가 그 뒤에 서기 때문이다).
+   */
+  private failOnFatalEngineError<T>(
+    task: Task,
+    source: AsyncIterable<T>,
+  ): AsyncIterable<T> {
+    const failers = this.fatalEngineErrorFailers;
+    return {
+      [Symbol.asyncIterator](): AsyncIterator<T> {
+        const iterator = source[Symbol.asyncIterator]();
+        let fail!: (error: Error) => void;
+        const failed = new Promise<never>((_, reject) => { fail = reject; });
+        failed.catch(() => undefined);
+        failers.set(task, fail);
+        const release = (): void => {
+          if (failers.get(task) === fail) failers.delete(task);
+        };
+        return {
+          async next(): Promise<IteratorResult<T>> {
+            try {
+              const pending = iterator.next();
+              pending.catch(() => undefined);
+              const result = await Promise.race([pending, failed]);
+              if (result.done) release();
+              return result;
+            } catch (err) {
+              release();
+              void Promise.resolve(iterator.return?.()).catch(() => undefined);
+              throw err;
+            }
+          },
+          async return(value?: unknown): Promise<IteratorResult<T>> {
+            release();
+            await iterator.return?.(value);
+            return { done: true, value: undefined as never };
+          },
+        };
+      },
+    };
   }
 
   private async _finalize(

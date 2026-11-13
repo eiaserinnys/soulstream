@@ -202,6 +202,8 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     loadTask: (sessionId) => taskManager.hydrateRunnerRecoveryTask(sessionId),
     getPublisher: () => detachedClaudeEventPublisher,
     collectDetached: (task, payload) => taskRuntime.claudeRuntimeTaskFollowup.collectDetached(task, payload),
+    terminateAfterFatalEngineError: (task, message) =>
+      taskRuntime.taskExecutor.terminateAfterFatalEngineError(task, message).then(() => undefined),
   });
   const claudeRuntime = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
     ? await composeClaudeRuntime({
