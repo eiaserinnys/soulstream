@@ -13,6 +13,7 @@ import {
   submitInputResponse,
   submitToolApproval,
 } from '../lib/input-request-actions';
+import { actionFailureMessage } from '../lib/action-failure';
 import { useInputRequestTimer } from '../hooks/useInputRequestTimer';
 import { formatTime } from '../lib/input-request-utils';
 import type {
@@ -135,18 +136,26 @@ function AskQuestionBannerInner({ node, sessionId }: AskQuestionBannerInnerProps
 
 function ToolApprovalBanner({ node, sessionId }: { node: ToolApprovalNodeDef; sessionId: string }) {
   const [selectedAnswer, setSelectedAnswer] = useState<string | null>(null);
+  const [failureMessage, setFailureMessage] = useState<string | null>(null);
   const handleDecision = async (decision: "approved" | "rejected") => {
     if (selectedAnswer) return;
+    setFailureMessage(null);
     setSelectedAnswer(decision);
-    const success = await submitToolApproval(
+    const result = await submitToolApproval(
       sessionId,
       node.approvalId,
       node.id,
       decision,
       decision === "rejected" ? "Rejected by user" : undefined,
     );
-    if (!success) {
+    if (!result.sent) {
       setSelectedAnswer(null);
+      if (result.reason === "failed") {
+        setFailureMessage(actionFailureMessage("tool-approval", {
+          status: result.status,
+          body: result.body,
+        }));
+      }
     }
   };
 
@@ -183,6 +192,11 @@ function ToolApprovalBanner({ node, sessionId }: { node: ToolApprovalNodeDef; se
           승인
         </Button>
       </div>
+      {failureMessage && (
+        <div role="alert" className="text-xs text-destructive">
+          {failureMessage}
+        </div>
+      )}
     </LiquidGlassCard>
   );
 }

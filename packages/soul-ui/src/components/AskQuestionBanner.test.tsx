@@ -225,6 +225,25 @@ describe("AskQuestionBanner", () => {
     expect(button?.disabled).toBe(false);
   });
 
+  it("shows an everyday failure message when tool approval submission fails", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 503, text: async () => "" });
+    ({ container, root } = renderBanner(makeToolApproval()));
+
+    const button = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((candidate) => candidate.textContent === "승인");
+    expect(button).toBeTruthy();
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await vi.waitFor(() => {
+      expect(document.body.querySelector('[role="alert"]')?.textContent)
+        .toBe("연결하지 못해 보내지 못했습니다. 다시 눌러 주세요.");
+    });
+    expect(button?.disabled).toBe(false);
+  });
+
   it("uses compact projected attention while the detail tree is suspended", () => {
     useDashboardStore.setState({
       activeSessionKey: "session-1",

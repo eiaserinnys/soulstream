@@ -1,8 +1,10 @@
 import { useOptionalLayoutContinuity } from '../../navigation/LayoutContinuityContext';
 import React, { forwardRef, memo, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
-import { AccessibilityInfo, Alert, findNodeHandle, Platform, Text, View, type LayoutChangeEvent, type LayoutRectangle, type TextInput } from 'react-native';
+import { AccessibilityInfo, findNodeHandle, Platform, Text, View, type LayoutChangeEvent, type LayoutRectangle, type TextInput } from 'react-native';
 import { isReportReply, type ReportReplyDraft, type ReportSendContext } from '../../lib/persistent-report';
 import type { ApiClient } from '../../api/client';
+import { ApiHttpError } from '../../api/clientCore';
+import { actionFailureMessage } from '../../api/actionFailure';
 import type { Session, SessionEvent } from '../../api/types';
 import { usePersistentDraft } from '../../hooks/usePersistentDraft';
 import { useChatAttachments } from '../../hooks/useChatAttachments';
@@ -102,6 +104,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   const [generatedUndo, setGeneratedUndo] = useState<{ before: string; after: string } | null>(null);
   const [generatedSelection, setGeneratedSelection] = useState<{ start: number; end: number } | undefined>();
   const [interrupting, setInterrupting] = useState(false);
+  const [interruptError, setInterruptError] = useState<string | null>(null);
   const interruptReleaseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionStatusRef = useRef(sessionStatus);
   const mountedRef = useRef(false);
@@ -132,6 +135,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     if (sessionStatus === 'running') return;
     clearInterruptReleaseTimer();
     setInterrupting(false);
+    setInterruptError(null);
   }, [clearInterruptReleaseTimer, sessionStatus]);
 
   const abandonComposer = useCallback((reason: string) => {
@@ -231,6 +235,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
     const visible = detailedNetworkActive;
     if (wasComposerVisibleRef.current && !visible) {
       abandonComposer(appForeground ? 'view_blur' : 'app_inactive');
+      setInterruptError(null);
     } else if (!wasComposerVisibleRef.current && visible) {
       resumeComposer();
     }
@@ -346,6 +351,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   const handleInterrupt = async () => {
     if (!api || !sessionId || interrupting) return;
     clearInterruptReleaseTimer();
+    setInterruptError(null);
     setInterrupting(true);
     try {
       await api.interruptSession(sessionId);
@@ -358,10 +364,16 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
         interruptReleaseTimerRef.current = null;
         setInterrupting(false);
       }, INTERRUPT_PENDING_RELEASE_MS);
-    } catch (e: any) {
+    } catch (e: unknown) {
       clearInterruptReleaseTimer();
       setInterrupting(false);
-      Alert.alert('중단 실패', e?.message ?? '알 수 없는 오류');
+      if (!mountedRef.current) return;
+      setInterruptError(actionFailureMessage(
+        'interrupt',
+        e instanceof ApiHttpError
+          ? { status: e.status, body: e.body }
+          : {},
+      ));
     }
   };
 
@@ -488,6 +500,12 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   return <>
       {sendError && sendError !== CHAT_SEND_ERROR_MESSAGES.disabled ? (
         <Text style={styles.errorText}>{sendError}</Text>
+      ) : null}
+
+      {interruptError ? (
+        <Text testID="chat-composer-interrupt-error" accessibilityRole="alert" style={styles.errorText}>
+          {interruptError}
+        </Text>
       ) : null}
 
       {inputDisabled ? (

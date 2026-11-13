@@ -1069,6 +1069,18 @@ describe('client.interruptSession', () => {
     const headers = (init as RequestInit).headers as Headers;
     expect(headers.get('Authorization')).toBe('Bearer test-jwt');
   });
+
+  it('실패 응답이면 성공으로 넘기지 않고 상태와 본문을 담아 던진다', async () => {
+    const body = { error: { code: 'SESSION_NOT_RUNNING', message: 'not running' } };
+    makeFetchMock(body, 409);
+    const api = createApiClient(BASE);
+
+    await expect(api.interruptSession('sess-1')).rejects.toMatchObject({
+      name: 'ApiHttpError',
+      status: 409,
+      body: JSON.stringify(body),
+    });
+  });
 });
 
 describe('client.acknowledgeSessionReview', () => {

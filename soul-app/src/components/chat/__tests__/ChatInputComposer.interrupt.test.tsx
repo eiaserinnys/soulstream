@@ -2,6 +2,7 @@ import React from 'react';
 import { ActivityIndicator, Alert, StyleSheet, type LayoutChangeEvent, type LayoutRectangle } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';
+import { ApiHttpError } from '../../../api/clientCore';
 import { ChatInputComposer } from '../ChatInputComposer';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
@@ -194,16 +195,49 @@ describe('ChatInputComposer interrupt progress', () => {
     expect(screen.getByTestId('chat-composer-interrupt-button').props.accessibilityState.disabled).toBe(false);
   });
 
-  test('중단 요청 실패는 진행 표시를 해제하고 기존 알림을 보인다', async () => {
+  test.each([
+    ['409', new ApiHttpError('conflict', 409, JSON.stringify({ error: { code: 'SESSION_NOT_RUNNING' } })),
+      '멈출 작업이 없습니다. 이미 끝난 세션일 수 있습니다.'],
+    ['503', new ApiHttpError('unavailable', 503, ''),
+      '노드에 연결하지 못해 멈추지 못했습니다. 다시 눌러 주세요.'],
+    ['네트워크 예외', new Error('연결 오류'),
+      '노드에 연결하지 못해 멈추지 못했습니다. 다시 눌러 주세요.'],
+  ])('중단 요청이 %s로 실패하면 버튼을 곧바로 되살리고 화면 안에 알린다', async (_label, error, message) => {
     const alert = jest.spyOn(Alert, 'alert').mockImplementation(() => {});
-    mockInterruptSession.mockRejectedValueOnce(new Error('연결 오류'));
+    mockInterruptSession.mockRejectedValueOnce(error);
     const screen = renderChatInputComposer();
 
     await pressInterrupt(screen);
 
     expect(screen.UNSAFE_queryByType(ActivityIndicator)).toBeNull();
     expect(screen.getByTestId('chat-composer-interrupt-button').props.accessibilityState.disabled).toBe(false);
-    expect(alert).toHaveBeenCalledWith('중단 실패', '연결 오류');
+    expect(screen.getByTestId('chat-composer-interrupt-error').props.children).toBe(message);
+    expect(alert).not.toHaveBeenCalled();
+  });
+
+  test('실패 문구는 다시 누르거나 세션 상태가 running을 벗어날 때 지운다', async () => {
+    mockInterruptSession.mockRejectedValueOnce(new ApiHttpError('conflict', 409, ''));
+    const screen = renderChatInputComposer();
+    await pressInterrupt(screen);
+    expect(screen.getByTestId('chat-composer-interrupt-error')).toBeTruthy();
+
+    mockInterruptSession.mockRejectedValueOnce(new ApiHttpError('conflict', 409, ''));
+    await pressInterrupt(screen);
+    expect(screen.getByTestId('chat-composer-interrupt-error')).toBeTruthy();
+
+    screen.rerender(<ChatInputComposer {...screen.props} sessionStatus="completed" />);
+    expect(screen.queryByTestId('chat-composer-interrupt-error')).toBeNull();
+  });
+
+  test('다시 눌러 성공하면 이전 실패 문구를 지운다', async () => {
+    mockInterruptSession.mockRejectedValueOnce(new ApiHttpError('conflict', 409, ''));
+    const screen = renderChatInputComposer();
+    await pressInterrupt(screen);
+    expect(screen.getByTestId('chat-composer-interrupt-error')).toBeTruthy();
+
+    await pressInterrupt(screen);
+
+    expect(screen.queryByTestId('chat-composer-interrupt-error')).toBeNull();
   });
 
   test('진행 중인 중단 타이머는 상태 변경과 언마운트 때 정리한다', async () => {

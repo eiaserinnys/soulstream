@@ -11,6 +11,8 @@ export interface ApiRequestContext {
     init?: RequestInit,
   ) => Promise<Response>;
   readJson: <T>(res: Response, op: string) => Promise<T>;
+  /** 본문을 읽지 않는 동작이 실패 응답에서도 조용히 성공하지 않게 한다. */
+  requireOk: (res: Response, op: string) => Promise<void>;
   buildQuery: (params?: Record<string, unknown>) => string;
 }
 
@@ -60,17 +62,20 @@ export function createApiRequestContext(
     return res;
   }
 
+  async function requireOk(res: Response, op: string): Promise<void> {
+    if (res.ok) return;
+    const text = await res.text().catch(() => '');
+    const snippet = text.slice(0, 200).replace(/\s+/g, ' ').trim();
+    throw new ApiHttpError(
+      `[${op}] HTTP ${res.status} ${res.statusText}` +
+        (snippet ? ` — ${snippet}` : ''),
+      res.status,
+      text,
+    );
+  }
+
   async function readJson<T>(res: Response, op: string): Promise<T> {
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      const snippet = text.slice(0, 200).replace(/\s+/g, ' ').trim();
-      throw new ApiHttpError(
-        `[${op}] HTTP ${res.status} ${res.statusText}` +
-          (snippet ? ` — ${snippet}` : ''),
-        res.status,
-        text,
-      );
-    }
+    await requireOk(res, op);
     const ct = res.headers.get('content-type') ?? '';
     if (!ct.toLowerCase().includes('application/json')) {
       const text = await res.text().catch(() => '');
@@ -83,7 +88,7 @@ export function createApiRequestContext(
     return res.json() as Promise<T>;
   }
 
-  return { base, authFetch, readJson, buildQuery };
+  return { base, authFetch, readJson, requireOk, buildQuery };
 }
 
 function buildQuery(params?: Record<string, unknown>): string {

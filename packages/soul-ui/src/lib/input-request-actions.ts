@@ -52,17 +52,24 @@ export async function submitInputResponse(
   }
 }
 
+export type ToolApprovalResult =
+  | { sent: true }
+  /** 이미 처리된 요청이라 보낼 필요가 없다. 사용자에게 실패를 알리지 않는다. */
+  | { sent: false; reason: "already_resolved" }
+  /** 전송 자체가 실패했다. 사용자에게 이유를 알린다. */
+  | { sent: false; reason: "failed"; status?: number; body?: string };
+
 export async function submitToolApproval(
   sessionId: string,
   approvalId: string,
   nodeId: string,
   decision: "approved" | "rejected",
   message?: string,
-): Promise<boolean> {
+): Promise<ToolApprovalResult> {
   try {
     const node = useDashboardStore.getState().processingCtx?.nodeMap?.get(nodeId);
     if (node?.type === "tool_approval" && (node as any).resolved) {
-      return false;
+      return { sent: false, reason: "already_resolved" };
     }
     const action = decision === "approved" ? "approve" : "reject";
     const response = await fetch(
@@ -73,8 +80,22 @@ export async function submitToolApproval(
         body: JSON.stringify(message ? { message } : {}),
       },
     );
-    return response.ok;
-  } catch {
-    return false;
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      console.error("Tool approval submission failed", {
+        sessionId,
+        nodeId,
+        status: response.status,
+      });
+      return { sent: false, reason: "failed", status: response.status, body };
+    }
+    return { sent: true };
+  } catch (error) {
+    console.error("Tool approval submission failed", {
+      sessionId,
+      nodeId,
+      error,
+    });
+    return { sent: false, reason: "failed" };
   }
 }

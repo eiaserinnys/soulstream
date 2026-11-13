@@ -7,6 +7,8 @@ import type {
   ToolApprovalResolvedPayload,
 } from '../../api/types';
 import { createApiClient } from '../../api/client';
+import { ApiHttpError } from '../../api/clientCore';
+import { actionFailureMessage } from '../../api/actionFailure';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useChatStore } from '../../store/chatStore';
 import { useTokens, type DesignTokens } from '../../theme';
@@ -33,6 +35,7 @@ export const ChatToolApprovalRequest = memo(function ChatToolApprovalRequest({
   const payload = event.data as unknown as ToolApprovalPayload;
   const approvalId = approvalIdFromPayload(payload);
   const [localDecision, setLocalDecision] = useState<'approved' | 'rejected' | null>(null);
+  const [failureMessage, setFailureMessage] = useState<string | null>(null);
   const isResolved = useChatStore((s) =>
     (s.eventsBySession[sessionId] ?? []).some((candidate) => {
       if (candidate.type !== 'tool_approval_resolved') return false;
@@ -48,11 +51,13 @@ export const ChatToolApprovalRequest = memo(function ChatToolApprovalRequest({
 
   async function decide(decision: 'approved' | 'rejected') {
     if (disabled) return;
+    setFailureMessage(null);
     setLocalDecision(decision);
     try {
       const serverUrl = useSettingsStore.getState().serverUrl;
       if (!serverUrl) {
         setLocalDecision(null);
+        setFailureMessage(actionFailureMessage('tool-approval'));
         return;
       }
       const api = createApiClient(serverUrl);
@@ -76,9 +81,16 @@ export const ChatToolApprovalRequest = memo(function ChatToolApprovalRequest({
       }
       if ('ok' in res && !res.ok) {
         setLocalDecision(null);
+        setFailureMessage(actionFailureMessage('tool-approval', {
+          status: typeof res.status === 'number' ? res.status : undefined,
+        }));
       }
-    } catch {
+    } catch (e: unknown) {
       setLocalDecision(null);
+      setFailureMessage(actionFailureMessage(
+        'tool-approval',
+        e instanceof ApiHttpError ? { status: e.status, body: e.body } : {},
+      ));
     }
   }
 
@@ -97,20 +109,27 @@ export const ChatToolApprovalRequest = memo(function ChatToolApprovalRequest({
             {localDecision === 'rejected' ? '거부됨' : localDecision === 'approved' ? '승인됨' : '처리 완료'}
           </Text>
         ) : (
-          <View style={styles.actionsRow}>
-            <TouchableOpacity
-              onPress={() => decide('approved')}
-              style={[styles.actionButton, styles.approveButton]}
-            >
-              <Text style={[styles.actionText, styles.approveText]}>승인</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => decide('rejected')}
-              style={[styles.actionButton, styles.rejectButton]}
-            >
-              <Text style={[styles.actionText, styles.rejectText]}>거부</Text>
-            </TouchableOpacity>
-          </View>
+          <>
+            <View style={styles.actionsRow}>
+              <TouchableOpacity
+                onPress={() => decide('approved')}
+                style={[styles.actionButton, styles.approveButton]}
+              >
+                <Text style={[styles.actionText, styles.approveText]}>승인</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={() => decide('rejected')}
+                style={[styles.actionButton, styles.rejectButton]}
+              >
+                <Text style={[styles.actionText, styles.rejectText]}>거부</Text>
+              </TouchableOpacity>
+            </View>
+            {failureMessage ? (
+              <Text testID="tool-approval-error" accessibilityRole="alert" style={styles.errorText}>
+                {failureMessage}
+              </Text>
+            ) : null}
+          </>
         )}
       </View>
     </View>
@@ -183,6 +202,16 @@ function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript') {
     doneText: {
       fontSize: t.chatFontSize.meta,
       color: t.colors.accent,
+    },
+    // 카드 질문 장(ChatInputRequest)의 전송 실패 문구와 같은 모양을 쓴다.
+    errorText: {
+      ...t.foundation.typography.meta,
+      marginTop: t.uiSpacing.sm,
+      paddingHorizontal: t.uiSpacing.md,
+      paddingVertical: t.uiSpacing.sm,
+      borderRadius: t.foundation.radius.field,
+      color: t.colors.errorText,
+      backgroundColor: t.colors.errorBg,
     },
   });
 }
