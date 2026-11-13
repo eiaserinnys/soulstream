@@ -45,13 +45,8 @@ import { EventOutbox } from "../upstream/event_outbox.js";
 import { EventOutboxPump } from "../upstream/event_outbox_pump.js";
 import { EventOutboxPumpMux } from "../upstream/event_outbox_pump_mux.js";
 import { composeTaskRuntime, createWorkerAttachmentRuntime, type TaskRuntimeComposition } from "./task_runtime_composition.js";
-import {
-  composeClaudeRuntime,
-  composeClaudeAccountServices,
-  composeQueuedDeliveryStartupRecovery,
-  createClaudeAccountPoolRegistry,
-} from "./claude_runtime_composition.js";
-import { createInstructionReceiptLookup } from "../task/delivery_instruction_receipt.js";
+import type { SessionDeliveryRow } from "../db/session_db_types.js";
+import { composeClaudeRuntime, composeClaudeAccountServices, composeQueuedDeliveryStartupRecovery, createClaudeAccountPoolRegistry } from "./claude_runtime_composition.js";
 import { composeClaudeLoginService, seedLegacyClaudeAccount } from "./claude_login_runtime_composition.js";
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
 import { createEngineFactory } from "./engine_factory.js";
@@ -211,29 +206,25 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     terminateAfterFatalEngineError: (task, message) =>
       taskRuntime.taskExecutor.terminateAfterFatalEngineError(task, message).then(() => undefined),
   });
-  const lookupInstructionReceipt = createInstructionReceiptLookup(
-    (sessionId) => taskManager.getTask(sessionId),
+  const queuedRecoveryParams = {
+    db,
+    agentRegistry,
+    modelCatalog,
+    sessionStore: claudeSessionStore,
+    sourceNode: env.SOULSTREAM_NODE_ID,
     logger,
-  );
+    resolveWorktreeWorkspace: (worktreeId: string) => resolveWorktreeWorkspace(worktreeService, worktreeId),
+    redeliverContent: (row: SessionDeliveryRow) => redeliverStoredDeliveryContent(row, taskManager, taskRuntime.onResume),
+    getTask: (sessionId: string) => taskManager.getTask(sessionId),
+  };
   const claudeRuntime = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
     ? await composeClaudeRuntime({
         enabled: true,
-        db,
-        agentRegistry,
-        modelCatalog,
+        ...queuedRecoveryParams,
         getModelCatalog: () => modelCatalog.snapshot(),
-        sessionStore: claudeSessionStore,
-        sourceNode: env.SOULSTREAM_NODE_ID,
-        idleTtlMs: env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS,
-        maxEntries: env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
+        idleTtlMs: env.CLAUDE_SESSION_RUNTIME_IDLE_TTL_MS, maxEntries: env.CLAUDE_SESSION_RUNTIME_MAX_ENTRIES,
         turnInactivityTimeoutMs: env.CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS,
-        logger,
         ...(claudeAccounts ? { claudeAccountTurnPort: claudeAccounts } : {}),
-        resolveWorktreeWorkspace: (worktreeId) => resolveWorktreeWorkspace(worktreeService, worktreeId),
-        redeliverContent: (row) => redeliverStoredDeliveryContent(
-          row, taskManager, taskRuntime.onResume,
-        ),
-        lookupInstructionReceipt,
         detachedEventSink: async (sessionId, event) => {
           const collectDetached = await publishDetachedClaudeEvent(sessionId, event);
           await collectDetached();
@@ -496,20 +487,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     sessionPageBindingService,
     ...(worktreeSweeper ? { worktreeSweeper } : {}),
     ...(claudeSessionClientRegistry ? { claudeSessionClientRegistry } : {}),
-    claudeRuntimeStartupRecovery: claudeRuntime.startupRecovery
-      ?? composeQueuedDeliveryStartupRecovery({
-        db,
-        agentRegistry,
-        modelCatalog,
-        sessionStore: claudeSessionStore,
-        sourceNode: env.SOULSTREAM_NODE_ID,
-        logger,
-        resolveWorktreeWorkspace: (worktreeId) => resolveWorktreeWorkspace(worktreeService, worktreeId),
-        redeliverContent: (row) => redeliverStoredDeliveryContent(
-          row, taskManager, taskRuntime.onResume,
-        ),
-        lookupInstructionReceipt,
-      }),
+    claudeRuntimeStartupRecovery: claudeRuntime.startupRecovery ?? composeQueuedDeliveryStartupRecovery(queuedRecoveryParams),
     eventOutbox,
     eventOutboxPump,
     eventOutboxPumpMux,

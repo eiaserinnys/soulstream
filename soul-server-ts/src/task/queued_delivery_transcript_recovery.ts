@@ -32,8 +32,11 @@ export interface QueuedDeliveryTranscriptRecoveryDeps {
   /**
    * Asks the runner that holds the target session whether it received this
    * delivery's instruction number. Anything the node cannot prove is "unknown".
+   * Production always supplies it. A harness that leaves it out keeps the
+   * transcript as the only proof: an absent input is redelivered and a backend
+   * without a transcript stays held.
    */
-  instructionReceipt: {
+  instructionReceipt?: {
     lookup(row: SessionDeliveryRow): Promise<NodeInstructionVerdict>;
   };
   /** Re-enters the ordinary durable intervention route with the same row. */
@@ -158,10 +161,15 @@ export class QueuedDeliveryTranscriptRecovery {
           continue;
         }
         if (
-          receipt.kind === "absent"
-          || (receipt.kind === "unavailable" && receipt.reason === UNSUPPORTED_BACKEND_REASON)
+          this.deps.instructionReceipt
+          && (receipt.kind === "absent"
+            || (receipt.kind === "unavailable" && receipt.reason === UNSUPPORTED_BACKEND_REASON))
         ) {
-          settled += await this.settleByInstructionReceipt(row);
+          settled += await this.settleByInstructionReceipt(row, this.deps.instructionReceipt);
+          continue;
+        }
+        if (receipt.kind === "absent") {
+          settled += await this.redeliverUnseen(row);
           continue;
         }
         const reason = receipt.kind === "input_pending"
@@ -183,11 +191,14 @@ export class QueuedDeliveryTranscriptRecovery {
   }
 
   /** Judges a row no transcript could settle by the runner's answer to its instruction number. */
-  private async settleByInstructionReceipt(row: SessionDeliveryRow): Promise<number> {
+  private async settleByInstructionReceipt(
+    row: SessionDeliveryRow,
+    instructionReceipt: NonNullable<QueuedDeliveryTranscriptRecoveryDeps["instructionReceipt"]>,
+  ): Promise<number> {
     let verdict: NodeInstructionVerdict;
     try {
       verdict = await withDeadline(
-        this.deps.instructionReceipt.lookup(row),
+        instructionReceipt.lookup(row),
         this.readTimeoutMs,
         () => new Error(
           `instruction receipt lookup for ${row.delivery_id} exceeded ${this.readTimeoutMs}ms`,

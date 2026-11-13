@@ -42,7 +42,7 @@ export async function askRunnerInstructionReceipt(
 export function handoffRegistrationId(
   task: Pick<Task, "runner" | "executionRegistration">,
 ): string | undefined {
-  return task.runner?.dispatcher.registrationId?.()
+  return task.runner?.dispatcher?.registrationId?.()
     ?? task.executionRegistration?.registrationId;
 }
 

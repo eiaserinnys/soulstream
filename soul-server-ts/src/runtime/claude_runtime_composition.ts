@@ -26,8 +26,8 @@ import { ChildCompletionConsumptionRecorder } from
   "../task/child_completion_consumption.js";
 import { QueuedDeliveryTranscriptRecovery } from
   "../task/queued_delivery_transcript_recovery.js";
-import type { NodeInstructionVerdict } from
-  "../task/state/node_instruction_decision.js";
+import { createInstructionReceiptLookup } from "../task/delivery_instruction_receipt.js";
+import type { Task } from "../task/task_models.js";
 import { ClaudeRuntimeStartupRecovery } from
   "./claude_runtime_startup_recovery.js";
 
@@ -66,7 +66,8 @@ interface ComposeClaudeRuntimeParams {
     event: ClaudeClientEvent,
   ): Promise<void>;
   redeliverContent(row: SessionDeliveryRow): Promise<void>;
-  lookupInstructionReceipt(row: SessionDeliveryRow): Promise<NodeInstructionVerdict>;
+  /** The node's live task for a session, whose runner can answer receipt lookups. */
+  getTask(sessionId: string): Task | undefined;
   resolveWorktreeWorkspace?(worktreeId: string): Promise<string>;
   claudeAccountTurnPort?: ClaudeAccountTurnPort;
 }
@@ -79,7 +80,8 @@ export interface ComposeQueuedDeliveryRecoveryParams {
   sourceNode: string;
   logger: Logger;
   redeliverContent(row: SessionDeliveryRow): Promise<void>;
-  lookupInstructionReceipt(row: SessionDeliveryRow): Promise<NodeInstructionVerdict>;
+  /** The node's live task for a session, whose runner can answer receipt lookups. */
+  getTask(sessionId: string): Task | undefined;
   resolveWorktreeWorkspace?(worktreeId: string): Promise<string>;
 }
 
@@ -116,7 +118,7 @@ export function composeQueuedDeliveryRecovery(
       deliveryRepository,
       recoveryRepository: deliveryRepository.recovery,
       transcriptReceipt,
-      instructionReceipt: { lookup: params.lookupInstructionReceipt },
+      instructionReceipt: { lookup: createInstructionReceiptLookup(params.getTask, params.logger) },
       redeliverContent: params.redeliverContent,
       logger: params.logger,
     },

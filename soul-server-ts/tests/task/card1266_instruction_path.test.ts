@@ -324,7 +324,7 @@ describe("card1266 instruction path: restart recovery of a Codex queue (I6)", ()
       sourceNode: "node-codex",
       logger: silentLogger,
       redeliverContent: vi.fn(),
-      lookupInstructionReceipt: async () => "unknown",
+      getTask: () => undefined,
     });
 
     await startup.afterRunnerRecovery();
