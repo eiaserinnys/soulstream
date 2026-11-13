@@ -75,12 +75,22 @@ export const SESSION_PROMISES: SessionPromiseDefinition[] = [
     id: "running_requires_worktree",
     statement:
       "실행 등록, 실행 중 전환, 시작 정리 되살림이 실행 중으로 옮길 때는 워크트리 게이트를 지난다.",
-    breaks: (row) =>
-      ["execution_registration", "running_transition", "startup_reconcile_restore"]
-        .includes(row.command.type)
-      && row.decision.kind === "apply"
-      && row.decision.next.status === "running"
-      && row.facts.worktreeReady !== true,
+    breaks: (row) => {
+      if (
+        !["execution_registration", "running_transition", "startup_reconcile_restore"]
+          .includes(row.command.type)
+        || row.decision.kind !== "apply"
+        || row.decision.next.status !== "running"
+      ) {
+        return false;
+      }
+      if (row.facts.worktree !== undefined) {
+        return row.facts.worktree === "not_ready"
+          || row.facts.worktree === "setup_required"
+          || row.facts.worktreeBusy === true;
+      }
+      return row.facts.worktreeReady !== true;
+    },
   },
   {
     id: "terminal_to_running_only_resume",

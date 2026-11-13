@@ -166,6 +166,24 @@ export interface SessionStateReport {
   promises: SessionPromiseResult[];
 }
 
+/** 생성 문서와 같은 시험 세계에서 만드는 약속 꾸러미 JSON. */
+export function sessionPromisesJson(report: SessionStateReport): string {
+  return `${
+    JSON.stringify({
+      tableRows: report.rows.length,
+      promises: report.promises,
+      holes: report.promises
+        .filter((promise) => promise.violations > 0)
+        .map((promise) => ({
+          id: promise.id,
+          statement: promise.statement,
+          knownHole: promise.knownHole ?? null,
+          violations: promise.violations,
+        })),
+    }, null, 2)
+  }\n`;
+}
+
 export function renderSessionCharts(promises: SessionPromiseResult[]) {
   validateDescriptions(sessionDecisionMachine.root);
   return plans.map((plan) => {
@@ -212,7 +230,9 @@ export function generateSessionStateDocument(
   const representative: Array<[SessionStateValue["status"], SessionStateValue["termination"], SessionStateValue["review"]]> = [
     ["none", "none", "not_required"],
     ["initializing", "none", "not_required"],
+    ["initializing", "recorded", "not_required"],
     ["running", "none", "acknowledged"],
+    ["running", "recorded", "not_required"],
     ["completed", "recorded", "needs_review"],
     ["error", "recorded", "needs_review"],
     ["interrupted", "none", "needs_review"],

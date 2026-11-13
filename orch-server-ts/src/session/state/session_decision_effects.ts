@@ -69,13 +69,10 @@ for (const command of ["execution_registration", "running_transition"] as const)
     "종료 기록을 지웠다",
   );
 }
-for (const command of [
-  "terminal_transition",
-  "node_disconnect_cleanup",
-  "startup_reconcile_missing",
-] as const) {
-  put("termination", command, "t_recorded", [], "종료 리비전을 기록했다");
-}
+put("termination", "terminal_transition", "t_recorded", [], "종료 리비전을 기록했다");
+// 노드 끊김 정리와 시작 정리의 사라진 세션 멈춤은 termination_event_id를
+// 건드리지 않는다(session_mutation_repository.ts, node_startup_reconciliation.ts).
+// 그래서 종료 영역 전이를 두지 않는다.
 put("termination", "startup_reconcile_restore", "t_none", [], "종료 기록을 지웠다");
 put("termination", "delete", "t_none", [], "종료 기록을 지웠다");
 

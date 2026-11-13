@@ -33,13 +33,13 @@ export const SESSION_COMMAND_RULES: Record<SessionDecisionCommand, string> = {
   terminal_transition:
     "기대한 종료 사건 번호가 양수일 때만 쓴다. 이미 완료나 오류로 끝난 줄, 종료 리비전이 기록된 중단 줄은 건드리지 않는다. 기존 종료 리비전이 없거나 새 사건 번호보다 작을 때만 종료 상태와 사유, 검수 칸, 마지막 발화를 적는다.",
   node_disconnect_cleanup:
-    "노드가 실행 중이던 세션을 끊김으로 정리한다. 이 노드의 initializing이나 running 줄만 interrupted로 옮기고 종료 사유를 killed, 검수 칸을 review_required에 따라 정한다.",
+    "노드가 실행 중이던 세션을 끊김으로 정리한다. 이 노드의 initializing이나 running 줄만 interrupted로 옮기고 종료 사유를 killed, 검수 칸을 review_required에 따라 정한다. 종료 리비전 칸은 건드리지 않는다.",
   startup_reconcile_missing:
-    "시작 시점에 잡아 둔 대상과 지금 줄이 같고, 노드의 실행 목록에 없으며, 아직 활성인 줄만 interrupted로 옮긴다. 줄과 대상의 종료 칸과 실행 id가 다르면 건드리지 않는다.",
+    "시작 시점에 잡아 둔 대상과 지금 줄이 같고, 노드의 실행 목록에 없으며, 아직 활성인 줄만 interrupted로 옮긴다. 줄과 대상의 종료 칸과 실행 id가 다르면 건드리지 않는다. 종료 리비전 칸은 건드리지 않는다.",
   startup_reconcile_restore:
     "끊김 종료가 리비전 없이 기록된 줄을 노드가 실행 중이라고 보고하고 워크트리가 준비됐을 때만 running으로 되살린다. 종료 칸을 지우고 검수 칸을 not_required로 둔다.",
   stale_registration:
-    "사건의 실행 등록 id가 세션의 현재 등록과 다르면 사건을 적용하지 않고 dead-letter로 보낸다. 저장 상태는 바꾸지 않는다.",
+    "세션 줄이 없으면 예외를 던진다. 사건의 실행 등록 id가 세션의 현재 등록과 다르면 사건을 적용하지 않고 dead-letter로 보낸다. 저장 상태는 바꾸지 않는다.",
   session_update_status:
     "session_update의 허용 열에 status가 있어 상태를 그대로 쓸 수 있다. 다른 상태 칸과 종료 칸은 건드리지 않는다. 종료 세션을 running으로 되살리는 길이 열려 있는 알려진 구멍이다.",
   acknowledge_review:
@@ -59,6 +59,7 @@ export const SESSION_REASON_LABELS: Record<string, string> = {
   terminal_without_resume: "종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다",
   status_fence: "이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다",
   revision_not_newer: "새 종료 사건 번호가 기존 기록보다 새롭지 않다",
+  invalid_terminal_event: "종료 사건 번호가 양수가 아니다",
   other_node: "다른 노드의 세션이다",
   not_active: "초기화 중이거나 실행 중인 세션이 아니다",
   target_missing: "시작 시점에 잡아 둔 대상과 지금 줄이 다르다",
@@ -119,12 +120,20 @@ export const SESSION_FACT_LABELS: Record<
     terminal_mismatch: "종료 재개, 리비전 불일치",
   },
   worktreeReady: { true: "준비됨", false: "준비 안 됨" },
+  worktree: {
+    none: "워크트리 없음",
+    ready: "준비됨",
+    not_ready: "준비 안 됨",
+    setup_required: "설치 필요",
+  },
+  worktreeBusy: { true: "다른 활성 세션 점유", false: "점유 없음" },
   revision: {
     none: "기록 없음",
     less: "기존보다 새로움",
     equal: "기존과 같음",
     greater: "기존보다 오래됨",
   },
+  eventId: { positive: "양수", non_positive: "양수 아님" },
   nodeOwns: { true: "이 노드", false: "다른 노드" },
   targetMatches: { true: "대상과 일치", false: "대상과 다름" },
   inRunningList: { true: "노드 보고에 있음", false: "노드 보고에 없음" },

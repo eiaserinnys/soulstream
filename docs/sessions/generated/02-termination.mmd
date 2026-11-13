@@ -10,7 +10,5 @@ state "종료 리비전 기록" as sessionTermination {
 sessionTermination --> t_none: 실행 등록을 기록한다: 종료 기록을 지웠다
 sessionTermination --> t_none: 실행 중 전환을 기록한다: 종료 기록을 지웠다
 sessionTermination --> t_recorded: 종료 전환을 기록한다: 종료 리비전을 기록했다
-sessionTermination --> t_recorded: 노드 끊김을 정리한다: 종료 리비전을 기록했다
-sessionTermination --> t_recorded: 시작 정리에서 사라진 세션을 멈춘다: 종료 리비전을 기록했다
 sessionTermination --> t_none: 시작 정리에서 살아 있는 세션을 되살린다: 종료 기록을 지웠다
 sessionTermination --> t_none: 세션을 지운다: 종료 기록을 지웠다

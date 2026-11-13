@@ -51,11 +51,38 @@ export const SESSION_LIMIT_TERMINATION_VALUES = [
   "other",
 ] as const;
 
+/**
+ * 실행 등록과 실행 중 전환의 워크트리 게이트 상태(SQL schema.sql
+ * session_record_execution_registration, session_apply_running_transition).
+ * 다른 활성 세션 점유는 워크트리 상태와 별개 사실이다.
+ */
+export const SESSION_WORKTREE_VALUES = [
+  "none",
+  "ready",
+  "not_ready",
+  "setup_required",
+] as const;
+export type SessionWorktree = (typeof SESSION_WORKTREE_VALUES)[number];
+
+/** 종료 전환의 사건 번호 검사(양수만 허용)를 가르는 사실. */
+export const SESSION_TERMINAL_EVENT_VALUES = ["positive", "non_positive"] as const;
+
 export const SESSION_FACT_VALUES = {
   register: {},
-  execution_registration: { resume: SESSION_RESUME_VALUES, worktreeReady: flag },
-  running_transition: { resume: SESSION_RESUME_VALUES, worktreeReady: flag },
-  terminal_transition: { revision: SESSION_REVISION_VALUES },
+  execution_registration: {
+    resume: SESSION_RESUME_VALUES,
+    worktree: SESSION_WORKTREE_VALUES,
+    worktreeBusy: flag,
+  },
+  running_transition: {
+    resume: SESSION_RESUME_VALUES,
+    worktree: SESSION_WORKTREE_VALUES,
+    worktreeBusy: flag,
+  },
+  terminal_transition: {
+    revision: SESSION_REVISION_VALUES,
+    eventId: SESSION_TERMINAL_EVENT_VALUES,
+  },
   node_disconnect_cleanup: { nodeOwns: flag },
   startup_reconcile_missing: { targetMatches: flag, inRunningList: flag },
   startup_reconcile_restore: { inRunningList: flag, worktreeReady: flag },

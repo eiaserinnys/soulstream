@@ -59,7 +59,16 @@ reject("register", "exists", "session_exists", not(inside("s_none")));
 
 for (const command of ["execution_registration", "running_transition"] as const) {
   reject(command, "missing", "session_missing", inside("s_none"));
-  reject(command, "worktree", "worktree_blocked", not(fact("worktreeReady", true)));
+  reject(
+    command,
+    "worktree",
+    "worktree_blocked",
+    or([
+      fact("worktree", "not_ready"),
+      fact("worktree", "setup_required"),
+      fact("worktreeBusy", true),
+    ]),
+  );
   reject(
     command,
     "resumeNotTerminal",
@@ -80,6 +89,12 @@ for (const command of ["execution_registration", "running_transition"] as const)
   );
 }
 
+reject(
+  "terminal_transition",
+  "invalidEvent",
+  "invalid_terminal_event",
+  fact("eventId", "non_positive"),
+);
 reject("terminal_transition", "missing", "session_missing", inside("s_none"));
 reject(
   "terminal_transition",
@@ -139,6 +154,7 @@ noop(
   not(fact("worktreeReady", true)),
 );
 
+reject("stale_registration", "missing", "session_missing", inside("s_none"));
 reject(
   "stale_registration",
   "mismatch",

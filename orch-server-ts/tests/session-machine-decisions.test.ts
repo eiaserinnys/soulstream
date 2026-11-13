@@ -40,7 +40,7 @@ const tableStates: readonly SessionStateValue[] = [
 
 it('fills every cell of the decision table with a verdict',()=>{
  const rows=sessionDecisionTable();
- expect(rows).toHaveLength(283);
+ expect(rows).toHaveLength(480);
  const counts=Object.fromEntries(SESSION_COMMANDS.map(command=>[command,0]));
  for(const row of rows){
  expect(['apply','noop','reject']).toContain(row.decision.kind);
@@ -48,18 +48,18 @@ it('fills every cell of the decision table with a verdict',()=>{
  counts[row.command.type]=(counts[row.command.type]??0)+1;
  }
  expect(counts).toEqual({
- register:7,
- execution_registration:42,
- running_transition:42,
- terminal_transition:13,
- node_disconnect_cleanup:14,
- startup_reconcile_missing:18,
- startup_reconcile_restore:28,
- stale_registration:21,
- session_update_status:7,
+ register:9,
+ execution_registration:111,
+ running_transition:111,
+ terminal_transition:20,
+ node_disconnect_cleanup:18,
+ startup_reconcile_missing:26,
+ startup_reconcile_restore:36,
+ stale_registration:27,
+ session_update_status:9,
  acknowledge_review:14,
- delete:35,
- resume_dispatch:42,
+ delete:45,
+ resume_dispatch:54,
  });
  for(const command of SESSION_COMMANDS){
  const payload=SESSION_TABLE_COMMAND[command];
@@ -86,7 +86,7 @@ it('writes the command payload into the next state',()=>{
  for(const reviewNext of ['not_required','needs_review','acknowledged'] as const){
  const from=command==='register'?state('none'):state('running');
  const facts=command==='terminal_transition'?{revision:'none' as const}
- :command==='execution_registration'||command==='running_transition'?{resume:'fresh' as const,worktreeReady:true}
+ :command==='execution_registration'||command==='running_transition'?{resume:'fresh' as const,worktree:'ready' as const,worktreeBusy:false}
  :command==='node_disconnect_cleanup'?{nodeOwns:true}
  :command==='startup_reconcile_missing'?{targetMatches:true,inRunningList:false}
  :{};
@@ -144,7 +144,7 @@ it('detects one injected defect per promise',()=>{
  terminal_revision_monotonic:probeRow('terminal_transition',state('completed','recorded'),{revision:'equal'}),
  interrupted_accepts_recorded_terminal:probeRow('terminal_transition',state('interrupted'),{revision:'none'},'reject'),
  cleanup_only_active:probeRow('node_disconnect_cleanup',state('interrupted','recorded'),{nodeOwns:true}),
- running_requires_worktree:probeRow('execution_registration',state('running'),{resume:'fresh',worktreeReady:false}),
+ running_requires_worktree:probeRow('execution_registration',state('running'),{resume:'fresh',worktree:'not_ready',worktreeBusy:false}),
  terminal_to_running_only_resume:probeRow('session_update_status',state('completed','recorded'),{},'apply',state('running')),
  active_delete_needs_stop:probeRow('delete',state('running'),{path:'timeout'}),
  limit_resume_chain:probeRow('resume_dispatch',state('error','recorded'),{chainContinued:false}),
