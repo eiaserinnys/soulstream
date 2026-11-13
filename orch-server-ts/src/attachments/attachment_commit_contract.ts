@@ -158,10 +158,20 @@ export type AttachmentStorageBinding = NonNullable<
   Awaited<ReturnType<ReturnType<typeof createR2StorageResolver>["resolveBinding"]>>
 >;
 
+export type AttachmentStorageFailure = {
+  /** Error code reported to the caller: storage_unavailable, R2_SETTINGS_UNAVAILABLE or storage_failed. */
+  readonly code: string;
+  readonly statusCode: number;
+  /** Name of the attempted work, without object keys or connection details. */
+  readonly operation: string;
+};
+
 export type CreateOwnedAttachmentCommitServiceOptions = {
   readonly repository: AttachmentCommitRepository;
   readonly resolveAttachmentBinding: () => Promise<AttachmentStorageBinding | null>;
   readonly now?: () => Date;
+  /** Optional sink for storage outages; receives no credentials, bucket names or object keys. */
+  readonly onStorageFailure?: (failure: AttachmentStorageFailure) => void;
 };
 
 export async function verifyStoredObject(input: {

@@ -217,6 +217,7 @@ export type CreateLiveOrchestratorProviderBundleOptions = {
   readonly inventory?: readonly LiveProviderWiringInventoryEntry[];
   readonly factoryProviderPaths?: readonly LiveProviderPath[];
   readonly resolveAttachmentStorage?: CreateOwnedAttachmentCommitServiceOptions["resolveAttachmentBinding"];
+  readonly onAttachmentStorageFailure?: CreateOwnedAttachmentCommitServiceOptions["onStorageFailure"];
   readonly resolveReadStorage?: CreateLiveAttachmentReadOptions["resolveReadStorage"];
   readonly dbSqlResolver?: LiveDbSqlResolver;
   readonly readPageAttachmentEvidence?: CreateLiveAttachmentReadOptions["readPageAttachmentEvidence"];
@@ -351,6 +352,9 @@ export function createLiveOrchestratorProviderBundle(
     : createOwnedAttachmentCommitService({
         repository: options.dependencies.dbCatalogRepository.attachmentCommitRepository,
         resolveAttachmentBinding: commitBinding,
+        ...(options.onAttachmentStorageFailure === undefined
+          ? {}
+          : { onStorageFailure: options.onAttachmentStorageFailure }),
       });
   if (options.agentAttachmentRegistration !== undefined && commits === undefined) {
     throw new Error("agentAttachmentRegistration requires attachment storage binding");

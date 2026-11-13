@@ -92,6 +92,75 @@ describe("R2 object upload signing", () => {
   });
 });
 
+describe("R2 request timeouts", () => {
+  function hangingFetch() {
+    return vi.fn((_url: string | URL | Request, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener("abort", () => reject(init.signal!.reason));
+      }),
+    );
+  }
+
+  function putInput(signal?: AbortSignal) {
+    const bytes = new Uint8Array([1, 2, 3]);
+    return {
+      storageKey: "asset-a",
+      mimeType: "text/plain",
+      byteSize: bytes.length,
+      checksumSha256: createHash("sha256").update(bytes).digest("hex"),
+      body: bytes,
+      ...(signal === undefined ? {} : { signal }),
+    };
+  }
+
+  it("ends an unresponsive request within its own timeout", async () => {
+    const fetchMock = hangingFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const storage = createR2BoardAssetStorage(fields, { requestTimeoutMs: 25 });
+
+    const startedAt = Date.now();
+    await expect(storage.putObject(putInput())).rejects.toThrow();
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves streamed reads to their caller signal instead of the request timeout", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const timer = setTimeout(() => {
+            controller.enqueue(new Uint8Array([7]));
+            controller.close();
+          }, 50);
+          init?.signal?.addEventListener("abort", () => {
+            clearTimeout(timer);
+            controller.error(init.signal!.reason);
+          });
+        },
+      });
+      return new Response(stream, { status: 200, headers: { "content-length": "1" } });
+    }));
+    const storage = createR2BoardAssetStorage(fields, { requestTimeoutMs: 10 });
+
+    const response = await storage.openObject({ storageKey: "asset-a" });
+
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(new Uint8Array([7]));
+  });
+
+  it("still aborts when the caller signal fires first", async () => {
+    const fetchMock = hangingFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const storage = createR2BoardAssetStorage(fields, { requestTimeoutMs: 60_000 });
+    const controller = new AbortController();
+
+    const startedAt = Date.now();
+    const pending = storage.putObject(putInput(controller.signal));
+    setTimeout(() => controller.abort(), 10);
+    await expect(pending).rejects.toThrow();
+    expect(Date.now() - startedAt).toBeLessThan(1_000);
+  });
+});
+
 function database() {
   const values = new Map<string, any>(["board_r2", "attachment_r2"].map(key => [key, { setting_key: key, value: { endpoint: "", bucket: "", accessKeyId: "", secretAccessKey: "" }, version: 1 }]));
   const sql: any = vi.fn(async (strings: TemplateStringsArray, ...args: any[]) => {

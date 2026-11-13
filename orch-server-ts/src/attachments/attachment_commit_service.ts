@@ -8,6 +8,7 @@ import {
   R2StorageRequestError,
 } from "../runtime/live_board_asset_storage.js";
 import type { R2StorageLocation } from "../runtime/r2_storage_resolver.js";
+import { R2SettingsError } from "../system/r2_settings.js";
 import { ATTACHMENT_TICKET_SECONDS, LARGE_ATTACHMENT_PART_SIZE } from "./attachment_upload_ticket.js";
 import { verifyStoredObject } from "./attachment_commit_contract.js";
 import type {
@@ -80,7 +81,7 @@ export function createOwnedAttachmentCommitService(
         if (error instanceof R2StorageRequestError && error.operation === "put object" && error.status === 412) {
           objectAlreadyPresent = true;
         } else {
-          throw mapStorageError(error, prepared.spec.attachmentId);
+          throw mapStorageError(options, error, prepared.spec.attachmentId, "put small attachment");
         }
       }
 
@@ -94,7 +95,7 @@ export function createOwnedAttachmentCommitService(
         });
       } catch (error) {
         if (objectAlreadyPresent && error instanceof R2ObjectIntegrityError) throw conflict(prepared.spec.attachmentId);
-        throw mapStorageError(error, prepared.spec.attachmentId);
+        throw mapStorageError(options, error, prepared.spec.attachmentId, "verify uploaded attachment");
       }
       if (verified.checksumSha256 !== sourceChecksum) {
         throw objectAlreadyPresent ? conflict(prepared.spec.attachmentId) : checksumMismatch(prepared.spec.attachmentId);
@@ -125,7 +126,7 @@ export function createOwnedAttachmentCommitService(
           });
           return multipartInitResult(existing, multipart, binding.identity, exp, prepared.spec.checksumSha256);
         } catch (error) {
-          throw mapStorageError(error, prepared.spec.attachmentId);
+          throw mapStorageError(options, error, prepared.spec.attachmentId, "create multipart part urls");
         }
       }
 
@@ -139,7 +140,7 @@ export function createOwnedAttachmentCommitService(
           expiresSeconds,
         });
       } catch (error) {
-        throw mapStorageError(error, prepared.spec.attachmentId);
+        throw mapStorageError(options, error, prepared.spec.attachmentId, "create multipart upload");
       }
       const stored = await options.repository.setMultipartUploadId({
         attachmentId: prepared.spec.attachmentId,
@@ -167,7 +168,7 @@ export function createOwnedAttachmentCommitService(
             });
             return multipartInitResult(raced, reissued, binding.identity, racedExp, prepared.spec.checksumSha256);
           } catch (error) {
-            throw mapStorageError(error, raced.attachmentId);
+            throw mapStorageError(options, error, raced.attachmentId, "create multipart part urls");
           }
         }
         if (raced?.uploadStatus === "committed") {
@@ -200,7 +201,7 @@ export function createOwnedAttachmentCommitService(
         objectAlreadyPresent = true;
         if (head.byteSize !== existing.byteSize) throw objectMismatch(ticket.importId);
       } catch (error) {
-        if (!isR2NotFound(error, "head object")) throw mapStorageError(error, ticket.importId);
+        if (!isR2NotFound(error, "head object")) throw mapStorageError(options, error, ticket.importId, "head uploaded attachment");
       }
       if (!objectAlreadyPresent) {
         try {
@@ -210,14 +211,18 @@ export function createOwnedAttachmentCommitService(
             parts: input.parts,
           });
         } catch (error) {
-          if (!isR2NotFound(error, "complete multipart upload")) throw mapStorageError(error, ticket.importId);
+          if (!isR2NotFound(error, "complete multipart upload")) {
+            throw mapStorageError(options, error, ticket.importId, "complete multipart upload");
+          }
           try {
             const head = await binding.storage.headObject({ storageKey: existing.storageKey });
             if (head.byteSize !== existing.byteSize) throw objectMismatch(ticket.importId);
             objectAlreadyPresent = true;
           } catch (headError) {
-            if (isR2NotFound(headError, "head object")) throw mapStorageError(error, ticket.importId);
-            throw mapStorageError(headError, ticket.importId);
+            if (isR2NotFound(headError, "head object")) {
+              throw mapStorageError(options, error, ticket.importId, "complete multipart upload");
+            }
+            throw mapStorageError(options, headError, ticket.importId, "head uploaded attachment");
           }
         }
       }
@@ -231,7 +236,7 @@ export function createOwnedAttachmentCommitService(
           signal: input.signal,
         });
       } catch (error) {
-        throw mapStorageError(error, ticket.importId);
+        throw mapStorageError(options, error, ticket.importId, "verify uploaded attachment");
       }
       assertOptionalChecksum(ticket.checksumSha256, verified.checksumSha256, ticket.importId);
       await assertBindingUnchanged(options, binding, ticket.importId);
@@ -252,7 +257,7 @@ export function createOwnedAttachmentCommitService(
       try {
         await binding.storage.abortMultipartUpload({ storageKey: existing.storageKey, uploadId: ticket.uploadId });
       } catch (error) {
-        throw mapStorageError(error, ticket.importId);
+        throw mapStorageError(options, error, ticket.importId, "abort multipart upload");
       }
       const cleared = await options.repository.clearPendingMultipart({
         attachmentId: ticket.importId,
@@ -397,8 +402,25 @@ function uploadExpiry(createdAt: Date | string, currentTime: Date, attachmentId:
 async function requireAttachmentBinding(
   options: CreateOwnedAttachmentCommitServiceOptions,
 ): Promise<AttachmentStorageBinding> {
-  const binding = await options.resolveAttachmentBinding();
+  let binding: AttachmentStorageBinding | null;
+  try {
+    binding = await options.resolveAttachmentBinding();
+  } catch (error) {
+    if (error instanceof R2SettingsError) {
+      options.onStorageFailure?.({
+        code: error.code,
+        statusCode: error.statusCode,
+        operation: "resolve attachment binding",
+      });
+    }
+    throw error;
+  }
   if (binding === null) {
+    options.onStorageFailure?.({
+      code: "storage_unavailable",
+      statusCode: 503,
+      operation: "resolve attachment binding",
+    });
     throw new AttachmentCommitError("storage_unavailable", 503, "Attachment storage is not configured");
   }
   return binding;
@@ -461,17 +483,27 @@ function isR2NotFound(error: unknown, operation: string): boolean {
   return error instanceof R2StorageRequestError && error.operation === operation && error.status === 404;
 }
 
-function mapStorageError(error: unknown, attachmentId: string): AttachmentCommitError {
+function mapStorageError(
+  options: CreateOwnedAttachmentCommitServiceOptions,
+  error: unknown,
+  attachmentId: string,
+  operation: string,
+): AttachmentCommitError {
   if (error instanceof AttachmentCommitError) return error;
   if (error instanceof R2ObjectIntegrityError) {
     return error.reason === "checksum"
       ? checksumMismatch(attachmentId)
       : objectMismatch(attachmentId);
   }
-  if (error instanceof R2StorageRequestError) {
-    return new AttachmentCommitError("storage_failed", 502, `R2 ${error.operation} failed (${error.status})`, attachmentId);
-  }
-  return new AttachmentCommitError("storage_failed", 502, "Attachment storage request failed", attachmentId);
+  const failed = error instanceof R2StorageRequestError
+    ? new AttachmentCommitError("storage_failed", 502, `R2 ${error.operation} failed (${error.status})`, attachmentId)
+    : new AttachmentCommitError("storage_failed", 502, "Attachment storage request failed", attachmentId);
+  options.onStorageFailure?.({
+    code: failed.code,
+    statusCode: failed.statusCode,
+    operation,
+  });
+  return failed;
 }
 
 function normalizeChecksum(value: string): string {

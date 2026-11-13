@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
-import { compileSkill, IncludeResolutionError } from "../src/skills/skill_compile.js";
+import {
+  compileSkill,
+  IncludeResolutionError,
+  JEV_TIMEOUT_MARGIN_MS,
+  type SkillScoreInput,
+} from "../src/skills/skill_compile.js";
 import type { DomainCatalogEntry, LoadedAtomBody, SkillCatalogEntry } from "../src/skills/skill_catalog.js";
 
 function body(nodeId: string, markdown: string, version = 1, childCount = 0): LoadedAtomBody {
@@ -19,6 +24,8 @@ function setup(markdown: string, options: {
   catalogs?: DomainCatalogEntry[];
   bodies?: Record<string, LoadedAtomBody>;
   score?: (keys: string[]) => Promise<Array<{ key: string; score: number }>>;
+  rawScore?: (input: SkillScoreInput) => Promise<Array<{ key: string; score: number }>>;
+  deadlineAt?: number;
   childCount?: number;
 } = {}) {
   const current = skill("main", "main-body");
@@ -30,10 +37,12 @@ function setup(markdown: string, options: {
     return value;
   });
   const loadCatalogs = vi.fn(async () => options.catalogs ?? []);
-  const score = vi.fn(async (input: { items: Array<{ key: string }> }) =>
-    options.score
-      ? options.score(input.items.map(({ key }) => key))
-      : input.items.map(({ key }) => ({ key, score: 0.8 })),
+  const score = vi.fn(async (input: SkillScoreInput) =>
+    options.rawScore
+      ? options.rawScore(input)
+      : options.score
+        ? options.score(input.items.map(({ key }) => key))
+        : input.items.map(({ key }) => ({ key, score: 0.8 })),
   );
   return {
     current,
@@ -50,6 +59,7 @@ function setup(markdown: string, options: {
       score,
       ...(intent === undefined ? {} : { intent }),
       ...(pins === undefined ? {} : { pins }),
+      ...(options.deadlineAt === undefined ? {} : { deadlineAt: options.deadlineAt }),
     }),
   };
 }
@@ -251,6 +261,29 @@ describe("load_skill compiler", () => {
     expect(result.compiled_markdown).toContain("close: close description");
     expect(result.warnings.map(({ code }) => code)).toContain("jev_failed");
     expect(result.links[0]?.selected).toEqual([]);
+  });
+
+  it("keeps a margin under the compile deadline so a stalled Jev score still opens the skill", async () => {
+    const receivedTimeouts: number[] = [];
+    const deadlineAt = Date.now() + JEV_TIMEOUT_MARGIN_MS + 1_500;
+    const h = setup("```link\npick: catalog\naxis: [camera.framing]\n```", {
+      catalogs: [catalog("wide", ["camera.framing"]), catalog("close", ["camera.framing"])],
+      rawScore: (input) => new Promise((_resolve, reject) => {
+        receivedTimeouts.push(input.timeoutMs);
+        setTimeout(() => reject(new Error("Jev request timed out")), input.timeoutMs);
+      }),
+      deadlineAt,
+    });
+    const startedAt = Date.now();
+
+    const result = await h.run("frame the portrait");
+
+    expect(receivedTimeouts).toHaveLength(1);
+    expect(receivedTimeouts[0]!).toBeGreaterThan(0);
+    expect(receivedTimeouts[0]!).toBeLessThanOrEqual(deadlineAt - startedAt - JEV_TIMEOUT_MARGIN_MS);
+    expect(result.warnings.map(({ code }) => code)).toContain("jev_failed");
+    expect(result.compiled_markdown).toContain("wide: wide description");
+    expect(result.compiled_markdown).toContain("작업에 맞는 것을 골라 읽는다");
   });
 
   it("keeps unresolved candidates out of excluded when intent is absent or Jev fails", async () => {
