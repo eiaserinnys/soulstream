@@ -305,6 +305,8 @@ function envelopeFor(row:SessionDecisionRow,options:{
 }
 
 function adoptEnvelope(seq:number,attempt:string):EventIngressEnvelope{
+ // 노드가 싣는 잇기 키 그대로다(event_transition_publisher.ts).
+ const transitionId=`adopt:command-1:${attempt}`;
  return {
   stream_id:STREAM_ID,
   source_seq:seq,
@@ -313,11 +315,11 @@ function adoptEnvelope(seq:number,attempt:string):EventIngressEnvelope{
   payload:{
    type:'metadata',
    metadata_type:'session_status_transition',
-   value:{transition_id:`adopt:command-1:${attempt}`},
+   value:{transition_id:transitionId},
   },
   searchable_text:null,
   created_at:NOW,
-  semantic_dedupe_key:null,
+  semantic_dedupe_key:`running_transition:${SESSION_ID}:${transitionId}`,
   session_effect:{
    kind:'running_transition',
    review_state:'needs_review',
@@ -623,12 +625,16 @@ it('replays a rejected adoption attempt without applying the effect again',async
  expect(first.applied).toBe(false);
  expect(first.rejectionReason)
   .toBe(SESSION_REJECTION_REASON_WIRE.worktree_busy);
- const otherSeq=committedApplication(
-  (await ingress.commitBatch('n1',batch(adoptEnvelope(2,'attempt-a'))))[0],
- );
- expect(otherSeq.applied).toBe(false);
- expect(otherSeq.rejectionReason)
+ // 같은 잇기 키를 다른 source_seq로 다시 보낸다(노드의 전송 재시도). 의미
+ // 중복 경로가 수령증의 rejection_reason을 되읽어 같은 사유를 돌려준다.
+ const resent=await ingress.commitBatch('n1',batch(adoptEnvelope(2,'attempt-a')));
+ expect(resent[0]?.outcome).toBe('committed');
+ if(resent[0]?.outcome!=='committed')throw new Error('not committed');
+ expect(resent[0].duplicateReceipt).toBe(true);
+ expect(resent[0].sessionEffectApplication?.applied).toBe(false);
+ expect(resent[0].sessionEffectApplication?.rejectionReason)
   .toBe(SESSION_REJECTION_REASON_WIRE.worktree_busy);
+ // 같은 source_seq 재전송(영수증 재생)도 같은 사유를 돌려준다.
  const replay=await ingress.commitBatch(
   'n1',
   batch(adoptEnvelope(1,'attempt-a')),
@@ -644,11 +650,11 @@ it('replays a rejected adoption attempt without applying the effect again',async
   INTERRUPTED_NEEDS_REVIEW,
   'rejected adoption',
  );
- // 첫 시도와 다른 source_seq 재시도가 사건을 하나씩 더했고, 같은 source_seq
- // 재전송은 수령증을 되읽어 사건도 효과도 다시 만들지 않았다.
+ // 첫 시도만 사건을 하나 더했고(더미 1 + 잇기 1), 의미 중복과 영수증 재생은
+ // 사건도 효과도 다시 만들지 않았다.
  const [counts]=await h.sql<Array<{count:number}>>`
  SELECT COUNT(*)::int AS count FROM events WHERE session_id=${SESSION_ID}`;
- expect(counts?.count).toBe(3);
+ expect(counts?.count).toBe(2);
 },120000);
 
 it('rejects state events from a foreign owner node and accepts NULL owners',async()=>{
