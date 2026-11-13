@@ -85,6 +85,33 @@ export function readProfileCredentialsReadOnly(
   };
 }
 
+/**
+ * CLI는 refresh가 거부되면 .credentials.json의 refreshToken을 빈 문자열로 덮어쓴다.
+ * 그 파일은 access token도 비어 readProfileCredentialsReadOnly가 null을 돌려주므로
+ * 죽은 자격인지 여기서 따로 본다. 파일이 없거나 claudeAiOauth가 비면 죽은 자격이 아니다.
+ */
+function hasDeadRefreshToken(profileDir: string): boolean {
+  const credPath = path.join(profileDir, ".credentials.json");
+  let raw: string;
+  try {
+    raw = fs.readFileSync(credPath, "utf8");
+  } catch {
+    return false;
+  }
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+
+  const oauth = parsed.claudeAiOauth;
+  if (!oauth || typeof oauth !== "object") return false;
+  const record = oauth as Record<string, unknown>;
+  return Object.hasOwn(record, "refreshToken") && record.refreshToken === "";
+}
+
 function normalizeResetIso(raw: unknown): string | null {
   if (typeof raw === "string" && raw.trim()) {
     const trimmed = raw.trim();
@@ -365,6 +392,13 @@ export class ClaudeAccountUsageCollector {
     const nowMs = this.now();
 
     for (const input of inputs) {
+      if (hasDeadRefreshToken(input.profileDir)) {
+        const idleObs = this.cacheIdleObservation(input.accountId, nowMs, false);
+        results.set(input.accountId, idleObs);
+        this.emitAuthOutcome(input.accountId, "renew_failed");
+        continue;
+      }
+
       const creds = readProfileCredentialsReadOnly(input.profileDir);
       if (!creds || (creds.expiresAtMs !== null && creds.expiresAtMs <= nowMs)) {
         const idleObs = this.cacheIdleObservation(input.accountId, nowMs, creds !== null);

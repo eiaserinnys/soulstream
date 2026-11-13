@@ -21,6 +21,14 @@ function writeCredentials(profileDir: string, accessToken: string, expiresAt: nu
   );
 }
 
+function writeWipedCredentials(profileDir: string): void {
+  fs.writeFileSync(
+    path.join(profileDir, ".credentials.json"),
+    JSON.stringify({ claudeAiOauth: { accessToken: "", refreshToken: "", expiresAt: 0, loginEnded: "time_limit" } }),
+    { mode: 0o600 },
+  );
+}
+
 describe("ClaudeAccountService needs_relogin pool exclusion", () => {
   let root: string;
   let accountsDir: string;
@@ -116,6 +124,30 @@ describe("ClaudeAccountService needs_relogin pool exclusion", () => {
     const restarted = createService();
     const result = await restarted.select(selectInput("s1"));
     expect(result).toMatchObject({ pool_exhausted: true });
+  });
+
+  it("turns an account whose refresh token was wiped into needs_relogin and out of selection", async () => {
+    const svc = createService();
+    await register(svc, ACC_A, nowMs + 7200_000, 1);
+    await register(svc, ACC_B, nowMs + 7200_000, 2);
+    writeWipedCredentials(svc.profileDir(ACC_A)!);
+
+    expect(authStateOf(await svc.getAccountList({ forceRefresh: true }), ACC_A)).toBe("needs_relogin");
+    expect(svc.store.readRelogin()[ACC_A]?.reason).toBe("renewal_failed");
+    expect(await svc.select(selectInput("s1"))).toMatchObject({ account_id: ACC_B });
+  });
+
+  it("returns reason needs_relogin when the only enabled account needs relogin", async () => {
+    const svc = createService();
+    await register(svc, ACC_A, nowMs + 7200_000, 1);
+    writeWipedCredentials(svc.profileDir(ACC_A)!);
+
+    expect(authStateOf(await svc.getAccountList({ forceRefresh: true }), ACC_A)).toBe("needs_relogin");
+    expect(await svc.select(selectInput("s1"))).toMatchObject({
+      pool_exhausted: true,
+      available_count: 0,
+      reason: "needs_relogin",
+    });
   });
 
   it("takes an account reported with a session authentication failure out of selection", async () => {

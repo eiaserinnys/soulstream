@@ -79,6 +79,8 @@ import type {
 
 const ACCOUNT_SWITCH_CONTINUATION_PROMPT =
   "계정 한도로 직전 응답이 끊겼습니다. 이미 끝낸 도구 작업은 반복하지 말고 남은 작업을 이어서 하세요.";
+const CLAUDE_ACCOUNTS_RELOGIN_MESSAGE =
+  "All Claude accounts on this node need to sign in again. Sign in again from the account pool screen.";
 
 function accountScopeForRateLimit(info: RateLimitStopInfo, model: string): ClaudeAccountScope {
   if (info.rateLimitType === "five_hour" || info.rateLimitType === "seven_day") return "all";
@@ -398,6 +400,9 @@ export class ClaudeEngineAdapter
               ? { resetsAt: initialSelection.earliest_available_at }
               : {}),
           });
+          if (initialSelection.reason === "needs_relogin") {
+            terminal.message = CLAUDE_ACCOUNTS_RELOGIN_MESSAGE;
+          }
           for (const payload of mapClaudeClientEvent(terminal)) {
             await channel.emit(engineEventFrame(
               { ...payload } as Record<string, unknown>,

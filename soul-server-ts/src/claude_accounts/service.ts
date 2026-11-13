@@ -309,6 +309,10 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
         this.sessionActivity.clearAssignment(input.session_id, previousActiveAccountId);
         this.maybeFinalizeDeferredRetire(previousActiveAccountId);
       }
+      const enabledCandidates = candidates.filter((candidate) => candidate.enabled);
+      const allEnabledNeedRelogin =
+        enabledCandidates.length > 0 &&
+        enabledCandidates.every((candidate) => candidate.auth_state === "needs_relogin");
       return {
         pool_exhausted: true,
         available_count: 0,
@@ -318,6 +322,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
           isFableModel(input.model) ? "fable" : "all",
           nowMs,
         ),
+        ...(allEnabledNeedRelogin ? { reason: "needs_relogin" as const } : {}),
       };
     }
 
