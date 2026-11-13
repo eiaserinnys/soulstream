@@ -166,7 +166,7 @@ it('matches session_register for every registration cell',async()=>{
 },120000);
 
 it('matches session_record_execution_registration for every cell',async()=>{
- const executionRows=rows.filter(row=>row.command.type==='execution_registration');
+ const executionRows=rows.filter(row=>row.command.type==='execution_registration'&&row.facts.owner==='match');
  expect(executionRows).toHaveLength(111);
  for(const row of executionRows){
  await reset();
@@ -197,7 +197,7 @@ it('matches session_record_execution_registration for every cell',async()=>{
 },120000);
 
 it('matches session_apply_running_transition for every cell',async()=>{
- const runningRows=rows.filter(row=>row.command.type==='running_transition');
+ const runningRows=rows.filter(row=>row.command.type==='running_transition'&&row.facts.owner==='match'&&row.facts.adopt!==true);
  expect(runningRows).toHaveLength(111);
  for(const row of runningRows){
  await reset();
@@ -223,7 +223,7 @@ it('matches session_apply_running_transition for every cell',async()=>{
 },120000);
 
 it('matches session_apply_terminal_transition for every revision cell',async()=>{
- const terminalRows=rows.filter(row=>row.command.type==='terminal_transition');
+ const terminalRows=rows.filter(row=>row.command.type==='terminal_transition'&&row.facts.owner==='match');
  expect(terminalRows).toHaveLength(20);
  for(const row of terminalRows){
  await reset();

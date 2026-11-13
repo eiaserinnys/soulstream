@@ -31,6 +31,8 @@ describePostgres("session output attachment history references PostgreSQL contra
   beforeAll(async () => {
     harness = await createPagePostgresHarness();
     await prepareCardWorkSchema(harness);
+    await harness.sql`ALTER TABLE sessions ADD COLUMN termination_detail TEXT,
+      ADD COLUMN last_assistant_text TEXT, ADD COLUMN worktree_id TEXT`;
     await harness.sql`INSERT INTO sessions(session_id,node_id)
       VALUES (${sessionId},${nodeId}),(${otherSessionId},${nodeId})`;
     const sqlResolver = createLiveDbSqlResolver({ sql: harness.liveSql });

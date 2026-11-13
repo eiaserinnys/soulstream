@@ -128,6 +128,20 @@ export type EventCanonicalExecutionRegistrationProjection = {
   execution_command_id: string;
 };
 
+/**
+ * 노드가 다시 시도할지 판단하는 거절 사유. 값은 wire schema의 enum과 같다.
+ * session_missing은 지금처럼 예외라 ACK로 싣지 않지만 enum에는 둔다.
+ */
+export const EVENT_SESSION_REJECTION_REASONS = [
+  "already_terminal",
+  "session_missing",
+  "owner_node_changed",
+  "worktree_busy",
+  "worktree_not_ready",
+] as const;
+export type EventSessionRejectionReason =
+  (typeof EVENT_SESSION_REJECTION_REASONS)[number];
+
 export type EventSessionEffectApplication = {
   applied: boolean;
   canonicalSession: EventCanonicalSessionProjection | null;
@@ -136,6 +150,8 @@ export type EventSessionEffectApplication = {
   canonicalExecutionRegistration?: EventCanonicalExecutionRegistrationProjection | null;
   /** One-release response compatibility for a legacy execution_acquire. */
   canonicalExecutionOwnership?: EventCanonicalExecutionOwnershipProjection | null;
+  /** 세션 기계가 거절한 까닭. 사유를 싣지 않는 기계 사유도 있다. */
+  rejectionReason?: EventSessionRejectionReason;
 };
 
 export type EventSessionEffectApplicationWire = {
@@ -144,6 +160,7 @@ export type EventSessionEffectApplicationWire = {
   canonical_execution_registration?: EventCanonicalExecutionRegistrationProjection | null;
   /** One-release response compatibility for a legacy execution_acquire. */
   canonical_execution_ownership?: EventCanonicalExecutionOwnershipProjection | null;
+  rejection_reason?: EventSessionRejectionReason;
 };
 
 export type CommittedIngressEvent = {

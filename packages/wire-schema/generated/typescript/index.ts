@@ -1741,6 +1741,11 @@ export interface EventSessionEffectApplication {
   canonical_session: EventCanonicalSessionProjection;
   canonical_execution_registration?: EventCanonicalExecutionRegistrationProjection | null;
   canonical_execution_ownership?: EventCanonicalExecutionOwnershipProjection | null;
+  /**
+   * 세션 기계가 상태 사건을 거절한 까닭. 노드는 already_terminal, session_missing, owner_node_changed를 영구 거절로, worktree_busy, worktree_not_ready를 다시 시도 가능으로 읽는다.
+   */
+  rejection_reason?:
+    "already_terminal" | "session_missing" | "owner_node_changed" | "worktree_busy" | "worktree_not_ready";
 }
 export interface EventCanonicalSessionProjection {
   status: string;

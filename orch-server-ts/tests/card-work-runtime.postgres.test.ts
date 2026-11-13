@@ -109,7 +109,7 @@ describe("card work runtime and internal MCP integration", () => {
             return { type: "error", status: "error", code: "CREATE_DENIED", message: "node rejected create" };
           }
           await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,card_id,folder_id,model_preset)
-            VALUES (${String(payload.agentSessionId)},'node-a',${String(payload.profile)},'initializing',${String(payload.cardId)},${String(payload.folderId)},'model-a')
+            VALUES (${String(payload.agentSessionId)},${String(payload.nodeId)},${String(payload.profile)},'initializing',${String(payload.cardId)},${String(payload.folderId)},'model-a')
             ON CONFLICT(session_id) DO NOTHING`;
           createReturned.resolve();
           return { type: "session_created", status: "ok", agentSessionId: payload.agentSessionId };

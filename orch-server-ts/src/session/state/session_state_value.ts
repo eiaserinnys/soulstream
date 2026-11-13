@@ -79,6 +79,15 @@ export function sessionStatusLeaf(value: SessionStateValue): SessionStatusLeaf {
   return value.status;
 }
 
+/** 종료 전환 입력의 목표 상태 글자를 기계의 종료 상태 값으로 읽는다. */
+export function sessionTerminalTarget(
+  value: string,
+): Extract<StoredSessionStatus, "completed" | "error" | "interrupted"> | null {
+  return value === "completed" || value === "error" || value === "interrupted"
+    ? value
+    : null;
+}
+
 export function stateValueToColumns(value: SessionStateValue): {
   status: StoredSessionStatus | null;
   termination_event_id: number | null;

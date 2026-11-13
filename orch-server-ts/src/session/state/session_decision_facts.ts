@@ -67,21 +67,32 @@ export type SessionWorktree = (typeof SESSION_WORKTREE_VALUES)[number];
 /** 종료 전환의 사건 번호 검사(양수만 허용)를 가르는 사실. */
 export const SESSION_TERMINAL_EVENT_VALUES = ["positive", "non_positive"] as const;
 
+/**
+ * 사건을 보낸 노드가 세션의 소유 노드와 같은지. sessions.node_id가 NULL이면
+ * match다(노드의 runner_central_check.ts와 같은 규칙).
+ */
+export const SESSION_OWNER_VALUES = ["match", "mismatch"] as const;
+export type SessionOwner = (typeof SESSION_OWNER_VALUES)[number];
+
 export const SESSION_FACT_VALUES = {
   register: {},
   execution_registration: {
     resume: SESSION_RESUME_VALUES,
     worktree: SESSION_WORKTREE_VALUES,
     worktreeBusy: flag,
+    owner: SESSION_OWNER_VALUES,
   },
   running_transition: {
     resume: SESSION_RESUME_VALUES,
     worktree: SESSION_WORKTREE_VALUES,
     worktreeBusy: flag,
+    owner: SESSION_OWNER_VALUES,
+    adopt: flag,
   },
   terminal_transition: {
     revision: SESSION_REVISION_VALUES,
     eventId: SESSION_TERMINAL_EVENT_VALUES,
+    owner: SESSION_OWNER_VALUES,
   },
   node_disconnect_cleanup: { nodeOwns: flag },
   startup_reconcile_missing: { targetMatches: flag, inRunningList: flag },

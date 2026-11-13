@@ -679,6 +679,111 @@ describe("NodeEventIngressController", () => {
     });
   });
 
+  it("ACKs a machine rejection with its rejection reason and canonical session", async () => {
+    const value = batch(1);
+    value.events[0]!.event_type = "metadata";
+    value.events[0]!.session_effect = {
+      kind: "running_transition",
+      review_state: "needs_review",
+      updated_at: "2026-08-06T00:00:00.000Z",
+    };
+    const canonicalSession = {
+      status: "interrupted",
+      termination_reason: "killed",
+      termination_detail: null,
+      review_state: "needs_review",
+      last_assistant_text: null,
+      termination_event_id: null,
+      updated_at: "2026-08-06T00:00:00.000Z",
+      last_event_id: 100,
+    };
+    const sent: Array<Record<string, unknown>> = [];
+    const controller = createController({
+      committer: {
+        commitBatch: vi.fn(async () => [{
+          envelope: value.events[0]!,
+          eventId: 101,
+          duplicateReceipt: false,
+          sessionEffectApplication: {
+            applied: false,
+            canonicalSession,
+            rejectionReason: "worktree_busy",
+          },
+        }]),
+      },
+      send: (frame: Record<string, unknown>) => sent.push(frame),
+    });
+
+    controller.enqueue(value as unknown as Record<string, unknown>);
+    await controller.drain();
+
+    expect(sent.at(-1)).toEqual({
+      type: "event_append_ack",
+      stream_id: STREAM_ID,
+      acked_through: 1,
+      events: [{
+        source_seq: 1,
+        event_id: 101,
+        effect_application: {
+          applied: false,
+          canonical_session: canonicalSession,
+          rejection_reason: "worktree_busy",
+        },
+      }],
+    });
+  });
+
+  it("replays a stored rejection reason for a resent attempt", async () => {
+    const value = batch(1);
+    value.events[0]!.event_type = "metadata";
+    value.events[0]!.session_effect = {
+      kind: "running_transition",
+      review_state: "needs_review",
+      updated_at: "2026-08-06T00:00:00.000Z",
+    };
+    const canonicalSession = {
+      status: "interrupted",
+      termination_reason: "killed",
+      termination_detail: null,
+      review_state: "needs_review",
+      last_assistant_text: null,
+      termination_event_id: null,
+      updated_at: "2026-08-06T00:00:00.000Z",
+      last_event_id: 100,
+    };
+    const sent: Array<Record<string, unknown>> = [];
+    const controller = createController({
+      committer: {
+        commitBatch: vi.fn(async () => [{
+          envelope: value.events[0]!,
+          eventId: 101,
+          duplicateReceipt: true,
+          sessionEffectApplication: {
+            applied: false,
+            canonicalSession,
+            rejectionReason: "already_terminal",
+          },
+        }]),
+      },
+      send: (frame: Record<string, unknown>) => sent.push(frame),
+    });
+
+    controller.enqueue(value as unknown as Record<string, unknown>);
+    await controller.drain();
+
+    expect(sent.at(-1)).toMatchObject({
+      events: [{
+        source_seq: 1,
+        event_id: 101,
+        effect_application: {
+          applied: false,
+          canonical_session: canonicalSession,
+          rejection_reason: "already_terminal",
+        },
+      }],
+    });
+  });
+
   it("projects a terminal effect into session cache before publishing session_ended", async () => {
     const value = batch(1);
     value.events[0]!.event_type = "session_ended";

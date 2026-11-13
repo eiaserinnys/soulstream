@@ -6,6 +6,8 @@ import {
   type SessionDecisionEvent,
 } from "./session_decision_facts.js";
 import {
+  fact,
+  inside,
   sessionApplied,
   sessionDecisionGuards,
   sessionNoops,
@@ -73,6 +75,23 @@ const GUARD_ORDER: Partial<Record<SessionDecisionCommand, string[]>> = {
     "missingRevision",
     "chain",
   ],
+  running_transition: [
+    "missing",
+    "owner",
+    "adoptTerminal",
+    "worktreeNotReady",
+    "worktreeBusy",
+    "resumeNotTerminal",
+    "revision",
+    "noResumeOnTerminal",
+  ],
+  terminal_transition: [
+    "missing",
+    "owner",
+    "invalidEvent",
+    "fence",
+    "revision",
+  ],
 };
 
 function orderedGuards(command: SessionDecisionCommand) {
@@ -106,6 +125,12 @@ sessionDecisionGuards["apply.running_transition.terminal_resume"] = and([
   ({ event }: { event: SessionDecisionEvent }) =>
     event.facts.resume === "terminal_match",
 ]);
+sessionDecisionGuards["apply.running_transition.adopt_resume"] = and([
+  sessionApplied("running_transition"),
+  fact("adopt", true),
+  inside("s_interrupted"),
+  inside("t_none"),
+]);
 
 for (const command of SESSION_COMMANDS) {
   verdict[command] = [
@@ -121,6 +146,16 @@ for (const command of SESSION_COMMANDS) {
           "terminal_resume",
           `apply.${command}.terminal_resume`,
         ),
+        ...(command === "running_transition"
+          ? [
+            decision(
+              command,
+              "apply",
+              "adopt_resume",
+              "apply.running_transition.adopt_resume",
+            ),
+          ]
+          : []),
         decision(
           command,
           "apply",

@@ -4,7 +4,7 @@
 
 세션 하나는 한 줄이다. 상태, 종료 리비전 기록, 검수 상태가 저장 영역이고 한도 재개 예약은 이번 물결에서 읽기 전용 투영이다. 연결 여부, 워크트리 준비, 노드 보고는 저장 영역이 아니라 판정 사실이다.
 
-결정표 480줄. 모든 명령이 모든 표 상태 값에서 판정을 낸다. 빈 칸은 없다.
+결정표 544줄. 모든 명령이 모든 표 상태 값에서 판정을 낸다. 빈 칸은 없다.
 
 ## 저장 상태 값
 
@@ -135,9 +135,9 @@ state "한도 재개 예약" as sessionReservation {
 | 명령 | 하는 일 |
 | :-- | :-- |
 | 세션 줄을 만든다 | 같은 세션 줄이 없을 때 새 줄을 만든다. 상태와 검수 칸은 등록 입력이 정하며, 만든 뒤에는 initializing이다. |
-| 실행 등록을 기록한다 | 세션 줄을 잠그고 실행 등록을 적는다. 워크트리가 있으면 준비 상태와 다른 활성 세션 점유를 먼저 본다. 종료 재개면 기대한 종료 리비전이 같을 때만 running으로 되살리고 종료 칸을 지운다. 재개가 아니면 종료 상태가 아닌 줄만 running으로 옮기며 종료 사유와 설명은 지우되 종료 리비전은 남긴다. |
-| 실행 중 전환을 기록한다 | 실행 등록과 같은 워크트리 게이트와 종료 재개 규칙을 쓴다. 등록 id는 쓰지 않고 상태와 검수 칸만 고친다. |
-| 종료 전환을 기록한다 | 기대한 종료 사건 번호가 양수일 때만 쓴다. 이미 완료나 오류로 끝난 줄, 종료 리비전이 기록된 중단 줄은 건드리지 않는다. 기존 종료 리비전이 없거나 새 사건 번호보다 작을 때만 종료 상태와 사유, 검수 칸, 마지막 발화를 적는다. |
+| 실행 등록을 기록한다 | 세션 줄을 잠그고 실행 등록을 적는다. 사건을 보낸 노드가 소유 노드와 다르면 거절한다. 워크트리가 있으면 준비 상태와 다른 활성 세션 점유를 먼저 본다. 종료 재개면 기대한 종료 리비전이 같을 때만 running으로 되살리고 종료 칸을 지운다. 재개가 아니면 종료 상태가 아닌 줄만 running으로 옮기며 종료 사유와 설명은 지우되 종료 리비전은 남긴다. |
+| 실행 중 전환을 기록한다 | 실행 등록과 같은 소유 노드 검사, 워크트리 게이트, 종료 재개 규칙을 쓴다. 등록 id는 쓰지 않고 상태와 검수 칸만 고친다. 잇기(전이 id가 adopt:로 시작)는 종료 기록이 없는 끊김 중단만 되살리고, 이미 끝난 세션이면 거절한다. |
+| 종료 전환을 기록한다 | 사건을 보낸 노드가 소유 노드와 다르면 거절한다. 기대한 종료 사건 번호가 양수일 때만 쓴다. 이미 완료나 오류로 끝난 줄, 종료 리비전이 기록된 중단 줄은 건드리지 않는다. 기존 종료 리비전이 없거나 새 사건 번호보다 작을 때만 종료 상태와 사유, 검수 칸, 마지막 발화를 적는다. |
 | 노드 끊김을 정리한다 | 노드가 실행 중이던 세션을 끊김으로 정리한다. 이 노드의 initializing이나 running 줄만 interrupted로 옮기고 종료 사유를 killed, 검수 칸을 review_required에 따라 정한다. 종료 리비전 칸은 건드리지 않는다. |
 | 시작 정리에서 사라진 세션을 멈춘다 | 시작 시점에 잡아 둔 대상과 지금 줄이 같고, 노드의 실행 목록에 없으며, 아직 활성인 줄만 interrupted로 옮긴다. 줄과 대상의 종료 칸과 실행 id가 다르면 건드리지 않는다. 종료 리비전 칸은 건드리지 않는다. |
 | 시작 정리에서 살아 있는 세션을 되살린다 | 끊김 종료가 리비전 없이 기록된 줄을 노드가 실행 중이라고 보고하고 워크트리가 준비됐을 때만 running으로 되살린다. 종료 칸을 지우고 검수 칸을 not_required로 둔다. |
@@ -162,248 +162,312 @@ state "한도 재개 예약" as sessionReservation {
 | 오류 · 종료 기록 있음 · 검수 대기 | 없음 | 거절 | 같은 세션 줄이 이미 있다 | 그대로 |
 | 중단 · 검수 대기 | 없음 | 거절 | 같은 세션 줄이 이미 있다 | 그대로 |
 | 중단 · 종료 기록 있음 · 검수 대기 | 없음 | 거절 | 같은 세션 줄이 이미 있다 | 그대로 |
-| 줄 없음 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 세션 줄이 없다 | 그대로 |
-| 줄 없음 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 세션 줄이 없다 | 그대로 |
-| 줄 없음 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 세션 줄이 없다 | 그대로 |
-| 초기화 중 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
-| 초기화 중 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
-| 초기화 중 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 초기화 중 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 초기화 중 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 초기화 중 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 초기화 중 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
-| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
-| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
-| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
-| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
-| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
-| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
-| 중단 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
-| 중단 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 줄 없음 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 세션 줄이 없다 | 그대로 |
-| 줄 없음 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 세션 줄이 없다 | 그대로 |
-| 줄 없음 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 세션 줄이 없다 | 그대로 |
-| 초기화 중 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
-| 초기화 중 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
-| 초기화 중 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 초기화 중 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 초기화 중 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 초기화 중 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 초기화 중 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
-| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
-| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
-| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
-| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
-| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
-| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
-| 중단 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
-| 중단 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음 | 거절 | 워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다 | 그대로 |
-| 줄 없음 | revision=기록 없음<br>eventId=양수 | 거절 | 세션 줄이 없다 | 그대로 |
-| 줄 없음 | revision=기록 없음<br>eventId=양수 아님 | 거절 | 종료 사건 번호가 양수가 아니다 | 그대로 |
-| 초기화 중 | revision=기록 없음<br>eventId=양수 | 적용 | 종료를 기록했다 | 완료 · 종료 기록 있음 · 검수 대기 |
-| 초기화 중 · 종료 기록 있음 | revision=기존보다 새로움<br>eventId=양수 | 적용 | 종료를 기록했다 | 완료 · 종료 기록 있음 · 검수 대기 |
-| 초기화 중 · 종료 기록 있음 | revision=기존과 같음<br>eventId=양수 | 거절 | 새 종료 사건 번호가 기존 기록보다 새롭지 않다 | 그대로 |
-| 초기화 중 · 종료 기록 있음 | revision=기존보다 오래됨<br>eventId=양수 | 거절 | 새 종료 사건 번호가 기존 기록보다 새롭지 않다 | 그대로 |
-| 실행 중 · 검수 확인 | revision=기록 없음<br>eventId=양수 | 적용 | 종료를 기록했다 | 완료 · 종료 기록 있음 · 검수 대기 |
-| 실행 중 · 종료 기록 있음 | revision=기존보다 새로움<br>eventId=양수 | 적용 | 종료를 기록했다 | 완료 · 종료 기록 있음 · 검수 대기 |
-| 실행 중 · 종료 기록 있음 | revision=기존과 같음<br>eventId=양수 | 거절 | 새 종료 사건 번호가 기존 기록보다 새롭지 않다 | 그대로 |
-| 실행 중 · 종료 기록 있음 | revision=기존보다 오래됨<br>eventId=양수 | 거절 | 새 종료 사건 번호가 기존 기록보다 새롭지 않다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | revision=기존보다 새로움<br>eventId=양수 | 거절 | 이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | revision=기존과 같음<br>eventId=양수 | 거절 | 이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다 | 그대로 |
-| 완료 · 종료 기록 있음 · 검수 대기 | revision=기존보다 오래됨<br>eventId=양수 | 거절 | 이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | revision=기존보다 새로움<br>eventId=양수 | 거절 | 이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | revision=기존과 같음<br>eventId=양수 | 거절 | 이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다 | 그대로 |
-| 오류 · 종료 기록 있음 · 검수 대기 | revision=기존보다 오래됨<br>eventId=양수 | 거절 | 이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다 | 그대로 |
-| 중단 · 검수 대기 | revision=기록 없음<br>eventId=양수 | 적용 | 종료를 기록했다 | 완료 · 종료 기록 있음 · 검수 대기 |
-| 중단 · 종료 기록 있음 · 검수 대기 | revision=기존보다 새로움<br>eventId=양수 | 거절 | 이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | revision=기존과 같음<br>eventId=양수 | 거절 | 이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다 | 그대로 |
-| 중단 · 종료 기록 있음 · 검수 대기 | revision=기존보다 오래됨<br>eventId=양수 | 거절 | 이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다 | 그대로 |
+| 줄 없음 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 세션 줄이 없다 | 그대로 |
+| 줄 없음 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 세션 줄이 없다 | 그대로 |
+| 줄 없음 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 세션 줄이 없다 | 그대로 |
+| 줄 없음 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 다름 | 거절 | 세션 줄이 없다 | 그대로 |
+| 초기화 중 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
+| 초기화 중 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
+| 초기화 중 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 초기화 중 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 초기화 중 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 초기화 중 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 초기화 중 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 다름 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
+| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
+| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 다름 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
+| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
+| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 다름 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
+| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
+| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 다름 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 다름 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 다름 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 중단 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
+| 중단 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
+| 중단 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 중단 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 다름 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 다름 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 줄 없음 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 세션 줄이 없다 | 그대로 |
+| 줄 없음 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 세션 줄이 없다 | 그대로 |
+| 줄 없음 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 세션 줄이 없다 | 그대로 |
+| 줄 없음 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 세션 줄이 없다 | 그대로 |
+| 줄 없음 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 다름<br>adopt=잇기 아님 | 거절 | 세션 줄이 없다 | 그대로 |
+| 초기화 중 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
+| 초기화 중 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
+| 초기화 중 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
+| 초기화 중 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
+| 초기화 중 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 초기화 중 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 초기화 중 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 초기화 중 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 초기화 중 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 다름<br>adopt=잇기 아님 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
+| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
+| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
+| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
+| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 다름<br>adopt=잇기 아님 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
+| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
+| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
+| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 검수 대기 |
+| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 검수 확인 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 다름<br>adopt=잇기 아님 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
+| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
+| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
+| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 적용 | 실행 등록을 기록하고 실행 중으로 옮겼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
+| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개인데 세션이 종료 상태가 아니다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 다름<br>adopt=잇기 아님 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 잇기가 이미 끝난 세션을 되살리려 한다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 잇기가 이미 끝난 세션을 되살리려 한다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 잇기가 이미 끝난 세션을 되살리려 한다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 잇기가 이미 끝난 세션을 되살리려 한다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 잇기가 이미 끝난 세션을 되살리려 한다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 다름<br>adopt=잇기 아님 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 잇기가 이미 끝난 세션을 되살리려 한다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 잇기가 이미 끝난 세션을 되살리려 한다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 잇기가 이미 끝난 세션을 되살리려 한다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 잇기가 이미 끝난 세션을 되살리려 한다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 잇기가 이미 끝난 세션을 되살리려 한다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 다름<br>adopt=잇기 아님 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 중단 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
+| 중단 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 적용 | 잇기로 끊김 중단을 되살렸다 | 실행 중 · 검수 대기 |
+| 중단 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
+| 중단 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 적용 | 잇기로 끊김 중단을 되살렸다 | 실행 중 · 검수 대기 |
+| 중단 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 중단 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 중단 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 다름<br>adopt=잇기 아님 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 잇기가 이미 끝난 세션을 되살리려 한다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 잇기가 이미 끝난 세션을 되살리려 한다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 잇기가 이미 끝난 세션을 되살리려 한다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 잇기가 이미 끝난 세션을 되살리려 한다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=새 실행<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 | 거절 | 잇기가 이미 끝난 세션을 되살리려 한다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 적용 | 종료 세션을 실행 등록으로 재개했다 | 실행 중 · 검수 대기 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=워크트리 없음<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 기대한 종료 리비전과 다르다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비됨<br>worktreeBusy=다른 활성 세션 점유<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 같은 워크트리를 다른 활성 세션이 쓴다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=준비 안 됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 불일치<br>worktree=설치 필요<br>worktreeBusy=점유 없음<br>owner=소유 노드와 같음<br>adopt=잇기 아님 | 거절 | 워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | resume=종료 재개, 리비전 일치<br>worktree=준비됨<br>worktreeBusy=점유 없음<br>owner=소유 노드와 다름<br>adopt=잇기 아님 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 줄 없음 | revision=기록 없음<br>eventId=양수<br>owner=소유 노드와 같음 | 거절 | 세션 줄이 없다 | 그대로 |
+| 줄 없음 | revision=기록 없음<br>eventId=양수 아님<br>owner=소유 노드와 같음 | 거절 | 세션 줄이 없다 | 그대로 |
+| 줄 없음 | revision=기록 없음<br>eventId=양수<br>owner=소유 노드와 다름 | 거절 | 세션 줄이 없다 | 그대로 |
+| 초기화 중 | revision=기록 없음<br>eventId=양수<br>owner=소유 노드와 같음 | 적용 | 종료를 기록했다 | 완료 · 종료 기록 있음 · 검수 대기 |
+| 초기화 중 | revision=기록 없음<br>eventId=양수<br>owner=소유 노드와 다름 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | revision=기존보다 새로움<br>eventId=양수<br>owner=소유 노드와 같음 | 적용 | 종료를 기록했다 | 완료 · 종료 기록 있음 · 검수 대기 |
+| 초기화 중 · 종료 기록 있음 | revision=기존과 같음<br>eventId=양수<br>owner=소유 노드와 같음 | 거절 | 새 종료 사건 번호가 기존 기록보다 새롭지 않다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | revision=기존보다 오래됨<br>eventId=양수<br>owner=소유 노드와 같음 | 거절 | 새 종료 사건 번호가 기존 기록보다 새롭지 않다 | 그대로 |
+| 초기화 중 · 종료 기록 있음 | revision=기존보다 새로움<br>eventId=양수<br>owner=소유 노드와 다름 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 실행 중 · 검수 확인 | revision=기록 없음<br>eventId=양수<br>owner=소유 노드와 같음 | 적용 | 종료를 기록했다 | 완료 · 종료 기록 있음 · 검수 대기 |
+| 실행 중 · 검수 확인 | revision=기록 없음<br>eventId=양수<br>owner=소유 노드와 다름 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | revision=기존보다 새로움<br>eventId=양수<br>owner=소유 노드와 같음 | 적용 | 종료를 기록했다 | 완료 · 종료 기록 있음 · 검수 대기 |
+| 실행 중 · 종료 기록 있음 | revision=기존과 같음<br>eventId=양수<br>owner=소유 노드와 같음 | 거절 | 새 종료 사건 번호가 기존 기록보다 새롭지 않다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | revision=기존보다 오래됨<br>eventId=양수<br>owner=소유 노드와 같음 | 거절 | 새 종료 사건 번호가 기존 기록보다 새롭지 않다 | 그대로 |
+| 실행 중 · 종료 기록 있음 | revision=기존보다 새로움<br>eventId=양수<br>owner=소유 노드와 다름 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | revision=기존보다 새로움<br>eventId=양수<br>owner=소유 노드와 같음 | 거절 | 이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | revision=기존과 같음<br>eventId=양수<br>owner=소유 노드와 같음 | 거절 | 이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | revision=기존보다 오래됨<br>eventId=양수<br>owner=소유 노드와 같음 | 거절 | 이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다 | 그대로 |
+| 완료 · 종료 기록 있음 · 검수 대기 | revision=기존보다 새로움<br>eventId=양수<br>owner=소유 노드와 다름 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | revision=기존보다 새로움<br>eventId=양수<br>owner=소유 노드와 같음 | 거절 | 이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | revision=기존과 같음<br>eventId=양수<br>owner=소유 노드와 같음 | 거절 | 이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | revision=기존보다 오래됨<br>eventId=양수<br>owner=소유 노드와 같음 | 거절 | 이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | revision=기존보다 새로움<br>eventId=양수<br>owner=소유 노드와 다름 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 중단 · 검수 대기 | revision=기록 없음<br>eventId=양수<br>owner=소유 노드와 같음 | 적용 | 종료를 기록했다 | 완료 · 종료 기록 있음 · 검수 대기 |
+| 중단 · 검수 대기 | revision=기록 없음<br>eventId=양수<br>owner=소유 노드와 다름 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | revision=기존보다 새로움<br>eventId=양수<br>owner=소유 노드와 같음 | 거절 | 이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | revision=기존과 같음<br>eventId=양수<br>owner=소유 노드와 같음 | 거절 | 이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | revision=기존보다 오래됨<br>eventId=양수<br>owner=소유 노드와 같음 | 거절 | 이미 완료나 오류로 끝났거나, 중단 종료가 리비전과 함께 기록됐다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | revision=기존보다 새로움<br>eventId=양수<br>owner=소유 노드와 다름 | 거절 | 사건을 보낸 노드가 세션의 소유 노드와 다르다 | 그대로 |
 | 줄 없음 | nodeOwns=다른 노드 | 무시 | 다른 노드의 세션이다 | 그대로 |
 | 줄 없음 | nodeOwns=이 노드 | 무시 | 초기화 중이거나 실행 중인 세션이 아니다 | 그대로 |
 | 초기화 중 | nodeOwns=다른 노드 | 무시 | 다른 노드의 세션이다 | 그대로 |
@@ -639,9 +703,9 @@ state "한도 재개 예약" as sessionReservation {
 | 명령 | 줄 수 |
 | :-- | --: |
 | 세션 줄을 만든다 | 9 |
-| 실행 등록을 기록한다 | 111 |
-| 실행 중 전환을 기록한다 | 111 |
-| 종료 전환을 기록한다 | 20 |
+| 실행 등록을 기록한다 | 120 |
+| 실행 중 전환을 기록한다 | 157 |
+| 종료 전환을 기록한다 | 29 |
 | 노드 끊김을 정리한다 | 18 |
 | 시작 정리에서 사라진 세션을 멈춘다 | 26 |
 | 시작 정리에서 살아 있는 세션을 되살린다 | 36 |
@@ -651,6 +715,21 @@ state "한도 재개 예약" as sessionReservation {
 | 세션을 지운다 | 45 |
 | 한도 재개 예약을 판정한다 | 54 |
 
+## 거절 사유
+
+상태 사건을 거절하면 응답 effect_application에 rejection_reason을 싣는다. 사유를 싣지 않는 거절도 있다. 노드는 already_terminal, session_missing, owner_node_changed를 영구 거절로, worktree_busy, worktree_not_ready를 다시 시도 가능으로 읽는다. 사유가 없으면 다시 시도 가능으로 친다. terminal_transition의 SQL 리비전 거절에는 사유를 싣지 않는다.
+
+| 기계 사유 | rejection_reason |
+| :-- | :-- |
+| owner_node_changed | owner_node_changed |
+| worktree_not_ready | worktree_not_ready |
+| worktree_busy | worktree_busy |
+| terminal_without_resume | already_terminal |
+| terminal_revision_changed | already_terminal |
+| already_terminal | already_terminal |
+| terminal_resume_not_terminal | 싣지 않음 |
+| session_missing | 싣지 않음 |
+
 ## 약속
 
 | 약속 | 위반 수 | 예시 |
@@ -659,13 +738,17 @@ state "한도 재개 예약" as sessionReservation {
 | 종료 리비전 없이 중단된 줄은 기존 종료 기록이 없으므로 새 종료 사건을 받아 리비전을 남긴다. | 0 | 없음 |
 | 노드 끊김 정리는 활성 줄만 중단으로 옮기고, 시작 정리 되살림은 종료 리비전 없이 중단된 줄만 실행 중으로 되돌린다. | 0 | 없음 |
 | 실행 등록, 실행 중 전환, 시작 정리 되살림이 실행 중으로 옮길 때는 워크트리 게이트를 지난다. | 0 | 없음 |
-| 종료 상태에서 실행 중으로 가는 길은 종료 재개를 기록하는 두 함수와 시작 정리 되살림뿐이다. | 4 | 완료 · 종료 기록 있음 · 검수 대기 / 범용 갱신으로 상태를 쓴다 → 범용 갱신으로 상태를 썼다<br>오류 · 종료 기록 있음 · 검수 대기 / 범용 갱신으로 상태를 쓴다 → 범용 갱신으로 상태를 썼다<br>중단 · 검수 대기 / 범용 갱신으로 상태를 쓴다 → 범용 갱신으로 상태를 썼다 |
+| 종료 상태에서 실행 중으로 가는 길은 종료 재개를 기록하는 두 함수와 시작 정리 되살림, 잇기 되살림뿐이다. | 4 | 완료 · 종료 기록 있음 · 검수 대기 / 범용 갱신으로 상태를 쓴다 → 범용 갱신으로 상태를 썼다<br>오류 · 종료 기록 있음 · 검수 대기 / 범용 갱신으로 상태를 쓴다 → 범용 갱신으로 상태를 썼다<br>중단 · 검수 대기 / 범용 갱신으로 상태를 쓴다 → 범용 갱신으로 상태를 썼다 |
+| 소유 노드가 다른 상태 사건은 세션 줄을 바꾸지 않는다. | 0 | 없음 |
+| 끊김 중단은 실행 등록, 초기 시동, 일반 재개로 되살아나지 않고 잇기로만 되살아난다. | 5 | 중단 · 검수 대기 / 실행 등록을 기록한다 / resume=terminal_match, worktree=none, worktreeBusy=false, owner=match → 종료 세션을 실행 등록으로 재개했다<br>중단 · 검수 대기 / 실행 등록을 기록한다 / resume=terminal_match, worktree=ready, worktreeBusy=false, owner=match → 종료 세션을 실행 등록으로 재개했다<br>중단 · 검수 대기 / 실행 중 전환을 기록한다 / resume=terminal_match, worktree=none, worktreeBusy=false, owner=match, adopt=false → 종료 세션을 실행 등록으로 재개했다 |
 | 활성 줄은 노드가 실제로 지웠을 때만 사라지고, 노드가 못 지우거나 연결이 없으면 멈춘 뒤에만 지운다. | 0 | 없음 |
 | 한도 재개는 예약의 한도 창과 종료 사슬이 이어질 때만 실행한다. | 0 | 없음 |
 
 알려진 구멍.
 
 - session_update_status가 종료 줄의 상태를 running으로 쓸 수 있다. SQL session_update가 status를 허용 열로 받기 때문이다. 위반 4줄.
+
+- 실행 등록과 잇기 아닌 실행 중 전환의 종료 재개 칸은 기대 종료 번호가 NULL과 같을 때 SQL이 되살린다. 일반 재개는 expected_terminal_event_id=null을 보내므로(soul-server-ts task_auto_resume_transition), 종료 번호가 NULL인 끊김 중단은 사용자 후속 글의 일반 재개로도 종료 재개 칸을 타고 되살아난다. 이것은 기존 동작이고 이번 물결은 adopt=거짓 판정을 바꾸지 않는다. 시작 정리 되살림은 이전 물결이 정한 되살림 길이며 아직 배선되지 않았다. 위반 5줄.
 
 ## 읽기 분류
 
@@ -692,9 +775,9 @@ state "한도 재개 예약" as sessionReservation {
 | session_register_with_model_preset | 예 | packages/db-schema/sql/schema.sql:1386 | src/control_plane/repositories/session_mutation_repository.ts:130<br>src/control_plane/repositories/session_mutation_repository.ts:236 | 등록 입력의 상태와 검수 칸을 그대로 INSERT한다. |
 | session_update | 예 | packages/db-schema/sql/schema.sql:1518 | src/control_plane/repositories/session_mutation_repository.ts:284 | 허용 열에 status가 있어 범용 갱신으로 상태를 쓸 수 있다. |
 | session_acknowledge_review | 아니오 | packages/db-schema/sql/schema.sql:1425 | src/runtime/live_session_review_repository.ts:23<br>src/control_plane/repositories/session_mutation_repository.ts:326 | review_state만 쓴다. |
-| session_record_execution_registration | 예 | packages/db-schema/sql/schema.sql:1579 | src/node/event_session_effect_applier.ts:158 | 워크트리 게이트 뒤 실행 등록과 상태를 쓴다. |
-| session_apply_running_transition | 예 | packages/db-schema/sql/schema.sql:4210 | src/node/event_session_effect_applier.ts:69 | 워크트리 게이트 뒤 상태와 검수 칸을 쓴다. |
-| session_apply_terminal_transition | 예 | packages/db-schema/sql/schema.sql:1720 | src/node/event_session_effect_applier.ts:216 | 종료 상태, 사유, 검수 칸, 종료 리비전을 쓴다. |
+| session_record_execution_registration | 예 | packages/db-schema/sql/schema.sql:1579 | src/node/event_session_effect_applier.ts:163 | 워크트리 게이트 뒤 실행 등록과 상태를 쓴다. |
+| session_apply_running_transition | 예 | packages/db-schema/sql/schema.sql:4210 | src/node/event_session_effect_applier.ts:74 | 워크트리 게이트 뒤 상태와 검수 칸을 쓴다. |
+| session_apply_terminal_transition | 예 | packages/db-schema/sql/schema.sql:1720 | src/node/event_session_effect_applier.ts:221 | 종료 상태, 사유, 검수 칸, 종료 리비전을 쓴다. |
 
 ### 직접 UPDATE
 
@@ -765,6 +848,7 @@ state "한도 재개 예약" as sessionReservation {
 | src/node/control_ws_route.ts | 1 | 0 | 0 | 노드 제어 프레임 상태. |
 | src/node/event_feed_projection_applier.ts | 2 | 0 | 0 | 사건 피드 표시 제목과 사건 종류. |
 | src/node/event_ingress_repository.ts | 0 | 0 | 2 | 이벤트 수신 상태. |
+| src/node/event_session_gate.ts | 0 | 0 | 1 | 워크트리 점유 확인의 활성 세션 목록. |
 | src/node/node_claude_auth_helpers.ts | 1 | 0 | 0 | 노드 응답 상태. |
 | src/node/pending_commands.ts | 1 | 0 | 0 | 노드 응답 상태. |
 | src/persistent-context/persistent_context_candidates.ts | 0 | 2 | 2 | 카드 상태. |
@@ -802,7 +886,7 @@ state "한도 재개 예약" as sessionReservation {
 | src/usage/session_statistics_usage_candidates.ts | 2 | 0 | 0 | 공급자 오류·사용 상태. |
 | src/usage/usage_summary_service.ts | 3 | 0 | 0 | 공급자 오류·사용 상태. |
 
-파일 79개, 비교 82줄, 목록 29줄, SQL 56줄이다.
+파일 80개, 비교 82줄, 목록 29줄, SQL 57줄이다.
 
 ## 다시 만들기
 

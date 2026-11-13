@@ -66,18 +66,23 @@ export const applyEventSessionEffect: EventSessionEffectApplier = async (
     return appliedWithoutCanonicalProjection();
   }
   if (effect.kind === "running_transition") {
+    // 잇기 되살림(R1)은 기대 종료 번호 없이 종료 재개로 부른다.
+    const terminalResume = input.terminalResume === true;
+    const expectedTerminalEventId = terminalResume
+      ? null
+      : effect.expected_terminal_event_id ?? null;
     const rows = await sql<CanonicalTransitionRow[]>`SELECT * FROM session_apply_running_transition(
       ${envelope.session_id},
       ${effect.review_state},
-      ${effect.expected_terminal_event_id ?? null},
-      ${effect.expected_terminal_event_id !== undefined},
+      ${expectedTerminalEventId},
+      ${terminalResume || effect.expected_terminal_event_id !== undefined},
       ${new Date(effect.updated_at)}
     )`;
     const application = canonicalTransitionApplication(rows, "running");
     await discardTerminalResumeProjectionIfApplied(
       sql,
       envelope.session_id,
-      effect.expected_terminal_event_id,
+      expectedTerminalEventId,
       application.applied,
     );
     return application;

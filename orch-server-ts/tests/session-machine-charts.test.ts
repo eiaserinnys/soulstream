@@ -17,6 +17,7 @@ it('regenerates the committed session decision document and charts without a dif
  );
  expect(result.charts.map(chart=>chart.id)).toEqual(['01-status','02-termination','03-review','04-reservation']);
  expect(result.markdown).toContain('## 결정표');
- expect(result.markdown).toContain('파일 79개');
+ expect(result.markdown).toContain('## 거절 사유');
+ expect(result.markdown).toContain('파일 80개');
  expect(result.markdown).not.toContain('undefined');
 },300000);
