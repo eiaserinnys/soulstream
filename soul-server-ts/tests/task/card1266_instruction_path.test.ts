@@ -374,9 +374,11 @@ describe("card1266 instruction path: a finished session's queued delivery is not
           markDeliveredFromTranscript: vi.fn(),
         },
         transcriptReceipt: {
+          // A backend with no transcript (Codex) cannot prove the input unseen.
           inspect: vi.fn(async (r: SessionDeliveryRow) => ({
-            kind: "absent" as const,
+            kind: "unavailable" as const,
             inputUuid: `delivery:${r.delivery_id}`,
+            reason: "unsupported_backend",
           })),
         },
         instructionReceipt: { lookup: async () => lookupVerdict },
@@ -396,5 +398,51 @@ describe("card1266 instruction path: a finished session's queued delivery is not
 
     expect(redeliverContent).not.toHaveBeenCalled();
     expect(ledger.get("stuck")?.state).toBe("uncertain");
+  });
+});
+
+describe("card1266 instruction path: a Claude transcript that proves the input unseen", () => {
+  function makeClaudeRecovery(verdict: NodeInstructionVerdict) {
+    const claimed = row("claude-row", "claimed", "session-claude");
+    const markConsumed = vi.fn(async () => ({
+      ...claimed,
+      state: "consumed",
+      aggregate_state: "consumed",
+    }) as SessionDeliveryRow);
+    const markUncertain = vi.fn();
+    const redeliverContent = vi.fn(async () => undefined);
+    const recovery = new QueuedDeliveryTranscriptRecovery({
+      deliveryRepository: {
+        get: vi.fn(async () => claimed),
+        markConsumed,
+        markUncertain,
+        retryDeliveryAttempt: vi.fn(async () => ({ ...claimed, state: "pending" })),
+      },
+      recoveryRepository: {
+        claimQueuedAfterNodeRestart: vi.fn(async () => [claimed]),
+        markDeliveredFromTranscript: vi.fn(),
+      },
+      transcriptReceipt: {
+        inspect: vi.fn(async () => ({ kind: "absent" as const, inputUuid: "delivery:claude-row" })),
+      },
+      instructionReceipt: { lookup: async () => verdict },
+      redeliverContent,
+      logger: { warn: vi.fn() },
+    } as never, "worker-card1266");
+    return { recovery, markConsumed, markUncertain, redeliverContent };
+  }
+
+  it("still redelivers when the runner cannot answer, since the transcript is the proof", async () => {
+    const h = makeClaudeRecovery("unknown");
+    await h.recovery.recoverAfterNodeRestart("node-a");
+    expect(h.redeliverContent).toHaveBeenCalledOnce();
+    expect(h.markUncertain).not.toHaveBeenCalled();
+  });
+
+  it("does not redeliver when the runner says it applied the instruction", async () => {
+    const h = makeClaudeRecovery("applied");
+    await h.recovery.recoverAfterNodeRestart("node-a");
+    expect(h.redeliverContent).not.toHaveBeenCalled();
+    expect(h.markConsumed).toHaveBeenCalledWith("claude-row", "runner_receipt:claude-row");
   });
 });

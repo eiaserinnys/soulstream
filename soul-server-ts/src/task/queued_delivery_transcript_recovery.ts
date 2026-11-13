@@ -59,7 +59,8 @@ export interface QueuedDeliveryTranscriptRecoveryPass {
  *
  * Every other row (an absent Claude input, or a backend with no Claude
  * transcript such as Codex) is judged by asking the runner for the delivery's
- * instruction number. Applied closes the row as consumed, a runner of the same
+ * instruction number. An absent Claude input is already proven unseen by its
+ * transcript, so only an "applied" answer changes its redelivery. Applied closes the row as consumed, a runner of the same
  * registration that never received it re-enters durable intervention after
  * spending the ordinary retry budget (an exhausted row becomes dead-lettered
  * without waking its target again), and anything else is left `uncertain` so
@@ -165,7 +166,11 @@ export class QueuedDeliveryTranscriptRecovery {
           && (receipt.kind === "absent"
             || (receipt.kind === "unavailable" && receipt.reason === UNSUPPORTED_BACKEND_REASON))
         ) {
-          settled += await this.settleByInstructionReceipt(row, this.deps.instructionReceipt);
+          settled += await this.settleByInstructionReceipt(
+            row,
+            this.deps.instructionReceipt,
+            receipt.kind === "absent",
+          );
           continue;
         }
         if (receipt.kind === "absent") {
@@ -194,6 +199,7 @@ export class QueuedDeliveryTranscriptRecovery {
   private async settleByInstructionReceipt(
     row: SessionDeliveryRow,
     instructionReceipt: NonNullable<QueuedDeliveryTranscriptRecoveryDeps["instructionReceipt"]>,
+    transcriptProvesUnseen: boolean,
   ): Promise<number> {
     let verdict: NodeInstructionVerdict;
     try {
@@ -211,6 +217,11 @@ export class QueuedDeliveryTranscriptRecovery {
       );
       verdict = "unknown";
     }
+    // A Claude transcript that lacks the input proves it was never seen, which a
+    // runner that cannot answer does not overturn. Only the runner saying it
+    // applied the instruction stops the redelivery. A backend with no transcript
+    // has no such proof, so its unknown stays unknown.
+    if (transcriptProvesUnseen && verdict === "unknown") verdict = "not_applied";
     const decision = decideNodeInstruction({ verdict, ledger: "line" });
     if (decision.ledger === "close_consumed") {
       const receiptId = `runner_receipt:${row.delivery_id}`;
