@@ -60,6 +60,7 @@ import { applyEventSessionEffect } from "./node/event_session_effect_applier.js"
 import { applyEventFeedProjection } from "./node/event_feed_projection_applier.js";
 import { createSessionReconciliationSink } from "./node/session_reconciliation_sink.js";
 import { runnerInventoryCommandType } from "./node/registry_helpers.js";
+import { RUNNER_INVENTORY_COMMAND_TIMEOUT_MS } from "./node/node_timeouts.js";
 import { createSessionCacheSeedSink } from "./node/session_cache_seed_sink.js";
 import { ReleaseActivationReceiptRepository } from "./node/release_activation_receipt_repository.js";
 import { createExpoPushProvider } from "./push/expo_push_provider.js";
@@ -183,6 +184,21 @@ export type ProductionOrchestrator = {
   readonly listen: () => Promise<string>;
   readonly close: () => Promise<void>;
 };
+
+export function createRunnerInventoryCommand(
+  registry: Pick<InMemoryNodeRegistry, "createCommand">,
+  nodeId: string,
+  capabilities: unknown,
+) {
+  const type = runnerInventoryCommandType(capabilities);
+  return registry.createCommand(
+    nodeId,
+    { type },
+    type === "list_runner_inventory"
+      ? { timeoutMs: RUNNER_INVENTORY_COMMAND_TIMEOUT_MS }
+      : {},
+  );
+}
 
 export async function createProductionOrchestrator(
   options: CreateProductionOrchestratorOptions,
@@ -377,9 +393,7 @@ export async function createLiveProductionApplication(
       if (!node || node.connectionId !== connectionId) {
         throw new Error(`node connection changed before inventory request: ${nodeId}`);
       }
-      const command = registry.createCommand(nodeId, {
-        type: runnerInventoryCommandType(node.capabilities),
-      });
+      const command = createRunnerInventoryCommand(registry, nodeId, node.capabilities);
       const response = await runtimeServices.sessionBridge.sendPendingCommand({ node, command });
       const runningSessionIds = response.running_session_ids;
       if (response.requestId !== command.requestId

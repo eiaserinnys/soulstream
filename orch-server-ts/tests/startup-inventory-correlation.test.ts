@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { createSessionReconciliationSink } from "../src/node/session_reconciliation_sink.js";
 import { InMemoryNodeRegistry } from "../src/node/registry.js";
+import { createRunnerInventoryCommand } from "../src/production.js";
 
 function fixture() {
   let connectionId = "first";
@@ -88,5 +89,18 @@ describe("startup inventory request scope", () => {
       expect(registry.getConnectedNode("node")?.pendingCommandCount).toBe(0);
       if (type === "list_sessions") expect(registry.sessionCache.findSession("visible")?.status).toBe("running");
     }
+  });
+});
+
+describe("startup inventory request timeout", () => {
+  it("gives list_runner_inventory a 90 second limit and leaves other commands on the default", () => {
+    const registry = new InMemoryNodeRegistry();
+    registry.registerNode({ type: "node_register", node_id: "node" });
+    const inventory = createRunnerInventoryCommand(registry, "node", { runner_inventory_v1: true });
+    expect(inventory.commandType).toBe("list_runner_inventory");
+    expect(inventory.timeoutMs).toBe(90_000);
+    const legacy = createRunnerInventoryCommand(registry, "node", {});
+    expect(legacy.commandType).toBe("list_sessions");
+    expect(legacy.timeoutMs).toBe(30_000);
   });
 });

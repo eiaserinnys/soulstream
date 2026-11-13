@@ -132,4 +132,9 @@ describe("control command inventory", () => {
     }
     expect(boundedResultTimeoutMs("list_sessions", 900)).toBe(900);
   });
+
+  it("gives list_runner_inventory 14.5 seconds and leaves other commands on 900 milliseconds", () => {
+    expect(boundedResultTimeoutMs("list_runner_inventory", 900)).toBe(14_500);
+    expect(boundedResultTimeoutMs("claude_runtime_background_tasks", 900)).toBe(900);
+  });
 });
