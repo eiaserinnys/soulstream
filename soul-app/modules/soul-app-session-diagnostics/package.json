@@ -2,7 +2,7 @@
   "name": "soul-app-session-diagnostics",
   "version": "1.0.0",
   "description": "Bounded native lifecycle and MetricKit diagnostics for Soul App",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "main": "src/index.ts",
   "types": "src/index.ts"
 }

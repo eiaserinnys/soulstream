@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "description": "Native iPad keyboard commands for Soulstream search",
   "main": "src/index.tsx",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "peerDependencies": {
     "expo": "*",
     "react": "*",
