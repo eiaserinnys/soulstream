@@ -1,4 +1,11 @@
-import { lstatSync, mkdirSync, readFileSync, readlinkSync, symlinkSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 
 import { describe, expect, it } from "vitest";
@@ -132,6 +139,7 @@ async function makeFixture(overrides: FixtureOverrides = {}): Promise<Fixture> {
   touch(root, join(commonDir, "config"), "[core]\n", 0o600);
   touch(root, join(commonDir, "HEAD"), "ref: refs/heads/main\n", 0o644);
   touch(root, join(commonDir, "packed-refs"), "# pack-refs\n", 0o644);
+  touch(root, join(commonDir, "index"), "DIRC", 0o644);
   touch(root, join(canonicalCodex, "auth.json"), "canonical-auth", 0o600);
   touch(root, join(canonicalCodex, "auth.lock"), "", 0o600);
 
@@ -349,7 +357,7 @@ describe("prepareIsolationPlan", () => {
         bindingOf(prepared.spec.bindings, join(fixture.commonDir, name)),
       ).toMatchObject({ writable: true });
     }
-    for (const name of ["hooks", "info", "packed-refs"]) {
+    for (const name of ["hooks", "info", "packed-refs", "index"]) {
       expect(
         bindingOf(prepared.spec.bindings, join(fixture.commonDir, name)),
       ).toMatchObject({ writable: false });
@@ -457,6 +465,22 @@ describe("prepareIsolationPlan", () => {
     expect(prepared.contextNotice).not.toContain("ssr1.");
     expect(prepared.contextNotice).not.toContain("db-secret");
     expect(prepared.contextNotice).not.toContain(fixture.canonicalCodex);
+  });
+
+  it("skips the checkout index binding and removes the stale view placeholder when the host index is missing", async () => {
+    const fixture = await makeFixture();
+    const viewRoot = join(fixture.sessionDir, "sandbox", "git-common", "soulstream");
+    // bwrap은 파일 bind의 목적지에 0바이트 자리 파일을 남긴다. 호스트 index가
+    // 없으면 그 파일이 그대로 보이고 0바이트 index는 git을 fatal로 멈춘다.
+    touch(fixture.root, join(viewRoot, "index"));
+    rmSync(join(fixture.commonDir, "index"), { force: true });
+
+    const prepared = await prepareIsolationPlan(fixture.input, fixture.ports);
+
+    expect(
+      bindingOf(prepared.spec.bindings, join(fixture.commonDir, "index")),
+    ).toBeUndefined();
+    expect(lstatSyncOrNull(join(viewRoot, "index"))).toBeNull();
   });
 
   it("binds the sandbox resolver to the real path of a symlinked host resolver", async () => {
