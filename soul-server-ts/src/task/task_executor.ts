@@ -96,6 +96,7 @@ import {
   nodeResponseRejection,
   type NodeAdoptionApplication,
   type NodeResponseContext,
+  type NodeResponseVerdict,
 } from "./state/node_response_handling.js";
 import {
   RunnerAdoptionRejectedError,
@@ -1044,6 +1045,8 @@ export class TaskExecutor {
         await this.handleExecutionFailure(task, activation, error);
         return;
       }
+      const registrationId = runner.dispatcher.registrationId();
+      if (registrationId !== undefined) clearRejectedTerminalMark(task, registrationId);
       await this.startExecutionWithRunner(task, agent, runner, activation, true);
     })();
     return executionSlotHeld ? execution : this.holdExecutionSlot(task, execution);
@@ -1088,32 +1091,7 @@ export class TaskExecutor {
     activation: ExecutionActivation | undefined,
     error: unknown,
   ): Promise<void> {
-    const rejection = nodeResponseRejection(error);
-    if (rejection && !mayMarkCentralError(rejection)) {
-      // 낡은 등록이나 소유 노드가 바뀐 거절, 중앙 세션 없음은 새 실행의 중앙 상태를
-      // 오류로 덮지 않는다(R5). 이 시도만 접는다.
-      this.logger.warn(
-        {
-          sessionId: task.agentSessionId,
-          cell: rejection.decision.cell,
-          intents: rejection.decision.intents,
-        },
-        "server rejected the attempt; central state is left untouched",
-      );
-      try {
-        if ((rejection.decision.intents as readonly string[]).includes("release_local_ownership")) {
-          await this.lifecycleTransition.releaseLocalOwnership(task);
-        }
-      } finally {
-        if (activation && task.executionActivation === activation) {
-          task.executionActivation = undefined;
-        }
-        if (activation) {
-          await activation.reject(error, { skipFailureCompensation: true });
-        }
-      }
-      return;
-    }
+    if (await this.abandonRejectedAttempt(task, activation, error)) return;
     const preparationFailure = executionPreparationFailure(error);
     const restsOnPriorTerminal = preparationFailure === undefined
       && activation?.hasFailureCompensation?.() === true;
@@ -1149,6 +1127,67 @@ export class TaskExecutor {
         );
       }
     }
+  }
+
+  /**
+   * 실행 시도(실행 등록, 첫 메시지)가 받은 거절의 정리 의도를 공유 settleRejection으로
+   * 실행한다. 중앙 상태를 오류로 덮는 의도가 없으면 이 시도만 접고 true를 돌려준다.
+   * 덮는 의도가 있으면 false를 돌려주고, 호출자의 오류 종료 길이 그 의도를 실행한다.
+   * 낡은 등록이나 소유 노드가 바뀐 거절은 결정 함수가 덮는 의도를 내지 않는다(R5).
+   */
+  private async abandonRejectedAttempt(
+    task: Task,
+    activation: ExecutionActivation | undefined,
+    error: unknown,
+    runner?: TaskRunnerRuntime,
+  ): Promise<boolean> {
+    const rejection = nodeResponseRejection(error);
+    if (!rejection) return false;
+    const attempted = runner !== undefined && task.runner === runner ? runner : undefined;
+    const settled = await this.lifecycleTransition.settleRejection(task, rejection, null);
+    if (mayMarkCentralError(settled)) return false;
+    this.logger.warn(
+      {
+        sessionId: task.agentSessionId,
+        cell: settled.decision.cell,
+        intents: settled.decision.intents,
+      },
+      "server rejected the attempt; central state is left untouched",
+    );
+    try {
+      // 이 시도가 붙인 러너를 닫는다. 로컬 소유 정리가 먼저 떼었어도 프로세스는 닫는다.
+      if (attempted) {
+        try {
+          await attempted.dispatcher.close();
+        } catch (closeError) {
+          this.logger.warn(
+            { err: closeError, sessionId: task.agentSessionId },
+            "runner close failed while abandoning a rejected attempt",
+          );
+        } finally {
+          releaseTaskRunner(task, attempted);
+        }
+      }
+      // 접힌 시도가 task를 실행도 러너도 등록도 없이 활성으로 남기면 그 task를 움직일
+      // 것이 없다. 이 노드가 돌리지 않는 세션을 실행 중으로 알리거나 종료 때 중단 종료를
+      // 올리지 않도록 로컬 소유를 정리한다(생성 길의 낡은 등록과 소유 노드 변경 거절).
+      if (
+        !(settled.decision.intents as readonly string[]).includes("release_local_ownership")
+        && isActiveTaskStatus(task.status)
+        && task.runner === undefined
+        && task.executionRegistration === undefined
+      ) {
+        await this.lifecycleTransition.releaseLocalOwnershipThroughPorts(task);
+      }
+    } finally {
+      if (activation && task.executionActivation === activation) {
+        task.executionActivation = undefined;
+      }
+      if (activation) {
+        await activation.reject(error, { skipFailureCompensation: true });
+      }
+    }
+    return true;
   }
 
   /**
@@ -1286,6 +1325,7 @@ export class TaskExecutor {
         registrationId: proof.registrationId,
         executionCommandId: proof.executionCommandId,
       };
+      clearRejectedTerminalMark(task, proof.registrationId);
       task.runnerTerminalFact = undefined;
       task.pendingExecutionExpectedTerminalEventId = undefined;
       resolveActivation();
@@ -1444,6 +1484,7 @@ export class TaskExecutor {
       await this._consumeEventStream(task, runner, agent);
     })().catch(
       async (err: unknown) => {
+        if (await this.abandonRejectedAttempt(task, activation, err, runner)) return;
         const compensatesRunningTransition =
           activation?.hasFailureCompensation?.() === true;
         try {
@@ -1553,7 +1594,7 @@ export class TaskExecutor {
           // dead letter와 격리는 사유 없는 영구 거절이다. 응답으로 받아 같은 길로 가른다.
           const facts = nodeResponseFactsFromError(responseContext, error);
           if (facts && facts.route !== "no_response") {
-            const verdict = judgeNodeResponse(facts);
+            const verdict = await this.settleAdoptRejection(task, judgeNodeResponse(facts));
             const response = adoptResponseOfVerdict(verdict);
             const answered: NodeAdoptionApplication = { applied: false, response };
             onAdoptionApplication?.(answered);
@@ -1569,9 +1610,9 @@ export class TaskExecutor {
         }
         const adoptVerdict = application.applied
           ? undefined
-          : judgeNodeResponse(
+          : await this.settleAdoptRejection(task, judgeNodeResponse(
               nodeResponseFactsFromApplication(responseContext, application),
-            );
+            ));
         const answered: NodeAdoptionApplication = adoptVerdict
           ? {
               applied: false,
@@ -1729,7 +1770,9 @@ export class TaskExecutor {
       if (!facts || facts.route === "no_response") throw error;
       const answered: NodeAdoptionApplication = {
         applied: false,
-        response: adoptResponseOfVerdict(judgeNodeResponse(facts)),
+        response: adoptResponseOfVerdict(
+          await this.settleAdoptRejection(task, judgeNodeResponse(facts)),
+        ),
       };
       return answered;
     }
@@ -1738,8 +1781,9 @@ export class TaskExecutor {
       this.resumeSuspendedRecoveredExecution(task);
       return { applied: true, rejectionReason: application.rejectionReason };
     }
-    const response = adoptResponseOfVerdict(judgeNodeResponse(
-      nodeResponseFactsFromApplication(responseContext, application),
+    const response = adoptResponseOfVerdict(await this.settleAdoptRejection(
+      task,
+      judgeNodeResponse(nodeResponseFactsFromApplication(responseContext, application)),
     ));
     // 사유로 가른 분류와 같으면 분류를 싣지 않는다. 낡은 등록처럼 사유만으로 가를 수
     // 없는 거절만 분류를 싣는다.
@@ -1751,6 +1795,45 @@ export class TaskExecutor {
         : { response }),
     };
     return answered;
+  }
+
+  /**
+   * 잇기(시동 복구 잇기, 붙은 러너 잇기)가 받은 거절의 정리 의도를 실행한다. 중앙 세션
+   * 유무를 모르면 확인해 다시 판정하고, 중앙 상태를 오류로 덮는 의도는 그 task의 오류
+   * 종료로 올린다. 낡은 등록이나 소유 노드가 바뀐 거절에는 결정 함수가 덮는 의도를 내지
+   * 않는다(R5). 러너 거둠과 나중에 다시 시도는 돌려준 응답 분류로 러너 복구가 한다.
+   *
+   * 로컬 소유 정리는 여기서 하지 않는다. 러너를 떼고 task를 잊으면 러너 복구의 중앙 확인이
+   * 그 세션을 보지 못해 러너 프로세스를 거두지 못한다. 중앙 세션이 없으면 중앙 확인이
+   * 「중앙 줄 없음」으로 거두며, 거둠이 러너를 놓고 task를 잊어 로컬 소유 정리를 함께 한다.
+   * 같은 까닭으로 중앙 세션이 없으면 오류 종료도 올리지 않는다. 받을 세션이 없고, 그 종료의
+   * 거절 정리가 로컬 소유를 정리해 거둠을 막는다.
+   */
+  private async settleAdoptRejection(
+    task: Task,
+    verdict: NodeResponseVerdict,
+  ): Promise<NodeResponseVerdict> {
+    const settled = await this.lifecycleTransition.judgeWithCentralSession(task, verdict);
+    if (
+      (settled.decision.intents as readonly string[]).includes("mark_central_error")
+      && settled.facts.centralSession !== "absent"
+      && task.terminationEventRecorded !== true
+    ) {
+      try {
+        this.engineFailureRecovery.recoverFromSynthesizedFailure(
+          task,
+          `runner adoption was rejected (${settled.decision.cell})`,
+        );
+        task.completedAt = new Date();
+        await this.lifecycleTransition.persistExecutorFinalState(task, true);
+      } catch (error) {
+        this.logger.warn(
+          { err: error, sessionId: task.agentSessionId },
+          "central error marking failed after a rejected adoption",
+        );
+      }
+    }
+    return settled;
   }
 
   /**
@@ -2894,6 +2977,17 @@ function executionPreparationFailure(
     return { detail: error.message, interventions: error.interventions };
   }
   return undefined;
+}
+
+/**
+ * 새 실행이 그 등록으로 서면 앞 턴의 종료가 거절되며 남긴 표시를 지운다(카드 #1266).
+ * 보유 러너는 다음 턴을 같은 등록으로 돌리므로, 지우지 않으면 다음 훑기가 새 턴을 돌리는
+ * 그 등록을 은퇴시킨다. 다른 등록의 표시는 그 등록의 은퇴를 위해 남긴다.
+ */
+function clearRejectedTerminalMark(task: Task, registrationId: string): void {
+  if (task.rejectedTerminationRegistrationId === registrationId) {
+    task.rejectedTerminationRegistrationId = undefined;
+  }
 }
 
 function keepaliveResultFor(

@@ -577,8 +577,9 @@ export class TaskLifecycleTransition {
   /**
    * 거절 응답이 고른 정리 의도를 실행하고 최종 판정을 돌려준다. 중앙 세션 유무를 모르면
    * 먼저 확인해 다시 판정한다. 같은 종료를 다시 올리는 의도는 실행할 것이 없다(주기 훑기가
-   * 다시 올리는 것은 등록 은퇴가 막는다). 중앙 오류 표시는 실행하지 않는다: 이 호출들이
-   * 중앙에 올린 것이 없어 덮을 것이 없고, 등록 호출의 표시는 실행기가 따로 한다.
+   * 다시 올리는 것은 등록 은퇴가 막는다). 중앙 오류 표시는 여기서 실행하지 않는다: 덮는
+   * 길이 호출마다 다르므로 돌려준 판정을 보고 호출자가 한다(실행 등록과 첫 메시지는
+   * 실행기의 오류 종료, 잇기는 실행기의 settleAdoptRejection, 재개는 재개 전이의 거절을 받은 쪽).
    * 정리 하나가 실패해도 다음 정리와 마무리를 막지 않는다.
    */
   async settleRejection(
@@ -586,12 +587,7 @@ export class TaskLifecycleTransition {
     verdict: NodeResponseVerdict,
     registrationId: string | null,
   ): Promise<NodeResponseVerdict> {
-    if (verdict.facts.centralSession === "unknown") {
-      const centralSession = await this.probeCentralSession(task.agentSessionId);
-      if (centralSession !== "unknown") {
-        verdict = judgeNodeResponse({ ...verdict.facts, centralSession });
-      }
-    }
+    verdict = await this.judgeWithCentralSession(task, verdict);
     for (const intent of verdict.decision.intents) {
       try {
         if (intent === "close_settlement_pending") {
@@ -604,7 +600,7 @@ export class TaskLifecycleTransition {
             if (!task.runner) await this.retireRejectedTerminal(task);
           }
         } else if (intent === "release_local_ownership") {
-          await (this.ports.releaseLocalOwnership ?? ((owned) => this.releaseLocalOwnership(owned)))(task);
+          await this.releaseLocalOwnershipThroughPorts(task);
         }
       } catch (error) {
         this.deps.logger.warn(
@@ -642,6 +638,23 @@ export class TaskLifecycleTransition {
         "rejected terminal registration retirement failed; recovery retries it",
       );
     }
+  }
+
+  /** 중앙 세션 유무를 모르는 판정이면 확인해 다시 판정한다. 확인하지 못하면 그대로 둔다. */
+  async judgeWithCentralSession(
+    task: Task,
+    verdict: NodeResponseVerdict,
+  ): Promise<NodeResponseVerdict> {
+    if (verdict.facts.centralSession !== "unknown") return verdict;
+    const centralSession = await this.probeCentralSession(task.agentSessionId);
+    return centralSession === "unknown"
+      ? verdict
+      : judgeNodeResponse({ ...verdict.facts, centralSession });
+  }
+
+  /** 로컬 소유를 정리한다. 정리 포트가 이어져 있으면 그것을, 없으면 기본 정리를 쓴다. */
+  async releaseLocalOwnershipThroughPorts(task: Task): Promise<void> {
+    await (this.ports.releaseLocalOwnership ?? ((owned) => this.releaseLocalOwnership(owned)))(task);
   }
 
   /** 중앙 세션이 없을 때의 로컬 소유 정리다. 러너를 놓고 등록 번호와 task를 잊는다. */

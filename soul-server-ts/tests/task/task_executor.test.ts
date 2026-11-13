@@ -3720,6 +3720,8 @@ describe("TaskExecutor runner process boundary", () => {
       pump as never,
     );
     const { runner } = makeRunnerProcessRuntime([]);
+    // 중앙 세션 한 줄이 있다. 없으면 다시 될 수 있는 거절도 로컬 소유를 정리한다(카드 #1266).
+    vi.mocked(mocks.db.getSession).mockResolvedValue({ agent_session_id: "sess-1" } as never);
     const executor = new TaskExecutor(
       () => makeFakeEngine([]),
       mocks.db,

@@ -470,6 +470,8 @@ export class RunnerRecoveryCoordinator {
       && task.rejectedTerminationRegistrationId !== undefined
       && task.rejectedTerminationRegistrationId === registration.registrationId
       && task.runnerRetainedForDetachedWork !== true
+      // 새 실행이 돌고 있으면 그 등록은 새 턴의 것이다. 거절된 종료의 은퇴는 실행이 끝난 뒤의 훑기가 한다.
+      && task.executionPromise === undefined
     ) {
       await this.retireRejectedTermination(registration, task);
       return;

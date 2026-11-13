@@ -172,6 +172,43 @@ describe("card #1266 U2a registration rejection", () => {
     expect(task.status).toBe("error");
   });
 
+  it.each([
+    {
+      name: "a stale registration",
+      canonicalExecutionRegistration: {
+        registrationId: "registration-other",
+        executionCommandId: "execute-other",
+      },
+      rejectionReason: undefined,
+    },
+    {
+      name: "a moved owner node",
+      canonicalExecutionRegistration: null,
+      rejectionReason: "owner_node_changed",
+    },
+  ])("forgets the created task that $name left running with nothing behind it", async ({
+    canonicalExecutionRegistration,
+    rejectionReason,
+  }) => {
+    const subject = makeSubject(async () => ({
+      eventId: 11,
+      applied: false,
+      ...(rejectionReason ? { rejectionReason } : {}),
+      canonicalSession: canonicalSession("running"),
+      canonicalExecutionRegistration,
+    }));
+    const forgetTask = vi.fn();
+    subject.executor.setTerminationCleanupPorts({ forgetTask });
+    // 생성 길은 activation 없이 실행을 시작한다(upstream/task_runtime_commands.ts).
+    const task = await start(subject);
+
+    // 접힌 시도가 task를 running으로 남기면 이 노드가 돌리지 않는 세션을 실행 중으로
+    // 알린다. 중앙 상태는 덮지 않고 로컬 소유만 정리한다(R5).
+    expect(forgetTask).toHaveBeenCalledWith("sess-1");
+    expect(task.runner).toBeUndefined();
+    expect(subject.double.enqueueTerminalTransitionAndWaitForApplication).not.toHaveBeenCalled();
+  });
+
   it("keeps a reasonless rejection on the old fail-the-attempt path", async () => {
     const subject = makeSubject(async () => ({
       eventId: 11,

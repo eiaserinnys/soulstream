@@ -338,7 +338,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
       : {}),
     ...(runnerProcess ? { recoveryStorage: runnerProcess.recoveryStorage } : {}),
   });
-  for (const owner of [taskManager, taskRuntime.taskExecutor]) owner.setTerminationCleanupPorts({ retireRejectedRegistration: async (task, id) => await runnerRecoveryCoordinator?.retireRejectedTerminalRegistration(task, id) });
+  for (const owner of [taskManager, taskRuntime.taskExecutor]) owner.setTerminationCleanupPorts({ retireRejectedRegistration: async (task, id) => await runnerRecoveryCoordinator?.retireRejectedTerminalRegistration(task, id), forgetTask: (id) => taskManager.forgetRunnerRecoveryTask(id) });
   const folderService = new FolderService(orchHostClientDeps);
   db.configureFolderReader(folderService);
   const catalogService = new CatalogService(
