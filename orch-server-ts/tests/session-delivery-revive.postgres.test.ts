@@ -36,6 +36,13 @@ describe("session delivery revival over PostgreSQL", () => {
       VALUES ('caller-1', 'claude', 'completed', 'ariella'),
              ('child-1', 'claude', 'completed', 'worker')
     `;
+    // beginDispatch는 완료 알림의 producer_terminal_revision이 부른 쪽이 본 종료
+    // revision(termination_event_id)과 같아야 지나간다.
+    await harness.sql`
+      UPDATE sessions
+      SET termination_event_id = 42, last_assistant_text = 'revision 42'
+      WHERE session_id = 'child-1'
+    `;
   });
 
   afterAll(async () => {
