@@ -3709,9 +3709,9 @@ describe("TaskExecutor runner process boundary", () => {
         },
       })),
     };
-    pump.waitForAcknowledgementResult.mockResolvedValueOnce(
-      acknowledgement.events[0],
-    );
+    pump.waitForAcknowledgementResult
+      .mockResolvedValueOnce(acknowledgement.events[0])
+      .mockResolvedValueOnce(acknowledgement.events[0]);
     const persistence = new EventPersistence(
       mocks.db,
       mocks.broadcaster,
@@ -3730,6 +3730,13 @@ describe("TaskExecutor runner process boundary", () => {
     const task = makeTask();
     task.runner = runner;
 
+    await expect(persistence.enqueueRunningTransitionAndWaitForApplication(
+      task.agentSessionId,
+      { reviewState: "not_required", transitionId: "adopt:execute-old:with-reason" },
+    )).resolves.toMatchObject({
+      applied: false,
+      rejectionReason: "worktree_busy",
+    });
     await expect(executor.adoptAttachedRunnerExecution(task, "execute-old"))
       .resolves.toEqual({ applied: false, rejectionReason: "worktree_busy" });
 
