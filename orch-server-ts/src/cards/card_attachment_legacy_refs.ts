@@ -69,13 +69,18 @@ export async function resolveCardLegacySourceRefsTx(
     body: string;
     format: "markdown" | "html";
     attachments?: readonly unknown[];
+    /** Attachments already prepared into card refs before the transaction; they skip the link permission check. */
+    skipLocations?: readonly CardLegacyLocation[];
   },
 ): Promise<CardLegacyAttachmentRef[]> {
+  const skipped = new Set(
+    (input.skipLocations ?? []).map((location) => `${location.nodeId}\u0000${location.path}`),
+  );
   const locations = collectCardLegacyLocations({
     body: input.body,
     format: input.format,
     ...(input.attachments === undefined ? {} : { attachments: input.attachments }),
-  });
+  }).filter((location) => !skipped.has(`${location.nodeId}\u0000${location.path}`));
   if (locations.length === 0) return [];
   const order: string[] = [];
   const origins = new Map<string, CardLegacyLocation>();
