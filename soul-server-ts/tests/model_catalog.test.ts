@@ -41,6 +41,7 @@ const COMMON_PRESET_IDS = [
   "gemini-3.8-flash",
   "gemini-4-argon",
   "gemini-4-carbon",
+  "gemini-4-hydrogen",
 ];
 
 const CHINA_PRESET_IDS = [
@@ -108,10 +109,10 @@ describe("ModelCatalog", () => {
   it("lists only presets whose group this node enabled and keeps the full snapshot", () => {
     const defaultView = openRepositoryCatalog();
     expect(defaultView.list().map((preset) => preset.id)).toEqual(COMMON_PRESET_IDS);
-    expect(defaultView.snapshot().presets.map((preset) => preset.id)).toHaveLength(22);
+    expect(defaultView.snapshot().presets.map((preset) => preset.id)).toHaveLength(23);
 
     const chinaView = openRepositoryCatalog({ enabledGroups: ["china"] });
-    expect(chinaView.list()).toHaveLength(22);
+    expect(chinaView.list()).toHaveLength(23);
     expect(chinaView.list().map((preset) => preset.id)).toEqual(expect.arrayContaining([
       ...COMMON_PRESET_IDS,
       ...CHINA_PRESET_IDS,
@@ -369,12 +370,13 @@ describe("ModelCatalog", () => {
   });
 });
 
-it("advertises the Antigravity usage provider for all three account presets", () => {
+it("advertises the Antigravity usage provider for all four account presets", () => {
   const catalog = openRepositoryCatalog();
   expect(catalog.advertise({}).filter(p => p.backend === "antigravity")).toMatchObject([
     { id: "gemini-3.8-flash", usage_provider: "antigravity" },
     { id: "gemini-4-argon", usage_provider: "antigravity" },
     { id: "gemini-4-carbon", usage_provider: "antigravity" },
+    { id: "gemini-4-hydrogen", usage_provider: "antigravity" },
   ]);
 });
 

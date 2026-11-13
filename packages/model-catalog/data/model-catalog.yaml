@@ -179,6 +179,12 @@ presets:
     supported_efforts: [low, medium, high]
     default_effort: high
     trusted_execution: true
+  - id: gemini-4-hydrogen
+    label: Gemini - 4 Hydrogen
+    backend: antigravity
+    model: gemini-4-hydrogen
+    supported_efforts: [low, medium, high, xhigh]
+    default_effort: high
   - id: opencode-deepseek-v4.1-flash-free
     label: OpenCode - DeepSeek V4.1 Flash Free
     backend: opencode
@@ -309,6 +315,11 @@ models:
     rates: {input: 2, cache_read: 0.1, cache_write_5m: null, cache_write_1h: null, output: 10}
     source: https://ai.google.dev/gemini-api/docs/pricing
   - provider: antigravity
+    model: gemini-4-hydrogen
+    display_name: Gemini 4 Hydrogen
+    rates: {input: 1.5, cache_read: 0.075, cache_write_5m: null, cache_write_1h: null, output: 7.5}
+    source: https://ai.google.dev/gemini-api/docs/pricing
+  - provider: antigravity
     model: gemini-4-argon
     display_name: Gemini 4 Argon
     rates: {input: 2, cache_read: 0.1, cache_write_5m: null, cache_write_1h: null, output: 10}
@@ -344,7 +355,7 @@ price_snapshot:
   refreshed_model_rows:
     claude: [claude-opus-5-5, claude-fable-5-2, claude-fable-5-1, claude-sonnet-5-5]
     codex: [gpt-6-astra, gpt-6.1-sol, gpt-6-luna]
-    antigravity: [gemini-4-carbon, gemini-4-argon, gemini-3.8-flash]
+    antigravity: [gemini-4-carbon, gemini-4-hydrogen, gemini-4-argon, gemini-3.8-flash]
     deepseek:
       - deepseek-v4.1-flash-1017
       - deepseek-v4.1-flash

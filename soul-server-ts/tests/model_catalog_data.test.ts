@@ -54,6 +54,7 @@ const PRESET_IDS = [
   "gemini-3.8-flash",
   "gemini-4-argon",
   "gemini-4-carbon",
+  "gemini-4-hydrogen",
   "opencode-deepseek-v4.1-flash-free",
 ];
 
@@ -65,7 +66,7 @@ const CHINA_PRESET_IDS = [
   "opencode-deepseek-v4.1-flash-free",
 ];
 
-/** 16 formerly priced rows: provider:model -> [input, cache_read, write5m, write1h, output]. */
+/** 17 formerly priced rows: provider:model -> [input, cache_read, write5m, write1h, output]. */
 const EXPECTED_RATES: Record<string, readonly [number, number, number | null, number | null, number]> = {
   "claude:claude-opus-5-5": [4, 0.2, 5, 8, 20],
   "claude:claude-fable-5-2": [8, 0.2, 10, 16, 40],
@@ -80,6 +81,7 @@ const EXPECTED_RATES: Record<string, readonly [number, number, number | null, nu
   "codex:gpt-6.1-sol": [2, 0.1, 2.5, 2.5, 10],
   "codex:gpt-6-astra": [10, 1, 12.5, 12.5, 50],
   "antigravity:gemini-4-carbon": [2, 0.1, null, null, 10],
+  "antigravity:gemini-4-hydrogen": [1.5, 0.075, null, null, 7.5],
   "antigravity:gemini-4-argon": [2, 0.1, null, null, 10],
   "antigravity:gemini-3.8-flash": [0.75, 0.075, null, null, 3.75],
   "deepseek:deepseek-flash": [0.3, 0.006, null, null, 1.2],
@@ -124,7 +126,7 @@ const KIMI_ENV = {
   CLAUDE_CODE_AUTO_COMPACT_WINDOW: "262144",
 };
 
-/** Values of the 17 former DEFAULT_MODEL_CATALOG presets plus the 5 operating additions. */
+/** Values of the 18 common presets plus the 5 china operating additions. */
 const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
   "claude-haiku": { label: "Claude - Haiku", backend: "claude", model: "haiku" },
   "claude-sonnet": {
@@ -296,6 +298,13 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     default_effort: "high",
     trusted_execution: true,
   },
+  "gemini-4-hydrogen": {
+    label: "Gemini - 4 Hydrogen",
+    backend: "antigravity",
+    model: "gemini-4-hydrogen",
+    supported_efforts: ["low", "medium", "high", "xhigh"],
+    default_effort: "high",
+  },
   "opencode-deepseek-v4.1-flash-free": {
     label: "OpenCode - DeepSeek V4.1 Flash Free",
     backend: "opencode",
@@ -363,7 +372,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void
 }
 
 describe("repository model catalogue data", () => {
-  it("carries the 22 operating presets and gates only the china group", () => {
+  it("carries the 23 operating presets and gates only the china group", () => {
     expect(catalog.schema_version).toBe(1);
     expect(catalog.groups).toEqual(["china"]);
     expect(catalog.presets.map((preset) => preset.id)).toEqual(PRESET_IDS);
@@ -442,6 +451,7 @@ describe("repository model catalogue data", () => {
       "gemini-3.8-flash": "Gemini 3.8 Flash",
       "gemini-4-argon": "Gemini 4 Argon",
       "gemini-4-carbon": "Gemini 4 Carbon",
+      "gemini-4-hydrogen": "Gemini 4 Hydrogen",
       "kimi-for-coding/k3": "Kimi for Coding K3",
     };
     for (const [model, label] of Object.entries(displayNames)) {
@@ -467,8 +477,8 @@ describe("repository model catalogue data", () => {
   });
 
   it("keeps every legacy price row and alias at its previous rates", () => {
-    expect(catalog.models).toHaveLength(17);
-    expect(catalog.models.filter((row) => row.rates !== null)).toHaveLength(16);
+    expect(catalog.models).toHaveLength(18);
+    expect(catalog.models.filter((row) => row.rates !== null)).toHaveLength(17);
     for (const [key, rates] of Object.entries(EXPECTED_RATES)) {
       const separator = key.indexOf(":");
       const provider = key.slice(0, separator);
@@ -485,12 +495,12 @@ describe("repository model catalogue data", () => {
     }
   });
 
-  it("prices all 21 legacy keys from the data file", () => {
+  it("prices all 22 legacy keys from the data file", () => {
     const keys = [
       ...Object.keys(EXPECTED_RATES),
       ...DEEPSEEK_ALIASES.map((alias) => `deepseek:${alias}`),
     ];
-    expect(keys).toHaveLength(21);
+    expect(keys).toHaveLength(22);
     for (const key of keys) {
       const separator = key.indexOf(":");
       const provider = key.slice(0, separator);
@@ -519,7 +529,7 @@ describe("repository model catalogue data", () => {
       refreshed_model_rows: {
         claude: ["claude-opus-5-5", "claude-fable-5-2", "claude-fable-5-1", "claude-sonnet-5-5"],
         codex: ["gpt-6-astra", "gpt-6.1-sol", "gpt-6-luna"],
-        antigravity: ["gemini-4-carbon", "gemini-4-argon", "gemini-3.8-flash"],
+        antigravity: ["gemini-4-carbon", "gemini-4-hydrogen", "gemini-4-argon", "gemini-3.8-flash"],
         deepseek: [
           "deepseek-v4.1-flash-1017",
           "deepseek-v4.1-flash",
