@@ -34,8 +34,8 @@ describe("postgres.js sql.begin on a saturated pool", () => {
   it("reserves the connection even when BEGIN is pipelined behind a busy query", async () => {
     const options = harness.sql.options as unknown as ConnectionOptions;
     const pool = postgres({
-      host: options.host[0],
-      port: options.port[0],
+      host: options.host[0]!,
+      port: options.port[0]!,
       user: options.user,
       pass: options.pass,
       database: options.database,
@@ -49,7 +49,8 @@ describe("postgres.js sql.begin on a saturated pool", () => {
           : { search_path: options.connection.search_path }),
         application_name: APPLICATION_NAME,
       },
-    });
+      // max_pipeline is a runtime option that postgres.js 3.4.9 types omit.
+    } as postgres.Options<{}>);
     try {
       // Open both connections, then keep both of them busy so BEGIN has to be
       // pipelined behind a running query (sent.length === max_pipeline).
