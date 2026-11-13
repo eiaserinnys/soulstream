@@ -499,9 +499,9 @@ describe("TaskDeliveryLedgerGate", () => {
     });
   });
 
-  it("keeps an unknown first result retryable under the active dispatch attempt", async () => {
+  it("leaves an unknown first result uncertain instead of retrying it", async () => {
     const deliveryId = "ffffffff-ffff-4fff-8fff-ffffffffffff";
-    const markUncertain = vi.fn();
+    const markUncertain = vi.fn().mockResolvedValue(row(deliveryId, "uncertain"));
     const retryDeliveryAttempt = vi.fn().mockResolvedValue(row(deliveryId, "pending"));
     const gate = new TaskDeliveryLedgerGate(true, {
       register: vi.fn(),
@@ -533,13 +533,12 @@ describe("TaskDeliveryLedgerGate", () => {
       consumeWhen: null,
     });
 
-    expect(retryDeliveryAttempt).toHaveBeenCalledWith(
+    expect(markUncertain).toHaveBeenCalledWith(
       deliveryId,
       "route-uncertain",
-      "verdict_unknown",
-      expect.any(Number),
+      "runner_receipt_unknown",
     );
-    expect(markUncertain).not.toHaveBeenCalled();
+    expect(retryDeliveryAttempt).not.toHaveBeenCalled();
   });
 
   it("treats a queued CAS miss as accepted when the durable row already advanced", async () => {

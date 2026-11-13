@@ -835,6 +835,8 @@ describe("turn input preparation failure ownership", () => {
     vi.setSystemTime(new Date("2026-11-10T05:00:00.000Z"));
     const inspect = vi.fn();
     const recovery = new QueuedDeliveryTranscriptRecovery({
+      // These suites exercise transcript proof; a runner that "never received it" leaves that path unchanged.
+      instructionReceipt: { lookup: async () => "not_applied" as const },
       deliveryRepository: {
         get: ledger.repository.get,
         markConsumed: ledger.repository.markConsumed,

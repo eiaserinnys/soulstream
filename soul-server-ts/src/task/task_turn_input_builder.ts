@@ -46,6 +46,7 @@ import {
   type PreparedAttachmentInput,
   type PrepareAttachmentInput,
 } from "./prepare_attachment_input.js";
+import { instructionNumberOf } from "./state/node_instruction_decision.js";
 
 export function buildFollowupInputUuid(interventions: InterventionMessage[]): string | undefined {
   if (interventions.length === 1) {
@@ -257,7 +258,7 @@ export class TaskTurnInputBuilder {
       ? systemPromptMaterialParts(ctx?.inputMaterialBreakdown?.systemParts, systemPrompt)
       : [];
     const runnerInterventionIds = interventions
-      .map((message) => message.runnerInterventionId)
+      .map(instructionNumberOf)
       .filter((id): id is string => id !== undefined);
     return {
       prompt: promptAssembly.text,
@@ -265,8 +266,8 @@ export class TaskTurnInputBuilder {
       imageAttachmentPaths: composed.imageAttachmentPaths,
       ...(systemPrompt !== undefined ? { systemPrompt } : {}),
       ...(inputUuid ? { inputUuid } : {}),
-      ...(firstIntervention.runnerInterventionId
-        ? { runnerInterventionId: firstIntervention.runnerInterventionId }
+      ...(instructionNumberOf(firstIntervention)
+        ? { runnerInterventionId: instructionNumberOf(firstIntervention) }
         : {}),
       ...(runnerInterventionIds.length > 0 ? { runnerInterventionIds } : {}),
       turnOrigin: interventionTurnOrigin(firstIntervention, inputUuid),

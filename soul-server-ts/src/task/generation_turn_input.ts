@@ -20,6 +20,7 @@ import {
   type AttachmentTurnSource,
 } from "./prepare_attachment_input.js";
 import { interventionTurnOrigin } from "./turn_origin.js";
+import { instructionNumberOf } from "./state/node_instruction_decision.js";
 
 const CLAUDE_ROLLOVER_REPLAY_INPUT_MAX_CHARS = 40_000;
 const CLAUDE_ROLLOVER_CONTEXT_MAX_CHARS = 20_000;
@@ -230,7 +231,7 @@ export function prepareGenerationTurnInput(
   }
 
   const runnerInterventionIds = interventions
-    .map((message) => message.runnerInterventionId)
+    .map(instructionNumberOf)
     .filter((id): id is string => id !== undefined);
   return {
     prompt: composedPrompt.prompt,
@@ -240,8 +241,8 @@ export function prepareGenerationTurnInput(
       ? { systemPrompt }
       : {}),
     ...(inputUuid ? { inputUuid } : {}),
-    ...(firstIntervention.runnerInterventionId
-      ? { runnerInterventionId: firstIntervention.runnerInterventionId }
+    ...(instructionNumberOf(firstIntervention)
+      ? { runnerInterventionId: instructionNumberOf(firstIntervention) }
       : {}),
     ...(runnerInterventionIds.length > 0 ? { runnerInterventionIds } : {}),
     turnOrigin: interventionTurnOrigin(firstIntervention, inputUuid),

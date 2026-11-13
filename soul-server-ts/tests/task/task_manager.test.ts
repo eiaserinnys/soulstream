@@ -1633,7 +1633,11 @@ describe("TaskManager.addIntervention (B-4)", () => {
     });
     expect(intervene).toHaveBeenCalledTimes(1);
     expect(task.interventionQueue).toEqual([
-      { text: "stop and change direction", user: "alice" },
+      expect.objectContaining({
+        text: "stop and change direction",
+        user: "alice",
+        runnerInterventionId: expect.any(String),
+      }),
     ]);
     expect(mocks.enqueueEvent).toHaveBeenCalledWith(
       "s-claude-steer",

@@ -82,6 +82,8 @@ describe("queued transcript finite restart recovery", () => {
     });
     const redeliverContent = vi.fn(async () => undefined);
     const recovery = new QueuedDeliveryTranscriptRecovery({
+      // These suites exercise transcript proof; a runner that "never received it" leaves that path unchanged.
+      instructionReceipt: { lookup: async () => "not_applied" as const },
       deliveryRepository: {
         get: vi.fn(async (deliveryId: string) => rows.get(deliveryId) ?? null),
         markConsumed: vi.fn(async () => null),
@@ -190,6 +192,8 @@ describe("queued transcript finite restart recovery", () => {
     }));
     const redeliverContent = vi.fn(async () => undefined);
     const recovery = new QueuedDeliveryTranscriptRecovery({
+      // These suites exercise transcript proof; a runner that "never received it" leaves that path unchanged.
+      instructionReceipt: { lookup: async () => "not_applied" as const },
       deliveryRepository: {
         get: vi.fn(async () => row()),
         markConsumed: vi.fn(),
@@ -281,6 +285,8 @@ describe("queued transcript finite restart recovery", () => {
     }));
     const redeliverContent = vi.fn(async () => undefined);
     const recovery = new QueuedDeliveryTranscriptRecovery({
+      // These suites exercise transcript proof; a runner that "never received it" leaves that path unchanged.
+      instructionReceipt: { lookup: async () => "not_applied" as const },
       deliveryRepository: {
         get: vi.fn(async () => row()),
         markConsumed: vi.fn(),
@@ -353,6 +359,8 @@ function makeHarness(receiptKind: "input_pending" | "completed") {
       }
     : { kind: "input_pending" as const, inputUuid });
   const queuedRecovery = new QueuedDeliveryTranscriptRecovery({
+    // These suites exercise transcript proof; a runner that "never received it" leaves that path unchanged.
+    instructionReceipt: { lookup: async () => "not_applied" as const },
     deliveryRepository: {
       get: vi.fn(async () => row()),
       markConsumed,

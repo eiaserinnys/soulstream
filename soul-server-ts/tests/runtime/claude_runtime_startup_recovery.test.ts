@@ -85,6 +85,8 @@ describe("ClaudeRuntimeStartupRecovery", () => {
       target_receipt_id: "transcript:assistant-after-restart",
     }) as SessionDeliveryRow);
     const queuedRecovery = new QueuedDeliveryTranscriptRecovery({
+      // These suites exercise transcript proof; a runner that "never received it" leaves that path unchanged.
+      instructionReceipt: { lookup: async () => "not_applied" as const },
       deliveryRepository: {
         get: vi.fn(async () => claimedRow),
         markConsumed,

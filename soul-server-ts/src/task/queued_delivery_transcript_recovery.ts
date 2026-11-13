@@ -6,9 +6,15 @@ import type { SessionDeliveryHostClient } from
 import type { SessionDeliveryRow } from "../db/session_db_types.js";
 import type { SessionDeliveryRecoveryHostClient } from
   "../control_plane/persistence_host_clients.js";
-import type {
-  ClaudeDeliveryTranscriptReceiptReader,
+import {
+  UNSUPPORTED_BACKEND_REASON,
+  type ClaudeDeliveryTranscriptReceiptReader,
 } from "../engine/claude_delivery_transcript_receipt.js";
+import {
+  INSTRUCTION_UNCERTAIN_REASON,
+  decideNodeInstruction,
+  type NodeInstructionVerdict,
+} from "./state/node_instruction_decision.js";
 
 export interface QueuedDeliveryTranscriptRecoveryDeps {
   deliveryRepository: Pick<
@@ -23,6 +29,16 @@ export interface QueuedDeliveryTranscriptRecoveryDeps {
     ClaudeDeliveryTranscriptReceiptReader,
     "inspect"
   >;
+  /**
+   * Asks the runner that holds the target session whether it received this
+   * delivery's instruction number. Anything the node cannot prove is "unknown".
+   * Production always supplies it. A harness that leaves it out keeps the
+   * transcript as the only proof: an absent input is redelivered and a backend
+   * without a transcript stays held.
+   */
+  instructionReceipt?: {
+    lookup(row: SessionDeliveryRow): Promise<NodeInstructionVerdict>;
+  };
   /** Re-enters the ordinary durable intervention route with the same row. */
   redeliverContent?(row: SessionDeliveryRow): Promise<void>;
   logger: Pick<Logger, "warn">;
@@ -39,10 +55,16 @@ export interface QueuedDeliveryTranscriptRecoveryPass {
  * A stable input UUID prevents duplicate execution, but SDK 0.3.218 does not
  * emit another Result when that UUID is re-sent after resume. A completed
  * transcript therefore settles the ledger directly. An accepted input that is
- * still pending returns to reconnect admission. An absent stable identity is
- * conclusive proof that the target has not seen the content, so a current node
- * spends the ordinary retry budget before it re-enters durable intervention.
- * An exhausted row becomes dead-lettered without waking its target again.
+ * still pending returns to reconnect admission.
+ *
+ * Every other row (an absent Claude input, or a backend with no Claude
+ * transcript such as Codex) is judged by asking the runner for the delivery's
+ * instruction number. An absent Claude input is already proven unseen by its
+ * transcript, so only an "applied" answer changes its redelivery. Applied closes the row as consumed, a runner of the same
+ * registration that never received it re-enters durable intervention after
+ * spending the ordinary retry budget (an exhausted row becomes dead-lettered
+ * without waking its target again), and anything else is left `uncertain` so
+ * the next node start does not pick it up again and nothing is sent twice.
  * Older nodes without that capability retain the R18 dead-letter fallback.
  */
 /**
@@ -96,7 +118,8 @@ export class QueuedDeliveryTranscriptRecovery {
     let settled = 0;
     const startedAtMs = Date.now();
     // Leave one read's worth of TTL so a row started here cannot outlive it.
-    const acceptUntilMs = startedAtMs + (this.attemptTtlMs - this.readTimeoutMs);
+    // A row can spend one transcript read and one runner lookup.
+    const acceptUntilMs = startedAtMs + (this.attemptTtlMs - this.readTimeoutMs * 2);
     for (const row of rows) {
       if (Date.now() >= acceptUntilMs) {
         await this.returnToPending(
@@ -138,54 +161,19 @@ export class QueuedDeliveryTranscriptRecovery {
           settled += 1;
           continue;
         }
-        if (receipt.kind === "absent") {
-          if (this.deps.redeliverContent) {
-            const current = await this.deps.deliveryRepository.get(row.delivery_id);
-            if (hasConsumptionReceipt(current)) {
-              settled += 1;
-              continue;
-            }
-            const retry = await this.deps.deliveryRepository.retryDeliveryAttempt(
-              row.delivery_id,
-              this.workerId,
-              "queued_transcript_redelivery_expired",
-              0,
-            );
-            if (!retry) {
-              const settledRow = await this.deps.deliveryRepository.get(row.delivery_id);
-              if (hasConsumptionReceipt(settledRow)) {
-                settled += 1;
-                continue;
-              }
-              throw new Error(
-                `Transcript-absent delivery ${row.delivery_id} lost its retry-state CAS`,
-              );
-            }
-            if (retry.aggregate_state === "dead_letter") {
-              settled += 1;
-              continue;
-            }
-            await this.deps.redeliverContent(retry);
-            settled += 1;
-            continue;
-          }
-          const reason = "queued_transcript_input_absent";
-          const uncertain = await this.deps.deliveryRepository.markUncertain(
-            row.delivery_id,
-            this.workerId,
-            reason,
+        if (
+          this.deps.instructionReceipt
+          && (receipt.kind === "absent"
+            || (receipt.kind === "unavailable" && receipt.reason === UNSUPPORTED_BACKEND_REASON))
+        ) {
+          settled += await this.settleByInstructionReceipt(
+            row,
+            this.deps.instructionReceipt,
           );
-          const settledRow = uncertain
-            ?? await this.deps.deliveryRepository.get(row.delivery_id);
-          if (
-            settledRow?.state !== "uncertain"
-            || settledRow.aggregate_state !== "dead_letter"
-          ) {
-            throw new Error(
-              `Transcript-absent delivery ${row.delivery_id} did not reach dead letter`,
-            );
-          }
-          settled += 1;
+          continue;
+        }
+        if (receipt.kind === "absent") {
+          settled += await this.redeliverUnseen(row);
           continue;
         }
         const reason = receipt.kind === "input_pending"
@@ -204,6 +192,111 @@ export class QueuedDeliveryTranscriptRecovery {
       }
     }
     return settled;
+  }
+
+  /** Judges a row no transcript could settle by the runner's answer to its instruction number. */
+  private async settleByInstructionReceipt(
+    row: SessionDeliveryRow,
+    instructionReceipt: NonNullable<QueuedDeliveryTranscriptRecoveryDeps["instructionReceipt"]>,
+  ): Promise<number> {
+    // Only `beginDispatch` stamps `dispatching_at`, right before the handoff to
+    // a runner, and a row only reaches `queued` through it. A queued row without
+    // the stamp (a message that arrived while the node was down) was never
+    // handed to any runner, so there is nothing to ask: it is simply not sent yet.
+    if (!row.dispatching_at) return await this.redeliverUnseen(row);
+    let verdict: NodeInstructionVerdict;
+    try {
+      verdict = await withDeadline(
+        instructionReceipt.lookup(row),
+        this.readTimeoutMs,
+        () => new Error(
+          `instruction receipt lookup for ${row.delivery_id} exceeded ${this.readTimeoutMs}ms`,
+        ),
+      );
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, deliveryId: row.delivery_id },
+        "Instruction receipt lookup failed during queued delivery recovery; treating it as unknown",
+      );
+      verdict = "unknown";
+    }
+    // A transcript without the input line only says it is not written yet, so it
+    // does not overturn the runner's answer: unknown stays unknown.
+    const decision = decideNodeInstruction({ verdict, ledger: "line" });
+    if (decision.ledger === "close_consumed") {
+      const receiptId = `runner_receipt:${row.delivery_id}`;
+      const consumed = await this.deps.deliveryRepository.markConsumed(
+        row.delivery_id,
+        receiptId,
+      );
+      const settledRow = consumed
+        ?? await this.deps.deliveryRepository.get(row.delivery_id);
+      if (settledRow?.state !== "consumed" || settledRow.aggregate_state !== "consumed") {
+        throw new Error(
+          `Runner-receipt delivery ${row.delivery_id} did not reach consumed`,
+        );
+      }
+      return 1;
+    }
+    if (decision.ledger === "mark_uncertain") {
+      const uncertain = await this.deps.deliveryRepository.markUncertain(
+        row.delivery_id,
+        this.workerId,
+        INSTRUCTION_UNCERTAIN_REASON,
+      );
+      const settledRow = uncertain
+        ?? await this.deps.deliveryRepository.get(row.delivery_id);
+      if (
+        settledRow?.state !== "uncertain"
+        || settledRow.aggregate_state !== "dead_letter"
+      ) {
+        throw new Error(
+          `Unknown-receipt delivery ${row.delivery_id} did not reach dead letter`,
+        );
+      }
+      return 1;
+    }
+    return await this.redeliverUnseen(row);
+  }
+
+  /** The runner or transcript proved the target never saw the content. */
+  private async redeliverUnseen(row: SessionDeliveryRow): Promise<number> {
+    if (this.deps.redeliverContent) {
+      const current = await this.deps.deliveryRepository.get(row.delivery_id);
+      if (hasConsumptionReceipt(current)) return 1;
+      const retry = await this.deps.deliveryRepository.retryDeliveryAttempt(
+        row.delivery_id,
+        this.workerId,
+        "queued_transcript_redelivery_expired",
+        0,
+      );
+      if (!retry) {
+        const settledRow = await this.deps.deliveryRepository.get(row.delivery_id);
+        if (hasConsumptionReceipt(settledRow)) return 1;
+        throw new Error(
+          `Transcript-absent delivery ${row.delivery_id} lost its retry-state CAS`,
+        );
+      }
+      if (retry.aggregate_state === "dead_letter") return 1;
+      await this.deps.redeliverContent(retry);
+      return 1;
+    }
+    const uncertain = await this.deps.deliveryRepository.markUncertain(
+      row.delivery_id,
+      this.workerId,
+      "queued_transcript_input_absent",
+    );
+    const settledRow = uncertain
+      ?? await this.deps.deliveryRepository.get(row.delivery_id);
+    if (
+      settledRow?.state !== "uncertain"
+      || settledRow.aggregate_state !== "dead_letter"
+    ) {
+      throw new Error(
+        `Transcript-absent delivery ${row.delivery_id} did not reach dead letter`,
+      );
+    }
+    return 1;
   }
 
   private async returnToPending(

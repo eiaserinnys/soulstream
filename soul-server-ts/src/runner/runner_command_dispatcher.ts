@@ -37,6 +37,7 @@ import {
   RUNNER_INTERVENTION_RECEIPT_CAPABILITY,
   runnerInputInterventionId,
   type RunnerInterventionReceiptPort,
+  type RunnerInterventionReceiptVerdict,
 } from "./runner_intervention_receipt.js";
 
 const OUTPUT_COMMAND_EVENT_TYPES = new Set([
@@ -81,6 +82,15 @@ export interface RunnerCommandDispatcher {
    * process made the next spawn terminate the server itself (card #1265).
    */
   releaseUnadoptedRecovery?(): Promise<void>;
+  /**
+   * Asks the runner that should have received this intervention number whether
+   * it did. Only a process runner can answer; an in-process dispatcher has no
+   * receipt table, so the node reads a missing method as "unknown".
+   */
+  lookupInterventionReceipt?(
+    interventionId: string,
+    expectedRegistrationId: string,
+  ): Promise<RunnerInterventionReceiptVerdict>;
   isClosed?(): boolean;
   hasLostRunner?(): boolean;
   /** True only after this process registration reported the exact closed-engine failure. */
