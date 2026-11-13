@@ -2,7 +2,7 @@ import type { CardAttachment } from "@soulstream/wire-schema/card-attachments";
 import { hasPendingSessionModelFallback } from "@soulstream/wire-schema/model-preset-fallbacks";
 import { cardAttachmentPaths } from "./card_attachment_paths.js";
 import { buildCardChangeNotification, buildCardQuestionAnswerNotice, buildCardQuestionThreadNotice, cardQuestionDeliveryTarget, type CardChangeDelivery } from "./card_change_notification.js";
-import { buildCardStatusReminder, MAX_REMINDERS_PER_TICK } from "./card_status_reminder.js";
+import { buildCardStatusReminder, buildOwnerSilentAction, MAX_REMINDERS_PER_TICK, type CardReminderFacts } from "./card_status_reminder.js";
 import { buildCardBlockedNotice, buildCardDoneNotice, buildCardQuestionNotice, buildCardReviewNotice, selectCardBoardNotice } from "./card_board_notice.js";
 import { type LimitResumeOwner } from "./card_limit_auto_resume.js";
 import { randomUUID } from "node:crypto";
@@ -121,18 +121,45 @@ export class CardDispatcher {
                 const session = await this.options.repository.ownerSession(endedRootId);
                 if (!isTerminalSessionStatus(session?.status ?? undefined)) return;
             }
+            const now = this.options.now?.() ?? Date.now();
             let sent = 0;
-            for (const facts of await this.options.repository.reminderFacts(this.options.now?.() ?? Date.now(), endedRootId)) {
+            for (const facts of await this.options.repository.reminderFacts(now, endedRootId)) {
                 if (!endedRootId && sent >= MAX_REMINDERS_PER_TICK) break;
-                const reminder = buildCardStatusReminder(facts, endedRootId !== undefined);
-                if (!reminder) continue;
                 try {
-                    if (await this.options.deliveryExists(reminder.deliveryId)) continue;
-                    sent++;
-                    await this.options.sendMessage(reminder.sessionId, reminder.text, undefined, reminder);
+                    if (await this.remindCard(facts, endedRootId !== undefined, now)) sent++;
                 } catch (error) { this.options.warn(`card ${facts.cardId} reminder delivery failed: ${String(error)}`); }
             }
         } catch (error) { this.options.warn(`card reminder check failed: ${String(error)}`); }
+    }
+    /** 기존 상태 리마인더를 먼저 보내고, 이미 나갔으면 담당 무응답(owner_silent) 판정으로 넘어간다. */
+    private async remindCard(facts: CardReminderFacts, rootEnded: boolean, now: number): Promise<boolean> {
+        const reminder = buildCardStatusReminder(facts, rootEnded);
+        if (reminder && !(await this.options.deliveryExists(reminder.deliveryId))) {
+            await this.options.sendMessage(reminder.sessionId, reminder.text, undefined, reminder);
+            return true;
+        }
+        const ownerSilent = buildOwnerSilentAction(facts, now);
+        if (!ownerSilent) return false;
+        if (ownerSilent.kind === "block") return await this.blockSilentOwner(facts, ownerSilent.blockedDetail);
+        if (await this.options.deliveryExists(ownerSilent.reminder.deliveryId)) return false;
+        await this.options.sendMessage(ownerSilent.reminder.sessionId, ownerSilent.reminder.text, undefined, ownerSilent.reminder);
+        return true;
+    }
+    private async blockSilentOwner(facts: CardReminderFacts, blockedDetail: string): Promise<boolean> {
+        const cards = await this.options.cards();
+        try {
+            await cards.setCardStatus({ actorKind: "system", actorSessionId: null, cardId: facts.cardId, status: "blocked",
+                blockedKind: "no_report", blockedDetail, expectedVersion: facts.cardVersion });
+        } catch (error) {
+            // expectedVersion이 어긋나면 이번 주기는 건너뛰고 다음 주기에 다시 판정한다.
+            this.options.warn(`card ${facts.cardId} owner silent block skipped: ${String(error)}`);
+            return false;
+        }
+        try {
+            await cards.updateCardNow({ actorKind: "system", actorSessionId: null, cardId: facts.cardId,
+                now: blockedDetail, turn: "outside" });
+        } catch (error) { this.options.warn(`card ${facts.cardId} owner silent board reason failed: ${String(error)}`); }
+        return true;
     }
     private async handleMutation(change: CardMutationChange): Promise<void> {
         const {result,previousStatus}=change;
