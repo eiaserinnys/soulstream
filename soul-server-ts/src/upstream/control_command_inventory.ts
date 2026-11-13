@@ -107,6 +107,11 @@ export function boundedResultTimeoutMs(commandType: string, fallbackMs: number):
       // Usage work can consume its 14s internal budget, and profile is in the
       // same external HTTP family. Stay below orch's 15s command limit.
       return 14_500;
+    case "list_runner_inventory":
+      // The first inventory after a soul-server restart waits for the runner
+      // start scan and the live inventory before it can answer. The 900ms
+      // control default rejected every retry (card #1273).
+      return 14_500;
     default:
       return fallbackMs;
   }
