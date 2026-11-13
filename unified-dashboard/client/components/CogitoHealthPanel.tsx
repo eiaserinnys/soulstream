@@ -1,106 +1,40 @@
-import { RefreshCw } from "lucide-react";
-import { Badge, Button, cn } from "@seosoyoung/soul-ui";
-import type {
-  CogitoAggregateStatus,
-  CogitoHealthSummary,
-  CogitoNodeHealth,
-  CogitoNodeStatus,
-} from "../lib/cogito-health";
-import { useCogitoHealth } from "../hooks/useCogitoHealth";
+import { cn } from "@seosoyoung/soul-ui";
+import type { CogitoNodeHealth, CogitoNodeStatus } from "../lib/cogito-health";
+import { clockLabel } from "./CogitoNodeHealthClock";
 
-type BadgeVariant = "outline" | "warning" | "success" | "error";
-type PanelStatus = CogitoAggregateStatus | CogitoNodeStatus | "loading" | "unavailable";
+type PanelStatus = CogitoNodeStatus | "loading" | "unavailable";
 
-export type CogitoHealthPanelState =
-  | { kind: "loading" }
-  | { kind: "error"; message: string }
-  | { kind: "ready"; summary: CogitoHealthSummary; refreshing?: boolean };
-
+/**
+ * 이웃 사용량 행과 같은 규칙을 쓴다.
+ *   - 상태 점: `.c724-status-dot`(8px)에 상태 색만 입힌다.
+ *   - 배지: `.c724-badge` 알약. 정상은 배지 없이 초록 점만, 로딩은 「Checking...」 줄 하나만.
+ */
 const STATUS_CONFIG: Record<
   PanelStatus,
-  { label: string; variant: BadgeVariant; dotClass: string }
+  { label: string | null; badgeClass: string | null; dotColor: string }
 > = {
-  ok: { label: "OK", variant: "success", dotClass: "bg-success" },
-  partial: { label: "Partial", variant: "warning", dotClass: "bg-accent-amber" },
-  empty: { label: "Empty", variant: "outline", dotClass: "bg-muted-foreground/50" },
-  timeout: { label: "Timeout", variant: "warning", dotClass: "bg-accent-amber" },
-  unavailable: { label: "Unavailable", variant: "warning", dotClass: "bg-accent-amber" },
-  error: { label: "Error", variant: "error", dotClass: "bg-accent-red" },
-  loading: { label: "Checking", variant: "outline", dotClass: "bg-muted-foreground/50" },
+  ok: { label: null, badgeClass: null, dotColor: "var(--color-emerald-400)" },
+  timeout: { label: "Timeout", badgeClass: "c724-badge c724-badge-warn", dotColor: "var(--color-amber-400)" },
+  unavailable: { label: "Unavailable", badgeClass: "c724-badge c724-badge-warn", dotColor: "var(--color-amber-400)" },
+  error: { label: "Error", badgeClass: "c724-badge c724-badge-danger", dotColor: "var(--color-red-400)" },
+  loading: { label: null, badgeClass: null, dotColor: "var(--v3-text-tertiary)" },
 };
 
-export function CogitoHealthPanel({request}: {request?: typeof fetch} = {}) {
-  const { summary, loading, refreshing, error, refresh } = useCogitoHealth(request);
-  const state: CogitoHealthPanelState = loading
-    ? { kind: "loading" }
-    : error
-      ? { kind: "error", message: error }
-      : summary
-        ? { kind: "ready", summary, refreshing }
-        : { kind: "error", message: "cogito health unavailable" };
+export type CogitoNodeHealthNoteState =
+  | { kind: "loading" }
+  | { kind: "error"; message: string };
 
-  return <CogitoHealthPanelContent state={state} onRefresh={refresh} />;
-}
-
-export function CogitoHealthPanelContent({
-  state,
-  onRefresh,
+/**
+ * 노드 하나의 cogito 상태 행.
+ * 펼친 노드 안에서는 머리에 노드 이름이 이미 있으므로 embedded 변형이 「Cogito」 라벨을 쓴다.
+ */
+export function CogitoNodeHealthRow({
+  node,
+  embedded = false,
 }: {
-  state: CogitoHealthPanelState;
-  onRefresh: () => void;
+  node: CogitoNodeHealth;
+  embedded?: boolean;
 }) {
-  const headerStatus =
-    state.kind === "ready"
-      ? state.summary.status
-      : state.kind === "loading"
-        ? "loading"
-        : "unavailable";
-  const isRefreshing = state.kind === "ready" && state.refreshing;
-
-  return (
-    <section
-      data-testid="cogito-health-panel"
-      className="shrink-0 overflow-hidden rounded-[13px] border border-border bg-muted/10"
-    >
-      <div className="flex items-center gap-2 px-3 py-1.5">
-        <span className="text-sm font-semibold text-foreground">Cogito</span>
-        <StatusBadge status={headerStatus} />
-        <div className="flex-1" />
-        <Button
-          size="icon-xs"
-          variant="ghost"
-          onClick={onRefresh}
-          disabled={state.kind === "loading" || isRefreshing}
-          title="Refresh cogito health"
-          aria-label="Refresh cogito health"
-        >
-          <RefreshCw className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")} />
-        </Button>
-      </div>
-
-      {state.kind === "loading" ? (
-        <div className="px-3 pb-2 text-xs text-muted-foreground">Checking...</div>
-      ) : state.kind === "error" ? (
-        <div className="px-3 pb-2 text-xs text-muted-foreground truncate">
-          {state.message}
-        </div>
-      ) : state.summary.nodes.length === 0 ? (
-        <div className="px-3 pb-2 text-xs text-muted-foreground">No cogito nodes</div>
-      ) : (
-        <div className="pb-1">
-          <div className="px-3 pb-1 text-[11px] text-muted-foreground">
-            {formatCheckedAt(state.summary.checkedAt)} / {state.summary.nodeCount} nodes
-          </div>
-          {state.summary.nodes.map((node) => (
-            <CogitoNodeHealthRow key={node.nodeId} node={node} />
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function CogitoNodeHealthRow({ node }: { node: CogitoNodeHealth }) {
   const runtimeItems = [
     `runtime ${node.runtime.status}`,
     node.runtime.agentCount !== undefined ? `${node.runtime.agentCount} agents` : null,
@@ -111,56 +45,79 @@ function CogitoNodeHealthRow({ node }: { node: CogitoNodeHealth }) {
   const capabilityText = formatCapabilities(node);
   const dependencyText = formatDependencies(node);
   const warning = node.warnings[0];
+  const checked = clockLabel(node.checkedAt ?? null);
+  // 진단 값 줄은 좁은 폭에서 말줄임 대신 줄바꿈하고, 끌어서 선택할 수 있다(cogito 전용 선택자).
+  const metaClass = embedded ? "c724-meta-inline" : "text-[11px] text-muted-foreground truncate";
 
   return (
-    <div className="px-3 py-1.5 border-t border-border/60 space-y-1">
-      <div className="flex items-center gap-2 min-w-0">
-        <StatusDot status={node.status} />
-        <span className="min-w-0 flex-1 truncate text-xs font-medium text-foreground">
-          {node.nodeId}
-        </span>
+    <div
+      className={cn(
+        "cogito-node-health",
+        embedded ? "c724-account-row mt-2" : "px-3 py-1.5 border-t border-border/60 space-y-1",
+      )}
+      data-testid="cogito-node-health"
+      data-node-id={node.nodeId}
+    >
+      <div className={embedded ? "c724-account-top" : "flex items-center gap-2 min-w-0"}>
+        <div className={embedded ? "c724-account-identity" : "contents"}>
+          <StatusDot status={node.status} />
+          <span
+            className={embedded
+              ? "c724-account-email"
+              : "min-w-0 flex-1 truncate text-xs font-medium text-foreground"}
+          >
+            {embedded ? "Cogito" : node.nodeId}
+          </span>
+        </div>
         <StatusBadge status={node.status} />
       </div>
-      <div className="text-[11px] text-muted-foreground truncate">
+      <div className={metaClass}>
         {node.serviceStatus}
-        {node.checkedAt ? ` / ${formatCheckedAt(node.checkedAt)}` : ""}
+        {checked ? ` / ${checked}` : ""}
       </div>
-      {capabilityText && (
-        <div className="text-[11px] text-muted-foreground truncate">
-          caps {capabilityText}
+      {capabilityText && <div className={metaClass}>caps {capabilityText}</div>}
+      {runtimeItems.length > 0 && <div className={metaClass}>{runtimeItems.join(" / ")}</div>}
+      {dependencyText && <div className={metaClass}>deps {dependencyText}</div>}
+      {warning && <div className={metaClass}>{warning.code}: {warning.message}</div>}
+    </div>
+  );
+}
+
+/**
+ * cogito를 아직 받는 중이거나 받지 못했을 때, 행이 들어올 자리에 그리는 한 줄.
+ * 행과 같은 틀을 써서 응답이 도착해도 자리가 튀지 않는다.
+ */
+export function CogitoNodeHealthNote({ state }: { state: CogitoNodeHealthNoteState }) {
+  const status: PanelStatus = state.kind === "loading" ? "loading" : "unavailable";
+  return (
+    <div
+      className="cogito-node-health c724-account-row mt-2"
+      data-testid="cogito-node-health"
+      data-node-state={state.kind}
+    >
+      <div className="c724-account-top">
+        <div className="c724-account-identity">
+          <StatusDot status={status} />
+          <span className="c724-account-email">Cogito</span>
         </div>
-      )}
-      {runtimeItems.length > 0 && (
-        <div className="text-[11px] text-muted-foreground truncate">
-          {runtimeItems.join(" / ")}
-        </div>
-      )}
-      {dependencyText && (
-        <div className="text-[11px] text-muted-foreground truncate">
-          deps {dependencyText}
-        </div>
-      )}
-      {warning && (
-        <div className="text-[11px] text-muted-foreground/80 truncate">
-          {warning.code}: {warning.message}
-        </div>
-      )}
+        <StatusBadge status={status} />
+      </div>
+      {state.kind === "loading"
+        ? <div className="c724-meta-inline">Checking...</div>
+        : <p className="c724-pool-error">{state.message}</p>}
     </div>
   );
 }
 
 function StatusBadge({ status }: { status: PanelStatus }) {
   const config = STATUS_CONFIG[status];
-  return (
-    <Badge variant={config.variant} size="sm">
-      {config.label}
-    </Badge>
-  );
+  if (!config.badgeClass || !config.label) return null;
+  return <span className={config.badgeClass}>{config.label}</span>;
 }
 
 function StatusDot({ status }: { status: PanelStatus }) {
   const config = STATUS_CONFIG[status];
-  return <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", config.dotClass)} />;
+  return <span className="c724-status-dot" style={{ backgroundColor: config.dotColor }} />;
 }
 
 function formatCapabilities(node: CogitoNodeHealth): string {
@@ -175,14 +132,4 @@ function formatDependencies(node: CogitoNodeHealth): string {
     .slice(0, 4)
     .map((dep) => `${dep.name}:${dep.status}`)
     .join(", ");
-}
-
-function formatCheckedAt(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
 }

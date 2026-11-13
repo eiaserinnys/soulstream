@@ -223,7 +223,8 @@ export function ConfigModal({ open, onOpenChange, api, initialTab, userEditor }:
               ) : selectedTab === LIQUID_GLASS_TAB_NAME ? (
                 <LiquidGlassTab preference={api ? {value:localGlass,set:patch=>setLocalGlass(value=>({...value,...patch}))} : undefined} />
               ) : selectedTab === NODES_TAB_NAME ? (
-                <div className="rounded border border-border">
+                // 구역 틀 테두리는 두지 않는다. 노드 카드와 사용량 행이 이미 테두리를 가진다.
+                <div>
                   <NodePanel request={api?.request} sampleNodes={api?.nodes} />
                 </div>
               ) : selectedTab === RECURRING_JOBS_TAB_NAME ? (

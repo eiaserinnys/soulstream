@@ -11,6 +11,7 @@ import type {
   UsageSummarySnapshot,
 } from "@seosoyoung/soul-ui";
 import { NodePanel } from "../components/NodePanel";
+import { sampleCogitoBriefs } from "../components/CogitoNodeHealthSample";
 import type { OrchestratorNode } from "../store/orchestrator-store";
 import { PersistentSessionWeeklyUsage } from "./PersistentSessionWeeklyUsage";
 
@@ -230,9 +231,11 @@ function jsonData(data: unknown): Response {
   return Response.json(data);
 }
 
+export type ReviewCogitoState = "normal" | "loading" | "failure";
+
 export function createProviderPanelReviewRequest(
   state: ProviderPanelReviewState,
-  { summaryDelayMs = 0 }: { summaryDelayMs?: number } = {},
+  { summaryDelayMs = 0, cogitoState = "normal" }: { summaryDelayMs?: number; cogitoState?: ReviewCogitoState } = {},
 ): typeof fetch {
   const nodeId = NODE_BY_STATE[state];
   const basePath = `/api/nodes/${nodeId}/claude-auth`;
@@ -274,7 +277,22 @@ export function createProviderPanelReviewRequest(
       };
       return jsonData(snapshot);
     }
-    if (path === "/cogito/briefs") return jsonData({ status: "ok", node_count: 1, nodes: [{ node_id: nodeId, status: "ok", data: { status: "ok" } }] });
+    if (path === "/cogito/briefs") {
+      if (cogitoState === "loading") {
+        const signal = init?.signal;
+        return await new Promise<Response>((_resolve, reject) => {
+          if (signal?.aborted) {
+            reject(new DOMException("The operation was aborted.", "AbortError"));
+            return;
+          }
+          signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")), { once: true });
+        });
+      }
+      if (cogitoState === "failure") {
+        return Response.json({ error: "sample cogito unavailable" }, { status: 503 });
+      }
+      return jsonData(sampleCogitoBriefs([{ nodeId }]));
+    }
 
     if (path === `${basePath}/accounts` && method === "GET") return jsonData(list);
     if (path === `${basePath}/status` && method === "GET") return jsonData({ has_token: hasToken });
@@ -327,6 +345,10 @@ export function createProviderPanelReviewRequest(
     }
     const accountMatch = path.match(/\/accounts\/([^/]+)$/);
     if (accountMatch && method === "PATCH") {
+      // 계정 행 오류 줄(actionError)을 실제 경로로 띄우는 검수 상태. 주소의 claudeActionState=failure로 연다.
+      if (new URLSearchParams(window.location.search).get("claudeActionState") === "failure") {
+        return Response.json({ code: "sample_failure", message: "sample claude action failed" }, { status: 503 });
+      }
       const accountId = decodeURIComponent(accountMatch[1]!);
       const body = JSON.parse(String(init?.body ?? "{}")) as { enabled?: boolean; priority?: number | null };
       list = {
@@ -356,18 +378,28 @@ function sampleNode(nodeId: string): OrchestratorNode {
   };
 }
 
+// cogito 로딩·실패는 컴포넌트 검수 창 주소의 cogitoState로 연다(ComponentsReviewPage는 이 값을 넘기지 않는다).
+function reviewCogitoState(): ReviewCogitoState {
+  const value = new URLSearchParams(window.location.search).get("cogitoState");
+  return value === "loading" || value === "failure" ? value : "normal";
+}
+
 export function ProviderPanelReviewSample({ state, loading = false }: { state: ProviderPanelReviewState; loading?: boolean }) {
   const nodeId = NODE_BY_STATE[state];
   // 스크린샷 한 장에 수 초가 걸리므로 로딩 상태 캡처가 스켈레톤을 담도록 넉넉히 늦춘다.
   const request = useMemo(
-    () => createProviderPanelReviewRequest(state, { summaryDelayMs: loading ? 12_000 : 0 }),
+    () => createProviderPanelReviewRequest(state, {
+      summaryDelayMs: loading ? 12_000 : 0,
+      cogitoState: reviewCogitoState(),
+    }),
     [state, loading],
   );
   const nodes = useMemo(() => new Map([[nodeId, sampleNode(nodeId)]]), [nodeId]);
   const client = useMemo(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }), []);
 
   return <QueryClientProvider client={client}>
-    <NodePanel request={request} sampleNodes={nodes} />
+    {/* 검수 창에는 설정 구역 틀이 없으므로 안쪽 여백은 이 샘플 틀이 가진다. */}
+    <div className="p-2"><NodePanel request={request} sampleNodes={nodes} /></div>
   </QueryClientProvider>;
 }
 

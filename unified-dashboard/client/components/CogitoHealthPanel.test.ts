@@ -1,146 +1,110 @@
-import { createElement } from "react";
+import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
-import {
-  CogitoHealthPanelContent,
-  type CogitoHealthPanelState,
-} from "./CogitoHealthPanel";
+import { CogitoNodeHealthNote, CogitoNodeHealthRow } from "./CogitoHealthPanel";
+import { clockLabel } from "./CogitoNodeHealthClock";
+import type { CogitoNodeHealth } from "../lib/cogito-health";
 
 vi.mock("@seosoyoung/soul-ui", async () => {
-  const React = await import("react");
   return {
-    Badge: ({ children }: { children: unknown }) =>
-      React.createElement("span", null, children as never),
-    Button: ({
-      children,
-      ...props
-    }: {
-      children: unknown;
-      [key: string]: unknown;
-    }) => React.createElement("button", props, children as never),
     cn: (...classes: unknown[]) => classes.filter(Boolean).join(" "),
   };
 });
 
-function render(state: CogitoHealthPanelState): string {
-  return renderToStaticMarkup(
-    createElement(CogitoHealthPanelContent, {
-      state,
-      onRefresh: () => {},
-    }),
-  );
+const healthyNode: CogitoNodeHealth = {
+  nodeId: "node-ok",
+  status: "ok",
+  checkedAt: "2026-05-25T12:00:01.000Z",
+  service: "soul-server-ts",
+  serviceStatus: "ok",
+  capabilityCount: 2,
+  capabilities: ["cogito", "session_query"],
+  omittedCapabilities: 0,
+  runtime: {
+    status: "ok",
+    uptimeLabel: "5m",
+    memoryLabel: "rss 120MB / heap 45MB",
+    agentCount: 4,
+    activeTaskCount: 1,
+    tasksByStatus: { running: 1 },
+    dependencies: [{ name: "database", status: "ok" }],
+  },
+  warnings: [],
+};
+
+const timeoutNode: CogitoNodeHealth = {
+  ...healthyNode,
+  status: "timeout",
+  warnings: [{ code: "cogito_timeout", message: "cogito brief timed out after 8s" }],
+};
+
+const errorNode: CogitoNodeHealth = {
+  ...healthyNode,
+  status: "error",
+};
+
+function render(element: ReactElement): string {
+  return renderToStaticMarkup(element);
 }
 
-describe("CogitoHealthPanelContent", () => {
-  it("renders loading state", () => {
-    expect(render({ kind: "loading" })).toContain("Checking");
+describe("CogitoNodeHealthRow", () => {
+  it("draws the loading expression in the row slot without a badge", () => {
+    const html = render(createElement(CogitoNodeHealthNote, { state: { kind: "loading" } }));
+
+    expect(html).toContain("Cogito");
+    expect(html).toContain("Checking...");
+    expect(html).not.toContain("c724-badge");
   });
 
-  it("renders endpoint error state without crashing", () => {
-    const html = render({ kind: "error", message: "cogito briefs HTTP 503" });
+  it("draws the failure line in the row slot", () => {
+    const html = render(createElement(CogitoNodeHealthNote, {
+      state: { kind: "error", message: "cogito briefs HTTP 503" },
+    }));
 
+    expect(html).toContain("Cogito");
     expect(html).toContain("Unavailable");
+    expect(html).toContain("c724-badge c724-badge-warn");
+    expect(html).toContain("c724-pool-error");
     expect(html).toContain("cogito briefs HTTP 503");
   });
 
-  it("renders empty aggregate state", () => {
-    const html = render({
-      kind: "ready",
-      summary: {
-        status: "empty",
-        checkedAt: "2026-05-25T12:00:00.000Z",
-        nodeCount: 0,
-        nodes: [],
-      },
-    });
+  it("labels the embedded row 「Cogito」 with the neighbor dot and no badge when healthy", () => {
+    const html = render(createElement(CogitoNodeHealthRow, { node: healthyNode, embedded: true }));
 
-    expect(html).toContain("Empty");
-    expect(html).toContain("No cogito nodes");
+    expect(html).toContain(">Cogito<");
+    expect(html).not.toContain(">node-ok<");
+    expect(html).toContain("c724-account-row");
+    expect(html).toContain("c724-status-dot");
+    expect(html).not.toContain("c724-badge");
+    expect(html).not.toContain(">OK<");
+    expect(html).toContain("runtime ok");
+    expect(html).toContain("database:ok");
   });
 
-  it("renders partial aggregate and timeout node state", () => {
-    const html = render({
-      kind: "ready",
-      summary: {
-        status: "partial",
-        checkedAt: "2026-05-25T12:00:00.000Z",
-        nodeCount: 2,
-        nodes: [
-          {
-            nodeId: "node-ok",
-            status: "ok",
-            checkedAt: "2026-05-25T12:00:01.000Z",
-            service: "soul-server-ts",
-            serviceStatus: "ok",
-            capabilityCount: 2,
-            capabilities: ["cogito", "session_query"],
-            omittedCapabilities: 0,
-            runtime: {
-              status: "ok",
-              uptimeLabel: "5m",
-              memoryLabel: "rss 120MB / heap 45MB",
-              agentCount: 4,
-              activeTaskCount: 1,
-              tasksByStatus: { running: 1 },
-              dependencies: [{ name: "database", status: "ok" }],
-            },
-            warnings: [],
-          },
-          {
-            nodeId: "node-timeout",
-            status: "timeout",
-            serviceStatus: "timeout",
-            capabilityCount: 0,
-            capabilities: [],
-            omittedCapabilities: 0,
-            runtime: {
-              status: "unavailable",
-              tasksByStatus: {},
-              dependencies: [],
-            },
-            warnings: [{ code: "node_timeout", message: "deadline exceeded" }],
-          },
-        ],
-      },
-    });
+  it("uses the neighbor warning and danger badges for timeout and error", () => {
+    const timeout = render(createElement(CogitoNodeHealthRow, { node: timeoutNode, embedded: true }));
+    const error = render(createElement(CogitoNodeHealthRow, { node: errorNode, embedded: true }));
 
-    expect(html).toContain("Partial");
+    expect(timeout).toContain("c724-badge c724-badge-warn");
+    expect(timeout).toContain(">Timeout<");
+    expect(timeout).toContain("cogito_timeout: cogito brief timed out after 8s");
+    expect(error).toContain("c724-badge c724-badge-danger");
+    expect(error).toContain(">Error<");
+  });
+
+  it("writes the checked time as the head's 24-hour HH:MM", () => {
+    const html = render(createElement(CogitoNodeHealthRow, { node: healthyNode, embedded: true }));
+    const expected = clockLabel(healthyNode.checkedAt ?? null);
+
+    expect(expected).toMatch(/^\d{2}:\d{2}$/);
+    expect(html).toContain(`ok / ${expected}`);
+  });
+
+  it("keeps the node name in the standalone row", () => {
+    const html = render(createElement(CogitoNodeHealthRow, { node: healthyNode }));
+
     expect(html).toContain("node-ok");
     expect(html).toContain("runtime ok");
     expect(html).toContain("database:ok");
-    expect(html).toContain("node-timeout");
-    expect(html).toContain("Timeout");
-    expect(html).toContain("node_timeout");
-  });
-
-  it("renders as a bounded card without owning a nested scroll surface", () => {
-    const html = render({
-      kind: "ready",
-      summary: {
-        status: "ok",
-        checkedAt: "2026-05-25T12:00:00.000Z",
-        nodeCount: 1,
-        nodes: [
-          {
-            nodeId: "eiaserinnys",
-            status: "ok",
-            serviceStatus: "ok",
-            capabilityCount: 0,
-            capabilities: [],
-            omittedCapabilities: 0,
-            runtime: {
-              status: "ok",
-              tasksByStatus: {},
-              dependencies: [],
-            },
-            warnings: [],
-          },
-        ],
-      },
-    });
-
-    expect(html).toContain("rounded-[13px]");
-    expect(html).not.toContain("max-h-72");
-    expect(html).not.toContain("overflow-y-auto");
   });
 });

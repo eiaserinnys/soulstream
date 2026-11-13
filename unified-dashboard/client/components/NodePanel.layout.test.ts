@@ -19,24 +19,13 @@ vi.mock("@seosoyoung/soul-ui", async () => {
     cn: (...classes: unknown[]) => classes.filter(Boolean).join(" "),
     nodeIdToHue: () => 220,
     useTheme: () => ["dark"],
-    ScrollArea: ({
-      children,
-      className,
-      ...props
-    }: {
-      children: unknown;
-      className?: string;
-      [key: string]: unknown;
-    }) => React.createElement("div", { className, ...props }, children as never),
   };
 });
 
 vi.mock("./CogitoHealthPanel", async () => {
   const React = await import("react");
-  return {
-    CogitoHealthPanel: () =>
-      React.createElement("section", { "data-testid": "cogito-health-panel" }, "Cogito"),
-  };
+  const Stub = () => React.createElement("div");
+  return { CogitoNodeHealthRow: Stub, CogitoNodeHealthNote: Stub };
 });
 
 vi.mock("./NodeProvidersPanel", async () => {
@@ -88,28 +77,26 @@ describe("NodePanel layout", () => {
     container = undefined;
   });
 
-  it("keeps cogito and node cards inside one scroll surface with separated cards", () => {
+  it("lays the node cards out in the settings flow without owning a nested scroll surface", () => {
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     flushSync(() => {
       root?.render(createElement(QueryClientProvider, { client }, createElement(NodePanel)));
     });
 
-    const scroll = container?.querySelector<HTMLElement>('[data-testid="node-panel-scroll"]');
-    expect(scroll).not.toBeNull();
-    expect(scroll?.className).toContain("flex-1");
-    expect(scroll?.className).toContain("min-h-0");
-
-    const body = container?.querySelector<HTMLElement>('[data-testid="node-panel-scroll-body"]');
+    // NodePanel은 스크롤을 직접 만들지 않는다. 스크롤은 바깥 설정 상세 영역 하나가 맡는다.
+    expect(container?.querySelector('[data-testid="node-panel-scroll"]')).toBeNull();
+    const body = container?.querySelector<HTMLElement>('[data-testid="node-panel-body"]');
     expect(body).not.toBeNull();
     expect(body?.className).toContain("space-y-2");
-    expect(body?.className).toContain("p-2");
+    // 안쪽 여백은 설정 구역 틀(.config-detail)이 가진다. 몸통이 다시 더하면 제목 시작선보다 안쪽에서 시작한다.
+    expect(body?.className).not.toMatch(/(^|\s)p[xylrtb]?-\d/);
 
-    const cogito = container?.querySelector<HTMLElement>('[data-testid="cogito-health-panel"]');
+    // cogito는 목록 위 별도 카드가 아니라 펼친 노드 안에 있다.
+    expect(container?.querySelector('[data-testid="cogito-health-panel"]')).toBeNull();
+
     const list = container?.querySelector<HTMLElement>('[data-testid="node-card-list"]');
-    expect(cogito).not.toBeNull();
     expect(list).not.toBeNull();
-    expect(body?.children[0]).toBe(cogito);
-    expect(body?.children[1]).toBe(list);
+    expect(list?.parentElement).toBe(body);
     expect(list?.className).toContain("space-y-2");
 
     const cards = Array.from(container?.querySelectorAll<HTMLElement>('[data-testid="node-card"]') ?? []);
