@@ -3088,6 +3088,10 @@ export interface ClaudeAccount {
   enabled: boolean;
   priority: number | null;
   auth_state: "ok" | "idle" | "needs_relogin" | "logging_in";
+  /**
+   * UTC ISO 8601 expiry of the in-progress login flow while auth_state is logging_in. Omitted otherwise.
+   */
+  login_expires_at?: string;
   usage: {
     five_hour: ClaudeAccountUsageWindow | null;
     seven_day: ClaudeAccountUsageWindow | null;

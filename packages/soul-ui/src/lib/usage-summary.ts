@@ -19,6 +19,8 @@ export type ClaudeAccount = {
   readonly enabled: boolean;
   readonly priority: number | null;
   readonly auth_state: "ok" | "idle" | "needs_relogin" | "logging_in";
+  /** 로그인 중인 계정에만 있는 진행 중 흐름의 만료 시각(ISO 8601). */
+  readonly login_expires_at?: string;
   readonly usage: {
     readonly five_hour: ClaudeAccountUsageWindow | null;
     readonly seven_day: ClaudeAccountUsageWindow | null;

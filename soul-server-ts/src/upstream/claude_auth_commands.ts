@@ -112,6 +112,7 @@ function toWireClaudeAccount(account: ClaudeAccountView): ClaudeAccount {
     enabled: account.enabled,
     priority: account.priority,
     auth_state: account.auth_state,
+    ...(account.login_expires_at !== null ? { login_expires_at: account.login_expires_at } : {}),
     usage: account.usage,
     observed_at: account.observed_at,
     blocked: account.blocked,

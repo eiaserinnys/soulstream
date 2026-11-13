@@ -15,6 +15,8 @@ const BASE64URL_32_BYTE_VALUE_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 export const MAX_LOGIN_CODE_LENGTH = 2_048;
 export const MAX_STDOUT_SCAN_BUFFER_CHARS = 32_768;
+/** SIGKILL 을 보낸 뒤 자식 종료를 더 기다리는 상한. 넘기면 마무리로 넘어간다. */
+export const DEFAULT_POST_KILL_WAIT_MS = 5_000;
 
 const ANSI_ESCAPE_PATTERN = /\x1b\[[0-9;?]*[ -/]*[@-~]/g;
 const URL_CANDIDATE_PATTERN = /https:\/\/[^\s"'<>]+/gi;
@@ -50,6 +52,8 @@ export interface InternalLoginFlow {
   terminatingReason: TerminationReason | null;
   terminationPromise: Promise<ClaudeAuthLoginFlow> | null;
   successCommitPromise: Promise<void> | null;
+  /** 이 흐름을 대체한 새 흐름. 늦은 마무리가 새 흐름의 상태를 건드리지 않게 한다. */
+  supersededBy: { loginId: string; accountId: string | null } | null;
 }
 
 export function createInternalLoginFlow(input: {
@@ -81,6 +85,7 @@ export function createInternalLoginFlow(input: {
     terminatingReason: null,
     terminationPromise: null,
     successCommitPromise: null,
+    supersededBy: null,
   };
 }
 
@@ -236,6 +241,7 @@ export async function terminateChildProcess(
   child: ChildProcess,
   exitPromise: Promise<ChildExit>,
   killGracePeriodMs: number,
+  postKillWaitMs: number = DEFAULT_POST_KILL_WAIT_MS,
 ): Promise<void> {
   if (child.stdin && !child.stdin.destroyed) {
     try {
@@ -267,16 +273,24 @@ export async function terminateChildProcess(
     }
   }, killGracePeriodMs);
 
+  // SIGKILL 뒤에도 자식이 끝나지 않으면 대기를 끊어 마무리(finally)가 반드시 돌게 한다.
+  let waitTimer: NodeJS.Timeout;
+  const waitLimit = new Promise<void>((resolve) => {
+    waitTimer = setTimeout(resolve, killGracePeriodMs + postKillWaitMs);
+  });
+
   try {
-    await exitPromise;
+    await Promise.race([exitPromise.then(() => undefined), waitLimit]);
   } finally {
     clearTimeout(killTimer);
+    clearTimeout(waitTimer!);
   }
 }
 
 export async function terminateFlowChildren(
   flow: InternalLoginFlow,
   killGracePeriodMs: number,
+  postKillWaitMs: number = DEFAULT_POST_KILL_WAIT_MS,
 ): Promise<void> {
   const children = [
     [flow.loginChild, flow.loginChildExitPromise],
@@ -284,7 +298,7 @@ export async function terminateFlowChildren(
   ] as const;
   for (const [child, exitPromise] of children) {
     if (child && exitPromise) {
-      await terminateChildProcess(child, exitPromise, killGracePeriodMs);
+      await terminateChildProcess(child, exitPromise, killGracePeriodMs, postKillWaitMs);
     }
   }
 }

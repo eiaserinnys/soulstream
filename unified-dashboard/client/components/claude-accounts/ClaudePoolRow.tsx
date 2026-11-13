@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, DashboardIconCap } from "@seosoyoung/soul-ui";
 import { ChevronDown, ChevronUp, Plus } from "lucide-react";
@@ -51,6 +51,14 @@ function existingAccountId(error: unknown): string | null {
   return error instanceof ClaudeAuthRequestError ? error.apiError?.existing_account_id ?? null : null;
 }
 
+/** 새 흐름이 살아 있는 상태. 이 상태로 시작·대체되면 계정 목록을 다시 받아 남은 시간을 맞춘다. */
+const ACTIVE_LOGIN_STATES: ReadonlySet<ClaudeAuthLoginFlow["state"]> = new Set([
+  "requested",
+  "url_ready",
+  "code_submitted",
+  "verifying",
+]);
+
 export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = false }: Props) {
   const queryClient = useQueryClient();
   const queryKey = useMemo(() => ["claude-auth-accounts", nodeId] as const, [nodeId]);
@@ -71,12 +79,42 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
   const [notice, setNotice] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const accountIdsBeforeLogin = useRef<Set<string>>(new Set());
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const expiredLoginsHandled = useRef<Set<string>>(new Set());
 
   const reloadAccounts = useCallback(async () => {
     const next = await getClaudeAccounts(request, nodeId);
     queryClient.setQueryData(queryKey, next);
     return next;
   }, [nodeId, queryClient, queryKey, request]);
+
+  const loginExpiries = useMemo(() => {
+    const entries: Array<{ accountId: string; expiresAt: number }> = [];
+    for (const account of accounts) {
+      if (account.auth_state !== "logging_in" || !account.login_expires_at) continue;
+      const expiresAt = new Date(account.login_expires_at).getTime();
+      if (Number.isFinite(expiresAt)) entries.push({ accountId: account.id, expiresAt });
+    }
+    return entries;
+  }, [accounts]);
+
+  useEffect(() => {
+    if (loginExpiries.length === 0) return;
+    // 목록이 바뀐 그 자리에서 지금 시각을 맞춘다. 마운트 때 값이 남아 있으면 남은 분이 틀리게 나온다.
+    setNowMs(Date.now());
+    const timer = setInterval(() => setNowMs(Date.now()), 30_000);
+    return () => clearInterval(timer);
+  }, [loginExpiries]);
+
+  // 남은 시간이 0이 된 계정마다 한 번만 목록을 다시 받아 행이 실제 상태로 바뀌게 한다.
+  useEffect(() => {
+    const due = loginExpiries.filter(
+      (entry) => entry.expiresAt <= nowMs && !expiredLoginsHandled.current.has(`${entry.accountId}:${entry.expiresAt}`),
+    );
+    if (due.length === 0) return;
+    for (const entry of due) expiredLoginsHandled.current.add(`${entry.accountId}:${entry.expiresAt}`);
+    void reloadAccounts().catch(() => undefined);
+  }, [loginExpiries, nowMs, reloadAccounts]);
 
   const completeLogin = useCallback(async (accountId: string | null) => {
     const next = await reloadAccounts();
@@ -99,8 +137,10 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
     setLoginFlow(next);
     if (next.error?.existing_account_id) setHighlightAccountId(next.error.existing_account_id);
     if (next.state === "done") await completeLogin(next.account_id ?? accountId);
+    // 시작·대체된 새 흐름 기준으로 남은 시간이 보이도록 목록을 다시 받는다.
+    else if (ACTIVE_LOGIN_STATES.has(next.state)) await reloadAccounts();
     return next;
-  }, [accounts, completeLogin, nodeId, request]);
+  }, [accounts, completeLogin, nodeId, reloadAccounts, request]);
 
   const completeCurrentLogin = useCallback(async () => {
     await completeLogin(loginFlow?.account_id ?? null);
@@ -254,6 +294,7 @@ export function ClaudePoolRow({ nodeId, request, initialList, slots, loading = f
             account={account}
             index={index}
             enabledCount={enabledCount}
+            nowMs={nowMs}
             busy={busyAccountId !== null || loginFlow !== null}
             confirmingDelete={confirmingDeleteId === account.id}
             highlighted={highlightAccountId === account.id}

@@ -623,11 +623,15 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
 
     // Re-enable ACC_A, mark ACC_B as logging_in, mark ACC_C as needs_relogin
     await svc.updateAccount(ACC_A, { enabled: true });
-    await svc.beginRelogin(ACC_B);
+    const loginExpiresAt = new Date(nowMs + 600_000).toISOString();
+    await svc.beginRelogin(ACC_B, loginExpiresAt);
     await svc.endRelogin(ACC_C, "needs_relogin");
 
     const listWithStates = await svc.getAccountList({ forceRefresh: true });
     const accAView = listWithStates.accounts.find((a) => a.id === ACC_A)!;
+    const accBView = listWithStates.accounts.find((a) => a.id === ACC_B)!;
+    expect(accBView.auth_state).toBe("logging_in");
+    expect(accBView.login_expires_at).toBe(loginExpiresAt);
     // Verify Fable weekly_scoped fixture was parsed into fable_weekly
     expect(accAView.usage).toEqual({
       five_hour: { used_percent: 37, resets_at: "2026-10-28T14:20:00.212584+00:00" },

@@ -2460,6 +2460,11 @@
           "type": "string",
           "enum": ["ok", "idle", "needs_relogin", "logging_in"]
         },
+        "login_expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "UTC ISO 8601 expiry of the in-progress login flow while auth_state is logging_in. Omitted otherwise."
+        },
         "usage": {
           "type": "object",
           "required": ["five_hour", "seven_day", "fable_weekly"],

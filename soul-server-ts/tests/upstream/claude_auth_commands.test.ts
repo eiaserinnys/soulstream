@@ -242,6 +242,7 @@ describe("claude auth command boundary", () => {
       enabled: true,
       priority: 1,
       auth_state: "ok" as const,
+      login_expires_at: null,
       active_sessions: 0,
       blocked: { resets_at: null, observed_at: null },
       stale: false,
@@ -376,6 +377,71 @@ describe("claude auth command boundary", () => {
         "Not implemented in soul-server-ts: claude_auth_login_start",
       ),
     );
+  });
+
+  it("wire 목록은 로그인 중인 계정에만 login_expires_at을 싣는다", async () => {
+    const loginExpiresAt = "2026-11-13T09:00:00.000Z";
+    const base = {
+      email: "alpha@example.com",
+      plan: "max",
+      enabled: true,
+      priority: 1,
+      active_sessions: 0,
+      blocked: null,
+      stale: false,
+      observed_at: null,
+      usage: { five_hour: null, seven_day: null, fable_weekly: null },
+    };
+    const pool = {
+      total_count: 2,
+      available_count: 1,
+      best_weekly_remaining_percent: null,
+      best_weekly_resets_at: null,
+      earliest_available_at: null,
+    };
+    const commands = new ClaudeAuthCommands({
+      agentRegistry: createAgentRegistry(["claude"]),
+      claudeAccounts: {
+        getAccountList: async () => ({
+          mode: "pool" as const,
+          accounts: [
+            {
+              ...base,
+              id: "11111111-1111-4111-8111-111111111111",
+              auth_state: "logging_in" as const,
+              login_expires_at: loginExpiresAt,
+            },
+            {
+              ...base,
+              id: "22222222-2222-4222-8222-222222222222",
+              auth_state: "ok" as const,
+              login_expires_at: null,
+            },
+          ],
+          pool,
+          fable_pool: null,
+        }),
+        updateAccount: async () => {
+          throw new Error("not used");
+        },
+        deleteAccount: async () => {
+          throw new Error("not used");
+        },
+      },
+    });
+
+    const response = await commands.handle({
+      type: "claude_auth_accounts_list",
+      requestId: "req-wire-expiry",
+    });
+    const accounts = (
+      response as { data: { accounts: Array<Record<string, unknown>> } }
+    ).data.accounts;
+    expect(accounts[0]).toMatchObject({
+      auth_state: "logging_in",
+      login_expires_at: loginExpiresAt,
+    });
+    expect("login_expires_at" in accounts[1]!).toBe(false);
   });
 
   it("runs the official CLI login through command handling and lists the registered account", async () => {

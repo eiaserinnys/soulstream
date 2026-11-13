@@ -10,6 +10,7 @@ import {
   ClaudeLoginError,
   type ClaudeLoginProfileFetcher,
   createInternalLoginFlow,
+  DEFAULT_POST_KILL_WAIT_MS,
   type InternalLoginFlow,
   isTerminalState,
   MAX_STDOUT_SCAN_BUFFER_CHARS,
@@ -40,6 +41,7 @@ export interface ClaudeLoginServiceConfig {
   fetchProfile?: ClaudeLoginProfileFetcher;
   loginTimeoutMs?: number;
   killGracePeriodMs?: number;
+  postKillWaitMs?: number;
   activeSessionPollIntervalMs?: number;
   now?: () => number;
 }
@@ -53,6 +55,7 @@ export class ClaudeLoginService {
   private readonly fetchProfile?: ClaudeLoginProfileFetcher;
   private readonly loginTimeoutMs: number;
   private readonly killGracePeriodMs: number;
+  private readonly postKillWaitMs: number;
   private readonly activeSessionPollIntervalMs: number;
   private readonly now: () => number;
   private readonly flows = new Map<string, InternalLoginFlow>();
@@ -67,43 +70,41 @@ export class ClaudeLoginService {
     this.fetchProfile = config.fetchProfile;
     this.loginTimeoutMs = config.loginTimeoutMs ?? DEFAULT_LOGIN_TIMEOUT_MS;
     this.killGracePeriodMs = config.killGracePeriodMs ?? DEFAULT_KILL_GRACE_PERIOD_MS;
+    this.postKillWaitMs = config.postKillWaitMs ?? DEFAULT_POST_KILL_WAIT_MS;
     this.activeSessionPollIntervalMs =
       config.activeSessionPollIntervalMs ?? DEFAULT_ACTIVE_SESSION_POLL_INTERVAL_MS;
     this.now = config.now ?? Date.now;
   }
 
   async start(input: { account_id?: string | null } = {}): Promise<ClaudeAuthLoginFlow> {
-    if (this.activeFlowId !== null) {
-      throw new ClaudeLoginError(
-        "login_in_progress",
-        "Another Claude login flow is already in progress",
-      );
+    const requestedAccountId = input.account_id?.trim() || null;
+    const expiresAt = new Date(this.now() + this.loginTimeoutMs).toISOString();
+
+    let profileDir: string | null = null;
+    if (requestedAccountId !== null) {
+      const existing = await this.port.findAccount(requestedAccountId);
+      profileDir = this.port.profileDir(requestedAccountId);
+      if (!existing || !profileDir) {
+        throw new ClaudeLoginError("account_not_found", "Target Claude account was not found");
+      }
     }
 
     const loginId = randomUUID();
-    const requestedAccountId = input.account_id?.trim() || null;
-    this.activeFlowId = loginId;
+    // 진행 중인 흐름이 있으면 새 시작이 잠금을 곧바로 넘겨받고 옛 흐름은 뒤에서 끝낸다.
+    this.supersedeActiveFlow({ loginId, requestedAccountId });
 
     try {
-      let configDir: string;
       if (requestedAccountId !== null) {
-        const existing = await this.port.findAccount(requestedAccountId);
-        const profileDir = this.port.profileDir(requestedAccountId);
-        if (!existing || !profileDir) {
-          throw new ClaudeLoginError("account_not_found", "Target Claude account was not found");
-        }
-        configDir = profileDir;
-        await this.port.beginRelogin(requestedAccountId);
-      } else {
-        configDir = await this.port.createPendingDir(loginId);
+        await this.port.beginRelogin(requestedAccountId, expiresAt);
       }
+      const configDir = profileDir ?? await this.port.createPendingDir(loginId);
 
       const flow = createInternalLoginFlow({
         loginId,
         requestedAccountId,
         configDir,
         baseEnv: this.baseEnv,
-        expiresAt: new Date(this.now() + this.loginTimeoutMs).toISOString(),
+        expiresAt,
       });
 
       this.flows.set(loginId, flow);
@@ -193,6 +194,29 @@ export class ClaudeLoginService {
   }
 
   async shutdown(): Promise<void> { await this.close(); }
+
+  /**
+   * 새 시작이 진행 중인 흐름의 잠금을 곧바로 넘겨받는다. 옛 흐름의 자식 종료는 기다리지 않고
+   * 뒤에서 끝내며, 옛 흐름의 늦은 마무리는 finishFlow 의 loginId 비교와 settleRelogin 의
+   * supersededBy 확인으로 새 흐름의 잠금과 계정 상태를 건드리지 않는다.
+   */
+  private supersedeActiveFlow(next: { loginId: string; requestedAccountId: string | null }): void {
+    const previousId = this.activeFlowId;
+    this.activeFlowId = next.loginId;
+    if (previousId === null) return;
+    const previous = this.flows.get(previousId);
+    if (!previous) return;
+    previous.supersededBy = { loginId: next.loginId, accountId: next.requestedAccountId };
+    this.logger.info(
+      {
+        loginId: previous.loginId,
+        supersededBy: next.loginId,
+        accountId: next.requestedAccountId,
+      },
+      "Claude CLI login flow superseded",
+    );
+    void this.terminateFlow(previous, "cancel");
+  }
 
   private async waitForZeroActiveSessionsAndSpawn(
     flow: InternalLoginFlow,
@@ -404,7 +428,7 @@ export class ClaudeLoginService {
 
     const promise = (async (): Promise<ClaudeAuthLoginFlow> => {
       try {
-        await terminateFlowChildren(flow, this.killGracePeriodMs);
+        await terminateFlowChildren(flow, this.killGracePeriodMs, this.postKillWaitMs);
         await this.cleanupNonSuccessFlow(flow);
       } finally {
         if (reason === "timeout" || reason === "failure") {
@@ -446,6 +470,8 @@ export class ClaudeLoginService {
   ): Promise<void> {
     if (flow.reloginEnded || !flow.accountId) return;
     flow.reloginEnded = true;
+    // 같은 계정을 새 흐름이 다시 잡았으면 옛 흐름은 그 계정의 상태(logging_in, needs_relogin)를 바꾸지 않는다.
+    if (flow.supersededBy !== null && flow.supersededBy.accountId === flow.accountId) return;
     await this.port.endRelogin(flow.accountId, outcome);
   }
 

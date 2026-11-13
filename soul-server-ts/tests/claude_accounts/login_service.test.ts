@@ -1,4 +1,5 @@
 import { ChildProcess, spawnSync } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { existsSync, readFileSync } from "node:fs";
 import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -17,13 +18,51 @@ import {
 } from "../../src/claude_accounts/login_service.js";
 import { composeClaudeLoginService } from "../../src/runtime/claude_login_runtime_composition.js";
 
+// 자식이 실제로 끝나지 않는 상황을 만들기 위해 spawn만 갈아 끼운다. 기본값은 실제 spawn이다.
+const spawnOverride = vi.hoisted(() => ({
+  current: null as null | ((...args: unknown[]) => unknown),
+}));
+
+vi.mock("node:child_process", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("node:child_process")>();
+  return {
+    ...actual,
+    spawn: (...args: Parameters<typeof actual.spawn>) => {
+      const override = spawnOverride.current;
+      return override ? override(...args) : actual.spawn(...args);
+    },
+  };
+});
+
+function createNeverExitingChild(): ChildProcess {
+  const child = new EventEmitter() as ChildProcess & EventEmitter;
+  const stdin = Object.assign(new EventEmitter(), {
+    destroyed: false,
+    writable: true,
+    end: () => {},
+    destroy: () => {},
+    write: () => true,
+  });
+  const stdout = Object.assign(new EventEmitter(), { setEncoding: () => {} });
+  const stderr = Object.assign(new EventEmitter(), { resume: () => {} });
+  Object.assign(child, {
+    stdin,
+    stdout,
+    stderr,
+    exitCode: null,
+    signalCode: null,
+    kill: () => true,
+  });
+  return child;
+}
+
 interface FakePortState {
   port: ClaudeLoginAccountPort;
   accounts: Map<string, { id: string; email: string | null; plan: string | null }>;
   pendingDirs: Map<string, string>;
   retiredLogins: string[];
   registered: Array<{ loginId: string; id: string; email: string | null; plan: string | null }>;
-  reloginBegun: string[];
+  reloginBegun: Array<{ accountId: string; expiresAt: string }>;
   reloginEnded: Array<{ accountId: string; outcome: "ok" | "needs_relogin" }>;
   activeSessionCounts: Map<string, number>;
 }
@@ -33,7 +72,7 @@ function createFakePort(rootDir: string): FakePortState {
   const pendingDirs = new Map<string, string>();
   const retiredLogins: string[] = [];
   const registered: Array<{ loginId: string; id: string; email: string | null; plan: string | null }> = [];
-  const reloginBegun: string[] = [];
+  const reloginBegun: Array<{ accountId: string; expiresAt: string }> = [];
   const reloginEnded: Array<{ accountId: string; outcome: "ok" | "needs_relogin" }> = [];
   const activeSessionCounts = new Map<string, number>();
 
@@ -82,8 +121,8 @@ function createFakePort(rootDir: string): FakePortState {
     async retirePending(loginId: string): Promise<void> {
       retiredLogins.push(loginId);
     },
-    async beginRelogin(accountId: string): Promise<void> {
-      reloginBegun.push(accountId);
+    async beginRelogin(accountId: string, expiresAt: string): Promise<void> {
+      reloginBegun.push({ accountId, expiresAt });
     },
     async endRelogin(accountId: string, outcome: "ok" | "needs_relogin"): Promise<void> {
       reloginEnded.push({ accountId, outcome });
@@ -220,6 +259,7 @@ function deferred<T = void>(): { promise: Promise<T>; resolve: (value: T) => voi
 }
 
 afterEach(async () => {
+  spawnOverride.current = null;
   vi.restoreAllMocks();
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop()!;
@@ -374,23 +414,27 @@ if (args[0] === "auth" && args[1] === "login") {
     expect(serializedLogs).not.toContain("SECRET_RAW_STDERR_MARKER");
   });
 
-  it("동시에 두 개의 로그인을 시작할 수 없으며 완료 뒤에는 새 로그인이 가능하다", async () => {
+  it("같은 계정 재로그인을 다시 시작하면 새 시도가 대체하고 옛 흐름의 늦은 마무리는 계정 상태를 바꾸지 않는다", async () => {
     const rootDir = await makeTempDir();
     const state = createFakePort(rootDir);
-    const { logger } = createCapturingLogger();
+    const accountId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    state.accounts.set(accountId, { id: accountId, email: "same@example.com", plan: "Pro" });
+    const { mkdir } = await import("node:fs/promises");
+    await mkdir(state.port.profileDir(accountId)!, { recursive: true, mode: 0o700 });
 
+    const { logger } = createCapturingLogger();
     const cliPath = await createFakeClaudeCli(
       rootDir,
       `
 const args = process.argv.slice(2);
 if (args[0] === "auth" && args[1] === "login") {
-  process.stdout.write(${JSON.stringify(makeAuthUrl("one") + String.fromCharCode(10))});
+  process.stdout.write(${JSON.stringify(makeAuthUrl("same-account") + String.fromCharCode(10))});
   process.stdin.once("data", () => process.exit(0));
 } else if (args[0] === "auth" && args[1] === "status") {
   process.stdout.write(JSON.stringify({
     loggedIn: true,
-    email: "one@example.com",
-    accountUuid: "22222222-2222-4222-8222-222222222222",
+    email: "same@example.com",
+    accountUuid: "${accountId}",
   }));
   process.exit(0);
 }
@@ -401,27 +445,156 @@ if (args[0] === "auth" && args[1] === "login") {
       port: state.port,
       logger,
       executablePath: cliPath,
+      killGracePeriodMs: 200,
+      postKillWaitMs: 200,
     });
 
-    const first = await service.start();
-    await expect(service.start()).rejects.toMatchObject({
-      code: "login_in_progress",
-    });
-
+    const first = await service.start({ account_id: accountId });
     await waitFor(
       () => service.status({ login_id: first.login_id }),
       (flow) => flow.state === "url_ready",
     );
-    await service.submit_code({ login_id: first.login_id, code: "code-1" });
+
+    const second = await service.start({ account_id: accountId });
+    expect(second.login_id).not.toBe(first.login_id);
+    expect(second.account_id).toBe(accountId);
+    expect(second.state).toBe("requested");
+    expect(state.reloginBegun.map((entry) => entry.accountId)).toEqual([accountId, accountId]);
+
+    const cancelled = await waitFor(
+      () => service.status({ login_id: first.login_id }),
+      (flow) => flow.state === "cancelled",
+    );
+    expect(cancelled.error).toBeNull();
+    // 같은 계정을 새 흐름이 다시 잡았으므로 옛 흐름은 이 계정의 상태(logging_in)를 되돌리지 않는다.
+    expect(state.reloginEnded).toEqual([]);
+    expect((await service.status({ login_id: second.login_id })).state).not.toBe("cancelled");
+
+    await waitFor(
+      () => service.status({ login_id: second.login_id }),
+      (flow) => flow.state === "url_ready",
+    );
+    await service.submit_code({ login_id: second.login_id, code: "same-account-code" });
+    await waitFor(
+      () => service.status({ login_id: second.login_id }),
+      (flow) => flow.state === "done",
+    );
+    expect(state.reloginEnded).toEqual([{ accountId, outcome: "ok" }]);
+
+    const third = await service.start();
+    expect(third.state).toBe("requested");
+    await service.cancel({ login_id: third.login_id });
+  });
+
+  it("새 계정 추가 중 다시 시작하면 새 흐름이 대체하고 옛 흐름만 pending을 격리한다", async () => {
+    const rootDir = await makeTempDir();
+    const state = createFakePort(rootDir);
+    const { logger } = createCapturingLogger();
+    const newAccountId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+    const cliPath = await createFakeClaudeCli(
+      rootDir,
+      `
+const args = process.argv.slice(2);
+if (args[0] === "auth" && args[1] === "login") {
+  process.stdout.write(${JSON.stringify(makeAuthUrl("add-account") + String.fromCharCode(10))});
+  process.stdin.once("data", () => process.exit(0));
+} else if (args[0] === "auth" && args[1] === "status") {
+  process.stdout.write(JSON.stringify({
+    loggedIn: true,
+    email: "new@example.com",
+    accountUuid: "${newAccountId}",
+  }));
+  process.exit(0);
+}
+      `,
+    );
+
+    const service = new ClaudeLoginService({
+      port: state.port,
+      logger,
+      executablePath: cliPath,
+      killGracePeriodMs: 200,
+      postKillWaitMs: 200,
+    });
+
+    const first = await service.start();
     await waitFor(
       () => service.status({ login_id: first.login_id }),
-      (flow) => flow.state === "done",
+      (flow) => flow.state === "url_ready",
     );
 
     const second = await service.start();
     expect(second.login_id).not.toBe(first.login_id);
-    await service.cancel({ login_id: second.login_id });
+    expect(second.state).toBe("requested");
+
+    await waitFor(
+      () => service.status({ login_id: first.login_id }),
+      (flow) => flow.state === "cancelled",
+    );
+    expect(state.retiredLogins).toEqual([first.login_id]);
+    // 새 흐름의 pending 디렉토리는 옛 흐름의 늦은 마무리와 무관하게 그대로 남는다.
+    expect(state.pendingDirs.has(second.login_id)).toBe(true);
+
+    await waitFor(
+      () => service.status({ login_id: second.login_id }),
+      (flow) => flow.state === "url_ready",
+    );
+    await service.submit_code({ login_id: second.login_id, code: "add-account-code" });
+    const done = await waitFor(
+      () => service.status({ login_id: second.login_id }),
+      (flow) => flow.state === "done",
+    );
+    expect(done.account_id).toBe(newAccountId);
+    expect(state.registered).toEqual([
+      { loginId: second.login_id, id: newAccountId, email: "new@example.com", plan: null },
+    ]);
   });
+
+  it("자식이 끝나지 않아도 유예와 상한 뒤 마무리가 돌아 잠금이 풀린다", async () => {
+    const rootDir = await makeTempDir();
+    const state = createFakePort(rootDir);
+    const { logger } = createCapturingLogger();
+
+    spawnOverride.current = () => createNeverExitingChild();
+    try {
+      const service = new ClaudeLoginService({
+        port: state.port,
+        logger,
+        executablePath: "/nonexistent/claude",
+        killGracePeriodMs: 40,
+        postKillWaitMs: 30,
+      });
+
+      const first = await service.start();
+      const second = await service.start();
+      expect(second.login_id).not.toBe(first.login_id);
+
+      await waitFor(
+        () => service.status({ login_id: first.login_id }),
+        (flow) => flow.state === "cancelled",
+        2_000,
+      );
+      expect((await service.status({ login_id: second.login_id })).state).toBe("requested");
+
+      // 옛 흐름의 늦은 마무리가 새 흐름의 잠금을 지웠다면 세 번째 시작이 두 번째를 대체하지 못한다.
+      const third = await service.start();
+      await waitFor(
+        () => service.status({ login_id: second.login_id }),
+        (flow) => flow.state === "cancelled",
+        2_000,
+      );
+      expect((await service.status({ login_id: third.login_id })).state).toBe("requested");
+
+      const cancelledThird = await service.cancel({ login_id: third.login_id });
+      expect(cancelledThird.state).toBe("cancelled");
+      const fourth = await service.start();
+      expect(fourth.state).toBe("requested");
+      await service.cancel({ login_id: fourth.login_id });
+    } finally {
+      spawnOverride.current = null;
+    }
+  }, 10_000);
 
   it("claude auth status --json이 실패하면 등록하지 않고 pending을 격리한다", async () => {
     const rootDir = await makeTempDir();
@@ -656,7 +829,7 @@ if (args[0] === "auth" && args[1] === "login") {
     const started = await service.start({ account_id: accountId });
     expect(started.state).toBe("requested");
     expect(started.account_id).toBe(accountId);
-    expect(state.reloginBegun).toEqual([accountId]);
+    expect(state.reloginBegun).toEqual([{ accountId, expiresAt: expect.any(String) }]);
 
     await new Promise((resolve) => setTimeout(resolve, 60));
     expect((await service.status({ login_id: started.login_id })).state).toBe("requested");
