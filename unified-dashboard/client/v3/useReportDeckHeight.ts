@@ -5,6 +5,9 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
   const [waitingForFont, setWaitingForFont] = useState(false);
   const checkedInitialFont = useRef(false), mounted = useRef(true);
   const holding = useRef(false), pressing = useRef(false), scrolling = useRef(false);
+  // Handling: while the pointer stays inside a top-anchored band, keep the
+  // tallest sheet seen so the nav row cannot move under a second click.
+  const handling = useRef(false), handled = useRef(0);
   const pending = useRef<{ revision: unknown; layoutKey: string; height: number } | undefined>(undefined);
   const beforeAnswer = useRef(new Map<string, number>());
   const readingPositions = useRef(new WeakMap<HTMLElement, { top: number; atBottom: boolean }>());
@@ -14,7 +17,10 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
     holding.current = pressing.current || scrolling.current;
     if (!holding.current && pending.current) setMeasurement(pending.current);
   }, []);
-  const reset = useCallback(() => { pressing.current = false; scrolling.current = false; releaseIfSettled(); }, [releaseIfSettled]);
+  const reset = useCallback(() => {
+    pressing.current = false; scrolling.current = false; handling.current = false; handled.current = 0;
+    releaseIfSettled();
+  }, [releaseIfSettled]);
   useLayoutEffect(() => {
     if (previousLayout.current !== layoutKey) { beforeAnswer.current.clear(); readingPositions.current = new WeakMap(); reset(); previousLayout.current = layoutKey; }
     const node = root.current;
@@ -67,7 +73,10 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
         }
         readingPositions.current.set(reading, position(reading));
       });
-      pending.current = { revision, layoutKey, height: Math.ceil(Math.max(0, visible ?? 0)) + 2 };
+      const measured = Math.ceil(Math.max(0, visible ?? 0)) + 2;
+      const height = handling.current ? Math.max(measured, handled.current) : measured;
+      if (handling.current) handled.current = height;
+      pending.current = { revision, layoutKey, height };
       if (!holding.current) setMeasurement(pending.current);
       node.querySelectorAll<HTMLElement>('.pas-report-reading').forEach(reading => {
         reading.dataset.more = String(reading.scrollHeight - reading.scrollTop - reading.clientHeight > 1);
@@ -115,11 +124,24 @@ export function useReportDeckHeight(root: RefObject<HTMLElement | null>, revisio
     window.addEventListener('pointerup', release); window.addEventListener('pointercancel', release);
     return () => { window.removeEventListener('pointerup', release); window.removeEventListener('pointercancel', release); };
   }, [releaseIfSettled]);
-  const height = measurement?.layoutKey === layoutKey && (measurement.revision === revision || holding.current) ? measurement.height : undefined;
+  const current = measurement?.layoutKey === layoutKey && (measurement.revision === revision || holding.current || handling.current)
+    ? measurement.height : undefined;
+  const height = current === undefined ? undefined : handling.current ? Math.max(current, handled.current) : current;
   return {
     height, holding, waitingForFont, overflowing: maximumHeight !== undefined && height !== undefined && height > maximumHeight,
     hold: () => { pressing.current = true; holding.current = true; },
     startScroll: () => { scrolling.current = true; holding.current = true; },
     endScroll: () => { scrolling.current = false; releaseIfSettled(); },
+    startHandling: () => {
+      if (handling.current) return;
+      const seed = measurement?.layoutKey === layoutKey ? measurement.height : pending.current?.layoutKey === layoutKey ? pending.current.height : 0;
+      handling.current = true; handled.current = seed;
+    },
+    endHandling: () => {
+      if (!handling.current) return;
+      handling.current = false; handled.current = 0;
+      releaseIfSettled();
+      measureCurrent.current();
+    },
   };
 }

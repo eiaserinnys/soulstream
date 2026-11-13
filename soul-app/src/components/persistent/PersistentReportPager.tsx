@@ -29,7 +29,7 @@ function ReportNavButton({ interaction, testID, ...props }: React.ComponentProps
   </View>;
 }
 
-export function PersistentReportPager({ entries: rawEntries, index: rawIndex, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, renderQuestion, onOpenCardDetails, expandedKey: controlledExpandedKey, onExpandedKeyChange, completion, verticalList = false, revealKey, onRevealed, answeredHoldKey, onAnsweredHoldExpire }: {
+export function PersistentReportPager({ entries: rawEntries, index: rawIndex, api, onSelect, onDismiss, onFocusComposer, send, bubble = false, maxHeight, onInteraction, onDeckTouch, onReady, sessionId, renderCardDetails, renderCardStatus, renderQuestion, onOpenCardDetails, expandedKey: controlledExpandedKey, onExpandedKeyChange, completion, verticalList = false, revealKey, onRevealed, answeredHoldKey, onAnsweredHoldExpire, handling = false }: {
   expandedKey?: string | null; onExpandedKeyChange?(key: string | null): void;
   /** 답한 장을 확정한 붙들기 key. 있으면 펼치지 않은 동안 기한을 센다. */
   answeredHoldKey?: string | null; onAnsweredHoldExpire?(key: string): void;
@@ -44,6 +44,8 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
   send?: ReturnType<typeof usePersistentReportSend>; bubble?: boolean; maxHeight?: number; onInteraction?(pressed: boolean): void;
   onDeckTouch?(active: boolean): void; onReady?(ready: boolean): void; sessionId?: string;
   completion?: CardCompletion; verticalList?: boolean; revealKey?: string | null; onRevealed?(): void;
+  /** 판을 다루는 동안(터치가 판 안에서 시작해 판 밖에서 다시 시작될 때까지) 위에 붙은 띠가 줄지 않는다. */
+  handling?: boolean;
 }) {
   const entries = useMemo(() => completion?.filterEntries ? completion.filterEntries(rawEntries) : rawEntries, [completion, rawEntries]);
   const index = Math.min(rawIndex, Math.max(0, entries.length - 1));
@@ -89,21 +91,33 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
   const sliding = useRef(false);
   const [height, setHeight] = useState(0);
   const layoutKey = JSON.stringify([sessionId, bubble, compact, width]);
+  // 위에 붙은 아이패드 띠에서만 다루기 붙들기를 건다. 말풍선, 폰 띠, 키보드가 뜬 배치는 그대로다.
+  const bandHandling = handling && !bubble && !phone && !compact && !verticalList && entries.length > 1;
+  const heldHeight = useRef(0);
+  const heldLayout = useRef<string | null>(null);
   const [presentedLayout, setPresentedLayout] = useState<string | null>(null);
   const presentedSession = useRef(sessionId);
   const commitHeight = () => {
+    if (bandHandling) {
+      if (heldLayout.current !== layoutKey) { heldLayout.current = layoutKey; heldHeight.current = Math.max(0, height); }
+    } else if (heldLayout.current !== null) { heldLayout.current = null; heldHeight.current = 0; }
     const allMeasured = width > 0 && entries.every(entry => readyHeights.current.has(measureKey(entry)));
-    if (pressing.current || sliding.current || (bubble && !entries.every(entry => measuredHeights.current.has(measureKey(entry))))
+    // 다루기 붙들기가 걸린 아이패드 띠는 손가락이 판 안에 있는 동안에도 지금 장 높이를 잰다.
+    // 붙들기가 줄어듦을 막으므로 누르기·끌기 대기는 이 경우에 필요 없다(긴 장으로 넘기면 자란다).
+    if ((!bandHandling && (pressing.current || sliding.current))
+      || (bubble && !entries.every(entry => measuredHeights.current.has(measureKey(entry))))
       || (presentedLayout === layoutKey && !allMeasured)) return;
     const visible = entries[index];
     const next = visible ? Math.max(0, measuredHeights.current.get(measureKey(visible)) ?? 0,
       visible.state === 'answered' ? openHeights.current.get(measureKey(visible)) ?? 0 : 0) : 0;
-    setHeight(saved => saved === next ? saved : next);
+    const applied = bandHandling ? Math.max(next, heldHeight.current) : next;
+    if (bandHandling) heldHeight.current = applied;
+    setHeight(saved => saved === applied ? saved : applied);
     if (allMeasured && next > 0) { presentedSession.current = sessionId; setPresentedLayout(layoutKey); }
   };
   const latestMeasurement = useRef({ entries, commitHeight, measureKey });
   latestMeasurement.current = { entries, commitHeight, measureKey };
-  useLayoutEffect(commitHeight, [entries, compact, width, bubble, index]);
+  useLayoutEffect(commitHeight, [entries, compact, width, bubble, index, handling]);
   const bubbleHeight = bubble ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
   const inlineCapped = !bubble && (inlineExpanded || (inlineMaxHeight !== undefined && height > inlineMaxHeight));
   const inlineHeight = inlineCapped ? Math.min(inlineMaxHeight ?? height, height || inlineMaxHeight || 0) : undefined;

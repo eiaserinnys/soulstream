@@ -144,6 +144,8 @@ export function PersistentReportDeck({ sessionId, focusInput, dismissReport, not
   const deck = <section ref={node => { if (node) root.current = node; }} className="pas-report" data-bubble={Boolean(bubble)} data-inline-max-height={inlineMaxHeight !== undefined || undefined} data-overflow={sizing.overflowing} data-undo={Boolean(completion.recent) || undefined} style={{ transitionProperty: 'none', opacity: sizing.waitingForFont ? 0 : undefined, height: sizing.height, maxHeight: bubble?.maxHeight, ...(inlineMaxHeight !== undefined ? { '--pas-report-inline-max-height': `${inlineMaxHeight}px` } : {}), ...(bubble && seat?.body ? { position: 'absolute', left: bubble.left - seat.body.left, top: bubble.bottom - seat.body.top, width: bubble.width, transform: 'translateY(-100%)', '--pas-report-tail-left': `${bubble.tailLeft}px` } : {}) } as React.CSSProperties} data-testid="report-deck" data-many={entries.length > 1}
     inert={sizing.waitingForFont || undefined} aria-hidden={sizing.waitingForFont || undefined} aria-label="지금의 보고" aria-roledescription="carousel"
     onPointerDownCapture={sizing.hold}
+    onPointerEnter={bubble ? undefined : sizing.startHandling}
+    onPointerLeave={bubble ? undefined : sizing.endHandling}
     onFocusCapture={() => { focusWithin.current = true; }}
     onBlurCapture={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null) && (event.relatedTarget || event.target.isConnected)) focusWithin.current = false; }}
     onKeyDown={event => { if (renderCardDetails && (event.target as Element).closest('input,textarea,[contenteditable=true]')) return; if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') { event.preventDefault(); go(index + (event.key === 'ArrowRight' ? 1 : -1)); } }}>
