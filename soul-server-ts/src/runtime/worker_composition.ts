@@ -50,6 +50,7 @@ import { composeClaudeLoginService, seedLegacyClaudeAccount } from "./claude_log
 import { createDetachedClaudeEventBridge } from "./detached_claude_event_bridge.js";
 import { createEngineFactory } from "./engine_factory.js";
 import { backgroundLifecycleObserver, composeRunnerOrphanReaper, composeRunnerProcessRuntime, composeRunnerRecoveryCoordinator } from "./runner_process_composition.js";
+import { noPendingRunnerSettlement } from "../runner/runner_registration_control.js";
 import { composeSessionIsolation } from "./session_isolation_composition.js";
 import { resolveNodeServicesObservation } from "../mcp/node_services_observation_config.js";
 import type { WorkerComposition, WorkerCompositionParams } from "./worker_composition_types.js";
@@ -326,6 +327,9 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     closedTailDrainer: runnerProcess?.closedTailDrainer,
     taskManager,
     taskExecutor: taskRuntime.taskExecutor,
+    // 중앙 세션 한 줄은 hydrate나 메모리 캐시를 거치지 않고 직접 읽는다.
+    readCentralSession: async (sessionId) => await db.getSession(sessionId),
+    hasPendingRunnerSettlement: noPendingRunnerSettlement,
     logger,
     ...(params.nodeStallMonitor ? { nodeStallMonitor: params.nodeStallMonitor } : {}),
     ...(claudeRuntime.backgroundLifecycle

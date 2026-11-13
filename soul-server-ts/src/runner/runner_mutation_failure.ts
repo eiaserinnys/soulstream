@@ -3,7 +3,8 @@ export type RunnerMutationFailureCode =
   | "runner_termination_signal_failed"
   | "runner_termination_self_signal_refused"
   | "runner_termination_exit_proof_failed"
-  | "runner_registration_persistence_failed";
+  | "runner_registration_persistence_failed"
+  | "runner_settlement_pending";
 
 export class RunnerMutationFailure extends Error {
   readonly recoverable = true;

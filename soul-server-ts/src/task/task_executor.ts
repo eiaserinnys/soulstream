@@ -17,6 +17,7 @@
  */
 
 import type { Logger } from "pino";
+import { randomUUID } from "node:crypto";
 
 import type { AgentProfile } from "../agent_registry.js";
 import type { ModelCatalog } from "../model_catalog.js";
@@ -47,6 +48,8 @@ import {
 import type { RunnerRegistration } from "../runner/runner_process_registry.js";
 import { RunnerOrphanedSpawnError } from "../runner/runner_process_dispatcher.js";
 import type { RunnerPhaseObservation } from "../runner/runner_phase_observation.js";
+import { classifyRunnerAdoptRejection } from
+  "../runner/state/runner_central_check_decision.js";
 import {
   ISOLATION_AUTH_UNAVAILABLE,
   ISOLATION_POLICY_UNAVAILABLE,
@@ -80,6 +83,10 @@ import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
 import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
 import { releaseTaskRunner } from "./task_runner_release.js";
+import {
+  RunnerAdoptionRejectedError,
+  type RunnerAdoptionApplication,
+} from "./runner_adoption_rejected_error.js";
 import {
   createExecutionActivation,
   isTerminalTaskStatus,
@@ -196,6 +203,21 @@ interface RecoveredRunnerTerminalObservation {
   detail: string | null;
 }
 
+/**
+ * 잇기 거절로 소비를 멈춘 프레임 통로다.
+ *
+ * 다시 될 수 있는 거절은 러너를 붙인 채 둔다. 프레임 통로는 프레임마다
+ * 확인(ack)을 받아야 아이가 다음 프레임으로 넘어가므로, 소비를 영영 멈추면
+ * 나중에 잇기가 적용돼도 그 턴의 출력이 서버로 오지 않는다. 붙인 러너에
+ * 잇기 전이만 다시 보내는 길이 적용을 받으면 이 통로를 이어서 소비한다.
+ */
+interface SuspendedRecoveredExecution {
+  agent: AgentProfile;
+  runner: TaskRunnerRuntime;
+  frames: AsyncIterable<import("../runner/frame_protocol.js").RunnerEventFrame>;
+  terminalObservation?: RecoveredRunnerTerminalObservation;
+}
+
 function recoveredRunnerTerminalObservation(
   registration: RunnerRegistration,
 ): RecoveredRunnerTerminalObservation | undefined {
@@ -294,6 +316,8 @@ export class TaskExecutor {
   private readonly engineTurnRunner: TaskEngineTurnRunner;
   private readonly turnInputBuilder: TaskTurnInputBuilder;
   private readonly deliveryConsumption?: TaskDeliveryConsumption;
+  private readonly suspendedRecoveredExecutions =
+    new WeakMap<Task, SuspendedRecoveredExecution>();
   constructor(
     private readonly engineFactory: EngineFactory,
     private readonly db: SessionDB,
@@ -1392,6 +1416,7 @@ export class TaskExecutor {
     runtimeEnvIdentity?: string,
     onPendingFramesReplayed?: () => void,
     terminalObservation?: RecoveredRunnerTerminalObservation,
+    onAdoptionApplication?: (application?: RunnerAdoptionApplication) => void,
   ): Promise<void> {
     assertGenericTaskExecution(task, agent.id);
     if (task.runner) {
@@ -1406,25 +1431,51 @@ export class TaskExecutor {
     if (mode === "offline") task.status = "running";
     const promise = (async () => {
       // Adoption must establish the same durable running projection as a new
-      // turn before replaying runner frames. A stable execution command id
-      // suppresses duplicate client updates across repeated host restarts.
+      // turn before replaying runner frames. Every new adoption judgment gets
+      // its own attempt UUID so a stored rejection is not replayed; an outbox
+      // resend of the same event keeps its dedupe key.
       if (mode === "adopt") {
         const registrationId = runner.dispatcher.registrationId();
-        const application = await this.persistence
-          .enqueueRunningTransitionAndWaitForApplication(
-          task.agentSessionId,
-          {
-            reviewState: task.reviewState ?? "not_required",
-            transitionId: `adopt:${commandId ?? task.lastEventId}`,
-            ...(registrationId ? { registrationId } : {}),
-          },
-        );
-        applyCanonicalSessionProjection(task, application.canonicalSession);
-        if (!application.applied) {
-          throw new Error(
-            `runner adoption running transition rejected for ${task.agentSessionId}`,
-          );
+        let application: Awaited<ReturnType<
+          EventPersistence["enqueueRunningTransitionAndWaitForApplication"]
+        >>;
+        try {
+          application = await this.persistence
+            .enqueueRunningTransitionAndWaitForApplication(
+              task.agentSessionId,
+              {
+                reviewState: task.reviewState ?? "not_required",
+                transitionId: `adopt:${commandId ?? task.lastEventId}:${randomUUID()}`,
+                ...(registrationId ? { registrationId } : {}),
+              },
+            );
+        } catch (error) {
+          onAdoptionApplication?.();
+          throw error;
         }
+        onAdoptionApplication?.(application);
+        if (!application.applied) {
+          const rejection = new RunnerAdoptionRejectedError(
+            task.agentSessionId,
+            application.rejectionReason,
+          );
+          if (
+            classifyRunnerAdoptRejection(application.rejectionReason)
+            === "retryable_rejection"
+          ) {
+            // 다시 될 수 있는 거절은 러너를 붙인 채 둔다. 프레임 통로도 함께
+            // 붙잡아 둔다 — 여기서 놓으면 아이가 확인을 기다리다 멈춘 채로
+            // 남고, 나중에 잇기가 적용돼도 그 턴의 출력이 오지 않는다.
+            this.suspendedRecoveredExecutions.set(task, {
+              agent,
+              runner,
+              frames,
+              terminalObservation,
+            });
+          }
+          throw rejection;
+        }
+        applyCanonicalSessionProjection(task, application.canonicalSession);
       }
       await this.consumeRecoveredRunnerFrames(
         task,
@@ -1446,6 +1497,7 @@ export class TaskExecutor {
     mode: "adopt" | "replay" | "offline",
     onAttemptCreated?: (runner: TaskRunnerRuntime) => (() => void) | undefined,
     phaseObservation?: RunnerPhaseObservation,
+    onAdoptionApplication?: (application?: RunnerAdoptionApplication) => void,
   ): Promise<void> {
     // 가드는 기존 호출 규약대로 동기 예외다. 재부착은 턴 판정을 다시 하지 않는다.
     assertGenericTaskExecution(task, registration.config?.agent?.id);
@@ -1456,6 +1508,7 @@ export class TaskExecutor {
       mode,
       onAttemptCreated,
       phaseObservation,
+      onAdoptionApplication,
     );
   }
 
@@ -1466,6 +1519,7 @@ export class TaskExecutor {
     mode: "adopt" | "replay" | "offline",
     onAttemptCreated?: (runner: TaskRunnerRuntime) => (() => void) | undefined,
     phaseObservation?: RunnerPhaseObservation,
+    onAdoptionApplication?: (application?: RunnerAdoptionApplication) => void,
   ): Promise<void> {
     const config = registration.config;
     // 복구용 러너를 만들기 전에 거절한다. 오프라인 복구 dispatcher는 초기화하면서
@@ -1504,11 +1558,78 @@ export class TaskExecutor {
         config.runtimeEnvIdentity ?? `legacy:${config.codeSha}`,
         onPendingFramesReplayed,
         terminalObservation,
+        onAdoptionApplication,
       );
     } catch (error) {
       await this.releaseUnadoptedRunner(task, runner, config.sessionId);
       throw error;
     }
+  }
+
+  /**
+   * Sends only the adoption transition for a runner that is already attached.
+   *
+   * A rejected adoption keeps the runner attached: the process still holds the
+   * turn, and the next central check decides again with a fresh attempt UUID.
+   * This path neither re-attaches nor recovers frames.
+   */
+  async adoptAttachedRunnerExecution(
+    task: Task,
+    commandId?: string,
+  ): Promise<RunnerAdoptionApplication> {
+    if (!task.runner) {
+      throw new Error(`Task ${task.agentSessionId} has no attached runner to adopt`);
+    }
+    const registrationId = task.runner.dispatcher.registrationId();
+    const application = await this.persistence
+      .enqueueRunningTransitionAndWaitForApplication(
+        task.agentSessionId,
+        {
+          reviewState: task.reviewState ?? "not_required",
+          transitionId: `adopt:${commandId ?? task.lastEventId}:${randomUUID()}`,
+          ...(registrationId ? { registrationId } : {}),
+        },
+      );
+    if (application.applied) {
+      applyCanonicalSessionProjection(task, application.canonicalSession);
+      this.resumeSuspendedRecoveredExecution(task);
+    }
+    return {
+      applied: application.applied,
+      rejectionReason: application.rejectionReason,
+    };
+  }
+
+  /**
+   * 잇기 거절로 멈춰 둔 프레임 소비를 다시 잇는다.
+   *
+   * 붙인 러너에 보낸 잇기 전이가 적용되면, 시동 복구 때 열어 둔 프레임 통로를
+   * 이어서 소비해 턴의 출력과 종료를 평소 경로로 흘려보낸다. 러너가 그 사이
+   * 교체됐거나 이미 닫혔으면 아무것도 하지 않는다.
+   */
+  private resumeSuspendedRecoveredExecution(task: Task): void {
+    const suspended = this.suspendedRecoveredExecutions.get(task);
+    if (!suspended) return;
+    this.suspendedRecoveredExecutions.delete(task);
+    if (task.runner !== suspended.runner) return;
+    if (suspended.runner.dispatcher.isClosed?.() === true) return;
+    if (!suspended.runner.dispatcher.hasActiveExecution()) return;
+    if (task.executionPromise) return;
+    const promise = this.consumeRecoveredRunnerFrames(
+      task,
+      suspended.agent,
+      suspended.runner,
+      suspended.frames,
+      true,
+      suspended.terminalObservation,
+    );
+    this.holdExecutionSlot(task, promise);
+    void promise.catch((error: unknown) => {
+      this.logger.warn(
+        { err: error, sessionId: task.agentSessionId },
+        "resumed recovered runner execution failed",
+      );
+    });
   }
 
   /**

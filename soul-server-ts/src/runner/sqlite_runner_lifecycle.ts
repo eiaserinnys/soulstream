@@ -414,7 +414,7 @@ export type RunnerFinishOutcome = "applied" | "ignored";
 
 /**
  * 끝남의 한 길이다. running이고 실행 명령 번호가 같을 때만 적용한다.
- * closed나 reaped에 온 늦은 끝남은 무시하고 true를 돌려준다.
+ * closed나 reaped에 온 늦은 끝남은 무시하고 ignored를 돌려준다.
  */
 export function finishRunnerExecutionWithinTransaction(
   database: DatabaseSync,

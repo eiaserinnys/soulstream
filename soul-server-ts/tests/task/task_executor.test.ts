@@ -3600,7 +3600,7 @@ describe("TaskExecutor runner process boundary", () => {
       task.agentSessionId,
       {
         reviewState: "not_required",
-        transitionId: "adopt:execute-old",
+        transitionId: expect.stringMatching(/^adopt:execute-old:[0-9a-f-]{36}$/),
         registrationId: "registration-1",
       },
     ));
@@ -3619,6 +3619,39 @@ describe("TaskExecutor runner process boundary", () => {
     expect(task.lastEventId).toBeGreaterThan(0);
     expect(task.lastAssistantText).toBe("replayed");
     expect(task.status).toBe("completed");
+  });
+
+  it("sends only the adoption transition for an attached runner with a fresh attempt UUID each time", async () => {
+    const mocks = makeMocks();
+    const { runner, dispatcher } = makeRunnerProcessRuntime([]);
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.runner = runner;
+
+    await executor.adoptAttachedRunnerExecution(task, "execute-old");
+    await executor.adoptAttachedRunnerExecution(task, "execute-old");
+
+    expect(dispatcher.recoverFrames).not.toHaveBeenCalled();
+    expect(dispatcher.prepareSession).not.toHaveBeenCalled();
+    const transitionIds = mocks.enqueueRunningTransitionAndWaitForApplication.mock.calls
+      .map(([, input]) => (input as { transitionId: string }).transitionId);
+    expect(transitionIds).toHaveLength(2);
+    for (const transitionId of transitionIds) {
+      expect(transitionId).toMatch(
+        /^adopt:execute-old:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
+    }
+    expect(new Set(transitionIds).size).toBe(2);
+    expect(mocks.enqueueRunningTransitionAndWaitForApplication).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({ registrationId: "registration-1" }),
+    );
   });
 
   it("propagates an adopted runner transport failure after finalizing the failed execution", async () => {

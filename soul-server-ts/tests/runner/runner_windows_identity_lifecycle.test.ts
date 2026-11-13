@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { RunnerRegistrationControl } from "../../src/runner/runner_registration_control.js";
+import {
+  RunnerRegistrationControl,
+  noPendingRunnerSettlement,
+} from "../../src/runner/runner_registration_control.js";
 import { RunnerMutationFailure } from "../../src/runner/runner_mutation_failure.js";
 
 /**
@@ -88,6 +91,27 @@ describe("R31-B termination of a registration with no identity", () => {
     // fail-closed proof for a proven live runner is unchanged.
     expect(outcome).toBe("registration_invalidated");
     expect(calls.map((call) => call.method)).toEqual(["terminate"]);
+  });
+
+  it("refuses terminal retirement while the runner settlement is pending", async () => {
+    const calls: SpawnerCall[] = [];
+    const control = new RunnerRegistrationControl(
+      fakeSpawner(calls),
+      () => true,
+    );
+
+    await expect(
+      control.retireTerminal(
+        fakeRegistration({ pid: 44892, pidStartIdentity: "windows-process-1" }),
+      ),
+    ).rejects.toMatchObject({ code: "runner_settlement_pending" });
+    expect(calls).toEqual([]);
+  });
+
+  it("keeps the operational settlement probe reporting no pending settlement", () => {
+    expect(noPendingRunnerSettlement(
+      fakeRegistration({ pid: 44892, pidStartIdentity: "windows-process-1" }),
+    )).toBe(false);
   });
 
   it("surfaces a disposal failure rather than reporting a false success", async () => {

@@ -11,6 +11,8 @@ import {
   type RunnerProcessRuntimeFactoryOptions,
 } from "../runner/runner_process_runtime_factory.js";
 import { RunnerRecoveryCoordinator } from "../runner/runner_recovery_coordinator.js";
+import type { RunnerCentralSessionRow } from "../runner/runner_central_check.js";
+import type { RunnerSettlementPendingProbe } from "../runner/runner_registration_control.js";
 import { RunnerOrphanReaper } from "../runner/runner_orphan_reaper.js";
 import { listLiveRunnerSessionIds } from "../runner/runner_process_registry.js";
 import { RunnerRegistrationScanCache } from "../runner/runner_registration_scan_cache.js";
@@ -125,6 +127,8 @@ export async function composeRunnerRecoveryCoordinator(options: {
     | "hydrateRunnerRecoveryTask"
     | "markRunnerFailure"
     | "projectClosedRunner"
+    | "listTasks"
+    | "forgetRunnerRecoveryTask"
   >;
   taskExecutor: Pick<
     TaskExecutor,
@@ -132,7 +136,14 @@ export async function composeRunnerRecoveryCoordinator(options: {
     | "retainRegisteredDetachedRunner"
     | "releaseExpiredRetainedRunner"
     | "completeRetainedRunnerReleaseAfterTermination"
+    | "adoptAttachedRunnerExecution"
   >;
+  /** 중앙 세션 한 줄을 hydrate나 메모리 캐시 없이 읽는 포트다. */
+  readCentralSession?: (
+    sessionId: string,
+  ) => Promise<RunnerCentralSessionRow | null>;
+  /** 이 세션의 완료 정산 미결을 묻는 포트다. */
+  hasPendingRunnerSettlement?: RunnerSettlementPendingProbe;
   terminalizeClaudeBackgroundTasks?: (
     sessionId: string,
     execution: ExecutionRegistration,
@@ -158,6 +169,12 @@ export async function composeRunnerRecoveryCoordinator(options: {
     taskExecutor: options.taskExecutor,
     closedTailDrainer: options.closedTailDrainer,
     logger: options.logger,
+    ...(options.readCentralSession
+      ? { readCentralSession: options.readCentralSession }
+      : {}),
+    ...(options.hasPendingRunnerSettlement
+      ? { hasPendingRunnerSettlement: options.hasPendingRunnerSettlement }
+      : {}),
     ...(options.nodeStallMonitor ? { nodeStallMonitor: options.nodeStallMonitor } : {}),
     ...(options.terminalizeClaudeBackgroundTasks
       ? {
