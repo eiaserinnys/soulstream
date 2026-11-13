@@ -1,4 +1,5 @@
 import type { ConfigModalApi } from "../components/ConfigModal";
+import { sampleCogitoBriefs } from "../components/CogitoNodeHealthSample";
 import { createOwnedAgentsFixture } from "./owned-agents-fixture";
 import { createPersistentSessionsFixture } from "./persistent-sessions-fixture";
 import type { ClaudeAccount, ClaudeAccountList, SessionStory, UsageSummaryProvider, UsageSummaryQuota, UsageSummarySnapshot } from "@seosoyoung/soul-ui";
@@ -394,6 +395,7 @@ export function createDialoguesApi() {
     folderId: dialoguesFolders[0]!.id,
   });
   const persistentStoryState = new URLSearchParams(window.location.search).get("persistentStoryState") ?? "full";
+  const cogitoState = new URLSearchParams(window.location.search).get("cogitoState") ?? "normal";
   let persistentStoryRequestCount = 0;
   const request: typeof fetch = async (input, init) => {
     const url = new URL(String(input), "https://sample.invalid");
@@ -430,9 +432,30 @@ export function createDialoguesApi() {
           : persistentSettingsStory;
       return new Response(JSON.stringify(story), { headers: { "content-type": "application/json" } });
     }
+    if (path === "/cogito/briefs") {
+      if (cogitoState === "loading") {
+        const signal = init?.signal;
+        return await new Promise<Response>((_resolve, reject) => {
+          if (signal?.aborted) {
+            reject(new DOMException("The operation was aborted.", "AbortError"));
+            return;
+          }
+          signal?.addEventListener("abort", () => reject(new DOMException("The operation was aborted.", "AbortError")), { once: true });
+        });
+      }
+      if (cogitoState === "failure") {
+        return new Response(JSON.stringify({ error: "sample cogito unavailable" }), {
+          status: 503,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(JSON.stringify(sampleCogitoBriefs([
+        { nodeId: "sample-node" },
+        { nodeId: "sample-usage-node", status: "timeout", warnings: [{ code: "cogito_timeout", message: "cogito brief timed out after 8s" }] },
+      ])), { headers: { "content-type": "application/json" } });
+    }
     let value: unknown;
-    if (path === "/cogito/briefs") value = {status:"ok",node_count:1,nodes:[{node_id:"sample-node",status:"ok",data:{status:"ok"}}]};
-    else if (path.startsWith("/api/nodes/") && path.endsWith("/model-presets")) value = { model_presets: persistentSettingsModelPresets };
+    if (path.startsWith("/api/nodes/") && path.endsWith("/model-presets")) value = { model_presets: persistentSettingsModelPresets };
     else if (path.startsWith("/api/sessions/") && path.endsWith("/timeline")) {
       const messages = sample?.startsWith("persistent-settings-window") ? persistentSettingsTimeline : [];
       const eventTypes = url.searchParams.get("event_types")?.split(",");

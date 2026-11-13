@@ -9,17 +9,16 @@ vi.mock("@seosoyoung/soul-ui", async () => {
   const usage = await import("../../../packages/soul-ui/src/lib/usage-summary");
   return {
     ...usage,
+    Badge: ({ children }: { children?: ReactNode }) => <span>{children}</span>,
     cn: (...values: Array<string | false | null | undefined>) => values.filter(Boolean).join(" "),
     nodeIdToHue: () => 200,
     useTheme: () => ["dark", () => undefined],
-    ScrollArea: ({ children, ...props }: { children?: ReactNode } & Record<string, unknown>) => <div {...props}>{children}</div>,
     DashboardIconCap: ({ label, ...props }: { label?: string } & Record<string, unknown>) => (
       <button type="button" aria-label={label} {...props} />
     ),
   };
 });
 
-vi.mock("./CogitoHealthPanel", () => ({ CogitoHealthPanel: () => null }));
 vi.mock("./NodeProvidersPanel", () => ({
   NodeProvidersPanel: (props: { node: { fetchedAt: string | null } | null; loading: boolean }) => (
     <div
@@ -93,10 +92,10 @@ describe("NodePanel", () => {
     }
   }
 
-  async function mount(request: typeof fetch) {
+  async function mount(request: typeof fetch, nodes = nodesMap()) {
     await act(async () => root.render(
       <QueryClientProvider client={client}>
-        <NodePanel request={request} sampleNodes={nodesMap() as never} />
+        <NodePanel request={request} sampleNodes={nodes as never} />
       </QueryClientProvider>,
     ));
     await settle();
@@ -222,6 +221,68 @@ describe("NodePanel", () => {
 
     // 배지는 새로 고침 단추 왼쪽에 있어야 단추가 밀리지 않는다.
     expect(failed!.compareDocumentPosition(refreshCap) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("shows the expanded node's cogito inside it, and only that node's", async () => {
+    const request = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/cogito/briefs") return data({
+        status: "ok",
+        checked_at: "2026-11-07T15:50:00+09:00",
+        node_count: 2,
+        nodes: [
+          { node_id: "node-a", status: "ok", data: { status: "ok" } },
+          { node_id: "node-b", status: "ok", data: { status: "ok" } },
+        ],
+      });
+      return data(snapshot(summaryNode("2026-11-07T15:50:00+09:00")));
+    });
+    const nodes = new Map([
+      ["node-a", { nodeId: "node-a", status: "connected" }],
+      ["node-b", { nodeId: "node-b", status: "connected" }],
+    ]);
+
+    await mount(request as unknown as typeof fetch, nodes as never);
+
+    // 접힌 상태에서는 cogito 행이 없고, 목록 위 별도 카드도 없다.
+    expect(host.querySelectorAll('[data-testid="cogito-node-health"]')).toHaveLength(0);
+    expect(host.querySelector('[data-testid="cogito-health-panel"]')).toBeNull();
+
+    await expand();
+
+    const rows = Array.from(host.querySelectorAll<HTMLElement>('[data-testid="cogito-node-health"]'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.dataset.nodeId).toBe("node-a");
+    expect(rows[0]?.textContent).toContain("Cogito");
+
+    // 사용량 패널 아래에, 그 노드의 펼친 영역 안에 있다.
+    const providersRow = host.querySelector('[data-testid="providers"]')!;
+    expect(providersRow.compareDocumentPosition(rows[0]!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(card().contains(rows[0]!)).toBe(true);
+  });
+
+  it("refetches cogito together with the node refresh cap", async () => {
+    const request = vi.fn(async (input: RequestInfo | URL) => {
+      const path = String(input);
+      if (path === "/cogito/briefs") return data({
+        status: "ok",
+        node_count: 1,
+        nodes: [{ node_id: "node-a", status: "ok", data: { status: "ok" } }],
+      });
+      if (path.endsWith("/api/usage/refresh")) return data(snapshot(summaryNode("2026-11-07T16:05:00+09:00")));
+      return data(snapshot(summaryNode("2026-11-07T15:50:00+09:00")));
+    });
+
+    await mount(request as unknown as typeof fetch);
+    await expand();
+    const before = request.mock.calls.filter(([input]) => String(input) === "/cogito/briefs").length;
+
+    const refreshCap = head().querySelector<HTMLButtonElement>('button[aria-label="사용량 새로 고침"]')!;
+    await act(async () => refreshCap.dispatchEvent(new MouseEvent("click", { bubbles: true })));
+    await settle();
+
+    const after = request.mock.calls.filter(([input]) => String(input) === "/cogito/briefs").length;
+    expect(after).toBeGreaterThan(before);
   });
 
   it("does not collapse the node when the refresh cap is pressed", async () => {
