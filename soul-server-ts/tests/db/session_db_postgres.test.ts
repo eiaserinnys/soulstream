@@ -196,12 +196,22 @@ describePostgres("SessionDB PostgreSQL integration", () => {
       "already_acknowledged",
     );
 
+    // 범용 갱신은 종료 줄을 running으로 되살리지 않는다 (카드 #1315).
     await sessionMutations.transitionSession({
       idempotencyKey: "transition:sess-review:running",
       sessionId: "sess-review",
       fields: { status: "running", reviewState: "acknowledged" },
       updatedAt: new Date("2026-07-12T00:04:00Z"),
     });
+    await expect(db.getSession("sess-review")).resolves.toMatchObject({
+      status: "completed",
+      review_state: "acknowledged",
+    });
+    // 이어지는 끊김 정리 시험을 위해 실행 중 줄은 직접 세운다.
+    await harness!.sql`
+      UPDATE sessions SET status = 'running', review_state = 'acknowledged'
+      WHERE session_id = 'sess-review'
+    `;
     await expect(sessionMutations.reconcileNodeDisconnected(
       "node-review",
       new Date("2026-07-12T00:05:00Z"),

@@ -41,7 +41,7 @@ export const SESSION_COMMAND_RULES: Record<SessionDecisionCommand, string> = {
   stale_registration:
     "세션 줄이 없으면 예외를 던진다. 사건의 실행 등록 id가 세션의 현재 등록과 다르면 사건을 적용하지 않고 dead-letter로 보낸다. 저장 상태는 바꾸지 않는다.",
   session_update_status:
-    "session_update의 허용 열에 status가 있어 상태를 그대로 쓸 수 있다. 다른 상태 칸과 종료 칸은 건드리지 않는다. 종료 세션을 running으로 되살리는 길이 열려 있는 알려진 구멍이다.",
+    "session_update의 허용 열에 status가 있어 상태를 그대로 쓴다. 다른 상태 칸과 종료 칸은 건드리지 않는다. 종료 상태(completed, error, interrupted) 줄에 running을 쓰려 하면 줄을 바꾸지 않고 끝난다. 종료 세션을 되살리는 길은 종료 재개를 기록하는 함수들뿐이다.",
   acknowledge_review:
     "잠근 줄의 review_required와 review_state를 읽어 not_found, not_required, already_acknowledged, not_pending, acknowledged 가운데 하나를 낸다. needs_review일 때만 acknowledged로 쓴다.",
   delete:

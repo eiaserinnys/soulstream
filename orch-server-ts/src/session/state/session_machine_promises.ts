@@ -97,8 +97,6 @@ export const SESSION_PROMISES: SessionPromiseDefinition[] = [
     id: "terminal_to_running_only_resume",
     statement:
       "종료 상태에서 실행 중으로 가는 길은 종료 재개를 기록하는 두 함수와 시작 정리 되살림, 잇기 되살림뿐이다.",
-    knownHole:
-      "session_update_status가 종료 줄의 상태를 running으로 쓸 수 있다. SQL session_update가 status를 허용 열로 받기 때문이다.",
     breaks: (row) =>
       TERMINAL.has(row.state.status)
       && row.decision.kind === "apply"

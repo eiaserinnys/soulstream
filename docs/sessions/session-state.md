@@ -142,7 +142,7 @@ state "한도 재개 예약" as sessionReservation {
 | 시작 정리에서 사라진 세션을 멈춘다 | 시작 시점에 잡아 둔 대상과 지금 줄이 같고, 노드의 실행 목록에 없으며, 아직 활성인 줄만 interrupted로 옮긴다. 줄과 대상의 종료 칸과 실행 id가 다르면 건드리지 않는다. 종료 리비전 칸은 건드리지 않는다. |
 | 시작 정리에서 살아 있는 세션을 되살린다 | 끊김 종료가 리비전 없이 기록된 줄을 노드가 실행 중이라고 보고하고 워크트리가 준비됐을 때만 running으로 되살린다. 종료 칸을 지우고 검수 칸을 not_required로 둔다. |
 | 옛 실행 등록 사건을 막는다 | 세션 줄이 없으면 예외를 던진다. 사건의 실행 등록 id가 세션의 현재 등록과 다르면 사건을 적용하지 않고 dead-letter로 보낸다. 저장 상태는 바꾸지 않는다. |
-| 범용 갱신으로 상태를 쓴다 | session_update의 허용 열에 status가 있어 상태를 그대로 쓸 수 있다. 다른 상태 칸과 종료 칸은 건드리지 않는다. 종료 세션을 running으로 되살리는 길이 열려 있는 알려진 구멍이다. |
+| 범용 갱신으로 상태를 쓴다 | session_update의 허용 열에 status가 있어 상태를 그대로 쓴다. 다른 상태 칸과 종료 칸은 건드리지 않는다. 종료 상태(completed, error, interrupted) 줄에 running을 쓰려 하면 줄을 바꾸지 않고 끝난다. 종료 세션을 되살리는 길은 종료 재개를 기록하는 함수들뿐이다. |
 | 검수를 확인한다 | 잠근 줄의 review_required와 review_state를 읽어 not_found, not_required, already_acknowledged, not_pending, acknowledged 가운데 하나를 낸다. needs_review일 때만 acknowledged로 쓴다. |
 | 세션을 지운다 | 노드가 붙어 있으면 상태와 무관하게 노드에 삭제를 보낸다. 노드가 거절하면 409, 응답을 기다리는 중이면 accepted, 노드가 못 지우거나 옛 판이면 활성 세션만 409로 막고 끝난 세션은 orch가 직접 지운다. |
 | 한도 재개 예약을 판정한다 | 예약에 적힌 종료 리비전, 노드의 지역 작업 상태, 세션 줄, 한도 창과 종료 사슬을 차례로 본다. 모두 통과할 때만 깨우고, 지역 작업이 바쁘면 미루며, 나머지는 예약을 닫는다. 저장 상태는 바꾸지 않는다. |
@@ -580,10 +580,10 @@ state "한도 재개 예약" as sessionReservation {
 | 초기화 중 · 종료 기록 있음 | 없음 | 적용 | 범용 갱신으로 상태를 썼다 | 실행 중 · 종료 기록 있음 |
 | 실행 중 · 검수 확인 | 없음 | 적용 | 범용 갱신으로 상태를 썼다 | 실행 중 · 검수 확인 |
 | 실행 중 · 종료 기록 있음 | 없음 | 적용 | 범용 갱신으로 상태를 썼다 | 실행 중 · 종료 기록 있음 |
-| 완료 · 종료 기록 있음 · 검수 대기 | 없음 | 적용 | 범용 갱신으로 상태를 썼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
-| 오류 · 종료 기록 있음 · 검수 대기 | 없음 | 적용 | 범용 갱신으로 상태를 썼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
-| 중단 · 검수 대기 | 없음 | 적용 | 범용 갱신으로 상태를 썼다 | 실행 중 · 검수 대기 |
-| 중단 · 종료 기록 있음 · 검수 대기 | 없음 | 적용 | 범용 갱신으로 상태를 썼다 | 실행 중 · 종료 기록 있음 · 검수 대기 |
+| 완료 · 종료 기록 있음 · 검수 대기 | 없음 | 무시 | 초기화 중이거나 실행 중인 세션이 아니다 | 그대로 |
+| 오류 · 종료 기록 있음 · 검수 대기 | 없음 | 무시 | 초기화 중이거나 실행 중인 세션이 아니다 | 그대로 |
+| 중단 · 검수 대기 | 없음 | 무시 | 초기화 중이거나 실행 중인 세션이 아니다 | 그대로 |
+| 중단 · 종료 기록 있음 · 검수 대기 | 없음 | 무시 | 초기화 중이거나 실행 중인 세션이 아니다 | 그대로 |
 | 줄 없음 | reviewRequired=검수 불필요 | 거절 | 세션 줄이 없다 | 그대로 |
 | 줄 없음 | reviewRequired=검수 필요 | 거절 | 세션 줄이 없다 | 그대로 |
 | 초기화 중 | reviewRequired=검수 불필요 | 거절 | 검수가 필요 없는 세션이다 | 그대로 |
@@ -738,15 +738,13 @@ state "한도 재개 예약" as sessionReservation {
 | 종료 리비전 없이 중단된 줄은 기존 종료 기록이 없으므로 새 종료 사건을 받아 리비전을 남긴다. | 0 | 없음 |
 | 노드 끊김 정리는 활성 줄만 중단으로 옮기고, 시작 정리 되살림은 종료 리비전 없이 중단된 줄만 실행 중으로 되돌린다. | 0 | 없음 |
 | 실행 등록, 실행 중 전환, 시작 정리 되살림이 실행 중으로 옮길 때는 워크트리 게이트를 지난다. | 0 | 없음 |
-| 종료 상태에서 실행 중으로 가는 길은 종료 재개를 기록하는 두 함수와 시작 정리 되살림, 잇기 되살림뿐이다. | 4 | 완료 · 종료 기록 있음 · 검수 대기 / 범용 갱신으로 상태를 쓴다 → 범용 갱신으로 상태를 썼다<br>오류 · 종료 기록 있음 · 검수 대기 / 범용 갱신으로 상태를 쓴다 → 범용 갱신으로 상태를 썼다<br>중단 · 검수 대기 / 범용 갱신으로 상태를 쓴다 → 범용 갱신으로 상태를 썼다 |
+| 종료 상태에서 실행 중으로 가는 길은 종료 재개를 기록하는 두 함수와 시작 정리 되살림, 잇기 되살림뿐이다. | 0 | 없음 |
 | 소유 노드가 다른 상태 사건은 세션 줄을 바꾸지 않는다. | 0 | 없음 |
 | 끊김 중단은 실행 등록, 초기 시동, 일반 재개로 되살아나지 않고 잇기로만 되살아난다. | 5 | 중단 · 검수 대기 / 실행 등록을 기록한다 / resume=terminal_match, worktree=none, worktreeBusy=false, owner=match → 종료 세션을 실행 등록으로 재개했다<br>중단 · 검수 대기 / 실행 등록을 기록한다 / resume=terminal_match, worktree=ready, worktreeBusy=false, owner=match → 종료 세션을 실행 등록으로 재개했다<br>중단 · 검수 대기 / 실행 중 전환을 기록한다 / resume=terminal_match, worktree=none, worktreeBusy=false, owner=match, adopt=false → 종료 세션을 실행 등록으로 재개했다 |
 | 활성 줄은 노드가 실제로 지웠을 때만 사라지고, 노드가 못 지우거나 연결이 없으면 멈춘 뒤에만 지운다. | 0 | 없음 |
 | 한도 재개는 예약의 한도 창과 종료 사슬이 이어질 때만 실행한다. | 0 | 없음 |
 
 알려진 구멍.
-
-- session_update_status가 종료 줄의 상태를 running으로 쓸 수 있다. SQL session_update가 status를 허용 열로 받기 때문이다. 위반 4줄.
 
 - 실행 등록과 잇기 아닌 실행 중 전환의 종료 재개 칸은 기대 종료 번호가 NULL과 같을 때 SQL이 되살린다. 일반 재개는 expected_terminal_event_id=null을 보내므로(soul-server-ts task_auto_resume_transition), 종료 번호가 NULL인 끊김 중단은 사용자 후속 글의 일반 재개로도 종료 재개 칸을 타고 되살아난다. 이것은 기존 동작이고 이번 물결은 adopt=거짓 판정을 바꾸지 않는다. 시작 정리 되살림은 이전 물결이 정한 되살림 길이며 아직 배선되지 않았다. 위반 5줄.
 
@@ -773,11 +771,11 @@ state "한도 재개 예약" as sessionReservation {
 | :-- | :-- | :-- | :-- | :-- |
 | session_register | 예 | packages/db-schema/sql/schema.sql:1356 | 없음 | 정의만 있고 orch 호출은 없다. 실제 등록은 preset 변형을 쓴다. |
 | session_register_with_model_preset | 예 | packages/db-schema/sql/schema.sql:1386 | src/control_plane/repositories/session_mutation_repository.ts:130<br>src/control_plane/repositories/session_mutation_repository.ts:236 | 등록 입력의 상태와 검수 칸을 그대로 INSERT한다. |
-| session_update | 예 | packages/db-schema/sql/schema.sql:1518 | src/control_plane/repositories/session_mutation_repository.ts:284 | 허용 열에 status가 있어 범용 갱신으로 상태를 쓸 수 있다. |
+| session_update | 예 | packages/db-schema/sql/schema.sql:1518 | src/control_plane/repositories/session_mutation_repository.ts:284 | 허용 열에 status가 있어 범용 갱신으로 상태를 쓴다. 종료 줄에 running을 쓰려 하면 줄을 바꾸지 않는다. |
 | session_acknowledge_review | 아니오 | packages/db-schema/sql/schema.sql:1425 | src/runtime/live_session_review_repository.ts:23<br>src/control_plane/repositories/session_mutation_repository.ts:326 | review_state만 쓴다. |
-| session_record_execution_registration | 예 | packages/db-schema/sql/schema.sql:1579 | src/node/event_session_effect_applier.ts:163 | 워크트리 게이트 뒤 실행 등록과 상태를 쓴다. |
-| session_apply_running_transition | 예 | packages/db-schema/sql/schema.sql:4232 | src/node/event_session_effect_applier.ts:74 | 워크트리 게이트 뒤 상태와 검수 칸을 쓴다. |
-| session_apply_terminal_transition | 예 | packages/db-schema/sql/schema.sql:1720 | src/node/event_session_effect_applier.ts:221 | 종료 상태, 사유, 검수 칸, 종료 리비전을 쓴다. |
+| session_record_execution_registration | 예 | packages/db-schema/sql/schema.sql:1595 | src/node/event_session_effect_applier.ts:163 | 워크트리 게이트 뒤 실행 등록과 상태를 쓴다. |
+| session_apply_running_transition | 예 | packages/db-schema/sql/schema.sql:4170 | src/node/event_session_effect_applier.ts:74 | 워크트리 게이트 뒤 상태와 검수 칸을 쓴다. |
+| session_apply_terminal_transition | 예 | packages/db-schema/sql/schema.sql:1736 | src/node/event_session_effect_applier.ts:221 | 종료 상태, 사유, 검수 칸, 종료 리비전을 쓴다. |
 
 ### 직접 UPDATE
 
