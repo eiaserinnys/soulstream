@@ -277,8 +277,8 @@ describe("card attachment source import", () => {
   it("fails without creating a session when the source node is disconnected", async () => {
     // A card created before up-front import only stored the path; the run-time import still covers it.
     const { cards, cardId } = await makeCard([], false);
-    await h.sql`UPDATE cards SET status='queued',
-      attachments=${h.sql.json([attachment()])} WHERE id=${cardId}`;
+    const stored = [{ nodeId: SOURCE_NODE, path: REMOTE_IMAGE, name: "mock.png", mimeType: "image/png" }];
+    await h.sql`UPDATE cards SET status='queued', attachments=${h.sql.json(stored)} WHERE id=${cardId}`;
     readSource.mockRejectedValueOnce(
       new AttachmentTransportConnectionError(`Node is not connected: ${SOURCE_NODE}`),
     );
