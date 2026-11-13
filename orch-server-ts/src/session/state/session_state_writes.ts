@@ -131,7 +131,7 @@ export const SESSION_DIRECT_WRITES: SessionDirectWrite[] = [
   },
   {
     file: "src/runtime/live_provider_factory.ts",
-    line: 628,
+    line: 632,
     statement: "UPDATE",
     writesStatus: false,
     note: "node_id, display_name, folder_id만 쓴다.",
