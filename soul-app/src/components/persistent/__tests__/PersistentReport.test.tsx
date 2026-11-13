@@ -381,6 +381,31 @@ test('일반 보고는 높이 제한에 걸릴 때 본문을 스크롤하고 하
   expect(screen.onDismiss).toHaveBeenCalledWith('result');
 });
 
+test('아이패드 띠의 다루기 붙들기는 펼쳤다 접으면 놓고 접은 장 높이로 돌아간다', () => {
+  mockDevice = 'tablet';
+  const cardEntry = { ...reportReviewEntries[2], key: 'card_531', card_id: 'card-531', card_numbers: [531] };
+  const screen = render(<ChatUiControllerProvider sessionId="pas" appendGeneratedText={() => ({ ok: true })}>
+    <PersistentReportPager entries={[cardEntry, { ...reportReviewEntries[2], key: 'other-pas', card_numbers: [] }]} index={0} api={null} bubble={false} handling
+      onSelect={jest.fn()} onDismiss={jest.fn()} onFocusComposer={jest.fn()}
+      renderCardDetails={() => <Text testID="inline-card-expansion">긴 카드 세부</Text>}
+      send={{ busy: false, close: () => true, canCancel: () => false, cancelSent: () => false } as any} />
+  </ChatUiControllerProvider>);
+  measurePersistentReports(screen, { readingHeight: 40 });
+  const track = () => StyleSheet.flatten(screen.getByTestId('report-track').props.style).height;
+  const toggle = () => within(screen.getByTestId('report-sheet-card_531')).getByTestId('report-window-toggle');
+  const collapsed = track();
+  expect(collapsed).toBeGreaterThan(0);
+  // 판을 다루는 채로 펼치면 펼친 높이가 된다.
+  fireEvent.press(toggle());
+  expect(screen.getByTestId('inline-card-expansion')).toBeTruthy();
+  measurePersistentReports(screen, { readingHeight: 400 });
+  expect(track()).toBeGreaterThan(collapsed);
+  // 접으면 다루는 중이어도 펼친 높이를 붙들지 않고 접은 장 높이로 돌아간다.
+  fireEvent.press(toggle());
+  expect(screen.queryByTestId('inline-card-expansion')).toBeNull();
+  expect(track()).toBe(collapsed);
+});
+
 test('expanded inline report uses the layout height cap and scrolls its reading block', () => {
   mockDevice = 'tablet';
   const geometry = calculatePersistentSessionLayout({

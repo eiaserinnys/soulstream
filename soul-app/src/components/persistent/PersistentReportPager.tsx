@@ -95,17 +95,20 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
   const bandHandling = handling && !bubble && !phone && !compact && !verticalList && entries.length > 1;
   const heldHeight = useRef(0);
   const heldLayout = useRef<string | null>(null);
+  // 펼침도 배치다. 다루는 중 배치가 바뀌면 붙든 높이를 버리고 지금 장 높이에서 다시 센다(웹 layoutKey와 같다).
+  const heldKey = JSON.stringify([layoutKey, expandedKey]);
   const [presentedLayout, setPresentedLayout] = useState<string | null>(null);
   const presentedSession = useRef(sessionId);
   const commitHeight = () => {
     if (bandHandling) {
-      if (heldLayout.current !== layoutKey) { heldLayout.current = layoutKey; heldHeight.current = Math.max(0, height); }
+      if (heldLayout.current !== heldKey) {
+        // 다루기를 막 시작하면 보이는 높이에서, 다루는 중 배치가 바뀌면 0에서 센다.
+        heldHeight.current = heldLayout.current === null ? Math.max(0, height) : 0;
+        heldLayout.current = heldKey;
+      }
     } else if (heldLayout.current !== null) { heldLayout.current = null; heldHeight.current = 0; }
     const allMeasured = width > 0 && entries.every(entry => readyHeights.current.has(measureKey(entry)));
-    // 다루기 붙들기가 걸린 아이패드 띠는 손가락이 판 안에 있는 동안에도 지금 장 높이를 잰다.
-    // 붙들기가 줄어듦을 막으므로 누르기·끌기 대기는 이 경우에 필요 없다(긴 장으로 넘기면 자란다).
-    if ((!bandHandling && (pressing.current || sliding.current))
-      || (bubble && !entries.every(entry => measuredHeights.current.has(measureKey(entry))))
+    if (pressing.current || sliding.current || (bubble && !entries.every(entry => measuredHeights.current.has(measureKey(entry))))
       || (presentedLayout === layoutKey && !allMeasured)) return;
     const visible = entries[index];
     const next = visible ? Math.max(0, measuredHeights.current.get(measureKey(visible)) ?? 0,
@@ -117,7 +120,7 @@ export function PersistentReportPager({ entries: rawEntries, index: rawIndex, ap
   };
   const latestMeasurement = useRef({ entries, commitHeight, measureKey });
   latestMeasurement.current = { entries, commitHeight, measureKey };
-  useLayoutEffect(commitHeight, [entries, compact, width, bubble, index, handling]);
+  useLayoutEffect(commitHeight, [entries, compact, width, bubble, index, handling, expandedKey]);
   const bubbleHeight = bubble ? Math.min(maxHeight ?? height, height || maxHeight || 0) : undefined;
   const inlineCapped = !bubble && (inlineExpanded || (inlineMaxHeight !== undefined && height > inlineMaxHeight));
   const inlineHeight = inlineCapped ? Math.min(inlineMaxHeight ?? height, height || inlineMaxHeight || 0) : undefined;
