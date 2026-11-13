@@ -35,6 +35,7 @@ const catalog = parseModelCatalogYaml(REPOSITORY_CATALOG_YAML);
 const PRESET_IDS = [
   "claude-haiku",
   "claude-sonnet",
+  "claude-sonnet-trusted",
   "claude-opus",
   "claude-opus-lean",
   "claude-fable",
@@ -126,7 +127,7 @@ const KIMI_ENV = {
   CLAUDE_CODE_AUTO_COMPACT_WINDOW: "262144",
 };
 
-/** Values of the 18 common presets plus the 5 china operating additions. */
+/** Values of the 19 common presets plus the 5 china operating additions. */
 const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
   "claude-haiku": { label: "Claude - Haiku", backend: "claude", model: "haiku" },
   "claude-sonnet": {
@@ -135,6 +136,14 @@ const EXPECTED_PRESETS: Record<string, PresetExpectation> = {
     model: "sonnet",
     supported_efforts: CLAUDE_EFFORTS,
     default_effort: "xhigh",
+  },
+  "claude-sonnet-trusted": {
+    label: "Claude - Sonnet (상자 밖, 배달과 운영 조사)",
+    backend: "claude",
+    model: "sonnet",
+    supported_efforts: CLAUDE_EFFORTS,
+    default_effort: "xhigh",
+    trusted_execution: true,
   },
   "claude-opus": {
     label: "Claude - Opus",
@@ -372,7 +381,7 @@ async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void
 }
 
 describe("repository model catalogue data", () => {
-  it("carries the 23 operating presets and gates only the china group", () => {
+  it("carries the 24 operating presets and gates only the china group", () => {
     expect(catalog.schema_version).toBe(1);
     expect(catalog.groups).toEqual(["china"]);
     expect(catalog.presets.map((preset) => preset.id)).toEqual(PRESET_IDS);
