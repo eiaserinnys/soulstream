@@ -129,6 +129,7 @@ import { createRecurringSession } from "./session/recurring_session_creation.js"
 import type { SessionDeliveryRepository } from
   "./control_plane/repositories/session_delivery_repository.js";
 import type { LiveSystemPortraitAssetBoundary } from "./runtime/live_system_config_route_provider.js";
+import { ClaudeAccountReloginNotifier } from "./usage/claude_account_relogin_notifier.js";
 import { UsageSummaryService } from "./usage/usage_summary_service.js";
 import { SessionDeletionRepository } from "./session/session_deletion_repository.js";
 import { SessionDeletionService } from "./session/session_deletion_service.js";
@@ -357,6 +358,9 @@ export async function createLiveProductionApplication(
       stringValue(registry.getUserInfo(nodeId).email) || config.allowed_email || undefined,
     onWarning: (message, error) => context.warn(warningMessage(message, error)),
   });
+  const claudeAccountReloginNotifier = new ClaudeAccountReloginNotifier((alert) => {
+    void pushNotifier.notifyClaudeAccountRelogin(alert);
+  });
   let publishReconciledSessionUpdate:
     NonNullable<Parameters<typeof createSessionReconciliationSink>[0]["publishSessionUpdate"]>
       = () => undefined;
@@ -563,7 +567,14 @@ export async function createLiveProductionApplication(
     bridge: runtimeServices.sessionBridge,
     pollIntervalMs: config.usage_summary_poll_interval_seconds * 1_000,
     sharedAccountGroups: config.usage_summary_shared_accounts,
-    onCollected: () => { void cardDispatcher?.dispatch(); },
+    onCollected: (snapshot) => {
+      try {
+        claudeAccountReloginNotifier.observe(snapshot);
+      } catch (error) {
+        context.warn(warningMessage("Claude account relogin notification failed", error));
+      }
+      void cardDispatcher?.dispatch();
+    },
     onWarning: (message, error) => context.warn(warningMessage(message, error)),
   });
   try {

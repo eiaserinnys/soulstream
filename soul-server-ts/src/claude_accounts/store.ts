@@ -6,9 +6,11 @@ import { renameWithTransientRetrySync } from "../atomic_file_rename.js";
 import type {
   ClaudeAccountBlocksRecord,
   ClaudeAccountRecord,
+  ClaudeAccountReloginRecord,
   ClaudeAccountsJsonFile,
   ClaudeBindingsJsonFile,
   ClaudeBlocksJsonFile,
+  ClaudeReloginJsonFile,
   ClaudeSessionBindingEntry,
 } from "./types.js";
 
@@ -162,6 +164,7 @@ export class ClaudeAccountStore {
   readonly accountsFilePath: string;
   readonly bindingsFilePath: string;
   readonly blocksFilePath: string;
+  readonly reloginFilePath: string;
 
   constructor(options: ClaudeAccountStoreOptions) {
     this.accountsDir = path.resolve(options.accountsDir);
@@ -172,6 +175,7 @@ export class ClaudeAccountStore {
     this.accountsFilePath = path.join(this.accountsDir, "accounts.json");
     this.bindingsFilePath = path.join(this.accountsDir, "bindings.json");
     this.blocksFilePath = path.join(this.accountsDir, "blocks.json");
+    this.reloginFilePath = path.join(this.accountsDir, "relogin.json");
   }
 
   ensureBaseDirs(): void {
@@ -278,6 +282,25 @@ export class ClaudeAccountStore {
       blocks,
     };
     writeJsonAtomic0600(this.blocksFilePath, payload);
+  }
+
+  readRelogin(): Record<string, ClaudeAccountReloginRecord> {
+    const parsed = readJsonOrDefault<ClaudeReloginJsonFile>(this.reloginFilePath, {
+      version: 1,
+      relogin: {},
+    });
+    if (!parsed.relogin || typeof parsed.relogin !== "object") {
+      return {};
+    }
+    return { ...parsed.relogin };
+  }
+
+  writeRelogin(relogin: Record<string, ClaudeAccountReloginRecord>): void {
+    const payload: ClaudeReloginJsonFile = {
+      version: 1,
+      relogin,
+    };
+    writeJsonAtomic0600(this.reloginFilePath, payload);
   }
 
   moveDirectoryToRetired(sourceDir: string, prefix: string): string | null {

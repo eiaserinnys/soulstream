@@ -23,4 +23,14 @@ export type CardQuestionPushData = {
   folderId: string;
 };
 
-export type PushNotificationData = CardReviewPushData | PersistentReportPushData | CardQuestionPushData;
+export type ClaudeAccountReloginPushData = {
+  kind: 'claude_account_relogin';
+  nodeId: string;
+  accountId: string;
+};
+
+export type PushNotificationData =
+  | CardReviewPushData
+  | PersistentReportPushData
+  | CardQuestionPushData
+  | ClaudeAccountReloginPushData;

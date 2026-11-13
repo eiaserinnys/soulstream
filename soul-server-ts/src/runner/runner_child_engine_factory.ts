@@ -5,6 +5,7 @@ import type {
 } from "@anthropic-ai/claude-agent-sdk";
 import type { Logger } from "pino";
 import type {
+  ClaudeAccountAuthFailureInput,
   ClaudeAccountRejectInput,
   ClaudeAccountReleaseInput,
   ClaudeAccountSelectionInput,
@@ -295,6 +296,15 @@ class HostClaudeAccountTurnPort implements ClaudeAccountTurnPort {
 
   async reject(input: ClaudeAccountRejectInput): Promise<void> {
     await this.host.call("claude_accounts", "reject", [input.session_id, input], hostOptions());
+  }
+
+  async reportAuthFailure(input: ClaudeAccountAuthFailureInput): Promise<void> {
+    await this.host.call(
+      "claude_accounts",
+      "reportAuthFailure",
+      [input.session_id, input],
+      hostOptions(),
+    );
   }
 
   async release(input: ClaudeAccountReleaseInput): Promise<void> {

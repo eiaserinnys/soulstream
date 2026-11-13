@@ -10,7 +10,7 @@ const OPERATION_MUTABILITY = {
     delete: true,
     listSubkeys: false,
   },
-  claude_accounts: { select: true, reject: true, release: true },
+  claude_accounts: { select: true, reject: true, reportAuthFailure: true, release: true },
   snapshot: {
     persistRunState: true,
     persistSessionItems: true,

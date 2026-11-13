@@ -86,6 +86,23 @@ describe("PushNotifier", () => {
     });
   });
 
+  it("sends a Claude account relogin push to the node owner with the claude_account_relogin payload", async () => {
+    const harness = createHarness();
+
+    expect(await harness.notifier.notifyClaudeAccountRelogin({
+      nodeId: "node-a",
+      accountId: "account-a",
+      accountEmail: "a@example.com",
+    })).toBe(true);
+
+    expect(harness.provider.send).toHaveBeenCalledWith(
+      "token-1",
+      "클로드 계정 다시 로그인 필요",
+      "node-a의 a@example.com 계정 자격 갱신이 끊겼습니다. 설정에서 다시 로그인해 주세요.",
+      { kind: "claude_account_relogin", nodeId: "node-a", accountId: "account-a" },
+    );
+  });
+
   it("sends open report entries to the owner using the PAS payload keys", async () => {
     const harness = createHarness();
     const ask = reportEntry({

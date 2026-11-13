@@ -41,7 +41,7 @@ export function composeClaudeAccountServices(
       store: new FileClaudeAuthTokenStore(env.CLAUDE_AUTH_TOKEN_PATH),
     }, logger),
     claudeAccounts: env.CLAUDE_ACCOUNT_POOL_ENABLED && env.CLAUDE_ACCOUNTS_DIR
-      ? new ClaudeAccountService({ accountsDir: env.CLAUDE_ACCOUNTS_DIR, credentialRenewer: new ClaudeCliCredentialRenewer({ logger }) })
+      ? new ClaudeAccountService({ accountsDir: env.CLAUDE_ACCOUNTS_DIR, credentialRenewer: new ClaudeCliCredentialRenewer({ logger }), logger })
       : undefined,
   };
 }

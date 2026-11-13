@@ -256,8 +256,12 @@ export interface CachedAccountObservation {
   lastPolledAtMs: number;
 }
 
+/** 자격 갱신과 사용량 조회에서 관측한 인증 결과. 서비스가 needs_relogin 기록으로 옮긴다. */
+export type ClaudeAccountAuthOutcome = "renew_failed" | "rejected" | "recovered";
+
 export interface ClaudeAccountUsageCollectorOptions {
   credentialRenewer?: ClaudeProfileCredentialRenewer;
+  onAuthOutcome?: (accountId: string, outcome: ClaudeAccountAuthOutcome) => void;
   fetchImpl?: typeof fetch;
   now?: () => number;
   endpointUrl?: string;
@@ -286,6 +290,7 @@ export class ClaudeAccountUsageCollector {
   private readonly concurrency: number;
   private readonly perAccountTimeoutMs: number;
   private readonly credentialRenewer?: ClaudeProfileCredentialRenewer;
+  private readonly onAuthOutcome?: (accountId: string, outcome: ClaudeAccountAuthOutcome) => void;
   private readonly cache = new Map<string, CachedAccountObservation>();
   private readonly renewals = new Map<string, Promise<void>>();
   private readonly lastRenewalAttempt = new Map<string, number>();
@@ -298,6 +303,15 @@ export class ClaudeAccountUsageCollector {
     this.concurrency = Math.max(1, options.concurrency ?? DEFAULT_CONCURRENCY);
     this.perAccountTimeoutMs = options.perAccountTimeoutMs ?? DEFAULT_PER_ACCOUNT_TIMEOUT_MS;
     this.credentialRenewer = options.credentialRenewer;
+    this.onAuthOutcome = options.onAuthOutcome;
+  }
+
+  private emitAuthOutcome(accountId: string, outcome: ClaudeAccountAuthOutcome): void {
+    try {
+      this.onAuthOutcome?.(accountId, outcome);
+    } catch {
+      // 관측 결과 통지 실패가 사용량 수집을 막지 않는다.
+    }
   }
 
   getCachedObservation(
@@ -419,8 +433,18 @@ export class ClaudeAccountUsageCollector {
     this.lastRenewalAttempt.set(input.accountId, nowMs);
     const renewal = Promise.resolve()
       .then(() => this.credentialRenewer!.renew({ accountId: input.accountId, profileDir: input.profileDir }))
-      .then(() => this.collectAll([{ accountId: input.accountId, profileDir: input.profileDir }], { forceRefresh: true }))
-      .then(() => undefined)
+      .catch(() => {})
+      .then(async () => {
+        const renewed = readProfileCredentialsReadOnly(input.profileDir);
+        if (!renewed || (renewed.expiresAtMs !== null && renewed.expiresAtMs <= this.now())) {
+          this.emitAuthOutcome(input.accountId, "renew_failed");
+          return;
+        }
+        await this.collectAll(
+          [{ accountId: input.accountId, profileDir: input.profileDir }],
+          { forceRefresh: true },
+        );
+      })
       .catch(() => {})
       .finally(() => { this.renewals.delete(input.accountId); });
     this.renewals.set(input.accountId, renewal);
@@ -471,6 +495,7 @@ export class ClaudeAccountUsageCollector {
       const completedAtMs = this.now();
 
       if (response.status === 401 || response.status === 403) {
+        this.emitAuthOutcome(accountId, "rejected");
         return {
           auth_state: "idle",
           stale: false,
@@ -489,6 +514,7 @@ export class ClaudeAccountUsageCollector {
         response.json(),
       )) as unknown;
       const usage = parseAnthropicOAuthUsagePayload(body);
+      this.emitAuthOutcome(accountId, "recovered");
 
       return {
         auth_state: "ok",
