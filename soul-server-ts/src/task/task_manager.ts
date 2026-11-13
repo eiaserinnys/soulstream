@@ -19,7 +19,7 @@ import { assertGenericTaskExecution, assertOrchestrationCreation, isOrchestratio
 import type { Task } from "./task_models.js";
 import { AutoResumeTransition } from "./task_auto_resume_transition.js";
 import { createEvictedTaskLoader } from "./task_evicted_hydration.js";
-import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
+import { TaskLifecycleTransition, type TerminationCleanupPorts } from "./task_lifecycle_transition.js";
 import { TaskRunnerRecovery } from "./task_runner_recovery.js";
 import {
   TaskLifecycleRoute,
@@ -192,6 +192,11 @@ export class TaskManager {
     const lifecycleTransition = new TaskLifecycleTransition({
       logger,
       persistence,
+      // 종료가 거절되면 중앙 세션 없음을 확인하고 로컬 소유를 정리한다(카드 #1266).
+      readCentralSession: (sessionId) => db.getSession(sessionId),
+      forgetTask: (sessionId) => {
+        this.tasks.delete(sessionId);
+      },
     });
     this.lifecycleTransition = lifecycleTransition;
     this.lifecycleRoute = new TaskLifecycleRoute({
@@ -224,6 +229,7 @@ export class TaskManager {
       observePersistentResume,
       contextBuilder,
       agentRegistry,
+      settleRejection: (task, verdict) => lifecycleTransition.settleRejection(task, verdict, null),
     });
     this.runnerRecovery = new TaskRunnerRecovery({
       getTask: (sessionId) => this.tasks.get(sessionId),
@@ -309,6 +315,11 @@ export class TaskManager {
     completionNotifier: { notify(task: Task): Promise<void> },
   ): void {
     this.lifecycleTransition.setCompletionNotifier(completionNotifier);
+  }
+
+  /** 종료 거절의 정리 포트를 나중에 잇는다. 러너 복구가 등록 은퇴를 잇는다. */
+  setTerminationCleanupPorts(ports: TerminationCleanupPorts): void {
+    this.lifecycleTransition.setCleanupPorts(ports);
   }
 
   /**

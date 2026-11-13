@@ -68,14 +68,21 @@ export function buildSessionEndedEvent(task: Task): {
   };
 }
 
+/**
+ * 종료의 의미 중복 키다. 다시 보낼 때 바뀌지 않는 값으로만 만든다.
+ * 처음 만든 값을 task에 고정한다. 거절된 종료를 복구가 다시 올릴 때는 등록이
+ * 이미 지워졌고 completedAt이 새로 찍혀 있으므로, 그 값으로 다시 만들면
+ * 같은 종료가 매번 다른 키로 서버에 쌓인다(카드 #1266 별건 7).
+ */
 function terminalDedupeKey(task: Task): string {
-  const registration = task.executionRegistration;
-  const completedAt = task.completedAt ?? task.createdAt;
-  const transitionIdentity = [
-    registration && `command:${registration.executionCommandId}`,
-    `completed_at:${completedAt.toISOString()}`,
-  ].find(Boolean);
-  return `session_terminal:${task.agentSessionId}:${String(transitionIdentity)}`;
+  if (task.terminalDedupeIdentity === undefined) {
+    const registration = task.executionRegistration;
+    const completedAt = task.completedAt ?? task.createdAt;
+    task.terminalDedupeIdentity = registration
+      ? `command:${registration.executionCommandId}`
+      : `completed_at:${completedAt.toISOString()}`;
+  }
+  return `session_terminal:${task.agentSessionId}:${task.terminalDedupeIdentity}`;
 }
 
 function resolveTerminationReason(task: Task): TerminationReason {

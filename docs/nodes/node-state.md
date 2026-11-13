@@ -2,7 +2,7 @@
 
 이 문서는 `soul-server-ts/src/task/state/`의 XState 정의에서 만든 생성물이다. 정의를 고치면 아래 명령으로 다시 만든다. 리포의 파일과 생성 결과가 다르면 시험이 실패한다.
 
-멈춤 단위(카드 #1266 U4)가 장벽 직렬화 판정과 실행 상태 투영을 멈춤과 삭제 길에 이었다. 응답을 받은 칸은 종료 경로 단위가, 지시 경로는 지시 경로 단위가 운영 코드에 잇는다. 턴 고리 전체를 접지 않는다.
+멈춤 단위(카드 #1266 U4)가 장벽 직렬화 판정과 실행 상태 투영을 멈춤과 삭제 길에 이었고, 종료 경로 단위(카드 #1266 U2a)가 응답을 받은 칸의 함수를 서버 응답을 받는 일곱 호출에 이었다. 지시 경로는 지시 경로 단위가 운영 코드에 잇는다. 턴 고리 전체를 접지 않는다.
 
 ## 실행 상태
 
@@ -34,31 +34,26 @@ Task의 `status`, `runner`, `executionRegistration`, `runnerTerminalFact`, `runn
 
 | 응답 길 | 호출 | 사유 | 정본의 종료 사건 | 칸 |
 | :-- | :-- | :-- | :-- | :-- |
-| 전송 거절(다시 될 수 있음) | 모든 호출 | 모든 사유 | 모든 경우 | 다시 될 수 있는 거절 |
-| 전송 거절(영구라 격리) | 모든 호출 | 모든 사유 | 모든 경우 | 격리 |
-| 응답 안의 dead letter | 모든 호출 | 모든 사유 | 모든 경우 | 영구 거절 |
-| 응답 없음 | 모든 호출 | 모든 사유 | 모든 경우 | 다시 될 수 있는 거절 |
-| applied=false와 거절 사유 | 종료 | already_terminal | 우리 종료와 같음 | 다시 될 까닭이 없는 거절 |
+| 모든 응답 길 | 종료 | 모든 사유 | 우리 종료와 같음 | 적용됨 |
+| 전송 거절(다시 될 수 있음) | 모든 호출 | 모든 사유 | 모든 경우(종료에서 우리 종료와 같은 경우는 위 줄) | 다시 될 수 있는 거절 |
+| 전송 거절(영구라 격리) | 모든 호출 | 모든 사유 | 모든 경우(종료에서 우리 종료와 같은 경우는 위 줄) | 격리 |
+| 응답 안의 dead letter | 모든 호출 | 모든 사유 | 모든 경우(종료에서 우리 종료와 같은 경우는 위 줄) | 영구 거절 |
+| 응답 없음 | 모든 호출 | 모든 사유 | 모든 경우(종료에서 우리 종료와 같은 경우는 위 줄) | 다시 될 수 있는 거절 |
 | applied=false와 거절 사유 | 종료 | already_terminal | 다른 종료 | 다시 될 까닭이 없는 거절 |
 | applied=false와 거절 사유 | 종료 | already_terminal | 없음 | 다시 될 까닭이 없는 거절 |
 | applied=false와 거절 사유 | 종료 밖의 여섯 호출 | already_terminal | 해당 없음 | 다시 될 까닭이 없는 거절 |
-| applied=false와 거절 사유 | 종료 | session_missing | 우리 종료와 같음 | 다시 될 까닭이 없는 거절 |
 | applied=false와 거절 사유 | 종료 | session_missing | 다른 종료 | 다시 될 까닭이 없는 거절 |
 | applied=false와 거절 사유 | 종료 | session_missing | 없음 | 다시 될 까닭이 없는 거절 |
 | applied=false와 거절 사유 | 종료 밖의 여섯 호출 | session_missing | 해당 없음 | 다시 될 까닭이 없는 거절 |
-| applied=false와 거절 사유 | 종료 | owner_node_changed | 우리 종료와 같음 | 다시 될 까닭이 없는 거절 |
 | applied=false와 거절 사유 | 종료 | owner_node_changed | 다른 종료 | 다시 될 까닭이 없는 거절 |
 | applied=false와 거절 사유 | 종료 | owner_node_changed | 없음 | 다시 될 까닭이 없는 거절 |
 | applied=false와 거절 사유 | 종료 밖의 여섯 호출 | owner_node_changed | 해당 없음 | 다시 될 까닭이 없는 거절 |
-| applied=false와 거절 사유 | 종료 | worktree_busy | 우리 종료와 같음 | 다시 될 수 있는 거절 |
 | applied=false와 거절 사유 | 종료 | worktree_busy | 다른 종료 | 다시 될 수 있는 거절 |
 | applied=false와 거절 사유 | 종료 | worktree_busy | 없음 | 다시 될 수 있는 거절 |
 | applied=false와 거절 사유 | 종료 밖의 여섯 호출 | worktree_busy | 해당 없음 | 다시 될 수 있는 거절 |
-| applied=false와 거절 사유 | 종료 | worktree_not_ready | 우리 종료와 같음 | 다시 될 수 있는 거절 |
 | applied=false와 거절 사유 | 종료 | worktree_not_ready | 다른 종료 | 다시 될 수 있는 거절 |
 | applied=false와 거절 사유 | 종료 | worktree_not_ready | 없음 | 다시 될 수 있는 거절 |
 | applied=false와 거절 사유 | 종료 밖의 여섯 호출 | worktree_not_ready | 해당 없음 | 다시 될 수 있는 거절 |
-| applied=false와 거절 사유 | 종료 | 사유 없음 | 우리 종료와 같음 | 적용됨 |
 | applied=false와 거절 사유 | 종료 | 사유 없음 | 다른 종료 | 다시 될 까닭이 없는 거절 |
 | applied=false와 거절 사유 | 종료 | 사유 없음 | 없음 | 다시 될 수 있는 거절 |
 | applied=false와 거절 사유 | 종료 밖의 여섯 호출 | 사유 없음 | 해당 없음 | 다시 될 수 있는 거절 |
@@ -68,8 +63,9 @@ Task의 `status`, `runner`, `executionRegistration`, `runnerTerminalFact`, `runn
 - 영구 거절과 격리의 정리는 거절된 그 등록과 그 실행 명령에만 건다. 중앙 상태를 오류로 덮는 의도는 이 둘의 종료 밖 호출에서만 나온다.
 - owner_node_changed나 낡은 등록의 거절은 새 실행의 중앙 상태를 오류로 덮는 의도를 내지 않는다. 낡은 등록의 거절은 러너 거둠도 내지 않는다.
 - 종료의 영구 거절, 격리, 다시 될 까닭이 없는 종료 거절은 완료 정산 미결 닫기와 거절된 그 러너 등록 은퇴를 함께 내고 같은 종료를 다시 올리는 의도를 내지 않는다.
-- 중앙 세션 없음이 확인되면 로컬 소유 정리를 낸다. 받아 줄 세션이 없으므로 다시 시도하는 의도는 함께 내지 않는다.
-- 사유 없는 거절은 옛 서버 호환으로 다시 될 수 있는 거절이다. 단 종료 거절에 사유가 없을 때 정본의 종료 사건이 우리 종료와 같으면 적용됨, 다른 종료가 이미 있으면 already_terminal 사유의 다시 될 까닭이 없는 거절이다.
+- 종료 호출에서 정본의 종료 사건이 우리 종료이면 응답 길과 사유와 중앙 세션 유무에 상관없이 적용됨이다. 적용된 종료의 미결을 완료 전달 없이 닫는 의도는 나오지 않는다.
+- 중앙 세션 없음이 확인되면 로컬 소유 정리를 낸다. 받아 줄 세션이 없으므로 다시 시도하는 의도는 함께 내지 않는다. 종료는 같은 종료를 다시 올리지 않는 대신 완료 정산 미결 닫기를 함께 낸다.
+- 사유 없는 거절은 옛 서버 호환으로 다시 될 수 있는 거절이다. 단 종료 거절에 사유가 없을 때 다른 종료가 이미 있으면 already_terminal 사유의 다시 될 까닭이 없는 거절이다.
 - 정상 보유 중이면 러너 거둠 의도를 내지 않는다.
 
 ### 호출과 칸마다 기본 정리 의도
@@ -124,6 +120,8 @@ Task의 `status`, `runner`, `executionRegistration`, `runnerTerminalFact`, `runn
 | 붙은 러너 잇기가 사유 없이 거절됨(옛 서버) | 다시 될 수 있는 거절 | 나중에 다시 시도 |
 | 첫 메시지가 격리됨 | 격리 | 이 시도를 그만둠, 중앙 상태를 오류로 덮음(거절된 그 등록과 실행 명령에만) |
 | 종료 거절 뒤 중앙 세션 없음이 확인됨 | 다시 될 까닭이 없는 거절 | 완료 정산 미결 닫기, 거절된 그 러너 등록 은퇴, 로컬 소유 정리 |
+| 종료가 응답 없이 끝났는데 중앙 세션 없음이 확인됨 | 다시 될 수 있는 거절 | 완료 정산 미결 닫기, 로컬 소유 정리 |
+| 종료가 dead letter로 영구 거절됐는데 정본의 종료 사건이 우리 종료 | 적용됨 | 없음 |
 | 다시 될 수 있는 거절인데 중앙 세션 없음이 확인됨 | 다시 될 수 있는 거절 | 로컬 소유 정리 |
 
 ## 바깥 요청 칸
@@ -271,10 +269,10 @@ state "서버 응답을 받은 칸 하나로 가른다" as nodeResponse {
     state "다시 될 까닭이 없는 거절" as nodeResponse_no_retry
     state "영구 거절" as nodeResponse_permanent
     state "격리" as nodeResponse_quarantine
+    nodeResponse_decide --> nodeResponse_applied: 종료 호출에서 정본의 종료 사건이 우리 종료다(응답 길과 사유는 보지 않는다)
     nodeResponse_decide --> nodeResponse_quarantine: 전송 거절이 영구라 아웃박스 맨 앞 줄을 격리했다
     nodeResponse_decide --> nodeResponse_permanent: 응답 안에 dead letter가 실렸다
     nodeResponse_decide --> nodeResponse_retryable: 전송 거절이 다시 될 수 있거나 응답이 없다
-    nodeResponse_decide --> nodeResponse_applied: 종료 거절에 사유가 없고 정본의 종료 사건이 우리 종료다
     nodeResponse_decide --> nodeResponse_no_retry: 사유가 다시 될 까닭 없는 것이다
     nodeResponse_decide --> nodeResponse_no_retry: 종료 거절에 사유가 없고 다른 종료가 이미 있다
     nodeResponse_decide --> nodeResponse_retryable: 사유가 없거나 다시 될 수 있는 사유다(옛 서버 호환)

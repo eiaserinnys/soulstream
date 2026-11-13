@@ -26,7 +26,7 @@ interface TaskExecutorFinalizerDeps {
   lifecycleTransition: Pick<
     TaskLifecycleTransition,
     "persistExecutorFinalState" | "notifyCompletionIfApplied"
-  >;
+  > & Partial<Pick<TaskLifecycleTransition, "retireRejectedTerminal">>;
   logger: Logger;
   /** 보유가 followup 없이 풀릴 때 부른 세션에 알리는 길. */
   notifyBackgroundStopped?: (task: Task, firstSentence: string) => Promise<void>;
@@ -71,6 +71,8 @@ export class TaskExecutorFinalizer {
     // The sessions-row release ACK is the durable terminal/owner boundary. Keep
     // the runner handle until it commits so the same owner can retry on failure.
     await this.closeEngine(task);
+    // 거절된 종료의 등록은 러너를 닫거나 보유할지 정한 뒤에 은퇴시킨다.
+    await this.deps.lifecycleTransition.retireRejectedTerminal?.(task);
     if (persistence.terminalTransitionApplied && settleEndedTurnDeliveries) {
       await settleEndedTurnDeliveries();
     }

@@ -203,8 +203,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     loadTask: (sessionId) => taskManager.hydrateRunnerRecoveryTask(sessionId),
     getPublisher: () => detachedClaudeEventPublisher,
     collectDetached: (task, payload) => taskRuntime.claudeRuntimeTaskFollowup.collectDetached(task, payload),
-    terminateAfterFatalEngineError: (task, message) =>
-      taskRuntime.taskExecutor.terminateAfterFatalEngineError(task, message).then(() => undefined),
+    terminateAfterFatalEngineError: (task, message) => taskRuntime.taskExecutor.terminateAfterFatalEngineError(task, message).then(() => undefined),
   });
   const queuedRecoveryParams = {
     db, agentRegistry, modelCatalog,
@@ -339,6 +338,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
       : {}),
     ...(runnerProcess ? { recoveryStorage: runnerProcess.recoveryStorage } : {}),
   });
+  for (const owner of [taskManager, taskRuntime.taskExecutor]) owner.setTerminationCleanupPorts({ retireRejectedRegistration: async (task, id) => await runnerRecoveryCoordinator?.retireRejectedTerminalRegistration(task, id) });
   const folderService = new FolderService(orchHostClientDeps);
   db.configureFolderReader(folderService);
   const catalogService = new CatalogService(

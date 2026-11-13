@@ -20,6 +20,13 @@ import { annotateTerminalSystemAbort } from "./system_abort_notice.js";
 import { hasLiveExecutionEvidence } from "./task_execution_evidence.js";
 import { buildCallerInfoMetadataEntry } from "./task_metadata.js";
 import { releaseTaskRunner } from "./task_runner_release.js";
+import {
+  NodeResponseRejectedError,
+  judgeNodeResponse,
+  nodeResponseFactsFromApplication,
+  nodeResponseFactsFromError,
+  type NodeResponseVerdict,
+} from "./state/node_response_handling.js";
 import { reviewStateAfterFollowup } from "./session_review.js";
 import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
@@ -44,6 +51,11 @@ export interface AutoResumeTransitionDeps {
   observePersistentResume?: PersistentResumeObserver;
   contextBuilder?: ExecutionContextBuilder;
   agentRegistry?: AgentRegistry;
+  /**
+   * 거절 응답이 고른 정리 의도(로컬 소유 정리, 미결 닫기)를 실행하고 최종 판정을 돌려준다.
+   * 없으면 정리 없이 판정만 담아 던진다.
+   */
+  settleRejection?: (task: Task, verdict: NodeResponseVerdict) => Promise<NodeResponseVerdict>;
 }
 
 interface TerminalResumeSnapshot {
@@ -71,6 +83,10 @@ interface TerminalResumeSnapshot {
  */
 export class AutoResumeTransition {
   constructor(private readonly deps: AutoResumeTransitionDeps) {}
+
+  private async settle(task: Task, verdict: NodeResponseVerdict): Promise<NodeResponseVerdict> {
+    return await this.deps.settleRejection?.(task, verdict) ?? verdict;
+  }
 
   async resumeQueuedAfterTerminal(
     task: Task,
@@ -155,17 +171,35 @@ export class AutoResumeTransition {
       if (!this.deps.persistence) {
         throw new Error("running transition durable event persistence is required");
       }
-      const application = await this.deps.persistence
-        .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
-          reviewState: resumedReviewState,
-          transitionId: `resume:${transitionRevision}`,
-          ...(expectedTerminalEventId === undefined
-            ? {}
-            : { expectedTerminalEventId }),
-        });
+      const resumeContext = { call: "resume" } as const;
+      let application: Awaited<ReturnType<
+        NonNullable<typeof this.deps.persistence>["enqueueRunningTransitionAndWaitForApplication"]
+      >>;
+      try {
+        application = await this.deps.persistence
+          .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
+            reviewState: resumedReviewState,
+            transitionId: `resume:${transitionRevision}`,
+            ...(expectedTerminalEventId === undefined
+              ? {}
+              : { expectedTerminalEventId }),
+          });
+      } catch (error) {
+        const facts = nodeResponseFactsFromError(resumeContext, error);
+        if (!facts || facts.route === "no_response") throw error;
+        throw new NodeResponseRejectedError(
+          await this.settle(task, judgeNodeResponse(facts)),
+          `auto-resume running transition rejected for ${task.agentSessionId}`,
+          { cause: error },
+        );
+      }
       if (!application.applied) {
         applyCanonicalSessionProjection(task, application.canonicalSession);
-        throw new Error(
+        throw new NodeResponseRejectedError(
+          await this.settle(
+            task,
+            judgeNodeResponse(nodeResponseFactsFromApplication(resumeContext, application)),
+          ),
           `auto-resume running transition rejected for ${task.agentSessionId}`,
         );
       }
@@ -338,21 +372,42 @@ export class AutoResumeTransition {
       _dedupe_key:
         `resume_compensation:${task.agentSessionId}:${transitionRevision}`,
     };
-    const application = await persistence.enqueueTerminalTransitionAndWaitForApplication(
-      task.agentSessionId,
-      event,
-      {
-        kind: "terminal_transition",
-        status: snapshot.status,
-        termination_reason: snapshot.terminationReason,
-        termination_detail: snapshot.terminationDetail,
-        review_state: snapshot.reviewState,
-        last_assistant_text: snapshot.lastAssistantText,
-        updated_at: compensatedAt.toISOString(),
-      },
-    );
+    const compensationContext = { call: "resume_compensation_terminal" } as const;
+    let application: Awaited<ReturnType<
+      typeof persistence.enqueueTerminalTransitionAndWaitForApplication
+    >>;
+    try {
+      application = await persistence.enqueueTerminalTransitionAndWaitForApplication(
+        task.agentSessionId,
+        event,
+        {
+          kind: "terminal_transition",
+          status: snapshot.status,
+          termination_reason: snapshot.terminationReason,
+          termination_detail: snapshot.terminationDetail,
+          review_state: snapshot.reviewState,
+          last_assistant_text: snapshot.lastAssistantText,
+          updated_at: compensatedAt.toISOString(),
+        },
+      );
+    } catch (error) {
+      const facts = nodeResponseFactsFromError(compensationContext, error);
+      if (!facts || facts.route === "no_response") throw error;
+      throw new NodeResponseRejectedError(
+        await this.settle(task, judgeNodeResponse(facts)),
+        `running transition compensation rejected for ${task.agentSessionId}`,
+        { cause: error },
+      );
+    }
     if (!application.applied) {
-      throw new Error(
+      // 이 시도를 그만둔다. 다시 올릴 보정은 없다.
+      throw new NodeResponseRejectedError(
+        await this.settle(
+          task,
+          judgeNodeResponse(
+            nodeResponseFactsFromApplication(compensationContext, application),
+          ),
+        ),
         `running transition compensation rejected for ${task.agentSessionId}`,
       );
     }
@@ -440,5 +495,6 @@ export function prepareTaskForAutoResume(
   task.backgroundRuntimeAtTurnEnd = undefined;
   task.terminationEventRecorded = false;
   task.terminalEventId = undefined;
+  task.terminalDedupeIdentity = undefined;
   enqueueInterventionOnce(task, message);
 }

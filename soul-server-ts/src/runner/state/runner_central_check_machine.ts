@@ -74,6 +74,8 @@ export const runnerCentralCheckMachine = setup({
   },
   guards: {
     terminalRejection: ({ event }) => event.adoptResponse === "terminal_rejection",
+    terminalRejectionRetained: ({ event }) =>
+      event.adoptResponse === "terminal_rejection" && event.terminalRetained,
     missing: ({ event }) => event.lookup === "missing",
     ownerNodeChanged: ({ event }) => event.lookup === "owner_node_changed",
     lookupError: ({ event }) => event.lookup === "lookup_error",
@@ -100,11 +102,6 @@ export const runnerCentralCheckMachine = setup({
       on: {
         CHECK: [
           {
-            guard: "terminalRejection",
-            actions: verdict("reap"),
-            description: "다시 될 까닭 없는 잇기 거절이면 거둔다",
-          },
-          {
             guard: "missing",
             actions: verdict("reap"),
             description: "중앙 줄이 없으면 보유 중이어도 거둔다",
@@ -113,6 +110,16 @@ export const runnerCentralCheckMachine = setup({
             guard: "ownerNodeChanged",
             actions: verdict("reap"),
             description: "소유 노드가 바뀌었으면 보유 중이어도 거둔다",
+          },
+          {
+            guard: "terminalRejectionRetained",
+            actions: verdict("keep"),
+            description: "다시 될 까닭 없는 잇기 거절을 받았어도 정상 보유 중이면 거두지 않는다",
+          },
+          {
+            guard: "terminalRejection",
+            actions: verdict("reap"),
+            description: "다시 될 까닭 없는 잇기 거절이면 거둔다",
           },
           {
             guard: "lookupError",

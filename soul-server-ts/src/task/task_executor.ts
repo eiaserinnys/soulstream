@@ -48,7 +48,6 @@ import {
 import type { RunnerRegistration } from "../runner/runner_process_registry.js";
 import { RunnerOrphanedSpawnError } from "../runner/runner_process_dispatcher.js";
 import type { RunnerPhaseObservation } from "../runner/runner_phase_observation.js";
-import { classifyRunnerAdoptRejection } from "./state/node_adopt_rejection.js";
 import {
   ISOLATION_AUTH_UNAVAILABLE,
   ISOLATION_POLICY_UNAVAILABLE,
@@ -80,8 +79,24 @@ import { TaskEngineTurnRunner } from "./task_engine_turn_runner.js";
 import { TaskInitialMessagePublisher } from "./task_initial_message_publisher.js";
 import { applyCanonicalSessionProjection } from
   "./task_canonical_session_projection.js";
-import { TaskLifecycleTransition } from "./task_lifecycle_transition.js";
+import { classifyRunnerAdoptRejection } from "./state/node_adopt_rejection.js";
+import {
+  TaskLifecycleTransition,
+  type TerminationCleanupPorts,
+} from "./task_lifecycle_transition.js";
 import { releaseTaskRunner } from "./task_runner_release.js";
+import {
+  NodeAdoptionRejectedError,
+  NodeResponseRejectedError,
+  adoptResponseOfVerdict,
+  judgeNodeResponse,
+  mayMarkCentralError,
+  nodeResponseFactsFromApplication,
+  nodeResponseFactsFromError,
+  nodeResponseRejection,
+  type NodeAdoptionApplication,
+  type NodeResponseContext,
+} from "./state/node_response_handling.js";
 import {
   RunnerAdoptionRejectedError,
   type RunnerAdoptionApplication,
@@ -379,6 +394,7 @@ export class TaskExecutor {
       logger: this.logger,
       persistence,
       completionNotifier,
+      readCentralSession: (sessionId) => db.getSession(sessionId),
     });
     this.executorFinalizer = new TaskExecutorFinalizer({
       lifecycleTransition: this.lifecycleTransition,
@@ -1072,6 +1088,32 @@ export class TaskExecutor {
     activation: ExecutionActivation | undefined,
     error: unknown,
   ): Promise<void> {
+    const rejection = nodeResponseRejection(error);
+    if (rejection && !mayMarkCentralError(rejection)) {
+      // 낡은 등록이나 소유 노드가 바뀐 거절, 중앙 세션 없음은 새 실행의 중앙 상태를
+      // 오류로 덮지 않는다(R5). 이 시도만 접는다.
+      this.logger.warn(
+        {
+          sessionId: task.agentSessionId,
+          cell: rejection.decision.cell,
+          intents: rejection.decision.intents,
+        },
+        "server rejected the attempt; central state is left untouched",
+      );
+      try {
+        if ((rejection.decision.intents as readonly string[]).includes("release_local_ownership")) {
+          await this.lifecycleTransition.releaseLocalOwnership(task);
+        }
+      } finally {
+        if (activation && task.executionActivation === activation) {
+          task.executionActivation = undefined;
+        }
+        if (activation) {
+          await activation.reject(error, { skipFailureCompensation: true });
+        }
+      }
+      return;
+    }
     const preparationFailure = executionPreparationFailure(error);
     const restsOnPriorTerminal = preparationFailure === undefined
       && activation?.hasFailureCompensation?.() === true;
@@ -1089,7 +1131,7 @@ export class TaskExecutor {
         task,
         preparationFailure?.detail ?? error,
       );
-      task.completedAt = new Date();
+      if (task.terminationEventRecorded !== true) task.completedAt = new Date();
       await this._finalize(task);
       if (preparationFailure !== undefined) {
         await this.settlePreparationFailure(task, activation, preparationFailure);
@@ -1188,6 +1230,7 @@ export class TaskExecutor {
     resolveActivation: () => void,
   ): Promise<void> {
     task.executionRegistration = undefined;
+    task.terminalDedupeIdentity = undefined;
     let runner: TaskRunnerRuntime | undefined;
     let proof: import("./execution_registration.js").RunnerExecutionIdentity | undefined;
     try {
@@ -1202,26 +1245,42 @@ export class TaskExecutor {
       if (!proof || !isCompleteRunnerExecutionIdentity(proof)) {
         throw new Error(`Runner identity proof unavailable: ${task.agentSessionId}`);
       }
-      const application = await this.persistence.recordExecutionRegistrationAndWaitForApplication(
-        task.agentSessionId,
-        {
-          registrationId: proof.registrationId,
-          executionCommandId: proof.executionCommandId,
-          reviewState: task.reviewState ?? "not_required",
-          ...(task.pendingExecutionExpectedTerminalEventId === undefined
-            ? {}
-            : {
-                expectedTerminalEventId:
-                  task.pendingExecutionExpectedTerminalEventId,
-              }),
-        },
-      );
+      // 정본의 등록 번호가 이 시도의 등록과 다르면 낡은 등록의 거절이다. 새 실행의 중앙
+      // 상태를 오류로 덮지 않고 이 시도만 접는다(R5, handleExecutionFailure).
+      const responseContext = {
+        call: "execution_registration",
+        registrationId: proof.registrationId,
+      } as const;
+      let application: Awaited<ReturnType<
+        EventPersistence["recordExecutionRegistrationAndWaitForApplication"]
+      >>;
+      try {
+        application = await this.persistence.recordExecutionRegistrationAndWaitForApplication(
+          task.agentSessionId,
+          {
+            registrationId: proof.registrationId,
+            executionCommandId: proof.executionCommandId,
+            reviewState: task.reviewState ?? "not_required",
+            ...(task.pendingExecutionExpectedTerminalEventId === undefined
+              ? {}
+              : {
+                  expectedTerminalEventId:
+                    task.pendingExecutionExpectedTerminalEventId,
+                }),
+          },
+        );
+      } catch (error) {
+        throw this.rejectionFromError(responseContext, error, task);
+      }
       applyCanonicalSessionProjection(task, application.canonicalSession);
       const canonical = application.canonicalExecutionRegistration;
       if (!application.applied || !canonical
         || canonical.registrationId !== proof.registrationId
         || canonical.executionCommandId !== proof.executionCommandId) {
-        throw new Error(`Execution registration rejected: ${task.agentSessionId}`);
+        throw new NodeResponseRejectedError(
+          judgeNodeResponse(nodeResponseFactsFromApplication(responseContext, application)),
+          `Execution registration rejected: ${task.agentSessionId}`,
+        );
       }
       task.executionRegistration = {
         registrationId: proof.registrationId,
@@ -1246,6 +1305,31 @@ export class TaskExecutor {
       }
       throw error;
     }
+  }
+
+  /**
+   * 응답 대신 던져진 오류를 응답 칸으로 가른다. 응답이 아닌 오류와 응답 없음은 그대로
+   * 돌려주어 옛 실패 길을 탄다.
+   */
+  private rejectionFromError(
+    context: NodeResponseContext,
+    error: unknown,
+    task: Task,
+  ): unknown {
+    const facts = nodeResponseFactsFromError(context, error);
+    if (!facts || facts.route === "no_response") return error;
+    return new NodeResponseRejectedError(
+      judgeNodeResponse(facts),
+      `${context.call} was rejected for ${task.agentSessionId}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+      { cause: error },
+    );
+  }
+
+  /** 종료 응답의 정리 포트를 잇는다(거절된 등록 은퇴, 메모리 task 잊기, 정산 미결 닫기). */
+  setTerminationCleanupPorts(ports: TerminationCleanupPorts): void {
+    this.lifecycleTransition.setCleanupPorts(ports);
   }
 
   private supportsExecutionRegistration(): boolean {
@@ -1376,7 +1460,7 @@ export class TaskExecutor {
             task,
             preparationFailure?.detail ?? err,
           );
-          task.completedAt = new Date();
+          if (task.terminationEventRecorded !== true) task.completedAt = new Date();
           await this._finalize(task);
           if (preparationFailure !== undefined) {
             await this.settlePreparationFailure(task, activation, preparationFailure);
@@ -1447,6 +1531,11 @@ export class TaskExecutor {
       // resend of the same event keeps its dedupe key.
       if (mode === "adopt") {
         const registrationId = runner.dispatcher.registrationId();
+        const responseContext: NodeResponseContext = {
+          call: "startup_recovery_adopt",
+          registrationId: registrationId ?? null,
+          retained: task.runnerRetainedForDetachedWork === true,
+        };
         let application: Awaited<ReturnType<
           EventPersistence["enqueueRunningTransitionAndWaitForApplication"]
         >>;
@@ -1461,19 +1550,44 @@ export class TaskExecutor {
               },
             );
         } catch (error) {
+          // dead letter와 격리는 사유 없는 영구 거절이다. 응답으로 받아 같은 길로 가른다.
+          const facts = nodeResponseFactsFromError(responseContext, error);
+          if (facts && facts.route !== "no_response") {
+            const verdict = judgeNodeResponse(facts);
+            const response = adoptResponseOfVerdict(verdict);
+            const answered: NodeAdoptionApplication = { applied: false, response };
+            onAdoptionApplication?.(answered);
+            throw new NodeAdoptionRejectedError(
+              task.agentSessionId,
+              undefined,
+              response,
+              { cause: error },
+            );
+          }
           onAdoptionApplication?.();
           throw error;
         }
-        onAdoptionApplication?.(application);
-        if (!application.applied) {
-          const rejection = new RunnerAdoptionRejectedError(
+        const adoptVerdict = application.applied
+          ? undefined
+          : judgeNodeResponse(
+              nodeResponseFactsFromApplication(responseContext, application),
+            );
+        const answered: NodeAdoptionApplication = adoptVerdict
+          ? {
+              applied: false,
+              rejectionReason: application.rejectionReason,
+              response: adoptResponseOfVerdict(adoptVerdict),
+            }
+          : application;
+        onAdoptionApplication?.(answered);
+        if (adoptVerdict) {
+          const response = adoptResponseOfVerdict(adoptVerdict);
+          const rejection = new NodeAdoptionRejectedError(
             task.agentSessionId,
             application.rejectionReason,
+            response,
           );
-          if (
-            classifyRunnerAdoptRejection(application.rejectionReason)
-            === "retryable_rejection"
-          ) {
+          if (response === "retryable_rejection") {
             // 다시 될 수 있는 거절은 러너를 붙인 채 둔다. 프레임 통로도 함께
             // 붙잡아 둔다 — 여기서 놓으면 아이가 확인을 기다리다 멈춘 채로
             // 남고, 나중에 잇기가 적용돼도 그 턴의 출력이 오지 않는다.
@@ -1592,23 +1706,51 @@ export class TaskExecutor {
       throw new Error(`Task ${task.agentSessionId} has no attached runner to adopt`);
     }
     const registrationId = task.runner.dispatcher.registrationId();
-    const application = await this.persistence
-      .enqueueRunningTransitionAndWaitForApplication(
-        task.agentSessionId,
-        {
-          reviewState: task.reviewState ?? "not_required",
-          transitionId: `adopt:${commandId ?? task.lastEventId}:${randomUUID()}`,
-          ...(registrationId ? { registrationId } : {}),
-        },
-      );
+    const responseContext: NodeResponseContext = {
+      call: "attached_runner_adopt",
+      registrationId: registrationId ?? null,
+      retained: task.runnerRetainedForDetachedWork === true,
+    };
+    let application: Awaited<ReturnType<
+      EventPersistence["enqueueRunningTransitionAndWaitForApplication"]
+    >>;
+    try {
+      application = await this.persistence
+        .enqueueRunningTransitionAndWaitForApplication(
+          task.agentSessionId,
+          {
+            reviewState: task.reviewState ?? "not_required",
+            transitionId: `adopt:${commandId ?? task.lastEventId}:${randomUUID()}`,
+            ...(registrationId ? { registrationId } : {}),
+          },
+        );
+    } catch (error) {
+      const facts = nodeResponseFactsFromError(responseContext, error);
+      if (!facts || facts.route === "no_response") throw error;
+      const answered: NodeAdoptionApplication = {
+        applied: false,
+        response: adoptResponseOfVerdict(judgeNodeResponse(facts)),
+      };
+      return answered;
+    }
     if (application.applied) {
       applyCanonicalSessionProjection(task, application.canonicalSession);
       this.resumeSuspendedRecoveredExecution(task);
+      return { applied: true, rejectionReason: application.rejectionReason };
     }
-    return {
-      applied: application.applied,
+    const response = adoptResponseOfVerdict(judgeNodeResponse(
+      nodeResponseFactsFromApplication(responseContext, application),
+    ));
+    // 사유로 가른 분류와 같으면 분류를 싣지 않는다. 낡은 등록처럼 사유만으로 가를 수
+    // 없는 거절만 분류를 싣는다.
+    const answered: NodeAdoptionApplication = {
+      applied: false,
       rejectionReason: application.rejectionReason,
+      ...(response === classifyRunnerAdoptRejection(application.rejectionReason)
+        ? {}
+        : { response }),
     };
+    return answered;
   }
 
   /**
@@ -1756,7 +1898,7 @@ export class TaskExecutor {
       );
     } finally {
       if (!isOpenAiAgentsApprovalPending(task)) {
-        task.completedAt = new Date();
+        if (task.terminationEventRecorded !== true) task.completedAt = new Date();
       }
       await this._finalize(
         task,
@@ -2359,7 +2501,7 @@ export class TaskExecutor {
           "runner recovery ACK drain failed",
         );
       }
-      task.completedAt = new Date();
+      if (task.terminationEventRecorded !== true) task.completedAt = new Date();
       await this._finalize(
         task,
         () => this.settleEndedTurnReceipts(task, terminalTurnReceipts),

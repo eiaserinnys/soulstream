@@ -86,14 +86,24 @@ function uniqueCell(
 /** 응답을 받은 칸 표다. 같은 칸으로 모이는 입력은 한 줄로 접고 접은 줄은 전수로 확인한다. */
 export function nodeResponseCellRows(): NodeResponseCellRow[] {
   const rows: NodeResponseCellRow[] = [];
+  // 종료 호출에서 정본의 종료 사건이 우리 종료이면 응답 길과 사유를 보지 않는다.
+  const ourTermination = (facts: NodeResponseFacts): boolean =>
+    facts.call === "termination" && facts.termination === "same";
+  rows.push({
+    route: "모든 응답 길",
+    call: NODE_CALL_LABELS.termination,
+    reason: "모든 사유",
+    termination: NODE_TERMINATION_LABELS.same,
+    cell: uniqueCell("our termination", ourTermination),
+  });
   for (const route of NODE_RESPONSE_ROUTES) {
     if (route === "applied_false") continue;
     rows.push({
       route: NODE_ROUTE_LABELS[route],
       call: "모든 호출",
       reason: "모든 사유",
-      termination: "모든 경우",
-      cell: uniqueCell(route, (facts) => facts.route === route),
+      termination: "모든 경우(종료에서 우리 종료와 같은 경우는 위 줄)",
+      cell: uniqueCell(route, (facts) => facts.route === route && !ourTermination(facts)),
     });
   }
   for (const reason of NODE_WIRE_REASONS) {
@@ -104,6 +114,7 @@ export function nodeResponseCellRows(): NodeResponseCellRow[] {
         && (group === "termination") === (facts.call === "termination");
       if (group === "termination") {
         for (const projection of NODE_TERMINATION_PROJECTIONS) {
+          if (projection === "same") continue;
           rows.push({
             route: NODE_ROUTE_LABELS.applied_false,
             call: NODE_CALL_LABELS.termination,
@@ -269,6 +280,19 @@ export function nodeScenarioRows(): NodeScenarioRow[] {
         reason: "already_terminal",
         centralSession: "absent",
       },
+    },
+    {
+      scenario: "종료가 응답 없이 끝났는데 중앙 세션 없음이 확인됨",
+      facts: {
+        ...BASE_FACTS,
+        call: "termination",
+        route: "no_response",
+        centralSession: "absent",
+      },
+    },
+    {
+      scenario: "종료가 dead letter로 영구 거절됐는데 정본의 종료 사건이 우리 종료",
+      facts: { ...BASE_FACTS, call: "termination", route: "dead_letter", termination: "same" },
     },
     {
       scenario: "다시 될 수 있는 거절인데 중앙 세션 없음이 확인됨",

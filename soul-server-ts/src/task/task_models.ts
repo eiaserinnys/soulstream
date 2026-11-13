@@ -580,6 +580,21 @@ export interface Task {
   terminationEventRecorded?: boolean;
   /** Immutable events.id of the first durable session_ended transition. */
   terminalEventId?: number;
+  /**
+   * 종료 사건의 의미 중복 키다. 처음 만든 값을 고정해 다시 보낼 때 바뀌지 않게 한다.
+   * 등록이 지워지거나 completedAt이 다시 찍혀도 같은 종료는 같은 키로 올라간다.
+   */
+  terminalDedupeIdentity?: string;
+  /**
+   * 종료가 영구 거절되거나 다시 될 까닭 없이 거절된 러너 등록 번호다. 러너 복구가 그
+   * 등록만 은퇴시켜, 같은 종료가 주기 훑기와 재시작에서 다시 올라가지 않게 한다.
+   */
+  rejectedTerminationRegistrationId?: string;
+  /**
+   * 러너 복구가 지금 처리 중인 러너 등록 번호다. 복구가 올린 종료가 거절되면 그 거절의 등록은
+   * 중앙이 아는 실행 등록이 아니라 이 등록이다. 복구가 끝나면 지운다.
+   */
+  runnerRecoveryRegistrationId?: string;
   /** Claude Agent SDK 장기 실행 runtime 상태. */
   claudeRuntime?: ClaudeRuntimeState;
 
