@@ -63,8 +63,13 @@ export function claudeTransportEfforts(): readonly ReasoningEffort[] {
   return CLAUDE_SDK_EFFORTS as readonly ReasoningEffort[];
 }
 
+/**
+ * Efforts the Antigravity CLI transport can carry. `agy 1.5.7` advertises
+ * `gemini-4-hydrogen-xhigh` in its model list and the engine forwards the level
+ * as `--effort <level>`, so `xhigh` is deliverable.
+ */
 export function antigravityTransportEfforts(): readonly ReasoningEffort[] {
-  return ["low", "medium", "high"];
+  return ["low", "medium", "high", "xhigh"];
 }
 
 export function toClaudeSdkEffort(
