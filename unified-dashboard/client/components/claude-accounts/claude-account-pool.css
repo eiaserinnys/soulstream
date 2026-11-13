@@ -105,7 +105,8 @@
 
 .c724-badge-warn {
   background: color-mix(in oklch, var(--color-amber-500) 20%, transparent);
-  color: color-mix(in oklch, var(--color-amber-500) 46%, var(--foreground));
+  /* --foreground는 색상각이 0이라 oklch로 섞으면 amber가 빨강 쪽으로 끌려 적갈색이 된다. 이 줄만 oklab으로 섞는다. */
+  color: color-mix(in oklab, var(--color-amber-500) 46%, var(--foreground));
 }
 
 .c724-badge-danger {

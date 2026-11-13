@@ -122,6 +122,52 @@ CONTRAST_JS = r"""
 }
 """
 
+# 경고 배지 글자의 OKLCH 색상각을 같은 자리에 놓은 위험 배지 글자, --color-amber-500과 견준다(계산된 색 기준).
+HUE_JS = r"""
+(el) => {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 1;
+  const ctx = canvas.getContext('2d', {willReadFrequently: true});
+  const srgb = (css) => {
+    ctx.clearRect(0, 0, 1, 1);
+    ctx.fillStyle = '#000';
+    ctx.fillStyle = css;
+    ctx.fillRect(0, 0, 1, 1);
+    return [...ctx.getImageData(0, 0, 1, 1).data].slice(0, 3);
+  };
+  const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const hueOf = (css) => {
+    const [r, g, b] = srgb(css).map(lin);
+    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+    const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+    const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    const a = 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s;
+    const bb = 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s;
+    return ((Math.atan2(bb, a) * 180 / Math.PI) + 360) % 360;
+  };
+  const probe = document.createElement('span');
+  probe.className = 'c724-badge c724-badge-danger';
+  probe.textContent = 'x';
+  el.insertAdjacentElement('afterend', probe);
+  const danger = getComputedStyle(probe).color;
+  probe.remove();
+  const amber = getComputedStyle(document.documentElement).getPropertyValue('--color-amber-500').trim();
+  const swatch = document.createElement('span');
+  swatch.style.color = amber;
+  document.body.appendChild(swatch);
+  const amberColor = getComputedStyle(swatch).color;
+  swatch.remove();
+  const warn = getComputedStyle(el).color;
+  const dist = (a, b) => { const d = Math.abs(a - b) % 360; return d > 180 ? 360 - d : d; };
+  const hw = hueOf(warn), hd = hueOf(danger), ha = hueOf(amberColor);
+  return {
+    warnColor: warn, dangerColor: danger, amberColor,
+    warnHue: +hw.toFixed(1), dangerHue: +hd.toFixed(1), amberHue: +ha.toFixed(1),
+    toAmber: +dist(hw, ha).toFixed(1), toDanger: +dist(hw, hd).toFixed(1),
+  };
+}
+"""
+
 
 def pixel_ratio(png: bytes) -> float | None:
     """캡처 픽셀 교차 확인. 가장 흔한 색을 배경으로, 배경과 가장 먼 색을 글자색으로 본다(참고용)."""
@@ -156,6 +202,8 @@ def measure(page: Page, locator, out: Path, name: str, before: bool) -> dict:
     data = locator.evaluate(CONTRAST_JS)
     png = locator.screenshot(animations="disabled")
     data["pixelRatio"] = pixel_ratio(png)
+    if "badge-warn" in (locator.get_attribute("class") or ""):
+        data["hue"] = locator.evaluate(HUE_JS)
     page.screenshot(path=str(out / f"{name}{'-before' if before else ''}.png"), animations="disabled")
     return data
 
@@ -306,7 +354,8 @@ def main() -> int:
     before = args.mode == "before"
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        # 컴포넌트 검수 창이 헤드리스에서 WebGL 작업으로 매초 긴 작업을 돌려 요소 안정 대기가 시간 초과되므로 WebGL을 끈다.
+        browser = playwright.chromium.launch(args=["--disable-webgl"])
         try:
             lines = {} if before else start_lines(browser, base, out)
             contrast = contrast_cases(browser, base, out, before)
@@ -329,6 +378,13 @@ def main() -> int:
         low = [(theme, name) for theme, cases in contrast.items() for name, data in cases.items() if data["ratio"] < CONTRAST_MIN]
         assertions["beforeColorsAreLow"] = {"passed": bool(low), "lowCases": low}
     else:
+        hue_failures = []
+        for theme, cases in contrast.items():
+            for name, data in cases.items():
+                hue = data.get("hue")
+                if hue is not None and not hue["toAmber"] < hue["toDanger"]:
+                    hue_failures.append({"theme": theme, "case": name, **hue})
+        assertions["warnHueNearAmber"] = {"passed": not hue_failures, "failures": hue_failures}
         assertions["contrastAtLeast4_5"] = {"passed": not contrast_failures, "minimum": CONTRAST_MIN, "failures": contrast_failures}
 
     report = {"baseUrl": base, "mode": args.mode, "startLines": lines, "contrast": contrast, "assertions": assertions}
@@ -342,6 +398,11 @@ def main() -> int:
     for theme, cases in contrast.items():
         for name, data in cases.items():
             print(f"대비 {theme} {name}: {data['ratio']} (글자 {data['fg']} 배경 {data['bg']}, 픽셀 교차 {data['pixelRatio']})")
+    for theme, cases in contrast.items():
+        for name, data in cases.items():
+            hue = data.get("hue")
+            if hue:
+                print(f"색상각 {theme} {name}: 경고 {hue['warnHue']}° (amber {hue['amberHue']}° 거리 {hue['toAmber']}, 위험 {hue['dangerHue']}° 거리 {hue['toDanger']})")
     for name, entry in assertions.items():
         print(f"{name}: {'통과' if entry['passed'] else '실패'}")
     if report["passed"]:
