@@ -26,7 +26,10 @@ export function makeStyles(t: DesignTokens) {
     errorText: {
       color: c.errorText,
       fontSize: t.chatFontSize.meta,
+      lineHeight: t.chatFontSize.meta * t.lineHeightRatio,
       textAlign: 'center',
+      // 입력창(inputRow)과 같은 가로 여백을 써서 문구 상자가 입력창 끝선 안에 머문다.
+      paddingHorizontal: t.spacing.md,
       paddingVertical: t.spacing.xs,
     },
     offlineNotice: {

@@ -205,7 +205,7 @@ describe("AskQuestionBanner", () => {
 
   it("shows a retryable error when AskUserQuestion submission fails", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-    fetchMock.mockResolvedValueOnce({ ok: false, status: 400 });
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 400, text: async () => "" });
     ({ container, root } = renderBanner(makeInputRequest()));
 
     const button = Array.from(
@@ -222,6 +222,51 @@ describe("AskQuestionBanner", () => {
       );
     });
     expect(consoleError).toHaveBeenCalled();
+    expect(button?.disabled).toBe(false);
+  });
+
+  it("이미 응답된 입력 요청에는 실패 문구를 띄우지 않는다", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 422,
+      text: async () => JSON.stringify({
+        error: { code: "INPUT_REQUEST_ALREADY_RESPONDED" },
+      }),
+    });
+    ({ container, root } = renderBanner(makeInputRequest()));
+
+    const button = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((candidate) => candidate.textContent?.includes("같이 고쳐서"));
+    expect(button).toBeTruthy();
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await vi.waitFor(() => {
+      expect(button?.disabled).toBe(false);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(document.body.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("입력 요청 응답이 503이면 기존 문구를 띄운다", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 503, text: async () => "" });
+    ({ container, root } = renderBanner(makeInputRequest()));
+
+    const button = Array.from(
+      document.body.querySelectorAll<HTMLButtonElement>("button"),
+    ).find((candidate) => candidate.textContent?.includes("같이 고쳐서"));
+    expect(button).toBeTruthy();
+    await act(async () => {
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await vi.waitFor(() => {
+      expect(document.body.querySelector('[role="alert"]')?.textContent).toContain(
+        "응답 전송에 실패했습니다",
+      );
+    });
     expect(button?.disabled).toBe(false);
   });
 

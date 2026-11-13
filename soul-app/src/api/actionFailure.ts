@@ -17,11 +17,21 @@ export const INTERRUPT_FAILURE_MESSAGES = {
   other: '멈추지 못했습니다. 다시 눌러 주세요.',
 } as const;
 
+/** 도구 승인과 입력 요청이 함께 쓰는 「이미 끝난 요청」 문구. */
+export const ALREADY_RESOLVED_MESSAGE = '이미 끝난 요청이라 보내지 못했습니다.';
+
 export const TOOL_APPROVAL_FAILURE_MESSAGES = {
   unreachable: '연결하지 못해 보내지 못했습니다. 다시 눌러 주세요.',
-  alreadyResolved: '이미 끝난 요청이라 보내지 못했습니다.',
+  alreadyResolved: ALREADY_RESOLVED_MESSAGE,
   other: '보내지 못했습니다. 다시 눌러 주세요.',
 } as const;
+
+/** 입력 요청이 이미 응답됐거나 만료됐거나 더 이상 대기 중이 아님을 알리는 서버 코드. */
+export const INPUT_RESPONSE_ALREADY_HANDLED_CODES = [
+  'INPUT_REQUEST_ALREADY_RESPONDED',
+  'REQUEST_NOT_PENDING',
+  'INPUT_REQUEST_EXPIRED',
+] as const;
 
 /** 실패 응답 본문에서 서버 오류 코드를 꺼낸다. 형식이 다르면 null. */
 function actionFailureCode(body?: string): string | null {
@@ -33,6 +43,20 @@ function actionFailureCode(body?: string): string | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * 입력 요청 응답이 422와 「이미 처리됨」 코드로 돌아왔는지 판정한다.
+ * 그 밖의 422 코드(INPUT_RESPONSE_NOT_SUPPORTED 등)와 다른 상태는 실패다.
+ */
+export function isInputResponseAlreadyHandled(
+  failure: ActionFailure = {},
+): boolean {
+  if (failure.status !== 422) return false;
+  const code = actionFailureCode(failure.body);
+  return code !== null && (
+    INPUT_RESPONSE_ALREADY_HANDLED_CODES as readonly string[]
+  ).includes(code);
 }
 
 export function actionFailureMessage(

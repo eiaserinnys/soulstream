@@ -237,7 +237,7 @@ describe('ChatInputRequest', () => {
   });
 
   it('4xx 응답 실패를 인라인 접근성 alert와 로그로 드러내고 재시도를 허용한다', async () => {
-    mockRespond.mockResolvedValue({ ok: false, status: 400 });
+    mockRespond.mockResolvedValue({ ok: false, status: 400, text: async () => '' });
     const consoleError = jest
       .spyOn(console, 'error')
       .mockImplementation(() => undefined);
@@ -264,6 +264,66 @@ describe('ChatInputRequest', () => {
     expect(
       screen.getByTestId('input-request-option-0-0').props.accessibilityState,
     ).toMatchObject({ disabled: false });
+  });
+
+  it('이미 끝난 요청이면 422 코드를 읽어 그 자리에 이미 끝났다고 알린다', async () => {
+    mockRespond.mockResolvedValue({
+      ok: false,
+      status: 422,
+      text: async () => JSON.stringify({
+        error: { code: 'INPUT_REQUEST_ALREADY_RESPONDED' },
+      }),
+    });
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const event = inputRequestEvent({
+      ...LIVE_PAYLOAD,
+      questions: [
+        {
+          question: '계속할까요?',
+          multiSelect: false,
+          options: [{ label: '계속', description: '작업을 계속합니다.' }],
+        },
+      ],
+    });
+    const screen = render(
+      <ChatInputRequest event={event} sessionId="session-1" />,
+    );
+
+    fireEvent.press(screen.getByTestId('input-request-option-0-0'));
+
+    const error = await screen.findByTestId('input-request-error');
+    expect(error.props.accessibilityRole).toBe('alert');
+    expect(error).toHaveTextContent('이미 끝난 요청이라 보내지 못했습니다.');
+    expect(
+      screen.getByTestId('input-request-option-0-0').props.accessibilityState,
+    ).toMatchObject({ disabled: false });
+  });
+
+  it('422가 아닌 실패는 기존 응답 실패 문구를 그대로 쓴다', async () => {
+    mockRespond.mockResolvedValue({
+      ok: false,
+      status: 503,
+      text: async () => JSON.stringify({ error: { code: 'NODE_UNAVAILABLE' } }),
+    });
+    jest.spyOn(console, 'error').mockImplementation(() => undefined);
+    const event = inputRequestEvent({
+      ...LIVE_PAYLOAD,
+      questions: [
+        {
+          question: '계속할까요?',
+          multiSelect: false,
+          options: [{ label: '계속', description: '작업을 계속합니다.' }],
+        },
+      ],
+    });
+    const screen = render(
+      <ChatInputRequest event={event} sessionId="session-1" />,
+    );
+
+    fireEvent.press(screen.getByTestId('input-request-option-0-0'));
+
+    const error = await screen.findByTestId('input-request-error');
+    expect(error).toHaveTextContent(/응답을 보내지 못했습니다/);
   });
 
   it('네트워크 예외도 인라인 접근성 alert와 로그로 드러내고 재시도를 허용한다', async () => {

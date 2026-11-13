@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { actionFailureMessage } from "./action-failure";
+import { actionFailureMessage, isInputResponseAlreadyHandled } from "./action-failure";
 
 describe("actionFailureMessage", () => {
   describe("멈춤", () => {
@@ -59,5 +59,37 @@ describe("actionFailureMessage", () => {
       expect(actionFailureMessage("tool-approval", { status: 500 }))
         .toBe("보내지 못했습니다. 다시 눌러 주세요.");
     });
+  });
+});
+
+describe("isInputResponseAlreadyHandled", () => {
+  it.each([
+    "INPUT_REQUEST_ALREADY_RESPONDED",
+    "REQUEST_NOT_PENDING",
+    "INPUT_REQUEST_EXPIRED",
+  ])("422 %s는 이미 처리된 요청이다", (code) => {
+    expect(isInputResponseAlreadyHandled({
+      status: 422,
+      body: JSON.stringify({ error: { code } }),
+    })).toBe(true);
+  });
+
+  it("다른 422 코드는 실패다", () => {
+    expect(isInputResponseAlreadyHandled({
+      status: 422,
+      body: JSON.stringify({ error: { code: "INPUT_RESPONSE_NOT_SUPPORTED" } }),
+    })).toBe(false);
+  });
+
+  it("422가 아닌 상태는 같은 코드여도 실패다", () => {
+    expect(isInputResponseAlreadyHandled({
+      status: 409,
+      body: JSON.stringify({ error: { code: "INPUT_REQUEST_ALREADY_RESPONDED" } }),
+    })).toBe(false);
+  });
+
+  it("본문이 없거나 JSON이 아니면 실패다", () => {
+    expect(isInputResponseAlreadyHandled({ status: 422 })).toBe(false);
+    expect(isInputResponseAlreadyHandled({ status: 422, body: "<html>err</html>" })).toBe(false);
   });
 });

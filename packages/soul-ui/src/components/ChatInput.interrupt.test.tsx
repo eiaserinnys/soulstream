@@ -73,6 +73,8 @@ it("멈춤이 409를 받으면 원시 HTTP 문자열 대신 일상어로 알린�
   await vi.waitFor(() => {
     expect(host.textContent).toContain("멈출 작업이 없습니다. 이미 끝난 세션일 수 있습니다.");
   });
+  expect(host.querySelector('[role="alert"]')?.textContent)
+    .toContain("멈출 작업이 없습니다. 이미 끝난 세션일 수 있습니다.");
   expect(host.textContent).not.toContain("HTTP 409");
 });
 

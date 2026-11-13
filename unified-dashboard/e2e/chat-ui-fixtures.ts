@@ -182,7 +182,8 @@ export async function openChatUi(page: Page, pas = false) {
   await page.goto(pas ? `/persistent/${chatUiSession}` : `/?session=${chatUiSession}`);
   if (!pas && (page.viewportSize()?.width ?? 1440) <= 760) await page.getByTestId("v3-mobile-tab-chat").click();
   const root = page.locator('[data-slot="chat-root"]').filter({ visible: true }).first();
-  await expect(root).toBeVisible();
+  // 개발 서버가 처음 요청받을 때 채팅 청크를 변환하는 시간이 5초를 넘기도 한다.
+  await expect(root).toBeVisible({ timeout: 30_000 });
   await expect(root.locator(".chat-ui").first()).toBeVisible();
   return root;
 }

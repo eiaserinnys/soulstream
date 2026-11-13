@@ -515,7 +515,45 @@ export function createApiClient(baseUrl = ''): ApiClient {
   if (section === 'dialogues' && new URLSearchParams(window.location.search).get('sample') === 'persistent-select') return nativeSettingsApi;
   if (section === 'entryShell') return entryShellApi as unknown as ApiClient;
   if (section === 'dialogues') return dialogueApi;
+  if (section === 'chatUiComposer') {
+    return { ...api, ...usageEndpoints, ...createLiveActionEndpoints(baseUrl) } as unknown as ApiClient;
+  }
   return { ...api, ...usageEndpoints } as unknown as ApiClient;
+}
+
+/**
+ * 카드 #1316 검수용: 도구 승인·입력 요청은 검수 창에서도 실제 서버 응답 경로를
+ * 타야 실패 상태(409/422/503)를 그대로 재현할 수 있다. 이 두 동작만 실제 요청을
+ * 보내고, 나머지 검수 화면의 가짜 API는 그대로 둔다.
+ */
+function createLiveActionEndpoints(baseUrl: string) {
+  const context = createApiRequestContext(baseUrl);
+  return {
+    respond: (sessionId: string, requestId: string, answers: Record<string, string>) =>
+      context.authFetch(`${context.base}/api/sessions/${encodeURIComponent(sessionId)}/respond`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ request_id: requestId, answers }),
+      }),
+    approveTool: (sessionId: string, approvalId: string, body?: { message?: string; alwaysApprove?: boolean }) =>
+      context.authFetch(
+        `${context.base}/api/sessions/${encodeURIComponent(sessionId)}/tool-approvals/${encodeURIComponent(approvalId)}/approve`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body ?? {}),
+        },
+      ),
+    rejectTool: (sessionId: string, approvalId: string, body?: { message?: string; alwaysReject?: boolean }) =>
+      context.authFetch(
+        `${context.base}/api/sessions/${encodeURIComponent(sessionId)}/tool-approvals/${encodeURIComponent(approvalId)}/reject`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body ?? {}),
+        },
+      ),
+  };
 }
 
 export function createAttachmentReviewApi(): ApiClient {

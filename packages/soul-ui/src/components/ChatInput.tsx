@@ -480,7 +480,7 @@ export function ChatInput({
       <ChatInputFeedback textareaRef={textareaRef} />
 
       {(error || interruptError || uploadError) && (
-        <div className="chat-tone-danger rounded px-2 py-1 text-xs">
+        <div role="alert" className="chat-tone-danger rounded px-2 py-1 text-xs">
           {error || interruptError || uploadError}
         </div>
       )}

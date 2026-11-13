@@ -81,6 +81,54 @@ for (const width of [1440, 360]) {
   });
 }
 
+const INPUT_RESPONSE_MESSAGE = "응답 전송에 실패했습니다. 다시 시도해 주세요.";
+const ALREADY_HANDLED_MESSAGE = "이미 끝난 요청이라 보내지 못했습니다.";
+
+for (const status of [422, 503] as const) for (const width of [1440, 360]) {
+  test(`input request already handled splits from failure ${status} ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 1400 });
+    const h = await installChatUiRoutes(page, { example: "normal", count: 5, questions: true });
+    const respondCalls: string[] = [];
+    // installChatUiRoutes의 기본 respond 응답 뒤에 등록해 이 표본의 응답이 이긴다.
+    await page.route(/\/api\/sessions\/[^/]+\/respond$/, route => {
+      respondCalls.push(new URL(route.request().url()).pathname);
+      return route.fulfill({ status, json: {
+        error: { code: status === 422 ? "INPUT_REQUEST_ALREADY_RESPONDED" : "NODE_UNAVAILABLE" },
+      } });
+    });
+    const root = await openChatUi(page, false);
+    const option = root.getByRole("button", { name: "유지", exact: false }).first();
+    const card = option.locator("xpath=../..");
+    await expect(card).toBeVisible();
+    await expect(option).toBeEnabled();
+    await expect(card.getByRole("alert")).toHaveCount(0);
+
+    const label = `input-request-${status}-${width}`;
+    await capture(card, `web-${label}-before`);
+    await option.click();
+    if (status === 422) {
+      // 이미 처리된 요청은 실패가 아니므로 경고를 띄우지 않고 선택지만 되돌린다.
+      await expect.poll(() => respondCalls.length).toBe(1);
+      await expect(option).toBeEnabled();
+      await expect(card.getByText(ALREADY_HANDLED_MESSAGE, { exact: true })).toHaveCount(0);
+      await expect(card.getByRole("alert")).toHaveCount(0);
+    } else {
+      await expect(card.getByRole("alert")).toHaveText(INPUT_RESPONSE_MESSAGE);
+      await expect(option).toBeEnabled();
+    }
+    await capture(card, `web-${label}-after`);
+
+    expect(respondCalls).toHaveLength(1);
+    expect(h.errors).toEqual([]);
+    records[label] = {
+      status,
+      requested: respondCalls,
+      alert: await card.getByRole("alert").allTextContents(),
+      optionEnabled: await option.isEnabled(),
+    };
+  });
+}
+
 test.afterAll(() => {
   writeFileSync(path.join(output, "action-failure-metrics.json"), JSON.stringify(records, null, 2));
 });

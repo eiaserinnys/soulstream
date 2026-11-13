@@ -20,6 +20,10 @@ import type {
   SessionEvent,
 } from '../../api/types';
 import { createApiClient } from '../../api/client';
+import {
+  ALREADY_RESOLVED_MESSAGE,
+  isInputResponseAlreadyHandled,
+} from '../../api/actionFailure';
 import { useSettingsStore } from '../../store/settingsStore';
 import { useChatStore } from '../../store/chatStore';
 import { useInputRequestTimer } from '../../hooks/useInputRequestTimer';
@@ -128,6 +132,7 @@ export const ChatInputRequest = memo(function ChatInputRequest({
   const reportSubmissionFailure = (
     reason: string,
     detail?: Record<string, unknown>,
+    message: string = SUBMIT_ERROR_MESSAGE,
   ) => {
     try {
       console.error('[ChatInputRequest] 응답 전송 실패', {
@@ -140,7 +145,7 @@ export const ChatInputRequest = memo(function ChatInputRequest({
       // 진단 로그 실패가 사용자의 재시도 경로를 막으면 안 된다.
     }
     setSubmissionState('idle');
-    setSubmitError(SUBMIT_ERROR_MESSAGE);
+    setSubmitError(message);
   };
 
   const submitSelections = async (nextSelections: AnswerSelections) => {
@@ -166,7 +171,16 @@ export const ChatInputRequest = memo(function ChatInputRequest({
         buildAnswerPayload(questions, nextSelections),
       );
       if (!response.ok) {
-        reportSubmissionFailure('http_error', { status: response.status });
+        const body = await response.text().catch(() => '');
+        if (isInputResponseAlreadyHandled({ status: response.status, body })) {
+          reportSubmissionFailure(
+            'already_resolved',
+            { status: response.status },
+            ALREADY_RESOLVED_MESSAGE,
+          );
+          return;
+        }
+        reportSubmissionFailure('http_error', { status: response.status, body });
         return;
       }
       setSubmissionState('submitted');

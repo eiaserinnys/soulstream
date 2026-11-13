@@ -227,16 +227,18 @@ function InputRequestBanner({ node, sessionId }: { node: InputRequestNodeDef; se
     if (selectedAnswer) return;
     setSubmissionFailed(false);
     setSelectedAnswer(answer);  // 낙관적 UI: 버튼 즉시 비활성화
-    const success = await submitInputResponse(
+    const result = await submitInputResponse(
       sessionId,
       node.requestId,
       node.id,
       question.question,
       answer
     );
-    if (!success) {
+    if (!result.sent) {
       setSelectedAnswer(null);  // 실패 시 롤백
-      setSubmissionFailed(true);
+      if (result.reason === "failed") {
+        setSubmissionFailed(true);
+      }
     }
     // 성공 시 상태 갱신은 SSE로 돌아오는 input_request_responded 이벤트가 처리한다.
     // responded=true → findPendingInputRequest 필터링 → 배너 컴포넌트 언마운트
