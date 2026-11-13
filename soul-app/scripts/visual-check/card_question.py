@@ -556,7 +556,7 @@ def measure_paging(page: Page, base: str, width: int, theme: str, output: Path, 
 
 
 def judge_band_hold(label: str, long_state: dict, plain_short: dict, long_again: dict,
-                    held_short: dict, released_short: dict, held_long: dict) -> list[dict]:
+                    held_short: dict, released_short: dict, held_long_down: dict, held_long: dict) -> list[dict]:
     """캐릭터를 숨긴 띠: 다루는 동안 판이 줄지 않고, 다루기가 끝나면 지금 장 높이가 된다."""
     failures: list[dict] = []
 
@@ -598,7 +598,13 @@ def judge_band_hold(label: str, long_state: dict, plain_short: dict, long_again:
         fail("released deck height", {"plain": plain_short["deckHeight"], "released": released_short["deckHeight"]})
     if abs(released_short["navTop"] - plain_short["navTop"]) > 1:
         fail("released nav row", {"plain": plain_short["navTop"], "released": released_short["navTop"]})
-    # 다시 다루며 긴 장으로 넘기면 그만큼 자란다.
+    # 다시 다루며 긴 장으로 넘기면, 손가락을 댄 동안은 줄지도 자라지도 않고(넘기는 중 대기) 손을 뗀 뒤 자란다.
+    if held_long_down["sheet"] != long_again["sheet"]:
+        fail("long sheet shown while pressed", {"long": long_again["sheet"], "pressed": held_long_down["sheet"]})
+    if abs(held_long_down["deckHeight"] - released_short["deckHeight"]) > 1:
+        fail("deck height kept while pressed", {"before": released_short["deckHeight"], "pressed": held_long_down["deckHeight"]})
+    if abs(held_long_down["navTop"] - released_short["navTop"]) > 1:
+        fail("nav row kept while pressed", {"before": released_short["navTop"], "pressed": held_long_down["navTop"]})
     if held_long["sheet"] != long_again["sheet"]:
         fail("long sheet shown again", {"long": long_again["sheet"], "held": held_long["sheet"]})
     if abs(held_long["deckHeight"] - long_again["deckHeight"]) > 1:
@@ -665,13 +671,16 @@ def measure_band_hold(page: Page, base: str, width: int, theme: str, output: Pat
     touch(cdp, "start", short_box["x"] + short_box["width"] / 2, short_box["y"] + 24)
     page.wait_for_timeout(200)
     scroll_track(page, "prev")
+    held_long_down = wait_paging_settled(page)
+    pressed_name = f"card-question-band-hold-short-to-long-pressed-{width}-{theme}.png"
+    root.screenshot(path=str(output / pressed_name))
+    touch(cdp, "end")
+    page.wait_for_timeout(150)
     held_long = wait_paging_settled(page)
     grown_name = f"card-question-band-hold-short-to-long-{width}-{theme}.png"
     root.screenshot(path=str(output / grown_name))
-    touch(cdp, "end")
-    page.wait_for_timeout(150)
 
-    failures = judge_band_hold(label, long_state, plain_short, long_again, held_short, released_short, held_long)
+    failures = judge_band_hold(label, long_state, plain_short, long_again, held_short, released_short, held_long_down, held_long)
     result["failures"].extend(failures)
     return {
         "state": "pas-band-hold",
@@ -683,12 +692,13 @@ def measure_band_hold(page: Page, base: str, width: int, theme: str, output: Pat
         "capture": grown_name,
         "blockCapture": None,
         "paths": {"plainShort": plain_name, "longToShort": held_name,
-                  "released": released_name, "shortToLong": grown_name},
+                  "released": released_name, "shortToLongPressed": pressed_name, "shortToLong": grown_name},
         "long": long_state,
         "plainShort": plain_short,
         "longAgain": long_again,
         "heldShort": held_short,
         "releasedShort": released_short,
+        "heldLongPressed": held_long_down,
         "heldLong": held_long,
         "failures": failures,
         "alignmentFailures": failures,
