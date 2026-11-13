@@ -46,6 +46,7 @@
   "devDependencies": {
     "@hocuspocus/provider": "3.4.4",
     "@modelcontextprotocol/client": "2.2.0",
+    "@soulstream/statechart": "workspace:*",
     "@types/node": "^22.0.0",
     "@types/oidc-provider": "9.13.1",
     "@types/ws": "8.18.1",

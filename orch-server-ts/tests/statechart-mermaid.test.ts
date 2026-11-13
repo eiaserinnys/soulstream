@@ -5,7 +5,7 @@ import {
   type ChartNode,
   type ChartSpec,
   type ChartTransition,
-} from "../src/statechart/mermaid.js";
+} from "@soulstream/statechart";
 
 function node(
   id: string,

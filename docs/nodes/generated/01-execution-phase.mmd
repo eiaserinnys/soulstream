@@ -1,0 +1,30 @@
+stateDiagram-v2
+direction TB
+classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
+classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
+state "Task 필드의 사실을 노드 실행 상태 하나로 투영한다" as nodeExecution {
+    direction TB
+    state "사실을 받아 위에서부터 처음 맞는 실행 상태로 간다" as nodeExecution_project
+    state "종료 뒤 러너를 해제하는 중" as nodeExecution_retained_releasing
+    state "종료 뒤 클로드 백그라운드 작업 보유" as nodeExecution_retained_claude_background
+    state "종료 뒤 코덱스 남은 명령 보유" as nodeExecution_retained_codex_command
+    state "멈추는 중" as nodeExecution_stopping
+    state "러너 없이 올린 활성 task" as nodeExecution_hydrated_active
+    state "러너를 띄우는 중(러너 없음)" as nodeExecution_starting
+    state "러너의 남은 기록을 올리는 중(오프라인 재생)" as nodeExecution_replaying
+    state "종료를 올리는 중(러너 붙음)" as nodeExecution_terminating
+    state "실행 등록 응답을 기다리는 중(러너 붙음)" as nodeExecution_registering
+    state "러너가 턴을 도는 중" as nodeExecution_running
+    state "주인 없음" as nodeExecution_idle
+    nodeExecution_project --> nodeExecution_retained_releasing: 종료가 기록됐고 러너 해제 청구가 걸려 있다
+    nodeExecution_project --> nodeExecution_retained_claude_background: 종료가 기록됐고 클로드의 남은 백그라운드 작업이 러너를 쥐고 있다
+    nodeExecution_project --> nodeExecution_retained_codex_command: 종료가 기록됐고 코덱스의 남은 명령이 러너를 쥐고 있다
+    nodeExecution_project --> nodeExecution_stopping: 활성이고 멈춤 장벽이 올라 있다
+    nodeExecution_project --> nodeExecution_hydrated_active: 러너 없이 DB에서 올린 활성 task다
+    nodeExecution_project --> nodeExecution_starting: 활성이고 러너가 아직 없다
+    nodeExecution_project --> nodeExecution_replaying: 붙은 러너가 기록을 다시 읽는 손잡이다
+    nodeExecution_project --> nodeExecution_terminating: 러너가 붙은 채 종료를 올렸거나 올리는 중이다
+    nodeExecution_project --> nodeExecution_registering: 러너는 붙었고 실행 등록 응답을 아직 받지 못했다
+    nodeExecution_project --> nodeExecution_running: 러너가 붙었고 등록이 적용됐다
+    nodeExecution_project --> nodeExecution_idle: 활성도 러너도 없다
+}

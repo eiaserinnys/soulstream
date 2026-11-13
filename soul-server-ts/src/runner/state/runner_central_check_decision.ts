@@ -1,6 +1,10 @@
 import { transition } from "xstate";
 
 import {
+  TERMINAL_ADOPT_REJECTION_REASONS,
+  classifyRunnerAdoptRejection,
+} from "../../task/state/node_adopt_rejection.js";
+import {
   runnerCentralCheckMachine,
   type RunnerAdoptResponse,
   type RunnerCentralCheckDecision,
@@ -12,27 +16,11 @@ interface VerdictAction {
   params: { decision: RunnerCentralCheckDecision };
 }
 
-/** 다시 될 까닭 없는 잇기 거절 사유다. */
-export const TERMINAL_ADOPT_REJECTION_REASONS: readonly string[] = [
-  "already_terminal",
-  "session_missing",
-  "owner_node_changed",
-];
+/** 사유 분류의 정본은 task/state다. 기존 호출자를 위해 다시 내보낸다. */
+export { TERMINAL_ADOPT_REJECTION_REASONS, classifyRunnerAdoptRejection };
 
 export const RUNNER_CENTRAL_RETRY_BASE_MS = 15_000;
 export const RUNNER_CENTRAL_RETRY_MAX_MS = 300_000;
-
-/**
- * 잇기 거절 사유를 응답으로 가른다. 사유 없음과 모르는 값은 다시 될 수 있음이다.
- */
-export function classifyRunnerAdoptRejection(
-  reason: string | null | undefined,
-): RunnerAdoptResponse {
-  if (typeof reason === "string" && TERMINAL_ADOPT_REJECTION_REASONS.includes(reason)) {
-    return "terminal_rejection";
-  }
-  return "retryable_rejection";
-}
 
 /**
  * 다시 될 수 있는 거절 뒤 다음 판정까지의 간격이다.

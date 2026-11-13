@@ -1,0 +1,23 @@
+stateDiagram-v2
+direction TB
+classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
+classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
+state "실행 시작, 지시 넘기기, 멈춤 장벽의 직렬화" as nodeBarrier {
+    direction TB
+    state "장벽 없음" as nodeBarrier_none
+    state "실행 시작 장벽" as nodeBarrier_execution_start
+    state "지시 넘기기 장벽" as nodeBarrier_intervention_handoff
+    state "넘기기가 끝나기를 기다리는 멈춤" as nodeBarrier_stop_waiting_handoff
+    state "멈춤 장벽" as nodeBarrier_stop
+    nodeBarrier_none --> nodeBarrier_execution_start: 실행 시작 장벽을 올린다
+    nodeBarrier_none --> nodeBarrier_intervention_handoff: 지시 넘기기 장벽을 올린다
+    nodeBarrier_none --> nodeBarrier_stop: 곧바로 멈춘다
+    nodeBarrier_execution_start --> nodeBarrier_none: 시작 장벽이 풀린다
+    nodeBarrier_execution_start --> nodeBarrier_stop: 시작 장벽을 기다리지 않고 곧바로 멈춘다
+    nodeBarrier_intervention_handoff --> nodeBarrier_none: 넘기기가 끝난다
+    nodeBarrier_intervention_handoff --> nodeBarrier_stop_waiting_handoff: 넘기기가 끝난 뒤 보통 멈춤 길로 간다
+    nodeBarrier_stop_waiting_handoff --> nodeBarrier_stop: 넘기기가 끝나면 멈춤 장벽을 올려 보통 멈춤 길을 탄다
+    nodeBarrier_stop_waiting_handoff --> nodeBarrier_stop_waiting_handoff: 이미 멈추는 중이다
+    nodeBarrier_stop --> nodeBarrier_none: 멈춤이 끝난다
+    nodeBarrier_stop --> nodeBarrier_stop: 이미 멈추는 중이다
+}

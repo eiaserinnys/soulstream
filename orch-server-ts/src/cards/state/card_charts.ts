@@ -1,6 +1,6 @@
 import { CARD_REMAINING_EVIDENCE_STAGES } from './card_remaining_evidence.js';
 import { CARD_SERVER_EVIDENCE_STAGES } from './card_server_command.js';
-import { toMermaid, type ChartSpec } from '../../statechart/mermaid.js';
+import { toMermaid, type ChartSpec } from '@soulstream/statechart';
 import { cardDecisionMachine } from './card_decision_machine.js';
 import { CARD_FACT_VALUES, CARD_ACTORS, type CardDecisionCommand } from './card_decision_facts.js';
 import { CARD_DECISION_SOURCES, CARD_COMMAND_ENTRANCES, CARD_RUNTIME_DECISION_CALLS } from './card_decision_inventory.js';

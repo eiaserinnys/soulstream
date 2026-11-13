@@ -15,6 +15,7 @@ on:
       # soul-server-ts/tests/mcp/cluster-roundtrip-fixture.ts imports orch-server-ts/src.
       - 'orch-server-ts/src/**'
       - 'packages/mcp-contract/**'
+      - 'packages/statechart/**'
       - 'soul-server-ts/scripts/**'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'
@@ -28,6 +29,7 @@ on:
       - 'soul-server-ts/vitest.config.ts'
       - 'orch-server-ts/src/**'
       - 'packages/mcp-contract/**'
+      - 'packages/statechart/**'
       - 'soul-server-ts/scripts/**'
       - 'pnpm-lock.yaml'
       - 'pnpm-workspace.yaml'

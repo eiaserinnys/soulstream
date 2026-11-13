@@ -48,8 +48,7 @@ import {
 import type { RunnerRegistration } from "../runner/runner_process_registry.js";
 import { RunnerOrphanedSpawnError } from "../runner/runner_process_dispatcher.js";
 import type { RunnerPhaseObservation } from "../runner/runner_phase_observation.js";
-import { classifyRunnerAdoptRejection } from
-  "../runner/state/runner_central_check_decision.js";
+import { classifyRunnerAdoptRejection } from "./state/node_adopt_rejection.js";
 import {
   ISOLATION_AUTH_UNAVAILABLE,
   ISOLATION_POLICY_UNAVAILABLE,
