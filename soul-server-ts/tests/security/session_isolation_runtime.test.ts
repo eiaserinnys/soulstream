@@ -161,6 +161,27 @@ describe("config parsing", () => {
     }))).toThrow(/must be set together/);
   });
 
+  it("accepts the vault env file as the orch token source", () => {
+    expect(() => parseEnv(baseEnv({
+      HANIEL_ORCH_URL: "http://127.0.0.1:9400",
+      HANIEL_ORCH_VAULT_ENV_FILE: "/home/eias/.local/share/haniel/vault.env",
+    }))).not.toThrow();
+  });
+
+  it("rejects orch pairs with two token sources or none", () => {
+    expect(() => parseEnv(baseEnv({
+      HANIEL_ORCH_URL: "http://127.0.0.1:9400",
+      HANIEL_ORCH_TOKEN_FILE: "/tmp/orch-token",
+      HANIEL_ORCH_VAULT_ENV_FILE: "/home/eias/.local/share/haniel/vault.env",
+    }))).toThrow(/exactly one/);
+    expect(() => parseEnv(baseEnv({
+      HANIEL_ORCH_URL: "http://127.0.0.1:9400",
+    }))).toThrow(/exactly one/);
+    expect(() => parseEnv(baseEnv({
+      HANIEL_ORCH_VAULT_ENV_FILE: "/home/eias/.local/share/haniel/vault.env",
+    }))).toThrow(/must be set together/);
+  });
+
   it("rejects malformed isolation lists", () => {
     expect(() => parseEnv(baseEnv({
       SESSION_ISOLATION_LOCAL_MCP: "alpha",

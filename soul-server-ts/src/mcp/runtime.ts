@@ -77,7 +77,10 @@ export interface McpRuntime {
 
 export interface NodeServicesObservationEndpointConfig {
   baseUrl: string;
-  tokenFile: string;
+  /** 파일 출처: bearer가 든 토큰 파일. vaultEnvFile과 정확히 하나만 둔다. */
+  tokenFile?: string;
+  /** 볼트 출처: VAULT_TOKEN·VAULT_ADDR이 든 dotenv 파일. tokenFile과 정확히 하나만 둔다. */
+  vaultEnvFile?: string;
 }
 
 export interface NodeServicesObservationConfig {

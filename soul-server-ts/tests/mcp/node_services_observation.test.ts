@@ -4,7 +4,9 @@
  * dashboard(status/services/logs)와 orch(pending/nodes)의 고정 GET 다섯 종류만
  * 나가는지, 입력 검증, 로그 상한, redirect 금지, bearer가 반환·로그에 새지 않는지,
  * 한쪽 미설정이면 그쪽만 NOT_CONFIGURED인지 확인한다.
- * 실제 Haniel(9300)이나 운영 토큰 파일은 쓰지 않는다.
+ * orch의 볼트 출처는 가짜 Vault 응답으로 확인하며, 볼트 토큰·bearer·응답 본문이
+ * 결과에 새지 않는지도 본다.
+ * 실제 Haniel(9300)이나 운영 토큰 파일·Vault는 쓰지 않는다.
  */
 import { describe, expect, it, vi } from "vitest";
 
@@ -24,21 +26,37 @@ const DASHBOARD_TOKEN = "haniel-dashboard-fake-token-0001";
 const ORCH_TOKEN = "haniel-orch-fake-token-0001";
 const DASHBOARD_TOKEN_FILE = "/nonexistent/fake-dashboard-token";
 const ORCH_TOKEN_FILE = "/nonexistent/fake-orch-token";
+const ORCH_VAULT_ENV_FILE = "/nonexistent/fake-vault-env";
+const VAULT_URL = "https://vault.eiaserinnys.me";
+const VAULT_SECRET_PATH = "/v1/secret/data/shared/haniel";
+const VAULT_TOKEN = "vault-fake-token-0001";
+const VAULT_BEARER = "vault-fake-bearer-0001";
 
 interface RecordedCall {
   url: string;
   init: RequestInit;
 }
 
-function fakeHaniel(options: { services?: Record<string, unknown>; failPath?: string; status?: number } = {}) {
+function fakeHaniel(options: {
+  services?: Record<string, unknown>;
+  failPath?: string;
+  status?: number;
+  vaultUrl?: string;
+  vaultResponse?: () => Response;
+} = {}) {
   const calls: RecordedCall[] = [];
   const services = options.services ?? {
     alpha: { state: "running", uptime: 12, restart_count: 0 },
     beta: { state: "stopped", uptime: 0, restart_count: 1 },
   };
+  const vaultUrl = options.vaultUrl ?? VAULT_URL;
   const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     calls.push({ url, init: init ?? {} });
+    if (url === `${vaultUrl}${VAULT_SECRET_PATH}`) {
+      return options.vaultResponse?.()
+        ?? Response.json({ data: { data: { bearer: VAULT_BEARER } } });
+    }
     const path = url.startsWith(DASHBOARD_URL)
       ? url.slice(DASHBOARD_URL.length)
       : url.startsWith(ORCH_URL)
@@ -89,7 +107,9 @@ function runtimeWith(
     : { baseUrl: DASHBOARD_URL, tokenFile: DASHBOARD_TOKEN_FILE, ...options.dashboard };
   const orch = options.orch === null
     ? undefined
-    : { baseUrl: ORCH_URL, tokenFile: ORCH_TOKEN_FILE, ...options.orch };
+    : options.orch?.vaultEnvFile !== undefined
+      ? { baseUrl: ORCH_URL, ...options.orch }
+      : { baseUrl: ORCH_URL, tokenFile: ORCH_TOKEN_FILE, ...options.orch };
   return {
     nodeServicesObservation: {
       ...(dashboard ? { dashboard } : {}),
@@ -272,6 +292,115 @@ describe("observe_node_services fixed GET client", () => {
     expect(result.structuredContent).toMatchObject({
       orch: { pending: { deploys: [{ service: "alpha" }] } },
     });
+  });
+});
+
+describe("observe_node_services vault source", () => {
+  const vaultCredentials = async () => `VAULT_TOKEN=${VAULT_TOKEN}\n`;
+
+  it("reads the bearer from Vault on every orch request", async () => {
+    const { fetchImpl, calls } = fakeHaniel();
+    const result = await observeNodeServices(
+      runtimeWith(fetchImpl, {
+        dashboard: null,
+        orch: { vaultEnvFile: ORCH_VAULT_ENV_FILE },
+        readFileImpl: vaultCredentials,
+      }),
+      { include_pending: true },
+    );
+    expect(result.isError).toBeUndefined();
+    expect(calls.map((call) => call.url)).toEqual([
+      `${VAULT_URL}${VAULT_SECRET_PATH}`,
+      `${ORCH_URL}/api/orch/nodes`,
+      `${VAULT_URL}${VAULT_SECRET_PATH}`,
+      `${ORCH_URL}/api/orch/pending`,
+    ]);
+    expect(calls[0]?.init.method).toBe("GET");
+    expect(calls[0]?.init.redirect).toBe("error");
+    expect(calls[0]?.init.headers).toEqual({ "X-Vault-Token": VAULT_TOKEN });
+    expect(calls[1]?.init.headers).toEqual({ Authorization: `Bearer ${VAULT_BEARER}` });
+    expect(JSON.stringify(result)).not.toContain(VAULT_TOKEN);
+    expect(JSON.stringify(result)).not.toContain(VAULT_BEARER);
+  });
+
+  it("uses the default Vault address when VAULT_ADDR is absent and honors a declared one", async () => {
+    const defaulted = fakeHaniel();
+    await observeNodeServices(
+      runtimeWith(defaulted.fetchImpl, {
+        dashboard: null,
+        orch: { vaultEnvFile: ORCH_VAULT_ENV_FILE },
+        readFileImpl: vaultCredentials,
+      }),
+      {},
+    );
+    expect(defaulted.calls[0]?.url).toBe(`${VAULT_URL}${VAULT_SECRET_PATH}`);
+
+    const declared = fakeHaniel({ vaultUrl: "https://vault.example.test" });
+    await observeNodeServices(
+      runtimeWith(declared.fetchImpl, {
+        dashboard: null,
+        orch: { vaultEnvFile: ORCH_VAULT_ENV_FILE },
+        readFileImpl: async () =>
+          `VAULT_TOKEN=${VAULT_TOKEN}\nVAULT_ADDR=https://vault.example.test/\n`,
+      }),
+      {},
+    );
+    expect(declared.calls[0]?.url).toBe(`https://vault.example.test${VAULT_SECRET_PATH}`);
+  });
+
+  it("reports vault failures as the orch endpoint error without leaking secrets", async () => {
+    const scenarios: Array<{
+      name: string;
+      readFileImpl: (path: string) => Promise<string>;
+      vaultResponse?: () => Response;
+      expectText: string;
+    }> = [
+      {
+        name: "missing file",
+        readFileImpl: async () => {
+          throw new Error("ENOENT: no such file or directory");
+        },
+        expectText: "ENOENT",
+      },
+      {
+        name: "missing VAULT_TOKEN",
+        readFileImpl: async () => "VAULT_ADDR=https://vault.eiaserinnys.me\n",
+        expectText: "VAULT_TOKEN",
+      },
+      {
+        name: "non-200",
+        readFileImpl: vaultCredentials,
+        vaultResponse: () => new Response("vault-error-body-marker", { status: 503 }),
+        expectText: "503",
+      },
+      {
+        name: "missing bearer",
+        readFileImpl: vaultCredentials,
+        vaultResponse: () => Response.json({ data: { data: { bearer: "   " } } }),
+        expectText: "bearer",
+      },
+    ];
+    for (const scenario of scenarios) {
+      const { fetchImpl } = fakeHaniel(
+        scenario.vaultResponse ? { vaultResponse: scenario.vaultResponse } : {},
+      );
+      const result = await observeNodeServices(
+        runtimeWith(fetchImpl, {
+          dashboard: null,
+          orch: { vaultEnvFile: ORCH_VAULT_ENV_FILE },
+          readFileImpl: scenario.readFileImpl,
+        }),
+        {},
+      );
+      expect(result.isError, scenario.name).toBe(true);
+      expect(result.structuredContent, scenario.name).toMatchObject({
+        code: "NODE_SERVICES_OBSERVATION_FAILED",
+      });
+      expect(String(result.structuredContent?.error), scenario.name).toContain(scenario.expectText);
+      expect(JSON.stringify(result), scenario.name).not.toContain(VAULT_TOKEN);
+      expect(JSON.stringify(result), scenario.name).not.toContain(VAULT_BEARER);
+      expect(JSON.stringify(result), scenario.name).not.toContain("vault-error-body-marker");
+    }
   });
 });
 

@@ -250,11 +250,13 @@ export const EnvSchema = z
     SESSION_ISOLATION_TEST_DATABASE: z.string().optional(),
     /** 시험 전용 DB URL. 준비 입력에만 쓰고 설정·러너 config·로그로 내보내지 않는다. */
     SESSION_ISOLATION_TEST_DATABASE_URL: z.string().optional(),
-    /** Haniel 관측 MCP 쌍. 짝마다 둘 다 있거나 둘 다 없어야 한다. */
+    /** Haniel 관측 MCP 쌍. dashboard는 URL+토큰 파일, orch는 URL+토큰 출처 하나다. */
     HANIEL_DASHBOARD_URL: z.string().optional(),
     HANIEL_DASHBOARD_TOKEN_FILE: z.string().optional(),
     HANIEL_ORCH_URL: z.string().optional(),
     HANIEL_ORCH_TOKEN_FILE: z.string().optional(),
+    /** 볼트 출처: VAULT_TOKEN·VAULT_ADDR이 든 dotenv 파일. HANIEL_ORCH_TOKEN_FILE과 택일. */
+    HANIEL_ORCH_VAULT_ENV_FILE: z.string().optional(),
   })
   .superRefine((env, ctx) => {
     const internalMcpPort = env.MCP_INTERNAL_PORT ?? env.PORT + 1;
@@ -400,7 +402,6 @@ export const EnvSchema = z
     for (const [left, right] of [
       ["SESSION_ISOLATION_TEST_DATABASE", "SESSION_ISOLATION_TEST_DATABASE_URL"],
       ["HANIEL_DASHBOARD_URL", "HANIEL_DASHBOARD_TOKEN_FILE"],
-      ["HANIEL_ORCH_URL", "HANIEL_ORCH_TOKEN_FILE"],
     ] as const) {
       const hasLeft = env[left] !== undefined && env[left] !== "";
       const hasRight = env[right] !== undefined && env[right] !== "";
@@ -411,6 +412,31 @@ export const EnvSchema = z
           message: `${left} and ${right} must be set together`,
         });
       }
+    }
+    // orch는 URL에 토큰 출처가 정확히 하나 붙는다: 토큰 파일 또는 볼트 env 파일.
+    const orchSources = [
+      ["HANIEL_ORCH_TOKEN_FILE", env.HANIEL_ORCH_TOKEN_FILE],
+      ["HANIEL_ORCH_VAULT_ENV_FILE", env.HANIEL_ORCH_VAULT_ENV_FILE],
+    ] as const;
+    const orchSourceKeys = orchSources
+      .filter(([, value]) => value !== undefined && value !== "")
+      .map(([key]) => key);
+    const hasOrchUrl = env.HANIEL_ORCH_URL !== undefined && env.HANIEL_ORCH_URL !== "";
+    if (orchSourceKeys.length > 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["HANIEL_ORCH_VAULT_ENV_FILE"],
+        message:
+          "HANIEL_ORCH_TOKEN_FILE and HANIEL_ORCH_VAULT_ENV_FILE are mutually exclusive; set exactly one of them with HANIEL_ORCH_URL",
+      });
+    } else if (hasOrchUrl !== (orchSourceKeys.length === 1)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [hasOrchUrl ? (orchSourceKeys[0] ?? "HANIEL_ORCH_TOKEN_FILE") : "HANIEL_ORCH_URL"],
+        message: hasOrchUrl
+          ? "HANIEL_ORCH_URL must be set together with exactly one of HANIEL_ORCH_TOKEN_FILE or HANIEL_ORCH_VAULT_ENV_FILE"
+          : "HANIEL_ORCH_URL must be set together with HANIEL_ORCH_TOKEN_FILE or HANIEL_ORCH_VAULT_ENV_FILE",
+      });
     }
     try {
       parseIsolationLocalMcpList(env.SESSION_ISOLATION_LOCAL_MCP);
