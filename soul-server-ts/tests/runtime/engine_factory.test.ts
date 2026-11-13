@@ -120,6 +120,7 @@ describe("createEngineFactory", () => {
         earliest_available_at: null,
       }),
       reject: () => Promise.resolve(),
+      reportAuthFailure: () => Promise.resolve(),
       release: () => Promise.resolve(),
     };
     const factory = createEngineFactory({

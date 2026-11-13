@@ -923,6 +923,7 @@ describe("ClaudeSdkClient persistent runtime", () => {
     const accountPort = {
       select: vi.fn(async () => ({ account_id: "account-a", config_dir: "/accounts/a", available_count: 1 })),
       reject: vi.fn(),
+      reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn(async () => undefined),
     };
     const state = {
