@@ -20,6 +20,11 @@ interface DetachedClaudeEventBridgeOptions {
   loadTask?(sessionId: string): Promise<Task | null | undefined>;
   getPublisher(): Pick<TaskEngineEventPublisher, "publishEngineEvent"> | undefined;
   collectDetached(task: Task, payload: SSEEventPayload): Promise<void>;
+  /**
+   * 엔진이 치명 오류로 죽었는데 이어 받을 실행이 없을 때 task를 오류로 끝낸다.
+   * 사건을 게시한 뒤에 부른다. 없으면 종료 사건이 만들어지지 않는다.
+   */
+  terminateAfterFatalEngineError?(task: Task, message: string): Promise<void>;
 }
 
 /** Maps child-owned Claude lifecycle events back onto the existing host publisher path. */
@@ -63,10 +68,30 @@ export function createDetachedClaudeEventBridge(
       }
       detachedPayloads.push(payload);
     }
+    const fatal = detachedPayloads.find(isFatalErrorPayload);
+    if (fatal && options.terminateAfterFatalEngineError) {
+      try {
+        await options.terminateAfterFatalEngineError(task, fatal.message);
+      } catch (err) {
+        options.logger.error(
+          { err, sessionId },
+          "Detached Claude fatal error could not be turned into a termination",
+        );
+      }
+    }
     return async () => {
       for (const payload of detachedPayloads) {
         await options.collectDetached(task, payload);
       }
     };
   };
+}
+
+function isFatalErrorPayload(
+  payload: SSEEventPayload,
+): payload is SSEEventPayload & { type: "error"; fatal: true; message: string } {
+  const candidate = payload as { type?: unknown; fatal?: unknown; message?: unknown };
+  return candidate.type === "error"
+    && candidate.fatal === true
+    && typeof candidate.message === "string";
 }

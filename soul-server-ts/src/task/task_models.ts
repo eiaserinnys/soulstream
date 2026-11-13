@@ -28,6 +28,7 @@ import type { SessionCostBase } from "../engine/session_cost.js";
 import type { ExecutionSecurityDecision } from "../security/session_isolation_contract.js";
 import type { DeliveryIntent } from "./delivery_contract.js";
 import type { AgentProfile } from "../agent_registry.js";
+import type { NodeBarrierKind } from "./state/node_barrier_machine.js";
 import type { TaskRunnerRuntime } from "../runner/task_runner_runtime.js";
 import type {
   ExecutionRegistration,
@@ -664,6 +665,14 @@ export interface Task {
 
   /** Runtime-only explicit cancel request serialized against turn finalization. */
   interruptRequest?: Promise<boolean>;
+
+  /**
+   * Runtime-only: which barrier `interruptRequest` currently is. A stop that
+   * meets an intervention handoff waits for it and then takes the ordinary
+   * stop path; a stop that meets a stop joins it (`state/node_barrier_*`).
+   * Absent while `interruptRequest` is set means a stop barrier.
+   */
+  interruptBarrierKind?: NodeBarrierKind;
 
   /** DB에서 복원된 task인지 여부. 실행 중 메모리 task와 구분할 때 사용. */
   hydratedFromDb?: boolean;

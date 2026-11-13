@@ -88,6 +88,7 @@ import {
 } from "./runner_adoption_rejected_error.js";
 import {
   createExecutionActivation,
+  isActiveTaskStatus,
   isTerminalTaskStatus,
   type ExecutionActivation,
   type InterventionMessage,
@@ -2499,6 +2500,23 @@ export class TaskExecutor {
   ): void {
     task.runner = runner;
     task.runnerIsOfflineReplay = offlineReplay;
+  }
+
+  /**
+   * 엔진이 치명 오류로 죽었는데 그 오류를 받을 턴이 없을 때(분리 이벤트) 오류
+   * 종료 사건을 올린다. 진행 중인 실행이 있으면 그 실행의 종료 길이 같은 오류를
+   * 받아 끝내므로 여기서는 손대지 않는다.
+   */
+  async terminateAfterFatalEngineError(task: Task, message: string): Promise<boolean> {
+    if (!isActiveTaskStatus(task.status)) return false;
+    if (
+      task.executionPromise !== undefined
+      || task.runner?.dispatcher.hasActiveExecution?.() === true
+    ) return false;
+    this.engineFailureRecovery.recoverFromSynthesizedFailure(task, message);
+    task.completedAt = new Date();
+    await this._finalize(task);
+    return true;
   }
 
   private async _finalize(

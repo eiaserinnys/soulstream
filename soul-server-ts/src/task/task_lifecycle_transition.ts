@@ -21,6 +21,8 @@ import {
   recordTerminationHint,
 } from "./task_termination.js";
 import { releaseTaskRunner } from "./task_runner_release.js";
+import { decideNodeStopRequest } from "./state/node_barrier_decision.js";
+import { nodeExecutionPhaseOfTask } from "./state/node_execution_decision.js";
 
 export interface ExternalFinalizeParams {
   result?: string;
@@ -153,13 +155,26 @@ export class TaskLifecycleTransition {
     if (!task) return false;
     if (isUserStopConverged(task)) {
       task.interruptRequest = undefined;
+      task.interruptBarrierKind = undefined;
       return true;
     }
     if (task.interruptRequest) {
       const previousRequest = task.interruptRequest;
+      // 장벽 직렬화 정본: 지시 넘기기 장벽을 만난 멈춤은 넘기기가 끝난 뒤 보통
+      // 멈춤 길로 간다. 멈춤 장벽이면 이미 멈추는 중이라 그 결과에 붙는다.
+      const disposition = decideNodeStopRequest(
+        task.interruptBarrierKind === "intervention_handoff"
+          ? "intervention_handoff"
+          : "stop",
+      );
+      if (disposition === "stop_after_handoff") {
+        await previousRequest.catch(() => false);
+        return await this.cancelRunningTask(task, options);
+      }
       await previousRequest.catch(() => false);
       if (isUserStopConverged(task)) {
         task.interruptRequest = undefined;
+        task.interruptBarrierKind = undefined;
         return true;
       }
       if (task.interruptRequest !== previousRequest) {
@@ -167,10 +182,25 @@ export class TaskLifecycleTransition {
       }
       const retry = this.retryUserStopFinalization(task, forDelete);
       task.interruptRequest = retry;
+      task.interruptBarrierKind = "stop";
       return await retry;
     }
     if (!isActiveTaskStatus(task.status)) return false;
-    if (!task.runner) return false;
+    if (!task.runner) {
+      // 러너 없이 DB에서 올린 활성 task는 멈출 실행이 없어도 종료 기록을 만든다
+      // (SESSION_NOT_RUNNING으로 돌려보내면 세션이 영구 running으로 남는다).
+      if (nodeExecutionPhaseOfTask(task) !== "hydrated_active") return false;
+      const stopWithoutRunner = this.finalizeUserStop(
+        task,
+        undefined,
+        undefined,
+        true,
+        forDelete,
+      );
+      task.interruptRequest = stopWithoutRunner;
+      task.interruptBarrierKind = "stop";
+      return await stopWithoutRunner;
+    }
 
     const runner = task.runner;
     const executionPromise = task.executionPromise;
@@ -193,6 +223,7 @@ export class TaskLifecycleTransition {
       );
     })();
     task.interruptRequest = request;
+    task.interruptBarrierKind = "stop";
     return await request;
   }
 
@@ -289,6 +320,7 @@ export class TaskLifecycleTransition {
       task.executionPromise = undefined;
     }
     task.interruptRequest = undefined;
+    task.interruptBarrierKind = undefined;
     return interrupted;
   }
 

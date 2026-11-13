@@ -75,11 +75,18 @@ export class RunningInterventionTransition {
       ? Promise.all([previousTurnBarrier, ownTurnBarrier]).then(([interrupted]) => interrupted)
       : ownTurnBarrier;
     task.interruptRequest = turnBarrier;
+    // 앞 장벽이 멈춤이면 이 넘기기가 그 위에 이어 붙어도 멈춤 장벽으로 남는다.
+    // 멈춤은 자기 장벽이 아닌 장벽을 기다린 뒤 보통 멈춤 길을 타야 하므로(장벽
+    // 직렬화 정본), 지시 넘기기 장벽만 종류를 표시한다.
+    if (previousTurnBarrier === undefined) task.interruptBarrierKind = "intervention_handoff";
     try {
       return await this.deliverAfterTurnBarrier(task, message, options);
     } finally {
       releaseTurnBarrier();
-      if (task.interruptRequest === turnBarrier) task.interruptRequest = undefined;
+      if (task.interruptRequest === turnBarrier) {
+        task.interruptRequest = undefined;
+        task.interruptBarrierKind = undefined;
+      }
     }
   }
 
