@@ -251,6 +251,14 @@ export interface SessionExecutionChain {
   ancestors: SessionExecutionChainRow[];
 }
 
+/**
+ * `owner_node` host 연산의 반환. 세션 행 전체(metadata 포함) 대신 주인 노드만
+ * 읽는다. 세션 행이 없으면 호스트가 null을 돌려준다.
+ */
+export interface SessionOwnerNode {
+  node_id: string | null;
+}
+
 export interface RunningSessionSummaryRow {
   session_id: string;
   display_name: string | null;

@@ -31,7 +31,7 @@ describe("session message worker remote and orchestrator parity", () => {
         return new Response(response.body, { status: response.statusCode, statusText: STATUS_CODES[response.statusCode] });
       };
       const local = vi.fn();
-      const old = await sendMessageToSession({ nodeId: "other-node", sessionLookup: { getSession: async () => ({ node_id: "fake-node" }) },
+      const old = await sendMessageToSession({ nodeId: "other-node", ownerLookup: { getSessionOwnerNode: async () => ({ node_id: "fake-node" }) },
         taskManager: { addIntervention: local }, onResume: vi.fn(), logger: { warn: vi.fn() } as never,
         orch: { baseUrl: "http://orch", headers: {} }, fetchImpl },
       { targetSessionId: "sess-contract", message: "같은 메시지", callerInfo });

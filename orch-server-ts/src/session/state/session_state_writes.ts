@@ -69,7 +69,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
   {
     name: "session_apply_running_transition",
     writesStatus: true,
-    definition: "packages/db-schema/sql/schema.sql:4210",
+    definition: "packages/db-schema/sql/schema.sql:4232",
     callSites: [
       { file: "src/node/event_session_effect_applier.ts", line: 74 },
     ],

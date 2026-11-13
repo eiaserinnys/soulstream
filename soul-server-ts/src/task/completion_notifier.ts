@@ -87,7 +87,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     fetchImpl?: typeof fetch,
     private readonly sessionLookup?: Pick<
       SessionDB,
-      "getSession"
+      "getSession" | "getSessionOwnerNode"
     >,
     private readonly deliveryV2Enabled = false,
     deliveryRepository?: SessionDeliveryHostClient,
@@ -319,7 +319,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
   private async _isLocalTarget(callerSessionId: string): Promise<boolean> {
     if (!this.sessionLookup) return true;
     try {
-      const row = await this.sessionLookup.getSession(callerSessionId);
+      const row = await this.sessionLookup.getSessionOwnerNode(callerSessionId);
       return !row?.node_id || row.node_id === this.nodeId;
     } catch (err) {
       if (this.deliveryV2Enabled) throw err;

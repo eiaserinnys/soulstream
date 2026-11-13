@@ -33,7 +33,7 @@ function relayingDeps(
     orch: ORCH,
     onResume: () => {},
     nodeId: "self",
-    sessionLookup: { getSession: async () => ({ node_id: "other" }) },
+    ownerLookup: { getSessionOwnerNode: async () => ({ node_id: "other" }) },
     // Forces the orch relay path: the target session lives on another node.
     taskManager: {
       addIntervention: async () => {
@@ -128,7 +128,7 @@ describe("sendMessageToSession relay verdict", () => {
       orch: ORCH,
       onResume: () => {},
       nodeId: "self",
-      sessionLookup: { getSession: async () => ({ node_id: "self" }) },
+      ownerLookup: { getSessionOwnerNode: async () => ({ node_id: "self" }) },
       taskManager: {
         addIntervention: async () => { throw new Error("local route failed"); },
       },
@@ -150,7 +150,7 @@ describe("sendMessageToSession relay verdict", () => {
       orch: ORCH,
       onResume: () => {},
       nodeId: "self",
-      sessionLookup: { getSession: async () => null },
+      ownerLookup: { getSessionOwnerNode: async () => null },
       taskManager: {
         addIntervention: async () => { throw new Error("Task not found"); },
       },
@@ -270,8 +270,8 @@ describe("sendMessageToSession relay verdict", () => {
       orch: ORCH,
       onResume: () => {},
       nodeId: "self",
-      sessionLookup: {
-        getSession: async () => ({ node_id: "self" }),
+      ownerLookup: {
+        getSessionOwnerNode: async () => ({ node_id: "self" }),
       },
       taskManager: {
         addIntervention: async () => ({ delivered: true as const }),

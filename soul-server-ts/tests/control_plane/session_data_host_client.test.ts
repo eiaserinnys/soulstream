@@ -37,6 +37,7 @@ describe("SessionDataHostClient", () => {
       "resume_context",
       "generation_checkpoint_material",
       "caller_chain",
+      "owner_node",
     ]);
   });
 
@@ -90,6 +91,7 @@ describe("SessionDataHostClient", () => {
           totals: { turnSummaries: 0 },
         },
         caller_chain: { root: null, ancestors: [] },
+        owner_node: { node_id: "node-a" },
       };
       return new Response(JSON.stringify(result[operation ?? ""]), { status: 200 });
     });
@@ -127,6 +129,7 @@ describe("SessionDataHostClient", () => {
       () => client.getResumeContext("s1", 15),
       () => client.getGenerationCheckpointMaterial("s1", { recentEventLimit: 20, unsummarizedEventLimit: 200 }),
       () => client.getSessionCallerChain("s1"),
+      () => client.getSessionOwnerNode("s1"),
     ];
 
     for (const call of calls) await call();

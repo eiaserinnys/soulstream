@@ -254,9 +254,11 @@ describe("TaskCompletionNotifier.notify", () => {
       makeOrch(),
       vi.fn(),
       {
-        getSession: vi.fn(async (sessionId: string) => sessionId === "child-sess-1"
-          ? { card_id: "card-1", caller_session_id: "caller-db-current" }
-          : { node_id: NODE_ID }),
+        getSession: vi.fn(async () => ({
+          card_id: "card-1",
+          caller_session_id: "caller-db-current",
+        })),
+        getSessionOwnerNode: vi.fn(async () => ({ node_id: NODE_ID })),
       } as never,
       true,
       repository as never,
@@ -356,7 +358,8 @@ describe("TaskCompletionNotifier.notify", () => {
       makeOrch(),
       vi.fn(),
       {
-        getSession: vi.fn().mockResolvedValue({ node_id: NODE_ID }),
+        getSession: vi.fn().mockResolvedValue({ card_id: null, caller_session_id: null }),
+        getSessionOwnerNode: vi.fn().mockResolvedValue({ node_id: NODE_ID }),
       } as never,
       true,
       repository as never,
@@ -487,9 +490,11 @@ describe("TaskCompletionNotifier.notify", () => {
       makeOrch(),
       fetchImpl as typeof fetch,
       {
-        getSession: vi.fn(async (sessionId: string) => sessionId === "child-sess-1"
-          ? { card_id: "card-1", caller_session_id: "ordinary-agent-caller-new" }
-          : { node_id: "node-remote" }),
+        getSession: vi.fn(async () => ({
+          card_id: "card-1",
+          caller_session_id: "ordinary-agent-caller-new",
+        })),
+        getSessionOwnerNode: vi.fn(async () => ({ node_id: "node-remote" })),
       } as never,
       true,
       repository as never,
@@ -605,7 +610,10 @@ describe("TaskCompletionNotifier.notify", () => {
       silentLogger,
       makeOrch(),
       fetchImpl,
-      { getSession: vi.fn().mockResolvedValue({ node_id: "node-remote" }) } as never,
+      {
+        getSession: vi.fn().mockResolvedValue({ card_id: null, caller_session_id: null }),
+        getSessionOwnerNode: vi.fn().mockResolvedValue({ node_id: "node-remote" }),
+      } as never,
       true,
       repository as never,
     );
@@ -809,7 +817,8 @@ describe("TaskCompletionNotifier.notify", () => {
       makeOrch(),
       vi.fn(),
       {
-        getSession: vi.fn().mockResolvedValue({ node_id: NODE_ID }),
+        getSession: vi.fn().mockResolvedValue({ card_id: null, caller_session_id: null }),
+        getSessionOwnerNode: vi.fn().mockResolvedValue({ node_id: NODE_ID }),
       } as never,
       true,
       repository as never,

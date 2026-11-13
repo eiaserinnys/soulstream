@@ -1813,6 +1813,90 @@ async def test_session_append_metadata_not_found(test_db):
         )
 
 
+async def _apply_metadata_entry(db, session_id, entry, replace_existing_type=None):
+    await db.execute(
+        "SELECT session_apply_metadata_entry($1, $2, $3, $4)",
+        session_id, json.dumps(entry), replace_existing_type, _utc_now(),
+    )
+
+
+async def _create_session_with_metadata(db, session_id, metadata):
+    await _create_session(db, session_id)
+    await db.execute(
+        "UPDATE sessions SET metadata = $2::jsonb WHERE session_id = $1",
+        session_id, json.dumps(metadata),
+    )
+
+
+async def _stored_metadata(db, session_id):
+    row = await db.fetchrow("SELECT * FROM session_get($1)", session_id)
+    return _decode_jsonb(row["metadata"])
+
+
+def _caller_info_entry(number):
+    return {"type": "caller_info", "value": {"source": "agent", "n": number}}
+
+
+async def test_session_apply_metadata_entry_keeps_first_and_last_20_caller_info(test_db):
+    seeded = []
+    for number in range(30):
+        seeded.append(_caller_info_entry(number))
+        if number == 5:
+            seeded.append({"type": "persistent_session", "value": {"enabled": True}})
+        if number == 25:
+            seeded.append({"type": "session_cost", "value": {"usd": 1}})
+    await _create_session_with_metadata(test_db, "s-ci-cap", seeded)
+
+    appended = _caller_info_entry(30)
+    await _apply_metadata_entry(test_db, "s-ci-cap", appended)
+
+    everything = [*seeded, appended]
+    caller_infos = [entry for entry in everything if entry["type"] == "caller_info"]
+    kept = {id(caller_infos[0]), *(id(entry) for entry in caller_infos[-20:])}
+    expected = [
+        entry for entry in everything
+        if entry["type"] != "caller_info" or id(entry) in kept
+    ]
+    stored = await _stored_metadata(test_db, "s-ci-cap")
+    assert stored == expected
+    stored_numbers = [
+        entry["value"]["n"] for entry in stored if entry["type"] == "caller_info"
+    ]
+    assert stored_numbers == [0, *range(11, 31)]
+    assert [entry["type"] for entry in stored if entry["type"] != "caller_info"] == [
+        "persistent_session",
+        "session_cost",
+    ]
+
+
+async def test_session_apply_metadata_entry_leaves_other_append_paths_unchanged(test_db):
+    seeded = [_caller_info_entry(number) for number in range(30)]
+    seeded.append({"type": "persistent_generation", "value": {"number": 1}})
+    await _create_session_with_metadata(test_db, "s-ci-other", seeded)
+
+    # A non-caller_info append never trims caller_info.
+    cost = {"type": "session_cost", "value": {"usd": 2}}
+    await _apply_metadata_entry(test_db, "s-ci-other", cost)
+    assert await _stored_metadata(test_db, "s-ci-other") == [*seeded, cost]
+
+    # replace_existing_type still removes that type and appends, nothing else.
+    generation = {"type": "persistent_generation", "value": {"number": 2}}
+    await _apply_metadata_entry(
+        test_db, "s-ci-other", generation, "persistent_generation"
+    )
+    without_generation = [
+        entry for entry in seeded if entry["type"] != "persistent_generation"
+    ]
+    assert await _stored_metadata(test_db, "s-ci-other") == [
+        *without_generation, cost, generation
+    ]
+
+    # Replacing caller_info itself keeps only the new entry, as before.
+    only = _caller_info_entry(99)
+    await _apply_metadata_entry(test_db, "s-ci-other", only, "caller_info")
+    assert await _stored_metadata(test_db, "s-ci-other") == [cost, generation, only]
+
+
 async def test_session_update_last_message(test_db):
     await _create_session(test_db, "s-msg")
     now = _utc_now()

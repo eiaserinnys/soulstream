@@ -115,6 +115,23 @@ describe("session-data read repositories", () => {
     expect(queries[0]?.values).toEqual(["s1"]);
   });
 
+  it("reads only the owner node column and returns null for a missing session", async () => {
+    const { sql, calls } = createSql((text) => {
+      if (text.includes("SELECT node_id FROM sessions")) return [{ node_id: "node-a" }];
+      return [];
+    });
+    const repository = new SessionReadRepository(sql);
+
+    await expect(repository.getSessionOwnerNode("s1")).resolves.toEqual({ node_id: "node-a" });
+    const query = calls.find((call) => call.text.includes("SELECT node_id FROM sessions"));
+    expect(query?.text).not.toContain("SELECT *");
+    expect(query?.values).toEqual(["s1"]);
+
+    const { sql: emptySql } = createSql(() => []);
+    await expect(new SessionReadRepository(emptySql).getSessionOwnerNode("missing"))
+      .resolves.toBeNull();
+  });
+
   it("returns an empty chain root when the session row is missing", async () => {
     const { sql } = createSql(() => []);
     const repository = new SessionReadRepository(sql);

@@ -209,7 +209,7 @@ export function registerSessionMgmtTools(
         {
           taskManager: runtime.taskManager,
           nodeId: runtime.nodeId,
-          sessionLookup: runtime.db,
+          ownerLookup: runtime.db,
           logger: runtime.logger,
           orch: runtime.orch,
           onResume: runtime.onResume,

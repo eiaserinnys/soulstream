@@ -2095,6 +2095,7 @@ CREATE OR REPLACE FUNCTION session_apply_metadata_entry(
 ) RETURNS void LANGUAGE plpgsql AS $$
 DECLARE
     v_metadata JSONB;
+    v_entry    JSONB;
 BEGIN
     SELECT COALESCE(metadata, '[]'::jsonb)
       INTO v_metadata
@@ -2112,8 +2113,29 @@ BEGIN
          WHERE entry->>'type' IS DISTINCT FROM p_replace_existing_type;
     END IF;
 
+    v_entry := p_metadata_json::jsonb;
+    v_metadata := v_metadata || jsonb_build_array(v_entry);
+
+    -- caller_info is appended on every caller change and was never trimmed, so a
+    -- long-lived session row grew to hundreds of KB. Keep the first entry (the
+    -- session origin) and the last 20; other types and the order stay as they are.
+    IF p_replace_existing_type IS NULL AND v_entry->>'type' = 'caller_info' THEN
+        SELECT COALESCE(jsonb_agg(ranked.entry ORDER BY ranked.ord), '[]'::jsonb)
+          INTO v_metadata
+          FROM (
+              SELECT t.entry,
+                     t.ord,
+                     row_number() OVER (PARTITION BY t.entry->>'type' ORDER BY t.ord) AS from_start,
+                     row_number() OVER (PARTITION BY t.entry->>'type' ORDER BY t.ord DESC) AS from_end
+                FROM jsonb_array_elements(v_metadata) WITH ORDINALITY AS t(entry, ord)
+          ) AS ranked
+         WHERE ranked.entry->>'type' IS DISTINCT FROM 'caller_info'
+            OR ranked.from_start = 1
+            OR ranked.from_end <= 20;
+    END IF;
+
     UPDATE sessions
-       SET metadata = v_metadata || jsonb_build_array(p_metadata_json::jsonb),
+       SET metadata = v_metadata,
            updated_at = p_updated_at
      WHERE session_id = p_session_id;
 END;

@@ -2,6 +2,7 @@ import type {
   ListSessionSummaryRow,
   RunningSessionSummaryRow,
   SessionExecutionChain,
+  SessionOwnerNode,
   SessionRow,
   UpstreamSessionDumpRow,
 } from "../db/session_db_types.js";
@@ -41,6 +42,7 @@ export const SESSION_DATA_READ_OPERATIONS = [
   "resume_context",
   "generation_checkpoint_material",
   "caller_chain",
+  "owner_node",
 ] as const;
 
 /** event_read_page의 id 정렬 방향. 생략하면 지금까지처럼 오름차순이다. */
@@ -140,6 +142,7 @@ export interface SessionDataHost {
     limits: GenerationCheckpointReadLimits,
   ): Promise<GenerationCheckpointMaterial>;
   getSessionCallerChain(sessionId: string): Promise<SessionExecutionChain>;
+  getSessionOwnerNode(sessionId: string): Promise<SessionOwnerNode | null>;
 }
 
 export class SessionDataHostError extends Error {
@@ -268,6 +271,10 @@ export class SessionDataHostClient implements SessionDataHost {
 
   getSessionCallerChain(sessionId: string): Promise<SessionExecutionChain> {
     return this.securityGate("caller_chain", [sessionId]);
+  }
+
+  getSessionOwnerNode(sessionId: string): Promise<SessionOwnerNode | null> {
+    return this.turnCritical("owner_node", [sessionId]);
   }
 
   private interactive<T>(operation: string, args: unknown[], signal?: AbortSignal): Promise<T> {
