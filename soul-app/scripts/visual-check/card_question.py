@@ -193,17 +193,30 @@ PAGING_SCRIPT = r"""
   const sheets = [...document.querySelectorAll('[data-testid^="report-sheet-"]')];
   const sheet = sheets.find((element) => element.getAttribute('aria-hidden') !== 'true') || null;
   const scroller = sheet ? sheet.querySelector('[data-testid="report-scroll"]') : null;
+  const reading = sheet ? sheet.querySelector('[data-testid="report-reading"]') : null;
   const footer = sheet ? sheet.querySelector('[data-testid="report-footer"]') : null;
   const nav = deck ? deck.querySelector('[data-testid="report-nav"]') : null;
-  const page = deck ? deck.querySelector('[data-testid="report-count"], [data-testid="report-page"]') : null;
+  // 지금 장의 쪽 표시는 폰에서 장 안에, iPad에서는 판 아래 줄에 있다.
+  const page = (sheet && sheet.querySelector('[data-testid="report-page"]'))
+    || (deck && deck.querySelector('[data-testid="report-count"]'));
   const buttons = footer ? [...footer.querySelectorAll('[role="button"], button')] : [];
+  // 내용 높이는 스크롤 내용이 있으면 그 scrollHeight, 아니면 읽기 틀 자식들의 합이다.
+  const contentHeight = () => {
+    if (scroller) return Math.round(scroller.scrollHeight);
+    if (!reading) return null;
+    const kids = [...reading.children].filter((child) => child.getBoundingClientRect().height > 0);
+    if (!kids.length) return 0;
+    const top = Math.min(...kids.map((child) => child.getBoundingClientRect().top));
+    const bottom = Math.max(...kids.map((child) => child.getBoundingClientRect().bottom));
+    return Math.round(bottom - top);
+  };
   return {
     page: page ? (page.textContent || '').trim() : null,
     sheet: testId(sheet),
     deckHeight: deck ? round(deck.getBoundingClientRect().height) : null,
+    deckTop: deck ? rect(deck).top : null,
     deckBottom: deck ? rect(deck).bottom : null,
-    contentHeight: scroller ? Math.round(scroller.scrollHeight) : null,
-    contentFrameHeight: scroller ? round(scroller.getBoundingClientRect().height) : null,
+    contentHeight: contentHeight(),
     footerTop: footer ? rect(footer).top : null,
     footerBottom: footer ? rect(footer).bottom : null,
     buttonRowTop: buttons.length ? round(Math.min(...buttons.map((button) => button.getBoundingClientRect().top + window.scrollY))) : null,
@@ -440,7 +453,7 @@ def judge_paging(bubble: bool, label: str, before: dict, after: dict) -> list[di
     if before["sheet"] is None or after["sheet"] is None:
         fail("sheet visible", {"before": before["sheet"], "after": after["sheet"]})
         return failures
-    numeric = ("deckHeight", "deckBottom", "contentHeight", "footerTop")
+    numeric = ("deckHeight", "deckTop", "deckBottom", "contentHeight", "footerTop")
     if bubble:
         numeric = numeric + ("navTop",)
     missing = [key for key in numeric if before[key] is None or after[key] is None]
@@ -449,25 +462,23 @@ def judge_paging(bubble: bool, label: str, before: dict, after: dict) -> list[di
         return failures
     if before["sheet"] == after["sheet"]:
         fail("page changed", {"before": before["sheet"], "after": after["sheet"]})
+    if before["page"] == after["page"]:
+        fail("page label changed", {"before": before["page"], "after": after["page"]})
     # 짧은 장이 보이면 판 높이와 내용 높이가 그 장을 따라 줄어야 한다.
     if after["deckHeight"] > before["deckHeight"] - 20:
         fail("short sheet shrinks deck", {"before": before["deckHeight"], "after": after["deckHeight"]})
     if after["contentHeight"] > before["contentHeight"] - 20:
         fail("short sheet shorter content", {"before": before["contentHeight"], "after": after["contentHeight"]})
-    if bubble:
-        # 말풍선은 아래가 붙박이라 판 바닥과 그 위의 아래 줄 좌표가 그대로여야 한다.
-        if abs(after["deckBottom"] - before["deckBottom"]) > 1:
-            fail("bubble deck bottom held", {"before": before["deckBottom"], "after": after["deckBottom"]})
-        if abs(after["footerTop"] - before["footerTop"]) > 2:
-            fail("bubble button row top held", {"before": before["footerTop"], "after": after["footerTop"]})
-        if abs(after["navTop"] - before["navTop"]) > 1:
-            fail("bubble nav top held", {"before": before["navTop"], "after": after["navTop"]})
-    else:
-        # 띠에서는 판이 짧아진 만큼 아래 줄이 위로 올라온다.
-        if after["deckBottom"] >= before["deckBottom"]:
-            fail("band deck bottom rises", {"before": before["deckBottom"], "after": after["deckBottom"]})
-        if after["footerTop"] >= before["footerTop"]:
-            fail("band button row top rises", {"before": before["footerTop"], "after": after["footerTop"]})
+    # 아래가 붙박인 자리(말풍선과 발치 띠)라 판 바닥과 그 위의 아래 줄 좌표가 그대로다.
+    if abs(after["deckBottom"] - before["deckBottom"]) > 1:
+        fail("deck bottom held", {"before": before["deckBottom"], "after": after["deckBottom"]})
+    if abs(after["footerTop"] - before["footerTop"]) > 2:
+        fail("button row top held", {"before": before["footerTop"], "after": after["footerTop"]})
+    if bubble and abs(after["navTop"] - before["navTop"]) > 1:
+        fail("nav top held", {"before": before["navTop"], "after": after["navTop"]})
+    # 판이 짧아진 만큼 위쪽 끝이 내려온다.
+    if after["deckTop"] < before["deckTop"] + 20:
+        fail("deck top lowers", {"before": before["deckTop"], "after": after["deckTop"]})
     return failures
 
 
