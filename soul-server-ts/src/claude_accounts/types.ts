@@ -68,6 +68,22 @@ export interface ClaudeAccountBlocksRecord {
   fable?: ClaudeScopeBlockEntry;
 }
 
+export type ClaudeAccountReloginReason =
+  | "renewal_failed"
+  | "usage_rejected"
+  | "session_auth_failed"
+  | "login_failed";
+
+export interface ClaudeAccountReloginRecord {
+  reason: ClaudeAccountReloginReason;
+  observed_at: string;
+}
+
+export interface ClaudeReloginJsonFile {
+  version: 1;
+  relogin: Record<string, ClaudeAccountReloginRecord>;
+}
+
 export interface ClaudeAccountsJsonFile {
   version: 1;
   accounts: ClaudeAccountRecord[];
@@ -137,6 +153,12 @@ export interface ClaudeAccountRejectInput {
   resets_at: string | null;
   observed_at: string;
   session_id?: string;
+}
+
+export interface ClaudeAccountAuthFailureInput {
+  account_id: string;
+  session_id: string;
+  observed_at: string;
 }
 
 export interface ClaudeAccountReleaseInput {

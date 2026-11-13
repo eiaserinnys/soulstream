@@ -4,6 +4,7 @@ import { materializeClaudeAccountTranscript } from "./claude_account_pool_transc
 
 import type {
   ClaudeAccountAccessTokenCredential,
+  ClaudeAccountAuthFailureInput,
   ClaudeAccountRejectInput,
   ClaudeAccountReleaseInput,
   ClaudeAccountSelectionExhausted,
@@ -28,6 +29,7 @@ export type ClaudeAccountPoolTurn = ClaudeAccountTurnSelection;
 export interface ClaudeAccountTurnPort {
   select(input: ClaudeAccountSelectionInput): Promise<ClaudeAccountTurnResponse>;
   reject(input: ClaudeAccountRejectInput): Promise<void>;
+  reportAuthFailure(input: ClaudeAccountAuthFailureInput): Promise<void>;
   release(input: ClaudeAccountReleaseInput): Promise<void>;
   restoreActiveBinding?(input: { session_id: string; account_id: string }): Promise<void>;
 }

@@ -1045,7 +1045,7 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     expect(list.accounts.find((a) => a.id === ACC_B)?.usage.five_hour?.used_percent).toBe(40);
   });
 
-  it("keeps credentials unchanged while collecting usage and treats a single 401 as idle", async () => {
+  it("keeps credentials unchanged while collecting usage and treats a 401 as needs_relogin until the next success", async () => {
     let status = 200;
     const fetchImpl = vi.fn(async () => status === 200
       ? new Response(JSON.stringify({ five_hour: { utilization: 15, resets_at: "2026-10-28T05:00:00.000Z" } }), { status })
@@ -1064,10 +1064,15 @@ describe("ClaudeAccountService (P2 account pool store, selector, usage, port, ad
     nowMs += 6 * 60_000;
     const list = await svc.getAccountList({ forceRefresh: true });
     const accA3 = list.accounts.find((a) => a.id === ACC_A)!;
-    expect(accA3.auth_state).toBe("idle");
+    expect(accA3.auth_state).toBe("needs_relogin");
     expect(accA3.observed_at).toBeNull();
     expect(accA3.usage).toEqual({ five_hour: null, seven_day: null, fable_weekly: null });
     expect(fs.readFileSync(credPathA, "utf8")).toBe(credBefore);
+
+    status = 200;
+    nowMs += 6 * 60_000;
+    const recovered = await svc.getAccountList({ forceRefresh: true });
+    expect(recovered.accounts.find((a) => a.id === ACC_A)?.auth_state).toBe("ok");
   });
 
   it("preserves a newer successful observation when an overlapping collection times out", async () => {

@@ -640,6 +640,25 @@ export class ClaudeEngineAdapter
         for await (const clientEvent of events) {
           this.trackInputRequest(clientEvent);
 
+          if (
+            clientEvent.type === "assistant_error"
+            && clientEvent.errorType === "authentication_failed"
+            && selectedAccount
+            && params.agentSessionId
+            && this.claudeAccountTurnPort
+          ) {
+            // 이 세션의 풀 계정 자격이 거부됐다. 계정을 재로그인 필요로 올려 다음 선택에서 뺀다.
+            try {
+              await this.claudeAccountTurnPort.reportAuthFailure({
+                account_id: selectedAccount.account_id,
+                session_id: params.agentSessionId,
+                observed_at: new Date().toISOString(),
+              });
+            } catch (err) {
+              this.logger.warn({ err }, "Failed to report Claude account authentication failure");
+            }
+          }
+
           if (clientEvent.type === "session") {
             observedSessionId = clientEvent.sessionId;
           }

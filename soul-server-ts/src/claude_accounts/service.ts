@@ -1,5 +1,6 @@
 // Account lifecycle and pool operations share one store and session-activity contract.
 import * as fs from "node:fs";
+import type { Logger } from "pino";
 import type { ClaudeProfileCredentialRenewer } from "./credential_renewal.js";
 import { ClaudeAccountNotFoundError } from "./errors.js";
 import {
@@ -23,8 +24,11 @@ import type {
   ClaudeAccountAuthState,
   ClaudeAccountBlocksRecord,
   ClaudeAccountDeleteResult,
+  ClaudeAccountAuthFailureInput,
   ClaudeAccountList,
   ClaudeAccountRecord,
+  ClaudeAccountReloginReason,
+  ClaudeAccountReloginRecord,
   ClaudeAccountRejectInput,
   ClaudeAccountReleaseInput,
   ClaudeAccountSelectionInput,
@@ -37,6 +41,7 @@ import type {
 } from "./types.js";
 import {
   ClaudeAccountUsageCollector,
+  type ClaudeAccountAuthOutcome,
   type CollectAccountUsageOptions,
 } from "./usage.js";
 
@@ -52,6 +57,7 @@ export interface ClaudeAccountServiceOptions {
   concurrency?: number;
   perAccountTimeoutMs?: number;
   usageEndpointUrl?: string;
+  logger?: Logger;
 }
 
 export class ClaudeAccountService implements ClaudeLoginAccountPort {
@@ -61,12 +67,13 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
   private readonly credentialRenewer: ClaudeProfileCredentialRenewer | undefined;
   private readonly sessionActivity = new ClaudeAccountSessionActivity();
   private readonly loggingInExpiresAt = new Map<string, string>();
-  private readonly needsReloginAccountIds = new Set<string>();
+  private readonly logger: Logger | undefined;
   private readonly pendingRetireAccountIds = new Set<string>();
 
   constructor(options: ClaudeAccountServiceOptions) {
     this.now = options.now ?? (() => Date.now());
     this.credentialRenewer = options.credentialRenewer;
+    this.logger = options.logger;
     this.store = new ClaudeAccountStore({
       accountsDir: options.accountsDir,
       homeDir: options.homeDir,
@@ -79,7 +86,39 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       concurrency: options.concurrency,
       perAccountTimeoutMs: options.perAccountTimeoutMs,
       credentialRenewer: options.credentialRenewer,
+      onAuthOutcome: (accountId, outcome) => this.applyAuthOutcome(accountId, outcome),
     });
+  }
+
+  private applyAuthOutcome(accountId: string, outcome: ClaudeAccountAuthOutcome): void {
+    if (outcome === "renew_failed") this.markNeedsRelogin(accountId, "renewal_failed");
+    else if (outcome === "rejected") this.markNeedsRelogin(accountId, "usage_rejected");
+    else this.clearNeedsRelogin(accountId);
+  }
+
+  /** 이미 기록이 있으면 첫 관측을 유지한다. */
+  markNeedsRelogin(accountId: string, reason: ClaudeAccountReloginReason): void {
+    const relogin = this.store.readRelogin();
+    if (accountId in relogin) return;
+    relogin[accountId] = {
+      reason,
+      observed_at: new Date(this.now()).toISOString(),
+    };
+    this.store.writeRelogin(relogin);
+    this.logger?.warn({ accountId, reason }, "Claude account needs relogin");
+  }
+
+  private clearNeedsRelogin(accountId: string): void {
+    const relogin = this.store.readRelogin();
+    if (!(accountId in relogin)) return;
+    delete relogin[accountId];
+    this.store.writeRelogin(relogin);
+    this.logger?.info({ accountId }, "Claude account relogin state cleared");
+  }
+
+  async reportAuthFailure(input: ClaudeAccountAuthFailureInput): Promise<void> {
+    if (!this.store.readAccounts().some((acc) => acc.id === input.account_id)) return;
+    this.markNeedsRelogin(input.account_id, "session_auth_failed");
   }
 
   activeSessions(accountId: string): number {
@@ -153,7 +192,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
     this.store.writeAccounts(nextAccounts);
 
     this.loggingInExpiresAt.delete(input.id);
-    this.needsReloginAccountIds.delete(input.id);
+    this.clearNeedsRelogin(input.id);
     this.pendingRetireAccountIds.delete(input.id);
   }
 
@@ -167,24 +206,20 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
   ): Promise<void> {
     this.loggingInExpiresAt.delete(accountId);
     if (outcome === "ok") {
-      this.needsReloginAccountIds.delete(accountId);
+      this.clearNeedsRelogin(accountId);
       this.store.ensureProfileSymlinks(accountId);
     } else if (outcome === "needs_relogin") {
-      this.needsReloginAccountIds.add(accountId);
+      this.markNeedsRelogin(accountId, "login_failed");
     }
-  }
-
-  async markNeedsRelogin(accountId: string): Promise<void> {
-    this.loggingInExpiresAt.delete(accountId);
-    this.needsReloginAccountIds.add(accountId);
   }
 
   private resolveEffectiveAuthState(
     accountId: string,
     observedState: "ok" | "idle",
+    relogin: Record<string, ClaudeAccountReloginRecord>,
   ): ClaudeAccountAuthState {
     if (this.loggingInExpiresAt.has(accountId)) return "logging_in";
-    if (this.needsReloginAccountIds.has(accountId)) return "needs_relogin";
+    if (accountId in relogin) return "needs_relogin";
     return observedState;
   }
 
@@ -196,6 +231,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
     const accounts = this.store.readAccounts();
     const bindings = this.store.readBindings();
     const blocks = this.store.readBlocks();
+    const relogin = this.store.readRelogin();
 
     const candidates: SelectableAccountCandidate[] = accounts.map((acc) => {
       const obs = this.usageCollector.getCachedObservation(
@@ -206,7 +242,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
         id: acc.id,
         enabled: acc.enabled && !this.pendingRetireAccountIds.has(acc.id),
         priority: acc.priority,
-        auth_state: this.resolveEffectiveAuthState(acc.id, obs.auth_state),
+        auth_state: this.resolveEffectiveAuthState(acc.id, obs.auth_state, relogin),
         active_sessions: this.activeSessions(acc.id),
         stale: obs.stale,
         usage: obs.usage,
@@ -443,7 +479,11 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
     }
     this.usageCollector.deleteCachedAccount(accountId);
     this.loggingInExpiresAt.delete(accountId);
-    this.needsReloginAccountIds.delete(accountId);
+    const relogin = this.store.readRelogin();
+    if (accountId in relogin) {
+      delete relogin[accountId];
+      this.store.writeRelogin(relogin);
+    }
   }
 
   private finalizeAccountRemoval(
@@ -475,12 +515,9 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
     const accounts = this.store.readAccounts();
     const blocks = this.store.readBlocks();
 
+    // needs_relogin 계정도 계속 조회한다. 다음 사용량 조회가 성공해야 선택에 돌아온다.
     const pollTargets = accounts
-      .filter(
-        (acc) =>
-          !this.loggingInExpiresAt.has(acc.id) &&
-          !this.needsReloginAccountIds.has(acc.id),
-      )
+      .filter((acc) => !this.loggingInExpiresAt.has(acc.id))
       .map((acc) => ({
         accountId: acc.id,
         profileDir: this.store.profileDir(acc.id),
@@ -492,6 +529,8 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       options,
     );
 
+    // 조회 중 콜백이 기록을 바꿨을 수 있으므로 조회 뒤에 읽는다.
+    const relogin = this.store.readRelogin();
     const accountViews: ClaudeAccountView[] = accounts.map((acc) => {
       const obs =
         observations.get(acc.id) ??
@@ -499,7 +538,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
           acc.id,
           this.store.profileDir(acc.id),
         );
-      const auth_state = this.resolveEffectiveAuthState(acc.id, obs.auth_state);
+      const auth_state = this.resolveEffectiveAuthState(acc.id, obs.auth_state, relogin);
       return {
         id: acc.id,
         email: acc.email,

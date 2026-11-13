@@ -330,6 +330,7 @@ describe("applyRunnerHostCall", () => {
     const service = {
       select: vi.fn(async () => account),
       reject: vi.fn(async () => undefined),
+      reportAuthFailure: vi.fn(async () => undefined),
       release: vi.fn(async () => undefined),
     };
     const options = { claudeAccounts: service } as never;
@@ -363,6 +364,17 @@ describe("applyRunnerHostCall", () => {
       }],
       correlationId: "host:claude-account-reject",
     }, task, snapshots, options);
+    const authFailure = {
+      account_id: "account-a",
+      session_id: "session-a",
+      observed_at: "2026-10-28T00:00:00.000Z",
+    };
+    await applyRunnerHostCall({
+      service: "claude_accounts",
+      operation: "reportAuthFailure",
+      args: ["session-a", authFailure],
+      correlationId: "host:claude-account-auth-failure",
+    }, task, snapshots, options);
     await applyRunnerHostCall({
       service: "claude_accounts",
       operation: "release",
@@ -377,6 +389,7 @@ describe("applyRunnerHostCall", () => {
 
     expect(service.select).toHaveBeenCalledWith(selectInput);
     expect(service.reject).toHaveBeenCalledOnce();
+    expect(service.reportAuthFailure).toHaveBeenCalledWith(authFailure);
     expect(service.release).toHaveBeenCalledWith({ session_id: "session-a" });
     expect(service.release).toHaveBeenCalledWith(turnRelease);
     await expect(applyRunnerHostCall({

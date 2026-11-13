@@ -298,13 +298,21 @@ export function selectBestCandidate(
         return affA - affB;
       }
 
-      // 2. Priority (smaller number first; null is auto/last)
+      // 2. Accounts whose auth was confirmed (ok) precede unmeasured idle ones,
+      // so a priority number cannot put an unverified account ahead of a verified one
+      const authA = a.auth_state === "ok" ? 0 : 1;
+      const authB = b.auth_state === "ok" ? 0 : 1;
+      if (authA !== authB) {
+        return authA - authB;
+      }
+
+      // 3. Priority (smaller number first; null is auto/last)
       const priDiff = comparePriority(a.priority, b.priority);
       if (priDiff !== 0) {
         return priDiff;
       }
 
-      // 3. Measured <98% observations precede unmeasured idle/stale candidates
+      // 4. Measured <98% observations precede unmeasured idle/stale candidates
       const maxA = a.stale ? null : relevantMaxUsedPercent(a.usage, fableModel, nowMs);
       const maxB = b.stale ? null : relevantMaxUsedPercent(b.usage, fableModel, nowMs);
       const measuredA = maxA !== null ? 0 : 1;
@@ -313,7 +321,7 @@ export function selectBestCandidate(
         return measuredA - measuredB;
       }
 
-      // 4. Earliest relevant weekly reset first
+      // 5. Earliest relevant weekly reset first
       const weeklyResetA = a.stale ? null : relevantWeeklyResetMs(a.usage, fableModel, nowMs);
       const weeklyResetB = b.stale ? null : relevantWeeklyResetMs(b.usage, fableModel, nowMs);
       const weeklyResetDiff = compareOptionalAscending(weeklyResetA, weeklyResetB);
@@ -321,7 +329,7 @@ export function selectBestCandidate(
         return weeklyResetDiff;
       }
 
-      // 5. Earliest 5-hour reset first
+      // 6. Earliest 5-hour reset first
       const fiveHourResetA = a.stale ? null : effectiveWindowResetMs(a.usage.five_hour, nowMs);
       const fiveHourResetB = b.stale ? null : effectiveWindowResetMs(b.usage.five_hour, nowMs);
       const fiveHourResetDiff = compareOptionalAscending(fiveHourResetA, fiveHourResetB);
@@ -329,7 +337,7 @@ export function selectBestCandidate(
         return fiveHourResetDiff;
       }
 
-      // 6. For non-Fable models: prefer higher active Fable usage first to preserve Fable headroom
+      // 7. For non-Fable models: prefer higher active Fable usage first to preserve Fable headroom
       if (!fableModel) {
         const fableA = a.stale
           ? -1
@@ -342,18 +350,18 @@ export function selectBestCandidate(
         }
       }
 
-      // 7. Lower relevant max usage first as a remaining tie-breaker
+      // 8. Lower relevant max usage first as a remaining tie-breaker
       const usageDiff = compareOptionalAscending(maxA, maxB);
       if (usageDiff !== 0) {
         return usageDiff;
       }
 
-      // 8. Fewer active_sessions
+      // 9. Fewer active_sessions
       if (a.active_sessions !== b.active_sessions) {
         return a.active_sessions - b.active_sessions;
       }
 
-      // 9. id ascending
+      // 10. id ascending
       return a.id.localeCompare(b.id);
     });
 

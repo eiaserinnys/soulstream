@@ -211,6 +211,20 @@ export class PushNotifier {
     );
   }
 
+  async notifyClaudeAccountRelogin(input: {
+    nodeId: string;
+    accountId: string;
+    accountEmail: string;
+  }): Promise<boolean> {
+    if (this.closed) return false;
+    return this.trackSend(this.sendToUser(
+      input.nodeId,
+      "클로드 계정 다시 로그인 필요",
+      `${input.nodeId}의 ${input.accountEmail} 계정 자격 갱신이 끊겼습니다. 설정에서 다시 로그인해 주세요.`,
+      { kind: "claude_account_relogin", nodeId: input.nodeId, accountId: input.accountId },
+    ));
+  }
+
   async flush(): Promise<void> {
     while (this.pending.size > 0) {
       await Promise.allSettled([...this.pending]);

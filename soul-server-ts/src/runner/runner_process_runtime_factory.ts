@@ -468,6 +468,11 @@ export async function applyRunnerHostCall(
       case "reject":
         await service.reject(input as unknown as Parameters<ClaudeAccountTurnPort["reject"]>[0]);
         return null;
+      case "reportAuthFailure":
+        await service.reportAuthFailure(
+          input as unknown as Parameters<ClaudeAccountTurnPort["reportAuthFailure"]>[0],
+        );
+        return null;
       case "release":
         await service.release(input as unknown as Parameters<ClaudeAccountTurnPort["release"]>[0]);
         return null;
