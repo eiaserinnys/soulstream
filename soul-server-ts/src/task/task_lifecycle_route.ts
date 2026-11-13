@@ -9,6 +9,7 @@ import {
 } from "./task_lifecycle_transition.js";
 import { isActiveTaskStatus, type Task } from "./task_models.js";
 import { releaseTaskRunner } from "./task_runner_release.js";
+import { nodeExecutionPhaseOfTask } from "./state/node_execution_decision.js";
 import type { ClaudeRuntimeRegistryCloseReason } from
   "../engine/claude_session_client_registry.js";
 
@@ -98,8 +99,20 @@ export class TaskLifecycleRoute {
     // 줄을 지워 버린다. 끝나지 않은 멈춤 마무리는 `interruptRequest`가 남아 있는
     // 것으로 표시하고(성공 경로에서만 지운다), 다시 지울 때도 같은 멈춤 경로로
     // 종료 영속과 이번 revision 통지 등록을 다시 시도해 확인한 뒤에만 지운다.
-    const stopFinalizationPending = task.interruptRequest !== undefined;
-    if ((isActiveTaskStatus(task.status) && runner) || stopFinalizationPending) {
+    //
+    // 지시 넘기기 장벽은 멈춤 마무리가 아니므로 멈춤 대기로 읽지 않는다. 러너 없이
+    // DB에서 올린 활성 task는 지연 로더가 만든 것이라 조용히 지우지 않고 같은 멈춤
+    // 경로로 종료 기록과 통지 등록을 만든 뒤 지운다.
+    const stopFinalizationPending = task.interruptRequest !== undefined
+      && task.interruptBarrierKind !== "intervention_handoff";
+    const runnerlessActive = isActiveTaskStatus(task.status)
+      && !runner
+      && nodeExecutionPhaseOfTask(task) === "hydrated_active";
+    if (
+      (isActiveTaskStatus(task.status) && runner)
+      || runnerlessActive
+      || stopFinalizationPending
+    ) {
       // 삭제가 일으킨 멈춤은 종료 영속과 부른 세션 통지 등록이 확인돼야 한다.
       // 확인되지 않으면 cancelRunningTask가 throw하고, 세션 행은 남는다.
       await this.deps.lifecycleTransition.cancelRunningTask(task, {

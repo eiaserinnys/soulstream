@@ -68,9 +68,9 @@ export const NODE_REQUEST_TABLE: Readonly<Record<NodeExecutionPhase, PhaseRow>> 
     resume: cell("start_execution", "current", "새 실행을 시작한다"),
   },
   hydrated_active: {
-    stop: cell("terminate_without_runner", "design", "SESSION_NOT_RUNNING으로 돌려보내지 않고 종료 기록을 만든다"),
+    stop: cell("terminate_without_runner", "current", "SESSION_NOT_RUNNING으로 돌려보내지 않고 종료 기록을 만든다"),
     intervene: cell("queue_and_restart", "open", "러너가 없으므로 대기 줄에 넣고 다시 띄운다"),
-    delete: cell("terminate_without_runner_then_delete", "design", "조용히 지우지 않고 종료 기록을 만든 뒤 지운다"),
+    delete: cell("terminate_without_runner_then_delete", "current", "조용히 지우지 않고 종료 기록을 만든 뒤 지운다"),
     resume: cell("start_execution", "open", "러너를 새로 띄운다"),
   },
   starting: {

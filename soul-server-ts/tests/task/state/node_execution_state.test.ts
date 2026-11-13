@@ -81,6 +81,9 @@ describe("node execution phase projection", () => {
       .toBe("starting");
     expect(phase({ active: true, hydratedFromDb: true, hasRunner: true, hasRegistration: true }))
       .toBe("running");
+    // 실행 등록이 남았으면 시동 복구가 이을 러너가 있을 수 있어 러너 없는 task가 아니다.
+    expect(phase({ active: true, hydratedFromDb: true, hasRegistration: true }))
+      .toBe("starting");
   });
 
   it("puts normal retention after termination into the phase", () => {

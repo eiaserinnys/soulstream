@@ -13,6 +13,7 @@ import { summarizePayloadForLog } from "./log_payload_summary.js";
 import { createUpstreamCommandDispatcher } from "./upstream_command_dispatcher.js";
 import { createActiveHandlerDrain } from "./active_handler_drain.js";
 import type { Task } from "../task/task_models.js";
+import { nodeExecutionPhaseOfTask } from "../task/state/node_execution_decision.js";
 import type {
   ReconnectPolicyBoundary,
   UpstreamConfig,
@@ -474,16 +475,22 @@ export class UpstreamAdapter {
 
   private async listRunningSessionIds(waitForReconciliation = true): Promise<string[]> {
     if (waitForReconciliation) await this.deps.waitForRunnerReconciliation?.();
-    const inMemorySessionIds = this.deps.taskManager.listTasks()
+    const tasks = this.deps.taskManager.listTasks();
+    const inMemorySessionIds = tasks
       .filter((task) => task.status === "initializing" || task.status === "running")
       .filter((task) => !isBarrierlessHydratedInitializing(task))
+      .filter((task) => !isRunnerlessHydratedRunning(task))
+      .filter((task) => !hasClosedEngineFailure(task))
       .map((task) => task.agentSessionId);
-    return this.deps.listLiveRunnerSessionIds
-      ? [...new Set([
-          ...inMemorySessionIds,
-          ...await this.deps.listLiveRunnerSessionIds(),
-        ])]
-      : inMemorySessionIds;
+    if (!this.deps.listLiveRunnerSessionIds) return inMemorySessionIds;
+    // 엔진이 죽은 task의 러너 등록이 디스크에 아직 살아 있어도 실행 중으로 알리지
+    // 않는다. 서버가 목록에 든 세션을 끊김 중단에서 running으로 되돌리기 때문이다.
+    const engineDeadSessionIds = new Set(
+      tasks.filter(hasClosedEngineFailure).map((task) => task.agentSessionId),
+    );
+    const liveRunnerSessionIds = (await this.deps.listLiveRunnerSessionIds())
+      .filter((sessionId) => !engineDeadSessionIds.has(sessionId));
+    return [...new Set([...inMemorySessionIds, ...liveRunnerSessionIds])];
   }
 
   private async send(data: unknown): Promise<void> {
@@ -514,6 +521,22 @@ function isBarrierlessHydratedInitializing(task: Task): boolean {
     && task.hydratedFromDb === true
     && task.executionRegistration === undefined
     && task.executionActivation === undefined;
+}
+
+/**
+ * A running task restored from the DB with no runner, no durable execution
+ * registration and no startup barrier has nothing that can continue it: a
+ * runner that startup recovery will still adopt shows up through its on-disk
+ * registration (the live runner list) or the restored registration. Reporting
+ * it as running would make the orchestrator revert its interrupted close.
+ */
+function isRunnerlessHydratedRunning(task: Task): boolean {
+  return task.status === "running"
+    && nodeExecutionPhaseOfTask(task) === "hydrated_active";
+}
+
+function hasClosedEngineFailure(task: Task): boolean {
+  return task.runner?.dispatcher.hasClosedEngineFailureForFinalization?.() === true;
 }
 
 function isNodeRegisterAck(value: unknown, nodeId: string): value is NodeRegisterAck {
