@@ -146,22 +146,22 @@ const MANIFEST_INPUT: ReleaseManifestBuildInput = {
 };
 
 describe("model catalog node view", () => {
-  it("filters presets before env resolution: 17 without a group, 22 with china", async () => {
+  it("filters presets before env resolution: 18 without a group, 23 with china", async () => {
     await withTempCatalog(JSON.stringify(REPOSITORY_CATALOG), (catalogPath) => {
       const commonOnly = new ModelCatalog(openModelCatalogFile({ path: catalogPath }), {
         enabledGroups: [],
       });
       const commonAdvertised = commonOnly.advertise({});
-      expect(commonAdvertised).toHaveLength(17);
+      expect(commonAdvertised).toHaveLength(18);
       expect(commonAdvertised.map((entry) => entry.id)).not.toContain("kimi-3");
       expect(commonAdvertised.map((entry) => entry.id)).not.toContain("deepseek-flash-4.1");
-      expect(commonOnly.snapshot().presets).toHaveLength(22);
+      expect(commonOnly.snapshot().presets).toHaveLength(23);
 
       const withChina = new ModelCatalog(openModelCatalogFile({ path: catalogPath }), {
         enabledGroups: ["china"],
       });
       const chinaAdvertised = withChina.advertise({});
-      expect(chinaAdvertised).toHaveLength(22);
+      expect(chinaAdvertised).toHaveLength(23);
       expect(chinaAdvertised.map((entry) => entry.id)).toEqual(expect.arrayContaining([
         "kimi-2",
         "kimi-3",
