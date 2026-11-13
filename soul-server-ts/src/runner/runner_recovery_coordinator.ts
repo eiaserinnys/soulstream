@@ -84,6 +84,8 @@ export class RunnerRecoveryCoordinator {
   private readonly active = new Map<string, Promise<void>>();
   private readonly centralChecks = new Map<string, Promise<void>>();
   private readonly adoptionSends = new Set<string>();
+  /** 시동 잇기의 응답을 기다리는 세션. 응답 뒤 턴이 도는 동안에는 막지 않는다. */
+  private readonly adoptionResponseWaits = new Set<string>();
   private readonly reapedSessions = new Set<string>();
   private readonly centralRetry = new Map<string, CentralCheckRetry>();
   private scanInFlight: Promise<void> | undefined;
@@ -734,7 +736,7 @@ export class RunnerRecoveryCoordinator {
       if (!task.runner && !task.executionPromise) continue;
       if (this.centralChecks.has(sessionId)) continue;
       if (this.adoptionSends.has(sessionId)) continue;
-      if (this.active.has(sessionId)) continue;
+      if (this.adoptionResponseWaits.has(sessionId)) continue;
       if (this.adoptionFailureRecovery.has(sessionId)) continue;
       if (this.reapedSessions.has(sessionId)) continue;
       const retry = this.centralRetry.get(sessionId);
@@ -1039,55 +1041,71 @@ export class RunnerRecoveryCoordinator {
       },
       phaseObservation,
     ] as const;
-    const completion = mode === "adopt"
-      ? this.options.taskExecutor.recoverRegisteredRunner(
-          ...recoveryCall,
-          (application?: RunnerAdoptionApplication) => {
-            if (application === undefined) return;
-            adoptionAnswered = true;
-            this.recordCentralAdoptionResponse(sessionId, application);
-          },
-        )
-      : this.options.taskExecutor.recoverRegisteredRunner(...recoveryCall);
+    let completion: Promise<void>;
+    try {
+      if (mode === "adopt" && adoptionDisposition) {
+        // 응답을 기다리는 동안만 중앙 확인을 막는다. 응답을 받은 뒤 이 턴이
+        // 끝날 때까지 기다리는 것은 잇기가 아니라 실행이므로 막지 않는다.
+        this.adoptionResponseWaits.add(sessionId);
+      }
+      completion = mode === "adopt"
+        ? this.options.taskExecutor.recoverRegisteredRunner(
+            ...recoveryCall,
+            (application?: RunnerAdoptionApplication) => {
+              if (application === undefined) return;
+              adoptionAnswered = true;
+              this.adoptionResponseWaits.delete(sessionId);
+              this.recordCentralAdoptionResponse(sessionId, application);
+            },
+          )
+        : this.options.taskExecutor.recoverRegisteredRunner(...recoveryCall);
+    } catch (error) {
+      this.adoptionResponseWaits.delete(sessionId);
+      throw error;
+    }
     const ownedRunner = task.runner;
     if (mode === "offline") {
       await completion;
     } else if (mode === "adopt" && adoptionDisposition) {
       try {
-        await completion;
-        this.adoptionFailureRecovery.clear(sessionId);
-      } catch (error) {
-        // 잇기 거절은 응답이지 실패가 아니다. 러너를 붙인 채 두고 중앙 확인이
-        // 간격 뒤 다시 판정한다. 거절이 아닌 잇기 실패만 A가 맡는다.
-        if (error instanceof RunnerAdoptionRejectedError) {
-          if (!adoptionAnswered) {
-            this.recordCentralAdoptionResponse(sessionId, {
-              applied: false,
-              rejectionReason: error.rejectionReason,
-            });
+        try {
+          await completion;
+          this.adoptionFailureRecovery.clear(sessionId);
+        } catch (error) {
+          // 잇기 거절은 응답이지 실패가 아니다. 러너를 붙인 채 두고 중앙 확인이
+          // 간격 뒤 다시 판정한다. 거절이 아닌 잇기 실패만 A가 맡는다.
+          if (error instanceof RunnerAdoptionRejectedError) {
+            if (!adoptionAnswered) {
+              this.recordCentralAdoptionResponse(sessionId, {
+                applied: false,
+                rejectionReason: error.rejectionReason,
+              });
+            }
+            this.options.logger.info(
+              { sessionId, rejectionReason: error.reason, mode },
+              "startup runner adoption rejected; runner kept attached for a later central check",
+            );
+            return { task, replayed: false };
           }
-          this.options.logger.info(
-            { sessionId, rejectionReason: error.reason, mode },
-            "startup runner adoption rejected; runner kept attached for a later central check",
-          );
-          return { task, replayed: false };
+          if (this.reapedSessions.has(sessionId)) {
+            this.options.logger.info(
+              { sessionId, mode },
+              "startup runner adoption failure ignored because the session runner was reaped",
+            );
+            return { task, replayed: false };
+          }
+          await this.adoptionFailureRecovery.schedule({
+            registration,
+            disposition: adoptionDisposition,
+            task,
+            completion,
+            ownedRunner,
+            attemptRunner,
+            error,
+          });
         }
-        if (this.reapedSessions.has(sessionId)) {
-          this.options.logger.info(
-            { sessionId, mode },
-            "startup runner adoption failure ignored because the session runner was reaped",
-          );
-          return { task, replayed: false };
-        }
-        await this.adoptionFailureRecovery.schedule({
-          registration,
-          disposition: adoptionDisposition,
-          task,
-          completion,
-          ownedRunner,
-          attemptRunner,
-          error,
-        });
+      } finally {
+        this.adoptionResponseWaits.delete(sessionId);
       }
     } else {
       void completion.catch((error) => {
