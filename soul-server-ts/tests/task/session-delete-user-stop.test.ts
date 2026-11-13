@@ -427,6 +427,82 @@ describe("TaskLifecycleRoute.deleteTask — 멈춘 뒤 삭제 (card #1261)", () 
     expect(deleteSession).toHaveBeenCalledOnce();
   });
 
+  it("죽은 전달 행은 되살림을 요청해 전달을 시도한 뒤에 지운다", async () => {
+    const events: string[] = [];
+    const task = makeTask();
+    const { runner } = makeRunner(events);
+    task.runner = runner as never;
+    const deadRow = (params: RegisterSessionDeliveryParams) => ({
+      delivery_id: params.deliveryId,
+      relation_key: params.relationKey,
+      state: "uncertain",
+      aggregate_state: "dead_letter",
+    }) as never;
+    const pendingRow = (params: RegisterSessionDeliveryParams) => ({
+      delivery_id: params.deliveryId,
+      relation_key: params.relationKey,
+      target_session_id: "caller-1",
+      state: "pending",
+      aggregate_state: "pending",
+      attempt_count: 0,
+    }) as never;
+    let revivedRow: unknown = null;
+    const repository = makeDeliveryRepository(async (params) => {
+      // 되살림 요청이 있어야 행이 살아난다. 요청이 없으면 죽은 행 그대로다.
+      const revive = (params as { reviveDeadLetter?: boolean }).reviveDeadLetter === true;
+      revivedRow = revive ? pendingRow(params) : null;
+      return {
+        row: revive ? pendingRow(params) : deadRow(params),
+        inserted: false,
+        conflict: false,
+      };
+    });
+    repository.get.mockImplementation(async () => revivedRow as never);
+    const { route, deleteSession } = makeStrictRoute({
+      task,
+      persistence: appliedPersistence(),
+      completionNotifier: makeRealNotifier(repository),
+    });
+
+    await expect(route.deleteTask("sess-delete-1")).resolves.toBe(true);
+
+    expect(repository.register.mock.calls[0][0]).toMatchObject({
+      reviveDeadLetter: true,
+    });
+    expect(repository.claimAttemptForTarget).toHaveBeenCalledOnce();
+    expect(deleteSession).toHaveBeenCalledOnce();
+  });
+
+  it("되살림 요청 뒤에도 행이 죽어 있으면 삭제를 멈춘다", async () => {
+    const events: string[] = [];
+    const task = makeTask();
+    const { runner } = makeRunner(events);
+    task.runner = runner as never;
+    const repository = makeDeliveryRepository(async (params) => ({
+      row: {
+        delivery_id: params.deliveryId,
+        relation_key: params.relationKey,
+        state: "uncertain",
+        aggregate_state: "dead_letter",
+      } as never,
+      inserted: false,
+      conflict: true,
+    }));
+    const { route, deleteSession, forgetTask } = makeStrictRoute({
+      task,
+      persistence: appliedPersistence(),
+      completionNotifier: makeRealNotifier(repository),
+    });
+
+    await expect(route.deleteTask("sess-delete-1")).rejects.toThrow(
+      /notification registration failed before delete/,
+    );
+
+    expect(repository.claimAttemptForTarget).not.toHaveBeenCalled();
+    expect(deleteSession).not.toHaveBeenCalled();
+    expect(forgetTask).not.toHaveBeenCalled();
+  });
+
   it("메모리에 없는 세션은 false를 돌려주고 아무것도 지우지 않는다", async () => {
     const events: string[] = [];
     const task = makeTask({ status: "completed" });

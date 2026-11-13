@@ -21,12 +21,21 @@ import {
 } from "./session_delivery_runtime_followup_repository.js";
 import { isTerminalSessionStatus } from "../../session/session_status.js";
 
+/**
+ * 등록 요청. `reviveDeadLetter`는 보낸 쪽의 명시적 되살림 요청이다: 같은
+ * relation_key의 행이 uncertain/dead_letter면 이번 등록의 내용과 새 재시도
+ * 예산으로 pending에 되돌린다. 없으면 기존 동작이다.
+ */
+export type RegisterSessionDeliveryRequest = RegisterSessionDeliveryParams & {
+  reviveDeadLetter?: boolean;
+};
+
 export { compareRuntimeFollowupCandidates } from
   "./session_delivery_runtime_followup_repository.js";
 
 export async function registerSessionDelivery(
   sql: SqlClient,
-  params: RegisterSessionDeliveryParams,
+  params: RegisterSessionDeliveryRequest,
 ): Promise<RegisterSessionDeliveryResult> {
   return await withTransaction(sql, async (transaction) => {
     const runtimeFollowup = readRuntimeFollowupCandidate(params);
@@ -108,32 +117,84 @@ export async function registerSessionDelivery(
       existing.payload_hash !== params.payloadHash ||
       existing.intent !== params.intent ||
       existing.completion_id !== (params.completionId ?? null);
-    if (!conflict) {
+    const revive = params.reviveDeadLetter === true;
+    if (!conflict && !(revive && isDeadLetterRow(existing))) {
       return { row: existing, inserted: false, conflict: false };
     }
 
-    const uncertainRows = await transaction<SessionDeliveryRow[]>`
-      UPDATE session_deliveries
-      SET state = 'uncertain', aggregate_state = 'dead_letter',
-          dead_letter_reason = 'delivery identity conflict',
-          dead_lettered_at = NOW(), updated_at = NOW()
-      WHERE delivery_id = ${existing.delivery_id}
-        AND state NOT IN ('consumed', 'superseded')
-      RETURNING *
-    `;
-    if (uncertainRows[0]) {
-      await appendSessionDeliveryAttempt(transaction, {
-        deliveryId: existing.delivery_id,
-        outcome: "rejected",
-        reason: "delivery identity conflict",
-      });
+    let current = existing;
+    // 되살림을 요청한 등록이 이미 죽은 행을 만나면 다시 죽이지 않고 곧장 되살린다.
+    if (conflict && !(revive && isDeadLetterRow(existing))) {
+      const uncertainRows = await transaction<SessionDeliveryRow[]>`
+        UPDATE session_deliveries
+        SET state = 'uncertain', aggregate_state = 'dead_letter',
+            dead_letter_reason = 'delivery identity conflict',
+            dead_lettered_at = NOW(), updated_at = NOW()
+        WHERE delivery_id = ${existing.delivery_id}
+          AND state NOT IN ('consumed', 'superseded')
+        RETURNING *
+      `;
+      if (uncertainRows[0]) {
+        await appendSessionDeliveryAttempt(transaction, {
+          deliveryId: existing.delivery_id,
+          outcome: "rejected",
+          reason: "delivery identity conflict",
+        });
+      }
+      current = uncertainRows[0] ?? existing;
     }
-    return {
-      row: uncertainRows[0] ?? existing,
-      inserted: false,
-      conflict: true,
-    };
+    if (
+      revive
+      && current.relation_key === params.relationKey
+      && isDeadLetterRow(current)
+    ) {
+      // 보낸 쪽이 같은 신원으로 명시한 되살림이다. 새 내용이 이기고 재시도
+      // 예산(횟수와 나이)을 처음부터 다시 받는다. consumed/superseded는 닿지 않는다.
+      const revivedRows = await transaction<SessionDeliveryRow[]>`
+        UPDATE session_deliveries
+        SET state = 'pending', aggregate_state = 'pending',
+            payload_hash = ${params.payloadHash},
+            payload = ${transaction.json(asPostgresJsonValue(params.payload))},
+            completion_id = ${params.completionId ?? null},
+            intent = ${params.intent}, source = ${params.source},
+            attempt_count = 0, next_attempt_at = NOW(), created_at = NOW(),
+            attempt_token = NULL, attempt_expires_at = NULL,
+            claimed_at = NULL, dispatching_at = NULL, queued_at = NULL,
+            delivered_at = NULL, target_receipt_id = NULL,
+            target_receipt_at = NULL, last_error = NULL,
+            dead_letter_reason = NULL, dead_lettered_at = NULL,
+            updated_at = NOW()
+        WHERE delivery_id = ${current.delivery_id}
+          AND state NOT IN ('consumed', 'superseded')
+          AND (state = 'uncertain' OR aggregate_state = 'dead_letter')
+        RETURNING *
+      `;
+      if (revivedRows[0]) {
+        // 알림 outbox 행(dead_letter/discarded, 때로는 published)이 남아 있으면
+        // 다음 stage가 "notification outbox already exists"로 막히고, 남은 행의
+        // payload도 새 내용과 어긋난다. 되살린 delivery 행을 먼저 갱신한 같은
+        // 트랜잭션에서(락 순서: delivery 다음 outbox) 지워 새로 stage되게 한다.
+        // 이 outbox를 참조하는 FK나 표는 없다.
+        await transaction`
+          DELETE FROM session_delivery_notification_outbox
+          WHERE delivery_id = ${current.delivery_id}
+        `;
+        await appendSessionDeliveryAttempt(transaction, {
+          deliveryId: current.delivery_id,
+          outcome: "retryable",
+          reason: "delivery revived by sender",
+        });
+        return { row: revivedRows[0], inserted: false, conflict: false };
+      }
+    }
+    return { row: current, inserted: false, conflict };
   });
+}
+
+function isDeadLetterRow(row: SessionDeliveryRow): boolean {
+  return row.state !== "consumed"
+    && row.state !== "superseded"
+    && (row.state === "uncertain" || row.aggregate_state === "dead_letter");
 }
 
 export async function getSessionDeliveryRelationConsumption(

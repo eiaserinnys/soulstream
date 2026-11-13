@@ -31,6 +31,7 @@ import {
   recordObservedChildCompletions,
   recordSessionDeliveryRelationConsumed,
   registerSessionDelivery,
+  type RegisterSessionDeliveryRequest,
 } from "./session_delivery_relation_repository.js";
 
 export class SessionDeliveryRepository {
@@ -43,7 +44,7 @@ export class SessionDeliveryRepository {
   }
 
   async register(
-    params: RegisterSessionDeliveryParams,
+    params: RegisterSessionDeliveryRequest,
   ): Promise<RegisterSessionDeliveryResult> {
     return await registerSessionDelivery(this.sql, params);
   }

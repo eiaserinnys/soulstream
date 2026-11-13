@@ -18,7 +18,10 @@ import {
   DELIVERY_NOTIFICATION_MAX_ATTEMPTS,
   deliveryRetryDelayMs,
 } from "./session_delivery_notification_policy.js";
-import type { SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
+import type {
+  RegisterSessionDeliveryRequest,
+  SessionDeliveryHostClient,
+} from "../control_plane/persistence_host_clients.js";
 import type {
   RegisterSessionDeliveryParams,
   RegisterSessionDeliveryResult,
@@ -43,7 +46,7 @@ export interface DurableCompletionInput {
 
 export type CompletionDeliveryRegistrationResult =
   | { registered: true; deliveryId: string; conflict: boolean }
-  | { registered: false; reason: "registration_failed" | "identity_conflict" };
+  | { registered: false; reason: "registration_failed" | "identity_conflict" | "delivery_dead_lettered" };
 
 type CompletionDeliveryRepository = Pick<
   SessionDeliveryHostClient,
@@ -127,13 +130,16 @@ export class CompletionDeliveryCoordinator {
    * 삭제 길 전용: 이번 종료 revision의 등록 결과를 호출자에게 돌려주고 실패를
    * 삼키지 않는다. 같은 relation key의 행이 이미 있으면 그 revision은 등록된
    * 것으로 본다 — 등록 신원이 결정적이라 재시도가 같은 행에 다시 닿는다.
+   * 행이 죽어(uncertain/dead_letter) 있으면 등록과 함께 되살림을 요청한다.
+   * 등록 뒤에도 죽어 있으면 부른 세션이 알림을 받을 수 없으므로 등록 실패로 돌려
+   * 삭제를 멈춘다.
    */
   async enqueueForDelete(
     input: DurableCompletionInput,
   ): Promise<CompletionDeliveryRegistrationResult> {
     const registration = buildCompletionRegistration(input);
     const registered = await this.registerWithRetry(
-      registration,
+      { ...registration, reviveDeadLetter: true },
       input.sourceSessionId,
     );
     if (!registered) {
@@ -153,6 +159,18 @@ export class CompletionDeliveryCoordinator {
       );
       return { registered: false, reason: "identity_conflict" };
     }
+    if (isDeadLetterRow(registered.row)) {
+      this.deps.logger.error(
+        {
+          deliveryId: registered.row.delivery_id,
+          relationKey: registration.relationKey,
+          state: registered.row.state,
+          aggregateState: registered.row.aggregate_state,
+        },
+        "Completion delivery is dead-lettered and could not be revived",
+      );
+      return { registered: false, reason: "delivery_dead_lettered" };
+    }
     if (registered.conflict) {
       this.deps.logger.info(
         {
@@ -171,7 +189,7 @@ export class CompletionDeliveryCoordinator {
   }
 
   private async registerWithRetry(
-    registration: RegisterSessionDeliveryParams,
+    registration: RegisterSessionDeliveryRequest,
     sourceSessionId: string,
   ): Promise<RegisterSessionDeliveryResult | null> {
     for (let attempt = 0; ; attempt += 1) {
@@ -333,6 +351,10 @@ function isStaleSelfCompletionDelivery(
   return row.intent === "completion_notification"
     && row.source_session_id !== null
     && row.source_session_id === targetSessionId;
+}
+
+function isDeadLetterRow(row: SessionDeliveryRow): boolean {
+  return row.state === "uncertain" || row.aggregate_state === "dead_letter";
 }
 
 function isRetryExhausted(row: SessionDeliveryRow, nowMs = Date.now()): boolean {

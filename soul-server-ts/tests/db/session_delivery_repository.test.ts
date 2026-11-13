@@ -186,6 +186,98 @@ describe("SessionDeliveryRepository", () => {
     expect(calls[2].query).toContain("state NOT IN ('consumed', 'superseded')");
   });
 
+  describe("dead-letter revival requested by the sender", () => {
+    const dead = () => deliveryRow({
+      state: "uncertain",
+      aggregate_state: "dead_letter",
+      dead_letter_reason: "delivery attempt expired",
+      attempt_count: 16,
+    } as Partial<SessionDeliveryRow>);
+
+    it("revives a dead row to pending with the new payload and a fresh budget", async () => {
+      const revived = deliveryRow({
+        state: "pending",
+        aggregate_state: "pending",
+        attempt_count: 0,
+        dead_letter_reason: null,
+        dead_lettered_at: null,
+      } as Partial<SessionDeliveryRow>);
+      const { sql, calls } = createMockSql([[], [dead()], [revived], [], []]);
+
+      const result = await new SessionDeliveryRepository(sql).register({
+        ...registration,
+        payloadHash: "hash-new",
+        payload: { text: "new text" },
+        reviveDeadLetter: true,
+      });
+
+      expect(result).toEqual({ row: revived, inserted: false, conflict: false });
+      expect(calls).toHaveLength(5);
+      const update = calls[2];
+      expect(update.query).toContain("state = 'pending', aggregate_state = 'pending'");
+      expect(update.query).toContain("attempt_count = 0");
+      expect(update.query).toContain("created_at = NOW()");
+      expect(update.query).toContain("dead_letter_reason = NULL, dead_lettered_at = NULL");
+      expect(update.query).toContain("state NOT IN ('consumed', 'superseded')");
+      expect(update.values).toContain("hash-new");
+      expect(update.values).toContain(registration.deliveryId);
+      expect(calls[3].query).toContain(
+        "DELETE FROM session_delivery_notification_outbox",
+      );
+      expect(calls[3].values).toContain(registration.deliveryId);
+      expect(calls[4].query).toContain("session_delivery_attempts");
+      expect(calls[4].values).toContain("retryable");
+      expect(calls[4].values).toContain("delivery revived by sender");
+    });
+
+    it("leaves a dead row as it is when no revival is requested", async () => {
+      const { sql, calls } = createMockSql([[], [dead()]]);
+
+      const result = await new SessionDeliveryRepository(sql).register(registration);
+
+      expect(result).toEqual({ row: dead(), inserted: false, conflict: false });
+      expect(calls).toHaveLength(2);
+    });
+
+    it("lets a differing payload win over the conflict dead-letter when revival is requested", async () => {
+      const alive = deliveryRow({ payload_hash: "other-hash" });
+      const killed = deliveryRow({
+        payload_hash: "other-hash",
+        state: "uncertain",
+        aggregate_state: "dead_letter",
+      } as Partial<SessionDeliveryRow>);
+      const revived = deliveryRow({
+        state: "pending",
+        aggregate_state: "pending",
+      } as Partial<SessionDeliveryRow>);
+      const { sql, calls } = createMockSql([[], [alive], [killed], [], [revived], [], []]);
+
+      const result = await new SessionDeliveryRepository(sql).register({
+        ...registration,
+        reviveDeadLetter: true,
+      });
+
+      expect(result).toEqual({ row: revived, inserted: false, conflict: false });
+      expect(calls[2].query).toContain("delivery identity conflict");
+      expect(calls[4].query).toContain("state = 'pending', aggregate_state = 'pending'");
+    });
+
+    it("never revives consumed or superseded rows", async () => {
+      for (const state of ["consumed", "superseded"] as const) {
+        const closed = deliveryRow({ state, aggregate_state: "consumed" } as Partial<SessionDeliveryRow>);
+        const { sql, calls } = createMockSql([[], [closed]]);
+
+        const result = await new SessionDeliveryRepository(sql).register({
+          ...registration,
+          reviveDeadLetter: true,
+        });
+
+        expect(result).toEqual({ row: closed, inserted: false, conflict: false });
+        expect(calls).toHaveLength(2);
+      }
+    });
+  });
+
   it("defers retargeting until the atomic claim boundary", async () => {
     const original = deliveryRow({ target_session_id: "caller-original" });
     const { sql, calls } = createMockSql([[], [original]]);
