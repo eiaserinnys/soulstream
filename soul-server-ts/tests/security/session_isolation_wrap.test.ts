@@ -163,6 +163,26 @@ describe("wrapSessionCommand", () => {
     }
   });
 
+  it("mounts the own incoming folder bind after the incoming root tmpfs", () => {
+    const root = "/home/eias/haniel-root";
+    const incomingRoot = `${root}/services/soulstream/.local/incoming`;
+    const own = `${incomingRoot}/s1`;
+    const args = buildBwrapFlags(isolationSpec({
+      bindings: [{ source: own, destination: own, writable: false }],
+      masks: [
+        { path: root, kind: "directory" },
+        { path: incomingRoot, kind: "directory" },
+      ],
+      heavyWorkLockBindings: [],
+    }));
+    const ancestorMask = indexOfPair(args, "--tmpfs", root);
+    const rootMask = indexOfPair(args, "--tmpfs", incomingRoot);
+    const ownBind = indexOfPair(args, "--ro-bind", own);
+    expect(ancestorMask).toBeGreaterThan(-1);
+    expect(rootMask).toBeGreaterThan(ancestorMask);
+    expect(ownBind).toBeGreaterThan(rootMask);
+  });
+
   it("mounts an approved child bind after the directory mask that hides its parent", () => {
     const stateDir = "/run/soulstream/isolated";
     const sandbox = `${stateDir}/s1/sandbox`;

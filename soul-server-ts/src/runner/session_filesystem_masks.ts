@@ -171,6 +171,10 @@ export async function prepareIsolationMasks(
     await addMask(root, false);
   }
 
+  // 6b. 노드 incoming 루트. 정책 mask가 덮지 않는 배치에서도 다른 세션의 첨부가
+  // 보이지 않게 늘 가리고, 이 세션 폴더만 plan이 RO로 다시 연다.
+  await addMask(input.incomingRoot, false);
+
   // 7. masked prod-state 아래 승인된 공통 skill/script 디렉터리만 RO 재노출.
   const agentCommonFiles = await ports.resolveAgentCommonFilesDirectory();
   if (agentCommonFiles) {

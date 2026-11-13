@@ -169,6 +169,12 @@ export interface IsolationPreparationInput {
   workspaceDir: string;
   sessionDirectory: string;
   hostWorkspaceRoot: string;
+  /**
+   * 노드의 첨부 incoming 루트(절대 경로). materializer와 같은 규칙
+   * (`path.resolve(INCOMING_FILE_DIR)`)으로 해석한 값이다. 계획은 이 아래의
+   * `<세션 ID>` 폴더 하나만 읽기 전용으로 열고 루트 자체는 mask한다.
+   */
+  incomingRoot: string;
   homeDirectory: string;
   uid: number;
   policy: IsolationPolicy;

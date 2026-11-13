@@ -1,6 +1,6 @@
 import { realpath } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import type { Env } from "../config.js";
 import type { CodexCliPathResolution } from "../engine/codex_cli_path.js";
@@ -149,6 +149,8 @@ async function prepareRunnerIsolation(
     // 워크트리 턴이면 agent는 워크트리 경로로 치환돼 있다. B2의 host 검사는
     // 치환 전 프로필 경로를 기준으로 한다.
     hostWorkspaceRoot: request.task.profileWorkspaceDir ?? request.agent.workspace_dir,
+    // attachment materializer와 같은 해석(상대 경로는 서비스 cwd 기준)이다.
+    incomingRoot: resolve(env.INCOMING_FILE_DIR),
     homeDirectory,
     uid,
     policy: loaded.policy,

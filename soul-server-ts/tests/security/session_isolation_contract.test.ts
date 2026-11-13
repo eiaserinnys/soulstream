@@ -113,6 +113,7 @@ describe("session isolation contract", () => {
       workspaceDir: "/home/eias/workspace",
       sessionDirectory: "/home/eias/workspace/.local/share/soulstream/sessions/s1",
       hostWorkspaceRoot: "/home/eias/workspace",
+      incomingRoot: "/home/eias/workspace/.local/incoming",
       homeDirectory: "/home/eias",
       uid: 1000,
       policy,
