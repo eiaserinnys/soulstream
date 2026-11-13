@@ -1988,6 +1988,60 @@ describePostgres("session delivery atomicity PostgreSQL integration", () => {
     });
   });
 
+  it("revives a dead-lettered delivery only when the sender asks, with the new payload and a fresh budget", async () => {
+    await register("delivery-revive", "relation-revive");
+    await repository.markUncertain("delivery-revive", undefined, "delivery attempt expired");
+    const registration = {
+      deliveryId: "delivery-revive",
+      targetSessionId: "caller-old",
+      sourceSessionId: "child-session",
+      relationKey: "relation-revive",
+      completionId: "completion-relation-revive",
+      intent: "completion_notification" as const,
+      source: "completion_notifier",
+      producerKind: "child_session",
+      producerId: "child-session",
+      producerTerminalRevision: "42",
+      payloadHash: "hash-revive-new",
+      payload: { text: "new text" },
+    };
+
+    // 요청이 없으면 죽은 행은 그대로다.
+    await expect(repository.register({ ...registration, payloadHash: "hash-relation-revive", payload: { text: "done" } }))
+      .resolves.toMatchObject({
+        conflict: false,
+        row: { state: "uncertain", aggregate_state: "dead_letter" },
+      });
+
+    const revived = await repository.register({ ...registration, reviveDeadLetter: true });
+    expect(revived.row).toMatchObject({
+      state: "pending",
+      aggregate_state: "pending",
+      payload_hash: "hash-revive-new",
+      payload: { text: "new text" },
+      attempt_count: 0,
+      dead_letter_reason: null,
+      dead_lettered_at: null,
+    });
+    await expect(repository.claimAttemptForTarget("delivery-revive", "caller-old", "worker-revive"))
+      .resolves.toMatchObject({ state: "claimed" });
+
+    // consumed 행은 되살리지 않는다.
+    await register("delivery-revive-consumed", "relation-revive-consumed");
+    await harness.sql`
+      UPDATE session_deliveries
+      SET state = 'consumed', aggregate_state = 'consumed', consumed_at = NOW()
+      WHERE delivery_id = 'delivery-revive-consumed'
+    `;
+    await expect(repository.register({
+      ...registration,
+      deliveryId: "delivery-revive-consumed",
+      relationKey: "relation-revive-consumed",
+      completionId: "completion-relation-revive-consumed",
+      reviveDeadLetter: true,
+    })).resolves.toMatchObject({ row: { state: "consumed" } });
+  });
+
   it("schedules the next attempt on the database clock, not the caller's", async () => {
     await register("delivery-clock", "relation-clock", "durable_next_turn");
     await repository.claimAttemptForTarget("delivery-clock", "caller-old", "worker-clock");

@@ -350,6 +350,11 @@ export class SessionDeliveryRecoveryHostClient {
   }
 }
 
+/** 등록 요청. `reviveDeadLetter`는 죽은 행을 같은 신원으로 되살리라는 보낸 쪽의 요청이다. */
+export type RegisterSessionDeliveryRequest = RegisterSessionDeliveryParams & {
+  reviveDeadLetter?: boolean;
+};
+
 export class SessionDeliveryHostClient {
   readonly notifications: SessionDeliveryNotificationHostClient;
   readonly recovery: SessionDeliveryRecoveryHostClient;
@@ -361,7 +366,7 @@ export class SessionDeliveryHostClient {
     this.recovery = new SessionDeliveryRecoveryHostClient(this.transport);
   }
 
-  register(params: RegisterSessionDeliveryParams): Promise<RegisterSessionDeliveryResult> {
+  register(params: RegisterSessionDeliveryRequest): Promise<RegisterSessionDeliveryResult> {
     return this.transport.request("session-deliveries", "register", [params]);
   }
   get(deliveryId: string): Promise<SessionDeliveryRow | null> {
