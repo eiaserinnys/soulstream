@@ -3,13 +3,14 @@ import { createPagePostgresHarness, type PagePostgresHarness } from "./page/page
 import { prepareCardWorkSchema, appendCardEventTx, recordWorkReceipt } from "./card-work-postgres-fixture.js";
 import { prepareCardReminderSchema } from "./card-reminder-postgres-fixture.js";
 import { createFolderContentSqlAdapter } from "../src/board/folder_content_sql.js";
-import { CardControlPlaneService } from "../src/cards/card_control_plane_service.js";
+import { CardControlPlaneService, type CardMutationChange } from "../src/cards/card_control_plane_service.js";
 import { CardDispatchRepository } from "../src/cards/card_dispatch_repository.js";
 import { CardDispatcher, type CardDispatcherOptions } from "../src/cards/card_dispatcher.js";
 
 // Reuses card-work-start's actual event receipts and card-comments' dispatcher port seam.
 describe("durable card status reminders", () => {
-  let h: PagePostgresHarness, cards: CardControlPlaneService, repo: CardDispatchRepository, dispatcher: CardDispatcher;
+  let h: PagePostgresHarness, sql: ReturnType<typeof createFolderContentSqlAdapter>, cards: CardControlPlaneService;
+  let repo: CardDispatchRepository, dispatcher: CardDispatcher;
   let now: number;
   const origin = Date.parse("2026-10-03T08:00:00Z");
   const messages = vi.fn<CardDispatcherOptions["sendMessage"]>();
@@ -23,9 +24,8 @@ describe("durable card status reminders", () => {
   beforeAll(async () => {
     h = await createPagePostgresHarness(); await prepareCardWorkSchema(h); await prepareCardReminderSchema(h);
     await h.sql`INSERT INTO folders(id,name) VALUES ('f','폴더')`;
-    const sql = createFolderContentSqlAdapter(h.liveSql);
+    sql = createFolderContentSqlAdapter(h.liveSql);
     repo = new CardDispatchRepository(async () => sql);
-    cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx });
   }, 60000);
   beforeEach(async () => {
     await dispatcher?.drain();
@@ -35,9 +35,10 @@ describe("durable card status reminders", () => {
     now = origin; warn.mockReset(); kick.mockClear(); messages.mockReset();
     messages.mockImplementation(async (sessionId, _text, _admission, delivery) => {
       expect(delivery).toMatchObject({ actorKind: "system", actorSessionId: null });
-      await h.sql`INSERT INTO session_deliveries(delivery_id,target_session_id,relation_key,intent,source,payload_hash,state,aggregate_state)
-        VALUES (${delivery!.deliveryId},${sessionId},${delivery!.deliveryId},'durable_next_turn','card_change',${"a".repeat(64)},'pending','pending')`;
+      await h.sql`INSERT INTO session_deliveries(delivery_id,target_session_id,relation_key,intent,source,payload_hash,state,aggregate_state,created_at)
+        VALUES (${delivery!.deliveryId},${sessionId},${delivery!.deliveryId},'durable_next_turn','card_change',${"a".repeat(64)},'pending','pending',${new Date(now)})`;
     });
+    cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx });
     dispatcher = makeDispatcher();
   });
   afterEach(() => vi.restoreAllMocks());
@@ -68,6 +69,12 @@ describe("durable card status reminders", () => {
       VALUES ('notice','root',${`child_session:child:${eventId}`},'durable_next_turn','child_session_completion',${"a".repeat(64)},${aggregate === "pending" ? "pending" : aggregate === "consumed" ? "consumed" : "uncertain"},${aggregate},${new Date(now - age)})`;
   }
   async function unchanged(id: string, status: string) { expect((await cards.getCard(id))!.card.status).toBe(status); expect(warn).not.toHaveBeenCalled(); }
+  const ownerSilentCalls = () => messages.mock.calls.filter(([, , , delivery]) => delivery?.deliveryId?.includes(":owner_silent:"));
+  async function consume(deliveryId?: string) {
+    if (deliveryId) await h.sql`UPDATE session_deliveries SET state='consumed',aggregate_state='consumed' WHERE delivery_id=${deliveryId}`;
+    else await h.sql`UPDATE session_deliveries SET state='consumed',aggregate_state='consumed'`;
+  }
+  const ownerSilentText = (number: number, id: string, lastTurnEnd: string) => `[카드 상태 확인] 카드 #${number} 「원문」(${id})는 진행 중인데 담당 세션이 30분 넘게 턴을 마친 채이고, 돌고 있는 하위 세션도 예약된 깨움도 없습니다. 마지막 턴 종료: ${lastTurnEnd}. 기다리는 것이 있으면 무엇인지와 그것이 실제로 올 수 있는지 확인하세요. 끝난 하위 세션은 스스로 다시 보고하지 않습니다(완료 알림에 「이어서 다시 보고합니다」가 있던 경우만 예외). 올 수 없으면 결과를 직접 확인해 이어 가고, 정한 시각에 다시 볼 일이면 검증 대기(깨울 시각과 기다리는 것)로, 남이 풀어 줄 일이면 막힘으로 옮기세요. 이대로 30분이 더 지나면 카드를 막힘으로 옮깁니다.`;
   it("skips reminder facts for updates of a running root", async () => {
     const id = await seed("running", undefined, "running");
     const facts = vi.spyOn(repo, "reminderFacts");
@@ -236,5 +243,88 @@ describe("durable card status reminders", () => {
     expect(messages).not.toHaveBeenCalled();
     await h.sql`UPDATE session_deliveries SET state='consumed',aggregate_state='consumed' WHERE delivery_id='notice'`;
     await tick(); await tick(); expect(messages).toHaveBeenCalledTimes(1); expect(messages.mock.calls[0]![0]).toBe("root"); await unchanged(id, "running");
+  });
+  it("wakes a silent owner once after thirty minutes and never twice for the same turn end", async () => {
+    const id = await seed();
+    await tick();                                            // 기존 stalled가 상태 세대마다 한 번 나간다
+    expect(ownerSilentCalls()).toHaveLength(0);
+    await consume();
+    const turnEnd = await receipt("root", "completed", 0);   // 담당이 턴을 마쳤다
+    await dispatcher.sessionEnded("root");
+    now += 29 * 60000; await dispatcher.tick(); await dispatcher.drain();
+    expect(ownerSilentCalls()).toHaveLength(0);
+    now += 2 * 60000; await dispatcher.tick(); await dispatcher.drain();
+    expect(ownerSilentCalls()).toHaveLength(1);
+    expect(ownerSilentCalls()[0]![0]).toBe("root");
+    expect(ownerSilentCalls()[0]![1]).toBe(ownerSilentText((await cards.getCard(id))!.card.number!, id, "17:01"));
+    expect(ownerSilentCalls()[0]![3]!.deliveryId).toBe(`card-reminder:${id}:owner_silent:${turnEnd}:root`);
+    now += 60000; await dispatcher.tick(); await dispatcher.drain();
+    expect(ownerSilentCalls()).toHaveLength(1);
+    await unchanged(id, "running");
+  });
+  it("blocks the card without report and sends the board notice when the woken owner stays silent", async () => {
+    const changes: CardMutationChange[] = [];
+    cards = new CardControlPlaneService(sql, { appendEventTx: appendCardEventTx }, undefined, change => changes.push(change));
+    await h.sql`INSERT INTO sessions(session_id,node_id,agent_id,status,metadata) VALUES ('pas','node','roselin','completed',${h.sql.json([{ type: "persistent_session", value: { enabled: true } }])})`;
+    const id = (await cards.createCard({ actorKind: "agent", actorSessionId: "pas", actorUserId: null, folderId: "f", title: "원문", request: "요청", assignee: { kind: "session", sessionId: "root" } })).operation.target_id;
+    await h.sql`UPDATE cards SET status='running',status_changed_at=${new Date(now - 3600000)} WHERE id=${id}`;
+    await receipt("root", "completed", 60000);
+    changes.length = 0;
+
+    await tick(); await consume();                           // 기존 stalled를 받아 갔고 깨움은 아직이다
+    await receipt("root", "completed", 0); await dispatcher.sessionEnded("root");
+    now += 31 * 60000; await dispatcher.tick(); await dispatcher.drain();
+    expect(ownerSilentCalls()).toHaveLength(1);
+    await consume();                                         // 담당이 깨움을 받아 갔다
+
+    now += 60000; await receipt("root", "completed", 0); await dispatcher.sessionEnded("root");   // 응답 턴 종료
+    now += 31 * 60000; await dispatcher.tick(); await dispatcher.drain();
+
+    const card = (await cards.getCard(id))!.card;
+    expect(card.status).toBe("blocked");
+    expect(card.blocked_kind).toBe("no_report");
+    expect(card.blocked_detail).toBe("담당이 턴을 마친 채 30분이 지나 깨웠지만, 그 뒤 30분 동안 움직임이 없음");
+    expect(card.now?.text).toBe(card.blocked_detail);
+    expect(ownerSilentCalls()).toHaveLength(1);              // 두 번째는 깨움이 아니라 막힘이다
+    for (const change of changes) if (change.result.operation.operation_type === "set_card_status") dispatcher.acceptMutation(change);
+    await dispatcher.drain();
+    const board = messages.mock.calls.filter(([sessionId, text]) => sessionId === "pas" && String(text).startsWith("[카드 막힘]"));
+    expect(board).toHaveLength(1);
+    expect(board[0]![1]).toContain("사유: 담당이 턴을 마친 채 30분이 지나 깨웠지만, 그 뒤 30분 동안 움직임이 없음(no_report)");
+  });
+  it("starts again from the wake when a different delivery woke the owner", async () => {
+    const id = await seed();
+    await tick(); await consume();
+    await receipt("root", "completed", 0); await dispatcher.sessionEnded("root");
+    now += 31 * 60000; await dispatcher.tick(); await dispatcher.drain();
+    expect(ownerSilentCalls()).toHaveLength(1);
+    await consume();
+
+    now += 60000;
+    const childEvent = await receipt("child", "completed", 0);
+    await notice(childEvent);                                // 하위 세션 완료 알림이 담당을 깨웠다
+    now += 60000;
+    const turnEnd = await receipt("root", "completed", 0); await dispatcher.sessionEnded("root");
+    now += 31 * 60000; await dispatcher.tick(); await dispatcher.drain();
+
+    expect(ownerSilentCalls()).toHaveLength(2);
+    expect(ownerSilentCalls()[1]![3]!.deliveryId).toBe(`card-reminder:${id}:owner_silent:${turnEnd}:root`);
+    expect(ownerSilentCalls()[1]![3]!.deliveryId).not.toBe(ownerSilentCalls()[0]![3]!.deliveryId);
+    await unchanged(id, "running");
+  });
+  it.each(["active-child", "pending-delivery", "awaiting-verification", "limit-hit"])("keeps both owner silent steps out for %s", async kind => {
+    let id: string, status = "running";
+    if (kind === "active-child") { id = await seed("running", "running"); now += 31 * 60000; await dispatcher.tick(); await dispatcher.drain(); }
+    else if (kind === "pending-delivery") {
+      id = await seed(); now += 31 * 60000;
+      await notice(await receipt("child", "completed", 0));
+      await dispatcher.tick(); await dispatcher.drain();
+    } else if (kind === "awaiting-verification") {
+      id = await seed(); status = "awaiting_verification";
+      await h.sql`UPDATE cards SET status='awaiting_verification',wake_at=${new Date(now + 3600000)},waiting_for='검증' WHERE id=${id}`;
+      now += 31 * 60000; await dispatcher.tick(); await dispatcher.drain();
+    } else { id = await seed("running", undefined, "error", "limit_hit"); now += 31 * 60000; await dispatcher.tick(); await dispatcher.drain(); }
+    expect(ownerSilentCalls()).toHaveLength(0);
+    await unchanged(id, status);
   });
 });

@@ -22,9 +22,11 @@ export async function readCardReminderFacts(sql: SqlClient, now: number, endedRo
         WHERE NOT EXISTS (SELECT 1 FROM cards other WHERE other.assignee_session_id=child.session_id
           AND other.id<>${card.id} AND NOT other.archived)
       )
-      SELECT c.id AS "cardId",c.status AS "cardStatus",
+      SELECT c.id AS "cardId",c.number AS "cardNumber",c.title AS "cardTitle",c.version AS "cardVersion",
+        c.status AS "cardStatus",
         (EXTRACT(EPOCH FROM c.status_changed_at)*1000000)::bigint::text AS "statusEpochUs",
         r.session_id AS "rootSessionId",r.status AS "rootStatus",r.termination_reason AS "rootTerminationReason",
+        r.termination_event_id AS "rootTerminationEventId",
         EXISTS(SELECT 1 FROM tree t JOIN sessions s USING(session_id)
           WHERE s.session_id<>r.session_id AND s.status IN ('initializing','running')) AS "activeDescendants",
         EXISTS(SELECT 1 FROM tree t JOIN sessions s USING(session_id)
@@ -48,7 +50,16 @@ export async function readCardReminderFacts(sql: SqlClient, now: number, endedRo
             AND EXISTS(SELECT 1 FROM event_ingress_receipts receipt WHERE receipt.session_id=s.session_id
               AND receipt.event_id=s.termination_event_id AND receipt.created_at>${new Date(now - COMPLETION_REGISTRATION_FAILURE_CEILING_MS)})) AS "unregisteredCompletions",
         EXISTS(SELECT 1 FROM event_ingress_receipts receipt WHERE receipt.session_id=r.session_id
-          AND receipt.event_id=r.termination_event_id AND receipt.created_at>c.status_changed_at) AS "rootEndedAfterStatus"
+          AND receipt.event_id=r.termination_event_id AND receipt.created_at>c.status_changed_at) AS "rootEndedAfterStatus",
+        EXISTS(SELECT 1 FROM card_execution_requests request WHERE request.card_id=c.id AND request.state='pending') AS "pendingExecution",
+        (SELECT receipt.created_at FROM event_ingress_receipts receipt WHERE receipt.session_id=r.session_id
+          AND receipt.event_id=r.termination_event_id ORDER BY receipt.created_at DESC LIMIT 1) AS "lastRootTurnEndedAt",
+        (SELECT delivery.delivery_id FROM session_deliveries delivery
+          WHERE delivery.target_session_id=r.session_id
+            AND delivery.created_at<=(SELECT receipt.created_at FROM event_ingress_receipts receipt
+              WHERE receipt.session_id=r.session_id AND receipt.event_id=r.termination_event_id
+              ORDER BY receipt.created_at DESC LIMIT 1)
+          ORDER BY delivery.created_at DESC,delivery.enqueue_sequence DESC LIMIT 1) AS "latestRootDeliveryId"
       FROM cards c JOIN sessions r ON r.session_id=${root} WHERE c.id=${card.id} AND NOT c.archived`;
     if (rows[0]) result.push(rows[0]);
   }
