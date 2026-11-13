@@ -47,6 +47,11 @@ import {
   type Task,
 } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
+import type { EventOutboxRecord } from "../../src/upstream/event_outbox.js";
+import {
+  isValidEventAppendAck,
+  type EventAppendAck,
+} from "../../src/upstream/event_outbox_pump_protocol.js";
 
 import { makeEventPersistenceTestDouble } from "./event_persistence_test_double.js";
 
@@ -3600,7 +3605,7 @@ describe("TaskExecutor runner process boundary", () => {
       task.agentSessionId,
       {
         reviewState: "not_required",
-        transitionId: "adopt:execute-old",
+        transitionId: expect.stringMatching(/^adopt:execute-old:[0-9a-f-]{36}$/),
         registrationId: "registration-1",
       },
     ));
@@ -3619,6 +3624,130 @@ describe("TaskExecutor runner process boundary", () => {
     expect(task.lastEventId).toBeGreaterThan(0);
     expect(task.lastAssistantText).toBe("replayed");
     expect(task.status).toBe("completed");
+  });
+
+  it("sends only the adoption transition for an attached runner with a fresh attempt UUID each time", async () => {
+    const mocks = makeMocks();
+    const { runner, dispatcher } = makeRunnerProcessRuntime([]);
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      mocks.persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.runner = runner;
+
+    await executor.adoptAttachedRunnerExecution(task, "execute-old");
+    await executor.adoptAttachedRunnerExecution(task, "execute-old");
+
+    expect(dispatcher.recoverFrames).not.toHaveBeenCalled();
+    expect(dispatcher.prepareSession).not.toHaveBeenCalled();
+    const transitionIds = mocks.enqueueRunningTransitionAndWaitForApplication.mock.calls
+      .map(([, input]) => (input as { transitionId: string }).transitionId);
+    expect(transitionIds).toHaveLength(2);
+    for (const transitionId of transitionIds) {
+      expect(transitionId).toMatch(
+        /^adopt:execute-old:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/,
+      );
+    }
+    expect(new Set(transitionIds).size).toBe(2);
+    expect(mocks.enqueueRunningTransitionAndWaitForApplication).toHaveBeenCalledWith(
+      task.agentSessionId,
+      expect.objectContaining({ registrationId: "registration-1" }),
+    );
+  });
+
+  it("carries the ACK rejection reason through persistence to the adoption caller", async () => {
+    const mocks = makeMocks();
+    const canonicalSession = {
+      status: "completed",
+      termination_reason: "completed_ok",
+      termination_detail: null,
+      review_state: "not_required",
+      last_assistant_text: null,
+      termination_event_id: null,
+      updated_at: "2026-08-11T00:00:00.000Z",
+      last_event_id: 42,
+    };
+    const acknowledgement: EventAppendAck = {
+      type: "event_append_ack",
+      stream_id: "stream-1",
+      acked_through: 7,
+      events: [{
+        source_seq: 7,
+        event_id: 42,
+        effect_application: {
+          applied: false,
+          rejection_reason: "worktree_busy",
+          canonical_session: canonicalSession,
+        },
+      }],
+    };
+    expect(isValidEventAppendAck(acknowledgement)).toBe(true);
+    const record: EventOutboxRecord = {
+      stream_id: "stream-1",
+      source_seq: 7,
+      session_id: "sess-1",
+      event_type: "metadata",
+      payload: {},
+      searchable_text: "",
+      created_at: "2026-08-11T00:00:00.000Z",
+      semantic_dedupe_key: null,
+      session_effect: null,
+      payload_hash: "a".repeat(64),
+    };
+    const pump = {
+      waitForAcknowledgement: vi.fn(),
+      waitForAcknowledgementResult: vi.fn(async () => ({
+        source_seq: 7,
+        event_id: 42,
+        effect_application: {
+          applied: false,
+          canonical_session: canonicalSession,
+        },
+      })),
+    };
+    pump.waitForAcknowledgementResult
+      .mockResolvedValueOnce(acknowledgement.events[0])
+      .mockResolvedValueOnce(acknowledgement.events[0]);
+    const persistence = new EventPersistence(
+      mocks.db,
+      mocks.broadcaster,
+      silentLogger,
+      { append: vi.fn(async () => record) },
+      pump as never,
+    );
+    const { runner } = makeRunnerProcessRuntime([]);
+    const executor = new TaskExecutor(
+      () => makeFakeEngine([]),
+      mocks.db,
+      persistence,
+      mocks.broadcaster,
+      silentLogger,
+    );
+    const task = makeTask();
+    task.runner = runner;
+
+    await expect(persistence.enqueueRunningTransitionAndWaitForApplication(
+      task.agentSessionId,
+      { reviewState: "not_required", transitionId: "adopt:execute-old:with-reason" },
+    )).resolves.toMatchObject({
+      applied: false,
+      rejectionReason: "worktree_busy",
+    });
+    await expect(executor.adoptAttachedRunnerExecution(task, "execute-old"))
+      .resolves.toEqual({ applied: false, rejectionReason: "worktree_busy" });
+
+    const withoutReason = await persistence
+      .enqueueRunningTransitionAndWaitForApplication(task.agentSessionId, {
+        reviewState: "not_required",
+        transitionId: "adopt:execute-old:no-reason",
+      });
+    expect(withoutReason).not.toHaveProperty("rejectionReason");
+    await expect(executor.adoptAttachedRunnerExecution(task, "execute-old"))
+      .resolves.toEqual({ applied: false, rejectionReason: undefined });
   });
 
   it("propagates an adopted runner transport failure after finalizing the failed execution", async () => {

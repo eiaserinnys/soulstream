@@ -415,6 +415,11 @@ export class TaskManager {
     return task && isOrchestrationDecisionTask(task) ? null : task;
   }
 
+  /** 거둔 러너의 메모리 task를 내린다. 다음 조회는 저장소에서 다시 읽는다. */
+  forgetRunnerRecoveryTask(sessionId: string): void {
+    this.tasks.delete(sessionId);
+  }
+
   async markRunnerFailure(
     task: Task,
     message: string,

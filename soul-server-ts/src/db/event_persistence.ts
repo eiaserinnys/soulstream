@@ -261,6 +261,9 @@ export class EventPersistence extends EventTransitionPublisher {
     return {
       eventId: acknowledgement.event_id,
       applied: application.applied,
+      ...(application.rejection_reason === undefined
+        ? {}
+        : { rejectionReason: application.rejection_reason }),
       canonicalSession: application.canonical_session,
       canonicalExecutionRegistration:
         application.canonical_execution_registration === null

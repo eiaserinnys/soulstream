@@ -24,6 +24,8 @@ import {
   RunnerSqliteLifecycle,
 } from "../../src/runner/sqlite_runner_lifecycle.js";
 import { RunnerSqliteEventOutbox } from "../../src/runner/sqlite_event_outbox.js";
+import { RunnerAdoptionRejectedError } from
+  "../../src/task/runner_adoption_rejected_error.js";
 import { TaskHydrationFailedError } from "../../src/task/task_hydration_errors.js";
 import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { Task } from "../../src/task/task_models.js";
@@ -674,6 +676,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         runAsync: expect.any(Function),
         databaseSummary: expect.any(Function),
       }),
+      expect.any(Function),
     );
     expect(subject.logger.error).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -705,6 +708,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         runAsync: expect.any(Function),
         databaseSummary: expect.any(Function),
       }),
+      expect.any(Function),
     );
     expect(subject.terminate).not.toHaveBeenCalled();
   });
@@ -725,6 +729,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         runAsync: expect.any(Function),
         databaseSummary: expect.any(Function),
       }),
+      expect.any(Function),
     );
     expect(subject.terminate).not.toHaveBeenCalled();
   });
@@ -753,6 +758,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         runAsync: expect.any(Function),
         databaseSummary: expect.any(Function),
       }),
+      expect.any(Function),
     );
     expect(subject.terminate).not.toHaveBeenCalled();
     expect(subject.restartRegisteredRunner).not.toHaveBeenCalled();
@@ -792,6 +798,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         runAsync: expect.any(Function),
         databaseSummary: expect.any(Function),
       }),
+      expect.any(Function),
     );
   });
 
@@ -1581,6 +1588,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         runAsync: expect.any(Function),
         databaseSummary: expect.any(Function),
       }),
+      expect.any(Function),
     );
     expect(subject.terminate).not.toHaveBeenCalled();
     expect(subject.markReaped).not.toHaveBeenCalled();
@@ -2189,6 +2197,7 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         runAsync: expect.any(Function),
         databaseSummary: expect.any(Function),
       }),
+      expect.any(Function),
     );
     expect(subject.logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -2622,6 +2631,433 @@ describe("RunnerRecoveryCoordinator phase observation", () => {
       failurePhase: "registration",
       failureElapsedMs: 9,
     }), "runner recovery scan phase failed");
+  });
+});
+
+describe("RunnerRecoveryCoordinator central check", () => {
+  interface CentralRow {
+    node_id: string | null;
+    status: string | null;
+  }
+
+  function makeCentralSubject(options: {
+    tasks: Task[];
+    registrations?: RunnerRegistration[];
+    readCentralSession: (sessionId: string) => Promise<CentralRow | null>;
+    adopt?: (
+      task: Task,
+      commandId?: string,
+    ) => Promise<{ applied: boolean; rejectionReason?: string }>;
+    recoverRegisteredRunner?: ReturnType<typeof vi.fn>;
+    hydrateRunnerRecoveryTask?: (sessionId: string) => Promise<Task | null>;
+    now?: () => number;
+    hasPendingRunnerSettlement?: () => boolean;
+  }) {
+    const forgetRunnerRecoveryTask = vi.fn();
+    const subject = makeSubject(
+      options.registrations ?? [registration()],
+      RECOVERY_NOW_MS,
+      [],
+      {
+        ...(options.now ? { now: options.now } : {}),
+        ...(options.hasPendingRunnerSettlement
+          ? { hasPendingRunnerSettlement: options.hasPendingRunnerSettlement }
+          : {}),
+        readCentralSession: options.readCentralSession,
+        taskManager: {
+          hydrateRunnerRecoveryTask:
+            options.hydrateRunnerRecoveryTask ?? vi.fn(async () => null),
+          listTasks: () => options.tasks,
+          forgetRunnerRecoveryTask,
+        } as never,
+        taskExecutor: {
+          ...(options.adopt
+            ? { adoptAttachedRunnerExecution: options.adopt }
+            : {}),
+          ...(options.recoverRegisteredRunner
+            ? { recoverRegisteredRunner: options.recoverRegisteredRunner }
+            : {}),
+        } as never,
+      },
+    );
+    return { ...subject, forgetRunnerRecoveryTask };
+  }
+
+  async function settle(subject: { coordinator: RunnerRecoveryCoordinator }) {
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+  }
+
+  function runningTask(sessionId = "session-a"): {
+    task: Task;
+    runner: NonNullable<Task["runner"]>;
+    detachHost: ReturnType<typeof vi.fn>;
+  } {
+    const target = task(sessionId);
+    const attached = finishedRunner("registration-a", "execute-a");
+    target.runner = attached.runner;
+    target.executionRegistration = {
+      registrationId: "registration-a",
+      executionCommandId: "execute-a",
+    };
+    return { task: target, runner: attached.runner, detachHost: attached.detachHost };
+  }
+
+  function terminalRetainedTask(): {
+    task: Task;
+    runner: NonNullable<Task["runner"]>;
+  } {
+    const target = task("session-a");
+    target.status = "completed";
+    target.terminationReason = "completed_ok";
+    target.terminationEventRecorded = true;
+    target.terminalEventId = 9;
+    target.runner = finishedRunner("registration-a").runner;
+    target.runnerRetainedForDetachedWork = true;
+    return { task: target, runner: target.runner };
+  }
+
+  it("reaps a runner whose central session row is gone", async () => {
+    const target = task("session-a");
+    const { runner, detachHost } = finishedRunner("registration-a", "execute-a");
+    target.runner = runner;
+    target.callerSessionId = "caller-session";
+    const subject = makeCentralSubject({
+      tasks: [target],
+      readCentralSession: async () => null,
+    });
+
+    await settle(subject);
+
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledWith(
+      registration().config.paths,
+      "registration-a",
+    );
+    expect(detachHost).toHaveBeenCalledOnce();
+    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith("session-a");
+    expect(target.runner).toBeUndefined();
+    // Clearing the recipient suppresses the completion delivery a late
+    // execution end would otherwise register.
+    expect(target.callerSessionId).toBeUndefined();
+    expect(subject.markReaped).not.toHaveBeenCalled();
+  });
+
+  it("does not adopt or reap a terminal-retained runner while the central row is inactive", async () => {
+    const { task: target, runner } = terminalRetainedTask();
+    const adopt = vi.fn(async () => ({ applied: true }));
+    const subject = makeCentralSubject({
+      tasks: [target],
+      readCentralSession: async () => ({ node_id: "node-a", status: "completed" }),
+      adopt,
+    });
+
+    await settle(subject);
+
+    expect(adopt).not.toHaveBeenCalled();
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+    expect(target.runner).toBe(runner);
+    expect(subject.forgetRunnerRecoveryTask).not.toHaveBeenCalled();
+  });
+
+  it("reaps a terminal-retained runner when the owner node changed", async () => {
+    const { task: target } = terminalRetainedTask();
+    const subject = makeCentralSubject({
+      tasks: [target],
+      readCentralSession: async () => ({ node_id: "node-b", status: "running" }),
+    });
+
+    await settle(subject);
+
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(target.runner).toBeUndefined();
+    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith("session-a");
+  });
+
+  it("changes nothing when the central lookup fails", async () => {
+    const { task: target, runner } = runningTask();
+    const subject = makeCentralSubject({
+      tasks: [target],
+      readCentralSession: async () => {
+        throw new SessionDataHostError({
+          operation: "getSession",
+          retryable: true,
+          message: "session data host unavailable",
+        });
+      },
+    });
+
+    await settle(subject);
+
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+    expect(subject.forgetRunnerRecoveryTask).not.toHaveBeenCalled();
+    expect(target.runner).toBe(runner);
+    expect(subject.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-a" }),
+      "runner central session lookup failed",
+    );
+  });
+
+  it("adopts an inactive session's running turn through the attached runner only", async () => {
+    const { task: target, detachHost } = runningTask();
+    const adopt = vi.fn(async () => ({ applied: true }));
+    const subject = makeCentralSubject({
+      tasks: [target],
+      readCentralSession: async () => ({ node_id: "node-a", status: "completed" }),
+      adopt,
+    });
+
+    await settle(subject);
+
+    expect(adopt).toHaveBeenCalledOnce();
+    expect(adopt).toHaveBeenCalledWith(target, "execute-a");
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+    expect(detachHost).not.toHaveBeenCalled();
+    expect(subject.forgetRunnerRecoveryTask).not.toHaveBeenCalled();
+  });
+
+  it("reaps after an adoption rejection that is not worth retrying", async () => {
+    const { task: target } = runningTask();
+    const adopt = vi.fn(async () => ({
+      applied: false,
+      rejectionReason: "already_terminal",
+    }));
+    const subject = makeCentralSubject({
+      tasks: [target],
+      readCentralSession: async () => ({ node_id: "node-a", status: "completed" }),
+      adopt,
+    });
+
+    await settle(subject);
+    expect(adopt).toHaveBeenCalledOnce();
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+
+    await settle(subject);
+
+    expect(adopt).toHaveBeenCalledOnce();
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledOnce();
+    expect(target.runner).toBeUndefined();
+  });
+
+  it("keeps a retryably rejected runner and backs off 15s, 30s, then 5 minutes", async () => {
+    const { task: target } = runningTask();
+    let nowMs = RECOVERY_NOW_MS;
+    const adopt = vi.fn(async () => ({
+      applied: false,
+      rejectionReason: "still-unknown-to-the-node",
+    }));
+    const subject = makeCentralSubject({
+      tasks: [target],
+      now: () => nowMs,
+      readCentralSession: async () => ({ node_id: "node-a", status: "completed" }),
+      adopt,
+    });
+
+    await settle(subject);
+    expect(adopt).toHaveBeenCalledTimes(1);
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+    expect(target.runner).toBeDefined();
+
+    const expectAttempts = async (advanceMs: number, attempts: number) => {
+      nowMs += advanceMs;
+      await settle(subject);
+      expect(adopt).toHaveBeenCalledTimes(attempts);
+    };
+
+    await expectAttempts(14_999, 1);
+    await expectAttempts(1, 2);
+    await expectAttempts(29_999, 2);
+    await expectAttempts(1, 3);
+    await expectAttempts(59_999, 3);
+    await expectAttempts(1, 4);
+    await expectAttempts(119_999, 4);
+    await expectAttempts(1, 5);
+    await expectAttempts(239_999, 5);
+    await expectAttempts(1, 6);
+    // The cap is five minutes: the seventh attempt waits the same 300s.
+    await expectAttempts(299_999, 6);
+    await expectAttempts(1, 7);
+    await expectAttempts(299_999, 7);
+    await expectAttempts(1, 8);
+
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+    expect(target.runner).toBeDefined();
+  });
+
+  it("re-adopts after the interval when startup adoption was retryably rejected", async () => {
+    const target = task("session-a");
+    target.executionRegistration = {
+      registrationId: "registration-a",
+      executionCommandId: "execute-a",
+    };
+    const runner = finishedRunner("registration-a", "execute-a").runner;
+    let nowMs = RECOVERY_NOW_MS;
+    const adopt = vi.fn(async () => ({ applied: true }));
+    const recoverRegisteredRunner = vi.fn(async (
+      owned: Task,
+      _registration: RunnerRegistration,
+      _commandId: string | undefined,
+      _mode: "adopt" | "replay" | "offline",
+      onAttemptCreated?: (attempt: NonNullable<Task["runner"]>) => (() => void) | undefined,
+      _phaseObservation?: unknown,
+      onAdoptionApplication?: (application: {
+        applied: boolean;
+        rejectionReason?: string;
+      }) => void,
+    ) => {
+      owned.runner = runner;
+      onAttemptCreated?.(runner)?.();
+      onAdoptionApplication?.({ applied: false, rejectionReason: "worktree_busy" });
+      throw new RunnerAdoptionRejectedError("session-a", "worktree_busy");
+    });
+    const subject = makeCentralSubject({
+      tasks: [target],
+      hydrateRunnerRecoveryTask: async () => target,
+      now: () => nowMs,
+      readCentralSession: async () => ({ node_id: "node-a", status: "completed" }),
+      adopt,
+      recoverRegisteredRunner,
+    });
+
+    await settle(subject);
+    expect(recoverRegisteredRunner).toHaveBeenCalledOnce();
+    expect(adopt).not.toHaveBeenCalled();
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+
+    nowMs += 14_999;
+    await settle(subject);
+    expect(adopt).not.toHaveBeenCalled();
+
+    nowMs += 1;
+    await settle(subject);
+    expect(adopt).toHaveBeenCalledOnce();
+    expect(adopt).toHaveBeenCalledWith(target, "execute-a");
+    expect(recoverRegisteredRunner).toHaveBeenCalledOnce();
+  });
+
+  it("does not block the scan or another session while an adoption response is pending", async () => {
+    const first = runningTask("session-a");
+    const second = task("session-b");
+    second.runner = finishedRunner("registration-a").runner;
+    const pending = deferred<{ applied: boolean; rejectionReason?: string }>();
+    const adopt = vi.fn(() => pending.promise);
+    const subject = makeCentralSubject({
+      tasks: [first.task, second],
+      registrations: [
+        registration({ sessionId: "session-a" }),
+        registration({ sessionId: "session-b" }),
+      ],
+      readCentralSession: async (sessionId) =>
+        sessionId === "session-a"
+          ? { node_id: "node-a", status: "completed" }
+          : null,
+      adopt,
+    });
+
+    await withinBudget(subject.coordinator.scanOnce(), 2000);
+    await vi.waitFor(() => expect(adopt).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(subject.retireTerminalRegistration)
+      .toHaveBeenCalledOnce());
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledWith(
+      registration({ sessionId: "session-b" }).config.paths,
+      "registration-a",
+    );
+    expect(second.runner).toBeUndefined();
+
+    pending.resolve({ applied: true });
+    await subject.coordinator.waitForSettled();
+  });
+
+  it("reaps a startup-adopted session while its turn is still running", async () => {
+    const target = task("session-a");
+    target.callerSessionId = "caller-session";
+    target.executionRegistration = {
+      registrationId: "registration-a",
+      executionCommandId: "execute-a",
+    };
+    const attached = finishedRunner("registration-a", "execute-a");
+    let rejectTurn!: (error: unknown) => void;
+    const turn = new Promise<void>((_resolve, reject) => { rejectTurn = reject; });
+    let recoverySettled = false;
+    const recoverRegisteredRunner = vi.fn(async (
+      owned: Task,
+      _registration: RunnerRegistration,
+      _commandId: string | undefined,
+      _mode: "adopt" | "replay" | "offline",
+      onAttemptCreated?: (attempt: NonNullable<Task["runner"]>) => (() => void) | undefined,
+      _phaseObservation?: unknown,
+      onAdoptionApplication?: (application: {
+        applied: boolean;
+        rejectionReason?: string;
+      }) => void,
+    ) => {
+      owned.runner = attached.runner;
+      onAttemptCreated?.(attached.runner)?.();
+      onAdoptionApplication?.({ applied: true });
+      try {
+        await turn;
+      } finally {
+        recoverySettled = true;
+      }
+    });
+    const subject = makeCentralSubject({
+      tasks: [target],
+      hydrateRunnerRecoveryTask: async () => target,
+      readCentralSession: async () => null,
+      recoverRegisteredRunner,
+    });
+
+    await withinBudget(subject.coordinator.scanOnce(), 2000);
+    await vi.waitFor(() => expect(recoverRegisteredRunner).toHaveBeenCalledOnce());
+    expect(target.runner).toBe(attached.runner);
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+
+    await withinBudget(subject.coordinator.scanOnce(), 2000);
+    await vi.waitFor(() => expect(subject.retireTerminalRegistration)
+      .toHaveBeenCalledOnce());
+
+    expect(subject.retireTerminalRegistration).toHaveBeenCalledWith(
+      registration().config.paths,
+      "registration-a",
+    );
+    expect(attached.detachHost).toHaveBeenCalledOnce();
+    expect(subject.forgetRunnerRecoveryTask).toHaveBeenCalledWith("session-a");
+    expect(target.runner).toBeUndefined();
+    expect(target.callerSessionId).toBeUndefined();
+    expect(subject.markReaped).not.toHaveBeenCalled();
+
+    // The turn ends only after the reap. Its failure must neither reach
+    // adoption failure recovery nor register a completion delivery.
+    rejectTurn(new Error("runner host detached by reap"));
+    await subject.coordinator.waitForSettled();
+    expect(recoverySettled).toBe(true);
+    expect(subject.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-a" }),
+      "startup runner adoption failure ignored because the session runner was reaped",
+    );
+    expect(subject.logger.warn).not.toHaveBeenCalledWith(
+      expect.anything(),
+      "live runner adoption failed but registration is not safe to replace",
+    );
+  });
+
+  it("refuses to reap while the runner settlement is pending", async () => {
+    const { task: target, runner } = runningTask();
+    const subject = makeCentralSubject({
+      tasks: [target],
+      readCentralSession: async () => null,
+      hasPendingRunnerSettlement: () => true,
+    });
+
+    await settle(subject);
+
+    expect(subject.retireTerminalRegistration).not.toHaveBeenCalled();
+    expect(subject.forgetRunnerRecoveryTask).not.toHaveBeenCalled();
+    expect(target.runner).toBe(runner);
+    expect(subject.logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionId: "session-a" }),
+      "runner central check failed",
+    );
   });
 });
 

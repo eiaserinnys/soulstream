@@ -28,6 +28,7 @@ const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as
 const COMMAND_ID = "execute-lifecycle";
 const MATCHING_COMMAND = COMMAND_ID;
 const MISMATCHED_COMMAND = "execute-other";
+const SESSION_ID = "session-a";
 const STARTED_AT = "2026-11-13T00:00:01.000Z";
 const STEP_AT = "2026-11-13T00:00:02.000Z";
 
@@ -42,22 +43,26 @@ afterEach(async () => {
 type Outcome = "changed" | "unchanged" | "rejected";
 
 describe("runner lifecycle decision table against real SQLite", () => {
-  it("matches every state, step, and command match combination", async () => {
-    const outcomes: Record<string, Outcome> = {};
-    for (const row of runnerLifecycleDecisionTable()) {
-      const path = await createRunner();
-      arrangeState(path, row.state);
-      outcomes[`${row.state}/${row.step}/${row.commandMatches}`] =
-        await executeStep(path, row);
-    }
+  it.each(["bootstrap", "prebootstrap"] as const)(
+    "matches every state, step, and command match combination on the %s table",
+    async (layout) => {
+      const outcomes: Record<string, Outcome> = {};
+      for (const row of runnerLifecycleDecisionTable()) {
+        const path = await createRunner(layout);
+        arrangeState(path, row.state);
+        outcomes[`${row.state}/${row.step}/${row.commandMatches}`] =
+          await executeStep(path, row);
+      }
 
-    for (const row of runnerLifecycleDecisionTable()) {
-      expect(
-        outcomes[`${row.state}/${row.step}/${row.commandMatches}`],
-        `${row.state}/${row.step}/${row.commandMatches}`,
-      ).toBe(expectedOutcome(row));
-    }
-  }, 300_000);
+      for (const row of runnerLifecycleDecisionTable()) {
+        expect(
+          outcomes[`${row.state}/${row.step}/${row.commandMatches}`],
+          `${layout}: ${row.state}/${row.step}/${row.commandMatches}`,
+        ).toBe(expectedOutcome(row));
+      }
+    },
+    300_000,
+  );
 
   it("ignores a late finish after close instead of overriding the closed state", async () => {
     const path = await createRunner();
@@ -150,19 +155,23 @@ function expectedOutcome(row: RunnerLifecycleDecisionRow): Outcome {
   return "rejected";
 }
 
-async function createRunner(): Promise<string> {
+async function createRunner(
+  layout: "bootstrap" | "prebootstrap" = "bootstrap",
+): Promise<string> {
   const directory = await mkdtemp(join(tmpdir(), "soulstream-runner-lifecycle-"));
   directories.push(directory);
   const path = join(directory, "runner.sqlite");
   const outbox = await RunnerSqliteEventOutbox.create(path);
-  await outbox.initializeBootstrap(bootstrapInput());
+  if (layout === "bootstrap") {
+    await outbox.initializeBootstrap(bootstrapInput());
+  }
   outbox.close();
   return path;
 }
 
 function arrangeState(path: string, state: RunnerLifecycleState): void {
   if (state === "none") return;
-  const lifecycle = RunnerSqliteLifecycle.open(path);
+  const lifecycle = RunnerSqliteLifecycle.open(path, SESSION_ID);
   try {
     lifecycle.begin({
       pid: process.pid,
@@ -200,7 +209,7 @@ async function executeStep(
   path: string,
   row: RunnerLifecycleDecisionRow,
 ): Promise<Outcome> {
-  const lifecycle = RunnerSqliteLifecycle.open(path);
+  const lifecycle = RunnerSqliteLifecycle.open(path, SESSION_ID);
   try {
     const before = lifecycle.read();
     const commandId = row.commandMatches ? MATCHING_COMMAND : MISMATCHED_COMMAND;

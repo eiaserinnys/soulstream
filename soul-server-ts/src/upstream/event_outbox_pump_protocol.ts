@@ -75,6 +75,8 @@ export type EventAppendAcknowledgement = {
   event_id: number;
   effect_application?: {
     applied: boolean;
+    /** 적용하지 않았을 때 서버가 실어 보내는 사유다. 없을 수 있다. */
+    rejection_reason?: string;
     canonical_session: EventCanonicalSessionProjection;
     canonical_execution_registration?: EventCanonicalExecutionRegistrationProjection | null;
     canonical_execution_ownership?: EventCanonicalExecutionOwnershipProjection | null;
@@ -177,6 +179,10 @@ function isValidEffectApplication(
 ): boolean {
   if (value === undefined) return true;
   if (typeof value.applied !== "boolean") return false;
+  if (
+    value.rejection_reason !== undefined
+    && typeof value.rejection_reason !== "string"
+  ) return false;
   if (!isValidCanonicalExecutionRegistration(
     value.canonical_execution_registration,
   )) return false;

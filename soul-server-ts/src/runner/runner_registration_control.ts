@@ -8,8 +8,32 @@ type RegistrationSpawner = Pick<
   "invalidateRegistration" | "retireTerminalRegistration" | "terminate"
 > & Partial<Pick<RunnerProcessSpawner, "disposeUnprovenRegistration">>;
 
+/** 이 세션의 완료 정산 미결이 있는지 묻는 포트다. 미결이면 등록을 은퇴하지 않는다. */
+export type RunnerSettlementPendingProbe = (
+  registration: RunnerRegistration,
+) => boolean | Promise<boolean>;
+
+/** 운영 공급자다. 실제 영속은 카드 #1266이 맡는다. */
+export const noPendingRunnerSettlement: RunnerSettlementPendingProbe = () => false;
+
 export class RunnerRegistrationControl {
-  constructor(private readonly spawner: RegistrationSpawner = new RunnerProcessSpawner()) {}
+  constructor(
+    private readonly spawner: RegistrationSpawner = new RunnerProcessSpawner(),
+    private readonly hasPendingRunnerSettlement: RunnerSettlementPendingProbe =
+      noPendingRunnerSettlement,
+  ) {}
+
+  /** 완료 정산 미결이면 은퇴·처형을 거절한다. 거둠 경로도 먼저 이 문을 지난다. */
+  async assertNoPendingSettlement(
+    registration: RunnerRegistration,
+  ): Promise<void> {
+    if (await this.hasPendingRunnerSettlement(registration)) {
+      throw new RunnerMutationFailure(
+        "runner_settlement_pending",
+        `runner settlement is pending for ${registration.config.sessionId}`,
+      );
+    }
+  }
 
   /**
    * An incomplete registration identity is residue, not proof of a live runner.
@@ -47,6 +71,7 @@ export class RunnerRegistrationControl {
   }
 
   async retireTerminal(registration: RunnerRegistration): Promise<void> {
+    await this.assertNoPendingSettlement(registration);
     if (!registration.pidAlive && registration.pidStartIdentity === null) {
       await this.retireReleasedTerminal(registration, async () => true);
       return;
@@ -61,6 +86,7 @@ export class RunnerRegistrationControl {
     registration: RunnerRegistration,
     confirmRetirementStillValid: () => Promise<boolean>,
   ): Promise<void> {
+    await this.assertNoPendingSettlement(registration);
     if (
       registration.pidAlive
       || registration.pidStartIdentity !== null

@@ -12,6 +12,8 @@ const INTERNAL_DEDUPE_KEY = "_dedupe_key";
 export type EventSessionTransitionApplication = {
   eventId: number;
   applied: boolean;
+  /** 서버가 거절 사유를 실어 보냈을 때만 있다. */
+  rejectionReason?: string;
   canonicalSession: EventCanonicalSessionProjection;
   canonicalExecutionRegistration?: ExecutionRegistration | null;
 };

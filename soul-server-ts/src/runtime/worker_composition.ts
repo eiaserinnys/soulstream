@@ -326,6 +326,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     closedTailDrainer: runnerProcess?.closedTailDrainer,
     taskManager,
     taskExecutor: taskRuntime.taskExecutor,
+    readCentralSession: (sessionId) => db.getSession(sessionId),
     logger,
     ...(params.nodeStallMonitor ? { nodeStallMonitor: params.nodeStallMonitor } : {}),
     ...(claudeRuntime.backgroundLifecycle
