@@ -70,6 +70,7 @@ from playwright.sync_api import Page, sync_playwright
 THEMES = ("light", "dark")
 WIDE = 1440
 NARROW = 390
+INLINE = 1024
 CARD_SCENES = ("ga", "na", "da", "ra", "legacy")
 PAS_COLLAPSED = ("ga", "da", "ra", "legacy")
 PAS_EXPANDED = ("ga", "na")
@@ -773,6 +774,8 @@ def capture_paging(page: Page, base: str, out: Path, bubble: bool, theme: str) -
     """긴 질문 장에서 한 줄 카드 장으로 넘기며 판 높이와 아래 줄 좌표를 잰다."""
     width = WIDE if bubble else NARROW
     open_sheet(page, base, "ga", bubble=bubble, label=f"paging-{width}-{theme}")
+    # 카드 #1197: 포인터가 판 안에 있으면 다루기 붙들기가 걸린다. 이 장면은 포인터가 판 밖일 때를 잰다.
+    page.mouse.move(2, page.viewport_size["height"] - 2)
     before = wait_paging_settled(page)
     long_path = shot(page, out, f"card-question-pas-paging-long-{width}-{theme}", SCREEN_SCOPE)
     if bubble:
@@ -792,6 +795,109 @@ def capture_paging(page: Page, base: str, out: Path, bubble: bool, theme: str) -
         "after": after,
         "failures": judge_paging(bubble, before, after),
     }
+
+
+def scroll_track(page: Page, direction: str) -> None:
+    """넘기기 단추가 없는 폭에서는 트랙을 실제로 스크롤한다."""
+    page.evaluate(
+        "(direction) => { const track = document.querySelector('[data-testid=\"card-question-review\"] .pas-report-track');"
+        " track.scrollTo({ left: direction === 'next' ? track.clientWidth : 0, behavior: 'smooth' }); }",
+        direction,
+    )
+
+
+def capture_inline_hold(page: Page, base: str, out: Path, theme: str) -> dict:
+    """캐릭터를 숨긴 1024 인라인 띠에서 판을 다루는 동안 넘기기 단추 줄이 제자리에 남는지 잰다.
+
+    포인터가 판 밖일 때를 기준으로 잰 뒤, 판 안에 포인터를 둔 채 긴 장에서 짧은 장으로,
+    짧은 장에서 긴 장으로 넘기고, 마지막에 포인터를 판 밖으로 뺀다.
+    """
+    label = f"inline-hold-{INLINE}-{theme}"
+    outside = (2, page.viewport_size["height"] - 2)
+    open_sheet(page, base, "ga", bubble=False, label=label)
+    page.mouse.move(*outside)
+    settle(page)
+    long_state = wait_paging_settled(page)
+    # 기준: 포인터가 판 밖일 때 짧은 장은 판을 줄이고 넘기기 줄을 올린다.
+    scroll_track(page, "next")
+    plain_short = wait_paging_settled(page)
+    scroll_track(page, "prev")
+    long_again = wait_paging_settled(page)
+    deck_box = page.locator(f"{SCREEN_SCOPE} .pas-report").first.bounding_box()
+    inside = (deck_box["x"] + deck_box["width"] / 2, deck_box["y"] + 24)
+    page.mouse.move(*inside)
+    page.wait_for_timeout(150)
+    # 긴 장 -> 짧은 장: 포인터가 판 안에 있으면 판 높이와 다음 장 줄 top이 그대로다.
+    page.get_by_role("button", name="다음 장").click()
+    held_short = wait_paging_settled(page)
+    long_to_short = shot(page, out, f"card-question-inline-hold-long-to-short-{INLINE}-{theme}", SCREEN_SCOPE)
+    # 포인터가 판을 떠나면 지금 장 높이로 맞춘다.
+    page.mouse.move(*outside)
+    released_short = wait_paging_settled(page)
+    released = shot(page, out, f"card-question-inline-hold-released-{INLINE}-{theme}", SCREEN_SCOPE)
+    # 짧은 장 -> 긴 장: 포인터가 판 안에 있으면 긴 장 높이로 커진다.
+    page.mouse.move(*inside)
+    page.wait_for_timeout(150)
+    page.get_by_role("button", name="앞 장").click()
+    held_long = wait_paging_settled(page)
+    short_to_long = shot(page, out, f"card-question-inline-hold-short-to-long-{INLINE}-{theme}", SCREEN_SCOPE)
+    failures = judge_inline_hold(label, long_state, plain_short, long_again, held_short, released_short, held_long)
+    return {
+        "capture": f"inline-hold-{INLINE}-{theme}",
+        "surface": "band",
+        "width": INLINE,
+        "paths": {"longToShort": long_to_short, "released": released, "shortToLong": short_to_long},
+        "long": long_state,
+        "plainShort": plain_short,
+        "longAgain": long_again,
+        "heldShort": held_short,
+        "releasedShort": released_short,
+        "heldLong": held_long,
+        "failures": failures,
+    }
+
+
+def judge_inline_hold(label: str, long_state: dict, plain_short: dict, long_again: dict,
+                      held_short: dict, released_short: dict, held_long: dict) -> list[dict]:
+    failures: list[dict] = []
+
+    def fail(check: str, detail=None) -> None:
+        failures.append({"check": check, "surface": "band", "label": label, "detail": detail})
+
+    numeric = ("deckHeight", "navTop", "contentHeight")
+    for name, state in (("long", long_state), ("plainShort", plain_short), ("longAgain", long_again),
+                        ("heldShort", held_short), ("releasedShort", released_short), ("heldLong", held_long)):
+        missing = [key for key in numeric if state[key] is None]
+        if missing:
+            fail("inlineHoldMeasured", {"state": name, "missing": missing})
+            return failures
+    if long_state["sheet"] == plain_short["sheet"] or plain_short["sheet"] == long_again["sheet"]:
+        fail("pageChanged", {"long": long_state["sheet"], "plainShort": plain_short["sheet"],
+                             "longAgain": long_again["sheet"]})
+    if plain_short["deckHeight"] > long_state["deckHeight"] - 20:
+        fail("shortSheetShrinksDeck", {"before": long_state["deckHeight"], "after": plain_short["deckHeight"]})
+    if plain_short["navTop"] >= long_state["navTop"]:
+        fail("bandNavTopRises", {"before": long_state["navTop"], "after": plain_short["navTop"]})
+    # 다루는 동안: 긴 장에서 짧은 장으로 넘겨도 판 높이와 다음 장 줄 top이 그대로다.
+    if held_short["sheet"] == long_again["sheet"]:
+        fail("heldPageChanged", {"before": long_again["sheet"], "after": held_short["sheet"]})
+    if abs(held_short["deckHeight"] - long_again["deckHeight"]) > 1:
+        fail("heldDeckHeight", {"before": long_again["deckHeight"], "after": held_short["deckHeight"]})
+    if abs(held_short["navTop"] - long_again["navTop"]) > 1:
+        fail("heldNavTop", {"before": long_again["navTop"], "after": held_short["navTop"]})
+    if held_short["contentHeight"] > long_again["contentHeight"] - 20:
+        fail("heldShortContent", {"before": long_again["contentHeight"], "after": held_short["contentHeight"]})
+    # 다루기가 끝나면 지금 장(짧은 장) 높이로 한 번에 맞춘다.
+    if abs(released_short["deckHeight"] - plain_short["deckHeight"]) > 1:
+        fail("releasedDeckHeight", {"expected": plain_short["deckHeight"], "actual": released_short["deckHeight"]})
+    if abs(released_short["navTop"] - plain_short["navTop"]) > 1:
+        fail("releasedNavTop", {"expected": plain_short["navTop"], "actual": released_short["navTop"]})
+    # 짧은 장에서 긴 장으로 넘기면 긴 장 높이로 커진다.
+    if abs(held_long["deckHeight"] - long_again["deckHeight"]) > 1:
+        fail("grownDeckHeight", {"expected": long_again["deckHeight"], "actual": held_long["deckHeight"]})
+    if abs(held_long["navTop"] - long_again["navTop"]) > 1:
+        fail("grownNavTop", {"expected": long_again["navTop"], "actual": held_long["navTop"]})
+    return failures
 
 
 def judge_paging(bubble: bool, before: dict, after: dict) -> list[dict]:
@@ -1274,6 +1380,13 @@ def main() -> int:
                 frame = capture_paging(page, base, out, True, theme)
                 frames.append(frame)
                 failures.extend({"capture": frame["capture"], **failure} for failure in frame["failures"])
+
+                # 카드 #1197: 캐릭터를 숨긴 1024 인라인 띠에서 판을 다루는 동안 넘기기 단추 줄이 제자리에 남는다.
+                page.set_viewport_size({"width": INLINE, "height": 1200})
+                frame = capture_inline_hold(page, base, out, theme)
+                frames.append(frame)
+                failures.extend({"capture": frame["capture"], **failure} for failure in frame["failures"])
+                page.set_viewport_size({"width": WIDE, "height": 900})
 
                 theme_interactions = interaction_checks(page, base, out, theme)
                 interactions[theme] = theme_interactions

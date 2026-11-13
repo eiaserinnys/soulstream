@@ -40,8 +40,12 @@ comment composer's left and right lines within 1px.
 
 Paging evidence (card #1197): the deck height follows the visible sheet, so
 paging from the long question sheet to the one-line card sheet shortens the
-deck. The iPad bubble keeps its bottom, footer and nav row in place; the phone
-band rises with the shorter deck. Captures are card-question-paging-{long,short}.
+deck. The iPad bubble keeps its bottom, footer and nav row in place; the
+top-anchored phone band keeps its top and lets the footer follow the content end.
+Captures are card-question-paging-{long,short}. The character-hidden iPad 820
+band also checks that a touch inside the deck holds the deck height and nav row
+until a touch starts outside the deck, then snaps to the visible sheet
+(card-question-band-hold-*).
 """
 from __future__ import annotations
 
@@ -213,6 +217,8 @@ PAGING_SCRIPT = r"""
   return {
     page: page ? (page.textContent || '').trim() : null,
     sheet: testId(sheet),
+    // 검수 창이 말풍선 자리에 그렸는지, 위에 붙은 띠로 그렸는지.
+    bubble: Boolean(deck && deck.closest('[data-testid="card-question-pas-bubble"]')),
     deckHeight: deck ? round(deck.getBoundingClientRect().height) : null,
     deckTop: deck ? rect(deck).top : null,
     deckBottom: deck ? rect(deck).bottom : null,
@@ -444,8 +450,29 @@ def wait_paging_settled(page: Page) -> dict:
     return settled
 
 
-def judge_paging(bubble: bool, label: str, before: dict, after: dict) -> list[dict]:
+def scroll_track(page: Page, direction: str) -> None:
+    """판 트랙을 실제로 스크롤한다(폰 띠와 같은 넘기기 경로)."""
+    page.evaluate(
+        "(direction) => { const track = document.querySelector('[data-testid=\"report-track\"]');"
+        " track.scrollLeft = direction === 'next' ? track.clientWidth : 0;"
+        " track.dispatchEvent(new Event('scroll', { bubbles: true })); }",
+        direction,
+    )
+
+
+def touch(cdp, kind: str, x: float = 0, y: float = 0) -> None:
+    """CDP로 터치를 보낸다. RNW가 onTouchStart/onTouchEnd로 전달한다."""
+    if kind == "start":
+        cdp.send("Input.dispatchTouchEvent",
+                 {"type": "touchStart", "touchPoints": [{"x": x, "y": y, "id": 1}]})
+    else:
+        cdp.send("Input.dispatchTouchEvent", {"type": "touchEnd", "touchPoints": []})
+
+
+def judge_paging(label: str, before: dict, after: dict) -> list[dict]:
     failures: list[dict] = []
+    # 폭이 아니라 검수 창이 실제로 그린 자리(말풍선/위에 붙은 띠)로 판정한다.
+    bubble = bool(before.get("bubble"))
 
     def fail(check: str, detail) -> None:
         failures.append({"check": check, "label": label, "surface": "bubble" if bubble else "band", "detail": detail})
@@ -469,16 +496,25 @@ def judge_paging(bubble: bool, label: str, before: dict, after: dict) -> list[di
         fail("short sheet shrinks deck", {"before": before["deckHeight"], "after": after["deckHeight"]})
     if after["contentHeight"] > before["contentHeight"] - 20:
         fail("short sheet shorter content", {"before": before["contentHeight"], "after": after["contentHeight"]})
-    # 아래가 붙박인 자리(말풍선과 발치 띠)라 판 바닥과 그 위의 아래 줄 좌표가 그대로다.
-    if abs(after["deckBottom"] - before["deckBottom"]) > 1:
-        fail("deck bottom held", {"before": before["deckBottom"], "after": after["deckBottom"]})
-    if abs(after["footerTop"] - before["footerTop"]) > 2:
-        fail("button row top held", {"before": before["footerTop"], "after": after["footerTop"]})
-    if bubble and abs(after["navTop"] - before["navTop"]) > 1:
-        fail("nav top held", {"before": before["navTop"], "after": after["navTop"]})
-    # 판이 짧아진 만큼 위쪽 끝이 내려온다.
-    if after["deckTop"] < before["deckTop"] + 20:
-        fail("deck top lowers", {"before": before["deckTop"], "after": after["deckTop"]})
+    if bubble:
+        # 아래가 붙박인 말풍선이라 판 바닥과 그 위의 아래 줄 좌표가 그대로다.
+        if abs(after["deckBottom"] - before["deckBottom"]) > 1:
+            fail("deck bottom held", {"before": before["deckBottom"], "after": after["deckBottom"]})
+        if abs(after["footerTop"] - before["footerTop"]) > 2:
+            fail("button row top held", {"before": before["footerTop"], "after": after["footerTop"]})
+        if abs(after["navTop"] - before["navTop"]) > 1:
+            fail("nav top held", {"before": before["navTop"], "after": after["navTop"]})
+        # 판이 짧아진 만큼 위쪽 끝이 내려온다.
+        if after["deckTop"] < before["deckTop"] + 20:
+            fail("deck top lowers", {"before": before["deckTop"], "after": after["deckTop"]})
+    else:
+        # 위에 붙은 띠는 위끝이 그대로이고 아래 줄이 내용 끝을 따라 올라온다.
+        if abs(after["deckTop"] - before["deckTop"]) > 1:
+            fail("deck top held", {"before": before["deckTop"], "after": after["deckTop"]})
+        if after["deckBottom"] > before["deckBottom"] - 20:
+            fail("deck bottom rises", {"before": before["deckBottom"], "after": after["deckBottom"]})
+        if after["footerTop"] > before["footerTop"] - 20:
+            fail("button row rises", {"before": before["footerTop"], "after": after["footerTop"]})
     return failures
 
 
@@ -490,17 +526,16 @@ def measure_paging(page: Page, base: str, width: int, theme: str, output: Path, 
     before = wait_paging_settled(page)
     long_name = f"card-question-paging-long-{width}-{theme}.png"
     page.locator('[data-testid="card-question-pas-sample"]').first.screenshot(path=str(output / long_name))
-    if width >= 768:
-        # 아래 줄의 이동 단추로 넘긴다.
+    if count(page.get_by_test_id("report-next-touch")) > 0:
+        # 아래 줄의 이동 단추로 넘긴다(아이패드 띠와 말풍선).
         page.get_by_test_id("report-next-touch").click()
     else:
         # 폰에서는 이동 단추를 숨기므로 트랙을 실제로 스크롤한다.
-        page.evaluate("() => { const track = document.querySelector('[data-testid=\"report-track\"]');"
-                      " track.scrollLeft = track.clientWidth; track.dispatchEvent(new Event('scroll', { bubbles: true })); }")
+        scroll_track(page, "next")
     after = wait_paging_settled(page)
     short_name = f"card-question-paging-short-{width}-{theme}.png"
     page.locator('[data-testid="card-question-pas-sample"]').first.screenshot(path=str(output / short_name))
-    failures = judge_paging(width >= 768, label, before, after)
+    failures = judge_paging(label, before, after)
     result["failures"].extend(failures)
     return {
         "state": "pas-paging",
@@ -512,9 +547,149 @@ def measure_paging(page: Page, base: str, width: int, theme: str, output: Path, 
         "capture": short_name,
         "blockCapture": None,
         "paths": {"long": long_name, "short": short_name},
-        "bubble": width >= 768,
+        "bubble": bool(before.get("bubble")),
         "before": before,
         "after": after,
+        "failures": failures,
+        "alignmentFailures": failures,
+    }
+
+
+def judge_band_hold(label: str, long_state: dict, plain_short: dict, long_again: dict,
+                    held_short: dict, released_short: dict, held_long: dict) -> list[dict]:
+    """캐릭터를 숨긴 띠: 다루는 동안 판이 줄지 않고, 다루기가 끝나면 지금 장 높이가 된다."""
+    failures: list[dict] = []
+
+    def fail(check: str, detail) -> None:
+        failures.append({"check": check, "label": label, "surface": "band-hold", "detail": detail})
+
+    named = (("long", long_state), ("plain short", plain_short), ("long again", long_again),
+             ("held short", held_short), ("released short", released_short), ("held long", held_long))
+    for name, state in named:
+        missing = [key for key in ("deckHeight", "deckTop", "deckBottom", "contentHeight", "footerTop", "navTop")
+                   if state[key] is None]
+        if missing:
+            fail("band hold measured", {"state": name, "missing": missing})
+            return failures
+    if long_again["sheet"] != long_state["sheet"]:
+        fail("returned to long sheet", {"long": long_state["sheet"], "again": long_again["sheet"]})
+    if plain_short["sheet"] == long_state["sheet"]:
+        fail("page changed", {"long": long_state["sheet"], "short": plain_short["sheet"]})
+    # 기준선: 다루지 않을 때는 짧은 장이 판과 넘기기 줄을 실제로 줄인다.
+    if plain_short["deckHeight"] > long_state["deckHeight"] - 20:
+        fail("short sheet shrinks deck", {"long": long_state["deckHeight"], "short": plain_short["deckHeight"]})
+    if plain_short["navTop"] > long_state["navTop"] - 20:
+        fail("short sheet raises nav row", {"long": long_state["navTop"], "short": plain_short["navTop"]})
+    if abs(plain_short["deckTop"] - long_state["deckTop"]) > 1:
+        fail("deck top held without handling", {"long": long_state["deckTop"], "short": plain_short["deckTop"]})
+    # 다루는 동안: 짧은 장으로 넘겨도 판 높이와 넘기기 줄이 긴 장 자리에 그대로다.
+    if held_short["sheet"] != plain_short["sheet"]:
+        fail("page changed while handling", {"short": plain_short["sheet"], "held": held_short["sheet"]})
+    if abs(held_short["deckHeight"] - long_again["deckHeight"]) > 1:
+        fail("held deck height", {"long": long_again["deckHeight"], "held": held_short["deckHeight"]})
+    if abs(held_short["navTop"] - long_again["navTop"]) > 1:
+        fail("held nav row", {"long": long_again["navTop"], "held": held_short["navTop"]})
+    if abs(held_short["deckTop"] - long_again["deckTop"]) > 1:
+        fail("held deck top", {"long": long_again["deckTop"], "held": held_short["deckTop"]})
+    if held_short["contentHeight"] > long_again["contentHeight"] - 20:
+        fail("held short content", {"long": long_again["contentHeight"], "held": held_short["contentHeight"]})
+    # 판 밖 터치가 시작되면 지금 장 높이로 한 번에 맞춘다.
+    if abs(released_short["deckHeight"] - plain_short["deckHeight"]) > 1:
+        fail("released deck height", {"plain": plain_short["deckHeight"], "released": released_short["deckHeight"]})
+    if abs(released_short["navTop"] - plain_short["navTop"]) > 1:
+        fail("released nav row", {"plain": plain_short["navTop"], "released": released_short["navTop"]})
+    # 다시 다루며 긴 장으로 넘기면 그만큼 자란다.
+    if held_long["sheet"] != long_again["sheet"]:
+        fail("long sheet shown again", {"long": long_again["sheet"], "held": held_long["sheet"]})
+    if abs(held_long["deckHeight"] - long_again["deckHeight"]) > 1:
+        fail("grows to long deck height", {"long": long_again["deckHeight"], "held": held_long["deckHeight"]})
+    if abs(held_long["navTop"] - long_again["navTop"]) > 1:
+        fail("grows nav row", {"long": long_again["navTop"], "held": held_long["navTop"]})
+    return failures
+
+
+def measure_band_hold(page: Page, base: str, width: int, theme: str, output: Path, result: dict) -> dict:
+    """캐릭터를 숨긴 아이패드 띠에서 판을 다루는 동안 판 높이와 넘기기 줄이 제자리인지 잰다."""
+    label = f"band-hold-{width}-{theme}"
+    goto(page, base, "pas", "ga", False, theme, width, {"character": "0"})
+    settle(page)
+    root = page.locator('[data-testid="card-question-pas-sample"]').first
+    long_state = wait_paging_settled(page)
+    scroll_track(page, "next")
+    plain_short = wait_paging_settled(page)
+    plain_name = f"card-question-band-hold-plain-short-{width}-{theme}.png"
+    root.screenshot(path=str(output / plain_name))
+    scroll_track(page, "prev")
+    long_again = wait_paging_settled(page)
+
+    deck = page.get_by_test_id("report-deck").first
+    box = deck.bounding_box()
+    if box is None:
+        failures = [{"check": "band hold deck", "label": label, "detail": "판을 찾지 못했다"}]
+        result["failures"].extend(failures)
+        return {"state": "pas-band-hold", "surface": "pas", "scene": "ga", "width": width, "theme": theme,
+                "expanded": False, "capture": None, "blockCapture": None, "paths": {},
+                "long": long_state, "plainShort": plain_short, "longAgain": long_again,
+                "failures": failures, "alignmentFailures": failures}
+
+    cdp = page.context.new_cdp_session(page)
+    # 판 안에서 터치가 시작되면 다루기가 걸린다.
+    touch(cdp, "start", box["x"] + box["width"] / 2, box["y"] + 24)
+    page.wait_for_timeout(200)
+    scroll_track(page, "next")
+    held_short = wait_paging_settled(page)
+    held_name = f"card-question-band-hold-long-to-short-{width}-{theme}.png"
+    root.screenshot(path=str(output / held_name))
+    touch(cdp, "end")
+    page.wait_for_timeout(150)
+
+    # 판 밖 터치가 시작되면 다루기가 풀리고 지금 장 높이로 맞춘다.
+    outside = page.get_by_test_id("card-question-pas-list").first.bounding_box()
+    if outside is None:
+        failures = [{"check": "band hold outside", "label": label, "detail": "판 밖 자리를 찾지 못했다"}]
+        result["failures"].extend(failures)
+        return {"state": "pas-band-hold", "surface": "pas", "scene": "ga", "width": width, "theme": theme,
+                "expanded": False, "capture": held_name, "blockCapture": None, "paths": {"longToShort": held_name},
+                "long": long_state, "plainShort": plain_short, "longAgain": long_again, "heldShort": held_short,
+                "failures": failures, "alignmentFailures": failures}
+    touch(cdp, "start", outside["x"] + outside["width"] / 2, outside["y"] + min(outside["height"] / 2, 200))
+    page.wait_for_timeout(200)
+    released_short = wait_paging_settled(page)
+    released_name = f"card-question-band-hold-released-{width}-{theme}.png"
+    root.screenshot(path=str(output / released_name))
+    touch(cdp, "end")
+    page.wait_for_timeout(150)
+
+    # 짧은 장을 보는 채로 다시 판 안에서 다루면 긴 장으로 넘길 때 그만큼 자란다.
+    short_box = deck.bounding_box() or box
+    touch(cdp, "start", short_box["x"] + short_box["width"] / 2, short_box["y"] + 24)
+    page.wait_for_timeout(200)
+    scroll_track(page, "prev")
+    held_long = wait_paging_settled(page)
+    grown_name = f"card-question-band-hold-short-to-long-{width}-{theme}.png"
+    root.screenshot(path=str(output / grown_name))
+    touch(cdp, "end")
+    page.wait_for_timeout(150)
+
+    failures = judge_band_hold(label, long_state, plain_short, long_again, held_short, released_short, held_long)
+    result["failures"].extend(failures)
+    return {
+        "state": "pas-band-hold",
+        "surface": "pas",
+        "scene": "ga",
+        "width": width,
+        "theme": theme,
+        "expanded": False,
+        "capture": grown_name,
+        "blockCapture": None,
+        "paths": {"plainShort": plain_name, "longToShort": held_name,
+                  "released": released_name, "shortToLong": grown_name},
+        "long": long_state,
+        "plainShort": plain_short,
+        "longAgain": long_again,
+        "heldShort": held_short,
+        "releasedShort": released_short,
+        "heldLong": held_long,
         "failures": failures,
         "alignmentFailures": failures,
     }
@@ -1018,6 +1193,30 @@ def main() -> int:
                             measure_interactions(page, args.base_url, width, output, result)
                     finally:
                         context.close()
+                    # 카드 #1197: 캐릭터를 숨긴 아이패드 띠에서 판을 다루는 동안 판이 줄지 않는지 잰다.
+                    # 터치를 보내야 하므로 has_touch를 켠 문맥을 따로 연다.
+                    if width >= 768 and theme == "light":
+                        touch_context = browser.new_context(
+                            viewport={"width": width, "height": height},
+                            color_scheme=theme,
+                            device_scale_factor=1,
+                            has_touch=True,
+                        )
+                        touch_page = touch_context.new_page()
+                        touch_page.set_default_timeout(15000)
+                        touch_page.on("pageerror", lambda error, label=f"{width}-{theme}-touch":
+                                      result["pageErrors"].append(f"{label}: {error}"))
+                        touch_page.on("console", lambda message, label=f"{width}-{theme}-touch": (
+                            result["consoleErrors"].append(f"{label} console: {message.text}")
+                            if message.type == "error" else None
+                        ))
+                        touch_context.route("**/*", route_request)
+                        try:
+                            result["states"].append(measure_band_hold(
+                                touch_page, args.base_url, width, theme, output, result,
+                            ))
+                        finally:
+                            touch_context.close()
         finally:
             browser.close()
 
