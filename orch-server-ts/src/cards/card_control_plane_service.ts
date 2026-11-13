@@ -19,7 +19,9 @@ import type { AttachmentRef } from "@soulstream/wire-schema/attachments";
 import { attachmentRefIds, attachmentRefsOf, collectCardAttachmentRefs, collectCardItemAttachmentRefs, validateCardSourceRefsTx } from "./card_attachment_refs.js";
 import { requireCardAttachmentTx } from "./card_attachment_policy.js";
 import { normalizedMimeType, previewInfo } from "../attachments/attachment_read_http.js";
-import { mergeCardSourceAttachmentRefs, resolveCardLegacySourceRefsTx } from "./card_attachment_legacy_refs.js";
+import { normalizeAttachmentLegacyPath, attachmentScopeFromRegistrationScope } from "../attachments/attachment_read_service.js";
+import { createCardAttachmentPreparer, type CardAttachmentReusableAsset, type CardAttachmentSourceStoreDeps } from "../attachments/card_attachment_source_import.js";
+import { mergeCardSourceAttachmentRefs, resolveCardLegacySourceRefsTx, type CardLegacyLocation } from "./card_attachment_legacy_refs.js";
 import { applyCardMoveTx } from "./control_plane/card_move.js";
 import { readAssignedCardContext } from "./assigned_card_context.js";
 import { readSupervisedCardContext } from "./supervised_card_context.js";
@@ -68,6 +70,8 @@ type CreateCardParams = FolderActorParams & {
   nodeId?: string | null; modelPreset?: string | null; idempotencyKey?: string | null; brief?: string;
 };
 type AddCommentParams = CardMutationParams & { body:string; kind?:"comment" | "spoken"; mode?:"spoken" | "reply"; itemId?:number; questionId?:string };
+/** Path attachments already turned into R2 assets before the create transaction ran. */
+type PreparedCardAttachments = { refs: AttachmentRef[]; skip: CardLegacyLocation[] };
 type CardCommentRow = NonNullable<Awaited<ReturnType<CardRepository["getComment"]>>>;
 export type CardReportSyncParams = {
   previousStatus: CardStatus | undefined;
@@ -89,7 +93,8 @@ export class CardControlPlaneService {
     private readonly warn: (message: string) => void = console.warn,
     corsAllowedOrigins: readonly string[] = [],
     private readonly onQuestionAsked?: (input:{cardId:string;questionId:string})=>void | Promise<void>,
-    appendTimeline?: AppendReportTimeline) {
+    appendTimeline?: AppendReportTimeline,
+    private readonly attachmentPreparation?: CardAttachmentSourceStoreDeps) {
     this.repo=new CardRepository(repoSql, corsAllowedOrigins);
     this.core=new CardMutationCore(db,this.repo,broadcaster);
     this.reports=onReportsChanged ? new PersistentReportService(repoSql,onReportsChanged,undefined,appendTimeline) : undefined;
@@ -161,18 +166,56 @@ export class CardControlPlaneService {
   async createCard(params: CreateCardParams) {
     params = await this.prepareCreateCardParams(this.repoSql, params);
     const id=randomUUID();
+    const prepared=await this.prepareCardAttachments(id,params);
     const a=assigneeToFields(params.assignee);
-    const result=await this.core.mutate(this.createCardMutation(params,id))
+    const result=await this.core.mutate(this.createCardMutation(params,id,prepared))
       .catch(error=>translateAssigneeConflict(this.repoSql,error,a.assignee_session_id));
     if (!result.idempotent) this.onMutation?.({result});
     return result;
+  }
+  /**
+   * Path attachments become R2 assets before the card row exists. An agent's
+   * prepared assets enter attachment_refs directly (the create-time card has no
+   * assignee session for the link policy to accept); a user's preparation only
+   * leaves aliases for resolveCardLegacySourceRefsTx to link as before.
+   */
+  private async prepareCardAttachments(cardId:string,params:CreateCardParams):Promise<PreparedCardAttachments | null> {
+    const deps=this.attachmentPreparation;
+    const attachments=params.attachments ?? [];
+    if (deps===undefined || attachments.length===0) return null;
+    const email=normalizeActorEmail(params.actorUserId ?? "");
+    const owner=params.actorKind==="agent" && params.actorSessionId
+      ? {kind:"agent_session" as const,key:params.actorSessionId}
+      : params.actorKind==="user" && email.length>0 ? {kind:"user_email" as const,key:email} : null;
+    if (owner===null) return null;
+    const prepare=createCardAttachmentPreparer({...deps,findAsset:attachmentId=>this.findReusableAttachmentAsset(attachmentId)});
+    const refs:AttachmentRef[]=[];
+    const skip:CardLegacyLocation[]=[];
+    for (const attachment of attachments) {
+      const prepared=await prepare({cardId,owner,sourceNodeId:attachment.nodeId,sourceSessionId:params.actorSessionId ?? "",
+        path:attachment.path,name:attachment.name,mimeType:attachment.mimeType});
+      skip.push({nodeId:attachment.nodeId,path:normalizeAttachmentLegacyPath(attachment.path)});
+      if (params.actorKind==="agent" && !refs.some(ref=>ref.attachment_id===prepared.attachmentId))
+        refs.push({attachment_id:prepared.attachmentId});
+    }
+    return params.actorKind==="agent" ? {refs,skip} : {refs:[],skip:[]};
+  }
+  private async findReusableAttachmentAsset(attachmentId:string):Promise<CardAttachmentReusableAsset | null> {
+    const rows=await this.repoSql<{id:string;upload_status:string;registration_scope:unknown;source_session_id:string | null}[]>`
+      SELECT id,upload_status,registration_scope,source_session_id FROM file_assets
+      WHERE id=${attachmentId} AND storage_purpose='attachment' AND garbage_collected_at IS NULL LIMIT 1`;
+    const row=rows[0];
+    if (row===undefined || (row.upload_status!=="pending" && row.upload_status!=="committed")) return null;
+    const scope=attachmentScopeFromRegistrationScope(row.registration_scope);
+    return {attachmentId:row.id,uploadStatus:row.upload_status,
+      registrationSessionId:scope?.type==="session" ? scope.id : row.source_session_id};
   }
   async createCardTx(
     sql: RepositorySql,
     params: CreateCardParams & {cardId:string},
   ): Promise<{operation:FolderOperationRow;eventId:number | null;card:CardRow}> {
     const prepared=await this.prepareCreateCardParams(sql,params);
-    const result=await this.core.mutateTx(sql,this.createCardMutation(prepared,params.cardId));
+    const result=await this.core.mutateTx(sql,this.createCardMutation(prepared,params.cardId,null));
     const card=(await sql<CardRow[]>`SELECT * FROM cards WHERE id=${params.cardId}`)[0];
     if (!card) throw new Error("Card was not stored");
     return {...result,card};
@@ -185,7 +228,7 @@ export class CardControlPlaneService {
     if (!assignee) throw invalidCard("Creating session must have an agent_id");
     return {...params,assignee,nodeId:params.nodeId ?? creator?.node_id,modelPreset:params.modelPreset ?? creator?.model_preset};
   }
-  private createCardMutation(params:CreateCardParams,id:string):FolderMutateParams {
+  private createCardMutation(params:CreateCardParams,id:string,prepared:PreparedCardAttachments | null):FolderMutateParams {
     const assignee=assigneeToFields(params.assignee);
     return { folderId:params.folderId,targetKind:"card",targetId:id,operationType:"create_card",actor:params,
       idempotencyKey:params.idempotencyKey,payload:{ title:params.title,request:params.request,brief:params.brief ?? "",attachments:params.attachments ?? [],queue:params.queue ?? false,assignee:params.assignee ?? null,nodeId:params.nodeId ?? null,modelPreset:params.modelPreset ?? null },
@@ -198,8 +241,12 @@ export class CardControlPlaneService {
         const queuePosition=initial.queue_position_key;
         if (assignee.assignee_session_id) await assertSingleCardAssignee(sql,assignee.assignee_session_id,id);
         await validateCardSourceRefsTx(sql,{cardId:id,actorKind:params.actorKind ?? "agent",actorSessionId:params.actorSessionId,body:params.request,existingRefs:[]});
-        const legacyRefs=await resolveCardLegacySourceRefsTx(sql,{cardId:id,assigneeSessionId:assignee.assignee_session_id,actor:params,body:params.request,format:"markdown",attachments:params.attachments ?? []});
-        const refs=mergeCardSourceAttachmentRefs(collectCardAttachmentRefs({request:params.request,attachments:params.attachments ?? [],items:[],previousRefs:[],previousItems:[]}),legacyRefs);
+        const legacyRefs=await resolveCardLegacySourceRefsTx(sql,{cardId:id,assigneeSessionId:assignee.assignee_session_id,actor:params,body:params.request,format:"markdown",attachments:params.attachments ?? [],
+          ...(prepared===null ? {} : {skipLocations:prepared.skip})});
+        const refs=mergeCardSourceAttachmentRefs(
+          [...collectCardAttachmentRefs({request:params.request,attachments:params.attachments ?? [],items:[],previousRefs:[],previousItems:[]}),
+            ...(prepared?.refs ?? [])],
+          legacyRefs);
         await sql`INSERT INTO cards(id,folder_id,position_key,queue_position_key,title,request,brief,attachments,attachment_refs,status,
           assignee_kind,assignee_agent_id,assignee_session_id,assignee_user_id,node_id,model_preset,
           created_session_id,created_event_id,updated_session_id,updated_event_id)
@@ -806,3 +853,4 @@ async function assertKeptEvidenceUsableTx(sql:RepositorySql,id:string,type:"imag
     throw Object.assign(new Error("이미지 첨부가 아닙니다."),{statusCode:422,code:"ATTACHMENT_IMAGE_REQUIRED"});
 }
 function invalid(message:string) { return Object.assign(new Error(message),{ statusCode:422,code:"INVALID_CARD_REQUEST" }); }
+function normalizeActorEmail(value:string): string { return value.trim().toLowerCase(); }

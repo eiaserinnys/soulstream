@@ -1895,6 +1895,7 @@
           ]
         },
         "attachments": {
+          "description": "노드 파일 경로 첨부. 붙이는 순간 원래 노드에서 읽어 저장하며, 노드가 꺼져 있거나 파일을 못 읽으면 카드를 만들지 않는다.",
           "items": {
             "additionalProperties": false,
             "properties": {

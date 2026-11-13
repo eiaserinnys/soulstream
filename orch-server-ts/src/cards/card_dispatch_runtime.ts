@@ -195,6 +195,7 @@ export async function createCardDispatchRuntime(options: {
     appendTimeline: options.appendTimeline,
     corsAllowedOrigins: options.corsAllowedOrigins,
     onQuestionAsked: options.onQuestionAsked,
+    attachmentPreparation: options.attachmentImport,
   });
   const legacyOptions: import("./card_dispatcher.js").CardDispatcherOptions = {
     repository: cardDispatchRepository,

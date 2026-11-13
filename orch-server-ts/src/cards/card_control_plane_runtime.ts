@@ -1,4 +1,5 @@
 import { FolderContentSqlResolver } from "../board/folder_content_sql.js";
+import type { CardAttachmentSourceStoreDeps } from "../attachments/card_attachment_source_import.js";
 import type { LiveDbSqlResolver } from "../runtime/live_db_sql.js";
 import type { InMemorySseReplayBroadcaster, SessionStreamEvent } from "../sse/replay_broadcaster.js";
 import { CardControlPlaneService, type CardMutationChange } from "./card_control_plane_service.js";
@@ -15,6 +16,7 @@ export function createCardControlPlaneServiceProvider(options: {
   appendTimeline?: AppendReportTimeline;
   corsAllowedOrigins?: readonly string[];
   onQuestionAsked?: (input:{cardId:string;questionId:string})=>void | Promise<void>;
+  attachmentPreparation?: CardAttachmentSourceStoreDeps;
 }): () => Promise<CardControlPlaneService> {
   const resolver=new FolderContentSqlResolver(options.sqlResolver);
   let service: CardControlPlaneService | undefined;
@@ -35,7 +37,8 @@ export function createCardControlPlaneServiceProvider(options: {
       async emitCardUpdated(cardId, folderId) {
         options.broadcaster.append({ type: "card_updated", cardId, folderId });
       },
-    },options.onMutation,options.onReportsChanged,options.warn,options.corsAllowedOrigins,options.onQuestionAsked,options.appendTimeline);
+    },options.onMutation,options.onReportsChanged,options.warn,options.corsAllowedOrigins,options.onQuestionAsked,options.appendTimeline,
+      options.attachmentPreparation);
     return service;
   };
 }

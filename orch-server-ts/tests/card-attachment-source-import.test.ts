@@ -228,11 +228,11 @@ describe("card attachment source import", () => {
     expect(putSmall).toHaveBeenCalledTimes(1);
     expect(putSmall.mock.calls[0]![0].spec).toMatchObject({
       attachmentId,
-      owner: { kind: "agent_session", key: expect.any(String) },
+      owner: { kind: "user_email", key: OWNER },
       registration: {
         registrationScope: { type: "card", id: cardId },
         sourceNodeId: SOURCE_NODE,
-        sourceSessionId: expect.any(String),
+        sourceSessionId: "",
         outputCommandId: null,
       },
       originalName: "mock.png",
@@ -247,7 +247,9 @@ describe("card attachment source import", () => {
 
     const refs = await h.sql<Array<{ attachment_refs: Array<{ attachment_id: string }> }>>`
       SELECT attachment_refs FROM cards WHERE id=${cardId}`;
-    expect(refs[0]!.attachment_refs).toContainEqual({ attachment_id: attachmentId });
+    expect(refs[0]!.attachment_refs).toContainEqual(
+      expect.objectContaining({ attachment_id: attachmentId }),
+    );
   });
 
   it("reuses the stored alias on the second run without calling the source node", async () => {
@@ -273,10 +275,15 @@ describe("card attachment source import", () => {
   });
 
   it("fails without creating a session when the source node is disconnected", async () => {
+    // A card created before up-front import only stored the path; the run-time import still covers it.
+    const { cards, cardId } = await makeCard([], false);
+    const stored = [{ nodeId: SOURCE_NODE, path: REMOTE_IMAGE, name: "mock.png", mimeType: "image/png" }];
+    await h.sql`UPDATE cards SET status='queued', attachments=${h.sql.json(stored)} WHERE id=${cardId}`;
     readSource.mockRejectedValueOnce(
       new AttachmentTransportConnectionError(`Node is not connected: ${SOURCE_NODE}`),
     );
-    const { cards, cardId } = await makeCard([attachment()], true);
+    await runtime.dispatcher.checkLimits();
+    await runtime.dispatcher.drain();
 
     expect(createSession).not.toHaveBeenCalled();
     expect(sent.some(payload => payload.type === "create_session")).toBe(false);
