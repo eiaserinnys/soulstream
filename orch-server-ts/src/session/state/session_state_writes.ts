@@ -62,7 +62,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
     writesStatus: true,
     definition: "packages/db-schema/sql/schema.sql:1579",
     callSites: [
-      { file: "src/node/event_session_effect_applier.ts", line: 158 },
+      { file: "src/node/event_session_effect_applier.ts", line: 163 },
     ],
     note: "워크트리 게이트 뒤 실행 등록과 상태를 쓴다.",
   },
@@ -71,7 +71,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
     writesStatus: true,
     definition: "packages/db-schema/sql/schema.sql:4210",
     callSites: [
-      { file: "src/node/event_session_effect_applier.ts", line: 69 },
+      { file: "src/node/event_session_effect_applier.ts", line: 74 },
     ],
     note: "워크트리 게이트 뒤 상태와 검수 칸을 쓴다.",
   },
@@ -80,7 +80,7 @@ export const SESSION_SQL_WRITERS: SessionSqlWriter[] = [
     writesStatus: true,
     definition: "packages/db-schema/sql/schema.sql:1720",
     callSites: [
-      { file: "src/node/event_session_effect_applier.ts", line: 216 },
+      { file: "src/node/event_session_effect_applier.ts", line: 221 },
     ],
     note: "종료 상태, 사유, 검수 칸, 종료 리비전을 쓴다.",
   },
@@ -223,6 +223,7 @@ export const SESSION_STATUS_LITERAL_ALLOWLIST: SessionStatusLiteralFile[] = [
   { file: "src/node/control_ws_route.ts", comparisons: 1, lists: 0, sql: 0, note: "노드 제어 프레임 상태." },
   { file: "src/node/event_feed_projection_applier.ts", comparisons: 2, lists: 0, sql: 0, note: "사건 피드 표시 제목과 사건 종류." },
   { file: "src/node/event_ingress_repository.ts", comparisons: 0, lists: 0, sql: 2, note: "이벤트 수신 상태." },
+  { file: "src/node/event_session_gate.ts", comparisons: 0, lists: 0, sql: 1, note: "워크트리 점유 확인의 활성 세션 목록." },
   { file: "src/node/node_claude_auth_helpers.ts", comparisons: 1, lists: 0, sql: 0, note: "노드 응답 상태." },
   { file: "src/node/pending_commands.ts", comparisons: 1, lists: 0, sql: 0, note: "노드 응답 상태." },
   { file: "src/persistent-context/persistent_context_candidates.ts", comparisons: 0, lists: 2, sql: 2, note: "카드 상태." },

@@ -80,6 +80,8 @@ export function sessionFactsConsistent(
   if (
     command === "execution_registration" || command === "running_transition"
   ) {
+    // 잇기는 expected_terminal_event_id를 보내지 않으므로 새 실행일 때만 성립한다.
+    if (facts.adopt === true && facts.resume !== "fresh") return false;
     // 줄이 없으면 워크트리도 점유도 없다.
     if (value.status === "none") {
       return facts.worktree === "none" && facts.worktreeBusy === false;
@@ -112,6 +114,38 @@ export function sessionFactsConsistent(
 
 const TERMINAL_STATUSES = new Set(["completed", "error", "interrupted"]);
 
+/** 소유 노드 사실을 읽는 명령. 이 명령들은 owner=mismatch를 대표 한 칸으로 둔다. */
+const OWNER_COMMANDS = new Set<SessionDecisionCommand>([
+  "execution_registration",
+  "running_transition",
+  "terminal_transition",
+]);
+
+/**
+ * owner=mismatch는 상태 값마다 대표 한 칸만 둔다. 다른 사실은 그 상태에서
+ * 모순이 없는 대표값을 쓴다. 소유 노드 거절이 세션 없음 다음으로 먼저라
+ * 나머지 사실은 판정을 바꾸지 않는다.
+ */
+function representativeMismatchFacts(
+  value: SessionStateValue,
+  command: SessionDecisionCommand,
+): FiniteFacts {
+  if (command === "terminal_transition") {
+    return value.termination === "none"
+      ? { revision: "none", eventId: "positive", owner: "mismatch" }
+      : { revision: "less", eventId: "positive", owner: "mismatch" };
+  }
+  const terminal = value.termination === "recorded";
+  const facts: FiniteFacts = {
+    resume: terminal ? "terminal_match" : "fresh",
+    worktree: value.status === "none" ? "none" : "ready",
+    worktreeBusy: false,
+    owner: "mismatch",
+  };
+  if (command === "running_transition") facts.adopt = false;
+  return facts;
+}
+
 let cached: SessionDecisionRow[] | null = null;
 
 /**
@@ -128,7 +162,17 @@ export function sessionDecisionTable(): SessionDecisionRow[] {
     const payload = SESSION_TABLE_COMMAND[command];
     for (const value of states) {
       for (const facts of enumerateSessionFacts(command)) {
+        if (facts.owner === "mismatch") continue;
         if (!sessionFactsConsistent(value, command, facts)) continue;
+        rows.push({
+          state: value,
+          command: payload,
+          facts: { ...deriveSessionFacts(payload), ...facts },
+          decision: decideSessionTransition(value, payload, facts),
+        });
+      }
+      if (OWNER_COMMANDS.has(command)) {
+        const facts = representativeMismatchFacts(value, command);
         rows.push({
           state: value,
           command: payload,

@@ -207,6 +207,12 @@ export class NodeEventIngressController {
                           canonical_execution_ownership:
                             item.sessionEffectApplication.canonicalExecutionOwnership,
                         }),
+                    ...(item.sessionEffectApplication.rejectionReason === undefined
+                      ? {}
+                      : {
+                          rejection_reason:
+                            item.sessionEffectApplication.rejectionReason,
+                        }),
                   },
                 }
               : {}),

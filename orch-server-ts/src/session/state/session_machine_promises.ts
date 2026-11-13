@@ -41,6 +41,7 @@ export const SESSION_PROMISES: SessionPromiseDefinition[] = [
       && row.state.status === "interrupted"
       && row.state.termination === "none"
       && row.facts.revision === "none"
+      && row.facts.owner !== "mismatch"
       && (
         row.decision.kind !== "apply"
         || row.decision.next.termination !== "recorded"
@@ -95,7 +96,7 @@ export const SESSION_PROMISES: SessionPromiseDefinition[] = [
   {
     id: "terminal_to_running_only_resume",
     statement:
-      "종료 상태에서 실행 중으로 가는 길은 종료 재개를 기록하는 두 함수와 시작 정리 되살림뿐이다.",
+      "종료 상태에서 실행 중으로 가는 길은 종료 재개를 기록하는 두 함수와 시작 정리 되살림, 잇기 되살림뿐이다.",
     knownHole:
       "session_update_status가 종료 줄의 상태를 running으로 쓸 수 있다. SQL session_update가 status를 허용 열로 받기 때문이다.",
     breaks: (row) =>
@@ -107,6 +108,37 @@ export const SESSION_PROMISES: SessionPromiseDefinition[] = [
         "running_transition",
         "startup_reconcile_restore",
       ].includes(row.command.type),
+  },
+  {
+    id: "owner_node_gate",
+    statement: "소유 노드가 다른 상태 사건은 세션 줄을 바꾸지 않는다.",
+    breaks: (row) =>
+      row.facts.owner === "mismatch" && row.decision.kind === "apply",
+  },
+  {
+    id: "disconnected_revived_only_by_adoption",
+    statement:
+      "끊김 중단은 실행 등록, 초기 시동, 일반 재개로 되살아나지 않고 잇기로만 되살아난다.",
+    knownHole:
+      "실행 등록과 잇기 아닌 실행 중 전환의 종료 재개 칸은 기대 종료 번호가 NULL과 같을 때 SQL이 되살린다. 노드는 그 번호를 보내지 않아 제품 경로에서 닿지 않고, 이번 물결은 adopt=거짓 판정을 바꾸지 않는다. 시작 정리 되살림은 이전 물결이 정한 되살림 길이며 아직 배선되지 않았다.",
+    breaks: (row) => {
+      if (
+        ![
+          "execution_registration",
+          "running_transition",
+          "startup_reconcile_restore",
+        ].includes(row.command.type)
+        || row.decision.kind !== "apply"
+        || row.decision.next.status !== "running"
+        || row.state.status !== "interrupted"
+        || row.state.termination !== "none"
+      ) {
+        return false;
+      }
+      return !(
+        row.command.type === "running_transition" && row.facts.adopt === true
+      );
+    },
   },
   {
     id: "active_delete_needs_stop",

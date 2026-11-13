@@ -20,6 +20,22 @@ const CATALOG = catalog.snapshot();
 
 const STREAM_ID = "018f47b7-c6de-7d64-9c8d-0b62cbbb2e10";
 
+/** 문지기가 읽는 잠근 세션 줄. 상태 사건 시험은 이 줄을 세운다. */
+const GATE_ROW = {
+  node_id: null,
+  status: "running",
+  termination_reason: null,
+  termination_detail: null,
+  review_state: "not_required",
+  last_assistant_text: null,
+  termination_event_id: null,
+  last_event_id: null,
+  updated_at: new Date("2026-08-06T00:00:00.000Z"),
+  worktree_id: null,
+  execution_registration_id: null,
+  execution_command_id: null,
+};
+
 describe("EventIngressRepository", () => {
   it("commits event append, typed effect, and receipt in one transaction", async () => {
     const order: string[] = [];
@@ -342,10 +358,7 @@ describe("EventIngressRepository", () => {
       }
       if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
         order.push("session-lock");
-        return [{
-          execution_registration_id: null,
-          execution_command_id: null,
-        }];
+        return [GATE_ROW];
       }
       if (text.includes("SELECT event_append")) return [{ event_id: 41 }];
       if (text.includes("UPDATE claude_background_task_generations")) {
@@ -606,7 +619,7 @@ describe("EventIngressRepository", () => {
     const sql = fakeSql(async (text, values) => {
       if (text.includes("FROM event_ingress_receipts")) return [];
       if (text.includes("FROM sessions") && text.includes("FOR UPDATE")) {
-        return [{ execution_registration_id: null }];
+        return [GATE_ROW];
       }
       if (text.includes("pg_advisory_xact_lock")) return [];
       if (text.includes("FROM events") && text.includes("dedupe_key")) return [];

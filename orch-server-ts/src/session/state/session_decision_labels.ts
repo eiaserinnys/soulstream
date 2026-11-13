@@ -27,11 +27,11 @@ export const SESSION_COMMAND_RULES: Record<SessionDecisionCommand, string> = {
   register:
     "같은 세션 줄이 없을 때 새 줄을 만든다. 상태와 검수 칸은 등록 입력이 정하며, 만든 뒤에는 initializing이다.",
   execution_registration:
-    "세션 줄을 잠그고 실행 등록을 적는다. 워크트리가 있으면 준비 상태와 다른 활성 세션 점유를 먼저 본다. 종료 재개면 기대한 종료 리비전이 같을 때만 running으로 되살리고 종료 칸을 지운다. 재개가 아니면 종료 상태가 아닌 줄만 running으로 옮기며 종료 사유와 설명은 지우되 종료 리비전은 남긴다.",
+    "세션 줄을 잠그고 실행 등록을 적는다. 사건을 보낸 노드가 소유 노드와 다르면 거절한다. 워크트리가 있으면 준비 상태와 다른 활성 세션 점유를 먼저 본다. 종료 재개면 기대한 종료 리비전이 같을 때만 running으로 되살리고 종료 칸을 지운다. 재개가 아니면 종료 상태가 아닌 줄만 running으로 옮기며 종료 사유와 설명은 지우되 종료 리비전은 남긴다.",
   running_transition:
-    "실행 등록과 같은 워크트리 게이트와 종료 재개 규칙을 쓴다. 등록 id는 쓰지 않고 상태와 검수 칸만 고친다.",
+    "실행 등록과 같은 소유 노드 검사, 워크트리 게이트, 종료 재개 규칙을 쓴다. 등록 id는 쓰지 않고 상태와 검수 칸만 고친다. 잇기(전이 id가 adopt:로 시작)는 종료 기록이 없는 끊김 중단만 되살리고, 이미 끝난 세션이면 거절한다.",
   terminal_transition:
-    "기대한 종료 사건 번호가 양수일 때만 쓴다. 이미 완료나 오류로 끝난 줄, 종료 리비전이 기록된 중단 줄은 건드리지 않는다. 기존 종료 리비전이 없거나 새 사건 번호보다 작을 때만 종료 상태와 사유, 검수 칸, 마지막 발화를 적는다.",
+    "사건을 보낸 노드가 소유 노드와 다르면 거절한다. 기대한 종료 사건 번호가 양수일 때만 쓴다. 이미 완료나 오류로 끝난 줄, 종료 리비전이 기록된 중단 줄은 건드리지 않는다. 기존 종료 리비전이 없거나 새 사건 번호보다 작을 때만 종료 상태와 사유, 검수 칸, 마지막 발화를 적는다.",
   node_disconnect_cleanup:
     "노드가 실행 중이던 세션을 끊김으로 정리한다. 이 노드의 initializing이나 running 줄만 interrupted로 옮기고 종료 사유를 killed, 검수 칸을 review_required에 따라 정한다. 종료 리비전 칸은 건드리지 않는다.",
   startup_reconcile_missing:
@@ -53,7 +53,11 @@ export const SESSION_COMMAND_RULES: Record<SessionDecisionCommand, string> = {
 export const SESSION_REASON_LABELS: Record<string, string> = {
   session_exists: "같은 세션 줄이 이미 있다",
   session_missing: "세션 줄이 없다",
+  owner_node_changed: "사건을 보낸 노드가 세션의 소유 노드와 다르다",
   worktree_blocked: "워크트리가 준비되지 않았거나 다른 활성 세션이 쓴다",
+  worktree_not_ready: "워크트리 줄이 없거나 준비되지 않았거나 설치가 필요하다",
+  worktree_busy: "같은 워크트리를 다른 활성 세션이 쓴다",
+  already_terminal: "잇기가 이미 끝난 세션을 되살리려 한다",
   terminal_resume_not_terminal: "종료 재개인데 세션이 종료 상태가 아니다",
   terminal_revision_changed: "기대한 종료 리비전과 다르다",
   terminal_without_resume: "종료 재개 표시 없이 종료 세션을 실행 중으로 바꾸려 한다",
@@ -84,6 +88,7 @@ export const SESSION_REASON_LABELS: Record<string, string> = {
   registered: "세션 줄을 만들었다",
   active_registration: "실행 등록을 기록하고 실행 중으로 옮겼다",
   terminal_resume: "종료 세션을 실행 등록으로 재개했다",
+  adopt_resume: "잇기로 끊김 중단을 되살렸다",
   terminal_recorded: "종료를 기록했다",
   disconnect_cleanup: "노드 끊김을 중단 종료로 기록했다",
   startup_interrupted: "시작 정리에서 사라진 세션을 중단 종료로 기록했다",
@@ -93,6 +98,21 @@ export const SESSION_REASON_LABELS: Record<string, string> = {
   review_acknowledged: "검수를 확인했다",
   deleted: "세션 줄을 지웠다",
   fire: "한도 재개를 실행한다",
+};
+
+/**
+ * 세션 기계 사유 → 와이어 rejection_reason. null이면 사유를 싣지 않는다.
+ * terminal_transition의 SQL 리비전 거절은 기계 사유가 아니라 표에 없다.
+ */
+export const SESSION_REJECTION_REASON_WIRE: Record<string, string | null> = {
+  owner_node_changed: "owner_node_changed",
+  worktree_not_ready: "worktree_not_ready",
+  worktree_busy: "worktree_busy",
+  terminal_without_resume: "already_terminal",
+  terminal_revision_changed: "already_terminal",
+  already_terminal: "already_terminal",
+  terminal_resume_not_terminal: null,
+  session_missing: null,
 };
 
 export const SESSION_STATUS_LABELS: Record<SessionStatusLeaf, string> = {
@@ -127,6 +147,8 @@ export const SESSION_FACT_LABELS: Record<
     setup_required: "설치 필요",
   },
   worktreeBusy: { true: "다른 활성 세션 점유", false: "점유 없음" },
+  owner: { match: "소유 노드와 같음", mismatch: "소유 노드와 다름" },
+  adopt: { true: "잇기", false: "잇기 아님" },
   revision: {
     none: "기록 없음",
     less: "기존보다 새로움",

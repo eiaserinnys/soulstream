@@ -32,8 +32,12 @@ export type {
   EventSessionEffect,
   EventSessionEffectApplication,
   EventSessionEffectApplicationWire,
+  EventSessionRejectionReason,
 } from "./event_ingress_contract.js";
-export { isEventAppendBatchFrame } from "./event_ingress_contract.js";
+export {
+  EVENT_SESSION_REJECTION_REASONS,
+  isEventAppendBatchFrame,
+} from "./event_ingress_contract.js";
 export { EventIngressValidationError } from "./event_ingress_validation.js";
 
 export const EVENT_INGRESS_PROTOCOL_VERSION = 1;

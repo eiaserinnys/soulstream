@@ -4,6 +4,7 @@ import {
   SESSION_COMMAND_RULES,
   SESSION_FACT_LABELS,
   SESSION_REASON_LABELS,
+  SESSION_REJECTION_REASON_WIRE,
   SESSION_REVIEW_LABELS,
   SESSION_STATUS_LABELS,
   factValueLabel,
@@ -318,6 +319,19 @@ export function generateSessionStateDocument(
   );
   for (const command of SESSION_COMMANDS) {
     lines.push(`| ${SESSION_COMMAND_LABELS[command]} | ${counts.get(command) ?? 0} |`);
+  }
+
+  lines.push(
+    "",
+    "## 거절 사유",
+    "",
+    "상태 사건을 거절하면 응답 effect_application에 rejection_reason을 싣는다. 사유를 싣지 않는 거절도 있다. 노드는 already_terminal, session_missing, owner_node_changed를 영구 거절로, worktree_busy, worktree_not_ready를 다시 시도 가능으로 읽는다. 사유가 없으면 다시 시도 가능으로 친다. terminal_transition의 SQL 리비전 거절에는 사유를 싣지 않는다.",
+    "",
+    "| 기계 사유 | rejection_reason |",
+    "| :-- | :-- |",
+  );
+  for (const [reason, wire] of Object.entries(SESSION_REJECTION_REASON_WIRE)) {
+    lines.push(`| ${reason} | ${wire ?? "싣지 않음"} |`);
   }
 
   lines.push(

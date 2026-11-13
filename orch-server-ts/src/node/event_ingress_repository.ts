@@ -23,6 +23,17 @@ import {
 } from "./event_feed_semantic_watermark.js";
 import { applySessionStatisticsProjection } from "../usage/session_statistics_projection.js";
 import type { ModelCatalogSource } from "../model/model_catalog_source.js";
+import {
+  decideEventSessionGate,
+  gatedSessionCommand,
+  sessionCanonicalProjection,
+  sessionOwnerMatches,
+  type SessionGateRow,
+} from "./event_session_gate.js";
+import {
+  EVENT_SESSION_REJECTION_REASONS,
+  type EventSessionRejectionReason,
+} from "./event_ingress_contract.js";
 
 type QueryRows = readonly Record<string, unknown>[];
 
@@ -58,6 +69,8 @@ export type EventSessionEffectApplier = (
     eventId: number;
     envelope: EventIngressEnvelope;
     effect: EventSessionEffect;
+    /** 세션 기계가 R1(잇기 되살림)로 판정했다. */
+    terminalResume?: boolean;
   },
 ) => Promise<EventSessionEffectApplication>;
 
@@ -209,15 +222,20 @@ export class EventIngressRepository {
       };
     }
     const generationHandoff = await lockRetainedRunnerGenerations(transaction, nodeId, envelope);
-    const sessionOwner = await lockSession(transaction, envelope.session_id);
-    if (sessionOwner === null) {
+    const sessionRow = await lockSession(transaction, envelope.session_id);
+    if (sessionRow === null) {
       throw new Error(`session ${envelope.session_id} does not exist`);
     }
-    if (envelope.registration_id !== undefined
+    // 소유 노드가 다른 상태 사건은 등록 번호 불일치 격리보다 먼저 거절한다.
+    const gatedCommand = gatedSessionCommand(envelope.session_effect);
+    const ownerMismatch = gatedCommand !== null
+      && !sessionOwnerMatches(sessionRow, nodeId);
+    if (!ownerMismatch
+      && envelope.registration_id !== undefined
       && (
         envelope.registration_id === null
-        || sessionOwner.executionRegistrationId === null
-        || envelope.registration_id !== sessionOwner.executionRegistrationId
+        || sessionRow.execution_registration_id === null
+        || envelope.registration_id !== sessionRow.execution_registration_id
       )) {
       return {
         outcome: "dead_lettered",
@@ -251,12 +269,38 @@ export class EventIngressRepository {
       if (!this.applySessionEffect) {
         throw new Error("typed session effects are not enabled in this release");
       }
-      sessionEffectApplication = await this.applySessionEffect(transaction, {
+      const gate = await decideEventSessionGate(transaction, {
+        row: sessionRow,
         nodeId,
         eventId,
         envelope,
-        effect: envelope.session_effect,
       });
+      if (gate.kind === "reject") {
+        // 거절이면 SQL 함수를 부르지 않는다. 잠근 줄이 응답의 정본이다.
+        sessionEffectApplication = {
+          applied: false,
+          canonicalSession: sessionCanonicalProjection(sessionRow),
+          ...(gate.reason === null ? {} : { rejectionReason: gate.reason }),
+        };
+      } else {
+        sessionEffectApplication = await this.applySessionEffect(transaction, {
+          nodeId,
+          eventId,
+          envelope,
+          effect: envelope.session_effect,
+          ...(gate.kind === "apply" && gate.terminalResume
+            ? { terminalResume: true }
+            : {}),
+        });
+        if (gate.kind === "apply" && sessionEffectApplication.applied === false) {
+          // 기계와 SQL이 갈렸다. 사유 없이 SQL 결과를 돌려준다.
+          console.warn({
+            cause_code: "SESSION_MACHINE_INGRESS_MISMATCH",
+            session_id: envelope.session_id,
+            command: gatedCommand,
+          });
+        }
+      }
     } else if (semanticReceipt && isCanonicalTransitionEffect(envelope.session_effect)) {
       sessionEffectApplication = await findCanonicalEffectApplication(
         transaction,
@@ -293,7 +337,7 @@ export class EventIngressRepository {
       nodeId,
       envelope.session_id,
       generationHandoff,
-      sessionOwner,
+      sessionRow,
       envelope.session_effect,
       sessionEffectApplication,
     );
@@ -326,21 +370,17 @@ export class EventIngressRepository {
 async function lockSession(
   sql: EventIngressQuerySql,
   sessionId: string,
-): Promise<{ executionRegistrationId: string | null; executionCommandId: string | null } | null> {
-  const rows = await sql<Array<{
-    execution_registration_id: string | null;
-    execution_command_id: string | null;
-  }>>`
-    SELECT execution_registration_id, execution_command_id
+): Promise<SessionGateRow | null> {
+  const rows = await sql<SessionGateRow[]>`
+    SELECT node_id, status, termination_reason, termination_detail,
+           review_state, last_assistant_text, termination_event_id,
+           last_event_id, updated_at, worktree_id,
+           execution_registration_id, execution_command_id
     FROM sessions
     WHERE session_id = ${sessionId}
     FOR UPDATE
   `;
-  if (!rows[0]) return null;
-  return {
-    executionRegistrationId: rows[0].execution_registration_id,
-    executionCommandId: rows[0].execution_command_id,
-  };
+  return rows[0] ?? null;
 }
 
 type GenerationHandoffRow = {
@@ -371,7 +411,7 @@ async function handoffRetainedRunnerGenerations(
   nodeId: string,
   sessionId: string,
   rows: GenerationHandoffRow[],
-  owner: { executionRegistrationId: string | null; executionCommandId: string | null },
+  owner: SessionGateRow,
   effect: EventSessionEffect | null,
   application: EventSessionEffectApplication | undefined,
 ): Promise<void> {
@@ -389,10 +429,10 @@ async function handoffRetainedRunnerGenerations(
   const priorExecutionCommandId = priorExecutionCommandIds.size === 1
     ? rows[0]!.execution_command_id
     : null;
-  const hasExactSessionOwner = owner.executionRegistrationId === effect.registration_id
-    && owner.executionCommandId === priorExecutionCommandId;
-  const hasClearedSessionOwner = owner.executionRegistrationId === null
-    && owner.executionCommandId === null;
+  const hasExactSessionOwner = owner.execution_registration_id === effect.registration_id
+    && owner.execution_command_id === priorExecutionCommandId;
+  const hasClearedSessionOwner = owner.execution_registration_id === null
+    && owner.execution_command_id === null;
   if (priorExecutionCommandId === null
     || (!hasExactSessionOwner && !hasClearedSessionOwner)) {
     throw new Error("Claude background generation handoff owner mismatch");
@@ -555,6 +595,9 @@ function toReceiptEffectApplication(
               canonical_execution_ownership:
                 application.canonicalExecutionOwnership,
             }),
+        ...(application.rejectionReason === undefined
+          ? {}
+          : { rejection_reason: application.rejectionReason }),
       }
     : null;
 }
@@ -589,7 +632,28 @@ function parseEffectApplication(
           canonicalExecutionOwnership:
             parseCanonicalExecutionOwnership(value.canonical_execution_ownership, sourceSeq),
         }),
+    ...(value.rejection_reason === undefined
+      ? {}
+      : {
+          rejectionReason: parseRejectionReason(value.rejection_reason, sourceSeq),
+        }),
   };
+}
+
+function parseRejectionReason(
+  value: unknown,
+  sourceSeq: number,
+): EventSessionRejectionReason {
+  if (
+    typeof value === "string"
+    && (EVENT_SESSION_REJECTION_REASONS as readonly string[]).includes(value)
+  ) {
+    return value as EventSessionRejectionReason;
+  }
+  throw new EventIngressProtocolConflict(
+    `event ingress receipt has invalid rejection_reason at source_seq ${sourceSeq}`,
+    sourceSeq,
+  );
 }
 
 function parseCanonicalExecutionRegistration(

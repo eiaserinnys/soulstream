@@ -40,7 +40,7 @@ const tableStates: readonly SessionStateValue[] = [
 
 it('fills every cell of the decision table with a verdict',()=>{
  const rows=sessionDecisionTable();
- expect(rows).toHaveLength(480);
+ expect(rows).toHaveLength(544);
  const counts=Object.fromEntries(SESSION_COMMANDS.map(command=>[command,0]));
  for(const row of rows){
  expect(['apply','noop','reject']).toContain(row.decision.kind);
@@ -49,9 +49,9 @@ it('fills every cell of the decision table with a verdict',()=>{
  }
  expect(counts).toEqual({
  register:9,
- execution_registration:111,
- running_transition:111,
- terminal_transition:20,
+ execution_registration:120,
+ running_transition:157,
+ terminal_transition:29,
  node_disconnect_cleanup:18,
  startup_reconcile_missing:26,
  startup_reconcile_restore:36,
@@ -116,12 +116,17 @@ it('pins every promise and its known hole',()=>{
  ['cleanup_only_active',0],
  ['running_requires_worktree',0],
  ['terminal_to_running_only_resume',4],
+ ['owner_node_gate',0],
+ ['disconnected_revived_only_by_adoption',5],
  ['active_delete_needs_stop',0],
  ['limit_resume_chain',0],
  ]);
  const hole=results.find(result=>result.id==='terminal_to_running_only_resume')!;
  expect(hole.examples).toHaveLength(3);
  expect(hole.knownHole).toContain('session_update');
+ const adoptionHole=results.find(result=>result.id==='disconnected_revived_only_by_adoption')!;
+ expect(adoptionHole.examples).toHaveLength(3);
+ expect(adoptionHole.knownHole).toContain('시작 정리');
 });
 
 function probeRow(
@@ -146,6 +151,8 @@ it('detects one injected defect per promise',()=>{
  cleanup_only_active:probeRow('node_disconnect_cleanup',state('interrupted','recorded'),{nodeOwns:true}),
  running_requires_worktree:probeRow('execution_registration',state('running'),{resume:'fresh',worktree:'not_ready',worktreeBusy:false}),
  terminal_to_running_only_resume:probeRow('session_update_status',state('completed','recorded'),{},'apply',state('running')),
+ owner_node_gate:probeRow('terminal_transition',state('running'),{revision:'none',eventId:'positive',owner:'mismatch'},'apply',state('running','recorded')),
+ disconnected_revived_only_by_adoption:probeRow('execution_registration',state('interrupted'),{resume:'terminal_match',worktree:'ready',worktreeBusy:false,owner:'match'},'apply',state('running')),
  active_delete_needs_stop:probeRow('delete',state('running'),{path:'timeout'}),
  limit_resume_chain:probeRow('resume_dispatch',state('error','recorded'),{chainContinued:false}),
  };

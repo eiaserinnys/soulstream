@@ -57,18 +57,23 @@ function noop(
 
 reject("register", "exists", "session_exists", not(inside("s_none")));
 
+/** 잇기가 되살리는 유일한 칸: 종료 기록이 없는 끊김 중단. */
+const ADOPTED_DISCONNECTED = and([
+  fact("adopt", true),
+  inside("s_interrupted"),
+  inside("t_none"),
+]);
+
 for (const command of ["execution_registration", "running_transition"] as const) {
   reject(command, "missing", "session_missing", inside("s_none"));
+  reject(command, "owner", "owner_node_changed", fact("owner", "mismatch"));
   reject(
     command,
-    "worktree",
-    "worktree_blocked",
-    or([
-      fact("worktree", "not_ready"),
-      fact("worktree", "setup_required"),
-      fact("worktreeBusy", true),
-    ]),
+    "worktreeNotReady",
+    "worktree_not_ready",
+    or([fact("worktree", "not_ready"), fact("worktree", "setup_required")]),
   );
+  reject(command, "worktreeBusy", "worktree_busy", fact("worktreeBusy", true));
   reject(
     command,
     "resumeNotTerminal",
@@ -85,9 +90,22 @@ for (const command of ["execution_registration", "running_transition"] as const)
     command,
     "noResumeOnTerminal",
     "terminal_without_resume",
-    and([fact("resume", "fresh"), TERMINAL]),
+    and([fact("resume", "fresh"), TERMINAL, not(ADOPTED_DISCONNECTED)]),
   );
 }
+reject(
+  "running_transition",
+  "adoptTerminal",
+  "already_terminal",
+  and([
+    fact("adopt", true),
+    or([
+      inside("s_completed"),
+      inside("s_error"),
+      and([inside("s_interrupted"), inside("t_recorded")]),
+    ]),
+  ]),
+);
 
 reject(
   "terminal_transition",
@@ -96,6 +114,12 @@ reject(
   fact("eventId", "non_positive"),
 );
 reject("terminal_transition", "missing", "session_missing", inside("s_none"));
+reject(
+  "terminal_transition",
+  "owner",
+  "owner_node_changed",
+  fact("owner", "mismatch"),
+);
 reject(
   "terminal_transition",
   "fence",
