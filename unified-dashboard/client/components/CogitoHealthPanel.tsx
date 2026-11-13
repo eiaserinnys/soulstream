@@ -1,18 +1,23 @@
-import { Badge, cn } from "@seosoyoung/soul-ui";
+import { cn } from "@seosoyoung/soul-ui";
 import type { CogitoNodeHealth, CogitoNodeStatus } from "../lib/cogito-health";
+import { clockLabel } from "./CogitoNodeHealthClock";
 
-type BadgeVariant = "outline" | "warning" | "success" | "error";
 type PanelStatus = CogitoNodeStatus | "loading" | "unavailable";
 
+/**
+ * 이웃 사용량 행과 같은 규칙을 쓴다.
+ *   - 상태 점: `.c724-status-dot`(8px)에 상태 색만 입힌다.
+ *   - 배지: `.c724-badge` 알약. 정상은 배지 없이 초록 점만, 로딩은 「Checking...」 줄 하나만.
+ */
 const STATUS_CONFIG: Record<
   PanelStatus,
-  { label: string; variant: BadgeVariant; dotClass: string }
+  { label: string | null; badgeClass: string | null; dotColor: string }
 > = {
-  ok: { label: "OK", variant: "success", dotClass: "bg-success" },
-  timeout: { label: "Timeout", variant: "warning", dotClass: "bg-accent-amber" },
-  unavailable: { label: "Unavailable", variant: "warning", dotClass: "bg-accent-amber" },
-  error: { label: "Error", variant: "error", dotClass: "bg-accent-red" },
-  loading: { label: "Checking", variant: "outline", dotClass: "bg-muted-foreground/50" },
+  ok: { label: null, badgeClass: null, dotColor: "var(--color-emerald-400)" },
+  timeout: { label: "Timeout", badgeClass: "c724-badge c724-badge-warn", dotColor: "var(--color-amber-400)" },
+  unavailable: { label: "Unavailable", badgeClass: "c724-badge c724-badge-warn", dotColor: "var(--color-amber-400)" },
+  error: { label: "Error", badgeClass: "c724-badge c724-badge-danger", dotColor: "var(--color-red-400)" },
+  loading: { label: null, badgeClass: null, dotColor: "var(--v3-text-tertiary)" },
 };
 
 export type CogitoNodeHealthNoteState =
@@ -40,13 +45,16 @@ export function CogitoNodeHealthRow({
   const capabilityText = formatCapabilities(node);
   const dependencyText = formatDependencies(node);
   const warning = node.warnings[0];
-  const metaClass = embedded
-    ? "c724-meta-inline truncate"
-    : "text-[11px] text-muted-foreground truncate";
+  const checked = clockLabel(node.checkedAt ?? null);
+  // 진단 값 줄은 좁은 폭에서 말줄임 대신 줄바꿈하고, 끌어서 선택할 수 있다(cogito 전용 선택자).
+  const metaClass = embedded ? "c724-meta-inline" : "text-[11px] text-muted-foreground truncate";
 
   return (
     <div
-      className={cn(embedded ? "c724-account-row mt-2" : "px-3 py-1.5 border-t border-border/60 space-y-1")}
+      className={cn(
+        "cogito-node-health",
+        embedded ? "c724-account-row mt-2" : "px-3 py-1.5 border-t border-border/60 space-y-1",
+      )}
       data-testid="cogito-node-health"
       data-node-id={node.nodeId}
     >
@@ -65,7 +73,7 @@ export function CogitoNodeHealthRow({
       </div>
       <div className={metaClass}>
         {node.serviceStatus}
-        {node.checkedAt ? ` / ${formatCheckedAt(node.checkedAt)}` : ""}
+        {checked ? ` / ${checked}` : ""}
       </div>
       {capabilityText && <div className={metaClass}>caps {capabilityText}</div>}
       {runtimeItems.length > 0 && <div className={metaClass}>{runtimeItems.join(" / ")}</div>}
@@ -82,7 +90,11 @@ export function CogitoNodeHealthRow({
 export function CogitoNodeHealthNote({ state }: { state: CogitoNodeHealthNoteState }) {
   const status: PanelStatus = state.kind === "loading" ? "loading" : "unavailable";
   return (
-    <div className="c724-account-row mt-2" data-testid="cogito-node-health" data-node-state={state.kind}>
+    <div
+      className="cogito-node-health c724-account-row mt-2"
+      data-testid="cogito-node-health"
+      data-node-state={state.kind}
+    >
       <div className="c724-account-top">
         <div className="c724-account-identity">
           <StatusDot status={status} />
@@ -90,25 +102,22 @@ export function CogitoNodeHealthNote({ state }: { state: CogitoNodeHealthNoteSta
         </div>
         <StatusBadge status={status} />
       </div>
-      <div className="c724-meta-inline truncate">
-        {state.kind === "loading" ? "Checking..." : state.message}
-      </div>
+      {state.kind === "loading"
+        ? <div className="c724-meta-inline">Checking...</div>
+        : <p className="c724-pool-error">{state.message}</p>}
     </div>
   );
 }
 
 function StatusBadge({ status }: { status: PanelStatus }) {
   const config = STATUS_CONFIG[status];
-  return (
-    <Badge variant={config.variant} size="sm">
-      {config.label}
-    </Badge>
-  );
+  if (!config.badgeClass || !config.label) return null;
+  return <span className={config.badgeClass}>{config.label}</span>;
 }
 
 function StatusDot({ status }: { status: PanelStatus }) {
   const config = STATUS_CONFIG[status];
-  return <span className={cn("w-1.5 h-1.5 rounded-full shrink-0", config.dotClass)} />;
+  return <span className="c724-status-dot" style={{ backgroundColor: config.dotColor }} />;
 }
 
 function formatCapabilities(node: CogitoNodeHealth): string {
@@ -123,14 +132,4 @@ function formatDependencies(node: CogitoNodeHealth): string {
     .slice(0, 4)
     .map((dep) => `${dep.name}:${dep.status}`)
     .join(", ");
-}
-
-function formatCheckedAt(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleTimeString(undefined, {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
 }

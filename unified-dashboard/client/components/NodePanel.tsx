@@ -14,15 +14,9 @@ import { useOrchestratorStore } from "../store/orchestrator-store";
 import { fetchUsageSummary, refreshUsageSummary } from "../lib/usage-summary";
 import { useCogitoHealth } from "../hooks/useCogitoHealth";
 import { CogitoNodeHealthNote, CogitoNodeHealthRow } from "./CogitoHealthPanel";
+import { clockLabel } from "./CogitoNodeHealthClock";
 import { NodeProvidersPanel } from "./NodeProvidersPanel";
 import "./claude-accounts/claude-account-pool.css";
-
-function clockLabel(value: string | null): string | null {
-  if (!value) return null;
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return null;
-  return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", hour12: false }).format(date);
-}
 
 export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sampleNodes?: ReturnType<typeof useOrchestratorStore.getState>["nodes"] } = {}) {
   const storedNodes = useOrchestratorStore((s) => s.nodes);
@@ -114,13 +108,19 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
                   >
                     {node.nodeId[0]?.toUpperCase()}
                   </div>
-                  <span className="text-sm font-medium text-foreground truncate flex-1">
+                  {/* 이름은 자기 글자 폭을 먼저 지키고, 좁은 폭에서는 시각 글이 먼저 줄어든다. */}
+                  <span className="text-sm font-medium text-foreground truncate flex-auto min-w-0">
                     {node.nodeId}
                   </span>
                   {isExpanded && staleSince ? (
-                    <span className="c724-badge c724-badge-warn">수집 지연 · {staleSince}</span>
+                    // 좁은 폭에서는 배지가 이름 자리를 먹지 않도록 펼친 패널 안으로 내린다.
+                    // `.c724-badge`의 display가 Tailwind hidden을 이기므로 숨김은 바깥 상자가 맡는다.
+                    <span className="hidden shrink-0 sm:inline-flex">
+                      <span className="c724-badge c724-badge-warn">수집 지연 · {staleSince}</span>
+                    </span>
                   ) : isExpanded && updated ? (
-                    <span className="text-xs text-muted-foreground">{updated} 갱신</span>
+                    // 좁은 폭에서는 이름이 먼저 남고 시각 글이 물러난다. 시각은 펼친 cogito 행이 그대로 보여 준다.
+                    <span className="hidden min-w-0 shrink-[100] truncate text-xs text-muted-foreground sm:inline">{updated} 갱신</span>
                   ) : null}
                   {/* 실패 배지는 새로 고침 단추 왼쪽에 붙여, 나타날 때 단추가 밀리지 않게 한다. */}
                   {isExpanded && refreshFailedNodeId === node.nodeId ? (
@@ -130,6 +130,7 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
                     <DashboardIconCap
                       size="small"
                       label="사용량 새로 고침"
+                      className="shrink-0"
                       // 갱신 중에도 초점을 잃지 않도록 disabled 대신 aria-disabled를 쓰고,
                       // 다시 눌러도 handleRefresh가 중복 실행되지 않게 막는다.
                       aria-disabled={refreshingNodeId === node.nodeId}
@@ -150,12 +151,17 @@ export function NodePanel({ request, sampleNodes }: { request?: typeof fetch; sa
                         : "bg-success shadow-[0_0_6px_rgba(16,185,129,0.3)]",
                     )}
                   />
-                  <span className="text-xs text-muted-foreground">
+                  <span className="shrink-0 text-xs text-muted-foreground">
                     {isExpanded ? "▲" : "▼"}
                   </span>
                 </div>
                 {/* 확장 패널 — 공급자 중립 사용량 아래에 그 노드의 cogito 상태 */}
                 {isExpanded && <div className="border-t border-border px-3 py-3">
+                  {staleSince ? (
+                    <div className="mb-2 sm:hidden">
+                      <span className="c724-badge c724-badge-warn">수집 지연 · {staleSince}</span>
+                    </div>
+                  ) : null}
                   <NodeProvidersPanel
                     request={request ?? fetch}
                     nodeId={node.nodeId}

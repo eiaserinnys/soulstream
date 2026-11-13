@@ -335,6 +335,14 @@
   gap: var(--v3-space-2);
 }
 
+/* cogito 진단 값과 경고는 읽고 옮겨 적는 글이라 공용 none 규칙에서 되살린다.
+   「Cogito」 라벨(.c724-account-email)과 배지(.c724-badge)는 그대로 선택되지 않는다. */
+.cogito-node-health .c724-meta-inline {
+  user-select: text;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 @media (max-width: 520px) {
   .c724-quota-label-row {
     flex-wrap: wrap;
