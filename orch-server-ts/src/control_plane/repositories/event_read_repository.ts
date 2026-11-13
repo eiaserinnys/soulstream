@@ -127,9 +127,37 @@ export class EventReadRepository {
     eventTypes?: string[],
     period?: SessionReadPeriod,
     metadataTypes?: string[],
+    order?: "asc" | "desc",
   ): Promise<HostEventRow[]> {
     const types = eventTypes && eventTypes.length > 0 ? eventTypes : null;
     const metadata = metadataTypes && metadataTypes.length > 0 ? metadataTypes : null;
+    if (metadata !== null && order === "desc") {
+      // 색인 (session_id, event_type, id)를 거꾸로 타도록 event_type은 리터럴로 둔다.
+      const rows = period
+        ? await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+            SELECT id, session_id, event_type, payload, searchable_text, created_at
+            FROM events
+            WHERE session_id = ${sessionId}
+              AND id > ${afterId}
+              AND created_at >= ${period.since}::timestamptz
+              AND created_at < ${period.until}::timestamptz
+              AND event_type = 'metadata'
+              AND payload->>'metadata_type' = ANY(${metadata}::text[])
+            ORDER BY id DESC
+            LIMIT ${limit}
+          `
+        : await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`
+            SELECT id, session_id, event_type, payload, searchable_text, created_at
+            FROM events
+            WHERE session_id = ${sessionId}
+              AND id > ${afterId}
+              AND event_type = 'metadata'
+              AND payload->>'metadata_type' = ANY(${metadata}::text[])
+            ORDER BY id DESC
+            LIMIT ${limit}
+          `;
+      return rows.map(normalizeEvent);
+    }
     if (metadata !== null) {
       const rows = period
         ? await this.sql<Array<Omit<HostEventRow, "payload"> & { payload: unknown }>>`

@@ -87,4 +87,71 @@ describePostgres("persistent decision metadata reads in PostgreSQL", () => {
     const unfiltered = await events.readEvents(sessionId, 0, 20000);
     expect(unfiltered).toHaveLength(10040);
   }, 60_000);
+
+  it("returns the newest metadata generation rows first only when order is desc", async () => {
+    const sessionId = `decision-metadata-desc-${randomUUID()}`;
+    await harness.sql`INSERT INTO sessions (session_id, display_name) VALUES (${sessionId}, ${sessionId})`;
+    await harness.sql`
+      INSERT INTO events (session_id, id, event_type, payload, searchable_text)
+      SELECT
+        ${sessionId},
+        g,
+        'metadata',
+        jsonb_build_object('metadata_type', 'session_settings', 'value', repeat('x', 400)),
+        ''
+      FROM generate_series(1, 10000) AS g
+    `;
+    await harness.sql`
+      INSERT INTO events (session_id, id, event_type, payload, searchable_text)
+      SELECT
+        ${sessionId},
+        10000 + g,
+        'metadata',
+        jsonb_build_object(
+          'metadata_type', 'persistent_generation',
+          'value', jsonb_build_object(
+            'number', g,
+            'first_call', jsonb_build_object(
+              'generation', g,
+              'model_preset', 'claude-opus',
+              'input_tokens', g * 1000
+            )
+          )
+        ),
+        ''
+      FROM generate_series(1, 40) AS g
+    `;
+    await harness.sql`
+      INSERT INTO events (session_id, id, event_type, payload, searchable_text)
+      SELECT
+        ${sessionId},
+        10040 + g,
+        'assistant_message',
+        jsonb_build_object('metadata_type', 'persistent_generation', 'value', jsonb_build_object('number', g)),
+        ''
+      FROM generate_series(1, 5) AS g
+    `;
+
+    const newest = await events.readEvents(
+      sessionId,
+      0,
+      5,
+      ["metadata"],
+      undefined,
+      ["persistent_generation"],
+      "desc",
+    );
+    expect(newest.map((row) => row.id)).toEqual([10040, 10039, 10038, 10037, 10036]);
+    expect(newest.every((row) => row.event_type === "metadata")).toBe(true);
+
+    const ascending = await events.readEvents(
+      sessionId,
+      0,
+      5,
+      ["metadata"],
+      undefined,
+      ["persistent_generation"],
+    );
+    expect(ascending.map((row) => row.id)).toEqual([10001, 10002, 10003, 10004, 10005]);
+  }, 60_000);
 });

@@ -265,6 +265,41 @@ describe("session-data read repositories", () => {
     expect(calls.filter((call) => call.text.includes("event_read("))).toHaveLength(1);
   });
 
+  it("reads metadata rows newest first only when order is desc", async () => {
+    const now = new Date("2026-11-12T00:00:00.000Z");
+    const event = {
+      id: 12,
+      session_id: "s1",
+      event_type: "metadata",
+      payload: { metadata_type: "persistent_generation" },
+      searchable_text: "",
+      created_at: now,
+    };
+    const { sql, calls } = createSql((text) => {
+      if (text.includes("ORDER BY id DESC")) return [event];
+      return [];
+    });
+    const repository = new EventReadRepository(sql);
+
+    await expect(repository.readEvents(
+      "s1",
+      4,
+      5,
+      ["metadata"],
+      undefined,
+      ["persistent_generation"],
+      "desc",
+    )).resolves.toEqual([event]);
+
+    const call = calls[0]!;
+    expect(call.text).toContain("FROM events");
+    expect(call.text).toContain("AND id > ?");
+    expect(call.text).toContain("event_type = 'metadata'");
+    expect(call.text).toContain("ORDER BY id DESC");
+    expect(call.text).not.toContain("event_read(");
+    expect(call.values).toEqual(["s1", 4, ["persistent_generation"], 5]);
+  });
+
   it("cancels and discards its owned event search connection on request abort", async () => {
     let rejectPending!: (error: Error) => void;
     let resolveDispatched!: () => void;
