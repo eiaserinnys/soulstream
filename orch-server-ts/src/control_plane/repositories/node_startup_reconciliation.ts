@@ -23,10 +23,10 @@ export async function captureNodeStartupTargets(sql: SqlClient, nodeId: string):
 
 /** Only a server-request snapshot authorizes absence; unsolicited inventory can restore. */
 export async function reconcileNodeStartup(
-  sql: SqlClient, nodeId: string, runningSessionIds: string[], updatedAt: Date,
-  targets: NodeStartupTarget[] = [],
+  sql: SqlClient, nodeId: string, runningSessionIds: string[], updatedAt: Date, targets: NodeStartupTarget[] = [],
 ) {
   return await sql.begin(async (sql) => {
+    await lockInterruptTargetsInOrder(sql, nodeId, runningSessionIds, targets);
     const interruptedRows = await sql<Array<ReconciledSessionRow>>`
       UPDATE sessions AS session
       SET status = 'interrupted', was_running_at_shutdown = TRUE,
@@ -101,6 +101,28 @@ export async function reconcileNodeStartup(
       updates: [...interruptedRows, ...restoredRows].map(mapReconciledSessionRow),
     };
   });
+}
+
+/**
+ * The interrupt UPDATE below joins the targets in no defined order, so it would take its
+ * session row locks in whatever order the join yields. Taking the same rows first in
+ * session_id order keeps this transaction from crossing another one that locks several
+ * sessions in key order. Those rows are only ever updated here, never deleted, so the
+ * lock does not need to block foreign key checks (FOR NO KEY UPDATE).
+ */
+async function lockInterruptTargetsInOrder(
+  sql: import("postgres").TransactionSql<any>, nodeId: string, runningSessionIds: string[],
+  targets: NodeStartupTarget[],
+) {
+  if (targets.length === 0) return;
+  await sql`
+    SELECT session_id FROM sessions
+    WHERE node_id = ${nodeId}
+      AND session_id = ANY(${sql.array(targets.map((target) => target.sessionId))}::text[])
+      AND NOT (session_id = ANY(${sql.array(runningSessionIds)}::text[]))
+    ORDER BY session_id
+    FOR NO KEY UPDATE
+  `;
 }
 
 async function lockRestorableSessionsThenWorktrees(

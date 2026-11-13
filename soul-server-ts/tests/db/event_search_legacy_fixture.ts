@@ -29,5 +29,18 @@ export async function installLegacyEventSearch(harness: FullSchemaPostgresHarnes
         END IF;
         RETURN OLD;
       END; $$ LANGUAGE plpgsql`);
+    // The fresh schema carries the deferred constraint triggers of migration 160. The 135
+    // writer needs the immediate triggers: its BEFORE DELETE decrement must read
+    // event_search_terms before the ON DELETE CASCADE removes those rows.
+    await tx.unsafe(`
+      DROP TRIGGER IF EXISTS trg_event_search_terms ON events;
+      CREATE TRIGGER trg_event_search_terms
+        AFTER INSERT OR UPDATE OF searchable_text ON events
+        FOR EACH ROW EXECUTE FUNCTION refresh_event_search_terms();
+      DROP TRIGGER IF EXISTS trg_event_search_corpus_stats_delete ON events;
+      CREATE TRIGGER trg_event_search_corpus_stats_delete
+        BEFORE DELETE ON events
+        FOR EACH ROW EXECUTE FUNCTION decrement_event_search_corpus_stats();
+    `);
   });
 }

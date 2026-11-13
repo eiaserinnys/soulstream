@@ -321,7 +321,7 @@ export class PersistentReportService {
   }
   private async mutate(sessionId: string, apply: (sql:RepositorySql, entries:PersistentReportEntry[],dismissed:DismissedCard[])=>Promise<PersistentReportIssue[] | null>, internal=false): Promise<PersistentReportResult> {
     const outcome = await this.sql.begin(async sql => {
-      const row = (await sql<ReportRow[]>`SELECT session_id,node_id,session_type,metadata FROM sessions WHERE session_id=${sessionId} FOR UPDATE`)[0];
+      const row = (await sql<ReportRow[]>`SELECT session_id,node_id,session_type,metadata FROM sessions WHERE session_id=${sessionId} FOR NO KEY UPDATE`)[0];
       const entries = readPersistentReport(row?.metadata);
       const summaries = entries.map(({key,title})=>({key,title}));
       if (!row) return {result:{ok:false,code:"SESSION_NOT_FOUND",errors:[{path:"session_id",reason:"세션이 없습니다"}],entries:summaries} as PersistentReportResult};

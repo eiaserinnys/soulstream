@@ -52,7 +52,7 @@ export class SessionFolderMoveRepository {
     return await sql.begin(async (transaction) => {
       const sessions = await transaction<{folder_id:string|null}[]>`
         SELECT folder_id FROM sessions WHERE session_id = ANY(${transaction.array(input.sessionIds)}::text[])
-        ORDER BY session_id FOR UPDATE
+        ORDER BY session_id FOR NO KEY UPDATE
       `;
       const cards = await transaction<CardRow[]>`
         SELECT * FROM cards WHERE assignee_session_id = ANY(${transaction.array(input.sessionIds)}::text[])

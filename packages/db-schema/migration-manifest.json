@@ -644,6 +644,10 @@
     {
       "id": "159_session_update_keeps_terminal_status.sql",
       "sha256": "765dfb0a348f8994520252cd4f365dc465e2a6458af4af478eb3ca1b7a17bee4"
+    },
+    {
+      "id": "160_event_search_deferred_stats_and_session_lock_levels.sql",
+      "sha256": "ddd663a54fe478906fc73ee4bce77fb2d6029cb9e1d6f74f4fe5f6c80abb9569"
     }
   ]
 }

@@ -48,6 +48,11 @@ describePostgres("event search direct writer migration", () => {
     await sql.begin((tx) => tx.unsafe(upgrade));
     await sql.begin((tx) => tx.unsafe(upgrade));
     expect(await snapshot(harness)).toEqual(beforeSwitch);
+    // 160 turns the writer triggers into deferred constraint triggers (card #1332).
+    const deferredStats = migration("160_event_search_deferred_stats_and_session_lock_levels");
+    await sql.begin((tx) => tx.unsafe(deferredStats));
+    await sql.begin((tx) => tx.unsafe(deferredStats));
+    expect(await snapshot(harness)).toEqual(beforeSwitch);
     await sql`DELETE FROM sessions WHERE session_id = 'rollback-guard'`;
     await resetFixture(harness);
     expect((await sql`SELECT to_regclass('event_search_terms') AS relation`)[0]?.relation).toBeNull();

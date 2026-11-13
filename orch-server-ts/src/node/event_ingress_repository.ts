@@ -378,7 +378,7 @@ async function lockSession(
            execution_registration_id, execution_command_id
     FROM sessions
     WHERE session_id = ${sessionId}
-    FOR UPDATE
+    FOR NO KEY UPDATE
   `;
   return rows[0] ?? null;
 }

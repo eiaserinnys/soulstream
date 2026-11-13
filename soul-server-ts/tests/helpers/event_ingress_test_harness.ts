@@ -84,7 +84,7 @@ export class InMemoryEventIngressSqlProvider implements EventIngressSqlProvider 
             }]
           : [];
       }
-      if (statement.includes("FROM sessions") && statement.includes("FOR UPDATE")) {
+      if (statement.includes("FROM sessions") && statement.includes("FOR NO KEY UPDATE")) {
         return [{ execution_registration_id: null }];
       }
       if (statement.includes("SELECT event_append(")) {
