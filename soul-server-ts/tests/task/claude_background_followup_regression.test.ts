@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import pino from "pino";
 import { describe, expect, it, vi } from "vitest";
 
@@ -101,6 +103,109 @@ function makeNotifier(addIntervention: ReturnType<typeof vi.fn>) {
   );
 }
 
+/**
+ * orch의 register 계약을 그대로 흉내 내는 인메모리 세션 전달 저장소.
+ * 같은 relation_key에 다른 신원이 오면 기존 행을 dead_letter로 만든다.
+ */
+function makeDeliveryRepository(rows: Map<string, Record<string, unknown>>) {
+  return {
+    register: vi.fn(async (params: Record<string, unknown>) => {
+      const existing = [...rows.values()].find(
+        (row) => row.delivery_id === params.deliveryId
+          || row.relation_key === params.relationKey,
+      );
+      const createdAt = params.createdAt as Date;
+      if (!existing) {
+        const row = {
+          delivery_id: params.deliveryId,
+          target_session_id: params.targetSessionId,
+          source_session_id: params.sourceSessionId,
+          relation_key: params.relationKey,
+          completion_id: params.completionId,
+          intent: params.intent,
+          source: params.source,
+          producer_kind: params.producerKind,
+          producer_id: params.producerId,
+          producer_terminal_revision: params.producerTerminalRevision,
+          parent_delivery_id: null,
+          caller_turn_id: null,
+          payload_hash: params.payloadHash,
+          payload: params.payload,
+          state: "pending",
+          aggregate_state: "pending",
+          dead_letter_reason: null,
+          attempt_count: 0,
+          next_attempt_at: createdAt,
+          last_error: null,
+          attempt_token: null,
+          attempt_expires_at: null,
+          created_at: createdAt,
+          updated_at: createdAt,
+          delivered_at: null,
+          consumed_at: null,
+        };
+        rows.set(row.delivery_id as string, row);
+        return { row, inserted: true, conflict: false };
+      }
+      const conflict =
+        existing.delivery_id !== params.deliveryId
+        || existing.relation_key !== params.relationKey
+        || existing.payload_hash !== params.payloadHash
+        || existing.intent !== params.intent
+        || existing.completion_id !== (params.completionId ?? null);
+      if (!conflict) return { row: existing, inserted: false, conflict: false };
+      const dead = {
+        ...existing,
+        state: "uncertain",
+        aggregate_state: "dead_letter",
+        dead_letter_reason: "delivery identity conflict",
+      };
+      rows.set(dead.delivery_id as string, dead);
+      return { row: dead, inserted: false, conflict: true };
+    }),
+    get: vi.fn(async (deliveryId: string) => rows.get(deliveryId) ?? null),
+    claimAttemptForTarget: vi.fn(async (
+      deliveryId: string,
+      targetSessionId: string,
+      attemptToken: string,
+    ) => {
+      const row = rows.get(deliveryId);
+      if (
+        !row || row.state !== "pending"
+        || (row.next_attempt_at as Date).getTime() > Date.now()
+      ) return null;
+      const claimed = {
+        ...row,
+        target_session_id: targetSessionId,
+        state: "claimed",
+        attempt_token: attemptToken,
+      };
+      rows.set(deliveryId, claimed);
+      return claimed;
+    }),
+    deferPending: vi.fn(async (
+      deliveryId: string,
+      reason: string,
+      retryDelayMs: number,
+    ) => {
+      const row = rows.get(deliveryId);
+      if (!row) return null;
+      const deferred = {
+        ...row,
+        state: "pending",
+        attempt_token: null,
+        last_error: reason,
+        next_attempt_at: new Date(Date.now() + retryDelayMs),
+      };
+      rows.set(deliveryId, deferred);
+      return deferred;
+    }),
+    retryDeliveryAttempt: vi.fn(async () => null),
+    expireStaleDeliveryAttempts: vi.fn(async () => 0),
+    markUncertain: vi.fn(async () => null),
+  };
+}
+
 describe("Claude background follow-up regression", () => {
   it("T1: 시한이 지나면 보유를 풀지 않은 채 followup이 자동 재개된다 (#1265)", async () => {
     vi.useFakeTimers();
@@ -118,10 +223,12 @@ describe("Claude background follow-up regression", () => {
       };
       const addIntervention = vi.fn(async () => ({ autoResumed: true }));
       const releaseRetainedRunner = vi.fn(async () => undefined);
+      const notifyBackgroundStopped = vi.fn(async () => undefined);
       const controller = new ClaudeRuntimeTaskFollowupController({
         taskManager: { addIntervention },
         onResume: vi.fn(),
         releaseRetainedRunner,
+        notifyBackgroundStopped,
         logger: silentLogger,
         deliveryV2Enabled: true,
         sourceNode: "node-1",
@@ -153,6 +260,8 @@ describe("Claude background follow-up regression", () => {
       expect(intervention.source).toBe(CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE);
       expect(intervention.followupKey).toContain("task-native");
       expect(intervention.text).toContain("task-native");
+      // followup으로 이어 간 세대는 「이을 수 없음」 알림을 만들지 않는다.
+      expect(notifyBackgroundStopped).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }
@@ -243,6 +352,108 @@ describe("Claude background follow-up regression", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("T3a: 완료를 followup으로 이을 수 없어 보유가 풀리면 멈춤 알림을 보낸다 (R5)", async () => {
+    const task = makeTask({
+      status: "completed",
+      runnerRetainedForDetachedWork: true,
+    });
+    const addIntervention = vi.fn(async () => ({ autoResumed: true }));
+    const notifyBackgroundStopped = vi.fn(async () => undefined);
+    const releaseRetainedRunner = vi.fn(async (target: Task) => {
+      target.runnerRetainedForDetachedWork = undefined;
+    });
+    const controller = new ClaudeRuntimeTaskFollowupController({
+      taskManager: { addIntervention },
+      onResume: vi.fn(),
+      releaseRetainedRunner,
+      notifyBackgroundStopped,
+      logger: silentLogger,
+      deliveryV2Enabled: true,
+      sourceNode: "node-1",
+      followupDeadlineMs: 120_000,
+    } as never);
+    // V2가 신원을 세우지 못하는 완료 사건(sdk_membership인데 durable metadata 없음).
+    const lost = {
+      type: "claude_runtime_task_updated",
+      task_id: "task-lost",
+      session_id: "sdk-session-1",
+      patch: { status: "completed", is_backgrounded: true },
+    } as unknown as SSEEventPayload;
+    attachClaudeBackgroundProvenance(lost, "sdk_membership");
+
+    await controller.collectDetached(task, lost);
+
+    expect(addIntervention).not.toHaveBeenCalled();
+    expect(releaseRetainedRunner).toHaveBeenCalledOnce();
+    expect(task.runnerRetainedForDetachedWork).toBeUndefined();
+    expect(notifyBackgroundStopped).toHaveBeenCalledWith(
+      task,
+      "백그라운드 작업이 끝났지만 이 세션을 이어 갈 수 없어 멈췄습니다.",
+    );
+  });
+
+  it("T3b: V2에서 완료 알림과 멈춤 알림은 겹치지 않는 전달로 둘 다 남는다", async () => {
+    const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
+    const rows = new Map<string, Record<string, unknown>>();
+    const repository = makeDeliveryRepository(rows);
+    const notifier = new TaskCompletionNotifier(
+      "node-1",
+      { addIntervention } as never,
+      { get: () => undefined } as never,
+      vi.fn(),
+      silentLogger,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      repository as never,
+    );
+    const task = makeTask({
+      status: "completed",
+      terminalEventId: 5,
+      completedAt: new Date("2026-11-13T00:10:00.000Z"),
+    });
+
+    await notifier.notify(task);
+    await notifier.notifyBackgroundStopped(task, "백그라운드 작업이 60분 안에 끝나지 않아 멈췄습니다.");
+    await notifier.notifyBackgroundStopped(task, "백그라운드 작업이 60분 안에 끝나지 않아 멈췄습니다.");
+
+    expect(addIntervention).toHaveBeenCalledTimes(2);
+    const completion = addIntervention.mock.calls[0]![0] as {
+      deliveryId: string;
+      relationKey: string;
+      text: string;
+    };
+    const stopped = addIntervention.mock.calls[1]![0] as {
+      deliveryId: string;
+      relationKey: string;
+      text: string;
+    };
+    expect(completion.relationKey).toBe("child_session:agent-child:5");
+    expect(stopped.relationKey).toBe(
+      "child_session:agent-child:5:background_stopped:"
+      + createHash("sha256")
+        .update("백그라운드 작업이 60분 안에 끝나지 않아 멈췄습니다.")
+        .digest("hex").slice(0, 16),
+    );
+    expect(stopped.deliveryId).not.toBe(completion.deliveryId);
+    expect(stopped.text).toContain("이 세션은 더 보고하지 않습니다.");
+
+    // 두 전달 모두 살아 있고, 완료 알림 행은 dead_letter가 아니다.
+    expect(rows.size).toBe(2);
+    const completionRow = [...rows.values()].find(
+      (row) => row.relation_key === "child_session:agent-child:5",
+    );
+    expect(completionRow).toMatchObject({
+      state: "claimed",
+      aggregate_state: "pending",
+      dead_letter_reason: null,
+    });
+    expect([...rows.values()].some(
+      (row) => row.aggregate_state === "dead_letter",
+    )).toBe(false);
   });
 
   it("T3: 보유 상한을 넘기면 보유를 풀고 부른 세션에 더 보고하지 않습니다를 보낸다", async () => {

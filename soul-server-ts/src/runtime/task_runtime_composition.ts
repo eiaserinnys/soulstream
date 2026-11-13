@@ -178,6 +178,9 @@ export function composeTaskRuntime(
     onResume,
     releaseRetainedRunner: async (task) =>
       await taskExecutor.releaseRetainedClaudeRunner(task),
+    notifyBackgroundStopped: async (task, firstSentence) => {
+      await completionNotifier.notifyBackgroundStopped(task, firstSentence);
+    },
     transcriptReceipt: params.claudeTranscriptReceipt,
     logger,
     deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,

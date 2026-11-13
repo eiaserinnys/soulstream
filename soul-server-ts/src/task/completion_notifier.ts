@@ -19,6 +19,8 @@
  *   3. 양쪽 모두 실패해도 *notify는 resolve* — child finalize에 throw 전파 금지
  *      (Python `task_manager.py:512-519` try/except 정합).
  */
+import { createHash } from "node:crypto";
+
 import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
@@ -130,7 +132,9 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       buildBackgroundStoppedNotice(firstSentence),
     );
     if (prepared === undefined) return;
-    await this._deliverPrepared(task, prepared);
+    await this._deliverPrepared(task, prepared, {
+      relationSuffix: backgroundStopRelationSuffix(firstSentence),
+    });
   }
 
   /**
@@ -177,7 +181,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
   private async _deliverPrepared(
     task: Task,
     prepared: PreparedCompletionDelivery,
-    options: { requireRegistration?: boolean } = {},
+    options: { requireRegistration?: boolean; relationSuffix?: string } = {},
   ): Promise<boolean> {
     const { callerSessionId, callerInfo, text } = prepared;
     const childId = task.agentSessionId;
@@ -197,6 +201,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
         callerInfo,
         ...task.rateLimitStopInfo,
         createdAt: task.completedAt ?? new Date(),
+        ...(options.relationSuffix ? { relationSuffix: options.relationSuffix } : {}),
       };
       if (options.requireRegistration === true) {
         const registration = await this.durableCoordinator.enqueueForDelete(input);
@@ -467,4 +472,13 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       return { kind: "failed", reason: "cross_node_relay_failed" };
     }
   }
+}
+
+/**
+ * 보유 해제 알림의 durable relation 꼬리표. 같은 세션·같은 종료 revision에서도
+ * 완료 알림과 다른 deliveryId를 세우고, 같은 까닭의 알림은 한 번만 간다.
+ */
+function backgroundStopRelationSuffix(firstSentence: string): string {
+  const reason = createHash("sha256").update(firstSentence).digest("hex").slice(0, 16);
+  return `background_stopped:${reason}`;
 }

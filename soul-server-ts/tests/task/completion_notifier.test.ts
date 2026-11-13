@@ -1076,4 +1076,24 @@ describe("TaskCompletionNotifier.notify", () => {
     await expect(notifier.notify(makeChild())).resolves.toBeUndefined();
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
+
+  it("R4. 남은 백그라운드가 있는데 보유가 서지 않은 종료 — 멈췄습니다 줄", async () => {
+    const tm = makeTaskManagerStub();
+    const notifier = new TaskCompletionNotifier(
+      NODE_ID, tm.taskManager, makeAgentRegistry(), vi.fn(), silentLogger,
+    );
+
+    await notifier.notify(makeChild({
+      backgroundRuntimeAtTurnEnd: 2,
+      runnerRetainedForDetachedWork: undefined,
+    }));
+
+    const params = tm.addIntervention.mock.calls[0]![0] as AddInterventionParams;
+    expect(params.text).toContain("hello world from child");
+    expect(params.text).toContain(
+      "백그라운드 작업이 남은 채 끝났고 그 작업은 멈췄습니다. "
+      + "이 세션은 더 보고하지 않습니다.",
+    );
+    expect(params.text).not.toContain("이어서 다시 보고합니다");
+  });
 });

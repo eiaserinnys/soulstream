@@ -16,7 +16,7 @@ import type { ClaudeDeliveryTranscriptReceiptReader } from
 
 import type { StartExecutionCallback } from "./task_intervention_route.js";
 import type { TaskManager } from "./task_manager.js";
-import type { Task } from "./task_models.js";
+import { isTerminalTaskStatus, type Task } from "./task_models.js";
 import { buildClaudeRuntimeFollowupDelivery } from "./claude_runtime_followup_delivery.js";
 import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import {
@@ -26,6 +26,8 @@ import {
 } from "./claude_runtime_task_followup_prompt.js";
 import { buildClaudeBackgroundGenerationIdentity } from
   "./claude_background_generation_identity.js";
+import { CLAUDE_BACKGROUND_UNRECOVERABLE_SENTENCE } from
+  "./claude_background_retention_notice.js";
 import { hasPendingClaudeBackgroundRuntimeWork } from "./claude_runtime_state.js";
 import type { ClaudeBackgroundConsumptionProof } from
   "./claude_background_result_consumption.js";
@@ -60,6 +62,8 @@ export interface ClaudeRuntimeTaskFollowupDeps {
     Partial<Pick<TaskManager, "getDeliveryConsumptionRecorder">>;
   onResume: StartExecutionCallback;
   releaseRetainedRunner(task: Task): Promise<void>;
+  /** 보유가 followup 없이 풀렸을 때 부른 세션에 알린다(R3/R5). */
+  notifyBackgroundStopped?(task: Task, firstSentence: string): Promise<void>;
   transcriptReceipt?: Pick<
     ClaudeDeliveryTranscriptReceiptReader,
     "inspectInput" | "inspectNativeTaskNotification"
@@ -231,11 +235,28 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
 
   async collectDetached(task: Task, event: SSEEventPayload): Promise<void> {
     const generationKey = this.collect(task, event);
+    const ownershipBefore = this.nativeOwnershipByGenerationKey.size;
     await this.observeNativeEvent(task, event);
     if (hasPendingClaudeBackgroundRuntimeWork(task)) return;
     if (generationKey === undefined) {
-      await this.flushPending(task);
+      const flushed = await this.flushPending(task);
+      const wasRetained = task.runnerRetainedForDetachedWork === true;
       await this.deps.releaseRetainedRunner(task);
+      const released = wasRetained && task.runnerRetainedForDetachedWork !== true;
+      // R3/R5: 완료 사건인데 followup을 세우지 못해 보유가 풀렸다. native가
+      // 이미 이어받았거나(native 소유 중/이번 사건에서 소비) 새 턴이 도는
+      // 세션은 알리지 않는다 — 이어받은 세대는 그 턴이 다시 보고한다.
+      const nativeContinued = this.nativeOwnershipByGenerationKey.size < ownershipBefore;
+      if (
+        flushed === 0 &&
+        released &&
+        isTerminalTaskStatus(task.status) &&
+        isTerminalCompletionEvent(event) &&
+        !nativeContinued &&
+        !this.hasNativeOwnership(task.agentSessionId)
+      ) {
+        await this.notifyUnrecoverable(task);
+      }
       return;
     }
     const pending = this.pendingBySession.get(task.agentSessionId);
@@ -413,6 +434,27 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
         "Claude runtime task follow-up intervention failed",
       );
       throw err;
+    }
+  }
+
+  /** native 알림 턴이 아직 전달을 쥐고 있는 세션인가. */
+  private hasNativeOwnership(sessionId: string): boolean {
+    for (const item of this.nativeOwnershipByGenerationKey.values()) {
+      if (item.sessionId === sessionId) return true;
+    }
+    return false;
+  }
+
+  private async notifyUnrecoverable(task: Task): Promise<void> {
+    const notify = this.deps.notifyBackgroundStopped;
+    if (!notify) return;
+    try {
+      await notify(task, CLAUDE_BACKGROUND_UNRECOVERABLE_SENTENCE);
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "Claude background stopped notice failed",
+      );
     }
   }
 
@@ -648,6 +690,22 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     );
   }
 
+}
+
+/** 완료 통지 꼴(터미널 상태)인 사건인가 — 이을 수 없음(R5) 판정의 전제. */
+function isTerminalCompletionEvent(event: SSEEventPayload): boolean {
+  const payload = event as Record<string, unknown>;
+  const type = asString(payload.type);
+  if (
+    type !== "claude_runtime_task_notification" &&
+    type !== "claude_runtime_task_updated"
+  ) return false;
+  if (!asString(payload.task_id)) return false;
+  const patch = type === "claude_runtime_task_updated"
+    ? asRecord(payload.patch) ?? {}
+    : {};
+  const status = asString(payload.status) ?? asString(patch.status);
+  return status !== undefined && TERMINAL_RUNTIME_TASK_STATUSES.has(status);
 }
 
 function assistantUuidFromDedupeKey(value: string | undefined): string | undefined {
