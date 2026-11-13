@@ -38,7 +38,7 @@ it("advertises two base-model presets, bounded efforts and the Antigravity usage
     expect(catalog.list().find(x=>x.id===id)).toMatchObject({backend:"antigravity",model:id,default_effort:effort,supported_efforts:["low","medium","high"]});
     expect(catalog.advertise().find(x=>x.id===id)?.usage_provider).toBe("antigravity");
   }
-  expect(nodeEffortCapabilities("sdk").antigravity).toEqual(["low","medium","high","xhigh"]);
+  expect(nodeEffortCapabilities("sdk").antigravity).toEqual(["low","medium","high","xhigh","max"]);
 });
 it("creates Antigravity through both factories without checking or spawning an installed CLI", () => {
   const workspaceDir=makeTempDirSync("agy-factories-");
