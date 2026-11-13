@@ -625,6 +625,12 @@ export interface Task {
   /** Foreground result 뒤 detached work를 소유하여 다음 turn까지 보존된 runner. */
   runnerRetainedForDetachedWork?: boolean;
 
+  /**
+   * 턴이 끝난 순간 아직 돌고 있던 백그라운드 작업 수. 완료 알림이 보유 여부에
+   * 맞는 한 줄을 붙일 때 쓴다. 런타임 전용이라 DB·wire에 박지 않는다.
+   */
+  backgroundRuntimeAtTurnEnd?: number;
+
   /** Runtime-only exact close claim; never persisted or sent over the wire. */
   runnerReleaseClaim?: RunnerReleaseClaim;
 

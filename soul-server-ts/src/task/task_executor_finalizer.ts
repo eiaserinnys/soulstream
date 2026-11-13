@@ -16,6 +16,11 @@ import {
   completeTaskRunnerReleaseClaim,
   releaseTaskRunner,
 } from "./task_runner_release.js";
+import { countPendingClaudeBackgroundRuntimeWork } from "./claude_runtime_state.js";
+import {
+  buildRetentionCapExceededSentence,
+  DEFAULT_CLAUDE_BACKGROUND_RETENTION_CAP_MS,
+} from "./claude_background_retention_notice.js";
 
 interface TaskExecutorFinalizerDeps {
   lifecycleTransition: Pick<
@@ -23,6 +28,10 @@ interface TaskExecutorFinalizerDeps {
     "persistExecutorFinalState" | "notifyCompletionIfApplied"
   >;
   logger: Logger;
+  /** 보유가 followup 없이 풀릴 때 부른 세션에 알리는 길. */
+  notifyBackgroundStopped?: (task: Task, firstSentence: string) => Promise<void>;
+  /** 클로드 백그라운드 보유 상한. 넘기면 보유를 풀고 알린다. */
+  retentionCapMs?: number;
 }
 
 export type RetainedRunnerReleaseResult =
@@ -34,7 +43,13 @@ type DetachedWorkRetention = "retained" | "codex_inactive" | "not_retained";
 type CodexActivityDisposition = "retain" | "inactive" | "unsupported";
 
 export class TaskExecutorFinalizer {
-  constructor(private readonly deps: TaskExecutorFinalizerDeps) {}
+  private readonly retentionCapTimers = new Map<Task, ReturnType<typeof setTimeout>>();
+  private readonly retentionCapMs: number;
+
+  constructor(private readonly deps: TaskExecutorFinalizerDeps) {
+    this.retentionCapMs = deps.retentionCapMs
+      ?? DEFAULT_CLAUDE_BACKGROUND_RETENTION_CAP_MS;
+  }
 
   async finalize(
     task: Task,
@@ -49,6 +64,9 @@ export class TaskExecutorFinalizer {
      */
     beforeNotify?: (terminalTransitionApplied: boolean) => Promise<boolean>,
   ): Promise<void> {
+    // Snapshot before closeEngine can terminalize the remaining background
+    // work: the completion notice reports what was still running at turn end.
+    task.backgroundRuntimeAtTurnEnd = countPendingClaudeBackgroundRuntimeWork(task);
     const persistence = await this.deps.lifecycleTransition.persistExecutorFinalState(task, true);
     // The sessions-row release ACK is the durable terminal/owner boundary. Keep
     // the runner handle until it commits so the same owner can retry on failure.
@@ -67,6 +85,7 @@ export class TaskExecutorFinalizer {
     if (task.runnerRetainedForDetachedWork !== true) return;
 
     if (!releaseTaskRunner(task, runner)) return;
+    this.clearRetentionCap(task);
     await this.closeRunnerDispatcher(task, runner);
   }
 
@@ -83,6 +102,7 @@ export class TaskExecutorFinalizer {
     if (runner.dispatcher.hasLostRunner?.() === true) return "not_retained";
     if (retention === "retained" || retention === "codex_inactive") {
       task.runnerRetainedForDetachedWork = true;
+      if (retention === "retained") this.scheduleRetentionCap(task, runner);
     }
     return retention;
   }
@@ -139,6 +159,7 @@ export class TaskExecutorFinalizer {
       );
       return "retry_required";
     }
+    this.clearRetentionCap(task);
     return "released";
   }
 
@@ -160,7 +181,59 @@ export class TaskExecutorFinalizer {
       && await this.retainRunnerIfDetachedWorkActive(task, runner) === "retained"
     ) return;
     if (runner) await this.closeRunnerDispatcher(task, runner);
+    if (runner) this.clearRetentionCap(task);
     if (runner) releaseTaskRunner(task, runner);
+  }
+
+  /**
+   * 보유 상한 타이머. 넘기면 엔진 활동과 무관하게 보유를 풀고(남은 백그라운드는
+   * Query와 함께 멈춘다) 부른 세션에 「더 보고하지 않습니다」를 보낸다(R3).
+   */
+  private scheduleRetentionCap(
+    task: Task,
+    runner: NonNullable<Task["runner"]>,
+  ): void {
+    if (!Number.isFinite(this.retentionCapMs) || this.retentionCapMs <= 0) return;
+    this.clearRetentionCap(task);
+    const timer = setTimeout(() => {
+      this.retentionCapTimers.delete(task);
+      void this.onRetentionCapExpired(task, runner);
+    }, this.retentionCapMs);
+    (timer as { unref?: () => void }).unref?.();
+    this.retentionCapTimers.set(task, timer);
+  }
+
+  private clearRetentionCap(task: Task): void {
+    const timer = this.retentionCapTimers.get(task);
+    if (!timer) return;
+    this.retentionCapTimers.delete(task);
+    clearTimeout(timer);
+  }
+
+  private async onRetentionCapExpired(
+    task: Task,
+    runner: NonNullable<Task["runner"]>,
+  ): Promise<void> {
+    if (task.runnerRetainedForDetachedWork !== true || task.runner !== runner) return;
+    if (!releaseTaskRunner(task, runner)) return;
+    await this.closeRunnerDispatcher(task, runner);
+    const firstSentence = buildRetentionCapExceededSentence(this.retentionCapMs);
+    const notify = this.deps.notifyBackgroundStopped;
+    if (!notify) {
+      this.deps.logger.warn(
+        { sessionId: task.agentSessionId },
+        "background retention cap released without a caller notice port",
+      );
+      return;
+    }
+    try {
+      await notify(task, firstSentence);
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "background retention cap notice failed",
+      );
+    }
   }
 
   private async closeRunnerDispatcher(

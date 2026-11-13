@@ -13,6 +13,11 @@ import type { Task } from "../task/task_models.js";
 interface DetachedClaudeEventBridgeOptions {
   logger: Logger;
   findTask(sessionId: string): Task | undefined;
+  /**
+   * 호스트 재시작 뒤 메모리에 없는 task를 저장소에서 되살린다(R5). 여기서
+   * 사건을 버리면 보유했던 백그라운드 결과가 조용히 사라진다.
+   */
+  loadTask?(sessionId: string): Promise<Task | null | undefined>;
   getPublisher(): Pick<TaskEngineEventPublisher, "publishEngineEvent"> | undefined;
   collectDetached(task: Task, payload: SSEEventPayload): Promise<void>;
 }
@@ -26,8 +31,18 @@ export function createDetachedClaudeEventBridge(
   idempotencyKey?: string,
 ) => Promise<() => Promise<void>> {
   return async (sessionId, event, idempotencyKey) => {
-    const task = options.findTask(sessionId);
+    let task = options.findTask(sessionId);
     const publisher = options.getPublisher();
+    if (!task && publisher && options.loadTask) {
+      try {
+        task = (await options.loadTask(sessionId)) ?? undefined;
+      } catch (err) {
+        options.logger.warn(
+          { err, sessionId, eventType: event.type },
+          "Detached Claude runtime event task recovery failed",
+        );
+      }
+    }
     if (!task || !publisher) {
       options.logger.warn(
         { sessionId, eventType: event.type },

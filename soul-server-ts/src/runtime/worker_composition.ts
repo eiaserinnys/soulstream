@@ -199,9 +199,9 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
   const publishDetachedClaudeEvent = createDetachedClaudeEventBridge({
     logger,
     findTask: (sessionId) => taskManager.getTask(sessionId),
+    loadTask: (sessionId) => taskManager.hydrateRunnerRecoveryTask(sessionId),
     getPublisher: () => detachedClaudeEventPublisher,
-    collectDetached: async (task, payload) =>
-      await taskRuntime.claudeRuntimeTaskFollowup.collectDetached(task, payload),
+    collectDetached: (task, payload) => taskRuntime.claudeRuntimeTaskFollowup.collectDetached(task, payload),
   });
   const claudeRuntime = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
     ? await composeClaudeRuntime({
@@ -332,10 +332,8 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     ...(claudeRuntime.backgroundLifecycle
       ? {
         terminalizeClaudeBackgroundTasks: (sessionId, execution) =>
-          claudeRuntime.backgroundLifecycle!.terminalizeDeadRunner(
-            sessionId,
-            execution,
-          ),
+          claudeRuntime.backgroundLifecycle!.terminalizeDeadRunner(sessionId, execution),
+        completionNotifier: taskRuntime.completionNotifier,
       }
       : {}),
     ...(runnerProcess ? { recoveryStorage: runnerProcess.recoveryStorage } : {}),

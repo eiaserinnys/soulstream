@@ -64,6 +64,86 @@ describe("createDetachedClaudeEventBridge", () => {
     });
   });
 
+  it("hydrates a task missing from memory and continues to collectDetached (R5)", async () => {
+    const hydrated = { agentSessionId: "session-a" } as never;
+    const publishEngineEvent = vi.fn(async () => undefined);
+    const collectDetached = vi.fn(async () => undefined);
+    const loadTask = vi.fn(async () => hydrated);
+    const bridge = createDetachedClaudeEventBridge({
+      logger: pino({ level: "silent" }),
+      findTask: () => undefined,
+      loadTask,
+      getPublisher: () => ({ publishEngineEvent }),
+      collectDetached,
+    });
+
+    const continueAfterResponse = await bridge(
+      "session-a",
+      { type: "text", text: "detached done", timestamp: 1 },
+    );
+    expect(loadTask).toHaveBeenCalledWith("session-a");
+    expect(publishEngineEvent).toHaveBeenCalledWith(hydrated, {
+      type: "assistant_message",
+      content: "detached done",
+      timestamp: 1,
+    });
+
+    await continueAfterResponse();
+    expect(collectDetached).toHaveBeenCalledWith(hydrated, {
+      type: "assistant_message",
+      content: "detached done",
+      timestamp: 1,
+    });
+  });
+
+  it("stops with a warning when task hydration returns nothing", async () => {
+    const warn = vi.fn();
+    const publishEngineEvent = vi.fn(async () => undefined);
+    const collectDetached = vi.fn(async () => undefined);
+    const bridge = createDetachedClaudeEventBridge({
+      logger: { warn } as never,
+      findTask: () => undefined,
+      loadTask: async () => null,
+      getPublisher: () => ({ publishEngineEvent }),
+      collectDetached,
+    });
+
+    const continueAfterResponse = await bridge(
+      "session-a",
+      { type: "text", text: "detached done", timestamp: 1 },
+    );
+    await continueAfterResponse();
+
+    expect(publishEngineEvent).not.toHaveBeenCalled();
+    expect(collectDetached).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it("stops with a warning when task hydration throws", async () => {
+    const warn = vi.fn();
+    const publishEngineEvent = vi.fn(async () => undefined);
+    const collectDetached = vi.fn(async () => undefined);
+    const bridge = createDetachedClaudeEventBridge({
+      logger: { warn } as never,
+      findTask: () => undefined,
+      loadTask: async () => {
+        throw new Error("hydrate failed");
+      },
+      getPublisher: () => ({ publishEngineEvent }),
+      collectDetached,
+    });
+
+    const continueAfterResponse = await bridge(
+      "session-a",
+      { type: "text", text: "detached done", timestamp: 1 },
+    );
+    await continueAfterResponse();
+
+    expect(publishEngineEvent).not.toHaveBeenCalled();
+    expect(collectDetached).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalled();
+  });
+
   it("preserves the SDK assistant identity for post-publish native consumption", async () => {
     const task = { agentSessionId: "session-a" } as never;
     const collected: Record<string, unknown>[] = [];

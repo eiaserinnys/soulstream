@@ -19,6 +19,8 @@
  *   3. 양쪽 모두 실패해도 *notify는 resolve* — child finalize에 throw 전파 금지
  *      (Python `task_manager.py:512-519` try/except 정합).
  */
+import { createHash } from "node:crypto";
+
 import type { Logger } from "pino";
 
 import type { AgentRegistry } from "../agent_registry.js";
@@ -28,6 +30,12 @@ import type { SessionDB } from "../db/session_db.js";
 import type { OrchProxyConfig } from "../mcp/runtime.js";
 
 import { CompletionDeliveryCoordinator } from "./completion_delivery_coordinator.js";
+import {
+  buildBackgroundStoppedNotice,
+  buildRetainedBackgroundNotice,
+  buildStoppedBackgroundNotice,
+  DEFAULT_CLAUDE_BACKGROUND_RETENTION_CAP_MS,
+} from "./claude_background_retention_notice.js";
 import { OrchInterveneClient, OrchInterveneRequestError } from "./orch_intervene_client.js";
 import {
   classifyCompletionDeliveryResult,
@@ -50,6 +58,8 @@ import type { Task } from "./task_models.js";
 export interface CompletionNotifier {
   notify(task: Task): Promise<void>;
   notifyForDelete?(task: Task): Promise<boolean>;
+  /** 보유가 followup 없이 풀렸을 때 부른 세션에 알린다(R3/R5). */
+  notifyBackgroundStopped?(task: Task, firstSentence: string): Promise<void>;
   recoverPending?(): Promise<void>;
 }
 
@@ -81,6 +91,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     >,
     private readonly deliveryV2Enabled = false,
     deliveryRepository?: SessionDeliveryHostClient,
+    private readonly backgroundRetentionCapMs = DEFAULT_CLAUDE_BACKGROUND_RETENTION_CAP_MS,
   ) {
     this.interveneClient = orch ? new OrchInterveneClient(orch, fetchImpl) : undefined;
     if (deliveryV2Enabled && deliveryRepository) {
@@ -114,6 +125,21 @@ export class TaskCompletionNotifier implements CompletionNotifier {
   }
 
   /**
+   * 보유가 followup 없이 풀렸을 때 부른 세션에 보내는 알림(R3). 까닭 문장 뒤에
+   * 「이 세션은 더 보고하지 않습니다.」 꼬리를 붙인다. 부른 세션이 없으면 생략한다.
+   */
+  async notifyBackgroundStopped(task: Task, firstSentence: string): Promise<void> {
+    const prepared = await this._prepareDelivery(
+      task,
+      buildBackgroundStoppedNotice(firstSentence),
+    );
+    if (prepared === undefined) return;
+    await this._deliverPrepared(task, prepared, {
+      relationSuffix: backgroundStopRelationSuffix(firstSentence),
+    });
+  }
+
+  /**
    * 삭제 길 전용. 이번 종료 revision의 등록 결과를 실제로 돌려준다 — 실패를
    * 로그로 삼키지 않는다. 등록이 필요 없는 경우(notifyCompletion=false, caller
    * 없음, 자기 자신)는 true다. 일반 완료·멈춤 단추 길은 `notify`를 그대로 쓴다.
@@ -128,6 +154,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
 
   private async _prepareDelivery(
     task: Task,
+    text?: string,
   ): Promise<PreparedCompletionDelivery | undefined> {
     if (task.notifyCompletion === false) {
       this.logger.info(
@@ -149,14 +176,14 @@ export class TaskCompletionNotifier implements CompletionNotifier {
     return {
       callerSessionId,
       callerInfo: this._buildCallerInfo(task),
-      text: this._buildNotifyText(task),
+      text: text ?? this._buildNotifyText(task),
     };
   }
 
   private async _deliverPrepared(
     task: Task,
     prepared: PreparedCompletionDelivery,
-    options: { requireRegistration?: boolean } = {},
+    options: { requireRegistration?: boolean; relationSuffix?: string } = {},
   ): Promise<boolean> {
     const { callerSessionId, callerInfo, text } = prepared;
     const childId = task.agentSessionId;
@@ -176,6 +203,7 @@ export class TaskCompletionNotifier implements CompletionNotifier {
         callerInfo,
         ...task.rateLimitStopInfo,
         createdAt: task.completedAt ?? new Date(),
+        ...(options.relationSuffix ? { relationSuffix: options.relationSuffix } : {}),
       };
       if (options.requireRegistration === true) {
         const registration = await this.durableCoordinator.enqueueForDelete(input);
@@ -337,6 +365,16 @@ export class TaskCompletionNotifier implements CompletionNotifier {
    * `(빈 응답)` fallback으로 parent에 빈 메시지가 그대로 가는 것을 차단.
    */
   private _buildNotifyText(task: Task): string {
+    const body = this._buildCompletionBody(task);
+    const remaining = task.backgroundRuntimeAtTurnEnd ?? 0;
+    if (remaining <= 0) return body;
+    const line = task.runnerRetainedForDetachedWork === true
+      ? buildRetainedBackgroundNotice(remaining, this.backgroundRetentionCapMs)
+      : buildStoppedBackgroundNotice();
+    return `${body}\n\n${line}`;
+  }
+
+  private _buildCompletionBody(task: Task): string {
     const sid = task.agentSessionId;
     if (task.terminationDetail === "user_stop") {
       const resultText = task.lastAssistantText?.trim() || "(빈 응답)";
@@ -436,4 +474,13 @@ export class TaskCompletionNotifier implements CompletionNotifier {
       return { kind: "failed", reason: "cross_node_relay_failed" };
     }
   }
+}
+
+/**
+ * 보유 해제 알림의 durable relation 꼬리표. 같은 세션·같은 종료 revision에서도
+ * 완료 알림과 다른 deliveryId를 세우고, 같은 까닭의 알림은 한 번만 간다.
+ */
+function backgroundStopRelationSuffix(firstSentence: string): string {
+  const reason = createHash("sha256").update(firstSentence).digest("hex").slice(0, 16);
+  return `background_stopped:${reason}`;
 }

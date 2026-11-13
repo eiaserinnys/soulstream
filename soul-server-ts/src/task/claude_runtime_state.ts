@@ -20,12 +20,19 @@ const TERMINAL_CLAUDE_RUNTIME_TASK_STATUSES = new Set<ClaudeRuntimeTaskStatus>([
   "killed",
 ]);
 
-export function hasPendingClaudeBackgroundRuntimeWork(task: Task): boolean {
-  return Object.values(task.claudeRuntime?.tasks ?? {}).some(
-    (runtimeTask) =>
+export function countPendingClaudeBackgroundRuntimeWork(task: Task): number {
+  let count = 0;
+  for (const runtimeTask of Object.values(task.claudeRuntime?.tasks ?? {})) {
+    if (
       runtimeTask.isBackgrounded === true
-      && !TERMINAL_CLAUDE_RUNTIME_TASK_STATUSES.has(runtimeTask.status),
-  );
+      && !TERMINAL_CLAUDE_RUNTIME_TASK_STATUSES.has(runtimeTask.status)
+    ) count += 1;
+  }
+  return count;
+}
+
+export function hasPendingClaudeBackgroundRuntimeWork(task: Task): boolean {
+  return countPendingClaudeBackgroundRuntimeWork(task) > 0;
 }
 
 export function applyClaudeRuntimeEvent(task: Task, event: SSEEventPayload): boolean {

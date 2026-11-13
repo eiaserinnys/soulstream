@@ -3,6 +3,7 @@ import type { Logger } from "pino";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { ExecutionRegistration } from "../task/execution_registration.js";
+import type { Task } from "../task/task_models.js";
 import type { ClosedRunnerTailDrainer } from "./closed_runner_tail_drainer.js";
 import type { RunnerProcessSpawner } from "./runner_process_spawn.js";
 import type { RunnerCentralSessionRow } from "./runner_central_check.js";
@@ -80,4 +81,10 @@ export interface RunnerRecoveryCoordinatorOptions {
     sessionId: string,
     execution: ExecutionRegistration,
   ) => Promise<number>;
+  /**
+   * 죽은 러너의 백그라운드 작업을 종료로 적은 뒤 부른 세션에 멈춤을 알린다(R3).
+   * 러너가 죽으면 자식에 남은 runtime_followup 행을 claim할 곳이 없어 부른
+   * 쪽은 아무것도 받지 못한다.
+   */
+  notifyDeadRunnerBackgroundStopped?: (task: Task) => Promise<void>;
 }

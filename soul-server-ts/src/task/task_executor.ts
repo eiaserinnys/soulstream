@@ -367,6 +367,8 @@ export class TaskExecutor {
     private readonly profileWorkspaceResolver?: ProfileWorkspaceResolver,
     /** 일반 세션 실행 중 한도 전환. 미주입이면 동작하지 않는다. */
     private readonly sessionModelFallbackRuntime?: SessionModelFallbackRuntime,
+    /** 클로드 백그라운드 보유 상한. 넘기면 보유를 풀고 부른 세션에 알린다. */
+    backgroundRetentionCapMs?: number,
   ) {
     this.lifecycleTransition = new TaskLifecycleTransition({
       logger: this.logger,
@@ -376,6 +378,10 @@ export class TaskExecutor {
     this.executorFinalizer = new TaskExecutorFinalizer({
       lifecycleTransition: this.lifecycleTransition,
       logger: this.logger,
+      notifyBackgroundStopped: async (task, firstSentence) => {
+        await this.lifecycleTransition.notifyBackgroundStopped(task, firstSentence);
+      },
+      ...(backgroundRetentionCapMs !== undefined ? { retentionCapMs: backgroundRetentionCapMs } : {}),
     });
     this.engineEventPublisher = new TaskEngineEventPublisher({
       broadcaster,

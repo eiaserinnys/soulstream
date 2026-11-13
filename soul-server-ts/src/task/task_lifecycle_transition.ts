@@ -36,6 +36,7 @@ export interface ExternalFinalizeParams {
 interface CompletionNotificationPort {
   notify(task: Task): Promise<void>;
   notifyForDelete?(task: Task): Promise<boolean>;
+  notifyBackgroundStopped?(task: Task, firstSentence: string): Promise<void>;
 }
 
 interface TaskLifecycleTransitionDeps {
@@ -120,6 +121,25 @@ export class TaskLifecycleTransition {
       this.deps.logger.warn(
         { err, sessionId: task.agentSessionId },
         "completion notification failed after terminal transition was applied",
+      );
+      return false;
+    }
+  }
+
+  /**
+   * 보유가 followup 없이 풀렸다는 알림(R3). 부른 세션이 없으면 보내지 않는다.
+   * 알림 실패는 턴 종료를 막지 않는다.
+   */
+  async notifyBackgroundStopped(task: Task, firstSentence: string): Promise<boolean> {
+    const notify = this.completionNotifier?.notifyBackgroundStopped;
+    if (!task.callerSessionId || !notify) return true;
+    try {
+      await notify.call(this.completionNotifier, task, firstSentence);
+      return true;
+    } catch (err) {
+      this.deps.logger.warn(
+        { err, sessionId: task.agentSessionId },
+        "background retention stop notification failed",
       );
       return false;
     }

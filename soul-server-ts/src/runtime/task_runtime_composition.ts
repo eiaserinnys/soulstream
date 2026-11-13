@@ -160,6 +160,7 @@ export function composeTaskRuntime(
     db,
     env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
     completionDeliveryRepository,
+    env.CLAUDE_BACKGROUND_RETENTION_CAP_MS,
   );
   const completionDeliveryRecoveryWorker = env.CLAUDE_SESSION_RUNTIME_V2_ENABLED
     ? new CompletionDeliveryRecoveryWorker({
@@ -177,10 +178,14 @@ export function composeTaskRuntime(
     onResume,
     releaseRetainedRunner: async (task) =>
       await taskExecutor.releaseRetainedClaudeRunner(task),
+    notifyBackgroundStopped: async (task, firstSentence) => {
+      await completionNotifier.notifyBackgroundStopped(task, firstSentence);
+    },
     transcriptReceipt: params.claudeTranscriptReceipt,
     logger,
     deliveryV2Enabled: env.CLAUDE_SESSION_RUNTIME_V2_ENABLED,
     sourceNode: env.SOULSTREAM_NODE_ID,
+    followupDeadlineMs: env.CLAUDE_BACKGROUND_FOLLOWUP_DEADLINE_MS,
   });
 
   // off에서는 게이트를 만들지 않는다 — 판정 호출도 정책 파일 읽기도 0회다.
@@ -245,6 +250,7 @@ export function composeTaskRuntime(
       persistentSessions: taskManager.persistentSessions,
       scheduleService,
     },
+    env.CLAUDE_BACKGROUND_RETENTION_CAP_MS,
   );
   completionDeliveryRecoveryWorker?.start();
   const scheduleDispatcher = new ScheduleDispatcher(

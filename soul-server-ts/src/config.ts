@@ -161,6 +161,19 @@ export const EnvSchema = z
     CLAUDE_SESSION_RUNTIME_TURN_TIMEOUT_MS: z.coerce
       .number().int().positive().default(1_200_000),
     /**
+     * Runtime v2 only. A retained Claude Query waits this long for the SDK's
+     * own notification turn to become a Soulstream turn before the background
+     * completion is delivered as a follow-up input anyway.
+     */
+    CLAUDE_BACKGROUND_FOLLOWUP_DEADLINE_MS: z.coerce
+      .number().int().positive().default(120_000),
+    /**
+     * Runtime v2 only. Retained Claude background work is released after this
+     * cap, and the caller is told the session stopped reporting.
+     */
+    CLAUDE_BACKGROUND_RETENTION_CAP_MS: z.coerce
+      .number().int().positive().default(3_600_000),
+    /**
      * context_builder: atom MCP HTTP API 설정.
      * 모두 optional — 미설정 시 atom 호출 skip (graceful, turn 진행에 영향 없음).
      */

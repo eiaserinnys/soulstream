@@ -34,6 +34,11 @@ export interface DurableCompletionInput {
   rateLimitType?: string;
   resetsAt?: string;
   createdAt: Date;
+  /**
+   * 같은 종료 revision에 딸리는 별개 통지(보유 해제 등)를 완료 알림과 구분하는
+   * 꼬리표. 없으면 완료 알림 키 그대로다.
+   */
+  relationSuffix?: string;
 }
 
 export type CompletionDeliveryRegistrationResult =
@@ -339,7 +344,8 @@ function buildCompletionRegistration(
   input: DurableCompletionInput,
 ): RegisterSessionDeliveryParams {
   const relationKey =
-    `child_session:${input.sourceSessionId}:${input.terminalRevision}`;
+    `child_session:${input.sourceSessionId}:${input.terminalRevision}` +
+    (input.relationSuffix ? `:${input.relationSuffix}` : "");
   const identity = buildDeterministicDeliveryIdentity({
     targetSessionId: input.targetSessionId,
     relationKey,
