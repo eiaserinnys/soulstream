@@ -179,10 +179,29 @@ export async function installChatUiRoutes(page: Page, options: {
 }
 
 export async function openChatUi(page: Page, pas = false) {
-  await page.goto(pas ? `/persistent/${chatUiSession}` : `/?session=${chatUiSession}`);
-  if (!pas && (page.viewportSize()?.width ?? 1440) <= 760) await page.getByTestId("v3-mobile-tab-chat").click();
-  const root = page.locator('[data-slot="chat-root"]').filter({ visible: true }).first();
-  await expect(root).toBeVisible();
-  await expect(root.locator(".chat-ui").first()).toBeVisible();
-  return root;
+  const open = async (waitMs: number) => {
+    await page.goto(pas ? `/persistent/${chatUiSession}` : `/?session=${chatUiSession}`);
+    if (!pas && (page.viewportSize()?.width ?? 1440) <= 760) {
+      // ?session= 의도가 소비되기 전에 모바일 채팅 탭을 누르면 기본 세션 패널이
+      // 먼저 열려 run-alpha-2 대신 다른 세션이 붙는다. 의도 소비를 기다린 뒤 누른다.
+      await page.waitForFunction(
+        () => !new URL(location.href).searchParams.has("session"),
+        undefined,
+        { timeout: waitMs },
+      ).catch(() => {});
+      await page.getByTestId("v3-mobile-tab-chat").click();
+    }
+    const root = page.locator('[data-slot="chat-root"]').filter({ visible: true }).first();
+    // 개발 서버가 처음 요청받을 때 채팅 청크를 변환하는 시간이 5초를 넘기도 한다.
+    await expect(root).toBeVisible({ timeout: waitMs });
+    await expect(root.locator(".chat-ui").first()).toBeVisible({ timeout: waitMs });
+    return root;
+  };
+  try {
+    return await open(15_000);
+  } catch {
+    // 앱 시작 경합으로 ?session= 의도가 먼저 소비되면 폴더 화면에 머문다.
+    // 이 카드의 검수 대상이 아닌 기존 경합이라 한 번만 다시 열어 화면 조건을 맞춘다.
+    return open(30_000);
+  }
 }

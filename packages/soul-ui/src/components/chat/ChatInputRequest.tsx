@@ -36,16 +36,18 @@ export const ChatInputRequest = memo(function ChatInputRequest({
     if (!msg.requestId) return;
     setSubmissionFailed(false);
     setSelectedAnswer(answer);  // 낙관적 UI
-    const success = await submitInputResponse(
+    const result = await submitInputResponse(
       sessionId,
       msg.requestId,
       msg.id,
       question.question,
       answer
     );
-    if (!success) {
+    if (!result.sent) {
       setSelectedAnswer(null);  // 실패 시 롤백
-      setSubmissionFailed(true);
+      if (result.reason === "failed") {
+        setSubmissionFailed(true);
+      }
     }
   };
 

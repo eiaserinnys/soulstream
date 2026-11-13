@@ -1,6 +1,7 @@
 import { memo, useRef, useState } from "react";
 import type { ChatMessage } from "../../lib/flatten-tree";
 import { submitToolApproval } from "../../lib/input-request-actions";
+import { actionFailureMessage } from "../../lib/action-failure";
 import { cn } from "../../lib/cn";
 import { Button } from "../ui/button";
 import { useGlassSurface } from "../LiquidGlassProvider";
@@ -15,22 +16,30 @@ export const ChatToolApproval = memo(function ChatToolApproval({
   presentation?: "default" | "manuscript";
 }) {
   const [selected, setSelected] = useState<"approved" | "rejected" | null>(null);
+  const [failureMessage, setFailureMessage] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const webglActive = useGlassSurface(cardRef, { enabled: presentation !== "manuscript" });
   const isResolved = !!msg.approvalResolved || !!selected;
 
   const handleDecision = async (decision: "approved" | "rejected") => {
     if (isResolved || !msg.approvalId) return;
+    setFailureMessage(null);
     setSelected(decision);
-    const ok = await submitToolApproval(
+    const result = await submitToolApproval(
       sessionId,
       msg.approvalId,
       msg.treeNodeId,
       decision,
       decision === "rejected" ? "Rejected by user" : undefined,
     );
-    if (!ok) {
+    if (!result.sent) {
       setSelected(null);
+      if (result.reason === "failed") {
+        setFailureMessage(actionFailureMessage("tool-approval", {
+          status: result.status,
+          body: result.body,
+        }));
+      }
     }
   };
 
@@ -66,24 +75,31 @@ export const ChatToolApproval = memo(function ChatToolApproval({
             {msg.approvalMessage ? ` — ${msg.approvalMessage}` : ""}
           </div>
         ) : (
-          <div className="flex flex-wrap justify-end gap-2">
-            <Button
-              variant="destructive-outline"
-              size="xs"
-              onClick={() => handleDecision("rejected")}
-              className="h-auto rounded-full px-3.5 py-1.5 text-xs font-normal"
-            >
-              거부
-            </Button>
-            <Button
-              variant="success"
-              size="xs"
-              onClick={() => handleDecision("approved")}
-              className="h-auto rounded-full px-3.5 py-1.5 text-xs font-semibold"
-            >
-              승인
-            </Button>
-          </div>
+          <>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                variant="destructive-outline"
+                size="xs"
+                onClick={() => handleDecision("rejected")}
+                className="h-auto rounded-full px-3.5 py-1.5 text-xs font-normal"
+              >
+                거부
+              </Button>
+              <Button
+                variant="success"
+                size="xs"
+                onClick={() => handleDecision("approved")}
+                className="h-auto rounded-full px-3.5 py-1.5 text-xs font-semibold"
+              >
+                승인
+              </Button>
+            </div>
+            {failureMessage && (
+              <div role="alert" className="text-xs text-destructive">
+                {failureMessage}
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

@@ -25,6 +25,7 @@ import { ChatInputEditor } from "./chat/ChatInputEditor";
 import { useChatInputSend } from "./chat/useChatInputSend";
 import { createComposeFlowRecorder } from "./chat/composeFlowRecorder";
 import { useUiEventTracker } from "../lib/ui-events";
+import { actionFailureMessage } from "../lib/action-failure";
 import { useTextareaAutoHeight } from "./chat/useTextareaAutoHeight";
 import { useChatTypography } from "./chat/useChatTypography";
 import { SuggestionChip } from "./SuggestionChip";
@@ -39,6 +40,14 @@ import { usePersistentReport } from './persistent-report/PersistentReportProvide
 import type { RegisterGeneratedTextActions } from "./chat-ui/chat-ui-composer";
 import { mergePendingTextIntoComposer, type PendingChatSendActions } from "./chat/pending-chat-send";
 import type { PendingChatSend } from "../stores/dashboard-store-types";
+
+/** 멈춤 요청이 실패 응답을 받았을 때 상태와 본문을 보존한다. */
+class InterruptHttpError extends Error {
+  constructor(readonly status: number, readonly body: string) {
+    super(`interrupt failed: HTTP ${status}`);
+    this.name = "InterruptHttpError";
+  }
+}
 
 interface ChatInputProps {
   /** 외부에서 주입하는 추가 비활성화 조건 (예: 오케스트레이터에서 노드 dead 상태) */
@@ -292,9 +301,7 @@ export function ChatInput({
       );
       if (!res.ok) {
         const body = await res.text().catch(() => "");
-        throw new Error(
-          body ? `HTTP ${res.status}: ${body.slice(0, 200)}` : `HTTP ${res.status}`,
-        );
+        throw new InterruptHttpError(res.status, body);
       }
       trackUiEvent("action_end", {
         flowId: actionFlowId,
@@ -315,7 +322,10 @@ export function ChatInput({
           durationMs: Date.now() - startedAt,
         },
       });
-      setInterruptError(err instanceof Error ? err.message : String(err));
+      setInterruptError(actionFailureMessage(
+        "interrupt",
+        err instanceof InterruptHttpError ? { status: err.status, body: err.body } : {},
+      ));
     } finally {
       setInterrupting(false);
     }
@@ -470,7 +480,7 @@ export function ChatInput({
       <ChatInputFeedback textareaRef={textareaRef} />
 
       {(error || interruptError || uploadError) && (
-        <div className="chat-tone-danger rounded px-2 py-1 text-xs">
+        <div role="alert" className="chat-tone-danger rounded px-2 py-1 text-xs">
           {error || interruptError || uploadError}
         </div>
       )}

@@ -142,7 +142,7 @@ describe("ChatInputRequest", () => {
 
   it("shows a retryable error when AskUserQuestion submission fails", async () => {
     const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-    fetchMock.mockResolvedValueOnce({ ok: false, status: 400 });
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 400, text: async () => "" });
     render();
 
     await act(async () => {
@@ -155,6 +155,43 @@ describe("ChatInputRequest", () => {
       );
     });
     expect(consoleError).toHaveBeenCalled();
+    expect(findButton(container, "진행").disabled).toBe(false);
+  });
+
+  it("이미 응답된 요청에는 실패 문구를 띄우지 않는다", async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      status: 422,
+      text: async () => JSON.stringify({
+        error: { code: "INPUT_REQUEST_ALREADY_RESPONDED" },
+      }),
+    });
+    render();
+
+    await act(async () => {
+      findButton(container, "진행").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await vi.waitFor(() => {
+      expect(findButton(container, "진행").disabled).toBe(false);
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(container.querySelector('[role="alert"]')).toBeNull();
+  });
+
+  it("503이면 기존 실패 문구를 띄운다", async () => {
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 503, text: async () => "" });
+    render();
+
+    await act(async () => {
+      findButton(container, "진행").dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    await vi.waitFor(() => {
+      expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+        "응답 전송에 실패했습니다",
+      );
+    });
     expect(findButton(container, "진행").disabled).toBe(false);
   });
 

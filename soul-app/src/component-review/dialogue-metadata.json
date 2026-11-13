@@ -193,7 +193,6 @@
     "대화 이벤트 복사 메뉴"
   ],
   "alertOwners": [
-    "components/chat/ChatInputComposer.tsx",
     "components/chat/ClaudeRuntimeSchedulesStrip.tsx",
     "components/chat/ClaudeRuntimeTasksStrip.tsx",
     "components/chat/RealtimeVoiceControls.tsx",

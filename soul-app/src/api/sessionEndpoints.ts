@@ -82,6 +82,7 @@ export function createSessionEndpoints({
   base,
   authFetch,
   readJson,
+  requireOk,
   buildQuery,
 }: ApiRequestContext) {
   return {
@@ -247,10 +248,13 @@ export function createSessionEndpoints({
         },
       ),
 
-    interruptSession: (sessionId: string): Promise<Response> =>
-      authFetch(`${base}/api/sessions/${encodeURIComponent(sessionId)}/interrupt`, {
-        method: 'POST',
-      }),
+    interruptSession: async (sessionId: string): Promise<void> => {
+      const response = await authFetch(
+        `${base}/api/sessions/${encodeURIComponent(sessionId)}/interrupt`,
+        { method: 'POST' },
+      );
+      await requireOk(response, 'interruptSession');
+    },
 
     acknowledgeSessionReview: (sessionId: string) =>
       authFetch(
