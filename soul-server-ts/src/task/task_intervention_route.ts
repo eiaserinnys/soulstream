@@ -256,6 +256,12 @@ export class TaskInterventionRoute {
           };
         }
       }
+      // Read before the activation wait so a concurrent resume that starts
+      // while this read is in flight is still caught by the loop below.
+      await appendSystemAbortNotice(task, message, {
+        readSessionTermination: this.deps.readSessionTermination,
+        logger: this.deps.logger,
+      });
       // Keep concurrent inputs behind whichever execution activation currently
       // owns startup, including the running projection before its callback starts.
       let awaitedActivation: Task["executionActivation"];
@@ -266,10 +272,6 @@ export class TaskInterventionRoute {
         task.executionActivation !== undefined
         && task.executionActivation !== awaitedActivation
       );
-      await appendSystemAbortNotice(task, message, {
-        readSessionTermination: this.deps.readSessionTermination,
-        logger: this.deps.logger,
-      });
       const taskRoute = interventionTaskRoute(task);
       if (taskRoute === "activating") {
         throw new Error(
