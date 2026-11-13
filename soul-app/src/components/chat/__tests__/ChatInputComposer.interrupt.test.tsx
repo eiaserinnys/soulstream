@@ -1,9 +1,11 @@
 import React from 'react';
 import { ActivityIndicator, Alert, StyleSheet, type LayoutChangeEvent, type LayoutRectangle } from 'react-native';
-import { act, fireEvent, render } from '@testing-library/react-native';
+import { act, fireEvent, render, renderHook } from '@testing-library/react-native';
 import type { ApiClient } from '../../../api/client';
 import { ApiHttpError } from '../../../api/clientCore';
+import { useTokens } from '../../../theme';
 import { ChatInputComposer } from '../ChatInputComposer';
+import { getChatRowHorizontalInset } from '../ChatBody.styles';
 
 jest.mock('@expo/vector-icons/Ionicons', () => 'Ionicons');
 
@@ -59,6 +61,7 @@ jest.mock('../useChatSendFlow', () => ({
 function renderChatInputComposer(
   sessionStatus: string = 'running',
   onComposerLayout?: (anchorLayout: LayoutRectangle, composerBox: LayoutRectangle) => void,
+  presentation: 'default' | 'manuscript' = 'default',
 ) {
   const api = { interruptSession: mockInterruptSession } as unknown as ApiClient;
   const props = {
@@ -72,6 +75,7 @@ function renderChatInputComposer(
     minimumBottomPadding: 0,
     requestBottomFollow: jest.fn(),
     onComposerLayout,
+    presentation,
   };
   const screen = render(<ChatInputComposer {...props} />);
   return { ...screen, props };
@@ -227,6 +231,25 @@ describe('ChatInputComposer interrupt progress', () => {
 
     screen.rerender(<ChatInputComposer {...screen.props} sessionStatus="completed" />);
     expect(screen.queryByTestId('chat-composer-interrupt-error')).toBeNull();
+  });
+
+  test('실패 문구 가로 여백은 PAS 0, 일반 12다', async () => {
+    const tokens = renderHook(() => useTokens()).result.current;
+    expect(getChatRowHorizontalInset(tokens, 'default', 12)).toBe(12);
+    expect(getChatRowHorizontalInset(tokens, 'manuscript', 12)).toBe(0);
+
+    mockInterruptSession.mockRejectedValueOnce(new ApiHttpError('conflict', 409, ''));
+    const normal = renderChatInputComposer('running', undefined, 'default');
+    await pressInterrupt(normal);
+    expect(StyleSheet.flatten(normal.getByTestId('chat-composer-interrupt-error').props.style).paddingHorizontal)
+      .toBe(tokens.spacing.md);
+    normal.unmount();
+
+    mockInterruptSession.mockRejectedValueOnce(new ApiHttpError('conflict', 409, ''));
+    const pas = renderChatInputComposer('running', undefined, 'manuscript');
+    await pressInterrupt(pas);
+    expect(StyleSheet.flatten(pas.getByTestId('chat-composer-interrupt-error').props.style).paddingHorizontal)
+      .toBe(0);
   });
 
   test('다시 눌러 성공하면 이전 실패 문구를 지운다', async () => {

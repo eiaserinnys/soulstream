@@ -11,14 +11,13 @@ Launch method
 
 The script serves unified-dashboard/dist itself on an ephemeral local port and
 never contacts a node. It opens the chat composer review page at iPad 820 and
-iPhone 360 widths and captures, per scene:
+iPhone 375/360 widths and captures, per scene:
 
   interrupt              before pressing 멈춤, and after the fake api rejects the
                          interrupt with HTTP 409 (SESSION_NOT_RUNNING)
   interrupt-unreachable  before pressing 멈춤, and after the fake api rejects the
                          interrupt with HTTP 503 (NODE_UNAVAILABLE). This scene
-                         carries the longest stop message and checks by number
-                         that the message box stays inside the composer box.
+                         carries the longest stop message.
   approval-409           before pressing 승인, and after the real approve request
                          is answered with HTTP 409 (APPROVAL_ALREADY_RESOLVED)
   approval-503           before pressing 승인, and after the real approve request
@@ -26,6 +25,10 @@ iPhone 360 widths and captures, per scene:
   input-request          before pressing the answer option, and after the real
                          respond request is answered with HTTP 422
                          (INPUT_REQUEST_ALREADY_RESPONDED)
+
+The stop scenes run in both presentations: normal chat and PAS
+(`context=pas`). Their captures are named
+app-{interrupt|interrupt-unreachable}-{chat|pas}-{before|after}-{width}.png.
 
 The approve and respond requests leave the page through the settings store's
 serverUrl, which ReviewChatUiComposer pins to the review origin after the
@@ -38,8 +41,10 @@ PASS judgments:
   - the 멈춤 button is enabled again right after the failure (aria-disabled is
     not true), so the reader can press it again
   - the approval and input request actions stay pressable after the failure
-  - the longest stop message box stays inside the composer box left and right
-    (numbers in the metrics), and its two lines keep a sane line height
+  - the stop message content box (element box minus computed horizontal
+    padding) has the same left and right edges as the composer box
+    (chat-composer-box) within ±1 px, in normal and PAS at every width
+  - the longest stop message keeps a sane line height when it wraps
 """
 from __future__ import annotations
 
@@ -56,7 +61,7 @@ from playwright.sync_api import Page, sync_playwright
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 DIST_ROOT = REPO_ROOT / "unified-dashboard" / "dist"
-VIEWPORTS = [(820, 1180), (360, 780)]
+VIEWPORTS = [(820, 1180), (375, 780), (360, 780)]
 
 INTERRUPT_MESSAGE = "멈출 작업이 없습니다. 이미 끝난 세션일 수 있습니다."
 INTERRUPT_UNREACHABLE_MESSAGE = "노드에 연결하지 못해 멈추지 못했습니다. 다시 눌러 주세요."
@@ -90,12 +95,14 @@ def start_server() -> tuple[http.server.ThreadingHTTPServer, str]:
     return server, f"http://127.0.0.1:{port}/assets/ios-components/index.html"
 
 
-def build_url(base: str, failure: str) -> str:
+def build_url(base: str, failure: str, context: str | None = None) -> str:
     parts = urllib.parse.urlsplit(base)
     query = urllib.parse.parse_qs(parts.query, keep_blank_values=True)
     query["section"] = ["chatUiComposer"]
     query["failure"] = [failure]
     query["theme"] = ["light"]
+    if context:
+        query["context"] = [context]
     return urllib.parse.urlunsplit((
         parts.scheme, parts.netloc, parts.path,
         urllib.parse.urlencode(query, doseq=True), parts.fragment,
@@ -187,31 +194,36 @@ def inside(inner: dict | None, outer: dict | None) -> bool:
     )
 
 
-def text_extents(page: Page, selector: str) -> dict | None:
-    """글자 줄 상자의 좌우 끝을 잰다(요소 상자는 폭을 다 차지하므로 글자 줄로 잰다)."""
+def content_box(page: Page, selector: str) -> dict | None:
+    """요소 상자(border box)에서 계산된 좌우 padding을 뺀 내용 상자를 잰다."""
     return page.evaluate(
         "sel => { const el = document.querySelector(sel); if (!el) return null;"
-        " const range = document.createRange(); range.selectNodeContents(el);"
-        " const rects = Array.from(range.getClientRects())"
-        "   .filter(r => r.width > 0 && r.height > 0);"
-        " if (!rects.length) return null;"
-        " return { left: Math.min(...rects.map(r => r.left)),"
-        "   right: Math.max(...rects.map(r => r.right)) }; }",
+        " const rect = el.getBoundingClientRect();"
+        " const style = getComputedStyle(el);"
+        " const padL = parseFloat(style.paddingLeft) || 0;"
+        " const padR = parseFloat(style.paddingRight) || 0;"
+        " return { left: rect.left + padL, right: rect.right - padR,"
+        "   elementLeft: rect.left, elementRight: rect.right,"
+        "   paddingLeft: padL, paddingRight: padR }; }",
         selector,
     )
 
 
 def check_error_edges(page: Page, label: str, error_selector: str, result: dict) -> None:
-    """문구 상자의 좌우가 입력창(composer box) 좌우 안에 있는지 숫자로 검사한다."""
-    extents = text_extents(page, error_selector)
+    """문구 요소의 내용 상자 좌우가 입력창(composer box) 좌우와 ±1 안에서 같은지 검사한다."""
+    content = content_box(page, error_selector)
     input_box = page.locator(COMPOSER_BOX).first.bounding_box()
-    element_box = page.locator(error_selector).first.bounding_box()
-    passed = bool(extents and input_box) and (
-        extents["left"] >= input_box["x"] - 0.5
-        and extents["right"] <= input_box["x"] + input_box["width"] + 0.5
+    passed = bool(content and input_box) and (
+        abs(content["left"] - input_box["x"]) <= 1
+        and abs(content["right"] - (input_box["x"] + input_box["width"])) <= 1
     )
-    record(result, "문구 상자가 입력창 좌우 안에 있음", label, passed,
-           {"textExtents": extents, "errorBox": element_box, "inputBox": input_box})
+    record(result, "문구 내용 상자 좌우가 입력창 상자 좌우와 같음", label, passed, {
+        "contentBox": content,
+        "inputBox": input_box,
+        "deltaLeft": None if not content or not input_box else content["left"] - input_box["x"],
+        "deltaRight": None if not content or not input_box
+        else content["right"] - (input_box["x"] + input_box["width"]),
+    })
 
 
 def line_metrics(page: Page, selector: str) -> dict | None:
@@ -333,22 +345,24 @@ def resize_scene(page: Page, base: str, output: Path, result: dict) -> None:
                                     "reason": "이 동작은 팝오버를 열지 않는다"})
 
 
-def interrupt_scene(page: Page, base: str, width: int, output: Path, result: dict, sample: str) -> None:
+def interrupt_scene(page: Page, base: str, width: int, output: Path, result: dict, sample: str,
+                    presentation: str) -> None:
     expected = INTERRUPT_MESSAGE if sample == "interrupt" else INTERRUPT_UNREACHABLE_MESSAGE
-    label = f"{sample}-{width}"
-    page.goto(build_url(base, sample), wait_until="networkidle")
+    label = f"{sample}-{presentation}-{width}"
+    context = "pas" if presentation == "pas" else None
+    page.goto(build_url(base, sample, context), wait_until="networkidle")
     page.locator(ROOT).wait_for(state="visible")
     page.locator(INTERRUPT_BUTTON).wait_for(state="visible")
     settle(page)
     root = page.locator(ROOT).first
-    before = f"app-{sample}-before-{width}.png"
+    before = f"app-{sample}-{presentation}-before-{width}.png"
     root.screenshot(path=str(output / before))
     before_text = text_of(page, INTERRUPT_ERROR)
 
     page.locator(INTERRUPT_BUTTON).first.click()
     page.locator(INTERRUPT_ERROR).wait_for(state="visible")
     settle(page)
-    after = f"app-{sample}-after-{width}.png"
+    after = f"app-{sample}-{presentation}-after-{width}.png"
     root.screenshot(path=str(output / after))
     message = text_of(page, INTERRUPT_ERROR)
     disabled = page.locator(INTERRUPT_BUTTON).first.get_attribute("aria-disabled")
@@ -358,8 +372,9 @@ def interrupt_scene(page: Page, base: str, width: int, output: Path, result: dic
     record(result, "누르기 전에는 문구 없음", label, before_text == "", {"before": before_text})
     record(result, "실패 뒤 멈춤 버튼 다시 누를 수 있음", label, disabled != "true",
            {"ariaDisabled": disabled})
-    result["states"].append({"scene": sample, "width": width, "captures": [before, after],
-                             "message": message, "ariaDisabled": disabled})
+    result["states"].append({"scene": sample, "presentation": presentation, "width": width,
+                             "captures": [before, after], "message": message,
+                             "ariaDisabled": disabled})
     pressed = page.locator(INTERRUPT_BUTTON).first.evaluate(
         "el => ({ testId: el.getAttribute('data-testid'), text: (el.textContent || '').trim().slice(0, 40) })"
     )
@@ -480,8 +495,9 @@ def main() -> int:
                     routes_state: dict = {}
                     run_routes(page, base_netloc, routes_state)
                     try:
-                        interrupt_scene(page, base, width, output, result, "interrupt")
-                        interrupt_scene(page, base, width, output, result, "interrupt-unreachable")
+                        for presentation in ("chat", "pas"):
+                            interrupt_scene(page, base, width, output, result, "interrupt", presentation)
+                            interrupt_scene(page, base, width, output, result, "interrupt-unreachable", presentation)
                         approval_scene(page, base, width, output, result, 409, routes_state)
                         approval_scene(page, base, width, output, result, 503, routes_state)
                         input_request_scene(page, base, width, output, result, routes_state)

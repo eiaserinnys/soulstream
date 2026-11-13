@@ -63,7 +63,7 @@ export const ChatInputComposer = memo(forwardRef<ChatInputComposerHandle, Props>
   presentation = 'default', generatedNotice, onComposerClearedForSend, onComposerLayout, getReportSendContext,
 }, ref) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
+  const styles = useMemo(() => makeStyles(t, presentation), [t, presentation]);
   const composerAnchorLayout = useRef<LayoutRectangle | null>(null);
   const composerBoxLayout = useRef<LayoutRectangle | null>(null);
   const composerRowLayout = useRef<LayoutRectangle | null>(null);

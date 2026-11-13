@@ -13,7 +13,7 @@ export function getChatRowHorizontalInset(
 
 export const ADD_GLYPH_INSET_RATIO = 3 / 16; // Ionicons `add` stroke inset within its icon box.
 
-export function makeStyles(t: DesignTokens) {
+export function makeStyles(t: DesignTokens, presentation: 'default' | 'manuscript' = 'default') {
   const c = t.colors;
   const roles = createSurfaceRoles(t);
   const sessionRoles = createSessionVisualRoles(t);
@@ -28,8 +28,9 @@ export function makeStyles(t: DesignTokens) {
       fontSize: t.chatFontSize.meta,
       lineHeight: t.chatFontSize.meta * t.lineHeightRatio,
       textAlign: 'center',
-      // 입력창(inputRow)과 같은 가로 여백을 써서 문구 상자가 입력창 끝선 안에 머문다.
-      paddingHorizontal: t.spacing.md,
+      // 입력창 행과 같은 가로 여백을 써서 문구의 내용 상자가 입력창 상자와 맞는다.
+      // PAS는 바깥 틀이 좌우 여백을 주고 manuscriptInputRow가 0이므로 여기서도 0이다.
+      paddingHorizontal: getChatRowHorizontalInset(t, presentation),
       paddingVertical: t.spacing.xs,
     },
     offlineNotice: {

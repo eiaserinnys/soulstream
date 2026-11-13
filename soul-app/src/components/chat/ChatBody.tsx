@@ -116,7 +116,7 @@ export function ChatBody({
   reportView, inputComposerRef, getReportSendContext,
 }: Props) {
   const t = useTokens();
-  const styles = useMemo(() => makeStyles(t), [t]);
+  const styles = useMemo(() => makeStyles(t, presentation), [t, presentation]);
 
   const serverUrl = useSettingsStore((s) => s.serverUrl);
   const scopeGeneration = useAuthScopeGeneration();
