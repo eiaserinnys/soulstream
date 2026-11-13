@@ -31,14 +31,21 @@ export type CardReminderFacts = {
   lastRootTurnEndedAt: Date | null;
   latestRootDeliveryId: string | null;
 };
+/** 루트 세션이 정상 종료했고 한도 중단이 아닐 때만 상태 확인 대상이다. */
+function isTerminalRoot(facts: CardReminderFacts): boolean {
+  return ["completed", "error"].includes(facts.rootStatus) && facts.rootTerminationReason !== "limit_hit";
+}
+function isRunningStatus(status: CardStatus): boolean {
+  return status === "running";
+}
 export function buildCardStatusReminder(facts: CardReminderFacts, rootEnded: boolean):
   (CardChangeDelivery & { sessionId: string; text: string }) | null {
-  if (!["completed", "error"].includes(facts.rootStatus) || facts.rootTerminationReason === "limit_hit") return null;
+  if (!isTerminalRoot(facts)) return null;
   let kind: "comment_unhandled" | "not_running" | "stalled", text: string;
   if (rootEnded && facts.unhandledCommentId && !facts.pendingDeliveries) {
     kind = "comment_unhandled";
     text = `[카드 상태 확인] 카드 ${facts.cardId}는 '${cardStatusLabels[facts.cardStatus]}'인데, 사용자 커멘트(ID ${facts.unhandledCommentId})가 전달된 뒤 카드 상태, 항목, 커멘트에 바뀐 것이 없습니다. 수정 지시였으면 항목을 하는 중으로 알리고 카드를 진행 중으로 옮긴 뒤 진행하고, 질문이었으면 답 커멘트를 남기세요.`;
-  } else if (facts.cardStatus !== "running") {
+  } else if (!isRunningStatus(facts.cardStatus)) {
     if (!rootEnded || !facts.activeDescendants) return null;
     kind = "not_running";
     text = `[카드 상태 확인] 카드 ${facts.cardId}는 '${cardStatusLabels[facts.cardStatus]}'인데, 담당 세션이 턴을 마친 뒤에도 맡긴 작업 세션이 돌고 있습니다.`;
@@ -69,7 +76,7 @@ export function isOwnerSilentResponseTurn(facts: CardReminderFacts): boolean {
 
 /** 카드가 실행 중인데 담당이 턴을 마친 채 조용한가. 기존 stalled 게이트에 실행 예약과 턴 종료 시각을 더 본다. */
 function ownerSilentTarget(facts: CardReminderFacts, now: number): boolean {
-  return facts.cardStatus === "running"
+  return isRunningStatus(facts.cardStatus)
     && !facts.activeTree
     && !facts.pendingDeliveries
     && !facts.unregisteredCompletions
@@ -84,7 +91,7 @@ function ownerSilentTarget(facts: CardReminderFacts, now: number): boolean {
  * 기존 stalled가 상태 세대마다 한 번뿐이라 그 뒤로 아무 깨움도 없던 자리를 메운다.
  */
 export function buildOwnerSilentAction(facts: CardReminderFacts, now: number): CardOwnerSilentAction | null {
-  if (!["completed", "error"].includes(facts.rootStatus) || facts.rootTerminationReason === "limit_hit") return null;
+  if (!isTerminalRoot(facts)) return null;
   if (!ownerSilentTarget(facts, now)) return null;
   if (isOwnerSilentResponseTurn(facts)) return { kind: "block", blockedDetail: OWNER_SILENT_BLOCKED_DETAIL };
   const lastTurnEnd = formatSeoulWakeTime(facts.lastRootTurnEndedAt!, new Date(now));
