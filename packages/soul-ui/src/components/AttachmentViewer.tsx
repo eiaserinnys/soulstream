@@ -215,6 +215,16 @@ export function AttachmentViewer({
     }
     : null;
   const extension = item.name?.includes(".") ? item.name.split(".").pop()!.toUpperCase() : "FILE";
+  // The popup frame follows the content kind: documents read at the document
+  // width, images and videos at their own size, HTML and audio keep the stable
+  // viewport frame, and files without a preview fit their state text.
+  const contentKind = item.previewKind === "image"
+    ? "image"
+    : item.previewKind === "text"
+      ? textFormat === "html" ? "html" : "document"
+      : mediaFormat === "video" ? "video"
+        : mediaFormat === "audio" ? "audio"
+          : "file";
 
   const changeIndex = (next: number) => {
     if (!multiItem || next < 0 || next >= items.length || next === index) return;
@@ -250,6 +260,7 @@ export function AttachmentViewer({
         ref={popupRef}
         initialFocus={popupRef}
         className="v3-surface image-viewer-popup chat-image-viewer-popup"
+        data-attachment-kind={contentKind}
         {...(returnFocus ? { finalFocus: () => returnFocus } : {})}
         onKeyDown={handleKeyDown}
       >

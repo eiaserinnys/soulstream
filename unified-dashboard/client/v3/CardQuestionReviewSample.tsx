@@ -8,6 +8,7 @@ import { PersistentReportProvider } from '@seosoyoung/soul-ui/components/persist
 import { calculatePersistentSessionLayout } from '@seosoyoung/soul-ui/lib/persistent-session-layout';
 import { useCardStore } from '@seosoyoung/soul-ui/cards/card-store';
 import type { CardComment, CardDetail, CardQuestion, CardRow } from '@seosoyoung/soul-ui/cards/card-types';
+import { attachmentContentUrl } from '@seosoyoung/soul-ui/lib/chat-attachment-model';
 import { CardDetailPane } from './CardDetailPane';
 import { CardQuestionActions, CardQuestionBody, CardQuestionAnswered, cardQuestionDetailView } from './CardQuestionBlock';
 import { PersistentReportDeck, type ReportBubbleSeat } from './PersistentReportDeck';
@@ -21,6 +22,42 @@ import './persistent-session-screen.css';
 export type CardQuestionScene = 'ga' | 'na' | 'da' | 'ra' | 'legacy';
 
 const at = (minute: number) => new Date(Date.UTC(2026, 10, 12, 5, minute)).toISOString();
+
+const reviewDocumentId = 'card-question-review-doc';
+const reviewDocumentText = [
+  '# 미리 해 둘 정리 작업 모음',
+  '',
+  '질문 장에서 여는 문서 표본입니다. 폭은 문서 읽기 폭을 넘지 않고, 길면 창 안에서 스크롤합니다.',
+  '',
+  '## 남은 일',
+  '',
+  '- 첫째: 표본 문서를 확인합니다.',
+  '- 둘째: 보기 창 폭과 높이를 확인합니다.',
+  '',
+  '| 항목 | 담당 | 상태 | 다음 | 비고 |',
+  '| --- | --- | --- | --- | --- |',
+  '| 문서 폭 | 로젤린 | 확인 | 읽기 폭 유지 | 아주 긴 셀 내용이 들어가도 표 상자 안에서만 가로로 스크롤합니다 |',
+].join('\n');
+const reviewDocument = new Blob([reviewDocumentText], { type: 'text/markdown' });
+
+function reviewDocumentAttachment(cardId: string) {
+  const context = { type: 'card' as const, id: cardId };
+  const previewUrl = attachmentContentUrl(reviewDocumentId, context);
+  return {
+    type: 'link' as const,
+    label: '미리 해 둘 정리 작업 모음',
+    url: attachmentContentUrl(reviewDocumentId, context, true),
+    attachment_id: reviewDocumentId,
+    descriptor: {
+      attachment_id: reviewDocumentId, name: '미리 해 둘 정리 작업 모음.md', mime_type: 'text/markdown',
+      byte_size: reviewDocument.size, checksum_sha256: null, width: null, height: null,
+      preview_kind: 'text' as const, preview_mime_type: 'text/markdown',
+    },
+    read_context: context,
+    previewUrl,
+    originalUrl: attachmentContentUrl(reviewDocumentId, context, true),
+  };
+}
 
 const secretQuestion: CardQuestion = {
   id: 'q-secret', kind: 'choice', title: '에이전트 접속 비밀값을 숨길까요?',
@@ -71,8 +108,10 @@ function cardFor(scene: CardQuestionScene): CardRow {
 
 function detailFor(scene: CardQuestionScene): CardDetail {
   const card = cardFor(scene);
+  const question = questionFor[scene];
   return {
-    ...reviewDetail, card, sessions: [], reports: [], questions: [questionFor[scene]],
+    ...reviewDetail, card, sessions: [], reports: [],
+    questions: [{ ...question, attachments: [...(question.attachments ?? []), reviewDocumentAttachment(card.id)] }],
     comments: [
       { id: 'c1', cardId: card.id, authorKind: 'agent', authorId: 'roselin', sessionId: null, kind: 'comment', body: '실행 명령에 실린 값을 세어 1번 항목에 적었습니다.', createdAt: at(8) },
       ...threadFor[scene],
@@ -129,6 +168,23 @@ export function CardQuestionReviewSample({ scene, surface, bubble = true, narrow
   const boardUpdate = useRef<((questionId: string) => void) | null>(null);
   useLayoutEffect(() => { detailRef.current = detail; }, [detail]);
   useCardApiSample(detailRef, questionId => boardUpdate.current?.(questionId));
+  // 표본 문서 바이트를 화면 안에서 내려 주어 서버 없이도 질문 장 첨부가 실제 보기 창으로 열린다.
+  useEffect(() => {
+    const originalFetch = window.fetch;
+    const sampleFetch: typeof fetch = async (input, init) => {
+      const url = new URL(input instanceof Request ? input.url : String(input), window.location.origin);
+      if (url.origin !== window.location.origin || url.pathname !== `/api/attachments/${reviewDocumentId}/content`) return originalFetch(input, init);
+      const headers = { 'Content-Type': 'text/markdown; charset=utf-8', 'Content-Length': String(reviewDocument.size) };
+      if (init?.method === 'HEAD') return new Response(null, { status: 200, headers });
+      const range = new Headers(init?.headers).get('Range');
+      return new Response(reviewDocument, {
+        status: range ? 206 : 200,
+        headers: { ...headers, ...(range ? { 'Content-Range': `bytes 0-${reviewDocument.size - 1}/${reviewDocument.size}` } : {}) },
+      });
+    };
+    window.fetch = sampleFetch;
+    return () => { if (window.fetch === sampleFetch) window.fetch = originalFetch; };
+  }, []);
   useEffect(() => {
     const store = useCardStore.getState();
     store.putCards([detail.card]);

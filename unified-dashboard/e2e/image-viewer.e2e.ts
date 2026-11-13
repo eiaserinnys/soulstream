@@ -85,7 +85,7 @@ for(const viewer of ["card","file","chat"]) for(const [vw,vh,w,h] of cases) {
     const data=await metrics(popup);
     const name=`${viewer}-${vw}x${vh}-${w}x${h}`;
     writeFileSync(path.join(output,name+".json"),JSON.stringify(data,null,2));
-    await page.screenshot({path:path.join(output,name+".png"),animations:"disabled"});
+    await page.screenshot({path:path.join(output,name+".png"),animations:"disabled",timeout:15000});
     expect(data.natural).toEqual([w,h]);
     expect.soft(data.popup.x).toBeGreaterThanOrEqual(15);
     expect.soft(data.popup.y).toBeGreaterThanOrEqual(15);
@@ -131,7 +131,7 @@ test("long caption stays inside the card image popup",async({page})=>{
   const popup=await open(page,"card",390,844,1200,2800,"long");
   const data=await metrics(popup);
   writeFileSync(path.join(output,"card-long-caption.json"),JSON.stringify(data,null,2));
-  await page.screenshot({path:path.join(output,"card-long-caption.png"),animations:"disabled"});
+  await page.screenshot({path:path.join(output,"card-long-caption.png"),animations:"disabled",timeout:15000});
   expect(data.popup.bottom).toBeLessThanOrEqual(828);
   expect(data.edges[0].rect.bottom).toBeLessThanOrEqual(data.popup.bottom);
   expect(data.edges[0].scroll).toBe(data.edges[0].client);
@@ -142,7 +142,7 @@ test("ordinary popup preserves its original frame",async({page})=>{
   await page.goto("/e2e/image-viewer.fixture.html?viewer=ordinary");
   const popup=page.locator('[data-slot="dialog-popup"]');
   await expect(popup).not.toHaveAttribute("data-starting-style");
-  await page.screenshot({path:path.join(output,"ordinary.png"),animations:"disabled"});
+  await page.screenshot({path:path.join(output,"ordinary.png"),animations:"disabled",timeout:15000});
   expect((await popup.boundingBox())!.width).toBe(512);
 });
 
@@ -158,7 +158,7 @@ test("supplement: three-line caption and outside dismissal",async({page})=>{
   expect(data.nonImage).toBeLessThanOrEqual(data.reserved+1);
   expect(data.edges[0].rect.bottom).toBeLessThan(data.popup.bottom);
   writeFileSync(path.join(output,"card-three-lines.json"),JSON.stringify({...data,lines},null,2));
-  await page.screenshot({path:path.join(output,"card-three-lines.png"),animations:"disabled"});
+  await page.screenshot({path:path.join(output,"card-three-lines.png"),animations:"disabled",timeout:15000});
   await page.mouse.click(20,20);
   await expect(popup).toHaveCount(0);
 });
@@ -173,7 +173,7 @@ test("supplement: geometry recorder detects a seeded sizing violation",async({pa
 
 test("supplement: small file image remains painted",async({page})=>{
   const popup=await open(page,"file",1920,1080,64,64);
-  await page.screenshot({path:path.join(output,"file-small-painted.png"),animations:"disabled"});
+  await page.screenshot({path:path.join(output,"file-small-painted.png"),animations:"disabled",timeout:15000});
   const data=await popup.locator("img").evaluate((image:HTMLImageElement)=>{
     const canvas=document.createElement("canvas");
     canvas.width=64;canvas.height=64;
@@ -191,7 +191,7 @@ for(const sample of ["card-image","file-image","card-image-screen"]) test(`suppl
   await installV3VisualQaRoutes(page);
   await page.goto(`/dialogues?sample=${sample}`);
   const popup=page.locator('[data-slot="dialog-popup"]');
-  await expect(popup).toBeVisible();
+  await expect(popup).toBeVisible({timeout:20000});
   await expect(popup).not.toHaveAttribute("data-starting-style");
   await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode());
   const data=await metrics(popup);
@@ -203,14 +203,14 @@ for(const sample of ["card-image","file-image","card-image-screen"]) test(`suppl
     expect(data.natural).toEqual([1920,1080]);
     expect(data.popup.right).toBeLessThanOrEqual(1904);
   }
-  await page.screenshot({path:path.join(output,sample+"-dialogues.png"),animations:"disabled"});
+  await page.screenshot({path:path.join(output,sample+"-dialogues.png"),animations:"disabled",timeout:15000});
   await page.keyboard.press("Escape");
   await expect(popup).toHaveCount(0);
 });
 
 async function capture(page:Page,popup:Locator,name:string,extra:Record<string,unknown>={}) {
   const data={...await metrics(popup),...extra};
-  await page.screenshot({path:path.join(output,name+".png"),animations:"disabled"});
+  await page.screenshot({path:path.join(output,name+".png"),animations:"disabled",timeout:15000});
   writeFileSync(path.join(output,name+".json"),JSON.stringify(data,null,2));
   return data;
 }
@@ -293,7 +293,7 @@ test(`repair close contrast ${viewer} ${theme}`,async({page})=>{
   const popup=await open(page,viewer,1920,1080,1920,1080,"",{theme,sample:theme==="light"?"dark":"bright"});
   const data=await metrics(popup);
   const name=`close-${viewer}-${theme}`;
-  const screenshot=await page.screenshot({path:path.join(output,name+".png"),animations:"disabled"});
+  const screenshot=await page.screenshot({path:path.join(output,name+".png"),animations:"disabled",timeout:15000});
   const contrast=await page.evaluate(async({png,theme,box})=>{
     const bitmap=await createImageBitmap(await (await fetch("data:image/png;base64,"+png)).blob());
     const canvas=document.createElement("canvas");
@@ -347,7 +347,7 @@ for(const [viewer,vw,vh,w,h,caption,gallery,sample,name] of [
     const data=await metrics(popup);
     mkdirSync(headroomOutput,{recursive:true});
     const stem=`${previewPhase}-${name}`;
-    await page.screenshot({path:path.join(headroomOutput,stem+".png"),animations:"disabled"});
+    await page.screenshot({path:path.join(headroomOutput,stem+".png"),animations:"disabled",timeout:15000});
     writeFileSync(path.join(headroomOutput,stem+".json"),JSON.stringify({viewport:[vw,vh],...data},null,2));
     if(previewPhase==="after") {
       const margin=vw<=640?24:32;
@@ -378,5 +378,239 @@ for(const [vw,vh] of [[1920,1080],[390,844]]) for(const [w,h] of [[64,64],[240,8
     expect(data.popup.top).toBeGreaterThanOrEqual(vw<=640?24:32);
     expect(Math.abs(data.popup.top-(vh-data.popup.bottom))).toBeLessThanOrEqual(1);
     if(vw===1920) {expect(data.image.width).toBe(w);expect(data.image.height).toBe(h);}
+  });
+}
+
+// 카드 #1289: 보기 창은 내용 종류에 맞춰 크기를 잡는다. 이미지는 원본 크기(작은 이미지는
+// 늘리지 않음), 문서는 읽기 폭, 긴 문서는 화면 높이 한도에서 본문 스크롤. 질문 장의 첨부
+// 링크는 새 탭이 아니라 이 보기 창으로 열린다.
+const attachmentViewports = [[2560,1392],[1440,900],[360,780]] as const;
+async function openAttachment(page:Page, kind:string, vw:number, vh:number, w=800, h=600) {
+  await page.setViewportSize({width:vw,height:vh});
+  await page.emulateMedia({colorScheme:"light",reducedMotion:"reduce"});
+  await page.addInitScript(()=>localStorage.setItem("ls.webglGlass","0"));
+  await page.goto(`/e2e/image-viewer.fixture.html?viewer=attachment&attachment=${kind}&width=${w}&height=${h}`);
+  const popup=page.locator('[data-slot="dialog-popup"]');
+  await expect(popup).toBeVisible();
+  await expect(popup).not.toHaveAttribute("data-starting-style");
+  await page.evaluate(()=>document.fonts.ready);
+  return popup;
+}
+async function attachmentMetrics(popup: Locator) {
+  return popup.evaluate(el=>{
+    const rect=(node:Element)=>node.getBoundingClientRect().toJSON();
+    const scroll=el.querySelector('[data-slot="dialog-panel-scroll"]');
+    const panel=el.querySelector('[data-slot="dialog-panel"]');
+    const markdown=el.querySelector(".chat-attachment-markdown");
+    const table=el.querySelector("table");
+    const tableBox=table?.parentElement ?? null;
+    const pre=el.querySelector("pre");
+    const image=el.querySelector("img") as HTMLImageElement | null;
+    const footer=el.querySelector('[data-slot="dialog-footer"]');
+    return {
+      popup:rect(el),
+      kind:el.getAttribute("data-attachment-kind"),
+      image:image ? rect(image) : null,
+      natural:image ? [image.naturalWidth,image.naturalHeight] : null,
+      markdown:markdown ? rect(markdown) : null,
+      pre:pre ? rect(pre) : null,
+      footer:footer ? rect(footer) : null,
+      scroll:scroll ? {scrollHeight:scroll.scrollHeight,clientHeight:scroll.clientHeight,scrollWidth:scroll.scrollWidth,clientWidth:scroll.clientWidth} : null,
+      panel:panel ? {scrollWidth:panel.scrollWidth,clientWidth:panel.clientWidth} : null,
+      popupScroll:{scrollWidth:el.scrollWidth,clientWidth:el.clientWidth},
+      table:table && tableBox ? {rect:rect(tableBox),scrollWidth:tableBox.scrollWidth,clientWidth:tableBox.clientWidth} : null,
+      active:el.contains(document.activeElement),
+      pageScrollWidth:document.documentElement.scrollWidth,
+    };
+  });
+}
+async function captureAttachment(page:Page, popup:Locator, name:string, vw:number, vh:number) {
+  const data={viewport:[vw,vh],...await attachmentMetrics(popup)};
+  await page.screenshot({path:path.join(output,name+".png"),animations:"disabled",timeout:15000});
+  writeFileSync(path.join(output,name+".json"),JSON.stringify(data,null,2));
+  return data;
+}
+function documentCap(vw:number) { return Math.min(768, vw-32); }
+function viewportMargin(vw:number) { return vw<=640 ? 24 : 32; }
+
+for(const [vw,vh] of attachmentViewports) {
+  test(`attachment long document ${vw}x${vh}`,async({page})=>{
+    const popup=await openAttachment(page,"doc-long",vw,vh);
+    await expect(popup.locator(".chat-attachment-markdown")).toBeVisible();
+    await expect(popup.locator("table")).toBeVisible();
+    const data=await captureAttachment(page,popup,`attachment-doc-long-${vw}x${vh}`,vw,vh);
+    if(phase!=="after") return;
+    expect(data.kind).toBe("document");
+    expect(Math.abs(data.popup.width-documentCap(vw))).toBeLessThanOrEqual(1);
+    expect(data.popup.right).toBeLessThanOrEqual(vw-15);
+    expect(data.popup.bottom).toBeLessThanOrEqual(vh-15);
+    expect(data.popup.height).toBeLessThanOrEqual(vh-2*viewportMargin(vw)+1);
+    expect(data.scroll!.scrollHeight).toBeGreaterThan(data.scroll!.clientHeight);
+    expect(data.popupScroll.scrollWidth).toBeLessThanOrEqual(data.popupScroll.clientWidth+1);
+    expect(data.panel!.scrollWidth).toBeLessThanOrEqual(data.panel!.clientWidth+1);
+    expect(data.table!.scrollWidth).toBeGreaterThan(data.table!.clientWidth);
+    expect(data.markdown!.width).toBeLessThanOrEqual(data.panel!.clientWidth+1);
+    expect(data.pageScrollWidth).toBeLessThanOrEqual(vw);
+  });
+  test(`attachment short document ${vw}x${vh}`,async({page})=>{
+    const popup=await openAttachment(page,"doc-short",vw,vh);
+    await expect(popup.locator(".chat-attachment-markdown")).toBeVisible();
+    const data=await captureAttachment(page,popup,`attachment-doc-short-${vw}x${vh}`,vw,vh);
+    if(phase!=="after") return;
+    expect(data.kind).toBe("document");
+    expect(Math.abs(data.popup.width-documentCap(vw))).toBeLessThanOrEqual(1);
+    expect(Math.abs(data.scroll!.scrollHeight-data.scroll!.clientHeight)).toBeLessThanOrEqual(1);
+    expect(data.popup.height).toBeLessThan(vh-2*viewportMargin(vw)-100);
+    expect(data.popupScroll.scrollWidth).toBeLessThanOrEqual(data.popupScroll.clientWidth+1);
+  });
+  test(`attachment plain text ${vw}x${vh}`,async({page})=>{
+    const popup=await openAttachment(page,"text",vw,vh);
+    await expect(popup.locator("pre")).toBeVisible();
+    const data=await captureAttachment(page,popup,`attachment-text-${vw}x${vh}`,vw,vh);
+    if(phase!=="after") return;
+    expect(data.kind).toBe("document");
+    expect(Math.abs(data.popup.width-documentCap(vw))).toBeLessThanOrEqual(1);
+    expect(data.popupScroll.scrollWidth).toBeLessThanOrEqual(data.popupScroll.clientWidth+1);
+    expect(data.pre!.width).toBeLessThanOrEqual(data.panel!.clientWidth+1);
+  });
+}
+
+for(const [kind,w,h] of [["image-small",64,64],["image-large",2560,1440]] as const) for(const [vw,vh] of attachmentViewports) {
+  test(`attachment ${kind} ${vw}x${vh}`,async({page})=>{
+    const popup=await openAttachment(page,kind,vw,vh,w,h);
+    await popup.locator("img").evaluate((el:HTMLImageElement)=>el.decode());
+    const data=await captureAttachment(page,popup,`attachment-${kind}-${vw}x${vh}`,vw,vh);
+    if(phase!=="after") return;
+    expect(data.kind).toBe("image");
+    expect(data.natural).toEqual([w,h]);
+    expect(data.footer).not.toBeNull();
+    expect(data.popup.right).toBeLessThanOrEqual(vw-15);
+    expect(data.popup.bottom).toBeLessThanOrEqual(vh-15);
+    if(kind==="image-small") {
+      expect(data.image!.width).toBe(64);
+      expect(data.image!.height).toBe(64);
+      expect(data.popup.width).toBe(320);
+      expect(data.popup.height).toBeLessThan(256+1);
+    } else {
+      expect(data.image!.width).toBeLessThanOrEqual(w);
+      expect(data.image!.height).toBeLessThanOrEqual(h);
+      expect(data.image!.width).toBeLessThan(w);
+      expect(data.popup.width).toBeLessThanOrEqual(vw-32+1);
+      expect(data.popup.height).toBeLessThanOrEqual(vh-2*viewportMargin(vw)+1);
+    }
+    expect(data.popupScroll.scrollWidth).toBeLessThanOrEqual(data.popupScroll.clientWidth+1);
+  });
+}
+
+for(const [vw,vh] of attachmentViewports) {
+  test(`attachment document loading ${vw}x${vh}`,async({page})=>{
+    let release!:()=>void;
+    const gate=new Promise<void>(resolve=>{release=resolve;});
+    await page.route("**/api/attachments/slow-doc/content*",async route=>{
+      await gate;
+      const body="가".repeat(1365)+"a";
+      return route.fulfill({status:206,headers:{
+        "Content-Type":"text/markdown; charset=utf-8","Content-Length":"4096","Content-Range":"bytes 0-4095/4096",
+      },body});
+    });
+    const popup=await openAttachment(page,"slow-doc",vw,vh);
+    await expect(popup.locator(".chat-attachment-state")).toContainText("미리보기를 불러오는 중…");
+    const loading=await captureAttachment(page,popup,`attachment-loading-${vw}x${vh}`,vw,vh);
+    if(phase==="after") {
+      expect(loading.kind).toBe("document");
+      expect(Math.abs(loading.popup.width-documentCap(vw))).toBeLessThanOrEqual(1);
+    }
+    release();
+    await expect(popup.locator(".chat-attachment-markdown")).toBeVisible();
+    const loaded=await captureAttachment(page,popup,`attachment-loaded-${vw}x${vh}`,vw,vh);
+    if(phase==="after") {
+      expect(loaded.kind).toBe("document");
+      expect(Math.abs(loaded.popup.width-loading.popup.width)).toBeLessThanOrEqual(1);
+      expect(Math.abs(loaded.popup.width-documentCap(vw))).toBeLessThanOrEqual(1);
+    }
+  });
+}
+
+test("attachment unavailable keeps the existing error",async({page})=>{
+  const popup=await openAttachment(page,"missing",1440,900);
+  await expect(popup.locator(".chat-attachment-state")).toContainText("첨부를 찾을 수 없습니다.");
+  const data=await captureAttachment(page,popup,"attachment-missing-1440x900",1440,900);
+  if(phase==="after") {
+    expect(data.kind).toBe("document");
+    expect(Math.abs(data.popup.width-documentCap(1440))).toBeLessThanOrEqual(1);
+  }
+});
+
+test("attachment document resizes while open",async({page})=>{
+  const popup=await openAttachment(page,"doc-long",2560,1392);
+  await expect(popup.locator(".chat-attachment-markdown")).toBeVisible();
+  for(const [vw,vh] of [[1440,900],[360,780],[2560,1392]] as const) {
+    await page.setViewportSize({width:vw,height:vh});
+    if(phase==="after") await expect.poll(async()=>Math.abs((await attachmentMetrics(popup)).popup.width-documentCap(vw))).toBeLessThanOrEqual(1);
+    const data=await captureAttachment(page,popup,`attachment-resize-${vw}x${vh}`,vw,vh);
+    if(phase!=="after") continue;
+    expect(Math.abs(data.popup.width-documentCap(vw))).toBeLessThanOrEqual(1);
+    expect(data.popup.right).toBeLessThanOrEqual(vw-15);
+    expect(data.popupScroll.scrollWidth).toBeLessThanOrEqual(data.popupScroll.clientWidth+1);
+  }
+});
+
+for(const surface of ["card","pas"] as const) {
+  test(`question document link opens the viewer ${surface}`,async({page,context})=>{
+    await page.setViewportSize({width:1440,height:900});
+    await page.emulateMedia({colorScheme:"light",reducedMotion:"reduce"});
+    await page.addInitScript(()=>{
+      localStorage.setItem("ls.webglGlass","0");
+      Object.defineProperty(navigator.serviceWorker,"register",{configurable:true,value:async()=>({update:async()=>undefined,active:null,addEventListener:()=>undefined})});
+      Object.defineProperty(navigator.serviceWorker,"controller",{configurable:true,get:()=>null});
+    });
+    await installV3VisualQaRoutes(page);
+    await page.route("**/api/auth/config",route=>route.fulfill({contentType:"application/json",body:JSON.stringify({authEnabled:true,devModeEnabled:false})}));
+    await page.route("**/api/auth/status",route=>route.fulfill({contentType:"application/json",body:JSON.stringify({authenticated:true,user:{email:"qa@example.test",name:"QA",isAdmin:true}})}));
+    await page.goto(`/components?sample=card-question&scene=ga&surface=${surface}`);
+    const link=page.getByRole("link",{name:"미리 해 둘 정리 작업 모음"});
+    await expect(link).toBeVisible({timeout:20000});
+    const url=page.url();
+    const pagesBefore=context.pages().length;
+    const newPagePromise=context.waitForEvent("page",{timeout:3000}).catch(()=>null);
+    await link.click();
+    const newPage=await newPagePromise;
+    if(newPage) {
+      await newPage.waitForLoadState("domcontentloaded").catch(()=>undefined);
+      await newPage.screenshot({path:path.join(output,`question-${surface}-new-tab.png`),animations:"disabled",timeout:15000});
+      writeFileSync(path.join(output,`question-${surface}-new-tab.json`),JSON.stringify({newTabUrl:newPage.url(),pagesBefore,pagesAfter:context.pages().length},null,2));
+      await newPage.close();
+    }
+    if(phase!=="after") {
+      expect(newPage).not.toBeNull();
+      return;
+    }
+    expect(newPage).toBeNull();
+    const popup=page.locator(".chat-image-viewer-popup");
+    await expect(popup).toBeVisible();
+    await expect(popup.locator(".chat-attachment-markdown")).toBeVisible();
+    expect(page.url()).toBe(url);
+    expect(context.pages().length).toBe(pagesBefore);
+    const data=await captureAttachment(page,popup,`question-document-${surface}`,1440,900);
+    expect(data.kind).toBe("document");
+    expect(Math.abs(data.popup.width-documentCap(1440))).toBeLessThanOrEqual(1);
+    expect(data.active).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(popup).toHaveCount(0);
+    await expect(link).toBeFocused();
+  });
+}
+
+for(const [vw,vh] of [[1920,1080],[390,844]] as const) {
+  test(`attachment caller chat image unchanged ${vw}x${vh}`,async({page})=>{
+    const popup=await open(page,"chat",vw,vh,800,600,"",{gallery:"single"});
+    const data=await metrics(popup);
+    await page.screenshot({path:path.join(output,`caller-chat-${vw}x${vh}.png`),animations:"disabled",timeout:15000});
+    writeFileSync(path.join(output,`caller-chat-${vw}x${vh}.json`),JSON.stringify({viewport:[vw,vh],...data},null,2));
+    const scale=Math.min(1,(vw-32-data.border-48)/800);
+    expect(data.image.width).toBeCloseTo(800*scale,0);
+    expect(data.image.height).toBeCloseTo(600*scale,0);
+    expect(data.popup.width).toBeCloseTo(Math.max(320,data.image.width+48+data.border),0);
+    expect(data.popup.right).toBeLessThanOrEqual(vw-15);
   });
 }
