@@ -95,9 +95,10 @@ const sessionSearchHandlers = {
         const folders = await (await options.folders.serviceProvider()).getAllFolders();
         if (!session || !isBoardFolderAllowed(access, folders, session.folder_id)) return errorResult("Folder access denied");
       }
-      if (session?.status === "running") return errorResult(`Session ${sessionId} on node ${session.node_id} is running; stop it before deleting it`);
-      await options.sessions.catalogProvider.deleteSession(sessionId);
-      return jsonResult({ ok: true, session_id: sessionId });
+      // 화면 삭제와 같은 판정을 쓴다: 소유 노드가 있으면 노드 명령으로 멈춘 뒤 지우고,
+      // 노드가 없거나 옛 판이면 활성 세션만 거절한 뒤 orch가 직접 지운다.
+      const outcome = await options.sessions.catalogProvider.deleteSession(sessionId);
+      return jsonResult({ ok: true, session_id: sessionId, outcome });
     } catch (error) { return errorResult(error instanceof Error ? error.message : String(error)); }
   },
 } satisfies Record<string, McpToolHandler>;

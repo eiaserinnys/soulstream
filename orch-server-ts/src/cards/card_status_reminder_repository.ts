@@ -40,7 +40,7 @@ export async function readCardReminderFacts(sql: SqlClient, now: number, endedRo
         ) AS "unhandledCommentId",
         EXISTS(SELECT 1 FROM tree t JOIN sessions s USING(session_id)
           WHERE s.session_id<>r.session_id AND s.status IN ('completed','error','interrupted')
-            AND s.notify_completion IS DISTINCT FROM FALSE AND s.termination_detail IS DISTINCT FROM 'user_stop'
+            AND s.notify_completion IS DISTINCT FROM FALSE
             AND s.termination_event_id IS NOT NULL
             AND NOT EXISTS(SELECT 1 FROM session_deliveries d WHERE d.relation_key='child_session:'||s.session_id||':'||s.termination_event_id)
             AND NOT EXISTS(SELECT 1 FROM session_delivery_relation_consumptions consumed

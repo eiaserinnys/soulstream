@@ -86,11 +86,13 @@ describe("session MCP roundtrip", () => {
       expect(h.sessions().child).toBeDefined(); expect(h.notifications).toEqual([]);
     } finally { h.runtime.orch = orch; }
   });
-  it("refuses remote running deletion without stopping a runner", async () => {
+  it("relays remote running deletion to the orchestrator without a node-side refusal", async () => {
     h.reset({ status: "running" }); const result = await call("delete_session", { session_id: "child" });
-    expect(result.isError).toBe(true);
-    expect((result.content as { text: string }[])[0].text).toBe("Session child on node remote is running; stop it before deleting it");
-    expect(h.sessions().child).toBeDefined(); expect(h.notifications).toEqual([]);
+    expect(result.isError).not.toBe(true);
+    expect(result.structuredContent).toEqual({ ok: true, session_id: "child" });
+    expect(h.sessions().child).toBeUndefined();
+    expect(h.notifications).toEqual([{ deleted: "child" }]);
+    expect(h.paths).toContain("/api/mcp/host/delete_session");
   });
   it.each(successes)("preserves %s success %j", async (name, args) => { const result = await roundtrip(name, args); expect(result.isError).not.toBe(true); });
   it.each(errors)("preserves %s error %j", async (name, args) => { const result = await roundtrip(name, args); expect(result.isError).toBe(true); });

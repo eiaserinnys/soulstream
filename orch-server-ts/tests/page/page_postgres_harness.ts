@@ -586,9 +586,13 @@ async function assertSafeExternalDatabase(url: string): Promise<void> {
   }
   const sql = postgres(url, { max: 1, idle_timeout: 1 });
   try {
+    // 하니스가 만든 page_* 스키마는 실행마다 새로 만들고 정리하는 자기 영역이다.
+    // 같은 외부 테스트 DB를 여러 시험 파일이 동시에 써도 서로의 스키마를 오염으로
+    // 오인하지 않도록 제외한다. 그 밖의 테이블은 그대로 빈 DB를 요구한다.
     const [row] = await sql<[{ count: number }]>`
       SELECT COUNT(*)::int AS count FROM information_schema.tables
       WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+        AND table_schema NOT LIKE 'page\\_%'
     `;
     if ((row?.count ?? 0) > 0) throw new Error("TEST_DATABASE_URL must point at an empty test database");
   } finally {

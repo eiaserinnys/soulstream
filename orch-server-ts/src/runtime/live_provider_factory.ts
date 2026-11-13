@@ -63,6 +63,7 @@ import type { NodeAgentProfileRouteOptions } from "../node/node_agent_profile_ro
 import type { AgentProfileRouteOptions } from "../node/agent_profile_routes.js";
 import type { ContextBundleRouteOptions } from "../node/context_bundle_routes.js";
 import type { SessionCatalogRouteOptions } from "../session/session_catalog_routes.js";
+import { sessionDeleteTransportFromRouteOptions } from "../session/session_delete.js";
 import { createLiveDashboardAccessProvider } from "./live_dashboard_access_provider.js";
 import { createLiveExecuteProxyRouteProvider } from "./live_execute_proxy_route_provider.js";
 import {
@@ -543,6 +544,10 @@ export function createLiveOrchestratorProviderBundle(
         options.dependencies.dbCatalogRepository.sessionCatalogProvider,
         options.dependencies.dbCatalogRepository.folderRouteProvider,
         options.runtimeServices.sessionBroadcaster,
+        sessionDeleteTransportFromRouteOptions({
+          router: options.runtimeServices.sessionRouter,
+          bridge: options.runtimeServices.sessionBridge,
+        }),
       ),
       accessProvider: sessionResourceAccessProvider,
     },

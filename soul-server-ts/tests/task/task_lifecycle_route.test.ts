@@ -10,7 +10,7 @@ import {
 } from "../../src/task/task_lifecycle_route.js";
 import { TaskLifecycleTransition } from
   "../../src/task/task_lifecycle_transition.js";
-import type { Task } from "../../src/task/task_models.js";
+import { isActiveTaskStatus, type Task } from "../../src/task/task_models.js";
 import type { SessionBroadcaster } from "../../src/upstream/session_broadcaster.js";
 
 const silentLogger = pino({ level: "silent" });
@@ -40,7 +40,18 @@ function makeRoute(
   const broadcaster = { emitSessionDeleted } as unknown as SessionBroadcaster;
 
   const lifecycleTransition = {
-    cancelRunningTask: vi.fn().mockResolvedValue(true),
+    // 실제 전이처럼 실행 중 task를 사람의 멈춤(user_stop)으로 종결시킨다.
+    cancelRunningTask: vi.fn(async (task?: Task) => {
+      if (!task) return false;
+      if (isActiveTaskStatus(task.status)) {
+        task.status = "interrupted";
+        task.completedAt ??= new Date();
+        task.terminationDetail = "user_stop";
+        // 실제 전이처럼 성공한 멈춤 마무리는 러너를 놓아준다.
+        task.runner = undefined;
+      }
+      return true;
+    }),
     interruptAndDrain: vi.fn().mockResolvedValue(undefined),
     markRunningTaskInterruptedForShutdown: vi.fn().mockResolvedValue(undefined),
     interruptForShutdown: vi.fn().mockResolvedValue(undefined),
@@ -318,7 +329,7 @@ describe("TaskLifecycleRoute.cancelTask", () => {
 });
 
 describe("TaskLifecycleRoute.deleteTask", () => {
-  it("interrupts and drains before forgetting the task, then deletes DB row and broadcasts", async () => {
+  it("stops a running session like the stop button, then deletes DB row and broadcasts", async () => {
     const events: string[] = [];
     const task = makeTask({ agentSessionId: "s1" });
     const {
@@ -347,8 +358,15 @@ describe("TaskLifecycleRoute.deleteTask", () => {
         }),
       } as never,
     };
-    vi.mocked(lifecycleTransition.interruptAndDrain).mockImplementationOnce(async () => {
-      events.push("interrupt");
+    vi.mocked(lifecycleTransition.cancelRunningTask).mockImplementationOnce(async (running) => {
+      events.push("stop-user");
+      if (running) {
+        running.status = "interrupted";
+        running.completedAt ??= new Date();
+        running.terminationDetail = "user_stop";
+        running.runner = undefined;
+      }
+      return true;
     });
     deleteSession.mockImplementationOnce(async () => {
       events.push("delete");
@@ -360,11 +378,16 @@ describe("TaskLifecycleRoute.deleteTask", () => {
     await expect(route.deleteTask("s1")).resolves.toBe(true);
 
     expect(tasks.has("s1")).toBe(false);
-    expect(lifecycleTransition.interruptAndDrain).toHaveBeenCalledWith(task);
+    expect(lifecycleTransition.cancelRunningTask).toHaveBeenCalledWith(
+      task,
+      { forDelete: true },
+    );
+    expect(lifecycleTransition.interruptAndDrain).not.toHaveBeenCalled();
+    expect(task.terminationDetail).toBe("user_stop");
     expect(deleteSession).toHaveBeenCalledWith("s1", "delete_session:s1");
     expect(emitSessionDeleted).toHaveBeenCalledWith("s1");
     expect(events).toEqual([
-      "interrupt",
+      "stop-user",
       "close-runtime",
       "runner-close",
       "retire-registration",

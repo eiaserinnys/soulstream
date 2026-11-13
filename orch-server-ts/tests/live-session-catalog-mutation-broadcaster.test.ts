@@ -8,6 +8,7 @@ import {
   type SessionCatalogProvider,
   type SessionStreamEvent,
 } from "../src/index.js";
+import type { SessionDeleteTransport } from "../src/session/session_delete.js";
 
 describe("withSessionCatalogMutationBroadcasts", () => {
   it("publishes every committed descendant returned by both REST move routes", async () => {
@@ -17,7 +18,12 @@ describe("withSessionCatalogMutationBroadcasts", () => {
     provider.moveSessionsToFolder = vi.fn(async () => ({count:3,sessionIds}));
     provider.updateSessionCatalog = vi.fn(async () => ({count:3,sessionIds}));
     const folders = createFolderProvider();
-    const wrapped = withSessionCatalogMutationBroadcasts(provider,folders,broadcaster);
+    const wrapped = withSessionCatalogMutationBroadcasts(
+      provider,
+      folders,
+      broadcaster,
+      createDeleteTransport(),
+    );
     await wrapped.moveSessionsToFolder(["root"],"folder-b");
     await wrapped.updateSessionCatalog("root",{folderId:"folder-b"});
     expect(folders.listSessionAssignmentsByIds).toHaveBeenNthCalledWith(1,sessionIds);
@@ -47,6 +53,7 @@ describe("withSessionCatalogMutationBroadcasts", () => {
       provider,
       createFolderProvider(),
       broadcaster,
+      createDeleteTransport(),
     );
 
     await wrapped.renameSession("sess-a", "Renamed");
@@ -81,6 +88,7 @@ describe("withSessionCatalogMutationBroadcasts", () => {
       provider,
       createFolderProvider(),
       broadcaster,
+      createDeleteTransport(),
     );
 
     await wrapped.getSessionCards("sess-a");
@@ -96,9 +104,17 @@ function createSessionProvider(): SessionCatalogProvider {
     renameSession: vi.fn(async () => undefined),
     moveSessionsToFolder: vi.fn(async () => ({ count: 1 })),
     updateSessionCatalog: vi.fn(async () => undefined),
-    deleteSession: vi.fn(async () => undefined),
+    getSessionDeleteTarget: vi.fn(async () => ({ nodeId: null, status: "completed" })),
+    deleteSession: vi.fn(async () => "deleted" as const),
     getSessionCards: vi.fn(async () => []),
     updateReadPosition: vi.fn(async () => undefined),
+  };
+}
+
+function createDeleteTransport(): SessionDeleteTransport {
+  return {
+    isNodeConnected: () => true,
+    sendDeleteCommand: vi.fn(async () => ({ status: "ok", deleted: true })),
   };
 }
 

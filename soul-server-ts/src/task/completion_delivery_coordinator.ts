@@ -21,6 +21,7 @@ import {
 import type { SessionDeliveryHostClient } from "../control_plane/persistence_host_clients.js";
 import type {
   RegisterSessionDeliveryParams,
+  RegisterSessionDeliveryResult,
   SessionDeliveryRow,
 } from "../db/session_db_types.js";
 
@@ -34,6 +35,10 @@ export interface DurableCompletionInput {
   resetsAt?: string;
   createdAt: Date;
 }
+
+export type CompletionDeliveryRegistrationResult =
+  | { registered: true; deliveryId: string; conflict: boolean }
+  | { registered: false; reason: "registration_failed" | "identity_conflict" };
 
 type CompletionDeliveryRepository = Pick<
   SessionDeliveryHostClient,
@@ -98,25 +103,11 @@ export class CompletionDeliveryCoordinator {
 
   async enqueue(input: DurableCompletionInput): Promise<void> {
     const registration = buildCompletionRegistration(input);
-    let registered;
-    for (let attempt = 0; ; attempt += 1) {
-      try {
-        registered = await this.deps.repository.register(registration);
-        break;
-      } catch (err) {
-        const delayMs = isRetryablePersistenceFailure(err)
-          ? COMPLETION_REGISTRATION_RETRY_DELAYS_MS[attempt]
-          : undefined;
-        if (delayMs === undefined) {
-          this.deps.logger.error(
-            { err, sourceSessionId: input.sourceSessionId, attempts: attempt + 1 },
-            "Completion delivery could not be persisted",
-          );
-          return;
-        }
-        await wait(delayMs);
-      }
-    }
+    const registered = await this.registerWithRetry(
+      registration,
+      input.sourceSessionId,
+    );
+    if (!registered) return;
     if (registered.conflict) {
       this.deps.logger.error(
         { deliveryId: registered.row.delivery_id },
@@ -125,6 +116,76 @@ export class CompletionDeliveryCoordinator {
       return;
     }
     await this.attemptPending(registered.row.delivery_id);
+  }
+
+  /**
+   * 삭제 길 전용: 이번 종료 revision의 등록 결과를 호출자에게 돌려주고 실패를
+   * 삼키지 않는다. 같은 relation key의 행이 이미 있으면 그 revision은 등록된
+   * 것으로 본다 — 등록 신원이 결정적이라 재시도가 같은 행에 다시 닿는다.
+   */
+  async enqueueForDelete(
+    input: DurableCompletionInput,
+  ): Promise<CompletionDeliveryRegistrationResult> {
+    const registration = buildCompletionRegistration(input);
+    const registered = await this.registerWithRetry(
+      registration,
+      input.sourceSessionId,
+    );
+    if (!registered) {
+      return { registered: false, reason: "registration_failed" };
+    }
+    if (
+      registered.conflict
+      && registered.row.relation_key !== registration.relationKey
+    ) {
+      this.deps.logger.error(
+        {
+          deliveryId: registered.row.delivery_id,
+          expectedRelationKey: registration.relationKey,
+          actualRelationKey: registered.row.relation_key,
+        },
+        "Completion delivery identity conflict",
+      );
+      return { registered: false, reason: "identity_conflict" };
+    }
+    if (registered.conflict) {
+      this.deps.logger.info(
+        {
+          deliveryId: registered.row.delivery_id,
+          relationKey: registration.relationKey,
+        },
+        "Completion delivery already registered for this terminal revision",
+      );
+    }
+    await this.attemptPending(registered.row.delivery_id);
+    return {
+      registered: true,
+      deliveryId: registered.row.delivery_id,
+      conflict: registered.conflict,
+    };
+  }
+
+  private async registerWithRetry(
+    registration: RegisterSessionDeliveryParams,
+    sourceSessionId: string,
+  ): Promise<RegisterSessionDeliveryResult | null> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await this.deps.repository.register(registration);
+      } catch (err) {
+        const delayMs = isRetryablePersistenceFailure(err)
+          ? COMPLETION_REGISTRATION_RETRY_DELAYS_MS[attempt]
+          : undefined;
+        if (delayMs === undefined) {
+          this.deps.logger.error(
+            { err, sourceSessionId, attempts: attempt + 1 },
+            "Completion delivery could not be persisted",
+          );
+          return null;
+        }
+        await wait(delayMs);
+      }
+    }
   }
 
   async recoverPending(_limit = 100): Promise<void> {

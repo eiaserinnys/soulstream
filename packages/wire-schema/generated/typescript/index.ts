@@ -1,7 +1,7 @@
 /* AUTO-GENERATED — do not edit. Run packages/wire-schema/scripts/generate.sh */
 
 /**
- * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 195개 $defs (top-level wire 92 + supporting/SSE 103). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
+ * 노드 ↔ 오케스트레이터 WebSocket 메시지 정본. 197개 $defs (top-level wire 94 + supporting/SSE 103). 출처: soul-server-ts/src/upstream/* · packages/wire-schema generated SSE types + OpenAI Agents SDK parity.
  */
 export type SoulstreamUpstreamProtocol =
   | NodeRegister
@@ -28,6 +28,7 @@ export type SoulstreamUpstreamProtocol =
   | ErrorMessage
   | InterveneAck
   | InterruptSessionAck
+  | DeleteSessionAck
   | AcknowledgeSessionReviewAck
   | PersistentSessionSettingsUpdated
   | PersistentSessionInstructionsApplied
@@ -50,6 +51,7 @@ export type SoulstreamUpstreamProtocol =
   | EnsureSessionRunning
   | EnsureSessionRunningAck
   | InterruptSession
+  | DeleteSession
   | AcknowledgeSessionReview
   | SetPersistentSessionSettings
   | ApplyPersistentSessionInstructions
@@ -1881,6 +1883,19 @@ export interface InterruptSessionAck {
   [k: string]: unknown;
 }
 /**
+ * 노드→orch: delete_session 명령 ACK. 노드가 세션 행을 지운 뒤 보낸다.
+ */
+export interface DeleteSessionAck {
+  type: "delete_session_ack";
+  requestId: string;
+  status: "ok" | "error";
+  agentSessionId?: string;
+  deleted?: boolean;
+  code?: string;
+  message?: string;
+  [k: string]: unknown;
+}
+/**
  * 노드→orch: acknowledge_session_review 원자 전이 ACK.
  */
 export interface AcknowledgeSessionReviewAck {
@@ -2280,6 +2295,20 @@ export interface EnsureSessionRunningAck {
  */
 export interface InterruptSession {
   type: "interrupt_session";
+  agentSessionId: string;
+  /**
+   * 구버전 호환 — 신규 코드는 agentSessionId 사용.
+   */
+  session_id?: string;
+  requestId?: string;
+  request_id?: string;
+  [k: string]: unknown;
+}
+/**
+ * orch→노드: 세션을 지운다. 실행 중이면 먼저 사람이 멈춘 것과 같이 멈춘 뒤 지운다(부른 세션에 멈춤 알림).
+ */
+export interface DeleteSession {
+  type: "delete_session";
   agentSessionId: string;
   /**
    * 구버전 호환 — 신규 코드는 agentSessionId 사용.
@@ -3533,6 +3562,7 @@ export const CONTROL_COMMAND_TYPES = [
   "create_card_orchestration_decision",
   "prepare_card_orchestration_decision",
   "interrupt_session",
+  "delete_session",
   "acknowledge_session_review",
   "set_persistent_session_settings",
   "apply_persistent_session_instructions",

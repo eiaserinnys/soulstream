@@ -1,4 +1,8 @@
 import type { SessionCatalogProvider } from "../session/session_catalog_routes.js";
+import {
+  deleteSessionWithNode,
+  type SessionDeleteTransport,
+} from "../session/session_delete.js";
 import type {
   InMemorySseReplayBroadcaster,
   SessionStreamEvent,
@@ -11,6 +15,7 @@ export function withSessionCatalogMutationBroadcasts(
   provider: SessionCatalogProvider,
   folderProvider: LiveFolderProvider,
   broadcaster: InMemorySseReplayBroadcaster<SessionStreamEvent>,
+  sessionDeleteTransport: SessionDeleteTransport,
 ): SessionCatalogProvider {
   const broadcastSessions = async (sessionIds: readonly string[]) =>
     await broadcastTargetedSessionCatalogDelta(folderProvider, broadcaster, sessionIds);
@@ -33,11 +38,22 @@ export function withSessionCatalogMutationBroadcasts(
     async deleteSession(sessionId, callerInfo) {
       const deletedBoardItemIds =
         await folderProvider.listBoardItemIdsForSessionDeletion(sessionId);
-      await provider.deleteSession(sessionId, callerInfo);
-      await broadcastCatalogSnapshot(folderProvider, broadcaster, {
-        sessionsDelta: { [sessionId]: null },
-        boardItemsDelta: deletedBoardItemsDelta(deletedBoardItemIds),
+      const target = await provider.getSessionDeleteTarget(sessionId);
+      const outcome = await deleteSessionWithNode({
+        sessionId,
+        target,
+        transport: sessionDeleteTransport,
+        deleteDirectly: (id) => provider.deleteSession(id, callerInfo),
       });
+      // 접수(노드가 마저 지움)면 아직 행이 남아 있으므로 지금 지웠다고 알리지 않는다.
+      // 노드가 삭제를 끝내면 session_deleted로 화면에 알린다.
+      if (outcome === "deleted") {
+        await broadcastCatalogSnapshot(folderProvider, broadcaster, {
+          sessionsDelta: { [sessionId]: null },
+          boardItemsDelta: deletedBoardItemsDelta(deletedBoardItemIds),
+        });
+      }
+      return outcome;
     },
   };
 }

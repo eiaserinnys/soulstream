@@ -38,8 +38,12 @@ function createProvider(overrides: Partial<SessionCatalogProvider> = {}) {
     async updateSessionCatalog(sessionId, update, callerInfo) {
       calls.push(["update", sessionId, update, callerInfo]);
     },
+    async getSessionDeleteTarget() {
+      return { nodeId: null, status: "completed" };
+    },
     async deleteSession(sessionId, callerInfo) {
       calls.push(["delete", sessionId, callerInfo]);
+      return "deleted";
     },
     async getSessionCards(sessionId) {
       calls.push(["cards", sessionId]);
@@ -234,8 +238,8 @@ describe("session catalog/read-position route harness", () => {
       },
     ]);
     expect(read.json()).toEqual({ ok: true });
-    expect(deleted.statusCode).toBe(204);
-    expect(deleted.body).toBe("");
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json()).toEqual({ ok: true });
     expect(calls.map((call) => call[0])).toEqual([
       "rename",
       "move",

@@ -41,12 +41,22 @@ import type {
 import type { Task } from "./task_models.js";
 
 /**
- * 본 notifier의 *유일한* 진입점. 다른 public 메서드를 추가하지 않는다 —
- * 임의 메시지 릴레이로 오용 차단 (위임 프롬프트 🟡 #1).
+ * 완료 통지 진입점. 임의 메시지 릴레이로 오용되지 않도록 표면을 좁게 유지한다.
+ *
+ * `notify`는 멈춤 단추·일반 완료 길이다 — 실패를 삼키고 resolve한다(기존 계약).
+ * `notifyForDelete`는 삭제 길 전용이며 이번 종료 revision의 등록 결과를 실제로
+ * 돌려준다. 등록이 확인되지 않으면 삭제 경로가 세션 행을 지우지 않는다.
  */
 export interface CompletionNotifier {
   notify(task: Task): Promise<void>;
+  notifyForDelete?(task: Task): Promise<boolean>;
   recoverPending?(): Promise<void>;
+}
+
+interface PreparedCompletionDelivery {
+  callerSessionId: string;
+  callerInfo: AgentCallerInfo;
+  text: string;
 }
 
 export class TaskCompletionNotifier implements CompletionNotifier {
@@ -98,25 +108,57 @@ export class TaskCompletionNotifier implements CompletionNotifier {
   }
 
   async notify(task: Task): Promise<void> {
+    const prepared = await this._prepareDelivery(task);
+    if (prepared === undefined) return;
+    await this._deliverPrepared(task, prepared);
+  }
+
+  /**
+   * 삭제 길 전용. 이번 종료 revision의 등록 결과를 실제로 돌려준다 — 실패를
+   * 로그로 삼키지 않는다. 등록이 필요 없는 경우(notifyCompletion=false, caller
+   * 없음, 자기 자신)는 true다. 일반 완료·멈춤 단추 길은 `notify`를 그대로 쓴다.
+   */
+  async notifyForDelete(task: Task): Promise<boolean> {
+    const prepared = await this._prepareDelivery(task);
+    if (prepared === undefined) return true;
+    return await this._deliverPrepared(task, prepared, {
+      requireRegistration: true,
+    });
+  }
+
+  private async _prepareDelivery(
+    task: Task,
+  ): Promise<PreparedCompletionDelivery | undefined> {
     if (task.notifyCompletion === false) {
       this.logger.info(
         { childId: task.agentSessionId, callerSessionId: task.callerSessionId },
         "Completion notification suppressed by task notifyCompletion=false",
       );
-      return;
+      return undefined;
     }
 
     const callerSessionId = await this._resolveCallerSessionId(task);
-    if (!callerSessionId) return;
+    if (!callerSessionId) return undefined;
     if (callerSessionId === task.agentSessionId) {
       this.logger.info(
         { childId: task.agentSessionId, callerSessionId },
         "Self completion notification suppressed to preserve terminal session state",
       );
-      return;
+      return undefined;
     }
-    const callerInfo = this._buildCallerInfo(task);
-    const text = this._buildNotifyText(task);
+    return {
+      callerSessionId,
+      callerInfo: this._buildCallerInfo(task),
+      text: this._buildNotifyText(task),
+    };
+  }
+
+  private async _deliverPrepared(
+    task: Task,
+    prepared: PreparedCompletionDelivery,
+    options: { requireRegistration?: boolean } = {},
+  ): Promise<boolean> {
+    const { callerSessionId, callerInfo, text } = prepared;
     const childId = task.agentSessionId;
     if (this.deliveryV2Enabled) {
       if (!this.durableCoordinator || task.terminalEventId === undefined) {
@@ -124,9 +166,9 @@ export class TaskCompletionNotifier implements CompletionNotifier {
           { childId, callerSessionId, terminalEventId: task.terminalEventId },
           "Completion notification withheld: canonical terminal receipt is unavailable",
         );
-        return;
+        return false;
       }
-      await this.durableCoordinator.enqueue({
+      const input = {
         targetSessionId: callerSessionId,
         sourceSessionId: childId,
         terminalRevision: String(task.terminalEventId),
@@ -134,16 +176,22 @@ export class TaskCompletionNotifier implements CompletionNotifier {
         callerInfo,
         ...task.rateLimitStopInfo,
         createdAt: task.completedAt ?? new Date(),
-      });
-      return;
+      };
+      if (options.requireRegistration === true) {
+        const registration = await this.durableCoordinator.enqueueForDelete(input);
+        return registration.registered;
+      }
+      await this.durableCoordinator.enqueue(input);
+      return true;
     }
-    await this._deliver({
+    const verdict = await this._deliver({
       agentSessionId: callerSessionId,
       text,
       user: "agent",
       callerInfo,
       ...task.rateLimitStopInfo,
     }, childId);
+    return verdict.kind === "accepted" || verdict.kind === "settled";
   }
 
   async recoverPending(): Promise<void> {
@@ -290,6 +338,10 @@ export class TaskCompletionNotifier implements CompletionNotifier {
    */
   private _buildNotifyText(task: Task): string {
     const sid = task.agentSessionId;
+    if (task.terminationDetail === "user_stop") {
+      const resultText = task.lastAssistantText?.trim() || "(빈 응답)";
+      return `⏹️ 에이전트 세션을 사람이 멈춤 (ID: \`${sid}\`)\n\n${resultText}`;
+    }
     if (task.status === "interrupted") {
       return `⚠️ 에이전트 세션 중단 (ID: \`${sid}\`)`;
     }
