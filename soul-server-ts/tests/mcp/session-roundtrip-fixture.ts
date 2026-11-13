@@ -56,13 +56,15 @@ export async function createSessionRoundtripFixture() {
         types?: string[],
         _period?: unknown,
         metadataTypes?: string[],
+        _order?: "asc" | "desc",
       ) => {
         fail("event_read_page");
-        return events.filter(e => e.id > after
+        const matched = events.filter(e => e.id > after
           && (!types || types.includes(e.event_type))
           && (!metadataTypes?.length
-            || metadataTypes.includes((e.payload as Record<string, unknown> | undefined)?.metadata_type as string)))
-          .slice(0, limit).map(e => ({ ...e, session_id: id }));
+            || metadataTypes.includes((e.payload as Record<string, unknown> | undefined)?.metadata_type as string)));
+        const page = _order === "desc" ? [...matched].reverse() : matched;
+        return page.slice(0, limit).map(e => ({ ...e, session_id: id }));
       },
       countEvents: async () => { fail("event_count"); return events.length; },
       readOneEvent: async (id: string, eventId: number) => { fail("event_read_one");

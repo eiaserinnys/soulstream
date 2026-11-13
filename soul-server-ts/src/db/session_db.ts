@@ -13,6 +13,7 @@ import type {
   SessionEventSearchRow,
   SessionHistorySearchParams,
   SessionHistorySearchResult,
+  SessionReadOrder,
   SessionResumeContext,
   SessionTurnExcerptResult,
 } from "../control_plane/session_data_host_client.js";
@@ -298,6 +299,7 @@ export class SessionDB {
     eventTypes?: string[],
     period?: SessionReadPeriod,
     metadataTypes?: string[],
+    order?: SessionReadOrder,
   ): Promise<SessionEventRow[]> {
     return await this.requireSessionDataHost().readEvents(
       sessionId,
@@ -306,6 +308,7 @@ export class SessionDB {
       eventTypes,
       period,
       metadataTypes,
+      order,
     );
   }
 

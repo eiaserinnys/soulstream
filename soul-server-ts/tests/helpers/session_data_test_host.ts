@@ -36,8 +36,8 @@ export function configureTestSessionDataHost(
     listSessionsForUpstreamDump: (params) =>
       sessions.listSessionsForUpstreamDump(params),
     countEvents: (sessionId) => events.countEvents(sessionId),
-    readEvents: (sessionId, afterId, limit, eventTypes, period, metadataTypes) =>
-      events.readEvents(sessionId, afterId, limit, eventTypes, period, metadataTypes),
+    readEvents: (sessionId, afterId, limit, eventTypes, period, metadataTypes, order) =>
+      events.readEvents(sessionId, afterId, limit, eventTypes, period, metadataTypes, order),
     readOneEvent: (sessionId, eventId) =>
       events.readOneEvent(sessionId, eventId),
     streamEventsRaw: (sessionId, afterId) =>

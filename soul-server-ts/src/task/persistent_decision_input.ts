@@ -23,6 +23,8 @@ import type { Task } from "./task_models.js";
 import { isCacheKeepaliveInput } from "./persistent_keepalive_marker.js";
 
 const DECISION_EVENT_WINDOW = 200;
+/** 판정은 프리셋별 최신 first_call 하나만 쓰므로 최신 세대 기록 이만큼이면 충분하다. */
+const GENERATION_METADATA_READ_LIMIT = 50;
 const HUMAN_SOURCES = new Set(["browser", "soul-app", "slack"]);
 const INPUT_EVENT_TYPES = new Set(["user_message", "intervention_sent"]);
 
@@ -56,10 +58,11 @@ export async function buildPersistentDecisionInput(
     ? await deps.db.readEvents(
         task.agentSessionId,
         0,
-        task.lastEventId,
+        GENERATION_METADATA_READ_LIMIT,
         ["metadata"],
         undefined,
         ["persistent_generation"],
+        "desc",
       )
     : [];
   const contextUsage = latestContextUsage(orderedEvents);
@@ -98,7 +101,10 @@ export async function buildPersistentDecisionInput(
     presetProviders[preset] = resolved.provider;
     supportedFallbackModels.push(preset);
   }
-  const checkpointTokens = collectCheckpointTokensByPreset(task, generationMetadataEvents);
+  const checkpointTokens = collectCheckpointTokensByPreset(
+    task,
+    [...generationMetadataEvents].sort((left, right) => left.id - right.id),
+  );
   const lastComplete = [...orderedEvents].reverse().find((event) => event.event_type === "complete");
   const lastCallEndedAt = options.lastCallEndedAt
     ?? lastComplete?.created_at.toISOString()
@@ -166,7 +172,7 @@ function collectCheckpointTokensByPreset(
 ): Record<string, number | undefined> {
   const checkpoints: Record<string, number | undefined> = {};
   const measuredGenerations = new Set<number>();
-  for (const event of [...events].sort((left, right) => left.id - right.id)) {
+  for (const event of events) {
     if (event.event_type !== "metadata" || event.payload.metadata_type !== "persistent_generation") {
       continue;
     }

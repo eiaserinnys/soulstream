@@ -506,11 +506,73 @@ describe("buildPersistentDecisionInput", () => {
     expect(readEvents).toHaveBeenCalledWith(
       task.agentSessionId,
       0,
-      task.lastEventId,
+      50,
       ["metadata"],
       undefined,
       ["persistent_generation"],
+      "desc",
     );
+  });
+
+  it("keeps the newest checkpoint when generation metadata arrives newest first", async () => {
+    const task = makeTask();
+    const generationMetadata = (id: number, generation: number, inputTokens: number, contextReset = false) => ({
+      id,
+      session_id: task.agentSessionId,
+      event_type: "metadata",
+      payload: {
+        metadata_type: "persistent_generation",
+        value: {
+          number: generation,
+          first_call: {
+            generation,
+            model_preset: "claude-opus",
+            input_tokens: inputTokens,
+            context_reset: contextReset,
+          },
+        },
+      },
+      searchable_text: "",
+      created_at: new Date("2026-10-05T00:00:00.000Z"),
+    });
+    const readEvents = vi.fn(async (
+      _sessionId: string,
+      _afterId: number,
+      _limit: number,
+      eventTypes?: string[],
+    ) => eventTypes
+      ? [
+          generationMetadata(20, 3, 4_000, true),
+          generationMetadata(19, 2, 55_000),
+          generationMetadata(18, 1, 72_000),
+        ]
+      : []);
+    rememberProviderUsageObservation("claude", makeUsage(35, 20));
+    rememberProviderUsageObservation("codex", makeUsage(35, 20, "168h"));
+
+    const input = await buildPersistentDecisionInput(
+      { task, trigger: "arrival", now },
+      {
+        db: { readEvents } as unknown as Pick<SessionDB, "readEvents">,
+        modelCatalog: {
+          resolve: (id: string) => ({ id, backend: id.startsWith("claude") ? "claude" : "codex" }),
+          snapshot: () => ({ persistent_defaults: { fallback_models: [] } }),
+        } as unknown as Pick<ModelCatalog, "resolve" | "snapshot">,
+        providerUsage: { fetchUsage: vi.fn() } as unknown as ProviderUsageCommandHandler,
+        logger: { warn: vi.fn() },
+      },
+    );
+
+    expect(readEvents).toHaveBeenCalledWith(
+      task.agentSessionId,
+      0,
+      50,
+      ["metadata"],
+      undefined,
+      ["persistent_generation"],
+      "desc",
+    );
+    expect(input.checkpoint_tokens_by_preset).toEqual({ "claude-opus": 55_000 });
   });
 
   it("uses the latest non-reset measurement when a newer reset measurement exists", async () => {

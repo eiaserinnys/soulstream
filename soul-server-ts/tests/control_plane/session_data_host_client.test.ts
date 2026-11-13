@@ -220,6 +220,8 @@ describe("SessionDataHostClient", () => {
     await client.readEvents("s1", 0, 10, ["metadata"], undefined, ["persistent_generation"]);
     await client.readEvents("s1", 0, 10, ["metadata"], period, ["persistent_generation"]);
     await client.readEvents("s1", 0, 10, ["metadata"], period);
+    await client.readEvents("s1", 0, 10, ["metadata"], undefined, ["persistent_generation"], "desc");
+    await client.readEvents("s1", 0, 10, ["metadata"], period, ["persistent_generation"], "desc");
 
     expect(requests).toEqual([
       {
@@ -233,6 +235,14 @@ describe("SessionDataHostClient", () => {
       {
         url: "http://orchestrator.test/api/session-data/host/event_read_page",
         args: ["s1", 0, 10, ["metadata"], period],
+      },
+      {
+        url: "http://orchestrator.test/api/session-data/host/event_read_page",
+        args: ["s1", 0, 10, ["metadata"], null, ["persistent_generation"], "desc"],
+      },
+      {
+        url: "http://orchestrator.test/api/session-data/host/event_read_page",
+        args: ["s1", 0, 10, ["metadata"], period, ["persistent_generation"], "desc"],
       },
     ]);
   });
