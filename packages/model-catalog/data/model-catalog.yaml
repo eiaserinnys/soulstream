@@ -15,6 +15,18 @@ presets:
     model: sonnet
     supported_efforts: [low, medium, high, xhigh, max]
     default_effort: xhigh
+  - id: claude-sonnet-trusted
+    label: Claude - Sonnet (상자 밖, 배달과 운영 조사)
+    backend: claude
+    model: sonnet
+    supported_efforts: [low, medium, high, xhigh, max]
+    default_effort: xhigh
+    trusted_execution: true
+    # 카드 #1292 디렉터 결정(261113): 배달원(bubbles)과 운영 조사(blossom) 자리에만 쓰는 상자 밖 Sonnet이다.
+    # claude-sonnet은 상자 안 그대로 둔다. 모델과 요율, 계정 풀은 claude-sonnet과 같다.
+    # 되돌림: 이 프리셋 세션이 맡은 일 밖의 프로세스 종료, 서비스 재시작, 승인 없는 배포 같은 사고를 내면
+    # 이 항목의 trusted_execution을 거두고, 두 자리를 원래 모델(codex-6.1-sol, 코덱스 한도 동안 claude-opus high)로
+    # 되돌린다. atom 공통 node-model-selection의 「코덱스 불가 시 대체 위임」과 서소영 카드 담당 rules도 함께 되돌린다.
   - id: claude-opus
     label: Claude - Opus
     backend: claude

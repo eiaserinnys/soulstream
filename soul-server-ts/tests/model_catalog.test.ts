@@ -26,6 +26,7 @@ const REPOSITORY_CATALOG_PATH = modelCatalogPathForRepository(
 const COMMON_PRESET_IDS = [
   "claude-haiku",
   "claude-sonnet",
+  "claude-sonnet-trusted",
   "claude-opus",
   "claude-opus-lean",
   "claude-fable",
@@ -109,10 +110,10 @@ describe("ModelCatalog", () => {
   it("lists only presets whose group this node enabled and keeps the full snapshot", () => {
     const defaultView = openRepositoryCatalog();
     expect(defaultView.list().map((preset) => preset.id)).toEqual(COMMON_PRESET_IDS);
-    expect(defaultView.snapshot().presets.map((preset) => preset.id)).toHaveLength(23);
+    expect(defaultView.snapshot().presets.map((preset) => preset.id)).toHaveLength(24);
 
     const chinaView = openRepositoryCatalog({ enabledGroups: ["china"] });
-    expect(chinaView.list()).toHaveLength(23);
+    expect(chinaView.list()).toHaveLength(24);
     expect(chinaView.list().map((preset) => preset.id)).toEqual(expect.arrayContaining([
       ...COMMON_PRESET_IDS,
       ...CHINA_PRESET_IDS,
@@ -382,6 +383,7 @@ it("advertises the Antigravity usage provider for all four account presets", () 
 
 describe("model preset trusted execution", () => {
   const trustedPresetIds = [
+    "claude-sonnet-trusted",
     "claude-opus",
     "claude-opus-lean",
     "claude-fable",
@@ -393,7 +395,7 @@ describe("model preset trusted execution", () => {
     "gemini-4-carbon",
   ];
 
-  it("marks exactly the nine trusted presets in the repository catalog", () => {
+  it("marks exactly the ten trusted presets in the repository catalog", () => {
     const catalog = openRepositoryCatalog();
     expect(
       catalog.list()
