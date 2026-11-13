@@ -30,6 +30,7 @@ export function configureTestSessionDataHost(
 
   db.configureSessionDataHost({
     getSession: (sessionId) => sessions.getSession(sessionId),
+    getSessionOwnerNode: (sessionId) => sessions.getSessionOwnerNode(sessionId),
     listSessionsSummary: (params) => sessions.listSessionsSummary(params),
     listRunningSessionsSummary: (params) =>
       sessions.listRunningSessionsSummary(params),

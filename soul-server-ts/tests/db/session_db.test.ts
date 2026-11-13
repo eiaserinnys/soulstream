@@ -379,8 +379,10 @@ describe("SessionDB session-data host delegation", () => {
     const getSession = vi.fn().mockResolvedValue({ session_id: "s1" });
     const listSessionsSummary = vi.fn().mockResolvedValue({ sessions: [], total: 0 });
     const countEvents = vi.fn().mockResolvedValue(7);
+    const getSessionOwnerNode = vi.fn().mockResolvedValue({ node_id: "node-a" });
     db.configureSessionDataHost({
       getSession,
+      getSessionOwnerNode,
       listSessionsSummary,
       countEvents,
     } as never);
@@ -389,8 +391,10 @@ describe("SessionDB session-data host delegation", () => {
     await expect(db.listSessionsSummary({ limit: 10, offset: 0 }))
       .resolves.toEqual({ sessions: [], total: 0 });
     await expect(db.countEvents("s1")).resolves.toBe(7);
+    await expect(db.getSessionOwnerNode("s1")).resolves.toEqual({ node_id: "node-a" });
 
     expect(getSession).toHaveBeenCalledWith("s1");
+    expect(getSessionOwnerNode).toHaveBeenCalledWith("s1");
     expect(listSessionsSummary).toHaveBeenCalledWith({ limit: 10, offset: 0 });
     expect(countEvents).toHaveBeenCalledWith("s1");
     expect(calls).toHaveLength(0);

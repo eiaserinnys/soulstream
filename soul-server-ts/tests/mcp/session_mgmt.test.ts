@@ -131,6 +131,7 @@ function makeRuntime(
       getSession: vi.fn(async (sessionId: string) =>
         sessionId === "caller-sess-1" ? { folder_id: callerFolderId } : null,
       ),
+      getSessionOwnerNode: vi.fn(async () => null),
       getBoardItems: vi.fn(async () => callerBoardItems),
       getPrimarySessionBoardItem: vi.fn(async (sessionId: string) =>
         callerBoardItems.find((item) =>
@@ -171,12 +172,10 @@ function confirmRemoteOwnerAfterNotOwner(
   targetSessionId: string,
 ): void {
   let targetLookups = 0;
-  vi.mocked(runtime.db.getSession).mockImplementation(async (sessionId) => {
+  vi.mocked(runtime.db.getSessionOwnerNode).mockImplementation(async (sessionId) => {
     if (sessionId !== targetSessionId) return null;
     const nodeId = targetLookups++ === 0 ? "node-test" : "node-remote";
-    return { node_id: nodeId } as unknown as NonNullable<
-      Awaited<ReturnType<SessionDB["getSession"]>>
-    >;
+    return { node_id: nodeId };
   });
 }
 async function createClient(runtime: McpRuntime, options: { headers?: Record<string, string> } = {}): Promise<Client> {

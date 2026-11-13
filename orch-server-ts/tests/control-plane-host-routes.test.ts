@@ -824,6 +824,7 @@ describe("control-plane host routes", () => {
   it("dispatches every session-data read operation through the explicit whitelist", async () => {
     const targets = {
       getSession: vi.fn(async () => null),
+      getSessionOwnerNode: vi.fn(async () => null),
       listSessionsSummary: vi.fn(async () => ({ sessions: [], total: 0 })),
       listRunningSessionsSummary: vi.fn(async () => ({ sessions: [], total: 0 })),
       listSessionsForUpstreamDump: vi.fn(async () => ({ sessions: [], total: 0 })),
@@ -870,6 +871,7 @@ describe("control-plane host routes", () => {
     });
     const operations = [
       ["get", "getSession"],
+      ["owner_node", "getSessionOwnerNode"],
       ["list_summary", "listSessionsSummary"],
       ["list_running", "listRunningSessionsSummary"],
       ["upstream_dump", "listSessionsForUpstreamDump"],

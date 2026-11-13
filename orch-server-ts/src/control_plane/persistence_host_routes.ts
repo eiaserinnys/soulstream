@@ -122,6 +122,7 @@ const sessionDataOperations = {
   resume_context: ["sessionReadComposites", null, "getResumeContext"],
   generation_checkpoint_material: ["sessionReadComposites", null, "getGenerationCheckpointMaterial"],
   caller_chain: ["sessionReads", null, "getSessionCallerChain"],
+  owner_node: ["sessionReads", null, "getSessionOwnerNode"],
 } as const satisfies Record<string, OperationTarget>;
 
 const worktreeOperations = {

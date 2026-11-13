@@ -394,8 +394,8 @@ describe("sendMessageToSession cross-node exact-once", () => {
           nonOwnerRoute.addIntervention(params, onResume),
       },
       nodeId: "local-node",
-      sessionLookup: {
-        getSession: async () => ({ node_id: "owner-node" }),
+      ownerLookup: {
+        getSessionOwnerNode: async () => ({ node_id: "owner-node" }),
       },
       onResume: () => {
         throw new Error("non-owner resumed the target");
@@ -447,8 +447,8 @@ describe("sendMessageToSession cross-node exact-once", () => {
           owner.route.addIntervention(params, onResume),
       },
       nodeId: "owner-node",
-      sessionLookup: {
-        getSession: async () => ({ node_id: "owner-node" }),
+      ownerLookup: {
+        getSessionOwnerNode: async () => ({ node_id: "owner-node" }),
       },
       onResume: owner.onResume,
       logger: silentLogger(),
@@ -479,7 +479,7 @@ describe("sendMessageToSession cross-node exact-once", () => {
     const owner = makeOwnerNode(ledger);
     const nonOwnerRoute = makeNonOwnerRoute(ledger);
     const ownerSequence = ["local-node", "owner-node"];
-    const getSession = vi.fn(async () => ({
+    const getSessionOwnerNode = vi.fn(async () => ({
       node_id: ownerSequence.shift() ?? "owner-node",
     }));
 
@@ -491,7 +491,7 @@ describe("sendMessageToSession cross-node exact-once", () => {
           nonOwnerRoute.addIntervention(params, onResume),
       },
       nodeId: "local-node",
-      sessionLookup: { getSession },
+      ownerLookup: { getSessionOwnerNode },
       onResume: () => {
         throw new Error("former owner resumed the target");
       },
@@ -507,7 +507,7 @@ describe("sendMessageToSession cross-node exact-once", () => {
       ok: true,
       detail: { relayed: true, outcome: "auto_resumed", delivered: true },
     });
-    expect(getSession).toHaveBeenCalledTimes(2);
+    expect(getSessionOwnerNode).toHaveBeenCalledTimes(2);
     expect(ledger.rows.size).toBe(1);
     expect(ledger.admissions.get("local-node") ?? 0).toBe(0);
     expect(ledger.admissions.get("owner-node") ?? 0).toBe(1);
@@ -534,7 +534,7 @@ describe("sendMessageToSession cross-node exact-once", () => {
         },
       },
       nodeId: "local-node",
-      sessionLookup: { getSession: async () => ({ node_id: "owner-node" }) },
+      ownerLookup: { getSessionOwnerNode: async () => ({ node_id: "owner-node" }) },
       onResume: () => {},
       logger: silentLogger(),
       orch: { baseUrl: "http://orch.test", headers: {} },
@@ -602,8 +602,8 @@ describe("sendMessageToSession cross-node exact-once", () => {
           route.addIntervention(params, onResume),
       },
       nodeId: "local-node",
-      sessionLookup: {
-        getSession: async () => lookupNodeId === null
+      ownerLookup: {
+        getSessionOwnerNode: async () => lookupNodeId === null
           ? null
           : { node_id: lookupNodeId },
       },
@@ -624,14 +624,18 @@ describe("sendMessageToSession cross-node exact-once", () => {
     expect(ledger.admissions.get("local-node") ?? 0).toBe(0);
   });
 
-  it("fails an unavailable owner lookup explicitly before any delivery side effect", async () => {
+  it("relays through orch once when the owner lookup fails, with no local admission", async () => {
+    const clock = new FakeClock();
+    const ledger = new SharedDeliveryLedger(clock);
+    const owner = makeOwnerNode(ledger);
     const addIntervention = vi.fn(async () => ({ delivered: true as const }));
-    const fetchImpl = vi.fn(async () => new Response("unexpected relay"));
+    const relay = relayFetch(owner);
+    const fetchImpl = vi.fn(relay);
     const result = await sendMessageToSession({
       taskManager: { addIntervention },
       nodeId: "local-node",
-      sessionLookup: {
-        getSession: async () => {
+      ownerLookup: {
+        getSessionOwnerNode: async () => {
           throw new Error("session owner store unavailable");
         },
       },
@@ -641,16 +645,44 @@ describe("sendMessageToSession cross-node exact-once", () => {
       fetchImpl,
     }, {
       targetSessionId: TARGET_SESSION_ID,
-      message: "owner lookup failure contract",
+      message: "owner lookup failure relay",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      detail: { relayed: true, delivered: true },
+    });
+    expect(addIntervention).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(ledger.rows.size).toBe(1);
+    expect(ledger.admissions.get("local-node") ?? 0).toBe(0);
+    expect(ledger.admissions.get("owner-node") ?? 0).toBe(1);
+  });
+
+  it("keeps the owner lookup failure in the result when no orch relay is configured", async () => {
+    const addIntervention = vi.fn(async () => ({ delivered: true as const }));
+    const result = await sendMessageToSession({
+      taskManager: { addIntervention },
+      nodeId: "local-node",
+      ownerLookup: {
+        getSessionOwnerNode: async () => {
+          throw new Error("session owner store unavailable");
+        },
+      },
+      onResume: () => {},
+      logger: silentLogger(),
+    }, {
+      targetSessionId: TARGET_SESSION_ID,
+      message: "owner lookup failure without orch",
     });
 
     expect(result).toEqual({
       ok: false,
       error: "session owner store unavailable",
-      fallback_error: "target owner lookup failed: session owner store unavailable",
+      fallback_error:
+        "target owner lookup failed: session owner store unavailable; orch fallback unavailable",
     });
     expect(addIntervention).not.toHaveBeenCalled();
-    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
   it("oracle rejects each independently weakened exact-once dimension", () => {

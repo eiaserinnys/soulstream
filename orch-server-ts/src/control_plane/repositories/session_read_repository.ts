@@ -56,8 +56,24 @@ export interface HostSessionExecutionChain {
   ancestors: HostSessionExecutionChainRow[];
 }
 
+export interface HostSessionOwnerNode {
+  node_id: string | null;
+}
+
 export class SessionReadRepository {
   constructor(private readonly sql: SqlClient) {}
+
+  /**
+   * Reads only the owning node. A caller that just routes a message must not
+   * pay for the whole session row (metadata can reach hundreds of KB).
+   */
+  async getSessionOwnerNode(sessionId: string): Promise<HostSessionOwnerNode | null> {
+    const rows = await this.sql<HostSessionOwnerNode[]>`
+      SELECT node_id FROM sessions WHERE session_id = ${sessionId} LIMIT 1
+    `;
+    const row = rows[0];
+    return row === undefined ? null : { node_id: row.node_id };
+  }
 
   async getSession(sessionId: string): Promise<HostSessionRow | null> {
     const rows = await this.sql<HostSessionRow[]>`

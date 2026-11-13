@@ -22,8 +22,8 @@ export interface SessionMessageOrchConfig {
 export interface SendMessageToSessionDeps {
   taskManager: Pick<TaskManager, "addIntervention">;
   nodeId: string;
-  sessionLookup: {
-    getSession(sessionId: string): Promise<{ node_id: string | null } | null>;
+  ownerLookup: {
+    getSessionOwnerNode(sessionId: string): Promise<{ node_id: string | null } | null>;
   };
   onResume: StartExecutionCallback;
   logger: Logger;
@@ -104,12 +104,18 @@ export async function sendMessageToSession(
   try {
     ownerNodeId = await resolveOwnerNodeId(deps, targetSessionId);
   } catch (err) {
-    const error = errorMessage(err);
-    return {
-      ok: false,
-      error,
-      fallback_error: `target owner lookup failed: ${error}`,
-    };
+    // The owner is unknown, so no local admission here (it could create a
+    // non-owner admission). The orchestrator finds the owner on its own.
+    const lookupError = errorMessage(err);
+    deps.logger.warn(
+      { err, targetSessionId },
+      "send_message_to_session owner lookup failed — relaying through orch",
+    );
+    return withLookupFailure(
+      await relayThroughOrch(deps, request, null),
+      "target owner lookup failed",
+      lookupError,
+    );
   }
   if (ownerNodeId !== null && ownerNodeId !== deps.nodeId) {
     return await relayThroughOrch(deps, request, null);
@@ -129,23 +135,24 @@ export async function sendMessageToSession(
       "send_message_to_session local delivery failed",
     );
     if (err instanceof TaskOwnedByAnotherNodeError) {
+      let relookedUpOwnerNodeId: string | null;
       try {
-        const ownerNodeId = await resolveOwnerNodeId(deps, targetSessionId);
-        if (ownerNodeId === null || ownerNodeId === deps.nodeId) {
-          return {
-            ok: false,
-            error: localError,
-            fallback_error: "target owner remained local after NOT_OWNER",
-          };
-        }
-        return await relayThroughOrch(deps, request, localError);
+        relookedUpOwnerNodeId = await resolveOwnerNodeId(deps, targetSessionId);
       } catch (ownerError) {
+        return withLookupFailure(
+          await relayThroughOrch(deps, request, localError),
+          "target owner relookup failed",
+          errorMessage(ownerError),
+        );
+      }
+      if (relookedUpOwnerNodeId === null || relookedUpOwnerNodeId === deps.nodeId) {
         return {
           ok: false,
           error: localError,
-          fallback_error: `target owner relookup failed: ${errorMessage(ownerError)}`,
+          fallback_error: "target owner remained local after NOT_OWNER",
         };
       }
+      return await relayThroughOrch(deps, request, localError);
     }
     return {
       ok: false,
@@ -165,11 +172,25 @@ export async function sendMessageToSession(
 }
 
 async function resolveOwnerNodeId(
-  deps: Pick<SendMessageToSessionDeps, "sessionLookup">,
+  deps: Pick<SendMessageToSessionDeps, "ownerLookup">,
   targetSessionId: string,
 ): Promise<string | null> {
-  const session = await deps.sessionLookup.getSession(targetSessionId);
-  return session?.node_id ?? null;
+  const owner = await deps.ownerLookup.getSessionOwnerNode(targetSessionId);
+  return owner?.node_id ?? null;
+}
+
+/** Keeps the owner lookup failure visible when the relay it fell back to also fails. */
+function withLookupFailure(
+  relayed: SendMessageToSessionResult,
+  label: string,
+  lookupError: string,
+): SendMessageToSessionResult {
+  if (relayed.ok) return relayed;
+  return {
+    ...relayed,
+    error: relayed.error ?? lookupError,
+    fallback_error: `${label}: ${lookupError}; ${relayed.fallback_error}`,
+  };
 }
 
 async function relayThroughOrch(
