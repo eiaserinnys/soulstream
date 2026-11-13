@@ -332,10 +332,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
     ...(claudeRuntime.backgroundLifecycle
       ? {
         terminalizeClaudeBackgroundTasks: (sessionId, execution) =>
-          claudeRuntime.backgroundLifecycle!.terminalizeDeadRunner(
-            sessionId,
-            execution,
-          ),
+          claudeRuntime.backgroundLifecycle!.terminalizeDeadRunner(sessionId, execution),
         completionNotifier: taskRuntime.completionNotifier,
       }
       : {}),
