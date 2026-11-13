@@ -1,0 +1,24 @@
+stateDiagram-v2
+direction TB
+classDef breaks fill:#ffecee,stroke:#e72e3b,stroke-width:2px,color:#cd2834
+classDef hole fill:#ffffff,stroke:#9a9a9a,stroke-dasharray:4 3
+state "세션 상태" as sessionStatus {
+    direction TB
+    state "세션 줄이 없음" as s_none
+    state "초기화 중" as s_initializing
+    state "실행 중" as s_running
+    state "완료" as s_completed
+    state "오류" as s_error
+    state "중단" as s_interrupted
+}
+sessionStatus --> s_initializing: 세션 줄을 만든다: 줄을 만들었다
+sessionStatus --> s_running: 실행 등록을 기록한다: 실행 중으로 옮겼다
+sessionStatus --> s_running: 실행 중 전환을 기록한다: 실행 중으로 옮겼다
+sessionStatus --> s_completed: 종료 전환을 기록한다: completed로 기록했다
+sessionStatus --> s_error: 종료 전환을 기록한다: error로 기록했다
+sessionStatus --> s_interrupted: 종료 전환을 기록한다: interrupted로 기록했다
+sessionStatus --> s_interrupted: 노드 끊김을 정리한다: 중단으로 기록했다
+sessionStatus --> s_interrupted: 시작 정리에서 사라진 세션을 멈춘다: 중단으로 기록했다
+sessionStatus --> s_running: 시작 정리에서 살아 있는 세션을 되살린다: running으로 되살렸다
+sessionStatus --> s_running: 범용 갱신으로 상태를 쓴다: 상태를 썼다
+sessionStatus --> s_none: 세션을 지운다: 줄을 지웠다
