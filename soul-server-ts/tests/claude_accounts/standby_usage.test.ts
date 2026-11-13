@@ -29,7 +29,7 @@ function usage(sevenDay: number | null = null, fable: number | null = null): Cla
 
 function account(id: string, accountUsage: ClaudeAccountUsage): ClaudeAccountView {
   return { id, email: "test@example.com", plan: "max", enabled: true, priority: null,
-    auth_state: "ok", active_sessions: 0, blocked: null, stale: false,
+    auth_state: "ok", login_expires_at: null, active_sessions: 0, blocked: null, stale: false,
     observed_at: new Date(now).toISOString(), usage: accountUsage };
 }
 

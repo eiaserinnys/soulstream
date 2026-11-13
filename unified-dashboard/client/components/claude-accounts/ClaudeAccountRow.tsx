@@ -7,6 +7,7 @@ type Props = {
   account: ClaudeAccount;
   index: number;
   enabledCount: number;
+  nowMs: number;
   busy: boolean;
   confirmingDelete: boolean;
   highlighted: boolean;
@@ -49,9 +50,13 @@ function statusColor(account: ClaudeAccount): string {
   return "var(--color-emerald-400)";
 }
 
-function accountStatus(account: ClaudeAccount): string | null {
+function accountStatus(account: ClaudeAccount, nowMs: number): string | null {
   if (account.auth_state === "needs_relogin") return "재로그인 필요";
-  if (account.auth_state === "logging_in") return "로그인 중";
+  if (account.auth_state === "logging_in") {
+    const expiresAt = account.login_expires_at ? new Date(account.login_expires_at).getTime() : NaN;
+    const remainingMinutes = Number.isFinite(expiresAt) ? Math.ceil((expiresAt - nowMs) / 60_000) : 0;
+    return remainingMinutes > 0 ? `로그인 중, ${remainingMinutes}분 남음` : "로그인 중";
+  }
   if (!account.enabled) return "사용 안 함";
   if (account.auth_state === "idle") return "대기";
   if (account.blocked) {
@@ -65,6 +70,7 @@ export function ClaudeAccountRow({
   account,
   index,
   enabledCount,
+  nowMs,
   busy,
   confirmingDelete,
   highlighted,
@@ -75,7 +81,7 @@ export function ClaudeAccountRow({
   onCancelDelete,
   onDelete,
 }: Props) {
-  const status = accountStatus(account);
+  const status = accountStatus(account, nowMs);
   const rowState = account.auth_state === "needs_relogin" ? "needs_relogin" : account.blocked ? "blocked" : "normal";
   const hasUsage = account.usage.five_hour !== null || account.usage.seven_day !== null || account.usage.fable_weekly !== null;
   const observed = account.observed_at ? localClock(account.observed_at) : null;
@@ -115,7 +121,7 @@ export function ClaudeAccountRow({
             <ArrowDown className="size-4" aria-hidden="true" />
           </DashboardIconCap>
         </> : null}
-        <DashboardIconCap size="small" label="재로그인" disabled={busy} onClick={onRelogin}>
+        <DashboardIconCap size="small" label={account.auth_state === "logging_in" ? "새로 시도" : "재로그인"} disabled={busy} onClick={onRelogin}>
           <RotateCcw className="size-4" aria-hidden="true" />
         </DashboardIconCap>
         <DashboardIconCap size="small" label="계정 삭제" disabled={busy} onClick={onRequestDelete}>

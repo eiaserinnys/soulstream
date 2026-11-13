@@ -34,6 +34,8 @@ export interface ClaudeAccountView {
   enabled: boolean;
   priority: number | null;
   auth_state: ClaudeAccountAuthState;
+  /** 로그인 중인 계정에만 있는 진행 중 흐름의 만료 시각(ISO 8601). */
+  login_expires_at: string | null;
   active_sessions: number;
   blocked: ClaudeAccountBlockView | null;
   stale: boolean;
@@ -174,7 +176,7 @@ export interface ClaudeLoginAccountPort {
     plan: string | null;
   }): Promise<void>;
   retirePending(loginId: string): Promise<void>;
-  beginRelogin(accountId: string): Promise<void>;
+  beginRelogin(accountId: string, expiresAt: string): Promise<void>;
   endRelogin(accountId: string, outcome: "ok" | "needs_relogin"): Promise<void>;
   activeSessions(accountId: string): number;
 }

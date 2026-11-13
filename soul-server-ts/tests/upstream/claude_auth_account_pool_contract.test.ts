@@ -72,8 +72,10 @@ describe("Claude account pool wire contract", () => {
     ]);
     expect(Object.keys(account.properties ?? {}).sort()).toEqual([
       "active_sessions", "auth_state", "blocked", "email", "enabled", "id",
-      "observed_at", "plan", "priority", "usage",
+      "login_expires_at", "observed_at", "plan", "priority", "usage",
     ]);
+    expect(account.properties?.login_expires_at?.format).toBe("date-time");
+    expect(account.required ?? []).not.toContain("login_expires_at");
     expect(Object.keys(account.properties?.usage?.properties ?? {}).sort()).toEqual([
       "fable_weekly", "five_hour", "seven_day",
     ]);

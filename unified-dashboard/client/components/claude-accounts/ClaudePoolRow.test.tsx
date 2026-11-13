@@ -113,9 +113,11 @@ afterEach(async () => {
 
 async function settle() {
   await act(async () => {
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
+  });
+  // act flush 중에 시작된 effect의 비동기 갱신을 한 번 더 흘려보낸다.
+  await act(async () => {
+    for (let index = 0; index < 8; index += 1) await Promise.resolve();
   });
 }
 
@@ -381,6 +383,7 @@ describe("ClaudePoolRow", () => {
     const added = account("new-account", 2, "new@example.test");
     const requestMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(data(flow("requested")))
+      .mockResolvedValueOnce(data(initial))
       .mockResolvedValueOnce(data(flow("url_ready")))
       .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveCode = resolve; }))
       .mockResolvedValueOnce(data(flow("verifying")))
@@ -410,9 +413,9 @@ describe("ClaudePoolRow", () => {
     });
     const confirm = button("확인");
     await act(async () => { confirm.click(); confirm.click(); });
-    expect(requestMock).toHaveBeenCalledTimes(3);
-    expect(String(requestMock.mock.calls[2]?.[0])).toBe("/api/nodes/node-a/claude-auth/logins/login-a/code");
-    expect(JSON.parse(String(requestMock.mock.calls[2]?.[1]?.body))).toEqual({ code: "synthetic-code#synthetic-state" });
+    expect(requestMock).toHaveBeenCalledTimes(4);
+    expect(String(requestMock.mock.calls[3]?.[0])).toBe("/api/nodes/node-a/claude-auth/logins/login-a/code");
+    expect(JSON.parse(String(requestMock.mock.calls[3]?.[1]?.body))).toEqual({ code: "synthetic-code#synthetic-state" });
 
     await act(async () => resolveCode(data(flow("code_submitted"))));
     await settle();
@@ -436,6 +439,7 @@ describe("ClaudePoolRow", () => {
     const refreshed = list([{ ...account("first", 1), email: "updated@example.test" }]);
     const requestMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(data(flow("requested", { account_id: "first" })))
+      .mockResolvedValueOnce(data(initial))
       .mockResolvedValueOnce(data(flow("done", { account_id: "first" })))
       .mockResolvedValueOnce(data(refreshed));
     await mount(initial, requestMock as unknown as typeof fetch);
@@ -456,6 +460,7 @@ describe("ClaudePoolRow", () => {
     const initial = list([account("first", 1)]);
     const requestMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(data(flow("requested")))
+      .mockResolvedValueOnce(data(initial))
       .mockRejectedValueOnce(new Error("offline"))
       .mockResolvedValueOnce(data(flow("url_ready")));
     await mount(initial, requestMock as unknown as typeof fetch);
@@ -468,13 +473,14 @@ describe("ClaudePoolRow", () => {
 
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     expect(host.querySelector('[data-testid="claude-login-sheet"]')?.getAttribute("data-login-state")).toBe("url_ready");
-    expect(requestMock).toHaveBeenCalledTimes(3);
+    expect(requestMock).toHaveBeenCalledTimes(4);
   });
 
   it("shows human-readable duplicate-account errors and highlights the existing row", async () => {
     const initial = list([account("first", 1), account("existing", 2)]);
     const requestMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(data(flow("url_ready")))
+      .mockResolvedValueOnce(data(initial))
       .mockResolvedValueOnce(Response.json({ code: "account_exists", message: "duplicate", existing_account_id: "existing" }, { status: 409 }));
     await mount(initial, requestMock as unknown as typeof fetch);
     await expand();
@@ -514,6 +520,7 @@ describe("ClaudePoolRow", () => {
     const initial = list([account("first", 1)]);
     const requestMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(data(flow("url_ready")))
+      .mockResolvedValueOnce(data(initial))
       .mockResolvedValueOnce(data(flow("cancelled")));
     await mount(initial, requestMock as unknown as typeof fetch);
     await expand();
@@ -531,6 +538,7 @@ describe("ClaudePoolRow", () => {
     const initial = list([account("first", 1)]);
     const requestMock = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(data(flow("url_ready")))
+      .mockResolvedValueOnce(data(initial))
       .mockResolvedValueOnce(data(flow("cancelled")));
     await mount(initial, requestMock as unknown as typeof fetch, true);
     await expand();
@@ -545,5 +553,83 @@ describe("ClaudePoolRow", () => {
 
     expect(requestMock).toHaveBeenLastCalledWith("/api/nodes/node-a/claude-auth/logins/login-a", expect.objectContaining({ method: "DELETE" }));
     expect(host.querySelector('[data-testid="claude-login-sheet"]')).toBeNull();
+  });
+
+  it("로그인 중인 계정에 남은 분과 새로 시도 단추를 보이고 만료 시각이 없으면 로그인 중만 보인다", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-13T09:00:00.000Z"));
+    const withExpiry = {
+      ...account("pending", 1),
+      auth_state: "logging_in" as const,
+      login_expires_at: new Date(Date.now() + 8 * 60_000).toISOString(),
+    };
+    const withoutExpiry = { ...account("stale", 2), auth_state: "logging_in" as const };
+    await mount(list([withExpiry, withoutExpiry]), vi.fn<typeof fetch>() as unknown as typeof fetch);
+    await expand();
+
+    const pendingRow = host.querySelector<HTMLElement>('[data-account-id="pending"]')!;
+    expect(pendingRow.textContent).toContain("로그인 중, 8분 남음");
+    expect(button("새로 시도", pendingRow)).toBeTruthy();
+    const staleRow = host.querySelector<HTMLElement>('[data-account-id="stale"]')!;
+    expect(staleRow.textContent).toContain("로그인 중");
+    expect(staleRow.textContent).not.toContain("분 남음");
+    expect(button("새로 시도", staleRow)).toBeTruthy();
+  });
+
+  it("남은 시간은 화면을 연 채로 줄어들고 0이 되면 계정 목록을 한 번 다시 받는다", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-13T09:00:00.000Z"));
+    const loggingIn = {
+      ...account("pending", 1),
+      auth_state: "logging_in" as const,
+      login_expires_at: new Date(Date.now() + 2 * 60_000).toISOString(),
+    };
+    const expired = list([{ ...account("pending", 1), auth_state: "needs_relogin" }]);
+    const requestMock = vi.fn<typeof fetch>().mockResolvedValueOnce(data(expired));
+    await mount(list([loggingIn]), requestMock as unknown as typeof fetch);
+    await expand();
+    expect(host.textContent).toContain("로그인 중, 2분 남음");
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(host.textContent).toContain("로그인 중, 1분 남음");
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    await settle();
+    // react-query의 알림은 setTimeout(0)으로 예약되므로 가짜 타이머에서 한 번 더 돌린다.
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(requestMock).toHaveBeenCalledTimes(1);
+    expect(String(requestMock.mock.calls[0]?.[0])).toBe("/api/nodes/node-a/claude-auth/accounts");
+    expect(host.textContent).toContain("재로그인 필요");
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(requestMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("새로 시도는 같은 계정으로 로그인을 시작하고 새 흐름 기준 남은 시간으로 목록을 갱신한다", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-13T09:00:00.000Z"));
+    const initial = list([{
+      ...account("first", 1),
+      auth_state: "logging_in" as const,
+      login_expires_at: new Date(Date.now() + 2 * 60_000).toISOString(),
+    }]);
+    const refreshed = list([{
+      ...account("first", 1),
+      auth_state: "logging_in" as const,
+      login_expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
+    }]);
+    const requestMock = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(data(flow("requested", { account_id: "first" })))
+      .mockResolvedValueOnce(data(refreshed));
+    await mount(initial, requestMock as unknown as typeof fetch);
+    await expand();
+
+    await act(async () => button("새로 시도", host.querySelector('[data-account-id="first"]')!).click());
+    await settle();
+
+    expect(String(requestMock.mock.calls[0]?.[0])).toBe("/api/nodes/node-a/claude-auth/logins");
+    expect(JSON.parse(String(requestMock.mock.calls[0]?.[1]?.body))).toEqual({ account_id: "first" });
+    expect(String(requestMock.mock.calls[1]?.[0])).toBe("/api/nodes/node-a/claude-auth/accounts");
+    expect(host.textContent).toContain("로그인 중, 10분 남음");
   });
 });

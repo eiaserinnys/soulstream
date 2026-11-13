@@ -60,7 +60,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
   private readonly now: () => number;
   private readonly credentialRenewer: ClaudeProfileCredentialRenewer | undefined;
   private readonly sessionActivity = new ClaudeAccountSessionActivity();
-  private readonly loggingInAccountIds = new Set<string>();
+  private readonly loggingInExpiresAt = new Map<string, string>();
   private readonly needsReloginAccountIds = new Set<string>();
   private readonly pendingRetireAccountIds = new Set<string>();
 
@@ -152,20 +152,20 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
     nextAccounts.push(record);
     this.store.writeAccounts(nextAccounts);
 
-    this.loggingInAccountIds.delete(input.id);
+    this.loggingInExpiresAt.delete(input.id);
     this.needsReloginAccountIds.delete(input.id);
     this.pendingRetireAccountIds.delete(input.id);
   }
 
-  async beginRelogin(accountId: string): Promise<void> {
-    this.loggingInAccountIds.add(accountId);
+  async beginRelogin(accountId: string, expiresAt: string): Promise<void> {
+    this.loggingInExpiresAt.set(accountId, expiresAt);
   }
 
   async endRelogin(
     accountId: string,
     outcome: "ok" | "needs_relogin",
   ): Promise<void> {
-    this.loggingInAccountIds.delete(accountId);
+    this.loggingInExpiresAt.delete(accountId);
     if (outcome === "ok") {
       this.needsReloginAccountIds.delete(accountId);
       this.store.ensureProfileSymlinks(accountId);
@@ -175,7 +175,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
   }
 
   async markNeedsRelogin(accountId: string): Promise<void> {
-    this.loggingInAccountIds.delete(accountId);
+    this.loggingInExpiresAt.delete(accountId);
     this.needsReloginAccountIds.add(accountId);
   }
 
@@ -183,7 +183,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
     accountId: string,
     observedState: "ok" | "idle",
   ): ClaudeAccountAuthState {
-    if (this.loggingInAccountIds.has(accountId)) return "logging_in";
+    if (this.loggingInExpiresAt.has(accountId)) return "logging_in";
     if (this.needsReloginAccountIds.has(accountId)) return "needs_relogin";
     return observedState;
   }
@@ -442,7 +442,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
       this.store.writeBlocks(blocks);
     }
     this.usageCollector.deleteCachedAccount(accountId);
-    this.loggingInAccountIds.delete(accountId);
+    this.loggingInExpiresAt.delete(accountId);
     this.needsReloginAccountIds.delete(accountId);
   }
 
@@ -478,7 +478,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
     const pollTargets = accounts
       .filter(
         (acc) =>
-          !this.loggingInAccountIds.has(acc.id) &&
+          !this.loggingInExpiresAt.has(acc.id) &&
           !this.needsReloginAccountIds.has(acc.id),
       )
       .map((acc) => ({
@@ -507,6 +507,7 @@ export class ClaudeAccountService implements ClaudeLoginAccountPort {
         enabled: acc.enabled,
         priority: acc.priority,
         auth_state,
+        login_expires_at: this.loggingInExpiresAt.get(acc.id) ?? null,
         active_sessions: this.activeSessions(acc.id),
         blocked: projectPublicBlockView(blocks[acc.id], nowMs),
         stale: obs.stale,
