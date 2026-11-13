@@ -5,6 +5,9 @@ import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import { AutoResumeTransition } from "../../src/task/task_auto_resume_transition.js";
+import { CLAUDE_BACKGROUND_RUNNER_DEAD_SENTENCE } from
+  "../../src/task/claude_background_retention_notice.js";
+import { TaskCompletionNotifier } from "../../src/task/completion_notifier.js";
 import { TaskExecutorFinalizer } from "../../src/task/task_executor_finalizer.js";
 import {
   RunnerRecoveryCoordinator,
@@ -31,6 +34,7 @@ import { TaskExecutor } from "../../src/task/task_executor.js";
 import type { Task } from "../../src/task/task_models.js";
 import { makeEventPersistenceTestDouble } from
   "../task/event_persistence_test_double.js";
+import { makeDeliveryRepository } from "../task/delivery_repository_test_fake.js";
 
 const RECOVERY_NOW_MS = Date.parse("2026-08-11T00:00:30.000Z");
 
@@ -426,6 +430,58 @@ describe("RunnerRecoveryCoordinator exception matrix", () => {
         registrationId: "registration-a",
         executionCommandId: "execute-a",
       },
+    );
+  });
+
+  it("죽은 러너의 백그라운드 작업은 부른 세션에 멈춤 알림을 정확히 1건 남긴다 (R3)", async () => {
+    const deadRegistration = registration({ lifecycleState: "completed", pidAlive: false });
+    const recovered = task("session-a");
+    recovered.status = "completed";
+    recovered.terminationReason = "completed_ok";
+    recovered.terminationEventRecorded = true;
+    recovered.terminalEventId = 22;
+    recovered.completedAt = new Date("2026-08-11T00:00:00.000Z");
+    recovered.callerSessionId = "session-parent";
+    const rows = new Map<string, Record<string, unknown>>();
+    const repository = makeDeliveryRepository(rows);
+    const addIntervention = vi.fn(async () => ({ queued: true, queuePosition: 1 }));
+    const notifier = new TaskCompletionNotifier(
+      "node-1",
+      { addIntervention } as never,
+      { get: () => undefined } as never,
+      vi.fn(),
+      { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
+      undefined,
+      undefined,
+      undefined,
+      true,
+      repository as never,
+    );
+    const terminalizeClaudeBackgroundTasks = vi.fn(async () => 2);
+    const subject = makeSubject([deadRegistration], RECOVERY_NOW_MS, [], {
+      taskManager: {
+        hydrateRunnerRecoveryTask: vi.fn(async () => recovered),
+      } as never,
+      terminalizeClaudeBackgroundTasks,
+      notifyDeadRunnerBackgroundStopped: async (deadTask: Task) =>
+        await notifier.notifyBackgroundStopped(
+          deadTask,
+          CLAUDE_BACKGROUND_RUNNER_DEAD_SENTENCE,
+        ),
+    } as never);
+
+    await subject.coordinator.scanOnce();
+    await subject.coordinator.waitForSettled();
+
+    expect(terminalizeClaudeBackgroundTasks).toHaveBeenCalledOnce();
+    expect(addIntervention).toHaveBeenCalledOnce();
+    const notice = addIntervention.mock.calls[0]![0] as {
+      agentSessionId: string;
+      text: string;
+    };
+    expect(notice.agentSessionId).toBe("session-parent");
+    expect(notice.text).toBe(
+      "백그라운드 작업을 돌리던 실행기가 끝나 작업이 멈췄습니다. 이 세션은 더 보고하지 않습니다.",
     );
   });
 

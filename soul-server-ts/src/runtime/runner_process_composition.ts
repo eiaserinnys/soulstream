@@ -4,6 +4,10 @@ import type { Env } from "../config.js";
 import type { TaskExecutor } from "../task/task_executor.js";
 import type { TaskManager } from "../task/task_manager.js";
 import type { ExecutionRegistration } from "../task/execution_registration.js";
+import type { Task } from "../task/task_models.js";
+import { CLAUDE_BACKGROUND_RUNNER_DEAD_SENTENCE } from
+  "../task/claude_background_retention_notice.js";
+import type { CompletionNotifier } from "../task/completion_notifier.js";
 import type { ClaudeBackgroundTaskLifecycle } from "../task/claude_background_task_lifecycle.js";
 import type { RunnerProcessRuntimeFactory } from "../task/task_executor.js";
 import {
@@ -148,6 +152,8 @@ export async function composeRunnerRecoveryCoordinator(options: {
     sessionId: string,
     execution: ExecutionRegistration,
   ) => Promise<number>;
+  /** 죽은 러너의 백그라운드 작업을 이을 수 없을 때 부른 세션에 알리는 포트. */
+  completionNotifier?: Pick<CompletionNotifier, "notifyBackgroundStopped">;
   logger: Logger;
   nodeStallMonitor?: Pick<NodeStallMonitor, "beginRunnerOperation">;
   recoveryStorage?: RunnerRecoveryStorage;
@@ -180,6 +186,15 @@ export async function composeRunnerRecoveryCoordinator(options: {
       ? {
         terminalizeClaudeBackgroundTasks:
           options.terminalizeClaudeBackgroundTasks,
+      }
+      : {}),
+    ...(options.completionNotifier
+      ? {
+        notifyDeadRunnerBackgroundStopped: async (deadTask: Task) =>
+          await options.completionNotifier!.notifyBackgroundStopped?.(
+            deadTask,
+            CLAUDE_BACKGROUND_RUNNER_DEAD_SENTENCE,
+          ),
       }
       : {}),
     ...(options.releaseGarbageCollector

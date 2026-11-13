@@ -58,6 +58,8 @@ import type { Task } from "./task_models.js";
 export interface CompletionNotifier {
   notify(task: Task): Promise<void>;
   notifyForDelete?(task: Task): Promise<boolean>;
+  /** 보유가 followup 없이 풀렸을 때 부른 세션에 알린다(R3/R5). */
+  notifyBackgroundStopped?(task: Task, firstSentence: string): Promise<void>;
   recoverPending?(): Promise<void>;
 }
 

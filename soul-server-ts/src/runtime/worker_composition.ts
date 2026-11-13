@@ -336,6 +336,7 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
             sessionId,
             execution,
           ),
+        completionNotifier: taskRuntime.completionNotifier,
       }
       : {}),
     ...(runnerProcess ? { recoveryStorage: runnerProcess.recoveryStorage } : {}),

@@ -110,6 +110,10 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
   private readonly nativeTranscriptTailByGenerationKey =
     new Map<string, Promise<boolean>>();
   private readonly ownershipDeadlineTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  /** 세대가 선 SDK 작업 키. 뒤이은 식별 없는 사건은 멈춤 정산을 하지 않는다. */
+  private readonly collectedSdkTaskKeys = new Set<string>();
+  /** 식별 없는 터미널 사건의 풀기·알림을 시한까지 미루는 타이머. */
+  private readonly deferredStopTimers = new Map<string, ReturnType<typeof setTimeout>>();
   private sequence = 0;
 
   constructor(private readonly deps: ClaudeRuntimeTaskFollowupDeps) {}
@@ -221,6 +225,8 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
       // R1: native 쪽이 이 완료를 이어받든 아니든 시한 안에 정산한다.
       this.scheduleOwnershipDeadline(task, identity.generationKey);
     }
+    this.collectedSdkTaskKeys.add(backgroundSdkTaskKey(task.agentSessionId, taskId));
+    this.clearDeferredStop(task.agentSessionId, taskId);
     return identity.generationKey;
   }
 
@@ -239,6 +245,19 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     await this.observeNativeEvent(task, event);
     if (hasPendingClaudeBackgroundRuntimeWork(task)) return;
     if (generationKey === undefined) {
+      const eventTaskId = asString((event as Record<string, unknown>).task_id);
+      if (
+        eventTaskId !== undefined &&
+        isTerminalCompletionEvent(event) &&
+        !this.collectedSdkTaskKeys.has(backgroundSdkTaskKey(task.agentSessionId, eventTaskId))
+      ) {
+        // R3/R5: 식별 없는 터미널 사건은 세대를 세우지 못한다. 뒤이어 올 수 있는
+        // task_notification이 같은 작업의 세대를 세우므로 보유를 풀지도, 멈춤을
+        // 알리지도 않고 시한까지 기다린다. 여기서 서두르면 풀기가 러너를 닫아
+        // 뒤이은 followup이 앉을 자리를 없앤다(B, 카드 #1300 2회차).
+        this.scheduleDeferredStop(task, eventTaskId);
+        return;
+      }
       const flushed = await this.flushPending(task);
       const wasRetained = task.runnerRetainedForDetachedWork === true;
       await this.deps.releaseRetainedRunner(task);
@@ -456,6 +475,61 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
         "Claude background stopped notice failed",
       );
     }
+  }
+
+  /**
+   * 식별 없는 터미널 사건의 정산을 시한까지 미룬다. 시한을 정할 수 없으면
+   * 종전처럼 그 자리에서 정산한다.
+   */
+  private scheduleDeferredStop(task: Task, taskId: string): void {
+    const key = backgroundSdkTaskKey(task.agentSessionId, taskId);
+    if (this.deferredStopTimers.has(key)) return;
+    const settle = () => {
+      void this.settleDeferredStop(task, taskId).catch((err: unknown) => {
+        this.deps.logger.warn(
+          { err, sessionId: task.agentSessionId, taskId },
+          "Claude background deferred stop failed",
+        );
+      });
+    };
+    const deadlineMs = this.deps.followupDeadlineMs ??
+      DEFAULT_CLAUDE_BACKGROUND_FOLLOWUP_DEADLINE_MS;
+    if (!Number.isFinite(deadlineMs) || deadlineMs <= 0) {
+      settle();
+      return;
+    }
+    const timer = setTimeout(() => {
+      this.deferredStopTimers.delete(key);
+      settle();
+    }, deadlineMs);
+    (timer as { unref?: () => void }).unref?.();
+    this.deferredStopTimers.set(key, timer);
+  }
+
+  private clearDeferredStop(sessionId: string, taskId: string): void {
+    const key = backgroundSdkTaskKey(sessionId, taskId);
+    const timer = this.deferredStopTimers.get(key);
+    if (!timer) return;
+    this.deferredStopTimers.delete(key);
+    clearTimeout(timer);
+  }
+
+  /**
+   * 시한이 지난 뒤의 정산. 그 SDK 작업의 세대가 서지 않았고, 세션이 새 턴을
+   * 돌리지 않고, 아직 도는 백그라운드가 없을 때만 보유를 풀고 멈춤을 알린다.
+   */
+  private async settleDeferredStop(task: Task, taskId: string): Promise<void> {
+    const key = backgroundSdkTaskKey(task.agentSessionId, taskId);
+    if (this.collectedSdkTaskKeys.has(key)) return;
+    if (!isTerminalTaskStatus(task.status)) return;
+    if (hasPendingClaudeBackgroundRuntimeWork(task)) return;
+    if (this.hasNativeOwnership(task.agentSessionId)) return;
+    const flushed = await this.flushPending(task);
+    const wasRetained = task.runnerRetainedForDetachedWork === true;
+    await this.deps.releaseRetainedRunner(task);
+    const released = wasRetained && task.runnerRetainedForDetachedWork !== true;
+    if (flushed > 0 || !released || !isTerminalTaskStatus(task.status)) return;
+    await this.notifyUnrecoverable(task);
   }
 
   private getPendingMap(sessionId: string): Map<string, PendingRuntimeTaskFollowup> {
@@ -690,6 +764,11 @@ export class ClaudeRuntimeTaskFollowupController implements ClaudeRuntimeTaskFol
     );
   }
 
+}
+
+/** SDK 작업 하나를 세는 키. 식별 없는 사건과 뒤이은 알림이 같은 키에 닿는다. */
+function backgroundSdkTaskKey(sessionId: string, taskId: string): string {
+  return `${sessionId}:${taskId}`;
 }
 
 /** 완료 통지 꼴(터미널 상태)인 사건인가 — 이을 수 없음(R5) 판정의 전제. */

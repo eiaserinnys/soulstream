@@ -18,6 +18,7 @@ import { TaskCompletionNotifier } from "../../src/task/completion_notifier.js";
 import { TaskExecutorFinalizer } from "../../src/task/task_executor_finalizer.js";
 import { TaskLifecycleTransition } from "../../src/task/task_lifecycle_transition.js";
 import type { Task } from "../../src/task/task_models.js";
+import { makeDeliveryRepository } from "./delivery_repository_test_fake.js";
 
 const silentLogger = pino({ level: "silent" });
 
@@ -101,109 +102,6 @@ function makeNotifier(addIntervention: ReturnType<typeof vi.fn>) {
     vi.fn(),
     silentLogger,
   );
-}
-
-/**
- * orch의 register 계약을 그대로 흉내 내는 인메모리 세션 전달 저장소.
- * 같은 relation_key에 다른 신원이 오면 기존 행을 dead_letter로 만든다.
- */
-function makeDeliveryRepository(rows: Map<string, Record<string, unknown>>) {
-  return {
-    register: vi.fn(async (params: Record<string, unknown>) => {
-      const existing = [...rows.values()].find(
-        (row) => row.delivery_id === params.deliveryId
-          || row.relation_key === params.relationKey,
-      );
-      const createdAt = params.createdAt as Date;
-      if (!existing) {
-        const row = {
-          delivery_id: params.deliveryId,
-          target_session_id: params.targetSessionId,
-          source_session_id: params.sourceSessionId,
-          relation_key: params.relationKey,
-          completion_id: params.completionId,
-          intent: params.intent,
-          source: params.source,
-          producer_kind: params.producerKind,
-          producer_id: params.producerId,
-          producer_terminal_revision: params.producerTerminalRevision,
-          parent_delivery_id: null,
-          caller_turn_id: null,
-          payload_hash: params.payloadHash,
-          payload: params.payload,
-          state: "pending",
-          aggregate_state: "pending",
-          dead_letter_reason: null,
-          attempt_count: 0,
-          next_attempt_at: createdAt,
-          last_error: null,
-          attempt_token: null,
-          attempt_expires_at: null,
-          created_at: createdAt,
-          updated_at: createdAt,
-          delivered_at: null,
-          consumed_at: null,
-        };
-        rows.set(row.delivery_id as string, row);
-        return { row, inserted: true, conflict: false };
-      }
-      const conflict =
-        existing.delivery_id !== params.deliveryId
-        || existing.relation_key !== params.relationKey
-        || existing.payload_hash !== params.payloadHash
-        || existing.intent !== params.intent
-        || existing.completion_id !== (params.completionId ?? null);
-      if (!conflict) return { row: existing, inserted: false, conflict: false };
-      const dead = {
-        ...existing,
-        state: "uncertain",
-        aggregate_state: "dead_letter",
-        dead_letter_reason: "delivery identity conflict",
-      };
-      rows.set(dead.delivery_id as string, dead);
-      return { row: dead, inserted: false, conflict: true };
-    }),
-    get: vi.fn(async (deliveryId: string) => rows.get(deliveryId) ?? null),
-    claimAttemptForTarget: vi.fn(async (
-      deliveryId: string,
-      targetSessionId: string,
-      attemptToken: string,
-    ) => {
-      const row = rows.get(deliveryId);
-      if (
-        !row || row.state !== "pending"
-        || (row.next_attempt_at as Date).getTime() > Date.now()
-      ) return null;
-      const claimed = {
-        ...row,
-        target_session_id: targetSessionId,
-        state: "claimed",
-        attempt_token: attemptToken,
-      };
-      rows.set(deliveryId, claimed);
-      return claimed;
-    }),
-    deferPending: vi.fn(async (
-      deliveryId: string,
-      reason: string,
-      retryDelayMs: number,
-    ) => {
-      const row = rows.get(deliveryId);
-      if (!row) return null;
-      const deferred = {
-        ...row,
-        state: "pending",
-        attempt_token: null,
-        last_error: reason,
-        next_attempt_at: new Date(Date.now() + retryDelayMs),
-      };
-      rows.set(deliveryId, deferred);
-      return deferred;
-    }),
-    retryDeliveryAttempt: vi.fn(async () => null),
-    expireStaleDeliveryAttempts: vi.fn(async () => 0),
-    markUncertain: vi.fn(async () => null),
-  };
 }
 
 describe("Claude background follow-up regression", () => {
@@ -355,43 +253,156 @@ describe("Claude background follow-up regression", () => {
   });
 
   it("T3a: 완료를 followup으로 이을 수 없어 보유가 풀리면 멈춤 알림을 보낸다 (R5)", async () => {
-    const task = makeTask({
-      status: "completed",
-      runnerRetainedForDetachedWork: true,
-    });
-    const addIntervention = vi.fn(async () => ({ autoResumed: true }));
-    const notifyBackgroundStopped = vi.fn(async () => undefined);
-    const releaseRetainedRunner = vi.fn(async (target: Task) => {
-      target.runnerRetainedForDetachedWork = undefined;
-    });
-    const controller = new ClaudeRuntimeTaskFollowupController({
-      taskManager: { addIntervention },
-      onResume: vi.fn(),
-      releaseRetainedRunner,
-      notifyBackgroundStopped,
-      logger: silentLogger,
-      deliveryV2Enabled: true,
-      sourceNode: "node-1",
-      followupDeadlineMs: 120_000,
-    } as never);
-    // V2가 신원을 세우지 못하는 완료 사건(sdk_membership인데 durable metadata 없음).
-    const lost = {
-      type: "claude_runtime_task_updated",
-      task_id: "task-lost",
-      session_id: "sdk-session-1",
-      patch: { status: "completed", is_backgrounded: true },
-    } as unknown as SSEEventPayload;
-    attachClaudeBackgroundProvenance(lost, "sdk_membership");
+    vi.useFakeTimers();
+    try {
+      const task = makeTask({
+        status: "completed",
+        runnerRetainedForDetachedWork: true,
+      });
+      const addIntervention = vi.fn(async () => ({ autoResumed: true }));
+      const notifyBackgroundStopped = vi.fn(async () => undefined);
+      const releaseRetainedRunner = vi.fn(async (target: Task) => {
+        target.runnerRetainedForDetachedWork = undefined;
+      });
+      const controller = new ClaudeRuntimeTaskFollowupController({
+        taskManager: { addIntervention },
+        onResume: vi.fn(),
+        releaseRetainedRunner,
+        notifyBackgroundStopped,
+        logger: silentLogger,
+        deliveryV2Enabled: true,
+        sourceNode: "node-1",
+        followupDeadlineMs: 120_000,
+      } as never);
+      // V2가 신원을 세우지 못하는 완료 사건(sdk_membership인데 durable metadata 없음).
+      const lost = {
+        type: "claude_runtime_task_updated",
+        task_id: "task-lost",
+        session_id: "sdk-session-1",
+        patch: { status: "completed", is_backgrounded: true },
+      } as unknown as SSEEventPayload;
+      attachClaudeBackgroundProvenance(lost, "sdk_membership");
 
-    await controller.collectDetached(task, lost);
+      await controller.collectDetached(task, lost);
 
-    expect(addIntervention).not.toHaveBeenCalled();
-    expect(releaseRetainedRunner).toHaveBeenCalledOnce();
-    expect(task.runnerRetainedForDetachedWork).toBeUndefined();
-    expect(notifyBackgroundStopped).toHaveBeenCalledWith(
-      task,
-      "백그라운드 작업이 끝났지만 이 세션을 이어 갈 수 없어 멈췄습니다.",
-    );
+      // 식별 없는 사건은 뒤이은 알림이 세대를 세울 수 있어 시한까지 기다린다(B).
+      expect(releaseRetainedRunner).not.toHaveBeenCalled();
+      expect(notifyBackgroundStopped).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      expect(addIntervention).not.toHaveBeenCalled();
+      expect(releaseRetainedRunner).toHaveBeenCalledOnce();
+      expect(task.runnerRetainedForDetachedWork).toBeUndefined();
+      expect(notifyBackgroundStopped).toHaveBeenCalledOnce();
+      expect(notifyBackgroundStopped).toHaveBeenCalledWith(
+        task,
+        "백그라운드 작업이 끝났지만 이 세션을 이어 갈 수 없어 멈췄습니다.",
+      );
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("B1: 식별 없는 터미널 사건 뒤 시한 안에 세대가 서면 followup이 가고 멈춤 알림이 없다", async () => {
+    vi.useFakeTimers();
+    try {
+      const task = makeTask({
+        status: "completed",
+        runnerRetainedForDetachedWork: true,
+      });
+      const addIntervention = vi.fn(async () => ({ autoResumed: true }));
+      const notifyBackgroundStopped = vi.fn(async () => undefined);
+      const releaseRetainedRunner = vi.fn(async (target: Task) => {
+        target.runnerRetainedForDetachedWork = undefined;
+      });
+      const controller = new ClaudeRuntimeTaskFollowupController({
+        taskManager: { addIntervention },
+        onResume: vi.fn(),
+        releaseRetainedRunner,
+        notifyBackgroundStopped,
+        logger: silentLogger,
+        deliveryV2Enabled: true,
+        sourceNode: "node-1",
+        followupDeadlineMs: 120_000,
+      } as never);
+      // 메타데이터 없는 터미널 사건 — 이 시점에는 세대가 서지 않는다.
+      const lost = {
+        type: "claude_runtime_task_updated",
+        task_id: "task-late",
+        session_id: "sdk-session-1",
+        patch: { status: "completed", is_backgrounded: true },
+      } as unknown as SSEEventPayload;
+      attachClaudeBackgroundProvenance(lost, "sdk_membership");
+      await controller.collectDetached(task, lost);
+
+      // 시한 전에는 풀지도, 멈춤을 알리지도 않는다.
+      expect(releaseRetainedRunner).not.toHaveBeenCalled();
+      expect(notifyBackgroundStopped).not.toHaveBeenCalled();
+
+      // 시한 안에 tool_use_id를 가진 알림이 와서 같은 작업의 세대를 세운다.
+      await controller.collectDetached(task, nativeTerminal(task, "task-late", "toolu-late"));
+      await vi.advanceTimersByTimeAsync(120_000);
+
+      // followup이 자동 재개로 가고, 멈춤 알림은 한 번도 나가지 않는다.
+      expect(addIntervention).toHaveBeenCalledOnce();
+      const followup = addIntervention.mock.calls[0]![0] as {
+        agentSessionId: string;
+        source: string;
+      };
+      expect(followup.agentSessionId).toBe("agent-child");
+      expect(followup.source).toBe(CLAUDE_RUNTIME_TASK_FOLLOWUP_SOURCE);
+      expect(notifyBackgroundStopped).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("B2: 식별 없는 터미널 사건만 있으면 시한 뒤에 멈춤 알림을 정확히 한 번 보낸다", async () => {
+    vi.useFakeTimers();
+    try {
+      const task = makeTask({
+        status: "completed",
+        runnerRetainedForDetachedWork: true,
+      });
+      const addIntervention = vi.fn(async () => ({ autoResumed: true }));
+      const notifyBackgroundStopped = vi.fn(async () => undefined);
+      const releaseRetainedRunner = vi.fn(async (target: Task) => {
+        target.runnerRetainedForDetachedWork = undefined;
+      });
+      const controller = new ClaudeRuntimeTaskFollowupController({
+        taskManager: { addIntervention },
+        onResume: vi.fn(),
+        releaseRetainedRunner,
+        notifyBackgroundStopped,
+        logger: silentLogger,
+        deliveryV2Enabled: true,
+        sourceNode: "node-1",
+        followupDeadlineMs: 120_000,
+      } as never);
+      const lost = {
+        type: "claude_runtime_task_updated",
+        task_id: "task-lived",
+        session_id: "sdk-session-1",
+        patch: { status: "completed", is_backgrounded: true },
+      } as unknown as SSEEventPayload;
+      attachClaudeBackgroundProvenance(lost, "sdk_membership");
+      await controller.collectDetached(task, lost);
+
+      await vi.advanceTimersByTimeAsync(119_999);
+      expect(releaseRetainedRunner).not.toHaveBeenCalled();
+      expect(notifyBackgroundStopped).not.toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(1);
+      expect(releaseRetainedRunner).toHaveBeenCalledOnce();
+      expect(notifyBackgroundStopped).toHaveBeenCalledOnce();
+      expect(notifyBackgroundStopped).toHaveBeenCalledWith(
+        task,
+        "백그라운드 작업이 끝났지만 이 세션을 이어 갈 수 없어 멈췄습니다.",
+      );
+      expect(addIntervention).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("T3b: V2에서 완료 알림과 멈춤 알림은 겹치지 않는 전달로 둘 다 남는다", async () => {

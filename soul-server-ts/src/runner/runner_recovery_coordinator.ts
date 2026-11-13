@@ -508,10 +508,12 @@ export class RunnerRecoveryCoordinator {
             "registered runner recovery skipped because SDK background work owns the process",
           );
           return;
-        case "terminalize_dead_background":
-          await this.terminalizeDeadClaudeBackgroundTasks(registration);
+        case "terminalize_dead_background": {
+          const recovered = await this.terminalizeDeadClaudeBackgroundTasks(registration);
           facts.deadBackgroundTerminalized = true;
+          if (recovered > 0) await this.notifyDeadRunnerBackgroundStopped(task);
           continue;
+        }
         case "probe_expired_retention":
           facts.retention = await this.releaseExpiredRetainedRunner(
             registration,
@@ -1146,8 +1148,12 @@ export class RunnerRecoveryCoordinator {
         ),
       terminalize: async (owned, recoveredTask, error, verified) => {
         if (await this.retireAttachedTerminalAdmission(owned, recoveredTask)) return;
+        // 이미 종료 확정인 task는 markFailure가 아무것도 보내지 않는다. 그
+        // 경우에만 러너 죽음의 멈춤을 따로 알린다 — 아니면 실패 결과와 겹친다.
+        const alreadyTerminal = isTerminalTaskStatus(recoveredTask.status);
+        let recovered = 0;
         if (verified === "reap_dead") {
-          await this.terminalizeDeadClaudeBackgroundTasks(owned);
+          recovered = await this.terminalizeDeadClaudeBackgroundTasks(owned);
         }
         await this.adoptionFailureRecovery.terminalize(
           owned,
@@ -1155,20 +1161,36 @@ export class RunnerRecoveryCoordinator {
           error,
           verified,
         );
+        if (recovered > 0 && alreadyTerminal) {
+          await this.notifyDeadRunnerBackgroundStopped(recoveredTask);
+        }
       },
     });
   }
 
   private async terminalizeDeadClaudeBackgroundTasks(
     registration: RunnerRegistration,
-  ): Promise<void> {
+  ): Promise<number> {
     const registrationId = registration.registrationId;
     const executionCommandId = registration.lifecycle?.execution_command_id;
-    if (!registrationId || !executionCommandId) return;
-    await this.options.terminalizeClaudeBackgroundTasks?.(
+    if (!registrationId || !executionCommandId) return 0;
+    return await this.options.terminalizeClaudeBackgroundTasks?.(
       registration.config.sessionId,
       { registrationId, executionCommandId },
-    );
+    ) ?? 0;
+  }
+
+  private async notifyDeadRunnerBackgroundStopped(task: Task | undefined): Promise<void> {
+    const notify = this.options.notifyDeadRunnerBackgroundStopped;
+    if (!notify || !task) return;
+    try {
+      await notify(task);
+    } catch (error) {
+      this.options.logger.warn(
+        { err: error, sessionId: task.agentSessionId },
+        "dead runner background stopped notice failed",
+      );
+    }
   }
 
   private async recoverByDisposition(

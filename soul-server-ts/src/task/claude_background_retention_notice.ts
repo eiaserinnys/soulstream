@@ -42,3 +42,7 @@ export function buildRetentionCapExceededSentence(capMs: number): string {
 /** 보유 없이 followup을 이을 수 없어 멈춘 까닭. */
 export const CLAUDE_BACKGROUND_UNRECOVERABLE_SENTENCE =
   "백그라운드 작업이 끝났지만 이 세션을 이어 갈 수 없어 멈췄습니다.";
+
+/** 러너가 죽어 백그라운드 작업을 이어 갈 수 없어 멈춘 까닭(R3). */
+export const CLAUDE_BACKGROUND_RUNNER_DEAD_SENTENCE =
+  "백그라운드 작업을 돌리던 실행기가 끝나 작업이 멈췄습니다.";
