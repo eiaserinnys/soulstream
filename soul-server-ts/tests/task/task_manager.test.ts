@@ -2682,8 +2682,10 @@ describe("TaskManager.addIntervention — 메모리 비어 있을 때 DB hydrati
       { agentSessionId: "s1", text: "x", user: "u" },
       vi.fn(),
     );
-    // 메모리 hit이라 getSession 호출 안 됨
-    expect(mocks.getSession).not.toHaveBeenCalled();
+    // 메모리 hit이라 hydration은 하지 않는다. getSession은 직전 턴 종료 사유
+    // 조회에 한 번만 쓰이며, 행이 null이므로 hydration이 일어났다면 실패했을 것이다.
+    expect(mocks.getSession).toHaveBeenCalledTimes(1);
+    expect(mocks.getSession).toHaveBeenCalledWith("s1");
   });
 
   it("hydrate가 metadata JSONB array에서 마지막 신원 박힌 caller_info를 복원 (R-2 회로 차단)", async () => {

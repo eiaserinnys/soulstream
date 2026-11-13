@@ -16,6 +16,7 @@ import {
   type TerminationReason,
 } from "./task_models.js";
 import { enqueueInterventionOnce } from "./task_intervention_queue.js";
+import { annotateTerminalSystemAbort } from "./system_abort_notice.js";
 import { hasLiveExecutionEvidence } from "./task_execution_evidence.js";
 import { buildCallerInfoMetadataEntry } from "./task_metadata.js";
 import { releaseTaskRunner } from "./task_runner_release.js";
@@ -78,6 +79,9 @@ export class AutoResumeTransition {
     if (!isTerminalTaskStatus(task.status)) return false;
     const message = task.interventionQueue[0];
     if (!message) return false;
+    // This path skips addIntervention, so annotate the original queued message
+    // in place before prepareTaskForAutoResume clears the terminal snapshot.
+    annotateTerminalSystemAbort(task, message);
     await this.resume(task, message, onResume, { publishUserMessage: false });
     return true;
   }
@@ -429,6 +433,7 @@ export function prepareTaskForAutoResume(
   task.result = undefined;
   task.terminationReason = undefined;
   task.terminationDetail = undefined;
+  task.lastSystemAbortNoticeKey = undefined;
   task.pendingTerminationHint = undefined;
   task.pendingTerminationDetail = undefined;
   task.rateLimitStopInfo = undefined;

@@ -300,6 +300,8 @@ export class TaskManager {
         : undefined,
       projectClosedRunner: async (task, detail) =>
         await this.runnerRecovery.projectClosed(task, detail),
+      readSessionTermination: (sessionId) => this.db.getSession(sessionId),
+      logger: this.logger,
     });
   }
 

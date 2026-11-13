@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { AttachmentPathBinding } from "@soulstream/wire-schema/attachments";
+import type { Logger } from "pino";
 
 import type {
   AutoResumeCallback,
@@ -26,6 +27,10 @@ import type {
 import { readCanonicalDeliveryPayload } from "./delivery_payload.js";
 import type { SessionNotificationPublisher } from "./task_session_notification.js";
 import { hasLiveExecutionEvidence } from "./task_execution_evidence.js";
+import {
+  appendSystemAbortNotice,
+  type PreviousSessionTermination,
+} from "./system_abort_notice.js";
 import {
   isNotificationDeliveryIntent,
 } from "./session_delivery_notification_payload.js";
@@ -113,6 +118,15 @@ export interface TaskInterventionRouteDeps {
       | "recordNotificationPublished" | "recordNotificationFailure"
   >;
   sessionNotificationPublisher?: Pick<SessionNotificationPublisher, "publish">;
+  /**
+   * Stored session row read used only to tell whether the previous turn ended
+   * for a system reason while the in-memory task still looks active. Optional
+   * so route-only compositions keep their current dependency surface.
+   */
+  readSessionTermination?: (
+    sessionId: string,
+  ) => Promise<PreviousSessionTermination | null>;
+  logger?: Pick<Logger, "warn">;
   /**
    * Existing interrupted transition used to retire a task whose startup can no
    * longer finish. Optional so route-only compositions and tests keep their
@@ -242,6 +256,12 @@ export class TaskInterventionRoute {
           };
         }
       }
+      // Read before the activation wait so a concurrent resume that starts
+      // while this read is in flight is still caught by the loop below.
+      await appendSystemAbortNotice(task, message, {
+        readSessionTermination: this.deps.readSessionTermination,
+        logger: this.deps.logger,
+      });
       // Keep concurrent inputs behind whichever execution activation currently
       // owns startup, including the running projection before its callback starts.
       let awaitedActivation: Task["executionActivation"];

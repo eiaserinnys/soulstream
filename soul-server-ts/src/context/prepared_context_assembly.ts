@@ -1,6 +1,7 @@
 import type { AgentProfile } from "../agent_registry.js";
 import type { InputMaterialPartV1 } from "@soulstream/wire-schema";
 import type { Task } from "../task/task_models.js";
+import { SYSTEM_ABORT_NOTICE_KEY } from "../task/system_abort_notice.js";
 import { assemblePrompt, type ContextItem } from "./prompt_assembler.js";
 import {
   createInputMaterialPart,
@@ -167,7 +168,10 @@ export function assemblePreparedContext(args: PreparedContextAssemblyInput): Pre
     contextParts.push(args.taskAtomMaterialParts ?? null);
   }
   for (const item of withoutSessionContextSourceMarkers(args.task.contextItems)
-    .filter((entry) => entry.key !== "assigned_cards")) {
+    .filter((entry) => (
+      entry.key !== "assigned_cards"
+      && entry.key !== SYSTEM_ABORT_NOTICE_KEY
+    ))) {
     combinedContextItems.push(item);
     contextParts.push(null);
   }

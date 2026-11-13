@@ -1252,3 +1252,58 @@ describe("AutoResumeTransition", () => {
     expect(task.contextItems).toEqual([contextItem]);
   });
 });
+
+describe("AutoResumeTransition queued resume system abort notice", () => {
+  function noticeItems(items: Array<{ key: string }> | undefined) {
+    return (items ?? []).filter(
+      (item) => item.key === "previous_turn_system_abort",
+    );
+  }
+
+  it("annotates the queued original message when the terminal reason is a system abort", async () => {
+    const task = makeTerminalTask({
+      status: "error",
+      terminationReason: "error_aborted",
+      terminationDetail: "runner process exited before execution completed",
+      terminalEventId: 3114,
+    });
+    const message = { text: "밀린 입력", user: "system" };
+    task.interventionQueue.push(message);
+    const persistenceDouble = makeEventPersistenceTestDouble();
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+    });
+
+    await expect(
+      transition.resumeQueuedAfterTerminal(task, vi.fn()),
+    ).resolves.toBe(true);
+
+    expect(noticeItems(message.context)).toHaveLength(1);
+    expect(noticeItems(task.contextItems)).toHaveLength(1);
+    expect(task.prompt).toBe("밀린 입력");
+  });
+
+  it("leaves the queued original message untouched after a human stop", async () => {
+    const task = makeTerminalTask({
+      status: "interrupted",
+      terminationReason: "killed",
+      terminationDetail: "user_stop",
+      terminalEventId: 3115,
+    });
+    const message = { text: "밀린 입력", user: "system" };
+    task.interventionQueue.push(message);
+    const persistenceDouble = makeEventPersistenceTestDouble();
+    const transition = new AutoResumeTransition({
+      logger: silentLogger,
+      persistence: persistenceDouble.persistence,
+    });
+
+    await expect(
+      transition.resumeQueuedAfterTerminal(task, vi.fn()),
+    ).resolves.toBe(true);
+
+    expect(message.context).toBeUndefined();
+    expect(task.contextItems).toEqual([]);
+  });
+});
