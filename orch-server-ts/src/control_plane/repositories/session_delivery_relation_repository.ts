@@ -170,6 +170,15 @@ export async function registerSessionDelivery(
         RETURNING *
       `;
       if (revivedRows[0]) {
+        // 알림 outbox 행(dead_letter/discarded, 때로는 published)이 남아 있으면
+        // 다음 stage가 "notification outbox already exists"로 막히고, 남은 행의
+        // payload도 새 내용과 어긋난다. 되살린 delivery 행을 먼저 갱신한 같은
+        // 트랜잭션에서(락 순서: delivery 다음 outbox) 지워 새로 stage되게 한다.
+        // 이 outbox를 참조하는 FK나 표는 없다.
+        await transaction`
+          DELETE FROM session_delivery_notification_outbox
+          WHERE delivery_id = ${current.delivery_id}
+        `;
         await appendSessionDeliveryAttempt(transaction, {
           deliveryId: current.delivery_id,
           outcome: "retryable",

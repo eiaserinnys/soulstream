@@ -45,7 +45,7 @@ R51 코드 대조 커밋 SHA: `0cb746d81addde5280fc26a7a447bb7c395eb44f`
 
 ## uncertain/dead_letter의 출구
 
-`uncertain/dead_letter`는 자동 경로(재전달, auto-resume, 부트 집기)의 종결이다. 자동 경로는 이 행을 다시 잡지 않는다. 출구는 보낸 쪽이 같은 신원(같은 `relation_key`)으로 되살림을 요청한 재등록 하나다. `session_delivery_relation_repository.ts:registerSessionDelivery`가 `reviveDeadLetter`가 있는 등록에서 죽은 행(`state='uncertain'` 또는 `aggregate_state='dead_letter'`, `consumed`·`superseded` 제외)을 이번 등록의 내용과 새 재시도 예산(`attempt_count=0`, `created_at=NOW()`)으로 `pending/pending`에 되돌리고 dead_letter 칸을 비우며 `retryable`/`delivery revived by sender` 시도 기록을 남긴다. 내용이 달라 identity conflict가 되는 경우도 요청이 있으면 새 내용이 이긴다. 요청이 없으면 등록 동작은 그대로다. 지금 이 요청을 하는 곳은 세션 삭제 길(`completion_delivery_coordinator.ts:enqueueForDelete`)뿐이며, 등록 뒤에도 행이 죽어 있으면 `delivery_dead_lettered`로 등록 실패를 돌려 삭제를 멈춘다.
+`uncertain/dead_letter`는 자동 경로(재전달, auto-resume, 부트 집기)의 종결이다. 자동 경로는 이 행을 다시 잡지 않는다. 출구는 보낸 쪽이 같은 신원(같은 `relation_key`)으로 되살림을 요청한 재등록 하나다. `session_delivery_relation_repository.ts:registerSessionDelivery`가 `reviveDeadLetter`가 있는 등록에서 죽은 행(`state='uncertain'` 또는 `aggregate_state='dead_letter'`, `consumed`·`superseded` 제외)을 이번 등록의 내용과 새 재시도 예산(`attempt_count=0`, `created_at=NOW()`)으로 `pending/pending`에 되돌리고 dead_letter 칸을 비우며 `retryable`/`delivery revived by sender` 시도 기록을 남긴다. 같은 트랜잭션에서 그 전달의 알림 outbox 행(dead_letter, discarded, published 어느 것이든)을 지워, 다시 전달할 때 stage가 새 outbox 행을 만들 수 있게 한다(delivery 행을 먼저 갱신하고 그다음 outbox를 지우는 락 순서). 내용이 달라 identity conflict가 되는 경우도 요청이 있으면 새 내용이 이긴다. 요청이 없으면 등록 동작은 그대로다. 지금 이 요청을 하는 곳은 세션 삭제 길(`completion_delivery_coordinator.ts:enqueueForDelete`)뿐이며, 등록 뒤에도 행이 죽어 있으면 `delivery_dead_lettered`로 등록 실패를 돌려 삭제를 멈춘다.
 
 ## 끝난 턴의 전달 정산
 

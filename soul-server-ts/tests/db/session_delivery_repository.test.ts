@@ -202,7 +202,7 @@ describe("SessionDeliveryRepository", () => {
         dead_letter_reason: null,
         dead_lettered_at: null,
       } as Partial<SessionDeliveryRow>);
-      const { sql, calls } = createMockSql([[], [dead()], [revived], []]);
+      const { sql, calls } = createMockSql([[], [dead()], [revived], [], []]);
 
       const result = await new SessionDeliveryRepository(sql).register({
         ...registration,
@@ -212,7 +212,7 @@ describe("SessionDeliveryRepository", () => {
       });
 
       expect(result).toEqual({ row: revived, inserted: false, conflict: false });
-      expect(calls).toHaveLength(4);
+      expect(calls).toHaveLength(5);
       const update = calls[2];
       expect(update.query).toContain("state = 'pending', aggregate_state = 'pending'");
       expect(update.query).toContain("attempt_count = 0");
@@ -221,9 +221,13 @@ describe("SessionDeliveryRepository", () => {
       expect(update.query).toContain("state NOT IN ('consumed', 'superseded')");
       expect(update.values).toContain("hash-new");
       expect(update.values).toContain(registration.deliveryId);
-      expect(calls[3].query).toContain("session_delivery_attempts");
-      expect(calls[3].values).toContain("retryable");
-      expect(calls[3].values).toContain("delivery revived by sender");
+      expect(calls[3].query).toContain(
+        "DELETE FROM session_delivery_notification_outbox",
+      );
+      expect(calls[3].values).toContain(registration.deliveryId);
+      expect(calls[4].query).toContain("session_delivery_attempts");
+      expect(calls[4].values).toContain("retryable");
+      expect(calls[4].values).toContain("delivery revived by sender");
     });
 
     it("leaves a dead row as it is when no revival is requested", async () => {
@@ -246,7 +250,7 @@ describe("SessionDeliveryRepository", () => {
         state: "pending",
         aggregate_state: "pending",
       } as Partial<SessionDeliveryRow>);
-      const { sql, calls } = createMockSql([[], [alive], [killed], [], [revived], []]);
+      const { sql, calls } = createMockSql([[], [alive], [killed], [], [revived], [], []]);
 
       const result = await new SessionDeliveryRepository(sql).register({
         ...registration,
