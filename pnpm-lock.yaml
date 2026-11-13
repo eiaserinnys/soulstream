@@ -104,6 +104,9 @@ importers:
       '@modelcontextprotocol/client':
         specifier: 2.2.0
         version: 2.2.0
+      '@soulstream/statechart':
+        specifier: workspace:*
+        version: link:../packages/statechart
       '@types/node':
         specifier: ^22.0.0
         version: 22.19.15

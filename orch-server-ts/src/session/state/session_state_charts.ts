@@ -1,4 +1,4 @@
-import { toMermaid, type ChartSpec } from "../../statechart/mermaid.js";
+import { toMermaid, type ChartSpec } from "@soulstream/statechart";
 import {
   SESSION_COMMAND_LABELS,
   SESSION_COMMAND_RULES,
