@@ -207,12 +207,9 @@ export async function composeWorkerRuntime(params: WorkerCompositionParams): Pro
       taskRuntime.taskExecutor.terminateAfterFatalEngineError(task, message).then(() => undefined),
   });
   const queuedRecoveryParams = {
-    db,
-    agentRegistry,
-    modelCatalog,
+    db, agentRegistry, modelCatalog,
     sessionStore: claudeSessionStore,
-    sourceNode: env.SOULSTREAM_NODE_ID,
-    logger,
+    sourceNode: env.SOULSTREAM_NODE_ID, logger,
     resolveWorktreeWorkspace: (worktreeId: string) => resolveWorktreeWorkspace(worktreeService, worktreeId),
     redeliverContent: (row: SessionDeliveryRow) => redeliverStoredDeliveryContent(row, taskManager, taskRuntime.onResume),
     getTask: (sessionId: string) => taskManager.getTask(sessionId),
